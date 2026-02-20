@@ -1,0 +1,17 @@
+{
+  "version": "0.2.1",
+  "defaults": {},
+  "configurations": [
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "vms.exe",
+      "name": "vms.exe with args",
+      "args": [
+        "rtsp://orwell:elvees@172.16.254.105:554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif",
+        "arg2",
+        "--verbose"
+      ]
+    }
+  ]
+}
