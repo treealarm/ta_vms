@@ -21,9 +21,12 @@ using AVPacketPtr = std::unique_ptr<AVPacket, AVPacketDeleter>;
 
 int main(int argc, char* argv[])
 {
-  const char* rtsp_url =
-    "rtsp://orwell:elvees@172.16.254.105:554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif";
-  if (argc > 1)
+  const char* rtsp_url = nullptr;
+  if (argc < 2)
+  {
+    std::cerr << "rtsp_url not found in args\n";
+    return 0;
+  }
     rtsp_url = argv[1];
 
   const char* out_file = "record_10s.mp4";
@@ -92,6 +95,7 @@ int main(int argc, char* argv[])
   const int64_t duration_us = 10 * AV_TIME_BASE;
 
   int64_t start_time_us = av_gettime_relative();
+  int64_t last_dts = 0;
 
   while (av_read_frame(in_ctx, pkt.get()) >= 0) 
   {
@@ -108,8 +112,29 @@ int main(int argc, char* argv[])
       break;
     }
 
+    // если камера не прислала PTS
+    if (pkt->pts == AV_NOPTS_VALUE) {
+      pkt->pts = pkt->dts;
+    }
+
+    // если и DTS нет — считаем по времени
+    if (pkt->dts == AV_NOPTS_VALUE) {
+      pkt->dts = last_dts + 1;
+      pkt->pts = pkt->dts;
+    }
+
+    // гарантируем монотонность
+    if (pkt->dts <= last_dts) {
+      pkt->dts = last_dts + 1;
+      pkt->pts = pkt->dts;
+    }
+
+    last_dts = pkt->dts;
+    std::cout << "last_dts" << last_dts << "\n";
+
 
     pkt->stream_index = out_stream->index;
+
 
     av_interleaved_write_frame(out_ctx, pkt.get());
     av_packet_unref(pkt.get());
