@@ -107,11 +107,23 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& media)
   }
 
   AVRational tb = m_out_stream->time_base;
-  int64_t frame_duration = av_rescale_q(1, AVRational{ 1,25 }, tb);
 
-  pkt->dts = m_pts;
-  pkt->pts = pkt->dts;
-  pkt->duration = frame_duration;
+  int64_t frame_duration = av_rescale_q(1, AVRational{ 1,25 }, tb); ;
+  
+  av_packet_rescale_ts(pkt, m_in_stream->time_base, m_out_stream->time_base);
+
+  if (pkt->duration <= 0)
+  {
+    pkt->duration = frame_duration;
+  }
+  else
+  {
+    frame_duration = pkt->duration;
+  }
+
+    pkt->dts = m_pts;
+    pkt->pts = m_pts;
+
   m_pts += frame_duration;
   
 

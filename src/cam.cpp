@@ -3,7 +3,7 @@
 
 cam::cam(const std::string& rtsp_url, const std::string& cam_id)
   : m_rtsp_url(rtsp_url), m_cam_id(cam_id),
-  m_writer("records", cam_id, 10) // сегменты по 10 секунд
+  m_writer("records", cam_id, 60) // сегменты по 10 секунд
 {
   if (!m_reader.open(m_rtsp_url))
     throw std::runtime_error("Failed to open RTSP");
