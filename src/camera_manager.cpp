@@ -80,8 +80,6 @@ bool camera_manager::stop_recording(const std::string& camera_id,
 }
 
 bool camera_manager::start_jpeg_stream(const std::string& camera_id,
-                                       const std::string& host,
-                                       uint16_t port,
                                        std::string& error) {
   std::scoped_lock lock(m_mutex);
 
@@ -91,17 +89,25 @@ bool camera_manager::start_jpeg_stream(const std::string& camera_id,
     return false;
   }
 
-  if (host.empty()) {
-    error = "host must not be empty";
+  return it->second.camera->start_jpeg_stream(error);
+}
+
+bool camera_manager::wait_next_jpeg_frame(const std::string& camera_id,
+                                          std::vector<uint8_t>& frame,
+                                          uint64_t& frame_number,
+                                          std::string& error) {
+  std::unique_lock lock(m_mutex);
+
+  auto it = m_cameras.find(camera_id);
+  if (it == m_cameras.end()) {
+    error = "camera not found: " + camera_id;
     return false;
   }
 
-  if (port == 0) {
-    error = "port must be greater than 0";
-    return false;
-  }
+  auto* camera = it->second.camera.get();
+  lock.unlock();
 
-  return it->second.camera->start_jpeg_stream(host, port, error);
+  return camera->wait_next_jpeg_frame(frame, frame_number, error);
 }
 
 bool camera_manager::stop_jpeg_stream(const std::string& camera_id,

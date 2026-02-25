@@ -1,10 +1,12 @@
 #pragma once
 
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -16,28 +18,22 @@ extern "C" {
 
 class jpeg_streamer : public media_sink {
 public:
-  jpeg_streamer(const std::string& host, uint16_t port);
+  jpeg_streamer();
   ~jpeg_streamer() override;
 
   bool init(AVStream* in_stream, std::string& error);
   void on_packet(const std::shared_ptr<media_packet>& media) override;
   void close();
 
+  bool wait_next_frame(std::vector<uint8_t>& frame, uint64_t& frame_number);
+
 private:
-  bool open_socket(std::string& error);
   bool init_decoder(AVStream* in_stream, std::string& error);
   bool init_encoder(std::string& error);
 
-  bool send_frame(const uint8_t* data, size_t size);
   void cleanup_codec();
-  void cleanup_socket();
 
 private:
-  std::string m_host;
-  uint16_t m_port;
-
-  int m_socket_fd = -1;
-
   AVCodecContext* m_decoder_ctx = nullptr;
   AVCodecContext* m_encoder_ctx = nullptr;
 
@@ -46,4 +42,9 @@ private:
   SwsContext* m_sws_ctx = nullptr;
 
   std::mutex m_mutex;
+  std::condition_variable m_frame_cv;
+  std::vector<uint8_t> m_last_frame;
+  uint64_t m_last_frame_number = 0;
+  uint64_t m_consumed_frame_number = 0;
+  bool m_closed = false;
 };

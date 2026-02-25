@@ -8,6 +8,7 @@ service CameraControlService {
   rpc StopRecording(CameraRequest) returns (OperationStatus);
   rpc StartJpegStream(JpegStreamRequest) returns (OperationStatus);
   rpc StopJpegStream(CameraRequest) returns (OperationStatus);
+  rpc StreamJpegFrames(CameraRequest) returns (stream JpegFrame);
 }
 
 message AddCameraRequest {
@@ -29,4 +30,9 @@ message JpegStreamRequest {
 message OperationStatus {
   bool success = 1;
   string message = 2;
+}
+
+message JpegFrame {
+  bytes jpeg_data = 1;
+  uint64 frame_number = 2;
 }
