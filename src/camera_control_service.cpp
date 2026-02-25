@@ -47,13 +47,10 @@ grpc::Status camera_control_service::StartJpegStream(
     const vms::control::JpegStreamRequest* request,
     vms::control::OperationStatus* response) {
   std::string error;
-  const bool success = m_manager.start_jpeg_stream(request->camera_id(),
-                                                   request->host(),
-                                                   static_cast<uint16_t>(request->port()),
-                                                   error);
+  const bool success = m_manager.start_jpeg_stream(request->camera_id(), error);
 
   response->set_success(success);
-  response->set_message(success ? "jpeg stream started" : error);
+  response->set_message(success ? "jpeg stream started (grpc)" : error);
   return grpc::Status::OK;
 }
 
@@ -66,5 +63,30 @@ grpc::Status camera_control_service::StopJpegStream(
 
   response->set_success(success);
   response->set_message(success ? "jpeg stream stopped" : error);
+  return grpc::Status::OK;
+}
+
+grpc::Status camera_control_service::StreamJpegFrames(
+    grpc::ServerContext* context,
+    const vms::control::CameraRequest* request,
+    grpc::ServerWriter<vms::control::JpegFrame>* writer) {
+  std::vector<uint8_t> frame;
+  uint64_t frame_number = 0;
+
+  while (!context->IsCancelled()) {
+    std::string error;
+    if (!m_manager.wait_next_jpeg_frame(request->camera_id(), frame, frame_number, error)) {
+      return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, error);
+    }
+
+    vms::control::JpegFrame msg;
+    msg.set_jpeg_data(frame.data(), static_cast<int>(frame.size()));
+    msg.set_frame_number(frame_number);
+
+    if (!writer->Write(msg)) {
+      break;
+    }
+  }
+
   return grpc::Status::OK;
 }

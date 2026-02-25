@@ -16,8 +16,8 @@ dotnet run --project tools/vms-control-client -- start cam-1
 # Остановить запись
 dotnet run --project tools/vms-control-client -- stop cam-1
 
-# Запустить JPEG-стрим
-dotnet run --project tools/vms-control-client -- start-jpeg cam-1 127.0.0.1 9000
+# Запустить JPEG-стрим (через gRPC stream)
+dotnet run --project tools/vms-control-client -- start-jpeg cam-1
 
 # Остановить JPEG-стрим
 dotnet run --project tools/vms-control-client -- stop-jpeg cam-1
@@ -33,22 +33,21 @@ dotnet run --project tools/vms-control-client -- --address localhost:50051
 
 ```text
 add cam-1 rtsp://127.0.0.1:8554/live --start
-start-jpeg cam-1 127.0.0.1 9000
+start-jpeg cam-1
 stop-jpeg cam-1
 stop cam-1
 exit
 ```
 
-## Встроенный приёмник JPEG
+## Приём JPEG через protobuf/gRPC
 
-Когда в клиенте вызывается `start-jpeg <camera-id> <host> <port>`, клиент автоматически поднимает TCP listener на указанном `port` и принимает JPEG-кадры в формате:
+Когда в клиенте вызывается `start-jpeg <camera-id>`, клиент:
 
-- 4 байта длины кадра (big-endian)
-- байты JPEG кадра
+1. вызывает `StartJpegStream` на сервере;
+2. открывает gRPC server-streaming вызов `StreamJpegFrames`;
+3. сохраняет полученные `JpegFrame` сообщения в папку `jpeg_frames` рядом с бинарником.
 
-Полученные кадры сохраняются в папку `jpeg_frames` рядом с бинарником клиента.
-
-> Важно: `host` и `port` в команде `start-jpeg` должны указывать на машину, где запущен этот клиент (иначе сервер будет стримить в другое место).
+Получение останавливается при `stop-jpeg <camera-id>`.
 
 По умолчанию клиент подключается к `localhost:50051`. Адрес можно переопределить:
 

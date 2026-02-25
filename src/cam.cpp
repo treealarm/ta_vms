@@ -40,7 +40,7 @@ void cam::stop() {
   m_writer.close();
 }
 
-bool cam::start_jpeg_stream(const std::string& host, uint16_t port, std::string& error) {
+bool cam::start_jpeg_stream(std::string& error) {
   if (m_jpeg_streamer) {
     error = "jpeg stream already running";
     return false;
@@ -52,7 +52,7 @@ bool cam::start_jpeg_stream(const std::string& host, uint16_t port, std::string&
     m_is_running = false;
   }
 
-  auto streamer = std::make_unique<jpeg_streamer>(host, port);
+  auto streamer = std::make_unique<jpeg_streamer>();
   if (!streamer->init(m_reader.video_stream(), error)) {
     if (should_resume) {
       m_reader.start();
@@ -67,6 +67,20 @@ bool cam::start_jpeg_stream(const std::string& host, uint16_t port, std::string&
   if (should_resume) {
     m_reader.start();
     m_is_running = true;
+  }
+
+  return true;
+}
+
+bool cam::wait_next_jpeg_frame(std::vector<uint8_t>& frame, uint64_t& frame_number, std::string& error) {
+  if (!m_jpeg_streamer) {
+    error = "jpeg stream is not running";
+    return false;
+  }
+
+  if (!m_jpeg_streamer->wait_next_frame(frame, frame_number)) {
+    error = "jpeg stream closed";
+    return false;
   }
 
   return true;

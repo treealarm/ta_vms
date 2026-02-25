@@ -1,14 +1,6 @@
 #include "stream/jpeg_streamer.h"
 
-#include <arpa/inet.h>
-#include <cerrno>
-#include <cstring>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
-jpeg_streamer::jpeg_streamer(const std::string& host, uint16_t port)
-    : m_host(host), m_port(port) {}
+jpeg_streamer::jpeg_streamer() = default;
 
 jpeg_streamer::~jpeg_streamer() {
   close();
@@ -24,11 +16,9 @@ bool jpeg_streamer::init(AVStream* in_stream, std::string& error) {
 
   const auto fail = [&]() {
     cleanup_codec();
-    cleanup_socket();
     return false;
   };
 
-  if (!open_socket(error)) return fail();
   if (!init_decoder(in_stream, error)) return fail();
   if (!init_encoder(error)) return fail();
 
@@ -65,13 +55,14 @@ bool jpeg_streamer::init(AVStream* in_stream, std::string& error) {
     return fail();
   }
 
+  m_closed = false;
   return true;
 }
 
 void jpeg_streamer::on_packet(const std::shared_ptr<media_packet>& media) {
   std::scoped_lock lock(m_mutex);
 
-  if (!media || !media->packet || !m_decoder_ctx || !m_encoder_ctx || m_socket_fd < 0) {
+  if (!media || !media->packet || !m_decoder_ctx || !m_encoder_ctx || m_closed) {
     return;
   }
 
@@ -103,7 +94,9 @@ void jpeg_streamer::on_packet(const std::shared_ptr<media_packet>& media) {
     }
 
     while (avcodec_receive_packet(m_encoder_ctx, out_pkt) == 0) {
-      send_frame(out_pkt->data, out_pkt->size);
+      m_last_frame.assign(out_pkt->data, out_pkt->data + out_pkt->size);
+      ++m_last_frame_number;
+      m_frame_cv.notify_all();
       av_packet_unref(out_pkt);
     }
 
@@ -112,34 +105,27 @@ void jpeg_streamer::on_packet(const std::shared_ptr<media_packet>& media) {
   }
 }
 
-void jpeg_streamer::close() {
-  std::scoped_lock lock(m_mutex);
-  cleanup_codec();
-  cleanup_socket();
+bool jpeg_streamer::wait_next_frame(std::vector<uint8_t>& frame, uint64_t& frame_number) {
+  std::unique_lock lock(m_mutex);
+  m_frame_cv.wait(lock, [this] {
+    return m_closed || m_last_frame_number > m_consumed_frame_number;
+  });
+
+  if (m_closed) {
+    return false;
+  }
+
+  frame = m_last_frame;
+  frame_number = m_last_frame_number;
+  m_consumed_frame_number = m_last_frame_number;
+  return true;
 }
 
-bool jpeg_streamer::open_socket(std::string& error) {
-  m_socket_fd = socket(AF_INET, SOCK_STREAM, 0);
-  if (m_socket_fd < 0) {
-    error = "failed to create socket";
-    return false;
-  }
-
-  sockaddr_in addr{};
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(m_port);
-
-  if (inet_pton(AF_INET, m_host.c_str(), &addr.sin_addr) <= 0) {
-    error = "invalid target host";
-    return false;
-  }
-
-  if (connect(m_socket_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-    error = "failed to connect to target: " + std::string(std::strerror(errno));
-    return false;
-  }
-
-  return true;
+void jpeg_streamer::close() {
+  std::scoped_lock lock(m_mutex);
+  m_closed = true;
+  cleanup_codec();
+  m_frame_cv.notify_all();
 }
 
 bool jpeg_streamer::init_decoder(AVStream* in_stream, std::string& error) {
@@ -195,24 +181,6 @@ bool jpeg_streamer::init_encoder(std::string& error) {
   return true;
 }
 
-bool jpeg_streamer::send_frame(const uint8_t* data, size_t size) {
-  const uint32_t net_size = htonl(static_cast<uint32_t>(size));
-  if (::send(m_socket_fd, &net_size, sizeof(net_size), MSG_NOSIGNAL) != sizeof(net_size)) {
-    return false;
-  }
-
-  size_t sent = 0;
-  while (sent < size) {
-    const auto res = ::send(m_socket_fd, data + sent, size - sent, MSG_NOSIGNAL);
-    if (res <= 0) {
-      return false;
-    }
-    sent += static_cast<size_t>(res);
-  }
-
-  return true;
-}
-
 void jpeg_streamer::cleanup_codec() {
   if (m_sws_ctx) {
     sws_freeContext(m_sws_ctx);
@@ -234,11 +202,6 @@ void jpeg_streamer::cleanup_codec() {
   if (m_encoder_ctx) {
     avcodec_free_context(&m_encoder_ctx);
   }
-}
 
-void jpeg_streamer::cleanup_socket() {
-  if (m_socket_fd >= 0) {
-    ::close(m_socket_fd);
-    m_socket_fd = -1;
-  }
+  m_last_frame.clear();
 }

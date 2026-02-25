@@ -1,10 +1,9 @@
 #pragma once
-#include <string>
 #include <memory>
-#include <cstdint>
+#include <string>
 #include "reader/rtsp_reader.h"
-#include "writer/segment_writer.h"
 #include "stream/jpeg_streamer.h"
+#include "writer/segment_writer.h"
 
 class cam {
 public:
@@ -14,8 +13,9 @@ public:
   void start();
   void stop();
 
-  bool start_jpeg_stream(const std::string& host, uint16_t port, std::string& error);
+  bool start_jpeg_stream(std::string& error);
   bool stop_jpeg_stream(std::string& error);
+  bool wait_next_jpeg_frame(std::vector<uint8_t>& frame, uint64_t& frame_number, std::string& error);
 
 private:
   std::string m_cam_id;
