@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.11.35431.28
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "vms-control-client", "vms-control-client.csproj", "{44A8E1BE-0E3C-480C-B164-E3895A8849B0}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{44A8E1BE-0E3C-480C-B164-E3895A8849B0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{44A8E1BE-0E3C-480C-B164-E3895A8849B0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{44A8E1BE-0E3C-480C-B164-E3895A8849B0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{44A8E1BE-0E3C-480C-B164-E3895A8849B0}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {6EFB9B3A-B0A6-48E9-8B75-EBCBFC36E187}
+	EndGlobalSection
+EndGlobal

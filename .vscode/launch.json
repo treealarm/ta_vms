@@ -1,0 +1,27 @@
+{
+  "version": "0.2.1",
+  "configurations": [
+    {
+      "name": "Запуск vms.exe",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/x64-Debug/Debug/vms.exe",
+      "args": [
+        "0.0.0.0:50051",
+        "rtsp://orwell:elvees@172.16.254.105:554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif",
+        "cam1"
+      ],
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "environment": []
+    },
+    {
+      "type": "cmake",
+      "request": "launch",
+      "name": "Debug portfile(s)",
+      "cmakeDebugType": "external",
+      "pipeName": "\\\\.\\pipe\\vcpkg_ext_portfile_dbg",
+      "preLaunchTask": "Debug vcpkg commands"
+    }
+  ]
+}
