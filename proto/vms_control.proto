@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package vms.control;
+
+service CameraControlService {
+  rpc AddCamera(AddCameraRequest) returns (OperationStatus);
+  rpc StartRecording(CameraRequest) returns (OperationStatus);
+  rpc StopRecording(CameraRequest) returns (OperationStatus);
+}
+
+message AddCameraRequest {
+  string camera_id = 1;
+  string rtsp_url = 2;
+  bool start_immediately = 3;
+}
+
+message CameraRequest {
+  string camera_id = 1;
+}
+
+message OperationStatus {
+  bool success = 1;
+  string message = 2;
+}
