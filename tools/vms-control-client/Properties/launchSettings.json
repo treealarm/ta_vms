@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "vms-control-client": {
+      "commandName": "Project",
+      "commandLineArgs": "--address 127.0.0.1:50051 add cam-1 \"rtsp://orwell:elvees@172.16.254.105:554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif\" --start"
+    }
+  }
+}
