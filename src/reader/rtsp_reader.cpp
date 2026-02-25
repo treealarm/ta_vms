@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <iostream>
 #include "media/av_deleters.h"
 #include "rtsp_reader.h"
@@ -42,7 +43,13 @@ bool rtsp_reader::open(const std::string& url) {
 }
 
 void rtsp_reader::add_sink(media_sink* sink) {
+  std::scoped_lock lock(m_sinks_mutex);
   m_sinks.push_back(sink);
+}
+
+void rtsp_reader::remove_sink(media_sink* sink) {
+  std::scoped_lock lock(m_sinks_mutex);
+  m_sinks.erase(std::remove(m_sinks.begin(), m_sinks.end(), sink), m_sinks.end());
 }
 
 AVStream* rtsp_reader::video_stream() const {
@@ -74,7 +81,13 @@ void rtsp_reader::read_loop() {
     media->stream_index = m_video_index;
     media->time_base = m_ctx->streams[m_video_index]->time_base;
 
-    for (auto* sink : m_sinks)
+    std::vector<media_sink*> sinks_copy;
+    {
+      std::scoped_lock lock(m_sinks_mutex);
+      sinks_copy = m_sinks;
+    }
+
+    for (auto* sink : sinks_copy)
       sink->on_packet(media);
   }
 }

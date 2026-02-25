@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -16,6 +17,12 @@ public:
 
   bool start_recording(const std::string& camera_id, std::string& error);
   bool stop_recording(const std::string& camera_id, std::string& error);
+  bool start_jpeg_stream(const std::string& camera_id,
+                         const std::string& host,
+                         uint16_t port,
+                         std::string& error);
+  bool stop_jpeg_stream(const std::string& camera_id, std::string& error);
+
   void stop_all();
 
 private:
