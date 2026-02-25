@@ -12,6 +12,7 @@ pkg_check_modules(FFMPEG REQUIRED
     libavformat
     libavcodec
     libavutil
+    libswscale
 )
 
 set(PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/proto/vms_control.proto)
@@ -48,6 +49,9 @@ set(SOURCES
 
     src/writer/segment_writer.cpp
     src/writer/segment_writer.h
+
+    src/stream/jpeg_streamer.cpp
+    src/stream/jpeg_streamer.h
 
     ${PROTO_SRC}
     ${GRPC_SRC}

@@ -41,3 +41,30 @@ grpc::Status camera_control_service::StopRecording(
   response->set_message(success ? "recording stopped" : error);
   return grpc::Status::OK;
 }
+
+grpc::Status camera_control_service::StartJpegStream(
+    grpc::ServerContext* /*context*/,
+    const vms::control::JpegStreamRequest* request,
+    vms::control::OperationStatus* response) {
+  std::string error;
+  const bool success = m_manager.start_jpeg_stream(request->camera_id(),
+                                                   request->host(),
+                                                   static_cast<uint16_t>(request->port()),
+                                                   error);
+
+  response->set_success(success);
+  response->set_message(success ? "jpeg stream started" : error);
+  return grpc::Status::OK;
+}
+
+grpc::Status camera_control_service::StopJpegStream(
+    grpc::ServerContext* /*context*/,
+    const vms::control::CameraRequest* request,
+    vms::control::OperationStatus* response) {
+  std::string error;
+  const bool success = m_manager.stop_jpeg_stream(request->camera_id(), error);
+
+  response->set_success(success);
+  response->set_message(success ? "jpeg stream stopped" : error);
+  return grpc::Status::OK;
+}
