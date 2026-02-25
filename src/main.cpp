@@ -42,11 +42,14 @@ int main(int argc, char** argv) {
 
   std::cout << "Camera gRPC server is listening on " << server_address << "\n";
 
-  std::string error;
-  const bool success = manager.add_camera(argv[3],
-    argv[2],
-    true,
-    error);
+  if (argc > 3)
+  {
+    std::string error;
+    const bool success = manager.add_camera(argv[3],
+      argv[2],
+      true,
+      error);
+  }
 
   while (!g_stop_requested) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
