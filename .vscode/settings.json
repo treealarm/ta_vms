@@ -4,8 +4,8 @@
         "-T", "v143",
         "-A", "x64"
     ],
-    "cmake.buildDirectory": "${workspaceFolder}/build/x64-Debug",
-    "cmake.installPrefix": "${workspaceFolder}/install/x64-Debug",
+    "cmake.buildDirectory": "${workspaceFolder}/out/build/x64-Debug",
+    "cmake.installPrefix": "${workspaceFolder}/out/install/x64-Debug",
     "cmake.environment": {
         "VCToolsVersion": ""
     },
