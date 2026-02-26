@@ -10,7 +10,7 @@ export default defineConfig({
     strictPort: true, // не менять порт автоматически
     proxy: {
       // proxy для API-запросов
-      '/api': { target: backendTarget, changeOrigin: true, secure: false },
+      '/api': { target: backendTarget, changeOrigin: true, secure: false, ws: true },
       '/swagger': { target: backendTarget, changeOrigin: true, secure: false },
       '/public': { target: backendTarget, changeOrigin: true, secure: false },
       '/static_files': { target: backendTarget, changeOrigin: true, secure: false },

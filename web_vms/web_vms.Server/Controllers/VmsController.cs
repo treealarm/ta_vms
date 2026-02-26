@@ -1,11 +1,14 @@
 using Microsoft.AspNetCore.Mvc;
+using System.Net.WebSockets;
 using Vms.Control;
 
 namespace web_vms.Server.Controllers;
 
 [ApiController]
 [Route("api/vms")]
-public class VmsController(CameraControlService.CameraControlServiceClient grpcClient) : ControllerBase
+public class VmsController(
+  CameraControlService.CameraControlServiceClient grpcClient,
+  IConfiguration configuration) : ControllerBase
 {
   [HttpPost("cameras")]
   public async Task<IActionResult> AddCamera([FromBody] AddCameraDto request, CancellationToken ct)
@@ -35,13 +38,16 @@ public class VmsController(CameraControlService.CameraControlServiceClient grpcC
   }
 
   [HttpPost("cameras/{cameraId}/jpeg/start")]
-  public async Task<IActionResult> StartJpeg(string cameraId, [FromBody] StartJpegDto request, CancellationToken ct)
+  public async Task<IActionResult> StartJpeg(string cameraId, CancellationToken ct)
   {
+    var host = configuration.GetValue<string>("JpegStream:Host") ?? "127.0.0.1";
+    var port = configuration.GetValue<uint?>("JpegStream:Port") ?? 8090;
+
     var response = await grpcClient.StartJpegStreamAsync(new JpegStreamRequest
     {
       CameraId = cameraId,
-      Host = request.Host,
-      Port = request.Port
+      Host = host,
+      Port = port
     }, cancellationToken: ct);
 
     return Ok(ToApiResponse(response));
@@ -91,11 +97,29 @@ public class VmsController(CameraControlService.CameraControlServiceClient grpcC
     }
   }
 
+  [HttpGet("cameras/{cameraId}/jpeg/ws")]
+  public async Task StreamFramesOverWebSocket(string cameraId, CancellationToken ct)
+  {
+    if (!HttpContext.WebSockets.IsWebSocketRequest)
+    {
+      Response.StatusCode = StatusCodes.Status400BadRequest;
+      await Response.WriteAsync("WebSocket request expected.", ct);
+      return;
+    }
+
+    using var webSocket = await HttpContext.WebSockets.AcceptWebSocketAsync();
+    using var call = grpcClient.StreamJpegFrames(new CameraRequest { CameraId = cameraId }, cancellationToken: ct);
+
+    while (!ct.IsCancellationRequested && webSocket.State == WebSocketState.Open && await call.ResponseStream.MoveNext(ct))
+    {
+      var frameData = call.ResponseStream.Current.JpegData.Memory;
+      await webSocket.SendAsync(frameData, WebSocketMessageType.Binary, true, ct);
+    }
+  }
+
   private static ApiResponse ToApiResponse(OperationStatus status) => new(status.Success, status.Message);
 }
 
 public record AddCameraDto(string CameraId, string RtspUrl, bool StartImmediately);
-
-public record StartJpegDto(string Host, uint Port);
 
 public record ApiResponse(bool Success, string Message);
