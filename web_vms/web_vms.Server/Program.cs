@@ -1,18 +1,22 @@
+using Grpc.Net.Client;
+using Vms.Control;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+var grpcAddress = builder.Configuration.GetValue<string>("VmsGrpc:Address") ?? "http://localhost:50051";
+var grpcChannel = GrpcChannel.ForAddress(grpcAddress);
+builder.Services.AddSingleton(grpcChannel);
+builder.Services.AddSingleton(_ => new CameraControlService.CameraControlServiceClient(grpcChannel));
 
 var app = builder.Build();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
   app.UseSwagger();
