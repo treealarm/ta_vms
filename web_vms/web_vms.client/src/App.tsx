@@ -12,7 +12,7 @@ const getErrorMessage = async (response: Response): Promise<string> => {
 }
 
 function App() {
-  const [cameraId, setCameraId] = useState('camera-1')
+  const [cameraId, setCameraId] = useState('cam1')
   const [rtspUrl, setRtspUrl] = useState('rtsp://127.0.0.1:8554/stream')
   const [status, setStatus] = useState('Ready')
   const [isBusy, setIsBusy] = useState(false)
