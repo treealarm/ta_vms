@@ -32,6 +32,7 @@ bool jpeg_streamer::init(AVStream* in_stream, std::string& error) {
   m_scaled_frame->format = m_encoder_ctx->pix_fmt;
   m_scaled_frame->width = m_encoder_ctx->width;
   m_scaled_frame->height = m_encoder_ctx->height;
+  m_scaled_frame->color_range = AVCOL_RANGE_JPEG;
 
   if (av_frame_get_buffer(m_scaled_frame, 32) < 0) {
     error = "failed to allocate scaled frame buffer";
@@ -75,6 +76,11 @@ void jpeg_streamer::on_packet(const std::shared_ptr<media_packet>& media) {
     if (av_frame_make_writable(m_scaled_frame) < 0) {
       continue;
     }
+
+    m_decoded_frame->color_range =
+      m_decoder_ctx->color_range != AVCOL_RANGE_UNSPECIFIED
+      ? m_decoder_ctx->color_range
+      : AVCOL_RANGE_MPEG;
 
     sws_scale(m_sws_ctx,
               m_decoded_frame->data,
@@ -168,7 +174,8 @@ bool jpeg_streamer::init_encoder(std::string& error) {
   }
 
   m_encoder_ctx->time_base = AVRational{1, 25};
-  m_encoder_ctx->pix_fmt = AV_PIX_FMT_YUVJ420P;
+  m_encoder_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
+  m_encoder_ctx->color_range = AVCOL_RANGE_JPEG;
   m_encoder_ctx->width = m_decoder_ctx->width;
   m_encoder_ctx->height = m_decoder_ctx->height;
   m_encoder_ctx->compression_level = 2;
