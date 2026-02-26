@@ -101,9 +101,7 @@ static async Task<int> ExecuteParsedCommandAsync(
         {
             var response = await client.StartJpegStreamAsync(new JpegStreamRequest
             {
-                CameraId = parsed.CameraId,
-                Host = string.Empty,
-                Port = 0
+                CameraId = parsed.CameraId
             });
 
             Console.WriteLine($"success={response.Success} message=\"{response.Message}\"");
