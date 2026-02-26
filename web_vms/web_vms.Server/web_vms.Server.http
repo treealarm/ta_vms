@@ -1,0 +1,6 @@
+@web_vms.Server_HostAddress = http://localhost:5134
+
+GET {{web_vms.Server_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
