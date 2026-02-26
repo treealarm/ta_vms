@@ -23,8 +23,6 @@ message CameraRequest {
 
 message JpegStreamRequest {
   string camera_id = 1;
-  string host = 2;
-  uint32 port = 3;
 }
 
 message OperationStatus {

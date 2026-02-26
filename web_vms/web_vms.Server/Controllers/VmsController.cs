@@ -7,8 +7,7 @@ namespace web_vms.Server.Controllers;
 [ApiController]
 [Route("api/vms")]
 public class VmsController(
-  CameraControlService.CameraControlServiceClient grpcClient,
-  IConfiguration configuration) : ControllerBase
+  CameraControlService.CameraControlServiceClient grpcClient) : ControllerBase
 {
   [HttpPost("cameras")]
   public async Task<IActionResult> AddCamera([FromBody] AddCameraDto request, CancellationToken ct)
@@ -40,14 +39,9 @@ public class VmsController(
   [HttpPost("cameras/{cameraId}/jpeg/start")]
   public async Task<IActionResult> StartJpeg(string cameraId, CancellationToken ct)
   {
-    var host = configuration.GetValue<string>("JpegStream:Host") ?? "127.0.0.1";
-    var port = configuration.GetValue<uint?>("JpegStream:Port") ?? 8090;
-
     var response = await grpcClient.StartJpegStreamAsync(new JpegStreamRequest
     {
-      CameraId = cameraId,
-      Host = host,
-      Port = port
+      CameraId = cameraId
     }, cancellationToken: ct);
 
     return Ok(ToApiResponse(response));
