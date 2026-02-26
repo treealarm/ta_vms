@@ -1,6 +1,7 @@
 #include <csignal>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -22,6 +23,10 @@ int main(int argc, char** argv) {
   std::string server_address = "0.0.0.0:50051";
   if (argc > 1) {
     server_address = argv[1];
+  } else if (const char* grpc_vms_port = std::getenv("GRPC_VMS_PORT")) {
+    if (*grpc_vms_port != '\0') {
+      server_address = "0.0.0.0:" + std::string(grpc_vms_port);
+    }
   }
 
   std::signal(SIGINT, on_signal);
