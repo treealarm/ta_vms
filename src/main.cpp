@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
     std::string error;
     const bool success = manager.add_camera(argv[3],
       argv[2],
-      true,
+      false,
       error);
   }
 
