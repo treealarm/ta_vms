@@ -346,7 +346,7 @@ internal sealed class JpegReceiverManager(CameraControlService.CameraControlServ
 
                 if (frameNo % 25 == 0)
                 {
-                    Console.WriteLine($"Received {frameNo} JPEG frames. Last: {filePath}");
+                    //Console.WriteLine($"Received {frameNo} JPEG frames. Last: {filePath}");
                 }
             }
         }
