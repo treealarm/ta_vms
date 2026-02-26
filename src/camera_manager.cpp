@@ -24,7 +24,7 @@ bool camera_manager::add_camera(const std::string& camera_id,
   try {
     auto camera = std::make_unique<cam>(rtsp_url, camera_id);
     if (start_immediately) {
-      camera->start();
+      camera->start_recording();
     }
 
     camera_entry entry;
@@ -54,7 +54,7 @@ bool camera_manager::start_recording(const std::string& camera_id,
     return false;
   }
 
-  it->second.camera->start();
+  it->second.camera->start_recording();
   it->second.is_recording = true;
   return true;
 }
@@ -74,7 +74,7 @@ bool camera_manager::stop_recording(const std::string& camera_id,
     return false;
   }
 
-  it->second.camera->stop();
+  it->second.camera->stop_recording();
   it->second.is_recording = false;
   return true;
 }
@@ -127,9 +127,7 @@ void camera_manager::stop_all() {
   std::scoped_lock lock(m_mutex);
 
   for (auto& [_, entry] : m_cameras) {
-    if (entry.is_recording) {
-      entry.camera->stop();
-      entry.is_recording = false;
-    }
+    entry.camera->shutdown();
+    entry.is_recording = false;
   }
 }

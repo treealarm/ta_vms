@@ -9,35 +9,47 @@ cam::cam(const std::string& rtsp_url, const std::string& cam_id)
   }
 
   m_writer.init(m_reader.video_stream());
-  m_reader.add_sink(&m_writer);
-}
-
-cam::~cam() {
-  stop();
-}
-
-void cam::start() {
-  if (m_is_running) {
-    return;
-  }
 
   m_reader.start();
   m_is_running = true;
 }
 
-void cam::stop() {
-  if (m_is_running) {
-    m_reader.stop();
-    m_is_running = false;
+cam::~cam() {
+  shutdown();
+}
+
+void cam::start_recording() {
+  if (m_is_recording) {
+    return;
   }
 
+  m_reader.add_sink(&m_writer);
+  m_is_recording = true;
+}
+
+void cam::stop_recording() {
+  if (!m_is_recording) {
+    return;
+  }
+
+  m_reader.remove_sink(&m_writer);
+  m_writer.close();
+  m_is_recording = false;
+}
+
+void cam::shutdown() {
   if (m_jpeg_streamer) {
     m_reader.remove_sink(m_jpeg_streamer.get());
     m_jpeg_streamer->close();
     m_jpeg_streamer.reset();
   }
 
-  m_writer.close();
+  stop_recording();
+
+  if (m_is_running) {
+    m_reader.stop();
+    m_is_running = false;
+  }
 }
 
 bool cam::start_jpeg_stream(std::string& error) {
@@ -46,28 +58,13 @@ bool cam::start_jpeg_stream(std::string& error) {
     return false;
   }
 
-  const bool should_resume = m_is_running;
-  if (should_resume) {
-    m_reader.stop();
-    m_is_running = false;
-  }
-
   auto streamer = std::make_unique<jpeg_streamer>();
   if (!streamer->init(m_reader.video_stream(), error)) {
-    if (should_resume) {
-      m_reader.start();
-      m_is_running = true;
-    }
     return false;
   }
 
   m_reader.add_sink(streamer.get());
   m_jpeg_streamer = std::move(streamer);
-
-  if (should_resume) {
-    m_reader.start();
-    m_is_running = true;
-  }
 
   return true;
 }
@@ -92,20 +89,9 @@ bool cam::stop_jpeg_stream(std::string& error) {
     return false;
   }
 
-  const bool should_resume = m_is_running;
-  if (should_resume) {
-    m_reader.stop();
-    m_is_running = false;
-  }
-
   m_reader.remove_sink(m_jpeg_streamer.get());
   m_jpeg_streamer->close();
   m_jpeg_streamer.reset();
-
-  if (should_resume) {
-    m_reader.start();
-    m_is_running = true;
-  }
 
   return true;
 }
