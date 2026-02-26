@@ -87,7 +87,11 @@ void rtsp_reader::read_loop() {
       sinks_copy = m_sinks;
     }
 
-    for (auto* sink : sinks_copy)
-      sink->on_packet(media);
+    for (auto* sink : sinks_copy) {
+      auto sink_media = clone_media_packet(media);
+      if (!sink_media)
+        continue;
+      sink->on_packet(sink_media);
+    }
   }
 }

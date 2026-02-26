@@ -17,6 +17,24 @@ struct media_packet {
   AVRational time_base;
 };
 
+inline std::shared_ptr<media_packet> clone_media_packet(const std::shared_ptr<media_packet>& src) {
+  if (!src || !src->packet)
+    return nullptr;
+
+  avpacket_ptr pkt_copy(av_packet_alloc(), avpacket_deleter{});
+  if (!pkt_copy)
+    return nullptr;
+
+  if (av_packet_ref(pkt_copy.get(), src->packet.get()) < 0)
+    return nullptr;
+
+  auto dst = std::make_shared<media_packet>();
+  dst->packet = std::move(pkt_copy);
+  dst->stream_index = src->stream_index;
+  dst->time_base = src->time_base;
+  return dst;
+}
+
 struct media_frame {
   avframe_ptr frame;
   int stream_index;
