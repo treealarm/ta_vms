@@ -26,6 +26,8 @@ public:
   AVStream* video_stream() const;
 
 private:
+  bool connect();
+  void disconnect();
   void read_loop();
 
   std::string m_rtsp_url;
