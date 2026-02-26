@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import './App.css'
 
 type ApiResponse = {
@@ -14,21 +14,52 @@ const getErrorMessage = async (response: Response): Promise<string> => {
 function App() {
   const [cameraId, setCameraId] = useState('camera-1')
   const [rtspUrl, setRtspUrl] = useState('rtsp://127.0.0.1:8554/stream')
-  const [jpegHost, setJpegHost] = useState('127.0.0.1')
-  const [jpegPort, setJpegPort] = useState(8090)
   const [status, setStatus] = useState('Ready')
   const [isBusy, setIsBusy] = useState(false)
   const [frameVersion, setFrameVersion] = useState(0)
+  const [webSocketEnabled, setWebSocketEnabled] = useState(false)
+  const [liveFrameUrl, setLiveFrameUrl] = useState<string | null>(null)
 
   const singleFrameUrl = useMemo(
     () => `/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/frame?v=${frameVersion}`,
     [cameraId, frameVersion]
   )
 
-  const mjpegUrl = useMemo(
-    () => `/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/mjpeg`,
-    [cameraId]
-  )
+  useEffect(() => {
+    if (!webSocketEnabled) {
+      return
+    }
+
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+    const ws = new WebSocket(`${wsProtocol}://${window.location.host}/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/ws`)
+
+    ws.binaryType = 'blob'
+
+    ws.onopen = () => setStatus('WebSocket JPEG stream connected')
+    ws.onerror = () => setStatus('WebSocket JPEG stream error')
+    ws.onclose = () => setStatus('WebSocket JPEG stream disconnected')
+    ws.onmessage = (event) => {
+      const objectUrl = URL.createObjectURL(event.data as Blob)
+      setLiveFrameUrl((previousUrl) => {
+        if (previousUrl) {
+          URL.revokeObjectURL(previousUrl)
+        }
+
+        return objectUrl
+      })
+    }
+
+    return () => {
+      ws.close()
+      setLiveFrameUrl((previousUrl) => {
+        if (previousUrl) {
+          URL.revokeObjectURL(previousUrl)
+        }
+
+        return null
+      })
+    }
+  }, [cameraId, webSocketEnabled])
 
   const runAction = async (action: () => Promise<Response>) => {
     setIsBusy(true)
@@ -91,9 +122,7 @@ function App() {
             onClick={() =>
               runAction(() =>
                 fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/start`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ host: jpegHost, port: Number(jpegPort) })
+                  method: 'POST'
                 })
               )
             }
@@ -102,23 +131,21 @@ function App() {
           </button>
           <button disabled={isBusy} onClick={() => runAction(() => fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/stop`, { method: 'POST' }))}>Stop JPEG stream</button>
         </div>
-
-        <div className="inline-fields">
-          <label>
-            JPEG host
-            <input value={jpegHost} onChange={(event) => setJpegHost(event.target.value)} />
-          </label>
-          <label>
-            JPEG port
-            <input type="number" value={jpegPort} onChange={(event) => setJpegPort(Number(event.target.value))} min={1} max={65535} />
-          </label>
-        </div>
       </section>
 
       <section className="card stream">
         <h2>Frames</h2>
-        <p>MJPEG stream from gRPC:</p>
-        <img className="frame" src={mjpegUrl} alt="Live MJPEG stream" />
+        <label>
+          <input
+            type="checkbox"
+            checked={webSocketEnabled}
+            onChange={(event) => setWebSocketEnabled(event.target.checked)}
+          />
+          Show live frames over WebSocket
+        </label>
+        {webSocketEnabled && (
+          <img className="frame" src={liveFrameUrl ?? undefined} alt="Live WebSocket JPEG stream" />
+        )}
         <button onClick={() => setFrameVersion((value) => value + 1)}>Refresh single frame</button>
         <img className="frame" src={singleFrameUrl} alt="Single JPEG frame" />
       </section>
