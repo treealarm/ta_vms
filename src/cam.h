@@ -10,8 +10,9 @@ public:
   cam(const std::string& rtsp_url, const std::string& cam_id);
   ~cam();
 
-  void start();
-  void stop();
+  void start_recording();
+  void stop_recording();
+  void shutdown();
 
   bool start_jpeg_stream(std::string& error);
   bool stop_jpeg_stream(std::string& error);
@@ -25,4 +26,5 @@ private:
   segment_writer m_writer;
   std::unique_ptr<jpeg_streamer> m_jpeg_streamer;
   bool m_is_running = false;
+  bool m_is_recording = false;
 };
