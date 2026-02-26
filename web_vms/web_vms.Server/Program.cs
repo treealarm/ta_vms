@@ -1,4 +1,5 @@
 using Grpc.Net.Client;
+using System.Net;
 using Vms.Control;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -11,6 +12,27 @@ var grpcAddress = builder.Configuration.GetValue<string>("VmsGrpc:Address") ?? "
 var grpcChannel = GrpcChannel.ForAddress(grpcAddress);
 builder.Services.AddSingleton(grpcChannel);
 builder.Services.AddSingleton(_ => new CameraControlService.CameraControlServiceClient(grpcChannel));
+
+var http_port = 5134;
+
+if (int.TryParse(Environment.GetEnvironmentVariable("HTTP_VMS_PORT"), out http_port))
+{
+  Console.WriteLine($"HTTP_VMS_PORT port: {http_port}");
+}
+else
+{
+  http_port = 5134;
+}
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+  // this configuration is the same as:
+  //- ASPNETCORE_URLS=http://+:8000;http://+:${GRPC_MAIN_PORT}
+  //- Kestrel__Endpoints__gRPC__Url=http://*:${GRPC_MAIN_PORT}
+  //- Kestrel__Endpoints__gRPC__Protocols=Http2
+  //- Kestrel__Endpoints__Http__Url=http://*:8000
+  options.Listen(IPAddress.Any, http_port);
+});
 
 var app = builder.Build();
 
