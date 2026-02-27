@@ -22,12 +22,16 @@ set(VMS_PROTO_HDR ${CMAKE_CURRENT_BINARY_DIR}/${VMS_PROTO_NAME}.pb.h)
 set(VMS_GRPC_SRC ${CMAKE_CURRENT_BINARY_DIR}/${VMS_PROTO_NAME}.grpc.pb.cc)
 set(VMS_GRPC_HDR ${CMAKE_CURRENT_BINARY_DIR}/${VMS_PROTO_NAME}.grpc.pb.h)
 
-set(DAPR_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr/dapr_runtime.proto)
-get_filename_component(DAPR_PROTO_NAME ${DAPR_PROTO_FILE} NAME_WE)
-set(DAPR_PROTO_SRC ${CMAKE_CURRENT_BINARY_DIR}/${DAPR_PROTO_NAME}.pb.cc)
-set(DAPR_PROTO_HDR ${CMAKE_CURRENT_BINARY_DIR}/${DAPR_PROTO_NAME}.pb.h)
-set(DAPR_GRPC_SRC ${CMAKE_CURRENT_BINARY_DIR}/${DAPR_PROTO_NAME}.grpc.pb.cc)
-set(DAPR_GRPC_HDR ${CMAKE_CURRENT_BINARY_DIR}/${DAPR_PROTO_NAME}.grpc.pb.h)
+set(DAPR_RUNTIME_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr/proto/runtime/v1/dapr.proto)
+set(DAPR_COMMON_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr/proto/common/v1/common.proto)
+
+set(DAPR_RUNTIME_PROTO_SRC ${CMAKE_CURRENT_BINARY_DIR}/proto/runtime/v1/dapr.pb.cc)
+set(DAPR_RUNTIME_PROTO_HDR ${CMAKE_CURRENT_BINARY_DIR}/proto/runtime/v1/dapr.pb.h)
+set(DAPR_RUNTIME_GRPC_SRC ${CMAKE_CURRENT_BINARY_DIR}/proto/runtime/v1/dapr.grpc.pb.cc)
+set(DAPR_RUNTIME_GRPC_HDR ${CMAKE_CURRENT_BINARY_DIR}/proto/runtime/v1/dapr.grpc.pb.h)
+
+set(DAPR_COMMON_PROTO_SRC ${CMAKE_CURRENT_BINARY_DIR}/proto/common/v1/common.pb.cc)
+set(DAPR_COMMON_PROTO_HDR ${CMAKE_CURRENT_BINARY_DIR}/proto/common/v1/common.pb.h)
 
 add_custom_command(
     OUTPUT ${VMS_PROTO_SRC} ${VMS_PROTO_HDR} ${VMS_GRPC_SRC} ${VMS_GRPC_HDR}
@@ -42,15 +46,25 @@ add_custom_command(
 )
 
 add_custom_command(
-    OUTPUT ${DAPR_PROTO_SRC} ${DAPR_PROTO_HDR} ${DAPR_GRPC_SRC} ${DAPR_GRPC_HDR}
+    OUTPUT ${DAPR_RUNTIME_PROTO_SRC} ${DAPR_RUNTIME_PROTO_HDR} ${DAPR_RUNTIME_GRPC_SRC} ${DAPR_RUNTIME_GRPC_HDR}
     COMMAND protobuf::protoc
     ARGS
       --grpc_out=${CMAKE_CURRENT_BINARY_DIR}
       --cpp_out=${CMAKE_CURRENT_BINARY_DIR}
       -I ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr
       --plugin=protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>
-      ${DAPR_PROTO_FILE}
-    DEPENDS ${DAPR_PROTO_FILE}
+      ${DAPR_RUNTIME_PROTO_FILE}
+    DEPENDS ${DAPR_RUNTIME_PROTO_FILE}
+)
+
+add_custom_command(
+    OUTPUT ${DAPR_COMMON_PROTO_SRC} ${DAPR_COMMON_PROTO_HDR}
+    COMMAND protobuf::protoc
+    ARGS
+      --cpp_out=${CMAKE_CURRENT_BINARY_DIR}
+      -I ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr
+      ${DAPR_COMMON_PROTO_FILE}
+    DEPENDS ${DAPR_COMMON_PROTO_FILE}
 )
 
 set(SOURCES
@@ -76,8 +90,9 @@ set(SOURCES
 
     ${VMS_PROTO_SRC}
     ${VMS_GRPC_SRC}
-    ${DAPR_PROTO_SRC}
-    ${DAPR_GRPC_SRC}
+    ${DAPR_RUNTIME_PROTO_SRC}
+    ${DAPR_RUNTIME_GRPC_SRC}
+    ${DAPR_COMMON_PROTO_SRC}
 )
 
 add_executable(vms ${SOURCES})
