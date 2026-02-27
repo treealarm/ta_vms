@@ -5,7 +5,7 @@
 
 #include <grpcpp/grpcpp.h>
 
-#include "proto/runtime/v1/dapr.grpc.pb.h"
+#include "dapr/proto/runtime/v1/dapr.grpc.pb.h"
 
 namespace {
 std::string read_env_or_default(const char* key, const char* fallback)
