@@ -5,7 +5,7 @@
 
 #include <grpcpp/grpcpp.h>
 
-#include "dapr_runtime.grpc.pb.h"
+#include "proto/runtime/v1/dapr.grpc.pb.h"
 
 class dapr_publisher {
 public:
