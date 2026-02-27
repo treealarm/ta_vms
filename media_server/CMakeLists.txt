@@ -15,7 +15,7 @@ pkg_check_modules(FFMPEG REQUIRED
     libswscale
 )
 
-set(PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/proto/vms_control.proto)
+set(PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_control.proto)
 get_filename_component(PROTO_NAME ${PROTO_FILE} NAME_WE)
 set(PROTO_SRC ${CMAKE_CURRENT_BINARY_DIR}/${PROTO_NAME}.pb.cc)
 set(PROTO_HDR ${CMAKE_CURRENT_BINARY_DIR}/${PROTO_NAME}.pb.h)
@@ -28,30 +28,30 @@ add_custom_command(
     ARGS
       --grpc_out=${CMAKE_CURRENT_BINARY_DIR}
       --cpp_out=${CMAKE_CURRENT_BINARY_DIR}
-      -I ${CMAKE_CURRENT_SOURCE_DIR}/proto
+      -I ${CMAKE_CURRENT_SOURCE_DIR}/../proto
       --plugin=protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>
       ${PROTO_FILE}
     DEPENDS ${PROTO_FILE}
 )
 
 set(SOURCES
-    src/main.cpp
-    src/cam.cpp
-    src/camera_manager.cpp
-    src/camera_control_service.cpp
+    main.cpp
+    cam.cpp
+    camera_manager.cpp
+    camera_control_service.cpp
 
-    src/media/av_deleters.h
-    src/media/media_packet.h
-    src/media/media_sink.h
+    media/av_deleters.h
+    media/media_packet.h
+    media/media_sink.h
 
-    src/reader/rtsp_reader.cpp
-    src/reader/rtsp_reader.h
+    reader/rtsp_reader.cpp
+    reader/rtsp_reader.h
 
-    src/writer/segment_writer.cpp
-    src/writer/segment_writer.h
+    writer/segment_writer.cpp
+    writer/segment_writer.h
 
-    src/stream/jpeg_streamer.cpp
-    src/stream/jpeg_streamer.h
+    stream/jpeg_streamer.cpp
+    stream/jpeg_streamer.h
 
     ${PROTO_SRC}
     ${GRPC_SRC}
@@ -61,7 +61,7 @@ add_executable(vms ${SOURCES})
 
 target_include_directories(vms
     PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_BINARY_DIR}
         ${FFMPEG_INCLUDE_DIRS}
 )
