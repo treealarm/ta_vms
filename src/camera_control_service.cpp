@@ -18,6 +18,20 @@ grpc::Status camera_control_service::AddCamera(
   return grpc::Status::OK;
 }
 
+grpc::Status camera_control_service::ListCameras(
+    grpc::ServerContext* /*context*/,
+    const vms::control::ListCamerasRequest* /*request*/,
+    vms::control::ListCamerasResponse* response) {
+  for (const auto& camera : m_manager.list_cameras()) {
+    auto* item = response->add_cameras();
+    item->set_camera_id(camera.camera_id);
+    item->set_rtsp_url(camera.rtsp_url);
+    item->set_is_recording(camera.is_recording);
+  }
+
+  return grpc::Status::OK;
+}
+
 grpc::Status camera_control_service::StartRecording(
     grpc::ServerContext* /*context*/,
     const vms::control::CameraRequest* request,

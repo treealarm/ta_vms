@@ -4,6 +4,7 @@ package vms.control;
 
 service CameraControlService {
   rpc AddCamera(AddCameraRequest) returns (OperationStatus);
+  rpc ListCameras(ListCamerasRequest) returns (ListCamerasResponse);
   rpc StartRecording(CameraRequest) returns (OperationStatus);
   rpc StopRecording(CameraRequest) returns (OperationStatus);
   rpc StartJpegStream(JpegStreamRequest) returns (OperationStatus);
@@ -19,6 +20,18 @@ message AddCameraRequest {
 
 message CameraRequest {
   string camera_id = 1;
+}
+
+message ListCamerasRequest {}
+
+message CameraInfo {
+  string camera_id = 1;
+  string rtsp_url = 2;
+  bool is_recording = 3;
+}
+
+message ListCamerasResponse {
+  repeated CameraInfo cameras = 1;
 }
 
 message JpegStreamRequest {

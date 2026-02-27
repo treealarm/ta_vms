@@ -31,7 +31,8 @@ label {
   font-size: 14px;
 }
 
-input {
+input,
+select {
   border: 1px solid #475569;
   border-radius: 8px;
   background: #0f172a;

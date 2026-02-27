@@ -22,6 +22,14 @@ public class VmsController(
     return Ok(ToApiResponse(response));
   }
 
+  [HttpGet("cameras")]
+  public async Task<IActionResult> ListCameras(CancellationToken ct)
+  {
+    var response = await grpcClient.ListCamerasAsync(new ListCamerasRequest(), cancellationToken: ct);
+    var cameras = response.Cameras.Select(static camera => new CameraDto(camera.CameraId, camera.RtspUrl, camera.IsRecording));
+    return Ok(cameras);
+  }
+
   [HttpPost("cameras/{cameraId}/recording/start")]
   public async Task<IActionResult> StartRecording(string cameraId, CancellationToken ct)
   {
@@ -115,5 +123,7 @@ public class VmsController(
 }
 
 public record AddCameraDto(string CameraId, string RtspUrl, bool StartImmediately);
+
+public record CameraDto(string CameraId, string RtspUrl, bool IsRecording);
 
 public record ApiResponse(bool Success, string Message);
