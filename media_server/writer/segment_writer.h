@@ -9,9 +9,9 @@ extern "C" {
 #include <libavformat/avformat.h>
 }
 
+#include "dapr_publisher.h"
 #include "media/media_packet.h"
 #include "media/media_sink.h"
-
 
 class segment_writer : public media_sink {
 public:
@@ -39,5 +39,9 @@ private:
   AVStream* m_out_stream = nullptr;
 
   std::chrono::steady_clock::time_point m_segment_start_time;
+  std::chrono::system_clock::time_point m_segment_start_wall_time;
+  std::filesystem::path m_current_segment_relative_path;
+
   int64_t m_pts = 0;
+  dapr_publisher m_dapr_publisher;
 };

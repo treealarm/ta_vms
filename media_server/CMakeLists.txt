@@ -15,23 +15,42 @@ pkg_check_modules(FFMPEG REQUIRED
     libswscale
 )
 
-set(PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_control.proto)
-get_filename_component(PROTO_NAME ${PROTO_FILE} NAME_WE)
-set(PROTO_SRC ${CMAKE_CURRENT_BINARY_DIR}/${PROTO_NAME}.pb.cc)
-set(PROTO_HDR ${CMAKE_CURRENT_BINARY_DIR}/${PROTO_NAME}.pb.h)
-set(GRPC_SRC ${CMAKE_CURRENT_BINARY_DIR}/${PROTO_NAME}.grpc.pb.cc)
-set(GRPC_HDR ${CMAKE_CURRENT_BINARY_DIR}/${PROTO_NAME}.grpc.pb.h)
+set(VMS_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_control.proto)
+get_filename_component(VMS_PROTO_NAME ${VMS_PROTO_FILE} NAME_WE)
+set(VMS_PROTO_SRC ${CMAKE_CURRENT_BINARY_DIR}/${VMS_PROTO_NAME}.pb.cc)
+set(VMS_PROTO_HDR ${CMAKE_CURRENT_BINARY_DIR}/${VMS_PROTO_NAME}.pb.h)
+set(VMS_GRPC_SRC ${CMAKE_CURRENT_BINARY_DIR}/${VMS_PROTO_NAME}.grpc.pb.cc)
+set(VMS_GRPC_HDR ${CMAKE_CURRENT_BINARY_DIR}/${VMS_PROTO_NAME}.grpc.pb.h)
+
+set(DAPR_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr/dapr_runtime.proto)
+get_filename_component(DAPR_PROTO_NAME ${DAPR_PROTO_FILE} NAME_WE)
+set(DAPR_PROTO_SRC ${CMAKE_CURRENT_BINARY_DIR}/${DAPR_PROTO_NAME}.pb.cc)
+set(DAPR_PROTO_HDR ${CMAKE_CURRENT_BINARY_DIR}/${DAPR_PROTO_NAME}.pb.h)
+set(DAPR_GRPC_SRC ${CMAKE_CURRENT_BINARY_DIR}/${DAPR_PROTO_NAME}.grpc.pb.cc)
+set(DAPR_GRPC_HDR ${CMAKE_CURRENT_BINARY_DIR}/${DAPR_PROTO_NAME}.grpc.pb.h)
 
 add_custom_command(
-    OUTPUT ${PROTO_SRC} ${PROTO_HDR} ${GRPC_SRC} ${GRPC_HDR}
+    OUTPUT ${VMS_PROTO_SRC} ${VMS_PROTO_HDR} ${VMS_GRPC_SRC} ${VMS_GRPC_HDR}
     COMMAND protobuf::protoc
     ARGS
       --grpc_out=${CMAKE_CURRENT_BINARY_DIR}
       --cpp_out=${CMAKE_CURRENT_BINARY_DIR}
       -I ${CMAKE_CURRENT_SOURCE_DIR}/../proto
       --plugin=protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>
-      ${PROTO_FILE}
-    DEPENDS ${PROTO_FILE}
+      ${VMS_PROTO_FILE}
+    DEPENDS ${VMS_PROTO_FILE}
+)
+
+add_custom_command(
+    OUTPUT ${DAPR_PROTO_SRC} ${DAPR_PROTO_HDR} ${DAPR_GRPC_SRC} ${DAPR_GRPC_HDR}
+    COMMAND protobuf::protoc
+    ARGS
+      --grpc_out=${CMAKE_CURRENT_BINARY_DIR}
+      --cpp_out=${CMAKE_CURRENT_BINARY_DIR}
+      -I ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr
+      --plugin=protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>
+      ${DAPR_PROTO_FILE}
+    DEPENDS ${DAPR_PROTO_FILE}
 )
 
 set(SOURCES
@@ -39,6 +58,8 @@ set(SOURCES
     cam.cpp
     camera_manager.cpp
     camera_control_service.cpp
+    dapr_publisher.cpp
+    dapr_publisher.h
 
     media/av_deleters.h
     media/media_packet.h
@@ -53,8 +74,10 @@ set(SOURCES
     stream/jpeg_streamer.cpp
     stream/jpeg_streamer.h
 
-    ${PROTO_SRC}
-    ${GRPC_SRC}
+    ${VMS_PROTO_SRC}
+    ${VMS_GRPC_SRC}
+    ${DAPR_PROTO_SRC}
+    ${DAPR_GRPC_SRC}
 )
 
 add_executable(vms ${SOURCES})

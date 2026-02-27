@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package dapr.proto.runtime.v1;
+
+service Dapr {
+  rpc PublishEvent(PublishEventRequest) returns (PublishEventResponse) {}
+}
+
+message PublishEventRequest {
+  string pubsub_name = 1;
+  string topic = 2;
+  bytes data = 3;
+  map<string, string> metadata = 4;
+  string data_content_type = 5;
+}
+
+message PublishEventResponse {}
