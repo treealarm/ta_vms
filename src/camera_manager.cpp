@@ -29,6 +29,7 @@ bool camera_manager::add_camera(const std::string& camera_id,
 
     camera_entry entry;
     entry.camera = std::move(camera);
+    entry.rtsp_url = rtsp_url;
     entry.is_recording = start_immediately;
 
     m_cameras.emplace(camera_id, std::move(entry));
@@ -108,6 +109,19 @@ bool camera_manager::wait_next_jpeg_frame(const std::string& camera_id,
   lock.unlock();
 
   return camera->wait_next_jpeg_frame(frame, frame_number, error);
+}
+
+std::vector<camera_manager::camera_info> camera_manager::list_cameras() const {
+  std::scoped_lock lock(m_mutex);
+
+  std::vector<camera_info> cameras;
+  cameras.reserve(m_cameras.size());
+
+  for (const auto& [camera_id, entry] : m_cameras) {
+    cameras.push_back(camera_info{camera_id, entry.rtsp_url, entry.is_recording});
+  }
+
+  return cameras;
 }
 
 bool camera_manager::stop_jpeg_stream(const std::string& camera_id,

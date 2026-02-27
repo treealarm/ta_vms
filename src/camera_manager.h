@@ -10,6 +10,12 @@
 
 class camera_manager {
 public:
+  struct camera_info {
+    std::string camera_id;
+    std::string rtsp_url;
+    bool is_recording = false;
+  };
+
   bool add_camera(const std::string& camera_id,
                   const std::string& rtsp_url,
                   bool start_immediately,
@@ -24,14 +30,18 @@ public:
                             uint64_t& frame_number,
                             std::string& error);
 
+  std::vector<camera_info> list_cameras() const;
+
   void stop_all();
 
 private:
   struct camera_entry {
     std::unique_ptr<cam> camera;
+    std::string rtsp_url;
     bool is_recording = false;
   };
 
-  std::mutex m_mutex;
+
+  mutable std::mutex m_mutex;
   std::map<std::string, camera_entry> m_cameras;
 };

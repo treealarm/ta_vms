@@ -13,6 +13,10 @@ public:
                          const vms::control::AddCameraRequest* request,
                          vms::control::OperationStatus* response) override;
 
+  grpc::Status ListCameras(grpc::ServerContext* context,
+                           const vms::control::ListCamerasRequest* request,
+                           vms::control::ListCamerasResponse* response) override;
+
   grpc::Status StartRecording(grpc::ServerContext* context,
                               const vms::control::CameraRequest* request,
                               vms::control::OperationStatus* response) override;
