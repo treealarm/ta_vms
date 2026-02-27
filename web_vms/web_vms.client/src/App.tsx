@@ -1,6 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import './App.css'
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Checkbox,
+  FormControl,
+  FormControlLabel,
+  Grid,
+  InputLabel,
+  MenuItem,
+  Select,
+  Stack,
+  TextField,
+  Typography
+} from '@mui/material'
 
 type ApiResponse = {
   success: boolean
@@ -150,79 +166,177 @@ function App() {
   }
 
   return (
-    <main className="layout">
-      <h1>VMS gRPC Test Console</h1>
+    <Box sx={{ maxWidth: 1100, mx: 'auto', p: { xs: 2, md: 4 } }}>
+      <Stack spacing={2.5}>
+        <Typography variant="h4" component="h1" fontWeight={700}>
+          VMS gRPC Test Console
+        </Typography>
 
-      <form className="card" onSubmit={onAddCamera}>
-        <h2>Camera</h2>
-        <label>
-          Added cameras
-          <div className="inline-fields">
-            <select
-              value={cameras.some((camera) => camera.cameraId === cameraId) ? cameraId : ''}
-              onChange={(event) => onCameraSelect(event.target.value)}
-            >
-              <option value="">Select added camera</option>
-              {cameras.map((camera) => (
-                <option key={camera.cameraId} value={camera.cameraId}>
-                  {camera.cameraId} ({camera.isRecording ? 'recording' : 'idle'})
-                </option>
-              ))}
-            </select>
-            <button type="button" disabled={isBusy} onClick={() => void loadCameras(cameraId)}>Refresh list</button>
-          </div>
-        </label>
-        <label>
-          Camera ID
-          <input value={cameraId} onChange={(event) => setCameraId(event.target.value)} required />
-        </label>
-        <label>
-          RTSP URL
-          <input value={rtspUrl} onChange={(event) => setRtspUrl(event.target.value)} required />
-        </label>
-        <button disabled={isBusy} type="submit">Add camera</button>
-      </form>
+        <Card>
+          <CardContent>
+            <Box component="form" onSubmit={onAddCamera}>
+              <Stack spacing={2}>
+                <Typography variant="h6">Camera</Typography>
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, md: 8 }}>
+                    <FormControl fullWidth>
+                      <InputLabel id="camera-select-label">Added cameras</InputLabel>
+                      <Select
+                        labelId="camera-select-label"
+                        label="Added cameras"
+                        value={cameras.some((camera) => camera.cameraId === cameraId) ? cameraId : ''}
+                        onChange={(event) => onCameraSelect(event.target.value)}
+                      >
+                        <MenuItem value="">Select added camera</MenuItem>
+                        {cameras.map((camera) => (
+                          <MenuItem key={camera.cameraId} value={camera.cameraId}>
+                            {camera.cameraId} ({camera.isRecording ? 'recording' : 'idle'})
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <Button
+                      type="button"
+                      variant="outlined"
+                      fullWidth
+                      disabled={isBusy}
+                      sx={{ height: '100%' }}
+                      onClick={() => void loadCameras(cameraId)}
+                    >
+                      Refresh list
+                    </Button>
+                  </Grid>
+                </Grid>
 
-      <section className="card actions">
-        <h2>Commands</h2>
-        <div className="actions-grid">
-          <button disabled={isBusy} onClick={() => runAction(() => fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/recording/start`, { method: 'POST' }))}>Start recording</button>
-          <button disabled={isBusy} onClick={() => runAction(() => fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/recording/stop`, { method: 'POST' }))}>Stop recording</button>
-          <button
-            disabled={isBusy}
-            onClick={() =>
-              runAction(() =>
-                fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/start`, {
-                  method: 'POST'
-                })
-              )
-            }
-          >
-            Start JPEG stream
-          </button>
-          <button disabled={isBusy} onClick={() => runAction(() => fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/stop`, { method: 'POST' }))}>Stop JPEG stream</button>
-        </div>
-      </section>
+                <TextField
+                  label="Camera ID"
+                  value={cameraId}
+                  onChange={(event) => setCameraId(event.target.value)}
+                  required
+                  fullWidth
+                />
+                <TextField
+                  label="RTSP URL"
+                  value={rtspUrl}
+                  onChange={(event) => setRtspUrl(event.target.value)}
+                  required
+                  fullWidth
+                />
+                <Button disabled={isBusy} type="submit" variant="contained">
+                  Add camera
+                </Button>
+              </Stack>
+            </Box>
+          </CardContent>
+        </Card>
 
-      <section className="card stream">
-        <h2>Frames</h2>
-        <label>
-          <input
-            type="checkbox"
-            checked={webSocketEnabled}
-            onChange={(event) => setWebSocketEnabled(event.target.checked)}
-          />
-          Show live frames over WebSocket
-        </label>
-        {webSocketEnabled && (
-          <img className="frame" src={liveFrameUrl ?? undefined} alt="Live WebSocket JPEG stream" />
-        )}
-        <button onClick={() => setFrameVersion((value) => value + 1)}>Refresh single frame</button>
-        <img className="frame" src={singleFrameUrl} alt="Single JPEG frame" />
-      </section>
+        <Card>
+          <CardContent>
+            <Stack spacing={2}>
+              <Typography variant="h6">Commands</Typography>
+              <Grid container spacing={1.5}>
+                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+                  <Button
+                    fullWidth
+                    disabled={isBusy}
+                    onClick={() => runAction(() => fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/recording/start`, { method: 'POST' }))}
+                  >
+                    Start recording
+                  </Button>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+                  <Button
+                    fullWidth
+                    disabled={isBusy}
+                    onClick={() => runAction(() => fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/recording/stop`, { method: 'POST' }))}
+                  >
+                    Stop recording
+                  </Button>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+                  <Button
+                    fullWidth
+                    disabled={isBusy}
+                    onClick={() =>
+                      runAction(() =>
+                        fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/start`, {
+                          method: 'POST'
+                        })
+                      )
+                    }
+                  >
+                    Start JPEG stream
+                  </Button>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+                  <Button
+                    fullWidth
+                    disabled={isBusy}
+                    onClick={() => runAction(() => fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/stop`, { method: 'POST' }))}
+                  >
+                    Stop JPEG stream
+                  </Button>
+                </Grid>
+              </Grid>
+            </Stack>
+          </CardContent>
+        </Card>
 
-      <p className="status">{status}</p>
-    </main>
+        <Card>
+          <CardContent>
+            <Stack spacing={2}>
+              <Typography variant="h6">Frames</Typography>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={webSocketEnabled}
+                    onChange={(event) => setWebSocketEnabled(event.target.checked)}
+                  />
+                }
+                label="Show live frames over WebSocket"
+              />
+              {webSocketEnabled && (
+                <Box
+                  component="img"
+                  src={liveFrameUrl ?? undefined}
+                  alt="Live WebSocket JPEG stream"
+                  sx={{
+                    width: '100%',
+                    minHeight: 280,
+                    objectFit: 'contain',
+                    border: 1,
+                    borderColor: 'divider',
+                    borderRadius: 2,
+                    bgcolor: 'background.default'
+                  }}
+                />
+              )}
+              <Button variant="outlined" onClick={() => setFrameVersion((value) => value + 1)}>
+                Refresh single frame
+              </Button>
+              <Box
+                component="img"
+                src={singleFrameUrl}
+                alt="Single JPEG frame"
+                sx={{
+                  width: '100%',
+                  minHeight: 280,
+                  objectFit: 'contain',
+                  border: 1,
+                  borderColor: 'divider',
+                  borderRadius: 2,
+                  bgcolor: 'background.default'
+                }}
+              />
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Alert severity={status.startsWith('Error') ? 'error' : 'info'}>{status}</Alert>
+      </Stack>
+    </Box>
   )
 }
 
