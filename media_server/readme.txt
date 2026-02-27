@@ -1,0 +1,1 @@
+dapr run --app-id vms --app-port 50051 --dapr-grpc-port 50001

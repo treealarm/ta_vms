@@ -8,16 +8,20 @@
 #include <sstream>
 
 namespace {
-std::string to_iso_utc(const std::chrono::system_clock::time_point& tp)
-{
-  const std::time_t t = std::chrono::system_clock::to_time_t(tp);
-  std::tm tm{};
-  gmtime_r(&t, &tm);
+  std::string to_iso_utc(const std::chrono::system_clock::time_point& tp)
+  {
+    using namespace std::chrono;
 
-  std::ostringstream out;
-  out << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
-  return out.str();
-}
+    auto utc_time = zoned_time{ "UTC", tp };
+    auto sys_time = utc_time.get_sys_time();
+    std::time_t t = system_clock::to_time_t(sys_time);
+
+    // форматируем через ctime или put_time
+    std::tm tm = *std::gmtime(&t);  // note: std::gmtime не потокобезопасна, но здесь одноразово
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
+    return std::string(buf);
+  }
 
 std::string json_escape(const std::string& value)
 {

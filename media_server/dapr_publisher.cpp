@@ -20,7 +20,7 @@ std::string read_env_or_default(const char* key, const char* fallback)
 }
 
 dapr_publisher::dapr_publisher()
-  : m_pubsub_name(read_env_or_default("DAPR_PUBSUB_NAME", "pubsub")),
+  : m_pubsub_name(read_env_or_default("DAPR_PUBSUB_NAME", "orderpubsub")),
     m_channel(grpc::CreateChannel(
       read_env_or_default("DAPR_GRPC_ENDPOINT", "127.0.0.1:50001"),
       grpc::InsecureChannelCredentials())),
@@ -36,7 +36,7 @@ bool dapr_publisher::publish_json(const std::string& topic, const std::string& p
   request.set_data(payload);
   request.set_data_content_type("application/json");
 
-  dapr::proto::runtime::v1::PublishEventResponse response;
+  google::protobuf::Empty response;
   grpc::ClientContext context;
   grpc::Status status = m_stub->PublishEvent(&context, request, &response);
 
