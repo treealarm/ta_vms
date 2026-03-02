@@ -38,6 +38,7 @@ function App() {
   const [status, setStatus] = useState('Ready')
   const [isBusy, setIsBusy] = useState(false)
   const [liveFrameUrl, setLiveFrameUrl] = useState<string | null>(null)
+  const [jpegStreamReconnectKey, setJpegStreamReconnectKey] = useState(0)
   const [cameras, setCameras] = useState<CameraInfo[]>([])
 
   const loadCameras = useCallback(async (preferredCameraId?: string) => {
@@ -75,26 +76,43 @@ function App() {
 
   useEffect(() => {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(`${wsProtocol}://${window.location.host}/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/ws`)
+    let ws: WebSocket | null = null
+    let reconnectTimeoutId: number | null = null
+    let isDisposed = false
 
-    ws.binaryType = 'blob'
+    const connect = () => {
+      ws = new WebSocket(`${wsProtocol}://${window.location.host}/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/ws`)
+      ws.binaryType = 'blob'
 
-    ws.onopen = () => setStatus('WebSocket JPEG stream connected')
-    ws.onerror = () => setStatus('WebSocket JPEG stream error')
-    ws.onclose = () => setStatus('WebSocket JPEG stream disconnected')
-    ws.onmessage = (event) => {
-      const objectUrl = URL.createObjectURL(event.data as Blob)
-      setLiveFrameUrl((previousUrl) => {
-        if (previousUrl) {
-          URL.revokeObjectURL(previousUrl)
+      ws.onopen = () => setStatus('WebSocket JPEG stream connected')
+      ws.onerror = () => setStatus('WebSocket JPEG stream error')
+      ws.onclose = () => {
+        setStatus('WebSocket JPEG stream disconnected')
+        if (!isDisposed) {
+          reconnectTimeoutId = window.setTimeout(connect, 1000)
         }
+      }
+      ws.onmessage = (event) => {
+        const objectUrl = URL.createObjectURL(event.data as Blob)
+        setLiveFrameUrl((previousUrl) => {
+          if (previousUrl) {
+            URL.revokeObjectURL(previousUrl)
+          }
 
-        return objectUrl
-      })
+          return objectUrl
+        })
+      }
     }
 
+    connect()
+
     return () => {
-      ws.close()
+      isDisposed = true
+      if (reconnectTimeoutId !== null) {
+        window.clearTimeout(reconnectTimeoutId)
+      }
+
+      ws?.close()
       setLiveFrameUrl((previousUrl) => {
         if (previousUrl) {
           URL.revokeObjectURL(previousUrl)
@@ -103,7 +121,7 @@ function App() {
         return null
       })
     }
-  }, [cameraId])
+  }, [cameraId, jpegStreamReconnectKey])
 
   const runAction = async (action: () => Promise<Response>) => {
     setIsBusy(true)
@@ -247,11 +265,17 @@ function App() {
                     fullWidth
                     disabled={isBusy}
                     onClick={() =>
-                      runAction(() =>
-                        fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/start`, {
+                      runAction(async () => {
+                        const response = await fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/start`, {
                           method: 'POST'
                         })
-                      )
+
+                        if (response.ok) {
+                          setJpegStreamReconnectKey((previous) => previous + 1)
+                        }
+
+                        return response
+                      })
                     }
                   >
                     Start JPEG stream
