@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
   Alert,
@@ -6,9 +6,7 @@ import {
   Button,
   Card,
   CardContent,
-  Checkbox,
   FormControl,
-  FormControlLabel,
   Grid,
   InputLabel,
   MenuItem,
@@ -39,15 +37,8 @@ function App() {
   const [rtspUrl, setRtspUrl] = useState('rtsp://127.0.0.1:8554/stream')
   const [status, setStatus] = useState('Ready')
   const [isBusy, setIsBusy] = useState(false)
-  const [frameVersion, setFrameVersion] = useState(0)
-  const [webSocketEnabled, setWebSocketEnabled] = useState(false)
   const [liveFrameUrl, setLiveFrameUrl] = useState<string | null>(null)
   const [cameras, setCameras] = useState<CameraInfo[]>([])
-
-  const singleFrameUrl = useMemo(
-    () => `/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/frame?v=${frameVersion}`,
-    [cameraId, frameVersion]
-  )
 
   const loadCameras = useCallback(async (preferredCameraId?: string) => {
     try {
@@ -83,10 +74,6 @@ function App() {
   }, [loadCameras])
 
   useEffect(() => {
-    if (!webSocketEnabled) {
-      return
-    }
-
     const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
     const ws = new WebSocket(`${wsProtocol}://${window.location.host}/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/ws`)
 
@@ -116,7 +103,7 @@ function App() {
         return null
       })
     }
-  }, [cameraId, webSocketEnabled])
+  }, [cameraId])
 
   const runAction = async (action: () => Promise<Response>) => {
     setIsBusy(true)
@@ -288,38 +275,10 @@ function App() {
           <CardContent>
             <Stack spacing={2}>
               <Typography variant="h6">Frames</Typography>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={webSocketEnabled}
-                    onChange={(event) => setWebSocketEnabled(event.target.checked)}
-                  />
-                }
-                label="Show live frames over WebSocket"
-              />
-              {webSocketEnabled && (
-                <Box
-                  component="img"
-                  src={liveFrameUrl ?? undefined}
-                  alt="Live WebSocket JPEG stream"
-                  sx={{
-                    width: '100%',
-                    minHeight: 280,
-                    objectFit: 'contain',
-                    border: 1,
-                    borderColor: 'divider',
-                    borderRadius: 2,
-                    bgcolor: 'background.default'
-                  }}
-                />
-              )}
-              <Button variant="outlined" onClick={() => setFrameVersion((value) => value + 1)}>
-                Refresh single frame
-              </Button>
               <Box
                 component="img"
-                src={singleFrameUrl}
-                alt="Single JPEG frame"
+                src={liveFrameUrl ?? undefined}
+                alt="Live JPEG stream"
                 sx={{
                   width: '100%',
                   minHeight: 280,
