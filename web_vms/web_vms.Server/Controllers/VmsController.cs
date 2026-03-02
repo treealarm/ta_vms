@@ -62,20 +62,6 @@ public class VmsController(
     return Ok(ToApiResponse(response));
   }
 
-  [HttpGet("cameras/{cameraId}/jpeg/frame")]
-  public async Task<IActionResult> GetSingleFrame(string cameraId, CancellationToken ct)
-  {
-    using var call = grpcClient.StreamJpegFrames(new CameraRequest { CameraId = cameraId }, cancellationToken: ct);
-    if (!await call.ResponseStream.MoveNext(ct))
-    {
-      return NotFound("Frame not available.");
-    }
-
-    var frame = call.ResponseStream.Current;
-    Response.Headers.Append("X-Frame-Number", frame.FrameNumber.ToString());
-    return File(frame.JpegData.ToByteArray(), "image/jpeg");
-  }
-
   [HttpGet("cameras/{cameraId}/jpeg/mjpeg")]
   public async Task StreamFramesAsMjpeg(string cameraId, CancellationToken ct)
   {
