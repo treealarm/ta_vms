@@ -1,4 +1,4 @@
-#include <csignal>
+﻿#include <csignal>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
