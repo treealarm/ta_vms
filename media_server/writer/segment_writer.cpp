@@ -101,7 +101,7 @@ segment_writer::segment_writer(const std::string& base_dir,
 bool segment_writer::init(AVStream* in_stream)
 {
   m_in_stream = in_stream;
-  std::filesystem::create_directories(m_base_dir / m_camera_id);
+  std::filesystem::create_directories(m_base_dir);
   return true;
 }
 
@@ -109,8 +109,14 @@ void segment_writer::open_new_segment()
 {
   close_segment();
 
-  m_current_segment_relative_path = std::filesystem::path(m_camera_id) / make_filename();
+  const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+  const std::string year = std::format("{:%Y}", now);
+  const std::string month_day = std::format("{:%m-%d}", now);
+
+  m_current_segment_relative_path =
+    std::filesystem::path(m_camera_id) / year / month_day / make_filename();
   auto path = m_base_dir / m_current_segment_relative_path;
+  std::filesystem::create_directories(path.parent_path());
 
   if (avformat_alloc_output_context2(
     &m_ctx, nullptr, nullptr, path.string().c_str()) < 0)

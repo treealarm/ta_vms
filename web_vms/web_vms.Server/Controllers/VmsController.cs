@@ -16,7 +16,8 @@ public class VmsController(
     {
       CameraId = request.CameraId,
       RtspUrl = request.RtspUrl,
-      StartImmediately = request.StartImmediately
+      StartImmediately = request.StartImmediately,
+      StorageBasePath = request.StorageBasePath ?? string.Empty
     }, cancellationToken: ct);
 
     return Ok(ToApiResponse(response));
@@ -108,7 +109,10 @@ public class VmsController(
   private static ApiResponse ToApiResponse(OperationStatus status) => new(status.Success, status.Message);
 }
 
-public record AddCameraDto(string CameraId, string RtspUrl, bool StartImmediately);
+public record AddCameraDto(string CameraId,
+                           string RtspUrl,
+                           bool StartImmediately,
+                           string? StorageBasePath);
 
 public record CameraDto(string CameraId, string RtspUrl, bool IsRecording);
 

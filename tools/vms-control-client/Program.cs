@@ -140,7 +140,8 @@ static async Task<OperationStatus> SendCommandAsync(
         {
             CameraId = parsed.CameraId,
             RtspUrl = parsed.RtspUrl ?? string.Empty,
-            StartImmediately = parsed.StartImmediately
+            StartImmediately = parsed.StartImmediately,
+            StorageBasePath = parsed.StorageBasePath ?? string.Empty
         }),
         "start" => await client.StartRecordingAsync(new CameraRequest { CameraId = parsed.CameraId }),
         "stop" => await client.StopRecordingAsync(new CameraRequest { CameraId = parsed.CameraId }),
@@ -203,20 +204,44 @@ static ParsedArguments ParseAdd(string address, string[] tokens)
 {
     if (tokens.Length < 3)
     {
-        return ParsedArguments.Fail("Command 'add' expects: add <camera-id> <rtsp-url> [--start].");
+        return ParsedArguments.Fail("Command 'add' expects: add <camera-id> <rtsp-url> [--start] [--storage-base-path <path>].");
     }
 
     var cameraId = tokens[1];
     var rtspUrl = tokens[2];
-    var startImmediately = tokens.Skip(3).Any(t => t is "--start" or "-s");
+    var startImmediately = false;
+    string? storageBasePath = null;
+    var unexpected = new List<string>();
 
-    var unexpected = tokens.Skip(3).Where(t => t is not "--start" and not "-s").ToList();
+    for (var i = 3; i < tokens.Length; i++)
+    {
+        var token = tokens[i];
+        if (token is "--start" or "-s")
+        {
+            startImmediately = true;
+            continue;
+        }
+
+        if (token == "--storage-base-path")
+        {
+            if (i + 1 >= tokens.Length)
+            {
+                return ParsedArguments.Fail("Missing value for --storage-base-path.");
+            }
+
+            storageBasePath = tokens[++i];
+            continue;
+        }
+
+        unexpected.Add(token);
+    }
+
     if (unexpected.Count > 0)
     {
         return ParsedArguments.Fail($"Unexpected arguments for 'add': {string.Join(' ', unexpected)}");
     }
 
-    return ParsedArguments.Ok(address, "add", cameraId, rtspUrl, startImmediately);
+    return ParsedArguments.Ok(address, "add", cameraId, rtspUrl, startImmediately, storageBasePath);
 }
 
 static ParsedArguments ParseSimpleCameraCommand(string address, string command, string[] tokens)
@@ -226,7 +251,7 @@ static ParsedArguments ParseSimpleCameraCommand(string address, string command, 
         return ParsedArguments.Fail($"Command '{command}' expects: {command} <camera-id>.");
     }
 
-    return ParsedArguments.Ok(address, command, tokens[1], null, false);
+    return ParsedArguments.Ok(address, command, tokens[1], null, false, null);
 }
 
 static string EnsureHttpScheme(string address)
@@ -243,7 +268,7 @@ static string EnsureHttpScheme(string address)
 static void PrintUsage()
 {
     Console.WriteLine("Usage:");
-    Console.WriteLine("  dotnet run --project tools/vms-control-client -- [--address host:port] add <camera-id> <rtsp-url> [--start]");
+    Console.WriteLine("  dotnet run --project tools/vms-control-client -- [--address host:port] add <camera-id> <rtsp-url> [--start] [--storage-base-path <path>]");
     Console.WriteLine("  dotnet run --project tools/vms-control-client -- [--address host:port] start <camera-id>");
     Console.WriteLine("  dotnet run --project tools/vms-control-client -- [--address host:port] stop <camera-id>");
     Console.WriteLine("  dotnet run --project tools/vms-control-client -- [--address host:port] start-jpeg <camera-id>");
@@ -256,7 +281,7 @@ static void PrintUsage()
 static void PrintInteractiveHelp()
 {
     Console.WriteLine("Commands:");
-    Console.WriteLine("  add <camera-id> <rtsp-url> [--start]");
+    Console.WriteLine("  add <camera-id> <rtsp-url> [--start] [--storage-base-path <path>]");
     Console.WriteLine("  start <camera-id>");
     Console.WriteLine("  stop <camera-id>");
     Console.WriteLine("  start-jpeg <camera-id>");
@@ -289,13 +314,19 @@ internal sealed record ParsedArguments(
     string Command,
     string CameraId,
     string? RtspUrl,
-    bool StartImmediately)
+    bool StartImmediately,
+    string? StorageBasePath)
 {
-    public static ParsedArguments Ok(string address, string command, string cameraId, string? rtspUrl, bool startImmediately) =>
-        new(true, null, address, command, cameraId, rtspUrl, startImmediately);
+    public static ParsedArguments Ok(string address,
+                                     string command,
+                                     string cameraId,
+                                     string? rtspUrl,
+                                     bool startImmediately,
+                                     string? storageBasePath) =>
+        new(true, null, address, command, cameraId, rtspUrl, startImmediately, storageBasePath);
 
     public static ParsedArguments Fail(string errorMessage) =>
-        new(false, errorMessage, string.Empty, string.Empty, string.Empty, null, false);
+        new(false, errorMessage, string.Empty, string.Empty, string.Empty, null, false, null);
 }
 
 internal sealed class JpegReceiverManager(CameraControlService.CameraControlServiceClient client) : IAsyncDisposable
