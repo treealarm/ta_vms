@@ -49,9 +49,13 @@ int main(int argc, char** argv) {
 
   if (argc > 3)
   {
+    const auto cam_id = argv[3];
+    const auto url = argv[2];
     std::string error;
-    const bool success = manager.add_camera(argv[3],
-      argv[2],
+    const bool success = manager.add_camera(
+      cam_id,
+      url,
+      "",
       false,
       error);
   }
