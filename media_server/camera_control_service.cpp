@@ -10,6 +10,7 @@ grpc::Status camera_control_service::AddCamera(
   std::string error;
   const bool success = m_manager.add_camera(request->camera_id(),
                                             request->rtsp_url(),
+                                            request->storage_base_path(),
                                             request->start_immediately(),
                                             error);
 

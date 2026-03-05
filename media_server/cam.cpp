@@ -1,9 +1,31 @@
 #include "cam.h"
 
+#include <cstdlib>
 #include <stdexcept>
 
-cam::cam(const std::string& rtsp_url, const std::string& cam_id)
-    : m_rtsp_url(rtsp_url), m_cam_id(cam_id), m_writer("records", cam_id, 60) {
+namespace {
+std::string resolve_storage_base_path(const std::string& storage_base_path)
+{
+  if (!storage_base_path.empty()) {
+    return storage_base_path;
+  }
+
+  if (const char* value = std::getenv("VMS_STORAGE_BASE_PATH")) {
+    if (value[0] != '\0') {
+      return value;
+    }
+  }
+
+  return "records";
+}
+}
+
+cam::cam(const std::string& rtsp_url,
+         const std::string& cam_id,
+         const std::string& storage_base_path)
+    : m_rtsp_url(rtsp_url),
+      m_cam_id(cam_id),
+      m_writer(resolve_storage_base_path(storage_base_path), cam_id, 60) {
   if (!m_reader.open(m_rtsp_url)) {
     throw std::runtime_error("Failed to open RTSP");
   }

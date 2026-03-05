@@ -7,7 +7,9 @@
 
 class cam {
 public:
-  cam(const std::string& rtsp_url, const std::string& cam_id);
+  cam(const std::string& rtsp_url,
+      const std::string& cam_id,
+      const std::string& storage_base_path = "");
   ~cam();
 
   void start_recording();

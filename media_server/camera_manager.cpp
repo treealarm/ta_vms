@@ -2,6 +2,7 @@
 
 bool camera_manager::add_camera(const std::string& camera_id,
                                 const std::string& rtsp_url,
+                                const std::string& storage_base_path,
                                 bool start_immediately,
                                 std::string& error) {
   std::scoped_lock lock(m_mutex);
@@ -22,7 +23,7 @@ bool camera_manager::add_camera(const std::string& camera_id,
   }
 
   try {
-    auto camera = std::make_unique<cam>(rtsp_url, camera_id);
+    auto camera = std::make_unique<cam>(rtsp_url, camera_id, storage_base_path);
     if (start_immediately) {
       camera->start_recording();
     }
