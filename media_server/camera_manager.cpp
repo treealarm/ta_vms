@@ -30,7 +30,7 @@ bool camera_manager::add_camera(const std::string& camera_id,
 
     camera_entry entry;
     entry.camera = std::move(camera);
-    entry.rtsp_url = rtsp_url;
+    entry.source = rtsp_url;
     entry.is_recording = start_immediately;
 
     m_cameras.emplace(camera_id, std::move(entry));
@@ -119,7 +119,7 @@ std::vector<camera_manager::camera_info> camera_manager::list_cameras() const {
   cameras.reserve(m_cameras.size());
 
   for (const auto& [camera_id, entry] : m_cameras) {
-    cameras.push_back(camera_info{camera_id, entry.rtsp_url, entry.is_recording});
+    cameras.push_back(camera_info{camera_id, entry.source, entry.is_recording});
   }
 
   return cameras;
@@ -145,4 +145,41 @@ void camera_manager::stop_all() {
     entry.camera->shutdown();
     entry.is_recording = false;
   }
+}
+
+bool camera_manager::start_play_file(const std::string& camera_id,
+                                     const std::string& relative_path,
+                                     std::string& error) {
+  if (relative_path.empty()) {
+    error = "relative_path must not be empty";
+    return false;
+  }
+
+  if (relative_path.starts_with('/') || relative_path.starts_with("..")) {
+    error = "relative_path must be relative and stay inside storage";
+    return false;
+  }
+
+  return add_camera(camera_id, relative_path, "", false, error);
+}
+
+bool camera_manager::stop_play_file(const std::string& camera_id,
+                                    const std::string& relative_path,
+                                    std::string& error) {
+  std::scoped_lock lock(m_mutex);
+
+  auto it = m_cameras.find(camera_id);
+  if (it == m_cameras.end()) {
+    error = "camera not found: " + camera_id;
+    return false;
+  }
+
+  if (!relative_path.empty() && it->second.source != relative_path) {
+    error = "relative_path does not match current source";
+    return false;
+  }
+
+  it->second.camera->shutdown();
+  m_cameras.erase(it);
+  return true;
 }

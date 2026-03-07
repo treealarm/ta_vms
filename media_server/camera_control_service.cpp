@@ -57,6 +57,34 @@ grpc::Status camera_control_service::StopRecording(
   return grpc::Status::OK;
 }
 
+grpc::Status camera_control_service::StartPlayFile(
+    grpc::ServerContext* /*context*/,
+    const vms::control::PlayFileRequest* request,
+    vms::control::OperationStatus* response) {
+  std::string error;
+  const bool success = m_manager.start_play_file(request->camera_id(),
+                                                 request->relative_path(),
+                                                 error);
+
+  response->set_success(success);
+  response->set_message(success ? "file playback started" : error);
+  return grpc::Status::OK;
+}
+
+grpc::Status camera_control_service::StopPlayFile(
+    grpc::ServerContext* /*context*/,
+    const vms::control::PlayFileRequest* request,
+    vms::control::OperationStatus* response) {
+  std::string error;
+  const bool success = m_manager.stop_play_file(request->camera_id(),
+                                                request->relative_path(),
+                                                error);
+
+  response->set_success(success);
+  response->set_message(success ? "file playback stopped" : error);
+  return grpc::Status::OK;
+}
+
 grpc::Status camera_control_service::StartJpegStream(
     grpc::ServerContext* /*context*/,
     const vms::control::JpegStreamRequest* request,

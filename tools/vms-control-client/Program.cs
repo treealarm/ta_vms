@@ -145,6 +145,16 @@ static async Task<OperationStatus> SendCommandAsync(
         }),
         "start" => await client.StartRecordingAsync(new CameraRequest { CameraId = parsed.CameraId }),
         "stop" => await client.StopRecordingAsync(new CameraRequest { CameraId = parsed.CameraId }),
+        "start-file" => await client.StartPlayFileAsync(new PlayFileRequest
+        {
+            CameraId = parsed.CameraId,
+            RelativePath = parsed.RelativePath ?? string.Empty
+        }),
+        "stop-file" => await client.StopPlayFileAsync(new PlayFileRequest
+        {
+            CameraId = parsed.CameraId,
+            RelativePath = parsed.RelativePath ?? string.Empty
+        }),
         "stop-jpeg" => await client.StopJpegStreamAsync(new CameraRequest { CameraId = parsed.CameraId }),
         _ => throw new InvalidOperationException($"Unknown command '{parsed.Command}'.")
     };
@@ -196,8 +206,20 @@ static ParsedArguments ParseCommandArguments(string address, string[] args)
         "stop" => ParseSimpleCameraCommand(address, command, args),
         "start-jpeg" => ParseSimpleCameraCommand(address, command, args),
         "stop-jpeg" => ParseSimpleCameraCommand(address, command, args),
+        "start-file" => ParseFileCommand(address, command, args),
+        "stop-file" => ParseFileCommand(address, command, args),
         _ => ParsedArguments.Fail($"Unknown command '{args[0]}'.")
     };
+}
+
+static ParsedArguments ParseFileCommand(string address, string command, string[] tokens)
+{
+    if (tokens.Length != 3)
+    {
+        return ParsedArguments.Fail($"Command '{command}' expects: {command} <camera-id> <relative-path>.");
+    }
+
+    return ParsedArguments.Ok(address, command, tokens[1], null, false, null, tokens[2]);
 }
 
 static ParsedArguments ParseAdd(string address, string[] tokens)
@@ -241,7 +263,7 @@ static ParsedArguments ParseAdd(string address, string[] tokens)
         return ParsedArguments.Fail($"Unexpected arguments for 'add': {string.Join(' ', unexpected)}");
     }
 
-    return ParsedArguments.Ok(address, "add", cameraId, rtspUrl, startImmediately, storageBasePath);
+    return ParsedArguments.Ok(address, "add", cameraId, rtspUrl, startImmediately, storageBasePath, null);
 }
 
 static ParsedArguments ParseSimpleCameraCommand(string address, string command, string[] tokens)
@@ -251,7 +273,7 @@ static ParsedArguments ParseSimpleCameraCommand(string address, string command, 
         return ParsedArguments.Fail($"Command '{command}' expects: {command} <camera-id>.");
     }
 
-    return ParsedArguments.Ok(address, command, tokens[1], null, false, null);
+    return ParsedArguments.Ok(address, command, tokens[1], null, false, null, null);
 }
 
 static string EnsureHttpScheme(string address)
@@ -271,6 +293,8 @@ static void PrintUsage()
     Console.WriteLine("  dotnet run --project tools/vms-control-client -- [--address host:port] add <camera-id> <rtsp-url> [--start] [--storage-base-path <path>]");
     Console.WriteLine("  dotnet run --project tools/vms-control-client -- [--address host:port] start <camera-id>");
     Console.WriteLine("  dotnet run --project tools/vms-control-client -- [--address host:port] stop <camera-id>");
+    Console.WriteLine("  dotnet run --project tools/vms-control-client -- [--address host:port] start-file <camera-id> <relative-path>");
+    Console.WriteLine("  dotnet run --project tools/vms-control-client -- [--address host:port] stop-file <camera-id> <relative-path>");
     Console.WriteLine("  dotnet run --project tools/vms-control-client -- [--address host:port] start-jpeg <camera-id>");
     Console.WriteLine("  dotnet run --project tools/vms-control-client -- [--address host:port] stop-jpeg <camera-id>");
     Console.WriteLine();
@@ -284,6 +308,8 @@ static void PrintInteractiveHelp()
     Console.WriteLine("  add <camera-id> <rtsp-url> [--start] [--storage-base-path <path>]");
     Console.WriteLine("  start <camera-id>");
     Console.WriteLine("  stop <camera-id>");
+    Console.WriteLine("  start-file <camera-id> <relative-path>");
+    Console.WriteLine("  stop-file <camera-id> <relative-path>");
     Console.WriteLine("  start-jpeg <camera-id>");
     Console.WriteLine("  stop-jpeg <camera-id>");
     Console.WriteLine("  help");
@@ -315,18 +341,20 @@ internal sealed record ParsedArguments(
     string CameraId,
     string? RtspUrl,
     bool StartImmediately,
-    string? StorageBasePath)
+    string? StorageBasePath,
+    string? RelativePath)
 {
     public static ParsedArguments Ok(string address,
                                      string command,
                                      string cameraId,
                                      string? rtspUrl,
                                      bool startImmediately,
-                                     string? storageBasePath) =>
-        new(true, null, address, command, cameraId, rtspUrl, startImmediately, storageBasePath);
+                                     string? storageBasePath,
+                                     string? relativePath) =>
+        new(true, null, address, command, cameraId, rtspUrl, startImmediately, storageBasePath, relativePath);
 
     public static ParsedArguments Fail(string errorMessage) =>
-        new(false, errorMessage, string.Empty, string.Empty, string.Empty, null, false, null);
+        new(false, errorMessage, string.Empty, string.Empty, string.Empty, null, false, null, null);
 }
 
 internal sealed class JpegReceiverManager(CameraControlService.CameraControlServiceClient client) : IAsyncDisposable

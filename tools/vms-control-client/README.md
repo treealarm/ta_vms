@@ -16,6 +16,12 @@ dotnet run --project tools/vms-control-client -- start cam-1
 # Остановить запись
 dotnet run --project tools/vms-control-client -- stop cam-1
 
+# Запустить воспроизведение из файла
+dotnet run --project tools/vms-control-client -- start-file cam-file clips/cam-1.mp4
+
+# Остановить воспроизведение из файла
+dotnet run --project tools/vms-control-client -- stop-file cam-file clips/cam-1.mp4
+
 # Запустить JPEG-стрим (через gRPC stream)
 dotnet run --project tools/vms-control-client -- start-jpeg cam-1
 
@@ -36,6 +42,8 @@ add cam-1 rtsp://127.0.0.1:8554/live --start
 start-jpeg cam-1
 stop-jpeg cam-1
 stop cam-1
+start-file cam-file clips/cam-1.mp4
+stop-file cam-file clips/cam-1.mp4
 exit
 ```
 

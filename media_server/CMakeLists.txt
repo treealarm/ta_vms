@@ -86,6 +86,9 @@ set(SOURCES
 
     reader/rtsp_reader.cpp
     reader/rtsp_reader.h
+    reader/file_reader.cpp
+    reader/file_reader.h
+    reader/reader.h
 
     writer/segment_writer.cpp
     writer/segment_writer.h
