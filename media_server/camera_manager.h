@@ -30,6 +30,12 @@ public:
                             std::vector<uint8_t>& frame,
                             uint64_t& frame_number,
                             std::string& error);
+  bool start_play_file(const std::string& camera_id,
+                       const std::string& relative_path,
+                       std::string& error);
+  bool stop_play_file(const std::string& camera_id,
+                      const std::string& relative_path,
+                      std::string& error);
 
   std::vector<camera_info> list_cameras() const;
 
@@ -38,7 +44,7 @@ public:
 private:
   struct camera_entry {
     std::unique_ptr<cam> camera;
-    std::string rtsp_url;
+    std::string source;
     bool is_recording = false;
   };
 

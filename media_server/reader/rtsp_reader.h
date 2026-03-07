@@ -6,24 +6,25 @@
 #include <mutex>
 #include "media/media_packet.h"
 #include "media/media_sink.h"
+#include "reader.h"
 
 extern "C" {
 #include <libavformat/avformat.h>
 }
 
-class rtsp_reader {
+class rtsp_reader final : public reader {
 public:
   rtsp_reader();
-  ~rtsp_reader();
+  ~rtsp_reader() override;
 
-  bool open(const std::string& url);
-  void add_sink(media_sink* sink);
-  void remove_sink(media_sink* sink);
+  bool open(const std::string& url) override;
+  void add_sink(media_sink* sink) override;
+  void remove_sink(media_sink* sink) override;
 
-  void start();  // запуск потока
-  void stop();   // корректная остановка
+  void start() override;  // запуск потока
+  void stop() override;   // корректная остановка
 
-  AVStream* video_stream() const;
+  AVStream* video_stream() const override;
 
 private:
   bool connect();

@@ -3,6 +3,9 @@
 #include <cstdlib>
 #include <stdexcept>
 
+#include "reader/file_reader.h"
+#include "reader/rtsp_reader.h"
+
 namespace {
 std::string resolve_storage_base_path(const std::string& storage_base_path)
 {
@@ -18,21 +21,31 @@ std::string resolve_storage_base_path(const std::string& storage_base_path)
 
   return "records";
 }
+
+bool is_rtsp_source(const std::string& source) {
+  return source.rfind("rtsp://", 0) == 0 || source.rfind("rtsps://", 0) == 0;
+}
 }
 
 cam::cam(const std::string& rtsp_url,
          const std::string& cam_id,
          const std::string& storage_base_path)
-    : m_rtsp_url(rtsp_url),
+    : m_source(rtsp_url),
       m_cam_id(cam_id),
       m_writer(resolve_storage_base_path(storage_base_path), cam_id, 60) {
-  if (!m_reader.open(m_rtsp_url)) {
-    throw std::runtime_error("Failed to open RTSP");
+  if (is_rtsp_source(m_source)) {
+    m_reader = std::make_unique<rtsp_reader>();
+  } else {
+    m_reader = std::make_unique<file_reader>();
   }
 
-  m_writer.init(m_reader.video_stream());
+  if (!m_reader->open(m_source)) {
+    throw std::runtime_error("Failed to open media source");
+  }
 
-  m_reader.start();
+  m_writer.init(m_reader->video_stream());
+
+  m_reader->start();
   m_is_running = true;
 }
 
@@ -45,7 +58,7 @@ void cam::start_recording() {
     return;
   }
 
-  m_reader.add_sink(&m_writer);
+  m_reader->add_sink(&m_writer);
   m_is_recording = true;
 }
 
@@ -54,14 +67,14 @@ void cam::stop_recording() {
     return;
   }
 
-  m_reader.remove_sink(&m_writer);
+  m_reader->remove_sink(&m_writer);
   m_writer.close();
   m_is_recording = false;
 }
 
 void cam::shutdown() {
   if (m_jpeg_streamer) {
-    m_reader.remove_sink(m_jpeg_streamer.get());
+    m_reader->remove_sink(m_jpeg_streamer.get());
     m_jpeg_streamer->close();
     m_jpeg_streamer.reset();
   }
@@ -69,7 +82,7 @@ void cam::shutdown() {
   stop_recording();
 
   if (m_is_running) {
-    m_reader.stop();
+    m_reader->stop();
     m_is_running = false;
   }
 }
@@ -81,11 +94,11 @@ bool cam::start_jpeg_stream(std::string& error) {
   }
 
   auto streamer = std::make_unique<jpeg_streamer>();
-  if (!streamer->init(m_reader.video_stream(), error)) {
+  if (!streamer->init(m_reader->video_stream(), error)) {
     return false;
   }
 
-  m_reader.add_sink(streamer.get());
+  m_reader->add_sink(streamer.get());
   m_jpeg_streamer = std::move(streamer);
 
   return true;
@@ -111,7 +124,7 @@ bool cam::stop_jpeg_stream(std::string& error) {
     return false;
   }
 
-  m_reader.remove_sink(m_jpeg_streamer.get());
+  m_reader->remove_sink(m_jpeg_streamer.get());
   m_jpeg_streamer->close();
   m_jpeg_streamer.reset();
 

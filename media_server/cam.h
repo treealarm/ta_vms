@@ -1,7 +1,7 @@
 #pragma once
 #include <memory>
 #include <string>
-#include "reader/rtsp_reader.h"
+#include "reader/reader.h"
 #include "stream/jpeg_streamer.h"
 #include "writer/segment_writer.h"
 
@@ -22,9 +22,9 @@ public:
 
 private:
   std::string m_cam_id;
-  std::string m_rtsp_url;
+  std::string m_source;
 
-  rtsp_reader m_reader;
+  std::unique_ptr<reader> m_reader;
   segment_writer m_writer;
   std::unique_ptr<jpeg_streamer> m_jpeg_streamer;
   bool m_is_running = false;
