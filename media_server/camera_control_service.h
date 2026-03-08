@@ -25,9 +25,9 @@ public:
                              const vms::control::CameraRequest* request,
                              vms::control::OperationStatus* response) override;
 
-  grpc::Status StartPlayFile(grpc::ServerContext* context,
-                             const vms::control::CameraRequest* request,
-                             vms::control::OperationStatus* response) override;
+  grpc::Status StartPlayFile(::grpc::ServerContext* context, 
+                            const ::vms::control::PlayFileRequest* request, 
+                            ::vms::control::OperationStatus* response) override;
 
   grpc::Status StopPlayFile(grpc::ServerContext* context,
                             const vms::control::CameraRequest* request,

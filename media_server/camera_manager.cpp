@@ -246,7 +246,8 @@ bool camera_manager::start_play_file(const std::string& camera_id,
   std::sort(candidate_files.begin(), candidate_files.end());
 
   size_t best_index = 0;
-  auto best_difference = std::chrono::seconds::max();
+  std::chrono::system_clock::duration best_difference =
+    std::chrono::system_clock::duration::max();
 
   for (size_t i = 0; i < candidate_files.size(); ++i) {
     const auto parsed_time = parse_segment_start_time(candidate_files[i].filename().string());
@@ -254,7 +255,8 @@ bool camera_manager::start_play_file(const std::string& camera_id,
       continue;
     }
 
-    const auto difference = *parsed_time > *requested_time ? *parsed_time - *requested_time : *requested_time - *parsed_time;
+    const auto difference = *parsed_time > *requested_time ? 
+      *parsed_time - *requested_time : *requested_time - *parsed_time;
     if (difference < best_difference) {
       best_difference = difference;
       best_index = i;
