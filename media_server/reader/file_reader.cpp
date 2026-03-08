@@ -1,13 +1,23 @@
 #include <algorithm>
-#include <chrono>
 #include <iostream>
-#include <thread>
+#include <sstream>
 
 #include "file_reader.h"
 #include "media/av_deleters.h"
 
 namespace {
-constexpr auto kReconnectInterval = std::chrono::seconds(2);
+std::vector<std::string> split(const std::string& value, char delimiter) {
+  std::vector<std::string> parts;
+  std::stringstream stream(value);
+  std::string item;
+  while (std::getline(stream, item, delimiter)) {
+    if (!item.empty()) {
+      parts.push_back(item);
+    }
+  }
+
+  return parts;
+}
 }
 
 file_reader::file_reader() = default;
@@ -18,16 +28,37 @@ file_reader::~file_reader() {
 }
 
 bool file_reader::open(const std::string& source) {
-  m_file_path = source;
+  m_file_paths.clear();
+  m_current_file_index = 0;
+
+  if (source.rfind("playlist:", 0) == 0) {
+    const auto list = source.substr(9);
+    m_file_paths = split(list, '|');
+  } else if (source.rfind("file:", 0) == 0) {
+    m_file_paths.push_back(source.substr(5));
+  } else {
+    m_file_paths.push_back(source);
+  }
+
+  if (m_file_paths.empty()) {
+    return false;
+  }
+
   disconnect();
-  return connect();
+  return connect_current_file();
 }
 
-bool file_reader::connect() {
+bool file_reader::connect_current_file() {
   disconnect();
 
-  if (avformat_open_input(&m_ctx, m_file_path.c_str(), nullptr, nullptr) < 0) {
-    std::cerr << "Failed to open file source\n";
+  if (m_current_file_index >= m_file_paths.size()) {
+    return false;
+  }
+
+  const auto& file_path = m_file_paths[m_current_file_index];
+
+  if (avformat_open_input(&m_ctx, file_path.c_str(), nullptr, nullptr) < 0) {
+    std::cerr << "Failed to open file source: " << file_path << "\n";
     return false;
   }
 
@@ -51,8 +82,17 @@ bool file_reader::connect() {
     return false;
   }
 
-  std::cerr << "File source opened\n";
+  std::cerr << "File source opened: " << file_path << "\n";
   return true;
+}
+
+bool file_reader::advance_to_next_file() {
+  if (m_current_file_index + 1 >= m_file_paths.size()) {
+    return false;
+  }
+
+  ++m_current_file_index;
+  return connect_current_file();
 }
 
 void file_reader::disconnect() {
@@ -99,22 +139,18 @@ void file_reader::stop() {
 void file_reader::read_loop() {
   while (m_running) {
     if (!m_ctx || m_video_index < 0) {
-      if (!connect()) {
-        std::this_thread::sleep_for(kReconnectInterval);
-        continue;
+      if (!connect_current_file()) {
+        break;
       }
     }
 
     avpacket_ptr pkt(av_packet_alloc(), avpacket_deleter{});
     const int read_result = av_read_frame(m_ctx, pkt.get());
     if (read_result < 0) {
-      if (av_seek_frame(m_ctx, -1, 0, AVSEEK_FLAG_BACKWARD) >= 0) {
-        avformat_flush(m_ctx);
-        continue;
+      if (!advance_to_next_file()) {
+        break;
       }
 
-      disconnect();
-      std::this_thread::sleep_for(kReconnectInterval);
       continue;
     }
 

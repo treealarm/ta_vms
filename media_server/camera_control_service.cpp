@@ -63,7 +63,7 @@ grpc::Status camera_control_service::StartPlayFile(
     vms::control::OperationStatus* response) {
   std::string error;
   const bool success = m_manager.start_play_file(request->camera_id(),
-                                                 request->relative_path(),
+                                                 request->start_time(),
                                                  error);
 
   response->set_success(success);
@@ -73,11 +73,10 @@ grpc::Status camera_control_service::StartPlayFile(
 
 grpc::Status camera_control_service::StopPlayFile(
     grpc::ServerContext* /*context*/,
-    const vms::control::PlayFileRequest* request,
+    const vms::control::CameraRequest* request,
     vms::control::OperationStatus* response) {
   std::string error;
   const bool success = m_manager.stop_play_file(request->camera_id(),
-                                                request->relative_path(),
                                                 error);
 
   response->set_success(success);

@@ -25,18 +25,22 @@ std::string resolve_storage_base_path(const std::string& storage_base_path)
 bool is_rtsp_source(const std::string& source) {
   return source.rfind("rtsp://", 0) == 0 || source.rfind("rtsps://", 0) == 0;
 }
+
+bool is_file_source(const std::string& source) {
+  return source.rfind("playlist:", 0) == 0 || source.rfind("file:", 0) == 0 || !is_rtsp_source(source);
+}
 }
 
-cam::cam(const std::string& rtsp_url,
+cam::cam(const std::string& source,
          const std::string& cam_id,
          const std::string& storage_base_path)
-    : m_source(rtsp_url),
+    : m_source(source),
       m_cam_id(cam_id),
       m_writer(resolve_storage_base_path(storage_base_path), cam_id, 60) {
-  if (is_rtsp_source(m_source)) {
-    m_reader = std::make_unique<rtsp_reader>();
-  } else {
+  if (is_file_source(m_source)) {
     m_reader = std::make_unique<file_reader>();
+  } else {
+    m_reader = std::make_unique<rtsp_reader>();
   }
 
   if (!m_reader->open(m_source)) {
@@ -51,6 +55,19 @@ cam::cam(const std::string& rtsp_url,
 
 cam::~cam() {
   shutdown();
+}
+
+std::string cam::join_playlist(const std::vector<std::string>& files) {
+  std::string joined;
+  for (size_t i = 0; i < files.size(); ++i) {
+    if (i > 0) {
+      joined += '|';
+    }
+
+    joined += files[i];
+  }
+
+  return joined;
 }
 
 void cam::start_recording() {

@@ -12,6 +12,23 @@ public class VmsController(
   [HttpPost("cameras")]
   public async Task<IActionResult> AddCamera([FromBody] AddCameraDto request, CancellationToken ct)
   {
+    if (!string.IsNullOrWhiteSpace(request.StartTime))
+    {
+      var stopResponse = await grpcClient.StopPlayFileAsync(new CameraRequest { CameraId = request.CameraId }, cancellationToken: ct);
+      if (!stopResponse.Success && !stopResponse.Message.Contains("camera not found", StringComparison.OrdinalIgnoreCase))
+      {
+        return Ok(ToApiResponse(stopResponse));
+      }
+
+      var startPlayResponse = await grpcClient.StartPlayFileAsync(new PlayFileRequest
+      {
+        CameraId = request.CameraId,
+        StartTime = request.StartTime
+      }, cancellationToken: ct);
+
+      return Ok(ToApiResponse(startPlayResponse));
+    }
+
     var response = await grpcClient.AddCameraAsync(new AddCameraRequest
     {
       CameraId = request.CameraId,
@@ -112,7 +129,8 @@ public class VmsController(
 public record AddCameraDto(string CameraId,
                            string RtspUrl,
                            bool StartImmediately,
-                           string? StorageBasePath);
+                           string? StorageBasePath,
+                           string? StartTime);
 
 public record CameraDto(string CameraId, string RtspUrl, bool IsRecording);
 

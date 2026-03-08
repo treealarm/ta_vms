@@ -1,15 +1,18 @@
 #pragma once
 #include <memory>
 #include <string>
+#include <vector>
 #include "reader/reader.h"
 #include "stream/jpeg_streamer.h"
 #include "writer/segment_writer.h"
 
 class cam {
 public:
-  cam(const std::string& rtsp_url,
+  cam(const std::string& source,
       const std::string& cam_id,
       const std::string& storage_base_path = "");
+
+  static std::string join_playlist(const std::vector<std::string>& files);
   ~cam();
 
   void start_recording();
