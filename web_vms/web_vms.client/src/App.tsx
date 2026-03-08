@@ -35,6 +35,7 @@ const getErrorMessage = async (response: Response): Promise<string> => {
 function App() {
   const [cameraId, setCameraId] = useState('cam1')
   const [rtspUrl, setRtspUrl] = useState('rtsp://127.0.0.1:8554/stream')
+  const [startTime, setStartTime] = useState('')
   const [status, setStatus] = useState('Ready')
   const [isBusy, setIsBusy] = useState(false)
   const [liveFrameUrl, setLiveFrameUrl] = useState<string | null>(null)
@@ -146,6 +147,7 @@ function App() {
   const onAddCamera = async (event: FormEvent) => {
     event.preventDefault()
     const newCameraId = cameraId
+    const hasStartTime = startTime.trim().length > 0
 
     await runAction(() =>
       fetch('/api/vms/cameras', {
@@ -153,8 +155,9 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           cameraId: newCameraId,
-          rtspUrl,
-          startImmediately: false
+          rtspUrl: hasStartTime ? '' : rtspUrl,
+          startImmediately: false,
+          startTime: hasStartTime ? startTime.trim() : null
         })
       })
     )
@@ -223,10 +226,18 @@ function App() {
                   fullWidth
                 />
                 <TextField
+                  label="Playback start time (YYYY-MM-DDTHH:mm:ss)"
+                  value={startTime}
+                  onChange={(event) => setStartTime(event.target.value)}
+                  helperText="If provided, camera is recreated and playback starts from nearest recorded file time."
+                  fullWidth
+                />
+                <TextField
                   label="RTSP URL"
                   value={rtspUrl}
                   onChange={(event) => setRtspUrl(event.target.value)}
-                  required
+                  required={startTime.trim().length === 0}
+                  disabled={startTime.trim().length > 0}
                   fullWidth
                 />
                 <Button disabled={isBusy} type="submit" variant="contained">

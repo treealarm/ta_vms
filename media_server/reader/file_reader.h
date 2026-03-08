@@ -27,11 +27,13 @@ public:
   void stop() override;
 
 private:
-  bool connect();
+  bool connect_current_file();
+  bool advance_to_next_file();
   void disconnect();
   void read_loop();
 
-  std::string m_file_path;
+  std::vector<std::string> m_file_paths;
+  size_t m_current_file_index = 0;
   AVFormatContext* m_ctx = nullptr;
   int m_video_index = -1;
   std::vector<media_sink*> m_sinks;

@@ -8,7 +8,7 @@ service CameraControlService {
   rpc StartRecording(CameraRequest) returns (OperationStatus);
   rpc StopRecording(CameraRequest) returns (OperationStatus);
   rpc StartPlayFile(PlayFileRequest) returns (OperationStatus);
-  rpc StopPlayFile(PlayFileRequest) returns (OperationStatus);
+  rpc StopPlayFile(CameraRequest) returns (OperationStatus);
   rpc StartJpegStream(JpegStreamRequest) returns (OperationStatus);
   rpc StopJpegStream(CameraRequest) returns (OperationStatus);
   rpc StreamJpegFrames(CameraRequest) returns (stream JpegFrame);
@@ -27,7 +27,7 @@ message CameraRequest {
 
 message PlayFileRequest {
   string camera_id = 1;
-  string relative_path = 2;
+  string start_time = 2;
 }
 
 message ListCamerasRequest {}
