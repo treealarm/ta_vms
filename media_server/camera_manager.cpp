@@ -17,11 +17,6 @@ bool camera_manager::add_camera(const std::string& camera_id,
     return false;
   }
 
-  if (m_cameras.contains(camera_id)) {
-    error = "camera already exists: " + camera_id;
-    return false;
-  }
-
   try {
     auto camera = std::make_unique<cam>(rtsp_url, camera_id, storage_base_path);
     if (start_immediately) {
