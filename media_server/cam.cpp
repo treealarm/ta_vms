@@ -53,6 +53,24 @@ cam::cam(const std::string& source,
   m_is_running = true;
 }
 
+cam::cam(const std::string& cam_id,
+         const file_playback_config& playback_config)
+    : m_source("records:" + playback_config.start_time),
+      m_cam_id(cam_id),
+      m_writer(resolve_storage_base_path(playback_config.storage_base_path), cam_id, 60) {
+  auto reader = std::make_unique<file_reader>(cam_id, resolve_storage_base_path(playback_config.storage_base_path));
+  if (!reader->open(playback_config.start_time)) {
+    throw std::runtime_error("Failed to open media source");
+  }
+
+  m_reader = std::move(reader);
+
+  m_writer.init(m_reader->video_stream());
+
+  m_reader->start();
+  m_is_running = true;
+}
+
 cam::~cam() {
   shutdown();
 }

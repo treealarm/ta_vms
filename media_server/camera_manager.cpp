@@ -1,59 +1,5 @@
 #include "camera_manager.h"
 
-#include <algorithm>
-#include <chrono>
-#include <cmath>
-#include <filesystem>
-#include <sstream>
-#include <iomanip>
-#include <ctime>
-#include <optional>
-#include <vector>
-
-namespace {
-std::optional<std::chrono::system_clock::time_point> parse_segment_start_time(
-    const std::string& file_name) {
-  if (file_name.size() < 19) {
-    return std::nullopt;
-  }
-
-  std::tm tm{};
-  std::istringstream stream(file_name.substr(0, 19));
-  stream >> std::get_time(&tm, "%Y-%m-%d_%H-%M-%S");
-  if (stream.fail()) {
-    return std::nullopt;
-  }
-
-  const std::time_t value = std::mktime(&tm);
-  if (value < 0) {
-    return std::nullopt;
-  }
-
-  return std::chrono::system_clock::from_time_t(value);
-}
-
-std::optional<std::chrono::system_clock::time_point> parse_requested_time(
-    const std::string& value) {
-  if (value.empty()) {
-    return std::nullopt;
-  }
-
-  std::tm tm{};
-  std::istringstream stream(value);
-  stream >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
-  if (stream.fail()) {
-    return std::nullopt;
-  }
-
-  const std::time_t parsed_time = std::mktime(&tm);
-  if (parsed_time < 0) {
-    return std::nullopt;
-  }
-
-  return std::chrono::system_clock::from_time_t(parsed_time);
-}
-}  // namespace
-
 bool camera_manager::add_camera(const std::string& camera_id,
                                 const std::string& rtsp_url,
                                 const std::string& storage_base_path,
@@ -210,66 +156,29 @@ bool camera_manager::start_play_file(const std::string& camera_id,
     return false;
   }
 
-  const auto requested_time = parse_requested_time(start_time);
-  if (!requested_time) {
-    error = "start_time must be in format YYYY-MM-DDTHH:MM:SS";
+  try {
+    std::scoped_lock lock(m_mutex);
+
+    auto existing = m_cameras.find(camera_id);
+    if (existing != m_cameras.end()) {
+      existing->second.camera->shutdown();
+      m_cameras.erase(existing);
+    }
+
+    auto playback_camera = std::make_unique<cam>(
+        camera_id, cam::file_playback_config{start_time, ""});
+
+    camera_entry entry;
+    entry.camera = std::move(playback_camera);
+    entry.source = "records:" + start_time;
+    entry.is_recording = false;
+
+    m_cameras.emplace(camera_id, std::move(entry));
+    return true;
+  } catch (const std::exception& ex) {
+    error = ex.what();
     return false;
   }
-
-  std::vector<std::filesystem::path> candidate_files;
-  const std::filesystem::path camera_directory = std::filesystem::path("records") / camera_id;
-
-  if (!std::filesystem::exists(camera_directory)) {
-    error = "records not found for camera: " + camera_id;
-    return false;
-  }
-
-  for (const auto& entry : std::filesystem::recursive_directory_iterator(camera_directory)) {
-    if (!entry.is_regular_file()) {
-      continue;
-    }
-
-    if (entry.path().extension() != ".mkv") {
-      continue;
-    }
-
-    if (parse_segment_start_time(entry.path().filename().string())) {
-      candidate_files.push_back(entry.path());
-    }
-  }
-
-  if (candidate_files.empty()) {
-    error = "no playable files found for camera: " + camera_id;
-    return false;
-  }
-
-  std::sort(candidate_files.begin(), candidate_files.end());
-
-  size_t best_index = 0;
-  std::chrono::system_clock::duration best_difference =
-    std::chrono::system_clock::duration::max();
-
-  for (size_t i = 0; i < candidate_files.size(); ++i) {
-    const auto parsed_time = parse_segment_start_time(candidate_files[i].filename().string());
-    if (!parsed_time) {
-      continue;
-    }
-
-    const auto difference = *parsed_time > *requested_time ? 
-      *parsed_time - *requested_time : *requested_time - *parsed_time;
-    if (difference < best_difference) {
-      best_difference = difference;
-      best_index = i;
-    }
-  }
-
-  std::vector<std::string> playlist;
-  playlist.reserve(candidate_files.size() - best_index);
-  for (size_t i = best_index; i < candidate_files.size(); ++i) {
-    playlist.push_back(candidate_files[i].string());
-  }
-
-  return add_camera(camera_id, "playlist:" + cam::join_playlist(playlist), "", false, error);
 }
 
 bool camera_manager::stop_play_file(const std::string& camera_id,

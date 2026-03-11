@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory>
 #include <mutex>
+#include <filesystem>
 
 #include "media/media_packet.h"
 #include "media/media_sink.h"
@@ -17,6 +18,7 @@ extern "C" {
 class file_reader final : public reader {
 public:
   file_reader();
+  file_reader(std::string camera_id, std::string storage_base_path);
   ~file_reader() override;
 
   bool open(const std::string& source) override;
@@ -29,6 +31,7 @@ public:
 private:
   bool connect_current_file();
   bool advance_to_next_file();
+  bool initialize_recording_file_sequence(const std::string& start_time);
   void disconnect();
   void read_loop();
 
@@ -41,4 +44,7 @@ private:
 
   std::thread m_thread;
   std::atomic<bool> m_running{ false };
+
+  std::string m_camera_id;
+  std::filesystem::path m_storage_base_path;
 };

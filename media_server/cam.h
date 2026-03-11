@@ -8,9 +8,16 @@
 
 class cam {
 public:
+  struct file_playback_config {
+    std::string start_time;
+    std::string storage_base_path;
+  };
+
   cam(const std::string& source,
       const std::string& cam_id,
       const std::string& storage_base_path = "");
+  cam(const std::string& cam_id,
+      const file_playback_config& playback_config);
 
   static std::string join_playlist(const std::vector<std::string>& files);
   ~cam();

@@ -1,6 +1,12 @@
 #include <algorithm>
+#include <chrono>
+#include <ctime>
+#include <filesystem>
+#include <iomanip>
 #include <iostream>
+#include <optional>
 #include <sstream>
+#include <utility>
 
 #include "file_reader.h"
 #include "media/av_deleters.h"
@@ -18,9 +24,55 @@ std::vector<std::string> split(const std::string& value, char delimiter) {
 
   return parts;
 }
+
+std::optional<std::chrono::system_clock::time_point> parse_segment_start_time(
+    const std::string& file_name) {
+  if (file_name.size() < 19) {
+    return std::nullopt;
+  }
+
+  std::tm tm{};
+  std::istringstream stream(file_name.substr(0, 19));
+  stream >> std::get_time(&tm, "%Y-%m-%d_%H-%M-%S");
+  if (stream.fail()) {
+    return std::nullopt;
+  }
+
+  const std::time_t value = std::mktime(&tm);
+  if (value < 0) {
+    return std::nullopt;
+  }
+
+  return std::chrono::system_clock::from_time_t(value);
+}
+
+std::optional<std::chrono::system_clock::time_point> parse_requested_time(
+    const std::string& value) {
+  if (value.empty()) {
+    return std::nullopt;
+  }
+
+  std::tm tm{};
+  std::istringstream stream(value);
+  stream >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
+  if (stream.fail()) {
+    return std::nullopt;
+  }
+
+  const std::time_t parsed_time = std::mktime(&tm);
+  if (parsed_time < 0) {
+    return std::nullopt;
+  }
+
+  return std::chrono::system_clock::from_time_t(parsed_time);
+}
 }
 
 file_reader::file_reader() = default;
+
+file_reader::file_reader(std::string camera_id, std::string storage_base_path)
+    : m_camera_id(std::move(camera_id)),
+      m_storage_base_path(std::move(storage_base_path)) {}
 
 file_reader::~file_reader() {
   stop();
@@ -31,7 +83,11 @@ bool file_reader::open(const std::string& source) {
   m_file_paths.clear();
   m_current_file_index = 0;
 
-  if (source.rfind("playlist:", 0) == 0) {
+  if (!m_camera_id.empty() && !m_storage_base_path.empty()) {
+    if (!initialize_recording_file_sequence(source)) {
+      return false;
+    }
+  } else if (source.rfind("playlist:", 0) == 0) {
     const auto list = source.substr(9);
     m_file_paths = split(list, '|');
   } else if (source.rfind("file:", 0) == 0) {
@@ -46,6 +102,68 @@ bool file_reader::open(const std::string& source) {
 
   disconnect();
   return connect_current_file();
+}
+
+bool file_reader::initialize_recording_file_sequence(const std::string& start_time) {
+  const auto requested_time = parse_requested_time(start_time);
+  if (!requested_time) {
+    std::cerr << "Invalid start time, expected YYYY-MM-DDTHH:MM:SS\n";
+    return false;
+  }
+
+  const std::filesystem::path camera_directory = m_storage_base_path / m_camera_id;
+  if (!std::filesystem::exists(camera_directory)) {
+    std::cerr << "records not found for camera: " << m_camera_id << "\n";
+    return false;
+  }
+
+  std::vector<std::filesystem::path> candidate_files;
+  for (const auto& entry : std::filesystem::recursive_directory_iterator(camera_directory)) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+
+    if (entry.path().extension() != ".mkv") {
+      continue;
+    }
+
+    if (parse_segment_start_time(entry.path().filename().string())) {
+      candidate_files.push_back(entry.path());
+    }
+  }
+
+  if (candidate_files.empty()) {
+    std::cerr << "no playable files found for camera: " << m_camera_id << "\n";
+    return false;
+  }
+
+  std::sort(candidate_files.begin(), candidate_files.end());
+
+  size_t best_index = 0;
+  std::chrono::system_clock::duration best_difference =
+      std::chrono::system_clock::duration::max();
+
+  for (size_t i = 0; i < candidate_files.size(); ++i) {
+    const auto parsed_time = parse_segment_start_time(candidate_files[i].filename().string());
+    if (!parsed_time) {
+      continue;
+    }
+
+    const auto difference = *parsed_time > *requested_time
+        ? *parsed_time - *requested_time
+        : *requested_time - *parsed_time;
+    if (difference < best_difference) {
+      best_difference = difference;
+      best_index = i;
+    }
+  }
+
+  m_file_paths.reserve(candidate_files.size() - best_index);
+  for (size_t i = best_index; i < candidate_files.size(); ++i) {
+    m_file_paths.push_back(candidate_files[i].string());
+  }
+
+  return !m_file_paths.empty();
 }
 
 bool file_reader::connect_current_file() {
