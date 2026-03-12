@@ -174,7 +174,7 @@ bool jpeg_streamer::init_encoder(std::string& error) {
   }
 
   m_encoder_ctx->time_base = AVRational{1, 25};
-  m_encoder_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
+  m_encoder_ctx->pix_fmt = AV_PIX_FMT_YUVJ420P;
   m_encoder_ctx->color_range = AVCOL_RANGE_JPEG;
   m_encoder_ctx->width = m_decoder_ctx->width;
   m_encoder_ctx->height = m_decoder_ctx->height;
