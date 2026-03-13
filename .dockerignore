@@ -6,3 +6,9 @@ build
 node_modules
 *.log
 *.tmp
+*.o
+*.a
+*.so
+.vscode
+Dockerfile
+docker-compose.yml

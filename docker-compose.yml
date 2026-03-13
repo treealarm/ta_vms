@@ -1,8 +1,9 @@
-version: "3.9"
 
 services:
   vms:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "${GRPC_VMS_PORT}:${GRPC_VMS_PORT}"
     env_file:
