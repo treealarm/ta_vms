@@ -167,8 +167,7 @@ void cam::on_packet(const std::shared_ptr<media_packet>& pkt) {
 
   if (m_is_recording) {
     if (!m_is_writer_initialized) {
-      auto* stream = m_reader->video_stream();
-      if (stream && m_writer.init(stream)) {
+      if (pkt->codec_parameters && m_writer.init(pkt->codec_parameters, pkt->time_base)) {
         m_is_writer_initialized = true;
       }
     }
