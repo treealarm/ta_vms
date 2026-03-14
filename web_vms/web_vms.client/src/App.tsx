@@ -39,6 +39,7 @@ function App() {
   const [status, setStatus] = useState('Ready')
   const [isBusy, setIsBusy] = useState(false)
   const [cameras, setCameras] = useState<CameraInfo[]>([])
+  const [isJpegStreamEnabled, setIsJpegStreamEnabled] = useState(false)
 
   const selectedCamera = cameras.find((camera) => camera.cameraId === cameraId)
   const isRecording = selectedCamera?.isRecording ?? false
@@ -120,6 +121,7 @@ function App() {
 
   const onCameraSelect = (selectedCameraId: string) => {
     setCameraId(selectedCameraId)
+    setIsJpegStreamEnabled(false)
     const selectedCamera = cameras.find((camera) => camera.cameraId === selectedCameraId)
     if (selectedCamera) {
       setRtspUrl(selectedCamera.rtspUrl)
@@ -131,9 +133,39 @@ function App() {
       fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/state`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recording: !isRecording, jpegStream: false })
+        body: JSON.stringify({ recording: !isRecording, jpegStream: isJpegStreamEnabled })
       })
     )
+  }
+
+  const onToggleJpegStream = async () => {
+    const nextJpegStreamState = !isJpegStreamEnabled
+
+    setIsBusy(true)
+    try {
+      const response = await fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/state`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recording: isRecording, jpegStream: nextJpegStreamState })
+      })
+
+      if (!response.ok) {
+        setStatus(`Error: ${await getErrorMessage(response)}`)
+        return
+      }
+
+      const result: ApiResponse = await response.json()
+      setStatus(`${result.success ? 'OK' : 'Fail'}: ${result.message}`)
+      if (result.success) {
+        setIsJpegStreamEnabled(nextJpegStreamState)
+      }
+      await loadCameras(cameraId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      setStatus(`Error: ${message}`)
+    } finally {
+      setIsBusy(false)
+    }
   }
 
   return (
@@ -225,6 +257,17 @@ function App() {
                     onClick={onToggleRecording}
                   >
                     REC
+                  </Button>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+                  <Button
+                    fullWidth
+                    disabled={isBusy}
+                    variant={isJpegStreamEnabled ? 'contained' : 'outlined'}
+                    color={isJpegStreamEnabled ? 'secondary' : 'primary'}
+                    onClick={() => void onToggleJpegStream()}
+                  >
+                    JPEG STREAM
                   </Button>
                 </Grid>
               </Grid>
