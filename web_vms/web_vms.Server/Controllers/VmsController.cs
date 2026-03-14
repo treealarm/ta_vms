@@ -51,7 +51,16 @@ public class VmsController(
   [HttpPost("cameras/{cameraId}/recording/start")]
   public async Task<IActionResult> StartRecording(string cameraId, CancellationToken ct)
   {
-    var response = await grpcClient.StartRecordingAsync(new CameraRequest { CameraId = cameraId }, cancellationToken: ct);
+    var response = await grpcClient.SetCameraStateAsync(new SetCameraStateRequest
+    {
+      CameraId = cameraId,
+      State = new CameraState
+      {
+        Recording = true,
+        JpegStream = false
+      }
+    }, cancellationToken: ct);
+
     return Ok(ToApiResponse(response));
   }
 
