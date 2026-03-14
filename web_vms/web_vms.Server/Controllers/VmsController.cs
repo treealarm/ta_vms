@@ -40,6 +40,30 @@ public class VmsController(
     return Ok(ToApiResponse(response));
   }
 
+  [HttpDelete("cameras/{cameraId}")]
+  public async Task<IActionResult> RemoveCamera(string cameraId, [FromQuery] bool isArchive, CancellationToken ct)
+  {
+    OperationStatus response;
+
+    if (isArchive)
+    {
+      response = await grpcClient.RemoveArchPlayerAsync(new PlayFileRequest
+      {
+        CameraId = cameraId,
+        ClientId = $"{cameraId}_arch"
+      }, cancellationToken: ct);
+    }
+    else
+    {
+      response = await grpcClient.RemoveCameraAsync(new CameraRequest
+      {
+        CameraId = cameraId
+      }, cancellationToken: ct);
+    }
+
+    return Ok(ToApiResponse(response));
+  }
+
   [HttpGet("cameras")]
   public async Task<IActionResult> ListCameras(CancellationToken ct)
   {
