@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using System.Net.WebSockets;
 using Vms.Control;
 
 namespace web_vms.Server.Controllers;
@@ -72,6 +73,26 @@ public class VmsController(
     }, cancellationToken: ct);
 
     return Ok(ToApiResponse(response));
+  }
+
+  [HttpGet("cameras/{cameraId}/jpeg/ws")]
+  public async Task StreamFramesOverWebSocket(string cameraId, CancellationToken ct)
+  {
+    if (!HttpContext.WebSockets.IsWebSocketRequest)
+    {
+      Response.StatusCode = StatusCodes.Status400BadRequest;
+      await Response.WriteAsync("WebSocket request expected.", ct);
+      return;
+    }
+
+    using var webSocket = await HttpContext.WebSockets.AcceptWebSocketAsync();
+    using var call = grpcClient.StreamJpegFrames(new CameraRequest { CameraId = cameraId }, cancellationToken: ct);
+
+    while (!ct.IsCancellationRequested && webSocket.State == WebSocketState.Open && await call.ResponseStream.MoveNext(ct))
+    {
+      var frameData = call.ResponseStream.Current.JpegData.Memory;
+      await webSocket.SendAsync(frameData, WebSocketMessageType.Binary, true, ct);
+    }
   }
 
   private static ApiResponse ToApiResponse(OperationStatus status) => new(status.Success, status.Message);

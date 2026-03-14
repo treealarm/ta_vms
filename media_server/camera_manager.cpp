@@ -127,6 +127,25 @@ bool camera_manager::set_camera_state(const std::string& camera_id,
   return true;
 }
 
+
+bool camera_manager::wait_next_jpeg_frame(const std::string& camera_id,
+                                          std::vector<uint8_t>& frame,
+                                          uint64_t& frame_number,
+                                          std::string& error) {
+  std::unique_lock lock(m_mutex);
+
+  auto it = m_cameras.find(camera_id);
+  if (it == m_cameras.end()) {
+    error = "camera not found: " + camera_id;
+    return false;
+  }
+
+  auto* camera = it->second.camera.get();
+  lock.unlock();
+
+  return camera->wait_next_jpeg_frame(frame, frame_number, error);
+}
+
 std::vector<camera_manager::camera_info> camera_manager::list_cameras() const {
   std::scoped_lock lock(m_mutex);
 

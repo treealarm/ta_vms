@@ -22,8 +22,12 @@ public:
                               vms::control::OperationStatus* response) override;
 
   grpc::Status SetCameraState(grpc::ServerContext* context,
-                               const vms::control::SetCameraStateRequest* request,
-                               vms::control::OperationStatus* response) override;
+                              const vms::control::SetCameraStateRequest* request,
+                              vms::control::OperationStatus* response) override;
+
+  grpc::Status StreamJpegFrames(grpc::ServerContext* context,
+                                const vms::control::CameraRequest* request,
+                                grpc::ServerWriter<vms::control::JpegFrame>* writer) override;
 
   grpc::Status StartPlayFile(::grpc::ServerContext* context, 
                             const ::vms::control::PlayFileRequest* request, 

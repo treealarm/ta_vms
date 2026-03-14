@@ -61,6 +61,31 @@ grpc::Status camera_control_service::SetCameraState(
   return grpc::Status::OK;
 }
 
+grpc::Status camera_control_service::StreamJpegFrames(
+    grpc::ServerContext* context,
+    const vms::control::CameraRequest* request,
+    grpc::ServerWriter<vms::control::JpegFrame>* writer) {
+  while (!context->IsCancelled()) {
+    std::vector<uint8_t> frame;
+    uint64_t frame_number = 0;
+    std::string error;
+
+    if (!m_manager.wait_next_jpeg_frame(request->camera_id(), frame, frame_number, error)) {
+      return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, error);
+    }
+
+    vms::control::JpegFrame response_frame;
+    response_frame.set_jpeg_data(frame.data(), static_cast<int>(frame.size()));
+    response_frame.set_frame_number(frame_number);
+
+    if (!writer->Write(response_frame)) {
+      break;
+    }
+  }
+
+  return grpc::Status::OK;
+}
+
 grpc::Status camera_control_service::StartPlayFile(
     grpc::ServerContext* /*context*/,
     const vms::control::PlayFileRequest* request,
