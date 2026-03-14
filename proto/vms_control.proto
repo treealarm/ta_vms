@@ -5,6 +5,8 @@ package vms.control;
 service CameraControlService {
   rpc AddCamera(AddCameraRequest) returns (OperationStatus);
   rpc AddArchPlayer(PlayFileRequest) returns (OperationStatus);
+  rpc RemoveCamera(CameraRequest) returns (OperationStatus);
+  rpc RemoveArchPlayer(PlayFileRequest) returns (OperationStatus);
   rpc ListCameras(ListCamerasRequest) returns (ListCamerasResponse);
   rpc SetCameraState(SetCameraStateRequest) returns (OperationStatus);
   rpc SetPlayerState(PlayFileRequest) returns (OperationStatus);

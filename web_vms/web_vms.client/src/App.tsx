@@ -122,6 +122,15 @@ function App() {
     )
   }
 
+
+  const onRemoveCamera = async (camera: CameraInfo) => {
+    await runAction(() =>
+      fetch(`/api/vms/cameras/${encodeURIComponent(camera.cameraId)}?isArchive=${camera.rtspUrl.trim().length === 0}`, {
+        method: 'DELETE'
+      })
+    )
+  }
+
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto', p: { xs: 2, md: 4 } }}>
       <Stack spacing={2.5}>
@@ -213,6 +222,7 @@ function App() {
                         await loadCameras()
                       }}
                       onActionError={setStatus}
+                      onRemove={onRemoveCamera}
                     />
                   </Grid>
                 ))}
