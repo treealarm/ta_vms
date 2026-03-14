@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
   Alert,
@@ -6,26 +6,19 @@ import {
   Button,
   Card,
   CardContent,
-  FormControl,
   Grid,
-  InputLabel,
-  MenuItem,
-  Select,
   Stack,
   TextField,
   Typography
 } from '@mui/material'
+import CameraStreamCard, { type CameraInfo } from './components/CameraStreamCard'
 
 type ApiResponse = {
   success: boolean
   message: string
 }
 
-type CameraInfo = {
-  cameraId: string
-  rtspUrl: string
-  isRecording: boolean
-}
+const MAX_CAMERAS = 4
 
 const getErrorMessage = async (response: Response): Promise<string> => {
   const text = await response.text()
@@ -39,15 +32,11 @@ function App() {
   const [status, setStatus] = useState('Ready')
   const [isBusy, setIsBusy] = useState(false)
   const [cameras, setCameras] = useState<CameraInfo[]>([])
-  const [isJpegStreamEnabled, setIsJpegStreamEnabled] = useState(false)
-  const [liveFrameUrl, setLiveFrameUrl] = useState<string | null>(null)
 
-  const selectedCamera = cameras.find((camera) => camera.cameraId === cameraId)
-  const isRecording = selectedCamera?.isRecording ?? false
-  const archiveClientId = `${cameraId}_arch`
-  const streamClientId = startTime.trim().length > 0 ? archiveClientId : ''
+  const visibleCameras = useMemo(() => cameras.slice(0, MAX_CAMERAS), [cameras])
+  const isLimitReached = cameras.length >= MAX_CAMERAS
 
-  const loadCameras = useCallback(async (preferredCameraId?: string) => {
+  const loadCameras = useCallback(async () => {
     try {
       const response = await fetch('/api/vms/cameras')
       if (!response.ok) {
@@ -56,72 +45,15 @@ function App() {
 
       const cameraList: CameraInfo[] = await response.json()
       setCameras(cameraList)
-
-      if (preferredCameraId) {
-        const preferredCamera = cameraList.find((camera) => camera.cameraId === preferredCameraId)
-        if (preferredCamera) {
-          setCameraId(preferredCamera.cameraId)
-          setRtspUrl(preferredCamera.rtspUrl)
-          return
-        }
-      }
-
-      const selectedCamera = cameraList.find((camera) => camera.cameraId === cameraId)
-      if (selectedCamera) {
-        setRtspUrl(selectedCamera.rtspUrl)
-      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       setStatus(`Error loading cameras: ${message}`)
     }
-  }, [cameraId])
+  }, [])
 
   useEffect(() => {
     void loadCameras()
   }, [loadCameras])
-
-  useEffect(() => {
-    if (!isJpegStreamEnabled) {
-      setLiveFrameUrl((previousUrl) => {
-        if (previousUrl) {
-          URL.revokeObjectURL(previousUrl)
-        }
-
-        return null
-      })
-      return
-    }
-
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const query = streamClientId ? `?clientId=${encodeURIComponent(streamClientId)}` : ''
-    const ws = new WebSocket(`${wsProtocol}://${window.location.host}/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/ws${query}`)
-    ws.binaryType = 'blob'
-
-    ws.onopen = () => setStatus('WebSocket JPEG stream connected')
-    ws.onerror = () => setStatus('WebSocket JPEG stream error')
-    ws.onclose = () => setStatus('WebSocket JPEG stream disconnected')
-    ws.onmessage = (event) => {
-      const objectUrl = URL.createObjectURL(event.data as Blob)
-      setLiveFrameUrl((previousUrl) => {
-        if (previousUrl) {
-          URL.revokeObjectURL(previousUrl)
-        }
-
-        return objectUrl
-      })
-    }
-
-    return () => {
-      ws.close()
-      setLiveFrameUrl((previousUrl) => {
-        if (previousUrl) {
-          URL.revokeObjectURL(previousUrl)
-        }
-
-        return null
-      })
-    }
-  }, [cameraId, isJpegStreamEnabled, streamClientId])
 
   const runAction = async (action: () => Promise<Response>) => {
     setIsBusy(true)
@@ -134,7 +66,7 @@ function App() {
 
       const result: ApiResponse = await response.json()
       setStatus(`${result.success ? 'OK' : 'Fail'}: ${result.message}`)
-      await loadCameras(cameraId)
+      await loadCameras()
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       setStatus(`Error: ${message}`)
@@ -145,76 +77,53 @@ function App() {
 
   const onAddCamera = async (event: FormEvent) => {
     event.preventDefault()
-    const newCameraId = cameraId
-    const hasStartTime = startTime.trim().length > 0
+    if (isLimitReached) {
+      setStatus(`Error: Maximum ${MAX_CAMERAS} cameras supported in grid view`)
+      return
+    }
 
     await runAction(() =>
       fetch('/api/vms/cameras', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          cameraId: newCameraId,
-          rtspUrl: hasStartTime ? '' : rtspUrl,
+          cameraId,
+          rtspUrl,
           state: { recording: false, jpegStream: false },
-          startTime: hasStartTime ? startTime.trim() : null
+          startTime: null
         })
       })
     )
-
-    await loadCameras(newCameraId)
   }
 
-  const onCameraSelect = (selectedCameraId: string) => {
-    setCameraId(selectedCameraId)
-    setIsJpegStreamEnabled(false)
-    const selectedCamera = cameras.find((camera) => camera.cameraId === selectedCameraId)
-    if (selectedCamera) {
-      setRtspUrl(selectedCamera.rtspUrl)
+  const onAddPlayer = async () => {
+    if (isLimitReached) {
+      setStatus(`Error: Maximum ${MAX_CAMERAS} cameras supported in grid view`)
+      return
     }
-  }
 
-  const onToggleRecording = () => {
-    void runAction(() =>
-      fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/state`, {
+    const trimmedStartTime = startTime.trim()
+    if (!trimmedStartTime) {
+      setStatus('Error: Playback start time is required for add player')
+      return
+    }
+
+    await runAction(() =>
+      fetch('/api/vms/cameras', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recording: !isRecording, jpegStream: isJpegStreamEnabled })
+        body: JSON.stringify({
+          cameraId,
+          rtspUrl: '',
+          state: { recording: false, jpegStream: false },
+          startTime: trimmedStartTime
+        })
       })
     )
   }
 
-  const onToggleJpegStream = async () => {
-    const nextJpegStreamState = !isJpegStreamEnabled
-
-    setIsBusy(true)
-    try {
-      const response = await fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/state`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recording: isRecording, jpegStream: nextJpegStreamState })
-      })
-
-      if (!response.ok) {
-        setStatus(`Error: ${await getErrorMessage(response)}`)
-        return
-      }
-
-      const result: ApiResponse = await response.json()
-      setStatus(`${result.success ? 'OK' : 'Fail'}: ${result.message}`)
-      if (result.success) {
-        setIsJpegStreamEnabled(nextJpegStreamState)
-      }
-      await loadCameras(cameraId)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error'
-      setStatus(`Error: ${message}`)
-    } finally {
-      setIsBusy(false)
-    }
-  }
-
   return (
-    <Box sx={{ maxWidth: 1100, mx: 'auto', p: { xs: 2, md: 4 } }}>
+    <Box sx={{ maxWidth: 1200, mx: 'auto', p: { xs: 2, md: 4 } }}>
       <Stack spacing={2.5}>
         <Typography variant="h4" component="h1" fontWeight={700}>
           VMS gRPC Test Console
@@ -224,39 +133,7 @@ function App() {
           <CardContent>
             <Box component="form" onSubmit={onAddCamera}>
               <Stack spacing={2}>
-                <Typography variant="h6">Camera</Typography>
-                <Grid container spacing={2}>
-                  <Grid size={{ xs: 12, md: 8 }}>
-                    <FormControl fullWidth>
-                      <InputLabel id="camera-select-label">Added cameras</InputLabel>
-                      <Select
-                        labelId="camera-select-label"
-                        label="Added cameras"
-                        value={cameras.some((camera) => camera.cameraId === cameraId) ? cameraId : ''}
-                        onChange={(event) => onCameraSelect(event.target.value)}
-                      >
-                        <MenuItem value="">Select added camera</MenuItem>
-                        {cameras.map((camera) => (
-                          <MenuItem key={camera.cameraId} value={camera.cameraId}>
-                            {camera.cameraId} ({camera.isRecording ? 'recording' : 'idle'})
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                  <Grid size={{ xs: 12, md: 4 }}>
-                    <Button
-                      type="button"
-                      variant="outlined"
-                      fullWidth
-                      disabled={isBusy}
-                      sx={{ height: '100%' }}
-                      onClick={() => void loadCameras(cameraId)}
-                    >
-                      Refresh list
-                    </Button>
-                  </Grid>
-                </Grid>
+                <Typography variant="h6">Camera setup</Typography>
 
                 <TextField
                   label="Camera ID"
@@ -265,23 +142,56 @@ function App() {
                   required
                   fullWidth
                 />
-                <TextField
-                  label="Playback start time (YYYY-MM-DDTHH:mm:ss)"
-                  value={startTime}
-                  onChange={(event) => setStartTime(event.target.value)}
-                  helperText="If provided, camera is recreated and playback starts from nearest recorded file time."
-                  fullWidth
-                />
-                <TextField
-                  label="RTSP URL"
-                  value={rtspUrl}
-                  onChange={(event) => setRtspUrl(event.target.value)}
-                  required={startTime.trim().length === 0}
-                  disabled={startTime.trim().length > 0}
-                  fullWidth
-                />
-                <Button disabled={isBusy} type="submit" variant="contained">
-                  Add camera
+
+                <Grid container spacing={1.5} alignItems="stretch">
+                  <Grid size={{ xs: 12, md: 9 }}>
+                    <TextField
+                      label="Playback start time (YYYY-MM-DDTHH:mm:ss)"
+                      value={startTime}
+                      onChange={(event) => setStartTime(event.target.value)}
+                      helperText="Creates camera player from archive start time"
+                      fullWidth
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 3 }}>
+                    <Button
+                      type="button"
+                      variant="outlined"
+                      disabled={isBusy || isLimitReached}
+                      fullWidth
+                      sx={{ height: '100%' }}
+                      onClick={() => void onAddPlayer()}
+                    >
+                      Add player
+                    </Button>
+                  </Grid>
+                </Grid>
+
+                <Grid container spacing={1.5} alignItems="stretch">
+                  <Grid size={{ xs: 12, md: 9 }}>
+                    <TextField
+                      label="RTSP URL"
+                      value={rtspUrl}
+                      onChange={(event) => setRtspUrl(event.target.value)}
+                      required
+                      fullWidth
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 3 }}>
+                    <Button
+                      disabled={isBusy || isLimitReached}
+                      type="submit"
+                      variant="contained"
+                      fullWidth
+                      sx={{ height: '100%' }}
+                    >
+                      Add camera
+                    </Button>
+                  </Grid>
+                </Grid>
+
+                <Button type="button" variant="text" disabled={isBusy} onClick={() => void loadCameras()}>
+                  Refresh list
                 </Button>
               </Stack>
             </Box>
@@ -291,53 +201,25 @@ function App() {
         <Card>
           <CardContent>
             <Stack spacing={2}>
-              <Typography variant="h6">Commands</Typography>
-              <Grid container spacing={1.5}>
-                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                  <Button
-                    fullWidth
-                    disabled={isBusy}
-                    variant={isRecording ? 'contained' : 'outlined'}
-                    color={isRecording ? 'error' : 'primary'}
-                    onClick={onToggleRecording}
-                  >
-                    REC
-                  </Button>
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                  <Button
-                    fullWidth
-                    disabled={isBusy}
-                    variant={isJpegStreamEnabled ? 'contained' : 'outlined'}
-                    color={isJpegStreamEnabled ? 'secondary' : 'primary'}
-                    onClick={() => void onToggleJpegStream()}
-                  >
-                    JPEG STREAM
-                  </Button>
-                </Grid>
+              <Typography variant="h6">Streams grid (up to 4 cameras)</Typography>
+              <Grid container spacing={2}>
+                {visibleCameras.map((camera) => (
+                  <Grid key={camera.cameraId} size={{ xs: 12, sm: 6 }}>
+                    <CameraStreamCard
+                      camera={camera}
+                      isBusy={isBusy}
+                      onActionComplete={async (message) => {
+                        setStatus(message)
+                        await loadCameras()
+                      }}
+                      onActionError={setStatus}
+                    />
+                  </Grid>
+                ))}
               </Grid>
-            </Stack>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent>
-            <Stack spacing={2}>
-              <Typography variant="h6">Frames</Typography>
-              <Box
-                component="img"
-                src={liveFrameUrl ?? undefined}
-                alt="Live JPEG stream"
-                sx={{
-                  width: '100%',
-                  minHeight: 280,
-                  objectFit: 'contain',
-                  border: 1,
-                  borderColor: 'divider',
-                  borderRadius: 2,
-                  bgcolor: 'background.default'
-                }}
-              />
+              {visibleCameras.length === 0 ? (
+                <Typography color="text.secondary">No cameras added yet.</Typography>
+              ) : null}
             </Stack>
           </CardContent>
         </Card>
