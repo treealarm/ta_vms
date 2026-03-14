@@ -55,18 +55,6 @@ grpc::Status camera_control_service::ListCameras(
   return grpc::Status::OK;
 }
 
-grpc::Status camera_control_service::StartRecording(
-    grpc::ServerContext* /*context*/,
-    const vms::control::CameraRequest* request,
-    vms::control::OperationStatus* response) {
-  std::string error;
-  const bool success = m_manager.start_recording(request->camera_id(), error);
-
-  response->set_success(success);
-  response->set_message(success ? "recording started" : error);
-  return grpc::Status::OK;
-}
-
 grpc::Status camera_control_service::SetCameraState(
     grpc::ServerContext* /*context*/,
     const vms::control::SetCameraStateRequest* request,

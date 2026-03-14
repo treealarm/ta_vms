@@ -6,7 +6,6 @@ service CameraControlService {
   rpc AddCamera(AddCameraRequest) returns (OperationStatus);
   rpc AddArchPlayer(PlayFileRequest) returns (OperationStatus);
   rpc ListCameras(ListCamerasRequest) returns (ListCamerasResponse);
-  rpc StartRecording(CameraRequest) returns (OperationStatus);
   rpc SetCameraState(SetCameraStateRequest) returns (OperationStatus);
   rpc SetPlayerState(PlayFileRequest) returns (OperationStatus);
   rpc StreamJpegFrames(CameraRequest) returns (stream JpegFrame);

@@ -21,9 +21,6 @@ public:
                            const vms::control::ListCamerasRequest* request,
                            vms::control::ListCamerasResponse* response) override;
 
-  grpc::Status StartRecording(grpc::ServerContext* context,
-                              const vms::control::CameraRequest* request,
-                              vms::control::OperationStatus* response) override;
 
   grpc::Status SetCameraState(grpc::ServerContext* context,
                               const vms::control::SetCameraStateRequest* request,
