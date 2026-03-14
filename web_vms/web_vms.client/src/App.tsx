@@ -34,6 +34,10 @@ function App() {
   const [cameras, setCameras] = useState<CameraInfo[]>([])
 
   const visibleCameras = useMemo(() => cameras.slice(0, MAX_CAMERAS), [cameras])
+  const cameraSlots = useMemo(
+    () => Array.from({ length: MAX_CAMERAS }, (_, index) => visibleCameras[index] ?? null),
+    [visibleCameras]
+  )
   const isLimitReached = cameras.length >= MAX_CAMERAS
 
   const loadCameras = useCallback(async () => {
@@ -122,6 +126,15 @@ function App() {
     )
   }
 
+
+  const onRemoveCamera = async (camera: CameraInfo) => {
+    await runAction(() =>
+      fetch(`/api/vms/cameras/${encodeURIComponent(camera.cameraId)}?isArchive=${camera.rtspUrl.trim().length === 0}`, {
+        method: 'DELETE'
+      })
+    )
+  }
+
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto', p: { xs: 2, md: 4 } }}>
       <Stack spacing={2.5}>
@@ -203,23 +216,50 @@ function App() {
             <Stack spacing={2}>
               <Typography variant="h6">Streams grid (up to 4 cameras)</Typography>
               <Grid container spacing={2}>
-                {visibleCameras.map((camera) => (
-                  <Grid key={camera.cameraId} size={{ xs: 12, sm: 6 }}>
-                    <CameraStreamCard
-                      camera={camera}
-                      isBusy={isBusy}
-                      onActionComplete={async (message) => {
-                        setStatus(message)
-                        await loadCameras()
-                      }}
-                      onActionError={setStatus}
-                    />
+                {cameraSlots.map((camera, index) => (
+                  <Grid key={camera?.cameraId ?? `empty-slot-${index + 1}`} size={{ xs: 12, sm: 6 }}>
+                    {camera ? (
+                      <CameraStreamCard
+                        camera={camera}
+                        isBusy={isBusy}
+                        onActionComplete={async (message) => {
+                          setStatus(message)
+                          await loadCameras()
+                        }}
+                        onActionError={setStatus}
+                        onRemove={onRemoveCamera}
+                      />
+                    ) : (
+                      <Card
+                        variant="outlined"
+                        sx={{
+                          height: '100%',
+                          minHeight: 320,
+                          borderStyle: 'dashed',
+                          borderColor: 'divider',
+                          bgcolor: 'action.hover'
+                        }}
+                      >
+                        <CardContent sx={{ height: '100%' }}>
+                          <Stack
+                            sx={{ height: '100%' }}
+                            alignItems="center"
+                            justifyContent="center"
+                            spacing={1}
+                          >
+                            <Typography variant="subtitle1" color="text.secondary">
+                              Slot {index + 1}
+                            </Typography>
+                            <Typography variant="body2" color="text.disabled">
+                              Empty
+                            </Typography>
+                          </Stack>
+                        </CardContent>
+                      </Card>
+                    )}
                   </Grid>
                 ))}
               </Grid>
-              {visibleCameras.length === 0 ? (
-                <Typography color="text.secondary">No cameras added yet.</Typography>
-              ) : null}
             </Stack>
           </CardContent>
         </Card>

@@ -128,6 +128,41 @@ bool camera_manager::set_camera_state(const std::string& camera_id,
 }
 
 
+bool camera_manager::remove_camera(const std::string& camera_id,
+                                 std::string& error) {
+  std::scoped_lock lock(m_mutex);
+
+  auto it = m_cameras.find(camera_id);
+  if (it == m_cameras.end()) {
+    error = "camera not found: " + camera_id;
+    return false;
+  }
+
+  it->second.camera->shutdown();
+  m_cameras.erase(it);
+  return true;
+}
+
+bool camera_manager::remove_arch_player(const std::string& client_id,
+                                      std::string& error) {
+  std::scoped_lock lock(m_mutex);
+
+  if (client_id.empty()) {
+    error = "client_id must not be empty";
+    return false;
+  }
+
+  auto it = m_arch_players_by_client.find(client_id);
+  if (it == m_arch_players_by_client.end()) {
+    error = "archive player not found for client: " + client_id;
+    return false;
+  }
+
+  it->second.shutdown();
+  m_arch_players_by_client.erase(it);
+  return true;
+}
+
 bool camera_manager::wait_next_jpeg_frame(const std::string& stream_id,
                                           std::vector<uint8_t>& frame,
                                           uint64_t& frame_number,

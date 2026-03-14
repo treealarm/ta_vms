@@ -41,6 +41,33 @@ grpc::Status camera_control_service::AddArchPlayer(
   return grpc::Status::OK;
 }
 
+grpc::Status camera_control_service::RemoveCamera(
+    grpc::ServerContext* /*context*/,
+    const vms::control::CameraRequest* request,
+    vms::control::OperationStatus* response) {
+  std::string error;
+  const bool success = m_manager.remove_camera(request->camera_id(), error);
+
+  response->set_success(success);
+  response->set_message(success ? "camera removed" : error);
+  return grpc::Status::OK;
+}
+
+grpc::Status camera_control_service::RemoveArchPlayer(
+    grpc::ServerContext* /*context*/,
+    const vms::control::PlayFileRequest* request,
+    vms::control::OperationStatus* response) {
+  std::string error;
+  const std::string client_id = request->client_id().empty()
+      ? request->camera_id() + "_arch"
+      : request->client_id();
+  const bool success = m_manager.remove_arch_player(client_id, error);
+
+  response->set_success(success);
+  response->set_message(success ? "archive player removed" : error);
+  return grpc::Status::OK;
+}
+
 grpc::Status camera_control_service::ListCameras(
     grpc::ServerContext* /*context*/,
     const vms::control::ListCamerasRequest* /*request*/,

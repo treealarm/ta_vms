@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   CardContent,
+  IconButton,
   Stack,
   Typography
 } from '@mui/material'
@@ -24,6 +25,7 @@ type CameraStreamCardProps = {
   isBusy: boolean
   onActionComplete: (message: string) => Promise<void>
   onActionError: (message: string) => void
+  onRemove: (camera: CameraInfo) => Promise<void>
 }
 
 const getErrorMessage = async (response: Response): Promise<string> => {
@@ -35,7 +37,8 @@ function CameraStreamCard({
   camera,
   isBusy,
   onActionComplete,
-  onActionError
+  onActionError,
+  onRemove
 }: CameraStreamCardProps) {
   const [isJpegStreamEnabled, setIsJpegStreamEnabled] = useState(false)
   const [frameUrl, setFrameUrl] = useState<string | null>(null)
@@ -117,7 +120,17 @@ function CameraStreamCard({
     <Card sx={{ height: '100%' }}>
       <CardContent>
         <Stack spacing={1.5}>
-          <Typography variant="h6">{camera.cameraId}</Typography>
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Typography variant="h6">{camera.cameraId}</Typography>
+            <IconButton
+              size="small"
+              disabled={busy}
+              aria-label={`Remove ${camera.cameraId}`}
+              onClick={() => void onRemove(camera)}
+            >
+              ✕
+            </IconButton>
+          </Stack>
           <Typography variant="body2" color="text.secondary" noWrap title={camera.rtspUrl}>
             {camera.rtspUrl}
           </Typography>
