@@ -40,6 +40,7 @@ function App() {
   const [isBusy, setIsBusy] = useState(false)
   const [cameras, setCameras] = useState<CameraInfo[]>([])
   const [isJpegStreamEnabled, setIsJpegStreamEnabled] = useState(false)
+  const [liveFrameUrl, setLiveFrameUrl] = useState<string | null>(null)
 
   const selectedCamera = cameras.find((camera) => camera.cameraId === cameraId)
   const isRecording = selectedCamera?.isRecording ?? false
@@ -77,6 +78,47 @@ function App() {
     void loadCameras()
   }, [loadCameras])
 
+  useEffect(() => {
+    if (!isJpegStreamEnabled) {
+      setLiveFrameUrl((previousUrl) => {
+        if (previousUrl) {
+          URL.revokeObjectURL(previousUrl)
+        }
+
+        return null
+      })
+      return
+    }
+
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+    const ws = new WebSocket(`${wsProtocol}://${window.location.host}/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/ws`)
+    ws.binaryType = 'blob'
+
+    ws.onopen = () => setStatus('WebSocket JPEG stream connected')
+    ws.onerror = () => setStatus('WebSocket JPEG stream error')
+    ws.onclose = () => setStatus('WebSocket JPEG stream disconnected')
+    ws.onmessage = (event) => {
+      const objectUrl = URL.createObjectURL(event.data as Blob)
+      setLiveFrameUrl((previousUrl) => {
+        if (previousUrl) {
+          URL.revokeObjectURL(previousUrl)
+        }
+
+        return objectUrl
+      })
+    }
+
+    return () => {
+      ws.close()
+      setLiveFrameUrl((previousUrl) => {
+        if (previousUrl) {
+          URL.revokeObjectURL(previousUrl)
+        }
+
+        return null
+      })
+    }
+  }, [cameraId, isJpegStreamEnabled])
 
   const runAction = async (action: () => Promise<Response>) => {
     setIsBusy(true)
@@ -271,6 +313,28 @@ function App() {
                   </Button>
                 </Grid>
               </Grid>
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent>
+            <Stack spacing={2}>
+              <Typography variant="h6">Frames</Typography>
+              <Box
+                component="img"
+                src={liveFrameUrl ?? undefined}
+                alt="Live JPEG stream"
+                sx={{
+                  width: '100%',
+                  minHeight: 280,
+                  objectFit: 'contain',
+                  border: 1,
+                  borderColor: 'divider',
+                  borderRadius: 2,
+                  bgcolor: 'background.default'
+                }}
+              />
             </Stack>
           </CardContent>
         </Card>

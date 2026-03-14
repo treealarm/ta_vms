@@ -35,6 +35,10 @@ public:
                        std::string& error);
   bool stop_play_file(const std::string& camera_id,
                       std::string& error);
+  bool wait_next_jpeg_frame(const std::string& camera_id,
+                            std::vector<uint8_t>& frame,
+                            uint64_t& frame_number,
+                            std::string& error);
 
   std::vector<camera_info> list_cameras() const;
 
