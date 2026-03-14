@@ -20,6 +20,27 @@ grpc::Status camera_control_service::AddCamera(
   return grpc::Status::OK;
 }
 
+grpc::Status camera_control_service::AddArchPlayer(
+    grpc::ServerContext* /*context*/,
+    const vms::control::PlayFileRequest* request,
+    vms::control::OperationStatus* response) {
+  std::string error;
+  const bool jpeg_stream = request->has_jpeg_stream() ? request->jpeg_stream() : true;
+  const std::string client_id = request->client_id().empty()
+      ? request->camera_id() + "_arch"
+      : request->client_id();
+  const bool success = m_manager.add_arch_player(request->camera_id(),
+                                                 client_id,
+                                                 request->start_time(),
+                                                 std::string(),
+                                                 jpeg_stream,
+                                                 error);
+
+  response->set_success(success);
+  response->set_message(success ? "archive player added" : error);
+  return grpc::Status::OK;
+}
+
 grpc::Status camera_control_service::ListCameras(
     grpc::ServerContext* /*context*/,
     const vms::control::ListCamerasRequest* /*request*/,
@@ -61,6 +82,26 @@ grpc::Status camera_control_service::SetCameraState(
   return grpc::Status::OK;
 }
 
+grpc::Status camera_control_service::SetPlayerState(
+    grpc::ServerContext* /*context*/,
+    const vms::control::PlayFileRequest* request,
+    vms::control::OperationStatus* response) {
+  std::string error;
+  const bool jpeg_stream = request->has_jpeg_stream() ? request->jpeg_stream() : true;
+  const std::string client_id = request->client_id().empty()
+      ? request->camera_id() + "_arch"
+      : request->client_id();
+  const bool success = m_manager.set_player_state(client_id,
+                                                  request->camera_id(),
+                                                  request->start_time(),
+                                                  jpeg_stream,
+                                                  error);
+
+  response->set_success(success);
+  response->set_message(success ? "archive player state updated" : error);
+  return grpc::Status::OK;
+}
+
 grpc::Status camera_control_service::StreamJpegFrames(
     grpc::ServerContext* context,
     const vms::control::CameraRequest* request,
@@ -70,7 +111,11 @@ grpc::Status camera_control_service::StreamJpegFrames(
     uint64_t frame_number = 0;
     std::string error;
 
-    if (!m_manager.wait_next_jpeg_frame(request->camera_id(), frame, frame_number, error)) {
+    const std::string stream_id = request->client_id().empty()
+        ? request->camera_id()
+        : request->client_id();
+
+    if (!m_manager.wait_next_jpeg_frame(stream_id, frame, frame_number, error)) {
       return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, error);
     }
 
@@ -85,31 +130,3 @@ grpc::Status camera_control_service::StreamJpegFrames(
 
   return grpc::Status::OK;
 }
-
-grpc::Status camera_control_service::StartPlayFile(
-    grpc::ServerContext* /*context*/,
-    const vms::control::PlayFileRequest* request,
-    vms::control::OperationStatus* response) {
-  std::string error;
-  const bool success = m_manager.start_play_file(request->camera_id(),
-                                                 request->start_time(),
-                                                 error);
-
-  response->set_success(success);
-  response->set_message(success ? "file playback started" : error);
-  return grpc::Status::OK;
-}
-
-grpc::Status camera_control_service::StopPlayFile(
-    grpc::ServerContext* /*context*/,
-    const vms::control::CameraRequest* request,
-    vms::control::OperationStatus* response) {
-  std::string error;
-  const bool success = m_manager.stop_play_file(request->camera_id(),
-                                                error);
-
-  response->set_success(success);
-  response->set_message(success ? "file playback stopped" : error);
-  return grpc::Status::OK;
-}
-

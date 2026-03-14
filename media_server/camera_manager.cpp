@@ -128,15 +128,22 @@ bool camera_manager::set_camera_state(const std::string& camera_id,
 }
 
 
-bool camera_manager::wait_next_jpeg_frame(const std::string& camera_id,
+bool camera_manager::wait_next_jpeg_frame(const std::string& stream_id,
                                           std::vector<uint8_t>& frame,
                                           uint64_t& frame_number,
                                           std::string& error) {
   std::unique_lock lock(m_mutex);
 
-  auto it = m_cameras.find(camera_id);
+  auto player_it = m_arch_players_by_client.find(stream_id);
+  if (player_it != m_arch_players_by_client.end()) {
+    auto* player = &player_it->second;
+    lock.unlock();
+    return player->wait_next_jpeg_frame(frame, frame_number, error);
+  }
+
+  auto it = m_cameras.find(stream_id);
   if (it == m_cameras.end()) {
-    error = "camera not found: " + camera_id;
+    error = "camera or archive player not found: " + stream_id;
     return false;
   }
 
@@ -167,35 +174,49 @@ void camera_manager::stop_all() {
     entry.is_recording = false;
     entry.is_jpeg_streaming = false;
   }
+
+  for (auto& [_, player] : m_arch_players_by_client) {
+    player.shutdown();
+  }
 }
 
-bool camera_manager::start_play_file(const std::string& camera_id,
+bool camera_manager::add_arch_player(const std::string& camera_id,
+                                     const std::string& client_id,
                                      const std::string& start_time,
+                                     const std::string& storage_base_path,
+                                     bool jpeg_stream,
                                      std::string& error) {
   if (camera_id.empty()) {
     error = "camera_id must not be empty";
     return false;
   }
 
+  if (client_id.empty()) {
+    error = "client_id must not be empty";
+    return false;
+  }
+
+  if (start_time.empty()) {
+    error = "start_time must not be empty";
+    return false;
+  }
+
   try {
     std::scoped_lock lock(m_mutex);
 
-    auto existing = m_cameras.find(camera_id);
-    if (existing != m_cameras.end()) {
-      existing->second.camera->shutdown();
-      m_cameras.erase(existing);
+    auto existing = m_arch_players_by_client.find(client_id);
+    if (existing != m_arch_players_by_client.end()) {
+      existing->second.shutdown();
+      m_arch_players_by_client.erase(existing);
     }
 
-    auto playback_camera = std::make_unique<cam>(
-        camera_id, cam::file_playback_config{start_time, ""});
+    arch_player player(camera_id,
+                       start_time,
+                       storage_base_path,
+                       jpeg_stream,
+                       error);
+    m_arch_players_by_client.emplace(client_id, std::move(player));
 
-    camera_entry entry;
-    entry.camera = std::move(playback_camera);
-    entry.source = "records:" + start_time;
-    entry.is_recording = false;
-    entry.is_jpeg_streaming = false;
-
-    m_cameras.emplace(camera_id, std::move(entry));
     return true;
   } catch (const std::exception& ex) {
     error = ex.what();
@@ -203,17 +224,28 @@ bool camera_manager::start_play_file(const std::string& camera_id,
   }
 }
 
-bool camera_manager::stop_play_file(const std::string& camera_id,
-                                    std::string& error) {
+bool camera_manager::set_player_state(const std::string& client_id,
+                                      const std::string& camera_id,
+                                      const std::string& start_time,
+                                      bool jpeg_stream,
+                                      std::string& error) {
   std::scoped_lock lock(m_mutex);
 
-  auto it = m_cameras.find(camera_id);
-  if (it == m_cameras.end()) {
-    error = "camera not found: " + camera_id;
+  if (client_id.empty()) {
+    error = "client_id must not be empty";
     return false;
   }
 
-  it->second.camera->shutdown();
-  m_cameras.erase(it);
-  return true;
+  auto it = m_arch_players_by_client.find(client_id);
+  if (it == m_arch_players_by_client.end()) {
+    error = "archive player not found for client: " + client_id;
+    return false;
+  }
+
+  if (!camera_id.empty() && camera_id != it->second.camera_id()) {
+    error = "camera_id does not match archive player camera";
+    return false;
+  }
+
+  return it->second.set_state(start_time, jpeg_stream, error);
 }

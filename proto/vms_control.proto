@@ -4,12 +4,12 @@ package vms.control;
 
 service CameraControlService {
   rpc AddCamera(AddCameraRequest) returns (OperationStatus);
+  rpc AddArchPlayer(PlayFileRequest) returns (OperationStatus);
   rpc ListCameras(ListCamerasRequest) returns (ListCamerasResponse);
   rpc StartRecording(CameraRequest) returns (OperationStatus);
   rpc SetCameraState(SetCameraStateRequest) returns (OperationStatus);
+  rpc SetPlayerState(PlayFileRequest) returns (OperationStatus);
   rpc StreamJpegFrames(CameraRequest) returns (stream JpegFrame);
-  rpc StartPlayFile(PlayFileRequest) returns (OperationStatus);
-  rpc StopPlayFile(CameraRequest) returns (OperationStatus);
 }
 
 message CameraState {
@@ -31,11 +31,14 @@ message SetCameraStateRequest {
 
 message CameraRequest {
   string camera_id = 1;
+  string client_id = 2;
 }
 
 message PlayFileRequest {
   string camera_id = 1;
   string start_time = 2;
+  string client_id = 3;
+  optional bool jpeg_stream = 4;
 }
 
 message ListCamerasRequest {}
