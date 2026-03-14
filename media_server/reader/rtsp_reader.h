@@ -10,6 +10,7 @@
 
 extern "C" {
 #include <libavformat/avformat.h>
+#include <libavutil/time.h>
 }
 
 class rtsp_reader final : public reader {
@@ -32,7 +33,8 @@ private:
   void read_loop();
 
   std::string m_rtsp_url;
-  AVFormatContext* m_ctx = nullptr;
+  avformat_context_ptr m_ctx = nullptr;
+  int64_t m_interrupt_start = 0;
   int m_video_index = -1;
   std::vector<media_sink*> m_sinks;
   mutable std::mutex m_sinks_mutex;

@@ -5,6 +5,7 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/frame.h>
+#include <libavformat/avformat.h>
 }
 
 struct avpacket_deleter {
@@ -20,5 +21,12 @@ using avframe_ptr = std::shared_ptr<AVFrame>;
 struct avframe_deleter {
   void operator()(AVFrame* f) const noexcept {
     if (f) av_frame_free(&f);
+  }
+};
+
+struct avformat_context_deleter {
+  void operator()(AVFormatContext* ctx) const {
+    if (ctx)
+      avformat_close_input(&ctx);
   }
 };

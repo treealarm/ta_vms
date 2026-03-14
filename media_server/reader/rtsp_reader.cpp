@@ -17,8 +17,19 @@ rtsp_reader::~rtsp_reader() {
 
 bool rtsp_reader::open(const std::string& url) {
   m_rtsp_url = url;
-  disconnect();
-  return connect();
+  
+  return true;
+}
+
+static int interrupt_cb(void* opaque)
+{
+  int64_t* start = (int64_t*)opaque;
+
+  if (av_gettime() - *start > 5000000)
+    return 1;
+
+  *start = av_gettime();
+  return 0;
 }
 
 bool rtsp_reader::connect() {
@@ -26,17 +37,30 @@ bool rtsp_reader::connect() {
 
   AVDictionary* opts = nullptr;
   av_dict_set(&opts, "rtsp_transport", "tcp", 0);
-  av_dict_set(&opts, "stimeout", "5000000", 0);
+  av_dict_set(&opts, "rtsp_flags", "prefer_tcp", 0);
+  av_dict_set(&opts, "timeout", "5000000", 0);
+  av_dict_set(&opts, "rw_timeout", "5000000", 0);
 
-  if (avformat_open_input(&m_ctx, m_rtsp_url.c_str(), nullptr, &opts) < 0) {
+  m_interrupt_start = av_gettime();
+
+  AVFormatContext* ctx = avformat_alloc_context();
+  ctx->interrupt_callback.callback = interrupt_cb;
+  ctx->interrupt_callback.opaque = &m_interrupt_start;
+
+  if (avformat_open_input(&ctx, m_rtsp_url.c_str(), nullptr, &opts) < 0) {
     std::cerr << "Failed to open RTSP\n";
     av_dict_free(&opts);
+    avformat_close_input(&ctx);
     return false;
+  }
+
+  if (ctx != m_ctx.get()) {
+    m_ctx.reset(ctx);
   }
 
   av_dict_free(&opts);
 
-  if (avformat_find_stream_info(m_ctx, nullptr) < 0) {
+  if (avformat_find_stream_info(m_ctx.get(), nullptr) < 0) {
     std::cerr << "Failed to get stream info\n";
     disconnect();
     return false;
@@ -62,8 +86,7 @@ bool rtsp_reader::connect() {
 
 void rtsp_reader::disconnect() {
   m_video_index = -1;
-  if (m_ctx)
-    avformat_close_input(&m_ctx);
+  m_ctx.reset();
 }
 
 void rtsp_reader::add_sink(media_sink* sink) {
@@ -107,7 +130,7 @@ void rtsp_reader::read_loop() {
     }
 
     avpacket_ptr pkt(av_packet_alloc(), avpacket_deleter{});
-    const int read_result = av_read_frame(m_ctx, pkt.get());
+    const int read_result = av_read_frame(m_ctx.get(), pkt.get());
 
     if (read_result < 0) {
       const auto now = std::chrono::steady_clock::now();

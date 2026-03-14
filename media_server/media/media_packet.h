@@ -17,6 +17,8 @@ struct media_packet {
   AVRational time_base;
 };
 
+using avformat_context_ptr = std::unique_ptr<AVFormatContext, avformat_context_deleter>;
+
 inline std::shared_ptr<media_packet> clone_media_packet(const std::shared_ptr<media_packet>& src) {
   if (!src || !src->packet)
     return nullptr;
