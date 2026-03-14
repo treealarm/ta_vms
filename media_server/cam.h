@@ -1,25 +1,19 @@
 #pragma once
+
 #include <memory>
 #include <string>
 #include <vector>
+
 #include "reader/reader.h"
 #include "stream/jpeg_streamer.h"
 #include "writer/segment_writer.h"
 
 class cam {
 public:
-  struct file_playback_config {
-    std::string start_time;
-    std::string storage_base_path;
-  };
-
   cam(const std::string& source,
       const std::string& cam_id,
       const std::string& storage_base_path = "");
-  cam(const std::string& cam_id,
-      const file_playback_config& playback_config);
 
-  static std::string join_playlist(const std::vector<std::string>& files);
   ~cam();
 
   void start_recording();
@@ -28,7 +22,9 @@ public:
 
   bool start_jpeg_stream(std::string& error);
   bool stop_jpeg_stream(std::string& error);
-  bool wait_next_jpeg_frame(std::vector<uint8_t>& frame, uint64_t& frame_number, std::string& error);
+  bool wait_next_jpeg_frame(std::vector<uint8_t>& frame,
+                            uint64_t& frame_number,
+                            std::string& error);
 
 private:
   std::string m_cam_id;
