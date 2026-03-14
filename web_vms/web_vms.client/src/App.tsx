@@ -38,10 +38,7 @@ function App() {
   const [startTime, setStartTime] = useState('')
   const [status, setStatus] = useState('Ready')
   const [isBusy, setIsBusy] = useState(false)
-  const [liveFrameUrl, setLiveFrameUrl] = useState<string | null>(null)
-  const [jpegStreamReconnectKey, setJpegStreamReconnectKey] = useState(0)
   const [cameras, setCameras] = useState<CameraInfo[]>([])
-  const [isJpegStreaming, setIsJpegStreaming] = useState(false)
 
   const selectedCamera = cameras.find((camera) => camera.cameraId === cameraId)
   const isRecording = selectedCamera?.isRecording ?? false
@@ -79,54 +76,6 @@ function App() {
     void loadCameras()
   }, [loadCameras])
 
-  useEffect(() => {
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    let ws: WebSocket | null = null
-    let reconnectTimeoutId: number | null = null
-    let isDisposed = false
-
-    const connect = () => {
-      ws = new WebSocket(`${wsProtocol}://${window.location.host}/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/ws`)
-      ws.binaryType = 'blob'
-
-      ws.onopen = () => setStatus('WebSocket JPEG stream connected')
-      ws.onerror = () => setStatus('WebSocket JPEG stream error')
-      ws.onclose = () => {
-        setStatus('WebSocket JPEG stream disconnected')
-        if (!isDisposed) {
-          reconnectTimeoutId = window.setTimeout(connect, 1000)
-        }
-      }
-      ws.onmessage = (event) => {
-        const objectUrl = URL.createObjectURL(event.data as Blob)
-        setLiveFrameUrl((previousUrl) => {
-          if (previousUrl) {
-            URL.revokeObjectURL(previousUrl)
-          }
-
-          return objectUrl
-        })
-      }
-    }
-
-    connect()
-
-    return () => {
-      isDisposed = true
-      if (reconnectTimeoutId !== null) {
-        window.clearTimeout(reconnectTimeoutId)
-      }
-
-      ws?.close()
-      setLiveFrameUrl((previousUrl) => {
-        if (previousUrl) {
-          URL.revokeObjectURL(previousUrl)
-        }
-
-        return null
-      })
-    }
-  }, [cameraId, jpegStreamReconnectKey])
 
   const runAction = async (action: () => Promise<Response>) => {
     setIsBusy(true)
@@ -160,7 +109,7 @@ function App() {
         body: JSON.stringify({
           cameraId: newCameraId,
           rtspUrl: hasStartTime ? '' : rtspUrl,
-          startImmediately: false,
+          state: { recording: false, jpegStream: false },
           startTime: hasStartTime ? startTime.trim() : null
         })
       })
@@ -171,7 +120,6 @@ function App() {
 
   const onCameraSelect = (selectedCameraId: string) => {
     setCameraId(selectedCameraId)
-    setIsJpegStreaming(false)
     const selectedCamera = cameras.find((camera) => camera.cameraId === selectedCameraId)
     if (selectedCamera) {
       setRtspUrl(selectedCamera.rtspUrl)
@@ -179,35 +127,13 @@ function App() {
   }
 
   const onToggleRecording = () => {
-    const actionPath = isRecording ? 'stop' : 'start'
-    void runAction(() => fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/recording/${actionPath}`, { method: 'POST' }))
-  }
-
-  const onToggleJpegStream = () => {
-    if (isJpegStreaming) {
-      void runAction(async () => {
-        const response = await fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/stop`, { method: 'POST' })
-        if (response.ok) {
-          setIsJpegStreaming(false)
-        }
-
-        return response
+    void runAction(() =>
+      fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/state`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recording: !isRecording, jpegStream: false })
       })
-      return
-    }
-
-    void runAction(async () => {
-      const response = await fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/start`, {
-        method: 'POST'
-      })
-
-      if (response.ok) {
-        setIsJpegStreaming(true)
-        setJpegStreamReconnectKey((previous) => previous + 1)
-      }
-
-      return response
-    })
+    )
   }
 
   return (
@@ -301,39 +227,7 @@ function App() {
                     REC
                   </Button>
                 </Grid>
-                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                  <Button
-                    fullWidth
-                    disabled={isBusy}
-                    variant={isJpegStreaming ? 'contained' : 'outlined'}
-                    onClick={onToggleJpegStream}
-                  >
-                    JPEG STREAM
-                  </Button>
-                </Grid>
               </Grid>
-            </Stack>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent>
-            <Stack spacing={2}>
-              <Typography variant="h6">Frames</Typography>
-              <Box
-                component="img"
-                src={liveFrameUrl ?? undefined}
-                alt="Live JPEG stream"
-                sx={{
-                  width: '100%',
-                  minHeight: 280,
-                  objectFit: 'contain',
-                  border: 1,
-                  borderColor: 'divider',
-                  borderRadius: 2,
-                  bgcolor: 'background.default'
-                }}
-              />
             </Stack>
           </CardContent>
         </Card>

@@ -21,9 +21,9 @@ public:
                               const vms::control::CameraRequest* request,
                               vms::control::OperationStatus* response) override;
 
-  grpc::Status StopRecording(grpc::ServerContext* context,
-                             const vms::control::CameraRequest* request,
-                             vms::control::OperationStatus* response) override;
+  grpc::Status SetCameraState(grpc::ServerContext* context,
+                               const vms::control::SetCameraStateRequest* request,
+                               vms::control::OperationStatus* response) override;
 
   grpc::Status StartPlayFile(::grpc::ServerContext* context, 
                             const ::vms::control::PlayFileRequest* request, 
@@ -33,17 +33,6 @@ public:
                             const vms::control::CameraRequest* request,
                             vms::control::OperationStatus* response) override;
 
-  grpc::Status StartJpegStream(grpc::ServerContext* context,
-                               const vms::control::JpegStreamRequest* request,
-                               vms::control::OperationStatus* response) override;
-
-  grpc::Status StopJpegStream(grpc::ServerContext* context,
-                              const vms::control::CameraRequest* request,
-                              vms::control::OperationStatus* response) override;
-
-  grpc::Status StreamJpegFrames(grpc::ServerContext* context,
-                                const vms::control::CameraRequest* request,
-                                grpc::ServerWriter<vms::control::JpegFrame>* writer) override;
 
 private:
   camera_manager& m_manager;

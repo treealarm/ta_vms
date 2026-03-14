@@ -6,19 +6,26 @@ service CameraControlService {
   rpc AddCamera(AddCameraRequest) returns (OperationStatus);
   rpc ListCameras(ListCamerasRequest) returns (ListCamerasResponse);
   rpc StartRecording(CameraRequest) returns (OperationStatus);
-  rpc StopRecording(CameraRequest) returns (OperationStatus);
+  rpc SetCameraState(SetCameraStateRequest) returns (OperationStatus);
   rpc StartPlayFile(PlayFileRequest) returns (OperationStatus);
   rpc StopPlayFile(CameraRequest) returns (OperationStatus);
-  rpc StartJpegStream(JpegStreamRequest) returns (OperationStatus);
-  rpc StopJpegStream(CameraRequest) returns (OperationStatus);
-  rpc StreamJpegFrames(CameraRequest) returns (stream JpegFrame);
+}
+
+message CameraState {
+  bool recording = 1;
+  bool jpeg_stream = 2;
 }
 
 message AddCameraRequest {
   string camera_id = 1;
   string rtsp_url = 2;
-  bool start_immediately = 3;
+  CameraState state = 3;
   string storage_base_path = 4;
+}
+
+message SetCameraStateRequest {
+  string camera_id = 1;
+  CameraState state = 2;
 }
 
 message CameraRequest {
@@ -42,16 +49,7 @@ message ListCamerasResponse {
   repeated CameraInfo cameras = 1;
 }
 
-message JpegStreamRequest {
-  string camera_id = 1;
-}
-
 message OperationStatus {
   bool success = 1;
   string message = 2;
-}
-
-message JpegFrame {
-  bytes jpeg_data = 1;
-  uint64 frame_number = 2;
 }
