@@ -280,6 +280,17 @@ void file_reader::read_loop() {
     media->packet = pkt;
     media->stream_index = m_video_index;
     media->time_base = m_ctx->streams[m_video_index]->time_base;
+    avcodec_parameters_ptr codec_copy(avcodec_parameters_alloc(),
+      [](AVCodecParameters* params) { avcodec_parameters_free(&params); });
+    if (!codec_copy) {
+      continue;
+    }
+
+    if (avcodec_parameters_copy(codec_copy.get(), m_ctx->streams[m_video_index]->codecpar) < 0) {
+      continue;
+    }
+
+    media->codec_parameters = std::move(codec_copy);
 
     std::vector<media_sink*> sinks_copy;
     {

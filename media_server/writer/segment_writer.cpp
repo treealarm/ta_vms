@@ -98,9 +98,24 @@ segment_writer::segment_writer(const std::string& base_dir,
 {
 }
 
-bool segment_writer::init(AVStream* in_stream)
+bool segment_writer::init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base)
 {
-  m_in_stream = in_stream;
+  if (!codec_parameters) {
+    return false;
+  }
+
+  avcodec_parameters_ptr codec_copy(avcodec_parameters_alloc(),
+    [](AVCodecParameters* params) { avcodec_parameters_free(&params); });
+  if (!codec_copy) {
+    return false;
+  }
+
+  if (avcodec_parameters_copy(codec_copy.get(), codec_parameters.get()) < 0) {
+    return false;
+  }
+
+  m_in_codec_parameters = std::move(codec_copy);
+  m_in_time_base = time_base;
   std::filesystem::create_directories(m_base_dir);
   return true;
 }
@@ -108,6 +123,11 @@ bool segment_writer::init(AVStream* in_stream)
 void segment_writer::open_new_segment()
 {
   close_segment();
+
+  if (!m_in_codec_parameters) {
+    std::cerr << "segment writer is not initialized with input codec parameters\n";
+    return;
+  }
 
   const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
   const std::string year = std::format("{:%Y}", now);
@@ -127,10 +147,23 @@ void segment_writer::open_new_segment()
   }
 
   m_out_stream = avformat_new_stream(m_ctx, nullptr);
-  avcodec_parameters_copy(
-    m_out_stream->codecpar, m_in_stream->codecpar);
+  if (!m_out_stream) {
+    std::cerr << "avformat_new_stream failed\n";
+    avformat_free_context(m_ctx);
+    m_ctx = nullptr;
+    return;
+  }
 
-  m_out_stream->time_base = m_in_stream->time_base;
+  if (avcodec_parameters_copy(
+    m_out_stream->codecpar, m_in_codec_parameters.get()) < 0) {
+    std::cerr << "avcodec_parameters_copy failed\n";
+    avformat_free_context(m_ctx);
+    m_ctx = nullptr;
+    m_out_stream = nullptr;
+    return;
+  }
+
+  m_out_stream->time_base = m_in_time_base;
 
   if (!(m_ctx->oformat->flags & AVFMT_NOFILE)) {
     if (avio_open(&m_ctx->pb,
@@ -223,7 +256,7 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& media)
 
   int64_t frame_duration = av_rescale_q(1, AVRational{ 1,25 }, tb); ;
 
-  av_packet_rescale_ts(pkt, m_in_stream->time_base, m_out_stream->time_base);
+  av_packet_rescale_ts(pkt, media->time_base, m_out_stream->time_base);
 
   if (pkt->duration <= 0)
   {

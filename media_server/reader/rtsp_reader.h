@@ -1,9 +1,10 @@
-﻿#pragma once
+#pragma once
+
 #include <atomic>
-#include <thread>
-#include <vector>
 #include <memory>
 #include <mutex>
+#include <thread>
+
 #include "media/media_packet.h"
 #include "media/media_sink.h"
 #include "reader.h"
@@ -22,8 +23,8 @@ public:
   void add_sink(media_sink* sink) override;
   void remove_sink(media_sink* sink) override;
 
-  void start() override;  // запуск потока
-  void stop() override;   // корректная остановка
+  void start() override;
+  void stop() override;
 
   AVStream* video_stream() const override;
 
@@ -36,8 +37,9 @@ private:
   avformat_context_ptr m_ctx = nullptr;
   int64_t m_interrupt_start = 0;
   int m_video_index = -1;
-  std::vector<media_sink*> m_sinks;
-  mutable std::mutex m_sinks_mutex;
+
+  media_sink* m_sink = nullptr;
+  mutable std::mutex m_sink_mutex;
 
   std::thread m_thread;
   std::atomic<bool> m_running{ false };

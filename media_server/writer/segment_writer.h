@@ -19,7 +19,7 @@ public:
     const std::string& camera_id,
     int segment_seconds);
 
-  bool init(AVStream* in_stream);
+  bool init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base);
   void on_packet(const std::shared_ptr<media_packet>& media) override;
   void close();
 
@@ -33,7 +33,8 @@ private:
   std::string m_camera_id;
   std::chrono::seconds m_segment_seconds;
 
-  AVStream* m_in_stream = nullptr;
+  avcodec_parameters_ptr m_in_codec_parameters;
+  AVRational m_in_time_base{};
 
   AVFormatContext* m_ctx = nullptr;
   AVStream* m_out_stream = nullptr;
