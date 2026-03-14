@@ -15,6 +15,10 @@ public:
               bool jpeg_stream,
               std::string& error);
   ~arch_player();
+  arch_player(const arch_player&) = delete;
+  arch_player& operator=(const arch_player&) = delete;
+  arch_player(arch_player&&) noexcept = default;
+  arch_player& operator=(arch_player&&) noexcept = default;
 
   bool set_state(const std::string& start_time,
                  bool jpeg_stream,
