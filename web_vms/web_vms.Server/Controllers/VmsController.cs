@@ -14,16 +14,12 @@ public class VmsController(
   {
     if (!string.IsNullOrWhiteSpace(request.StartTime))
     {
-      var stopResponse = await grpcClient.StopPlayFileAsync(new CameraRequest { CameraId = request.CameraId }, cancellationToken: ct);
-      if (!stopResponse.Success && !stopResponse.Message.Contains("camera not found", StringComparison.OrdinalIgnoreCase))
-      {
-        return Ok(ToApiResponse(stopResponse));
-      }
-
-      var startPlayResponse = await grpcClient.StartPlayFileAsync(new PlayFileRequest
+      var startPlayResponse = await grpcClient.AddArchPlayerAsync(new PlayFileRequest
       {
         CameraId = request.CameraId,
-        StartTime = request.StartTime
+        StartTime = request.StartTime,
+        ClientId = $"{request.CameraId}_arch",
+        JpegStream = true
       }, cancellationToken: ct);
 
       return Ok(ToApiResponse(startPlayResponse));
@@ -76,7 +72,7 @@ public class VmsController(
   }
 
   [HttpGet("cameras/{cameraId}/jpeg/ws")]
-  public async Task StreamFramesOverWebSocket(string cameraId, CancellationToken ct)
+  public async Task StreamFramesOverWebSocket(string cameraId, [FromQuery] string? clientId, CancellationToken ct)
   {
     if (!HttpContext.WebSockets.IsWebSocketRequest)
     {
@@ -86,7 +82,11 @@ public class VmsController(
     }
 
     using var webSocket = await HttpContext.WebSockets.AcceptWebSocketAsync();
-    using var call = grpcClient.StreamJpegFrames(new CameraRequest { CameraId = cameraId }, cancellationToken: ct);
+    using var call = grpcClient.StreamJpegFrames(new CameraRequest
+    {
+      CameraId = cameraId,
+      ClientId = clientId ?? string.Empty
+    }, cancellationToken: ct);
 
     while (!ct.IsCancellationRequested && webSocket.State == WebSocketState.Open && await call.ResponseStream.MoveNext(ct))
     {

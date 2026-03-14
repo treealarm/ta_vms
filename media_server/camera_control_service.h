@@ -13,6 +13,10 @@ public:
                          const vms::control::AddCameraRequest* request,
                          vms::control::OperationStatus* response) override;
 
+  grpc::Status AddArchPlayer(grpc::ServerContext* context,
+                             const vms::control::PlayFileRequest* request,
+                             vms::control::OperationStatus* response) override;
+
   grpc::Status ListCameras(grpc::ServerContext* context,
                            const vms::control::ListCamerasRequest* request,
                            vms::control::ListCamerasResponse* response) override;
@@ -25,18 +29,13 @@ public:
                               const vms::control::SetCameraStateRequest* request,
                               vms::control::OperationStatus* response) override;
 
+  grpc::Status SetPlayerState(grpc::ServerContext* context,
+                              const vms::control::PlayFileRequest* request,
+                              vms::control::OperationStatus* response) override;
+
   grpc::Status StreamJpegFrames(grpc::ServerContext* context,
                                 const vms::control::CameraRequest* request,
                                 grpc::ServerWriter<vms::control::JpegFrame>* writer) override;
-
-  grpc::Status StartPlayFile(::grpc::ServerContext* context, 
-                            const ::vms::control::PlayFileRequest* request, 
-                            ::vms::control::OperationStatus* response) override;
-
-  grpc::Status StopPlayFile(grpc::ServerContext* context,
-                            const vms::control::CameraRequest* request,
-                            vms::control::OperationStatus* response) override;
-
 
 private:
   camera_manager& m_manager;

@@ -44,6 +44,8 @@ function App() {
 
   const selectedCamera = cameras.find((camera) => camera.cameraId === cameraId)
   const isRecording = selectedCamera?.isRecording ?? false
+  const archiveClientId = `${cameraId}_arch`
+  const streamClientId = startTime.trim().length > 0 ? archiveClientId : ''
 
   const loadCameras = useCallback(async (preferredCameraId?: string) => {
     try {
@@ -91,7 +93,8 @@ function App() {
     }
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(`${wsProtocol}://${window.location.host}/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/ws`)
+    const query = streamClientId ? `?clientId=${encodeURIComponent(streamClientId)}` : ''
+    const ws = new WebSocket(`${wsProtocol}://${window.location.host}/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/ws${query}`)
     ws.binaryType = 'blob'
 
     ws.onopen = () => setStatus('WebSocket JPEG stream connected')
@@ -118,7 +121,7 @@ function App() {
         return null
       })
     }
-  }, [cameraId, isJpegStreamEnabled])
+  }, [cameraId, isJpegStreamEnabled, streamClientId])
 
   const runAction = async (action: () => Promise<Response>) => {
     setIsBusy(true)

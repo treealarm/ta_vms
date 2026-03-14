@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "arch_player.h"
 #include "cam.h"
 
 class camera_manager {
@@ -30,12 +31,18 @@ public:
                         bool recording,
                         bool jpeg_stream,
                         std::string& error);
-  bool start_play_file(const std::string& camera_id,
+  bool add_arch_player(const std::string& camera_id,
+                       const std::string& client_id,
                        const std::string& start_time,
+                       const std::string& storage_base_path,
+                       bool jpeg_stream,
                        std::string& error);
-  bool stop_play_file(const std::string& camera_id,
-                      std::string& error);
-  bool wait_next_jpeg_frame(const std::string& camera_id,
+  bool set_player_state(const std::string& client_id,
+                        const std::string& camera_id,
+                        const std::string& start_time,
+                        bool jpeg_stream,
+                        std::string& error);
+  bool wait_next_jpeg_frame(const std::string& stream_id,
                             std::vector<uint8_t>& frame,
                             uint64_t& frame_number,
                             std::string& error);
@@ -55,4 +62,5 @@ private:
 
   mutable std::mutex m_mutex;
   std::map<std::string, camera_entry> m_cameras;
+  std::map<std::string, arch_player> m_arch_players_by_client;
 };
