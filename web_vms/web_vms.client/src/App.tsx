@@ -41,6 +41,10 @@ function App() {
   const [liveFrameUrl, setLiveFrameUrl] = useState<string | null>(null)
   const [jpegStreamReconnectKey, setJpegStreamReconnectKey] = useState(0)
   const [cameras, setCameras] = useState<CameraInfo[]>([])
+  const [isJpegStreaming, setIsJpegStreaming] = useState(false)
+
+  const selectedCamera = cameras.find((camera) => camera.cameraId === cameraId)
+  const isRecording = selectedCamera?.isRecording ?? false
 
   const loadCameras = useCallback(async (preferredCameraId?: string) => {
     try {
@@ -167,10 +171,43 @@ function App() {
 
   const onCameraSelect = (selectedCameraId: string) => {
     setCameraId(selectedCameraId)
+    setIsJpegStreaming(false)
     const selectedCamera = cameras.find((camera) => camera.cameraId === selectedCameraId)
     if (selectedCamera) {
       setRtspUrl(selectedCamera.rtspUrl)
     }
+  }
+
+  const onToggleRecording = () => {
+    const actionPath = isRecording ? 'stop' : 'start'
+    void runAction(() => fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/recording/${actionPath}`, { method: 'POST' }))
+  }
+
+  const onToggleJpegStream = () => {
+    if (isJpegStreaming) {
+      void runAction(async () => {
+        const response = await fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/stop`, { method: 'POST' })
+        if (response.ok) {
+          setIsJpegStreaming(false)
+        }
+
+        return response
+      })
+      return
+    }
+
+    void runAction(async () => {
+      const response = await fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/start`, {
+        method: 'POST'
+      })
+
+      if (response.ok) {
+        setIsJpegStreaming(true)
+        setJpegStreamReconnectKey((previous) => previous + 1)
+      }
+
+      return response
+    })
   }
 
   return (
@@ -257,48 +294,21 @@ function App() {
                   <Button
                     fullWidth
                     disabled={isBusy}
-                    onClick={() => runAction(() => fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/recording/start`, { method: 'POST' }))}
+                    variant={isRecording ? 'contained' : 'outlined'}
+                    color={isRecording ? 'error' : 'primary'}
+                    onClick={onToggleRecording}
                   >
-                    Start recording
+                    REC
                   </Button>
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
                   <Button
                     fullWidth
                     disabled={isBusy}
-                    onClick={() => runAction(() => fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/recording/stop`, { method: 'POST' }))}
+                    variant={isJpegStreaming ? 'contained' : 'outlined'}
+                    onClick={onToggleJpegStream}
                   >
-                    Stop recording
-                  </Button>
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                  <Button
-                    fullWidth
-                    disabled={isBusy}
-                    onClick={() =>
-                      runAction(async () => {
-                        const response = await fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/start`, {
-                          method: 'POST'
-                        })
-
-                        if (response.ok) {
-                          setJpegStreamReconnectKey((previous) => previous + 1)
-                        }
-
-                        return response
-                      })
-                    }
-                  >
-                    Start JPEG stream
-                  </Button>
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                  <Button
-                    fullWidth
-                    disabled={isBusy}
-                    onClick={() => runAction(() => fetch(`/api/vms/cameras/${encodeURIComponent(cameraId)}/jpeg/stop`, { method: 'POST' }))}
-                  >
-                    Stop JPEG stream
+                    JPEG STREAM
                   </Button>
                 </Grid>
               </Grid>
