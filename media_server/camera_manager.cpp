@@ -3,7 +3,8 @@
 bool camera_manager::add_camera(const std::string& camera_id,
                                 const std::string& rtsp_url,
                                 const std::string& storage_base_path,
-                                bool start_immediately,
+                                bool recording,
+                                bool jpeg_stream,
                                 std::string& error) {
   std::scoped_lock lock(m_mutex);
 
@@ -25,14 +26,21 @@ bool camera_manager::add_camera(const std::string& camera_id,
 
   try {
     auto camera = std::make_unique<cam>(rtsp_url, camera_id, storage_base_path);
-    if (start_immediately) {
+    if (recording) {
       camera->start_recording();
+    }
+
+    if (jpeg_stream) {
+      if (!camera->start_jpeg_stream(error)) {
+        return false;
+      }
     }
 
     camera_entry entry;
     entry.camera = std::move(camera);
     entry.source = rtsp_url;
-    entry.is_recording = start_immediately;
+    entry.is_recording = recording;
+    entry.is_jpeg_streaming = jpeg_stream;
 
     m_cameras.emplace(camera_id, std::move(entry));
     return true;
@@ -82,8 +90,10 @@ bool camera_manager::stop_recording(const std::string& camera_id,
   return true;
 }
 
-bool camera_manager::start_jpeg_stream(const std::string& camera_id,
-                                       std::string& error) {
+bool camera_manager::set_camera_state(const std::string& camera_id,
+                                    bool recording,
+                                    bool jpeg_stream,
+                                    std::string& error) {
   std::scoped_lock lock(m_mutex);
 
   auto it = m_cameras.find(camera_id);
@@ -92,25 +102,29 @@ bool camera_manager::start_jpeg_stream(const std::string& camera_id,
     return false;
   }
 
-  return it->second.camera->start_jpeg_stream(error);
-}
-
-bool camera_manager::wait_next_jpeg_frame(const std::string& camera_id,
-                                          std::vector<uint8_t>& frame,
-                                          uint64_t& frame_number,
-                                          std::string& error) {
-  std::unique_lock lock(m_mutex);
-
-  auto it = m_cameras.find(camera_id);
-  if (it == m_cameras.end()) {
-    error = "camera not found: " + camera_id;
-    return false;
+  if (recording != it->second.is_recording) {
+    if (recording) {
+      it->second.camera->start_recording();
+    } else {
+      it->second.camera->stop_recording();
+    }
+    it->second.is_recording = recording;
   }
 
-  auto* camera = it->second.camera.get();
-  lock.unlock();
+  if (jpeg_stream != it->second.is_jpeg_streaming) {
+    if (jpeg_stream) {
+      if (!it->second.camera->start_jpeg_stream(error)) {
+        return false;
+      }
+    } else {
+      if (!it->second.camera->stop_jpeg_stream(error)) {
+        return false;
+      }
+    }
+    it->second.is_jpeg_streaming = jpeg_stream;
+  }
 
-  return camera->wait_next_jpeg_frame(frame, frame_number, error);
+  return true;
 }
 
 std::vector<camera_manager::camera_info> camera_manager::list_cameras() const {
@@ -126,25 +140,13 @@ std::vector<camera_manager::camera_info> camera_manager::list_cameras() const {
   return cameras;
 }
 
-bool camera_manager::stop_jpeg_stream(const std::string& camera_id,
-                                      std::string& error) {
-  std::scoped_lock lock(m_mutex);
-
-  auto it = m_cameras.find(camera_id);
-  if (it == m_cameras.end()) {
-    error = "camera not found: " + camera_id;
-    return false;
-  }
-
-  return it->second.camera->stop_jpeg_stream(error);
-}
-
 void camera_manager::stop_all() {
   std::scoped_lock lock(m_mutex);
 
   for (auto& [_, entry] : m_cameras) {
     entry.camera->shutdown();
     entry.is_recording = false;
+    entry.is_jpeg_streaming = false;
   }
 }
 
@@ -172,6 +174,7 @@ bool camera_manager::start_play_file(const std::string& camera_id,
     entry.camera = std::move(playback_camera);
     entry.source = "records:" + start_time;
     entry.is_recording = false;
+    entry.is_jpeg_streaming = false;
 
     m_cameras.emplace(camera_id, std::move(entry));
     return true;
