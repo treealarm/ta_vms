@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <thread>
@@ -90,13 +89,15 @@ void rtsp_reader::disconnect() {
 }
 
 void rtsp_reader::add_sink(media_sink* sink) {
-  std::scoped_lock lock(m_sinks_mutex);
-  m_sinks.push_back(sink);
+  std::scoped_lock lock(m_sink_mutex);
+  m_sink = sink;
 }
 
 void rtsp_reader::remove_sink(media_sink* sink) {
-  std::scoped_lock lock(m_sinks_mutex);
-  m_sinks.erase(std::remove(m_sinks.begin(), m_sinks.end(), sink), m_sinks.end());
+  std::scoped_lock lock(m_sink_mutex);
+  if (m_sink == sink) {
+    m_sink = nullptr;
+  }
 }
 
 AVStream* rtsp_reader::video_stream() const {
@@ -151,17 +152,14 @@ void rtsp_reader::read_loop() {
     media->stream_index = m_video_index;
     media->time_base = m_ctx->streams[m_video_index]->time_base;
 
-    std::vector<media_sink*> sinks_copy;
+    media_sink* sink = nullptr;
     {
-      std::scoped_lock lock(m_sinks_mutex);
-      sinks_copy = m_sinks;
+      std::scoped_lock lock(m_sink_mutex);
+      sink = m_sink;
     }
 
-    for (auto* sink : sinks_copy) {
-      auto sink_media = clone_media_packet(media);
-      if (!sink_media)
-        continue;
-      sink->on_packet(sink_media);
+    if (sink) {
+      sink->on_packet(media);
     }
   }
 
