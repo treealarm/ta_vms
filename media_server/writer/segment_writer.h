@@ -1,9 +1,10 @@
 #pragma once
 
-#include <string>
-#include <memory>
-#include <filesystem>
 #include <chrono>
+#include <filesystem>
+#include <memory>
+#include <string>
+#include <unordered_map>
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -16,14 +17,20 @@ extern "C" {
 class segment_writer : public media_sink {
 public:
   segment_writer(const std::string& base_dir,
-    const std::string& camera_id,
-    int segment_seconds);
+                 const std::string& camera_id,
+                 int segment_seconds);
 
-  bool init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base);
   void on_packet(const std::shared_ptr<media_packet>& media) override;
   void close();
 
 private:
+  struct input_stream_info {
+    avcodec_parameters_ptr codec_parameters;
+    AVRational time_base{};
+    AVMediaType media_type = AVMEDIA_TYPE_UNKNOWN;
+  };
+
+  bool ensure_input_stream(const std::shared_ptr<media_packet>& media);
   void open_new_segment();
   void close_segment();
   std::string make_filename() const;
@@ -33,16 +40,14 @@ private:
   std::string m_camera_id;
   std::chrono::seconds m_segment_seconds;
 
-  avcodec_parameters_ptr m_in_codec_parameters;
-  AVRational m_in_time_base{};
+  std::unordered_map<int, input_stream_info> m_input_streams;
 
   AVFormatContext* m_ctx = nullptr;
-  AVStream* m_out_stream = nullptr;
+  std::unordered_map<int, AVStream*> m_output_streams;
 
   std::chrono::steady_clock::time_point m_segment_start_time;
   std::chrono::system_clock::time_point m_segment_start_wall_time;
   std::filesystem::path m_current_segment_relative_path;
 
-  int64_t m_pts = 0;
   dapr_publisher m_dapr_publisher;
 };

@@ -1,53 +1,35 @@
-#include "writer/segment_writer.h"
+#include "segment_writer.h"
 
-#include <chrono>
-#include <ctime>
 #include <format>
-#include <iomanip>
 #include <iostream>
-#include <sstream>
 
 namespace {
-  std::string to_iso_utc(const std::chrono::system_clock::time_point& tp)
-  {
-    using namespace std::chrono;
+std::string to_iso_utc(const std::chrono::system_clock::time_point& value)
+{
+  const auto in_time_t = std::chrono::system_clock::to_time_t(value);
+  std::tm tm{};
+#if defined(_WIN32)
+  gmtime_s(&tm, &in_time_t);
+#else
+  gmtime_r(&in_time_t, &tm);
+#endif
 
-    auto utc_time = zoned_time{ "UTC", tp };
-    auto sys_time = utc_time.get_sys_time();
-    std::time_t t = system_clock::to_time_t(sys_time);
-
-    // форматируем через ctime или put_time
-    std::tm tm = *std::gmtime(&t);  // note: std::gmtime не потокобезопасна, но здесь одноразово
-    char buf[32];
-    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
-    return std::string(buf);
-  }
+  return std::format("{:%Y-%m-%dT%H:%M:%SZ}", tm);
+}
 
 std::string json_escape(const std::string& value)
 {
   std::string escaped;
   escaped.reserve(value.size());
 
-  for (char c : value) {
-    switch (c) {
-      case '"':
-        escaped += "\\\"";
-        break;
-      case '\\':
-        escaped += "\\\\";
-        break;
-      case '\n':
-        escaped += "\\n";
-        break;
-      case '\r':
-        escaped += "\\r";
-        break;
-      case '\t':
-        escaped += "\\t";
-        break;
-      default:
-        escaped += c;
-        break;
+  for (const char ch : value) {
+    switch (ch) {
+    case '\\': escaped += "\\\\"; break;
+    case '"': escaped += "\\\""; break;
+    case '\n': escaped += "\\n"; break;
+    case '\r': escaped += "\\r"; break;
+    case '\t': escaped += "\\t"; break;
+    default: escaped += ch; break;
     }
   }
 
@@ -98,10 +80,14 @@ segment_writer::segment_writer(const std::string& base_dir,
 {
 }
 
-bool segment_writer::init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base)
+bool segment_writer::ensure_input_stream(const std::shared_ptr<media_packet>& media)
 {
-  if (!codec_parameters) {
+  if (!media || !media->codec_parameters || media->stream_index < 0) {
     return false;
+  }
+
+  if (m_input_streams.contains(media->stream_index)) {
+    return true;
   }
 
   avcodec_parameters_ptr codec_copy(avcodec_parameters_alloc(),
@@ -110,13 +96,12 @@ bool segment_writer::init(const avcodec_parameters_ptr& codec_parameters, AVRati
     return false;
   }
 
-  if (avcodec_parameters_copy(codec_copy.get(), codec_parameters.get()) < 0) {
+  if (avcodec_parameters_copy(codec_copy.get(), media->codec_parameters.get()) < 0) {
     return false;
   }
 
-  m_in_codec_parameters = std::move(codec_copy);
-  m_in_time_base = time_base;
-  std::filesystem::create_directories(m_base_dir);
+  m_input_streams.emplace(media->stream_index,
+                          input_stream_info{ std::move(codec_copy), media->time_base, media->media_type });
   return true;
 }
 
@@ -124,8 +109,8 @@ void segment_writer::open_new_segment()
 {
   close_segment();
 
-  if (!m_in_codec_parameters) {
-    std::cerr << "segment writer is not initialized with input codec parameters\n";
+  if (m_input_streams.empty()) {
+    std::cerr << "segment writer has no registered streams\n";
     return;
   }
 
@@ -146,24 +131,28 @@ void segment_writer::open_new_segment()
     return;
   }
 
-  m_out_stream = avformat_new_stream(m_ctx, nullptr);
-  if (!m_out_stream) {
-    std::cerr << "avformat_new_stream failed\n";
-    avformat_free_context(m_ctx);
-    m_ctx = nullptr;
-    return;
-  }
+  m_output_streams.clear();
+  for (const auto& [input_index, stream_info] : m_input_streams) {
+    AVStream* out_stream = avformat_new_stream(m_ctx, nullptr);
+    if (!out_stream) {
+      std::cerr << "avformat_new_stream failed\n";
+      avformat_free_context(m_ctx);
+      m_ctx = nullptr;
+      m_output_streams.clear();
+      return;
+    }
 
-  if (avcodec_parameters_copy(
-    m_out_stream->codecpar, m_in_codec_parameters.get()) < 0) {
-    std::cerr << "avcodec_parameters_copy failed\n";
-    avformat_free_context(m_ctx);
-    m_ctx = nullptr;
-    m_out_stream = nullptr;
-    return;
-  }
+    if (avcodec_parameters_copy(out_stream->codecpar, stream_info.codec_parameters.get()) < 0) {
+      std::cerr << "avcodec_parameters_copy failed\n";
+      avformat_free_context(m_ctx);
+      m_ctx = nullptr;
+      m_output_streams.clear();
+      return;
+    }
 
-  m_out_stream->time_base = m_in_time_base;
+    out_stream->time_base = stream_info.time_base;
+    m_output_streams.emplace(input_index, out_stream);
+  }
 
   if (!(m_ctx->oformat->flags & AVFMT_NOFILE)) {
     if (avio_open(&m_ctx->pb,
@@ -173,6 +162,7 @@ void segment_writer::open_new_segment()
       std::cerr << "avio_open failed\n";
       avformat_free_context(m_ctx);
       m_ctx = nullptr;
+      m_output_streams.clear();
       return;
     }
   }
@@ -182,12 +172,12 @@ void segment_writer::open_new_segment()
     avio_closep(&m_ctx->pb);
     avformat_free_context(m_ctx);
     m_ctx = nullptr;
+    m_output_streams.clear();
     return;
   }
 
   m_segment_start_time = std::chrono::steady_clock::now();
   m_segment_start_wall_time = std::chrono::system_clock::now();
-  m_pts = 0;
 
   const std::string payload = make_segment_started_payload(
     m_camera_id,
@@ -220,21 +210,26 @@ void segment_writer::close_segment()
 
   avformat_free_context(m_ctx);
   m_ctx = nullptr;
-  m_out_stream = nullptr;
+  m_output_streams.clear();
   m_current_segment_relative_path.clear();
 }
 
 void segment_writer::on_packet(const std::shared_ptr<media_packet>& media)
 {
-  if (!media || !media->packet)
+  if (!media || !media->packet) {
     return;
+  }
+
+  if (!ensure_input_stream(media)) {
+    return;
+  }
 
   AVPacket* pkt = media->packet.get();
 
-  // стартуем ТОЛЬКО с keyframe
   if (!m_ctx) {
-    if (!(pkt->flags & AV_PKT_FLAG_KEY))
+    if (media->media_type == AVMEDIA_TYPE_VIDEO && !(pkt->flags & AV_PKT_FLAG_KEY)) {
       return;
+    }
 
     open_new_segment();
     if (!m_ctx)
@@ -243,8 +238,8 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& media)
 
   auto elapsed = std::chrono::steady_clock::now() - m_segment_start_time;
 
-  // 🔪 режем ТОЛЬКО по keyframe
   if (elapsed >= m_segment_seconds &&
+    media->media_type == AVMEDIA_TYPE_VIDEO &&
     (pkt->flags & AV_PKT_FLAG_KEY))
   {
     open_new_segment();
@@ -252,28 +247,14 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& media)
       return;
   }
 
-  AVRational tb = m_out_stream->time_base;
-
-  int64_t frame_duration = av_rescale_q(1, AVRational{ 1,25 }, tb); ;
-
-  av_packet_rescale_ts(pkt, media->time_base, m_out_stream->time_base);
-
-  if (pkt->duration <= 0)
-  {
-    pkt->duration = frame_duration;
-  }
-  else
-  {
-    frame_duration = pkt->duration;
+  const auto out_stream_it = m_output_streams.find(media->stream_index);
+  if (out_stream_it == m_output_streams.end()) {
+    return;
   }
 
-  pkt->dts = m_pts;
-  pkt->pts = m_pts;
-
-  m_pts += frame_duration;
-
-
-  pkt->stream_index = m_out_stream->index;
+  AVStream* out_stream = out_stream_it->second;
+  av_packet_rescale_ts(pkt, media->time_base, out_stream->time_base);
+  pkt->stream_index = out_stream->index;
 
   if (av_interleaved_write_frame(m_ctx, pkt) < 0) {
     std::cerr << "write_frame failed\n";

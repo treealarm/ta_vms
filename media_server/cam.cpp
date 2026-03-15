@@ -80,7 +80,6 @@ void cam::start_recording() {
     }
 
     m_is_recording = true;
-    m_is_writer_initialized = false;
   }
 
   update_reader_subscription();
@@ -94,7 +93,6 @@ void cam::stop_recording() {
     }
 
     m_is_recording = false;
-    m_is_writer_initialized = false;
     m_writer.close();
   }
 
@@ -151,7 +149,6 @@ void cam::shutdown() {
 
     if (m_is_recording) {
       m_is_recording = false;
-      m_is_writer_initialized = false;
       m_writer.close();
     }
 
@@ -237,21 +234,13 @@ void cam::on_packet(const std::shared_ptr<media_packet>& pkt) {
   std::scoped_lock lock(m_sinks_mutex);
 
   if (m_is_recording) {
-    if (!m_is_writer_initialized) {
-      if (pkt->codec_parameters && m_writer.init(pkt->codec_parameters, pkt->time_base)) {
-        m_is_writer_initialized = true;
-      }
-    }
-
-    if (m_is_writer_initialized) {
-      auto writer_packet = clone_media_packet(pkt);
-      if (writer_packet) {
-        m_writer.on_packet(writer_packet);
-      }
+    auto writer_packet = clone_media_packet(pkt);
+    if (writer_packet) {
+      m_writer.on_packet(writer_packet);
     }
   }
 
-  if (m_is_web_rtc_running && m_webrtc_output_sink) {
+  if (m_is_web_rtc_running && m_webrtc_output_sink && pkt->media_type == AVMEDIA_TYPE_VIDEO) {
     if (!m_is_webrtc_sink_initialized) {
       if (pkt->codec_parameters && m_webrtc_output_sink->init(pkt->codec_parameters, pkt->time_base)) {
         m_is_webrtc_sink_initialized = true;
