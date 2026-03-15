@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <filesystem>
+#include <unordered_set>
 
 #include "media/media_packet.h"
 #include "media/media_sink.h"
@@ -39,6 +40,7 @@ private:
   size_t m_current_file_index = 0;
   AVFormatContext* m_ctx = nullptr;
   int m_video_index = -1;
+  std::unordered_set<int> m_forward_stream_indexes;
   std::vector<media_sink*> m_sinks;
   mutable std::mutex m_sinks_mutex;
 

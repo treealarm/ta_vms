@@ -22,5 +22,7 @@ private:
 
   AVFormatContext* m_ctx = nullptr;
   AVStream* m_out_stream = nullptr;
+  int64_t m_last_dts = AV_NOPTS_VALUE;
+  int64_t m_last_pts = AV_NOPTS_VALUE;
   bool m_is_initialized = false;
 };

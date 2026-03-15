@@ -49,7 +49,6 @@ private:
   mutable std::mutex m_sinks_mutex;
   bool m_is_running = false;
   bool m_is_recording = false;
-  bool m_is_writer_initialized = false;
   bool m_is_web_rtc_running = false;
   bool m_is_webrtc_sink_initialized = false;
   bool m_is_attached_to_reader = false;

@@ -187,10 +187,15 @@ bool file_reader::connect_current_file() {
   }
 
   m_video_index = -1;
+  m_forward_stream_indexes.clear();
   for (unsigned i = 0; i < m_ctx->nb_streams; ++i) {
-    if (m_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+    const AVMediaType media_type = m_ctx->streams[i]->codecpar->codec_type;
+    if (media_type == AVMEDIA_TYPE_VIDEO && m_video_index < 0) {
       m_video_index = static_cast<int>(i);
-      break;
+    }
+
+    if (media_type == AVMEDIA_TYPE_VIDEO || media_type == AVMEDIA_TYPE_AUDIO) {
+      m_forward_stream_indexes.insert(static_cast<int>(i));
     }
   }
 
@@ -215,6 +220,7 @@ bool file_reader::advance_to_next_file() {
 
 void file_reader::disconnect() {
   m_video_index = -1;
+  m_forward_stream_indexes.clear();
   if (m_ctx) {
     avformat_close_input(&m_ctx);
   }
@@ -256,7 +262,7 @@ void file_reader::stop() {
 
 void file_reader::read_loop() {
   while (m_running) {
-    if (!m_ctx || m_video_index < 0) {
+    if (!m_ctx || m_video_index < 0 || m_forward_stream_indexes.empty()) {
       if (!connect_current_file()) {
         break;
       }
@@ -272,21 +278,25 @@ void file_reader::read_loop() {
       continue;
     }
 
-    if (pkt->stream_index != m_video_index) {
+    if (!m_forward_stream_indexes.contains(pkt->stream_index)) {
       continue;
     }
 
     auto media = std::make_shared<media_packet>();
     media->packet = pkt;
-    media->stream_index = m_video_index;
-    media->time_base = m_ctx->streams[m_video_index]->time_base;
+    media->stream_index = pkt->stream_index;
+    media->time_base = m_ctx->streams[pkt->stream_index]->time_base;
+    media->media_type = m_ctx->streams[pkt->stream_index]->codecpar->codec_type;
+    media->frame_rate = m_ctx->streams[pkt->stream_index]->avg_frame_rate;
+    media->sample_rate = m_ctx->streams[pkt->stream_index]->codecpar->sample_rate;
+    media->nb_samples = 0;
     avcodec_parameters_ptr codec_copy(avcodec_parameters_alloc(),
       [](AVCodecParameters* params) { avcodec_parameters_free(&params); });
     if (!codec_copy) {
       continue;
     }
 
-    if (avcodec_parameters_copy(codec_copy.get(), m_ctx->streams[m_video_index]->codecpar) < 0) {
+    if (avcodec_parameters_copy(codec_copy.get(), m_ctx->streams[pkt->stream_index]->codecpar) < 0) {
       continue;
     }
 

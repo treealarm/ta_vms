@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <unordered_set>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -37,6 +38,7 @@ private:
   avformat_context_ptr m_ctx = nullptr;
   int64_t m_interrupt_start = 0;
   int m_video_index = -1;
+  std::unordered_set<int> m_forward_stream_indexes;
 
   media_sink* m_sink = nullptr;
   mutable std::mutex m_sink_mutex;
