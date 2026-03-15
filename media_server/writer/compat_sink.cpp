@@ -21,16 +21,36 @@ bool compat_sink::init(const avcodec_parameters_ptr& codec_parameters, AVRationa
     return false;
   }
 
-  if (codec_parameters->codec_id == AV_CODEC_ID_H264) {
-    return init_copy_mode(codec_parameters, time_base);
+  if (codec_parameters->codec_type == AVMEDIA_TYPE_VIDEO) {
+    if (codec_parameters->codec_id == AV_CODEC_ID_H264) {
+      return init_copy_mode(codec_parameters, time_base);
+    }
+    return init_transcode_mode(codec_parameters, time_base);
   }
 
-  return init_transcode_mode(codec_parameters, time_base);
+  if (codec_parameters->codec_type == AVMEDIA_TYPE_AUDIO) {
+    if (codec_parameters->codec_id == AV_CODEC_ID_OPUS) {
+      return init_copy_audio_mode(codec_parameters, time_base);
+    }
+    return init_audio_transcode_mode(codec_parameters, time_base);
+  }
+
+  m_mode = mode::failed;
+  return false;
 }
 
 bool compat_sink::init_copy_mode(const avcodec_parameters_ptr& codec_parameters, AVRational time_base)
 {
   m_mode = mode::copy_h264;
+  m_out_time_base = time_base;
+  m_out_codec_parameters = codec_parameters;
+  m_is_initialized = true;
+  return true;
+}
+
+bool compat_sink::init_copy_audio_mode(const avcodec_parameters_ptr& codec_parameters, AVRational time_base)
+{
+  m_mode = mode::copy_opus;
   m_out_time_base = time_base;
   m_out_codec_parameters = codec_parameters;
   m_is_initialized = true;
@@ -154,6 +174,147 @@ bool compat_sink::init_transcode_mode(const avcodec_parameters_ptr& codec_parame
   return true;
 }
 
+
+
+bool compat_sink::init_audio_transcode_mode(const avcodec_parameters_ptr& codec_parameters, AVRational time_base)
+{
+  const AVCodec* decoder = avcodec_find_decoder(codec_parameters->codec_id);
+  if (!decoder) {
+    std::cerr << "failed to find audio decoder for input stream\n";
+    m_mode = mode::failed;
+    return false;
+  }
+
+  m_decoder_ctx = avcodec_alloc_context3(decoder);
+  if (!m_decoder_ctx) {
+    m_mode = mode::failed;
+    return false;
+  }
+
+  if (avcodec_parameters_to_context(m_decoder_ctx, codec_parameters.get()) < 0 ||
+      avcodec_open2(m_decoder_ctx, decoder, nullptr) < 0) {
+    m_mode = mode::failed;
+    return false;
+  }
+
+  const AVCodec* encoder = avcodec_find_encoder_by_name("libopus");
+  if (!encoder) {
+    std::cerr << "failed to find libopus encoder (FFmpeg must be built with --enable-libopus)\n";
+    m_mode = mode::failed;
+    return false;
+  }
+
+  m_encoder_ctx = avcodec_alloc_context3(encoder);
+  if (!m_encoder_ctx) {
+    m_mode = mode::failed;
+    return false;
+  }
+
+  m_encoder_ctx->sample_rate = 48000;
+  av_channel_layout_default(&m_encoder_ctx->ch_layout, 2);
+  m_encoder_ctx->sample_fmt = encoder->sample_fmts ? encoder->sample_fmts[0] : AV_SAMPLE_FMT_FLTP;
+  m_encoder_ctx->time_base = AVRational{ 1, m_encoder_ctx->sample_rate };
+  m_encoder_ctx->bit_rate = 128000;
+
+  if (avcodec_open2(m_encoder_ctx, encoder, nullptr) < 0) {
+    std::cerr << "failed to open opus encoder\n";
+    m_mode = mode::failed;
+    return false;
+  }
+
+  if (swr_alloc_set_opts2(&m_swr_ctx,
+                          &m_encoder_ctx->ch_layout,
+                          m_encoder_ctx->sample_fmt,
+                          m_encoder_ctx->sample_rate,
+                          &m_decoder_ctx->ch_layout,
+                          m_decoder_ctx->sample_fmt,
+                          m_decoder_ctx->sample_rate,
+                          0,
+                          nullptr) < 0 || !m_swr_ctx || swr_init(m_swr_ctx) < 0) {
+    std::cerr << "failed to initialize swresample for opus\n";
+    m_mode = mode::failed;
+    return false;
+  }
+
+  m_audio_resampled_frame = av_frame_alloc();
+  if (!m_audio_resampled_frame) {
+    m_mode = mode::failed;
+    return false;
+  }
+
+  m_audio_resampled_frame->format = m_encoder_ctx->sample_fmt;
+  m_audio_resampled_frame->sample_rate = m_encoder_ctx->sample_rate;
+  m_audio_resampled_frame->ch_layout = m_encoder_ctx->ch_layout;
+  m_audio_resampled_frame->nb_samples = m_encoder_ctx->frame_size > 0 ? m_encoder_ctx->frame_size : 960;
+
+  if (av_frame_get_buffer(m_audio_resampled_frame, 0) < 0) {
+    m_mode = mode::failed;
+    return false;
+  }
+
+  avcodec_parameters_ptr out_codec_params(avcodec_parameters_alloc(),
+    [](AVCodecParameters* params) { avcodec_parameters_free(&params); });
+  if (!out_codec_params || avcodec_parameters_from_context(out_codec_params.get(), m_encoder_ctx) < 0) {
+    m_mode = mode::failed;
+    return false;
+  }
+
+  m_out_codec_parameters = std::move(out_codec_params);
+  m_out_time_base = m_encoder_ctx->time_base;
+  m_mode = mode::encode_opus;
+  m_is_initialized = true;
+  return true;
+}
+
+void compat_sink::transcode_audio_packet(const std::shared_ptr<media_packet>& media)
+{
+  if (avcodec_send_packet(m_decoder_ctx, media->packet.get()) < 0) {
+    return;
+  }
+
+  AVFrame* decoded = av_frame_alloc();
+  if (!decoded) {
+    return;
+  }
+
+  while (avcodec_receive_frame(m_decoder_ctx, decoded) == 0) {
+    if (av_frame_make_writable(m_audio_resampled_frame) < 0) {
+      break;
+    }
+
+    av_frame_unref(m_audio_resampled_frame);
+    m_audio_resampled_frame->nb_samples = decoded->nb_samples;
+    m_audio_resampled_frame->format = m_encoder_ctx->sample_fmt;
+    m_audio_resampled_frame->sample_rate = m_encoder_ctx->sample_rate;
+    m_audio_resampled_frame->ch_layout = m_encoder_ctx->ch_layout;
+    if (av_frame_get_buffer(m_audio_resampled_frame, 0) < 0) {
+      break;
+    }
+
+    if (swr_convert(m_swr_ctx,
+                    m_audio_resampled_frame->data,
+                    m_audio_resampled_frame->nb_samples,
+                    const_cast<const uint8_t**>(decoded->data),
+                    decoded->nb_samples) < 0) {
+      break;
+    }
+
+    m_audio_resampled_frame->pts = av_rescale_q(decoded->pts, media->time_base, m_encoder_ctx->time_base);
+    encode_audio_frame(m_audio_resampled_frame);
+    av_frame_unref(decoded);
+  }
+
+  av_frame_free(&decoded);
+}
+
+void compat_sink::encode_audio_frame(AVFrame* frame)
+{
+  if (avcodec_send_frame(m_encoder_ctx, frame) < 0) {
+    return;
+  }
+
+  drain_encoder_packets();
+}
 void compat_sink::add_sink(media_sink* sink)
 {
   if (!sink) {
@@ -176,7 +337,7 @@ void compat_sink::on_packet(const std::shared_ptr<media_packet>& media)
     return;
   }
 
-  if (m_mode == mode::copy_h264) {
+  if (m_mode == mode::copy_h264 || m_mode == mode::copy_opus) {
     auto out_media = clone_media_packet(media);
     if (!out_media) {
       return;
@@ -190,6 +351,11 @@ void compat_sink::on_packet(const std::shared_ptr<media_packet>& media)
 
   if (m_mode == mode::encode_libx264) {
     transcode_packet(media);
+    return;
+  }
+
+  if (m_mode == mode::encode_opus) {
+    transcode_audio_packet(media);
   }
 }
 
@@ -247,6 +413,7 @@ void compat_sink::drain_encoder_packets()
     out_media->packet = pkt;
     out_media->stream_index = 0;
     out_media->time_base = m_encoder_ctx->time_base;
+    out_media->media_type = m_out_codec_parameters ? m_out_codec_parameters->codec_type : AVMEDIA_TYPE_UNKNOWN;
     out_media->codec_parameters = m_out_codec_parameters;
     emit_packet(out_media);
 
@@ -261,11 +428,17 @@ void compat_sink::drain_encoder_packets()
 
 void compat_sink::flush_decoder_encoder()
 {
-  if (m_mode != mode::encode_libx264) {
+  if (m_mode != mode::encode_libx264 && m_mode != mode::encode_opus) {
     return;
   }
 
   avcodec_send_packet(m_decoder_ctx, nullptr);
+
+  if (m_mode == mode::encode_opus) {
+    avcodec_send_frame(m_encoder_ctx, nullptr);
+    drain_encoder_packets();
+    return;
+  }
 
   AVFrame* decoded = av_frame_alloc();
   if (decoded) {
@@ -322,6 +495,14 @@ void compat_sink::close()
 
   if (m_scaled_frame) {
     av_frame_free(&m_scaled_frame);
+  }
+
+  if (m_audio_resampled_frame) {
+    av_frame_free(&m_audio_resampled_frame);
+  }
+
+  if (m_swr_ctx) {
+    swr_free(&m_swr_ctx);
   }
 
   if (m_sws_ctx) {

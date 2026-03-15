@@ -12,32 +12,53 @@ rtsp_output_sink::~rtsp_output_sink()
   close();
 }
 
-bool rtsp_output_sink::init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base)
+bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
 {
   close();
 
-  if (!codec_parameters || m_rtsp_url.empty())
+  if (streams.empty() || m_rtsp_url.empty()) {
     return false;
+  }
 
   if (avformat_alloc_output_context2(&m_ctx, nullptr, "rtsp", m_rtsp_url.c_str()) < 0 || !m_ctx) {
     std::cerr << "failed to allocate rtsp output context\n";
     return false;
   }
 
-  m_out_stream = avformat_new_stream(m_ctx, nullptr);
-  if (!m_out_stream) {
-    std::cerr << "failed to create rtsp output stream\n";
+  m_streams.clear();
+  m_streams.reserve(streams.size());
+
+  for (const auto& stream : streams) {
+    if (!stream.codec_parameters) {
+      continue;
+    }
+
+    AVStream* out_stream = avformat_new_stream(m_ctx, nullptr);
+    if (!out_stream) {
+      std::cerr << "failed to create rtsp output stream\n";
+      close();
+      return false;
+    }
+
+    if (avcodec_parameters_copy(out_stream->codecpar, stream.codec_parameters.get()) < 0) {
+      std::cerr << "failed to copy codec parameters\n";
+      close();
+      return false;
+    }
+
+    out_stream->time_base = stream.time_base.num > 0 ? stream.time_base : AVRational{ 1, 90000 };
+
+    stream_state state;
+    state.media_type = stream.media_type;
+    state.out_stream = out_stream;
+    state.input_time_base = stream.time_base;
+    m_streams.push_back(state);
+  }
+
+  if (m_streams.empty()) {
     close();
     return false;
   }
-
-  if (avcodec_parameters_copy(m_out_stream->codecpar, codec_parameters.get()) < 0) {
-    std::cerr << "failed to copy codec parameters\n";
-    close();
-    return false;
-  }
-
-  m_out_stream->time_base = time_base.num > 0 ? time_base : AVRational{ 1,25 };
 
   AVDictionary* opts = nullptr;
   av_dict_set(&opts, "rtsp_transport", "tcp", 0);
@@ -51,19 +72,34 @@ bool rtsp_output_sink::init(const avcodec_parameters_ptr& codec_parameters, AVRa
 
   av_dict_free(&opts);
 
-  m_last_dts = AV_NOPTS_VALUE;
-  m_last_pts = AV_NOPTS_VALUE;
   m_is_initialized = true;
   return true;
 }
+
+rtsp_output_sink::stream_state* rtsp_output_sink::find_stream(AVMediaType media_type)
+{
+  for (auto& stream : m_streams) {
+    if (stream.media_type == media_type) {
+      return &stream;
+    }
+  }
+
+  return nullptr;
+}
+
 void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
 {
-  if (!m_is_initialized || !media || !media->packet || !m_out_stream) {
+  if (!m_is_initialized || !media || !media->packet) {
+    return;
+  }
+
+  auto* stream = find_stream(media->media_type);
+  if (!stream || !stream->out_stream) {
     return;
   }
 
   AVPacket* pkt = media->packet.get();
-  av_packet_rescale_ts(pkt, media->time_base, m_out_stream->time_base);
+  av_packet_rescale_ts(pkt, media->time_base, stream->out_stream->time_base);
 
   if (pkt->dts == AV_NOPTS_VALUE && pkt->pts != AV_NOPTS_VALUE) {
     pkt->dts = pkt->pts;
@@ -72,35 +108,33 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
     pkt->pts = pkt->dts;
   }
 
-  if (m_last_dts != AV_NOPTS_VALUE && pkt->dts != AV_NOPTS_VALUE && pkt->dts <= m_last_dts) {
-    pkt->dts = m_last_dts + 1;
+  if (stream->last_dts != AV_NOPTS_VALUE && pkt->dts != AV_NOPTS_VALUE && pkt->dts <= stream->last_dts) {
+    pkt->dts = stream->last_dts + 1;
   }
 
-  if (m_last_pts != AV_NOPTS_VALUE && pkt->pts != AV_NOPTS_VALUE && pkt->pts <= m_last_pts) {
-    pkt->pts = m_last_pts + 1;
+  if (stream->last_pts != AV_NOPTS_VALUE && pkt->pts != AV_NOPTS_VALUE && pkt->pts <= stream->last_pts) {
+    pkt->pts = stream->last_pts + 1;
   }
 
   if (pkt->pts != AV_NOPTS_VALUE && pkt->dts != AV_NOPTS_VALUE && pkt->pts < pkt->dts) {
     pkt->pts = pkt->dts;
   }
 
-  pkt->stream_index = m_out_stream->index;
+  pkt->stream_index = stream->out_stream->index;
 
   if (av_interleaved_write_frame(m_ctx, pkt) < 0) {
     std::cerr << "failed to write packet to rtsp output\n";
     return;
   }
 
-  m_last_dts = pkt->dts;
-  m_last_pts = pkt->pts;
+  stream->last_dts = pkt->dts;
+  stream->last_pts = pkt->pts;
 }
 
 void rtsp_output_sink::close()
 {
   if (!m_ctx) {
-    m_out_stream = nullptr;
-    m_last_dts = AV_NOPTS_VALUE;
-    m_last_pts = AV_NOPTS_VALUE;
+    m_streams.clear();
     m_is_initialized = false;
     return;
   }
@@ -115,8 +149,6 @@ void rtsp_output_sink::close()
 
   avformat_free_context(m_ctx);
   m_ctx = nullptr;
-  m_out_stream = nullptr;
-  m_last_dts = AV_NOPTS_VALUE;
-  m_last_pts = AV_NOPTS_VALUE;
+  m_streams.clear();
   m_is_initialized = false;
 }
