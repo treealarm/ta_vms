@@ -158,6 +158,9 @@ void rtsp_reader::read_loop() {
     media->stream_index = pkt->stream_index;
     media->time_base = m_ctx->streams[pkt->stream_index]->time_base;
     media->media_type = m_ctx->streams[pkt->stream_index]->codecpar->codec_type;
+    media->frame_rate = m_ctx->streams[pkt->stream_index]->avg_frame_rate;
+    media->sample_rate = m_ctx->streams[pkt->stream_index]->codecpar->sample_rate;
+    media->nb_samples = 0;
     avcodec_parameters_ptr codec_copy(avcodec_parameters_alloc(),
       [](AVCodecParameters* params) { avcodec_parameters_free(&params); });
     if (!codec_copy) {

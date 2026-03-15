@@ -19,6 +19,9 @@ struct media_packet {
   int stream_index;
   AVRational time_base;
   AVMediaType media_type = AVMEDIA_TYPE_UNKNOWN;
+  AVRational frame_rate{ 0, 1 };
+  int sample_rate = 0;
+  int nb_samples = 0;
   avcodec_parameters_ptr codec_parameters;
 };
 
@@ -40,6 +43,9 @@ inline std::shared_ptr<media_packet> clone_media_packet(const std::shared_ptr<me
   dst->stream_index = src->stream_index;
   dst->time_base = src->time_base;
   dst->media_type = src->media_type;
+  dst->frame_rate = src->frame_rate;
+  dst->sample_rate = src->sample_rate;
+  dst->nb_samples = src->nb_samples;
 
   dst->codec_parameters = src->codec_parameters;
 

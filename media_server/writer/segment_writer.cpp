@@ -252,23 +252,49 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& media)
   }
 
   AVStream* out_stream = out_stream_it->second;
-  av_packet_rescale_ts(pkt, media->time_base, out_stream->time_base);
 
+  int64_t duration = 0;
   if (media->media_type == AVMEDIA_TYPE_VIDEO) {
-    const AVRational tb = out_stream->time_base;
-    int64_t frame_duration = av_rescale_q(1, AVRational{ 1,25 }, tb);
-
-    if (pkt->duration <= 0) {
-      pkt->duration = frame_duration;
-    } else {
-      frame_duration = pkt->duration;
+    AVRational fps = media->frame_rate;
+    if (fps.num <= 0 || fps.den <= 0) {
+      fps = AVRational{ 25, 1 };
     }
 
-    int64_t& next_pts = m_next_pts_by_input_stream[media->stream_index];
-    pkt->dts = next_pts;
-    pkt->pts = next_pts;
-    next_pts += frame_duration;
+    duration = av_rescale_q(1, av_inv_q(fps), out_stream->time_base);
+  } else if (media->media_type == AVMEDIA_TYPE_AUDIO) {
+    const int sample_rate = media->sample_rate > 0 ? media->sample_rate :
+      (media->codec_parameters ? media->codec_parameters->sample_rate : 0);
+
+    if (sample_rate > 0) {
+      int nb_samples = media->nb_samples;
+      if (nb_samples <= 0 && pkt->duration > 0) {
+        nb_samples = static_cast<int>(av_rescale_q(pkt->duration,
+                                                   media->time_base,
+                                                   AVRational{ 1, sample_rate }));
+      }
+      if (nb_samples <= 0) {
+        nb_samples = 1024;
+      }
+
+      duration = av_rescale_q(nb_samples,
+                              AVRational{ 1, sample_rate },
+                              out_stream->time_base);
+    }
   }
+
+  if (duration <= 0) {
+    if (pkt->duration > 0) {
+      duration = av_rescale_q(pkt->duration, media->time_base, out_stream->time_base);
+    } else {
+      duration = 1;
+    }
+  }
+
+  int64_t& next_pts = m_next_pts_by_input_stream[media->stream_index];
+  pkt->pts = next_pts;
+  pkt->dts = next_pts;
+  pkt->duration = duration;
+  next_pts += duration;
 
   pkt->stream_index = out_stream->index;
 
