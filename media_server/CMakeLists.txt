@@ -33,6 +33,7 @@ set(SOURCES
     media/av_deleters.h
     media/media_packet.h
     media/media_sink.h
+    media/sink_container.h
 
     reader/rtsp_reader.cpp
     reader/rtsp_reader.h
