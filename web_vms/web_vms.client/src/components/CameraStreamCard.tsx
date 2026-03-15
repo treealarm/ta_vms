@@ -106,20 +106,15 @@ function CameraStreamCard({
             }}
           />
 
-          <Stack direction="row" spacing={1.5}>
-            <Button
-              fullWidth
-              disabled={busy || isArchiveCamera}
-              variant={camera.isRecording ? 'contained' : 'outlined'}
-              color={camera.isRecording ? 'error' : 'primary'}
-              onClick={() => void updateState(!camera.isRecording)}
-            >
-              REC
-            </Button>
-            <Button fullWidth component="a" href={streamUrl} target="_blank" rel="noreferrer" variant="outlined">
-              OPEN WEBRTC
-            </Button>
-          </Stack>
+          <Button
+            fullWidth
+            disabled={busy || isArchiveCamera}
+            variant={camera.isRecording ? 'contained' : 'outlined'}
+            color={camera.isRecording ? 'error' : 'primary'}
+            onClick={() => void updateState(!camera.isRecording)}
+          >
+            REC
+          </Button>
         </Stack>
       </CardContent>
     </Card>
