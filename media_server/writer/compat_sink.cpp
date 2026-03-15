@@ -199,10 +199,7 @@ bool compat_sink::init_audio_transcode_mode(const avcodec_parameters_ptr& codec_
 
   const AVCodec* encoder = avcodec_find_encoder_by_name("libopus");
   if (!encoder) {
-    encoder = avcodec_find_encoder(AV_CODEC_ID_OPUS);
-  }
-  if (!encoder) {
-    std::cerr << "failed to find opus encoder\n";
+    std::cerr << "failed to find libopus encoder (FFmpeg must be built with --enable-libopus)\n";
     m_mode = mode::failed;
     return false;
   }
