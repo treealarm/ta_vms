@@ -1,25 +1,13 @@
 #include "segment_writer.h"
 
-#include <ctime>
 #include <format>
-#include <iomanip>
 #include <iostream>
-#include <sstream>
 
 namespace {
 std::string to_iso_utc(std::chrono::system_clock::time_point tp)
 {
-  const auto seconds_tp = std::chrono::floor<std::chrono::seconds>(tp);
-  const auto as_time_t = std::chrono::system_clock::to_time_t(seconds_tp);
-
-  const std::tm* utc_tm = std::gmtime(&as_time_t);
-  if (!utc_tm) {
-    return {};
-  }
-
-  std::ostringstream stream;
-  stream << std::put_time(utc_tm, "%Y-%m-%dT%H:%M:%SZ");
-  return stream.str();
+  return std::format("{:%Y-%m-%dT%H:%M:%SZ}",
+                     std::chrono::floor<std::chrono::seconds>(tp));
 }
 
 std::string json_escape(const std::string& value)
