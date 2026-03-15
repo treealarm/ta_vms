@@ -16,6 +16,7 @@ service CameraControlService {
 message CameraState {
   bool recording = 1;
   bool jpeg_stream = 2;
+  bool web_rtc = 3;
 }
 
 message AddCameraRequest {

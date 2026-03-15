@@ -5,6 +5,7 @@ bool camera_manager::add_camera(const std::string& camera_id,
                                 const std::string& storage_base_path,
                                 bool recording,
                                 bool jpeg_stream,
+                                bool web_rtc,
                                 std::string& error) {
   std::scoped_lock lock(m_mutex);
 
@@ -36,11 +37,18 @@ bool camera_manager::add_camera(const std::string& camera_id,
       }
     }
 
+    if (web_rtc) {
+      if (!camera->start_web_rtc(error)) {
+        return false;
+      }
+    }
+
     camera_entry entry;
     entry.camera = std::move(camera);
     entry.source = rtsp_url;
     entry.is_recording = recording;
     entry.is_jpeg_streaming = jpeg_stream;
+    entry.is_web_rtc_streaming = web_rtc;
 
     m_cameras.emplace(camera_id, std::move(entry));
     return true;
@@ -93,6 +101,7 @@ bool camera_manager::stop_recording(const std::string& camera_id,
 bool camera_manager::set_camera_state(const std::string& camera_id,
                                     bool recording,
                                     bool jpeg_stream,
+                                    bool web_rtc,
                                     std::string& error) {
   std::scoped_lock lock(m_mutex);
 
@@ -122,6 +131,19 @@ bool camera_manager::set_camera_state(const std::string& camera_id,
       }
     }
     it->second.is_jpeg_streaming = jpeg_stream;
+  }
+
+  if (web_rtc != it->second.is_web_rtc_streaming) {
+    if (web_rtc) {
+      if (!it->second.camera->start_web_rtc(error)) {
+        return false;
+      }
+    } else {
+      if (!it->second.camera->stop_web_rtc(error)) {
+        return false;
+      }
+    }
+    it->second.is_web_rtc_streaming = web_rtc;
   }
 
   return true;
@@ -195,7 +217,7 @@ std::vector<camera_manager::camera_info> camera_manager::list_cameras() const {
   cameras.reserve(m_cameras.size());
 
   for (const auto& [camera_id, entry] : m_cameras) {
-    cameras.push_back(camera_info{camera_id, entry.source, entry.is_recording});
+    cameras.push_back(camera_info{camera_id, entry.source, entry.is_recording, entry.is_jpeg_streaming, entry.is_web_rtc_streaming});
   }
 
   return cameras;
@@ -208,6 +230,7 @@ void camera_manager::stop_all() {
     entry.camera->shutdown();
     entry.is_recording = false;
     entry.is_jpeg_streaming = false;
+    entry.is_web_rtc_streaming = false;
   }
 
   for (auto& [_, player] : m_arch_players_by_client) {

@@ -13,6 +13,7 @@ grpc::Status camera_control_service::AddCamera(
                                             request->storage_base_path(),
                                             request->state().recording(),
                                             request->state().jpeg_stream(),
+                                            request->state().web_rtc(),
                                             error);
 
   response->set_success(success);
@@ -90,6 +91,7 @@ grpc::Status camera_control_service::SetCameraState(
   const bool success = m_manager.set_camera_state(request->camera_id(),
                                                   request->state().recording(),
                                                   request->state().jpeg_stream(),
+                                                  request->state().web_rtc(),
                                                   error);
 
   response->set_success(success);

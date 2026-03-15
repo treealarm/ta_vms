@@ -16,6 +16,7 @@ public:
     std::string rtsp_url;
     bool is_recording = false;
     bool is_jpeg_streaming = false;
+    bool is_web_rtc_streaming = false;
   };
 
   bool add_camera(const std::string& camera_id,
@@ -23,6 +24,7 @@ public:
                   const std::string& storage_base_path,
                   bool recording,
                   bool jpeg_stream,
+                  bool web_rtc,
                   std::string& error);
 
   bool start_recording(const std::string& camera_id, std::string& error);
@@ -30,6 +32,7 @@ public:
   bool set_camera_state(const std::string& camera_id,
                         bool recording,
                         bool jpeg_stream,
+                        bool web_rtc,
                         std::string& error);
   bool add_arch_player(const std::string& camera_id,
                        const std::string& client_id,
@@ -59,6 +62,7 @@ private:
     std::string source;
     bool is_recording = false;
     bool is_jpeg_streaming = false;
+    bool is_web_rtc_streaming = false;
   };
 
 

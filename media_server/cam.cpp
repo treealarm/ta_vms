@@ -6,6 +6,21 @@
 #include "reader/rtsp_reader.h"
 
 namespace {
+std::string resolve_storage_base_path(const std::string& storage_base_path)
+{
+  if (!storage_base_path.empty()) {
+    return storage_base_path;
+  }
+
+  if (const char* value = std::getenv("VMS_STORAGE_BASE_PATH")) {
+    if (value[0] != '\0') {
+      return value;
+    }
+  }
+
+  return "records";
+}
+
 std::string resolve_webrtc_rtsp_base_url()
 {
   if (const char* value = std::getenv("VMS_WEBRTC_RTSP_BASE_URL")) {
@@ -38,9 +53,8 @@ cam::cam(const std::string& source,
          const std::string& cam_id,
          const std::string& storage_base_path)
     : m_source(source),
-      m_cam_id(cam_id) {
-  (void)storage_base_path;
-
+      m_cam_id(cam_id),
+      m_writer(resolve_storage_base_path(storage_base_path), cam_id, 60) {
   if (!is_rtsp_source(m_source)) {
     throw std::runtime_error("cam supports only RTSP sources");
   }
@@ -59,16 +73,35 @@ cam::~cam() {
 }
 
 void cam::start_recording() {
-  std::string error;
-  start_web_rtc(resolve_default_webrtc_rtsp_url(m_cam_id), error);
+  {
+    std::scoped_lock lock(m_sinks_mutex);
+    if (m_is_recording) {
+      return;
+    }
+
+    m_is_recording = true;
+    m_is_writer_initialized = false;
+  }
+
+  update_reader_subscription();
 }
 
 void cam::stop_recording() {
-  std::string error;
-  stop_web_rtc(error);
+  {
+    std::scoped_lock lock(m_sinks_mutex);
+    if (!m_is_recording) {
+      return;
+    }
+
+    m_is_recording = false;
+    m_is_writer_initialized = false;
+    m_writer.close();
+  }
+
+  update_reader_subscription();
 }
 
-bool cam::start_web_rtc(const std::string& rtsp_url, std::string& error) {
+bool cam::start_web_rtc(std::string& error) {
   {
     std::scoped_lock lock(m_sinks_mutex);
 
@@ -77,12 +110,7 @@ bool cam::start_web_rtc(const std::string& rtsp_url, std::string& error) {
       return false;
     }
 
-    if (rtsp_url.empty()) {
-      error = "rtsp url must not be empty";
-      return false;
-    }
-
-    m_webrtc_output_sink = std::make_unique<webrtc_output_sink>(rtsp_url);
+    m_webrtc_output_sink = std::make_unique<webrtc_output_sink>(resolve_default_webrtc_rtsp_url(m_cam_id));
     m_is_web_rtc_running = true;
     m_is_webrtc_sink_initialized = false;
   }
@@ -119,6 +147,12 @@ void cam::shutdown() {
     if (m_jpeg_streamer) {
       m_jpeg_streamer->close();
       m_jpeg_streamer.reset();
+    }
+
+    if (m_is_recording) {
+      m_is_recording = false;
+      m_is_writer_initialized = false;
+      m_writer.close();
     }
 
     if (m_is_web_rtc_running) {
@@ -202,6 +236,21 @@ bool cam::stop_jpeg_stream(std::string& error) {
 void cam::on_packet(const std::shared_ptr<media_packet>& pkt) {
   std::scoped_lock lock(m_sinks_mutex);
 
+  if (m_is_recording) {
+    if (!m_is_writer_initialized) {
+      if (pkt->codec_parameters && m_writer.init(pkt->codec_parameters, pkt->time_base)) {
+        m_is_writer_initialized = true;
+      }
+    }
+
+    if (m_is_writer_initialized) {
+      auto writer_packet = clone_media_packet(pkt);
+      if (writer_packet) {
+        m_writer.on_packet(writer_packet);
+      }
+    }
+  }
+
   if (m_is_web_rtc_running && m_webrtc_output_sink) {
     if (!m_is_webrtc_sink_initialized) {
       if (pkt->codec_parameters && m_webrtc_output_sink->init(pkt->codec_parameters, pkt->time_base)) {
@@ -228,7 +277,7 @@ void cam::on_packet(const std::shared_ptr<media_packet>& pkt) {
 void cam::update_reader_subscription() {
   std::scoped_lock lock(m_sinks_mutex);
 
-  const bool has_consumers = m_is_web_rtc_running || static_cast<bool>(m_jpeg_streamer);
+  const bool has_consumers = m_is_recording || m_is_web_rtc_running || static_cast<bool>(m_jpeg_streamer);
 
   if (has_consumers && !m_is_attached_to_reader) {
     m_reader->add_sink(this);
