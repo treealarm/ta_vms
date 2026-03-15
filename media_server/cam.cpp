@@ -6,19 +6,26 @@
 #include "reader/rtsp_reader.h"
 
 namespace {
-std::string resolve_storage_base_path(const std::string& storage_base_path)
+std::string resolve_webrtc_rtsp_base_url()
 {
-  if (!storage_base_path.empty()) {
-    return storage_base_path;
-  }
-
-  if (const char* value = std::getenv("VMS_STORAGE_BASE_PATH")) {
+  if (const char* value = std::getenv("VMS_WEBRTC_RTSP_BASE_URL")) {
     if (value[0] != '\0') {
       return value;
     }
   }
 
-  return "records";
+  return "rtsp://localhost:8554";
+}
+
+std::string resolve_webrtc_rtsp_url(const std::string& camera_id)
+{
+  std::string base_url = resolve_webrtc_rtsp_base_url();
+
+  if (!base_url.empty() && base_url.back() != '/') {
+    base_url.push_back('/');
+  }
+
+  return base_url + camera_id;
 }
 
 bool is_rtsp_source(const std::string& source)
@@ -32,8 +39,12 @@ cam::cam(const std::string& source,
          const std::string& storage_base_path)
     : m_source(source),
       m_cam_id(cam_id),
-      m_writer(resolve_storage_base_path(storage_base_path), cam_id, 60),
-      m_ffmpeg_compat_sink(m_writer) {
+      m_rtsp_output_sink(resolve_webrtc_rtsp_url(cam_id)),
+      m_ffmpeg_compat_sink([this](const std::shared_ptr<media_packet>& media) {
+        m_rtsp_output_sink.on_packet(media);
+      }) {
+  (void)storage_base_path;
+
   if (!is_rtsp_source(m_source)) {
     throw std::runtime_error("cam supports only RTSP sources");
   }
@@ -75,6 +86,7 @@ void cam::stop_recording() {
     m_is_recording = false;
     m_is_writer_initialized = false;
     m_ffmpeg_compat_sink.close();
+    m_rtsp_output_sink.close();
   }
 
   update_reader_subscription();
@@ -92,6 +104,7 @@ void cam::shutdown() {
       m_is_recording = false;
       m_is_writer_initialized = false;
       m_ffmpeg_compat_sink.close();
+      m_rtsp_output_sink.close();
     }
   }
 
@@ -169,7 +182,12 @@ void cam::on_packet(const std::shared_ptr<media_packet>& pkt) {
   if (m_is_recording) {
     if (!m_is_writer_initialized) {
       if (pkt->codec_parameters && m_ffmpeg_compat_sink.init(pkt->codec_parameters, pkt->time_base)) {
-        m_is_writer_initialized = true;
+        if (m_rtsp_output_sink.init(m_ffmpeg_compat_sink.output_codec_parameters(),
+                                    m_ffmpeg_compat_sink.output_time_base())) {
+          m_is_writer_initialized = true;
+        } else {
+          m_ffmpeg_compat_sink.close();
+        }
       }
     }
 

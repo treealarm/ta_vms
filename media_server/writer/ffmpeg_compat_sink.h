@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 
 extern "C" {
@@ -8,16 +9,20 @@ extern "C" {
 }
 
 #include "media/media_sink.h"
-#include "writer/segment_writer.h"
 
 class ffmpeg_compat_sink : public media_sink {
 public:
-  explicit ffmpeg_compat_sink(segment_writer& writer);
+  using packet_callback = std::function<void(const std::shared_ptr<media_packet>&)>;
+
+  explicit ffmpeg_compat_sink(packet_callback on_packet_ready);
   ~ffmpeg_compat_sink() override;
 
   bool init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base);
   void on_packet(const std::shared_ptr<media_packet>& media) override;
   void close();
+
+  const avcodec_parameters_ptr& output_codec_parameters() const;
+  AVRational output_time_base() const;
 
 private:
   enum class mode {
@@ -33,11 +38,12 @@ private:
   void encode_frame(AVFrame* frame);
   void drain_encoder_packets();
   void flush_decoder_encoder();
+  void emit_packet(const std::shared_ptr<media_packet>& media);
 
 private:
-  segment_writer& m_writer;
+  packet_callback m_on_packet_ready;
   mode m_mode = mode::unknown;
-  bool m_is_writer_initialized = false;
+  bool m_is_initialized = false;
 
   AVCodecContext* m_decoder_ctx = nullptr;
   AVCodecContext* m_encoder_ctx = nullptr;

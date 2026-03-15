@@ -6,8 +6,8 @@ extern "C" {
 #include <libavutil/opt.h>
 }
 
-ffmpeg_compat_sink::ffmpeg_compat_sink(segment_writer& writer)
-  : m_writer(writer)
+ffmpeg_compat_sink::ffmpeg_compat_sink(packet_callback on_packet_ready)
+  : m_on_packet_ready(std::move(on_packet_ready))
 {
 }
 
@@ -18,7 +18,9 @@ ffmpeg_compat_sink::~ffmpeg_compat_sink()
 
 bool ffmpeg_compat_sink::init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base)
 {
-  if (!codec_parameters) {
+  close();
+
+  if (!codec_parameters || !m_on_packet_ready) {
     m_mode = mode::failed;
     return false;
   }
@@ -35,8 +37,8 @@ bool ffmpeg_compat_sink::init_copy_mode(const avcodec_parameters_ptr& codec_para
   m_mode = mode::copy_h264;
   m_out_time_base = time_base;
   m_out_codec_parameters = codec_parameters;
-  m_is_writer_initialized = m_writer.init(m_out_codec_parameters, m_out_time_base);
-  return m_is_writer_initialized;
+  m_is_initialized = true;
+  return true;
 }
 
 bool ffmpeg_compat_sink::init_transcode_mode(const avcodec_parameters_ptr& codec_parameters, AVRational time_base)
@@ -151,14 +153,14 @@ bool ffmpeg_compat_sink::init_transcode_mode(const avcodec_parameters_ptr& codec
   m_out_codec_parameters = std::move(out_codec_params);
   m_out_time_base = m_encoder_ctx->time_base;
   m_mode = mode::encode_libx264;
+  m_is_initialized = true;
 
-  m_is_writer_initialized = m_writer.init(m_out_codec_parameters, m_out_time_base);
-  return m_is_writer_initialized;
+  return true;
 }
 
 void ffmpeg_compat_sink::on_packet(const std::shared_ptr<media_packet>& media)
 {
-  if (!media || !media->packet || !m_is_writer_initialized) {
+  if (!media || !media->packet || !m_is_initialized) {
     return;
   }
 
@@ -170,7 +172,7 @@ void ffmpeg_compat_sink::on_packet(const std::shared_ptr<media_packet>& media)
 
     out_media->codec_parameters = m_out_codec_parameters;
     out_media->time_base = m_out_time_base;
-    m_writer.on_packet(out_media);
+    emit_packet(out_media);
     return;
   }
 
@@ -234,7 +236,7 @@ void ffmpeg_compat_sink::drain_encoder_packets()
     out_media->stream_index = 0;
     out_media->time_base = m_encoder_ctx->time_base;
     out_media->codec_parameters = m_out_codec_parameters;
-    m_writer.on_packet(out_media);
+    emit_packet(out_media);
 
     out_pkt = av_packet_alloc();
     if (!out_pkt) {
@@ -280,6 +282,11 @@ void ffmpeg_compat_sink::flush_decoder_encoder()
   drain_encoder_packets();
 }
 
+void ffmpeg_compat_sink::emit_packet(const std::shared_ptr<media_packet>& media)
+{
+  m_on_packet_ready(media);
+}
+
 void ffmpeg_compat_sink::close()
 {
   flush_decoder_encoder();
@@ -301,8 +308,18 @@ void ffmpeg_compat_sink::close()
     avcodec_free_context(&m_encoder_ctx);
   }
 
-  m_writer.close();
   m_out_codec_parameters.reset();
+  m_out_time_base = AVRational{};
   m_mode = mode::unknown;
-  m_is_writer_initialized = false;
+  m_is_initialized = false;
+}
+
+const avcodec_parameters_ptr& ffmpeg_compat_sink::output_codec_parameters() const
+{
+  return m_out_codec_parameters;
+}
+
+AVRational ffmpeg_compat_sink::output_time_base() const
+{
+  return m_out_time_base;
 }
