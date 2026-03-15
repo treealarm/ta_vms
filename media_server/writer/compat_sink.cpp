@@ -3,9 +3,6 @@
 #include <algorithm>
 #include <iostream>
 
-extern "C" {
-#include <libavutil/opt.h>
-}
 
 compat_sink::~compat_sink()
 {
@@ -215,9 +212,22 @@ bool compat_sink::init_audio_transcode_mode(const avcodec_parameters_ptr& codec_
   m_encoder_ctx->sample_fmt = encoder->sample_fmts ? encoder->sample_fmts[0] : AV_SAMPLE_FMT_FLTP;
   m_encoder_ctx->time_base = AVRational{ 1, m_encoder_ctx->sample_rate };
   m_encoder_ctx->bit_rate = 128000;
+  //m_encoder_ctx->frame_size = 960;
 
   if (avcodec_open2(m_encoder_ctx, encoder, nullptr) < 0) {
     std::cerr << "failed to open opus encoder\n";
+    m_mode = mode::failed;
+    return false;
+  }
+
+  m_audio_fifo = av_audio_fifo_alloc(
+    m_encoder_ctx->sample_fmt,
+    m_encoder_ctx->ch_layout.nb_channels,
+    1024
+  );
+
+  if (!m_audio_fifo) {
+    std::cerr << "failed to allocate audio fifo\n";
     m_mode = mode::failed;
     return false;
   }
@@ -278,29 +288,73 @@ void compat_sink::transcode_audio_packet(const std::shared_ptr<media_packet>& me
   }
 
   while (avcodec_receive_frame(m_decoder_ctx, decoded) == 0) {
-    if (av_frame_make_writable(m_audio_resampled_frame) < 0) {
+
+    int dst_nb_samples = av_rescale_rnd(
+      swr_get_delay(m_swr_ctx, m_decoder_ctx->sample_rate) + decoded->nb_samples,
+      m_encoder_ctx->sample_rate,
+      m_decoder_ctx->sample_rate,
+      AV_ROUND_UP
+    );
+
+    AVFrame* resampled = av_frame_alloc();
+    if (!resampled) break;
+
+    resampled->format = m_encoder_ctx->sample_fmt;
+    resampled->sample_rate = m_encoder_ctx->sample_rate;
+    resampled->ch_layout = m_encoder_ctx->ch_layout;
+    resampled->nb_samples = dst_nb_samples;
+
+    if (av_frame_get_buffer(resampled, 0) < 0) {
+      av_frame_free(&resampled);
       break;
     }
 
-    av_frame_unref(m_audio_resampled_frame);
-    m_audio_resampled_frame->nb_samples = decoded->nb_samples;
-    m_audio_resampled_frame->format = m_encoder_ctx->sample_fmt;
-    m_audio_resampled_frame->sample_rate = m_encoder_ctx->sample_rate;
-    m_audio_resampled_frame->ch_layout = m_encoder_ctx->ch_layout;
-    if (av_frame_get_buffer(m_audio_resampled_frame, 0) < 0) {
+    int samples = swr_convert(
+      m_swr_ctx,
+      resampled->data,
+      dst_nb_samples,
+      (const uint8_t**)decoded->data,
+      decoded->nb_samples
+    );
+
+    if (samples < 0) {
+      av_frame_free(&resampled);
       break;
     }
 
-    if (swr_convert(m_swr_ctx,
-                    m_audio_resampled_frame->data,
-                    m_audio_resampled_frame->nb_samples,
-                    const_cast<const uint8_t**>(decoded->data),
-                    decoded->nb_samples) < 0) {
-      break;
+    resampled->nb_samples = samples;
+
+    av_audio_fifo_write(
+      m_audio_fifo,
+      (void**)resampled->data,
+      resampled->nb_samples
+    );
+
+    av_frame_free(&resampled);
+
+    while (av_audio_fifo_size(m_audio_fifo) >= m_encoder_ctx->frame_size) {
+
+      AVFrame* frame = av_frame_alloc();
+      frame->nb_samples = m_encoder_ctx->frame_size;
+      frame->format = m_encoder_ctx->sample_fmt;
+      frame->sample_rate = m_encoder_ctx->sample_rate;
+      frame->ch_layout = m_encoder_ctx->ch_layout;
+
+      if (av_frame_get_buffer(frame, 0) < 0) {
+        av_frame_free(&frame);
+        break;
+      }
+
+      av_audio_fifo_read(
+        m_audio_fifo,
+        (void**)frame->data,
+        m_encoder_ctx->frame_size
+      );
+
+      encode_audio_frame(frame);
+      av_frame_free(&frame);
     }
 
-    m_audio_resampled_frame->pts = av_rescale_q(decoded->pts, media->time_base, m_encoder_ctx->time_base);
-    encode_audio_frame(m_audio_resampled_frame);
     av_frame_unref(decoded);
   }
 
@@ -508,6 +562,11 @@ void compat_sink::close()
   if (m_sws_ctx) {
     sws_freeContext(m_sws_ctx);
     m_sws_ctx = nullptr;
+  }
+
+  if (m_audio_fifo) {
+    av_audio_fifo_free(m_audio_fifo);
+    m_audio_fifo = nullptr;
   }
 
   if (m_decoder_ctx) {

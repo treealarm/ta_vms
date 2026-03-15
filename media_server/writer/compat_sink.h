@@ -8,6 +8,8 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libswresample/swresample.h>
 #include <libswscale/swscale.h>
+#include <libavutil/opt.h>
+#include <libavutil/audio_fifo.h>
 }
 
 #include "media/sink_container.h"
@@ -64,4 +66,6 @@ private:
 
   AVFrame* m_scaled_frame = nullptr;
   AVFrame* m_audio_resampled_frame = nullptr;
+
+  AVAudioFifo* m_audio_fifo = nullptr;
 };
