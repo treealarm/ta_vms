@@ -32,7 +32,8 @@ cam::cam(const std::string& source,
          const std::string& storage_base_path)
     : m_source(source),
       m_cam_id(cam_id),
-      m_writer(resolve_storage_base_path(storage_base_path), cam_id, 60) {
+      m_writer(resolve_storage_base_path(storage_base_path), cam_id, 60),
+      m_ffmpeg_compat_sink(m_writer) {
   if (!is_rtsp_source(m_source)) {
     throw std::runtime_error("cam supports only RTSP sources");
   }
@@ -73,7 +74,7 @@ void cam::stop_recording() {
 
     m_is_recording = false;
     m_is_writer_initialized = false;
-    m_writer.close();
+    m_ffmpeg_compat_sink.close();
   }
 
   update_reader_subscription();
@@ -90,7 +91,7 @@ void cam::shutdown() {
     if (m_is_recording) {
       m_is_recording = false;
       m_is_writer_initialized = false;
-      m_writer.close();
+      m_ffmpeg_compat_sink.close();
     }
   }
 
@@ -167,7 +168,7 @@ void cam::on_packet(const std::shared_ptr<media_packet>& pkt) {
 
   if (m_is_recording) {
     if (!m_is_writer_initialized) {
-      if (pkt->codec_parameters && m_writer.init(pkt->codec_parameters, pkt->time_base)) {
+      if (pkt->codec_parameters && m_ffmpeg_compat_sink.init(pkt->codec_parameters, pkt->time_base)) {
         m_is_writer_initialized = true;
       }
     }
@@ -175,7 +176,7 @@ void cam::on_packet(const std::shared_ptr<media_packet>& pkt) {
     if (m_is_writer_initialized) {
       auto writer_packet = clone_media_packet(pkt);
       if (writer_packet) {
-        m_writer.on_packet(writer_packet);
+        m_ffmpeg_compat_sink.on_packet(writer_packet);
       }
     }
   }

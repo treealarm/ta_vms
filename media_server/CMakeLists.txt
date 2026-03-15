@@ -43,6 +43,9 @@ set(SOURCES
     writer/segment_writer.cpp
     writer/segment_writer.h
 
+    writer/ffmpeg_compat_sink.cpp
+    writer/ffmpeg_compat_sink.h
+
     stream/jpeg_streamer.cpp
     stream/jpeg_streamer.h
 )

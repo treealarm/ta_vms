@@ -8,6 +8,7 @@
 #include "media/media_sink.h"
 #include "reader/reader.h"
 #include "stream/jpeg_streamer.h"
+#include "writer/ffmpeg_compat_sink.h"
 #include "writer/segment_writer.h"
 
 class cam final : public media_sink {
@@ -38,6 +39,7 @@ private:
 
   std::unique_ptr<reader> m_reader;
   segment_writer m_writer;
+  ffmpeg_compat_sink m_ffmpeg_compat_sink;
   std::unique_ptr<jpeg_streamer> m_jpeg_streamer;
 
   mutable std::mutex m_sinks_mutex;
