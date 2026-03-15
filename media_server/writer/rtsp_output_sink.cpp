@@ -16,13 +16,11 @@ bool rtsp_output_sink::init(const avcodec_parameters_ptr& codec_parameters, AVRa
 {
   close();
 
-  if (!codec_parameters || m_rtsp_url.empty()) {
+  if (!codec_parameters || m_rtsp_url.empty())
     return false;
-  }
 
   if (avformat_alloc_output_context2(&m_ctx, nullptr, "rtsp", m_rtsp_url.c_str()) < 0 || !m_ctx) {
     std::cerr << "failed to allocate rtsp output context\n";
-    m_ctx = nullptr;
     return false;
   }
 
@@ -34,35 +32,28 @@ bool rtsp_output_sink::init(const avcodec_parameters_ptr& codec_parameters, AVRa
   }
 
   if (avcodec_parameters_copy(m_out_stream->codecpar, codec_parameters.get()) < 0) {
-    std::cerr << "failed to copy codec parameters for rtsp stream\n";
+    std::cerr << "failed to copy codec parameters\n";
     close();
     return false;
   }
 
-  m_out_stream->time_base = time_base.num > 0 ? time_base : AVRational{ 1, 25 };
+  m_out_stream->time_base = time_base.num > 0 ? time_base : AVRational{ 1,25 };
 
   AVDictionary* opts = nullptr;
   av_dict_set(&opts, "rtsp_transport", "tcp", 0);
 
-  if (avio_open2(&m_ctx->pb, m_rtsp_url.c_str(), AVIO_FLAG_WRITE, nullptr, &opts) < 0) {
-    av_dict_free(&opts);
-    std::cerr << "failed to open rtsp url: " << m_rtsp_url << "\n";
-    close();
-    return false;
-  }
-
   if (avformat_write_header(m_ctx, &opts) < 0) {
-    av_dict_free(&opts);
     std::cerr << "failed to write rtsp header\n";
+    av_dict_free(&opts);
     close();
     return false;
   }
 
   av_dict_free(&opts);
+
   m_is_initialized = true;
   return true;
 }
-
 void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
 {
   if (!m_is_initialized || !media || !media->packet || !m_out_stream) {
