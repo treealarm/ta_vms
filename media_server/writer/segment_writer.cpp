@@ -220,7 +220,7 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& media)
   AVPacket* pkt = media->packet.get();
 
   if (!m_ctx) {
-    if (media->media_type == AVMEDIA_TYPE_VIDEO && !(pkt->flags & AV_PKT_FLAG_KEY)) {
+    if (media->media_type != AVMEDIA_TYPE_VIDEO || !(pkt->flags & AV_PKT_FLAG_KEY)) {
       return;
     }
 

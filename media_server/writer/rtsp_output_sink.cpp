@@ -51,6 +51,8 @@ bool rtsp_output_sink::init(const avcodec_parameters_ptr& codec_parameters, AVRa
 
   av_dict_free(&opts);
 
+  m_last_dts = AV_NOPTS_VALUE;
+  m_last_pts = AV_NOPTS_VALUE;
   m_is_initialized = true;
   return true;
 }
@@ -62,17 +64,43 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
 
   AVPacket* pkt = media->packet.get();
   av_packet_rescale_ts(pkt, media->time_base, m_out_stream->time_base);
+
+  if (pkt->dts == AV_NOPTS_VALUE && pkt->pts != AV_NOPTS_VALUE) {
+    pkt->dts = pkt->pts;
+  }
+  if (pkt->pts == AV_NOPTS_VALUE && pkt->dts != AV_NOPTS_VALUE) {
+    pkt->pts = pkt->dts;
+  }
+
+  if (m_last_dts != AV_NOPTS_VALUE && pkt->dts != AV_NOPTS_VALUE && pkt->dts <= m_last_dts) {
+    pkt->dts = m_last_dts + 1;
+  }
+
+  if (m_last_pts != AV_NOPTS_VALUE && pkt->pts != AV_NOPTS_VALUE && pkt->pts <= m_last_pts) {
+    pkt->pts = m_last_pts + 1;
+  }
+
+  if (pkt->pts != AV_NOPTS_VALUE && pkt->dts != AV_NOPTS_VALUE && pkt->pts < pkt->dts) {
+    pkt->pts = pkt->dts;
+  }
+
   pkt->stream_index = m_out_stream->index;
 
   if (av_interleaved_write_frame(m_ctx, pkt) < 0) {
     std::cerr << "failed to write packet to rtsp output\n";
+    return;
   }
+
+  m_last_dts = pkt->dts;
+  m_last_pts = pkt->pts;
 }
 
 void rtsp_output_sink::close()
 {
   if (!m_ctx) {
     m_out_stream = nullptr;
+    m_last_dts = AV_NOPTS_VALUE;
+    m_last_pts = AV_NOPTS_VALUE;
     m_is_initialized = false;
     return;
   }
@@ -88,5 +116,7 @@ void rtsp_output_sink::close()
   avformat_free_context(m_ctx);
   m_ctx = nullptr;
   m_out_stream = nullptr;
+  m_last_dts = AV_NOPTS_VALUE;
+  m_last_pts = AV_NOPTS_VALUE;
   m_is_initialized = false;
 }
