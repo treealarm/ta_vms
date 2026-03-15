@@ -9,6 +9,7 @@
 #include "reader/reader.h"
 #include "stream/jpeg_streamer.h"
 #include "writer/segment_writer.h"
+#include "writer/webrtc_output_sink.h"
 
 class cam final : public media_sink {
 public:
@@ -20,6 +21,10 @@ public:
 
   void start_recording();
   void stop_recording();
+
+  bool start_web_rtc(std::string& error);
+  bool stop_web_rtc(std::string& error);
+
   void shutdown();
 
   bool start_jpeg_stream(std::string& error);
@@ -38,11 +43,14 @@ private:
 
   std::unique_ptr<reader> m_reader;
   segment_writer m_writer;
+  std::unique_ptr<webrtc_output_sink> m_webrtc_output_sink;
   std::unique_ptr<jpeg_streamer> m_jpeg_streamer;
 
   mutable std::mutex m_sinks_mutex;
   bool m_is_running = false;
   bool m_is_recording = false;
   bool m_is_writer_initialized = false;
+  bool m_is_web_rtc_running = false;
+  bool m_is_webrtc_sink_initialized = false;
   bool m_is_attached_to_reader = false;
 };
