@@ -125,6 +125,7 @@ void segment_writer::open_new_segment()
   }
 
   m_output_streams.clear();
+  m_next_pts_by_input_stream.clear();
   for (const auto& [input_index, stream_info] : m_input_streams) {
     AVStream* out_stream = avformat_new_stream(m_ctx, nullptr);
     if (!out_stream) {
@@ -132,6 +133,7 @@ void segment_writer::open_new_segment()
       avformat_free_context(m_ctx);
       m_ctx = nullptr;
       m_output_streams.clear();
+      m_next_pts_by_input_stream.clear();
       return;
     }
 
@@ -140,6 +142,7 @@ void segment_writer::open_new_segment()
       avformat_free_context(m_ctx);
       m_ctx = nullptr;
       m_output_streams.clear();
+      m_next_pts_by_input_stream.clear();
       return;
     }
 
@@ -156,6 +159,7 @@ void segment_writer::open_new_segment()
       avformat_free_context(m_ctx);
       m_ctx = nullptr;
       m_output_streams.clear();
+      m_next_pts_by_input_stream.clear();
       return;
     }
   }
@@ -166,6 +170,7 @@ void segment_writer::open_new_segment()
     avformat_free_context(m_ctx);
     m_ctx = nullptr;
     m_output_streams.clear();
+    m_next_pts_by_input_stream.clear();
     return;
   }
 
@@ -204,6 +209,7 @@ void segment_writer::close_segment()
   avformat_free_context(m_ctx);
   m_ctx = nullptr;
   m_output_streams.clear();
+  m_next_pts_by_input_stream.clear();
   m_current_segment_relative_path.clear();
 }
 
@@ -247,6 +253,23 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& media)
 
   AVStream* out_stream = out_stream_it->second;
   av_packet_rescale_ts(pkt, media->time_base, out_stream->time_base);
+
+  if (media->media_type == AVMEDIA_TYPE_VIDEO) {
+    const AVRational tb = out_stream->time_base;
+    int64_t frame_duration = av_rescale_q(1, AVRational{ 1,25 }, tb);
+
+    if (pkt->duration <= 0) {
+      pkt->duration = frame_duration;
+    } else {
+      frame_duration = pkt->duration;
+    }
+
+    int64_t& next_pts = m_next_pts_by_input_stream[media->stream_index];
+    pkt->dts = next_pts;
+    pkt->pts = next_pts;
+    next_pts += frame_duration;
+  }
+
   pkt->stream_index = out_stream->index;
 
   if (av_interleaved_write_frame(m_ctx, pkt) < 0) {
