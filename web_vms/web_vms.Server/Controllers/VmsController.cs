@@ -19,7 +19,7 @@ public class VmsController(
         CameraId = request.CameraId,
         StartTime = request.StartTime,
         ClientId = $"{request.CameraId}_arch",
-        JpegStream = true
+        JpegStream = false
       }, cancellationToken: ct);
 
       return Ok(ToApiResponse(startPlayResponse));
@@ -32,7 +32,8 @@ public class VmsController(
       State = new CameraState
       {
         Recording = request.State?.Recording ?? false,
-        JpegStream = request.State?.JpegStream ?? false
+        JpegStream = false,
+        WebRtc = true
       },
       StorageBasePath = request.StorageBasePath ?? string.Empty
     }, cancellationToken: ct);
@@ -81,7 +82,8 @@ public class VmsController(
       State = new CameraState
       {
         Recording = true,
-        JpegStream = false
+        JpegStream = false,
+        WebRtc = true
       }
     }, cancellationToken: ct);
 
@@ -97,7 +99,8 @@ public class VmsController(
       State = new CameraState
       {
         Recording = state.Recording,
-        JpegStream = state.JpegStream
+        JpegStream = state.JpegStream,
+        WebRtc = state.WebRtc
       }
     }, cancellationToken: ct);
 
@@ -139,6 +142,6 @@ public record AddCameraDto(string CameraId,
 
 public record CameraDto(string CameraId, string RtspUrl, bool IsRecording);
 
-public record CameraStateDto(bool Recording, bool JpegStream);
+public record CameraStateDto(bool Recording, bool JpegStream, bool WebRtc);
 
 public record ApiResponse(bool Success, string Message);

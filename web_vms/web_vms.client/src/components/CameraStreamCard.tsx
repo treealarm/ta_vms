@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Box,
   Button,
@@ -33,6 +33,8 @@ const getErrorMessage = async (response: Response): Promise<string> => {
   return text || response.statusText
 }
 
+const WEBRTC_BASE_URL = (import.meta.env.VITE_WEBRTC_BASE_URL as string | undefined)?.trim() || 'http://localhost:8889'
+
 function CameraStreamCard({
   camera,
   isBusy,
@@ -40,62 +42,20 @@ function CameraStreamCard({
   onActionError,
   onRemove
 }: CameraStreamCardProps) {
-  const [isJpegStreamEnabled, setIsJpegStreamEnabled] = useState(false)
-  const [frameUrl, setFrameUrl] = useState<string | null>(null)
   const [isCameraBusy, setIsCameraBusy] = useState(false)
 
   const busy = isBusy || isCameraBusy
+  const isArchiveCamera = camera.rtspUrl.trim().length === 0
+  const streamId = isArchiveCamera ? `${camera.cameraId}_arch` : camera.cameraId
+  const streamUrl = useMemo(() => `${WEBRTC_BASE_URL.replace(/\/$/, '')}/${encodeURIComponent(streamId)}/`, [streamId])
 
-  useEffect(() => {
-    if (!isJpegStreamEnabled) {
-      setFrameUrl((previousUrl) => {
-        if (previousUrl) {
-          URL.revokeObjectURL(previousUrl)
-        }
-
-        return null
-      })
-      return
-    }
-
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(
-      `${wsProtocol}://${window.location.host}/api/vms/cameras/${encodeURIComponent(camera.cameraId)}/jpeg/ws`
-    )
-    ws.binaryType = 'blob'
-
-    ws.onmessage = (event) => {
-      const objectUrl = URL.createObjectURL(event.data as Blob)
-      setFrameUrl((previousUrl) => {
-        if (previousUrl) {
-          URL.revokeObjectURL(previousUrl)
-        }
-
-        return objectUrl
-      })
-    }
-
-    ws.onerror = () => onActionError(`Error: WebSocket stream error for ${camera.cameraId}`)
-
-    return () => {
-      ws.close()
-      setFrameUrl((previousUrl) => {
-        if (previousUrl) {
-          URL.revokeObjectURL(previousUrl)
-        }
-
-        return null
-      })
-    }
-  }, [camera.cameraId, isJpegStreamEnabled, onActionError])
-
-  const updateState = async (nextRecordingState: boolean, nextJpegState: boolean) => {
+  const updateState = async (nextRecordingState: boolean) => {
     setIsCameraBusy(true)
     try {
       const response = await fetch(`/api/vms/cameras/${encodeURIComponent(camera.cameraId)}/state`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recording: nextRecordingState, jpegStream: nextJpegState })
+        body: JSON.stringify({ recording: nextRecordingState, jpegStream: false, webRtc: true })
       })
 
       if (!response.ok) {
@@ -104,9 +64,6 @@ function CameraStreamCard({
       }
 
       const result: ApiResponse = await response.json()
-      if (result.success) {
-        setIsJpegStreamEnabled(nextJpegState)
-      }
       await onActionComplete(`${result.success ? 'OK' : 'Fail'}: ${result.message}`)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
@@ -132,17 +89,16 @@ function CameraStreamCard({
             </IconButton>
           </Stack>
           <Typography variant="body2" color="text.secondary" noWrap title={camera.rtspUrl}>
-            {camera.rtspUrl}
+            {camera.rtspUrl || 'Archive player'}
           </Typography>
 
           <Box
-            component="img"
-            src={frameUrl ?? undefined}
-            alt={`Stream ${camera.cameraId}`}
+            component="iframe"
+            src={streamUrl}
+            title={`Stream ${streamId}`}
             sx={{
               width: '100%',
               aspectRatio: '1 / 1',
-              objectFit: 'contain',
               border: 1,
               borderColor: 'divider',
               borderRadius: 2,
@@ -150,26 +106,15 @@ function CameraStreamCard({
             }}
           />
 
-          <Stack direction="row" spacing={1.5}>
-            <Button
-              fullWidth
-              disabled={busy}
-              variant={camera.isRecording ? 'contained' : 'outlined'}
-              color={camera.isRecording ? 'error' : 'primary'}
-              onClick={() => void updateState(!camera.isRecording, isJpegStreamEnabled)}
-            >
-              REC
-            </Button>
-            <Button
-              fullWidth
-              disabled={busy}
-              variant={isJpegStreamEnabled ? 'contained' : 'outlined'}
-              color={isJpegStreamEnabled ? 'secondary' : 'primary'}
-              onClick={() => void updateState(camera.isRecording, !isJpegStreamEnabled)}
-            >
-              JPEG STREAM
-            </Button>
-          </Stack>
+          <Button
+            fullWidth
+            disabled={busy || isArchiveCamera}
+            variant={camera.isRecording ? 'contained' : 'outlined'}
+            color={camera.isRecording ? 'error' : 'primary'}
+            onClick={() => void updateState(!camera.isRecording)}
+          >
+            REC
+          </Button>
         </Stack>
       </CardContent>
     </Card>
