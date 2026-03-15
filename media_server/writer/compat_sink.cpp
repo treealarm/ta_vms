@@ -1,14 +1,10 @@
 #include "writer/compat_sink.h"
 
+#include <algorithm>
 #include <iostream>
 
 extern "C" {
 #include <libavutil/opt.h>
-}
-
-compat_sink::compat_sink(packet_callback on_packet_ready)
-  : m_on_packet_ready(std::move(on_packet_ready))
-{
 }
 
 compat_sink::~compat_sink()
@@ -20,7 +16,7 @@ bool compat_sink::init(const avcodec_parameters_ptr& codec_parameters, AVRationa
 {
   close();
 
-  if (!codec_parameters || !m_on_packet_ready) {
+  if (!codec_parameters) {
     m_mode = mode::failed;
     return false;
   }
@@ -158,6 +154,22 @@ bool compat_sink::init_transcode_mode(const avcodec_parameters_ptr& codec_parame
   return true;
 }
 
+void compat_sink::add_sink(media_sink* sink)
+{
+  if (!sink) {
+    return;
+  }
+
+  std::scoped_lock lock(m_sinks_mutex);
+  m_sinks.push_back(sink);
+}
+
+void compat_sink::remove_sink(media_sink* sink)
+{
+  std::scoped_lock lock(m_sinks_mutex);
+  m_sinks.erase(std::remove(m_sinks.begin(), m_sinks.end(), sink), m_sinks.end());
+}
+
 void compat_sink::on_packet(const std::shared_ptr<media_packet>& media)
 {
   if (!media || !media->packet || !m_is_initialized) {
@@ -284,7 +296,24 @@ void compat_sink::flush_decoder_encoder()
 
 void compat_sink::emit_packet(const std::shared_ptr<media_packet>& media)
 {
-  m_on_packet_ready(media);
+  std::vector<media_sink*> sinks_copy;
+  {
+    std::scoped_lock lock(m_sinks_mutex);
+    sinks_copy = m_sinks;
+  }
+
+  for (auto* sink : sinks_copy) {
+    if (!sink) {
+      continue;
+    }
+
+    auto sink_media = clone_media_packet(media);
+    if (!sink_media) {
+      continue;
+    }
+
+    sink->on_packet(sink_media);
+  }
 }
 
 void compat_sink::close()

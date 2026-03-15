@@ -1,23 +1,24 @@
 #pragma once
 
-#include <functional>
 #include <memory>
+#include <vector>
+#include <mutex>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libswscale/swscale.h>
 }
 
-#include "media/media_sink.h"
+#include "media/sink_container.h"
 
-class compat_sink : public media_sink {
+class compat_sink : public media_sink, public sink_container {
 public:
-  using packet_callback = std::function<void(const std::shared_ptr<media_packet>&)>;
-
-  explicit compat_sink(packet_callback on_packet_ready);
+  compat_sink() = default;
   ~compat_sink() override;
 
   bool init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base);
+  void add_sink(media_sink* sink) override;
+  void remove_sink(media_sink* sink) override;
   void on_packet(const std::shared_ptr<media_packet>& media) override;
   void close();
 
@@ -41,7 +42,8 @@ private:
   void emit_packet(const std::shared_ptr<media_packet>& media);
 
 private:
-  packet_callback m_on_packet_ready;
+  std::vector<media_sink*> m_sinks;
+  mutable std::mutex m_sinks_mutex;
   mode m_mode = mode::unknown;
   bool m_is_initialized = false;
 

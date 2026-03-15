@@ -1,11 +1,9 @@
 #include "writer/webrtc_output_sink.h"
 
 webrtc_output_sink::webrtc_output_sink(std::string rtsp_url)
-  : m_rtsp_output_sink(std::move(rtsp_url)),
-    m_compat_sink([this](const std::shared_ptr<media_packet>& media) {
-      m_rtsp_output_sink.on_packet(media);
-    })
+  : m_rtsp_output_sink(std::move(rtsp_url))
 {
+  m_compat_sink.add_sink(&m_rtsp_output_sink);
 }
 
 bool webrtc_output_sink::init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base)
