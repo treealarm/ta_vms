@@ -13,6 +13,7 @@ pkg_check_modules(FFMPEG REQUIRED
     libavcodec
     libavutil
     libswscale
+    libswresample
 )
 
 set(VMS_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_control.proto)
