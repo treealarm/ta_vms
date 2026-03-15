@@ -10,12 +10,12 @@ extern "C" {
 
 #include "media/media_sink.h"
 
-class ffmpeg_compat_sink : public media_sink {
+class compat_sink : public media_sink {
 public:
   using packet_callback = std::function<void(const std::shared_ptr<media_packet>&)>;
 
-  explicit ffmpeg_compat_sink(packet_callback on_packet_ready);
-  ~ffmpeg_compat_sink() override;
+  explicit compat_sink(packet_callback on_packet_ready);
+  ~compat_sink() override;
 
   bool init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base);
   void on_packet(const std::shared_ptr<media_packet>& media) override;

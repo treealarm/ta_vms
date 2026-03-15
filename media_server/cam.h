@@ -8,8 +8,7 @@
 #include "media/media_sink.h"
 #include "reader/reader.h"
 #include "stream/jpeg_streamer.h"
-#include "writer/ffmpeg_compat_sink.h"
-#include "writer/rtsp_output_sink.h"
+#include "writer/webrtc_output_sink.h"
 
 class cam final : public media_sink {
 public:
@@ -21,6 +20,10 @@ public:
 
   void start_recording();
   void stop_recording();
+
+  bool start_web_rtc(const std::string& rtsp_url, std::string& error);
+  bool stop_web_rtc(std::string& error);
+
   void shutdown();
 
   bool start_jpeg_stream(std::string& error);
@@ -38,13 +41,12 @@ private:
   std::string m_source;
 
   std::unique_ptr<reader> m_reader;
-  rtsp_output_sink m_rtsp_output_sink;
-  ffmpeg_compat_sink m_ffmpeg_compat_sink;
+  std::unique_ptr<webrtc_output_sink> m_webrtc_output_sink;
   std::unique_ptr<jpeg_streamer> m_jpeg_streamer;
 
   mutable std::mutex m_sinks_mutex;
   bool m_is_running = false;
-  bool m_is_recording = false;
-  bool m_is_writer_initialized = false;
+  bool m_is_web_rtc_running = false;
+  bool m_is_webrtc_sink_initialized = false;
   bool m_is_attached_to_reader = false;
 };

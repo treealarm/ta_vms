@@ -1,4 +1,4 @@
-#include "writer/ffmpeg_compat_sink.h"
+#include "writer/compat_sink.h"
 
 #include <iostream>
 
@@ -6,17 +6,17 @@ extern "C" {
 #include <libavutil/opt.h>
 }
 
-ffmpeg_compat_sink::ffmpeg_compat_sink(packet_callback on_packet_ready)
+compat_sink::compat_sink(packet_callback on_packet_ready)
   : m_on_packet_ready(std::move(on_packet_ready))
 {
 }
 
-ffmpeg_compat_sink::~ffmpeg_compat_sink()
+compat_sink::~compat_sink()
 {
   close();
 }
 
-bool ffmpeg_compat_sink::init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base)
+bool compat_sink::init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base)
 {
   close();
 
@@ -32,7 +32,7 @@ bool ffmpeg_compat_sink::init(const avcodec_parameters_ptr& codec_parameters, AV
   return init_transcode_mode(codec_parameters, time_base);
 }
 
-bool ffmpeg_compat_sink::init_copy_mode(const avcodec_parameters_ptr& codec_parameters, AVRational time_base)
+bool compat_sink::init_copy_mode(const avcodec_parameters_ptr& codec_parameters, AVRational time_base)
 {
   m_mode = mode::copy_h264;
   m_out_time_base = time_base;
@@ -41,7 +41,7 @@ bool ffmpeg_compat_sink::init_copy_mode(const avcodec_parameters_ptr& codec_para
   return true;
 }
 
-bool ffmpeg_compat_sink::init_transcode_mode(const avcodec_parameters_ptr& codec_parameters, AVRational time_base)
+bool compat_sink::init_transcode_mode(const avcodec_parameters_ptr& codec_parameters, AVRational time_base)
 {
   const AVCodec* decoder = avcodec_find_decoder(codec_parameters->codec_id);
   if (!decoder) {
@@ -158,7 +158,7 @@ bool ffmpeg_compat_sink::init_transcode_mode(const avcodec_parameters_ptr& codec
   return true;
 }
 
-void ffmpeg_compat_sink::on_packet(const std::shared_ptr<media_packet>& media)
+void compat_sink::on_packet(const std::shared_ptr<media_packet>& media)
 {
   if (!media || !media->packet || !m_is_initialized) {
     return;
@@ -181,7 +181,7 @@ void ffmpeg_compat_sink::on_packet(const std::shared_ptr<media_packet>& media)
   }
 }
 
-void ffmpeg_compat_sink::transcode_packet(const std::shared_ptr<media_packet>& media)
+void compat_sink::transcode_packet(const std::shared_ptr<media_packet>& media)
 {
   if (avcodec_send_packet(m_decoder_ctx, media->packet.get()) < 0) {
     return;
@@ -213,7 +213,7 @@ void ffmpeg_compat_sink::transcode_packet(const std::shared_ptr<media_packet>& m
   av_frame_free(&decoded);
 }
 
-void ffmpeg_compat_sink::encode_frame(AVFrame* frame)
+void compat_sink::encode_frame(AVFrame* frame)
 {
   if (avcodec_send_frame(m_encoder_ctx, frame) < 0) {
     return;
@@ -222,7 +222,7 @@ void ffmpeg_compat_sink::encode_frame(AVFrame* frame)
   drain_encoder_packets();
 }
 
-void ffmpeg_compat_sink::drain_encoder_packets()
+void compat_sink::drain_encoder_packets()
 {
   AVPacket* out_pkt = av_packet_alloc();
   if (!out_pkt) {
@@ -247,7 +247,7 @@ void ffmpeg_compat_sink::drain_encoder_packets()
   av_packet_free(&out_pkt);
 }
 
-void ffmpeg_compat_sink::flush_decoder_encoder()
+void compat_sink::flush_decoder_encoder()
 {
   if (m_mode != mode::encode_libx264) {
     return;
@@ -282,12 +282,12 @@ void ffmpeg_compat_sink::flush_decoder_encoder()
   drain_encoder_packets();
 }
 
-void ffmpeg_compat_sink::emit_packet(const std::shared_ptr<media_packet>& media)
+void compat_sink::emit_packet(const std::shared_ptr<media_packet>& media)
 {
   m_on_packet_ready(media);
 }
 
-void ffmpeg_compat_sink::close()
+void compat_sink::close()
 {
   flush_decoder_encoder();
 
@@ -314,12 +314,12 @@ void ffmpeg_compat_sink::close()
   m_is_initialized = false;
 }
 
-const avcodec_parameters_ptr& ffmpeg_compat_sink::output_codec_parameters() const
+const avcodec_parameters_ptr& compat_sink::output_codec_parameters() const
 {
   return m_out_codec_parameters;
 }
 
-AVRational ffmpeg_compat_sink::output_time_base() const
+AVRational compat_sink::output_time_base() const
 {
   return m_out_time_base;
 }

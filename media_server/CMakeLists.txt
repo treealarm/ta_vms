@@ -43,10 +43,12 @@ set(SOURCES
     writer/segment_writer.cpp
     writer/segment_writer.h
 
-    writer/ffmpeg_compat_sink.cpp
-    writer/ffmpeg_compat_sink.h
+    writer/compat_sink.cpp
+    writer/compat_sink.h
     writer/rtsp_output_sink.cpp
     writer/rtsp_output_sink.h
+    writer/webrtc_output_sink.cpp
+    writer/webrtc_output_sink.h
 
     stream/jpeg_streamer.cpp
     stream/jpeg_streamer.h
