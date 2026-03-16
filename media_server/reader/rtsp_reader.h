@@ -36,7 +36,6 @@ private:
 
   std::string m_rtsp_url;
   avformat_context_ptr m_ctx = nullptr;
-  int64_t m_interrupt_start = 0;
   int m_video_index = -1;
   std::unordered_set<int> m_forward_stream_indexes;
 

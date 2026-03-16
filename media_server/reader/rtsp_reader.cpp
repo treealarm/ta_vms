@@ -20,16 +20,6 @@ bool rtsp_reader::open(const std::string& url) {
   return true;
 }
 
-static int interrupt_cb(void* opaque)
-{
-  int64_t* start = (int64_t*)opaque;
-
-  if (av_gettime() - *start > 5000000)
-    return 1;
-
-  *start = av_gettime();
-  return 0;
-}
 
 bool rtsp_reader::connect() {
   disconnect();
@@ -40,11 +30,7 @@ bool rtsp_reader::connect() {
   av_dict_set(&opts, "timeout", "5000000", 0);
   av_dict_set(&opts, "rw_timeout", "5000000", 0);
 
-  m_interrupt_start = av_gettime();
-
   AVFormatContext* ctx = avformat_alloc_context();
-  ctx->interrupt_callback.callback = interrupt_cb;
-  ctx->interrupt_callback.opaque = &m_interrupt_start;
 
   if (avformat_open_input(&ctx, m_rtsp_url.c_str(), nullptr, &opts) < 0) {
     std::cerr << "Failed to open RTSP\n";

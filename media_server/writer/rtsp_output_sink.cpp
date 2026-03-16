@@ -62,6 +62,8 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
 
   AVDictionary* opts = nullptr;
   av_dict_set(&opts, "rtsp_transport", "tcp", 0);
+  av_dict_set(&opts, "timeout", "5000000", 0);
+  av_dict_set(&opts, "rw_timeout", "5000000", 0);
 
   if (avformat_write_header(m_ctx, &opts) < 0) {
     std::cerr << "failed to write rtsp header\n";
@@ -99,6 +101,15 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
   }
 
   AVPacket* pkt = media->packet.get();
+
+  if (stream->media_type == AVMEDIA_TYPE_VIDEO && m_wait_keyframe) {
+    if (!(pkt->flags & AV_PKT_FLAG_KEY)) {
+      return; // игнорируем
+    }
+
+    m_wait_keyframe = false; // нашли первый IDR
+  }
+
   av_packet_rescale_ts(pkt, media->time_base, stream->out_stream->time_base);
 
   if (pkt->dts == AV_NOPTS_VALUE && pkt->pts != AV_NOPTS_VALUE) {
@@ -122,13 +133,13 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
 
   pkt->stream_index = stream->out_stream->index;
 
+  stream->last_dts = pkt->dts;
+  stream->last_pts = pkt->pts;
+
   if (av_interleaved_write_frame(m_ctx, pkt) < 0) {
     std::cerr << "failed to write packet to rtsp output\n";
     return;
   }
-
-  stream->last_dts = pkt->dts;
-  stream->last_pts = pkt->pts;
 }
 
 void rtsp_output_sink::close()
@@ -151,4 +162,5 @@ void rtsp_output_sink::close()
   m_ctx = nullptr;
   m_streams.clear();
   m_is_initialized = false;
+  m_wait_keyframe = true;
 }

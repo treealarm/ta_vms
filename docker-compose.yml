@@ -5,6 +5,17 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "${GRPC_VMS_PORT}:${GRPC_VMS_PORT}"
+      - "${GRPC_VMS_PORT}:${GRPC_VMS_PORT}"  # твой gRPC порт
     env_file:
       - .env
+    depends_on:
+      - mediamtx
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: mediamtx
+    ports:
+      - "8889:8889"       # WebRTC UI доступен с хоста
+      - "8554:8554"       # RTSP
+      - "8000:8000"       # HTTP API (опционально)
+      - "8189:8189/udp"  # ICE/UDP медиапоток
