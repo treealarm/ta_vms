@@ -111,7 +111,12 @@ bool webrtc_output_sink::ensure_initialized(const std::shared_ptr<media_packet>&
     return false;
   }
 
-  if (!init(m_video_codec_parameters, m_video_time_base, m_audio_codec_parameters, m_audio_time_base)) {
+  const auto video_codec_parameters = m_video_codec_parameters;
+  const auto audio_codec_parameters = m_audio_codec_parameters;
+  const AVRational video_time_base = m_video_time_base;
+  const AVRational audio_time_base = m_audio_time_base;
+
+  if (!init(video_codec_parameters, video_time_base, audio_codec_parameters, audio_time_base)) {
     return false;
   }
 
