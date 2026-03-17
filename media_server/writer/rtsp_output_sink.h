@@ -34,6 +34,8 @@ private:
   };
 
   stream_state* find_stream(AVMediaType media_type);
+  bool update_stream_config_from_packet(const std::shared_ptr<media_packet>& media);
+  std::vector<stream_config> collect_known_streams() const;
 
 private:
   std::string m_rtsp_url;
@@ -42,4 +44,6 @@ private:
   std::vector<stream_state> m_streams;
   bool m_is_initialized = false;
   bool m_wait_keyframe = true;
+  stream_config m_video_config;
+  stream_config m_audio_config;
 };
