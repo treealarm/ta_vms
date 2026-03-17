@@ -22,6 +22,7 @@ public:
   AVRational output_time_base() const;
 
 private:
+  std::unique_ptr<stream_processor> create_processor(const avcodec_parameters_ptr& codec_parameters) const;
   void emit_packet(const std::shared_ptr<media_packet>& media);
 
 private:
