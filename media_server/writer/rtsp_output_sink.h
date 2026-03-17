@@ -44,6 +44,7 @@ private:
   std::vector<stream_state> m_streams;
   bool m_is_initialized = false;
   bool m_wait_keyframe = true;
+  int m_consecutive_write_errors = 0;
   stream_config m_video_config;
   stream_config m_audio_config;
 };

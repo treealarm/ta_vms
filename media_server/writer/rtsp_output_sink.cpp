@@ -84,6 +84,7 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
 
   m_is_initialized = true;
   m_wait_keyframe = true;
+  m_consecutive_write_errors = 0;
   return true;
 }
 
@@ -205,9 +206,21 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
   stream->last_pts = pkt->pts;
 
   if (av_interleaved_write_frame(m_ctx, pkt) < 0) {
-    std::cerr << "failed to write packet to rtsp output\n";
+    ++m_consecutive_write_errors;
+
+    constexpr int critical_write_error_threshold = 3;
+    std::cerr << "failed to write packet to rtsp output (consecutive errors: "
+      << m_consecutive_write_errors << ")\n";
+
+    if (m_consecutive_write_errors >= critical_write_error_threshold) {
+      std::cerr << "rtsp output sink watchdog: closing broken output context for reinit\n";
+      close();
+    }
+
     return;
   }
+
+  m_consecutive_write_errors = 0;
 }
 
 void rtsp_output_sink::close()
@@ -216,6 +229,7 @@ void rtsp_output_sink::close()
     m_streams.clear();
     m_is_initialized = false;
     m_wait_keyframe = true;
+    m_consecutive_write_errors = 0;
     return;
   }
 
@@ -232,4 +246,5 @@ void rtsp_output_sink::close()
   m_streams.clear();
   m_is_initialized = false;
   m_wait_keyframe = true;
+  m_consecutive_write_errors = 0;
 }
