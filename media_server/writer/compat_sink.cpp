@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "media/media_packet.h"
+#include "writer/stream_processor_factory.h"
 
 compat_sink::~compat_sink()
 {
