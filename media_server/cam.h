@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <mutex>
-#include <deque>
 #include <string>
 #include <vector>
 
@@ -51,12 +50,5 @@ private:
   bool m_is_running = false;
   bool m_is_recording = false;
   bool m_is_web_rtc_running = false;
-  bool m_is_webrtc_sink_initialized = false;
   bool m_is_attached_to_reader = false;
-
-  avcodec_parameters_ptr m_webrtc_video_codec_parameters;
-  avcodec_parameters_ptr m_webrtc_audio_codec_parameters;
-  AVRational m_webrtc_video_time_base{};
-  AVRational m_webrtc_audio_time_base{};
-  std::deque<std::shared_ptr<media_packet>> m_webrtc_pending_packets;
 };

@@ -110,12 +110,6 @@ bool cam::start_web_rtc(std::string& error) {
 
     m_webrtc_output_sink = std::make_unique<webrtc_output_sink>(resolve_default_webrtc_rtsp_url(m_cam_id));
     m_is_web_rtc_running = true;
-    m_is_webrtc_sink_initialized = false;
-    m_webrtc_video_codec_parameters.reset();
-    m_webrtc_audio_codec_parameters.reset();
-    m_webrtc_video_time_base = AVRational{};
-    m_webrtc_audio_time_base = AVRational{};
-    m_webrtc_pending_packets.clear();
   }
 
   update_reader_subscription();
@@ -132,17 +126,11 @@ bool cam::stop_web_rtc(std::string& error) {
     }
 
     m_is_web_rtc_running = false;
-    m_is_webrtc_sink_initialized = false;
 
     if (m_webrtc_output_sink) {
       m_webrtc_output_sink->close();
       m_webrtc_output_sink.reset();
     }
-    m_webrtc_video_codec_parameters.reset();
-    m_webrtc_audio_codec_parameters.reset();
-    m_webrtc_video_time_base = AVRational{};
-    m_webrtc_audio_time_base = AVRational{};
-    m_webrtc_pending_packets.clear();
   }
 
   update_reader_subscription();
@@ -164,16 +152,10 @@ void cam::shutdown() {
 
     if (m_is_web_rtc_running) {
       m_is_web_rtc_running = false;
-      m_is_webrtc_sink_initialized = false;
       if (m_webrtc_output_sink) {
         m_webrtc_output_sink->close();
         m_webrtc_output_sink.reset();
       }
-      m_webrtc_video_codec_parameters.reset();
-      m_webrtc_audio_codec_parameters.reset();
-      m_webrtc_video_time_base = AVRational{};
-      m_webrtc_audio_time_base = AVRational{};
-      m_webrtc_pending_packets.clear();
     }
   }
 
@@ -257,38 +239,9 @@ void cam::on_packet(const std::shared_ptr<media_packet>& pkt) {
 
   if (m_is_web_rtc_running && m_webrtc_output_sink &&
       (pkt->media_type == AVMEDIA_TYPE_VIDEO || pkt->media_type == AVMEDIA_TYPE_AUDIO)) {
-    if (pkt->media_type == AVMEDIA_TYPE_VIDEO && pkt->codec_parameters && !m_webrtc_video_codec_parameters) {
-      m_webrtc_video_codec_parameters = pkt->codec_parameters;
-      m_webrtc_video_time_base = pkt->time_base;
-    }
-
-    if (pkt->media_type == AVMEDIA_TYPE_AUDIO && pkt->codec_parameters && !m_webrtc_audio_codec_parameters) {
-      m_webrtc_audio_codec_parameters = pkt->codec_parameters;
-      m_webrtc_audio_time_base = pkt->time_base;
-    }
-
     auto webrtc_packet = clone_media_packet(pkt);
     if (webrtc_packet) {
-      if (!m_is_webrtc_sink_initialized) {
-        m_webrtc_pending_packets.push_back(webrtc_packet);
-      } else {
-        m_webrtc_output_sink->on_packet(webrtc_packet);
-      }
-    }
-
-    if (!m_is_webrtc_sink_initialized &&
-        m_webrtc_video_codec_parameters &&
-        m_webrtc_audio_codec_parameters &&
-        m_webrtc_output_sink->init(m_webrtc_video_codec_parameters,
-                                   m_webrtc_video_time_base,
-                                   m_webrtc_audio_codec_parameters,
-                                   m_webrtc_audio_time_base)) {
-      m_is_webrtc_sink_initialized = true;
-      while (!m_webrtc_pending_packets.empty()) {
-        auto pending = m_webrtc_pending_packets.front();
-        m_webrtc_pending_packets.pop_front();
-        m_webrtc_output_sink->on_packet(pending);
-      }
+      m_webrtc_output_sink->on_packet(webrtc_packet);
     }
   }
 

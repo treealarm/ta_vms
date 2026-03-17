@@ -51,7 +51,21 @@ bool webrtc_output_sink::init(const avcodec_parameters_ptr& video_codec_paramete
 
 void webrtc_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
 {
-  if (!m_is_initialized || !media) {
+  if (!media) {
+    return;
+  }
+
+  if (media->media_type == AVMEDIA_TYPE_VIDEO && media->codec_parameters && !m_video_codec_parameters) {
+    m_video_codec_parameters = media->codec_parameters;
+    m_video_time_base = media->time_base;
+  }
+
+  if (media->media_type == AVMEDIA_TYPE_AUDIO && media->codec_parameters && !m_audio_codec_parameters) {
+    m_audio_codec_parameters = media->codec_parameters;
+    m_audio_time_base = media->time_base;
+  }
+
+  if (!ensure_initialized(media)) {
     return;
   }
 
@@ -71,4 +85,50 @@ void webrtc_output_sink::close()
   m_audio_compat_sink.close();
   m_rtsp_output_sink.close();
   m_is_initialized = false;
+  reset_stream_state();
+}
+
+void webrtc_output_sink::reset_stream_state()
+{
+  m_video_codec_parameters.reset();
+  m_audio_codec_parameters.reset();
+  m_video_time_base = AVRational{};
+  m_audio_time_base = AVRational{};
+  m_waiting_for_key_frame = true;
+}
+
+bool webrtc_output_sink::ensure_initialized(const std::shared_ptr<media_packet>& media)
+{
+  if (m_is_initialized) {
+    return media->media_type != AVMEDIA_TYPE_VIDEO || !m_waiting_for_key_frame || is_video_key_frame(media);
+  }
+
+  if (!m_video_codec_parameters || !m_audio_codec_parameters) {
+    return false;
+  }
+
+  if (media->media_type != AVMEDIA_TYPE_VIDEO || !is_video_key_frame(media)) {
+    return false;
+  }
+
+  const auto video_codec_parameters = m_video_codec_parameters;
+  const auto audio_codec_parameters = m_audio_codec_parameters;
+  const AVRational video_time_base = m_video_time_base;
+  const AVRational audio_time_base = m_audio_time_base;
+
+  if (!init(video_codec_parameters, video_time_base, audio_codec_parameters, audio_time_base)) {
+    return false;
+  }
+
+  m_waiting_for_key_frame = false;
+  return true;
+}
+
+bool webrtc_output_sink::is_video_key_frame(const std::shared_ptr<media_packet>& media) const
+{
+  if (!media || !media->packet || media->media_type != AVMEDIA_TYPE_VIDEO) {
+    return false;
+  }
+
+  return (media->packet->flags & AV_PKT_FLAG_KEY) != 0;
 }
