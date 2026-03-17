@@ -48,13 +48,9 @@ set(SOURCES
     writer/compat_sink.cpp
     writer/compat_sink.h
     writer/stream_processor.h
-    writer/video_copy_processor.cpp
     writer/video_copy_processor.h
-    writer/audio_copy_processor.cpp
     writer/audio_copy_processor.h
-    writer/video_transcode_processor.cpp
     writer/video_transcode_processor.h
-    writer/audio_transcode_processor.cpp
     writer/audio_transcode_processor.h
     writer/rtsp_output_sink.cpp
     writer/rtsp_output_sink.h
@@ -66,6 +62,13 @@ set(SOURCES
 )
 
 add_executable(vms ${SOURCES})
+
+target_sources(vms PRIVATE
+    writer/video_copy_processor.cpp
+    writer/audio_copy_processor.cpp
+    writer/video_transcode_processor.cpp
+    writer/audio_transcode_processor.cpp
+)
 
 protobuf_generate(
     TARGET vms
