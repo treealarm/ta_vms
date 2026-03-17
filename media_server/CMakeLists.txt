@@ -47,6 +47,8 @@ set(SOURCES
 
     writer/compat_sink.cpp
     writer/compat_sink.h
+    writer/stream_processor.cpp
+    writer/stream_processor.h
     writer/rtsp_output_sink.cpp
     writer/rtsp_output_sink.h
     writer/webrtc_output_sink.cpp
