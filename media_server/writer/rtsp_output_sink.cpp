@@ -5,6 +5,8 @@
 rtsp_output_sink::rtsp_output_sink(std::string rtsp_url)
   : m_rtsp_url(std::move(rtsp_url))
 {
+  m_video_config.media_type = AVMEDIA_TYPE_VIDEO;
+  m_audio_config.media_type = AVMEDIA_TYPE_AUDIO;
 }
 
 rtsp_output_sink::~rtsp_output_sink()
@@ -14,7 +16,13 @@ rtsp_output_sink::~rtsp_output_sink()
 
 bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
 {
+  const auto video_config = m_video_config;
+  const auto audio_config = m_audio_config;
+
   close();
+
+  m_video_config = video_config;
+  m_audio_config = audio_config;
 
   if (streams.empty() || m_rtsp_url.empty()) {
     return false;
@@ -75,6 +83,7 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
   av_dict_free(&opts);
 
   m_is_initialized = true;
+  m_wait_keyframe = true;
   return true;
 }
 
@@ -89,10 +98,69 @@ rtsp_output_sink::stream_state* rtsp_output_sink::find_stream(AVMediaType media_
   return nullptr;
 }
 
+bool rtsp_output_sink::update_stream_config_from_packet(const std::shared_ptr<media_packet>& media)
+{
+  if (!media || !media->codec_parameters) {
+    return false;
+  }
+
+  stream_config* config = nullptr;
+  if (media->media_type == AVMEDIA_TYPE_VIDEO) {
+    config = &m_video_config;
+  } else if (media->media_type == AVMEDIA_TYPE_AUDIO) {
+    config = &m_audio_config;
+  } else {
+    return false;
+  }
+
+  const bool changed = !config->codec_parameters ||
+    config->codec_parameters->codec_id != media->codec_parameters->codec_id ||
+    config->codec_parameters->codec_type != media->codec_parameters->codec_type ||
+    config->time_base.num != media->time_base.num ||
+    config->time_base.den != media->time_base.den;
+
+  config->codec_parameters = media->codec_parameters;
+  config->time_base = media->time_base;
+
+  return changed;
+}
+
+std::vector<rtsp_output_sink::stream_config> rtsp_output_sink::collect_known_streams() const
+{
+  std::vector<stream_config> streams;
+
+  if (m_video_config.codec_parameters) {
+    streams.push_back(m_video_config);
+  }
+
+  if (m_audio_config.codec_parameters) {
+    streams.push_back(m_audio_config);
+  }
+
+  return streams;
+}
+
 void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
 {
-  if (!m_is_initialized || !media || !media->packet) {
+  if (!media || !media->packet) {
     return;
+  }
+
+  const bool config_changed = update_stream_config_from_packet(media);
+
+  if (!m_is_initialized) {
+    const auto streams = collect_known_streams();
+    if (streams.empty() || !init(streams)) {
+      return;
+    }
+  } else {
+    auto* existing_stream = find_stream(media->media_type);
+    if (!existing_stream || config_changed) {
+      const auto streams = collect_known_streams();
+      if (streams.empty() || !init(streams)) {
+        return;
+      }
+    }
   }
 
   auto* stream = find_stream(media->media_type);
@@ -104,10 +172,10 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
 
   if (stream->media_type == AVMEDIA_TYPE_VIDEO && m_wait_keyframe) {
     if (!(pkt->flags & AV_PKT_FLAG_KEY)) {
-      return; // игнорируем
+      return;
     }
 
-    m_wait_keyframe = false; // нашли первый IDR
+    m_wait_keyframe = false;
   }
 
   av_packet_rescale_ts(pkt, media->time_base, stream->out_stream->time_base);
@@ -147,6 +215,7 @@ void rtsp_output_sink::close()
   if (!m_ctx) {
     m_streams.clear();
     m_is_initialized = false;
+    m_wait_keyframe = true;
     return;
   }
 
