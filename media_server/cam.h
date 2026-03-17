@@ -8,7 +8,7 @@
 #include "media/media_sink.h"
 #include "reader/reader.h"
 #include "stream/jpeg_streamer.h"
-#include "writer/segment_writer.h"
+#include "arch_writer/segment_writer.h"
 #include "writer/webrtc_output_sink.h"
 
 class cam final : public media_sink {

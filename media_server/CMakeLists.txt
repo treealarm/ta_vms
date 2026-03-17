@@ -42,8 +42,8 @@ set(SOURCES
     reader/file_reader.h
     reader/reader.h
 
-    writer/segment_writer.cpp
-    writer/segment_writer.h
+    arch_writer/segment_writer.cpp
+    arch_writer/segment_writer.h
 
     writer/compat_sink.cpp
     writer/compat_sink.h
