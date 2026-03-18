@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include "media/sink_container.h"
+#include "interfaces/sink_container.h"
 
 extern "C" {
 #include <libavformat/avformat.h>

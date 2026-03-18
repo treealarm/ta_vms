@@ -4,7 +4,7 @@
 #include <mutex>
 #include <vector>
 
-#include "media/sink_container.h"
+#include "interfaces/sink_container.h"
 #include "writer/stream_processor.h"
 
 class compat_sink : public media_sink, public sink_container {

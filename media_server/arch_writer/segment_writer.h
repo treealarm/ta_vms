@@ -11,8 +11,8 @@ extern "C" {
 }
 
 #include "dapr_publisher.h"
-#include "media/media_packet.h"
-#include "media/media_sink.h"
+#include "interfaces/media_packet.h"
+#include "interfaces/media_sink.h"
 
 class segment_writer : public media_sink {
 public:

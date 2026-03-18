@@ -31,16 +31,17 @@ set(SOURCES
     dapr_publisher.cpp
     dapr_publisher.h
 
-    media/av_deleters.h
-    media/media_packet.h
-    media/media_sink.h
-    media/sink_container.h
+    interfaces/av_deleters.h
+    interfaces/media_packet.h
+    interfaces/media_sink.h
+    interfaces/sink_container.h
+    interfaces/reader.h
 
     reader/rtsp_reader.cpp
     reader/rtsp_reader.h
     reader/file_reader.cpp
     reader/file_reader.h
-    reader/reader.h
+    
 
     arch_writer/segment_writer.cpp
     arch_writer/segment_writer.h

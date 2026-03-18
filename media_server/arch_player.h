@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "reader/reader.h"
+#include "interfaces/reader.h"
 #include "stream/jpeg_streamer.h"
 
 class arch_player {

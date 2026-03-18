@@ -5,8 +5,8 @@
 #include <string>
 #include <vector>
 
-#include "media/media_sink.h"
-#include "reader/reader.h"
+#include "interfaces/media_sink.h"
+#include "interfaces/reader.h"
 #include "stream/jpeg_streamer.h"
 #include "arch_writer/segment_writer.h"
 #include "writer/webrtc_output_sink.h"

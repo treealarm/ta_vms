@@ -14,7 +14,7 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
-#include "media/media_sink.h"
+#include "interfaces/media_sink.h"
 
 class jpeg_streamer : public media_sink {
 public:

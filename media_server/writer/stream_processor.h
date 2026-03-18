@@ -3,7 +3,7 @@
 #include <functional>
 #include <memory>
 
-#include "media/media_packet.h"
+#include "interfaces/media_packet.h"
 
 extern "C" {
 #include <libavcodec/avcodec.h>

@@ -7,7 +7,7 @@ extern "C" {
 #include <libavformat/avformat.h>
 }
 
-#include "media/media_sink.h"
+#include "interfaces/media_sink.h"
 
 class rtsp_output_sink : public media_sink {
 public:

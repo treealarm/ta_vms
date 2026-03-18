@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-#include "media/media_packet.h"
+#include "interfaces/media_packet.h"
 #include "writer/audio_copy_processor.h"
 #include "writer/audio_transcode_processor.h"
 #include "writer/video_copy_processor.h"

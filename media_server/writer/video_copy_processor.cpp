@@ -1,6 +1,6 @@
 #include "writer/video_copy_processor.h"
 
-#include "media/media_packet.h"
+#include "interfaces/media_packet.h"
 
 bool video_copy_processor::init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base, emit_fn emit)
 {

@@ -7,7 +7,7 @@ extern "C" {
 #include <libswresample/swresample.h>
 }
 
-#include "media/media_packet.h"
+#include "interfaces/media_packet.h"
 
 namespace {
 avcodec_parameters_ptr alloc_out_params(AVCodecContext* encoder_ctx)

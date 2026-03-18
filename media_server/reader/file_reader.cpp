@@ -9,7 +9,7 @@
 #include <utility>
 
 #include "file_reader.h"
-#include "media/av_deleters.h"
+#include "interfaces/av_deleters.h"
 
 namespace {
 std::vector<std::string> split(const std::string& value, char delimiter) {

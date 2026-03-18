@@ -8,9 +8,9 @@
 #include <filesystem>
 #include <unordered_set>
 
-#include "media/media_packet.h"
-#include "media/media_sink.h"
-#include "reader.h"
+#include "interfaces/media_packet.h"
+#include "interfaces/media_sink.h"
+#include "interfaces/reader.h"
 
 extern "C" {
 #include <libavformat/avformat.h>

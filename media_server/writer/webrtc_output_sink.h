@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include "media/media_sink.h"
+#include "interfaces/media_sink.h"
 #include "writer/compat_sink.h"
 #include "writer/rtsp_output_sink.h"
 
