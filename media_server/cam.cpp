@@ -69,7 +69,8 @@ cam::cam(const std::string& source,
   m_is_running = true;
 }
 
-cam::~cam() {
+cam::~cam() 
+{
   shutdown();
 }
 
@@ -93,7 +94,6 @@ void cam::stop_recording() {
     if (!m_writer) {
       return;
     }
-    m_writer->close();
     m_writer.reset();
   }
 
@@ -126,7 +126,6 @@ bool cam::stop_web_rtc(std::string& error) {
     }
 
     if (m_webrtc_output_sink) {
-      m_webrtc_output_sink->close();
       m_webrtc_output_sink.reset();
     }
   }
@@ -143,7 +142,6 @@ void cam::shutdown()
   {
     std::scoped_lock lock(m_sinks_mutex);
     if (m_jpeg_streamer) {
-      m_jpeg_streamer->close();
       m_jpeg_streamer.reset();
     }
   }
@@ -208,7 +206,6 @@ bool cam::stop_jpeg_stream(std::string& error) {
       return false;
     }
 
-    m_jpeg_streamer->close();
     m_jpeg_streamer.reset();
   }
 

@@ -9,11 +9,10 @@
 class webrtc_output_sink : public media_sink {
 public:
   explicit webrtc_output_sink(std::string rtsp_url);
-
+  ~webrtc_output_sink() override;
   void on_packet(const std::shared_ptr<media_packet>& media) override;
-  void close();
-
 private:
+  void close();
   rtsp_output_sink m_rtsp_output_sink;
   compat_sink m_video_compat_sink;
   compat_sink m_audio_compat_sink;

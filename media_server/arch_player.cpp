@@ -133,7 +133,6 @@ void arch_player::shutdown() {
 
   if (m_jpeg_streamer) {
     m_reader->remove_sink(m_jpeg_streamer.get());
-    m_jpeg_streamer->close();
     m_jpeg_streamer.reset();
   }
 
@@ -170,7 +169,6 @@ bool arch_player::stop_jpeg_stream(std::string& error) {
   }
 
   m_reader->remove_sink(m_jpeg_streamer.get());
-  m_jpeg_streamer->close();
   m_jpeg_streamer.reset();
 
   return true;

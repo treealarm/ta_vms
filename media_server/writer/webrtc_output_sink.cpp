@@ -7,6 +7,10 @@ webrtc_output_sink::webrtc_output_sink(std::string rtsp_url)
   m_audio_compat_sink.add_sink(&m_rtsp_output_sink);
 }
 
+webrtc_output_sink::~webrtc_output_sink()
+{
+  close();
+}
 void webrtc_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
 {
   if (!media) {

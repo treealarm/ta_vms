@@ -19,10 +19,8 @@ public:
   segment_writer(const std::string& base_dir,
                  const std::string& camera_id,
                  int segment_seconds);
-
+  ~segment_writer() override;
   void on_packet(const std::shared_ptr<media_packet>& media) override;
-  void close();
-
 private:
   struct input_stream_info {
     avcodec_parameters_ptr codec_parameters;
@@ -34,7 +32,7 @@ private:
   void open_new_segment();
   void close_segment();
   std::string make_filename() const;
-
+  void close();
 private:
   std::filesystem::path m_base_dir;
   std::string m_camera_id;

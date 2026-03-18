@@ -22,12 +22,12 @@ public:
   ~jpeg_streamer() override;
 
   bool init(AVStream* in_stream, std::string& error);
-  void on_packet(const std::shared_ptr<media_packet>& media) override;
-  void close();
+  void on_packet(const std::shared_ptr<media_packet>& media) override;  
 
   bool wait_next_frame(std::vector<uint8_t>& frame, uint64_t& frame_number);
 
 private:
+  void close();
   bool init_decoder(AVStream* in_stream, std::string& error);
   bool init_encoder(std::string& error);
 

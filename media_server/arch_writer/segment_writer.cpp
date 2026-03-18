@@ -73,6 +73,11 @@ segment_writer::segment_writer(const std::string& base_dir,
 {
 }
 
+segment_writer::~segment_writer()
+{
+  close();
+}
+
 bool segment_writer::ensure_input_stream(const std::shared_ptr<media_packet>& media)
 {
   if (!media || !media->codec_parameters || media->stream_index < 0) {
