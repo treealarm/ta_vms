@@ -2,6 +2,10 @@
 
 #include <string>
 #include <deque>
+#include <thread>
+#include <atomic>
+#include <condition_variable>
+#include <mutex> 
 
 #include "interfaces/media_sink.h"
 #include "writer/compat_sink.h"

@@ -10,6 +10,8 @@ services:
       - .env
     depends_on:
       - mediamtx
+    volumes:
+      - "${PWD}/data:/data"
 
   mediamtx:
     image: bluenviron/mediamtx:latest
