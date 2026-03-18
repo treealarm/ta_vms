@@ -40,15 +40,13 @@ private:
 
   std::string m_cam_id;
   std::string m_source;
+  std::string m_storage_base_path;
 
   std::unique_ptr<reader> m_reader;
-  segment_writer m_writer;
-  std::unique_ptr<webrtc_output_sink> m_webrtc_output_sink;
-  std::unique_ptr<jpeg_streamer> m_jpeg_streamer;
+  std::shared_ptr<segment_writer> m_writer;
+  std::shared_ptr<webrtc_output_sink> m_webrtc_output_sink;
+  std::shared_ptr<jpeg_streamer> m_jpeg_streamer;
 
   mutable std::mutex m_sinks_mutex;
   bool m_is_running = false;
-  bool m_is_recording = false;
-  bool m_is_web_rtc_running = false;
-  bool m_is_attached_to_reader = false;
 };

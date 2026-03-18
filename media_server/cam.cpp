@@ -54,7 +54,8 @@ cam::cam(const std::string& source,
          const std::string& storage_base_path)
     : m_source(source),
       m_cam_id(cam_id),
-      m_writer(resolve_storage_base_path(storage_base_path), cam_id, 60) {
+      m_storage_base_path(storage_base_path)
+{
   if (!is_rtsp_source(m_source)) {
     throw std::runtime_error("cam supports only RTSP sources");
   }
@@ -75,11 +76,12 @@ cam::~cam() {
 void cam::start_recording() {
   {
     std::scoped_lock lock(m_sinks_mutex);
-    if (m_is_recording) {
+    if (m_writer) {
       return;
     }
 
-    m_is_recording = true;
+    m_writer =
+      std::make_shared<segment_writer>(resolve_storage_base_path(m_storage_base_path), m_cam_id, 60);
   }
 
   update_reader_subscription();
@@ -88,12 +90,11 @@ void cam::start_recording() {
 void cam::stop_recording() {
   {
     std::scoped_lock lock(m_sinks_mutex);
-    if (!m_is_recording) {
+    if (!m_writer) {
       return;
     }
-
-    m_is_recording = false;
-    m_writer.close();
+    m_writer->close();
+    m_writer.reset();
   }
 
   update_reader_subscription();
@@ -103,13 +104,12 @@ bool cam::start_web_rtc(std::string& error) {
   {
     std::scoped_lock lock(m_sinks_mutex);
 
-    if (m_is_web_rtc_running) {
+    if (m_webrtc_output_sink) {
       error = "web rtc stream already running";
       return false;
     }
 
-    m_webrtc_output_sink = std::make_unique<webrtc_output_sink>(resolve_default_webrtc_rtsp_url(m_cam_id));
-    m_is_web_rtc_running = true;
+    m_webrtc_output_sink = std::make_shared<webrtc_output_sink>(resolve_default_webrtc_rtsp_url(m_cam_id));
   }
 
   update_reader_subscription();
@@ -120,12 +120,10 @@ bool cam::stop_web_rtc(std::string& error) {
   {
     std::scoped_lock lock(m_sinks_mutex);
 
-    if (!m_is_web_rtc_running) {
+    if (!m_webrtc_output_sink) {
       error = "web rtc stream is not running";
       return false;
     }
-
-    m_is_web_rtc_running = false;
 
     if (m_webrtc_output_sink) {
       m_webrtc_output_sink->close();
@@ -137,25 +135,16 @@ bool cam::stop_web_rtc(std::string& error) {
   return true;
 }
 
-void cam::shutdown() {
+void cam::shutdown()
+{
+  stop_recording();
+  std::string error;
+  stop_web_rtc(error);
   {
     std::scoped_lock lock(m_sinks_mutex);
     if (m_jpeg_streamer) {
       m_jpeg_streamer->close();
       m_jpeg_streamer.reset();
-    }
-
-    if (m_is_recording) {
-      m_is_recording = false;
-      m_writer.close();
-    }
-
-    if (m_is_web_rtc_running) {
-      m_is_web_rtc_running = false;
-      if (m_webrtc_output_sink) {
-        m_webrtc_output_sink->close();
-        m_webrtc_output_sink.reset();
-      }
     }
   }
 
@@ -182,7 +171,7 @@ bool cam::start_jpeg_stream(std::string& error) {
       return false;
     }
 
-    auto streamer = std::make_unique<jpeg_streamer>();
+    auto streamer = std::make_shared<jpeg_streamer>();
     if (!streamer->init(stream, error)) {
       return false;
     }
@@ -227,45 +216,54 @@ bool cam::stop_jpeg_stream(std::string& error) {
   return true;
 }
 
-void cam::on_packet(const std::shared_ptr<media_packet>& pkt) {
-  std::scoped_lock lock(m_sinks_mutex);
+void cam::on_packet(const std::shared_ptr<media_packet>& pkt)
+{
+  std::shared_ptr<segment_writer> writer;
+  std::shared_ptr<webrtc_output_sink> webrtc;
+  std::shared_ptr<jpeg_streamer> jpeg;
 
-  if (m_is_recording) {
-    auto writer_packet = clone_media_packet(pkt);
-    if (writer_packet) {
-      m_writer.on_packet(writer_packet);
+  {
+    std::scoped_lock lock(m_sinks_mutex);
+
+    writer = m_writer;
+    webrtc = m_webrtc_output_sink;
+    jpeg = m_jpeg_streamer;
+  }
+
+  // дальше без lock
+
+  if (writer) {
+    if (auto p = clone_media_packet(pkt)) {
+      writer->on_packet(p);
     }
   }
 
-  if (m_is_web_rtc_running && m_webrtc_output_sink &&
-      (pkt->media_type == AVMEDIA_TYPE_VIDEO || pkt->media_type == AVMEDIA_TYPE_AUDIO)) {
-    auto webrtc_packet = clone_media_packet(pkt);
-    if (webrtc_packet) {
-      m_webrtc_output_sink->on_packet(webrtc_packet);
+  if (webrtc &&
+    (pkt->media_type == AVMEDIA_TYPE_VIDEO || pkt->media_type == AVMEDIA_TYPE_AUDIO)) {
+    if (auto p = clone_media_packet(pkt)) {
+      webrtc->on_packet(p);
     }
   }
 
-  if (m_jpeg_streamer) {
-    auto jpeg_packet = clone_media_packet(pkt);
-    if (jpeg_packet) {
-      m_jpeg_streamer->on_packet(jpeg_packet);
+  if (jpeg) {
+    if (auto p = clone_media_packet(pkt)) {
+      jpeg->on_packet(p);
     }
   }
 }
 
-void cam::update_reader_subscription() {
+void cam::update_reader_subscription() 
+{
   std::scoped_lock lock(m_sinks_mutex);
 
-  const bool has_consumers = m_is_recording || m_is_web_rtc_running || static_cast<bool>(m_jpeg_streamer);
+  const bool has_consumers = m_writer || m_webrtc_output_sink || m_jpeg_streamer;
 
-  if (has_consumers && !m_is_attached_to_reader) {
+  if (has_consumers) 
+  {
     m_reader->add_sink(this);
-    m_is_attached_to_reader = true;
-    return;
   }
-
-  if (!has_consumers && m_is_attached_to_reader) {
+  else
+  {
     m_reader->remove_sink(this);
-    m_is_attached_to_reader = false;
   }
 }
