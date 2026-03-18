@@ -8,16 +8,27 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-var grpcAddress = builder.Configuration.GetValue<string>("VmsGrpc:Address") ?? "http://localhost:50051";
+var grpcAddress = Environment.GetEnvironmentVariable("GRPC_VMS_ADDR");
+
+if (!string.IsNullOrEmpty(grpcAddress))
+{
+  Console.WriteLine($"GRPC_VMS_ADDR: {grpcAddress}");
+}
+else
+{
+  grpcAddress = "http://localhost:50051";
+}
+
+
 var grpcChannel = GrpcChannel.ForAddress(grpcAddress);
 builder.Services.AddSingleton(grpcChannel);
 builder.Services.AddSingleton(_ => new CameraControlService.CameraControlServiceClient(grpcChannel));
 
 var http_port = 5134;
 
-if (int.TryParse(Environment.GetEnvironmentVariable("HTTP_VMS_PORT"), out http_port))
+if (int.TryParse(Environment.GetEnvironmentVariable("WEB_VMS_PORT"), out http_port))
 {
-  Console.WriteLine($"HTTP_VMS_PORT port: {http_port}");
+  Console.WriteLine($"WEB_VMS_PORT port: {http_port}");
 }
 else
 {

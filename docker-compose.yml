@@ -5,13 +5,24 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "${GRPC_VMS_PORT}:${GRPC_VMS_PORT}"  # твой gRPC порт
+      - "${GRPC_VMS_PORT}:${GRPC_VMS_PORT}"
     env_file:
       - .env
     depends_on:
       - mediamtx
     volumes:
       - "${PWD}/data:/data"
+      
+  web_vms:
+    build:
+      context: .
+      dockerfile: web_vms/web_vms.Server/Dockerfile  
+    ports:
+      - "${WEB_VMS_PORT}:${WEB_VMS_PORT}"  
+    depends_on:
+      - vms
+    env_file:
+      - .env
 
   mediamtx:
     image: bluenviron/mediamtx:latest

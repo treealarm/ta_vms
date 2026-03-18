@@ -1,14 +1,43 @@
-.git
-.gitignore
-build
-**/out
-**/build
-node_modules
+# -------------------
+# Временные / системные файлы
+# -------------------
 *.log
 *.tmp
-*.o
-*.a
-*.so
-.vscode
-Dockerfile
-docker-compose.yml
+*.user
+*.suo
+*.pdb
+*.cache
+*.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.sln
+*.suo
+*.user
+
+# -------------------
+# .NET / C# сборки
+# -------------------
+**/bin/
+**/obj/
+**/out/
+
+# -------------------
+# C++ сборки
+# -------------------
+media_server/build/
+media_server/out/
+media_server/bin/
+media_server/obj/
+
+# -------------------
+# Node / фронт
+# -------------------
+web_vms.client/node_modules/
+web_vms.client/dist/
+
+# -------------------
+# Данные / runtime файлы
+# -------------------
+data/
