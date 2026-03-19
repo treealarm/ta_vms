@@ -43,6 +43,8 @@ set(SOURCES
     reader/file_reader.cpp
     reader/file_reader.h
     
+    sink_container/sink_container_impl.h
+    sink_container/sink_container_impl.cpp
 
     arch_writer/segment_writer.cpp
     arch_writer/segment_writer.h

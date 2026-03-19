@@ -80,16 +80,14 @@ void rtsp_reader::disconnect() {
   m_ctx.reset();
 }
 
-void rtsp_reader::add_sink(media_sink* sink) {
-  std::scoped_lock lock(m_sink_mutex);
-  m_sink = sink;
+void rtsp_reader::add_sink(std::shared_ptr<media_sink> sink) 
+{
+  m_sinks_helper.add_sink(sink);
 }
 
-void rtsp_reader::remove_sink(media_sink* sink) {
-  std::scoped_lock lock(m_sink_mutex);
-  if (m_sink == sink) {
-    m_sink = nullptr;
-  }
+void rtsp_reader::remove_sink(std::shared_ptr<media_sink> sink) 
+{
+  m_sinks_helper.remove_sink(sink);
 }
 
 AVStream* rtsp_reader::video_stream() const {
@@ -159,14 +157,8 @@ void rtsp_reader::read_loop() {
 
     media->codec_parameters = std::move(codec_copy);
 
-    media_sink* sink = nullptr;
-    {
-      std::scoped_lock lock(m_sink_mutex);
-      sink = m_sink;
-    }
-
-    if (sink) {
-      sink->on_packet(media);
+    for (auto& s : m_sinks_helper.snapshot_sinks()) {
+      s->on_packet(media);
     }
   }
 

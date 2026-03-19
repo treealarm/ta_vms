@@ -4,7 +4,6 @@ bool camera_manager::add_camera(const std::string& camera_id,
                                 const std::string& rtsp_url,
                                 const std::string& storage_base_path,
                                 bool recording,
-                                bool jpeg_stream,
                                 bool web_rtc,
                                 std::string& error) {
   std::scoped_lock lock(m_mutex);
@@ -26,16 +25,11 @@ bool camera_manager::add_camera(const std::string& camera_id,
   }
 
   try {
-    auto camera = std::make_unique<cam>(rtsp_url, camera_id, storage_base_path);
+    auto camera = std::make_shared<cam>(rtsp_url, camera_id, storage_base_path);
     if (recording) {
       camera->start_recording();
     }
 
-    if (jpeg_stream) {
-      if (!camera->start_jpeg_stream(error)) {
-        return false;
-      }
-    }
 
     if (web_rtc) {
       if (!camera->start_web_rtc(error)) {
@@ -47,7 +41,6 @@ bool camera_manager::add_camera(const std::string& camera_id,
     entry.camera = std::move(camera);
     entry.source = rtsp_url;
     entry.is_recording = recording;
-    entry.is_jpeg_streaming = jpeg_stream;
     entry.is_web_rtc_streaming = web_rtc;
 
     m_cameras.emplace(camera_id, std::move(entry));
@@ -100,7 +93,6 @@ bool camera_manager::stop_recording(const std::string& camera_id,
 
 bool camera_manager::set_camera_state(const std::string& camera_id,
                                     bool recording,
-                                    bool jpeg_stream,
                                     bool web_rtc,
                                     std::string& error) {
   std::scoped_lock lock(m_mutex);
@@ -120,18 +112,6 @@ bool camera_manager::set_camera_state(const std::string& camera_id,
     it->second.is_recording = recording;
   }
 
-  if (jpeg_stream != it->second.is_jpeg_streaming) {
-    if (jpeg_stream) {
-      if (!it->second.camera->start_jpeg_stream(error)) {
-        return false;
-      }
-    } else {
-      if (!it->second.camera->stop_jpeg_stream(error)) {
-        return false;
-      }
-    }
-    it->second.is_jpeg_streaming = jpeg_stream;
-  }
 
   if (web_rtc != it->second.is_web_rtc_streaming) {
     if (web_rtc) {
@@ -180,34 +160,9 @@ bool camera_manager::remove_arch_player(const std::string& client_id,
     return false;
   }
 
-  it->second.shutdown();
+  it->second->shutdown();
   m_arch_players_by_client.erase(it);
   return true;
-}
-
-bool camera_manager::wait_next_jpeg_frame(const std::string& stream_id,
-                                          std::vector<uint8_t>& frame,
-                                          uint64_t& frame_number,
-                                          std::string& error) {
-  std::unique_lock lock(m_mutex);
-
-  auto player_it = m_arch_players_by_client.find(stream_id);
-  if (player_it != m_arch_players_by_client.end()) {
-    auto* player = &player_it->second;
-    lock.unlock();
-    return player->wait_next_jpeg_frame(frame, frame_number, error);
-  }
-
-  auto it = m_cameras.find(stream_id);
-  if (it == m_cameras.end()) {
-    error = "camera or archive player not found: " + stream_id;
-    return false;
-  }
-
-  auto* camera = it->second.camera.get();
-  lock.unlock();
-
-  return camera->wait_next_jpeg_frame(frame, frame_number, error);
 }
 
 std::vector<camera_manager::camera_info> camera_manager::list_cameras() const {
@@ -217,7 +172,7 @@ std::vector<camera_manager::camera_info> camera_manager::list_cameras() const {
   cameras.reserve(m_cameras.size());
 
   for (const auto& [camera_id, entry] : m_cameras) {
-    cameras.push_back(camera_info{camera_id, entry.source, entry.is_recording, entry.is_jpeg_streaming, entry.is_web_rtc_streaming});
+    cameras.push_back(camera_info{camera_id, entry.source, entry.is_recording, entry.is_web_rtc_streaming});
   }
 
   return cameras;
@@ -229,12 +184,11 @@ void camera_manager::stop_all() {
   for (auto& [_, entry] : m_cameras) {
     entry.camera->shutdown();
     entry.is_recording = false;
-    entry.is_jpeg_streaming = false;
     entry.is_web_rtc_streaming = false;
   }
 
   for (auto& [_, player] : m_arch_players_by_client) {
-    player.shutdown();
+    player->shutdown();
   }
 }
 
@@ -242,8 +196,7 @@ bool camera_manager::add_arch_player(const std::string& camera_id,
                                      const std::string& client_id,
                                      const std::string& start_time,
                                      const std::string& storage_base_path,
-                                     bool jpeg_stream,
-                                     std::string& error) {
+                                      std::string& error) {
   if (camera_id.empty()) {
     error = "camera_id must not be empty";
     return false;
@@ -264,14 +217,13 @@ bool camera_manager::add_arch_player(const std::string& camera_id,
 
     auto existing = m_arch_players_by_client.find(client_id);
     if (existing != m_arch_players_by_client.end()) {
-      existing->second.shutdown();
+      existing->second->shutdown();
       m_arch_players_by_client.erase(existing);
     }
 
-    arch_player player(camera_id,
+    std::shared_ptr<arch_player> player = std::make_shared<arch_player>(camera_id,
                        start_time,
                        storage_base_path,
-                       jpeg_stream,
                        error);
     m_arch_players_by_client.emplace(client_id, std::move(player));
 
@@ -285,7 +237,6 @@ bool camera_manager::add_arch_player(const std::string& camera_id,
 bool camera_manager::set_player_state(const std::string& client_id,
                                       const std::string& camera_id,
                                       const std::string& start_time,
-                                      bool jpeg_stream,
                                       std::string& error) {
   std::scoped_lock lock(m_mutex);
 
@@ -300,10 +251,10 @@ bool camera_manager::set_player_state(const std::string& client_id,
     return false;
   }
 
-  if (!camera_id.empty() && camera_id != it->second.camera_id()) {
+  if (!camera_id.empty() && camera_id != it->second->camera_id()) {
     error = "camera_id does not match archive player camera";
     return false;
   }
 
-  return it->second.set_state(start_time, jpeg_stream, error);
+  return it->second->set_state(start_time, error);
 }

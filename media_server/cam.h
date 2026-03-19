@@ -11,13 +11,14 @@
 #include "arch_writer/segment_writer.h"
 #include "writer/webrtc_output_sink.h"
 
-class cam final : public media_sink {
+class cam final
+{
 public:
   cam(const std::string& source,
       const std::string& cam_id,
       const std::string& storage_base_path = "");
 
-  ~cam() override;
+  virtual ~cam();
 
   void start_recording();
   void stop_recording();
@@ -27,16 +28,7 @@ public:
 
   void shutdown();
 
-  bool start_jpeg_stream(std::string& error);
-  bool stop_jpeg_stream(std::string& error);
-  bool wait_next_jpeg_frame(std::vector<uint8_t>& frame,
-                            uint64_t& frame_number,
-                            std::string& error);
-
-  void on_packet(const std::shared_ptr<media_packet>& pkt) override;
-
 private:
-  void update_reader_subscription();
 
   std::string m_cam_id;
   std::string m_source;
@@ -45,8 +37,5 @@ private:
   std::unique_ptr<reader> m_reader;
   std::shared_ptr<segment_writer> m_writer;
   std::shared_ptr<webrtc_output_sink> m_webrtc_output_sink;
-  std::shared_ptr<jpeg_streamer> m_jpeg_streamer;
-
   mutable std::mutex m_sinks_mutex;
-  bool m_is_running = false;
 };

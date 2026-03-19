@@ -10,6 +10,8 @@
 #include "interfaces/media_sink.h"
 #include "interfaces/reader.h"
 
+#include "sink_container/sink_container_impl.h"
+
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavutil/time.h>
@@ -21,8 +23,8 @@ public:
   ~rtsp_reader() override;
 
   bool open(const std::string& url) override;
-  void add_sink(media_sink* sink) override;
-  void remove_sink(media_sink* sink) override;
+  void add_sink(std::shared_ptr<media_sink> sink) override;
+  void remove_sink(std::shared_ptr<media_sink> sink) override;
 
   void start() override;
   void stop() override;
@@ -39,8 +41,7 @@ private:
   int m_video_index = -1;
   std::unordered_set<int> m_forward_stream_indexes;
 
-  media_sink* m_sink = nullptr;
-  mutable std::mutex m_sink_mutex;
+  sink_container_impl m_sinks_helper;
 
   std::thread m_thread;
   std::atomic<bool> m_running{ false };

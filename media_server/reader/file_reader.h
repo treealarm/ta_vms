@@ -11,6 +11,7 @@
 #include "interfaces/media_packet.h"
 #include "interfaces/media_sink.h"
 #include "interfaces/reader.h"
+#include "sink_container/sink_container_impl.h"
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -23,8 +24,8 @@ public:
   ~file_reader() override;
 
   bool open(const std::string& source) override;
-  void add_sink(media_sink* sink) override;
-  void remove_sink(media_sink* sink) override;
+  void add_sink(std::shared_ptr<media_sink> sink) override;
+  void remove_sink(std::shared_ptr<media_sink> sink) override;
   AVStream* video_stream() const override;
   void start() override;
   void stop() override;
@@ -41,12 +42,11 @@ private:
   AVFormatContext* m_ctx = nullptr;
   int m_video_index = -1;
   std::unordered_set<int> m_forward_stream_indexes;
-  std::vector<media_sink*> m_sinks;
-  mutable std::mutex m_sinks_mutex;
 
   std::thread m_thread;
   std::atomic<bool> m_running{ false };
 
   std::string m_camera_id;
   std::filesystem::path m_storage_base_path;
+  sink_container_impl m_sinks_helper;
 };

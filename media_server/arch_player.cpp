@@ -11,11 +11,10 @@
 arch_player::arch_player(const std::string& camera_id,
                          const std::string& start_time,
                          const std::string& storage_base_path,
-                         bool jpeg_stream,
                          std::string& error)
     : m_camera_id(camera_id),
       m_storage_base_path(storage_base_path) {
-  if (!recreate(start_time, jpeg_stream, error)) {
+  if (!recreate(start_time, error)) {
     throw std::runtime_error(error);
   }
 }
@@ -25,7 +24,6 @@ arch_player::~arch_player() {
 }
 
 bool arch_player::recreate(const std::string& start_time,
-                           bool jpeg_stream,
                            std::string& error) {
   const auto playback_config = file_playback_config{start_time, m_storage_base_path};
   auto playback_reader = std::make_unique<file_reader>(
@@ -39,68 +37,22 @@ bool arch_player::recreate(const std::string& start_time,
 
   playback_reader->start();
 
-  if (jpeg_stream) {
-    auto streamer = std::make_unique<jpeg_streamer>();
-    if (!streamer->init(playback_reader->video_stream(), error)) {
-      playback_reader->stop();
-      return false;
-    }
-
-    playback_reader->add_sink(streamer.get());
-    m_jpeg_streamer = std::move(streamer);
-  }
-
   m_reader = std::move(playback_reader);
   m_start_time = start_time;
-  m_is_jpeg_streaming = jpeg_stream;
-  m_is_running = true;
+
   return true;
 }
 
 bool arch_player::set_state(const std::string& start_time,
-                            bool jpeg_stream,
                             std::string& error) {
   const bool has_new_start_time = !start_time.empty() && start_time != m_start_time;
   if (has_new_start_time) {
     shutdown();
-    return recreate(start_time, jpeg_stream, error);
+    return recreate(start_time, error);
   }
 
   if (!m_reader) {
     error = "player is not initialized";
-    return false;
-  }
-
-  if (jpeg_stream != m_is_jpeg_streaming) {
-    const bool success = jpeg_stream
-      ? start_jpeg_stream(error)
-      : stop_jpeg_stream(error);
-
-    if (!success) {
-      return false;
-    }
-
-    m_is_jpeg_streaming = jpeg_stream;
-  }
-
-  return true;
-}
-
-bool arch_player::wait_next_jpeg_frame(std::vector<uint8_t>& frame,
-                                       uint64_t& frame_number,
-                                       std::string& error) {
-  if (!m_reader) {
-    error = "player is not initialized";
-    return false;
-  }
-
-  if (!m_jpeg_streamer) {
-    error = "jpeg stream is not running";
-    return false;
-  }
-
-  if (!m_jpeg_streamer->wait_next_frame(frame, frame_number)) {
-    error = "jpeg stream closed";
     return false;
   }
 
@@ -116,45 +68,11 @@ void arch_player::shutdown() {
     return;
   }
 
-  if (m_jpeg_streamer) {
-    m_reader->remove_sink(m_jpeg_streamer.get());
-    m_jpeg_streamer.reset();
-  }
 
-  if (m_is_running) {
+  if (m_reader) {
     m_reader->stop();
-    m_is_running = false;
   }
 
-  m_is_jpeg_streaming = false;
   m_reader.reset();
 }
 
-bool arch_player::start_jpeg_stream(std::string& error) {
-  if (m_jpeg_streamer) {
-    error = "jpeg stream already running";
-    return false;
-  }
-
-  auto streamer = std::make_unique<jpeg_streamer>();
-  if (!streamer->init(m_reader->video_stream(), error)) {
-    return false;
-  }
-
-  m_reader->add_sink(streamer.get());
-  m_jpeg_streamer = std::move(streamer);
-
-  return true;
-}
-
-bool arch_player::stop_jpeg_stream(std::string& error) {
-  if (!m_jpeg_streamer) {
-    error = "jpeg stream is not running";
-    return false;
-  }
-
-  m_reader->remove_sink(m_jpeg_streamer.get());
-  m_jpeg_streamer.reset();
-
-  return true;
-}

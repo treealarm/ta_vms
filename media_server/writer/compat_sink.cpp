@@ -61,20 +61,14 @@ std::unique_ptr<stream_processor> compat_sink::create_processor(const avcodec_pa
   return nullptr;
 }
 
-void compat_sink::add_sink(media_sink* sink)
+void compat_sink::add_sink(std::shared_ptr<media_sink> sink)
 {
-  if (!sink) {
-    return;
-  }
-
-  std::scoped_lock lock(m_sinks_mutex);
-  m_sinks.push_back(sink);
+  m_sinks_helper.add_sink(sink);
 }
 
-void compat_sink::remove_sink(media_sink* sink)
+void compat_sink::remove_sink(std::shared_ptr<media_sink> sink)
 {
-  std::scoped_lock lock(m_sinks_mutex);
-  m_sinks.erase(std::remove(m_sinks.begin(), m_sinks.end(), sink), m_sinks.end());
+  m_sinks_helper.remove_sink(sink);
 }
 
 bool compat_sink::should_reinitialize(const std::shared_ptr<media_packet>& media) const
@@ -117,13 +111,9 @@ void compat_sink::on_packet(const std::shared_ptr<media_packet>& media)
 
 void compat_sink::emit_packet(const std::shared_ptr<media_packet>& media)
 {
-  std::vector<media_sink*> sinks_copy;
-  {
-    std::scoped_lock lock(m_sinks_mutex);
-    sinks_copy = m_sinks;
-  }
+  auto sinks_copy = m_sinks_helper.snapshot_sinks();
 
-  for (auto* sink : sinks_copy) {
+  for (auto sink : sinks_copy) {
     if (!sink) {
       continue;
     }

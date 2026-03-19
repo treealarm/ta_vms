@@ -12,7 +12,6 @@ grpc::Status camera_control_service::AddCamera(
                                             request->rtsp_url(),
                                             request->storage_base_path(),
                                             request->state().recording(),
-                                            request->state().jpeg_stream(),
                                             request->state().web_rtc(),
                                             error);
 
@@ -26,7 +25,7 @@ grpc::Status camera_control_service::AddArchPlayer(
     const vms::control::PlayFileRequest* request,
     vms::control::OperationStatus* response) {
   std::string error;
-  const bool jpeg_stream = request->has_jpeg_stream() ? request->jpeg_stream() : true;
+
   const std::string client_id = request->client_id().empty()
       ? request->camera_id() + "_arch"
       : request->client_id();
@@ -34,7 +33,6 @@ grpc::Status camera_control_service::AddArchPlayer(
                                                  client_id,
                                                  request->start_time(),
                                                  std::string(),
-                                                 jpeg_stream,
                                                  error);
 
   response->set_success(success);
@@ -90,7 +88,6 @@ grpc::Status camera_control_service::SetCameraState(
   std::string error;
   const bool success = m_manager.set_camera_state(request->camera_id(),
                                                   request->state().recording(),
-                                                  request->state().jpeg_stream(),
                                                   request->state().web_rtc(),
                                                   error);
 
@@ -104,14 +101,13 @@ grpc::Status camera_control_service::SetPlayerState(
     const vms::control::PlayFileRequest* request,
     vms::control::OperationStatus* response) {
   std::string error;
-  const bool jpeg_stream = request->has_jpeg_stream() ? request->jpeg_stream() : true;
+
   const std::string client_id = request->client_id().empty()
       ? request->camera_id() + "_arch"
       : request->client_id();
   const bool success = m_manager.set_player_state(client_id,
                                                   request->camera_id(),
                                                   request->start_time(),
-                                                  jpeg_stream,
                                                   error);
 
   response->set_success(success);
@@ -132,9 +128,8 @@ grpc::Status camera_control_service::StreamJpegFrames(
         ? request->camera_id()
         : request->client_id();
 
-    if (!m_manager.wait_next_jpeg_frame(stream_id, frame, frame_number, error)) {
-      return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, error);
-    }
+    assert(false, "jpeg streamer unavailable");
+    return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, error);
 
     vms::control::JpegFrame response_frame;
     response_frame.set_jpeg_data(frame.data(), static_cast<int>(frame.size()));

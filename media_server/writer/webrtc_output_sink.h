@@ -20,7 +20,7 @@ public:
 private:
   void close();
   void send_to_sinks(const std::shared_ptr<media_packet>& media);
-  rtsp_output_sink m_rtsp_output_sink;
+  std::shared_ptr<rtsp_output_sink> m_rtsp_output_sink;
   compat_sink m_video_compat_sink;
   compat_sink m_audio_compat_sink;
 

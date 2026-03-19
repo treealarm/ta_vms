@@ -226,14 +226,12 @@ void file_reader::disconnect() {
   }
 }
 
-void file_reader::add_sink(media_sink* sink) {
-  std::scoped_lock lock(m_sinks_mutex);
-  m_sinks.push_back(sink);
+void file_reader::add_sink(std::shared_ptr<media_sink> sink) {
+  m_sinks_helper.add_sink(sink);
 }
 
-void file_reader::remove_sink(media_sink* sink) {
-  std::scoped_lock lock(m_sinks_mutex);
-  m_sinks.erase(std::remove(m_sinks.begin(), m_sinks.end(), sink), m_sinks.end());
+void file_reader::remove_sink(std::shared_ptr<media_sink> sink) {
+  m_sinks_helper.remove_sink(sink);
 }
 
 AVStream* file_reader::video_stream() const {
@@ -302,13 +300,7 @@ void file_reader::read_loop() {
 
     media->codec_parameters = std::move(codec_copy);
 
-    std::vector<media_sink*> sinks_copy;
-    {
-      std::scoped_lock lock(m_sinks_mutex);
-      sinks_copy = m_sinks;
-    }
-
-    for (auto* sink : sinks_copy) {
+    for (auto& sink : m_sinks_helper.snapshot_sinks()) {
       auto sink_media = clone_media_packet(media);
       if (!sink_media) {
         continue;

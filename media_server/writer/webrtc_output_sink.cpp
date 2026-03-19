@@ -1,10 +1,10 @@
 #include "writer/webrtc_output_sink.h"
 
 webrtc_output_sink::webrtc_output_sink(std::string rtsp_url)
-  : m_rtsp_output_sink(std::move(rtsp_url))
 {
-  m_video_compat_sink.add_sink(&m_rtsp_output_sink);
-  m_audio_compat_sink.add_sink(&m_rtsp_output_sink);
+  m_rtsp_output_sink = std::make_shared<rtsp_output_sink>(std::move(rtsp_url));
+  m_video_compat_sink.add_sink(m_rtsp_output_sink);
+  m_audio_compat_sink.add_sink(m_rtsp_output_sink);
 
   m_worker = std::thread([this] {
     while (m_running) 
@@ -93,5 +93,5 @@ void webrtc_output_sink::close()
 {
   m_video_compat_sink.close();
   m_audio_compat_sink.close();
-  m_rtsp_output_sink.close();
+  m_rtsp_output_sink->close();
 }

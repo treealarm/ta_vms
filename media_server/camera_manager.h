@@ -23,7 +23,6 @@ public:
                   const std::string& rtsp_url,
                   const std::string& storage_base_path,
                   bool recording,
-                  bool jpeg_stream,
                   bool web_rtc,
                   std::string& error);
 
@@ -31,26 +30,19 @@ public:
   bool stop_recording(const std::string& camera_id, std::string& error);
   bool set_camera_state(const std::string& camera_id,
                         bool recording,
-                        bool jpeg_stream,
                         bool web_rtc,
                         std::string& error);
   bool add_arch_player(const std::string& camera_id,
                        const std::string& client_id,
                        const std::string& start_time,
                        const std::string& storage_base_path,
-                       bool jpeg_stream,
                        std::string& error);
   bool remove_camera(const std::string& camera_id, std::string& error);
   bool remove_arch_player(const std::string& client_id, std::string& error);
   bool set_player_state(const std::string& client_id,
                         const std::string& camera_id,
                         const std::string& start_time,
-                        bool jpeg_stream,
                         std::string& error);
-  bool wait_next_jpeg_frame(const std::string& stream_id,
-                            std::vector<uint8_t>& frame,
-                            uint64_t& frame_number,
-                            std::string& error);
 
   std::vector<camera_info> list_cameras() const;
 
@@ -58,15 +50,14 @@ public:
 
 private:
   struct camera_entry {
-    std::unique_ptr<cam> camera;
+    std::shared_ptr<cam> camera;
     std::string source;
     bool is_recording = false;
-    bool is_jpeg_streaming = false;
     bool is_web_rtc_streaming = false;
   };
 
 
   mutable std::mutex m_mutex;
   std::map<std::string, camera_entry> m_cameras;
-  std::map<std::string, arch_player> m_arch_players_by_client;
+  std::map<std::string, std::shared_ptr<arch_player>> m_arch_players_by_client;
 };
