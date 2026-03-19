@@ -128,7 +128,6 @@ grpc::Status camera_control_service::StreamJpegFrames(
         ? request->camera_id()
         : request->client_id();
 
-    assert(false, "jpeg streamer unavailable");
     return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, error);
 
     vms::control::JpegFrame response_frame;

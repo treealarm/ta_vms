@@ -181,22 +181,35 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
 
   av_packet_rescale_ts(pkt, media->time_base, stream->out_stream->time_base);
 
-  if (pkt->dts == AV_NOPTS_VALUE && pkt->pts != AV_NOPTS_VALUE) {
-    pkt->dts = pkt->pts;
+  // шаг времени
+  int64_t step = pkt->duration > 0 ? pkt->duration : 1;
+
+  // 1. Восстановление timestamp
+  if (pkt->pts == AV_NOPTS_VALUE && pkt->dts == AV_NOPTS_VALUE) {
+    int64_t next = (stream->last_dts != AV_NOPTS_VALUE)
+      ? stream->last_dts + step
+      : 0;
+
+    pkt->pts = pkt->dts = next;
   }
-  if (pkt->pts == AV_NOPTS_VALUE && pkt->dts != AV_NOPTS_VALUE) {
+  else if (pkt->pts == AV_NOPTS_VALUE) {
     pkt->pts = pkt->dts;
   }
-
-  if (stream->last_dts != AV_NOPTS_VALUE && pkt->dts != AV_NOPTS_VALUE && pkt->dts <= stream->last_dts) {
-    pkt->dts = stream->last_dts + 1;
+  else if (pkt->dts == AV_NOPTS_VALUE) {
+    pkt->dts = pkt->pts;
   }
 
-  if (stream->last_pts != AV_NOPTS_VALUE && pkt->pts != AV_NOPTS_VALUE && pkt->pts <= stream->last_pts) {
-    pkt->pts = stream->last_pts + 1;
+  // 2. Монотонность
+  if (stream->last_dts != AV_NOPTS_VALUE && pkt->dts <= stream->last_dts) {
+    pkt->dts = stream->last_dts + step;
   }
 
-  if (pkt->pts != AV_NOPTS_VALUE && pkt->dts != AV_NOPTS_VALUE && pkt->pts < pkt->dts) {
+  if (stream->last_pts != AV_NOPTS_VALUE && pkt->pts <= stream->last_pts) {
+    pkt->pts = stream->last_pts + step;
+  }
+
+  // 3. pts >= dts
+  if (pkt->pts < pkt->dts) {
     pkt->pts = pkt->dts;
   }
 
