@@ -5,23 +5,8 @@
 #include <stdexcept>
 
 #include "reader/file_reader.h"
+#include "interfaces/storage_utils.h"
 
-namespace {
-std::string resolve_storage_base_path(const std::string& storage_base_path)
-{
-  if (!storage_base_path.empty()) {
-    return storage_base_path;
-  }
-
-  if (const char* value = std::getenv("VMS_STORAGE_BASE_PATH")) {
-    if (value[0] != '\0') {
-      return value;
-    }
-  }
-
-  return "records";
-}
-}
 
 arch_player::arch_player(const std::string& camera_id,
                          const std::string& start_time,
