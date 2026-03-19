@@ -218,17 +218,24 @@ void segment_writer::close_segment()
   m_current_segment_relative_path.clear();
 }
 
-void segment_writer::on_packet(const std::shared_ptr<media_packet>& media)
+void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)
 {
-  if (!media || !media->packet) {
+  if (!in_media || !in_media->packet) {
     return;
   }
 
-  if (!ensure_input_stream(media)) {
+  if (!ensure_input_stream(in_media)) {
+    return;
+  }
+
+  auto media = clone_media_packet(in_media);
+  if (!media) 
+  {
     return;
   }
 
   AVPacket* pkt = media->packet.get();
+
 
   if (!m_ctx) {
     if (media->media_type != AVMEDIA_TYPE_VIDEO || !(pkt->flags & AV_PKT_FLAG_KEY)) {

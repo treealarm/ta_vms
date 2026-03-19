@@ -68,7 +68,10 @@ std::optional<std::chrono::system_clock::time_point> parse_requested_time(
 }
 }
 
-file_reader::file_reader() = default;
+file_reader::file_reader()
+{
+
+}
 
 file_reader::file_reader(std::string camera_id, std::string storage_base_path)
     : m_camera_id(std::move(camera_id)),

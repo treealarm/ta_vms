@@ -55,7 +55,7 @@ function CameraStreamCard({
       const response = await fetch(`/api/vms/cameras/${encodeURIComponent(camera.cameraId)}/state`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recording: nextRecordingState, jpegStream: false, webRtc: true })
+        body: JSON.stringify({ recording: nextRecordingState, webRtc: true })
       })
 
       if (!response.ok) {

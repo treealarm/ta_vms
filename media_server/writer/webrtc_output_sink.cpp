@@ -73,18 +73,27 @@ void webrtc_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
   m_cv.notify_one();
 }
 
-void webrtc_output_sink::send_to_sinks(const std::shared_ptr<media_packet>& media)
+void webrtc_output_sink::send_to_sinks(const std::shared_ptr<media_packet>& in_media)
 {
-  if (!media) {
+  if (!in_media) 
+  {
     return;
   }
 
-  if (media->media_type == AVMEDIA_TYPE_VIDEO) {
+  auto media = clone_media_packet(in_media);
+  if (!media)
+  {
+    return;
+  }
+
+  if (media->media_type == AVMEDIA_TYPE_VIDEO)
+  {
     m_video_compat_sink.on_packet(media);
     return;
   }
 
-  if (media->media_type == AVMEDIA_TYPE_AUDIO) {
+  if (media->media_type == AVMEDIA_TYPE_AUDIO) 
+  {
     m_audio_compat_sink.on_packet(media);
   }
 }

@@ -221,10 +221,12 @@ bool camera_manager::add_arch_player(const std::string& camera_id,
       m_arch_players_by_client.erase(existing);
     }
 
-    std::shared_ptr<arch_player> player = std::make_shared<arch_player>(camera_id,
-                       start_time,
-                       storage_base_path,
-                       error);
+    std::shared_ptr<arch_player> player = std::make_shared<arch_player>(
+      camera_id,
+      client_id,
+      start_time,
+      storage_base_path,
+      error);
     m_arch_players_by_client.emplace(client_id, std::move(player));
 
     return true;

@@ -89,7 +89,7 @@ function App() {
         body: JSON.stringify({
           cameraId,
           rtspUrl,
-          state: { recording: false, jpegStream: false, webRtc: true },
+          state: { recording: false, webRtc: true },
           startTime: null
         })
       })
@@ -115,7 +115,7 @@ function App() {
         body: JSON.stringify({
           cameraId,
           rtspUrl: '',
-          state: { recording: false, jpegStream: false, webRtc: true },
+          state: { recording: false, webRtc: true },
           startTime: trimmedStartTime
         })
       })
