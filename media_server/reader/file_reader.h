@@ -44,7 +44,7 @@ private:
   std::unordered_set<int> m_forward_stream_indexes;
 
   std::thread m_thread;
-  std::atomic<bool> m_running{ false };
+  std::atomic_bool m_running{ false };
 
   std::string m_camera_id;
   std::filesystem::path m_storage_base_path;

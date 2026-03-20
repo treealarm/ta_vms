@@ -82,11 +82,6 @@ const std::string& arch_player::camera_id() const
 
 void arch_player::shutdown() 
 {
-  if (!m_reader) 
-  {
-    return;
-  }
-
   if (m_reader) 
   {
     m_reader->stop();

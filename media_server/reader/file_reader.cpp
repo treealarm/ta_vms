@@ -12,12 +12,15 @@
 #include "interfaces/av_deleters.h"
 
 namespace {
-std::vector<std::string> split(const std::string& value, char delimiter) {
+std::vector<std::string> split(const std::string& value, char delimiter)
+{
   std::vector<std::string> parts;
   std::stringstream stream(value);
   std::string item;
-  while (std::getline(stream, item, delimiter)) {
-    if (!item.empty()) {
+  while (std::getline(stream, item, delimiter))
+  {
+    if (!item.empty()) 
+    {
       parts.push_back(item);
     }
   }
@@ -26,20 +29,24 @@ std::vector<std::string> split(const std::string& value, char delimiter) {
 }
 
 std::optional<std::chrono::system_clock::time_point> parse_segment_start_time(
-    const std::string& file_name) {
-  if (file_name.size() < 19) {
+    const std::string& file_name)
+{
+  if (file_name.size() < 19) 
+  {
     return std::nullopt;
   }
 
   std::tm tm{};
   std::istringstream stream(file_name.substr(0, 19));
   stream >> std::get_time(&tm, "%Y-%m-%d_%H-%M-%S");
-  if (stream.fail()) {
+  if (stream.fail()) 
+  {
     return std::nullopt;
   }
 
   const std::time_t value = std::mktime(&tm);
-  if (value < 0) {
+  if (value < 0)
+  {
     return std::nullopt;
   }
 
@@ -47,7 +54,8 @@ std::optional<std::chrono::system_clock::time_point> parse_segment_start_time(
 }
 
 std::optional<std::chrono::system_clock::time_point> parse_requested_time(
-    const std::string& value) {
+    const std::string& value) 
+{
   if (value.empty()) {
     return std::nullopt;
   }
@@ -55,12 +63,14 @@ std::optional<std::chrono::system_clock::time_point> parse_requested_time(
   std::tm tm{};
   std::istringstream stream(value);
   stream >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
-  if (stream.fail()) {
+  if (stream.fail()) 
+  {
     return std::nullopt;
   }
 
   const std::time_t parsed_time = std::mktime(&tm);
-  if (parsed_time < 0) {
+  if (parsed_time < 0) 
+  {
     return std::nullopt;
   }
 
@@ -107,35 +117,43 @@ bool file_reader::open(const std::string& source) {
   return connect_current_file();
 }
 
-bool file_reader::initialize_recording_file_sequence(const std::string& start_time) {
+bool file_reader::initialize_recording_file_sequence(const std::string& start_time) 
+{
   const auto requested_time = parse_requested_time(start_time);
-  if (!requested_time) {
+  if (!requested_time) 
+  {
     std::cerr << "Invalid start time, expected YYYY-MM-DDTHH:MM:SS\n";
     return false;
   }
 
   const std::filesystem::path camera_directory = m_storage_base_path / m_camera_id;
-  if (!std::filesystem::exists(camera_directory)) {
+  if (!std::filesystem::exists(camera_directory)) 
+  {
     std::cerr << "records not found for camera: " << m_camera_id << "\n";
     return false;
   }
 
   std::vector<std::filesystem::path> candidate_files;
-  for (const auto& entry : std::filesystem::recursive_directory_iterator(camera_directory)) {
-    if (!entry.is_regular_file()) {
+  for (const auto& entry : std::filesystem::recursive_directory_iterator(camera_directory)) 
+  {
+    if (!entry.is_regular_file()) 
+    {
       continue;
     }
 
-    if (entry.path().extension() != ".mkv") {
+    if (entry.path().extension() != ".mkv") 
+    {
       continue;
     }
 
-    if (parse_segment_start_time(entry.path().filename().string())) {
+    if (parse_segment_start_time(entry.path().filename().string()))
+    {
       candidate_files.push_back(entry.path());
     }
   }
 
-  if (candidate_files.empty()) {
+  if (candidate_files.empty()) 
+  {
     std::cerr << "no playable files found for camera: " << m_camera_id << "\n";
     return false;
   }
@@ -146,44 +164,52 @@ bool file_reader::initialize_recording_file_sequence(const std::string& start_ti
   std::chrono::system_clock::duration best_difference =
       std::chrono::system_clock::duration::max();
 
-  for (size_t i = 0; i < candidate_files.size(); ++i) {
+  for (size_t i = 0; i < candidate_files.size(); ++i) 
+  {
     const auto parsed_time = parse_segment_start_time(candidate_files[i].filename().string());
-    if (!parsed_time) {
+    if (!parsed_time) 
+    {
       continue;
     }
 
     const auto difference = *parsed_time > *requested_time
         ? *parsed_time - *requested_time
         : *requested_time - *parsed_time;
-    if (difference < best_difference) {
+    if (difference < best_difference) 
+    {
       best_difference = difference;
       best_index = i;
     }
   }
 
   m_file_paths.reserve(candidate_files.size() - best_index);
-  for (size_t i = best_index; i < candidate_files.size(); ++i) {
+  for (size_t i = best_index; i < candidate_files.size(); ++i) 
+  {
     m_file_paths.push_back(candidate_files[i].string());
   }
 
   return !m_file_paths.empty();
 }
 
-bool file_reader::connect_current_file() {
+bool file_reader::connect_current_file()
+{
   disconnect();
 
-  if (m_current_file_index >= m_file_paths.size()) {
+  if (m_current_file_index >= m_file_paths.size()) 
+  {
     return false;
   }
 
   const auto& file_path = m_file_paths[m_current_file_index];
 
-  if (avformat_open_input(&m_ctx, file_path.c_str(), nullptr, nullptr) < 0) {
+  if (avformat_open_input(&m_ctx, file_path.c_str(), nullptr, nullptr) < 0) 
+  {
     std::cerr << "Failed to open file source: " << file_path << "\n";
     return false;
   }
 
-  if (avformat_find_stream_info(m_ctx, nullptr) < 0) {
+  if (avformat_find_stream_info(m_ctx, nullptr) < 0)
+  {
     std::cerr << "Failed to get stream info\n";
     disconnect();
     return false;
@@ -191,18 +217,22 @@ bool file_reader::connect_current_file() {
 
   m_video_index = -1;
   m_forward_stream_indexes.clear();
-  for (unsigned i = 0; i < m_ctx->nb_streams; ++i) {
+  for (unsigned i = 0; i < m_ctx->nb_streams; ++i)
+  {
     const AVMediaType media_type = m_ctx->streams[i]->codecpar->codec_type;
-    if (media_type == AVMEDIA_TYPE_VIDEO && m_video_index < 0) {
+    if (media_type == AVMEDIA_TYPE_VIDEO && m_video_index < 0) 
+    {
       m_video_index = static_cast<int>(i);
     }
 
-    if (media_type == AVMEDIA_TYPE_VIDEO || media_type == AVMEDIA_TYPE_AUDIO) {
+    if (media_type == AVMEDIA_TYPE_VIDEO || media_type == AVMEDIA_TYPE_AUDIO)
+    {
       m_forward_stream_indexes.insert(static_cast<int>(i));
     }
   }
 
-  if (m_video_index < 0) {
+  if (m_video_index < 0) 
+  {
     std::cerr << "No video stream\n";
     disconnect();
     return false;
@@ -212,8 +242,10 @@ bool file_reader::connect_current_file() {
   return true;
 }
 
-bool file_reader::advance_to_next_file() {
-  if (m_current_file_index + 1 >= m_file_paths.size()) {
+bool file_reader::advance_to_next_file()
+{
+  if (m_current_file_index + 1 >= m_file_paths.size()) 
+  {
     return false;
   }
 
@@ -221,10 +253,12 @@ bool file_reader::advance_to_next_file() {
   return connect_current_file();
 }
 
-void file_reader::disconnect() {
+void file_reader::disconnect() 
+{
   m_video_index = -1;
   m_forward_stream_indexes.clear();
-  if (m_ctx) {
+  if (m_ctx) 
+  {
     avformat_close_input(&m_ctx);
   }
 }
@@ -254,32 +288,41 @@ void file_reader::start() {
   m_thread = std::thread([this] { read_loop(); });
 }
 
-void file_reader::stop() {
+void file_reader::stop() 
+{
   m_running = false;
-  if (m_thread.joinable()) {
+  if (m_thread.joinable()) 
+  {
     m_thread.join();
   }
 }
 
-void file_reader::read_loop() {
-  while (m_running) {
-    if (!m_ctx || m_video_index < 0 || m_forward_stream_indexes.empty()) {
-      if (!connect_current_file()) {
+void file_reader::read_loop() 
+{
+  while (m_running) 
+  {
+    if (!m_ctx || m_video_index < 0 || m_forward_stream_indexes.empty()) 
+    {
+      if (!connect_current_file()) 
+      {
         break;
       }
     }
 
     avpacket_ptr pkt(av_packet_alloc(), avpacket_deleter{});
     const int read_result = av_read_frame(m_ctx, pkt.get());
-    if (read_result < 0) {
-      if (!advance_to_next_file()) {
+    if (read_result < 0) 
+    {
+      if (!advance_to_next_file()) 
+      {
         break;
       }
-
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
       continue;
     }
 
-    if (!m_forward_stream_indexes.contains(pkt->stream_index)) {
+    if (!m_forward_stream_indexes.contains(pkt->stream_index)) 
+    {
       continue;
     }
 
@@ -293,19 +336,23 @@ void file_reader::read_loop() {
     media->nb_samples = 0;
     avcodec_parameters_ptr codec_copy(avcodec_parameters_alloc(),
       [](AVCodecParameters* params) { avcodec_parameters_free(&params); });
-    if (!codec_copy) {
+    if (!codec_copy) 
+    {
       continue;
     }
 
-    if (avcodec_parameters_copy(codec_copy.get(), m_ctx->streams[pkt->stream_index]->codecpar) < 0) {
+    if (avcodec_parameters_copy(codec_copy.get(), m_ctx->streams[pkt->stream_index]->codecpar) < 0) 
+    {
       continue;
     }
 
     media->codec_parameters = std::move(codec_copy);
 
-    for (auto& sink : m_sinks_helper.snapshot_sinks()) {
+    for (auto& sink : m_sinks_helper.snapshot_sinks()) 
+    {
       auto sink_media = clone_media_packet(media);
-      if (!sink_media) {
+      if (!sink_media) 
+      {
         continue;
       }
 
