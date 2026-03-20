@@ -1,4 +1,4 @@
-#include <algorithm>
+﻿#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <filesystem>
@@ -11,73 +11,16 @@
 #include "file_reader.h"
 #include "interfaces/av_deleters.h"
 
-namespace {
-std::vector<std::string> split(const std::string& value, char delimiter)
+namespace
 {
-  std::vector<std::string> parts;
-  std::stringstream stream(value);
-  std::string item;
-  while (std::getline(stream, item, delimiter))
+  static int64_t to_us(int64_t pts, AVRational time_base)
   {
-    if (!item.empty()) 
-    {
-      parts.push_back(item);
-    }
-  }
+    if (pts == AV_NOPTS_VALUE)
+      return -1;
 
-  return parts;
+    return av_rescale_q(pts, time_base, AVRational{ 1, 1000000 });
+  }
 }
-
-std::optional<std::chrono::system_clock::time_point> parse_segment_start_time(
-    const std::string& file_name)
-{
-  if (file_name.size() < 19) 
-  {
-    return std::nullopt;
-  }
-
-  std::tm tm{};
-  std::istringstream stream(file_name.substr(0, 19));
-  stream >> std::get_time(&tm, "%Y-%m-%d_%H-%M-%S");
-  if (stream.fail()) 
-  {
-    return std::nullopt;
-  }
-
-  const std::time_t value = std::mktime(&tm);
-  if (value < 0)
-  {
-    return std::nullopt;
-  }
-
-  return std::chrono::system_clock::from_time_t(value);
-}
-
-std::optional<std::chrono::system_clock::time_point> parse_requested_time(
-    const std::string& value) 
-{
-  if (value.empty()) {
-    return std::nullopt;
-  }
-
-  std::tm tm{};
-  std::istringstream stream(value);
-  stream >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
-  if (stream.fail()) 
-  {
-    return std::nullopt;
-  }
-
-  const std::time_t parsed_time = std::mktime(&tm);
-  if (parsed_time < 0) 
-  {
-    return std::nullopt;
-  }
-
-  return std::chrono::system_clock::from_time_t(parsed_time);
-}
-}
-
 file_reader::file_reader()
 {
 
@@ -87,120 +30,30 @@ file_reader::file_reader(std::string camera_id, std::string storage_base_path)
     : m_camera_id(std::move(camera_id)),
       m_storage_base_path(std::move(storage_base_path)) {}
 
-file_reader::~file_reader() {
+file_reader::~file_reader() 
+{
   stop();
   disconnect();
 }
 
-bool file_reader::open(const std::string& source) {
-  m_file_paths.clear();
-  m_current_file_index = 0;
-
-  if (!m_camera_id.empty() && !m_storage_base_path.empty()) {
-    if (!initialize_recording_file_sequence(source)) {
-      return false;
-    }
-  } else if (source.rfind("playlist:", 0) == 0) {
-    const auto list = source.substr(9);
-    m_file_paths = split(list, '|');
-  } else if (source.rfind("file:", 0) == 0) {
-    m_file_paths.push_back(source.substr(5));
-  } else {
-    m_file_paths.push_back(source);
-  }
-
-  if (m_file_paths.empty()) {
-    return false;
-  }
-
-  disconnect();
-  return connect_current_file();
-}
-
-bool file_reader::initialize_recording_file_sequence(const std::string& start_time) 
+bool file_reader::open(const std::string& source) 
 {
-  const auto requested_time = parse_requested_time(start_time);
-  if (!requested_time) 
-  {
-    std::cerr << "Invalid start time, expected YYYY-MM-DDTHH:MM:SS\n";
-    return false;
-  }
-
-  const std::filesystem::path camera_directory = m_storage_base_path / m_camera_id;
-  if (!std::filesystem::exists(camera_directory)) 
-  {
-    std::cerr << "records not found for camera: " << m_camera_id << "\n";
-    return false;
-  }
-
-  std::vector<std::filesystem::path> candidate_files;
-  for (const auto& entry : std::filesystem::recursive_directory_iterator(camera_directory)) 
-  {
-    if (!entry.is_regular_file()) 
-    {
-      continue;
-    }
-
-    if (entry.path().extension() != ".mkv") 
-    {
-      continue;
-    }
-
-    if (parse_segment_start_time(entry.path().filename().string()))
-    {
-      candidate_files.push_back(entry.path());
-    }
-  }
-
-  if (candidate_files.empty()) 
-  {
-    std::cerr << "no playable files found for camera: " << m_camera_id << "\n";
-    return false;
-  }
-
-  std::sort(candidate_files.begin(), candidate_files.end());
-
-  size_t best_index = 0;
-  std::chrono::system_clock::duration best_difference =
-      std::chrono::system_clock::duration::max();
-
-  for (size_t i = 0; i < candidate_files.size(); ++i) 
-  {
-    const auto parsed_time = parse_segment_start_time(candidate_files[i].filename().string());
-    if (!parsed_time) 
-    {
-      continue;
-    }
-
-    const auto difference = *parsed_time > *requested_time
-        ? *parsed_time - *requested_time
-        : *requested_time - *parsed_time;
-    if (difference < best_difference) 
-    {
-      best_difference = difference;
-      best_index = i;
-    }
-  }
-
-  m_file_paths.reserve(candidate_files.size() - best_index);
-  for (size_t i = best_index; i < candidate_files.size(); ++i) 
-  {
-    m_file_paths.push_back(candidate_files[i].string());
-  }
-
-  return !m_file_paths.empty();
+  disconnect();
+  std::lock_guard lock(m_mutex);
+  m_source = source;
+  return true;
 }
 
-bool file_reader::connect_current_file()
+std::string file_reader::get_source()
+{
+  std::lock_guard lock(m_mutex);
+  return m_source;
+}
+
+bool file_reader::connect_current_file(const std::string& file_path)
 {
   disconnect();
 
-  if (m_current_file_index >= m_file_paths.size()) 
-  {
-    return false;
-  }
-
-  const auto& file_path = m_file_paths[m_current_file_index];
 
   if (avformat_open_input(&m_ctx, file_path.c_str(), nullptr, nullptr) < 0) 
   {
@@ -215,8 +68,6 @@ bool file_reader::connect_current_file()
     return false;
   }
 
-  m_video_index = -1;
-  m_forward_stream_indexes.clear();
   for (unsigned i = 0; i < m_ctx->nb_streams; ++i)
   {
     const AVMediaType media_type = m_ctx->streams[i]->codecpar->codec_type;
@@ -242,21 +93,8 @@ bool file_reader::connect_current_file()
   return true;
 }
 
-bool file_reader::advance_to_next_file()
-{
-  if (m_current_file_index + 1 >= m_file_paths.size()) 
-  {
-    return false;
-  }
-
-  ++m_current_file_index;
-  return connect_current_file();
-}
-
 void file_reader::disconnect() 
 {
-  m_video_index = -1;
-  m_forward_stream_indexes.clear();
   if (m_ctx) 
   {
     avformat_close_input(&m_ctx);
@@ -271,21 +109,29 @@ void file_reader::remove_sink(std::shared_ptr<media_sink> sink) {
   m_sinks_helper.remove_sink(sink);
 }
 
-AVStream* file_reader::video_stream() const {
-  if (m_ctx && m_video_index >= 0) {
+AVStream* file_reader::video_stream() const 
+{
+  if (m_ctx && m_video_index >= 0) 
+  {
     return m_ctx->streams[m_video_index];
   }
 
   return nullptr;
 }
 
-void file_reader::start() {
-  if (m_running) {
+void file_reader::start() 
+{
+  if (m_running) 
+  {
     return;
   }
 
   m_running = true;
-  m_thread = std::thread([this] { read_loop(); });
+  m_thread = std::thread([this] 
+    { 
+      read_loop(); 
+    }
+  );
 }
 
 void file_reader::stop() 
@@ -297,66 +143,117 @@ void file_reader::stop()
   }
 }
 
-void file_reader::read_loop() 
+void file_reader::read_loop()
 {
-  while (m_running) 
-  {
-    if (!m_ctx || m_video_index < 0 || m_forward_stream_indexes.empty()) 
-    {
-      if (!connect_current_file()) 
-      {
-        break;
-      }
-    }
+  using clock = std::chrono::steady_clock;
 
-    avpacket_ptr pkt(av_packet_alloc(), avpacket_deleter{});
-    const int read_result = av_read_frame(m_ctx, pkt.get());
-    if (read_result < 0) 
+  int64_t first_pts_us = -1;
+  clock::time_point start_wall_time;
+
+  while (m_running)
+  {
+    if (!m_ctx || m_video_index < 0 || m_forward_stream_indexes.empty())
     {
-      if (!advance_to_next_file()) 
-      {
+      if (!connect_current_file(get_source()))
         break;
-      }
+
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
       continue;
     }
 
-    if (!m_forward_stream_indexes.contains(pkt->stream_index)) 
+    avpacket_ptr pkt(av_packet_alloc(), avpacket_deleter{});
+    int ret = av_read_frame(m_ctx, pkt.get());
+
+    if (ret < 0)
     {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
       continue;
     }
 
+    if (!m_forward_stream_indexes.contains(pkt->stream_index))
+      continue;
+
+    AVStream* stream = m_ctx->streams[pkt->stream_index];
+
+    int64_t pts_us = to_us(pkt->pts, stream->time_base);
+    if (pts_us < 0)
+      continue;
+
+    // --- инициализация базового времени ---
+    if (first_pts_us < 0)
+    {
+      first_pts_us = pts_us;
+      start_wall_time = clock::now();
+    }
+
+    int64_t relative_us = pts_us - first_pts_us;
+
+    auto target_time = start_wall_time +
+      std::chrono::microseconds(relative_us);
+
+    constexpr auto MAX_SLEEP = std::chrono::seconds(1);
+    constexpr auto MAX_LAG = std::chrono::milliseconds(500);
+
+    // --- ожидание ---
+    auto now = clock::now();
+
+    if (target_time > now)
+    {
+      auto sleep_duration = target_time - now;
+
+      if (sleep_duration > MAX_SLEEP)
+      {
+        // слишком большой разрыв → пересинхронизация
+        start_wall_time = now - std::chrono::microseconds(relative_us);
+        // после этого target_time ≈ now
+      }
+      else
+      {
+        std::this_thread::sleep_for(sleep_duration);
+      }
+    }
+    else
+    {
+      auto lag = now - target_time;
+
+      if (lag > MAX_LAG)
+      {
+        // сильно отстали → пересинхронизация
+        start_wall_time = now - std::chrono::microseconds(relative_us);
+      }
+      // иначе просто отправляем без sleep
+    }
+
+    // --- формирование пакета ---
     auto media = std::make_shared<media_packet>();
     media->packet = pkt;
     media->stream_index = pkt->stream_index;
-    media->time_base = m_ctx->streams[pkt->stream_index]->time_base;
-    media->media_type = m_ctx->streams[pkt->stream_index]->codecpar->codec_type;
-    media->frame_rate = m_ctx->streams[pkt->stream_index]->avg_frame_rate;
-    media->sample_rate = m_ctx->streams[pkt->stream_index]->codecpar->sample_rate;
+    media->time_base = stream->time_base;
+    media->media_type = stream->codecpar->codec_type;
+    media->frame_rate = stream->avg_frame_rate;
+    media->sample_rate = stream->codecpar->sample_rate;
     media->nb_samples = 0;
-    avcodec_parameters_ptr codec_copy(avcodec_parameters_alloc(),
-      [](AVCodecParameters* params) { avcodec_parameters_free(&params); });
-    if (!codec_copy) 
-    {
-      continue;
-    }
 
-    if (avcodec_parameters_copy(codec_copy.get(), m_ctx->streams[pkt->stream_index]->codecpar) < 0) 
-    {
+    avcodec_parameters_ptr codec_copy(
+      avcodec_parameters_alloc(),
+      [](AVCodecParameters* p) { avcodec_parameters_free(&p); });
+
+    if (!codec_copy)
       continue;
-    }
+
+    if (avcodec_parameters_copy(codec_copy.get(), stream->codecpar) < 0)
+      continue;
 
     media->codec_parameters = std::move(codec_copy);
 
-    for (auto& sink : m_sinks_helper.snapshot_sinks()) 
+    // --- отправка ---
+    for (auto& sink : m_sinks_helper.snapshot_sinks())
     {
-      auto sink_media = clone_media_packet(media);
-      if (!sink_media) 
-      {
+      auto clone = clone_media_packet(media);
+      if (!clone)
         continue;
-      }
 
-      sink->on_packet(sink_media);
+      sink->on_packet(clone);
     }
   }
 

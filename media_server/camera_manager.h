@@ -32,16 +32,14 @@ public:
                         bool recording,
                         bool web_rtc,
                         std::string& error);
-  bool add_arch_player(const std::string& camera_id,
+  bool add_arch_player(
                        const std::string& client_id,
-                       const std::string& start_time,
-                       const std::string& storage_base_path,
                        std::string& error);
   bool remove_camera(const std::string& camera_id, std::string& error);
   bool remove_arch_player(const std::string& client_id, std::string& error);
   bool set_player_state(const std::string& client_id,
                         const std::string& camera_id,
-                        const std::string& start_time,
+                        const std::chrono::system_clock::time_point& start_time,
                         std::string& error);
 
   std::vector<camera_info> list_cameras() const;

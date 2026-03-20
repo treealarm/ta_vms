@@ -38,9 +38,6 @@ public:
                               const vms::control::PlayFileRequest* request,
                               vms::control::OperationStatus* response) override;
 
-  grpc::Status StreamJpegFrames(grpc::ServerContext* context,
-                                const vms::control::CameraRequest* request,
-                                grpc::ServerWriter<vms::control::JpegFrame>* writer) override;
 
 private:
   camera_manager& m_manager;

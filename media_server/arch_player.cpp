@@ -3,26 +3,88 @@
 #include <cstdlib>
 #include <memory>
 #include <stdexcept>
+#include <filesystem>
 
 #include "reader/file_reader.h"
 #include "interfaces/storage_utils.h"
 #include "interfaces/web_rtc_utils.h"
 
+namespace
+{
+std::vector<std::string> split(const std::string& value, char delimiter)
+{
+  std::vector<std::string> parts;
+  std::stringstream stream(value);
+  std::string item;
+  while (std::getline(stream, item, delimiter))
+  {
+    if (!item.empty())
+    {
+      parts.push_back(item);
+    }
+  }
+
+  return parts;
+}
+
+std::optional<std::chrono::system_clock::time_point> parse_segment_start_time(
+  const std::string& file_name)
+{
+  if (file_name.size() < 19)
+  {
+    return std::nullopt;
+  }
+
+  std::tm tm{};
+  std::istringstream stream(file_name.substr(0, 19));
+  stream >> std::get_time(&tm, "%Y-%m-%d_%H-%M-%S");
+  if (stream.fail())
+  {
+    return std::nullopt;
+  }
+
+  const std::time_t value = std::mktime(&tm);
+  if (value < 0)
+  {
+    return std::nullopt;
+  }
+
+  return std::chrono::system_clock::from_time_t(value);
+}
+
+std::optional<std::chrono::system_clock::time_point> parse_requested_time(
+  const std::string& value)
+{
+  if (value.empty())
+  {
+    return std::nullopt;
+  }
+
+  std::tm tm{};
+  std::istringstream stream(value);
+  stream >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
+  if (stream.fail())
+  {
+    return std::nullopt;
+  }
+
+  const std::time_t parsed_time = std::mktime(&tm);
+  if (parsed_time < 0)
+  {
+    return std::nullopt;
+  }
+
+  return std::chrono::system_clock::from_time_t(parsed_time);
+}
+}
+
 arch_player::arch_player(
-  const std::string& camera_id,
   const std::string& client_id,
-  const std::string& start_time,
-  const std::string& storage_base_path,
   std::string& error)
     : 
-  m_camera_id(camera_id),
-  m_client_id(client_id),
-  m_storage_base_path(storage_base_path) 
+  m_client_id(client_id)
 {
-  if (!recreate(start_time, error)) 
-  {
-    throw std::runtime_error(error);
-  }
+
 }
 
 arch_player::~arch_player() 
@@ -30,15 +92,70 @@ arch_player::~arch_player()
   shutdown();
 }
 
-bool arch_player::recreate(const std::string& start_time,
+std::optional<std::string> arch_player::find_file(
+  const std::string& camera_id,
+  const std::filesystem::path& base_path,
+  const std::chrono::system_clock::time_point& start_time)
+{
+  const auto camera_dir = base_path / camera_id;
+
+  if (!std::filesystem::exists(camera_dir))
+    return std::nullopt;
+
+  std::vector<std::pair<std::chrono::system_clock::time_point, std::string>> files;
+
+  for (const auto& entry : std::filesystem::recursive_directory_iterator(camera_dir))
+  {
+    if (!entry.is_regular_file())
+      continue;
+
+    if (entry.path().extension() != ".mkv")
+      continue;
+
+    auto parsed = parse_segment_start_time(entry.path().filename().string());
+    if (!parsed)
+      continue;
+
+    files.emplace_back(*parsed, entry.path().string());
+  }
+
+  if (files.empty())
+    return std::nullopt;
+
+  std::sort(files.begin(), files.end(),
+    [](const auto& a, const auto& b)
+    {
+      return a.first < b.first;
+    });
+
+  // --- ключевая логика ---
+  for (const auto& [ts, path] : files)
+  {
+    if (ts >= start_time)
+      return path;
+  }
+
+  // fallback: если нет >=, берём последний
+  return files.back().second;
+}
+
+bool arch_player::open(const std::chrono::system_clock::time_point& start_time,
                            std::string& error) 
 {
-  const auto playback_config = file_playback_config{start_time, m_storage_base_path};
+  auto base_path = resolve_storage_base_path();
+
   auto playback_reader = std::make_unique<file_reader>(
       m_camera_id,
-      resolve_storage_base_path(playback_config.storage_base_path));
+    base_path);
+  const auto file_name = find_file(m_camera_id, base_path, start_time);
 
-  if (!playback_reader->open(playback_config.start_time))
+  if (!file_name)
+  {
+    error = "Unable to find file";
+    return false;
+  }
+
+  if (!playback_reader->open(*file_name))
   {
     error = "Failed to open media source";
     return false;
@@ -52,14 +169,16 @@ bool arch_player::recreate(const std::string& start_time,
   return true;
 }
 
-bool arch_player::set_state(const std::string& start_time,
-                            std::string& error) 
+bool arch_player::set_state(
+  const std::chrono::system_clock::time_point& start_time,
+  const std::string& camera_id,
+  std::string& error) 
 {
-  const bool has_new_start_time = !start_time.empty() && start_time != m_start_time;
-  if (has_new_start_time) 
+  m_camera_id = camera_id;
+  shutdown();
+  if (!open(start_time, error))
   {
-    shutdown();
-    return recreate(start_time, error);
+    return false;
   }
 
   if (!m_reader) 

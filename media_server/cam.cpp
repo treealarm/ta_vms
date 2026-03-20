@@ -50,7 +50,7 @@ void cam::start_recording()
     }
 
     m_writer =
-      std::make_shared<segment_writer>(resolve_storage_base_path(m_storage_base_path), m_cam_id, 60);
+      std::make_shared<segment_writer>(resolve_storage_base_path(), m_cam_id, 60);
     sink = m_writer;
   }
 

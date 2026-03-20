@@ -1,3 +1,4 @@
+using Google.Protobuf.WellKnownTypes;
 using Microsoft.AspNetCore.Mvc;
 using System.Net.WebSockets;
 using Vms.Control;
@@ -12,12 +13,19 @@ public class VmsController(
   [HttpPost("cameras")]
   public async Task<IActionResult> AddCamera([FromBody] AddCameraDto request, CancellationToken ct)
   {
-    if (!string.IsNullOrWhiteSpace(request.StartTime))
+    if (request.StartTime!= null)
     {
+      var dt = request.StartTime ?? DateTime.UtcNow;
+
+      if (dt.Kind != DateTimeKind.Utc)
+        dt = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+
+      var StartTimeStamp = Timestamp.FromDateTime(dt);
+
       var startPlayResponse = await grpcClient.AddArchPlayerAsync(new PlayFileRequest
       {
         CameraId = request.CameraId,
-        StartTime = request.StartTime,
+        StartTime = StartTimeStamp,
         ClientId = $"{request.CameraId}_arch"
       }, cancellationToken: ct);
 
@@ -109,7 +117,7 @@ public record AddCameraDto(string CameraId,
                            string RtspUrl,
                            CameraStateDto? State,
                            string? StorageBasePath,
-                           string? StartTime);
+                           DateTime? StartTime);
 
 public record CameraDto(string CameraId, string RtspUrl, bool IsRecording);
 

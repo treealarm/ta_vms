@@ -31,22 +31,20 @@ public:
   void stop() override;
 
 private:
-  bool connect_current_file();
-  bool advance_to_next_file();
-  bool initialize_recording_file_sequence(const std::string& start_time);
+  bool connect_current_file(const std::string& source);
   void disconnect();
   void read_loop();
+  std::string get_source();
 
-  std::vector<std::string> m_file_paths;
-  size_t m_current_file_index = 0;
   AVFormatContext* m_ctx = nullptr;
   int m_video_index = -1;
   std::unordered_set<int> m_forward_stream_indexes;
-
   std::thread m_thread;
   std::atomic_bool m_running{ false };
 
   std::string m_camera_id;
   std::filesystem::path m_storage_base_path;
   sink_container_impl m_sinks_helper;
+  std::string m_source;
+  std::mutex m_mutex;
 };

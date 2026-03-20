@@ -192,25 +192,17 @@ void camera_manager::stop_all() {
   }
 }
 
-bool camera_manager::add_arch_player(const std::string& camera_id,
+bool camera_manager::add_arch_player(
                                      const std::string& client_id,
-                                     const std::string& start_time,
-                                     const std::string& storage_base_path,
-                                      std::string& error) {
-  if (camera_id.empty()) {
-    error = "camera_id must not be empty";
-    return false;
-  }
+                                      std::string& error) 
+{
+
 
   if (client_id.empty()) {
     error = "client_id must not be empty";
     return false;
   }
 
-  if (start_time.empty()) {
-    error = "start_time must not be empty";
-    return false;
-  }
 
   try {
     std::scoped_lock lock(m_mutex);
@@ -222,10 +214,7 @@ bool camera_manager::add_arch_player(const std::string& camera_id,
     }
 
     std::shared_ptr<arch_player> player = std::make_shared<arch_player>(
-      camera_id,
       client_id,
-      start_time,
-      storage_base_path,
       error);
     m_arch_players_by_client.emplace(client_id, std::move(player));
 
@@ -236,10 +225,12 @@ bool camera_manager::add_arch_player(const std::string& camera_id,
   }
 }
 
-bool camera_manager::set_player_state(const std::string& client_id,
-                                      const std::string& camera_id,
-                                      const std::string& start_time,
-                                      std::string& error) {
+bool camera_manager::set_player_state(
+  const std::string& client_id,
+  const std::string& camera_id,
+  const std::chrono::system_clock::time_point& start_time,
+  std::string& error) 
+{
   std::scoped_lock lock(m_mutex);
 
   if (client_id.empty()) {
@@ -258,5 +249,5 @@ bool camera_manager::set_player_state(const std::string& client_id,
     return false;
   }
 
-  return it->second->set_state(start_time, error);
+  return it->second->set_state(start_time, camera_id, error);
 }
