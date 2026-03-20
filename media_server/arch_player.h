@@ -29,7 +29,9 @@ public:
 
 
   const std::string& camera_id() const;
-
+  std::chrono::system_clock::time_point start_time() const {
+    return m_start_time;
+  }
   void shutdown();
 
 private:

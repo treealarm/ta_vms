@@ -5,7 +5,8 @@
 #include "camera_manager.h"
 #include "vms_control.grpc.pb.h"
 
-class camera_control_service final : public vms::control::CameraControlService::Service {
+class camera_control_service final : public vms::control::CameraControlService::Service 
+{
 public:
   explicit camera_control_service(camera_manager& manager);
 
@@ -18,11 +19,11 @@ public:
                              vms::control::OperationStatus* response) override;
 
   grpc::Status RemoveCamera(grpc::ServerContext* context,
-                            const vms::control::CameraRequest* request,
+                            const vms::control::SourceRequest* request,
                             vms::control::OperationStatus* response) override;
 
   grpc::Status RemoveArchPlayer(grpc::ServerContext* context,
-                                const vms::control::PlayFileRequest* request,
+                                const vms::control::SourceRequest* request,
                                 vms::control::OperationStatus* response) override;
 
   grpc::Status ListCameras(grpc::ServerContext* context,
@@ -35,12 +36,16 @@ public:
                               vms::control::OperationStatus* response) override;
 
   grpc::Status GetCameraState(grpc::ServerContext* context,
-    const vms::control::CameraRequest* request,
+    const vms::control::SourceRequest* request,
     vms::control::CameraState* response) override;
 
   grpc::Status SetPlayerState(grpc::ServerContext* context,
                               const vms::control::PlayFileRequest* request,
                               vms::control::OperationStatus* response) override;
+
+  grpc::Status ListPlayers(grpc::ServerContext* context,
+    const vms::control::ListPlayersRequest* request,
+    vms::control::ListPlayersResponse* response) override;
 
 
 private:

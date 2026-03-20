@@ -194,7 +194,6 @@ std::vector<camera_manager::camera_info> camera_manager::list_cameras() const
   std::scoped_lock lock(m_mutex);
 
   std::vector<camera_info> cameras;
-  cameras.reserve(m_cameras.size());
 
   for (const auto& [camera_id, entry] : m_cameras) 
   {
@@ -204,6 +203,19 @@ std::vector<camera_manager::camera_info> camera_manager::list_cameras() const
   return cameras;
 }
 
+std::vector<camera_manager::player_info> camera_manager::list_players() const
+{
+  std::scoped_lock lock(m_mutex);
+
+  std::vector<player_info> cameras;
+
+  for (const auto& [client_id, entry] : m_arch_players_by_client)
+  {
+    cameras.push_back(player_info{ entry->camera_id(), client_id, entry->start_time()});
+  }
+
+  return cameras;
+}
 void camera_manager::stop_all() 
 {
   std::scoped_lock lock(m_mutex);

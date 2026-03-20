@@ -1,9 +1,8 @@
 using Google.Protobuf.WellKnownTypes;
 using Microsoft.AspNetCore.Mvc;
-using System.Net.WebSockets;
 using Vms.Control;
 
-namespace web_vms.Server.Controllers;
+namespace web_vms;
 
 [ApiController]
 [Route("api/vms")]
@@ -13,8 +12,23 @@ public class VmsController(
   [HttpPost("cameras")]
   public async Task<IActionResult> AddCamera([FromBody] AddCameraDto request, CancellationToken ct)
   {
-    if (request.StartTime!= null)
+    var response = await grpcClient.AddCameraAsync(new AddCameraRequest
     {
+      CameraId = request.CameraId,
+      RtspUrl = request.RtspUrl,
+      State = new CameraState
+      {
+        Recording = request.State?.Recording ?? false,
+        WebRtc = true
+      }
+    }, cancellationToken: ct);
+
+    return Ok(ToApiResponse(response));
+  }
+
+  [HttpPost("players")]
+  public async Task<IActionResult> AddPlayer([FromBody] AddPlayerDto request, CancellationToken ct)
+  {
       var dt = request.StartTime ?? DateTime.UtcNow;
 
       if (dt.Kind != DateTimeKind.Utc)
@@ -26,45 +40,21 @@ public class VmsController(
       {
         CameraId = request.CameraId,
         StartTime = StartTimeStamp,
-        ClientId = $"{request.CameraId}_arch"
+        ClientId = request.ClientId
       }, cancellationToken: ct);
 
       return Ok(ToApiResponse(startPlayResponse));
-    }
-
-    var response = await grpcClient.AddCameraAsync(new AddCameraRequest
-    {
-      CameraId = request.CameraId,
-      RtspUrl = request.RtspUrl,
-      State = new CameraState
-      {
-        Recording = request.State?.Recording ?? false,
-        WebRtc = true
-      },
-      StorageBasePath = request.StorageBasePath ?? string.Empty
-    }, cancellationToken: ct);
-
-    return Ok(ToApiResponse(response));
   }
 
   [HttpDelete("cameras/{cameraId}")]
-  public async Task<IActionResult> RemoveCamera(string cameraId, [FromQuery] bool isArchive, CancellationToken ct)
+  public async Task<IActionResult> RemoveCamera(string cameraId, CancellationToken ct)
   {
     OperationStatus response;
 
-    if (isArchive)
     {
-      response = await grpcClient.RemoveArchPlayerAsync(new PlayFileRequest
+      response = await grpcClient.RemoveCameraAsync(new SourceRequest
       {
-        CameraId = cameraId,
-        ClientId = $"{cameraId}_arch"
-      }, cancellationToken: ct);
-    }
-    else
-    {
-      response = await grpcClient.RemoveCameraAsync(new CameraRequest
-      {
-        CameraId = cameraId
+        SourceId = cameraId
       }, cancellationToken: ct);
     }
 
@@ -77,6 +67,36 @@ public class VmsController(
     var response = await grpcClient.ListCamerasAsync(new ListCamerasRequest(), cancellationToken: ct);
     var cameras = response.Cameras.Select(static camera => new CameraDto(camera.CameraId, camera.RtspUrl));
     return Ok(cameras);
+  }
+
+  [HttpDelete("players/{clientId}")]
+  public async Task<IActionResult> RemovePlayer(string clientId, CancellationToken ct)
+  {
+    OperationStatus response;
+
+      response = await grpcClient.RemoveArchPlayerAsync(new SourceRequest
+      {
+        SourceId = clientId
+      }, cancellationToken: ct);
+
+    return Ok(ToApiResponse(response));
+  }
+
+  [HttpGet("players")]
+  public async Task<IActionResult> GetPlayers(CancellationToken ct)
+  {
+    var grpcResponse = await grpcClient.ListPlayersAsync(
+        new ListPlayersRequest(),
+        cancellationToken: ct);
+
+    var result = grpcResponse.Players.Select(p => new PlayerDto
+    {
+      CameraId = p.CameraId,
+      ClientId = p.ClientId,
+      StartTime = p.StartTime.ToDateTime() // или ToDateTimeOffset()
+    });
+
+    return Ok(result);
   }
 
   [HttpPost("cameras/{cameraId}/recording/start")]
@@ -108,10 +128,9 @@ public class VmsController(
   [HttpGet("cameras/{cameraId}/state")]
   public async Task<IActionResult> GetCameraState(string cameraId, CancellationToken ct)
   {
-    var grpcResponse = await grpcClient.GetCameraStateAsync(new CameraRequest
+    var grpcResponse = await grpcClient.GetCameraStateAsync(new SourceRequest
     {
-      CameraId = cameraId,
-      ClientId = string.Empty
+      SourceId = cameraId
     }, cancellationToken: ct);
 
     var dto = new CameraStateDto
@@ -129,9 +148,12 @@ public class VmsController(
 
 public record AddCameraDto(string CameraId,
                            string RtspUrl,
-                           CameraStateDto? State,
-                           string? StorageBasePath,
-                           DateTime? StartTime);
+                           CameraStateDto? State);
+
+public record AddPlayerDto(
+  string CameraId,
+  string ClientId,
+  DateTime? StartTime);
 
 public record CameraDto(string CameraId, string RtspUrl);
 

@@ -12,11 +12,15 @@ import {
   Typography
 } from '@mui/material'
 import CameraStreamCard, { type CameraInfo } from './components/CameraStreamCard'
+import PlayerStreamCard from './components/PlayerStreamCard'
+
+import { toIsoUtc, type PlayerInfo } from './dto/dtos'
 
 type ApiResponse = {
   success: boolean
   message: string
 }
+
 
 const MAX_CAMERAS = 4
 
@@ -32,9 +36,10 @@ function App() {
   const [status, setStatus] = useState('Ready')
   const [isBusy, setIsBusy] = useState(false)
   const [cameras, setCameras] = useState<CameraInfo[]>([])
+  const [players, setPlayers] = useState<PlayerInfo[]>([])
 
   const visibleCameras = useMemo(() => cameras.slice(0, MAX_CAMERAS), [cameras])
-  const isLimitReached = cameras.length >= MAX_CAMERAS
+  const isLimitReached = cameras.length + players.length >= MAX_CAMERAS
 
   const loadCameras = useCallback(async () => {
     try {
@@ -51,9 +56,25 @@ function App() {
     }
   }, [])
 
+  const loadPlayers = useCallback(async () => {
+    try {
+      const response = await fetch('/api/vms/players')
+      if (!response.ok) {
+        throw new Error(await getErrorMessage(response))
+      }
+
+      const list: PlayerInfo[] = await response.json()
+      setPlayers(list)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      setStatus(`Error loading players: ${message}`)
+    }
+  }, [])
+
   useEffect(() => {
-    void loadCameras()
-  }, [loadCameras])
+    loadCameras();
+    loadPlayers();
+  }, [loadCameras, loadPlayers])
 
   const runAction = async (action: () => Promise<Response>) => {
     setIsBusy(true)
@@ -67,6 +88,7 @@ function App() {
       const result: ApiResponse = await response.json()
       setStatus(`${result.success ? 'OK' : 'Fail'}: ${result.message}`)
       await loadCameras()
+      await loadPlayers()
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       setStatus(`Error: ${message}`)
@@ -89,8 +111,7 @@ function App() {
         body: JSON.stringify({
           cameraId,
           rtspUrl,
-          state: { recording: false, webRtc: true },
-          startTime: null
+          state: { recording: false, webRtc: true }
         })
       })
     )
@@ -102,21 +123,17 @@ function App() {
       return
     }
 
-    const trimmedStartTime = startTime.trim()
-    if (!trimmedStartTime) {
-      setStatus('Error: Playback start time is required for add player')
-      return
-    }
+    const trimmedStartTime = startTime.trim();
+    const iso = toIsoUtc(trimmedStartTime);
 
     await runAction(() =>
-      fetch('/api/vms/cameras', {
+      fetch('/api/vms/players', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           cameraId,
-          rtspUrl: '',
-          state: { recording: false, webRtc: true },
-          startTime: trimmedStartTime
+          clientId:cameraId+"_arch",
+          startTime: iso
         })
       })
     )
@@ -127,6 +144,19 @@ function App() {
     await runAction(() =>
       fetch(`/api/vms/cameras/${encodeURIComponent(camera.cameraId)}?isArchive=${camera.rtspUrl.trim().length === 0}`, {
         method: 'DELETE'
+      })
+    )
+  }
+
+  const onRemovePlayer = async (p: PlayerInfo) => {
+    await runAction(() =>
+      fetch(`/api/vms/players`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cameraId: p.cameraId,
+          clientId: p.clientId
+        })
       })
     )
   }
@@ -210,7 +240,7 @@ function App() {
         <Card>
           <CardContent>
             <Stack spacing={2}>
-              <Typography variant="h6">Streams grid (up to 4 cameras)</Typography>
+              <Typography variant="h6">Live Cameras</Typography>
               <Grid container spacing={2}>
                 {visibleCameras.map((camera) => (
                   <Grid key={camera.cameraId} size={{ xs: 12, sm: 6 }}>
@@ -227,9 +257,19 @@ function App() {
                   </Grid>
                 ))}
               </Grid>
-              {visibleCameras.length === 0 ? (
-                <Typography color="text.secondary">No cameras added yet.</Typography>
-              ) : null}
+              <Typography variant="h6">Arch Players</Typography>
+
+              <Grid container spacing={2}>
+                {players.map((player) => (
+                  <Grid key={player.clientId} size={{ xs: 12, sm: 6 }}>
+                    <PlayerStreamCard
+                      player={player}
+                      isBusy={isBusy}
+                      onRemove={onRemovePlayer}
+                    />
+                  </Grid>
+                ))}
+              </Grid>
             </Stack>
           </CardContent>
         </Card>

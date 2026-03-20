@@ -77,10 +77,10 @@ grpc::Status camera_control_service::AddArchPlayer(
 
 grpc::Status camera_control_service::RemoveCamera(
     grpc::ServerContext* /*context*/,
-    const vms::control::CameraRequest* request,
+    const vms::control::SourceRequest* request,
     vms::control::OperationStatus* response) {
   std::string error;
-  const bool success = m_manager.remove_camera(request->camera_id(), error);
+  const bool success = m_manager.remove_camera(request->source_id(), error);
 
   response->set_success(success);
   response->set_message(success ? "camera removed" : error);
@@ -89,13 +89,11 @@ grpc::Status camera_control_service::RemoveCamera(
 
 grpc::Status camera_control_service::RemoveArchPlayer(
     grpc::ServerContext* /*context*/,
-    const vms::control::PlayFileRequest* request,
+    const vms::control::SourceRequest* request,
     vms::control::OperationStatus* response) {
   std::string error;
-  const std::string client_id = request->client_id().empty()
-      ? request->camera_id() + "_arch"
-      : request->client_id();
-  const bool success = m_manager.remove_arch_player(client_id, error);
+
+  const bool success = m_manager.remove_arch_player(request->source_id(), error);
 
   response->set_success(success);
   response->set_message(success ? "archive player removed" : error);
@@ -105,12 +103,28 @@ grpc::Status camera_control_service::RemoveArchPlayer(
 grpc::Status camera_control_service::ListCameras(
     grpc::ServerContext* /*context*/,
     const vms::control::ListCamerasRequest* /*request*/,
-    vms::control::ListCamerasResponse* response) {
+    vms::control::ListCamerasResponse* response)
+{
   for (const auto& camera : m_manager.list_cameras()) 
   {
     auto* item = response->add_cameras();
     item->set_camera_id(camera.camera_id);
     item->set_rtsp_url(camera.rtsp_url);
+  }
+
+  return grpc::Status::OK;
+}
+
+grpc::Status camera_control_service::ListPlayers(grpc::ServerContext* context,
+  const vms::control::ListPlayersRequest* request,
+  vms::control::ListPlayersResponse* response)
+{
+  for (const auto& camera : m_manager.list_players())
+  {
+    auto* item = response->add_players();
+    item->set_camera_id(camera.camera_id);
+    item->set_client_id(camera.client_id);
+    *item->mutable_start_time() = from_time_point(camera.start_time);
   }
 
   return grpc::Status::OK;
@@ -134,14 +148,14 @@ grpc::Status camera_control_service::SetCameraState(
 
 grpc::Status camera_control_service::GetCameraState(
   grpc::ServerContext* context,
-  const vms::control::CameraRequest* request,
+  const vms::control::SourceRequest* request,
   vms::control::CameraState* response)
 {
   std::string error;
   bool recording;
   bool web_rtc;
 
-  const bool success = m_manager.get_camera_state(request->camera_id(),
+  const bool success = m_manager.get_camera_state(request->source_id(),
     recording,
     web_rtc,
     error);
@@ -150,7 +164,7 @@ grpc::Status camera_control_service::GetCameraState(
   {
     return grpc::Status::CANCELLED;
   }
-  response->set_camera_id(request->camera_id());
+  response->set_camera_id(request->source_id());
   response->set_recording(recording);
   response->set_web_rtc(web_rtc);
   return grpc::Status::OK;
@@ -159,14 +173,12 @@ grpc::Status camera_control_service::GetCameraState(
 grpc::Status camera_control_service::SetPlayerState(
     grpc::ServerContext* /*context*/,
     const vms::control::PlayFileRequest* request,
-    vms::control::OperationStatus* response) {
+    vms::control::OperationStatus* response) 
+{
   std::string error;
 
-  const std::string client_id = request->client_id().empty()
-      ? request->camera_id() + "_arch"
-      : request->client_id();
   const bool success = m_manager.set_player_state(
-    client_id,
+    request->client_id(),
     request->camera_id(),
     to_time_point(request->start_time()),
     error);

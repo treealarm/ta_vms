@@ -11,14 +11,19 @@
 
 class camera_manager {
 public:
-  struct camera_info {
+  struct camera_info 
+  {
     std::string camera_id;
     std::string rtsp_url;
     bool is_recording = false;
-    bool is_jpeg_streaming = false;
     bool is_web_rtc_streaming = false;
   };
-
+  struct player_info
+  {
+    std::string camera_id;
+    std::string client_id;
+    std::chrono::system_clock::time_point start_time;
+  };
   bool add_camera(const std::string& camera_id,
                   const std::string& rtsp_url,
                   const std::string& storage_base_path,
@@ -50,7 +55,7 @@ public:
                         std::string& error);
 
   std::vector<camera_info> list_cameras() const;
-
+  std::vector<player_info> list_players() const;
   void stop_all();
 
 private:
