@@ -15,7 +15,7 @@ public:
                          vms::control::OperationStatus* response) override;
 
   grpc::Status AddArchPlayer(grpc::ServerContext* context,
-                             const vms::control::PlayFileRequest* request,
+                             const vms::control::PlayerState* request,
                              vms::control::OperationStatus* response) override;
 
   grpc::Status RemoveCamera(grpc::ServerContext* context,
@@ -40,7 +40,7 @@ public:
     vms::control::CameraState* response) override;
 
   grpc::Status SetPlayerState(grpc::ServerContext* context,
-                              const vms::control::PlayFileRequest* request,
+                              const vms::control::PlayerState* request,
                               vms::control::OperationStatus* response) override;
 
   grpc::Status ListPlayers(grpc::ServerContext* context,

@@ -1,4 +1,4 @@
-﻿import { useMemo } from 'react'
+﻿import { useMemo, useState } from 'react'
 import {
   Box,
   Button,
@@ -6,10 +6,10 @@ import {
   CardContent,
   IconButton,
   Stack,
-  Typography
+  Typography,
+  TextField
 } from '@mui/material'
 import type { PlayerInfo } from '../dto/dtos'
-
 
 type PlayerStreamCardProps = {
   player: PlayerInfo
@@ -27,24 +27,58 @@ function PlayerStreamCard({
   onRemove
 }: PlayerStreamCardProps) {
 
+  const [openPicker, setOpenPicker] = useState(false)
+  const [newTime, setNewTime] = useState('')
+
   const streamUrl = useMemo(
     () => `${WEBRTC_BASE_URL.replace(/\/$/, '')}/${encodeURIComponent(player.clientId)}/`,
     [player.clientId]
   )
 
+  const sendSeek = async () => {
+    if (!newTime) return
+
+    const iso = new Date(newTime).toISOString()
+
+    await fetch('/api/vms/players/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cameraId: player.cameraId,
+        clientId: player.clientId,
+        startTime: iso
+      })
+    })
+
+    setOpenPicker(false)
+  }
+
   return (
     <Card sx={{ height: '100%' }}>
       <CardContent>
         <Stack spacing={1.5}>
+
           <Stack direction="row" justifyContent="space-between" alignItems="center">
             <Typography variant="h6">{player.cameraId}</Typography>
-            <IconButton
-              size="small"
-              disabled={isBusy}
-              onClick={() => void onRemove(player)}
-            >
-              ✕
-            </IconButton>
+
+            <Stack direction="row">
+              {/* КНОПКА КАЛЕНДАРЯ */}
+              <IconButton
+                size="small"
+                disabled={isBusy}
+                onClick={() => setOpenPicker((v) => !v)}
+              >
+                📅
+              </IconButton>
+
+              <IconButton
+                size="small"
+                disabled={isBusy}
+                onClick={() => void onRemove(player)}
+              >
+                ✕
+              </IconButton>
+            </Stack>
           </Stack>
 
           <Typography variant="body2" color="text.secondary">
@@ -64,15 +98,28 @@ function PlayerStreamCard({
             }}
           />
 
-          {/* задел под будущие кнопки */}
+          {/* PICKER */}
+          {openPicker && (
+            <Stack direction="row" spacing={1}>
+              <TextField
+                type="datetime-local"
+                value={newTime}
+                onChange={(e) => setNewTime(e.target.value)}
+                fullWidth
+              />
+              <Button variant="contained" onClick={sendSeek}>
+                Go
+              </Button>
+            </Stack>
+          )}
+
+          {/* базовые кнопки */}
           <Stack direction="row" spacing={1}>
             <Button fullWidth variant="outlined" disabled>
               Pause
             </Button>
-            <Button fullWidth variant="outlined" disabled>
-              Seek
-            </Button>
           </Stack>
+
         </Stack>
       </CardContent>
     </Card>

@@ -55,7 +55,6 @@ int main(int argc, char** argv) {
     const bool success = manager.add_camera(
       cam_id,
       url,
-      "",
       false,
       true,
       error);

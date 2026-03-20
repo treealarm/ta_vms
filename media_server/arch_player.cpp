@@ -214,18 +214,20 @@ bool arch_player::start_web_rtc(std::string& error)
   std::shared_ptr<webrtc_output_sink>  sink;
   {
     std::scoped_lock lock(m_sinks_mutex);
-
-    if (m_webrtc_output_sink)
+    sink = m_webrtc_output_sink;
+    if (!sink)
+    {      
+      m_webrtc_output_sink =
+        std::make_shared<webrtc_output_sink>(resolve_default_webrtc_rtsp_url(m_client_id));
+    }
+    else
     {
       error = "web rtc stream already running";
-      return true;
     }
-
-    m_webrtc_output_sink = 
-      std::make_shared<webrtc_output_sink>(resolve_default_webrtc_rtsp_url(m_client_id));
     sink = m_webrtc_output_sink;
   }
   m_reader->add_sink(sink);
+  
   return true;
 }
 

@@ -42,7 +42,6 @@ grpc::Status camera_control_service::AddCamera(
   std::string error;
   const bool success = m_manager.add_camera(request->camera_id(),
                                             request->rtsp_url(),
-                                            request->storage_base_path(),
                                             request->state().recording(),
                                             request->state().web_rtc(),
                                             error);
@@ -54,7 +53,7 @@ grpc::Status camera_control_service::AddCamera(
 
 grpc::Status camera_control_service::AddArchPlayer(
     grpc::ServerContext* /*context*/,
-    const vms::control::PlayFileRequest* request,
+    const vms::control::PlayerState* request,
     vms::control::OperationStatus* response) 
 {
   std::string error;
@@ -172,7 +171,7 @@ grpc::Status camera_control_service::GetCameraState(
 
 grpc::Status camera_control_service::SetPlayerState(
     grpc::ServerContext* /*context*/,
-    const vms::control::PlayFileRequest* request,
+    const vms::control::PlayerState* request,
     vms::control::OperationStatus* response) 
 {
   std::string error;

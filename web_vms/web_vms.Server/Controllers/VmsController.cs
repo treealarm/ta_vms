@@ -36,7 +36,7 @@ public class VmsController(
 
       var StartTimeStamp = Timestamp.FromDateTime(dt);
 
-      var startPlayResponse = await grpcClient.AddArchPlayerAsync(new PlayFileRequest
+      var startPlayResponse = await grpcClient.AddArchPlayerAsync(new PlayerState
       {
         CameraId = request.CameraId,
         StartTime = StartTimeStamp,
@@ -44,6 +44,31 @@ public class VmsController(
       }, cancellationToken: ct);
 
       return Ok(ToApiResponse(startPlayResponse));
+  }
+
+  [HttpPost("players/state")]
+  public async Task<IActionResult> SetPlayerState([FromBody] PlayerStateDto dto, CancellationToken ct)
+  {
+    var request = new PlayerState
+    {
+      CameraId = dto.CameraId,
+      ClientId = dto.ClientId
+    };
+
+    if (!string.IsNullOrEmpty(dto.StartTime))
+    {
+      request.StartTime = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(
+          DateTime.SpecifyKind(DateTime.Parse(dto.StartTime), DateTimeKind.Utc)
+      );
+    }
+
+    var response = await grpcClient.SetPlayerStateAsync(request, cancellationToken: ct);
+
+    return Ok(new
+    {
+      success = response.Success,
+      message = response.Message
+    });
   }
 
   [HttpDelete("cameras/{cameraId}")]

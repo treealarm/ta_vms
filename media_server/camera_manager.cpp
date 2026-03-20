@@ -2,7 +2,6 @@
 
 bool camera_manager::add_camera(const std::string& camera_id,
                                 const std::string& rtsp_url,
-                                const std::string& storage_base_path,
                                 bool recording,
                                 bool web_rtc,
                                 std::string& error) {
@@ -25,7 +24,7 @@ bool camera_manager::add_camera(const std::string& camera_id,
   }
 
   try {
-    auto camera = std::make_shared<cam>(rtsp_url, camera_id, storage_base_path);
+    auto camera = std::make_shared<cam>(rtsp_url, camera_id);
     if (recording) {
       camera->start_recording();
     }

@@ -15,8 +15,7 @@ class cam final
 {
 public:
   cam(const std::string& source,
-      const std::string& cam_id,
-      const std::string& storage_base_path = "");
+      const std::string& cam_id);
 
   virtual ~cam();
 

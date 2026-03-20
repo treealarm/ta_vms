@@ -16,11 +16,9 @@ bool is_rtsp_source(const std::string& source)
 }
 
 cam::cam(const std::string& source,
-         const std::string& cam_id,
-         const std::string& storage_base_path)
+         const std::string& cam_id)
     : m_source(source),
-      m_cam_id(cam_id),
-      m_storage_base_path(storage_base_path)
+      m_cam_id(cam_id)
 {
   if (!is_rtsp_source(m_source)) {
     throw std::runtime_error("cam supports only RTSP sources");

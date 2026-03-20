@@ -26,7 +26,6 @@ public:
   };
   bool add_camera(const std::string& camera_id,
                   const std::string& rtsp_url,
-                  const std::string& storage_base_path,
                   bool recording,
                   bool web_rtc,
                   std::string& error);
