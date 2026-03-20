@@ -46,9 +46,13 @@ public class VmsController(
       return Ok(ToApiResponse(startPlayResponse));
   }
 
+
   [HttpPost("players/state")]
   public async Task<IActionResult> SetPlayerState([FromBody] PlayerStateDto dto, CancellationToken ct)
   {
+    if (dto == null)
+      return BadRequest("Request body is missing");
+
     var request = new PlayerState
     {
       CameraId = dto.CameraId,
@@ -57,18 +61,28 @@ public class VmsController(
 
     if (!string.IsNullOrEmpty(dto.StartTime))
     {
-      request.StartTime = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(
-          DateTime.SpecifyKind(DateTime.Parse(dto.StartTime), DateTimeKind.Utc)
-      );
+      try
+      {
+        // Парсим строку в UTC. Если пришло "2026-03-20T18:00:00Z" — будет UTC.
+        // Если пришло без Z — тоже трактуется как UTC.
+        var dtUtc = DateTime.Parse(
+            dto.StartTime,
+            null,
+            System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal
+        );
+
+        request.StartTime = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(dtUtc);
+      }
+      catch (FormatException)
+      {
+        return BadRequest("Invalid StartTime format. Use ISO 8601.");
+      }
     }
 
-    var response = await grpcClient.SetPlayerStateAsync(request, cancellationToken: ct);
+    // Здесь вызываем gRPC
+    var grpcResponse = await grpcClient.SetPlayerStateAsync(request, cancellationToken: ct);
 
-    return Ok(new
-    {
-      success = response.Success,
-      message = response.Message
-    });
+    return Ok(new { success = grpcResponse.Success, message = grpcResponse.Message });
   }
 
   [HttpDelete("cameras/{cameraId}")]

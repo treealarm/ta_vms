@@ -12,7 +12,15 @@ std::chrono::system_clock::time_point to_time_point(
     duration_cast<system_clock::duration>(
       seconds(ts.seconds()) + nanoseconds(ts.nanos()));
 
-  return system_clock::time_point(d);
+  auto tp = system_clock::time_point(d);
+  
+  //std::chrono::zoned_time local_time{ std::chrono::current_zone(), tp };
+
+  //std::cout << "Local time: "
+  //  << std::format("{:%F %T}", local_time)
+  //  << "\n";
+
+  return tp;
 }
 
 google::protobuf::Timestamp from_time_point(
