@@ -32,6 +32,13 @@ public:
                         bool recording,
                         bool web_rtc,
                         std::string& error);
+
+  bool get_camera_state(
+    const std::string& camera_id,
+    bool& recording,
+    bool& web_rtc,
+    std::string& error);
+
   bool add_arch_player(
                        const std::string& client_id,
                        std::string& error);

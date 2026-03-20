@@ -75,41 +75,55 @@ public class VmsController(
   public async Task<IActionResult> ListCameras(CancellationToken ct)
   {
     var response = await grpcClient.ListCamerasAsync(new ListCamerasRequest(), cancellationToken: ct);
-    var cameras = response.Cameras.Select(static camera => new CameraDto(camera.CameraId, camera.RtspUrl, camera.IsRecording));
+    var cameras = response.Cameras.Select(static camera => new CameraDto(camera.CameraId, camera.RtspUrl));
     return Ok(cameras);
   }
 
   [HttpPost("cameras/{cameraId}/recording/start")]
   public async Task<IActionResult> StartRecording(string cameraId, CancellationToken ct)
   {
-    var response = await grpcClient.SetCameraStateAsync(new SetCameraStateRequest
+    var response = await grpcClient.SetCameraStateAsync(new CameraState
     {
       CameraId = cameraId,
-      State = new CameraState
-      {
-        Recording = true,
-        WebRtc = true
-      }
+      Recording = true,
+      WebRtc = true
     }, cancellationToken: ct);
 
     return Ok(ToApiResponse(response));
   }
 
-  [HttpPost("cameras/{cameraId}/state")]
-  public async Task<IActionResult> SetCameraState(string cameraId, [FromBody] CameraStateDto state, CancellationToken ct)
+  [HttpPost("cameras/state")]
+  public async Task<IActionResult> SetCameraState([FromBody] CameraStateDto state, CancellationToken ct)
   {
-    var response = await grpcClient.SetCameraStateAsync(new SetCameraStateRequest
+    var response = await grpcClient.SetCameraStateAsync(new CameraState
     {
-      CameraId = cameraId,
-      State = new CameraState
-      {
-        Recording = state.Recording,
-        WebRtc = state.WebRtc
-      }
+      CameraId = state.CameraId,
+      Recording = state.Recording,
+      WebRtc = state.WebRtc
     }, cancellationToken: ct);
 
     return Ok(ToApiResponse(response));
   }
+
+  [HttpGet("cameras/{cameraId}/state")]
+  public async Task<IActionResult> GetCameraState(string cameraId, CancellationToken ct)
+  {
+    var grpcResponse = await grpcClient.GetCameraStateAsync(new CameraRequest
+    {
+      CameraId = cameraId,
+      ClientId = string.Empty
+    }, cancellationToken: ct);
+
+    var dto = new CameraStateDto
+    {
+      Recording = grpcResponse.Recording,
+      WebRtc = grpcResponse.WebRtc,
+      CameraId = grpcResponse.CameraId
+    };
+
+    return Ok(dto);
+  }
+
   private static ApiResponse ToApiResponse(OperationStatus status) => new(status.Success, status.Message);
 }
 
@@ -119,8 +133,14 @@ public record AddCameraDto(string CameraId,
                            string? StorageBasePath,
                            DateTime? StartTime);
 
-public record CameraDto(string CameraId, string RtspUrl, bool IsRecording);
+public record CameraDto(string CameraId, string RtspUrl);
 
-public record CameraStateDto(bool Recording, bool WebRtc);
+public record CameraStateDto
+{
+  required public string CameraId { get; init; }
+  public bool Recording { get; init; }
+  public bool WebRtc { get; init; }
+}
 
 public record ApiResponse(bool Success, string Message);
+

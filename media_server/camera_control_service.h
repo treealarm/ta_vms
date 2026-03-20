@@ -31,8 +31,12 @@ public:
 
 
   grpc::Status SetCameraState(grpc::ServerContext* context,
-                              const vms::control::SetCameraStateRequest* request,
+                              const vms::control::CameraState* request,
                               vms::control::OperationStatus* response) override;
+
+  grpc::Status GetCameraState(grpc::ServerContext* context,
+    const vms::control::CameraRequest* request,
+    vms::control::CameraState* response) override;
 
   grpc::Status SetPlayerState(grpc::ServerContext* context,
                               const vms::control::PlayFileRequest* request,

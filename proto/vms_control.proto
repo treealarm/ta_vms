@@ -10,12 +10,14 @@ service CameraControlService {
   rpc RemoveCamera(CameraRequest) returns (OperationStatus);
   rpc RemoveArchPlayer(PlayFileRequest) returns (OperationStatus);
   rpc ListCameras(ListCamerasRequest) returns (ListCamerasResponse);
-  rpc SetCameraState(SetCameraStateRequest) returns (OperationStatus);
+  rpc SetCameraState(CameraState) returns (OperationStatus);
+  rpc GetCameraState(CameraRequest) returns (CameraState);
   rpc SetPlayerState(PlayFileRequest) returns (OperationStatus);
 }
 
 message CameraState {
-  bool recording = 1;
+  string camera_id = 1;
+  bool recording = 2;
   bool web_rtc = 3;
 }
 
@@ -24,11 +26,6 @@ message AddCameraRequest {
   string rtsp_url = 2;
   CameraState state = 3;
   string storage_base_path = 4;
-}
-
-message SetCameraStateRequest {
-  string camera_id = 1;
-  CameraState state = 2;
 }
 
 message CameraRequest {
@@ -47,7 +44,6 @@ message ListCamerasRequest {}
 message CameraInfo {
   string camera_id = 1;
   string rtsp_url = 2;
-  bool is_recording = 3;
 }
 
 message ListCamerasResponse {

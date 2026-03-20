@@ -106,11 +106,11 @@ grpc::Status camera_control_service::ListCameras(
     grpc::ServerContext* /*context*/,
     const vms::control::ListCamerasRequest* /*request*/,
     vms::control::ListCamerasResponse* response) {
-  for (const auto& camera : m_manager.list_cameras()) {
+  for (const auto& camera : m_manager.list_cameras()) 
+  {
     auto* item = response->add_cameras();
     item->set_camera_id(camera.camera_id);
     item->set_rtsp_url(camera.rtsp_url);
-    item->set_is_recording(camera.is_recording);
   }
 
   return grpc::Status::OK;
@@ -118,16 +118,41 @@ grpc::Status camera_control_service::ListCameras(
 
 grpc::Status camera_control_service::SetCameraState(
     grpc::ServerContext* /*context*/,
-    const vms::control::SetCameraStateRequest* request,
-    vms::control::OperationStatus* response) {
+    const vms::control::CameraState* request,
+    vms::control::OperationStatus* response) 
+{
   std::string error;
   const bool success = m_manager.set_camera_state(request->camera_id(),
-                                                  request->state().recording(),
-                                                  request->state().web_rtc(),
+                                                  request->recording(),
+                                                  request->web_rtc(),
                                                   error);
 
   response->set_success(success);
   response->set_message(success ? "camera state updated" : error);
+  return grpc::Status::OK;
+}
+
+grpc::Status camera_control_service::GetCameraState(
+  grpc::ServerContext* context,
+  const vms::control::CameraRequest* request,
+  vms::control::CameraState* response)
+{
+  std::string error;
+  bool recording;
+  bool web_rtc;
+
+  const bool success = m_manager.get_camera_state(request->camera_id(),
+    recording,
+    web_rtc,
+    error);
+
+  if (!success)
+  {
+    return grpc::Status::CANCELLED;
+  }
+  response->set_camera_id(request->camera_id());
+  response->set_recording(recording);
+  response->set_web_rtc(web_rtc);
   return grpc::Status::OK;
 }
 

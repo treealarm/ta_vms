@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import {
   Box,
   Button,
@@ -9,15 +9,15 @@ import {
   Typography
 } from '@mui/material'
 
-type ApiResponse = {
-  success: boolean
-  message: string
-}
-
 type CameraInfo = {
   cameraId: string
   rtspUrl: string
-  isRecording: boolean
+}
+
+type CameraStateDto = {
+  cameraId: string
+  recording: boolean
+  webRtc: boolean
 }
 
 type CameraStreamCardProps = {
@@ -26,11 +26,6 @@ type CameraStreamCardProps = {
   onActionComplete: (message: string) => Promise<void>
   onActionError: (message: string) => void
   onRemove: (camera: CameraInfo) => Promise<void>
-}
-
-const getErrorMessage = async (response: Response): Promise<string> => {
-  const text = await response.text()
-  return text || response.statusText
 }
 
 const WEBRTC_BASE_URL = (import.meta.env.VITE_WEBRTC_BASE_URL as string | undefined)?.trim() || 'http://localhost:8889'
@@ -43,30 +38,65 @@ function CameraStreamCard({
   onRemove
 }: CameraStreamCardProps) {
   const [isCameraBusy, setIsCameraBusy] = useState(false)
+  const [cameraState, setCameraState] = useState<CameraStateDto | null>(null)
 
   const busy = isBusy || isCameraBusy
   const isArchiveCamera = camera.rtspUrl.trim().length === 0
   const streamId = isArchiveCamera ? `${camera.cameraId}_arch` : camera.cameraId
-  const streamUrl = useMemo(() => `${WEBRTC_BASE_URL.replace(/\/$/, '')}/${encodeURIComponent(streamId)}/`, [streamId])
+  const streamUrl = useMemo(
+    () => `${WEBRTC_BASE_URL.replace(/\/$/, '')}/${encodeURIComponent(streamId)}/`,
+    [streamId]
+  )
 
-  const updateState = async (nextRecordingState: boolean) => {
+  // функция для запроса состояния камеры
+  const fetchCameraState = async () => {
+    try {
+      const response = await fetch(`/api/vms/cameras/${encodeURIComponent(camera.cameraId)}/state`)
+      if (!response.ok) return
+      const data: CameraStateDto = await response.json()
+      setCameraState(data)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      onActionError(`Failed to fetch camera state: ${message}`)
+    }
+  }
+
+  // начальный запрос и периодический polling
+  useEffect(() => {
+    let mounted = true
+    const interval = setInterval(() => {
+      if (mounted) fetchCameraState()
+    }, 5000)
+
+    fetchCameraState() // сразу при монтировании
+
+    return () => {
+      mounted = false
+      clearInterval(interval)
+    }
+  }, [camera.cameraId])
+
+  // функция переключения записи
+  const updateRecordingState = async (nextRecordingState: boolean) => {
     setIsCameraBusy(true)
     try {
-      const response = await fetch(`/api/vms/cameras/${encodeURIComponent(camera.cameraId)}/state`, {
+      const response = await fetch(`/api/vms/cameras/state`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recording: nextRecordingState, webRtc: true })
+        body: JSON.stringify({ cameraid: camera.cameraId, recording: nextRecordingState, webRtc: true })
       })
 
       if (!response.ok) {
-        onActionError(`Error: ${await getErrorMessage(response)}`)
+        onActionError(`Error: ${await response.text()}`)
         return
       }
 
-      const result: ApiResponse = await response.json()
-      await onActionComplete(`${result.success ? 'OK' : 'Fail'}: ${result.message}`)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error'
+      const result = await response.json()
+      await onActionComplete(`Result: ${result.success ? 'OK' : 'Fail'}: ${result.message}`)
+      // обновляем локальный state после успешного запроса
+      setCameraState((prev) => prev ? { ...prev, recording: nextRecordingState } : prev)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
       onActionError(`Error: ${message}`)
     } finally {
       setIsCameraBusy(false)
@@ -88,6 +118,7 @@ function CameraStreamCard({
               ✕
             </IconButton>
           </Stack>
+
           <Typography variant="body2" color="text.secondary" noWrap title={camera.rtspUrl}>
             {camera.rtspUrl || 'Archive player'}
           </Typography>
@@ -108,10 +139,10 @@ function CameraStreamCard({
 
           <Button
             fullWidth
-            disabled={busy || isArchiveCamera}
-            variant={camera.isRecording ? 'contained' : 'outlined'}
-            color={camera.isRecording ? 'error' : 'primary'}
-            onClick={() => void updateState(!camera.isRecording)}
+            disabled={busy || isArchiveCamera || !cameraState}
+            variant={cameraState?.recording ? 'contained' : 'outlined'}
+            color={cameraState?.recording ? 'error' : 'primary'}
+            onClick={() => void updateRecordingState(!cameraState?.recording)}
           >
             REC
           </Button>
@@ -121,5 +152,5 @@ function CameraStreamCard({
   )
 }
 
-export type { CameraInfo }
+export type { CameraInfo, CameraStateDto }
 export default CameraStreamCard

@@ -91,6 +91,27 @@ bool camera_manager::stop_recording(const std::string& camera_id,
   return true;
 }
 
+bool camera_manager::get_camera_state(
+  const std::string& camera_id,
+  bool& recording,
+  bool& web_rtc,
+  std::string& error) 
+{
+  std::scoped_lock lock(m_mutex);
+
+  auto it = m_cameras.find(camera_id);
+  if (it == m_cameras.end()) 
+  {
+    error = "camera not found: " + camera_id;
+    return false;
+  }
+
+  recording = it->second.is_recording;
+  web_rtc = it->second.is_web_rtc_streaming;
+
+  return true;
+}
+
 bool camera_manager::set_camera_state(const std::string& camera_id,
                                     bool recording,
                                     bool web_rtc,
@@ -103,10 +124,13 @@ bool camera_manager::set_camera_state(const std::string& camera_id,
     return false;
   }
 
-  if (recording != it->second.is_recording) {
-    if (recording) {
+  if (recording != it->second.is_recording) 
+  {
+    if (recording) 
+    {
       it->second.camera->start_recording();
-    } else {
+    } else 
+    {
       it->second.camera->stop_recording();
     }
     it->second.is_recording = recording;
@@ -165,20 +189,23 @@ bool camera_manager::remove_arch_player(const std::string& client_id,
   return true;
 }
 
-std::vector<camera_manager::camera_info> camera_manager::list_cameras() const {
+std::vector<camera_manager::camera_info> camera_manager::list_cameras() const 
+{
   std::scoped_lock lock(m_mutex);
 
   std::vector<camera_info> cameras;
   cameras.reserve(m_cameras.size());
 
-  for (const auto& [camera_id, entry] : m_cameras) {
+  for (const auto& [camera_id, entry] : m_cameras) 
+  {
     cameras.push_back(camera_info{camera_id, entry.source, entry.is_recording, entry.is_web_rtc_streaming});
   }
 
   return cameras;
 }
 
-void camera_manager::stop_all() {
+void camera_manager::stop_all() 
+{
   std::scoped_lock lock(m_mutex);
 
   for (auto& [_, entry] : m_cameras) {
@@ -187,7 +214,8 @@ void camera_manager::stop_all() {
     entry.is_web_rtc_streaming = false;
   }
 
-  for (auto& [_, player] : m_arch_players_by_client) {
+  for (auto& [_, player] : m_arch_players_by_client) 
+  {
     player->shutdown();
   }
 }
