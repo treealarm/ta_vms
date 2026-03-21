@@ -32,7 +32,6 @@ const getErrorMessage = async (response: Response): Promise<string> => {
 function App() {
   const [cameraId, setCameraId] = useState('cam1')
   const [rtspUrl, setRtspUrl] = useState('rtsp://127.0.0.1:8554/stream')
-  const [startTime, setStartTime] = useState('')
   const [status, setStatus] = useState('Ready')
   const [isBusy, setIsBusy] = useState(false)
   const [cameras, setCameras] = useState<CameraInfo[]>([])
@@ -123,8 +122,7 @@ function App() {
       return
     }
 
-    const trimmedStartTime = startTime.trim();
-    const iso = toIsoUtc(trimmedStartTime);
+    const iso = new Date().toISOString();
 
     await runAction(() =>
       fetch('/api/vms/players', {
@@ -133,7 +131,7 @@ function App() {
         body: JSON.stringify({
           cameraId,
           clientId:cameraId+"_arch",
-          startTime: iso
+          position: iso
         })
       })
     )
@@ -159,10 +157,6 @@ function App() {
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto', p: { xs: 2, md: 4 } }}>
       <Stack spacing={2.5}>
-        <Typography variant="h4" component="h1" fontWeight={700}>
-          VMS gRPC Test Console
-        </Typography>
-
         <Card>
           <CardContent>
             <Box component="form" onSubmit={onAddCamera}>
@@ -175,58 +169,49 @@ function App() {
                   onChange={(event) => setCameraId(event.target.value)}
                   required
                   fullWidth
+                  size="small"
                 />
 
-                <Grid container spacing={1.5} alignItems="stretch">
-                  <Grid size={{ xs: 12, md: 9 }}>
-                    <TextField
-                      label="Playback start time (YYYY-MM-DDTHH:mm:ss)"
-                      value={startTime}
-                      onChange={(event) => setStartTime(event.target.value)}
-                      helperText="Creates camera player from archive start time"
-                      fullWidth
-                    />
-                  </Grid>
-                  <Grid size={{ xs: 12, md: 3 }}>
-                    <Button
-                      type="button"
-                      variant="outlined"
-                      disabled={isBusy || isLimitReached}
-                      fullWidth
-                      sx={{ height: '100%' }}
-                      onClick={() => void onAddPlayer()}
-                    >
-                      Add player
-                    </Button>
-                  </Grid>
-                </Grid>
+                <Stack direction="row" spacing={1.5} alignItems="center">
+                  <TextField
+                    label="RTSP URL"
+                    value={rtspUrl}
+                    onChange={(event) => setRtspUrl(event.target.value)}
+                    required
+                    fullWidth
+                    size="small"
+                  />
 
-                <Grid container spacing={1.5} alignItems="stretch">
-                  <Grid size={{ xs: 12, md: 9 }}>
-                    <TextField
-                      label="RTSP URL"
-                      value={rtspUrl}
-                      onChange={(event) => setRtspUrl(event.target.value)}
-                      required
-                      fullWidth
-                    />
-                  </Grid>
-                  <Grid size={{ xs: 12, md: 3 }}>
-                    <Button
-                      disabled={isBusy || isLimitReached}
-                      type="submit"
-                      variant="contained"
-                      fullWidth
-                      sx={{ height: '100%' }}
-                    >
-                      Add camera
-                    </Button>
-                  </Grid>
-                </Grid>
+                  <Button
+                    disabled={isBusy || isLimitReached}
+                    type="submit"
+                    variant="outlined"
+                    size="small"
+                    sx={{ minWidth: 120 }}
+                  >
+                    Add
+                  </Button>
+                </Stack>
 
-                <Button type="button" variant="text" disabled={isBusy} onClick={() => void loadCameras()}>
-                  Refresh list
-                </Button>
+                <Stack direction="row" spacing={1.5}>
+                  <Button
+                    variant="outlined"
+                    disabled={isBusy}
+                    onClick={() => void loadCameras()}
+                    fullWidth
+                  >
+                    Refresh list
+                  </Button>
+
+                  <Button
+                    variant="outlined"
+                    disabled={isBusy || isLimitReached}
+                    onClick={() => void onAddPlayer()}
+                    fullWidth
+                  >
+                    Add player
+                  </Button>
+                </Stack>
               </Stack>
             </Box>
           </CardContent>

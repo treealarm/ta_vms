@@ -4,10 +4,10 @@ import {
   Button,
   Card,
   CardContent,
-  IconButton,
-  Stack,
-  Typography
+  Stack, Typography, IconButton, TextField
+
 } from '@mui/material'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 
 type CameraInfo = {
   cameraId: string
@@ -105,24 +105,50 @@ function CameraStreamCard({
 
   return (
     <Card sx={{ height: '100%' }}>
-      <CardContent>
-        <Stack spacing={1.5}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <Typography variant="h6">{camera.cameraId}</Typography>
+      <CardContent sx={{ p: 1.5 }}>
+        <Stack spacing={1}>
+          {/* Заголовок + кнопка удаления */}
+
+          <Stack direction="row" spacing={1} alignItems="center">
+            {/* Camera ID */}
+            <Typography variant="subtitle1" sx={{ flexShrink: 0 }}>
+              {camera.cameraId}
+            </Typography>
+
+            {/* Read-only URL с возможностью копирования */}
+            <TextField
+              value={camera.rtspUrl || 'Archive player'}
+              InputProps={{
+                readOnly: true,
+                endAdornment: (
+                  <IconButton
+                    size="small"
+                    onClick={() => {
+                      navigator.clipboard.writeText(camera.rtspUrl || '');
+                    }}
+                  >
+                    <ContentCopyIcon fontSize="small" />
+                  </IconButton>
+                )
+              }}
+              variant="outlined"
+              size="small"
+              sx={{ flexGrow: 1 }}
+            />
+
+            {/* Кнопка удаления */}
             <IconButton
               size="small"
               disabled={busy}
               aria-label={`Remove ${camera.cameraId}`}
               onClick={() => void onRemove(camera)}
+              sx={{ flexShrink: 0 }}
             >
               ✕
             </IconButton>
           </Stack>
 
-          <Typography variant="body2" color="text.secondary" noWrap title={camera.rtspUrl}>
-            {camera.rtspUrl || 'Archive player'}
-          </Typography>
-
+          {/* Видео */}
           <Box
             component="iframe"
             src={streamUrl}
@@ -132,12 +158,14 @@ function CameraStreamCard({
               aspectRatio: '1 / 1',
               border: 1,
               borderColor: 'divider',
-              borderRadius: 2,
+              borderRadius: 1,
               bgcolor: 'background.default'
             }}
           />
 
+          {/* Кнопка REC */}
           <Button
+            size="small"
             fullWidth
             disabled={busy || isArchiveCamera || !cameraState}
             variant={cameraState?.recording ? 'contained' : 'outlined'}

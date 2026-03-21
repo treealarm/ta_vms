@@ -11,7 +11,7 @@ public:
   explicit camera_control_service(camera_manager& manager);
 
   grpc::Status AddCamera(grpc::ServerContext* context,
-                         const vms::control::AddCameraRequest* request,
+                         const vms::control::CameraState* request,
                          vms::control::OperationStatus* response) override;
 
   grpc::Status AddArchPlayer(grpc::ServerContext* context,
