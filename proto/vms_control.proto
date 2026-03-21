@@ -16,6 +16,15 @@ service CameraControlService {
   rpc ListPlayers(ListPlayersRequest) returns (ListPlayersResponse);
 }
 
+message OperationStatus {
+  bool success = 1;
+  string message = 2;
+}
+
+message SourceRequest {
+  string source_id = 1;
+}
+
 message CameraState {
   string camera_id = 1;
   bool recording = 2;
@@ -26,16 +35,6 @@ message AddCameraRequest {
   string camera_id = 1;
   string rtsp_url = 2;
   CameraState state = 3;
-}
-
-message SourceRequest {
-  string source_id = 1;
-}
-
-message PlayerState {
-  string camera_id = 1;
-  google.protobuf.Timestamp start_time = 2;
-  string client_id = 3;
 }
 
 message ListCamerasRequest {}
@@ -49,19 +48,15 @@ message ListCamerasResponse {
   repeated CameraInfo cameras = 1;
 }
 
-message OperationStatus {
-  bool success = 1;
-  string message = 2;
-}
-
-message PlayerInfo {
+message PlayerState {
   string camera_id = 1;
-  google.protobuf.Timestamp start_time = 2;
+  optional google.protobuf.Timestamp position = 2;
   string client_id = 3;
 }
+
 
 message ListPlayersRequest {}
 
 message ListPlayersResponse {
-  repeated PlayerInfo players = 1;
+  repeated PlayerState players = 1;
 }

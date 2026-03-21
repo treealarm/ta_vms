@@ -1,7 +1,7 @@
-export type PlayerInfo = {
+export type PlayerStateDto = {
   cameraId: string
   clientId: string
-  startTime: string
+  position: string
 }
 
 export const toIsoUtc = (value: string) => {

@@ -14,7 +14,7 @@ import {
 import CameraStreamCard, { type CameraInfo } from './components/CameraStreamCard'
 import PlayerStreamCard from './components/PlayerStreamCard'
 
-import { toIsoUtc, type PlayerInfo } from './dto/dtos'
+import { toIsoUtc, type PlayerStateDto } from './dto/dtos'
 
 type ApiResponse = {
   success: boolean
@@ -36,7 +36,7 @@ function App() {
   const [status, setStatus] = useState('Ready')
   const [isBusy, setIsBusy] = useState(false)
   const [cameras, setCameras] = useState<CameraInfo[]>([])
-  const [players, setPlayers] = useState<PlayerInfo[]>([])
+  const [players, setPlayers] = useState<PlayerStateDto[]>([])
 
   const visibleCameras = useMemo(() => cameras.slice(0, MAX_CAMERAS), [cameras])
   const isLimitReached = cameras.length + players.length >= MAX_CAMERAS
@@ -63,7 +63,7 @@ function App() {
         throw new Error(await getErrorMessage(response))
       }
 
-      const list: PlayerInfo[] = await response.json()
+      const list: PlayerStateDto[] = await response.json()
       setPlayers(list)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
@@ -111,7 +111,7 @@ function App() {
         body: JSON.stringify({
           cameraId,
           rtspUrl,
-          state: { recording: false, webRtc: true }
+          state: { cameraId: cameraId, recording: false, webRtc: true }
         })
       })
     )
@@ -148,15 +148,10 @@ function App() {
     )
   }
 
-  const onRemovePlayer = async (p: PlayerInfo) => {
+  const onRemovePlayer = async (p: PlayerStateDto) => {
     await runAction(() =>
-      fetch(`/api/vms/players`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cameraId: p.cameraId,
-          clientId: p.clientId
-        })
+      fetch(`/api/vms/players/${encodeURIComponent(p.clientId)}`, {
+        method: 'DELETE'
       })
     )
   }

@@ -4,6 +4,6 @@
   {
     public string CameraId { get; init; } = default!;
     public string ClientId { get; init; } = default!;
-    public string? StartTime { get; init; } // если нужно менять
+    public DateTime? Position { get; init; } // если нужно менять
   }
 }

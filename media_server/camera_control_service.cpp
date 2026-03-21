@@ -131,7 +131,7 @@ grpc::Status camera_control_service::ListPlayers(grpc::ServerContext* context,
     auto* item = response->add_players();
     item->set_camera_id(camera.camera_id);
     item->set_client_id(camera.client_id);
-    *item->mutable_start_time() = from_time_point(camera.start_time);
+    *item->mutable_position() = from_time_point(camera.start_time);
   }
 
   return grpc::Status::OK;
@@ -187,7 +187,7 @@ grpc::Status camera_control_service::SetPlayerState(
   const bool success = m_manager.set_player_state(
     request->client_id(),
     request->camera_id(),
-    to_time_point(request->start_time()),
+    to_time_point(request->position()),
     error);
 
   response->set_success(success);

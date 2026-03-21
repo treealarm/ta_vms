@@ -39,7 +39,7 @@ public class VmsController(
       var startPlayResponse = await grpcClient.AddArchPlayerAsync(new PlayerState
       {
         CameraId = request.CameraId,
-        StartTime = StartTimeStamp,
+        Position = StartTimeStamp,
         ClientId = request.ClientId
       }, cancellationToken: ct);
 
@@ -59,30 +59,36 @@ public class VmsController(
       ClientId = dto.ClientId
     };
 
-    if (!string.IsNullOrEmpty(dto.StartTime))
+    if (dto.Position.HasValue)
     {
-      try
-      {
-        // Парсим строку в UTC. Если пришло "2026-03-20T18:00:00Z" — будет UTC.
-        // Если пришло без Z — тоже трактуется как UTC.
-        var dtUtc = DateTime.Parse(
-            dto.StartTime,
-            null,
-            System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal
-        );
+      var dt = dto.Position.Value;
 
-        request.StartTime = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(dtUtc);
-      }
-      catch (FormatException)
+      DateTime dtUtc;
+
+      if (dt.Kind == DateTimeKind.Utc)
       {
-        return BadRequest("Invalid StartTime format. Use ISO 8601.");
+        dtUtc = dt;
       }
+      else if (dt.Kind == DateTimeKind.Local)
+      {
+        dtUtc = dt.ToUniversalTime();
+      }
+      else // Unspecified
+      {
+        // считаем, что фронт прислал UTC (обычно так и есть)
+        dtUtc = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+      }
+
+      request.Position = Timestamp.FromDateTime(dtUtc);
     }
 
-    // Здесь вызываем gRPC
     var grpcResponse = await grpcClient.SetPlayerStateAsync(request, cancellationToken: ct);
 
-    return Ok(new { success = grpcResponse.Success, message = grpcResponse.Message });
+    return Ok(new
+    {
+      success = grpcResponse.Success,
+      message = grpcResponse.Message
+    });
   }
 
   [HttpDelete("cameras/{cameraId}")]
@@ -128,11 +134,11 @@ public class VmsController(
         new ListPlayersRequest(),
         cancellationToken: ct);
 
-    var result = grpcResponse.Players.Select(p => new PlayerDto
+    var result = grpcResponse.Players.Select(p => new PlayerStateDto
     {
       CameraId = p.CameraId,
       ClientId = p.ClientId,
-      StartTime = p.StartTime.ToDateTime() // или ToDateTimeOffset()
+      Position = p.Position.ToDateTime() // или ToDateTimeOffset()
     });
 
     return Ok(result);

@@ -9,12 +9,12 @@ import {
   Typography,
   TextField
 } from '@mui/material'
-import type { PlayerInfo } from '../dto/dtos'
+import type { PlayerStateDto } from '../dto/dtos'
 
 type PlayerStreamCardProps = {
-  player: PlayerInfo
+  player: PlayerStateDto
   isBusy: boolean
-  onRemove: (player: PlayerInfo) => Promise<void>
+  onRemove: (player: PlayerStateDto) => Promise<void>
 }
 
 const WEBRTC_BASE_URL =
@@ -27,7 +27,6 @@ function PlayerStreamCard({
   onRemove
 }: PlayerStreamCardProps) {
 
-  const [openPicker, setOpenPicker] = useState(false)
   const [newTime, setNewTime] = useState('')
 
   const streamUrl = useMemo(
@@ -49,8 +48,6 @@ function PlayerStreamCard({
         startTime: iso
       })
     })
-
-    setOpenPicker(false)
   }
 
   return (
@@ -62,14 +59,6 @@ function PlayerStreamCard({
             <Typography variant="h6">{player.cameraId}</Typography>
 
             <Stack direction="row">
-              {/* КНОПКА КАЛЕНДАРЯ */}
-              <IconButton
-                size="small"
-                disabled={isBusy}
-                onClick={() => setOpenPicker((v) => !v)}
-              >
-                📅
-              </IconButton>
 
               <IconButton
                 size="small"
@@ -80,10 +69,6 @@ function PlayerStreamCard({
               </IconButton>
             </Stack>
           </Stack>
-
-          <Typography variant="body2" color="text.secondary">
-            Archive from: {player.startTime}
-          </Typography>
 
           <Box
             component="iframe"
@@ -99,7 +84,7 @@ function PlayerStreamCard({
           />
 
           {/* PICKER */}
-          {openPicker && (
+          
             <Stack direction="row" spacing={1}>
               <TextField
                 type="datetime-local"
@@ -111,14 +96,6 @@ function PlayerStreamCard({
                 Go
               </Button>
             </Stack>
-          )}
-
-          {/* базовые кнопки */}
-          <Stack direction="row" spacing={1}>
-            <Button fullWidth variant="outlined" disabled>
-              Pause
-            </Button>
-          </Stack>
 
         </Stack>
       </CardContent>
