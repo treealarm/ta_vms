@@ -31,7 +31,6 @@ private:
   bool ensure_input_stream(const std::shared_ptr<media_packet>& media);
   void open_new_segment();
   void close_segment();
-  std::string make_filename() const;
   void close();
 private:
   std::filesystem::path m_base_dir;

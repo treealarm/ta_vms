@@ -1,3 +1,6 @@
+
+#include "file_system/recording_storage.h"
+
 #include "segment_writer.h"
 
 #include <format>
@@ -116,8 +119,12 @@ void segment_writer::open_new_segment()
   const std::string year = std::format("{:%Y}", now);
   const std::string month_day = std::format("{:%m-%d}", now);
 
+  recording_storage storage(m_base_dir);
+
   m_current_segment_relative_path =
-    std::filesystem::path(m_camera_id) / year / month_day / make_filename();
+    storage.make_segment_path(m_camera_id, now);
+
+
   auto path = m_base_dir / m_current_segment_relative_path;
   std::filesystem::create_directories(path.parent_path());
 
@@ -313,13 +320,6 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)
   if (av_interleaved_write_frame(m_ctx, pkt) < 0) {
     std::cerr << "write_frame failed\n";
   }
-}
-
-std::string segment_writer::make_filename() const
-{
-  using namespace std::chrono;
-  auto now = floor<seconds>(system_clock::now());
-  return std::format("{:%Y-%m-%d_%H-%M-%S}.mkv", now);
 }
 
 void segment_writer::close()

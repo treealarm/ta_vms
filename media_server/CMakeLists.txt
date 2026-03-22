@@ -68,6 +68,9 @@ set(SOURCES
 
     stream/jpeg_streamer.cpp
     stream/jpeg_streamer.h
+
+    file_system/recording_storage.h
+    file_system/recording_storage.cpp
 )
 
 add_executable(vms ${SOURCES})

@@ -14,6 +14,7 @@ service CameraControlService {
   rpc GetCameraState(SourceRequest) returns (CameraState);
   rpc SetPlayerState(PlayerState) returns (OperationStatus);
   rpc ListPlayers(ListPlayersRequest) returns (ListPlayersResponse);
+  rpc GetRecordings(RecordingsRequest) returns (RecordingsResponse);
 }
 
 message OperationStatus {
@@ -48,4 +49,21 @@ message ListPlayersRequest {}
 
 message ListPlayersResponse {
   repeated PlayerState players = 1;
+}
+
+
+message RecordingsRequest {
+  string camera_id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  uint32 limit = 3;
+}
+
+message Recording {
+  string file_path = 1;
+  google.protobuf.Timestamp start_time = 2;
+  optional google.protobuf.Timestamp end_time = 3;
+}
+message RecordingsResponse {
+  repeated Recording recordings = 1;
+  optional Recording nearest = 3;
 }
