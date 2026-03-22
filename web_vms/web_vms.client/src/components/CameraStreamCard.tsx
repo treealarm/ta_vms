@@ -1,34 +1,25 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import {
-  Box,
   Button,
   Card,
   CardContent,
-  Stack, Typography, IconButton, TextField
-
+  Stack,
+  Typography,
+  IconButton,
+  TextField
 } from '@mui/material'
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import type { CameraStateDto } from '../dto/dtos'
+import CameraStream from './CameraStream'
 
-type CameraInfo = {
-  cameraId: string
-  rtspUrl: string
-}
-
-type CameraStateDto = {
-  cameraId: string
-  recording: boolean
-  webRtc: boolean
-}
 
 type CameraStreamCardProps = {
-  camera: CameraInfo
+  camera: CameraStateDto
   isBusy: boolean
   onActionComplete: (message: string) => Promise<void>
   onActionError: (message: string) => void
-  onRemove: (camera: CameraInfo) => Promise<void>
+  onRemove: (camera: CameraStateDto) => Promise<void>
 }
-
-const WEBRTC_BASE_URL = (import.meta.env.VITE_WEBRTC_BASE_URL as string | undefined)?.trim() || 'http://localhost:8889'
 
 function CameraStreamCard({
   camera,
@@ -41,12 +32,7 @@ function CameraStreamCard({
   const [cameraState, setCameraState] = useState<CameraStateDto | null>(null)
 
   const busy = isBusy || isCameraBusy
-  const isArchiveCamera = camera.rtspUrl.trim().length === 0
-  const streamId = isArchiveCamera ? `${camera.cameraId}_arch` : camera.cameraId
-  const streamUrl = useMemo(
-    () => `${WEBRTC_BASE_URL.replace(/\/$/, '')}/${encodeURIComponent(streamId)}/`,
-    [streamId]
-  )
+
 
   // функция для запроса состояния камеры
   const fetchCameraState = async () => {
@@ -76,6 +62,7 @@ function CameraStreamCard({
     }
   }, [camera.cameraId])
 
+
   // функция переключения записи
   const updateRecordingState = async (nextRecordingState: boolean) => {
     setIsCameraBusy(true)
@@ -93,8 +80,7 @@ function CameraStreamCard({
 
       const result = await response.json()
       await onActionComplete(`Result: ${result.success ? 'OK' : 'Fail'}: ${result.message}`)
-      // обновляем локальный state после успешного запроса
-      setCameraState((prev) => prev ? { ...prev, recording: nextRecordingState } : prev)
+      setCameraState((prev) => (prev ? { ...prev, recording: nextRecordingState } : prev))
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'
       onActionError(`Error: ${message}`)
@@ -108,23 +94,21 @@ function CameraStreamCard({
       <CardContent sx={{ p: 1.5 }}>
         <Stack spacing={1}>
           {/* Заголовок + кнопка удаления */}
-
           <Stack direction="row" spacing={1} alignItems="center">
-            {/* Camera ID */}
             <Typography variant="subtitle1" sx={{ flexShrink: 0 }}>
               {camera.cameraId}
             </Typography>
 
-            {/* Read-only URL с возможностью копирования */}
             <TextField
-              value={camera.rtspUrl || 'Archive player'}
-              InputProps={{
+              value={camera.rtspUrl}
+              sx=
+              {{
                 readOnly: true,
                 endAdornment: (
                   <IconButton
                     size="small"
                     onClick={() => {
-                      navigator.clipboard.writeText(camera.rtspUrl || '');
+                      navigator.clipboard.writeText(camera.rtspUrl || '')
                     }}
                   >
                     <ContentCopyIcon fontSize="small" />
@@ -136,7 +120,6 @@ function CameraStreamCard({
               sx={{ flexGrow: 1 }}
             />
 
-            {/* Кнопка удаления */}
             <IconButton
               size="small"
               disabled={busy}
@@ -148,26 +131,14 @@ function CameraStreamCard({
             </IconButton>
           </Stack>
 
-          {/* Видео */}
-          <Box
-            component="iframe"
-            src={streamUrl}
-            title={`Stream ${streamId}`}
-            sx={{
-              width: '100%',
-              aspectRatio: '1 / 1',
-              border: 1,
-              borderColor: 'divider',
-              borderRadius: 1,
-              bgcolor: 'background.default'
-            }}
-          />
+          {/* Видео WebRTC */}
+          <CameraStream streamName={camera.cameraId} />
 
           {/* Кнопка REC */}
           <Button
             size="small"
             fullWidth
-            disabled={busy || isArchiveCamera || !cameraState}
+            disabled={busy || !cameraState}
             variant={cameraState?.recording ? 'contained' : 'outlined'}
             color={cameraState?.recording ? 'error' : 'primary'}
             onClick={() => void updateRecordingState(!cameraState?.recording)}
@@ -180,5 +151,4 @@ function CameraStreamCard({
   )
 }
 
-export type { CameraInfo, CameraStateDto }
 export default CameraStreamCard

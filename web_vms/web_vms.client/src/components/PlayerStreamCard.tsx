@@ -10,6 +10,7 @@ import {
   TextField
 } from '@mui/material'
 import type { PlayerStateDto } from '../dto/dtos'
+import CameraStream from './CameraStream'
 
 type PlayerStreamCardProps = {
   player: PlayerStateDto
@@ -17,9 +18,6 @@ type PlayerStreamCardProps = {
   onRemove: (player: PlayerStateDto) => Promise<void>
 }
 
-const WEBRTC_BASE_URL =
-  (import.meta.env.VITE_WEBRTC_BASE_URL as string | undefined)?.trim() ||
-  'http://localhost:8889'
 
 function PlayerStreamCard({
   player,
@@ -28,11 +26,6 @@ function PlayerStreamCard({
 }: PlayerStreamCardProps) {
 
   const [newTime, setNewTime] = useState('')
-
-  const streamUrl = useMemo(
-    () => `${WEBRTC_BASE_URL.replace(/\/$/, '')}/${encodeURIComponent(player.clientId)}/`,
-    [player.clientId]
-  )
 
   const sendSeek = async () => {
     if (!newTime) return
@@ -70,18 +63,7 @@ function PlayerStreamCard({
             </Stack>
           </Stack>
 
-          <Box
-            component="iframe"
-            src={streamUrl}
-            title={`Player ${player.clientId}`}
-            sx={{
-              width: '100%',
-              aspectRatio: '1 / 1',
-              border: 1,
-              borderColor: 'divider',
-              borderRadius: 2
-            }}
-          />
+          <CameraStream streamName={player.clientId} />
 
           {/* PICKER */}
           

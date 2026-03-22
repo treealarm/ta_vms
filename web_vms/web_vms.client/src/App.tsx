@@ -11,10 +11,10 @@ import {
   TextField,
   Typography
 } from '@mui/material'
-import CameraStreamCard, { type CameraInfo } from './components/CameraStreamCard'
+import CameraStreamCard from './components/CameraStreamCard'
 import PlayerStreamCard from './components/PlayerStreamCard'
 
-import { toIsoUtc, type PlayerStateDto } from './dto/dtos'
+import { type CameraStateDto, type PlayerStateDto } from './dto/dtos'
 
 type ApiResponse = {
   success: boolean
@@ -34,7 +34,7 @@ function App() {
   const [rtspUrl, setRtspUrl] = useState('rtsp://127.0.0.1:8554/stream')
   const [status, setStatus] = useState('Ready')
   const [isBusy, setIsBusy] = useState(false)
-  const [cameras, setCameras] = useState<CameraInfo[]>([])
+  const [cameras, setCameras] = useState<CameraStateDto[]>([])
   const [players, setPlayers] = useState<PlayerStateDto[]>([])
 
   const visibleCameras = useMemo(() => cameras.slice(0, MAX_CAMERAS), [cameras])
@@ -47,7 +47,7 @@ function App() {
         throw new Error(await getErrorMessage(response))
       }
 
-      const cameraList: CameraInfo[] = await response.json()
+      const cameraList: CameraStateDto[] = await response.json()
       setCameras(cameraList)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
@@ -138,7 +138,7 @@ function App() {
   }
 
 
-  const onRemoveCamera = async (camera: CameraInfo) => {
+  const onRemoveCamera = async (camera: CameraStateDto) => {
     await runAction(() =>
       fetch(`/api/vms/cameras/${encodeURIComponent(camera.cameraId)}?isArchive=${camera.rtspUrl.trim().length === 0}`, {
         method: 'DELETE'
