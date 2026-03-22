@@ -36,7 +36,6 @@ set(SOURCES
     interfaces/media_sink.h
     interfaces/sink_container.h
     interfaces/reader.h
-    interfaces/storage_utils.h
     interfaces/web_rtc_utils.h
 
     reader/rtsp_reader.cpp

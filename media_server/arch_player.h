@@ -43,11 +43,7 @@ private:
 
   std::optional<std::string> find_file(
     const std::string& camera_id,
-    const std::filesystem::path& base_path,
     const std::chrono::system_clock::time_point& start_time);
-
-  std::optional<std::chrono::system_clock::time_point> parse_segment_start_time(
-    const std::string& file_name);
 
   std::string m_camera_id;
   std::string m_client_id;

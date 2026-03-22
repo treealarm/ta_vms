@@ -1,4 +1,4 @@
-import { Box } from '@mui/material';
+п»їimport { Box } from '@mui/material';
 import React, { useEffect, useRef } from 'react';
 
 interface CameraStreamProps {
@@ -69,7 +69,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
             sdp: answerSDP,
           });
 
-          // Ждём пока соединение не развалится
+          // Р–РґС‘Рј РїРѕРєР° СЃРѕРµРґРёРЅРµРЅРёРµ РЅРµ СЂР°Р·РІР°Р»РёС‚СЃСЏ
           await new Promise<void>((resolve) => {
             pc.onconnectionstatechange = () => {
               if (
@@ -86,7 +86,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
           console.warn('WebRTC retry error:', err);
         }
 
-        // задержка перед реконнектом
+        // Р·Р°РґРµСЂР¶РєР° РїРµСЂРµРґ СЂРµРєРѕРЅРЅРµРєС‚РѕРј
         await new Promise((r) => setTimeout(r, 2000));
       }
     };

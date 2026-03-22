@@ -67,10 +67,10 @@ std::string make_segment_finished_payload(const std::string& camera_id,
 }
 }
 
-segment_writer::segment_writer(const std::string& base_dir,
+segment_writer::segment_writer(
   const std::string& camera_id,
   int segment_seconds)
-  : m_base_dir(base_dir),
+  :
   m_camera_id(camera_id),
   m_segment_seconds(segment_seconds)
 {
@@ -116,16 +116,14 @@ void segment_writer::open_new_segment()
   }
 
   const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
-  const std::string year = std::format("{:%Y}", now);
-  const std::string month_day = std::format("{:%m-%d}", now);
 
-  recording_storage storage(m_base_dir);
+  recording_storage storage;
 
   m_current_segment_relative_path =
     storage.make_segment_path(m_camera_id, now);
 
 
-  auto path = m_base_dir / m_current_segment_relative_path;
+  auto path = storage.get_absolute_path(m_camera_id, now);
   std::filesystem::create_directories(path.parent_path());
 
   if (avformat_alloc_output_context2(

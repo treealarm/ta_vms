@@ -8,7 +8,7 @@
 #include "file_system/recording_storage.h"
 
 #include "reader/file_reader.h"
-#include "interfaces/storage_utils.h"
+
 #include "interfaces/web_rtc_utils.h"
 
 
@@ -28,10 +28,9 @@ arch_player::~arch_player()
 
 std::optional<std::string> arch_player::find_file(
   const std::string& camera_id,
-  const std::filesystem::path& base_path,
   const std::chrono::system_clock::time_point& start_time)
 {
-  recording_storage storage(base_path);
+  recording_storage storage;
   auto rec = storage.find_nearest(camera_id, start_time);
 
   if (!rec)
@@ -43,13 +42,10 @@ std::optional<std::string> arch_player::find_file(
 bool arch_player::open(const std::chrono::system_clock::time_point& start_time,
                            std::string& error) 
 {
-  auto base_path = resolve_storage_base_path();
-
   auto playback_reader = std::make_unique<file_reader>(
-      m_camera_id,
-      base_path);
+      m_camera_id);
 
-  const auto file_name = find_file(m_camera_id, base_path, start_time);
+  const auto file_name = find_file(m_camera_id, start_time);
 
   if (!file_name)
   {

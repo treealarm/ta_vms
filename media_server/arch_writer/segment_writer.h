@@ -16,7 +16,7 @@ extern "C" {
 
 class segment_writer : public media_sink {
 public:
-  segment_writer(const std::string& base_dir,
+  segment_writer(
                  const std::string& camera_id,
                  int segment_seconds);
   ~segment_writer() override;
@@ -33,7 +33,6 @@ private:
   void close_segment();
   void close();
 private:
-  std::filesystem::path m_base_dir;
   std::string m_camera_id;
   std::chrono::seconds m_segment_seconds;
 

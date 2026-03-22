@@ -26,9 +26,9 @@ file_reader::file_reader()
 
 }
 
-file_reader::file_reader(std::string camera_id, std::string storage_base_path)
-    : m_camera_id(std::move(camera_id)),
-      m_storage_base_path(std::move(storage_base_path)) {}
+file_reader::file_reader(std::string camera_id)
+    : m_camera_id(std::move(camera_id))
+{}
 
 file_reader::~file_reader() 
 {

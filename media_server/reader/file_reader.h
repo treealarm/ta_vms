@@ -20,7 +20,7 @@ extern "C" {
 class file_reader final : public reader {
 public:
   file_reader();
-  file_reader(std::string camera_id, std::string storage_base_path);
+  file_reader(std::string camera_id);
   ~file_reader() override;
 
   bool open(const std::string& source) override;
@@ -43,7 +43,6 @@ private:
   std::atomic_bool m_running{ false };
 
   std::string m_camera_id;
-  std::filesystem::path m_storage_base_path;
   sink_container_impl m_sinks_helper;
   std::string m_source;
   std::mutex m_mutex;

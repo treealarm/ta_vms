@@ -5,6 +5,8 @@
 #include <optional>
 #include <filesystem>
 #include <chrono>
+#include <cstdlib>
+#include <string>
 
 struct recording_info
 {
@@ -16,7 +18,7 @@ struct recording_info
 class recording_storage
 {
 public:
-  explicit recording_storage(std::filesystem::path base_path);
+  explicit recording_storage();
 
   std::vector<recording_info> get_recordings(
     const std::string& camera_id,
@@ -29,8 +31,20 @@ public:
   std::filesystem::path make_segment_path(
     const std::string& camera_id,
     std::chrono::system_clock::time_point ts);
+
+  std::filesystem::path get_absolute_path(const std::string& camera_id,
+    std::chrono::system_clock::time_point ts);
 private:
-  std::filesystem::path m_base_path;
+  std::filesystem::path resolve_storage_base_path()
+  {
+    if (const char* value = std::getenv("VMS_STORAGE_BASE_PATH")) {
+      if (value[0] != '\0') {
+        return value;
+      }
+    }
+
+    return "records";
+  }
 
   std::vector<recording_info> load_day(
     const std::filesystem::path& day_path);
@@ -45,4 +59,6 @@ private:
   std::filesystem::path shift_day(
     const std::filesystem::path& current_day,
     int offset_days);
+
+  std::filesystem::path m_base_path;
 };

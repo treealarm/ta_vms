@@ -6,8 +6,8 @@
 
 using namespace std::chrono;
 
-recording_storage::recording_storage(std::filesystem::path base_path)
-  : m_base_path(std::move(base_path))
+recording_storage::recording_storage()
+  : m_base_path(resolve_storage_base_path())
 {
 }
 
@@ -249,5 +249,11 @@ std::filesystem::path recording_storage::make_segment_path(
   auto ts_sec = floor<std::chrono::seconds>(ts);
   std::string filename = std::format("{:%Y-%m-%d_%H-%M-%S}.mkv", ts_sec);
 
-  return std::filesystem::path(camera_id) / year / md / filename;
+  return  std::filesystem::path(camera_id) / year / md / filename;
+}
+
+std::filesystem::path recording_storage::get_absolute_path(const std::string& camera_id,
+  std::chrono::system_clock::time_point ts)
+{
+  return resolve_storage_base_path()/make_segment_path(camera_id, ts);
 }

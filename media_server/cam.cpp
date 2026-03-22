@@ -4,7 +4,6 @@
 #include <stdexcept>
 
 #include "reader/rtsp_reader.h"
-#include "interfaces/storage_utils.h"
 #include "interfaces/web_rtc_utils.h"
 
 namespace {
@@ -48,7 +47,7 @@ void cam::start_recording()
     }
 
     m_writer =
-      std::make_shared<segment_writer>(resolve_storage_base_path(), m_cam_id, 60);
+      std::make_shared<segment_writer>(m_cam_id, 60);
     sink = m_writer;
   }
 

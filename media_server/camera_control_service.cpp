@@ -194,3 +194,43 @@ grpc::Status camera_control_service::SetPlayerState(
   response->set_message(success ? "archive player state updated" : error);
   return grpc::Status::OK;
 }
+
+grpc::Status camera_control_service::GetRecordings(grpc::ServerContext* context,
+  const vms::control::RecordingsRequest* request,
+  vms::control::RecordingsResponse* response)
+{
+
+  auto nearest = m_storage.find_nearest(request->camera_id(), to_time_point(request->timestamp()));
+
+  if (nearest)
+  {
+    auto recording = response->mutable_nearest();
+    *recording->mutable_file_path() = nearest->file_path.string();
+    *recording->mutable_start_time() = from_time_point(nearest->start_time);
+
+    if (nearest->end_time)
+    {
+      *recording->mutable_end_time() = from_time_point(*nearest->end_time);
+    }
+  }  
+
+  auto recordings = m_storage.get_recordings(
+    request->camera_id(),
+    to_time_point(request->timestamp()),
+    request->limit()
+  );
+  
+  for (auto& r : recordings)
+  {
+    auto recording = response->add_recordings();
+    *recording->mutable_file_path() = r.file_path.string();
+    *recording->mutable_start_time() = from_time_point(r.start_time);
+
+    if (r.end_time)
+    {
+      *recording->mutable_end_time() = from_time_point(*r.end_time);
+    }
+  }
+
+  return grpc::Status::OK;
+}
