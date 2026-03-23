@@ -1,4 +1,4 @@
-﻿import { useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import {
   Box,
   Button,
@@ -30,21 +30,48 @@ function PlayerStreamCard({
 }: PlayerStreamCardProps) {
   const [newTime, setNewTime] = useState('')
   const [listOpen, setListOpen] = useState(false)
+  const [currentFilePath, setCurrentFilePath] = useState(player.filePath)
+  const [currentPlayer, setCurrentPlayer] = useState<PlayerStateDto>(player)
+
+  // Периодический опрос состояния плейера
+  useEffect(() => {
+    // создаём интервал один раз при монтировании компонента
+    const interval = setInterval(async () => {
+      try {
+        const uri = `/api/vms/players/state?clientId=${encodeURIComponent(player.clientId)}`;
+        console.log('fetch players', uri); // проверка вызова
+        const resp = await fetch(uri)
+        if (!resp.ok) return
+
+        const updated: PlayerStateDto = await resp.json()
+
+        // обновляем filePath только если изменился
+        setCurrentFilePath(prev => (updated.filePath !== prev ? updated.filePath : prev))
+
+        // обновляем остальное состояние плеера
+        setCurrentPlayer(updated)
+      } catch (err) {
+        console.error('Error fetching player state', err)
+      }
+    }, 3000) // каждые 3 секунды
+
+    // очищаем интервал при размонтировании
+    return () => clearInterval(interval)
+  }, [player.clientId]) // зависимость только от player.clientId
 
   const sendSeek = async (iso?: string) => {
     const timeToSend =
       iso ?? (newTime ? new Date(newTime).toISOString() : null)
-
-    console.log("sendSeek", timeToSend)
     if (!timeToSend) return
 
     await fetch('/api/vms/players/state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        cameraId: player.cameraId,
-        clientId: player.clientId,
-        position: timeToSend
+        cameraId: currentPlayer.cameraId,
+        clientId: currentPlayer.clientId,
+        position: timeToSend,
+        filePath: currentFilePath
       })
     })
   }
@@ -52,8 +79,9 @@ function PlayerStreamCard({
   const handleSelectRecording = (rec: RecordingDto) => {
     const date = new Date(rec.startTime)
 
+    setCurrentFilePath(rec.filePath);
     setNewTime(toLocalDatetimeInputValue(date)) // локально
-    //sendSeek(date.toISOString()) // UTC в API
+    sendSeek(date.toISOString()) // UTC в API
   }
 
   return (
@@ -126,6 +154,7 @@ function PlayerStreamCard({
                         ? new Date(newTime).toISOString()
                         : undefined
                     }
+                    filePath={currentFilePath}
                     onSelect={handleSelectRecording}
                   />
                 </Box>

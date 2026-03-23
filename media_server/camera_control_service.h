@@ -44,6 +44,10 @@ public:
                               const vms::control::PlayerState* request,
                               vms::control::OperationStatus* response) override;
 
+  grpc::Status GetPlayerState(grpc::ServerContext* context,
+    const vms::control::SourceRequest* request,
+    vms::control::PlayerState* response);
+
   grpc::Status ListPlayers(grpc::ServerContext* context,
     const vms::control::ListPlayersRequest* request,
     vms::control::ListPlayersResponse* response) override;
@@ -51,6 +55,8 @@ public:
   grpc::Status GetRecordings(grpc::ServerContext* context,
     const vms::control::RecordingsRequest* request,
     vms::control::RecordingsResponse* response) override;
+
+
 
 private:
   camera_manager& m_manager;

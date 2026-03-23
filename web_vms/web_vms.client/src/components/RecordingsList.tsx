@@ -18,18 +18,19 @@ type Props = {
   onClose: () => void
   cameraId: string
   timestamp?: string
+  filePath?: string
   onSelect: (rec: RecordingDto) => void
 }
 
 export default function RecordingsList({
   open,
-  onClose,
   cameraId,
   timestamp,
+  filePath,
   onSelect
 }: Props) {
   const [data, setData] = useState<RecordingDto[]>([])
-  const [nearest, setNearest] = useState<RecordingDto | null>(null)
+
   const [selected, setSelected] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -43,6 +44,7 @@ export default function RecordingsList({
       setLoaded(false)
     }
   }, [open])
+
 
   // один запрос
   useEffect(() => {
@@ -68,7 +70,7 @@ export default function RecordingsList({
         if (cancelled) return
 
         setData(json.recordings || [])
-        setNearest(json.nearest || null)
+
       } finally {
         if (!cancelled) {
           setLoading(false)
@@ -86,9 +88,11 @@ export default function RecordingsList({
 
   const handleClick = (rec: RecordingDto) => {
     setSelected(rec.filePath)
+    console.log('rec.filePath', rec.filePath)
     onSelect(rec)
   }
 
+  console.log('filePath', filePath);
   if (!open) return null
 
   return (
@@ -129,7 +133,7 @@ export default function RecordingsList({
         ) : (
           <List dense disablePadding>
             {data.map((rec) => {
-              const isNearest = nearest?.filePath === rec.filePath
+              const isNearest = filePath === rec.filePath
               const isSelected = selected === rec.filePath
 
               const time = new Date(rec.startTime).toLocaleTimeString()

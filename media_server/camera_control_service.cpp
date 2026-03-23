@@ -196,6 +196,29 @@ grpc::Status camera_control_service::SetPlayerState(
   return grpc::Status::OK;
 }
 
+grpc::Status camera_control_service::GetPlayerState(grpc::ServerContext* context,
+  const vms::control::SourceRequest* request,
+  vms::control::PlayerState* response)
+{
+  std::string error;
+
+  const auto entry = m_manager.get_player_state(
+    request->source_id(),
+    error);
+  if (!entry)
+  {
+    return grpc::Status::CANCELLED;
+  }
+  response->set_client_id(entry->client_id);
+  response->set_camera_id(entry->camera_id);
+  *response->mutable_position() = from_time_point(entry->start_time);
+  if (entry->file_path)
+  {
+    *response->mutable_file_path() = entry->file_path->filename().string();
+  }
+  
+  return grpc::Status::OK;
+}
 grpc::Status camera_control_service::GetRecordings(grpc::ServerContext* context,
   const vms::control::RecordingsRequest* request,
   vms::control::RecordingsResponse* response)
@@ -224,7 +247,7 @@ grpc::Status camera_control_service::GetRecordings(grpc::ServerContext* context,
   for (auto& r : recordings)
   {
     auto recording = response->add_recordings();
-    *recording->mutable_file_path() = r.file_path.string();
+    *recording->mutable_file_path() = r.file_path.filename().string();
     *recording->mutable_start_time() = from_time_point(r.start_time);
 
     if (r.end_time)

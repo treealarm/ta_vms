@@ -30,6 +30,10 @@ public:
 
 
   const std::string& camera_id() const;
+  std::optional<std::string> file_path()
+  {
+    return m_cur_file_path;
+  };
   std::chrono::system_clock::time_point start_time() const {
     return m_start_time;
   }
@@ -48,6 +52,7 @@ private:
 
   std::string m_client_id;
   std::string m_camera_id;
+  std::optional<std::string> m_cur_file_path;
   
   std::chrono::system_clock::time_point m_start_time;
   std::unique_ptr<reader> m_reader;

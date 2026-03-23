@@ -9,7 +9,8 @@
 #include "arch_player.h"
 #include "cam.h"
 
-class camera_manager {
+class camera_manager 
+{
 public:
   struct camera_info 
   {
@@ -23,6 +24,7 @@ public:
     std::string camera_id;
     std::string client_id;
     std::chrono::system_clock::time_point start_time;
+    std::optional<std::filesystem::path> file_path;
   };
   bool add_camera(const std::string& camera_id,
                   const std::string& rtsp_url,
@@ -53,6 +55,10 @@ public:
                         const std::string& camera_id,
                         const std::chrono::system_clock::time_point& start_time,
                         std::string& error);
+
+  std::optional<player_info> get_player_state(
+    const std::string& client_id,
+    std::string& error);
 
   std::vector<camera_info> list_cameras() const;
   std::vector<player_info> list_players() const;

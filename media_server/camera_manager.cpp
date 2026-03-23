@@ -210,7 +210,12 @@ std::vector<camera_manager::player_info> camera_manager::list_players() const
 
   for (const auto& [client_id, entry] : m_arch_players_by_client)
   {
-    cameras.push_back(player_info{ entry->camera_id(), client_id, entry->start_time()});
+    cameras.push_back(player_info{
+        entry->camera_id(),
+        client_id,
+        entry->start_time(),
+        entry->file_path() ? std::make_optional(*entry->file_path()) : std::nullopt
+      });
   }
 
   return cameras;
@@ -291,4 +296,32 @@ bool camera_manager::set_player_state(
   }
 
   return it->second->set_state(start_time, camera_id, error);
+}
+
+std::optional<camera_manager::player_info>  camera_manager::get_player_state(
+  const std::string& client_id,
+  std::string& error)
+{
+  std::scoped_lock lock(m_mutex);
+
+  if (client_id.empty()) {
+    error = "client_id must not be empty";
+    return std::nullopt;
+  }
+
+  auto it = m_arch_players_by_client.find(client_id);
+  if (it == m_arch_players_by_client.end()) {
+    error = "archive player not found for client: " + client_id;
+    return std::nullopt;
+  }
+
+  camera_manager::player_info pi
+  {
+    it->second->camera_id(),
+    client_id,
+    it->second->start_time(),
+    it->second->file_path() ? std::make_optional(*it->second->file_path()) : std::nullopt
+  };
+
+  return pi;
 }

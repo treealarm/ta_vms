@@ -25,6 +25,7 @@ export type PlayerStateDto = {
   cameraId: string
   clientId: string
   position: string
+  filePath: string
 }
 
 export type CameraStateDto = {

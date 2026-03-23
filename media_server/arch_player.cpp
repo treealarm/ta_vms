@@ -47,15 +47,15 @@ bool arch_player::open(const std::chrono::system_clock::time_point& start_time,
   auto playback_reader = std::make_unique<file_reader>(
       m_camera_id);
 
-  const auto file_name = find_file(m_camera_id, start_time);
+  m_cur_file_path = find_file(m_camera_id, start_time);
 
-  if (!file_name)
+  if (!m_cur_file_path)
   {
     error = "Unable to find file";
     return false;
   }
 
-  if (!playback_reader->open(*file_name))
+  if (!playback_reader->open(*m_cur_file_path))
   {
     error = "Failed to open media source";
     return false;

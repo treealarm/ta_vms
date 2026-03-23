@@ -13,6 +13,7 @@ service CameraControlService {
   rpc SetCameraState(CameraState) returns (OperationStatus);
   rpc GetCameraState(SourceRequest) returns (CameraState);
   rpc SetPlayerState(PlayerState) returns (OperationStatus);
+  rpc GetPlayerState(SourceRequest) returns (PlayerState);
   rpc ListPlayers(ListPlayersRequest) returns (ListPlayersResponse);
   rpc GetRecordings(RecordingsRequest) returns (RecordingsResponse);
 }
@@ -43,6 +44,7 @@ message PlayerState {
   string camera_id = 1;
   optional google.protobuf.Timestamp position = 2;
   string client_id = 3;
+  optional string file_path = 4;
 }
 
 message ListPlayersRequest {}

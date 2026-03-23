@@ -1,5 +1,6 @@
 using Google.Protobuf.WellKnownTypes;
 using Microsoft.AspNetCore.Mvc;
+using System.Threading;
 using Vms.Control;
 
 namespace web_vms;
@@ -87,6 +88,35 @@ public class VmsController(
       success = grpcResponse.Success,
       message = grpcResponse.Message
     });
+  }
+
+  [HttpGet("players/state")]
+  public async Task<IActionResult> GetPlayerState([FromQuery] string clientId, CancellationToken ct)
+  {
+    if (string.IsNullOrEmpty(clientId))
+      return BadRequest("clientId is required");
+
+    // Здесь вместо сервиса пример заглушки
+    PlayerState playerState = 
+      await grpcClient.GetPlayerStateAsync(new SourceRequest() {SourceId = clientId }, cancellationToken:ct);
+
+    if (playerState == null)
+      return NotFound();
+
+    var dto = new PlayerStateDto
+    {
+      CameraId = playerState.CameraId,
+      ClientId = playerState.ClientId,
+      FilePath = playerState.FilePath
+    };
+
+    if (playerState.Position != null)
+    {
+      // Преобразуем google.protobuf.Timestamp обратно в DateTime
+      dto.Position = playerState.Position.ToDateTime();
+    }
+
+    return Ok(dto);
   }
 
   [HttpDelete("cameras/{cameraId}")]
