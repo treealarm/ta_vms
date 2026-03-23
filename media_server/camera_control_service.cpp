@@ -200,27 +200,27 @@ grpc::Status camera_control_service::GetRecordings(grpc::ServerContext* context,
   const vms::control::RecordingsRequest* request,
   vms::control::RecordingsResponse* response)
 {
+  int32_t n_nearest = -1;
 
-  auto nearest = m_storage.find_nearest(request->camera_id(), to_time_point(request->timestamp()));
-
-  if (nearest)
+  auto recordings = m_storage.get_recordings(
+    request->camera_id(),
+    to_time_point(request->timestamp()),
+    request->limit(),
+    n_nearest
+  );
+  
+  if (n_nearest >= 0)
   {
+    auto nearest = &recordings[n_nearest];
     auto recording = response->mutable_nearest();
-    *recording->mutable_file_path() = nearest->file_path.string();
+    *recording->mutable_file_path() = nearest->file_path.filename().string();
     *recording->mutable_start_time() = from_time_point(nearest->start_time);
 
     if (nearest->end_time)
     {
       *recording->mutable_end_time() = from_time_point(*nearest->end_time);
     }
-  }  
-
-  auto recordings = m_storage.get_recordings(
-    request->camera_id(),
-    to_time_point(request->timestamp()),
-    request->limit()
-  );
-  
+  }
   for (auto& r : recordings)
   {
     auto recording = response->add_recordings();

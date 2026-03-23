@@ -23,7 +23,8 @@ public:
   std::vector<recording_info> get_recordings(
     const std::string& camera_id,
     std::chrono::system_clock::time_point ts,
-    uint32_t limit);
+    uint32_t limit,
+    int32_t& nearestIndex);
 
   std::optional<recording_info> find_nearest(
     const std::string& camera_id,

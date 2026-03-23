@@ -17,14 +17,17 @@ bool compat_sink::init(const avcodec_parameters_ptr& codec_parameters, AVRationa
 {
   close();
 
+  std::lock_guard<std::mutex> lock(m_mutex);
+
   m_processor = create_processor(codec_parameters);
-  if (!m_processor) {
+  if (!m_processor) 
+  {
     return false;
   }
 
-  if (!m_processor->init(codec_parameters, time_base, [this](const std::shared_ptr<media_packet>& media) {
-        emit_packet(media);
-      })) {
+  if (!m_processor->init(codec_parameters, time_base, [this](const std::shared_ptr<media_packet>& media)
+    { emit_packet(media); })) 
+  {
     m_processor.reset();
     return false;
   }
@@ -38,20 +41,25 @@ bool compat_sink::init(const avcodec_parameters_ptr& codec_parameters, AVRationa
 
 std::unique_ptr<stream_processor> compat_sink::create_processor(const avcodec_parameters_ptr& codec_parameters) const
 {
-  if (!codec_parameters) {
+  if (!codec_parameters) 
+  {
     return nullptr;
   }
 
-  if (codec_parameters->codec_type == AVMEDIA_TYPE_VIDEO) {
-    if (codec_parameters->codec_id == AV_CODEC_ID_H264) {
+  if (codec_parameters->codec_type == AVMEDIA_TYPE_VIDEO)
+  {
+    if (codec_parameters->codec_id == AV_CODEC_ID_H264) 
+    {
       return std::make_unique<video_copy_processor>();
     }
 
     return std::make_unique<video_transcode_processor>();
   }
 
-  if (codec_parameters->codec_type == AVMEDIA_TYPE_AUDIO) {
-    if (codec_parameters->codec_id == AV_CODEC_ID_OPUS) {
+  if (codec_parameters->codec_type == AVMEDIA_TYPE_AUDIO) 
+  {
+    if (codec_parameters->codec_id == AV_CODEC_ID_OPUS) 
+    {
       return std::make_unique<audio_copy_processor>();
     }
 
@@ -73,15 +81,20 @@ void compat_sink::remove_sink(std::shared_ptr<media_sink> sink)
 
 bool compat_sink::should_reinitialize(const std::shared_ptr<media_packet>& media) const
 {
-  if (!media || !media->codec_parameters) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  if (!media || !media->codec_parameters) 
+  {
     return false;
   }
 
-  if (!m_processor || !m_in_codec_parameters) {
+  if (!m_processor || !m_in_codec_parameters)
+  {
     return true;
   }
 
-  if (m_in_time_base.num != media->time_base.num || m_in_time_base.den != media->time_base.den) {
+  if (m_in_time_base.num != media->time_base.num || m_in_time_base.den != media->time_base.den) 
+  {
     return true;
   }
 
@@ -91,18 +104,24 @@ bool compat_sink::should_reinitialize(const std::shared_ptr<media_packet>& media
 
 void compat_sink::on_packet(const std::shared_ptr<media_packet>& media)
 {
-  if (!media || !media->packet || !media->codec_parameters) {
+  if (!media || !media->packet || !media->codec_parameters) 
+  {
     return;
   }
 
-  if (should_reinitialize(media)) {
-    if (!init(media->codec_parameters, media->time_base)) {
+  if (should_reinitialize(media)) 
+  {
+    if (!init(media->codec_parameters, media->time_base)) 
+    {
       return;
     }
 
   }
 
-  if (!m_processor) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  if (!m_processor)
+  {
     return;
   }
 
@@ -129,7 +148,10 @@ void compat_sink::emit_packet(const std::shared_ptr<media_packet>& media)
 
 void compat_sink::close()
 {
-  if (m_processor) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  if (m_processor) 
+  {
     m_processor->flush();
     m_processor.reset();
   }

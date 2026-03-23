@@ -1,4 +1,4 @@
-#include "file_system/recording_storage.h"
+﻿#include "file_system/recording_storage.h"
 
 #include <sstream>
 #include <iomanip>
@@ -110,7 +110,7 @@ std::optional<std::chrono::system_clock::time_point>
 }
 
 std::vector<recording_info>
-recording_storage::load_day(const std::filesystem::path& day_path)
+  recording_storage::load_day(const std::filesystem::path& day_path)
 {
   std::vector<recording_info> result;
 
@@ -146,11 +146,12 @@ recording_storage::load_day(const std::filesystem::path& day_path)
 }
 
 std::optional<recording_info>
-recording_storage::find_nearest(
+  recording_storage::find_nearest(
   const std::string& camera_id,
   std::chrono::system_clock::time_point ts)
 {
-  auto vec = get_recordings(camera_id, ts, 1);
+  int32_t nearest;
+  auto vec = get_recordings(camera_id, ts, 1, nearest);
   if (vec.empty())
     return std::nullopt;
 
@@ -161,19 +162,21 @@ std::vector<recording_info>
 recording_storage::get_recordings(
   const std::string& camera_id,
   std::chrono::system_clock::time_point ts,
-  uint32_t limit)
+  uint32_t limit,
+  int32_t& nearestIndex // ← индекс ближайшей записи
+)
 {
   std::vector<recording_info> files;
 
   auto day_path = make_day_path(camera_id, ts);
 
-  // ������ ������� ����
+  // 1️⃣ грузим текущий день
   auto current = load_day(day_path);
   files.insert(files.end(), current.begin(), current.end());
 
-  // ���� ���� � ���������� �������� ���
+  // 2️⃣ если мало — подгружаем соседние дни
   int offset = 1;
-  while (files.size() < limit * 2) // ����� ��� ������ nearest
+  while (files.size() < limit * 2) // запас для выбора nearest
   {
     auto prev = load_day(shift_day(day_path, -offset));
     auto next = load_day(shift_day(day_path, offset));
@@ -187,43 +190,37 @@ recording_storage::get_recordings(
     offset++;
   }
 
-  if (files.empty())
+  if (files.empty()) {
+    nearestIndex = -1;
     return {};
-
-  std::sort(files.begin(), files.end(),
-    [](const auto& a, const auto& b)
-    {
-      return a.start_time < b.start_time;
-    });
-
-  auto it = std::lower_bound(files.begin(), files.end(), ts,
-    [](const auto& rec, const auto& t)
-    {
-      return rec.start_time < t;
-    });
-
-  int l = int(it - files.begin()) - 1;
-  int r = int(it - files.begin());
-
-  std::vector<recording_info> result;
-
-  while (result.size() < limit && (l >= 0 || r < (int)files.size()))
-  {
-    if (l < 0)
-      result.push_back(files[r++]);
-    else if (r >= (int)files.size())
-      result.push_back(files[l--]);
-    else
-    {
-      auto dl = ts - files[l].start_time;
-      auto dr = files[r].start_time - ts;
-
-      if (dl <= dr)
-        result.push_back(files[l--]);
-      else
-        result.push_back(files[r++]);
-    }
   }
+
+  // 3️⃣ сортировка по времени
+  std::sort(files.begin(), files.end(),
+    [](const auto& a, const auto& b) { return a.start_time < b.start_time; });
+
+  // 4️⃣ находим ближайшую запись к ts
+  auto it = std::min_element(files.begin(), files.end(),
+    [ts](const auto& a, const auto& b) {
+      auto da = std::chrono::duration_cast<std::chrono::milliseconds>(a.start_time - ts).count();
+      auto db = std::chrono::duration_cast<std::chrono::milliseconds>(b.start_time - ts).count();
+      return std::abs(da) < std::abs(db);
+    });
+
+  nearestIndex = static_cast<int32_t>(std::distance(files.begin(), it));
+
+  // 5️⃣ формируем результат: просто первые `limit` записей вокруг nearestIndex
+  // если нужно, можно взять максимум limit записей, начиная с nearestIndex ± limit/2
+  int start = std::max(0, nearestIndex - static_cast<int32_t>(limit / 2));
+  int end = std::min<int32_t>(start + limit, static_cast<int32_t>(files.size()));
+
+  // корректируем start, если end обрезан
+  start = std::max(0, end - static_cast<int32_t>(limit));
+
+  std::vector<recording_info> result(files.begin() + start, files.begin() + end);
+
+  // пересчитываем nearestIndex внутри result
+  nearestIndex -= start;
 
   return result;
 }
@@ -245,7 +242,7 @@ std::filesystem::path recording_storage::make_segment_path(
     unsigned(ymd.month()),
     unsigned(ymd.day()));
 
-  // ��� ����� = timestamp
+  // имя файла = timestamp
   auto ts_sec = floor<std::chrono::seconds>(ts);
   std::string filename = std::format("{:%Y-%m-%d_%H-%M-%S}.mkv", ts_sec);
 

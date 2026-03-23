@@ -13,7 +13,6 @@ public:
   compat_sink() = default;
   ~compat_sink() override;
 
-  bool init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base);
   void add_sink(std::shared_ptr<media_sink> sink) override;
   void remove_sink(std::shared_ptr<media_sink> sink) override;
   void on_packet(const std::shared_ptr<media_packet>& media) override;
@@ -25,11 +24,11 @@ public:
 private:
   std::unique_ptr<stream_processor> create_processor(const avcodec_parameters_ptr& codec_parameters) const;
   void emit_packet(const std::shared_ptr<media_packet>& media);
-
-private:
+  bool init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base);
   bool should_reinitialize(const std::shared_ptr<media_packet>& media) const;
 
 private:
+  mutable std::mutex m_mutex;
   std::unique_ptr<stream_processor> m_processor;
   avcodec_parameters_ptr m_in_codec_parameters;
   AVRational m_in_time_base{};
