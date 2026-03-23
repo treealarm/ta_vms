@@ -15,6 +15,7 @@ class arch_player {
 public:
   arch_player(
     const std::string& client_id,
+    const std::string& camera_id,
     std::string& error);
   ~arch_player();
   arch_player(const arch_player&) = delete;
@@ -45,8 +46,9 @@ private:
     const std::string& camera_id,
     const std::chrono::system_clock::time_point& start_time);
 
-  std::string m_camera_id;
   std::string m_client_id;
+  std::string m_camera_id;
+  
   std::chrono::system_clock::time_point m_start_time;
   std::unique_ptr<reader> m_reader;
   std::shared_ptr<webrtc_output_sink> m_webrtc_output_sink;

@@ -14,9 +14,11 @@
 
 arch_player::arch_player(
   const std::string& client_id,
+  const std::string& camera_id,
   std::string& error)
     : 
-  m_client_id(client_id)
+  m_client_id(client_id),
+  m_camera_id(camera_id)
 {
 
 }

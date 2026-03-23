@@ -44,8 +44,9 @@ public:
     std::string& error);
 
   bool add_arch_player(
-                       const std::string& client_id,
-                       std::string& error);
+    const std::string& client_id,
+    const std::string& camera_id,
+    std::string& error);
   bool remove_camera(const std::string& camera_id, std::string& error);
   bool remove_arch_player(const std::string& client_id, std::string& error);
   bool set_player_state(const std::string& client_id,

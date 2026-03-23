@@ -9,93 +9,86 @@ interface CameraStreamProps {
 const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
-  const stoppedRef = useRef(false);
-
+  const retryTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!streamName) return;
+    if (!streamName) {
+      console.error("stream is null")
+      return;
+    }
+      
 
-    stoppedRef.current = false;
+    let stopped = false;
 
-    const start = async () => {
-      while (!stoppedRef.current) {
-        try {
-          const pc = new RTCPeerConnection({
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-          });
+    const startConnection = async () => {
+      if (stopped) return;
 
-          pcRef.current = pc;
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      });
+      pcRef.current = pc;
 
-          pc.ontrack = (event) => {
-            if (videoRef.current) {
-              videoRef.current.srcObject = event.streams[0];
-            }
-          };
-
-          pc.onconnectionstatechange = () => {
-            const state = pc.connectionState;
-
-            if (state === 'failed' || state === 'disconnected' || state === 'closed') {
-              console.warn('WebRTC disconnected, retrying...');
-              pc.close();
-            }
-          };
-
-          const offer = await pc.createOffer({
-            offerToReceiveAudio: true,
-            offerToReceiveVideo: true,
-          });
-
-          await pc.setLocalDescription(offer);
-
-          const url = `${(baseUrl || 'http://localhost:8889').replace(/\/$/, '')}/${encodeURIComponent(streamName)}/whep`;
-
-          const resp = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/sdp',
-            },
-            body: offer.sdp,
-          });
-
-          if (!resp.ok) {
-            throw new Error(`WHEP failed: ${resp.status}`);
-          }
-
-          const answerSDP = await resp.text();
-
-          await pc.setRemoteDescription({
-            type: 'answer',
-            sdp: answerSDP,
-          });
-
-          // Ждём пока соединение не развалится
-          await new Promise<void>((resolve) => {
-            pc.onconnectionstatechange = () => {
-              if (
-                pc.connectionState === 'failed' ||
-                pc.connectionState === 'disconnected' ||
-                pc.connectionState === 'closed'
-              ) {
-                resolve();
-              }
-            };
-          });
-
-        } catch (err) {
-          console.warn('WebRTC retry error:', err);
+      pc.ontrack = (event) => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = event.streams[0];
         }
+      };
 
-        // задержка перед реконнектом
-        await new Promise((r) => setTimeout(r, 2000));
+      const cleanupAndRetry = () => {
+        if (stopped) return;
+
+        console.warn('WebRTC disconnected, retrying...');
+        pc.close();
+        pcRef.current = null;
+
+        // небольшая задержка перед повторным соединением
+        retryTimeoutRef.current = window.setTimeout(() => {
+          startConnection();
+        }, 2000);
+      };
+
+      pc.onconnectionstatechange = () => {
+        const state = pc.connectionState;
+        if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+          cleanupAndRetry();
+        }
+      };
+
+      try {
+        const offer = await pc.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true,
+        });
+        await pc.setLocalDescription(offer);
+
+        const url = `${(baseUrl || 'http://localhost:8889').replace(/\/$/, '')}/${encodeURIComponent(streamName)}/whep`;
+        console.log("url=", url);
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/sdp' },
+          body: offer.sdp,
+        });
+
+        if (!resp.ok) throw new Error(`WHEP failed: ${resp.status}`);
+
+        const answerSDP = await resp.text();
+        await pc.setRemoteDescription({ type: 'answer', sdp: answerSDP });
+      } catch (err) {
+        console.warn('WebRTC connection error, retrying...', err);
+        cleanupAndRetry();
       }
     };
 
-    start();
+    startConnection();
 
     return () => {
-      stoppedRef.current = true;
+      stopped = true;
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
       pcRef.current?.close();
+      pcRef.current = null;
     };
   }, [streamName, baseUrl]);
 
@@ -107,7 +100,8 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
         aspectRatio: '1 / 1',
         border: 1,
         borderColor: 'divider',
-        borderRadius: 2
+        borderRadius: 2,
+        overflow: 'hidden',
       }}
     >
       <video

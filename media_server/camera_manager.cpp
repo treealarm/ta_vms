@@ -232,8 +232,9 @@ void camera_manager::stop_all()
 }
 
 bool camera_manager::add_arch_player(
-                                     const std::string& client_id,
-                                      std::string& error) 
+  const std::string& client_id,
+  const std::string& camera_id,
+  std::string& error) 
 {
 
 
@@ -254,6 +255,7 @@ bool camera_manager::add_arch_player(
 
     std::shared_ptr<arch_player> player = std::make_shared<arch_player>(
       client_id,
+      camera_id,
       error);
     m_arch_players_by_client.emplace(client_id, std::move(player));
 

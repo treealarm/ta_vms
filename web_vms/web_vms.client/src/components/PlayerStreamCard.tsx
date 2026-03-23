@@ -9,8 +9,9 @@ import {
   Typography,
   TextField
 } from '@mui/material'
-import type { PlayerStateDto } from '../dto/dtos'
+import { toLocalDatetimeInputValue, type PlayerStateDto, type RecordingDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
+import RecordingsList from './RecordingsList'
 
 type PlayerStreamCardProps = {
   player: PlayerStateDto
@@ -26,11 +27,17 @@ function PlayerStreamCard({
 }: PlayerStreamCardProps) {
 
   const [newTime, setNewTime] = useState('')
+  const [listOpen, setListOpen] = useState(false)
 
-  const sendSeek = async () => {
-    if (!newTime) return
+  const sendSeek = async (iso?: string) => {
 
-    const iso = new Date(newTime).toISOString()
+
+    const timeToSend = iso ?? (newTime ? new Date(newTime).toISOString() : null)
+    console.log('sendSeek', timeToSend)
+    if (!timeToSend) {
+
+      return
+    }
 
     await fetch('/api/vms/players/state', {
       method: 'POST',
@@ -38,13 +45,21 @@ function PlayerStreamCard({
       body: JSON.stringify({
         cameraId: player.cameraId,
         clientId: player.clientId,
-        startTime: iso
+        position: timeToSend
       })
     })
   }
 
+  const handleSelectRecording = (rec: RecordingDto) => {
+    const date = new Date(rec.startTime)
+
+    setNewTime(toLocalDatetimeInputValue(date)) // ✅ локально
+
+    sendSeek(date.toISOString()) // ✅ в API по-прежнему UTC
+  }
+
   return (
-    <Card sx={{ height: '100%' }}>
+    <Card sx={{ height: '100%', position: 'relative' }}>
       <CardContent>
         <Stack spacing={1.5}>
 
@@ -52,7 +67,7 @@ function PlayerStreamCard({
             <Typography variant="h6">{player.cameraId}</Typography>
 
             <Stack direction="row">
-
+             
               <IconButton
                 size="small"
                 disabled={isBusy}
@@ -60,6 +75,7 @@ function PlayerStreamCard({
               >
                 ✕
               </IconButton>
+              
             </Stack>
           </Stack>
 
@@ -72,13 +88,24 @@ function PlayerStreamCard({
                 type="datetime-local"
                 value={newTime}
                 onChange={(e) => setNewTime(e.target.value)}
-                fullWidth
-              />
-              <Button variant="contained" onClick={sendSeek}>
+              fullWidth
+              inputProps={{ step: 1 }}
+            />
+            <IconButton size="small" onClick={() => setListOpen(true)}>
+              🕘
+            </IconButton>
+            <Button variant="contained" onClick={() => sendSeek()}>
                 Go
               </Button>
             </Stack>
 
+          <RecordingsList
+            open={listOpen}
+            onClose={() => setListOpen(false)}
+            cameraId={player.cameraId}
+            timestamp={newTime ? new Date(newTime).toISOString() : undefined}
+            onSelect={handleSelectRecording}
+          />
         </Stack>
       </CardContent>
     </Card>

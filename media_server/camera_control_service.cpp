@@ -75,6 +75,7 @@ grpc::Status camera_control_service::AddArchPlayer(
 
   const bool success = m_manager.add_arch_player(
     request->client_id(),
+    request->camera_id(),
     error);
 
   response->set_success(success);
