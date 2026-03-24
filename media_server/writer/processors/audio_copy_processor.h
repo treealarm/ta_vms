@@ -1,6 +1,6 @@
 #pragma once
 
-#include "writer/stream_processor.h"
+#include "writer/processors/stream_processor.h"
 
 class audio_copy_processor : public stream_processor {
 public:

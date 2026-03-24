@@ -3,10 +3,10 @@
 #include <algorithm>
 
 #include "interfaces/media_packet.h"
-#include "writer/audio_copy_processor.h"
-#include "writer/audio_transcode_processor.h"
-#include "writer/video_copy_processor.h"
-#include "writer/video_transcode_processor.h"
+#include "writer/processors/audio_copy_processor.h"
+#include "writer/processors/audio_transcode_processor.h"
+#include "writer/processors/video_copy_processor.h"
+#include "writer/processors/video_transcode_processor.h"
 
 
 #include "av_utils/need_reinit.h"

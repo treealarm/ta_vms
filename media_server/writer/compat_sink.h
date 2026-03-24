@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "interfaces/sink_container.h"
-#include "writer/stream_processor.h"
+#include "writer/processors/stream_processor.h"
 #include "sink_container/sink_container_impl.h"
 
 class compat_sink : public media_sink, public sink_container

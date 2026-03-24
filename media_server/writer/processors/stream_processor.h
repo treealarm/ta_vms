@@ -9,9 +9,9 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 }
 
-using avcodec_parameters_ptr = std::shared_ptr<AVCodecParameters>;
 
-class stream_processor {
+class stream_processor 
+{
 public:
   using emit_fn = std::function<void(const std::shared_ptr<media_packet>&)>;
 
