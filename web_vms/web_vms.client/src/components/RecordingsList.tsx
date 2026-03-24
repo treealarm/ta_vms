@@ -6,11 +6,8 @@ import {
   Tooltip,
   CircularProgress,
   Box,
-  IconButton,
-  Stack,
-  Typography
+  Stack
 } from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
 import type { RecordingDto } from '../dto/dtos'
 
 type Props = {
@@ -166,8 +163,7 @@ export default function RecordingsList({
                     }}
                   >
                     <ListItemText
-                      primary={isNearest ? `➤ ${time}` : time}
-                      primaryTypographyProps={{ fontSize: 13 }}
+                      primary={isNearest ? `➤ ${time}` : time}        
                     />
                   </ListItemButton>
                 </Tooltip>

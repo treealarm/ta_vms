@@ -6,7 +6,8 @@ import {
   Stack,
   Typography,
   IconButton,
-  TextField
+  TextField,
+  InputAdornment
 } from '@mui/material'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import type { CameraStateDto } from '../dto/dtos'
@@ -101,22 +102,23 @@ function CameraStreamCard({
 
             <TextField
               value={camera.rtspUrl}
-              sx=
-              {{
-                readOnly: true,
-                endAdornment: (
-                  <IconButton
-                    size="small"
-                    onClick={() => {
-                      navigator.clipboard.writeText(camera.rtspUrl || '')
-                    }}
-                  >
-                    <ContentCopyIcon fontSize="small" />
-                  </IconButton>
-                )
-              }}
               variant="outlined"
               size="small"
+              slotProps={{
+                input: {
+                  readOnly: true,
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        onClick={() => navigator.clipboard.writeText(camera.rtspUrl || '')}
+                      >
+                        <ContentCopyIcon fontSize="small" />
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                },
+              }}
               sx={{ flexGrow: 1 }}
             />
 
