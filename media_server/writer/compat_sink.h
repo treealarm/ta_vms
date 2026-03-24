@@ -8,7 +8,8 @@
 #include "writer/stream_processor.h"
 #include "sink_container/sink_container_impl.h"
 
-class compat_sink : public media_sink, public sink_container {
+class compat_sink : public media_sink, public sink_container
+{
 public:
   compat_sink() = default;
   ~compat_sink() override;
@@ -27,7 +28,6 @@ private:
   bool init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base);
   bool should_reinitialize(const std::shared_ptr<media_packet>& media) const;
 
-private:
   mutable std::mutex m_mutex;
   std::unique_ptr<stream_processor> m_processor;
   avcodec_parameters_ptr m_in_codec_parameters;

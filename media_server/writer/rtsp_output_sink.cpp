@@ -1,6 +1,9 @@
-#include "writer/rtsp_output_sink.h"
-
 #include <iostream>
+
+#include "writer/rtsp_output_sink.h"
+#include "av_utils/need_reinit.h"
+
+
 
 rtsp_output_sink::rtsp_output_sink(std::string rtsp_url)
   : m_rtsp_url(std::move(rtsp_url))
@@ -101,24 +104,32 @@ rtsp_output_sink::stream_state* rtsp_output_sink::find_stream(AVMediaType media_
 
 bool rtsp_output_sink::update_stream_config_from_packet(const std::shared_ptr<media_packet>& media)
 {
-  if (!media || !media->codec_parameters) {
+  if (!media || !media->codec_parameters) 
+  {
     return false;
   }
 
   stream_config* config = nullptr;
-  if (media->media_type == AVMEDIA_TYPE_VIDEO) {
+  if (media->media_type == AVMEDIA_TYPE_VIDEO) 
+  {
     config = &m_video_config;
-  } else if (media->media_type == AVMEDIA_TYPE_AUDIO) {
+  } 
+  else if (media->media_type == AVMEDIA_TYPE_AUDIO) 
+  {
     config = &m_audio_config;
-  } else {
+  } 
+  else
+  {
     return false;
   }
 
-  const bool changed = !config->codec_parameters ||
-    config->codec_parameters->codec_id != media->codec_parameters->codec_id ||
-    config->codec_parameters->codec_type != media->codec_parameters->codec_type ||
-    config->time_base.num != media->time_base.num ||
-    config->time_base.den != media->time_base.den;
+  const bool changed =
+    av_utils::need_reinit(
+      config->codec_parameters.get(),
+      config->time_base,
+      media->codec_parameters.get(),
+      media->time_base
+    );
 
   config->codec_parameters = media->codec_parameters;
   config->time_base = media->time_base;

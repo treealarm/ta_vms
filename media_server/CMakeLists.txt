@@ -49,6 +49,9 @@ set(SOURCES
     arch_writer/segment_writer.cpp
     arch_writer/segment_writer.h
 
+    av_utils/need_reinit.cpp
+    av_utils/need_reinit.h
+
     writer/compat_sink.cpp
     writer/compat_sink.h
     writer/stream_processor.h

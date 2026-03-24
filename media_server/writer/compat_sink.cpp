@@ -8,6 +8,9 @@
 #include "writer/video_copy_processor.h"
 #include "writer/video_transcode_processor.h"
 
+
+#include "av_utils/need_reinit.h"
+
 compat_sink::~compat_sink()
 {
   close();
@@ -83,23 +86,18 @@ bool compat_sink::should_reinitialize(const std::shared_ptr<media_packet>& media
 {
   std::lock_guard<std::mutex> lock(m_mutex);
 
-  if (!media || !media->codec_parameters) 
-  {
+  if (!media || !media->codec_parameters)
     return false;
-  }
 
   if (!m_processor || !m_in_codec_parameters)
-  {
     return true;
-  }
 
-  if (m_in_time_base.num != media->time_base.num || m_in_time_base.den != media->time_base.den) 
-  {
-    return true;
-  }
-
-  return m_in_codec_parameters->codec_type != media->codec_parameters->codec_type ||
-         m_in_codec_parameters->codec_id != media->codec_parameters->codec_id;
+  return av_utils::need_reinit(
+    m_in_codec_parameters.get(),
+    m_in_time_base,
+    media->codec_parameters.get(),
+    media->time_base
+  );
 }
 
 void compat_sink::on_packet(const std::shared_ptr<media_packet>& media)

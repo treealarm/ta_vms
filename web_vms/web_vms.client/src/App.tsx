@@ -31,12 +31,15 @@ const getErrorMessage = async (response: Response): Promise<string> => {
 
 function App() {
   const [cameraId, setCameraId] = useState('cam1')
-  const [rtspUrl, setRtspUrl] = useState('rtsp://127.0.0.1:8554/stream')
+  const [rtspUrl, setRtspUrl] = useState('rtsp://orwell:elveesadm@172.16.80.109:554/axis-media/media.amp')
   const [status, setStatus] = useState('Ready')
   const [isBusy, setIsBusy] = useState(false)
   const [cameras, setCameras] = useState<CameraStateDto[]>([])
   const [players, setPlayers] = useState<PlayerStateDto[]>([])
-
+  //rtsp://orwell:elvees@172.16.80.116/onvif-media/media.amp?profile=profile_1_h264&sessiontimeout=60&streamtype=unicast
+  //rtsp://orwell:elvees@172.16.80.155/onvif-media/media.amp?profile=quality_h264&sessiontimeout=60&streamtype=unicast
+  //rtsp://orwell:elvees@172.16.254.137/onvif-media/media.amp?profile=quality_h264&sessiontimeout=60&streamtype=unicast4
+  //rtsp://orwell:elveesadm@172.16.80.109:554/axis-media/media.amp
   const visibleCameras = useMemo(() => cameras.slice(0, MAX_CAMERAS), [cameras])
   const isLimitReached = cameras.length + players.length >= MAX_CAMERAS
 

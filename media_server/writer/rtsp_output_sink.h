@@ -20,7 +20,6 @@ public:
   explicit rtsp_output_sink(std::string rtsp_url);
   ~rtsp_output_sink() override;
 
-  bool init(const std::vector<stream_config>& streams);
   void on_packet(const std::shared_ptr<media_packet>& media) override;
   void close();
 
@@ -32,7 +31,7 @@ private:
     int64_t last_dts = AV_NOPTS_VALUE;
     int64_t last_pts = AV_NOPTS_VALUE;
   };
-
+  bool init(const std::vector<stream_config>& streams);
   stream_state* find_stream(AVMediaType media_type);
   bool update_stream_config_from_packet(const std::shared_ptr<media_packet>& media);
   std::vector<stream_config> collect_known_streams() const;
