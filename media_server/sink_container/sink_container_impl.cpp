@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "sink_container/sink_container_impl.h"
 
 void sink_container_impl::add_sink(std::shared_ptr<media_sink> sink)

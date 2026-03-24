@@ -9,21 +9,45 @@ extern "C" {
 
 #include "interfaces/media_packet.h"
 
-namespace {
+namespace 
+{
 avcodec_parameters_ptr alloc_out_params(AVCodecContext* encoder_ctx)
 {
   avcodec_parameters_ptr out_codec_params(avcodec_parameters_alloc(),
     [](AVCodecParameters* params) { avcodec_parameters_free(&params); });
-  if (!out_codec_params) {
+  if (!out_codec_params)
+  {
     return nullptr;
   }
 
-  if (avcodec_parameters_from_context(out_codec_params.get(), encoder_ctx) < 0) {
+  if (avcodec_parameters_from_context(out_codec_params.get(), encoder_ctx) < 0) 
+  {
     return nullptr;
   }
 
   return out_codec_params;
 }
+
+
+AVSampleFormat choose_supported_sample_fmt(AVCodecContext* ctx, const AVCodec* codec, AVSampleFormat wanted)
+{
+  const void* configs = nullptr;
+  int num_configs = 0;
+
+  int ret = avcodec_get_supported_config(ctx, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0, &configs, &num_configs);
+  if (ret < 0 || num_configs == 0)
+    return wanted; // fallback
+
+  auto arr = reinterpret_cast<const AVSampleFormat*>(configs);
+  for (int i = 0; i < num_configs; i++) 
+  {
+    if (arr[i] == wanted)
+      return wanted; // wanted формат поддерживаетс€
+  }
+
+  return arr[0]; // если нет Ч первый поддерживаемый
+}
+
 }
 
 audio_transcode_processor::~audio_transcode_processor()
@@ -85,7 +109,13 @@ bool audio_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
 
   m_encoder_ctx->sample_rate = 48000;
   av_channel_layout_default(&m_encoder_ctx->ch_layout, 2);
-  m_encoder_ctx->sample_fmt = encoder->sample_fmts ? encoder->sample_fmts[0] : AV_SAMPLE_FMT_FLTP;
+
+  m_encoder_ctx->sample_fmt = choose_supported_sample_fmt(
+    m_encoder_ctx,
+    encoder,
+    AV_SAMPLE_FMT_FLTP
+  );
+
   m_encoder_ctx->time_base = AVRational{ 1, m_encoder_ctx->sample_rate };
   m_encoder_ctx->bit_rate = 128000;
 

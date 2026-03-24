@@ -1,5 +1,3 @@
-#pragma once
-
 #include "need_reinit.h"
 
 namespace av_utils
