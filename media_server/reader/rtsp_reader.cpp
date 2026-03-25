@@ -9,7 +9,8 @@ constexpr auto kWatchdogInterval = std::chrono::seconds(5);
 }
 
 rtsp_reader::rtsp_reader() = default;
-rtsp_reader::~rtsp_reader() {
+rtsp_reader::~rtsp_reader() 
+{
   stop();
   disconnect();
 }
@@ -21,7 +22,8 @@ bool rtsp_reader::open(const std::string& url) {
 }
 
 
-bool rtsp_reader::connect() {
+bool rtsp_reader::connect() 
+{
   disconnect();
 
   AVDictionary* opts = nullptr;
@@ -32,20 +34,23 @@ bool rtsp_reader::connect() {
 
   AVFormatContext* ctx = avformat_alloc_context();
 
-  if (avformat_open_input(&ctx, m_rtsp_url.c_str(), nullptr, &opts) < 0) {
+  if (avformat_open_input(&ctx, m_rtsp_url.c_str(), nullptr, &opts) < 0)
+  {
     std::cerr << "Failed to open RTSP\n";
     av_dict_free(&opts);
     avformat_close_input(&ctx);
     return false;
   }
 
-  if (ctx != m_ctx.get()) {
+  if (ctx != m_ctx.get()) 
+  {
     m_ctx.reset(ctx);
   }
 
   av_dict_free(&opts);
 
-  if (avformat_find_stream_info(m_ctx.get(), nullptr) < 0) {
+  if (avformat_find_stream_info(m_ctx.get(), nullptr) < 0)
+  {
     std::cerr << "Failed to get stream info\n";
     disconnect();
     return false;
@@ -53,18 +58,22 @@ bool rtsp_reader::connect() {
 
   m_video_index = -1;
   m_forward_stream_indexes.clear();
-  for (unsigned i = 0; i < m_ctx->nb_streams; ++i) {
+  for (unsigned i = 0; i < m_ctx->nb_streams; ++i) 
+  {
     const AVMediaType media_type = m_ctx->streams[i]->codecpar->codec_type;
-    if (media_type == AVMEDIA_TYPE_VIDEO && m_video_index < 0) {
+    if (media_type == AVMEDIA_TYPE_VIDEO && m_video_index < 0)
+    {
       m_video_index = static_cast<int>(i);
     }
 
-    if (media_type == AVMEDIA_TYPE_VIDEO || media_type == AVMEDIA_TYPE_AUDIO) {
+    if (media_type == AVMEDIA_TYPE_VIDEO || media_type == AVMEDIA_TYPE_AUDIO)
+    {
       m_forward_stream_indexes.insert(static_cast<int>(i));
     }
   }
 
-  if (m_video_index < 0) {
+  if (m_video_index < 0) 
+  {
     std::cerr << "No video stream\n";
     disconnect();
     return false;
@@ -96,13 +105,16 @@ AVStream* rtsp_reader::video_stream() const {
   return nullptr;
 }
 
-void rtsp_reader::start() {
-  if (m_running) return;
+void rtsp_reader::start() 
+{
+  if (m_running) 
+    return;
   m_running = true;
   m_thread = std::thread([this] { read_loop(); });
 }
 
-void rtsp_reader::stop() {
+void rtsp_reader::stop()
+{
   m_running = false;
   if (m_thread.joinable())
     m_thread.join();
@@ -112,8 +124,10 @@ void rtsp_reader::read_loop() {
   auto last_frame_at = std::chrono::steady_clock::now();
 
   while (m_running) {
-    if (!m_ctx || m_video_index < 0 || m_forward_stream_indexes.empty()) {
-      if (!connect()) {
+    if (!m_ctx || m_video_index < 0 || m_forward_stream_indexes.empty()) 
+    {
+      if (!connect()) 
+      {
         std::this_thread::sleep_for(kWatchdogInterval);
         continue;
       }
@@ -123,9 +137,11 @@ void rtsp_reader::read_loop() {
     avpacket_ptr pkt(av_packet_alloc(), avpacket_deleter{});
     const int read_result = av_read_frame(m_ctx.get(), pkt.get());
 
-    if (read_result < 0) {
+    if (read_result < 0) 
+    {
       const auto now = std::chrono::steady_clock::now();
-      if (now - last_frame_at >= kWatchdogInterval) {
+      if (now - last_frame_at >= kWatchdogInterval)
+      {
         std::cerr << "RTSP reader watchdog: reconnecting due to read error\n";
         disconnect();
       }
@@ -151,13 +167,15 @@ void rtsp_reader::read_loop() {
       continue;
     }
 
-    if (avcodec_parameters_copy(codec_copy.get(), m_ctx->streams[pkt->stream_index]->codecpar) < 0) {
+    if (avcodec_parameters_copy(codec_copy.get(), m_ctx->streams[pkt->stream_index]->codecpar) < 0)
+    {
       continue;
     }
 
     media->codec_parameters = std::move(codec_copy);
 
-    for (auto& s : m_sinks_helper.snapshot_sinks()) {
+    for (auto& s : m_sinks_helper.snapshot_sinks()) 
+    {
       s->on_packet(media);
     }
   }

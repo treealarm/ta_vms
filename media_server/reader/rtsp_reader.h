@@ -44,5 +44,5 @@ private:
   sink_container_impl m_sinks_helper;
 
   std::thread m_thread;
-  std::atomic<bool> m_running{ false };
+  std::atomic_bool m_running{ false };
 };

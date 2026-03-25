@@ -46,4 +46,7 @@ private:
   int m_consecutive_write_errors = 0;
   stream_config m_video_config;
   stream_config m_audio_config;
+
+  int64_t m_last_master_pts = AV_NOPTS_VALUE;
+  AVRational m_master_time_base{ 1, 90000 }; // видео как master
 };

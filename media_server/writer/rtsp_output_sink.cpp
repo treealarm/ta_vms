@@ -1,4 +1,4 @@
-#include <iostream>
+﻿#include <iostream>
 
 #include "writer/rtsp_output_sink.h"
 #include "av_utils/need_reinit.h"
@@ -57,7 +57,7 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
       return false;
     }
 
-    out_stream->time_base = stream.time_base.num > 0 ? stream.time_base : AVRational{ 1, 90000 };
+    out_stream->time_base = m_master_time_base;
 
     stream_state state;
     state.media_type = stream.media_type;
@@ -75,6 +75,7 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
   av_dict_set(&opts, "rtsp_transport", "tcp", 0);
   av_dict_set(&opts, "timeout", "5000000", 0);
   av_dict_set(&opts, "rw_timeout", "5000000", 0);
+  av_dict_set(&opts, "max_interleave_delta", "1000000", 0);//10000000 (10 seconds) 1000000 (1 seconds)
 
   if (avformat_write_header(m_ctx, &opts) < 0) {
     std::cerr << "failed to write rtsp header\n";
@@ -165,7 +166,8 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
     if (streams.empty() || !init(streams)) {
       return;
     }
-  } else {
+  }
+  else {
     auto* existing_stream = find_stream(media->media_type);
     if (!existing_stream || config_changed) {
       const auto streams = collect_known_streams();
@@ -182,25 +184,47 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
 
   AVPacket* pkt = media->packet.get();
 
-  if (stream->media_type == AVMEDIA_TYPE_VIDEO && m_wait_keyframe) {
-    if (!(pkt->flags & AV_PKT_FLAG_KEY)) {
-      return;
+  if (stream->media_type == AVMEDIA_TYPE_VIDEO && m_wait_keyframe)
+  {
+    if (!(pkt->flags & AV_PKT_FLAG_KEY))
+    {
+      return; // ждём keyframe
     }
-
     m_wait_keyframe = false;
+
+    if (pkt->pts <= 0)
+    {
+      m_last_master_pts = 0;
+    }
+    else
+    {
+      m_last_master_pts = pkt->pts;
+    }
   }
 
+  // --- 1. Рескейл в out_stream->time_base (как раньше) ---
   av_packet_rescale_ts(pkt, media->time_base, stream->out_stream->time_base);
 
-  // ��� �������
+
+  // --- 2. Подгонка PTS/DTS под master (видео) ---
+  if (stream->media_type != AVMEDIA_TYPE_VIDEO)
+  {
+    const int64_t threshold = 180; // ~2 мс в timebase 1/90000
+    int64_t offset = m_last_master_pts - pkt->pts;
+
+    if (std::abs(offset) > threshold)
+    {
+      // сильный рассинхрон → подгоняем
+      pkt->pts = m_last_master_pts;
+      pkt->dts = m_last_master_pts;
+    }
+  }
+
+  // --- 3. Восстановление отсутствующих PTS/DTS ---
   int64_t step = pkt->duration > 0 ? pkt->duration : 1;
 
-  // 1. �������������� timestamp
   if (pkt->pts <= 0 && pkt->dts <= 0) {
-    int64_t next = (stream->last_dts != AV_NOPTS_VALUE)
-      ? stream->last_dts + step
-      : 0;
-
+    int64_t next = (stream->last_dts != AV_NOPTS_VALUE) ? stream->last_dts + step : 0;
     pkt->pts = pkt->dts = next;
   }
   else if (pkt->pts <= 0) {
@@ -210,25 +234,36 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
     pkt->dts = pkt->pts;
   }
 
-  // 2. ������������
+  // --- 4. Монотонность внутри потока ---
   if (stream->last_dts != AV_NOPTS_VALUE && pkt->dts <= stream->last_dts) {
     pkt->dts = stream->last_dts + step;
   }
-
   if (stream->last_pts != AV_NOPTS_VALUE && pkt->pts <= stream->last_pts) {
     pkt->pts = stream->last_pts + step;
   }
 
-  // 3. pts >= dts
+  // --- 5. PTS >= DTS ---
   if (pkt->pts < pkt->dts) {
     pkt->pts = pkt->dts;
   }
 
+
   pkt->stream_index = stream->out_stream->index;
 
+  // --- 6. Обновляем last_pts/last_dts ---
   stream->last_dts = pkt->dts;
   stream->last_pts = pkt->pts;
 
+  // --- 7. Обновляем master PTS если это видео ---
+  if (stream->media_type == AVMEDIA_TYPE_VIDEO) {
+    m_last_master_pts = pkt->pts;
+  }
+
+  if (pkt->pts < 0)
+  {
+    std::cerr << "rtsp output sink: pkt->pts < 0\n";
+  }
+  // --- 5. Запись пакета ---
   if (av_interleaved_write_frame(m_ctx, pkt) < 0) {
     ++m_consecutive_write_errors;
 
@@ -240,7 +275,6 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
       std::cerr << "rtsp output sink watchdog: closing broken output context for reinit\n";
       close();
     }
-
     return;
   }
 

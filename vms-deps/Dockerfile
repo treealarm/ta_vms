@@ -23,4 +23,7 @@ RUN --mount=type=cache,target=/vcpkg/buildtrees \
     --mount=type=cache,target=/vcpkg/packages \
     --mount=type=cache,target=/vcpkg/downloads \
     --mount=type=cache,target=/vcpkg/binary-cache \
-    /vcpkg/vcpkg install protobuf grpc ffmpeg[opus]:x64-linux
+    /vcpkg/vcpkg install \
+        protobuf \
+        grpc \
+        ffmpeg[gpl,x264,x265,opus,vpx,aom,openssl]:x64-linux
