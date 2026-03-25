@@ -64,7 +64,18 @@ const archSlice = createSlice({
         state.players = action.payload
       })
       .addCase(fetchPlayerState.fulfilled, (state, action) => {
-        state.playerStatesByClientId[action.payload.clientId] = action.payload
+        const id = action.payload.clientId
+        const prev = state.playerStatesByClientId[id]
+
+        const isEqual =
+          prev &&
+          prev.cameraId === action.payload.cameraId &&
+          prev.position === action.payload.position &&
+          prev.filePath === action.payload.filePath
+
+        if (!isEqual) {
+          state.playerStatesByClientId[id] = action.payload
+        }
       })
       .addCase(addPlayer.fulfilled, (state, action) => {
         state.status = `${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`

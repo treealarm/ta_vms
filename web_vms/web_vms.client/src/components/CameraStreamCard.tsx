@@ -17,19 +17,18 @@ import { useAppDispatch, useAppSelector } from '../store'
 
 type CameraStreamCardProps = {
   camera: CameraStateDto
-  isBusy: boolean
   onRemove: (camera: CameraStateDto) => Promise<void>
 }
 
-function CameraStreamCard({ camera, isBusy, onRemove }: CameraStreamCardProps) {
+function CameraStreamCard({ camera, onRemove }: CameraStreamCardProps) {
   const dispatch = useAppDispatch()
   const cameraState = useAppSelector((state) => state.live.cameraStatesById[camera.cameraId])
-  const busy = useMemo(() => isBusy, [isBusy])
 
   useEffect(() => {
     const interval = setInterval(() => {
-      void dispatch(fetchCameraState(camera.cameraId))
+      dispatch(fetchCameraState(camera.cameraId))
     }, 5000)
+
 
     void dispatch(fetchCameraState(camera.cameraId))
 
@@ -80,7 +79,6 @@ function CameraStreamCard({ camera, isBusy, onRemove }: CameraStreamCardProps) {
 
             <IconButton
               size="small"
-              disabled={busy}
               aria-label={`Remove ${camera.cameraId}`}
               onClick={() => void onRemove(camera)}
               sx={{ flexShrink: 0 }}
@@ -94,7 +92,6 @@ function CameraStreamCard({ camera, isBusy, onRemove }: CameraStreamCardProps) {
           <Button
             size="small"
             fullWidth
-            disabled={busy || !cameraState}
             variant={cameraState?.recording ? 'contained' : 'outlined'}
             color={cameraState?.recording ? 'error' : 'primary'}
             onClick={() => void updateRecordingState(!cameraState?.recording)}

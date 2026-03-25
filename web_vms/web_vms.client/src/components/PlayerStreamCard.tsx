@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Box, Button, Card, CardContent, IconButton, Stack, Typography, TextField } from '@mui/material'
 import { toLocalDatetimeInputValue, type PlayerStateDto, type RecordingDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
@@ -8,18 +8,16 @@ import { useAppDispatch, useAppSelector } from '../store'
 
 type PlayerStreamCardProps = {
   player: PlayerStateDto
-  isBusy: boolean
   onRemove: (player: PlayerStateDto) => Promise<void>
 }
 
-function PlayerStreamCard({ player, isBusy, onRemove }: PlayerStreamCardProps) {
+function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
   const dispatch = useAppDispatch()
   const [newTime, setNewTime] = useState('')
   const [listOpen, setListOpen] = useState(false)
 
   const currentPlayer = useAppSelector((state) => state.arch.playerStatesByClientId[player.clientId]) ?? player
   const currentFilePath = currentPlayer.filePath
-  const busy = useMemo(() => isBusy, [isBusy])
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -60,7 +58,7 @@ function PlayerStreamCard({ player, isBusy, onRemove }: PlayerStreamCardProps) {
           <Stack direction="row" justifyContent="space-between" alignItems="center">
             <Typography variant="h6">{player.cameraId}</Typography>
 
-            <IconButton size="small" disabled={busy} onClick={() => void onRemove(player)}>
+            <IconButton size="small" onClick={() => void onRemove(player)}>
               ✕
             </IconButton>
           </Stack>

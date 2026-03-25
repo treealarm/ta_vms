@@ -23,12 +23,12 @@ const MAX_CAMERAS = 4
 function App() {
   const dispatch = useAppDispatch()
   const [cameraId, setCameraId] = useState('cam1')
-  const [rtspUrl, setRtspUrl] = useState('rtsp://orwell:elveesadm@172.16.80.109:554/axis-media/media.amp')
+  const [rtspUrl, setRtspUrl] = useState('rtsp://admin:$Power321@192.168.1.150:554/channel=0_stream=0&onvif=0.sdp?real_stream')
 
   const cameras = useAppSelector((state) => state.live.cameras)
   const players = useAppSelector((state) => state.arch.players)
   const status = useAppSelector((state) => state.live.status !== 'Ready' ? state.live.status : state.arch.status !== 'Ready' ? state.arch.status : state.fs.status)
-  const isBusy = useAppSelector((state) => state.live.isBusy || state.arch.isBusy || state.fs.isBusy)
+
   const visibleCameras = useMemo(() => cameras.slice(0, MAX_CAMERAS), [cameras])
   const isLimitReached = cameras.length + players.length >= MAX_CAMERAS
 
@@ -107,7 +107,7 @@ function App() {
                   />
 
                   <Button
-                    disabled={isBusy || isLimitReached}
+                    disabled={isLimitReached}
                     type="submit"
                     variant="outlined"
                     size="small"
@@ -118,13 +118,13 @@ function App() {
                 </Stack>
 
                 <Stack direction="row" spacing={1.5}>
-                  <Button variant="outlined" disabled={isBusy} onClick={() => void refreshLists()} fullWidth>
+                  <Button variant="outlined" onClick={() => void refreshLists()} fullWidth>
                     Refresh list
                   </Button>
 
                   <Button
                     variant="outlined"
-                    disabled={isBusy || isLimitReached}
+                    disabled={isLimitReached}
                     onClick={() => void onAddPlayer()}
                     fullWidth
                   >
@@ -145,7 +145,6 @@ function App() {
                   <Grid key={camera.cameraId} size={{ xs: 12, sm: 6 }}>
                     <CameraStreamCard
                       camera={camera}
-                      isBusy={isBusy}
                       onRemove={async (cameraToDelete) => {
                         const result = await dispatch(
                           removeCamera({
@@ -169,7 +168,6 @@ function App() {
                   <Grid key={player.clientId} size={{ xs: 12, sm: 6 }}>
                     <PlayerStreamCard
                       player={player}
-                      isBusy={isBusy}
                       onRemove={async (playerToDelete) => {
                         const result = await dispatch(removePlayer(playerToDelete.clientId))
 
