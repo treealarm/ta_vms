@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import {
   Button,
   Card,
@@ -12,89 +12,48 @@ import {
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import type { CameraStateDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
-
+import { fetchCameraState, updateCameraRecording } from '../store/liveSlice'
+import { useAppDispatch, useAppSelector } from '../store'
 
 type CameraStreamCardProps = {
   camera: CameraStateDto
   isBusy: boolean
-  onActionComplete: (message: string) => Promise<void>
-  onActionError: (message: string) => void
   onRemove: (camera: CameraStateDto) => Promise<void>
 }
 
-function CameraStreamCard({
-  camera,
-  isBusy,
-  onActionComplete,
-  onActionError,
-  onRemove
-}: CameraStreamCardProps) {
-  const [isCameraBusy, setIsCameraBusy] = useState(false)
-  const [cameraState, setCameraState] = useState<CameraStateDto | null>(null)
+function CameraStreamCard({ camera, isBusy, onRemove }: CameraStreamCardProps) {
+  const dispatch = useAppDispatch()
+  const cameraState = useAppSelector((state) => state.live.cameraStatesById[camera.cameraId])
+  const busy = useMemo(() => isBusy, [isBusy])
 
-  const busy = isBusy || isCameraBusy
-
-
-  // функция для запроса состояния камеры
-  const fetchCameraState = async () => {
-    try {
-      const response = await fetch(`/api/live/cameras/${encodeURIComponent(camera.cameraId)}/state`)
-      if (!response.ok) return
-      const data: CameraStateDto = await response.json()
-      setCameraState(data)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error'
-      onActionError(`Failed to fetch camera state: ${message}`)
-    }
-  }
-
-  // начальный запрос и периодический polling
   useEffect(() => {
-    let mounted = true
     const interval = setInterval(() => {
-      if (mounted) fetchCameraState()
+      void dispatch(fetchCameraState(camera.cameraId))
     }, 5000)
 
-    fetchCameraState() // сразу при монтировании
+    void dispatch(fetchCameraState(camera.cameraId))
 
     return () => {
-      mounted = false
       clearInterval(interval)
     }
-  }, [camera.cameraId])
+  }, [camera.cameraId, dispatch])
 
-
-  // функция переключения записи
   const updateRecordingState = async (nextRecordingState: boolean) => {
-    setIsCameraBusy(true)
-    try {
-      const response = await fetch(`/api/live/cameras/state`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cameraid: camera.cameraId, recording: nextRecordingState, webRtc: true })
+    await dispatch(
+      updateCameraRecording({
+        cameraId: camera.cameraId,
+        recording: nextRecordingState,
+        webRtc: true
       })
+    )
 
-      if (!response.ok) {
-        onActionError(`Error: ${await response.text()}`)
-        return
-      }
-
-      const result = await response.json()
-      await onActionComplete(`Result: ${result.success ? 'OK' : 'Fail'}: ${result.message}`)
-      setCameraState((prev) => (prev ? { ...prev, recording: nextRecordingState } : prev))
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error'
-      onActionError(`Error: ${message}`)
-    } finally {
-      setIsCameraBusy(false)
-    }
+    await dispatch(fetchCameraState(camera.cameraId))
   }
 
   return (
     <Card sx={{ height: '100%' }}>
       <CardContent sx={{ p: 1.5 }}>
         <Stack spacing={1}>
-          {/* Заголовок + кнопка удаления */}
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography variant="subtitle1" sx={{ flexShrink: 0 }}>
               {camera.cameraId}
@@ -109,15 +68,12 @@ function CameraStreamCard({
                   readOnly: true,
                   endAdornment: (
                     <InputAdornment position="end">
-                      <IconButton
-                        size="small"
-                        onClick={() => navigator.clipboard.writeText(camera.rtspUrl || '')}
-                      >
+                      <IconButton size="small" onClick={() => navigator.clipboard.writeText(camera.rtspUrl || '')}>
                         <ContentCopyIcon fontSize="small" />
                       </IconButton>
                     </InputAdornment>
-                  ),
-                },
+                  )
+                }
               }}
               sx={{ flexGrow: 1 }}
             />
@@ -133,10 +89,8 @@ function CameraStreamCard({
             </IconButton>
           </Stack>
 
-          {/* Видео WebRTC */}
           <CameraStream streamName={camera.cameraId} />
 
-          {/* Кнопка REC */}
           <Button
             size="small"
             fullWidth

@@ -1,21 +1,10 @@
-﻿import { useEffect, useState } from 'react'
-import {
-  Box,
-  Button,
-  Card,
-  CardContent,
-  IconButton,
-  Stack,
-  Typography,
-  TextField
-} from '@mui/material'
-import {
-  toLocalDatetimeInputValue,
-  type PlayerStateDto,
-  type RecordingDto
-} from '../dto/dtos'
+import { useEffect, useMemo, useState } from 'react'
+import { Box, Button, Card, CardContent, IconButton, Stack, Typography, TextField } from '@mui/material'
+import { toLocalDatetimeInputValue, type PlayerStateDto, type RecordingDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
 import RecordingsList from './RecordingsList'
+import { fetchPlayerState, seekPlayer } from '../store/archSlice'
+import { useAppDispatch, useAppSelector } from '../store'
 
 type PlayerStreamCardProps = {
   player: PlayerStateDto
@@ -23,94 +12,63 @@ type PlayerStreamCardProps = {
   onRemove: (player: PlayerStateDto) => Promise<void>
 }
 
-function PlayerStreamCard({
-  player,
-  isBusy,
-  onRemove
-}: PlayerStreamCardProps) {
+function PlayerStreamCard({ player, isBusy, onRemove }: PlayerStreamCardProps) {
+  const dispatch = useAppDispatch()
   const [newTime, setNewTime] = useState('')
   const [listOpen, setListOpen] = useState(false)
-  const [currentFilePath, setCurrentFilePath] = useState(player.filePath)
-  const [currentPlayer, setCurrentPlayer] = useState<PlayerStateDto>(player)
 
-  // Периодический опрос состояния плейера
+  const currentPlayer = useAppSelector((state) => state.arch.playerStatesByClientId[player.clientId]) ?? player
+  const currentFilePath = currentPlayer.filePath
+  const busy = useMemo(() => isBusy, [isBusy])
+
   useEffect(() => {
-    // создаём интервал один раз при монтировании компонента
-    const interval = setInterval(async () => {
-      try {
-        const uri = `/api/arch/players/state?clientId=${encodeURIComponent(player.clientId)}`;
-        console.log('fetch players', uri); // проверка вызова
-        const resp = await fetch(uri)
-        if (!resp.ok) return
+    const interval = setInterval(() => {
+      void dispatch(fetchPlayerState(player.clientId))
+    }, 3000)
 
-        const updated: PlayerStateDto = await resp.json()
+    void dispatch(fetchPlayerState(player.clientId))
 
-        // обновляем filePath только если изменился
-        setCurrentFilePath(prev => (updated.filePath !== prev ? updated.filePath : prev))
-
-        // обновляем остальное состояние плеера
-        setCurrentPlayer(updated)
-      } catch (err) {
-        console.error('Error fetching player state', err)
-      }
-    }, 3000) // каждые 3 секунды
-
-    // очищаем интервал при размонтировании
     return () => clearInterval(interval)
-  }, [player.clientId]) // зависимость только от player.clientId
+  }, [dispatch, player.clientId])
 
   const sendSeek = async (iso?: string) => {
-    const timeToSend =
-      iso ?? (newTime ? new Date(newTime).toISOString() : null)
-    if (!timeToSend) return
+    const timeToSend = iso ?? (newTime ? new Date(newTime).toISOString() : null)
+    if (!timeToSend) {
+      return
+    }
 
-    await fetch('/api/arch/players/state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    await dispatch(
+      seekPlayer({
         cameraId: currentPlayer.cameraId,
         clientId: currentPlayer.clientId,
         position: timeToSend,
         filePath: currentFilePath
       })
-    })
+    )
   }
 
   const handleSelectRecording = (rec: RecordingDto) => {
     const date = new Date(rec.startTime)
-
-    setCurrentFilePath(rec.filePath);
-    setNewTime(toLocalDatetimeInputValue(date)) // локально
-    sendSeek(date.toISOString()) // UTC в API
+    setNewTime(toLocalDatetimeInputValue(date))
+    void sendSeek(date.toISOString())
   }
 
   return (
     <Card sx={{ height: '100%' }}>
       <CardContent>
         <Stack spacing={1.5} sx={{ height: '100%' }}>
-
-          {/* HEADER */}
-          <Stack
-            direction="row"
-            justifyContent="space-between"
-            alignItems="center"
-          >
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
             <Typography variant="h6">{player.cameraId}</Typography>
 
-            <IconButton
-              size="small"
-              disabled={isBusy}
-              onClick={() => void onRemove(player)}
-            >
+            <IconButton size="small" disabled={busy} onClick={() => void onRemove(player)}>
               ✕
             </IconButton>
           </Stack>
 
-          {/* STREAM + LIST */}
           <Box
             sx={{
               width: '100%',
-              aspectRatio: '1 / 1', // 🔑 единственный источник высоты
+              aspectRatio: '1 / 1',
               display: 'flex',
               minHeight: 0
             }}
@@ -123,7 +81,6 @@ function PlayerStreamCard({
                 minHeight: 0
               }}
             >
-              {/* VIDEO */}
               <Box
                 sx={{
                   flex: 1,
@@ -134,7 +91,6 @@ function PlayerStreamCard({
                 <CameraStream streamName={player.clientId} />
               </Box>
 
-              {/* LIST */}
               {listOpen && (
                 <Box
                   sx={{
@@ -142,18 +98,14 @@ function PlayerStreamCard({
                     flexDirection: 'column',
                     borderLeft: '1px solid rgba(0,0,0,0.1)',
                     overflow: 'hidden',
-                    minHeight: 0 // 🔑 критично
+                    minHeight: 0
                   }}
                 >
                   <RecordingsList
                     open={listOpen}
                     onClose={() => setListOpen(false)}
                     cameraId={player.cameraId}
-                    timestamp={
-                      newTime
-                        ? new Date(newTime).toISOString()
-                        : undefined
-                    }
+                    timestamp={newTime ? new Date(newTime).toISOString() : undefined}
                     filePath={currentFilePath}
                     onSelect={handleSelectRecording}
                   />
@@ -162,7 +114,6 @@ function PlayerStreamCard({
             </Stack>
           </Box>
 
-          {/* PICKER */}
           <Stack direction="row" spacing={1}>
             <TextField
               type="datetime-local"
@@ -172,14 +123,11 @@ function PlayerStreamCard({
               inputProps={{ step: 1 }}
             />
 
-            <IconButton
-              size="small"
-              onClick={() => setListOpen((v) => !v)}
-            >
+            <IconButton size="small" onClick={() => setListOpen((v) => !v)}>
               🕘
             </IconButton>
 
-            <Button variant="contained" onClick={() => sendSeek()}>
+            <Button variant="contained" onClick={() => void sendSeek()}>
               Go
             </Button>
           </Stack>

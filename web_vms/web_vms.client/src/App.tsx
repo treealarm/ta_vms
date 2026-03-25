@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
   Alert,
@@ -13,148 +13,69 @@ import {
 } from '@mui/material'
 import CameraStreamCard from './components/CameraStreamCard'
 import PlayerStreamCard from './components/PlayerStreamCard'
-
-import { type CameraStateDto, type PlayerStateDto } from './dto/dtos'
-
-type ApiResponse = {
-  success: boolean
-  message: string
-}
-
+import { type AddCameraRequestDto, type AddPlayerRequestDto } from './dto/dtos'
+import { addCamera, loadCameras, removeCamera, setLiveStatus } from './store/liveSlice'
+import { addPlayer, loadPlayers, removePlayer } from './store/archSlice'
+import { useAppDispatch, useAppSelector } from './store'
 
 const MAX_CAMERAS = 4
 
-const getErrorMessage = async (response: Response): Promise<string> => {
-  const text = await response.text()
-  return text || response.statusText
-}
-
 function App() {
+  const dispatch = useAppDispatch()
   const [cameraId, setCameraId] = useState('cam1')
   const [rtspUrl, setRtspUrl] = useState('rtsp://orwell:elveesadm@172.16.80.109:554/axis-media/media.amp')
-  const [status, setStatus] = useState('Ready')
-  const [isBusy, setIsBusy] = useState(false)
-  const [cameras, setCameras] = useState<CameraStateDto[]>([])
-  const [players, setPlayers] = useState<PlayerStateDto[]>([])
-  //rtsp://orwell:elvees@172.16.80.116/onvif-media/media.amp?profile=profile_1_h264&sessiontimeout=60&streamtype=unicast
-  //rtsp://orwell:elvees@172.16.80.155/onvif-media/media.amp?profile=quality_h264&sessiontimeout=60&streamtype=unicast
-  //rtsp://orwell:elvees@172.16.254.137/onvif-media/media.amp?profile=quality_h264&sessiontimeout=60&streamtype=unicast4
-  //rtsp://orwell:elveesadm@172.16.80.109:554/axis-media/media.amp
+
+  const cameras = useAppSelector((state) => state.live.cameras)
+  const players = useAppSelector((state) => state.arch.players)
+  const status = useAppSelector((state) => state.live.status !== 'Ready' ? state.live.status : state.arch.status !== 'Ready' ? state.arch.status : state.fs.status)
+  const isBusy = useAppSelector((state) => state.live.isBusy || state.arch.isBusy || state.fs.isBusy)
   const visibleCameras = useMemo(() => cameras.slice(0, MAX_CAMERAS), [cameras])
   const isLimitReached = cameras.length + players.length >= MAX_CAMERAS
 
-  const loadCameras = useCallback(async () => {
-    try {
-      const response = await fetch('/api/live/cameras')
-      if (!response.ok) {
-        throw new Error(await getErrorMessage(response))
-      }
-
-      const cameraList: CameraStateDto[] = await response.json()
-      setCameras(cameraList)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error'
-      setStatus(`Error loading cameras: ${message}`)
-    }
-  }, [])
-
-  const loadPlayers = useCallback(async () => {
-    try {
-      const response = await fetch('/api/arch/players')
-      if (!response.ok) {
-        throw new Error(await getErrorMessage(response))
-      }
-
-      const list: PlayerStateDto[] = await response.json()
-      setPlayers(list)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error'
-      setStatus(`Error loading players: ${message}`)
-    }
-  }, [])
-
   useEffect(() => {
-    loadCameras();
-    loadPlayers();
-  }, [loadCameras, loadPlayers])
+    void dispatch(loadCameras())
+    void dispatch(loadPlayers())
+  }, [dispatch])
 
-  const runAction = async (action: () => Promise<Response>) => {
-    setIsBusy(true)
-    try {
-      const response = await action()
-      if (!response.ok) {
-        setStatus(`Error: ${await getErrorMessage(response)}`)
-        return
-      }
-
-      const result: ApiResponse = await response.json()
-      setStatus(`${result.success ? 'OK' : 'Fail'}: ${result.message}`)
-      await loadCameras()
-      await loadPlayers()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error'
-      setStatus(`Error: ${message}`)
-    } finally {
-      setIsBusy(false)
-    }
+  const refreshLists = async () => {
+    await Promise.all([dispatch(loadCameras()), dispatch(loadPlayers())])
   }
 
   const onAddCamera = async (event: FormEvent) => {
     event.preventDefault()
     if (isLimitReached) {
-      setStatus(`Error: Maximum ${MAX_CAMERAS} cameras supported in grid view`)
+      dispatch(setLiveStatus(`Error: Maximum ${MAX_CAMERAS} cameras supported in grid view`))
       return
     }
 
-    await runAction(() =>
-      fetch('/api/live/cameras', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cameraId,
-          rtspUrl,
-          state: { cameraId: cameraId, recording: false, webRtc: true }
-        })
-      })
-    )
+    const payload: AddCameraRequestDto = {
+      cameraId,
+      rtspUrl,
+      state: { cameraId, recording: false, webRtc: true }
+    }
+
+    const result = await dispatch(addCamera(payload))
+    if (!addCamera.rejected.match(result)) {
+      await refreshLists()
+    }
   }
 
   const onAddPlayer = async () => {
     if (isLimitReached) {
-      setStatus(`Error: Maximum ${MAX_CAMERAS} cameras supported in grid view`)
+      dispatch(setLiveStatus(`Error: Maximum ${MAX_CAMERAS} cameras supported in grid view`))
       return
     }
 
-    const iso = new Date().toISOString();
+    const payload: AddPlayerRequestDto = {
+      cameraId,
+      clientId: `${cameraId}_arch`,
+      position: new Date().toISOString()
+    }
 
-    await runAction(() =>
-      fetch('/api/arch/players', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cameraId,
-          clientId:cameraId+"_arch",
-          position: iso
-        })
-      })
-    )
-  }
-
-
-  const onRemoveCamera = async (camera: CameraStateDto) => {
-    await runAction(() =>
-      fetch(`/api/live/cameras/${encodeURIComponent(camera.cameraId)}?isArchive=${camera.rtspUrl.trim().length === 0}`, {
-        method: 'DELETE'
-      })
-    )
-  }
-
-  const onRemovePlayer = async (p: PlayerStateDto) => {
-    await runAction(() =>
-      fetch(`/api/arch/players/${encodeURIComponent(p.clientId)}`, {
-        method: 'DELETE'
-      })
-    )
+    const result = await dispatch(addPlayer(payload))
+    if (!addPlayer.rejected.match(result)) {
+      await refreshLists()
+    }
   }
 
   return (
@@ -197,12 +118,7 @@ function App() {
                 </Stack>
 
                 <Stack direction="row" spacing={1.5}>
-                  <Button
-                    variant="outlined"
-                    disabled={isBusy}
-                    onClick={() => void loadCameras()}
-                    fullWidth
-                  >
+                  <Button variant="outlined" disabled={isBusy} onClick={() => void refreshLists()} fullWidth>
                     Refresh list
                   </Button>
 
@@ -230,12 +146,18 @@ function App() {
                     <CameraStreamCard
                       camera={camera}
                       isBusy={isBusy}
-                      onActionComplete={async (message) => {
-                        setStatus(message)
-                        await loadCameras()
+                      onRemove={async (cameraToDelete) => {
+                        const result = await dispatch(
+                          removeCamera({
+                            cameraId: cameraToDelete.cameraId,
+                            isArchive: cameraToDelete.rtspUrl.trim().length === 0
+                          })
+                        )
+
+                        if (!removeCamera.rejected.match(result)) {
+                          await refreshLists()
+                        }
                       }}
-                      onActionError={setStatus}
-                      onRemove={onRemoveCamera}
                     />
                   </Grid>
                 ))}
@@ -248,7 +170,13 @@ function App() {
                     <PlayerStreamCard
                       player={player}
                       isBusy={isBusy}
-                      onRemove={onRemovePlayer}
+                      onRemove={async (playerToDelete) => {
+                        const result = await dispatch(removePlayer(playerToDelete.clientId))
+
+                        if (!removePlayer.rejected.match(result)) {
+                          await refreshLists()
+                        }
+                      }}
                     />
                   </Grid>
                 ))}
