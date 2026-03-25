@@ -1,10 +1,14 @@
 import { configureStore } from '@reduxjs/toolkit'
 import { useDispatch, useSelector, type TypedUseSelectorHook } from 'react-redux'
-import vmsReducer from './vmsSlice'
+import liveReducer from './liveSlice'
+import archReducer from './archSlice'
+import fsReducer from './fsSlice'
 
 export const store = configureStore({
   reducer: {
-    vms: vmsReducer
+    live: liveReducer,
+    arch: archReducer,
+    fs: fsReducer
   }
 })
 

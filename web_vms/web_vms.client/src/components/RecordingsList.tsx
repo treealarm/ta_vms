@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { List, ListItemButton, ListItemText, Tooltip, CircularProgress, Box, Stack } from '@mui/material'
 import type { RecordingDto } from '../dto/dtos'
-import { fetchRecordings } from '../store/vmsSlice'
+import { fetchRecordings } from '../store/fsSlice'
 import { useAppDispatch, useAppSelector } from '../store'
 
 type Props = {
@@ -52,7 +52,7 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
   }, [cameraId, dispatch, loaded, open, queryTime])
 
   const recordingsKey = queryTime ? `${cameraId}:${queryTime}` : ''
-  const data = useAppSelector((state) => state.vms.recordingsByKey[recordingsKey]?.recordings ?? [])
+  const data = useAppSelector((state) => state.fs.recordingsByKey[recordingsKey]?.recordings ?? [])
 
   const handleClick = (rec: RecordingDto) => {
     setSelected(rec.filePath)

@@ -14,15 +14,8 @@ import {
 import CameraStreamCard from './components/CameraStreamCard'
 import PlayerStreamCard from './components/PlayerStreamCard'
 import { type AddCameraRequestDto, type AddPlayerRequestDto } from './dto/dtos'
-import {
-  addCamera,
-  addPlayer,
-  loadCameras,
-  loadPlayers,
-  removeCamera,
-  removePlayer,
-  setStatus
-} from './store/vmsSlice'
+import { addCamera, loadCameras, removeCamera, setLiveStatus } from './store/liveSlice'
+import { addPlayer, loadPlayers, removePlayer } from './store/archSlice'
 import { useAppDispatch, useAppSelector } from './store'
 
 const MAX_CAMERAS = 4
@@ -32,7 +25,10 @@ function App() {
   const [cameraId, setCameraId] = useState('cam1')
   const [rtspUrl, setRtspUrl] = useState('rtsp://orwell:elveesadm@172.16.80.109:554/axis-media/media.amp')
 
-  const { cameras, players, status, isBusy } = useAppSelector((state) => state.vms)
+  const cameras = useAppSelector((state) => state.live.cameras)
+  const players = useAppSelector((state) => state.arch.players)
+  const status = useAppSelector((state) => state.live.status !== 'Ready' ? state.live.status : state.arch.status !== 'Ready' ? state.arch.status : state.fs.status)
+  const isBusy = useAppSelector((state) => state.live.isBusy || state.arch.isBusy || state.fs.isBusy)
   const visibleCameras = useMemo(() => cameras.slice(0, MAX_CAMERAS), [cameras])
   const isLimitReached = cameras.length + players.length >= MAX_CAMERAS
 
@@ -48,7 +44,7 @@ function App() {
   const onAddCamera = async (event: FormEvent) => {
     event.preventDefault()
     if (isLimitReached) {
-      dispatch(setStatus(`Error: Maximum ${MAX_CAMERAS} cameras supported in grid view`))
+      dispatch(setLiveStatus(`Error: Maximum ${MAX_CAMERAS} cameras supported in grid view`))
       return
     }
 
@@ -66,7 +62,7 @@ function App() {
 
   const onAddPlayer = async () => {
     if (isLimitReached) {
-      dispatch(setStatus(`Error: Maximum ${MAX_CAMERAS} cameras supported in grid view`))
+      dispatch(setLiveStatus(`Error: Maximum ${MAX_CAMERAS} cameras supported in grid view`))
       return
     }
 

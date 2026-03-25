@@ -3,7 +3,7 @@ import { Box, Button, Card, CardContent, IconButton, Stack, Typography, TextFiel
 import { toLocalDatetimeInputValue, type PlayerStateDto, type RecordingDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
 import RecordingsList from './RecordingsList'
-import { fetchPlayerState, seekPlayer } from '../store/vmsSlice'
+import { fetchPlayerState, seekPlayer } from '../store/archSlice'
 import { useAppDispatch, useAppSelector } from '../store'
 
 type PlayerStreamCardProps = {
@@ -17,7 +17,7 @@ function PlayerStreamCard({ player, isBusy, onRemove }: PlayerStreamCardProps) {
   const [newTime, setNewTime] = useState('')
   const [listOpen, setListOpen] = useState(false)
 
-  const currentPlayer = useAppSelector((state) => state.vms.playerStatesByClientId[player.clientId]) ?? player
+  const currentPlayer = useAppSelector((state) => state.arch.playerStatesByClientId[player.clientId]) ?? player
   const currentFilePath = currentPlayer.filePath
   const busy = useMemo(() => isBusy, [isBusy])
 

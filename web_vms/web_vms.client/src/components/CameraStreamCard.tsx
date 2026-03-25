@@ -12,7 +12,7 @@ import {
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import type { CameraStateDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
-import { fetchCameraState, updateCameraRecording } from '../store/vmsSlice'
+import { fetchCameraState, updateCameraRecording } from '../store/liveSlice'
 import { useAppDispatch, useAppSelector } from '../store'
 
 type CameraStreamCardProps = {
@@ -23,7 +23,7 @@ type CameraStreamCardProps = {
 
 function CameraStreamCard({ camera, isBusy, onRemove }: CameraStreamCardProps) {
   const dispatch = useAppDispatch()
-  const cameraState = useAppSelector((state) => state.vms.cameraStatesById[camera.cameraId])
+  const cameraState = useAppSelector((state) => state.live.cameraStatesById[camera.cameraId])
   const busy = useMemo(() => isBusy, [isBusy])
 
   useEffect(() => {
