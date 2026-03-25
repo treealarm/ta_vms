@@ -38,7 +38,7 @@ function CameraStreamCard({
   // функция для запроса состояния камеры
   const fetchCameraState = async () => {
     try {
-      const response = await fetch(`/api/vms/cameras/${encodeURIComponent(camera.cameraId)}/state`)
+      const response = await fetch(`/api/live/cameras/${encodeURIComponent(camera.cameraId)}/state`)
       if (!response.ok) return
       const data: CameraStateDto = await response.json()
       setCameraState(data)
@@ -68,7 +68,7 @@ function CameraStreamCard({
   const updateRecordingState = async (nextRecordingState: boolean) => {
     setIsCameraBusy(true)
     try {
-      const response = await fetch(`/api/vms/cameras/state`, {
+      const response = await fetch(`/api/live/cameras/state`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cameraid: camera.cameraId, recording: nextRecordingState, webRtc: true })
