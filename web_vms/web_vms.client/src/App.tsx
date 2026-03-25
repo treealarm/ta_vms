@@ -45,7 +45,7 @@ function App() {
 
   const loadCameras = useCallback(async () => {
     try {
-      const response = await fetch('/api/vms/cameras')
+      const response = await fetch('/api/live/cameras')
       if (!response.ok) {
         throw new Error(await getErrorMessage(response))
       }
@@ -60,7 +60,7 @@ function App() {
 
   const loadPlayers = useCallback(async () => {
     try {
-      const response = await fetch('/api/vms/players')
+      const response = await fetch('/api/arch/players')
       if (!response.ok) {
         throw new Error(await getErrorMessage(response))
       }
@@ -107,7 +107,7 @@ function App() {
     }
 
     await runAction(() =>
-      fetch('/api/vms/cameras', {
+      fetch('/api/live/cameras', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -128,7 +128,7 @@ function App() {
     const iso = new Date().toISOString();
 
     await runAction(() =>
-      fetch('/api/vms/players', {
+      fetch('/api/arch/players', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -143,7 +143,7 @@ function App() {
 
   const onRemoveCamera = async (camera: CameraStateDto) => {
     await runAction(() =>
-      fetch(`/api/vms/cameras/${encodeURIComponent(camera.cameraId)}?isArchive=${camera.rtspUrl.trim().length === 0}`, {
+      fetch(`/api/live/cameras/${encodeURIComponent(camera.cameraId)}?isArchive=${camera.rtspUrl.trim().length === 0}`, {
         method: 'DELETE'
       })
     )
@@ -151,7 +151,7 @@ function App() {
 
   const onRemovePlayer = async (p: PlayerStateDto) => {
     await runAction(() =>
-      fetch(`/api/vms/players/${encodeURIComponent(p.clientId)}`, {
+      fetch(`/api/arch/players/${encodeURIComponent(p.clientId)}`, {
         method: 'DELETE'
       })
     )

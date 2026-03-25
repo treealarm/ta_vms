@@ -38,7 +38,7 @@ function PlayerStreamCard({
     // создаём интервал один раз при монтировании компонента
     const interval = setInterval(async () => {
       try {
-        const uri = `/api/vms/players/state?clientId=${encodeURIComponent(player.clientId)}`;
+        const uri = `/api/arch/players/state?clientId=${encodeURIComponent(player.clientId)}`;
         console.log('fetch players', uri); // проверка вызова
         const resp = await fetch(uri)
         if (!resp.ok) return
@@ -64,7 +64,7 @@ function PlayerStreamCard({
       iso ?? (newTime ? new Date(newTime).toISOString() : null)
     if (!timeToSend) return
 
-    await fetch('/api/vms/players/state', {
+    await fetch('/api/arch/players/state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
