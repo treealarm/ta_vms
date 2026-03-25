@@ -196,17 +196,17 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
   int64_t step = pkt->duration > 0 ? pkt->duration : 1;
 
   // 1. Восстановление timestamp
-  if (pkt->pts == AV_NOPTS_VALUE && pkt->dts == AV_NOPTS_VALUE) {
+  if (pkt->pts <= 0 && pkt->dts <= 0) {
     int64_t next = (stream->last_dts != AV_NOPTS_VALUE)
       ? stream->last_dts + step
       : 0;
 
     pkt->pts = pkt->dts = next;
   }
-  else if (pkt->pts == AV_NOPTS_VALUE) {
+  else if (pkt->pts <= 0) {
     pkt->pts = pkt->dts;
   }
-  else if (pkt->dts == AV_NOPTS_VALUE) {
+  else if (pkt->dts <= 0) {
     pkt->dts = pkt->pts;
   }
 
