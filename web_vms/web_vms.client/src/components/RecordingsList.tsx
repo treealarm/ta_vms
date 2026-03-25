@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { List, ListItemButton, ListItemText, Tooltip, CircularProgress, Box, Stack } from '@mui/material'
 import type { RecordingDto } from '../dto/dtos'
 import { fetchRecordings } from '../store/vmsSlice'
@@ -18,15 +18,17 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
   const [selected, setSelected] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [queryTime, setQueryTime] = useState<string | undefined>()
+  const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     if (open) {
       setQueryTime(timestamp)
+      setLoaded(false)
     }
-  }, [open, timestamp])
+  }, [open])
 
   useEffect(() => {
-    if (!open || !queryTime) {
+    if (!open || !queryTime || loaded) {
       return
     }
 
@@ -38,6 +40,7 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
 
       if (!cancelled) {
         setLoading(false)
+        setLoaded(true)
       }
     }
 
@@ -46,7 +49,7 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
     return () => {
       cancelled = true
     }
-  }, [cameraId, dispatch, open, queryTime])
+  }, [cameraId, dispatch, loaded, open, queryTime])
 
   const recordingsKey = queryTime ? `${cameraId}:${queryTime}` : ''
   const data = useAppSelector((state) => state.vms.recordingsByKey[recordingsKey]?.recordings ?? [])
@@ -56,55 +59,9 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
     onSelect(rec)
   }
 
-  const content = useMemo(() => {
-    if (loading) {
-      return (
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 1 }}>
-          <CircularProgress size={20} />
-        </Box>
-      )
-    }
-
-    return (
-      <List dense disablePadding>
-        {data.map((rec) => {
-          const isNearest = filePath === rec.filePath
-          const isSelected = selected === rec.filePath
-          const time = new Date(rec.startTime).toLocaleTimeString()
-
-          return (
-            <Tooltip
-              key={rec.filePath}
-              title={
-                <>
-                  <div>{rec.filePath}</div>
-                  <div>
-                    {new Date(rec.startTime).toLocaleString()} —{' '}
-                    {rec.endTime ? new Date(rec.endTime).toLocaleString() : '...'}
-                  </div>
-                </>
-              }
-              placement="left"
-            >
-              <ListItemButton
-                selected={isSelected}
-                onClick={() => handleClick(rec)}
-                sx={{
-                  py: 0.5,
-                  borderLeft: isNearest ? '3px solid orange' : undefined,
-                  bgcolor: isSelected ? 'rgba(25,118,210,0.15)' : undefined
-                }}
-              >
-                <ListItemText primary={isNearest ? `➤ ${time}` : time} />
-              </ListItemButton>
-            </Tooltip>
-          )
-        })}
-      </List>
-    )
-  }, [data, filePath, loading, selected])
-
-  if (!open) return null
+  if (!open) {
+    return null
+  }
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -113,9 +70,51 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
         alignItems="center"
         justifyContent="space-between"
         sx={{ px: 1, py: 1, borderBottom: '1px solid rgba(0,0,0,0.1)', flexShrink: 0 }}
-      ></Stack>
+      />
 
-      <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>{content}</Box>
+      <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 1 }}>
+            <CircularProgress size={20} />
+          </Box>
+        ) : (
+          <List dense disablePadding>
+            {data.map((rec) => {
+              const isNearest = filePath === rec.filePath
+              const isSelected = selected === rec.filePath
+              const time = new Date(rec.startTime).toLocaleTimeString()
+
+              return (
+                <Tooltip
+                  key={rec.filePath}
+                  title={
+                    <>
+                      <div>{rec.filePath}</div>
+                      <div>
+                        {new Date(rec.startTime).toLocaleString()} —{' '}
+                        {rec.endTime ? new Date(rec.endTime).toLocaleString() : '...'}
+                      </div>
+                    </>
+                  }
+                  placement="left"
+                >
+                  <ListItemButton
+                    selected={isSelected}
+                    onClick={() => handleClick(rec)}
+                    sx={{
+                      py: 0.5,
+                      borderLeft: isNearest ? '3px solid orange' : undefined,
+                      bgcolor: isSelected ? 'rgba(25,118,210,0.15)' : undefined
+                    }}
+                  >
+                    <ListItemText primary={isNearest ? `➤ ${time}` : time} />
+                  </ListItemButton>
+                </Tooltip>
+              )
+            })}
+          </List>
+        )}
+      </Box>
     </Box>
   )
 }
