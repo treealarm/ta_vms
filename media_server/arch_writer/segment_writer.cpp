@@ -18,7 +18,8 @@ std::string json_escape(const std::string& value)
   std::string escaped;
   escaped.reserve(value.size());
 
-  for (const char ch : value) {
+  for (const char ch : value) 
+  {
     switch (ch) {
     case '\\': escaped += "\\\\"; break;
     case '"': escaped += "\\\""; break;
@@ -83,17 +84,20 @@ segment_writer::~segment_writer()
 
 bool segment_writer::ensure_input_stream(const std::shared_ptr<media_packet>& media)
 {
-  if (!media || !media->codec_parameters || media->stream_index < 0) {
+  if (!media || !media->codec_parameters || media->stream_index < 0)
+  {
     return false;
   }
 
-  if (m_input_streams.contains(media->stream_index)) {
+  if (m_input_streams.contains(media->stream_index)) 
+  {
     return true;
   }
 
   avcodec_parameters_ptr codec_copy(avcodec_parameters_alloc(),
     [](AVCodecParameters* params) { avcodec_parameters_free(&params); });
-  if (!codec_copy) {
+  if (!codec_copy) 
+  {
     return false;
   }
 
@@ -110,7 +114,8 @@ void segment_writer::open_new_segment()
 {
   close_segment();
 
-  if (m_input_streams.empty()) {
+  if (m_input_streams.empty()) 
+  {
     std::cerr << "segment writer has no registered streams\n";
     return;
   }
@@ -136,9 +141,11 @@ void segment_writer::open_new_segment()
 
   m_output_streams.clear();
   m_next_pts_by_input_stream.clear();
-  for (const auto& [input_index, stream_info] : m_input_streams) {
+  for (const auto& [input_index, stream_info] : m_input_streams) 
+  {
     AVStream* out_stream = avformat_new_stream(m_ctx, nullptr);
-    if (!out_stream) {
+    if (!out_stream) 
+    {
       std::cerr << "avformat_new_stream failed\n";
       avformat_free_context(m_ctx);
       m_ctx = nullptr;
@@ -147,7 +154,8 @@ void segment_writer::open_new_segment()
       return;
     }
 
-    if (avcodec_parameters_copy(out_stream->codecpar, stream_info.codec_parameters.get()) < 0) {
+    if (avcodec_parameters_copy(out_stream->codecpar, stream_info.codec_parameters.get()) < 0) 
+    {
       std::cerr << "avcodec_parameters_copy failed\n";
       avformat_free_context(m_ctx);
       m_ctx = nullptr;
@@ -160,7 +168,8 @@ void segment_writer::open_new_segment()
     m_output_streams.emplace(input_index, out_stream);
   }
 
-  if (!(m_ctx->oformat->flags & AVFMT_NOFILE)) {
+  if (!(m_ctx->oformat->flags & AVFMT_NOFILE)) 
+  {
     if (avio_open(&m_ctx->pb,
       path.string().c_str(),
       AVIO_FLAG_WRITE) < 0)
@@ -174,7 +183,8 @@ void segment_writer::open_new_segment()
     }
   }
 
-  if (avformat_write_header(m_ctx, nullptr) < 0) {
+  if (avformat_write_header(m_ctx, nullptr) < 0) 
+  {
     std::cerr << "avformat_write_header failed\n";
     avio_closep(&m_ctx->pb);
     avformat_free_context(m_ctx);
@@ -225,11 +235,13 @@ void segment_writer::close_segment()
 
 void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)
 {
-  if (!in_media || !in_media->packet) {
+  if (!in_media || !in_media->packet)
+  {
     return;
   }
 
-  if (!ensure_input_stream(in_media)) {
+  if (!ensure_input_stream(in_media))
+  {
     return;
   }
 
@@ -243,7 +255,8 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)
 
 
   if (!m_ctx) {
-    if (media->media_type != AVMEDIA_TYPE_VIDEO || !(pkt->flags & AV_PKT_FLAG_KEY)) {
+    if (media->media_type != AVMEDIA_TYPE_VIDEO || !(pkt->flags & AV_PKT_FLAG_KEY)) 
+    {
       return;
     }
 
@@ -264,16 +277,19 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)
   }
 
   const auto out_stream_it = m_output_streams.find(media->stream_index);
-  if (out_stream_it == m_output_streams.end()) {
+  if (out_stream_it == m_output_streams.end()) 
+  {
     return;
   }
 
   AVStream* out_stream = out_stream_it->second;
 
   int64_t duration = 0;
-  if (media->media_type == AVMEDIA_TYPE_VIDEO) {
+  if (media->media_type == AVMEDIA_TYPE_VIDEO)
+  {
     AVRational fps = media->frame_rate;
-    if (fps.num <= 0 || fps.den <= 0) {
+    if (fps.num <= 0 || fps.den <= 0)
+    {
       fps = AVRational{ 25, 1 };
     }
 
@@ -284,7 +300,8 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)
 
     if (sample_rate > 0) {
       int nb_samples = media->nb_samples;
-      if (nb_samples <= 0 && pkt->duration > 0) {
+      if (nb_samples <= 0 && pkt->duration > 0)
+      {
         nb_samples = static_cast<int>(av_rescale_q(pkt->duration,
                                                    media->time_base,
                                                    AVRational{ 1, sample_rate }));
@@ -300,9 +317,12 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)
   }
 
   if (duration <= 0) {
-    if (pkt->duration > 0) {
+    if (pkt->duration > 0)
+    {
       duration = av_rescale_q(pkt->duration, media->time_base, out_stream->time_base);
-    } else {
+    } 
+    else 
+    {
       duration = 1;
     }
   }
@@ -315,7 +335,8 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)
 
   pkt->stream_index = out_stream->index;
 
-  if (av_interleaved_write_frame(m_ctx, pkt) < 0) {
+  if (av_interleaved_write_frame(m_ctx, pkt) < 0)
+  {
     std::cerr << "write_frame failed\n";
   }
 }
