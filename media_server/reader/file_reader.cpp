@@ -168,9 +168,15 @@ void file_reader::read_loop()
       if (AVERROR_EOF == ret)
       {
         if (m_on_file_end)
-          m_on_file_end(get_source());
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        continue;
+        {
+          auto succ = m_on_file_end(get_source());
+          if (!succ)
+          {
+            // возможно не стоит закрывать ридер, пока он пересоздается на проигрывание.
+            m_running = false;
+            break;
+          }
+        }
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
       continue;

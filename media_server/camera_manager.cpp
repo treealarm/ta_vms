@@ -260,8 +260,8 @@ bool camera_manager::add_arch_player(
 
     std::shared_ptr<arch_player> player = std::make_shared<arch_player>(
       client_id,
-      camera_id,
-      error);
+      camera_id
+      );
     m_arch_players_by_client.emplace(client_id, std::move(player));
 
     return true;
@@ -295,7 +295,7 @@ bool camera_manager::set_player_state(
     return false;
   }
 
-  return it->second->set_state(start_time, camera_id, error);
+  return it->second->set_state(start_time, camera_id);
 }
 
 std::optional<camera_manager::player_info>  camera_manager::get_player_state(

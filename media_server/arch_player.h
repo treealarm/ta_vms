@@ -5,6 +5,7 @@
 #include <vector>
 #include <optional>
 #include <filesystem>
+#include <queue>
 
 #include "interfaces/reader.h"
 #include "stream/jpeg_streamer.h"
@@ -15,8 +16,7 @@ class arch_player {
 public:
   arch_player(
     const std::string& client_id,
-    const std::string& camera_id,
-    std::string& error);
+    const std::string& camera_id);
   ~arch_player();
   arch_player(const arch_player&) = delete;
   arch_player& operator=(const arch_player&) = delete;
@@ -25,32 +25,40 @@ public:
 
   bool set_state(
     const std::chrono::system_clock::time_point& start_time,
-    const std::string& camera_id,
-    std::string& error);
+    const std::string& camera_id);
 
 
-  const std::string& camera_id() const;
+  const std::string& camera_id() const
+  {
+    std::scoped_lock lock(m_task_mutex);
+    return m_camera_id;
+  };
   std::optional<std::string> file_path()
   {
+    std::scoped_lock lock(m_task_mutex);
     return m_cur_file_path;
   };
-  std::chrono::system_clock::time_point start_time() const {
+  std::chrono::system_clock::time_point start_time() const 
+  {
+    std::scoped_lock lock(m_task_mutex);
     return m_start_time;
   }
   void shutdown();
 
 private:
 
-  bool open(const std::chrono::system_clock::time_point& start_time,
-                std::string& error);
+  bool open(const std::chrono::system_clock::time_point& start_time);
   
-  bool open_file_reader(const std::string& file_path,
-    std::string& error);
+  bool open_file_reader(const std::string& file_path);
 
-  bool start_web_rtc(std::string& error);
-  bool stop_web_rtc(std::string& error);
+  bool start_web_rtc();
+  bool stop_web_rtc();
 
   bool on_eof(const std::string& file);
+
+  void worker_loop();
+  void post_task(std::function<void()> task);
+
   std::string m_client_id;
   std::string m_camera_id;
   std::optional<std::string> m_cur_file_path;
@@ -58,7 +66,12 @@ private:
   std::chrono::system_clock::time_point m_start_time;
   std::shared_ptr<reader> m_reader;
   std::shared_ptr<webrtc_output_sink> m_webrtc_output_sink;
-  mutable std::mutex m_sinks_mutex;
 
   recording_storage m_storage;
+
+  std::queue<std::function<void()>> m_task_queue;
+  mutable std::mutex m_task_mutex;
+  std::condition_variable m_task_cv;
+  bool m_stop_worker;
+  std::thread m_worker;
 };
