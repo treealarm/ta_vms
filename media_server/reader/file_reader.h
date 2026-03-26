@@ -7,6 +7,7 @@
 #include <mutex>
 #include <filesystem>
 #include <unordered_set>
+#include <functional>
 
 #include "interfaces/media_packet.h"
 #include "interfaces/media_sink.h"
@@ -15,12 +16,13 @@
 
 extern "C" {
 #include <libavformat/avformat.h>
+
 }
 
-class file_reader final : public reader {
+class file_reader final : public reader 
+{
 public:
-  file_reader();
-  file_reader(std::string camera_id);
+  explicit file_reader(std::string camera_id, std::function<bool(const std::string&)> cb_eof);
   ~file_reader() override;
 
   bool open(const std::string& source) override;
@@ -43,6 +45,8 @@ private:
   std::atomic_bool m_running{ false };
 
   std::string m_camera_id;
+  std::function<bool(const std::string&)> m_on_file_end;
+
   sink_container_impl m_sinks_helper;
   std::string m_source;
   std::mutex m_mutex;

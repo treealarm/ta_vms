@@ -15,8 +15,6 @@ std::filesystem::path recording_storage::make_day_path(
   const std::string& camera_id,
   std::chrono::system_clock::time_point ts)
 {
-  using namespace std::chrono;
-
   auto days = floor<std::chrono::days>(ts);
   year_month_day ymd{ days };
 
@@ -45,8 +43,6 @@ std::filesystem::path recording_storage::shift_day(
   {
     return {};
   }
-
-  using namespace std::chrono;
 
   year_month_day ymd{
     year{Y},
@@ -88,8 +84,6 @@ std::optional<std::chrono::system_clock::time_point>
     return std::nullopt;
   }
 
-  using namespace std::chrono;
-
   std::chrono::year_month_day ymd{
     std::chrono::year{Y},
     std::chrono::month{unsigned(M)},
@@ -106,7 +100,11 @@ std::optional<std::chrono::system_clock::time_point>
     + minutes{ m }
   + seconds{ s };
 
-  return tp;
+  // ts — локальное время из имени файла
+  zoned_time zt{ "UTC", tp }; // преобразуем в UTC
+  auto utc_tp = zt.get_sys_time(); // system_clock::time_point в UTC
+
+  return utc_tp;
 }
 
 std::vector<recording_info>
@@ -229,8 +227,6 @@ std::filesystem::path recording_storage::make_segment_path(
   const std::string& camera_id,
   std::chrono::system_clock::time_point ts)
 {
-  using namespace std::chrono;
-
   auto days = floor<std::chrono::days>(ts);
   year_month_day ymd{ days };
 
@@ -277,4 +273,30 @@ std::filesystem::path recording_storage::resolve_file_ext()
   }
 
   return ".mkv";
+}
+
+std::optional<recording_info> recording_storage::find_next(
+  const std::string& camera_id,
+  std::chrono::system_clock::time_point ts)
+{
+  int nearestIndex = 0;
+  auto recordings = get_recordings(camera_id, ts, 3, nearestIndex);
+
+  if (recordings.empty())
+    return std::nullopt;
+
+  // nearestIndex указывает на запись, ближайшую к ts
+  // ищем следующую после ts
+  if (nearestIndex + 1 < static_cast<int>(recordings.size()))
+    return recordings[nearestIndex + 1];
+
+  // Если следующей нет в загруженном массиве, пробуем подгрузить следующий день
+  auto day_path = make_day_path(camera_id, ts);
+  auto next_day_path = shift_day(day_path, 1);
+  auto next_day_recordings = load_day(next_day_path);
+
+  if (!next_day_recordings.empty())
+    return next_day_recordings.front();
+
+  return std::nullopt;
 }

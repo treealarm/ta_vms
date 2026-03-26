@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <filesystem>
 
-#include "file_system/recording_storage.h"
+
 
 #include "reader/file_reader.h"
 
@@ -28,32 +28,63 @@ arch_player::~arch_player()
   shutdown();
 }
 
-std::optional<std::string> arch_player::find_file(
-  const std::string& camera_id,
-  const std::chrono::system_clock::time_point& start_time)
+bool arch_player::on_eof(const std::string& file)
 {
-  recording_storage storage;
-  auto rec = storage.find_nearest(camera_id, start_time);
+  auto path = std::filesystem::path(file);
+  auto ts = m_storage.parse_time(path.filename().string());
 
-  if (!rec)
-    return std::nullopt;
+  if (!ts)
+  {
+    return false;
+  }
+  auto my_utc = recording_storage::timepoint_to_utc_string(*ts);
+  auto info = m_storage.find_next(camera_id(), *ts);
 
-  return rec->file_path.string();
+  if (!info)
+  {
+    return false;
+  }
+  std::string error;
+
+  bool retval = open_file_reader(info->file_path.string(), error);
+  if (retval)
+  {
+    m_start_time = info->start_time;
+  }
+  return retval;
 }
 
 bool arch_player::open(const std::chrono::system_clock::time_point& start_time,
                            std::string& error) 
 {
-  auto playback_reader = std::make_unique<file_reader>(
-      m_camera_id);
+  auto rec = m_storage.find_nearest(camera_id(), start_time);
 
-  m_cur_file_path = find_file(m_camera_id, start_time);
-
-  if (!m_cur_file_path)
+  if (!rec)
   {
     error = "Unable to find file";
     return false;
   }
+
+  bool retval =  open_file_reader(rec->file_path.string(), error);  
+  if (retval)
+  {
+    m_start_time = start_time;
+  }
+  return retval;
+}
+
+bool arch_player::open_file_reader(const std::string& file_path,
+  std::string& error)
+{
+  m_cur_file_path = file_path;
+
+
+  auto playback_reader = std::make_shared<file_reader>(
+    m_camera_id,
+    [this](const std::string& file) ->bool
+    {
+      return this->on_eof(file);
+    });
 
   if (!playback_reader->open(*m_cur_file_path))
   {
@@ -63,8 +94,7 @@ bool arch_player::open(const std::chrono::system_clock::time_point& start_time,
 
   playback_reader->start();
 
-  m_reader = std::move(playback_reader);
-  m_start_time = start_time;
+  m_reader = std::move(playback_reader);  
 
   return true;
 }

@@ -9,7 +9,7 @@
 #include "interfaces/reader.h"
 #include "stream/jpeg_streamer.h"
 #include "writer/webrtc_output_sink.h"
-
+#include "file_system/recording_storage.h"
 
 class arch_player {
 public:
@@ -43,19 +43,22 @@ private:
 
   bool open(const std::chrono::system_clock::time_point& start_time,
                 std::string& error);
+  
+  bool open_file_reader(const std::string& file_path,
+    std::string& error);
+
   bool start_web_rtc(std::string& error);
   bool stop_web_rtc(std::string& error);
 
-  std::optional<std::string> find_file(
-    const std::string& camera_id,
-    const std::chrono::system_clock::time_point& start_time);
-
+  bool on_eof(const std::string& file);
   std::string m_client_id;
   std::string m_camera_id;
   std::optional<std::string> m_cur_file_path;
   
   std::chrono::system_clock::time_point m_start_time;
-  std::unique_ptr<reader> m_reader;
+  std::shared_ptr<reader> m_reader;
   std::shared_ptr<webrtc_output_sink> m_webrtc_output_sink;
   mutable std::mutex m_sinks_mutex;
+
+  recording_storage m_storage;
 };

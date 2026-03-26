@@ -21,13 +21,12 @@ namespace
     return av_rescale_q(pts, time_base, AVRational{ 1, 1000000 });
   }
 }
-file_reader::file_reader()
-{
 
-}
-
-file_reader::file_reader(std::string camera_id)
-    : m_camera_id(std::move(camera_id))
+file_reader::file_reader(std::string camera_id,
+  std::function<bool(const std::string&)> cb_eof)
+    : 
+  m_camera_id(std::move(camera_id)),
+  m_on_file_end(cb_eof)
 {}
 
 file_reader::~file_reader() 
@@ -166,6 +165,13 @@ void file_reader::read_loop()
 
     if (ret < 0)
     {
+      if (AVERROR_EOF == ret)
+      {
+        if (m_on_file_end)
+          m_on_file_end(get_source());
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        continue;
+      }
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
       continue;
     }
