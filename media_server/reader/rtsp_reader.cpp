@@ -32,7 +32,7 @@ bool rtsp_reader::connect()
   av_dict_set(&opts, "timeout", "5000000", 0);
   av_dict_set(&opts, "rw_timeout", "5000000", 0);
 
-  AVFormatContext* ctx = avformat_alloc_context();
+  AVFormatContext* ctx = nullptr;
 
   if (avformat_open_input(&ctx, m_rtsp_url.c_str(), nullptr, &opts) < 0)
   {
@@ -42,10 +42,7 @@ bool rtsp_reader::connect()
     return false;
   }
 
-  if (ctx != m_ctx.get()) 
-  {
-    m_ctx.reset(ctx);
-  }
+  m_ctx.reset(ctx);
 
   av_dict_free(&opts);
 

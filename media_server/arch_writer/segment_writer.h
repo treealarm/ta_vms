@@ -41,7 +41,8 @@ private:
   std::unordered_map<int, input_stream_info> m_input_streams;
 
   
-  AVFormatContext* m_ctx = nullptr;
+  avformat_context_ptr m_ctx = nullptr;
+
   std::unordered_map<int, AVStream*> m_output_streams;
 
   std::chrono::steady_clock::time_point m_segment_start_time;

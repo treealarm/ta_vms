@@ -67,24 +67,26 @@ void segment_writer::open_new_segment()
   auto path = storage.get_absolute_path(m_camera_id, now);
   std::filesystem::create_directories(path.parent_path());
 
+  AVFormatContext* ctx = nullptr;
+
   if (avformat_alloc_output_context2(
-    &m_ctx, nullptr, nullptr, path.string().c_str()) < 0)
+    &ctx, nullptr, nullptr, path.string().c_str()) < 0)
   {
     std::cerr << "avformat_alloc_output_context2 failed\n";
-    m_ctx = nullptr;
     return;
   }
+
+  m_ctx.reset(ctx);
 
   m_output_streams.clear();
 
   for (const auto& [input_index, stream_info] : m_input_streams) 
   {
-    AVStream* out_stream = avformat_new_stream(m_ctx, nullptr);
+    AVStream* out_stream = avformat_new_stream(m_ctx.get(), nullptr);
     if (!out_stream) 
     {
       std::cerr << "avformat_new_stream failed\n";
-      avformat_free_context(m_ctx);
-      m_ctx = nullptr;
+      m_ctx.reset();
       m_output_streams.clear();
       return;
     }
@@ -92,8 +94,7 @@ void segment_writer::open_new_segment()
     if (avcodec_parameters_copy(out_stream->codecpar, stream_info.codec_parameters.get()) < 0) 
     {
       std::cerr << "avcodec_parameters_copy failed\n";
-      avformat_free_context(m_ctx);
-      m_ctx = nullptr;
+      m_ctx.reset();
       m_output_streams.clear();
       return;
     }
@@ -109,19 +110,17 @@ void segment_writer::open_new_segment()
       AVIO_FLAG_WRITE) < 0)
     {
       std::cerr << "avio_open failed\n";
-      avformat_free_context(m_ctx);
-      m_ctx = nullptr;
+      m_ctx.reset();
       m_output_streams.clear();
       return;
     }
   }
 
-  if (avformat_write_header(m_ctx, nullptr) < 0) 
+  if (avformat_write_header(m_ctx.get(), nullptr) < 0)
   {
     std::cerr << "avformat_write_header failed\n";
     avio_closep(&m_ctx->pb);
-    avformat_free_context(m_ctx);
-    m_ctx = nullptr;
+    m_ctx.reset();
     m_output_streams.clear();
     return;
   }
@@ -139,13 +138,12 @@ void segment_writer::close_segment()
     std::chrono::steady_clock::now() - m_segment_start_time);
 
 
-  av_write_trailer(m_ctx);
+  av_write_trailer(m_ctx.get());
 
   if (!(m_ctx->oformat->flags & AVFMT_NOFILE))
     avio_closep(&m_ctx->pb);
 
-  avformat_free_context(m_ctx);
-  m_ctx = nullptr;
+  m_ctx.reset();
   m_output_streams.clear();
 }
 
@@ -220,7 +218,7 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)
 
   pkt->stream_index = out_stream->index;
 
-  if (av_interleaved_write_frame(m_ctx, pkt) < 0)
+  if (av_interleaved_write_frame(m_ctx.get(), pkt) < 0)
     std::cerr << "write_frame failed\n";
 }
 

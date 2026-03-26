@@ -13,6 +13,7 @@ extern "C" {
 using avpacket_ptr = std::shared_ptr<AVPacket>;
 using avframe_ptr = std::shared_ptr<AVFrame>;
 using avcodec_parameters_ptr = std::shared_ptr<AVCodecParameters>;
+using avformat_context_ptr = std::unique_ptr<AVFormatContext, avformat_context_deleter>;
 
 struct media_packet {
   avpacket_ptr packet;
@@ -25,7 +26,7 @@ struct media_packet {
   avcodec_parameters_ptr codec_parameters;
 };
 
-using avformat_context_ptr = std::unique_ptr<AVFormatContext, avformat_context_deleter>;
+
 
 inline std::shared_ptr<media_packet> clone_media_packet(const std::shared_ptr<media_packet>& src) {
   if (!src || !src->packet)

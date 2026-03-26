@@ -36,7 +36,7 @@ private:
   void read_loop();
   std::string get_source();
 
-  AVFormatContext* m_ctx = nullptr;
+  avformat_context_ptr m_ctx = nullptr;
   int m_video_index = -1;
   std::unordered_set<int> m_forward_stream_indexes;
   std::thread m_thread;

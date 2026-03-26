@@ -276,5 +276,5 @@ std::filesystem::path recording_storage::resolve_file_ext()
     }
   }
 
-  return ".ts";
+  return ".mkv";
 }

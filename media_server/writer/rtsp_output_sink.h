@@ -39,7 +39,7 @@ private:
 private:
   std::string m_rtsp_url;
 
-  AVFormatContext* m_ctx = nullptr;
+  avformat_context_ptr m_ctx = nullptr;
   std::vector<stream_state> m_streams;
   bool m_is_initialized = false;
   bool m_wait_keyframe = true;

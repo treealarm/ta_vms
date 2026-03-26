@@ -54,14 +54,17 @@ bool file_reader::connect_current_file(const std::string& file_path)
 {
   disconnect();
 
+  AVFormatContext* ctx = nullptr;
 
-  if (avformat_open_input(&m_ctx, file_path.c_str(), nullptr, nullptr) < 0) 
+  if (avformat_open_input(&ctx, file_path.c_str(), nullptr, nullptr) < 0) 
   {
     std::cerr << "Failed to open file source: " << file_path << "\n";
     return false;
-  }
+  }  
 
-  if (avformat_find_stream_info(m_ctx, nullptr) < 0)
+  m_ctx.reset(ctx);
+
+  if (avformat_find_stream_info(m_ctx.get(), nullptr) < 0)
   {
     std::cerr << "Failed to get stream info\n";
     disconnect();
@@ -95,10 +98,7 @@ bool file_reader::connect_current_file(const std::string& file_path)
 
 void file_reader::disconnect() 
 {
-  if (m_ctx) 
-  {
-    avformat_close_input(&m_ctx);
-  }
+  m_ctx.reset();
 }
 
 void file_reader::add_sink(std::shared_ptr<media_sink> sink) {
@@ -162,7 +162,7 @@ void file_reader::read_loop()
     }
 
     avpacket_ptr pkt(av_packet_alloc(), avpacket_deleter{});
-    int ret = av_read_frame(m_ctx, pkt.get());
+    int ret = av_read_frame(m_ctx.get(), pkt.get());
 
     if (ret < 0)
     {

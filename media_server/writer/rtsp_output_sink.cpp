@@ -30,11 +30,14 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
   if (streams.empty() || m_rtsp_url.empty()) {
     return false;
   }
+  AVFormatContext* ctx = nullptr;
 
-  if (avformat_alloc_output_context2(&m_ctx, nullptr, "rtsp", m_rtsp_url.c_str()) < 0 || !m_ctx) {
+  if (avformat_alloc_output_context2(&ctx, nullptr, "rtsp", m_rtsp_url.c_str()) < 0 || !ctx) 
+  {
     std::cerr << "failed to allocate rtsp output context\n";
     return false;
   }
+  m_ctx.reset(ctx);
 
   m_streams.clear();
   m_streams.reserve(streams.size());
@@ -44,7 +47,7 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
       continue;
     }
 
-    AVStream* out_stream = avformat_new_stream(m_ctx, nullptr);
+    AVStream* out_stream = avformat_new_stream(m_ctx.get(), nullptr);
     if (!out_stream) {
       std::cerr << "failed to create rtsp output stream\n";
       close();
@@ -77,7 +80,7 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
   av_dict_set(&opts, "rw_timeout", "5000000", 0);
   av_dict_set(&opts, "max_interleave_delta", "1000000", 0);//10000000 (10 seconds) 1000000 (1 seconds)
 
-  if (avformat_write_header(m_ctx, &opts) < 0) {
+  if (avformat_write_header(m_ctx.get(), &opts) < 0) {
     std::cerr << "failed to write rtsp header\n";
     av_dict_free(&opts);
     close();
@@ -264,7 +267,7 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
     std::cerr << "rtsp output sink: pkt->pts < 0\n";
   }
   // --- 5. Запись пакета ---
-  if (av_interleaved_write_frame(m_ctx, pkt) < 0) {
+  if (av_interleaved_write_frame(m_ctx.get(), pkt) < 0) {
     ++m_consecutive_write_errors;
 
     constexpr int critical_write_error_threshold = 3;
@@ -292,15 +295,15 @@ void rtsp_output_sink::close()
   }
 
   if (m_is_initialized) {
-    av_write_trailer(m_ctx);
+    av_write_trailer(m_ctx.get());
   }
 
   if (!(m_ctx->oformat->flags & AVFMT_NOFILE) && m_ctx->pb) {
     avio_closep(&m_ctx->pb);
   }
 
-  avformat_free_context(m_ctx);
-  m_ctx = nullptr;
+  m_ctx.reset();
+
   m_streams.clear();
   m_is_initialized = false;
   m_wait_keyframe = true;
