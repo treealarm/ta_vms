@@ -36,17 +36,8 @@ public:
   std::filesystem::path get_absolute_path(const std::string& camera_id,
     std::chrono::system_clock::time_point ts);
 private:
-  std::filesystem::path resolve_storage_base_path()
-  {
-    if (const char* value = std::getenv("VMS_STORAGE_BASE_PATH")) {
-      if (value[0] != '\0') {
-        return value;
-      }
-    }
-
-    return "records";
-  }
-
+  std::filesystem::path resolve_storage_base_path();
+  std::filesystem::path resolve_file_ext();
   std::vector<recording_info> load_day(
     const std::filesystem::path& day_path);
 

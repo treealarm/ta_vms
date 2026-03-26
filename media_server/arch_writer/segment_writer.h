@@ -14,7 +14,8 @@ extern "C" {
 #include "interfaces/media_packet.h"
 #include "interfaces/media_sink.h"
 
-class segment_writer : public media_sink {
+class segment_writer : public media_sink
+{
 public:
   segment_writer(
                  const std::string& camera_id,
@@ -22,7 +23,8 @@ public:
   ~segment_writer() override;
   void on_packet(const std::shared_ptr<media_packet>& media) override;
 private:
-  struct input_stream_info {
+  struct input_stream_info 
+  {
     avcodec_parameters_ptr codec_parameters;
     AVRational time_base{};
     AVMediaType media_type = AVMEDIA_TYPE_UNKNOWN;
@@ -38,13 +40,20 @@ private:
 
   std::unordered_map<int, input_stream_info> m_input_streams;
 
+  
   AVFormatContext* m_ctx = nullptr;
   std::unordered_map<int, AVStream*> m_output_streams;
-  std::unordered_map<int, int64_t> m_next_pts_by_input_stream;
 
   std::chrono::steady_clock::time_point m_segment_start_time;
-  std::chrono::system_clock::time_point m_segment_start_wall_time;
-  std::filesystem::path m_current_segment_relative_path;
 
   dapr_publisher m_dapr_publisher;
+
+  struct stream_timing_state {
+    int64_t first_pts = AV_NOPTS_VALUE;
+    int64_t first_dts = AV_NOPTS_VALUE;
+    int64_t last_pts = AV_NOPTS_VALUE;
+    int64_t last_dts = AV_NOPTS_VALUE;
+  };
+
+  std::unordered_map<int, stream_timing_state> m_timing;
 };

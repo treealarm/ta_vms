@@ -30,7 +30,6 @@ dapr_publisher::dapr_publisher()
 
 bool dapr_publisher::publish_json(const std::string& topic, const std::string& payload) const
 {
-  return true;//no dapr for now
   dapr::proto::runtime::v1::PublishEventRequest request;
   request.set_pubsub_name(m_pubsub_name);
   request.set_topic(topic);

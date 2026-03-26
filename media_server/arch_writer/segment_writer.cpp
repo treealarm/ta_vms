@@ -6,67 +6,6 @@
 #include <format>
 #include <iostream>
 
-namespace {
-std::string to_iso_utc(std::chrono::system_clock::time_point tp)
-{
-  return std::format("{:%Y-%m-%dT%H:%M:%SZ}",
-                     std::chrono::floor<std::chrono::seconds>(tp));
-}
-
-std::string json_escape(const std::string& value)
-{
-  std::string escaped;
-  escaped.reserve(value.size());
-
-  for (const char ch : value) 
-  {
-    switch (ch) {
-    case '\\': escaped += "\\\\"; break;
-    case '"': escaped += "\\\""; break;
-    case '\n': escaped += "\\n"; break;
-    case '\r': escaped += "\\r"; break;
-    case '\t': escaped += "\\t"; break;
-    default: escaped += ch; break;
-    }
-  }
-
-  return escaped;
-}
-
-std::string make_segment_started_payload(const std::string& camera_id,
-  const std::string& relative_path,
-  const std::chrono::system_clock::time_point& started_at)
-{
-  return std::format(
-    "{{\"event\":\"recording_segment_started\","
-    "\"camera_id\":\"{}\","
-    "\"relative_path\":\"{}\","
-    "\"started_at\":\"{}\"}}",
-    json_escape(camera_id),
-    json_escape(relative_path),
-    to_iso_utc(started_at));
-}
-
-std::string make_segment_finished_payload(const std::string& camera_id,
-  const std::string& relative_path,
-  const std::chrono::system_clock::time_point& started_at,
-  const std::chrono::system_clock::time_point& finished_at,
-  double duration_seconds)
-{
-  return std::format(
-    "{{\"event\":\"recording_segment_finished\","
-    "\"camera_id\":\"{}\","
-    "\"relative_path\":\"{}\","
-    "\"started_at\":\"{}\","
-    "\"finished_at\":\"{}\","
-    "\"duration_seconds\":{:.3f}}}",
-    json_escape(camera_id),
-    json_escape(relative_path),
-    to_iso_utc(started_at),
-    to_iso_utc(finished_at),
-    duration_seconds);
-}
-}
 
 segment_writer::segment_writer(
   const std::string& camera_id,
@@ -112,6 +51,7 @@ bool segment_writer::ensure_input_stream(const std::shared_ptr<media_packet>& me
 
 void segment_writer::open_new_segment()
 {
+  m_timing.clear();
   close_segment();
 
   if (m_input_streams.empty()) 
@@ -123,10 +63,6 @@ void segment_writer::open_new_segment()
   const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
 
   recording_storage storage;
-
-  m_current_segment_relative_path =
-    storage.make_segment_path(m_camera_id, now);
-
 
   auto path = storage.get_absolute_path(m_camera_id, now);
   std::filesystem::create_directories(path.parent_path());
@@ -140,7 +76,7 @@ void segment_writer::open_new_segment()
   }
 
   m_output_streams.clear();
-  m_next_pts_by_input_stream.clear();
+
   for (const auto& [input_index, stream_info] : m_input_streams) 
   {
     AVStream* out_stream = avformat_new_stream(m_ctx, nullptr);
@@ -150,7 +86,6 @@ void segment_writer::open_new_segment()
       avformat_free_context(m_ctx);
       m_ctx = nullptr;
       m_output_streams.clear();
-      m_next_pts_by_input_stream.clear();
       return;
     }
 
@@ -160,7 +95,6 @@ void segment_writer::open_new_segment()
       avformat_free_context(m_ctx);
       m_ctx = nullptr;
       m_output_streams.clear();
-      m_next_pts_by_input_stream.clear();
       return;
     }
 
@@ -178,7 +112,6 @@ void segment_writer::open_new_segment()
       avformat_free_context(m_ctx);
       m_ctx = nullptr;
       m_output_streams.clear();
-      m_next_pts_by_input_stream.clear();
       return;
     }
   }
@@ -190,18 +123,10 @@ void segment_writer::open_new_segment()
     avformat_free_context(m_ctx);
     m_ctx = nullptr;
     m_output_streams.clear();
-    m_next_pts_by_input_stream.clear();
     return;
   }
 
   m_segment_start_time = std::chrono::steady_clock::now();
-  m_segment_start_wall_time = std::chrono::system_clock::now();
-
-  const std::string payload = make_segment_started_payload(
-    m_camera_id,
-    m_current_segment_relative_path.string(),
-    m_segment_start_wall_time);
-  m_dapr_publisher.publish_json("recording.events", payload);
 }
 
 void segment_writer::close_segment()
@@ -213,13 +138,6 @@ void segment_writer::close_segment()
   const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
     std::chrono::steady_clock::now() - m_segment_start_time);
 
-  const std::string payload = make_segment_finished_payload(
-    m_camera_id,
-    m_current_segment_relative_path.string(),
-    m_segment_start_wall_time,
-    finished_at,
-    duration.count() / 1000.0);
-  m_dapr_publisher.publish_json("recording.events", payload);
 
   av_write_trailer(m_ctx);
 
@@ -229,116 +147,81 @@ void segment_writer::close_segment()
   avformat_free_context(m_ctx);
   m_ctx = nullptr;
   m_output_streams.clear();
-  m_next_pts_by_input_stream.clear();
-  m_current_segment_relative_path.clear();
 }
 
 void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)
 {
-  if (!in_media || !in_media->packet)
-  {
+  if (!in_media || !in_media->packet || !ensure_input_stream(in_media))
     return;
-  }
-
-  if (!ensure_input_stream(in_media))
-  {
-    return;
-  }
 
   auto media = clone_media_packet(in_media);
-  if (!media) 
-  {
+  if (!media)
     return;
-  }
 
   AVPacket* pkt = media->packet.get();
 
-
-  if (!m_ctx) {
-    if (media->media_type != AVMEDIA_TYPE_VIDEO || !(pkt->flags & AV_PKT_FLAG_KEY)) 
-    {
+  // открываем сегмент на ключевом кадре, если нужно
+  if (!m_ctx)
+  {
+    if (media->media_type != AVMEDIA_TYPE_VIDEO || !(pkt->flags & AV_PKT_FLAG_KEY))
       return;
-    }
-
     open_new_segment();
-    if (!m_ctx)
-      return;
+    if (!m_ctx) return;
   }
 
   auto elapsed = std::chrono::steady_clock::now() - m_segment_start_time;
-
   if (elapsed >= m_segment_seconds &&
     media->media_type == AVMEDIA_TYPE_VIDEO &&
     (pkt->flags & AV_PKT_FLAG_KEY))
   {
     open_new_segment();
-    if (!m_ctx)
-      return;
+    if (!m_ctx) return;
   }
 
-  const auto out_stream_it = m_output_streams.find(media->stream_index);
-  if (out_stream_it == m_output_streams.end()) 
-  {
+  auto out_it = m_output_streams.find(media->stream_index);
+  if (out_it == m_output_streams.end())
     return;
-  }
 
-  AVStream* out_stream = out_stream_it->second;
+  AVStream* out_stream = out_it->second;
+  auto& timing = m_timing[media->stream_index];
 
-  int64_t duration = 0;
-  if (media->media_type == AVMEDIA_TYPE_VIDEO)
+  // rescale сразу, даже если PTS/DTS кривые
+  av_packet_rescale_ts(pkt, media->time_base, out_stream->time_base);
+
+  bool invalid = pkt->pts == AV_NOPTS_VALUE || pkt->dts == AV_NOPTS_VALUE || pkt->pts < 0 || pkt->dts < 0;
+
+  if (!invalid)
   {
-    AVRational fps = media->frame_rate;
-    if (fps.num <= 0 || fps.den <= 0)
-    {
-      fps = AVRational{ 25, 1 };
-    }
+    // инициализация и нормализация старта сегмента
+    if (timing.first_pts == AV_NOPTS_VALUE) timing.first_pts = pkt->pts;
+    if (timing.first_dts == AV_NOPTS_VALUE) timing.first_dts = pkt->dts;
 
-    duration = av_rescale_q(1, av_inv_q(fps), out_stream->time_base);
-  } else if (media->media_type == AVMEDIA_TYPE_AUDIO) {
-    const int sample_rate = media->sample_rate > 0 ? media->sample_rate :
-      (media->codec_parameters ? media->codec_parameters->sample_rate : 0);
+    pkt->pts -= timing.first_pts;
+    pkt->dts -= timing.first_dts;
 
-    if (sample_rate > 0) {
-      int nb_samples = media->nb_samples;
-      if (nb_samples <= 0 && pkt->duration > 0)
-      {
-        nb_samples = static_cast<int>(av_rescale_q(pkt->duration,
-                                                   media->time_base,
-                                                   AVRational{ 1, sample_rate }));
-      }
-      if (nb_samples <= 0) {
-        nb_samples = 1024;
-      }
-
-      duration = av_rescale_q(nb_samples,
-                              AVRational{ 1, sample_rate },
-                              out_stream->time_base);
-    }
+    // защита от откатов
+    if (timing.last_pts != AV_NOPTS_VALUE && pkt->pts <= timing.last_pts) pkt->pts = timing.last_pts + 1;
+    if (timing.last_dts != AV_NOPTS_VALUE && pkt->dts <= timing.last_dts) pkt->dts = timing.last_dts + 1;
+  }
+  else
+  {
+    // fallback для кривых пакетов
+    if (pkt->duration <= 0) pkt->duration = 1;
+    int64_t next = (timing.last_pts != AV_NOPTS_VALUE) ? timing.last_pts + pkt->duration : 0;
+    pkt->pts = pkt->dts = next;
   }
 
-  if (duration <= 0) {
-    if (pkt->duration > 0)
-    {
-      duration = av_rescale_q(pkt->duration, media->time_base, out_stream->time_base);
-    } 
-    else 
-    {
-      duration = 1;
-    }
-  }
+  // сохраняем последние значения
+  timing.last_pts = pkt->pts;
+  timing.last_dts = pkt->dts;
 
-  int64_t& next_pts = m_next_pts_by_input_stream[media->stream_index];
-  pkt->pts = next_pts;
-  pkt->dts = next_pts;
-  pkt->duration = duration;
-  next_pts += duration;
+  // защита на случай, если dts > pts
+  if (pkt->dts > pkt->pts) pkt->dts = pkt->pts;
 
   pkt->stream_index = out_stream->index;
 
   if (av_interleaved_write_frame(m_ctx, pkt) < 0)
-  {
     std::cerr << "write_frame failed\n";
-  }
 }
 
 void segment_writer::close()

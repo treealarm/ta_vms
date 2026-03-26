@@ -122,7 +122,7 @@ std::vector<recording_info>
     if (!entry.is_regular_file())
       continue;
 
-    if (entry.path().extension() != ".mkv")
+    if (entry.path().extension() != resolve_file_ext())
       continue;
 
     auto ts = parse_time(entry.path().filename().string());
@@ -244,7 +244,9 @@ std::filesystem::path recording_storage::make_segment_path(
 
   // имя файла = timestamp
   auto ts_sec = floor<std::chrono::seconds>(ts);
-  std::string filename = std::format("{:%Y-%m-%d_%H-%M-%S}.mkv", ts_sec);
+  std::string filename = std::format("{:%Y-%m-%d_%H-%M-%S}{}", 
+    ts_sec, 
+    resolve_file_ext().string());
 
   return  std::filesystem::path(camera_id) / year / md / filename;
 }
@@ -253,4 +255,26 @@ std::filesystem::path recording_storage::get_absolute_path(const std::string& ca
   std::chrono::system_clock::time_point ts)
 {
   return resolve_storage_base_path()/make_segment_path(camera_id, ts);
+}
+
+std::filesystem::path recording_storage::resolve_storage_base_path()
+{
+  if (const char* value = std::getenv("VMS_STORAGE_BASE_PATH")) {
+    if (value[0] != '\0') {
+      return value;
+    }
+  }
+
+  return "records";
+}
+
+std::filesystem::path recording_storage::resolve_file_ext()
+{
+  if (const char* value = std::getenv("VMS_FILE_EXT")) {
+    if (value[0] != '\0') {
+      return value;
+    }
+  }
+
+  return ".ts";
 }
