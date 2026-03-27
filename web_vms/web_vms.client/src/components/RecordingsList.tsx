@@ -17,9 +17,16 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
   const [selected, setSelected] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [pickerTime, setPickerTime] = useState(toLocalDatetimeInputValue(new Date()))
+  const [displayTime, setDisplayTime] = useState(timestamp ?? new Date().toISOString())
   const [queryTime, setQueryTime] = useState<string | undefined>()
   const [loaded, setLoaded] = useState(false)
   const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null)
+
+  useEffect(() => {
+    if (timestamp) {
+      setDisplayTime(timestamp)
+    }
+  }, [timestamp])
 
   useEffect(() => {
     if (open) {
@@ -105,38 +112,33 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
     return null
   }
 
-  const shownTime = queryTime ? new Date(queryTime) : new Date()
+  const shownTime = new Date(displayTime)
   const shownDate = shownTime.toLocaleDateString()
   const shownClock = shownTime.toLocaleTimeString()
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <Stack
-        direction="row"
+        direction="column"
         alignItems="center"
-        justifyContent="space-between"
         spacing={0.5}
         sx={{ px: 1, py: 1, borderBottom: '1px solid rgba(0,0,0,0.1)', flexShrink: 0 }}
       >
-        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 0 }}>
-          <IconButton size="small" onClick={(e) => setPickerAnchor(e.currentTarget)} title="Выбрать время">
-            📅
-          </IconButton>
-          <Stack sx={{ minWidth: 0 }}>
-            <Typography variant="caption" sx={{ lineHeight: 1.15 }}>
-              {shownDate}
-            </Typography>
-            <Typography variant="caption" sx={{ lineHeight: 1.15 }}>
-              {shownClock}
-            </Typography>
-          </Stack>
-        </Stack>
+        <Typography variant="caption" sx={{ lineHeight: 1.15 }}>
+          {shownDate}
+        </Typography>
+        <Typography variant="caption" sx={{ lineHeight: 1.15 }}>
+          {shownClock}
+        </Typography>
 
         <Stack direction="row" spacing={0.5}>
-          <IconButton size="small" onClick={handlePrev} title="Назад">
+          <IconButton size="small" onClick={handlePrev} title="Previous">
             ◀
           </IconButton>
-          <IconButton size="small" onClick={handleNext} title="Вперёд">
+          <IconButton size="small" onClick={(e) => setPickerAnchor(e.currentTarget)} title="Pick date and time">
+            📅
+          </IconButton>
+          <IconButton size="small" onClick={handleNext} title="Next">
             ▶
           </IconButton>
         </Stack>
