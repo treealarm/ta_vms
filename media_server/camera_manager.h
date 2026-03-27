@@ -23,8 +23,9 @@ public:
   {
     std::string camera_id;
     std::string client_id;
-    std::chrono::system_clock::time_point start_time;
+    std::chrono::system_clock::time_point position_ts;
     std::optional<std::filesystem::path> file_path;
+    std::optional<reader_progress> progress;
   };
   bool add_camera(const std::string& camera_id,
                   const std::string& rtsp_url,

@@ -27,10 +27,18 @@ export type ApiResponseDto = {
 }
 
 export type PlayerStateDto = {
-  cameraId: string
-  clientId: string
-  position: string
-  filePath: string
+  camera_id: string
+  client_id: string
+  position_ts: string
+}
+
+export type PlayerProgressStateDto = {
+  camera_id: string
+  client_id: string
+  position_ts: string
+  file_path: string
+  duration_ms: number
+  position_ms:number
 }
 
 export type CameraStateDto = {
@@ -61,17 +69,6 @@ export type AddCameraRequestDto = {
   state: Pick<CameraStateDto, 'cameraId' | 'recording' | 'webRtc'>
 }
 
-export type AddPlayerRequestDto = {
-  cameraId: string
-  clientId: string
-  position: string
-}
 
 export type UpdateCameraStateRequestDto = Pick<CameraStateDto, 'cameraId' | 'recording' | 'webRtc'>
 
-export type SeekPlayerRequestDto = {
-  cameraId: string
-  clientId: string
-  position: string
-  filePath?: string
-}

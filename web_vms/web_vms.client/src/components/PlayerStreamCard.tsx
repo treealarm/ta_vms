@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Box, Card, CardContent, IconButton, Stack, Typography } from '@mui/material'
-import { type PlayerStateDto, type RecordingDto } from '../dto/dtos'
+import { type PlayerProgressStateDto, type RecordingDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
 import RecordingsList from './RecordingsList'
-import { fetchPlayerState, seekPlayer } from '../store/archSlice'
+import { fetchPlayerState, setPlayerState } from '../store/archSlice'
 import { useAppDispatch, useAppSelector } from '../store'
 
 type PlayerStreamCardProps = {
-  player: PlayerStateDto
-  onRemove: (player: PlayerStateDto) => Promise<void>
+  player: PlayerProgressStateDto
+  onRemove: (player: PlayerProgressStateDto) => Promise<void>
 }
 
 function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
@@ -16,27 +16,26 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
 
   const [listOpen, setListOpen] = useState(false)
 
-  const currentPlayer = useAppSelector((state) => state.arch.playerStatesByClientId[player.clientId]) ?? player
-  const currentFilePath = currentPlayer.filePath
-  const currentPosition = currentPlayer.position
+  const currentPlayer = useAppSelector((state) => state.arch.playerStatesByClientId[player.client_id]) ?? player
+  const currentFilePath = currentPlayer.file_path
+  const currentPosition = currentPlayer.position_ts
 
   useEffect(() => {
     const interval = setInterval(() => {
-      void dispatch(fetchPlayerState(player.clientId))
+      void dispatch(fetchPlayerState(player.client_id))
     }, 3000)
 
-    void dispatch(fetchPlayerState(player.clientId))
+    void dispatch(fetchPlayerState(player.client_id))
 
     return () => clearInterval(interval)
-  }, [dispatch, player.clientId])
+  }, [dispatch, player.client_id])
 
   const sendSeek = async (timeToSend: string) => {
     await dispatch(
-      seekPlayer({
-        cameraId: currentPlayer.cameraId,
-        clientId: currentPlayer.clientId,
-        position: timeToSend,
-        filePath: currentFilePath
+      setPlayerState({
+        camera_id: currentPlayer.camera_id,
+        client_id: currentPlayer.client_id,
+        position_ts: timeToSend
       })
     )
   }
@@ -50,7 +49,7 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
       <CardContent>
         <Stack spacing={1.5} sx={{ height: '100%' }}>
           <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <Typography variant="h6">{player.cameraId}</Typography>
+            <Typography variant="h6">{player.camera_id}</Typography>
 
             <IconButton size="small" onClick={() => void onRemove(player)}>
               ✕
@@ -80,7 +79,7 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
                   minHeight: 0
                 }}
               >
-                <CameraStream streamName={player.clientId} />
+                <CameraStream streamName={player.client_id} />
               </Box>
 
               {listOpen && (
@@ -95,7 +94,7 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
                 >
                   <RecordingsList
                     open={listOpen}
-                    cameraId={player.cameraId}
+                    cameraId={player.camera_id}
                     timestamp={currentPosition}
                     filePath={currentFilePath}
                     onSelect={handleSelectRecording}

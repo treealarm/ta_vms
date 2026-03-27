@@ -2,9 +2,8 @@
 {
   public record PlayerStateDto
   {
-    public string CameraId { get; init; } = default!;
-    public string ClientId { get; init; } = default!;
-    public DateTime? Position { get; set; } // если нужно менять
-    public string? FilePath { get; init; } = default!;
+    public string camera_id { get; init; } = default!;
+    public string client_id { get; init; } = default!;
+    public DateTime? position_ts { get; set; } // если нужно менять
   }
 }

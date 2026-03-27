@@ -1,6 +1,7 @@
 using Google.Protobuf.WellKnownTypes;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Control;
+using web_vms.Server.Dto;
 
 namespace web_vms;
 
@@ -12,7 +13,7 @@ public class ArchController(
   [HttpPost("players")]
   public async Task<IActionResult> AddPlayer([FromBody] PlayerStateDto request, CancellationToken ct)
   {
-      var dt = request.Position ?? DateTime.UtcNow;
+      var dt = request.position_ts ?? DateTime.UtcNow;
 
       if (dt.Kind != DateTimeKind.Utc)
         dt = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
@@ -21,9 +22,9 @@ public class ArchController(
 
       var startPlayResponse = await grpcClient.AddArchPlayerAsync(new PlayerState
       {
-        CameraId = request.CameraId,
-        Position = StartTimeStamp,
-        ClientId = request.ClientId
+        CameraId = request.camera_id,
+        PositionTs = StartTimeStamp,
+        ClientId = request.client_id
       }, cancellationToken: ct);
 
       return Ok(ApiResponseMapper.ToApiResponse(startPlayResponse));
@@ -38,13 +39,13 @@ public class ArchController(
 
     var request = new PlayerState
     {
-      CameraId = dto.CameraId,
-      ClientId = dto.ClientId
+      CameraId = dto.camera_id,
+      ClientId = dto.client_id
     };
 
-    if (dto.Position.HasValue)
+    if (dto.position_ts.HasValue)
     {
-      var dt = dto.Position.Value;
+      var dt = dto.position_ts.Value;
 
       DateTime dtUtc;
 
@@ -61,7 +62,7 @@ public class ArchController(
         dtUtc = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
       }
 
-      request.Position = Timestamp.FromDateTime(dtUtc);
+      request.PositionTs = Timestamp.FromDateTime(dtUtc);
     }
 
     var grpcResponse = await grpcClient.SetPlayerStateAsync(request, cancellationToken: ct);
@@ -79,22 +80,24 @@ public class ArchController(
     if (string.IsNullOrEmpty(clientId))
       return BadRequest("clientId is required");
 
-    PlayerState playerState =
-      await grpcClient.GetPlayerStateAsync(new SourceRequest() { SourceId = clientId }, cancellationToken: ct);
+    PlayerProgressState playerState =
+      await grpcClient.GetPlayerProgressStateAsync(new SourceRequest() { SourceId = clientId }, cancellationToken: ct);
 
     if (playerState == null)
       return NotFound();
 
-    var dto = new PlayerStateDto
+    var dto = new PlayerProgressStateDto
     {
-      CameraId = playerState.CameraId,
-      ClientId = playerState.ClientId,
-      FilePath = playerState.FilePath
+      camera_id = playerState.CameraId,
+      client_id = playerState.ClientId,
+      file_path = playerState.FilePath
     };
 
-    if (playerState.Position != null)
-      dto.Position = playerState.Position.ToDateTime();
+    if (playerState.PositionTs != null)
+      dto.position_ts = playerState.PositionTs.ToDateTime();
 
+    dto.duration_ms = playerState.DurationMs;
+    dto.position_ms = playerState.PositionMs;
     return Ok(dto);
   }
 
@@ -116,11 +119,11 @@ public class ArchController(
         new ListPlayersRequest(),
         cancellationToken: ct);
 
-    var result = grpcResponse.Players.Select(p => new PlayerStateDto
+    var result = grpcResponse.Players.Select(p => new PlayerProgressStateDto
     {
-      CameraId = p.CameraId,
-      ClientId = p.ClientId,
-      Position = p.Position.ToDateTime()
+      camera_id = p.CameraId,
+      client_id = p.ClientId,
+      position_ts = p.PositionTs.ToDateTime()
     });
 
     return Ok(result);

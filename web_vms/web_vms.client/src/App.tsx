@@ -13,7 +13,7 @@ import {
 } from '@mui/material'
 import CameraStreamCard from './components/CameraStreamCard'
 import PlayerStreamCard from './components/PlayerStreamCard'
-import { type AddCameraRequestDto, type AddPlayerRequestDto } from './dto/dtos'
+import { type AddCameraRequestDto, type PlayerStateDto } from './dto/dtos'
 import { addCamera, loadCameras, removeCamera, setLiveStatus } from './store/liveSlice'
 import { addPlayer, loadPlayers, removePlayer } from './store/archSlice'
 import { useAppDispatch, useAppSelector } from './store'
@@ -66,10 +66,10 @@ function App() {
       return
     }
 
-    const payload: AddPlayerRequestDto = {
-      cameraId,
-      clientId: `${cameraId}_arch`,
-      position: new Date().toISOString()
+    const payload: PlayerStateDto = {
+      camera_id: cameraId,
+      client_id: `${cameraId}_arch`,
+      position_ts: new Date().toISOString()
     }
 
     const result = await dispatch(addPlayer(payload))
@@ -165,11 +165,11 @@ function App() {
 
               <Grid container spacing={2}>
                 {players.map((player) => (
-                  <Grid key={player.clientId} size={{ xs: 12, sm: 6 }}>
+                  <Grid key={player.client_id} size={{ xs: 12, sm: 6 }}>
                     <PlayerStreamCard
                       player={player}
                       onRemove={async (playerToDelete) => {
-                        const result = await dispatch(removePlayer(playerToDelete.clientId))
+                        const result = await dispatch(removePlayer(playerToDelete.client_id))
 
                         if (!removePlayer.rejected.match(result)) {
                           await refreshLists()

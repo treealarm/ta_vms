@@ -323,5 +323,6 @@ std::optional<camera_manager::player_info>  camera_manager::get_player_state(
     it->second->file_path() ? std::make_optional(*it->second->file_path()) : std::nullopt
   };
 
+  pi.progress = it->second->get_progress();
   return pi;
 }

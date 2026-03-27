@@ -44,9 +44,11 @@ public:
                               const vms::control::PlayerState* request,
                               vms::control::OperationStatus* response) override;
 
-  grpc::Status GetPlayerState(grpc::ServerContext* context,
-    const vms::control::SourceRequest* request,
-    vms::control::PlayerState* response);
+  ::grpc::Status GetPlayerProgressState(
+    ::grpc::ServerContext* context, 
+    const ::vms::control::SourceRequest* request, 
+    ::vms::control::PlayerProgressState* response) override;
+
 
   grpc::Status ListPlayers(grpc::ServerContext* context,
     const vms::control::ListPlayersRequest* request,
