@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { List, ListItemButton, ListItemText, Tooltip, CircularProgress, Box, Stack, IconButton, TextField } from '@mui/material'
+import { List, ListItemButton, ListItemText, Tooltip, CircularProgress, Box, Stack, IconButton, TextField, Popover, Typography } from '@mui/material'
 import { toLocalDatetimeInputValue, type RecordingDto } from '../dto/dtos'
 import { fetchRecordings } from '../store/fsSlice'
 import { useAppDispatch, useAppSelector } from '../store'
@@ -16,18 +16,19 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
   const dispatch = useAppDispatch()
   const [selected, setSelected] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [inputTime, setInputTime] = useState(toLocalDatetimeInputValue(new Date()))
+  const [pickerTime, setPickerTime] = useState(toLocalDatetimeInputValue(new Date()))
   const [queryTime, setQueryTime] = useState<string | undefined>()
   const [loaded, setLoaded] = useState(false)
+  const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null)
 
   useEffect(() => {
     if (open) {
       const initialTime = timestamp ?? new Date().toISOString()
-      setInputTime(toLocalDatetimeInputValue(new Date(initialTime)))
+      setPickerTime(toLocalDatetimeInputValue(new Date(initialTime)))
       setQueryTime(initialTime)
       setLoaded(false)
     }
-  }, [open, timestamp])
+  }, [open])
 
   useEffect(() => {
     if (!open || !queryTime || loaded) {
@@ -58,21 +59,23 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
 
   const requestAt = (time: string) => {
     setQueryTime(time)
-    setInputTime(toLocalDatetimeInputValue(new Date(time)))
+    setPickerTime(toLocalDatetimeInputValue(new Date(time)))
     setLoaded(false)
   }
 
-  const handleApplyTime = () => {
-    if (!inputTime) {
+  const handlePickerChange = (value: string) => {
+    setPickerTime(value)
+    if (!value) {
       return
     }
 
-    const nextTime = new Date(inputTime)
+    const nextTime = new Date(value)
     if (isNaN(nextTime.getTime())) {
       return
     }
 
     requestAt(nextTime.toISOString())
+    setPickerAnchor(null)
   }
 
   const handleNext = () => {
@@ -102,31 +105,60 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
     return null
   }
 
+  const shownTime = queryTime ? new Date(queryTime) : new Date()
+  const shownDate = shownTime.toLocaleDateString()
+  const shownClock = shownTime.toLocaleTimeString()
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <Stack
         direction="row"
         alignItems="center"
+        justifyContent="space-between"
         spacing={0.5}
         sx={{ px: 1, py: 1, borderBottom: '1px solid rgba(0,0,0,0.1)', flexShrink: 0 }}
       >
-        <TextField
-          type="datetime-local"
-          value={inputTime}
-          onChange={(e) => setInputTime(e.target.value)}
-          inputProps={{ step: 1 }}
-          size="small"
-        />
-        <IconButton size="small" onClick={handleApplyTime} title="Обновить список по времени">
-          🔎
-        </IconButton>
-        <IconButton size="small" onClick={handlePrev} title="Назад">
-          ◀
-        </IconButton>
-        <IconButton size="small" onClick={handleNext} title="Вперёд">
-          ▶
-        </IconButton>
+        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 0 }}>
+          <IconButton size="small" onClick={(e) => setPickerAnchor(e.currentTarget)} title="Выбрать время">
+            📅
+          </IconButton>
+          <Stack sx={{ minWidth: 0 }}>
+            <Typography variant="caption" sx={{ lineHeight: 1.15 }}>
+              {shownDate}
+            </Typography>
+            <Typography variant="caption" sx={{ lineHeight: 1.15 }}>
+              {shownClock}
+            </Typography>
+          </Stack>
+        </Stack>
+
+        <Stack direction="row" spacing={0.5}>
+          <IconButton size="small" onClick={handlePrev} title="Назад">
+            ◀
+          </IconButton>
+          <IconButton size="small" onClick={handleNext} title="Вперёд">
+            ▶
+          </IconButton>
+        </Stack>
       </Stack>
+
+      <Popover
+        open={Boolean(pickerAnchor)}
+        anchorEl={pickerAnchor}
+        onClose={() => setPickerAnchor(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+      >
+        <Box sx={{ p: 1 }}>
+          <TextField
+            autoFocus
+            type="datetime-local"
+            value={pickerTime}
+            onChange={(e) => handlePickerChange(e.target.value)}
+            inputProps={{ step: 1 }}
+            size="small"
+          />
+        </Box>
+      </Popover>
 
       <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
         {loading ? (
