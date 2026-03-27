@@ -12,25 +12,41 @@ type Props = {
   onSelect: (rec: RecordingDto) => void
 }
 
+const normalizeTimestamp = (value?: string) => {
+  if (!value) {
+    return new Date().toISOString()
+  }
+
+  const parsed = new Date(value)
+  if (isNaN(parsed.getTime())) {
+    return new Date().toISOString()
+  }
+
+  // Guard against "epoch-like" placeholders when server position is not ready yet.
+  if (parsed.getUTCFullYear() <= 1970) {
+    return new Date().toISOString()
+  }
+
+  return parsed.toISOString()
+}
+
 export default function RecordingsList({ open, cameraId, timestamp, filePath, onSelect }: Props) {
   const dispatch = useAppDispatch()
   const [selected, setSelected] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [pickerTime, setPickerTime] = useState(toLocalDatetimeInputValue(new Date()))
-  const [displayTime, setDisplayTime] = useState(timestamp ?? new Date().toISOString())
+  const [displayTime, setDisplayTime] = useState(normalizeTimestamp(timestamp))
   const [queryTime, setQueryTime] = useState<string | undefined>()
   const [loaded, setLoaded] = useState(false)
   const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null)
 
   useEffect(() => {
-    if (timestamp) {
-      setDisplayTime(timestamp)
-    }
+    setDisplayTime(normalizeTimestamp(timestamp))
   }, [timestamp])
 
   useEffect(() => {
     if (open) {
-      const initialTime = timestamp ?? new Date().toISOString()
+      const initialTime = normalizeTimestamp(timestamp)
       setPickerTime(toLocalDatetimeInputValue(new Date(initialTime)))
       setQueryTime(initialTime)
       setLoaded(false)
@@ -115,6 +131,10 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
   const shownTime = new Date(displayTime)
   const shownDate = shownTime.toLocaleDateString()
   const shownClock = shownTime.toLocaleTimeString()
+  const openPicker = (target: HTMLElement) => {
+    setPickerTime(toLocalDatetimeInputValue(new Date(displayTime)))
+    setPickerAnchor(target)
+  }
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -135,7 +155,7 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
           <IconButton size="small" onClick={handlePrev} title="Previous">
             ◀
           </IconButton>
-          <IconButton size="small" onClick={(e) => setPickerAnchor(e.currentTarget)} title="Pick date and time">
+          <IconButton size="small" onClick={(e) => openPicker(e.currentTarget)} title="Pick date and time">
             📅
           </IconButton>
           <IconButton size="small" onClick={handleNext} title="Next">
