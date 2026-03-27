@@ -13,11 +13,13 @@ type PlayerStreamCardProps = {
 
 function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
   const dispatch = useAppDispatch()
-  const [newTime, setNewTime] = useState('')
+
+  const [newTime, setNewTime] = useState(toLocalDatetimeInputValue(new Date()))
   const [listOpen, setListOpen] = useState(false)
 
   const currentPlayer = useAppSelector((state) => state.arch.playerStatesByClientId[player.clientId]) ?? player
-  const currentFilePath = currentPlayer.filePath
+  const currentFilePath = currentPlayer.filePath;
+  const currentPosition = currentPlayer.position;
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -28,6 +30,8 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
 
     return () => clearInterval(interval)
   }, [dispatch, player.clientId])
+
+ 
 
   const sendSeek = async (iso?: string) => {
     const timeToSend = iso ?? (newTime ? new Date(newTime).toISOString() : null)
