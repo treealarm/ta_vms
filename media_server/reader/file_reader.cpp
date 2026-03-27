@@ -11,17 +11,6 @@
 #include "file_reader.h"
 #include "interfaces/av_deleters.h"
 
-namespace
-{
-  static int64_t to_us(int64_t pts, AVRational time_base)
-  {
-    if (pts == AV_NOPTS_VALUE)
-      return -1;
-
-    return av_rescale_q(pts, time_base, AVRational{ 1, 1000000 });
-  }
-}
-
 file_reader::file_reader(std::string camera_id,
   std::function<bool(const std::string&)> cb_eof)
     : 
@@ -187,9 +176,11 @@ void file_reader::read_loop()
 
     AVStream* stream = m_ctx->streams[pkt->stream_index];
 
-    int64_t pts_us = to_us(pkt->pts, stream->time_base);
-    if (pts_us < 0)
+    if (pkt->pts == AV_NOPTS_VALUE)
       continue;
+
+    int64_t pts_us = av_rescale_q(pkt->pts, stream->time_base, AVRational{ 1, 1000000 });
+
 
     // --- инициализация базового времени ---
     if (first_pts_us < 0)
@@ -199,6 +190,9 @@ void file_reader::read_loop()
     }
 
     int64_t relative_us = pts_us - first_pts_us;
+
+    if (relative_us < 0)
+      relative_us = 0;
 
     auto target_time = start_wall_time +
       std::chrono::microseconds(relative_us);
