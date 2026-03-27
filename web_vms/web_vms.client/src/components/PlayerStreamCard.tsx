@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Box, Button, Card, CardContent, IconButton, Stack, Typography, TextField } from '@mui/material'
-import { toLocalDatetimeInputValue, type PlayerStateDto, type RecordingDto } from '../dto/dtos'
+import { Box, Card, CardContent, IconButton, Stack, Typography } from '@mui/material'
+import { type PlayerStateDto, type RecordingDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
 import RecordingsList from './RecordingsList'
 import { fetchPlayerState, seekPlayer } from '../store/archSlice'
@@ -14,12 +14,11 @@ type PlayerStreamCardProps = {
 function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
   const dispatch = useAppDispatch()
 
-  const [newTime, setNewTime] = useState(toLocalDatetimeInputValue(new Date()))
   const [listOpen, setListOpen] = useState(false)
 
   const currentPlayer = useAppSelector((state) => state.arch.playerStatesByClientId[player.clientId]) ?? player
-  const currentFilePath = currentPlayer.filePath;
-  const currentPosition = currentPlayer.position;
+  const currentFilePath = currentPlayer.filePath
+  const currentPosition = currentPlayer.position
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -31,14 +30,7 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
     return () => clearInterval(interval)
   }, [dispatch, player.clientId])
 
- 
-
-  const sendSeek = async (iso?: string) => {
-    const timeToSend = iso ?? (newTime ? new Date(newTime).toISOString() : null)
-    if (!timeToSend) {
-      return
-    }
-
+  const sendSeek = async (timeToSend: string) => {
     await dispatch(
       seekPlayer({
         cameraId: currentPlayer.cameraId,
@@ -50,9 +42,7 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
   }
 
   const handleSelectRecording = (rec: RecordingDto) => {
-    const date = new Date(rec.startTime)
-    setNewTime(toLocalDatetimeInputValue(date))
-    void sendSeek(date.toISOString())
+    void sendSeek(new Date(rec.startTime).toISOString())
   }
 
   return (
@@ -105,9 +95,8 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
                 >
                   <RecordingsList
                     open={listOpen}
-                    onClose={() => setListOpen(false)}
                     cameraId={player.cameraId}
-                    timestamp={newTime ? new Date(newTime).toISOString() : undefined}
+                    timestamp={currentPosition}
                     filePath={currentFilePath}
                     onSelect={handleSelectRecording}
                   />
@@ -117,21 +106,9 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
           </Box>
 
           <Stack direction="row" spacing={1}>
-            <TextField
-              type="datetime-local"
-              value={newTime}
-              onChange={(e) => setNewTime(e.target.value)}
-              fullWidth
-              inputProps={{ step: 1 }}
-            />
-
             <IconButton size="small" onClick={() => setListOpen((v) => !v)}>
               🕘
             </IconButton>
-
-            <Button variant="contained" onClick={() => void sendSeek()}>
-              Go
-            </Button>
           </Stack>
         </Stack>
       </CardContent>
