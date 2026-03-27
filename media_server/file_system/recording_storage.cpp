@@ -156,69 +156,90 @@ std::optional<recording_info>
   return vec.front();
 }
 
-std::vector<recording_info>
-recording_storage::get_recordings(
+std::vector<recording_info> recording_storage::get_recordings(
   const std::string& camera_id,
   std::chrono::system_clock::time_point ts,
   uint32_t limit,
-  int32_t& nearestIndex // ← индекс ближайшей записи
+  int32_t& nearestIndex
 )
 {
-  std::vector<recording_info> files;
+  const int32_t half = static_cast<int32_t>(limit / 2);
+  const int32_t maxDays = 30;
 
   auto day_path = make_day_path(camera_id, ts);
 
   // 1️⃣ грузим текущий день
-  auto current = load_day(day_path);
-  files.insert(files.end(), current.begin(), current.end());
+  auto curr = load_day(day_path);
 
-  // 2️⃣ если мало — подгружаем соседние дни
-  int offset = 1;
-  while (files.size() < limit * 2) // запас для выбора nearest
-  {
-    auto prev = load_day(shift_day(day_path, -offset));
-    auto next = load_day(shift_day(day_path, offset));
-
-    if (prev.empty() && next.empty())
-      break;
-
-    files.insert(files.end(), prev.begin(), prev.end());
-    files.insert(files.end(), next.begin(), next.end());
-
-    offset++;
+  if (curr.empty()) {
+    // если день пуст — будем искать ближайший вообще
+    curr = {};
   }
 
-  if (files.empty()) {
-    nearestIndex = -1;
-    return {};
-  }
-
-  // 3️⃣ сортировка по времени
-  std::sort(files.begin(), files.end(),
-    [](const auto& a, const auto& b) { return a.start_time < b.start_time; });
-
-  // 4️⃣ находим ближайшую запись к ts
-  auto it = std::min_element(files.begin(), files.end(),
-    [ts](const auto& a, const auto& b) {
-      auto da = std::chrono::duration_cast<std::chrono::milliseconds>(a.start_time - ts).count();
-      auto db = std::chrono::duration_cast<std::chrono::milliseconds>(b.start_time - ts).count();
-      return std::abs(da) < std::abs(db);
+  // предполагаем, что load_day уже возвращает отсортированные данные
+  auto it = std::lower_bound(curr.begin(), curr.end(), ts,
+    [](const recording_info& rec, const auto& value) {
+      return rec.start_time < value;
     });
 
-  nearestIndex = static_cast<int32_t>(std::distance(files.begin(), it));
+  int32_t pos = static_cast<int32_t>(std::distance(curr.begin(), it));
 
-  // 5️⃣ формируем результат: просто первые `limit` записей вокруг nearestIndex
-  // если нужно, можно взять максимум limit записей, начиная с nearestIndex ± limit/2
-  int start = std::max(0, nearestIndex - static_cast<int32_t>(limit / 2));
-  int end = std::min<int32_t>(start + limit, static_cast<int32_t>(files.size()));
+  // ближайший внутри дня (если есть)
+  if (!curr.empty()) {
+    if (pos == curr.size()) pos--;
+    else if (pos > 0) {
+      auto d1 = std::abs(std::chrono::duration_cast<std::chrono::milliseconds>(curr[pos].start_time - ts).count());
+      auto d2 = std::abs(std::chrono::duration_cast<std::chrono::milliseconds>(curr[pos - 1].start_time - ts).count());
+      if (d2 < d1) pos--;
+    }
+  }
 
-  // корректируем start, если end обрезан
-  start = std::max(0, end - static_cast<int32_t>(limit));
+  std::vector<recording_info> left;
+  std::vector<recording_info> right;
 
-  std::vector<recording_info> result(files.begin() + start, files.begin() + end);
+  // 2️⃣ заполняем из текущего дня
+  for (int32_t i = pos - 1; i >= 0 && left.size() < half; --i)
+    left.push_back(curr[i]);
 
-  // пересчитываем nearestIndex внутри result
-  nearestIndex -= start;
+  for (int32_t i = pos; i < curr.size() && right.size() < half + (limit % 2); ++i)
+    right.push_back(curr[i]);
+
+  // 3️⃣ догружаем слева
+  int dayOffset = 1;
+  while (left.size() < half && dayOffset <= maxDays) {
+    auto prev = load_day(shift_day(day_path, -dayOffset));
+
+    for (int i = static_cast<int>(prev.size()) - 1; i >= 0 && left.size() < half; --i)
+      left.push_back(prev[i]);
+
+    dayOffset++;
+  }
+
+  // 4️⃣ догружаем справа
+  dayOffset = 1;
+  while (right.size() < half + (limit % 2) && dayOffset <= maxDays) {
+    auto next = load_day(shift_day(day_path, dayOffset));
+
+    for (int i = 0; i < next.size() && right.size() < half + (limit % 2); ++i)
+      right.push_back(next[i]);
+
+    dayOffset++;
+  }
+
+  // 5️⃣ собираем результат
+  std::reverse(left.begin(), left.end());
+
+  std::vector<recording_info> result;
+  result.reserve(left.size() + right.size());
+
+  result.insert(result.end(), left.begin(), left.end());
+  result.insert(result.end(), right.begin(), right.end());
+
+  // 6️⃣ индекс ближайшего
+  nearestIndex = static_cast<int32_t>(left.size());
+
+  if (result.empty())
+    nearestIndex = -1;
 
   return result;
 }

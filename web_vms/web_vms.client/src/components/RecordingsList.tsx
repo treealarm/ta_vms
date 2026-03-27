@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
-import { List, ListItemButton, ListItemText, Tooltip, CircularProgress, Box, Stack, IconButton, TextField, Popover, Typography } from '@mui/material'
+import {
+  List, ListItemButton, ListItemText,
+  Tooltip, CircularProgress, Box, Stack,
+  IconButton, TextField, Popover, Typography,
+  ListSubheader
+} from '@mui/material'
 import { toLocalDatetimeInputValue, type RecordingDto } from '../dto/dtos'
 import { fetchRecordings } from '../store/fsSlice'
 import { useAppDispatch, useAppSelector } from '../store'
@@ -188,41 +193,63 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
             <CircularProgress size={20} />
           </Box>
         ) : (
-          <List dense disablePadding>
-            {data.map((rec) => {
-              const isNearest = filePath === rec.filePath
-              const isSelected = selected === rec.filePath
-              const time = new Date(rec.startTime).toLocaleTimeString()
+            <List dense disablePadding>
+              {data.map((rec, index) => {
+                const prev = data[index - 1]
 
-              return (
-                <Tooltip
-                  key={rec.filePath}
-                  title={
-                    <>
-                      <div>{rec.filePath}</div>
-                      <div>
-                        {new Date(rec.startTime).toLocaleString()} —{' '}
-                        {rec.endTime ? new Date(rec.endTime).toLocaleString() : '...'}
-                      </div>
-                    </>
-                  }
-                  placement="left"
-                >
-                  <ListItemButton
-                    selected={isSelected}
-                    onClick={() => handleClick(rec)}
-                    sx={{
-                      py: 0.5,
-                      borderLeft: isNearest ? '3px solid orange' : undefined,
-                      bgcolor: isSelected ? 'rgba(25,118,210,0.15)' : undefined
-                    }}
-                  >
-                    <ListItemText primary={isNearest ? `➤ ${time}` : time} />
-                  </ListItemButton>
-                </Tooltip>
-              )
-            })}
-          </List>
+                const currentDate = new Date(rec.startTime).toDateString()
+                const prevDate = prev ? new Date(prev.startTime).toDateString() : null
+
+                const showDateHeader = index === 0 || currentDate !== prevDate
+
+                const isNearest = filePath === rec.filePath
+                const isSelected = selected === rec.filePath
+                const time = new Date(rec.startTime).toLocaleTimeString()
+
+                return (
+                  <div key={rec.filePath}>
+                    {showDateHeader && (
+                      <ListSubheader
+                        disableSticky
+                        sx={{
+                          lineHeight: '24px',
+                          bgcolor: 'background.paper',
+                          fontSize: 12,
+                          opacity: 0.7
+                        }}
+                      >
+                        {new Date(rec.startTime).toLocaleDateString()}
+                      </ListSubheader>
+                    )}
+
+                    <Tooltip
+                      title={
+                        <>
+                          <div>{rec.filePath}</div>
+                          <div>
+                            {new Date(rec.startTime).toLocaleString()} —{' '}
+                            {rec.endTime ? new Date(rec.endTime).toLocaleString() : '...'}
+                          </div>
+                        </>
+                      }
+                      placement="left"
+                    >
+                      <ListItemButton
+                        selected={isSelected}
+                        onClick={() => handleClick(rec)}
+                        sx={{
+                          py: 0.5,
+                          borderLeft: isNearest ? '3px solid orange' : undefined,
+                          bgcolor: isSelected ? 'rgba(25,118,210,0.15)' : undefined
+                        }}
+                      >
+                        <ListItemText primary={isNearest ? `➤ ${time}` : time} />
+                      </ListItemButton>
+                    </Tooltip>
+                  </div>
+                )
+              })}
+            </List>
         )}
       </Box>
     </Box>
