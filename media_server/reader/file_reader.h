@@ -17,14 +17,18 @@
 
 extern "C" {
 #include <libavformat/avformat.h>
-
 }
+
 
 class file_reader final : public reader 
 {
   using clock = std::chrono::steady_clock;
 public:
-  explicit file_reader(std::string camera_id, std::function<bool(const std::string&)> cb_eof);
+  explicit file_reader(
+    std::string camera_id, 
+    std::function<bool(const std::string&)> cb_eof,
+    std::function<void(const reader_progress&)> cb_progress
+  );
   ~file_reader() override;
 
   bool open(const std::string& source) override;
@@ -50,6 +54,7 @@ private:
 
   std::string m_camera_id;
   std::function<bool(const std::string&)> m_on_file_end;
+  std::function<void(const reader_progress&)> m_on_progress;
 
   sink_container_impl m_sinks_helper;
   std::string m_source;

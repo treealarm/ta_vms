@@ -10,11 +10,15 @@
 #include "file_reader.h"
 #include "interfaces/av_deleters.h"
 
-file_reader::file_reader(std::string camera_id,
-  std::function<bool(const std::string&)> cb_eof)
+file_reader::file_reader(
+  std::string camera_id,
+  std::function<bool(const std::string&)> cb_eof,
+  std::function<void(const reader_progress&)> cb_progress
+)
     : 
   m_camera_id(std::move(camera_id)),
-  m_on_file_end(cb_eof)
+  m_on_file_end(cb_eof),
+  m_on_progress(cb_progress)
 {}
 
 file_reader::~file_reader() 
@@ -233,6 +237,32 @@ void file_reader::read_loop()
         std::this_thread::sleep_for(sleep_us);
     }
     
+    if (pkt->stream_index == m_master_stream_index && m_on_progress)
+    {
+      using namespace std::chrono;
+
+      int64_t duration_ms = 0;
+      if (m_ctx && m_ctx->duration > 0)
+        duration_ms = m_ctx->duration / 1000; // из микросекунд в миллисекунды
+
+      // Текущая позиция относительно master
+      int64_t position_ms = 0;
+      if (m_master_pts_us >= 0)
+      {
+        auto elapsed_us = m_master_pts_us + duration_cast<microseconds>(steady_clock::now() - m_master_wall_time).count();
+        position_ms = elapsed_us / 1000; // в миллисекундах
+      }
+
+      if (position_ms > duration_ms)
+        position_ms = duration_ms;
+
+      reader_progress progress;
+      progress.duration = milliseconds(duration_ms);
+      progress.position = milliseconds(position_ms);
+
+      // Можно вызывать асинхронно в отдельном потоке UI, если нужно
+      m_on_progress(progress);
+    }
 
     // --- формирование пакета ---
     auto media = std::make_shared<media_packet>();
@@ -269,3 +299,4 @@ void file_reader::read_loop()
 
   disconnect();
 }
+

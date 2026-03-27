@@ -30,39 +30,47 @@ public:
 
   const std::string& camera_id() const
   {
-    std::scoped_lock lock(m_task_mutex);
+    std::scoped_lock lock(m_data_mutex);
     return m_camera_id;
   };
-  std::optional<std::string> file_path()
+  std::optional<std::string> file_path() const
   {
-    std::scoped_lock lock(m_task_mutex);
+    std::scoped_lock lock(m_data_mutex);
     return m_cur_file_path;
   };
-  std::chrono::system_clock::time_point start_time() const 
+  std::chrono::system_clock::time_point cur_time() const 
   {
-    std::scoped_lock lock(m_task_mutex);
-    return m_start_time;
+    std::scoped_lock lock(m_data_mutex);
+    return m_cur_time;
+  }
+  reader_progress get_progress() const 
+  {
+    std::scoped_lock lock(m_data_mutex);
+    return m_progress;
   }
   void shutdown();
 
 private:
-
-  bool open(const std::chrono::system_clock::time_point& start_time);
-  
+ 
   bool open_file_reader(const std::string& file_path);
 
   bool start_web_rtc();
   bool stop_web_rtc();
 
   bool on_eof(const std::string& file);
+  void on_progress(const reader_progress& progress);
 
   void worker_loop();
   void post_task(std::function<void()> task);
 
   std::string m_client_id;
   std::string m_camera_id;
+  reader_progress m_progress;
   std::optional<std::string> m_cur_file_path;
+
+  mutable std::mutex m_data_mutex;
   
+  std::chrono::system_clock::time_point m_cur_time;
   std::chrono::system_clock::time_point m_start_time;
   std::shared_ptr<reader> m_reader;
   std::shared_ptr<webrtc_output_sink> m_webrtc_output_sink;

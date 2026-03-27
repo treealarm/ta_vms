@@ -17,3 +17,9 @@ public:
   virtual void start() = 0;
   virtual void stop() = 0;
 };
+
+struct reader_progress
+{
+  std::chrono::milliseconds duration = std::chrono::milliseconds(0);
+  std::chrono::milliseconds position = std::chrono::milliseconds(0);
+};

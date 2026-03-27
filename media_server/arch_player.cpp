@@ -44,13 +44,13 @@ void arch_player::post_task(std::function<void()> task)
 
 void arch_player::worker_loop()
 {
-  while (true)
+  while (!m_stop_worker)
   {
     std::function<void()> task;
     {
       std::unique_lock lock(m_task_mutex);
       m_task_cv.wait(lock, [this] { return m_stop_worker || !m_task_queue.empty(); });
-      if (m_stop_worker && m_task_queue.empty())
+      if (m_stop_worker)
         break;
       task = std::move(m_task_queue.front());
       m_task_queue.pop();
@@ -67,11 +67,23 @@ bool arch_player::set_state(
   // кидаем задачу в очередь
   post_task([this, start_time, camera_id]()
     {
-      m_camera_id = camera_id;
+      {
+        std::scoped_lock lock(m_data_mutex);
+        m_camera_id = camera_id;
+      }
+      
       shutdown();
 
-      if (!open(start_time))
+      auto rec = m_storage.find_nearest(camera_id, start_time);
+      if (!rec)
+      {
         return;
+      }
+
+      if (!open_file_reader(rec->file_path.string()))
+      {
+        return;
+      }
 
       if (!start_web_rtc())
         return;
@@ -88,7 +100,7 @@ bool arch_player::on_eof(const std::string& file)
   if (!ts)
     return false;
 
-  auto info = m_storage.find_next(m_camera_id, *ts);
+  auto info = m_storage.find_next(camera_id(), *ts);
   if (!info)
     return false;
 
@@ -98,8 +110,7 @@ bool arch_player::on_eof(const std::string& file)
       if (!open_file_reader(info->file_path.string()))
       {
         return;
-      }
-      m_start_time = info->start_time;
+      }      
 
       if (!start_web_rtc())
         return;
@@ -108,35 +119,53 @@ bool arch_player::on_eof(const std::string& file)
   return true;
 }
 
+void arch_player::on_progress(const reader_progress& progress)
+{
+    std::scoped_lock lock(m_data_mutex);
+    m_progress = progress; 
+    m_cur_time = m_start_time + progress.position;
+}
+
 bool arch_player::open_file_reader(const std::string& file_path)
 {
   auto playback_reader = std::make_shared<file_reader>(
-    m_camera_id,
-    [this](const std::string& f) { return this->on_eof(f); });
-
-  {
-    if (!playback_reader->open(file_path))
+    camera_id(),
+    [this](const std::string& f) 
+    { 
+      return this->on_eof(f); 
+    },
+    [this](const reader_progress& progress)
     {
-      return false;
+      this->on_progress(progress);
     }
+  );
 
-    playback_reader->start();
-    m_reader = playback_reader;
-    m_cur_file_path = file_path;
-  }
 
-  return true;
-}
-
-bool arch_player::open(const std::chrono::system_clock::time_point& start_time)
-{
-  auto rec = m_storage.find_nearest(m_camera_id, start_time);
-  if (!rec)
+  if (!playback_reader->open(file_path))
   {
     return false;
   }
 
-  return open_file_reader(rec->file_path.string());
+  auto path = std::filesystem::path(file_path);
+  auto ts = m_storage.parse_time(path.filename().string());
+  if (ts)
+  {
+    std::scoped_lock lock(m_data_mutex);
+    m_cur_time = *ts;
+    m_start_time = *ts;
+  }
+  
+  playback_reader->start();
+  m_reader = playback_reader;
+
+  {
+    std::scoped_lock lock(m_data_mutex);
+    m_cur_file_path = file_path;
+  }
+  
+
+
+  return true;
 }
 
 void arch_player::shutdown()
