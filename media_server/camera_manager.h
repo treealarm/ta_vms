@@ -25,6 +25,7 @@ public:
     std::string client_id;
     std::chrono::system_clock::time_point position_ts;
     std::optional<std::filesystem::path> file_path;
+    std::optional<std::chrono::system_clock::time_point> start_ts;
     std::optional<reader_progress> progress;
   };
   bool add_camera(const std::string& camera_id,

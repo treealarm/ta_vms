@@ -48,6 +48,12 @@ public:
     std::scoped_lock lock(m_data_mutex);
     return m_progress;
   }
+  std::chrono::system_clock::time_point get_start_time() const
+  {
+    std::scoped_lock lock(m_data_mutex);
+    return m_start_time;
+  }
+   ;
   void shutdown();
 
 private:

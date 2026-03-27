@@ -219,6 +219,12 @@ grpc::Status camera_control_service::SetPlayerState(
     *response->mutable_file_path() = entry->file_path->filename().string();
   }
 
+  if (entry->start_ts)
+  {
+    *response->mutable_start_ts() = from_time_point(*entry->start_ts);
+  }
+  
+
   if (entry->progress)
   {
     response->set_duration_ms(entry->progress->duration.count());

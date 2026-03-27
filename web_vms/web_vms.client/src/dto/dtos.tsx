@@ -37,6 +37,7 @@ export type PlayerProgressStateDto = {
   client_id: string
   position_ts: string
   file_path: string
+  start_ts: string
   duration_ms: number
   position_ms:number
 }

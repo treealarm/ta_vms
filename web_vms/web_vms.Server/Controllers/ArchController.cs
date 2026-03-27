@@ -96,6 +96,7 @@ public class ArchController(
     if (playerState.PositionTs != null)
       dto.position_ts = playerState.PositionTs.ToDateTime();
 
+    dto.start_ts = playerState.StartTs.ToDateTime();
     dto.duration_ms = playerState.DurationMs;
     dto.position_ms = playerState.PositionMs;
     return Ok(dto);

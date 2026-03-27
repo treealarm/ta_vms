@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Box, Card, CardContent, IconButton, Stack, Typography } from '@mui/material'
+import { Box, Card, CardContent, IconButton, Slider, Stack, Typography } from '@mui/material'
+import { useState, useEffect } from 'react'
 import { type PlayerProgressStateDto, type RecordingDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
 import RecordingsList from './RecordingsList'
@@ -13,23 +13,30 @@ type PlayerStreamCardProps = {
 
 function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
   const dispatch = useAppDispatch()
-
   const [listOpen, setListOpen] = useState(false)
 
-  const currentPlayer = useAppSelector((state) => state.arch.playerStatesByClientId[player.client_id]) ?? player
-  const currentFilePath = currentPlayer.file_path
-  const currentPosition = currentPlayer.position_ts
+  const currentPlayer = useAppSelector(
+    (state) => state.arch.playerStatesByClientId[player.client_id]
+  ) ?? player
 
+  const [sliderValue, setSliderValue] = useState(currentPlayer.position_ms)
+
+  // Подтягиваем позицию каждые 3 секунды
   useEffect(() => {
     const interval = setInterval(() => {
       void dispatch(fetchPlayerState(player.client_id))
     }, 3000)
 
     void dispatch(fetchPlayerState(player.client_id))
-
     return () => clearInterval(interval)
   }, [dispatch, player.client_id])
 
+  // Обновляем слайдер при внешнем обновлении позиции
+  useEffect(() => {
+    setSliderValue(currentPlayer.position_ms)
+  }, [currentPlayer.position_ms])
+
+  // Отправка seek на сервер
   const sendSeek = async (timeToSend: string) => {
     await dispatch(
       setPlayerState({
@@ -40,6 +47,18 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
     )
   }
 
+  const handleSliderChange = (_: Event, value: number | number[]) => {
+    if (typeof value === 'number') setSliderValue(value)
+  }
+
+  const handleSliderCommitted = (_: Event | React.SyntheticEvent, value: number | number[]) => {
+    if (typeof value === 'number' && currentPlayer.start_ts != null) {
+      const startTime = new Date(currentPlayer.start_ts).getTime() // абсолютное начало
+      const targetTs = new Date(startTime + value).toISOString()   // прибавляем позицию в ms
+      void sendSeek(targetTs)                                       // передаём ISO, как нужно
+    }
+  }
+
   const handleSelectRecording = (rec: RecordingDto) => {
     void sendSeek(new Date(rec.startTime).toISOString())
   }
@@ -48,55 +67,32 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
     <Card sx={{ height: '100%' }}>
       <CardContent>
         <Stack spacing={1.5} sx={{ height: '100%' }}>
+          {/* Верхний заголовок */}
           <Stack direction="row" justifyContent="space-between" alignItems="center">
             <Typography variant="h6">{player.camera_id}</Typography>
-
-            <IconButton size="small" onClick={() => void onRemove(player)}>
-              ✕
-            </IconButton>
+            <IconButton size="small" onClick={() => void onRemove(player)}>✕</IconButton>
           </Stack>
 
-          <Box
-            sx={{
-              width: '100%',
-              aspectRatio: '1 / 1',
-              display: 'flex',
-              minHeight: 0
-            }}
-          >
-            <Stack
-              direction="row"
-              spacing={1}
-              sx={{
-                width: '100%',
-                minHeight: 0
-              }}
-            >
-              <Box
-                sx={{
-                  flex: 1,
-                  minWidth: 0,
-                  minHeight: 0
-                }}
-              >
+          {/* Видео и список */}
+          <Box sx={{ width: '100%', aspectRatio: '1 / 1', display: 'flex', minHeight: 0 }}>
+            <Stack direction="row" spacing={1} sx={{ width: '100%', minHeight: 0 }}>
+              <Box sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
                 <CameraStream streamName={player.client_id} />
               </Box>
 
               {listOpen && (
-                <Box
-                  sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    borderLeft: '1px solid rgba(0,0,0,0.1)',
-                    overflow: 'hidden',
-                    minHeight: 0
-                  }}
-                >
+                <Box sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  borderLeft: '1px solid rgba(0,0,0,0.1)',
+                  overflow: 'hidden',
+                  minHeight: 0
+                }}>
                   <RecordingsList
                     open={listOpen}
                     cameraId={player.camera_id}
-                    timestamp={currentPosition}
-                    filePath={currentFilePath}
+                    timestamp={currentPlayer.position_ts}
+                    filePath={currentPlayer.file_path}
                     onSelect={handleSelectRecording}
                   />
                 </Box>
@@ -104,10 +100,15 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
             </Stack>
           </Box>
 
+          {/* Слайдер */}
           <Stack direction="row" spacing={1}>
-            <IconButton size="small" onClick={() => setListOpen((v) => !v)}>
-              🕘
-            </IconButton>
+            <IconButton size="small" onClick={() => setListOpen(v => !v)}>🕘</IconButton>
+            <Slider
+              value={sliderValue}
+              max={currentPlayer.duration_ms}
+              onChange={handleSliderChange}
+              onChangeCommitted={handleSliderCommitted}
+            />
           </Stack>
         </Stack>
       </CardContent>
