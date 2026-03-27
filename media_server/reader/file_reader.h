@@ -39,6 +39,8 @@ private:
   void disconnect();
   void read_loop();
   std::string get_source();
+  // ¬озвращает true, если нужно ждать перед отправкой пакета, false если можно сразу
+  std::chrono::microseconds sync_to_master_clock(int64_t pkt_pts_us);
 
   avformat_context_ptr m_ctx = nullptr;
   int m_video_index = -1;

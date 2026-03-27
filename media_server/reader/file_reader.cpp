@@ -138,6 +138,52 @@ bool file_reader::connect_current_file(const std::string& file_path)
   return true;
 }
 
+
+std::chrono::microseconds file_reader::sync_to_master_clock(int64_t pkt_pts_us)
+{
+  using clock = std::chrono::steady_clock;
+  auto now = clock::now();
+
+  // инициализация master
+  if (m_master_pts_us < 0)
+  {
+    m_master_pts_us = pkt_pts_us;
+    m_master_wall_time = now;
+    return std::chrono::microseconds(0); // первый пакет — без ожидания
+  }
+
+  int64_t delta_us = pkt_pts_us - m_master_pts_us;
+  if (delta_us < 0)
+    delta_us = 0;
+
+  auto target_time = m_master_wall_time + std::chrono::microseconds(delta_us);
+
+  constexpr auto MAX_SLEEP = std::chrono::seconds(1);
+  constexpr auto MAX_LAG = std::chrono::milliseconds(500);
+
+  if (target_time > now)
+  {
+    auto sleep_duration = target_time - now;
+    if (sleep_duration > MAX_SLEEP)
+    {
+      // пересинхронизация
+      m_master_wall_time = now - std::chrono::microseconds(delta_us);
+      return std::chrono::microseconds(0);
+    }
+    return std::chrono::duration_cast<std::chrono::microseconds>(sleep_duration);
+  }
+  else
+  {
+    auto lag = now - target_time;
+    if (lag > MAX_LAG)
+    {
+      // сильно отстали → пересинхронизация
+      m_master_wall_time = now - std::chrono::microseconds(delta_us);
+    }
+    return std::chrono::microseconds(0); // уже поздно, отправляем сразу
+  }
+}
+
 void file_reader::read_loop()
 {
   while (m_running)
@@ -182,52 +228,9 @@ void file_reader::read_loop()
     {
       int64_t pts_us = av_rescale_q(pkt->pts, stream->time_base, AVRational{ 1, 1000000 });
 
-      // --- инициализация базового времени ---
-      if (m_master_pts_us < 0)
-      {
-        m_master_pts_us = pts_us;
-        m_master_wall_time = clock::now();
-      }
-
-      int64_t relative_us = pts_us - m_master_pts_us;
-
-      if (relative_us < 0)
-        relative_us = 0;
-
-      auto target_time = m_master_wall_time + std::chrono::microseconds(relative_us);
-
-      constexpr auto MAX_SLEEP = std::chrono::seconds(1);
-      constexpr auto MAX_LAG = std::chrono::milliseconds(500);
-
-      // --- ожидание ---
-      auto now = clock::now();
-
-      if (target_time > now)
-      {
-        auto sleep_duration = target_time - now;
-
-        if (sleep_duration > MAX_SLEEP)
-        {
-          // слишком большой разрыв → пересинхронизация
-          m_master_wall_time = now - std::chrono::microseconds(relative_us);
-          // после этого target_time ≈ now
-        }
-        else
-        {
-          std::this_thread::sleep_for(sleep_duration);
-        }
-      }
-      else
-      {
-        auto lag = now - target_time;
-
-        if (lag > MAX_LAG)
-        {
-          // сильно отстали → пересинхронизация
-          m_master_wall_time = now - std::chrono::microseconds(relative_us);
-        }
-        // иначе просто отправляем без sleep
-      }
+      auto sleep_us = sync_to_master_clock(pts_us);
+      if (sleep_us.count() > 0)
+        std::this_thread::sleep_for(sleep_us);
     }
     
 
