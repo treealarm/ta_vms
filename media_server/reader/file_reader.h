@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <unordered_set>
 #include <functional>
+#include <chrono>
 
 #include "interfaces/media_packet.h"
 #include "interfaces/media_sink.h"
@@ -21,6 +22,7 @@ extern "C" {
 
 class file_reader final : public reader 
 {
+  using clock = std::chrono::steady_clock;
 public:
   explicit file_reader(std::string camera_id, std::function<bool(const std::string&)> cb_eof);
   ~file_reader() override;
@@ -40,7 +42,7 @@ private:
 
   avformat_context_ptr m_ctx = nullptr;
   int m_video_index = -1;
-  std::unordered_set<int> m_forward_stream_indexes;
+  std::unordered_set<int32_t> m_forward_stream_indexes;
   std::thread m_thread;
   std::atomic_bool m_running{ false };
 
@@ -50,4 +52,8 @@ private:
   sink_container_impl m_sinks_helper;
   std::string m_source;
   std::mutex m_mutex;
+
+  int64_t m_master_pts_us = -1;
+  clock::time_point m_master_wall_time;
+  int32_t m_master_stream_index = -1;
 };

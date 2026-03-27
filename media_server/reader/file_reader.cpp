@@ -1,5 +1,4 @@
 ﻿#include <algorithm>
-#include <chrono>
 #include <ctime>
 #include <filesystem>
 #include <iomanip>
@@ -38,62 +37,18 @@ std::string file_reader::get_source()
   return m_source;
 }
 
-bool file_reader::connect_current_file(const std::string& file_path)
-{
-  disconnect();
-
-  AVFormatContext* ctx = nullptr;
-
-  if (avformat_open_input(&ctx, file_path.c_str(), nullptr, nullptr) < 0) 
-  {
-    std::cerr << "Failed to open file source: " << file_path << "\n";
-    return false;
-  }  
-
-  m_ctx.reset(ctx);
-
-  if (avformat_find_stream_info(m_ctx.get(), nullptr) < 0)
-  {
-    std::cerr << "Failed to get stream info\n";
-    disconnect();
-    return false;
-  }
-
-  for (unsigned i = 0; i < m_ctx->nb_streams; ++i)
-  {
-    const AVMediaType media_type = m_ctx->streams[i]->codecpar->codec_type;
-    if (media_type == AVMEDIA_TYPE_VIDEO && m_video_index < 0) 
-    {
-      m_video_index = static_cast<int>(i);
-    }
-
-    if (media_type == AVMEDIA_TYPE_VIDEO || media_type == AVMEDIA_TYPE_AUDIO)
-    {
-      m_forward_stream_indexes.insert(static_cast<int>(i));
-    }
-  }
-
-  if (m_video_index < 0) 
-  {
-    std::cerr << "No video stream\n";
-    disconnect();
-    return false;
-  }
-
-  std::cerr << "File source opened: " << file_path << "\n";
-  return true;
-}
-
 void file_reader::disconnect() 
 {
   m_ctx.reset();
 }
 
-void file_reader::add_sink(std::shared_ptr<media_sink> sink) {
+void file_reader::add_sink(std::shared_ptr<media_sink> sink) 
+{
   m_sinks_helper.add_sink(sink);
 }
 
-void file_reader::remove_sink(std::shared_ptr<media_sink> sink) {
+void file_reader::remove_sink(std::shared_ptr<media_sink> sink)
+{
   m_sinks_helper.remove_sink(sink);
 }
 
@@ -131,13 +86,60 @@ void file_reader::stop()
   }
 }
 
+bool file_reader::connect_current_file(const std::string& file_path)
+{
+  disconnect();
+
+  AVFormatContext* ctx = nullptr;
+
+  if (avformat_open_input(&ctx, file_path.c_str(), nullptr, nullptr) < 0)
+  {
+    std::cerr << "Failed to open file source: " << file_path << "\n";
+    return false;
+  }
+
+  m_ctx.reset(ctx);
+
+  if (avformat_find_stream_info(m_ctx.get(), nullptr) < 0)
+  {
+    std::cerr << "Failed to get stream info\n";
+    disconnect();
+    return false;
+  }
+
+  for (unsigned i = 0; i < m_ctx->nb_streams; ++i)
+  {
+    const AVMediaType media_type = m_ctx->streams[i]->codecpar->codec_type;
+    if (media_type == AVMEDIA_TYPE_VIDEO && m_video_index < 0)
+    {
+      m_video_index = static_cast<int32_t>(i);
+    }
+    if (media_type == AVMEDIA_TYPE_AUDIO)
+    {
+      m_master_stream_index = static_cast<int32_t>(i);
+    }
+    if (media_type == AVMEDIA_TYPE_VIDEO || media_type == AVMEDIA_TYPE_AUDIO)
+    {
+      m_forward_stream_indexes.insert(static_cast<int32_t>(i));
+    }
+  }
+
+  if (m_master_stream_index < 0)
+    m_master_stream_index = m_video_index;
+
+  if (m_video_index < 0)
+  {
+    std::cerr << "No video stream\n";
+    disconnect();
+    return false;
+  }
+
+  std::cerr << "File source opened: " << file_path << "\n";
+  return true;
+}
+
 void file_reader::read_loop()
 {
-  using clock = std::chrono::steady_clock;
-
-  int64_t first_pts_us = -1;
-  clock::time_point start_wall_time;
-
   while (m_running)
   {
     if (!m_ctx || m_video_index < 0 || m_forward_stream_indexes.empty())
@@ -176,59 +178,58 @@ void file_reader::read_loop()
 
     AVStream* stream = m_ctx->streams[pkt->stream_index];
 
-    if (pkt->pts == AV_NOPTS_VALUE)
-      continue;
-
-    int64_t pts_us = av_rescale_q(pkt->pts, stream->time_base, AVRational{ 1, 1000000 });
-
-
-    // --- инициализация базового времени ---
-    if (first_pts_us < 0)
+    if (pkt->stream_index == m_master_stream_index)
     {
-      first_pts_us = pts_us;
-      start_wall_time = clock::now();
-    }
+      int64_t pts_us = av_rescale_q(pkt->pts, stream->time_base, AVRational{ 1, 1000000 });
 
-    int64_t relative_us = pts_us - first_pts_us;
-
-    if (relative_us < 0)
-      relative_us = 0;
-
-    auto target_time = start_wall_time +
-      std::chrono::microseconds(relative_us);
-
-    constexpr auto MAX_SLEEP = std::chrono::seconds(1);
-    constexpr auto MAX_LAG = std::chrono::milliseconds(500);
-
-    // --- ожидание ---
-    auto now = clock::now();
-
-    if (target_time > now)
-    {
-      auto sleep_duration = target_time - now;
-
-      if (sleep_duration > MAX_SLEEP)
+      // --- инициализация базового времени ---
+      if (m_master_pts_us < 0)
       {
-        // слишком большой разрыв → пересинхронизация
-        start_wall_time = now - std::chrono::microseconds(relative_us);
-        // после этого target_time ≈ now
+        m_master_pts_us = pts_us;
+        m_master_wall_time = clock::now();
+      }
+
+      int64_t relative_us = pts_us - m_master_pts_us;
+
+      if (relative_us < 0)
+        relative_us = 0;
+
+      auto target_time = m_master_wall_time + std::chrono::microseconds(relative_us);
+
+      constexpr auto MAX_SLEEP = std::chrono::seconds(1);
+      constexpr auto MAX_LAG = std::chrono::milliseconds(500);
+
+      // --- ожидание ---
+      auto now = clock::now();
+
+      if (target_time > now)
+      {
+        auto sleep_duration = target_time - now;
+
+        if (sleep_duration > MAX_SLEEP)
+        {
+          // слишком большой разрыв → пересинхронизация
+          m_master_wall_time = now - std::chrono::microseconds(relative_us);
+          // после этого target_time ≈ now
+        }
+        else
+        {
+          std::this_thread::sleep_for(sleep_duration);
+        }
       }
       else
       {
-        std::this_thread::sleep_for(sleep_duration);
-      }
-    }
-    else
-    {
-      auto lag = now - target_time;
+        auto lag = now - target_time;
 
-      if (lag > MAX_LAG)
-      {
-        // сильно отстали → пересинхронизация
-        start_wall_time = now - std::chrono::microseconds(relative_us);
+        if (lag > MAX_LAG)
+        {
+          // сильно отстали → пересинхронизация
+          m_master_wall_time = now - std::chrono::microseconds(relative_us);
+        }
+        // иначе просто отправляем без sleep
       }
-      // иначе просто отправляем без sleep
     }
+    
 
     // --- формирование пакета ---
     auto media = std::make_shared<media_packet>();
