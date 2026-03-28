@@ -307,28 +307,80 @@ std::filesystem::path recording_storage::resolve_file_ext()
   return ".mkv";
 }
 
-std::optional<recording_info> recording_storage::find_next(
+std::optional<recording_info> recording_storage::find_offset(
   const std::string& camera_id,
-  std::chrono::system_clock::time_point ts)
+  std::chrono::system_clock::time_point ts,
+  int offset)
 {
-  int nearestIndex = 0;
-  auto recordings = get_recordings(camera_id, ts, 3, nearestIndex);
+  if (offset == 0)
+    return find_nearest(camera_id, ts);
 
-  if (recordings.empty())
-    return std::nullopt;
+  auto ts_sec = std::chrono::floor<std::chrono::seconds>(ts);
 
-  // nearestIndex указывает на запись, ближайшую к ts
-  // ищем следующую после ts
-  if (nearestIndex + 1 < static_cast<int>(recordings.size()))
-    return recordings[nearestIndex + 1];
+  int direction = (offset > 0) ? 1 : -1;
+  int remaining = std::abs(offset);
 
-  // Если следующей нет в загруженном массиве, пробуем подгрузить следующий день
-  auto day_path = make_day_path(camera_id, ts);
-  auto next_day_path = shift_day(day_path, 1);
-  auto next_day_recordings = load_day(next_day_path);
+  auto day_path = make_day_path(camera_id, ts_sec);
 
-  if (!next_day_recordings.empty())
-    return next_day_recordings.front();
+  const int maxDays = 30;
+
+  for (int dayShift = 0; dayShift <= maxDays; ++dayShift) 
+  {
+    auto current_day = shift_day(day_path, dayShift * direction);
+
+    if (!std::filesystem::exists(current_day))
+      continue;
+
+    std::vector<recording_info> candidates;
+
+    for (const auto& entry : std::filesystem::directory_iterator(current_day)) 
+    {
+      if (!entry.is_regular_file())
+        continue;
+
+      if (entry.path().extension() != resolve_file_ext())
+        continue;
+
+      auto file_ts = parse_time(entry.path().filename().string());
+      if (!file_ts)
+        continue;
+
+      // фильтр только для первого дня
+      if (dayShift == 0) 
+      {
+        if (direction > 0 && *file_ts <= ts_sec)
+          continue;
+        if (direction < 0 && *file_ts >= ts_sec)
+          continue;
+      }
+
+      candidates.push_back(
+        {
+        entry.path(),
+        *file_ts
+        });
+    }
+
+    if (candidates.empty())
+      continue;
+
+    // сортируем только текущий день (локально, не глобально)
+    std::sort(candidates.begin(), candidates.end(),
+      [](const auto& a, const auto& b) 
+      {
+        return a.start_time < b.start_time;
+      });
+
+    if (direction < 0)
+      std::reverse(candidates.begin(), candidates.end());
+
+    if (remaining <= static_cast<int>(candidates.size())) 
+    {
+      return candidates[remaining - 1];
+    }
+
+    remaining -= static_cast<int>(candidates.size());
+  }
 
   return std::nullopt;
 }

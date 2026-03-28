@@ -101,7 +101,7 @@ bool arch_player::on_eof(const std::string& file)
   if (!ts)
     return false;
 
-  auto info = m_storage.find_next(camera_id(), *ts);
+  auto info = m_storage.find_offset(camera_id(), *ts, 1);
   if (!info)
     return false;
 

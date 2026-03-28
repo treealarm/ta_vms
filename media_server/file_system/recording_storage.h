@@ -29,9 +29,10 @@ public:
     const std::string& camera_id,
     std::chrono::system_clock::time_point ts);
 
-  std::optional<recording_info> find_next(
+  std::optional<recording_info> find_offset(
     const std::string& camera_id,
-    std::chrono::system_clock::time_point ts);
+    std::chrono::system_clock::time_point ts,
+    int offset);
 
   std::filesystem::path make_segment_path(
     const std::string& camera_id,
