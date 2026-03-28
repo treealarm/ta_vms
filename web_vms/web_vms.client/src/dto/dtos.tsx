@@ -53,7 +53,6 @@ export type CameraStateDto = {
 export type RecordingDto = {
   filePath: string
   startTime: string
-  endTime?: string
 }
 
 export type RecordingsQueryDto = {

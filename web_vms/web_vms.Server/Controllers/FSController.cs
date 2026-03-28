@@ -41,8 +41,7 @@ namespace web_vms.Server.Controllers
       result.Recordings = grpcResponse.Recordings.Select(r => new RecordingDto
       {
         FilePath = r.FilePath,
-        StartTime = r.StartTime.ToDateTime(),
-        EndTime = r.EndTime?.ToDateTime()
+        StartTime = r.StartTime.ToDateTime()
       }).ToList();
 
       if (grpcResponse.Nearest != null)
@@ -50,8 +49,7 @@ namespace web_vms.Server.Controllers
         result.Nearest = new RecordingDto
         {
           FilePath = grpcResponse.Nearest.FilePath,
-          StartTime = grpcResponse.Nearest.StartTime.ToDateTime(),
-          EndTime = grpcResponse.Nearest.EndTime?.ToDateTime()
+          StartTime = grpcResponse.Nearest.StartTime.ToDateTime()
         };
       }
 

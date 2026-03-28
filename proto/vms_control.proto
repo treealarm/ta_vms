@@ -75,7 +75,6 @@ message RecordingsRequest {
 message Recording {
   string file_path = 1;
   google.protobuf.Timestamp start_time = 2;
-  optional google.protobuf.Timestamp end_time = 3;
 }
 message RecordingsResponse {
   repeated Recording recordings = 1;

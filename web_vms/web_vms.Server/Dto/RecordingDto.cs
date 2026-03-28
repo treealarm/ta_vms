@@ -11,7 +11,6 @@
   {
     public string FilePath { get; set; } = default!;
     public DateTime StartTime { get; set; }
-    public DateTime? EndTime { get; set; }
   }
 
   public class RecordingsResponseDto

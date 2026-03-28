@@ -12,7 +12,6 @@ struct recording_info
 {
   std::filesystem::path file_path;
   std::chrono::system_clock::time_point start_time;
-  std::optional<std::chrono::system_clock::time_point> end_time;
 };
 
 class recording_storage

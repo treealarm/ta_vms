@@ -107,8 +107,7 @@ std::optional<std::chrono::system_clock::time_point>
   return utc_tp;
 }
 
-std::vector<recording_info>
-  recording_storage::load_day(const std::filesystem::path& day_path)
+std::vector<recording_info>  recording_storage::load_day(const std::filesystem::path& day_path)
 {
   std::vector<recording_info> result;
 
@@ -129,8 +128,7 @@ std::vector<recording_info>
 
     result.push_back({
       entry.path(),
-      *ts,
-      std::nullopt
+      *ts
       });
   }
 
@@ -143,13 +141,26 @@ std::vector<recording_info>
   return result;
 }
 
-std::optional<recording_info>
-  recording_storage::find_nearest(
+std::optional<recording_info> recording_storage::find_nearest(
   const std::string& camera_id,
   std::chrono::system_clock::time_point ts)
 {
+  // 1️ быстрый путь: проверка точного файла
+  auto abs_path = get_absolute_path(camera_id, ts);
+
+  if (std::filesystem::exists(abs_path))
+  {
+    return recording_info
+    {
+      abs_path,
+      ts
+    };
+  }
+
+  // 2️ fallback — старая логика
   int32_t nearest;
   auto vec = get_recordings(camera_id, ts, 1, nearest);
+
   if (vec.empty())
     return std::nullopt;
 

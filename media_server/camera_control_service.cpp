@@ -252,22 +252,12 @@ grpc::Status camera_control_service::GetRecordings(grpc::ServerContext* context,
     auto recording = response->mutable_nearest();
     *recording->mutable_file_path() = nearest->file_path.filename().string();
     *recording->mutable_start_time() = from_time_point(nearest->start_time);
-
-    if (nearest->end_time)
-    {
-      *recording->mutable_end_time() = from_time_point(*nearest->end_time);
-    }
   }
   for (auto& r : recordings)
   {
     auto recording = response->add_recordings();
     *recording->mutable_file_path() = r.file_path.filename().string();
     *recording->mutable_start_time() = from_time_point(r.start_time);
-
-    if (r.end_time)
-    {
-      *recording->mutable_end_time() = from_time_point(*r.end_time);
-    }
   }
 
   return grpc::Status::OK;
