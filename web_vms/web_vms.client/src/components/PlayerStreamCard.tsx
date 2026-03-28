@@ -37,12 +37,13 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
   }, [currentPlayer.position_ms])
 
   // Отправка seek на сервер
-  const sendSeek = async (timeToSend: string) => {
+  const sendSeek = async (timeToSend: string, position: number) => {
     await dispatch(
       setPlayerState({
         camera_id: currentPlayer.camera_id,
         client_id: currentPlayer.client_id,
-        position_ts: timeToSend
+        position_ts: timeToSend,
+        position_ms: position
       })
     )
   }
@@ -54,13 +55,13 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
   const handleSliderCommitted = (_: Event | React.SyntheticEvent, value: number | number[]) => {
     if (typeof value === 'number' && currentPlayer.start_ts != null) {
       const startTime = new Date(currentPlayer.start_ts).getTime() // абсолютное начало
-      const targetTs = new Date(startTime + value).toISOString()   // прибавляем позицию в ms
-      void sendSeek(targetTs)                                       // передаём ISO, как нужно
+      const targetTs = new Date(startTime).toISOString()   // прибавляем позицию в ms
+      void sendSeek(targetTs, value)                                       // передаём ISO, как нужно
     }
   }
 
   const handleSelectRecording = (rec: RecordingDto) => {
-    void sendSeek(new Date(rec.startTime).toISOString())
+    void sendSeek(new Date(rec.startTime).toISOString(),0)
   }
 
   return (

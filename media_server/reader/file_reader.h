@@ -26,6 +26,7 @@ class file_reader final : public reader
 public:
   explicit file_reader(
     std::string camera_id, 
+    std::chrono::milliseconds position,
     std::function<bool(const std::string&)> cb_eof,
     std::function<void(const reader_progress&)> cb_progress
   );
@@ -40,6 +41,7 @@ public:
 
 private:
   bool connect_current_file(const std::string& source);
+  bool seek_to_position(std::chrono::milliseconds position);
   void disconnect();
   void read_loop();
   std::string get_source();
@@ -53,11 +55,12 @@ private:
   std::atomic_bool m_running{ false };
 
   std::string m_camera_id;
+  std::chrono::milliseconds m_start_position_ms;
   std::function<bool(const std::string&)> m_on_file_end;
   std::function<void(const reader_progress&)> m_on_progress;
 
   sink_container_impl m_sinks_helper;
-  std::string m_source;
+  std::string m_source;  
   std::mutex m_mutex;
 
   int64_t m_master_pts_us = -1;

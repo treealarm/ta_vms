@@ -30,6 +30,7 @@ export type PlayerStateDto = {
   camera_id: string
   client_id: string
   position_ts: string
+  position_ms: number
 }
 
 export type PlayerProgressStateDto = {

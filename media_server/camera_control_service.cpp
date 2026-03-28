@@ -189,6 +189,7 @@ grpc::Status camera_control_service::SetPlayerState(
     request->client_id(),
     request->camera_id(),
     to_time_point(request->position_ts()),
+    std::chrono::milliseconds(request->position_ms()),
     error);
 
   response->set_success(success);

@@ -12,11 +12,13 @@
 
 file_reader::file_reader(
   std::string camera_id,
+  std::chrono::milliseconds position,
   std::function<bool(const std::string&)> cb_eof,
   std::function<void(const reader_progress&)> cb_progress
 )
     : 
   m_camera_id(std::move(camera_id)),
+  m_start_position_ms(position),
   m_on_file_end(cb_eof),
   m_on_progress(cb_progress)
 {}
@@ -136,6 +138,14 @@ bool file_reader::connect_current_file(const std::string& file_path)
     std::cerr << "No video stream\n";
     disconnect();
     return false;
+  }
+
+  if (m_start_position_ms.count() > 0)
+  {
+    if (!seek_to_position(m_start_position_ms))
+    {
+      std::cerr << "seek_to_position failed\n";
+    }
   }
 
   std::cerr << "File source opened: " << file_path << "\n";
@@ -300,3 +310,68 @@ void file_reader::read_loop()
   disconnect();
 }
 
+bool file_reader::seek_to_position(std::chrono::milliseconds position)
+{
+  if (!m_ctx || m_master_stream_index < 0)
+    return false;
+
+  AVStream* stream = m_ctx->streams[m_master_stream_index];
+  if (!stream)
+    return false;
+
+  // --- 1. перевод позиции в time_base стрима ---
+  int64_t target_ts = av_rescale_q(
+    position.count(),
+    AVRational{ 1, 1000 },
+    stream->time_base
+  );
+
+  // --- 2. seek к ближайшему keyframe назад ---
+  if (av_seek_frame(m_ctx.get(), m_master_stream_index, target_ts, AVSEEK_FLAG_BACKWARD) < 0)
+  {
+    std::cerr << "seek failed\n";
+    return false;
+  }
+
+  // --- 3. flush ---
+  avformat_flush(m_ctx.get());
+
+  // --- 4. сброс синхронизации ---
+  m_master_pts_us = -1;
+
+  // --- 5. дотягиваемся до нужного времени ---
+  int64_t target_pts_us = av_rescale_q(
+    target_ts,
+    stream->time_base,
+    AVRational{ 1, 1000000 }
+  );
+
+  avpacket_ptr pkt(av_packet_alloc(), avpacket_deleter{});
+  if (!pkt)
+    return false;
+
+  while (av_read_frame(m_ctx.get(), pkt.get()) >= 0)
+  {
+    if (pkt->stream_index != m_master_stream_index)
+    {
+      av_packet_unref(pkt.get());
+      continue;
+    }
+
+    int64_t pts_us = av_rescale_q(
+      pkt->pts,
+      stream->time_base,
+      AVRational{ 1, 1000000 }
+    );
+
+    av_packet_unref(pkt.get());
+
+    if (pts_us >= target_pts_us)
+    {
+      // нашли нужную позицию — дальше read_loop продолжит нормально
+      return true;
+    }
+  }
+
+  return false;
+}

@@ -275,6 +275,7 @@ bool camera_manager::set_player_state(
   const std::string& client_id,
   const std::string& camera_id,
   const std::chrono::system_clock::time_point& start_time,
+  std::chrono::milliseconds position,
   std::string& error) 
 {
   std::scoped_lock lock(m_mutex);
@@ -295,7 +296,7 @@ bool camera_manager::set_player_state(
     return false;
   }
 
-  return it->second->set_state(start_time, camera_id);
+  return it->second->set_state(start_time, camera_id, position);
 }
 
 std::optional<camera_manager::player_info>  camera_manager::get_player_state(

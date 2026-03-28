@@ -62,10 +62,11 @@ void arch_player::worker_loop()
 // --- публичный интерфейс ---
 bool arch_player::set_state(
   const std::chrono::system_clock::time_point& start_time,
-  const std::string& camera_id)
+  const std::string& camera_id,
+  std::chrono::milliseconds position)
 {
   // кидаем задачу в очередь
-  post_task([this, start_time, camera_id]()
+  post_task([this, start_time, camera_id, position]()
     {
       {
         std::scoped_lock lock(m_data_mutex);
@@ -80,7 +81,7 @@ bool arch_player::set_state(
         return;
       }
 
-      if (!open_file_reader(rec->file_path.string()))
+      if (!open_file_reader(rec->file_path.string(), position))
       {
         return;
       }
@@ -107,7 +108,7 @@ bool arch_player::on_eof(const std::string& file)
   post_task([this, info]()
     {
       std::string error;
-      if (!open_file_reader(info->file_path.string()))
+      if (!open_file_reader(info->file_path.string(), std::chrono::milliseconds(0)))
       {
         return;
       }      
@@ -126,10 +127,13 @@ void arch_player::on_progress(const reader_progress& progress)
     m_cur_time = m_start_time + progress.position;
 }
 
-bool arch_player::open_file_reader(const std::string& file_path)
+bool arch_player::open_file_reader(
+  const std::string& file_path, 
+  std::chrono::milliseconds position)
 {
   auto playback_reader = std::make_shared<file_reader>(
     camera_id(),
+    position,
     [this](const std::string& f) 
     { 
       return this->on_eof(f); 

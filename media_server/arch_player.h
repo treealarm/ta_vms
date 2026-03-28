@@ -25,7 +25,8 @@ public:
 
   bool set_state(
     const std::chrono::system_clock::time_point& start_time,
-    const std::string& camera_id);
+    const std::string& camera_id,
+    std::chrono::milliseconds position);
 
 
   const std::string& camera_id() const
@@ -58,7 +59,7 @@ public:
 
 private:
  
-  bool open_file_reader(const std::string& file_path);
+  bool open_file_reader(const std::string& file_path, std::chrono::milliseconds position);
 
   bool start_web_rtc();
   bool stop_web_rtc();
