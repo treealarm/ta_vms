@@ -10,6 +10,15 @@ namespace web_vms;
 public class ArchController(
   CameraControlService.CameraControlServiceClient grpcClient) : ControllerBase
 {
+
+  private static string MapPlayerMode(PlayerMode mode) => mode switch
+  {
+    PlayerMode.Playing => "playing",
+    PlayerMode.Paused => "paused",
+    PlayerMode.Stopped => "stopped",
+    _ => "unspecified"
+  };
+
   [HttpPost("players")]
   public async Task<IActionResult> AddPlayer([FromBody] PlayerStateDto request, CancellationToken ct)
   {
@@ -91,7 +100,8 @@ public class ArchController(
     {
       camera_id = playerState.CameraId,
       client_id = playerState.ClientId,
-      file_path = playerState.FilePath
+      file_path = playerState.FilePath,
+      mode = MapPlayerMode(playerState.Mode)
     };
 
     if (playerState.PositionTs != null)
@@ -164,7 +174,8 @@ public class ArchController(
     {
       camera_id = p.CameraId,
       client_id = p.ClientId,
-      position_ts = p.PositionTs.ToDateTime()
+      position_ts = p.PositionTs.ToDateTime(),
+      mode = MapPlayerMode(p.Mode)
     });
 
     return Ok(result);

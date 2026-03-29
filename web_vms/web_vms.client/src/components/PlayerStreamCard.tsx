@@ -1,4 +1,4 @@
-import { Box, Card, CardContent, IconButton, Slider, Stack, Typography } from '@mui/material'
+import { Box, Card, CardContent, IconButton, Slider, Stack, Tooltip, Typography } from '@mui/material'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
@@ -69,6 +69,11 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
     void sendSeek(new Date(rec.startTime).toISOString(), 0)
   }
 
+  const mode = currentPlayer.mode ?? 'unspecified'
+  const isPlayActive = mode === 'playing'
+  const isPauseActive = mode === 'paused'
+  const isStopActive = mode === 'stopped'
+
   const handleSendCommand = (command: 'play' | 'pause' | 'stop') => {
     void dispatch(
       sendPlayerCommand({
@@ -127,18 +132,38 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
           </Stack>
 
           <Stack direction="row" spacing={1} justifyContent="center">
-            <IconButton size="small" onClick={() => handleSendCommand('play')}>
-              <PlayArrowIcon />
-            </IconButton>
-            <IconButton size="small" onClick={() => handleSendCommand('pause')}>
-              <PauseIcon />
-            </IconButton>
-            <IconButton size="small" color="secondary" onClick={() => handleSendCommand('stop')}>
-              <StopIcon />
-            </IconButton>
-            <IconButton size="small" onClick={() => setListOpen(v => !v)}>
-              <AccessTimeIcon />
-            </IconButton>
+            <Tooltip title={isPlayActive ? 'Сейчас воспроизводится' : 'Воспроизвести'}>
+              <IconButton
+                size="small"
+                color={isPlayActive ? 'primary' : 'default'}
+                onClick={() => handleSendCommand('play')}
+              >
+                <PlayArrowIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={isPauseActive ? 'Пауза включена' : 'Поставить на паузу'}>
+              <IconButton
+                size="small"
+                color={isPauseActive ? 'primary' : 'default'}
+                onClick={() => handleSendCommand('pause')}
+              >
+                <PauseIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={isStopActive ? 'Остановлено' : 'Остановить'}>
+              <IconButton
+                size="small"
+                color={isStopActive ? 'secondary' : 'default'}
+                onClick={() => handleSendCommand('stop')}
+              >
+                <StopIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={listOpen ? 'Скрыть записи' : 'Показать записи'}>
+              <IconButton size="small" onClick={() => setListOpen(v => !v)}>
+                <AccessTimeIcon />
+              </IconButton>
+            </Tooltip>
           </Stack>
         </Stack>
       </CardContent>
