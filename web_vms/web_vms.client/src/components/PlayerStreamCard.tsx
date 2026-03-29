@@ -1,4 +1,9 @@
-import { Box, Button, Card, CardContent, IconButton, Slider, Stack, Typography } from '@mui/material'
+import { Box, Card, CardContent, IconButton, Slider, Stack, Typography } from '@mui/material'
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import PauseIcon from '@mui/icons-material/Pause';
+import StopIcon from '@mui/icons-material/Stop';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+
 import { useState, useEffect } from 'react'
 import { type PlayerProgressStateDto, type RecordingDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
@@ -122,10 +127,18 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
           </Stack>
 
           <Stack direction="row" spacing={1} justifyContent="center">
-            <Button size="small" variant="outlined" onClick={() => handleSendCommand('play')}>Play</Button>
-            <Button size="small" variant="outlined" onClick={() => handleSendCommand('pause')}>Pause</Button>
-            <Button size="small" variant="outlined" color="error" onClick={() => handleSendCommand('stop')}>Stop</Button>
-            <IconButton size="small" onClick={() => setListOpen(v => !v)}>🕘</IconButton>
+            <IconButton size="small" onClick={() => handleSendCommand('play')}>
+              <PlayArrowIcon />
+            </IconButton>
+            <IconButton size="small" onClick={() => handleSendCommand('pause')}>
+              <PauseIcon />
+            </IconButton>
+            <IconButton size="small" color="secondary" onClick={() => handleSendCommand('stop')}>
+              <StopIcon />
+            </IconButton>
+            <IconButton size="small" onClick={() => setListOpen(v => !v)}>
+              <AccessTimeIcon />
+            </IconButton>
           </Stack>
         </Stack>
       </CardContent>
