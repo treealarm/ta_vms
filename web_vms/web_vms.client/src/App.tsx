@@ -33,8 +33,38 @@ function App() {
   const isLimitReached = cameras.length + players.length >= MAX_CAMERAS
 
   useEffect(() => {
-    void dispatch(loadCameras())
-    void dispatch(loadPlayers())
+    let cancelled = false
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+
+    const bootstrap = async (attempt: number) => {
+      if (cancelled) {
+        return
+      }
+
+      const [camerasResult, playersResult] = await Promise.all([
+        dispatch(loadCameras()),
+        dispatch(loadPlayers())
+      ])
+
+      const hasError =
+        loadCameras.rejected.match(camerasResult) ||
+        loadPlayers.rejected.match(playersResult)
+
+      if (hasError && attempt < 20 && !cancelled) {
+        retryTimer = setTimeout(() => {
+          void bootstrap(attempt + 1)
+        }, 1500)
+      }
+    }
+
+    void bootstrap(0)
+
+    return () => {
+      cancelled = true
+      if (retryTimer != null) {
+        clearTimeout(retryTimer)
+      }
+    }
   }, [dispatch])
 
   const refreshLists = async () => {
