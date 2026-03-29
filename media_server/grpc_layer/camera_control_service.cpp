@@ -258,6 +258,11 @@ grpc::Status camera_control_service::SetPlayerState(
     response->set_duration_ms(entry->progress->duration.count());
     response->set_position_ms(entry->progress->position.count());
   }
+
+  if (entry->mode)
+  {
+    response->set_mode(to_grpc_mode(*entry->mode));
+  }
   return grpc::Status::OK;
 }
 grpc::Status camera_control_service::GetRecordings(grpc::ServerContext* context,

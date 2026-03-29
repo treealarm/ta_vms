@@ -344,5 +344,6 @@ std::optional<camera_manager::player_info>  camera_manager::get_player_state(
   };
   pi.start_ts = it->second->get_start_time();
   pi.progress = it->second->get_progress();
+  pi.mode = it->second->get_mode();
   return pi;
 }

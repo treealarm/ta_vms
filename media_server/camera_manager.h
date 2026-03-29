@@ -27,6 +27,7 @@ public:
     std::optional<std::filesystem::path> file_path;
     std::optional<std::chrono::system_clock::time_point> start_ts;
     std::optional<reader_progress> progress;
+    std::optional<player_mode> mode;
   };
   bool add_camera(const std::string& camera_id,
                   const std::string& rtsp_url,

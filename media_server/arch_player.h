@@ -72,7 +72,10 @@ public:
     std::scoped_lock lock(m_data_mutex);
     return m_start_time;
   }
-   ;
+  player_mode get_mode() const
+  {
+    return m_mode;
+  }
   void shutdown();
 
 private:
