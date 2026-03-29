@@ -103,6 +103,45 @@ public class ArchController(
     return Ok(dto);
   }
 
+
+
+  [HttpPost("players/command")]
+  public async Task<IActionResult> SendPlayerCommand([FromBody] PlayerCommandDto dto, CancellationToken ct)
+  {
+    if (dto == null)
+      return BadRequest("Request body is missing");
+
+    if (string.IsNullOrWhiteSpace(dto.client_id))
+      return BadRequest("client_id is required");
+
+    if (string.IsNullOrWhiteSpace(dto.command))
+      return BadRequest("command is required");
+
+    var request = new PlayerCommand
+    {
+      ClientId = dto.client_id
+    };
+
+    switch (dto.command.Trim().ToLowerInvariant())
+    {
+      case "play":
+        request.Play = new Play();
+        break;
+      case "pause":
+        request.Pause = new Pause();
+        break;
+      case "stop":
+        request.Stop = new Stop();
+        break;
+      default:
+        return BadRequest("command must be one of: play, pause, stop");
+    }
+
+    var grpcResponse = await grpcClient.SendPlayerCommandAsync(request, cancellationToken: ct);
+
+    return Ok(ApiResponseMapper.ToApiResponse(grpcResponse));
+  }
+
   [HttpDelete("players/{clientId}")]
   public async Task<IActionResult> RemovePlayer(string clientId, CancellationToken ct)
   {

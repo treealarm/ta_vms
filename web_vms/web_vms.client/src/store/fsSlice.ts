@@ -1,4 +1,4 @@
-import { createAsyncThunk, createSlice } from '@reduxjs/toolkit'
+import { type AnyAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import type { RecordingsQueryDto, RecordingsResponseDto } from '../dto/dtos'
 import { parseJson } from './api'
 
@@ -30,17 +30,17 @@ const fsSlice = createSlice({
   reducers: {},
   extraReducers: (builder) => {
     builder
-      .addCase(fetchRecordings.fulfilled, (state, action) => {
+      .addCase(fetchRecordings.fulfilled, (state, action: AnyAction) => {
         const key = `${action.meta.arg.cameraId}:${action.meta.arg.timestamp}`
         state.recordingsByKey[key] = action.payload
       })
-      .addMatcher((action: { type: string }) => action.type.startsWith('fs/') && action.type.endsWith('/pending'), (state) => {
+      .addMatcher((action: AnyAction) => action.type.startsWith('fs/') && action.type.endsWith('/pending'), (state) => {
         state.isBusy = true
       })
-      .addMatcher((action: { type: string }) => action.type.startsWith('fs/') && action.type.endsWith('/fulfilled'), (state) => {
+      .addMatcher((action: AnyAction) => action.type.startsWith('fs/') && action.type.endsWith('/fulfilled'), (state) => {
         state.isBusy = false
       })
-      .addMatcher((action: { type: string }) => action.type.startsWith('fs/') && action.type.endsWith('/rejected'), (state, action) => {
+      .addMatcher((action: AnyAction) => action.type.startsWith('fs/') && action.type.endsWith('/rejected'), (state, action: AnyAction) => {
         state.isBusy = false
         state.status = `Error: ${action.error.message ?? 'Unknown error'}`
       })

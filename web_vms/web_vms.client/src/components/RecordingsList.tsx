@@ -226,10 +226,7 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
                       title={
                         <>
                           <div>{rec.filePath}</div>
-                          <div>
-                            {new Date(rec.startTime).toLocaleString()} —{' '}
-                            {rec.endTime ? new Date(rec.endTime).toLocaleString() : '...'}
-                          </div>
+                          <div>{new Date(rec.startTime).toLocaleString()}</div>
                         </>
                       }
                       placement="left"

@@ -1,4 +1,4 @@
-import { createAsyncThunk, createSlice } from '@reduxjs/toolkit'
+import { type AnyAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import type { AddCameraRequestDto, ApiResponseDto, CameraStateDto, UpdateCameraStateRequestDto } from '../dto/dtos'
 import { parseJson } from './api'
 
@@ -73,12 +73,12 @@ const liveSlice = createSlice({
     builder
       .addCase(loadCameras.fulfilled, (state, action) => {
         state.cameras = action.payload
+        state.status = 'Ready'
       })
       .addCase(fetchCameraState.fulfilled, (state, action) => {
         const id = action.payload.cameraId
         const prev = state.cameraStatesById[id]
 
-        // Сравниваем только поля, которые реально используются
         const isEqual =
           prev &&
           prev.recording === action.payload.recording &&
@@ -98,17 +98,17 @@ const liveSlice = createSlice({
       .addCase(updateCameraRecording.fulfilled, (state, action) => {
         state.status = `Result: ${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
       })
-      .addMatcher((action: { type: string }) => action.type.startsWith('live/') && action.type.endsWith('/pending'), (state) => {
+      .addMatcher((action: AnyAction) => action.type.startsWith('live/') && action.type.endsWith('/pending'), (state) => {
         state.isBusy = true
       })
-      .addMatcher((action: { type: string }) => action.type.startsWith('live/') && action.type.endsWith('/fulfilled'), (state) => {
+      .addMatcher((action: AnyAction) => action.type.startsWith('live/') && action.type.endsWith('/fulfilled'), (state) => {
         state.isBusy = false
       })
       .addMatcher(
-        (action: { type: string }) => action.type.startsWith('live/') && action.type.endsWith('/rejected'),
-        (state, action) => {
+        (action: AnyAction) => action.type.startsWith('live/') && action.type.endsWith('/rejected'),
+        (state, action: AnyAction) => {
           state.isBusy = false
-          state.status = `Error: ${action.error.message ?? 'Unknown error'}`
+          state.status = `Error: ${action.error?.message ?? 'Unknown error'}`
         }
       )
   }

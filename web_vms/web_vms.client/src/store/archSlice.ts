@@ -1,5 +1,5 @@
-import { createAsyncThunk, createSlice } from '@reduxjs/toolkit'
-import type { ApiResponseDto, PlayerProgressStateDto, PlayerStateDto } from '../dto/dtos'
+import { type AnyAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
+import type { ApiResponseDto, PlayerCommandDto, PlayerProgressStateDto, PlayerStateDto } from '../dto/dtos'
 import { parseJson } from './api'
 
 type ArchState = {
@@ -54,16 +54,28 @@ export const setPlayerState = createAsyncThunk('arch/seekPlayer', async (payload
   return parseJson<ApiResponseDto>(response)
 })
 
+
+export const sendPlayerCommand = createAsyncThunk('arch/sendPlayerCommand', async (payload: PlayerCommandDto) => {
+  const response = await fetch('/api/arch/players/command', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+
+  return parseJson<ApiResponseDto>(response)
+})
+
 const archSlice = createSlice({
   name: 'arch',
   initialState,
   reducers: {},
   extraReducers: (builder) => {
     builder
-      .addCase(loadPlayers.fulfilled, (state, action) => {
+      .addCase(loadPlayers.fulfilled, (state, action: AnyAction) => {
         state.players = action.payload
+        state.status = 'Ready'
       })
-      .addCase(fetchPlayerState.fulfilled, (state, action) => {
+      .addCase(fetchPlayerState.fulfilled, (state, action: AnyAction) => {
         const id = action.payload.client_id
         const prev = state.playerStatesByClientId[id]
 
@@ -77,24 +89,27 @@ const archSlice = createSlice({
           state.playerStatesByClientId[id] = action.payload
         }
       })
-      .addCase(addPlayer.fulfilled, (state, action) => {
+      .addCase(addPlayer.fulfilled, (state, action: AnyAction) => {
         state.status = `${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
       })
-      .addCase(removePlayer.fulfilled, (state, action) => {
+      .addCase(removePlayer.fulfilled, (state, action: AnyAction) => {
         state.status = `${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
       })
-      .addCase(setPlayerState.fulfilled, (state, action) => {
+      .addCase(setPlayerState.fulfilled, (state, action: AnyAction) => {
         state.status = `${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
       })
-      .addMatcher((action: { type: string }) => action.type.startsWith('arch/') && action.type.endsWith('/pending'), (state) => {
+      .addCase(sendPlayerCommand.fulfilled, (state, action: AnyAction) => {
+        state.status = `${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
+      })
+      .addMatcher((action: AnyAction) => action.type.startsWith('arch/') && action.type.endsWith('/pending'), (state) => {
         state.isBusy = true
       })
-      .addMatcher((action: { type: string }) => action.type.startsWith('arch/') && action.type.endsWith('/fulfilled'), (state) => {
+      .addMatcher((action: AnyAction) => action.type.startsWith('arch/') && action.type.endsWith('/fulfilled'), (state) => {
         state.isBusy = false
       })
       .addMatcher(
-        (action: { type: string }) => action.type.startsWith('arch/') && action.type.endsWith('/rejected'),
-        (state, action) => {
+        (action: AnyAction) => action.type.startsWith('arch/') && action.type.endsWith('/rejected'),
+        (state, action: AnyAction) => {
           state.isBusy = false
           state.status = `Error: ${action.error.message ?? 'Unknown error'}`
         }
