@@ -1,5 +1,5 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit'
-import type { ApiResponseDto, PlayerProgressStateDto, PlayerStateDto } from '../dto/dtos'
+import type { ApiResponseDto, PlayerCommandDto, PlayerProgressStateDto, PlayerStateDto } from '../dto/dtos'
 import { parseJson } from './api'
 
 type ArchState = {
@@ -54,6 +54,17 @@ export const setPlayerState = createAsyncThunk('arch/seekPlayer', async (payload
   return parseJson<ApiResponseDto>(response)
 })
 
+
+export const sendPlayerCommand = createAsyncThunk('arch/sendPlayerCommand', async (payload: PlayerCommandDto) => {
+  const response = await fetch('/api/arch/players/command', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+
+  return parseJson<ApiResponseDto>(response)
+})
+
 const archSlice = createSlice({
   name: 'arch',
   initialState,
@@ -84,6 +95,9 @@ const archSlice = createSlice({
         state.status = `${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
       })
       .addCase(setPlayerState.fulfilled, (state, action) => {
+        state.status = `${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
+      })
+      .addCase(sendPlayerCommand.fulfilled, (state, action) => {
         state.status = `${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
       })
       .addMatcher((action: { type: string }) => action.type.startsWith('arch/') && action.type.endsWith('/pending'), (state) => {

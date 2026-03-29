@@ -1,9 +1,9 @@
-import { Box, Card, CardContent, IconButton, Slider, Stack, Typography } from '@mui/material'
+import { Box, Button, Card, CardContent, IconButton, Slider, Stack, Typography } from '@mui/material'
 import { useState, useEffect } from 'react'
 import { type PlayerProgressStateDto, type RecordingDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
 import RecordingsList from './RecordingsList'
-import { fetchPlayerState, setPlayerState } from '../store/archSlice'
+import { fetchPlayerState, sendPlayerCommand, setPlayerState } from '../store/archSlice'
 import { useAppDispatch, useAppSelector } from '../store'
 
 type PlayerStreamCardProps = {
@@ -61,7 +61,16 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
   }
 
   const handleSelectRecording = (rec: RecordingDto) => {
-    void sendSeek(new Date(rec.startTime).toISOString(),0)
+    void sendSeek(new Date(rec.startTime).toISOString(), 0)
+  }
+
+  const handleSendCommand = (command: 'play' | 'pause' | 'stop') => {
+    void dispatch(
+      sendPlayerCommand({
+        client_id: currentPlayer.client_id,
+        command
+      })
+    )
   }
 
   return (
@@ -110,6 +119,12 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
               onChange={handleSliderChange}
               onChangeCommitted={handleSliderCommitted}
             />
+          </Stack>
+
+          <Stack direction="row" spacing={1} justifyContent="center">
+            <Button size="small" variant="outlined" onClick={() => handleSendCommand('play')}>Play</Button>
+            <Button size="small" variant="outlined" onClick={() => handleSendCommand('pause')}>Pause</Button>
+            <Button size="small" variant="outlined" color="error" onClick={() => handleSendCommand('stop')}>Stop</Button>
           </Stack>
         </Stack>
       </CardContent>
