@@ -73,6 +73,7 @@ const archSlice = createSlice({
     builder
       .addCase(loadPlayers.fulfilled, (state, action: AnyAction) => {
         state.players = action.payload
+        state.status = 'Ready'
       })
       .addCase(fetchPlayerState.fulfilled, (state, action: AnyAction) => {
         const id = action.payload.client_id

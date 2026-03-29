@@ -73,6 +73,7 @@ const liveSlice = createSlice({
     builder
       .addCase(loadCameras.fulfilled, (state, action) => {
         state.cameras = action.payload
+        state.status = 'Ready'
       })
       .addCase(fetchCameraState.fulfilled, (state, action) => {
         const id = action.payload.cameraId
