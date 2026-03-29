@@ -54,10 +54,6 @@ function CameraStreamCard({ camera, onRemove }: CameraStreamCardProps) {
       <CardContent sx={{ p: 1.5 }}>
         <Stack spacing={1}>
           <Stack direction="row" spacing={1} alignItems="center">
-            <Typography variant="subtitle1" sx={{ flexShrink: 0 }}>
-              {camera.cameraId}
-            </Typography>
-
             <TextField
               value={camera.rtspUrl}
               variant="outlined"

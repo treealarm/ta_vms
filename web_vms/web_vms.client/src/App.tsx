@@ -11,12 +11,12 @@ import {
   TextField,
   Typography
 } from '@mui/material'
-import CameraStreamCard from './components/CameraStreamCard'
-import PlayerStreamCard from './components/PlayerStreamCard'
+
 import { type AddCameraRequestDto, type PlayerStateDto } from './dto/dtos'
 import { addCamera, loadCameras, removeCamera, setLiveStatus } from './store/liveSlice'
 import { addPlayer, loadPlayers, removePlayer } from './store/archSlice'
 import { useAppDispatch, useAppSelector } from './store'
+import CameraUnifiedCard from './components/CameraUnifiedCard'
 
 const MAX_CAMERAS = 4
 
@@ -26,11 +26,10 @@ function App() {
   const [rtspUrl, setRtspUrl] = useState('rtsp://admin:$Power321@192.168.1.150:554/channel=0_stream=0&onvif=0.sdp?real_stream')
 
   const cameras = useAppSelector((state) => state.live.cameras)
-  const players = useAppSelector((state) => state.arch.players)
   const status = useAppSelector((state) => state.live.status !== 'Ready' ? state.live.status : state.arch.status !== 'Ready' ? state.arch.status : state.fs.status)
 
   const visibleCameras = useMemo(() => cameras.slice(0, MAX_CAMERAS), [cameras])
-  const isLimitReached = cameras.length + players.length >= MAX_CAMERAS
+  const isLimitReached = cameras.length >= MAX_CAMERAS
 
   useEffect(() => {
     let cancelled = false
@@ -90,24 +89,6 @@ function App() {
     }
   }
 
-  const onAddPlayer = async () => {
-    if (isLimitReached) {
-      dispatch(setLiveStatus(`Error: Maximum ${MAX_CAMERAS} cameras supported in grid view`))
-      return
-    }
-
-    const payload: PlayerStateDto = {
-      camera_id: cameraId,
-      client_id: `${cameraId}_arch`,
-      position_ts: new Date().toISOString()
-    }
-
-    const result = await dispatch(addPlayer(payload))
-    if (!addPlayer.rejected.match(result)) {
-      await refreshLists()
-    }
-  }
-
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto', p: { xs: 2, md: 4 } }}>
       <Stack spacing={2.5}>
@@ -152,14 +133,6 @@ function App() {
                     Refresh list
                   </Button>
 
-                  <Button
-                    variant="outlined"
-                    disabled={isLimitReached}
-                    onClick={() => void onAddPlayer()}
-                    fullWidth
-                  >
-                    Add player
-                  </Button>
                 </Stack>
               </Stack>
             </Box>
@@ -169,13 +142,12 @@ function App() {
         <Card>
           <CardContent>
             <Stack spacing={2}>
-              <Typography variant="h6">Live Cameras</Typography>
               <Grid container spacing={2}>
                 {visibleCameras.map((camera) => (
                   <Grid key={camera.cameraId} size={{ xs: 12, sm: 6 }}>
-                    <CameraStreamCard
+                    <CameraUnifiedCard
                       camera={camera}
-                      onRemove={async (cameraToDelete) => {
+                      onRemoveCamera={async (cameraToDelete) => {
                         const result = await dispatch(
                           removeCamera({
                             cameraId: cameraToDelete.cameraId,
@@ -187,19 +159,13 @@ function App() {
                           await refreshLists()
                         }
                       }}
-                    />
-                  </Grid>
-                ))}
-              </Grid>
-              <Typography variant="h6">Arch Players</Typography>
 
-              <Grid container spacing={2}>
-                {players.map((player) => (
-                  <Grid key={player.client_id} size={{ xs: 12, sm: 6 }}>
-                    <PlayerStreamCard
-                      player={player}
-                      onRemove={async (playerToDelete) => {
-                        const result = await dispatch(removePlayer(playerToDelete.client_id))
+                      onRemovePlayer={async (playerToDelete) => {
+                        const result = await dispatch(
+                          removePlayer(
+                            playerToDelete.client_id
+                          )
+                        )
 
                         if (!removePlayer.rejected.match(result)) {
                           await refreshLists()
@@ -209,6 +175,7 @@ function App() {
                   </Grid>
                 ))}
               </Grid>
+
             </Stack>
           </CardContent>
         </Card>

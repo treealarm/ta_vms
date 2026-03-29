@@ -26,7 +26,6 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
 
   const [sliderValue, setSliderValue] = useState(currentPlayer.position_ms)
 
-  // Подтягиваем позицию каждые 3 секунды
   useEffect(() => {
     const interval = setInterval(() => {
       void dispatch(fetchPlayerState(player.client_id))
@@ -36,12 +35,10 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
     return () => clearInterval(interval)
   }, [dispatch, player.client_id])
 
-  // Обновляем слайдер при внешнем обновлении позиции
   useEffect(() => {
     setSliderValue(currentPlayer.position_ms)
   }, [currentPlayer.position_ms])
 
-  // Отправка seek на сервер
   const sendSeek = async (timeToSend: string, position: number) => {
     await dispatch(
       setPlayerState({
@@ -59,9 +56,9 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
 
   const handleSliderCommitted = (_: Event | React.SyntheticEvent, value: number | number[]) => {
     if (typeof value === 'number' && currentPlayer.start_ts != null) {
-      const startTime = new Date(currentPlayer.start_ts).getTime() // абсолютное начало
-      const targetTs = new Date(startTime).toISOString()   // прибавляем позицию в ms
-      void sendSeek(targetTs, value)                                       // передаём ISO, как нужно
+      const startTime = new Date(currentPlayer.start_ts).getTime()
+      const targetTs = new Date(startTime).toISOString()
+      void sendSeek(targetTs, value)
     }
   }
 
@@ -87,13 +84,13 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
     <Card sx={{ height: '100%' }}>
       <CardContent>
         <Stack spacing={1.5} sx={{ height: '100%' }}>
-          {/* Верхний заголовок */}
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
+          {/* Header */}
+          {/* <Stack direction="row" justifyContent="space-between" alignItems="center">
             <Typography variant="h6">{player.camera_id}</Typography>
-            <IconButton size="small" onClick={() => void onRemove(player)}>✕</IconButton>
-          </Stack>
+            <!IconButton size="small" onClick={() => void onRemove(player)}>✕</>
+          </Stack>*/}
 
-          {/* Видео и список */}
+          {/* Video and recordings */}
           <Box sx={{ width: '100%', aspectRatio: '1 / 1', display: 'flex', minHeight: 0 }}>
             <Stack direction="row" spacing={1} sx={{ width: '100%', minHeight: 0 }}>
               <Box sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
@@ -120,9 +117,8 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
             </Stack>
           </Box>
 
-          {/* Слайдер */}
+          {/* Slider */}
           <Stack direction="row" spacing={1}>
-            
             <Slider
               value={sliderValue}
               max={currentPlayer.duration_ms}
@@ -132,7 +128,7 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
           </Stack>
 
           <Stack direction="row" spacing={1} justifyContent="center">
-            <Tooltip title={isPlayActive ? 'Сейчас воспроизводится' : 'Воспроизвести'}>
+            <Tooltip title={isPlayActive ? 'Currently playing' : 'Play'}>
               <IconButton
                 size="small"
                 color={isPlayActive ? 'primary' : 'default'}
@@ -141,7 +137,8 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
                 <PlayArrowIcon />
               </IconButton>
             </Tooltip>
-            <Tooltip title={isPauseActive ? 'Пауза включена' : 'Поставить на паузу'}>
+
+            <Tooltip title={isPauseActive ? 'Paused' : 'Pause'}>
               <IconButton
                 size="small"
                 color={isPauseActive ? 'primary' : 'default'}
@@ -150,7 +147,8 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
                 <PauseIcon />
               </IconButton>
             </Tooltip>
-            <Tooltip title={isStopActive ? 'Остановлено' : 'Остановить'}>
+
+            <Tooltip title={isStopActive ? 'Stopped' : 'Stop'}>
               <IconButton
                 size="small"
                 color={isStopActive ? 'secondary' : 'default'}
@@ -159,7 +157,8 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
                 <StopIcon />
               </IconButton>
             </Tooltip>
-            <Tooltip title={listOpen ? 'Скрыть записи' : 'Показать записи'}>
+
+            <Tooltip title={listOpen ? 'Hide recordings' : 'Show recordings'}>
               <IconButton size="small" onClick={() => setListOpen(v => !v)}>
                 <AccessTimeIcon />
               </IconButton>

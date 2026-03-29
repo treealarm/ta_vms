@@ -21,6 +21,19 @@ export function toLocalDatetimeInputValue(date: Date) {
   )
 }
 
+// sessionId.ts
+export function getTabId(): string {
+  const key = 'tab_id'
+
+  let tabId = sessionStorage.getItem(key)
+  if (!tabId) {
+    tabId = crypto.randomUUID()
+    sessionStorage.setItem(key, tabId)
+  }
+
+  return tabId
+}
+
 export type ApiResponseDto = {
   success: boolean
   message: string

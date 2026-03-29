@@ -71,7 +71,7 @@ grpc::Status camera_control_service::AddArchPlayer(
   {
     response->set_success(false);
     response->set_message("archive player wrong client_id");
-    return grpc::Status::CANCELLED;
+    return ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "wrong client_id");
   }
 
   const bool success = m_manager.add_arch_player(
@@ -171,7 +171,7 @@ grpc::Status camera_control_service::GetCameraState(
 
   if (!success)
   {
-    return grpc::Status::CANCELLED;
+    return ::grpc::Status(::grpc::StatusCode::INTERNAL, "camera state error");
   }
   response->set_camera_id(request->source_id());
   response->set_recording(recording);
@@ -211,7 +211,7 @@ grpc::Status camera_control_service::SetPlayerState(
   {
     response->set_success(false);
     response->set_message("archive player command not found");
-    return grpc::Status::CANCELLED;
+    return ::grpc::Status(::grpc::StatusCode::NOT_FOUND, "player command not found");
   }
 
   const bool success = m_manager.set_player_command(
@@ -237,7 +237,7 @@ grpc::Status camera_control_service::SetPlayerState(
     error);
   if (!entry)
   {
-    return grpc::Status::CANCELLED;
+    return ::grpc::Status(::grpc::StatusCode::NOT_FOUND, "archive player not found");
   }
   response->set_client_id(entry->client_id);
   response->set_camera_id(entry->camera_id);

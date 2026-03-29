@@ -90,27 +90,35 @@ public class ArchController(
     if (string.IsNullOrEmpty(clientId))
       return BadRequest("clientId is required");
 
-    PlayerProgressState playerState =
+    try
+    {
+      PlayerProgressState playerState =
       await grpcClient.GetPlayerProgressStateAsync(new SourceRequest() { SourceId = clientId }, cancellationToken: ct);
 
-    if (playerState == null)
-      return NotFound();
+      if (playerState == null)
+        return NotFound();
 
-    var dto = new PlayerProgressStateDto
+      var dto = new PlayerProgressStateDto
+      {
+        camera_id = playerState.CameraId,
+        client_id = playerState.ClientId,
+        file_path = playerState.FilePath,
+        mode = MapPlayerMode(playerState.Mode)
+      };
+
+      if (playerState.PositionTs != null)
+        dto.position_ts = playerState.PositionTs.ToDateTime();
+
+      dto.start_ts = playerState.StartTs.ToDateTime();
+      dto.duration_ms = playerState.DurationMs;
+      dto.position_ms = playerState.PositionMs;
+      return Ok(dto);
+    }
+    catch (Exception ex)
     {
-      camera_id = playerState.CameraId,
-      client_id = playerState.ClientId,
-      file_path = playerState.FilePath,
-      mode = MapPlayerMode(playerState.Mode)
-    };
-
-    if (playerState.PositionTs != null)
-      dto.position_ts = playerState.PositionTs.ToDateTime();
-
-    dto.start_ts = playerState.StartTs.ToDateTime();
-    dto.duration_ms = playerState.DurationMs;
-    dto.position_ms = playerState.PositionMs;
-    return Ok(dto);
+      Console.Error.WriteLine(ex.ToString());
+      return BadRequest(ex.ToString());
+    }
   }
 
 
