@@ -25,7 +25,7 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
   useEffect(() => {
     const interval = setInterval(() => {
       void dispatch(fetchPlayerState(player.client_id))
-    }, 3000)
+    }, 1000)
 
     void dispatch(fetchPlayerState(player.client_id))
     return () => clearInterval(interval)
@@ -112,7 +112,7 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
 
           {/* Слайдер */}
           <Stack direction="row" spacing={1}>
-            <IconButton size="small" onClick={() => setListOpen(v => !v)}>🕘</IconButton>
+            
             <Slider
               value={sliderValue}
               max={currentPlayer.duration_ms}
@@ -125,6 +125,7 @@ function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
             <Button size="small" variant="outlined" onClick={() => handleSendCommand('play')}>Play</Button>
             <Button size="small" variant="outlined" onClick={() => handleSendCommand('pause')}>Pause</Button>
             <Button size="small" variant="outlined" color="error" onClick={() => handleSendCommand('stop')}>Stop</Button>
+            <IconButton size="small" onClick={() => setListOpen(v => !v)}>🕘</IconButton>
           </Stack>
         </Stack>
       </CardContent>

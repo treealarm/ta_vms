@@ -228,6 +228,11 @@ bool arch_player::open_file_reader(
   m_reader = playback_reader;
 
   m_reader = playback_reader;
+
+  if (player_mode::undefined == m_mode)
+  {
+    m_mode = player_mode::playing;
+  }
   set_player_mode();
 
   {
