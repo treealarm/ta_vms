@@ -29,8 +29,15 @@ export type ApiResponseDto = {
 export type PlayerStateDto = {
   camera_id: string
   client_id: string
-  position_ts: string
-  position_ms: number
+  position_ts?: string
+  position_ms?: number
+}
+
+export type PlayerCommand = 'play' | 'pause' | 'stop'
+
+export type PlayerCommandDto = {
+  client_id: string
+  command: PlayerCommand
 }
 
 export type PlayerProgressStateDto = {
