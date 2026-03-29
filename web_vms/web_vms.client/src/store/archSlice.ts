@@ -83,7 +83,8 @@ const archSlice = createSlice({
           prev &&
           prev.camera_id === action.payload.camera_id &&
           prev.position_ts === action.payload.position_ts &&
-          prev.file_path === action.payload.file_path
+          prev.file_path === action.payload.file_path &&
+          prev.mode === action.payload.mode
 
         if (!isEqual) {
           state.playerStatesByClientId[id] = action.payload

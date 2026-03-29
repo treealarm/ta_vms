@@ -1,4 +1,4 @@
-﻿namespace web_vms.Server.Dto
+namespace web_vms.Server.Dto
 {
   public record PlayerProgressStateDto
   {
@@ -9,5 +9,6 @@
     public DateTime? start_ts { get; set; }
     public uint duration_ms { get; set; } = 0;
     public uint position_ms { get; set; } = 0;
+    public string mode { get; init; } = "unspecified";
   }
 }

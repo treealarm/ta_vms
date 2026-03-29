@@ -35,6 +35,8 @@ export type PlayerStateDto = {
 
 export type PlayerCommand = 'play' | 'pause' | 'stop'
 
+export type PlayerMode = 'unspecified' | 'playing' | 'paused' | 'stopped'
+
 export type PlayerCommandDto = {
   client_id: string
   command: PlayerCommand
@@ -48,6 +50,7 @@ export type PlayerProgressStateDto = {
   start_ts: string
   duration_ms: number
   position_ms:number
+  mode: PlayerMode
 }
 
 export type CameraStateDto = {
