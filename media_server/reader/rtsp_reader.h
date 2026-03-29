@@ -29,6 +29,17 @@ public:
   void start() override;
   void stop() override;
 
+  void pause() override
+  {
+  };
+  void resume() override
+  {
+  };
+  bool is_running() const override
+  {
+    return m_running;
+  }
+
   AVStream* video_stream() const override;
 
 private:

@@ -16,6 +16,16 @@ public:
   virtual AVStream* video_stream() const = 0;
   virtual void start() = 0;
   virtual void stop() = 0;
+  virtual void pause() = 0;
+  virtual void resume() = 0;
+  virtual bool is_running() const = 0;
+};
+
+enum class player_mode {
+  stopped,
+  playing,
+  paused,
+  undefined
 };
 
 struct reader_progress
@@ -23,3 +33,4 @@ struct reader_progress
   std::chrono::milliseconds duration = std::chrono::milliseconds(0);
   std::chrono::milliseconds position = std::chrono::milliseconds(0);
 };
+

@@ -12,6 +12,23 @@
 #include "writer/webrtc_output_sink.h"
 #include "file_system/recording_storage.h"
 
+struct player_command
+{
+  enum class type
+  {
+    play,
+    pause,
+    stop
+  };
+
+  type cmd;
+
+  // параметры (используешь по ситуации)
+  std::optional<int32_t> step_frames;
+  std::optional<int64_t> position_ms;
+  std::optional<double> speed;
+};
+
 class arch_player {
 public:
   arch_player(
@@ -28,6 +45,7 @@ public:
     const std::string& camera_id,
     std::chrono::milliseconds position);
 
+  bool set_player_command(const player_command& cmd);
 
   const std::string& camera_id() const
   {
@@ -64,6 +82,8 @@ private:
   bool start_web_rtc();
   bool stop_web_rtc();
 
+  void set_player_mode();
+
   bool on_eof(const std::string& file);
   void on_progress(const reader_progress& progress);
 
@@ -89,4 +109,6 @@ private:
   std::condition_variable m_task_cv;
   bool m_stop_worker;
   std::thread m_worker;
+
+  std::atomic<player_mode> m_mode{ player_mode::undefined };
 };

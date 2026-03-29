@@ -2,6 +2,7 @@
 #include <chrono>
 
 #include "camera_control_service.h"
+#include "player_command_mapper.h"
 
 std::chrono::system_clock::time_point to_time_point(
   const google::protobuf::Timestamp& ts)
@@ -197,6 +198,32 @@ grpc::Status camera_control_service::SetPlayerState(
   return grpc::Status::OK;
 }
 
+::grpc::Status camera_control_service::SendPlayerCommand(
+  ::grpc::ServerContext* context,
+  const ::vms::control::PlayerCommand* request,
+  ::vms::control::OperationStatus* response)
+{
+  std::string error;
+
+  auto cmd = map_player_command(*request);
+
+  if (!cmd)
+  {
+    response->set_success(false);
+    response->set_message("archive player command not found");
+    return grpc::Status::CANCELLED;
+  }
+
+  const bool success = m_manager.set_player_command(
+    request->client_id(),
+    *cmd,
+    //request->cmd_case(),
+    error);
+
+  response->set_success(success);
+  response->set_message(success ? "archive player command sent" : error);
+  return grpc::Status::OK;
+}
 
 ::grpc::Status camera_control_service::GetPlayerProgressState(
   ::grpc::ServerContext* context,

@@ -202,6 +202,12 @@ void file_reader::read_loop()
 {
   while (m_running)
   {
+    if (m_paused)
+    {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      continue;
+    }
+
     if (!m_ctx || m_video_index < 0 || m_forward_stream_indexes.empty())
     {
       if (!connect_current_file(get_source()))

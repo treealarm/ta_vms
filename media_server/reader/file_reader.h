@@ -38,7 +38,18 @@ public:
   AVStream* video_stream() const override;
   void start() override;
   void stop() override;
-
+  void pause() override
+  {
+    m_paused = true;
+  };
+  void resume() override
+  {
+    m_paused = false;
+  };
+  bool is_running() const override
+  {
+    return m_running;
+  }
 private:
   bool connect_current_file(const std::string& source);
   bool seek_to_position(std::chrono::milliseconds position);
@@ -58,6 +69,8 @@ private:
   std::chrono::milliseconds m_start_position_ms;
   std::function<bool(const std::string&)> m_on_file_end;
   std::function<void(const reader_progress&)> m_on_progress;
+
+  std::atomic_bool m_paused{ false };
 
   sink_container_impl m_sinks_helper;
   std::string m_source;  

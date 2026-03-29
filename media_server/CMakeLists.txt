@@ -27,9 +27,13 @@ set(SOURCES
     arch_player.cpp
     arch_player.h
     camera_manager.cpp
-    camera_control_service.cpp
-    dapr_publisher.cpp
-    dapr_publisher.h
+    
+    grpc_layer/camera_control_service.h
+    grpc_layer/camera_control_service.cpp
+    grpc_layer/dapr_publisher.cpp
+    grpc_layer/dapr_publisher.h
+    grpc_layer/player_command_mapper.h
+    grpc_layer/player_command_mapper.cpp
 
     interfaces/av_deleters.h
     interfaces/media_packet.h

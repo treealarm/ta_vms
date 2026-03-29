@@ -59,6 +59,10 @@ public:
     std::chrono::milliseconds position,
     std::string& error);
 
+  bool set_player_command(const std::string& client_id,
+    const player_command& cmd,
+    std::string& error);
+
   std::optional<player_info> get_player_state(
     const std::string& client_id,
     std::string& error);

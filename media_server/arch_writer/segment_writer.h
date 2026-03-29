@@ -10,7 +10,7 @@ extern "C" {
 #include <libavformat/avformat.h>
 }
 
-#include "dapr_publisher.h"
+#include "grpc_layer/dapr_publisher.h"
 #include "interfaces/media_packet.h"
 #include "interfaces/media_sink.h"
 

@@ -299,6 +299,25 @@ bool camera_manager::set_player_state(
   return it->second->set_state(start_time, camera_id, position);
 }
 
+bool camera_manager::set_player_command(const std::string& client_id,
+  const player_command& cmd,
+  std::string& error)
+{
+  std::scoped_lock lock(m_mutex);
+
+  if (client_id.empty()) {
+    error = "client_id must not be empty";
+    return false;
+  }
+  auto it = m_arch_players_by_client.find(client_id);
+  if (it == m_arch_players_by_client.end()) {
+    error = "archive player not found for client: " + client_id;
+    return false;
+  }
+
+  return it->second->set_player_command(cmd);
+}
+
 std::optional<camera_manager::player_info>  camera_manager::get_player_state(
   const std::string& client_id,
   std::string& error)

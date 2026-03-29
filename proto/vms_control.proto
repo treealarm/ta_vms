@@ -16,6 +16,7 @@ service CameraControlService {
   rpc ListPlayers(ListPlayersRequest) returns (ListPlayersResponse);
   rpc SetPlayerState(PlayerState) returns (OperationStatus);  
   rpc GetPlayerProgressState(SourceRequest) returns (PlayerProgressState);
+  rpc SendPlayerCommand(PlayerCommand) returns (OperationStatus); 
 
   rpc GetRecordings(RecordingsRequest) returns (RecordingsResponse);
 }
@@ -58,6 +59,20 @@ message PlayerProgressState {
   uint32 duration_ms = 6;
   uint32 position_ms = 7;
 }
+
+message PlayerCommand {
+  string client_id = 1;
+
+  oneof cmd {
+    Play play = 10;
+    Pause pause = 11;
+    Stop stop = 12;
+  }
+}
+
+message Play {}
+message Pause {}
+message Stop {}
 
 message ListPlayersRequest {}
 

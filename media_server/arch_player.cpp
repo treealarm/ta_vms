@@ -59,7 +59,73 @@ void arch_player::worker_loop()
   }
 }
 
+void arch_player::set_player_mode()
+{
+  auto mode = m_mode.load();
+
+  post_task([this, mode]()
+    {
+      auto reader = m_reader;
+
+      if (!reader)
+        return;
+
+      switch (mode)
+      {
+      case player_mode::playing:
+      {
+        reader->resume();
+
+        if (!reader->is_running())
+          reader->start();
+
+        break;
+      }
+
+      case player_mode::paused:
+      {
+        reader->pause();
+        break;
+      }
+
+      case player_mode::stopped:
+      {
+        reader->stop();
+        break;
+      }
+
+      default:
+        break;
+      }
+    });
+}
 // --- публичный интерфейс ---
+
+bool arch_player::set_player_command(const player_command& cmd)
+{
+  switch (cmd.cmd)
+  {
+  case player_command::type::play:
+    m_mode = player_mode::playing;
+    break;
+
+  case player_command::type::pause:
+    m_mode = player_mode::paused;
+    break;
+
+  case player_command::type::stop:
+    m_mode = player_mode::stopped;
+    break;
+
+
+  default:
+    m_mode = player_mode::undefined;
+  }
+
+  set_player_mode();
+  return m_mode != player_mode::undefined;
+}
+
 bool arch_player::set_state(
   const std::chrono::system_clock::time_point& start_time,
   const std::string& camera_id,
@@ -158,9 +224,11 @@ bool arch_player::open_file_reader(
     m_cur_time = *ts;
     m_start_time = *ts;
   }
-  
-  playback_reader->start();
+
   m_reader = playback_reader;
+
+  m_reader = playback_reader;
+  set_player_mode();
 
   {
     std::scoped_lock lock(m_data_mutex);

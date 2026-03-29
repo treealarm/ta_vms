@@ -9,7 +9,7 @@
 
 #include <grpcpp/grpcpp.h>
 
-#include "camera_control_service.h"
+#include "grpc_layer/camera_control_service.h"
 
 namespace {
 std::atomic<bool> g_stop_requested{false};
