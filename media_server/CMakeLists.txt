@@ -46,6 +46,8 @@ set(SOURCES
     reader/rtsp_reader.h
     reader/file_reader.cpp
     reader/file_reader.h
+    reader/snapshot_reader.cpp
+    reader/snapshot_reader.h
     
     sink_container/sink_container_impl.h
     sink_container/sink_container_impl.cpp
