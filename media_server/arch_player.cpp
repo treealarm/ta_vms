@@ -49,7 +49,10 @@ void arch_player::worker_loop()
     std::function<void()> task;
     {
       std::unique_lock lock(m_task_mutex);
-      m_task_cv.wait(lock, [this] { return m_stop_worker || !m_task_queue.empty(); });
+      m_task_cv.wait(lock, [this] 
+        { 
+          return m_stop_worker || !m_task_queue.empty(); 
+        });
       if (m_stop_worker)
         break;
       task = std::move(m_task_queue.front());
