@@ -30,3 +30,13 @@ struct avformat_context_deleter {
       avformat_close_input(&ctx);
   }
 };
+
+
+struct avcodec_context_deleter {
+  void operator()(AVCodecContext* ctx) const noexcept {
+    if (ctx) {
+      avcodec_free_context(&ctx);
+    }
+  }
+};
+
