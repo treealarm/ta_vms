@@ -305,11 +305,7 @@ void file_reader::read_loop()
     // --- отправка ---
     for (auto& sink : m_sinks_helper.snapshot_sinks())
     {
-      auto clone = clone_media_packet(media);
-      if (!clone)
-        continue;
-
-      sink->on_packet(clone);
+      sink->on_packet(media);
     }
   }
 
