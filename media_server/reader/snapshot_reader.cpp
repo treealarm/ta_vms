@@ -1,13 +1,12 @@
-#include "snapshot_reader.h"
+﻿#include "snapshot_reader.h"
 
 #include <iostream>
 
 #include "interfaces/av_deleters.h"
 
 snapshot_reader::snapshot_reader(
-  std::chrono::milliseconds position,
-  std::function<void(const reader_progress&)> cb_progress)
-  : m_position(position), m_on_progress(std::move(cb_progress))
+  std::chrono::milliseconds position)
+  : m_position(position)
 {}
 
 snapshot_reader::~snapshot_reader()
@@ -197,7 +196,6 @@ bool snapshot_reader::decode_to_snapshot(std::chrono::milliseconds position)
       continue;
     }
 
-    bool reached = false;
     while (avcodec_receive_frame(codec_ctx.get(), frame.get()) == 0)
     {
       const int64_t frame_pts = frame->best_effort_timestamp;
@@ -212,34 +210,21 @@ bool snapshot_reader::decode_to_snapshot(std::chrono::milliseconds position)
         stream->time_base,
         AVRational{ 1, 1000000 });
 
-      av_frame_unref(frame.get());
-
       if (frame_pts_us >= target_pts_us)
       {
-        reached = true;
-        break;
-      }
-    }
+        // 🔥 ВАЖНО: сохраняем FRAME
+        AVFrame* cloned = av_frame_clone(frame.get());
+        if (!cloned)
+          return false;
 
-    if (reached)
-    {
-      avpacket_ptr cloned(av_packet_alloc(), avpacket_deleter{});
-      if (!cloned)
-      {
+        m_snapshot_frame.reset(cloned, avframe_deleter{});
+
+        av_frame_unref(frame.get());
         av_packet_unref(pkt.get());
-        return false;
+        return true;
       }
 
-      if (av_packet_ref(cloned.get(), pkt.get()) < 0)
-      {
-        av_packet_unref(pkt.get());
-        return false;
-      }
-
-      m_snapshot_packet = std::move(cloned);
-      av_packet_unref(pkt.get());
-      notify_progress();
-      return true;
+      av_frame_unref(frame.get());
     }
 
     av_packet_unref(pkt.get());
@@ -248,27 +233,9 @@ bool snapshot_reader::decode_to_snapshot(std::chrono::milliseconds position)
   return false;
 }
 
-void snapshot_reader::notify_progress() const
-{
-  if (!m_on_progress)
-  {
-    return;
-  }
-
-  reader_progress progress;
-  progress.duration = std::chrono::milliseconds(m_ctx && m_ctx->duration > 0 ? m_ctx->duration / 1000 : 0);
-  progress.position = m_position;
-  if (progress.position > progress.duration && progress.duration.count() > 0)
-  {
-    progress.position = progress.duration;
-  }
-
-  m_on_progress(progress);
-}
-
 void snapshot_reader::read_loop()
 {
-  if (!m_ctx || m_video_index < 0 || !m_snapshot_packet)
+  if (!m_ctx || m_video_index < 0 || !m_snapshot_frame)
   {
     if (!connect_current_file(get_source()))
     {
@@ -284,8 +251,16 @@ void snapshot_reader::read_loop()
     return;
   }
 
-  const int64_t pts_step = std::max<int64_t>(1, av_rescale_q(1, AVRational{ 1, 1 }, stream->time_base));
-  int64_t seq = 0;
+  if (!m_encoder_ctx)
+  {
+    if (!init_encoder(stream))
+    {
+      m_running = false;
+      return;
+    }
+  }
+
+  int64_t pts = 0;
 
   while (m_running)
   {
@@ -295,52 +270,93 @@ void snapshot_reader::read_loop()
       continue;
     }
 
-    auto media = std::make_shared<media_packet>();
-    media->packet = std::shared_ptr<AVPacket>(av_packet_alloc(), avpacket_deleter{});
-    if (!media->packet)
+    // 🔥 копируем frame
+    AVFrame* frame = av_frame_clone(m_snapshot_frame.get());
+    if (!frame)
     {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       continue;
     }
 
-    if (av_packet_ref(media->packet.get(), m_snapshot_packet.get()) < 0)
+    frame->pts = pts++;
+    frame->pict_type = AV_PICTURE_TYPE_I;
+    frame->flags |= AV_FRAME_FLAG_KEY;
+    // encode
+    if (avcodec_send_frame(m_encoder_ctx, frame) < 0)
     {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      av_frame_free(&frame);
       continue;
     }
 
-    const int64_t base_pts = m_snapshot_packet->pts == AV_NOPTS_VALUE ? 0 : m_snapshot_packet->pts;
-    const int64_t base_dts = m_snapshot_packet->dts == AV_NOPTS_VALUE ? base_pts : m_snapshot_packet->dts;
+    av_frame_free(&frame);
 
-    media->packet->pts = base_pts + seq * pts_step;
-    media->packet->dts = base_dts + seq * pts_step;
-    media->packet->duration = pts_step;
+    AVPacket* out = av_packet_alloc();
+    if (!out)
+      continue;
 
-    media->stream_index = m_video_index;
-    media->time_base = stream->time_base;
-    media->media_type = AVMEDIA_TYPE_VIDEO;
-    media->frame_rate = stream->avg_frame_rate;
-    media->sample_rate = 0;
-    media->nb_samples = 0;
-
-    avcodec_parameters_ptr codec_copy(
-      avcodec_parameters_alloc(),
-      [](AVCodecParameters* p) { avcodec_parameters_free(&p); });
-
-    if (codec_copy && avcodec_parameters_copy(codec_copy.get(), stream->codecpar) >= 0)
+    while (avcodec_receive_packet(m_encoder_ctx, out) == 0)
     {
-      media->codec_parameters = std::move(codec_copy);
+      auto media = std::make_shared<media_packet>();
+      media->packet = avpacket_ptr(out, avpacket_deleter{});
+      media->stream_index = 0;
+      media->time_base = m_encoder_time_base;
+      media->media_type = AVMEDIA_TYPE_VIDEO;
 
-      for (auto& sink : m_sinks_helper.snapshot_sinks())
+      avcodec_parameters_ptr codec_copy(
+        avcodec_parameters_alloc(),
+        [](AVCodecParameters* p) { avcodec_parameters_free(&p); });
+
+      if (codec_copy && avcodec_parameters_from_context(codec_copy.get(), m_encoder_ctx) >= 0)
       {
-        sink->on_packet(media);
+        media->codec_parameters = std::move(codec_copy);
+
+        for (auto& sink : m_sinks_helper.snapshot_sinks())
+        {
+          sink->on_packet(media);
+        }
       }
 
-      ++seq;
+      out = av_packet_alloc();
+      if (!out)
+        break;
     }
 
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    av_packet_free(&out);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(40)); // ~25 fps
   }
 
   disconnect();
+}
+
+bool snapshot_reader::init_encoder(AVStream* stream)
+{
+  const AVCodec* encoder = avcodec_find_encoder(AV_CODEC_ID_H264);
+  if (!encoder)
+    return false;
+
+  m_encoder_ctx = avcodec_alloc_context3(encoder);
+  if (!m_encoder_ctx)
+    return false;
+
+  m_encoder_ctx->width = m_snapshot_frame->width;
+  m_encoder_ctx->height = m_snapshot_frame->height;
+  m_encoder_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
+  m_encoder_ctx->time_base = AVRational{ 1, 25 };
+  m_encoder_ctx->framerate = AVRational{ 25, 1 };
+  m_encoder_ctx->gop_size = 1;
+  m_encoder_ctx->max_b_frames = 0;
+  m_encoder_ctx->refs = 1;
+  m_encoder_ctx->keyint_min = 1;
+  m_encoder_ctx->strict_std_compliance = FF_COMPLIANCE_STRICT;
+
+  av_opt_set(m_encoder_ctx->priv_data, "preset", "veryfast", 0);
+  av_opt_set(m_encoder_ctx->priv_data, "tune", "zerolatency", 0);
+
+  if (avcodec_open2(m_encoder_ctx, encoder, nullptr) < 0)
+    return false;
+
+  m_encoder_time_base = m_encoder_ctx->time_base;
+
+  return true;
 }

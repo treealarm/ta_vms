@@ -8,6 +8,7 @@
 #include <filesystem>
 
 #include "reader/file_reader.h"
+#include "reader/snapshot_reader.h"
 #include "interfaces/web_rtc_utils.h"
 
 arch_player::arch_player(
@@ -77,10 +78,19 @@ void arch_player::set_player_mode()
       {
       case player_mode::playing:
       {
-        reader->resume();
+        if (!m_snap_reader)
+        {
+          reader->resume();
 
-        if (!reader->is_running())
-          reader->start();
+          if (!reader->is_running())
+            reader->start();
+        }
+        else
+        {
+          m_snap_reader.reset();
+          auto progress = get_progress();
+          open_file_reader(*file_path(), progress.position);
+        }
 
         break;
       }
@@ -88,6 +98,8 @@ void arch_player::set_player_mode()
       case player_mode::paused:
       {
         reader->pause();
+        auto progress = get_progress();
+        open_snap_reader(*file_path(), progress.position);
         break;
       }
 
@@ -154,9 +166,6 @@ bool arch_player::set_state(
       {
         return;
       }
-
-      if (!start_web_rtc())
-        return;
     });
 
   return true; // сам вызов сразу возвращает, выполнение асинхронно
@@ -181,9 +190,6 @@ bool arch_player::on_eof(const std::string& file)
       {
         return;
       }      
-
-      if (!start_web_rtc())
-        return;
     });
 
   return true;
@@ -196,16 +202,40 @@ void arch_player::on_progress(const reader_progress& progress)
     m_cur_time = m_start_time + progress.position;
 }
 
-bool arch_player::open_file_reader(
+bool arch_player::open_snap_reader(
   const std::string& file_path, 
+  std::chrono::milliseconds position)
+{
+  auto playback_reader = std::make_shared<snapshot_reader>(
+    position
+  );
+
+  if (!playback_reader->open(file_path))
+  {
+    return false;
+  }
+
+  if (!start_web_rtc(playback_reader))
+    return false;
+
+  m_snap_reader = playback_reader;
+
+  if (!playback_reader->is_running())
+    playback_reader->start();
+
+  return true;
+}
+
+bool arch_player::open_file_reader(
+  const std::string& file_path,
   std::chrono::milliseconds position)
 {
   auto playback_reader = std::make_shared<file_reader>(
     camera_id(),
     position,
-    [this](const std::string& f) 
-    { 
-      return this->on_eof(f); 
+    [this](const std::string& f)
+    {
+      return this->on_eof(f);
     },
     [this](const reader_progress& progress)
     {
@@ -229,8 +259,8 @@ bool arch_player::open_file_reader(
   }
 
   m_reader = playback_reader;
-
-  m_reader = playback_reader;
+  if (!start_web_rtc(playback_reader))
+    return false;
 
   if (player_mode::undefined == m_mode)
   {
@@ -242,8 +272,6 @@ bool arch_player::open_file_reader(
     std::scoped_lock lock(m_data_mutex);
     m_cur_file_path = file_path;
   }
-  
-
 
   return true;
 }
@@ -259,7 +287,7 @@ void arch_player::shutdown()
     reader_copy->stop();
 }
 
-bool arch_player::start_web_rtc()
+bool arch_player::start_web_rtc(std::shared_ptr<reader> reader)
 {
   std::shared_ptr<webrtc_output_sink> sink;
   {
@@ -268,8 +296,10 @@ bool arch_player::start_web_rtc()
     sink = m_webrtc_output_sink;
   }
 
-  if (m_reader)
-    m_reader->add_sink(sink);
+  if (reader)
+  {
+    reader->add_sink(sink);
+  }
   else
   {
     return false;
@@ -278,7 +308,7 @@ bool arch_player::start_web_rtc()
   return true;
 }
 
-bool arch_player::stop_web_rtc()
+bool arch_player::stop_web_rtc(std::shared_ptr<reader> reader)
 {
   std::shared_ptr<webrtc_output_sink> sink;
   {
@@ -290,9 +320,9 @@ bool arch_player::stop_web_rtc()
     sink = m_webrtc_output_sink;
     m_webrtc_output_sink.reset();
   }
-
-  if (m_reader && sink)
-    m_reader->remove_sink(sink);
+  
+  if (reader && sink)
+    reader->remove_sink(sink);
 
   return true;
 }
