@@ -169,12 +169,24 @@ bool snapshot_reader::decode_to_snapshot_packets(std::chrono::milliseconds posit
     return false;
   }
 
+  bool seen_video_keyframe = false;
   while (av_read_frame(m_ctx.get(), pkt.get()) >= 0)
   {
     if (pkt->stream_index != m_video_index)
     {
       av_packet_unref(pkt.get());
       continue;
+    }
+
+    if (!seen_video_keyframe)
+    {
+      if (!(pkt->flags & AV_PKT_FLAG_KEY))
+      {
+        av_packet_unref(pkt.get());
+        continue;
+      }
+
+      seen_video_keyframe = true;
     }
 
     if (avcodec_send_packet(codec_ctx.get(), pkt.get()) < 0)
@@ -240,7 +252,7 @@ bool snapshot_reader::decode_to_snapshot_packets(std::chrono::milliseconds posit
 
       while (avcodec_receive_packet(m_encoder_ctx, encoded.get()) == 0)
       {
-        auto media = make_video_snapshot_packet(encoded.get());
+        auto media = make_video_snapshot_packet(encoded.get(), target_ts);
         if (media)
         {
           m_snapshot_packets.push_back(std::move(media));
@@ -302,13 +314,18 @@ bool snapshot_reader::init_encoder()
     return false;
   }
 
-  m_encoder_time_base = m_encoder_ctx->time_base;
   return true;
 }
 
-std::shared_ptr<media_packet> snapshot_reader::make_video_snapshot_packet(AVPacket* pkt) const
+std::shared_ptr<media_packet> snapshot_reader::make_video_snapshot_packet(AVPacket* pkt, int64_t target_ts) const
 {
-  if (!pkt || !m_encoder_ctx)
+  if (!pkt || !m_encoder_ctx || !m_ctx || m_video_index < 0)
+  {
+    return nullptr;
+  }
+
+  AVStream* source_stream = m_ctx->streams[m_video_index];
+  if (!source_stream)
   {
     return nullptr;
   }
@@ -324,11 +341,18 @@ std::shared_ptr<media_packet> snapshot_reader::make_video_snapshot_packet(AVPack
     return nullptr;
   }
 
+  packet_copy->stream_index = m_video_index;
+  packet_copy->pts = target_ts;
+  packet_copy->dts = target_ts;
+  packet_copy->duration = 0;
+
   auto media = std::make_shared<media_packet>();
   media->packet = std::move(packet_copy);
   media->stream_index = m_video_index;
-  media->time_base = m_encoder_time_base;
+  media->time_base = source_stream->time_base;
   media->media_type = AVMEDIA_TYPE_VIDEO;
+  media->frame_rate = source_stream->avg_frame_rate;
+  media->sample_rate = source_stream->codecpar->sample_rate;
 
   avcodec_parameters_ptr codec_copy(avcodec_parameters_alloc(), [](AVCodecParameters* p) { avcodec_parameters_free(&p); });
   if (!codec_copy || avcodec_parameters_from_context(codec_copy.get(), m_encoder_ctx) < 0)

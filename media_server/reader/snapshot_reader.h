@@ -35,7 +35,7 @@ private:
   void build_placeholder_packets();
   void disconnect();
   bool init_encoder();
-  std::shared_ptr<media_packet> make_video_snapshot_packet(AVPacket* pkt) const;
+  std::shared_ptr<media_packet> make_video_snapshot_packet(AVPacket* pkt, int64_t target_ts) const;
   std::shared_ptr<media_packet> make_placeholder_packet(int stream_index) const;
 
   avformat_context_ptr m_ctx = nullptr;
@@ -47,7 +47,6 @@ private:
   std::vector<std::shared_ptr<media_packet>> m_snapshot_packets;
 
   AVCodecContext* m_encoder_ctx = nullptr;
-  AVRational m_encoder_time_base{ 1, 25 };
 
   mutable std::mutex m_mutex;
 };
