@@ -81,4 +81,6 @@ private:
   int64_t m_master_pts_us = -1;
   clock::time_point m_master_wall_time;
   int32_t m_master_stream_index = -1;
+
+  std::atomic_bool m_drop_until_keyframe = false;
 };

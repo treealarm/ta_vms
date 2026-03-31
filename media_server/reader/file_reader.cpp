@@ -245,6 +245,19 @@ void file_reader::read_loop()
 
     AVStream* stream = m_ctx->streams[pkt->stream_index];
 
+    if (pkt->stream_index == m_video_index)
+    {
+      if (m_drop_until_keyframe)
+      {
+        if (!(pkt->flags & AV_PKT_FLAG_KEY))
+        {
+          continue;
+        }
+
+        m_drop_until_keyframe = false;
+      }
+    }
+
     if (pkt->stream_index == m_master_stream_index)
     {
       int64_t pts_us = av_rescale_q(pkt->pts, stream->time_base, AVRational{ 1, 1000000 });
@@ -322,66 +335,33 @@ void file_reader::read_loop()
 
 bool file_reader::seek_to_position(std::chrono::milliseconds position)
 {
-  if (!m_ctx || m_master_stream_index < 0)
+  if (!m_ctx || m_video_index < 0)
     return false;
 
-  AVStream* stream = m_ctx->streams[m_master_stream_index];
+  AVStream* stream = m_ctx->streams[m_video_index];
   if (!stream)
     return false;
 
-  // --- 1. перевод позиции в time_base стрима ---
   int64_t target_ts = av_rescale_q(
     position.count(),
     AVRational{ 1, 1000 },
     stream->time_base
   );
 
-  // --- 2. seek к ближайшему keyframe назад ---
-  if (av_seek_frame(m_ctx.get(), m_master_stream_index, target_ts, AVSEEK_FLAG_BACKWARD) < 0)
+  if (av_seek_frame(m_ctx.get(), m_video_index, target_ts, AVSEEK_FLAG_BACKWARD) < 0)
   {
     std::cerr << "seek failed\n";
     return false;
   }
 
-  // --- 3. flush ---
   avformat_flush(m_ctx.get());
 
-  // --- 4. сброс синхронизации ---
+  // reset state
   m_master_pts_us = -1;
+  m_packet_transcoder.close();
 
-  // --- 5. дотягиваемся до нужного времени ---
-  int64_t target_pts_us = av_rescale_q(
-    target_ts,
-    stream->time_base,
-    AVRational{ 1, 1000000 }
-  );
+  // IMPORTANT: начать только с keyframe
+  m_drop_until_keyframe = true;
 
-  avpacket_ptr pkt(av_packet_alloc(), avpacket_deleter{});
-  if (!pkt)
-    return false;
-
-  while (av_read_frame(m_ctx.get(), pkt.get()) >= 0)
-  {
-    if (pkt->stream_index != m_master_stream_index)
-    {
-      av_packet_unref(pkt.get());
-      continue;
-    }
-
-    int64_t pts_us = av_rescale_q(
-      pkt->pts,
-      stream->time_base,
-      AVRational{ 1, 1000000 }
-    );
-
-    av_packet_unref(pkt.get());
-
-    if (pts_us >= target_pts_us)
-    {
-      // нашли нужную позицию — дальше read_loop продолжит нормально
-      return true;
-    }
-  }
-
-  return false;
+  return true;
 }
