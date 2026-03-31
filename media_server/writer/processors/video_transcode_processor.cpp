@@ -75,10 +75,8 @@ bool video_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
     return false;
   }
 
-  const AVCodec* encoder = avcodec_find_encoder_by_name("libx264");
-  if (!encoder) {
-    encoder = avcodec_find_encoder(AV_CODEC_ID_H264);
-  }
+  const AVCodec* encoder = avcodec_find_encoder(AV_CODEC_ID_H264);
+
   if (!encoder) {
     std::cerr << "failed to find h264 encoder\n";
     return false;
@@ -96,7 +94,7 @@ bool video_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
   m_encoder_ctx->time_base = time_base.num > 0 ? time_base : AVRational{ 1, 25 };
   m_encoder_ctx->framerate = av_inv_q(m_encoder_ctx->time_base);
   m_encoder_ctx->max_b_frames = 0;
-  m_encoder_ctx->gop_size = 50;
+  m_encoder_ctx->gop_size = m_decoder_ctx->gop_size >= 1 ? m_decoder_ctx->gop_size : 25;
 
   av_opt_set(m_encoder_ctx->priv_data, "preset", "veryfast", 0);
   av_opt_set(m_encoder_ctx->priv_data, "tune", "zerolatency", 0);
