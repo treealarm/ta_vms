@@ -23,17 +23,8 @@ bool snapshot_reader::open(const std::string& source)
   return true;
 }
 
-void snapshot_reader::add_sink(std::shared_ptr<media_sink> sink)
-{
-  m_sinks_helper.add_sink(sink);
-}
 
-void snapshot_reader::remove_sink(std::shared_ptr<media_sink> sink)
-{
-  m_sinks_helper.remove_sink(sink);
-}
-
-AVStream* snapshot_reader::video_stream() const
+AVStream* snapshot_reader::video_stream()
 {
   if (m_ctx && m_video_index >= 0)
   {
@@ -74,7 +65,6 @@ std::string snapshot_reader::get_source()
 
 void snapshot_reader::disconnect()
 {
-  m_snapshot_packet.reset();
   m_ctx.reset();
   m_video_index = -1;
 }
@@ -310,10 +300,7 @@ void snapshot_reader::read_loop()
       {
         media->codec_parameters = std::move(codec_copy);
 
-        for (auto& sink : m_sinks_helper.snapshot_sinks())
-        {
-          sink->on_packet(media);
-        }
+        //here media is ready to send
       }
 
       out = av_packet_alloc();

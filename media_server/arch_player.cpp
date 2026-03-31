@@ -8,7 +8,6 @@
 #include <filesystem>
 
 #include "reader/file_reader.h"
-#include "reader/snapshot_reader.h"
 #include "interfaces/web_rtc_utils.h"
 
 arch_player::arch_player(
@@ -78,19 +77,10 @@ void arch_player::set_player_mode()
       {
       case player_mode::playing:
       {
-        if (!m_snap_reader)
-        {
           reader->resume();
 
           if (!reader->is_running())
             reader->start();
-        }
-        else
-        {
-          m_snap_reader.reset();
-          auto progress = get_progress();
-          open_file_reader(*file_path(), progress.position);
-        }
 
         break;
       }
@@ -98,8 +88,6 @@ void arch_player::set_player_mode()
       case player_mode::paused:
       {
         reader->pause();
-        auto progress = get_progress();
-        open_snap_reader(*file_path(), progress.position);
         break;
       }
 
@@ -200,30 +188,6 @@ void arch_player::on_progress(const reader_progress& progress)
     std::scoped_lock lock(m_data_mutex);
     m_progress = progress; 
     m_cur_time = m_start_time + progress.position;
-}
-
-bool arch_player::open_snap_reader(
-  const std::string& file_path, 
-  std::chrono::milliseconds position)
-{
-  auto playback_reader = std::make_shared<snapshot_reader>(
-    position
-  );
-
-  if (!playback_reader->open(file_path))
-  {
-    return false;
-  }
-
-  if (!start_web_rtc(playback_reader))
-    return false;
-
-  m_snap_reader = playback_reader;
-
-  if (!playback_reader->is_running())
-    playback_reader->start();
-
-  return true;
 }
 
 bool arch_player::open_file_reader(

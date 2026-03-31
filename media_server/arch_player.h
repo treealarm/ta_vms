@@ -81,7 +81,6 @@ public:
 private:
  
   bool open_file_reader(const std::string& file_path, std::chrono::milliseconds position);
-  bool open_snap_reader(const std::string& file_path, std::chrono::milliseconds position);
 
   bool start_web_rtc(std::shared_ptr<reader> reader);
   bool stop_web_rtc(std::shared_ptr<reader> reader);
@@ -104,7 +103,7 @@ private:
   std::chrono::system_clock::time_point m_cur_time;
   std::chrono::system_clock::time_point m_start_time;
   std::shared_ptr<reader> m_reader;
-  std::shared_ptr<reader> m_snap_reader;
+
   std::shared_ptr<webrtc_output_sink> m_webrtc_output_sink;
 
   recording_storage m_storage;
