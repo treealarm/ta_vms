@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+ï»¿import { useEffect, useState } from 'react'
 import {
   Box,
   Card,
@@ -57,7 +57,7 @@ function CameraUnifiedCard({ camera, onRemoveCamera, onRemovePlayer }: CameraUni
       void dispatch(
         sendPlayerCommand({
           client_id: player.client_id,
-          command: 'stop' // èëè 'pause'
+          command: 'stop' // Ð¸Ð»Ð¸ 'pause'
         })
       )
     }
