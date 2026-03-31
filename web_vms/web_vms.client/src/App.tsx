@@ -12,9 +12,9 @@ import {
   Typography
 } from '@mui/material'
 
-import { type AddCameraRequestDto, type PlayerStateDto } from './dto/dtos'
+import { type AddCameraRequestDto } from './dto/dtos'
 import { addCamera, loadCameras, removeCamera, setLiveStatus } from './store/liveSlice'
-import { addPlayer, loadPlayers, removePlayer } from './store/archSlice'
+import { loadPlayers, removePlayer } from './store/archSlice'
 import { useAppDispatch, useAppSelector } from './store'
 import CameraUnifiedCard from './components/CameraUnifiedCard'
 

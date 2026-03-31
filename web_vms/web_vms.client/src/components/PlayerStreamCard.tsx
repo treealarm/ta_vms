@@ -1,4 +1,4 @@
-import { Box, Card, CardContent, IconButton, Slider, Stack, Tooltip, Typography } from '@mui/material'
+import { Box, Card, CardContent, IconButton, Slider, Stack, Tooltip } from '@mui/material'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
@@ -16,7 +16,7 @@ type PlayerStreamCardProps = {
   onRemove: (player: PlayerProgressStateDto) => Promise<void>
 }
 
-function PlayerStreamCard({ player, onRemove }: PlayerStreamCardProps) {
+function PlayerStreamCard({ player }: PlayerStreamCardProps) {
   const dispatch = useAppDispatch()
   const [listOpen, setListOpen] = useState(false)
 
