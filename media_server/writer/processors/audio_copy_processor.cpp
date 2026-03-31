@@ -16,14 +16,7 @@ void audio_copy_processor::process(const std::shared_ptr<media_packet>& media)
     return;
   }
 
-  auto out_media = clone_media_packet(media);
-  if (!out_media) {
-    return;
-  }
-
-  out_media->codec_parameters = m_out_codec_parameters;
-  out_media->time_base = m_out_time_base;
-  m_emit(out_media);
+  m_emit(media);
 }
 
 void audio_copy_processor::flush() {}

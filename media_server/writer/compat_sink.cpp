@@ -135,12 +135,7 @@ void compat_sink::emit_packet(const std::shared_ptr<media_packet>& media)
       continue;
     }
 
-    auto sink_media = clone_media_packet(media);
-    if (!sink_media) {
-      continue;
-    }
-
-    sink->on_packet(sink_media);
+    sink->on_packet(media);
   }
 }
 

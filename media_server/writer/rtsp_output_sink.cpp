@@ -156,11 +156,15 @@ std::vector<rtsp_output_sink::stream_config> rtsp_output_sink::collect_known_str
   return streams;
 }
 
-void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
+void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
 {
-  if (!media || !media->packet) {
+  if (!in_media || !in_media->packet) {
     return;
   }
+
+  auto media = clone_media_packet(in_media);
+  if (!media)
+    return;
 
   const bool config_changed = update_stream_config_from_packet(media);
 
