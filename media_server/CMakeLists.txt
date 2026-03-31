@@ -73,6 +73,8 @@ set(SOURCES
     writer/rtsp_output_sink.h
     writer/webrtc_output_sink.cpp
     writer/webrtc_output_sink.h
+    writer/sync_packet_transcoder.cpp
+    writer/sync_packet_transcoder.h
 
     stream/jpeg_streamer.cpp
     stream/jpeg_streamer.h

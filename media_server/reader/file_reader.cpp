@@ -26,6 +26,7 @@ file_reader::file_reader(
 file_reader::~file_reader() 
 {
   stop();
+  m_packet_transcoder.close();
   disconnect();
 }
 
@@ -303,12 +304,19 @@ void file_reader::read_loop()
     media->codec_parameters = std::move(codec_copy);
 
     // --- отправка ---
-    for (auto& sink : m_sinks_helper.snapshot_sinks())
+    auto out_media = m_packet_transcoder.transcode_packet(media);
+    while (out_media)
     {
-      sink->on_packet(media);
+      for (auto& sink : m_sinks_helper.snapshot_sinks())
+      {
+        sink->on_packet(out_media);
+      }
+
+      out_media = m_packet_transcoder.transcode_packet(nullptr);
     }
   }
 
+  m_packet_transcoder.close();
   disconnect();
 }
 

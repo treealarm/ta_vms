@@ -14,6 +14,7 @@
 #include "interfaces/media_sink.h"
 #include "interfaces/reader.h"
 #include "sink_container/sink_container_impl.h"
+#include "writer/sync_packet_transcoder.h"
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -56,7 +57,8 @@ private:
   void disconnect();
   void read_loop();
   std::string get_source();
-  // Возвращает true, если нужно ждать перед отправкой пакета, false если можно сразу
+  sync_packet_transcoder m_packet_transcoder;
+  // Г‚Г®Г§ГўГ°Г Г№Г ГҐГІ true, ГҐГ±Г«ГЁ Г­ГіГ¦Г­Г® Г¦Г¤Г ГІГј ГЇГҐГ°ГҐГ¤ Г®ГІГЇГ°Г ГўГЄГ®Г© ГЇГ ГЄГҐГІГ , false ГҐГ±Г«ГЁ Г¬Г®Г¦Г­Г® Г±Г°Г Г§Гі
   std::chrono::microseconds sync_to_master_clock(int64_t pkt_pts_us);
 
   avformat_context_ptr m_ctx = nullptr;
