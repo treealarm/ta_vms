@@ -19,6 +19,7 @@ file_reader::file_reader(
     : 
   m_camera_id(std::move(camera_id)),
   m_start_position_ms(position),
+  m_snapshot_reader(position),
   m_on_file_end(cb_eof),
   m_on_progress(cb_progress)
 {}
@@ -93,9 +94,24 @@ void file_reader::stop()
   }
 }
 
+void file_reader::pause()
+{
+  m_paused = true;
+  m_last_pause_emit_at = clock::time_point::min();
+}
+
+void file_reader::resume()
+{
+  m_paused = false;
+  m_last_pause_emit_at = clock::time_point::min();
+}
+
 bool file_reader::connect_current_file(const std::string& file_path)
 {
   disconnect();
+  m_forward_stream_indexes.clear();
+  m_video_index = -1;
+  m_master_stream_index = -1;
 
   AVFormatContext* ctx = nullptr;
 
@@ -147,6 +163,11 @@ bool file_reader::connect_current_file(const std::string& file_path)
     {
       std::cerr << "seek_to_position failed\n";
     }
+  }
+
+  if (!m_snapshot_reader.open(file_path))
+  {
+    std::cerr << "snapshot_reader open failed for source: " << file_path << "\n";
   }
 
   std::cerr << "File source opened: " << file_path << "\n";
@@ -205,6 +226,7 @@ void file_reader::read_loop()
   {
     if (m_paused)
     {
+      emit_paused_snapshots();
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
       continue;
     }
@@ -331,6 +353,33 @@ void file_reader::read_loop()
 
   m_packet_transcoder.close();
   disconnect();
+}
+
+void file_reader::emit_paused_snapshots()
+{
+  const auto now = clock::now();
+  if (m_last_pause_emit_at != clock::time_point::min() &&
+      now - m_last_pause_emit_at < std::chrono::seconds(1))
+  {
+    return;
+  }
+
+  const auto snapshots = m_snapshot_reader.snapshot_packets();
+  for (const auto& media : snapshots)
+  {
+    auto out_media = m_packet_transcoder.transcode_packet(media);
+    while (out_media)
+    {
+      for (auto& sink : m_sinks_helper.snapshot_sinks())
+      {
+        sink->on_packet(out_media);
+      }
+
+      out_media = m_packet_transcoder.transcode_packet(nullptr);
+    }
+  }
+
+  m_last_pause_emit_at = now;
 }
 
 bool file_reader::seek_to_position(std::chrono::milliseconds position)

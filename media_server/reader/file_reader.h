@@ -13,6 +13,7 @@
 #include "interfaces/media_packet.h"
 #include "interfaces/media_sink.h"
 #include "interfaces/reader.h"
+#include "reader/snapshot_reader.h"
 #include "sink_container/sink_container_impl.h"
 #include "writer/sync_packet_transcoder.h"
 
@@ -39,14 +40,8 @@ public:
   AVStream* video_stream() const override;
   void start() override;
   void stop() override;
-  void pause() override
-  {
-    m_paused = true;
-  };
-  void resume() override
-  {
-    m_paused = false;
-  };
+  void pause() override;
+  void resume() override;
   bool is_running() const override
   {
     return m_running;
@@ -56,6 +51,7 @@ private:
   bool seek_to_position(std::chrono::milliseconds position);
   void disconnect();
   void read_loop();
+  void emit_paused_snapshots();
   std::string get_source();
   sync_packet_transcoder m_packet_transcoder;
   // Âîçâðàùàåò true, åñëè íóæíî æäàòü ïåðåä îòïðàâêîé ïàêåòà, false åñëè ìîæíî ñðàçó
@@ -69,6 +65,7 @@ private:
 
   std::string m_camera_id;
   std::chrono::milliseconds m_start_position_ms;
+  snapshot_reader m_snapshot_reader;
   std::function<bool(const std::string&)> m_on_file_end;
   std::function<void(const reader_progress&)> m_on_progress;
 
@@ -83,4 +80,5 @@ private:
   int32_t m_master_stream_index = -1;
 
   std::atomic_bool m_drop_until_keyframe = false;
+  clock::time_point m_last_pause_emit_at = clock::time_point::min();
 };
