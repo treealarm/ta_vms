@@ -17,10 +17,9 @@ segment_writer::segment_writer(
       sync_packet_transcoder::codec_config config;
       config.video_codec = AV_CODEC_ID_H264;
       config.allow_hevc_video_passthrough = true;
-      config.audio_codec =
-        storage.file_ext() == recording_storage::k_ts_ext
-        ? AV_CODEC_ID_AAC
-        : AV_CODEC_ID_OPUS;
+      const bool is_ts = storage.file_ext() == recording_storage::k_ts_ext;
+      config.audio_codec = is_ts ? AV_CODEC_ID_AAC : AV_CODEC_ID_OPUS;
+      config.allow_all_audio_passthrough = !is_ts;
       return config;
     }())
 {

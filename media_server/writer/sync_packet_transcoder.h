@@ -16,6 +16,7 @@ public:
     AVCodecID video_codec = AV_CODEC_ID_H264;
     AVCodecID audio_codec = AV_CODEC_ID_OPUS;
     bool allow_hevc_video_passthrough = false;
+    bool allow_all_audio_passthrough = false;
   };
 
   explicit sync_packet_transcoder(codec_config config = {});

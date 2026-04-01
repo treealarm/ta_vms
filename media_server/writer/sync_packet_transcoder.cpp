@@ -36,6 +36,11 @@ std::unique_ptr<stream_processor> sync_packet_transcoder::create_processor(const
 
   if (codec_parameters->codec_type == AVMEDIA_TYPE_AUDIO)
   {
+    if (m_config.allow_all_audio_passthrough)
+    {
+      return std::make_unique<audio_copy_processor>();
+    }
+
     if (codec_parameters->codec_id == m_config.audio_codec)
     {
       return std::make_unique<audio_copy_processor>();
