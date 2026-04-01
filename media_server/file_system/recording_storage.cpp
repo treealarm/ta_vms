@@ -304,7 +304,7 @@ std::filesystem::path recording_storage::resolve_file_ext()
     }
   }
 
-  return ".mkv";
+  return k_mkv_ext;
 }
 
 std::optional<recording_info> recording_storage::find_offset(

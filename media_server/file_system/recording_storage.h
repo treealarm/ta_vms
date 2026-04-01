@@ -18,6 +18,8 @@ class recording_storage
 {
 public:
   explicit recording_storage();
+  static constexpr std::string_view k_mkv_ext = ".mkv";
+  static constexpr std::string_view k_ts_ext = ".ts";
 
   std::vector<recording_info> get_recordings(
     const std::string& camera_id,
