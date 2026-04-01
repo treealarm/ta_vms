@@ -44,11 +44,6 @@ AVSampleFormat choose_supported_sample_fmt(AVCodecContext* ctx, const AVCodec* c
     if (arr[i] == wanted)
       return wanted;
   return arr[0];
-{
-}
-
-      return wanted; // wanted ôîðìàò ïîääåðæèâàåòñÿ
-  }
 
   return arr[0]; // åñëè íåò — ïåðâûé ïîääåðæèâàåìûé
 }

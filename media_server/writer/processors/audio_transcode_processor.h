@@ -11,7 +11,10 @@ struct SwrContext;
 
 class audio_transcode_processor : public stream_processor {
 public:
-  explicit audio_transcode_processor(AVCodecID codec_id = AV_CODEC_ID_OPUS);
+  explicit audio_transcode_processor(AVCodecID codec_id = AV_CODEC_ID_OPUS)
+    : m_codec_id(codec_id)
+  {
+  }
   ~audio_transcode_processor() override;
 
   bool init(const avcodec_parameters_ptr&, AVRational, emit_fn) override;
