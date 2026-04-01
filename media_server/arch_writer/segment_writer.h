@@ -13,6 +13,7 @@ extern "C" {
 #include "grpc_layer/dapr_publisher.h"
 #include "interfaces/media_packet.h"
 #include "interfaces/media_sink.h"
+#include "writer/sync_packet_transcoder.h"
 
 class segment_writer : public media_sink
 {
@@ -31,6 +32,7 @@ private:
   };
 
   bool ensure_input_stream(const std::shared_ptr<media_packet>& media);
+  void write_packet(const std::shared_ptr<media_packet>& media);
   void open_new_segment();
   void close_segment();
   void close();
@@ -48,6 +50,7 @@ private:
   std::chrono::steady_clock::time_point m_segment_start_time;
 
   dapr_publisher m_dapr_publisher;
+  sync_packet_transcoder m_packet_transcoder;
 
   struct stream_timing_state {
     int64_t first_pts = AV_NOPTS_VALUE;

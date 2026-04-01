@@ -9,9 +9,8 @@ extern "C" {
 
 #include "interfaces/media_packet.h"
 
-namespace 
-{
-avcodec_parameters_ptr alloc_out_params(AVCodecContext* encoder_ctx)
+// ---- static helpers ----
+avcodec_parameters_ptr audio_transcode_processor::alloc_out_params(AVCodecContext* encoder_ctx)
 {
   avcodec_parameters_ptr out_codec_params(avcodec_parameters_alloc(),
     [](AVCodecParameters* params) { avcodec_parameters_free(&params); });
@@ -20,7 +19,7 @@ avcodec_parameters_ptr alloc_out_params(AVCodecContext* encoder_ctx)
     return nullptr;
   }
 
-  if (avcodec_parameters_from_context(out_codec_params.get(), encoder_ctx) < 0) 
+  if (avcodec_parameters_from_context(out_codec_params.get(), encoder_ctx) < 0)
   {
     return nullptr;
   }
@@ -28,28 +27,32 @@ avcodec_parameters_ptr alloc_out_params(AVCodecContext* encoder_ctx)
   return out_codec_params;
 }
 
-
-AVSampleFormat choose_supported_sample_fmt(AVCodecContext* ctx, const AVCodec* codec, AVSampleFormat wanted)
+AVSampleFormat audio_transcode_processor::choose_supported_sample_fmt(
+  AVCodecContext* ctx,
+  const AVCodec* codec,
+  AVSampleFormat wanted)
 {
   const void* configs = nullptr;
   int num_configs = 0;
 
   int ret = avcodec_get_supported_config(ctx, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0, &configs, &num_configs);
   if (ret < 0 || num_configs == 0)
-    return wanted; // fallback
-
-  auto arr = reinterpret_cast<const AVSampleFormat*>(configs);
-  for (int i = 0; i < num_configs; i++) 
   {
-    if (arr[i] == wanted)
-      return wanted; // wanted формат поддерживаетс€
+    return wanted; // fallback
   }
 
-  return arr[0]; // если нет Ч первый поддерживаемый
-}
+  auto arr = reinterpret_cast<const AVSampleFormat*>(configs);
+  for (int i = 0; i < num_configs; i++)
+  {
+    if (arr[i] == wanted)
+    {
+      return wanted; // wanted sample format is supported
+    }
+  return arr[0]; // fallback to first supported sample format
 
-}
+// ---- instance methods ----
 
+  if (!encoder)
 audio_transcode_processor::~audio_transcode_processor()
 {
   flush();
@@ -101,7 +104,7 @@ bool audio_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
   if (!encoder) 
   {
     
-    std::cerr << "failed to find libopus encoder" << std::endl;
+    std::cerr << "failed to find audio encoder for codec id: " << static_cast<int>(m_codec_id) << std::endl;
 
     if (m_codec_id == AV_CODEC_ID_OPUS)
     {

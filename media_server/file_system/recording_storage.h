@@ -42,6 +42,7 @@ public:
 
   std::filesystem::path get_absolute_path(const std::string& camera_id,
     std::chrono::system_clock::time_point ts);
+  std::filesystem::path file_ext();
 
   std::optional<std::chrono::system_clock::time_point> parse_time(
     const std::string& filename);
@@ -49,10 +50,10 @@ public:
   {
     using namespace std::chrono;
 
-    // создаём zoned_time в UTC
+    // Г±Г®Г§Г¤Г ВёГ¬ zoned_time Гў UTC
     zoned_time utc{ "UTC", tp };
 
-    // форматируем в строку
+    // ГґГ®Г°Г¬Г ГІГЁГ°ГіГҐГ¬ Гў Г±ГІГ°Г®ГЄГі
     return format("{:%Y-%m-%d %H:%M:%S}", utc);
   }
 private:

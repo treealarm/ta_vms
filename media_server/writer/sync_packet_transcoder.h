@@ -11,6 +11,15 @@
 class sync_packet_transcoder
 {
 public:
+  struct codec_config
+  {
+    AVCodecID video_codec = AV_CODEC_ID_H264;
+    AVCodecID audio_codec = AV_CODEC_ID_OPUS;
+    bool allow_hevc_video_passthrough = false;
+    bool allow_all_audio_passthrough = false;
+  };
+
+  explicit sync_packet_transcoder(codec_config config = {});
   ~sync_packet_transcoder();
 
   std::shared_ptr<media_packet> transcode_packet(const std::shared_ptr<media_packet>& media);
@@ -34,6 +43,7 @@ private:
   processor_state* state_for_media_type(AVMediaType media_type);
 
 private:
+  codec_config m_config;
   mutable std::mutex m_mutex;
   processor_state m_video_state;
   processor_state m_audio_state;
