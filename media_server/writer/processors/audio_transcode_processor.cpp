@@ -42,10 +42,15 @@ AVSampleFormat choose_supported_sample_fmt(AVCodecContext* ctx, const AVCodec* c
   for (int i = 0; i < num_configs; i++) 
   {
     if (arr[i] == wanted)
-      return wanted; // wanted ôîðìàò ïîääåðæèâàåòñÿ
+audio_transcode_processor::audio_transcode_processor(AVCodecID codec_id)
+  : m_codec_id(codec_id)
+{
+}
+
+      return wanted; // wanted Ã´Ã®Ã°Ã¬Ã Ã² Ã¯Ã®Ã¤Ã¤Ã¥Ã°Ã¦Ã¨Ã¢Ã Ã¥Ã²Ã±Ã¿
   }
 
-  return arr[0]; // åñëè íåò — ïåðâûé ïîääåðæèâàåìûé
+  return arr[0]; // Ã¥Ã±Ã«Ã¨ Ã­Ã¥Ã² â€” Ã¯Ã¥Ã°Ã¢Ã»Ã© Ã¯Ã®Ã¤Ã¤Ã¥Ã°Ã¦Ã¨Ã¢Ã Ã¥Ã¬Ã»Ã©
 }
 
 }
@@ -101,7 +106,7 @@ bool audio_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
   if (!encoder) 
   {
     
-    std::cerr << "failed to find libopus encoder" << std::endl;
+    std::cerr << "failed to find audio encoder for codec id: " << static_cast<int>(m_codec_id) << std::endl;
 
     if (m_codec_id == AV_CODEC_ID_OPUS)
     {

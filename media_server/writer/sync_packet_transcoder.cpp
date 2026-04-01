@@ -6,6 +6,11 @@
 #include "writer/processors/video_copy_processor.h"
 #include "writer/processors/video_transcode_processor.h"
 
+sync_packet_transcoder::sync_packet_transcoder(codec_config config)
+  : m_config(config)
+{
+}
+
 sync_packet_transcoder::~sync_packet_transcoder()
 {
   close();
@@ -20,22 +25,23 @@ std::unique_ptr<stream_processor> sync_packet_transcoder::create_processor(const
 
   if (codec_parameters->codec_type == AVMEDIA_TYPE_VIDEO)
   {
-    if (codec_parameters->codec_id == AV_CODEC_ID_H264)
+    if (codec_parameters->codec_id == m_config.video_codec ||
+        (m_config.allow_hevc_video_passthrough && codec_parameters->codec_id == AV_CODEC_ID_H265))
     {
       return std::make_unique<video_copy_processor>();
     }
 
-    return std::make_unique<video_transcode_processor>();
+    return std::make_unique<video_transcode_processor>(m_config.video_codec);
   }
 
   if (codec_parameters->codec_type == AVMEDIA_TYPE_AUDIO)
   {
-    if (codec_parameters->codec_id == AV_CODEC_ID_OPUS)
+    if (codec_parameters->codec_id == m_config.audio_codec)
     {
       return std::make_unique<audio_copy_processor>();
     }
 
-    return std::make_unique<audio_transcode_processor>();
+    return std::make_unique<audio_transcode_processor>(m_config.audio_codec);
   }
 
   return nullptr;

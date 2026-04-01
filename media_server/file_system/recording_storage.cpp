@@ -285,6 +285,11 @@ std::filesystem::path recording_storage::get_absolute_path(const std::string& ca
   return resolve_storage_base_path()/make_segment_path(camera_id, ts);
 }
 
+std::filesystem::path recording_storage::file_ext()
+{
+  return resolve_file_ext();
+}
+
 std::filesystem::path recording_storage::resolve_storage_base_path()
 {
   if (const char* value = std::getenv("VMS_STORAGE_BASE_PATH")) {

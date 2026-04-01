@@ -1,4 +1,3 @@
-
 #include "file_system/recording_storage.h"
 
 #include "segment_writer.h"
@@ -6,13 +5,24 @@
 #include <format>
 #include <iostream>
 
-
 segment_writer::segment_writer(
   const std::string& camera_id,
   int segment_seconds)
   :
   m_camera_id(camera_id),
-  m_segment_seconds(segment_seconds)
+  m_segment_seconds(segment_seconds),
+  m_packet_transcoder([]
+    {
+      recording_storage storage;
+      sync_packet_transcoder::codec_config config;
+      config.video_codec = AV_CODEC_ID_H264;
+      config.allow_hevc_video_passthrough = true;
+      config.audio_codec =
+        storage.file_ext() == recording_storage::k_ts_ext
+        ? AV_CODEC_ID_AAC
+        : AV_CODEC_ID_OPUS;
+      return config;
+    }())
 {
 }
 
@@ -28,14 +38,14 @@ bool segment_writer::ensure_input_stream(const std::shared_ptr<media_packet>& me
     return false;
   }
 
-  if (m_input_streams.contains(media->stream_index)) 
+  if (m_input_streams.contains(media->stream_index))
   {
     return true;
   }
 
   avcodec_parameters_ptr codec_copy(avcodec_parameters_alloc(),
     [](AVCodecParameters* params) { avcodec_parameters_free(&params); });
-  if (!codec_copy) 
+  if (!codec_copy)
   {
     return false;
   }
@@ -54,7 +64,7 @@ void segment_writer::open_new_segment()
   m_timing.clear();
   close_segment();
 
-  if (m_input_streams.empty()) 
+  if (m_input_streams.empty())
   {
     std::cerr << "segment writer has no registered streams\n";
     return;
@@ -80,10 +90,10 @@ void segment_writer::open_new_segment()
 
   m_output_streams.clear();
 
-  for (const auto& [input_index, stream_info] : m_input_streams) 
+  for (const auto& [input_index, stream_info] : m_input_streams)
   {
     AVStream* out_stream = avformat_new_stream(m_ctx.get(), nullptr);
-    if (!out_stream) 
+    if (!out_stream)
     {
       std::cerr << "avformat_new_stream failed\n";
       m_ctx.reset();
@@ -91,7 +101,7 @@ void segment_writer::open_new_segment()
       return;
     }
 
-    if (avcodec_parameters_copy(out_stream->codecpar, stream_info.codec_parameters.get()) < 0) 
+    if (avcodec_parameters_copy(out_stream->codecpar, stream_info.codec_parameters.get()) < 0)
     {
       std::cerr << "avcodec_parameters_copy failed\n";
       m_ctx.reset();
@@ -103,7 +113,7 @@ void segment_writer::open_new_segment()
     m_output_streams.emplace(input_index, out_stream);
   }
 
-  if (!(m_ctx->oformat->flags & AVFMT_NOFILE)) 
+  if (!(m_ctx->oformat->flags & AVFMT_NOFILE))
   {
     if (avio_open(&m_ctx->pb,
       path.string().c_str(),
@@ -133,11 +143,6 @@ void segment_writer::close_segment()
   if (!m_ctx)
     return;
 
-  const auto finished_at = std::chrono::system_clock::now();
-  const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-    std::chrono::steady_clock::now() - m_segment_start_time);
-
-
   av_write_trailer(m_ctx.get());
 
   if (!(m_ctx->oformat->flags & AVFMT_NOFILE))
@@ -149,6 +154,19 @@ void segment_writer::close_segment()
 
 void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)
 {
+  if (!in_media || !in_media->packet)
+    return;
+
+  auto media = m_packet_transcoder.transcode_packet(in_media);
+  while (media)
+  {
+    write_packet(media);
+    media = m_packet_transcoder.transcode_packet(nullptr);
+  }
+}
+
+void segment_writer::write_packet(const std::shared_ptr<media_packet>& in_media)
+{
   if (!in_media || !in_media->packet || !ensure_input_stream(in_media))
     return;
 
@@ -158,7 +176,6 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)
 
   AVPacket* pkt = media->packet.get();
 
-  // открываем сегмент на ключевом кадре, если нужно
   if (!m_ctx)
   {
     if (media->media_type != AVMEDIA_TYPE_VIDEO || !(pkt->flags & AV_PKT_FLAG_KEY))
@@ -183,37 +200,31 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)
   AVStream* out_stream = out_it->second;
   auto& timing = m_timing[media->stream_index];
 
-  // rescale сразу, даже если PTS/DTS кривые
   av_packet_rescale_ts(pkt, media->time_base, out_stream->time_base);
 
   bool invalid = pkt->pts == AV_NOPTS_VALUE || pkt->dts == AV_NOPTS_VALUE || pkt->pts < 0 || pkt->dts < 0;
 
   if (!invalid)
   {
-    // инициализация и нормализация старта сегмента
     if (timing.first_pts == AV_NOPTS_VALUE) timing.first_pts = pkt->pts;
     if (timing.first_dts == AV_NOPTS_VALUE) timing.first_dts = pkt->dts;
 
     pkt->pts -= timing.first_pts;
     pkt->dts -= timing.first_dts;
 
-    // защита от откатов
     if (timing.last_pts != AV_NOPTS_VALUE && pkt->pts <= timing.last_pts) pkt->pts = timing.last_pts + 1;
     if (timing.last_dts != AV_NOPTS_VALUE && pkt->dts <= timing.last_dts) pkt->dts = timing.last_dts + 1;
   }
   else
   {
-    // fallback для кривых пакетов
     if (pkt->duration <= 0) pkt->duration = 1;
     int64_t next = (timing.last_pts != AV_NOPTS_VALUE) ? timing.last_pts + pkt->duration : 0;
     pkt->pts = pkt->dts = next;
   }
 
-  // сохраняем последние значения
   timing.last_pts = pkt->pts;
   timing.last_dts = pkt->dts;
 
-  // защита на случай, если dts > pts
   if (pkt->dts > pkt->pts) pkt->dts = pkt->pts;
 
   pkt->stream_index = out_stream->index;
@@ -224,5 +235,6 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)
 
 void segment_writer::close()
 {
+  m_packet_transcoder.close();
   close_segment();
 }

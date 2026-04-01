@@ -26,6 +26,11 @@ avcodec_parameters_ptr alloc_out_params(AVCodecContext* encoder_ctx)
 }
 }
 
+video_transcode_processor::video_transcode_processor(AVCodecID codec_id)
+  : m_codec_id(codec_id)
+{
+}
+
 video_transcode_processor::~video_transcode_processor()
 {
   flush();
@@ -75,10 +80,10 @@ bool video_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
     return false;
   }
 
-  const AVCodec* encoder = avcodec_find_encoder(AV_CODEC_ID_H264);
+  const AVCodec* encoder = avcodec_find_encoder(m_codec_id);
 
   if (!encoder) {
-    std::cerr << "failed to find h264 encoder\n";
+    std::cerr << "failed to find video encoder for codec id: " << static_cast<int>(m_codec_id) << "\n";
     return false;
   }
 
