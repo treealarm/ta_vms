@@ -119,8 +119,14 @@ std::vector<recording_info>  recording_storage::load_day(const std::filesystem::
     if (!entry.is_regular_file())
       continue;
 
-    if (entry.path().extension() != resolve_file_ext())
+    std::string ext = entry.path().extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+    if (std::none_of(k_allowed_exts.begin(), k_allowed_exts.end(),
+      [&](std::string_view e) { return ext == e; }))
+    {
       continue;
+    }
 
     auto ts = parse_time(entry.path().filename().string());
     if (!ts)
@@ -274,7 +280,7 @@ std::filesystem::path recording_storage::make_segment_path(
   auto ts_sec = floor<std::chrono::seconds>(ts);
   std::string filename = std::format("{:%Y-%m-%d_%H-%M-%S}{}", 
     ts_sec, 
-    resolve_file_ext().string());
+    file_ext().string());
 
   return  std::filesystem::path(camera_id) / year / md / filename;
 }
@@ -287,7 +293,13 @@ std::filesystem::path recording_storage::get_absolute_path(const std::string& ca
 
 std::filesystem::path recording_storage::file_ext()
 {
-  return resolve_file_ext();
+  if (const char* value = std::getenv("VMS_FILE_EXT")) {
+    if (value[0] != '\0') {
+      return value;
+    }
+  }
+
+  return k_ts_ext;
 }
 
 std::filesystem::path recording_storage::resolve_storage_base_path()
@@ -299,17 +311,6 @@ std::filesystem::path recording_storage::resolve_storage_base_path()
   }
 
   return "records";
-}
-
-std::filesystem::path recording_storage::resolve_file_ext()
-{
-  if (const char* value = std::getenv("VMS_FILE_EXT")) {
-    if (value[0] != '\0') {
-      return value;
-    }
-  }
-
-  return k_mkv_ext;
 }
 
 std::optional<recording_info> recording_storage::find_offset(
@@ -343,7 +344,7 @@ std::optional<recording_info> recording_storage::find_offset(
       if (!entry.is_regular_file())
         continue;
 
-      if (entry.path().extension() != resolve_file_ext())
+      if (entry.path().extension() != file_ext())
         continue;
 
       auto file_ts = parse_time(entry.path().filename().string());

@@ -1,4 +1,4 @@
-#include "writer/processors/audio_transcode_processor.h"
+﻿#include "writer/processors/audio_transcode_processor.h"
 
 #include <iostream>
 
@@ -37,22 +37,17 @@ AVSampleFormat audio_transcode_processor::choose_supported_sample_fmt(
 
   int ret = avcodec_get_supported_config(ctx, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0, &configs, &num_configs);
   if (ret < 0 || num_configs == 0)
-  {
     return wanted; // fallback
-  }
 
   auto arr = reinterpret_cast<const AVSampleFormat*>(configs);
   for (int i = 0; i < num_configs; i++)
   {
     if (arr[i] == wanted)
-    {
-      return wanted; // wanted sample format is supported
-    }
-  return arr[0]; // fallback to first supported sample format
+      return wanted; // wanted
+  }
 
-// ---- instance methods ----
-
-  if (!encoder)
+  return arr[0];
+}
 audio_transcode_processor::~audio_transcode_processor()
 {
   flush();

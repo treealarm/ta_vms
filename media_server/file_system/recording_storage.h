@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <array>
 #include <optional>
 #include <filesystem>
 #include <chrono>
@@ -20,6 +21,10 @@ public:
   explicit recording_storage();
   static constexpr std::string_view k_mkv_ext = ".mkv";
   static constexpr std::string_view k_ts_ext = ".ts";
+  static constexpr std::array<std::string_view, 2> k_allowed_exts = {
+    k_mkv_ext,
+    k_ts_ext
+  };
 
   std::vector<recording_info> get_recordings(
     const std::string& camera_id,
@@ -58,7 +63,7 @@ public:
   }
 private:
   std::filesystem::path resolve_storage_base_path();
-  std::filesystem::path resolve_file_ext();
+
   std::vector<recording_info> load_day(
     const std::filesystem::path& day_path);
 

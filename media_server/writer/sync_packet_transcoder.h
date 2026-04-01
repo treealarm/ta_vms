@@ -19,7 +19,7 @@ public:
     bool allow_all_audio_passthrough = false;
   };
 
-  explicit sync_packet_transcoder(codec_config config = {});
+  explicit sync_packet_transcoder(codec_config config);
   ~sync_packet_transcoder();
 
   std::shared_ptr<media_packet> transcode_packet(const std::shared_ptr<media_packet>& media);

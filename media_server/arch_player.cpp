@@ -162,14 +162,26 @@ bool arch_player::set_state(
 // --- приватные методы ---
 bool arch_player::on_eof(const std::string& file)
 {
+  auto reader = m_reader;
+
+  if (!reader)
+    return false;
+
   auto path = std::filesystem::path(file);
   auto ts = m_storage.parse_time(path.filename().string());
   if (!ts)
+  {
+    set_player_command({ .cmd = player_command::type::stop });
     return false;
+  }    
 
   auto info = m_storage.find_offset(camera_id(), *ts, 1);
   if (!info)
+  {
+    set_player_command({ .cmd = player_command::type::stop });
     return false;
+  }
+    
 
   post_task([this, info]()
     {

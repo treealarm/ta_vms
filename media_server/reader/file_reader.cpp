@@ -21,7 +21,13 @@ file_reader::file_reader(
   m_start_position_ms(position),
   m_snapshot_reader(position),
   m_on_file_end(cb_eof),
-  m_on_progress(cb_progress)
+  m_on_progress(cb_progress),
+  m_packet_transcoder({
+  .video_codec = AV_CODEC_ID_H264,
+  .audio_codec = AV_CODEC_ID_OPUS,
+  .allow_hevc_video_passthrough = false,
+  .allow_all_audio_passthrough = false
+})
 {}
 
 file_reader::~file_reader() 
@@ -252,9 +258,8 @@ void file_reader::read_loop()
           auto succ = m_on_file_end(get_source());
           if (!succ)
           {
-            // возможно не стоит закрывать ридер, пока он пересоздается на проигрывание.
-            m_running = false;
-            break;
+            // не стоит закрывать ридер, пока он пересоздается на проигрывание.  
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));         
           }
         }
       }
