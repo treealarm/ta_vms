@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "writer/processors/stream_processor.h"
 
 struct AVAudioFifo;
@@ -22,6 +24,8 @@ private:
   void drain_encoder_packets();
 
 private:
+  const AVCodecID m_codec_id = AV_CODEC_ID_OPUS;
+  
   emit_fn m_emit;
   AVCodecContext* m_decoder_ctx = nullptr;
   AVCodecContext* m_encoder_ctx = nullptr;

@@ -96,9 +96,17 @@ bool audio_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
     return false;
   }
 
-  const AVCodec* encoder = avcodec_find_encoder_by_name("libopus");
-  if (!encoder) {
-    std::cerr << "failed to find libopus encoder (FFmpeg must be built with --enable-libopus)\n";
+  const AVCodec* encoder = avcodec_find_encoder(m_codec_id);
+
+  if (!encoder) 
+  {
+    
+    std::cerr << "failed to find libopus encoder" << std::endl;
+
+    if (m_codec_id == AV_CODEC_ID_OPUS)
+    {
+      std::cerr << "(FFmpeg must be built with --enable - libopus)" << std::endl;
+    }
     return false;
   }
 
