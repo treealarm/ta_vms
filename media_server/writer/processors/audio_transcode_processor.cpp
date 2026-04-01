@@ -42,8 +42,8 @@ AVSampleFormat choose_supported_sample_fmt(AVCodecContext* ctx, const AVCodec* c
   for (int i = 0; i < num_configs; i++) 
   {
     if (arr[i] == wanted)
-audio_transcode_processor::audio_transcode_processor(AVCodecID codec_id)
-  : m_codec_id(codec_id)
+      return wanted;
+  return arr[0];
 {
 }
 
