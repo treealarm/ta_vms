@@ -9,9 +9,7 @@ extern "C" {
 
 #include "interfaces/media_packet.h"
 
-namespace {
-
-avcodec_parameters_ptr alloc_out_params(AVCodecContext* encoder_ctx)
+avcodec_parameters_ptr audio_transcode_processor::alloc_out_params(AVCodecContext* encoder_ctx)
 {
   avcodec_parameters_ptr out_codec_params(avcodec_parameters_alloc(),
     [](AVCodecParameters* params) { avcodec_parameters_free(&params); });
@@ -28,7 +26,7 @@ avcodec_parameters_ptr alloc_out_params(AVCodecContext* encoder_ctx)
   return out_codec_params;
 }
 
-AVSampleFormat choose_supported_sample_fmt(AVCodecContext* ctx, const AVCodec* codec, AVSampleFormat wanted)
+AVSampleFormat audio_transcode_processor::choose_supported_sample_fmt(AVCodecContext* ctx, const AVCodec* codec, AVSampleFormat wanted)
 {
   const void* configs = nullptr;
   int num_configs = 0;
@@ -48,8 +46,6 @@ AVSampleFormat choose_supported_sample_fmt(AVCodecContext* ctx, const AVCodec* c
     }
   return arr[0];
 
-} // namespace
-}
 
   if (!encoder)
 audio_transcode_processor::~audio_transcode_processor()

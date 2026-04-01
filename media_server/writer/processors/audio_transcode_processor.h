@@ -24,6 +24,8 @@ public:
   AVRational output_time_base() const override;
 
 private:
+  static avcodec_parameters_ptr alloc_out_params(AVCodecContext* encoder_ctx);
+  static AVSampleFormat choose_supported_sample_fmt(AVCodecContext* ctx, const AVCodec* codec, AVSampleFormat wanted);
   void encode_audio_frame(AVFrame* frame);
   void drain_encoder_packets();
 
