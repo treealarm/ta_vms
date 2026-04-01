@@ -9,8 +9,8 @@ extern "C" {
 
 #include "interfaces/media_packet.h"
 
-namespace 
-{
+namespace {
+
 avcodec_parameters_ptr alloc_out_params(AVCodecContext* encoder_ctx)
 {
   avcodec_parameters_ptr out_codec_params(avcodec_parameters_alloc(),
@@ -20,14 +20,13 @@ avcodec_parameters_ptr alloc_out_params(AVCodecContext* encoder_ctx)
     return nullptr;
   }
 
-  if (avcodec_parameters_from_context(out_codec_params.get(), encoder_ctx) < 0) 
+  if (avcodec_parameters_from_context(out_codec_params.get(), encoder_ctx) < 0)
   {
     return nullptr;
   }
 
   return out_codec_params;
 }
-
 
 AVSampleFormat choose_supported_sample_fmt(AVCodecContext* ctx, const AVCodec* codec, AVSampleFormat wanted)
 {
@@ -36,20 +35,23 @@ AVSampleFormat choose_supported_sample_fmt(AVCodecContext* ctx, const AVCodec* c
 
   int ret = avcodec_get_supported_config(ctx, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0, &configs, &num_configs);
   if (ret < 0 || num_configs == 0)
-    return wanted; // fallback
+  {
+    return wanted;
+  }
 
   auto arr = reinterpret_cast<const AVSampleFormat*>(configs);
-  for (int i = 0; i < num_configs; i++) 
+  for (int i = 0; i < num_configs; i++)
   {
     if (arr[i] == wanted)
+    {
       return wanted;
+    }
   return arr[0];
 
-  return arr[0]; // åñëè íåò — ïåðâûé ïîääåðæèâàåìûé
+} // namespace
 }
 
-}
-
+  if (!encoder)
 audio_transcode_processor::~audio_transcode_processor()
 {
   flush();
