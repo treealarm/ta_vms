@@ -38,7 +38,7 @@ AVSampleFormat audio_transcode_processor::choose_supported_sample_fmt(
   int ret = avcodec_get_supported_config(ctx, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0, &configs, &num_configs);
   if (ret < 0 || num_configs == 0)
   {
-    return wanted;
+    return wanted; // fallback
   }
 
   auto arr = reinterpret_cast<const AVSampleFormat*>(configs);
@@ -46,9 +46,9 @@ AVSampleFormat audio_transcode_processor::choose_supported_sample_fmt(
   {
     if (arr[i] == wanted)
     {
-      return wanted;
+      return wanted; // wanted sample format is supported
     }
-  return arr[0];
+  return arr[0]; // fallback to first supported sample format
 
 // ---- instance methods ----
 
