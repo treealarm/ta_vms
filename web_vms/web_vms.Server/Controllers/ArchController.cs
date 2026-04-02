@@ -151,8 +151,20 @@ public class ArchController(
       case "stop":
         request.Stop = new Stop();
         break;
+      case "step":
+        if (!dto.step_frames.HasValue || dto.step_frames.Value == 0)
+          return BadRequest("step_frames is required for step command and must be non-zero");
+
+        request.Step = new Step { StepFrames = dto.step_frames.Value };
+        break;
+      case "step_forward":
+        request.Step = new Step { StepFrames = 1 };
+        break;
+      case "step_back":
+        request.Step = new Step { StepFrames = -1 };
+        break;
       default:
-        return BadRequest("command must be one of: play, pause, stop");
+        return BadRequest("command must be one of: play, pause, stop, step, step_back, step_forward");
     }
 
     var grpcResponse = await grpcClient.SendPlayerCommandAsync(request, cancellationToken: ct);

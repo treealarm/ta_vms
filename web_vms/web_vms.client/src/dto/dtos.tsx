@@ -46,13 +46,14 @@ export type PlayerStateDto = {
   position_ms?: number
 }
 
-export type PlayerCommand = 'play' | 'pause' | 'stop'
+export type PlayerCommand = 'play' | 'pause' | 'stop' | 'step' | 'step_back' | 'step_forward'
 
 export type PlayerMode = 'unspecified' | 'playing' | 'paused' | 'stopped'
 
 export type PlayerCommandDto = {
   client_id: string
   command: PlayerCommand
+  step_frames?: number
 }
 
 export type PlayerProgressStateDto = {
@@ -95,4 +96,3 @@ export type AddCameraRequestDto = {
 
 
 export type UpdateCameraStateRequestDto = Pick<CameraStateDto, 'cameraId' | 'recording' | 'webRtc'>
-
