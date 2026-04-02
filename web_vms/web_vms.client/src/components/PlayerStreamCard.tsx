@@ -3,6 +3,8 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import SkipPreviousIcon from '@mui/icons-material/SkipPrevious';
+import SkipNextIcon from '@mui/icons-material/SkipNext';
 
 import { useState, useEffect } from 'react'
 import { type PlayerProgressStateDto, type RecordingDto } from '../dto/dtos'
@@ -24,8 +26,6 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
     (state) => state.arch.playerStatesByClientId[player.client_id]
   ) ?? player
 
-  const [sliderValue, setSliderValue] = useState(currentPlayer.position_ms)
-
   useEffect(() => {
     const interval = setInterval(() => {
       void dispatch(fetchPlayerState(player.client_id))
@@ -34,10 +34,6 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
     void dispatch(fetchPlayerState(player.client_id))
     return () => clearInterval(interval)
   }, [dispatch, player.client_id])
-
-  useEffect(() => {
-    setSliderValue(currentPlayer.position_ms)
-  }, [currentPlayer.position_ms])
 
   const sendSeek = async (timeToSend: string, position: number) => {
     await dispatch(
@@ -48,10 +44,6 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
         position_ms: position
       })
     )
-  }
-
-  const handleSliderChange = (_: Event, value: number | number[]) => {
-    if (typeof value === 'number') setSliderValue(value)
   }
 
   const handleSliderCommitted = (_: Event | React.SyntheticEvent, value: number | number[]) => {
@@ -71,7 +63,7 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
   const isPauseActive = mode === 'paused'
   const isStopActive = mode === 'stopped'
 
-  const handleSendCommand = (command: 'play' | 'pause' | 'stop') => {
+  const handleSendCommand = (command: 'play' | 'pause' | 'stop' | 'step_back' | 'step_forward') => {
     void dispatch(
       sendPlayerCommand({
         client_id: currentPlayer.client_id,
@@ -120,14 +112,31 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
           {/* Slider */}
           <Stack direction="row" spacing={1}>
             <Slider
-              value={sliderValue}
+              value={currentPlayer.position_ms}
               max={currentPlayer.duration_ms}
-              onChange={handleSliderChange}
               onChangeCommitted={handleSliderCommitted}
             />
           </Stack>
 
           <Stack direction="row" spacing={1} justifyContent="center">
+            <Tooltip title="Step back">
+              <IconButton
+                size="small"
+                onClick={() => handleSendCommand('step_back')}
+              >
+                <SkipPreviousIcon />
+              </IconButton>
+            </Tooltip>
+
+            <Tooltip title="Step forward">
+              <IconButton
+                size="small"
+                onClick={() => handleSendCommand('step_forward')}
+              >
+                <SkipNextIcon />
+              </IconButton>
+            </Tooltip>
+
             <Tooltip title={isPlayActive ? 'Currently playing' : 'Play'}>
               <IconButton
                 size="small"
