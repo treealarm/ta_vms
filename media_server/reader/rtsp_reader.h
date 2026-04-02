@@ -39,7 +39,7 @@ public:
   {
     return m_running;
   }
-
+  void step(int32_t steps) override {};
   AVStream* video_stream() const override;
 
 private:

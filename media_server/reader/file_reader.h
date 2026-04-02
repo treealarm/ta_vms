@@ -46,6 +46,7 @@ public:
   {
     return m_running;
   }
+  void step(int32_t steps) override;
 private:
   bool connect_current_file(const std::string& source);
   bool seek_to_position(std::chrono::milliseconds position);
@@ -70,6 +71,7 @@ private:
   std::function<void(const reader_progress&)> m_on_progress;
 
   std::atomic_bool m_paused{ false };
+  std::atomic_int32_t m_steps;
 
   sink_container_impl m_sinks_helper;
   std::string m_source;  

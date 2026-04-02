@@ -29,7 +29,8 @@ public:
 
   AVStream* video_stream();
   std::vector<std::shared_ptr<media_packet>> snapshot_packets() const;
-
+  bool forward();
+  bool prev();
 private:
   bool connect_current_file(const std::string& source);
 
@@ -44,8 +45,6 @@ private:
   bool fill_buffer_from_position(int64_t target_ts);
   size_t find_frame_ge(int64_t target_ts) const;
   bool encode_current_frame();
-  bool forward();
-  bool prev();
 
   avformat_context_ptr m_ctx = nullptr;
   int m_video_index = -1;

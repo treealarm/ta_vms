@@ -62,6 +62,11 @@ void arch_player::worker_loop()
   }
 }
 
+void arch_player::step(int32_t steps)
+{
+
+}
+
 void arch_player::set_player_mode()
 {
   auto mode = m_mode.load();
@@ -113,6 +118,7 @@ bool arch_player::set_player_command(const player_command& cmd)
     break;
 
   case player_command::type::pause:
+  case player_command::type::step:
     m_mode = player_mode::paused;
     break;
 
@@ -126,6 +132,12 @@ bool arch_player::set_player_command(const player_command& cmd)
   }
 
   set_player_mode();
+
+  if (cmd.cmd == player_command::type::step)
+  {
+    step(cmd.step_frames ? *cmd.step_frames : 1);
+  }
+
   return m_mode != player_mode::undefined;
 }
 

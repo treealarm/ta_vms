@@ -75,12 +75,17 @@ message PlayerCommand {
     Play play = 10;
     Pause pause = 11;
     Stop stop = 12;
+	Step step = 13;
   }
 }
 
 message Play {}
 message Pause {}
 message Stop {}
+message Step 
+{
+	int32 step_frames = 1;
+}
 
 message ListPlayersRequest {}
 

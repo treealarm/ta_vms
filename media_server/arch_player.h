@@ -18,7 +18,8 @@ struct player_command
   {
     play,
     pause,
-    stop
+    stop,
+    step
   };
 
   type cmd;
@@ -86,6 +87,7 @@ private:
   bool stop_web_rtc(std::shared_ptr<reader> reader);
 
   void set_player_mode();
+  void step(int32_t steps);
 
   bool on_eof(const std::string& file);
   void on_progress(const reader_progress& progress);

@@ -111,6 +111,11 @@ void file_reader::resume()
   m_last_pause_emit_at = clock::time_point::min();
 }
 
+void file_reader::step(int32_t steps)
+{
+  m_steps = steps;
+}
+
 bool file_reader::connect_current_file(const std::string& file_path)
 {
   disconnect();
@@ -382,6 +387,19 @@ void file_reader::emit_paused_snapshots()
     {
       std::cerr << "snapshot_reader open failed for source: " << m_file_path << "\n";
     }
+  }
+
+  if (m_steps != 0)
+  {
+    if (m_steps > 0)
+    {
+      m_snapshot_reader->forward();
+    }
+    else
+    {
+      m_snapshot_reader->prev();
+    } 
+    m_steps = 0;
   }
   const auto snapshots = m_snapshot_reader->snapshot_packets();
 
