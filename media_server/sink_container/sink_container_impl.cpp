@@ -1,4 +1,4 @@
-#include <algorithm>
+ï»¿#include <algorithm>
 #include "sink_container/sink_container_impl.h"
 
 void sink_container_impl::add_sink(std::shared_ptr<media_sink> sink)
@@ -15,7 +15,7 @@ void sink_container_impl::add_sink(std::shared_ptr<media_sink> sink)
     {
       if (s == sink)
       {
-        return; // óæå åñòü
+        return; // ÑƒĞ¶Ğµ ĞµÑÑ‚ÑŒ
       }
       ++it;
     }

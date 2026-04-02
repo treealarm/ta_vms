@@ -54,7 +54,7 @@ private:
   void emit_paused_snapshots();
   std::string get_source();
   sync_packet_transcoder m_packet_transcoder;
-  // Âîçâðàùàåò true, åñëè íóæíî æäàòü ïåðåä îòïðàâêîé ïàêåòà, false åñëè ìîæíî ñðàçó
+
   std::chrono::microseconds sync_to_master_clock(int64_t pkt_pts_us);
 
   avformat_context_ptr m_ctx = nullptr;
@@ -65,7 +65,7 @@ private:
 
   std::string m_camera_id;
   std::chrono::milliseconds m_start_position_ms;
-  snapshot_reader m_snapshot_reader;
+  std::unique_ptr<snapshot_reader> m_snapshot_reader;
   std::function<bool(const std::string&)> m_on_file_end;
   std::function<void(const reader_progress&)> m_on_progress;
 
@@ -81,4 +81,7 @@ private:
 
   std::atomic_bool m_drop_until_keyframe = false;
   clock::time_point m_last_pause_emit_at = clock::time_point::min();
+
+  std::string m_file_path;
+  std::chrono::milliseconds m_cur_video_pos;
 };

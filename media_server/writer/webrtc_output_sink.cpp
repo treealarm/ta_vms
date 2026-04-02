@@ -1,4 +1,4 @@
-#include "writer/webrtc_output_sink.h"
+п»ї#include "writer/webrtc_output_sink.h"
 
 webrtc_output_sink::webrtc_output_sink(std::string rtsp_url)
 {
@@ -52,7 +52,7 @@ void webrtc_output_sink::on_packet(const std::shared_ptr<media_packet>& media)
 
   if (m_queue.size() >= m_max_queue) {
 
-    // ищем старый НЕключевой видео
+    // РёС‰РµРј СЃС‚Р°СЂС‹Р№ РЊв‰€РєР»СЋС‡РµРІРѕР№ РІРёРґРµРѕ
     auto it = std::find_if(m_queue.begin(), m_queue.end(),
       [](const std::shared_ptr<media_packet>& p) {
         return p &&

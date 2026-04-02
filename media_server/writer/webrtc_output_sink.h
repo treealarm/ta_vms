@@ -1,4 +1,4 @@
-#pragma once
+п»ї#pragma once
 
 #include <string>
 #include <deque>
@@ -27,7 +27,7 @@ private:
   std::mutex m_queue_mutex;
   std::condition_variable m_cv;
 
-  size_t m_max_queue = 200; // подбирается
+  size_t m_max_queue = 200; // ЧџЧћЧ”Ч‘ЧЧ ЧђЧ•ЧўЧЎпџЃ
   std::atomic_bool m_running{ true };
 
   std::thread m_worker;

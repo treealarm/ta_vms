@@ -55,8 +55,11 @@ void snapshot_reader::disconnect()
     avcodec_free_context(&m_encoder_ctx);
   }
 
+  if (m_decoder_ctx)
+    avcodec_free_context(&m_decoder_ctx);
+
   m_snapshot_packets.clear();
-  m_snapshot_frame.reset();
+
   m_other_stream_indexes.clear();
   m_ctx.reset();
   m_video_index = -1;
@@ -82,9 +85,11 @@ bool snapshot_reader::connect_current_file(const std::string& source)
     return false;
   }
 
+  // --- поиск стримов (оставляем как есть) ---
   for (unsigned i = 0; i < m_ctx->nb_streams; ++i)
   {
     const auto media_type = m_ctx->streams[i]->codecpar->codec_type;
+
     if (media_type == AVMEDIA_TYPE_VIDEO && m_video_index < 0)
     {
       m_video_index = static_cast<int>(i);
@@ -104,169 +109,51 @@ bool snapshot_reader::connect_current_file(const std::string& source)
     return false;
   }
 
-  if (!decode_to_snapshot_packets(m_position))
+  // --- НОВОЕ: init decoder ---
+  if (!init_decoder())
   {
+    std::cerr << "Failed to init decoder\n";
+    disconnect();
     return false;
   }
 
-  build_placeholder_packets();
-  return true;
-}
-
-bool snapshot_reader::decode_to_snapshot_packets(std::chrono::milliseconds position)
-{
-  if (!m_ctx || m_video_index < 0)
-  {
-    return false;
-  }
-
+  // --- НОВОЕ: позиция ---
   AVStream* stream = m_ctx->streams[m_video_index];
-  if (!stream)
+
+  const int64_t target_ts = av_rescale_q(
+    m_position.count(),
+    AVRational{ 1, 1000 },
+    stream->time_base
+  );
+
+  // --- НОВОЕ: init encoder (после первого decode лучше, но можно и тут) ---
+  // encoder зависит от frame → поэтому пока НЕ вызываем
+
+  // --- НОВОЕ: заполняем буфер ---
+  if (!fill_buffer_from_position(target_ts))
   {
+    std::cerr << "Failed to fill buffer\n";
+    disconnect();
     return false;
   }
 
-  const AVCodec* codec = avcodec_find_decoder(stream->codecpar->codec_id);
-  if (!codec)
+  // --- НОВОЕ: encoder init после первого кадра ---
+  if (!init_encoder())
   {
-    std::cerr << "Decoder not found for video stream\n";
+    std::cerr << "Failed to init encoder\n";
+    disconnect();
     return false;
   }
 
-  std::unique_ptr<AVCodecContext, avcodec_context_deleter> codec_ctx(avcodec_alloc_context3(codec));
-  if (!codec_ctx)
+  // --- НОВОЕ: сформировать первый snapshot ---
+  if (!encode_current_frame())
   {
+    std::cerr << "Failed to encode first frame\n";
+    disconnect();
     return false;
   }
 
-  if (avcodec_parameters_to_context(codec_ctx.get(), stream->codecpar) < 0)
-  {
-    return false;
-  }
-
-  if (avcodec_open2(codec_ctx.get(), codec, nullptr) < 0)
-  {
-    return false;
-  }
-
-  const int64_t target_ts = av_rescale_q(position.count(), AVRational{ 1, 1000 }, stream->time_base);
-  if (av_seek_frame(m_ctx.get(), m_video_index, target_ts, AVSEEK_FLAG_BACKWARD) < 0)
-  {
-    std::cerr << "seek failed\n";
-    return false;
-  }
-
-  avformat_flush(m_ctx.get());
-  avcodec_flush_buffers(codec_ctx.get());
-
-  const int64_t target_pts_us = av_rescale_q(target_ts, stream->time_base, AVRational{ 1, 1000000 });
-
-  avpacket_ptr pkt(av_packet_alloc(), avpacket_deleter{});
-  avframe_ptr frame(av_frame_alloc(), avframe_deleter{});
-
-  if (!pkt || !frame)
-  {
-    return false;
-  }
-
-  bool seen_video_keyframe = false;
-  while (av_read_frame(m_ctx.get(), pkt.get()) >= 0)
-  {
-    if (pkt->stream_index != m_video_index)
-    {
-      av_packet_unref(pkt.get());
-      continue;
-    }
-
-    if (!seen_video_keyframe)
-    {
-      if (!(pkt->flags & AV_PKT_FLAG_KEY))
-      {
-        av_packet_unref(pkt.get());
-        continue;
-      }
-
-      seen_video_keyframe = true;
-    }
-
-    if (avcodec_send_packet(codec_ctx.get(), pkt.get()) < 0)
-    {
-      av_packet_unref(pkt.get());
-      continue;
-    }
-
-    while (avcodec_receive_frame(codec_ctx.get(), frame.get()) == 0)
-    {
-      const int64_t frame_pts = frame->best_effort_timestamp;
-      if (frame_pts == AV_NOPTS_VALUE)
-      {
-        av_frame_unref(frame.get());
-        continue;
-      }
-
-      const int64_t frame_pts_us = av_rescale_q(frame_pts, stream->time_base, AVRational{ 1, 1000000 });
-      if (frame_pts_us < target_pts_us)
-      {
-        av_frame_unref(frame.get());
-        continue;
-      }
-
-      AVFrame* cloned = av_frame_clone(frame.get());
-      if (!cloned)
-      {
-        return false;
-      }
-
-      m_snapshot_frame.reset(cloned, avframe_deleter{});
-      av_frame_unref(frame.get());
-      av_packet_unref(pkt.get());
-
-      if (!init_encoder())
-      {
-        return false;
-      }
-
-      AVFrame* encode_frame = av_frame_clone(m_snapshot_frame.get());
-      if (!encode_frame)
-      {
-        return false;
-      }
-
-      encode_frame->pts = 0;
-      encode_frame->pict_type = AV_PICTURE_TYPE_I;
-      encode_frame->flags |= AV_FRAME_FLAG_KEY;
-
-      if (avcodec_send_frame(m_encoder_ctx, encode_frame) < 0)
-      {
-        av_frame_free(&encode_frame);
-        return false;
-      }
-
-      av_frame_free(&encode_frame);
-
-      avpacket_ptr encoded(av_packet_alloc(), avpacket_deleter{});
-      if (!encoded)
-      {
-        return false;
-      }
-
-      while (avcodec_receive_packet(m_encoder_ctx, encoded.get()) == 0)
-      {
-        auto media = make_video_snapshot_packet(encoded.get(), target_ts);
-        if (media)
-        {
-          m_snapshot_packets.push_back(std::move(media));
-        }
-        av_packet_unref(encoded.get());
-      }
-
-      return !m_snapshot_packets.empty();
-    }
-
-    av_packet_unref(pkt.get());
-  }
-
-  return false;
+  return true;
 }
 
 void snapshot_reader::build_placeholder_packets()
@@ -283,8 +170,11 @@ void snapshot_reader::build_placeholder_packets()
 
 bool snapshot_reader::init_encoder()
 {
+  if (m_frame_buffer.empty())
+    return false;
+
   const AVCodec* encoder = avcodec_find_encoder(AV_CODEC_ID_H264);
-  if (!encoder || !m_snapshot_frame)
+  if (!encoder)
   {
     return false;
   }
@@ -295,9 +185,12 @@ bool snapshot_reader::init_encoder()
     return false;
   }
 
-  m_encoder_ctx->width = m_snapshot_frame->width;
-  m_encoder_ctx->height = m_snapshot_frame->height;
-  m_encoder_ctx->pix_fmt = static_cast<AVPixelFormat>(m_snapshot_frame->format);
+  auto* frame = m_frame_buffer[m_current_index].frame.get();
+
+  m_encoder_ctx->width = frame->width;
+  m_encoder_ctx->height = frame->height;
+  m_encoder_ctx->pix_fmt = (AVPixelFormat)frame->format;
+
   m_encoder_ctx->time_base = AVRational{ 1, 25 };
   m_encoder_ctx->framerate = AVRational{ 25, 1 };
   m_encoder_ctx->gop_size = 1;
@@ -403,4 +296,236 @@ std::shared_ptr<media_packet> snapshot_reader::make_placeholder_packet(int strea
   media->sample_rate = stream->codecpar->sample_rate;
   media->codec_parameters = std::move(codec_copy);
   return media;
+}
+
+bool snapshot_reader::init_decoder()
+{
+  AVStream* stream = m_ctx->streams[m_video_index];
+  const AVCodec* codec = avcodec_find_decoder(stream->codecpar->codec_id);
+  if (!codec) return false;
+
+  m_decoder_ctx = avcodec_alloc_context3(codec);
+  if (!m_decoder_ctx) return false;
+
+  if (avcodec_parameters_to_context(m_decoder_ctx, stream->codecpar) < 0)
+    return false;
+
+  if (avcodec_open2(m_decoder_ctx, codec, nullptr) < 0)
+    return false;
+
+  return true;
+}
+
+bool snapshot_reader::decode_next_frame()
+{
+  avpacket_ptr pkt(av_packet_alloc(), avpacket_deleter{});
+  avframe_ptr frame(av_frame_alloc(), avframe_deleter{});
+
+  while (av_read_frame(m_ctx.get(), pkt.get()) >= 0)
+  {
+    if (pkt->stream_index != m_video_index)
+    {
+      av_packet_unref(pkt.get());
+      continue;
+    }
+
+    if (avcodec_send_packet(m_decoder_ctx, pkt.get()) < 0)
+    {
+      av_packet_unref(pkt.get());
+      continue;
+    }
+
+    while (avcodec_receive_frame(m_decoder_ctx, frame.get()) == 0)
+    {
+      int64_t pts = frame->best_effort_timestamp;
+      if (pts == AV_NOPTS_VALUE)
+      {
+        av_frame_unref(frame.get());
+        continue;
+      }
+
+      AVFrame* cloned = av_frame_clone(frame.get());
+      if (!cloned) return false;
+
+      buffered_frame bf;
+      bf.frame.reset(cloned, avframe_deleter{});
+      bf.pts = pts;
+
+      m_frame_buffer.push_back(std::move(bf));
+
+      if (m_frame_buffer.size() > m_max_buffer)
+      {
+        m_frame_buffer.pop_front();
+        if (m_current_index > 0)
+          --m_current_index;
+      }
+
+      av_frame_unref(frame.get());
+      av_packet_unref(pkt.get());
+      return true;
+    }
+
+    av_packet_unref(pkt.get());
+  }
+
+  return false;
+}
+
+bool snapshot_reader::fill_buffer_from_position(int64_t target_ts)
+{
+  AVStream* stream = m_ctx->streams[m_video_index];
+
+  if (av_seek_frame(m_ctx.get(), m_video_index, target_ts, AVSEEK_FLAG_BACKWARD) < 0)
+    return false;
+
+  avformat_flush(m_ctx.get());
+  avcodec_flush_buffers(m_decoder_ctx);
+
+  m_frame_buffer.clear();
+
+  const int64_t target_pts_us = av_rescale_q(
+    target_ts,
+    stream->time_base,
+    AVRational{ 1, 1000000 }
+  );
+
+  bool reached = false;
+
+  while (true)
+  {
+    if (!decode_next_frame())
+      break;
+
+    const auto& f = m_frame_buffer.back();
+
+    if (f.pts == AV_NOPTS_VALUE)
+      continue;
+
+    const int64_t frame_pts_us = av_rescale_q(
+      f.pts,
+      stream->time_base,
+      AVRational{ 1, 1000000 }
+    );
+
+    if (frame_pts_us >= target_pts_us)
+    {
+      reached = true;
+      break;
+    }
+  }
+
+  if (!reached)
+    return false;
+
+  // добираем буфер дальше
+  while (m_frame_buffer.size() < m_max_buffer)
+  {
+    if (!decode_next_frame())
+      break;
+  }
+
+  m_current_index = find_frame_ge(target_pts_us);
+
+  return true;
+}
+
+size_t snapshot_reader::find_frame_ge(int64_t target_pts_us) const
+{
+  AVStream* stream = m_ctx->streams[m_video_index];
+
+  for (size_t i = 0; i < m_frame_buffer.size(); ++i)
+  {
+    const int64_t pts = m_frame_buffer[i].pts;
+    if (pts == AV_NOPTS_VALUE)
+      continue;
+
+    const int64_t frame_pts_us = av_rescale_q(
+      pts,
+      stream->time_base,
+      AVRational{ 1, 1000000 }
+    );
+
+    if (frame_pts_us >= target_pts_us)
+      return i;
+  }
+
+  return m_frame_buffer.size() - 1;
+}
+
+bool snapshot_reader::encode_current_frame()
+{
+  if (m_frame_buffer.empty()) return false;
+
+  const auto& bf = m_frame_buffer[m_current_index];
+
+  AVFrame* encode_frame = av_frame_clone(bf.frame.get());
+  if (!encode_frame) return false;
+
+  encode_frame->pts = 0;
+  encode_frame->pict_type = AV_PICTURE_TYPE_I;
+  encode_frame->flags |= AV_FRAME_FLAG_KEY;
+
+  if (avcodec_send_frame(m_encoder_ctx, encode_frame) < 0)
+  {
+    av_frame_free(&encode_frame);
+    return false;
+  }
+
+  av_frame_free(&encode_frame);
+
+  avpacket_ptr pkt(av_packet_alloc(), avpacket_deleter{});
+  if (!pkt) return false;
+
+  m_snapshot_packets.clear();
+
+  while (avcodec_receive_packet(m_encoder_ctx, pkt.get()) == 0)
+  {
+    auto media = make_video_snapshot_packet(pkt.get(), bf.pts);
+    if (media)
+      m_snapshot_packets.push_back(std::move(media));
+
+    av_packet_unref(pkt.get());
+  }
+
+  build_placeholder_packets();
+  return !m_snapshot_packets.empty();
+}
+
+bool snapshot_reader::forward()
+{
+  std::lock_guard lock(m_mutex);
+
+  if (m_current_index + 1 < m_frame_buffer.size())
+  {
+    ++m_current_index;
+    return encode_current_frame();
+  }
+
+  if (!decode_next_frame())
+    return false;
+
+  ++m_current_index;
+  return encode_current_frame();
+}
+
+bool snapshot_reader::prev()
+{
+  std::lock_guard lock(m_mutex);
+
+  if (m_current_index > 0)
+  {
+    --m_current_index;
+    return encode_current_frame();
+  }
+
+  // fallback: делаем seek назад
+  int64_t current_pts = m_frame_buffer.front().pts;
+
+  int64_t rewind_ts = current_pts - av_rescale_q(2000, AVRational{ 1,1000 },
+    m_ctx->streams[m_video_index]->time_base);
+
+  if (!fill_buffer_from_position(rewind_ts))
+    return false;
+
+  return encode_current_frame();
 }

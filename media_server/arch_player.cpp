@@ -1,4 +1,4 @@
-#include "arch_player.h"
+п»ї#include "arch_player.h"
 
 #include <thread>
 #include <mutex>
@@ -32,7 +32,7 @@ arch_player::~arch_player()
   shutdown();
 }
 
-// --- очередь задач ---
+// --- РѕС‡РµСЂРµРґСЊ Р·Р°РґР°С‡ ---
 void arch_player::post_task(std::function<void()> task)
 {
   {
@@ -102,7 +102,7 @@ void arch_player::set_player_mode()
       }
     });
 }
-// --- публичный интерфейс ---
+// --- РїСѓР±Р»РёС‡РЅС‹Р№ РёРЅС‚РµСЂС„РµР№СЃ ---
 
 bool arch_player::set_player_command(const player_command& cmd)
 {
@@ -134,7 +134,7 @@ bool arch_player::set_state(
   const std::string& camera_id,
   std::chrono::milliseconds position)
 {
-  // кидаем задачу в очередь
+  // РєРёРґР°РµРј Р·Р°РґР°С‡Сѓ РІ РѕС‡РµСЂРµРґСЊ
   post_task([this, start_time, camera_id, position]()
     {
       {
@@ -156,10 +156,10 @@ bool arch_player::set_state(
       }
     });
 
-  return true; // сам вызов сразу возвращает, выполнение асинхронно
+  return true; // СЃР°Рј РІС‹Р·РѕРІ СЃСЂР°Р·Сѓ РІРѕР·РІСЂР°С‰Р°РµС‚, РІС‹РїРѕР»РЅРµРЅРёРµ Р°СЃРёРЅС…СЂРѕРЅРЅРѕ
 }
 
-// --- приватные методы ---
+// --- РїСЂРёРІР°С‚РЅС‹Рµ РјРµС‚РѕРґС‹ ---
 bool arch_player::on_eof(const std::string& file)
 {
   auto reader = m_reader;

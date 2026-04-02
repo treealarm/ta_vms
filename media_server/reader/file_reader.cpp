@@ -19,7 +19,6 @@ file_reader::file_reader(
     : 
   m_camera_id(std::move(camera_id)),
   m_start_position_ms(position),
-  m_snapshot_reader(position),
   m_on_file_end(cb_eof),
   m_on_progress(cb_progress),
   m_packet_transcoder({
@@ -171,11 +170,7 @@ bool file_reader::connect_current_file(const std::string& file_path)
     }
   }
 
-  if (!m_snapshot_reader.open(file_path))
-  {
-    std::cerr << "snapshot_reader open failed for source: " << file_path << "\n";
-  }
-
+  m_file_path = file_path;
   std::cerr << "File source opened: " << file_path << "\n";
   return true;
 }
@@ -236,6 +231,10 @@ void file_reader::read_loop()
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
       continue;
     }
+    else
+    {
+      m_snapshot_reader.reset();
+    }
 
     if (!m_ctx || m_video_index < 0 || m_forward_stream_indexes.empty())
     {
@@ -283,6 +282,13 @@ void file_reader::read_loop()
 
         m_drop_until_keyframe = false;
       }
+
+      m_cur_video_pos = std::chrono::milliseconds(
+        av_rescale_q(
+        pkt->pts,
+        stream->time_base,
+        AVRational{ 1, 1000 }
+      ));
     }
 
     if (pkt->stream_index == m_master_stream_index)
@@ -369,7 +375,16 @@ void file_reader::emit_paused_snapshots()
     return;
   }
 
-  const auto snapshots = m_snapshot_reader.snapshot_packets();
+  if (!m_snapshot_reader)
+  {
+    m_snapshot_reader = std::make_unique<snapshot_reader>(m_cur_video_pos);
+    if (!m_snapshot_reader->open(m_file_path))
+    {
+      std::cerr << "snapshot_reader open failed for source: " << m_file_path << "\n";
+    }
+  }
+  const auto snapshots = m_snapshot_reader->snapshot_packets();
+
   for (const auto& media : snapshots)
   {
     auto out_media = m_packet_transcoder.transcode_packet(media);

@@ -1,4 +1,4 @@
-#pragma once
+п»ї#pragma once
 
 #include <string>
 #include <vector>
@@ -48,5 +48,5 @@ private:
   stream_config m_audio_config;
 
   int64_t m_last_master_pts = AV_NOPTS_VALUE;
-  AVRational m_master_time_base{ 1, 90000 }; // видео как master
+  AVRational m_master_time_base{ 1, 90000 }; // РІРёРґРµРѕ РєР°Рє master
 };

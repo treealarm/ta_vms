@@ -1,4 +1,4 @@
-#pragma once
+п»ї#pragma once
 
 #include <memory>
 #include <string>
@@ -23,7 +23,7 @@ struct player_command
 
   type cmd;
 
-  // параметры (используешь по ситуации)
+  // РїР°СЂР°РјРµС‚СЂС‹ (РёСЃРїРѕР»СЊР·СѓРµС€СЊ РїРѕ СЃРёС‚СѓР°С†РёРё)
   std::optional<int32_t> step_frames;
   std::optional<int64_t> position_ms;
   std::optional<double> speed;
