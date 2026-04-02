@@ -65,6 +65,15 @@ void arch_player::worker_loop()
 void arch_player::step(int32_t steps)
 {
 
+  post_task([this, steps]()
+    {
+      auto reader = m_reader;
+
+      if (!reader)
+        return;
+
+      reader->step(steps);
+    });
 }
 
 void arch_player::set_player_mode()

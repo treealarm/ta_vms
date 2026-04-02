@@ -15,6 +15,13 @@ std::optional<player_command> map_player_command(const ::vms::control::PlayerCom
   case proto::CmdCase::kStop:
     return player_command{ player_command::type::stop };
 
+  case proto::CmdCase::kStep:
+    return player_command
+    { 
+      .cmd = player_command::type::step,
+      .step_frames = req.step().step_frames()
+    };
+
   default:
     return std::nullopt;
   }
