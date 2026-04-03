@@ -32,6 +32,13 @@ public:
   bool forward();
   bool prev();
 private:
+
+  struct buffered_frame
+  {
+    avframe_ptr frame;
+    int64_t pts = AV_NOPTS_VALUE;
+  };
+
   bool connect_current_file(const std::string& source);
 
   void build_placeholder_packets();
@@ -41,10 +48,11 @@ private:
   std::shared_ptr<media_packet> make_placeholder_packet(int stream_index) const;
 
   bool init_decoder();
-  bool decode_next_frame();
-  bool fill_buffer_from_position(int64_t target_ts);
-  size_t find_frame_ge(int64_t target_ts) const;
+  bool decode_next_frame(std::deque<buffered_frame>& frame_buffer);
   bool encode_current_frame();
+
+  bool seek_to(int64_t target_ts);
+  bool decode_until(int64_t target_pts);
 
   avformat_context_ptr m_ctx = nullptr;
   int m_video_index = -1;
@@ -56,12 +64,6 @@ private:
   AVCodecContext* m_encoder_ctx = nullptr;
 
   mutable std::mutex m_mutex;
-
-  struct buffered_frame
-  {
-    avframe_ptr frame;
-    int64_t pts = AV_NOPTS_VALUE;
-  };
 
   std::deque<buffered_frame> m_frame_buffer;
   size_t m_current_index = 0;

@@ -120,22 +120,21 @@ bool snapshot_reader::connect_current_file(const std::string& source)
   // --- НОВОЕ: позиция ---
   AVStream* stream = m_ctx->streams[m_video_index];
 
+  // для seek
   const int64_t target_ts = av_rescale_q(
     m_position.count(),
     AVRational{ 1, 1000 },
     stream->time_base
   );
 
-  // --- НОВОЕ: init encoder (после первого decode лучше, но можно и тут) ---
-  // encoder зависит от frame → поэтому пока НЕ вызываем
 
-  // --- НОВОЕ: заполняем буфер ---
-  if (!fill_buffer_from_position(target_ts))
-  {
-    std::cerr << "Failed to fill buffer\n";
-    disconnect();
+  if (!seek_to(target_ts))
     return false;
-  }
+
+  if (!decode_until(target_ts))
+    return false;
+
+  m_current_index = m_frame_buffer.size() - 1;
 
   // --- НОВОЕ: encoder init после первого кадра ---
   if (!init_encoder())
@@ -316,7 +315,7 @@ bool snapshot_reader::init_decoder()
   return true;
 }
 
-bool snapshot_reader::decode_next_frame()
+bool snapshot_reader::decode_next_frame(std::deque<buffered_frame>& frame_buffer)
 {
   avpacket_ptr pkt(av_packet_alloc(), avpacket_deleter{});
   avframe_ptr frame(av_frame_alloc(), avframe_deleter{});
@@ -351,14 +350,7 @@ bool snapshot_reader::decode_next_frame()
       bf.frame.reset(cloned, avframe_deleter{});
       bf.pts = pts;
 
-      m_frame_buffer.push_back(std::move(bf));
-
-      if (m_frame_buffer.size() > m_max_buffer)
-      {
-        m_frame_buffer.pop_front();
-        if (m_current_index > 0)
-          --m_current_index;
-      }
+      frame_buffer.push_back(std::move(bf));
 
       av_frame_unref(frame.get());
       av_packet_unref(pkt.get());
@@ -369,87 +361,6 @@ bool snapshot_reader::decode_next_frame()
   }
 
   return false;
-}
-
-bool snapshot_reader::fill_buffer_from_position(int64_t target_ts)
-{
-  AVStream* stream = m_ctx->streams[m_video_index];
-
-  if (av_seek_frame(m_ctx.get(), m_video_index, target_ts, AVSEEK_FLAG_BACKWARD) < 0)
-    return false;
-
-  avformat_flush(m_ctx.get());
-  avcodec_flush_buffers(m_decoder_ctx);
-
-  m_frame_buffer.clear();
-
-  const int64_t target_pts_us = av_rescale_q(
-    target_ts,
-    stream->time_base,
-    AVRational{ 1, 1000000 }
-  );
-
-  bool reached = false;
-
-  while (true)
-  {
-    if (!decode_next_frame())
-      break;
-
-    const auto& f = m_frame_buffer.back();
-
-    if (f.pts == AV_NOPTS_VALUE)
-      continue;
-
-    const int64_t frame_pts_us = av_rescale_q(
-      f.pts,
-      stream->time_base,
-      AVRational{ 1, 1000000 }
-    );
-
-    if (frame_pts_us >= target_pts_us)
-    {
-      reached = true;
-      break;
-    }
-  }
-
-  if (!reached)
-    return false;
-
-  // добираем буфер дальше
-  while (m_frame_buffer.size() < m_max_buffer)
-  {
-    if (!decode_next_frame())
-      break;
-  }
-
-  m_current_index = find_frame_ge(target_pts_us);
-
-  return true;
-}
-
-size_t snapshot_reader::find_frame_ge(int64_t target_pts_us) const
-{
-  AVStream* stream = m_ctx->streams[m_video_index];
-
-  for (size_t i = 0; i < m_frame_buffer.size(); ++i)
-  {
-    const int64_t pts = m_frame_buffer[i].pts;
-    if (pts == AV_NOPTS_VALUE)
-      continue;
-
-    const int64_t frame_pts_us = av_rescale_q(
-      pts,
-      stream->time_base,
-      AVRational{ 1, 1000000 }
-    );
-
-    if (frame_pts_us >= target_pts_us)
-      return i;
-  }
-
-  return m_frame_buffer.size() - 1;
 }
 
 bool snapshot_reader::encode_current_frame()
@@ -501,10 +412,17 @@ bool snapshot_reader::forward()
     return encode_current_frame();
   }
 
-  if (!decode_next_frame())
+  if (!decode_next_frame(m_frame_buffer))
     return false;
 
   ++m_current_index;
+
+  if (m_frame_buffer.size() > m_max_buffer)
+  {
+    m_frame_buffer.pop_front();
+    if (m_current_index > 0)
+      --m_current_index;
+  }
   return encode_current_frame();
 }
 
@@ -518,14 +436,91 @@ bool snapshot_reader::prev()
     return encode_current_frame();
   }
 
-  // fallback: делаем seek назад
-  int64_t current_pts = m_frame_buffer.front().pts;
+  // --- нужно расширить буфер назад ---
+  const auto& first = m_frame_buffer.front();
 
-  int64_t rewind_ts = current_pts - av_rescale_q(2000, AVRational{ 1,1000 },
-    m_ctx->streams[m_video_index]->time_base);
+  int64_t first_pts = first.pts;
 
-  if (!fill_buffer_from_position(rewind_ts))
-    return false;
+  AVStream* stream = m_ctx->streams[m_video_index];
+
+  int64_t rewind_seconds[] = { 1, 3, 5};
+
+  std::deque<buffered_frame> new_frames;
+
+  bool found_previous = false;
+
+  for (auto sec : rewind_seconds)
+  {
+    int64_t rewind_ts = first_pts - av_rescale_q(
+      sec, AVRational{ 1,1 }, stream->time_base);
+
+    if (rewind_ts < 0)
+      rewind_ts = 0;
+
+    if (!seek_to(rewind_ts))
+      return false;
+
+    new_frames.clear();
+
+    while (true)
+    {
+      if (!decode_next_frame(new_frames))
+        break;
+
+      const auto& f = new_frames.back();
+
+      if (f.pts >= first_pts)
+        break;
+
+      found_previous = true;
+    }
+
+    if (found_previous)
+      break;
+  }
+
+  size_t added = new_frames.size();
+
+  // вставляем В НАЧАЛО
+  while (!new_frames.empty())
+  {
+    m_frame_buffer.push_front(std::move(new_frames.back()));
+    new_frames.pop_back();
+  }
+
+  // ставим индекс на предыдущий кадр
+  m_current_index += added;
+
+  while (m_frame_buffer.size() > m_max_buffer && m_current_index < (m_frame_buffer.size() - 1))
+  {
+    m_frame_buffer.pop_back();
+  }
 
   return encode_current_frame();
+}
+
+bool snapshot_reader::seek_to(int64_t target_ts)
+{
+  if (av_seek_frame(m_ctx.get(), m_video_index, target_ts, AVSEEK_FLAG_BACKWARD) < 0)
+    return false;
+
+  avformat_flush(m_ctx.get());
+  avcodec_flush_buffers(m_decoder_ctx);
+  return true;
+}
+
+bool snapshot_reader::decode_until(int64_t target_pts)
+{
+  AVStream* stream = m_ctx->streams[m_video_index];
+
+  while (true)
+  {
+    if (!decode_next_frame(m_frame_buffer))
+      return false;
+
+    const auto& f = m_frame_buffer.back();
+
+    if (f.pts >= target_pts)
+      return true;
+  }
 }
