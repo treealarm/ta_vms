@@ -64,7 +64,6 @@ void arch_player::worker_loop()
 
 void arch_player::step(int32_t steps)
 {
-
   post_task([this, steps]()
     {
       auto reader = m_reader;
@@ -127,6 +126,7 @@ bool arch_player::set_player_command(const player_command& cmd)
   {
   case player_command::type::play:
     m_mode = player_mode::playing;
+    m_play_speed = cmd.speed ? *cmd.speed : 1.0;
     break;
 
   case player_command::type::pause:
