@@ -183,11 +183,6 @@ bool arch_player::set_state(
 // --- приватные методы ---
 bool arch_player::on_eof(const std::string& file)
 {
-  auto reader = m_reader;
-
-  if (!reader)
-    return false;
-
   auto path = std::filesystem::path(file);
   auto ts = m_storage.parse_time(path.filename().string());
   if (!ts)
