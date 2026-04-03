@@ -79,7 +79,11 @@ message PlayerCommand {
   }
 }
 
-message Play {}
+message Play 
+{
+	optional double speed = 1;
+}
+
 message Pause {}
 message Stop {}
 message Step 

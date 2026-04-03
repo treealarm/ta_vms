@@ -79,8 +79,9 @@ void arch_player::step(int32_t steps)
 void arch_player::set_player_mode()
 {
   auto mode = m_mode.load();
+  auto speed = m_play_speed.load();
 
-  post_task([this, mode]()
+  post_task([this, mode, speed]()
     {
       auto reader = m_reader;
 
@@ -91,10 +92,12 @@ void arch_player::set_player_mode()
       {
       case player_mode::playing:
       {
-          reader->resume();
+        
+        reader->set_speed(speed);
+        reader->resume();
 
-          if (!reader->is_running())
-            reader->start();
+        if (!reader->is_running())
+          reader->start();
 
         break;
       }
@@ -257,6 +260,7 @@ bool arch_player::open_file_reader(
   if (player_mode::undefined == m_mode)
   {
     m_mode = player_mode::playing;
+    m_play_speed = 1.0f;
   }
   set_player_mode();
 

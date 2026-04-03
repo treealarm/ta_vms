@@ -47,6 +47,7 @@ public:
     return m_running;
   }
   void step(int32_t steps) override;
+  void set_speed(double speed) override;
 private:
   bool connect_current_file(const std::string& source);
   bool seek_to_position(std::chrono::milliseconds position);
@@ -72,6 +73,7 @@ private:
 
   std::atomic_bool m_paused{ false };
   std::atomic_int32_t m_steps;
+  std::atomic<double> m_play_speed = 1.0f;
 
   sink_container_impl m_sinks_helper;
   std::string m_source;  

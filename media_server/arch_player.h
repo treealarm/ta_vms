@@ -117,4 +117,5 @@ private:
   std::thread m_worker;
 
   std::atomic<player_mode> m_mode{ player_mode::undefined };
+  std::atomic<double> m_play_speed = 1.0f;
 };

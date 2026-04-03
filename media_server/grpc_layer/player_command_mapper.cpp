@@ -7,7 +7,11 @@ std::optional<player_command> map_player_command(const ::vms::control::PlayerCom
   switch (req.cmd_case())
   {
   case proto::CmdCase::kPlay:
-    return player_command{ player_command::type::play };
+    return player_command
+    {
+      .cmd = player_command::type::play,
+      .speed = req.play().has_speed() ? req.play().speed() : 1.0
+    };
 
   case proto::CmdCase::kPause:
     return player_command{ player_command::type::pause };

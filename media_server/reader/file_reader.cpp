@@ -116,6 +116,13 @@ void file_reader::step(int32_t steps)
   m_steps = steps;
 }
 
+void file_reader::set_speed(double speed)
+{
+  m_play_speed = speed;
+  if (m_play_speed < 0.1)
+    m_play_speed = 0.1;
+}
+
 bool file_reader::connect_current_file(const std::string& file_path)
 {
   disconnect();
@@ -186,19 +193,22 @@ std::chrono::microseconds file_reader::sync_to_master_clock(int64_t pkt_pts_us)
   using clock = std::chrono::steady_clock;
   auto now = clock::now();
 
-  // инициализация master
   if (m_master_pts_us < 0)
   {
     m_master_pts_us = pkt_pts_us;
     m_master_wall_time = now;
-    return std::chrono::microseconds(0); // первый пакет — без ожидания
+    return std::chrono::microseconds(0);
   }
 
   int64_t delta_us = pkt_pts_us - m_master_pts_us;
   if (delta_us < 0)
     delta_us = 0;
 
-  auto target_time = m_master_wall_time + std::chrono::microseconds(delta_us);
+  // учет скорости воспроизведения
+  double speed = (m_play_speed <= 0.0) ? 1.0 : m_play_speed.load();
+  int64_t scaled_delta_us = static_cast<int64_t>(delta_us / speed);
+
+  auto target_time = m_master_wall_time + std::chrono::microseconds(scaled_delta_us);
 
   constexpr auto MAX_SLEEP = std::chrono::seconds(1);
   constexpr auto MAX_LAG = std::chrono::milliseconds(500);
@@ -206,12 +216,13 @@ std::chrono::microseconds file_reader::sync_to_master_clock(int64_t pkt_pts_us)
   if (target_time > now)
   {
     auto sleep_duration = target_time - now;
+
     if (sleep_duration > MAX_SLEEP)
     {
-      // пересинхронизация
-      m_master_wall_time = now - std::chrono::microseconds(delta_us);
+      m_master_wall_time = now - std::chrono::microseconds(scaled_delta_us);
       return std::chrono::microseconds(0);
     }
+
     return std::chrono::duration_cast<std::chrono::microseconds>(sleep_duration);
   }
   else
@@ -219,10 +230,10 @@ std::chrono::microseconds file_reader::sync_to_master_clock(int64_t pkt_pts_us)
     auto lag = now - target_time;
     if (lag > MAX_LAG)
     {
-      // сильно отстали → пересинхронизация
-      m_master_wall_time = now - std::chrono::microseconds(delta_us);
+      m_master_wall_time = now - std::chrono::microseconds(scaled_delta_us);
     }
-    return std::chrono::microseconds(0); // уже поздно, отправляем сразу
+
+    return std::chrono::microseconds(0);
   }
 }
 

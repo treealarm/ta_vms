@@ -40,6 +40,7 @@ public:
     return m_running;
   }
   void step(int32_t steps) override {};
+  void set_speed(double speed) override {};
   AVStream* video_stream() const override;
 
 private:

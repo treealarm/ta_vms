@@ -20,6 +20,7 @@ public:
   virtual void resume() = 0;
   virtual bool is_running() const = 0;
   virtual void step(int32_t steps) = 0;
+  virtual void set_speed(double speed) = 0;
 };
 
 enum class player_mode {
