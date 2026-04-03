@@ -1,10 +1,11 @@
-import { Box, Card, CardContent, IconButton, Slider, Stack, Tooltip } from '@mui/material'
+import { Box, Card, CardContent, IconButton, Menu, MenuItem, Slider, Stack, Tooltip, Typography } from '@mui/material'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import SkipPreviousIcon from '@mui/icons-material/SkipPrevious';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
+import SpeedIcon from '@mui/icons-material/Speed';
 
 import { useState, useEffect } from 'react'
 import { type PlayerProgressStateDto, type RecordingDto } from '../dto/dtos'
@@ -21,6 +22,11 @@ type PlayerStreamCardProps = {
 function PlayerStreamCard({ player }: PlayerStreamCardProps) {
   const dispatch = useAppDispatch()
   const [listOpen, setListOpen] = useState(false)
+  const [speedMenuAnchor, setSpeedMenuAnchor] = useState<null | HTMLElement>(null)
+  const [playbackSpeed, setPlaybackSpeed] = useState(1)
+  const speedOptions = [0.25, 0.5, 1, 1.5, 2] as const
+  const fasterOptions = speedOptions.filter((speed) => speed > 1).sort((a, b) => b - a)
+  const slowerOptions = speedOptions.filter((speed) => speed < 1).sort((a, b) => b - a)
 
   const currentPlayer = useAppSelector(
     (state) => state.arch.playerStatesByClientId[player.client_id]
@@ -67,7 +73,20 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
     void dispatch(
       sendPlayerCommand({
         client_id: currentPlayer.client_id,
-        command
+        command,
+        ...(command === 'play' ? { speed: playbackSpeed } : {})
+      })
+    )
+  }
+
+  const handlePlaybackSpeedSelect = (speed: number) => {
+    setPlaybackSpeed(speed)
+    setSpeedMenuAnchor(null)
+    void dispatch(
+      sendPlayerCommand({
+        client_id: currentPlayer.client_id,
+        command: 'play',
+        speed
       })
     )
   }
@@ -119,6 +138,61 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
           </Stack>
 
           <Stack direction="row" spacing={1} justifyContent="center">
+            <Tooltip title="Playback speed">
+              <IconButton
+                size="small"
+                onClick={(event) => setSpeedMenuAnchor(event.currentTarget)}
+                color="default"
+              >
+                <Stack alignItems="center" spacing={0} sx={{ lineHeight: 1 }}>
+                  <SpeedIcon fontSize="small" />
+                  <Typography variant="caption">{playbackSpeed}x</Typography>
+                </Stack>
+              </IconButton>
+            </Tooltip>
+            <Menu
+              anchorEl={speedMenuAnchor}
+              open={Boolean(speedMenuAnchor)}
+              onClose={() => setSpeedMenuAnchor(null)}
+              anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+              transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+              slotProps={{
+                paper: {
+                  sx: {
+                    minWidth: 72
+                  }
+                }
+              }}
+            >
+              {fasterOptions.map((speed) => (
+                <MenuItem
+                  dense
+                  key={speed}
+                  selected={playbackSpeed === speed}
+                  onClick={() => handlePlaybackSpeedSelect(speed)}
+                >
+                  ↑ {speed}x
+                </MenuItem>
+              ))}
+              <MenuItem
+                dense
+                selected={playbackSpeed === 1}
+                onClick={() => handlePlaybackSpeedSelect(1)}
+              >
+                1x
+              </MenuItem>
+              {slowerOptions.map((speed) => (
+                <MenuItem
+                  dense
+                  key={speed}
+                  selected={playbackSpeed === speed}
+                  onClick={() => handlePlaybackSpeedSelect(speed)}
+                >
+                  ↓ {speed}x
+                </MenuItem>
+              ))}
+            </Menu>
+
             <Tooltip title="Step back">
               <IconButton
                 size="small"
