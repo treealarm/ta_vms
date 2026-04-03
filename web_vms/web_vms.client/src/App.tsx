@@ -23,7 +23,7 @@ const MAX_CAMERAS = 4
 function App() {
   const dispatch = useAppDispatch()
   const [cameraId, setCameraId] = useState('cam1')
-  const [rtspUrl, setRtspUrl] = useState('rtsp://admin:$Power321@192.168.1.150:554/channel=0_stream=0&onvif=0.sdp?real_stream')
+  const [rtspUrl, setRtspUrl] = useState('rtsp://admin:pass@192.168.1.150:554/channel=0_stream=0&onvif=0.sdp?real_stream')
 
   const cameras = useAppSelector((state) => state.live.cameras)
   const status = useAppSelector((state) => state.live.status !== 'Ready' ? state.live.status : state.arch.status !== 'Ready' ? state.arch.status : state.fs.status)
