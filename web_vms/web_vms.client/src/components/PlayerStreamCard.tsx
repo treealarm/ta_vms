@@ -82,6 +82,13 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
   const handlePlaybackSpeedSelect = (speed: number) => {
     setPlaybackSpeed(speed)
     setSpeedMenuAnchor(null)
+    void dispatch(
+      sendPlayerCommand({
+        client_id: currentPlayer.client_id,
+        command: 'play',
+        speed
+      })
+    )
   }
 
   return (
