@@ -130,9 +130,18 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
 
           <Stack direction="row" spacing={1} justifyContent="center">
             <Tooltip title="Playback speed">
-              <Box sx={{ position: 'relative', width: 40, height: 40 }}>
+              <Box sx={{ position: 'relative', width: 56, height: 56 }}>
                 <SpeedDial
                   ariaLabel="Playback speed selector"
+                  sx={{
+                    position: 'absolute',
+                    right: 0,
+                    bottom: 0,
+                    '& .MuiFab-primary': {
+                      bgcolor: 'background.paper',
+                      color: 'text.primary'
+                    }
+                  }}
                   icon={
                     <Stack alignItems="center" spacing={0}>
                       <SpeedIcon fontSize="small" />
