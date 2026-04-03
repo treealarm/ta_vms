@@ -54,6 +54,7 @@ export type PlayerCommandDto = {
   client_id: string
   command: PlayerCommand
   step_frames?: number
+  speed?: number
 }
 
 export type PlayerProgressStateDto = {

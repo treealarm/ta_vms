@@ -144,6 +144,8 @@ public class ArchController(
     {
       case "play":
         request.Play = new Play();
+        if (dto.speed.HasValue)
+          request.Play.Speed = dto.speed.Value;
         break;
       case "pause":
         request.Pause = new Pause();
