@@ -314,34 +314,29 @@ void file_reader::read_loop()
       auto sleep_us = sync_to_master_clock(pts_us);
       if (sleep_us.count() > 0)
         std::this_thread::sleep_for(sleep_us);
+
+      if (m_on_progress)
+      {
+        using namespace std::chrono;
+
+        int64_t duration_ms = 0;
+        if (m_ctx && m_ctx->duration > 0)
+          duration_ms = m_ctx->duration / 1000;
+
+        int64_t position_ms = pts_us / 1000;
+
+        if (position_ms > duration_ms)
+          position_ms = duration_ms;
+
+        reader_progress progress;
+        progress.duration = milliseconds(duration_ms);
+        progress.position = milliseconds(position_ms);
+
+        m_on_progress(progress);
+      }
     }
     
-    if (pkt->stream_index == m_master_stream_index && m_on_progress)
-    {
-      using namespace std::chrono;
 
-      int64_t duration_ms = 0;
-      if (m_ctx && m_ctx->duration > 0)
-        duration_ms = m_ctx->duration / 1000; // из микросекунд в миллисекунды
-
-      // Текущая позиция относительно master
-      int64_t position_ms = 0;
-      if (m_master_pts_us >= 0)
-      {
-        auto elapsed_us = m_master_pts_us + duration_cast<microseconds>(steady_clock::now() - m_master_wall_time).count();
-        position_ms = elapsed_us / 1000; // в миллисекундах
-      }
-
-      if (position_ms > duration_ms)
-        position_ms = duration_ms;
-
-      reader_progress progress;
-      progress.duration = milliseconds(duration_ms);
-      progress.position = milliseconds(position_ms);
-
-      // Можно вызывать асинхронно в отдельном потоке UI, если нужно
-      m_on_progress(progress);
-    }
 
     // --- формирование пакета ---
     auto media = std::make_shared<media_packet>();
