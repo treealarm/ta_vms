@@ -90,10 +90,8 @@ bool camera_manager::stop_recording(const std::string& camera_id,
   return true;
 }
 
-bool camera_manager::get_camera_state(
+std::optional<camera_manager::camera_info>  camera_manager::get_camera_state(
   const std::string& camera_id,
-  bool& recording,
-  bool& web_rtc,
   std::string& error) 
 {
   std::scoped_lock lock(m_mutex);
@@ -102,53 +100,83 @@ bool camera_manager::get_camera_state(
   if (it == m_cameras.end()) 
   {
     error = "camera not found: " + camera_id;
-    return false;
+    return std::nullopt;
   }
 
-  recording = it->second.is_recording;
-  web_rtc = it->second.is_web_rtc_streaming;
+  camera_manager::camera_info info
+  {
+    .camera_id = camera_id,
+    .rtsp_url = it->second.source,
+    .is_recording = it->second.is_recording,
+    .is_web_rtc_streaming = it->second.is_web_rtc_streaming
+  };
 
-  return true;
+  return info;
 }
 
-bool camera_manager::set_camera_state(const std::string& camera_id,
-                                    bool recording,
-                                    bool web_rtc,
-                                    std::string& error) {
-  std::scoped_lock lock(m_mutex);
-
-  auto it = m_cameras.find(camera_id);
-  if (it == m_cameras.end()) {
-    error = "camera not found: " + camera_id;
-    return false;
-  }
-
-  if (recording != it->second.is_recording) 
+bool camera_manager::set_camera_state(
+  const std::string& camera_id,
+  const std::string& rtsp_url,
+  bool recording,
+  bool web_rtc,
+  std::string& error)
+{
+  bool recreate = false;
+  do
   {
-    if (recording) 
+    std::scoped_lock lock(m_mutex);
+
+    auto it = m_cameras.find(camera_id);
+    if (it == m_cameras.end())
     {
-      it->second.camera->start_recording();
-    } else 
+      error = "camera not found: " + camera_id;
+      return false;
+    }
+
+    if (it->second.source != rtsp_url)
     {
-      it->second.camera->stop_recording();
+      recreate = true;
+      break;
     }
-    it->second.is_recording = recording;
-  }
 
-
-  if (web_rtc != it->second.is_web_rtc_streaming) {
-    if (web_rtc) {
-      if (!it->second.camera->start_web_rtc(error)) {
-        return false;
+    if (recording != it->second.is_recording)
+    {
+      if (recording)
+      {
+        it->second.camera->start_recording();
       }
-    } else {
-      if (!it->second.camera->stop_web_rtc(error)) {
-        return false;
+      else
+      {
+        it->second.camera->stop_recording();
       }
+      it->second.is_recording = recording;
     }
-    it->second.is_web_rtc_streaming = web_rtc;
-  }
 
+
+    if (web_rtc != it->second.is_web_rtc_streaming)
+    {
+      if (web_rtc)
+      {
+        if (!it->second.camera->start_web_rtc(error))
+        {
+          return false;
+        }
+      }
+      else
+      {
+        if (!it->second.camera->stop_web_rtc(error))
+        {
+          return false;
+        }
+      }
+      it->second.is_web_rtc_streaming = web_rtc;
+    }
+  } while (false);
+ 
+  if (recreate)
+  {
+    return add_camera(camera_id, rtsp_url, recording, web_rtc, error);
+  }
   return true;
 }
 

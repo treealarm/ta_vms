@@ -1,7 +1,6 @@
 using Grpc.Net.Client;
 using System.Net;
 using Vms.Control;
-using Grpc.Core;
 using web_vms;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 
@@ -70,7 +69,6 @@ var app = builder.Build();
 
 app.MapGrpcService<CfgServiceImpl>();
 
-app.MapGet("/", () => "gRPC server is running");
 
 app.UseDefaultFiles();
 app.UseStaticFiles();

@@ -10,6 +10,7 @@
 #include <grpcpp/grpcpp.h>
 
 #include "grpc_layer/camera_control_service.h"
+#include "grpc_layer/cfg_client.h"
 
 namespace {
 std::atomic<bool> g_stop_requested{false};
@@ -47,11 +48,28 @@ int main(int argc, char** argv) {
 
   std::cout << "Camera gRPC server is listening on " << server_address << "\n";
 
-  if (argc > 3)
+  cfg_client c_client;
+  auto cfg_list = c_client.list_cameras();
+
+  std::string error;
+
+  if (cfg_list.size() > 0)
+  {
+    for (auto c : cfg_list)
+    {
+      const bool success = manager.add_camera(
+        c.camera_id(),
+        c.rtsp_url(),
+        c.recording(),
+        c.web_rtc(),
+        error);
+    }
+  }
+  else if (argc > 3)
   {
     const auto cam_id = argv[3];
     const auto url = argv[2];
-    std::string error;
+    
     const bool success = manager.add_camera(
       cam_id,
       url,

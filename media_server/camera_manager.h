@@ -37,15 +37,15 @@ public:
 
   bool start_recording(const std::string& camera_id, std::string& error);
   bool stop_recording(const std::string& camera_id, std::string& error);
-  bool set_camera_state(const std::string& camera_id,
-                        bool recording,
-                        bool web_rtc,
-                        std::string& error);
-
-  bool get_camera_state(
+  bool set_camera_state(
     const std::string& camera_id,
-    bool& recording,
-    bool& web_rtc,
+    const std::string& rtsp_url,
+    bool recording,
+    bool web_rtc,
+    std::string& error);
+
+  std::optional<camera_info> get_camera_state(
+    const std::string& camera_id,
     std::string& error);
 
   bool add_arch_player(

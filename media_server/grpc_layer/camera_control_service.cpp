@@ -145,10 +145,12 @@ grpc::Status camera_control_service::SetCameraState(
     vms::control::OperationStatus* response) 
 {
   std::string error;
-  const bool success = m_manager.set_camera_state(request->camera_id(),
-                                                  request->recording(),
-                                                  request->web_rtc(),
-                                                  error);
+  const bool success = m_manager.set_camera_state(
+    request->camera_id(),
+    request->rtsp_url(),
+    request->recording(),
+    request->web_rtc(),
+    error);
 
   response->set_success(success);
   response->set_message(success ? "camera state updated" : error);
@@ -161,21 +163,19 @@ grpc::Status camera_control_service::GetCameraState(
   vms::control::CameraState* response)
 {
   std::string error;
-  bool recording;
-  bool web_rtc;
 
-  const bool success = m_manager.get_camera_state(request->source_id(),
-    recording,
-    web_rtc,
+  const auto info = m_manager.get_camera_state(
+    request->source_id(),
     error);
 
-  if (!success)
+  if (!info)
   {
-    return ::grpc::Status(::grpc::StatusCode::INTERNAL, "camera state error");
+    return ::grpc::Status(::grpc::StatusCode::INTERNAL, error);
   }
   response->set_camera_id(request->source_id());
-  response->set_recording(recording);
-  response->set_web_rtc(web_rtc);
+  response->set_recording(info->is_recording);
+  response->set_web_rtc(info->is_web_rtc_streaming);
+  response->set_rtsp_url(info->rtsp_url);
   return grpc::Status::OK;
 }
 

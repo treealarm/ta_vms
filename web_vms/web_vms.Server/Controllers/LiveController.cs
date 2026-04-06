@@ -18,7 +18,7 @@ public class LiveController(
       CameraId = request.CameraId,
       RtspUrl = request.RtspUrl,
       Recording = request.Recording,
-      WebRtc = true
+      WebRtc = request.WebRtc
 
     }, cancellationToken: ct);
 
@@ -63,7 +63,8 @@ public class LiveController(
     {
       CameraId = state.CameraId,
       Recording = state.Recording,
-      WebRtc = state.WebRtc
+      WebRtc = state.WebRtc,
+      RtspUrl = state.RtspUrl
     }, cancellationToken: ct);
 
     await _manager.SetState(state);
@@ -82,7 +83,8 @@ public class LiveController(
     {
       Recording = grpcResponse.Recording,
       WebRtc = grpcResponse.WebRtc,
-      CameraId = grpcResponse.CameraId
+      CameraId = grpcResponse.CameraId,
+      RtspUrl = grpcResponse.RtspUrl
     };
 
     return Ok(dto);

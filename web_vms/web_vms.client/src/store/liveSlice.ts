@@ -1,16 +1,14 @@
 import { type AnyAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
-import type { AddCameraRequestDto, ApiResponseDto, CameraStateDto, UpdateCameraStateRequestDto } from '../dto/dtos'
+import type { CameraStateDto, ApiResponseDto } from '../dto/dtos'
 import { parseJson } from './api'
 
 type LiveState = {
-  cameras: CameraStateDto[]
   cameraStatesById: Record<string, CameraStateDto>
   isBusy: boolean
   status: string
 }
 
 const initialState: LiveState = {
-  cameras: [],
   cameraStatesById: {},
   isBusy: false,
   status: 'Ready'
@@ -21,7 +19,7 @@ export const loadCameras = createAsyncThunk('live/loadCameras', async () => {
   return parseJson<CameraStateDto[]>(response)
 })
 
-export const addCamera = createAsyncThunk('live/addCamera', async (payload: AddCameraRequestDto) => {
+export const addCamera = createAsyncThunk('live/addCamera', async (payload: CameraStateDto) => {
   const response = await fetch('/api/live/cameras', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -50,7 +48,7 @@ export const fetchCameraState = createAsyncThunk('live/fetchCameraState', async 
 
 export const updateCameraRecording = createAsyncThunk(
   'live/updateCameraRecording',
-  async (payload: UpdateCameraStateRequestDto) => {
+  async (payload: CameraStateDto) => {
     const response = await fetch('/api/live/cameras/state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -72,7 +70,12 @@ const liveSlice = createSlice({
   extraReducers: (builder) => {
     builder
       .addCase(loadCameras.fulfilled, (state, action) => {
-        state.cameras = action.payload
+        state.cameraStatesById = {}
+
+        for (const cam of action.payload) {
+          state.cameraStatesById[cam.cameraId] = cam
+        }
+
         state.status = 'Ready'
       })
       .addCase(fetchCameraState.fulfilled, (state, action) => {

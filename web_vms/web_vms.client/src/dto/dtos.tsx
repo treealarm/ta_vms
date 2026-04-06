@@ -88,12 +88,3 @@ export type RecordingsQueryDto = {
 export type RecordingsResponseDto = {
   recordings: RecordingDto[]
 }
-
-export type AddCameraRequestDto = {
-  cameraId: string
-  rtspUrl: string
-  state: Pick<CameraStateDto, 'cameraId' | 'recording' | 'webRtc'>
-}
-
-
-export type UpdateCameraStateRequestDto = Pick<CameraStateDto, 'cameraId' | 'recording' | 'webRtc'>

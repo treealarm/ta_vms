@@ -12,7 +12,7 @@ import {
   Typography
 } from '@mui/material'
 
-import { type AddCameraRequestDto } from './dto/dtos'
+import { type CameraStateDto } from './dto/dtos'
 import { addCamera, loadCameras, removeCamera, setLiveStatus } from './store/liveSlice'
 import { loadPlayers, removePlayer } from './store/archSlice'
 import { useAppDispatch, useAppSelector } from './store'
@@ -25,11 +25,19 @@ function App() {
   const [cameraId, setCameraId] = useState('cam1')
   const [rtspUrl, setRtspUrl] = useState('rtsp://admin:pass@192.168.1.150:554/channel=0_stream=0&onvif=0.sdp?real_stream')
 
-  const cameras = useAppSelector((state) => state.live.cameras)
   const status = useAppSelector((state) => state.live.status !== 'Ready' ? state.live.status : state.arch.status !== 'Ready' ? state.arch.status : state.fs.status)
 
-  const visibleCameras = useMemo(() => cameras.slice(0, MAX_CAMERAS), [cameras])
-  const isLimitReached = cameras.length >= MAX_CAMERAS
+  const camerasMap = useAppSelector((state) => state.live.cameraStatesById)
+
+  const { visibleCameras, total } = useMemo(() => {
+    const arr = Object.values(camerasMap)
+    return {
+      visibleCameras: arr.slice(0, MAX_CAMERAS),
+      total: arr.length
+    }
+  }, [camerasMap])
+
+  const isLimitReached = total >= MAX_CAMERAS
 
   useEffect(() => {
     let cancelled = false
@@ -77,10 +85,11 @@ function App() {
       return
     }
 
-    const payload: AddCameraRequestDto = {
-      cameraId,
-      rtspUrl,
-      state: { cameraId, recording: false, webRtc: true }
+    const payload: CameraStateDto = {
+      cameraId: cameraId,
+      rtspUrl: rtspUrl,
+      recording: false,
+      webRtc: true
     }
 
     const result = await dispatch(addCamera(payload))

@@ -15,7 +15,7 @@ class cfg_client
 {
 public:
   cfg_client();
-
+  std::vector<vms::cfg::CameraState> list_cameras();
 private:
   std::shared_ptr<grpc::Channel> m_channel;
   std::unique_ptr<vms::cfg::CfgService::Stub> m_stub;
