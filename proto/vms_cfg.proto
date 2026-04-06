@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package vms.cfg;
+
+service CfgService {
+  rpc AddCamera(CameraState) returns (OperationStatus);
+  rpc RemoveCamera(SourceRequest) returns (OperationStatus); 
+  rpc ListCameras(ListCamerasRequest) returns (ListCamerasResponse);
+  rpc SetCameraState(CameraState) returns (OperationStatus);
+  rpc GetCameraState(SourceRequest) returns (CameraState);
+}
+
+message OperationStatus {
+  bool success = 1;
+  string message = 2;
+}
+
+message SourceRequest {
+  string source_id = 1;
+}
+
+message CameraState {
+  string camera_id = 1;
+  bool recording = 2;
+  bool web_rtc = 3;
+  string rtsp_url = 4;
+}
+
+message ListCamerasRequest {}
+
+message ListCamerasResponse {
+  repeated CameraState cameras = 1;
+}

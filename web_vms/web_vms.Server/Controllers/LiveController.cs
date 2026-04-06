@@ -6,12 +6,14 @@ namespace web_vms;
 [ApiController]
 [Route("api/[controller]")]
 public class LiveController(
-  CameraControlService.CameraControlServiceClient grpcClient) : ControllerBase
+  CameraControlService.CameraControlServiceClient _grpcClient,
+  ICameraManager _manager
+  ) : ControllerBase
 {
   [HttpPost("cameras")]
   public async Task<IActionResult> AddCamera([FromBody] CameraStateDto request, CancellationToken ct)
   {
-    var response = await grpcClient.AddCameraAsync(new CameraState
+    var response = await _grpcClient.AddCameraAsync(new CameraState
     {
       CameraId = request.CameraId,
       RtspUrl = request.RtspUrl,
@@ -20,24 +22,27 @@ public class LiveController(
 
     }, cancellationToken: ct);
 
+    await _manager.Add(request);
+
     return Ok(ApiResponseMapper.ToApiResponse(response));
   }
 
   [HttpDelete("cameras/{cameraId}")]
   public async Task<IActionResult> RemoveCamera(string cameraId, CancellationToken ct)
   {
-    var response = await grpcClient.RemoveCameraAsync(new SourceRequest
+    var response = await _grpcClient.RemoveCameraAsync(new SourceRequest
     {
       SourceId = cameraId
     }, cancellationToken: ct);
 
+    await _manager.Remove(cameraId);
     return Ok(ApiResponseMapper.ToApiResponse(response));
   }
 
   [HttpGet("cameras")]
   public async Task<IActionResult> ListCameras(CancellationToken ct)
   {
-    var response = await grpcClient.ListCamerasAsync(new ListCamerasRequest(), cancellationToken: ct);
+    var response = await _grpcClient.ListCamerasAsync(new ListCamerasRequest(), cancellationToken: ct);
     var cameras = response.Cameras.Select(
       camera =>
       new CameraStateDto
@@ -54,20 +59,21 @@ public class LiveController(
   [HttpPost("cameras/state")]
   public async Task<IActionResult> SetCameraState([FromBody] CameraStateDto state, CancellationToken ct)
   {
-    var response = await grpcClient.SetCameraStateAsync(new CameraState
+    var response = await _grpcClient.SetCameraStateAsync(new CameraState
     {
       CameraId = state.CameraId,
       Recording = state.Recording,
       WebRtc = state.WebRtc
     }, cancellationToken: ct);
 
+    await _manager.SetState(state);
     return Ok(ApiResponseMapper.ToApiResponse(response));
   }
 
   [HttpGet("cameras/{cameraId}/state")]
   public async Task<IActionResult> GetCameraState(string cameraId, CancellationToken ct)
   {
-    var grpcResponse = await grpcClient.GetCameraStateAsync(new SourceRequest
+    var grpcResponse = await _grpcClient.GetCameraStateAsync(new SourceRequest
     {
       SourceId = cameraId
     }, cancellationToken: ct);

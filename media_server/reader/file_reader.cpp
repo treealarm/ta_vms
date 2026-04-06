@@ -188,27 +188,27 @@ bool file_reader::connect_current_file(const std::string& file_path)
 }
 
 
-std::chrono::microseconds file_reader::sync_to_master_clock(int64_t pkt_pts_us)
+std::chrono::milliseconds file_reader::sync_to_master_clock(int64_t pkt_pts)
 {
   using clock = std::chrono::steady_clock;
   auto now = clock::now();
 
-  if (m_master_pts_us < 0)
+  if (m_master_pts < 0)
   {
-    m_master_pts_us = pkt_pts_us;
+    m_master_pts = pkt_pts;
     m_master_wall_time = now;
-    return std::chrono::microseconds(0);
+    return std::chrono::milliseconds(0);
   }
 
-  int64_t delta_us = pkt_pts_us - m_master_pts_us;
-  if (delta_us < 0)
-    delta_us = 0;
+  int64_t delta = pkt_pts - m_master_pts;
+  if (delta < 0)
+    delta = 0;
 
   // учет скорости воспроизведения
   double speed = (m_play_speed <= 0.0) ? 1.0 : m_play_speed.load();
-  int64_t scaled_delta_us = static_cast<int64_t>(delta_us / speed);
+  int64_t scaled_delta = static_cast<int64_t>(delta / speed);
 
-  auto target_time = m_master_wall_time + std::chrono::microseconds(scaled_delta_us);
+  auto target_time = m_master_wall_time + std::chrono::milliseconds(scaled_delta);
 
   constexpr auto MAX_SLEEP = std::chrono::seconds(1);
   constexpr auto MAX_LAG = std::chrono::milliseconds(500);
@@ -219,21 +219,21 @@ std::chrono::microseconds file_reader::sync_to_master_clock(int64_t pkt_pts_us)
 
     if (sleep_duration > MAX_SLEEP)
     {
-      m_master_wall_time = now - std::chrono::microseconds(scaled_delta_us);
-      return std::chrono::microseconds(0);
+      m_master_wall_time = now - std::chrono::milliseconds(scaled_delta);
+      return std::chrono::milliseconds(0);
     }
 
-    return std::chrono::duration_cast<std::chrono::microseconds>(sleep_duration);
+    return std::chrono::duration_cast<std::chrono::milliseconds>(sleep_duration);
   }
   else
   {
     auto lag = now - target_time;
     if (lag > MAX_LAG)
     {
-      m_master_wall_time = now - std::chrono::microseconds(scaled_delta_us);
+      m_master_wall_time = now - std::chrono::milliseconds(scaled_delta);
     }
 
-    return std::chrono::microseconds(0);
+    return std::chrono::milliseconds(0);
   }
 }
 
@@ -309,21 +309,24 @@ void file_reader::read_loop()
 
     if (pkt->stream_index == m_master_stream_index)
     {
-      int64_t pts_us = av_rescale_q(pkt->pts, stream->time_base, AVRational{ 1, 1000000 });
+      int64_t pts_ms = av_rescale_q(pkt->pts, stream->time_base, AVRational{ 1, 1000 });
 
-      auto sleep_us = sync_to_master_clock(pts_us);
-      if (sleep_us.count() > 0)
-        std::this_thread::sleep_for(sleep_us);
+      auto sleep_ms = sync_to_master_clock(pts_ms);
+      if (sleep_ms.count() > 0)
+        std::this_thread::sleep_for(sleep_ms);
 
       if (m_on_progress)
       {
         using namespace std::chrono;
+        
 
         int64_t duration_ms = 0;
         if (m_ctx && m_ctx->duration > 0)
+        {
           duration_ms = m_ctx->duration / 1000;
+        }          
 
-        int64_t position_ms = pts_us / 1000;
+        int64_t position_ms = pts_ms;
 
         if (position_ms > duration_ms)
           position_ms = duration_ms;
@@ -450,7 +453,7 @@ bool file_reader::seek_to_position(std::chrono::milliseconds position)
   avformat_flush(m_ctx.get());
 
   // reset state
-  m_master_pts_us = -1;
+  m_master_pts = -1;
   m_packet_transcoder.close();
 
   // IMPORTANT: начать только с keyframe

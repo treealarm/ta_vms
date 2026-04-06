@@ -57,7 +57,7 @@ private:
   std::string get_source();
   sync_packet_transcoder m_packet_transcoder;
 
-  std::chrono::microseconds sync_to_master_clock(int64_t pkt_pts_us);
+  std::chrono::milliseconds sync_to_master_clock(int64_t pkt_pts_us);
 
   avformat_context_ptr m_ctx = nullptr;
   int m_video_index = -1;
@@ -79,7 +79,7 @@ private:
   std::string m_source;  
   std::mutex m_mutex;
 
-  int64_t m_master_pts_us = -1;
+  int64_t m_master_pts = -1; //ms
   clock::time_point m_master_wall_time;
   int32_t m_master_stream_index = -1;
 

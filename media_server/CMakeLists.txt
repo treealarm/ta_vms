@@ -17,6 +17,7 @@ pkg_check_modules(FFMPEG REQUIRED
 )
 
 set(VMS_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_control.proto)
+set(CFG_CLIENT_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_cfg.proto)
 
 set(DAPR_RUNTIME_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr/proto/runtime/v1/dapr.proto)
 set(DAPR_COMMON_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr/proto/common/v1/common.proto)
@@ -34,6 +35,8 @@ set(SOURCES
     grpc_layer/dapr_publisher.h
     grpc_layer/player_command_mapper.h
     grpc_layer/player_command_mapper.cpp
+    grpc_layer/cfg_client.h
+    grpc_layer/cfg_client.cpp
 
     interfaces/av_deleters.h
     interfaces/media_packet.h
@@ -92,6 +95,7 @@ protobuf_generate(
         ${VMS_PROTO_FILE}
         ${DAPR_RUNTIME_PROTO_FILE}
         ${DAPR_COMMON_PROTO_FILE}
+        ${CFG_CLIENT_PROTO_FILE}
 )
 
 protobuf_generate(
@@ -102,6 +106,7 @@ protobuf_generate(
         ${VMS_PROTO_FILE}
         ${DAPR_RUNTIME_PROTO_FILE}
         ${DAPR_COMMON_PROTO_FILE}
+        ${CFG_CLIENT_PROTO_FILE}
     PLUGIN protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>
     GENERATE_EXTENSIONS .grpc.pb.cc .grpc.pb.h
 )
