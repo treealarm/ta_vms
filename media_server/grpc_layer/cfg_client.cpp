@@ -27,7 +27,7 @@ cfg_client::cfg_client()
 {
 }
 
-std::vector<vms::cfg::CameraState> cfg_client::list_cameras()
+bool cfg_client::list_cameras(std::vector<vms::cfg::CameraState>& result)
 {
   vms::cfg::ListCamerasRequest request;
   vms::cfg::ListCamerasResponse response;
@@ -46,10 +46,9 @@ std::vector<vms::cfg::CameraState> cfg_client::list_cameras()
     std::cerr << "ListCameras RPC failed: "
       << status.error_message() << std::endl;
 
-    return {};
+    return false;
   }
 
-  std::vector<vms::cfg::CameraState> result;
   result.reserve(response.cameras_size());
 
   for (const auto& cam : response.cameras())
@@ -57,5 +56,5 @@ std::vector<vms::cfg::CameraState> cfg_client::list_cameras()
     result.push_back(cam); // копия proto-объекта
   }
 
-  return result;
+  return true;
 }

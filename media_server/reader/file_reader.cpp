@@ -123,7 +123,7 @@ void file_reader::set_speed(double speed)
     m_play_speed = 0.1;
 }
 
-bool file_reader::connect_current_file(const std::string& file_path)
+bool file_reader::connect_current_file()
 {
   disconnect();
   m_forward_stream_indexes.clear();
@@ -132,9 +132,9 @@ bool file_reader::connect_current_file(const std::string& file_path)
 
   AVFormatContext* ctx = nullptr;
 
-  if (avformat_open_input(&ctx, file_path.c_str(), nullptr, nullptr) < 0)
+  if (avformat_open_input(&ctx, get_source().c_str(), nullptr, nullptr) < 0)
   {
-    std::cerr << "Failed to open file source: " << file_path << "\n";
+    std::cerr << "Failed to open file source: " << get_source() << "\n";
     return false;
   }
 
@@ -182,8 +182,7 @@ bool file_reader::connect_current_file(const std::string& file_path)
     }
   }
 
-  m_file_path = file_path;
-  std::cerr << "File source opened: " << file_path << "\n";
+  std::cerr << "File source opened: " << get_source() << "\n";
   return true;
 }
 
@@ -254,7 +253,7 @@ void file_reader::read_loop()
 
     if (!m_ctx || m_video_index < 0 || m_forward_stream_indexes.empty())
     {
-      if (!connect_current_file(get_source()))
+      if (!connect_current_file())
         break;
 
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -392,9 +391,9 @@ void file_reader::emit_paused_snapshots()
   if (!m_snapshot_reader)
   {
     m_snapshot_reader = std::make_unique<snapshot_reader>(m_cur_video_pos);
-    if (!m_snapshot_reader->open(m_file_path))
+    if (!m_snapshot_reader->open(get_source()))
     {
-      std::cerr << "snapshot_reader open failed for source: " << m_file_path << "\n";
+      std::cerr << "snapshot_reader open failed for source: " << get_source() << "\n";
     }
   }
 

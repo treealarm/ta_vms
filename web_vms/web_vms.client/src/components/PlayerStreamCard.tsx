@@ -64,6 +64,10 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
     void sendSeek(new Date(rec.startTime).toISOString(), 0)
   }
 
+  const handleTimeChange = (iso: string) => {
+    void sendSeek(iso, 0)
+  }
+
   const mode = currentPlayer.mode ?? 'unspecified'
   const isPlayActive = mode === 'playing'
   const isPauseActive = mode === 'paused'
@@ -122,6 +126,7 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
                     timestamp={currentPlayer.position_ts}
                     filePath={currentPlayer.file_path}
                     onSelect={handleSelectRecording}
+                    onTimeChange={handleTimeChange}
                   />
                 </Box>
               )}

@@ -104,6 +104,10 @@ void arch_player::set_player_mode()
       case player_mode::paused:
       {
         reader->pause();
+
+        if (!reader->is_running())
+          reader->start();
+        
         break;
       }
 

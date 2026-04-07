@@ -49,7 +49,7 @@ public:
   void step(int32_t steps) override;
   void set_speed(double speed) override;
 private:
-  bool connect_current_file(const std::string& source);
+  bool connect_current_file();
   bool seek_to_position(std::chrono::milliseconds position);
   void disconnect();
   void read_loop();
@@ -86,6 +86,5 @@ private:
   std::atomic_bool m_drop_until_keyframe = false;
   clock::time_point m_last_pause_emit_at = clock::time_point::min();
 
-  std::string m_file_path;
   std::chrono::milliseconds m_cur_video_pos;
 };

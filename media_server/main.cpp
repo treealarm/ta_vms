@@ -49,7 +49,12 @@ int main(int argc, char** argv) {
   std::cout << "Camera gRPC server is listening on " << server_address << "\n";
 
   cfg_client c_client;
-  auto cfg_list = c_client.list_cameras();
+  std::vector<vms::cfg::CameraState> cfg_list;
+  
+  while (!c_client.list_cameras(cfg_list) && !g_stop_requested)
+  {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+  }
 
   std::string error;
 
@@ -65,18 +70,19 @@ int main(int argc, char** argv) {
         error);
     }
   }
-  else if (argc > 3)
-  {
-    const auto cam_id = argv[3];
-    const auto url = argv[2];
-    
-    const bool success = manager.add_camera(
-      cam_id,
-      url,
-      true,
-      true,
-      error);
-  }
+
+  //if (argc > 3)
+  //{
+  //  const auto cam_id = argv[3];
+  //  const auto url = argv[2];
+  //  
+  //  const bool success = manager.add_camera(
+  //    cam_id,
+  //    url,
+  //    true,
+  //    true,
+  //    error);
+  //}
 
   while (!g_stop_requested) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));

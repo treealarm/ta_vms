@@ -1,13 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   List, ListItemButton, ListItemText,
   Tooltip, CircularProgress, Box, Stack,
-  IconButton, TextField, Popover, Typography,
+  IconButton, Popover, Typography,
   ListSubheader
 } from '@mui/material'
-import { toLocalDatetimeInputValue, type RecordingDto } from '../dto/dtos'
+import { type RecordingDto } from '../dto/dtos'
 import { fetchRecordings } from '../store/fsSlice'
 import { useAppDispatch, useAppSelector } from '../store'
+
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
+import dayjs, { Dayjs } from 'dayjs'
 
 type Props = {
   open: boolean
@@ -15,6 +20,7 @@ type Props = {
   timestamp?: string
   filePath?: string
   onSelect: (rec: RecordingDto) => void
+  onTimeChange?: (iso: string) => void
 }
 
 const normalizeTimestamp = (value?: string) => {
@@ -35,15 +41,17 @@ const normalizeTimestamp = (value?: string) => {
   return parsed.toISOString()
 }
 
-export default function RecordingsList({ open, cameraId, timestamp, filePath, onSelect }: Props) {
+export default function RecordingsList({ open, cameraId, timestamp, filePath, onSelect, onTimeChange }: Props) {
   const dispatch = useAppDispatch()
   const [selected, setSelected] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [pickerTime, setPickerTime] = useState(toLocalDatetimeInputValue(new Date()))
+  const [pickerTime, setPickerTime] = useState<Dayjs | null>(dayjs())
   const [displayTime, setDisplayTime] = useState(normalizeTimestamp(timestamp))
   const [queryTime, setQueryTime] = useState<string | undefined>()
   const [loaded, setLoaded] = useState(false)
   const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null)
+
+  const acceptTimeoutRef = useRef<number | null>(null)
 
   useEffect(() => {
     setDisplayTime(normalizeTimestamp(timestamp))
@@ -52,11 +60,19 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
   useEffect(() => {
     if (open) {
       const initialTime = normalizeTimestamp(timestamp)
-      setPickerTime(toLocalDatetimeInputValue(new Date(initialTime)))
+      setPickerTime(dayjs(initialTime))
       setQueryTime(initialTime)
       setLoaded(false)
     }
   }, [open])
+
+  useEffect(() => {
+    return () => {
+      if (acceptTimeoutRef.current) {
+        clearTimeout(acceptTimeoutRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (!open || !queryTime || loaded) {
@@ -82,29 +98,44 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
     }
   }, [cameraId, dispatch, loaded, open, queryTime])
 
+  const handleAccept = (value: Dayjs | null) => {
+    if (!value) return
+
+    const iso = value.toISOString()
+
+    // сбрасываем предыдущий таймер
+    if (acceptTimeoutRef.current) {
+      clearTimeout(acceptTimeoutRef.current)
+    }
+
+    acceptTimeoutRef.current = window.setTimeout(() => {
+      requestAt(iso)          // обновляем список
+      onTimeChange?.(iso)     // ✅ только отсюда
+    }, 2000) // подбери задержку
+
+    //setPickerAnchor(null)
+  }
+
+
+
   const recordingsKey = queryTime ? `${cameraId}:${queryTime}` : ''
-  const data = useAppSelector((state) => state.fs.recordingsByKey[recordingsKey]?.recordings ?? [])
+  const EMPTY: RecordingDto[] = []
+  const data = useAppSelector(
+    (state) => state.fs.recordingsByKey[recordingsKey]?.recordings ?? EMPTY
+  )
 
   const requestAt = (time: string) => {
-    setQueryTime(time)
-    setPickerTime(toLocalDatetimeInputValue(new Date(time)))
+    const d = dayjs(time)
+    if (!d.isValid()) return
+    const iso = d.toISOString()
+
+    setQueryTime(iso)
+    setPickerTime(d)
+    setDisplayTime(iso) // ✅ синхронизация
     setLoaded(false)
+    onTimeChange?.(iso)
   }
 
-  const handlePickerChange = (value: string) => {
-    setPickerTime(value)
-    if (!value) {
-      return
-    }
-
-    const nextTime = new Date(value)
-    if (isNaN(nextTime.getTime())) {
-      return
-    }
-
-    requestAt(nextTime.toISOString())
-    setPickerAnchor(null)
-  }
 
   const handleNext = () => {
     const last = data[data.length - 1]
@@ -136,8 +167,9 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
   const shownTime = new Date(displayTime)
   const shownDate = shownTime.toLocaleDateString()
   const shownClock = shownTime.toLocaleTimeString()
+
   const openPicker = (target: HTMLElement) => {
-    setPickerTime(toLocalDatetimeInputValue(new Date(displayTime)))
+    setPickerTime(dayjs(displayTime)) // ✅
     setPickerAnchor(target)
   }
 
@@ -176,14 +208,22 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
         anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
       >
         <Box sx={{ p: 1 }}>
-          <TextField
-            autoFocus
-            type="datetime-local"
-            value={pickerTime}
-            onChange={(e) => handlePickerChange(e.target.value)}
-            inputProps={{ step: 1 }}
-            size="small"
-          />
+          <LocalizationProvider dateAdapter={AdapterDayjs}>
+            <DateTimePicker
+              value={pickerTime}
+              onChange={(newValue) => setPickerTime(newValue)}
+              onAccept={handleAccept}
+              timeSteps={{ minutes:1, seconds: 1 }}
+              views={['year', 'month', 'day', 'hours', 'minutes', 'seconds']} // ✅
+              format="YYYY-MM-DD HH:mm:ss" // желательно
+              slotProps={{
+                textField: {
+                  size: 'small',
+                  autoFocus: true
+                }
+              }}
+            />
+          </LocalizationProvider>
         </Box>
       </Popover>
 
