@@ -524,3 +524,30 @@ bool snapshot_reader::decode_until(int64_t target_pts)
       return true;
   }
 }
+
+std::chrono::milliseconds snapshot_reader::get_duration() const
+{
+  if (!m_ctx)
+    return std::chrono::milliseconds(0);
+
+  return std::chrono::milliseconds(m_ctx->duration / 1000);
+}
+
+std::chrono::milliseconds snapshot_reader::current_position() const
+{
+  std::lock_guard lock(m_mutex);
+
+  if (!m_ctx || m_video_index < 0 || m_frame_buffer.empty())
+    return std::chrono::milliseconds(0);
+
+  const auto& bf = m_frame_buffer[m_current_index];
+  AVStream* stream = m_ctx->streams[m_video_index];
+
+  auto ms = av_rescale_q(
+    bf.pts,
+    stream->time_base,
+    AVRational{ 1, 1000 }
+  );
+
+  return std::chrono::milliseconds(ms);
+}

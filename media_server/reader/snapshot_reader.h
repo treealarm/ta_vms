@@ -31,6 +31,8 @@ public:
   std::vector<std::shared_ptr<media_packet>> snapshot_packets() const;
   bool forward();
   bool prev();
+  std::chrono::milliseconds current_position() const;
+  std::chrono::milliseconds get_duration() const;
 private:
 
   struct buffered_frame
@@ -53,7 +55,7 @@ private:
 
   bool seek_to(int64_t target_ts);
   bool decode_until(int64_t target_pts);
-
+  
   avformat_context_ptr m_ctx = nullptr;
   int m_video_index = -1;
   std::vector<int> m_other_stream_indexes;

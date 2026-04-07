@@ -6,6 +6,7 @@
 #include <optional>
 #include <filesystem>
 #include <queue>
+#include <optional>
 
 #include "interfaces/reader.h"
 #include "stream/jpeg_streamer.h"
@@ -44,7 +45,7 @@ public:
   bool set_state(
     const std::chrono::system_clock::time_point& start_time,
     const std::string& camera_id,
-    std::chrono::milliseconds position);
+    std::optional<std::chrono::milliseconds> position);
 
   bool set_player_command(const player_command& cmd);
 

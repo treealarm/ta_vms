@@ -19,8 +19,7 @@ class segment_writer : public media_sink
 {
 public:
   segment_writer(
-                 const std::string& camera_id,
-                 int segment_seconds);
+                 const std::string& camera_id);
   ~segment_writer() override;
   void on_packet(const std::shared_ptr<media_packet>& media) override;
 private:
@@ -38,7 +37,6 @@ private:
   void close();
 private:
   std::string m_camera_id;
-  std::chrono::seconds m_segment_seconds;
 
   std::unordered_map<int, input_stream_info> m_input_streams;
 

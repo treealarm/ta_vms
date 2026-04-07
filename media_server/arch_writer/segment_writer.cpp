@@ -6,11 +6,9 @@
 #include <iostream>
 
 segment_writer::segment_writer(
-  const std::string& camera_id,
-  int segment_seconds)
+  const std::string& camera_id)
   :
   m_camera_id(camera_id),
-  m_segment_seconds(segment_seconds),
   m_packet_transcoder([]
     {
       recording_storage storage;
@@ -184,7 +182,7 @@ void segment_writer::write_packet(const std::shared_ptr<media_packet>& in_media)
   }
 
   auto elapsed = std::chrono::steady_clock::now() - m_segment_start_time;
-  if (elapsed >= m_segment_seconds &&
+  if (elapsed >= recording_storage::get_segment_duration() &&
     media->media_type == AVMEDIA_TYPE_VIDEO &&
     (pkt->flags & AV_PKT_FLAG_KEY))
   {

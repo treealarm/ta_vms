@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <string>
+#include <chrono>
 
 struct recording_info
 {
@@ -25,7 +26,10 @@ public:
     k_mkv_ext,
     k_ts_ext
   };
-
+  static std::chrono::seconds get_segment_duration()
+  {
+    return std::chrono::seconds(60);
+  };
   std::vector<recording_info> get_recordings(
     const std::string& camera_id,
     std::chrono::system_clock::time_point ts,
@@ -55,10 +59,8 @@ public:
   {
     using namespace std::chrono;
 
-    // ñîçäà¸ì zoned_time â UTC
     zoned_time utc{ "UTC", tp };
 
-    // ôîðìàòèðóåì â ñòðîêó
     return format("{:%Y-%m-%d %H:%M:%S}", utc);
   }
 private:

@@ -160,10 +160,10 @@ bool arch_player::set_player_command(const player_command& cmd)
 bool arch_player::set_state(
   const std::chrono::system_clock::time_point& start_time,
   const std::string& camera_id,
-  std::chrono::milliseconds position)
+  std::optional<std::chrono::milliseconds> position_in)
 {
   // кидаем задачу в очередь
-  post_task([this, start_time, camera_id, position]()
+  post_task([this, start_time, camera_id, position_in]()
     {
       {
         std::scoped_lock lock(m_data_mutex);
@@ -177,6 +177,12 @@ bool arch_player::set_state(
       {
         return;
       }
+      auto pos_shift = 
+        std::chrono::duration_cast<std::chrono::milliseconds>(start_time - rec->start_time);
+
+      std::chrono::milliseconds position = position_in.value_or(
+        pos_shift
+      );
 
       if (!open_file_reader(rec->file_path.string(), position))
       {

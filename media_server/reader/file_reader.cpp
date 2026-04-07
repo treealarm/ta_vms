@@ -26,7 +26,8 @@ file_reader::file_reader(
   .audio_codec = AV_CODEC_ID_OPUS,
   .allow_hevc_video_passthrough = false,
   .allow_all_audio_passthrough = false
-})
+}),
+  m_cur_video_pos(position)
 {}
 
 file_reader::~file_reader() 
@@ -314,31 +315,8 @@ void file_reader::read_loop()
       if (sleep_ms.count() > 0)
         std::this_thread::sleep_for(sleep_ms);
 
-      if (m_on_progress)
-      {
-        using namespace std::chrono;
-        
-
-        int64_t duration_ms = 0;
-        if (m_ctx && m_ctx->duration > 0)
-        {
-          duration_ms = m_ctx->duration / 1000;
-        }          
-
-        int64_t position_ms = pts_ms;
-
-        if (position_ms > duration_ms)
-          position_ms = duration_ms;
-
-        reader_progress progress;
-        progress.duration = milliseconds(duration_ms);
-        progress.position = milliseconds(position_ms);
-
-        m_on_progress(progress);
-      }
-    }
-    
-
+      on_progress(std::chrono::milliseconds(pts_ms), get_duration());
+    } 
 
     // --- формирование пакета ---
     auto media = std::make_shared<media_packet>();
@@ -377,6 +355,22 @@ void file_reader::read_loop()
 
   m_packet_transcoder.close();
   disconnect();
+}
+
+void file_reader::on_progress(std::chrono::milliseconds pts_ms, std::chrono::milliseconds duration)
+{
+  if (m_on_progress)
+  {
+    reader_progress progress;
+
+    progress.duration = duration;
+    progress.position = pts_ms;
+
+    if (progress.position > progress.duration)
+      progress.position = progress.duration;
+
+    m_on_progress(progress);
+  }
 }
 
 void file_reader::emit_paused_snapshots()
@@ -425,13 +419,32 @@ void file_reader::emit_paused_snapshots()
     }
   }
 
+  on_progress(m_snapshot_reader->current_position(), m_snapshot_reader->get_duration());
+
   m_last_pause_emit_at = now;
+}
+
+std::chrono::milliseconds file_reader::get_duration()
+{
+  std::chrono::milliseconds duration_ms;
+  if (m_ctx && m_ctx->duration > 0)
+  {
+    duration_ms = std::chrono::milliseconds(m_ctx->duration / 1000);
+  }
+  return duration_ms;
 }
 
 bool file_reader::seek_to_position(std::chrono::milliseconds position)
 {
   if (!m_ctx || m_video_index < 0)
     return false;
+
+
+  auto duration = get_duration();
+  if (position > duration)
+  {
+    position = duration - std::chrono::milliseconds(1000);
+  }
 
   AVStream* stream = m_ctx->streams[m_video_index];
   if (!stream)

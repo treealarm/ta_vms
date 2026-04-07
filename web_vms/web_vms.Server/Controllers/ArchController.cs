@@ -72,7 +72,11 @@ public class ArchController(
       }
 
       request.PositionTs = Timestamp.FromDateTime(dtUtc);
-      request.PositionMs = dto.position_ms;
+
+      if (dto.position_ms is uint value)
+      {
+        request.PositionMs = value;
+      }
     }
 
     var grpcResponse = await grpcClient.SetPlayerStateAsync(request, cancellationToken: ct);

@@ -51,6 +51,8 @@ public:
 private:
   bool connect_current_file();
   bool seek_to_position(std::chrono::milliseconds position);
+  std::chrono::milliseconds get_duration();
+  void on_progress(std::chrono::milliseconds pts_ms, std::chrono::milliseconds duration);
   void disconnect();
   void read_loop();
   void emit_paused_snapshots();
@@ -86,5 +88,5 @@ private:
   std::atomic_bool m_drop_until_keyframe = false;
   clock::time_point m_last_pause_emit_at = clock::time_point::min();
 
-  std::chrono::milliseconds m_cur_video_pos;
+  std::chrono::milliseconds m_cur_video_pos = std::chrono::milliseconds(0);
 };

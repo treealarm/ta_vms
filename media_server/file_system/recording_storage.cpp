@@ -202,12 +202,28 @@ std::vector<recording_info> recording_storage::get_recordings(
   int32_t pos = static_cast<int32_t>(std::distance(curr.begin(), it));
 
   // ближайший внутри дня (если есть)
-  if (!curr.empty()) {
-    if (pos == curr.size()) pos--;
-    else if (pos > 0) {
-      auto d1 = std::abs(std::chrono::duration_cast<std::chrono::milliseconds>(curr[pos].start_time - ts).count());
-      auto d2 = std::abs(std::chrono::duration_cast<std::chrono::milliseconds>(curr[pos - 1].start_time - ts).count());
-      if (d2 < d1) pos--;
+  if (!curr.empty())
+  {
+    if (pos == curr.size())
+    {
+      pos--; // только последний доступен
+    }
+    else if (pos > 0)
+    {
+      auto d_curr = std::chrono::duration_cast<std::chrono::milliseconds>(
+        curr[pos].start_time - ts);
+
+      auto d_prev = std::chrono::duration_cast<std::chrono::milliseconds>(
+        ts - curr[pos - 1].start_time);
+
+      auto threshold = get_segment_duration();
+
+      // ключевая логика:
+      // если предыдущий не сильно дальше — берём его
+      if (d_prev <= d_curr + threshold)
+      {
+        pos--;
+      }
     }
   }
 

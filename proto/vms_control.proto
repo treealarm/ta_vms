@@ -47,7 +47,7 @@ message PlayerState {
   string camera_id = 1;
   string client_id = 2;
   optional google.protobuf.Timestamp position_ts = 3;
-  uint32 position_ms = 4;
+  optional uint32 position_ms = 4;
 }
 
 enum PlayerMode {

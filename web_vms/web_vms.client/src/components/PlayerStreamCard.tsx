@@ -41,7 +41,7 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
     return () => clearInterval(interval)
   }, [dispatch, player.client_id])
 
-  const sendSeek = async (timeToSend: string, position: number) => {
+  const sendSeek = async (timeToSend: string, position: number|null) => {
     await dispatch(
       setPlayerState({
         camera_id: currentPlayer.camera_id,
@@ -65,7 +65,7 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
   }
 
   const handleTimeChange = (iso: string) => {
-    void sendSeek(iso, 0)
+    void sendSeek(iso, null)
   }
 
   const mode = currentPlayer.mode ?? 'unspecified'

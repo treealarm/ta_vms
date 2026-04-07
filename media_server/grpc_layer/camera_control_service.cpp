@@ -183,14 +183,17 @@ grpc::Status camera_control_service::SetPlayerState(
     grpc::ServerContext* /*context*/,
     const vms::control::PlayerState* request,
     vms::control::OperationStatus* response) 
-{
+{  
   std::string error;
+  auto pos = request->has_position_ms() ? 
+    std::make_optional<std::chrono::milliseconds>(request->position_ms()) :
+    std::nullopt;
 
   const bool success = m_manager.set_player_state(
     request->client_id(),
     request->camera_id(),
     to_time_point(request->position_ts()),
-    std::chrono::milliseconds(request->position_ms()),
+    pos,
     error);
 
   response->set_success(success);
