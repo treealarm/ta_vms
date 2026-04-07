@@ -313,10 +313,21 @@ void file_reader::read_loop()
 
       auto sleep_ms = sync_to_master_clock(pts_ms);
       if (sleep_ms.count() > 0)
+      {
         std::this_thread::sleep_for(sleep_ms);
-
+      } 
       on_progress(std::chrono::milliseconds(pts_ms), get_duration());
     } 
+
+    double speed = (m_play_speed <= 0.0) ? 1.0 : m_play_speed.load();
+
+    if (speed > 1)
+    {
+      pkt->pts = static_cast<int64_t>(pkt->pts / speed);
+      pkt->dts = static_cast<int64_t>(pkt->dts / speed);
+      if (pkt->duration > 0)
+        pkt->duration = static_cast<int64_t>(pkt->duration / speed);
+    }    
 
     // --- формирование пакета ---
     auto media = std::make_shared<media_packet>();
@@ -341,7 +352,9 @@ void file_reader::read_loop()
     media->codec_parameters = std::move(codec_copy);
 
     // --- отправка ---
+
     auto out_media = m_packet_transcoder.transcode_packet(media);
+
     while (out_media)
     {
       for (auto& sink : m_sinks_helper.snapshot_sinks())
