@@ -73,12 +73,18 @@ export type CredentialsDto = {
   pass: string
 }
 
+export type OnvifConnectionDto = {
+  ip: string
+  port: number
+}
+
 export type CameraStateDto = {
   cameraId: string
   recording: boolean
   webRtc: boolean
   rtspUrl: string
   cred: CredentialsDto
+  onvifConn: OnvifConnectionDto
 }
 
 export type RecordingDto = {

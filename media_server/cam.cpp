@@ -15,7 +15,8 @@ cam::cam(const std::string& source,
   m_user(user),
   m_pass(pass)
 {
-  m_reader = std::make_unique<rtsp_reader>(user, pass);
+  m_reader = std::make_unique<rtsp_reader>(cam_id, user, pass);
+
   if (!m_reader->open(m_source))
   {
     throw std::runtime_error("Failed to open media source");

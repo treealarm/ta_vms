@@ -27,6 +27,8 @@ function App() {
   const [rtspUrl, setRtspUrl] = useState('rtsp://192.168.1.150:554/channel=0_stream=0&onvif=0.sdp?real_stream')
   const [user, setUser] = useState('orwell')
   const [pass, setPass] = useState('elvees')
+  const [onvifIp, setOnvifIp] = useState('192.168.1.150')
+  const [onvifPort, setOnvifPort] = useState(8899)
 
   const status = useAppSelector((state) => state.live.status !== 'Ready' ? state.live.status : state.arch.status !== 'Ready' ? state.arch.status : state.fs.status)
 
@@ -96,6 +98,11 @@ function App() {
       cred: {
         user: user,
         pass: pass
+      },
+      onvifConn:
+      {
+        ip: onvifIp,
+        port: onvifPort
       }
     }
 
@@ -112,7 +119,6 @@ function App() {
           <CardContent>
             <Box component="form" onSubmit={onAddCamera}>
               <Stack spacing={2}>
-                <Typography variant="h6">Camera setup</Typography>
 
                 <TextField
                   label="Camera ID"
@@ -128,7 +134,6 @@ function App() {
                     label="RTSP URL"
                     value={rtspUrl}
                     onChange={(event) => setRtspUrl(event.target.value)}
-                    required
                     fullWidth
                     size="small"
                   />
@@ -137,7 +142,6 @@ function App() {
                     label="User"
                     value={user}
                     onChange={(event) => setUser(event.target.value)}
-                    required
                     fullWidth
                     size="small"
                   />
@@ -155,6 +159,25 @@ function App() {
                   >
                     Add
                   </Button>
+                </Stack>
+                <Stack direction="row" spacing={1.5} alignItems="center">
+                  <TextField
+                    label="Onvif IP"
+                    value={onvifIp}
+                    onChange={(event) => setOnvifIp(event.target.value)}
+                    size="small"
+                  />
+                  <TextField
+                    label="Onvif Port"
+                    value={onvifPort}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (!Number.isNaN(value)) {
+                        setOnvifPort(value);
+                      }
+                    }}
+                    size="small"
+                  />
                 </Stack>
 
                 <Stack direction="row" spacing={1.5}>

@@ -36,24 +36,6 @@ namespace web_vms
     };
 
 
-    public override async Task<OperationStatus> AddCamera(CameraState request, ServerCallContext context)
-    {
-      var result = await _manager.Add(ToDto(request));
-
-      return new OperationStatus { Success = result };
-    }
-
-    public override async Task<OperationStatus> RemoveCamera(SourceRequest request, ServerCallContext context)
-    {
-      var removed = await _manager.Remove(request.SourceId);
-
-      return new OperationStatus
-      {
-        Success = removed,
-        Message = removed ? "Removed" : "Not found"
-      };
-    }
-
     public override async Task<ListCamerasResponse> ListCameras(ListCamerasRequest request, ServerCallContext context)
     {
       var response = new ListCamerasResponse();
@@ -64,22 +46,25 @@ namespace web_vms
       return response;
     }
 
-    public override async Task<OperationStatus> SetCameraState(CameraState request, ServerCallContext context)
+    public override async Task<OnvifState> GetCameraOnvifUri(SourceRequest request, ServerCallContext context)
     {
-      var result = await _manager.SetState(ToDto(request));
+      var response = new OnvifState();
 
-      return new OperationStatus
-      {
-        Success = result
-      };
-    }
-
-    public override async Task<CameraState> GetCameraState(SourceRequest request, ServerCallContext context)
-    {
       var state = await _manager.Get(request.SourceId);
 
-
-      return state != null ? ToProto(state!) : new CameraState();
+      if (state != null && state.OnvifConn != null
+        &&
+        !string.IsNullOrEmpty(state.OnvifConn.ip)
+        &&
+        state.OnvifConn.port > 0)
+      {
+        var newUrl = await OnvifUtils.GetStreamUri(state);
+        if (!string.IsNullOrEmpty(newUrl))
+        {
+          response.RtspUrl = newUrl;
+        }
+      }
+      return response;
     }
   }
 }

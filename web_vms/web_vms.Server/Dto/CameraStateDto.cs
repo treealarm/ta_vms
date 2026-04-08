@@ -7,5 +7,6 @@
     public bool WebRtc { get; init; }
     public string? RtspUrl { get; init; }
     public CredentialsDto? Cred { get; init; }
+    public OnvifConnectionDto? OnvifConn { get; set; }
   }
 }

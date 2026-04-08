@@ -49,18 +49,6 @@ public class LiveController(
   [HttpGet("cameras")]
   public async Task<IActionResult> ListCameras(CancellationToken ct)
   {
-    //var cam = Camera.Create("192.168.1.150", 8899, "orwell", "elvees");
-    //var mediaService = await cam.GetMediaService();
-    //if(mediaService != null)
-    //{
-    //  var profile = mediaService.GetProfiles().FirstOrDefault();
-    //  if (profile != null)
-    //  {
-    //    var uri = await  mediaService.GetStreamUri(profile);
-    //    Console.WriteLine(uri?.ToString());
-    //  }
-    //}
-
     var response = await _grpcClient.ListCamerasAsync(new ListCamerasRequest(), cancellationToken: ct);
     var cameras = response.Cameras.Select(camera =>
         new CameraStateDto
@@ -100,6 +88,11 @@ public class LiveController(
       } : null
     }, cancellationToken: ct);
 
+    var curState = await _manager.Get(state.CameraId);
+    if (curState != null && state.OnvifConn == null)
+    {
+      state.OnvifConn = curState.OnvifConn;
+    }
     await _manager.SetState(state);
     return Ok(ApiResponseMapper.ToApiResponse(response));
   }

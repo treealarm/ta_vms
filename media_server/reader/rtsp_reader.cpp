@@ -3,6 +3,7 @@
 #include <thread>
 #include "interfaces/av_deleters.h"
 #include "rtsp_reader.h"
+#include "grpc_layer/cfg_client.h"
 
 namespace {
 constexpr auto kWatchdogInterval = std::chrono::seconds(5);
@@ -20,7 +21,9 @@ std::string build_rtsp_url_with_auth(const std::string& url,
 }
 }
 
-rtsp_reader::rtsp_reader(const std::string& user, const std::string& pass):
+rtsp_reader::rtsp_reader(
+  const std::string& cam_id, const std::string& user, const std::string& pass):
+  m_cam_id(cam_id),
   m_user(user),
   m_password(pass)
 {
@@ -56,6 +59,13 @@ bool rtsp_reader::connect()
     av_dict_set(&opts, "password", m_password.c_str(), 0);
   }
   AVFormatContext* ctx = nullptr;
+
+  if (m_rtsp_url.empty())
+  {
+    cfg_client c_client;
+
+    c_client.get_uri(m_cam_id, m_rtsp_url);
+  }
 
   std::string final_url = build_rtsp_url_with_auth(m_rtsp_url, m_user, m_password);
 

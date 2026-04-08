@@ -14,7 +14,6 @@ const PasswordField = ({ pass, setPass }) => {
       type={showPassword ? "text" : "password"}
       value={pass}
       onChange={(event) => setPass(event.target.value)}
-      required
       fullWidth
       size="small"
       InputProps={{

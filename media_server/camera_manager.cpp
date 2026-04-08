@@ -16,11 +16,6 @@ bool camera_manager::add_camera(
     return false;
   }
 
-  if (rtsp_url.empty()) {
-    error = "rtsp_url must not be empty";
-    return false;
-  }
-
   auto existing = m_cameras.find(camera_id);
   if (existing != m_cameras.end()) {
     existing->second->shutdown();

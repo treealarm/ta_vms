@@ -271,8 +271,12 @@ std::vector<recording_info> recording_storage::get_recordings(
   // 6️⃣ индекс ближайшего
   nearestIndex = static_cast<int32_t>(left.size());
 
+  if (!result.empty() && nearestIndex >= result.size())
+    nearestIndex = static_cast<int32_t>(result.size()) - 1;
+
   if (result.empty())
     nearestIndex = -1;
+
 
   return result;
 }

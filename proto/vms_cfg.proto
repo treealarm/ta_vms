@@ -3,16 +3,8 @@ syntax = "proto3";
 package vms.cfg;
 
 service CfgService {
-  rpc AddCamera(CameraState) returns (OperationStatus);
-  rpc RemoveCamera(SourceRequest) returns (OperationStatus); 
   rpc ListCameras(ListCamerasRequest) returns (ListCamerasResponse);
-  rpc SetCameraState(CameraState) returns (OperationStatus);
-  rpc GetCameraState(SourceRequest) returns (CameraState);
-}
-
-message OperationStatus {
-  bool success = 1;
-  string message = 2;
+  rpc GetCameraOnvifUri(SourceRequest) returns (OnvifState);
 }
 
 message SourceRequest {
@@ -22,6 +14,10 @@ message SourceRequest {
 message Credentials {
   string user = 1;
   string pass = 2;
+}
+
+message OnvifState {
+  string rtsp_url = 4;
 }
 
 message CameraState {
