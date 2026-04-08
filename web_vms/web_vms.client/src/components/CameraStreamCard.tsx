@@ -39,11 +39,9 @@ function CameraStreamCard({ camera, onRemove }: CameraStreamCardProps) {
   const updateRecordingState = async (nextRecordingState: boolean) => {
 
     const payload: CameraStateDto = {
-      cameraId: camera.cameraId,
-      rtspUrl: camera.rtspUrl,
-      recording: nextRecordingState,
-      webRtc: camera.webRtc
-    }
+      ...camera,
+      recording: nextRecordingState
+    };
 
     await dispatch(
       updateCameraRecording(payload)

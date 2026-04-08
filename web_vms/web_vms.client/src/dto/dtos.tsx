@@ -68,11 +68,17 @@ export type PlayerProgressStateDto = {
   mode: PlayerMode
 }
 
+export type CredentialsDto = {
+  user: string
+  pass: string
+}
+
 export type CameraStateDto = {
   cameraId: string
   recording: boolean
   webRtc: boolean
   rtspUrl: string
+  cred: CredentialsDto
 }
 
 export type RecordingDto = {

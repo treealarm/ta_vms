@@ -15,7 +15,9 @@ class cam final
 {
 public:
   cam(const std::string& source,
-      const std::string& cam_id);
+      const std::string& cam_id,
+    const std::string& user,
+    const std::string& pass);
 
   virtual ~cam();
 
@@ -26,12 +28,18 @@ public:
   bool stop_web_rtc(std::string& error);
 
   void shutdown();
-
+  std::string get_id() { return m_cam_id; }
+  std::string get_source() { return m_source; }
+  std::string get_user() { return m_user; }
+  std::string get_pass() { return m_pass; }
+  bool is_recording() { return m_writer != nullptr; }
+  bool is_web_rtc_streaming() { return m_webrtc_output_sink != nullptr; }
 private:
 
   std::string m_cam_id;
   std::string m_source;
-  std::string m_storage_base_path;
+  std::string m_user;
+  std::string m_pass;
 
   std::unique_ptr<reader> m_reader;
   std::shared_ptr<segment_writer> m_writer;

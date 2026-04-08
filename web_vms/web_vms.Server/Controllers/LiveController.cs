@@ -1,3 +1,4 @@
+using DeviceServiceReference;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Control;
 
@@ -18,7 +19,13 @@ public class LiveController(
       CameraId = request.CameraId,
       RtspUrl = request.RtspUrl,
       Recording = request.Recording,
-      WebRtc = request.WebRtc
+      WebRtc = request.WebRtc,
+      Cred = request.Cred!=null ?
+      new Credentials()
+      { 
+        User= request.Cred.User,
+        Pass = request.Cred.Pass
+      } : null
 
     }, cancellationToken: ct);
 
@@ -42,17 +49,36 @@ public class LiveController(
   [HttpGet("cameras")]
   public async Task<IActionResult> ListCameras(CancellationToken ct)
   {
+    //var cam = Camera.Create("192.168.1.150", 8899, "orwell", "elvees");
+    //var mediaService = await cam.GetMediaService();
+    //if(mediaService != null)
+    //{
+    //  var profile = mediaService.GetProfiles().FirstOrDefault();
+    //  if (profile != null)
+    //  {
+    //    var uri = await  mediaService.GetStreamUri(profile);
+    //    Console.WriteLine(uri?.ToString());
+    //  }
+    //}
+
     var response = await _grpcClient.ListCamerasAsync(new ListCamerasRequest(), cancellationToken: ct);
-    var cameras = response.Cameras.Select(
-      camera =>
-      new CameraStateDto
-      {
-        CameraId = camera.CameraId,
-        Recording = camera.Recording,
-        WebRtc = camera.WebRtc,
-        RtspUrl = camera.RtspUrl
-      }
-      );
+    var cameras = response.Cameras.Select(camera =>
+        new CameraStateDto
+        {
+          CameraId = camera.CameraId,
+          Recording = camera.Recording,
+          WebRtc = camera.WebRtc,
+          RtspUrl = camera.RtspUrl,
+          Cred = camera.Cred != null
+                ? new CredentialsDto
+                {
+                  User = camera.Cred.User,
+                  Pass = camera.Cred.Pass
+                }
+                : null
+        }
+    );
+
     return Ok(cameras);
   }
 
@@ -65,6 +91,13 @@ public class LiveController(
       Recording = state.Recording,
       WebRtc = state.WebRtc,
       RtspUrl = state.RtspUrl
+      ,
+      Cred = state.Cred != null ?
+      new Credentials()
+      {
+        User = state.Cred.User,
+        Pass = state.Cred.Pass
+      } : null
     }, cancellationToken: ct);
 
     await _manager.SetState(state);
@@ -74,17 +107,24 @@ public class LiveController(
   [HttpGet("cameras/{cameraId}/state")]
   public async Task<IActionResult> GetCameraState(string cameraId, CancellationToken ct)
   {
-    var grpcResponse = await _grpcClient.GetCameraStateAsync(new SourceRequest
+    var camera = await _grpcClient.GetCameraStateAsync(new SourceRequest
     {
       SourceId = cameraId
     }, cancellationToken: ct);
 
     var dto = new CameraStateDto
     {
-      Recording = grpcResponse.Recording,
-      WebRtc = grpcResponse.WebRtc,
-      CameraId = grpcResponse.CameraId,
-      RtspUrl = grpcResponse.RtspUrl
+      Recording = camera.Recording,
+      WebRtc = camera.WebRtc,
+      CameraId = camera.CameraId,
+      RtspUrl = camera.RtspUrl,
+      Cred = camera.Cred != null
+        ? new CredentialsDto
+        {
+          User = camera.Cred.User,
+          Pass = camera.Cred.Pass
+        }
+        : null
     };
 
     return Ok(dto);

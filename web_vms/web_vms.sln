@@ -3,9 +3,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.11.35431.28
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "web_vms.Server", "web_vms.Server\web_vms.Server.csproj", "{E8BA75E2-6F13-4E3E-8C85-6242F66A7AB2}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "web_vms.Server", "web_vms.Server\web_vms.Server.csproj", "{E8BA75E2-6F13-4E3E-8C85-6242F66A7AB2}"
 EndProject
 Project("{54A90642-561A-4BB1-A94E-469ADEE60C69}") = "web_vms.client", "web_vms.client\web_vms.client.esproj", "{39F28CE0-E59F-4936-83D1-12B1C012E709}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OnvifLib", "OnvifLib\OnvifLib.csproj", "{AB69F714-B82E-4721-82DD-E41FB18AA186}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -23,6 +25,10 @@ Global
 		{39F28CE0-E59F-4936-83D1-12B1C012E709}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{39F28CE0-E59F-4936-83D1-12B1C012E709}.Release|Any CPU.Build.0 = Release|Any CPU
 		{39F28CE0-E59F-4936-83D1-12B1C012E709}.Release|Any CPU.Deploy.0 = Release|Any CPU
+		{AB69F714-B82E-4721-82DD-E41FB18AA186}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AB69F714-B82E-4721-82DD-E41FB18AA186}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AB69F714-B82E-4721-82DD-E41FB18AA186}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AB69F714-B82E-4721-82DD-E41FB18AA186}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

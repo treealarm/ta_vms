@@ -17,13 +17,16 @@ import { addCamera, loadCameras, removeCamera, setLiveStatus } from './store/liv
 import { loadPlayers, removePlayer } from './store/archSlice'
 import { useAppDispatch, useAppSelector } from './store'
 import CameraUnifiedCard from './components/CameraUnifiedCard'
+import PasswordField from './components/PasswordField'
 
 const MAX_CAMERAS = 4
 
 function App() {
   const dispatch = useAppDispatch()
   const [cameraId, setCameraId] = useState('cam1')
-  const [rtspUrl, setRtspUrl] = useState('rtsp://admin:pass@192.168.1.150:554/channel=0_stream=0&onvif=0.sdp?real_stream')
+  const [rtspUrl, setRtspUrl] = useState('rtsp://192.168.1.150:554/channel=0_stream=0&onvif=0.sdp?real_stream')
+  const [user, setUser] = useState('orwell')
+  const [pass, setPass] = useState('elvees')
 
   const status = useAppSelector((state) => state.live.status !== 'Ready' ? state.live.status : state.arch.status !== 'Ready' ? state.arch.status : state.fs.status)
 
@@ -89,7 +92,11 @@ function App() {
       cameraId: cameraId,
       rtspUrl: rtspUrl,
       recording: false,
-      webRtc: true
+      webRtc: true,
+      cred: {
+        user: user,
+        pass: pass
+      }
     }
 
     const result = await dispatch(addCamera(payload))
@@ -124,6 +131,19 @@ function App() {
                     required
                     fullWidth
                     size="small"
+                  />
+
+                  <TextField
+                    label="User"
+                    value={user}
+                    onChange={(event) => setUser(event.target.value)}
+                    required
+                    fullWidth
+                    size="small"
+                  />
+                  <PasswordField 
+                    pass={pass}
+                    setPass={setPass }
                   />
 
                   <Button

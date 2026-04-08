@@ -12,7 +12,13 @@ namespace web_vms
       CameraId = s.CameraId,
       Recording = s.Recording,
       WebRtc = s.WebRtc,
-      RtspUrl = s.RtspUrl
+      RtspUrl = s.RtspUrl,
+      Cred = s.Cred == null ? null : new
+      CredentialsDto()
+      {
+        User = s.Cred.User,
+        Pass = s.Cred.Pass
+      }
     };
 
     private static CameraState ToProto(CameraStateDto d) => new()
@@ -20,7 +26,13 @@ namespace web_vms
       CameraId = d.CameraId,
       Recording = d.Recording,
       WebRtc = d.WebRtc,
-      RtspUrl = d.RtspUrl ?? ""
+      RtspUrl = d.RtspUrl ?? "",
+      Cred = d.Cred == null ? null : new Credentials()
+      {
+        User = d.Cred.User,
+        Pass = d.Cred.Pass
+      }
+
     };
 
 

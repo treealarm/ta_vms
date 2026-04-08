@@ -6,25 +6,18 @@
 #include "reader/rtsp_reader.h"
 #include "interfaces/web_rtc_utils.h"
 
-namespace {
-
-bool is_rtsp_source(const std::string& source)
-{
-  return source.rfind("rtsp://", 0) == 0 || source.rfind("rtsps://", 0) == 0;
-}
-}
-
 cam::cam(const std::string& source,
-         const std::string& cam_id)
+         const std::string& cam_id,
+  const std::string& user,
+  const std::string& pass)
     : m_source(source),
-      m_cam_id(cam_id)
+      m_cam_id(cam_id),
+  m_user(user),
+  m_pass(pass)
 {
-  if (!is_rtsp_source(m_source)) {
-    throw std::runtime_error("cam supports only RTSP sources");
-  }
-
-  m_reader = std::make_unique<rtsp_reader>();
-  if (!m_reader->open(m_source)) {
+  m_reader = std::make_unique<rtsp_reader>(user, pass);
+  if (!m_reader->open(m_source))
+  {
     throw std::runtime_error("Failed to open media source");
   }
 

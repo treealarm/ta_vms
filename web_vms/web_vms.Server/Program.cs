@@ -53,11 +53,6 @@ else
 
 builder.WebHost.ConfigureKestrel(options =>
 {
-  // this configuration is the same as:
-  //- ASPNETCORE_URLS=http://+:8000;http://+:${GRPC_MAIN_PORT}
-  //- Kestrel__Endpoints__gRPC__Url=http://*:${GRPC_MAIN_PORT}
-  //- Kestrel__Endpoints__gRPC__Protocols=Http2
-  //- Kestrel__Endpoints__Http__Url=http://*:8000
   options.Listen(IPAddress.Any, grpc_port, listenOptions =>
   {
     listenOptions.Protocols = HttpProtocols.Http2;

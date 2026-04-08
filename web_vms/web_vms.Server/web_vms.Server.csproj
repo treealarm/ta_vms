@@ -31,6 +31,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\OnvifLib\OnvifLib.csproj" />
     <ProjectReference Include="..\web_vms.client\web_vms.client.esproj">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>

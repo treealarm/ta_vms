@@ -30,11 +30,17 @@ message SourceRequest {
   string source_id = 1;
 }
 
+message Credentials {
+  string user = 1;
+  string pass = 2;
+}
+
 message CameraState {
   string camera_id = 1;
   bool recording = 2;
   bool web_rtc = 3;
   string rtsp_url = 4;
+  optional Credentials cred = 5;
 }
 
 message ListCamerasRequest {}

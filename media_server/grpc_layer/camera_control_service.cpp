@@ -49,11 +49,14 @@ grpc::Status camera_control_service::AddCamera(
     const vms::control::CameraState* request,
     vms::control::OperationStatus* response) {
   std::string error;
-  const bool success = m_manager.add_camera(request->camera_id(),
-                                            request->rtsp_url(),
-                                            request->recording(),
-                                            request->web_rtc(),
-                                            error);
+  const bool success = m_manager.add_camera(
+    request->camera_id(),
+    request->rtsp_url(),
+    request->cred().user(),
+    request->cred().pass(),
+    request->recording(),
+    request->web_rtc(),
+    error);
 
   response->set_success(success);
   response->set_message(success ? "camera added" : error);
@@ -148,6 +151,8 @@ grpc::Status camera_control_service::SetCameraState(
   const bool success = m_manager.set_camera_state(
     request->camera_id(),
     request->rtsp_url(),
+    request->cred().user(),
+    request->cred().pass(),
     request->recording(),
     request->web_rtc(),
     error);

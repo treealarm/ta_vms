@@ -6,16 +6,34 @@
 
 namespace {
 constexpr auto kWatchdogInterval = std::chrono::seconds(5);
+
+std::string build_rtsp_url_with_auth(const std::string& url,
+  const std::string& user,
+  const std::string& pass)
+{
+  if (user.empty()) return url;
+
+  const std::string prefix = "rtsp://";
+  if (url.rfind(prefix, 0) != 0) return url;
+
+  return prefix + user + ":" + pass + "@" + url.substr(prefix.size());
+}
 }
 
-rtsp_reader::rtsp_reader() = default;
+rtsp_reader::rtsp_reader(const std::string& user, const std::string& pass):
+  m_user(user),
+  m_password(pass)
+{
+
+}
 rtsp_reader::~rtsp_reader() 
 {
   stop();
   disconnect();
 }
 
-bool rtsp_reader::open(const std::string& url) {
+bool rtsp_reader::open(const std::string& url) 
+{
   m_rtsp_url = url;
   
   return true;
@@ -32,9 +50,16 @@ bool rtsp_reader::connect()
   av_dict_set(&opts, "timeout", "5000000", 0);
   av_dict_set(&opts, "rw_timeout", "5000000", 0);
 
+  if (!m_user.empty()) 
+  {
+    av_dict_set(&opts, "user", m_user.c_str(), 0);
+    av_dict_set(&opts, "password", m_password.c_str(), 0);
+  }
   AVFormatContext* ctx = nullptr;
 
-  if (avformat_open_input(&ctx, m_rtsp_url.c_str(), nullptr, &opts) < 0)
+  std::string final_url = build_rtsp_url_with_auth(m_rtsp_url, m_user, m_password);
+
+  if (avformat_open_input(&ctx, final_url.c_str(), nullptr, &opts) < 0)
   {
     std::cerr << "Failed to open RTSP\n";
     av_dict_free(&opts);
@@ -96,7 +121,8 @@ void rtsp_reader::remove_sink(std::shared_ptr<media_sink> sink)
   m_sinks_helper.remove_sink(sink);
 }
 
-AVStream* rtsp_reader::video_stream() const {
+AVStream* rtsp_reader::video_stream() const 
+{
   if (m_ctx && m_video_index >= 0)
     return m_ctx->streams[m_video_index];
   return nullptr;
@@ -117,7 +143,8 @@ void rtsp_reader::stop()
     m_thread.join();
 }
 
-void rtsp_reader::read_loop() {
+void rtsp_reader::read_loop()
+{
   auto last_frame_at = std::chrono::steady_clock::now();
 
   while (m_running) {

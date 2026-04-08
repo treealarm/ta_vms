@@ -16,6 +16,8 @@ public:
   {
     std::string camera_id;
     std::string rtsp_url;
+    std::string user;
+    std::string pass;
     bool is_recording = false;
     bool is_web_rtc_streaming = false;
   };
@@ -31,6 +33,8 @@ public:
   };
   bool add_camera(const std::string& camera_id,
                   const std::string& rtsp_url,
+    const std::string& user,
+    const std::string& pass,
                   bool recording,
                   bool web_rtc,
                   std::string& error);
@@ -40,6 +44,8 @@ public:
   bool set_camera_state(
     const std::string& camera_id,
     const std::string& rtsp_url,
+    const std::string& user,
+    const std::string& pass,
     bool recording,
     bool web_rtc,
     std::string& error);
@@ -73,15 +79,7 @@ public:
   void stop_all();
 
 private:
-  struct camera_entry {
-    std::shared_ptr<cam> camera;
-    std::string source;
-    bool is_recording = false;
-    bool is_web_rtc_streaming = false;
-  };
-
-
   mutable std::mutex m_mutex;
-  std::map<std::string, camera_entry> m_cameras;
+  std::map<std::string, std::shared_ptr<cam> > m_cameras;
   std::map<std::string, std::shared_ptr<arch_player>> m_arch_players_by_client;
 };

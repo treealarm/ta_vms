@@ -65,6 +65,8 @@ int main(int argc, char** argv) {
       const bool success = manager.add_camera(
         c.camera_id(),
         c.rtsp_url(),
+        c.cred().user(),
+        c.cred().pass(),
         c.recording(),
         c.web_rtc(),
         error);
