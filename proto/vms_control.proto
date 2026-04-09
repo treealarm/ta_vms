@@ -19,6 +19,7 @@ service CameraControlService {
   rpc SendPlayerCommand(PlayerCommand) returns (OperationStatus); 
 
   rpc GetRecordings(RecordingsRequest) returns (RecordingsResponse);
+  rpc GetArchiveFrameJpeg(ArchiveFrameJpegRequest) returns (ArchiveFrameJpegResponse);
 }
 
 message OperationStatus {
@@ -117,4 +118,15 @@ message Recording {
 message RecordingsResponse {
   repeated Recording recordings = 1;
   optional Recording nearest = 3;
+}
+message ArchiveFrameJpegRequest {
+  string camera_id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+}
+
+message ArchiveFrameJpegResponse {
+  bool success = 1;
+  string message = 2;
+  bytes jpeg = 3;
+  string mime_type = 4;
 }

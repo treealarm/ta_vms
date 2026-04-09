@@ -1,5 +1,6 @@
 #include <google/protobuf/timestamp.pb.h>
 #include <chrono>
+#include <vector>
 
 #include "camera_control_service.h"
 #include "player_command_mapper.h"
@@ -299,6 +300,43 @@ grpc::Status camera_control_service::GetRecordings(grpc::ServerContext* context,
     *recording->mutable_file_path() = r.file_path.filename().string();
     *recording->mutable_start_time() = from_time_point(r.start_time);
   }
+
+  return grpc::Status::OK;
+}
+
+grpc::Status camera_control_service::GetArchiveFrameJpeg(
+  grpc::ServerContext* context,
+  const vms::control::ArchiveFrameJpegRequest* request,
+  vms::control::ArchiveFrameJpegResponse* response)
+{
+  if (request->camera_id().empty())
+  {
+    response->set_success(false);
+    response->set_message("camera_id must not be empty");
+    return ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "camera_id must not be empty");
+  }
+
+  std::vector<uint8_t> jpeg;
+  std::string error;
+
+  archive_frame_jpeg_reader reader;
+  const bool success = reader.read_frame_at(
+    request->camera_id(),
+    to_time_point(request->timestamp()),
+    jpeg,
+    error);
+
+  response->set_success(success);
+
+  if (!success)
+  {
+    response->set_message(error.empty() ? "failed to read archive jpeg frame" : error);
+    return ::grpc::Status(::grpc::StatusCode::NOT_FOUND, response->message());
+  }
+
+  response->set_message("ok");
+  response->set_mime_type("image/jpeg");
+  response->set_jpeg(jpeg.data(), static_cast<int>(jpeg.size()));
 
   return grpc::Status::OK;
 }
