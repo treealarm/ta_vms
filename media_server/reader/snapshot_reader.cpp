@@ -121,14 +121,24 @@ bool snapshot_reader::connect_current_file(const std::string& source)
   AVStream* stream = m_ctx->streams[m_video_index];
 
   // для seek
-  const int64_t target_ts = av_rescale_q(
+  int64_t safety_ms = 1000; // 0.5–2 сек обычно достаточно
+
+  int64_t target_ts = av_rescale_q(
     m_position.count(),
     AVRational{ 1, 1000 },
     stream->time_base
   );
 
+  int64_t seek_ts = target_ts - av_rescale_q(
+    safety_ms,
+    AVRational{ 1, 1000 },
+    stream->time_base
+  );
 
-  if (!seek_to(target_ts))
+  seek_ts = std::max<int64_t>(seek_ts, 0);
+
+
+  if (!seek_to(seek_ts))
     return false;
 
   if (!decode_until(target_ts))
@@ -334,6 +344,8 @@ bool snapshot_reader::decode_next_frame(std::deque<buffered_frame>& frame_buffer
       continue;
     }
 
+    bool found = false;
+
     while (avcodec_receive_frame(m_decoder_ctx, frame.get()) == 0)
     {
       int64_t pts = frame->best_effort_timestamp;
@@ -503,6 +515,16 @@ bool snapshot_reader::seek_to(int64_t target_ts)
 {
   if (av_seek_frame(m_ctx.get(), m_video_index, target_ts, AVSEEK_FLAG_BACKWARD) < 0)
     return false;
+  
+  //if (!avformat_seek_file(
+  //  m_ctx.get(),
+  //  m_video_index,
+  //  INT64_MIN,
+  //  target_ts,
+  //  INT64_MAX,
+  //  AVSEEK_FLAG_BACKWARD
+  //))
+  //  return false;
 
   avformat_flush(m_ctx.get());
   avcodec_flush_buffers(m_decoder_ctx);
