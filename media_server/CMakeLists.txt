@@ -51,6 +51,8 @@ set(SOURCES
     reader/file_reader.h
     reader/snapshot_reader.cpp
     reader/snapshot_reader.h
+    reader/archive_frame_jpeg_reader.cpp
+    reader/archive_frame_jpeg_reader.h
     
     sink_container/sink_container_impl.h
     sink_container/sink_container_impl.cpp
