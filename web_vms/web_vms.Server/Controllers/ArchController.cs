@@ -1,4 +1,5 @@
 using Google.Protobuf.WellKnownTypes;
+using Grpc.Core;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Control;
 using web_vms.Server.Dto;
@@ -176,6 +177,55 @@ public class ArchController(
     var grpcResponse = await grpcClient.SendPlayerCommandAsync(request, cancellationToken: ct);
 
     return Ok(ApiResponseMapper.ToApiResponse(grpcResponse));
+  }
+
+  [HttpGet("snapshot")]
+  public async Task<IActionResult> GetArchiveSnapshotJpeg(
+    [FromQuery] string cameraId,
+    [FromQuery] DateTime timestamp,
+    CancellationToken ct)
+  {
+    if (string.IsNullOrWhiteSpace(cameraId))
+      return BadRequest("cameraId is required");
+
+    DateTime timestampUtc;
+    if (timestamp.Kind == DateTimeKind.Utc)
+    {
+      timestampUtc = timestamp;
+    }
+    else if (timestamp.Kind == DateTimeKind.Local)
+    {
+      timestampUtc = timestamp.ToUniversalTime();
+    }
+    else
+    {
+      timestampUtc = DateTime.SpecifyKind(timestamp, DateTimeKind.Utc);
+    }
+
+    try
+    {
+      var grpcResponse = await grpcClient.GetArchiveFrameJpegAsync(new ArchiveFrameJpegRequest
+      {
+        CameraId = cameraId,
+        Timestamp = Timestamp.FromDateTime(timestampUtc)
+      }, cancellationToken: ct);
+
+      if (!grpcResponse.Success)
+        return NotFound(new { success = false, message = grpcResponse.Message });
+
+      if (grpcResponse.Jpeg == null || grpcResponse.Jpeg.Length == 0)
+        return NotFound(new { success = false, message = "jpeg frame is empty" });
+
+      var mimeType = string.IsNullOrWhiteSpace(grpcResponse.MimeType)
+        ? "image/jpeg"
+        : grpcResponse.MimeType;
+
+      return File(grpcResponse.Jpeg.ToByteArray(), mimeType);
+    }
+    catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
+    {
+      return NotFound(new { success = false, message = ex.Status.Detail });
+    }
   }
 
   [HttpDelete("players/{clientId}")]
