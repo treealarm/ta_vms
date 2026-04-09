@@ -5,7 +5,12 @@ import InputAdornment from "@mui/material/InputAdornment";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
 
-const PasswordField = ({ pass, setPass }) => {
+interface PasswordProps {
+  pass: string;
+  setPass: (value: string) => void;
+}
+
+const PasswordField = ({ pass, setPass }: PasswordProps) => {
   const [showPassword, setShowPassword] = useState(false);
 
   return (

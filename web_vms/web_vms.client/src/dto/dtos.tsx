@@ -43,7 +43,7 @@ export type PlayerStateDto = {
   camera_id: string
   client_id: string
   position_ts?: string
-  position_ms?: number
+  position_ms?: number|null
 }
 
 export type PlayerCommand = 'play' | 'pause' | 'stop' | 'step' | 'step_back' | 'step_forward'

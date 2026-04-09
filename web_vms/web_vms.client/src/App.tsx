@@ -8,8 +8,7 @@ import {
   CardContent,
   Grid,
   Stack,
-  TextField,
-  Typography
+  TextField
 } from '@mui/material'
 
 import { type CameraStateDto } from './dto/dtos'
