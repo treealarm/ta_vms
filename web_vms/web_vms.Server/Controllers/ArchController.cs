@@ -222,7 +222,7 @@ public class ArchController(
 
       return File(grpcResponse.Jpeg.ToByteArray(), mimeType);
     }
-    catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound)
     {
       return NotFound(new { success = false, message = ex.Status.Detail });
     }
