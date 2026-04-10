@@ -57,5 +57,5 @@ private:
     int64_t last_dts = AV_NOPTS_VALUE;
   };
 
-  std::unordered_map<int, stream_timing_state> m_timing;
+  std::unordered_map<int32_t, stream_timing_state> m_timing;
 };

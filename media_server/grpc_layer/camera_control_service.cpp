@@ -122,7 +122,12 @@ grpc::Status camera_control_service::ListCameras(
   {
     auto* item = response->add_cameras();
     item->set_camera_id(camera.camera_id);
+
+    item->set_recording(camera.is_recording);
+    item->set_web_rtc(camera.is_web_rtc_streaming);
     item->set_rtsp_url(camera.rtsp_url);
+    item->mutable_cred()->set_user(camera.user);
+    item->mutable_cred()->set_pass(camera.pass);
   }
 
   return grpc::Status::OK;
@@ -182,6 +187,8 @@ grpc::Status camera_control_service::GetCameraState(
   response->set_recording(info->is_recording);
   response->set_web_rtc(info->is_web_rtc_streaming);
   response->set_rtsp_url(info->rtsp_url);
+  response->mutable_cred()->set_user(info->user);
+  response->mutable_cred()->set_pass(info->pass);
   return grpc::Status::OK;
 }
 

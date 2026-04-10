@@ -1,9 +1,9 @@
-﻿#include "file_system/recording_storage.h"
+﻿#include <format>
+#include <iostream>
 
+#include "file_system/recording_storage.h"
 #include "segment_writer.h"
 
-#include <format>
-#include <iostream>
 
 segment_writer::segment_writer(
   const std::string& camera_id)
