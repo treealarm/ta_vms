@@ -5,6 +5,7 @@
 
 /data
 cameras.json
+**/build/
 
 # User-specific files
 *.rsuser
