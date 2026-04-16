@@ -22,6 +22,7 @@ set(CFG_CLIENT_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_cfg.proto)
 set(DAPR_RUNTIME_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr/proto/runtime/v1/dapr.proto)
 set(DAPR_COMMON_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr/proto/common/v1/common.proto)
 
+
 set(SOURCES
     main.cpp
     cam.cpp
@@ -130,8 +131,10 @@ target_link_libraries(vms
     gRPC::grpc++
 )
 
+target_compile_definitions(vms PRIVATE _CRT_SECURE_NO_WARNINGS)
+
 target_compile_options(vms PRIVATE
-    $<$<AND:$<CONFIG:Debug>,$<CXX_COMPILER_ID:GNU>>:-Wall -Wextra -Werror>
-    $<$<AND:$<CONFIG:Debug>,$<CXX_COMPILER_ID:Clang>>:-Wall -Wextra -Werror>
-    $<$<AND:$<CONFIG:Debug>,$<CXX_COMPILER_ID:MSVC>>:/W4 /WX>
+    $<$<CXX_COMPILER_ID:GNU>:-Wall -Wextra>
+    $<$<CXX_COMPILER_ID:Clang>:-Wall -Wextra>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4>
 )

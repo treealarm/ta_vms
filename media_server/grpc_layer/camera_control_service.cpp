@@ -36,8 +36,8 @@ google::protobuf::Timestamp from_time_point(
   auto nanos = duration_cast<nanoseconds>(duration - sec);
 
   google::protobuf::Timestamp ts;
-  ts.set_seconds(sec.count());
-  ts.set_nanos(nanos.count());
+  ts.set_seconds(static_cast<int64_t>(sec.count()));
+  ts.set_nanos(static_cast<int32_t>(nanos.count()));
 
   return ts;
 }
@@ -271,8 +271,8 @@ grpc::Status camera_control_service::SetPlayerState(
 
   if (entry->progress)
   {
-    response->set_duration_ms(entry->progress->duration.count());
-    response->set_position_ms(entry->progress->position.count());
+    response->set_duration_ms(static_cast<int32_t>(entry->progress->duration.count()));
+    response->set_position_ms(static_cast<int32_t>(entry->progress->position.count()));
   }
 
   if (entry->mode)

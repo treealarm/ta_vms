@@ -175,7 +175,7 @@ void audio_transcode_processor::process(const std::shared_ptr<media_packet>& med
   }
 
   while (avcodec_receive_frame(m_decoder_ctx, decoded) == 0) {
-    int dst_nb_samples = av_rescale_rnd(
+    int64_t dst_nb_samples = av_rescale_rnd(
       swr_get_delay(m_swr_ctx, m_decoder_ctx->sample_rate) + decoded->nb_samples,
       m_encoder_ctx->sample_rate,
       m_decoder_ctx->sample_rate,
@@ -189,7 +189,7 @@ void audio_transcode_processor::process(const std::shared_ptr<media_packet>& med
     resampled->format = m_encoder_ctx->sample_fmt;
     resampled->sample_rate = m_encoder_ctx->sample_rate;
     resampled->ch_layout = m_encoder_ctx->ch_layout;
-    resampled->nb_samples = dst_nb_samples;
+    resampled->nb_samples = static_cast<int>(dst_nb_samples);
 
     if (av_frame_get_buffer(resampled, 0) < 0) {
       av_frame_free(&resampled);
@@ -199,7 +199,7 @@ void audio_transcode_processor::process(const std::shared_ptr<media_packet>& med
     int samples = swr_convert(
       m_swr_ctx,
       resampled->data,
-      dst_nb_samples,
+      static_cast<int>(dst_nb_samples),
       (const uint8_t**)decoded->data,
       decoded->nb_samples);
 
