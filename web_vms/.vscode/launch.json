@@ -1,0 +1,45 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Backend (.NET)",
+        "type": "coreclr",
+        "request": "launch",
+        "preLaunchTask": "build",
+        "program": "${workspaceFolder}/web_vms.Server/bin/Debug/net8.0/web_vms.Server.dll",
+        "cwd": "${workspaceFolder}/web_vms.Server",
+        "stopAtEntry": false,
+        "env": {
+          "ASPNETCORE_ENVIRONMENT": "Development"
+        }
+      },
+      {
+        "name": "Frontend (Vite)",
+        "type": "node",
+        "request": "launch",
+        "cwd": "${workspaceFolder}/web_vms.client",
+        "runtimeExecutable": "npm",
+        "runtimeArgs": ["run", "dev"],
+        "console": "integratedTerminal",
+        "skipFiles": ["<node_internals>/**"]
+      },
+      {
+        "name": "Frontend Debug (Chromium)",
+        "type": "chrome",
+        "request": "launch",
+        "url": "http://localhost:5173",
+        "webRoot": "${workspaceFolder}/web_vms.client/src"
+      }
+    ],
+    "compounds": [
+      {
+        "name": "Full stack (F5)",
+        "stopAll": true,
+        "configurations": [
+          "Backend (.NET)",
+          "Frontend (Vite)",
+          "Frontend Debug (Chromium)"
+        ]
+      }
+    ]
+  }

@@ -129,3 +129,9 @@ target_link_libraries(vms
     gRPC::grpc
     gRPC::grpc++
 )
+
+target_compile_options(vms PRIVATE
+    $<$<AND:$<CONFIG:Debug>,$<CXX_COMPILER_ID:GNU>>:-Wall -Wextra -Werror>
+    $<$<AND:$<CONFIG:Debug>,$<CXX_COMPILER_ID:Clang>>:-Wall -Wextra -Werror>
+    $<$<AND:$<CONFIG:Debug>,$<CXX_COMPILER_ID:MSVC>>:/W4 /WX>
+)

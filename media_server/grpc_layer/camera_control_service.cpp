@@ -133,8 +133,8 @@ grpc::Status camera_control_service::ListCameras(
   return grpc::Status::OK;
 }
 
-grpc::Status camera_control_service::ListPlayers(grpc::ServerContext* context,
-  const vms::control::ListPlayersRequest* request,
+grpc::Status camera_control_service::ListPlayers(grpc::ServerContext* /*context*/,
+  const vms::control::ListPlayersRequest* /*request*/,
   vms::control::ListPlayersResponse* response)
 {
   for (const auto& camera : m_manager.list_players())
@@ -169,7 +169,7 @@ grpc::Status camera_control_service::SetCameraState(
 }
 
 grpc::Status camera_control_service::GetCameraState(
-  grpc::ServerContext* context,
+  grpc::ServerContext* /*context*/,
   const vms::control::SourceRequest* request,
   vms::control::CameraState* response)
 {
@@ -215,7 +215,7 @@ grpc::Status camera_control_service::SetPlayerState(
 }
 
 ::grpc::Status camera_control_service::SendPlayerCommand(
-  ::grpc::ServerContext* context,
+  ::grpc::ServerContext* /*context*/,
   const ::vms::control::PlayerCommand* request,
   ::vms::control::OperationStatus* response)
 {
@@ -242,7 +242,7 @@ grpc::Status camera_control_service::SetPlayerState(
 }
 
 ::grpc::Status camera_control_service::GetPlayerProgressState(
-  ::grpc::ServerContext* context,
+  ::grpc::ServerContext* /*context*/,
   const ::vms::control::SourceRequest* request,
   ::vms::control::PlayerProgressState* response)
 {
@@ -281,7 +281,7 @@ grpc::Status camera_control_service::SetPlayerState(
   }
   return grpc::Status::OK;
 }
-grpc::Status camera_control_service::GetRecordings(grpc::ServerContext* context,
+grpc::Status camera_control_service::GetRecordings(grpc::ServerContext* /*context*/,
   const vms::control::RecordingsRequest* request,
   vms::control::RecordingsResponse* response)
 {
@@ -312,7 +312,7 @@ grpc::Status camera_control_service::GetRecordings(grpc::ServerContext* context,
 }
 
 grpc::Status camera_control_service::GetArchiveFrameJpeg(
-  grpc::ServerContext* context,
+  grpc::ServerContext* /*context*/,
   const vms::control::ArchiveFrameJpegRequest* request,
   vms::control::ArchiveFrameJpegResponse* response)
 {

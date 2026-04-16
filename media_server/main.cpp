@@ -70,6 +70,9 @@ int main(int argc, char** argv) {
         c.recording(),
         c.web_rtc(),
         error);
+      if (!success) {
+        std::cerr << "Failed to add camera '" << c.camera_id() << "': " << error << "\n";
+      }
     }
   }
 

@@ -16,17 +16,17 @@ file_reader::file_reader(
   std::function<bool(const std::string&)> cb_eof,
   std::function<void(const reader_progress&)> cb_progress
 )
-    : 
-  m_camera_id(std::move(camera_id)),
-  m_start_position_ms(position),
-  m_on_file_end(cb_eof),
-  m_on_progress(cb_progress),
+    :
   m_packet_transcoder({
   .video_codec = AV_CODEC_ID_H264,
   .audio_codec = AV_CODEC_ID_OPUS,
   .allow_hevc_video_passthrough = false,
   .allow_all_audio_passthrough = false
 }),
+  m_camera_id(std::move(camera_id)),
+  m_start_position_ms(position),
+  m_on_file_end(cb_eof),
+  m_on_progress(cb_progress),
   m_cur_video_pos(position)
 {}
 

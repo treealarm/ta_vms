@@ -7,6 +7,12 @@
             "request": "launch",
             "program": "${command:cmake.launchTargetPath}",
             "args": [],
+            "environment": [
+                {
+                    "name": "VMS_STORAGE_BASE_PATH",
+                    "value": "${workspaceFolder}/../../media_storage"
+                }
+            ],
             "cwd": "${workspaceFolder}",
             "stopAtEntry": false,
             "MIMode": "gdb",

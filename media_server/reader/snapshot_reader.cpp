@@ -344,8 +344,6 @@ bool snapshot_reader::decode_next_frame(std::deque<buffered_frame>& frame_buffer
       continue;
     }
 
-    bool found = false;
-
     while (avcodec_receive_frame(m_decoder_ctx, frame.get()) == 0)
     {
       int64_t pts = frame->best_effort_timestamp;
@@ -533,8 +531,6 @@ bool snapshot_reader::seek_to(int64_t target_ts)
 
 bool snapshot_reader::decode_until(int64_t target_pts)
 {
-  AVStream* stream = m_ctx->streams[m_video_index];
-
   while (true)
   {
     if (!decode_next_frame(m_frame_buffer))

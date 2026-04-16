@@ -247,7 +247,10 @@ std::vector<camera_manager::player_info> camera_manager::list_players() const
         entry->camera_id(),
         client_id,
         entry->cur_time(),
-        entry->file_path() ? std::make_optional(*entry->file_path()) : std::nullopt
+        entry->file_path() ? std::make_optional(*entry->file_path()) : std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        std::nullopt
       });
   }
 
@@ -371,7 +374,10 @@ std::optional<camera_manager::player_info>  camera_manager::get_player_state(
     it->second->camera_id(),
     client_id,
     it->second->cur_time(),
-    it->second->file_path() ? std::make_optional(*it->second->file_path()) : std::nullopt
+    it->second->file_path() ? std::make_optional(*it->second->file_path()) : std::nullopt,
+    std::nullopt,
+    std::nullopt,
+    std::nullopt
   };
   pi.start_ts = it->second->get_start_time();
   pi.progress = it->second->get_progress();

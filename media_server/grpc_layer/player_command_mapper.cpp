@@ -7,24 +7,34 @@ std::optional<player_command> map_player_command(const ::vms::control::PlayerCom
   switch (req.cmd_case())
   {
   case proto::CmdCase::kPlay:
-    return player_command
-    {
-      .cmd = player_command::type::play,
-      .speed = req.play().has_speed() ? req.play().speed() : 1.0
-    };
+  {
+    player_command cmd{};
+    cmd.cmd = player_command::type::play;
+    cmd.speed = req.play().has_speed() ? req.play().speed() : 1.0;
+    return cmd;
+  }
 
   case proto::CmdCase::kPause:
-    return player_command{ player_command::type::pause };
+  {
+    player_command cmd{};
+    cmd.cmd = player_command::type::pause;
+    return cmd;
+  }
 
   case proto::CmdCase::kStop:
-    return player_command{ player_command::type::stop };
+  {
+    player_command cmd{};
+    cmd.cmd = player_command::type::stop;
+    return cmd;
+  }
 
   case proto::CmdCase::kStep:
-    return player_command
-    { 
-      .cmd = player_command::type::step,
-      .step_frames = req.step().step_frames()
-    };
+  {
+    player_command cmd{};
+    cmd.cmd = player_command::type::step;
+    cmd.step_frames = req.step().step_frames();
+    return cmd;
+  }
 
   default:
     return std::nullopt;

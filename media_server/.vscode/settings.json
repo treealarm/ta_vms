@@ -1,5 +1,3 @@
 {
-  "cmake.configureSettings": {
-    "CMAKE_TOOLCHAIN_FILE": "/home/toshiba/vcpkg/scripts/buildsystems/vcpkg.cmake"
-  }
+
 }

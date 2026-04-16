@@ -1,7 +1,6 @@
 #pragma once
 
 #include <chrono>
-#include <filesystem>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -10,7 +9,6 @@ extern "C" {
 #include <libavformat/avformat.h>
 }
 
-#include "grpc_layer/dapr_publisher.h"
 #include "interfaces/media_packet.h"
 #include "interfaces/media_sink.h"
 #include "writer/sync_packet_transcoder.h"
@@ -47,7 +45,6 @@ private:
 
   std::chrono::steady_clock::time_point m_segment_start_time;
 
-  dapr_publisher m_dapr_publisher;
   sync_packet_transcoder m_packet_transcoder;
 
   struct stream_timing_state {
@@ -57,5 +54,5 @@ private:
     int64_t last_dts = AV_NOPTS_VALUE;
   };
 
-  std::unordered_map<int32_t, stream_timing_state> m_timing;
+  std::unordered_map<int, stream_timing_state> m_timing;
 };

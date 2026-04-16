@@ -200,14 +200,18 @@ bool arch_player::on_eof(const std::string& file)
   auto ts = m_storage.parse_time(path.filename().string());
   if (!ts)
   {
-    set_player_command({ .cmd = player_command::type::stop });
+    player_command stop_cmd{};
+    stop_cmd.cmd = player_command::type::stop;
+    set_player_command(stop_cmd);
     return false;
   }    
 
   auto info = m_storage.find_offset(camera_id(), *ts, 1);
   if (!info)
   {
-    set_player_command({ .cmd = player_command::type::stop });
+    player_command stop_cmd{};
+    stop_cmd.cmd = player_command::type::stop;
+    set_player_command(stop_cmd);
     return false;
   }
     

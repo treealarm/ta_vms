@@ -36,8 +36,9 @@ public:
   bool is_web_rtc_streaming() { return m_webrtc_output_sink != nullptr; }
 private:
 
-  std::string m_cam_id;
   std::string m_source;
+  std::string m_cam_id;
+
   std::string m_user;
   std::string m_pass;
 

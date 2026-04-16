@@ -180,7 +180,8 @@ std::vector<recording_info> recording_storage::get_recordings(
   int32_t& nearestIndex
 )
 {
-  const int32_t half = static_cast<int32_t>(limit / 2);
+  const size_t half = static_cast<size_t>(limit / 2);
+  const size_t right_target = half + static_cast<size_t>(limit % 2);
   const int32_t maxDays = 30;
 
   auto day_path = make_day_path(camera_id, ts);
@@ -199,12 +200,12 @@ std::vector<recording_info> recording_storage::get_recordings(
       return rec.start_time < value;
     });
 
-  int32_t pos = static_cast<int32_t>(std::distance(curr.begin(), it));
+  size_t pos = static_cast<size_t>(std::distance(curr.begin(), it));
 
   // ближайший внутри дня (если есть)
   if (!curr.empty())
   {
-    if (pos == curr.size())
+    if (pos >= curr.size())
     {
       pos--; // только последний доступен
     }
@@ -231,10 +232,10 @@ std::vector<recording_info> recording_storage::get_recordings(
   std::vector<recording_info> right;
 
   // 2️⃣ заполняем из текущего дня
-  for (int32_t i = pos - 1; i >= 0 && left.size() < half; --i)
-    left.push_back(curr[i]);
+  for (size_t i = pos; i > 0 && left.size() < half; --i)
+    left.push_back(curr[i - 1]);
 
-  for (int32_t i = pos; i < curr.size() && right.size() < half + (limit % 2); ++i)
+  for (size_t i = pos; i < curr.size() && right.size() < right_target; ++i)
     right.push_back(curr[i]);
 
   // 3️⃣ догружаем слева
@@ -242,18 +243,18 @@ std::vector<recording_info> recording_storage::get_recordings(
   while (left.size() < half && dayOffset <= maxDays) {
     auto prev = load_day(shift_day(day_path, -dayOffset));
 
-    for (int i = static_cast<int>(prev.size()) - 1; i >= 0 && left.size() < half; --i)
-      left.push_back(prev[i]);
+    for (size_t i = prev.size(); i > 0 && left.size() < half; --i)
+      left.push_back(prev[i - 1]);
 
     dayOffset++;
   }
 
   // 4️⃣ догружаем справа
   dayOffset = 1;
-  while (right.size() < half + (limit % 2) && dayOffset <= maxDays) {
+  while (right.size() < right_target && dayOffset <= maxDays) {
     auto next = load_day(shift_day(day_path, dayOffset));
 
-    for (int i = 0; i < next.size() && right.size() < half + (limit % 2); ++i)
+    for (size_t i = 0; i < next.size() && right.size() < right_target; ++i)
       right.push_back(next[i]);
 
     dayOffset++;
@@ -271,7 +272,7 @@ std::vector<recording_info> recording_storage::get_recordings(
   // 6️⃣ индекс ближайшего
   nearestIndex = static_cast<int32_t>(left.size());
 
-  if (!result.empty() && nearestIndex >= result.size())
+  if (!result.empty() && nearestIndex >= static_cast<int32_t>(result.size()))
     nearestIndex = static_cast<int32_t>(result.size()) - 1;
 
   if (result.empty())
