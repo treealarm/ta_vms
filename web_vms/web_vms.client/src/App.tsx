@@ -201,8 +201,7 @@ function App() {
                       onRemoveCamera={async (cameraToDelete) => {
                         const result = await dispatch(
                           removeCamera({
-                            cameraId: cameraToDelete.cameraId,
-                            isArchive: cameraToDelete.rtspUrl.trim().length === 0
+                            cameraId: cameraToDelete.cameraId
                           })
                         )
 
