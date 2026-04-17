@@ -1,0 +1,30 @@
+services:
+  vms:
+    image: treealarm/vms:latest
+    ports:
+      - "${GRPC_VMS_PORT}:${GRPC_VMS_PORT}"
+    env_file:
+      - .env
+    depends_on:
+      - mediamtx
+    volumes:
+      - "./data:/data"
+
+  web_vms:
+    image: treealarm/web_vms:latest
+    ports:
+      - "${WEB_VMS_PORT}:${WEB_VMS_PORT}"
+    depends_on:
+      - vms
+    env_file:
+      - .env
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    ports:
+      - "8889:8889"
+      - "8554:8554"
+      - "8000:8000"
+      - "8189:8189/udp"
+    volumes:
+        - ./config/mediamtx.yml:/mediamtx.yml

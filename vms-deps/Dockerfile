@@ -5,6 +5,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV VCPKG_DEFAULT_BINARY_CACHE=/vcpkg/binary-cache
 ENV CMAKE_TOOLCHAIN_FILE=/vcpkg/scripts/buildsystems/vcpkg.cmake
 
+ENV VCPKG_BUILD_TYPE=release
+
 # Установка компиляторов и инструментов
 RUN apt-get update && apt-get install -y \
     software-properties-common curl zip unzip tar git \
