@@ -1,60 +1,82 @@
-﻿using web_vms.Types.Dto;
+﻿using System.Linq;
+using Vms.Cfg;
+using web_vms.Types.Dto;
 
 namespace web_vms
 {
-  using System.Collections.Concurrent;
-
   public class CameraManager : ICameraManager
   {
-    private readonly ConcurrentDictionary<string, CameraStateDto> _cameras = new();
-    private readonly CameraStorage _storage = new();
+    private readonly CfgService.CfgServiceClient _cfgClient;
 
-    public CameraManager()
+    public CameraManager(CfgService.CfgServiceClient cfgClient)
     {
-      // загрузка при старте
-      var data = _storage.Load();
-      foreach (var c in data)
-        _cameras[c.CameraId] = c;
+      _cfgClient = cfgClient;
     }
 
-    public Task<bool> Add(CameraStateDto dto)
+    public async Task<bool> Add(CameraStateDto dto)
     {
-      _cameras[dto.CameraId] = dto;
-      Persist();
-      return Task.FromResult(true);
+      var response = await _cfgClient.AddCameraAsync(ToProto(dto));
+      return response.Success;
     }
 
-    public Task<bool> Remove(string id)
+    public async Task<bool> Remove(string id)
     {
-      var removed = _cameras.TryRemove(id, out _);
-      Persist();
-      return Task.FromResult(removed);
+      var response = await _cfgClient.RemoveCameraAsync(new SourceRequest { SourceId = id });
+      return response.Success;
     }
 
-    public Task<List<CameraStateDto>> List()
+    public async Task<List<CameraStateDto>> List()
     {
-      return Task.FromResult(_cameras.Values.ToList());
+      var response = await _cfgClient.ListCamerasAsync(new ListCamerasRequest());
+      return response.Cameras.Select(ToDto).ToList();
     }
 
-    public Task<bool> SetState(CameraStateDto dto)
+    public async Task<bool> SetState(CameraStateDto dto)
     {
-      if (!_cameras.ContainsKey(dto.CameraId))
-        return Task.FromResult(false);
-
-      _cameras[dto.CameraId] = dto;
-      Persist();
-      return Task.FromResult(true);
+      var response = await _cfgClient.SetCameraStateAsync(ToProto(dto));
+      return response.Success;
     }
 
-    public Task<CameraStateDto?> Get(string id)
+    public async Task<CameraStateDto?> Get(string id)
     {
-      _cameras.TryGetValue(id, out var cam);
-      return Task.FromResult(cam);
+      var response = await _cfgClient.GetCameraStateAsync(new SourceRequest { SourceId = id });
+      return response.Found ? ToDto(response.Camera) : null;
     }
 
-    private void Persist()
+    private static CameraStateDto ToDto(CameraState state) => new()
     {
-      _storage.Save(_cameras.Values);
-    }
+      CameraId = state.CameraId,
+      Recording = state.Recording,
+      WebRtc = state.WebRtc,
+      RtspUrl = state.RtspUrl,
+      Cred = state.Cred == null ? null : new CredentialsDto
+      {
+        User = state.Cred.User,
+        Pass = state.Cred.Pass
+      },
+      OnvifConn = state.OnvifConn == null ? null : new OnvifConnectionDto
+      {
+        ip = state.OnvifConn.Ip,
+        port = state.OnvifConn.Port
+      }
+    };
+
+    private static CameraState ToProto(CameraStateDto dto) => new()
+    {
+      CameraId = dto.CameraId,
+      Recording = dto.Recording,
+      WebRtc = dto.WebRtc,
+      RtspUrl = dto.RtspUrl ?? string.Empty,
+      Cred = dto.Cred == null ? null : new Credentials
+      {
+        User = dto.Cred.User,
+        Pass = dto.Cred.Pass
+      },
+      OnvifConn = dto.OnvifConn == null ? null : new OnvifConnection
+      {
+        Ip = dto.OnvifConn.ip,
+        Port = dto.OnvifConn.port
+      }
+    };
   }
 }

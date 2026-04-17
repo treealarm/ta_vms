@@ -14,6 +14,19 @@
         }
       },
       {
+        "name": "VmsCfg (.NET)",
+        "type": "coreclr",
+        "request": "launch",
+        "preLaunchTask": "build",
+        "program": "${workspaceFolder}/VmsCfg/bin/Debug/net8.0/VmsCfg.dll",
+        "cwd": "${workspaceFolder}/VmsCfg",
+        "stopAtEntry": false,
+        "env": {
+          "ASPNETCORE_ENVIRONMENT": "Development",
+          "CFG_VMS_PORT": "5135"
+        }
+      },
+      {
         "name": "Frontend (Vite)",
         "type": "node",
         "request": "launch",
@@ -36,6 +49,7 @@
         "name": "Full stack (F5)",
         "stopAll": true,
         "configurations": [
+          "VmsCfg (.NET)",
           "Backend (.NET)",
           "Frontend (Vite)",
           "Frontend Debug (Chromium)"

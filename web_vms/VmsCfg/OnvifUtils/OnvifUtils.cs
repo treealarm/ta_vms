@@ -1,18 +1,20 @@
-﻿using web_vms.Types.Dto;
+﻿using System.Linq;
+using OnvifLib;
+using web_vms.Types.Dto;
 
-namespace web_vms
+namespace VmsCfg
 {
-  public class OnvifUtils
+  public static class OnvifUtils
   {
     public static async Task<string> GetStreamUri(CameraStateDto camInfo)
     {
-      if (camInfo == null ||
-        camInfo.OnvifConn == null)
+      if (camInfo == null || camInfo.OnvifConn == null)
       {
         return string.Empty;
       }
+
       var cam = Camera.Create(
-        camInfo.OnvifConn.ip, 
+        camInfo.OnvifConn.ip,
         camInfo.OnvifConn.port,
         camInfo?.Cred?.User ?? string.Empty,
         camInfo?.Cred?.Pass ?? string.Empty);
@@ -27,6 +29,7 @@ namespace web_vms
           return uri;
         }
       }
+
       return string.Empty;
     }
   }

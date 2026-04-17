@@ -27,11 +27,11 @@
 
   <ItemGroup>
     <Protobuf Include="..\..\proto\vms_control.proto" GrpcServices="Client" />
-    <Protobuf Include="..\..\proto\vms_cfg.proto" GrpcServices="Server" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\OnvifLib\OnvifLib.csproj" />
+    <ProjectReference Include="..\VmsCfg\VmsCfg.csproj" />
     <ProjectReference Include="..\web_vms.Types\web_vms.Types.csproj" />
     <ProjectReference Include="..\web_vms.client\web_vms.client.esproj">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>

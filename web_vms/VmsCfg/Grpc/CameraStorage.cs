@@ -1,7 +1,7 @@
 ﻿using System.Text.Json;
 using web_vms.Types.Dto;
 
-namespace web_vms
+namespace VmsCfg
 {
   public class CameraStorage
   {
@@ -14,8 +14,7 @@ namespace web_vms
         return new();
 
       var json = File.ReadAllText(_filePath);
-      return JsonSerializer.Deserialize<List<CameraStateDto>>(json)
-             ?? new();
+      return JsonSerializer.Deserialize<List<CameraStateDto>>(json) ?? new();
     }
 
     public void Save(IEnumerable<CameraStateDto> cameras)
