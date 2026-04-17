@@ -1,6 +1,7 @@
 ﻿using Google.Protobuf.WellKnownTypes;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Control;
+using web_vms.Types.Dto;
 
 namespace web_vms.Server.Controllers
 {

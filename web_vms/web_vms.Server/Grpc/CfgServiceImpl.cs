@@ -1,6 +1,7 @@
 ﻿using Grpc.Core;
 using System.Collections.Concurrent;
 using Vms.Cfg;
+using web_vms.Types.Dto;
 
 namespace web_vms
 {

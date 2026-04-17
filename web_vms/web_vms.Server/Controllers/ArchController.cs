@@ -2,7 +2,7 @@ using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Control;
-using web_vms.Server.Dto;
+using web_vms.Types.Dto;
 
 namespace web_vms;
 

@@ -1,4 +1,4 @@
-﻿namespace web_vms
+﻿namespace web_vms.Types.Dto
 {
   public record CredentialsDto
   {

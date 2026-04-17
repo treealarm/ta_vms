@@ -1,4 +1,4 @@
-namespace web_vms.Server.Dto
+namespace web_vms.Types.Dto
 {
   public record PlayerProgressStateDto
   {

@@ -1,4 +1,6 @@
-﻿namespace web_vms
+﻿using web_vms.Types.Dto;
+
+namespace web_vms
 {
   public interface ICameraManager
   {

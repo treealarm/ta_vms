@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using web_vms.Types.Dto;
 
 namespace web_vms
 {
