@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(PkgConfig REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
 
 pkg_check_modules(FFMPEG REQUIRED
     libavformat
@@ -18,10 +19,9 @@ pkg_check_modules(FFMPEG REQUIRED
 
 set(VMS_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_control.proto)
 set(CFG_CLIENT_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_cfg.proto)
-
+set(LOGGER_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/logger.proto)
 set(DAPR_RUNTIME_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr/proto/runtime/v1/dapr.proto)
 set(DAPR_COMMON_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr/proto/common/v1/common.proto)
-
 
 set(SOURCES
     main.cpp
@@ -38,6 +38,8 @@ set(SOURCES
     grpc_layer/player_command_mapper.cpp
     grpc_layer/cfg_client.h
     grpc_layer/cfg_client.cpp
+    grpc_layer/log_service.h
+    grpc_layer/log_service.cpp
 
     interfaces/av_deleters.h
     interfaces/media_packet.h
@@ -87,6 +89,9 @@ set(SOURCES
 
     file_system/recording_storage.h
     file_system/recording_storage.cpp
+
+    logger/logger.h
+    logger/logger.cpp
 )
 
 add_executable(vms ${SOURCES})
@@ -96,9 +101,8 @@ protobuf_generate(
     IMPORT_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/../proto
     PROTOS
         ${VMS_PROTO_FILE}
-        ${DAPR_RUNTIME_PROTO_FILE}
-        ${DAPR_COMMON_PROTO_FILE}
         ${CFG_CLIENT_PROTO_FILE}
+        ${LOGGER_PROTO_FILE}
 )
 
 protobuf_generate(
@@ -110,6 +114,7 @@ protobuf_generate(
         ${DAPR_RUNTIME_PROTO_FILE}
         ${DAPR_COMMON_PROTO_FILE}
         ${CFG_CLIENT_PROTO_FILE}
+        ${LOGGER_PROTO_FILE}
     PLUGIN protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>
     GENERATE_EXTENSIONS .grpc.pb.cc .grpc.pb.h
 )
@@ -129,6 +134,7 @@ target_link_libraries(vms
     protobuf::libprotobuf
     gRPC::grpc
     gRPC::grpc++
+    spdlog::spdlog
 )
 
 target_compile_definitions(vms PRIVATE _CRT_SECURE_NO_WARNINGS)

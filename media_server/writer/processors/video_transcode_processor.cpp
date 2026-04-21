@@ -1,6 +1,6 @@
 #include "writer/processors/video_transcode_processor.h"
 
-#include <iostream>
+#include <format>
 
 extern "C" {
 #include <libavutil/opt.h>
@@ -8,6 +8,7 @@ extern "C" {
 }
 
 #include "interfaces/media_packet.h"
+#include "logger/logger.h"
 
 namespace {
 avcodec_parameters_ptr alloc_out_params(AVCodecContext* encoder_ctx)
@@ -56,6 +57,7 @@ video_transcode_processor::~video_transcode_processor()
 bool video_transcode_processor::init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base, emit_fn emit)
 {
   if (!codec_parameters) {
+    logger::instance().warning("video_transcode_processor: empty codec parameters");
     return false;
   }
 
@@ -63,32 +65,36 @@ bool video_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
 
   const AVCodec* decoder = avcodec_find_decoder(codec_parameters->codec_id);
   if (!decoder) {
-    std::cerr << "failed to find decoder for input stream\n";
+    logger::instance().error("failed to find decoder for input stream");
     return false;
   }
 
   m_decoder_ctx = avcodec_alloc_context3(decoder);
   if (!m_decoder_ctx) {
+    logger::instance().error("video_transcode_processor: failed to allocate decoder context");
     return false;
   }
 
   if (avcodec_parameters_to_context(m_decoder_ctx, codec_parameters.get()) < 0) {
+    logger::instance().error("video_transcode_processor: failed to initialize decoder context");
     return false;
   }
 
   if (avcodec_open2(m_decoder_ctx, decoder, nullptr) < 0) {
+    logger::instance().error("video_transcode_processor: failed to open decoder");
     return false;
   }
 
   const AVCodec* encoder = avcodec_find_encoder(m_codec_id);
 
   if (!encoder) {
-    std::cerr << "failed to find video encoder for codec id: " << static_cast<int>(m_codec_id) << "\n";
+    logger::instance().error(std::format("failed to find video encoder for codec id: {}", static_cast<int>(m_codec_id)));
     return false;
   }
 
   m_encoder_ctx = avcodec_alloc_context3(encoder);
   if (!m_encoder_ctx) {
+    logger::instance().error("video_transcode_processor: failed to allocate encoder context");
     return false;
   }
 
@@ -105,6 +111,7 @@ bool video_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
   av_opt_set(m_encoder_ctx->priv_data, "tune", "zerolatency", 0);
 
   if (avcodec_open2(m_encoder_ctx, encoder, nullptr) < 0) {
+    logger::instance().error("video_transcode_processor: failed to open encoder");
     return false;
   }
 
@@ -119,11 +126,13 @@ bool video_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
     nullptr,
     nullptr);
   if (!m_sws_ctx) {
+    logger::instance().error("video_transcode_processor: failed to create scaler context");
     return false;
   }
 
   m_scaled_frame = av_frame_alloc();
   if (!m_scaled_frame) {
+    logger::instance().error("video_transcode_processor: failed to allocate scaled frame");
     return false;
   }
 
@@ -132,11 +141,13 @@ bool video_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
   m_scaled_frame->height = m_encoder_ctx->height;
 
   if (av_frame_get_buffer(m_scaled_frame, 32) < 0) {
+    logger::instance().error("video_transcode_processor: failed to allocate scaled frame buffer");
     return false;
   }
 
   m_out_codec_parameters = alloc_out_params(m_encoder_ctx);
   if (!m_out_codec_parameters) {
+    logger::instance().error("video_transcode_processor: failed to build output codec parameters");
     return false;
   }
 

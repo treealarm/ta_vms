@@ -2,7 +2,6 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
-#include <iostream>
 #include <memory>
 #include <string>
 #include <thread>
@@ -11,42 +10,57 @@
 
 #include "grpc_layer/camera_control_service.h"
 #include "grpc_layer/cfg_client.h"
+#include "grpc_layer/log_service.h"
 
-namespace {
-std::atomic<bool> g_stop_requested{false};
+#include "logger/logger.h"
 
-void on_signal(int /*signal*/) {
-  g_stop_requested = true;
-}
+namespace 
+{
+  std::atomic<bool> g_stop_requested{false};
+
+  void on_signal(int /*signal*/) 
+  {
+    g_stop_requested = true;
+  }
 }  // namespace
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv) 
+{
   std::string server_address = "0.0.0.0:50051";
-  if (argc > 1) {
+  if (argc > 1)
+  {
     server_address = argv[1];
-  } else if (const char* grpc_vms_port = std::getenv("GRPC_VMS_PORT")) {
-    if (*grpc_vms_port != '\0') {
+  } 
+  else if (const char* grpc_vms_port = std::getenv("GRPC_VMS_PORT"))
+  {
+    if (*grpc_vms_port != '\0') 
+    {
       server_address = "0.0.0.0:" + std::string(grpc_vms_port);
     }
   }
+
+  logger::instance().init();
 
   std::signal(SIGINT, on_signal);
   std::signal(SIGTERM, on_signal);
 
   camera_manager manager;
   camera_control_service service(manager);
+  log_service logs_service;
 
   grpc::ServerBuilder builder;
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
   builder.RegisterService(&service);
+  builder.RegisterService(&logs_service);
 
   std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
-  if (!server) {
-    std::cerr << "Failed to start gRPC server on " << server_address << "\n";
+  if (!server) 
+  {
+    logger::instance().error(std::format("Failed to start gRPC server on {}", server_address));
     return 1;
   }
 
-  std::cout << "Camera gRPC server is listening on " << server_address << "\n";
+  logger::instance().info(std::format("gRPC server is listening on  {}", server_address));
 
   cfg_client c_client;
   std::vector<vms::cfg::CameraState> cfg_list;
@@ -70,8 +84,9 @@ int main(int argc, char** argv) {
         c.recording(),
         c.web_rtc(),
         error);
-      if (!success) {
-        std::cerr << "Failed to add camera '" << c.camera_id() << "': " << error << "\n";
+      if (!success) 
+      {
+        logger::instance().error(std::format("Failed to add camera '{}': {}", c.camera_id(), error));
       }
     }
   }

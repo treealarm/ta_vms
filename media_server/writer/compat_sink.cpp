@@ -1,8 +1,7 @@
 #include "writer/compat_sink.h"
 
-#include <algorithm>
-
 #include "interfaces/media_packet.h"
+#include "logger/logger.h"
 #include "writer/processors/audio_copy_processor.h"
 #include "writer/processors/audio_transcode_processor.h"
 #include "writer/processors/video_copy_processor.h"
@@ -25,12 +24,14 @@ bool compat_sink::init(const avcodec_parameters_ptr& codec_parameters, AVRationa
   m_processor = create_processor(codec_parameters);
   if (!m_processor) 
   {
+    logger::instance().warning("compat_sink: failed to create stream processor");
     return false;
   }
 
   if (!m_processor->init(codec_parameters, time_base, [this](const std::shared_ptr<media_packet>& media)
     { emit_packet(media); })) 
   {
+    logger::instance().warning("compat_sink: processor initialization failed");
     m_processor.reset();
     return false;
   }
@@ -111,6 +112,7 @@ void compat_sink::on_packet(const std::shared_ptr<media_packet>& media)
   {
     if (!init(media->codec_parameters, media->time_base)) 
     {
+      logger::instance().warning("compat_sink: reinitialization failed, dropping packet");
       return;
     }
 
@@ -120,6 +122,7 @@ void compat_sink::on_packet(const std::shared_ptr<media_packet>& media)
 
   if (!m_processor)
   {
+    logger::instance().warning("compat_sink: processor is not initialized, dropping packet");
     return;
   }
 

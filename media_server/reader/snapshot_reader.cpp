@@ -1,8 +1,9 @@
 #include "snapshot_reader.h"
 
-#include <iostream>
+#include <format>
 
 #include "interfaces/av_deleters.h"
+#include "logger/logger.h"
 
 snapshot_reader::snapshot_reader(std::chrono::milliseconds position)
   : m_position(position)
@@ -72,7 +73,7 @@ bool snapshot_reader::connect_current_file(const std::string& source)
   AVFormatContext* ctx = nullptr;
   if (avformat_open_input(&ctx, source.c_str(), nullptr, nullptr) < 0)
   {
-    std::cerr << "Failed to open file source: " << source << "\n";
+    logger::instance().error(std::format("Failed to open file source: {}", source));
     return false;
   }
 
@@ -80,7 +81,7 @@ bool snapshot_reader::connect_current_file(const std::string& source)
 
   if (avformat_find_stream_info(m_ctx.get(), nullptr) < 0)
   {
-    std::cerr << "Failed to get stream info\n";
+    logger::instance().error("Failed to get stream info");
     disconnect();
     return false;
   }
@@ -104,7 +105,7 @@ bool snapshot_reader::connect_current_file(const std::string& source)
 
   if (m_video_index < 0)
   {
-    std::cerr << "No video stream\n";
+    logger::instance().error("No video stream");
     disconnect();
     return false;
   }
@@ -112,7 +113,7 @@ bool snapshot_reader::connect_current_file(const std::string& source)
   // --- НОВОЕ: init decoder ---
   if (!init_decoder())
   {
-    std::cerr << "Failed to init decoder\n";
+    logger::instance().error("Failed to init decoder");
     disconnect();
     return false;
   }
@@ -139,17 +140,24 @@ bool snapshot_reader::connect_current_file(const std::string& source)
 
 
   if (!seek_to(seek_ts))
+  {
+    logger::instance().error(std::format("Failed to seek file source: {}:{}", source, seek_ts));
     return false;
+  }
+    
 
   if (!decode_until(target_ts))
+  {
+    logger::instance().error(std::format("Failed to decode_until file source: {}:{}", source, seek_ts));
     return false;
+  }    
 
   m_current_index = m_frame_buffer.size() - 1;
 
   // --- НОВОЕ: encoder init после первого кадра ---
   if (!init_encoder())
   {
-    std::cerr << "Failed to init encoder\n";
+    logger::instance().error("Failed to init encoder");
     disconnect();
     return false;
   }
@@ -157,7 +165,7 @@ bool snapshot_reader::connect_current_file(const std::string& source)
   // --- НОВОЕ: сформировать первый snapshot ---
   if (!encode_current_frame())
   {
-    std::cerr << "Failed to encode first frame\n";
+    logger::instance().error("Failed to encode first frame");
     disconnect();
     return false;
   }

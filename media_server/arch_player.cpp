@@ -1,5 +1,6 @@
 ﻿#include "arch_player.h"
 
+#include <format>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -9,6 +10,7 @@
 
 #include "reader/file_reader.h"
 #include "interfaces/web_rtc_utils.h"
+#include "logger/logger.h"
 
 arch_player::arch_player(
   const std::string& client_id,
@@ -32,6 +34,11 @@ arch_player::~arch_player()
   shutdown();
 }
 
+std::shared_ptr<reader> arch_player::get_reader()
+{
+  std::scoped_lock lock(m_data_mutex);
+  return m_reader;
+}
 // --- очередь задач ---
 void arch_player::post_task(std::function<void()> task)
 {
@@ -66,7 +73,7 @@ void arch_player::step(int32_t steps)
 {
   post_task([this, steps]()
     {
-      auto reader = m_reader;
+      auto reader = get_reader();
 
       if (!reader)
         return;
@@ -82,7 +89,7 @@ void arch_player::set_player_mode()
 
   post_task([this, mode, speed]()
     {
-      auto reader = m_reader;
+      auto reader = get_reader();
 
       if (!reader)
         return;
@@ -158,10 +165,12 @@ bool arch_player::set_player_command(const player_command& cmd)
 }
 
 bool arch_player::set_state(
-  const std::chrono::system_clock::time_point& start_time,
+  const std::optional <std::chrono::system_clock::time_point> start_time_opt,
   const std::string& camera_id,
   std::optional<std::chrono::milliseconds> position_in)
 {
+  std::chrono::system_clock::time_point start_time =
+    start_time_opt.value_or(std::chrono::system_clock::now());
   // кидаем задачу в очередь
   post_task([this, start_time, camera_id, position_in]()
     {
@@ -175,6 +184,9 @@ bool arch_player::set_state(
       auto rec = m_storage.find_nearest(camera_id, start_time);
       if (!rec)
       {
+        logger::instance().warning(std::format(
+          "arch_player: no archive segment found for camera '{}' at requested time",
+          camera_id));
         return;
       }
       auto pos_shift = 
@@ -186,6 +198,9 @@ bool arch_player::set_state(
 
       if (!open_file_reader(rec->file_path.string(), position))
       {
+        logger::instance().warning(std::format(
+          "arch_player: failed to open archive reader for file '{}'",
+          rec->file_path.string()));
         return;
       }
     });
@@ -200,6 +215,9 @@ bool arch_player::on_eof(const std::string& file)
   auto ts = m_storage.parse_time(path.filename().string());
   if (!ts)
   {
+    logger::instance().warning(std::format(
+      "arch_player: failed to parse timestamp from file name '{}', stopping playback",
+      path.filename().string()));
     player_command stop_cmd{};
     stop_cmd.cmd = player_command::type::stop;
     set_player_command(stop_cmd);
@@ -209,6 +227,9 @@ bool arch_player::on_eof(const std::string& file)
   auto info = m_storage.find_offset(camera_id(), *ts, 1);
   if (!info)
   {
+    logger::instance().warning(std::format(
+      "arch_player: no next segment after '{}', stopping playback",
+      file));
     player_command stop_cmd{};
     stop_cmd.cmd = player_command::type::stop;
     set_player_command(stop_cmd);
@@ -221,6 +242,9 @@ bool arch_player::on_eof(const std::string& file)
       std::string error;
       if (!open_file_reader(info->file_path.string(), std::chrono::milliseconds(0)))
       {
+        logger::instance().warning(std::format(
+          "arch_player: failed to open next segment '{}'",
+          info->file_path.string()));
         return;
       }      
     });
@@ -255,6 +279,9 @@ bool arch_player::open_file_reader(
 
   if (!playback_reader->open(file_path))
   {
+    logger::instance().warning(std::format(
+      "arch_player: file reader open failed for '{}'",
+      file_path));
     return false;
   }
 
@@ -267,7 +294,11 @@ bool arch_player::open_file_reader(
     m_start_time = *ts;
   }
 
-  m_reader = playback_reader;
+  {
+    std::scoped_lock lock(m_data_mutex);
+    m_reader = playback_reader;
+  }
+  
   if (!start_web_rtc(playback_reader))
     return false;
 
@@ -290,6 +321,7 @@ void arch_player::shutdown()
 {
   std::shared_ptr<reader> reader_copy;
   {
+    std::scoped_lock lock(m_data_mutex);
     reader_copy = m_reader;
     m_reader.reset();
   }
@@ -312,6 +344,7 @@ bool arch_player::start_web_rtc(std::shared_ptr<reader> reader)
   }
   else
   {
+    logger::instance().warning("arch_player: start_web_rtc called with null reader");
     return false;
   }
 

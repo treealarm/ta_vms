@@ -2,10 +2,8 @@
 
 #include <atomic>
 #include <thread>
-#include <vector>
 #include <memory>
 #include <mutex>
-#include <filesystem>
 #include <unordered_set>
 #include <functional>
 #include <chrono>

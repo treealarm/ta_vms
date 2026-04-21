@@ -1,6 +1,9 @@
 #include "writer/sync_packet_transcoder.h"
 
+#include <format>
+
 #include "av_utils/need_reinit.h"
+#include "logger/logger.h"
 #include "writer/processors/audio_copy_processor.h"
 #include "writer/processors/audio_transcode_processor.h"
 #include "writer/processors/video_copy_processor.h"
@@ -77,6 +80,7 @@ bool sync_packet_transcoder::init_state(processor_state& state, const std::share
   auto processor = create_processor(media->codec_parameters);
   if (!processor)
   {
+    logger::instance().warning("sync_packet_transcoder: failed to create processor for stream");
     return false;
   }
 
@@ -94,6 +98,10 @@ bool sync_packet_transcoder::init_state(processor_state& state, const std::share
       m_pending_packets.push_back(out_media);
     }))
   {
+    logger::instance().warning(std::format(
+      "sync_packet_transcoder: processor init failed for stream {} media_type {}",
+      media->stream_index,
+      static_cast<int>(media->media_type)));
     return false;
   }
 
@@ -138,6 +146,9 @@ std::shared_ptr<media_packet> sync_packet_transcoder::transcode_packet(const std
 
         if (!init_state(*state, media))
         {
+          logger::instance().warning(std::format(
+            "sync_packet_transcoder: dropping packet, failed to initialize processor for stream {}",
+            media->stream_index));
           return nullptr;
         }
       }

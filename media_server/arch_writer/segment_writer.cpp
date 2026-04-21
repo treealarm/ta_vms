@@ -2,8 +2,7 @@
 
 #include "segment_writer.h"
 
-#include <format>
-#include <iostream>
+#include "logger/logger.h"
 
 segment_writer::segment_writer(
   const std::string& camera_id)
@@ -63,7 +62,7 @@ void segment_writer::open_new_segment()
 
   if (m_input_streams.empty())
   {
-    std::cerr << "segment writer has no registered streams\n";
+    logger::instance().warning("segment writer has no registered streams");
     return;
   }
 
@@ -79,7 +78,7 @@ void segment_writer::open_new_segment()
   if (avformat_alloc_output_context2(
     &ctx, nullptr, nullptr, path.string().c_str()) < 0)
   {
-    std::cerr << "avformat_alloc_output_context2 failed\n";
+    logger::instance().error("avformat_alloc_output_context2 failed");
     return;
   }
 
@@ -92,7 +91,7 @@ void segment_writer::open_new_segment()
     AVStream* out_stream = avformat_new_stream(m_ctx.get(), nullptr);
     if (!out_stream)
     {
-      std::cerr << "avformat_new_stream failed\n";
+      logger::instance().error("avformat_new_stream failed");
       m_ctx.reset();
       m_output_streams.clear();
       return;
@@ -100,7 +99,7 @@ void segment_writer::open_new_segment()
 
     if (avcodec_parameters_copy(out_stream->codecpar, stream_info.codec_parameters.get()) < 0)
     {
-      std::cerr << "avcodec_parameters_copy failed\n";
+      logger::instance().error("avcodec_parameters_copy failed");
       m_ctx.reset();
       m_output_streams.clear();
       return;
@@ -116,7 +115,7 @@ void segment_writer::open_new_segment()
       path.string().c_str(),
       AVIO_FLAG_WRITE) < 0)
     {
-      std::cerr << "avio_open failed\n";
+      logger::instance().error("avio_open failed");
       m_ctx.reset();
       m_output_streams.clear();
       return;
@@ -125,7 +124,7 @@ void segment_writer::open_new_segment()
 
   if (avformat_write_header(m_ctx.get(), nullptr) < 0)
   {
-    std::cerr << "avformat_write_header failed\n";
+    logger::instance().error("avformat_write_header failed");
     avio_closep(&m_ctx->pb);
     m_ctx.reset();
     m_output_streams.clear();
@@ -227,7 +226,7 @@ void segment_writer::write_packet(const std::shared_ptr<media_packet>& in_media)
   pkt->stream_index = out_stream->index;
 
   if (av_interleaved_write_frame(m_ctx.get(), pkt) < 0)
-    std::cerr << "write_frame failed\n";
+    logger::instance().error("write_frame failed");
 }
 
 void segment_writer::close()

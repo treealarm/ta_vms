@@ -43,7 +43,7 @@ public:
   arch_player& operator=(arch_player&&) noexcept = default;
 
   bool set_state(
-    const std::chrono::system_clock::time_point& start_time,
+    const std::optional <std::chrono::system_clock::time_point> start_time,
     const std::string& camera_id,
     std::optional<std::chrono::milliseconds> position);
 
@@ -78,10 +78,10 @@ public:
   {
     return m_mode;
   }
-  void shutdown();
+  
 
 private:
- 
+  void shutdown();
   bool open_file_reader(const std::string& file_path, std::chrono::milliseconds position);
 
   bool start_web_rtc(std::shared_ptr<reader> reader);
@@ -95,6 +95,7 @@ private:
 
   void worker_loop();
   void post_task(std::function<void()> task);
+  std::shared_ptr<reader> get_reader();
 
   std::string m_client_id;
   std::string m_camera_id;

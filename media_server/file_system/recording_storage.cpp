@@ -323,10 +323,21 @@ std::filesystem::path recording_storage::file_ext()
   return k_ts_ext;
 }
 
+std::string recording_storage::timepoint_to_utc_string(std::chrono::system_clock::time_point tp)
+{
+  using namespace std::chrono;
+
+  zoned_time utc{ "UTC", tp };
+
+  return format("{:%Y-%m-%d %H:%M:%S}", utc);
+}
+
 std::filesystem::path recording_storage::resolve_storage_base_path()
 {
-  if (const char* value = std::getenv("VMS_STORAGE_BASE_PATH")) {
-    if (value[0] != '\0') {
+  if (const char* value = std::getenv("VMS_STORAGE_BASE_PATH"))
+  {
+    if (value[0] != '\0') 
+    {
       return value;
     }
   }

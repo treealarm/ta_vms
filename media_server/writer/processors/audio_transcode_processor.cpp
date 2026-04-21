@@ -1,6 +1,6 @@
 ﻿#include "writer/processors/audio_transcode_processor.h"
 
-#include <iostream>
+#include <format>
 
 extern "C" {
 #include <libavutil/audio_fifo.h>
@@ -8,6 +8,7 @@ extern "C" {
 }
 
 #include "interfaces/media_packet.h"
+#include "logger/logger.h"
 
 // ---- static helpers ----
 avcodec_parameters_ptr audio_transcode_processor::alloc_out_params(AVCodecContext* encoder_ctx)
@@ -73,6 +74,7 @@ audio_transcode_processor::~audio_transcode_processor()
 bool audio_transcode_processor::init(const avcodec_parameters_ptr& codec_parameters, AVRational, emit_fn emit)
 {
   if (!codec_parameters) {
+    logger::instance().warning("audio_transcode_processor: empty codec parameters");
     return false;
   }
 
@@ -80,17 +82,19 @@ bool audio_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
 
   const AVCodec* decoder = avcodec_find_decoder(codec_parameters->codec_id);
   if (!decoder) {
-    std::cerr << "failed to find audio decoder for input stream\n";
+    logger::instance().error("failed to find audio decoder for input stream");
     return false;
   }
 
   m_decoder_ctx = avcodec_alloc_context3(decoder);
   if (!m_decoder_ctx) {
+    logger::instance().error("audio_transcode_processor: failed to allocate decoder context");
     return false;
   }
 
   if (avcodec_parameters_to_context(m_decoder_ctx, codec_parameters.get()) < 0 ||
       avcodec_open2(m_decoder_ctx, decoder, nullptr) < 0) {
+    logger::instance().error("audio_transcode_processor: failed to initialize decoder");
     return false;
   }
 
@@ -98,18 +102,18 @@ bool audio_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
 
   if (!encoder) 
   {
-    
-    std::cerr << "failed to find audio encoder for codec id: " << static_cast<int>(m_codec_id) << std::endl;
+    logger::instance().error(std::format("failed to find audio encoder for codec id: {}", static_cast<int>(m_codec_id)));
 
     if (m_codec_id == AV_CODEC_ID_OPUS)
     {
-      std::cerr << "(FFmpeg must be built with --enable - libopus)" << std::endl;
+      logger::instance().error("(FFmpeg must be built with --enable-libopus)");
     }
     return false;
   }
 
   m_encoder_ctx = avcodec_alloc_context3(encoder);
   if (!m_encoder_ctx) {
+    logger::instance().error("audio_transcode_processor: failed to allocate encoder context");
     return false;
   }
 
@@ -126,6 +130,7 @@ bool audio_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
   m_encoder_ctx->bit_rate = 128000;
 
   if (avcodec_open2(m_encoder_ctx, encoder, nullptr) < 0) {
+    logger::instance().error("audio_transcode_processor: failed to initialize encoder");
     return false;
   }
 
@@ -135,6 +140,7 @@ bool audio_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
     1024);
 
   if (!m_audio_fifo) {
+    logger::instance().error("audio_transcode_processor: failed to allocate audio fifo");
     return false;
   }
 
@@ -147,11 +153,13 @@ bool audio_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
                           m_decoder_ctx->sample_rate,
                           0,
                           nullptr) < 0 || !m_swr_ctx || swr_init(m_swr_ctx) < 0) {
+    logger::instance().error("audio_transcode_processor: failed to initialize resampler");
     return false;
   }
 
   m_out_codec_parameters = alloc_out_params(m_encoder_ctx);
   if (!m_out_codec_parameters) {
+    logger::instance().error("audio_transcode_processor: failed to build output codec parameters");
     return false;
   }
 
@@ -175,7 +183,7 @@ void audio_transcode_processor::process(const std::shared_ptr<media_packet>& med
   }
 
   while (avcodec_receive_frame(m_decoder_ctx, decoded) == 0) {
-    int64_t dst_nb_samples = av_rescale_rnd(
+    int dst_nb_samples = av_rescale_rnd(
       swr_get_delay(m_swr_ctx, m_decoder_ctx->sample_rate) + decoded->nb_samples,
       m_encoder_ctx->sample_rate,
       m_decoder_ctx->sample_rate,
@@ -189,7 +197,7 @@ void audio_transcode_processor::process(const std::shared_ptr<media_packet>& med
     resampled->format = m_encoder_ctx->sample_fmt;
     resampled->sample_rate = m_encoder_ctx->sample_rate;
     resampled->ch_layout = m_encoder_ctx->ch_layout;
-    resampled->nb_samples = static_cast<int>(dst_nb_samples);
+    resampled->nb_samples = dst_nb_samples;
 
     if (av_frame_get_buffer(resampled, 0) < 0) {
       av_frame_free(&resampled);
@@ -199,7 +207,7 @@ void audio_transcode_processor::process(const std::shared_ptr<media_packet>& med
     int samples = swr_convert(
       m_swr_ctx,
       resampled->data,
-      static_cast<int>(dst_nb_samples),
+      dst_nb_samples,
       (const uint8_t**)decoded->data,
       decoded->nb_samples);
 

@@ -1,14 +1,10 @@
-﻿#include <algorithm>
-#include <ctime>
-#include <filesystem>
-#include <iomanip>
-#include <iostream>
-#include <optional>
-#include <sstream>
+﻿#include <ctime>
+#include <format>
 #include <utility>
 
 #include "file_reader.h"
 #include "interfaces/av_deleters.h"
+#include "logger/logger.h"
 
 file_reader::file_reader(
   std::string camera_id,
@@ -135,7 +131,7 @@ bool file_reader::connect_current_file()
 
   if (avformat_open_input(&ctx, get_source().c_str(), nullptr, nullptr) < 0)
   {
-    std::cerr << "Failed to open file source: " << get_source() << "\n";
+    logger::instance().error(std::format("Failed to open file source: {}", get_source()));
     return false;
   }
 
@@ -143,7 +139,7 @@ bool file_reader::connect_current_file()
 
   if (avformat_find_stream_info(m_ctx.get(), nullptr) < 0)
   {
-    std::cerr << "Failed to get stream info\n";
+    logger::instance().error("Failed to get stream info");
     disconnect();
     return false;
   }
@@ -170,7 +166,7 @@ bool file_reader::connect_current_file()
 
   if (m_video_index < 0)
   {
-    std::cerr << "No video stream\n";
+    logger::instance().error("No video stream");
     disconnect();
     return false;
   }
@@ -179,11 +175,11 @@ bool file_reader::connect_current_file()
   {
     if (!seek_to_position(m_start_position_ms))
     {
-      std::cerr << "seek_to_position failed\n";
+      logger::instance().error("seek_to_position failed");
     }
   }
 
-  std::cerr << "File source opened: " << get_source() << "\n";
+  logger::instance().info(std::format("File source opened: {}", get_source()));
   return true;
 }
 
@@ -400,7 +396,7 @@ void file_reader::emit_paused_snapshots()
     m_snapshot_reader = std::make_unique<snapshot_reader>(m_cur_video_pos);
     if (!m_snapshot_reader->open(get_source()))
     {
-      std::cerr << "snapshot_reader open failed for source: " << get_source() << "\n";
+      logger::instance().error(std::format("snapshot_reader open failed for source: {}", get_source()));
     }
   }
 
@@ -471,7 +467,7 @@ bool file_reader::seek_to_position(std::chrono::milliseconds position)
 
   if (av_seek_frame(m_ctx.get(), m_video_index, target_ts, AVSEEK_FLAG_BACKWARD) < 0)
   {
-    std::cerr << "seek failed\n";
+    logger::instance().error("seek failed");
     return false;
   }
 

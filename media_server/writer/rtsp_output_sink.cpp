@@ -1,7 +1,8 @@
-﻿#include <iostream>
+﻿#include <format>
 
 #include "writer/rtsp_output_sink.h"
 #include "av_utils/need_reinit.h"
+#include "logger/logger.h"
 
 
 
@@ -34,7 +35,7 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
 
   if (avformat_alloc_output_context2(&ctx, nullptr, "rtsp", m_rtsp_url.c_str()) < 0 || !ctx) 
   {
-    std::cerr << "failed to allocate rtsp output context\n";
+    logger::instance().error("failed to allocate rtsp output context");
     return false;
   }
   m_ctx.reset(ctx);
@@ -49,13 +50,13 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
 
     AVStream* out_stream = avformat_new_stream(m_ctx.get(), nullptr);
     if (!out_stream) {
-      std::cerr << "failed to create rtsp output stream\n";
+      logger::instance().error("failed to create rtsp output stream");
       close();
       return false;
     }
 
     if (avcodec_parameters_copy(out_stream->codecpar, stream.codec_parameters.get()) < 0) {
-      std::cerr << "failed to copy codec parameters\n";
+      logger::instance().error("failed to copy codec parameters");
       close();
       return false;
     }
@@ -81,7 +82,7 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
   av_dict_set(&opts, "max_interleave_delta", "1000000", 0);//10000000 (10 seconds) 1000000 (1 seconds)
 
   if (avformat_write_header(m_ctx.get(), &opts) < 0) {
-    std::cerr << "failed to write rtsp header\n";
+    logger::instance().error("failed to write rtsp header");
     av_dict_free(&opts);
     close();
     return false;
@@ -268,18 +269,19 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
 
   if (pkt->pts < 0)
   {
-    std::cerr << "rtsp output sink: pkt->pts < 0\n";
+    logger::instance().warning("rtsp output sink: pkt->pts < 0");
   }
   // --- 5. Запись пакета ---
   if (av_interleaved_write_frame(m_ctx.get(), pkt) < 0) {
     ++m_consecutive_write_errors;
 
     constexpr int critical_write_error_threshold = 3;
-    std::cerr << "failed to write packet to rtsp output (consecutive errors: "
-      << m_consecutive_write_errors << ")\n";
+    logger::instance().error(std::format(
+      "failed to write packet to rtsp output (consecutive errors: {})",
+      m_consecutive_write_errors));
 
     if (m_consecutive_write_errors >= critical_write_error_threshold) {
-      std::cerr << "rtsp output sink watchdog: closing broken output context for reinit\n";
+      logger::instance().warning("rtsp output sink watchdog: closing broken output context for reinit");
       close();
     }
     return;

@@ -1,10 +1,11 @@
 #include "cfg_client.h"
 
 #include <cstdlib>
-#include <iostream>
+#include <format>
 
 #include <grpcpp/grpcpp.h>
 
+#include "logger/logger.h"
 
 namespace {
 std::string read_env_or_default(const char* key, const char* fallback)
@@ -43,8 +44,7 @@ bool cfg_client::list_cameras(std::vector<vms::cfg::CameraState>& result)
 
   if (!status.ok())
   {
-    std::cerr << "ListCameras RPC failed: "
-      << status.error_message() << std::endl;
+    logger::instance().error(std::format("ListCameras RPC failed: {}", status.error_message()));
 
     return false;
   }
@@ -77,8 +77,7 @@ bool cfg_client::get_uri(const std::string& cam_id, std::string& uri)
 
   if (!status.ok())
   {
-    std::cerr << "GetCameraOnvifUri RPC failed: "
-      << status.error_message() << std::endl;
+    logger::instance().error(std::format("GetCameraOnvifUri RPC failed: {}", status.error_message()));
 
     return false;
   }

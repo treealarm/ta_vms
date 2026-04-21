@@ -55,17 +55,9 @@ public:
 
   std::optional<std::chrono::system_clock::time_point> parse_time(
     const std::string& filename);
-  static inline std::string timepoint_to_utc_string(std::chrono::system_clock::time_point tp)
-  {
-    using namespace std::chrono;
-
-    zoned_time utc{ "UTC", tp };
-
-    return format("{:%Y-%m-%d %H:%M:%S}", utc);
-  }
+  static std::string timepoint_to_utc_string(std::chrono::system_clock::time_point tp);
+  static std::filesystem::path resolve_storage_base_path();
 private:
-  std::filesystem::path resolve_storage_base_path();
-
   std::vector<recording_info> load_day(
     const std::filesystem::path& day_path);
 

@@ -1,9 +1,9 @@
 #include <chrono>
-#include <iostream>
 #include <thread>
 #include "interfaces/av_deleters.h"
 #include "rtsp_reader.h"
 #include "grpc_layer/cfg_client.h"
+#include "logger/logger.h"
 
 namespace {
 constexpr auto kWatchdogInterval = std::chrono::seconds(5);
@@ -71,7 +71,7 @@ bool rtsp_reader::connect()
 
   if (avformat_open_input(&ctx, final_url.c_str(), nullptr, &opts) < 0)
   {
-    std::cerr << "Failed to open RTSP\n";
+    logger::instance().error("Failed to open RTSP");
     av_dict_free(&opts);
     avformat_close_input(&ctx);
     return false;
@@ -83,7 +83,7 @@ bool rtsp_reader::connect()
 
   if (avformat_find_stream_info(m_ctx.get(), nullptr) < 0)
   {
-    std::cerr << "Failed to get stream info\n";
+    logger::instance().error("Failed to get stream info");
     disconnect();
     return false;
   }
@@ -106,12 +106,12 @@ bool rtsp_reader::connect()
 
   if (m_video_index < 0) 
   {
-    std::cerr << "No video stream\n";
+    logger::instance().error("No video stream");
     disconnect();
     return false;
   }
 
-  std::cerr << "RTSP connected\n";
+  logger::instance().info("RTSP connected");
   return true;
 }
 
@@ -176,7 +176,7 @@ void rtsp_reader::read_loop()
       const auto now = std::chrono::steady_clock::now();
       if (now - last_frame_at >= kWatchdogInterval)
       {
-        std::cerr << "RTSP reader watchdog: reconnecting due to read error\n";
+        logger::instance().warning("RTSP reader watchdog: reconnecting due to read error");
         disconnect();
       }
       continue;

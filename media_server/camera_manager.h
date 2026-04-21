@@ -62,7 +62,7 @@ public:
   bool remove_arch_player(const std::string& client_id, std::string& error);
   bool set_player_state(const std::string& client_id,
     const std::string& camera_id,
-    const std::chrono::system_clock::time_point& start_time,
+    const std::optional <std::chrono::system_clock::time_point> start_time,
     std::optional<std::chrono::milliseconds> position,
     std::string& error);
 

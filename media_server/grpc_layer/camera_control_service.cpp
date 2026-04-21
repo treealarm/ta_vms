@@ -36,8 +36,8 @@ google::protobuf::Timestamp from_time_point(
   auto nanos = duration_cast<nanoseconds>(duration - sec);
 
   google::protobuf::Timestamp ts;
-  ts.set_seconds(static_cast<int64_t>(sec.count()));
-  ts.set_nanos(static_cast<int32_t>(nanos.count()));
+  ts.set_seconds(sec.count());
+  ts.set_nanos(nanos.count());
 
   return ts;
 }
@@ -78,13 +78,56 @@ grpc::Status camera_control_service::AddArchPlayer(
     return ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "wrong client_id");
   }
 
-  const bool success = m_manager.add_arch_player(
+  bool success = m_manager.add_arch_player(
     request->client_id(),
     request->camera_id(),
     error);
 
+  if (success)
+  {
+    auto pos = request->has_position_ms() ?
+      std::make_optional<std::chrono::milliseconds>(request->position_ms()) :
+      std::nullopt;
+
+    auto position_ts = request->has_position_ts() ?
+      std::optional <std::chrono::system_clock::time_point>(to_time_point(request->position_ts())) :
+      std::nullopt;
+
+    success = m_manager.set_player_state(
+      request->client_id(),
+      request->camera_id(),
+      position_ts,
+      pos,
+      error);
+  }
   response->set_success(success);
   response->set_message(success ? "archive player added" : error);
+  return grpc::Status::OK;
+}
+
+grpc::Status camera_control_service::SetPlayerState(
+  grpc::ServerContext* /*context*/,
+  const vms::control::PlayerState* request,
+  vms::control::OperationStatus* response)
+{
+  std::string error;
+  auto pos = request->has_position_ms() ?
+    std::make_optional<std::chrono::milliseconds>(request->position_ms()) :
+    std::nullopt;
+
+  auto position_ts = request->has_position_ts() ?
+    std::optional <std::chrono::system_clock::time_point>(to_time_point(request->position_ts())) :
+    std::nullopt;
+
+  const bool success = m_manager.set_player_state(
+    request->client_id(),
+    request->camera_id(),
+    position_ts,
+    pos,
+    error);
+
+  response->set_success(success);
+  response->set_message(success ? "archive player state updated" : error);
   return grpc::Status::OK;
 }
 
@@ -128,21 +171,6 @@ grpc::Status camera_control_service::ListCameras(
     item->set_rtsp_url(camera.rtsp_url);
     item->mutable_cred()->set_user(camera.user);
     item->mutable_cred()->set_pass(camera.pass);
-  }
-
-  return grpc::Status::OK;
-}
-
-grpc::Status camera_control_service::ListPlayers(grpc::ServerContext* /*context*/,
-  const vms::control::ListPlayersRequest* /*request*/,
-  vms::control::ListPlayersResponse* response)
-{
-  for (const auto& camera : m_manager.list_players())
-  {
-    auto* item = response->add_players();
-    item->set_camera_id(camera.camera_id);
-    item->set_client_id(camera.client_id);
-    *item->mutable_position_ts() = from_time_point(camera.position_ts);
   }
 
   return grpc::Status::OK;
@@ -192,28 +220,6 @@ grpc::Status camera_control_service::GetCameraState(
   return grpc::Status::OK;
 }
 
-grpc::Status camera_control_service::SetPlayerState(
-    grpc::ServerContext* /*context*/,
-    const vms::control::PlayerState* request,
-    vms::control::OperationStatus* response) 
-{  
-  std::string error;
-  auto pos = request->has_position_ms() ? 
-    std::make_optional<std::chrono::milliseconds>(request->position_ms()) :
-    std::nullopt;
-
-  const bool success = m_manager.set_player_state(
-    request->client_id(),
-    request->camera_id(),
-    to_time_point(request->position_ts()),
-    pos,
-    error);
-
-  response->set_success(success);
-  response->set_message(success ? "archive player state updated" : error);
-  return grpc::Status::OK;
-}
-
 ::grpc::Status camera_control_service::SendPlayerCommand(
   ::grpc::ServerContext* /*context*/,
   const ::vms::control::PlayerCommand* request,
@@ -238,6 +244,42 @@ grpc::Status camera_control_service::SetPlayerState(
 
   response->set_success(success);
   response->set_message(success ? "archive player command sent" : error);
+  return grpc::Status::OK;
+}
+
+grpc::Status camera_control_service::ListPlayers(grpc::ServerContext* /*context*/,
+  const vms::control::ListPlayersRequest* /*request*/,
+  vms::control::ListPlayersResponse* response)
+{
+  for (const auto& camera : m_manager.list_players())
+  {
+    auto* item = response->add_players();
+    item->set_camera_id(camera.camera_id);
+    item->set_client_id(camera.client_id);
+    *item->mutable_position_ts() = from_time_point(camera.position_ts);
+
+    if (camera.file_path)
+    {
+      *item->mutable_file_path() = camera.file_path->filename().string();
+    }
+
+    if (camera.start_ts)
+    {
+      *item->mutable_start_ts() = from_time_point(*camera.start_ts);
+    }
+
+    if (camera.progress)
+    {
+      item->set_duration_ms(camera.progress->duration.count());
+      item->set_position_ms(camera.progress->position.count());
+    }
+
+    if (camera.mode)
+    {
+      item->set_mode(to_grpc_mode(*camera.mode));
+    }
+  }
+
   return grpc::Status::OK;
 }
 
@@ -271,8 +313,8 @@ grpc::Status camera_control_service::SetPlayerState(
 
   if (entry->progress)
   {
-    response->set_duration_ms(static_cast<int32_t>(entry->progress->duration.count()));
-    response->set_position_ms(static_cast<int32_t>(entry->progress->position.count()));
+    response->set_duration_ms(entry->progress->duration.count());
+    response->set_position_ms(entry->progress->position.count());
   }
 
   if (entry->mode)
@@ -281,6 +323,7 @@ grpc::Status camera_control_service::SetPlayerState(
   }
   return grpc::Status::OK;
 }
+
 grpc::Status camera_control_service::GetRecordings(grpc::ServerContext* /*context*/,
   const vms::control::RecordingsRequest* request,
   vms::control::RecordingsResponse* response)
