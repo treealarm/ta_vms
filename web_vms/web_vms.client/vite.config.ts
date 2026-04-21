@@ -6,6 +6,7 @@ const backendTarget = 'http://127.0.0.1:5134' // твой ASP.NET backend
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: '0.0.0.0',
     port: 5173, // Vite dev-server
     strictPort: true, // не менять порт автоматически
     proxy: {

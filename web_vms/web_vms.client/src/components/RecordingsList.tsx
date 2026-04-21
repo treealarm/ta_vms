@@ -83,7 +83,7 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
 
     const load = async () => {
       setLoading(true)
-      await dispatch(fetchRecordings({ cameraId, timestamp: queryTime }))
+      await dispatch(fetchRecordings({ cameraId, timestamp: queryTime, limit:50 }))
 
       if (!cancelled) {
         setLoading(false)

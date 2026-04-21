@@ -17,6 +17,7 @@ import { loadPlayers, removePlayer } from './store/archSlice'
 import { useAppDispatch, useAppSelector } from './store'
 import CameraUnifiedCard from './components/CameraUnifiedCard'
 import PasswordField from './components/PasswordField'
+import LogJournalPanel from './components/LogJournalPanel'
 
 const MAX_CAMERAS = 4
 
@@ -112,7 +113,7 @@ function App() {
   }
 
   return (
-    <Box sx={{ maxWidth: 1200, mx: 'auto', p: { xs: 2, md: 4 } }}>
+    <Box sx={{ maxWidth: 1200, mx: 'auto', p: { xs: 2, md: 4 }, pb: 36 }}>
       <Stack spacing={2.5}>
         <Card>
           <CardContent>
@@ -232,6 +233,7 @@ function App() {
 
         <Alert severity={status.startsWith('Error') ? 'error' : 'info'}>{status}</Alert>
       </Stack>
+      <LogJournalPanel />
     </Box>
   )
 }

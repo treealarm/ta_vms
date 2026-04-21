@@ -13,44 +13,101 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
 
   useEffect(() => {
     if (!streamName) {
-      console.error("stream is null")
+      console.error('stream is null');
       return;
     }
-      
 
     let stopped = false;
+    let sessionId = 0;
+    let reconnecting = false;
+
+    const cleanupAndRetry = (pc?: RTCPeerConnection) => {
+      if (stopped || reconnecting) {
+        return;
+      }
+
+      reconnecting = true;
+
+      console.warn('WebRTC disconnected, retrying...');
+
+      if (pc) {
+        pc.onconnectionstatechange = null;
+        pc.ontrack = null;
+        pc.close();
+      }
+
+      if (pcRef.current) {
+        pcRef.current.onconnectionstatechange = null;
+        pcRef.current.ontrack = null;
+        pcRef.current.close();
+        pcRef.current = null;
+      }
+
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+
+      retryTimeoutRef.current = window.setTimeout(() => {
+        if (stopped) {
+          return;
+        }
+
+        reconnecting = false;
+        startConnection();
+      }, 2000);
+    };
+
+    const isSessionExpired = (
+      currentSession: number,
+      pc: RTCPeerConnection
+    ) => {
+      if (stopped || currentSession !== sessionId) {
+        pc.onconnectionstatechange = null;
+        pc.ontrack = null;
+        pc.close();
+        return true;
+      }
+
+      return false;
+    };
 
     const startConnection = async () => {
-      if (stopped) return;
+      if (stopped) {
+        return;
+      }
+
+      const currentSession = ++sessionId;
+
+      if (pcRef.current) {
+        pcRef.current.onconnectionstatechange = null;
+        pcRef.current.ontrack = null;
+        pcRef.current.close();
+        pcRef.current = null;
+      }
 
       const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+        iceServers: [
+          {
+            urls: 'stun:stun.l.google.com:19302',
+          },
+        ],
       });
+
       pcRef.current = pc;
 
       pc.ontrack = (event) => {
-        if (videoRef.current) {
+        if (videoRef.current && event.streams?.[0]) {
           videoRef.current.srcObject = event.streams[0];
         }
       };
 
-      const cleanupAndRetry = () => {
-        if (stopped) return;
-
-        console.warn('WebRTC disconnected, retrying...');
-        pc.close();
-        pcRef.current = null;
-
-        // небольшая задержка перед повторным соединением
-        retryTimeoutRef.current = window.setTimeout(() => {
-          startConnection();
-        }, 2000);
-      };
-
       pc.onconnectionstatechange = () => {
         const state = pc.connectionState;
-        if (state === 'failed' || state === 'disconnected' || state === 'closed') {
-          cleanupAndRetry();
+
+        console.log('PC state:', state);
+
+        if (state === 'failed' || state === 'disconnected') {
+          cleanupAndRetry(pc);
         }
       };
 
@@ -59,23 +116,60 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
           offerToReceiveAudio: true,
           offerToReceiveVideo: true,
         });
+
+        if (isSessionExpired(currentSession, pc)) {
+          return;
+        }
+
         await pc.setLocalDescription(offer);
 
-        const url = `${(baseUrl || 'http://localhost:8889').replace(/\/$/, '')}/${encodeURIComponent(streamName)}/whep`;
-        console.log("url=", url);
+        if (isSessionExpired(currentSession, pc)) {
+          return;
+        }
+
+        const url = `${(
+          baseUrl ||
+          `${window.location.protocol}//${window.location.hostname}:8889`
+        ).replace(/\/$/, '')}/${encodeURIComponent(streamName)}/whep`;
+
+        console.log('WHEP url =', url);
+
         const resp = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/sdp' },
+          headers: {
+            'Content-Type': 'application/sdp',
+          },
           body: offer.sdp,
         });
 
-        if (!resp.ok) throw new Error(`WHEP failed: ${resp.status}`);
+        if (isSessionExpired(currentSession, pc)) {
+          return;
+        }
+
+        if (!resp.ok) {
+          throw new Error(`WHEP failed: ${resp.status}`);
+        }
 
         const answerSDP = await resp.text();
-        await pc.setRemoteDescription({ type: 'answer', sdp: answerSDP });
+
+        if (isSessionExpired(currentSession, pc)) {
+          return;
+        }
+
+        await pc.setRemoteDescription({
+          type: 'answer',
+          sdp: answerSDP,
+        });
+
+        if (isSessionExpired(currentSession, pc)) {
+          return;
+        }
+
+        reconnecting = false;
+        console.log('WebRTC connected successfully');
       } catch (err) {
-        console.warn('WebRTC connection error, retrying...', err);
-        cleanupAndRetry();
+        console.error('WebRTC connection error:', err);
+        cleanupAndRetry(pc);
       }
     };
 
@@ -83,12 +177,18 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
 
     return () => {
       stopped = true;
+
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
         retryTimeoutRef.current = null;
       }
-      pcRef.current?.close();
-      pcRef.current = null;
+
+      if (pcRef.current) {
+        pcRef.current.onconnectionstatechange = null;
+        pcRef.current.ontrack = null;
+        pcRef.current.close();
+        pcRef.current = null;
+      }
     };
   }, [streamName, baseUrl]);
 
@@ -110,7 +210,10 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
         playsInline
         muted
         controls
-        style={{ width: '100%', height: '100%' }}
+        style={{
+          width: '100%',
+          height: '100%',
+        }}
       />
     </Box>
   );

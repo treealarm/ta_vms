@@ -31,7 +31,9 @@ function CameraUnifiedCard({ camera, onRemoveCamera, onRemovePlayer }: CameraUni
 
   const createPlayer = async () => {
 
-    const clientId = `${getTabId()}_${camera.cameraId}_arch`
+    const clientId =
+      `${getTabId()}_`+
+    `${camera.cameraId}_arch`;
 
     const payload: PlayerStateDto = {
       camera_id: camera.cameraId,

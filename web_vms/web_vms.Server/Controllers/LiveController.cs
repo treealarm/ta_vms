@@ -1,4 +1,3 @@
-using DeviceServiceReference;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Control;
 using web_vms.Types.Dto;

@@ -3,6 +3,7 @@ using System.Net;
 using Vms.Control;
 using Vms.Cfg;
 using web_vms;
+using Vms.Logger;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,6 +36,7 @@ else
 
 var cfgGrpcChannel = GrpcChannel.ForAddress(cfgGrpcAddress);
 builder.Services.AddSingleton(_ => new CfgService.CfgServiceClient(cfgGrpcChannel));
+builder.Services.AddSingleton(_ => new LogService.LogServiceClient(grpcChannel));
 builder.Services.AddSingleton<ICameraManager, CameraManager>();
 
 var http_port = 5134;

@@ -95,8 +95,30 @@ export type RecordingDto = {
 export type RecordingsQueryDto = {
   cameraId: string
   timestamp: string
+  limit: number
 }
 
 export type RecordingsResponseDto = {
   recordings: RecordingDto[]
+}
+
+export type LogQueryDto = {
+  from?: string
+  to?: string
+  limit?: number
+  level?: string
+  source?: string
+}
+
+export type LogEntryDto = {
+  timestamp: string
+  level: string
+  file: string
+  function: string
+  message: string
+}
+
+export type LogResponseDto = {
+  logs: LogEntryDto[]
+  hasMore: boolean
 }

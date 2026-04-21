@@ -3,12 +3,14 @@ import { useDispatch, useSelector, type TypedUseSelectorHook } from 'react-redux
 import liveReducer from './liveSlice'
 import archReducer from './archSlice'
 import fsReducer from './fsSlice'
+import logsReducer from './logSlice'
 
 export const store = configureStore({
   reducer: {
     live: liveReducer,
     arch: archReducer,
-    fs: fsReducer
+    fs: fsReducer,
+    logs: logsReducer
   }
 })
 

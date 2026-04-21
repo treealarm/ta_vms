@@ -31,7 +31,7 @@ export const addCamera = createAsyncThunk('live/addCamera', async (payload: Came
 
 export const removeCamera = createAsyncThunk(
   'live/removeCamera',
-  async ({ cameraId }: { cameraId: string}) => {
+  async ({ cameraId }: { cameraId: string; }) => {
     const response = await fetch(
       `/api/live/cameras/${encodeURIComponent(cameraId)}`,
       { method: 'DELETE' }
