@@ -58,29 +58,3 @@ bool cfg_client::list_cameras(std::vector<vms::cfg::CameraState>& result)
 
   return true;
 }
-
-bool cfg_client::get_uri(const std::string& cam_id, std::string& uri)
-{
-  vms::cfg::SourceRequest request;
-  request.set_source_id(cam_id);
-
-  vms::cfg::OnvifState response;
-
-  grpc::ClientContext context;
-
-  // опционально: таймаут
-  context.set_deadline(
-    std::chrono::system_clock::now() + std::chrono::seconds(10)
-  );
-
-  grpc::Status status = m_stub->GetCameraOnvifUri(&context, request, &response);
-
-  if (!status.ok())
-  {
-    logger::instance().error(std::format("GetCameraOnvifUri RPC failed: {}", status.error_message()));
-
-    return false;
-  }
-  uri = response.rtsp_url();
-  return true;
-}

@@ -2,7 +2,7 @@
 #include <thread>
 #include "interfaces/av_deleters.h"
 #include "rtsp_reader.h"
-#include "grpc_layer/cfg_client.h"
+#include "grpc_layer/onvif_client.h"
 #include "logger/logger.h"
 
 namespace {
@@ -62,7 +62,7 @@ bool rtsp_reader::connect()
 
   if (m_rtsp_url.empty())
   {
-    cfg_client c_client;
+    onvif_client c_client;
 
     c_client.get_uri(m_cam_id, m_rtsp_url);
   }
