@@ -3,20 +3,23 @@
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
+#include <google/protobuf/util/json_util.h>
+#include <google/protobuf/timestamp.pb.h>
+#include "logger.grpc.pb.h"
 
 #include "logger.h"
 #include "file_system/recording_storage.h"
 
 namespace
 {
-constexpr std::size_t kMaxLogFileSizeBytes = 10 * 1024 * 1024; // 10 MB
-constexpr std::size_t kMaxLogFiles = 5;
+  constexpr std::size_t kMaxLogFileSizeBytes = 10 * 1024 * 1024; // 10 MB
+  constexpr std::size_t kMaxLogFiles = 5;
 }
 
 logger& logger::instance()
 {
-    static logger instance;
-    return instance;
+  static logger instance;
+  return instance;
 }
 
 void logger::init(
@@ -39,7 +42,7 @@ void logger::init(
   file_sink->set_pattern("%v");
   console_sink->set_pattern("%v");
 
-  std::vector<spdlog::sink_ptr> sinks{file_sink, console_sink};
+  std::vector<spdlog::sink_ptr> sinks{ file_sink, console_sink };
   m_logger = std::make_shared<spdlog::logger>("service_logger", sinks.begin(), sinks.end());
   m_logger->set_level(to_spdlog_level(m_min_level));
   m_logger->flush_on(spdlog::level::trace);
@@ -84,24 +87,85 @@ void logger::error(
   log(log_level::error, message, location);
 }
 
+//std::string logger::build_json_message(
+//  log_level level,
+//  const std::string& message,
+//  const std::source_location& location) const
+//{
+//  const auto file =
+//    std::filesystem::path(location.file_name())
+//    .filename()
+//    .string();
+//
+//  return std::format(
+//    R"({{"timestamp":"{}","level":"{}","file":"{}","line":{},"function":"{}","message":"{}"}})",
+//    get_timestamp(),
+//    level_to_string(level),
+//    escape_json(file),
+//    location.line(),
+//    escape_json(location.function_name()),
+//    escape_json(message));
+//}
+
+#include <google/protobuf/util/json_util.h>
+#include <google/protobuf/timestamp.pb.h>
+
 std::string logger::build_json_message(
   log_level level,
   const std::string& message,
   const std::source_location& location) const
 {
-  const auto file =
+  vms::logger::LogEntry entry;
+
+  // timestamp
+  google::protobuf::Timestamp ts;
+  ts.set_seconds(std::time(nullptr));
+  ts.set_nanos(0);
+
+  // если нужен миллисекундный timestamp — можно через chrono,
+  // но для примера оставим так
+
+  *entry.mutable_timestamp() = ts;
+
+  // other fields
+  entry.set_level(level_to_string(level));
+
+  entry.set_file(
     std::filesystem::path(location.file_name())
     .filename()
-    .string();
+    .string());
 
-  return std::format(
-    R"({{"timestamp":"{}","level":"{}","file":"{}","line":{},"function":"{}","message":"{}"}})",
-    get_timestamp(),
-    level_to_string(level),
-    escape_json(file),
-    location.line(),
-    escape_json(location.function_name()),
-    escape_json(message));
+  entry.set_function(location.function_name());
+  entry.set_message(message);
+
+  google::protobuf::util::JsonPrintOptions options;
+
+  // компактный JSON в одну строку
+  options.add_whitespace = false;
+
+  // сохранять оригинальные proto field names:
+  // timestamp, level, file...
+  options.preserve_proto_field_names = true;
+
+  // если нужны поля даже с default values
+  options.always_print_fields_with_no_presence = false;
+
+  std::string json;
+
+  auto status =
+    google::protobuf::util::MessageToJsonString(
+      entry,
+      &json,
+      options);
+
+  if (!status.ok())
+  {
+    // fallback чтобы логгер не упал
+    return std::format(
+      R"({{"level":"ERROR","message":"failed to serialize log entry"}})");
+  }
+
+  return json;
 }
 
 std::string logger::escape_json(const std::string& text) const
@@ -138,16 +202,16 @@ std::string logger::get_timestamp() const
 
 const char* logger::level_to_string(log_level level) const
 {
-    switch (level)
-    {
-    case log_level::trace: return "TRACE";
-    case log_level::debug: return "DEBUG";
-    case log_level::info: return "INFO";
-    case log_level::warning: return "WARNING";
-    case log_level::error: return "ERROR";
-    case log_level::critical: return "CRITICAL";
-    default: return "UNKNOWN";
-    }
+  switch (level)
+  {
+  case log_level::trace: return "TRACE";
+  case log_level::debug: return "DEBUG";
+  case log_level::info: return "INFO";
+  case log_level::warning: return "WARNING";
+  case log_level::error: return "ERROR";
+  case log_level::critical: return "CRITICAL";
+  default: return "UNKNOWN";
+  }
 }
 
 spdlog::level::level_enum logger::to_spdlog_level(log_level level) const
