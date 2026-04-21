@@ -112,24 +112,5 @@ namespace VmsCfg
       });
     }
 
-    public override async Task<OnvifState> GetCameraOnvifUri(SourceRequest request, ServerCallContext context)
-    {
-      var response = new OnvifState();
-      var state = _storage.Load().FirstOrDefault(c => c.CameraId == request.SourceId);
-
-      if (state != null 
-      && state.OnvifConn != null 
-      && !string.IsNullOrEmpty(state.OnvifConn.ip) 
-      && state.OnvifConn.port > 0)
-      {
-        var newUrl = await OnvifUtils.GetStreamUri(state);
-        if (!string.IsNullOrEmpty(newUrl))
-        {
-          response.RtspUrl = newUrl;
-        }
-      }
-
-      return response;
-    }
   }
 }

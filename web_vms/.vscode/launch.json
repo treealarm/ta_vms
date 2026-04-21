@@ -27,6 +27,19 @@
         }
       },
       {
+        "name": "VmsOnvif (.NET)",
+        "type": "coreclr",
+        "request": "launch",
+        "preLaunchTask": "build",
+        "program": "${workspaceFolder}/VmsOnvif/bin/Debug/net8.0/VmsOnvif.dll",
+        "cwd": "${workspaceFolder}/VmsOnvif",
+        "stopAtEntry": false,
+        "env": {
+          "ASPNETCORE_ENVIRONMENT": "Development",
+          "ONVIF_SRV_PORT": "5136"
+        }
+      },
+      {
         "name": "Frontend (Vite)",
         "type": "node",
         "request": "launch",
@@ -50,6 +63,7 @@
         "stopAll": true,
         "configurations": [
           "VmsCfg (.NET)",
+          "VmsOnvif (.NET)",
           "Backend (.NET)",
           "Frontend (Vite)",
           "Frontend Debug (Chromium)"

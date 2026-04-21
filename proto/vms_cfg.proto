@@ -4,7 +4,6 @@ package vms.cfg;
 
 service CfgService {
   rpc ListCameras(ListCamerasRequest) returns (ListCamerasResponse);
-  rpc GetCameraOnvifUri(SourceRequest) returns (OnvifState);
   rpc AddCamera(CameraState) returns (OperationStatus);
   rpc SetCameraState(CameraState) returns (OperationStatus);
   rpc RemoveCamera(SourceRequest) returns (OperationStatus);
@@ -23,10 +22,6 @@ message Credentials {
 message OnvifConnection {
   string ip = 1;
   int32 port = 2;
-}
-
-message OnvifState {
-  string rtsp_url = 4;
 }
 
 message CameraState {
