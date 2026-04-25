@@ -1,5 +1,57 @@
 
 services:
+  vmscfg:
+    build:
+      context: .
+      dockerfile: web_vms/VmsCfg/Dockerfile
+    env_file:
+      - .env
+
+  vmscfg-dapr:
+    image: "daprio/daprd:1.14.4"
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "vmscfg"
+      - "-app-port"
+      - "5135"
+      - "-app-protocol"
+      - "grpc"
+      - "-dapr-http-port"
+      - "3500"
+      - "-dapr-grpc-port"
+      - "50001"
+    network_mode: "service:vmscfg"
+    depends_on:
+      - vmscfg
+
+  vmsonvif:
+    build:
+      context: .
+      dockerfile: web_vms/VmsOnvif/Dockerfile
+    env_file:
+      - .env
+    depends_on:
+      - vmscfg
+
+  vmsonvif-dapr:
+    image: "daprio/daprd:1.14.4"
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "vmsonvif"
+      - "-app-port"
+      - "5136"
+      - "-app-protocol"
+      - "grpc"
+      - "-dapr-http-port"
+      - "3500"
+      - "-dapr-grpc-port"
+      - "50001"
+    network_mode: "service:vmsonvif"
+    depends_on:
+      - vmsonvif
+
   vms:
     build:
       context: .
@@ -9,9 +61,29 @@ services:
     env_file:
       - .env
     depends_on:
+      - vmscfg
+      - vmsonvif
       - mediamtx
     volumes:
       - "${PWD}/data:/data"
+
+  vms-dapr:
+    image: "daprio/daprd:1.14.4"
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "vms"
+      - "-app-port"
+      - "50051"
+      - "-app-protocol"
+      - "grpc"
+      - "-dapr-http-port"
+      - "3500"
+      - "-dapr-grpc-port"
+      - "50001"
+    network_mode: "service:vms"
+    depends_on:
+      - vms
       
   web_vms:
     build:
@@ -21,8 +93,27 @@ services:
       - "${WEB_VMS_PORT}:${WEB_VMS_PORT}"  
     depends_on:
       - vms
+      - vmscfg
     env_file:
       - .env
+
+  web_vms-dapr:
+    image: "daprio/daprd:1.14.4"
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "web-vms"
+      - "-app-port"
+      - "${WEB_VMS_PORT}"
+      - "-app-protocol"
+      - "http"
+      - "-dapr-http-port"
+      - "3500"
+      - "-dapr-grpc-port"
+      - "50001"
+    network_mode: "service:web_vms"
+    depends_on:
+      - web_vms
 
   mediamtx:
     image: bluenviron/mediamtx:latest

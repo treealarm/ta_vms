@@ -21,8 +21,9 @@ std::string read_env_or_default(const char* key, const char* fallback)
 
 onvif_client::onvif_client()
   :
+    m_app_id(read_env_or_default("DAPR_ONVIF_APP_ID", "vmsonvif")),
     m_channel(grpc::CreateChannel(
-      read_env_or_default("CFG_VMS_ADDR", "127.0.0.1:5135"),
+      read_env_or_default("DAPR_GRPC_ENDPOINT", "127.0.0.1:50001"),
       grpc::InsecureChannelCredentials())),
     m_stub(vms::onvif::OnvifService::NewStub(m_channel))
 {
@@ -39,12 +40,16 @@ bool onvif_client::get_uri(const std::string& cam_id, std::string& uri)
   context.set_deadline(
     std::chrono::system_clock::now() + std::chrono::seconds(10)
   );
+  context.AddMetadata("dapr-app-id", m_app_id);
 
   grpc::Status status = m_stub->GetCameraOnvifUri(&context, request, &response);
 
   if (!status.ok())
   {
-    logger::instance().error(std::format("GetCameraOnvifUri RPC failed: {}", status.error_message()));
+    logger::instance().error(std::format(
+      "GetCameraOnvifUri RPC via Dapr failed for app '{}': {}",
+      m_app_id,
+      status.error_message()));
 
     return false;
   }

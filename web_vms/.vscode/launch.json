@@ -5,38 +5,51 @@
         "name": "Backend (.NET)",
         "type": "coreclr",
         "request": "launch",
-        "preLaunchTask": "build",
+        "preLaunchTask": "prepare:web_vms",
+        "postDebugTask": "dapr:web_vms:stop",
         "program": "${workspaceFolder}/web_vms.Server/bin/Debug/net8.0/web_vms.Server.dll",
         "cwd": "${workspaceFolder}/web_vms.Server",
         "stopAtEntry": false,
         "env": {
-          "ASPNETCORE_ENVIRONMENT": "Development"
+          "ASPNETCORE_ENVIRONMENT": "Development",
+          "WEB_VMS_PORT": "5134",
+          "DAPR_HTTP_PORT": "3500",
+          "DAPR_GRPC_PORT": "50001",
+          "DAPR_VMS_APP_ID": "vms",
+          "DAPR_CFG_APP_ID": "vmscfg"
         }
       },
       {
         "name": "VmsCfg (.NET)",
         "type": "coreclr",
         "request": "launch",
-        "preLaunchTask": "build",
+        "preLaunchTask": "prepare:vmscfg",
+        "postDebugTask": "dapr:vmscfg:stop",
         "program": "${workspaceFolder}/VmsCfg/bin/Debug/net8.0/VmsCfg.dll",
         "cwd": "${workspaceFolder}/VmsCfg",
         "stopAtEntry": false,
         "env": {
           "ASPNETCORE_ENVIRONMENT": "Development",
-          "CFG_VMS_PORT": "5135"
+          "CFG_VMS_PORT": "5135",
+          "DAPR_HTTP_PORT": "3501",
+          "DAPR_GRPC_PORT": "50002"
         }
       },
       {
         "name": "VmsOnvif (.NET)",
         "type": "coreclr",
         "request": "launch",
-        "preLaunchTask": "build",
+        "preLaunchTask": "prepare:vmsonvif",
+        "postDebugTask": "dapr:vmsonvif:stop",
         "program": "${workspaceFolder}/VmsOnvif/bin/Debug/net8.0/VmsOnvif.dll",
         "cwd": "${workspaceFolder}/VmsOnvif",
         "stopAtEntry": false,
         "env": {
           "ASPNETCORE_ENVIRONMENT": "Development",
-          "ONVIF_SRV_PORT": "5136"
+          "ONVIF_SRV_PORT": "5136",
+          "DAPR_HTTP_PORT": "3502",
+          "DAPR_GRPC_PORT": "50003",
+          "DAPR_CFG_APP_ID": "vmscfg"
         }
       },
       {

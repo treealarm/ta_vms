@@ -13,6 +13,7 @@ public:
   onvif_client();
   bool get_uri(const std::string& cam_id, std::string& uri);
 private:
+  std::string m_app_id;
   std::shared_ptr<grpc::Channel> m_channel;
   std::unique_ptr<vms::onvif::OnvifService::Stub> m_stub;
 };

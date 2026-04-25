@@ -17,6 +17,7 @@ public:
   cfg_client();
   bool list_cameras(std::vector<vms::cfg::CameraState>& cfg);
 private:
+  std::string m_app_id;
   std::shared_ptr<grpc::Channel> m_channel;
   std::unique_ptr<vms::cfg::CfgService::Stub> m_stub;
 };

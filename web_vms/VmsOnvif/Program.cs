@@ -1,4 +1,4 @@
-using Grpc.Net.Client;
+using Dapr.Client;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Vms.Cfg;
 using VmsOnvif;
@@ -8,18 +8,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddGrpc();
 builder.Services.AddSingleton<OnvifServiceImpl>();
 
-var cfgGrpcAddress = Environment.GetEnvironmentVariable("CFG_VMS_ADDR");
-if (!string.IsNullOrEmpty(cfgGrpcAddress))
-{
-  Console.WriteLine($"CFG_VMS_ADDR: {cfgGrpcAddress}");
-}
-else
-{
-  cfgGrpcAddress = "http://localhost:5135";
-}
-
-var cfgGrpcChannel = GrpcChannel.ForAddress(cfgGrpcAddress);
-builder.Services.AddSingleton(_ => new CfgService.CfgServiceClient(cfgGrpcChannel));
+var cfgAppId = Environment.GetEnvironmentVariable("DAPR_CFG_APP_ID") ?? "vmscfg";
+Console.WriteLine($"DAPR_CFG_APP_ID: {cfgAppId}");
+builder.Services.AddSingleton(_ =>
+  new CfgService.CfgServiceClient(
+    DaprClient.CreateInvocationInvoker(cfgAppId)));
 
 var grpcPort = 5136;
 if (int.TryParse(Environment.GetEnvironmentVariable("ONVIF_SRV_PORT"), out grpcPort))
