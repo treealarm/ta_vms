@@ -51,6 +51,7 @@ export type PlayerCommand = 'play' | 'pause' | 'stop' | 'step' | 'step_back' | '
 export type PlayerMode = 'unspecified' | 'playing' | 'paused' | 'stopped'
 
 export type PlayerCommandDto = {
+  camera_id: string
   client_id: string
   command: PlayerCommand
   step_frames?: number
@@ -80,11 +81,17 @@ export type OnvifConnectionDto = {
 
 export type CameraStateDto = {
   cameraId: string
+  serverId?: string
   recording: boolean
   webRtc: boolean
   rtspUrl: string
-  cred: CredentialsDto
-  onvifConn: OnvifConnectionDto
+  cred?: CredentialsDto
+  onvifConn?: OnvifConnectionDto
+}
+
+export type MediaServerNodeDto = {
+  serverId: string
+  status: string
 }
 
 export type RecordingDto = {

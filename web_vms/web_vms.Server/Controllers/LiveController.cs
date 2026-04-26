@@ -1,3 +1,4 @@
+using Dapr.Client;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Control;
 using web_vms.Types.Dto;
@@ -7,119 +8,161 @@ namespace web_vms;
 [ApiController]
 [Route("api/[controller]")]
 public class LiveController(
-  CameraControlService.CameraControlServiceClient _grpcClient,
   ICameraManager _manager
   ) : ControllerBase
 {
+  private CameraControlService.CameraControlServiceClient GetMediaClient(string? serverId)
+  {
+    if (string.IsNullOrWhiteSpace(serverId))
+    {
+      throw new InvalidOperationException("serverId must not be empty for media server requests");
+    }
+
+    return new CameraControlService.CameraControlServiceClient(DaprClient.CreateInvocationInvoker(serverId));
+  }
+
+  private static CameraState ToControlState(CameraStateDto request) => new()
+  {
+    CameraId = request.CameraId,
+    RtspUrl = request.RtspUrl,
+    Recording = request.Recording,
+    WebRtc = request.WebRtc,
+    Cred = request.Cred != null
+      ? new Credentials
+      {
+        User = request.Cred.User,
+        Pass = request.Cred.Pass
+      }
+      : null
+  };
+
   [HttpPost("cameras")]
   public async Task<IActionResult> AddCamera([FromBody] CameraStateDto request, CancellationToken ct)
   {
-    var response = await _grpcClient.AddCameraAsync(new CameraState
+    if (string.IsNullOrWhiteSpace(request.ServerId))
     {
-      CameraId = request.CameraId,
-      RtspUrl = request.RtspUrl,
-      Recording = request.Recording,
-      WebRtc = request.WebRtc,
-      Cred = request.Cred!=null ?
-      new Credentials()
-      { 
-        User= request.Cred.User,
-        Pass = request.Cred.Pass
-      } : null
+      return BadRequest("serverId must not be empty");
+    }
 
-    }, cancellationToken: ct);
+    var response = await GetMediaClient(request.ServerId).AddCameraAsync(ToControlState(request), cancellationToken: ct);
 
-    await _manager.Add(request);
+    if (response.Success)
+    {
+      await _manager.Add(request);
+    }
 
     return Ok(ApiResponseMapper.ToApiResponse(response));
+  }
+
+  [HttpPut("cameras/{cameraId}/parent")]
+  public async Task<IActionResult> ChangeCameraParent(
+    string cameraId,
+    [FromBody] CameraStateDto request,
+    CancellationToken ct)
+  {
+    if (cameraId != request.CameraId)
+    {
+      return BadRequest("cameraId in route and body must match");
+    }
+
+    if (string.IsNullOrWhiteSpace(request.ServerId))
+    {
+      return BadRequest("serverId must not be empty");
+    }
+
+    var current = await _manager.Get(cameraId);
+    if (current is null)
+    {
+      return NotFound();
+    }
+
+    if (current.ServerId == request.ServerId)
+    {
+      await _manager.Add(request);
+      return Ok(new ApiResponse(true, "Camera parent is unchanged"));
+    }
+
+    var removeResponse = await GetMediaClient(current.ServerId).RemoveCameraAsync(
+      new SourceRequest { SourceId = cameraId },
+      cancellationToken: ct);
+
+    if (!removeResponse.Success)
+    {
+      return Ok(ApiResponseMapper.ToApiResponse(removeResponse));
+    }
+
+    var addResponse = await GetMediaClient(request.ServerId).AddCameraAsync(ToControlState(request), cancellationToken: ct);
+    if (addResponse.Success)
+    {
+      await _manager.Add(request);
+    }
+
+    return Ok(ApiResponseMapper.ToApiResponse(addResponse));
   }
 
   [HttpDelete("cameras/{cameraId}")]
   public async Task<IActionResult> RemoveCamera(string cameraId, CancellationToken ct)
   {
-    var response = await _grpcClient.RemoveCameraAsync(new SourceRequest
+    var current = await _manager.Get(cameraId);
+    if (string.IsNullOrWhiteSpace(current?.ServerId))
+    {
+      return NotFound();
+    }
+
+    var response = await GetMediaClient(current.ServerId).RemoveCameraAsync(new SourceRequest
     {
       SourceId = cameraId
     }, cancellationToken: ct);
 
-    await _manager.Remove(cameraId);
+    if (response.Success)
+    {
+      await _manager.Remove(cameraId);
+    }
+
     return Ok(ApiResponseMapper.ToApiResponse(response));
+  }
+
+  [HttpGet("servers")]
+  public async Task<IActionResult> ListServers(CancellationToken ct)
+  {
+    return Ok(await _manager.ListServers());
   }
 
   [HttpGet("cameras")]
   public async Task<IActionResult> ListCameras(CancellationToken ct)
   {
-    var response = await _grpcClient.ListCamerasAsync(new ListCamerasRequest(), cancellationToken: ct);
-    var cameras = response.Cameras.Select(camera =>
-        new CameraStateDto
-        {
-          CameraId = camera.CameraId,
-          Recording = camera.Recording,
-          WebRtc = camera.WebRtc,
-          RtspUrl = camera.RtspUrl,
-          Cred = camera.Cred != null
-                ? new CredentialsDto
-                {
-                  User = camera.Cred.User,
-                  Pass = camera.Cred.Pass
-                }
-                : null
-        }
-    );
-
-    return Ok(cameras);
+    return Ok(await _manager.List());
   }
 
   [HttpPost("cameras/state")]
   public async Task<IActionResult> SetCameraState([FromBody] CameraStateDto state, CancellationToken ct)
   {
-    var response = await _grpcClient.SetCameraStateAsync(new CameraState
-    {
-      CameraId = state.CameraId,
-      Recording = state.Recording,
-      WebRtc = state.WebRtc,
-      RtspUrl = state.RtspUrl
-      ,
-      Cred = state.Cred != null ?
-      new Credentials()
-      {
-        User = state.Cred.User,
-        Pass = state.Cred.Pass
-      } : null
-    }, cancellationToken: ct);
-
     var curState = await _manager.Get(state.CameraId);
     if (curState != null && state.OnvifConn == null)
     {
       state.OnvifConn = curState.OnvifConn;
     }
-    await _manager.SetState(state);
+
+    var targetServerId = state.ServerId ?? curState?.ServerId;
+    if (string.IsNullOrWhiteSpace(targetServerId))
+    {
+      return NotFound();
+    }
+
+    var response = await GetMediaClient(targetServerId).SetCameraStateAsync(ToControlState(state), cancellationToken: ct);
+
+    if (response.Success)
+    {
+      await _manager.SetState(state);
+    }
+
     return Ok(ApiResponseMapper.ToApiResponse(response));
   }
 
   [HttpGet("cameras/{cameraId}/state")]
   public async Task<IActionResult> GetCameraState(string cameraId, CancellationToken ct)
   {
-    var camera = await _grpcClient.GetCameraStateAsync(new SourceRequest
-    {
-      SourceId = cameraId
-    }, cancellationToken: ct);
-
-    var dto = new CameraStateDto
-    {
-      Recording = camera.Recording,
-      WebRtc = camera.WebRtc,
-      CameraId = camera.CameraId,
-      RtspUrl = camera.RtspUrl,
-      Cred = camera.Cred != null
-        ? new CredentialsDto
-        {
-          User = camera.Cred.User,
-          Pass = camera.Cred.Pass
-        }
-        : null
-    };
-
-    return Ok(dto);
+    var camera = await _manager.Get(cameraId);
+    return camera is null ? NotFound() : Ok(camera);
   }
 }

@@ -34,12 +34,12 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      void dispatch(fetchPlayerState(player.client_id))
+      void dispatch(fetchPlayerState({ clientId: player.client_id, cameraId: player.camera_id }))
     }, 1000)
 
-    void dispatch(fetchPlayerState(player.client_id))
+    void dispatch(fetchPlayerState({ clientId: player.client_id, cameraId: player.camera_id }))
     return () => clearInterval(interval)
-  }, [dispatch, player.client_id])
+  }, [dispatch, player.camera_id, player.client_id])
 
   const sendSeek = async (timeToSend: string, position: number|null) => {
     await dispatch(
@@ -76,6 +76,7 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
   const handleSendCommand = (command: 'play' | 'pause' | 'stop' | 'step_back' | 'step_forward') => {
     void dispatch(
       sendPlayerCommand({
+        camera_id: currentPlayer.camera_id,
         client_id: currentPlayer.client_id,
         command,
         ...(command === 'play' ? { speed: playbackSpeed } : {})
@@ -88,6 +89,7 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
     setSpeedMenuAnchor(null)
     void dispatch(
       sendPlayerCommand({
+        camera_id: currentPlayer.camera_id,
         client_id: currentPlayer.client_id,
         command: 'play',
         speed

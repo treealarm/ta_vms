@@ -1,18 +1,25 @@
 import { type AnyAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
-import type { CameraStateDto, ApiResponseDto } from '../dto/dtos'
+import type { CameraStateDto, ApiResponseDto, MediaServerNodeDto } from '../dto/dtos'
 import { parseJson } from './api'
 
 type LiveState = {
   cameraStatesById: Record<string, CameraStateDto>
+  servers: MediaServerNodeDto[]
   isBusy: boolean
   status: string
 }
 
 const initialState: LiveState = {
   cameraStatesById: {},
+  servers: [],
   isBusy: false,
   status: 'Ready'
 }
+
+export const loadServers = createAsyncThunk('live/loadServers', async () => {
+  const response = await fetch('/api/live/servers')
+  return parseJson<MediaServerNodeDto[]>(response)
+})
 
 export const loadCameras = createAsyncThunk('live/loadCameras', async () => {
   const response = await fetch('/api/live/cameras')
@@ -35,6 +42,22 @@ export const removeCamera = createAsyncThunk(
     const response = await fetch(
       `/api/live/cameras/${encodeURIComponent(cameraId)}`,
       { method: 'DELETE' }
+    )
+
+    return parseJson<ApiResponseDto>(response)
+  }
+)
+
+export const changeCameraParent = createAsyncThunk(
+  'live/changeCameraParent',
+  async (payload: CameraStateDto) => {
+    const response = await fetch(
+      `/api/live/cameras/${encodeURIComponent(payload.cameraId)}/parent`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }
     )
 
     return parseJson<ApiResponseDto>(response)
@@ -78,6 +101,9 @@ const liveSlice = createSlice({
 
         state.status = 'Ready'
       })
+      .addCase(loadServers.fulfilled, (state, action) => {
+        state.servers = action.payload
+      })
       .addCase(fetchCameraState.fulfilled, (state, action) => {
         const id = action.payload.cameraId
         const prev = state.cameraStatesById[id]
@@ -86,7 +112,8 @@ const liveSlice = createSlice({
           prev &&
           prev.recording === action.payload.recording &&
           prev.webRtc === action.payload.webRtc &&
-          prev.rtspUrl === action.payload.rtspUrl
+          prev.rtspUrl === action.payload.rtspUrl &&
+          prev.serverId === action.payload.serverId
 
         if (!isEqual) {
           state.cameraStatesById[id] = action.payload
@@ -96,6 +123,9 @@ const liveSlice = createSlice({
         state.status = `${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
       })
       .addCase(removeCamera.fulfilled, (state, action) => {
+        state.status = `${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
+      })
+      .addCase(changeCameraParent.fulfilled, (state, action) => {
         state.status = `${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
       })
       .addCase(updateCameraRecording.fulfilled, (state, action) => {

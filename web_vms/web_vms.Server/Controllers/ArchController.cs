@@ -1,4 +1,5 @@
 using Google.Protobuf.WellKnownTypes;
+using Dapr.Client;
 using Grpc.Core;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Control;
@@ -9,8 +10,10 @@ namespace web_vms;
 [ApiController]
 [Route("api/[controller]")]
 public class ArchController(
-  CameraControlService.CameraControlServiceClient grpcClient) : ControllerBase
+  ICameraManager manager) : ControllerBase
 {
+  private static CameraControlService.CameraControlServiceClient GetMediaClient(string serverId) =>
+    new(DaprClient.CreateInvocationInvoker(serverId));
 
   private static string MapPlayerMode(PlayerMode mode) => mode switch
   {
@@ -20,9 +23,31 @@ public class ArchController(
     _ => "unspecified"
   };
 
+  private static PlayerProgressStateDto ToDto(PlayerProgressState playerState) => new()
+  {
+    camera_id = playerState.CameraId,
+    client_id = playerState.ClientId,
+    file_path = playerState.FilePath,
+    mode = MapPlayerMode(playerState.Mode),
+    position_ts = playerState.PositionTs?.ToDateTime(),
+    start_ts = playerState.StartTs?.ToDateTime(),
+    duration_ms = playerState.DurationMs,
+    position_ms = playerState.PositionMs
+  };
+
+  private async Task<string?> GetServerIdForCamera(string cameraId)
+  {
+    var camera = await manager.Get(cameraId);
+    return camera?.ServerId;
+  }
+
   [HttpPost("players")]
   public async Task<IActionResult> AddPlayer([FromBody] PlayerStateDto request, CancellationToken ct)
   {
+      var serverId = await GetServerIdForCamera(request.camera_id);
+      if (string.IsNullOrWhiteSpace(serverId))
+        return NotFound();
+
       var dt = request.position_ts ?? DateTime.UtcNow;
 
       if (dt.Kind != DateTimeKind.Utc)
@@ -30,7 +55,7 @@ public class ArchController(
 
       var StartTimeStamp = Timestamp.FromDateTime(dt);
 
-      var startPlayResponse = await grpcClient.AddArchPlayerAsync(new PlayerState
+      var startPlayResponse = await GetMediaClient(serverId).AddArchPlayerAsync(new PlayerState
       {
         CameraId = request.camera_id,
         PositionTs = StartTimeStamp,
@@ -46,6 +71,10 @@ public class ArchController(
   {
     if (dto == null)
       return BadRequest("Request body is missing");
+
+    var serverId = await GetServerIdForCamera(dto.camera_id);
+    if (string.IsNullOrWhiteSpace(serverId))
+      return NotFound();
 
     var request = new PlayerState
     {
@@ -80,7 +109,7 @@ public class ArchController(
       }
     }
 
-    var grpcResponse = await grpcClient.SetPlayerStateAsync(request, cancellationToken: ct);
+    var grpcResponse = await GetMediaClient(serverId).SetPlayerStateAsync(request, cancellationToken: ct);
 
     return Ok(new
     {
@@ -90,34 +119,30 @@ public class ArchController(
   }
 
   [HttpGet("players/state")]
-  public async Task<IActionResult> GetPlayerState([FromQuery] string clientId, CancellationToken ct)
+  public async Task<IActionResult> GetPlayerState(
+    [FromQuery] string clientId,
+    [FromQuery] string cameraId,
+    CancellationToken ct)
   {
     if (string.IsNullOrEmpty(clientId))
       return BadRequest("clientId is required");
 
+    if (string.IsNullOrWhiteSpace(cameraId))
+      return BadRequest("cameraId is required");
+
+    var serverId = await GetServerIdForCamera(cameraId);
+    if (string.IsNullOrWhiteSpace(serverId))
+      return NotFound();
+
     try
     {
       PlayerProgressState playerState =
-      await grpcClient.GetPlayerProgressStateAsync(new SourceRequest() { SourceId = clientId }, cancellationToken: ct);
+      await GetMediaClient(serverId).GetPlayerProgressStateAsync(new SourceRequest() { SourceId = clientId }, cancellationToken: ct);
 
       if (playerState == null)
         return NotFound();
 
-      var dto = new PlayerProgressStateDto
-      {
-        camera_id = playerState.CameraId,
-        client_id = playerState.ClientId,
-        file_path = playerState.FilePath,
-        mode = MapPlayerMode(playerState.Mode)
-      };
-
-      if (playerState.PositionTs != null)
-        dto.position_ts = playerState.PositionTs.ToDateTime();
-
-      dto.start_ts = playerState.StartTs.ToDateTime();
-      dto.duration_ms = playerState.DurationMs;
-      dto.position_ms = playerState.PositionMs;
-      return Ok(dto);
+      return Ok(ToDto(playerState));
     }
     catch (Exception ex)
     {
@@ -137,8 +162,15 @@ public class ArchController(
     if (string.IsNullOrWhiteSpace(dto.client_id))
       return BadRequest("client_id is required");
 
+    if (string.IsNullOrWhiteSpace(dto.camera_id))
+      return BadRequest("camera_id is required");
+
     if (string.IsNullOrWhiteSpace(dto.command))
       return BadRequest("command is required");
+
+    var serverId = await GetServerIdForCamera(dto.camera_id);
+    if (string.IsNullOrWhiteSpace(serverId))
+      return NotFound();
 
     var request = new PlayerCommand
     {
@@ -174,7 +206,7 @@ public class ArchController(
         return BadRequest("command must be one of: play, pause, stop, step, step_back, step_forward");
     }
 
-    var grpcResponse = await grpcClient.SendPlayerCommandAsync(request, cancellationToken: ct);
+    var grpcResponse = await GetMediaClient(serverId).SendPlayerCommandAsync(request, cancellationToken: ct);
 
     return Ok(ApiResponseMapper.ToApiResponse(grpcResponse));
   }
@@ -187,6 +219,10 @@ public class ArchController(
   {
     if (string.IsNullOrWhiteSpace(cameraId))
       return BadRequest("cameraId is required");
+
+    var serverId = await GetServerIdForCamera(cameraId);
+    if (string.IsNullOrWhiteSpace(serverId))
+      return NotFound();
 
     DateTime timestampUtc;
     if (timestamp.Kind == DateTimeKind.Utc)
@@ -204,7 +240,7 @@ public class ArchController(
 
     try
     {
-      var grpcResponse = await grpcClient.GetArchiveFrameJpegAsync(new ArchiveFrameJpegRequest
+      var grpcResponse = await GetMediaClient(serverId).GetArchiveFrameJpegAsync(new ArchiveFrameJpegRequest
       {
         CameraId = cameraId,
         Timestamp = Timestamp.FromDateTime(timestampUtc)
@@ -229,9 +265,19 @@ public class ArchController(
   }
 
   [HttpDelete("players/{clientId}")]
-  public async Task<IActionResult> RemovePlayer(string clientId, CancellationToken ct)
+  public async Task<IActionResult> RemovePlayer(
+    string clientId,
+    [FromQuery] string cameraId,
+    CancellationToken ct)
   {
-    var response = await grpcClient.RemoveArchPlayerAsync(new SourceRequest
+    if (string.IsNullOrWhiteSpace(cameraId))
+      return BadRequest("cameraId is required");
+
+    var serverId = await GetServerIdForCamera(cameraId);
+    if (string.IsNullOrWhiteSpace(serverId))
+      return NotFound();
+
+    var response = await GetMediaClient(serverId).RemoveArchPlayerAsync(new SourceRequest
     {
       SourceId = clientId
     }, cancellationToken: ct);
@@ -242,17 +288,15 @@ public class ArchController(
   [HttpGet("players")]
   public async Task<IActionResult> GetPlayers(CancellationToken ct)
   {
-    var grpcResponse = await grpcClient.ListPlayersAsync(
-        new ListPlayersRequest(),
-        cancellationToken: ct);
-
-    var result = grpcResponse.Players.Select(p => new PlayerProgressStateDto
+    var result = new List<PlayerProgressStateDto>();
+    var servers = await manager.ListServers();
+    foreach (var server in servers)
     {
-      camera_id = p.CameraId,
-      client_id = p.ClientId,
-      position_ts = p.PositionTs.ToDateTime(),
-      mode = MapPlayerMode(p.Mode)
-    });
+      var grpcResponse = await GetMediaClient(server.ServerId).ListPlayersAsync(
+          new ListPlayersRequest(),
+          cancellationToken: ct);
+      result.AddRange(grpcResponse.Players.Select(ToDto));
+    }
 
     return Ok(result);
   }

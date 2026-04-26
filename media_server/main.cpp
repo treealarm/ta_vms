@@ -64,6 +64,11 @@ int main(int argc, char** argv)
 
   cfg_client c_client;
   std::vector<vms::cfg::CameraSetup> cfg_list;
+
+  while (!c_client.register_media_server() && !g_stop_requested)
+  {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+  }
   
   while (!c_client.list_cameras(cfg_list) && !g_stop_requested)
   {

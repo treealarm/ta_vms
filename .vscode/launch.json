@@ -16,7 +16,7 @@
                 "WEB_VMS_PORT": "5134",
                 "DAPR_HTTP_PORT": "3500",
                 "DAPR_GRPC_PORT": "50001",
-                "DAPR_VMS_APP_ID": "vms",
+                "DAPR_LOGGER_APP_ID": "vms",
                 "DAPR_CFG_APP_ID": "vmscfg",
                 "DAPR_FS_APP_ID": "vmsfs"
             }
@@ -92,7 +92,7 @@
                     "value": "127.0.0.1:50011"
                 },
                 {
-                    "name": "DAPR_VMS_APP_ID",
+                    "name": "APP_ID",
                     "value": "vms"
                 },
                 {

@@ -31,6 +31,12 @@ namespace web_vms
       return response.Cameras.Select(ToDto).ToList();
     }
 
+    public async Task<List<MediaServerNodeDto>> ListServers()
+    {
+      var response = await _cfgClient.ListMediaServersAsync(new ListMediaServersRequest());
+      return response.Servers.Select(ToDto).ToList();
+    }
+
     public async Task<bool> SetState(CameraStateDto dto)
     {
       var response = await _cfgClient.SetCameraStateAsync(ToStateProto(dto));
@@ -46,6 +52,7 @@ namespace web_vms
     private static CameraStateDto ToDto(CameraSetup setup) => new()
     {
       CameraId = setup.CameraId,
+      ServerId = setup.ServerId,
       Recording = setup.State?.Recording ?? false,
       WebRtc = setup.State?.WebRtc ?? false,
       RtspUrl = setup.RtspUrl,
@@ -61,9 +68,16 @@ namespace web_vms
       }
     };
 
+    private static MediaServerNodeDto ToDto(MediaServerNode server) => new()
+    {
+      ServerId = server.ServerId,
+      Status = server.Status
+    };
+
     private static CameraSetup ToSetupProto(CameraStateDto dto) => new()
     {
       CameraId = dto.CameraId,
+      ServerId = dto.ServerId ?? string.Empty,
       RtspUrl = dto.RtspUrl ?? string.Empty,
       Cred = dto.Cred == null ? null : new Credentials
       {

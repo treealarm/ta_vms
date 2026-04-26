@@ -58,6 +58,7 @@ function CameraUnifiedCard({ camera, onRemoveCamera, onRemovePlayer }: CameraUni
     if (mode === 'live' && player) {
       void dispatch(
         sendPlayerCommand({
+          camera_id: player.camera_id,
           client_id: player.client_id,
           command: 'stop' // или 'pause'
         })

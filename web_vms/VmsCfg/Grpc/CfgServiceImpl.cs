@@ -23,8 +23,41 @@ namespace VmsCfg
         };
       }
 
+      if (string.IsNullOrWhiteSpace(request.ServerId))
+      {
+        return new OperationStatus
+        {
+          Success = false,
+          Message = "server_id must not be empty"
+        };
+      }
+
       await _storage.SetupCameraAsync(request, context.CancellationToken);
       return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OperationStatus> RegisterMediaServer(MediaServerNode request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.ServerId))
+      {
+        return new OperationStatus
+        {
+          Success = false,
+          Message = "server_id must not be empty"
+        };
+      }
+
+      await _storage.RegisterMediaServerAsync(request, context.CancellationToken);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<ListMediaServersResponse> ListMediaServers(
+      ListMediaServersRequest request,
+      ServerCallContext context)
+    {
+      var response = new ListMediaServersResponse();
+      response.Servers.AddRange(await _storage.ListMediaServersAsync(context.CancellationToken));
+      return response;
     }
 
     public override async Task<OperationStatus> SetCameraState(CameraState request, ServerCallContext context)
@@ -45,7 +78,7 @@ namespace VmsCfg
     public override async Task<ListCamerasResponse> ListCameras(ListCamerasRequest request, ServerCallContext context)
     {
       var response = new ListCamerasResponse();
-      response.Cameras.AddRange(await _storage.ListCamerasAsync(context.CancellationToken));
+      response.Cameras.AddRange(await _storage.ListCamerasAsync(request.ServerId, context.CancellationToken));
       return response;
     }
 

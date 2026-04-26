@@ -4,6 +4,8 @@ package vms.cfg;
 
 service CfgService {
   rpc ListCameras(ListCamerasRequest) returns (ListCamerasResponse);
+  rpc ListMediaServers(ListMediaServersRequest) returns (ListMediaServersResponse);
+  rpc RegisterMediaServer(MediaServerNode) returns (OperationStatus);
   rpc SetupCamera(CameraSetup) returns (OperationStatus);
   rpc SetCameraState(CameraState) returns (OperationStatus);
   rpc RemoveCamera(SourceRequest) returns (OperationStatus);
@@ -36,13 +38,27 @@ message CameraState {
 
 message CameraSetup {
   string camera_id = 1;
+  string server_id = 2;
   string rtsp_url = 4;
   optional Credentials cred = 5;
   optional OnvifConnection onvif_conn = 6;
   optional CameraState state = 7;
 }
 
-message ListCamerasRequest {}
+message MediaServerNode {
+  string server_id = 1;
+  string status = 2;
+}
+
+message ListMediaServersRequest {}
+
+message ListMediaServersResponse {
+  repeated MediaServerNode servers = 1;
+}
+
+message ListCamerasRequest {
+  string server_id = 1;
+}
 
 message ListCamerasResponse {
   repeated CameraSetup cameras = 1;

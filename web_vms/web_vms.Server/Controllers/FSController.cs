@@ -1,4 +1,5 @@
 ﻿using Google.Protobuf.WellKnownTypes;
+using Dapr.Client;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Control;
 using web_vms.Types.Dto;
@@ -8,13 +9,22 @@ namespace web_vms.Server.Controllers
   [Route("api/[controller]")]
   [ApiController]
   public class FSController(
-  CameraControlService.CameraControlServiceClient grpcClient) : ControllerBase
+    ICameraManager manager) : ControllerBase
   {
+    private static CameraControlService.CameraControlServiceClient GetMediaClient(string serverId) =>
+      new(DaprClient.CreateInvocationInvoker(serverId));
+
     [HttpPost("recordings")]
     public async Task<IActionResult> GetRecordings(
       [FromBody] RecordingsQueryDto query,
       CancellationToken ct)
     {
+      var camera = await manager.Get(query.CameraId);
+      if (string.IsNullOrWhiteSpace(camera?.ServerId))
+      {
+        return NotFound();
+      }
+
       var request = new RecordingsRequest
       {
         CameraId = query.CameraId,
@@ -35,7 +45,7 @@ namespace web_vms.Server.Controllers
         request.Timestamp = Timestamp.FromDateTime(dtUtc);
       }
 
-      var grpcResponse = await grpcClient.GetRecordingsAsync(request, cancellationToken: ct);
+      var grpcResponse = await GetMediaClient(camera.ServerId).GetRecordingsAsync(request, cancellationToken: ct);
 
       var result = new RecordingsResponseDto();
 

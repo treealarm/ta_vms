@@ -23,7 +23,7 @@
                     "value": "127.0.0.1:50011"
                 },
                 {
-                    "name": "DAPR_VMS_APP_ID",
+                    "name": "APP_ID",
                     "value": "vms"
                 },
                 {

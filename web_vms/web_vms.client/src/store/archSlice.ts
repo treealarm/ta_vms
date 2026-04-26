@@ -31,16 +31,22 @@ export const addPlayer = createAsyncThunk('arch/addPlayer', async (payload: Play
   return parseJson<ApiResponseDto>(response)
 })
 
-export const removePlayer = createAsyncThunk('arch/removePlayer', async (clientId: string) => {
-  const response = await fetch(`/api/arch/players/${encodeURIComponent(clientId)}`, {
-    method: 'DELETE'
-  })
+export const removePlayer = createAsyncThunk(
+  'arch/removePlayer',
+  async ({ clientId, cameraId }: { clientId: string; cameraId: string }) => {
+    const response = await fetch(
+      `/api/arch/players/${encodeURIComponent(clientId)}?cameraId=${encodeURIComponent(cameraId)}`,
+      { method: 'DELETE' }
+    )
 
-  return parseJson<ApiResponseDto>(response)
-})
+    return parseJson<ApiResponseDto>(response)
+  }
+)
 
-export const fetchPlayerState = createAsyncThunk('arch/fetchPlayerState', async (clientId: string) => {
-  const response = await fetch(`/api/arch/players/state?clientId=${encodeURIComponent(clientId)}`)
+export const fetchPlayerState = createAsyncThunk('arch/fetchPlayerState', async ({ clientId, cameraId }: { clientId: string; cameraId: string }) => {
+  const response = await fetch(
+    `/api/arch/players/state?clientId=${encodeURIComponent(clientId)}&cameraId=${encodeURIComponent(cameraId)}`
+  )
   return parseJson<PlayerProgressStateDto>(response)
 })
 

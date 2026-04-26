@@ -15,9 +15,11 @@ class cfg_client
 {
 public:
   cfg_client();
+  bool register_media_server();
   bool list_cameras(std::vector<vms::cfg::CameraSetup>& cfg);
 private:
   std::string m_app_id;
+  std::string m_server_id;
   std::shared_ptr<grpc::Channel> m_channel;
   std::unique_ptr<vms::cfg::CfgService::Stub> m_stub;
 };
