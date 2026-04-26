@@ -15,7 +15,7 @@
           "WEB_VMS_PORT": "5134",
           "DAPR_HTTP_PORT": "3500",
           "DAPR_GRPC_PORT": "50001",
-          "DAPR_LOGGER_APP_ID": "vms",
+          "DAPR_LOGGER_APP_ID": "vmslogger",
           "DAPR_CFG_APP_ID": "vmscfg"
         }
       },
@@ -53,6 +53,23 @@
         }
       },
       {
+        "name": "VmsLogger (.NET)",
+        "type": "coreclr",
+        "request": "launch",
+        "preLaunchTask": "prepare:vmslogger",
+        "postDebugTask": "dapr:vmslogger:stop",
+        "program": "${workspaceFolder}/VmsLogger/bin/Debug/net8.0/VmsLogger.dll",
+        "cwd": "${workspaceFolder}/VmsLogger",
+        "stopAtEntry": false,
+        "env": {
+          "ASPNETCORE_ENVIRONMENT": "Development",
+          "LOGGER_VMS_PORT": "5138",
+          "DAPR_HTTP_PORT": "3510",
+          "DAPR_GRPC_PORT": "50110",
+          "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../../media_storage"
+        }
+      },
+      {
         "name": "Frontend (Vite)",
         "type": "node",
         "request": "launch",
@@ -77,6 +94,7 @@
         "configurations": [
           "VmsCfg (.NET)",
           "VmsOnvif (.NET)",
+          "VmsLogger (.NET)",
           "Backend (.NET)",
           "Frontend (Vite)",
           "Frontend Debug (Chromium)"

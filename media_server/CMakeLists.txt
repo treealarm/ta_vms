@@ -44,9 +44,6 @@ set(SOURCES
     grpc_layer/onvif_client.cpp
     grpc_layer/fs_client.h
     grpc_layer/fs_client.cpp
-    grpc_layer/log_service.h
-    grpc_layer/log_service.cpp
-
     interfaces/av_deleters.h
     interfaces/media_packet.h
     interfaces/media_sink.h

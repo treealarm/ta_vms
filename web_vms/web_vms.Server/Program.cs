@@ -10,7 +10,7 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-var loggerAppId = Environment.GetEnvironmentVariable("DAPR_LOGGER_APP_ID") ?? "vms";
+var loggerAppId = Environment.GetEnvironmentVariable("DAPR_LOGGER_APP_ID") ?? "vmslogger";
 Console.WriteLine($"DAPR_LOGGER_APP_ID: {loggerAppId}");
 builder.Services.AddSingleton(_ =>
   new LogService.LogServiceClient(

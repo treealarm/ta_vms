@@ -10,7 +10,6 @@
 
 #include "grpc_layer/camera_control_service.h"
 #include "grpc_layer/cfg_client.h"
-#include "grpc_layer/log_service.h"
 
 #include "logger/logger.h"
 
@@ -46,12 +45,10 @@ int main(int argc, char** argv)
 
   camera_manager manager;
   camera_control_service service(manager);
-  log_service logs_service;
 
   grpc::ServerBuilder builder;
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
   builder.RegisterService(&service);
-  builder.RegisterService(&logs_service);
 
   std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
   if (!server) 
