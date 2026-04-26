@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package vms.fs;
+
+service FsService {
+  rpc IngestClip(IngestClipRequest) returns (OperationStatus);
+  rpc GetRecordings(GetRecordingsRequest) returns (GetRecordingsResponse);
+}
+
+message OperationStatus {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    SUCCESS = 1;
+    RETRYABLE_FAILURE = 2;
+    PERMANENT_FAILURE = 3;
+  }
+
+  Status status = 1;
+  string message = 2;
+  string clip_uid = 3;
+}
+
+message ClipMeta {
+  string camera_id = 1;
+  string file_path = 2;
+  google.protobuf.Timestamp start_ts = 3;
+  google.protobuf.Timestamp end_ts = 4;
+  uint64 size_bytes = 5;
+  string clip_uid = 6;
+}
+
+message IngestClipRequest {
+  ClipMeta clip = 1;
+}
+
+message GetRecordingsRequest {
+  string camera_id = 1;
+  optional google.protobuf.Timestamp from_ts = 2;
+  optional google.protobuf.Timestamp to_ts = 3;
+  uint32 limit = 4;
+}
+
+message Recording {
+  string camera_id = 1;
+  string file_path = 2;
+  google.protobuf.Timestamp start_ts = 3;
+  google.protobuf.Timestamp end_ts = 4;
+  uint64 size_bytes = 5;
+}
+
+message GetRecordingsResponse {
+  repeated Recording recordings = 1;
+}

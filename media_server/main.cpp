@@ -63,7 +63,7 @@ int main(int argc, char** argv)
   logger::instance().info(std::format("gRPC server is listening on  {}", server_address));
 
   cfg_client c_client;
-  std::vector<vms::cfg::CameraState> cfg_list;
+  std::vector<vms::cfg::CameraSetup> cfg_list;
   
   while (!c_client.list_cameras(cfg_list) && !g_stop_requested)
   {
@@ -79,10 +79,10 @@ int main(int argc, char** argv)
       const bool success = manager.add_camera(
         c.camera_id(),
         c.rtsp_url(),
-        c.cred().user(),
-        c.cred().pass(),
-        c.recording(),
-        c.web_rtc(),
+        c.has_cred() ? c.cred().user() : "",
+        c.has_cred() ? c.cred().pass() : "",
+        c.has_state() && c.state().recording(),
+        c.has_state() && c.state().web_rtc(),
         error);
       if (!success) 
       {

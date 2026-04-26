@@ -29,7 +29,7 @@ cfg_client::cfg_client()
 {
 }
 
-bool cfg_client::list_cameras(std::vector<vms::cfg::CameraState>& result)
+bool cfg_client::list_cameras(std::vector<vms::cfg::CameraSetup>& result)
 {
   vms::cfg::ListCamerasRequest request;
   vms::cfg::ListCamerasResponse response;

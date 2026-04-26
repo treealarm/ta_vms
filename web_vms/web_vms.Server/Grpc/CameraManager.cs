@@ -15,7 +15,7 @@ namespace web_vms
 
     public async Task<bool> Add(CameraStateDto dto)
     {
-      var response = await _cfgClient.AddCameraAsync(ToProto(dto));
+      var response = await _cfgClient.SetupCameraAsync(ToSetupProto(dto));
       return response.Success;
     }
 
@@ -33,39 +33,37 @@ namespace web_vms
 
     public async Task<bool> SetState(CameraStateDto dto)
     {
-      var response = await _cfgClient.SetCameraStateAsync(ToProto(dto));
+      var response = await _cfgClient.SetCameraStateAsync(ToStateProto(dto));
       return response.Success;
     }
 
     public async Task<CameraStateDto?> Get(string id)
     {
       var response = await _cfgClient.GetCameraStateAsync(new SourceRequest { SourceId = id });
-      return response.Found ? ToDto(response.Camera) : null;
+      return response.Found ? ToDto(response.Setup) : null;
     }
 
-    private static CameraStateDto ToDto(CameraState state) => new()
+    private static CameraStateDto ToDto(CameraSetup setup) => new()
     {
-      CameraId = state.CameraId,
-      Recording = state.Recording,
-      WebRtc = state.WebRtc,
-      RtspUrl = state.RtspUrl,
-      Cred = state.Cred == null ? null : new CredentialsDto
+      CameraId = setup.CameraId,
+      Recording = setup.State?.Recording ?? false,
+      WebRtc = setup.State?.WebRtc ?? false,
+      RtspUrl = setup.RtspUrl,
+      Cred = setup.Cred == null ? null : new CredentialsDto
       {
-        User = state.Cred.User,
-        Pass = state.Cred.Pass
+        User = setup.Cred.User,
+        Pass = setup.Cred.Pass
       },
-      OnvifConn = state.OnvifConn == null ? null : new OnvifConnectionDto
+      OnvifConn = setup.OnvifConn == null ? null : new OnvifConnectionDto
       {
-        ip = state.OnvifConn.Ip,
-        port = state.OnvifConn.Port
+        ip = setup.OnvifConn.Ip,
+        port = setup.OnvifConn.Port
       }
     };
 
-    private static CameraState ToProto(CameraStateDto dto) => new()
+    private static CameraSetup ToSetupProto(CameraStateDto dto) => new()
     {
       CameraId = dto.CameraId,
-      Recording = dto.Recording,
-      WebRtc = dto.WebRtc,
       RtspUrl = dto.RtspUrl ?? string.Empty,
       Cred = dto.Cred == null ? null : new Credentials
       {
@@ -76,7 +74,15 @@ namespace web_vms
       {
         Ip = dto.OnvifConn.ip,
         Port = dto.OnvifConn.port
-      }
+      },
+      State = ToStateProto(dto)
+    };
+
+    private static CameraState ToStateProto(CameraStateDto dto) => new()
+    {
+      CameraId = dto.CameraId,
+      Recording = dto.Recording,
+      WebRtc = dto.WebRtc
     };
   }
 }

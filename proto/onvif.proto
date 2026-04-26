@@ -6,10 +6,6 @@ option go_package = "grpc/vmsonvif;vmsonvif";
 
 import "vms_cfg.proto";
 
-message OnvifState {
-  string rtsp_url = 4;
-}
-
 service OnvifService {
-  rpc GetCameraOnvifUri(vms.cfg.SourceRequest) returns (OnvifState);
+  rpc GetCameraOnvifUri(vms.cfg.SourceRequest) returns (vms.cfg.OnvifState);
 }

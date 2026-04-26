@@ -1,11 +1,27 @@
 
 services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+      POSTGRES_DB: "${POSTGRES_CFG_DB:-ta_cfg}"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+
   vmscfg:
     build:
       context: .
       dockerfile: web_vms/VmsCfg/Dockerfile
     env_file:
       - .env
+    environment:
+      POSTGRES_HOST: postgres
+    depends_on:
+      - postgres
 
   vmscfg-dapr:
     image: "daprio/daprd:1.14.4"
@@ -33,6 +49,35 @@ services:
       - .env
     depends_on:
       - vmscfg
+
+  vmsfs:
+    build:
+      context: .
+      dockerfile: web_vms/VmsFs/Dockerfile
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+    depends_on:
+      - postgres
+
+  vmsfs-dapr:
+    image: "daprio/daprd:1.14.4"
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "vmsfs"
+      - "-app-port"
+      - "5137"
+      - "-app-protocol"
+      - "grpc"
+      - "-dapr-http-port"
+      - "3500"
+      - "-dapr-grpc-port"
+      - "50001"
+    network_mode: "service:vmsfs"
+    depends_on:
+      - vmsfs
 
   vmsonvif-dapr:
     image: "daprio/daprd:1.14.4"
@@ -63,6 +108,7 @@ services:
     depends_on:
       - vmscfg
       - vmsonvif
+      - vmsfs
       - mediamtx
     volumes:
       - "${PWD}/data:/data"
@@ -94,6 +140,7 @@ services:
     depends_on:
       - vms
       - vmscfg
+      - vmsfs
     env_file:
       - .env
 
@@ -123,3 +170,6 @@ services:
       - "8554:8554"       # RTSP
       - "8000:8000"       # HTTP API (опционально)
       - "8189:8189/udp"  # ICE/UDP медиапоток
+
+volumes:
+  postgres-data:

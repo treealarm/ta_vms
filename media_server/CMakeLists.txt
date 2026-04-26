@@ -20,6 +20,7 @@ pkg_check_modules(FFMPEG REQUIRED
 set(VMS_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_control.proto)
 set(CFG_CLIENT_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_cfg.proto)
 set(ONVIF_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/onvif.proto)
+set(FS_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_fs.proto)
 set(LOGGER_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/logger.proto)
 set(DAPR_RUNTIME_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr/proto/runtime/v1/dapr.proto)
 set(DAPR_COMMON_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr/proto/common/v1/common.proto)
@@ -41,6 +42,8 @@ set(SOURCES
     grpc_layer/cfg_client.cpp
     grpc_layer/onvif_client.h
     grpc_layer/onvif_client.cpp
+    grpc_layer/fs_client.h
+    grpc_layer/fs_client.cpp
     grpc_layer/log_service.h
     grpc_layer/log_service.cpp
 
@@ -106,6 +109,7 @@ protobuf_generate(
         ${VMS_PROTO_FILE}
         ${CFG_CLIENT_PROTO_FILE}
         ${ONVIF_PROTO_FILE}
+        ${FS_PROTO_FILE}
         ${LOGGER_PROTO_FILE}
         ${DAPR_RUNTIME_PROTO_FILE}
         ${DAPR_COMMON_PROTO_FILE}
@@ -121,6 +125,7 @@ protobuf_generate(
         ${DAPR_COMMON_PROTO_FILE}
         ${CFG_CLIENT_PROTO_FILE}
         ${ONVIF_PROTO_FILE}
+        ${FS_PROTO_FILE}
         ${LOGGER_PROTO_FILE}
     PLUGIN protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>
     GENERATE_EXTENSIONS .grpc.pb.cc .grpc.pb.h

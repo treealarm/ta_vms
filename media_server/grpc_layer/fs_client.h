@@ -1,0 +1,92 @@
+#pragma once
+
+#include <cstddef>
+#include <chrono>
+#include <condition_variable>
+#include <filesystem>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <queue>
+#include <string>
+#include <thread>
+#include <vector>
+
+#include <grpcpp/grpcpp.h>
+
+#include "vms_fs.grpc.pb.h"
+
+class fs_client
+{
+public:
+  static fs_client& instance();
+
+  fs_client(const fs_client&) = delete;
+  fs_client& operator=(const fs_client&) = delete;
+
+  struct recording
+  {
+    std::string camera_id;
+    std::string file_path;
+    std::chrono::system_clock::time_point start_ts;
+    std::optional<std::chrono::system_clock::time_point> end_ts;
+    std::uint64_t size_bytes = 0;
+  };
+
+  void enqueue_ingest_clip(
+    const std::string& camera_id,
+    const std::string& file_path,
+    std::chrono::system_clock::time_point start_ts,
+    std::optional<std::chrono::system_clock::time_point> end_ts,
+    std::uint64_t size_bytes);
+
+  bool ingest_clip(
+    const recording& clip,
+    std::string& clip_uid,
+    std::string& error);
+
+  bool get_recordings(
+    const std::string& camera_id,
+    std::optional<std::chrono::system_clock::time_point> from_ts,
+    std::optional<std::chrono::system_clock::time_point> to_ts,
+    std::uint32_t limit,
+    std::vector<recording>& result,
+    std::string& error);
+
+private:
+  fs_client();
+  ~fs_client();
+
+  enum class ingest_result
+  {
+    success,
+    retryable_failure,
+    permanent_failure
+  };
+
+  struct ingest_outcome
+  {
+    ingest_result result = ingest_result::success;
+    std::string reason;
+  };
+
+  void worker_loop();
+  ingest_outcome ingest_clip_sync(const vms::fs::IngestClipRequest& request);
+  bool load_outbox_chunk_locked(std::size_t max_records);
+  bool append_outbox_locked(const vms::fs::IngestClipRequest& request) const;
+  bool append_permanent_failure_locked(
+    const vms::fs::IngestClipRequest& request,
+    const std::string& reason) const;
+
+  std::string m_app_id;
+  std::shared_ptr<grpc::Channel> m_channel;
+  std::unique_ptr<vms::fs::FsService::Stub> m_stub;
+  std::filesystem::path m_outbox_path;
+  std::filesystem::path m_permanent_failures_path;
+  std::mutex m_mutex;
+  mutable std::mutex m_file_mutex;
+  std::condition_variable m_cv;
+  std::queue<vms::fs::IngestClipRequest> m_queue;
+  std::thread m_worker;
+  bool m_stopping = false;
+};

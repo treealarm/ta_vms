@@ -1,7 +1,5 @@
-﻿using System.Linq;
-using Grpc.Core;
+﻿using Grpc.Core;
 using Vms.Cfg;
-using web_vms.Types.Dto;
 
 namespace VmsCfg
 {
@@ -14,102 +12,64 @@ namespace VmsCfg
       _storage = storage;
     }
 
-    private static CameraStateDto ToDto(CameraState s) => new()
+    public override async Task<OperationStatus> SetupCamera(CameraSetup request, ServerCallContext context)
     {
-      CameraId = s.CameraId,
-      Recording = s.Recording,
-      WebRtc = s.WebRtc,
-      RtspUrl = s.RtspUrl,
-      Cred = s.Cred == null ? null : new CredentialsDto
+      if (string.IsNullOrWhiteSpace(request.CameraId))
       {
-        User = s.Cred.User,
-        Pass = s.Cred.Pass
-      },
-      OnvifConn = s.OnvifConn == null ? null : new OnvifConnectionDto
-      {
-        ip = s.OnvifConn.Ip,
-        port = s.OnvifConn.Port
+        return new OperationStatus
+        {
+          Success = false,
+          Message = "camera_id must not be empty"
+        };
       }
-    };
 
-    private static CameraState ToProto(CameraStateDto d) => new()
-    {
-      CameraId = d.CameraId,
-      Recording = d.Recording,
-      WebRtc = d.WebRtc,
-      RtspUrl = d.RtspUrl ?? string.Empty,
-      Cred = d.Cred == null ? null : new Credentials
-      {
-        User = d.Cred.User,
-        Pass = d.Cred.Pass
-      },
-      OnvifConn = d.OnvifConn == null ? null : new OnvifConnection
-      {
-        Ip = d.OnvifConn.ip,
-        Port = d.OnvifConn.port
-      }
-    };
-
-    public override Task<OperationStatus> AddCamera(CameraState request, ServerCallContext context)
-    {
-      var cameras = _storage.Load();
-      cameras.RemoveAll(c => c.CameraId == request.CameraId);
-      cameras.Add(ToDto(request));
-      _storage.Save(cameras);
-
-      return Task.FromResult(new OperationStatus { Success = true });
+      await _storage.SetupCameraAsync(request, context.CancellationToken);
+      return new OperationStatus { Success = true };
     }
 
-    public override Task<OperationStatus> SetCameraState(CameraState request, ServerCallContext context)
+    public override async Task<OperationStatus> SetCameraState(CameraState request, ServerCallContext context)
     {
-      var cameras = _storage.Load();
-      var existing = cameras.FirstOrDefault(c => c.CameraId == request.CameraId);
-      if (existing == null)
+      var updated = await _storage.SetCameraStateAsync(request, context.CancellationToken);
+      if (!updated)
       {
-        return Task.FromResult(new OperationStatus
+        return new OperationStatus
         {
           Success = false,
           Message = "Camera not found"
-        });
+        };
       }
 
-      cameras.Remove(existing);
-      cameras.Add(ToDto(request));
-      _storage.Save(cameras);
-
-      return Task.FromResult(new OperationStatus { Success = true });
+      return new OperationStatus { Success = true };
     }
 
-    public override Task<ListCamerasResponse> ListCameras(ListCamerasRequest request, ServerCallContext context)
+    public override async Task<ListCamerasResponse> ListCameras(ListCamerasRequest request, ServerCallContext context)
     {
       var response = new ListCamerasResponse();
-      var cameras = _storage.Load();
-      response.Cameras.AddRange(cameras.Select(ToProto));
-      return Task.FromResult(response);
+      response.Cameras.AddRange(await _storage.ListCamerasAsync(context.CancellationToken));
+      return response;
     }
 
-    public override Task<OperationStatus> RemoveCamera(SourceRequest request, ServerCallContext context)
+    public override async Task<OperationStatus> RemoveCamera(SourceRequest request, ServerCallContext context)
     {
-      var cameras = _storage.Load();
-      var removed = cameras.RemoveAll(c => c.CameraId == request.SourceId) > 0;
-      _storage.Save(cameras);
+      var removed = await _storage.RemoveCameraAsync(request.SourceId, context.CancellationToken);
 
-      return Task.FromResult(new OperationStatus { Success = removed });
+      return new OperationStatus { Success = removed };
     }
 
-    public override Task<CameraStateResponse> GetCameraState(SourceRequest request, ServerCallContext context)
+    public override async Task<CameraStateResponse> GetCameraState(SourceRequest request, ServerCallContext context)
     {
-      var state = _storage.Load().FirstOrDefault(c => c.CameraId == request.SourceId);
-      if (state == null)
+      var (found, setup) = await _storage.GetCameraAsync(request.SourceId, context.CancellationToken);
+      if (!found || setup is null)
       {
-        return Task.FromResult(new CameraStateResponse { Found = false });
+        return new CameraStateResponse { Found = false };
       }
 
-      return Task.FromResult(new CameraStateResponse
+      return new CameraStateResponse
       {
         Found = true,
-        Camera = ToProto(state)
-      });
+        Setup = setup,
+        State = setup.State
+      };
     }
 
   }

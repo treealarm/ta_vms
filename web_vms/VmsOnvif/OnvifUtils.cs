@@ -5,7 +5,7 @@ namespace VmsOnvif;
 
 public static class OnvifUtils
 {
-  public static async Task<string> GetStreamUri(CameraState camInfo)
+  public static async Task<string> GetStreamUri(CameraSetup camInfo)
   {
     if (camInfo?.OnvifConn == null)
     {

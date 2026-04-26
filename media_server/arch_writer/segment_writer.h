@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -44,6 +45,9 @@ private:
   std::unordered_map<int, AVStream*> m_output_streams;
 
   std::chrono::steady_clock::time_point m_segment_start_time;
+  std::chrono::system_clock::time_point m_segment_start_ts{};
+  std::filesystem::path m_segment_abs_path;
+  std::filesystem::path m_segment_rel_path;
 
   sync_packet_transcoder m_packet_transcoder;
 

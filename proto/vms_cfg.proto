@@ -4,7 +4,7 @@ package vms.cfg;
 
 service CfgService {
   rpc ListCameras(ListCamerasRequest) returns (ListCamerasResponse);
-  rpc AddCamera(CameraState) returns (OperationStatus);
+  rpc SetupCamera(CameraSetup) returns (OperationStatus);
   rpc SetCameraState(CameraState) returns (OperationStatus);
   rpc RemoveCamera(SourceRequest) returns (OperationStatus);
   rpc GetCameraState(SourceRequest) returns (CameraStateResponse);
@@ -24,19 +24,28 @@ message OnvifConnection {
   int32 port = 2;
 }
 
+message OnvifState {
+  string rtsp_url = 4;
+}
+
 message CameraState {
   string camera_id = 1;
   bool recording = 2;
   bool web_rtc = 3;
+}
+
+message CameraSetup {
+  string camera_id = 1;
   string rtsp_url = 4;
   optional Credentials cred = 5;
   optional OnvifConnection onvif_conn = 6;
+  optional CameraState state = 7;
 }
 
 message ListCamerasRequest {}
 
 message ListCamerasResponse {
-  repeated CameraState cameras = 1;
+  repeated CameraSetup cameras = 1;
 }
 
 message OperationStatus {
@@ -45,6 +54,7 @@ message OperationStatus {
 }
 
 message CameraStateResponse {
-  CameraState camera = 1;
+  CameraState state = 1;
+  CameraSetup setup = 3;
   bool found = 2;
 }

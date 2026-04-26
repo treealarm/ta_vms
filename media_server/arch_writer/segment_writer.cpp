@@ -2,6 +2,11 @@
 
 #include "segment_writer.h"
 
+#include <format>
+#include <optional>
+#include <system_error>
+
+#include "grpc_layer/fs_client.h"
 #include "logger/logger.h"
 
 segment_writer::segment_writer(
@@ -70,8 +75,10 @@ void segment_writer::open_new_segment()
 
   recording_storage storage;
 
-  auto path = storage.get_absolute_path(m_camera_id, now);
+  m_segment_rel_path = storage.make_segment_path(m_camera_id, now);
+  const auto path = recording_storage::resolve_storage_base_path() / m_segment_rel_path;
   std::filesystem::create_directories(path.parent_path());
+  m_segment_abs_path = path;
 
   AVFormatContext* ctx = nullptr;
 
@@ -132,6 +139,14 @@ void segment_writer::open_new_segment()
   }
 
   m_segment_start_time = std::chrono::steady_clock::now();
+  m_segment_start_ts = now;
+
+  fs_client::instance().enqueue_ingest_clip(
+    m_camera_id,
+    m_segment_rel_path.string(),
+    m_segment_start_ts,
+    std::nullopt,
+    0);
 }
 
 void segment_writer::close_segment()
@@ -144,8 +159,43 @@ void segment_writer::close_segment()
   if (!(m_ctx->oformat->flags & AVFMT_NOFILE))
     avio_closep(&m_ctx->pb);
 
+  const auto segment_end_ts = std::chrono::system_clock::now();
+
   m_ctx.reset();
   m_output_streams.clear();
+
+  if (!m_segment_abs_path.empty() && !m_segment_rel_path.empty())
+  {
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(m_segment_abs_path, ec);
+    if (ec)
+    {
+      logger::instance().warning(std::format(
+        "failed to read segment size for '{}': {}",
+        m_segment_abs_path.string(),
+        ec.message()));
+
+      fs_client::instance().enqueue_ingest_clip(
+        m_camera_id,
+        m_segment_rel_path.string(),
+        m_segment_start_ts,
+        segment_end_ts,
+        0);
+    }
+    else
+    {
+      fs_client::instance().enqueue_ingest_clip(
+        m_camera_id,
+        m_segment_rel_path.string(),
+        m_segment_start_ts,
+        segment_end_ts,
+        size);
+    }
+  }
+
+  m_segment_abs_path.clear();
+  m_segment_rel_path.clear();
+  m_segment_start_ts = {};
 }
 
 void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)

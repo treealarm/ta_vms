@@ -34,7 +34,7 @@ bool onvif_client::get_uri(const std::string& cam_id, std::string& uri)
   vms::cfg::SourceRequest request;
   request.set_source_id(cam_id);
 
-  vms::onvif::OnvifState response;
+  vms::cfg::OnvifState response;
 
   grpc::ClientContext context;
   context.set_deadline(
