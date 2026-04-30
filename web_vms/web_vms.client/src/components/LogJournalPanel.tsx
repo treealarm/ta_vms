@@ -30,20 +30,21 @@ function formatLogLine(ts: string, level: string, message: string, file: string,
   return `${ts} [${level}] ${message} (${file}::${func})`
 }
 
-function getLevelColor(level: string): string {
-  switch (level.trim().toLowerCase()) {
-    case 'error':
-      return '#ef5350'
-    case 'warn':
-    case 'warning':
-      return '#ffb74d'
-    case 'info':
-      return '#64b5f6'
-    case 'debug':
-      return '#81c784'
-    default:
-      return '#e0e0e0'
+function normalizeLogLevelKey(level: string): 'error' | 'warn' | 'info' | 'debug' | 'default' {
+  const k = level.trim().toLowerCase()
+  if (k === 'error') {
+    return 'error'
   }
+  if (k === 'warn' || k === 'warning') {
+    return 'warn'
+  }
+  if (k === 'info') {
+    return 'info'
+  }
+  if (k === 'debug') {
+    return 'debug'
+  }
+  return 'default'
 }
 
 export default function LogJournalPanel() {
@@ -205,33 +206,17 @@ export default function LogJournalPanel() {
                 </Button>
               </Stack>
 
-              <Box
-                sx={{
-                  maxHeight: 220,
-                  overflowY: 'auto',
-                  bgcolor: '#111',
-                  color: '#e0e0e0',
-                  borderRadius: 1,
-                  p: 1,
-                  fontFamily: 'monospace',
-                  fontSize: 12
-                }}
-              >
+              <Box className="vms-log-journal-body">
                 {filteredEntries.length === 0 && (
-                  <Typography variant="caption" sx={{ color: '#aaa' }}>
+                  <Typography variant="caption" className="vms-log-journal-empty">
                     No logs
                   </Typography>
                 )}
                 {filteredEntries.map((e, idx) => (
                   <Box
                     key={`${e.timestamp}-${idx}`}
-                    sx={{
-                      whiteSpace: 'pre-wrap',
-                      color: getLevelColor(e.level),
-                      borderLeft: `2px solid ${getLevelColor(e.level)}`,
-                      pl: 1,
-                      py: 0.25
-                    }}
+                    className="vms-log-line"
+                    data-log-level={normalizeLogLevelKey(e.level)}
                   >
                     {formatLogLine(
                       toLocalDatetimeInputValue(new Date(e.timestamp)),

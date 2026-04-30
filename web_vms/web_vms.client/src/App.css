@@ -1,13 +1,76 @@
+/**
+ * Visual design tokens and global UI overrides.
+ * Edit colors, radii, fonts, and extra MUI tweaks here.
+ *
+ * `src/theme/netTerrainTheme.ts` must use the same hex values for `palette` (MUI cannot use
+ * CSS `var()` there). After changing :root below, sync the theme file if MUI visuals should match.
+ */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+/* -------- Design tokens (NetTerrain-inspired red + white on charcoal) -------- */
 :root {
-  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  --app-font-family: Roboto, Tahoma, Geneva, Arial, sans-serif;
+  --app-radius: 8px;
+  --app-radius-sm: 4px;
+
+  --app-primary-main: #c21931;
+  --app-primary-dark: #9a1426;
+  --app-primary-light: #e84d63;
+  --app-primary-contrast: #ffffff;
+
+  --app-secondary-main: #646363;
+  --app-secondary-light: #808080;
+  --app-secondary-dark: #565656;
+  --app-secondary-contrast: #ffffff;
+
+  --app-error: #ef493f;
+
+  --app-bg-default: #3c3c3c;
+  --app-bg-paper: #4a4949;
+  --app-bg-elevated: #434343;
+  --app-border: #333333;
+  --app-divider-soft: rgba(0, 0, 0, 0.12);
+
+  --app-text-primary: #fcfcfc;
+  --app-text-secondary: #c1c1c1;
+  --app-text-disabled: #808080;
+
+  --app-action-active: #ffffff;
+  --app-action-hover: rgba(255, 255, 255, 0.08);
+  --app-action-selected: rgba(194, 25, 49, 0.18);
+  --app-action-disabled-bg: rgba(128, 128, 128, 0.24);
+
+  --app-video-bg: #0a0a0a;
+  --app-scrollbar-fg: rgba(238, 238, 238, 0.35);
+
+  /* Log journal */
+  --app-log-panel-bg: #1a1a1a;
+  --app-log-panel-fg: #e0e0e0;
+  --app-log-empty: #aaa;
+  --app-log-error: #ef5350;
+  --app-log-warn: #ffb74d;
+  --app-log-info: #64b5f6;
+  --app-log-debug: #81c784;
+  --app-log-default: #e0e0e0;
 }
 
 body {
-  margin: 0;
-  background: #0f172a;
-  color: #e2e8f0;
+  font-family: var(--app-font-family);
+  background: var(--app-bg-default);
+  color: var(--app-text-primary);
+  scrollbar-color: var(--app-scrollbar-fg) var(--app-bg-elevated);
 }
 
+/* -------- Legacy utility blocks (non-MUI markup) -------- */
 .layout {
   max-width: 980px;
   margin: 0 auto;
@@ -17,9 +80,9 @@ body {
 }
 
 .card {
-  background: #1e293b;
-  border: 1px solid #334155;
-  border-radius: 12px;
+  background: var(--app-bg-paper);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
   padding: 16px;
   display: grid;
   gap: 12px;
@@ -33,20 +96,20 @@ label {
 
 input,
 select {
-  border: 1px solid #475569;
-  border-radius: 8px;
-  background: #0f172a;
-  color: #f8fafc;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: var(--app-bg-elevated);
+  color: var(--app-text-primary);
   padding: 10px;
 }
 
 button {
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--app-radius);
   padding: 10px 12px;
   font-weight: 600;
-  background: #3b82f6;
-  color: white;
+  background: var(--app-primary-main);
+  color: var(--app-primary-contrast);
   cursor: pointer;
 }
 
@@ -71,14 +134,269 @@ button:disabled {
   width: 100%;
   min-height: 220px;
   object-fit: contain;
-  border: 1px solid #475569;
-  border-radius: 10px;
-  background: #020617;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: #2a2a2a;
 }
 
 .status {
   margin: 0;
   padding: 12px 16px;
-  border-radius: 10px;
-  background: #1d4ed8;
+  border-radius: var(--app-radius);
+  background: var(--app-primary-main);
+}
+
+/* -------- MUI global chrome -------- */
+.MuiPaper-root {
+  background-image: none;
+}
+
+.MuiPaper-outlined {
+  border-color: var(--app-border);
+}
+
+.MuiCard-root {
+  border: 1px solid var(--app-border);
+  background-image: none;
+  border-radius: var(--app-radius);
+}
+
+.MuiTabs-indicator {
+  height: 3px;
+  background-color: var(--app-primary-main);
+}
+
+.MuiTab-root {
+  text-transform: none;
+  font-weight: 500;
+}
+
+.MuiButton-root {
+  border-radius: var(--app-radius);
+}
+
+.MuiButton-containedPrimary:hover {
+  background-color: var(--app-primary-dark);
+}
+
+.MuiButton-root.MuiButton-contained {
+  box-shadow: none;
+}
+
+.MuiToggleButton-root {
+  text-transform: none;
+}
+
+.MuiToggleButton-root.Mui-selected {
+  background-color: color-mix(in srgb, var(--app-primary-main) 35%, transparent);
+}
+
+.MuiToggleButton-root.Mui-selected:hover {
+  background-color: color-mix(in srgb, var(--app-primary-main) 45%, transparent);
+}
+
+.MuiOutlinedInput-root {
+  background-color: var(--app-bg-elevated);
+}
+
+.MuiOutlinedInput-root fieldset {
+  border-color: var(--app-border);
+}
+
+.MuiOutlinedInput-root:hover fieldset {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.MuiOutlinedInput-root.Mui-focused fieldset {
+  border-color: var(--app-primary-main);
+}
+
+.MuiAppBar-root {
+  background-color: var(--app-bg-paper);
+  border-bottom: 1px solid var(--app-border);
+}
+
+/* -------- Live / archive video surfaces -------- */
+.vms-video-frame {
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background-color: var(--app-video-bg);
+}
+
+.vms-archive-video-wrap {
+  width: 100%;
+  height: 100%;
+  background-color: var(--app-video-bg);
+  border-radius: var(--app-radius-sm);
+  overflow: hidden;
+}
+
+.vms-archive-video-wrap video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.vms-archive-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--app-video-bg);
+  color: var(--app-text-secondary);
+  font-size: 14px;
+  padding: 0 8px;
+  text-align: center;
+}
+
+.vms-archive-recordings-split {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--app-divider-soft);
+  overflow: hidden;
+  min-height: 0;
+}
+
+.vms-hls-preview-video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: min(75vh, 900px);
+  border-radius: var(--app-radius-sm);
+  overflow: hidden;
+  background-color: var(--app-video-bg);
+}
+
+.vms-hls-preview-video video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+/* -------- Recordings side list -------- */
+.vms-recordings-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  width: 118px;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+.vms-recordings-toolbar {
+  padding-left: 8px;
+  padding-right: 8px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--app-divider-soft);
+  flex-shrink: 0;
+}
+
+.vms-recordings-toolbar .MuiTypography-caption {
+  line-height: 1.15;
+}
+
+.vms-recordings-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.vms-recordings-loader {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.vms-recordings-subheader {
+  line-height: 24px;
+  background-color: var(--app-bg-paper);
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.vms-recordings-root .MuiListItemButton-root {
+  padding-top: 2.8px;
+  padding-bottom: 2.8px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.vms-recordings-root .MuiListItemButton-root.Mui-selected {
+  background-color: color-mix(in srgb, var(--app-primary-main) 15%, transparent);
+}
+
+.vms-recordings-root .MuiListItemButton-root[data-vms-playing] {
+  border-left: 3px solid var(--app-primary-light);
+}
+
+.vms-recordings-root .MuiListItemText-primary {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
+
+.vms-tooltip-block {
+  display: block;
+  max-width: 380px;
+}
+
+.vms-tooltip-path {
+  word-break: break-all;
+}
+
+.vms-picker-popover {
+  padding: 8px;
+}
+
+/* -------- Log journal -------- */
+.vms-log-journal-body {
+  max-height: 220px;
+  overflow-y: auto;
+  background-color: var(--app-log-panel-bg);
+  color: var(--app-log-panel-fg);
+  border-radius: var(--app-radius-sm);
+  padding: 8px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.vms-log-journal-empty {
+  color: var(--app-log-empty);
+}
+
+.vms-log-line {
+  white-space: pre-wrap;
+  padding-left: 8px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  border-left: 2px solid transparent;
+}
+
+.vms-log-line[data-log-level='error'] {
+  color: var(--app-log-error);
+  border-left-color: var(--app-log-error);
+}
+
+.vms-log-line[data-log-level='warn'] {
+  color: var(--app-log-warn);
+  border-left-color: var(--app-log-warn);
+}
+
+.vms-log-line[data-log-level='info'] {
+  color: var(--app-log-info);
+  border-left-color: var(--app-log-info);
+}
+
+.vms-log-line[data-log-level='debug'] {
+  color: var(--app-log-debug);
+  border-left-color: var(--app-log-debug);
+}
+
+.vms-log-line[data-log-level='default'] {
+  color: var(--app-log-default);
+  border-left-color: var(--app-log-default);
 }

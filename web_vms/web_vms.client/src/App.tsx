@@ -77,7 +77,7 @@ function App() {
   }
 
   return (
-    <Box sx={{ maxWidth: 1200, mx: 'auto', p: { xs: 2, md: 4 }, pb: 36 }}>
+    <Box sx={{ width: '100%', p: { xs: 2, md: 4 }, pb: 36 }}>
       <Stack spacing={2.5}>
         <ServerCameraSetupPanel
           cameras={Object.values(camerasMap)}

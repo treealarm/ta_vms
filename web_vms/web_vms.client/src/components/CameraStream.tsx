@@ -195,13 +195,14 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
   return (
     <Box
       title={streamName}
+      className="vms-video-frame"
       sx={{
         width: '100%',
         aspectRatio: '1 / 1',
-        border: 1,
-        borderColor: 'divider',
-        borderRadius: 2,
         overflow: 'hidden',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
       }}
     >
       <video
@@ -213,6 +214,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
         style={{
           width: '100%',
           height: '100%',
+          objectFit: 'contain',
         }}
       />
     </Box>

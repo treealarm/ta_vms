@@ -115,13 +115,7 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
               </Box>
 
               {listOpen && (
-                <Box sx={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  borderLeft: '1px solid rgba(0,0,0,0.1)',
-                  overflow: 'hidden',
-                  minHeight: 0
-                }}>
+                <Box className="vms-archive-recordings-split">
                   <RecordingsList
                     open={listOpen}
                     cameraId={player.camera_id}

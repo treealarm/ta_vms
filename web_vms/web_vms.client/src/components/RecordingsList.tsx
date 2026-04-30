@@ -103,17 +103,14 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
 
     const iso = value.toISOString()
 
-    // сбрасываем предыдущий таймер
     if (acceptTimeoutRef.current) {
       clearTimeout(acceptTimeoutRef.current)
     }
 
     acceptTimeoutRef.current = window.setTimeout(() => {
-      requestAt(iso)          // обновляем список
-      onTimeChange?.(iso)     // ✅ только отсюда
-    }, 2000) // подбери задержку
-
-    //setPickerAnchor(null)
+      requestAt(iso)
+      onTimeChange?.(iso)
+    }, 2000)
   }
 
 
@@ -131,7 +128,7 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
 
     setQueryTime(iso)
     setPickerTime(d)
-    setDisplayTime(iso) // ✅ синхронизация
+    setDisplayTime(iso)
     setLoaded(false)
     onTimeChange?.(iso)
   }
@@ -169,18 +166,13 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
   const shownClock = shownTime.toLocaleTimeString()
 
   const openPicker = (target: HTMLElement) => {
-    setPickerTime(dayjs(displayTime)) // ✅
+    setPickerTime(dayjs(displayTime))
     setPickerAnchor(target)
   }
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <Stack
-        direction="column"
-        alignItems="center"
-        spacing={0.5}
-        sx={{ px: 1, py: 1, borderBottom: '1px solid rgba(0,0,0,0.1)', flexShrink: 0 }}
-      >
+    <Box className="vms-recordings-root">
+      <Stack direction="column" alignItems="center" spacing={0.5} className="vms-recordings-toolbar">
         <Typography variant="caption" sx={{ lineHeight: 1.15 }}>
           {shownDate}
         </Typography>
@@ -207,15 +199,15 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
         onClose={() => setPickerAnchor(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
       >
-        <Box sx={{ p: 1 }}>
+        <Box className="vms-picker-popover">
           <LocalizationProvider dateAdapter={AdapterDayjs}>
             <DateTimePicker
               value={pickerTime}
               onChange={(newValue) => setPickerTime(newValue)}
               onAccept={handleAccept}
               timeSteps={{ minutes:1, seconds: 1 }}
-              views={['year', 'month', 'day', 'hours', 'minutes', 'seconds']} // ✅
-              format="YYYY-MM-DD HH:mm:ss" // желательно
+              views={['year', 'month', 'day', 'hours', 'minutes', 'seconds']}
+              format="YYYY-MM-DD HH:mm:ss"
               slotProps={{
                 textField: {
                   size: 'small',
@@ -227,9 +219,9 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
         </Box>
       </Popover>
 
-      <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <Box className="vms-recordings-scroll">
         {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 1 }}>
+          <Box className="vms-recordings-loader">
             <CircularProgress size={20} />
           </Box>
         ) : (
@@ -249,36 +241,24 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
                 return (
                   <div key={rec.filePath}>
                     {showDateHeader && (
-                      <ListSubheader
-                        disableSticky
-                        sx={{
-                          lineHeight: '24px',
-                          bgcolor: 'background.paper',
-                          fontSize: 12,
-                          opacity: 0.7
-                        }}
-                      >
+                      <ListSubheader disableSticky className="vms-recordings-subheader">
                         {new Date(rec.startTime).toLocaleDateString()}
                       </ListSubheader>
                     )}
 
                     <Tooltip
                       title={
-                        <>
-                          <div>{rec.filePath}</div>
+                        <Box component="span" className="vms-tooltip-block">
+                          <div className="vms-tooltip-path">{rec.filePath}</div>
                           <div>{new Date(rec.startTime).toLocaleString()}</div>
-                        </>
+                        </Box>
                       }
                       placement="left"
                     >
                       <ListItemButton
                         selected={isSelected}
                         onClick={() => handleClick(rec)}
-                        sx={{
-                          py: 0.5,
-                          borderLeft: isNearest ? '3px solid orange' : undefined,
-                          bgcolor: isSelected ? 'rgba(25,118,210,0.15)' : undefined
-                        }}
+                        data-vms-playing={isNearest ? true : undefined}
                       >
                         <ListItemText primary={isNearest ? `➤ ${time}` : time} />
                       </ListItemButton>
