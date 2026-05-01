@@ -20,6 +20,7 @@ public:
     std::string pass;
     bool is_recording = false;
     bool is_web_rtc_streaming = false;
+    recording_policy_mode recording_policy = recording_policy_mode::off;
   };
   struct player_info
   {
@@ -33,9 +34,9 @@ public:
   };
   bool add_camera(const std::string& camera_id,
                   const std::string& rtsp_url,
-    const std::string& user,
-    const std::string& pass,
-                  bool recording,
+                  const std::string& user,
+                  const std::string& pass,
+                  const recording_policy_spec& policy,
                   bool web_rtc,
                   std::string& error);
 
@@ -46,7 +47,7 @@ public:
     const std::string& rtsp_url,
     const std::string& user,
     const std::string& pass,
-    bool recording,
+    const recording_policy_spec& policy,
     bool web_rtc,
     std::string& error);
 

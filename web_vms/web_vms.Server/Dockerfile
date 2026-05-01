@@ -1,11 +1,11 @@
 ﻿# =========================
-# Базовый runtime для ASP.NET
+# Base ASP.NET runtime image
 # =========================
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 WORKDIR /app
 
 # =========================
-# SDK с Node.js для фронта
+# SDK image + Node.js for SPA build
 # =========================
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build-env
 RUN apt-get update && apt-get install -y curl
@@ -16,42 +16,42 @@ ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 
 # =========================
-# Копируем проекты и proto
+# Copy project files and proto
 # =========================
 COPY ["web_vms/web_vms.Server/web_vms.Server.csproj", "web_vms.Server/"]
 COPY ["web_vms/web_vms.client/web_vms.client.esproj", "web_vms.client/"]
 COPY ["proto", "proto"]
 
 # =========================
-# Восстанавливаем зависимости серверного проекта
+# Restore server dependencies
 # =========================
 RUN dotnet restore "web_vms.Server/web_vms.Server.csproj"
 
 # =========================
-# Копируем весь исходный код и фронт
+# Copy full source (server + client)
 # =========================
 COPY . .
 
 # =========================
-# Собираем фронт (npm install + build)
+# Build frontend (npm ci + build)
 # =========================
 WORKDIR "/src/web_vms/web_vms.client"
 RUN npm ci
 RUN npm run build
 
 # =========================
-# Собираем сервер
+# Build server
 # =========================
 WORKDIR "/src/web_vms/web_vms.Server"
 RUN dotnet build "web_vms.Server.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
 # =========================
-# Публикуем сервер
+# Publish server
 # =========================
 RUN dotnet publish "web_vms.Server.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 # =========================
-# Финальный образ для запуска
+# Final runnable image
 # =========================
 FROM base AS final
 WORKDIR /app

@@ -7,6 +7,7 @@
 
 #include "interfaces/media_sink.h"
 #include "interfaces/reader.h"
+#include "recording_types.h"
 #include "stream/jpeg_streamer.h"
 #include "arch_writer/segment_writer.h"
 #include "writer/webrtc_output_sink.h"
@@ -21,7 +22,7 @@ public:
 
   virtual ~cam();
 
-  void start_recording();
+  void apply_recording_policy(const recording_policy_spec& policy);
   void stop_recording();
 
   bool start_web_rtc(std::string& error);
@@ -34,6 +35,8 @@ public:
   std::string get_pass() { return m_pass; }
   bool is_recording() { return m_writer != nullptr; }
   bool is_web_rtc_streaming() { return m_webrtc_output_sink != nullptr; }
+  recording_policy_mode get_recording_policy_mode() const { return m_recording_policy_mode; }
+
 private:
 
   std::string m_source;
@@ -44,6 +47,9 @@ private:
 
   std::unique_ptr<reader> m_reader;
   std::shared_ptr<segment_writer> m_writer;
+  recording_policy_mode m_recording_policy_mode{recording_policy_mode::off};
+  std::chrono::seconds m_record_segment_duration{60};
+  bool m_record_ingest_retained{true};
   std::shared_ptr<webrtc_output_sink> m_webrtc_output_sink;
   mutable std::mutex m_sinks_mutex;
 };

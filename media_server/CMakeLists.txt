@@ -34,6 +34,8 @@ set(SOURCES
     
     grpc_layer/camera_control_service.h
     grpc_layer/camera_control_service.cpp
+    grpc_layer/proto_mapper.h
+    grpc_layer/proto_mapper.cpp
     grpc_layer/dapr_publisher.cpp
     grpc_layer/dapr_publisher.h
     grpc_layer/player_command_mapper.h
@@ -92,6 +94,7 @@ set(SOURCES
 
     file_system/recording_storage.h
     file_system/recording_storage.cpp
+    file_system/recording_storage_archive.cpp
 
     logger/logger.h
     logger/logger.cpp

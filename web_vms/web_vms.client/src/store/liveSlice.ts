@@ -23,7 +23,11 @@ export const loadServers = createAsyncThunk('live/loadServers', async () => {
 
 export const loadCameras = createAsyncThunk('live/loadCameras', async () => {
   const response = await fetch('/api/live/cameras')
-  return parseJson<CameraStateDto[]>(response)
+  const list = await parseJson<CameraStateDto[]>(response)
+  return list.map((cam) => ({
+    ...cam,
+    recordingMode: cam.recordingMode ?? (cam.recording === true ? 'continuous' : 'off')
+  }))
 })
 
 export const addCamera = createAsyncThunk('live/addCamera', async (payload: CameraStateDto) => {
@@ -66,7 +70,11 @@ export const changeCameraParent = createAsyncThunk(
 
 export const fetchCameraState = createAsyncThunk('live/fetchCameraState', async (cameraId: string) => {
   const response = await fetch(`/api/live/cameras/${encodeURIComponent(cameraId)}/state`)
-  return parseJson<CameraStateDto>(response)
+  const cam = await parseJson<CameraStateDto>(response)
+  return {
+    ...cam,
+    recordingMode: cam.recordingMode ?? (cam.recording === true ? 'continuous' : 'off')
+  }
 })
 
 export const updateCameraRecording = createAsyncThunk(
@@ -111,9 +119,11 @@ const liveSlice = createSlice({
         const isEqual =
           prev &&
           prev.recording === action.payload.recording &&
+          prev.recordingMode === action.payload.recordingMode &&
           prev.webRtc === action.payload.webRtc &&
           prev.rtspUrl === action.payload.rtspUrl &&
-          prev.serverId === action.payload.serverId
+          prev.serverId === action.payload.serverId &&
+          prev.activeRetentionWindow === action.payload.activeRetentionWindow
 
         if (!isEqual) {
           state.cameraStatesById[id] = action.payload

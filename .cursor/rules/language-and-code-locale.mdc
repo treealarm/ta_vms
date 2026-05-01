@@ -1,0 +1,18 @@
+---
+description: Russian dialogue with user; English-only in source and UI copy
+alwaysApply: true
+---
+
+# Locale
+
+## Conversation
+
+- Reply to the user in **Russian** (questions, explanations, PR/commit descriptions unless they ask otherwise).
+
+## Code and product copy
+
+- **Comments** (any language file): **English only**.
+- **Frontend**: user-visible strings — labels, buttons, tooltips, placeholders, `aria-label`, notifications, empty states: **English only**.
+- Prefer **English** for new symbol names and log messages in code; match existing project style where files are already mixed.
+
+Do not add Russian text inside source files or UI strings as part of routine changes.

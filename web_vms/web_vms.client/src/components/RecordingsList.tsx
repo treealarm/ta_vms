@@ -5,14 +5,51 @@ import {
   IconButton, Popover, Typography,
   ListSubheader
 } from '@mui/material'
-import { type RecordingDto } from '../dto/dtos'
-import { fetchRecordings } from '../store/fsSlice'
+import { type RecordingDto, type RecordingRangeDto } from '../dto/dtos'
+import { fetchRecordingRanges } from '../store/fsSlice'
 import { useAppDispatch, useAppSelector } from '../store'
 
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 import dayjs, { Dayjs } from 'dayjs'
+
+function formatClipStart24(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) {
+    return iso
+  }
+  return d.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+}
+
+function formatTooltipDateTime(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) {
+    return iso
+  }
+  return d.toLocaleString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+}
+
+function formatListDayLabel(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) {
+    return ''
+  }
+  return d.toLocaleDateString('sv-SE')
+}
 
 type Props = {
   open: boolean
@@ -21,6 +58,10 @@ type Props = {
   filePath?: string
   onSelect: (rec: RecordingDto) => void
   onTimeChange?: (iso: string) => void
+  /** Fired when the range list for the current query changes (e.g. after fetch). */
+  onRangesChange?: (ranges: RecordingRangeDto[]) => void
+  /** Optional: sync list selection with current playback (e.g. auto-advance). Range `startTime` (ISO). */
+  playbackStartTime?: string
 }
 
 const normalizeTimestamp = (value?: string) => {
@@ -41,7 +82,7 @@ const normalizeTimestamp = (value?: string) => {
   return parsed.toISOString()
 }
 
-export default function RecordingsList({ open, cameraId, timestamp, filePath, onSelect, onTimeChange }: Props) {
+export default function RecordingsList({ open, cameraId, timestamp, filePath, onSelect, onTimeChange, onRangesChange, playbackStartTime }: Props) {
   const dispatch = useAppDispatch()
   const [selected, setSelected] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -83,7 +124,7 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
 
     const load = async () => {
       setLoading(true)
-      await dispatch(fetchRecordings({ cameraId, timestamp: queryTime, limit:50 }))
+      await dispatch(fetchRecordingRanges({ cameraId, timestamp: queryTime, limit:50 }))
 
       if (!cancelled) {
         setLoading(false)
@@ -116,10 +157,20 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
 
 
   const recordingsKey = queryTime ? `${cameraId}:${queryTime}` : ''
-  const EMPTY: RecordingDto[] = []
+  const EMPTY: RecordingRangeDto[] = []
   const data = useAppSelector(
-    (state) => state.fs.recordingsByKey[recordingsKey]?.recordings ?? EMPTY
+    (state) => state.fs.recordingRangesByKey[recordingsKey]?.ranges ?? EMPTY
   )
+
+  useEffect(() => {
+    onRangesChange?.(data)
+  }, [data, onRangesChange])
+
+  useEffect(() => {
+    if (playbackStartTime != null && playbackStartTime !== '') {
+      setSelected(playbackStartTime)
+    }
+  }, [playbackStartTime])
 
   const requestAt = (time: string) => {
     const d = dayjs(time)
@@ -152,9 +203,9 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
     requestAt(new Date(first.startTime).toISOString())
   }
 
-  const handleClick = (rec: RecordingDto) => {
-    setSelected(rec.filePath)
-    onSelect(rec)
+  const handleClick = (range: RecordingRangeDto) => {
+    setSelected(range.startTime)
+    onSelect({ filePath: range.filePath, startTime: range.startTime })
   }
 
   if (!open) {
@@ -162,8 +213,13 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
   }
 
   const shownTime = new Date(displayTime)
-  const shownDate = shownTime.toLocaleDateString()
-  const shownClock = shownTime.toLocaleTimeString()
+  const shownDate = shownTime.toLocaleDateString('sv-SE')
+  const shownClock = shownTime.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
 
   const openPicker = (target: HTMLElement) => {
     setPickerTime(dayjs(displayTime))
@@ -171,8 +227,23 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
   }
 
   return (
-    <Box className="vms-recordings-root">
-      <Stack direction="column" alignItems="center" spacing={0.5} className="vms-recordings-toolbar">
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        minHeight: 0,
+        width: 118,
+        flexShrink: 0,
+        alignSelf: 'stretch',
+      }}
+    >
+      <Stack
+        direction="column"
+        alignItems="center"
+        spacing={0.5}
+        sx={{ px: 1, py: 1, borderBottom: '1px solid rgba(0,0,0,0.1)', flexShrink: 0 }}
+      >
         <Typography variant="caption" sx={{ lineHeight: 1.15 }}>
           {shownDate}
         </Typography>
@@ -199,7 +270,7 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
         onClose={() => setPickerAnchor(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
       >
-        <Box className="vms-picker-popover">
+        <Box sx={{ p: 1 }}>
           <LocalizationProvider dateAdapter={AdapterDayjs}>
             <DateTimePicker
               value={pickerTime}
@@ -219,9 +290,9 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
         </Box>
       </Popover>
 
-      <Box className="vms-recordings-scroll">
+      <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
         {loading ? (
-          <Box className="vms-recordings-loader">
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 1 }}>
             <CircularProgress size={20} />
           </Box>
         ) : (
@@ -235,22 +306,32 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
                 const showDateHeader = index === 0 || currentDate !== prevDate
 
                 const isNearest = filePath === rec.filePath
-                const isSelected = selected === rec.filePath
-                const time = new Date(rec.startTime).toLocaleTimeString()
+                const isSelected = selected === rec.startTime
 
                 return (
-                  <div key={rec.filePath}>
+                  <div key={`${rec.startTime}:${rec.endTime}`}>
                     {showDateHeader && (
-                      <ListSubheader disableSticky className="vms-recordings-subheader">
-                        {new Date(rec.startTime).toLocaleDateString()}
+                      <ListSubheader
+                        disableSticky
+                        sx={{
+                          lineHeight: '24px',
+                          bgcolor: 'background.paper',
+                          fontSize: 12,
+                          opacity: 0.7
+                        }}
+                      >
+                        {formatListDayLabel(rec.startTime)}
                       </ListSubheader>
                     )}
 
                     <Tooltip
                       title={
-                        <Box component="span" className="vms-tooltip-block">
-                          <div className="vms-tooltip-path">{rec.filePath}</div>
-                          <div>{new Date(rec.startTime).toLocaleString()}</div>
+                        <Box component="span" sx={{ display: 'block', maxWidth: 380 }}>
+                          <div style={{ wordBreak: 'break-all' }}>{rec.filePath}</div>
+                          <div>Start: {formatTooltipDateTime(rec.startTime)}</div>
+                          <div>End: {formatTooltipDateTime(rec.endTime)}</div>
+                          <div>Clips: {rec.clipsCount}</div>
+                          {rec.eventIds?.length ? <div>Events: {rec.eventIds.join(', ')}</div> : null}
                         </Box>
                       }
                       placement="left"
@@ -258,9 +339,23 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
                       <ListItemButton
                         selected={isSelected}
                         onClick={() => handleClick(rec)}
-                        data-vms-playing={isNearest ? true : undefined}
+                        sx={{
+                          py: 0.35,
+                          px: 0.75,
+                          borderLeft: isNearest ? '3px solid orange' : undefined,
+                          bgcolor: isSelected ? 'rgba(25,118,210,0.15)' : undefined,
+                        }}
                       >
-                        <ListItemText primary={isNearest ? `➤ ${time}` : time} />
+                        <ListItemText
+                          primary={isNearest ? `➤ ${formatClipStart24(rec.startTime)}` : formatClipStart24(rec.startTime)}
+                          slotProps={{
+                            primary: {
+                              variant: 'body2',
+                              noWrap: true,
+                              sx: { fontVariantNumeric: 'tabular-nums', fontSize: '0.8rem', lineHeight: 1.2 },
+                            },
+                          }}
+                        />
                       </ListItemButton>
                     </Tooltip>
                   </div>

@@ -119,7 +119,7 @@ function PlayerStreamCard({ player }: PlayerStreamCardProps) {
                   <RecordingsList
                     open={listOpen}
                     cameraId={player.camera_id}
-                    timestamp={currentPlayer.position_ts}
+                    timestamp={currentPlayer.position_ts ?? ''}
                     filePath={currentPlayer.file_path}
                     onSelect={handleSelectRecording}
                     onTimeChange={handleTimeChange}

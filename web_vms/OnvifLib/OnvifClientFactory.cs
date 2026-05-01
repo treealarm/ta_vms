@@ -20,7 +20,7 @@ namespace OnvifLib
 
       var client = (TClient)Activator.CreateInstance(typeof(TClient), binding, endpoint)!;
 
-      // Установка данных авторизации
+      // Configure digest / username credentials on the client
       client.ClientCredentials.UserName.UserName = username;
       client.ClientCredentials.UserName.Password = password;
 

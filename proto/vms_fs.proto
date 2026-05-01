@@ -6,7 +6,15 @@ package vms.fs;
 
 service FsService {
   rpc IngestClip(IngestClipRequest) returns (OperationStatus);
-  rpc GetRecordings(GetRecordingsRequest) returns (GetRecordingsResponse);
+  rpc RetainEvent(RetainEventRequest) returns (OperationStatus);
+  rpc GetRecordings(GetRecordingsFromToRequest) returns (GetRecordingsResponse);
+  rpc GetRecordingsAround(GetRecordingsAroundRequest) returns (GetRecordingsResponse);
+  rpc GetRecordingRanges(GetRecordingRangesRequest) returns (GetRecordingRangesResponse);
+  rpc GetRecordingRangeForClip(GetRecordingRangeForClipRequest) returns (RecordingRangeForClipResponse);
+  rpc ResolveRangePosition(ResolveRangePositionRequest) returns (ResolveRangePositionResponse);
+  rpc GetNextRecordingAfter(GetNextRecordingAfterRequest) returns (GetRecordingsResponse);
+  rpc GetCameraRetentionStatus(GetCameraRetentionStatusRequest) returns (GetCameraRetentionStatusResponse);
+  rpc ListRetentionEvents(ListRetentionEventsRequest) returns (ListRetentionEventsResponse);
 }
 
 message OperationStatus {
@@ -16,7 +24,6 @@ message OperationStatus {
     RETRYABLE_FAILURE = 2;
     PERMANENT_FAILURE = 3;
   }
-
   Status status = 1;
   string message = 2;
   string clip_uid = 3;
@@ -29,27 +36,122 @@ message ClipMeta {
   google.protobuf.Timestamp end_ts = 4;
   uint64 size_bytes = 5;
   string clip_uid = 6;
+  optional bool retained = 7;
 }
 
 message IngestClipRequest {
   ClipMeta clip = 1;
 }
 
-message GetRecordingsRequest {
+message RetainEventRequest {
+  string event_id = 1;
+  string camera_id = 2;
+  google.protobuf.Timestamp alarm_start_ts = 3;
+  optional google.protobuf.Timestamp alarm_end_ts = 4;
+  uint32 pre_record_seconds = 5;
+  uint32 post_record_seconds = 6;
+  uint32 timeout_seconds = 7;
+}
+
+message GetRecordingsFromToRequest {
   string camera_id = 1;
   optional google.protobuf.Timestamp from_ts = 2;
   optional google.protobuf.Timestamp to_ts = 3;
   uint32 limit = 4;
 }
 
+message GetRecordingsAroundRequest {
+  string camera_id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  uint32 limit = 3;
+}
+
+message GetRecordingRangesRequest {
+  string camera_id = 1;
+  optional google.protobuf.Timestamp from_ts = 2;
+  optional google.protobuf.Timestamp to_ts = 3;
+  optional google.protobuf.Timestamp timestamp = 4;
+  uint32 limit = 5;
+  uint32 gap_tolerance_ms = 6;
+}
+
+message GetRecordingRangeForClipRequest {
+  string camera_id = 1;
+  string file_path = 2;
+  uint32 gap_tolerance_ms = 3;
+}
+
+message ResolveRangePositionRequest {
+  string camera_id = 1;
+  google.protobuf.Timestamp range_start_ts = 2;
+  uint32 range_position_ms = 3;
+  uint32 gap_tolerance_ms = 4;
+}
+
+message GetNextRecordingAfterRequest {
+  string camera_id = 1;
+  string file_path = 2;
+}
+
 message Recording {
   string camera_id = 1;
   string file_path = 2;
   google.protobuf.Timestamp start_ts = 3;
-  google.protobuf.Timestamp end_ts = 4;
+  optional google.protobuf.Timestamp end_ts = 4;
   uint64 size_bytes = 5;
 }
 
 message GetRecordingsResponse {
   repeated Recording recordings = 1;
+}
+
+message RecordingRange {
+  string camera_id = 1;
+  string file_path = 2;
+  google.protobuf.Timestamp start_ts = 3;
+  optional google.protobuf.Timestamp end_ts = 4;
+  uint32 clips_count = 5;
+  repeated string event_ids = 6;
+}
+
+message GetRecordingRangesResponse {
+  repeated RecordingRange ranges = 1;
+}
+
+message RecordingRangeForClipResponse {
+  bool found = 1;
+  RecordingRange range = 2;
+  google.protobuf.Timestamp clip_start_ts = 3;
+}
+
+message ResolveRangePositionResponse {
+  bool found = 1;
+  string file_path = 2;
+  uint32 position_ms = 3;
+}
+
+message GetCameraRetentionStatusRequest {
+  string camera_id = 1;
+}
+
+message GetCameraRetentionStatusResponse {
+  bool active_retention_window = 1;
+}
+
+message RetentionEventRow {
+  string event_id = 1;
+  string camera_id = 2;
+  google.protobuf.Timestamp alarm_start_ts = 3;
+  optional google.protobuf.Timestamp alarm_end_ts = 4;
+}
+
+message ListRetentionEventsRequest {
+  uint32 limit = 1;
+  optional google.protobuf.Timestamp before_alarm_start_ts = 2;
+}
+
+message ListRetentionEventsResponse {
+  repeated RetentionEventRow events = 1;
+  bool has_more = 2;
+  optional google.protobuf.Timestamp next_before_alarm_start_ts = 3;
 }

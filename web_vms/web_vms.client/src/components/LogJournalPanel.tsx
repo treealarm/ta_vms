@@ -5,6 +5,7 @@ import {
   Card,
   CardContent,
   Chip,
+  Collapse,
   FormControlLabel,
   MenuItem,
   Stack,
@@ -112,15 +113,15 @@ export default function LogJournalPanel() {
   }
 
   return (
-    <Box sx={{ position: 'fixed', left: 16, right: 16, bottom: 16, zIndex: 1300 }}>
+    <Box sx={{ width: '100%', mt: 2 }}>
       {!isVisible && (
         <Button variant="contained" size="small" onClick={() => setIsVisible(true)}>
           Show logs
         </Button>
       )}
 
-      {isVisible && (
-        <Card elevation={8}>
+      <Collapse in={isVisible} timeout={220} unmountOnExit>
+        <Card elevation={4}>
           <CardContent sx={{ p: 1.5 }}>
             <Stack spacing={1}>
               <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
@@ -128,7 +129,9 @@ export default function LogJournalPanel() {
                 <Chip size="small" label={isBusy ? 'Loading...' : status} />
                 {hasMore && <Chip size="small" color="warning" label="has more" />}
                 <Box sx={{ flexGrow: 1 }} />
-                <Button size="small" onClick={() => setIsVisible(false)}>Hide</Button>
+                <Button size="small" onClick={() => setIsVisible(false)}>
+                  Hide
+                </Button>
               </Stack>
 
               <Stack direction="row" spacing={1} flexWrap="wrap">
@@ -141,7 +144,9 @@ export default function LogJournalPanel() {
                   sx={{ minWidth: 140 }}
                 >
                   {RANGE_OPTIONS.map((r) => (
-                    <MenuItem key={r.value} value={r.value}>{r.label}</MenuItem>
+                    <MenuItem key={r.value} value={r.value}>
+                      {r.label}
+                    </MenuItem>
                   ))}
                 </TextField>
 
@@ -164,7 +169,9 @@ export default function LogJournalPanel() {
                 >
                   <MenuItem value="">all</MenuItem>
                   {LEVEL_OPTIONS.filter((v) => v).map((v) => (
-                    <MenuItem key={v} value={v}>{v}</MenuItem>
+                    <MenuItem key={v} value={v}>
+                      {v}
+                    </MenuItem>
                   ))}
                 </TextField>
 
@@ -186,11 +193,7 @@ export default function LogJournalPanel() {
                 <FormControlLabel
                   sx={{ ml: 0.5 }}
                   control={
-                    <Switch
-                      size="small"
-                      checked={autoRefresh}
-                      onChange={(e) => setAutoRefresh(e.target.checked)}
-                    />
+                    <Switch size="small" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
                   }
                   label="Auto"
                 />
@@ -231,7 +234,7 @@ export default function LogJournalPanel() {
             </Stack>
           </CardContent>
         </Card>
-      )}
+      </Collapse>
     </Box>
   )
 }

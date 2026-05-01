@@ -61,11 +61,11 @@ export type PlayerCommandDto = {
 export type PlayerProgressStateDto = {
   camera_id: string
   client_id: string
-  position_ts: string
-  file_path: string
-  start_ts: string
+  position_ts?: string
+  file_path?: string
+  start_ts?: string
   duration_ms: number
-  position_ms:number
+  position_ms: number
   mode: PlayerMode
 }
 
@@ -79,14 +79,27 @@ export type OnvifConnectionDto = {
   port: number
 }
 
+export type RecordingMode = 'off' | 'continuous' | 'prealarm'
+
+export type PreAlarmRecordingSettingsDto = {
+  preRecordSeconds: number
+  postRecordSeconds: number
+  segmentSeconds: number
+}
+
 export type CameraStateDto = {
   cameraId: string
   serverId?: string
-  recording: boolean
+  /** Mirror of cfg/media; prefer recordingMode in UI */
+  recording?: boolean
+  recordingMode: RecordingMode
   webRtc: boolean
   rtspUrl: string
   cred?: CredentialsDto
   onvifConn?: OnvifConnectionDto
+  preAlarm?: PreAlarmRecordingSettingsDto
+  /** True while camera is inside a retention episode from FS (wall clock in [retain_from, retain_until]); new clips ingest as retained */
+  activeRetentionWindow?: boolean
 }
 
 export type MediaServerNodeDto = {
@@ -94,19 +107,64 @@ export type MediaServerNodeDto = {
   status: string
 }
 
+/** Built client-side from servers + cameras for Settings tree */
+export type ServerInstanceDto = {
+  serverId: string
+  address: string
+  cameras: CameraStateDto[]
+}
+
 export type RecordingDto = {
   filePath: string
   startTime: string
 }
 
+export type RecordingRangeDto = {
+  filePath: string
+  startTime: string
+  endTime: string
+  clipsCount: number
+  eventIds?: string[]
+}
+
+export type RecordingRangesResponseDto = {
+  ranges: RecordingRangeDto[]
+}
+
 export type RecordingsQueryDto = {
   cameraId: string
-  timestamp: string
-  limit: number
+  timestamp?: string
+  fromUtc?: string
+  toUtc?: string
+  limit?: number
 }
 
 export type RecordingsResponseDto = {
   recordings: RecordingDto[]
+  nearest?: RecordingDto
+}
+
+export type RetentionEventDto = {
+  eventId?: string
+  cameraId: string
+  alarmStartTs: string
+  alarmEndTs?: string
+  preRecordSeconds?: number
+  postRecordSeconds?: number
+  timeoutSeconds?: number
+}
+
+export type RetentionEventRowDto = {
+  eventId: string
+  cameraId: string
+  alarmStartTs: string
+  alarmEndTs?: string
+}
+
+export type RetentionEventsListDto = {
+  events: RetentionEventRowDto[]
+  hasMore: boolean
+  nextBeforeAlarmStart?: string
 }
 
 export type LogQueryDto = {

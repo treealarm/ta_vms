@@ -8,10 +8,15 @@
 
 #include <grpcpp/grpcpp.h>
 
+#include "camera_manager.h"
 #include "grpc_layer/camera_control_service.h"
 #include "grpc_layer/cfg_client.h"
+#include "grpc_layer/proto_mapper.h"
 
 #include "logger/logger.h"
+
+#include "vms_cfg.pb.h"
+#include "vms_control.pb.h"
 
 namespace 
 {
@@ -78,12 +83,25 @@ int main(int argc, char** argv)
   {
     for (auto c : cfg_list)
     {
+      recording_policy_spec policy =
+        proto_mapper::recording_policy_for_media(
+          vms::control::RECORDING_OFF,
+          0);
+      if (c.has_state())
+      {
+        const auto& st = c.state();
+        policy = proto_mapper::recording_policy_for_media(
+          static_cast<vms::control::RecordingMode>(
+            static_cast<int>(st.recording_mode())),
+          proto_mapper::prealarm_segment_seconds(c));
+      }
+
       const bool success = manager.add_camera(
         c.camera_id(),
         c.rtsp_url(),
         c.has_cred() ? c.cred().user() : "",
         c.has_cred() ? c.cred().pass() : "",
-        c.has_state() && c.state().recording(),
+        policy,
         c.has_state() && c.state().web_rtc(),
         error);
       if (!success) 

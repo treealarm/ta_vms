@@ -22,6 +22,11 @@ builder.Services.AddSingleton(_ =>
   new CfgService.CfgServiceClient(
     DaprClient.CreateInvocationInvoker(cfgAppId)));
 
+var fsAppId = Environment.GetEnvironmentVariable("DAPR_FS_APP_ID") ?? "vmsfs";
+Console.WriteLine($"DAPR_FS_APP_ID: {fsAppId}");
+builder.Services.AddSingleton(_ =>
+  new Vms.Fs.FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsAppId)));
+
 builder.Services.AddSingleton<ICameraManager, CameraManager>();
 
 var http_port = 5134;

@@ -6,7 +6,7 @@ namespace OnvifLib
   public class ImageResult
   {
     public byte[] Data { get; set; } = [];
-    public string? Extension { get; set; } // или без точки: "jpeg"
+    public string? Extension { get; set; } // with or without dot, e.g. "jpeg"
     public string? MimeType { get; set; }
   }
   public class MediaService : OnvifServiceBase, IOnvifServiceFactory<MediaService>
@@ -31,7 +31,7 @@ namespace OnvifLib
       if (parts.Length != 2)
         return null;
 
-      return "." + parts[1]; // например, "image/jpeg" → ".jpeg"
+      return "." + parts[1]; // e.g. "image/jpeg" → ".jpeg"
     }
 
     protected MediaService(

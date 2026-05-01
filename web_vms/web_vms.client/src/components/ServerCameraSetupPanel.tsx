@@ -139,9 +139,10 @@ export default function ServerCameraSetupPanel({
   const buildPayload = (): CameraStateDto => ({
     cameraId,
     serverId,
-    rtspUrl,
+    recordingMode: selectedCamera?.recordingMode ?? 'off',
     recording: selectedCamera?.recording ?? false,
     webRtc: selectedCamera?.webRtc ?? true,
+    rtspUrl,
     cred: user || pass
       ? {
         user,
@@ -153,7 +154,8 @@ export default function ServerCameraSetupPanel({
         ip: onvifIp,
         port: onvifPort
       }
-      : undefined
+      : undefined,
+    preAlarm: selectedCamera?.preAlarm
   })
 
   const isExistingCamera = selectedCamera?.cameraId === cameraId

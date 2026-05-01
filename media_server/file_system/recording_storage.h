@@ -57,6 +57,14 @@ public:
     const std::string& filename);
   static std::string timepoint_to_utc_string(std::chrono::system_clock::time_point tp);
   static std::filesystem::path resolve_storage_base_path();
+
+  std::optional<std::filesystem::path> resolve_archive_relative_path(
+    const std::string& relative_path) const;
+
+  bool stat_archive_file(const std::filesystem::path& absolute_path,
+    std::uint64_t& size_bytes,
+    std::string& error) const;
+
 private:
   std::vector<recording_info> load_day(
     const std::filesystem::path& day_path);

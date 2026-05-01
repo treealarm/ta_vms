@@ -1,11 +1,16 @@
 #include "camera_manager.h"
 
+#include <format>
+
+#include "grpc_layer/proto_mapper.h"
+#include "vms_control.pb.h"
+
 bool camera_manager::add_camera(
   const std::string& camera_id,
   const std::string& rtsp_url,
   const std::string& user,
   const std::string& pass,
-  bool recording,
+  const recording_policy_spec& policy,
   bool web_rtc,
   std::string& error) 
 {
@@ -24,9 +29,7 @@ bool camera_manager::add_camera(
 
   try {
     auto camera = std::make_shared<cam>(rtsp_url, camera_id, user, pass);
-    if (recording) {
-      camera->start_recording();
-    }
+    camera->apply_recording_policy(policy);
 
 
     if (web_rtc) {
@@ -59,7 +62,9 @@ bool camera_manager::start_recording(const std::string& camera_id,
     return false;
   }
 
-  it->second->start_recording();
+  it->second->apply_recording_policy(proto_mapper::recording_policy_for_media(
+    vms::control::RECORDING_CONTINUOUS,
+    0));
   return true;
 }
 
@@ -104,6 +109,7 @@ std::optional<camera_manager::camera_info>  camera_manager::get_camera_state(
     .pass = it->second->get_pass(),
     .is_recording = it->second->is_recording(),
     .is_web_rtc_streaming = it->second->is_web_rtc_streaming(),
+    .recording_policy = it->second->get_recording_policy_mode(),
   };
 
   return info;
@@ -114,7 +120,7 @@ bool camera_manager::set_camera_state(
   const std::string& rtsp_url,
   const std::string& user,
   const std::string& pass,
-  bool recording,
+  const recording_policy_spec& policy,
   bool web_rtc,
   std::string& error)
 {
@@ -138,17 +144,7 @@ bool camera_manager::set_camera_state(
       break;
     }
 
-    if (recording != it->second->is_recording())
-    {
-      if (recording)
-      {
-        it->second->start_recording();
-      }
-      else
-      {
-        it->second->stop_recording();
-      }
-    }
+    it->second->apply_recording_policy(policy);
 
 
     if (web_rtc != it->second->is_web_rtc_streaming())
@@ -172,7 +168,14 @@ bool camera_manager::set_camera_state(
  
   if (recreate)
   {
-    return add_camera(camera_id, rtsp_url, user, pass, recording, web_rtc, error);
+    return add_camera(
+      camera_id,
+      rtsp_url,
+      user,
+      pass,
+      policy,
+      web_rtc,
+      error);
   }
   return true;
 }
@@ -225,12 +228,13 @@ std::vector<camera_manager::camera_info> camera_manager::list_cameras() const
   {
     cameras.push_back(
       camera_info{
-        camera_id, 
+        camera_id,
         entry->get_source(),
         entry->get_user(),
         entry->get_pass(),
         entry->is_recording(),
-        entry->is_web_rtc_streaming()
+        entry->is_web_rtc_streaming(),
+        entry->get_recording_policy_mode(),
       });
   }
 

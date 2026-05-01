@@ -3,14 +3,16 @@ using Dapr.Client;
 using Grpc.Core;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Control;
+using Vms.Fs;
 using web_vms.Types.Dto;
 
 namespace web_vms;
 
 [ApiController]
 [Route("api/[controller]")]
-public class ArchController(
-  ICameraManager manager) : ControllerBase
+public partial class ArchController(
+  ICameraManager manager,
+  Vms.Fs.FsService.FsServiceClient fsClient) : ControllerBase
 {
   private static CameraControlService.CameraControlServiceClient GetMediaClient(string serverId) =>
     new(DaprClient.CreateInvocationInvoker(serverId));

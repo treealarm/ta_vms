@@ -105,7 +105,7 @@ public class Camera
   public static Camera Create(string ip, int port, string username, string password, double timeout = 15)
   {
     var cam = new Camera(ip, port, username, password, timeout);
-    cam.InitTask = cam.InitAsync(); // запускаем в фоне
+    cam.InitTask = cam.InitAsync(); // start initialization in the background
     return cam;
   }
   private Camera(string ip, int port, string username, string password, double timeout)
@@ -152,7 +152,7 @@ public class Camera
 
     if (result == null)
     {
-      // сбрасываем, чтобы в следующий раз попробовать снова
+      // Reset so the next call retries discovery
       _servicesTask = null;
     }
 

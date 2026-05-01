@@ -1,15 +1,23 @@
 import { type AnyAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
-import type { RecordingsQueryDto, RecordingsResponseDto } from '../dto/dtos'
+import type {
+  ApiResponseDto,
+  RecordingRangesResponseDto,
+  RecordingsQueryDto,
+  RecordingsResponseDto,
+  RetentionEventDto
+} from '../dto/dtos'
 import { parseJson } from './api'
 
 type FsState = {
   recordingsByKey: Record<string, RecordingsResponseDto>
+  recordingRangesByKey: Record<string, RecordingRangesResponseDto>
   isBusy: boolean
   status: string
 }
 
 const initialState: FsState = {
   recordingsByKey: {},
+  recordingRangesByKey: {},
   isBusy: false,
   status: 'Ready'
 }
@@ -24,6 +32,29 @@ export const fetchRecordings = createAsyncThunk('fs/fetchRecordings', async (pay
   return parseJson<RecordingsResponseDto>(response)
 })
 
+export const fetchRecordingRanges = createAsyncThunk(
+  'fs/fetchRecordingRanges',
+  async (payload: RecordingsQueryDto) => {
+    const response = await fetch('/api/fs/recording-ranges', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+
+    return parseJson<RecordingRangesResponseDto>(response)
+  }
+)
+
+export const sendRetentionEvent = createAsyncThunk('fs/sendRetentionEvent', async (payload: RetentionEventDto) => {
+  const response = await fetch('/api/fs/events', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+
+  return parseJson<ApiResponseDto>(response)
+})
+
 const fsSlice = createSlice({
   name: 'fs',
   initialState,
@@ -31,8 +62,15 @@ const fsSlice = createSlice({
   extraReducers: (builder) => {
     builder
       .addCase(fetchRecordings.fulfilled, (state, action: AnyAction) => {
-        const key = `${action.meta.arg.cameraId}:${action.meta.arg.timestamp}`
+        const key = `${action.meta.arg.cameraId}:${action.meta.arg.timestamp ?? ''}`
         state.recordingsByKey[key] = action.payload
+      })
+      .addCase(fetchRecordingRanges.fulfilled, (state, action: AnyAction) => {
+        const key = `${action.meta.arg.cameraId}:${action.meta.arg.timestamp ?? ''}`
+        state.recordingRangesByKey[key] = action.payload
+      })
+      .addCase(sendRetentionEvent.fulfilled, (state, action) => {
+        state.status = `Retention event: ${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
       })
       .addMatcher((action: AnyAction) => action.type.startsWith('fs/') && action.type.endsWith('/pending'), (state) => {
         state.isBusy = true

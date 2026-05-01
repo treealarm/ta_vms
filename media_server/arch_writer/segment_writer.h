@@ -18,11 +18,14 @@ class segment_writer : public media_sink
 {
 public:
   segment_writer(
-                 const std::string& camera_id);
+    const std::string& camera_id,
+    std::chrono::seconds segment_duration,
+    bool ingest_retained);
   ~segment_writer() override;
   void on_packet(const std::shared_ptr<media_packet>& media) override;
+
 private:
-  struct input_stream_info 
+  struct input_stream_info
   {
     avcodec_parameters_ptr codec_parameters;
     AVRational time_base{};
@@ -34,12 +37,13 @@ private:
   void open_new_segment();
   void close_segment();
   void close();
-private:
+
   std::string m_camera_id;
+  std::chrono::seconds m_segment_duration;
+  bool m_ingest_retained;
 
   std::unordered_map<int, input_stream_info> m_input_streams;
 
-  
   avformat_context_ptr m_ctx = nullptr;
 
   std::unordered_map<int, AVStream*> m_output_streams;

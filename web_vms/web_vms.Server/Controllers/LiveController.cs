@@ -1,6 +1,8 @@
 using Dapr.Client;
+using Grpc.Core;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Control;
+using Vms.Fs;
 using web_vms.Types.Dto;
 
 namespace web_vms;
@@ -8,7 +10,8 @@ namespace web_vms;
 [ApiController]
 [Route("api/[controller]")]
 public class LiveController(
-  ICameraManager _manager
+  ICameraManager _manager,
+  FsService.FsServiceClient _fsClient
   ) : ControllerBase
 {
   private CameraControlService.CameraControlServiceClient GetMediaClient(string? serverId)
@@ -21,20 +24,41 @@ public class LiveController(
     return new CameraControlService.CameraControlServiceClient(DaprClient.CreateInvocationInvoker(serverId));
   }
 
-  private static CameraState ToControlState(CameraStateDto request) => new()
+  private static CameraState ToControlState(CameraStateDto request)
   {
-    CameraId = request.CameraId,
-    RtspUrl = request.RtspUrl,
-    Recording = request.Recording,
-    WebRtc = request.WebRtc,
-    Cred = request.Cred != null
-      ? new Credentials
+    var n = CameraManager.Normalize(request);
+    var state = new CameraState
+    {
+      CameraId = n.CameraId,
+      RtspUrl = n.RtspUrl ?? "",
+      WebRtc = n.WebRtc,
+      Cred = n.Cred != null
+        ? new Credentials
+        {
+          User = n.Cred.User,
+          Pass = n.Cred.Pass
+        }
+        : null,
+      RecordingMode = n.RecordingMode switch
       {
-        User = request.Cred.User,
-        Pass = request.Cred.Pass
+        "continuous" => RecordingMode.RecordingContinuous,
+        "prealarm" => RecordingMode.RecordingPrealarm,
+        _ => RecordingMode.RecordingOff,
       }
-      : null
-  };
+    };
+
+    if (state.RecordingMode == RecordingMode.RecordingPrealarm && n.PreAlarm != null)
+    {
+      state.Prealarm = new PreAlarmRecordingSettings
+      {
+        PreRecordSeconds = n.PreAlarm.PreRecordSeconds,
+        PostRecordSeconds = n.PreAlarm.PostRecordSeconds,
+        SegmentSeconds = n.PreAlarm.SegmentSeconds > 0 ? n.PreAlarm.SegmentSeconds : 5,
+      };
+    }
+
+    return state;
+  }
 
   [HttpPost("cameras")]
   public async Task<IActionResult> AddCamera([FromBody] CameraStateDto request, CancellationToken ct)
@@ -44,11 +68,12 @@ public class LiveController(
       return BadRequest("serverId must not be empty");
     }
 
-    var response = await GetMediaClient(request.ServerId).AddCameraAsync(ToControlState(request), cancellationToken: ct);
+    var normalized = CameraManager.Normalize(request);
+    var response = await GetMediaClient(normalized.ServerId!).AddCameraAsync(ToControlState(normalized), cancellationToken: ct);
 
     if (response.Success)
     {
-      await _manager.Add(request);
+      await _manager.Add(normalized);
     }
 
     return Ok(ApiResponseMapper.ToApiResponse(response));
@@ -78,7 +103,7 @@ public class LiveController(
 
     if (current.ServerId == request.ServerId)
     {
-      await _manager.Add(request);
+      await _manager.Add(CameraManager.Normalize(request));
       return Ok(new ApiResponse(true, "Camera parent is unchanged"));
     }
 
@@ -91,10 +116,11 @@ public class LiveController(
       return Ok(ApiResponseMapper.ToApiResponse(removeResponse));
     }
 
-    var addResponse = await GetMediaClient(request.ServerId).AddCameraAsync(ToControlState(request), cancellationToken: ct);
+    var normalized = CameraManager.Normalize(request);
+    var addResponse = await GetMediaClient(normalized.ServerId!).AddCameraAsync(ToControlState(normalized), cancellationToken: ct);
     if (addResponse.Success)
     {
-      await _manager.Add(request);
+      await _manager.Add(normalized);
     }
 
     return Ok(ApiResponseMapper.ToApiResponse(addResponse));
@@ -149,11 +175,12 @@ public class LiveController(
       return NotFound();
     }
 
-    var response = await GetMediaClient(targetServerId).SetCameraStateAsync(ToControlState(state), cancellationToken: ct);
+    var normalized = CameraManager.Normalize(state with { ServerId = targetServerId });
+    var response = await GetMediaClient(targetServerId).SetCameraStateAsync(ToControlState(normalized), cancellationToken: ct);
 
     if (response.Success)
     {
-      await _manager.SetState(state);
+      await _manager.SetState(normalized);
     }
 
     return Ok(ApiResponseMapper.ToApiResponse(response));
@@ -163,6 +190,28 @@ public class LiveController(
   public async Task<IActionResult> GetCameraState(string cameraId, CancellationToken ct)
   {
     var camera = await _manager.Get(cameraId);
-    return camera is null ? NotFound() : Ok(camera);
+    if (camera is null)
+    {
+      return NotFound();
+    }
+
+    var normalized = CameraManager.Normalize(camera);
+
+    if (string.Equals(normalized.RecordingMode, "off", StringComparison.OrdinalIgnoreCase))
+    {
+      return Ok(normalized with { ActiveRetentionWindow = false });
+    }
+
+    try
+    {
+      var retention = await _fsClient.GetCameraRetentionStatusAsync(
+        new GetCameraRetentionStatusRequest { CameraId = cameraId },
+        cancellationToken: ct);
+      return Ok(normalized with { ActiveRetentionWindow = retention.ActiveRetentionWindow });
+    }
+    catch (RpcException)
+    {
+      return Ok(normalized with { ActiveRetentionWindow = false });
+    }
   }
 }

@@ -29,7 +29,7 @@ namespace OnvifLib
     {
       var type = typeof(T);
 
-      // Проверяем кэш
+      // Check cache
       if (_serviceCache.TryGetValue(type, out var cached))
       {
         if (DateTime.UtcNow - cached.CreatedAt < _serviceTtl)
@@ -38,7 +38,7 @@ namespace OnvifLib
         }
       }
 
-      // Создаём новый сервис через OnvifServiceSelector
+      // Create a new service via OnvifServiceSelector
       var service = await OnvifServiceSelector.TryCreateService<T>(services, _binding, _username, _password);
 
       if (service != null)
@@ -50,7 +50,7 @@ namespace OnvifLib
     }
 
     /// <summary>
-    /// Принудительно сбросить кэш конкретного сервиса
+    /// Invalidate cached instance for a specific service type.
     /// </summary>
     public void Invalidate<T>() where T : class
     {
@@ -58,7 +58,7 @@ namespace OnvifLib
     }
 
     /// <summary>
-    /// Очистить весь кэш
+    /// Clear the entire cache.
     /// </summary>
     public void Clear()
     {

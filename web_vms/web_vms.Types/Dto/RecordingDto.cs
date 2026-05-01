@@ -3,7 +3,9 @@
   public class RecordingsQueryDto
   {
     public string CameraId { get; set; } = "cam1";
-    public DateTime? Timestamp { get; set; } = DateTime.UtcNow;
+    public DateTime? Timestamp { get; set; }
+    public DateTime? FromUtc { get; set; }
+    public DateTime? ToUtc { get; set; }
     public uint? Limit { get; set; } = 50;
   }
 
@@ -17,5 +19,45 @@
   {
     public List<RecordingDto> Recordings { get; set; } = [];
     public RecordingDto? Nearest { get; set; }
+  }
+
+  public class RecordingRangeDto
+  {
+    public string FilePath { get; set; } = default!;
+    public DateTime StartTime { get; set; }
+    public DateTime EndTime { get; set; }
+    public uint ClipsCount { get; set; }
+    public List<string> EventIds { get; set; } = [];
+  }
+
+  public class RecordingRangesResponseDto
+  {
+    public List<RecordingRangeDto> Ranges { get; set; } = [];
+  }
+
+  public class RetentionEventDto
+  {
+    public string? EventId { get; set; }
+    public string CameraId { get; set; } = default!;
+    public DateTime AlarmStartTs { get; set; }
+    public DateTime? AlarmEndTs { get; set; }
+    public uint? PreRecordSeconds { get; set; }
+    public uint? PostRecordSeconds { get; set; }
+    public uint? TimeoutSeconds { get; set; }
+  }
+
+  public class RetentionEventRowDto
+  {
+    public string EventId { get; set; } = default!;
+    public string CameraId { get; set; } = default!;
+    public DateTime AlarmStartTs { get; set; }
+    public DateTime? AlarmEndTs { get; set; }
+  }
+
+  public class RetentionEventsListDto
+  {
+    public List<RetentionEventRowDto> Events { get; set; } = [];
+    public bool HasMore { get; set; }
+    public DateTime? NextBeforeAlarmStart { get; set; }
   }
 }

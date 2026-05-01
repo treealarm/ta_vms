@@ -12,7 +12,7 @@ namespace OnvifLib
 
     public void AfterReceiveReply(ref Message reply, object correlationState)
     {
-      // Логгирование ответа
+      // Log response (debug)
       Console.WriteLine("Received Reply: ");
       Console.WriteLine(reply.ToString());
 
@@ -23,7 +23,7 @@ namespace OnvifLib
 
     public object BeforeSendRequest(ref Message request, IClientChannel channel)
     {
-      // Логгирование запроса
+      // Log outgoing request (debug)
       Console.WriteLine("Sending Request: ");
       Console.WriteLine(request.ToString());
       if (Headers == null)
