@@ -51,8 +51,6 @@ public class LiveController(
     {
       state.Prealarm = new PreAlarmRecordingSettings
       {
-        PreRecordSeconds = n.PreAlarm.PreRecordSeconds,
-        PostRecordSeconds = n.PreAlarm.PostRecordSeconds,
         SegmentSeconds = n.PreAlarm.SegmentSeconds > 0 ? n.PreAlarm.SegmentSeconds : 5,
       };
     }

@@ -164,25 +164,6 @@ grpc::Status camera_control_service::RemoveArchPlayer(
   return grpc::Status::OK;
 }
 
-grpc::Status camera_control_service::ListCameras(
-    grpc::ServerContext* /*context*/,
-    const vms::control::ListCamerasRequest* /*request*/,
-    vms::control::ListCamerasResponse* response)
-{
-  for (const auto& camera : m_manager.list_cameras()) 
-  {
-    auto* item = response->add_cameras();
-    item->set_camera_id(camera.camera_id);
-
-    item->set_recording_mode(proto_mapper::to_grpc_recording_mode(camera.recording_policy));
-    item->set_web_rtc(camera.is_web_rtc_streaming);
-    item->set_rtsp_url(camera.rtsp_url);
-    item->mutable_cred()->set_user(camera.user);
-    item->mutable_cred()->set_pass(camera.pass);
-  }
-
-  return grpc::Status::OK;
-}
 
 grpc::Status camera_control_service::SetCameraState(
     grpc::ServerContext* /*context*/,

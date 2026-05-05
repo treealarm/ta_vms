@@ -11,11 +11,15 @@ CREATE TABLE IF NOT EXISTS camera_setup (
   cred_user text NULL,
   cred_pass text NULL,
   onvif_ip text NULL,
-  onvif_port integer NULL
+  onvif_port integer NULL,
+  pre_record_seconds integer NOT NULL DEFAULT 30,
+  post_record_seconds integer NOT NULL DEFAULT 30,
+  prealarm_segment_seconds integer NOT NULL DEFAULT 5
 );
 
 CREATE TABLE IF NOT EXISTS camera_state (
   camera_id text PRIMARY KEY REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
   recording boolean NOT NULL DEFAULT false,
-  web_rtc boolean NOT NULL DEFAULT false
+  web_rtc boolean NOT NULL DEFAULT false,
+  recording_mode text NOT NULL DEFAULT 'off'
 );

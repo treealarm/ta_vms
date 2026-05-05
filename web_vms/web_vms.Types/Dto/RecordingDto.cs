@@ -41,9 +41,6 @@
     public string CameraId { get; set; } = default!;
     public DateTime AlarmStartTs { get; set; }
     public DateTime? AlarmEndTs { get; set; }
-    public uint? PreRecordSeconds { get; set; }
-    public uint? PostRecordSeconds { get; set; }
-    public uint? TimeoutSeconds { get; set; }
   }
 
   public class RetentionEventRowDto

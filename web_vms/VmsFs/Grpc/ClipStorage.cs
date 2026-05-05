@@ -26,16 +26,14 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource)
       : Guid.Parse(clip.ClipUid);
 
     await using var command = _dataSource.CreateCommand("""
-      INSERT INTO clips (clip_uid, file_path, camera_id, start_ts, end_ts, size_bytes, retained, retained_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7,
-        CASE WHEN $7 THEN now() ELSE NULL END)
+      INSERT INTO clips (clip_uid, file_path, camera_id, start_ts, end_ts, size_bytes, retained)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       ON CONFLICT (file_path) DO UPDATE SET
         camera_id = EXCLUDED.camera_id,
         start_ts = EXCLUDED.start_ts,
         end_ts = COALESCE(EXCLUDED.end_ts, clips.end_ts),
         size_bytes = GREATEST(clips.size_bytes, EXCLUDED.size_bytes),
-        retained = clips.retained OR EXCLUDED.retained,
-        retained_at = CASE WHEN clips.retained OR EXCLUDED.retained THEN COALESCE(clips.retained_at, now()) ELSE clips.retained_at END
+        retained = clips.retained OR EXCLUDED.retained
       RETURNING clip_uid::text;
       """);
 
@@ -59,68 +57,41 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource)
       ? $"{req.CameraId}-{req.AlarmStartTs.ToDateTime().ToUniversalTime().Ticks}"
       : req.EventId.Trim();
 
-    var pre = req.PreRecordSeconds == 0 ? 30u : req.PreRecordSeconds;
-    var post = req.PostRecordSeconds == 0 ? 30u : req.PostRecordSeconds;
-    var timeout = req.TimeoutSeconds == 0 ? 300u : req.TimeoutSeconds;
-
     var alarmStart = req.AlarmStartTs.ToDateTime();
     if (alarmStart.Kind != DateTimeKind.Utc)
       alarmStart = alarmStart.ToUniversalTime();
 
-    var retainFrom = alarmStart.AddSeconds(-pre);
-    var retainUntil = alarmStart.AddSeconds(timeout);
-    if (req.AlarmEndTs != null)
-      retainUntil = req.AlarmEndTs.ToDateTime().ToUniversalTime().AddSeconds(post);
+    var timeout = req.TimeoutSeconds == 0 ? 30u : req.TimeoutSeconds;
+    var alarmEnd = req.AlarmEndTs is not null
+      ? req.AlarmEndTs.ToDateTime().ToUniversalTime()
+      : alarmStart.AddSeconds(timeout);
 
-    if (retainUntil < retainFrom)
-      throw new InvalidOperationException("retain_until_ts must be >= retain_from_ts");
-
-    await using var connection = await _dataSource.OpenConnectionAsync(ct);
-    await using var tx = await connection.BeginTransactionAsync(ct);
-
-    await using (var upsert = new NpgsqlCommand("""
-      INSERT INTO retention_events(event_id, camera_id, alarm_start_ts, alarm_end_ts, retain_from_ts, retain_until_ts, updated_at)
-      VALUES($1, $2, $3, $4, $5, $6, now())
+    await using var upsert = _dataSource.CreateCommand("""
+      INSERT INTO retention_events(event_id, camera_id, alarm_start_ts, alarm_end_ts)
+      VALUES($1, $2, $3, COALESCE($4::timestamptz, $3 + ($5 * interval '1 second')))
       ON CONFLICT(event_id) DO UPDATE SET
         camera_id = EXCLUDED.camera_id,
         alarm_start_ts = EXCLUDED.alarm_start_ts,
-        alarm_end_ts = EXCLUDED.alarm_end_ts,
-        retain_from_ts = EXCLUDED.retain_from_ts,
-        retain_until_ts = EXCLUDED.retain_until_ts,
-        updated_at = now();
-      """, connection, tx))
-    {
-      upsert.Parameters.AddWithValue(eventId);
-      upsert.Parameters.AddWithValue(req.CameraId);
-      upsert.Parameters.AddWithValue(alarmStart);
-      upsert.Parameters.AddWithValue(req.AlarmEndTs is null ? DBNull.Value : req.AlarmEndTs.ToDateTime());
-      upsert.Parameters.AddWithValue(retainFrom);
-      upsert.Parameters.AddWithValue(retainUntil);
-      await upsert.ExecuteNonQueryAsync(ct);
-    }
+        alarm_end_ts = COALESCE($4::timestamptz, retention_events.alarm_end_ts);
+      """);
+    upsert.Parameters.AddWithValue(eventId);
+    upsert.Parameters.AddWithValue(req.CameraId);
+    upsert.Parameters.AddWithValue(alarmStart);
+    upsert.Parameters.AddWithValue(req.AlarmEndTs is null ? DBNull.Value : req.AlarmEndTs.ToDateTime());
+    upsert.Parameters.AddWithValue((int)timeout);
+    await upsert.ExecuteNonQueryAsync(ct);
 
-    await using (var retainClips = new NpgsqlCommand("""
-      WITH updated AS (
-        UPDATE clips AS c
-        SET retained = TRUE, retained_at = COALESCE(c.retained_at, now())
-        WHERE c.camera_id = $2
-          AND c.start_ts <= $3
-          AND COALESCE(c.end_ts, c.start_ts) >= $4
-        RETURNING c.clip_uid
-      )
-      INSERT INTO retention_event_clips(event_id, clip_uid)
-      SELECT $1, clip_uid FROM updated
-      ON CONFLICT(event_id, clip_uid) DO NOTHING;
-      """, connection, tx))
-    {
-      retainClips.Parameters.AddWithValue(eventId);
-      retainClips.Parameters.AddWithValue(req.CameraId);
-      retainClips.Parameters.AddWithValue(retainUntil);
-      retainClips.Parameters.AddWithValue(retainFrom);
-      await retainClips.ExecuteNonQueryAsync(ct);
-    }
-
-    await tx.CommitAsync(ct);
+    await using var retainClips = _dataSource.CreateCommand("""
+      UPDATE clips
+      SET retained = TRUE
+      WHERE camera_id = $1
+        AND start_ts <= $2
+        AND COALESCE(end_ts, start_ts) >= $3;
+      """);
+    retainClips.Parameters.AddWithValue(req.CameraId);
+    retainClips.Parameters.AddWithValue(alarmEnd);
+    retainClips.Parameters.AddWithValue(alarmStart);
+    await retainClips.ExecuteNonQueryAsync(ct);
   }
 
   public async Task<List<Recording>> GetRecordingsFromToAsync(GetRecordingsFromToRequest request, CancellationToken ct)
@@ -326,7 +297,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource)
     await using var cmd = _dataSource.CreateCommand("""
       SELECT EXISTS (
         SELECT 1 FROM retention_events
-        WHERE camera_id = $1 AND retain_from_ts <= now() AND retain_until_ts >= now()
+        WHERE camera_id = $1 AND alarm_start_ts <= now() AND alarm_end_ts >= now()
       );
       """);
     cmd.Parameters.AddWithValue(cameraId);
@@ -435,9 +406,11 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource)
   {
     await using var command = _dataSource.CreateCommand("""
       SELECT c.camera_id, c.file_path, c.start_ts, c.end_ts, c.size_bytes,
-             COALESCE(string_agg(DISTINCT rec.event_id, ','), '')
+             COALESCE(string_agg(DISTINCT re.event_id, ','), '')
       FROM clips c
-      LEFT JOIN retention_event_clips rec ON rec.clip_uid = c.clip_uid
+      LEFT JOIN retention_events re ON re.camera_id = c.camera_id
+        AND c.start_ts <= re.alarm_end_ts
+        AND COALESCE(c.end_ts, c.start_ts) >= re.alarm_start_ts
       WHERE c.camera_id = $1 AND c.retained = TRUE
         AND ($2::timestamptz IS NULL OR COALESCE(c.end_ts, 'infinity'::timestamptz) >= $2)
         AND ($3::timestamptz IS NULL OR c.start_ts <= $3)
@@ -467,9 +440,11 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource)
 
     var before = await QueryRecordingsWithEventsAsync("""
       SELECT c.camera_id, c.file_path, c.start_ts, c.end_ts, c.size_bytes,
-             COALESCE(string_agg(DISTINCT rec.event_id, ','), '')
+             COALESCE(string_agg(DISTINCT re.event_id, ','), '')
       FROM clips c
-      LEFT JOIN retention_event_clips rec ON rec.clip_uid = c.clip_uid
+      LEFT JOIN retention_events re ON re.camera_id = c.camera_id
+        AND c.start_ts <= re.alarm_end_ts
+        AND COALESCE(c.end_ts, c.start_ts) >= re.alarm_start_ts
       WHERE c.camera_id = $1 AND c.retained = TRUE AND c.start_ts < $2
       GROUP BY c.clip_uid
       ORDER BY c.start_ts DESC
@@ -478,9 +453,11 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource)
 
     var after = await QueryRecordingsWithEventsAsync("""
       SELECT c.camera_id, c.file_path, c.start_ts, c.end_ts, c.size_bytes,
-             COALESCE(string_agg(DISTINCT rec.event_id, ','), '')
+             COALESCE(string_agg(DISTINCT re.event_id, ','), '')
       FROM clips c
-      LEFT JOIN retention_event_clips rec ON rec.clip_uid = c.clip_uid
+      LEFT JOIN retention_events re ON re.camera_id = c.camera_id
+        AND c.start_ts <= re.alarm_end_ts
+        AND COALESCE(c.end_ts, c.start_ts) >= re.alarm_start_ts
       WHERE c.camera_id = $1 AND c.retained = TRUE AND c.start_ts >= $2
       GROUP BY c.clip_uid
       ORDER BY c.start_ts ASC

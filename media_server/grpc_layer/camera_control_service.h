@@ -28,11 +28,6 @@ public:
                                 const vms::control::SourceRequest* request,
                                 vms::control::OperationStatus* response) override;
 
-  grpc::Status ListCameras(grpc::ServerContext* context,
-                           const vms::control::ListCamerasRequest* request,
-                           vms::control::ListCamerasResponse* response) override;
-
-
   grpc::Status SetCameraState(grpc::ServerContext* context,
                               const vms::control::CameraState* request,
                               vms::control::OperationStatus* response) override;

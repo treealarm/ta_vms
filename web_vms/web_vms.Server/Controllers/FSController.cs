@@ -156,12 +156,6 @@ public sealed class FSController(
       grpcReq.EventId = body.EventId!;
     if (body.AlarmEndTs.HasValue)
       grpcReq.AlarmEndTs = Timestamp.FromDateTime(ToUtc(body.AlarmEndTs.Value));
-    if (body.PreRecordSeconds.HasValue)
-      grpcReq.PreRecordSeconds = body.PreRecordSeconds.Value;
-    if (body.PostRecordSeconds.HasValue)
-      grpcReq.PostRecordSeconds = body.PostRecordSeconds.Value;
-    if (body.TimeoutSeconds.HasValue)
-      grpcReq.TimeoutSeconds = body.TimeoutSeconds.Value;
 
     var resp = await fsClient.RetainEventAsync(grpcReq, cancellationToken: ct);
     if (resp.Status != OperationStatus.Types.Status.Success)

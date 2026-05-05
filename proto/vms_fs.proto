@@ -48,8 +48,6 @@ message RetainEventRequest {
   string camera_id = 2;
   google.protobuf.Timestamp alarm_start_ts = 3;
   optional google.protobuf.Timestamp alarm_end_ts = 4;
-  uint32 pre_record_seconds = 5;
-  uint32 post_record_seconds = 6;
   uint32 timeout_seconds = 7;
 }
 
