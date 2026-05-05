@@ -72,6 +72,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
 
     var config = await _configCache.GetAsync(req.CameraId, ct);
     var preSeconds = config?.PreRecordSeconds ?? 30;
+    var postSeconds = config?.PostRecordSeconds ?? 30;
 
     await using var upsert = _dataSource.CreateCommand("""
       INSERT INTO retention_events(event_id, camera_id, alarm_start_ts, alarm_end_ts)
@@ -92,13 +93,14 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
       UPDATE clips
       SET retained = TRUE
       WHERE camera_id = $1
-        AND start_ts <= $2
+        AND start_ts <= $2 + ($5 * interval '1 second')
         AND COALESCE(end_ts, start_ts) >= $3 - ($4 * interval '1 second');
       """);
     retainClips.Parameters.AddWithValue(req.CameraId);
     retainClips.Parameters.AddWithValue(alarmEnd);
     retainClips.Parameters.AddWithValue(alarmStart);
     retainClips.Parameters.AddWithValue(preSeconds);
+    retainClips.Parameters.AddWithValue(postSeconds);
     await retainClips.ExecuteNonQueryAsync(ct);
   }
 

@@ -15,7 +15,6 @@ service FsService {
   rpc GetNextRecordingAfter(GetNextRecordingAfterRequest) returns (GetRecordingsResponse);
   rpc GetCameraRetentionStatus(GetCameraRetentionStatusRequest) returns (GetCameraRetentionStatusResponse);
   rpc ListRetentionEvents(ListRetentionEventsRequest) returns (ListRetentionEventsResponse);
-  rpc InvalidateCameraConfig(InvalidateCameraConfigRequest) returns (OperationStatus);
 }
 
 message OperationStatus {
@@ -154,6 +153,3 @@ message ListRetentionEventsResponse {
   optional google.protobuf.Timestamp next_before_alarm_start_ts = 3;
 }
 
-message InvalidateCameraConfigRequest {
-  string camera_id = 1;
-}

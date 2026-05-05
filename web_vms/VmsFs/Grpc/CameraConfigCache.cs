@@ -33,8 +33,8 @@ public sealed class CameraConfigCache(CfgService.CfgServiceClient cfgClient)
 
     var config = new CameraConfig(
       resp.State.RecordingMode,
-      resp.Setup.PreAlarm != null ? (int)resp.Setup.PreAlarm.PreRecordSeconds : 30,
-      resp.Setup.PreAlarm != null ? (int)resp.Setup.PreAlarm.PostRecordSeconds : 30);
+      resp.Setup.PreAlarm != null ? (int)resp.Setup.PreAlarm.PreRecordSeconds : 10,
+      resp.Setup.PreAlarm != null ? (int)resp.Setup.PreAlarm.PostRecordSeconds : 10);
 
     _cache.TryAdd(cameraId, config);
     return config;

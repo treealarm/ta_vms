@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Dapr.AspNetCore" Version="1.16.0" />
     <PackageReference Include="Dapr.Client" Version="1.16.0" />
     <PackageReference Include="Google.Protobuf" Version="3.34.1" />
     <PackageReference Include="Grpc.AspNetCore" Version="2.76.0" />
@@ -24,7 +25,6 @@
 
   <ItemGroup>
     <Protobuf Include="..\..\proto\vms_cfg.proto" GrpcServices="Both" />
-    <Protobuf Include="..\..\proto\vms_fs.proto" GrpcServices="Client" />
   </ItemGroup>
 
   <ItemGroup>

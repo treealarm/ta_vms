@@ -68,7 +68,7 @@ services:
       - "-app-id"
       - "vmsfs"
       - "-app-port"
-      - "5137"
+      - "${FS_VMS_PORT}"
       - "-app-protocol"
       - "grpc"
       - "-dapr-http-port"

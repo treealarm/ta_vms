@@ -1,20 +1,15 @@
-﻿using Grpc.Core;
+using Dapr.Client;
+using Grpc.Core;
 using Vms.Cfg;
-using FsServiceClient = Vms.Fs.FsService.FsServiceClient;
-using InvalidateCameraConfigRequest = Vms.Fs.InvalidateCameraConfigRequest;
 
 namespace VmsCfg
 {
-  public class CfgServiceImpl : CfgService.CfgServiceBase
+  public class CfgServiceImpl(CameraStorage storage, DaprClient daprClient) : CfgService.CfgServiceBase
   {
-    private readonly CameraStorage _storage;
-    private readonly FsServiceClient _fsClient;
-
-    public CfgServiceImpl(CameraStorage storage, FsServiceClient fsClient)
-    {
-      _storage = storage;
-      _fsClient = fsClient;
-    }
+    private const string CameraConfigChangedTopic = "camera-config-changed";
+    private readonly string _pubSubName =
+      Environment.GetEnvironmentVariable("PUBSUB_NAME")
+        ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
 
     private void InvalidateFsCache(string cameraId)
     {
@@ -22,12 +17,11 @@ namespace VmsCfg
       {
         try
         {
-          await _fsClient.InvalidateCameraConfigAsync(
-            new InvalidateCameraConfigRequest { CameraId = cameraId });
+          await daprClient.PublishEventAsync(_pubSubName, CameraConfigChangedTopic, cameraId);
         }
         catch (Exception ex)
         {
-          Console.Error.WriteLine($"VmsFs cache invalidation failed for '{cameraId}': {ex.Message}");
+          Console.Error.WriteLine($"Camera config invalidation publish failed for '{cameraId}': {ex.Message}");
         }
       });
     }
@@ -35,24 +29,12 @@ namespace VmsCfg
     public override async Task<OperationStatus> SetupCamera(CameraSetup request, ServerCallContext context)
     {
       if (string.IsNullOrWhiteSpace(request.CameraId))
-      {
-        return new OperationStatus
-        {
-          Success = false,
-          Message = "camera_id must not be empty"
-        };
-      }
+        return new OperationStatus { Success = false, Message = "camera_id must not be empty" };
 
       if (string.IsNullOrWhiteSpace(request.ServerId))
-      {
-        return new OperationStatus
-        {
-          Success = false,
-          Message = "server_id must not be empty"
-        };
-      }
+        return new OperationStatus { Success = false, Message = "server_id must not be empty" };
 
-      await _storage.SetupCameraAsync(request, context.CancellationToken);
+      await storage.SetupCameraAsync(request, context.CancellationToken);
       InvalidateFsCache(request.CameraId);
       return new OperationStatus { Success = true };
     }
@@ -60,15 +42,9 @@ namespace VmsCfg
     public override async Task<OperationStatus> RegisterMediaServer(MediaServerNode request, ServerCallContext context)
     {
       if (string.IsNullOrWhiteSpace(request.ServerId))
-      {
-        return new OperationStatus
-        {
-          Success = false,
-          Message = "server_id must not be empty"
-        };
-      }
+        return new OperationStatus { Success = false, Message = "server_id must not be empty" };
 
-      await _storage.RegisterMediaServerAsync(request, context.CancellationToken);
+      await storage.RegisterMediaServerAsync(request, context.CancellationToken);
       return new OperationStatus { Success = true };
     }
 
@@ -77,21 +53,15 @@ namespace VmsCfg
       ServerCallContext context)
     {
       var response = new ListMediaServersResponse();
-      response.Servers.AddRange(await _storage.ListMediaServersAsync(context.CancellationToken));
+      response.Servers.AddRange(await storage.ListMediaServersAsync(context.CancellationToken));
       return response;
     }
 
     public override async Task<OperationStatus> SetCameraState(CameraState request, ServerCallContext context)
     {
-      var updated = await _storage.SetCameraStateAsync(request, context.CancellationToken);
+      var updated = await storage.SetCameraStateAsync(request, context.CancellationToken);
       if (!updated)
-      {
-        return new OperationStatus
-        {
-          Success = false,
-          Message = "Camera not found"
-        };
-      }
+        return new OperationStatus { Success = false, Message = "Camera not found" };
 
       InvalidateFsCache(request.CameraId);
       return new OperationStatus { Success = true };
@@ -100,34 +70,25 @@ namespace VmsCfg
     public override async Task<ListCamerasResponse> ListCameras(ListCamerasRequest request, ServerCallContext context)
     {
       var response = new ListCamerasResponse();
-      response.Cameras.AddRange(await _storage.ListCamerasAsync(request.ServerId, context.CancellationToken));
+      response.Cameras.AddRange(await storage.ListCamerasAsync(request.ServerId, context.CancellationToken));
       return response;
     }
 
     public override async Task<OperationStatus> RemoveCamera(SourceRequest request, ServerCallContext context)
     {
-      var removed = await _storage.RemoveCameraAsync(request.SourceId, context.CancellationToken);
+      var removed = await storage.RemoveCameraAsync(request.SourceId, context.CancellationToken);
       if (removed)
         InvalidateFsCache(request.SourceId);
-
       return new OperationStatus { Success = removed };
     }
 
     public override async Task<CameraStateResponse> GetCameraState(SourceRequest request, ServerCallContext context)
     {
-      var (found, setup) = await _storage.GetCameraAsync(request.SourceId, context.CancellationToken);
+      var (found, setup) = await storage.GetCameraAsync(request.SourceId, context.CancellationToken);
       if (!found || setup is null)
-      {
         return new CameraStateResponse { Found = false };
-      }
 
-      return new CameraStateResponse
-      {
-        Found = true,
-        Setup = setup,
-        State = setup.State
-      };
+      return new CameraStateResponse { Found = true, Setup = setup, State = setup.State };
     }
-
   }
 }
