@@ -1,26 +1,24 @@
 #include "proto_mapper.h"
 
 recording_policy_spec proto_mapper::recording_policy_for_media(
-  vms::control::RecordingMode grpc_mode,
+  vms::cfg::RecordingMode grpc_mode,
   uint32_t prealarm_seg)
 {
   recording_policy_spec pol;
   switch (grpc_mode)
   {
-    case vms::control::RECORDING_CONTINUOUS:
+    case vms::cfg::RECORDING_CONTINUOUS:
       pol.mode = recording_policy_mode::continuous;
       pol.segment_len = std::chrono::seconds(60);
-      pol.ingest_retained = true;
       return pol;
-    case vms::control::RECORDING_PREALARM:
+    case vms::cfg::RECORDING_PREALARM:
       pol.mode = recording_policy_mode::prealarm;
     {
       const uint32_t seg = prealarm_seg > 0 ? prealarm_seg : 5;
       pol.segment_len = std::chrono::seconds(seg);
-      pol.ingest_retained = false;
       return pol;
     }
-    case vms::control::RECORDING_OFF:
+    case vms::cfg::RECORDING_OFF:
     default:
       pol.mode = recording_policy_mode::off;
       return pol;
@@ -29,32 +27,12 @@ recording_policy_spec proto_mapper::recording_policy_for_media(
 
 uint32_t proto_mapper::prealarm_segment_seconds(const vms::control::CameraState& state)
 {
-  if (state.has_prealarm() && state.prealarm().segment_seconds() > 0)
-  {
-    return state.prealarm().segment_seconds();
-  }
-  return 5;
+  return state.segment_seconds() > 0 ? state.segment_seconds() : 5;
 }
 
 uint32_t proto_mapper::prealarm_segment_seconds(const vms::cfg::CameraSetup& setup)
 {
   if (setup.has_pre_alarm() && setup.pre_alarm().segment_seconds() > 0)
-  {
     return setup.pre_alarm().segment_seconds();
-  }
   return 5;
-}
-
-vms::control::RecordingMode proto_mapper::to_grpc_recording_mode(recording_policy_mode mode)
-{
-  switch (mode)
-  {
-    case recording_policy_mode::continuous:
-      return vms::control::RECORDING_CONTINUOUS;
-    case recording_policy_mode::prealarm:
-      return vms::control::RECORDING_PREALARM;
-    case recording_policy_mode::off:
-    default:
-      return vms::control::RECORDING_OFF;
-  }
 }

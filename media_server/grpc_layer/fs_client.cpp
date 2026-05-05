@@ -102,8 +102,7 @@ void fs_client::enqueue_ingest_clip(
   const std::string& file_path,
   std::chrono::system_clock::time_point start_ts,
   std::optional<std::chrono::system_clock::time_point> end_ts,
-  std::uint64_t size_bytes,
-  bool retained)
+  std::uint64_t size_bytes)
 {
   vms::fs::IngestClipRequest request;
   auto* clip = request.mutable_clip();
@@ -118,7 +117,6 @@ void fs_client::enqueue_ingest_clip(
   {
     clip->set_size_bytes(size_bytes);
   }
-  clip->set_retained(retained);
 
   {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -135,7 +133,6 @@ void fs_client::enqueue_ingest_clip(
 
 bool fs_client::ingest_clip(
   const recording& clip,
-  bool retained,
   std::string& clip_uid,
   std::string& error)
 {
@@ -149,7 +146,6 @@ bool fs_client::ingest_clip(
     *meta->mutable_end_ts() = to_proto_ts(*clip.end_ts);
   }
   meta->set_size_bytes(clip.size_bytes);
-  meta->set_retained(retained);
 
   const auto outcome = ingest_clip_sync(request);
   if (outcome.result != ingest_result::success)
@@ -405,10 +401,6 @@ bool fs_client::load_outbox_chunk_locked(std::size_t max_records)
         "failed to parse fs outbox line, skipping: {}",
         parse_status.ToString()));
       continue;
-    }
-    if (!request.clip().has_retained())
-    {
-      request.mutable_clip()->set_retained(false);
     }
     if (request.clip().size_bytes() == 0)
     {

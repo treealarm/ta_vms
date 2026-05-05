@@ -12,10 +12,6 @@ class camera_control_service final : public vms::control::CameraControlService::
 public:
   explicit camera_control_service(camera_manager& manager);
 
-  grpc::Status AddCamera(grpc::ServerContext* context,
-                         const vms::control::CameraState* request,
-                         vms::control::OperationStatus* response) override;
-
   grpc::Status AddArchPlayer(grpc::ServerContext* context,
                              const vms::control::PlayerState* request,
                              vms::control::OperationStatus* response) override;
@@ -31,10 +27,6 @@ public:
   grpc::Status SetCameraState(grpc::ServerContext* context,
                               const vms::control::CameraState* request,
                               vms::control::OperationStatus* response) override;
-
-  grpc::Status GetCameraState(grpc::ServerContext* context,
-    const vms::control::SourceRequest* request,
-    vms::control::CameraState* response) override;
 
   grpc::Status SetPlayerState(grpc::ServerContext* context,
                               const vms::control::PlayerState* request,

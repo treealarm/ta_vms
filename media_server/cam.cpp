@@ -46,7 +46,6 @@ void cam::apply_recording_policy(const recording_policy_spec& policy)
     std::scoped_lock lock(m_sinks_mutex);
     if (m_writer &&
       m_record_segment_duration == seg &&
-      m_record_ingest_retained == policy.ingest_retained &&
       m_recording_policy_mode == policy.mode)
     {
       return;
@@ -63,9 +62,8 @@ void cam::apply_recording_policy(const recording_policy_spec& policy)
       return;
     }
 
-    m_writer = std::make_shared<segment_writer>(m_cam_id, seg, policy.ingest_retained);
+    m_writer = std::make_shared<segment_writer>(m_cam_id, seg);
     m_record_segment_duration = seg;
-    m_record_ingest_retained = policy.ingest_retained;
     m_recording_policy_mode = policy.mode;
     sink = m_writer;
   }
@@ -85,7 +83,6 @@ void cam::stop_recording()
     sink = m_writer;
     m_writer.reset();
     m_record_segment_duration = std::chrono::seconds(60);
-    m_record_ingest_retained = true;
     m_recording_policy_mode = recording_policy_mode::off;
   }
   if (sink)

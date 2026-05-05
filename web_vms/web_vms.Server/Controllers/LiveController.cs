@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Vms.Control;
 using Vms.Fs;
 using web_vms.Types.Dto;
+using RecordingMode = Vms.Cfg.RecordingMode;
 
 namespace web_vms;
 
@@ -48,12 +49,7 @@ public class LiveController(
     };
 
     if (state.RecordingMode == RecordingMode.RecordingPrealarm && n.PreAlarm != null)
-    {
-      state.Prealarm = new PreAlarmRecordingSettings
-      {
-        SegmentSeconds = n.PreAlarm.SegmentSeconds > 0 ? n.PreAlarm.SegmentSeconds : 5,
-      };
-    }
+      state.SegmentSeconds = n.PreAlarm.SegmentSeconds > 0 ? n.PreAlarm.SegmentSeconds : 5;
 
     return state;
   }
@@ -67,7 +63,7 @@ public class LiveController(
     }
 
     var normalized = CameraManager.Normalize(request);
-    var response = await GetMediaClient(normalized.ServerId!).AddCameraAsync(ToControlState(normalized), cancellationToken: ct);
+    var response = await GetMediaClient(normalized.ServerId!).SetCameraStateAsync(ToControlState(normalized), cancellationToken: ct);
 
     if (response.Success)
     {
@@ -115,7 +111,7 @@ public class LiveController(
     }
 
     var normalized = CameraManager.Normalize(request);
-    var addResponse = await GetMediaClient(normalized.ServerId!).AddCameraAsync(ToControlState(normalized), cancellationToken: ct);
+    var addResponse = await GetMediaClient(normalized.ServerId!).SetCameraStateAsync(ToControlState(normalized), cancellationToken: ct);
     if (addResponse.Success)
     {
       await _manager.Add(normalized);

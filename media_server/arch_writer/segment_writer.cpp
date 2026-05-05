@@ -11,12 +11,10 @@
 
 segment_writer::segment_writer(
   const std::string& camera_id,
-  std::chrono::seconds segment_duration,
-  bool ingest_retained)
+  std::chrono::seconds segment_duration)
   :
   m_camera_id(camera_id),
   m_segment_duration(segment_duration.count() > 0 ? segment_duration : std::chrono::seconds(60)),
-  m_ingest_retained(ingest_retained),
   m_packet_transcoder([]
     {
       recording_storage storage;
@@ -150,8 +148,7 @@ void segment_writer::open_new_segment()
     m_segment_rel_path.string(),
     m_segment_start_ts,
     std::nullopt,
-    0,
-    m_ingest_retained);
+    0);
 }
 
 void segment_writer::close_segment()
@@ -185,8 +182,7 @@ void segment_writer::close_segment()
         m_segment_rel_path.string(),
         m_segment_start_ts,
         segment_end_ts,
-        0,
-        m_ingest_retained);
+        0);
     }
     else
     {
@@ -195,8 +191,7 @@ void segment_writer::close_segment()
         m_segment_rel_path.string(),
         m_segment_start_ts,
         segment_end_ts,
-        size,
-        m_ingest_retained);
+        size);
     }
   }
 

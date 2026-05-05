@@ -9,9 +9,10 @@ internal sealed record RecordingWithEvents(
   Recording Recording,
   List<string> EventIds);
 
-public sealed class ClipStorage(NpgsqlDataSource dataSource)
+public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache configCache)
 {
   private readonly NpgsqlDataSource _dataSource = dataSource;
+  private readonly CameraConfigCache _configCache = configCache;
 
   /// <summary>Split uninterrupted spans into ~minute-sized ranges for the archive list.</summary>
   private static readonly TimeSpan DefaultMaxRecordingRangeWallSpan = TimeSpan.FromMinutes(1);
@@ -24,6 +25,9 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource)
     var clipUid = string.IsNullOrWhiteSpace(clip.ClipUid)
       ? Guid.NewGuid()
       : Guid.Parse(clip.ClipUid);
+
+    var config = await _configCache.GetAsync(clip.CameraId, ct);
+    var retained = await ResolveRetainedAsync(clip, config, ct);
 
     await using var command = _dataSource.CreateCommand("""
       INSERT INTO clips (clip_uid, file_path, camera_id, start_ts, end_ts, size_bytes, retained)
@@ -45,7 +49,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource)
       NpgsqlDbType.TimestampTz,
       clip.EndTs is null ? DBNull.Value : clip.EndTs.ToDateTime());
     command.Parameters.AddWithValue(NpgsqlDbType.Bigint, (long)clip.SizeBytes);
-    command.Parameters.AddWithValue(NpgsqlDbType.Boolean, clip.HasRetained ? clip.Retained : false);
+    command.Parameters.AddWithValue(NpgsqlDbType.Boolean, retained);
 
     var stored = (string)(await command.ExecuteScalarAsync(ct))!;
     return stored;
@@ -65,6 +69,9 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource)
     var alarmEnd = req.AlarmEndTs is not null
       ? req.AlarmEndTs.ToDateTime().ToUniversalTime()
       : alarmStart.AddSeconds(timeout);
+
+    var config = await _configCache.GetAsync(req.CameraId, ct);
+    var preSeconds = config?.PreRecordSeconds ?? 30;
 
     await using var upsert = _dataSource.CreateCommand("""
       INSERT INTO retention_events(event_id, camera_id, alarm_start_ts, alarm_end_ts)
@@ -86,11 +93,12 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource)
       SET retained = TRUE
       WHERE camera_id = $1
         AND start_ts <= $2
-        AND COALESCE(end_ts, start_ts) >= $3;
+        AND COALESCE(end_ts, start_ts) >= $3 - ($4 * interval '1 second');
       """);
     retainClips.Parameters.AddWithValue(req.CameraId);
     retainClips.Parameters.AddWithValue(alarmEnd);
     retainClips.Parameters.AddWithValue(alarmStart);
+    retainClips.Parameters.AddWithValue(preSeconds);
     await retainClips.ExecuteNonQueryAsync(ct);
   }
 
@@ -404,13 +412,17 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource)
     int limit,
     CancellationToken ct)
   {
+    var config = await _configCache.GetAsync(cameraId, ct);
+    var pre = config?.PreRecordSeconds ?? 30;
+    var post = config?.PostRecordSeconds ?? 30;
+
     await using var command = _dataSource.CreateCommand("""
       SELECT c.camera_id, c.file_path, c.start_ts, c.end_ts, c.size_bytes,
              COALESCE(string_agg(DISTINCT re.event_id, ','), '')
       FROM clips c
       LEFT JOIN retention_events re ON re.camera_id = c.camera_id
-        AND c.start_ts <= re.alarm_end_ts
-        AND COALESCE(c.end_ts, c.start_ts) >= re.alarm_start_ts
+        AND c.start_ts <= re.alarm_end_ts + ($5 * interval '1 second')
+        AND COALESCE(c.end_ts, c.start_ts) >= re.alarm_start_ts - ($6 * interval '1 second')
       WHERE c.camera_id = $1 AND c.retained = TRUE
         AND ($2::timestamptz IS NULL OR COALESCE(c.end_ts, 'infinity'::timestamptz) >= $2)
         AND ($3::timestamptz IS NULL OR c.start_ts <= $3)
@@ -419,13 +431,11 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource)
       LIMIT $4;
       """);
     command.Parameters.AddWithValue(cameraId);
-    command.Parameters.AddWithValue(
-      NpgsqlDbType.TimestampTz,
-      fromTs is null ? DBNull.Value : fromTs.ToDateTime());
-    command.Parameters.AddWithValue(
-      NpgsqlDbType.TimestampTz,
-      toTs is null ? DBNull.Value : toTs.ToDateTime());
+    command.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, fromTs is null ? DBNull.Value : fromTs.ToDateTime());
+    command.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, toTs is null ? DBNull.Value : toTs.ToDateTime());
     command.Parameters.AddWithValue(limit);
+    command.Parameters.AddWithValue(post);
+    command.Parameters.AddWithValue(pre);
     return await ReadRecordingWithEventsAsync(command, ct);
   }
 
@@ -435,6 +445,10 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource)
     int limit,
     CancellationToken ct)
   {
+    var config = await _configCache.GetAsync(cameraId, ct);
+    var pre = config?.PreRecordSeconds ?? 30;
+    var post = config?.PostRecordSeconds ?? 30;
+
     var beforeLimit = limit / 2;
     var afterLimit = limit - beforeLimit;
 
@@ -443,26 +457,26 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource)
              COALESCE(string_agg(DISTINCT re.event_id, ','), '')
       FROM clips c
       LEFT JOIN retention_events re ON re.camera_id = c.camera_id
-        AND c.start_ts <= re.alarm_end_ts
-        AND COALESCE(c.end_ts, c.start_ts) >= re.alarm_start_ts
+        AND c.start_ts <= re.alarm_end_ts + ($4 * interval '1 second')
+        AND COALESCE(c.end_ts, c.start_ts) >= re.alarm_start_ts - ($5 * interval '1 second')
       WHERE c.camera_id = $1 AND c.retained = TRUE AND c.start_ts < $2
       GROUP BY c.clip_uid
       ORDER BY c.start_ts DESC
       LIMIT $3;
-      """, cameraId, center, beforeLimit, ct);
+      """, cameraId, center, beforeLimit, post, pre, ct);
 
     var after = await QueryRecordingsWithEventsAsync("""
       SELECT c.camera_id, c.file_path, c.start_ts, c.end_ts, c.size_bytes,
              COALESCE(string_agg(DISTINCT re.event_id, ','), '')
       FROM clips c
       LEFT JOIN retention_events re ON re.camera_id = c.camera_id
-        AND c.start_ts <= re.alarm_end_ts
-        AND COALESCE(c.end_ts, c.start_ts) >= re.alarm_start_ts
+        AND c.start_ts <= re.alarm_end_ts + ($4 * interval '1 second')
+        AND COALESCE(c.end_ts, c.start_ts) >= re.alarm_start_ts - ($5 * interval '1 second')
       WHERE c.camera_id = $1 AND c.retained = TRUE AND c.start_ts >= $2
       GROUP BY c.clip_uid
       ORDER BY c.start_ts ASC
       LIMIT $3;
-      """, cameraId, center, afterLimit, ct);
+      """, cameraId, center, afterLimit, post, pre, ct);
 
     var combined = new List<RecordingWithEvents>(before.Count + after.Count);
     for (var i = before.Count - 1; i >= 0; i--)
@@ -476,12 +490,16 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource)
     string cameraId,
     DateTime ts,
     int lim,
+    int post,
+    int pre,
     CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand(sql);
     command.Parameters.AddWithValue(cameraId);
     command.Parameters.AddWithValue(ts);
     command.Parameters.AddWithValue(lim);
+    command.Parameters.AddWithValue(post);
+    command.Parameters.AddWithValue(pre);
     return await ReadRecordingWithEventsAsync(command, ct);
   }
 
@@ -595,5 +613,35 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource)
     }
 
     return ranges;
+  }
+
+  private async Task<bool> ResolveRetainedAsync(ClipMeta clip, CameraConfig? config, CancellationToken ct)
+  {
+    if (config is null)
+      return true;
+
+    if (config.RecordingMode == Vms.Cfg.RecordingMode.RecordingContinuous)
+      return true;
+
+    if (config.RecordingMode != Vms.Cfg.RecordingMode.RecordingPrealarm)
+      return false;
+
+    var startTs = clip.StartTs.ToDateTime();
+    var endTs = clip.EndTs is not null ? clip.EndTs.ToDateTime() : (DateTime?)null;
+
+    await using var cmd = _dataSource.CreateCommand("""
+      SELECT EXISTS (
+        SELECT 1 FROM retention_events
+        WHERE camera_id = $1
+          AND $2::timestamptz <= alarm_end_ts + ($4 * interval '1 second')
+          AND COALESCE($3::timestamptz, $2::timestamptz) >= alarm_start_ts - ($5 * interval '1 second')
+      );
+      """);
+    cmd.Parameters.AddWithValue(clip.CameraId);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, startTs);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, endTs.HasValue ? endTs.Value : DBNull.Value);
+    cmd.Parameters.AddWithValue(config.PostRecordSeconds);
+    cmd.Parameters.AddWithValue(config.PreRecordSeconds);
+    return (bool)(await cmd.ExecuteScalarAsync(ct))!;
   }
 }

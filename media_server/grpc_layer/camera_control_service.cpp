@@ -50,27 +50,6 @@ google::protobuf::Timestamp from_time_point(
 camera_control_service::camera_control_service(camera_manager& manager)
     : m_manager(manager) {}
 
-grpc::Status camera_control_service::AddCamera(
-    grpc::ServerContext* /*context*/,
-    const vms::control::CameraState* request,
-    vms::control::OperationStatus* response) {
-  std::string error;
-  const auto policy = proto_mapper::recording_policy_for_media(
-    request->recording_mode(),
-    proto_mapper::prealarm_segment_seconds(*request));
-  const bool success = m_manager.add_camera(
-    request->camera_id(),
-    request->rtsp_url(),
-    request->has_cred() ? request->cred().user() : "",
-    request->has_cred() ? request->cred().pass() : "",
-    policy,
-    request->web_rtc(),
-    error);
-
-  response->set_success(success);
-  response->set_message(success ? "camera added" : error);
-  return grpc::Status::OK;
-}
 
 grpc::Status camera_control_service::AddArchPlayer(
     grpc::ServerContext* /*context*/,
@@ -188,30 +167,6 @@ grpc::Status camera_control_service::SetCameraState(
   return grpc::Status::OK;
 }
 
-grpc::Status camera_control_service::GetCameraState(
-  grpc::ServerContext* /*context*/,
-  const vms::control::SourceRequest* request,
-  vms::control::CameraState* response)
-{
-  std::string error;
-
-  const auto info = m_manager.get_camera_state(
-    request->source_id(),
-    error);
-
-  if (!info)
-  {
-    return ::grpc::Status(::grpc::StatusCode::INTERNAL, error);
-  }
-  response->set_camera_id(request->source_id());
-  response->set_recording_mode(
-    proto_mapper::to_grpc_recording_mode(info->recording_policy));
-  response->set_web_rtc(info->is_web_rtc_streaming);
-  response->set_rtsp_url(info->rtsp_url);
-  response->mutable_cred()->set_user(info->user);
-  response->mutable_cred()->set_pass(info->pass);
-  return grpc::Status::OK;
-}
 
 ::grpc::Status camera_control_service::SendPlayerCommand(
   ::grpc::ServerContext* /*context*/,

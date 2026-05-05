@@ -1,14 +1,13 @@
 syntax = "proto3";
 
 import "google/protobuf/timestamp.proto";
+import "vms_cfg.proto";
 
 package vms.control;
 
 service CameraControlService {
-  rpc AddCamera(CameraState) returns (OperationStatus);
   rpc RemoveCamera(SourceRequest) returns (OperationStatus);
   rpc SetCameraState(CameraState) returns (OperationStatus);
-  rpc GetCameraState(SourceRequest) returns (CameraState);
 
   rpc AddArchPlayer(PlayerState) returns (OperationStatus);
   rpc RemoveArchPlayer(SourceRequest) returns (OperationStatus);
@@ -39,23 +38,13 @@ message Credentials {
   string pass = 2;
 }
 
-enum RecordingMode {
-  RECORDING_OFF = 0;
-  RECORDING_CONTINUOUS = 1;
-  RECORDING_PREALARM = 2;
-}
-
-message PreAlarmRecordingSettings {
-  uint32 segment_seconds = 3;
-}
-
 message CameraState {
   string camera_id = 1;
-  RecordingMode recording_mode = 2;
+  vms.cfg.RecordingMode recording_mode = 2;
   bool web_rtc = 3;
   string rtsp_url = 4;
   optional Credentials cred = 5;
-  optional PreAlarmRecordingSettings prealarm = 6;
+  uint32 segment_seconds = 6;
 }
 
 

@@ -63,7 +63,7 @@ bool camera_manager::start_recording(const std::string& camera_id,
   }
 
   it->second->apply_recording_policy(proto_mapper::recording_policy_for_media(
-    vms::control::RECORDING_CONTINUOUS,
+    vms::cfg::RECORDING_CONTINUOUS,
     0));
   return true;
 }
@@ -131,10 +131,7 @@ bool camera_manager::set_camera_state(
 
     auto it = m_cameras.find(camera_id);
     if (it == m_cameras.end())
-    {
-      error = "camera not found: " + camera_id;
-      return false;
-    }
+      return add_camera(camera_id, rtsp_url, user, pass, policy, web_rtc, error);
 
     if (it->second->get_source()!= rtsp_url || 
       it->second->get_user() != user ||

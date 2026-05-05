@@ -49,7 +49,6 @@ private:
   std::shared_ptr<segment_writer> m_writer;
   recording_policy_mode m_recording_policy_mode{recording_policy_mode::off};
   std::chrono::seconds m_record_segment_duration{60};
-  bool m_record_ingest_retained{true};
   std::shared_ptr<webrtc_output_sink> m_webrtc_output_sink;
   mutable std::mutex m_sinks_mutex;
 };

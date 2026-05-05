@@ -3,9 +3,10 @@ using Vms.Fs;
 
 namespace VmsFs;
 
-public sealed class FsServiceImpl(ClipStorage storage) : FsService.FsServiceBase
+public sealed class FsServiceImpl(ClipStorage storage, CameraConfigCache configCache) : FsService.FsServiceBase
 {
   private readonly ClipStorage _storage = storage;
+  private readonly CameraConfigCache _configCache = configCache;
 
   public override async Task<OperationStatus> IngestClip(
     IngestClipRequest request,
@@ -199,5 +200,13 @@ public sealed class FsServiceImpl(ClipStorage storage) : FsService.FsServiceBase
       Console.Error.WriteLine($"ListRetentionEvents failed: {ex}");
       throw new RpcException(new Status(StatusCode.Internal, ex.Message));
     }
+  }
+
+  public override Task<OperationStatus> InvalidateCameraConfig(
+    InvalidateCameraConfigRequest request,
+    ServerCallContext context)
+  {
+    _configCache.Invalidate(request.CameraId);
+    return Task.FromResult(new OperationStatus { Status = OperationStatus.Types.Status.Success });
   }
 }

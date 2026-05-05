@@ -38,12 +38,10 @@ public:
     const std::string& file_path,
     std::chrono::system_clock::time_point start_ts,
     std::optional<std::chrono::system_clock::time_point> end_ts,
-    std::uint64_t size_bytes,
-    bool retained);
+    std::uint64_t size_bytes);
 
   bool ingest_clip(
     const recording& clip,
-    bool retained,
     std::string& clip_uid,
     std::string& error);
 

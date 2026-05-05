@@ -1,12 +1,18 @@
+using Dapr.Client;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Npgsql;
 using VmsCfg;
+using Vms.Fs;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var fsAppId = Environment.GetEnvironmentVariable("DAPR_FS_APP_ID") ?? "vmsfs";
 
 builder.Services.AddGrpc();
 builder.Services.AddSingleton(_ =>
   NpgsqlDataSource.Create(BuildPostgresConnectionString()));
+builder.Services.AddSingleton(_ =>
+  new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsAppId)));
 builder.Services.AddSingleton<DbMigrator>();
 builder.Services.AddSingleton<CameraStorage>();
 builder.Services.AddSingleton<CfgServiceImpl>();

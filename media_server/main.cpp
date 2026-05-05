@@ -85,14 +85,13 @@ int main(int argc, char** argv)
     {
       recording_policy_spec policy =
         proto_mapper::recording_policy_for_media(
-          vms::control::RECORDING_OFF,
+          vms::cfg::RECORDING_OFF,
           0);
       if (c.has_state())
       {
         const auto& st = c.state();
         policy = proto_mapper::recording_policy_for_media(
-          static_cast<vms::control::RecordingMode>(
-            static_cast<int>(st.recording_mode())),
+          st.recording_mode(),
           proto_mapper::prealarm_segment_seconds(c));
       }
 

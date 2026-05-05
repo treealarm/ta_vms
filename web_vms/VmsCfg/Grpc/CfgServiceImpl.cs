@@ -1,15 +1,35 @@
 ﻿using Grpc.Core;
 using Vms.Cfg;
+using FsServiceClient = Vms.Fs.FsService.FsServiceClient;
+using InvalidateCameraConfigRequest = Vms.Fs.InvalidateCameraConfigRequest;
 
 namespace VmsCfg
 {
   public class CfgServiceImpl : CfgService.CfgServiceBase
   {
     private readonly CameraStorage _storage;
+    private readonly FsServiceClient _fsClient;
 
-    public CfgServiceImpl(CameraStorage storage)
+    public CfgServiceImpl(CameraStorage storage, FsServiceClient fsClient)
     {
       _storage = storage;
+      _fsClient = fsClient;
+    }
+
+    private void InvalidateFsCache(string cameraId)
+    {
+      _ = Task.Run(async () =>
+      {
+        try
+        {
+          await _fsClient.InvalidateCameraConfigAsync(
+            new InvalidateCameraConfigRequest { CameraId = cameraId });
+        }
+        catch (Exception ex)
+        {
+          Console.Error.WriteLine($"VmsFs cache invalidation failed for '{cameraId}': {ex.Message}");
+        }
+      });
     }
 
     public override async Task<OperationStatus> SetupCamera(CameraSetup request, ServerCallContext context)
@@ -33,6 +53,7 @@ namespace VmsCfg
       }
 
       await _storage.SetupCameraAsync(request, context.CancellationToken);
+      InvalidateFsCache(request.CameraId);
       return new OperationStatus { Success = true };
     }
 
@@ -72,6 +93,7 @@ namespace VmsCfg
         };
       }
 
+      InvalidateFsCache(request.CameraId);
       return new OperationStatus { Success = true };
     }
 
@@ -85,6 +107,8 @@ namespace VmsCfg
     public override async Task<OperationStatus> RemoveCamera(SourceRequest request, ServerCallContext context)
     {
       var removed = await _storage.RemoveCameraAsync(request.SourceId, context.CancellationToken);
+      if (removed)
+        InvalidateFsCache(request.SourceId);
 
       return new OperationStatus { Success = removed };
     }
