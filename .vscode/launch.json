@@ -80,7 +80,8 @@
                 "POSTGRES_PORT": "5432",
                 "POSTGRES_USER": "postgres",
                 "POSTGRES_PASSWORD": "postgres",
-                "POSTGRES_FS_DB": "ta_fs"
+                "POSTGRES_FS_DB": "ta_fs",
+                "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage"
             }
         },
         {

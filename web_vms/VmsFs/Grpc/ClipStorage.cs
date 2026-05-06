@@ -302,6 +302,46 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
     return list;
   }
 
+  public async Task<List<(Guid ClipUid, string FilePath, string CameraId, DateTime EndTs)>> GetUnretainedCandidatesAsync(
+    int minOlderThanSeconds,
+    int batchSize,
+    CancellationToken ct)
+  {
+    await using var cmd = _dataSource.CreateCommand("""
+      SELECT clip_uid, file_path, camera_id, end_ts
+      FROM clips
+      WHERE retained = false
+        AND end_ts IS NOT NULL
+        AND end_ts < now() - ($1 * interval '1 second')
+      ORDER BY start_ts ASC
+      LIMIT $2;
+      """);
+    cmd.Parameters.AddWithValue(minOlderThanSeconds);
+    cmd.Parameters.AddWithValue(batchSize);
+
+    var result = new List<(Guid, string, string, DateTime)>();
+    await using var reader = await cmd.ExecuteReaderAsync(ct);
+    while (await reader.ReadAsync(ct))
+    {
+      result.Add((
+        reader.GetGuid(0),
+        reader.GetString(1),
+        reader.GetString(2),
+        reader.GetDateTime(3).ToUniversalTime()
+      ));
+    }
+    return result;
+  }
+
+  public async Task DeleteClipRecordAsync(Guid clipUid, CancellationToken ct)
+  {
+    await using var cmd = _dataSource.CreateCommand("""
+      DELETE FROM clips WHERE clip_uid = $1;
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Uuid, clipUid);
+    await cmd.ExecuteNonQueryAsync(ct);
+  }
+
   public async Task<bool> HasActiveRetentionWindowAsync(string cameraId, CancellationToken ct)
   {
     await using var cmd = _dataSource.CreateCommand("""

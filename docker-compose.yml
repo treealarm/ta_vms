@@ -58,6 +58,8 @@ services:
       - .env
     environment:
       POSTGRES_HOST: postgres
+    volumes:
+      - "${PWD}/data:/data"
     depends_on:
       - postgres
 

@@ -14,6 +14,7 @@ var grpcPort = RequirePort("FS_VMS_PORT");
 builder.Services.AddGrpc();
 builder.Services.AddDaprPubSubClient();
 builder.Services.AddHostedService<CameraConfigSubscriber>();
+builder.Services.AddHostedService<ClipCleaner>();
 builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(BuildPostgresConnectionString()));
 builder.Services.AddSingleton(_ =>
   new CfgService.CfgServiceClient(DaprClient.CreateInvocationInvoker(cfgAppId)));
