@@ -9,6 +9,6 @@ public abstract record HlsPlaylistResult
 
 public interface IHlsArchiveService
 {
-  Task<HlsPlaylistResult> BuildPreviewPlaylistAsync(string cameraId, DateTime fromUtc, DateTime toUtc, CancellationToken ct);
+  Task<HlsPlaylistResult> BuildPreviewPlaylistAsync(string cameraId, TimelineSlice range, CancellationToken ct);
   Task<HlsPlaylistResult> BuildFilesPlaylistAsync(string cameraId, string startClipUid, uint count, CancellationToken ct);
 }

@@ -33,7 +33,7 @@ public partial class ArchController(
     if (fromDt >= toDt)
       return BadRequest(new { error = "from must be before to" });
 
-    var result = await hlsService.BuildPreviewPlaylistAsync(cameraId, fromDt, toDt, ct);
+    var result = await hlsService.BuildPreviewPlaylistAsync(cameraId, new TimelineSlice(fromDt, toDt), ct);
     return PlaylistResult(result);
   }
 
