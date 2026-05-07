@@ -112,22 +112,6 @@ public sealed class FsServiceImpl(ClipStorage storage, ArchiveFileStorage archiv
     }
   }
 
-  public override async Task<RecordingRangeForClipResponse> GetRecordingRangeForClip(
-    GetRecordingRangeForClipRequest request,
-    ServerCallContext context)
-  {
-    try
-    {
-      var (found, range, clipStart) = await _storage.GetRecordingRangeForClipAsync(request, context.CancellationToken);
-      return new RecordingRangeForClipResponse { Found = found, Range = range, ClipStartTs = clipStart };
-    }
-    catch (Exception ex)
-    {
-      Console.Error.WriteLine($"GetRecordingRangeForClip failed: {ex}");
-      throw new RpcException(new Status(StatusCode.Internal, ex.Message));
-    }
-  }
-
   public override async Task<ResolveRangePositionResponse> ResolveRangePosition(
     ResolveRangePositionRequest request,
     ServerCallContext context)
@@ -158,6 +142,24 @@ public sealed class FsServiceImpl(ClipStorage storage, ArchiveFileStorage archiv
     catch (Exception ex)
     {
       Console.Error.WriteLine($"GetNextRecordingAfter failed: {ex}");
+      throw new RpcException(new Status(StatusCode.Internal, ex.Message));
+    }
+  }
+
+  public override async Task<GetRecordingsResponse> GetClipsFrom(
+    GetClipsFromRequest request,
+    ServerCallContext context)
+  {
+    try
+    {
+      var list = await _storage.GetClipsFromAsync(request, context.CancellationToken);
+      var response = new GetRecordingsResponse();
+      response.Recordings.AddRange(list);
+      return response;
+    }
+    catch (Exception ex)
+    {
+      Console.Error.WriteLine($"GetClipsFrom failed: {ex}");
       throw new RpcException(new Status(StatusCode.Internal, ex.Message));
     }
   }

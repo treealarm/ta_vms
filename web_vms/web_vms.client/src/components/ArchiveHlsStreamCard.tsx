@@ -33,24 +33,18 @@ export default function ArchiveHlsStreamCard({ cameraId }: ArchiveHlsStreamCardP
     }
   }
 
-  const paths = useMemo(() => {
-    if (ranges.length === 0 || startIndex < 0 || startIndex >= ranges.length) {
-      return []
-    }
-    return ranges[startIndex].recordings.map(r => r.filePath)
-  }, [ranges, startIndex])
-
   const playlistUrl = useMemo(() => {
-    if (!cameraId || paths.length === 0) {
-      return null
-    }
-    const q = new URLSearchParams()
-    q.set('cameraId', cameraId)
-    for (const p of paths) {
-      q.append('path', p)
-    }
+    if (ranges.length === 0 || startIndex < 0 || startIndex >= ranges.length) return null
+    const range = ranges[startIndex]
+    const firstClip = range.recordings[0]
+    if (!cameraId || !firstClip?.clipUid) return null
+    const q = new URLSearchParams({
+      cameraId,
+      clipUid: firstClip.clipUid,
+      count: String(range.recordings.length),
+    })
     return `/api/arch/hls/from-files.m3u8?${q.toString()}`
-  }, [cameraId, paths])
+  }, [cameraId, ranges, startIndex])
 
   const rangeFilePath = ranges[startIndex]?.recordings[0]?.filePath
 

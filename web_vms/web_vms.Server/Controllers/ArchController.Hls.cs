@@ -11,8 +11,6 @@ namespace web_vms;
 
 public partial class ArchController
 {
-  private const uint GapToleranceMs = 1000;
-  private const int MaxHlsFromFilesPaths = 120;
   private static readonly TimeSpan ArchiveHlsSubsegmentTarget = TimeSpan.FromSeconds(4);
 
   [HttpGet("hls/preview.m3u8")]
@@ -57,17 +55,10 @@ public partial class ArchController
       Limit = 500
     }, cancellationToken: ct);
 
-    var recs = fsResp.Recordings.OrderBy(r => r.StartTs.ToDateTime()).ToList();
-    var kept = new List<FsRecording>();
-    foreach (var rec in recs)
-    {
-      var fp = rec.FilePath?.Trim() ?? "";
-      if (fp.Length == 0)
-        continue;
-      if (!await ValidateClipOwnedByCamera(cameraId, fp, ct))
-        continue;
-      kept.Add(rec);
-    }
+    var kept = fsResp.Recordings
+      .Where(r => !string.IsNullOrWhiteSpace(r.FilePath))
+      .OrderBy(r => r.StartTs.ToDateTime())
+      .ToList();
 
     if (kept.Count == 0)
     {
@@ -167,115 +158,61 @@ public partial class ArchController
   }
 
   [HttpGet("hls/from-files.m3u8")]
-  public async Task FromFilesHlsPlaylist([FromQuery] string cameraId, CancellationToken ct)
+  public async Task FromFilesHlsPlaylist(
+    [FromQuery] string cameraId,
+    [FromQuery] string clipUid,
+    [FromQuery] uint count = 1,
+    CancellationToken ct = default)
   {
     cameraId = cameraId?.Trim() ?? "";
-    if (cameraId.Length == 0)
+    clipUid = clipUid?.Trim() ?? "";
+    if (cameraId.Length == 0 || clipUid.Length == 0)
     {
       Response.StatusCode = 400;
-      await Response.WriteAsJsonAsync(new { error = "cameraId is required" }, ct);
+      await Response.WriteAsJsonAsync(new { error = "cameraId and clipUid are required" }, ct);
       return;
     }
 
-    var raw = Request.Query["path"];
-    var paths = new List<string>();
-    var seen = new HashSet<string>(StringComparer.Ordinal);
-    foreach (var p in raw)
-    {
-      var t = p?.Trim() ?? "";
-      if (t.Length == 0 || seen.Contains(t))
-        continue;
-      seen.Add(t);
-      paths.Add(t);
-      if (paths.Count >= MaxHlsFromFilesPaths)
-        break;
-    }
-
-    if (paths.Count == 0)
+    if (!Guid.TryParse(clipUid, out _))
     {
       Response.StatusCode = 400;
-      await Response.WriteAsJsonAsync(new { error = "at least one path parameter is required" }, ct);
+      await Response.WriteAsJsonAsync(new { error = "clipUid must be a valid UUID" }, ct);
+      return;
+    }
+
+    GetRecordingsResponse clipsResp;
+    try
+    {
+      clipsResp = await fsClient.GetClipsFromAsync(new GetClipsFromRequest
+      {
+        CameraId = cameraId,
+        ClipUid = clipUid,
+        Count = count == 0 ? 1 : count
+      }, cancellationToken: ct);
+    }
+    catch (RpcException ex)
+    {
+      Response.StatusCode = 500;
+      await Response.WriteAsJsonAsync(new { error = ex.Status.Detail }, ct);
+      return;
+    }
+
+    if (clipsResp.Recordings.Count == 0)
+    {
+      Response.StatusCode = 404;
+      await Response.WriteAsJsonAsync(new { error = "no clips found" }, ct);
       return;
     }
 
     var pieces = new List<HlsPiece>();
-
-    foreach (var fp in paths)
+    foreach (var rec in clipsResp.Recordings)
     {
-      if (!await ValidateClipOwnedByCamera(cameraId, fp, ct))
-      {
-        Response.StatusCode = 404;
-        await Response.WriteAsJsonAsync(new { error = "clip not found" }, ct);
-        return;
-      }
-
-      StatArchiveTsResponse stat;
-      try
-      {
-        stat = await fsClient.StatArchiveTsAsync(new StatArchiveTsRequest { RelativePath = fp },
-          cancellationToken: ct);
-      }
-      catch (RpcException)
-      {
-        Response.StatusCode = 500;
-        await Response.WriteAsJsonAsync(new { error = "stat failed" }, ct);
-        return;
-      }
-
-      if (!stat.Exists)
-      {
-        Response.StatusCode = 404;
-        await Response.WriteAsJsonAsync(new { error = "segment not found on media server" }, ct);
-        return;
-      }
-
-      RecordingRangeForClipResponse rr;
-      try
-      {
-        rr = await fsClient.GetRecordingRangeForClipAsync(new GetRecordingRangeForClipRequest
-        {
-          CameraId = cameraId,
-          FilePath = fp,
-          GapToleranceMs = GapToleranceMs
-        }, cancellationToken: ct);
-      }
-      catch (RpcException)
-      {
-        Response.StatusCode = 404;
-        await Response.WriteAsJsonAsync(new { error = "clip metadata not found" }, ct);
-        return;
-      }
-
-      if (!rr.Found || rr.ClipStartTs == null)
-      {
-        Response.StatusCode = 404;
-        await Response.WriteAsJsonAsync(new { error = "clip metadata not found" }, ct);
-        return;
-      }
-
-      var center = rr.ClipStartTs;
-      var around = await fsClient.GetRecordingsAroundAsync(new GetRecordingsAroundRequest
-      {
-        CameraId = cameraId,
-        Timestamp = center,
-        Limit = 120
-      }, cancellationToken: ct);
-
-      FsRecording? rec = around.Recordings.FirstOrDefault(x => x.FilePath == fp);
-      if (rec == null)
-      {
-        Response.StatusCode = 404;
-        await Response.WriteAsJsonAsync(new { error = "recording row not found for clip" }, ct);
-        return;
-      }
-
       var segWall = rec.StartTs.ToDateTime();
       var durSec = await RecordingWallDurationSec(cameraId, rec, segWall, ct);
       var durMs = (long)(durSec * 1000);
       if (durMs <= 0)
         durMs = 1;
-
-      pieces.Add(new HlsPiece(fp, 0, 0, durSec, 0, durMs, segWall));
+      pieces.Add(new HlsPiece(rec.FilePath, 0, 0, durSec, 0, durMs, segWall));
     }
 
     var maxSec = pieces.Max(p => p.DurSec);
@@ -295,12 +232,9 @@ public partial class ArchController
         b.Append("#EXT-X-DISCONTINUITY\n");
       prevClip = p.ClipPath;
 
-      var qs =
-        $"cameraId={Uri.EscapeDataString(cameraId)}&path={Uri.EscapeDataString(p.ClipPath)}";
-      var segmentUri = $"/api/arch/hls/ts?{qs}";
+      var qs = $"cameraId={Uri.EscapeDataString(cameraId)}&path={Uri.EscapeDataString(p.ClipPath)}";
       b.Append($"#EXTINF:{p.DurSec:F3},\n");
-      b.Append(segmentUri);
-      b.Append('\n');
+      b.Append($"/api/arch/hls/ts?{qs}\n");
     }
 
     b.Append("#EXT-X-ENDLIST\n");
@@ -330,13 +264,6 @@ public partial class ArchController
     {
       Response.StatusCode = 400;
       await Response.WriteAsJsonAsync(new { error = "cameraId and path are required" }, ct);
-      return;
-    }
-
-    if (!await ValidateClipOwnedByCamera(cameraId, path, ct))
-    {
-      Response.StatusCode = 404;
-      await Response.WriteAsJsonAsync(new { error = "clip not found" }, ct);
       return;
     }
 
@@ -462,23 +389,7 @@ public partial class ArchController
   private static string ArchiveTsContentType(string filePath) =>
     filePath.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase) ? "video/x-matroska" : "video/mp2t";
 
-  private async Task<bool> ValidateClipOwnedByCamera(string cameraId, string filePath, CancellationToken ct)
-  {
-    try
-    {
-      var resp = await fsClient.GetRecordingRangeForClipAsync(new GetRecordingRangeForClipRequest
-      {
-        CameraId = cameraId,
-        FilePath = filePath,
-        GapToleranceMs = GapToleranceMs
-      }, cancellationToken: ct);
-      return resp.Found;
-    }
-    catch
-    {
-      return false;
-    }
-  }
+
 
   private async Task<double> RecordingWallDurationSec(string cameraId, FsRecording rec, DateTime refWall,
     CancellationToken ct)
