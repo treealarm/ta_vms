@@ -128,23 +128,6 @@ public sealed class FsServiceImpl(ClipStorage storage, ArchiveFileStorage archiv
     }
   }
 
-  public override async Task<GetRecordingsResponse> GetNextRecordingAfter(
-    GetNextRecordingAfterRequest request,
-    ServerCallContext context)
-  {
-    try
-    {
-      var list = await _storage.GetNextRecordingAfterAsync(request, context.CancellationToken);
-      var response = new GetRecordingsResponse();
-      response.Recordings.AddRange(list);
-      return response;
-    }
-    catch (Exception ex)
-    {
-      Console.Error.WriteLine($"GetNextRecordingAfter failed: {ex}");
-      throw new RpcException(new Status(StatusCode.Internal, ex.Message));
-    }
-  }
 
   public override async Task<GetRecordingsResponse> GetClipsFrom(
     GetClipsFromRequest request,

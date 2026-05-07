@@ -247,22 +247,6 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
     return (true, fp, (uint)pos.TotalMilliseconds);
   }
 
-  public async Task<List<Recording>> GetNextRecordingAfterAsync(GetNextRecordingAfterRequest request, CancellationToken ct)
-  {
-    await using var command = _dataSource.CreateCommand("""
-      SELECT c.camera_id, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text
-      FROM clips c
-      INNER JOIN clips cur ON cur.camera_id = $1 AND cur.file_path = $2 AND cur.retained = TRUE
-      WHERE c.camera_id = $1 AND c.retained = TRUE AND c.start_ts > cur.start_ts
-      ORDER BY c.start_ts ASC
-      LIMIT 1;
-      """);
-    command.Parameters.AddWithValue(request.CameraId);
-    command.Parameters.AddWithValue(request.FilePath);
-
-    var list = await ReadRecordingListAsync(command, ct);
-    return list;
-  }
 
   public async Task<List<Recording>> GetClipsFromAsync(GetClipsFromRequest request, CancellationToken ct)
   {
