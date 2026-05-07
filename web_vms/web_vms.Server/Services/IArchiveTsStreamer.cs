@@ -14,6 +14,8 @@ public abstract record ArchiveStreamResult
   public sealed record Error(string Reason) : ArchiveStreamResult;
 }
 
+public record HttpRange(ulong Start, ulong Length);
+
 public record RangeInfo(ulong Start, ulong Length, ulong Total);
 
 public interface IArchiveTsStreamer

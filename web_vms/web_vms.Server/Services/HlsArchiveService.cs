@@ -56,14 +56,14 @@ public sealed class HlsArchiveService(FsService.FsServiceClient fsClient) : IHls
       if (!stat.Exists)
         continue;
 
-      segments.AddRange(await BuildSubsegmentsAsync(rec, fromUtc, toUtc, cameraId, ct));
+      var seg = await BuildRecordingSegmentAsync(rec, fromUtc, toUtc, cameraId, ct);
+      if (seg is not null)
+        segments.Add(seg);
     }
 
     if (segments.Count == 0)
       return new HlsPlaylistResult.NotFound("no recordings in range");
 
-    var maxSec = segments.Max(s => s.Duration.TotalSeconds);
-    var targetDur = (int)Math.Ceiling(Math.Max(1, maxSec));
     var startOffset = ComputeStartOffset(segments, fromUtc);
     var playlistDur = segments.Sum(s => s.Duration.TotalSeconds);
     if (playlistDur > 0 && startOffset >= playlistDur)
@@ -71,12 +71,7 @@ public sealed class HlsArchiveService(FsService.FsServiceClient fsClient) : IHls
     if (startOffset < 0 || double.IsNaN(startOffset))
       startOffset = 0;
 
-    var playlist = new HlsPlaylistBuilder();
-    playlist.AppendHeader(targetDur, startOffset);
-    AppendSegments(playlist, segments, cameraId);
-    playlist.AppendEndList();
-
-    return new HlsPlaylistResult.Ok(playlist.Build());
+    return new HlsPlaylistResult.Ok(BuildPlaylist(cameraId, segments, startOffset));
   }
 
   public async Task<HlsPlaylistResult> BuildFilesPlaylistAsync(
@@ -109,15 +104,17 @@ public sealed class HlsArchiveService(FsService.FsServiceClient fsClient) : IHls
       segments.Add(new HlsSegment(rec.FilePath, null, wallStart, wallStart + dur));
     }
 
-    var maxSec = segments.Max(s => s.Duration.TotalSeconds);
-    var targetDur = (int)Math.Ceiling(Math.Max(1, maxSec));
+    return new HlsPlaylistResult.Ok(BuildPlaylist(cameraId, segments));
+  }
 
+  private static string BuildPlaylist(string cameraId, List<HlsSegment> segments, double? startOffset = null)
+  {
+    var targetDur = (int)Math.Ceiling(Math.Max(1, segments.Max(s => s.Duration.TotalSeconds)));
     var playlist = new HlsPlaylistBuilder();
-    playlist.AppendHeader(targetDur);
+    playlist.AppendHeader(targetDur, startOffset);
     AppendSegments(playlist, segments, cameraId);
     playlist.AppendEndList();
-
-    return new HlsPlaylistResult.Ok(playlist.Build());
+    return playlist.Build();
   }
 
   private static void AppendSegments(HlsPlaylistBuilder playlist, List<HlsSegment> segments, string cameraId)
@@ -187,17 +184,17 @@ public sealed class HlsArchiveService(FsService.FsServiceClient fsClient) : IHls
     return TimeSpan.FromHours(1);
   }
 
-  private async Task<List<HlsSegment>> BuildSubsegmentsAsync(
+  private async Task<HlsSegment?> BuildRecordingSegmentAsync(
     FsRecording rec, DateTime wallFrom, DateTime wallTo, string cameraId, CancellationToken ct)
   {
     var wallStart = rec.StartTs.ToDateTime();
     if (wallTo <= wallStart)
-      return [];
+      return null;
 
     var refT = wallStart > wallFrom ? wallStart : wallFrom;
     var durSec = await RecordingWallDurationSecAsync(cameraId, rec, refT, ct);
     var dur = TimeSpan.FromSeconds(Math.Max(durSec, 0.001));
-    return [new HlsSegment(rec.FilePath, null, wallStart, wallStart + dur)];
+    return new HlsSegment(rec.FilePath, null, wallStart, wallStart + dur);
   }
 
   private static double ComputeStartOffset(List<HlsSegment> segments, DateTime fromWall)

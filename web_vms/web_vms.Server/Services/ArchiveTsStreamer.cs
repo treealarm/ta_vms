@@ -31,13 +31,13 @@ public sealed class ArchiveTsStreamer(FsService.FsServiceClient fsClient) : IArc
     var maxFromBase = fileSize - offset;
     var entityLen = length > 0 ? Math.Min(length, maxFromBase) : maxFromBase;
 
-    var (rngStart, rngLen, hasRange) = ParseHttpRange(rangeHeader, entityLen);
+    var httpRange = ParseHttpRange(rangeHeader, entityLen);
 
     var req = new ReadArchiveTsRequest { RelativePath = path };
-    if (hasRange)
+    if (httpRange is not null)
     {
-      req.Offset = offset + rngStart;
-      req.Length = rngLen;
+      req.Offset = offset + httpRange.Start;
+      req.Length = httpRange.Length;
     }
     else
     {
@@ -46,8 +46,8 @@ public sealed class ArchiveTsStreamer(FsService.FsServiceClient fsClient) : IArc
         req.Length = entityLen;
     }
 
-    RangeInfo? range = hasRange ? new RangeInfo(rngStart, rngLen, entityLen) : null;
-    var contentLength = (long)(hasRange ? rngLen : entityLen);
+    RangeInfo? range = httpRange is not null ? new RangeInfo(httpRange.Start, httpRange.Length, entityLen) : null;
+    var contentLength = (long)(httpRange?.Length ?? entityLen);
 
     return new ArchiveStreamResult.Ok(ContentType(path), contentLength, range, StreamChunksAsync(req, ct));
   }
@@ -69,14 +69,14 @@ public sealed class ArchiveTsStreamer(FsService.FsServiceClient fsClient) : IArc
   private static string ContentType(string filePath) =>
     filePath.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase) ? "video/x-matroska" : "video/mp2t";
 
-  private static (ulong start, ulong length, bool hasRange) ParseHttpRange(string? hdr, ulong entityLen)
+  private static HttpRange? ParseHttpRange(string? hdr, ulong entityLen)
   {
     hdr = hdr?.Trim() ?? "";
     if (hdr.Length == 0 || entityLen == 0)
-      return (0, 0, false);
+      return null;
     const string prefix = "bytes=";
     if (!hdr.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-      return (0, 0, false);
+      return null;
 
     var s = hdr.AsSpan(prefix.Length).Trim();
     var comma = s.IndexOf(',');
@@ -85,15 +85,15 @@ public sealed class ArchiveTsStreamer(FsService.FsServiceClient fsClient) : IArc
 
     var dash = s.IndexOf('-');
     if (dash < 0)
-      return (0, 0, false);
+      return null;
 
     var startStr = s[..dash].Trim();
     var endStr = s[(dash + 1)..].Trim();
     if (startStr.Length == 0)
-      return (0, 0, false);
+      return null;
 
     if (!ulong.TryParse(startStr, out var start) || start >= entityLen)
-      return (0, 0, false);
+      return null;
 
     ulong rngLen;
     if (endStr.Length == 0)
@@ -101,10 +101,10 @@ public sealed class ArchiveTsStreamer(FsService.FsServiceClient fsClient) : IArc
     else
     {
       if (!ulong.TryParse(endStr, out var end) || end < start || end >= entityLen)
-        return (0, 0, false);
+        return null;
       rngLen = end - start + 1;
     }
 
-    return (start, rngLen, true);
+    return new HttpRange(start, rngLen);
   }
 }
