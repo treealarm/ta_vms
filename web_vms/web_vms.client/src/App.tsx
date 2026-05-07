@@ -19,7 +19,6 @@ import {
   removeCamera,
   setLiveStatus
 } from './store/liveSlice'
-import { loadPlayers } from './store/archSlice'
 import { useAppDispatch, useAppSelector } from './store'
 import CameraUnifiedCard from './components/CameraUnifiedCard'
 import CameraControlPanel from './components/CameraControlPanel'
@@ -46,11 +45,7 @@ export default function App() {
   const [soloCameraId, setSoloCameraId] = useState<string | null>(null)
 
   const status = useAppSelector((state) =>
-    state.live.status !== 'Ready'
-      ? state.live.status
-      : state.arch.status !== 'Ready'
-        ? state.arch.status
-        : state.fs.status
+    state.live.status !== 'Ready' ? state.live.status : state.fs.status
   )
 
   const camerasMap = useAppSelector((state) => state.live.cameraStatesById)
@@ -129,16 +124,14 @@ export default function App() {
         return
       }
 
-      const [camerasResult, serversResult, playersResult] = await Promise.all([
+      const [camerasResult, serversResult] = await Promise.all([
         dispatch(loadCameras()),
         dispatch(loadServers()),
-        dispatch(loadPlayers())
       ])
 
       const hasError =
         loadCameras.rejected.match(camerasResult) ||
-        loadServers.rejected.match(serversResult) ||
-        loadPlayers.rejected.match(playersResult)
+        loadServers.rejected.match(serversResult)
 
       if (hasError && attempt < 20 && !cancelled) {
         retryTimer = setTimeout(() => {
@@ -164,7 +157,7 @@ export default function App() {
   }, [selectedServerId, serversTree])
 
   const refreshLists = async () => {
-    await Promise.all([dispatch(loadCameras()), dispatch(loadServers()), dispatch(loadPlayers())])
+    await Promise.all([dispatch(loadCameras()), dispatch(loadServers())])
   }
 
   const onAddCamera = async (event: FormEvent) => {

@@ -9,7 +9,9 @@ using FsRecording = Vms.Fs.Recording;
 
 namespace web_vms;
 
-public partial class ArchController
+[ApiController]
+[Route("api/[controller]")]
+public partial class ArchController(Vms.Fs.FsService.FsServiceClient fsClient) : ControllerBase
 {
   private static readonly TimeSpan ArchiveHlsSubsegmentTarget = TimeSpan.FromSeconds(4);
 
