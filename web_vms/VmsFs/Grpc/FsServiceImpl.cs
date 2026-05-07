@@ -112,22 +112,6 @@ public sealed class FsServiceImpl(ClipStorage storage, ArchiveFileStorage archiv
     }
   }
 
-  public override async Task<ResolveRangePositionResponse> ResolveRangePosition(
-    ResolveRangePositionRequest request,
-    ServerCallContext context)
-  {
-    try
-    {
-      var (found, fp, ms) = await _storage.ResolveRangePositionAsync(request, context.CancellationToken);
-      return new ResolveRangePositionResponse { Found = found, FilePath = fp, PositionMs = ms };
-    }
-    catch (Exception ex)
-    {
-      Console.Error.WriteLine($"ResolveRangePosition failed: {ex}");
-      throw new RpcException(new Status(StatusCode.Internal, ex.Message));
-    }
-  }
-
 
   public override async Task<GetRecordingsResponse> GetClipsFrom(
     GetClipsFromRequest request,

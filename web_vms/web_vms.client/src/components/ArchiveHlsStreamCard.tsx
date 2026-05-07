@@ -40,7 +40,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: ArchiveHlsStreamCardP
     if (!cameraId || !firstClip?.clipUid) return null
     const q = new URLSearchParams({
       cameraId,
-      clipUid: firstClip.clipUid,
+      startClipUid: firstClip.clipUid,
       count: String(range.recordings.length),
     })
     return `/api/arch/hls/from-files.m3u8?${q.toString()}`

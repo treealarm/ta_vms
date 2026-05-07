@@ -10,7 +10,6 @@ service FsService {
   rpc GetRecordings(GetRecordingsFromToRequest) returns (GetRecordingsResponse);
   rpc GetRecordingsAround(GetRecordingsAroundRequest) returns (GetRecordingsResponse);
   rpc GetRecordingRanges(GetRecordingRangesRequest) returns (GetRecordingRangesResponse);
-  rpc ResolveRangePosition(ResolveRangePositionRequest) returns (ResolveRangePositionResponse);
   rpc GetClipsFrom(GetClipsFromRequest) returns (GetRecordingsResponse);
   rpc GetCameraRetentionStatus(GetCameraRetentionStatusRequest) returns (GetCameraRetentionStatusResponse);
   rpc ListRetentionEvents(ListRetentionEventsRequest) returns (ListRetentionEventsResponse);
@@ -74,20 +73,11 @@ message GetRecordingRangesRequest {
   uint32 gap_tolerance_ms = 6;
 }
 
-message ResolveRangePositionRequest {
-  string camera_id = 1;
-  google.protobuf.Timestamp range_start_ts = 2;
-  uint32 range_position_ms = 3;
-  uint32 gap_tolerance_ms = 4;
-}
-
 message GetClipsFromRequest {
   string camera_id = 1;
-  string clip_uid = 2;
+  string start_clip_uid = 2;
   uint32 count = 3;
 }
-
-
 
 message GetRecordingsResponse {
   repeated Recording recordings = 1;
@@ -99,12 +89,6 @@ message RecordingRange {
 
 message GetRecordingRangesResponse {
   repeated RecordingRange ranges = 1;
-}
-
-message ResolveRangePositionResponse {
-  bool found = 1;
-  string file_path = 2;
-  uint32 position_ms = 3;
 }
 
 message GetCameraRetentionStatusRequest {

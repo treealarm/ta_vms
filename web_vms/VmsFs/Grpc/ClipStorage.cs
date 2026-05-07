@@ -193,59 +193,6 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
   }
 
 
-  public async Task<(bool Found, string FilePath, uint PositionMs)> ResolveRangePositionAsync(
-    ResolveRangePositionRequest request,
-    CancellationToken ct)
-  {
-    var gapMs = request.GapToleranceMs <= 0 ? 1000 : (int)request.GapToleranceMs;
-    var rangeStart = request.RangeStartTs.ToDateTime();
-    if (rangeStart.Kind != DateTimeKind.Utc)
-      rangeStart = rangeStart.ToUniversalTime();
-
-    var ranges = await GetRecordingRangesAsync(new GetRecordingRangesRequest
-    {
-      CameraId = request.CameraId,
-      Timestamp = Timestamp.FromDateTime(rangeStart),
-      Limit = 20,
-      GapToleranceMs = (uint)gapMs
-    }, ct);
-
-    RecordingRange? target = null;
-    foreach (var r in ranges)
-    {
-      if (r.Recordings.Count > 0 && r.Recordings[0].StartTs.ToDateTime().Equals(rangeStart))
-      {
-        target = r;
-        break;
-      }
-    }
-
-    if (target is null)
-      return (false, string.Empty, 0);
-
-    var targetTs = target.Recordings[0].StartTs.ToDateTime().AddMilliseconds(request.RangePositionMs);
-
-    await using var cmd = _dataSource.CreateCommand("""
-      SELECT file_path, start_ts
-      FROM clips
-      WHERE camera_id = $1 AND retained = TRUE
-        AND start_ts <= $2 AND COALESCE(end_ts, start_ts) >= $2
-      ORDER BY start_ts DESC
-      LIMIT 1;
-      """);
-    cmd.Parameters.AddWithValue(request.CameraId);
-    cmd.Parameters.AddWithValue(targetTs);
-    await using var reader = await cmd.ExecuteReaderAsync(ct);
-    if (!await reader.ReadAsync(ct))
-      return (false, string.Empty, 0);
-
-    var fp = reader.GetString(0);
-    var clipStart = reader.GetDateTime(1).ToUniversalTime();
-    var pos = targetTs - clipStart;
-    if (pos < TimeSpan.Zero)
-      pos = TimeSpan.Zero;
-    return (true, fp, (uint)pos.TotalMilliseconds);
-  }
 
 
   public async Task<List<Recording>> GetClipsFromAsync(GetClipsFromRequest request, CancellationToken ct)
@@ -260,7 +207,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
       LIMIT $3;
       """);
     command.Parameters.AddWithValue(request.CameraId);
-    command.Parameters.AddWithValue(NpgsqlDbType.Uuid, Guid.Parse(request.ClipUid));
+    command.Parameters.AddWithValue(NpgsqlDbType.Uuid, Guid.Parse(request.StartClipUid));
     command.Parameters.AddWithValue(count);
 
     return await ReadRecordingListAsync(command, ct);

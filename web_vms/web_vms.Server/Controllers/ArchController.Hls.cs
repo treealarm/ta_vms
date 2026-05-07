@@ -150,23 +150,23 @@ public partial class ArchController(Vms.Fs.FsService.FsServiceClient fsClient) :
   [HttpGet("hls/from-files.m3u8")]
   public async Task FromFilesHlsPlaylist(
     [FromQuery] string cameraId,
-    [FromQuery] string clipUid,
+    [FromQuery] string startClipUid,
     [FromQuery] uint count = 1,
     CancellationToken ct = default)
   {
     cameraId = cameraId?.Trim() ?? "";
-    clipUid = clipUid?.Trim() ?? "";
+    var clipUid = startClipUid?.Trim() ?? "";
     if (cameraId.Length == 0 || clipUid.Length == 0)
     {
       Response.StatusCode = 400;
-      await Response.WriteAsJsonAsync(new { error = "cameraId and clipUid are required" }, ct);
+      await Response.WriteAsJsonAsync(new { error = "cameraId and startClipUid are required" }, ct);
       return;
     }
 
     if (!Guid.TryParse(clipUid, out _))
     {
       Response.StatusCode = 400;
-      await Response.WriteAsJsonAsync(new { error = "clipUid must be a valid UUID" }, ct);
+      await Response.WriteAsJsonAsync(new { error = "startClipUid must be a valid UUID" }, ct);
       return;
     }
 
@@ -176,7 +176,7 @@ public partial class ArchController(Vms.Fs.FsService.FsServiceClient fsClient) :
       clipsResp = await fsClient.GetClipsFromAsync(new GetClipsFromRequest
       {
         CameraId = cameraId,
-        ClipUid = clipUid,
+        StartClipUid = clipUid,
         Count = count == 0 ? 1 : count
       }, cancellationToken: ct);
     }
