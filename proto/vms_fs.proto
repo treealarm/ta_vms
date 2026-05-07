@@ -33,17 +33,17 @@ message OperationStatus {
   string clip_uid = 3;
 }
 
-message ClipMeta {
+message Recording {
   string camera_id = 1;
   string file_path = 2;
   google.protobuf.Timestamp start_ts = 3;
-  google.protobuf.Timestamp end_ts = 4;
+  optional google.protobuf.Timestamp end_ts = 4;
   uint64 size_bytes = 5;
   string clip_uid = 6;
 }
 
 message IngestClipRequest {
-  ClipMeta clip = 1;
+  Recording clip = 1;
 }
 
 message RetainEventRequest {
@@ -94,14 +94,7 @@ message GetNextRecordingAfterRequest {
   string file_path = 2;
 }
 
-message Recording {
-  string camera_id = 1;
-  string file_path = 2;
-  google.protobuf.Timestamp start_ts = 3;
-  optional google.protobuf.Timestamp end_ts = 4;
-  uint64 size_bytes = 5;
-  string clip_uid = 6;
-}
+
 
 message GetRecordingsResponse {
   repeated Recording recordings = 1;

@@ -17,7 +17,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
   /// <summary>Split uninterrupted spans into ~minute-sized ranges for the archive list.</summary>
   private static readonly TimeSpan DefaultMaxRecordingRangeWallSpan = TimeSpan.FromMinutes(1);
 
-  public async Task<string> IngestAsync(ClipMeta clip, CancellationToken ct)
+  public async Task<string> IngestAsync(Recording clip, CancellationToken ct)
   {
     if (string.IsNullOrWhiteSpace(clip.CameraId) || string.IsNullOrWhiteSpace(clip.FilePath) || clip.StartTs is null)
       throw new ArgumentException("camera_id, file_path and start_ts are required");
@@ -639,7 +639,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
     return ranges;
   }
 
-  private async Task<bool> ResolveRetainedAsync(ClipMeta clip, CameraConfig? config, CancellationToken ct)
+  private async Task<bool> ResolveRetainedAsync(Recording clip, CameraConfig? config, CancellationToken ct)
   {
     if (config is null)
       return true;

@@ -251,7 +251,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: ArchiveHlsStreamCardP
                     cameraId={cameraId}
                     timestamp={anchorTs}
                     filePath={rangeFilePath}
-                    playbackStartTime={ranges[startIndex]?.startTime}
+                    playbackStartTime={ranges[startIndex]?.recordings[0]?.startTime}
                     onSelect={handleSelectRecording}
                     onTimeChange={setAnchorTs}
                     onRangesChange={onRangesChange}
