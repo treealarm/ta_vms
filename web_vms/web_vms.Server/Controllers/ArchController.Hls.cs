@@ -13,7 +13,6 @@ namespace web_vms;
 [Route("api/[controller]")]
 public partial class ArchController(Vms.Fs.FsService.FsServiceClient fsClient) : ControllerBase
 {
-  private static readonly TimeSpan ArchiveHlsSubsegmentTarget = TimeSpan.FromSeconds(4);
 
   [HttpGet("hls/preview.m3u8")]
   public async Task PreviewHlsPlaylist(
@@ -89,18 +88,7 @@ public partial class ArchController(Vms.Fs.FsService.FsServiceClient fsClient) :
       if (!stat.Exists)
         continue;
 
-      GetArchiveTsClipIndexResponse? idxResp = null;
-      try
-      {
-        idxResp = await fsClient.GetArchiveTsClipIndexAsync(
-          new GetArchiveTsClipIndexRequest { RelativePath = fp }, cancellationToken: ct);
-      }
-      catch
-      {
-        // optional index
-      }
-
-      pieces.AddRange(await BuildArchiveHlsSubsegmentsAsync(rec, idxResp, stat.SizeBytes, fromDt, toDt, cameraId, ct));
+      pieces.AddRange(await BuildArchiveHlsSubsegmentsAsync(rec, fromDt, toDt, cameraId, ct));
     }
 
     if (pieces.Count == 0)
@@ -442,146 +430,21 @@ public partial class ArchController(Vms.Fs.FsService.FsServiceClient fsClient) :
 
   private async Task<List<HlsPiece>> BuildArchiveHlsSubsegmentsAsync(
     FsRecording rec,
-    GetArchiveTsClipIndexResponse? idxResp,
-    ulong fileSize,
     DateTime wallFrom,
     DateTime wallTo,
     string cameraId,
     CancellationToken ct)
   {
-    var fp = rec.FilePath;
-    TsClipIndex? idx = idxResp?.Index;
-    var segWall = ClipSegmentWallUtc(idx, rec);
-    if (segWall == default)
-      return [];
-
-    var refT = wallFrom;
-    if (rec.StartTs.ToDateTime() > wallFrom)
-      refT = rec.StartTs.ToDateTime();
-
+    var segWall = rec.StartTs.ToDateTime();
+    var refT = rec.StartTs.ToDateTime() > wallFrom ? rec.StartTs.ToDateTime() : wallFrom;
     var durSecTotal = await RecordingWallDurationSec(cameraId, rec, refT, ct);
     var durMs = (long)(durSecTotal * 1000);
     if (durMs <= 0)
       durMs = 1;
-
-    var localFromMs = (long)(wallFrom - segWall).TotalMilliseconds;
-    if (localFromMs < 0)
-      localFromMs = 0;
     var localToMs = (long)(wallTo - segWall).TotalMilliseconds;
-    if (localToMs > durMs)
-      localToMs = durMs;
-    if (localToMs <= localFromMs)
+    if (localToMs <= 0)
       return [];
-
-    var useIdx = idxResp is { Found: true } && idx != null && idx.Keyframes.Count > 0;
-    if (!useIdx)
-    {
-      return
-      [
-        new HlsPiece(fp, 0, 0, durSecTotal, 0, durMs, segWall)
-      ];
-    }
-
-    var kfs = idx!.Keyframes.OrderBy(k => k.TimeMsFromSegmentStart).ToList();
-
-    var cur = KeyframeIdxAtOrBefore(kfs, localFromMs);
-    var bucketMs = (long)ArchiveHlsSubsegmentTarget.TotalMilliseconds;
-
-    var outPieces = new List<HlsPiece>();
-
-    while (cur < kfs.Count)
-    {
-      var t0 = (long)kfs[cur].TimeMsFromSegmentStart;
-      if (t0 >= localToMs)
-        break;
-
-      var o0 = kfs[cur].ByteOffset;
-      if (o0 > fileSize)
-        break;
-
-      var bound = t0 + bucketMs;
-      if (bound > localToMs)
-        bound = localToMs;
-
-      var endIdx = FirstKeyframeIdxAtOrAfter(kfs, cur + 1, bound);
-      if (endIdx <= cur)
-        endIdx = cur + 1;
-
-      ulong o1;
-      long t1;
-      if (endIdx >= kfs.Count)
-      {
-        o1 = fileSize;
-        t1 = durMs;
-        if (t1 <= t0)
-          t1 = t0 + 1;
-      }
-      else
-      {
-        o1 = kfs[endIdx].ByteOffset;
-        t1 = (long)kfs[endIdx].TimeMsFromSegmentStart;
-      }
-
-      if (o1 <= o0)
-      {
-        cur = Math.Max(cur + 1, endIdx);
-        continue;
-      }
-
-      if (o1 > fileSize)
-        o1 = fileSize;
-
-      var segLen = o1 - o0;
-      var durSeg = (t1 - t0) / 1000.0;
-      if (durSeg < 0.001)
-        durSeg = 0.001;
-
-      outPieces.Add(new HlsPiece(fp, o0, segLen, durSeg, t0, t1, segWall));
-      cur = endIdx;
-    }
-
-    return outPieces;
-  }
-
-  private static DateTime ClipSegmentWallUtc(TsClipIndex? idx, FsRecording rec)
-  {
-    if (idx?.SegmentWallStart != null)
-      return idx.SegmentWallStart.ToDateTime();
-    return rec.StartTs.ToDateTime();
-  }
-
-  private static int KeyframeIdxAtOrBefore(IReadOnlyList<TsClipKeyframeEntry> kfs, long localMs)
-  {
-    if (kfs.Count == 0)
-      return 0;
-    var lo = 0;
-    var hi = kfs.Count - 1;
-    var ans = -1;
-    while (lo <= hi)
-    {
-      var mid = (lo + hi) / 2;
-      var t = (long)kfs[mid].TimeMsFromSegmentStart;
-      if (t <= localMs)
-      {
-        ans = mid;
-        lo = mid + 1;
-      }
-      else
-        hi = mid - 1;
-    }
-
-    return ans < 0 ? 0 : ans;
-  }
-
-  private static int FirstKeyframeIdxAtOrAfter(IReadOnlyList<TsClipKeyframeEntry> kfs, int start, long boundMs)
-  {
-    for (var i = start; i < kfs.Count; i++)
-    {
-      if ((long)kfs[i].TimeMsFromSegmentStart >= boundMs)
-        return i;
-    }
-
-    return kfs.Count;
+    return [new HlsPiece(rec.FilePath, 0, 0, durSecTotal, 0, durMs, segWall)];
   }
 
   private static double HlsVodStartTimeOffset(List<HlsPiece> pieces, DateTime fromWall)

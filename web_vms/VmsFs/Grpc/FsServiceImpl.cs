@@ -266,27 +266,4 @@ public sealed class FsServiceImpl(ClipStorage storage, ArchiveFileStorage archiv
     }
   }
 
-  public override async Task<GetArchiveTsClipIndexResponse> GetArchiveTsClipIndex(
-    GetArchiveTsClipIndexRequest request, ServerCallContext context)
-  {
-    var abs = _archiveStorage.ResolveRelativePath(request.RelativePath);
-    if (abs == null)
-      return new GetArchiveTsClipIndexResponse { Found = false, Message = "invalid path" };
-
-    var idxPath = abs + ".idx.json";
-    if (!File.Exists(idxPath))
-      return new GetArchiveTsClipIndexResponse { Found = false, Message = "index file not found" };
-
-    try
-    {
-      var json = await File.ReadAllTextAsync(idxPath, context.CancellationToken);
-      var idx = Google.Protobuf.JsonParser.Default.Parse<TsClipIndex>(json);
-      return new GetArchiveTsClipIndexResponse { Found = true, Index = idx };
-    }
-    catch (Exception ex)
-    {
-      return new GetArchiveTsClipIndexResponse { Found = false, Message = ex.Message };
-    }
-  }
-
 }

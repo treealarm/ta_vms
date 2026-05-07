@@ -18,7 +18,6 @@ service FsService {
 
   rpc StatArchiveTs(StatArchiveTsRequest) returns (StatArchiveTsResponse);
   rpc ReadArchiveTs(ReadArchiveTsRequest) returns (stream ReadArchiveTsChunk);
-  rpc GetArchiveTsClipIndex(GetArchiveTsClipIndexRequest) returns (GetArchiveTsClipIndexResponse);
 }
 
 message OperationStatus {
@@ -160,25 +159,4 @@ message ReadArchiveTsChunk {
   bytes data = 1;
 }
 
-message TsClipKeyframeEntry {
-  uint64 byte_offset = 1 [json_name = "o"];
-  uint64 time_ms_from_segment_start = 2 [json_name = "t"];
-}
-
-message TsClipIndex {
-  uint32 format_version = 1 [json_name = "v"];
-  string relative_path = 2 [json_name = "p"];
-  google.protobuf.Timestamp segment_wall_start = 3 [json_name = "s"];
-  repeated TsClipKeyframeEntry keyframes = 4 [json_name = "k"];
-}
-
-message GetArchiveTsClipIndexRequest {
-  string relative_path = 1;
-}
-
-message GetArchiveTsClipIndexResponse {
-  bool found = 1;
-  string message = 2;
-  TsClipIndex index = 3;
-}
 
