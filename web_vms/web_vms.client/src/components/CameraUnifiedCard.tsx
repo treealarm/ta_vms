@@ -20,7 +20,6 @@ import { type CameraStateDto, type RecordingMode } from '../dto/dtos'
 import CameraStreamCard from './CameraStreamCard'
 import ArchiveHlsStreamCard from './ArchiveHlsStreamCard'
 import { useAppDispatch, useAppSelector } from '../store'
-import { sendPlayerCommand } from '../store/archSlice'
 import { fetchCameraState, updateCameraRecording } from '../store/liveSlice'
 
 type CameraUnifiedCardProps = {
@@ -34,10 +33,7 @@ type CameraUnifiedCardProps = {
 function CameraUnifiedCard({ camera, gridSoloActive = false, onToggleGridSolo }: CameraUnifiedCardProps) {
   const dispatch = useAppDispatch()
 
-  const players = useAppSelector((state) => state.arch.players)
   const cameraState = useAppSelector((state) => state.live.cameraStatesById[camera.cameraId])
-
-  const player = players.find((p) => p.camera_id === camera.cameraId)
 
   const [mode, setMode] = useState<'live' | 'archive'>('live')
 
@@ -49,18 +45,6 @@ function CameraUnifiedCard({ camera, gridSoloActive = false, onToggleGridSolo }:
     merged.activeRetentionWindow === true && recordingMode !== 'off'
   const retentionTooltip =
     'Retention episode active — segments finalized now are retained on disk (not subject to normal pruning)'
-
-  useEffect(() => {
-    if (mode === 'live' && player) {
-      void dispatch(
-        sendPlayerCommand({
-          camera_id: player.camera_id,
-          client_id: player.client_id,
-          command: 'stop'
-        })
-      )
-    }
-  }, [mode, player, dispatch])
 
   useEffect(() => {
     const interval = setInterval(() => {

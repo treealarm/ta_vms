@@ -28,6 +28,8 @@ builder.Services.AddSingleton(_ =>
   new Vms.Fs.FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsAppId)));
 
 builder.Services.AddSingleton<ICameraManager, CameraManager>();
+builder.Services.AddSingleton<IHlsArchiveService, HlsArchiveService>();
+builder.Services.AddSingleton<IArchiveTsStreamer, ArchiveTsStreamer>();
 
 var http_port = 5134;
 
@@ -58,6 +60,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseAuthorization();
+app.UseMiddleware<HeadRequestMiddleware>();
 
 app.MapControllers();
 

@@ -3,9 +3,10 @@ using Vms.Fs;
 
 namespace VmsFs;
 
-public sealed class FsServiceImpl(ClipStorage storage) : FsService.FsServiceBase
+public sealed class FsServiceImpl(ClipStorage storage, ArchiveFileStorage archiveStorage) : FsService.FsServiceBase
 {
   private readonly ClipStorage _storage = storage;
+  private readonly ArchiveFileStorage _archiveStorage = archiveStorage;
 
   public override async Task<OperationStatus> IngestClip(
     IngestClipRequest request,
@@ -111,52 +112,21 @@ public sealed class FsServiceImpl(ClipStorage storage) : FsService.FsServiceBase
     }
   }
 
-  public override async Task<RecordingRangeForClipResponse> GetRecordingRangeForClip(
-    GetRecordingRangeForClipRequest request,
-    ServerCallContext context)
-  {
-    try
-    {
-      var (found, range, clipStart) = await _storage.GetRecordingRangeForClipAsync(request, context.CancellationToken);
-      return new RecordingRangeForClipResponse { Found = found, Range = range, ClipStartTs = clipStart };
-    }
-    catch (Exception ex)
-    {
-      Console.Error.WriteLine($"GetRecordingRangeForClip failed: {ex}");
-      throw new RpcException(new Status(StatusCode.Internal, ex.Message));
-    }
-  }
 
-  public override async Task<ResolveRangePositionResponse> ResolveRangePosition(
-    ResolveRangePositionRequest request,
+  public override async Task<GetRecordingsResponse> GetClipsFrom(
+    GetClipsFromRequest request,
     ServerCallContext context)
   {
     try
     {
-      var (found, fp, ms) = await _storage.ResolveRangePositionAsync(request, context.CancellationToken);
-      return new ResolveRangePositionResponse { Found = found, FilePath = fp, PositionMs = ms };
-    }
-    catch (Exception ex)
-    {
-      Console.Error.WriteLine($"ResolveRangePosition failed: {ex}");
-      throw new RpcException(new Status(StatusCode.Internal, ex.Message));
-    }
-  }
-
-  public override async Task<GetRecordingsResponse> GetNextRecordingAfter(
-    GetNextRecordingAfterRequest request,
-    ServerCallContext context)
-  {
-    try
-    {
-      var list = await _storage.GetNextRecordingAfterAsync(request, context.CancellationToken);
+      var list = await _storage.GetClipsFromAsync(request, context.CancellationToken);
       var response = new GetRecordingsResponse();
       response.Recordings.AddRange(list);
       return response;
     }
     catch (Exception ex)
     {
-      Console.Error.WriteLine($"GetNextRecordingAfter failed: {ex}");
+      Console.Error.WriteLine($"GetClipsFrom failed: {ex}");
       throw new RpcException(new Status(StatusCode.Internal, ex.Message));
     }
   }
@@ -198,6 +168,68 @@ public sealed class FsServiceImpl(ClipStorage storage) : FsService.FsServiceBase
     {
       Console.Error.WriteLine($"ListRetentionEvents failed: {ex}");
       throw new RpcException(new Status(StatusCode.Internal, ex.Message));
+    }
+  }
+
+  public override Task<StatArchiveTsResponse> StatArchiveTs(
+    StatArchiveTsRequest request, ServerCallContext context)
+  {
+    var abs = _archiveStorage.ResolveRelativePath(request.RelativePath);
+    if (abs == null)
+      return Task.FromResult(new StatArchiveTsResponse { Exists = false, Message = "invalid path" });
+
+    try
+    {
+      var info = new FileInfo(abs);
+      if (!info.Exists)
+        return Task.FromResult(new StatArchiveTsResponse { Exists = false, Message = "not found" });
+      return Task.FromResult(new StatArchiveTsResponse { Exists = true, SizeBytes = (ulong)info.Length });
+    }
+    catch (Exception ex)
+    {
+      return Task.FromResult(new StatArchiveTsResponse { Exists = false, Message = ex.Message });
+    }
+  }
+
+  public override async Task ReadArchiveTs(
+    ReadArchiveTsRequest request,
+    IServerStreamWriter<ReadArchiveTsChunk> responseStream,
+    ServerCallContext context)
+  {
+    var abs = _archiveStorage.ResolveRelativePath(request.RelativePath);
+    if (abs == null)
+      throw new RpcException(new Status(StatusCode.InvalidArgument, "invalid path"));
+
+    var info = new FileInfo(abs);
+    if (!info.Exists)
+      throw new RpcException(new Status(StatusCode.NotFound, "not found"));
+
+    var fileSize = (ulong)info.Length;
+    var offset = request.Offset;
+    if (offset > fileSize)
+      throw new RpcException(new Status(StatusCode.OutOfRange, "offset past end"));
+
+    var entityLen = fileSize - offset;
+    if (request.Length > 0)
+      entityLen = Math.Min(entityLen, request.Length);
+
+    const int bufSize = 256 * 1024;
+    var buf = new byte[bufSize];
+    await using var fs = new FileStream(abs, FileMode.Open, FileAccess.Read, FileShare.Read, bufSize, useAsync: true);
+    fs.Seek((long)offset, SeekOrigin.Begin);
+
+    var remaining = entityLen;
+    while (remaining > 0)
+    {
+      var toRead = (int)Math.Min(remaining, (ulong)bufSize);
+      var got = await fs.ReadAsync(buf.AsMemory(0, toRead), context.CancellationToken);
+      if (got == 0)
+        break;
+
+      await responseStream.WriteAsync(
+        new ReadArchiveTsChunk { Data = Google.Protobuf.ByteString.CopyFrom(buf, 0, got) },
+        context.CancellationToken);
+      remaining -= (ulong)got;
     }
   }
 

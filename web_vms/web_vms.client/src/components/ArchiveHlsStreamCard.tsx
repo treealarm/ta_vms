@@ -27,33 +27,26 @@ export default function ArchiveHlsStreamCard({ cameraId }: ArchiveHlsStreamCardP
   }, [])
 
   const handleSelectRecording = (rec: RecordingDto) => {
-    const i = ranges.findIndex((x) => x.filePath === rec.filePath && x.startTime === rec.startTime)
+    const i = ranges.findIndex((x) => x.recordings[0]?.filePath === rec.filePath && x.recordings[0]?.startTime === rec.startTime)
     if (i >= 0) {
       setStartIndex(i)
     }
   }
 
-  const paths = useMemo(() => {
-    if (ranges.length === 0 || startIndex < 0 || startIndex >= ranges.length) {
-      return []
-    }
-    // One clip per `startIndex`; when the video ends, advance to the next range if any.
-    return [ranges[startIndex].filePath]
-  }, [ranges, startIndex])
-
   const playlistUrl = useMemo(() => {
-    if (!cameraId || paths.length === 0) {
-      return null
-    }
-    const q = new URLSearchParams()
-    q.set('cameraId', cameraId)
-    for (const p of paths) {
-      q.append('path', p)
-    }
+    if (ranges.length === 0 || startIndex < 0 || startIndex >= ranges.length) return null
+    const range = ranges[startIndex]
+    const firstClip = range.recordings[0]
+    if (!cameraId || !firstClip?.clipUid) return null
+    const q = new URLSearchParams({
+      cameraId,
+      startClipUid: firstClip.clipUid,
+      count: String(range.recordings.length),
+    })
     return `/api/arch/hls/from-files.m3u8?${q.toString()}`
-  }, [cameraId, paths])
+  }, [cameraId, ranges, startIndex])
 
-  const rangeFilePath = ranges[startIndex]?.filePath
+  const rangeFilePath = ranges[startIndex]?.recordings[0]?.filePath
 
   useEffect(() => {
     const video = videoRef.current
@@ -252,7 +245,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: ArchiveHlsStreamCardP
                     cameraId={cameraId}
                     timestamp={anchorTs}
                     filePath={rangeFilePath}
-                    playbackStartTime={ranges[startIndex]?.startTime}
+                    playbackStartTime={ranges[startIndex]?.recordings[0]?.startTime}
                     onSelect={handleSelectRecording}
                     onTimeChange={setAnchorTs}
                     onRangesChange={onRangesChange}

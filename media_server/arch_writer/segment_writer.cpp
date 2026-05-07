@@ -120,9 +120,7 @@ void segment_writer::open_new_segment()
 
   if (!(m_ctx->oformat->flags & AVFMT_NOFILE))
   {
-    if (avio_open(&m_ctx->pb,
-      path.string().c_str(),
-      AVIO_FLAG_WRITE) < 0)
+    if (avio_open(&m_ctx->pb, path.string().c_str(), AVIO_FLAG_WRITE) < 0)
     {
       logger::instance().error("avio_open failed");
       m_ctx.reset();
@@ -130,6 +128,7 @@ void segment_writer::open_new_segment()
       return;
     }
   }
+
 
   if (avformat_write_header(m_ctx.get(), nullptr) < 0)
   {

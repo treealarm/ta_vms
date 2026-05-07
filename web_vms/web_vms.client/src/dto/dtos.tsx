@@ -117,14 +117,13 @@ export type ServerInstanceDto = {
 export type RecordingDto = {
   filePath: string
   startTime: string
+  endTime?: string
+  sizeBytes: number
+  clipUid: string
 }
 
 export type RecordingRangeDto = {
-  filePath: string
-  startTime: string
-  endTime: string
-  clipsCount: number
-  eventIds?: string[]
+  recordings: RecordingDto[]
 }
 
 export type RecordingRangesResponseDto = {

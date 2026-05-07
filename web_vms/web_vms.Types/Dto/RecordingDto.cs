@@ -13,6 +13,9 @@
   {
     public string FilePath { get; set; } = default!;
     public DateTime StartTime { get; set; }
+    public DateTime? EndTime { get; set; }
+    public ulong SizeBytes { get; set; }
+    public string ClipUid { get; set; } = "";
   }
 
   public class RecordingsResponseDto
@@ -23,11 +26,7 @@
 
   public class RecordingRangeDto
   {
-    public string FilePath { get; set; } = default!;
-    public DateTime StartTime { get; set; }
-    public DateTime EndTime { get; set; }
-    public uint ClipsCount { get; set; }
-    public List<string> EventIds { get; set; } = [];
+    public List<RecordingDto> Recordings { get; set; } = [];
   }
 
   public class RecordingRangesResponseDto
