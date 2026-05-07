@@ -64,9 +64,6 @@ public partial class ArchController(
     [FromQuery] ulong length = 0,
     CancellationToken ct = default)
   {
-    if (Request.Method != HttpMethods.Get && Request.Method != HttpMethods.Head)
-      return StatusCode(StatusCodes.Status405MethodNotAllowed);
-
     cameraId = cameraId?.Trim() ?? "";
     path = path?.Trim() ?? "";
     if (cameraId.Length == 0 || path.Length == 0)
@@ -96,9 +93,6 @@ public partial class ArchController(
         {
           Response.StatusCode = StatusCodes.Status200OK;
         }
-
-        if (Request.Method == HttpMethods.Head)
-          return new EmptyResult();
 
         await foreach (var chunk in ok.Data.WithCancellation(ct))
           await Response.Body.WriteAsync(chunk, ct);

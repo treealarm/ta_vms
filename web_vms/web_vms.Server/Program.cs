@@ -60,6 +60,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseAuthorization();
+app.UseMiddleware<HeadRequestMiddleware>();
 
 app.MapControllers();
 
