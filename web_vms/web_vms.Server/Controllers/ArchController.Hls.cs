@@ -4,7 +4,6 @@ using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Vms.Control;
 using Vms.Fs;
 using FsRecording = Vms.Fs.Recording;
 
@@ -50,14 +49,6 @@ public partial class ArchController
       return;
     }
 
-    var serverId = await GetServerIdForCamera(cameraId);
-    if (string.IsNullOrWhiteSpace(serverId))
-    {
-      Response.StatusCode = 404;
-      await Response.WriteAsJsonAsync(new { error = "camera not found" }, ct);
-      return;
-    }
-
     var fsResp = await fsClient.GetRecordingsAsync(new GetRecordingsFromToRequest
     {
       CameraId = cameraId,
@@ -92,7 +83,7 @@ public partial class ArchController
       StatArchiveTsResponse stat;
       try
       {
-        stat = await GetMediaClient(serverId!).StatArchiveTsAsync(new StatArchiveTsRequest { RelativePath = fp },
+        stat = await fsClient.StatArchiveTsAsync(new StatArchiveTsRequest { RelativePath = fp },
           cancellationToken: ct);
       }
       catch (RpcException)
@@ -108,7 +99,7 @@ public partial class ArchController
       GetArchiveTsClipIndexResponse? idxResp = null;
       try
       {
-        idxResp = await GetMediaClient(serverId!).GetArchiveTsClipIndexAsync(
+        idxResp = await fsClient.GetArchiveTsClipIndexAsync(
           new GetArchiveTsClipIndexRequest { RelativePath = fp }, cancellationToken: ct);
       }
       catch
@@ -207,14 +198,6 @@ public partial class ArchController
       return;
     }
 
-    var serverId = await GetServerIdForCamera(cameraId);
-    if (string.IsNullOrWhiteSpace(serverId))
-    {
-      Response.StatusCode = 404;
-      await Response.WriteAsJsonAsync(new { error = "camera not found" }, ct);
-      return;
-    }
-
     var pieces = new List<HlsPiece>();
 
     foreach (var fp in paths)
@@ -229,7 +212,7 @@ public partial class ArchController
       StatArchiveTsResponse stat;
       try
       {
-        stat = await GetMediaClient(serverId!).StatArchiveTsAsync(new StatArchiveTsRequest { RelativePath = fp },
+        stat = await fsClient.StatArchiveTsAsync(new StatArchiveTsRequest { RelativePath = fp },
           cancellationToken: ct);
       }
       catch (RpcException)
@@ -357,17 +340,10 @@ public partial class ArchController
       return;
     }
 
-    var serverId = await GetServerIdForCamera(cameraId);
-    if (string.IsNullOrWhiteSpace(serverId))
-    {
-      Response.StatusCode = 404;
-      return;
-    }
-
     StatArchiveTsResponse stat;
     try
     {
-      stat = await GetMediaClient(serverId!).StatArchiveTsAsync(new StatArchiveTsRequest { RelativePath = path },
+      stat = await fsClient.StatArchiveTsAsync(new StatArchiveTsRequest { RelativePath = path },
         cancellationToken: ct);
     }
     catch (RpcException ex)
@@ -437,7 +413,7 @@ public partial class ArchController
     AsyncServerStreamingCall<ReadArchiveTsChunk>? call = null;
     try
     {
-      call = GetMediaClient(serverId!).ReadArchiveTs(req, cancellationToken: ct);
+      call = fsClient.ReadArchiveTs(req, cancellationToken: ct);
     }
     catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound)
     {

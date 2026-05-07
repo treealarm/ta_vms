@@ -27,7 +27,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: ArchiveHlsStreamCardP
   }, [])
 
   const handleSelectRecording = (rec: RecordingDto) => {
-    const i = ranges.findIndex((x) => x.filePath === rec.filePath && x.startTime === rec.startTime)
+    const i = ranges.findIndex((x) => x.recordings[0]?.filePath === rec.filePath && x.recordings[0]?.startTime === rec.startTime)
     if (i >= 0) {
       setStartIndex(i)
     }
@@ -37,8 +37,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: ArchiveHlsStreamCardP
     if (ranges.length === 0 || startIndex < 0 || startIndex >= ranges.length) {
       return []
     }
-    // One clip per `startIndex`; when the video ends, advance to the next range if any.
-    return [ranges[startIndex].filePath]
+    return ranges[startIndex].recordings.map(r => r.filePath)
   }, [ranges, startIndex])
 
   const playlistUrl = useMemo(() => {
@@ -53,7 +52,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: ArchiveHlsStreamCardP
     return `/api/arch/hls/from-files.m3u8?${q.toString()}`
   }, [cameraId, paths])
 
-  const rangeFilePath = ranges[startIndex]?.filePath
+  const rangeFilePath = ranges[startIndex]?.recordings[0]?.filePath
 
   useEffect(() => {
     const video = videoRef.current

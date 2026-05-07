@@ -187,25 +187,21 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
 
   const handleNext = () => {
     const last = data[data.length - 1]
-    if (!last) {
-      return
-    }
-
-    requestAt(new Date(last.startTime).toISOString())
+    if (!last?.recordings[0]) return
+    requestAt(new Date(last.recordings[0].startTime).toISOString())
   }
 
   const handlePrev = () => {
     const first = data[0]
-    if (!first) {
-      return
-    }
-
-    requestAt(new Date(first.startTime).toISOString())
+    if (!first?.recordings[0]) return
+    requestAt(new Date(first.recordings[0].startTime).toISOString())
   }
 
   const handleClick = (range: RecordingRangeDto) => {
-    setSelected(range.startTime)
-    onSelect({ filePath: range.filePath, startTime: range.startTime })
+    const first = range.recordings[0]
+    if (!first) return
+    setSelected(first.startTime)
+    onSelect(first)
   }
 
   if (!open) {
@@ -298,18 +294,21 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
         ) : (
             <List dense disablePadding>
               {data.map((rec, index) => {
+                const first = rec.recordings[0]
+                if (!first) return null
+                const last = rec.recordings[rec.recordings.length - 1]
                 const prev = data[index - 1]
 
-                const currentDate = new Date(rec.startTime).toDateString()
-                const prevDate = prev ? new Date(prev.startTime).toDateString() : null
+                const currentDate = new Date(first.startTime).toDateString()
+                const prevDate = prev?.recordings[0] ? new Date(prev.recordings[0].startTime).toDateString() : null
 
                 const showDateHeader = index === 0 || currentDate !== prevDate
 
-                const isNearest = filePath === rec.filePath
-                const isSelected = selected === rec.startTime
+                const isNearest = rec.recordings.some(r => r.filePath === filePath)
+                const isSelected = selected === first.startTime
 
                 return (
-                  <div key={`${rec.startTime}:${rec.endTime}`}>
+                  <div key={`${first.startTime}:${last?.endTime ?? ''}`}>
                     {showDateHeader && (
                       <ListSubheader
                         disableSticky
@@ -320,18 +319,17 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
                           opacity: 0.7
                         }}
                       >
-                        {formatListDayLabel(rec.startTime)}
+                        {formatListDayLabel(first.startTime)}
                       </ListSubheader>
                     )}
 
                     <Tooltip
                       title={
                         <Box component="span" sx={{ display: 'block', maxWidth: 380 }}>
-                          <div style={{ wordBreak: 'break-all' }}>{rec.filePath}</div>
-                          <div>Start: {formatTooltipDateTime(rec.startTime)}</div>
-                          <div>End: {formatTooltipDateTime(rec.endTime)}</div>
-                          <div>Clips: {rec.clipsCount}</div>
-                          {rec.eventIds?.length ? <div>Events: {rec.eventIds.join(', ')}</div> : null}
+                          <div style={{ wordBreak: 'break-all' }}>{first.filePath}</div>
+                          <div>Start: {formatTooltipDateTime(first.startTime)}</div>
+                          {last?.endTime && <div>End: {formatTooltipDateTime(last.endTime)}</div>}
+                          <div>Clips: {rec.recordings.length}</div>
                         </Box>
                       }
                       placement="left"
@@ -347,7 +345,7 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
                         }}
                       >
                         <ListItemText
-                          primary={isNearest ? `➤ ${formatClipStart24(rec.startTime)}` : formatClipStart24(rec.startTime)}
+                          primary={isNearest ? `➤ ${formatClipStart24(first.startTime)}` : formatClipStart24(first.startTime)}
                           slotProps={{
                             primary: {
                               variant: 'body2',

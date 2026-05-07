@@ -23,7 +23,10 @@ public sealed class FSController(
   private static RecordingDto ToRecordingDto(Vms.Fs.Recording r) => new()
   {
     FilePath = r.FilePath,
-    StartTime = r.StartTs.ToDateTime()
+    StartTime = r.StartTs.ToDateTime(),
+    EndTime = r.EndTs?.ToDateTime(),
+    SizeBytes = r.SizeBytes,
+    ClipUid = r.ClipUid
   };
 
   private static RecordingDto? NearestRecording(IReadOnlyList<RecordingDto> recordings, DateTime targetUtc)
@@ -126,11 +129,7 @@ public sealed class FSController(
     {
       Ranges = grpcResp.Ranges.Select(r => new RecordingRangeDto
       {
-        FilePath = r.FilePath,
-        StartTime = r.StartTs.ToDateTime(),
-        EndTime = r.EndTs?.ToDateTime() ?? r.StartTs.ToDateTime(),
-        ClipsCount = r.ClipsCount,
-        EventIds = r.EventIds.ToList()
+        Recordings = r.Recordings.Select(ToRecordingDto).ToList()
       }).ToList()
     };
 

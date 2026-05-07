@@ -21,6 +21,8 @@ builder.Services.AddSingleton(_ =>
 builder.Services.AddSingleton<CameraConfigCache>();
 builder.Services.AddSingleton<DbMigrator>();
 builder.Services.AddSingleton<ClipStorage>();
+builder.Services.AddSingleton(_ =>
+  new ArchiveFileStorage(Environment.GetEnvironmentVariable("VMS_STORAGE_BASE_PATH") ?? "records"));
 builder.Services.AddSingleton<FsServiceImpl>();
 
 builder.WebHost.ConfigureKestrel(options =>

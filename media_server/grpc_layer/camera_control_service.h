@@ -56,18 +56,6 @@ public:
     const vms::control::ArchiveFrameJpegRequest* request,
     vms::control::ArchiveFrameJpegResponse* response) override;
 
-  grpc::Status StatArchiveTs(grpc::ServerContext* context,
-    const vms::control::StatArchiveTsRequest* request,
-    vms::control::StatArchiveTsResponse* response) override;
-
-  grpc::Status ReadArchiveTs(grpc::ServerContext* context,
-    const vms::control::ReadArchiveTsRequest* request,
-    grpc::ServerWriter<vms::control::ReadArchiveTsChunk>* writer) override;
-
-  grpc::Status GetArchiveTsClipIndex(grpc::ServerContext* context,
-    const vms::control::GetArchiveTsClipIndexRequest* request,
-    vms::control::GetArchiveTsClipIndexResponse* response) override;
-
 private:
   camera_manager& m_manager;
   recording_storage m_storage;

@@ -108,7 +108,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
   {
     var limit = request.Limit == 0 ? 100 : (int)request.Limit;
     await using var command = _dataSource.CreateCommand("""
-      SELECT camera_id, file_path, start_ts, end_ts, size_bytes
+      SELECT camera_id, file_path, start_ts, end_ts, size_bytes, clip_uid::text
       FROM clips
       WHERE camera_id = $1
         AND retained = TRUE
@@ -139,7 +139,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
       center = center.ToUniversalTime();
 
     var before = await QueryRecordingsAsync("""
-      SELECT camera_id, file_path, start_ts, end_ts, size_bytes
+      SELECT camera_id, file_path, start_ts, end_ts, size_bytes, clip_uid::text
       FROM clips
       WHERE camera_id = $1 AND retained = TRUE AND start_ts < $2
       ORDER BY start_ts DESC
@@ -147,7 +147,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
       """, request.CameraId, center, beforeLimit, ct);
 
     var after = await QueryRecordingsAsync("""
-      SELECT camera_id, file_path, start_ts, end_ts, size_bytes
+      SELECT camera_id, file_path, start_ts, end_ts, size_bytes, clip_uid::text
       FROM clips
       WHERE camera_id = $1 AND retained = TRUE AND start_ts >= $2
       ORDER BY start_ts ASC
@@ -221,8 +221,11 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
 
     foreach (var r in ranges)
     {
-      var start = r.StartTs.ToDateTime();
-      var end = r.EndTs?.ToDateTime() ?? start;
+      if (r.Recordings.Count == 0) continue;
+      var start = r.Recordings[0].StartTs.ToDateTime();
+      var lastRec = r.Recordings[^1];
+      var endRaw = lastRec.EndTs?.ToDateTime() ?? lastRec.StartTs.ToDateTime();
+      var end = endRaw > start ? endRaw : start;
       var tol = TimeSpan.FromMilliseconds(gapMs);
       if (clipStart.Value >= start && clipStart.Value <= end.Add(tol))
         return (true, r, Timestamp.FromDateTime(DateTime.SpecifyKind(clipStart.Value, DateTimeKind.Utc)));
@@ -251,7 +254,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
     RecordingRange? target = null;
     foreach (var r in ranges)
     {
-      if (r.StartTs.ToDateTime().Equals(rangeStart))
+      if (r.Recordings.Count > 0 && r.Recordings[0].StartTs.ToDateTime().Equals(rangeStart))
       {
         target = r;
         break;
@@ -261,7 +264,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
     if (target is null)
       return (false, string.Empty, 0);
 
-    var targetTs = target.StartTs.ToDateTime().AddMilliseconds(request.RangePositionMs);
+    var targetTs = target.Recordings[0].StartTs.ToDateTime().AddMilliseconds(request.RangePositionMs);
 
     await using var cmd = _dataSource.CreateCommand("""
       SELECT file_path, start_ts
@@ -288,7 +291,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
   public async Task<List<Recording>> GetNextRecordingAfterAsync(GetNextRecordingAfterRequest request, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      SELECT c.camera_id, c.file_path, c.start_ts, c.end_ts, c.size_bytes
+      SELECT c.camera_id, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text
       FROM clips c
       INNER JOIN clips cur ON cur.camera_id = $1 AND cur.file_path = $2 AND cur.retained = TRUE
       WHERE c.camera_id = $1 AND c.retained = TRUE AND c.start_ts > cur.start_ts
@@ -440,7 +443,8 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
       CameraId = reader.GetString(0),
       FilePath = reader.GetString(1),
       StartTs = Timestamp.FromDateTime(reader.GetDateTime(2).ToUniversalTime()),
-      SizeBytes = (ulong)reader.GetInt64(4)
+      SizeBytes = (ulong)reader.GetInt64(4),
+      ClipUid = reader.IsDBNull(5) ? "" : reader.GetString(5)
     };
     if (!reader.IsDBNull(3))
       rec.EndTs = Timestamp.FromDateTime(reader.GetDateTime(3).ToUniversalTime());
@@ -459,7 +463,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
     var post = config?.PostRecordSeconds ?? 30;
 
     await using var command = _dataSource.CreateCommand("""
-      SELECT c.camera_id, c.file_path, c.start_ts, c.end_ts, c.size_bytes,
+      SELECT c.camera_id, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text,
              COALESCE(string_agg(DISTINCT re.event_id, ','), '')
       FROM clips c
       LEFT JOIN retention_events re ON re.camera_id = c.camera_id
@@ -495,7 +499,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
     var afterLimit = limit - beforeLimit;
 
     var before = await QueryRecordingsWithEventsAsync("""
-      SELECT c.camera_id, c.file_path, c.start_ts, c.end_ts, c.size_bytes,
+      SELECT c.camera_id, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text,
              COALESCE(string_agg(DISTINCT re.event_id, ','), '')
       FROM clips c
       LEFT JOIN retention_events re ON re.camera_id = c.camera_id
@@ -508,7 +512,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
       """, cameraId, center, beforeLimit, post, pre, ct);
 
     var after = await QueryRecordingsWithEventsAsync("""
-      SELECT c.camera_id, c.file_path, c.start_ts, c.end_ts, c.size_bytes,
+      SELECT c.camera_id, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text,
              COALESCE(string_agg(DISTINCT re.event_id, ','), '')
       FROM clips c
       LEFT JOIN retention_events re ON re.camera_id = c.camera_id
@@ -552,7 +556,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
     while (await reader.ReadAsync(ct))
     {
       var rec = ReadRecording(reader);
-      var ev = reader.IsDBNull(5) ? "" : reader.GetString(5);
+      var ev = reader.IsDBNull(6) ? "" : reader.GetString(6);
       var ids = string.IsNullOrEmpty(ev)
         ? new List<string>()
         : ev.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToList();
@@ -587,40 +591,22 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
         _ => DateTime.SpecifyKind(t, DateTimeKind.Utc).ToUniversalTime()
       };
 
-    void PushRange(RecordingWithEvents it)
-    {
-      var c = it.Recording;
-      ranges.Add(new RecordingRange
-      {
-        CameraId = c.CameraId,
-        FilePath = c.FilePath,
-        StartTs = c.StartTs,
-        EndTs = c.EndTs ?? c.StartTs,
-        ClipsCount = 1,
-      });
-      foreach (var id in it.EventIds)
-      {
-        if (!string.IsNullOrEmpty(id))
-          ranges[^1].EventIds.Add(id);
-      }
-    }
-
     foreach (var item in clips)
     {
       var clip = item.Recording;
       var start = AsUtc(clip.StartTs.ToDateTime());
-      var endRaw = clip.EndTs?.ToDateTime();
-      var end = endRaw.HasValue && AsUtc(endRaw.Value) > start ? AsUtc(endRaw.Value) : start;
 
       if (ranges.Count == 0)
       {
-        PushRange(item);
+        var r = new RecordingRange();
+        r.Recordings.Add(clip);
+        ranges.Add(r);
         prevItem = item;
         continue;
       }
 
       var cur = ranges[^1];
-      var rangeFirstStart = AsUtc(cur.StartTs.ToDateTime());
+      var rangeFirstStart = AsUtc(cur.Recordings[0].StartTs.ToDateTime());
       var spanExceeded =
         maxRangeWallSpan > TimeSpan.Zero && start - rangeFirstStart >= maxRangeWallSpan;
 
@@ -637,18 +623,14 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
         pauseTooLong = start - prevStart > TimeSpan.FromSeconds(degenerateMaxInterStartSeconds);
 
       if (spanExceeded || pauseTooLong)
-        PushRange(item);
+      {
+        var r = new RecordingRange();
+        r.Recordings.Add(clip);
+        ranges.Add(r);
+      }
       else
       {
-        var rangeEnd = AsUtc(cur.EndTs!.ToDateTime());
-        if (end > rangeEnd)
-          cur.EndTs = Timestamp.FromDateTime(DateTime.SpecifyKind(end, DateTimeKind.Utc));
-        cur.ClipsCount += 1;
-        foreach (var id in item.EventIds)
-        {
-          if (!string.IsNullOrEmpty(id) && !cur.EventIds.Contains(id))
-            cur.EventIds.Add(id);
-        }
+        cur.Recordings.Add(clip);
       }
 
       prevItem = item;

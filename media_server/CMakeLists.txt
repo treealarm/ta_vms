@@ -94,7 +94,6 @@ set(SOURCES
 
     file_system/recording_storage.h
     file_system/recording_storage.cpp
-    file_system/recording_storage_archive.cpp
 
     logger/logger.h
     logger/logger.cpp
