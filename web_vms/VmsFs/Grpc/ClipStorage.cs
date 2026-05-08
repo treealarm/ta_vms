@@ -112,7 +112,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
       FROM clips
       WHERE camera_id = $1
         AND retained = TRUE
-        AND ($2::timestamptz IS NULL OR COALESCE(end_ts, 'infinity'::timestamptz) >= $2)
+        AND ($2::timestamptz IS NULL OR COALESCE(end_ts, start_ts + interval '1 minute') >= $2)
         AND ($3::timestamptz IS NULL OR start_ts <= $3)
       ORDER BY start_ts DESC
       LIMIT $4;
@@ -392,7 +392,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
         AND c.start_ts <= re.alarm_end_ts + ($5 * interval '1 second')
         AND COALESCE(c.end_ts, c.start_ts) >= re.alarm_start_ts - ($6 * interval '1 second')
       WHERE c.camera_id = $1 AND c.retained = TRUE
-        AND ($2::timestamptz IS NULL OR COALESCE(c.end_ts, 'infinity'::timestamptz) >= $2)
+        AND ($2::timestamptz IS NULL OR COALESCE(c.end_ts, c.start_ts + interval '1 minute') >= $2)
         AND ($3::timestamptz IS NULL OR c.start_ts <= $3)
       GROUP BY c.clip_uid
       ORDER BY c.start_ts ASC
