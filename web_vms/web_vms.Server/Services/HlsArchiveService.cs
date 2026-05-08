@@ -129,7 +129,6 @@ public sealed class HlsArchiveService(
 
       var values = new RouteValueDictionary
       {
-        ["cameraId"] = cameraId,
         ["path"] = s.FilePath
       };
       if (s.ByteRange is { } br)

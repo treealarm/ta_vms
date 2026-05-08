@@ -1,5 +1,4 @@
 using System.Globalization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace web_vms;
@@ -57,17 +56,16 @@ public partial class ArchController(
   }
 
   [HttpGet("hls/ts")]
+  [HttpHead("hls/ts")]
   public async Task<IActionResult> ServeArchiveTs(
-    [FromQuery] string cameraId,
     [FromQuery] string path,
     [FromQuery] ulong offset = 0,
     [FromQuery] ulong length = 0,
     CancellationToken ct = default)
   {
-    cameraId = cameraId?.Trim() ?? "";
     path = path?.Trim() ?? "";
-    if (cameraId.Length == 0 || path.Length == 0)
-      return BadRequest(new { error = "cameraId and path are required" });
+    if (path.Length == 0)
+      return BadRequest(new { error = "path is required" });
 
     var result = await tsStreamer.OpenAsync(path, offset, length, Request.Headers["Range"].ToString(), ct);
 
@@ -94,8 +92,11 @@ public partial class ArchController(
           Response.StatusCode = StatusCodes.Status200OK;
         }
 
-        await foreach (var chunk in ok.Data.WithCancellation(ct))
-          await Response.Body.WriteAsync(chunk, ct);
+        if (!HttpMethods.IsHead(Request.Method))
+        {
+          await foreach (var chunk in ok.Data.WithCancellation(ct))
+            await Response.Body.WriteAsync(chunk, ct);
+        }
 
         return new EmptyResult();
     }
