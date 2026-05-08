@@ -171,6 +171,24 @@ public sealed class FsServiceImpl(ClipStorage storage, ArchiveFileStorage archiv
     }
   }
 
+  public override async Task<GetRecordingByUidResponse> GetRecordingByUid(
+    GetRecordingByUidRequest request,
+    ServerCallContext context)
+  {
+    var uids = new List<Guid>(request.ClipUids.Count);
+    foreach (var raw in request.ClipUids)
+    {
+      if (!Guid.TryParse(raw, out var uid))
+        throw new RpcException(new Status(StatusCode.InvalidArgument, $"invalid clip_uid: {raw}"));
+      uids.Add(uid);
+    }
+
+    var recordings = await _storage.GetRecordingsByUidsAsync(uids, context.CancellationToken);
+    var response = new GetRecordingByUidResponse();
+    response.Recordings.AddRange(recordings);
+    return response;
+  }
+
   public override Task<StatArchiveTsResponse> StatArchiveTs(
     StatArchiveTsRequest request, ServerCallContext context)
   {

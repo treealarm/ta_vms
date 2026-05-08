@@ -16,6 +16,8 @@ service FsService {
 
   rpc StatArchiveTs(StatArchiveTsRequest) returns (StatArchiveTsResponse);
   rpc ReadArchiveTs(ReadArchiveTsRequest) returns (stream ReadArchiveTsChunk);
+
+  rpc GetRecordingByUid(GetRecordingByUidRequest) returns (GetRecordingByUidResponse);
 }
 
 message OperationStatus {
@@ -135,6 +137,14 @@ message ReadArchiveTsRequest {
 
 message ReadArchiveTsChunk {
   bytes data = 1;
+}
+
+message GetRecordingByUidRequest {
+  repeated string clip_uids = 1;
+}
+
+message GetRecordingByUidResponse {
+  repeated Recording recordings = 1;
 }
 
 

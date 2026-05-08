@@ -244,6 +244,20 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
     return result;
   }
 
+  public async Task<List<Recording>> GetRecordingsByUidsAsync(IReadOnlyList<Guid> clipUids, CancellationToken ct)
+  {
+    if (clipUids.Count == 0)
+      return [];
+
+    await using var command = _dataSource.CreateCommand("""
+      SELECT camera_id, file_path, start_ts, end_ts, size_bytes, clip_uid::text
+      FROM clips
+      WHERE clip_uid = ANY($1);
+      """);
+    command.Parameters.AddWithValue(NpgsqlDbType.Array | NpgsqlDbType.Uuid, clipUids.ToArray());
+    return await ReadRecordingListAsync(command, ct);
+  }
+
   public async Task DeleteClipRecordAsync(Guid clipUid, CancellationToken ct)
   {
     await using var cmd = _dataSource.CreateCommand("""

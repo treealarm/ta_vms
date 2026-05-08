@@ -21,5 +21,5 @@ public record RangeInfo(ulong Start, ulong Length, ulong Total);
 public interface IArchiveTsStreamer
 {
   Task<ArchiveStreamResult> OpenAsync(
-    string path, ulong offset, ulong length, string? rangeHeader, CancellationToken ct);
+    string clipUid, ulong offset, ulong length, string? rangeHeader, CancellationToken ct);
 }

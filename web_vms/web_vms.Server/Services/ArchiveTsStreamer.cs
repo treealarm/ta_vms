@@ -7,8 +7,26 @@ namespace web_vms;
 public sealed class ArchiveTsStreamer(FsService.FsServiceClient fsClient) : IArchiveTsStreamer
 {
   public async Task<ArchiveStreamResult> OpenAsync(
-    string path, ulong offset, ulong length, string? rangeHeader, CancellationToken ct)
+    string clipUid, ulong offset, ulong length, string? rangeHeader, CancellationToken ct)
   {
+    GetRecordingByUidResponse recResp;
+    try
+    {
+      var lookupReq = new GetRecordingByUidRequest();
+      lookupReq.ClipUids.Add(clipUid);
+      recResp = await fsClient.GetRecordingByUidAsync(lookupReq, cancellationToken: ct);
+    }
+    catch (RpcException ex)
+    {
+      return new ArchiveStreamResult.Error(ex.Status.Detail);
+    }
+
+    var rec = recResp.Recordings.FirstOrDefault();
+    if (rec is null || string.IsNullOrWhiteSpace(rec.FilePath))
+      return new ArchiveStreamResult.NotFound("clip not found");
+
+    var path = rec.FilePath;
+
     StatArchiveTsResponse stat;
     try
     {
