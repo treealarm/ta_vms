@@ -12,6 +12,14 @@ service CfgService {
   rpc GetCameraState(SourceRequest) returns (CameraStateResponse);
 }
 
+service StorageService {
+  rpc AddStorage(Storage) returns (OperationStatus);
+  rpc RemoveStorage(StorageRequest) returns (OperationStatus);
+  rpc ListStorages(ListStoragesRequest) returns (ListStoragesResponse);
+  rpc SetCameraStorages(SetCameraStoragesRequest) returns (OperationStatus);
+  rpc GetCameraStorages(CameraStoragesRequest) returns (GetCameraStoragesResponse);
+}
+
 message SourceRequest {
   string source_id = 1;
 }
@@ -87,3 +95,39 @@ message CameraStateResponse {
   CameraSetup setup = 3;
   bool found = 2;
 }
+
+message Storage {
+  string storage_id     = 1;
+  string root_path      = 2;
+  uint64 reserved_bytes = 3;
+}
+
+message CameraStorageAssignment {
+  string camera_id  = 1;
+  string storage_id = 2;
+  int32  priority   = 3;
+}
+
+message StorageRequest {
+  string storage_id = 1;
+}
+
+message CameraStoragesRequest {
+  string camera_id = 1;
+}
+
+message ListStoragesRequest {}
+
+message ListStoragesResponse {
+  repeated Storage storages = 1;
+}
+
+message SetCameraStoragesRequest {
+  string camera_id = 1;
+  repeated CameraStorageAssignment assignments = 2;
+}
+
+message GetCameraStoragesResponse {
+  repeated CameraStorageAssignment assignments = 1;
+}
+

@@ -11,7 +11,9 @@ builder.Services.AddDaprClient();
 builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(BuildPostgresConnectionString()));
 builder.Services.AddSingleton<DbMigrator>();
 builder.Services.AddSingleton<CameraStorage>();
+builder.Services.AddSingleton<StorageDb>();
 builder.Services.AddSingleton<CfgServiceImpl>();
+builder.Services.AddSingleton<StorageServiceImpl>();
 
 builder.WebHost.ConfigureKestrel(options =>
 {
@@ -21,6 +23,7 @@ builder.WebHost.ConfigureKestrel(options =>
 var app = builder.Build();
 await app.Services.GetRequiredService<DbMigrator>().MigrateAsync();
 app.MapGrpcService<CfgServiceImpl>();
+app.MapGrpcService<StorageServiceImpl>();
 app.Run();
 
 static string Require(string name) =>

@@ -166,6 +166,18 @@ export type RetentionEventsListDto = {
   nextBeforeAlarmStart?: string
 }
 
+export type StorageDto = {
+  storageId: string
+  rootPath: string
+  reservedBytes: number
+}
+
+export type CameraStorageAssignmentDto = {
+  cameraId: string
+  storageId: string
+  priority: number
+}
+
 export type LogQueryDto = {
   from?: string
   to?: string

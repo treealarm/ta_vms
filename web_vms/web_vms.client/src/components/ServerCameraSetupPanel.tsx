@@ -23,6 +23,7 @@ import type { CameraStateDto, MediaServerNodeDto } from '../dto/dtos'
 import { addCamera, changeCameraParent, setLiveStatus } from '../store/liveSlice'
 import { useAppDispatch } from '../store'
 import PasswordField from './PasswordField'
+import CameraStoragesControl from './CameraStoragesControl'
 
 type Props = {
   cameras: CameraStateDto[]
@@ -321,6 +322,10 @@ export default function ServerCameraSetupPanel({
                   Refresh list
                 </Button>
               </Stack>
+
+              {selectedCameraId && (
+                <CameraStoragesControl cameraId={selectedCameraId} />
+              )}
             </Stack>
           </Box>
             </Stack>

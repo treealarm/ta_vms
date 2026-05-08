@@ -25,6 +25,7 @@ import CameraControlPanel from './components/CameraControlPanel'
 import LogJournalPanel from './components/LogJournalPanel'
 import SimulationPanel from './components/SimulationPanel'
 import RetentionEventsTab from './components/RetentionEventsTab'
+import StorageSetupPanel from './components/StorageSetupPanel'
 
 const MAX_CAMERAS = 4
 
@@ -212,8 +213,9 @@ export default function App() {
       <Stack spacing={2.5}>
         <Tabs value={mainTab} onChange={(_, v: number) => setMainTab(v)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
           <Tab label="Monitor" />
-          <Tab label="Settings" />
+          <Tab label="Cam setup" />
           <Tab label="Events" />
+          <Tab label="Storages" />
         </Tabs>
 
         {mainTab === 0 && (
@@ -322,6 +324,8 @@ export default function App() {
         )}
 
         {mainTab === 2 && <RetentionEventsTab />}
+
+        {mainTab === 3 && <StorageSetupPanel />}
 
         <SimulationPanel cameras={Object.values(camerasMap)} />
         <LogJournalPanel />

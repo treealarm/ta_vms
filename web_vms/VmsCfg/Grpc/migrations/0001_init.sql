@@ -23,3 +23,19 @@ CREATE TABLE IF NOT EXISTS camera_state (
   web_rtc boolean NOT NULL DEFAULT false,
   recording_mode text NOT NULL DEFAULT 'off'
 );
+
+CREATE TABLE IF NOT EXISTS storage (
+  storage_id     text PRIMARY KEY,
+  root_path      text NOT NULL UNIQUE,
+  reserved_bytes bigint NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS camera_storage (
+  camera_id   text NOT NULL REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
+  storage_id  text NOT NULL REFERENCES storage(storage_id) ON DELETE CASCADE,
+  priority    integer NOT NULL DEFAULT 0,
+  PRIMARY KEY (camera_id, storage_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_camera_storage_priority
+  ON camera_storage (camera_id, priority ASC);
