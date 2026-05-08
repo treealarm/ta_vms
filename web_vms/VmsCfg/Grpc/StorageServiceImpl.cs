@@ -1,10 +1,22 @@
+using Dapr.Client;
 using Grpc.Core;
 using Vms.Cfg;
 
 namespace VmsCfg;
 
-public class StorageServiceImpl(StorageDb db) : StorageService.StorageServiceBase
+public class StorageServiceImpl(StorageDb db, DaprClient daprClient) : StorageService.StorageServiceBase
 {
+  private const string CameraStorageChangedTopic = "camera-storage-changed";
+  private static readonly string PubSubName =
+    Environment.GetEnvironmentVariable("PUBSUB_NAME")
+      ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
+
+  private void PublishStorageChanged(string cameraId) =>
+    _ = Task.Run(async () =>
+    {
+      try { await daprClient.PublishEventAsync(PubSubName, CameraStorageChangedTopic, cameraId); }
+      catch (Exception ex) { Console.Error.WriteLine($"camera-storage-changed publish failed: {ex.Message}"); }
+    });
   public override async Task<OperationStatus> AddStorage(Storage request, ServerCallContext context)
   {
     if (string.IsNullOrWhiteSpace(request.StorageId))
@@ -37,6 +49,7 @@ public class StorageServiceImpl(StorageDb db) : StorageService.StorageServiceBas
       return new OperationStatus { Success = false, Message = "camera_id must not be empty" };
 
     await db.SetCameraStoragesAsync(request.CameraId, request.Assignments, context.CancellationToken);
+    PublishStorageChanged(request.CameraId);
     return new OperationStatus { Success = true };
   }
 
@@ -48,4 +61,5 @@ public class StorageServiceImpl(StorageDb db) : StorageService.StorageServiceBas
     response.Assignments.AddRange(assignments);
     return response;
   }
+
 }

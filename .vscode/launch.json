@@ -186,18 +186,6 @@
                 "Frontend (Vite)",
                 "Frontend Debug (Chromium)"
             ]
-        },
-        {
-            "name": "Backend + services",
-            "stopAll": true,
-            "configurations": [
-                "VmsCfg (.NET)",
-                "VmsOnvif (.NET)",
-                "VmsFs (.NET)",
-                "VmsLogger (.NET)",
-                "Media Server (C++)",
-                "Backend (.NET)"
-            ]
         }
     ]
 }

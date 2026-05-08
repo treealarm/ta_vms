@@ -15,15 +15,27 @@ public class LiveController(
   FsService.FsServiceClient _fsClient
   ) : ControllerBase
 {
+  private static readonly TimeSpan MediaCallTimeout = TimeSpan.FromSeconds(5);
+
   private CameraControlService.CameraControlServiceClient GetMediaClient(string? serverId)
   {
     if (string.IsNullOrWhiteSpace(serverId))
-    {
       throw new InvalidOperationException("serverId must not be empty for media server requests");
-    }
 
     return new CameraControlService.CameraControlServiceClient(DaprClient.CreateInvocationInvoker(serverId));
   }
+
+  private static CallOptions MediaCallOptions(CancellationToken ct) =>
+    new(deadline: DateTime.UtcNow.Add(MediaCallTimeout), cancellationToken: ct);
+
+  private static string MediaServerError(RpcException ex) => ex.StatusCode switch
+  {
+    Grpc.Core.StatusCode.DeadlineExceeded => "Media server did not respond within timeout (is it running?)",
+    Grpc.Core.StatusCode.Unavailable      => "Media server is unavailable",
+    _                                     => string.IsNullOrWhiteSpace(ex.Status.Detail)
+                                              ? $"Media server error: {ex.StatusCode}"
+                                              : $"Media server error: {ex.Status.Detail}"
+  };
 
   private static CameraState ToControlState(CameraStateDto request)
   {
@@ -63,14 +75,30 @@ public class LiveController(
     }
 
     var normalized = CameraManager.Normalize(request);
-    var response = await GetMediaClient(normalized.ServerId!).SetCameraStateAsync(ToControlState(normalized), cancellationToken: ct);
-
-    if (response.Success)
+    Vms.Control.OperationStatus response;
+    try
     {
-      await _manager.Add(normalized);
+      response = await GetMediaClient(normalized.ServerId!).SetCameraStateAsync(
+        ToControlState(normalized), MediaCallOptions(ct));
+    }
+    catch (RpcException ex)
+    {
+      return Ok(new ApiResponse(false, MediaServerError(ex)));
     }
 
-    return Ok(ApiResponseMapper.ToApiResponse(response));
+    if (!response.Success)
+      return Ok(ApiResponseMapper.ToApiResponse(response));
+
+    try
+    {
+      await _manager.Add(normalized, ct);
+    }
+    catch (RpcException ex)
+    {
+      return Ok(new ApiResponse(false, $"Config service error: {MediaServerError(ex)}"));
+    }
+
+    return Ok(new ApiResponse(true, "ok"));
   }
 
   [HttpPut("cameras/{cameraId}/parent")]
@@ -97,27 +125,49 @@ public class LiveController(
 
     if (current.ServerId == request.ServerId)
     {
-      await _manager.Add(CameraManager.Normalize(request));
+      await _manager.Add(CameraManager.Normalize(request), ct);
       return Ok(new ApiResponse(true, "Camera parent is unchanged"));
     }
 
-    var removeResponse = await GetMediaClient(current.ServerId).RemoveCameraAsync(
-      new SourceRequest { SourceId = cameraId },
-      cancellationToken: ct);
+    Vms.Control.OperationStatus removeResponse;
+    try
+    {
+      removeResponse = await GetMediaClient(current.ServerId).RemoveCameraAsync(
+        new SourceRequest { SourceId = cameraId }, MediaCallOptions(ct));
+    }
+    catch (RpcException ex)
+    {
+      return Ok(new ApiResponse(false, MediaServerError(ex)));
+    }
 
     if (!removeResponse.Success)
-    {
       return Ok(ApiResponseMapper.ToApiResponse(removeResponse));
-    }
 
     var normalized = CameraManager.Normalize(request);
-    var addResponse = await GetMediaClient(normalized.ServerId!).SetCameraStateAsync(ToControlState(normalized), cancellationToken: ct);
-    if (addResponse.Success)
+    Vms.Control.OperationStatus addResponse;
+    try
     {
-      await _manager.Add(normalized);
+      addResponse = await GetMediaClient(normalized.ServerId!).SetCameraStateAsync(
+        ToControlState(normalized), MediaCallOptions(ct));
+    }
+    catch (RpcException ex)
+    {
+      return Ok(new ApiResponse(false, MediaServerError(ex)));
     }
 
-    return Ok(ApiResponseMapper.ToApiResponse(addResponse));
+    if (!addResponse.Success)
+      return Ok(ApiResponseMapper.ToApiResponse(addResponse));
+
+    try
+    {
+      await _manager.Add(normalized, ct);
+    }
+    catch (RpcException ex)
+    {
+      return Ok(new ApiResponse(false, $"Config service error: {MediaServerError(ex)}"));
+    }
+
+    return Ok(new ApiResponse(true, "ok"));
   }
 
   [HttpDelete("cameras/{cameraId}")]
@@ -129,15 +179,19 @@ public class LiveController(
       return NotFound();
     }
 
-    var response = await GetMediaClient(current.ServerId).RemoveCameraAsync(new SourceRequest
+    Vms.Control.OperationStatus response;
+    try
     {
-      SourceId = cameraId
-    }, cancellationToken: ct);
+      response = await GetMediaClient(current.ServerId).RemoveCameraAsync(
+        new SourceRequest { SourceId = cameraId }, MediaCallOptions(ct));
+    }
+    catch (RpcException ex)
+    {
+      return Ok(new ApiResponse(false, MediaServerError(ex)));
+    }
 
     if (response.Success)
-    {
-      await _manager.Remove(cameraId);
-    }
+      await _manager.Remove(cameraId, ct);
 
     return Ok(ApiResponseMapper.ToApiResponse(response));
   }
@@ -170,12 +224,19 @@ public class LiveController(
     }
 
     var normalized = CameraManager.Normalize(state with { ServerId = targetServerId });
-    var response = await GetMediaClient(targetServerId).SetCameraStateAsync(ToControlState(normalized), cancellationToken: ct);
+    Vms.Control.OperationStatus response;
+    try
+    {
+      response = await GetMediaClient(targetServerId).SetCameraStateAsync(
+        ToControlState(normalized), MediaCallOptions(ct));
+    }
+    catch (RpcException ex)
+    {
+      return Ok(new ApiResponse(false, MediaServerError(ex)));
+    }
 
     if (response.Success)
-    {
-      await _manager.SetState(normalized);
-    }
+      await _manager.SetState(normalized, ct);
 
     return Ok(ApiResponseMapper.ToApiResponse(response));
   }

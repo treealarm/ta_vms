@@ -2,7 +2,8 @@ namespace VmsFs;
 
 public sealed class ClipCleaner(
   ClipStorage storage,
-  CameraConfigCache configCache) : IHostedService, IAsyncDisposable
+  CameraConfigCache configCache,
+  StorageListCache storageListCache) : IHostedService, IAsyncDisposable
 {
   // Conservative lower bound: SQL pre-filters clips older than this many seconds.
   // Per-camera pre_record_seconds is then applied in code as the authoritative check.
@@ -64,13 +65,16 @@ public sealed class ClipCleaner(
         // so only delete clips whose end_ts is older than that window.
         var safeCutoff = DateTime.UtcNow.AddSeconds(-preSeconds);
 
-        foreach (var (clipUid, filePath, _, endTs) in group)
+        foreach (var (clipUid, filePath, _, storageId, endTs) in group)
         {
           if (ct.IsCancellationRequested) return;
           if (endTs >= safeCutoff)
             continue;
 
-          if (!TryDeleteAssociatedFiles(StorageBasePath, filePath))
+          var basePath = string.IsNullOrEmpty(storageId) ? StorageBasePath
+            : (storageListCache.TryGetRootPath(storageId) ?? StorageBasePath);
+
+          if (!TryDeleteAssociatedFiles(basePath, filePath))
             continue;
 
           await storage.DeleteClipRecordAsync(clipUid, ct);

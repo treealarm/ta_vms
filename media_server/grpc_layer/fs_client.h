@@ -10,6 +10,8 @@
 #include <queue>
 #include <string>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <grpcpp/grpcpp.h>
@@ -33,8 +35,22 @@ public:
     std::uint64_t size_bytes = 0;
   };
 
+  struct storage_info
+  {
+    std::string storage_id;
+    std::string root_path;
+    bool empty() const { return root_path.empty(); }
+  };
+
+  // Returns the primary storage for the camera (storage_id + root_path).
+  // On cache hit: returns immediately and triggers background refresh if stale.
+  // On cache miss: fetches synchronously.
+  // Returns empty storage_info if no storage is assigned (caller should fall back to env).
+  storage_info get_camera_storage(const std::string& camera_id);
+
   void enqueue_ingest_clip(
     const std::string& camera_id,
+    const std::string& storage_id,
     const std::string& file_path,
     std::chrono::system_clock::time_point start_ts,
     std::optional<std::chrono::system_clock::time_point> end_ts,
@@ -78,6 +94,16 @@ private:
     const vms::fs::IngestClipRequest& request,
     const std::string& reason) const;
 
+  storage_info fetch_camera_storage(const std::string& camera_id);
+  void trigger_storage_refresh(const std::string& camera_id);
+
+  struct storage_cache_entry
+  {
+    std::string storage_id;
+    std::string root_path;
+    std::chrono::steady_clock::time_point fetched_at;
+  };
+
   std::string m_app_id;
   std::shared_ptr<grpc::Channel> m_channel;
   std::unique_ptr<vms::fs::FsService::Stub> m_stub;
@@ -89,4 +115,8 @@ private:
   std::queue<vms::fs::IngestClipRequest> m_queue;
   std::thread m_worker;
   bool m_stopping = false;
+
+  mutable std::mutex m_storage_mutex;
+  std::unordered_map<std::string, storage_cache_entry> m_storage_cache;
+  std::unordered_set<std::string> m_storage_refreshing;
 };

@@ -3,7 +3,10 @@ using Vms.Fs;
 
 namespace VmsFs;
 
-public sealed class FsServiceImpl(ClipStorage storage, ArchiveFileStorage archiveStorage) : FsService.FsServiceBase
+public sealed class FsServiceImpl(
+  ClipStorage storage,
+  ArchiveFileStorage archiveStorage,
+  CameraStorageCache storageCache) : FsService.FsServiceBase
 {
   private readonly ClipStorage _storage = storage;
   private readonly ArchiveFileStorage _archiveStorage = archiveStorage;
@@ -169,6 +172,17 @@ public sealed class FsServiceImpl(ClipStorage storage, ArchiveFileStorage archiv
       Console.Error.WriteLine($"ListRetentionEvents failed: {ex}");
       throw new RpcException(new Status(StatusCode.Internal, ex.Message));
     }
+  }
+
+  public override async Task<GetCameraStorageResponse> GetCameraStorage(
+    GetCameraStorageRequest request,
+    ServerCallContext context)
+  {
+    var info = await storageCache.GetAsync(request.CameraId, context.CancellationToken);
+    var response = new GetCameraStorageResponse();
+    if (info != null)
+      response.Storage = info;
+    return response;
   }
 
   public override async Task<GetRecordingByUidResponse> GetRecordingByUid(

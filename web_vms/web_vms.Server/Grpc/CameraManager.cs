@@ -1,4 +1,5 @@
 ﻿using System.Linq;
+using Grpc.Core;
 using Vms.Cfg;
 using web_vms.Types.Dto;
 
@@ -6,6 +7,8 @@ namespace web_vms;
 
 public class CameraManager : ICameraManager
 {
+  private static readonly TimeSpan CfgCallTimeout = TimeSpan.FromSeconds(5);
+
   private readonly CfgService.CfgServiceClient _cfgClient;
 
   public CameraManager(CfgService.CfgServiceClient cfgClient)
@@ -13,40 +16,43 @@ public class CameraManager : ICameraManager
     _cfgClient = cfgClient;
   }
 
-  public async Task<bool> Add(CameraStateDto dto)
+  private static CallOptions CfgOptions(CancellationToken ct = default) =>
+    new(deadline: DateTime.UtcNow.Add(CfgCallTimeout), cancellationToken: ct);
+
+  public async Task<bool> Add(CameraStateDto dto, CancellationToken ct = default)
   {
-    var response = await _cfgClient.SetupCameraAsync(ToSetupProto(NormalizeDto(dto)));
+    var response = await _cfgClient.SetupCameraAsync(ToSetupProto(NormalizeDto(dto)), CfgOptions(ct));
     return response.Success;
   }
 
-  public async Task<bool> Remove(string id)
+  public async Task<bool> Remove(string id, CancellationToken ct = default)
   {
-    var response = await _cfgClient.RemoveCameraAsync(new SourceRequest { SourceId = id });
+    var response = await _cfgClient.RemoveCameraAsync(new SourceRequest { SourceId = id }, CfgOptions(ct));
     return response.Success;
   }
 
-  public async Task<List<CameraStateDto>> List()
+  public async Task<List<CameraStateDto>> List(CancellationToken ct = default)
   {
-    var response = await _cfgClient.ListCamerasAsync(new ListCamerasRequest());
+    var response = await _cfgClient.ListCamerasAsync(new ListCamerasRequest(), CfgOptions(ct));
     return response.Cameras.Select(ToDto).ToList();
   }
 
-  public async Task<List<MediaServerNodeDto>> ListServers()
+  public async Task<List<MediaServerNodeDto>> ListServers(CancellationToken ct = default)
   {
-    var response = await _cfgClient.ListMediaServersAsync(new ListMediaServersRequest());
+    var response = await _cfgClient.ListMediaServersAsync(new ListMediaServersRequest(), CfgOptions(ct));
     return response.Servers.Select(ToDto).ToList();
   }
 
-  public async Task<bool> SetState(CameraStateDto dto)
+  public async Task<bool> SetState(CameraStateDto dto, CancellationToken ct = default)
   {
     var normalized = NormalizeDto(dto);
-    var response = await _cfgClient.SetCameraStateAsync(ToStateProto(normalized));
+    var response = await _cfgClient.SetCameraStateAsync(ToStateProto(normalized), CfgOptions(ct));
     return response.Success;
   }
 
-  public async Task<CameraStateDto?> Get(string id)
+  public async Task<CameraStateDto?> Get(string id, CancellationToken ct = default)
   {
-    var response = await _cfgClient.GetCameraStateAsync(new SourceRequest { SourceId = id });
+    var response = await _cfgClient.GetCameraStateAsync(new SourceRequest { SourceId = id }, CfgOptions(ct));
     return response.Found ? ToDto(response.Setup) : null;
   }
 

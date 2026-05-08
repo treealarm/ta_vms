@@ -50,6 +50,7 @@ private:
   std::chrono::system_clock::time_point m_segment_start_ts{};
   std::filesystem::path m_segment_abs_path;
   std::filesystem::path m_segment_rel_path;
+  std::string m_segment_storage_id;
 
   sync_packet_transcoder m_packet_transcoder;
 

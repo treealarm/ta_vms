@@ -77,8 +77,13 @@ void segment_writer::open_new_segment()
 
   recording_storage storage;
 
+  auto cam_storage = fs_client::instance().get_camera_storage(m_camera_id);
+  const auto storage_root = cam_storage.empty()
+    ? recording_storage::resolve_storage_base_path().string()
+    : cam_storage.root_path;
+
   m_segment_rel_path = storage.make_segment_path(m_camera_id, now);
-  const auto path = recording_storage::resolve_storage_base_path() / m_segment_rel_path;
+  const auto path = std::filesystem::path(storage_root) / m_segment_rel_path;
   std::filesystem::create_directories(path.parent_path());
   m_segment_abs_path = path;
 
@@ -141,9 +146,11 @@ void segment_writer::open_new_segment()
 
   m_segment_start_time = std::chrono::steady_clock::now();
   m_segment_start_ts = now;
+  m_segment_storage_id = cam_storage.storage_id;
 
   fs_client::instance().enqueue_ingest_clip(
     m_camera_id,
+    m_segment_storage_id,
     m_segment_rel_path.string(),
     m_segment_start_ts,
     std::nullopt,
@@ -178,6 +185,7 @@ void segment_writer::close_segment()
 
       fs_client::instance().enqueue_ingest_clip(
         m_camera_id,
+        m_segment_storage_id,
         m_segment_rel_path.string(),
         m_segment_start_ts,
         segment_end_ts,
@@ -187,6 +195,7 @@ void segment_writer::close_segment()
     {
       fs_client::instance().enqueue_ingest_clip(
         m_camera_id,
+        m_segment_storage_id,
         m_segment_rel_path.string(),
         m_segment_start_ts,
         segment_end_ts,
@@ -196,6 +205,7 @@ void segment_writer::close_segment()
 
   m_segment_abs_path.clear();
   m_segment_rel_path.clear();
+  m_segment_storage_id.clear();
   m_segment_start_ts = {};
 }
 
