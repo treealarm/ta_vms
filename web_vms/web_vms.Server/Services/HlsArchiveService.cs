@@ -42,12 +42,11 @@ public sealed class HlsArchiveService(
     var segments = new List<HlsSegment>();
     foreach (var rec in kept)
     {
-      var fp = rec.FilePath.Trim();
       StatArchiveTsResponse stat;
       try
       {
         stat = await fsClient.StatArchiveTsAsync(
-          new StatArchiveTsRequest { RelativePath = fp }, cancellationToken: ct);
+          new StatArchiveTsRequest { ClipUid = rec.ClipUid }, cancellationToken: ct);
       }
       catch (RpcException)
       {

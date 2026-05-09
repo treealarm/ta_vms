@@ -5,7 +5,6 @@ import {
   Card,
   CardContent,
   Chip,
-  Collapse,
   FormControlLabel,
   MenuItem,
   Stack,
@@ -52,7 +51,6 @@ export default function LogJournalPanel() {
   const dispatch = useAppDispatch()
   const { entries, hasMore, isBusy, status } = useAppSelector((state) => state.logs)
 
-  const [isVisible, setIsVisible] = useState(true)
   const [rangeSec, setRangeSec] = useState(60)
   const [limit, setLimit] = useState(200)
   const [level, setLevel] = useState('')
@@ -81,7 +79,7 @@ export default function LogJournalPanel() {
   }, [])
 
   useEffect(() => {
-    if (!isVisible || !autoRefresh) {
+    if (!autoRefresh) {
       return
     }
     const timer = setInterval(() => {
@@ -89,7 +87,7 @@ export default function LogJournalPanel() {
     }, 3000)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isVisible, autoRefresh, rangeSec, limit, level, source])
+  }, [autoRefresh, rangeSec, limit, level, source])
 
   const filteredEntries = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -113,128 +111,114 @@ export default function LogJournalPanel() {
   }
 
   return (
-    <Box sx={{ width: '100%', mt: 2 }}>
-      {!isVisible && (
-        <Button variant="contained" size="small" onClick={() => setIsVisible(true)}>
-          Show logs
-        </Button>
-      )}
+    <Card elevation={4}>
+      <CardContent sx={{ p: 1.5 }}>
+        <Stack spacing={1}>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+            <Typography variant="subtitle2">Log Journal</Typography>
+            <Chip size="small" label={isBusy ? 'Loading...' : status} />
+            {hasMore && <Chip size="small" color="warning" label="has more" />}
+          </Stack>
 
-      <Collapse in={isVisible} timeout={220} unmountOnExit>
-        <Card elevation={4}>
-          <CardContent sx={{ p: 1.5 }}>
-            <Stack spacing={1}>
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                <Typography variant="subtitle2">Log Journal</Typography>
-                <Chip size="small" label={isBusy ? 'Loading...' : status} />
-                {hasMore && <Chip size="small" color="warning" label="has more" />}
-                <Box sx={{ flexGrow: 1 }} />
-                <Button size="small" onClick={() => setIsVisible(false)}>
-                  Hide
-                </Button>
-              </Stack>
+          <Stack direction="row" spacing={1} flexWrap="wrap">
+            <TextField
+              select
+              size="small"
+              label="Range"
+              value={rangeSec}
+              onChange={(e) => setRangeSec(Number(e.target.value))}
+              sx={{ minWidth: 140 }}
+            >
+              {RANGE_OPTIONS.map((r) => (
+                <MenuItem key={r.value} value={r.value}>
+                  {r.label}
+                </MenuItem>
+              ))}
+            </TextField>
 
-              <Stack direction="row" spacing={1} flexWrap="wrap">
-                <TextField
-                  select
-                  size="small"
-                  label="Range"
-                  value={rangeSec}
-                  onChange={(e) => setRangeSec(Number(e.target.value))}
-                  sx={{ minWidth: 140 }}
-                >
-                  {RANGE_OPTIONS.map((r) => (
-                    <MenuItem key={r.value} value={r.value}>
-                      {r.label}
-                    </MenuItem>
-                  ))}
-                </TextField>
+            <TextField
+              size="small"
+              type="number"
+              label="Limit"
+              value={limit}
+              onChange={(e) => setLimit(Math.max(1, Number(e.target.value) || 1))}
+              sx={{ width: 100 }}
+            />
 
-                <TextField
-                  size="small"
-                  type="number"
-                  label="Limit"
-                  value={limit}
-                  onChange={(e) => setLimit(Math.max(1, Number(e.target.value) || 1))}
-                  sx={{ width: 100 }}
-                />
+            <TextField
+              select
+              size="small"
+              label="Level"
+              value={level}
+              onChange={(e) => setLevel(e.target.value)}
+              sx={{ minWidth: 120 }}
+            >
+              <MenuItem value="">all</MenuItem>
+              {LEVEL_OPTIONS.filter((v) => v).map((v) => (
+                <MenuItem key={v} value={v}>
+                  {v}
+                </MenuItem>
+              ))}
+            </TextField>
 
-                <TextField
-                  select
-                  size="small"
-                  label="Level"
-                  value={level}
-                  onChange={(e) => setLevel(e.target.value)}
-                  sx={{ minWidth: 120 }}
-                >
-                  <MenuItem value="">all</MenuItem>
-                  {LEVEL_OPTIONS.filter((v) => v).map((v) => (
-                    <MenuItem key={v} value={v}>
-                      {v}
-                    </MenuItem>
-                  ))}
-                </TextField>
+            <TextField
+              size="small"
+              label="Source"
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+              sx={{ minWidth: 160 }}
+            />
 
-                <TextField
-                  size="small"
-                  label="Source"
-                  value={source}
-                  onChange={(e) => setSource(e.target.value)}
-                  sx={{ minWidth: 160 }}
-                />
+            <TextField
+              size="small"
+              label="Search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              sx={{ minWidth: 180, flexGrow: 1 }}
+            />
+            <FormControlLabel
+              sx={{ ml: 0.5 }}
+              control={
+                <Switch size="small" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
+              }
+              label="Auto"
+            />
 
-                <TextField
-                  size="small"
-                  label="Search"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  sx={{ minWidth: 180, flexGrow: 1 }}
-                />
-                <FormControlLabel
-                  sx={{ ml: 0.5 }}
-                  control={
-                    <Switch size="small" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
-                  }
-                  label="Auto"
-                />
+            <Button size="small" variant="outlined" onClick={() => void runFetch()}>
+              Refresh
+            </Button>
+            <Button size="small" variant="outlined" onClick={() => dispatch(clearLogs())}>
+              Clear
+            </Button>
+            <Button size="small" variant="outlined" startIcon={<ContentCopyIcon />} onClick={() => void onCopy()}>
+              Copy
+            </Button>
+          </Stack>
 
-                <Button size="small" variant="outlined" onClick={() => void runFetch()}>
-                  Refresh
-                </Button>
-                <Button size="small" variant="outlined" onClick={() => dispatch(clearLogs())}>
-                  Clear
-                </Button>
-                <Button size="small" variant="outlined" startIcon={<ContentCopyIcon />} onClick={() => void onCopy()}>
-                  Copy
-                </Button>
-              </Stack>
-
-              <Box className="vms-log-journal-body">
-                {filteredEntries.length === 0 && (
-                  <Typography variant="caption" className="vms-log-journal-empty">
-                    No logs
-                  </Typography>
+          <Box className="vms-log-journal-body">
+            {filteredEntries.length === 0 && (
+              <Typography variant="caption" className="vms-log-journal-empty">
+                No logs
+              </Typography>
+            )}
+            {filteredEntries.map((e, idx) => (
+              <Box
+                key={`${e.timestamp}-${idx}`}
+                className="vms-log-line"
+                data-log-level={normalizeLogLevelKey(e.level)}
+              >
+                {formatLogLine(
+                  toLocalDatetimeInputValue(new Date(e.timestamp)),
+                  e.level,
+                  e.message,
+                  e.file,
+                  e.function
                 )}
-                {filteredEntries.map((e, idx) => (
-                  <Box
-                    key={`${e.timestamp}-${idx}`}
-                    className="vms-log-line"
-                    data-log-level={normalizeLogLevelKey(e.level)}
-                  >
-                    {formatLogLine(
-                      toLocalDatetimeInputValue(new Date(e.timestamp)),
-                      e.level,
-                      e.message,
-                      e.file,
-                      e.function
-                    )}
-                  </Box>
-                ))}
               </Box>
-            </Stack>
-          </CardContent>
-        </Card>
-      </Collapse>
-    </Box>
+            ))}
+          </Box>
+        </Stack>
+      </CardContent>
+    </Card>
   )
 }

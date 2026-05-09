@@ -1,15 +1,16 @@
 using Grpc.Core;
 using Vms.Fs;
+using System.Linq;
 
 namespace VmsFs;
 
 public sealed class FsServiceImpl(
   ClipStorage storage,
-  ArchiveFileStorage archiveStorage,
+  StorageListCache storageListCache,
   CameraStorageCache storageCache) : FsService.FsServiceBase
 {
   private readonly ClipStorage _storage = storage;
-  private readonly ArchiveFileStorage _archiveStorage = archiveStorage;
+  private readonly StorageListCache _storageListCache = storageListCache;
 
   public override async Task<OperationStatus> IngestClip(
     IngestClipRequest request,
@@ -203,23 +204,31 @@ public sealed class FsServiceImpl(
     return response;
   }
 
-  public override Task<StatArchiveTsResponse> StatArchiveTs(
+  public override async Task<StatArchiveTsResponse> StatArchiveTs(
     StatArchiveTsRequest request, ServerCallContext context)
   {
-    var abs = _archiveStorage.ResolveRelativePath(request.RelativePath);
-    if (abs == null)
-      return Task.FromResult(new StatArchiveTsResponse { Exists = false, Message = "invalid path" });
+    if (!Guid.TryParse(request.ClipUid, out var uid))
+      return new StatArchiveTsResponse { Exists = false, Message = "invalid clip_uid" };
+
+    var recordings = await _storage.GetRecordingsByUidsAsync([uid], context.CancellationToken);
+    var rec = recordings.FirstOrDefault();
+    if (rec is null || string.IsNullOrWhiteSpace(rec.FilePath))
+      return new StatArchiveTsResponse { Exists = false, Message = "clip not found" };
+
+    var abs = await ResolveAbsolutePathAsync(rec.StorageId, rec.FilePath, context.CancellationToken);
+    if (abs is null)
+      return new StatArchiveTsResponse { Exists = false, Message = "storage not found" };
 
     try
     {
       var info = new FileInfo(abs);
       if (!info.Exists)
-        return Task.FromResult(new StatArchiveTsResponse { Exists = false, Message = "not found" });
-      return Task.FromResult(new StatArchiveTsResponse { Exists = true, SizeBytes = (ulong)info.Length });
+        return new StatArchiveTsResponse { Exists = false, Message = "not found" };
+      return new StatArchiveTsResponse { Exists = true, SizeBytes = (ulong)info.Length, FilePath = abs };
     }
     catch (Exception ex)
     {
-      return Task.FromResult(new StatArchiveTsResponse { Exists = false, Message = ex.Message });
+      return new StatArchiveTsResponse { Exists = false, Message = ex.Message };
     }
   }
 
@@ -228,10 +237,16 @@ public sealed class FsServiceImpl(
     IServerStreamWriter<ReadArchiveTsChunk> responseStream,
     ServerCallContext context)
   {
-    var abs = _archiveStorage.ResolveRelativePath(request.RelativePath);
-    if (abs == null)
-      throw new RpcException(new Status(StatusCode.InvalidArgument, "invalid path"));
+    if (!Guid.TryParse(request.ClipUid, out var uid))
+      throw new RpcException(new Status(StatusCode.InvalidArgument, "invalid clip_uid"));
 
+    var recordings = await _storage.GetRecordingsByUidsAsync([uid], context.CancellationToken);
+    var rec = recordings.FirstOrDefault();
+    if (rec is null || string.IsNullOrWhiteSpace(rec.FilePath))
+      throw new RpcException(new Status(StatusCode.NotFound, "clip not found"));
+
+    var abs = await ResolveAbsolutePathAsync(rec.StorageId, rec.FilePath, context.CancellationToken)
+      ?? throw new RpcException(new Status(StatusCode.NotFound, "storage not found"));
     var info = new FileInfo(abs);
     if (!info.Exists)
       throw new RpcException(new Status(StatusCode.NotFound, "not found"));
@@ -263,6 +278,15 @@ public sealed class FsServiceImpl(
         context.CancellationToken);
       remaining -= (ulong)got;
     }
+  }
+
+  private async Task<string?> ResolveAbsolutePathAsync(string storageId, string relativePath, CancellationToken ct)
+  {
+    var storages = await _storageListCache.GetAsync(ct);
+    var root = _storageListCache.Find(storages, storageId)?.RootPath;
+    if (string.IsNullOrWhiteSpace(root))
+      return null;
+    return Path.Combine(root, relativePath);
   }
 
 }

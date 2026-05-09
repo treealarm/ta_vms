@@ -123,17 +123,18 @@ message ListRetentionEventsResponse {
 }
 
 message StatArchiveTsRequest {
-  string relative_path = 1;
+  string clip_uid = 1;
 }
 
 message StatArchiveTsResponse {
   bool exists = 1;
   uint64 size_bytes = 2;
   string message = 3;
+  string file_path = 4;
 }
 
 message ReadArchiveTsRequest {
-  string relative_path = 1;
+  string clip_uid = 1;
   uint64 offset = 2;
   uint64 length = 3;
 }

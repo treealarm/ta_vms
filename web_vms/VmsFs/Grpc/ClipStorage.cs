@@ -201,7 +201,7 @@ public sealed class ClipStorage(NpgsqlDataSource dataSource, CameraConfigCache c
   {
     var count = request.Count == 0 ? 1 : (int)request.Count;
     await using var command = _dataSource.CreateCommand("""
-      SELECT c.camera_id, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text
+      SELECT c.camera_id, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id
       FROM clips c
       INNER JOIN clips anchor ON anchor.clip_uid = $2 AND anchor.camera_id = $1
       WHERE c.camera_id = $1 AND c.retained = TRUE AND c.start_ts >= anchor.start_ts

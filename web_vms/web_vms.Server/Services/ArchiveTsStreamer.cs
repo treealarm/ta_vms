@@ -9,29 +9,11 @@ public sealed class ArchiveTsStreamer(FsService.FsServiceClient fsClient) : IArc
   public async Task<ArchiveStreamResult> OpenAsync(
     string clipUid, ulong offset, ulong length, string? rangeHeader, CancellationToken ct)
   {
-    GetRecordingByUidResponse recResp;
-    try
-    {
-      var lookupReq = new GetRecordingByUidRequest();
-      lookupReq.ClipUids.Add(clipUid);
-      recResp = await fsClient.GetRecordingByUidAsync(lookupReq, cancellationToken: ct);
-    }
-    catch (RpcException ex)
-    {
-      return new ArchiveStreamResult.Error(ex.Status.Detail);
-    }
-
-    var rec = recResp.Recordings.FirstOrDefault();
-    if (rec is null || string.IsNullOrWhiteSpace(rec.FilePath))
-      return new ArchiveStreamResult.NotFound("clip not found");
-
-    var path = rec.FilePath;
-
     StatArchiveTsResponse stat;
     try
     {
       stat = await fsClient.StatArchiveTsAsync(
-        new StatArchiveTsRequest { RelativePath = path }, cancellationToken: ct);
+        new StatArchiveTsRequest { ClipUid = clipUid }, cancellationToken: ct);
     }
     catch (RpcException ex)
     {
@@ -51,7 +33,7 @@ public sealed class ArchiveTsStreamer(FsService.FsServiceClient fsClient) : IArc
 
     var httpRange = ParseHttpRange(rangeHeader, entityLen);
 
-    var req = new ReadArchiveTsRequest { RelativePath = path };
+    var req = new ReadArchiveTsRequest { ClipUid = clipUid };
     if (httpRange is not null)
     {
       req.Offset = offset + httpRange.Start;
@@ -67,7 +49,7 @@ public sealed class ArchiveTsStreamer(FsService.FsServiceClient fsClient) : IArc
     RangeInfo? range = httpRange is not null ? new RangeInfo(httpRange.Start, httpRange.Length, entityLen) : null;
     var contentLength = (long)(httpRange?.Length ?? entityLen);
 
-    return new ArchiveStreamResult.Ok(ContentType(path), contentLength, range, StreamChunksAsync(req, ct));
+    return new ArchiveStreamResult.Ok(ContentType(stat.FilePath), contentLength, range, StreamChunksAsync(req, ct));
   }
 
   private async IAsyncEnumerable<ReadOnlyMemory<byte>> StreamChunksAsync(

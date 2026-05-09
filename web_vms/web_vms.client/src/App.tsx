@@ -7,7 +7,7 @@ import {
   CardContent,
   Stack,
   Tab,
-  Tabs
+  Tabs,
 } from '@mui/material'
 
 import { type CameraStateDto, type ServerInstanceDto } from './dto/dtos'
@@ -209,21 +209,22 @@ export default function App() {
   }
 
   return (
-    <Box sx={{ width: '100%', p: { xs: 2, md: 4 } }}>
-      <Stack spacing={2.5}>
-        <Tabs value={mainTab} onChange={(_, v: number) => setMainTab(v)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
-          <Tab label="Monitor" />
-          <Tab label="Cam setup" />
-          <Tab label="Events" />
-          <Tab label="Storages" />
-        </Tabs>
-
+    <Box sx={{ display: 'flex', height: '100dvh', overflow: 'hidden' }}>
+      <Box
+        sx={{
+          flex: 1,
+          minWidth: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          p: { xs: 2, md: 4 }
+        }}
+      >
         {mainTab === 0 && (
-          <Stack spacing={2} sx={{ minHeight: 0 }}>
+          <Stack spacing={2} sx={{ flex: 1, minHeight: 0 }}>
             <Card
               sx={{
-                height: { xs: 'calc(100dvh - 11.5rem)', md: 'calc(100dvh - 14rem)' },
-                maxHeight: { xs: 'calc(100dvh - 11.5rem)', md: 'calc(100dvh - 14rem)' },
+                flex: 1,
                 minHeight: 0,
                 display: 'flex',
                 flexDirection: 'column',
@@ -274,62 +275,83 @@ export default function App() {
           </Stack>
         )}
 
-        {mainTab === 1 && (
-          <CameraControlPanel
-            cameraId={cameraId}
-            setCameraId={setCameraId}
-            rtspUrl={rtspUrl}
-            setRtspUrl={setRtspUrl}
-            user={user}
-            setUser={setUser}
-            pass={pass}
-            setPass={setPass}
-            onvifIp={onvifIp}
-            setOnvifIp={setOnvifIp}
-            onvifPort={onvifPort}
-            setOnvifPort={setOnvifPort}
-            preRecordSeconds={preRecordSeconds}
-            setPreRecordSeconds={setPreRecordSeconds}
-            postRecordSeconds={postRecordSeconds}
-            setPostRecordSeconds={setPostRecordSeconds}
-            preAlarmSegmentSeconds={preAlarmSegmentSeconds}
-            setPreAlarmSegmentSeconds={setPreAlarmSegmentSeconds}
-            selectedServerId={selectedServerId}
-            setSelectedServerId={setSelectedServerId}
-            selectedCameraId={selectedCameraId}
-            setSelectedCameraId={setSelectedCameraId}
-            servers={serversTree}
-            isLimitReached={isLimitReached}
-            onAddCamera={onAddCamera}
-            onRefreshLists={refreshLists}
-            onSelectCamera={selectCameraForEdit}
-            onMoveCamera={async (cameraToMove, serverId) => {
-              const current = camerasMap[cameraToMove]
-              if (!current) {
-                return
-              }
-              const result = await dispatch(changeCameraParent({ ...current, serverId }))
-              if (!changeCameraParent.rejected.match(result)) {
-                await refreshLists()
-              }
-            }}
-            onRemoveCamera={async (cameraToDelete) => {
-              const result = await dispatch(removeCamera({ cameraId: cameraToDelete }))
-              if (!removeCamera.rejected.match(result)) {
-                setSelectedCameraId('')
-                await refreshLists()
-              }
-            }}
-          />
+        {mainTab !== 0 && (
+          <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+            {mainTab === 1 && (
+              <CameraControlPanel
+                cameraId={cameraId}
+                setCameraId={setCameraId}
+                rtspUrl={rtspUrl}
+                setRtspUrl={setRtspUrl}
+                user={user}
+                setUser={setUser}
+                pass={pass}
+                setPass={setPass}
+                onvifIp={onvifIp}
+                setOnvifIp={setOnvifIp}
+                onvifPort={onvifPort}
+                setOnvifPort={setOnvifPort}
+                preRecordSeconds={preRecordSeconds}
+                setPreRecordSeconds={setPreRecordSeconds}
+                postRecordSeconds={postRecordSeconds}
+                setPostRecordSeconds={setPostRecordSeconds}
+                preAlarmSegmentSeconds={preAlarmSegmentSeconds}
+                setPreAlarmSegmentSeconds={setPreAlarmSegmentSeconds}
+                selectedServerId={selectedServerId}
+                setSelectedServerId={setSelectedServerId}
+                selectedCameraId={selectedCameraId}
+                setSelectedCameraId={setSelectedCameraId}
+                servers={serversTree}
+                isLimitReached={isLimitReached}
+                onAddCamera={onAddCamera}
+                onRefreshLists={refreshLists}
+                onSelectCamera={selectCameraForEdit}
+                onMoveCamera={async (cameraToMove, serverId) => {
+                  const current = camerasMap[cameraToMove]
+                  if (!current) {
+                    return
+                  }
+                  const result = await dispatch(changeCameraParent({ ...current, serverId }))
+                  if (!changeCameraParent.rejected.match(result)) {
+                    await refreshLists()
+                  }
+                }}
+                onRemoveCamera={async (cameraToDelete) => {
+                  const result = await dispatch(removeCamera({ cameraId: cameraToDelete }))
+                  if (!removeCamera.rejected.match(result)) {
+                    setSelectedCameraId('')
+                    await refreshLists()
+                  }
+                }}
+              />
+            )}
+
+            {mainTab === 2 && <RetentionEventsTab />}
+            {mainTab === 3 && <StorageSetupPanel />}
+            {mainTab === 4 && <SimulationPanel cameras={Object.values(camerasMap)} />}
+            {mainTab === 5 && <LogJournalPanel />}
+          </Box>
         )}
+      </Box>
 
-        {mainTab === 2 && <RetentionEventsTab />}
-
-        {mainTab === 3 && <StorageSetupPanel />}
-
-        <SimulationPanel cameras={Object.values(camerasMap)} />
-        <LogJournalPanel />
-      </Stack>
+      <Tabs
+        orientation="vertical"
+        value={mainTab}
+        onChange={(_, v: number) => setMainTab(v)}
+        sx={{
+          order: -1,
+          borderRight: 1,
+          borderColor: 'divider',
+          '& .MuiTab-root': { minWidth: 90 }
+        }}
+      >
+        <Tab label="Monitor" />
+        <Tab label="Cam setup" />
+        <Tab label="Events" />
+        <Tab label="Storages" />
+        <Tab label="Tests" />
+        <Tab label="Logs" />
+      </Tabs>
     </Box>
   )
 }
