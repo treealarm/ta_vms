@@ -18,7 +18,12 @@ builder.Services.AddHostedService<ClipCleaner>();
 builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(BuildPostgresConnectionString()));
 builder.Services.AddSingleton(_ =>
   new CfgService.CfgServiceClient(DaprClient.CreateInvocationInvoker(cfgAppId)));
+builder.Services.AddSingleton(_ =>
+  new StorageService.StorageServiceClient(DaprClient.CreateInvocationInvoker(cfgAppId)));
 builder.Services.AddSingleton<CameraConfigCache>();
+builder.Services.AddSingleton<StorageListCache>();
+builder.Services.AddSingleton<CameraStorageCache>();
+builder.Services.AddHostedService<CameraStorageSubscriber>();
 builder.Services.AddSingleton<DbMigrator>();
 builder.Services.AddSingleton<ClipStorage>();
 builder.Services.AddSingleton(_ =>

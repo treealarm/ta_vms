@@ -9,7 +9,7 @@ namespace web_vms;
 public sealed record ByteRange(ulong Offset, ulong Length);
 
 public sealed record HlsSegment(
-  string FilePath,
+  string ClipUid,
   ByteRange? ByteRange,
   TimelineSlice Wall)
 {
@@ -32,7 +32,7 @@ public sealed class HlsArchiveService(
     }, cancellationToken: ct);
 
     var kept = fsResp.Recordings
-      .Where(r => !string.IsNullOrWhiteSpace(r.FilePath))
+      .Where(r => !string.IsNullOrWhiteSpace(r.FilePath) && !string.IsNullOrWhiteSpace(r.ClipUid))
       .OrderBy(r => r.StartTs.ToDateTime())
       .ToList();
 
@@ -101,7 +101,7 @@ public sealed class HlsArchiveService(
     {
       var wallStart = rec.StartTs.ToDateTime();
       var wall = new TimelineSlice(wallStart, wallStart + RecordingWallDuration(rec));
-      segments.Add(new HlsSegment(rec.FilePath, null, wall));
+      segments.Add(new HlsSegment(rec.ClipUid, null, wall));
     }
 
     return new HlsPlaylistResult.Ok(BuildPlaylist(cameraId, segments));
@@ -119,17 +119,17 @@ public sealed class HlsArchiveService(
 
   private void AppendSegments(HlsPlaylistBuilder playlist, List<HlsSegment> segments, string cameraId)
   {
-    var prevPath = "";
+    var prevClipUid = "";
     for (var i = 0; i < segments.Count; i++)
     {
       var s = segments[i];
-      if (i > 0 && s.FilePath != prevPath)
+      if (i > 0 && s.ClipUid != prevClipUid)
         playlist.AppendDiscontinuity();
-      prevPath = s.FilePath;
+      prevClipUid = s.ClipUid;
 
       var values = new RouteValueDictionary
       {
-        ["path"] = s.FilePath
+        ["clipUid"] = s.ClipUid
       };
       if (s.ByteRange is { } br)
       {
@@ -170,7 +170,7 @@ public sealed class HlsArchiveService(
       return null;
 
     var wall = new TimelineSlice(wallStart, wallStart + RecordingWallDuration(rec));
-    return new HlsSegment(rec.FilePath, null, wall);
+    return new HlsSegment(rec.ClipUid, null, wall);
   }
 
   private static double ComputeStartOffset(List<HlsSegment> segments, DateTime fromWall)

@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(grep -v \"\\\\.o$\")"
+      "Bash(grep -v \"\\\\.o$\")",
+      "Bash(grep -v \"^$\")",
+      "Bash(cmake -S . -B build -DCMAKE_BUILD_TYPE=Release)",
+      "Bash(cmake --build build --parallel)",
+      "Bash(netstat -tlnp)",
+      "Bash(cat /tmp/web_vms-dapr/vms.log 2>/dev/null | tail -20)",
+      "Read(//tmp/web_vms-dapr/**)",
+      "Bash(cmake --build build --target vms --parallel)"
     ]
   }
 }

@@ -16,6 +16,10 @@ service FsService {
 
   rpc StatArchiveTs(StatArchiveTsRequest) returns (StatArchiveTsResponse);
   rpc ReadArchiveTs(ReadArchiveTsRequest) returns (stream ReadArchiveTsChunk);
+
+  rpc GetRecordingByUid(GetRecordingByUidRequest) returns (GetRecordingByUidResponse);
+
+  rpc GetCameraStorage(GetCameraStorageRequest) returns (GetCameraStorageResponse);
 }
 
 message OperationStatus {
@@ -31,12 +35,13 @@ message OperationStatus {
 }
 
 message Recording {
-  string camera_id = 1;
-  string file_path = 2;
+  string camera_id  = 1;
+  string file_path  = 2;
   google.protobuf.Timestamp start_ts = 3;
   optional google.protobuf.Timestamp end_ts = 4;
   uint64 size_bytes = 5;
-  string clip_uid = 6;
+  string clip_uid   = 6;
+  string storage_id = 7;
 }
 
 message IngestClipRequest {
@@ -135,6 +140,27 @@ message ReadArchiveTsRequest {
 
 message ReadArchiveTsChunk {
   bytes data = 1;
+}
+
+message StorageInfo {
+  string storage_id = 1;
+  string root_path  = 2;
+}
+
+message GetCameraStorageRequest {
+  string camera_id = 1;
+}
+
+message GetCameraStorageResponse {
+  optional StorageInfo storage = 1;
+}
+
+message GetRecordingByUidRequest {
+  repeated string clip_uids = 1;
+}
+
+message GetRecordingByUidResponse {
+  repeated Recording recordings = 1;
 }
 
 

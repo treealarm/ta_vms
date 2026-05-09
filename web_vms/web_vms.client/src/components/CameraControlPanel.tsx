@@ -15,6 +15,7 @@ import {
 } from '@mui/material'
 
 import PasswordField from './PasswordField'
+import CameraStoragesControl from './CameraStoragesControl'
 import type { CameraStateDto, ServerInstanceDto } from '../dto/dtos'
 
 type CameraControlPanelProps = {
@@ -244,6 +245,10 @@ export default function CameraControlPanel({
                     Refresh list
                   </Button>
                 </Stack>
+
+                {selectedCameraId && (
+                  <CameraStoragesControl cameraId={selectedCameraId} />
+                )}
               </Stack>
             </Box>
           </CardContent>

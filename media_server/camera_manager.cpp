@@ -131,7 +131,10 @@ bool camera_manager::set_camera_state(
 
     auto it = m_cameras.find(camera_id);
     if (it == m_cameras.end())
-      return add_camera(camera_id, rtsp_url, user, pass, policy, web_rtc, error);
+    {
+      recreate = true;
+      break;
+    }
 
     if (it->second->get_source()!= rtsp_url || 
       it->second->get_user() != user ||

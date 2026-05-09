@@ -90,5 +90,6 @@ namespace VmsCfg
 
       return new CameraStateResponse { Found = true, Setup = setup, State = setup.State };
     }
+
   }
 }

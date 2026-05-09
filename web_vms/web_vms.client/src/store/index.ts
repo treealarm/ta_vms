@@ -3,12 +3,14 @@ import { useDispatch, useSelector, type TypedUseSelectorHook } from 'react-redux
 import liveReducer from './liveSlice'
 import fsReducer from './fsSlice'
 import logsReducer from './logSlice'
+import storageReducer from './storageSlice'
 
 export const store = configureStore({
   reducer: {
     live: liveReducer,
     fs: fsReducer,
-    logs: logsReducer
+    logs: logsReducer,
+    storage: storageReducer
   }
 })
 

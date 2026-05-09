@@ -58,16 +58,19 @@ public partial class ArchController(
   [HttpGet("hls/ts")]
   [HttpHead("hls/ts")]
   public async Task<IActionResult> ServeArchiveTs(
-    [FromQuery] string path,
+    [FromQuery] string clipUid,
     [FromQuery] ulong offset = 0,
     [FromQuery] ulong length = 0,
     CancellationToken ct = default)
   {
-    path = path?.Trim() ?? "";
-    if (path.Length == 0)
-      return BadRequest(new { error = "path is required" });
+    clipUid = clipUid?.Trim() ?? "";
+    if (clipUid.Length == 0)
+      return BadRequest(new { error = "clipUid is required" });
 
-    var result = await tsStreamer.OpenAsync(path, offset, length, Request.Headers["Range"].ToString(), ct);
+    if (!Guid.TryParse(clipUid, out _))
+      return BadRequest(new { error = "clipUid must be a valid UUID" });
+
+    var result = await tsStreamer.OpenAsync(clipUid, offset, length, Request.Headers["Range"].ToString(), ct);
 
     switch (result)
     {

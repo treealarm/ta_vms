@@ -21,6 +21,9 @@ Console.WriteLine($"DAPR_CFG_APP_ID: {cfgAppId}");
 builder.Services.AddSingleton(_ =>
   new CfgService.CfgServiceClient(
     DaprClient.CreateInvocationInvoker(cfgAppId)));
+builder.Services.AddSingleton(_ =>
+  new StorageService.StorageServiceClient(
+    DaprClient.CreateInvocationInvoker(cfgAppId)));
 
 var fsAppId = Environment.GetEnvironmentVariable("DAPR_FS_APP_ID") ?? "vmsfs";
 Console.WriteLine($"DAPR_FS_APP_ID: {fsAppId}");
