@@ -9,7 +9,9 @@
       "Bash(cat /tmp/web_vms-dapr/vms.log 2>/dev/null | tail -20)",
       "Read(//tmp/web_vms-dapr/**)",
       "Bash(cmake --build build --target vms --parallel)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(cmake --build build --target fs_client)",
+      "Bash(cmake --build build)"
     ]
   }
 }

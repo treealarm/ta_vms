@@ -454,16 +454,27 @@ bool fs_client::append_outbox_locked(const vms::fs::IngestClipRequest& request) 
 
 fs_client::storage_info fs_client::get_camera_storage(const std::string& camera_id)
 {
+  storage_info cached;
+  bool found        = false;
+  bool needs_refresh = false;
+
   {
     std::lock_guard lock(m_storage_mutex);
     auto it = m_storage_cache.find(camera_id);
     if (it != m_storage_cache.end())
     {
-      auto age = std::chrono::steady_clock::now() - it->second.fetched_at;
-      if (age >= std::chrono::minutes(1))
-        trigger_storage_refresh(camera_id);
-      return { it->second.storage_id, it->second.root_path };
+      auto age   = std::chrono::steady_clock::now() - it->second.fetched_at;
+      needs_refresh = (age >= std::chrono::minutes(1));
+      cached = { it->second.storage_id, it->second.root_path };
+      found  = true;
     }
+  }
+
+  if (found)
+  {
+    if (needs_refresh)
+      trigger_storage_refresh(camera_id);
+    return cached;
   }
 
   auto info = fetch_camera_storage(camera_id);
