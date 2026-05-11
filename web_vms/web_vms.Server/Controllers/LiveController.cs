@@ -75,19 +75,26 @@ public class LiveController(
     }
 
     var normalized = CameraManager.Normalize(request);
-    Vms.Control.OperationStatus response;
-    try
-    {
-      response = await GetMediaClient(normalized.ServerId!).SetCameraStateAsync(
-        ToControlState(normalized), MediaCallOptions(ct));
-    }
-    catch (RpcException ex)
-    {
-      return Ok(new ApiResponse(false, MediaServerError(ex)));
-    }
 
-    if (!response.Success)
-      return Ok(ApiResponseMapper.ToApiResponse(response));
+    // Only notify the media server if there is a stream to actually run.
+    // A camera with no streams is valid config — the user will add streams separately.
+    var hasStream = normalized.Streams.Count > 0 || !string.IsNullOrEmpty(normalized.RtspUrl);
+    if (hasStream)
+    {
+      Vms.Control.OperationStatus mediaResponse;
+      try
+      {
+        mediaResponse = await GetMediaClient(normalized.ServerId!).SetCameraStateAsync(
+          ToControlState(normalized), MediaCallOptions(ct));
+      }
+      catch (RpcException ex)
+      {
+        return Ok(new ApiResponse(false, MediaServerError(ex)));
+      }
+
+      if (!mediaResponse.Success)
+        return Ok(ApiResponseMapper.ToApiResponse(mediaResponse));
+    }
 
     try
     {
