@@ -22,7 +22,7 @@ bool archive_frame_jpeg_reader::read_frame_at(
   error.clear();
   m_packet_transcoder.close();
 
-  const auto rec = m_storage.find_nearest(camera_id, timestamp);
+  const auto rec = m_storage.find_nearest(camera_id, "", timestamp);
   if (!rec)
   {
     error = "recording not found";

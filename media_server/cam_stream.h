@@ -1,0 +1,57 @@
+#pragma once
+
+#include <memory>
+#include <mutex>
+#include <string>
+#include <vector>
+
+#include "interfaces/media_sink.h"
+#include "interfaces/reader.h"
+#include "recording_types.h"
+#include "stream/jpeg_streamer.h"
+#include "arch_writer/segment_writer.h"
+#include "writer/webrtc_output_sink.h"
+
+class cam_stream final
+{
+public:
+  cam_stream(
+    const std::string& rtsp_url,
+    const std::string& camera_id,
+    const std::string& stream_name,
+    const std::string& user,
+    const std::string& pass);
+
+  ~cam_stream();
+
+  void apply_recording_policy(const recording_policy_spec& policy);
+  void stop_recording();
+
+  bool start_web_rtc(std::string& error);
+  bool stop_web_rtc(std::string& error);
+
+  void shutdown();
+
+  std::string get_source() const { return m_rtsp_url; }
+  std::string get_camera_id() const { return m_camera_id; }
+  std::string get_stream_name() const { return m_stream_name; }
+  std::string get_user() const { return m_user; }
+  std::string get_pass() const { return m_pass; }
+  bool is_recording() const { return m_writer != nullptr; }
+  bool is_web_rtc_streaming() const { return m_webrtc_output_sink != nullptr; }
+  recording_policy_mode get_recording_policy_mode() const { return m_recording_policy_mode; }
+
+private:
+  std::string m_rtsp_url;
+  std::string m_camera_id;
+  std::string m_stream_name;
+  std::string m_user;
+  std::string m_pass;
+
+  std::unique_ptr<reader> m_reader;
+  std::shared_ptr<segment_writer> m_writer;
+  recording_policy_mode m_recording_policy_mode{recording_policy_mode::off};
+  std::chrono::seconds m_record_segment_duration{60};
+  std::shared_ptr<webrtc_output_sink> m_webrtc_output_sink;
+  mutable std::mutex m_sinks_mutex;
+};

@@ -181,7 +181,7 @@ bool arch_player::set_state(
       
       shutdown();
 
-      auto rec = m_storage.find_nearest(camera_id, start_time);
+      auto rec = m_storage.find_nearest(camera_id, "", start_time);
       if (!rec)
       {
         logger::instance().warning(std::format(
@@ -224,7 +224,7 @@ bool arch_player::on_eof(const std::string& file)
     return false;
   }    
 
-  auto info = m_storage.find_offset(camera_id(), *ts, 1);
+  auto info = m_storage.find_offset(camera_id(), "", *ts, 1);
   if (!info)
   {
     logger::instance().warning(std::format(

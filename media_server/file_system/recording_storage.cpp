@@ -13,6 +13,7 @@ recording_storage::recording_storage()
 
 std::filesystem::path recording_storage::make_day_path(
   const std::string& camera_id,
+  const std::string& stream_name,
   std::chrono::system_clock::time_point ts)
 {
   auto days = floor<std::chrono::days>(ts);
@@ -26,7 +27,11 @@ std::filesystem::path recording_storage::make_day_path(
     unsigned(ymd.month()),
     unsigned(ymd.day()));
 
-  return m_base_path / camera_id / year / md;
+  auto base = stream_name.empty()
+    ? m_base_path / camera_id
+    : m_base_path / camera_id / stream_name;
+
+  return base / year / md;
 }
 
 std::filesystem::path recording_storage::shift_day(
@@ -149,23 +154,16 @@ std::vector<recording_info>  recording_storage::load_day(const std::filesystem::
 
 std::optional<recording_info> recording_storage::find_nearest(
   const std::string& camera_id,
+  const std::string& stream_name,
   std::chrono::system_clock::time_point ts)
 {
-  // 1️ быстрый путь: проверка точного файла
-  auto abs_path = get_absolute_path(camera_id, ts);
+  auto abs_path = get_absolute_path(camera_id, stream_name, ts);
 
   if (std::filesystem::exists(abs_path))
-  {
-    return recording_info
-    {
-      abs_path,
-      ts
-    };
-  }
+    return recording_info{ abs_path, ts };
 
-  // 2️ fallback — старая логика
   int32_t nearest;
-  auto vec = get_recordings(camera_id, ts, 1, nearest);
+  auto vec = get_recordings(camera_id, stream_name, ts, 1, nearest);
 
   if (vec.empty())
     return std::nullopt;
@@ -175,6 +173,7 @@ std::optional<recording_info> recording_storage::find_nearest(
 
 std::vector<recording_info> recording_storage::get_recordings(
   const std::string& camera_id,
+  const std::string& stream_name,
   std::chrono::system_clock::time_point ts,
   uint32_t limit,
   int32_t& nearestIndex
@@ -184,7 +183,7 @@ std::vector<recording_info> recording_storage::get_recordings(
   const size_t right_target = half + static_cast<size_t>(limit % 2);
   const int32_t maxDays = 30;
 
-  auto day_path = make_day_path(camera_id, ts);
+  auto day_path = make_day_path(camera_id, stream_name, ts);
 
   // 1️⃣ грузим текущий день
   auto curr = load_day(day_path);
@@ -284,6 +283,7 @@ std::vector<recording_info> recording_storage::get_recordings(
 
 std::filesystem::path recording_storage::make_segment_path(
   const std::string& camera_id,
+  const std::string& stream_name,
   std::chrono::system_clock::time_point ts)
 {
   auto days = floor<std::chrono::days>(ts);
@@ -297,19 +297,24 @@ std::filesystem::path recording_storage::make_segment_path(
     unsigned(ymd.month()),
     unsigned(ymd.day()));
 
-  // имя файла = timestamp
   auto ts_sec = floor<std::chrono::seconds>(ts);
-  std::string filename = std::format("{:%Y-%m-%d_%H-%M-%S}{}", 
-    ts_sec, 
+  std::string filename = std::format("{:%Y-%m-%d_%H-%M-%S}{}",
+    ts_sec,
     file_ext().string());
 
-  return  std::filesystem::path(camera_id) / year / md / filename;
+  auto base = stream_name.empty()
+    ? std::filesystem::path(camera_id)
+    : std::filesystem::path(camera_id) / stream_name;
+
+  return base / year / md / filename;
 }
 
-std::filesystem::path recording_storage::get_absolute_path(const std::string& camera_id,
+std::filesystem::path recording_storage::get_absolute_path(
+  const std::string& camera_id,
+  const std::string& stream_name,
   std::chrono::system_clock::time_point ts)
 {
-  return resolve_storage_base_path()/make_segment_path(camera_id, ts);
+  return resolve_storage_base_path() / make_segment_path(camera_id, stream_name, ts);
 }
 
 std::filesystem::path recording_storage::file_ext()
@@ -347,18 +352,19 @@ std::filesystem::path recording_storage::resolve_storage_base_path()
 
 std::optional<recording_info> recording_storage::find_offset(
   const std::string& camera_id,
+  const std::string& stream_name,
   std::chrono::system_clock::time_point ts,
   int offset)
 {
   if (offset == 0)
-    return find_nearest(camera_id, ts);
+    return find_nearest(camera_id, stream_name, ts);
 
   auto ts_sec = std::chrono::floor<std::chrono::seconds>(ts);
 
   int direction = (offset > 0) ? 1 : -1;
   int remaining = std::abs(offset);
 
-  auto day_path = make_day_path(camera_id, ts_sec);
+  auto day_path = make_day_path(camera_id, stream_name, ts_sec);
 
   const int maxDays = 30;
 

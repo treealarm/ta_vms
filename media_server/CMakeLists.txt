@@ -27,7 +27,8 @@ set(DAPR_COMMON_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr/proto/commo
 
 set(SOURCES
     main.cpp
-    cam.cpp
+    cam_stream.cpp
+    cam_device.cpp
     arch_player.cpp
     arch_player.h
     camera_manager.cpp

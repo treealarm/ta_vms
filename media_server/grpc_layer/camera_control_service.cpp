@@ -277,6 +277,7 @@ grpc::Status camera_control_service::GetRecordings(grpc::ServerContext* /*contex
 
   auto recordings = m_storage.get_recordings(
     request->camera_id(),
+    "",
     to_time_point(request->timestamp()),
     request->limit(),
     n_nearest

@@ -79,33 +79,28 @@ int main(int argc, char** argv)
 
   std::string error;
 
-  if (cfg_list.size() > 0)
+  for (const auto& c : cfg_list)
   {
-    for (auto c : cfg_list)
-    {
-      recording_policy_spec policy =
-        proto_mapper::recording_policy_for_media(
-          vms::cfg::RECORDING_OFF,
-          0);
-      if (c.streams_size() > 0)
-      {
-        policy = proto_mapper::recording_policy_for_media(
-          c.streams(0).recording_mode(),
-          proto_mapper::prealarm_segment_seconds(c));
-      }
+    const std::string user = c.has_cred() ? c.cred().user() : "";
+    const std::string pass = c.has_cred() ? c.cred().pass() : "";
 
-      const bool success = manager.add_camera(
-        c.camera_id(),
-        c.streams_size() > 0 ? c.streams(0).rtsp_url() : "",
-        c.has_cred() ? c.cred().user() : "",
-        c.has_cred() ? c.cred().pass() : "",
-        policy,
-        c.streams_size() > 0 && c.streams(0).web_rtc(),
-        error);
-      if (!success) 
-      {
-        logger::instance().error(std::format("Failed to add camera '{}': {}", c.camera_id(), error));
-      }
+    std::vector<camera_manager::stream_config> streams;
+    for (int i = 0; i < c.streams_size(); ++i)
+    {
+      const auto& s = c.streams(i);
+      streams.push_back({
+        .stream_name = s.stream_name(),
+        .rtsp_url    = s.rtsp_url(),
+        .policy      = proto_mapper::recording_policy_for_media(
+                         s.recording_mode(),
+                         proto_mapper::prealarm_segment_seconds(c)),
+        .web_rtc     = s.web_rtc()
+      });
+    }
+
+    if (!manager.configure_camera(c.camera_id(), user, pass, streams, error))
+    {
+      logger::instance().error(std::format("Failed to configure camera '{}': {}", c.camera_id(), error));
     }
   }
 

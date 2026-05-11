@@ -14,13 +14,17 @@ inline std::string resolve_webrtc_rtsp_base_url()
   return "rtsp://localhost:8554";
 }
 
-inline std::string resolve_default_webrtc_rtsp_url(const std::string& camera_id)
+inline std::string resolve_default_webrtc_rtsp_url(
+  const std::string& camera_id,
+  const std::string& stream_name = "")
 {
   std::string base_url = resolve_webrtc_rtsp_base_url();
 
-  if (!base_url.empty() && base_url.back() != '/') {
+  if (!base_url.empty() && base_url.back() != '/')
     base_url.push_back('/');
-  }
 
-  return base_url + camera_id;
+  if (stream_name.empty())
+    return base_url + camera_id;
+
+  return base_url + camera_id + "/" + stream_name;
 }
