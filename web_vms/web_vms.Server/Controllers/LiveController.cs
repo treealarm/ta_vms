@@ -37,7 +37,7 @@ public class LiveController(
                                               : $"Media server error: {ex.Status.Detail}"
   };
 
-  private static CameraState ToControlState(CameraStateDto request)
+  private static CameraState ToControlState(CameraSetupDto request)
   {
     var n = CameraManager.Normalize(request);
     var state = new CameraState
@@ -67,7 +67,7 @@ public class LiveController(
   }
 
   [HttpPost("cameras")]
-  public async Task<IActionResult> AddCamera([FromBody] CameraStateDto request, CancellationToken ct)
+  public async Task<IActionResult> AddCamera([FromBody] CameraSetupDto request, CancellationToken ct)
   {
     if (string.IsNullOrWhiteSpace(request.ServerId))
     {
@@ -104,7 +104,7 @@ public class LiveController(
   [HttpPut("cameras/{cameraId}/parent")]
   public async Task<IActionResult> ChangeCameraParent(
     string cameraId,
-    [FromBody] CameraStateDto request,
+    [FromBody] CameraSetupDto request,
     CancellationToken ct)
   {
     if (cameraId != request.CameraId)
@@ -209,7 +209,7 @@ public class LiveController(
   }
 
   [HttpPost("cameras/state")]
-  public async Task<IActionResult> SetCameraState([FromBody] CameraStateDto state, CancellationToken ct)
+  public async Task<IActionResult> SetCameraState([FromBody] CameraSetupDto state, CancellationToken ct)
   {
     var curState = await _manager.Get(state.CameraId);
     if (curState != null && state.OnvifConn == null)
@@ -236,7 +236,7 @@ public class LiveController(
     }
 
     if (response.Success)
-      await _manager.SetState(normalized, ct);
+      await _manager.SetSetup(normalized, ct);
 
     return Ok(ApiResponseMapper.ToApiResponse(response));
   }

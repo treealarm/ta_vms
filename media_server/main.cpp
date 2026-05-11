@@ -87,11 +87,10 @@ int main(int argc, char** argv)
         proto_mapper::recording_policy_for_media(
           vms::cfg::RECORDING_OFF,
           0);
-      if (c.has_state())
+      if (c.streams_size() > 0)
       {
-        const auto& st = c.state();
         policy = proto_mapper::recording_policy_for_media(
-          st.recording_mode(),
+          c.streams(0).recording_mode(),
           proto_mapper::prealarm_segment_seconds(c));
       }
 
@@ -101,7 +100,7 @@ int main(int argc, char** argv)
         c.has_cred() ? c.cred().user() : "",
         c.has_cred() ? c.cred().pass() : "",
         policy,
-        c.has_state() && c.state().web_rtc(),
+        c.streams_size() > 0 && c.streams(0).web_rtc(),
         error);
       if (!success) 
       {

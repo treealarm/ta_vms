@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { Button, Chip, CircularProgress, Stack, TextField, Typography } from '@mui/material'
+import { Button, Chip, CircularProgress, FormControlLabel, MenuItem, Stack, Switch, TextField, Typography } from '@mui/material'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera } from '../store/liveSlice'
-import type { CameraStreamDto } from '../dto/dtos'
+import type { CameraStreamDto, RecordingMode } from '../dto/dtos'
 
 type Props = {
   cameraId: string
@@ -10,6 +10,8 @@ type Props = {
   onSaved: () => Promise<void>
   onRemoved: () => Promise<void>
 }
+
+type ProfileInfo = { token: string; name: string; width: number; height: number; encoding: string }
 
 export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemoved }: Props) {
   const dispatch = useAppDispatch()
@@ -22,7 +24,9 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
   const [name, setName] = useState(streamName ?? '')
   const [rtspUrl, setRtspUrl] = useState(existingStream?.rtspUrl ?? '')
   const [profileToken, setProfileToken] = useState(existingStream?.profileToken ?? '')
-  type ProfileInfo = { token: string; name: string; width: number; height: number; encoding: string }
+  const [webRtc, setWebRtc] = useState(existingStream?.webRtc ?? false)
+  const [recordingMode, setRecordingMode] = useState<RecordingMode>(existingStream?.recordingMode ?? 'off')
+
   const [availableProfiles, setAvailableProfiles] = useState<ProfileInfo[]>([])
   const [profilesLoading, setProfilesLoading] = useState(false)
   const [profilesError, setProfilesError] = useState<string | null>(null)
@@ -42,9 +46,7 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
       }
       const profiles = await response.json() as ProfileInfo[]
       setAvailableProfiles(profiles)
-      if (profiles.length === 0) {
-        setProfilesError('No profiles found on this camera')
-      }
+      if (profiles.length === 0) setProfilesError('No profiles found on this camera')
     } catch {
       setProfilesError('Failed to reach the camera')
     } finally {
@@ -57,21 +59,19 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
     const updated: CameraStreamDto = {
       streamName: isNew ? name : streamName!,
       rtspUrl,
-      profileToken
+      profileToken,
+      webRtc,
+      recordingMode
     }
     const others = (camera.streams ?? []).filter((s) => s.streamName !== updated.streamName)
     const result = await dispatch(addCamera({ ...camera, streams: [...others, updated] }))
-    if (!addCamera.rejected.match(result)) {
-      await onSaved()
-    }
+    if (!addCamera.rejected.match(result)) await onSaved()
   }
 
   const handleRemove = async () => {
     const filtered = (camera.streams ?? []).filter((s) => s.streamName !== streamName)
     const result = await dispatch(addCamera({ ...camera, streams: filtered }))
-    if (!addCamera.rejected.match(result)) {
-      await onRemoved()
-    }
+    if (!addCamera.rejected.match(result)) await onRemoved()
   }
 
   return (
@@ -120,9 +120,7 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
         </Stack>
 
         {profilesError && (
-          <Typography variant="caption" color="error">
-            {profilesError}
-          </Typography>
+          <Typography variant="caption" color="error">{profilesError}</Typography>
         )}
 
         {availableProfiles.length > 0 && (
@@ -145,6 +143,24 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
           </Stack>
         )}
       </Stack>
+
+      <TextField
+        select
+        label="Recording mode"
+        value={recordingMode}
+        onChange={(e) => setRecordingMode(e.target.value as RecordingMode)}
+        size="small"
+        sx={{ maxWidth: 200 }}
+      >
+        <MenuItem value="off">Off</MenuItem>
+        <MenuItem value="continuous">Continuous</MenuItem>
+        <MenuItem value="prealarm">Pre-alarm</MenuItem>
+      </TextField>
+
+      <FormControlLabel
+        control={<Switch checked={webRtc} onChange={(e) => setWebRtc(e.target.checked)} />}
+        label="WebRTC live stream"
+      />
 
       <Stack direction="row" spacing={1}>
         <Button type="submit" variant="outlined" size="small">

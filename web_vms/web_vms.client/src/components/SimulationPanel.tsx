@@ -10,12 +10,12 @@ import {
   Typography
 } from '@mui/material'
 
-import type { CameraStateDto, RetentionEventDto } from '../dto/dtos'
+import type { CameraSetupDto, RetentionEventDto } from '../dto/dtos'
 import { useAppDispatch } from '../store'
 import { sendRetentionEvent } from '../store/fsSlice'
 
 type SimulationPanelProps = {
-  cameras: CameraStateDto[]
+  cameras: CameraSetupDto[]
 }
 
 export default function SimulationPanel({ cameras }: SimulationPanelProps) {

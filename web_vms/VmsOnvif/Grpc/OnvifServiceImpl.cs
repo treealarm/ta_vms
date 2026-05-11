@@ -11,7 +11,7 @@ public class OnvifServiceImpl(CfgService.CfgServiceClient cfgClient) : OnvifServ
 
   public override async Task<GetProfilesResponse> GetProfiles(CameraRequest request, ServerCallContext context)
   {
-    var state = await _cfgClient.GetCameraStateAsync(
+    var state = await _cfgClient.GetCameraAsync(
       new SourceRequest { SourceId = request.SourceId },
       cancellationToken: context.CancellationToken);
 
@@ -34,7 +34,7 @@ public class OnvifServiceImpl(CfgService.CfgServiceClient cfgClient) : OnvifServ
 
   public override async Task<StreamUriResponse> GetStreamUri(StreamUriRequest request, ServerCallContext context)
   {
-    var state = await _cfgClient.GetCameraStateAsync(
+    var state = await _cfgClient.GetCameraAsync(
       new SourceRequest { SourceId = request.SourceId },
       cancellationToken: context.CancellationToken);
 

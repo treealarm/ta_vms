@@ -17,10 +17,10 @@ public sealed class CameraConfigCache(CfgService.CfgServiceClient cfgClient)
     if (_cache.TryGetValue(cameraId, out var cached))
       return cached;
 
-    CameraStateResponse resp;
+    GetCameraResponse resp;
     try
     {
-      resp = await cfgClient.GetCameraStateAsync(
+      resp = await cfgClient.GetCameraAsync(
         new SourceRequest { SourceId = cameraId }, cancellationToken: ct);
     }
     catch
@@ -28,11 +28,12 @@ public sealed class CameraConfigCache(CfgService.CfgServiceClient cfgClient)
       return null;
     }
 
-    if (!resp.Found)
+    if (!resp.Found || resp.Setup is null)
       return null;
 
+    var recordingMode = resp.Setup.Streams.FirstOrDefault()?.RecordingMode ?? RecordingMode.RecordingOff;
     var config = new CameraConfig(
-      resp.State.RecordingMode,
+      recordingMode,
       resp.Setup.PreAlarm != null ? (int)resp.Setup.PreAlarm.PreRecordSeconds : 10,
       resp.Setup.PreAlarm != null ? (int)resp.Setup.PreAlarm.PostRecordSeconds : 10);
 

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Button, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera, changeCameraParent, removeCamera } from '../store/liveSlice'
-import type { CameraStateDto } from '../dto/dtos'
+import type { CameraSetupDto } from '../dto/dtos'
 import CameraStoragesControl from './CameraStoragesControl'
 import PasswordField from './PasswordField'
 
@@ -35,7 +35,7 @@ export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: 
     if (!Number.isNaN(value)) setter(Math.max(0, value))
   }
 
-  const buildPayload = (): CameraStateDto => ({
+  const buildPayload = (): CameraSetupDto => ({
     cameraId: isNew ? cameraId : initialCameraId,
     serverId,
     recordingMode: existing?.recordingMode ?? 'off',

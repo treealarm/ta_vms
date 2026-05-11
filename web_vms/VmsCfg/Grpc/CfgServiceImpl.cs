@@ -57,16 +57,6 @@ namespace VmsCfg
       return response;
     }
 
-    public override async Task<OperationStatus> SetCameraState(CameraState request, ServerCallContext context)
-    {
-      var updated = await storage.SetCameraStateAsync(request, context.CancellationToken);
-      if (!updated)
-        return new OperationStatus { Success = false, Message = "Camera not found" };
-
-      InvalidateFsCache(request.CameraId);
-      return new OperationStatus { Success = true };
-    }
-
     public override async Task<ListCamerasResponse> ListCameras(ListCamerasRequest request, ServerCallContext context)
     {
       var response = new ListCamerasResponse();
@@ -82,14 +72,13 @@ namespace VmsCfg
       return new OperationStatus { Success = removed };
     }
 
-    public override async Task<CameraStateResponse> GetCameraState(SourceRequest request, ServerCallContext context)
+    public override async Task<GetCameraResponse> GetCamera(SourceRequest request, ServerCallContext context)
     {
       var (found, setup) = await storage.GetCameraAsync(request.SourceId, context.CancellationToken);
       if (!found || setup is null)
-        return new CameraStateResponse { Found = false };
+        return new GetCameraResponse { Found = false };
 
-      return new CameraStateResponse { Found = true, Setup = setup, State = setup.State };
+      return new GetCameraResponse { Found = true, Setup = setup };
     }
-
   }
 }

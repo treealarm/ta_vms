@@ -16,14 +16,14 @@ import {
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import FullscreenIcon from '@mui/icons-material/Fullscreen'
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit'
-import { type CameraStateDto, type RecordingMode } from '../dto/dtos'
+import { type CameraSetupDto, type RecordingMode } from '../dto/dtos'
 import CameraStreamCard from './CameraStreamCard'
 import ArchiveHlsStreamCard from './ArchiveHlsStreamCard'
 import { useAppDispatch, useAppSelector } from '../store'
 import { fetchCameraState, updateCameraRecording } from '../store/liveSlice'
 
 type CameraUnifiedCardProps = {
-  camera: CameraStateDto
+  camera: CameraSetupDto
   /** This camera fills the monitor grid; others are hidden. */
   gridSoloActive?: boolean
   /** Toggle between solo (this camera) and full quad grid. */
@@ -37,7 +37,7 @@ function CameraUnifiedCard({ camera, gridSoloActive = false, onToggleGridSolo }:
 
   const [mode, setMode] = useState<'live' | 'archive'>('live')
 
-  const merged: CameraStateDto = { ...camera, ...(cameraState ?? {}) }
+  const merged: CameraSetupDto = { ...camera, ...(cameraState ?? {}) }
   const recordingMode: RecordingMode =
     merged.recordingMode ?? (merged.recording === true ? 'continuous' : 'off')
 
@@ -57,7 +57,7 @@ function CameraUnifiedCard({ camera, gridSoloActive = false, onToggleGridSolo }:
   }, [camera.cameraId, dispatch])
 
   const updateRecordingMode = async (recordingMode: RecordingMode) => {
-    const payload: CameraStateDto = {
+    const payload: CameraSetupDto = {
       ...camera,
       ...(cameraState ?? {}),
       recordingMode

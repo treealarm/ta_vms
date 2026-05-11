@@ -1,9 +1,9 @@
 import { Box } from '@mui/material'
-import type { CameraStateDto } from '../dto/dtos'
+import type { CameraSetupDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
 
 type CameraStreamCardProps = {
-  camera: CameraStateDto
+  camera: CameraSetupDto
 }
 
 /** Live stream area only; recording and toolbar live in CameraUnifiedCard. */

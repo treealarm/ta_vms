@@ -91,9 +91,11 @@ export type CameraStreamDto = {
   streamName: string
   profileToken: string
   rtspUrl: string
+  webRtc: boolean
+  recordingMode: RecordingMode
 }
 
-export type CameraStateDto = {
+export type CameraSetupDto = {
   cameraId: string
   serverId?: string
   /** Mirror of cfg/media; prefer recordingMode in UI */
@@ -118,7 +120,7 @@ export type MediaServerNodeDto = {
 export type ServerInstanceDto = {
   serverId: string
   address: string
-  cameras: CameraStateDto[]
+  cameras: CameraSetupDto[]
 }
 
 export type RecordingDto = {
