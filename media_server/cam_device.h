@@ -15,6 +15,7 @@ public:
 
   bool add_stream(
     const std::string& stream_name,
+    const std::string& profile_token,
     const std::string& rtsp_url,
     const std::string& user,
     const std::string& pass,

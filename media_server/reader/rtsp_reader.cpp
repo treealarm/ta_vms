@@ -22,10 +22,12 @@ std::string build_rtsp_url_with_auth(const std::string& url,
 }
 
 rtsp_reader::rtsp_reader(
-  const std::string& cam_id, const std::string& user, const std::string& pass):
-  m_cam_id(cam_id),
-  m_user(user),
-  m_password(pass)
+  const std::string& cam_id, const std::string& profile_token,
+  const std::string& user, const std::string& pass)
+  : m_cam_id(cam_id)
+  , m_profile_token(profile_token)
+  , m_user(user)
+  , m_password(pass)
 {
 
 }
@@ -64,7 +66,7 @@ bool rtsp_reader::connect()
   {
     onvif_client c_client;
 
-    c_client.get_uri(m_cam_id, m_rtsp_url);
+    c_client.get_uri(m_cam_id, m_profile_token, m_rtsp_url);
   }
 
   std::string final_url = build_rtsp_url_with_auth(m_rtsp_url, m_user, m_password);

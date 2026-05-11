@@ -89,12 +89,13 @@ int main(int argc, char** argv)
     {
       const auto& s = c.streams(i);
       streams.push_back({
-        .stream_name = s.stream_name(),
-        .rtsp_url    = s.rtsp_url(),
-        .policy      = proto_mapper::recording_policy_for_media(
-                         s.recording_mode(),
-                         proto_mapper::prealarm_segment_seconds(c)),
-        .web_rtc     = s.web_rtc()
+        .stream_name   = s.stream_name(),
+        .profile_token = s.profile_token(),
+        .rtsp_url      = s.rtsp_url(),
+        .policy        = proto_mapper::recording_policy_for_media(
+                           s.recording_mode(),
+                           proto_mapper::prealarm_segment_seconds(c)),
+        .web_rtc       = s.web_rtc()
       });
     }
 

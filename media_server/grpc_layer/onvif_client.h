@@ -11,7 +11,7 @@ class onvif_client
 {
 public:
   onvif_client();
-  bool get_uri(const std::string& cam_id, std::string& uri);
+  bool get_uri(const std::string& cam_id, const std::string& profile_token, std::string& uri);
 private:
   std::string m_app_id;
   std::shared_ptr<grpc::Channel> m_channel;

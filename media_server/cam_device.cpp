@@ -11,6 +11,7 @@ cam_device::~cam_device()
 
 bool cam_device::add_stream(
   const std::string& stream_name,
+  const std::string& profile_token,
   const std::string& rtsp_url,
   const std::string& user,
   const std::string& pass,
@@ -27,7 +28,7 @@ bool cam_device::add_stream(
 
   try
   {
-    auto stream = std::make_shared<cam_stream>(rtsp_url, m_camera_id, stream_name, user, pass);
+    auto stream = std::make_shared<cam_stream>(rtsp_url, m_camera_id, stream_name, profile_token, user, pass);
     stream->apply_recording_policy(policy);
 
     if (web_rtc)

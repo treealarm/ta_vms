@@ -19,7 +19,7 @@ extern "C" {
 
 class rtsp_reader final : public reader {
 public:
-  rtsp_reader(const std::string& cam_id, const std::string& user, const std::string& pass);
+  rtsp_reader(const std::string& cam_id, const std::string& profile_token, const std::string& user, const std::string& pass);
   ~rtsp_reader() override;
 
   bool open(const std::string& url) override;
@@ -59,6 +59,7 @@ private:
   std::atomic_bool m_running{ false };
 
   std::string m_cam_id;
+  std::string m_profile_token;
   std::string m_user;
   std::string m_password;
 };

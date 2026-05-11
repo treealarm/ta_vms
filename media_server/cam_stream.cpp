@@ -11,6 +11,7 @@ cam_stream::cam_stream(
   const std::string& rtsp_url,
   const std::string& camera_id,
   const std::string& stream_name,
+  const std::string& profile_token,
   const std::string& user,
   const std::string& pass)
   : m_rtsp_url(rtsp_url)
@@ -19,7 +20,7 @@ cam_stream::cam_stream(
   , m_user(user)
   , m_pass(pass)
 {
-  m_reader = std::make_unique<rtsp_reader>(camera_id, user, pass);
+  m_reader = std::make_unique<rtsp_reader>(camera_id, profile_token, user, pass);
 
   if (!m_reader->open(m_rtsp_url))
     throw std::runtime_error("Failed to open media source");

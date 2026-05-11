@@ -29,11 +29,12 @@ onvif_client::onvif_client()
 {
 }
 
-bool onvif_client::get_uri(const std::string& cam_id, std::string& uri)
+bool onvif_client::get_uri(const std::string& cam_id, const std::string& profile_token, std::string& uri)
 {
   vms::onvif::StreamUriRequest request;
   request.set_source_id(cam_id);
-  // profile_token left empty — server picks the first available profile
+  if (!profile_token.empty())
+    request.set_profile_token(profile_token);
 
   vms::onvif::StreamUriResponse response;
 

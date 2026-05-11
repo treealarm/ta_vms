@@ -37,7 +37,7 @@ bool camera_manager::configure_camera(
   for (const auto& s : streams)
   {
     std::string stream_error;
-    if (!device->add_stream(s.stream_name, s.rtsp_url, user, pass, s.policy, s.web_rtc, stream_error))
+    if (!device->add_stream(s.stream_name, s.profile_token, s.rtsp_url, user, pass, s.policy, s.web_rtc, stream_error))
     {
       logger::instance().error(std::format(
         "Failed to add stream '{}' for camera '{}': {}", s.stream_name, camera_id, stream_error));
@@ -83,7 +83,7 @@ bool camera_manager::add_camera(
     it = m_cameras.emplace(camera_id, std::make_shared<cam_device>(camera_id)).first;
   }
 
-  return it->second->add_stream("", rtsp_url, user, pass, policy, web_rtc, error);
+  return it->second->add_stream("", "", rtsp_url, user, pass, policy, web_rtc, error);
 }
 
 bool camera_manager::start_recording(const std::string& camera_id, std::string& error)
@@ -189,7 +189,7 @@ bool camera_manager::set_camera_state(
   if (it == m_cameras.end())
   {
     auto device = std::make_shared<cam_device>(camera_id);
-    if (!device->add_stream("", rtsp_url, user, pass, policy, web_rtc, error))
+    if (!device->add_stream("", "", rtsp_url, user, pass, policy, web_rtc, error))
       return false;
     m_cameras.emplace(camera_id, std::move(device));
     return true;
@@ -197,7 +197,7 @@ bool camera_manager::set_camera_state(
 
   auto* stream = it->second->get_stream("");
   if (!stream)
-    return it->second->add_stream("", rtsp_url, user, pass, policy, web_rtc, error);
+    return it->second->add_stream("", "", rtsp_url, user, pass, policy, web_rtc, error);
 
   if (stream->get_source() != rtsp_url ||
       stream->get_user()   != user     ||
@@ -205,7 +205,7 @@ bool camera_manager::set_camera_state(
   {
     std::string dummy;
     it->second->remove_stream("", dummy);
-    return it->second->add_stream("", rtsp_url, user, pass, policy, web_rtc, error);
+    return it->second->add_stream("", "", rtsp_url, user, pass, policy, web_rtc, error);
   }
 
   stream->apply_recording_policy(policy);

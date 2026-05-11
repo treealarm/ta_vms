@@ -15,6 +15,7 @@ public:
   struct stream_config
   {
     std::string stream_name;
+    std::string profile_token;
     std::string rtsp_url;
     recording_policy_spec policy;
     bool web_rtc = false;
