@@ -92,9 +92,7 @@ int main(int argc, char** argv)
         .stream_name   = s.stream_name(),
         .profile_token = s.profile_token(),
         .rtsp_url      = s.rtsp_url(),
-        .policy        = proto_mapper::recording_policy_for_media(
-                           s.recording_mode(),
-                           proto_mapper::prealarm_segment_seconds(c)),
+        .policy        = proto_mapper::recording_policy_for_stream(s),
         .web_rtc       = s.web_rtc()
       });
     }

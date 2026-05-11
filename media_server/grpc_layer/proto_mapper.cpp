@@ -25,14 +25,18 @@ recording_policy_spec proto_mapper::recording_policy_for_media(
   }
 }
 
+recording_policy_spec proto_mapper::recording_policy_for_stream(
+  const vms::cfg::CameraStream& stream)
+{
+  if (!stream.has_recording_profile())
+    return recording_policy_for_media(vms::cfg::RECORDING_OFF, 0);
+
+  const auto& profile = stream.recording_profile();
+  const uint32_t seg = profile.segment_seconds() > 0 ? profile.segment_seconds() : 5;
+  return recording_policy_for_media(profile.mode(), seg);
+}
+
 uint32_t proto_mapper::prealarm_segment_seconds(const vms::control::CameraState& state)
 {
   return state.segment_seconds() > 0 ? state.segment_seconds() : 5;
-}
-
-uint32_t proto_mapper::prealarm_segment_seconds(const vms::cfg::CameraSetup& setup)
-{
-  if (setup.has_pre_alarm() && setup.pre_alarm().segment_seconds() > 0)
-    return setup.pre_alarm().segment_seconds();
-  return 5;
 }

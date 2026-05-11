@@ -77,18 +77,6 @@ export const fetchCameraState = createAsyncThunk('live/fetchCameraState', async 
   }
 })
 
-export const updateCameraRecording = createAsyncThunk(
-  'live/updateCameraRecording',
-  async (payload: CameraSetupDto) => {
-    const response = await fetch('/api/live/cameras/state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-
-    return parseJson<ApiResponseDto>(response)
-  }
-)
 
 const liveSlice = createSlice({
   name: 'live',
@@ -138,10 +126,7 @@ const liveSlice = createSlice({
       .addCase(changeCameraParent.fulfilled, (state, action) => {
         state.status = `${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
       })
-      .addCase(updateCameraRecording.fulfilled, (state, action) => {
-        state.status = `Result: ${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
-      })
-      .addMatcher((action: AnyAction) => action.type.startsWith('live/') && action.type.endsWith('/pending'), (state) => {
+.addMatcher((action: AnyAction) => action.type.startsWith('live/') && action.type.endsWith('/pending'), (state) => {
         state.isBusy = true
       })
       .addMatcher((action: AnyAction) => action.type.startsWith('live/') && action.type.endsWith('/fulfilled'), (state) => {

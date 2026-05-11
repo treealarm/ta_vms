@@ -1,4 +1,3 @@
-using System.Linq;
 using Grpc.Core;
 using Vms.Cfg;
 using web_vms.Types.Dto;
@@ -21,7 +20,7 @@ public class CameraManager : ICameraManager
 
   public async Task<bool> Add(CameraSetupDto dto, CancellationToken ct = default)
   {
-    var response = await _cfgClient.SetupCameraAsync(ToSetupProto(NormalizeDto(dto)), CfgOptions(ct));
+    var response = await _cfgClient.SetupCameraAsync(ToSetupProto(dto), CfgOptions(ct));
     return response.Success;
   }
 
@@ -45,25 +44,7 @@ public class CameraManager : ICameraManager
 
   public async Task<bool> SetSetup(CameraSetupDto dto, CancellationToken ct = default)
   {
-    var normalized = NormalizeDto(dto);
-
-    // Get current camera to preserve its setup, then update all streams' state
-    var current = await Get(normalized.CameraId, ct);
-    if (current is null)
-      return false;
-
-    var updatedStreams = current.Streams
-      .Select(s => s with { RecordingMode = normalized.RecordingMode, WebRtc = normalized.WebRtc })
-      .ToList();
-
-    var updated = current with
-    {
-      RecordingMode = normalized.RecordingMode,
-      WebRtc = normalized.WebRtc,
-      Streams = updatedStreams
-    };
-
-    var response = await _cfgClient.SetupCameraAsync(ToSetupProto(updated), CfgOptions(ct));
+    var response = await _cfgClient.SetupCameraAsync(ToSetupProto(dto), CfgOptions(ct));
     return response.Success;
   }
 
@@ -73,55 +54,47 @@ public class CameraManager : ICameraManager
     return response.Found ? ToDto(response.Setup) : null;
   }
 
-  private static CameraSetupDto NormalizeDto(CameraSetupDto dto)
-  {
-    var mode = string.IsNullOrWhiteSpace(dto.RecordingMode)
-      ? (dto.Recording ? "continuous" : "off")
-      : dto.RecordingMode.Trim().ToLowerInvariant();
-
-    if (mode is not ("off" or "continuous" or "prealarm"))
-      mode = dto.Recording ? "continuous" : "off";
-
-    var recording = mode is "continuous" or "prealarm";
-    return dto with { RecordingMode = mode, Recording = recording };
-  }
-
-  public static CameraSetupDto Normalize(CameraSetupDto dto) => NormalizeDto(dto);
+  public static CameraSetupDto Normalize(CameraSetupDto dto) => dto;
 
   private static CameraSetupDto ToDto(CameraSetup setup)
   {
     var streams = setup.Streams
       .Select(s => new CameraStreamDto
       {
-        StreamName    = s.StreamName,
-        ProfileToken  = s.ProfileToken,
-        RtspUrl       = s.RtspUrl,
-        WebRtc        = s.WebRtc,
-        RecordingMode = RecordingModeToString(s.RecordingMode)
+        StreamName       = s.StreamName,
+        ProfileToken     = s.ProfileToken,
+        RtspUrl          = s.RtspUrl,
+        WebRtc           = s.WebRtc,
+        RecordingProfile = s.RecordingProfile != null ? ToProfileDto(s.RecordingProfile) : null,
       })
       .ToList();
 
     var firstStream = streams.FirstOrDefault();
+    var mode = firstStream?.RecordingProfile?.Mode ?? "off";
 
     return new CameraSetupDto
     {
       CameraId      = setup.CameraId,
       ServerId      = setup.ServerId,
-      RecordingMode = firstStream?.RecordingMode ?? "off",
-      Recording     = firstStream?.RecordingMode is "continuous" or "prealarm",
+      RecordingMode = mode,
+      Recording     = mode is "continuous" or "prealarm",
       WebRtc        = firstStream?.WebRtc ?? false,
       RtspUrl       = firstStream?.RtspUrl,
       Streams       = streams,
       Cred          = setup.Cred == null ? null : new CredentialsDto { User = setup.Cred.User, Pass = setup.Cred.Pass },
       OnvifConn     = setup.OnvifConn == null ? null : new OnvifConnectionDto { ip = setup.OnvifConn.Ip, port = setup.OnvifConn.Port },
-      PreAlarm      = setup.PreAlarm == null ? null : new PreAlarmRecordingSettingsDto
-      {
-        PreRecordSeconds  = setup.PreAlarm.PreRecordSeconds,
-        PostRecordSeconds = setup.PreAlarm.PostRecordSeconds,
-        SegmentSeconds    = setup.PreAlarm.SegmentSeconds
-      }
     };
   }
+
+  private static RecordingProfileDto ToProfileDto(RecordingProfile p) => new()
+  {
+    Id                = p.Id,
+    Name              = p.Name,
+    Mode              = RecordingModeToString(p.Mode),
+    PreRecordSeconds  = p.PreRecordSeconds,
+    PostRecordSeconds = p.PostRecordSeconds,
+    SegmentSeconds    = p.SegmentSeconds,
+  };
 
   private static MediaServerNodeDto ToDto(MediaServerNode server) => new()
   {
@@ -137,38 +110,46 @@ public class CameraManager : ICameraManager
       ServerId  = dto.ServerId ?? string.Empty,
       Cred      = dto.Cred == null ? null : new Credentials { User = dto.Cred.User, Pass = dto.Cred.Pass },
       OnvifConn = dto.OnvifConn == null ? null : new OnvifConnection { Ip = dto.OnvifConn.ip, Port = dto.OnvifConn.port },
-      PreAlarm  = dto.PreAlarm == null ? null : new PreAlarmRecordingSettings
-      {
-        PreRecordSeconds  = dto.PreAlarm.PreRecordSeconds,
-        PostRecordSeconds = dto.PreAlarm.PostRecordSeconds,
-        SegmentSeconds    = dto.PreAlarm.SegmentSeconds
-      }
     };
 
     if (dto.Streams.Count > 0)
     {
-      setup.Streams.AddRange(dto.Streams.Select(s => new CameraStream
+      setup.Streams.AddRange(dto.Streams.Select(s =>
       {
-        StreamName    = s.StreamName,
-        ProfileToken  = s.ProfileToken,
-        RtspUrl       = s.RtspUrl,
-        WebRtc        = s.WebRtc,
-        RecordingMode = ParseRecordingMode(s.RecordingMode)
+        var stream = new CameraStream
+        {
+          StreamName   = s.StreamName,
+          ProfileToken = s.ProfileToken,
+          RtspUrl      = s.RtspUrl,
+          WebRtc       = s.WebRtc,
+        };
+        if (s.RecordingProfile != null)
+          stream.RecordingProfile = ToProfileProto(s.RecordingProfile);
+        return stream;
       }));
     }
     else if (!string.IsNullOrEmpty(dto.RtspUrl))
     {
       setup.Streams.Add(new CameraStream
       {
-        StreamName    = "main",
-        RtspUrl       = dto.RtspUrl,
-        WebRtc        = dto.WebRtc,
-        RecordingMode = ParseRecordingMode(dto.RecordingMode)
+        StreamName = "main",
+        RtspUrl    = dto.RtspUrl,
+        WebRtc     = dto.WebRtc,
       });
     }
 
     return setup;
   }
+
+  private static RecordingProfile ToProfileProto(RecordingProfileDto p) => new()
+  {
+    Id                = p.Id,
+    Name              = p.Name,
+    Mode              = ParseRecordingMode(p.Mode),
+    PreRecordSeconds  = p.PreRecordSeconds,
+    PostRecordSeconds = p.PostRecordSeconds,
+    SegmentSeconds    = p.SegmentSeconds,
+  };
 
   private static string RecordingModeToString(RecordingMode mode) => mode switch
   {

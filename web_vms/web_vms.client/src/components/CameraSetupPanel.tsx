@@ -26,10 +26,6 @@ export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: 
   const [pass, setPass] = useState(existing?.cred?.pass ?? '')
   const [onvifIp, setOnvifIp] = useState(existing?.onvifConn?.ip ?? '')
   const [onvifPort, setOnvifPort] = useState(existing?.onvifConn?.port ?? 0)
-  const [preRecordSeconds, setPreRecordSeconds] = useState(existing?.preAlarm?.preRecordSeconds ?? 30)
-  const [postRecordSeconds, setPostRecordSeconds] = useState(existing?.preAlarm?.postRecordSeconds ?? 30)
-  const [preAlarmSegmentSeconds, setPreAlarmSegmentSeconds] = useState(existing?.preAlarm?.segmentSeconds ?? 5)
-
   const setNonNegativeNumber = (raw: string, setter: (n: number) => void) => {
     const value = Number(raw)
     if (!Number.isNaN(value)) setter(Math.max(0, value))
@@ -44,7 +40,6 @@ export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: 
     streams: existing?.streams ?? [],
     cred: user || pass ? { user, pass } : undefined,
     onvifConn: onvifIp ? { ip: onvifIp, port: onvifPort } : undefined,
-    preAlarm: { preRecordSeconds, postRecordSeconds, segmentSeconds: preAlarmSegmentSeconds }
   })
 
   const handleSave = async (e: React.FormEvent) => {
@@ -100,33 +95,6 @@ export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: 
       <Stack direction="row" spacing={1}>
         <TextField label="User" value={user} onChange={(e) => setUser(e.target.value)} size="small" />
         <PasswordField pass={pass} setPass={setPass} />
-      </Stack>
-
-      <Stack direction="row" spacing={1}>
-        <TextField
-          label="Pre-record, sec"
-          type="number"
-          value={preRecordSeconds}
-          onChange={(e) => setNonNegativeNumber(e.target.value, setPreRecordSeconds)}
-          size="small"
-          slotProps={{ htmlInput: { min: 0 } }}
-        />
-        <TextField
-          label="Post-record, sec"
-          type="number"
-          value={postRecordSeconds}
-          onChange={(e) => setNonNegativeNumber(e.target.value, setPostRecordSeconds)}
-          size="small"
-          slotProps={{ htmlInput: { min: 0 } }}
-        />
-        <TextField
-          label="Segment, sec"
-          type="number"
-          value={preAlarmSegmentSeconds}
-          onChange={(e) => setNonNegativeNumber(e.target.value, setPreAlarmSegmentSeconds)}
-          size="small"
-          slotProps={{ htmlInput: { min: 1 } }}
-        />
       </Stack>
 
       <Stack direction="row" spacing={1}>

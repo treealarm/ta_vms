@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button, Chip, CircularProgress, FormControlLabel, MenuItem, Stack, Switch, TextField, Typography } from '@mui/material'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera } from '../store/liveSlice'
-import type { CameraStreamDto, RecordingMode } from '../dto/dtos'
+import type { CameraStreamDto, RecordingProfileDto } from '../dto/dtos'
 
 type Props = {
   cameraId: string
@@ -25,43 +25,55 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
   const [rtspUrl, setRtspUrl] = useState(existingStream?.rtspUrl ?? '')
   const [profileToken, setProfileToken] = useState(existingStream?.profileToken ?? '')
   const [webRtc, setWebRtc] = useState(existingStream?.webRtc ?? false)
-  const [recordingMode, setRecordingMode] = useState<RecordingMode>(existingStream?.recordingMode ?? 'off')
+  const [selectedProfileId, setSelectedProfileId] = useState<string>(existingStream?.recordingProfile?.id ?? '')
 
-  const [availableProfiles, setAvailableProfiles] = useState<ProfileInfo[]>([])
+  const [recordingProfiles, setRecordingProfiles] = useState<RecordingProfileDto[]>([])
   const [profilesLoading, setProfilesLoading] = useState(false)
-  const [profilesError, setProfilesError] = useState<string | null>(null)
+
+  const [availableOnvifProfiles, setAvailableOnvifProfiles] = useState<ProfileInfo[]>([])
+  const [onvifLoading, setOnvifLoading] = useState(false)
+  const [onvifError, setOnvifError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setProfilesLoading(true)
+    fetch('/api/recording-profiles')
+      .then((r) => r.json() as Promise<RecordingProfileDto[]>)
+      .then(setRecordingProfiles)
+      .catch(() => {})
+      .finally(() => setProfilesLoading(false))
+  }, [])
 
   if (!camera) return null
 
-  const fetchProfiles = async () => {
-    setProfilesLoading(true)
-    setProfilesError(null)
-    setAvailableProfiles([])
+  const fetchOnvifProfiles = async () => {
+    setOnvifLoading(true)
+    setOnvifError(null)
+    setAvailableOnvifProfiles([])
     try {
       const response = await fetch(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/profiles`)
       if (!response.ok) {
-        const text = await response.text()
-        setProfilesError(text || `Error ${response.status}`)
+        setOnvifError((await response.text()) || `Error ${response.status}`)
         return
       }
       const profiles = await response.json() as ProfileInfo[]
-      setAvailableProfiles(profiles)
-      if (profiles.length === 0) setProfilesError('No profiles found on this camera')
+      setAvailableOnvifProfiles(profiles)
+      if (profiles.length === 0) setOnvifError('No profiles found on this camera')
     } catch {
-      setProfilesError('Failed to reach the camera')
+      setOnvifError('Failed to reach the camera')
     } finally {
-      setProfilesLoading(false)
+      setOnvifLoading(false)
     }
   }
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
+    const profile = recordingProfiles.find((p) => p.id === selectedProfileId)
     const updated: CameraStreamDto = {
       streamName: isNew ? name : streamName!,
       rtspUrl,
       profileToken,
       webRtc,
-      recordingMode
+      recordingProfile: profile,
     }
     const others = (camera.streams ?? []).filter((s) => s.streamName !== updated.streamName)
     const result = await dispatch(addCamera({ ...camera, streams: [...others, updated] }))
@@ -111,21 +123,21 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
           <Button
             size="small"
             variant="outlined"
-            onClick={fetchProfiles}
-            disabled={profilesLoading}
+            onClick={fetchOnvifProfiles}
+            disabled={onvifLoading}
             sx={{ minWidth: 80, flexShrink: 0 }}
           >
-            {profilesLoading ? <CircularProgress size={16} /> : 'Load'}
+            {onvifLoading ? <CircularProgress size={16} /> : 'Load'}
           </Button>
         </Stack>
 
-        {profilesError && (
-          <Typography variant="caption" color="error">{profilesError}</Typography>
+        {onvifError && (
+          <Typography variant="caption" color="error">{onvifError}</Typography>
         )}
 
-        {availableProfiles.length > 0 && (
+        {availableOnvifProfiles.length > 0 && (
           <Stack direction="row" spacing={0.5} flexWrap="wrap">
-            {availableProfiles.map((p) => {
+            {availableOnvifProfiles.map((p) => {
               const res = p.width && p.height ? ` ${p.width}×${p.height}` : ''
               const enc = p.encoding ? ` ${p.encoding}` : ''
               const label = p.name !== p.token ? `${p.name}${res}${enc}` : `${p.token}${res}${enc}`
@@ -146,15 +158,19 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
 
       <TextField
         select
-        label="Recording mode"
-        value={recordingMode}
-        onChange={(e) => setRecordingMode(e.target.value as RecordingMode)}
+        label="Recording profile"
+        value={selectedProfileId}
+        onChange={(e) => setSelectedProfileId(e.target.value)}
         size="small"
-        sx={{ maxWidth: 200 }}
+        sx={{ maxWidth: 240 }}
+        disabled={profilesLoading}
       >
-        <MenuItem value="off">Off</MenuItem>
-        <MenuItem value="continuous">Continuous</MenuItem>
-        <MenuItem value="prealarm">Pre-alarm</MenuItem>
+        <MenuItem value="">No recording</MenuItem>
+        {recordingProfiles.map((p) => (
+          <MenuItem key={p.id} value={p.id}>
+            {p.name}
+          </MenuItem>
+        ))}
       </TextField>
 
       <FormControlLabel

@@ -1,4 +1,5 @@
 using Npgsql;
+using NpgsqlTypes;
 using Vms.Cfg;
 
 namespace VmsCfg;
@@ -9,27 +10,18 @@ public class CameraStorage(NpgsqlDataSource dataSource)
 
   public async Task SetupCameraAsync(CameraSetup camera, CancellationToken ct)
   {
-    var preRec = camera.PreAlarm != null ? camera.PreAlarm.PreRecordSeconds : 30u;
-    var postRec = camera.PreAlarm != null ? camera.PreAlarm.PostRecordSeconds : 30u;
-    var seg = camera.PreAlarm != null ? Math.Max(1u, camera.PreAlarm.SegmentSeconds) : 5u;
-
     await using var connection = await _dataSource.OpenConnectionAsync(ct);
     await using var tx = await connection.BeginTransactionAsync(ct);
 
     await using (var command = new NpgsqlCommand("""
-      INSERT INTO camera_setup (
-        camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port,
-        pre_record_seconds, post_record_seconds, prealarm_segment_seconds)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      INSERT INTO camera_setup (camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port)
+      VALUES ($1, $2, $3, $4, $5, $6)
       ON CONFLICT (camera_id) DO UPDATE SET
-        server_id = EXCLUDED.server_id,
-        cred_user = EXCLUDED.cred_user,
-        cred_pass = EXCLUDED.cred_pass,
-        onvif_ip = EXCLUDED.onvif_ip,
-        onvif_port = EXCLUDED.onvif_port,
-        pre_record_seconds = EXCLUDED.pre_record_seconds,
-        post_record_seconds = EXCLUDED.post_record_seconds,
-        prealarm_segment_seconds = EXCLUDED.prealarm_segment_seconds;
+        server_id  = EXCLUDED.server_id,
+        cred_user  = EXCLUDED.cred_user,
+        cred_pass  = EXCLUDED.cred_pass,
+        onvif_ip   = EXCLUDED.onvif_ip,
+        onvif_port = EXCLUDED.onvif_port;
       """, connection, tx))
     {
       command.Parameters.AddWithValue(camera.CameraId);
@@ -38,9 +30,6 @@ public class CameraStorage(NpgsqlDataSource dataSource)
       command.Parameters.AddWithValue((object?)camera.Cred?.Pass ?? DBNull.Value);
       command.Parameters.AddWithValue((object?)camera.OnvifConn?.Ip ?? DBNull.Value);
       command.Parameters.AddWithValue((object?)camera.OnvifConn?.Port ?? DBNull.Value);
-      command.Parameters.AddWithValue((int)preRec);
-      command.Parameters.AddWithValue((int)postRec);
-      command.Parameters.AddWithValue((int)seg);
       await command.ExecuteNonQueryAsync(ct);
     }
 
@@ -71,21 +60,25 @@ public class CameraStorage(NpgsqlDataSource dataSource)
 
     foreach (var stream in streamList)
     {
+      Guid? profileId = stream.RecordingProfile != null && !string.IsNullOrEmpty(stream.RecordingProfile.Id)
+        ? Guid.Parse(stream.RecordingProfile.Id)
+        : null;
+
       await using var cmd = new NpgsqlCommand("""
-        INSERT INTO camera_stream (camera_id, stream_name, profile_token, rtsp_url, web_rtc, recording_mode)
+        INSERT INTO camera_stream (camera_id, stream_name, profile_token, rtsp_url, web_rtc, recording_profile_id)
         VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT (camera_id, stream_name) DO UPDATE SET
-          profile_token  = EXCLUDED.profile_token,
-          rtsp_url       = EXCLUDED.rtsp_url,
-          web_rtc        = EXCLUDED.web_rtc,
-          recording_mode = EXCLUDED.recording_mode;
+          profile_token        = EXCLUDED.profile_token,
+          rtsp_url             = EXCLUDED.rtsp_url,
+          web_rtc              = EXCLUDED.web_rtc,
+          recording_profile_id = EXCLUDED.recording_profile_id;
         """, connection, tx);
       cmd.Parameters.AddWithValue(cameraId);
       cmd.Parameters.AddWithValue(stream.StreamName);
       cmd.Parameters.AddWithValue(stream.ProfileToken ?? string.Empty);
       cmd.Parameters.AddWithValue(stream.RtspUrl ?? string.Empty);
       cmd.Parameters.AddWithValue(stream.WebRtc);
-      cmd.Parameters.AddWithValue(RecordingModeToDb(stream.RecordingMode));
+      cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)profileId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Uuid });
       await cmd.ExecuteNonQueryAsync(ct);
     }
   }
@@ -124,8 +117,7 @@ public class CameraStorage(NpgsqlDataSource dataSource)
     var cameras = new List<CameraSetup>();
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port,
-             pre_record_seconds, post_record_seconds, prealarm_segment_seconds
+      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port
       FROM camera_setup
       WHERE $1 = '' OR server_id = $1
       ORDER BY camera_id;
@@ -148,8 +140,7 @@ public class CameraStorage(NpgsqlDataSource dataSource)
     CameraSetup? setup = null;
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port,
-             pre_record_seconds, post_record_seconds, prealarm_segment_seconds
+      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port
       FROM camera_setup
       WHERE camera_id = $1;
       """, connection))
@@ -175,6 +166,50 @@ public class CameraStorage(NpgsqlDataSource dataSource)
     return await command.ExecuteNonQueryAsync(ct) > 0;
   }
 
+  public async Task<List<RecordingProfile>> ListRecordingProfilesAsync(CancellationToken ct)
+  {
+    await using var command = _dataSource.CreateCommand("""
+      SELECT id, name, mode, pre_record_seconds, post_record_seconds, segment_seconds
+      FROM recording_profile
+      ORDER BY name;
+      """);
+
+    var profiles = new List<RecordingProfile>();
+    await using var reader = await command.ExecuteReaderAsync(ct);
+    while (await reader.ReadAsync(ct))
+      profiles.Add(ReadRecordingProfile(reader));
+    return profiles;
+  }
+
+  public async Task UpsertRecordingProfileAsync(RecordingProfile profile, CancellationToken ct)
+  {
+    await using var command = _dataSource.CreateCommand("""
+      INSERT INTO recording_profile (id, name, mode, pre_record_seconds, post_record_seconds, segment_seconds)
+      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6)
+      ON CONFLICT (id) DO UPDATE SET
+        name                = EXCLUDED.name,
+        mode                = EXCLUDED.mode,
+        pre_record_seconds  = EXCLUDED.pre_record_seconds,
+        post_record_seconds = EXCLUDED.post_record_seconds,
+        segment_seconds     = EXCLUDED.segment_seconds;
+      """);
+    command.Parameters.AddWithValue(profile.Id ?? string.Empty);
+    command.Parameters.AddWithValue(profile.Name);
+    command.Parameters.AddWithValue(RecordingModeToDb(profile.Mode));
+    command.Parameters.AddWithValue((int)profile.PreRecordSeconds);
+    command.Parameters.AddWithValue((int)profile.PostRecordSeconds);
+    command.Parameters.AddWithValue((int)Math.Max(1u, profile.SegmentSeconds));
+    await command.ExecuteNonQueryAsync(ct);
+  }
+
+  public async Task<bool> RemoveRecordingProfileAsync(string id, CancellationToken ct)
+  {
+    await using var command = _dataSource.CreateCommand(
+      "DELETE FROM recording_profile WHERE id = $1::uuid;");
+    command.Parameters.AddWithValue(id);
+    return await command.ExecuteNonQueryAsync(ct) > 0;
+  }
+
   private static async Task LoadStreamsAsync(
     NpgsqlConnection connection,
     IReadOnlyList<CameraSetup> cameras,
@@ -186,10 +221,12 @@ public class CameraStorage(NpgsqlDataSource dataSource)
     var index = cameras.ToDictionary(c => c.CameraId);
 
     await using var cmd = new NpgsqlCommand("""
-      SELECT camera_id, stream_name, profile_token, rtsp_url, web_rtc, recording_mode
-      FROM camera_stream
-      WHERE camera_id = ANY($1)
-      ORDER BY camera_id, stream_name;
+      SELECT cs.camera_id, cs.stream_name, cs.profile_token, cs.rtsp_url, cs.web_rtc,
+             rp.id, rp.name, rp.mode, rp.pre_record_seconds, rp.post_record_seconds, rp.segment_seconds
+      FROM camera_stream cs
+      LEFT JOIN recording_profile rp ON rp.id = cs.recording_profile_id
+      WHERE cs.camera_id = ANY($1)
+      ORDER BY cs.camera_id, cs.stream_name;
       """, connection);
     cmd.Parameters.AddWithValue(ids);
 
@@ -199,16 +236,41 @@ public class CameraStorage(NpgsqlDataSource dataSource)
       var camId = reader.GetString(0);
       if (!index.TryGetValue(camId, out var camera)) continue;
 
-      camera.Streams.Add(new CameraStream
+      var stream = new CameraStream
       {
-        StreamName    = reader.GetString(1),
-        ProfileToken  = reader.GetString(2),
-        RtspUrl       = reader.GetString(3),
-        WebRtc        = reader.GetBoolean(4),
-        RecordingMode = ParseRecordingMode(reader.GetString(5))
-      });
+        StreamName   = reader.GetString(1),
+        ProfileToken = reader.GetString(2),
+        RtspUrl      = reader.GetString(3),
+        WebRtc       = reader.GetBoolean(4),
+      };
+
+      if (!reader.IsDBNull(5))
+      {
+        stream.RecordingProfile = new RecordingProfile
+        {
+          Id                = reader.GetGuid(5).ToString(),
+          Name              = reader.GetString(6),
+          Mode              = ParseRecordingMode(reader.GetString(7)),
+          PreRecordSeconds  = (uint)reader.GetInt32(8),
+          PostRecordSeconds = (uint)reader.GetInt32(9),
+          SegmentSeconds    = (uint)reader.GetInt32(10),
+        };
+      }
+
+      camera.Streams.Add(stream);
     }
   }
+
+  private static RecordingProfile ReadRecordingProfile(NpgsqlDataReader reader) =>
+    new()
+    {
+      Id                = reader.GetGuid(0).ToString(),
+      Name              = reader.GetString(1),
+      Mode              = ParseRecordingMode(reader.GetString(2)),
+      PreRecordSeconds  = (uint)reader.GetInt32(3),
+      PostRecordSeconds = (uint)reader.GetInt32(4),
+      SegmentSeconds    = (uint)reader.GetInt32(5),
+    };
 
   private static string RecordingModeToDb(RecordingMode mode) => mode switch
   {
@@ -231,12 +293,6 @@ public class CameraStorage(NpgsqlDataSource dataSource)
     {
       CameraId = reader.GetString(0),
       ServerId = reader.GetString(1),
-      PreAlarm = new PreAlarmRecordingSettings
-      {
-        PreRecordSeconds  = (uint)Math.Clamp(reader.GetInt32(6), 0, int.MaxValue),
-        PostRecordSeconds = (uint)Math.Clamp(reader.GetInt32(7), 0, int.MaxValue),
-        SegmentSeconds    = (uint)Math.Clamp(reader.GetInt32(8), 1, int.MaxValue)
-      }
     };
 
     if (!reader.IsDBNull(2) || !reader.IsDBNull(3))

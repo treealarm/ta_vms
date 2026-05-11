@@ -39,29 +39,29 @@ public class LiveController(
 
   private static CameraState ToControlState(CameraSetupDto request)
   {
-    var n = CameraManager.Normalize(request);
-    var state = new CameraState
+    var firstStream = request.Streams.FirstOrDefault();
+    var profile = firstStream?.RecordingProfile;
+
+    var recordingMode = profile?.Mode switch
     {
-      CameraId = n.CameraId,
-      RtspUrl = n.Streams.FirstOrDefault()?.RtspUrl ?? n.RtspUrl ?? "",
-      WebRtc = n.WebRtc,
-      Cred = n.Cred != null
-        ? new Credentials
-        {
-          User = n.Cred.User,
-          Pass = n.Cred.Pass
-        }
-        : null,
-      RecordingMode = n.RecordingMode switch
-      {
-        "continuous" => RecordingMode.RecordingContinuous,
-        "prealarm" => RecordingMode.RecordingPrealarm,
-        _ => RecordingMode.RecordingOff,
-      }
+      "continuous" => RecordingMode.RecordingContinuous,
+      "prealarm"   => RecordingMode.RecordingPrealarm,
+      _            => RecordingMode.RecordingOff,
     };
 
-    if (state.RecordingMode == RecordingMode.RecordingPrealarm && n.PreAlarm != null)
-      state.SegmentSeconds = n.PreAlarm.SegmentSeconds > 0 ? n.PreAlarm.SegmentSeconds : 5;
+    var state = new CameraState
+    {
+      CameraId = request.CameraId,
+      RtspUrl  = firstStream?.RtspUrl ?? request.RtspUrl ?? "",
+      WebRtc   = firstStream?.WebRtc ?? request.WebRtc,
+      Cred     = request.Cred != null
+        ? new Credentials { User = request.Cred.User, Pass = request.Cred.Pass }
+        : null,
+      RecordingMode = recordingMode,
+    };
+
+    if (recordingMode == RecordingMode.RecordingPrealarm && profile != null)
+      state.SegmentSeconds = profile.SegmentSeconds > 0 ? profile.SegmentSeconds : 5u;
 
     return state;
   }

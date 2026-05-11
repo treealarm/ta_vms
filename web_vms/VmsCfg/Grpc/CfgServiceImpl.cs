@@ -80,5 +80,36 @@ namespace VmsCfg
 
       return new GetCameraResponse { Found = true, Setup = setup };
     }
+
+    public override async Task<ListRecordingProfilesResponse> ListRecordingProfiles(
+      ListRecordingProfilesRequest request,
+      ServerCallContext context)
+    {
+      var response = new ListRecordingProfilesResponse();
+      response.Profiles.AddRange(await storage.ListRecordingProfilesAsync(context.CancellationToken));
+      return response;
+    }
+
+    public override async Task<OperationStatus> UpsertRecordingProfile(
+      RecordingProfile request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.Name))
+        return new OperationStatus { Success = false, Message = "name must not be empty" };
+
+      await storage.UpsertRecordingProfileAsync(request, context.CancellationToken);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OperationStatus> RemoveRecordingProfile(
+      RecordingProfileRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.Id))
+        return new OperationStatus { Success = false, Message = "id must not be empty" };
+
+      var removed = await storage.RemoveRecordingProfileAsync(request.Id, context.CancellationToken);
+      return new OperationStatus { Success = removed };
+    }
   }
 }

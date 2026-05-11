@@ -17,6 +17,7 @@ import LogJournalPanel from './components/LogJournalPanel'
 import SimulationPanel from './components/SimulationPanel'
 import RetentionEventsTab from './components/RetentionEventsTab'
 import StorageSetupPanel from './components/StorageSetupPanel'
+import RecordingProfilesPanel from './components/RecordingProfilesPanel'
 
 const MAX_CAMERAS = 4
 
@@ -142,8 +143,9 @@ export default function App() {
             {mainTab === 1 && <CameraControlPanel />}
             {mainTab === 2 && <RetentionEventsTab />}
             {mainTab === 3 && <StorageSetupPanel />}
-            {mainTab === 4 && <SimulationPanel cameras={Object.values(camerasMap)} />}
-            {mainTab === 5 && <LogJournalPanel />}
+            {mainTab === 4 && <RecordingProfilesPanel />}
+            {mainTab === 5 && <SimulationPanel cameras={Object.values(camerasMap)} />}
+            {mainTab === 6 && <LogJournalPanel />}
           </Box>
         )}
       </Box>
@@ -163,6 +165,7 @@ export default function App() {
         <Tab label="Cam setup" />
         <Tab label="Events" />
         <Tab label="Storages" />
+        <Tab label="Recording" />
         <Tab label="Tests" />
         <Tab label="Logs" />
       </Tabs>

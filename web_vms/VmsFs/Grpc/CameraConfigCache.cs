@@ -31,11 +31,13 @@ public sealed class CameraConfigCache(CfgService.CfgServiceClient cfgClient)
     if (!resp.Found || resp.Setup is null)
       return null;
 
-    var recordingMode = resp.Setup.Streams.FirstOrDefault()?.RecordingMode ?? RecordingMode.RecordingOff;
+    var firstStream = resp.Setup.Streams.FirstOrDefault();
+    var profile = firstStream?.RecordingProfile;
+
     var config = new CameraConfig(
-      recordingMode,
-      resp.Setup.PreAlarm != null ? (int)resp.Setup.PreAlarm.PreRecordSeconds : 10,
-      resp.Setup.PreAlarm != null ? (int)resp.Setup.PreAlarm.PostRecordSeconds : 10);
+      profile?.Mode ?? RecordingMode.RecordingOff,
+      profile != null ? (int)profile.PreRecordSeconds : 0,
+      profile != null ? (int)profile.PostRecordSeconds : 0);
 
     _cache.TryAdd(cameraId, config);
     return config;

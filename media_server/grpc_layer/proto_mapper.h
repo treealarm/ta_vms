@@ -13,6 +13,8 @@ public:
     vms::cfg::RecordingMode mode,
     uint32_t prealarm_segment_seconds);
 
+  static recording_policy_spec recording_policy_for_stream(
+    const vms::cfg::CameraStream& stream);
+
   static uint32_t prealarm_segment_seconds(const vms::control::CameraState& state);
-  static uint32_t prealarm_segment_seconds(const vms::cfg::CameraSetup& setup);
 };
