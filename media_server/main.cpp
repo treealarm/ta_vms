@@ -97,7 +97,7 @@ int main(int argc, char** argv)
 
       const bool success = manager.add_camera(
         c.camera_id(),
-        c.rtsp_url(),
+        c.streams_size() > 0 ? c.streams(0).rtsp_url() : "",
         c.has_cred() ? c.cred().user() : "",
         c.has_cred() ? c.cred().pass() : "",
         policy,

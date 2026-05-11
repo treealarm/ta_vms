@@ -30,6 +30,7 @@
     <Protobuf Include="..\..\proto\vms_control.proto" GrpcServices="Client" />
     <Protobuf Include="..\..\proto\vms_fs.proto" GrpcServices="Client" />
     <Protobuf Include="..\..\proto\logger.proto" GrpcServices="Client" />
+    <Protobuf Include="..\..\proto\onvif.proto" GrpcServices="Client" />
   </ItemGroup>
 
   <ItemGroup>

@@ -31,10 +31,11 @@ onvif_client::onvif_client()
 
 bool onvif_client::get_uri(const std::string& cam_id, std::string& uri)
 {
-  vms::cfg::SourceRequest request;
+  vms::onvif::StreamUriRequest request;
   request.set_source_id(cam_id);
+  // profile_token left empty — server picks the first available profile
 
-  vms::cfg::OnvifState response;
+  vms::onvif::StreamUriResponse response;
 
   grpc::ClientContext context;
   context.set_deadline(
@@ -42,12 +43,12 @@ bool onvif_client::get_uri(const std::string& cam_id, std::string& uri)
   );
   context.AddMetadata("dapr-app-id", m_app_id);
 
-  grpc::Status status = m_stub->GetCameraOnvifUri(&context, request, &response);
+  grpc::Status status = m_stub->GetStreamUri(&context, request, &response);
 
   if (!status.ok())
   {
     logger::instance().error(std::format(
-      "GetCameraOnvifUri RPC via Dapr failed for app '{}': {}",
+      "GetStreamUri RPC via Dapr failed for app '{}': {}",
       m_app_id,
       status.error_message()));
 

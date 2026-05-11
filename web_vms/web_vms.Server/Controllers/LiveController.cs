@@ -43,7 +43,7 @@ public class LiveController(
     var state = new CameraState
     {
       CameraId = n.CameraId,
-      RtspUrl = n.RtspUrl ?? "",
+      RtspUrl = n.Streams.FirstOrDefault()?.RtspUrl ?? n.RtspUrl ?? "",
       WebRtc = n.WebRtc,
       Cred = n.Cred != null
         ? new Credentials

@@ -34,10 +34,6 @@ message OnvifConnection {
   int32 port = 2;
 }
 
-message OnvifState {
-  string rtsp_url = 4;
-}
-
 message PreAlarmRecordingSettings {
   uint32 pre_record_seconds = 1;
   uint32 post_record_seconds = 2;
@@ -56,14 +52,20 @@ message CameraState {
   bool web_rtc = 3;
 }
 
+message CameraStream {
+  string stream_name   = 1;
+  string profile_token = 2;
+  string rtsp_url      = 3;
+}
+
 message CameraSetup {
   string camera_id = 1;
   string server_id = 2;
-  string rtsp_url = 4;
   optional Credentials cred = 5;
   optional OnvifConnection onvif_conn = 6;
   optional CameraState state = 7;
   optional PreAlarmRecordingSettings pre_alarm = 8;
+  repeated CameraStream streams = 9;
 }
 
 message MediaServerNode {

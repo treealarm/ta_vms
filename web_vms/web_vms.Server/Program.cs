@@ -1,6 +1,7 @@
 using Dapr.Client;
 using System.Net;
 using Vms.Cfg;
+using Vms.Onvif;
 using web_vms;
 using Vms.Logger;
 
@@ -29,6 +30,11 @@ var fsAppId = Environment.GetEnvironmentVariable("DAPR_FS_APP_ID") ?? "vmsfs";
 Console.WriteLine($"DAPR_FS_APP_ID: {fsAppId}");
 builder.Services.AddSingleton(_ =>
   new Vms.Fs.FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsAppId)));
+
+var onvifAppId = Environment.GetEnvironmentVariable("DAPR_ONVIF_APP_ID") ?? "vmsonvif";
+Console.WriteLine($"DAPR_ONVIF_APP_ID: {onvifAppId}");
+builder.Services.AddSingleton(_ =>
+  new OnvifService.OnvifServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId)));
 
 builder.Services.AddSingleton<ICameraManager, CameraManager>();
 builder.Services.AddSingleton<IHlsArchiveService, HlsArchiveService>();

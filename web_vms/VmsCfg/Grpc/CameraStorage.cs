@@ -1,4 +1,6 @@
-﻿using Npgsql;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Npgsql;
 using Vms.Cfg;
 
 namespace VmsCfg;
@@ -6,6 +8,11 @@ namespace VmsCfg;
 public class CameraStorage(NpgsqlDataSource dataSource)
 {
   private readonly NpgsqlDataSource _dataSource = dataSource;
+
+  private record StreamRow(
+    [property: JsonPropertyName("n")] string Name,
+    [property: JsonPropertyName("p")] string Profile,
+    [property: JsonPropertyName("u")] string Url);
 
   public async Task SetupCameraAsync(CameraSetup camera, CancellationToken ct)
   {
@@ -18,12 +25,11 @@ public class CameraStorage(NpgsqlDataSource dataSource)
 
     await using (var command = new NpgsqlCommand("""
       INSERT INTO camera_setup (
-        camera_id, server_id, rtsp_url, cred_user, cred_pass, onvif_ip, onvif_port,
+        camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port,
         pre_record_seconds, post_record_seconds, prealarm_segment_seconds)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       ON CONFLICT (camera_id) DO UPDATE SET
         server_id = EXCLUDED.server_id,
-        rtsp_url = EXCLUDED.rtsp_url,
         cred_user = EXCLUDED.cred_user,
         cred_pass = EXCLUDED.cred_pass,
         onvif_ip = EXCLUDED.onvif_ip,
@@ -35,7 +41,6 @@ public class CameraStorage(NpgsqlDataSource dataSource)
     {
       command.Parameters.AddWithValue(camera.CameraId);
       command.Parameters.AddWithValue(camera.ServerId ?? string.Empty);
-      command.Parameters.AddWithValue(camera.RtspUrl ?? string.Empty);
       command.Parameters.AddWithValue((object?)camera.Cred?.User ?? DBNull.Value);
       command.Parameters.AddWithValue((object?)camera.Cred?.Pass ?? DBNull.Value);
       command.Parameters.AddWithValue((object?)camera.OnvifConn?.Ip ?? DBNull.Value);
@@ -61,7 +66,46 @@ public class CameraStorage(NpgsqlDataSource dataSource)
       await command.ExecuteNonQueryAsync(ct);
     }
 
+    await UpsertStreamsAsync(connection, tx, camera.CameraId, camera.Streams, ct);
+
     await tx.CommitAsync(ct);
+  }
+
+  private static async Task UpsertStreamsAsync(
+    NpgsqlConnection connection,
+    NpgsqlTransaction tx,
+    string cameraId,
+    IEnumerable<CameraStream> streams,
+    CancellationToken ct)
+  {
+    var streamList = streams.ToList();
+    var keepNames = streamList.Select(s => s.StreamName).ToArray();
+
+    await using (var deleteCmd = new NpgsqlCommand("""
+      DELETE FROM camera_stream
+      WHERE camera_id = $1 AND NOT (stream_name = ANY($2));
+      """, connection, tx))
+    {
+      deleteCmd.Parameters.AddWithValue(cameraId);
+      deleteCmd.Parameters.AddWithValue(keepNames);
+      await deleteCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    foreach (var stream in streamList)
+    {
+      await using var cmd = new NpgsqlCommand("""
+        INSERT INTO camera_stream (camera_id, stream_name, profile_token, rtsp_url)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (camera_id, stream_name) DO UPDATE SET
+          profile_token = EXCLUDED.profile_token,
+          rtsp_url = EXCLUDED.rtsp_url;
+        """, connection, tx);
+      cmd.Parameters.AddWithValue(cameraId);
+      cmd.Parameters.AddWithValue(stream.StreamName);
+      cmd.Parameters.AddWithValue(stream.ProfileToken ?? string.Empty);
+      cmd.Parameters.AddWithValue(stream.RtspUrl ?? string.Empty);
+      await cmd.ExecuteNonQueryAsync(ct);
+    }
   }
 
   public async Task RegisterMediaServerAsync(MediaServerNode server, CancellationToken ct)
@@ -126,13 +170,23 @@ public class CameraStorage(NpgsqlDataSource dataSource)
   public async Task<List<CameraSetup>> ListCamerasAsync(string serverId, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      SELECT s.camera_id, s.server_id, s.rtsp_url, s.cred_user, s.cred_pass, s.onvif_ip, s.onvif_port,
+      SELECT s.camera_id, s.server_id, s.cred_user, s.cred_pass, s.onvif_ip, s.onvif_port,
              COALESCE(st.recording, false), COALESCE(st.web_rtc, false),
              COALESCE(NULLIF(TRIM(st.recording_mode), ''), 'off'),
-             s.pre_record_seconds, s.post_record_seconds, s.prealarm_segment_seconds
+             s.pre_record_seconds, s.post_record_seconds, s.prealarm_segment_seconds,
+             COALESCE(
+               json_agg(json_build_object('n', cs.stream_name, 'p', cs.profile_token, 'u', cs.rtsp_url)
+                        ORDER BY cs.stream_name)
+               FILTER (WHERE cs.stream_name IS NOT NULL),
+               '[]'
+             ) AS streams
       FROM camera_setup s
       LEFT JOIN camera_state st ON st.camera_id = s.camera_id
+      LEFT JOIN camera_stream cs ON cs.camera_id = s.camera_id
       WHERE $1 = '' OR s.server_id = $1
+      GROUP BY s.camera_id, s.server_id, s.cred_user, s.cred_pass, s.onvif_ip, s.onvif_port,
+               st.recording, st.web_rtc, st.recording_mode,
+               s.pre_record_seconds, s.post_record_seconds, s.prealarm_segment_seconds
       ORDER BY s.camera_id;
       """);
     command.Parameters.AddWithValue(serverId ?? string.Empty);
@@ -150,13 +204,23 @@ public class CameraStorage(NpgsqlDataSource dataSource)
   public async Task<(bool Found, CameraSetup? Setup)> GetCameraAsync(string cameraId, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      SELECT s.camera_id, s.server_id, s.rtsp_url, s.cred_user, s.cred_pass, s.onvif_ip, s.onvif_port,
+      SELECT s.camera_id, s.server_id, s.cred_user, s.cred_pass, s.onvif_ip, s.onvif_port,
              COALESCE(st.recording, false), COALESCE(st.web_rtc, false),
              COALESCE(NULLIF(TRIM(st.recording_mode), ''), 'off'),
-             s.pre_record_seconds, s.post_record_seconds, s.prealarm_segment_seconds
+             s.pre_record_seconds, s.post_record_seconds, s.prealarm_segment_seconds,
+             COALESCE(
+               json_agg(json_build_object('n', cs.stream_name, 'p', cs.profile_token, 'u', cs.rtsp_url)
+                        ORDER BY cs.stream_name)
+               FILTER (WHERE cs.stream_name IS NOT NULL),
+               '[]'
+             ) AS streams
       FROM camera_setup s
       LEFT JOIN camera_state st ON st.camera_id = s.camera_id
-      WHERE s.camera_id = $1;
+      LEFT JOIN camera_stream cs ON cs.camera_id = s.camera_id
+      WHERE s.camera_id = $1
+      GROUP BY s.camera_id, s.server_id, s.cred_user, s.cred_pass, s.onvif_ip, s.onvif_port,
+               st.recording, st.web_rtc, st.recording_mode,
+               s.pre_record_seconds, s.post_record_seconds, s.prealarm_segment_seconds;
       """);
     command.Parameters.AddWithValue(cameraId);
 
@@ -220,18 +284,21 @@ public class CameraStorage(NpgsqlDataSource dataSource)
 
   private static CameraSetup ReadCameraSetup(NpgsqlDataReader reader)
   {
-    _ = reader.GetBoolean(7);
-    var webRtc = reader.GetBoolean(8);
-    var recordingMode = reader.GetString(9);
-    var preRec = reader.GetInt32(10);
-    var postRec = reader.GetInt32(11);
-    var seg = reader.GetInt32(12);
+    // col 0: camera_id, 1: server_id, 2: cred_user, 3: cred_pass,
+    // col 4: onvif_ip, 5: onvif_port, 6: recording, 7: web_rtc,
+    // col 8: recording_mode, 9: pre_record_seconds, 10: post_record_seconds,
+    // col 11: prealarm_segment_seconds, 12: streams (json)
+    var webRtc = reader.GetBoolean(7);
+    var recordingMode = reader.GetString(8);
+    var preRec = reader.GetInt32(9);
+    var postRec = reader.GetInt32(10);
+    var seg = reader.GetInt32(11);
+    var streamsJson = reader.GetString(12);
 
     var setup = new CameraSetup
     {
       CameraId = reader.GetString(0),
       ServerId = reader.GetString(1),
-      RtspUrl = reader.GetString(2),
       PreAlarm = new PreAlarmRecordingSettings
       {
         PreRecordSeconds = (uint)Math.Clamp(preRec, 0, int.MaxValue),
@@ -246,22 +313,33 @@ public class CameraStorage(NpgsqlDataSource dataSource)
       }
     };
 
-    if (!reader.IsDBNull(3) || !reader.IsDBNull(4))
+    if (!reader.IsDBNull(2) || !reader.IsDBNull(3))
     {
       setup.Cred = new Credentials
       {
-        User = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
-        Pass = reader.IsDBNull(4) ? string.Empty : reader.GetString(4)
+        User = reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+        Pass = reader.IsDBNull(3) ? string.Empty : reader.GetString(3)
       };
     }
 
-    if (!reader.IsDBNull(5))
+    if (!reader.IsDBNull(4))
     {
       setup.OnvifConn = new OnvifConnection
       {
-        Ip = reader.GetString(5),
-        Port = reader.IsDBNull(6) ? 0 : reader.GetInt32(6)
+        Ip = reader.GetString(4),
+        Port = reader.IsDBNull(5) ? 0 : reader.GetInt32(5)
       };
+    }
+
+    var rows = JsonSerializer.Deserialize<List<StreamRow>>(streamsJson) ?? [];
+    foreach (var row in rows)
+    {
+      setup.Streams.Add(new CameraStream
+      {
+        StreamName = row.Name,
+        ProfileToken = row.Profile,
+        RtspUrl = row.Url
+      });
     }
 
     return setup;

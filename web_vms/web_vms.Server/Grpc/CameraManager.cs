@@ -80,6 +80,15 @@ public class CameraManager : ICameraManager
       _ => "off",
     };
 
+    var streams = setup.Streams
+      .Select(s => new CameraStreamDto
+      {
+        StreamName = s.StreamName,
+        ProfileToken = s.ProfileToken,
+        RtspUrl = s.RtspUrl
+      })
+      .ToList();
+
     return new CameraStateDto
     {
       CameraId = setup.CameraId,
@@ -87,7 +96,8 @@ public class CameraManager : ICameraManager
       Recording = mode is "continuous" or "prealarm",
       RecordingMode = mode,
       WebRtc = setup.State?.WebRtc ?? false,
-      RtspUrl = setup.RtspUrl,
+      RtspUrl = streams.FirstOrDefault()?.RtspUrl,
+      Streams = streams,
       Cred = setup.Cred == null
         ? null
         : new CredentialsDto
@@ -125,7 +135,6 @@ public class CameraManager : ICameraManager
     {
       CameraId = dto.CameraId,
       ServerId = dto.ServerId ?? string.Empty,
-      RtspUrl = dto.RtspUrl ?? string.Empty,
       Cred = dto.Cred == null
         ? null
         : new Credentials
@@ -150,6 +159,20 @@ public class CameraManager : ICameraManager
           SegmentSeconds = dto.PreAlarm.SegmentSeconds
         }
     };
+
+    if (dto.Streams.Count > 0)
+    {
+      setup.Streams.AddRange(dto.Streams.Select(s => new CameraStream
+      {
+        StreamName = s.StreamName,
+        ProfileToken = s.ProfileToken,
+        RtspUrl = s.RtspUrl
+      }));
+    }
+    else if (!string.IsNullOrEmpty(dto.RtspUrl))
+    {
+      setup.Streams.Add(new CameraStream { StreamName = "main", RtspUrl = dto.RtspUrl });
+    }
 
     return setup;
   }

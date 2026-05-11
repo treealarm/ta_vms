@@ -87,6 +87,12 @@ export type PreAlarmRecordingSettingsDto = {
   segmentSeconds: number
 }
 
+export type CameraStreamDto = {
+  streamName: string
+  profileToken: string
+  rtspUrl: string
+}
+
 export type CameraStateDto = {
   cameraId: string
   serverId?: string
@@ -100,6 +106,7 @@ export type CameraStateDto = {
   preAlarm?: PreAlarmRecordingSettingsDto
   /** True while camera is inside a retention episode from FS (wall clock in [retain_from, retain_until]); new clips ingest as retained */
   activeRetentionWindow?: boolean
+  streams?: CameraStreamDto[]
 }
 
 export type MediaServerNodeDto = {
