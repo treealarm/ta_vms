@@ -66,6 +66,8 @@ public sealed class ClipStorage(
     var alarmEnd = req.AlarmEndTs is not null
       ? req.AlarmEndTs.ToDateTime().ToUniversalTime()
       : alarmStart.AddSeconds(timeout);
+    var streamName = req.HasStreamName && !string.IsNullOrWhiteSpace(req.StreamName)
+      ? req.StreamName : null;
 
     var config = await configCache.GetAsync(req.CameraId, ct);
     var preSeconds = config?.PreRecordSeconds ?? 30;
@@ -75,28 +77,33 @@ public sealed class ClipStorage(
     await using var tx = await conn.BeginTransactionAsync(ct);
 
     await using (var upsert = new NpgsqlCommand("""
-      INSERT INTO retention_events(event_id, camera_id, alarm_start_ts, alarm_end_ts)
-      VALUES($1, $2, $3, COALESCE($4::timestamptz, $3 + ($5 * interval '1 second')))
+      INSERT INTO retention_events(event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts)
+      VALUES($1, $2, $3, $4, COALESCE($5::timestamptz, $4 + ($6 * interval '1 second')))
       ON CONFLICT(event_id) DO UPDATE SET
         camera_id      = EXCLUDED.camera_id,
+        stream_name    = EXCLUDED.stream_name,
         alarm_start_ts = EXCLUDED.alarm_start_ts,
-        alarm_end_ts   = COALESCE($4::timestamptz, retention_events.alarm_end_ts);
+        alarm_end_ts   = COALESCE($5::timestamptz, retention_events.alarm_end_ts);
       """, conn, tx))
     {
       upsert.Parameters.AddWithValue(eventId);
       upsert.Parameters.AddWithValue(req.CameraId);
+      upsert.Parameters.AddWithValue((object?)streamName ?? DBNull.Value);
       upsert.Parameters.AddWithValue(alarmStart);
       upsert.Parameters.AddWithValue(req.AlarmEndTs is null ? DBNull.Value : req.AlarmEndTs.ToDateTime());
       upsert.Parameters.AddWithValue((int)timeout);
       await upsert.ExecuteNonQueryAsync(ct);
     }
 
-    await using (var retainClips = new NpgsqlCommand("""
+    // When stream_name is specified retain only that stream's clips, otherwise all streams
+    var streamFilter = streamName is null ? "" : "AND stream_name = $6";
+    await using (var retainClips = new NpgsqlCommand($"""
       UPDATE clips
       SET retained = TRUE
       WHERE camera_id = $1
         AND start_ts <= $2 + ($5 * interval '1 second')
-        AND COALESCE(end_ts, start_ts) >= $3 - ($4 * interval '1 second');
+        AND COALESCE(end_ts, start_ts) >= $3 - ($4 * interval '1 second')
+        {streamFilter};
       """, conn, tx))
     {
       retainClips.Parameters.AddWithValue(req.CameraId);
@@ -104,6 +111,8 @@ public sealed class ClipStorage(
       retainClips.Parameters.AddWithValue(alarmStart);
       retainClips.Parameters.AddWithValue(preSeconds);
       retainClips.Parameters.AddWithValue(postSeconds);
+      if (streamName is not null)
+        retainClips.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
       await retainClips.ExecuteNonQueryAsync(ct);
     }
 
@@ -184,7 +193,14 @@ public sealed class ClipStorage(
       clips = await GetRecordingsWithEventsAsync(request.CameraId, streamName, request.FromTs, request.ToTs, fetchLimit, ct);
     }
 
-    var ranges = GroupRecordingRanges(clips, gap, DefaultMaxRecordingRangeWallSpan);
+    // Group clips by stream first so ranges never mix multiple streams,
+    // then merge all streams' ranges sorted by their earliest clip time.
+    var ranges = clips
+      .GroupBy(c => c.Recording.StreamName)
+      .SelectMany(g => GroupRecordingRanges(g.OrderBy(c => c.Recording.StartTs.ToDateTime()).ToList(), gap, DefaultMaxRecordingRangeWallSpan))
+      .OrderBy(r => r.Recordings[0].StartTs.ToDateTime())
+      .ToList();
+
     if (ranges.Count > limit)
       ranges = ranges.GetRange(0, limit);
     return ranges;
@@ -198,18 +214,22 @@ public sealed class ClipStorage(
 
     await using var db = await dbFactory.CreateDbContextAsync(ct);
 
-    var anchorStart = await db.Clips
+    var anchor = await db.Clips
       .Where(c => c.CameraId == request.CameraId && c.ClipUid == anchorUid)
-      .Select(c => (DateTime?)c.StartTs)
+      .Select(c => new { c.StartTs, c.StreamName })
       .FirstOrDefaultAsync(ct);
 
-    if (anchorStart is null)
+    if (anchor is null)
       return [];
 
-    var q = db.Clips.Where(c => c.CameraId == request.CameraId && c.Retained && c.StartTs >= anchorStart.Value);
+    // Use explicit stream filter if provided, otherwise inherit the anchor clip's stream
+    // so playback never crosses stream boundaries.
+    var effectiveStream = !string.IsNullOrEmpty(streamName) ? streamName : anchor.StreamName;
 
-    if (!string.IsNullOrEmpty(streamName))
-      q = q.Where(c => c.StreamName == streamName);
+    var q = db.Clips.Where(c => c.CameraId == request.CameraId && c.Retained && c.StartTs >= anchor.StartTs);
+
+    if (!string.IsNullOrEmpty(effectiveStream))
+      q = q.Where(c => c.StreamName == effectiveStream);
 
     var rows = await q.OrderBy(c => c.StartTs).Take(count).ToListAsync(ct);
     return rows.Select(ToRecording).ToList();
@@ -273,13 +293,13 @@ public sealed class ClipStorage(
 
     await using var cmd = beforeAlarmStart is null
       ? dataSource.CreateCommand("""
-        SELECT event_id, camera_id, alarm_start_ts, alarm_end_ts
+        SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts
         FROM retention_events
         ORDER BY alarm_start_ts DESC, event_id DESC
         LIMIT $1;
         """)
       : dataSource.CreateCommand("""
-        SELECT event_id, camera_id, alarm_start_ts, alarm_end_ts
+        SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts
         FROM retention_events
         WHERE alarm_start_ts < $1
         ORDER BY alarm_start_ts DESC, event_id DESC
@@ -300,12 +320,12 @@ public sealed class ClipStorage(
     {
       var row = new RetentionEventRow
       {
-        EventId = reader.GetString(0),
-        CameraId = reader.GetString(1),
-        AlarmStartTs = Timestamp.FromDateTime(reader.GetDateTime(2).ToUniversalTime())
+        EventId      = reader.GetString(0),
+        CameraId     = reader.GetString(1),
+        AlarmStartTs = Timestamp.FromDateTime(reader.GetDateTime(3).ToUniversalTime())
       };
-      if (!reader.IsDBNull(3))
-        row.AlarmEndTs = Timestamp.FromDateTime(reader.GetDateTime(3).ToUniversalTime());
+      if (!reader.IsDBNull(2)) row.StreamName = reader.GetString(2);
+      if (!reader.IsDBNull(4)) row.AlarmEndTs = Timestamp.FromDateTime(reader.GetDateTime(4).ToUniversalTime());
       events.Add(row);
     }
 

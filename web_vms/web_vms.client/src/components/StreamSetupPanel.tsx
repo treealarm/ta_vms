@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Button, Chip, CircularProgress, FormControlLabel, MenuItem, Stack, Switch, TextField, Typography } from '@mui/material'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera } from '../store/liveSlice'
@@ -34,18 +34,7 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
   const [onvifLoading, setOnvifLoading] = useState(false)
   const [onvifError, setOnvifError] = useState<string | null>(null)
 
-  useEffect(() => {
-    setProfilesLoading(true)
-    fetch('/api/recording-profiles')
-      .then((r) => r.json() as Promise<RecordingProfileDto[]>)
-      .then(setRecordingProfiles)
-      .catch(() => {})
-      .finally(() => setProfilesLoading(false))
-  }, [])
-
-  if (!camera) return null
-
-  const fetchOnvifProfiles = async () => {
+  const fetchOnvifProfiles = useCallback(async () => {
     setOnvifLoading(true)
     setOnvifError(null)
     setAvailableOnvifProfiles([])
@@ -63,7 +52,22 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
     } finally {
       setOnvifLoading(false)
     }
-  }
+  }, [cameraId])
+
+  useEffect(() => {
+    setProfilesLoading(true)
+    fetch('/api/recording-profiles')
+      .then((r) => r.json() as Promise<RecordingProfileDto[]>)
+      .then(setRecordingProfiles)
+      .catch(() => {})
+      .finally(() => setProfilesLoading(false))
+  }, [])
+
+  useEffect(() => {
+    void fetchOnvifProfiles()
+  }, [fetchOnvifProfiles])
+
+  if (!camera) return null
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -111,7 +115,7 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
       />
 
       <Stack spacing={1}>
-        <Stack direction="row" spacing={1} alignItems="center">
+        <Stack direction="row" spacing={1} alignItems="flex-start">
           <TextField
             label="ONVIF profile token"
             value={profileToken}
@@ -123,11 +127,11 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
           <Button
             size="small"
             variant="outlined"
-            onClick={fetchOnvifProfiles}
+            onClick={() => void fetchOnvifProfiles()}
             disabled={onvifLoading}
-            sx={{ minWidth: 80, flexShrink: 0 }}
+            sx={{ minWidth: 88, flexShrink: 0, mt: '4px', height: 32 }}
           >
-            {onvifLoading ? <CircularProgress size={16} /> : 'Load'}
+            {onvifLoading ? <CircularProgress size={16} /> : 'Refresh'}
           </Button>
         </Stack>
 

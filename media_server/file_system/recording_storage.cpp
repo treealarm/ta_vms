@@ -328,15 +328,6 @@ std::filesystem::path recording_storage::file_ext()
   return k_ts_ext;
 }
 
-std::string recording_storage::timepoint_to_utc_string(std::chrono::system_clock::time_point tp)
-{
-  using namespace std::chrono;
-
-  zoned_time utc{ "UTC", tp };
-
-  return format("{:%Y-%m-%d %H:%M:%S}", utc);
-}
-
 std::filesystem::path recording_storage::resolve_storage_base_path()
 {
   if (const char* value = std::getenv("VMS_STORAGE_BASE_PATH"))
@@ -350,81 +341,3 @@ std::filesystem::path recording_storage::resolve_storage_base_path()
   return "records";
 }
 
-std::optional<recording_info> recording_storage::find_offset(
-  const std::string& camera_id,
-  const std::string& stream_name,
-  std::chrono::system_clock::time_point ts,
-  int offset)
-{
-  if (offset == 0)
-    return find_nearest(camera_id, stream_name, ts);
-
-  auto ts_sec = std::chrono::floor<std::chrono::seconds>(ts);
-
-  int direction = (offset > 0) ? 1 : -1;
-  int remaining = std::abs(offset);
-
-  auto day_path = make_day_path(camera_id, stream_name, ts_sec);
-
-  const int maxDays = 30;
-
-  for (int dayShift = 0; dayShift <= maxDays; ++dayShift) 
-  {
-    auto current_day = shift_day(day_path, dayShift * direction);
-
-    if (!std::filesystem::exists(current_day))
-      continue;
-
-    std::vector<recording_info> candidates;
-
-    for (const auto& entry : std::filesystem::directory_iterator(current_day)) 
-    {
-      if (!entry.is_regular_file())
-        continue;
-
-      if (entry.path().extension() != file_ext())
-        continue;
-
-      auto file_ts = parse_time(entry.path().filename().string());
-      if (!file_ts)
-        continue;
-
-      // фильтр только для первого дня
-      if (dayShift == 0) 
-      {
-        if (direction > 0 && *file_ts <= ts_sec)
-          continue;
-        if (direction < 0 && *file_ts >= ts_sec)
-          continue;
-      }
-
-      candidates.push_back(
-        {
-        entry.path(),
-        *file_ts
-        });
-    }
-
-    if (candidates.empty())
-      continue;
-
-    // сортируем только текущий день (локально, не глобально)
-    std::sort(candidates.begin(), candidates.end(),
-      [](const auto& a, const auto& b) 
-      {
-        return a.start_time < b.start_time;
-      });
-
-    if (direction < 0)
-      std::reverse(candidates.begin(), candidates.end());
-
-    if (remaining <= static_cast<int>(candidates.size())) 
-    {
-      return candidates[remaining - 1];
-    }
-
-    remaining -= static_cast<int>(candidates.size());
-  }
-
-  return std::nullopt;
-}

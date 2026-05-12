@@ -38,12 +38,6 @@ google::protobuf::Timestamp to_proto_ts(std::chrono::system_clock::time_point va
   return timestamp;
 }
 
-std::chrono::system_clock::time_point from_timestamp(
-  const google::protobuf::Timestamp& value)
-{
-  return std::chrono::system_clock::time_point{
-    std::chrono::seconds(value.seconds()) + std::chrono::nanoseconds(value.nanos())};
-}
 
 bool is_retryable_grpc_error(grpc::StatusCode code)
 {
@@ -276,61 +270,6 @@ fs_client::ingest_outcome fs_client::ingest_clip_sync(const vms::fs::IngestClipR
       response.message()));
     return { ingest_result::permanent_failure, response.message() };
   }
-}
-
-bool fs_client::get_recordings(
-  const std::string& camera_id,
-  std::optional<std::chrono::system_clock::time_point> from_ts,
-  std::optional<std::chrono::system_clock::time_point> to_ts,
-  std::uint32_t limit,
-  std::vector<recording>& result,
-  std::string& error)
-{
-  vms::fs::GetRecordingsFromToRequest request;
-  request.set_camera_id(camera_id);
-  request.set_limit(limit);
-  if (from_ts)
-  {
-    *request.mutable_from_ts() = to_proto_ts(*from_ts);
-  }
-  if (to_ts)
-  {
-    *request.mutable_to_ts() = to_proto_ts(*to_ts);
-  }
-
-  vms::fs::GetRecordingsResponse response;
-  grpc::ClientContext context;
-  context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(5));
-  context.AddMetadata("dapr-app-id", m_app_id);
-
-  const grpc::Status status = m_stub->GetRecordings(&context, request, &response);
-  if (!status.ok())
-  {
-    error = status.error_message();
-    logger::instance().error(std::format(
-      "GetRecordings RPC via Dapr failed for app '{}': {}",
-      m_app_id,
-      error));
-    return false;
-  }
-
-  result.clear();
-  result.reserve(response.recordings_size());
-  for (const auto& item : response.recordings())
-  {
-    result.push_back(recording{
-      .camera_id   = item.camera_id(),
-      .stream_name = item.stream_name(),
-      .file_path   = item.file_path(),
-      .start_ts = from_timestamp(item.start_ts()),
-      .end_ts = item.has_end_ts()
-        ? std::optional<std::chrono::system_clock::time_point>(from_timestamp(item.end_ts()))
-        : std::nullopt,
-      .size_bytes = item.size_bytes()
-    });
-  }
-
-  return true;
 }
 
 bool fs_client::load_outbox_chunk_locked(std::size_t max_records)

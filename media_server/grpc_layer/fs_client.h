@@ -63,14 +63,6 @@ public:
     std::string& clip_uid,
     std::string& error);
 
-  bool get_recordings(
-    const std::string& camera_id,
-    std::optional<std::chrono::system_clock::time_point> from_ts,
-    std::optional<std::chrono::system_clock::time_point> to_ts,
-    std::uint32_t limit,
-    std::vector<recording>& result,
-    std::string& error);
-
 private:
   fs_client();
   ~fs_client();

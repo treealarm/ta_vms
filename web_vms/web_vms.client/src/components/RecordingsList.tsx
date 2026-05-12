@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   List, ListItemButton, ListItemText,
   Tooltip, CircularProgress, Box, Stack,
   IconButton, Popover, Typography,
-  ListSubheader
+  ListSubheader, Select, MenuItem
 } from '@mui/material'
 import { type RecordingDto, type RecordingRangeDto } from '../dto/dtos'
 import { fetchRecordingRanges } from '../store/fsSlice'
@@ -91,6 +91,7 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
   const [queryTime, setQueryTime] = useState<string | undefined>()
   const [loaded, setLoaded] = useState(false)
   const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null)
+  const [streamFilter, setStreamFilter] = useState<string>('')
 
   const acceptTimeoutRef = useRef<number | null>(null)
 
@@ -124,7 +125,7 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
 
     const load = async () => {
       setLoading(true)
-      await dispatch(fetchRecordingRanges({ cameraId, timestamp: queryTime, limit:50 }))
+      await dispatch(fetchRecordingRanges({ cameraId, timestamp: queryTime, limit: 50 }))
 
       if (!cancelled) {
         setLoading(false)
@@ -165,6 +166,22 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
   useEffect(() => {
     onRangesChange?.(data)
   }, [data, onRangesChange])
+
+  const streamNames = useMemo(() => {
+    const names = new Set<string>()
+    data.forEach((range) => range.recordings.forEach((r) => { if (r.streamName) names.add(r.streamName) }))
+    return [...names].sort()
+  }, [data])
+
+  // Reset filter if selected stream disappears from new data
+  useEffect(() => {
+    if (streamFilter && !streamNames.includes(streamFilter)) setStreamFilter('')
+  }, [streamFilter, streamNames])
+
+  const filteredData = useMemo(() => {
+    if (!streamFilter) return data
+    return data.filter((range) => range.recordings.some((r) => r.streamName === streamFilter))
+  }, [data, streamFilter])
 
   useEffect(() => {
     if (playbackStartTime != null && playbackStartTime !== '') {
@@ -240,6 +257,20 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
         spacing={0.5}
         sx={{ px: 1, py: 1, borderBottom: '1px solid rgba(0,0,0,0.1)', flexShrink: 0 }}
       >
+        {streamNames.length > 1 && (
+          <Select
+            size="small"
+            value={streamFilter}
+            onChange={(e) => setStreamFilter(e.target.value)}
+            displayEmpty
+            sx={{ width: '100%', fontSize: '0.75rem', '.MuiSelect-select': { py: 0.4, px: 1 } }}
+          >
+            <MenuItem value="" sx={{ fontSize: '0.75rem' }}>All streams</MenuItem>
+            {streamNames.map((s) => (
+              <MenuItem key={s} value={s} sx={{ fontSize: '0.75rem' }}>{s}</MenuItem>
+            ))}
+          </Select>
+        )}
         <Typography variant="caption" sx={{ lineHeight: 1.15 }}>
           {shownDate}
         </Typography>
@@ -293,11 +324,11 @@ export default function RecordingsList({ open, cameraId, timestamp, filePath, on
           </Box>
         ) : (
             <List dense disablePadding>
-              {data.map((rec, index) => {
+              {filteredData.map((rec, index) => {
                 const first = rec.recordings[0]
                 if (!first) return null
                 const last = rec.recordings[rec.recordings.length - 1]
-                const prev = data[index - 1]
+                const prev = filteredData[index - 1]
 
                 const currentDate = new Date(first.startTime).toDateString()
                 const prevDate = prev?.recordings[0] ? new Date(prev.recordings[0].startTime).toDateString() : null

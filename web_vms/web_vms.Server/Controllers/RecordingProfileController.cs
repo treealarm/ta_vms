@@ -40,6 +40,35 @@ public class RecordingProfileController(CfgService.CfgServiceClient _cfgClient) 
     return Ok(new ApiResponse(response.Success, response.Message));
   }
 
+  [HttpPost("stream-override")]
+  public async Task<IActionResult> SetStreamOverride([FromBody] StreamOverrideDto dto, CancellationToken ct)
+  {
+    if (string.IsNullOrWhiteSpace(dto.CameraId) || string.IsNullOrWhiteSpace(dto.StreamName) || string.IsNullOrWhiteSpace(dto.ProfileId))
+      return BadRequest("cameraId, streamName and profileId are required");
+
+    var response = await _cfgClient.SetStreamOverrideAsync(new SetStreamOverrideRequest
+    {
+      CameraId   = dto.CameraId,
+      StreamName = dto.StreamName,
+      ProfileId  = dto.ProfileId,
+    }, CfgOptions(ct));
+    return Ok(new ApiResponse(response.Success, response.Message));
+  }
+
+  [HttpDelete("stream-override")]
+  public async Task<IActionResult> ClearStreamOverride([FromQuery] string cameraId, [FromQuery] string streamName, CancellationToken ct)
+  {
+    if (string.IsNullOrWhiteSpace(cameraId) || string.IsNullOrWhiteSpace(streamName))
+      return BadRequest("cameraId and streamName are required");
+
+    var response = await _cfgClient.ClearStreamOverrideAsync(new ClearStreamOverrideRequest
+    {
+      CameraId   = cameraId,
+      StreamName = streamName,
+    }, CfgOptions(ct));
+    return Ok(new ApiResponse(response.Success, response.Message));
+  }
+
   private static RecordingProfileDto ToDto(RecordingProfile p) => new()
   {
     Id                = p.Id,
@@ -48,6 +77,7 @@ public class RecordingProfileController(CfgService.CfgServiceClient _cfgClient) 
     PreRecordSeconds  = p.PreRecordSeconds,
     PostRecordSeconds = p.PostRecordSeconds,
     SegmentSeconds    = p.SegmentSeconds,
+    IsOverridePreset  = p.IsOverridePreset,
   };
 
   private static RecordingProfile ToProto(RecordingProfileDto dto) => new()
@@ -58,6 +88,7 @@ public class RecordingProfileController(CfgService.CfgServiceClient _cfgClient) 
     PreRecordSeconds  = dto.PreRecordSeconds,
     PostRecordSeconds = dto.PostRecordSeconds,
     SegmentSeconds    = dto.SegmentSeconds,
+    IsOverridePreset  = dto.IsOverridePreset,
   };
 
   private static string RecordingModeToString(RecordingMode mode) => mode switch

@@ -169,7 +169,7 @@ public class CameraStorage(NpgsqlDataSource dataSource)
   public async Task<List<RecordingProfile>> ListRecordingProfilesAsync(CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      SELECT id, name, mode, pre_record_seconds, post_record_seconds, segment_seconds
+      SELECT id, name, mode, pre_record_seconds, post_record_seconds, segment_seconds, is_override_preset
       FROM recording_profile
       ORDER BY name;
       """);
@@ -184,14 +184,15 @@ public class CameraStorage(NpgsqlDataSource dataSource)
   public async Task UpsertRecordingProfileAsync(RecordingProfile profile, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      INSERT INTO recording_profile (id, name, mode, pre_record_seconds, post_record_seconds, segment_seconds)
-      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6)
+      INSERT INTO recording_profile (id, name, mode, pre_record_seconds, post_record_seconds, segment_seconds, is_override_preset)
+      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7)
       ON CONFLICT (id) DO UPDATE SET
         name                = EXCLUDED.name,
         mode                = EXCLUDED.mode,
         pre_record_seconds  = EXCLUDED.pre_record_seconds,
         post_record_seconds = EXCLUDED.post_record_seconds,
-        segment_seconds     = EXCLUDED.segment_seconds;
+        segment_seconds     = EXCLUDED.segment_seconds,
+        is_override_preset  = EXCLUDED.is_override_preset;
       """);
     command.Parameters.AddWithValue(profile.Id ?? string.Empty);
     command.Parameters.AddWithValue(profile.Name);
@@ -199,6 +200,32 @@ public class CameraStorage(NpgsqlDataSource dataSource)
     command.Parameters.AddWithValue((int)profile.PreRecordSeconds);
     command.Parameters.AddWithValue((int)profile.PostRecordSeconds);
     command.Parameters.AddWithValue((int)Math.Max(1u, profile.SegmentSeconds));
+    command.Parameters.AddWithValue(profile.IsOverridePreset);
+    await command.ExecuteNonQueryAsync(ct);
+  }
+
+  public async Task SetStreamOverrideAsync(string cameraId, string streamName, string profileId, CancellationToken ct)
+  {
+    await using var command = _dataSource.CreateCommand("""
+      UPDATE camera_stream
+      SET override_profile_id = $3::uuid
+      WHERE camera_id = $1 AND stream_name = $2;
+      """);
+    command.Parameters.AddWithValue(cameraId);
+    command.Parameters.AddWithValue(streamName);
+    command.Parameters.AddWithValue(profileId);
+    await command.ExecuteNonQueryAsync(ct);
+  }
+
+  public async Task ClearStreamOverrideAsync(string cameraId, string streamName, CancellationToken ct)
+  {
+    await using var command = _dataSource.CreateCommand("""
+      UPDATE camera_stream
+      SET override_profile_id = NULL
+      WHERE camera_id = $1 AND stream_name = $2;
+      """);
+    command.Parameters.AddWithValue(cameraId);
+    command.Parameters.AddWithValue(streamName);
     await command.ExecuteNonQueryAsync(ct);
   }
 
@@ -222,9 +249,11 @@ public class CameraStorage(NpgsqlDataSource dataSource)
 
     await using var cmd = new NpgsqlCommand("""
       SELECT cs.camera_id, cs.stream_name, cs.profile_token, cs.rtsp_url, cs.web_rtc,
-             rp.id, rp.name, rp.mode, rp.pre_record_seconds, rp.post_record_seconds, rp.segment_seconds
+             rp.id,  rp.name,  rp.mode,  rp.pre_record_seconds,  rp.post_record_seconds,  rp.segment_seconds,  rp.is_override_preset,
+             ov.id,  ov.name,  ov.mode,  ov.pre_record_seconds,  ov.post_record_seconds,  ov.segment_seconds,  ov.is_override_preset
       FROM camera_stream cs
       LEFT JOIN recording_profile rp ON rp.id = cs.recording_profile_id
+      LEFT JOIN recording_profile ov ON ov.id = cs.override_profile_id
       WHERE cs.camera_id = ANY($1)
       ORDER BY cs.camera_id, cs.stream_name;
       """, connection);
@@ -245,31 +274,28 @@ public class CameraStorage(NpgsqlDataSource dataSource)
       };
 
       if (!reader.IsDBNull(5))
-      {
-        stream.RecordingProfile = new RecordingProfile
-        {
-          Id                = reader.GetGuid(5).ToString(),
-          Name              = reader.GetString(6),
-          Mode              = ParseRecordingMode(reader.GetString(7)),
-          PreRecordSeconds  = (uint)reader.GetInt32(8),
-          PostRecordSeconds = (uint)reader.GetInt32(9),
-          SegmentSeconds    = (uint)reader.GetInt32(10),
-        };
-      }
+        stream.RecordingProfile = ReadRecordingProfileFromRow(reader, offset: 5);
+
+      if (!reader.IsDBNull(12))
+        stream.OverrideProfile = ReadRecordingProfileFromRow(reader, offset: 12);
 
       camera.Streams.Add(stream);
     }
   }
 
   private static RecordingProfile ReadRecordingProfile(NpgsqlDataReader reader) =>
+    ReadRecordingProfileFromRow(reader, offset: 0);
+
+  private static RecordingProfile ReadRecordingProfileFromRow(NpgsqlDataReader reader, int offset) =>
     new()
     {
-      Id                = reader.GetGuid(0).ToString(),
-      Name              = reader.GetString(1),
-      Mode              = ParseRecordingMode(reader.GetString(2)),
-      PreRecordSeconds  = (uint)reader.GetInt32(3),
-      PostRecordSeconds = (uint)reader.GetInt32(4),
-      SegmentSeconds    = (uint)reader.GetInt32(5),
+      Id                = reader.GetGuid(offset).ToString(),
+      Name              = reader.GetString(offset + 1),
+      Mode              = ParseRecordingMode(reader.GetString(offset + 2)),
+      PreRecordSeconds  = (uint)reader.GetInt32(offset + 3),
+      PostRecordSeconds = (uint)reader.GetInt32(offset + 4),
+      SegmentSeconds    = (uint)reader.GetInt32(offset + 5),
+      IsOverridePreset  = reader.GetBoolean(offset + 6),
     };
 
   private static string RecordingModeToDb(RecordingMode mode) => mode switch

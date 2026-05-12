@@ -19,22 +19,26 @@ CREATE TABLE IF NOT EXISTS recording_profile (
   mode                text NOT NULL DEFAULT 'continuous',
   pre_record_seconds  integer NOT NULL DEFAULT 0,
   post_record_seconds integer NOT NULL DEFAULT 0,
-  segment_seconds     integer NOT NULL DEFAULT 60
+  segment_seconds     integer NOT NULL DEFAULT 60,
+  is_override_preset  boolean NOT NULL DEFAULT false
 );
 
--- Default profiles
-INSERT INTO recording_profile (id, name, mode, pre_record_seconds, post_record_seconds, segment_seconds) VALUES
-  ('00000000-0000-0000-0000-000000000001', 'Continuous',  'continuous', 0,  0,  60),
-  ('00000000-0000-0000-0000-000000000002', 'Pre-alarm',   'prealarm',  30, 30, 5)
+-- Default profiles (well-known UUIDs so they survive re-deploys)
+-- 0001/0002: primary profiles   0003+: override presets
+INSERT INTO recording_profile (id, name, mode, pre_record_seconds, post_record_seconds, segment_seconds, is_override_preset) VALUES
+  ('00000000-0000-0000-0000-000000000001', 'Continuous',    'continuous', 0,  0,  60, true),
+  ('00000000-0000-0000-0000-000000000002', 'Pre-alarm',     'prealarm',  30, 30, 5,  true),
+  ('00000000-0000-0000-0000-000000000003', 'Recording Off', 'off',       0,  0,  60, true)
 ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS camera_stream (
-  camera_id          text NOT NULL REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
-  stream_name        text NOT NULL,
-  profile_token      text NOT NULL DEFAULT '',
-  rtsp_url           text NOT NULL DEFAULT '',
-  web_rtc            boolean NOT NULL DEFAULT false,
-  recording_profile_id uuid NULL REFERENCES recording_profile(id) ON DELETE SET NULL,
+  camera_id            text NOT NULL REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
+  stream_name          text NOT NULL,
+  profile_token        text NOT NULL DEFAULT '',
+  rtsp_url             text NOT NULL DEFAULT '',
+  web_rtc              boolean NOT NULL DEFAULT false,
+  recording_profile_id  uuid NULL REFERENCES recording_profile(id) ON DELETE SET NULL,
+  override_profile_id   uuid NULL REFERENCES recording_profile(id) ON DELETE SET NULL,
   PRIMARY KEY (camera_id, stream_name)
 );
 

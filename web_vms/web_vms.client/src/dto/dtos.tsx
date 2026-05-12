@@ -88,6 +88,7 @@ export type RecordingProfileDto = {
   preRecordSeconds: number
   postRecordSeconds: number
   segmentSeconds: number
+  isOverridePreset: boolean
 }
 
 export type CameraStreamDto = {
@@ -96,6 +97,7 @@ export type CameraStreamDto = {
   rtspUrl: string
   webRtc: boolean
   recordingProfile?: RecordingProfileDto
+  overrideProfile?: RecordingProfileDto
 }
 
 export type CameraSetupDto = {
@@ -127,6 +129,7 @@ export type ServerInstanceDto = {
 
 export type RecordingDto = {
   filePath: string
+  streamName?: string
   startTime: string
   endTime?: string
   sizeBytes: number
@@ -143,6 +146,7 @@ export type RecordingRangesResponseDto = {
 
 export type RecordingsQueryDto = {
   cameraId: string
+  streamName?: string
   timestamp?: string
   fromUtc?: string
   toUtc?: string
@@ -157,16 +161,16 @@ export type RecordingsResponseDto = {
 export type RetentionEventDto = {
   eventId?: string
   cameraId: string
+  streamName?: string
   alarmStartTs: string
   alarmEndTs?: string
-  preRecordSeconds?: number
-  postRecordSeconds?: number
   timeoutSeconds?: number
 }
 
 export type RetentionEventRowDto = {
   eventId: string
   cameraId: string
+  streamName?: string
   alarmStartTs: string
   alarmEndTs?: string
 }

@@ -19,6 +19,7 @@ import FullscreenExitIcon from '@mui/icons-material/FullscreenExit'
 import { type CameraSetupDto } from '../dto/dtos'
 import CameraStreamCard from './CameraStreamCard'
 import ArchiveHlsStreamCard from './ArchiveHlsStreamCard'
+import StreamOverrideRow from './StreamOverrideRow'
 import { useAppDispatch, useAppSelector } from '../store'
 import { fetchCameraState } from '../store/liveSlice'
 
@@ -36,9 +37,14 @@ function CameraUnifiedCard({ camera, gridSoloActive = false, onToggleGridSolo }:
   const cameraState = useAppSelector((state) => state.live.cameraStatesById[camera.cameraId])
 
   const [mode, setMode] = useState<'live' | 'archive'>('live')
+  const [selectedStreamName, setSelectedStreamName] = useState<string>('')
 
   const merged: CameraSetupDto = { ...camera, ...(cameraState ?? {}) }
   const recordingMode = merged.recordingMode ?? 'off'
+
+  const webRtcStreams = (merged.streams ?? []).filter((s) => s.webRtc)
+  const activeStreamName = selectedStreamName || webRtcStreams[0]?.streamName || ''
+  const activeStream = (merged.streams ?? []).find((s) => s.streamName === activeStreamName) ?? null
 
   const activeRetentionWindow =
     merged.activeRetentionWindow === true && recordingMode !== 'off'
@@ -135,15 +141,6 @@ function CameraUnifiedCard({ camera, gridSoloActive = false, onToggleGridSolo }:
               sx={{ flex: '1 1 80px', minWidth: 64 }}
             />
 
-            {recordingMode !== 'off' && (
-              <Chip
-                label={recordingMode === 'prealarm' ? 'Pre-alarm' : 'Rec'}
-                size="small"
-                color="error"
-                sx={{ fontSize: '0.7rem', height: 20, flexShrink: 0 }}
-              />
-            )}
-
             <ToggleButtonGroup
               value={mode}
               exclusive
@@ -176,6 +173,8 @@ function CameraUnifiedCard({ camera, gridSoloActive = false, onToggleGridSolo }:
             )}
           </Stack>
 
+          <StreamOverrideRow cameraId={camera.cameraId} stream={activeStream} />
+
           <Box
             sx={{
               flex: 1,
@@ -185,7 +184,7 @@ function CameraUnifiedCard({ camera, gridSoloActive = false, onToggleGridSolo }:
               overflow: 'hidden'
             }}
           >
-            <CameraStreamCard camera={camera} />
+            <CameraStreamCard camera={camera} onStreamChange={setSelectedStreamName} />
           </Box>
 
           {mode === 'archive' && (

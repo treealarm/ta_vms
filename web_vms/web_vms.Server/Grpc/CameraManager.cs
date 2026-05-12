@@ -66,11 +66,13 @@ public class CameraManager : ICameraManager
         RtspUrl          = s.RtspUrl,
         WebRtc           = s.WebRtc,
         RecordingProfile = s.RecordingProfile != null ? ToProfileDto(s.RecordingProfile) : null,
+        OverrideProfile  = s.OverrideProfile  != null ? ToProfileDto(s.OverrideProfile)  : null,
       })
       .ToList();
 
     var firstStream = streams.FirstOrDefault();
-    var mode = firstStream?.RecordingProfile?.Mode ?? "off";
+    var effectiveProfile = firstStream?.OverrideProfile ?? firstStream?.RecordingProfile;
+    var mode = effectiveProfile?.Mode ?? "off";
 
     return new CameraSetupDto
     {
@@ -94,6 +96,7 @@ public class CameraManager : ICameraManager
     PreRecordSeconds  = p.PreRecordSeconds,
     PostRecordSeconds = p.PostRecordSeconds,
     SegmentSeconds    = p.SegmentSeconds,
+    IsOverridePreset  = p.IsOverridePreset,
   };
 
   private static MediaServerNodeDto ToDto(MediaServerNode server) => new()

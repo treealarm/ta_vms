@@ -101,21 +101,7 @@ const liveSlice = createSlice({
         state.servers = action.payload
       })
       .addCase(fetchCameraState.fulfilled, (state, action) => {
-        const id = action.payload.cameraId
-        const prev = state.cameraStatesById[id]
-
-        const isEqual =
-          prev &&
-          prev.recording === action.payload.recording &&
-          prev.recordingMode === action.payload.recordingMode &&
-          prev.webRtc === action.payload.webRtc &&
-          prev.rtspUrl === action.payload.rtspUrl &&
-          prev.serverId === action.payload.serverId &&
-          prev.activeRetentionWindow === action.payload.activeRetentionWindow
-
-        if (!isEqual) {
-          state.cameraStatesById[id] = action.payload
-        }
+        state.cameraStatesById[action.payload.cameraId] = action.payload
       })
       .addCase(addCamera.fulfilled, (state, action) => {
         state.status = `${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`

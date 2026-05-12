@@ -22,10 +22,11 @@ CREATE INDEX IF NOT EXISTS idx_clips_retained_cleanup
   ON clips (retained, start_ts ASC);
 
 CREATE TABLE IF NOT EXISTS retention_events (
-  event_id text PRIMARY KEY,
-  camera_id text NOT NULL,
+  event_id       text PRIMARY KEY,
+  camera_id      text NOT NULL,
+  stream_name    text NULL,
   alarm_start_ts timestamptz NOT NULL,
-  alarm_end_ts timestamptz NOT NULL
+  alarm_end_ts   timestamptz NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_retention_events_camera_time
