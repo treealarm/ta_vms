@@ -37,33 +37,52 @@ public class LiveController(
                                               : $"Media server error: {ex.Status.Detail}"
   };
 
-  private static CameraState ToControlState(CameraSetupDto request)
+  private static IReadOnlyList<CameraState> ToControlStates(CameraSetupDto request)
   {
-    var firstStream = request.Streams.FirstOrDefault();
-    var profile = firstStream?.RecordingProfile;
+    var cred = request.Cred != null
+      ? new Credentials { User = request.Cred.User, Pass = request.Cred.Pass }
+      : null;
 
-    var recordingMode = profile?.Mode switch
+    var streams = request.Streams;
+    if (streams == null || streams.Count == 0)
     {
-      "continuous" => RecordingMode.RecordingContinuous,
-      "prealarm"   => RecordingMode.RecordingPrealarm,
-      _            => RecordingMode.RecordingOff,
-    };
+      // Legacy single-stream path
+      return [new CameraState
+      {
+        CameraId = request.CameraId,
+        RtspUrl  = request.RtspUrl ?? "",
+        WebRtc   = request.WebRtc,
+        Cred     = cred,
+      }];
+    }
 
-    var state = new CameraState
+    var states = new List<CameraState>(streams.Count);
+    foreach (var stream in streams)
     {
-      CameraId = request.CameraId,
-      RtspUrl  = firstStream?.RtspUrl ?? request.RtspUrl ?? "",
-      WebRtc   = firstStream?.WebRtc ?? request.WebRtc,
-      Cred     = request.Cred != null
-        ? new Credentials { User = request.Cred.User, Pass = request.Cred.Pass }
-        : null,
-      RecordingMode = recordingMode,
-    };
+      var profile = stream.OverrideProfile ?? stream.RecordingProfile;
+      var recordingMode = profile?.Mode switch
+      {
+        "continuous" => RecordingMode.RecordingContinuous,
+        "prealarm"   => RecordingMode.RecordingPrealarm,
+        _            => RecordingMode.RecordingOff,
+      };
 
-    if (recordingMode == RecordingMode.RecordingPrealarm && profile != null)
-      state.SegmentSeconds = profile.SegmentSeconds > 0 ? profile.SegmentSeconds : 5u;
+      var state = new CameraState
+      {
+        CameraId      = request.CameraId,
+        StreamName    = stream.StreamName,
+        RtspUrl       = stream.RtspUrl ?? "",
+        WebRtc        = stream.WebRtc,
+        Cred          = cred,
+        RecordingMode = recordingMode,
+      };
 
-    return state;
+      if (recordingMode == RecordingMode.RecordingPrealarm && profile != null)
+        state.SegmentSeconds = profile.SegmentSeconds > 0 ? profile.SegmentSeconds : 5u;
+
+      states.Add(state);
+    }
+    return states;
   }
 
   [HttpPost("cameras")]
@@ -81,19 +100,22 @@ public class LiveController(
     var hasStream = normalized.Streams.Count > 0 || !string.IsNullOrEmpty(normalized.RtspUrl);
     if (hasStream)
     {
-      Vms.Control.OperationStatus mediaResponse;
-      try
+      var mediaClient = GetMediaClient(normalized.ServerId!);
+      foreach (var controlState in ToControlStates(normalized))
       {
-        mediaResponse = await GetMediaClient(normalized.ServerId!).SetCameraStateAsync(
-          ToControlState(normalized), MediaCallOptions(ct));
-      }
-      catch (RpcException ex)
-      {
-        return Ok(new ApiResponse(false, MediaServerError(ex)));
-      }
+        Vms.Control.OperationStatus mediaResponse;
+        try
+        {
+          mediaResponse = await mediaClient.SetCameraStateAsync(controlState, MediaCallOptions(ct));
+        }
+        catch (RpcException ex)
+        {
+          return Ok(new ApiResponse(false, MediaServerError(ex)));
+        }
 
-      if (!mediaResponse.Success)
-        return Ok(ApiResponseMapper.ToApiResponse(mediaResponse));
+        if (!mediaResponse.Success)
+          return Ok(ApiResponseMapper.ToApiResponse(mediaResponse));
+      }
     }
 
     try
@@ -151,19 +173,22 @@ public class LiveController(
       return Ok(ApiResponseMapper.ToApiResponse(removeResponse));
 
     var normalized = CameraManager.Normalize(request);
-    Vms.Control.OperationStatus addResponse;
-    try
+    var addClient = GetMediaClient(normalized.ServerId!);
+    foreach (var controlState in ToControlStates(normalized))
     {
-      addResponse = await GetMediaClient(normalized.ServerId!).SetCameraStateAsync(
-        ToControlState(normalized), MediaCallOptions(ct));
-    }
-    catch (RpcException ex)
-    {
-      return Ok(new ApiResponse(false, MediaServerError(ex)));
-    }
+      Vms.Control.OperationStatus addResponse;
+      try
+      {
+        addResponse = await addClient.SetCameraStateAsync(controlState, MediaCallOptions(ct));
+      }
+      catch (RpcException ex)
+      {
+        return Ok(new ApiResponse(false, MediaServerError(ex)));
+      }
 
-    if (!addResponse.Success)
-      return Ok(ApiResponseMapper.ToApiResponse(addResponse));
+      if (!addResponse.Success)
+        return Ok(ApiResponseMapper.ToApiResponse(addResponse));
+    }
 
     try
     {
@@ -231,21 +256,25 @@ public class LiveController(
     }
 
     var normalized = CameraManager.Normalize(state with { ServerId = targetServerId });
-    Vms.Control.OperationStatus response;
-    try
+    var stateClient = GetMediaClient(targetServerId);
+    Vms.Control.OperationStatus lastResponse = new() { Success = true, Message = "ok" };
+    foreach (var controlState in ToControlStates(normalized))
     {
-      response = await GetMediaClient(targetServerId).SetCameraStateAsync(
-        ToControlState(normalized), MediaCallOptions(ct));
-    }
-    catch (RpcException ex)
-    {
-      return Ok(new ApiResponse(false, MediaServerError(ex)));
+      try
+      {
+        lastResponse = await stateClient.SetCameraStateAsync(controlState, MediaCallOptions(ct));
+      }
+      catch (RpcException ex)
+      {
+        return Ok(new ApiResponse(false, MediaServerError(ex)));
+      }
+
+      if (!lastResponse.Success)
+        return Ok(ApiResponseMapper.ToApiResponse(lastResponse));
     }
 
-    if (response.Success)
-      await _manager.SetSetup(normalized, ct);
-
-    return Ok(ApiResponseMapper.ToApiResponse(response));
+    await _manager.SetSetup(normalized, ct);
+    return Ok(ApiResponseMapper.ToApiResponse(lastResponse));
   }
 
   [HttpGet("cameras/{cameraId}/state")]

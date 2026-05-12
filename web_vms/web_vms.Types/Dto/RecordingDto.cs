@@ -40,14 +40,17 @@
   {
     public string? EventId { get; set; }
     public string CameraId { get; set; } = default!;
+    public string? StreamName { get; set; }
     public DateTime AlarmStartTs { get; set; }
     public DateTime? AlarmEndTs { get; set; }
+    public uint TimeoutSeconds { get; set; }
   }
 
   public class RetentionEventRowDto
   {
     public string EventId { get; set; } = default!;
     public string CameraId { get; set; } = default!;
+    public string? StreamName { get; set; }
     public DateTime AlarmStartTs { get; set; }
     public DateTime? AlarmEndTs { get; set; }
   }

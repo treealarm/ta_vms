@@ -33,6 +33,7 @@ message CameraState {
   string rtsp_url = 4;
   optional Credentials cred = 5;
   uint32 segment_seconds = 6;
+  string stream_name = 7;
 }
 
 

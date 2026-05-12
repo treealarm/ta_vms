@@ -155,12 +155,15 @@ public sealed class FSController(
 
     var grpcReq = new RetainEventRequest
     {
-      CameraId = body.CameraId,
-      AlarmStartTs = Timestamp.FromDateTime(ToUtc(body.AlarmStartTs))
+      CameraId        = body.CameraId,
+      AlarmStartTs    = Timestamp.FromDateTime(ToUtc(body.AlarmStartTs)),
+      TimeoutSeconds  = body.TimeoutSeconds,
     };
 
     if (!string.IsNullOrWhiteSpace(body.EventId))
       grpcReq.EventId = body.EventId!;
+    if (!string.IsNullOrWhiteSpace(body.StreamName))
+      grpcReq.StreamName = body.StreamName!;
     if (body.AlarmEndTs.HasValue)
       grpcReq.AlarmEndTs = Timestamp.FromDateTime(ToUtc(body.AlarmEndTs.Value));
 
@@ -189,10 +192,11 @@ public sealed class FSController(
       HasMore = grpcResp.HasMore,
       Events = grpcResp.Events.Select(e => new RetentionEventRowDto
       {
-        EventId = e.EventId,
-        CameraId = e.CameraId,
+        EventId    = e.EventId,
+        CameraId   = e.CameraId,
+        StreamName = e.HasStreamName ? e.StreamName : null,
         AlarmStartTs = e.AlarmStartTs.ToDateTime(),
-        AlarmEndTs = e.AlarmEndTs?.ToDateTime()
+        AlarmEndTs   = e.AlarmEndTs?.ToDateTime()
       }).ToList()
     };
 

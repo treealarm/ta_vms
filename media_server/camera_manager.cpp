@@ -176,6 +176,7 @@ std::optional<camera_manager::camera_info> camera_manager::get_camera_state(
 
 bool camera_manager::set_camera_state(
   const std::string& camera_id,
+  const std::string& stream_name,
   const std::string& rtsp_url,
   const std::string& user,
   const std::string& pass,
@@ -189,23 +190,23 @@ bool camera_manager::set_camera_state(
   if (it == m_cameras.end())
   {
     auto device = std::make_shared<cam_device>(camera_id);
-    if (!device->add_stream("", "", rtsp_url, user, pass, policy, web_rtc, error))
+    if (!device->add_stream(stream_name, "", rtsp_url, user, pass, policy, web_rtc, error))
       return false;
     m_cameras.emplace(camera_id, std::move(device));
     return true;
   }
 
-  auto* stream = it->second->get_stream("");
+  auto* stream = it->second->get_stream(stream_name);
   if (!stream)
-    return it->second->add_stream("", "", rtsp_url, user, pass, policy, web_rtc, error);
+    return it->second->add_stream(stream_name, "", rtsp_url, user, pass, policy, web_rtc, error);
 
   if (stream->get_source() != rtsp_url ||
       stream->get_user()   != user     ||
       stream->get_pass()   != pass)
   {
     std::string dummy;
-    it->second->remove_stream("", dummy);
-    return it->second->add_stream("", "", rtsp_url, user, pass, policy, web_rtc, error);
+    it->second->remove_stream(stream_name, dummy);
+    return it->second->add_stream(stream_name, "", rtsp_url, user, pass, policy, web_rtc, error);
   }
 
   stream->apply_recording_policy(policy);

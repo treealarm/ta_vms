@@ -13,6 +13,7 @@ import {
 import type { CameraSetupDto, RetentionEventDto } from '../dto/dtos'
 import { useAppDispatch } from '../store'
 import { sendRetentionEvent } from '../store/fsSlice'
+import { fetchCameraState } from '../store/liveSlice'
 
 type SimulationPanelProps = {
   cameras: CameraSetupDto[]
@@ -21,20 +22,20 @@ type SimulationPanelProps = {
 export default function SimulationPanel({ cameras }: SimulationPanelProps) {
   const dispatch = useAppDispatch()
   const [cameraId, setCameraId] = useState('')
+  const [streamName, setStreamName] = useState('')
   const [eventId, setEventId] = useState('test-alarm')
   const [alarmStartTs, setAlarmStartTs] = useState('')
   const [timeoutSeconds, setTimeoutSeconds] = useState(30)
 
   const selectedCameraId = cameraId || cameras[0]?.cameraId || ''
-  const selectedCamera = cameras.find((camera) => camera.cameraId === selectedCameraId)
-  const preRecordSeconds = selectedCamera?.preAlarm?.preRecordSeconds ?? 15
-  const postRecordSeconds = selectedCamera?.preAlarm?.postRecordSeconds ?? 15
+  const selectedCamera = cameras.find((c) => c.cameraId === selectedCameraId)
+  const recordableStreams = (selectedCamera?.streams ?? []).filter(
+    (s) => s.recordingProfile != null || s.overrideProfile != null
+  )
 
   const setNonNegativeNumber = (raw: string, setter: (value: number) => void) => {
     const value = Number(raw)
-    if (!Number.isNaN(value)) {
-      setter(Math.max(0, value))
-    }
+    if (!Number.isNaN(value)) setter(Math.max(0, value))
   }
 
   const newEventId = () => {
@@ -45,10 +46,7 @@ export default function SimulationPanel({ cameras }: SimulationPanelProps) {
   const currentEventId = () => eventId.trim() || `test-alarm-${selectedCameraId}-${Date.now()}`
 
   const sendAlarmStart = async () => {
-    if (!selectedCameraId) {
-      return
-    }
-
+    if (!selectedCameraId) return
     const now = new Date().toISOString()
     const nextEventId = currentEventId()
     setEventId(nextEventId)
@@ -57,31 +55,26 @@ export default function SimulationPanel({ cameras }: SimulationPanelProps) {
     const payload: RetentionEventDto = {
       eventId: nextEventId,
       cameraId: selectedCameraId,
+      streamName: streamName || undefined,
       alarmStartTs: now,
-      preRecordSeconds,
-      postRecordSeconds,
-      timeoutSeconds
+      timeoutSeconds,
     }
-
     await dispatch(sendRetentionEvent(payload))
+    void dispatch(fetchCameraState(selectedCameraId))
   }
 
   const sendAlarmEnd = async () => {
-    if (!selectedCameraId || !alarmStartTs) {
-      return
-    }
-
+    if (!selectedCameraId || !alarmStartTs) return
     const payload: RetentionEventDto = {
       eventId: currentEventId(),
       cameraId: selectedCameraId,
+      streamName: streamName || undefined,
       alarmStartTs,
       alarmEndTs: new Date().toISOString(),
-      preRecordSeconds,
-      postRecordSeconds,
-      timeoutSeconds
+      timeoutSeconds,
     }
-
     await dispatch(sendRetentionEvent(payload))
+    void dispatch(fetchCameraState(selectedCameraId))
     setAlarmStartTs('')
   }
 
@@ -111,6 +104,21 @@ export default function SimulationPanel({ cameras }: SimulationPanelProps) {
           </TextField>
 
           <TextField
+            select
+            label="Stream (optional)"
+            value={streamName}
+            onChange={(e) => setStreamName(e.target.value)}
+            size="small"
+            fullWidth
+            helperText="All streams if not specified"
+          >
+            <MenuItem value="">All streams</MenuItem>
+            {recordableStreams.map((s) => (
+              <MenuItem key={s.streamName} value={s.streamName}>{s.streamName}</MenuItem>
+            ))}
+          </TextField>
+
+          <TextField
             label="Event ID"
             value={eventId}
             onChange={(event) => setEventId(event.target.value)}
@@ -123,9 +131,6 @@ export default function SimulationPanel({ cameras }: SimulationPanelProps) {
             Generate event id
           </Button>
 
-          <Typography variant="body2" color="text.secondary">
-            Pre/post are camera settings: {preRecordSeconds}s before, {postRecordSeconds}s after.
-          </Typography>
           <Typography variant="body2" color="text.secondary">
             {alarmStartTs ? `Alarm started at ${alarmStartTs}` : 'Alarm is not active in this test panel.'}
           </Typography>

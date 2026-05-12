@@ -161,16 +161,16 @@ export type RecordingsResponseDto = {
 export type RetentionEventDto = {
   eventId?: string
   cameraId: string
+  streamName?: string
   alarmStartTs: string
   alarmEndTs?: string
-  preRecordSeconds?: number
-  postRecordSeconds?: number
   timeoutSeconds?: number
 }
 
 export type RetentionEventRowDto = {
   eventId: string
   cameraId: string
+  streamName?: string
   alarmStartTs: string
   alarmEndTs?: string
 }

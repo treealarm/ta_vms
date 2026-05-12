@@ -69,6 +69,7 @@ grpc::Status camera_control_service::SetCameraState(
     proto_mapper::prealarm_segment_seconds(*request));
   const bool success = m_manager.set_camera_state(
     request->camera_id(),
+    request->stream_name(),
     request->rtsp_url(),
     request->has_cred() ? request->cred().user() : "",
     request->has_cred() ? request->cred().pass() : "",

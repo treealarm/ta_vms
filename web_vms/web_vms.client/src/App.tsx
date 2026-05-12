@@ -4,8 +4,8 @@ import {
   Box,
   Card,
   CardContent,
-  Drawer,
   IconButton,
+  Paper,
   Stack,
   Tab,
   Tabs,
@@ -182,7 +182,7 @@ export default function App() {
 
         <Tooltip title="Tests" placement="right">
           <IconButton
-            onClick={() => setTestsOpen(true)}
+            onClick={() => setTestsOpen((v) => !v)}
             sx={{ m: 1, color: testsOpen ? 'primary.main' : 'text.secondary' }}
           >
             <ScienceIcon />
@@ -190,22 +190,37 @@ export default function App() {
         </Tooltip>
       </Box>
 
-      <Drawer
-        anchor="right"
-        open={testsOpen}
-        onClose={() => setTestsOpen(false)}
-        PaperProps={{ sx: { width: 480, p: 2, display: 'flex', flexDirection: 'column', gap: 2 } }}
-      >
-        <Stack direction="row" alignItems="center" justifyContent="space-between">
-          <Typography variant="h6">Tests</Typography>
-          <IconButton size="small" onClick={() => setTestsOpen(false)}>
-            <CloseIcon />
-          </IconButton>
-        </Stack>
-        <Box sx={{ flex: 1, overflow: 'auto' }}>
-          <SimulationPanel cameras={Object.values(camerasMap)} />
-        </Box>
-      </Drawer>
+      {testsOpen && (
+        <Paper
+          elevation={8}
+          sx={{
+            position: 'fixed',
+            bottom: 16,
+            left: 108,
+            width: 460,
+            maxHeight: '80vh',
+            zIndex: 1300,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            sx={{ px: 2, py: 1, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
+          >
+            <Typography variant="subtitle1" fontWeight={600}>Tests</Typography>
+            <IconButton size="small" onClick={() => setTestsOpen(false)}>
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Stack>
+          <Box sx={{ overflow: 'auto', p: 2 }}>
+            <SimulationPanel cameras={Object.values(camerasMap)} />
+          </Box>
+        </Paper>
+      )}
     </Box>
   )
 }
