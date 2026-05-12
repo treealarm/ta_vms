@@ -2,7 +2,6 @@
 
 #include <grpcpp/grpcpp.h>
 
-#include "file_system/recording_storage.h"
 #include "camera_manager.h"
 #include "reader/archive_frame_jpeg_reader.h"
 #include "vms_control.grpc.pb.h"
@@ -20,15 +19,10 @@ public:
                               const vms::control::CameraState* request,
                               vms::control::OperationStatus* response) override;
 
-  grpc::Status GetRecordings(grpc::ServerContext* context,
-    const vms::control::RecordingsRequest* request,
-    vms::control::RecordingsResponse* response) override;
-
   grpc::Status GetArchiveFrameJpeg(grpc::ServerContext* context,
     const vms::control::ArchiveFrameJpegRequest* request,
     vms::control::ArchiveFrameJpegResponse* response) override;
 
 private:
   camera_manager& m_manager;
-  recording_storage m_storage;
 };

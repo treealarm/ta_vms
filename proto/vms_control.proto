@@ -9,7 +9,6 @@ service CameraControlService {
   rpc RemoveCamera(SourceRequest) returns (OperationStatus);
   rpc SetCameraState(CameraState) returns (OperationStatus);
 
-  rpc GetRecordings(RecordingsRequest) returns (RecordingsResponse);
   rpc GetArchiveFrameJpeg(ArchiveFrameJpegRequest) returns (ArchiveFrameJpegResponse);
 }
 
@@ -37,20 +36,6 @@ message CameraState {
 }
 
 
-message RecordingsRequest {
-  string camera_id = 1;
-  google.protobuf.Timestamp timestamp = 2;
-  uint32 limit = 3;
-}
-
-message Recording {
-  string file_path = 1;
-  google.protobuf.Timestamp start_time = 2;
-}
-message RecordingsResponse {
-  repeated Recording recordings = 1;
-  optional Recording nearest = 3;
-}
 message ArchiveFrameJpegRequest {
   string camera_id = 1;
   google.protobuf.Timestamp timestamp = 2;

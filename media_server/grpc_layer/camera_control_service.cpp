@@ -82,37 +82,6 @@ grpc::Status camera_control_service::SetCameraState(
 }
 
 
-grpc::Status camera_control_service::GetRecordings(grpc::ServerContext* /*context*/,
-  const vms::control::RecordingsRequest* request,
-  vms::control::RecordingsResponse* response)
-{
-  int32_t n_nearest = -1;
-
-  auto recordings = m_storage.get_recordings(
-    request->camera_id(),
-    "",
-    to_time_point(request->timestamp()),
-    request->limit(),
-    n_nearest
-  );
-  
-  if (n_nearest >= 0)
-  {
-    auto nearest = &recordings[n_nearest];
-    auto recording = response->mutable_nearest();
-    *recording->mutable_file_path() = nearest->file_path.filename().string();
-    *recording->mutable_start_time() = from_time_point(nearest->start_time);
-  }
-  for (auto& r : recordings)
-  {
-    auto recording = response->add_recordings();
-    *recording->mutable_file_path() = r.file_path.filename().string();
-    *recording->mutable_start_time() = from_time_point(r.start_time);
-  }
-
-  return grpc::Status::OK;
-}
-
 grpc::Status camera_control_service::GetArchiveFrameJpeg(
   grpc::ServerContext* /*context*/,
   const vms::control::ArchiveFrameJpegRequest* request,
