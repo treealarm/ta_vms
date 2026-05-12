@@ -8,6 +8,7 @@ public record RecordingProfileDto
   public uint PreRecordSeconds { get; init; }
   public uint PostRecordSeconds { get; init; }
   public uint SegmentSeconds { get; init; }
+  public bool IsOverridePreset { get; init; }
 }
 
 public record CameraStreamDto
@@ -17,6 +18,14 @@ public record CameraStreamDto
   public string RtspUrl { get; init; } = string.Empty;
   public bool WebRtc { get; init; }
   public RecordingProfileDto? RecordingProfile { get; init; }
+  public RecordingProfileDto? OverrideProfile { get; init; }
+}
+
+public record StreamOverrideDto
+{
+  public required string CameraId { get; init; }
+  public required string StreamName { get; init; }
+  public required string ProfileId { get; init; }
 }
 
 public record CameraSetupDto

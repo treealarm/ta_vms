@@ -4,10 +4,16 @@ import {
   Box,
   Card,
   CardContent,
+  Drawer,
+  IconButton,
   Stack,
   Tab,
   Tabs,
+  Tooltip,
+  Typography,
 } from '@mui/material'
+import ScienceIcon from '@mui/icons-material/Science'
+import CloseIcon from '@mui/icons-material/Close'
 
 import { loadCameras, loadServers } from './store/liveSlice'
 import { useAppDispatch, useAppSelector } from './store'
@@ -25,6 +31,7 @@ export default function App() {
   const dispatch = useAppDispatch()
   const [mainTab, setMainTab] = useState(0)
   const [soloCameraId, setSoloCameraId] = useState<string | null>(null)
+  const [testsOpen, setTestsOpen] = useState(false)
 
   const status = useAppSelector((state) =>
     state.live.status !== 'Ready' ? state.live.status : state.fs.status
@@ -144,31 +151,61 @@ export default function App() {
             {mainTab === 2 && <RetentionEventsTab />}
             {mainTab === 3 && <StorageSetupPanel />}
             {mainTab === 4 && <RecordingProfilesPanel />}
-            {mainTab === 5 && <SimulationPanel cameras={Object.values(camerasMap)} />}
-            {mainTab === 6 && <LogJournalPanel />}
+            {mainTab === 5 && <LogJournalPanel />}
           </Box>
         )}
       </Box>
 
-      <Tabs
-        orientation="vertical"
-        value={mainTab}
-        onChange={(_, v: number) => setMainTab(v)}
+      <Box
         sx={{
           order: -1,
           borderRight: 1,
           borderColor: 'divider',
-          '& .MuiTab-root': { minWidth: 90 }
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
         }}
       >
-        <Tab label="Monitor" />
-        <Tab label="Cam setup" />
-        <Tab label="Events" />
-        <Tab label="Storages" />
-        <Tab label="Recording" />
-        <Tab label="Tests" />
-        <Tab label="Logs" />
-      </Tabs>
+        <Tabs
+          orientation="vertical"
+          value={mainTab}
+          onChange={(_, v: number) => setMainTab(v)}
+          sx={{ '& .MuiTab-root': { minWidth: 90 } }}
+        >
+          <Tab label="Monitor" />
+          <Tab label="Cam setup" />
+          <Tab label="Events" />
+          <Tab label="Storages" />
+          <Tab label="Recording" />
+          <Tab label="Logs" />
+        </Tabs>
+
+        <Tooltip title="Tests" placement="right">
+          <IconButton
+            onClick={() => setTestsOpen(true)}
+            sx={{ m: 1, color: testsOpen ? 'primary.main' : 'text.secondary' }}
+          >
+            <ScienceIcon />
+          </IconButton>
+        </Tooltip>
+      </Box>
+
+      <Drawer
+        anchor="right"
+        open={testsOpen}
+        onClose={() => setTestsOpen(false)}
+        PaperProps={{ sx: { width: 480, p: 2, display: 'flex', flexDirection: 'column', gap: 2 } }}
+      >
+        <Stack direction="row" alignItems="center" justifyContent="space-between">
+          <Typography variant="h6">Tests</Typography>
+          <IconButton size="small" onClick={() => setTestsOpen(false)}>
+            <CloseIcon />
+          </IconButton>
+        </Stack>
+        <Box sx={{ flex: 1, overflow: 'auto' }}>
+          <SimulationPanel cameras={Object.values(camerasMap)} />
+        </Box>
+      </Drawer>
     </Box>
   )
 }

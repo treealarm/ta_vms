@@ -12,6 +12,8 @@ service CfgService {
   rpc ListRecordingProfiles(ListRecordingProfilesRequest) returns (ListRecordingProfilesResponse);
   rpc UpsertRecordingProfile(RecordingProfile) returns (OperationStatus);
   rpc RemoveRecordingProfile(RecordingProfileRequest) returns (OperationStatus);
+  rpc SetStreamOverride(SetStreamOverrideRequest) returns (OperationStatus);
+  rpc ClearStreamOverride(ClearStreamOverrideRequest) returns (OperationStatus);
 }
 
 service StorageService {
@@ -49,14 +51,16 @@ message RecordingProfile {
   uint32 pre_record_seconds  = 4;
   uint32 post_record_seconds = 5;
   uint32 segment_seconds     = 6;
+  bool   is_override_preset  = 7;
 }
 
 message CameraStream {
-  string stream_name                    = 1;
-  string profile_token                  = 2;
-  string rtsp_url                       = 3;
-  bool   web_rtc                        = 4;
-  optional RecordingProfile recording_profile = 5;
+  string stream_name                       = 1;
+  string profile_token                     = 2;
+  string rtsp_url                          = 3;
+  bool   web_rtc                           = 4;
+  optional RecordingProfile recording_profile  = 5;
+  optional RecordingProfile override_profile   = 6;
 }
 
 message CameraSetup {
@@ -69,6 +73,17 @@ message CameraSetup {
 
 message RecordingProfileRequest {
   string id = 1;
+}
+
+message SetStreamOverrideRequest {
+  string camera_id   = 1;
+  string stream_name = 2;
+  string profile_id  = 3;
+}
+
+message ClearStreamOverrideRequest {
+  string camera_id   = 1;
+  string stream_name = 2;
 }
 
 message ListRecordingProfilesRequest {}

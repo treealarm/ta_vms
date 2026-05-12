@@ -5,10 +5,11 @@ import CameraStream from './CameraStream'
 
 type CameraStreamCardProps = {
   camera: CameraSetupDto
+  onStreamChange?: (streamName: string) => void
 }
 
 /** Live stream area only; recording and toolbar live in CameraUnifiedCard. */
-function CameraStreamCard({ camera }: CameraStreamCardProps) {
+function CameraStreamCard({ camera, onStreamChange }: CameraStreamCardProps) {
   const webRtcStreams = (camera.streams ?? []).filter((s) => s.webRtc)
   const [selectedIndex, setSelectedIndex] = useState(0)
 
@@ -16,14 +17,19 @@ function CameraStreamCard({ camera }: CameraStreamCardProps) {
 
   const streamName = webRtcStreams.length > 0
     ? `${camera.cameraId}/${webRtcStreams[idx].streamName}`
-    : camera.cameraId  // backward compat: no streams configured
+    : camera.cameraId
+
+  const handleTabChange = (_: unknown, v: number) => {
+    setSelectedIndex(v)
+    onStreamChange?.(webRtcStreams[v]?.streamName ?? '')
+  }
 
   return (
     <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {webRtcStreams.length > 0 && (
         <Tabs
           value={idx}
-          onChange={(_, v: number) => setSelectedIndex(v)}
+          onChange={handleTabChange}
           variant="scrollable"
           scrollButtons="auto"
           sx={{ flexShrink: 0, minHeight: 32, '& .MuiTab-root': { minHeight: 32, py: 0.5 } }}

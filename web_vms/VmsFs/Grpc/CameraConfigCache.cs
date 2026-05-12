@@ -32,7 +32,8 @@ public sealed class CameraConfigCache(CfgService.CfgServiceClient cfgClient)
       return null;
 
     var firstStream = resp.Setup.Streams.FirstOrDefault();
-    var profile = firstStream?.RecordingProfile;
+    // Override profile takes precedence over primary when set
+    var profile = firstStream?.OverrideProfile ?? firstStream?.RecordingProfile;
 
     var config = new CameraConfig(
       profile?.Mode ?? RecordingMode.RecordingOff,

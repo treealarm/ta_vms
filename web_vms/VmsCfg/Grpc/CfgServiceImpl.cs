@@ -111,5 +111,32 @@ namespace VmsCfg
       var removed = await storage.RemoveRecordingProfileAsync(request.Id, context.CancellationToken);
       return new OperationStatus { Success = removed };
     }
+
+    public override async Task<OperationStatus> SetStreamOverride(
+      SetStreamOverrideRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId) || string.IsNullOrWhiteSpace(request.StreamName))
+        return new OperationStatus { Success = false, Message = "camera_id and stream_name are required" };
+
+      if (string.IsNullOrWhiteSpace(request.ProfileId) || !Guid.TryParse(request.ProfileId, out _))
+        return new OperationStatus { Success = false, Message = "profile_id must be a valid UUID" };
+
+      await storage.SetStreamOverrideAsync(request.CameraId, request.StreamName, request.ProfileId, context.CancellationToken);
+      InvalidateFsCache(request.CameraId);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OperationStatus> ClearStreamOverride(
+      ClearStreamOverrideRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId) || string.IsNullOrWhiteSpace(request.StreamName))
+        return new OperationStatus { Success = false, Message = "camera_id and stream_name are required" };
+
+      await storage.ClearStreamOverrideAsync(request.CameraId, request.StreamName, context.CancellationToken);
+      InvalidateFsCache(request.CameraId);
+      return new OperationStatus { Success = true };
+    }
   }
 }

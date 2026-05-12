@@ -4,12 +4,14 @@ import {
   Button,
   Chip,
   Divider,
+  FormControlLabel,
   IconButton,
   List,
   ListItem,
   ListItemText,
   MenuItem,
   Stack,
+  Switch,
   TextField,
   Tooltip,
   Typography,
@@ -24,6 +26,7 @@ const EMPTY_PROFILE: Omit<RecordingProfileDto, 'id'> = {
   preRecordSeconds: 0,
   postRecordSeconds: 0,
   segmentSeconds: 60,
+  isOverridePreset: false,
 }
 
 export default function RecordingProfilesPanel() {
@@ -135,7 +138,12 @@ export default function RecordingProfilesPanel() {
             >
               <ListItemText
                 sx={{ py: 0.5, pl: 1 }}
-                primary={p.name}
+                primary={
+                  <Stack direction="row" spacing={0.5} alignItems="center" component="span">
+                    <span>{p.name}</span>
+                    {p.isOverridePreset && <Chip label="override preset" size="small" color="primary" variant="outlined" />}
+                  </Stack>
+                }
                 secondary={
                   <Stack direction="row" spacing={0.5} alignItems="center" component="span">
                     <Chip label={modeLabel(p.mode)} size="small" />
@@ -229,6 +237,17 @@ export default function RecordingProfilesPanel() {
             size="small"
             slotProps={{ htmlInput: { min: 1 } }}
             sx={{ width: 140 }}
+          />
+
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={editing.isOverridePreset}
+                onChange={(e) => setField('isOverridePreset', e.target.checked)}
+              />
+            }
+            label={<Typography variant="body2">Show as override preset</Typography>}
           />
 
           {error && (

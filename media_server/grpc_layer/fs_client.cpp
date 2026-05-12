@@ -38,12 +38,6 @@ google::protobuf::Timestamp to_proto_ts(std::chrono::system_clock::time_point va
   return timestamp;
 }
 
-std::chrono::system_clock::time_point from_timestamp(
-  const google::protobuf::Timestamp& value)
-{
-  return std::chrono::system_clock::time_point{
-    std::chrono::seconds(value.seconds()) + std::chrono::nanoseconds(value.nanos())};
-}
 
 bool is_retryable_grpc_error(grpc::StatusCode code)
 {

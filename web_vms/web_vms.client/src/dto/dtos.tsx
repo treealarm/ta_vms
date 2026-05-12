@@ -88,6 +88,7 @@ export type RecordingProfileDto = {
   preRecordSeconds: number
   postRecordSeconds: number
   segmentSeconds: number
+  isOverridePreset: boolean
 }
 
 export type CameraStreamDto = {
@@ -96,6 +97,7 @@ export type CameraStreamDto = {
   rtspUrl: string
   webRtc: boolean
   recordingProfile?: RecordingProfileDto
+  overrideProfile?: RecordingProfileDto
 }
 
 export type CameraSetupDto = {
