@@ -29,8 +29,6 @@ set(SOURCES
     main.cpp
     cam_stream.cpp
     cam_device.cpp
-    arch_player.cpp
-    arch_player.h
     camera_manager.cpp
     
     grpc_layer/camera_control_service.h
@@ -39,8 +37,6 @@ set(SOURCES
     grpc_layer/proto_mapper.cpp
     grpc_layer/dapr_publisher.cpp
     grpc_layer/dapr_publisher.h
-    grpc_layer/player_command_mapper.h
-    grpc_layer/player_command_mapper.cpp
     grpc_layer/cfg_client.h
     grpc_layer/cfg_client.cpp
     grpc_layer/onvif_client.h

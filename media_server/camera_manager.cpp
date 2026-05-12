@@ -237,27 +237,6 @@ bool camera_manager::remove_camera(const std::string& camera_id, std::string& er
   return true;
 }
 
-bool camera_manager::remove_arch_player(const std::string& client_id, std::string& error)
-{
-  std::scoped_lock lock(m_mutex);
-
-  if (client_id.empty())
-  {
-    error = "client_id must not be empty";
-    return false;
-  }
-
-  auto it = m_arch_players_by_client.find(client_id);
-  if (it == m_arch_players_by_client.end())
-  {
-    error = "archive player not found for client: " + client_id;
-    return false;
-  }
-
-  m_arch_players_by_client.erase(it);
-  return true;
-}
-
 std::vector<camera_manager::camera_info> camera_manager::list_cameras() const
 {
   std::scoped_lock lock(m_mutex);
@@ -284,155 +263,11 @@ std::vector<camera_manager::camera_info> camera_manager::list_cameras() const
   return result;
 }
 
-std::vector<camera_manager::player_info> camera_manager::list_players() const
-{
-  std::scoped_lock lock(m_mutex);
-
-  std::vector<player_info> result;
-  result.reserve(m_arch_players_by_client.size());
-
-  for (const auto& [client_id, entry] : m_arch_players_by_client)
-  {
-    player_info pi{
-      .camera_id   = entry->camera_id(),
-      .client_id   = client_id,
-      .position_ts = entry->cur_time(),
-      .file_path   = entry->file_path() ? std::make_optional(*entry->file_path()) : std::nullopt,
-      .start_ts    = entry->get_start_time(),
-      .progress    = entry->get_progress(),
-      .mode        = entry->get_mode(),
-    };
-    result.push_back(pi);
-  }
-
-  return result;
-}
-
 void camera_manager::stop_all()
 {
   std::scoped_lock lock(m_mutex);
 
   for (auto& [_, device] : m_cameras)
     device->shutdown();
-
-  m_arch_players_by_client.clear();
 }
 
-bool camera_manager::add_arch_player(
-  const std::string& client_id,
-  const std::string& camera_id,
-  std::string& error)
-{
-  if (client_id.empty())
-  {
-    error = "client_id must not be empty";
-    return false;
-  }
-
-  try
-  {
-    std::scoped_lock lock(m_mutex);
-
-    auto existing = m_arch_players_by_client.find(client_id);
-    if (existing != m_arch_players_by_client.end())
-      m_arch_players_by_client.erase(existing);
-
-    m_arch_players_by_client.emplace(
-      client_id,
-      std::make_shared<arch_player>(client_id, camera_id));
-
-    return true;
-  }
-  catch (const std::exception& ex)
-  {
-    error = ex.what();
-    return false;
-  }
-}
-
-bool camera_manager::set_player_state(
-  const std::string& client_id,
-  const std::string& camera_id,
-  const std::optional<std::chrono::system_clock::time_point> start_time,
-  std::optional<std::chrono::milliseconds> position,
-  std::string& error)
-{
-  std::scoped_lock lock(m_mutex);
-
-  if (client_id.empty())
-  {
-    error = "client_id must not be empty";
-    return false;
-  }
-
-  auto it = m_arch_players_by_client.find(client_id);
-  if (it == m_arch_players_by_client.end())
-  {
-    error = "archive player not found for client: " + client_id;
-    return false;
-  }
-
-  if (!camera_id.empty() && camera_id != it->second->camera_id())
-  {
-    error = "camera_id does not match archive player camera";
-    return false;
-  }
-
-  return it->second->set_state(start_time, camera_id, position);
-}
-
-bool camera_manager::set_player_command(
-  const std::string& client_id,
-  const player_command& cmd,
-  std::string& error)
-{
-  std::scoped_lock lock(m_mutex);
-
-  if (client_id.empty())
-  {
-    error = "client_id must not be empty";
-    return false;
-  }
-
-  auto it = m_arch_players_by_client.find(client_id);
-  if (it == m_arch_players_by_client.end())
-  {
-    error = "archive player not found for client: " + client_id;
-    return false;
-  }
-
-  return it->second->set_player_command(cmd);
-}
-
-std::optional<camera_manager::player_info> camera_manager::get_player_state(
-  const std::string& client_id,
-  std::string& error)
-{
-  std::scoped_lock lock(m_mutex);
-
-  if (client_id.empty())
-  {
-    error = "client_id must not be empty";
-    return std::nullopt;
-  }
-
-  auto it = m_arch_players_by_client.find(client_id);
-  if (it == m_arch_players_by_client.end())
-  {
-    error = "archive player not found for client: " + client_id;
-    return std::nullopt;
-  }
-
-  player_info pi{
-    .camera_id   = it->second->camera_id(),
-    .client_id   = client_id,
-    .position_ts = it->second->cur_time(),
-    .file_path   = it->second->file_path()
-                     ? std::make_optional(*it->second->file_path())
-                     : std::nullopt,
-    .start_ts    = it->second->get_start_time(),
-    .progress    = it->second->get_progress(),
-    .mode        = it->second->get_mode(),
-  };
-  return pi;
-}

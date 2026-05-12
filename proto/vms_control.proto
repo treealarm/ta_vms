@@ -9,16 +9,8 @@ service CameraControlService {
   rpc RemoveCamera(SourceRequest) returns (OperationStatus);
   rpc SetCameraState(CameraState) returns (OperationStatus);
 
-  rpc AddArchPlayer(PlayerState) returns (OperationStatus);
-  rpc RemoveArchPlayer(SourceRequest) returns (OperationStatus);
-  rpc ListPlayers(ListPlayersRequest) returns (ListPlayersResponse);
-  rpc SetPlayerState(PlayerState) returns (OperationStatus);  
-  rpc GetPlayerProgressState(SourceRequest) returns (PlayerProgressState);
-  rpc SendPlayerCommand(PlayerCommand) returns (OperationStatus); 
-
   rpc GetRecordings(RecordingsRequest) returns (RecordingsResponse);
   rpc GetArchiveFrameJpeg(ArchiveFrameJpegRequest) returns (ArchiveFrameJpegResponse);
-
 }
 
 message OperationStatus {
@@ -42,61 +34,6 @@ message CameraState {
   string rtsp_url = 4;
   optional Credentials cred = 5;
   uint32 segment_seconds = 6;
-}
-
-
-message PlayerState {
-  string camera_id = 1;
-  string client_id = 2;
-  optional google.protobuf.Timestamp position_ts = 3;
-  optional uint32 position_ms = 4;
-}
-
-enum PlayerMode {
-  PLAYER_MODE_UNSPECIFIED = 0;
-  PLAYING = 1;
-  PAUSED = 2;
-  STOPPED = 3;
-}
-
-message PlayerProgressState {
-  string camera_id = 1;
-  string client_id = 2;
-  optional google.protobuf.Timestamp position_ts = 3;
-  optional string file_path = 4;
-  optional google.protobuf.Timestamp start_ts = 5;
-  uint32 duration_ms = 6;
-  uint32 position_ms = 7;
-  PlayerMode mode = 8;
-}
-
-message PlayerCommand {
-  string client_id = 1;
-
-  oneof cmd {
-    Play play = 10;
-    Pause pause = 11;
-    Stop stop = 12;
-	Step step = 13;
-  }
-}
-
-message Play 
-{
-	optional double speed = 1;
-}
-
-message Pause {}
-message Stop {}
-message Step 
-{
-	int32 step_frames = 1;
-}
-
-message ListPlayersRequest {}
-
-message ListPlayersResponse {
-  repeated PlayerProgressState players = 1;
 }
 
 
