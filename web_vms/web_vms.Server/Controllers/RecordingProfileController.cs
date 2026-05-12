@@ -1,0 +1,76 @@
+using Dapr.Client;
+using Grpc.Core;
+using Microsoft.AspNetCore.Mvc;
+using Vms.Cfg;
+using web_vms.Types.Dto;
+
+namespace web_vms;
+
+[ApiController]
+[Route("api/recording-profiles")]
+public class RecordingProfileController(CfgService.CfgServiceClient _cfgClient) : ControllerBase
+{
+  private static readonly TimeSpan CfgCallTimeout = TimeSpan.FromSeconds(5);
+
+  private static CallOptions CfgOptions(CancellationToken ct) =>
+    new(deadline: DateTime.UtcNow.Add(CfgCallTimeout), cancellationToken: ct);
+
+  [HttpGet]
+  public async Task<IActionResult> List(CancellationToken ct)
+  {
+    var response = await _cfgClient.ListRecordingProfilesAsync(new ListRecordingProfilesRequest(), CfgOptions(ct));
+    return Ok(response.Profiles.Select(ToDto));
+  }
+
+  [HttpPut]
+  public async Task<IActionResult> Upsert([FromBody] RecordingProfileDto dto, CancellationToken ct)
+  {
+    if (string.IsNullOrWhiteSpace(dto.Name))
+      return BadRequest("name must not be empty");
+
+    var response = await _cfgClient.UpsertRecordingProfileAsync(ToProto(dto), CfgOptions(ct));
+    return Ok(new ApiResponse(response.Success, response.Message));
+  }
+
+  [HttpDelete("{id}")]
+  public async Task<IActionResult> Remove(string id, CancellationToken ct)
+  {
+    var response = await _cfgClient.RemoveRecordingProfileAsync(
+      new RecordingProfileRequest { Id = id }, CfgOptions(ct));
+    return Ok(new ApiResponse(response.Success, response.Message));
+  }
+
+  private static RecordingProfileDto ToDto(RecordingProfile p) => new()
+  {
+    Id                = p.Id,
+    Name              = p.Name,
+    Mode              = RecordingModeToString(p.Mode),
+    PreRecordSeconds  = p.PreRecordSeconds,
+    PostRecordSeconds = p.PostRecordSeconds,
+    SegmentSeconds    = p.SegmentSeconds,
+  };
+
+  private static RecordingProfile ToProto(RecordingProfileDto dto) => new()
+  {
+    Id                = dto.Id ?? string.Empty,
+    Name              = dto.Name,
+    Mode              = ParseRecordingMode(dto.Mode),
+    PreRecordSeconds  = dto.PreRecordSeconds,
+    PostRecordSeconds = dto.PostRecordSeconds,
+    SegmentSeconds    = dto.SegmentSeconds,
+  };
+
+  private static string RecordingModeToString(RecordingMode mode) => mode switch
+  {
+    RecordingMode.RecordingContinuous => "continuous",
+    RecordingMode.RecordingPrealarm   => "prealarm",
+    _                                 => "off",
+  };
+
+  private static RecordingMode ParseRecordingMode(string mode) => mode switch
+  {
+    "continuous" => RecordingMode.RecordingContinuous,
+    "prealarm"   => RecordingMode.RecordingPrealarm,
+    _            => RecordingMode.RecordingOff,
+  };
+}

@@ -7,8 +7,6 @@
 #include <filesystem>
 #include <chrono>
 #include <cstdlib>
-#include <string>
-#include <chrono>
 
 struct recording_info
 {
@@ -30,27 +28,35 @@ public:
   {
     return std::chrono::seconds(60);
   };
+
   std::vector<recording_info> get_recordings(
     const std::string& camera_id,
+    const std::string& stream_name,
     std::chrono::system_clock::time_point ts,
     uint32_t limit,
     int32_t& nearestIndex);
 
   std::optional<recording_info> find_nearest(
     const std::string& camera_id,
+    const std::string& stream_name,
     std::chrono::system_clock::time_point ts);
 
   std::optional<recording_info> find_offset(
     const std::string& camera_id,
+    const std::string& stream_name,
     std::chrono::system_clock::time_point ts,
     int offset);
 
   std::filesystem::path make_segment_path(
     const std::string& camera_id,
+    const std::string& stream_name,
     std::chrono::system_clock::time_point ts);
 
-  std::filesystem::path get_absolute_path(const std::string& camera_id,
+  std::filesystem::path get_absolute_path(
+    const std::string& camera_id,
+    const std::string& stream_name,
     std::chrono::system_clock::time_point ts);
+
   std::filesystem::path file_ext();
 
   std::optional<std::chrono::system_clock::time_point> parse_time(
@@ -64,6 +70,7 @@ private:
 
   std::filesystem::path make_day_path(
     const std::string& camera_id,
+    const std::string& stream_name,
     std::chrono::system_clock::time_point ts);
 
   std::filesystem::path shift_day(

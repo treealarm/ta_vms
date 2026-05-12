@@ -11,7 +11,9 @@
       "Bash(cmake --build build --target vms --parallel)",
       "Bash(npx tsc *)",
       "Bash(cmake --build build --target fs_client)",
-      "Bash(cmake --build build)"
+      "Bash(cmake --build build)",
+      "Bash(find /home/toshiba/tests/Square/DbLayer -type f | sort && echo \"===\" && ls /home/toshiba/tests/Square/DbLayer/)",
+      "Read(//home/toshiba/tests/Square/DbLayer/**)"
     ]
   }
 }

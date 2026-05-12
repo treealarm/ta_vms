@@ -3,7 +3,57 @@
 #include <format>
 
 #include "grpc_layer/proto_mapper.h"
+#include "logger/logger.h"
 #include "vms_control.pb.h"
+
+bool camera_manager::configure_camera(
+  const std::string& camera_id,
+  const std::string& user,
+  const std::string& pass,
+  const std::vector<stream_config>& streams,
+  std::string& error)
+{
+  std::scoped_lock lock(m_mutex);
+
+  if (camera_id.empty())
+  {
+    error = "camera_id must not be empty";
+    return false;
+  }
+
+  auto existing = m_cameras.find(camera_id);
+  if (existing != m_cameras.end())
+  {
+    existing->second->shutdown();
+    m_cameras.erase(existing);
+  }
+
+  if (streams.empty())
+    return true;
+
+  auto device = std::make_shared<cam_device>(camera_id);
+  bool any_failed = false;
+
+  for (const auto& s : streams)
+  {
+    std::string stream_error;
+    if (!device->add_stream(s.stream_name, s.profile_token, s.rtsp_url, user, pass, s.policy, s.web_rtc, stream_error))
+    {
+      logger::instance().error(std::format(
+        "Failed to add stream '{}' for camera '{}': {}", s.stream_name, camera_id, stream_error));
+      any_failed = true;
+    }
+  }
+
+  m_cameras.emplace(camera_id, std::move(device));
+
+  if (any_failed)
+  {
+    error = "one or more streams failed to start";
+    return false;
+  }
+  return true;
+}
 
 bool camera_manager::add_camera(
   const std::string& camera_id,
@@ -12,107 +62,116 @@ bool camera_manager::add_camera(
   const std::string& pass,
   const recording_policy_spec& policy,
   bool web_rtc,
-  std::string& error) 
+  std::string& error)
 {
   std::scoped_lock lock(m_mutex);
 
-  if (camera_id.empty()) {
+  if (camera_id.empty())
+  {
     error = "camera_id must not be empty";
     return false;
   }
 
-  auto existing = m_cameras.find(camera_id);
-  if (existing != m_cameras.end()) {
-    existing->second->shutdown();
-    m_cameras.erase(existing);
-  }
-
-  try {
-    auto camera = std::make_shared<cam>(rtsp_url, camera_id, user, pass);
-    camera->apply_recording_policy(policy);
-
-
-    if (web_rtc) {
-      if (!camera->start_web_rtc(error)) {
-        return false;
-      }
-    }
-
-
-    m_cameras.emplace(camera_id, std::move(camera));
-    return true;
-  } catch (const std::exception& ex) {
-    error = ex.what();
-    return false;
-  }
-}
-
-bool camera_manager::start_recording(const std::string& camera_id,
-                                     std::string& error) {
-  std::scoped_lock lock(m_mutex);
-
   auto it = m_cameras.find(camera_id);
-  if (it == m_cameras.end()) {
-    error = "camera not found: " + camera_id;
-    return false;
+  if (it != m_cameras.end())
+  {
+    std::string dummy;
+    it->second->remove_stream("", dummy);
+  }
+  else
+  {
+    it = m_cameras.emplace(camera_id, std::make_shared<cam_device>(camera_id)).first;
   }
 
-  if (it->second->is_recording()) {
-    error = "camera already recording: " + camera_id;
-    return false;
-  }
-
-  it->second->apply_recording_policy(proto_mapper::recording_policy_for_media(
-    vms::cfg::RECORDING_CONTINUOUS,
-    0));
-  return true;
+  return it->second->add_stream("", "", rtsp_url, user, pass, policy, web_rtc, error);
 }
 
-bool camera_manager::stop_recording(const std::string& camera_id,
-                                    std::string& error) {
-  std::scoped_lock lock(m_mutex);
-
-  auto it = m_cameras.find(camera_id);
-  if (it == m_cameras.end()) {
-    error = "camera not found: " + camera_id;
-    return false;
-  }
-
-  if (!it->second->is_recording()) {
-    error = "camera is not recording: " + camera_id;
-    return false;
-  }
-
-  it->second->stop_recording();
-
-  return true;
-}
-
-std::optional<camera_manager::camera_info>  camera_manager::get_camera_state(
-  const std::string& camera_id,
-  std::string& error) 
+bool camera_manager::start_recording(const std::string& camera_id, std::string& error)
 {
   std::scoped_lock lock(m_mutex);
 
   auto it = m_cameras.find(camera_id);
-  if (it == m_cameras.end()) 
+  if (it == m_cameras.end())
+  {
+    error = "camera not found: " + camera_id;
+    return false;
+  }
+
+  auto* stream = it->second->first_stream();
+  if (!stream)
+  {
+    error = "camera has no streams: " + camera_id;
+    return false;
+  }
+
+  if (stream->is_recording())
+  {
+    error = "camera already recording: " + camera_id;
+    return false;
+  }
+
+  stream->apply_recording_policy(proto_mapper::recording_policy_for_media(
+    vms::cfg::RECORDING_CONTINUOUS, 0));
+  return true;
+}
+
+bool camera_manager::stop_recording(const std::string& camera_id, std::string& error)
+{
+  std::scoped_lock lock(m_mutex);
+
+  auto it = m_cameras.find(camera_id);
+  if (it == m_cameras.end())
+  {
+    error = "camera not found: " + camera_id;
+    return false;
+  }
+
+  auto* stream = it->second->first_stream();
+  if (!stream)
+  {
+    error = "camera has no streams: " + camera_id;
+    return false;
+  }
+
+  if (!stream->is_recording())
+  {
+    error = "camera is not recording: " + camera_id;
+    return false;
+  }
+
+  stream->stop_recording();
+  return true;
+}
+
+std::optional<camera_manager::camera_info> camera_manager::get_camera_state(
+  const std::string& camera_id,
+  std::string& error)
+{
+  std::scoped_lock lock(m_mutex);
+
+  auto it = m_cameras.find(camera_id);
+  if (it == m_cameras.end())
   {
     error = "camera not found: " + camera_id;
     return std::nullopt;
   }
 
-  camera_manager::camera_info info
+  auto* stream = it->second->first_stream();
+  if (!stream)
   {
-    .camera_id = camera_id,
-    .rtsp_url = it->second->get_source(),
-    .user = it->second->get_user(),
-    .pass = it->second->get_pass(),
-    .is_recording = it->second->is_recording(),
-    .is_web_rtc_streaming = it->second->is_web_rtc_streaming(),
-    .recording_policy = it->second->get_recording_policy_mode(),
-  };
+    error = "camera has no streams: " + camera_id;
+    return std::nullopt;
+  }
 
-  return info;
+  return camera_info{
+    .camera_id          = camera_id,
+    .rtsp_url           = stream->get_source(),
+    .user               = stream->get_user(),
+    .pass               = stream->get_pass(),
+    .is_recording       = stream->is_recording(),
+    .is_web_rtc_streaming = stream->is_web_rtc_streaming(),
+    .recording_policy   = stream->get_recording_policy_mode(),
+  };
 }
 
 bool camera_manager::set_camera_state(
@@ -124,69 +183,51 @@ bool camera_manager::set_camera_state(
   bool web_rtc,
   std::string& error)
 {
-  bool recreate = false;
-  do
-  {
-    std::scoped_lock lock(m_mutex);
-
-    auto it = m_cameras.find(camera_id);
-    if (it == m_cameras.end())
-    {
-      recreate = true;
-      break;
-    }
-
-    if (it->second->get_source()!= rtsp_url || 
-      it->second->get_user() != user ||
-      it->second->get_pass() != pass)
-    {
-      recreate = true;
-      break;
-    }
-
-    it->second->apply_recording_policy(policy);
-
-
-    if (web_rtc != it->second->is_web_rtc_streaming())
-    {
-      if (web_rtc)
-      {
-        if (!it->second->start_web_rtc(error))
-        {
-          return false;
-        }
-      }
-      else
-      {
-        if (!it->second->stop_web_rtc(error))
-        {
-          return false;
-        }
-      }
-    }
-  } while (false);
- 
-  if (recreate)
-  {
-    return add_camera(
-      camera_id,
-      rtsp_url,
-      user,
-      pass,
-      policy,
-      web_rtc,
-      error);
-  }
-  return true;
-}
-
-
-bool camera_manager::remove_camera(const std::string& camera_id,
-                                 std::string& error) {
   std::scoped_lock lock(m_mutex);
 
   auto it = m_cameras.find(camera_id);
-  if (it == m_cameras.end()) {
+  if (it == m_cameras.end())
+  {
+    auto device = std::make_shared<cam_device>(camera_id);
+    if (!device->add_stream("", "", rtsp_url, user, pass, policy, web_rtc, error))
+      return false;
+    m_cameras.emplace(camera_id, std::move(device));
+    return true;
+  }
+
+  auto* stream = it->second->get_stream("");
+  if (!stream)
+    return it->second->add_stream("", "", rtsp_url, user, pass, policy, web_rtc, error);
+
+  if (stream->get_source() != rtsp_url ||
+      stream->get_user()   != user     ||
+      stream->get_pass()   != pass)
+  {
+    std::string dummy;
+    it->second->remove_stream("", dummy);
+    return it->second->add_stream("", "", rtsp_url, user, pass, policy, web_rtc, error);
+  }
+
+  stream->apply_recording_policy(policy);
+
+  if (web_rtc != stream->is_web_rtc_streaming())
+  {
+    if (web_rtc)
+      return stream->start_web_rtc(error);
+    else
+      return stream->stop_web_rtc(error);
+  }
+
+  return true;
+}
+
+bool camera_manager::remove_camera(const std::string& camera_id, std::string& error)
+{
+  std::scoped_lock lock(m_mutex);
+
+  auto it = m_cameras.find(camera_id);
+  if (it == m_cameras.end())
+  {
     error = "camera not found: " + camera_id;
     return false;
   }
@@ -196,19 +237,18 @@ bool camera_manager::remove_camera(const std::string& camera_id,
   return true;
 }
 
-bool camera_manager::remove_arch_player(const std::string& client_id,
-                                      std::string& error) 
+bool camera_manager::remove_arch_player(const std::string& client_id, std::string& error)
 {
   std::scoped_lock lock(m_mutex);
 
-  if (client_id.empty()) 
+  if (client_id.empty())
   {
     error = "client_id must not be empty";
     return false;
   }
 
   auto it = m_arch_players_by_client.find(client_id);
-  if (it == m_arch_players_by_client.end()) 
+  if (it == m_arch_players_by_client.end())
   {
     error = "archive player not found for client: " + client_id;
     return false;
@@ -218,63 +258,62 @@ bool camera_manager::remove_arch_player(const std::string& client_id,
   return true;
 }
 
-std::vector<camera_manager::camera_info> camera_manager::list_cameras() const 
+std::vector<camera_manager::camera_info> camera_manager::list_cameras() const
 {
   std::scoped_lock lock(m_mutex);
 
-  std::vector<camera_info> cameras;
+  std::vector<camera_info> result;
+  result.reserve(m_cameras.size());
 
-  for (const auto& [camera_id, entry] : m_cameras) 
+  for (const auto& [camera_id, device] : m_cameras)
   {
-    cameras.push_back(
-      camera_info{
-        camera_id,
-        entry->get_source(),
-        entry->get_user(),
-        entry->get_pass(),
-        entry->is_recording(),
-        entry->is_web_rtc_streaming(),
-        entry->get_recording_policy_mode(),
-      });
+    const auto* stream = device->first_stream();
+    if (!stream) continue;
+
+    result.push_back(camera_info{
+      .camera_id            = camera_id,
+      .rtsp_url             = stream->get_source(),
+      .user                 = stream->get_user(),
+      .pass                 = stream->get_pass(),
+      .is_recording         = stream->is_recording(),
+      .is_web_rtc_streaming = stream->is_web_rtc_streaming(),
+      .recording_policy     = stream->get_recording_policy_mode(),
+    });
   }
 
-  return cameras;
+  return result;
 }
 
 std::vector<camera_manager::player_info> camera_manager::list_players() const
 {
   std::scoped_lock lock(m_mutex);
 
-  std::vector<player_info> cameras;
+  std::vector<player_info> result;
+  result.reserve(m_arch_players_by_client.size());
 
   for (const auto& [client_id, entry] : m_arch_players_by_client)
   {
-    player_info pi
-    {
-        entry->camera_id(),
-        client_id,
-        entry->cur_time(),
-        entry->file_path() ? std::make_optional(*entry->file_path()) : std::nullopt,
-        std::nullopt,
-        std::nullopt,
-        std::nullopt
+    player_info pi{
+      .camera_id   = entry->camera_id(),
+      .client_id   = client_id,
+      .position_ts = entry->cur_time(),
+      .file_path   = entry->file_path() ? std::make_optional(*entry->file_path()) : std::nullopt,
+      .start_ts    = entry->get_start_time(),
+      .progress    = entry->get_progress(),
+      .mode        = entry->get_mode(),
     };
-    pi.start_ts = entry->get_start_time();
-    pi.progress = entry->get_progress();
-    pi.mode = entry->get_mode();
-    cameras.push_back(pi);
+    result.push_back(pi);
   }
 
-  return cameras;
+  return result;
 }
-void camera_manager::stop_all() 
+
+void camera_manager::stop_all()
 {
   std::scoped_lock lock(m_mutex);
 
-  for (auto& [_, entry] : m_cameras)
-  {
-    entry->shutdown();
-  }
+  for (auto& [_, device] : m_cameras)
+    device->shutdown();
 
   m_arch_players_by_client.clear();
 }
@@ -282,36 +321,29 @@ void camera_manager::stop_all()
 bool camera_manager::add_arch_player(
   const std::string& client_id,
   const std::string& camera_id,
-  std::string& error) 
+  std::string& error)
 {
-
-
-  if (client_id.empty()) 
+  if (client_id.empty())
   {
     error = "client_id must not be empty";
     return false;
   }
 
-
-  try 
+  try
   {
     std::scoped_lock lock(m_mutex);
 
     auto existing = m_arch_players_by_client.find(client_id);
-    if (existing != m_arch_players_by_client.end()) 
-    {
+    if (existing != m_arch_players_by_client.end())
       m_arch_players_by_client.erase(existing);
-    }
 
-    std::shared_ptr<arch_player> player = std::make_shared<arch_player>(
+    m_arch_players_by_client.emplace(
       client_id,
-      camera_id
-      );
-    m_arch_players_by_client.emplace(client_id, std::move(player));
+      std::make_shared<arch_player>(client_id, camera_id));
 
     return true;
-  } 
-  catch (const std::exception& ex) 
+  }
+  catch (const std::exception& ex)
   {
     error = ex.what();
     return false;
@@ -321,26 +353,26 @@ bool camera_manager::add_arch_player(
 bool camera_manager::set_player_state(
   const std::string& client_id,
   const std::string& camera_id,
-  const std::optional <std::chrono::system_clock::time_point> start_time,
+  const std::optional<std::chrono::system_clock::time_point> start_time,
   std::optional<std::chrono::milliseconds> position,
-  std::string& error) 
+  std::string& error)
 {
   std::scoped_lock lock(m_mutex);
 
-  if (client_id.empty()) 
+  if (client_id.empty())
   {
     error = "client_id must not be empty";
     return false;
   }
 
   auto it = m_arch_players_by_client.find(client_id);
-  if (it == m_arch_players_by_client.end()) 
+  if (it == m_arch_players_by_client.end())
   {
     error = "archive player not found for client: " + client_id;
     return false;
   }
 
-  if (!camera_id.empty() && camera_id != it->second->camera_id()) 
+  if (!camera_id.empty() && camera_id != it->second->camera_id())
   {
     error = "camera_id does not match archive player camera";
     return false;
@@ -349,19 +381,21 @@ bool camera_manager::set_player_state(
   return it->second->set_state(start_time, camera_id, position);
 }
 
-bool camera_manager::set_player_command(const std::string& client_id,
+bool camera_manager::set_player_command(
+  const std::string& client_id,
   const player_command& cmd,
   std::string& error)
 {
   std::scoped_lock lock(m_mutex);
 
-  if (client_id.empty()) 
+  if (client_id.empty())
   {
     error = "client_id must not be empty";
     return false;
   }
+
   auto it = m_arch_players_by_client.find(client_id);
-  if (it == m_arch_players_by_client.end()) 
+  if (it == m_arch_players_by_client.end())
   {
     error = "archive player not found for client: " + client_id;
     return false;
@@ -370,37 +404,35 @@ bool camera_manager::set_player_command(const std::string& client_id,
   return it->second->set_player_command(cmd);
 }
 
-std::optional<camera_manager::player_info>  camera_manager::get_player_state(
+std::optional<camera_manager::player_info> camera_manager::get_player_state(
   const std::string& client_id,
   std::string& error)
 {
   std::scoped_lock lock(m_mutex);
 
-  if (client_id.empty()) 
+  if (client_id.empty())
   {
     error = "client_id must not be empty";
     return std::nullopt;
   }
 
   auto it = m_arch_players_by_client.find(client_id);
-  if (it == m_arch_players_by_client.end()) 
+  if (it == m_arch_players_by_client.end())
   {
     error = "archive player not found for client: " + client_id;
     return std::nullopt;
   }
 
-  camera_manager::player_info pi
-  {
-    it->second->camera_id(),
-    client_id,
-    it->second->cur_time(),
-    it->second->file_path() ? std::make_optional(*it->second->file_path()) : std::nullopt,
-    std::nullopt,
-    std::nullopt,
-    std::nullopt
+  player_info pi{
+    .camera_id   = it->second->camera_id(),
+    .client_id   = client_id,
+    .position_ts = it->second->cur_time(),
+    .file_path   = it->second->file_path()
+                     ? std::make_optional(*it->second->file_path())
+                     : std::nullopt,
+    .start_ts    = it->second->get_start_time(),
+    .progress    = it->second->get_progress(),
+    .mode        = it->second->get_mode(),
   };
-  pi.start_ts = it->second->get_start_time();
-  pi.progress = it->second->get_progress();
-  pi.mode = it->second->get_mode();
   return pi;
 }

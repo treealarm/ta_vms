@@ -4,8 +4,32 @@ package vms.onvif;
 
 option go_package = "grpc/vmsonvif;vmsonvif";
 
-import "vms_cfg.proto";
-
 service OnvifService {
-  rpc GetCameraOnvifUri(vms.cfg.SourceRequest) returns (vms.cfg.OnvifState);
+  rpc GetProfiles(CameraRequest) returns (GetProfilesResponse);
+  rpc GetStreamUri(StreamUriRequest) returns (StreamUriResponse);
+}
+
+message CameraRequest {
+  string source_id = 1;
+}
+
+message StreamUriRequest {
+  string source_id = 1;
+  string profile_token = 2; // empty = first available profile
+}
+
+message OnvifProfile {
+  string token    = 1;
+  string name     = 2;
+  int32  width    = 3;
+  int32  height   = 4;
+  string encoding = 5;
+}
+
+message GetProfilesResponse {
+  repeated OnvifProfile profiles = 1;
+}
+
+message StreamUriResponse {
+  string rtsp_url = 1;
 }

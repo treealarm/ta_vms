@@ -3,9 +3,9 @@ import {
   Box,
   Card,
   CardContent,
+  Chip,
   IconButton,
   InputAdornment,
-  MenuItem,
   Stack,
   TextField,
   ToggleButton,
@@ -16,14 +16,14 @@ import {
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import FullscreenIcon from '@mui/icons-material/Fullscreen'
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit'
-import { type CameraStateDto, type RecordingMode } from '../dto/dtos'
+import { type CameraSetupDto } from '../dto/dtos'
 import CameraStreamCard from './CameraStreamCard'
 import ArchiveHlsStreamCard from './ArchiveHlsStreamCard'
 import { useAppDispatch, useAppSelector } from '../store'
-import { fetchCameraState, updateCameraRecording } from '../store/liveSlice'
+import { fetchCameraState } from '../store/liveSlice'
 
 type CameraUnifiedCardProps = {
-  camera: CameraStateDto
+  camera: CameraSetupDto
   /** This camera fills the monitor grid; others are hidden. */
   gridSoloActive?: boolean
   /** Toggle between solo (this camera) and full quad grid. */
@@ -37,9 +37,8 @@ function CameraUnifiedCard({ camera, gridSoloActive = false, onToggleGridSolo }:
 
   const [mode, setMode] = useState<'live' | 'archive'>('live')
 
-  const merged: CameraStateDto = { ...camera, ...(cameraState ?? {}) }
-  const recordingMode: RecordingMode =
-    merged.recordingMode ?? (merged.recording === true ? 'continuous' : 'off')
+  const merged: CameraSetupDto = { ...camera, ...(cameraState ?? {}) }
+  const recordingMode = merged.recordingMode ?? 'off'
 
   const activeRetentionWindow =
     merged.activeRetentionWindow === true && recordingMode !== 'off'
@@ -55,16 +54,6 @@ function CameraUnifiedCard({ camera, gridSoloActive = false, onToggleGridSolo }:
       clearInterval(interval)
     }
   }, [camera.cameraId, dispatch])
-
-  const updateRecordingMode = async (recordingMode: RecordingMode) => {
-    const payload: CameraStateDto = {
-      ...camera,
-      ...(cameraState ?? {}),
-      recordingMode
-    }
-    await dispatch(updateCameraRecording(payload))
-    await dispatch(fetchCameraState(camera.cameraId))
-  }
 
   return (
     <Card
@@ -146,29 +135,14 @@ function CameraUnifiedCard({ camera, gridSoloActive = false, onToggleGridSolo }:
               sx={{ flex: '1 1 80px', minWidth: 64 }}
             />
 
-            <TextField
-              select
-              size="small"
-              margin="none"
-              label="Rec"
-              value={cameraState?.recordingMode ?? camera.recordingMode ?? 'off'}
-              onChange={(event) => void updateRecordingMode(event.target.value as RecordingMode)}
-              slotProps={{
-                inputLabel: { shrink: true, sx: { fontSize: '0.7rem', top: 2 } },
-                select: { sx: { py: 0.25, fontSize: '0.75rem' } }
-              }}
-              sx={{ width: 100, flexShrink: 0 }}
-            >
-              <MenuItem value="off" dense sx={{ fontSize: '0.8125rem', minHeight: 32 }}>
-                Off
-              </MenuItem>
-              <MenuItem value="continuous" dense sx={{ fontSize: '0.8125rem', minHeight: 32 }}>
-                Continuous
-              </MenuItem>
-              <MenuItem value="prealarm" dense sx={{ fontSize: '0.8125rem', minHeight: 32 }}>
-                Pre-alarm
-              </MenuItem>
-            </TextField>
+            {recordingMode !== 'off' && (
+              <Chip
+                label={recordingMode === 'prealarm' ? 'Pre-alarm' : 'Rec'}
+                size="small"
+                color="error"
+                sx={{ fontSize: '0.7rem', height: 20, flexShrink: 0 }}
+              />
+            )}
 
             <ToggleButtonGroup
               value={mode}

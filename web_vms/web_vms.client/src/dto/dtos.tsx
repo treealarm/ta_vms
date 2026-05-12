@@ -81,25 +81,36 @@ export type OnvifConnectionDto = {
 
 export type RecordingMode = 'off' | 'continuous' | 'prealarm'
 
-export type PreAlarmRecordingSettingsDto = {
+export type RecordingProfileDto = {
+  id: string
+  name: string
+  mode: RecordingMode
   preRecordSeconds: number
   postRecordSeconds: number
   segmentSeconds: number
 }
 
-export type CameraStateDto = {
+export type CameraStreamDto = {
+  streamName: string
+  profileToken: string
+  rtspUrl: string
+  webRtc: boolean
+  recordingProfile?: RecordingProfileDto
+}
+
+export type CameraSetupDto = {
   cameraId: string
   serverId?: string
-  /** Mirror of cfg/media; prefer recordingMode in UI */
+  /** Derived from first stream's profile mode */
   recording?: boolean
   recordingMode: RecordingMode
   webRtc: boolean
   rtspUrl: string
   cred?: CredentialsDto
   onvifConn?: OnvifConnectionDto
-  preAlarm?: PreAlarmRecordingSettingsDto
   /** True while camera is inside a retention episode from FS (wall clock in [retain_from, retain_until]); new clips ingest as retained */
   activeRetentionWindow?: boolean
+  streams?: CameraStreamDto[]
 }
 
 export type MediaServerNodeDto = {
@@ -111,7 +122,7 @@ export type MediaServerNodeDto = {
 export type ServerInstanceDto = {
   serverId: string
   address: string
-  cameras: CameraStateDto[]
+  cameras: CameraSetupDto[]
 }
 
 export type RecordingDto = {

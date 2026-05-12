@@ -37,37 +37,37 @@ public class LiveController(
                                               : $"Media server error: {ex.Status.Detail}"
   };
 
-  private static CameraState ToControlState(CameraStateDto request)
+  private static CameraState ToControlState(CameraSetupDto request)
   {
-    var n = CameraManager.Normalize(request);
-    var state = new CameraState
+    var firstStream = request.Streams.FirstOrDefault();
+    var profile = firstStream?.RecordingProfile;
+
+    var recordingMode = profile?.Mode switch
     {
-      CameraId = n.CameraId,
-      RtspUrl = n.RtspUrl ?? "",
-      WebRtc = n.WebRtc,
-      Cred = n.Cred != null
-        ? new Credentials
-        {
-          User = n.Cred.User,
-          Pass = n.Cred.Pass
-        }
-        : null,
-      RecordingMode = n.RecordingMode switch
-      {
-        "continuous" => RecordingMode.RecordingContinuous,
-        "prealarm" => RecordingMode.RecordingPrealarm,
-        _ => RecordingMode.RecordingOff,
-      }
+      "continuous" => RecordingMode.RecordingContinuous,
+      "prealarm"   => RecordingMode.RecordingPrealarm,
+      _            => RecordingMode.RecordingOff,
     };
 
-    if (state.RecordingMode == RecordingMode.RecordingPrealarm && n.PreAlarm != null)
-      state.SegmentSeconds = n.PreAlarm.SegmentSeconds > 0 ? n.PreAlarm.SegmentSeconds : 5;
+    var state = new CameraState
+    {
+      CameraId = request.CameraId,
+      RtspUrl  = firstStream?.RtspUrl ?? request.RtspUrl ?? "",
+      WebRtc   = firstStream?.WebRtc ?? request.WebRtc,
+      Cred     = request.Cred != null
+        ? new Credentials { User = request.Cred.User, Pass = request.Cred.Pass }
+        : null,
+      RecordingMode = recordingMode,
+    };
+
+    if (recordingMode == RecordingMode.RecordingPrealarm && profile != null)
+      state.SegmentSeconds = profile.SegmentSeconds > 0 ? profile.SegmentSeconds : 5u;
 
     return state;
   }
 
   [HttpPost("cameras")]
-  public async Task<IActionResult> AddCamera([FromBody] CameraStateDto request, CancellationToken ct)
+  public async Task<IActionResult> AddCamera([FromBody] CameraSetupDto request, CancellationToken ct)
   {
     if (string.IsNullOrWhiteSpace(request.ServerId))
     {
@@ -75,19 +75,26 @@ public class LiveController(
     }
 
     var normalized = CameraManager.Normalize(request);
-    Vms.Control.OperationStatus response;
-    try
-    {
-      response = await GetMediaClient(normalized.ServerId!).SetCameraStateAsync(
-        ToControlState(normalized), MediaCallOptions(ct));
-    }
-    catch (RpcException ex)
-    {
-      return Ok(new ApiResponse(false, MediaServerError(ex)));
-    }
 
-    if (!response.Success)
-      return Ok(ApiResponseMapper.ToApiResponse(response));
+    // Only notify the media server if there is a stream to actually run.
+    // A camera with no streams is valid config — the user will add streams separately.
+    var hasStream = normalized.Streams.Count > 0 || !string.IsNullOrEmpty(normalized.RtspUrl);
+    if (hasStream)
+    {
+      Vms.Control.OperationStatus mediaResponse;
+      try
+      {
+        mediaResponse = await GetMediaClient(normalized.ServerId!).SetCameraStateAsync(
+          ToControlState(normalized), MediaCallOptions(ct));
+      }
+      catch (RpcException ex)
+      {
+        return Ok(new ApiResponse(false, MediaServerError(ex)));
+      }
+
+      if (!mediaResponse.Success)
+        return Ok(ApiResponseMapper.ToApiResponse(mediaResponse));
+    }
 
     try
     {
@@ -104,7 +111,7 @@ public class LiveController(
   [HttpPut("cameras/{cameraId}/parent")]
   public async Task<IActionResult> ChangeCameraParent(
     string cameraId,
-    [FromBody] CameraStateDto request,
+    [FromBody] CameraSetupDto request,
     CancellationToken ct)
   {
     if (cameraId != request.CameraId)
@@ -209,7 +216,7 @@ public class LiveController(
   }
 
   [HttpPost("cameras/state")]
-  public async Task<IActionResult> SetCameraState([FromBody] CameraStateDto state, CancellationToken ct)
+  public async Task<IActionResult> SetCameraState([FromBody] CameraSetupDto state, CancellationToken ct)
   {
     var curState = await _manager.Get(state.CameraId);
     if (curState != null && state.OnvifConn == null)
@@ -236,7 +243,7 @@ public class LiveController(
     }
 
     if (response.Success)
-      await _manager.SetState(normalized, ct);
+      await _manager.SetSetup(normalized, ct);
 
     return Ok(ApiResponseMapper.ToApiResponse(response));
   }

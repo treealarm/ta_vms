@@ -7,9 +7,11 @@ service CfgService {
   rpc ListMediaServers(ListMediaServersRequest) returns (ListMediaServersResponse);
   rpc RegisterMediaServer(MediaServerNode) returns (OperationStatus);
   rpc SetupCamera(CameraSetup) returns (OperationStatus);
-  rpc SetCameraState(CameraState) returns (OperationStatus);
   rpc RemoveCamera(SourceRequest) returns (OperationStatus);
-  rpc GetCameraState(SourceRequest) returns (CameraStateResponse);
+  rpc GetCamera(SourceRequest) returns (GetCameraResponse);
+  rpc ListRecordingProfiles(ListRecordingProfilesRequest) returns (ListRecordingProfilesResponse);
+  rpc UpsertRecordingProfile(RecordingProfile) returns (OperationStatus);
+  rpc RemoveRecordingProfile(RecordingProfileRequest) returns (OperationStatus);
 }
 
 service StorageService {
@@ -34,36 +36,50 @@ message OnvifConnection {
   int32 port = 2;
 }
 
-message OnvifState {
-  string rtsp_url = 4;
-}
-
-message PreAlarmRecordingSettings {
-  uint32 pre_record_seconds = 1;
-  uint32 post_record_seconds = 2;
-  uint32 segment_seconds = 3;
-}
-
 enum RecordingMode {
   RECORDING_OFF = 0;
   RECORDING_CONTINUOUS = 1;
   RECORDING_PREALARM = 2;
 }
 
-message CameraState {
-  string camera_id = 1;
-  RecordingMode recording_mode = 2;
-  bool web_rtc = 3;
+message RecordingProfile {
+  string id                  = 1;
+  string name                = 2;
+  RecordingMode mode         = 3;
+  uint32 pre_record_seconds  = 4;
+  uint32 post_record_seconds = 5;
+  uint32 segment_seconds     = 6;
+}
+
+message CameraStream {
+  string stream_name                    = 1;
+  string profile_token                  = 2;
+  string rtsp_url                       = 3;
+  bool   web_rtc                        = 4;
+  optional RecordingProfile recording_profile = 5;
 }
 
 message CameraSetup {
   string camera_id = 1;
   string server_id = 2;
-  string rtsp_url = 4;
   optional Credentials cred = 5;
   optional OnvifConnection onvif_conn = 6;
-  optional CameraState state = 7;
-  optional PreAlarmRecordingSettings pre_alarm = 8;
+  repeated CameraStream streams = 9;
+}
+
+message RecordingProfileRequest {
+  string id = 1;
+}
+
+message ListRecordingProfilesRequest {}
+
+message ListRecordingProfilesResponse {
+  repeated RecordingProfile profiles = 1;
+}
+
+message GetCameraResponse {
+  CameraSetup setup = 1;
+  bool found = 2;
 }
 
 message MediaServerNode {
@@ -88,12 +104,6 @@ message ListCamerasResponse {
 message OperationStatus {
   bool success = 1;
   string message = 2;
-}
-
-message CameraStateResponse {
-  CameraState state = 1;
-  CameraSetup setup = 3;
-  bool found = 2;
 }
 
 message Storage {
@@ -130,4 +140,3 @@ message SetCameraStoragesRequest {
 message GetCameraStoragesResponse {
   repeated CameraStorageAssignment assignments = 1;
 }
-

@@ -3,6 +3,14 @@ using System.ServiceModel.Channels;
 
 namespace OnvifLib
 {
+  public record OnvifProfileInfo(
+    string Token,
+    string Name,
+    int Width,
+    int Height,
+    string Encoding
+  );
+
   public class ImageResult
   {
     public byte[] Data { get; set; } = [];
@@ -13,9 +21,9 @@ namespace OnvifLib
   {
     public const string WSDL_V10 = "http://www.onvif.org/ver10/media/wsdl";
     public const string WSDL_V20 = "http://www.onvif.org/ver20/media/wsdl";
-    public virtual List<string> GetProfiles()
+    public virtual List<OnvifProfileInfo> GetProfiles()
     {
-      return new List<string>();
+      return [];
     }
     public virtual async Task<string> GetStreamUri(string profile_token)
     {

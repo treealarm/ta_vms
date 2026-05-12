@@ -99,6 +99,7 @@ fs_client::~fs_client()
 
 void fs_client::enqueue_ingest_clip(
   const std::string& camera_id,
+  const std::string& stream_name,
   const std::string& storage_id,
   const std::string& file_path,
   std::chrono::system_clock::time_point start_ts,
@@ -108,6 +109,7 @@ void fs_client::enqueue_ingest_clip(
   vms::fs::IngestClipRequest request;
   auto* clip = request.mutable_clip();
   clip->set_camera_id(camera_id);
+  clip->set_stream_name(stream_name);
   clip->set_storage_id(storage_id);
   clip->set_file_path(file_path);
   *clip->mutable_start_ts() = to_proto_ts(start_ts);
@@ -141,6 +143,7 @@ bool fs_client::ingest_clip(
   vms::fs::IngestClipRequest request;
   auto* meta = request.mutable_clip();
   meta->set_camera_id(clip.camera_id);
+  meta->set_stream_name(clip.stream_name);
   meta->set_file_path(clip.file_path);
   *meta->mutable_start_ts() = to_proto_ts(clip.start_ts);
   if (clip.end_ts)
@@ -316,8 +319,9 @@ bool fs_client::get_recordings(
   for (const auto& item : response.recordings())
   {
     result.push_back(recording{
-      .camera_id = item.camera_id(),
-      .file_path = item.file_path(),
+      .camera_id   = item.camera_id(),
+      .stream_name = item.stream_name(),
+      .file_path   = item.file_path(),
       .start_ts = from_timestamp(item.start_ts()),
       .end_ts = item.has_end_ts()
         ? std::optional<std::chrono::system_clock::time_point>(from_timestamp(item.end_ts()))

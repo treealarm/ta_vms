@@ -29,12 +29,12 @@ public:
   bool stop_web_rtc(std::string& error);
 
   void shutdown();
-  std::string get_id() { return m_cam_id; }
-  std::string get_source() { return m_source; }
-  std::string get_user() { return m_user; }
-  std::string get_pass() { return m_pass; }
-  bool is_recording() { return m_writer != nullptr; }
-  bool is_web_rtc_streaming() { return m_webrtc_output_sink != nullptr; }
+  std::string get_id() const { return m_cam_id; }
+  std::string get_source() const { return m_source; }
+  std::string get_user() const { return m_user; }
+  std::string get_pass() const { return m_pass; }
+  bool is_recording() const { return m_writer != nullptr; }
+  bool is_web_rtc_streaming() const { return m_webrtc_output_sink != nullptr; }
   recording_policy_mode get_recording_policy_mode() const { return m_recording_policy_mode; }
 
 private:

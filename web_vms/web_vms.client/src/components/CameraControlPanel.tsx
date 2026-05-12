@@ -1,5 +1,4 @@
-import type { Dispatch, FormEventHandler, SetStateAction } from 'react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Box,
   Button,
@@ -9,85 +8,38 @@ import {
   List,
   ListItemButton,
   ListItemText,
-  MenuItem,
   Stack,
-  TextField
+  Typography
 } from '@mui/material'
+import { useAppDispatch, useAppSelector } from '../store'
+import { loadCameras, loadServers } from '../store/liveSlice'
+import CameraSetupPanel from './CameraSetupPanel'
+import StreamSetupPanel from './StreamSetupPanel'
 
-import PasswordField from './PasswordField'
-import CameraStoragesControl from './CameraStoragesControl'
-import type { CameraStateDto, ServerInstanceDto } from '../dto/dtos'
+type Selection =
+  | { kind: 'none' }
+  | { kind: 'camera'; cameraId: string; serverId: string }
+  | { kind: 'new_camera'; serverId: string }
+  | { kind: 'stream'; cameraId: string; streamName: string }
+  | { kind: 'new_stream'; cameraId: string }
 
-type CameraControlPanelProps = {
-  cameraId: string
-  setCameraId: Dispatch<SetStateAction<string>>
-  rtspUrl: string
-  setRtspUrl: Dispatch<SetStateAction<string>>
-  user: string
-  setUser: Dispatch<SetStateAction<string>>
-  pass: string
-  setPass: Dispatch<SetStateAction<string>>
-  onvifIp: string
-  setOnvifIp: Dispatch<SetStateAction<string>>
-  onvifPort: number
-  setOnvifPort: Dispatch<SetStateAction<number>>
-  preRecordSeconds: number
-  setPreRecordSeconds: Dispatch<SetStateAction<number>>
-  postRecordSeconds: number
-  setPostRecordSeconds: Dispatch<SetStateAction<number>>
-  preAlarmSegmentSeconds: number
-  setPreAlarmSegmentSeconds: Dispatch<SetStateAction<number>>
-  selectedServerId: string
-  setSelectedServerId: Dispatch<SetStateAction<string>>
-  selectedCameraId: string
-  setSelectedCameraId: Dispatch<SetStateAction<string>>
-  servers: ServerInstanceDto[]
-  isLimitReached: boolean
-  onAddCamera: FormEventHandler
-  onRefreshLists: () => void | Promise<void>
-  onRemoveCamera: (cameraId: string) => void | Promise<void>
-  onMoveCamera: (cameraId: string, serverId: string) => void | Promise<void>
-  onSelectCamera: (camera: CameraStateDto) => void
-}
-
-export default function CameraControlPanel({
-  cameraId,
-  setCameraId,
-  rtspUrl,
-  setRtspUrl,
-  user,
-  setUser,
-  pass,
-  setPass,
-  onvifIp,
-  setOnvifIp,
-  onvifPort,
-  setOnvifPort,
-  preRecordSeconds,
-  setPreRecordSeconds,
-  postRecordSeconds,
-  setPostRecordSeconds,
-  preAlarmSegmentSeconds,
-  setPreAlarmSegmentSeconds,
-  selectedServerId,
-  setSelectedServerId,
-  selectedCameraId,
-  setSelectedCameraId,
-  servers,
-  isLimitReached,
-  onAddCamera,
-  onRefreshLists,
-  onRemoveCamera,
-  onMoveCamera,
-  onSelectCamera
-}: CameraControlPanelProps) {
+export default function CameraControlPanel() {
+  const dispatch = useAppDispatch()
+  const servers = useAppSelector((state) => state.live.servers)
+  const camerasMap = useAppSelector((state) => state.live.cameraStatesById)
+  const [selection, setSelection] = useState<Selection>({ kind: 'none' })
   const [isVisible, setIsVisible] = useState(true)
 
-  const setNonNegativeNumber = (raw: string, setter: Dispatch<SetStateAction<number>>) => {
-    const value = Number(raw)
-    if (!Number.isNaN(value)) {
-      setter(Math.max(0, value))
-    }
+  const serversTree = useMemo(() => {
+    const cams = Object.values(camerasMap)
+    return servers.map((s) => ({
+      serverId: s.serverId,
+      cameras: cams.filter((c) => c.serverId === s.serverId)
+    }))
+  }, [servers, camerasMap])
+
+  const refresh = async () => {
+    await Promise.all([dispatch(loadCameras()), dispatch(loadServers())])
   }
 
   return (
@@ -101,156 +53,140 @@ export default function CameraControlPanel({
       <Collapse in={isVisible} timeout={220} unmountOnExit>
         <Card>
           <CardContent>
-            <Box component="form" onSubmit={onAddCamera}>
-              <Stack spacing={2}>
-                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                  <Button size="small" onClick={() => setIsVisible(false)}>
-                    Hide
-                  </Button>
-                </Stack>
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+              {/* Tree */}
+              <Box sx={{ minWidth: 260, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                <List dense disablePadding>
+                  <ListItemButton onClick={() => setIsVisible(false)}>
+                    <ListItemText primary="Hide" primaryTypographyProps={{ color: 'text.secondary' }} />
+                  </ListItemButton>
 
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-                  <Box sx={{ minWidth: 280, border: 1, borderColor: 'divider', borderRadius: 1 }}>
-                    <List dense>
-                      {servers.map((server) => (
-                        <Box key={server.serverId}>
+                  {serversTree.map((server) => (
+                    <Box key={server.serverId}>
+                      {/* Server row — click → new camera form */}
+                      <ListItemButton
+                        selected={selection.kind === 'new_camera' && selection.serverId === server.serverId}
+                        onClick={() => setSelection({ kind: 'new_camera', serverId: server.serverId })}
+                      >
+                        <ListItemText
+                          primary={server.serverId}
+                          secondary="+ new camera"
+                          primaryTypographyProps={{ fontWeight: 600 }}
+                        />
+                      </ListItemButton>
+
+                      {server.cameras.map((camera) => (
+                        <Box key={camera.cameraId}>
+                          {/* Camera row */}
                           <ListItemButton
-                            selected={selectedServerId === server.serverId && selectedCameraId === ''}
-                            onClick={() => {
-                              setSelectedServerId(server.serverId)
-                              setSelectedCameraId('')
-                            }}
+                            sx={{ pl: 4 }}
+                            selected={selection.kind === 'camera' && selection.cameraId === camera.cameraId}
+                            onClick={() =>
+                              setSelection({ kind: 'camera', cameraId: camera.cameraId, serverId: server.serverId })
+                            }
                           >
-                            <ListItemText primary={server.serverId} secondary={server.address} />
+                            <ListItemText primary={camera.cameraId} />
                           </ListItemButton>
-                          {server.cameras.map((camera) => (
+
+                          {/* Stream rows */}
+                          {(camera.streams ?? []).map((stream) => (
                             <ListItemButton
-                              key={camera.cameraId}
-                              sx={{ pl: 4 }}
-                              selected={selectedCameraId === camera.cameraId}
-                              onClick={() => {
-                                setSelectedServerId(server.serverId)
-                                setSelectedCameraId(camera.cameraId)
-                                onSelectCamera(camera)
-                              }}
+                              key={stream.streamName}
+                              sx={{ pl: 8 }}
+                              selected={
+                                selection.kind === 'stream' &&
+                                selection.cameraId === camera.cameraId &&
+                                selection.streamName === stream.streamName
+                              }
+                              onClick={() =>
+                                setSelection({ kind: 'stream', cameraId: camera.cameraId, streamName: stream.streamName })
+                              }
                             >
-                              <ListItemText primary={camera.cameraId} />
+                              <ListItemText
+                                primary={stream.streamName}
+                                secondary={stream.rtspUrl || stream.profileToken || undefined}
+                                secondaryTypographyProps={{ noWrap: true }}
+                              />
                             </ListItemButton>
                           ))}
+
+                          {/* Add stream row */}
+                          <ListItemButton
+                            sx={{ pl: 8 }}
+                            selected={selection.kind === 'new_stream' && selection.cameraId === camera.cameraId}
+                            onClick={() => setSelection({ kind: 'new_stream', cameraId: camera.cameraId })}
+                          >
+                            <ListItemText
+                              primary="+ add stream"
+                              primaryTypographyProps={{ color: 'primary.main' }}
+                            />
+                          </ListItemButton>
                         </Box>
                       ))}
-                    </List>
-                  </Box>
+                    </Box>
+                  ))}
+                </List>
+              </Box>
 
-                  <Stack spacing={2} flex={1}>
-                    <TextField
-                      select
-                      label="Server"
-                      value={selectedServerId}
-                      onChange={(event) => {
-                        const nextServerId = event.target.value
-                        if (selectedCameraId) {
-                          void onMoveCamera(selectedCameraId, nextServerId)
-                        }
-                        setSelectedServerId(nextServerId)
-                      }}
-                      size="small"
-                    >
-                      {servers.map((server) => (
-                        <MenuItem key={server.serverId} value={server.serverId}>
-                          {server.serverId} ({server.address})
-                        </MenuItem>
-                      ))}
-                    </TextField>
-
-                    <TextField
-                      label="Camera ID"
-                      value={cameraId}
-                      onChange={(event) => setCameraId(event.target.value)}
-                      required
-                      fullWidth
-                      size="small"
-                    />
-
-                    <Stack direction="row" spacing={1.5} alignItems="center">
-                      <TextField
-                        label="RTSP URL"
-                        value={rtspUrl}
-                        onChange={(event) => setRtspUrl(event.target.value)}
-                        fullWidth
-                        size="small"
-                      />
-
-                      <TextField label="User" value={user} onChange={(event) => setUser(event.target.value)} fullWidth size="small" />
-                      <PasswordField pass={pass} setPass={setPass} />
-
-                      <Button
-                        disabled={isLimitReached || selectedServerId === ''}
-                        type="submit"
-                        variant="outlined"
-                        size="small"
-                        sx={{ minWidth: 120 }}
-                      >
-                        Setup
-                      </Button>
-                    </Stack>
-                    <Stack direction="row" spacing={1.5} alignItems="center">
-                      <TextField label="Onvif IP" value={onvifIp} onChange={(event) => setOnvifIp(event.target.value)} size="small" />
-                      <TextField
-                        label="Onvif Port"
-                        value={onvifPort}
-                        onChange={(event) => setNonNegativeNumber(event.target.value, setOnvifPort)}
-                        size="small"
-                      />
-                      <Button
-                        disabled={!selectedCameraId}
-                        color="error"
-                        variant="outlined"
-                        onClick={() => void onRemoveCamera(selectedCameraId)}
-                      >
-                        Delete selected
-                      </Button>
-                    </Stack>
-                    <Stack direction="row" spacing={1.5} alignItems="center">
-                      <TextField
-                        label="Pre-record, sec"
-                        type="number"
-                        value={preRecordSeconds}
-                        onChange={(event) => setNonNegativeNumber(event.target.value, setPreRecordSeconds)}
-                        size="small"
-                        slotProps={{ htmlInput: { min: 0 } }}
-                      />
-                      <TextField
-                        label="Post-record, sec"
-                        type="number"
-                        value={postRecordSeconds}
-                        onChange={(event) => setNonNegativeNumber(event.target.value, setPostRecordSeconds)}
-                        size="small"
-                        slotProps={{ htmlInput: { min: 0 } }}
-                      />
-                      <TextField
-                        label="Pre-alarm segment, sec"
-                        type="number"
-                        value={preAlarmSegmentSeconds}
-                        onChange={(event) => setNonNegativeNumber(event.target.value, setPreAlarmSegmentSeconds)}
-                        size="small"
-                        slotProps={{ htmlInput: { min: 1 } }}
-                      />
-                    </Stack>
-                  </Stack>
-                </Stack>
-
-                <Stack direction="row" spacing={1.5}>
-                  <Button variant="outlined" onClick={() => void onRefreshLists()} fullWidth>
-                    Refresh list
-                  </Button>
-                </Stack>
-
-                {selectedCameraId && (
-                  <CameraStoragesControl cameraId={selectedCameraId} />
+              {/* Detail panel */}
+              <Box flex={1} sx={{ minWidth: 0 }}>
+                {selection.kind === 'camera' && (
+                  <CameraSetupPanel
+                    key={selection.cameraId}
+                    cameraId={selection.cameraId}
+                    serverId={selection.serverId}
+                    onSaved={refresh}
+                    onRemoved={async () => {
+                      setSelection({ kind: 'none' })
+                      await refresh()
+                    }}
+                  />
                 )}
-              </Stack>
-            </Box>
+
+                {selection.kind === 'new_camera' && (
+                  <CameraSetupPanel
+                    key={`new@${selection.serverId}`}
+                    cameraId=""
+                    serverId={selection.serverId}
+                    onSaved={refresh}
+                    onRemoved={refresh}
+                  />
+                )}
+
+                {selection.kind === 'stream' && (
+                  <StreamSetupPanel
+                    key={`${selection.cameraId}/${selection.streamName}`}
+                    cameraId={selection.cameraId}
+                    streamName={selection.streamName}
+                    onSaved={refresh}
+                    onRemoved={async () => {
+                      setSelection({ kind: 'camera', cameraId: selection.cameraId, serverId: camerasMap[selection.cameraId]?.serverId ?? '' })
+                      await refresh()
+                    }}
+                  />
+                )}
+
+                {selection.kind === 'new_stream' && (
+                  <StreamSetupPanel
+                    key={`${selection.cameraId}/new`}
+                    cameraId={selection.cameraId}
+                    streamName={null}
+                    onSaved={refresh}
+                    onRemoved={refresh}
+                  />
+                )}
+
+                {selection.kind === 'none' && (
+                  <Typography color="text.secondary" sx={{ pt: 1 }}>
+                    Select a server, camera, or stream
+                  </Typography>
+                )}
+              </Box>
+            </Stack>
+
+            <Button variant="outlined" onClick={refresh} sx={{ mt: 2 }} size="small">
+              Refresh
+            </Button>
           </CardContent>
         </Card>
       </Collapse>

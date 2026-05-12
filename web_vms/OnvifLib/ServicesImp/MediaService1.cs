@@ -59,9 +59,15 @@ namespace OnvifLib
       var streamResponse = await _mediaClient1.GetStreamUriAsync(streamUriRequest, profile.token);
       return streamResponse.Uri;
     }
-    public override List<string> GetProfiles()
+    public override List<OnvifProfileInfo> GetProfiles()
     {
-      return _profiles.Select(p => p.token).ToList();
+      return _profiles.Select(p => new OnvifProfileInfo(
+        Token: p.token,
+        Name: p.Name ?? p.token,
+        Width: p.VideoEncoderConfiguration?.Resolution?.Width ?? 0,
+        Height: p.VideoEncoderConfiguration?.Resolution?.Height ?? 0,
+        Encoding: p.VideoEncoderConfiguration?.Encoding.ToString() ?? string.Empty
+      )).ToList();
     }
     public override async Task<ImageResult?> GetImage()
     {

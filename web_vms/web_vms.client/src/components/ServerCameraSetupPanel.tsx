@@ -19,14 +19,14 @@ import {
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 
-import type { CameraStateDto, MediaServerNodeDto } from '../dto/dtos'
+import type { CameraSetupDto, MediaServerNodeDto } from '../dto/dtos'
 import { addCamera, changeCameraParent, setLiveStatus } from '../store/liveSlice'
 import { useAppDispatch } from '../store'
 import PasswordField from './PasswordField'
 import CameraStoragesControl from './CameraStoragesControl'
 
 type Props = {
-  cameras: CameraStateDto[]
+  cameras: CameraSetupDto[]
   servers: MediaServerNodeDto[]
   isLimitReached: boolean
   maxCameras: number
@@ -39,7 +39,7 @@ const DEFAULT_PASS = 'elvees'
 const DEFAULT_ONVIF_IP = '192.168.1.150'
 const DEFAULT_ONVIF_PORT = 8899
 
-const getNextCameraId = (cameras: CameraStateDto[]) => {
+const getNextCameraId = (cameras: CameraSetupDto[]) => {
   const existing = new Set(cameras.map((camera) => camera.cameraId))
   let index = 1
 
@@ -85,7 +85,7 @@ export default function ServerCameraSetupPanel({
   )
 
   const camerasByServer = useMemo(() => {
-    const grouped = new Map<string, CameraStateDto[]>()
+    const grouped = new Map<string, CameraSetupDto[]>()
     serverOptions.forEach((id) => grouped.set(id, []))
 
     for (const camera of cameras) {
@@ -102,7 +102,7 @@ export default function ServerCameraSetupPanel({
     }
   }, [serverId, serverOptions])
 
-  const fillFromCamera = (camera: CameraStateDto) => {
+  const fillFromCamera = (camera: CameraSetupDto) => {
     setSelectedCameraId(camera.cameraId)
     setCameraId(camera.cameraId)
     setServerId(camera.serverId || '')
@@ -137,7 +137,7 @@ export default function ServerCameraSetupPanel({
     fillDefaultsForServer(id)
   }
 
-  const buildPayload = (): CameraStateDto => ({
+  const buildPayload = (): CameraSetupDto => ({
     cameraId,
     serverId,
     recordingMode: selectedCamera?.recordingMode ?? 'off',

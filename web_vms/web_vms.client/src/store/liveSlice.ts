@@ -1,9 +1,9 @@
 import { type AnyAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
-import type { CameraStateDto, ApiResponseDto, MediaServerNodeDto } from '../dto/dtos'
+import type { CameraSetupDto, ApiResponseDto, MediaServerNodeDto } from '../dto/dtos'
 import { parseJson } from './api'
 
 type LiveState = {
-  cameraStatesById: Record<string, CameraStateDto>
+  cameraStatesById: Record<string, CameraSetupDto>
   servers: MediaServerNodeDto[]
   isBusy: boolean
   status: string
@@ -23,14 +23,14 @@ export const loadServers = createAsyncThunk('live/loadServers', async () => {
 
 export const loadCameras = createAsyncThunk('live/loadCameras', async () => {
   const response = await fetch('/api/live/cameras')
-  const list = await parseJson<CameraStateDto[]>(response)
+  const list = await parseJson<CameraSetupDto[]>(response)
   return list.map((cam) => ({
     ...cam,
     recordingMode: cam.recordingMode ?? (cam.recording === true ? 'continuous' : 'off')
   }))
 })
 
-export const addCamera = createAsyncThunk('live/addCamera', async (payload: CameraStateDto) => {
+export const addCamera = createAsyncThunk('live/addCamera', async (payload: CameraSetupDto) => {
   const response = await fetch('/api/live/cameras', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -54,7 +54,7 @@ export const removeCamera = createAsyncThunk(
 
 export const changeCameraParent = createAsyncThunk(
   'live/changeCameraParent',
-  async (payload: CameraStateDto) => {
+  async (payload: CameraSetupDto) => {
     const response = await fetch(
       `/api/live/cameras/${encodeURIComponent(payload.cameraId)}/parent`,
       {
@@ -70,25 +70,13 @@ export const changeCameraParent = createAsyncThunk(
 
 export const fetchCameraState = createAsyncThunk('live/fetchCameraState', async (cameraId: string) => {
   const response = await fetch(`/api/live/cameras/${encodeURIComponent(cameraId)}/state`)
-  const cam = await parseJson<CameraStateDto>(response)
+  const cam = await parseJson<CameraSetupDto>(response)
   return {
     ...cam,
     recordingMode: cam.recordingMode ?? (cam.recording === true ? 'continuous' : 'off')
   }
 })
 
-export const updateCameraRecording = createAsyncThunk(
-  'live/updateCameraRecording',
-  async (payload: CameraStateDto) => {
-    const response = await fetch('/api/live/cameras/state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-
-    return parseJson<ApiResponseDto>(response)
-  }
-)
 
 const liveSlice = createSlice({
   name: 'live',
@@ -138,10 +126,7 @@ const liveSlice = createSlice({
       .addCase(changeCameraParent.fulfilled, (state, action) => {
         state.status = `${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
       })
-      .addCase(updateCameraRecording.fulfilled, (state, action) => {
-        state.status = `Result: ${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
-      })
-      .addMatcher((action: AnyAction) => action.type.startsWith('live/') && action.type.endsWith('/pending'), (state) => {
+.addMatcher((action: AnyAction) => action.type.startsWith('live/') && action.type.endsWith('/pending'), (state) => {
         state.isBusy = true
       })
       .addMatcher((action: AnyAction) => action.type.startsWith('live/') && action.type.endsWith('/fulfilled'), (state) => {

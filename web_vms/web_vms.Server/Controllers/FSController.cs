@@ -22,11 +22,12 @@ public sealed class FSController(
 
   private static RecordingDto ToRecordingDto(Vms.Fs.Recording r) => new()
   {
-    FilePath = r.FilePath,
-    StartTime = r.StartTs.ToDateTime(),
-    EndTime = r.EndTs?.ToDateTime(),
-    SizeBytes = r.SizeBytes,
-    ClipUid = r.ClipUid
+    FilePath   = r.FilePath,
+    StreamName = r.StreamName,
+    StartTime  = r.StartTs.ToDateTime(),
+    EndTime    = r.EndTs?.ToDateTime(),
+    SizeBytes  = r.SizeBytes,
+    ClipUid    = r.ClipUid
   };
 
   private static RecordingDto? NearestRecording(IReadOnlyList<RecordingDto> recordings, DateTime targetUtc)
@@ -66,20 +67,25 @@ public sealed class FSController(
     GetRecordingsResponse grpcResp;
     if (query.Timestamp.HasValue)
     {
-      grpcResp = await fsClient.GetRecordingsAroundAsync(new GetRecordingsAroundRequest
+      var req = new GetRecordingsAroundRequest
       {
-        CameraId = query.CameraId,
+        CameraId  = query.CameraId,
         Timestamp = Timestamp.FromDateTime(ToUtc(query.Timestamp.Value)),
-        Limit = limit
-      }, cancellationToken: ct);
+        Limit     = limit
+      };
+      if (!string.IsNullOrEmpty(query.StreamName))
+        req.StreamName = query.StreamName;
+      grpcResp = await fsClient.GetRecordingsAroundAsync(req, cancellationToken: ct);
     }
     else
     {
       var req = new GetRecordingsFromToRequest
       {
         CameraId = query.CameraId,
-        Limit = limit
+        Limit    = limit
       };
+      if (!string.IsNullOrEmpty(query.StreamName))
+        req.StreamName = query.StreamName;
       if (query.FromUtc.HasValue)
         req.FromTs = Timestamp.FromDateTime(ToUtc(query.FromUtc.Value));
       if (query.ToUtc.HasValue)
@@ -108,10 +114,12 @@ public sealed class FSController(
 
     var grpcReq = new GetRecordingRangesRequest
     {
-      CameraId = query.CameraId,
-      Limit = query.Limit ?? 50,
+      CameraId       = query.CameraId,
+      Limit          = query.Limit ?? 50,
       GapToleranceMs = 1000
     };
+    if (!string.IsNullOrEmpty(query.StreamName))
+      grpcReq.StreamName = query.StreamName;
 
     if (query.Timestamp.HasValue)
       grpcReq.Timestamp = Timestamp.FromDateTime(ToUtc(query.Timestamp.Value));
