@@ -2,6 +2,7 @@ using Dapr.Client;
 using Dapr.Messaging.PublishSubscribe.Extensions;
 using Dapr.Messaging.PublishSubscribe;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Vms.Cfg;
 using VmsFs;
@@ -15,7 +16,10 @@ builder.Services.AddGrpc();
 builder.Services.AddDaprPubSubClient();
 builder.Services.AddHostedService<CameraConfigSubscriber>();
 builder.Services.AddHostedService<ClipCleaner>();
-builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(BuildPostgresConnectionString()));
+var postgresConnStr = BuildPostgresConnectionString();
+builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(postgresConnStr));
+builder.Services.AddDbContextFactory<ClipsDbContext>(options =>
+  options.UseNpgsql(postgresConnStr));
 builder.Services.AddSingleton(_ =>
   new CfgService.CfgServiceClient(DaprClient.CreateInvocationInvoker(cfgAppId)));
 builder.Services.AddSingleton(_ =>

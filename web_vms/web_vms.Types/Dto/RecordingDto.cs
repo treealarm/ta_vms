@@ -3,6 +3,7 @@
   public class RecordingsQueryDto
   {
     public string CameraId { get; set; } = "cam1";
+    public string? StreamName { get; set; }
     public DateTime? Timestamp { get; set; }
     public DateTime? FromUtc { get; set; }
     public DateTime? ToUtc { get; set; }
@@ -12,6 +13,7 @@
   public class RecordingDto
   {
     public string FilePath { get; set; } = default!;
+    public string StreamName { get; set; } = "";
     public DateTime StartTime { get; set; }
     public DateTime? EndTime { get; set; }
     public ulong SizeBytes { get; set; }

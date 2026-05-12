@@ -152,6 +152,7 @@ void segment_writer::open_new_segment()
 
   fs_client::instance().enqueue_ingest_clip(
     m_camera_id,
+    m_stream_name,
     m_segment_storage_id,
     m_segment_rel_path.string(),
     m_segment_start_ts,
@@ -187,6 +188,7 @@ void segment_writer::close_segment()
 
       fs_client::instance().enqueue_ingest_clip(
         m_camera_id,
+        m_stream_name,
         m_segment_storage_id,
         m_segment_rel_path.string(),
         m_segment_start_ts,
@@ -197,6 +199,7 @@ void segment_writer::close_segment()
     {
       fs_client::instance().enqueue_ingest_clip(
         m_camera_id,
+        m_stream_name,
         m_segment_storage_id,
         m_segment_rel_path.string(),
         m_segment_start_ts,

@@ -29,6 +29,7 @@ public:
   struct recording
   {
     std::string camera_id;
+    std::string stream_name;
     std::string file_path;
     std::chrono::system_clock::time_point start_ts;
     std::optional<std::chrono::system_clock::time_point> end_ts;
@@ -50,6 +51,7 @@ public:
 
   void enqueue_ingest_clip(
     const std::string& camera_id,
+    const std::string& stream_name,
     const std::string& storage_id,
     const std::string& file_path,
     std::chrono::system_clock::time_point start_ts,
