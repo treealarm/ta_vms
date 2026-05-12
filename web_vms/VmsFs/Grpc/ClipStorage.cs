@@ -184,7 +184,14 @@ public sealed class ClipStorage(
       clips = await GetRecordingsWithEventsAsync(request.CameraId, streamName, request.FromTs, request.ToTs, fetchLimit, ct);
     }
 
-    var ranges = GroupRecordingRanges(clips, gap, DefaultMaxRecordingRangeWallSpan);
+    // Group clips by stream first so ranges never mix multiple streams,
+    // then merge all streams' ranges sorted by their earliest clip time.
+    var ranges = clips
+      .GroupBy(c => c.Recording.StreamName)
+      .SelectMany(g => GroupRecordingRanges(g.OrderBy(c => c.Recording.StartTs.ToDateTime()).ToList(), gap, DefaultMaxRecordingRangeWallSpan))
+      .OrderBy(r => r.Recordings[0].StartTs.ToDateTime())
+      .ToList();
+
     if (ranges.Count > limit)
       ranges = ranges.GetRange(0, limit);
     return ranges;
@@ -198,18 +205,22 @@ public sealed class ClipStorage(
 
     await using var db = await dbFactory.CreateDbContextAsync(ct);
 
-    var anchorStart = await db.Clips
+    var anchor = await db.Clips
       .Where(c => c.CameraId == request.CameraId && c.ClipUid == anchorUid)
-      .Select(c => (DateTime?)c.StartTs)
+      .Select(c => new { c.StartTs, c.StreamName })
       .FirstOrDefaultAsync(ct);
 
-    if (anchorStart is null)
+    if (anchor is null)
       return [];
 
-    var q = db.Clips.Where(c => c.CameraId == request.CameraId && c.Retained && c.StartTs >= anchorStart.Value);
+    // Use explicit stream filter if provided, otherwise inherit the anchor clip's stream
+    // so playback never crosses stream boundaries.
+    var effectiveStream = !string.IsNullOrEmpty(streamName) ? streamName : anchor.StreamName;
 
-    if (!string.IsNullOrEmpty(streamName))
-      q = q.Where(c => c.StreamName == streamName);
+    var q = db.Clips.Where(c => c.CameraId == request.CameraId && c.Retained && c.StartTs >= anchor.StartTs);
+
+    if (!string.IsNullOrEmpty(effectiveStream))
+      q = q.Where(c => c.StreamName == effectiveStream);
 
     var rows = await q.OrderBy(c => c.StartTs).Take(count).ToListAsync(ct);
     return rows.Select(ToRecording).ToList();

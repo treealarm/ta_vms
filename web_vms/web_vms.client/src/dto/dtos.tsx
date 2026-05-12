@@ -127,6 +127,7 @@ export type ServerInstanceDto = {
 
 export type RecordingDto = {
   filePath: string
+  streamName?: string
   startTime: string
   endTime?: string
   sizeBytes: number
@@ -143,6 +144,7 @@ export type RecordingRangesResponseDto = {
 
 export type RecordingsQueryDto = {
   cameraId: string
+  streamName?: string
   timestamp?: string
   fromUtc?: string
   toUtc?: string
