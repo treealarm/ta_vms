@@ -1,5 +1,8 @@
-﻿using Google.Protobuf.WellKnownTypes;
+﻿using Dapr.Client;
+using Google.Protobuf.WellKnownTypes;
+using Grpc.Core;
 using Microsoft.AspNetCore.Mvc;
+using Vms.Control;
 using Vms.Fs;
 using web_vms;
 using web_vms.Types.Dto;
@@ -12,6 +15,14 @@ public sealed class FSController(
   ICameraManager manager,
   FsService.FsServiceClient fsClient) : ControllerBase
 {
+  private static readonly TimeSpan FrameJpegTimeout = TimeSpan.FromSeconds(15);
+
+  private static CameraControlService.CameraControlServiceClient GetMediaClient(string serverId) =>
+    new(DaprClient.CreateInvocationInvoker(serverId));
+
+  private static CallOptions FrameCallOptions(CancellationToken ct) =>
+    new(deadline: DateTime.UtcNow.Add(FrameJpegTimeout), cancellationToken: ct);
+
   private static DateTime ToUtc(DateTime dt) =>
     dt.Kind switch
     {
@@ -168,7 +179,7 @@ public sealed class FSController(
       grpcReq.AlarmEndTs = Timestamp.FromDateTime(ToUtc(body.AlarmEndTs.Value));
 
     var resp = await fsClient.RetainEventAsync(grpcReq, cancellationToken: ct);
-    if (resp.Status != OperationStatus.Types.Status.Success)
+    if (resp.Status != Vms.Fs.OperationStatus.Types.Status.Success)
       return StatusCode(500, new { success = false, message = resp.Message });
 
     return Ok(new ApiResponse(true, "ok"));
@@ -204,5 +215,99 @@ public sealed class FSController(
       dto.NextBeforeAlarmStart = grpcResp.NextBeforeAlarmStartTs.ToDateTime();
 
     return Ok(dto);
+  }
+
+  [HttpGet("frame-jpeg")]
+  public async Task<IActionResult> GetFrameJpeg(
+    [FromQuery] string cameraId,
+    [FromQuery] string? streamName,
+    [FromQuery] string timestamp,
+    CancellationToken ct)
+  {
+    if (string.IsNullOrWhiteSpace(cameraId))
+      return BadRequest(new { error = "cameraId is required" });
+
+    if (string.IsNullOrWhiteSpace(timestamp))
+      return BadRequest(new { error = "timestamp is required" });
+
+    if (!DateTime.TryParse(timestamp, null, System.Globalization.DateTimeStyles.RoundtripKind, out var tsUtc))
+      return BadRequest(new { error = "timestamp must be RFC3339 / ISO 8601" });
+
+    tsUtc = ToUtc(tsUtc);
+
+    var cam = await manager.Get(cameraId);
+    if (cam is null)
+      return NotFound(new { error = "camera not found" });
+
+    if (string.IsNullOrWhiteSpace(cam.ServerId))
+      return StatusCode(503, new { error = "camera has no assigned media server" });
+
+    var fsReq = new GetRecordingsAroundRequest
+    {
+      CameraId  = cameraId,
+      Timestamp = Timestamp.FromDateTime(tsUtc),
+      Limit     = 3
+    };
+    if (!string.IsNullOrWhiteSpace(streamName))
+      fsReq.StreamName = streamName;
+
+    GetRecordingsResponse fsResp;
+    try
+    {
+      fsResp = await fsClient.GetRecordingsAroundAsync(fsReq, cancellationToken: ct);
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(503, new { error = $"FS service error: {ex.Status.Detail}" });
+    }
+
+    var rec = fsResp.Recordings
+      .Where(r => r.StartTs.ToDateTime() <= tsUtc)
+      .OrderByDescending(r => r.StartTs.ToDateTime())
+      .FirstOrDefault();
+
+    if (rec is null)
+      return NotFound(new { error = "no recording found for the given timestamp" });
+
+    StatArchiveTsResponse stat;
+    try
+    {
+      stat = await fsClient.StatArchiveTsAsync(
+        new StatArchiveTsRequest { ClipUid = rec.ClipUid }, cancellationToken: ct);
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(503, new { error = $"FS service error: {ex.Status.Detail}" });
+    }
+
+    if (!stat.Exists)
+      return NotFound(new { error = stat.Message });
+
+    var offsetMs = (long)(tsUtc - rec.StartTs.ToDateTime()).TotalMilliseconds;
+    if (offsetMs < 0) offsetMs = 0;
+
+    ArchiveFrameJpegResponse mediaResp;
+    try
+    {
+      mediaResp = await GetMediaClient(cam.ServerId).GetArchiveFrameJpegAsync(
+        new ArchiveFrameJpegRequest { FilePath = stat.FilePath, OffsetMs = offsetMs },
+        FrameCallOptions(ct));
+    }
+    catch (RpcException ex)
+    {
+      var status = ex.StatusCode switch
+      {
+        Grpc.Core.StatusCode.NotFound        => 404,
+        Grpc.Core.StatusCode.DeadlineExceeded => 504,
+        Grpc.Core.StatusCode.Unavailable      => 503,
+        _                                     => 500
+      };
+      return StatusCode(status, new { error = ex.Status.Detail });
+    }
+
+    if (!mediaResp.Success)
+      return StatusCode(500, new { error = mediaResp.Message });
+
+    return File(mediaResp.Jpeg.ToByteArray(), "image/jpeg");
   }
 }

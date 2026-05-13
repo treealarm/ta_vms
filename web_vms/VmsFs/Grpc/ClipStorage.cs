@@ -274,13 +274,19 @@ public sealed class ClipStorage(
 
   public async Task<bool> HasActiveRetentionWindowAsync(string cameraId, CancellationToken ct)
   {
+    var config = await configCache.GetAsync(cameraId, ct);
+    var post = config?.PostRecordSeconds ?? 30;
+
     await using var cmd = dataSource.CreateCommand("""
       SELECT EXISTS (
         SELECT 1 FROM retention_events
-        WHERE camera_id = $1 AND alarm_start_ts <= now() AND alarm_end_ts >= now()
+        WHERE camera_id = $1
+          AND alarm_start_ts <= now()
+          AND alarm_end_ts + ($2 * interval '1 second') >= now()
       );
       """);
     cmd.Parameters.AddWithValue(cameraId);
+    cmd.Parameters.AddWithValue(post);
     return (bool)(await cmd.ExecuteScalarAsync(ct))!;
   }
 

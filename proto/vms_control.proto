@@ -1,6 +1,5 @@
 syntax = "proto3";
 
-import "google/protobuf/timestamp.proto";
 import "vms_cfg.proto";
 
 package vms.control;
@@ -38,8 +37,8 @@ message CameraState {
 
 
 message ArchiveFrameJpegRequest {
-  string camera_id = 1;
-  google.protobuf.Timestamp timestamp = 2;
+  string file_path = 1;
+  int64 offset_ms = 2;
 }
 
 message ArchiveFrameJpegResponse {

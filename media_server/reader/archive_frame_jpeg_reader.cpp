@@ -1,6 +1,6 @@
 #include "reader/archive_frame_jpeg_reader.h"
 
-#include <algorithm>
+#include <chrono>
 
 archive_frame_jpeg_reader::archive_frame_jpeg_reader()
   : m_packet_transcoder({
@@ -13,8 +13,8 @@ archive_frame_jpeg_reader::archive_frame_jpeg_reader()
 }
 
 bool archive_frame_jpeg_reader::read_frame_at(
-  const std::string& camera_id,
-  const std::chrono::system_clock::time_point& timestamp,
+  const std::string& file_path,
+  int64_t offset_ms,
   std::vector<uint8_t>& jpeg_frame,
   std::string& error)
 {
@@ -22,18 +22,10 @@ bool archive_frame_jpeg_reader::read_frame_at(
   error.clear();
   m_packet_transcoder.close();
 
-  const auto rec = m_storage.find_nearest(camera_id, "", timestamp);
-  if (!rec)
-  {
-    error = "recording not found";
-    return false;
-  }
-
-  auto position = std::chrono::duration_cast<std::chrono::milliseconds>(timestamp - rec->start_time);
-  position = std::max(position, std::chrono::milliseconds(0));
+  auto position = std::chrono::milliseconds(offset_ms);
 
   snapshot_reader snapshot(position);
-  if (!snapshot.open(rec->file_path.string()))
+  if (!snapshot.open(file_path))
   {
     error = "snapshot_reader open failed";
     return false;
