@@ -86,7 +86,7 @@ export default function StreamOverrideRow({ cameraId, stream }: Props) {
         value={overrideValue}
         onChange={(e) => void handleChange(e.target.value)}
         disabled={busy || presets.length === 0}
-        sx={{ fontSize: '0.72rem', height: 22, minWidth: 120, '.MuiSelect-select': { py: 0, px: 0.75 } }}
+        sx={{ fontSize: '0.72rem', height: 22, minWidth: 96, '.MuiSelect-select': { py: 0, px: 0.75 } }}
         renderValue={(v) =>
           v === '' ? (
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>Override…</Typography>
