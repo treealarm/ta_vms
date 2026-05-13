@@ -1,6 +1,10 @@
 {
   "permissions": {
     "allow": [
+      "Bash(curl -s http://localhost*)",
+      "Bash(curl -sv http://localhost*)",
+      "Bash(curl -s -X GET http://localhost*)",
+      "Bash(curl -s -X POST http://localhost*)",
       "Bash(grep -v \"\\\\.o$\")",
       "Bash(grep -v \"^$\")",
       "Bash(cmake -S . -B build -DCMAKE_BUILD_TYPE=Release)",

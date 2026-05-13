@@ -34,7 +34,7 @@ export default function StreamOverrideRow({ cameraId, stream }: Props) {
       .catch(() => {})
   }, [])
 
-  if (!stream || (!stream.recordingProfile && !stream.overrideProfile)) return null
+  if (!stream) return null
 
   const effective = stream.overrideProfile ?? stream.recordingProfile
   const effectiveMode = effective?.mode ?? 'off'

@@ -23,7 +23,7 @@ public sealed class ClipStorage(
       throw new ArgumentException("camera_id, file_path and start_ts are required");
 
     var clipUid = string.IsNullOrWhiteSpace(clip.ClipUid) ? Guid.NewGuid() : Guid.Parse(clip.ClipUid);
-    var config = await configCache.GetAsync(clip.CameraId, ct);
+    var config = await configCache.GetAsync(clip.CameraId, ct, clip.StreamName);
     var retained = await ResolveRetainedAsync(clip, config, ct);
     var startTs = clip.StartTs.ToDateTime().ToUniversalTime();
     var endTs = clip.EndTs?.ToDateTime().ToUniversalTime();

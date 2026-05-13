@@ -44,7 +44,10 @@ function CameraUnifiedCard({ camera, gridSoloActive = false, onToggleGridSolo }:
 
   const webRtcStreams = (merged.streams ?? []).filter((s) => s.webRtc)
   const activeStreamName = selectedStreamName || webRtcStreams[0]?.streamName || ''
-  const activeStream = (merged.streams ?? []).find((s) => s.streamName === activeStreamName) ?? null
+  const activeStream =
+    (merged.streams ?? []).find((s) => s.streamName === activeStreamName)
+    ?? (merged.streams ?? [])[0]
+    ?? null
 
   const activeRetentionWindow =
     merged.activeRetentionWindow === true && recordingMode !== 'off'
@@ -173,7 +176,7 @@ function CameraUnifiedCard({ camera, gridSoloActive = false, onToggleGridSolo }:
             )}
           </Stack>
 
-          <StreamOverrideRow cameraId={camera.cameraId} stream={activeStream} />
+          {mode === 'live' && <StreamOverrideRow cameraId={camera.cameraId} stream={activeStream} />}
 
           <Box
             sx={{

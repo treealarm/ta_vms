@@ -12,9 +12,10 @@ public sealed class CameraConfigCache(CfgService.CfgServiceClient cfgClient)
 {
   private readonly ConcurrentDictionary<string, CameraConfig> _cache = new();
 
-  public async Task<CameraConfig?> GetAsync(string cameraId, CancellationToken ct)
+  public async Task<CameraConfig?> GetAsync(string cameraId, CancellationToken ct, string? streamName = null)
   {
-    if (_cache.TryGetValue(cameraId, out var cached))
+    var key = streamName is null ? cameraId : $"{cameraId}:{streamName}";
+    if (_cache.TryGetValue(key, out var cached))
       return cached;
 
     GetCameraResponse resp;
@@ -31,18 +32,27 @@ public sealed class CameraConfigCache(CfgService.CfgServiceClient cfgClient)
     if (!resp.Found || resp.Setup is null)
       return null;
 
-    var firstStream = resp.Setup.Streams.FirstOrDefault();
-    // Override profile takes precedence over primary when set
-    var profile = firstStream?.OverrideProfile ?? firstStream?.RecordingProfile;
+    // Use the specific stream's profile when streamName is provided,
+    // so per-stream override modes are respected during clip ingestion.
+    var stream = streamName is not null
+      ? (resp.Setup.Streams.FirstOrDefault(s => s.StreamName == streamName)
+         ?? resp.Setup.Streams.FirstOrDefault())
+      : resp.Setup.Streams.FirstOrDefault();
+
+    var profile = stream?.OverrideProfile ?? stream?.RecordingProfile;
 
     var config = new CameraConfig(
       profile?.Mode ?? RecordingMode.RecordingOff,
       profile != null ? (int)profile.PreRecordSeconds : 0,
       profile != null ? (int)profile.PostRecordSeconds : 0);
 
-    _cache.TryAdd(cameraId, config);
+    _cache.TryAdd(key, config);
     return config;
   }
 
-  public void Invalidate(string cameraId) => _cache.TryRemove(cameraId, out _);
+  public void Invalidate(string cameraId)
+  {
+    foreach (var key in _cache.Keys.Where(k => k == cameraId || k.StartsWith($"{cameraId}:")))
+      _cache.TryRemove(key, out _);
+  }
 }
