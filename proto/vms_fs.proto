@@ -20,6 +20,8 @@ service FsService {
   rpc GetRecordingByUid(GetRecordingByUidRequest) returns (GetRecordingByUidResponse);
 
   rpc GetCameraStorage(GetCameraStorageRequest) returns (GetCameraStorageResponse);
+
+  rpc GetClipsForEvent(GetClipsForEventRequest) returns (GetRecordingsResponse);
 }
 
 message OperationStatus {
@@ -127,6 +129,10 @@ message ListRetentionEventsResponse {
   repeated RetentionEventRow events = 1;
   bool has_more = 2;
   optional google.protobuf.Timestamp next_before_alarm_start_ts = 3;
+}
+
+message GetClipsForEventRequest {
+  string event_id = 1;
 }
 
 message StatArchiveTsRequest {

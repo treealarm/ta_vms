@@ -1,10 +1,8 @@
 #pragma once
 
-#include <chrono>
 #include <string>
 #include <vector>
 
-#include "file_system/recording_storage.h"
 #include "reader/snapshot_reader.h"
 #include "stream/jpeg_streamer.h"
 #include "writer/sync_packet_transcoder.h"
@@ -15,8 +13,8 @@ public:
   archive_frame_jpeg_reader();
 
   bool read_frame_at(
-    const std::string& camera_id,
-    const std::chrono::system_clock::time_point& timestamp,
+    const std::string& file_path,
+    int64_t offset_ms,
     std::vector<uint8_t>& jpeg_frame,
     std::string& error);
 
@@ -28,6 +26,5 @@ private:
     std::string& error) const;
 
 private:
-  recording_storage m_storage;
   sync_packet_transcoder m_packet_transcoder;
 };

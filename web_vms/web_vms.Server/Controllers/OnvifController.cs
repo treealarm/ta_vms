@@ -39,4 +39,25 @@ public class OnvifController(OnvifService.OnvifServiceClient onvifClient) : Cont
       return StatusCode(502, ex.Status.Detail);
     }
   }
+
+  [HttpGet("cameras/{cameraId}/stream-uri")]
+  public async Task<IActionResult> GetStreamUri(string cameraId, [FromQuery] string? profileToken, CancellationToken ct)
+  {
+    try
+    {
+      var response = await onvifClient.GetStreamUriAsync(
+        new StreamUriRequest { SourceId = cameraId, ProfileToken = profileToken ?? "" },
+        Options(ct));
+
+      return Ok(new { rtspUrl = response.RtspUrl });
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.DeadlineExceeded)
+    {
+      return StatusCode(504, "Camera did not respond within timeout");
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
 }

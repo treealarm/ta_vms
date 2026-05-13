@@ -3,7 +3,6 @@ import {
   Box,
   Card,
   CardContent,
-  Chip,
   IconButton,
   InputAdornment,
   Stack,
@@ -53,6 +52,25 @@ function CameraUnifiedCard({ camera, gridSoloActive = false, onToggleGridSolo }:
     merged.activeRetentionWindow === true && recordingMode !== 'off'
   const retentionTooltip =
     'Retention episode active — segments finalized now are retained on disk (not subject to normal pruning)'
+
+  const configuredRtsp = camera.rtspUrl || ''
+  const [onvifRtsp, setOnvifRtsp] = useState('')
+
+  useEffect(() => {
+    if (configuredRtsp || !camera.onvifConn) {
+      setOnvifRtsp('')
+      return
+    }
+    const profileToken = activeStream?.profileToken ?? ''
+    const qs = profileToken ? `?profileToken=${encodeURIComponent(profileToken)}` : ''
+    fetch(`/api/onvif/cameras/${encodeURIComponent(camera.cameraId)}/stream-uri${qs}`)
+      .then((r) => r.ok ? r.json() as Promise<{ rtspUrl: string }> : Promise.reject())
+      .then((data) => setOnvifRtsp(data.rtspUrl || ''))
+      .catch(() => setOnvifRtsp(''))
+  }, [camera.cameraId, camera.onvifConn, configuredRtsp, activeStream?.profileToken])
+
+  const displayRtsp = configuredRtsp || onvifRtsp
+  const rtspIsOnvif = !configuredRtsp && !!onvifRtsp
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -116,33 +134,40 @@ function CameraUnifiedCard({ camera, gridSoloActive = false, onToggleGridSolo }:
               {camera.cameraId}
             </Typography>
 
-            <TextField
-              value={camera.rtspUrl}
-              variant="outlined"
-              size="small"
-              margin="none"
-              hiddenLabel
-              placeholder="RTSP"
-              slotProps={{
-                input: {
-                  readOnly: true,
-                  sx: { py: 0.5, px: 1, fontSize: '0.75rem' },
-                  endAdornment: (
-                    <InputAdornment position="end" sx={{ ml: 0 }}>
-                      <IconButton
-                        size="small"
-                        edge="end"
-                        sx={{ p: 0.25 }}
-                        onClick={() => navigator.clipboard.writeText(camera.rtspUrl || '')}
-                      >
-                        <ContentCopyIcon sx={{ fontSize: '1rem' }} />
-                      </IconButton>
-                    </InputAdornment>
-                  )
-                }
-              }}
-              sx={{ flex: '1 1 80px', minWidth: 64 }}
-            />
+            <Tooltip title={rtspIsOnvif ? 'RTSP from ONVIF (not configured manually)' : ''} disableHoverListener={!rtspIsOnvif}>
+              <TextField
+                value={displayRtsp}
+                variant="outlined"
+                size="small"
+                margin="none"
+                hiddenLabel
+                placeholder="RTSP"
+                slotProps={{
+                  input: {
+                    readOnly: true,
+                    sx: {
+                      py: 0.5, px: 1, fontSize: '0.75rem',
+                      ...(rtspIsOnvif ? { color: 'text.secondary', fontStyle: 'italic' } : {})
+                    },
+                    endAdornment: (
+                      <InputAdornment position="end" sx={{ ml: 0 }}>
+                        <IconButton
+                          size="small"
+                          edge="end"
+                          sx={{ p: 0.25 }}
+                          onClick={() => navigator.clipboard.writeText(displayRtsp)}
+                        >
+                          <ContentCopyIcon sx={{ fontSize: '1rem' }} />
+                        </IconButton>
+                      </InputAdornment>
+                    )
+                  }
+                }}
+                sx={{ flex: '1 1 80px', minWidth: 64 }}
+              />
+            </Tooltip>
+
+            {mode === 'live' && <StreamOverrideRow cameraId={camera.cameraId} stream={activeStream} />}
 
             <ToggleButtonGroup
               value={mode}
@@ -175,8 +200,6 @@ function CameraUnifiedCard({ camera, gridSoloActive = false, onToggleGridSolo }:
               </Tooltip>
             )}
           </Stack>
-
-          {mode === 'live' && <StreamOverrideRow cameraId={camera.cameraId} stream={activeStream} />}
 
           <Box
             sx={{

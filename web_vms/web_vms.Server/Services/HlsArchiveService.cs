@@ -106,6 +106,43 @@ public sealed class HlsArchiveService(
     return new HlsPlaylistResult.Ok(BuildPlaylist(cameraId, segments));
   }
 
+  public async Task<HlsPlaylistResult> BuildEventPlaylistAsync(
+    string eventId, string? streamName, CancellationToken ct)
+  {
+    GetRecordingsResponse clipsResp;
+    try
+    {
+      clipsResp = await fsClient.GetClipsForEventAsync(
+        new GetClipsForEventRequest { EventId = eventId }, cancellationToken: ct);
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound)
+    {
+      return new HlsPlaylistResult.NotFound(ex.Status.Detail);
+    }
+    catch (RpcException ex)
+    {
+      return new HlsPlaylistResult.Error(ex.Status.Detail);
+    }
+
+    var clips = clipsResp.Recordings
+      .Where(r => !string.IsNullOrWhiteSpace(r.ClipUid))
+      .Where(r => streamName is null || r.StreamName == streamName)
+      .OrderBy(r => r.StartTs.ToDateTime())
+      .ToList();
+
+    if (clips.Count == 0)
+      return new HlsPlaylistResult.NotFound("no recordings for this stream in event");
+
+    var segments = clips.Select(rec =>
+    {
+      var wallStart = rec.StartTs.ToDateTime();
+      return new HlsSegment(rec.ClipUid, null,
+        new TimelineSlice(wallStart, wallStart + RecordingWallDuration(rec)));
+    }).ToList();
+
+    return new HlsPlaylistResult.Ok(BuildPlaylist(clips[0].CameraId, segments));
+  }
+
   private string BuildPlaylist(string cameraId, List<HlsSegment> segments, double? startOffset = null)
   {
     var targetDur = (int)Math.Ceiling(Math.Max(1, segments.Max(s => s.Duration.TotalSeconds)));

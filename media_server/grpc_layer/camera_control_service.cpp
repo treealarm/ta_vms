@@ -1,47 +1,7 @@
-#include <algorithm>
-#include <google/protobuf/timestamp.pb.h>
-#include <chrono>
 #include <vector>
 
 #include "camera_control_service.h"
 #include "proto_mapper.h"
-
-std::chrono::system_clock::time_point to_time_point(
-  const google::protobuf::Timestamp& ts)
-{
-  using namespace std::chrono;
-
-  system_clock::duration d =
-    duration_cast<system_clock::duration>(
-      seconds(ts.seconds()) + nanoseconds(ts.nanos()));
-
-  auto tp = system_clock::time_point(d);
-  
-  //std::chrono::zoned_time local_time{ std::chrono::current_zone(), tp };
-
-  //std::cout << "Local time: "
-  //  << std::format("{:%F %T}", local_time)
-  //  << "\n";
-
-  return tp;
-}
-
-google::protobuf::Timestamp from_time_point(
-  const std::chrono::system_clock::time_point& tp)
-{
-  using namespace std::chrono;
-
-  auto duration = tp.time_since_epoch();
-
-  auto sec = duration_cast<seconds>(duration);
-  auto nanos = duration_cast<nanoseconds>(duration - sec);
-
-  google::protobuf::Timestamp ts;
-  ts.set_seconds(sec.count());
-  ts.set_nanos(nanos.count());
-
-  return ts;
-}
 
 camera_control_service::camera_control_service(camera_manager& manager)
     : m_manager(manager) {}
@@ -61,7 +21,7 @@ grpc::Status camera_control_service::RemoveCamera(
 grpc::Status camera_control_service::SetCameraState(
     grpc::ServerContext* /*context*/,
     const vms::control::CameraState* request,
-    vms::control::OperationStatus* response) 
+    vms::control::OperationStatus* response)
 {
   std::string error;
   const auto policy = proto_mapper::recording_policy_for_media(
@@ -88,11 +48,11 @@ grpc::Status camera_control_service::GetArchiveFrameJpeg(
   const vms::control::ArchiveFrameJpegRequest* request,
   vms::control::ArchiveFrameJpegResponse* response)
 {
-  if (request->camera_id().empty())
+  if (request->file_path().empty())
   {
     response->set_success(false);
-    response->set_message("camera_id must not be empty");
-    return ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "camera_id must not be empty");
+    response->set_message("file_path must not be empty");
+    return ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "file_path must not be empty");
   }
 
   std::vector<uint8_t> jpeg;
@@ -100,8 +60,8 @@ grpc::Status camera_control_service::GetArchiveFrameJpeg(
 
   archive_frame_jpeg_reader reader;
   const bool success = reader.read_frame_at(
-    request->camera_id(),
-    to_time_point(request->timestamp()),
+    request->file_path(),
+    request->offset_ms(),
     jpeg,
     error);
 
@@ -119,4 +79,3 @@ grpc::Status camera_control_service::GetArchiveFrameJpeg(
 
   return grpc::Status::OK;
 }
-
