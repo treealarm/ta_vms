@@ -272,6 +272,39 @@ public sealed class ClipStorage(
     await db.Clips.Where(c => c.ClipUid == clipUid).ExecuteDeleteAsync(ct);
   }
 
+  public async Task<List<Recording>> GetClipsForEventAsync(string eventId, CancellationToken ct)
+  {
+    await using var evtCmd = dataSource.CreateCommand("""
+      SELECT camera_id FROM retention_events WHERE event_id = $1;
+      """);
+    evtCmd.Parameters.AddWithValue(eventId);
+    var cameraId = (string?)await evtCmd.ExecuteScalarAsync(ct);
+    if (cameraId is null)
+      return [];
+
+    var config = await configCache.GetAsync(cameraId, ct);
+    var pre  = config?.PreRecordSeconds  ?? 30;
+    var post = config?.PostRecordSeconds ?? 30;
+
+    await using var cmd = dataSource.CreateCommand("""
+      SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id,
+             ''
+      FROM clips c
+      JOIN retention_events re ON re.event_id = $1
+        AND re.camera_id = c.camera_id
+        AND c.start_ts <= re.alarm_end_ts + ($2 * interval '1 second')
+        AND COALESCE(c.end_ts, c.start_ts) >= re.alarm_start_ts - ($3 * interval '1 second')
+      WHERE c.retained = TRUE
+      ORDER BY c.stream_name, c.start_ts;
+      """);
+    cmd.Parameters.AddWithValue(eventId);
+    cmd.Parameters.AddWithValue(post);
+    cmd.Parameters.AddWithValue(pre);
+
+    var rows = await ReadRecordingWithEventsAsync(cmd, ct);
+    return rows.Select(r => r.Recording).ToList();
+  }
+
   public async Task<bool> HasActiveRetentionWindowAsync(string cameraId, CancellationToken ct)
   {
     var config = await configCache.GetAsync(cameraId, ct);

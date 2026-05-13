@@ -217,6 +217,41 @@ public sealed class FSController(
     return Ok(dto);
   }
 
+  [HttpGet("event-playlists")]
+  public async Task<IActionResult> GetEventPlaylists([FromQuery] string eventId, CancellationToken ct)
+  {
+    if (string.IsNullOrWhiteSpace(eventId))
+      return BadRequest(new { error = "eventId is required" });
+
+    GetRecordingsResponse clipsResp;
+    try
+    {
+      clipsResp = await fsClient.GetClipsForEventAsync(
+        new GetClipsForEventRequest { EventId = eventId }, cancellationToken: ct);
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound)
+    {
+      return NotFound(new { error = ex.Status.Detail });
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(503, new { error = ex.Status.Detail });
+    }
+
+    var streams = clipsResp.Recordings
+      .Select(r => r.StreamName)
+      .Distinct()
+      .OrderBy(s => s)
+      .Select(s => new
+      {
+        streamName  = s,
+        playlistUrl = $"/api/arch/hls/event.m3u8?eventId={Uri.EscapeDataString(eventId)}&streamName={Uri.EscapeDataString(s)}"
+      })
+      .ToList();
+
+    return Ok(new { streams });
+  }
+
   [HttpGet("frame-jpeg")]
   public async Task<IActionResult> GetFrameJpeg(
     [FromQuery] string cameraId,

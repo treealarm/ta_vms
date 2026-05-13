@@ -280,6 +280,22 @@ public sealed class FsServiceImpl(
     }
   }
 
+  public override async Task<GetRecordingsResponse> GetClipsForEvent(
+    GetClipsForEventRequest request,
+    ServerCallContext context)
+  {
+    if (string.IsNullOrWhiteSpace(request.EventId))
+      throw new RpcException(new Status(StatusCode.InvalidArgument, "event_id is required"));
+
+    var clips = await _storage.GetClipsForEventAsync(request.EventId, context.CancellationToken);
+    if (clips.Count == 0)
+      throw new RpcException(new Status(StatusCode.NotFound, "event not found or has no clips"));
+
+    var resp = new GetRecordingsResponse();
+    resp.Recordings.AddRange(clips);
+    return resp;
+  }
+
   private async Task<string?> ResolveAbsolutePathAsync(string storageId, string relativePath, CancellationToken ct)
   {
     var storages = await _storageListCache.GetAsync(ct);
