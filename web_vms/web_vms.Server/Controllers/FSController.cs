@@ -238,16 +238,27 @@ public sealed class FSController(
       return StatusCode(503, new { error = ex.Status.Detail });
     }
 
-    var streams = clipsResp.Recordings
+    var streamNames = clipsResp.Recordings
       .Select(r => r.StreamName)
       .Distinct()
       .OrderBy(s => s)
-      .Select(s => new
-      {
-        streamName  = s,
-        playlistUrl = $"/api/arch/hls/event.m3u8?eventId={Uri.EscapeDataString(eventId)}&streamName={Uri.EscapeDataString(s)}"
-      })
       .ToList();
+
+    var perStream = streamNames.Select(s => new
+    {
+      streamName  = s,
+      playlistUrl = $"/api/arch/hls/event.m3u8?eventId={Uri.EscapeDataString(eventId)}&streamName={Uri.EscapeDataString(s)}"
+    });
+
+    var allEntry = new
+    {
+      streamName  = (string?)null,
+      playlistUrl = $"/api/arch/hls/event.m3u8?eventId={Uri.EscapeDataString(eventId)}"
+    };
+
+    var streams = streamNames.Count > 1
+      ? perStream.Prepend(allEntry).ToList<object>()
+      : perStream.ToList<object>();
 
     return Ok(new { streams });
   }

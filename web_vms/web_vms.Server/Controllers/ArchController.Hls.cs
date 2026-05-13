@@ -58,13 +58,13 @@ public partial class ArchController(
   [HttpGet("hls/event.m3u8")]
   public async Task<IActionResult> EventHlsPlaylist(
     [FromQuery] string eventId,
-    [FromQuery] string streamName,
+    [FromQuery] string? streamName,
     CancellationToken ct)
   {
-    eventId    = eventId?.Trim()    ?? "";
-    streamName = streamName?.Trim() ?? "";
-    if (eventId.Length == 0 || streamName.Length == 0)
-      return BadRequest(new { error = "eventId and streamName are required" });
+    eventId    = eventId?.Trim() ?? "";
+    streamName = streamName?.Trim();
+    if (string.IsNullOrEmpty(eventId))
+      return BadRequest(new { error = "eventId is required" });
 
     var result = await hlsService.BuildEventPlaylistAsync(eventId, streamName, ct);
     return PlaylistResult(result);

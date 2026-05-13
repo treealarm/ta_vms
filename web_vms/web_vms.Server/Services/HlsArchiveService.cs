@@ -107,7 +107,7 @@ public sealed class HlsArchiveService(
   }
 
   public async Task<HlsPlaylistResult> BuildEventPlaylistAsync(
-    string eventId, string streamName, CancellationToken ct)
+    string eventId, string? streamName, CancellationToken ct)
   {
     GetRecordingsResponse clipsResp;
     try
@@ -125,7 +125,8 @@ public sealed class HlsArchiveService(
     }
 
     var clips = clipsResp.Recordings
-      .Where(r => !string.IsNullOrWhiteSpace(r.ClipUid) && r.StreamName == streamName)
+      .Where(r => !string.IsNullOrWhiteSpace(r.ClipUid))
+      .Where(r => streamName is null || r.StreamName == streamName)
       .OrderBy(r => r.StartTs.ToDateTime())
       .ToList();
 

@@ -11,5 +11,5 @@ public interface IHlsArchiveService
 {
   Task<HlsPlaylistResult> BuildPreviewPlaylistAsync(string cameraId, TimelineSlice range, CancellationToken ct);
   Task<HlsPlaylistResult> BuildFilesPlaylistAsync(string cameraId, string startClipUid, uint count, CancellationToken ct);
-  Task<HlsPlaylistResult> BuildEventPlaylistAsync(string eventId, string streamName, CancellationToken ct);
+  Task<HlsPlaylistResult> BuildEventPlaylistAsync(string eventId, string? streamName, CancellationToken ct);
 }

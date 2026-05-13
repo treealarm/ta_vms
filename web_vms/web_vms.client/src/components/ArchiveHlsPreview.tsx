@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Box, Stack, Tab, Tabs, Typography } from '@mui/material'
+import { Alert, Box, MenuItem, Select, Stack, Typography } from '@mui/material'
 import Hls from 'hls.js'
 
 import type { RetentionEventRowDto } from '../dto/dtos'
 
 type StreamEntry = {
-  streamName: string
+  streamName: string | null  // null = all streams
   playlistUrl: string
 }
 
@@ -13,8 +13,8 @@ type Props = {
   selected: RetentionEventRowDto | null
 }
 
-async function fetchEventPlaylists(eventId: string): Promise<StreamEntry[]> {
-  const resp = await fetch(`/api/fs/event-playlists?eventId=${encodeURIComponent(eventId)}`)
+async function fetchEventPlaylists(eventId: string, signal: AbortSignal): Promise<StreamEntry[]> {
+  const resp = await fetch(`/api/fs/event-playlists?eventId=${encodeURIComponent(eventId)}`, { signal })
   if (!resp.ok) throw new Error(`Failed to load streams: ${resp.status}`)
   const data = (await resp.json()) as { streams: StreamEntry[] }
   return data.streams
@@ -23,7 +23,7 @@ async function fetchEventPlaylists(eventId: string): Promise<StreamEntry[]> {
 export default function ArchiveHlsPreview({ selected }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [streams, setStreams] = useState<StreamEntry[]>([])
-  const [activeStream, setActiveStream] = useState<string>('')
+  const [activeStream, setActiveStream] = useState<string | null>(null)
   const [loadingStreams, setLoadingStreams] = useState(false)
   const [hlsError, setHlsError] = useState<string | null>(null)
 
@@ -37,24 +37,32 @@ export default function ArchiveHlsPreview({ selected }: Props) {
     setLoadingStreams(true)
     setHlsError(null)
 
-    fetchEventPlaylists(selected.eventId)
+    const controller = new AbortController()
+
+    fetchEventPlaylists(selected.eventId, controller.signal)
       .then((entries) => {
         setStreams(entries)
-        const preferred = selected.streamName
-        const pick = entries.find((e) => e.streamName === preferred) ?? entries[0]
-        setActiveStream(pick?.streamName ?? '')
+        const preferred = selected.streamName ?? null
+        const pick =
+          entries.find((e) => e.streamName === preferred) ??
+          entries.find((e) => e.streamName !== null) ??
+          entries[0]
+        setActiveStream(pick?.streamName ?? null)
       })
       .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === 'AbortError') return
         setHlsError(e instanceof Error ? e.message : String(e))
         setStreams([])
-        setActiveStream('')
+        setActiveStream(null)
       })
       .finally(() => setLoadingStreams(false))
+
+    return () => controller.abort()
   }, [selected])
 
   useEffect(() => {
     const video = videoRef.current
-    if (!video || !selected || !activeStream) return
+    if (!video || !selected || activeStream === undefined) return
 
     const entry = streams.find((s) => s.streamName === activeStream)
     if (!entry) return
@@ -128,17 +136,18 @@ export default function ArchiveHlsPreview({ selected }: Props) {
       )}
 
       {!loadingStreams && streams.length > 1 && (
-        <Tabs
-          value={activeStream}
-          onChange={(_, v: string) => setActiveStream(v)}
-          variant="scrollable"
-          scrollButtons="auto"
-          sx={{ minHeight: 34, '& .MuiTab-root': { minHeight: 34, py: 0.5 } }}
+        <Select
+          size="small"
+          value={activeStream ?? ''}
+          onChange={(e) => setActiveStream(e.target.value === '' ? null : e.target.value)}
+          sx={{ fontSize: '0.8rem', height: 28, alignSelf: 'flex-start', minWidth: 140 }}
         >
           {streams.map((s) => (
-            <Tab key={s.streamName} label={s.streamName} value={s.streamName} />
+            <MenuItem key={s.streamName ?? '__all__'} value={s.streamName ?? ''} sx={{ fontSize: '0.8rem' }}>
+              {s.streamName === null ? 'All streams' : s.streamName || '(default)'}
+            </MenuItem>
           ))}
-        </Tabs>
+        </Select>
       )}
 
       {hlsError && (
@@ -165,7 +174,7 @@ export default function ArchiveHlsPreview({ selected }: Props) {
         }}
       >
         <video
-          key={`${selected.eventId}-${activeStream}`}
+          key={`${selected.eventId}-${activeStream ?? '__all__'}`}
           ref={videoRef}
           controls
           playsInline
