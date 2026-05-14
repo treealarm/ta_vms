@@ -17,5 +17,6 @@ public:
 
   std::filesystem::path file_ext();
 
+  // Returns the value of VMS_STORAGE_BASE_PATH. Terminates the process if the variable is not set.
   static std::filesystem::path resolve_storage_base_path();
 };

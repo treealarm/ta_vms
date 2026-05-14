@@ -8,23 +8,18 @@
 #include "logger/logger.h"
 
 namespace {
-std::string read_env_or_default(const char* key, const char* fallback)
+std::string require_env(const char* key)
 {
   const char* value = std::getenv(key);
-  if (!value || *value == '\0') {
-    return fallback;
-  }
-
+  if (!value || *value == '\0')
+    throw std::runtime_error(std::format("Required environment variable '{}' is not set", key));
   return value;
 }
 }
 
 onvif_client::onvif_client()
-  :
-    m_app_id(read_env_or_default("DAPR_ONVIF_APP_ID", "vmsonvif")),
-    m_channel(grpc::CreateChannel(
-      read_env_or_default("DAPR_GRPC_ENDPOINT", "127.0.0.1:50001"),
-      grpc::InsecureChannelCredentials())),
+  : m_app_id(require_env("DAPR_ONVIF_APP_ID")),
+    m_channel(grpc::CreateChannel("127.0.0.1:50001", grpc::InsecureChannelCredentials())),
     m_stub(vms::onvif::OnvifService::NewStub(m_channel))
 {
 }

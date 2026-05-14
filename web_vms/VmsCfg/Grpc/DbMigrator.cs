@@ -41,6 +41,34 @@ public class DbMigrator(NpgsqlDataSource dataSource, IWebHostEnvironment environ
 
       await tx.CommitAsync(ct);
     }
+
+    await SeedDefaultMediaMtxServerAsync(connection, ct);
+  }
+
+  // Inserts a default MediaMTX server from env vars if the table is empty.
+  // Reads VMS_WEBRTC_RTSP_BASE_URL and VMS_WEBRTC_CLIENT_URL.
+  private static async Task SeedDefaultMediaMtxServerAsync(NpgsqlConnection connection, CancellationToken ct)
+  {
+    var rtspUrl   = Environment.GetEnvironmentVariable("VMS_WEBRTC_RTSP_BASE_URL");
+    var clientUrl = Environment.GetEnvironmentVariable("VMS_WEBRTC_CLIENT_URL");
+
+    if (string.IsNullOrWhiteSpace(rtspUrl) && string.IsNullOrWhiteSpace(clientUrl))
+      return;
+
+    await using var checkCmd = new NpgsqlCommand(
+      "SELECT COUNT(*) FROM media_mtx_server;", connection);
+    var count = (long)(await checkCmd.ExecuteScalarAsync(ct) ?? 0L);
+    if (count > 0)
+      return;
+
+    await using var insertCmd = new NpgsqlCommand("""
+      INSERT INTO media_mtx_server (name, rtsp_url, webrtc_url)
+      VALUES ('Default', $1, $2)
+      ON CONFLICT DO NOTHING;
+      """, connection);
+    insertCmd.Parameters.AddWithValue(rtspUrl ?? "rtsp://localhost:8554");
+    insertCmd.Parameters.AddWithValue(clientUrl ?? "http://localhost:8889");
+    await insertCmd.ExecuteNonQueryAsync(ct);
   }
 
   private string GetMigrationsPath()

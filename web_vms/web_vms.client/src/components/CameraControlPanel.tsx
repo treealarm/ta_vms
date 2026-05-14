@@ -13,6 +13,7 @@ import {
 } from '@mui/material'
 import { useAppDispatch, useAppSelector } from '../store'
 import { loadCameras, loadServers } from '../store/liveSlice'
+import { loadMediaMtxServers } from '../store/mediaMtxSlice'
 import CameraSetupPanel from './CameraSetupPanel'
 import StreamSetupPanel from './StreamSetupPanel'
 
@@ -39,7 +40,7 @@ export default function CameraControlPanel() {
   }, [servers, camerasMap])
 
   const refresh = async () => {
-    await Promise.all([dispatch(loadCameras()), dispatch(loadServers())])
+    await Promise.all([dispatch(loadCameras()), dispatch(loadServers()), dispatch(loadMediaMtxServers())])
   }
 
   return (

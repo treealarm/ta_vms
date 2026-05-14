@@ -8,21 +8,21 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddGrpc();
 builder.Services.AddSingleton<OnvifServiceImpl>();
 
-var cfgAppId = Environment.GetEnvironmentVariable("DAPR_CFG_APP_ID") ?? "vmscfg";
-Console.WriteLine($"DAPR_CFG_APP_ID: {cfgAppId}");
+var cfgAppId = Require("DAPR_CFG_APP_ID");
 builder.Services.AddSingleton(_ =>
   new CfgService.CfgServiceClient(
     DaprClient.CreateInvocationInvoker(cfgAppId)));
 
-var grpcPort = 5136;
-if (int.TryParse(Environment.GetEnvironmentVariable("ONVIF_SRV_PORT"), out grpcPort))
-{
-  Console.WriteLine($"ONVIF_SRV_PORT port: {grpcPort}");
-}
-else
-{
-  grpcPort = 5136;
-}
+var grpcPort = RequirePort("ONVIF_SRV_PORT");
+
+static string Require(string name) =>
+  Environment.GetEnvironmentVariable(name)
+    ?? throw new InvalidOperationException($"Required environment variable '{name}' is not set");
+
+static int RequirePort(string name) =>
+  int.TryParse(Environment.GetEnvironmentVariable(name), out var p)
+    ? p
+    : throw new InvalidOperationException($"Required environment variable '{name}' must be a valid integer");
 
 builder.WebHost.ConfigureKestrel(options =>
 {

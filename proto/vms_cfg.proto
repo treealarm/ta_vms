@@ -14,6 +14,10 @@ service CfgService {
   rpc RemoveRecordingProfile(RecordingProfileRequest) returns (OperationStatus);
   rpc SetStreamOverride(SetStreamOverrideRequest) returns (OperationStatus);
   rpc ClearStreamOverride(ClearStreamOverrideRequest) returns (OperationStatus);
+  rpc ListMediaMtxServers(ListMediaMtxServersRequest) returns (ListMediaMtxServersResponse);
+  rpc UpsertMediaMtxServer(MediaMtxServer) returns (OperationStatus);
+  rpc RemoveMediaMtxServer(MediaMtxServerRequest) returns (OperationStatus);
+  rpc GetOrAssignMediaMtxServer(SourceRequest) returns (GetOrAssignMediaMtxServerResponse);
 }
 
 service StorageService {
@@ -69,6 +73,7 @@ message CameraSetup {
   optional Credentials cred = 5;
   optional OnvifConnection onvif_conn = 6;
   repeated CameraStream streams = 9;
+  optional string media_mtx_server_id = 10;
 }
 
 message RecordingProfileRequest {
@@ -154,4 +159,26 @@ message SetCameraStoragesRequest {
 
 message GetCameraStoragesResponse {
   repeated CameraStorageAssignment assignments = 1;
+}
+
+message MediaMtxServer {
+  string id         = 1;
+  string name       = 2;
+  string rtsp_url   = 3;
+  string webrtc_url = 4;
+}
+
+message MediaMtxServerRequest {
+  string id = 1;
+}
+
+message ListMediaMtxServersRequest {}
+
+message ListMediaMtxServersResponse {
+  repeated MediaMtxServer servers = 1;
+}
+
+message GetOrAssignMediaMtxServerResponse {
+  bool          found  = 1;
+  MediaMtxServer server = 2;
 }

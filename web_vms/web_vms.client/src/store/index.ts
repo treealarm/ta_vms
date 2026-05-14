@@ -4,13 +4,15 @@ import liveReducer from './liveSlice'
 import fsReducer from './fsSlice'
 import logsReducer from './logSlice'
 import storageReducer from './storageSlice'
+import mediaMtxReducer from './mediaMtxSlice'
 
 export const store = configureStore({
   reducer: {
     live: liveReducer,
     fs: fsReducer,
     logs: logsReducer,
-    storage: storageReducer
+    storage: storageReducer,
+    mediaMtx: mediaMtxReducer,
   }
 })
 

@@ -17,13 +17,11 @@ constexpr std::size_t k_outbox_load_batch_size = 50;
 constexpr const char* k_outbox_file_name = ".fs_ingest_outbox.jsonl";
 constexpr const char* k_permanent_failures_file_name = ".fs_ingest_permanent_failures.jsonl";
 
-std::string read_env_or_default(const char* key, const char* fallback)
+std::string require_env(const char* key)
 {
   const char* value = std::getenv(key);
-  if (!value || *value == '\0') {
-    return fallback;
-  }
-
+  if (!value || *value == '\0')
+    throw std::runtime_error(std::format("Required environment variable '{}' is not set", key));
   return value;
 }
 
@@ -57,11 +55,8 @@ std::string request_file_path(const vms::fs::IngestClipRequest& request)
 }
 
 fs_client::fs_client()
-  :
-    m_app_id(read_env_or_default("DAPR_FS_APP_ID", "vmsfs")),
-    m_channel(grpc::CreateChannel(
-      read_env_or_default("DAPR_GRPC_ENDPOINT", "127.0.0.1:50001"),
-      grpc::InsecureChannelCredentials())),
+  : m_app_id(require_env("DAPR_FS_APP_ID")),
+    m_channel(grpc::CreateChannel("127.0.0.1:50001", grpc::InsecureChannelCredentials())),
     m_stub(vms::fs::FsService::NewStub(m_channel)),
     m_outbox_path(recording_storage::resolve_storage_base_path() / k_outbox_file_name),
     m_permanent_failures_path(recording_storage::resolve_storage_base_path() / k_permanent_failures_file_name)

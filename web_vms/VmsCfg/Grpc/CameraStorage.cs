@@ -13,15 +13,19 @@ public class CameraStorage(NpgsqlDataSource dataSource)
     await using var connection = await _dataSource.OpenConnectionAsync(ct);
     await using var tx = await connection.BeginTransactionAsync(ct);
 
+    Guid? mediaMtxServerId = !string.IsNullOrEmpty(camera.MediaMtxServerId)
+      && Guid.TryParse(camera.MediaMtxServerId, out var parsedMmx) ? parsedMmx : null;
+
     await using (var command = new NpgsqlCommand("""
-      INSERT INTO camera_setup (camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO camera_setup (camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       ON CONFLICT (camera_id) DO UPDATE SET
-        server_id  = EXCLUDED.server_id,
-        cred_user  = EXCLUDED.cred_user,
-        cred_pass  = EXCLUDED.cred_pass,
-        onvif_ip   = EXCLUDED.onvif_ip,
-        onvif_port = EXCLUDED.onvif_port;
+        server_id           = EXCLUDED.server_id,
+        cred_user           = EXCLUDED.cred_user,
+        cred_pass           = EXCLUDED.cred_pass,
+        onvif_ip            = EXCLUDED.onvif_ip,
+        onvif_port          = EXCLUDED.onvif_port,
+        media_mtx_server_id = EXCLUDED.media_mtx_server_id;
       """, connection, tx))
     {
       command.Parameters.AddWithValue(camera.CameraId);
@@ -30,6 +34,7 @@ public class CameraStorage(NpgsqlDataSource dataSource)
       command.Parameters.AddWithValue((object?)camera.Cred?.Pass ?? DBNull.Value);
       command.Parameters.AddWithValue((object?)camera.OnvifConn?.Ip ?? DBNull.Value);
       command.Parameters.AddWithValue((object?)camera.OnvifConn?.Port ?? DBNull.Value);
+      command.Parameters.Add(new NpgsqlParameter { Value = (object?)mediaMtxServerId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Uuid });
       await command.ExecuteNonQueryAsync(ct);
     }
 
@@ -117,7 +122,7 @@ public class CameraStorage(NpgsqlDataSource dataSource)
     var cameras = new List<CameraSetup>();
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port
+      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id
       FROM camera_setup
       WHERE $1 = '' OR server_id = $1
       ORDER BY camera_id;
@@ -140,7 +145,7 @@ public class CameraStorage(NpgsqlDataSource dataSource)
     CameraSetup? setup = null;
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port
+      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id
       FROM camera_setup
       WHERE camera_id = $1;
       """, connection))
@@ -335,6 +340,107 @@ public class CameraStorage(NpgsqlDataSource dataSource)
         Port = reader.IsDBNull(5) ? 0 : reader.GetInt32(5)
       };
 
+    if (!reader.IsDBNull(6))
+      setup.MediaMtxServerId = reader.GetGuid(6).ToString();
+
     return setup;
   }
+
+  // ── MediaMTX server management ───────────────────────────────────────────
+
+  public async Task<List<MediaMtxServer>> ListMediaMtxServersAsync(CancellationToken ct)
+  {
+    await using var command = _dataSource.CreateCommand("""
+      SELECT id, name, rtsp_url, webrtc_url FROM media_mtx_server ORDER BY name;
+      """);
+
+    var result = new List<MediaMtxServer>();
+    await using var reader = await command.ExecuteReaderAsync(ct);
+    while (await reader.ReadAsync(ct))
+      result.Add(ReadMediaMtxServer(reader));
+    return result;
+  }
+
+  public async Task UpsertMediaMtxServerAsync(MediaMtxServer server, CancellationToken ct)
+  {
+    await using var command = _dataSource.CreateCommand("""
+      INSERT INTO media_mtx_server (id, name, rtsp_url, webrtc_url)
+      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4)
+      ON CONFLICT (id) DO UPDATE SET
+        name       = EXCLUDED.name,
+        rtsp_url   = EXCLUDED.rtsp_url,
+        webrtc_url = EXCLUDED.webrtc_url
+      RETURNING id;
+      """);
+    command.Parameters.AddWithValue(server.Id ?? string.Empty);
+    command.Parameters.AddWithValue(server.Name);
+    command.Parameters.AddWithValue(server.RtspUrl);
+    command.Parameters.AddWithValue(server.WebrtcUrl);
+    var id = await command.ExecuteScalarAsync(ct);
+    server.Id = id?.ToString() ?? server.Id;
+  }
+
+  public async Task<bool> RemoveMediaMtxServerAsync(string id, CancellationToken ct)
+  {
+    await using var command = _dataSource.CreateCommand(
+      "DELETE FROM media_mtx_server WHERE id = $1::uuid;");
+    command.Parameters.AddWithValue(id);
+    return await command.ExecuteNonQueryAsync(ct) > 0;
+  }
+
+  public async Task<MediaMtxServer?> GetOrAssignMediaMtxServerAsync(string cameraId, CancellationToken ct)
+  {
+    await using var connection = await _dataSource.OpenConnectionAsync(ct);
+
+    // Check if camera already has a server assigned and it still exists
+    await using (var cmd = new NpgsqlCommand("""
+      SELECT m.id, m.name, m.rtsp_url, m.webrtc_url
+      FROM camera_setup cs
+      JOIN media_mtx_server m ON m.id = cs.media_mtx_server_id
+      WHERE cs.camera_id = $1;
+      """, connection))
+    {
+      cmd.Parameters.AddWithValue(cameraId);
+      await using var reader = await cmd.ExecuteReaderAsync(ct);
+      if (await reader.ReadAsync(ct))
+        return ReadMediaMtxServer(reader);
+    }
+
+    // Pick a random available server and assign it
+    await using var tx = await connection.BeginTransactionAsync(ct);
+    MediaMtxServer? picked = null;
+
+    await using (var pickCmd = new NpgsqlCommand("""
+      SELECT id, name, rtsp_url, webrtc_url FROM media_mtx_server ORDER BY random() LIMIT 1;
+      """, connection, tx))
+    {
+      await using var reader = await pickCmd.ExecuteReaderAsync(ct);
+      if (await reader.ReadAsync(ct))
+        picked = ReadMediaMtxServer(reader);
+    }
+
+    if (picked is null)
+      return null;
+
+    await using (var assignCmd = new NpgsqlCommand("""
+      UPDATE camera_setup SET media_mtx_server_id = $2::uuid WHERE camera_id = $1;
+      """, connection, tx))
+    {
+      assignCmd.Parameters.AddWithValue(cameraId);
+      assignCmd.Parameters.AddWithValue(picked.Id);
+      await assignCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    await tx.CommitAsync(ct);
+    return picked;
+  }
+
+  private static MediaMtxServer ReadMediaMtxServer(NpgsqlDataReader reader) =>
+    new()
+    {
+      Id        = reader.GetGuid(0).ToString(),
+      Name      = reader.GetString(1),
+      RtspUrl   = reader.GetString(2),
+      WebrtcUrl = reader.GetString(3),
+    };
 }

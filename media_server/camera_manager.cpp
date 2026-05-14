@@ -37,7 +37,7 @@ bool camera_manager::configure_camera(
   for (const auto& s : streams)
   {
     std::string stream_error;
-    if (!device->add_stream(s.stream_name, s.profile_token, s.rtsp_url, user, pass, s.policy, s.web_rtc, stream_error))
+    if (!device->add_stream(s.stream_name, s.profile_token, s.rtsp_url, user, pass, s.policy, s.web_rtc, stream_error, s.webrtc_rtsp_push_url))
     {
       logger::instance().error(std::format(
         "Failed to add stream '{}' for camera '{}': {}", s.stream_name, camera_id, stream_error));
@@ -182,7 +182,8 @@ bool camera_manager::set_camera_state(
   const std::string& pass,
   const recording_policy_spec& policy,
   bool web_rtc,
-  std::string& error)
+  std::string& error,
+  const std::string& webrtc_rtsp_push_url)
 {
   std::scoped_lock lock(m_mutex);
 
@@ -190,7 +191,7 @@ bool camera_manager::set_camera_state(
   if (it == m_cameras.end())
   {
     auto device = std::make_shared<cam_device>(camera_id);
-    if (!device->add_stream(stream_name, "", rtsp_url, user, pass, policy, web_rtc, error))
+    if (!device->add_stream(stream_name, "", rtsp_url, user, pass, policy, web_rtc, error, webrtc_rtsp_push_url))
       return false;
     m_cameras.emplace(camera_id, std::move(device));
     return true;
@@ -198,7 +199,7 @@ bool camera_manager::set_camera_state(
 
   auto* stream = it->second->get_stream(stream_name);
   if (!stream)
-    return it->second->add_stream(stream_name, "", rtsp_url, user, pass, policy, web_rtc, error);
+    return it->second->add_stream(stream_name, "", rtsp_url, user, pass, policy, web_rtc, error, webrtc_rtsp_push_url);
 
   if (stream->get_source() != rtsp_url ||
       stream->get_user()   != user     ||
@@ -206,7 +207,7 @@ bool camera_manager::set_camera_state(
   {
     std::string dummy;
     it->second->remove_stream(stream_name, dummy);
-    return it->second->add_stream(stream_name, "", rtsp_url, user, pass, policy, web_rtc, error);
+    return it->second->add_stream(stream_name, "", rtsp_url, user, pass, policy, web_rtc, error, webrtc_rtsp_push_url);
   }
 
   stream->apply_recording_policy(policy);

@@ -10,5 +10,10 @@ namespace web_vms
     Task<List<MediaServerNodeDto>> ListServers(CancellationToken ct = default);
     Task<bool> SetSetup(CameraSetupDto dto, CancellationToken ct = default);
     Task<CameraSetupDto?> Get(string id, CancellationToken ct = default);
+
+    Task<List<MediaMtxServerDto>> ListMediaMtxServers(CancellationToken ct = default);
+    Task<bool> UpsertMediaMtxServer(MediaMtxServerDto dto, CancellationToken ct = default);
+    Task<bool> RemoveMediaMtxServer(string id, CancellationToken ct = default);
+    Task<MediaMtxServerDto?> GetOrAssignMediaMtxServer(string cameraId, CancellationToken ct = default);
   }
 }

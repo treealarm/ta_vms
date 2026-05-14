@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <unordered_map>
 
 #include <grpcpp/grpcpp.h>
 
@@ -30,17 +31,20 @@ namespace
 
 int main(int argc, char** argv) 
 {
-  std::string server_address = "0.0.0.0:50051";
+  std::string server_address;
   if (argc > 1)
   {
     server_address = argv[1];
-  } 
-  else if (const char* grpc_vms_port = std::getenv("GRPC_VMS_PORT"))
+  }
+  else
   {
-    if (*grpc_vms_port != '\0') 
+    const char* grpc_vms_port = std::getenv("GRPC_VMS_PORT");
+    if (!grpc_vms_port || grpc_vms_port[0] == '\0')
     {
-      server_address = "0.0.0.0:" + std::string(grpc_vms_port);
+      logger::instance().error("Required environment variable 'GRPC_VMS_PORT' is not set");
+      return 1;
     }
+    server_address = "0.0.0.0:" + std::string(grpc_vms_port);
   }
 
   logger::instance().init();
@@ -66,16 +70,25 @@ int main(int argc, char** argv)
 
   cfg_client c_client;
   std::vector<vms::cfg::CameraSetup> cfg_list;
+  std::vector<vms::cfg::MediaMtxServer> mtx_servers;
 
   while (!c_client.register_media_server() && !g_stop_requested)
   {
     std::this_thread::sleep_for(std::chrono::milliseconds(5000));
   }
-  
+
   while (!c_client.list_cameras(cfg_list) && !g_stop_requested)
   {
     std::this_thread::sleep_for(std::chrono::milliseconds(5000));
   }
+
+  // Best-effort: load MediaMTX server list to resolve RTSP push URLs at startup.
+  c_client.list_media_mtx_servers(mtx_servers);
+
+  // Build a lookup map: server_id → rtsp_url
+  std::unordered_map<std::string, std::string> mtx_rtsp_by_id;
+  for (const auto& s : mtx_servers)
+    mtx_rtsp_by_id[s.id()] = s.rtsp_url();
 
   std::string error;
 
@@ -84,16 +97,26 @@ int main(int argc, char** argv)
     const std::string user = c.has_cred() ? c.cred().user() : "";
     const std::string pass = c.has_cred() ? c.cred().pass() : "";
 
+    // Resolve assigned MediaMTX RTSP push base URL for this camera
+    std::string cam_webrtc_push_url;
+    if (c.has_media_mtx_server_id() && !c.media_mtx_server_id().empty())
+    {
+      auto it = mtx_rtsp_by_id.find(c.media_mtx_server_id());
+      if (it != mtx_rtsp_by_id.end())
+        cam_webrtc_push_url = it->second;
+    }
+
     std::vector<camera_manager::stream_config> streams;
     for (int i = 0; i < c.streams_size(); ++i)
     {
       const auto& s = c.streams(i);
       streams.push_back({
-        .stream_name   = s.stream_name(),
-        .profile_token = s.profile_token(),
-        .rtsp_url      = s.rtsp_url(),
-        .policy        = proto_mapper::recording_policy_for_stream(s),
-        .web_rtc       = s.web_rtc()
+        .stream_name           = s.stream_name(),
+        .profile_token         = s.profile_token(),
+        .rtsp_url              = s.rtsp_url(),
+        .policy                = proto_mapper::recording_policy_for_stream(s),
+        .web_rtc               = s.web_rtc(),
+        .webrtc_rtsp_push_url  = cam_webrtc_push_url,
       });
     }
 

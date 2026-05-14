@@ -138,5 +138,56 @@ namespace VmsCfg
       InvalidateFsCache(request.CameraId);
       return new OperationStatus { Success = true };
     }
+
+    public override async Task<ListMediaMtxServersResponse> ListMediaMtxServers(
+      ListMediaMtxServersRequest request,
+      ServerCallContext context)
+    {
+      var response = new ListMediaMtxServersResponse();
+      response.Servers.AddRange(await storage.ListMediaMtxServersAsync(context.CancellationToken));
+      return response;
+    }
+
+    public override async Task<OperationStatus> UpsertMediaMtxServer(
+      MediaMtxServer request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.Name))
+        return new OperationStatus { Success = false, Message = "name must not be empty" };
+
+      if (string.IsNullOrWhiteSpace(request.RtspUrl))
+        return new OperationStatus { Success = false, Message = "rtsp_url must not be empty" };
+
+      if (string.IsNullOrWhiteSpace(request.WebrtcUrl))
+        return new OperationStatus { Success = false, Message = "webrtc_url must not be empty" };
+
+      await storage.UpsertMediaMtxServerAsync(request, context.CancellationToken);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OperationStatus> RemoveMediaMtxServer(
+      MediaMtxServerRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.Id))
+        return new OperationStatus { Success = false, Message = "id must not be empty" };
+
+      var removed = await storage.RemoveMediaMtxServerAsync(request.Id, context.CancellationToken);
+      return new OperationStatus { Success = removed };
+    }
+
+    public override async Task<GetOrAssignMediaMtxServerResponse> GetOrAssignMediaMtxServer(
+      SourceRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.SourceId))
+        return new GetOrAssignMediaMtxServerResponse { Found = false };
+
+      var server = await storage.GetOrAssignMediaMtxServerAsync(request.SourceId, context.CancellationToken);
+      if (server is null)
+        return new GetOrAssignMediaMtxServerResponse { Found = false };
+
+      return new GetOrAssignMediaMtxServerResponse { Found = true, Server = server };
+    }
   }
 }

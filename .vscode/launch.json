@@ -18,7 +18,8 @@
                 "DAPR_GRPC_PORT": "50001",
                 "DAPR_LOGGER_APP_ID": "vmslogger",
                 "DAPR_CFG_APP_ID": "vmscfg",
-                "DAPR_FS_APP_ID": "vmsfs"
+                "DAPR_FS_APP_ID": "vmsfs",
+                "DAPR_ONVIF_APP_ID": "vmsonvif"
             }
         },
         {
@@ -40,7 +41,9 @@
                 "POSTGRES_PORT": "5432",
                 "POSTGRES_USER": "postgres",
                 "POSTGRES_PASSWORD": "postgres",
-                "POSTGRES_CFG_DB": "ta_cfg"
+                "POSTGRES_CFG_DB": "ta_cfg",
+                "VMS_WEBRTC_RTSP_BASE_URL": "rtsp://localhost:8554",
+                "VMS_WEBRTC_CLIENT_URL": "http://localhost:8889"
             }
         },
         {
@@ -119,10 +122,6 @@
                     "value": "50051"
                 },
                 {
-                    "name": "DAPR_GRPC_ENDPOINT",
-                    "value": "127.0.0.1:50011"
-                },
-                {
                     "name": "APP_ID",
                     "value": "vms"
                 },
@@ -137,6 +136,14 @@
                 {
                     "name": "DAPR_FS_APP_ID",
                     "value": "vmsfs"
+                },
+                {
+                    "name": "PUBSUB_NAME",
+                    "value": "orderpubsub"
+                },
+                {
+                    "name": "VMS_WEBRTC_RTSP_BASE_URL",
+                    "value": "rtsp://localhost:8554"
                 }
             ],
             "cwd": "${workspaceFolder}/media_server",
