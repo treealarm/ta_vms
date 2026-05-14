@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Button, MenuItem, Stack, TextField, Typography } from '@mui/material'
+import { Box, Button, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera, changeCameraParent, removeCamera } from '../store/liveSlice'
 import type { CameraSetupDto } from '../dto/dtos'
 import CameraStoragesControl from './CameraStoragesControl'
 import PasswordField from './PasswordField'
+import CameraStream from './CameraStream'
 
 type Props = {
   cameraId: string  // '' = new camera
@@ -16,12 +17,14 @@ type Props = {
 export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: initialServerId, onSaved, onRemoved }: Props) {
   const dispatch = useAppDispatch()
   const servers = useAppSelector((state) => state.live.servers)
+  const mtxServers = useAppSelector((state) => state.mediaMtx.servers)
   const camerasMap = useAppSelector((state) => state.live.cameraStatesById)
   const existing = camerasMap[initialCameraId]
   const isNew = initialCameraId === ''
 
   const [cameraId, setCameraId] = useState(initialCameraId)
   const [serverId, setServerId] = useState(initialServerId)
+  const [mediaMtxServerId, setMediaMtxServerId] = useState(existing?.mediaMtxServerId ?? '')
   const [user, setUser] = useState(existing?.cred?.user ?? '')
   const [pass, setPass] = useState(existing?.cred?.pass ?? '')
   const [onvifIp, setOnvifIp] = useState(existing?.onvifConn?.ip ?? '')
@@ -30,6 +33,16 @@ export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: 
     const value = Number(raw)
     if (!Number.isNaN(value)) setter(Math.max(0, value))
   }
+
+  // Determine preview stream: first WebRTC-enabled stream
+  const firstWebRtcStream = (existing?.streams ?? []).find((s) => s.webRtc)
+  const previewStreamName = firstWebRtcStream
+    ? `${initialCameraId}/${firstWebRtcStream.streamName}`
+    : null
+
+  // WebRTC URL: prefer selected MediaMTX server's webrtcUrl, fall back to camera's stored value
+  const selectedMtxServer = mtxServers.find((s) => s.id === mediaMtxServerId)
+  const previewBaseUrl = selectedMtxServer?.webrtcUrl ?? existing?.mediaMtxWebrtcUrl
 
   const buildPayload = (): CameraSetupDto => ({
     cameraId: isNew ? cameraId : initialCameraId,
@@ -40,6 +53,7 @@ export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: 
     streams: existing?.streams ?? [],
     cred: user || pass ? { user, pass } : undefined,
     onvifConn: onvifIp ? { ip: onvifIp, port: onvifPort } : undefined,
+    mediaMtxServerId: mediaMtxServerId || undefined,
   })
 
   const handleSave = async (e: React.FormEvent) => {
@@ -81,6 +95,20 @@ export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: 
         ))}
       </TextField>
 
+      <TextField
+        select
+        label="MediaMTX server"
+        value={mediaMtxServerId}
+        onChange={(e) => setMediaMtxServerId(e.target.value)}
+        size="small"
+        helperText="Stream relay server for WebRTC (auto-assigned if left empty)"
+      >
+        <MenuItem value="">— auto-assign —</MenuItem>
+        {mtxServers.map((s) => (
+          <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+        ))}
+      </TextField>
+
       <Stack direction="row" spacing={1}>
         <TextField label="ONVIF IP" value={onvifIp} onChange={(e) => setOnvifIp(e.target.value)} size="small" />
         <TextField
@@ -109,6 +137,17 @@ export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: 
       </Stack>
 
       {!isNew && <CameraStoragesControl cameraId={initialCameraId} />}
+
+      {!isNew && previewStreamName && (
+        <Box>
+          <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+            Live preview ({firstWebRtcStream!.streamName})
+          </Typography>
+          <Box sx={{ maxWidth: 320 }}>
+            <CameraStream streamName={previewStreamName} baseUrl={previewBaseUrl} />
+          </Box>
+        </Box>
+      )}
     </Stack>
   )
 }

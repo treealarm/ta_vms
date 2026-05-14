@@ -24,6 +24,7 @@ import SimulationPanel from './components/SimulationPanel'
 import RetentionEventsTab from './components/RetentionEventsTab'
 import StorageSetupPanel from './components/StorageSetupPanel'
 import RecordingProfilesPanel from './components/RecordingProfilesPanel'
+import MediaMtxServersPanel from './components/MediaMtxServersPanel'
 
 const MAX_CAMERAS = 4
 
@@ -151,7 +152,8 @@ export default function App() {
             {mainTab === 2 && <RetentionEventsTab />}
             {mainTab === 3 && <StorageSetupPanel />}
             {mainTab === 4 && <RecordingProfilesPanel />}
-            {mainTab === 5 && <LogJournalPanel />}
+            {mainTab === 5 && <MediaMtxServersPanel />}
+            {mainTab === 6 && <LogJournalPanel />}
           </Box>
         )}
       </Box>
@@ -177,6 +179,7 @@ export default function App() {
           <Tab label="Events" />
           <Tab label="Storages" />
           <Tab label="Recording" />
+          <Tab label="MediaMTX" />
           <Tab label="Logs" />
         </Tabs>
 

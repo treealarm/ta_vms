@@ -113,11 +113,21 @@ export type CameraSetupDto = {
   /** True while camera is inside a retention episode from FS (wall clock in [retain_from, retain_until]); new clips ingest as retained */
   activeRetentionWindow?: boolean
   streams?: CameraStreamDto[]
+  mediaMtxServerId?: string
+  /** WebRTC client base URL for this camera's assigned MediaMTX server (e.g. http://host:8889) */
+  mediaMtxWebrtcUrl?: string
 }
 
 export type MediaServerNodeDto = {
   serverId: string
   status: string
+}
+
+export type MediaMtxServerDto = {
+  id: string
+  name: string
+  rtspUrl: string
+  webrtcUrl: string
 }
 
 /** Built client-side from servers + cameras for Settings tree */

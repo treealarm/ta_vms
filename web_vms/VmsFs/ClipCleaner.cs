@@ -11,10 +11,6 @@ public sealed class ClipCleaner(
   private const int BatchSize = 100;
   private static readonly TimeSpan Interval = TimeSpan.FromSeconds(5);
 
-  private static readonly string StorageBasePath =
-    Environment.GetEnvironmentVariable("VMS_STORAGE_BASE_PATH")
-      ?? throw new InvalidOperationException("Required environment variable 'VMS_STORAGE_BASE_PATH' is not set");
-
   private readonly CancellationTokenSource _cts = new();
   private Task? _task;
 
@@ -71,8 +67,18 @@ public sealed class ClipCleaner(
           if (endTs >= safeCutoff)
             continue;
 
-          var basePath = string.IsNullOrEmpty(storageId) ? StorageBasePath
-            : (storageListCache.TryGetRootPath(storageId) ?? StorageBasePath);
+          if (string.IsNullOrEmpty(storageId))
+          {
+            Console.Error.WriteLine($"ClipCleaner: clip {clipUid} has no storageId — skipping");
+            continue;
+          }
+
+          var basePath = storageListCache.TryGetRootPath(storageId);
+          if (basePath is null)
+          {
+            Console.Error.WriteLine($"ClipCleaner: storage '{storageId}' not found in cache — skipping clip {clipUid}");
+            continue;
+          }
 
           if (!TryDeleteAssociatedFiles(basePath, filePath))
             continue;

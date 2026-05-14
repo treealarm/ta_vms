@@ -18,6 +18,7 @@ public:
     std::string rtsp_url;
     recording_policy_spec policy;
     bool web_rtc = false;
+    std::string webrtc_rtsp_push_url; // override for the MediaMTX RTSP push target
   };
 
   struct camera_info
@@ -60,7 +61,8 @@ public:
     const std::string& pass,
     const recording_policy_spec& policy,
     bool web_rtc,
-    std::string& error);
+    std::string& error,
+    const std::string& webrtc_rtsp_push_url = "");
 
   std::optional<camera_info> get_camera_state(
     const std::string& camera_id,

@@ -189,9 +189,7 @@ public sealed partial class LogServiceImpl : LogService.LogServiceBase
     return haystack?.Contains(needle, StringComparison.OrdinalIgnoreCase) ?? false;
   }
 
-  private static string ResolveStorageBasePath()
-  {
-    var value = Environment.GetEnvironmentVariable("VMS_STORAGE_BASE_PATH");
-    return string.IsNullOrWhiteSpace(value) ? "records" : value;
-  }
+  private static string ResolveStorageBasePath() =>
+    Environment.GetEnvironmentVariable("VMS_STORAGE_BASE_PATH")
+      ?? throw new InvalidOperationException("Required environment variable 'VMS_STORAGE_BASE_PATH' is not set");
 }

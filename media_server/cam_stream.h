@@ -21,7 +21,8 @@ public:
     const std::string& stream_name,
     const std::string& profile_token,
     const std::string& user,
-    const std::string& pass);
+    const std::string& pass,
+    const std::string& webrtc_rtsp_push_url = "");
 
   ~cam_stream();
 
@@ -48,6 +49,7 @@ private:
   std::string m_stream_name;
   std::string m_user;
   std::string m_pass;
+  std::string m_webrtc_rtsp_push_url;
 
   std::unique_ptr<reader> m_reader;
   std::shared_ptr<segment_writer> m_writer;

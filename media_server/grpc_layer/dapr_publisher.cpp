@@ -1,29 +1,26 @@
 #include "dapr_publisher.h"
 
 #include <cstdlib>
-#include <iostream>
+#include <format>
+#include <stdexcept>
 
 #include <grpcpp/grpcpp.h>
 
 #include "dapr/proto/runtime/v1/dapr.grpc.pb.h"
 
 namespace {
-std::string read_env_or_default(const char* key, const char* fallback)
+std::string require_env(const char* key)
 {
   const char* value = std::getenv(key);
-  if (!value || *value == '\0') {
-    return fallback;
-  }
-
+  if (!value || *value == '\0')
+    throw std::runtime_error(std::format("Required environment variable '{}' is not set", key));
   return value;
 }
 }
 
 dapr_publisher::dapr_publisher()
-  : m_pubsub_name(read_env_or_default("DAPR_PUBSUB_NAME", "orderpubsub")),
-    m_channel(grpc::CreateChannel(
-      read_env_or_default("DAPR_GRPC_ENDPOINT", "127.0.0.1:50001"),
-      grpc::InsecureChannelCredentials())),
+  : m_pubsub_name(require_env("PUBSUB_NAME")),
+    m_channel(grpc::CreateChannel("127.0.0.1:50001", grpc::InsecureChannelCredentials())),
     m_stub(dapr::proto::runtime::v1::Dapr::NewStub(m_channel))
 {
 }

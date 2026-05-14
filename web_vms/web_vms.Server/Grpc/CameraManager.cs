@@ -76,15 +76,16 @@ public class CameraManager : ICameraManager
 
     return new CameraSetupDto
     {
-      CameraId      = setup.CameraId,
-      ServerId      = setup.ServerId,
-      RecordingMode = mode,
-      Recording     = mode is "continuous" or "prealarm",
-      WebRtc        = firstStream?.WebRtc ?? false,
-      RtspUrl       = firstStream?.RtspUrl,
-      Streams       = streams,
-      Cred          = setup.Cred == null ? null : new CredentialsDto { User = setup.Cred.User, Pass = setup.Cred.Pass },
-      OnvifConn     = setup.OnvifConn == null ? null : new OnvifConnectionDto { ip = setup.OnvifConn.Ip, port = setup.OnvifConn.Port },
+      CameraId         = setup.CameraId,
+      ServerId         = setup.ServerId,
+      RecordingMode    = mode,
+      Recording        = mode is "continuous" or "prealarm",
+      WebRtc           = firstStream?.WebRtc ?? false,
+      RtspUrl          = firstStream?.RtspUrl,
+      Streams          = streams,
+      Cred             = setup.Cred == null ? null : new CredentialsDto { User = setup.Cred.User, Pass = setup.Cred.Pass },
+      OnvifConn        = setup.OnvifConn == null ? null : new OnvifConnectionDto { ip = setup.OnvifConn.Ip, port = setup.OnvifConn.Port },
+      MediaMtxServerId = setup.HasMediaMtxServerId ? setup.MediaMtxServerId : null,
     };
   }
 
@@ -99,6 +100,46 @@ public class CameraManager : ICameraManager
     IsOverridePreset  = p.IsOverridePreset,
   };
 
+  public async Task<List<MediaMtxServerDto>> ListMediaMtxServers(CancellationToken ct = default)
+  {
+    var response = await _cfgClient.ListMediaMtxServersAsync(new ListMediaMtxServersRequest(), CfgOptions(ct));
+    return response.Servers.Select(ToMediaMtxDto).ToList();
+  }
+
+  public async Task<bool> UpsertMediaMtxServer(MediaMtxServerDto dto, CancellationToken ct = default)
+  {
+    var response = await _cfgClient.UpsertMediaMtxServerAsync(ToMediaMtxProto(dto), CfgOptions(ct));
+    return response.Success;
+  }
+
+  public async Task<bool> RemoveMediaMtxServer(string id, CancellationToken ct = default)
+  {
+    var response = await _cfgClient.RemoveMediaMtxServerAsync(new MediaMtxServerRequest { Id = id }, CfgOptions(ct));
+    return response.Success;
+  }
+
+  public async Task<MediaMtxServerDto?> GetOrAssignMediaMtxServer(string cameraId, CancellationToken ct = default)
+  {
+    var response = await _cfgClient.GetOrAssignMediaMtxServerAsync(new SourceRequest { SourceId = cameraId }, CfgOptions(ct));
+    return response.Found ? ToMediaMtxDto(response.Server) : null;
+  }
+
+  private static MediaMtxServerDto ToMediaMtxDto(MediaMtxServer s) => new()
+  {
+    Id        = s.Id,
+    Name      = s.Name,
+    RtspUrl   = s.RtspUrl,
+    WebrtcUrl = s.WebrtcUrl,
+  };
+
+  private static MediaMtxServer ToMediaMtxProto(MediaMtxServerDto dto) => new()
+  {
+    Id        = dto.Id ?? string.Empty,
+    Name      = dto.Name,
+    RtspUrl   = dto.RtspUrl,
+    WebrtcUrl = dto.WebrtcUrl,
+  };
+
   private static MediaServerNodeDto ToDto(MediaServerNode server) => new()
   {
     ServerId = server.ServerId,
@@ -109,10 +150,11 @@ public class CameraManager : ICameraManager
   {
     var setup = new CameraSetup
     {
-      CameraId  = dto.CameraId,
-      ServerId  = dto.ServerId ?? string.Empty,
-      Cred      = dto.Cred == null ? null : new Credentials { User = dto.Cred.User, Pass = dto.Cred.Pass },
-      OnvifConn = dto.OnvifConn == null ? null : new OnvifConnection { Ip = dto.OnvifConn.ip, Port = dto.OnvifConn.port },
+      CameraId         = dto.CameraId,
+      ServerId         = dto.ServerId ?? string.Empty,
+      Cred             = dto.Cred == null ? null : new Credentials { User = dto.Cred.User, Pass = dto.Cred.Pass },
+      OnvifConn        = dto.OnvifConn == null ? null : new OnvifConnection { Ip = dto.OnvifConn.ip, Port = dto.OnvifConn.port },
+      MediaMtxServerId = dto.MediaMtxServerId ?? string.Empty,
     };
 
     if (dto.Streams.Count > 0)

@@ -11,12 +11,13 @@ using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
 
-class cfg_client 
+class cfg_client
 {
 public:
   cfg_client();
   bool register_media_server();
   bool list_cameras(std::vector<vms::cfg::CameraSetup>& cfg);
+  bool list_media_mtx_servers(std::vector<vms::cfg::MediaMtxServer>& result);
 private:
   std::string m_app_id;
   std::string m_server_id;

@@ -37,7 +37,7 @@ public class LiveController(
                                               : $"Media server error: {ex.Status.Detail}"
   };
 
-  private static IReadOnlyList<CameraState> ToControlStates(CameraSetupDto request)
+  private static IReadOnlyList<CameraState> ToControlStates(CameraSetupDto request, string? webrtcRtspPushUrl = null)
   {
     var cred = request.Cred != null
       ? new Credentials { User = request.Cred.User, Pass = request.Cred.Pass }
@@ -49,10 +49,11 @@ public class LiveController(
       // Legacy single-stream path
       return [new CameraState
       {
-        CameraId = request.CameraId,
-        RtspUrl  = request.RtspUrl ?? "",
-        WebRtc   = request.WebRtc,
-        Cred     = cred,
+        CameraId            = request.CameraId,
+        RtspUrl             = request.RtspUrl ?? "",
+        WebRtc              = request.WebRtc,
+        Cred                = cred,
+        WebrtcRtspPushUrl   = webrtcRtspPushUrl ?? "",
       }];
     }
 
@@ -69,12 +70,13 @@ public class LiveController(
 
       var state = new CameraState
       {
-        CameraId      = request.CameraId,
-        StreamName    = stream.StreamName,
-        RtspUrl       = stream.RtspUrl ?? "",
-        WebRtc        = stream.WebRtc,
-        Cred          = cred,
-        RecordingMode = recordingMode,
+        CameraId            = request.CameraId,
+        StreamName          = stream.StreamName,
+        RtspUrl             = stream.RtspUrl ?? "",
+        WebRtc              = stream.WebRtc,
+        Cred                = cred,
+        RecordingMode       = recordingMode,
+        WebrtcRtspPushUrl   = webrtcRtspPushUrl ?? "",
       };
 
       if (recordingMode == RecordingMode.RecordingPrealarm && profile != null)
@@ -85,6 +87,26 @@ public class LiveController(
     return states;
   }
 
+  private async Task<(CameraSetupDto normalized, string? webrtcRtspPushUrl, string? webrtcUrl)>
+    ResolveWithMediaMtxAsync(CameraSetupDto request, CancellationToken ct)
+  {
+    var normalized = CameraManager.Normalize(request);
+
+    var hasWebRtcStream = normalized.Streams.Any(s => s.WebRtc) || normalized.WebRtc;
+    if (!hasWebRtcStream)
+      return (normalized, null, null);
+
+    var server = await _manager.GetOrAssignMediaMtxServer(normalized.CameraId, ct);
+    if (server is null)
+      return (normalized, null, null);
+
+    // Patch back the assigned server ID so it gets persisted
+    if (normalized.MediaMtxServerId != server.Id)
+      normalized = normalized with { MediaMtxServerId = server.Id };
+
+    return (normalized, server.RtspUrl, server.WebrtcUrl);
+  }
+
   [HttpPost("cameras")]
   public async Task<IActionResult> AddCamera([FromBody] CameraSetupDto request, CancellationToken ct)
   {
@@ -93,7 +115,7 @@ public class LiveController(
       return BadRequest("serverId must not be empty");
     }
 
-    var normalized = CameraManager.Normalize(request);
+    var (normalized, webrtcRtspPushUrl, _) = await ResolveWithMediaMtxAsync(request, ct);
 
     // Only notify the media server if there is a stream to actually run.
     // A camera with no streams is valid config — the user will add streams separately.
@@ -101,7 +123,7 @@ public class LiveController(
     if (hasStream)
     {
       var mediaClient = GetMediaClient(normalized.ServerId!);
-      foreach (var controlState in ToControlStates(normalized))
+      foreach (var controlState in ToControlStates(normalized, webrtcRtspPushUrl))
       {
         Vms.Control.OperationStatus mediaResponse;
         try
@@ -154,7 +176,8 @@ public class LiveController(
 
     if (current.ServerId == request.ServerId)
     {
-      await _manager.Add(CameraManager.Normalize(request), ct);
+      var (sameParentNorm, _, _) = await ResolveWithMediaMtxAsync(request, ct);
+      await _manager.Add(sameParentNorm, ct);
       return Ok(new ApiResponse(true, "Camera parent is unchanged"));
     }
 
@@ -172,9 +195,9 @@ public class LiveController(
     if (!removeResponse.Success)
       return Ok(ApiResponseMapper.ToApiResponse(removeResponse));
 
-    var normalized = CameraManager.Normalize(request);
+    var (normalized, webrtcRtspPushUrl, _) = await ResolveWithMediaMtxAsync(request, ct);
     var addClient = GetMediaClient(normalized.ServerId!);
-    foreach (var controlState in ToControlStates(normalized))
+    foreach (var controlState in ToControlStates(normalized, webrtcRtspPushUrl))
     {
       Vms.Control.OperationStatus addResponse;
       try
@@ -237,7 +260,20 @@ public class LiveController(
   [HttpGet("cameras")]
   public async Task<IActionResult> ListCameras(CancellationToken ct)
   {
-    return Ok(await _manager.List());
+    var cameras = await _manager.List(ct);
+
+    // Enrich each camera with its assigned MediaMTX WebRTC URL (best-effort; no auto-assign on list)
+    var allMtxServers = (await _manager.ListMediaMtxServers(ct))
+      .ToDictionary(s => s.Id, s => s.WebrtcUrl);
+
+    var enriched = cameras.Select(c =>
+    {
+      if (!string.IsNullOrEmpty(c.MediaMtxServerId) && allMtxServers.TryGetValue(c.MediaMtxServerId, out var url))
+        return c with { MediaMtxWebrtcUrl = url };
+      return c;
+    }).ToList();
+
+    return Ok(enriched);
   }
 
   [HttpPost("cameras/state")]
@@ -255,10 +291,11 @@ public class LiveController(
       return NotFound();
     }
 
-    var normalized = CameraManager.Normalize(state with { ServerId = targetServerId });
+    var (normalized, webrtcRtspPushUrl, _) = await ResolveWithMediaMtxAsync(
+      state with { ServerId = targetServerId }, ct);
     var stateClient = GetMediaClient(targetServerId);
     Vms.Control.OperationStatus lastResponse = new() { Success = true, Message = "ok" };
-    foreach (var controlState in ToControlStates(normalized))
+    foreach (var controlState in ToControlStates(normalized, webrtcRtspPushUrl))
     {
       try
       {
@@ -287,6 +324,10 @@ public class LiveController(
     }
 
     var normalized = CameraManager.Normalize(camera);
+
+    // Enrich with MediaMTX WebRTC URL for the frontend
+    var mediaMtxServer = await _manager.GetOrAssignMediaMtxServer(cameraId, ct);
+    normalized = normalized with { MediaMtxWebrtcUrl = mediaMtxServer?.WebrtcUrl };
 
     if (string.Equals(normalized.RecordingMode, "off", StringComparison.OrdinalIgnoreCase))
     {

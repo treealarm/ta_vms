@@ -11,14 +11,12 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-var loggerAppId = Environment.GetEnvironmentVariable("DAPR_LOGGER_APP_ID") ?? "vmslogger";
-Console.WriteLine($"DAPR_LOGGER_APP_ID: {loggerAppId}");
+var loggerAppId = Require("DAPR_LOGGER_APP_ID");
 builder.Services.AddSingleton(_ =>
   new LogService.LogServiceClient(
     DaprClient.CreateInvocationInvoker(loggerAppId)));
 
-var cfgAppId = Environment.GetEnvironmentVariable("DAPR_CFG_APP_ID") ?? "vmscfg";
-Console.WriteLine($"DAPR_CFG_APP_ID: {cfgAppId}");
+var cfgAppId = Require("DAPR_CFG_APP_ID");
 builder.Services.AddSingleton(_ =>
   new CfgService.CfgServiceClient(
     DaprClient.CreateInvocationInvoker(cfgAppId)));
@@ -26,13 +24,11 @@ builder.Services.AddSingleton(_ =>
   new StorageService.StorageServiceClient(
     DaprClient.CreateInvocationInvoker(cfgAppId)));
 
-var fsAppId = Environment.GetEnvironmentVariable("DAPR_FS_APP_ID") ?? "vmsfs";
-Console.WriteLine($"DAPR_FS_APP_ID: {fsAppId}");
+var fsAppId = Require("DAPR_FS_APP_ID");
 builder.Services.AddSingleton(_ =>
   new Vms.Fs.FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsAppId)));
 
-var onvifAppId = Environment.GetEnvironmentVariable("DAPR_ONVIF_APP_ID") ?? "vmsonvif";
-Console.WriteLine($"DAPR_ONVIF_APP_ID: {onvifAppId}");
+var onvifAppId = Require("DAPR_ONVIF_APP_ID");
 builder.Services.AddSingleton(_ =>
   new OnvifService.OnvifServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId)));
 
@@ -40,16 +36,16 @@ builder.Services.AddSingleton<ICameraManager, CameraManager>();
 builder.Services.AddSingleton<IHlsArchiveService, HlsArchiveService>();
 builder.Services.AddSingleton<IArchiveTsStreamer, ArchiveTsStreamer>();
 
-var http_port = 5134;
+var http_port = RequirePort("WEB_VMS_PORT");
 
-if (int.TryParse(Environment.GetEnvironmentVariable("WEB_VMS_PORT"), out http_port))
-{
-  Console.WriteLine($"WEB_VMS_PORT port: {http_port}");
-}
-else
-{
-  http_port = 5134;
-}
+static string Require(string name) =>
+  Environment.GetEnvironmentVariable(name)
+    ?? throw new InvalidOperationException($"Required environment variable '{name}' is not set");
+
+static int RequirePort(string name) =>
+  int.TryParse(Environment.GetEnvironmentVariable(name), out var p)
+    ? p
+    : throw new InvalidOperationException($"Required environment variable '{name}' must be a valid integer");
 
 builder.WebHost.ConfigureKestrel(options =>
 {

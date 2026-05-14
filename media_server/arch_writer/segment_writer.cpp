@@ -1,8 +1,7 @@
-﻿#include "file_system/recording_storage.h"
-
-#include "segment_writer.h"
+﻿#include "segment_writer.h"
 
 #include <format>
+#include "file_system/recording_storage.h"
 #include <optional>
 #include <system_error>
 
@@ -80,9 +79,13 @@ void segment_writer::open_new_segment()
   recording_storage storage;
 
   auto cam_storage = fs_client::instance().get_camera_storage(m_camera_id);
-  const auto storage_root = cam_storage.empty()
-    ? recording_storage::resolve_storage_base_path().string()
-    : cam_storage.root_path;
+  if (cam_storage.empty())
+  {
+    logger::instance().error(std::format(
+      "camera '{}' has no storage assigned — segment will not be written", m_camera_id));
+    return;
+  }
+  const auto storage_root = cam_storage.root_path;
 
   m_segment_rel_path = storage.make_segment_path(m_camera_id, m_stream_name, now);
   const auto path = std::filesystem::path(storage_root) / m_segment_rel_path;

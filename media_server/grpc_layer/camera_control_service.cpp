@@ -35,7 +35,8 @@ grpc::Status camera_control_service::SetCameraState(
     request->has_cred() ? request->cred().pass() : "",
     policy,
     request->web_rtc(),
-    error);
+    error,
+    request->webrtc_rtsp_push_url());
 
   response->set_success(success);
   response->set_message(success ? "camera state updated" : error);

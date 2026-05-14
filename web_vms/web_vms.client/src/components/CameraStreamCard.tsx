@@ -39,7 +39,7 @@ function CameraStreamCard({ camera, onStreamChange }: CameraStreamCardProps) {
           ))}
         </Tabs>
       )}
-      <CameraStream streamName={streamName} />
+      <CameraStream streamName={streamName} baseUrl={camera.mediaMtxWebrtcUrl} />
     </Box>
   )
 }

@@ -28,6 +28,14 @@ public record StreamOverrideDto
   public required string ProfileId { get; init; }
 }
 
+public record MediaMtxServerDto
+{
+  public string Id { get; init; } = string.Empty;
+  public string Name { get; init; } = string.Empty;
+  public string RtspUrl { get; init; } = string.Empty;
+  public string WebrtcUrl { get; init; } = string.Empty;
+}
+
 public record CameraSetupDto
 {
   public required string CameraId { get; init; }
@@ -43,4 +51,8 @@ public record CameraSetupDto
   /// <summary>Filled by web_vms.Server when merging FS retention status.</summary>
   public bool? ActiveRetentionWindow { get; init; }
   public IReadOnlyList<CameraStreamDto> Streams { get; init; } = [];
+  /// <summary>Assigned MediaMTX server ID (uuid).</summary>
+  public string? MediaMtxServerId { get; init; }
+  /// <summary>WebRTC client URL for this camera's assigned MediaMTX server; filled by web_vms.Server.</summary>
+  public string? MediaMtxWebrtcUrl { get; init; }
 }

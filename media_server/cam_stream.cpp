@@ -13,12 +13,14 @@ cam_stream::cam_stream(
   const std::string& stream_name,
   const std::string& profile_token,
   const std::string& user,
-  const std::string& pass)
+  const std::string& pass,
+  const std::string& webrtc_rtsp_push_url)
   : m_rtsp_url(rtsp_url)
   , m_camera_id(camera_id)
   , m_stream_name(stream_name)
   , m_user(user)
   , m_pass(pass)
+  , m_webrtc_rtsp_push_url(webrtc_rtsp_push_url)
 {
   m_reader = std::make_unique<rtsp_reader>(camera_id, profile_token, user, pass);
 
@@ -97,7 +99,7 @@ bool cam_stream::start_web_rtc(std::string& error)
       return false;
     }
     m_webrtc_output_sink = std::make_shared<webrtc_output_sink>(
-      resolve_default_webrtc_rtsp_url(m_camera_id, m_stream_name));
+      resolve_webrtc_rtsp_push_url(m_camera_id, m_stream_name, m_webrtc_rtsp_push_url));
     sink = m_webrtc_output_sink;
   }
   m_reader->add_sink(sink);
