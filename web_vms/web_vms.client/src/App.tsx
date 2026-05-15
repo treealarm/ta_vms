@@ -13,6 +13,8 @@ import ScienceIcon from '@mui/icons-material/Science'
 import CloseIcon from '@mui/icons-material/Close'
 
 import { loadCameras, loadServers } from './store/liveSlice'
+import { loadMonitors } from './store/monitorsSlice'
+import { loadMediaMtxServers } from './store/mediaMtxSlice'
 import { useAppDispatch, useAppSelector } from './store'
 import CameraControlPanel from './components/CameraControlPanel'
 import LogJournalPanel from './components/LogJournalPanel'
@@ -36,13 +38,17 @@ export default function App() {
 
     const bootstrap = async (attempt: number) => {
       if (cancelled) return
-      const [camerasResult, serversResult] = await Promise.all([
+      const [camerasResult, serversResult, monitorsResult, mtxResult] = await Promise.all([
         dispatch(loadCameras()),
         dispatch(loadServers()),
+        dispatch(loadMonitors()),
+        dispatch(loadMediaMtxServers()),
       ])
       const hasError =
         loadCameras.rejected.match(camerasResult) ||
-        loadServers.rejected.match(serversResult)
+        loadServers.rejected.match(serversResult) ||
+        loadMonitors.rejected.match(monitorsResult) ||
+        loadMediaMtxServers.rejected.match(mtxResult)
       if (hasError && attempt < 20 && !cancelled) {
         retryTimer = setTimeout(() => { void bootstrap(attempt + 1) }, 1500)
       }

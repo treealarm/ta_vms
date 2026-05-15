@@ -44,6 +44,8 @@ function CameraSlot({ monitor, slotIndex, soloActive, canSolo, onToggleSolo, all
     <Box sx={{ position: 'relative', minWidth: 0, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
       {camera ? (
         <CameraUnifiedCard
+          key={camera.cameraId}
+          slotKey={`${monitor.monitorId}-${slotIndex}`}
           camera={camera}
           gridSoloActive={soloActive}
           onToggleGridSolo={canSolo ? onToggleSolo : undefined}
@@ -148,7 +150,7 @@ export default function MonitorGrid({ monitor }: Props) {
     <Box sx={gridSx}>
       {visibleSlots.map((slotIndex) => (
         <CameraSlot
-          key={slotIndex}
+          key={`${monitor.monitorId}-${slotIndex}`}
           monitor={monitor}
           slotIndex={slotIndex}
           soloActive={soloSlot === slotIndex}

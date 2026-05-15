@@ -198,11 +198,12 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
       className="vms-video-frame"
       sx={{
         width: '100%',
-        aspectRatio: '1 / 1',
+        height: '100%',
         overflow: 'hidden',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+        bgcolor: 'black',
       }}
     >
       <video
