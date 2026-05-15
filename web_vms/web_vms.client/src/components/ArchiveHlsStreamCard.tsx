@@ -1,20 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import AccessTimeIcon from '@mui/icons-material/AccessTime'
-import { Alert, Box, Card, CardContent, IconButton, Stack, Tooltip, Typography } from '@mui/material'
+import { Alert, Box, Divider, IconButton, Stack, Tooltip, Typography } from '@mui/material'
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
 import Hls from 'hls.js'
 
 import type { RecordingDto, RecordingRangeDto } from '../dto/dtos'
-import RecordingsList from './RecordingsList'
+import RecordingsList, { type RecordingsListHandle } from './RecordingsList'
 
-type ArchiveHlsStreamCardProps = {
-  cameraId: string
-}
+const PANEL_BG = { bgcolor: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(6px)' } as const
+const BTN = {
+  p: '3px',
+  color: 'rgba(255,255,255,0.75)',
+  borderRadius: '4px',
+  '&:hover': { color: '#fff', bgcolor: 'rgba(255,255,255,0.12)' },
+} as const
 
-/** Archive playback via HLS (explicit clip list from recording-ranges). WebRTC arch player is not used. */
-export default function ArchiveHlsStreamCard({ cameraId }: ArchiveHlsStreamCardProps) {
+type Props = { cameraId: string }
+
+export default function ArchiveHlsStreamCard({ cameraId }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const listRef = useRef<RecordingsListHandle>(null)
   const [hlsError, setHlsError] = useState<string | null>(null)
-  const [listOpen, setListOpen] = useState(true)
+  const [listOpen, setListOpen] = useState(false)
   const [anchorTs, setAnchorTs] = useState(() => new Date().toISOString())
   const [ranges, setRanges] = useState<RecordingRangeDto[]>([])
   const [startIndex, setStartIndex] = useState(0)
@@ -27,10 +33,12 @@ export default function ArchiveHlsStreamCard({ cameraId }: ArchiveHlsStreamCardP
   }, [])
 
   const handleSelectRecording = (rec: RecordingDto) => {
-    const i = ranges.findIndex((x) => x.recordings[0]?.filePath === rec.filePath && x.recordings[0]?.startTime === rec.startTime)
-    if (i >= 0) {
-      setStartIndex(i)
-    }
+    const i = ranges.findIndex(
+      (x) =>
+        x.recordings[0]?.filePath === rec.filePath &&
+        x.recordings[0]?.startTime === rec.startTime
+    )
+    if (i >= 0) setStartIndex(i)
   }
 
   const playlistUrl = useMemo(() => {
@@ -48,214 +56,166 @@ export default function ArchiveHlsStreamCard({ cameraId }: ArchiveHlsStreamCardP
 
   const rangeFilePath = ranges[startIndex]?.recordings[0]?.filePath
 
+  const currentClipTime = ranges[startIndex]?.recordings[0]?.startTime
+  const formattedTime = currentClipTime
+    ? new Date(currentClipTime).toLocaleString(undefined, {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+      })
+    : null
+
   useEffect(() => {
     const video = videoRef.current
     setHlsError(null)
-
-    if (!video || !playlistUrl) {
-      return
-    }
+    if (!video || !playlistUrl) return
 
     let hls: Hls | null = null
-
-    const tryPlay = () => {
-      void video.play().catch(() => {
-        /* autoplay policy */
-      })
-    }
-
-    const onFatal = (detail: string) => {
-      setHlsError(detail)
-    }
-
-    const advanceToNextClip = () => {
+    const tryPlay = () => void video.play().catch(() => {})
+    const onFatal = (detail: string) => setHlsError(detail)
+    const advanceToNextClip = () =>
       setStartIndex((i) => {
         const list = rangesRef.current
-        if (i < list.length - 1) {
-          return i + 1
-        }
-        return i
+        return i < list.length - 1 ? i + 1 : i
       })
-    }
 
     if (Hls.isSupported()) {
-      hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: false,
-        xhrSetup: (xhr) => {
-          xhr.withCredentials = false
-        }
-      })
+      hls = new Hls({ enableWorker: true, lowLatencyMode: false })
       video.addEventListener('canplay', tryPlay, { once: true })
       video.addEventListener('loadeddata', tryPlay, { once: true })
-      hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-        hls?.loadSource(playlistUrl)
-      })
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        tryPlay()
-      })
+      hls.on(Hls.Events.MEDIA_ATTACHED, () => hls?.loadSource(playlistUrl))
+      hls.on(Hls.Events.MANIFEST_PARSED, () => tryPlay())
       hls.on(Hls.Events.ERROR, (_, data) => {
-        if (import.meta.env.DEV) {
-          console.warn('HLS event', data.type, data.details, data)
-        }
         if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              onFatal(`Network error (${data.details}). Check API / proxy (playlist or TS segment).`)
-              break
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              onFatal(`Media error (${data.details}). Codec or TS format may be unsupported in browser.`)
-              try {
-                hls?.recoverMediaError()
-              } catch {
-                /* ignore */
-              }
-              break
-            default:
-              onFatal(`Playback error: ${data.type} ${data.details ?? ''}`)
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            try { hls?.recoverMediaError() } catch {}
           }
+          onFatal(`${data.type}: ${data.details ?? ''}`)
         }
       })
       hls.attachMedia(video)
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.addEventListener('canplay', tryPlay, { once: true })
-      video.addEventListener('loadeddata', tryPlay, { once: true })
       video.src = playlistUrl
-      video.onerror = () => {
-        onFatal('Native HLS failed to load (invalid playlist or segment URL)')
-      }
+      video.onerror = () => onFatal('Native HLS failed')
     } else {
-      setHlsError('HLS is not supported in this browser')
+      setHlsError('HLS not supported in this browser')
       return
     }
 
     video.addEventListener('ended', advanceToNextClip)
-
     return () => {
       video.removeEventListener('ended', advanceToNextClip)
       video.onerror = null
       video.removeEventListener('canplay', tryPlay)
       video.removeEventListener('loadeddata', tryPlay)
-      if (hls != null) {
-        hls.destroy()
-      }
+      hls?.destroy()
       video.removeAttribute('src')
       video.load()
     }
   }, [playlistUrl])
 
   return (
-    <Card
-      sx={{
-        height: '100%',
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-      }}
-    >
-      <CardContent
-        sx={{
-          flex: 1,
-          minHeight: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          pt: 2,
-          '&:last-child': { pb: 2 },
-        }}
-      >
-        <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ flexShrink: 0 }}>
-            <Typography variant="body2" color="text.secondary">
-              Archive (HLS) — {cameraId}
-            </Typography>
-            <Tooltip title={listOpen ? 'Hide recordings' : 'Show recordings'}>
-              <IconButton size="small" onClick={() => setListOpen((v) => !v)}>
-                <AccessTimeIcon />
-              </IconButton>
-            </Tooltip>
-          </Stack>
+    <Box sx={{ height: '100%', width: '100%', display: 'flex', overflow: 'hidden' }}>
+      {/* ── Video area ── */}
+      <Box sx={{ flex: 1, minWidth: 0, position: 'relative', bgcolor: 'black' }}>
+        {hlsError && (
+          <Alert
+            severity="error"
+            onClose={() => setHlsError(null)}
+            sx={{ position: 'absolute', top: 4, left: 4, right: listOpen ? 'auto' : 32, zIndex: 2, fontSize: '0.72rem', py: 0.25 }}
+          >
+            {hlsError}
+          </Alert>
+        )}
 
+        {!playlistUrl ? (
+          <Box
+            sx={{
+              width: '100%', height: '100%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'rgba(255,255,255,0.35)', fontSize: '0.78rem', textAlign: 'center', px: 2,
+            }}
+          >
+            Open the recordings list →
+          </Box>
+        ) : (
+          <Box sx={{ width: '100%', height: '100%', '& video': { width: '100%', height: '100%', display: 'block', objectFit: 'contain' } }}>
+            <video key={playlistUrl} ref={videoRef} controls playsInline muted />
+          </Box>
+        )}
+      </Box>
+
+      {/* ── Right: compact strip ── */}
+      {!listOpen && (
+        <Stack
+          alignItems="center"
+          spacing={0.25}
+          sx={{ ...PANEL_BG, width: 28, flexShrink: 0, py: 0.5 }}
+        >
           {hlsError && (
-            <Alert severity="error" onClose={() => setHlsError(null)} sx={{ flexShrink: 0 }}>
-              {hlsError}
-            </Alert>
+            <Tooltip title={hlsError} placement="left">
+              <ErrorOutlineIcon sx={{ fontSize: '0.85rem', color: 'error.main', my: 0.25 }} />
+            </Tooltip>
           )}
 
-          <Box sx={{ width: '100%', flex: 1, minHeight: 0, display: 'flex' }}>
-            <Stack direction="row" spacing={1} sx={{ width: '100%', flex: 1, minHeight: 0 }}>
-              <Box sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-                {!playlistUrl ? (
-                  <Box
-                    sx={{
-                      width: '100%',
-                      height: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      bgcolor: 'black',
-                      color: 'text.secondary',
-                      fontSize: 14,
-                      px: 1,
-                      textAlign: 'center',
-                    }}
-                  >
-                    Open the recordings panel and pick a time range, or select a clip to play.
-                  </Box>
-                ) : (
-                  <Box
-                    sx={{
-                      width: '100%',
-                      height: '100%',
-                      bgcolor: 'black',
-                      borderRadius: 1,
-                      overflow: 'hidden',
-                      '& video': {
-                        width: '100%',
-                        height: '100%',
-                        display: 'block',
-                        objectFit: 'contain',
-                      },
-                    }}
-                  >
-                    <video
-                      key={playlistUrl}
-                      ref={videoRef}
-                      controls
-                      playsInline
-                      muted
-                    />
-                  </Box>
-                )}
-              </Box>
+          <Box sx={{ flex: 1 }} />
 
-              {listOpen && (
-                <Box
-                  sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    borderLeft: '1px solid rgba(0,0,0,0.1)',
-                    overflow: 'hidden',
-                    minHeight: 0,
-                  }}
-                >
-                  <RecordingsList
-                    open={listOpen}
-                    cameraId={cameraId}
-                    timestamp={anchorTs}
-                    filePath={rangeFilePath}
-                    playbackStartTime={ranges[startIndex]?.recordings[0]?.startTime}
-                    onSelect={handleSelectRecording}
-                    onTimeChange={setAnchorTs}
-                    onRangesChange={onRangesChange}
-                  />
-                </Box>
-              )}
-            </Stack>
-          </Box>
+          <Tooltip title={formattedTime ? `Archive · ${formattedTime}` : 'Open recordings'} placement="left">
+            <IconButton size="small" onClick={() => setListOpen(true)} sx={BTN}>
+              <span style={{ fontSize: '0.85rem', lineHeight: 1 }}>☰</span>
+            </IconButton>
+          </Tooltip>
         </Stack>
-      </CardContent>
-    </Card>
+      )}
+
+      {/* ── Right: recordings panel — always mounted (width=0 when hidden) so data prefetches ── */}
+      <Stack
+        sx={{
+          ...PANEL_BG,
+          width: listOpen ? 170 : 0,
+          flexShrink: 0,
+          overflow: 'hidden',
+          transition: 'width 0.15s ease',
+          borderLeft: listOpen ? '1px solid rgba(255,255,255,0.08)' : 'none',
+        }}
+      >
+        <Stack direction="row" alignItems="center" sx={{ px: 1, pt: 0.75, pb: 0.5, flexShrink: 0 }}>
+          <Typography sx={{ flex: 1, color: '#fff', fontWeight: 600, fontSize: '0.78rem' }}>
+            Archive
+          </Typography>
+          {formattedTime && (
+            <Tooltip title={formattedTime} placement="left">
+              <Typography sx={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.45)', mr: 0.75, cursor: 'default', whiteSpace: 'nowrap' }}>
+                {new Date(currentClipTime!).toLocaleDateString('sv-SE')}
+              </Typography>
+            </Tooltip>
+          )}
+          <IconButton
+            size="small"
+            onClick={() => setListOpen(false)}
+            sx={{ p: '2px', color: 'rgba(255,255,255,0.45)', '&:hover': { color: '#fff' } }}
+          >
+            ✕
+          </IconButton>
+        </Stack>
+
+        <Divider sx={{ borderColor: 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
+
+        <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          <RecordingsList
+            ref={listRef}
+            open={true}
+            cameraId={cameraId}
+            timestamp={anchorTs}
+            filePath={rangeFilePath}
+            playbackStartTime={ranges[startIndex]?.recordings[0]?.startTime}
+            onSelect={handleSelectRecording}
+            onTimeChange={setAnchorTs}
+            onRangesChange={onRangesChange}
+            dark
+          />
+        </Box>
+      </Stack>
+    </Box>
   )
 }
