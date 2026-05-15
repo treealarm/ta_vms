@@ -60,8 +60,8 @@ public class MonitorController(MonitorManager manager) : ControllerBase
   {
     try
     {
-      await manager.SetCameras(id, body.CameraIds, ct);
-      return Ok(new ApiResponse(true, "ok"));
+      var result = await manager.SetCameras(id, body.CameraIds, ct);
+      return Ok(result);
     }
     catch (RpcException ex)
     {
@@ -77,8 +77,8 @@ public class MonitorController(MonitorManager manager) : ControllerBase
 
     try
     {
-      await manager.SetSlot(id, slotIndex, body.CameraId, ct);
-      return Ok(new ApiResponse(true, "ok"));
+      var result = await manager.SetSlot(id, slotIndex, body.CameraId, ct);
+      return Ok(result);
     }
     catch (RpcException ex)
     {

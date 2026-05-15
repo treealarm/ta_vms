@@ -29,20 +29,20 @@ public class MonitorManager(CfgService.CfgServiceClient cfgClient)
     return response.Success;
   }
 
-  public async Task<bool> SetCameras(string monitorId, IEnumerable<string> cameraIds, CancellationToken ct = default)
+  public async Task<ApiResponse> SetCameras(string monitorId, IEnumerable<string> cameraIds, CancellationToken ct = default)
   {
     var request = new SetMonitorCamerasRequest { MonitorId = monitorId };
     request.CameraIds.AddRange(cameraIds);
     var response = await cfgClient.SetMonitorCamerasAsync(request, CfgOptions(ct));
-    return response.Success;
+    return new ApiResponse(response.Success, response.Message);
   }
 
-  public async Task<bool> SetSlot(string monitorId, int slotIndex, string cameraId, CancellationToken ct = default)
+  public async Task<ApiResponse> SetSlot(string monitorId, int slotIndex, string cameraId, CancellationToken ct = default)
   {
     var response = await cfgClient.SetMonitorSlotAsync(
       new SetMonitorSlotRequest { MonitorId = monitorId, SlotIndex = slotIndex, CameraId = cameraId },
       CfgOptions(ct));
-    return response.Success;
+    return new ApiResponse(response.Success, response.Message);
   }
 
   private static MonitorDto ToDto(MonitorSetup m) => new()

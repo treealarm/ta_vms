@@ -20,7 +20,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const listRef = useRef<RecordingsListHandle>(null)
   const [hlsError, setHlsError] = useState<string | null>(null)
-  const [listOpen, setListOpen] = useState(false)
+  const [listOpen, setListOpen] = useState(true)
   const [anchorTs, setAnchorTs] = useState(() => new Date().toISOString())
   const [ranges, setRanges] = useState<RecordingRangeDto[]>([])
   const [startIndex, setStartIndex] = useState(0)

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Box, IconButton, Menu, MenuItem, Tooltip, Typography } from '@mui/material'
 import SwitchCameraIcon from '@mui/icons-material/SwitchCamera'
 import type { CameraSetupDto, MonitorDto } from '../dto/dtos'
@@ -112,6 +112,11 @@ export default function MonitorGrid({ monitor }: Props) {
   const allCameras = useAppSelector((state) => state.live.cameraStatesById)
 
   const slotCount = layoutSlotCount(monitor.layout)
+
+  // Reset solo when switching monitors or changing layout (stale index would point at non-existent slot)
+  useEffect(() => {
+    setSoloSlot(null)
+  }, [monitor.monitorId, slotCount])
   const cols = layoutColumns(monitor.layout)
   const rows = layoutRows(monitor.layout)
 
