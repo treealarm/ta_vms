@@ -5,6 +5,7 @@ import fsReducer from './fsSlice'
 import logsReducer from './logSlice'
 import storageReducer from './storageSlice'
 import mediaMtxReducer from './mediaMtxSlice'
+import monitorsReducer from './monitorsSlice'
 
 export const store = configureStore({
   reducer: {
@@ -13,6 +14,7 @@ export const store = configureStore({
     logs: logsReducer,
     storage: storageReducer,
     mediaMtx: mediaMtxReducer,
+    monitors: monitorsReducer,
   }
 })
 

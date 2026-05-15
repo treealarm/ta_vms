@@ -113,6 +113,7 @@
             "program": "${workspaceFolder}/media_server/build/vms",
             "args": [],
             "environment": [
+                { "name": "DEBUGINFOD_URLS", "value": "" },
                 {
                     "name": "VMS_STORAGE_BASE_PATH",
                     "value": "${workspaceFolder}/../media_storage"
@@ -124,6 +125,10 @@
                 {
                     "name": "APP_ID",
                     "value": "vms"
+                },
+                {
+                    "name": "DAPR_GRPC_PORT",
+                    "value": "50011"
                 },
                 {
                     "name": "DAPR_CFG_APP_ID",
@@ -151,10 +156,12 @@
             "MIMode": "gdb",
             "externalConsole": false,
             "setupCommands": [
-                {
-                    "text": "-enable-pretty-printing"
-                }
+                { "text": "-enable-pretty-printing" },
+                { "text": "set debuginfod enabled off", "ignoreFailures": true },
+                { "text": "set debuginfod urls \"\"", "ignoreFailures": true }, // Удаляет системные URL-адреса из GDB
+                { "text": "set debuginfod verbose 0", "ignoreFailures": true }  // Полностью заглушает вывод этой подсистемы
             ]
+
         },
         {
             "name": "Frontend (Vite)",

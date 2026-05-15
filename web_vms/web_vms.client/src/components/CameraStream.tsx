@@ -130,7 +130,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
         const url = `${(
           baseUrl ||
           `${window.location.protocol}//${window.location.hostname}:8889`
-        ).replace(/\/$/, '')}/${encodeURIComponent(streamName)}/whep`;
+        ).replace(/\/$/, '')}/${streamName}/whep`;
 
         console.log('WHEP url =', url);
 
