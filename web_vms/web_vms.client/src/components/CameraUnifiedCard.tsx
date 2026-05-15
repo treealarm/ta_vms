@@ -1,227 +1,323 @@
-﻿import { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { patchSlot, selectSlotUi } from '../store/monitorUiSlice'
 import {
   Box,
+  Button,
   Card,
-  CardContent,
+  Chip,
+  Divider,
   IconButton,
-  InputAdornment,
   Stack,
-  TextField,
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
-  Typography
+  Typography,
 } from '@mui/material'
+import CloseIcon from '@mui/icons-material/Close'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord'
 import FullscreenIcon from '@mui/icons-material/Fullscreen'
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit'
+import LayersIcon from '@mui/icons-material/Layers'
+import LiveTvIcon from '@mui/icons-material/LiveTv'
+import TuneIcon from '@mui/icons-material/Tune'
+import VideoLibraryIcon from '@mui/icons-material/VideoLibrary'
 import { type CameraSetupDto } from '../dto/dtos'
-import CameraStreamCard from './CameraStreamCard'
+import CameraStream from './CameraStream'
 import ArchiveHlsStreamCard from './ArchiveHlsStreamCard'
 import StreamOverrideRow from './StreamOverrideRow'
 import { useAppDispatch, useAppSelector } from '../store'
 import { fetchCameraState } from '../store/liveSlice'
 
-type CameraUnifiedCardProps = {
+const STRIP_W = 28
+const PANEL_W = 182
+
+const STRIP_BG = { bgcolor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' } as const
+
+const BTN_SX = {
+  p: '3px',
+  color: 'rgba(255,255,255,0.8)',
+  borderRadius: '4px',
+  '&:hover': { color: '#fff', bgcolor: 'rgba(255,255,255,0.12)' },
+} as const
+
+const CAPTION_SX = {
+  display: 'block',
+  fontSize: '0.6rem',
+  color: 'rgba(255,255,255,0.45)',
+  textTransform: 'uppercase' as const,
+  letterSpacing: '0.06em',
+  mb: 0.4,
+}
+
+type Props = {
   camera: CameraSetupDto
-  /** This camera fills the monitor grid; others are hidden. */
+  slotKey?: string
   gridSoloActive?: boolean
-  /** Toggle between solo (this camera) and full quad grid. */
   onToggleGridSolo?: () => void
 }
 
-function CameraUnifiedCard({ camera, gridSoloActive = false, onToggleGridSolo }: CameraUnifiedCardProps) {
+export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = false, onToggleGridSolo }: Props) {
   const dispatch = useAppDispatch()
+  const cameraState = useAppSelector((s) => s.live.cameraStatesById[camera.cameraId])
 
-  const cameraState = useAppSelector((state) => state.live.cameraStatesById[camera.cameraId])
+  // UI state — persisted in Redux when slotKey provided, local otherwise
+  const storeKey = slotKey ?? `standalone-${camera.cameraId}`
+  const slotUi = useAppSelector(selectSlotUi(storeKey))
 
-  const [mode, setMode] = useState<'live' | 'archive'>('live')
-  const [selectedStreamName, setSelectedStreamName] = useState<string>('')
+  const mode = slotUi.mode
+  const selectedStream = slotUi.selectedStream
+  const panelOpen = slotUi.panelOpen
+
+  const setMode = (v: 'live' | 'archive') => dispatch(patchSlot({ key: storeKey, mode: v }))
+  const setSelectedStream = (v: string) => dispatch(patchSlot({ key: storeKey, selectedStream: v }))
+  const setPanelOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, panelOpen: v }))
+
+  const [onvifRtsp, setOnvifRtsp] = useState('')
 
   const merged: CameraSetupDto = { ...camera, ...(cameraState ?? {}) }
   const recordingMode = merged.recordingMode ?? 'off'
-
   const webRtcStreams = (merged.streams ?? []).filter((s) => s.webRtc)
-  const activeStreamName = selectedStreamName || webRtcStreams[0]?.streamName || ''
-  const activeStream =
-    (merged.streams ?? []).find((s) => s.streamName === activeStreamName)
-    ?? (merged.streams ?? [])[0]
-    ?? null
-
-  const activeRetentionWindow =
-    merged.activeRetentionWindow === true && recordingMode !== 'off'
-  const retentionTooltip =
-    'Retention episode active — segments finalized now are retained on disk (not subject to normal pruning)'
+  const activeStream = selectedStream || webRtcStreams[0]?.streamName || ''
+  const activeStreamObj =
+    (merged.streams ?? []).find((s) => s.streamName === activeStream) ??
+    (merged.streams ?? [])[0] ??
+    null
+  const activeRetention = merged.activeRetentionWindow === true && recordingMode !== 'off'
 
   const configuredRtsp = camera.rtspUrl || ''
-  const [onvifRtsp, setOnvifRtsp] = useState('')
-
   useEffect(() => {
-    if (configuredRtsp || !camera.onvifConn) {
-      setOnvifRtsp('')
-      return
-    }
-    const profileToken = activeStream?.profileToken ?? ''
-    const qs = profileToken ? `?profileToken=${encodeURIComponent(profileToken)}` : ''
+    if (configuredRtsp || !camera.onvifConn) { setOnvifRtsp(''); return }
+    const token = activeStreamObj?.profileToken ?? ''
+    const qs = token ? `?profileToken=${encodeURIComponent(token)}` : ''
     fetch(`/api/onvif/cameras/${encodeURIComponent(camera.cameraId)}/stream-uri${qs}`)
-      .then((r) => r.ok ? r.json() as Promise<{ rtspUrl: string }> : Promise.reject())
-      .then((data) => setOnvifRtsp(data.rtspUrl || ''))
+      .then((r) => (r.ok ? (r.json() as Promise<{ rtspUrl: string }>) : Promise.reject()))
+      .then((d) => setOnvifRtsp(d.rtspUrl || ''))
       .catch(() => setOnvifRtsp(''))
-  }, [camera.cameraId, camera.onvifConn, configuredRtsp, activeStream?.profileToken])
+  }, [camera.cameraId, camera.onvifConn, configuredRtsp, activeStreamObj?.profileToken])
 
-  const displayRtsp = configuredRtsp || onvifRtsp
+  const rtsp = configuredRtsp || onvifRtsp
   const rtspIsOnvif = !configuredRtsp && !!onvifRtsp
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      void dispatch(fetchCameraState(camera.cameraId))
-    }, 5000)
+    const id = setInterval(() => void dispatch(fetchCameraState(camera.cameraId)), 5000)
     void dispatch(fetchCameraState(camera.cameraId))
-    return () => {
-      clearInterval(interval)
-    }
+    return () => clearInterval(id)
   }, [camera.cameraId, dispatch])
+
+  const cycleStream = () => {
+    if (webRtcStreams.length < 2) return
+    const idx = webRtcStreams.findIndex((s) => s.streamName === activeStream)
+    setSelectedStream(webRtcStreams[(idx + 1) % webRtcStreams.length].streamName)
+  }
+
+  const streamName =
+    webRtcStreams.length > 0 ? `${camera.cameraId}/${activeStream}` : camera.cameraId
 
   return (
     <Card
       sx={{
-        height: '100%',
-        width: '100%',
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        ...(activeRetentionWindow
+        height: '100%', width: '100%', overflow: 'hidden',
+        display: 'flex', flexDirection: 'row',
+        bgcolor: 'black',
+        ...(activeRetention
           ? {
-              outline: (theme) => `3px solid ${theme.palette.error.main}`,
-              outlineOffset: '-3px',
-              boxShadow: (theme) => `0 0 10px 1px ${theme.palette.error.main}55`
+              outline: (t) => `2px solid ${t.palette.error.main}`,
+              outlineOffset: '-2px',
+              boxShadow: (t) => `0 0 8px ${t.palette.error.main}66`,
             }
-          : {})
+          : {}),
       }}
     >
-      <CardContent
-        sx={{
-          flex: 1,
-          minHeight: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          pt: 1,
-          px: 1.25,
-          pb: 1,
-          '&:last-child': { pb: 1 }
-        }}
-      >
-        <Stack spacing={0.75} sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          <Stack direction="row" alignItems="center" sx={{ flexShrink: 0, flexWrap: 'nowrap', gap: 0.5 }}>
-            {activeRetentionWindow && (
-              <Tooltip title={retentionTooltip}>
-                <Box
-                  component="span"
-                  sx={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    bgcolor: 'error.main',
-                    flexShrink: 0,
-                    alignSelf: 'center'
-                  }}
-                />
-              </Tooltip>
-            )}
-            <Typography variant="body2" sx={{ flexShrink: 0, fontWeight: 600, fontSize: '0.8125rem', lineHeight: 1.2 }}>
-              {camera.cameraId}
-            </Typography>
-
-            <Tooltip title={rtspIsOnvif ? 'RTSP from ONVIF (not configured manually)' : ''} disableHoverListener={!rtspIsOnvif}>
-              <TextField
-                value={displayRtsp}
-                variant="outlined"
-                size="small"
-                margin="none"
-                hiddenLabel
-                placeholder="RTSP"
-                slotProps={{
-                  input: {
-                    readOnly: true,
-                    sx: {
-                      py: 0.5, px: 1, fontSize: '0.75rem',
-                      ...(rtspIsOnvif ? { color: 'text.secondary', fontStyle: 'italic' } : {})
-                    },
-                    endAdornment: (
-                      <InputAdornment position="end" sx={{ ml: 0 }}>
-                        <IconButton
-                          size="small"
-                          edge="end"
-                          sx={{ p: 0.25 }}
-                          onClick={() => navigator.clipboard.writeText(displayRtsp)}
-                        >
-                          <ContentCopyIcon sx={{ fontSize: '1rem' }} />
-                        </IconButton>
-                      </InputAdornment>
-                    )
-                  }
-                }}
-                sx={{ flex: '1 1 80px', minWidth: 64 }}
-              />
+      {/* ── Left: icon strip (compact) ── */}
+      {!panelOpen && (
+        <Stack
+          alignItems="center"
+          spacing={0.25}
+          sx={{ ...STRIP_BG, width: STRIP_W, flexShrink: 0, py: 0.5, zIndex: 1 }}
+        >
+          {onToggleGridSolo != null && (
+            <Tooltip title={gridSoloActive ? 'Show all' : 'Expand'} placement="right">
+              <IconButton size="small" onClick={onToggleGridSolo} sx={BTN_SX}>
+                {gridSoloActive
+                  ? <FullscreenExitIcon sx={{ fontSize: '0.95rem' }} />
+                  : <FullscreenIcon sx={{ fontSize: '0.95rem' }} />}
+              </IconButton>
             </Tooltip>
+          )}
 
-            {mode === 'live' && <StreamOverrideRow cameraId={camera.cameraId} stream={activeStream} />}
+          <Tooltip title={mode === 'live' ? 'Switch to Archive' : 'Switch to Live'} placement="right">
+            <IconButton size="small" onClick={() => setMode(mode === 'live' ? 'archive' : 'live')} sx={BTN_SX}>
+              {mode === 'live'
+                ? <LiveTvIcon sx={{ fontSize: '0.95rem' }} />
+                : <VideoLibraryIcon sx={{ fontSize: '0.95rem' }} />}
+            </IconButton>
+          </Tooltip>
 
-            <ToggleButtonGroup
-              value={mode}
-              exclusive
-              onChange={(_, v) => v && setMode(v)}
-              size="small"
-              sx={{
-                flexShrink: 0,
-                '& .MuiToggleButton-root': { py: 0.125, px: 0.75, fontSize: '0.75rem', lineHeight: 1.2 }
-              }}
+          {webRtcStreams.length > 1 && (
+            <Tooltip title={`Stream: ${activeStream} — click to cycle`} placement="right">
+              <IconButton size="small" onClick={cycleStream} sx={BTN_SX}>
+                <LayersIcon sx={{ fontSize: '0.95rem' }} />
+              </IconButton>
+            </Tooltip>
+          )}
+
+          {activeRetention && (
+            <Tooltip title="Retention episode active" placement="right">
+              <FiberManualRecordIcon sx={{ fontSize: '0.6rem', color: 'error.main', my: 0.25 }} />
+            </Tooltip>
+          )}
+
+          <Box sx={{ flex: 1 }} />
+
+          <Tooltip title="Controls" placement="right">
+            <IconButton size="small" onClick={() => setPanelOpen(true)} sx={BTN_SX}>
+              <TuneIcon sx={{ fontSize: '0.95rem' }} />
+            </IconButton>
+          </Tooltip>
+        </Stack>
+      )}
+
+      {/* ── Left: expanded panel ── */}
+      {panelOpen && (
+        <Stack
+          sx={{ ...STRIP_BG, width: PANEL_W, flexShrink: 0, overflow: 'hidden auto', zIndex: 1 }}
+        >
+          {/* Header */}
+          <Stack direction="row" alignItems="center" sx={{ px: 1, pt: 0.75, pb: 0.5, flexShrink: 0 }}>
+            <Tooltip
+              title={rtsp ? (rtspIsOnvif ? `ONVIF: ${rtsp}` : rtsp) : 'No RTSP'}
+              placement="right"
             >
-              <ToggleButton value="live">Live</ToggleButton>
-              <ToggleButton value="archive">Archive</ToggleButton>
-            </ToggleButtonGroup>
-
-            {onToggleGridSolo != null && (
-              <Tooltip title={gridSoloActive ? 'Show all cameras' : 'Expand to fill grid'}>
-                <IconButton
-                  size="small"
-                  onClick={onToggleGridSolo}
-                  sx={{ p: 0.25, flexShrink: 0 }}
-                  aria-label={gridSoloActive ? 'Show all cameras' : 'Expand camera in grid'}
-                >
-                  {gridSoloActive ? (
-                    <FullscreenExitIcon sx={{ fontSize: '1.05rem' }} />
-                  ) : (
-                    <FullscreenIcon sx={{ fontSize: '1.05rem' }} />
-                  )}
-                </IconButton>
-              </Tooltip>
-            )}
+              <Typography
+                variant="body2"
+                sx={{ flex: 1, color: '#fff', fontWeight: 600, fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'default' }}
+              >
+                {camera.cameraId}
+              </Typography>
+            </Tooltip>
+            <IconButton
+              size="small"
+              onClick={() => setPanelOpen(false)}
+              sx={{ p: '2px', color: 'rgba(255,255,255,0.5)', '&:hover': { color: '#fff' } }}
+            >
+              <CloseIcon sx={{ fontSize: '0.9rem' }} />
+            </IconButton>
           </Stack>
 
-          <Box
-            sx={{
-              flex: 1,
-              minHeight: 0,
-              display: mode === 'live' ? 'flex' : 'none',
-              flexDirection: 'column',
-              overflow: 'hidden'
-            }}
-          >
-            <CameraStreamCard camera={camera} onStreamChange={setSelectedStreamName} />
-          </Box>
+          <Divider sx={{ borderColor: 'rgba(255,255,255,0.12)', flexShrink: 0 }} />
 
-          {mode === 'archive' && (
-            <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <ArchiveHlsStreamCard cameraId={camera.cameraId} />
+          <Stack spacing={1.25} sx={{ p: 1 }}>
+
+            {/* Streams */}
+            {webRtcStreams.length > 1 && (
+              <Box>
+                <Typography component="span" sx={CAPTION_SX}>Stream</Typography>
+                <Stack direction="row" flexWrap="wrap" gap={0.5}>
+                  {webRtcStreams.map((s) => (
+                    <Chip
+                      key={s.streamName}
+                      label={s.streamName}
+                      size="small"
+                      onClick={() => setSelectedStream(s.streamName)}
+                      variant={activeStream === s.streamName ? 'filled' : 'outlined'}
+                      sx={{
+                        height: 20, fontSize: '0.68rem', cursor: 'pointer',
+                        color: activeStream === s.streamName ? '#000' : 'rgba(255,255,255,0.75)',
+                        bgcolor: activeStream === s.streamName ? 'rgba(255,255,255,0.9)' : 'transparent',
+                        borderColor: 'rgba(255,255,255,0.3)',
+                        '& .MuiChip-label': { px: 0.75 },
+                      }}
+                    />
+                  ))}
+                </Stack>
+              </Box>
+            )}
+
+            {/* Mode */}
+            <Box>
+              <Typography component="span" sx={CAPTION_SX}>Mode</Typography>
+              <ToggleButtonGroup
+                value={mode} exclusive onChange={(_, v) => v && setMode(v)} size="small" fullWidth
+                sx={{
+                  '& .MuiToggleButton-root': {
+                    flex: 1, py: 0.25, fontSize: '0.7rem',
+                    color: 'rgba(255,255,255,0.6)', borderColor: 'rgba(255,255,255,0.2)',
+                    '&.Mui-selected': { color: '#fff', bgcolor: 'rgba(255,255,255,0.15)', borderColor: 'rgba(255,255,255,0.35)' },
+                  },
+                }}
+              >
+                <ToggleButton value="live">Live</ToggleButton>
+                <ToggleButton value="archive">Archive</ToggleButton>
+              </ToggleButtonGroup>
             </Box>
-          )}
+
+            {/* Override */}
+            {mode === 'live' && (
+              <Box>
+                <Typography component="span" sx={CAPTION_SX}>Override</Typography>
+                <StreamOverrideRow cameraId={camera.cameraId} stream={activeStreamObj} />
+              </Box>
+            )}
+
+            {/* Solo */}
+            {onToggleGridSolo != null && (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={gridSoloActive ? <FullscreenExitIcon /> : <FullscreenIcon />}
+                onClick={onToggleGridSolo}
+                fullWidth
+                sx={{
+                  fontSize: '0.7rem',
+                  color: 'rgba(255,255,255,0.7)', borderColor: 'rgba(255,255,255,0.2)',
+                  '&:hover': { color: '#fff', borderColor: 'rgba(255,255,255,0.5)', bgcolor: 'rgba(255,255,255,0.07)' },
+                }}
+              >
+                {gridSoloActive ? 'Show all' : 'Expand'}
+              </Button>
+            )}
+
+            {/* RTSP copy */}
+            {rtsp && (
+              <Stack direction="row" alignItems="center" gap={0.5}>
+                <Typography sx={{ flex: 1, fontSize: '0.62rem', color: 'rgba(255,255,255,0.35)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {rtsp}
+                </Typography>
+                <Tooltip title="Copy RTSP">
+                  <IconButton
+                    size="small"
+                    sx={{ p: '2px', color: 'rgba(255,255,255,0.45)', flexShrink: 0, '&:hover': { color: '#fff' } }}
+                    onClick={() => navigator.clipboard.writeText(rtsp)}
+                  >
+                    <ContentCopyIcon sx={{ fontSize: '0.75rem' }} />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+            )}
+
+            {/* Retention */}
+            {activeRetention && (
+              <Stack direction="row" alignItems="center" gap={0.75}>
+                <FiberManualRecordIcon sx={{ fontSize: '0.6rem', color: 'error.main', flexShrink: 0 }} />
+                <Typography sx={{ fontSize: '0.65rem', color: 'error.light' }}>Retention active</Typography>
+              </Stack>
+            )}
+          </Stack>
         </Stack>
-      </CardContent>
+      )}
+
+      {/* ── Right: video / archive ── fills remaining space */}
+      <Box sx={{ flex: 1, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
+        {mode === 'live' && (
+          <CameraStream streamName={streamName} baseUrl={merged.mediaMtxWebrtcUrl} />
+        )}
+        {mode === 'archive' && (
+          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <ArchiveHlsStreamCard cameraId={camera.cameraId} />
+          </Box>
+        )}
+      </Box>
     </Card>
   )
 }
-
-export default CameraUnifiedCard

@@ -246,7 +246,7 @@ public sealed class FSController(
 
     var perStream = streamNames.Select(s => new
     {
-      streamName  = s,
+      streamName  = (string?)s,
       playlistUrl = $"/api/arch/hls/event.m3u8?eventId={Uri.EscapeDataString(eventId)}&streamName={Uri.EscapeDataString(s)}"
     });
 

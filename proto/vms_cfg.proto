@@ -18,6 +18,11 @@ service CfgService {
   rpc UpsertMediaMtxServer(MediaMtxServer) returns (OperationStatus);
   rpc RemoveMediaMtxServer(MediaMtxServerRequest) returns (OperationStatus);
   rpc GetOrAssignMediaMtxServer(SourceRequest) returns (GetOrAssignMediaMtxServerResponse);
+  rpc ListMonitors(ListMonitorsRequest) returns (ListMonitorsResponse);
+  rpc UpsertMonitor(MonitorSetup) returns (MonitorSetup);
+  rpc RemoveMonitor(SourceRequest) returns (OperationStatus);
+  rpc SetMonitorCameras(SetMonitorCamerasRequest) returns (OperationStatus);
+  rpc SetMonitorSlot(SetMonitorSlotRequest) returns (OperationStatus);
 }
 
 service StorageService {
@@ -181,4 +186,34 @@ message ListMediaMtxServersResponse {
 message GetOrAssignMediaMtxServerResponse {
   bool          found  = 1;
   MediaMtxServer server = 2;
+}
+
+message MonitorSlot {
+  int32  slot_index = 1;
+  string camera_id  = 2;
+}
+
+message MonitorSetup {
+  string           monitor_id = 1;
+  string           name       = 2;
+  string           layout     = 3;
+  repeated string  camera_ids = 4;
+  repeated MonitorSlot slots  = 5;
+}
+
+message ListMonitorsRequest {}
+
+message ListMonitorsResponse {
+  repeated MonitorSetup monitors = 1;
+}
+
+message SetMonitorCamerasRequest {
+  string          monitor_id = 1;
+  repeated string camera_ids = 2;
+}
+
+message SetMonitorSlotRequest {
+  string monitor_id = 1;
+  int32  slot_index  = 2;
+  string camera_id  = 3;
 }

@@ -189,5 +189,56 @@ namespace VmsCfg
 
       return new GetOrAssignMediaMtxServerResponse { Found = true, Server = server };
     }
+
+    public override async Task<ListMonitorsResponse> ListMonitors(
+      ListMonitorsRequest request,
+      ServerCallContext context)
+    {
+      var response = new ListMonitorsResponse();
+      response.Monitors.AddRange(await storage.ListMonitorsAsync(context.CancellationToken));
+      return response;
+    }
+
+    public override async Task<MonitorSetup> UpsertMonitor(MonitorSetup request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.Name))
+        throw new RpcException(new Status(StatusCode.InvalidArgument, "name must not be empty"));
+
+      if (string.IsNullOrWhiteSpace(request.Layout))
+        throw new RpcException(new Status(StatusCode.InvalidArgument, "layout must not be empty"));
+
+      return await storage.UpsertMonitorAsync(request, context.CancellationToken);
+    }
+
+    public override async Task<OperationStatus> RemoveMonitor(SourceRequest request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.SourceId))
+        return new OperationStatus { Success = false, Message = "source_id must not be empty" };
+
+      var removed = await storage.RemoveMonitorAsync(request.SourceId, context.CancellationToken);
+      return new OperationStatus { Success = removed };
+    }
+
+    public override async Task<OperationStatus> SetMonitorCameras(
+      SetMonitorCamerasRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.MonitorId))
+        return new OperationStatus { Success = false, Message = "monitor_id must not be empty" };
+
+      await storage.SetMonitorCamerasAsync(request.MonitorId, request.CameraIds, context.CancellationToken);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OperationStatus> SetMonitorSlot(
+      SetMonitorSlotRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.MonitorId) || string.IsNullOrWhiteSpace(request.CameraId))
+        return new OperationStatus { Success = false, Message = "monitor_id and camera_id must not be empty" };
+
+      await storage.SetMonitorSlotAsync(request.MonitorId, request.SlotIndex, request.CameraId, context.CancellationToken);
+      return new OperationStatus { Success = true };
+    }
   }
 }

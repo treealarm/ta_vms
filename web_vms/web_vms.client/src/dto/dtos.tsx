@@ -223,3 +223,47 @@ export type LogResponseDto = {
   logs: LogEntryDto[]
   hasMore: boolean
 }
+
+export type MonitorLayout = '1x1' | '1x2' | '2x2' | '3x3'
+
+export const MONITOR_LAYOUTS: MonitorLayout[] = ['1x1', '1x2', '2x2', '3x3']
+
+export function layoutSlotCount(layout: MonitorLayout): number {
+  switch (layout) {
+    case '1x1': return 1
+    case '1x2': return 2
+    case '2x2': return 4
+    case '3x3': return 9
+  }
+}
+
+export function layoutColumns(layout: MonitorLayout): number {
+  switch (layout) {
+    case '1x1': return 1
+    case '1x2': return 2
+    case '2x2': return 2
+    case '3x3': return 3
+  }
+}
+
+export function layoutRows(layout: MonitorLayout): number {
+  switch (layout) {
+    case '1x1': return 1
+    case '1x2': return 1
+    case '2x2': return 2
+    case '3x3': return 3
+  }
+}
+
+export type MonitorSlotDto = {
+  slotIndex: number
+  cameraId: string
+}
+
+export type MonitorDto = {
+  monitorId: string
+  name: string
+  layout: MonitorLayout
+  cameraIds: string[]
+  slots: MonitorSlotDto[]
+}

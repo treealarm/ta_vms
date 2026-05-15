@@ -130,7 +130,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
         const url = `${(
           baseUrl ||
           `${window.location.protocol}//${window.location.hostname}:8889`
-        ).replace(/\/$/, '')}/${encodeURIComponent(streamName)}/whep`;
+        ).replace(/\/$/, '')}/${streamName}/whep`;
 
         console.log('WHEP url =', url);
 
@@ -198,11 +198,12 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
       className="vms-video-frame"
       sx={{
         width: '100%',
-        aspectRatio: '1 / 1',
+        height: '100%',
         overflow: 'hidden',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+        bgcolor: 'black',
       }}
     >
       <video

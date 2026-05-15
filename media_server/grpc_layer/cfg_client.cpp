@@ -20,7 +20,7 @@ std::string require_env(const char* key)
 cfg_client::cfg_client()
   : m_app_id(require_env("DAPR_CFG_APP_ID")),
     m_server_id(require_env("APP_ID")),
-    m_channel(grpc::CreateChannel("127.0.0.1:50001", grpc::InsecureChannelCredentials())),
+    m_channel(grpc::CreateChannel("127.0.0.1:" + require_env("DAPR_GRPC_PORT"), grpc::InsecureChannelCredentials())),
     m_stub(vms::cfg::CfgService::NewStub(m_channel))
 {
 }

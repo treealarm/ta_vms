@@ -443,4 +443,135 @@ public class CameraStorage(NpgsqlDataSource dataSource)
       RtspUrl   = reader.GetString(2),
       WebrtcUrl = reader.GetString(3),
     };
+
+  // ── Monitor management ────────────────────────────────────────────────────
+
+  public async Task<List<MonitorSetup>> ListMonitorsAsync(CancellationToken ct)
+  {
+    await using var connection = await _dataSource.OpenConnectionAsync(ct);
+
+    var monitors = new Dictionary<Guid, MonitorSetup>();
+    var order    = new List<Guid>();
+
+    await using (var cmd = new NpgsqlCommand("""
+      SELECT id, name, layout FROM monitor ORDER BY name;
+      """, connection))
+    {
+      await using var reader = await cmd.ExecuteReaderAsync(ct);
+      while (await reader.ReadAsync(ct))
+      {
+        var id = reader.GetGuid(0);
+        monitors[id] = new MonitorSetup
+        {
+          MonitorId = id.ToString(),
+          Name      = reader.GetString(1),
+          Layout    = reader.GetString(2),
+        };
+        order.Add(id);
+      }
+    }
+
+    if (monitors.Count == 0)
+      return [];
+
+    var idArray = order.ToArray();
+
+    await using (var cmd = new NpgsqlCommand("""
+      SELECT monitor_id, camera_id FROM monitor_camera
+      WHERE monitor_id = ANY($1)
+      ORDER BY monitor_id, position;
+      """, connection))
+    {
+      cmd.Parameters.Add(new NpgsqlParameter { Value = idArray, NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Uuid });
+      await using var reader = await cmd.ExecuteReaderAsync(ct);
+      while (await reader.ReadAsync(ct))
+      {
+        if (monitors.TryGetValue(reader.GetGuid(0), out var m))
+          m.CameraIds.Add(reader.GetString(1));
+      }
+    }
+
+    await using (var cmd = new NpgsqlCommand("""
+      SELECT monitor_id, slot_index, camera_id FROM monitor_slot
+      WHERE monitor_id = ANY($1);
+      """, connection))
+    {
+      cmd.Parameters.Add(new NpgsqlParameter { Value = idArray, NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Uuid });
+      await using var reader = await cmd.ExecuteReaderAsync(ct);
+      while (await reader.ReadAsync(ct))
+      {
+        if (monitors.TryGetValue(reader.GetGuid(0), out var m))
+          m.Slots.Add(new MonitorSlot { SlotIndex = reader.GetInt32(1), CameraId = reader.GetString(2) });
+      }
+    }
+
+    return order.Select(id => monitors[id]).ToList();
+  }
+
+  public async Task<MonitorSetup> UpsertMonitorAsync(MonitorSetup request, CancellationToken ct)
+  {
+    await using var command = _dataSource.CreateCommand("""
+      INSERT INTO monitor (id, name, layout)
+      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3)
+      ON CONFLICT (id) DO UPDATE SET
+        name   = EXCLUDED.name,
+        layout = EXCLUDED.layout
+      RETURNING id;
+      """);
+    command.Parameters.AddWithValue(request.MonitorId ?? string.Empty);
+    command.Parameters.AddWithValue(request.Name);
+    command.Parameters.AddWithValue(request.Layout);
+    var id = await command.ExecuteScalarAsync(ct);
+    request.MonitorId = id?.ToString() ?? request.MonitorId;
+    return request;
+  }
+
+  public async Task<bool> RemoveMonitorAsync(string monitorId, CancellationToken ct)
+  {
+    await using var command = _dataSource.CreateCommand(
+      "DELETE FROM monitor WHERE id = $1::uuid;");
+    command.Parameters.AddWithValue(monitorId);
+    return await command.ExecuteNonQueryAsync(ct) > 0;
+  }
+
+  public async Task SetMonitorCamerasAsync(string monitorId, IEnumerable<string> cameraIds, CancellationToken ct)
+  {
+    await using var connection = await _dataSource.OpenConnectionAsync(ct);
+    await using var tx = await connection.BeginTransactionAsync(ct);
+
+    await using (var del = new NpgsqlCommand(
+      "DELETE FROM monitor_camera WHERE monitor_id = $1::uuid;", connection, tx))
+    {
+      del.Parameters.AddWithValue(monitorId);
+      await del.ExecuteNonQueryAsync(ct);
+    }
+
+    int pos = 0;
+    foreach (var cameraId in cameraIds)
+    {
+      await using var ins = new NpgsqlCommand("""
+        INSERT INTO monitor_camera (monitor_id, camera_id, position)
+        VALUES ($1::uuid, $2, $3);
+        """, connection, tx);
+      ins.Parameters.AddWithValue(monitorId);
+      ins.Parameters.AddWithValue(cameraId);
+      ins.Parameters.AddWithValue(pos++);
+      await ins.ExecuteNonQueryAsync(ct);
+    }
+
+    await tx.CommitAsync(ct);
+  }
+
+  public async Task SetMonitorSlotAsync(string monitorId, int slotIndex, string cameraId, CancellationToken ct)
+  {
+    await using var command = _dataSource.CreateCommand("""
+      INSERT INTO monitor_slot (monitor_id, slot_index, camera_id)
+      VALUES ($1::uuid, $2, $3)
+      ON CONFLICT (monitor_id, slot_index) DO UPDATE SET camera_id = EXCLUDED.camera_id;
+      """);
+    command.Parameters.AddWithValue(monitorId);
+    command.Parameters.AddWithValue(slotIndex);
+    command.Parameters.AddWithValue(cameraId);
+    await command.ExecuteNonQueryAsync(ct);
+  }
 }

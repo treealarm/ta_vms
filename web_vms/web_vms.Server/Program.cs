@@ -33,6 +33,7 @@ builder.Services.AddSingleton(_ =>
   new OnvifService.OnvifServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId)));
 
 builder.Services.AddSingleton<ICameraManager, CameraManager>();
+builder.Services.AddSingleton<MonitorManager>();
 builder.Services.AddSingleton<IHlsArchiveService, HlsArchiveService>();
 builder.Services.AddSingleton<IArchiveTsStreamer, ArchiveTsStreamer>();
 
