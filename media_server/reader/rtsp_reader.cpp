@@ -1,4 +1,5 @@
 #include <chrono>
+#include <format>
 #include <thread>
 #include "interfaces/av_deleters.h"
 #include "rtsp_reader.h"
@@ -73,7 +74,7 @@ bool rtsp_reader::connect()
 
   if (avformat_open_input(&ctx, final_url.c_str(), nullptr, &opts) < 0)
   {
-    logger::instance().error("Failed to open RTSP");
+    logger::instance().error(std::format("Failed to open RTSP [cam={}]: {}", m_cam_id, m_rtsp_url));
     av_dict_free(&opts);
     avformat_close_input(&ctx);
     return false;
@@ -85,7 +86,7 @@ bool rtsp_reader::connect()
 
   if (avformat_find_stream_info(m_ctx.get(), nullptr) < 0)
   {
-    logger::instance().error("Failed to get stream info");
+    logger::instance().error(std::format("Failed to get stream info [cam={}]: {}", m_cam_id, m_rtsp_url));
     disconnect();
     return false;
   }
@@ -106,14 +107,14 @@ bool rtsp_reader::connect()
     }
   }
 
-  if (m_video_index < 0) 
+  if (m_video_index < 0)
   {
-    logger::instance().error("No video stream");
+    logger::instance().error(std::format("No video stream [cam={}]: {}", m_cam_id, m_rtsp_url));
     disconnect();
     return false;
   }
 
-  logger::instance().info("RTSP connected");
+  logger::instance().info(std::format("RTSP connected [cam={}]: {}", m_cam_id, m_rtsp_url));
   return true;
 }
 
@@ -178,7 +179,7 @@ void rtsp_reader::read_loop()
       const auto now = std::chrono::steady_clock::now();
       if (now - last_frame_at >= kWatchdogInterval)
       {
-        logger::instance().warning("RTSP reader watchdog: reconnecting due to read error");
+        logger::instance().warning(std::format("RTSP watchdog: reconnecting [cam={}]: {}", m_cam_id, m_rtsp_url));
         disconnect();
       }
       continue;

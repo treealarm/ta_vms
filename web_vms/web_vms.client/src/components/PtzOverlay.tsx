@@ -4,6 +4,10 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
+import NorthWestIcon from '@mui/icons-material/NorthWest'
+import NorthEastIcon from '@mui/icons-material/NorthEast'
+import SouthWestIcon from '@mui/icons-material/SouthWest'
+import SouthEastIcon from '@mui/icons-material/SouthEast'
 import AddIcon from '@mui/icons-material/Add'
 import RemoveIcon from '@mui/icons-material/Remove'
 import CloseIcon from '@mui/icons-material/Close'
@@ -143,22 +147,22 @@ export default function PtzOverlay({ cameraId, profileToken, onClose }: Props) {
       {/* D-pad + zoom */}
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
 
-        {/* D-pad 3×3 */}
+        {/* D-pad 3×3 with diagonals */}
         <Box sx={{
           display: 'grid',
           gridTemplateColumns: 'repeat(3, 36px)',
           gridTemplateRows: 'repeat(3, 36px)',
           gap: '3px',
         }}>
+          {btn(<NorthWestIcon fontSize="small" />, 'Up-Left',   -1,  1)}
+          {btn(<ArrowUpwardIcon fontSize="small" />,   'Up',     0,  1)}
+          {btn(<NorthEastIcon fontSize="small" />, 'Up-Right',   1,  1)}
+          {btn(<ArrowBackIcon fontSize="small" />,    'Left',   -1,  0)}
           <Box />
-          {btn(<ArrowUpwardIcon fontSize="small" />, 'Tilt up', 0, 1)}
-          <Box />
-          {btn(<ArrowBackIcon fontSize="small" />, 'Pan left', -1, 0)}
-          <Box />
-          {btn(<ArrowForwardIcon fontSize="small" />, 'Pan right', 1, 0)}
-          <Box />
-          {btn(<ArrowDownwardIcon fontSize="small" />, 'Tilt down', 0, -1)}
-          <Box />
+          {btn(<ArrowForwardIcon fontSize="small" />, 'Right',   1,  0)}
+          {btn(<SouthWestIcon fontSize="small" />, 'Down-Left', -1, -1)}
+          {btn(<ArrowDownwardIcon fontSize="small" />, 'Down',   0, -1)}
+          {btn(<SouthEastIcon fontSize="small" />, 'Down-Right', 1, -1)}
         </Box>
 
         {/* Zoom column */}
