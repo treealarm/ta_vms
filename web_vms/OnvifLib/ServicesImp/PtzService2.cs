@@ -46,16 +46,18 @@ namespace OnvifLib
 
       try
       {
-        var nodesResp = await _ptzClient.GetNodesAsync();
-        var node = nodesResp.PTZNode?.FirstOrDefault();
-        if (node?.SupportedPTZSpaces == null)
+        // GetConfigurations is more reliable than GetNodes:
+        // DefaultXxxSpace is null when the camera hasn't actually configured that move mode,
+        // whereas GetNodes.SupportedPTZSpaces can list spaces the camera doesn't truly implement.
+        var cfgResp = await _ptzClient.GetConfigurationsAsync();
+        var configs = cfgResp.PTZConfiguration;
+        if (configs == null || configs.Length == 0)
           return new PtzCapabilities(false, false, false);
 
-        var spaces = node.SupportedPTZSpaces;
         return new PtzCapabilities(
-          AbsoluteMove: spaces.AbsolutePanTiltPositionSpace?.Length > 0,
-          RelativeMove: spaces.RelativePanTiltTranslationSpace?.Length > 0,
-          ContinuousMove: spaces.ContinuousPanTiltVelocitySpace?.Length > 0
+          AbsoluteMove:   configs.Any(c => !string.IsNullOrEmpty(c.DefaultAbsolutePantTiltPositionSpace)),
+          RelativeMove:   configs.Any(c => !string.IsNullOrEmpty(c.DefaultRelativePanTiltTranslationSpace)),
+          ContinuousMove: configs.Any(c => !string.IsNullOrEmpty(c.DefaultContinuousPanTiltVelocitySpace))
         );
       }
       catch
