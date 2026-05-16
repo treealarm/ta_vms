@@ -31,6 +31,8 @@ builder.Services.AddSingleton(_ =>
 var onvifAppId = Require("DAPR_ONVIF_APP_ID");
 builder.Services.AddSingleton(_ =>
   new OnvifService.OnvifServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId)));
+builder.Services.AddSingleton(_ =>
+  new PtzService.PtzServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId)));
 
 builder.Services.AddSingleton<ICameraManager, CameraManager>();
 builder.Services.AddSingleton<MonitorManager>();

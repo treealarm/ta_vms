@@ -7,6 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddGrpc();
 builder.Services.AddSingleton<OnvifServiceImpl>();
+builder.Services.AddSingleton<PtzServiceImpl>();
 
 var cfgAppId = Require("DAPR_CFG_APP_ID");
 builder.Services.AddSingleton(_ =>
@@ -34,4 +35,5 @@ builder.WebHost.ConfigureKestrel(options =>
 
 var app = builder.Build();
 app.MapGrpcService<OnvifServiceImpl>();
+app.MapGrpcService<PtzServiceImpl>();
 app.Run();

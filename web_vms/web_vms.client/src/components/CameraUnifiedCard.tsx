@@ -22,10 +22,12 @@ import LayersIcon from '@mui/icons-material/Layers'
 import LiveTvIcon from '@mui/icons-material/LiveTv'
 import TuneIcon from '@mui/icons-material/Tune'
 import VideoLibraryIcon from '@mui/icons-material/VideoLibrary'
+import ControlCameraIcon from '@mui/icons-material/ControlCamera'
 import { type CameraSetupDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
 import ArchiveHlsStreamCard from './ArchiveHlsStreamCard'
 import StreamOverrideRow from './StreamOverrideRow'
+import PtzOverlay from './PtzOverlay'
 import { useAppDispatch, useAppSelector } from '../store'
 import { fetchCameraState } from '../store/liveSlice'
 
@@ -68,10 +70,12 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
   const mode = slotUi.mode
   const selectedStream = slotUi.selectedStream
   const panelOpen = slotUi.panelOpen
+  const ptzOpen = slotUi.ptzOpen
 
   const setMode = (v: 'live' | 'archive') => dispatch(patchSlot({ key: storeKey, mode: v }))
   const setSelectedStream = (v: string) => dispatch(patchSlot({ key: storeKey, selectedStream: v }))
   const setPanelOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, panelOpen: v }))
+  const setPtzOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, ptzOpen: v }))
 
   const [onvifRtsp, setOnvifRtsp] = useState('')
 
@@ -158,6 +162,18 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             <Tooltip title={`Stream: ${activeStream} — click to cycle`} placement="right">
               <IconButton size="small" onClick={cycleStream} sx={BTN_SX}>
                 <LayersIcon sx={{ fontSize: '0.95rem' }} />
+              </IconButton>
+            </Tooltip>
+          )}
+
+          {camera.onvifConn && mode === 'live' && (
+            <Tooltip title={ptzOpen ? 'Close PTZ' : 'PTZ control'} placement="right">
+              <IconButton
+                size="small"
+                onClick={() => setPtzOpen(!ptzOpen)}
+                sx={{ ...BTN_SX, ...(ptzOpen ? { color: '#fff', bgcolor: 'rgba(255,255,255,0.2)' } : {}) }}
+              >
+                <ControlCameraIcon sx={{ fontSize: '0.95rem' }} />
               </IconButton>
             </Tooltip>
           )}
@@ -308,7 +324,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
       )}
 
       {/* ── Right: video / archive ── fills remaining space */}
-      <Box sx={{ flex: 1, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
+      <Box sx={{ flex: 1, minWidth: 0, display: 'flex', overflow: 'hidden', position: 'relative' }}>
         {mode === 'live' && (
           <CameraStream streamName={streamName} baseUrl={merged.mediaMtxWebrtcUrl} />
         )}
@@ -316,6 +332,13 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <ArchiveHlsStreamCard cameraId={camera.cameraId} />
           </Box>
+        )}
+        {ptzOpen && mode === 'live' && (
+          <PtzOverlay
+            cameraId={camera.cameraId}
+            profileToken={activeStreamObj?.profileToken ?? ''}
+            onClose={() => setPtzOpen(false)}
+          />
         )}
       </Box>
     </Card>

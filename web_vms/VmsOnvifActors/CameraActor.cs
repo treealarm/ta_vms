@@ -46,6 +46,55 @@ public class CameraActor(ActorHost host) : Actor(host), ICameraActor
     return new GetStreamUriActorResult(await mediaService.GetStreamUri(token));
   }
 
+  public async Task PtzContinuousMoveAsync(PtzMoveActorRequest request)
+  {
+    var ptz = await GetPtzOrThrow(request.Conn);
+    await ptz.ContinuousMoveAsync(request.ProfileToken, request.Pan, request.Tilt, request.Zoom);
+  }
+
+  public async Task PtzAbsoluteMoveAsync(PtzAbsoluteMoveActorRequest request)
+  {
+    var ptz = await GetPtzOrThrow(request.Conn);
+    var speed = request.Speed > 0 ? request.Speed : 0.5f;
+    await ptz.AbsoluteMoveAsync(request.ProfileToken, request.Pan, request.Tilt, request.Zoom, speed, speed);
+  }
+
+  public async Task PtzRelativeMoveAsync(PtzMoveActorRequest request)
+  {
+    var ptz = await GetPtzOrThrow(request.Conn);
+    var speed = 0.5f;
+    await ptz.RelativeMoveAsync(request.ProfileToken, request.Pan, request.Tilt, request.Zoom, speed, speed);
+  }
+
+  public async Task PtzStopAsync(PtzStopActorRequest request)
+  {
+    var ptz = await GetPtzOrThrow(request.Conn);
+    await ptz.StopAsync(request.ProfileToken);
+  }
+
+  public async Task<PtzCapabilitiesDto> GetPtzCapabilitiesAsync(CameraConnInfo conn)
+  {
+    var camera = EnsureCamera(conn);
+    var ptz = await camera.GetPtzService();
+    if (ptz == null)
+      return new PtzCapabilitiesDto(false, false, false);
+
+    var caps = await ptz.GetCapabilitiesAsync(string.Empty);
+    return new PtzCapabilitiesDto(caps.AbsoluteMove, caps.RelativeMove, caps.ContinuousMove);
+  }
+
+  private async Task<PtzService2> GetPtzOrThrow(CameraConnInfo conn)
+  {
+    var camera = EnsureCamera(conn);
+    var ptz = await camera.GetPtzService();
+    if (ptz == null)
+    {
+      Evict();
+      throw new InvalidOperationException($"PTZ service not available for {conn.Ip}:{conn.Port}");
+    }
+    return ptz;
+  }
+
   protected override Task OnDeactivateAsync()
   {
     Evict();

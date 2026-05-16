@@ -37,9 +37,31 @@ namespace OnvifLib
       _caps = await _ptzClient.GetServiceCapabilitiesAsync();
     }
 
-    public bool SupportedCaps()
+    public bool SupportedCaps() => true;
+
+    public async Task<PtzCapabilities> GetCapabilitiesAsync(string profileToken)
     {
-      return true;
+      if (_ptzClient == null)
+        return new PtzCapabilities(false, false, false);
+
+      try
+      {
+        var nodesResp = await _ptzClient.GetNodesAsync();
+        var node = nodesResp.PTZNode?.FirstOrDefault();
+        if (node?.SupportedPTZSpaces == null)
+          return new PtzCapabilities(false, false, false);
+
+        var spaces = node.SupportedPTZSpaces;
+        return new PtzCapabilities(
+          AbsoluteMove: spaces.AbsolutePanTiltPositionSpace?.Length > 0,
+          RelativeMove: spaces.RelativePanTiltTranslationSpace?.Length > 0,
+          ContinuousMove: spaces.ContinuousPanTiltVelocitySpace?.Length > 0
+        );
+      }
+      catch
+      {
+        return new PtzCapabilities(false, false, false);
+      }
     }
     public async Task AbsoluteMoveAsync(string profileToken, float panTiltX, float panTiltY, float zoom = 0f, float speedPanTilt = 0.5f, float speedZoom = 0.5f)
     {
@@ -66,7 +88,7 @@ namespace OnvifLib
       float panTiltX, 
       float panTiltY, 
       float zoom = 0f, 
-      string timeout = "PT1S")
+      string timeout = "PT3S")
     {
       if (_ptzClient == null)
         throw new InvalidOperationException("PTZ client not initialized");
@@ -120,4 +142,6 @@ namespace OnvifLib
       base.Dispose();
     }
   }
+
+  public record PtzCapabilities(bool AbsoluteMove, bool RelativeMove, bool ContinuousMove);
 }
