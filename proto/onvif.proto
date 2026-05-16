@@ -9,6 +9,14 @@ service OnvifService {
   rpc GetStreamUri(StreamUriRequest) returns (StreamUriResponse);
 }
 
+service PtzService {
+  rpc GetCapabilities(PtzCapabilitiesRequest) returns (PtzCapabilitiesResponse);
+  rpc ContinuousMove(PtzContinuousMoveRequest) returns (PtzResponse);
+  rpc AbsoluteMove(PtzAbsoluteMoveRequest) returns (PtzResponse);
+  rpc RelativeMove(PtzRelativeMoveRequest) returns (PtzResponse);
+  rpc Stop(PtzStopRequest) returns (PtzResponse);
+}
+
 message CameraRequest {
   string source_id = 1;
 }
@@ -32,4 +40,50 @@ message GetProfilesResponse {
 
 message StreamUriResponse {
   string rtsp_url = 1;
+}
+
+message PtzContinuousMoveRequest {
+  string source_id     = 1;
+  string profile_token = 2;
+  float  pan           = 3;  // -1..1
+  float  tilt          = 4;  // -1..1
+  float  zoom          = 5;  // -1..1
+}
+
+message PtzAbsoluteMoveRequest {
+  string source_id     = 1;
+  string profile_token = 2;
+  float  pan           = 3;  // -1..1
+  float  tilt          = 4;  // -1..1
+  float  zoom          = 5;  //  0..1
+  float  speed         = 6;  //  0..1, default 0.5
+}
+
+message PtzRelativeMoveRequest {
+  string source_id     = 1;
+  string profile_token = 2;
+  float  pan           = 3;  // -1..1
+  float  tilt          = 4;  // -1..1
+  float  zoom          = 5;  // -1..1
+  float  speed         = 6;  //  0..1, default 0.5
+}
+
+message PtzStopRequest {
+  string source_id     = 1;
+  string profile_token = 2;
+}
+
+message PtzCapabilitiesRequest {
+  string source_id = 1;
+}
+
+message PtzCapabilitiesResponse {
+  bool absolute_move   = 1;
+  bool relative_move   = 2;
+  bool continuous_move = 3;
+}
+
+message PtzResponse {
+  bool   success = 1;
+  string error   = 2;
 }

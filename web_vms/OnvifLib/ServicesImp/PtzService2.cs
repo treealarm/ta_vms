@@ -37,9 +37,33 @@ namespace OnvifLib
       _caps = await _ptzClient.GetServiceCapabilitiesAsync();
     }
 
-    public bool SupportedCaps()
+    public bool SupportedCaps() => true;
+
+    public async Task<PtzCapabilities> GetCapabilitiesAsync(string profileToken)
     {
-      return true;
+      if (_ptzClient == null)
+        return new PtzCapabilities(false, false, false);
+
+      try
+      {
+        // GetConfigurations is more reliable than GetNodes:
+        // DefaultXxxSpace is null when the camera hasn't actually configured that move mode,
+        // whereas GetNodes.SupportedPTZSpaces can list spaces the camera doesn't truly implement.
+        var cfgResp = await _ptzClient.GetConfigurationsAsync();
+        var configs = cfgResp.PTZConfiguration;
+        if (configs == null || configs.Length == 0)
+          return new PtzCapabilities(false, false, false);
+
+        return new PtzCapabilities(
+          AbsoluteMove:   configs.Any(c => !string.IsNullOrEmpty(c.DefaultAbsolutePantTiltPositionSpace)),
+          RelativeMove:   configs.Any(c => !string.IsNullOrEmpty(c.DefaultRelativePanTiltTranslationSpace)),
+          ContinuousMove: configs.Any(c => !string.IsNullOrEmpty(c.DefaultContinuousPanTiltVelocitySpace))
+        );
+      }
+      catch
+      {
+        return new PtzCapabilities(false, false, false);
+      }
     }
     public async Task AbsoluteMoveAsync(string profileToken, float panTiltX, float panTiltY, float zoom = 0f, float speedPanTilt = 0.5f, float speedZoom = 0.5f)
     {
@@ -66,7 +90,7 @@ namespace OnvifLib
       float panTiltX, 
       float panTiltY, 
       float zoom = 0f, 
-      string timeout = "PT1S")
+      string timeout = "PT3S")
     {
       if (_ptzClient == null)
         throw new InvalidOperationException("PTZ client not initialized");
@@ -120,4 +144,6 @@ namespace OnvifLib
       base.Dispose();
     }
   }
+
+  public record PtzCapabilities(bool AbsoluteMove, bool RelativeMove, bool ContinuousMove);
 }

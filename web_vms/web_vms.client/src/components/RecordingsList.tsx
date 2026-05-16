@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import {
-  Box, CircularProgress, IconButton, List, ListItemButton, ListItemText,
-  ListSubheader, MenuItem, Popover, Select, Stack, Tooltip, Typography,
+  alpha, Box, CircularProgress, IconButton, List, ListItemButton, ListItemText,
+  ListSubheader, MenuItem, Popover, Select, Stack, Tooltip, Typography, useTheme,
 } from '@mui/material'
 import NavigateBeforeIcon from '@mui/icons-material/NavigateBefore'
 import NavigateNextIcon from '@mui/icons-material/NavigateNext'
@@ -69,11 +69,13 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
   const [streamFilter, setStreamFilter] = useState('')
   const acceptRef = useRef<number | null>(null)
 
-  const txt = dark ? 'rgba(255,255,255,0.85)' : undefined
-  const txtDim = dark ? 'rgba(255,255,255,0.45)' : 'text.secondary'
-  const divider = dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
+  const theme = useTheme()
+  const W = theme.palette.common.white
+  const txt = dark ? alpha(W, 0.85) : undefined
+  const txtDim = dark ? alpha(W, 0.45) : 'text.secondary'
+  const divider = dark ? alpha(W, 0.1) : alpha(theme.palette.common.black, 0.1)
   const btnSx = dark
-    ? { p: '3px', color: 'rgba(255,255,255,0.7)', '&:hover': { color: '#fff', bgcolor: 'rgba(255,255,255,0.1)' } }
+    ? { p: '3px', color: alpha(W, 0.7), '&:hover': { color: W, bgcolor: alpha(W, 0.1) } }
     : { p: '4px' }
 
   useEffect(() => { setDisplayTime(normalizeTs(timestamp)) }, [timestamp])
@@ -203,8 +205,8 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
               '.MuiSelect-select': { py: 0.25, px: 0.75 },
               ...(dark ? {
                 color: txt,
-                '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
-                '.MuiSvgIcon-root': { color: 'rgba(255,255,255,0.5)' },
+                '.MuiOutlinedInput-notchedOutline': { borderColor: alpha(W, 0.2) },
+                '.MuiSvgIcon-root': { color: alpha(W, 0.5) },
               } : {}),
             }}
           >
@@ -220,7 +222,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
       <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', mt: 1.5 }}>
-            <CircularProgress size={18} sx={dark ? { color: 'rgba(255,255,255,0.5)' } : {}} />
+            <CircularProgress size={18} sx={dark ? { color: alpha(W, 0.5) } : {}} />
           </Box>
         ) : filteredData.length === 0 ? (
           <Typography sx={{ px: 1, pt: 1.5, fontSize: '0.7rem', color: txtDim, textAlign: 'center' }}>
@@ -245,7 +247,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
                       sx={{
                         lineHeight: '22px', fontSize: '0.65rem', opacity: 0.6,
                         bgcolor: dark ? 'transparent' : 'background.paper',
-                        color: dark ? 'rgba(255,255,255,0.55)' : undefined,
+                        color: dark ? alpha(W, 0.55) : undefined,
                       }}
                     >
                       {fmtDay(first.startTime)}
@@ -268,9 +270,9 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
                       onClick={() => { setSelected(first.startTime); onSelect(first) }}
                       sx={{
                         py: 0.3, px: 0.75,
-                        borderLeft: isNearest ? '2px solid #ff9800' : '2px solid transparent',
-                        ...(dark && isSelected ? { bgcolor: 'rgba(255,255,255,0.12)' } : {}),
-                        ...(dark ? { '&:hover': { bgcolor: 'rgba(255,255,255,0.08)' } } : {}),
+                        borderLeft: isNearest ? `2px solid ${theme.palette.primary.main}` : '2px solid transparent',
+                        ...(dark && isSelected ? { bgcolor: alpha(W, 0.12) } : {}),
+                        ...(dark ? { '&:hover': { bgcolor: alpha(W, 0.08) } } : {}),
                       }}
                     >
                       <ListItemText
@@ -282,7 +284,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
                             sx: {
                               fontVariantNumeric: 'tabular-nums',
                               fontSize: '0.76rem', lineHeight: 1.25,
-                              color: dark ? (isSelected ? '#fff' : 'rgba(255,255,255,0.8)') : undefined,
+                              color: dark ? (isSelected ? W : alpha(W, 0.8)) : undefined,
                               fontWeight: isNearest ? 600 : undefined,
                             },
                           },

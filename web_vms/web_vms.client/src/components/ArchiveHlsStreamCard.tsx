@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Box, Divider, IconButton, Stack, Tooltip, Typography } from '@mui/material'
+import { alpha, Alert, Box, Divider, IconButton, Stack, Tooltip, Typography } from '@mui/material'
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
 import Hls from 'hls.js'
 
 import type { RecordingDto, RecordingRangeDto } from '../dto/dtos'
 import RecordingsList, { type RecordingsListHandle } from './RecordingsList'
 
-const PANEL_BG = { bgcolor: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(6px)' } as const
+const W = '#fff'
+const B = '#000'
+
+const PANEL_BG = { bgcolor: alpha(B, 0.62), backdropFilter: 'blur(6px)' } as const
 const BTN = {
   p: '3px',
-  color: 'rgba(255,255,255,0.75)',
+  color: alpha(W, 0.75),
   borderRadius: '4px',
-  '&:hover': { color: '#fff', bgcolor: 'rgba(255,255,255,0.12)' },
+  '&:hover': { color: W, bgcolor: alpha(W, 0.12) },
 } as const
 
 type Props = { cameraId: string }
@@ -133,7 +136,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
             sx={{
               width: '100%', height: '100%',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'rgba(255,255,255,0.35)', fontSize: '0.78rem', textAlign: 'center', px: 2,
+              color: alpha(W, 0.35), fontSize: '0.78rem', textAlign: 'center', px: 2,
             }}
           >
             Open the recordings list →
@@ -176,16 +179,16 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
           flexShrink: 0,
           overflow: 'hidden',
           transition: 'width 0.15s ease',
-          borderLeft: listOpen ? '1px solid rgba(255,255,255,0.08)' : 'none',
+          borderLeft: listOpen ? `1px solid ${alpha(W, 0.08)}` : 'none',
         }}
       >
         <Stack direction="row" alignItems="center" sx={{ px: 1, pt: 0.75, pb: 0.5, flexShrink: 0 }}>
-          <Typography sx={{ flex: 1, color: '#fff', fontWeight: 600, fontSize: '0.78rem' }}>
+          <Typography sx={{ flex: 1, color: W, fontWeight: 600, fontSize: '0.78rem' }}>
             Archive
           </Typography>
           {formattedTime && (
             <Tooltip title={formattedTime} placement="left">
-              <Typography sx={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.45)', mr: 0.75, cursor: 'default', whiteSpace: 'nowrap' }}>
+              <Typography sx={{ fontSize: '0.6rem', color: alpha(W, 0.45), mr: 0.75, cursor: 'default', whiteSpace: 'nowrap' }}>
                 {new Date(currentClipTime!).toLocaleDateString('sv-SE')}
               </Typography>
             </Tooltip>
@@ -193,13 +196,13 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
           <IconButton
             size="small"
             onClick={() => setListOpen(false)}
-            sx={{ p: '2px', color: 'rgba(255,255,255,0.45)', '&:hover': { color: '#fff' } }}
+            sx={{ p: '2px', color: alpha(W, 0.45), '&:hover': { color: W } }}
           >
             ✕
           </IconButton>
         </Stack>
 
-        <Divider sx={{ borderColor: 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
+        <Divider sx={{ borderColor: alpha(W, 0.1), flexShrink: 0 }} />
 
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <RecordingsList

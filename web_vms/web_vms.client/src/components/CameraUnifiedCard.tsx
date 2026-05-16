@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { patchSlot, selectSlotUi } from '../store/monitorUiSlice'
 import {
+  alpha,
   Box,
   Button,
   Card,
@@ -22,29 +23,34 @@ import LayersIcon from '@mui/icons-material/Layers'
 import LiveTvIcon from '@mui/icons-material/LiveTv'
 import TuneIcon from '@mui/icons-material/Tune'
 import VideoLibraryIcon from '@mui/icons-material/VideoLibrary'
+import ControlCameraIcon from '@mui/icons-material/ControlCamera'
 import { type CameraSetupDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
 import ArchiveHlsStreamCard from './ArchiveHlsStreamCard'
 import StreamOverrideRow from './StreamOverrideRow'
+import PtzOverlay from './PtzOverlay'
 import { useAppDispatch, useAppSelector } from '../store'
 import { fetchCameraState } from '../store/liveSlice'
 
 const STRIP_W = 28
 const PANEL_W = 182
 
-const STRIP_BG = { bgcolor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' } as const
+const W = '#fff'   // common.white shorthand for video overlays
+const B = '#000'   // common.black shorthand for video overlays
+
+const STRIP_BG = { bgcolor: alpha(B, 0.6), backdropFilter: 'blur(6px)' } as const
 
 const BTN_SX = {
   p: '3px',
-  color: 'rgba(255,255,255,0.8)',
+  color: alpha(W, 0.8),
   borderRadius: '4px',
-  '&:hover': { color: '#fff', bgcolor: 'rgba(255,255,255,0.12)' },
+  '&:hover': { color: W, bgcolor: alpha(W, 0.12) },
 } as const
 
 const CAPTION_SX = {
   display: 'block',
   fontSize: '0.6rem',
-  color: 'rgba(255,255,255,0.45)',
+  color: alpha(W, 0.45),
   textTransform: 'uppercase' as const,
   letterSpacing: '0.06em',
   mb: 0.4,
@@ -68,10 +74,12 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
   const mode = slotUi.mode
   const selectedStream = slotUi.selectedStream
   const panelOpen = slotUi.panelOpen
+  const ptzOpen = slotUi.ptzOpen
 
   const setMode = (v: 'live' | 'archive') => dispatch(patchSlot({ key: storeKey, mode: v }))
   const setSelectedStream = (v: string) => dispatch(patchSlot({ key: storeKey, selectedStream: v }))
   const setPanelOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, panelOpen: v }))
+  const setPtzOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, ptzOpen: v }))
 
   const [onvifRtsp, setOnvifRtsp] = useState('')
 
@@ -162,6 +170,18 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             </Tooltip>
           )}
 
+          {camera.onvifConn && mode === 'live' && (
+            <Tooltip title={ptzOpen ? 'Close PTZ' : 'PTZ control'} placement="right">
+              <IconButton
+                size="small"
+                onClick={() => setPtzOpen(!ptzOpen)}
+                sx={{ ...BTN_SX, ...(ptzOpen ? { color: W, bgcolor: alpha(W, 0.2) } : {}) }}
+              >
+                <ControlCameraIcon sx={{ fontSize: '0.95rem' }} />
+              </IconButton>
+            </Tooltip>
+          )}
+
           {activeRetention && (
             <Tooltip title="Retention episode active" placement="right">
               <FiberManualRecordIcon sx={{ fontSize: '0.6rem', color: 'error.main', my: 0.25 }} />
@@ -191,7 +211,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             >
               <Typography
                 variant="body2"
-                sx={{ flex: 1, color: '#fff', fontWeight: 600, fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'default' }}
+                sx={{ flex: 1, color: W, fontWeight: 600, fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'default' }}
               >
                 {camera.cameraId}
               </Typography>
@@ -199,13 +219,13 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             <IconButton
               size="small"
               onClick={() => setPanelOpen(false)}
-              sx={{ p: '2px', color: 'rgba(255,255,255,0.5)', '&:hover': { color: '#fff' } }}
+              sx={{ p: '2px', color: alpha(W, 0.5), '&:hover': { color: W } }}
             >
               <CloseIcon sx={{ fontSize: '0.9rem' }} />
             </IconButton>
           </Stack>
 
-          <Divider sx={{ borderColor: 'rgba(255,255,255,0.12)', flexShrink: 0 }} />
+          <Divider sx={{ borderColor: alpha(W, 0.12), flexShrink: 0 }} />
 
           <Stack spacing={1.25} sx={{ p: 1 }}>
 
@@ -223,9 +243,9 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
                       variant={activeStream === s.streamName ? 'filled' : 'outlined'}
                       sx={{
                         height: 20, fontSize: '0.68rem', cursor: 'pointer',
-                        color: activeStream === s.streamName ? '#000' : 'rgba(255,255,255,0.75)',
-                        bgcolor: activeStream === s.streamName ? 'rgba(255,255,255,0.9)' : 'transparent',
-                        borderColor: 'rgba(255,255,255,0.3)',
+                        color: activeStream === s.streamName ? B : alpha(W, 0.75),
+                        bgcolor: activeStream === s.streamName ? alpha(W, 0.9) : 'transparent',
+                        borderColor: alpha(W, 0.3),
                         '& .MuiChip-label': { px: 0.75 },
                       }}
                     />
@@ -242,8 +262,8 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
                 sx={{
                   '& .MuiToggleButton-root': {
                     flex: 1, py: 0.25, fontSize: '0.7rem',
-                    color: 'rgba(255,255,255,0.6)', borderColor: 'rgba(255,255,255,0.2)',
-                    '&.Mui-selected': { color: '#fff', bgcolor: 'rgba(255,255,255,0.15)', borderColor: 'rgba(255,255,255,0.35)' },
+                    color: alpha(W, 0.6), borderColor: alpha(W, 0.2),
+                    '&.Mui-selected': { color: W, bgcolor: alpha(W, 0.15), borderColor: alpha(W, 0.35) },
                   },
                 }}
               >
@@ -270,8 +290,8 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
                 fullWidth
                 sx={{
                   fontSize: '0.7rem',
-                  color: 'rgba(255,255,255,0.7)', borderColor: 'rgba(255,255,255,0.2)',
-                  '&:hover': { color: '#fff', borderColor: 'rgba(255,255,255,0.5)', bgcolor: 'rgba(255,255,255,0.07)' },
+                  color: alpha(W, 0.7), borderColor: alpha(W, 0.2),
+                  '&:hover': { color: W, borderColor: alpha(W, 0.5), bgcolor: alpha(W, 0.07) },
                 }}
               >
                 {gridSoloActive ? 'Show all' : 'Expand'}
@@ -281,13 +301,13 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             {/* RTSP copy */}
             {rtsp && (
               <Stack direction="row" alignItems="center" gap={0.5}>
-                <Typography sx={{ flex: 1, fontSize: '0.62rem', color: 'rgba(255,255,255,0.35)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <Typography sx={{ flex: 1, fontSize: '0.62rem', color: alpha(W, 0.35), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {rtsp}
                 </Typography>
                 <Tooltip title="Copy RTSP">
                   <IconButton
                     size="small"
-                    sx={{ p: '2px', color: 'rgba(255,255,255,0.45)', flexShrink: 0, '&:hover': { color: '#fff' } }}
+                    sx={{ p: '2px', color: alpha(W, 0.45), flexShrink: 0, '&:hover': { color: W } }}
                     onClick={() => navigator.clipboard.writeText(rtsp)}
                   >
                     <ContentCopyIcon sx={{ fontSize: '0.75rem' }} />
@@ -308,7 +328,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
       )}
 
       {/* ── Right: video / archive ── fills remaining space */}
-      <Box sx={{ flex: 1, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
+      <Box sx={{ flex: 1, minWidth: 0, display: 'flex', overflow: 'hidden', position: 'relative' }}>
         {mode === 'live' && (
           <CameraStream streamName={streamName} baseUrl={merged.mediaMtxWebrtcUrl} />
         )}
@@ -316,6 +336,13 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <ArchiveHlsStreamCard cameraId={camera.cameraId} />
           </Box>
+        )}
+        {ptzOpen && mode === 'live' && (
+          <PtzOverlay
+            cameraId={camera.cameraId}
+            profileToken={activeStreamObj?.profileToken ?? ''}
+            onClose={() => setPtzOpen(false)}
+          />
         )}
       </Box>
     </Card>
