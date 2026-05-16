@@ -50,6 +50,15 @@ services:
     depends_on:
       - vmscfg
 
+  vmsonvif-actors:
+    build:
+      context: .
+      dockerfile: web_vms/VmsOnvifActors/Dockerfile
+    env_file:
+      - .env
+    depends_on:
+      - vmscfg
+
   vmsfs:
     build:
       context: .
@@ -98,6 +107,28 @@ services:
     network_mode: "service:vmsonvif"
     depends_on:
       - vmsonvif
+
+  vmsonvif-actors-dapr:
+    image: "daprio/daprd:1.14.4"
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "vmsonvif-actors"
+      - "-app-port"
+      - "5141"
+      - "-app-protocol"
+      - "http"
+      - "-dapr-http-port"
+      - "3500"
+      - "-dapr-grpc-port"
+      - "50001"
+      - "-components-path"
+      - "/components"
+    volumes:
+      - "./init_files/dapr_components/vmsonvif-actors:/components"
+    network_mode: "service:vmsonvif-actors"
+    depends_on:
+      - vmsonvif-actors
 
   vms:
     build:

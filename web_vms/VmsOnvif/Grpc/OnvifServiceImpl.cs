@@ -1,7 +1,9 @@
+using Dapr.Actors;
+using Dapr.Actors.Client;
 using Grpc.Core;
-using OnvifLib;
 using Vms.Cfg;
 using Vms.Onvif;
+using web_vms.Types.Actors;
 
 namespace VmsOnvif;
 
@@ -20,7 +22,18 @@ public class OnvifServiceImpl(CfgService.CfgServiceClient cfgClient) : OnvifServ
     if (!state.Found || state.Setup?.OnvifConn == null)
       return response;
 
-    var profiles = await OnvifUtils.GetProfiles(state.Setup);
+    var actor = CameraActorProxy(request.SourceId);
+    List<ProfileInfoDto> profiles;
+    try
+    {
+      profiles = await actor.InvokeMethodAsync<CameraConnInfo, List<ProfileInfoDto>>(
+        "GetProfilesAsync", ToConn(state.Setup), context.CancellationToken);
+    }
+    catch (Exception ex)
+    {
+      throw new RpcException(new Status(StatusCode.Internal, $"Actor invoke failed: {ex.Message}"));
+    }
+
     response.Profiles.AddRange(profiles.Select(p => new OnvifProfile
     {
       Token = p.Token,
@@ -53,10 +66,32 @@ public class OnvifServiceImpl(CfgService.CfgServiceClient cfgClient) : OnvifServ
       return new StreamUriResponse { RtspUrl = fallbackUrl };
     }
 
-    var uri = await OnvifUtils.GetStreamUri(state.Setup, request.ProfileToken);
+    var actor = CameraActorProxy(request.SourceId);
+    GetStreamUriActorResult result;
+    try
+    {
+      result = await actor.InvokeMethodAsync<GetStreamUriActorRequest, GetStreamUriActorResult>(
+        "GetStreamUriAsync", new GetStreamUriActorRequest(ToConn(state.Setup), request.ProfileToken),
+        context.CancellationToken);
+    }
+    catch (Exception ex)
+    {
+      throw new RpcException(new Status(StatusCode.Internal, $"Actor invoke failed: {ex.Message}"));
+    }
+
     return new StreamUriResponse
     {
-      RtspUrl = string.IsNullOrEmpty(uri) ? fallbackUrl : uri
+      RtspUrl = string.IsNullOrEmpty(result.Uri) ? fallbackUrl : result.Uri
     };
   }
+
+  // Non-remoting proxy: uses JSON serialization, no DataContractSerializer
+  private static ActorProxy CameraActorProxy(string cameraId) =>
+    ActorProxy.Create(new ActorId(cameraId), "CameraActor");
+
+  private static CameraConnInfo ToConn(CameraSetup setup) => new(
+    setup.OnvifConn!.Ip,
+    setup.OnvifConn.Port,
+    setup.Cred?.User ?? string.Empty,
+    setup.Cred?.Pass ?? string.Empty);
 }
