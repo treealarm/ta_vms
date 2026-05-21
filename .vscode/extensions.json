@@ -4,7 +4,6 @@
         "ms-vscode.cpptools",
         "ms-vscode.cmake-tools",
         "dbaeumer.vscode-eslint",
-        "ms-azuretools.vscode-docker",
-        "zxh404.vscode-proto3"
+        "ms-azuretools.vscode-docker"
     ]
 }
