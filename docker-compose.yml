@@ -9,10 +9,30 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./init_files/postgres:/docker-entrypoint-initdb.d:ro
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "${PGADMIN_EMAIL:-admin@admin.com}"
+      PGADMIN_DEFAULT_PASSWORD: "${PGADMIN_PASSWORD:-admin}"
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    depends_on:
+      - postgres
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: mediamtx
+    ports:
+      - "8889:8889"       # WebRTC UI доступен с хоста
+      - "8554:8554"       # RTSP
+      - "8000:8000"       # HTTP API (опционально)
+      - "8189:8189/udp"  # ICE/UDP медиапоток
 
   vmscfg:
+    profiles: [app]
     build:
       context: .
       dockerfile: web_vms/VmsCfg/Dockerfile
@@ -24,6 +44,7 @@ services:
       - postgres
 
   vmscfg-dapr:
+    profiles: [app]
     image: "daprio/daprd:1.14.4"
     command:
       - "./daprd"
@@ -42,6 +63,7 @@ services:
       - vmscfg
 
   vmsonvif:
+    profiles: [app]
     build:
       context: .
       dockerfile: web_vms/VmsOnvif/Dockerfile
@@ -51,6 +73,7 @@ services:
       - vmscfg
 
   vmsonvif-actors:
+    profiles: [app]
     build:
       context: .
       dockerfile: web_vms/VmsOnvifActors/Dockerfile
@@ -60,6 +83,7 @@ services:
       - vmscfg
 
   vmsfs:
+    profiles: [app]
     build:
       context: .
       dockerfile: web_vms/VmsFs/Dockerfile
@@ -73,6 +97,7 @@ services:
       - postgres
 
   vmsfs-dapr:
+    profiles: [app]
     image: "daprio/daprd:1.14.4"
     command:
       - "./daprd"
@@ -91,6 +116,7 @@ services:
       - vmsfs
 
   vmsonvif-dapr:
+    profiles: [app]
     image: "daprio/daprd:1.14.4"
     command:
       - "./daprd"
@@ -113,6 +139,7 @@ services:
       - vmsonvif
 
   vmsonvif-actors-dapr:
+    profiles: [app]
     image: "daprio/daprd:1.14.4"
     command:
       - "./daprd"
@@ -139,6 +166,7 @@ services:
       - vmsonvif-actors
 
   vms:
+    profiles: [app]
     build:
       context: .
       dockerfile: Dockerfile
@@ -155,6 +183,7 @@ services:
       - "${PWD}/data:/data"
 
   vms-dapr:
+    profiles: [app]
     image: "daprio/daprd:1.14.4"
     command:
       - "./daprd"
@@ -171,13 +200,14 @@ services:
     network_mode: "service:vms"
     depends_on:
       - vms
-      
+
   web_vms:
+    profiles: [app]
     build:
       context: .
-      dockerfile: web_vms/web_vms.Server/Dockerfile  
+      dockerfile: web_vms/web_vms.Server/Dockerfile
     ports:
-      - "${WEB_VMS_PORT}:${WEB_VMS_PORT}"  
+      - "${WEB_VMS_PORT}:${WEB_VMS_PORT}"
     depends_on:
       - vms
       - vmscfg
@@ -186,6 +216,7 @@ services:
       - .env
 
   web_vms-dapr:
+    profiles: [app]
     image: "daprio/daprd:1.14.4"
     command:
       - "./daprd"
@@ -203,14 +234,3 @@ services:
     depends_on:
       - web_vms
 
-  mediamtx:
-    image: bluenviron/mediamtx:latest
-    container_name: mediamtx
-    ports:
-      - "8889:8889"       # WebRTC UI доступен с хоста
-      - "8554:8554"       # RTSP
-      - "8000:8000"       # HTTP API (опционально)
-      - "8189:8189/udp"  # ICE/UDP медиапоток
-
-volumes:
-  postgres-data:
