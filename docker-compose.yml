@@ -30,6 +30,8 @@ services:
       - "8554:8554"       # RTSP
       - "8000:8000"       # HTTP API (опционально)
       - "8189:8189/udp"  # ICE/UDP медиапоток
+    volumes:
+      - ./dockerhub/config/mediamtx.yml:/mediamtx.yml
 
   vmscfg:
     profiles: [app]
