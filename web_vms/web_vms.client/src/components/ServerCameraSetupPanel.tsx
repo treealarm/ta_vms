@@ -18,6 +18,7 @@ import {
 } from '@mui/material'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import { useTranslation } from 'react-i18next'
 
 import type { CameraSetupDto, MediaServerNodeDto } from '../dto/dtos'
 import { addCamera, changeCameraParent, setLiveStatus } from '../store/liveSlice'
@@ -58,6 +59,7 @@ export default function ServerCameraSetupPanel({
   onRefresh
 }: Props) {
   const dispatch = useAppDispatch()
+  const { t } = useTranslation()
   const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null)
   const [serverId, setServerId] = useState('')
   const [cameraId, setCameraId] = useState(() => getNextCameraId(cameras))
@@ -192,13 +194,13 @@ export default function ServerCameraSetupPanel({
       <CardContent>
         <Stack spacing={2}>
           <Stack direction="row" alignItems="center" justifyContent="space-between">
-            <Typography variant="subtitle1">Camera setup</Typography>
+            <Typography variant="subtitle1">{t('serverSetup.title')}</Typography>
             <Button
               onClick={() => setExpanded((value) => !value)}
               size="small"
               startIcon={expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
             >
-              {expanded ? 'Hide' : 'Show'}
+              {expanded ? t('serverSetup.hide') : t('serverSetup.show')}
             </Button>
           </Stack>
 
@@ -206,7 +208,7 @@ export default function ServerCameraSetupPanel({
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
           <Box sx={{ width: { xs: '100%', md: 300 }, flexShrink: 0 }}>
             <Stack spacing={1}>
-              <Typography variant="subtitle1">Media servers</Typography>
+              <Typography variant="subtitle1">{t('serverSetup.mediaServers')}</Typography>
               <List dense sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
                 {serverOptions.map((id) => {
                   const serverCameras = camerasByServer.get(id) ?? []
@@ -237,15 +239,15 @@ export default function ServerCameraSetupPanel({
             <Stack spacing={2}>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
                 <FormControl size="small" fullWidth>
-                  <InputLabel id="camera-server-label">Server</InputLabel>
+                  <InputLabel id="camera-server-label">{t('serverSetup.server')}</InputLabel>
                   <Select
                     labelId="camera-server-label"
-                    label="Server"
+                    label={t('serverSetup.server')}
                     value={serverId}
                     onChange={(event) => onServerSelectChange(event.target.value)}
                   >
                     {!serverId && (
-                      <MenuItem value="" disabled>Select server</MenuItem>
+                      <MenuItem value="" disabled>{t('serverSetup.selectServer')}</MenuItem>
                     )}
                     {serverOptions.map((id) => (
                       <MenuItem key={id} value={id}>{id}</MenuItem>
@@ -253,7 +255,7 @@ export default function ServerCameraSetupPanel({
                   </Select>
                 </FormControl>
                 <TextField
-                  label="Camera ID"
+                  label={t('serverSetup.cameraId')}
                   value={cameraId}
                   onChange={(event) => setCameraId(event.target.value)}
                   required
@@ -264,14 +266,14 @@ export default function ServerCameraSetupPanel({
 
               <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems="center">
                 <TextField
-                  label="RTSP URL"
+                  label={t('serverSetup.rtspUrl')}
                   value={rtspUrl}
                   onChange={(event) => setRtspUrl(event.target.value)}
                   fullWidth
                   size="small"
                 />
                 <TextField
-                  label="User"
+                  label={t('common.user')}
                   value={user}
                   onChange={(event) => setUser(event.target.value)}
                   fullWidth
@@ -282,13 +284,13 @@ export default function ServerCameraSetupPanel({
 
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="center">
                 <TextField
-                  label="Onvif IP"
+                  label={t('serverSetup.onvifIp')}
                   value={onvifIp}
                   onChange={(event) => setOnvifIp(event.target.value)}
                   size="small"
                 />
                 <TextField
-                  label="Onvif Port"
+                  label={t('serverSetup.onvifPort')}
                   value={onvifPort}
                   onChange={(event) => {
                     const value = Number(event.target.value)
@@ -302,24 +304,24 @@ export default function ServerCameraSetupPanel({
 
               {isParentChanged && (
                 <Typography color="warning.main" variant="body2">
-                  Server changed for an existing camera. Use Change parent to move it between media server instances.
+                  {t('serverSetup.parentChanged')}
                 </Typography>
               )}
               {!serverId && (
                 <Typography color="warning.main" variant="body2">
-                  No registered media server selected. Start a media server first, then refresh the list.
+                  {t('serverSetup.noServer')}
                 </Typography>
               )}
 
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
                 <Button disabled={!canSetup} type="submit" variant="outlined" fullWidth>
-                  Setup
+                  {t('serverSetup.setup')}
                 </Button>
                 <Button disabled={!serverId || !isParentChanged} onClick={() => void onChangeParent()} variant="contained" fullWidth>
-                  Change parent
+                  {t('serverSetup.changeParent')}
                 </Button>
                 <Button variant="outlined" onClick={() => void onRefresh()} fullWidth>
-                  Refresh list
+                  {t('serverSetup.refreshList')}
                 </Button>
               </Stack>
 

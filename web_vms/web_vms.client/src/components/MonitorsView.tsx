@@ -14,6 +14,7 @@ import {
 import AddIcon from '@mui/icons-material/Add'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
+import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import {
   loadMonitors,
@@ -27,6 +28,7 @@ import MonitorEditDialog from './MonitorEditDialog'
 
 export default function MonitorsView() {
   const dispatch = useAppDispatch()
+  const { t } = useTranslation()
   const monitors = useAppSelector((state) => state.monitors.monitors)
   const status = useAppSelector((state) => state.monitors.status)
   const allCameras = useAppSelector((state) => Object.values(state.live.cameraStatesById))
@@ -115,7 +117,7 @@ export default function MonitorsView() {
               ))}
             </Tabs>
 
-            <Tooltip title="New monitor">
+            <Tooltip title={t('monitors.newMonitor')}>
               <IconButton size="small" onClick={handleOpenCreate} sx={{ mx: 1 }}>
                 <AddIcon />
               </IconButton>
@@ -123,12 +125,12 @@ export default function MonitorsView() {
 
             {selectedMonitor && (
               <>
-                <Tooltip title="Edit monitor">
+                <Tooltip title={t('monitors.editMonitor')}>
                   <IconButton size="small" onClick={() => handleOpenEdit(selectedMonitor.monitorId)}>
                     <EditIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
-                <Tooltip title="Delete monitor">
+                <Tooltip title={t('monitors.deleteMonitor')}>
                   <IconButton size="small" onClick={() => void handleDelete(selectedMonitor.monitorId)} color="error">
                     <DeleteIcon fontSize="small" />
                   </IconButton>
@@ -143,9 +145,9 @@ export default function MonitorsView() {
           ) : (
             <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Stack alignItems="center" spacing={1}>
-                <Typography color="text.secondary">No monitors configured</Typography>
+                <Typography color="text.secondary">{t('monitors.noMonitors')}</Typography>
                 <Typography variant="body2" color="text.disabled">
-                  Click + to create your first monitor
+                  {t('monitors.createHint')}
                 </Typography>
               </Stack>
             </Box>

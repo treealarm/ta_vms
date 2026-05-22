@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Box, Button, MenuItem, Stack, TextField, Typography } from '@mui/material'
+import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera, changeCameraParent, removeCamera } from '../store/liveSlice'
 import type { CameraSetupDto } from '../dto/dtos'
@@ -16,6 +17,7 @@ type Props = {
 
 export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: initialServerId, onSaved, onRemoved }: Props) {
   const dispatch = useAppDispatch()
+  const { t } = useTranslation()
   const servers = useAppSelector((state) => state.live.servers)
   const mtxServers = useAppSelector((state) => state.mediaMtx.servers)
   const camerasMap = useAppSelector((state) => state.live.cameraStatesById)
@@ -77,11 +79,11 @@ export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: 
   return (
     <Stack component="form" spacing={2} onSubmit={handleSave}>
       <Typography variant="subtitle2" color="text.secondary">
-        {isNew ? 'New camera' : `Camera: ${initialCameraId}`}
+        {isNew ? t('cameras.newCamera') : t('cameras.cameraLabel', { id: initialCameraId })}
       </Typography>
 
       <TextField
-        label="Camera ID"
+        label={t('cameras.cameraId')}
         value={isNew ? cameraId : initialCameraId}
         onChange={(e) => setCameraId(e.target.value)}
         disabled={!isNew}
@@ -89,7 +91,7 @@ export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: 
         size="small"
       />
 
-      <TextField select label="Server" value={serverId} onChange={(e) => setServerId(e.target.value)} size="small">
+      <TextField select label={t('cameras.server')} value={serverId} onChange={(e) => setServerId(e.target.value)} size="small">
         {servers.map((s) => (
           <MenuItem key={s.serverId} value={s.serverId}>{s.serverId}</MenuItem>
         ))}
@@ -97,22 +99,22 @@ export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: 
 
       <TextField
         select
-        label="MediaMTX server"
+        label={t('cameras.mediaMtxServer')}
         value={mediaMtxServerId}
         onChange={(e) => setMediaMtxServerId(e.target.value)}
         size="small"
-        helperText="Stream relay server for WebRTC (auto-assigned if left empty)"
+        helperText={t('cameras.mediaMtxHelper')}
       >
-        <MenuItem value="">— auto-assign —</MenuItem>
+        <MenuItem value="">{t('cameras.autoAssign')}</MenuItem>
         {mtxServers.map((s) => (
           <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
         ))}
       </TextField>
 
       <Stack direction="row" spacing={1}>
-        <TextField label="ONVIF IP" value={onvifIp} onChange={(e) => setOnvifIp(e.target.value)} size="small" />
+        <TextField label={t('cameras.onvifIp')} value={onvifIp} onChange={(e) => setOnvifIp(e.target.value)} size="small" />
         <TextField
-          label="ONVIF Port"
+          label={t('cameras.onvifPort')}
           value={onvifPort}
           onChange={(e) => setNonNegativeNumber(e.target.value, setOnvifPort)}
           size="small"
@@ -121,17 +123,17 @@ export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: 
       </Stack>
 
       <Stack direction="row" spacing={1}>
-        <TextField label="User" value={user} onChange={(e) => setUser(e.target.value)} size="small" />
+        <TextField label={t('common.user')} value={user} onChange={(e) => setUser(e.target.value)} size="small" />
         <PasswordField pass={pass} setPass={setPass} />
       </Stack>
 
       <Stack direction="row" spacing={1}>
         <Button type="submit" variant="outlined" size="small">
-          {isNew ? 'Add camera' : 'Save'}
+          {isNew ? t('cameras.addCamera') : t('common.save')}
         </Button>
         {!isNew && (
           <Button color="error" variant="outlined" size="small" onClick={handleRemove}>
-            Delete camera
+            {t('cameras.deleteCamera')}
           </Button>
         )}
       </Stack>
@@ -141,7 +143,7 @@ export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: 
       {!isNew && previewStreamName && (
         <Box>
           <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-            Live preview ({firstWebRtcStream!.streamName})
+            {t('cameras.livePreview', { stream: firstWebRtcStream!.streamName })}
           </Typography>
           <Box sx={{ maxWidth: 320 }}>
             <CameraStream streamName={previewStreamName} baseUrl={previewBaseUrl} />

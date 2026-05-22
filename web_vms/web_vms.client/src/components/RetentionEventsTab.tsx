@@ -14,6 +14,7 @@ import {
   TableRow,
   Typography
 } from '@mui/material'
+import { useTranslation } from 'react-i18next'
 
 import type { RetentionEventRowDto, RetentionEventsListDto } from '../dto/dtos'
 import { getErrorMessage } from '../store/api'
@@ -35,6 +36,7 @@ async function fetchRetentionEventsPage(params: { before?: string }): Promise<Re
 }
 
 export default function RetentionEventsTab() {
+  const { t } = useTranslation()
   const [events, setEvents] = useState<RetentionEventRowDto[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -88,13 +90,13 @@ export default function RetentionEventsTab() {
     <Card variant="outlined">
       <CardContent sx={{ p: 2 }}>
         <Stack spacing={2}>
-          <Typography variant="h6">Retention events</Typography>
+          <Typography variant="h6">{t('events.title')}</Typography>
           {loading && events.length === 0 && <LinearProgress />}
           {error && (
             <Typography color="error">
               {error}{' '}
               <Button size="small" onClick={() => void resetAndLoad()}>
-                Retry
+                {t('events.retry')}
               </Button>
             </Typography>
           )}
@@ -112,10 +114,10 @@ export default function RetentionEventsTab() {
             <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow>
-                  <TableCell>event_id</TableCell>
-                  <TableCell>cam_id</TableCell>
-                  <TableCell>alarm_start_ts</TableCell>
-                  <TableCell>alarm_end_ts</TableCell>
+                  <TableCell>{t('events.eventId')}</TableCell>
+                  <TableCell>{t('events.camId')}</TableCell>
+                  <TableCell>{t('events.alarmStart')}</TableCell>
+                  <TableCell>{t('events.alarmEnd')}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -137,14 +139,14 @@ export default function RetentionEventsTab() {
             </Table>
             {events.length === 0 && !loading && (
               <Typography variant="body2" color="text.secondary" sx={{ py: 2, px: 1 }}>
-                No rows.
+                {t('events.noRows')}
               </Typography>
             )}
           </Box>
 
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
             <Button variant="outlined" size="small" disabled={loading || !hasMore} onClick={() => void loadOlder()}>
-              Load older
+              {t('events.loadOlder')}
             </Button>
             {loading && events.length > 0 && <LinearProgress sx={{ flex: 1, minWidth: 120 }} />}
           </Stack>
@@ -152,7 +154,7 @@ export default function RetentionEventsTab() {
           <Divider />
 
           <Typography variant="subtitle2" color="text.secondary">
-            Archive preview (HLS at alarm_start_ts; alarm end shown for reference)
+            {t('events.archivePreview')}
           </Typography>
           <ArchiveHlsPreview selected={selected} />
         </Stack>

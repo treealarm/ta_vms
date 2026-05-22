@@ -4,6 +4,7 @@ import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
+import { useTranslation } from "react-i18next";
 
 interface PasswordProps {
   pass: string;
@@ -11,11 +12,12 @@ interface PasswordProps {
 }
 
 const PasswordField = ({ pass, setPass }: PasswordProps) => {
+  const { t } = useTranslation();
   const [showPassword, setShowPassword] = useState(false);
 
   return (
     <TextField
-      label="Password"
+      label={t('common.password')}
       type={showPassword ? "text" : "password"}
       value={pass}
       onChange={(event) => setPass(event.target.value)}

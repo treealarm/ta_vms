@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Chip, CircularProgress, FormControlLabel, MenuItem, Stack, Switch, TextField, Typography } from '@mui/material'
+import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera } from '../store/liveSlice'
 import type { CameraStreamDto, RecordingProfileDto } from '../dto/dtos'
@@ -15,6 +16,7 @@ type ProfileInfo = { token: string; name: string; width: number; height: number;
 
 export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemoved }: Props) {
   const dispatch = useAppDispatch()
+  const { t } = useTranslation()
   const camera = useAppSelector((state) => state.live.cameraStatesById[cameraId])
   const existingStream = streamName != null
     ? camera?.streams?.find((s) => s.streamName === streamName)
@@ -93,21 +95,21 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
   return (
     <Stack component="form" spacing={2} onSubmit={handleSave}>
       <Typography variant="subtitle2" color="text.secondary">
-        {isNew ? `New stream on ${cameraId}` : `Stream: ${streamName}`}
+        {isNew ? t('stream.newStream', { camera: cameraId }) : t('stream.existing', { name: streamName })}
       </Typography>
 
       <TextField
-        label="Stream name"
+        label={t('stream.streamName')}
         value={name}
         onChange={(e) => setName(e.target.value)}
         disabled={!isNew}
         required
         size="small"
-        helperText="Unique within this camera, e.g. main, sub, hd"
+        helperText={t('stream.streamNameHelper')}
       />
 
       <TextField
-        label="RTSP URL"
+        label={t('stream.rtspUrl')}
         value={rtspUrl}
         onChange={(e) => setRtspUrl(e.target.value)}
         size="small"
@@ -117,12 +119,12 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
       <Stack spacing={1}>
         <Stack direction="row" spacing={1} alignItems="flex-start">
           <TextField
-            label="ONVIF profile token"
+            label={t('stream.onvifToken')}
             value={profileToken}
             onChange={(e) => setProfileToken(e.target.value)}
             size="small"
             fullWidth
-            helperText="Leave empty for direct RTSP without ONVIF"
+            helperText={t('stream.onvifTokenHelper')}
           />
           <Button
             size="small"
@@ -131,7 +133,7 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
             disabled={onvifLoading}
             sx={{ minWidth: 88, flexShrink: 0, mt: '4px', height: 32 }}
           >
-            {onvifLoading ? <CircularProgress size={16} /> : 'Refresh'}
+            {onvifLoading ? <CircularProgress size={16} /> : t('common.refresh')}
           </Button>
         </Stack>
 
@@ -162,14 +164,14 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
 
       <TextField
         select
-        label="Recording profile"
+        label={t('stream.recordingProfile')}
         value={selectedProfileId}
         onChange={(e) => setSelectedProfileId(e.target.value)}
         size="small"
         sx={{ maxWidth: 240 }}
         disabled={profilesLoading}
       >
-        <MenuItem value="">No recording</MenuItem>
+        <MenuItem value="">{t('stream.noRecording')}</MenuItem>
         {recordingProfiles.map((p) => (
           <MenuItem key={p.id} value={p.id}>
             {p.name}
@@ -179,16 +181,16 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
 
       <FormControlLabel
         control={<Switch checked={webRtc} onChange={(e) => setWebRtc(e.target.checked)} />}
-        label="WebRTC live stream"
+        label={t('stream.webrtcLive')}
       />
 
       <Stack direction="row" spacing={1}>
         <Button type="submit" variant="outlined" size="small">
-          {isNew ? 'Add stream' : 'Save'}
+          {isNew ? t('stream.addStream') : t('common.save')}
         </Button>
         {!isNew && (
           <Button color="error" variant="outlined" size="small" onClick={handleRemove}>
-            Delete stream
+            {t('stream.deleteStream')}
           </Button>
         )}
       </Stack>
