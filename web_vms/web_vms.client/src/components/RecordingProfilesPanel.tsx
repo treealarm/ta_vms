@@ -18,6 +18,7 @@ import {
 } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
+import { useTranslation } from 'react-i18next'
 import type { RecordingProfileDto, RecordingMode } from '../dto/dtos'
 
 const EMPTY_PROFILE: Omit<RecordingProfileDto, 'id'> = {
@@ -30,6 +31,7 @@ const EMPTY_PROFILE: Omit<RecordingProfileDto, 'id'> = {
 }
 
 export default function RecordingProfilesPanel() {
+  const { t } = useTranslation()
   const [profiles, setProfiles] = useState<RecordingProfileDto[]>([])
   const [editing, setEditing] = useState<RecordingProfileDto | null>(null)
   const [isNew, setIsNew] = useState(false)
@@ -109,11 +111,11 @@ export default function RecordingProfilesPanel() {
   }
 
   const modeLabel = (mode: RecordingMode) =>
-    mode === 'continuous' ? 'Continuous' : mode === 'prealarm' ? 'Pre-alarm' : 'Off'
+    mode === 'continuous' ? t('recording.continuous') : mode === 'prealarm' ? t('recording.prealarm') : t('recording.off')
 
   return (
     <Stack spacing={2} sx={{ maxWidth: 560 }}>
-      <Typography variant="h6">Recording profiles</Typography>
+      <Typography variant="h6">{t('recording.title')}</Typography>
 
       <List disablePadding>
         {profiles.map((p, i) => (
@@ -126,7 +128,7 @@ export default function RecordingProfilesPanel() {
                   <IconButton size="small" onClick={() => startEdit(p)} disabled={busy}>
                     <EditIcon fontSize="small" />
                   </IconButton>
-                  <Tooltip title="Delete">
+                  <Tooltip title={t('recording.deleteTooltip')}>
                     <span>
                       <IconButton size="small" color="error" onClick={() => void remove(p.id)} disabled={busy}>
                         <DeleteIcon fontSize="small" />
@@ -141,7 +143,7 @@ export default function RecordingProfilesPanel() {
                 primary={
                   <Stack direction="row" spacing={0.5} alignItems="center" component="span">
                     <span>{p.name}</span>
-                    {p.isOverridePreset && <Chip label="override preset" size="small" color="primary" variant="outlined" />}
+                    {p.isOverridePreset && <Chip label={t('recording.overridePresetChip')} size="small" color="primary" variant="outlined" />}
                   </Stack>
                 }
                 secondary={
@@ -149,12 +151,12 @@ export default function RecordingProfilesPanel() {
                     <Chip label={modeLabel(p.mode)} size="small" />
                     {p.mode === 'prealarm' && (
                       <Typography variant="caption" color="text.secondary">
-                        pre {p.preRecordSeconds}s · post {p.postRecordSeconds}s · seg {p.segmentSeconds}s
+                        {t('recording.prePostSeg', { pre: p.preRecordSeconds, post: p.postRecordSeconds, seg: p.segmentSeconds })}
                       </Typography>
                     )}
                     {p.mode === 'continuous' && (
                       <Typography variant="caption" color="text.secondary">
-                        seg {p.segmentSeconds}s
+                        {t('recording.seg', { seg: p.segmentSeconds })}
                       </Typography>
                     )}
                   </Stack>
@@ -165,7 +167,7 @@ export default function RecordingProfilesPanel() {
         ))}
         {profiles.length === 0 && (
           <Typography variant="body2" color="text.secondary" sx={{ pl: 1, py: 1 }}>
-            No profiles yet.
+            {t('recording.noProfiles')}
           </Typography>
         )}
       </List>
@@ -173,7 +175,7 @@ export default function RecordingProfilesPanel() {
       {!editing && (
         <Box>
           <Button variant="outlined" size="small" onClick={startNew}>
-            Add profile
+            {t('recording.addProfile')}
           </Button>
         </Box>
       )}
@@ -182,11 +184,11 @@ export default function RecordingProfilesPanel() {
         <Stack component="form" spacing={2} onSubmit={(e) => void save(e)}
           sx={{ pt: 1, borderTop: 1, borderColor: 'divider' }}>
           <Typography variant="subtitle2">
-            {isNew ? 'New profile' : `Edit: ${profiles.find((p) => p.id === editing.id)?.name ?? editing.name}`}
+            {isNew ? t('recording.newProfile') : t('recording.editProfile', { name: profiles.find((p) => p.id === editing.id)?.name ?? editing.name })}
           </Typography>
 
           <TextField
-            label="Name"
+            label={t('common.name')}
             value={editing.name}
             onChange={(e) => setField('name', e.target.value)}
             required
@@ -196,20 +198,20 @@ export default function RecordingProfilesPanel() {
 
           <TextField
             select
-            label="Mode"
+            label={t('recording.mode')}
             value={editing.mode}
             onChange={(e) => setField('mode', e.target.value as RecordingMode)}
             size="small"
             sx={{ maxWidth: 200 }}
           >
-            <MenuItem value="continuous">Continuous</MenuItem>
-            <MenuItem value="prealarm">Pre-alarm</MenuItem>
+            <MenuItem value="continuous">{t('recording.continuous')}</MenuItem>
+            <MenuItem value="prealarm">{t('recording.prealarm')}</MenuItem>
           </TextField>
 
           {editing.mode === 'prealarm' && (
             <Stack direction="row" spacing={1}>
               <TextField
-                label="Pre-record, sec"
+                label={t('recording.preRecordSec')}
                 type="number"
                 value={editing.preRecordSeconds}
                 onChange={(e) => setNonNeg('preRecordSeconds', e.target.value)}
@@ -218,7 +220,7 @@ export default function RecordingProfilesPanel() {
                 sx={{ width: 140 }}
               />
               <TextField
-                label="Post-record, sec"
+                label={t('recording.postRecordSec')}
                 type="number"
                 value={editing.postRecordSeconds}
                 onChange={(e) => setNonNeg('postRecordSeconds', e.target.value)}
@@ -230,7 +232,7 @@ export default function RecordingProfilesPanel() {
           )}
 
           <TextField
-            label="Segment, sec"
+            label={t('recording.segmentSec')}
             type="number"
             value={editing.segmentSeconds}
             onChange={(e) => setNonNeg('segmentSeconds', e.target.value)}
@@ -247,7 +249,7 @@ export default function RecordingProfilesPanel() {
                 onChange={(e) => setField('isOverridePreset', e.target.checked)}
               />
             }
-            label={<Typography variant="body2">Show as override preset</Typography>}
+            label={<Typography variant="body2">{t('recording.overridePreset')}</Typography>}
           />
 
           {error && (
@@ -256,9 +258,9 @@ export default function RecordingProfilesPanel() {
 
           <Stack direction="row" spacing={1}>
             <Button type="submit" variant="outlined" size="small" disabled={busy}>
-              {isNew ? 'Create' : 'Save'}
+              {isNew ? t('recording.create') : t('common.save')}
             </Button>
-            <Button size="small" onClick={cancel} disabled={busy}>Cancel</Button>
+            <Button size="small" onClick={cancel} disabled={busy}>{t('common.cancel')}</Button>
           </Stack>
         </Stack>
       )}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Box, MenuItem, Select, Stack, Typography } from '@mui/material'
 import Hls from 'hls.js'
+import { useTranslation } from 'react-i18next'
 
 import type { RetentionEventRowDto } from '../dto/dtos'
 
@@ -21,6 +22,7 @@ async function fetchEventPlaylists(eventId: string, signal: AbortSignal): Promis
 }
 
 export default function ArchiveHlsPreview({ selected }: Props) {
+  const { t } = useTranslation()
   const videoRef = useRef<HTMLVideoElement>(null)
   const [streams, setStreams] = useState<StreamEntry[]>([])
   const [activeStream, setActiveStream] = useState<string | null>(null)
@@ -115,7 +117,7 @@ export default function ArchiveHlsPreview({ selected }: Props) {
   if (!selected) {
     return (
       <Typography variant="body2" color="text.secondary">
-        Select an event row to load archive preview (HLS).
+        {t('archive.selectHint')}
       </Typography>
     )
   }
@@ -131,7 +133,7 @@ export default function ArchiveHlsPreview({ selected }: Props) {
 
       {loadingStreams && (
         <Typography variant="body2" color="text.secondary">
-          Loading streams…
+          {t('archive.loadingStreams')}
         </Typography>
       )}
 
@@ -144,7 +146,7 @@ export default function ArchiveHlsPreview({ selected }: Props) {
         >
           {streams.map((s) => (
             <MenuItem key={s.streamName ?? '__all__'} value={s.streamName ?? ''} sx={{ fontSize: '0.8rem' }}>
-              {s.streamName === null ? 'All streams' : s.streamName || '(default)'}
+              {s.streamName === null ? t('archive.allStreams') : s.streamName || t('archive.default')}
             </MenuItem>
           ))}
         </Select>
@@ -158,7 +160,7 @@ export default function ArchiveHlsPreview({ selected }: Props) {
 
       {!loadingStreams && streams.length === 0 && !hlsError && (
         <Typography variant="body2" color="text.secondary">
-          No clips found for this event.
+          {t('archive.noClips')}
         </Typography>
       )}
 

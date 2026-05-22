@@ -18,6 +18,7 @@ import {
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import AddIcon from '@mui/icons-material/Add'
+import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { loadMediaMtxServers, removeMediaMtxServer, upsertMediaMtxServer } from '../store/mediaMtxSlice'
 import type { MediaMtxServerDto } from '../dto/dtos'
@@ -26,6 +27,7 @@ const EMPTY: MediaMtxServerDto = { id: '', name: '', rtspUrl: '', webrtcUrl: '' 
 
 export default function MediaMtxServersPanel() {
   const dispatch = useAppDispatch()
+  const { t } = useTranslation()
   const { servers, isBusy, status } = useAppSelector((s) => s.mediaMtx)
   const [editing, setEditing] = useState<MediaMtxServerDto | null>(null)
 
@@ -56,9 +58,9 @@ export default function MediaMtxServersPanel() {
   return (
     <Stack spacing={2}>
       <Stack direction="row" alignItems="center" justifyContent="space-between">
-        <Typography variant="h6">MediaMTX Servers</Typography>
+        <Typography variant="h6">{t('mediaMtx.title')}</Typography>
         <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={handleNew} disabled={isBusy}>
-          Add server
+          {t('mediaMtx.addServer')}
         </Button>
       </Stack>
 
@@ -71,40 +73,40 @@ export default function MediaMtxServersPanel() {
       {editing && (
         <Paper variant="outlined" sx={{ p: 2 }}>
           <Typography variant="subtitle2" gutterBottom>
-            {editing.id ? `Edit: ${editing.name}` : 'New server'}
+            {editing.id ? t('mediaMtx.editServer', { name: editing.name }) : t('mediaMtx.newServer')}
           </Typography>
           <Stack spacing={1.5}>
             <TextField
-              label="Name"
+              label={t('common.name')}
               value={editing.name}
               onChange={(e) => setEditing({ ...editing, name: e.target.value })}
               size="small"
               required
             />
             <TextField
-              label="RTSP push URL (incoming)"
-              placeholder="rtsp://mediamtx:8554"
+              label={t('mediaMtx.rtspPushUrl')}
+              placeholder={t('mediaMtx.rtspPlaceholder')}
               value={editing.rtspUrl}
               onChange={(e) => setEditing({ ...editing, rtspUrl: e.target.value })}
               size="small"
               required
-              helperText="Used by the media server to push streams into MediaMTX"
+              helperText={t('mediaMtx.rtspHelper')}
             />
             <TextField
-              label="WebRTC client URL (outgoing)"
-              placeholder="http://hostname:8889"
+              label={t('mediaMtx.webrtcUrl')}
+              placeholder={t('mediaMtx.webrtcPlaceholder')}
               value={editing.webrtcUrl}
               onChange={(e) => setEditing({ ...editing, webrtcUrl: e.target.value })}
               size="small"
               required
-              helperText="Used by the browser to receive WebRTC streams (WHEP)"
+              helperText={t('mediaMtx.webrtcHelper')}
             />
             <Stack direction="row" spacing={1}>
               <Button variant="outlined" size="small" onClick={handleSave} disabled={isBusy}>
-                Save
+                {t('common.save')}
               </Button>
               <Button variant="text" size="small" onClick={handleCancel} disabled={isBusy}>
-                Cancel
+                {t('common.cancel')}
               </Button>
             </Stack>
           </Stack>
@@ -115,9 +117,9 @@ export default function MediaMtxServersPanel() {
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>RTSP push URL</TableCell>
-              <TableCell>WebRTC client URL</TableCell>
+              <TableCell>{t('mediaMtx.colName')}</TableCell>
+              <TableCell>{t('mediaMtx.colRtsp')}</TableCell>
+              <TableCell>{t('mediaMtx.colWebrtc')}</TableCell>
               <TableCell align="right" sx={{ width: 80 }} />
             </TableRow>
           </TableHead>
@@ -125,7 +127,7 @@ export default function MediaMtxServersPanel() {
             {servers.length === 0 && (
               <TableRow>
                 <TableCell colSpan={4}>
-                  <Box sx={{ color: 'text.secondary', py: 1 }}>No servers configured</Box>
+                  <Box sx={{ color: 'text.secondary', py: 1 }}>{t('mediaMtx.noServers')}</Box>
                 </TableCell>
               </TableRow>
             )}

@@ -10,6 +10,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material'
+import { useTranslation } from 'react-i18next'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import DeleteIcon from '@mui/icons-material/Delete'
@@ -27,6 +28,7 @@ type Props = {
 
 export default function CameraStoragesControl({ cameraId }: Props) {
   const dispatch = useAppDispatch()
+  const { t } = useTranslation()
   const allStorages = useAppSelector((state) => state.storage.storages)
   const savedAssignments = useAppSelector((state) => state.storage.cameraAssignments[cameraId] ?? [])
 
@@ -83,11 +85,11 @@ export default function CameraStoragesControl({ cameraId }: Props) {
 
   return (
     <Stack spacing={1}>
-      <Typography variant="body2" color="text.secondary">Storage assignment</Typography>
+      <Typography variant="body2" color="text.secondary">{t('storageControl.title')}</Typography>
 
       {assignments.length === 0 ? (
         <Typography variant="body2" color="text.secondary" sx={{ pl: 1 }}>
-          No storages assigned
+          {t('storageControl.noStorages')}
         </Typography>
       ) : (
         <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
@@ -119,9 +121,9 @@ export default function CameraStoragesControl({ cameraId }: Props) {
 
       <Stack direction="row" spacing={1} alignItems="center">
         <FormControl size="small" sx={{ flex: 1 }} disabled={available.length === 0}>
-          <InputLabel>Add storage</InputLabel>
+          <InputLabel>{t('storageControl.addStorage')}</InputLabel>
           <Select
-            label="Add storage"
+            label={t('storageControl.addStorage')}
             value={selectedStorageId}
             onChange={(e) => setSelectedStorageId(e.target.value)}
           >
@@ -131,10 +133,10 @@ export default function CameraStoragesControl({ cameraId }: Props) {
           </Select>
         </FormControl>
         <Button variant="outlined" size="small" disabled={!selectedStorageId} onClick={onAdd}>
-          Add
+          {t('common.add')}
         </Button>
         <Button variant="contained" size="small" disabled={!dirty} onClick={() => void onSave()}>
-          Save
+          {t('common.save')}
         </Button>
       </Stack>
     </Stack>

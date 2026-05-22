@@ -13,16 +13,11 @@ import {
   Typography
 } from '@mui/material'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import { useTranslation } from 'react-i18next'
 
 import { useAppDispatch, useAppSelector } from '../store'
 import { clearLogs, fetchLogs } from '../store/logSlice'
 import { toLocalDatetimeInputValue } from '../dto/dtos'
-
-const RANGE_OPTIONS = [
-  { label: 'Last 60 sec', value: 60 },
-  { label: 'Last 5 min', value: 300 },
-  { label: 'Last 15 min', value: 900 }
-]
 
 const LEVEL_OPTIONS = ['', 'debug', 'info', 'warn', 'error']
 
@@ -49,7 +44,14 @@ function normalizeLogLevelKey(level: string): 'error' | 'warn' | 'info' | 'debug
 
 export default function LogJournalPanel() {
   const dispatch = useAppDispatch()
+  const { t } = useTranslation()
   const { entries, hasMore, isBusy, status } = useAppSelector((state) => state.logs)
+
+  const RANGE_OPTIONS = [
+    { label: t('logs.last60s'), value: 60 },
+    { label: t('logs.last5m'), value: 300 },
+    { label: t('logs.last15m'), value: 900 },
+  ]
 
   const [rangeSec, setRangeSec] = useState(60)
   const [limit, setLimit] = useState(200)
@@ -115,16 +117,16 @@ export default function LogJournalPanel() {
       <CardContent sx={{ p: 1.5 }}>
         <Stack spacing={1}>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-            <Typography variant="subtitle2">Log Journal</Typography>
-            <Chip size="small" label={isBusy ? 'Loading...' : status} />
-            {hasMore && <Chip size="small" color="warning" label="has more" />}
+            <Typography variant="subtitle2">{t('logs.title')}</Typography>
+            <Chip size="small" label={isBusy ? t('common.loading') : status} />
+            {hasMore && <Chip size="small" color="warning" label={t('logs.hasMore')} />}
           </Stack>
 
           <Stack direction="row" spacing={1} flexWrap="wrap">
             <TextField
               select
               size="small"
-              label="Range"
+              label={t('logs.range')}
               value={rangeSec}
               onChange={(e) => setRangeSec(Number(e.target.value))}
               sx={{ minWidth: 140 }}
@@ -139,7 +141,7 @@ export default function LogJournalPanel() {
             <TextField
               size="small"
               type="number"
-              label="Limit"
+              label={t('logs.limit')}
               value={limit}
               onChange={(e) => setLimit(Math.max(1, Number(e.target.value) || 1))}
               sx={{ width: 100 }}
@@ -148,12 +150,12 @@ export default function LogJournalPanel() {
             <TextField
               select
               size="small"
-              label="Level"
+              label={t('logs.level')}
               value={level}
               onChange={(e) => setLevel(e.target.value)}
               sx={{ minWidth: 120 }}
             >
-              <MenuItem value="">all</MenuItem>
+              <MenuItem value="">{t('logs.all')}</MenuItem>
               {LEVEL_OPTIONS.filter((v) => v).map((v) => (
                 <MenuItem key={v} value={v}>
                   {v}
@@ -163,7 +165,7 @@ export default function LogJournalPanel() {
 
             <TextField
               size="small"
-              label="Source"
+              label={t('logs.source')}
               value={source}
               onChange={(e) => setSource(e.target.value)}
               sx={{ minWidth: 160 }}
@@ -171,7 +173,7 @@ export default function LogJournalPanel() {
 
             <TextField
               size="small"
-              label="Search"
+              label={t('logs.search')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               sx={{ minWidth: 180, flexGrow: 1 }}
@@ -181,24 +183,24 @@ export default function LogJournalPanel() {
               control={
                 <Switch size="small" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
               }
-              label="Auto"
+              label={t('logs.auto')}
             />
 
             <Button size="small" variant="outlined" onClick={() => void runFetch()}>
-              Refresh
+              {t('common.refresh')}
             </Button>
             <Button size="small" variant="outlined" onClick={() => dispatch(clearLogs())}>
-              Clear
+              {t('logs.clear')}
             </Button>
             <Button size="small" variant="outlined" startIcon={<ContentCopyIcon />} onClick={() => void onCopy()}>
-              Copy
+              {t('logs.copy')}
             </Button>
           </Stack>
 
           <Box className="vms-log-journal-body">
             {filteredEntries.length === 0 && (
               <Typography variant="caption" className="vms-log-journal-empty">
-                No logs
+                {t('logs.noLogs')}
               </Typography>
             )}
             {filteredEntries.map((e, idx) => (

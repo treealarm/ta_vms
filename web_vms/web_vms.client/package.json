@@ -18,8 +18,10 @@
     "@reduxjs/toolkit": "^2.9.1",
     "dayjs": "^1.11.20",
     "hls.js": "^1.6.16",
+    "i18next": "^26.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-i18next": "^17.0.8",
     "react-redux": "^9.2.0"
   },
   "devDependencies": {

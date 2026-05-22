@@ -18,6 +18,7 @@ import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
+import { useTranslation } from 'react-i18next'
 import type { CameraSetupDto, MonitorDto, MonitorLayout } from '../dto/dtos'
 import { MONITOR_LAYOUTS } from '../dto/dtos'
 
@@ -30,6 +31,7 @@ type Props = {
 }
 
 export default function MonitorEditDialog({ open, monitor, allCameras, onSave, onClose }: Props) {
+  const { t } = useTranslation()
   const [name, setName] = useState('')
   const [layout, setLayout] = useState<MonitorLayout>('2x2')
   const [cameraIds, setCameraIds] = useState<string[]>([])
@@ -79,11 +81,11 @@ export default function MonitorEditDialog({ open, monitor, allCameras, onSave, o
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>{monitor ? 'Edit monitor' : 'New monitor'}</DialogTitle>
+      <DialogTitle>{monitor ? t('monitors.editTitle') : t('monitors.newTitle')}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
           <TextField
-            label="Name"
+            label={t('common.name')}
             value={name}
             onChange={(e) => setName(e.target.value)}
             size="small"
@@ -92,10 +94,10 @@ export default function MonitorEditDialog({ open, monitor, allCameras, onSave, o
           />
 
           <FormControl size="small" fullWidth>
-            <InputLabel>Layout</InputLabel>
+            <InputLabel>{t('monitors.layout')}</InputLabel>
             <Select
               value={layout}
-              label="Layout"
+              label={t('monitors.layout')}
               onChange={(e) => setLayout(e.target.value as MonitorLayout)}
             >
               {MONITOR_LAYOUTS.map((l) => (
@@ -105,7 +107,7 @@ export default function MonitorEditDialog({ open, monitor, allCameras, onSave, o
           </FormControl>
 
           <Typography variant="subtitle2" color="text.secondary">
-            Camera pool (ordered)
+            {t('monitors.cameraPool')}
           </Typography>
 
           {cameraIds.map((id, idx) => (
@@ -128,10 +130,10 @@ export default function MonitorEditDialog({ open, monitor, allCameras, onSave, o
           {availableToAdd.length > 0 && (
             <Stack direction="row" spacing={1} alignItems="center">
               <FormControl size="small" sx={{ flex: 1 }}>
-                <InputLabel>Add camera</InputLabel>
+                <InputLabel>{t('monitors.addCamera')}</InputLabel>
                 <Select
                   value={addCameraId}
-                  label="Add camera"
+                  label={t('monitors.addCamera')}
                   onChange={(e) => setAddCameraId(e.target.value)}
                 >
                   {availableToAdd.map((c) => (
@@ -147,9 +149,9 @@ export default function MonitorEditDialog({ open, monitor, allCameras, onSave, o
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={onClose}>{t('common.cancel')}</Button>
         <Button onClick={handleSave} variant="contained" disabled={!name.trim()}>
-          Save
+          {t('common.save')}
         </Button>
       </DialogActions>
     </Dialog>

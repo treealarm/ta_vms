@@ -9,6 +9,7 @@ import {
   TextField,
   Typography
 } from '@mui/material'
+import { useTranslation } from 'react-i18next'
 
 import type { CameraSetupDto, RetentionEventDto } from '../dto/dtos'
 import { useAppDispatch } from '../store'
@@ -21,6 +22,7 @@ type SimulationPanelProps = {
 
 export default function SimulationPanel({ cameras }: SimulationPanelProps) {
   const dispatch = useAppDispatch()
+  const { t } = useTranslation()
   const [cameraId, setCameraId] = useState('')
   const [streamName, setStreamName] = useState('')
   const [eventId, setEventId] = useState('test-alarm')
@@ -82,15 +84,15 @@ export default function SimulationPanel({ cameras }: SimulationPanelProps) {
     <Card elevation={2} sx={{ maxWidth: 480 }}>
       <CardContent>
         <Stack spacing={2}>
-          <Typography variant="h6">Test actions</Typography>
+          <Typography variant="h6">{t('simulation.title')}</Typography>
 
           <Divider />
 
-          <Typography variant="subtitle2">Pre-alarm retention event</Typography>
+          <Typography variant="subtitle2">{t('simulation.retentionEvent')}</Typography>
 
           <TextField
             select
-            label="Camera"
+            label={t('simulation.camera')}
             value={selectedCameraId}
             onChange={(event) => setCameraId(event.target.value)}
             size="small"
@@ -105,38 +107,38 @@ export default function SimulationPanel({ cameras }: SimulationPanelProps) {
 
           <TextField
             select
-            label="Stream (optional)"
+            label={t('simulation.stream')}
             value={streamName}
             onChange={(e) => setStreamName(e.target.value)}
             size="small"
             fullWidth
-            helperText="All streams if not specified"
+            helperText={t('simulation.streamHelper')}
           >
-            <MenuItem value="">All streams</MenuItem>
+            <MenuItem value="">{t('simulation.allStreams')}</MenuItem>
             {recordableStreams.map((s) => (
               <MenuItem key={s.streamName} value={s.streamName}>{s.streamName}</MenuItem>
             ))}
           </TextField>
 
           <TextField
-            label="Event ID"
+            label={t('simulation.eventId')}
             value={eventId}
             onChange={(event) => setEventId(event.target.value)}
-            helperText="Start and end use the same event id"
+            helperText={t('simulation.eventIdHelper')}
             size="small"
             fullWidth
           />
 
           <Button variant="outlined" onClick={newEventId}>
-            Generate event id
+            {t('simulation.generateEventId')}
           </Button>
 
           <Typography variant="body2" color="text.secondary">
-            {alarmStartTs ? `Alarm started at ${alarmStartTs}` : 'Alarm is not active in this test panel.'}
+            {alarmStartTs ? t('simulation.alarmActive', { time: alarmStartTs }) : t('simulation.alarmInactive')}
           </Typography>
 
           <TextField
-            label="Timeout, sec"
+            label={t('simulation.timeoutSec')}
             type="number"
             value={timeoutSeconds}
             onChange={(event) => setNonNegativeNumber(event.target.value, setTimeoutSeconds)}
@@ -147,7 +149,7 @@ export default function SimulationPanel({ cameras }: SimulationPanelProps) {
 
           <Stack direction="row" spacing={1}>
             <Button variant="contained" disabled={!selectedCameraId} onClick={() => void sendAlarmStart()} fullWidth>
-              Alarm start now
+              {t('simulation.alarmStart')}
             </Button>
             <Button
               variant="outlined"
@@ -155,7 +157,7 @@ export default function SimulationPanel({ cameras }: SimulationPanelProps) {
               onClick={() => void sendAlarmEnd()}
               fullWidth
             >
-              Alarm end now
+              {t('simulation.alarmEnd')}
             </Button>
           </Stack>
         </Stack>

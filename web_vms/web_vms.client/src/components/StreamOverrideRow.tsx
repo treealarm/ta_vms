@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Chip, CircularProgress, MenuItem, Select, Stack, Typography } from '@mui/material'
+import { useTranslation } from 'react-i18next'
 import type { CameraStreamDto, RecordingProfileDto } from '../dto/dtos'
 import { useAppDispatch } from '../store'
 import { fetchCameraState } from '../store/liveSlice'
@@ -23,6 +24,7 @@ function modeColor(mode: string): 'error' | 'warning' | 'default' {
 
 export default function StreamOverrideRow({ cameraId, stream }: Props) {
   const dispatch = useAppDispatch()
+  const { t } = useTranslation()
   const [presets, setPresets] = useState<RecordingProfileDto[]>([])
   const [busy, setBusy] = useState(false)
   const [pendingValue, setPendingValue] = useState<string | null>(null)
@@ -76,7 +78,7 @@ export default function StreamOverrideRow({ cameraId, stream }: Props) {
       />
       {isOverride && (
         <Typography variant="caption" sx={{ color: 'primary.main', fontSize: '0.68rem', flexShrink: 0 }}>
-          override
+          {t('streamOverride.override')}
         </Typography>
       )}
 
@@ -89,7 +91,7 @@ export default function StreamOverrideRow({ cameraId, stream }: Props) {
         sx={{ fontSize: '0.72rem', height: 22, minWidth: 96, '.MuiSelect-select': { py: 0, px: 0.75 } }}
         renderValue={(v) =>
           v === '' ? (
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>Override…</Typography>
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>{t('streamOverride.overridePlaceholder')}</Typography>
           ) : (
             <Typography variant="caption">{presets.find((p) => p.id === v)?.name ?? v}</Typography>
           )
@@ -97,7 +99,7 @@ export default function StreamOverrideRow({ cameraId, stream }: Props) {
       >
         {isOverride && (
           <MenuItem value="" sx={{ fontSize: '0.72rem' }}>
-            <em>Clear override</em>
+            <em>{t('streamOverride.clearOverride')}</em>
           </MenuItem>
         )}
         {presets.map((p) => (

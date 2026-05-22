@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Chip, CircularProgress, FormControlLabel, MenuItem, Stack, Switch, TextField, Typography } from '@mui/material'
+import { Box, Button, Chip, CircularProgress, FormControlLabel, MenuItem, Stack, Switch, TextField, Typography } from '@mui/material'
+import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera } from '../store/liveSlice'
 import type { CameraStreamDto, RecordingProfileDto } from '../dto/dtos'
+import CameraStream from './CameraStream'
 
 type Props = {
   cameraId: string
@@ -15,6 +17,7 @@ type ProfileInfo = { token: string; name: string; width: number; height: number;
 
 export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemoved }: Props) {
   const dispatch = useAppDispatch()
+  const { t } = useTranslation()
   const camera = useAppSelector((state) => state.live.cameraStatesById[cameraId])
   const existingStream = streamName != null
     ? camera?.streams?.find((s) => s.streamName === streamName)
@@ -90,108 +93,134 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
     if (!addCamera.rejected.match(result)) await onRemoved()
   }
 
+  const showPreview = !isNew && webRtc
+
   return (
-    <Stack component="form" spacing={2} onSubmit={handleSave}>
-      <Typography variant="subtitle2" color="text.secondary">
-        {isNew ? `New stream on ${cameraId}` : `Stream: ${streamName}`}
-      </Typography>
+    <Stack component="form" direction="row" spacing={3} alignItems="flex-start" onSubmit={handleSave}>
+      {/* Left: form fields */}
+      <Stack spacing={2} sx={{ flex: 1, minWidth: 0 }}>
+        <Typography variant="subtitle2" color="text.secondary">
+          {isNew ? t('stream.newStream', { camera: cameraId }) : t('stream.existing', { name: streamName })}
+        </Typography>
 
-      <TextField
-        label="Stream name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        disabled={!isNew}
-        required
-        size="small"
-        helperText="Unique within this camera, e.g. main, sub, hd"
-      />
+        <TextField
+          label={t('stream.streamName')}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          disabled={!isNew}
+          required
+          size="small"
+          helperText={t('stream.streamNameHelper')}
+        />
 
-      <TextField
-        label="RTSP URL"
-        value={rtspUrl}
-        onChange={(e) => setRtspUrl(e.target.value)}
-        size="small"
-        fullWidth
-      />
+        <TextField
+          label={t('stream.rtspUrl')}
+          value={rtspUrl}
+          onChange={(e) => setRtspUrl(e.target.value)}
+          size="small"
+          fullWidth
+        />
 
-      <Stack spacing={1}>
-        <Stack direction="row" spacing={1} alignItems="flex-start">
-          <TextField
-            label="ONVIF profile token"
-            value={profileToken}
-            onChange={(e) => setProfileToken(e.target.value)}
-            size="small"
-            fullWidth
-            helperText="Leave empty for direct RTSP without ONVIF"
-          />
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={() => void fetchOnvifProfiles()}
-            disabled={onvifLoading}
-            sx={{ minWidth: 88, flexShrink: 0, mt: '4px', height: 32 }}
-          >
-            {onvifLoading ? <CircularProgress size={16} /> : 'Refresh'}
-          </Button>
+        <Stack spacing={1}>
+          <Stack direction="row" spacing={1} alignItems="flex-start">
+            <TextField
+              label={t('stream.onvifToken')}
+              value={profileToken}
+              onChange={(e) => setProfileToken(e.target.value)}
+              size="small"
+              fullWidth
+              helperText={t('stream.onvifTokenHelper')}
+            />
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => void fetchOnvifProfiles()}
+              disabled={onvifLoading}
+              sx={{ minWidth: 88, flexShrink: 0, mt: '4px', height: 32 }}
+            >
+              {onvifLoading ? <CircularProgress size={16} /> : t('common.refresh')}
+            </Button>
+          </Stack>
+
+          {onvifError && (
+            <Typography variant="caption" color="error">{onvifError}</Typography>
+          )}
+
+          {availableOnvifProfiles.length > 0 && (
+            <Stack direction="row" spacing={0.5} flexWrap="wrap">
+              {availableOnvifProfiles.map((p) => {
+                const res = p.width && p.height ? ` ${p.width}×${p.height}` : ''
+                const enc = p.encoding ? ` ${p.encoding}` : ''
+                const label = p.name !== p.token ? `${p.name}${res}${enc}` : `${p.token}${res}${enc}`
+                return (
+                  <Chip
+                    key={p.token}
+                    label={label}
+                    size="small"
+                    variant={profileToken === p.token ? 'filled' : 'outlined'}
+                    color={profileToken === p.token ? 'primary' : 'default'}
+                    onClick={() => {
+                      setProfileToken(p.token)
+                      if (isNew && !name) {
+                        const suggested = p.name !== p.token
+                          ? p.name.toLowerCase().replace(/[\s-]+/g, '_')
+                          : p.token.toLowerCase()
+                        setName(suggested)
+                      }
+                    }}
+                  />
+                )
+              })}
+            </Stack>
+          )}
         </Stack>
 
-        {onvifError && (
-          <Typography variant="caption" color="error">{onvifError}</Typography>
-        )}
+        <TextField
+          select
+          label={t('stream.recordingProfile')}
+          value={selectedProfileId}
+          onChange={(e) => setSelectedProfileId(e.target.value)}
+          size="small"
+          sx={{ maxWidth: 240 }}
+          disabled={profilesLoading}
+        >
+          <MenuItem value="">{t('stream.noRecording')}</MenuItem>
+          {recordingProfiles.map((p) => (
+            <MenuItem key={p.id} value={p.id}>
+              {p.name}
+            </MenuItem>
+          ))}
+        </TextField>
 
-        {availableOnvifProfiles.length > 0 && (
-          <Stack direction="row" spacing={0.5} flexWrap="wrap">
-            {availableOnvifProfiles.map((p) => {
-              const res = p.width && p.height ? ` ${p.width}×${p.height}` : ''
-              const enc = p.encoding ? ` ${p.encoding}` : ''
-              const label = p.name !== p.token ? `${p.name}${res}${enc}` : `${p.token}${res}${enc}`
-              return (
-                <Chip
-                  key={p.token}
-                  label={label}
-                  size="small"
-                  variant={profileToken === p.token ? 'filled' : 'outlined'}
-                  color={profileToken === p.token ? 'primary' : 'default'}
-                  onClick={() => setProfileToken(p.token)}
-                />
-              )
-            })}
-          </Stack>
-        )}
-      </Stack>
+        <FormControlLabel
+          control={<Switch checked={webRtc} onChange={(e) => setWebRtc(e.target.checked)} />}
+          label={t('stream.webrtcLive')}
+        />
 
-      <TextField
-        select
-        label="Recording profile"
-        value={selectedProfileId}
-        onChange={(e) => setSelectedProfileId(e.target.value)}
-        size="small"
-        sx={{ maxWidth: 240 }}
-        disabled={profilesLoading}
-      >
-        <MenuItem value="">No recording</MenuItem>
-        {recordingProfiles.map((p) => (
-          <MenuItem key={p.id} value={p.id}>
-            {p.name}
-          </MenuItem>
-        ))}
-      </TextField>
-
-      <FormControlLabel
-        control={<Switch checked={webRtc} onChange={(e) => setWebRtc(e.target.checked)} />}
-        label="WebRTC live stream"
-      />
-
-      <Stack direction="row" spacing={1}>
-        <Button type="submit" variant="outlined" size="small">
-          {isNew ? 'Add stream' : 'Save'}
-        </Button>
-        {!isNew && (
-          <Button color="error" variant="outlined" size="small" onClick={handleRemove}>
-            Delete stream
+        <Stack direction="row" spacing={1}>
+          <Button type="submit" variant="outlined" size="small">
+            {isNew ? t('stream.addStream') : t('common.save')}
           </Button>
-        )}
+          {!isNew && (
+            <Button color="error" variant="outlined" size="small" onClick={handleRemove}>
+              {t('stream.deleteStream')}
+            </Button>
+          )}
+        </Stack>
       </Stack>
+
+      {/* Right: live preview */}
+      {showPreview && (
+        <Box sx={{ width: 280, flexShrink: 0 }}>
+          <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+            {t('stream.livePreview')}
+          </Typography>
+          <CameraStream
+            streamName={`${cameraId}/${streamName!}`}
+            baseUrl={camera.mediaMtxWebrtcUrl}
+          />
+        </Box>
+      )}
     </Stack>
   )
 }

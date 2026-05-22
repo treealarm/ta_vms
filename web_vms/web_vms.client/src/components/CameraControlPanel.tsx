@@ -11,6 +11,7 @@ import {
   Stack,
   Typography
 } from '@mui/material'
+import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { loadCameras, loadServers } from '../store/liveSlice'
 import { loadMediaMtxServers } from '../store/mediaMtxSlice'
@@ -26,6 +27,7 @@ type Selection =
 
 export default function CameraControlPanel() {
   const dispatch = useAppDispatch()
+  const { t } = useTranslation()
   const servers = useAppSelector((state) => state.live.servers)
   const camerasMap = useAppSelector((state) => state.live.cameraStatesById)
   const [selection, setSelection] = useState<Selection>({ kind: 'none' })
@@ -47,7 +49,7 @@ export default function CameraControlPanel() {
     <Box>
       {!isVisible && (
         <Button variant="contained" size="small" onClick={() => setIsVisible(true)}>
-          Show camera controls
+          {t('cameraControl.showControls')}
         </Button>
       )}
 
@@ -59,7 +61,7 @@ export default function CameraControlPanel() {
               <Box sx={{ minWidth: 260, border: 1, borderColor: 'divider', borderRadius: 1 }}>
                 <List dense disablePadding>
                   <ListItemButton onClick={() => setIsVisible(false)}>
-                    <ListItemText primary="Hide" primaryTypographyProps={{ color: 'text.secondary' }} />
+                    <ListItemText primary={t('cameraControl.hide')} primaryTypographyProps={{ color: 'text.secondary' }} />
                   </ListItemButton>
 
                   {serversTree.map((server) => (
@@ -71,7 +73,7 @@ export default function CameraControlPanel() {
                       >
                         <ListItemText
                           primary={server.serverId}
-                          secondary="+ new camera"
+                          secondary={t('cameraControl.newCamera')}
                           primaryTypographyProps={{ fontWeight: 600 }}
                         />
                       </ListItemButton>
@@ -118,7 +120,7 @@ export default function CameraControlPanel() {
                             onClick={() => setSelection({ kind: 'new_stream', cameraId: camera.cameraId })}
                           >
                             <ListItemText
-                              primary="+ add stream"
+                              primary={t('cameraControl.addStream')}
                               primaryTypographyProps={{ color: 'primary.main' }}
                             />
                           </ListItemButton>
@@ -179,14 +181,14 @@ export default function CameraControlPanel() {
 
                 {selection.kind === 'none' && (
                   <Typography color="text.secondary" sx={{ pt: 1 }}>
-                    Select a server, camera, or stream
+                    {t('cameraControl.selectHint')}
                   </Typography>
                 )}
               </Box>
             </Stack>
 
             <Button variant="outlined" onClick={refresh} sx={{ mt: 2 }} size="small">
-              Refresh
+              {t('common.refresh')}
             </Button>
           </CardContent>
         </Card>

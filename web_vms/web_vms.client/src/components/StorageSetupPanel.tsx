@@ -10,11 +10,13 @@ import {
   Typography,
 } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
+import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addStorage, loadStorages, removeStorage } from '../store/storageSlice'
 
 export default function StorageSetupPanel() {
   const dispatch = useAppDispatch()
+  const { t } = useTranslation()
   const storages = useAppSelector((state) => state.storage.storages)
   const storeError = useAppSelector((state) => state.storage.status)
 
@@ -28,7 +30,7 @@ export default function StorageSetupPanel() {
   const onAdd = async () => {
     setLocalError('')
     if (!storageId.trim() || !rootPath.trim()) {
-      setLocalError('Storage ID and root path are required')
+      setLocalError(t('storage.required'))
       return
     }
     const result = await dispatch(addStorage({
@@ -57,24 +59,24 @@ export default function StorageSetupPanel() {
     <Card>
       <CardContent>
         <Stack spacing={2}>
-          <Typography variant="subtitle1">Storages</Typography>
+          <Typography variant="subtitle1">{t('storage.title')}</Typography>
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="flex-end">
             <TextField
-              label="Storage ID"
+              label={t('storage.storageId')}
               value={storageId}
               onChange={(e) => setStorageId(e.target.value)}
               size="small"
             />
             <TextField
-              label="Root path"
+              label={t('storage.rootPath')}
               value={rootPath}
               onChange={(e) => setRootPath(e.target.value)}
               size="small"
               sx={{ flex: 1 }}
             />
             <TextField
-              label="Reserved (GB)"
+              label={t('storage.reservedGb')}
               type="number"
               value={reservedGb}
               onChange={(e) => setReservedGb(Number(e.target.value))}
@@ -82,14 +84,14 @@ export default function StorageSetupPanel() {
               sx={{ width: 140 }}
             />
             <Button variant="outlined" onClick={() => void onAdd()}>
-              Add
+              {t('common.add')}
             </Button>
           </Stack>
 
           {error && <Typography color="error" variant="body2">{error}</Typography>}
 
           {storages.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">No storages configured</Typography>
+            <Typography variant="body2" color="text.secondary">{t('storage.noStorages')}</Typography>
           ) : (
             <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
               {storages.map((s, i) => (
@@ -108,7 +110,7 @@ export default function StorageSetupPanel() {
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ minWidth: 80, textAlign: 'right' }}>
                     {s.reservedBytes > 0
-                      ? `${(s.reservedBytes / (1024 ** 3)).toFixed(1)} GB reserved`
+                      ? t('storage.gbReserved', { n: (s.reservedBytes / (1024 ** 3)).toFixed(1) })
                       : '—'}
                   </Typography>
                   <IconButton size="small" onClick={() => void onDelete(s.storageId)}>

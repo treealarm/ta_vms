@@ -11,6 +11,7 @@ import {
 } from '@mui/material'
 import ScienceIcon from '@mui/icons-material/Science'
 import CloseIcon from '@mui/icons-material/Close'
+import { useTranslation } from 'react-i18next'
 
 import { loadCameras, loadServers } from './store/liveSlice'
 import { loadMonitors } from './store/monitorsSlice'
@@ -27,6 +28,7 @@ import MonitorsView from './components/MonitorsView'
 
 export default function App() {
   const dispatch = useAppDispatch()
+  const { t } = useTranslation()
   const [mainTab, setMainTab] = useState(0)
   const [testsOpen, setTestsOpen] = useState(false)
 
@@ -103,16 +105,16 @@ export default function App() {
           onChange={(_, v: number) => setMainTab(v)}
           sx={{ '& .MuiTab-root': { minWidth: 90 } }}
         >
-          <Tab label="Monitors" />
-          <Tab label="Cam setup" />
-          <Tab label="Events" />
-          <Tab label="Storages" />
-          <Tab label="Recording" />
-          <Tab label="MediaMTX" />
-          <Tab label="Logs" />
+          <Tab label={t('nav.monitors')} />
+          <Tab label={t('nav.camSetup')} />
+          <Tab label={t('nav.events')} />
+          <Tab label={t('nav.storages')} />
+          <Tab label={t('nav.recording')} />
+          <Tab label={t('nav.mediaMtx')} />
+          <Tab label={t('nav.logs')} />
         </Tabs>
 
-        <Tooltip title="Tests" placement="right">
+        <Tooltip title={t('tests.title')} placement="right">
           <IconButton
             onClick={() => setTestsOpen((v) => !v)}
             sx={{ m: 1, color: testsOpen ? 'primary.main' : 'text.secondary' }}
@@ -143,7 +145,7 @@ export default function App() {
             justifyContent="space-between"
             sx={{ px: 2, py: 1, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
           >
-            <Typography variant="subtitle1" fontWeight={600}>Tests</Typography>
+            <Typography variant="subtitle1" fontWeight={600}>{t('tests.title')}</Typography>
             <IconButton size="small" onClick={() => setTestsOpen(false)}>
               <CloseIcon fontSize="small" />
             </IconButton>
