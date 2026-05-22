@@ -6,6 +6,7 @@
 /data
 cameras.json
 **/build/
+CMakeUserPresets.json
 
 # User-specific files
 *.rsuser
