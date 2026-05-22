@@ -133,7 +133,8 @@
     "noRecording": "No recording",
     "webrtcLive": "WebRTC live stream",
     "addStream": "Add stream",
-    "deleteStream": "Delete stream"
+    "deleteStream": "Delete stream",
+    "livePreview": "Live preview"
   },
   "streamOverride": {
     "override": "override",
