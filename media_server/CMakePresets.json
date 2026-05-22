@@ -7,7 +7,7 @@
       "generator": "Ninja",
       "binaryDir": "build",
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "/media/toshiba/wdblue/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_TOOLCHAIN_FILE": "/mnt/wdblue/vcpkg/scripts/buildsystems/vcpkg.cmake",
         "CMAKE_BUILD_TYPE": "Debug"
       }
     },
