@@ -139,7 +139,8 @@ void segment_writer::open_new_segment()
 
 
   AVDictionary* mux_opts = nullptr;
-  av_dict_set(&mux_opts, "movflags", "frag_keyframe+default_base_moof", 0);
+  av_dict_set(&mux_opts, "movflags",
+    "frag_keyframe+empty_moov+default_base_moof", 0);
 
   const int write_header_ret = avformat_write_header(m_ctx.get(), &mux_opts);
   av_dict_free(&mux_opts);

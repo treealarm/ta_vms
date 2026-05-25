@@ -147,16 +147,39 @@ public sealed class HlsArchiveService(
   private async Task<string> BuildPlaylistAsync(
     string cameraId, List<HlsSegment> segments, CancellationToken ct, double? startOffset = null)
   {
-    var targetDur = (int)Math.Ceiling(Math.Max(1, segments.Max(s => s.Duration.TotalSeconds)));
+    var sidxCache = await BuildSidxCacheAsync(segments, ct);
+
+    var maxDur = 1.0;
+    foreach (var s in segments)
+    {
+      if (sidxCache.TryGetValue(s.ClipUid, out var idx) && idx?.Fragments.Count > 0)
+        maxDur = Math.Max(maxDur, idx.Fragments.Max(f => f.Duration));
+      else
+        maxDur = Math.Max(maxDur, s.Duration.TotalSeconds);
+    }
+
     var playlist = new HlsPlaylistBuilder();
-    playlist.AppendHeader(targetDur, startOffset);
-    await AppendSegmentsAsync(playlist, segments, cameraId, ct);
+    playlist.AppendHeader((int)Math.Ceiling(maxDur), startOffset);
+    AppendSegments(playlist, segments, sidxCache);
     playlist.AppendEndList();
     return playlist.Build();
   }
 
-  private async Task AppendSegmentsAsync(
-    HlsPlaylistBuilder playlist, List<HlsSegment> segments, string cameraId, CancellationToken ct)
+  private async Task<Dictionary<string, Fmp4SidxParser.SegmentIndex?>> BuildSidxCacheAsync(
+    List<HlsSegment> segments, CancellationToken ct)
+  {
+    var cache = new Dictionary<string, Fmp4SidxParser.SegmentIndex?>();
+    foreach (var s in segments)
+    {
+      if (s.FilePath.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) && !cache.ContainsKey(s.ClipUid))
+        cache[s.ClipUid] = await Fmp4SidxParser.ReadAsync(fsClient, s.ClipUid, ct);
+    }
+    return cache;
+  }
+
+  private void AppendSegments(
+    HlsPlaylistBuilder playlist, List<HlsSegment> segments,
+    IReadOnlyDictionary<string, Fmp4SidxParser.SegmentIndex?> sidxCache)
   {
     var prevClipUid = "";
     var mapEmittedForClip = "";
@@ -168,25 +191,34 @@ public sealed class HlsArchiveService(
         playlist.AppendDiscontinuity();
       prevClipUid = s.ClipUid;
 
-      var isFmp4 = s.FilePath.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase);
-
-      if (isFmp4 && s.ClipUid != mapEmittedForClip)
+      if (s.FilePath.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) &&
+          sidxCache.TryGetValue(s.ClipUid, out var idx) && idx is not null)
       {
-        var initSize = await Fmp4InitParser.ReadInitSizeAsync(fsClient, s.ClipUid, ct);
-        if (initSize is { } n)
+        if (s.ClipUid != mapEmittedForClip)
         {
-          var initUri = BuildSegmentUri(s.ClipUid, byteRange: new ByteRange(0, n));
-          playlist.AppendMap(initUri);
+          playlist.AppendMap(BuildSegmentUri(s.ClipUid, new ByteRange(0, idx.InitSize)));
           mapEmittedForClip = s.ClipUid;
-
-          // Rebuild segment with media offset so the player skips the init bytes
-          segments[i] = s with { ByteRange = new ByteRange(n, 0) };
-          s = segments[i];
         }
+
+        if (idx.Fragments.Count > 0)
+        {
+          // sidx found: one EXTINF per moof fragment
+          foreach (var frag in idx.Fragments)
+            playlist.AppendSegment(
+              BuildSegmentUri(s.ClipUid, new ByteRange(frag.Offset, frag.Size)),
+              frag.Duration);
+        }
+        else
+        {
+          // old file without sidx: serve media part as one whole segment
+          playlist.AppendSegment(
+            BuildSegmentUri(s.ClipUid, new ByteRange(idx.InitSize, 0)),
+            s.Duration.TotalSeconds);
+        }
+        continue;
       }
 
-      var uri = BuildSegmentUri(s.ClipUid, s.ByteRange);
-      playlist.AppendSegment(uri, s.Duration.TotalSeconds);
+      playlist.AppendSegment(BuildSegmentUri(s.ClipUid, s.ByteRange), s.Duration.TotalSeconds);
     }
   }
 
