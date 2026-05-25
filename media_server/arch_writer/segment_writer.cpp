@@ -18,13 +18,11 @@ segment_writer::segment_writer(
   m_segment_duration(segment_duration.count() > 0 ? segment_duration : std::chrono::seconds(60)),
   m_packet_transcoder([]
     {
-      recording_storage storage;
       sync_packet_transcoder::codec_config config;
       config.video_codec = AV_CODEC_ID_H264;
       config.allow_hevc_video_passthrough = true;
-      const bool is_ts = storage.file_ext() == recording_storage::k_ts_ext;
-      config.audio_codec = is_ts ? AV_CODEC_ID_AAC : AV_CODEC_ID_OPUS;
-      config.allow_all_audio_passthrough = !is_ts;
+      config.audio_codec = AV_CODEC_ID_AAC;
+      config.allow_all_audio_passthrough = false;
       return config;
     }())
 {
@@ -140,9 +138,17 @@ void segment_writer::open_new_segment()
   }
 
 
-  if (avformat_write_header(m_ctx.get(), nullptr) < 0)
+  AVDictionary* mux_opts = nullptr;
+  av_dict_set(&mux_opts, "movflags",
+    "frag_keyframe+empty_moov+default_base_moof", 0);
+
+  const int write_header_ret = avformat_write_header(m_ctx.get(), &mux_opts);
+  av_dict_free(&mux_opts);
+  if (write_header_ret < 0)
   {
-    logger::instance().error("avformat_write_header failed");
+    char av_errbuf[AV_ERROR_MAX_STRING_SIZE]{};
+    av_strerror(write_header_ret, av_errbuf, sizeof(av_errbuf));
+    logger::instance().error(std::format("avformat_write_header failed: {}", av_errbuf));
     avio_closep(&m_ctx->pb);
     m_ctx.reset();
     m_output_streams.clear();

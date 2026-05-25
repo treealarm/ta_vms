@@ -31,12 +31,6 @@ std::filesystem::path recording_storage::resolve_storage_base_path()
 
 std::filesystem::path recording_storage::file_ext()
 {
-  if (const char* value = std::getenv("VMS_FILE_EXT")) {
-    if (value[0] != '\0') {
-      return value;
-    }
-  }
-
-  return k_ts_ext;
+  return k_ext;
 }
 

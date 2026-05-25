@@ -1,7 +1,7 @@
 
 services:
   postgres:
-    image: postgres:16
+    image: postgres:latest
     environment:
       POSTGRES_USER: "${POSTGRES_USER:-postgres}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
@@ -47,7 +47,7 @@ services:
 
   vmscfg-dapr:
     profiles: [app]
-    image: "daprio/daprd:1.14.4"
+    image: "daprio/daprd:latest"
     command:
       - "./daprd"
       - "-app-id"
@@ -100,7 +100,7 @@ services:
 
   vmsfs-dapr:
     profiles: [app]
-    image: "daprio/daprd:1.14.4"
+    image: "daprio/daprd:latest"
     command:
       - "./daprd"
       - "-app-id"
@@ -119,7 +119,7 @@ services:
 
   vmsonvif-dapr:
     profiles: [app]
-    image: "daprio/daprd:1.14.4"
+    image: "daprio/daprd:latest"
     command:
       - "./daprd"
       - "-app-id"
@@ -142,7 +142,7 @@ services:
 
   vmsonvif-actors-dapr:
     profiles: [app]
-    image: "daprio/daprd:1.14.4"
+    image: "daprio/daprd:latest"
     command:
       - "./daprd"
       - "-app-id"
@@ -186,7 +186,7 @@ services:
 
   vms-dapr:
     profiles: [app]
-    image: "daprio/daprd:1.14.4"
+    image: "daprio/daprd:latest"
     command:
       - "./daprd"
       - "-app-id"
@@ -219,7 +219,7 @@ services:
 
   web_vms-dapr:
     profiles: [app]
-    image: "daprio/daprd:1.14.4"
+    image: "daprio/daprd:latest"
     command:
       - "./daprd"
       - "-app-id"
