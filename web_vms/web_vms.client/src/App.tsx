@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Box,
+  Button,
   IconButton,
   Paper,
   Stack,
@@ -12,6 +13,7 @@ import {
 import ScienceIcon from '@mui/icons-material/Science'
 import CloseIcon from '@mui/icons-material/Close'
 import { useTranslation } from 'react-i18next'
+import i18n from './i18n'
 
 import { loadCameras, loadServers } from './store/liveSlice'
 import { loadMonitors } from './store/monitorsSlice'
@@ -34,6 +36,16 @@ export default function App() {
   const { t } = useTranslation()
   const [mainTab, setMainTab] = useState(0)
   const [testsOpen, setTestsOpen] = useState(false)
+  const [lang, setLang] = useState<'en' | 'es'>(
+    () => (localStorage.getItem('lang') === 'es' ? 'es' : 'en')
+  )
+
+  const toggleLang = () => {
+    const next = lang === 'en' ? 'es' : 'en'
+    setLang(next)
+    void i18n.changeLanguage(next)
+    localStorage.setItem('lang', next)
+  }
 
   const camerasMap = useAppSelector((state) => state.live.cameraStatesById)
 
@@ -129,14 +141,24 @@ export default function App() {
           <Tab label={t('nav.logs')} />
         </Tabs>
 
-        <Tooltip title={t('tests.title')} placement="right">
-          <IconButton
-            onClick={() => setTestsOpen((v) => !v)}
-            sx={{ m: 1, color: testsOpen ? 'primary.main' : 'text.secondary' }}
+        <Stack alignItems="center" spacing={0.5} sx={{ mb: 1 }}>
+          <Tooltip title={t('tests.title')} placement="right">
+            <IconButton
+              onClick={() => setTestsOpen((v) => !v)}
+              sx={{ color: testsOpen ? 'primary.main' : 'text.secondary' }}
+            >
+              <ScienceIcon />
+            </IconButton>
+          </Tooltip>
+          <Button
+            size="small"
+            variant="text"
+            onClick={toggleLang}
+            sx={{ minWidth: 0, px: 1, py: 0.5, fontSize: '0.7rem', color: 'text.secondary' }}
           >
-            <ScienceIcon />
-          </IconButton>
-        </Tooltip>
+            {lang === 'en' ? 'ES' : 'EN'}
+          </Button>
+        </Stack>
       </Box>
 
       {testsOpen && (
