@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useImperativeHandle, useState } from 'react'
 import {
   Box,
   Button,
@@ -21,6 +21,8 @@ import EditIcon from '@mui/icons-material/Edit'
 import { useTranslation } from 'react-i18next'
 import type { RecordingProfileDto, RecordingMode } from '../dto/dtos'
 
+export type RecordingProfilesHandle = { applyIfDirty: () => Promise<void> }
+
 const EMPTY_PROFILE: Omit<RecordingProfileDto, 'id'> = {
   name: '',
   mode: 'continuous',
@@ -30,7 +32,7 @@ const EMPTY_PROFILE: Omit<RecordingProfileDto, 'id'> = {
   isOverridePreset: false,
 }
 
-export default function RecordingProfilesPanel() {
+export default function RecordingProfilesPanel({ ref }: { ref?: React.Ref<RecordingProfilesHandle> }) {
   const { t } = useTranslation()
   const [profiles, setProfiles] = useState<RecordingProfileDto[]>([])
   const [editing, setEditing] = useState<RecordingProfileDto | null>(null)
@@ -50,6 +52,14 @@ export default function RecordingProfilesPanel() {
 
   useEffect(() => { void load() }, [load])
 
+  // Warn browser on close when editing
+  useEffect(() => {
+    if (!editing) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [editing])
+
   const startNew = () => {
     setEditing({ id: '', ...EMPTY_PROFILE })
     setIsNew(true)
@@ -64,8 +74,7 @@ export default function RecordingProfilesPanel() {
 
   const cancel = () => { setEditing(null); setError(null) }
 
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const saveInternal = async (): Promise<void> => {
     if (!editing) return
     setBusy(true)
     setError(null)
@@ -85,6 +94,17 @@ export default function RecordingProfilesPanel() {
       setBusy(false)
     }
   }
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await saveInternal()
+  }
+
+  useImperativeHandle(ref, () => ({
+    applyIfDirty: async () => {
+      if (editing?.name) await saveInternal()
+    }
+  }))
 
   const remove = async (id: string) => {
     setBusy(true)
@@ -258,7 +278,7 @@ export default function RecordingProfilesPanel() {
 
           <Stack direction="row" spacing={1}>
             <Button type="submit" variant="outlined" size="small" disabled={busy}>
-              {isNew ? t('recording.create') : t('common.save')}
+              {isNew ? t('recording.create') : t('common.apply')}
             </Button>
             <Button size="small" onClick={cancel} disabled={busy}>{t('common.cancel')}</Button>
           </Stack>

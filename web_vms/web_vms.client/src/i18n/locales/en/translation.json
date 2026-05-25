@@ -1,6 +1,7 @@
 {
   "common": {
     "save": "Save",
+    "apply": "Apply",
     "cancel": "Cancel",
     "refresh": "Refresh",
     "add": "Add",

@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { Box, Button, Chip, CircularProgress, FormControlLabel, MenuItem, Stack, Switch, TextField, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
-import { addCamera } from '../store/liveSlice'
+import { addCamera, fetchCameraState } from '../store/liveSlice'
 import type { CameraStreamDto, RecordingProfileDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
 
+export type StreamSetupHandle = { applyIfDirty: () => Promise<void> }
+
 type Props = {
+  ref?: React.Ref<StreamSetupHandle>
   cameraId: string
   streamName: string | null  // null = new stream
   onSaved: () => Promise<void>
@@ -15,7 +18,7 @@ type Props = {
 
 type ProfileInfo = { token: string; name: string; width: number; height: number; encoding: string }
 
-export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemoved }: Props) {
+export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, onRemoved }: Props) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const camera = useAppSelector((state) => state.live.cameraStatesById[cameraId])
@@ -36,6 +39,21 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
   const [availableOnvifProfiles, setAvailableOnvifProfiles] = useState<ProfileInfo[]>([])
   const [onvifLoading, setOnvifLoading] = useState(false)
   const [onvifError, setOnvifError] = useState<string | null>(null)
+
+  // Snapshot of the saved state — used for dirty detection and Cancel
+  const snap = useRef({
+    rtspUrl: existingStream?.rtspUrl ?? '',
+    profileToken: existingStream?.profileToken ?? '',
+    webRtc: existingStream?.webRtc ?? false,
+    selectedProfileId: existingStream?.recordingProfile?.id ?? '',
+  })
+
+  const dirty = !isNew && (
+    rtspUrl !== snap.current.rtspUrl
+    || profileToken !== snap.current.profileToken
+    || webRtc !== snap.current.webRtc
+    || selectedProfileId !== snap.current.selectedProfileId
+  )
 
   const fetchOnvifProfiles = useCallback(async () => {
     setOnvifLoading(true)
@@ -70,13 +88,26 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
     void fetchOnvifProfiles()
   }, [fetchOnvifProfiles])
 
+  // Warn browser on close when dirty
+  useEffect(() => {
+    if (!dirty) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [dirty])
+
+  // applyInternalRef always points to the latest apply logic so useImperativeHandle
+  // can be called unconditionally (before the camera null-guard below).
+  const applyInternalRef = useRef<() => Promise<boolean>>(async () => true)
+  useImperativeHandle(ref, () => ({ applyIfDirty: async () => { await applyInternalRef.current() } }), [])
+
   if (!camera) return null
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const applyInternal = async (): Promise<boolean> => {
+    if (!dirty) return true
     const profile = recordingProfiles.find((p) => p.id === selectedProfileId)
     const updated: CameraStreamDto = {
-      streamName: isNew ? name : streamName!,
+      streamName: streamName!,
       rtspUrl,
       profileToken,
       webRtc,
@@ -84,7 +115,35 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
     }
     const others = (camera.streams ?? []).filter((s) => s.streamName !== updated.streamName)
     const result = await dispatch(addCamera({ ...camera, streams: [...others, updated] }))
-    if (!addCamera.rejected.match(result)) await onSaved()
+    if (!addCamera.rejected.match(result)) {
+      snap.current = { rtspUrl, profileToken, webRtc, selectedProfileId }
+      await dispatch(fetchCameraState(cameraId))
+      return true
+    }
+    return false
+  }
+  // Keep the ref up to date on every render so the handle always calls the latest closure
+  applyInternalRef.current = applyInternal
+
+  const handleApply = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (isNew) {
+      const profile = recordingProfiles.find((p) => p.id === selectedProfileId)
+      const updated: CameraStreamDto = { streamName: name, rtspUrl, profileToken, webRtc, recordingProfile: profile }
+      const others = (camera.streams ?? []).filter((s) => s.streamName !== updated.streamName)
+      const result = await dispatch(addCamera({ ...camera, streams: [...others, updated] }))
+      if (!addCamera.rejected.match(result)) await onSaved()
+    } else {
+      const ok = await applyInternal()
+      if (ok) await onSaved()
+    }
+  }
+
+  const handleCancel = () => {
+    setRtspUrl(snap.current.rtspUrl)
+    setProfileToken(snap.current.profileToken)
+    setWebRtc(snap.current.webRtc)
+    setSelectedProfileId(snap.current.selectedProfileId)
   }
 
   const handleRemove = async () => {
@@ -96,7 +155,7 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
   const showPreview = !isNew && webRtc
 
   return (
-    <Stack component="form" direction="row" spacing={3} alignItems="flex-start" onSubmit={handleSave}>
+    <Stack component="form" direction="row" spacing={3} alignItems="flex-start" onSubmit={handleApply}>
       {/* Left: form fields */}
       <Stack spacing={2} sx={{ flex: 1, minWidth: 0 }}>
         <Typography variant="subtitle2" color="text.secondary">
@@ -198,9 +257,14 @@ export default function StreamSetupPanel({ cameraId, streamName, onSaved, onRemo
         />
 
         <Stack direction="row" spacing={1}>
-          <Button type="submit" variant="outlined" size="small">
-            {isNew ? t('stream.addStream') : t('common.save')}
+          <Button type="submit" variant="outlined" size="small" disabled={!isNew && !dirty}>
+            {isNew ? t('stream.addStream') : t('common.apply')}
           </Button>
+          {!isNew && (
+            <Button variant="text" size="small" onClick={handleCancel} disabled={!dirty}>
+              {t('common.cancel')}
+            </Button>
+          )}
           {!isNew && (
             <Button color="error" variant="outlined" size="small" onClick={handleRemove}>
               {t('stream.deleteStream')}

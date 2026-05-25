@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Box,
   Button,
@@ -46,6 +46,22 @@ export default function CameraStoragesControl({ cameraId }: Props) {
     setDirty(false)
   }, [savedAssignments])
 
+  // Auto-apply on unmount if dirty
+  const applyRef = useRef(async () => {})
+  applyRef.current = async () => {
+    if (!dirty) return
+    await dispatch(setCameraStorages({ cameraId, assignments }))
+  }
+  useEffect(() => () => { void applyRef.current() }, [])
+
+  // Warn browser on close when dirty
+  useEffect(() => {
+    if (!dirty) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [dirty])
+
   const assignedIds = new Set(assignments.map((a) => a.storageId))
   const available = allStorages.filter((s) => !assignedIds.has(s.storageId))
 
@@ -76,8 +92,13 @@ export default function CameraStoragesControl({ cameraId }: Props) {
     setDirty(true)
   }
 
-  const onSave = async () => {
+  const onApply = async () => {
     await dispatch(setCameraStorages({ cameraId, assignments }))
+    setDirty(false)
+  }
+
+  const onCancel = () => {
+    setAssignments(savedAssignments)
     setDirty(false)
   }
 
@@ -135,8 +156,11 @@ export default function CameraStoragesControl({ cameraId }: Props) {
         <Button variant="outlined" size="small" disabled={!selectedStorageId} onClick={onAdd}>
           {t('common.add')}
         </Button>
-        <Button variant="contained" size="small" disabled={!dirty} onClick={() => void onSave()}>
-          {t('common.save')}
+        <Button variant="text" size="small" disabled={!dirty} onClick={onCancel}>
+          {t('common.cancel')}
+        </Button>
+        <Button variant="contained" size="small" disabled={!dirty} onClick={() => void onApply()}>
+          {t('common.apply')}
         </Button>
       </Stack>
     </Stack>
