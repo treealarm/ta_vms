@@ -18,6 +18,7 @@ cam_stream::cam_stream(
   : m_rtsp_url(rtsp_url)
   , m_camera_id(camera_id)
   , m_stream_name(stream_name)
+  , m_profile_token(profile_token)
   , m_user(user)
   , m_pass(pass)
   , m_webrtc_rtsp_push_url(webrtc_rtsp_push_url)

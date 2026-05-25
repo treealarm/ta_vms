@@ -57,6 +57,7 @@ public:
     const std::string& camera_id,
     const std::string& stream_name,
     const std::string& rtsp_url,
+    const std::string& profile_token,
     const std::string& user,
     const std::string& pass,
     const recording_policy_spec& policy,

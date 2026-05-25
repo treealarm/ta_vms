@@ -73,6 +73,7 @@ public class LiveController(
         CameraId            = request.CameraId,
         StreamName          = stream.StreamName,
         RtspUrl             = stream.RtspUrl ?? "",
+        ProfileToken        = stream.ProfileToken ?? "",
         WebRtc              = stream.WebRtc,
         Cred                = cred,
         RecordingMode       = recordingMode,
