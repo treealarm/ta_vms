@@ -29,7 +29,7 @@ public static class Fmp4SidxParser
     // Read start of file: ftyp + moov (up to 64 KB).
     var headerData = await ReadRangeAsync(fsClient, clipUid, 0, Math.Min(65536UL, fileSize), ct);
     if (headerData == null) return null;
-    if (!TryParseHeader(headerData, out var initSize, out var timescale)) return null;
+    if (!TryParseHeader(headerData, out var initSize, out var timescale, out var videoTrackId)) return null;
 
     // mfro is the last 16 bytes of the file.
     // Its field box_size gives the total byte size of the mfra container.
@@ -45,7 +45,7 @@ public static class Fmp4SidxParser
     // Read and parse mfra.
     var mfraData = await ReadRangeAsync(fsClient, clipUid, mfraStart, mfraBoxSize, ct);
     if (mfraData == null) return null;
-    var entries = ParseMfra(mfraData);
+    var entries = ParseMfra(mfraData, videoTrackId);
     if (entries == null || entries.Count == 0)
       return new SegmentIndex(initSize, Array.Empty<FragmentEntry>());
 
@@ -72,11 +72,12 @@ public static class Fmp4SidxParser
     return new SegmentIndex(initSize, fragments);
   }
 
-  // Parse ftyp+moov to find init section end and video track timescale.
-  private static bool TryParseHeader(byte[] data, out ulong initSize, out uint timescale)
+  // Parse ftyp+moov to find init section end, video track timescale, and video track_ID.
+  private static bool TryParseHeader(byte[] data, out ulong initSize, out uint timescale, out uint videoTrackId)
   {
     initSize = 0;
     timescale = 90000;
+    videoTrackId = 1;
     ulong pos = 0;
 
     while (pos + 8 <= (ulong)data.Length)
@@ -90,7 +91,7 @@ public static class Fmp4SidxParser
 
       if (type == "moov")
       {
-        TryParseMoovTimescale(data, pos + 8, pos + size, ref timescale);
+        ParseMoovVideoTrack(data, pos + 8, pos + size, ref timescale, ref videoTrackId);
         return true;
       }
 
@@ -103,7 +104,10 @@ public static class Fmp4SidxParser
     return initSize > 0;
   }
 
-  private static void TryParseMoovTimescale(byte[] data, ulong start, ulong end, ref uint timescale)
+  // Walk moov children; for each trak, check if it is the video track (has vmhd)
+  // and if so, read its tkhd track_ID and mdhd timescale.
+  private static void ParseMoovVideoTrack(
+    byte[] data, ulong start, ulong end, ref uint timescale, ref uint videoTrackId)
   {
     ulong pos = start;
     while (pos + 8 <= end && pos + 8 <= (ulong)data.Length)
@@ -113,13 +117,25 @@ public static class Fmp4SidxParser
       var type = ReadFourCc(data, pos + 4);
 
       if (type == "trak")
-        TryFindMdhd(data, pos + 8, Math.Min(pos + size, end), ref timescale);
+      {
+        uint tId = 0;
+        uint tScale = 0;
+        bool isVideo = false;
+        ParseTrak(data, pos + 8, Math.Min(pos + size, end), ref tId, ref tScale, ref isVideo);
+        if (isVideo && tId > 0 && tScale > 0)
+        {
+          videoTrackId = tId;
+          timescale = tScale;
+          return;
+        }
+      }
 
       pos += size;
     }
   }
 
-  private static void TryFindMdhd(byte[] data, ulong start, ulong end, ref uint timescale)
+  private static void ParseTrak(
+    byte[] data, ulong start, ulong end, ref uint trackId, ref uint timescale, ref bool isVideo)
   {
     ulong pos = start;
     while (pos + 8 <= end && pos + 8 <= (ulong)data.Length)
@@ -127,36 +143,79 @@ public static class Fmp4SidxParser
       var size = ReadUInt32Be(data, pos);
       if (size < 8) return;
       var type = ReadFourCc(data, pos + 4);
+      var childEnd = Math.Min(pos + size, end);
 
-      if (type == "mdia")
-        TryFindMdhd(data, pos + 8, Math.Min(pos + size, end), ref timescale);
-      else if (type == "mdhd")
+      if (type == "tkhd")
       {
-        // FullBox: size(4) + "mdhd"(4) + version(1) + flags(3)
-        // version=0: create(4) + modify(4) + timescale(4)
-        // version=1: create(8) + modify(8) + timescale(4)
-        if (pos + 12 >= (ulong)data.Length) return;
-        int version = data[(int)(pos + 8)];
-        ulong tsOffset = pos + 12 + (version == 1 ? 16UL : 8UL);
-        if (tsOffset + 4 <= (ulong)data.Length)
-          timescale = ReadUInt32Be(data, tsOffset);
-        return;
+        // FullBox + version(1) + flags(3); version=0: create(4)+modify(4)+track_ID(4)
+        //                                  version=1: create(8)+modify(8)+track_ID(4)
+        if (pos + 12 < (ulong)data.Length)
+        {
+          int v = data[(int)(pos + 8)];
+          ulong idOff = pos + 12 + (v == 1 ? 16UL : 8UL);
+          if (idOff + 4 <= (ulong)data.Length)
+            trackId = ReadUInt32Be(data, idOff);
+        }
       }
+      else if (type == "mdia")
+        ParseMdia(data, pos + 8, childEnd, ref timescale, ref isVideo);
 
+      pos += size;
+    }
+  }
+
+  private static void ParseMdia(
+    byte[] data, ulong start, ulong end, ref uint timescale, ref bool isVideo)
+  {
+    ulong pos = start;
+    while (pos + 8 <= end && pos + 8 <= (ulong)data.Length)
+    {
+      var size = ReadUInt32Be(data, pos);
+      if (size < 8) return;
+      var type = ReadFourCc(data, pos + 4);
+      var childEnd = Math.Min(pos + size, end);
+
+      if (type == "mdhd")
+      {
+        if (pos + 12 < (ulong)data.Length)
+        {
+          int v = data[(int)(pos + 8)];
+          ulong tsOff = pos + 12 + (v == 1 ? 16UL : 8UL);
+          if (tsOff + 4 <= (ulong)data.Length)
+            timescale = ReadUInt32Be(data, tsOff);
+        }
+      }
+      else if (type == "minf")
+        ParseMinf(data, pos + 8, childEnd, ref isVideo);
+
+      pos += size;
+    }
+  }
+
+  private static void ParseMinf(byte[] data, ulong start, ulong end, ref bool isVideo)
+  {
+    ulong pos = start;
+    while (pos + 8 <= end && pos + 8 <= (ulong)data.Length)
+    {
+      var size = ReadUInt32Be(data, pos);
+      if (size < 8) return;
+      if (ReadFourCc(data, pos + 4) == "vmhd") { isVideo = true; return; }
       pos += size;
     }
   }
 
   private record struct TfraEntry(ulong Time, ulong MoofOffset);
 
-  // Parse mfra box (data starts at offset 0) and return tfra entries.
-  private static List<TfraEntry>? ParseMfra(byte[] data)
+  // Parse mfra box (data starts at offset 0).
+  // Prefers the tfra whose track_ID matches videoTrackId; falls back to any non-empty tfra.
+  private static List<TfraEntry>? ParseMfra(byte[] data, uint videoTrackId)
   {
     if (data.Length < 8) return null;
     if (ReadFourCc(data, 4) != "mfra") return null;
 
     ulong mfraSize = ReadUInt32Be(data, 0);
     ulong pos = 8;
+    List<TfraEntry>? fallback = null;
 
     while (pos + 8 <= mfraSize && pos + 8 <= (ulong)data.Length)
     {
@@ -166,14 +225,20 @@ public static class Fmp4SidxParser
 
       if (type == "tfra")
       {
+        // track_ID is the first field after the FullBox header (offset 12)
+        uint trackId = pos + 16 <= (ulong)data.Length ? ReadUInt32Be(data, pos + 12) : 0;
         var entries = ParseTfra(data, pos, pos + size);
-        if (entries != null && entries.Count > 0) return entries;
+        if (entries != null && entries.Count > 0)
+        {
+          if (trackId == videoTrackId) return entries;
+          fallback ??= entries;
+        }
       }
 
       pos += size;
     }
 
-    return null;
+    return fallback;
   }
 
   // Parse a single tfra box.
