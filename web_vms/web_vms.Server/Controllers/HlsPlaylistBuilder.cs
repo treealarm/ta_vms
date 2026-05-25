@@ -10,7 +10,7 @@ public sealed class HlsPlaylistBuilder
   public void AppendHeader(int targetDuration, double? startOffset = null)
   {
     _sb.Append("#EXTM3U").Append(Lf);
-    _sb.Append("#EXT-X-VERSION:6").Append(Lf);
+    _sb.Append("#EXT-X-VERSION:7").Append(Lf);
     _sb.Append($"#EXT-X-TARGETDURATION:{targetDuration}").Append(Lf);
     _sb.Append("#EXT-X-MEDIA-SEQUENCE:0").Append(Lf);
     if (startOffset.HasValue)
@@ -18,6 +18,9 @@ public sealed class HlsPlaylistBuilder
   }
 
   public void AppendDiscontinuity() => _sb.Append("#EXT-X-DISCONTINUITY").Append(Lf);
+
+  public void AppendMap(string uri)
+    => _sb.Append($"#EXT-X-MAP:URI=\"{uri}\"").Append(Lf);
 
   public void AppendSegment(string uri, double durSec)
   {

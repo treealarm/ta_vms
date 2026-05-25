@@ -7,8 +7,7 @@
 class recording_storage
 {
 public:
-  static constexpr std::string_view k_ts_ext = ".ts";
-  static constexpr std::string_view k_mkv_ext = ".mkv";
+  static constexpr std::string_view k_ext = ".mp4";
 
   std::filesystem::path make_segment_path(
     const std::string& camera_id,

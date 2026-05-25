@@ -67,7 +67,9 @@ public sealed class ArchiveTsStreamer(FsService.FsServiceClient fsClient) : IArc
   }
 
   private static string ContentType(string filePath) =>
-    filePath.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase) ? "video/x-matroska" : "video/mp2t";
+    filePath.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase) ? "video/x-matroska" :
+    filePath.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ? "video/mp4" :
+    "video/mp2t";
 
   private static HttpRange? ParseHttpRange(string? hdr, ulong entityLen)
   {
