@@ -16,9 +16,12 @@
     "camSetup": "Cámaras",
     "events": "Eventos",
     "storages": "Almacenes",
-    "recording": "Grabación",
+    "recording": "Perfiles Grab.",
     "mediaMtx": "MediaMTX",
-    "logs": "Registros"
+    "onvif": "Eventos ONVIF",
+    "logs": "Registros",
+    "goAdmin": "Admin",
+    "goOperator": "Operador"
   },
   "tests": {
     "title": "Pruebas"
@@ -35,7 +38,8 @@
     "onvifPort": "Puerto ONVIF",
     "addCamera": "Agregar cámara",
     "deleteCamera": "Eliminar cámara",
-    "livePreview": "Vista en vivo ({{stream}})"
+    "livePreview": "Vista en vivo ({{stream}})",
+    "onvifEventsEnabled": "Suscribirse a eventos ONVIF"
   },
   "cameraControl": {
     "showControls": "Mostrar controles de cámara",
@@ -73,6 +77,7 @@
     "segmentSec": "Segmento, seg",
     "overridePreset": "Mostrar como preset de anulación",
     "overridePresetChip": "preset de anulación",
+    "builtinChip": "sistema",
     "create": "Crear",
     "prePostSeg": "pre {{pre}}s · post {{post}}s · seg {{seg}}s",
     "seg": "seg {{seg}}s",
@@ -118,6 +123,7 @@
     "alarmStart": "alarm_start_ts",
     "alarmEnd": "alarm_end_ts",
     "noRows": "Sin filas.",
+    "refresh": "Actualizar",
     "loadOlder": "Cargar anteriores",
     "archivePreview": "Vista previa de archivo (HLS en alarm_start_ts; alarm end es solo referencia)",
     "retry": "Reintentar"
@@ -143,6 +149,7 @@
     "overridePlaceholder": "Anular…"
   },
   "monitors": {
+    "title": "Monitores",
     "noMonitors": "Sin monitores configurados",
     "createHint": "Haga clic en + para crear su primer monitor",
     "newMonitor": "Nuevo monitor",
@@ -152,7 +159,9 @@
     "newTitle": "Nuevo monitor",
     "layout": "Diseño",
     "cameraPool": "Pool de cámaras (ordenado)",
-    "addCamera": "Agregar cámara"
+    "addCamera": "Agregar cámara",
+    "cameras_one": "cámara",
+    "cameras_other": "cámaras"
   },
   "simulation": {
     "title": "Acciones de prueba",
@@ -177,6 +186,26 @@
     "default": "(predeterminado)",
     "noClips": "No se encontraron clips para este evento.",
     "cameraAlarm": "Cámara <1>{{camera}}</1> · inicio de alarma {{start}} · fin de alarma {{end}}"
+  },
+  "onvifFilters": {
+    "tabSetup": "Configuración",
+    "tabFilters": "Filtros ONVIF",
+    "tabDebug": "Eventos ONVIF",
+    "filterText": "Subcadena de tópico / carga útil",
+    "timeoutSec": "Duración de grabación (seg)",
+    "addFilter": "Agregar",
+    "noFilters": "Sin filtros configurados",
+    "debugNoEvents": "Aún no se han recibido eventos",
+    "debugTime": "Hora",
+    "debugTopic": "Tópico",
+    "debugRefresh": "Actualizar",
+    "debugPayload": "Carga útil completa (XML)",
+    "autoRefresh": "Auto-actualizar"
+  },
+  "onvifSubs": {
+    "description": "Las cámaras de esta lista reciben eventos ONVIF. Activa el guardia para disparar grabaciones de retención con los filtros de alarma.",
+    "noCameras": "No hay cámaras agregadas.",
+    "addCamera": "Agregar cámara"
   },
   "serverSetup": {
     "title": "Configuración de cámara",

@@ -9,6 +9,7 @@ public record RecordingProfileDto
   public uint PostRecordSeconds { get; init; }
   public uint SegmentSeconds { get; init; }
   public bool IsOverridePreset { get; init; }
+  public bool IsBuiltin { get; init; }
 }
 
 public record CameraStreamDto
@@ -55,4 +56,7 @@ public record CameraSetupDto
   public string? MediaMtxServerId { get; init; }
   /// <summary>WebRTC client URL for this camera's assigned MediaMTX server; filled by web_vms.Server.</summary>
   public string? MediaMtxWebrtcUrl { get; init; }
+  public bool OnvifEventsEnabled { get; init; }
+  public bool HasOnvifFilters    { get; init; }
+  public bool OnvifManaged       { get; init; }
 }

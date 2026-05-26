@@ -1,12 +1,14 @@
+using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using NpgsqlTypes;
 using Vms.Cfg;
 
 namespace VmsCfg;
 
-public class CameraStorage(NpgsqlDataSource dataSource)
+public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfgDbContext> dbFactory)
 {
   private readonly NpgsqlDataSource _dataSource = dataSource;
+  private static readonly Guid BuiltinContinuousProfileId = new("00000000-0000-0000-0000-000000000001");
 
   public async Task SetupCameraAsync(CameraSetup camera, CancellationToken ct)
   {
@@ -122,7 +124,10 @@ public class CameraStorage(NpgsqlDataSource dataSource)
     var cameras = new List<CameraSetup>();
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id
+      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id,
+             EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id AND s.subscribed = true) AS onvif_events_enabled,
+             EXISTS(SELECT 1 FROM onvif_alarm_filter f WHERE f.camera_id = camera_setup.camera_id) AS has_onvif_filters,
+             EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id) AS onvif_managed
       FROM camera_setup
       WHERE $1 = '' OR server_id = $1
       ORDER BY camera_id;
@@ -145,7 +150,10 @@ public class CameraStorage(NpgsqlDataSource dataSource)
     CameraSetup? setup = null;
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id
+      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id,
+             EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id AND s.subscribed = true) AS onvif_events_enabled,
+             EXISTS(SELECT 1 FROM onvif_alarm_filter f WHERE f.camera_id = camera_setup.camera_id) AS has_onvif_filters,
+             EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id) AS onvif_managed
       FROM camera_setup
       WHERE camera_id = $1;
       """, connection))
@@ -174,7 +182,7 @@ public class CameraStorage(NpgsqlDataSource dataSource)
   public async Task<List<RecordingProfile>> ListRecordingProfilesAsync(CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      SELECT id, name, mode, pre_record_seconds, post_record_seconds, segment_seconds, is_override_preset
+      SELECT id, name, mode, pre_record_seconds, post_record_seconds, segment_seconds, is_override_preset, is_builtin
       FROM recording_profile
       ORDER BY name;
       """);
@@ -197,7 +205,8 @@ public class CameraStorage(NpgsqlDataSource dataSource)
         pre_record_seconds  = EXCLUDED.pre_record_seconds,
         post_record_seconds = EXCLUDED.post_record_seconds,
         segment_seconds     = EXCLUDED.segment_seconds,
-        is_override_preset  = EXCLUDED.is_override_preset;
+        is_override_preset  = EXCLUDED.is_override_preset
+      WHERE recording_profile.is_builtin = false;
       """);
     command.Parameters.AddWithValue(profile.Id ?? string.Empty);
     command.Parameters.AddWithValue(profile.Name);
@@ -234,10 +243,51 @@ public class CameraStorage(NpgsqlDataSource dataSource)
     await command.ExecuteNonQueryAsync(ct);
   }
 
+  public async Task<bool> ActivateAlarmOverrideAsync(string cameraId, string? streamName, DateTime until, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var rows = await db.CameraStreams
+      .Where(cs => cs.CameraId == cameraId
+                && (streamName == null || cs.StreamName == streamName)
+                && (cs.AlarmOverrideUntil != null
+                    || (cs.OverrideProfileId == null
+                        && (cs.RecordingProfileId == null
+                            || cs.RecordingProfile!.Mode == "off"))))
+      .ExecuteUpdateAsync(s => s
+        .SetProperty(cs => cs.OverrideProfileId, BuiltinContinuousProfileId)
+        .SetProperty(cs => cs.AlarmOverrideUntil,
+          cs => cs.AlarmOverrideUntil == null || cs.AlarmOverrideUntil < until ? until : cs.AlarmOverrideUntil),
+        ct);
+    return rows > 0;
+  }
+
+  public async Task<bool> ClearAlarmOverrideAsync(string cameraId, string streamName, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var rows = await db.CameraStreams
+      .Where(cs => cs.CameraId == cameraId && cs.StreamName == streamName && cs.AlarmOverrideUntil != null)
+      .ExecuteUpdateAsync(s => s
+        .SetProperty(cs => cs.OverrideProfileId, (Guid?)null)
+        .SetProperty(cs => cs.AlarmOverrideUntil, (DateTime?)null),
+        ct);
+    return rows > 0;
+  }
+
+  public async Task<List<(string CameraId, string StreamName)>> ListAlarmOverrideStreamsAsync(CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var now = DateTime.UtcNow;
+    var rows = await db.CameraStreams
+      .Where(cs => cs.AlarmOverrideUntil != null && cs.AlarmOverrideUntil < now)
+      .Select(cs => new { cs.CameraId, cs.StreamName })
+      .ToListAsync(ct);
+    return rows.Select(x => (x.CameraId, x.StreamName)).ToList();
+  }
+
   public async Task<bool> RemoveRecordingProfileAsync(string id, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand(
-      "DELETE FROM recording_profile WHERE id = $1::uuid;");
+      "DELETE FROM recording_profile WHERE id = $1::uuid AND is_builtin = false;");
     command.Parameters.AddWithValue(id);
     return await command.ExecuteNonQueryAsync(ct) > 0;
   }
@@ -254,8 +304,8 @@ public class CameraStorage(NpgsqlDataSource dataSource)
 
     await using var cmd = new NpgsqlCommand("""
       SELECT cs.camera_id, cs.stream_name, cs.profile_token, cs.rtsp_url, cs.web_rtc,
-             rp.id,  rp.name,  rp.mode,  rp.pre_record_seconds,  rp.post_record_seconds,  rp.segment_seconds,  rp.is_override_preset,
-             ov.id,  ov.name,  ov.mode,  ov.pre_record_seconds,  ov.post_record_seconds,  ov.segment_seconds,  ov.is_override_preset
+             rp.id,  rp.name,  rp.mode,  rp.pre_record_seconds,  rp.post_record_seconds,  rp.segment_seconds,  rp.is_override_preset,  rp.is_builtin,
+             ov.id,  ov.name,  ov.mode,  ov.pre_record_seconds,  ov.post_record_seconds,  ov.segment_seconds,  ov.is_override_preset,  ov.is_builtin
       FROM camera_stream cs
       LEFT JOIN recording_profile rp ON rp.id = cs.recording_profile_id
       LEFT JOIN recording_profile ov ON ov.id = cs.override_profile_id
@@ -281,8 +331,8 @@ public class CameraStorage(NpgsqlDataSource dataSource)
       if (!reader.IsDBNull(5))
         stream.RecordingProfile = ReadRecordingProfileFromRow(reader, offset: 5);
 
-      if (!reader.IsDBNull(12))
-        stream.OverrideProfile = ReadRecordingProfileFromRow(reader, offset: 12);
+      if (!reader.IsDBNull(13))
+        stream.OverrideProfile = ReadRecordingProfileFromRow(reader, offset: 13);
 
       camera.Streams.Add(stream);
     }
@@ -301,6 +351,7 @@ public class CameraStorage(NpgsqlDataSource dataSource)
       PostRecordSeconds = (uint)reader.GetInt32(offset + 4),
       SegmentSeconds    = (uint)reader.GetInt32(offset + 5),
       IsOverridePreset  = reader.GetBoolean(offset + 6),
+      IsBuiltin         = reader.GetBoolean(offset + 7),
     };
 
   private static string RecordingModeToDb(RecordingMode mode) => mode switch
@@ -342,6 +393,10 @@ public class CameraStorage(NpgsqlDataSource dataSource)
 
     if (!reader.IsDBNull(6))
       setup.MediaMtxServerId = reader.GetGuid(6).ToString();
+
+    setup.OnvifEventsEnabled = reader.GetBoolean(7);
+    setup.HasOnvifFilters    = reader.GetBoolean(8);
+    setup.OnvifManaged       = reader.GetBoolean(9);
 
     return setup;
   }
@@ -573,5 +628,101 @@ public class CameraStorage(NpgsqlDataSource dataSource)
     command.Parameters.AddWithValue(slotIndex);
     command.Parameters.AddWithValue(cameraId);
     await command.ExecuteNonQueryAsync(ct);
+  }
+
+  // ── ONVIF alarm filters ───────────────────────────────────────────────────
+
+  public async Task<List<OnvifAlarmFilter>> ListOnvifAlarmFiltersAsync(string cameraId, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var rows = await db.OnvifAlarmFilters
+      .Where(f => f.CameraId == cameraId)
+      .OrderBy(f => f.Id)
+      .ToListAsync(ct);
+    return rows.Select(ToProto).ToList();
+  }
+
+  public async Task<OnvifAlarmFilter> UpsertOnvifAlarmFilterAsync(OnvifAlarmFilter filter, CancellationToken ct)
+  {
+    await using var command = _dataSource.CreateCommand("""
+      INSERT INTO onvif_alarm_filter (id, camera_id, filter_text, timeout_seconds)
+      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4)
+      ON CONFLICT (id) DO UPDATE SET
+        filter_text     = EXCLUDED.filter_text,
+        timeout_seconds = EXCLUDED.timeout_seconds
+      RETURNING id, camera_id, filter_text, timeout_seconds;
+      """);
+    command.Parameters.AddWithValue(filter.Id ?? string.Empty);
+    command.Parameters.AddWithValue(filter.CameraId);
+    command.Parameters.AddWithValue(filter.FilterText);
+    command.Parameters.AddWithValue(filter.TimeoutSeconds);
+
+    await using var reader = await command.ExecuteReaderAsync(ct);
+    await reader.ReadAsync(ct);
+    return new OnvifAlarmFilter
+    {
+      Id             = reader.GetGuid(0).ToString(),
+      CameraId       = reader.GetString(1),
+      FilterText     = reader.GetString(2),
+      TimeoutSeconds = reader.GetInt32(3),
+    };
+  }
+
+  public async Task<(bool Removed, string? CameraId)> RemoveOnvifAlarmFilterAsync(string id, CancellationToken ct)
+  {
+    if (!Guid.TryParse(id, out var guid)) return (false, null);
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var filter = await db.OnvifAlarmFilters.FindAsync([guid], ct);
+    if (filter == null) return (false, null);
+    db.OnvifAlarmFilters.Remove(filter);
+    await db.SaveChangesAsync(ct);
+    return (true, filter.CameraId);
+  }
+
+  private static OnvifAlarmFilter ToProto(DbOnvifAlarmFilter row) =>
+    new()
+    {
+      Id             = row.Id.ToString(),
+      CameraId       = row.CameraId,
+      FilterText     = row.FilterText,
+      TimeoutSeconds = row.TimeoutSeconds,
+    };
+
+  public async Task SubscribeOnvifEventsAsync(string cameraId, CancellationToken ct)
+  {
+    await using var cmd = _dataSource.CreateCommand("""
+      INSERT INTO onvif_event_subscription (camera_id, subscribed) VALUES ($1, true)
+      ON CONFLICT (camera_id) DO NOTHING;
+      """);
+    cmd.Parameters.AddWithValue(cameraId);
+    await cmd.ExecuteNonQueryAsync(ct);
+  }
+
+  public async Task UnsubscribeOnvifEventsAsync(string cameraId, CancellationToken ct)
+  {
+    await using var cmd = _dataSource.CreateCommand(
+      "DELETE FROM onvif_event_subscription WHERE camera_id = $1;");
+    cmd.Parameters.AddWithValue(cameraId);
+    await cmd.ExecuteNonQueryAsync(ct);
+  }
+
+  public async Task SetOnvifArmedAsync(string cameraId, bool armed, CancellationToken ct)
+  {
+    await using var cmd = _dataSource.CreateCommand(
+      "UPDATE onvif_event_subscription SET subscribed = $2 WHERE camera_id = $1;");
+    cmd.Parameters.AddWithValue(cameraId);
+    cmd.Parameters.AddWithValue(armed);
+    await cmd.ExecuteNonQueryAsync(ct);
+  }
+
+  public async Task<List<(string CameraId, bool Subscribed)>> ListOnvifSubscriptionsAsync(CancellationToken ct)
+  {
+    await using var cmd = _dataSource.CreateCommand(
+      "SELECT camera_id, subscribed FROM onvif_event_subscription ORDER BY camera_id;");
+    var result = new List<(string, bool)>();
+    await using var reader = await cmd.ExecuteReaderAsync(ct);
+    while (await reader.ReadAsync(ct))
+      result.Add((reader.GetString(0), reader.GetBoolean(1)));
+    return result;
   }
 }

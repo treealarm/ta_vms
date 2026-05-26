@@ -8,7 +8,7 @@ import CameraStoragesControl from './CameraStoragesControl'
 import PasswordField from './PasswordField'
 import CameraStream from './CameraStream'
 
-export type CameraSetupHandle = { applyIfDirty: () => Promise<void> }
+export type CameraSetupHandle = { applyIfDirty: () => Promise<boolean> }
 
 type Props = {
   ref?: React.Ref<CameraSetupHandle>
@@ -34,7 +34,6 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const [pass, setPass] = useState(existing?.cred?.pass ?? '')
   const [onvifIp, setOnvifIp] = useState(existing?.onvifConn?.ip ?? '')
   const [onvifPort, setOnvifPort] = useState(existing?.onvifConn?.port ?? 0)
-
   const setNonNegativeNumber = (raw: string, setter: (n: number) => void) => {
     const value = Number(raw)
     if (!Number.isNaN(value)) setter(Math.max(0, value))
@@ -121,7 +120,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   }
 
   // Expose applyIfDirty for parent (CameraControlPanel) to call before switching selection
-  useImperativeHandle(ref, () => ({ applyIfDirty: async () => { await applyInternal() } }))
+  useImperativeHandle(ref, () => ({ applyIfDirty: () => applyInternal() }))
 
   // Warn browser on close when dirty
   useEffect(() => {
@@ -131,7 +130,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     return () => window.removeEventListener('beforeunload', handler)
   }, [dirty])
 
-  return (
+  const setupForm = (
     <Stack component="form" direction="row" spacing={3} alignItems="flex-start" onSubmit={handleApply}>
       {/* Left: form fields */}
       <Stack spacing={2} sx={{ flex: 1, minWidth: 0 }}>
@@ -221,4 +220,6 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
       )}
     </Stack>
   )
+
+  return setupForm
 }

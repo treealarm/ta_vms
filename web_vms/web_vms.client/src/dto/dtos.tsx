@@ -89,6 +89,7 @@ export type RecordingProfileDto = {
   postRecordSeconds: number
   segmentSeconds: number
   isOverridePreset: boolean
+  isBuiltin: boolean
 }
 
 export type CameraStreamDto = {
@@ -116,6 +117,9 @@ export type CameraSetupDto = {
   mediaMtxServerId?: string
   /** WebRTC client base URL for this camera's assigned MediaMTX server (e.g. http://host:8889) */
   mediaMtxWebrtcUrl?: string
+  onvifEventsEnabled?: boolean
+  hasOnvifFilters?: boolean
+  onvifManaged?: boolean
 }
 
 export type MediaServerNodeDto = {
@@ -266,4 +270,22 @@ export type MonitorDto = {
   layout: MonitorLayout
   cameraIds: string[]
   slots: MonitorSlotDto[]
+}
+
+export type OnvifCameraEntryDto = {
+  cameraId: string
+  subscribed: boolean
+}
+
+export type OnvifAlarmFilterDto = {
+  id?: string
+  cameraId: string
+  filterText: string
+  timeoutSeconds: number
+}
+
+export type OnvifEventRecordDto = {
+  receivedAt: string
+  topic: string
+  payloadXml: string
 }

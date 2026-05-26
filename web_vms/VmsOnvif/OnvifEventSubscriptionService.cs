@@ -1,0 +1,277 @@
+using System.Collections.Concurrent;
+using System.Threading.Channels;
+using EventServiceReference1;
+using Google.Protobuf.WellKnownTypes;
+using Grpc.Core;
+using OnvifLib;
+using Vms.Cfg;
+using Vms.Fs;
+
+namespace VmsOnvif;
+
+public sealed record OnvifEventEntry(DateTime ReceivedAt, string Topic, string PayloadXml);
+
+public sealed class OnvifEventSubscriptionService(
+  CfgService.CfgServiceClient cfgClient,
+  FsService.FsServiceClient fsClient,
+  OnvifFilterCache filterCache,
+  ILogger<OnvifEventSubscriptionService> logger) : BackgroundService
+{
+  private const int RingBufferSize = 250;
+  private static readonly TimeSpan PeriodicRefreshInterval = TimeSpan.FromSeconds(30);
+  private static readonly TimeSpan CfgTimeout = TimeSpan.FromSeconds(5);
+  private static readonly TimeSpan FsTimeout = TimeSpan.FromSeconds(10);
+
+  private readonly ConcurrentDictionary<string, (Queue<OnvifEventEntry> Queue, object Lock)>
+    _eventBuffers = new();
+
+  private readonly ConcurrentDictionary<string, CancellationTokenSource>
+    _cameraCts = new();
+
+  private readonly Channel<string> _configChangedChannel =
+    Channel.CreateUnbounded<string>(new UnboundedChannelOptions { SingleReader = true });
+
+  public void NotifyConfigChanged(string cameraId) =>
+    _configChangedChannel.Writer.TryWrite(cameraId);
+
+  public IReadOnlyList<OnvifEventEntry> GetRecentEvents(string cameraId)
+  {
+    if (!_eventBuffers.TryGetValue(cameraId, out var buf))
+      return [];
+    lock (buf.Lock)
+      return [.. buf.Queue.Reverse()];
+  }
+
+  protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+  {
+    await RefreshAllCamerasAsync(stoppingToken);
+    await Task.WhenAll(
+      PeriodicRefreshAsync(stoppingToken),
+      ConfigChangedLoopAsync(stoppingToken));
+  }
+
+  private async Task PeriodicRefreshAsync(CancellationToken ct)
+  {
+    using var timer = new PeriodicTimer(PeriodicRefreshInterval);
+    while (!ct.IsCancellationRequested)
+    {
+      try
+      {
+        await timer.WaitForNextTickAsync(ct);
+        await RefreshAllCamerasAsync(ct);
+      }
+      catch (OperationCanceledException) { break; }
+      catch (Exception ex) { logger.LogError(ex, "Periodic camera refresh failed"); }
+    }
+  }
+
+  private async Task ConfigChangedLoopAsync(CancellationToken ct)
+  {
+    try
+    {
+      await foreach (var cameraId in _configChangedChannel.Reader.ReadAllAsync(ct))
+        await RefreshCameraAsync(cameraId, ct);
+    }
+    catch (OperationCanceledException) { }
+  }
+
+  private async Task RefreshAllCamerasAsync(CancellationToken ct)
+  {
+    try
+    {
+      var opts = new CallOptions(deadline: DateTime.UtcNow.Add(CfgTimeout), cancellationToken: ct);
+      var resp = await cfgClient.ListCamerasAsync(new ListCamerasRequest(), opts);
+      foreach (var cam in resp.Cameras)
+        await RefreshCameraAsync(cam.CameraId, ct);
+    }
+    catch (Exception ex)
+    {
+      logger.LogError(ex, "Failed to list cameras for ONVIF subscriptions");
+    }
+  }
+
+  private async Task RefreshCameraAsync(string cameraId, CancellationToken ct)
+  {
+    try
+    {
+      var opts = new CallOptions(deadline: DateTime.UtcNow.Add(CfgTimeout), cancellationToken: ct);
+      var resp = await cfgClient.GetCameraAsync(new SourceRequest { SourceId = cameraId }, opts);
+
+      bool hasOnvif = resp.Found
+        && resp.Setup?.OnvifEventsEnabled == true
+        && resp.Setup.OnvifConn != null
+        && !string.IsNullOrEmpty(resp.Setup.OnvifConn.Ip)
+        && resp.Setup.OnvifConn.Port > 0;
+
+      if (!hasOnvif)
+      {
+        StopCameraSubscription(cameraId);
+        return;
+      }
+
+      if (_cameraCts.ContainsKey(cameraId))
+        return;
+
+      var cts = new CancellationTokenSource();
+      if (_cameraCts.TryAdd(cameraId, cts))
+        _ = RunCameraSubscriptionAsync(cameraId, resp.Setup!, cts.Token);
+      else
+        cts.Dispose();
+    }
+    catch (Exception ex)
+    {
+      logger.LogError(ex, "Failed to refresh camera {CameraId} ONVIF subscription", cameraId);
+    }
+  }
+
+  private void StopCameraSubscription(string cameraId)
+  {
+    if (_cameraCts.TryRemove(cameraId, out var cts))
+    {
+      cts.Cancel();
+      cts.Dispose();
+    }
+  }
+
+  private async Task RunCameraSubscriptionAsync(
+    string cameraId, CameraSetup setup, CancellationToken ct)
+  {
+    var ip   = setup.OnvifConn!.Ip;
+    var port = setup.OnvifConn.Port;
+    var user = setup.Cred?.User ?? string.Empty;
+    var pass = setup.Cred?.Pass ?? string.Empty;
+
+    logger.LogInformation(
+      "Starting ONVIF event subscription for {CameraId} ({Ip}:{Port})", cameraId, ip, port);
+
+    while (!ct.IsCancellationRequested)
+    {
+      OnvifLib.EventService1? eventSvc = null;
+      try
+      {
+        var camera = Camera.Create(ip, port, user, pass);
+        eventSvc = await camera.GetEventService();
+        if (eventSvc == null)
+        {
+          logger.LogWarning(
+            "Camera {CameraId}: ONVIF event service unavailable, retrying in 30s", cameraId);
+          await Task.Delay(TimeSpan.FromSeconds(30), ct);
+          continue;
+        }
+
+        eventSvc.OnEventReceived += messages => OnEventsReceived(cameraId, messages ?? []);
+        await eventSvc.StartReceivingAsync();
+        await Task.Delay(Timeout.Infinite, ct);
+      }
+      catch (OperationCanceledException) { break; }
+      catch (Exception ex)
+      {
+        logger.LogError(ex,
+          "ONVIF subscription error for {CameraId}, retrying in 15s", cameraId);
+        await Task.Delay(TimeSpan.FromSeconds(15), ct);
+      }
+      finally
+      {
+        if (eventSvc != null)
+        {
+          try { await eventSvc.StopReceivingAsync(); } catch { }
+          eventSvc.Dispose();
+        }
+      }
+    }
+
+    _cameraCts.TryRemove(cameraId, out _);
+    logger.LogInformation("ONVIF event subscription stopped for {CameraId}", cameraId);
+  }
+
+  private void OnEventsReceived(string cameraId, NotificationMessageHolderType[] messages)
+  {
+    if (messages.Length == 0) return;
+
+    foreach (var msg in messages)
+    {
+      var topic = ExtractTopicText(msg.Topic);
+      var payload = msg.Message?.OuterXml ?? string.Empty;
+
+      logger.LogDebug("Camera {CameraId}: ONVIF event received — topic='{Topic}'", cameraId, topic);
+
+      var record = new OnvifEventEntry(DateTime.UtcNow, topic, payload);
+
+      var buf = _eventBuffers.GetOrAdd(cameraId, _ => (new Queue<OnvifEventEntry>(), new object()));
+      lock (buf.Lock)
+      {
+        buf.Queue.Enqueue(record);
+        while (buf.Queue.Count > RingBufferSize)
+          buf.Queue.Dequeue();
+      }
+
+      _ = Task.Run(() => CheckAndTriggerAlarmAsync(cameraId, topic, payload));
+    }
+  }
+
+  private async Task CheckAndTriggerAlarmAsync(string cameraId, string topic, string payload)
+  {
+    try
+    {
+      List<OnvifAlarmFilter> filters;
+      using (var cfgCts = new CancellationTokenSource(CfgTimeout))
+        filters = await filterCache.GetAsync(cameraId, cfgCts.Token);
+
+      logger.LogDebug(
+        "Camera {CameraId}: checking {Count} filter(s) against topic='{Topic}'",
+        cameraId, filters.Count, topic);
+
+      if (filters.Count == 0) return;
+
+      var searchText = topic + " " + payload;
+      var matched = filters.FirstOrDefault(f =>
+        searchText.Contains(f.FilterText, StringComparison.OrdinalIgnoreCase));
+
+      if (matched == null)
+      {
+        logger.LogDebug(
+          "Camera {CameraId}: no filter matched topic='{Topic}' (filters: {Filters})",
+          cameraId, topic, string.Join(", ", filters.Select(f => $"'{f.FilterText}'")));
+        return;
+      }
+
+      logger.LogInformation(
+        "Camera {CameraId}: ONVIF alarm triggered by filter '{Filter}'",
+        cameraId, matched.FilterText);
+
+      var req = new RetainEventRequest
+      {
+        EventId        = $"onvif-{Guid.NewGuid()}",
+        CameraId       = cameraId,
+        AlarmStartTs   = Timestamp.FromDateTime(DateTime.UtcNow),
+        TimeoutSeconds = (uint)Math.Max(1, matched.TimeoutSeconds),
+      };
+
+      var fsOpts = new CallOptions(deadline: DateTime.UtcNow.Add(FsTimeout));
+      var status = await fsClient.RetainEventAsync(req, fsOpts);
+      logger.LogInformation(
+        "Camera {CameraId}: RetainEvent returned {Status}", cameraId, status.Status);
+    }
+    catch (Exception ex)
+    {
+      logger.LogError(ex, "CheckAndTriggerAlarmAsync failed for {CameraId}", cameraId);
+    }
+  }
+
+  private static string ExtractTopicText(TopicExpressionType? topic)
+  {
+    if (topic?.Any == null) return string.Empty;
+    return string.Join(" ", topic.Any.Select(n => n.InnerText ?? n.OuterXml ?? string.Empty)).Trim();
+  }
+
+  public override async Task StopAsync(CancellationToken cancellationToken)
+  {
+    foreach (var cts in _cameraCts.Values)
+    {
+      cts.Cancel();
+      cts.Dispose();
+    }
+    _cameraCts.Clear();
+    await base.StopAsync(cancellationToken);
+  }
+}

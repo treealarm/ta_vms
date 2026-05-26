@@ -23,7 +23,7 @@ import { useAppDispatch, useAppSelector } from '../store'
 import { loadMediaMtxServers, removeMediaMtxServer, upsertMediaMtxServer } from '../store/mediaMtxSlice'
 import type { MediaMtxServerDto } from '../dto/dtos'
 
-export type MediaMtxServersHandle = { applyIfDirty: () => Promise<void> }
+export type MediaMtxServersHandle = { applyIfDirty: () => Promise<boolean> }
 
 const EMPTY: MediaMtxServerDto = { id: '', name: '', rtspUrl: '', webrtcUrl: '' }
 
@@ -49,21 +49,24 @@ export default function MediaMtxServersPanel({ ref }: { ref?: React.Ref<MediaMtx
   const handleNew = () => setEditing({ ...EMPTY })
   const handleCancel = () => setEditing(null)
 
-  const handleSaveInternal = async (): Promise<void> => {
-    if (!editing) return
+  const handleSaveInternal = async (): Promise<boolean> => {
+    if (!editing) return true
     const result = await dispatch(upsertMediaMtxServer(editing))
     if (!upsertMediaMtxServer.rejected.match(result)) {
       await dispatch(loadMediaMtxServers())
       setEditing(null)
+      return true
     }
+    return false
   }
 
   const handleSave = () => void handleSaveInternal()
 
   useImperativeHandle(ref, () => ({
-    applyIfDirty: async () => {
-      if (editing?.name && editing.rtspUrl && editing.webrtcUrl) await handleSaveInternal()
-    }
+    applyIfDirty: () =>
+      editing?.name && editing.rtspUrl && editing.webrtcUrl
+        ? handleSaveInternal()
+        : Promise.resolve(true),
   }))
 
   const handleRemove = async (id: string) => {

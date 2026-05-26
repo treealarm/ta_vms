@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import {
+  Alert,
   Button,
   Card,
   CardContent,
@@ -12,8 +13,8 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import type { CameraSetupDto, RetentionEventDto } from '../dto/dtos'
-import { useAppDispatch } from '../store'
-import { sendRetentionEvent } from '../store/fsSlice'
+import { useAppDispatch, useAppSelector } from '../store'
+import { sendRetentionEvent, setSimulationEventId } from '../store/fsSlice'
 import { fetchCameraState } from '../store/liveSlice'
 
 type SimulationPanelProps = {
@@ -23,9 +24,10 @@ type SimulationPanelProps = {
 export default function SimulationPanel({ cameras }: SimulationPanelProps) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
+  const eventId = useAppSelector((s) => s.fs.simulationEventId)
+  const simulationResult = useAppSelector((s) => s.fs.simulationResult)
   const [cameraId, setCameraId] = useState('')
   const [streamName, setStreamName] = useState('')
-  const [eventId, setEventId] = useState('test-alarm')
   const [alarmStartTs, setAlarmStartTs] = useState('')
   const [timeoutSeconds, setTimeoutSeconds] = useState(30)
 
@@ -39,7 +41,7 @@ export default function SimulationPanel({ cameras }: SimulationPanelProps) {
   }
 
   const newEventId = () => {
-    setEventId(`test-alarm-${selectedCameraId || 'camera'}-${Date.now()}`)
+    dispatch(setSimulationEventId(`test-alarm-${selectedCameraId || 'camera'}-${Date.now()}`))
     setAlarmStartTs('')
   }
 
@@ -49,7 +51,7 @@ export default function SimulationPanel({ cameras }: SimulationPanelProps) {
     if (!selectedCameraId) return
     const now = new Date().toISOString()
     const nextEventId = currentEventId()
-    setEventId(nextEventId)
+    dispatch(setSimulationEventId(nextEventId))
     setAlarmStartTs(now)
 
     const payload: RetentionEventDto = {
@@ -121,7 +123,7 @@ export default function SimulationPanel({ cameras }: SimulationPanelProps) {
           <TextField
             label={t('simulation.eventId')}
             value={eventId}
-            onChange={(event) => setEventId(event.target.value)}
+            onChange={(e) => dispatch(setSimulationEventId(e.target.value))}
             helperText={t('simulation.eventIdHelper')}
             size="small"
             fullWidth
@@ -158,6 +160,12 @@ export default function SimulationPanel({ cameras }: SimulationPanelProps) {
               {t('simulation.alarmEnd')}
             </Button>
           </Stack>
+
+          {simulationResult && (
+            <Alert severity={simulationResult.ok ? 'success' : 'error'} sx={{ wordBreak: 'break-word' }}>
+              {simulationResult.message}
+            </Alert>
+          )}
         </Stack>
       </CardContent>
     </Card>

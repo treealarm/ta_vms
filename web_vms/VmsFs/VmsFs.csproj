@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <Protobuf Include="..\..\proto\vms_cfg.proto" GrpcServices="Client" />
+    <Protobuf Include="..\..\proto\vms_control.proto" GrpcServices="Client" />
     <Protobuf Include="..\..\proto\vms_fs.proto" GrpcServices="Both" />
   </ItemGroup>
 

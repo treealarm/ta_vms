@@ -21,7 +21,7 @@ import EditIcon from '@mui/icons-material/Edit'
 import { useTranslation } from 'react-i18next'
 import type { RecordingProfileDto, RecordingMode } from '../dto/dtos'
 
-export type RecordingProfilesHandle = { applyIfDirty: () => Promise<void> }
+export type RecordingProfilesHandle = { applyIfDirty: () => Promise<boolean> }
 
 const EMPTY_PROFILE: Omit<RecordingProfileDto, 'id'> = {
   name: '',
@@ -74,8 +74,8 @@ export default function RecordingProfilesPanel({ ref }: { ref?: React.Ref<Record
 
   const cancel = () => { setEditing(null); setError(null) }
 
-  const saveInternal = async (): Promise<void> => {
-    if (!editing) return
+  const saveInternal = async (): Promise<boolean> => {
+    if (!editing) return true
     setBusy(true)
     setError(null)
     try {
@@ -85,11 +85,13 @@ export default function RecordingProfilesPanel({ ref }: { ref?: React.Ref<Record
         body: JSON.stringify(editing),
       })
       const body = await r.json() as { success: boolean; message: string }
-      if (!body.success) { setError(body.message); return }
+      if (!body.success) { setError(body.message); return false }
       setEditing(null)
       await load()
+      return true
     } catch (e) {
       setError(String(e))
+      return false
     } finally {
       setBusy(false)
     }
@@ -101,9 +103,7 @@ export default function RecordingProfilesPanel({ ref }: { ref?: React.Ref<Record
   }
 
   useImperativeHandle(ref, () => ({
-    applyIfDirty: async () => {
-      if (editing?.name) await saveInternal()
-    }
+    applyIfDirty: () => editing?.name ? saveInternal() : Promise.resolve(true),
   }))
 
   const remove = async (id: string) => {
@@ -144,18 +144,20 @@ export default function RecordingProfilesPanel({ ref }: { ref?: React.Ref<Record
             <ListItem
               disablePadding
               secondaryAction={
-                <Stack direction="row" spacing={0.5}>
-                  <IconButton size="small" onClick={() => startEdit(p)} disabled={busy}>
-                    <EditIcon fontSize="small" />
-                  </IconButton>
-                  <Tooltip title={t('recording.deleteTooltip')}>
-                    <span>
-                      <IconButton size="small" color="error" onClick={() => void remove(p.id)} disabled={busy}>
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-                </Stack>
+                !p.isBuiltin && (
+                  <Stack direction="row" spacing={0.5}>
+                    <IconButton size="small" onClick={() => startEdit(p)} disabled={busy}>
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    <Tooltip title={t('recording.deleteTooltip')}>
+                      <span>
+                        <IconButton size="small" color="error" onClick={() => void remove(p.id)} disabled={busy}>
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </Stack>
+                )
               }
             >
               <ListItemText
@@ -163,7 +165,8 @@ export default function RecordingProfilesPanel({ ref }: { ref?: React.Ref<Record
                 primary={
                   <Stack direction="row" spacing={0.5} alignItems="center" component="span">
                     <span>{p.name}</span>
-                    {p.isOverridePreset && <Chip label={t('recording.overridePresetChip')} size="small" color="primary" variant="outlined" />}
+                    {p.isBuiltin && <Chip label={t('recording.builtinChip')} size="small" variant="outlined" />}
+                    {p.isOverridePreset && !p.isBuiltin && <Chip label={t('recording.overridePresetChip')} size="small" color="primary" variant="outlined" />}
                   </Stack>
                 }
                 secondary={

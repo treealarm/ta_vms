@@ -7,7 +7,9 @@ using web_vms.Types.Actors;
 
 namespace VmsOnvif;
 
-public class OnvifServiceImpl(CfgService.CfgServiceClient cfgClient) : OnvifService.OnvifServiceBase
+public class OnvifServiceImpl(
+  CfgService.CfgServiceClient cfgClient,
+  OnvifEventSubscriptionService subscriptionService) : OnvifService.OnvifServiceBase
 {
   private readonly CfgService.CfgServiceClient _cfgClient = cfgClient;
 
@@ -83,6 +85,20 @@ public class OnvifServiceImpl(CfgService.CfgServiceClient cfgClient) : OnvifServ
     {
       RtspUrl = string.IsNullOrEmpty(result.Uri) ? fallbackUrl : result.Uri
     };
+  }
+
+  public override Task<GetRecentOnvifEventsResponse> GetRecentOnvifEvents(
+    GetRecentOnvifEventsRequest request, ServerCallContext context)
+  {
+    var events = subscriptionService.GetRecentEvents(request.CameraId);
+    var response = new GetRecentOnvifEventsResponse();
+    response.Events.AddRange(events.Select(e => new OnvifEventRecord
+    {
+      ReceivedAt = e.ReceivedAt.ToString("O"),
+      Topic      = e.Topic,
+      PayloadXml = e.PayloadXml,
+    }));
+    return Task.FromResult(response);
   }
 
   // Non-remoting proxy: uses JSON serialization, no DataContractSerializer

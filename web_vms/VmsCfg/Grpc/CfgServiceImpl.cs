@@ -139,6 +139,50 @@ namespace VmsCfg
       return new OperationStatus { Success = true };
     }
 
+    public override async Task<ActivateAlarmOverrideResponse> ActivateAlarmOverride(
+      ActivateAlarmOverrideRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId) || request.Until is null)
+        return new ActivateAlarmOverrideResponse { Activated = false };
+
+      var streamName = request.HasStreamName && !string.IsNullOrWhiteSpace(request.StreamName)
+        ? request.StreamName : null;
+      var until = request.Until.ToDateTime().ToUniversalTime();
+
+      var activated = await storage.ActivateAlarmOverrideAsync(request.CameraId, streamName, until, context.CancellationToken);
+      if (activated)
+        InvalidateFsCache(request.CameraId);
+      return new ActivateAlarmOverrideResponse { Activated = activated };
+    }
+
+    public override async Task<OperationStatus> ClearAlarmOverride(
+      ClearAlarmOverrideRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId) || string.IsNullOrWhiteSpace(request.StreamName))
+        return new OperationStatus { Success = false, Message = "camera_id and stream_name are required" };
+
+      var cleared = await storage.ClearAlarmOverrideAsync(request.CameraId, request.StreamName, context.CancellationToken);
+      if (cleared)
+        InvalidateFsCache(request.CameraId);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<ListAlarmOverrideStreamsResponse> ListAlarmOverrideStreams(
+      ListAlarmOverrideStreamsRequest request,
+      ServerCallContext context)
+    {
+      var streams = await storage.ListAlarmOverrideStreamsAsync(context.CancellationToken);
+      var response = new ListAlarmOverrideStreamsResponse();
+      response.Streams.AddRange(streams.Select(s => new AlarmOverrideStream
+      {
+        CameraId   = s.CameraId,
+        StreamName = s.StreamName,
+      }));
+      return response;
+    }
+
     public override async Task<ListMediaMtxServersResponse> ListMediaMtxServers(
       ListMediaMtxServersRequest request,
       ServerCallContext context)
@@ -238,6 +282,85 @@ namespace VmsCfg
         return new OperationStatus { Success = false, Message = "monitor_id and camera_id must not be empty" };
 
       await storage.SetMonitorSlotAsync(request.MonitorId, request.SlotIndex, request.CameraId, context.CancellationToken);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<ListOnvifAlarmFiltersResponse> ListOnvifAlarmFilters(
+      ListOnvifAlarmFiltersRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId))
+        return new ListOnvifAlarmFiltersResponse();
+
+      var filters = await storage.ListOnvifAlarmFiltersAsync(request.CameraId, context.CancellationToken);
+      var response = new ListOnvifAlarmFiltersResponse();
+      response.Filters.AddRange(filters);
+      return response;
+    }
+
+    public override async Task<OnvifAlarmFilter> UpsertOnvifAlarmFilter(
+      OnvifAlarmFilter request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId))
+        throw new RpcException(new Status(StatusCode.InvalidArgument, "camera_id is required"));
+      if (string.IsNullOrWhiteSpace(request.FilterText))
+        throw new RpcException(new Status(StatusCode.InvalidArgument, "filter_text is required"));
+      if (request.TimeoutSeconds <= 0)
+        request.TimeoutSeconds = 30;
+
+      var result = await storage.UpsertOnvifAlarmFilterAsync(request, context.CancellationToken);
+      InvalidateFsCache(result.CameraId);
+      return result;
+    }
+
+    public override async Task<OperationStatus> RemoveOnvifAlarmFilter(
+      OnvifAlarmFilterRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.Id))
+        return new OperationStatus { Success = false, Message = "id is required" };
+
+      var (removed, cameraId) = await storage.RemoveOnvifAlarmFilterAsync(request.Id, context.CancellationToken);
+      if (removed && cameraId is not null)
+        InvalidateFsCache(cameraId);
+      return new OperationStatus { Success = removed };
+    }
+
+    public override async Task<OperationStatus> SubscribeOnvifEvents(
+      OnvifSubscriptionRequest request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId))
+        return new OperationStatus { Success = false, Message = "camera_id is required" };
+      await storage.SubscribeOnvifEventsAsync(request.CameraId, context.CancellationToken);
+      InvalidateFsCache(request.CameraId);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OperationStatus> UnsubscribeOnvifEvents(
+      OnvifSubscriptionRequest request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId))
+        return new OperationStatus { Success = false, Message = "camera_id is required" };
+      await storage.UnsubscribeOnvifEventsAsync(request.CameraId, context.CancellationToken);
+      InvalidateFsCache(request.CameraId);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OnvifSubscriptionsResponse> ListOnvifSubscriptions(
+      Google.Protobuf.WellKnownTypes.Empty request, ServerCallContext context)
+    {
+      var list = await storage.ListOnvifSubscriptionsAsync(context.CancellationToken);
+      var response = new OnvifSubscriptionsResponse();
+      response.Cameras.AddRange(list.Select(x => new OnvifCameraEntry { CameraId = x.CameraId, Subscribed = x.Subscribed }));
+      return response;
+    }
+
+    public override async Task<OperationStatus> SetOnvifArmed(
+      SetOnvifArmedRequest request, ServerCallContext context)
+    {
+      await storage.SetOnvifArmedAsync(request.CameraId, request.Armed, context.CancellationToken);
+      InvalidateFsCache(request.CameraId);
       return new OperationStatus { Success = true };
     }
   }

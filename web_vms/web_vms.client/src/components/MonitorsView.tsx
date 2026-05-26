@@ -26,7 +26,7 @@ import type { MonitorLayout } from '../dto/dtos'
 import MonitorGrid from './MonitorGrid'
 import MonitorEditDialog from './MonitorEditDialog'
 
-export default function MonitorsView() {
+export default function MonitorsView({ readOnly = false }: { readOnly?: boolean }) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const monitors = useAppSelector((state) => state.monitors.monitors)
@@ -117,13 +117,15 @@ export default function MonitorsView() {
               ))}
             </Tabs>
 
-            <Tooltip title={t('monitors.newMonitor')}>
-              <IconButton size="small" onClick={handleOpenCreate} sx={{ mx: 1 }}>
-                <AddIcon />
-              </IconButton>
-            </Tooltip>
+            {!readOnly && (
+              <Tooltip title={t('monitors.newMonitor')}>
+                <IconButton size="small" onClick={handleOpenCreate} sx={{ mx: 1 }}>
+                  <AddIcon />
+                </IconButton>
+              </Tooltip>
+            )}
 
-            {selectedMonitor && (
+            {!readOnly && selectedMonitor && (
               <>
                 <Tooltip title={t('monitors.editMonitor')}>
                   <IconButton size="small" onClick={() => handleOpenEdit(selectedMonitor.monitorId)}>
@@ -146,9 +148,11 @@ export default function MonitorsView() {
             <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Stack alignItems="center" spacing={1}>
                 <Typography color="text.secondary">{t('monitors.noMonitors')}</Typography>
-                <Typography variant="body2" color="text.disabled">
-                  {t('monitors.createHint')}
-                </Typography>
+                {!readOnly && (
+                  <Typography variant="body2" color="text.disabled">
+                    {t('monitors.createHint')}
+                  </Typography>
+                )}
               </Stack>
             </Box>
           )}
@@ -161,13 +165,15 @@ export default function MonitorsView() {
         </Alert>
       )}
 
-      <MonitorEditDialog
-        open={dialogOpen}
-        monitor={editingMonitor}
-        allCameras={allCameras}
-        onSave={(name, layout, cameraIds) => void handleDialogSave(name, layout, cameraIds)}
-        onClose={() => setDialogOpen(false)}
-      />
+      {!readOnly && (
+        <MonitorEditDialog
+          open={dialogOpen}
+          monitor={editingMonitor}
+          allCameras={allCameras}
+          onSave={(name, layout, cameraIds) => void handleDialogSave(name, layout, cameraIds)}
+          onClose={() => setDialogOpen(false)}
+        />
+      )}
     </Stack>
   )
 }

@@ -1,12 +1,15 @@
 using Grpc.Core;
 using Microsoft.AspNetCore.Mvc;
+using Vms.Cfg;
 using Vms.Onvif;
 
 namespace web_vms;
 
 [ApiController]
 [Route("api/[controller]")]
-public class OnvifController(OnvifService.OnvifServiceClient onvifClient) : ControllerBase
+public class OnvifController(
+  OnvifService.OnvifServiceClient onvifClient,
+  CfgService.CfgServiceClient cfgClient) : ControllerBase
 {
   private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
 
@@ -60,4 +63,154 @@ public class OnvifController(OnvifService.OnvifServiceClient onvifClient) : Cont
       return StatusCode(502, ex.Status.Detail);
     }
   }
+
+  // ── ONVIF alarm filters ──────────────────────────────────────────────────
+
+  [HttpGet("cameras/{cameraId}/alarm-filters")]
+  public async Task<IActionResult> ListAlarmFilters(string cameraId, CancellationToken ct)
+  {
+    try
+    {
+      var resp = await cfgClient.ListOnvifAlarmFiltersAsync(
+        new ListOnvifAlarmFiltersRequest { CameraId = cameraId }, Options(ct));
+      return Ok(resp.Filters.Select(f => new
+      {
+        id             = f.Id,
+        cameraId       = f.CameraId,
+        filterText     = f.FilterText,
+        timeoutSeconds = f.TimeoutSeconds,
+      }));
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
+  [HttpPost("cameras/{cameraId}/alarm-filters")]
+  public async Task<IActionResult> UpsertAlarmFilter(
+    string cameraId,
+    [FromBody] OnvifAlarmFilterBody body,
+    CancellationToken ct)
+  {
+    try
+    {
+      var result = await cfgClient.UpsertOnvifAlarmFilterAsync(
+        new OnvifAlarmFilter
+        {
+          Id             = body.Id ?? string.Empty,
+          CameraId       = cameraId,
+          FilterText     = body.FilterText,
+          TimeoutSeconds = body.TimeoutSeconds > 0 ? body.TimeoutSeconds : 30,
+        },
+        Options(ct));
+      return Ok(new
+      {
+        id             = result.Id,
+        cameraId       = result.CameraId,
+        filterText     = result.FilterText,
+        timeoutSeconds = result.TimeoutSeconds,
+      });
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.InvalidArgument)
+    {
+      return BadRequest(ex.Status.Detail);
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
+  [HttpDelete("cameras/{cameraId}/alarm-filters/{filterId}")]
+  public async Task<IActionResult> RemoveAlarmFilter(
+    string cameraId, string filterId, CancellationToken ct)
+  {
+    try
+    {
+      var resp = await cfgClient.RemoveOnvifAlarmFilterAsync(
+        new OnvifAlarmFilterRequest { Id = filterId }, Options(ct));
+      return resp.Success ? Ok() : NotFound();
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
+  // ── Subscriptions (arm / disarm) ─────────────────────────────────────────
+
+  [HttpGet("subscriptions")]
+  public async Task<IActionResult> ListSubscriptions(CancellationToken ct)
+  {
+    try
+    {
+      var resp = await cfgClient.ListOnvifSubscriptionsAsync(
+        new Google.Protobuf.WellKnownTypes.Empty(), Options(ct));
+      return Ok(resp.Cameras.Select(c => new { cameraId = c.CameraId, subscribed = c.Subscribed }));
+    }
+    catch (RpcException ex) { return StatusCode(502, ex.Status.Detail); }
+  }
+
+  [HttpPost("cameras/{cameraId}/subscription")]
+  public async Task<IActionResult> Subscribe(string cameraId, CancellationToken ct)
+  {
+    try
+    {
+      await cfgClient.SubscribeOnvifEventsAsync(
+        new OnvifSubscriptionRequest { CameraId = cameraId }, Options(ct));
+      return Ok();
+    }
+    catch (RpcException ex) { return StatusCode(502, ex.Status.Detail); }
+  }
+
+  [HttpDelete("cameras/{cameraId}/subscription")]
+  public async Task<IActionResult> Unsubscribe(string cameraId, CancellationToken ct)
+  {
+    try
+    {
+      await cfgClient.UnsubscribeOnvifEventsAsync(
+        new OnvifSubscriptionRequest { CameraId = cameraId }, Options(ct));
+      return Ok();
+    }
+    catch (RpcException ex) { return StatusCode(502, ex.Status.Detail); }
+  }
+
+  [HttpPut("cameras/{cameraId}/subscription")]
+  public async Task<IActionResult> SetArmed(string cameraId, [FromBody] SetArmedBody body, CancellationToken ct)
+  {
+    try
+    {
+      await cfgClient.SetOnvifArmedAsync(
+        new SetOnvifArmedRequest { CameraId = cameraId, Armed = body.Armed }, Options(ct));
+      return Ok();
+    }
+    catch (RpcException ex) { return StatusCode(502, ex.Status.Detail); }
+  }
+
+  public record SetArmedBody(bool Armed);
+
+  // ── ONVIF debug events ────────────────────────────────────────────────────
+
+  [HttpGet("cameras/{cameraId}/recent-events")]
+  public async Task<IActionResult> GetRecentEvents(string cameraId, CancellationToken ct)
+  {
+    try
+    {
+      var resp = await onvifClient.GetRecentOnvifEventsAsync(
+        new GetRecentOnvifEventsRequest { CameraId = cameraId }, Options(ct));
+      return Ok(resp.Events.Select(e => new
+      {
+        receivedAt = e.ReceivedAt,
+        topic      = e.Topic,
+        payloadXml = e.PayloadXml,
+      }));
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
 }
+
+public record OnvifAlarmFilterBody(string? Id, string FilterText, int TimeoutSeconds);

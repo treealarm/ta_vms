@@ -6,7 +6,7 @@ import { addCamera, fetchCameraState } from '../store/liveSlice'
 import type { CameraStreamDto, RecordingProfileDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
 
-export type StreamSetupHandle = { applyIfDirty: () => Promise<void> }
+export type StreamSetupHandle = { applyIfDirty: () => Promise<boolean> }
 
 type Props = {
   ref?: React.Ref<StreamSetupHandle>
@@ -99,7 +99,7 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
   // applyInternalRef always points to the latest apply logic so useImperativeHandle
   // can be called unconditionally (before the camera null-guard below).
   const applyInternalRef = useRef<() => Promise<boolean>>(async () => true)
-  useImperativeHandle(ref, () => ({ applyIfDirty: async () => { await applyInternalRef.current() } }), [])
+  useImperativeHandle(ref, () => ({ applyIfDirty: () => applyInternalRef.current() }), [])
 
   if (!camera) return null
 
