@@ -28,14 +28,15 @@ CREATE TABLE recording_profile (
   pre_record_seconds  integer NOT NULL DEFAULT 0,
   post_record_seconds integer NOT NULL DEFAULT 0,
   segment_seconds     integer NOT NULL DEFAULT 60,
-  is_override_preset  boolean NOT NULL DEFAULT false
+  is_override_preset  boolean NOT NULL DEFAULT false,
+  is_builtin          boolean NOT NULL DEFAULT false
 );
 
 -- Well-known UUIDs so default profiles survive re-deploys
-INSERT INTO recording_profile (id, name, mode, pre_record_seconds, post_record_seconds, segment_seconds, is_override_preset) VALUES
-  ('00000000-0000-0000-0000-000000000001', 'Continuous',    'continuous', 0,  0,  60, true),
-  ('00000000-0000-0000-0000-000000000002', 'Pre-alarm',     'prealarm',  30, 30, 5,  true),
-  ('00000000-0000-0000-0000-000000000003', 'Recording Off', 'off',       0,  0,  60, true);
+INSERT INTO recording_profile (id, name, mode, pre_record_seconds, post_record_seconds, segment_seconds, is_override_preset, is_builtin) VALUES
+  ('00000000-0000-0000-0000-000000000001', 'Continuous',    'continuous', 0, 0, 60, true, true),
+  ('00000000-0000-0000-0000-000000000002', 'Pre-alarm',     'prealarm',  5, 5, 5,  true, true),
+  ('00000000-0000-0000-0000-000000000003', 'Recording Off', 'off',       0, 0, 60, true, true);
 
 CREATE TABLE camera_stream (
   camera_id             text        NOT NULL REFERENCES camera_setup(camera_id) ON DELETE CASCADE,

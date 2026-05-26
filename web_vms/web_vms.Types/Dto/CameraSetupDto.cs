@@ -9,6 +9,7 @@ public record RecordingProfileDto
   public uint PostRecordSeconds { get; init; }
   public uint SegmentSeconds { get; init; }
   public bool IsOverridePreset { get; init; }
+  public bool IsBuiltin { get; init; }
 }
 
 public record CameraStreamDto

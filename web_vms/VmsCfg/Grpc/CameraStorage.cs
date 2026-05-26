@@ -176,7 +176,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
   public async Task<List<RecordingProfile>> ListRecordingProfilesAsync(CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      SELECT id, name, mode, pre_record_seconds, post_record_seconds, segment_seconds, is_override_preset
+      SELECT id, name, mode, pre_record_seconds, post_record_seconds, segment_seconds, is_override_preset, is_builtin
       FROM recording_profile
       ORDER BY name;
       """);
@@ -199,7 +199,8 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
         pre_record_seconds  = EXCLUDED.pre_record_seconds,
         post_record_seconds = EXCLUDED.post_record_seconds,
         segment_seconds     = EXCLUDED.segment_seconds,
-        is_override_preset  = EXCLUDED.is_override_preset;
+        is_override_preset  = EXCLUDED.is_override_preset
+      WHERE recording_profile.is_builtin = false;
       """);
     command.Parameters.AddWithValue(profile.Id ?? string.Empty);
     command.Parameters.AddWithValue(profile.Name);
@@ -280,7 +281,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
   public async Task<bool> RemoveRecordingProfileAsync(string id, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand(
-      "DELETE FROM recording_profile WHERE id = $1::uuid;");
+      "DELETE FROM recording_profile WHERE id = $1::uuid AND is_builtin = false;");
     command.Parameters.AddWithValue(id);
     return await command.ExecuteNonQueryAsync(ct) > 0;
   }
@@ -297,8 +298,8 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
 
     await using var cmd = new NpgsqlCommand("""
       SELECT cs.camera_id, cs.stream_name, cs.profile_token, cs.rtsp_url, cs.web_rtc,
-             rp.id,  rp.name,  rp.mode,  rp.pre_record_seconds,  rp.post_record_seconds,  rp.segment_seconds,  rp.is_override_preset,
-             ov.id,  ov.name,  ov.mode,  ov.pre_record_seconds,  ov.post_record_seconds,  ov.segment_seconds,  ov.is_override_preset
+             rp.id,  rp.name,  rp.mode,  rp.pre_record_seconds,  rp.post_record_seconds,  rp.segment_seconds,  rp.is_override_preset,  rp.is_builtin,
+             ov.id,  ov.name,  ov.mode,  ov.pre_record_seconds,  ov.post_record_seconds,  ov.segment_seconds,  ov.is_override_preset,  ov.is_builtin
       FROM camera_stream cs
       LEFT JOIN recording_profile rp ON rp.id = cs.recording_profile_id
       LEFT JOIN recording_profile ov ON ov.id = cs.override_profile_id
@@ -324,8 +325,8 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       if (!reader.IsDBNull(5))
         stream.RecordingProfile = ReadRecordingProfileFromRow(reader, offset: 5);
 
-      if (!reader.IsDBNull(12))
-        stream.OverrideProfile = ReadRecordingProfileFromRow(reader, offset: 12);
+      if (!reader.IsDBNull(13))
+        stream.OverrideProfile = ReadRecordingProfileFromRow(reader, offset: 13);
 
       camera.Streams.Add(stream);
     }
@@ -344,6 +345,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       PostRecordSeconds = (uint)reader.GetInt32(offset + 4),
       SegmentSeconds    = (uint)reader.GetInt32(offset + 5),
       IsOverridePreset  = reader.GetBoolean(offset + 6),
+      IsBuiltin         = reader.GetBoolean(offset + 7),
     };
 
   private static string RecordingModeToDb(RecordingMode mode) => mode switch

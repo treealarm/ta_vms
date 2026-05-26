@@ -16,7 +16,7 @@
     "camSetup": "Cam setup",
     "events": "Events",
     "storages": "Storages",
-    "recording": "Recording",
+    "recording": "Rec. profiles",
     "mediaMtx": "MediaMTX",
     "logs": "Logs"
   },
@@ -73,6 +73,7 @@
     "segmentSec": "Segment, sec",
     "overridePreset": "Show as override preset",
     "overridePresetChip": "override preset",
+    "builtinChip": "system",
     "create": "Create",
     "prePostSeg": "pre {{pre}}s · post {{post}}s · seg {{seg}}s",
     "seg": "seg {{seg}}s",

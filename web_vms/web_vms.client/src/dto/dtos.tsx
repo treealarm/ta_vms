@@ -89,6 +89,7 @@ export type RecordingProfileDto = {
   postRecordSeconds: number
   segmentSeconds: number
   isOverridePreset: boolean
+  isBuiltin: boolean
 }
 
 export type CameraStreamDto = {

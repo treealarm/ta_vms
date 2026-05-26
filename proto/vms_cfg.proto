@@ -66,6 +66,7 @@ message RecordingProfile {
   uint32 post_record_seconds = 5;
   uint32 segment_seconds     = 6;
   bool   is_override_preset  = 7;
+  bool   is_builtin          = 8;
 }
 
 message CameraStream {

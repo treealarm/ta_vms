@@ -98,6 +98,7 @@ public class CameraManager : ICameraManager
     PostRecordSeconds = p.PostRecordSeconds,
     SegmentSeconds    = p.SegmentSeconds,
     IsOverridePreset  = p.IsOverridePreset,
+    IsBuiltin         = p.IsBuiltin,
   };
 
   public async Task<List<MediaMtxServerDto>> ListMediaMtxServers(CancellationToken ct = default)

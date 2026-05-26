@@ -88,6 +88,7 @@ public class RecordingProfileController(
     PostRecordSeconds = p.PostRecordSeconds,
     SegmentSeconds    = p.SegmentSeconds,
     IsOverridePreset  = p.IsOverridePreset,
+    IsBuiltin         = p.IsBuiltin,
   };
 
   private static RecordingProfile ToProto(RecordingProfileDto dto) => new()

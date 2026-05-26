@@ -16,7 +16,7 @@
     "camSetup": "Cámaras",
     "events": "Eventos",
     "storages": "Almacenes",
-    "recording": "Grabación",
+    "recording": "Perfiles Grab.",
     "mediaMtx": "MediaMTX",
     "logs": "Registros"
   },
@@ -73,6 +73,7 @@
     "segmentSec": "Segmento, seg",
     "overridePreset": "Mostrar como preset de anulación",
     "overridePresetChip": "preset de anulación",
+    "builtinChip": "sistema",
     "create": "Crear",
     "prePostSeg": "pre {{pre}}s · post {{post}}s · seg {{seg}}s",
     "seg": "seg {{seg}}s",
