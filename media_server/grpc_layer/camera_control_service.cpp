@@ -31,6 +31,7 @@ grpc::Status camera_control_service::SetCameraState(
     request->camera_id(),
     request->stream_name(),
     request->rtsp_url(),
+    request->profile_token(),
     request->has_cred() ? request->cred().user() : "",
     request->has_cred() ? request->cred().pass() : "",
     policy,

@@ -34,6 +34,7 @@ message CameraState {
   uint32 segment_seconds        = 6;
   string stream_name            = 7;
   string webrtc_rtsp_push_url   = 8;
+  string profile_token          = 9;
 }
 
 

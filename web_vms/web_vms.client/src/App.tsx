@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Box,
+  Button,
   IconButton,
   Paper,
   Stack,
@@ -12,18 +13,22 @@ import {
 import ScienceIcon from '@mui/icons-material/Science'
 import CloseIcon from '@mui/icons-material/Close'
 import { useTranslation } from 'react-i18next'
+import i18n from './i18n'
 
 import { loadCameras, loadServers } from './store/liveSlice'
 import { loadMonitors } from './store/monitorsSlice'
 import { loadMediaMtxServers } from './store/mediaMtxSlice'
 import { useAppDispatch, useAppSelector } from './store'
 import CameraControlPanel from './components/CameraControlPanel'
+import type { CameraControlHandle } from './components/CameraControlPanel'
 import LogJournalPanel from './components/LogJournalPanel'
 import SimulationPanel from './components/SimulationPanel'
 import RetentionEventsTab from './components/RetentionEventsTab'
 import StorageSetupPanel from './components/StorageSetupPanel'
 import RecordingProfilesPanel from './components/RecordingProfilesPanel'
+import type { RecordingProfilesHandle } from './components/RecordingProfilesPanel'
 import MediaMtxServersPanel from './components/MediaMtxServersPanel'
+import type { MediaMtxServersHandle } from './components/MediaMtxServersPanel'
 import MonitorsView from './components/MonitorsView'
 
 export default function App() {
@@ -31,8 +36,22 @@ export default function App() {
   const { t } = useTranslation()
   const [mainTab, setMainTab] = useState(0)
   const [testsOpen, setTestsOpen] = useState(false)
+  const [lang, setLang] = useState<'en' | 'es'>(
+    () => (localStorage.getItem('lang') === 'es' ? 'es' : 'en')
+  )
+
+  const toggleLang = () => {
+    const next = lang === 'en' ? 'es' : 'en'
+    setLang(next)
+    void i18n.changeLanguage(next)
+    localStorage.setItem('lang', next)
+  }
 
   const camerasMap = useAppSelector((state) => state.live.cameraStatesById)
+
+  const cameraControlRef = useRef<CameraControlHandle>(null)
+  const recordingRef = useRef<RecordingProfilesHandle>(null)
+  const mediaMtxRef = useRef<MediaMtxServersHandle>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -63,6 +82,14 @@ export default function App() {
     }
   }, [dispatch])
 
+  // Auto-apply unsaved changes before switching tabs
+  const handleTabChange = async (_: unknown, v: number) => {
+    if (mainTab === 1) await cameraControlRef.current?.applyIfDirty()
+    if (mainTab === 4) await recordingRef.current?.applyIfDirty()
+    if (mainTab === 5) await mediaMtxRef.current?.applyIfDirty()
+    setMainTab(v)
+  }
+
   return (
     <Box sx={{ display: 'flex', height: '100dvh', overflow: 'hidden' }}>
       <Box
@@ -79,11 +106,11 @@ export default function App() {
 
         {mainTab !== 0 && (
           <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-            {mainTab === 1 && <CameraControlPanel />}
+            {mainTab === 1 && <CameraControlPanel ref={cameraControlRef} />}
             {mainTab === 2 && <RetentionEventsTab />}
             {mainTab === 3 && <StorageSetupPanel />}
-            {mainTab === 4 && <RecordingProfilesPanel />}
-            {mainTab === 5 && <MediaMtxServersPanel />}
+            {mainTab === 4 && <RecordingProfilesPanel ref={recordingRef} />}
+            {mainTab === 5 && <MediaMtxServersPanel ref={mediaMtxRef} />}
             {mainTab === 6 && <LogJournalPanel />}
           </Box>
         )}
@@ -102,7 +129,7 @@ export default function App() {
         <Tabs
           orientation="vertical"
           value={mainTab}
-          onChange={(_, v: number) => setMainTab(v)}
+          onChange={(e, v) => void handleTabChange(e, v)}
           sx={{ '& .MuiTab-root': { minWidth: 90 } }}
         >
           <Tab label={t('nav.monitors')} />
@@ -114,14 +141,24 @@ export default function App() {
           <Tab label={t('nav.logs')} />
         </Tabs>
 
-        <Tooltip title={t('tests.title')} placement="right">
-          <IconButton
-            onClick={() => setTestsOpen((v) => !v)}
-            sx={{ m: 1, color: testsOpen ? 'primary.main' : 'text.secondary' }}
+        <Stack alignItems="center" spacing={0.5} sx={{ mb: 1 }}>
+          <Tooltip title={t('tests.title')} placement="right">
+            <IconButton
+              onClick={() => setTestsOpen((v) => !v)}
+              sx={{ color: testsOpen ? 'primary.main' : 'text.secondary' }}
+            >
+              <ScienceIcon />
+            </IconButton>
+          </Tooltip>
+          <Button
+            size="small"
+            variant="text"
+            onClick={toggleLang}
+            sx={{ minWidth: 0, px: 1, py: 0.5, fontSize: '0.7rem', color: 'text.secondary' }}
           >
-            <ScienceIcon />
-          </IconButton>
-        </Tooltip>
+            {lang === 'en' ? 'ES' : 'EN'}
+          </Button>
+        </Stack>
       </Box>
 
       {testsOpen && (

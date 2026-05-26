@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useImperativeHandle, useMemo, useRef, useState } from 'react'
 import {
   Box,
   Button,
@@ -16,7 +16,13 @@ import { useAppDispatch, useAppSelector } from '../store'
 import { loadCameras, loadServers } from '../store/liveSlice'
 import { loadMediaMtxServers } from '../store/mediaMtxSlice'
 import CameraSetupPanel from './CameraSetupPanel'
+import type { CameraSetupHandle } from './CameraSetupPanel'
 import StreamSetupPanel from './StreamSetupPanel'
+import type { StreamSetupHandle } from './StreamSetupPanel'
+
+export type CameraControlHandle = { applyIfDirty: () => Promise<void> }
+
+type DetailHandle = CameraSetupHandle | StreamSetupHandle
 
 type Selection =
   | { kind: 'none' }
@@ -25,13 +31,15 @@ type Selection =
   | { kind: 'stream'; cameraId: string; streamName: string }
   | { kind: 'new_stream'; cameraId: string }
 
-export default function CameraControlPanel() {
+export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraControlHandle> }) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const servers = useAppSelector((state) => state.live.servers)
   const camerasMap = useAppSelector((state) => state.live.cameraStatesById)
   const [selection, setSelection] = useState<Selection>({ kind: 'none' })
   const [isVisible, setIsVisible] = useState(true)
+
+  const detailRef = useRef<DetailHandle>(null)
 
   const serversTree = useMemo(() => {
     const cams = Object.values(camerasMap)
@@ -44,6 +52,24 @@ export default function CameraControlPanel() {
   const refresh = async () => {
     await Promise.all([dispatch(loadCameras()), dispatch(loadServers()), dispatch(loadMediaMtxServers())])
   }
+
+  // Auto-apply unsaved changes before switching to a different panel
+  const setSelectionSafe = async (newSel: Selection) => {
+    if (detailRef.current) await detailRef.current.applyIfDirty()
+    setSelection(newSel)
+  }
+
+  const handleHide = async () => {
+    if (detailRef.current) await detailRef.current.applyIfDirty()
+    setIsVisible(false)
+  }
+
+  // Expose applyIfDirty for App.tsx to call before switching tabs
+  useImperativeHandle(ref, () => ({
+    applyIfDirty: async () => {
+      if (detailRef.current) await detailRef.current.applyIfDirty()
+    }
+  }))
 
   return (
     <Box>
@@ -60,7 +86,7 @@ export default function CameraControlPanel() {
               {/* Tree */}
               <Box sx={{ minWidth: 260, border: 1, borderColor: 'divider', borderRadius: 1 }}>
                 <List dense disablePadding>
-                  <ListItemButton onClick={() => setIsVisible(false)}>
+                  <ListItemButton onClick={() => void handleHide()}>
                     <ListItemText primary={t('cameraControl.hide')} primaryTypographyProps={{ color: 'text.secondary' }} />
                   </ListItemButton>
 
@@ -69,7 +95,7 @@ export default function CameraControlPanel() {
                       {/* Server row — click → new camera form */}
                       <ListItemButton
                         selected={selection.kind === 'new_camera' && selection.serverId === server.serverId}
-                        onClick={() => setSelection({ kind: 'new_camera', serverId: server.serverId })}
+                        onClick={() => void setSelectionSafe({ kind: 'new_camera', serverId: server.serverId })}
                       >
                         <ListItemText
                           primary={server.serverId}
@@ -85,7 +111,7 @@ export default function CameraControlPanel() {
                             sx={{ pl: 4 }}
                             selected={selection.kind === 'camera' && selection.cameraId === camera.cameraId}
                             onClick={() =>
-                              setSelection({ kind: 'camera', cameraId: camera.cameraId, serverId: server.serverId })
+                              void setSelectionSafe({ kind: 'camera', cameraId: camera.cameraId, serverId: server.serverId })
                             }
                           >
                             <ListItemText primary={camera.cameraId} />
@@ -102,7 +128,7 @@ export default function CameraControlPanel() {
                                 selection.streamName === stream.streamName
                               }
                               onClick={() =>
-                                setSelection({ kind: 'stream', cameraId: camera.cameraId, streamName: stream.streamName })
+                                void setSelectionSafe({ kind: 'stream', cameraId: camera.cameraId, streamName: stream.streamName })
                               }
                             >
                               <ListItemText
@@ -117,7 +143,7 @@ export default function CameraControlPanel() {
                           <ListItemButton
                             sx={{ pl: 8 }}
                             selected={selection.kind === 'new_stream' && selection.cameraId === camera.cameraId}
-                            onClick={() => setSelection({ kind: 'new_stream', cameraId: camera.cameraId })}
+                            onClick={() => void setSelectionSafe({ kind: 'new_stream', cameraId: camera.cameraId })}
                           >
                             <ListItemText
                               primary={t('cameraControl.addStream')}
@@ -135,6 +161,7 @@ export default function CameraControlPanel() {
               <Box flex={1} sx={{ minWidth: 0 }}>
                 {selection.kind === 'camera' && (
                   <CameraSetupPanel
+                    ref={detailRef}
                     key={selection.cameraId}
                     cameraId={selection.cameraId}
                     serverId={selection.serverId}
@@ -148,6 +175,7 @@ export default function CameraControlPanel() {
 
                 {selection.kind === 'new_camera' && (
                   <CameraSetupPanel
+                    ref={detailRef}
                     key={`new@${selection.serverId}`}
                     cameraId=""
                     serverId={selection.serverId}
@@ -158,6 +186,7 @@ export default function CameraControlPanel() {
 
                 {selection.kind === 'stream' && (
                   <StreamSetupPanel
+                    ref={detailRef}
                     key={`${selection.cameraId}/${selection.streamName}`}
                     cameraId={selection.cameraId}
                     streamName={selection.streamName}
@@ -171,6 +200,7 @@ export default function CameraControlPanel() {
 
                 {selection.kind === 'new_stream' && (
                   <StreamSetupPanel
+                    ref={detailRef}
                     key={`${selection.cameraId}/new`}
                     cameraId={selection.cameraId}
                     streamName={null}

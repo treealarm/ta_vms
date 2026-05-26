@@ -37,6 +37,7 @@ public:
   std::string get_source() const { return m_rtsp_url; }
   std::string get_camera_id() const { return m_camera_id; }
   std::string get_stream_name() const { return m_stream_name; }
+  std::string get_profile_token() const { return m_profile_token; }
   std::string get_user() const { return m_user; }
   std::string get_pass() const { return m_pass; }
   bool is_recording() const { return m_writer != nullptr; }
@@ -47,6 +48,7 @@ private:
   std::string m_rtsp_url;
   std::string m_camera_id;
   std::string m_stream_name;
+  std::string m_profile_token;
   std::string m_user;
   std::string m_pass;
   std::string m_webrtc_rtsp_push_url;

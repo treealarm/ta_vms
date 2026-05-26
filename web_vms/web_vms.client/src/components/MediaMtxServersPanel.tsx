@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useImperativeHandle, useState } from 'react'
 import {
   Alert,
   Box,
@@ -23,9 +23,11 @@ import { useAppDispatch, useAppSelector } from '../store'
 import { loadMediaMtxServers, removeMediaMtxServer, upsertMediaMtxServer } from '../store/mediaMtxSlice'
 import type { MediaMtxServerDto } from '../dto/dtos'
 
+export type MediaMtxServersHandle = { applyIfDirty: () => Promise<void> }
+
 const EMPTY: MediaMtxServerDto = { id: '', name: '', rtspUrl: '', webrtcUrl: '' }
 
-export default function MediaMtxServersPanel() {
+export default function MediaMtxServersPanel({ ref }: { ref?: React.Ref<MediaMtxServersHandle> }) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const { servers, isBusy, status } = useAppSelector((s) => s.mediaMtx)
@@ -35,11 +37,19 @@ export default function MediaMtxServersPanel() {
     dispatch(loadMediaMtxServers())
   }, [dispatch])
 
+  // Warn browser on close when editing
+  useEffect(() => {
+    if (!editing) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [editing])
+
   const handleEdit = (s: MediaMtxServerDto) => setEditing({ ...s })
   const handleNew = () => setEditing({ ...EMPTY })
   const handleCancel = () => setEditing(null)
 
-  const handleSave = async () => {
+  const handleSaveInternal = async (): Promise<void> => {
     if (!editing) return
     const result = await dispatch(upsertMediaMtxServer(editing))
     if (!upsertMediaMtxServer.rejected.match(result)) {
@@ -47,6 +57,14 @@ export default function MediaMtxServersPanel() {
       setEditing(null)
     }
   }
+
+  const handleSave = () => void handleSaveInternal()
+
+  useImperativeHandle(ref, () => ({
+    applyIfDirty: async () => {
+      if (editing?.name && editing.rtspUrl && editing.webrtcUrl) await handleSaveInternal()
+    }
+  }))
 
   const handleRemove = async (id: string) => {
     const result = await dispatch(removeMediaMtxServer(id))
@@ -103,7 +121,7 @@ export default function MediaMtxServersPanel() {
             />
             <Stack direction="row" spacing={1}>
               <Button variant="outlined" size="small" onClick={handleSave} disabled={isBusy}>
-                {t('common.save')}
+                {t('common.apply')}
               </Button>
               <Button variant="text" size="small" onClick={handleCancel} disabled={isBusy}>
                 {t('common.cancel')}
@@ -140,7 +158,7 @@ export default function MediaMtxServersPanel() {
                   <IconButton size="small" onClick={() => handleEdit(s)}>
                     <EditIcon fontSize="small" />
                   </IconButton>
-                  <IconButton size="small" color="error" onClick={() => handleRemove(s.id)} disabled={isBusy}>
+                  <IconButton size="small" color="error" onClick={() => void handleRemove(s.id)} disabled={isBusy}>
                     <DeleteIcon fontSize="small" />
                   </IconButton>
                 </TableCell>

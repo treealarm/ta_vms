@@ -1,21 +1,24 @@
-import { useState } from 'react'
+import { useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { Box, Button, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
-import { addCamera, changeCameraParent, removeCamera } from '../store/liveSlice'
+import { addCamera, changeCameraParent, fetchCameraState, removeCamera } from '../store/liveSlice'
 import type { CameraSetupDto } from '../dto/dtos'
 import CameraStoragesControl from './CameraStoragesControl'
 import PasswordField from './PasswordField'
 import CameraStream from './CameraStream'
 
+export type CameraSetupHandle = { applyIfDirty: () => Promise<void> }
+
 type Props = {
+  ref?: React.Ref<CameraSetupHandle>
   cameraId: string  // '' = new camera
   serverId: string  // pre-selected server
   onSaved: () => Promise<void>
   onRemoved: () => Promise<void>
 }
 
-export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: initialServerId, onSaved, onRemoved }: Props) {
+export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serverId: initialServerId, onSaved, onRemoved }: Props) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const servers = useAppSelector((state) => state.live.servers)
@@ -31,10 +34,30 @@ export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: 
   const [pass, setPass] = useState(existing?.cred?.pass ?? '')
   const [onvifIp, setOnvifIp] = useState(existing?.onvifConn?.ip ?? '')
   const [onvifPort, setOnvifPort] = useState(existing?.onvifConn?.port ?? 0)
+
   const setNonNegativeNumber = (raw: string, setter: (n: number) => void) => {
     const value = Number(raw)
     if (!Number.isNaN(value)) setter(Math.max(0, value))
   }
+
+  // Snapshot of the saved state — used for dirty detection and Cancel
+  const snap = useRef({
+    serverId: initialServerId,
+    mediaMtxServerId: existing?.mediaMtxServerId ?? '',
+    user: existing?.cred?.user ?? '',
+    pass: existing?.cred?.pass ?? '',
+    onvifIp: existing?.onvifConn?.ip ?? '',
+    onvifPort: existing?.onvifConn?.port ?? 0,
+  })
+
+  const dirty = !isNew && (
+    serverId !== snap.current.serverId
+    || mediaMtxServerId !== snap.current.mediaMtxServerId
+    || user !== snap.current.user
+    || pass !== snap.current.pass
+    || onvifIp !== snap.current.onvifIp
+    || onvifPort !== snap.current.onvifPort
+  )
 
   // WebRTC streams available for preview
   const webRtcStreams = (existing?.streams ?? []).filter((s) => s.webRtc)
@@ -55,15 +78,39 @@ export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: 
     mediaMtxServerId: mediaMtxServerId || undefined,
   })
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const applyInternal = async (): Promise<boolean> => {
+    if (!dirty) return true
     const payload = buildPayload()
     const serverChanged = !isNew && existing && serverId !== existing.serverId
     const action = serverChanged ? changeCameraParent : addCamera
     const result = await dispatch(action(payload))
     if (!action.rejected.match(result)) {
-      await onSaved()
+      snap.current = { serverId, mediaMtxServerId, user, pass, onvifIp, onvifPort }
+      await dispatch(fetchCameraState(initialCameraId))
+      return true
     }
+    return false
+  }
+
+  const handleApply = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (isNew) {
+      const payload = buildPayload()
+      const result = await dispatch(addCamera(payload))
+      if (!addCamera.rejected.match(result)) await onSaved()
+    } else {
+      const ok = await applyInternal()
+      if (ok) await onSaved()
+    }
+  }
+
+  const handleCancel = () => {
+    setServerId(snap.current.serverId)
+    setMediaMtxServerId(snap.current.mediaMtxServerId)
+    setUser(snap.current.user)
+    setPass(snap.current.pass)
+    setOnvifIp(snap.current.onvifIp)
+    setOnvifPort(snap.current.onvifPort)
   }
 
   const handleRemove = async () => {
@@ -73,8 +120,19 @@ export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: 
     }
   }
 
+  // Expose applyIfDirty for parent (CameraControlPanel) to call before switching selection
+  useImperativeHandle(ref, () => ({ applyIfDirty: async () => { await applyInternal() } }))
+
+  // Warn browser on close when dirty
+  useEffect(() => {
+    if (!dirty) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [dirty])
+
   return (
-    <Stack component="form" direction="row" spacing={3} alignItems="flex-start" onSubmit={handleSave}>
+    <Stack component="form" direction="row" spacing={3} alignItems="flex-start" onSubmit={handleApply}>
       {/* Left: form fields */}
       <Stack spacing={2} sx={{ flex: 1, minWidth: 0 }}>
         <Typography variant="subtitle2" color="text.secondary">
@@ -127,9 +185,14 @@ export default function CameraSetupPanel({ cameraId: initialCameraId, serverId: 
         </Stack>
 
         <Stack direction="row" spacing={1}>
-          <Button type="submit" variant="outlined" size="small">
-            {isNew ? t('cameras.addCamera') : t('common.save')}
+          <Button type="submit" variant="outlined" size="small" disabled={!isNew && !dirty}>
+            {isNew ? t('cameras.addCamera') : t('common.apply')}
           </Button>
+          {!isNew && (
+            <Button variant="text" size="small" onClick={handleCancel} disabled={!dirty}>
+              {t('common.cancel')}
+            </Button>
+          )}
           {!isNew && (
             <Button color="error" variant="outlined" size="small" onClick={handleRemove}>
               {t('cameras.deleteCamera')}
