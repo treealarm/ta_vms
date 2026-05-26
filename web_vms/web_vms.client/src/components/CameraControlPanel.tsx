@@ -20,7 +20,7 @@ import type { CameraSetupHandle } from './CameraSetupPanel'
 import StreamSetupPanel from './StreamSetupPanel'
 import type { StreamSetupHandle } from './StreamSetupPanel'
 
-export type CameraControlHandle = { applyIfDirty: () => Promise<void> }
+export type CameraControlHandle = { applyIfDirty: () => Promise<boolean> }
 
 type DetailHandle = CameraSetupHandle | StreamSetupHandle
 
@@ -66,9 +66,7 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
 
   // Expose applyIfDirty for App.tsx to call before switching tabs
   useImperativeHandle(ref, () => ({
-    applyIfDirty: async () => {
-      if (detailRef.current) await detailRef.current.applyIfDirty()
-    }
+    applyIfDirty: () => detailRef.current ? detailRef.current.applyIfDirty() : Promise.resolve(true)
   }))
 
   return (

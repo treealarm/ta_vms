@@ -84,9 +84,9 @@ export default function App() {
 
   // Auto-apply unsaved changes before switching tabs
   const handleTabChange = async (_: unknown, v: number) => {
-    if (mainTab === 1) await cameraControlRef.current?.applyIfDirty()
-    if (mainTab === 4) await recordingRef.current?.applyIfDirty()
-    if (mainTab === 5) await mediaMtxRef.current?.applyIfDirty()
+    if (mainTab === 1 && !(await cameraControlRef.current?.applyIfDirty() ?? true)) return
+    if (mainTab === 4 && !(await recordingRef.current?.applyIfDirty() ?? true)) return
+    if (mainTab === 5 && !(await mediaMtxRef.current?.applyIfDirty() ?? true)) return
     setMainTab(v)
   }
 

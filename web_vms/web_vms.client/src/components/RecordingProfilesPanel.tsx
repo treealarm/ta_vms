@@ -21,7 +21,7 @@ import EditIcon from '@mui/icons-material/Edit'
 import { useTranslation } from 'react-i18next'
 import type { RecordingProfileDto, RecordingMode } from '../dto/dtos'
 
-export type RecordingProfilesHandle = { applyIfDirty: () => Promise<void> }
+export type RecordingProfilesHandle = { applyIfDirty: () => Promise<boolean> }
 
 const EMPTY_PROFILE: Omit<RecordingProfileDto, 'id'> = {
   name: '',
@@ -74,8 +74,8 @@ export default function RecordingProfilesPanel({ ref }: { ref?: React.Ref<Record
 
   const cancel = () => { setEditing(null); setError(null) }
 
-  const saveInternal = async (): Promise<void> => {
-    if (!editing) return
+  const saveInternal = async (): Promise<boolean> => {
+    if (!editing) return true
     setBusy(true)
     setError(null)
     try {
@@ -85,11 +85,13 @@ export default function RecordingProfilesPanel({ ref }: { ref?: React.Ref<Record
         body: JSON.stringify(editing),
       })
       const body = await r.json() as { success: boolean; message: string }
-      if (!body.success) { setError(body.message); return }
+      if (!body.success) { setError(body.message); return false }
       setEditing(null)
       await load()
+      return true
     } catch (e) {
       setError(String(e))
+      return false
     } finally {
       setBusy(false)
     }
@@ -101,9 +103,7 @@ export default function RecordingProfilesPanel({ ref }: { ref?: React.Ref<Record
   }
 
   useImperativeHandle(ref, () => ({
-    applyIfDirty: async () => {
-      if (editing?.name) await saveInternal()
-    }
+    applyIfDirty: () => editing?.name ? saveInternal() : Promise.resolve(true),
   }))
 
   const remove = async (id: string) => {

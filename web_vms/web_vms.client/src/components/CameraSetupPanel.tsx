@@ -8,7 +8,7 @@ import CameraStoragesControl from './CameraStoragesControl'
 import PasswordField from './PasswordField'
 import CameraStream from './CameraStream'
 
-export type CameraSetupHandle = { applyIfDirty: () => Promise<void> }
+export type CameraSetupHandle = { applyIfDirty: () => Promise<boolean> }
 
 type Props = {
   ref?: React.Ref<CameraSetupHandle>
@@ -121,7 +121,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   }
 
   // Expose applyIfDirty for parent (CameraControlPanel) to call before switching selection
-  useImperativeHandle(ref, () => ({ applyIfDirty: async () => { await applyInternal() } }))
+  useImperativeHandle(ref, () => ({ applyIfDirty: () => applyInternal() }))
 
   // Warn browser on close when dirty
   useEffect(() => {
