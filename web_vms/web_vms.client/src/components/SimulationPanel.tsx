@@ -31,9 +31,7 @@ export default function SimulationPanel({ cameras }: SimulationPanelProps) {
 
   const selectedCameraId = cameraId || cameras[0]?.cameraId || ''
   const selectedCamera = cameras.find((c) => c.cameraId === selectedCameraId)
-  const recordableStreams = (selectedCamera?.streams ?? []).filter(
-    (s) => s.recordingProfile != null || s.overrideProfile != null
-  )
+  const recordableStreams = selectedCamera?.streams ?? []
 
   const setNonNegativeNumber = (raw: string, setter: (value: number) => void) => {
     const value = Number(raw)
