@@ -350,10 +350,18 @@ namespace VmsCfg
     public override async Task<OnvifSubscriptionsResponse> ListOnvifSubscriptions(
       Google.Protobuf.WellKnownTypes.Empty request, ServerCallContext context)
     {
-      var ids = await storage.ListOnvifSubscriptionsAsync(context.CancellationToken);
+      var list = await storage.ListOnvifSubscriptionsAsync(context.CancellationToken);
       var response = new OnvifSubscriptionsResponse();
-      response.CameraIds.AddRange(ids);
+      response.Cameras.AddRange(list.Select(x => new OnvifCameraEntry { CameraId = x.CameraId, Subscribed = x.Subscribed }));
       return response;
+    }
+
+    public override async Task<OperationStatus> SetOnvifArmed(
+      SetOnvifArmedRequest request, ServerCallContext context)
+    {
+      await storage.SetOnvifArmedAsync(request.CameraId, request.Armed, context.CancellationToken);
+      InvalidateFsCache(request.CameraId);
+      return new OperationStatus { Success = true };
     }
   }
 }

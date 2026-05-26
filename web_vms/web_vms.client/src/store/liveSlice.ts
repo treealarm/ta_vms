@@ -73,7 +73,11 @@ export const setOnvifEventsEnabled = createAsyncThunk(
   async ({ cameraId, enabled }: { cameraId: string; enabled: boolean }, { dispatch }) => {
     const response = await fetch(
       `/api/onvif/cameras/${encodeURIComponent(cameraId)}/subscription`,
-      { method: enabled ? 'POST' : 'DELETE' }
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ armed: enabled }),
+      }
     )
     if (response.ok)
       await dispatch(fetchCameraState(cameraId))

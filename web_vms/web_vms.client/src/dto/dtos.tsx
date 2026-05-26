@@ -119,6 +119,7 @@ export type CameraSetupDto = {
   mediaMtxWebrtcUrl?: string
   onvifEventsEnabled?: boolean
   hasOnvifFilters?: boolean
+  onvifManaged?: boolean
 }
 
 export type MediaServerNodeDto = {
@@ -269,6 +270,11 @@ export type MonitorDto = {
   layout: MonitorLayout
   cameraIds: string[]
   slots: MonitorSlotDto[]
+}
+
+export type OnvifCameraEntryDto = {
+  cameraId: string
+  subscribed: boolean
 }
 
 export type OnvifAlarmFilterDto = {

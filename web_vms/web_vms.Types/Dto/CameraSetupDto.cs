@@ -58,4 +58,5 @@ public record CameraSetupDto
   public string? MediaMtxWebrtcUrl { get; init; }
   public bool OnvifEventsEnabled { get; init; }
   public bool HasOnvifFilters    { get; init; }
+  public bool OnvifManaged       { get; init; }
 }

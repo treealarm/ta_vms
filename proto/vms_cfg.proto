@@ -36,6 +36,7 @@ service CfgService {
   rpc SubscribeOnvifEvents(OnvifSubscriptionRequest) returns (OperationStatus);
   rpc UnsubscribeOnvifEvents(OnvifSubscriptionRequest) returns (OperationStatus);
   rpc ListOnvifSubscriptions(google.protobuf.Empty) returns (OnvifSubscriptionsResponse);
+  rpc SetOnvifArmed(SetOnvifArmedRequest) returns (OperationStatus);
 }
 
 service StorageService {
@@ -95,6 +96,7 @@ message CameraSetup {
   optional string media_mtx_server_id = 10;
   bool onvif_events_enabled = 11;
   bool has_onvif_filters    = 12;
+  bool onvif_managed        = 13;
 }
 
 message RecordingProfileRequest {
@@ -283,6 +285,16 @@ message OnvifSubscriptionRequest {
   string camera_id = 1;
 }
 
+message OnvifCameraEntry {
+  string camera_id  = 1;
+  bool   subscribed = 2;
+}
+
 message OnvifSubscriptionsResponse {
-  repeated string camera_ids = 1;
+  repeated OnvifCameraEntry cameras = 1;
+}
+
+message SetOnvifArmedRequest {
+  string camera_id = 1;
+  bool   armed     = 2;
 }

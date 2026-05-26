@@ -88,6 +88,7 @@ public class CameraManager : ICameraManager
       MediaMtxServerId    = setup.HasMediaMtxServerId ? setup.MediaMtxServerId : null,
       OnvifEventsEnabled  = setup.OnvifEventsEnabled,
       HasOnvifFilters     = setup.HasOnvifFilters,
+      OnvifManaged        = setup.OnvifManaged,
     };
   }
 

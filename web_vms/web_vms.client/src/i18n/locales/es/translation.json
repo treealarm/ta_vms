@@ -18,7 +18,7 @@
     "storages": "Almacenes",
     "recording": "Perfiles Grab.",
     "mediaMtx": "MediaMTX",
-    "onvif": "ONVIF",
+    "onvif": "Eventos ONVIF",
     "logs": "Registros",
     "goAdmin": "Admin",
     "goOperator": "Operador"
@@ -201,6 +201,11 @@
     "debugRefresh": "Actualizar",
     "debugPayload": "Carga útil completa (XML)",
     "autoRefresh": "Auto-actualizar"
+  },
+  "onvifSubs": {
+    "description": "Las cámaras de esta lista reciben eventos ONVIF. Activa el guardia para disparar grabaciones de retención con los filtros de alarma.",
+    "noCameras": "No hay cámaras agregadas.",
+    "addCamera": "Agregar cámara"
   },
   "serverSetup": {
     "title": "Configuración de cámara",

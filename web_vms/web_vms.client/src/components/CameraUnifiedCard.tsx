@@ -87,6 +87,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
 
   const merged: CameraSetupDto = { ...camera, ...(cameraState ?? {}) }
 
+  const isOnvifManaged = merged.onvifManaged ?? false
   const effectiveArmed = pendingArmed !== null ? pendingArmed : (merged.onvifEventsEnabled ?? false)
   const armDisarm = (enabled: boolean) => {
     setPendingArmed(enabled)
@@ -192,7 +193,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             </Tooltip>
           )}
 
-          {merged.hasOnvifFilters && (
+          {isOnvifManaged && (
             <Tooltip title={effectiveArmed ? 'Armed — click to disarm' : 'Disarmed — click to arm'} placement="right">
               <IconButton
                 size="small"
@@ -303,7 +304,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             )}
 
             {/* Guard */}
-            {merged.hasOnvifFilters && (
+            {isOnvifManaged && (
               <Box>
                 <Typography component="span" sx={CAPTION_SX}>Guard</Typography>
                 <ToggleButtonGroup

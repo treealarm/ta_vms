@@ -18,7 +18,7 @@
     "storages": "Storages",
     "recording": "Rec. profiles",
     "mediaMtx": "MediaMTX",
-    "onvif": "ONVIF",
+    "onvif": "ONVIF Events",
     "logs": "Logs",
     "goAdmin": "Admin",
     "goOperator": "Operator"
@@ -201,6 +201,11 @@
     "debugRefresh": "Refresh",
     "debugPayload": "Full payload (XML)",
     "autoRefresh": "Auto-refresh"
+  },
+  "onvifSubs": {
+    "description": "Cameras in this list receive ONVIF events. Arm to trigger retention recordings on matching alarm filters.",
+    "noCameras": "No cameras added yet.",
+    "addCamera": "Add camera"
   },
   "serverSetup": {
     "title": "Camera setup",

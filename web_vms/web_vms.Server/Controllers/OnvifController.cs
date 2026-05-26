@@ -147,7 +147,7 @@ public class OnvifController(
     {
       var resp = await cfgClient.ListOnvifSubscriptionsAsync(
         new Google.Protobuf.WellKnownTypes.Empty(), Options(ct));
-      return Ok(resp.CameraIds);
+      return Ok(resp.Cameras.Select(c => new { cameraId = c.CameraId, subscribed = c.Subscribed }));
     }
     catch (RpcException ex) { return StatusCode(502, ex.Status.Detail); }
   }
@@ -175,6 +175,20 @@ public class OnvifController(
     }
     catch (RpcException ex) { return StatusCode(502, ex.Status.Detail); }
   }
+
+  [HttpPut("cameras/{cameraId}/subscription")]
+  public async Task<IActionResult> SetArmed(string cameraId, [FromBody] SetArmedBody body, CancellationToken ct)
+  {
+    try
+    {
+      await cfgClient.SetOnvifArmedAsync(
+        new SetOnvifArmedRequest { CameraId = cameraId, Armed = body.Armed }, Options(ct));
+      return Ok();
+    }
+    catch (RpcException ex) { return StatusCode(502, ex.Status.Detail); }
+  }
+
+  public record SetArmedBody(bool Armed);
 
   // ── ONVIF debug events ────────────────────────────────────────────────────
 
