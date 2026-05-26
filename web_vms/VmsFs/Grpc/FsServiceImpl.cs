@@ -7,7 +7,8 @@ namespace VmsFs;
 public sealed class FsServiceImpl(
   ClipStorage storage,
   StorageListCache storageListCache,
-  CameraStorageCache storageCache) : FsService.FsServiceBase
+  CameraStorageCache storageCache,
+  AlarmRecordingService alarmRecording) : FsService.FsServiceBase
 {
   private readonly ClipStorage _storage = storage;
   private readonly StorageListCache _storageListCache = storageListCache;
@@ -52,13 +53,22 @@ public sealed class FsServiceImpl(
   {
     try
     {
-      await _storage.RetainEventAsync(request, context.CancellationToken);
+      var until = await _storage.RetainEventAsync(request, context.CancellationToken);
+      _ = alarmRecording.TryActivateAsync(
+        request.CameraId,
+        request.HasStreamName && !string.IsNullOrWhiteSpace(request.StreamName) ? request.StreamName : null,
+        until,
+        context.CancellationToken);
       return new OperationStatus { Status = OperationStatus.Types.Status.Success, Message = "ok" };
+    }
+    catch (RetentionEventClosedException ex)
+    {
+      return new OperationStatus { Status = OperationStatus.Types.Status.PermanentFailure, Message = ex.Message };
     }
     catch (Exception ex)
     {
       Console.Error.WriteLine($"RetainEvent failed: {ex}");
-      return new OperationStatus { Status = OperationStatus.Types.Status.PermanentFailure, Message = ex.Message };
+      return new OperationStatus { Status = OperationStatus.Types.Status.RetryableFailure, Message = ex.Message };
     }
   }
 
@@ -288,8 +298,8 @@ public sealed class FsServiceImpl(
       throw new RpcException(new Status(StatusCode.InvalidArgument, "event_id is required"));
 
     var clips = await _storage.GetClipsForEventAsync(request.EventId, context.CancellationToken);
-    if (clips.Count == 0)
-      throw new RpcException(new Status(StatusCode.NotFound, "event not found or has no clips"));
+    if (clips is null)
+      throw new RpcException(new Status(StatusCode.NotFound, "event not found"));
 
     var resp = new GetRecordingsResponse();
     resp.Recordings.AddRange(clips);

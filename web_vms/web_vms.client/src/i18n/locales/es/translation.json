@@ -118,6 +118,7 @@
     "alarmStart": "alarm_start_ts",
     "alarmEnd": "alarm_end_ts",
     "noRows": "Sin filas.",
+    "refresh": "Actualizar",
     "loadOlder": "Cargar anteriores",
     "archivePreview": "Vista previa de archivo (HLS en alarm_start_ts; alarm end es solo referencia)",
     "retry": "Reintentar"

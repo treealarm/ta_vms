@@ -13,13 +13,17 @@ type FsState = {
   recordingRangesByKey: Record<string, RecordingRangesResponseDto>
   isBusy: boolean
   status: string
+  simulationEventId: string
+  simulationResult: { ok: boolean; message: string } | null
 }
 
 const initialState: FsState = {
   recordingsByKey: {},
   recordingRangesByKey: {},
   isBusy: false,
-  status: 'Ready'
+  status: 'Ready',
+  simulationEventId: `test-alarm-${Date.now()}`,
+  simulationResult: null,
 }
 
 export const fetchRecordings = createAsyncThunk('fs/fetchRecordings', async (payload: RecordingsQueryDto) => {
@@ -58,7 +62,12 @@ export const sendRetentionEvent = createAsyncThunk('fs/sendRetentionEvent', asyn
 const fsSlice = createSlice({
   name: 'fs',
   initialState,
-  reducers: {},
+  reducers: {
+    setSimulationEventId(state, action: { payload: string }) {
+      state.simulationEventId = action.payload
+      state.simulationResult = null
+    },
+  },
   extraReducers: (builder) => {
     builder
       .addCase(fetchRecordings.fulfilled, (state, action: AnyAction) => {
@@ -71,6 +80,12 @@ const fsSlice = createSlice({
       })
       .addCase(sendRetentionEvent.fulfilled, (state, action) => {
         state.status = `Retention event: ${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
+        state.simulationResult = { ok: action.payload.success, message: action.payload.message }
+      })
+      .addCase(sendRetentionEvent.rejected, (state, action) => {
+        const msg = action.error.message ?? 'Unknown error'
+        state.status = `Error: ${msg}`
+        state.simulationResult = { ok: false, message: msg }
       })
       .addMatcher((action: AnyAction) => action.type.startsWith('fs/') && action.type.endsWith('/pending'), (state) => {
         state.isBusy = true
@@ -85,4 +100,5 @@ const fsSlice = createSlice({
   }
 })
 
+export const { setSimulationEventId } = fsSlice.actions
 export default fsSlice.reducer

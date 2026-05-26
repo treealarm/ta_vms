@@ -52,7 +52,7 @@ export default function RetentionEventsTab() {
       setEvents(page.events)
       setHasMore(page.hasMore)
       setNextBefore(page.nextBeforeAlarmStart)
-      setSelected(page.events[0] ?? null)
+      setSelected((prev) => prev ?? page.events[0] ?? null)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setEvents([])
@@ -66,6 +66,8 @@ export default function RetentionEventsTab() {
 
   useEffect(() => {
     void resetAndLoad()
+    const id = setInterval(() => void resetAndLoad(), 15_000)
+    return () => clearInterval(id)
   }, [resetAndLoad])
 
   const loadOlder = async () => {
@@ -145,6 +147,9 @@ export default function RetentionEventsTab() {
           </Box>
 
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+            <Button variant="outlined" size="small" disabled={loading} onClick={() => void resetAndLoad()}>
+              {t('events.refresh')}
+            </Button>
             <Button variant="outlined" size="small" disabled={loading || !hasMore} onClick={() => void loadOlder()}>
               {t('events.loadOlder')}
             </Button>

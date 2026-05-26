@@ -139,6 +139,50 @@ namespace VmsCfg
       return new OperationStatus { Success = true };
     }
 
+    public override async Task<ActivateAlarmOverrideResponse> ActivateAlarmOverride(
+      ActivateAlarmOverrideRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId) || request.Until is null)
+        return new ActivateAlarmOverrideResponse { Activated = false };
+
+      var streamName = request.HasStreamName && !string.IsNullOrWhiteSpace(request.StreamName)
+        ? request.StreamName : null;
+      var until = request.Until.ToDateTime().ToUniversalTime();
+
+      var activated = await storage.ActivateAlarmOverrideAsync(request.CameraId, streamName, until, context.CancellationToken);
+      if (activated)
+        InvalidateFsCache(request.CameraId);
+      return new ActivateAlarmOverrideResponse { Activated = activated };
+    }
+
+    public override async Task<OperationStatus> ClearAlarmOverride(
+      ClearAlarmOverrideRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId) || string.IsNullOrWhiteSpace(request.StreamName))
+        return new OperationStatus { Success = false, Message = "camera_id and stream_name are required" };
+
+      var cleared = await storage.ClearAlarmOverrideAsync(request.CameraId, request.StreamName, context.CancellationToken);
+      if (cleared)
+        InvalidateFsCache(request.CameraId);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<ListAlarmOverrideStreamsResponse> ListAlarmOverrideStreams(
+      ListAlarmOverrideStreamsRequest request,
+      ServerCallContext context)
+    {
+      var streams = await storage.ListAlarmOverrideStreamsAsync(context.CancellationToken);
+      var response = new ListAlarmOverrideStreamsResponse();
+      response.Streams.AddRange(streams.Select(s => new AlarmOverrideStream
+      {
+        CameraId   = s.CameraId,
+        StreamName = s.StreamName,
+      }));
+      return response;
+    }
+
     public override async Task<ListMediaMtxServersResponse> ListMediaMtxServers(
       ListMediaMtxServersRequest request,
       ServerCallContext context)

@@ -72,7 +72,7 @@ void segment_writer::open_new_segment()
     return;
   }
 
-  const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+  const auto now = std::chrono::floor<std::chrono::milliseconds>(std::chrono::system_clock::now());
 
   recording_storage storage;
 

@@ -1,12 +1,14 @@
+using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using NpgsqlTypes;
 using Vms.Cfg;
 
 namespace VmsCfg;
 
-public class CameraStorage(NpgsqlDataSource dataSource)
+public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfgDbContext> dbFactory)
 {
   private readonly NpgsqlDataSource _dataSource = dataSource;
+  private static readonly Guid BuiltinContinuousProfileId = new("00000000-0000-0000-0000-000000000001");
 
   public async Task SetupCameraAsync(CameraSetup camera, CancellationToken ct)
   {
@@ -232,6 +234,47 @@ public class CameraStorage(NpgsqlDataSource dataSource)
     command.Parameters.AddWithValue(cameraId);
     command.Parameters.AddWithValue(streamName);
     await command.ExecuteNonQueryAsync(ct);
+  }
+
+  public async Task<bool> ActivateAlarmOverrideAsync(string cameraId, string? streamName, DateTime until, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var rows = await db.CameraStreams
+      .Where(cs => cs.CameraId == cameraId
+                && (streamName == null || cs.StreamName == streamName)
+                && (cs.AlarmOverrideUntil != null
+                    || (cs.OverrideProfileId == null
+                        && (cs.RecordingProfileId == null
+                            || cs.RecordingProfile!.Mode == "off"))))
+      .ExecuteUpdateAsync(s => s
+        .SetProperty(cs => cs.OverrideProfileId, BuiltinContinuousProfileId)
+        .SetProperty(cs => cs.AlarmOverrideUntil,
+          cs => cs.AlarmOverrideUntil == null || cs.AlarmOverrideUntil < until ? until : cs.AlarmOverrideUntil),
+        ct);
+    return rows > 0;
+  }
+
+  public async Task<bool> ClearAlarmOverrideAsync(string cameraId, string streamName, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var rows = await db.CameraStreams
+      .Where(cs => cs.CameraId == cameraId && cs.StreamName == streamName && cs.AlarmOverrideUntil != null)
+      .ExecuteUpdateAsync(s => s
+        .SetProperty(cs => cs.OverrideProfileId, (Guid?)null)
+        .SetProperty(cs => cs.AlarmOverrideUntil, (DateTime?)null),
+        ct);
+    return rows > 0;
+  }
+
+  public async Task<List<(string CameraId, string StreamName)>> ListAlarmOverrideStreamsAsync(CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var now = DateTime.UtcNow;
+    var rows = await db.CameraStreams
+      .Where(cs => cs.AlarmOverrideUntil != null && cs.AlarmOverrideUntil < now)
+      .Select(cs => new { cs.CameraId, cs.StreamName })
+      .ToListAsync(ct);
+    return rows.Select(x => (x.CameraId, x.StreamName)).ToList();
   }
 
   public async Task<bool> RemoveRecordingProfileAsync(string id, CancellationToken ct)

@@ -5,7 +5,8 @@ namespace VmsFs;
 
 public sealed class CameraConfigSubscriber(
   DaprPublishSubscribeClient pubSubClient,
-  CameraConfigCache configCache) : IHostedService, IDisposable
+  CameraConfigCache configCache,
+  CameraSetupCache setupCache) : IHostedService, IDisposable
 {
   private const string CameraConfigChangedTopic = "camera-config-changed";
   private static readonly string PubSubName =
@@ -45,7 +46,10 @@ public sealed class CameraConfigSubscriber(
     {
       var cameraId = JsonSerializer.Deserialize<string>(message.Data.Span);
       if (!string.IsNullOrWhiteSpace(cameraId))
+      {
         configCache.Invalidate(cameraId);
+        setupCache.Invalidate(cameraId);
+      }
       return Task.FromResult(TopicResponseAction.Success);
     }
     catch

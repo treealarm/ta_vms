@@ -55,7 +55,8 @@ public sealed class ClipStorage(
     return (string)(await cmd.ExecuteScalarAsync(ct))!;
   }
 
-  public async Task RetainEventAsync(RetainEventRequest req, CancellationToken ct)
+  // Returns the alarm_override_until timestamp (alarm_end + post_record_seconds).
+  public async Task<DateTime> RetainEventAsync(RetainEventRequest req, CancellationToken ct)
   {
     var eventId = string.IsNullOrWhiteSpace(req.EventId)
       ? $"{req.CameraId}-{req.AlarmStartTs.ToDateTime().ToUniversalTime().Ticks}"
@@ -70,20 +71,31 @@ public sealed class ClipStorage(
       ? req.StreamName : null;
 
     var config = await configCache.GetAsync(req.CameraId, ct);
-    var preSeconds = config?.PreRecordSeconds ?? 30;
+    var preSeconds  = config?.PreRecordSeconds  ?? 30;
     var postSeconds = config?.PostRecordSeconds ?? 30;
 
     await using var conn = await dataSource.OpenConnectionAsync(ct);
     await using var tx = await conn.BeginTransactionAsync(ct);
 
+    // Check for an existing event with the same ID and lock it for the transaction.
+    await using (var checkCmd = new NpgsqlCommand(
+      "SELECT alarm_end_ts FROM retention_events WHERE event_id = $1 FOR UPDATE",
+      conn, tx))
+    {
+      checkCmd.Parameters.AddWithValue(eventId);
+      var existing = await checkCmd.ExecuteScalarAsync(ct);
+      if (existing is DateTime existingEnd && existingEnd.ToUniversalTime() <= DateTime.UtcNow)
+      {
+        await tx.RollbackAsync(ct);
+        throw new RetentionEventClosedException(eventId, existingEnd);
+      }
+    }
+
     await using (var upsert = new NpgsqlCommand("""
       INSERT INTO retention_events(event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts)
       VALUES($1, $2, $3, $4, COALESCE($5::timestamptz, $4 + ($6 * interval '1 second')))
       ON CONFLICT(event_id) DO UPDATE SET
-        camera_id      = EXCLUDED.camera_id,
-        stream_name    = EXCLUDED.stream_name,
-        alarm_start_ts = EXCLUDED.alarm_start_ts,
-        alarm_end_ts   = COALESCE($5::timestamptz, retention_events.alarm_end_ts);
+        alarm_end_ts = GREATEST(retention_events.alarm_end_ts, EXCLUDED.alarm_end_ts);
       """, conn, tx))
     {
       upsert.Parameters.AddWithValue(eventId);
@@ -117,6 +129,7 @@ public sealed class ClipStorage(
     }
 
     await tx.CommitAsync(ct);
+    return alarmEnd.AddSeconds(postSeconds);
   }
 
   public async Task<List<Recording>> GetRecordingsFromToAsync(GetRecordingsFromToRequest request, CancellationToken ct)
@@ -272,7 +285,8 @@ public sealed class ClipStorage(
     await db.Clips.Where(c => c.ClipUid == clipUid).ExecuteDeleteAsync(ct);
   }
 
-  public async Task<List<Recording>> GetClipsForEventAsync(string eventId, CancellationToken ct)
+  // Returns null when the event does not exist; empty list when event exists but has no retained clips yet.
+  public async Task<List<Recording>?> GetClipsForEventAsync(string eventId, CancellationToken ct)
   {
     await using var evtCmd = dataSource.CreateCommand("""
       SELECT camera_id FROM retention_events WHERE event_id = $1;
@@ -280,7 +294,7 @@ public sealed class ClipStorage(
     evtCmd.Parameters.AddWithValue(eventId);
     var cameraId = (string?)await evtCmd.ExecuteScalarAsync(ct);
     if (cameraId is null)
-      return [];
+      return null;
 
     var config = await configCache.GetAsync(cameraId, ct);
     var pre  = config?.PreRecordSeconds  ?? 30;
@@ -579,11 +593,15 @@ public sealed class ClipStorage(
     if (config.RecordingMode == Vms.Cfg.RecordingMode.RecordingContinuous)
       return true;
 
-    if (config.RecordingMode != Vms.Cfg.RecordingMode.RecordingPrealarm)
-      return false;
-
+    // For prealarm and off modes, check retention_events overlap.
+    // Off-mode cameras can have alarm-triggered clips if an override was just activated;
+    // checking retention_events here covers that race and is the correct semantic anyway.
     var startTs = clip.StartTs.ToDateTime();
     var endTs = clip.EndTs is not null ? clip.EndTs.ToDateTime() : (DateTime?)null;
+    // Off-mode cameras have no configured pre/post; use generous defaults so alarm-triggered
+    // clips (which start a few seconds after the alarm fires) are correctly captured.
+    var pre  = config.PreRecordSeconds  > 0 ? config.PreRecordSeconds  : 30;
+    var post = config.PostRecordSeconds > 0 ? config.PostRecordSeconds : 30;
 
     await using var cmd = dataSource.CreateCommand("""
       SELECT EXISTS (
@@ -596,8 +614,8 @@ public sealed class ClipStorage(
     cmd.Parameters.AddWithValue(clip.CameraId);
     cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, startTs);
     cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, endTs.HasValue ? endTs.Value : DBNull.Value);
-    cmd.Parameters.AddWithValue(config.PostRecordSeconds);
-    cmd.Parameters.AddWithValue(config.PreRecordSeconds);
+    cmd.Parameters.AddWithValue(post);
+    cmd.Parameters.AddWithValue(pre);
     return (bool)(await cmd.ExecuteScalarAsync(ct))!;
   }
 
@@ -612,4 +630,11 @@ public sealed class ClipStorage(
     ClipUid    = c.ClipUid.ToString(),
     StorageId  = c.StorageId
   };
+}
+
+public sealed class RetentionEventClosedException(string eventId, DateTime closedAt)
+  : Exception($"Retention event '{eventId}' is already closed (alarm_end_ts={closedAt:O})")
+{
+  public string EventId { get; } = eventId;
+  public DateTime ClosedAt { get; } = closedAt;
 }

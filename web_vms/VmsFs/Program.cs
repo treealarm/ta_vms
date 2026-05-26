@@ -16,6 +16,8 @@ builder.Services.AddGrpc();
 builder.Services.AddDaprPubSubClient();
 builder.Services.AddHostedService<CameraConfigSubscriber>();
 builder.Services.AddHostedService<ClipCleaner>();
+builder.Services.AddSingleton<AlarmRecordingService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<AlarmRecordingService>());
 var postgresConnStr = BuildPostgresConnectionString();
 builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(postgresConnStr));
 builder.Services.AddDbContextFactory<ClipsDbContext>(options =>
@@ -25,6 +27,7 @@ builder.Services.AddSingleton(_ =>
 builder.Services.AddSingleton(_ =>
   new StorageService.StorageServiceClient(DaprClient.CreateInvocationInvoker(cfgAppId)));
 builder.Services.AddSingleton<CameraConfigCache>();
+builder.Services.AddSingleton<CameraSetupCache>();
 builder.Services.AddSingleton<StorageListCache>();
 builder.Services.AddSingleton<CameraStorageCache>();
 builder.Services.AddHostedService<CameraStorageSubscriber>();

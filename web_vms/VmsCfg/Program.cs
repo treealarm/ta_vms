@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using VmsCfg;
 
@@ -8,7 +9,10 @@ var grpcPort = RequirePort("CFG_VMS_PORT");
 
 builder.Services.AddGrpc();
 builder.Services.AddDaprClient();
-builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(BuildPostgresConnectionString()));
+var postgresConnStr = BuildPostgresConnectionString();
+builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(postgresConnStr));
+builder.Services.AddDbContextFactory<VmsCfgDbContext>(options =>
+  options.UseNpgsql(postgresConnStr));
 builder.Services.AddSingleton<DbMigrator>();
 builder.Services.AddSingleton<CameraStorage>();
 builder.Services.AddSingleton<StorageDb>();
