@@ -38,7 +38,7 @@ public sealed class AlarmRecordingService(
 
       var resp = await cfgClient.ActivateAlarmOverrideAsync(req, CfgOptions(ct));
       if (resp.Activated)
-        await PushCameraStateAsync(cameraId, RecordingMode.RecordingContinuous, ct);
+        await PushCameraStateAsync(cameraId, streamName, RecordingMode.RecordingContinuous, ct);
     }
     catch (Exception ex)
     {
@@ -77,7 +77,7 @@ public sealed class AlarmRecordingService(
           new ClearAlarmOverrideRequest { CameraId = stream.CameraId, StreamName = stream.StreamName },
           CfgOptions(ct));
         if (resp.Success)
-          await PushCameraStateAsync(stream.CameraId, null, ct);
+          await PushCameraStateAsync(stream.CameraId, stream.StreamName, null, ct);
       }
       catch (Exception ex)
       {
@@ -87,8 +87,9 @@ public sealed class AlarmRecordingService(
     }
   }
 
-  // overrideMode: the mode to push (pass null to read it from the cached base profile).
-  private async Task PushCameraStateAsync(string cameraId, RecordingMode? overrideMode, CancellationToken ct)
+  // streamName: null = all streams on the camera; non-null = only that stream.
+  // overrideMode: the mode to push (null = read from cached base profile).
+  private async Task PushCameraStateAsync(string cameraId, string? streamName, RecordingMode? overrideMode, CancellationToken ct)
   {
     var setup = await setupCache.GetAsync(cameraId, ct);
     if (setup is null)
@@ -99,6 +100,8 @@ public sealed class AlarmRecordingService(
 
     foreach (var stream in setup.Streams)
     {
+      if (streamName is not null && stream.StreamName != streamName)
+        continue;
       var mode = overrideMode ?? stream.BaseMode;
 
       var state = new CameraState
