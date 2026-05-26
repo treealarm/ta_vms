@@ -284,5 +284,47 @@ namespace VmsCfg
       await storage.SetMonitorSlotAsync(request.MonitorId, request.SlotIndex, request.CameraId, context.CancellationToken);
       return new OperationStatus { Success = true };
     }
+
+    public override async Task<ListOnvifAlarmFiltersResponse> ListOnvifAlarmFilters(
+      ListOnvifAlarmFiltersRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId))
+        return new ListOnvifAlarmFiltersResponse();
+
+      var filters = await storage.ListOnvifAlarmFiltersAsync(request.CameraId, context.CancellationToken);
+      var response = new ListOnvifAlarmFiltersResponse();
+      response.Filters.AddRange(filters);
+      return response;
+    }
+
+    public override async Task<OnvifAlarmFilter> UpsertOnvifAlarmFilter(
+      OnvifAlarmFilter request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId))
+        throw new RpcException(new Status(StatusCode.InvalidArgument, "camera_id is required"));
+      if (string.IsNullOrWhiteSpace(request.FilterText))
+        throw new RpcException(new Status(StatusCode.InvalidArgument, "filter_text is required"));
+      if (request.TimeoutSeconds <= 0)
+        request.TimeoutSeconds = 30;
+
+      var result = await storage.UpsertOnvifAlarmFilterAsync(request, context.CancellationToken);
+      InvalidateFsCache(result.CameraId);
+      return result;
+    }
+
+    public override async Task<OperationStatus> RemoveOnvifAlarmFilter(
+      OnvifAlarmFilterRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.Id))
+        return new OperationStatus { Success = false, Message = "id is required" };
+
+      var (removed, cameraId) = await storage.RemoveOnvifAlarmFilterAsync(request.Id, context.CancellationToken);
+      if (removed && cameraId is not null)
+        InvalidateFsCache(cameraId);
+      return new OperationStatus { Success = removed };
+    }
   }
 }

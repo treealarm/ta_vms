@@ -24,13 +24,14 @@ import LiveTvIcon from '@mui/icons-material/LiveTv'
 import TuneIcon from '@mui/icons-material/Tune'
 import VideoLibraryIcon from '@mui/icons-material/VideoLibrary'
 import ControlCameraIcon from '@mui/icons-material/ControlCamera'
+import SecurityIcon from '@mui/icons-material/Security'
 import { type CameraSetupDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
 import ArchiveHlsStreamCard from './ArchiveHlsStreamCard'
 import StreamOverrideRow from './StreamOverrideRow'
 import PtzOverlay from './PtzOverlay'
 import { useAppDispatch, useAppSelector } from '../store'
-import { fetchCameraState } from '../store/liveSlice'
+import { fetchCameraState, setOnvifEventsEnabled } from '../store/liveSlice'
 
 const STRIP_W = 28
 const PANEL_W = 182
@@ -182,6 +183,18 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             </Tooltip>
           )}
 
+          {merged.hasOnvifFilters && (
+            <Tooltip title={merged.onvifEventsEnabled ? 'Armed — click to disarm' : 'Disarmed — click to arm'} placement="right">
+              <IconButton
+                size="small"
+                onClick={() => void dispatch(setOnvifEventsEnabled({ camera: merged, enabled: !merged.onvifEventsEnabled }))}
+                sx={{ ...BTN_SX, ...(merged.onvifEventsEnabled ? { color: '#4caf50' } : {}) }}
+              >
+                <SecurityIcon sx={{ fontSize: '0.95rem' }} />
+              </IconButton>
+            </Tooltip>
+          )}
+
           {activeRetention && (
             <Tooltip title="Retention episode active" placement="right">
               <FiberManualRecordIcon sx={{ fontSize: '0.6rem', color: 'error.main', my: 0.25 }} />
@@ -277,6 +290,30 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
               <Box>
                 <Typography component="span" sx={CAPTION_SX}>Override</Typography>
                 <StreamOverrideRow cameraId={camera.cameraId} stream={activeStreamObj} />
+              </Box>
+            )}
+
+            {/* Guard */}
+            {merged.hasOnvifFilters && (
+              <Box>
+                <Typography component="span" sx={CAPTION_SX}>Guard</Typography>
+                <ToggleButtonGroup
+                  value={merged.onvifEventsEnabled ? 'armed' : 'disarmed'}
+                  exclusive
+                  onChange={(_, v) => v && void dispatch(setOnvifEventsEnabled({ camera: merged, enabled: v === 'armed' }))}
+                  size="small" fullWidth
+                  sx={{
+                    '& .MuiToggleButton-root': {
+                      flex: 1, py: 0.25, fontSize: '0.7rem',
+                      color: alpha(W, 0.6), borderColor: alpha(W, 0.2),
+                      '&.Mui-selected': { color: W, bgcolor: alpha(W, 0.15), borderColor: alpha(W, 0.35) },
+                    },
+                    '& .MuiToggleButton-root[value="armed"].Mui-selected': { color: '#4caf50', borderColor: '#4caf50' },
+                  }}
+                >
+                  <ToggleButton value="armed">Armed</ToggleButton>
+                  <ToggleButton value="disarmed">Disarmed</ToggleButton>
+                </ToggleButtonGroup>
               </Box>
             )}
 

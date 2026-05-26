@@ -68,6 +68,15 @@ export const changeCameraParent = createAsyncThunk(
   }
 )
 
+export const setOnvifEventsEnabled = createAsyncThunk(
+  'live/setOnvifEventsEnabled',
+  async ({ camera, enabled }: { camera: CameraSetupDto; enabled: boolean }, { dispatch }) => {
+    const result = await dispatch(addCamera({ ...camera, onvifEventsEnabled: enabled }))
+    if (!addCamera.rejected.match(result))
+      await dispatch(fetchCameraState(camera.cameraId))
+  }
+)
+
 export const fetchCameraState = createAsyncThunk('live/fetchCameraState', async (cameraId: string) => {
   const response = await fetch(`/api/live/cameras/${encodeURIComponent(cameraId)}/state`)
   const cam = await parseJson<CameraSetupDto>(response)

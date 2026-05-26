@@ -37,7 +37,8 @@
     "onvifPort": "ONVIF Port",
     "addCamera": "Add camera",
     "deleteCamera": "Delete camera",
-    "livePreview": "Live preview ({{stream}})"
+    "livePreview": "Live preview ({{stream}})",
+    "onvifEventsEnabled": "Subscribe to ONVIF events"
   },
   "cameraControl": {
     "showControls": "Show camera controls",
@@ -184,6 +185,21 @@
     "default": "(default)",
     "noClips": "No clips found for this event.",
     "cameraAlarm": "Camera <1>{{camera}}</1> · alarm start {{start}} · alarm end {{end}}"
+  },
+  "onvifFilters": {
+    "tabSetup": "Setup",
+    "tabFilters": "ONVIF Filters",
+    "tabDebug": "ONVIF Events",
+    "filterText": "Topic / payload substring",
+    "timeoutSec": "Recording duration (sec)",
+    "addFilter": "Add",
+    "noFilters": "No filters configured",
+    "debugNoEvents": "No events received yet",
+    "debugTime": "Time",
+    "debugTopic": "Topic",
+    "debugRefresh": "Refresh",
+    "debugPayload": "Full payload (XML)",
+    "autoRefresh": "Auto-refresh"
   },
   "serverSetup": {
     "title": "Camera setup",

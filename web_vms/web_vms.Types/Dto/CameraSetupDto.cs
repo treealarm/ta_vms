@@ -56,4 +56,6 @@ public record CameraSetupDto
   public string? MediaMtxServerId { get; init; }
   /// <summary>WebRTC client URL for this camera's assigned MediaMTX server; filled by web_vms.Server.</summary>
   public string? MediaMtxWebrtcUrl { get; init; }
+  public bool OnvifEventsEnabled { get; init; }
+  public bool HasOnvifFilters    { get; init; }
 }

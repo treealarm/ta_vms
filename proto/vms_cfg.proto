@@ -28,6 +28,9 @@ service CfgService {
   rpc RemoveMonitor(SourceRequest) returns (OperationStatus);
   rpc SetMonitorCameras(SetMonitorCamerasRequest) returns (OperationStatus);
   rpc SetMonitorSlot(SetMonitorSlotRequest) returns (OperationStatus);
+  rpc ListOnvifAlarmFilters(ListOnvifAlarmFiltersRequest) returns (ListOnvifAlarmFiltersResponse);
+  rpc UpsertOnvifAlarmFilter(OnvifAlarmFilter) returns (OnvifAlarmFilter);
+  rpc RemoveOnvifAlarmFilter(OnvifAlarmFilterRequest) returns (OperationStatus);
 }
 
 service StorageService {
@@ -85,6 +88,8 @@ message CameraSetup {
   optional OnvifConnection onvif_conn = 6;
   repeated CameraStream streams = 9;
   optional string media_mtx_server_id = 10;
+  bool onvif_events_enabled = 11;
+  bool has_onvif_filters    = 12;
 }
 
 message RecordingProfileRequest {
@@ -248,4 +253,23 @@ message ListAlarmOverrideStreamsRequest {}
 
 message ListAlarmOverrideStreamsResponse {
   repeated AlarmOverrideStream streams = 1;
+}
+
+message OnvifAlarmFilter {
+  string id              = 1;
+  string camera_id       = 2;
+  string filter_text     = 3;
+  int32  timeout_seconds = 4;
+}
+
+message ListOnvifAlarmFiltersRequest {
+  string camera_id = 1;
+}
+
+message ListOnvifAlarmFiltersResponse {
+  repeated OnvifAlarmFilter filters = 1;
+}
+
+message OnvifAlarmFilterRequest {
+  string id = 1;
 }

@@ -117,6 +117,8 @@ export type CameraSetupDto = {
   mediaMtxServerId?: string
   /** WebRTC client base URL for this camera's assigned MediaMTX server (e.g. http://host:8889) */
   mediaMtxWebrtcUrl?: string
+  onvifEventsEnabled?: boolean
+  hasOnvifFilters?: boolean
 }
 
 export type MediaServerNodeDto = {
@@ -267,4 +269,17 @@ export type MonitorDto = {
   layout: MonitorLayout
   cameraIds: string[]
   slots: MonitorSlotDto[]
+}
+
+export type OnvifAlarmFilterDto = {
+  id?: string
+  cameraId: string
+  filterText: string
+  timeoutSeconds: number
+}
+
+export type OnvifEventRecordDto = {
+  receivedAt: string
+  topic: string
+  payloadXml: string
 }

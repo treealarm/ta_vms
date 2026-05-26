@@ -6,6 +6,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
 {
   public DbSet<DbCameraStream> CameraStreams { get; set; }
   public DbSet<DbRecordingProfile> RecordingProfiles { get; set; }
+  public DbSet<DbOnvifAlarmFilter> OnvifAlarmFilters { get; set; }
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
@@ -31,6 +32,17 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.Id).HasColumnName("id");
       e.Property(x => x.Mode).HasColumnName("mode");
     });
+
+    modelBuilder.Entity<DbOnvifAlarmFilter>(e =>
+    {
+      e.ToTable("onvif_alarm_filter");
+      e.HasKey(x => x.Id);
+      e.Property(x => x.Id).HasColumnName("id");
+      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.FilterText).HasColumnName("filter_text");
+      e.Property(x => x.TimeoutSeconds).HasColumnName("timeout_seconds");
+      e.Property(x => x.CreatedAt).HasColumnName("created_at");
+    });
   }
 }
 
@@ -48,4 +60,13 @@ public sealed class DbRecordingProfile
 {
   public Guid Id { get; set; }
   public string Mode { get; set; } = string.Empty;
+}
+
+public sealed class DbOnvifAlarmFilter
+{
+  public Guid Id { get; set; }
+  public string CameraId { get; set; } = string.Empty;
+  public string FilterText { get; set; } = string.Empty;
+  public int TimeoutSeconds { get; set; }
+  public DateTime CreatedAt { get; set; }
 }

@@ -85,7 +85,9 @@ public class CameraManager : ICameraManager
       Streams          = streams,
       Cred             = setup.Cred == null ? null : new CredentialsDto { User = setup.Cred.User, Pass = setup.Cred.Pass },
       OnvifConn        = setup.OnvifConn == null ? null : new OnvifConnectionDto { ip = setup.OnvifConn.Ip, port = setup.OnvifConn.Port },
-      MediaMtxServerId = setup.HasMediaMtxServerId ? setup.MediaMtxServerId : null,
+      MediaMtxServerId    = setup.HasMediaMtxServerId ? setup.MediaMtxServerId : null,
+      OnvifEventsEnabled  = setup.OnvifEventsEnabled,
+      HasOnvifFilters     = setup.HasOnvifFilters,
     };
   }
 
@@ -155,7 +157,8 @@ public class CameraManager : ICameraManager
       ServerId         = dto.ServerId ?? string.Empty,
       Cred             = dto.Cred == null ? null : new Credentials { User = dto.Cred.User, Pass = dto.Cred.Pass },
       OnvifConn        = dto.OnvifConn == null ? null : new OnvifConnection { Ip = dto.OnvifConn.ip, Port = dto.OnvifConn.port },
-      MediaMtxServerId = dto.MediaMtxServerId ?? string.Empty,
+      MediaMtxServerId   = dto.MediaMtxServerId ?? string.Empty,
+      OnvifEventsEnabled = dto.OnvifEventsEnabled,
     };
 
     if (dto.Streams.Count > 0)

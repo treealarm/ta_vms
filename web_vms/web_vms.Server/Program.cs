@@ -34,6 +34,7 @@ builder.Services.AddSingleton(_ =>
 builder.Services.AddSingleton(_ =>
   new PtzService.PtzServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId)));
 
+
 builder.Services.AddSingleton<ICameraManager, CameraManager>();
 builder.Services.AddSingleton<MonitorManager>();
 builder.Services.AddSingleton<IHlsArchiveService, HlsArchiveService>();
