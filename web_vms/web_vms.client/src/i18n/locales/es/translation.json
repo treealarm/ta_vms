@@ -18,7 +18,9 @@
     "storages": "Almacenes",
     "recording": "Perfiles Grab.",
     "mediaMtx": "MediaMTX",
-    "logs": "Registros"
+    "logs": "Registros",
+    "goAdmin": "Admin",
+    "goOperator": "Operador"
   },
   "tests": {
     "title": "Pruebas"
@@ -145,6 +147,7 @@
     "overridePlaceholder": "Anular…"
   },
   "monitors": {
+    "title": "Monitores",
     "noMonitors": "Sin monitores configurados",
     "createHint": "Haga clic en + para crear su primer monitor",
     "newMonitor": "Nuevo monitor",
@@ -154,7 +157,9 @@
     "newTitle": "Nuevo monitor",
     "layout": "Diseño",
     "cameraPool": "Pool de cámaras (ordenado)",
-    "addCamera": "Agregar cámara"
+    "addCamera": "Agregar cámara",
+    "cameras_one": "cámara",
+    "cameras_other": "cámaras"
   },
   "simulation": {
     "title": "Acciones de prueba",

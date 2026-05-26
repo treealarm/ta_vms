@@ -18,7 +18,9 @@
     "storages": "Storages",
     "recording": "Rec. profiles",
     "mediaMtx": "MediaMTX",
-    "logs": "Logs"
+    "logs": "Logs",
+    "goAdmin": "Admin",
+    "goOperator": "Operator"
   },
   "tests": {
     "title": "Tests"
@@ -145,6 +147,7 @@
     "overridePlaceholder": "Override…"
   },
   "monitors": {
+    "title": "Monitors",
     "noMonitors": "No monitors configured",
     "createHint": "Click + to create your first monitor",
     "newMonitor": "New monitor",
@@ -154,7 +157,9 @@
     "newTitle": "New monitor",
     "layout": "Layout",
     "cameraPool": "Camera pool (ordered)",
-    "addCamera": "Add camera"
+    "addCamera": "Add camera",
+    "cameras_one": "camera",
+    "cameras_other": "cameras"
   },
   "simulation": {
     "title": "Test actions",
