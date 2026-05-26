@@ -326,5 +326,34 @@ namespace VmsCfg
         InvalidateFsCache(cameraId);
       return new OperationStatus { Success = removed };
     }
+
+    public override async Task<OperationStatus> SubscribeOnvifEvents(
+      OnvifSubscriptionRequest request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId))
+        return new OperationStatus { Success = false, Message = "camera_id is required" };
+      await storage.SubscribeOnvifEventsAsync(request.CameraId, context.CancellationToken);
+      InvalidateFsCache(request.CameraId);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OperationStatus> UnsubscribeOnvifEvents(
+      OnvifSubscriptionRequest request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId))
+        return new OperationStatus { Success = false, Message = "camera_id is required" };
+      await storage.UnsubscribeOnvifEventsAsync(request.CameraId, context.CancellationToken);
+      InvalidateFsCache(request.CameraId);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OnvifSubscriptionsResponse> ListOnvifSubscriptions(
+      Google.Protobuf.WellKnownTypes.Empty request, ServerCallContext context)
+    {
+      var ids = await storage.ListOnvifSubscriptionsAsync(context.CancellationToken);
+      var response = new OnvifSubscriptionsResponse();
+      response.CameraIds.AddRange(ids);
+      return response;
+    }
   }
 }

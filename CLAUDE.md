@@ -39,3 +39,7 @@ Exceptions where raw SQL is acceptable: complex bulk operations or SQL construct
 ## Docker image versions
 
 In `docker-compose.yml` use `latest` for all third-party images. Do not pin specific version tags (e.g. `1.14.4`) — use `latest` instead.
+
+## Database columns — no speculative additions
+
+Only add columns that are actively used. Do not add `created_at`, `updated_at`, audit fields, or any other column "just in case" — if it is not read or queried by existing code, it does not belong in the schema. Add it when there is a concrete requirement.

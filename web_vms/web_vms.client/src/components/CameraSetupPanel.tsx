@@ -1,5 +1,5 @@
 import { useEffect, useImperativeHandle, useRef, useState } from 'react'
-import { Box, Button, Checkbox, FormControlLabel, MenuItem, Stack, Tab, Tabs, TextField, Typography } from '@mui/material'
+import { Box, Button, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera, changeCameraParent, fetchCameraState, removeCamera } from '../store/liveSlice'
@@ -7,8 +7,6 @@ import type { CameraSetupDto } from '../dto/dtos'
 import CameraStoragesControl from './CameraStoragesControl'
 import PasswordField from './PasswordField'
 import CameraStream from './CameraStream'
-import OnvifAlarmFiltersPanel from './OnvifAlarmFiltersPanel'
-import OnvifDebugPanel from './OnvifDebugPanel'
 
 export type CameraSetupHandle = { applyIfDirty: () => Promise<boolean> }
 
@@ -29,7 +27,6 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const existing = camerasMap[initialCameraId]
   const isNew = initialCameraId === ''
 
-  const [subTab, setSubTab] = useState(0)
   const [cameraId, setCameraId] = useState(initialCameraId)
   const [serverId, setServerId] = useState(initialServerId)
   const [mediaMtxServerId, setMediaMtxServerId] = useState(existing?.mediaMtxServerId ?? '')
@@ -37,8 +34,6 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const [pass, setPass] = useState(existing?.cred?.pass ?? '')
   const [onvifIp, setOnvifIp] = useState(existing?.onvifConn?.ip ?? '')
   const [onvifPort, setOnvifPort] = useState(existing?.onvifConn?.port ?? 0)
-  const [onvifEventsEnabled, setOnvifEventsEnabled] = useState(existing?.onvifEventsEnabled ?? false)
-
   const setNonNegativeNumber = (raw: string, setter: (n: number) => void) => {
     const value = Number(raw)
     if (!Number.isNaN(value)) setter(Math.max(0, value))
@@ -52,7 +47,6 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     pass: existing?.cred?.pass ?? '',
     onvifIp: existing?.onvifConn?.ip ?? '',
     onvifPort: existing?.onvifConn?.port ?? 0,
-    onvifEventsEnabled: existing?.onvifEventsEnabled ?? false,
   })
 
   const dirty = !isNew && (
@@ -62,7 +56,6 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     || pass !== snap.current.pass
     || onvifIp !== snap.current.onvifIp
     || onvifPort !== snap.current.onvifPort
-    || onvifEventsEnabled !== snap.current.onvifEventsEnabled
   )
 
   // WebRTC streams available for preview
@@ -82,7 +75,6 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     cred: user || pass ? { user, pass } : undefined,
     onvifConn: onvifIp ? { ip: onvifIp, port: onvifPort } : undefined,
     mediaMtxServerId: mediaMtxServerId || undefined,
-    onvifEventsEnabled,
   })
 
   const applyInternal = async (): Promise<boolean> => {
@@ -92,7 +84,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     const action = serverChanged ? changeCameraParent : addCamera
     const result = await dispatch(action(payload))
     if (!action.rejected.match(result)) {
-      snap.current = { serverId, mediaMtxServerId, user, pass, onvifIp, onvifPort, onvifEventsEnabled }
+      snap.current = { serverId, mediaMtxServerId, user, pass, onvifIp, onvifPort }
       await dispatch(fetchCameraState(initialCameraId))
       return true
     }
@@ -118,7 +110,6 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     setPass(snap.current.pass)
     setOnvifIp(snap.current.onvifIp)
     setOnvifPort(snap.current.onvifPort)
-    setOnvifEventsEnabled(snap.current.onvifEventsEnabled)
   }
 
   const handleRemove = async () => {
@@ -192,17 +183,6 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
           <PasswordField pass={pass} setPass={setPass} />
         </Stack>
 
-        <FormControlLabel
-          control={
-            <Checkbox
-              size="small"
-              checked={onvifEventsEnabled}
-              onChange={(e) => setOnvifEventsEnabled(e.target.checked)}
-            />
-          }
-          label={<Typography variant="body2">{t('cameras.onvifEventsEnabled')}</Typography>}
-        />
-
         <Stack direction="row" spacing={1}>
           <Button type="submit" variant="outlined" size="small" disabled={!isNew && !dirty}>
             {isNew ? t('cameras.addCamera') : t('common.apply')}
@@ -241,24 +221,5 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     </Stack>
   )
 
-  if (isNew) return setupForm
-
-  const onvifEnabled = existing?.onvifEventsEnabled ?? false
-
-  return (
-    <Box>
-      <Tabs
-        value={subTab}
-        onChange={(_, v: number) => setSubTab(v)}
-        sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
-      >
-        <Tab label={t('onvifFilters.tabSetup')} />
-        {onvifEnabled && <Tab label={t('onvifFilters.tabFilters')} />}
-        {onvifEnabled && <Tab label={t('onvifFilters.tabDebug')} />}
-      </Tabs>
-      {subTab === 0 && setupForm}
-      {subTab === 1 && onvifEnabled && <OnvifAlarmFiltersPanel cameraId={initialCameraId} />}
-      {subTab === 2 && onvifEnabled && <OnvifDebugPanel cameraId={initialCameraId} />}
-    </Box>
-  )
+  return setupForm
 }

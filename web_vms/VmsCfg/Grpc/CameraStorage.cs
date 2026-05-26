@@ -19,16 +19,15 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       && Guid.TryParse(camera.MediaMtxServerId, out var parsedMmx) ? parsedMmx : null;
 
     await using (var command = new NpgsqlCommand("""
-      INSERT INTO camera_setup (camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id, onvif_events_enabled)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO camera_setup (camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       ON CONFLICT (camera_id) DO UPDATE SET
-        server_id             = EXCLUDED.server_id,
-        cred_user             = EXCLUDED.cred_user,
-        cred_pass             = EXCLUDED.cred_pass,
-        onvif_ip              = EXCLUDED.onvif_ip,
-        onvif_port            = EXCLUDED.onvif_port,
-        media_mtx_server_id   = EXCLUDED.media_mtx_server_id,
-        onvif_events_enabled  = EXCLUDED.onvif_events_enabled;
+        server_id           = EXCLUDED.server_id,
+        cred_user           = EXCLUDED.cred_user,
+        cred_pass           = EXCLUDED.cred_pass,
+        onvif_ip            = EXCLUDED.onvif_ip,
+        onvif_port          = EXCLUDED.onvif_port,
+        media_mtx_server_id = EXCLUDED.media_mtx_server_id;
       """, connection, tx))
     {
       command.Parameters.AddWithValue(camera.CameraId);
@@ -38,7 +37,6 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       command.Parameters.AddWithValue((object?)camera.OnvifConn?.Ip ?? DBNull.Value);
       command.Parameters.AddWithValue((object?)camera.OnvifConn?.Port ?? DBNull.Value);
       command.Parameters.Add(new NpgsqlParameter { Value = (object?)mediaMtxServerId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Uuid });
-      command.Parameters.AddWithValue(camera.OnvifEventsEnabled);
       await command.ExecuteNonQueryAsync(ct);
     }
 
@@ -126,7 +124,8 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     var cameras = new List<CameraSetup>();
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id, onvif_events_enabled,
+      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id,
+             EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id) AS onvif_events_enabled,
              EXISTS(SELECT 1 FROM onvif_alarm_filter f WHERE f.camera_id = camera_setup.camera_id) AS has_onvif_filters
       FROM camera_setup
       WHERE $1 = '' OR server_id = $1
@@ -150,7 +149,8 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     CameraSetup? setup = null;
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id, onvif_events_enabled,
+      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id,
+             EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id) AS onvif_events_enabled,
              EXISTS(SELECT 1 FROM onvif_alarm_filter f WHERE f.camera_id = camera_setup.camera_id) AS has_onvif_filters
       FROM camera_setup
       WHERE camera_id = $1;
@@ -684,4 +684,33 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       FilterText     = row.FilterText,
       TimeoutSeconds = row.TimeoutSeconds,
     };
+
+  public async Task SubscribeOnvifEventsAsync(string cameraId, CancellationToken ct)
+  {
+    await using var cmd = _dataSource.CreateCommand("""
+      INSERT INTO onvif_event_subscription (camera_id) VALUES ($1)
+      ON CONFLICT DO NOTHING;
+      """);
+    cmd.Parameters.AddWithValue(cameraId);
+    await cmd.ExecuteNonQueryAsync(ct);
+  }
+
+  public async Task UnsubscribeOnvifEventsAsync(string cameraId, CancellationToken ct)
+  {
+    await using var cmd = _dataSource.CreateCommand(
+      "DELETE FROM onvif_event_subscription WHERE camera_id = $1;");
+    cmd.Parameters.AddWithValue(cameraId);
+    await cmd.ExecuteNonQueryAsync(ct);
+  }
+
+  public async Task<List<string>> ListOnvifSubscriptionsAsync(CancellationToken ct)
+  {
+    await using var cmd = _dataSource.CreateCommand(
+      "SELECT camera_id FROM onvif_event_subscription ORDER BY camera_id;");
+    var result = new List<string>();
+    await using var reader = await cmd.ExecuteReaderAsync(ct);
+    while (await reader.ReadAsync(ct))
+      result.Add(reader.GetString(0));
+    return result;
+  }
 }

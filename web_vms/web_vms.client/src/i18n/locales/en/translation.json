@@ -18,6 +18,7 @@
     "storages": "Storages",
     "recording": "Rec. profiles",
     "mediaMtx": "MediaMTX",
+    "onvif": "ONVIF",
     "logs": "Logs",
     "goAdmin": "Admin",
     "goOperator": "Operator"

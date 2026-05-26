@@ -83,8 +83,17 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
   const setPtzOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, ptzOpen: v }))
 
   const [onvifRtsp, setOnvifRtsp] = useState('')
+  const [pendingArmed, setPendingArmed] = useState<boolean | null>(null)
 
   const merged: CameraSetupDto = { ...camera, ...(cameraState ?? {}) }
+
+  const effectiveArmed = pendingArmed !== null ? pendingArmed : (merged.onvifEventsEnabled ?? false)
+  const armDisarm = (enabled: boolean) => {
+    setPendingArmed(enabled)
+    void dispatch(setOnvifEventsEnabled({ cameraId: merged.cameraId, enabled }))
+      .finally(() => setPendingArmed(null))
+  }
+
   const recordingMode = merged.recordingMode ?? 'off'
   const webRtcStreams = (merged.streams ?? []).filter((s) => s.webRtc)
   const activeStream = selectedStream || webRtcStreams[0]?.streamName || ''
@@ -184,11 +193,11 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
           )}
 
           {merged.hasOnvifFilters && (
-            <Tooltip title={merged.onvifEventsEnabled ? 'Armed — click to disarm' : 'Disarmed — click to arm'} placement="right">
+            <Tooltip title={effectiveArmed ? 'Armed — click to disarm' : 'Disarmed — click to arm'} placement="right">
               <IconButton
                 size="small"
-                onClick={() => void dispatch(setOnvifEventsEnabled({ camera: merged, enabled: !merged.onvifEventsEnabled }))}
-                sx={{ ...BTN_SX, ...(merged.onvifEventsEnabled ? { color: '#4caf50' } : {}) }}
+                onClick={() => armDisarm(!effectiveArmed)}
+                sx={{ ...BTN_SX, ...(effectiveArmed ? { color: '#4caf50' } : {}) }}
               >
                 <SecurityIcon sx={{ fontSize: '0.95rem' }} />
               </IconButton>
@@ -298,9 +307,9 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
               <Box>
                 <Typography component="span" sx={CAPTION_SX}>Guard</Typography>
                 <ToggleButtonGroup
-                  value={merged.onvifEventsEnabled ? 'armed' : 'disarmed'}
+                  value={effectiveArmed ? 'armed' : 'disarmed'}
                   exclusive
-                  onChange={(_, v) => v && void dispatch(setOnvifEventsEnabled({ camera: merged, enabled: v === 'armed' }))}
+                  onChange={(_, v) => v && armDisarm(v === 'armed')}
                   size="small" fullWidth
                   sx={{
                     '& .MuiToggleButton-root': {

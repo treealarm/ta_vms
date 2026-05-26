@@ -18,6 +18,7 @@
     "storages": "Almacenes",
     "recording": "Perfiles Grab.",
     "mediaMtx": "MediaMTX",
+    "onvif": "ONVIF",
     "logs": "Registros",
     "goAdmin": "Admin",
     "goOperator": "Operador"

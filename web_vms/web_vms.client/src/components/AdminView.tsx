@@ -27,6 +27,7 @@ import MediaMtxServersPanel from './MediaMtxServersPanel'
 import type { MediaMtxServersHandle } from './MediaMtxServersPanel'
 import LogJournalPanel from './LogJournalPanel'
 import SimulationPanel from './SimulationPanel'
+import OnvifSubscriptionsPanel from './OnvifSubscriptionsPanel'
 
 export default function AdminView() {
   const { t } = useTranslation()
@@ -57,6 +58,7 @@ export default function AdminView() {
           {tab === 3 && <StorageSetupPanel />}
           {tab === 4 && <RecordingProfilesPanel ref={recordingRef} />}
           {tab === 5 && <LogJournalPanel />}
+          {tab === 6 && <OnvifSubscriptionsPanel />}
         </Box>
       </Box>
 
@@ -82,6 +84,7 @@ export default function AdminView() {
           <Tab label={t('nav.storages')} />
           <Tab label={t('nav.recording')} />
           <Tab label={t('nav.logs')} />
+          <Tab label={t('nav.onvif')} />
         </Tabs>
 
         <Stack alignItems="center" spacing={0.5} sx={{ mb: 1 }}>

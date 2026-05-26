@@ -138,6 +138,44 @@ public class OnvifController(
     }
   }
 
+  // ── Subscriptions (arm / disarm) ─────────────────────────────────────────
+
+  [HttpGet("subscriptions")]
+  public async Task<IActionResult> ListSubscriptions(CancellationToken ct)
+  {
+    try
+    {
+      var resp = await cfgClient.ListOnvifSubscriptionsAsync(
+        new Google.Protobuf.WellKnownTypes.Empty(), Options(ct));
+      return Ok(resp.CameraIds);
+    }
+    catch (RpcException ex) { return StatusCode(502, ex.Status.Detail); }
+  }
+
+  [HttpPost("cameras/{cameraId}/subscription")]
+  public async Task<IActionResult> Subscribe(string cameraId, CancellationToken ct)
+  {
+    try
+    {
+      await cfgClient.SubscribeOnvifEventsAsync(
+        new OnvifSubscriptionRequest { CameraId = cameraId }, Options(ct));
+      return Ok();
+    }
+    catch (RpcException ex) { return StatusCode(502, ex.Status.Detail); }
+  }
+
+  [HttpDelete("cameras/{cameraId}/subscription")]
+  public async Task<IActionResult> Unsubscribe(string cameraId, CancellationToken ct)
+  {
+    try
+    {
+      await cfgClient.UnsubscribeOnvifEventsAsync(
+        new OnvifSubscriptionRequest { CameraId = cameraId }, Options(ct));
+      return Ok();
+    }
+    catch (RpcException ex) { return StatusCode(502, ex.Status.Detail); }
+  }
+
   // ── ONVIF debug events ────────────────────────────────────────────────────
 
   [HttpGet("cameras/{cameraId}/recent-events")]

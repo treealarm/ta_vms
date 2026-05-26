@@ -159,7 +159,7 @@ public sealed class OnvifEventSubscriptionService(
           continue;
         }
 
-        eventSvc.OnEventReceived += messages => OnEventsReceived(cameraId, messages);
+        eventSvc.OnEventReceived += messages => OnEventsReceived(cameraId, messages ?? []);
         await eventSvc.StartReceivingAsync();
         await Task.Delay(Timeout.Infinite, ct);
       }
@@ -186,10 +186,15 @@ public sealed class OnvifEventSubscriptionService(
 
   private void OnEventsReceived(string cameraId, NotificationMessageHolderType[] messages)
   {
+    if (messages.Length == 0) return;
+
     foreach (var msg in messages)
     {
       var topic = ExtractTopicText(msg.Topic);
       var payload = msg.Message?.OuterXml ?? string.Empty;
+
+      logger.LogDebug("Camera {CameraId}: ONVIF event received — topic='{Topic}'", cameraId, topic);
+
       var record = new OnvifEventEntry(DateTime.UtcNow, topic, payload);
 
       var buf = _eventBuffers.GetOrAdd(cameraId, _ => (new Queue<OnvifEventEntry>(), new object()));
@@ -206,17 +211,29 @@ public sealed class OnvifEventSubscriptionService(
 
   private async Task CheckAndTriggerAlarmAsync(string cameraId, string topic, string payload)
   {
-    using var cts = new CancellationTokenSource(FsTimeout);
     try
     {
-      var filters = await filterCache.GetAsync(cameraId, cts.Token);
+      List<OnvifAlarmFilter> filters;
+      using (var cfgCts = new CancellationTokenSource(CfgTimeout))
+        filters = await filterCache.GetAsync(cameraId, cfgCts.Token);
+
+      logger.LogDebug(
+        "Camera {CameraId}: checking {Count} filter(s) against topic='{Topic}'",
+        cameraId, filters.Count, topic);
+
       if (filters.Count == 0) return;
 
       var searchText = topic + " " + payload;
       var matched = filters.FirstOrDefault(f =>
         searchText.Contains(f.FilterText, StringComparison.OrdinalIgnoreCase));
 
-      if (matched == null) return;
+      if (matched == null)
+      {
+        logger.LogDebug(
+          "Camera {CameraId}: no filter matched topic='{Topic}' (filters: {Filters})",
+          cameraId, topic, string.Join(", ", filters.Select(f => $"'{f.FilterText}'")));
+        return;
+      }
 
       logger.LogInformation(
         "Camera {CameraId}: ONVIF alarm triggered by filter '{Filter}'",
@@ -224,14 +241,16 @@ public sealed class OnvifEventSubscriptionService(
 
       var req = new RetainEventRequest
       {
-        EventId        = Guid.NewGuid().ToString(),
+        EventId        = $"onvif-{Guid.NewGuid()}",
         CameraId       = cameraId,
         AlarmStartTs   = Timestamp.FromDateTime(DateTime.UtcNow),
         TimeoutSeconds = (uint)Math.Max(1, matched.TimeoutSeconds),
       };
 
-      var fsOpts = new CallOptions(deadline: DateTime.UtcNow.Add(FsTimeout), cancellationToken: cts.Token);
-      await fsClient.RetainEventAsync(req, fsOpts);
+      var fsOpts = new CallOptions(deadline: DateTime.UtcNow.Add(FsTimeout));
+      var status = await fsClient.RetainEventAsync(req, fsOpts);
+      logger.LogInformation(
+        "Camera {CameraId}: RetainEvent returned {Status}", cameraId, status.Status);
     }
     catch (Exception ex)
     {

@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
 
 package vms.cfg;
 
@@ -31,6 +32,10 @@ service CfgService {
   rpc ListOnvifAlarmFilters(ListOnvifAlarmFiltersRequest) returns (ListOnvifAlarmFiltersResponse);
   rpc UpsertOnvifAlarmFilter(OnvifAlarmFilter) returns (OnvifAlarmFilter);
   rpc RemoveOnvifAlarmFilter(OnvifAlarmFilterRequest) returns (OperationStatus);
+
+  rpc SubscribeOnvifEvents(OnvifSubscriptionRequest) returns (OperationStatus);
+  rpc UnsubscribeOnvifEvents(OnvifSubscriptionRequest) returns (OperationStatus);
+  rpc ListOnvifSubscriptions(google.protobuf.Empty) returns (OnvifSubscriptionsResponse);
 }
 
 service StorageService {
@@ -272,4 +277,12 @@ message ListOnvifAlarmFiltersResponse {
 
 message OnvifAlarmFilterRequest {
   string id = 1;
+}
+
+message OnvifSubscriptionRequest {
+  string camera_id = 1;
+}
+
+message OnvifSubscriptionsResponse {
+  repeated string camera_ids = 1;
 }
