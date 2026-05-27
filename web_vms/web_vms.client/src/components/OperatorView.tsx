@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { LangToggle } from '../App'
 import MonitorsView from './MonitorsView'
 import RetentionEventsTab from './RetentionEventsTab'
+import SimulationFab from './SimulationFab'
 
 export default function OperatorView() {
   const { t } = useTranslation()
@@ -44,6 +45,7 @@ export default function OperatorView() {
         </Tabs>
 
         <Stack alignItems="center" spacing={0.5} sx={{ mb: 1 }}>
+          <SimulationFab />
           <Button
             size="small"
             variant="text"

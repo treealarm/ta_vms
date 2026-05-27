@@ -225,6 +225,8 @@ public sealed class FSController(
     }
 
     var sorted = allEvents
+      .GroupBy(e => e.EventId)
+      .Select(g => g.First())
       .OrderByDescending(e => e.AlarmStartTs)
       .Take((int)pageLimit)
       .ToList();

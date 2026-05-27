@@ -18,8 +18,7 @@
                 "DAPR_GRPC_PORT": "50001",
                 "DAPR_LOGGER_APP_ID": "vmslogger",
                 "DAPR_CFG_APP_ID": "vmscfg",
-                "DAPR_ONVIF_APP_ID": "vmsonvif",
-                "MEDIA_SERVER_PAIRS": "vms:vmsfs"
+                "DAPR_ONVIF_APP_ID": "vmsonvif"
             }
         },
         {
@@ -44,7 +43,7 @@
                 "POSTGRES_CFG_DB": "ta_cfg",
                 "VMS_WEBRTC_RTSP_BASE_URL": "rtsp://localhost:8554",
                 "VMS_WEBRTC_CLIENT_URL": "http://localhost:8889",
-                "MEDIA_SERVER_PAIRS": "vms:vmsfs"
+                "MEDIA_SERVER_PAIRS": "vms:vmsfs,vms-2:vmsfs-2"
             }
         },
         {
@@ -62,8 +61,7 @@
                 "DAPR_HTTP_PORT": "3502",
                 "DAPR_GRPC_PORT": "50003",
                 "DAPR_CFG_APP_ID": "vmscfg",
-                "PUBSUB_NAME": "pubsub",
-                "MEDIA_SERVER_PAIRS": "vms:vmsfs"
+                "PUBSUB_NAME": "pubsub"
             }
         },
         {
@@ -98,6 +96,7 @@
                 "DAPR_GRPC_PORT": "50004",
                 "DAPR_CFG_APP_ID": "vmscfg",
                 "PUBSUB_NAME": "pubsub",
+                "APP_ID": "vmsfs",
                 "POSTGRES_HOST": "localhost",
                 "POSTGRES_PORT": "5432",
                 "POSTGRES_USER": "postgres",
@@ -177,8 +176,8 @@
             "setupCommands": [
                 { "text": "-enable-pretty-printing" },
                 { "text": "set debuginfod enabled off", "ignoreFailures": true },
-                { "text": "set debuginfod urls \"\"", "ignoreFailures": true }, // Удаляет системные URL-адреса из GDB
-                { "text": "set debuginfod verbose 0", "ignoreFailures": true }  // Полностью заглушает вывод этой подсистемы
+                { "text": "set debuginfod urls \"\"", "ignoreFailures": true },
+                { "text": "set debuginfod verbose 0", "ignoreFailures": true }
             ]
 
         },
@@ -203,6 +202,62 @@
             "request": "launch",
             "url": "http://localhost:5173",
             "webRoot": "${workspaceFolder}/web_vms/web_vms.client/src"
+        },
+        {
+            "name": "VmsFs-2 (.NET)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "prepare:vmsfs-2",
+            "postDebugTask": "dapr:vmsfs-2:stop",
+            "program": "${workspaceFolder}/web_vms/VmsFs/bin/Debug/net8.0/VmsFs.dll",
+            "cwd": "${workspaceFolder}/web_vms/VmsFs",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "FS_VMS_PORT": "5142",
+                "DAPR_HTTP_PORT": "3506",
+                "DAPR_GRPC_PORT": "50008",
+                "DAPR_CFG_APP_ID": "vmscfg",
+                "PUBSUB_NAME": "pubsub",
+                "APP_ID": "vmsfs-2",
+                "POSTGRES_HOST": "localhost",
+                "POSTGRES_PORT": "5432",
+                "POSTGRES_USER": "postgres",
+                "POSTGRES_PASSWORD": "postgres",
+                "POSTGRES_FS_DB": "ta_fs",
+                "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage"
+            }
+        },
+        {
+            "name": "Media Server 2 (C++)",
+            "type": "cppdbg",
+            "request": "launch",
+            "preLaunchTask": "prepare:vms-2",
+            "postDebugTask": "dapr:vms-2:stop",
+            "program": "${workspaceFolder}/media_server/build/vms",
+            "args": [],
+            "environment": [
+                { "name": "DEBUGINFOD_URLS", "value": "" },
+                { "name": "VMS_STORAGE_BASE_PATH", "value": "${workspaceFolder}/../media_storage" },
+                { "name": "GRPC_VMS_PORT", "value": "50052" },
+                { "name": "APP_ID", "value": "vms-2" },
+                { "name": "DAPR_GRPC_PORT", "value": "50012" },
+                { "name": "DAPR_CFG_APP_ID", "value": "vmscfg" },
+                { "name": "DAPR_ONVIF_APP_ID", "value": "vmsonvif" },
+                { "name": "DAPR_STATE_STORE_NAME", "value": "statestore" },
+                { "name": "PUBSUB_NAME", "value": "orderpubsub" },
+                { "name": "VMS_WEBRTC_RTSP_BASE_URL", "value": "rtsp://localhost:8554" }
+            ],
+            "cwd": "${workspaceFolder}/media_server",
+            "stopAtEntry": false,
+            "MIMode": "gdb",
+            "externalConsole": false,
+            "setupCommands": [
+                { "text": "-enable-pretty-printing" },
+                { "text": "set debuginfod enabled off", "ignoreFailures": true },
+                { "text": "set debuginfod urls \"\"", "ignoreFailures": true },
+                { "text": "set debuginfod verbose 0", "ignoreFailures": true }
+            ]
         }
     ],
     "compounds": [
@@ -216,6 +271,23 @@
                 "VmsFs (.NET)",
                 "VmsLogger (.NET)",
                 "Media Server (C++)",
+                "Backend (.NET)",
+                "Frontend (Vite)",
+                "Frontend Debug (Chromium)"
+            ]
+        },
+        {
+            "name": "Full stack 2-pair (F5)",
+            "stopAll": true,
+            "configurations": [
+                "VmsCfg (.NET)",
+                "VmsOnvif (.NET)",
+                "VmsOnvifActors (.NET)",
+                "VmsFs (.NET)",
+                "VmsFs-2 (.NET)",
+                "VmsLogger (.NET)",
+                "Media Server (C++)",
+                "Media Server 2 (C++)",
                 "Backend (.NET)",
                 "Frontend (Vite)",
                 "Frontend Debug (Chromium)"

@@ -22,6 +22,8 @@ class fs_client
 {
 public:
   static fs_client& instance();
+  // Must be called once from main() before instance() is first accessed.
+  static void set_fs_app_id(const std::string& id);
 
   fs_client(const fs_client&) = delete;
   fs_client& operator=(const fs_client&) = delete;

@@ -78,7 +78,13 @@ export default function RetentionEventsTab() {
     setError(null)
     try {
       const page = await fetchRetentionEventsPage({ before: nextBefore })
-      setEvents((prev) => [...prev, ...page.events])
+      setEvents((prev) => {
+        const merged = [...prev, ...page.events]
+        const seen = new Set<string>()
+        return merged
+          .filter((e) => seen.has(e.eventId) ? false : (seen.add(e.eventId), true))
+          .sort((a, b) => new Date(b.alarmStartTs).getTime() - new Date(a.alarmStartTs).getTime())
+      })
       setHasMore(page.hasMore)
       setNextBefore(page.nextBeforeAlarmStart)
     } catch (e) {

@@ -11,11 +11,13 @@ var builder = WebApplication.CreateBuilder(args);
 
 var cfgAppId = Require("DAPR_CFG_APP_ID");
 var grpcPort = RequirePort("FS_VMS_PORT");
+var ownAppId = Environment.GetEnvironmentVariable("APP_ID");
 
 builder.Services.AddGrpc();
 builder.Services.AddDaprPubSubClient();
 builder.Services.AddHostedService<CameraConfigSubscriber>();
-builder.Services.AddHostedService<ClipCleaner>();
+builder.Services.AddSingleton<ClipCleaner>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ClipCleaner>());
 builder.Services.AddSingleton<AlarmRecordingService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<AlarmRecordingService>());
 var postgresConnStr = BuildPostgresConnectionString();
@@ -42,8 +44,38 @@ builder.WebHost.ConfigureKestrel(options =>
 
 var app = builder.Build();
 await app.Services.GetRequiredService<DbMigrator>().MigrateAsync();
+
+// Resolve own paired server_id from VmsCfg (used by ClipCleaner to scope cleanup to own cameras).
+if (!string.IsNullOrWhiteSpace(ownAppId))
+{
+  var ownServerId = await ResolveOwnServerIdAsync(
+    app.Services.GetRequiredService<CfgService.CfgServiceClient>(), ownAppId);
+  app.Services.GetRequiredService<ClipCleaner>().OwnServerId = ownServerId;
+}
+
 app.MapGrpcService<FsServiceImpl>();
 app.Run();
+
+static async Task<string?> ResolveOwnServerIdAsync(CfgService.CfgServiceClient cfg, string fsAppId)
+{
+  while (true)
+  {
+    try
+    {
+      var resp = await cfg.ListMediaServersAsync(new Vms.Cfg.ListMediaServersRequest());
+      var match = resp.Servers.FirstOrDefault(s =>
+        string.Equals(s.FsId, fsAppId, StringComparison.OrdinalIgnoreCase));
+      if (match is not null)
+        return match.ServerId;
+      Console.Error.WriteLine($"VmsFs: no server paired with fs_id='{fsAppId}' in ListMediaServers — retrying");
+    }
+    catch (Exception ex)
+    {
+      Console.Error.WriteLine($"VmsFs: ResolveOwnServerId failed, retrying in 5s: {ex.Message}");
+    }
+    await Task.Delay(5_000);
+  }
+}
 
 static string Require(string name) =>
   Environment.GetEnvironmentVariable(name)

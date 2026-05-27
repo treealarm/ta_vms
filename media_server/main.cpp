@@ -12,6 +12,7 @@
 #include "camera_manager.h"
 #include "grpc_layer/camera_control_service.h"
 #include "grpc_layer/cfg_client.h"
+#include "grpc_layer/fs_client.h"
 #include "grpc_layer/proto_mapper.h"
 #include "grpc_layer/state_store_client.h"
 
@@ -85,6 +86,13 @@ int main(int argc, char** argv)
   while (!c_client.list_cameras(cfg_list) && !g_stop_requested)
   {
     std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+  }
+
+  {
+    std::string fs_id;
+    while (!c_client.get_paired_fs_id(fs_id) && !g_stop_requested)
+      std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+    fs_client::set_fs_app_id(fs_id);
   }
 
   // Best-effort: load MediaMTX server list to resolve RTSP push URLs at startup.

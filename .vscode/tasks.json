@@ -323,7 +323,7 @@
             "command": "bash",
             "args": [
                 "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=vms; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vms -app-port 50051 -app-protocol grpc -dapr-http-port 3503 -dapr-grpc-port 50011 -metrics-port 9093 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
+                "pid_dir=/tmp/web_vms-dapr; name=vms; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vms -app-port 50051 -app-protocol grpc -dapr-http-port 3503 -dapr-grpc-port 50011 -metrics-port 9093 -components-path ~/.dapr/components > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
             ],
             "presentation": {
                 "reveal": "silent",
@@ -338,6 +338,81 @@
             "args": [
                 "-lc",
                 "if [ -f /tmp/web_vms-dapr/vms.pid ]; then kill \"$(cat /tmp/web_vms-dapr/vms.pid)\" 2>/dev/null || true; rm -f /tmp/web_vms-dapr/vms.pid; fi"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmsfs-2",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dotnet:build",
+                "dapr:vmsfs-2:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmsfs-2:start",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "pid_dir=/tmp/web_vms-dapr; name=vmsfs-2; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmsfs-2 -app-port 5142 -components-path ~/.dapr/components -app-protocol grpc -dapr-http-port 3506 -dapr-grpc-port 50008 -metrics-port 9096 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmsfs-2:stop",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "if [ -f /tmp/web_vms-dapr/vmsfs-2.pid ]; then kill \"$(cat /tmp/web_vms-dapr/vmsfs-2.pid)\" 2>/dev/null || true; rm -f /tmp/web_vms-dapr/vmsfs-2.pid; fi"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vms-2",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "cmake:configure:vms",
+                "cmake:build:vms",
+                "dapr:vms-2:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vms-2:start",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "pid_dir=/tmp/web_vms-dapr; name=vms-2; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vms-2 -app-port 50052 -app-protocol grpc -dapr-http-port 3508 -dapr-grpc-port 50012 -metrics-port 9098 -components-path ~/.dapr/components > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vms-2:stop",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "if [ -f /tmp/web_vms-dapr/vms-2.pid ]; then kill \"$(cat /tmp/web_vms-dapr/vms-2.pid)\" 2>/dev/null || true; rm -f /tmp/web_vms-dapr/vms-2.pid; fi"
             ],
             "presentation": {
                 "reveal": "silent",

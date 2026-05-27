@@ -108,6 +108,7 @@ public sealed class AlarmRecordingService(
       {
         CameraId      = cameraId,
         StreamName    = stream.StreamName,
+        ProfileToken  = stream.ProfileToken,
         RtspUrl       = stream.RtspUrl,
         WebRtc        = stream.WebRtc,
         RecordingMode = mode,
@@ -123,7 +124,10 @@ public sealed class AlarmRecordingService(
       {
         await GetMediaClient(setup.ServerId).SetCameraStateAsync(state, MediaOptions(ct));
       }
-      catch { /* best-effort */ }
+      catch (Exception ex)
+      {
+        Console.Error.WriteLine($"AlarmRecordingService: SetCameraState failed for '{cameraId}/{stream.StreamName}' on server '{setup.ServerId}': {ex.Message}");
+      }
     }
   }
 }

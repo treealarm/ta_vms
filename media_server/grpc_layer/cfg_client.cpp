@@ -12,7 +12,12 @@ std::string require_env(const char* key)
 {
   const char* value = std::getenv(key);
   if (!value || *value == '\0')
-    throw std::runtime_error(std::format("Required environment variable '{}' is not set", key));
+  {
+    const char* app_id = std::getenv("APP_ID");
+    throw std::runtime_error(std::format(
+      "Required environment variable '{}' is not set (APP_ID={})",
+      key, app_id ? app_id : "<not set>"));
+  }
   return value;
 }
 }
@@ -65,6 +70,46 @@ bool cfg_client::list_cameras(std::vector<vms::cfg::CameraSetup>& result)
   }
 
   return true;
+}
+
+bool cfg_client::get_paired_fs_id(std::string& fs_id)
+{
+  vms::cfg::ListMediaServersRequest request;
+  vms::cfg::ListMediaServersResponse response;
+
+  grpc::ClientContext context;
+  context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(5));
+  context.AddMetadata("dapr-app-id", m_app_id);
+
+  grpc::Status status = m_stub->ListMediaServers(&context, request, &response);
+
+  if (!status.ok())
+  {
+    logger::instance().error(std::format(
+      "ListMediaServers RPC via Dapr failed for app '{}': {}",
+      m_app_id, status.error_message()));
+    return false;
+  }
+
+  for (const auto& server : response.servers())
+  {
+    if (server.server_id() == m_server_id)
+    {
+      if (server.fs_id().empty())
+      {
+        logger::instance().error(std::format(
+          "Server '{}' has no fs_id configured in MEDIA_SERVER_PAIRS", m_server_id));
+        return false;
+      }
+      fs_id = server.fs_id();
+      return true;
+    }
+  }
+
+  logger::instance().error(std::format(
+    "Server '{}' not found in ListMediaServers response — check MEDIA_SERVER_PAIRS in VmsCfg",
+    m_server_id));
+  return false;
 }
 
 bool cfg_client::list_media_mtx_servers(std::vector<vms::cfg::MediaMtxServer>& result)

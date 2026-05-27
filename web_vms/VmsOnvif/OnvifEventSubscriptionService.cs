@@ -70,7 +70,7 @@ public sealed class OnvifEventSubscriptionService(
     try
     {
       await foreach (var cameraId in _configChangedChannel.Reader.ReadAllAsync(ct))
-        await RefreshCameraAsync(cameraId, ct);
+        await RefreshCameraAsync(cameraId, ct, forceRestart: true);
     }
     catch (OperationCanceledException) { }
   }
@@ -90,7 +90,7 @@ public sealed class OnvifEventSubscriptionService(
     }
   }
 
-  private async Task RefreshCameraAsync(string cameraId, CancellationToken ct)
+  private async Task RefreshCameraAsync(string cameraId, CancellationToken ct, bool forceRestart = false)
   {
     try
     {
@@ -108,6 +108,9 @@ public sealed class OnvifEventSubscriptionService(
         StopCameraSubscription(cameraId);
         return;
       }
+
+      if (forceRestart)
+        StopCameraSubscription(cameraId);
 
       if (_cameraCts.ContainsKey(cameraId))
         return;

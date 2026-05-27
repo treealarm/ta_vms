@@ -103,6 +103,7 @@ services:
       - .env
     environment:
       POSTGRES_HOST: postgres
+      APP_ID: vmsfs
     volumes:
       - "${PWD}/data:/data"
     depends_on:

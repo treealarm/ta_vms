@@ -57,6 +57,9 @@ builder.WebHost.ConfigureKestrel(options =>
 
 var app = builder.Build();
 
+var registry = app.Services.GetRequiredService<ServerPairRegistry>();
+await RetryAsync(() => registry.InitAsync());
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseWebSockets();
@@ -75,3 +78,16 @@ app.MapControllers();
 app.MapFallbackToFile("/index.html");
 
 app.Run();
+
+static async Task RetryAsync(Func<Task> action)
+{
+  while (true)
+  {
+    try { await action(); return; }
+    catch (Exception ex)
+    {
+      Console.Error.WriteLine($"Startup init failed, retrying in 5s: {ex.Message}");
+      await Task.Delay(5_000);
+    }
+  }
+}

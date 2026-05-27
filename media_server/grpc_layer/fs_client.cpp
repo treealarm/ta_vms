@@ -21,9 +21,16 @@ std::string require_env(const char* key)
 {
   const char* value = std::getenv(key);
   if (!value || *value == '\0')
-    throw std::runtime_error(std::format("Required environment variable '{}' is not set", key));
+  {
+    const char* app_id = std::getenv("APP_ID");
+    throw std::runtime_error(std::format(
+      "Required environment variable '{}' is not set (APP_ID={})",
+      key, app_id ? app_id : "<not set>"));
+  }
   return value;
 }
+
+static std::string s_fs_app_id;
 
 google::protobuf::Timestamp to_proto_ts(std::chrono::system_clock::time_point value)
 {
@@ -54,13 +61,17 @@ std::string request_file_path(const vms::fs::IngestClipRequest& request)
 }
 }
 
+void fs_client::set_fs_app_id(const std::string& id) { s_fs_app_id = id; }
+
 fs_client::fs_client()
-  : m_app_id(require_env("DAPR_FS_APP_ID")),
-    m_channel(grpc::CreateChannel("127.0.0.1:50001", grpc::InsecureChannelCredentials())),
+  : m_channel(grpc::CreateChannel("127.0.0.1:" + require_env("DAPR_GRPC_PORT"), grpc::InsecureChannelCredentials())),
     m_stub(vms::fs::FsService::NewStub(m_channel)),
     m_outbox_path(recording_storage::resolve_storage_base_path() / k_outbox_file_name),
     m_permanent_failures_path(recording_storage::resolve_storage_base_path() / k_permanent_failures_file_name)
 {
+  if (s_fs_app_id.empty())
+    throw std::runtime_error("fs_client: call set_fs_app_id() before first use");
+  m_app_id = s_fs_app_id;
   std::lock_guard<std::mutex> lock(m_mutex);
   load_outbox_chunk_locked(k_outbox_load_batch_size);
   m_worker = std::thread(&fs_client::worker_loop, this);
