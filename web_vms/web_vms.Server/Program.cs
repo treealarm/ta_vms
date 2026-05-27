@@ -24,9 +24,7 @@ builder.Services.AddSingleton(_ =>
   new StorageService.StorageServiceClient(
     DaprClient.CreateInvocationInvoker(cfgAppId)));
 
-var fsAppId = Require("DAPR_FS_APP_ID");
-builder.Services.AddSingleton(_ =>
-  new Vms.Fs.FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsAppId)));
+builder.Services.AddSingleton<ServerPairRegistry>();
 
 var onvifAppId = Require("DAPR_ONVIF_APP_ID");
 builder.Services.AddSingleton(_ =>

@@ -13,6 +13,7 @@
 #include "grpc_layer/camera_control_service.h"
 #include "grpc_layer/cfg_client.h"
 #include "grpc_layer/proto_mapper.h"
+#include "grpc_layer/state_store_client.h"
 
 #include "logger/logger.h"
 
@@ -68,14 +69,18 @@ int main(int argc, char** argv)
 
   logger::instance().info(std::format("gRPC server is listening on  {}", server_address));
 
+  state_store_client state_client;
+  std::thread heartbeat_thread([&]() {
+    while (!g_stop_requested) {
+      state_client.save_heartbeat();
+      for (int i = 0; i < 30 && !g_stop_requested; ++i)
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+  });
+
   cfg_client c_client;
   std::vector<vms::cfg::CameraSetup> cfg_list;
   std::vector<vms::cfg::MediaMtxServer> mtx_servers;
-
-  while (!c_client.register_media_server() && !g_stop_requested)
-  {
-    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-  }
 
   while (!c_client.list_cameras(cfg_list) && !g_stop_requested)
   {
@@ -146,5 +151,6 @@ int main(int argc, char** argv)
   manager.stop_all();
   server->Shutdown();
   server->Wait();
+  heartbeat_thread.join();
   return 0;
 }

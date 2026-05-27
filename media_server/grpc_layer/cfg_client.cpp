@@ -25,51 +25,6 @@ cfg_client::cfg_client()
 {
 }
 
-bool cfg_client::register_media_server()
-{
-  if (m_server_id.empty())
-  {
-    logger::instance().error("APP_ID env var must be set for media_server registration");
-    return false;
-  }
-
-  vms::cfg::MediaServerNode request;
-  vms::cfg::OperationStatus response;
-
-  request.set_server_id(m_server_id);
-  request.set_status("online");
-
-  grpc::ClientContext context;
-  context.set_deadline(
-    std::chrono::system_clock::now() + std::chrono::seconds(2)
-  );
-  context.AddMetadata("dapr-app-id", m_app_id);
-
-  grpc::Status status = m_stub->RegisterMediaServer(&context, request, &response);
-
-  if (!status.ok())
-  {
-    logger::instance().error(std::format(
-      "RegisterMediaServer RPC via Dapr failed for app '{}': {}",
-      m_app_id,
-      status.error_message()));
-
-    return false;
-  }
-
-  if (!response.success())
-  {
-    logger::instance().error(std::format(
-      "RegisterMediaServer rejected server '{}': {}",
-      m_server_id,
-      response.message()));
-
-    return false;
-  }
-
-  return true;
-}
-
 bool cfg_client::list_cameras(std::vector<vms::cfg::CameraSetup>& result)
 {
   if (m_server_id.empty())

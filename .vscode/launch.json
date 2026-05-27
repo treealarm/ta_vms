@@ -18,8 +18,8 @@
                 "DAPR_GRPC_PORT": "50001",
                 "DAPR_LOGGER_APP_ID": "vmslogger",
                 "DAPR_CFG_APP_ID": "vmscfg",
-                "DAPR_FS_APP_ID": "vmsfs",
-                "DAPR_ONVIF_APP_ID": "vmsonvif"
+                "DAPR_ONVIF_APP_ID": "vmsonvif",
+                "MEDIA_SERVER_PAIRS": "vms:vmsfs"
             }
         },
         {
@@ -43,7 +43,8 @@
                 "POSTGRES_PASSWORD": "postgres",
                 "POSTGRES_CFG_DB": "ta_cfg",
                 "VMS_WEBRTC_RTSP_BASE_URL": "rtsp://localhost:8554",
-                "VMS_WEBRTC_CLIENT_URL": "http://localhost:8889"
+                "VMS_WEBRTC_CLIENT_URL": "http://localhost:8889",
+                "MEDIA_SERVER_PAIRS": "vms:vmsfs"
             }
         },
         {
@@ -61,8 +62,8 @@
                 "DAPR_HTTP_PORT": "3502",
                 "DAPR_GRPC_PORT": "50003",
                 "DAPR_CFG_APP_ID": "vmscfg",
-                "DAPR_FS_APP_ID": "vmsfs",
-                "PUBSUB_NAME": "pubsub"
+                "PUBSUB_NAME": "pubsub",
+                "MEDIA_SERVER_PAIRS": "vms:vmsfs"
             }
         },
         {
@@ -157,8 +158,8 @@
                     "value": "vmsonvif"
                 },
                 {
-                    "name": "DAPR_FS_APP_ID",
-                    "value": "vmsfs"
+                    "name": "DAPR_STATE_STORE_NAME",
+                    "value": "statestore"
                 },
                 {
                     "name": "PUBSUB_NAME",

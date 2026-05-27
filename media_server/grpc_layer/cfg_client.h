@@ -15,7 +15,6 @@ class cfg_client
 {
 public:
   cfg_client();
-  bool register_media_server();
   bool list_cameras(std::vector<vms::cfg::CameraSetup>& cfg);
   bool list_media_mtx_servers(std::vector<vms::cfg::MediaMtxServer>& result);
 private:

@@ -8,7 +8,6 @@ package vms.cfg;
 service CfgService {
   rpc ListCameras(ListCamerasRequest) returns (ListCamerasResponse);
   rpc ListMediaServers(ListMediaServersRequest) returns (ListMediaServersResponse);
-  rpc RegisterMediaServer(MediaServerNode) returns (OperationStatus);
   rpc SetupCamera(CameraSetup) returns (OperationStatus);
   rpc RemoveCamera(SourceRequest) returns (OperationStatus);
   rpc GetCamera(SourceRequest) returns (GetCameraResponse);
@@ -127,7 +126,8 @@ message GetCameraResponse {
 
 message MediaServerNode {
   string server_id = 1;
-  string status = 2;
+  string status    = 2;
+  string fs_id     = 3;
 }
 
 message ListMediaServersRequest {}

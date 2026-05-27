@@ -22,6 +22,11 @@ services:
     depends_on:
       - postgres
 
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
   mediamtx:
     image: bluenviron/mediamtx:latest
     container_name: mediamtx
@@ -60,9 +65,14 @@ services:
       - "3500"
       - "-dapr-grpc-port"
       - "50001"
+      - "-components-path"
+      - "/components"
+    volumes:
+      - "./init_files/dapr_components/shared:/components"
     network_mode: "service:vmscfg"
     depends_on:
       - vmscfg
+      - redis
 
   vmsonvif:
     profiles: [app]
@@ -113,9 +123,14 @@ services:
       - "3500"
       - "-dapr-grpc-port"
       - "50001"
+      - "-components-path"
+      - "/components"
+    volumes:
+      - "./init_files/dapr_components/shared:/components"
     network_mode: "service:vmsfs"
     depends_on:
       - vmsfs
+      - redis
 
   vmsonvif-dapr:
     profiles: [app]
@@ -134,11 +149,16 @@ services:
       - "50001"
       - "-placement-host-address"
       - "host.docker.internal:50005"
+      - "-components-path"
+      - "/components"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - "./init_files/dapr_components/shared:/components"
     network_mode: "service:vmsonvif"
     depends_on:
       - vmsonvif
+      - redis
 
   vmsonvif-actors-dapr:
     profiles: [app]
@@ -199,9 +219,14 @@ services:
       - "3500"
       - "-dapr-grpc-port"
       - "50001"
+      - "-components-path"
+      - "/components"
+    volumes:
+      - "./init_files/dapr_components/shared:/components"
     network_mode: "service:vms"
     depends_on:
       - vms
+      - redis
 
   web_vms:
     profiles: [app]
@@ -232,7 +257,12 @@ services:
       - "3500"
       - "-dapr-grpc-port"
       - "50001"
+      - "-components-path"
+      - "/components"
+    volumes:
+      - "./init_files/dapr_components/shared:/components"
     network_mode: "service:web_vms"
     depends_on:
       - web_vms
+      - redis
 

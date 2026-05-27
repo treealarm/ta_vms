@@ -13,7 +13,7 @@ namespace web_vms.Server.Controllers;
 [ApiController]
 public sealed class FSController(
   ICameraManager manager,
-  FsService.FsServiceClient fsClient) : ControllerBase
+  ServerPairRegistry registry) : ControllerBase
 {
   private static readonly TimeSpan FrameJpegTimeout = TimeSpan.FromSeconds(15);
 
@@ -75,6 +75,7 @@ public sealed class FSController(
 
     var limit = query.Limit ?? 50;
 
+    var fsClient = registry.GetFsClient(cam.ServerId);
     GetRecordingsResponse grpcResp;
     if (query.Timestamp.HasValue)
     {
@@ -120,9 +121,11 @@ public sealed class FSController(
     if (string.IsNullOrWhiteSpace(query.CameraId))
       return BadRequest(new { error = "cameraId is required" });
 
-    if (await manager.Get(query.CameraId) is null)
+    var rangeCam = await manager.Get(query.CameraId);
+    if (rangeCam is null)
       return NotFound();
 
+    var fsClient = registry.GetFsClient(rangeCam.ServerId);
     var grpcReq = new GetRecordingRangesRequest
     {
       CameraId       = query.CameraId,
@@ -161,9 +164,11 @@ public sealed class FSController(
     if (string.IsNullOrWhiteSpace(body.CameraId))
       return BadRequest(new { error = "cameraId is required" });
 
-    if (await manager.Get(body.CameraId) is null)
+    var retainCam = await manager.Get(body.CameraId);
+    if (retainCam is null)
       return NotFound();
 
+    var fsClient = registry.GetFsClient(retainCam.ServerId);
     var grpcReq = new RetainEventRequest
     {
       CameraId        = body.CameraId,
@@ -188,7 +193,8 @@ public sealed class FSController(
   [HttpGet("retention-events")]
   public async Task<IActionResult> ListRetentionEvents([FromQuery] int? limit, [FromQuery] string? before, CancellationToken ct)
   {
-    var grpcReq = new ListRetentionEventsRequest { Limit = (uint)(limit ?? 50) };
+    var pageLimit = (uint)(limit ?? 50);
+    var grpcReq = new ListRetentionEventsRequest { Limit = pageLimit };
     if (!string.IsNullOrWhiteSpace(before))
     {
       if (!DateTime.TryParse(before, null, System.Globalization.DateTimeStyles.RoundtripKind, out var bt))
@@ -196,25 +202,38 @@ public sealed class FSController(
       grpcReq.BeforeAlarmStartTs = Timestamp.FromDateTime(ToUtc(bt));
     }
 
-    var grpcResp = await fsClient.ListRetentionEventsAsync(grpcReq, cancellationToken: ct);
-
-    var dto = new RetentionEventsListDto
+    // Fan-out to all FS instances and merge results sorted by alarm_start desc.
+    var allEvents = new List<RetentionEventRowDto>();
+    var hasMore = false;
+    foreach (var fsId in registry.AllFsIds)
     {
-      HasMore = grpcResp.HasMore,
-      Events = grpcResp.Events.Select(e => new RetentionEventRowDto
+      var fsClient = new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
+      try
       {
-        EventId    = e.EventId,
-        CameraId   = e.CameraId,
-        StreamName = e.HasStreamName ? e.StreamName : null,
-        AlarmStartTs = e.AlarmStartTs.ToDateTime(),
-        AlarmEndTs   = e.AlarmEndTs?.ToDateTime()
-      }).ToList()
-    };
+        var resp = await fsClient.ListRetentionEventsAsync(grpcReq, cancellationToken: ct);
+        if (resp.HasMore) hasMore = true;
+        allEvents.AddRange(resp.Events.Select(e => new RetentionEventRowDto
+        {
+          EventId      = e.EventId,
+          CameraId     = e.CameraId,
+          StreamName   = e.HasStreamName ? e.StreamName : null,
+          AlarmStartTs = e.AlarmStartTs.ToDateTime(),
+          AlarmEndTs   = e.AlarmEndTs?.ToDateTime()
+        }));
+      }
+      catch { /* FS unavailable — skip */ }
+    }
 
-    if (grpcResp.NextBeforeAlarmStartTs != null)
-      dto.NextBeforeAlarmStart = grpcResp.NextBeforeAlarmStartTs.ToDateTime();
+    var sorted = allEvents
+      .OrderByDescending(e => e.AlarmStartTs)
+      .Take((int)pageLimit)
+      .ToList();
 
-    return Ok(dto);
+    return Ok(new RetentionEventsListDto
+    {
+      HasMore = hasMore || allEvents.Count > (int)pageLimit,
+      Events  = sorted,
+    });
   }
 
   [HttpGet("event-playlists")]
@@ -223,20 +242,23 @@ public sealed class FSController(
     if (string.IsNullOrWhiteSpace(eventId))
       return BadRequest(new { error = "eventId is required" });
 
-    GetRecordingsResponse clipsResp;
-    try
+    // Fan-out to all FS instances — event_id is local to the FS that stored it.
+    GetRecordingsResponse? clipsResp = null;
+    foreach (var fsId in registry.AllFsIds)
     {
-      clipsResp = await fsClient.GetClipsForEventAsync(
-        new GetClipsForEventRequest { EventId = eventId }, cancellationToken: ct);
+      var fsClient = new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
+      try
+      {
+        clipsResp = await fsClient.GetClipsForEventAsync(
+          new GetClipsForEventRequest { EventId = eventId }, cancellationToken: ct);
+        break;
+      }
+      catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound) { /* try next */ }
+      catch (RpcException) { /* FS unavailable — try next */ }
     }
-    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound)
-    {
-      return NotFound(new { error = ex.Status.Detail });
-    }
-    catch (RpcException ex)
-    {
-      return StatusCode(503, new { error = ex.Status.Detail });
-    }
+
+    if (clipsResp is null)
+      return NotFound(new { error = "event not found" });
 
     var streamNames = clipsResp.Recordings
       .Select(r => r.StreamName)
@@ -288,6 +310,7 @@ public sealed class FSController(
     if (string.IsNullOrWhiteSpace(cam.ServerId))
       return StatusCode(503, new { error = "camera has no assigned media server" });
 
+    var jpegFsClient = registry.GetFsClient(cam.ServerId);
     var fsReq = new GetRecordingsAroundRequest
     {
       CameraId  = cameraId,
@@ -300,7 +323,7 @@ public sealed class FSController(
     GetRecordingsResponse fsResp;
     try
     {
-      fsResp = await fsClient.GetRecordingsAroundAsync(fsReq, cancellationToken: ct);
+      fsResp = await jpegFsClient.GetRecordingsAroundAsync(fsReq, cancellationToken: ct);
     }
     catch (RpcException ex)
     {
@@ -318,7 +341,7 @@ public sealed class FSController(
     StatArchiveTsResponse stat;
     try
     {
-      stat = await fsClient.StatArchiveTsAsync(
+      stat = await jpegFsClient.StatArchiveTsAsync(
         new StatArchiveTsRequest { ClipUid = rec.ClipUid }, cancellationToken: ct);
     }
     catch (RpcException ex)

@@ -13,7 +13,7 @@ public sealed record OnvifEventEntry(DateTime ReceivedAt, string Topic, string P
 
 public sealed class OnvifEventSubscriptionService(
   CfgService.CfgServiceClient cfgClient,
-  FsService.FsServiceClient fsClient,
+  ServerPairRegistry registry,
   OnvifFilterCache filterCache,
   ILogger<OnvifEventSubscriptionService> logger) : BackgroundService
 {
@@ -247,6 +247,11 @@ public sealed class OnvifEventSubscriptionService(
         TimeoutSeconds = (uint)Math.Max(1, matched.TimeoutSeconds),
       };
 
+      using var camCts = new CancellationTokenSource(CfgTimeout);
+      var camResp = await cfgClient.GetCameraAsync(new SourceRequest { SourceId = cameraId }, new CallOptions(cancellationToken: camCts.Token));
+      var serverId = camResp.Found ? camResp.Setup.ServerId : null;
+
+      var fsClient = registry.GetFsClient(serverId);
       var fsOpts = new CallOptions(deadline: DateTime.UtcNow.Add(FsTimeout));
       var status = await fsClient.RetainEventAsync(req, fsOpts);
       logger.LogInformation(

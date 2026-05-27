@@ -147,7 +147,8 @@ public class CameraManager : ICameraManager
   private static MediaServerNodeDto ToDto(MediaServerNode server) => new()
   {
     ServerId = server.ServerId,
-    Status   = server.Status
+    Status   = server.Status,
+    FsId     = server.FsId,
   };
 
   private static CameraSetup ToSetupProto(CameraSetupDto dto)

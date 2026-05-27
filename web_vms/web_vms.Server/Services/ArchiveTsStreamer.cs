@@ -1,28 +1,37 @@
 using System.Runtime.CompilerServices;
+using Dapr.Client;
 using Grpc.Core;
 using Vms.Fs;
 
 namespace web_vms;
 
-public sealed class ArchiveTsStreamer(FsService.FsServiceClient fsClient) : IArchiveTsStreamer
+public sealed class ArchiveTsStreamer(ServerPairRegistry registry) : IArchiveTsStreamer
 {
   public async Task<ArchiveStreamResult> OpenAsync(
     string clipUid, ulong offset, ulong length, string? rangeHeader, CancellationToken ct)
   {
-    StatArchiveTsResponse stat;
-    try
+    // Fan-out to all FS instances — clipUid is local to the FS that stored it.
+    FsService.FsServiceClient? owner = null;
+    StatArchiveTsResponse? stat = null;
+    foreach (var fsId in registry.AllFsIds)
     {
-      stat = await fsClient.StatArchiveTsAsync(
-        new StatArchiveTsRequest { ClipUid = clipUid }, cancellationToken: ct);
-    }
-    catch (RpcException ex)
-    {
-      return new ArchiveStreamResult.Error(ex.Status.Detail);
+      var candidate = new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
+      try
+      {
+        var s = await candidate.StatArchiveTsAsync(
+          new StatArchiveTsRequest { ClipUid = clipUid }, cancellationToken: ct);
+        if (s.Exists)
+        {
+          owner = candidate;
+          stat = s;
+          break;
+        }
+      }
+      catch (RpcException) { /* FS unavailable — try next */ }
     }
 
-    if (!stat.Exists)
-      return new ArchiveStreamResult.NotFound(
-        string.IsNullOrWhiteSpace(stat.Message) ? "not found" : stat.Message);
+    if (owner is null || stat is null)
+      return new ArchiveStreamResult.NotFound("clip not found");
 
     var fileSize = stat.SizeBytes;
     if (offset > fileSize)
@@ -49,10 +58,11 @@ public sealed class ArchiveTsStreamer(FsService.FsServiceClient fsClient) : IArc
     RangeInfo? range = httpRange is not null ? new RangeInfo(httpRange.Start, httpRange.Length, entityLen) : null;
     var contentLength = (long)(httpRange?.Length ?? entityLen);
 
-    return new ArchiveStreamResult.Ok(ContentType(stat.FilePath), contentLength, range, StreamChunksAsync(req, ct));
+    return new ArchiveStreamResult.Ok(ContentType(stat.FilePath), contentLength, range, StreamChunksAsync(owner, req, ct));
   }
 
-  private async IAsyncEnumerable<ReadOnlyMemory<byte>> StreamChunksAsync(
+  private static async IAsyncEnumerable<ReadOnlyMemory<byte>> StreamChunksAsync(
+    FsService.FsServiceClient fsClient,
     ReadArchiveTsRequest req,
     [EnumeratorCancellation] CancellationToken ct)
   {
