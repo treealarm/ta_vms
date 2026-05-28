@@ -6,15 +6,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddGrpc();
 builder.Services.AddSingleton<LogServiceImpl>();
 
-var grpcPort = 5138;
-if (int.TryParse(Environment.GetEnvironmentVariable("LOGGER_VMS_PORT"), out grpcPort))
-{
-  Console.WriteLine($"LOGGER_VMS_PORT port: {grpcPort}");
-}
-else
-{
-  grpcPort = 5138;
-}
+if (!int.TryParse(Environment.GetEnvironmentVariable("LOGGER_VMS_PORT"), out var grpcPort))
+  throw new InvalidOperationException("Required environment variable 'LOGGER_VMS_PORT' must be a valid integer");
 
 builder.WebHost.ConfigureKestrel(options =>
 {

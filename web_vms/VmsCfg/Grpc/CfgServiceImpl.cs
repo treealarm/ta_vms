@@ -26,7 +26,9 @@ namespace VmsCfg
       });
     }
 
-    private const string StateStoreName = "statestore";
+    private static readonly string StateStoreName =
+      Environment.GetEnvironmentVariable("DAPR_STATE_STORE_NAME")
+        ?? throw new InvalidOperationException("Required environment variable 'DAPR_STATE_STORE_NAME' is not set");
 
     public override async Task<OperationStatus> SetupCamera(CameraSetup request, ServerCallContext context)
     {

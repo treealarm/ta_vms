@@ -43,7 +43,8 @@
                 "POSTGRES_CFG_DB": "ta_cfg",
                 "VMS_WEBRTC_RTSP_BASE_URL": "rtsp://localhost:8554",
                 "VMS_WEBRTC_CLIENT_URL": "http://localhost:8889",
-                "MEDIA_SERVER_PAIRS": "vms:vmsfs,vms-2:vmsfs-2"
+                "MEDIA_SERVER_PAIRS": "vms:vmsfs,vms-2:vmsfs-2",
+                "DAPR_STATE_STORE_NAME": "statestore"
             }
         },
         {

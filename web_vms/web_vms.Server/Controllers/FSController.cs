@@ -231,10 +231,14 @@ public sealed class FSController(
       .Take((int)pageLimit)
       .ToList();
 
+    var hasMoreResult = hasMore || allEvents.Count > (int)pageLimit;
     return Ok(new RetentionEventsListDto
     {
-      HasMore = hasMore || allEvents.Count > (int)pageLimit,
+      HasMore = hasMoreResult,
       Events  = sorted,
+      NextBeforeAlarmStart = hasMoreResult && sorted.Count > 0
+        ? sorted[^1].AlarmStartTs
+        : null,
     });
   }
 
