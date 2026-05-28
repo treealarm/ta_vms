@@ -25,7 +25,8 @@ RUN --mount=type=cache,target=/vcpkg/buildtrees \
     --mount=type=cache,target=/vcpkg/packages \
     --mount=type=cache,target=/vcpkg/downloads \
     --mount=type=cache,target=/vcpkg/binary-cache \
-	VCPKG_BUILD_TYPE=release \
+    VCPKG_BUILD_TYPE=release \
+    VCPKG_MAX_CONCURRENCY=1 \
     /vcpkg/vcpkg install \
         protobuf \
         grpc \

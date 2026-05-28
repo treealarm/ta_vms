@@ -30,6 +30,7 @@ const EMPTY_PROFILE: Omit<RecordingProfileDto, 'id'> = {
   postRecordSeconds: 0,
   segmentSeconds: 60,
   isOverridePreset: false,
+  isBuiltin: false,
 }
 
 export default function RecordingProfilesPanel({ ref }: { ref?: React.Ref<RecordingProfilesHandle> }) {

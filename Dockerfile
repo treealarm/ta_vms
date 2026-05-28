@@ -9,7 +9,7 @@ COPY . /build
 WORKDIR /build/media_server
 
 RUN cmake -B build -G Ninja
-RUN cmake --build build -j
+RUN cmake --build build -j1
 
 # сохранить libstdc++
 RUN mkdir -p /runtime-libs && \

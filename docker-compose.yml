@@ -24,8 +24,6 @@ services:
 
   redis:
     image: redis:latest
-    ports:
-      - "6379:6379"
 
   mediamtx:
     image: bluenviron/mediamtx:latest
@@ -36,7 +34,39 @@ services:
       - "8000:8000"       # HTTP API (опционально)
       - "8189:8189/udp"  # ICE/UDP медиапоток
     volumes:
-      - ./dockerhub/config/mediamtx.yml:/mediamtx.yml
+      - ./init_files/config/mediamtx.yml:/mediamtx.yml
+
+  vmslogger:
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: web_vms/VmsLogger/Dockerfile
+    env_file:
+      - .env
+
+  vmslogger-dapr:
+    profiles: [app]
+    image: "daprio/daprd:latest"
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "vmslogger"
+      - "-app-port"
+      - "${LOGGER_VMS_PORT}"
+      - "-app-protocol"
+      - "grpc"
+      - "-dapr-http-port"
+      - "3500"
+      - "-dapr-grpc-port"
+      - "50001"
+      - "-components-path"
+      - "/components"
+    volumes:
+      - "./init_files/dapr_components/shared:/components"
+    network_mode: "service:vmslogger"
+    depends_on:
+      - vmslogger
+      - redis
 
   vmscfg:
     profiles: [app]
@@ -81,6 +111,8 @@ services:
       dockerfile: web_vms/VmsOnvif/Dockerfile
     env_file:
       - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - vmscfg
 
@@ -91,6 +123,8 @@ services:
       dockerfile: web_vms/VmsOnvifActors/Dockerfile
     env_file:
       - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - vmscfg
 
@@ -152,8 +186,6 @@ services:
       - "host.docker.internal:50005"
       - "-components-path"
       - "/components"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - "./init_files/dapr_components/shared:/components"
     network_mode: "service:vmsonvif"
@@ -180,8 +212,6 @@ services:
       - "/components"
       - "-placement-host-address"
       - "host.docker.internal:50005"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - "./init_files/dapr_components/vmsonvif-actors:/components"
     network_mode: "service:vmsonvif-actors"
@@ -197,6 +227,8 @@ services:
       - "${GRPC_VMS_PORT}:${GRPC_VMS_PORT}"
     env_file:
       - .env
+    environment:
+      APP_ID: vms
     depends_on:
       - vmscfg
       - vmsonvif

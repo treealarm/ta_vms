@@ -25,11 +25,16 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # ==============================
-# IMAGES
+# IMAGES  local → remote
 # ==============================
 $images = @(
-    @{ local="vms_rec-vms:latest";     remote="$BasePath/vms:latest" },
-    @{ local="vms_rec-web_vms:latest"; remote="$BasePath/web_vms:latest" }
+    @{ local="vms_rec-vmslogger:latest";       remote="$BasePath/vmslogger:latest" },
+    @{ local="vms_rec-vmscfg:latest";          remote="$BasePath/vmscfg:latest" },
+    @{ local="vms_rec-vmsonvif:latest";        remote="$BasePath/vmsonvif:latest" },
+    @{ local="vms_rec-vmsonvif-actors:latest"; remote="$BasePath/vmsonvif-actors:latest" },
+    @{ local="vms_rec-vmsfs:latest";           remote="$BasePath/vmsfs:latest" },
+    @{ local="vms_rec-vms:latest";             remote="$BasePath/vms:latest" },
+    @{ local="vms_rec-web_vms:latest";         remote="$BasePath/web_vms:latest" }
 )
 
 # ==============================

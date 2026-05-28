@@ -158,7 +158,6 @@ export default function ServerCameraSetupPanel({
         port: onvifPort
       }
       : undefined,
-    preAlarm: selectedCamera?.preAlarm
   })
 
   const isExistingCamera = selectedCamera?.cameraId === cameraId

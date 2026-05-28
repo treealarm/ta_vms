@@ -19,25 +19,28 @@ echo "Token length: ${#TOKEN}"
 echo "$TOKEN" | docker login "$REGISTRY" -u "$DOCKER_USER" --password-stdin
 
 # ==============================
-# IMAGES
+# IMAGES  local → remote
 # ==============================
-declare -A LOCAL
-declare -A REMOTE
-
-LOCAL[0]="vms_rec-vms:latest"
-REMOTE[0]="$BASE_PATH/vms:latest"
-
-LOCAL[1]="vms_rec-web_vms:latest"
-REMOTE[1]="$BASE_PATH/web_vms:latest"
+declare -a PAIRS=(
+    "vms_rec-vmslogger:latest      $BASE_PATH/vmslogger:latest"
+    "vms_rec-vmscfg:latest         $BASE_PATH/vmscfg:latest"
+    "vms_rec-vmsonvif:latest       $BASE_PATH/vmsonvif:latest"
+    "vms_rec-vmsonvif-actors:latest $BASE_PATH/vmsonvif-actors:latest"
+    "vms_rec-vmsfs:latest          $BASE_PATH/vmsfs:latest"
+    "vms_rec-vms:latest            $BASE_PATH/vms:latest"
+    "vms_rec-web_vms:latest        $BASE_PATH/web_vms:latest"
+)
 
 # ==============================
 # TAG + PUSH
 # ==============================
-for i in 0 1; do
-    echo "=== Processing ${LOCAL[$i]} ==="
+for pair in "${PAIRS[@]}"; do
+    local_img=$(echo "$pair" | awk '{print $1}')
+    remote_img=$(echo "$pair" | awk '{print $2}')
 
-    docker tag "${LOCAL[$i]}" "${REMOTE[$i]}"
-    docker push "${REMOTE[$i]}"
+    echo "=== Processing $local_img ==="
+    docker tag "$local_img" "$remote_img"
+    docker push "$remote_img"
 done
 
 echo "=== Done ==="

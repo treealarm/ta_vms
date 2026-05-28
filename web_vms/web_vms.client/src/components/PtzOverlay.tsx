@@ -80,7 +80,7 @@ function PtzButton({
           height: 36,
           color: theme.palette.text.primary,
           bgcolor: alpha(theme.palette.secondary.main, 0.25),
-          borderRadius: `${theme.shape.borderRadius / 2}px`,
+          borderRadius: `${(theme.shape.borderRadius as number) / 2}px`,
           border: `1px solid ${alpha(theme.palette.divider, 0.6)}`,
           '&:hover': {
             bgcolor: alpha(theme.palette.secondary.light, 0.35),

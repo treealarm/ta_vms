@@ -24,8 +24,8 @@ if (-not $?) {
 # 2️⃣ Сборка проекта через docker-compose
 Write-Host "=== Building vms_rec via docker-compose ==="
 Set-Location $RootDir
-docker compose build
+docker compose --profile app build
 
-# 3️⃣ Запуск контейнера
+# 3️⃣ Запуск контейнеров
 Write-Host "=== Starting vms_rec containers ==="
-docker compose up
+docker compose --profile app up

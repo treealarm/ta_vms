@@ -19,8 +19,8 @@ fi
 
 # 2️⃣ Сборка проекта через docker-compose
 echo "=== Building vms_rec via docker-compose ==="
-docker compose -f "$ROOT_DIR/docker-compose.yml" build
+docker compose -f "$ROOT_DIR/docker-compose.yml" --profile app build
 
 # 3️⃣ Запуск контейнеров
 echo "=== Starting vms_rec containers ==="
-docker compose -f "$ROOT_DIR/docker-compose.yml" up
+docker compose -f "$ROOT_DIR/docker-compose.yml" --profile app up

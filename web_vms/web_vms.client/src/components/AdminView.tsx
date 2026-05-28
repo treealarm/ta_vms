@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { LangToggle } from '../App'
-import { Box, Button, IconButton, Stack, Tab, Tabs } from '@mui/material'
+import { Box, Button, Stack, Tab, Tabs } from '@mui/material'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
