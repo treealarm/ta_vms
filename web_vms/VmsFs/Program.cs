@@ -45,15 +45,19 @@ builder.WebHost.ConfigureKestrel(options =>
 var app = builder.Build();
 await app.Services.GetRequiredService<DbMigrator>().MigrateAsync();
 
-// Resolve own paired server_id from VmsCfg (used by ClipCleaner to scope cleanup to own cameras).
+app.MapGrpcService<FsServiceImpl>();
+
+// Resolve own paired server_id from VmsCfg in the background so startup is not blocked.
 if (!string.IsNullOrWhiteSpace(ownAppId))
 {
-  var ownServerId = await ResolveOwnServerIdAsync(
-    app.Services.GetRequiredService<CfgService.CfgServiceClient>(), ownAppId);
-  app.Services.GetRequiredService<ClipCleaner>().OwnServerId = ownServerId;
+  var cfg = app.Services.GetRequiredService<CfgService.CfgServiceClient>();
+  var clipCleaner = app.Services.GetRequiredService<ClipCleaner>();
+  _ = Task.Run(async () =>
+  {
+    clipCleaner.OwnServerId = await ResolveOwnServerIdAsync(cfg, ownAppId);
+  });
 }
 
-app.MapGrpcService<FsServiceImpl>();
 app.Run();
 
 static async Task<string?> ResolveOwnServerIdAsync(CfgService.CfgServiceClient cfg, string fsAppId)

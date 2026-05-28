@@ -9,7 +9,21 @@ public class DbMigrator(NpgsqlDataSource dataSource, IWebHostEnvironment environ
 
   public async Task MigrateAsync(CancellationToken ct = default)
   {
-    await using var connection = await _dataSource.OpenConnectionAsync(ct);
+    NpgsqlConnection connection;
+    while (true)
+    {
+      try
+      {
+        connection = await _dataSource.OpenConnectionAsync(ct);
+        break;
+      }
+      catch (NpgsqlException ex)
+      {
+        Console.Error.WriteLine($"VmsCfg: Postgres not ready, retrying in 5s: {ex.Message}");
+        await Task.Delay(5_000, ct);
+      }
+    }
+    await using var _ = connection;
     await EnsureMigrationsTableAsync(connection, ct);
 
     var applied = await LoadAppliedMigrationsAsync(connection, ct);
