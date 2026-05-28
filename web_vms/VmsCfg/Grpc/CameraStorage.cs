@@ -10,6 +10,33 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
   private readonly NpgsqlDataSource _dataSource = dataSource;
   private static readonly Guid BuiltinContinuousProfileId = new("00000000-0000-0000-0000-000000000001");
 
+  private readonly IReadOnlyList<(string ServerId, string FsId)> _serverPairs = ParseServerPairs();
+
+  private static IReadOnlyList<(string ServerId, string FsId)> ParseServerPairs()
+  {
+    var raw = Environment.GetEnvironmentVariable("MEDIA_SERVER_PAIRS")
+      ?? throw new InvalidOperationException("Required environment variable 'MEDIA_SERVER_PAIRS' is not set");
+
+    var pairs = new List<(string, string)>();
+    foreach (var entry in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    {
+      var sep = entry.IndexOf(':');
+      if (sep < 1)
+        throw new InvalidOperationException($"Invalid MEDIA_SERVER_PAIRS entry '{entry}': expected 'server_id:fs_id'");
+      pairs.Add((entry[..sep], entry[(sep + 1)..]));
+    }
+
+    if (pairs.Count == 0)
+      throw new InvalidOperationException("MEDIA_SERVER_PAIRS must contain at least one 'server_id:fs_id' pair");
+
+    return pairs;
+  }
+
+  public IReadOnlyList<(string ServerId, string FsId)> GetServerPairs() => _serverPairs;
+
+  public bool IsValidServerId(string serverId) =>
+    _serverPairs.Any(p => p.ServerId == serverId);
+
   public async Task SetupCameraAsync(CameraSetup camera, CancellationToken ct)
   {
     await using var connection = await _dataSource.OpenConnectionAsync(ct);
@@ -88,33 +115,6 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)profileId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Uuid });
       await cmd.ExecuteNonQueryAsync(ct);
     }
-  }
-
-  public async Task RegisterMediaServerAsync(MediaServerNode server, CancellationToken ct)
-  {
-    await using var command = _dataSource.CreateCommand("""
-      INSERT INTO media_server_node (server_id, status, last_seen)
-      VALUES ($1, COALESCE(NULLIF($2, ''), 'online'), now())
-      ON CONFLICT (server_id) DO UPDATE SET
-        status = EXCLUDED.status,
-        last_seen = EXCLUDED.last_seen;
-      """);
-    command.Parameters.AddWithValue(server.ServerId);
-    command.Parameters.AddWithValue(server.Status ?? string.Empty);
-    await command.ExecuteNonQueryAsync(ct);
-  }
-
-  public async Task<List<MediaServerNode>> ListMediaServersAsync(CancellationToken ct)
-  {
-    await using var command = _dataSource.CreateCommand("""
-      SELECT server_id, status FROM media_server_node ORDER BY server_id;
-      """);
-
-    var servers = new List<MediaServerNode>();
-    await using var reader = await command.ExecuteReaderAsync(ct);
-    while (await reader.ReadAsync(ct))
-      servers.Add(new MediaServerNode { ServerId = reader.GetString(0), Status = reader.GetString(1) });
-    return servers;
   }
 
   public async Task<List<CameraSetup>> ListCamerasAsync(string serverId, CancellationToken ct)

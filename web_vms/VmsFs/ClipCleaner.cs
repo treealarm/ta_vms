@@ -3,6 +3,7 @@ namespace VmsFs;
 public sealed class ClipCleaner(
   ClipStorage storage,
   CameraConfigCache configCache,
+  CameraSetupCache setupCache,
   StorageListCache storageListCache) : IHostedService, IAsyncDisposable
 {
   // Conservative lower bound: SQL pre-filters clips older than this many seconds.
@@ -10,6 +11,10 @@ public sealed class ClipCleaner(
   private const int SqlMinOlderThanSeconds = 60;
   private const int BatchSize = 100;
   private static readonly TimeSpan Interval = TimeSpan.FromSeconds(5);
+
+  // When set, only clean up clips for cameras on this server (prevents cross-instance interference).
+  // Set by Program.cs after resolving the paired server_id from VmsCfg.
+  public string? OwnServerId { get; set; }
 
   private readonly CancellationTokenSource _cts = new();
   private Task? _task;
@@ -50,6 +55,14 @@ public sealed class ClipCleaner(
       foreach (var group in byCameraId)
       {
         if (ct.IsCancellationRequested) return;
+
+        // In multi-instance deployments, each VmsFs only cleans up its own server's cameras.
+        if (OwnServerId is not null)
+        {
+          var cameraSetup = await setupCache.GetAsync(group.Key, ct);
+          if (cameraSetup?.ServerId != OwnServerId)
+            continue;
+        }
 
         // Skip entire camera if an alarm is active right now — a RetainEvent may arrive soon.
         if (await storage.HasActiveRetentionWindowAsync(group.Key, ct))

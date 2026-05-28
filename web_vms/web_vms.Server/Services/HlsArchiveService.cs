@@ -1,3 +1,4 @@
+using Dapr.Client;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Microsoft.AspNetCore.Routing;
@@ -18,12 +19,23 @@ public sealed record HlsSegment(
 }
 
 public sealed class HlsArchiveService(
-  FsService.FsServiceClient fsClient,
+  ICameraManager cameraManager,
+  ServerPairRegistry registry,
   LinkGenerator linkGenerator) : IHlsArchiveService
 {
+  private async Task<FsService.FsServiceClient?> ResolveAsync(string cameraId, CancellationToken ct)
+  {
+    var cam = await cameraManager.Get(cameraId, ct);
+    return cam?.ServerId is { } sid ? registry.GetFsClient(sid) : null;
+  }
+
   public async Task<HlsPlaylistResult> BuildPreviewPlaylistAsync(
     string cameraId, TimelineSlice range, CancellationToken ct)
   {
+    var fsClient = await ResolveAsync(cameraId, ct);
+    if (fsClient is null)
+      return new HlsPlaylistResult.NotFound("camera not found or has no media server");
+
     var fsResp = await fsClient.GetRecordingsAsync(new GetRecordingsFromToRequest
     {
       CameraId = cameraId,
@@ -72,12 +84,16 @@ public sealed class HlsArchiveService(
     if (startOffset < 0 || double.IsNaN(startOffset))
       startOffset = 0;
 
-    return new HlsPlaylistResult.Ok(await BuildPlaylistAsync(cameraId, segments, ct, startOffset));
+    return new HlsPlaylistResult.Ok(await BuildPlaylistAsync(fsClient, segments, ct, startOffset));
   }
 
   public async Task<HlsPlaylistResult> BuildFilesPlaylistAsync(
     string cameraId, string startClipUid, uint count, CancellationToken ct)
   {
+    var fsClient = await ResolveAsync(cameraId, ct);
+    if (fsClient is null)
+      return new HlsPlaylistResult.NotFound("camera not found or has no media server");
+
     GetRecordingsResponse clipsResp;
     try
     {
@@ -103,26 +119,31 @@ public sealed class HlsArchiveService(
       return new HlsSegment(rec.ClipUid, null, wall, rec.FilePath ?? "");
     }).ToList();
 
-    return new HlsPlaylistResult.Ok(await BuildPlaylistAsync(cameraId, segments, ct));
+    return new HlsPlaylistResult.Ok(await BuildPlaylistAsync(fsClient, segments, ct));
   }
 
   public async Task<HlsPlaylistResult> BuildEventPlaylistAsync(
     string eventId, string? streamName, CancellationToken ct)
   {
-    GetRecordingsResponse clipsResp;
-    try
+    // Fan-out to all FS instances — event_id belongs to the FS that stored it.
+    GetRecordingsResponse? clipsResp = null;
+    FsService.FsServiceClient? eventFsClient = null;
+    foreach (var fsId in registry.AllFsIds)
     {
-      clipsResp = await fsClient.GetClipsForEventAsync(
-        new GetClipsForEventRequest { EventId = eventId }, cancellationToken: ct);
+      var candidate = new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
+      try
+      {
+        clipsResp = await candidate.GetClipsForEventAsync(
+          new GetClipsForEventRequest { EventId = eventId }, cancellationToken: ct);
+        eventFsClient = candidate;
+        break;
+      }
+      catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound) { /* try next */ }
+      catch (RpcException) { /* FS unavailable — try next */ }
     }
-    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound)
-    {
-      return new HlsPlaylistResult.NotFound(ex.Status.Detail);
-    }
-    catch (RpcException ex)
-    {
-      return new HlsPlaylistResult.Error(ex.Status.Detail);
-    }
+
+    if (clipsResp is null || eventFsClient is null)
+      return new HlsPlaylistResult.NotFound("event not found");
 
     var clips = clipsResp.Recordings
       .Where(r => !string.IsNullOrWhiteSpace(r.ClipUid))
@@ -141,13 +162,13 @@ public sealed class HlsArchiveService(
         rec.FilePath ?? "");
     }).ToList();
 
-    return new HlsPlaylistResult.Ok(await BuildPlaylistAsync(clips[0].CameraId, segments, ct));
+    return new HlsPlaylistResult.Ok(await BuildPlaylistAsync(eventFsClient, segments, ct));
   }
 
   private async Task<string> BuildPlaylistAsync(
-    string cameraId, List<HlsSegment> segments, CancellationToken ct, double? startOffset = null)
+    FsService.FsServiceClient fsClient, List<HlsSegment> segments, CancellationToken ct, double? startOffset = null)
   {
-    var sidxCache = await BuildSidxCacheAsync(segments, ct);
+    var sidxCache = await BuildSidxCacheAsync(fsClient, segments, ct);
 
     var maxDur = 1.0;
     foreach (var s in segments)
@@ -165,8 +186,8 @@ public sealed class HlsArchiveService(
     return playlist.Build();
   }
 
-  private async Task<Dictionary<string, Fmp4SidxParser.SegmentIndex?>> BuildSidxCacheAsync(
-    List<HlsSegment> segments, CancellationToken ct)
+  private static async Task<Dictionary<string, Fmp4SidxParser.SegmentIndex?>> BuildSidxCacheAsync(
+    FsService.FsServiceClient fsClient, List<HlsSegment> segments, CancellationToken ct)
   {
     var cache = new Dictionary<string, Fmp4SidxParser.SegmentIndex?>();
     foreach (var s in segments)

@@ -37,6 +37,7 @@ public sealed class StreamStateService(ICameraManager manager)
     {
       CameraId      = cameraId,
       StreamName    = streamName,
+      ProfileToken  = stream.ProfileToken,
       RtspUrl       = stream.RtspUrl,
       WebRtc        = stream.WebRtc,
       RecordingMode = recordingMode,
@@ -52,6 +53,9 @@ public sealed class StreamStateService(ICameraManager manager)
     {
       await GetMediaClient(camera.ServerId).SetCameraStateAsync(state, MediaCallOptions(ct));
     }
-    catch { /* best-effort */ }
+    catch (Exception ex)
+    {
+      Console.Error.WriteLine($"StreamStateService: SetCameraState failed for '{cameraId}/{streamName}' on server '{camera.ServerId}': {ex.Message}");
+    }
   }
 }

@@ -39,6 +39,8 @@ set(SOURCES
     grpc_layer/dapr_publisher.h
     grpc_layer/cfg_client.h
     grpc_layer/cfg_client.cpp
+    grpc_layer/state_store_client.h
+    grpc_layer/state_store_client.cpp
     grpc_layer/onvif_client.h
     grpc_layer/onvif_client.cpp
     grpc_layer/fs_client.h

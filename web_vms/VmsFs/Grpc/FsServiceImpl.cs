@@ -58,7 +58,7 @@ public sealed class FsServiceImpl(
         request.CameraId,
         request.HasStreamName && !string.IsNullOrWhiteSpace(request.StreamName) ? request.StreamName : null,
         until,
-        context.CancellationToken);
+        CancellationToken.None);
       return new OperationStatus { Status = OperationStatus.Types.Status.Success, Message = "ok" };
     }
     catch (RetentionEventClosedException ex)

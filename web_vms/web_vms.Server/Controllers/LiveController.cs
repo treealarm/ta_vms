@@ -12,7 +12,7 @@ namespace web_vms;
 [Route("api/[controller]")]
 public class LiveController(
   ICameraManager _manager,
-  FsService.FsServiceClient _fsClient
+  ServerPairRegistry _registry
   ) : ControllerBase
 {
   private static readonly TimeSpan MediaCallTimeout = TimeSpan.FromSeconds(5);
@@ -337,7 +337,8 @@ public class LiveController(
 
     try
     {
-      var retention = await _fsClient.GetCameraRetentionStatusAsync(
+      var fsClient = _registry.GetFsClient(normalized.ServerId);
+      var retention = await fsClient.GetCameraRetentionStatusAsync(
         new GetCameraRetentionStatusRequest { CameraId = cameraId },
         cancellationToken: ct);
       return Ok(normalized with { ActiveRetentionWindow = retention.ActiveRetentionWindow });

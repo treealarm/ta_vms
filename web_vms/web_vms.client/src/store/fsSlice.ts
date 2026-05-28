@@ -14,6 +14,7 @@ type FsState = {
   isBusy: boolean
   status: string
   simulationEventId: string
+  simulationAlarmStartTs: string
   simulationResult: { ok: boolean; message: string } | null
 }
 
@@ -23,6 +24,7 @@ const initialState: FsState = {
   isBusy: false,
   status: 'Ready',
   simulationEventId: `test-alarm-${Date.now()}`,
+  simulationAlarmStartTs: '',
   simulationResult: null,
 }
 
@@ -67,6 +69,9 @@ const fsSlice = createSlice({
       state.simulationEventId = action.payload
       state.simulationResult = null
     },
+    setSimulationAlarmStartTs(state, action: { payload: string }) {
+      state.simulationAlarmStartTs = action.payload
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -100,5 +105,5 @@ const fsSlice = createSlice({
   }
 })
 
-export const { setSimulationEventId } = fsSlice.actions
+export const { setSimulationEventId, setSimulationAlarmStartTs } = fsSlice.actions
 export default fsSlice.reducer

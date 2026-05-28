@@ -26,6 +26,10 @@ namespace VmsCfg
       });
     }
 
+    private static readonly string StateStoreName =
+      Environment.GetEnvironmentVariable("DAPR_STATE_STORE_NAME")
+        ?? throw new InvalidOperationException("Required environment variable 'DAPR_STATE_STORE_NAME' is not set");
+
     public override async Task<OperationStatus> SetupCamera(CameraSetup request, ServerCallContext context)
     {
       if (string.IsNullOrWhiteSpace(request.CameraId))
@@ -34,17 +38,11 @@ namespace VmsCfg
       if (string.IsNullOrWhiteSpace(request.ServerId))
         return new OperationStatus { Success = false, Message = "server_id must not be empty" };
 
+      if (!storage.IsValidServerId(request.ServerId))
+        return new OperationStatus { Success = false, Message = $"server_id '{request.ServerId}' is not a known media server" };
+
       await storage.SetupCameraAsync(request, context.CancellationToken);
       InvalidateFsCache(request.CameraId);
-      return new OperationStatus { Success = true };
-    }
-
-    public override async Task<OperationStatus> RegisterMediaServer(MediaServerNode request, ServerCallContext context)
-    {
-      if (string.IsNullOrWhiteSpace(request.ServerId))
-        return new OperationStatus { Success = false, Message = "server_id must not be empty" };
-
-      await storage.RegisterMediaServerAsync(request, context.CancellationToken);
       return new OperationStatus { Success = true };
     }
 
@@ -53,7 +51,19 @@ namespace VmsCfg
       ServerCallContext context)
     {
       var response = new ListMediaServersResponse();
-      response.Servers.AddRange(await storage.ListMediaServersAsync(context.CancellationToken));
+      foreach (var (serverId, fsId) in storage.GetServerPairs())
+      {
+        string status;
+        try
+        {
+          status = await daprClient.GetStateAsync<string>(StateStoreName, $"ms-status-{serverId}", cancellationToken: context.CancellationToken) ?? "offline";
+        }
+        catch
+        {
+          status = "offline";
+        }
+        response.Servers.Add(new MediaServerNode { ServerId = serverId, FsId = fsId, Status = status });
+      }
       return response;
     }
 

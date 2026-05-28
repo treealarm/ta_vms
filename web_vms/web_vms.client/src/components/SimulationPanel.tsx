@@ -14,21 +14,24 @@ import { useTranslation } from 'react-i18next'
 
 import type { CameraSetupDto, RetentionEventDto } from '../dto/dtos'
 import { useAppDispatch, useAppSelector } from '../store'
-import { sendRetentionEvent, setSimulationEventId } from '../store/fsSlice'
+import { sendRetentionEvent, setSimulationAlarmStartTs, setSimulationEventId } from '../store/fsSlice'
 import { fetchCameraState } from '../store/liveSlice'
 
 type SimulationPanelProps = {
   cameras: CameraSetupDto[]
 }
 
+const generateEventId = (cameraId: string) =>
+  `test-alarm-${cameraId || 'camera'}-${Date.now()}`
+
 export default function SimulationPanel({ cameras }: SimulationPanelProps) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const eventId = useAppSelector((s) => s.fs.simulationEventId)
+  const alarmStartTs = useAppSelector((s) => s.fs.simulationAlarmStartTs)
   const simulationResult = useAppSelector((s) => s.fs.simulationResult)
   const [cameraId, setCameraId] = useState('')
   const [streamName, setStreamName] = useState('')
-  const [alarmStartTs, setAlarmStartTs] = useState('')
   const [timeoutSeconds, setTimeoutSeconds] = useState(30)
 
   const selectedCameraId = cameraId || cameras[0]?.cameraId || ''
@@ -41,21 +44,17 @@ export default function SimulationPanel({ cameras }: SimulationPanelProps) {
   }
 
   const newEventId = () => {
-    dispatch(setSimulationEventId(`test-alarm-${selectedCameraId || 'camera'}-${Date.now()}`))
-    setAlarmStartTs('')
+    dispatch(setSimulationEventId(generateEventId(selectedCameraId)))
+    dispatch(setSimulationAlarmStartTs(''))
   }
-
-  const currentEventId = () => eventId.trim() || `test-alarm-${selectedCameraId}-${Date.now()}`
 
   const sendAlarmStart = async () => {
     if (!selectedCameraId) return
     const now = new Date().toISOString()
-    const nextEventId = currentEventId()
-    dispatch(setSimulationEventId(nextEventId))
-    setAlarmStartTs(now)
+    dispatch(setSimulationAlarmStartTs(now))
 
     const payload: RetentionEventDto = {
-      eventId: nextEventId,
+      eventId,
       cameraId: selectedCameraId,
       streamName: streamName || undefined,
       alarmStartTs: now,
@@ -68,7 +67,7 @@ export default function SimulationPanel({ cameras }: SimulationPanelProps) {
   const sendAlarmEnd = async () => {
     if (!selectedCameraId || !alarmStartTs) return
     const payload: RetentionEventDto = {
-      eventId: currentEventId(),
+      eventId,
       cameraId: selectedCameraId,
       streamName: streamName || undefined,
       alarmStartTs,
@@ -77,7 +76,8 @@ export default function SimulationPanel({ cameras }: SimulationPanelProps) {
     }
     await dispatch(sendRetentionEvent(payload))
     void dispatch(fetchCameraState(selectedCameraId))
-    setAlarmStartTs('')
+    dispatch(setSimulationAlarmStartTs(''))
+    dispatch(setSimulationEventId(generateEventId(selectedCameraId)))
   }
 
   return (

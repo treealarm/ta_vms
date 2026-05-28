@@ -2,7 +2,6 @@ using Dapr.Client;
 using Dapr.Messaging.PublishSubscribe.Extensions;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Vms.Cfg;
-using Vms.Fs;
 using VmsOnvif;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -17,10 +16,7 @@ builder.Services.AddSingleton(_ =>
   new CfgService.CfgServiceClient(
     DaprClient.CreateInvocationInvoker(cfgAppId)));
 
-var fsAppId = Require("DAPR_FS_APP_ID");
-builder.Services.AddSingleton(_ =>
-  new FsService.FsServiceClient(
-    DaprClient.CreateInvocationInvoker(fsAppId)));
+builder.Services.AddSingleton<ServerPairRegistry>();
 
 builder.Services.AddSingleton<OnvifFilterCache>();
 builder.Services.AddSingleton<OnvifEventSubscriptionService>();
@@ -47,6 +43,23 @@ builder.WebHost.ConfigureKestrel(options =>
 });
 
 var app = builder.Build();
+
+var registry = app.Services.GetRequiredService<ServerPairRegistry>();
+await RetryAsync(() => registry.InitAsync());
+
 app.MapGrpcService<OnvifServiceImpl>();
 app.MapGrpcService<PtzServiceImpl>();
 app.Run();
+
+static async Task RetryAsync(Func<Task> action)
+{
+  while (true)
+  {
+    try { await action(); return; }
+    catch (Exception ex)
+    {
+      Console.Error.WriteLine($"Startup init failed, retrying in 5s: {ex.Message}");
+      await Task.Delay(5_000);
+    }
+  }
+}

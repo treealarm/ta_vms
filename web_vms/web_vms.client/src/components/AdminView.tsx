@@ -1,21 +1,8 @@
 import { useRef, useState } from 'react'
 import { LangToggle } from '../App'
-import {
-  Box,
-  Button,
-  IconButton,
-  Paper,
-  Stack,
-  Tab,
-  Tabs,
-  Tooltip,
-  Typography,
-} from '@mui/material'
-import ScienceIcon from '@mui/icons-material/Science'
-import CloseIcon from '@mui/icons-material/Close'
+import { Box, Button, IconButton, Stack, Tab, Tabs } from '@mui/material'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { useAppSelector } from '../store'
 
 import MonitorListPanel from './MonitorListPanel'
 import CameraControlPanel from './CameraControlPanel'
@@ -26,16 +13,14 @@ import type { RecordingProfilesHandle } from './RecordingProfilesPanel'
 import MediaMtxServersPanel from './MediaMtxServersPanel'
 import type { MediaMtxServersHandle } from './MediaMtxServersPanel'
 import LogJournalPanel from './LogJournalPanel'
-import SimulationPanel from './SimulationPanel'
+import SimulationFab from './SimulationFab'
 import OnvifSubscriptionsPanel from './OnvifSubscriptionsPanel'
 
 export default function AdminView() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const camerasMap = useAppSelector((state) => state.live.cameraStatesById)
 
   const [tab, setTab] = useState(0)
-  const [testsOpen, setTestsOpen] = useState(false)
 
   const cameraControlRef = useRef<CameraControlHandle>(null)
   const recordingRef = useRef<RecordingProfilesHandle>(null)
@@ -88,14 +73,7 @@ export default function AdminView() {
         </Tabs>
 
         <Stack alignItems="center" spacing={0.5} sx={{ mb: 1 }}>
-          <Tooltip title={t('tests.title')} placement="right">
-            <IconButton
-              onClick={() => setTestsOpen((v) => !v)}
-              sx={{ color: testsOpen ? 'primary.main' : 'text.secondary' }}
-            >
-              <ScienceIcon />
-            </IconButton>
-          </Tooltip>
+          <SimulationFab />
           <Button
             size="small"
             variant="text"
@@ -107,38 +85,6 @@ export default function AdminView() {
           <LangToggle />
         </Stack>
       </Box>
-
-      {testsOpen && (
-        <Paper
-          elevation={8}
-          sx={{
-            position: 'fixed',
-            bottom: 16,
-            left: 108,
-            width: 460,
-            maxHeight: '80vh',
-            zIndex: 1300,
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-          }}
-        >
-          <Stack
-            direction="row"
-            alignItems="center"
-            justifyContent="space-between"
-            sx={{ px: 2, py: 1, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
-          >
-            <Typography variant="subtitle1" fontWeight={600}>{t('tests.title')}</Typography>
-            <IconButton size="small" onClick={() => setTestsOpen(false)}>
-              <CloseIcon fontSize="small" />
-            </IconButton>
-          </Stack>
-          <Box sx={{ overflow: 'auto', p: 2 }}>
-            <SimulationPanel cameras={Object.values(camerasMap)} />
-          </Box>
-        </Paper>
-      )}
     </Box>
   )
 }

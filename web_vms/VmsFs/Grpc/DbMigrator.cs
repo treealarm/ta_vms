@@ -10,36 +10,47 @@ public class DbMigrator(NpgsqlDataSource dataSource, IWebHostEnvironment environ
   public async Task MigrateAsync(CancellationToken ct = default)
   {
     await using var connection = await _dataSource.OpenConnectionAsync(ct);
-    await EnsureMigrationsTableAsync(connection, ct);
 
-    var applied = await LoadAppliedMigrationsAsync(connection, ct);
-    foreach (var migrationPath in Directory.EnumerateFiles(GetMigrationsPath(), "*.sql").Order())
+    // Serialize concurrent migrations across multiple instances sharing the same DB.
+    await using (var lockCmd = new NpgsqlCommand("SELECT pg_advisory_lock(7743512879);", connection))
+      await lockCmd.ExecuteNonQueryAsync(ct);
+
+    try
     {
-      var migrationName = Path.GetFileName(migrationPath);
-      if (applied.Contains(migrationName))
-      {
-        continue;
-      }
+      await EnsureMigrationsTableAsync(connection, ct);
 
-      await using var tx = await connection.BeginTransactionAsync(ct);
-      await using (var migrationCommand = new NpgsqlCommand(
-        await File.ReadAllTextAsync(migrationPath, ct),
-        connection,
-        tx))
+      var applied = await LoadAppliedMigrationsAsync(connection, ct);
+      foreach (var migrationPath in Directory.EnumerateFiles(GetMigrationsPath(), "*.sql").Order())
       {
-        await migrationCommand.ExecuteNonQueryAsync(ct);
-      }
+        var migrationName = Path.GetFileName(migrationPath);
+        if (applied.Contains(migrationName))
+          continue;
 
-      await using (var markCommand = new NpgsqlCommand(
-        "INSERT INTO schema_migrations (name) VALUES ($1);",
-        connection,
-        tx))
-      {
-        markCommand.Parameters.AddWithValue(migrationName);
-        await markCommand.ExecuteNonQueryAsync(ct);
-      }
+        await using var tx = await connection.BeginTransactionAsync(ct);
+        await using (var migrationCommand = new NpgsqlCommand(
+          await File.ReadAllTextAsync(migrationPath, ct),
+          connection,
+          tx))
+        {
+          await migrationCommand.ExecuteNonQueryAsync(ct);
+        }
 
-      await tx.CommitAsync(ct);
+        await using (var markCommand = new NpgsqlCommand(
+          "INSERT INTO schema_migrations (name) VALUES ($1);",
+          connection,
+          tx))
+        {
+          markCommand.Parameters.AddWithValue(migrationName);
+          await markCommand.ExecuteNonQueryAsync(ct);
+        }
+
+        await tx.CommitAsync(ct);
+      }
+    }
+    finally
+    {
+      await using var unlockCmd = new NpgsqlCommand("SELECT pg_advisory_unlock(7743512879);", connection);
+      await unlockCmd.ExecuteNonQueryAsync(ct);
     }
   }
 

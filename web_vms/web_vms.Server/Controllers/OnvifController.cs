@@ -128,6 +128,11 @@ public class OnvifController(
   {
     try
     {
+      var filters = await cfgClient.ListOnvifAlarmFiltersAsync(
+        new ListOnvifAlarmFiltersRequest { CameraId = cameraId }, Options(ct));
+      if (filters.Filters.All(f => f.Id != filterId))
+        return NotFound();
+
       var resp = await cfgClient.RemoveOnvifAlarmFilterAsync(
         new OnvifAlarmFilterRequest { Id = filterId }, Options(ct));
       return resp.Success ? Ok() : NotFound();
