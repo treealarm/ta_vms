@@ -1,5 +1,5 @@
 {
-    "window.autoDetectColorScheme": true,
+    "workbench.colorTheme": "Default Light Modern",
     "cmake.sourceDirectory": "${workspaceFolder}/media_server",
     "cmake.configurePreset": "linux-default",
     "cmake.buildDirectory": "${workspaceFolder}/media_server/build"
