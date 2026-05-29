@@ -10,11 +10,14 @@
 #include <grpcpp/grpcpp.h>
 
 #include "camera_manager.h"
+#include "config_subscriber.h"
 #include "grpc_layer/camera_control_service.h"
 #include "grpc_layer/cfg_client.h"
 #include "grpc_layer/fs_client.h"
 #include "grpc_layer/proto_mapper.h"
 #include "grpc_layer/state_store_client.h"
+#include "grpc_layer/utils_client.h"
+#include "mediamtx_monitor.h"
 
 #include "logger/logger.h"
 
@@ -55,14 +58,18 @@ int main(int argc, char** argv)
   std::signal(SIGTERM, on_signal);
 
   camera_manager manager;
+  cfg_client c_client;
   camera_control_service service(manager);
+  config_subscriber cfg_sub(manager, c_client,
+    std::getenv("PUBSUB_NAME") ? std::getenv("PUBSUB_NAME") : "orderpubsub");
 
   grpc::ServerBuilder builder;
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
   builder.RegisterService(&service);
+  builder.RegisterService(&cfg_sub);
 
   std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
-  if (!server) 
+  if (!server)
   {
     logger::instance().error(std::format("Failed to start gRPC server on {}", server_address));
     return 1;
@@ -79,7 +86,6 @@ int main(int argc, char** argv)
     }
   });
 
-  cfg_client c_client;
   std::vector<vms::cfg::CameraSetup> cfg_list;
   std::vector<vms::cfg::MediaMtxServer> mtx_servers;
 
@@ -143,7 +149,7 @@ int main(int argc, char** argv)
   //{
   //  const auto cam_id = argv[3];
   //  const auto url = argv[2];
-  //  
+  //
   //  const bool success = manager.add_camera(
   //    cam_id,
   //    url,
@@ -152,10 +158,25 @@ int main(int argc, char** argv)
   //    error);
   //}
 
+  std::unique_ptr<utils_client> u_client;
+  std::unique_ptr<mediamtx_monitor> monitor;
+  try
+  {
+    u_client = std::make_unique<utils_client>();
+    monitor  = std::make_unique<mediamtx_monitor>(manager, *u_client);
+    monitor->start();
+    logger::instance().info("mediamtx_monitor started");
+  }
+  catch (const std::exception& ex)
+  {
+    logger::instance().warning(std::format("mediamtx_monitor disabled: {}", ex.what()));
+  }
+
   while (!g_stop_requested) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
   }
 
+  if (monitor) monitor->stop();
   manager.stop_all();
   server->Shutdown();
   server->Wait();

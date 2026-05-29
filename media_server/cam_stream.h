@@ -22,7 +22,8 @@ public:
     const std::string& profile_token,
     const std::string& user,
     const std::string& pass,
-    const std::string& webrtc_rtsp_push_url = "");
+    const std::string& webrtc_rtsp_push_url = "",
+    bool               web_rtc_enabled      = false);
 
   ~cam_stream();
 
@@ -31,6 +32,7 @@ public:
 
   bool start_web_rtc(std::string& error);
   bool stop_web_rtc(std::string& error);
+  void update_webrtc_push_url(const std::string& new_url, bool web_rtc, std::string& error);
 
   void shutdown();
 
@@ -42,6 +44,10 @@ public:
   std::string get_pass() const { return m_pass; }
   bool is_recording() const { return m_writer != nullptr; }
   bool is_web_rtc_streaming() const { return m_webrtc_output_sink != nullptr; }
+  bool is_web_rtc_enabled() const { return m_web_rtc_enabled; }
+  void set_web_rtc_enabled(bool enabled) { m_web_rtc_enabled = enabled; }
+  const std::string& get_webrtc_push_url() const { return m_webrtc_rtsp_push_url; }
+  std::string mediamtx_path() const { return m_camera_id + "/" + m_stream_name; }
   recording_policy_mode get_recording_policy_mode() const { return m_recording_policy_mode; }
 
 private:
@@ -52,6 +58,7 @@ private:
   std::string m_user;
   std::string m_pass;
   std::string m_webrtc_rtsp_push_url;
+  bool        m_web_rtc_enabled{false};
 
   std::unique_ptr<reader> m_reader;
   std::shared_ptr<segment_writer> m_writer;

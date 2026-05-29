@@ -36,6 +36,38 @@ services:
     volumes:
       - ./init_files/config/mediamtx.yml:/mediamtx.yml
 
+  vmsutils:
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: web_vms/VmsUtils/Dockerfile
+    env_file:
+      - .env
+
+  vmsutils-dapr:
+    profiles: [app]
+    image: "daprio/daprd:latest"
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "vmsutils"
+      - "-app-port"
+      - "${UTILS_VMS_PORT}"
+      - "-app-protocol"
+      - "grpc"
+      - "-dapr-http-port"
+      - "3500"
+      - "-dapr-grpc-port"
+      - "50001"
+      - "-components-path"
+      - "/components"
+    volumes:
+      - "./init_files/dapr_components/shared:/components"
+    network_mode: "service:vmsutils"
+    depends_on:
+      - vmsutils
+      - redis
+
   vmslogger:
     profiles: [app]
     build:

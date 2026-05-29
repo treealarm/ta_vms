@@ -189,6 +189,7 @@ message MediaMtxServer {
   string name       = 2;
   string rtsp_url   = 3;
   string webrtc_url = 4;
+  string api_url    = 5;
 }
 
 message MediaMtxServerRequest {

@@ -212,7 +212,17 @@ bool camera_manager::set_camera_state(
     return it->second->add_stream(stream_name, profile_token, rtsp_url, user, pass, policy, web_rtc, error, webrtc_rtsp_push_url);
   }
 
+  // Push URL changed — update WebRTC in-place without reconnecting to camera source
+  if (stream->get_webrtc_push_url() != webrtc_rtsp_push_url)
+  {
+    stream->update_webrtc_push_url(webrtc_rtsp_push_url, web_rtc, error);
+    stream->apply_recording_policy(policy);
+    return true;
+  }
+
   stream->apply_recording_policy(policy);
+
+  stream->set_web_rtc_enabled(web_rtc);
 
   if (web_rtc != stream->is_web_rtc_streaming())
   {
@@ -264,6 +274,43 @@ std::vector<camera_manager::camera_info> camera_manager::list_cameras() const
     });
   }
 
+  return result;
+}
+
+bool camera_manager::ensure_web_rtc(const std::string& camera_id,
+                                     const std::string& stream_name,
+                                     std::string& error)
+{
+  std::scoped_lock lock(m_mutex);
+
+  auto it = m_cameras.find(camera_id);
+  if (it == m_cameras.end())
+  {
+    error = "camera not found: " + camera_id;
+    return false;
+  }
+
+  auto* stream = it->second->get_stream(stream_name);
+  if (!stream)
+  {
+    error = "stream not found: " + stream_name;
+    return false;
+  }
+
+  if (stream->is_web_rtc_streaming())
+    return true;
+
+  return stream->start_web_rtc(error);
+}
+
+std::vector<std::shared_ptr<cam_stream>> camera_manager::webrtc_streams_snapshot() const
+{
+  std::scoped_lock lock(m_mutex);
+  std::vector<std::shared_ptr<cam_stream>> result;
+  for (const auto& [_, device] : m_cameras)
+    for (const auto& [__, stream] : device->streams())
+      if (stream->is_web_rtc_enabled())
+        result.push_back(stream);
   return result;
 }
 

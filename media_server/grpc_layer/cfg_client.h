@@ -15,6 +15,7 @@ class cfg_client
 {
 public:
   cfg_client();
+  const std::string& server_id() const { return m_server_id; }
   bool list_cameras(std::vector<vms::cfg::CameraSetup>& cfg);
   bool list_media_mtx_servers(std::vector<vms::cfg::MediaMtxServer>& result);
   bool get_paired_fs_id(std::string& fs_id);

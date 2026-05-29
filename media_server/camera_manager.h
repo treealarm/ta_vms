@@ -72,6 +72,12 @@ public:
   bool remove_camera(const std::string& camera_id, std::string& error);
 
   std::vector<camera_info> list_cameras() const;
+  // Starts WebRTC for the given stream if not already streaming. No-op if already running.
+  bool ensure_web_rtc(const std::string& camera_id, const std::string& stream_name,
+                      std::string& error);
+
+  // Returns shared_ptrs to all webrtc-enabled streams (snapshot under lock).
+  std::vector<std::shared_ptr<cam_stream>> webrtc_streams_snapshot() const;
   void stop_all();
 
 private:

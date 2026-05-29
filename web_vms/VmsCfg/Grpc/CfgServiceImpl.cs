@@ -6,7 +6,8 @@ namespace VmsCfg
 {
   public class CfgServiceImpl(CameraStorage storage, DaprClient daprClient) : CfgService.CfgServiceBase
   {
-    private const string CameraConfigChangedTopic = "camera-config-changed";
+    private const string CameraConfigChangedTopic  = "camera-config-changed";
+    private const string MediaServerConfigChangedTopic = "media-server-config-changed";
     private readonly string _pubSubName =
       Environment.GetEnvironmentVariable("PUBSUB_NAME")
         ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
@@ -26,6 +27,22 @@ namespace VmsCfg
       });
     }
 
+    private void NotifyMediaServer(string serverId)
+    {
+      if (string.IsNullOrWhiteSpace(serverId)) return;
+      _ = Task.Run(async () =>
+      {
+        try
+        {
+          await daprClient.PublishEventAsync(_pubSubName, MediaServerConfigChangedTopic, serverId);
+        }
+        catch (Exception ex)
+        {
+          Console.Error.WriteLine($"Media server config notification failed for '{serverId}': {ex.Message}");
+        }
+      });
+    }
+
     private static readonly string StateStoreName =
       Environment.GetEnvironmentVariable("DAPR_STATE_STORE_NAME")
         ?? throw new InvalidOperationException("Required environment variable 'DAPR_STATE_STORE_NAME' is not set");
@@ -41,8 +58,17 @@ namespace VmsCfg
       if (!storage.IsValidServerId(request.ServerId))
         return new OperationStatus { Success = false, Message = $"server_id '{request.ServerId}' is not a known media server" };
 
+      // Get old server before updating so we can notify it if server_id changed
+      var (_, existing) = await storage.GetCameraAsync(request.CameraId, context.CancellationToken);
+
       await storage.SetupCameraAsync(request, context.CancellationToken);
       InvalidateFsCache(request.CameraId);
+      NotifyMediaServer(request.ServerId);
+
+      // Notify old server so it removes the camera
+      if (existing is not null && existing.ServerId != request.ServerId)
+        NotifyMediaServer(existing.ServerId);
+
       return new OperationStatus { Success = true };
     }
 
@@ -76,9 +102,15 @@ namespace VmsCfg
 
     public override async Task<OperationStatus> RemoveCamera(SourceRequest request, ServerCallContext context)
     {
+      // Get server_id before removing so we can notify the right media server
+      var (_, existing) = await storage.GetCameraAsync(request.SourceId, context.CancellationToken);
       var removed = await storage.RemoveCameraAsync(request.SourceId, context.CancellationToken);
       if (removed)
+      {
         InvalidateFsCache(request.SourceId);
+        if (existing is not null)
+          NotifyMediaServer(existing.ServerId);
+      }
       return new OperationStatus { Success = removed };
     }
 

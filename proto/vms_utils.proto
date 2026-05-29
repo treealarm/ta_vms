@@ -1,0 +1,17 @@
+syntax = "proto3";
+package vms.utils;
+
+service UtilsService {
+  rpc GetMediaMtxPathInfo(GetMediaMtxPathInfoRequest) returns (GetMediaMtxPathInfoResponse);
+}
+
+message GetMediaMtxPathInfoRequest {
+  string camera_id   = 1;
+  string stream_name = 2;
+}
+
+message GetMediaMtxPathInfoResponse {
+  bool  success       = 1;
+  int32 readers_count = 2;
+  bool  has_source    = 3;
+}

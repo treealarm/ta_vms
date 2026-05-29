@@ -44,6 +44,19 @@ grpc::Status camera_control_service::SetCameraState(
   return grpc::Status::OK;
 }
 
+grpc::Status camera_control_service::EnsureWebRtcStreaming(
+    grpc::ServerContext* /*context*/,
+    const vms::control::EnsureWebRtcStreamingRequest* request,
+    vms::control::OperationStatus* response)
+{
+  std::string error;
+  const bool success = m_manager.ensure_web_rtc(
+    request->camera_id(), request->stream_name(), error);
+
+  response->set_success(success);
+  response->set_message(success ? "ok" : error);
+  return grpc::Status::OK;
+}
 
 grpc::Status camera_control_service::GetArchiveFrameJpeg(
   grpc::ServerContext* /*context*/,

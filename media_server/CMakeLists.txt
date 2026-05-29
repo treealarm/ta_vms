@@ -19,15 +19,21 @@ pkg_check_modules(FFMPEG REQUIRED
 
 set(VMS_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_control.proto)
 set(CFG_CLIENT_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_cfg.proto)
+set(UTILS_CLIENT_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_utils.proto)
 set(ONVIF_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/onvif.proto)
 set(FS_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_fs.proto)
 set(LOGGER_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/logger.proto)
 set(DAPR_RUNTIME_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr/proto/runtime/v1/dapr.proto)
+set(DAPR_APPCALLBACK_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr/proto/runtime/v1/appcallback.proto)
 set(DAPR_COMMON_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/dapr/proto/common/v1/common.proto)
 
 set(SOURCES
     main.cpp
     cam_stream.cpp
+    config_subscriber.cpp
+    config_subscriber.h
+    mediamtx_monitor.cpp
+    mediamtx_monitor.h
     cam_device.cpp
     camera_manager.cpp
     
@@ -39,6 +45,8 @@ set(SOURCES
     grpc_layer/dapr_publisher.h
     grpc_layer/cfg_client.h
     grpc_layer/cfg_client.cpp
+    grpc_layer/utils_client.h
+    grpc_layer/utils_client.cpp
     grpc_layer/state_store_client.h
     grpc_layer/state_store_client.cpp
     grpc_layer/onvif_client.h
@@ -106,10 +114,12 @@ protobuf_generate(
     PROTOS
         ${VMS_PROTO_FILE}
         ${CFG_CLIENT_PROTO_FILE}
+        ${UTILS_CLIENT_PROTO_FILE}
         ${ONVIF_PROTO_FILE}
         ${FS_PROTO_FILE}
         ${LOGGER_PROTO_FILE}
         ${DAPR_RUNTIME_PROTO_FILE}
+        ${DAPR_APPCALLBACK_PROTO_FILE}
         ${DAPR_COMMON_PROTO_FILE}
 )
 
@@ -120,8 +130,10 @@ protobuf_generate(
     PROTOS
         ${VMS_PROTO_FILE}
         ${DAPR_RUNTIME_PROTO_FILE}
+        ${DAPR_APPCALLBACK_PROTO_FILE}
         ${DAPR_COMMON_PROTO_FILE}
         ${CFG_CLIENT_PROTO_FILE}
+        ${UTILS_CLIENT_PROTO_FILE}
         ${ONVIF_PROTO_FILE}
         ${FS_PROTO_FILE}
         ${LOGGER_PROTO_FILE}

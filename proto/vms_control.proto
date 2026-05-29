@@ -8,6 +8,8 @@ service CameraControlService {
   rpc RemoveCamera(SourceRequest) returns (OperationStatus);
   rpc SetCameraState(CameraState) returns (OperationStatus);
 
+  rpc EnsureWebRtcStreaming(EnsureWebRtcStreamingRequest) returns (OperationStatus);
+
   rpc GetArchiveFrameJpeg(ArchiveFrameJpegRequest) returns (ArchiveFrameJpegResponse);
 }
 
@@ -37,6 +39,11 @@ message CameraState {
   string profile_token          = 9;
 }
 
+
+message EnsureWebRtcStreamingRequest {
+  string camera_id   = 1;
+  string stream_name = 2;
+}
 
 message ArchiveFrameJpegRequest {
   string file_path = 1;

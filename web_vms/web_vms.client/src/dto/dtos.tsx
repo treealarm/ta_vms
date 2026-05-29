@@ -132,6 +132,7 @@ export type MediaMtxServerDto = {
   name: string
   rtspUrl: string
   webrtcUrl: string
+  apiUrl: string
 }
 
 /** Built client-side from servers + cameras for Settings tree */

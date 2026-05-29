@@ -35,7 +35,7 @@
                 "CFG_VMS_PORT": "5135",
                 "DAPR_HTTP_PORT": "3501",
                 "DAPR_GRPC_PORT": "50002",
-                "PUBSUB_NAME": "pubsub",
+                "PUBSUB_NAME": "orderpubsub",
                 "POSTGRES_HOST": "localhost",
                 "POSTGRES_PORT": "5432",
                 "POSTGRES_USER": "postgres",
@@ -62,7 +62,7 @@
                 "DAPR_HTTP_PORT": "3502",
                 "DAPR_GRPC_PORT": "50003",
                 "DAPR_CFG_APP_ID": "vmscfg",
-                "PUBSUB_NAME": "pubsub"
+                "PUBSUB_NAME": "orderpubsub"
             }
         },
         {
@@ -96,7 +96,7 @@
                 "DAPR_HTTP_PORT": "3504",
                 "DAPR_GRPC_PORT": "50004",
                 "DAPR_CFG_APP_ID": "vmscfg",
-                "PUBSUB_NAME": "pubsub",
+                "PUBSUB_NAME": "orderpubsub",
                 "APP_ID": "vmsfs",
                 "POSTGRES_HOST": "localhost",
                 "POSTGRES_PORT": "5432",
@@ -121,6 +121,24 @@
                 "DAPR_HTTP_PORT": "3510",
                 "DAPR_GRPC_PORT": "50110",
                 "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage"
+            }
+        },
+        {
+            "name": "VmsUtils (.NET)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "prepare:vmsutils",
+            "postDebugTask": "dapr:vmsutils:stop",
+            "program": "${workspaceFolder}/web_vms/VmsUtils/bin/Debug/net8.0/VmsUtils.dll",
+            "cwd": "${workspaceFolder}/web_vms/VmsUtils",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "UTILS_VMS_PORT": "5139",
+                "DAPR_HTTP_PORT": "3509",
+                "DAPR_GRPC_PORT": "50109",
+                "DAPR_CFG_APP_ID": "vmscfg",
+                "PUBSUB_NAME": "orderpubsub"
             }
         },
         {
@@ -156,6 +174,10 @@
                 {
                     "name": "DAPR_ONVIF_APP_ID",
                     "value": "vmsonvif"
+                },
+                {
+                    "name": "DAPR_UTILS_APP_ID",
+                    "value": "vmsutils"
                 },
                 {
                     "name": "DAPR_STATE_STORE_NAME",
@@ -219,7 +241,7 @@
                 "DAPR_HTTP_PORT": "3506",
                 "DAPR_GRPC_PORT": "50008",
                 "DAPR_CFG_APP_ID": "vmscfg",
-                "PUBSUB_NAME": "pubsub",
+                "PUBSUB_NAME": "orderpubsub",
                 "APP_ID": "vmsfs-2",
                 "POSTGRES_HOST": "localhost",
                 "POSTGRES_PORT": "5432",
@@ -245,6 +267,7 @@
                 { "name": "DAPR_GRPC_PORT", "value": "50012" },
                 { "name": "DAPR_CFG_APP_ID", "value": "vmscfg" },
                 { "name": "DAPR_ONVIF_APP_ID", "value": "vmsonvif" },
+                { "name": "DAPR_UTILS_APP_ID", "value": "vmsutils" },
                 { "name": "DAPR_STATE_STORE_NAME", "value": "statestore" },
                 { "name": "PUBSUB_NAME", "value": "orderpubsub" },
                 { "name": "VMS_WEBRTC_RTSP_BASE_URL", "value": "rtsp://localhost:8554" }

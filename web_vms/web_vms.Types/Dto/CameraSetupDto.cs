@@ -35,6 +35,7 @@ public record MediaMtxServerDto
   public string Name { get; init; } = string.Empty;
   public string RtspUrl { get; init; } = string.Empty;
   public string WebrtcUrl { get; init; } = string.Empty;
+  public string ApiUrl { get; init; } = string.Empty;
 }
 
 public record CameraSetupDto

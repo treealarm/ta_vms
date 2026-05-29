@@ -134,6 +134,7 @@ public class CameraManager : ICameraManager
     Name      = s.Name,
     RtspUrl   = s.RtspUrl,
     WebrtcUrl = s.WebrtcUrl,
+    ApiUrl    = s.ApiUrl,
   };
 
   private static MediaMtxServer ToMediaMtxProto(MediaMtxServerDto dto) => new()
@@ -142,6 +143,7 @@ public class CameraManager : ICameraManager
     Name      = dto.Name,
     RtspUrl   = dto.RtspUrl,
     WebrtcUrl = dto.WebrtcUrl,
+    ApiUrl    = dto.ApiUrl ?? string.Empty,
   };
 
   private static MediaServerNodeDto ToDto(MediaServerNode server) => new()
