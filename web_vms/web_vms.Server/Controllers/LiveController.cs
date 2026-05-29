@@ -180,45 +180,9 @@ public class LiveController(
       return NotFound();
     }
 
-    if (current.ServerId == request.ServerId)
-    {
-      var (sameParentNorm, _, _) = await ResolveWithMediaMtxAsync(request, ct);
-      await _manager.Add(sameParentNorm, ct);
-      return Ok(new ApiResponse(true, "Camera parent is unchanged"));
-    }
-
-    Vms.Control.OperationStatus removeResponse;
-    try
-    {
-      removeResponse = await GetMediaClient(current.ServerId).RemoveCameraAsync(
-        new SourceRequest { SourceId = cameraId }, MediaCallOptions(ct));
-    }
-    catch (RpcException ex)
-    {
-      return Ok(new ApiResponse(false, MediaServerError(ex)));
-    }
-
-    if (!removeResponse.Success)
-      return Ok(ApiResponseMapper.ToApiResponse(removeResponse));
-
     var (normalized, webrtcRtspPushUrl, _) = await ResolveWithMediaMtxAsync(request, ct);
-    var addClient = GetMediaClient(normalized.ServerId!);
-    foreach (var controlState in ToControlStates(normalized, webrtcRtspPushUrl))
-    {
-      Vms.Control.OperationStatus addResponse;
-      try
-      {
-        addResponse = await addClient.SetCameraStateAsync(controlState, MediaCallOptions(ct));
-      }
-      catch (RpcException ex)
-      {
-        return Ok(new ApiResponse(false, MediaServerError(ex)));
-      }
 
-      if (!addResponse.Success)
-        return Ok(ApiResponseMapper.ToApiResponse(addResponse));
-    }
-
+    // Config is the source of truth — save first, regardless of media server availability.
     try
     {
       await _manager.Add(normalized, ct);
@@ -226,6 +190,30 @@ public class LiveController(
     catch (RpcException ex)
     {
       return Ok(new ApiResponse(false, $"Config service error: {MediaServerError(ex)}"));
+    }
+
+    // Notify old media server to remove camera (best-effort — it may be offline).
+    var oldServerId = current.ServerId;
+    if (!string.IsNullOrWhiteSpace(oldServerId) && oldServerId != normalized.ServerId)
+    {
+      try
+      {
+        await GetMediaClient(oldServerId).RemoveCameraAsync(
+          new SourceRequest { SourceId = cameraId }, BestEffortCallOptions(ct));
+      }
+      catch (RpcException) { /* best-effort */ }
+    }
+
+    // Notify new media server to start the camera (best-effort).
+    if (!string.IsNullOrWhiteSpace(normalized.ServerId))
+    {
+      try
+      {
+        var addClient = GetMediaClient(normalized.ServerId);
+        foreach (var controlState in ToControlStates(normalized, webrtcRtspPushUrl))
+          await addClient.SetCameraStateAsync(controlState, BestEffortCallOptions(ct));
+      }
+      catch (RpcException) { /* best-effort */ }
     }
 
     return Ok(new ApiResponse(true, "ok"));

@@ -6,7 +6,7 @@
 #include "reader/archive_frame_jpeg_reader.h"
 #include "vms_control.grpc.pb.h"
 
-class camera_control_service final : public vms::control::CameraControlService::Service 
+class camera_control_service final : public vms::control::CameraControlService::Service
 {
 public:
   explicit camera_control_service(camera_manager& manager);

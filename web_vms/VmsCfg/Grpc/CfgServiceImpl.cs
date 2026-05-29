@@ -6,7 +6,8 @@ namespace VmsCfg
 {
   public class CfgServiceImpl(CameraStorage storage, DaprClient daprClient) : CfgService.CfgServiceBase
   {
-    private const string CameraConfigChangedTopic = "camera-config-changed";
+    private const string CameraConfigChangedTopic  = "camera-config-changed";
+    private const string MediaServerConfigChangedTopic = "media-server-config-changed";
     private readonly string _pubSubName =
       Environment.GetEnvironmentVariable("PUBSUB_NAME")
         ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
@@ -22,6 +23,22 @@ namespace VmsCfg
         catch (Exception ex)
         {
           Console.Error.WriteLine($"Camera config invalidation publish failed for '{cameraId}': {ex.Message}");
+        }
+      });
+    }
+
+    private void NotifyMediaServer(string serverId)
+    {
+      if (string.IsNullOrWhiteSpace(serverId)) return;
+      _ = Task.Run(async () =>
+      {
+        try
+        {
+          await daprClient.PublishEventAsync(_pubSubName, MediaServerConfigChangedTopic, serverId);
+        }
+        catch (Exception ex)
+        {
+          Console.Error.WriteLine($"Media server config notification failed for '{serverId}': {ex.Message}");
         }
       });
     }
@@ -43,6 +60,7 @@ namespace VmsCfg
 
       await storage.SetupCameraAsync(request, context.CancellationToken);
       InvalidateFsCache(request.CameraId);
+      NotifyMediaServer(request.ServerId);
       return new OperationStatus { Success = true };
     }
 
@@ -76,9 +94,15 @@ namespace VmsCfg
 
     public override async Task<OperationStatus> RemoveCamera(SourceRequest request, ServerCallContext context)
     {
+      // Get server_id before removing so we can notify the right media server
+      var (_, existing) = await storage.GetCameraAsync(request.SourceId, context.CancellationToken);
       var removed = await storage.RemoveCameraAsync(request.SourceId, context.CancellationToken);
       if (removed)
+      {
         InvalidateFsCache(request.SourceId);
+        if (existing is not null)
+          NotifyMediaServer(existing.ServerId);
+      }
       return new OperationStatus { Success = removed };
     }
 

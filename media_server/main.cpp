@@ -10,6 +10,7 @@
 #include <grpcpp/grpcpp.h>
 
 #include "camera_manager.h"
+#include "config_subscriber.h"
 #include "grpc_layer/camera_control_service.h"
 #include "grpc_layer/cfg_client.h"
 #include "grpc_layer/fs_client.h"
@@ -57,14 +58,18 @@ int main(int argc, char** argv)
   std::signal(SIGTERM, on_signal);
 
   camera_manager manager;
+  cfg_client c_client;
   camera_control_service service(manager);
+  config_subscriber cfg_sub(manager, c_client,
+    std::getenv("PUBSUB_NAME") ? std::getenv("PUBSUB_NAME") : "orderpubsub");
 
   grpc::ServerBuilder builder;
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
   builder.RegisterService(&service);
+  builder.RegisterService(&cfg_sub);
 
   std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
-  if (!server) 
+  if (!server)
   {
     logger::instance().error(std::format("Failed to start gRPC server on {}", server_address));
     return 1;
@@ -81,7 +86,6 @@ int main(int argc, char** argv)
     }
   });
 
-  cfg_client c_client;
   std::vector<vms::cfg::CameraSetup> cfg_list;
   std::vector<vms::cfg::MediaMtxServer> mtx_servers;
 

@@ -44,7 +44,6 @@ grpc::Status camera_control_service::SetCameraState(
   return grpc::Status::OK;
 }
 
-
 grpc::Status camera_control_service::EnsureWebRtcStreaming(
     grpc::ServerContext* /*context*/,
     const vms::control::EnsureWebRtcStreamingRequest* request,
