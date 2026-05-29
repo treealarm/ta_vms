@@ -406,7 +406,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
   public async Task<List<MediaMtxServer>> ListMediaMtxServersAsync(CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      SELECT id, name, rtsp_url, webrtc_url FROM media_mtx_server ORDER BY name;
+      SELECT id, name, rtsp_url, webrtc_url, api_url FROM media_mtx_server ORDER BY name;
       """);
 
     var result = new List<MediaMtxServer>();
@@ -419,18 +419,20 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
   public async Task UpsertMediaMtxServerAsync(MediaMtxServer server, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      INSERT INTO media_mtx_server (id, name, rtsp_url, webrtc_url)
-      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4)
+      INSERT INTO media_mtx_server (id, name, rtsp_url, webrtc_url, api_url)
+      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5)
       ON CONFLICT (id) DO UPDATE SET
         name       = EXCLUDED.name,
         rtsp_url   = EXCLUDED.rtsp_url,
-        webrtc_url = EXCLUDED.webrtc_url
+        webrtc_url = EXCLUDED.webrtc_url,
+        api_url    = EXCLUDED.api_url
       RETURNING id;
       """);
     command.Parameters.AddWithValue(server.Id ?? string.Empty);
     command.Parameters.AddWithValue(server.Name);
     command.Parameters.AddWithValue(server.RtspUrl);
     command.Parameters.AddWithValue(server.WebrtcUrl);
+    command.Parameters.AddWithValue(server.ApiUrl);
     var id = await command.ExecuteScalarAsync(ct);
     server.Id = id?.ToString() ?? server.Id;
   }
@@ -449,7 +451,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
 
     // Check if camera already has a server assigned and it still exists
     await using (var cmd = new NpgsqlCommand("""
-      SELECT m.id, m.name, m.rtsp_url, m.webrtc_url
+      SELECT m.id, m.name, m.rtsp_url, m.webrtc_url, m.api_url
       FROM camera_setup cs
       JOIN media_mtx_server m ON m.id = cs.media_mtx_server_id
       WHERE cs.camera_id = $1;
@@ -466,7 +468,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     MediaMtxServer? picked = null;
 
     await using (var pickCmd = new NpgsqlCommand("""
-      SELECT id, name, rtsp_url, webrtc_url FROM media_mtx_server ORDER BY random() LIMIT 1;
+      SELECT id, name, rtsp_url, webrtc_url, api_url FROM media_mtx_server ORDER BY random() LIMIT 1;
       """, connection, tx))
     {
       await using var reader = await pickCmd.ExecuteReaderAsync(ct);
@@ -497,6 +499,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       Name      = reader.GetString(1),
       RtspUrl   = reader.GetString(2),
       WebrtcUrl = reader.GetString(3),
+      ApiUrl    = reader.GetString(4),
     };
 
   // ── Monitor management ────────────────────────────────────────────────────

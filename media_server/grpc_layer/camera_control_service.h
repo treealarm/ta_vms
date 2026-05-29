@@ -19,6 +19,10 @@ public:
                               const vms::control::CameraState* request,
                               vms::control::OperationStatus* response) override;
 
+  grpc::Status EnsureWebRtcStreaming(grpc::ServerContext* context,
+                                     const vms::control::EnsureWebRtcStreamingRequest* request,
+                                     vms::control::OperationStatus* response) override;
+
   grpc::Status GetArchiveFrameJpeg(grpc::ServerContext* context,
     const vms::control::ArchiveFrameJpegRequest* request,
     vms::control::ArchiveFrameJpegResponse* response) override;

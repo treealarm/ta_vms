@@ -15,6 +15,8 @@
 #include "grpc_layer/fs_client.h"
 #include "grpc_layer/proto_mapper.h"
 #include "grpc_layer/state_store_client.h"
+#include "grpc_layer/utils_client.h"
+#include "mediamtx_monitor.h"
 
 #include "logger/logger.h"
 
@@ -143,7 +145,7 @@ int main(int argc, char** argv)
   //{
   //  const auto cam_id = argv[3];
   //  const auto url = argv[2];
-  //  
+  //
   //  const bool success = manager.add_camera(
   //    cam_id,
   //    url,
@@ -152,10 +154,25 @@ int main(int argc, char** argv)
   //    error);
   //}
 
+  std::unique_ptr<utils_client> u_client;
+  std::unique_ptr<mediamtx_monitor> monitor;
+  try
+  {
+    u_client = std::make_unique<utils_client>();
+    monitor  = std::make_unique<mediamtx_monitor>(manager, *u_client);
+    monitor->start();
+    logger::instance().info("mediamtx_monitor started");
+  }
+  catch (const std::exception& ex)
+  {
+    logger::instance().warning(std::format("mediamtx_monitor disabled: {}", ex.what()));
+  }
+
   while (!g_stop_requested) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
   }
 
+  if (monitor) monitor->stop();
   manager.stop_all();
   server->Shutdown();
   server->Wait();

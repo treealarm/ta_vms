@@ -14,7 +14,8 @@ cam_stream::cam_stream(
   const std::string& profile_token,
   const std::string& user,
   const std::string& pass,
-  const std::string& webrtc_rtsp_push_url)
+  const std::string& webrtc_rtsp_push_url,
+  bool               web_rtc_enabled)
   : m_rtsp_url(rtsp_url)
   , m_camera_id(camera_id)
   , m_stream_name(stream_name)
@@ -22,6 +23,7 @@ cam_stream::cam_stream(
   , m_user(user)
   , m_pass(pass)
   , m_webrtc_rtsp_push_url(webrtc_rtsp_push_url)
+  , m_web_rtc_enabled(web_rtc_enabled)
 {
   m_reader = std::make_unique<rtsp_reader>(camera_id, profile_token, user, pass);
 
@@ -123,6 +125,19 @@ bool cam_stream::stop_web_rtc(std::string& error)
   if (sink)
     m_reader->remove_sink(sink);
   return true;
+}
+
+void cam_stream::update_webrtc_push_url(const std::string& new_url, bool web_rtc, std::string& error)
+{
+  const bool was_streaming = is_web_rtc_streaming();
+  if (was_streaming)
+    stop_web_rtc(error);
+
+  m_webrtc_rtsp_push_url = new_url;
+  m_web_rtc_enabled = web_rtc;
+
+  if (web_rtc)
+    start_web_rtc(error);
 }
 
 void cam_stream::shutdown()

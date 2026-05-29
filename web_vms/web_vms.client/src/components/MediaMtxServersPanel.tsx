@@ -25,7 +25,7 @@ import type { MediaMtxServerDto } from '../dto/dtos'
 
 export type MediaMtxServersHandle = { applyIfDirty: () => Promise<boolean> }
 
-const EMPTY: MediaMtxServerDto = { id: '', name: '', rtspUrl: '', webrtcUrl: '' }
+const EMPTY: MediaMtxServerDto = { id: '', name: '', rtspUrl: '', webrtcUrl: '', apiUrl: '' }
 
 export default function MediaMtxServersPanel({ ref }: { ref?: React.Ref<MediaMtxServersHandle> }) {
   const dispatch = useAppDispatch()
@@ -122,6 +122,14 @@ export default function MediaMtxServersPanel({ ref }: { ref?: React.Ref<MediaMtx
               required
               helperText={t('mediaMtx.webrtcHelper')}
             />
+            <TextField
+              label={t('mediaMtx.apiUrl')}
+              placeholder={t('mediaMtx.apiPlaceholder')}
+              value={editing.apiUrl}
+              onChange={(e) => setEditing({ ...editing, apiUrl: e.target.value })}
+              size="small"
+              helperText={t('mediaMtx.apiHelper')}
+            />
             <Stack direction="row" spacing={1}>
               <Button variant="outlined" size="small" onClick={handleSave} disabled={isBusy}>
                 {t('common.apply')}
@@ -141,6 +149,7 @@ export default function MediaMtxServersPanel({ ref }: { ref?: React.Ref<MediaMtx
               <TableCell>{t('mediaMtx.colName')}</TableCell>
               <TableCell>{t('mediaMtx.colRtsp')}</TableCell>
               <TableCell>{t('mediaMtx.colWebrtc')}</TableCell>
+              <TableCell>{t('mediaMtx.colApi')}</TableCell>
               <TableCell align="right" sx={{ width: 80 }} />
             </TableRow>
           </TableHead>
@@ -157,6 +166,7 @@ export default function MediaMtxServersPanel({ ref }: { ref?: React.Ref<MediaMtx
                 <TableCell>{s.name}</TableCell>
                 <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{s.rtspUrl}</TableCell>
                 <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{s.webrtcUrl}</TableCell>
+                <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{s.apiUrl}</TableCell>
                 <TableCell align="right">
                   <IconButton size="small" onClick={() => handleEdit(s)}>
                     <EditIcon fontSize="small" />

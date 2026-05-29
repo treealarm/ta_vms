@@ -15,7 +15,8 @@ public class LiveController(
   ServerPairRegistry _registry
   ) : ControllerBase
 {
-  private static readonly TimeSpan MediaCallTimeout = TimeSpan.FromSeconds(5);
+  private static readonly TimeSpan MediaCallTimeout    = TimeSpan.FromSeconds(5);
+  private static readonly TimeSpan MediaCallBestEffort = TimeSpan.FromSeconds(1);
 
   private CameraControlService.CameraControlServiceClient GetMediaClient(string? serverId)
   {
@@ -27,6 +28,9 @@ public class LiveController(
 
   private static CallOptions MediaCallOptions(CancellationToken ct) =>
     new(deadline: DateTime.UtcNow.Add(MediaCallTimeout), cancellationToken: ct);
+
+  private static CallOptions BestEffortCallOptions(CancellationToken ct) =>
+    new(deadline: DateTime.UtcNow.Add(MediaCallBestEffort), cancellationToken: ct);
 
   private static string MediaServerError(RpcException ex) => ex.StatusCode switch
   {
@@ -97,13 +101,23 @@ public class LiveController(
     if (!hasWebRtcStream)
       return (normalized, null, null);
 
-    var server = await _manager.GetOrAssignMediaMtxServer(normalized.CameraId, ct);
+    MediaMtxServerDto? server;
+    if (!string.IsNullOrWhiteSpace(normalized.MediaMtxServerId))
+    {
+      // User explicitly chose a server — respect that choice, don't overwrite with DB value
+      var servers = await _manager.ListMediaMtxServers(ct);
+      server = servers.FirstOrDefault(s => s.Id == normalized.MediaMtxServerId);
+    }
+    else
+    {
+      // No server specified — auto-assign and patch back the assigned ID
+      server = await _manager.GetOrAssignMediaMtxServer(normalized.CameraId, ct);
+      if (server is not null && normalized.MediaMtxServerId != server.Id)
+        normalized = normalized with { MediaMtxServerId = server.Id };
+    }
+
     if (server is null)
       return (normalized, null, null);
-
-    // Patch back the assigned server ID so it gets persisted
-    if (normalized.MediaMtxServerId != server.Id)
-      normalized = normalized with { MediaMtxServerId = server.Id };
 
     return (normalized, server.RtspUrl, server.WebrtcUrl);
   }
@@ -118,29 +132,7 @@ public class LiveController(
 
     var (normalized, webrtcRtspPushUrl, _) = await ResolveWithMediaMtxAsync(request, ct);
 
-    // Only notify the media server if there is a stream to actually run.
-    // A camera with no streams is valid config — the user will add streams separately.
-    var hasStream = normalized.Streams.Count > 0 || !string.IsNullOrEmpty(normalized.RtspUrl);
-    if (hasStream)
-    {
-      var mediaClient = GetMediaClient(normalized.ServerId!);
-      foreach (var controlState in ToControlStates(normalized, webrtcRtspPushUrl))
-      {
-        Vms.Control.OperationStatus mediaResponse;
-        try
-        {
-          mediaResponse = await mediaClient.SetCameraStateAsync(controlState, MediaCallOptions(ct));
-        }
-        catch (RpcException ex)
-        {
-          return Ok(new ApiResponse(false, MediaServerError(ex)));
-        }
-
-        if (!mediaResponse.Success)
-          return Ok(ApiResponseMapper.ToApiResponse(mediaResponse));
-      }
-    }
-
+    // Config is the source of truth — save first.
     try
     {
       await _manager.Add(normalized, ct);
@@ -148,6 +140,19 @@ public class LiveController(
     catch (RpcException ex)
     {
       return Ok(new ApiResponse(false, $"Config service error: {MediaServerError(ex)}"));
+    }
+
+    // Notify media server best-effort (don't fail the save if media server is unavailable).
+    var hasStream = normalized.Streams.Count > 0 || !string.IsNullOrEmpty(normalized.RtspUrl);
+    if (hasStream && !string.IsNullOrWhiteSpace(normalized.ServerId))
+    {
+      try
+      {
+        var mediaClient = GetMediaClient(normalized.ServerId);
+        foreach (var controlState in ToControlStates(normalized, webrtcRtspPushUrl))
+          await mediaClient.SetCameraStateAsync(controlState, BestEffortCallOptions(ct));
+      }
+      catch (RpcException) { /* best-effort */ }
     }
 
     return Ok(new ApiResponse(true, "ok"));
@@ -294,24 +299,26 @@ public class LiveController(
 
     var (normalized, webrtcRtspPushUrl, _) = await ResolveWithMediaMtxAsync(
       state with { ServerId = targetServerId }, ct);
-    var stateClient = GetMediaClient(targetServerId);
-    Vms.Control.OperationStatus lastResponse = new() { Success = true, Message = "ok" };
-    foreach (var controlState in ToControlStates(normalized, webrtcRtspPushUrl))
-    {
-      try
-      {
-        lastResponse = await stateClient.SetCameraStateAsync(controlState, MediaCallOptions(ct));
-      }
-      catch (RpcException ex)
-      {
-        return Ok(new ApiResponse(false, MediaServerError(ex)));
-      }
 
-      if (!lastResponse.Success)
-        return Ok(ApiResponseMapper.ToApiResponse(lastResponse));
+    // Config is the source of truth — save first.
+    await _manager.SetSetup(normalized, ct);
+
+    // Notify media server best-effort.
+    Vms.Control.OperationStatus lastResponse = new() { Success = true, Message = "ok" };
+    try
+    {
+      var stateClient = GetMediaClient(targetServerId);
+      foreach (var controlState in ToControlStates(normalized, webrtcRtspPushUrl))
+      {
+        lastResponse = await stateClient.SetCameraStateAsync(controlState, BestEffortCallOptions(ct));
+        if (!lastResponse.Success) break;
+      }
+    }
+    catch (RpcException ex)
+    {
+      return Ok(new ApiResponse(true, $"Saved, but media server error: {MediaServerError(ex)}"));
     }
 
-    await _manager.SetSetup(normalized, ct);
     return Ok(ApiResponseMapper.ToApiResponse(lastResponse));
   }
 
@@ -329,6 +336,26 @@ public class LiveController(
     // Enrich with MediaMTX WebRTC URL for the frontend
     var mediaMtxServer = await _manager.GetOrAssignMediaMtxServer(cameraId, ct);
     normalized = normalized with { MediaMtxWebrtcUrl = mediaMtxServer?.WebrtcUrl };
+
+    // Ensure WebRTC push is active for all webrtc-enabled streams (best-effort)
+    var webRtcStreams = normalized.Streams
+      .Where(s => s.WebRtc && !string.IsNullOrWhiteSpace(s.StreamName))
+      .ToList();
+
+    if (webRtcStreams.Count > 0 && !string.IsNullOrWhiteSpace(normalized.ServerId))
+    {
+      try
+      {
+        var mediaClient = GetMediaClient(normalized.ServerId);
+        foreach (var stream in webRtcStreams)
+        {
+          await mediaClient.EnsureWebRtcStreamingAsync(
+            new EnsureWebRtcStreamingRequest { CameraId = cameraId, StreamName = stream.StreamName },
+            BestEffortCallOptions(ct));
+        }
+      }
+      catch (RpcException) { /* best-effort: don't fail state query if media server is unavailable */ }
+    }
 
     if (string.Equals(normalized.RecordingMode, "off", StringComparison.OrdinalIgnoreCase))
     {

@@ -94,9 +94,13 @@
     "webrtcUrl": "WebRTC client URL (outgoing)",
     "webrtcPlaceholder": "http://hostname:8889",
     "webrtcHelper": "Used by the browser to receive WebRTC streams (WHEP)",
+    "apiUrl": "API URL",
+    "apiPlaceholder": "http://mediamtx:9997",
+    "apiHelper": "MediaMTX REST API — used to check active viewers (optional)",
     "colName": "Name",
     "colRtsp": "RTSP push URL",
     "colWebrtc": "WebRTC client URL",
+    "colApi": "API URL",
     "noServers": "No servers configured"
   },
   "logs": {

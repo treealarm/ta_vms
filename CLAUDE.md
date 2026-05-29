@@ -1,5 +1,25 @@
 # Architecture rules
 
+## MediaMTX API access
+
+All interaction with the MediaMTX REST API goes through **VmsUtils** (`vmsutils` Dapr app-id). No other service (media_server, VmsCfg, web_vms, etc.) calls the MediaMTX API directly.
+
+- media_server sends `camera_id + stream_name` to VmsUtils via gRPC
+- VmsUtils resolves the assigned MediaMTX server (with its `api_url`) from VmsCfg, then queries the MediaMTX REST API
+- Other services consume the results from VmsUtils — they do not hold or forward MediaMTX API URLs
+
+## Adding a new service
+
+When adding a new service (C# or C++), you **must** update all of the following:
+1. `.env` — add the service's port and any Dapr app-id env vars
+2. `dockerhub/.env` — same as above
+3. `docker-compose.yml` — add service + dapr sidecar entries (with `profiles: [app]`)
+4. `.vscode/launch.json` — add a debug launch configuration for local development
+5. `.vscode/tasks.json` — add `prepare:<name>`, `dapr:<name>:start`, `dapr:<name>:stop` tasks (copy pattern from vmslogger)
+6. `web_vms/web_vms.sln` — add the project (for C# services)
+
+Omitting any of these causes a startup crash or missing debug config in dev.
+
 ## Environment variables
 
 When adding a new required environment variable to any service:
