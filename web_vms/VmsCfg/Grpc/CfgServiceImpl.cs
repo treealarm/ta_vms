@@ -58,9 +58,17 @@ namespace VmsCfg
       if (!storage.IsValidServerId(request.ServerId))
         return new OperationStatus { Success = false, Message = $"server_id '{request.ServerId}' is not a known media server" };
 
+      // Get old server before updating so we can notify it if server_id changed
+      var (_, existing) = await storage.GetCameraAsync(request.CameraId, context.CancellationToken);
+
       await storage.SetupCameraAsync(request, context.CancellationToken);
       InvalidateFsCache(request.CameraId);
       NotifyMediaServer(request.ServerId);
+
+      // Notify old server so it removes the camera
+      if (existing is not null && existing.ServerId != request.ServerId)
+        NotifyMediaServer(existing.ServerId);
+
       return new OperationStatus { Success = true };
     }
 

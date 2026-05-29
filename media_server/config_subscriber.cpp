@@ -1,6 +1,7 @@
 #include "config_subscriber.h"
 
 #include <format>
+#include <unordered_set>
 
 #include "grpc_layer/proto_mapper.h"
 #include "logger/logger.h"
@@ -69,9 +70,14 @@ void config_subscriber::reload_cameras()
   for (const auto& s : mtx_servers)
     mtx_rtsp_by_id[s.id()] = s.rtsp_url();
 
+  // Build set of camera IDs that should be running on this server
+  std::unordered_set<std::string> expected_ids;
   std::string error;
+
   for (const auto& c : cfg_list)
   {
+    expected_ids.insert(c.camera_id());
+
     const std::string user = c.has_cred() ? c.cred().user() : "";
     const std::string pass = c.has_cred() ? c.cred().pass() : "";
 
@@ -100,5 +106,16 @@ void config_subscriber::reload_cameras()
     if (!m_cameras.configure_camera(c.camera_id(), user, pass, streams, error))
       logger::instance().warning(std::format(
         "config_subscriber: failed to configure camera '{}': {}", c.camera_id(), error));
+  }
+
+  // Remove cameras that are no longer assigned to this server
+  for (const auto& camera_info : m_cameras.list_cameras())
+  {
+    if (!expected_ids.count(camera_info.camera_id))
+    {
+      logger::instance().info(std::format(
+        "config_subscriber: removing camera '{}' (no longer on this server)", camera_info.camera_id));
+      m_cameras.remove_camera(camera_info.camera_id, error);
+    }
   }
 }
