@@ -45,6 +45,7 @@ public:
   bool is_recording() const { return m_writer != nullptr; }
   bool is_web_rtc_streaming() const { return m_webrtc_output_sink != nullptr; }
   bool is_web_rtc_enabled() const { return m_web_rtc_enabled; }
+  void set_web_rtc_enabled(bool enabled) { m_web_rtc_enabled = enabled; }
   const std::string& get_webrtc_push_url() const { return m_webrtc_rtsp_push_url; }
   std::string mediamtx_path() const { return m_camera_id + "/" + m_stream_name; }
   recording_policy_mode get_recording_policy_mode() const { return m_recording_policy_mode; }

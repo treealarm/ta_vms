@@ -222,6 +222,8 @@ bool camera_manager::set_camera_state(
 
   stream->apply_recording_policy(policy);
 
+  stream->set_web_rtc_enabled(web_rtc);
+
   if (web_rtc != stream->is_web_rtc_streaming())
   {
     if (web_rtc)
