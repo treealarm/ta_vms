@@ -17,6 +17,10 @@ if (-not $?) {
     Write-Host "=== Building vms-deps ==="
     Set-Location "$RootDir\vms-deps"
     docker build -t vms-deps .
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "=== Failed to build vms-deps. Aborting. ==="
+        exit $LASTEXITCODE
+    }
 } else {
     Write-Host "=== vms-deps already exists, skipping build ==="
 }

@@ -75,6 +75,8 @@ services:
       dockerfile: web_vms/VmsLogger/Dockerfile
     env_file:
       - .env
+    volumes:
+      - "${PWD}/data:/data"
 
   vmslogger-dapr:
     profiles: [app]
