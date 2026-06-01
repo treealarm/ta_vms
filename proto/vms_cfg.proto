@@ -84,6 +84,7 @@ message CameraStream {
   bool   web_rtc                           = 4;
   optional RecordingProfile recording_profile  = 5;
   optional RecordingProfile override_profile   = 6;
+  optional bool disabled                   = 7;
 }
 
 message CameraSetup {
@@ -96,6 +97,7 @@ message CameraSetup {
   bool onvif_events_enabled = 11;
   bool has_onvif_filters    = 12;
   bool onvif_managed        = 13;
+  optional bool disabled    = 14;
 }
 
 message RecordingProfileRequest {

@@ -76,6 +76,9 @@ void config_subscriber::reload_cameras()
 
   for (const auto& c : cfg_list)
   {
+    if (c.has_disabled() && c.disabled())
+      continue;
+
     expected_ids.insert(c.camera_id());
 
     const std::string user = c.has_cred() ? c.cred().user() : "";
@@ -93,6 +96,8 @@ void config_subscriber::reload_cameras()
     for (int i = 0; i < c.streams_size(); ++i)
     {
       const auto& s = c.streams(i);
+      if (s.has_disabled() && s.disabled())
+        continue;
       streams.push_back({
         .stream_name          = s.stream_name(),
         .profile_token        = s.profile_token(),

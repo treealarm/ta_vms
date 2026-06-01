@@ -20,6 +20,7 @@ public record CameraStreamDto
   public bool WebRtc { get; init; }
   public RecordingProfileDto? RecordingProfile { get; init; }
   public RecordingProfileDto? OverrideProfile { get; init; }
+  public bool? Disabled { get; init; }
 }
 
 public record StreamOverrideDto
@@ -60,4 +61,5 @@ public record CameraSetupDto
   public bool OnvifEventsEnabled { get; init; }
   public bool HasOnvifFilters    { get; init; }
   public bool OnvifManaged       { get; init; }
+  public bool? Disabled          { get; init; }
 }

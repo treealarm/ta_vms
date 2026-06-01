@@ -99,6 +99,7 @@ export type CameraStreamDto = {
   webRtc: boolean
   recordingProfile?: RecordingProfileDto
   overrideProfile?: RecordingProfileDto
+  disabled?: boolean
 }
 
 export type CameraSetupDto = {
@@ -120,6 +121,7 @@ export type CameraSetupDto = {
   onvifEventsEnabled?: boolean
   hasOnvifFilters?: boolean
   onvifManaged?: boolean
+  disabled?: boolean
 }
 
 export type MediaServerNodeDto = {

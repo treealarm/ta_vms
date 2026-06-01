@@ -106,7 +106,7 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
                         <Box key={camera.cameraId}>
                           {/* Camera row */}
                           <ListItemButton
-                            sx={{ pl: 4 }}
+                            sx={{ pl: 4, opacity: camera.disabled === true ? 0.45 : 1 }}
                             selected={selection.kind === 'camera' && selection.cameraId === camera.cameraId}
                             onClick={() =>
                               void setSelectionSafe({ kind: 'camera', cameraId: camera.cameraId, serverId: server.serverId })
@@ -119,7 +119,7 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
                           {(camera.streams ?? []).map((stream) => (
                             <ListItemButton
                               key={stream.streamName}
-                              sx={{ pl: 8 }}
+                              sx={{ pl: 8, opacity: stream.disabled === true ? 0.45 : 1 }}
                               selected={
                                 selection.kind === 'stream' &&
                                 selection.cameraId === camera.cameraId &&
