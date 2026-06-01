@@ -8,6 +8,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddGrpc();
 builder.Services.AddDaprPubSubClient();
+builder.Services.AddSingleton<CameraConnCache>();
 builder.Services.AddSingleton<OnvifServiceImpl>();
 builder.Services.AddSingleton<PtzServiceImpl>();
 

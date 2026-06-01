@@ -6,6 +6,7 @@ namespace VmsOnvif;
 public sealed class CameraConfigSubscriber(
   DaprPublishSubscribeClient pubSubClient,
   OnvifFilterCache filterCache,
+  CameraConnCache connCache,
   OnvifEventSubscriptionService subscriptionService) : IHostedService, IDisposable
 {
   private const string CameraConfigChangedTopic = "camera-config-changed";
@@ -47,6 +48,7 @@ public sealed class CameraConfigSubscriber(
       var cameraId = JsonSerializer.Deserialize<string>(message.Data.Span);
       if (!string.IsNullOrWhiteSpace(cameraId))
       {
+        connCache.Invalidate(cameraId);
         filterCache.Invalidate(cameraId);
         subscriptionService.NotifyConfigChanged(cameraId);
       }
