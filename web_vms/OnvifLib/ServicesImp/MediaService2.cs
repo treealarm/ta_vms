@@ -13,11 +13,12 @@ namespace OnvifLib
     private List<MediaProfile> _profiles = new();
 
     public MediaService2(
-      string url, 
-      CustomBinding binding, 
-      string username, 
-      string password, 
-      string profile) : base(url, binding, username, password, profile)
+      string url,
+      CustomBinding binding,
+      string username,
+      string password,
+      string profile,
+      Func<SecurityToken>? tokenFactory = null) : base(url, binding, username, password, profile, tokenFactory)
     {
     }
 

@@ -21,6 +21,7 @@ public class Camera
   private readonly OnvifClientFactory _onvifClientFactory = new OnvifClientFactory();
   private Task<Dictionary<string, string>?>? _servicesTask;
   private System.DateTime _tokenExpiry = System.DateTime.UtcNow;
+  private TimeSpan _deviceClockOffset = TimeSpan.Zero;
   public Task InitTask { get; private set; } = Task.CompletedTask;
 
   private readonly OnvifServiceCache _serviceCache;
@@ -34,18 +35,20 @@ public class Camera
       _onvifClientFactory.SetSecurityToken(null);
     }
 
-    if (!string.IsNullOrEmpty(_username) && 
+    if (!string.IsNullOrEmpty(_username) &&
       _onvifClientFactory.GetSecurityToken() == null)
-    {      
+    {
       System.DateTime? deviceTime = await GetDeviceTimeAsync();
 
-      byte[] nonceBytes = new byte[20];
-      var random = new Random();
-      random.NextBytes(nonceBytes);
+      var resolvedTime = deviceTime ?? System.DateTime.UtcNow;
+      _deviceClockOffset = resolvedTime - System.DateTime.UtcNow;
 
-      var token = new SecurityToken(deviceTime ?? System.DateTime.UtcNow, nonceBytes);
+      var nonce = new byte[20];
+      Random.Shared.NextBytes(nonce);
 
-      _onvifClientFactory.SetSecurityToken(token);   
+      var token = new SecurityToken(resolvedTime, nonce);
+
+      _onvifClientFactory.SetSecurityToken(token);
     }
 
     var deviceClient = _onvifClientFactory.
@@ -129,12 +132,15 @@ public class Camera
     _binding.SendTimeout = TimeSpan.FromSeconds(timeout);
     _binding.ReceiveTimeout = TimeSpan.FromSeconds(timeout);
 
-    var endpoint = new EndpointAddress(_url);
+    _serviceCache = new OnvifServiceCache(_binding, username, password, MakeSecurityToken);
+  }
 
-    var clientInspector = new CustomMessageInspector();
-    var behavior = new CustomEndpointBehavior(clientInspector);
-
-    _serviceCache = new OnvifServiceCache(_binding, username, password);
+  private SecurityToken MakeSecurityToken()
+  {
+    var approxDeviceTime = System.DateTime.UtcNow + _deviceClockOffset;
+    var nonce = new byte[20];
+    Random.Shared.NextBytes(nonce);
+    return new SecurityToken(approxDeviceTime, nonce);
   }
 
   private async Task InitAsync()
@@ -176,7 +182,7 @@ public class Camera
 
     if (services != null)
     {
-      return await OnvifServiceSelector.TryCreateService<EventService1>(services, _binding, _username, _password);
+      return await OnvifServiceSelector.TryCreateService<EventService1>(services, _binding, _username, _password, MakeSecurityToken);
     }
     return null;
   }

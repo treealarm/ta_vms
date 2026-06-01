@@ -9,7 +9,8 @@ namespace OnvifLib
       Dictionary<string, string> services,
       CustomBinding binding,
       string username,
-      string password)
+      string password,
+      Func<SecurityToken>? tokenFactory = null)
       where T : class, IOnvifServiceFactory<T>
     {
       foreach (var wsdl in T.GetSupportedWsdls())
@@ -18,11 +19,11 @@ namespace OnvifLib
         {
           try
           {
-            var instance = await T.CreateAsync(url, binding, username, password, wsdl);
+            var instance = await T.CreateAsync(url, binding, username, password, wsdl, tokenFactory);
             if (instance != null)
               return instance;
           }
-          catch(Exception ex) 
+          catch(Exception ex)
           {
             Console.WriteLine(ex.ToString());
           }

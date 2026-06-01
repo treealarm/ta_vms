@@ -21,17 +21,17 @@ namespace OnvifLib
 
     public event Action<NotificationMessageHolderType[]>? OnEventReceived;
 
-    protected EventService1(string url, CustomBinding binding, string username, string password, string profile) :
-      base(url, binding, username, password, profile)
+    protected EventService1(string url, CustomBinding binding, string username, string password, string profile, Func<SecurityToken>? tokenFactory = null) :
+      base(url, binding, username, password, profile, tokenFactory)
     {
     }
     public static string[] GetSupportedWsdls()
     {
       return new[] { WSDL_V10 };
     }
-    public static async Task<EventService1?> CreateAsync(string url, CustomBinding binding, string username, string password, string profile)
+    public static async Task<EventService1?> CreateAsync(string url, CustomBinding binding, string username, string password, string profile, Func<SecurityToken>? tokenFactory = null)
     {
-      var instance1 = new EventService1(url, binding, username, password, profile);
+      var instance1 = new EventService1(url, binding, username, password, profile, tokenFactory);
       await instance1.InitializeAsync();
 
       return instance1;

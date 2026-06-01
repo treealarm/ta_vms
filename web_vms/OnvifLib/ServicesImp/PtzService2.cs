@@ -8,9 +8,8 @@ namespace OnvifLib
   {
     public const string WSDL_V20 = "http://www.onvif.org/ver20/ptz/wsdl";
     private PTZClient? _ptzClient;
-    private Capabilities? _caps;
-    protected PtzService2(string url, CustomBinding binding, string username, string password, string profile) :
-      base(url, binding, username, password, profile)
+    protected PtzService2(string url, CustomBinding binding, string username, string password, string profile, Func<SecurityToken>? tokenFactory = null) :
+      base(url, binding, username, password, profile, tokenFactory)
     {
     }
 
@@ -18,9 +17,9 @@ namespace OnvifLib
     {
       return new[] { WSDL_V20 };
     }
-    public static async Task<PtzService2?> CreateAsync(string url, CustomBinding binding, string username, string password, string profile)
+    public static async Task<PtzService2?> CreateAsync(string url, CustomBinding binding, string username, string password, string profile, Func<SecurityToken>? tokenFactory = null)
     {
-      var instance = new PtzService2(url, binding, username, password, profile);
+      var instance = new PtzService2(url, binding, username, password, profile, tokenFactory);
       await instance.InitializeAsync();
       return instance;
     }
@@ -34,7 +33,6 @@ namespace OnvifLib
         _username, 
         _password);
       await _ptzClient.OpenAsync();
-      _caps = await _ptzClient.GetServiceCapabilitiesAsync();
     }
 
     public bool SupportedCaps() => true;
