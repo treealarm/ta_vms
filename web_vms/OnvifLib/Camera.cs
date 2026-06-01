@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using System.Net;
+﻿using System.Net;
 using System.ServiceModel;
 using System.ServiceModel.Channels;
 using System.Text;
@@ -17,13 +16,14 @@ public class Camera
   private readonly int _port;
   private readonly string _ip;
 
-  private readonly CustomBinding _binding;
+  private readonly CustomBindingProvider _bindingProvider;
   private readonly OnvifClientFactory _onvifClientFactory = new OnvifClientFactory();
   private Task<Dictionary<string, string>?>? _servicesTask;
   private System.DateTime _tokenExpiry = System.DateTime.UtcNow;
+  private TimeSpan _deviceClockOffset = TimeSpan.Zero;
   public Task InitTask { get; private set; } = Task.CompletedTask;
 
-  private readonly OnvifServiceCache _serviceCache;
+  private OnvifServiceCache _serviceCache;
 
   private async Task<DeviceClient> GetDevice()
   {
@@ -34,24 +34,26 @@ public class Camera
       _onvifClientFactory.SetSecurityToken(null);
     }
 
-    if (!string.IsNullOrEmpty(_username) && 
+    if (!string.IsNullOrEmpty(_username) &&
       _onvifClientFactory.GetSecurityToken() == null)
-    {      
+    {
       System.DateTime? deviceTime = await GetDeviceTimeAsync();
 
-      byte[] nonceBytes = new byte[20];
-      var random = new Random();
-      random.NextBytes(nonceBytes);
+      var resolvedTime = deviceTime ?? System.DateTime.UtcNow;
+      _deviceClockOffset = resolvedTime - System.DateTime.UtcNow;
 
-      var token = new SecurityToken(deviceTime ?? System.DateTime.UtcNow, nonceBytes);
+      var nonce = new byte[20];
+      Random.Shared.NextBytes(nonce);
 
-      _onvifClientFactory.SetSecurityToken(token);   
+      var token = new SecurityToken(resolvedTime, nonce);
+
+      _onvifClientFactory.SetSecurityToken(token);
     }
 
     var deviceClient = _onvifClientFactory.
       CreateClient<DeviceClient, DeviceServiceReference.Device>(
         endpoint,
-        _binding,
+        _bindingProvider.Current,
         _username,
         _password
       );
@@ -68,7 +70,7 @@ public class Camera
     using var deviceClient = _onvifClientFactory.
       CreateClient<DeviceClient, DeviceServiceReference.Device>(
         endpoint,
-        _binding,
+        _bindingProvider.Current,
         _username,
         _password
       );
@@ -116,25 +118,16 @@ public class Camera
     _password = password;
     _port = port;
 
-    _binding = new CustomBinding(
-      new TextMessageEncodingBindingElement(MessageVersion.Soap12WSAddressing10, Encoding.UTF8), // SOAP 1.2
-      new HttpTransportBindingElement()
-      {
-        AuthenticationScheme = AuthenticationSchemes.Digest
-      }
-    );
+    _bindingProvider = new CustomBindingProvider(timeout);
+    _serviceCache = new OnvifServiceCache(_bindingProvider, username, password, MakeSecurityToken);
+  }
 
-    _binding.OpenTimeout = TimeSpan.FromSeconds(timeout);
-    _binding.CloseTimeout = TimeSpan.FromSeconds(timeout);
-    _binding.SendTimeout = TimeSpan.FromSeconds(timeout);
-    _binding.ReceiveTimeout = TimeSpan.FromSeconds(timeout);
-
-    var endpoint = new EndpointAddress(_url);
-
-    var clientInspector = new CustomMessageInspector();
-    var behavior = new CustomEndpointBehavior(clientInspector);
-
-    _serviceCache = new OnvifServiceCache(_binding, username, password);
+  private SecurityToken MakeSecurityToken()
+  {
+    var approxDeviceTime = System.DateTime.UtcNow + _deviceClockOffset;
+    var nonce = new byte[20];
+    Random.Shared.NextBytes(nonce);
+    return new SecurityToken(approxDeviceTime, nonce);
   }
 
   private async Task InitAsync()
@@ -176,7 +169,7 @@ public class Camera
 
     if (services != null)
     {
-      return await OnvifServiceSelector.TryCreateService<EventService1>(services, _binding, _username, _password);
+      return await OnvifServiceSelector.TryCreateService<EventService1>(services, _bindingProvider.Current, _username, _password, MakeSecurityToken);
     }
     return null;
   }
@@ -213,11 +206,37 @@ public class Camera
       var result = await client.GetServicesAsync(true);
       return result.Service.ToDictionary(s => s.Namespace, s => s.XAddr);
     }
+    catch (Exception ex) when (!_bindingProvider.IsDigest && IsAuthError(ex))
+    {
+      // Camera requires HTTP Digest auth — switch once and retry
+      _bindingProvider.SwitchToDigest();
+      _serviceCache = new OnvifServiceCache(_bindingProvider, _username, _password, MakeSecurityToken);
+      _onvifClientFactory.SetSecurityToken(null);
+      _tokenExpiry = System.DateTime.UtcNow;
+      try
+      {
+        using var client = await GetDevice();
+        var result = await client.GetServicesAsync(true);
+        return result.Service.ToDictionary(s => s.Namespace, s => s.XAddr);
+      }
+      catch (Exception retryEx)
+      {
+        Console.WriteLine(retryEx);
+        return null;
+      }
+    }
     catch (Exception ex)
     {
       Console.WriteLine(ex);
       return null;
     }
+  }
+
+  private static bool IsAuthError(Exception ex)
+  {
+    var text = ex.ToString();
+    return text.Contains("401")
+        || text.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase);
   }
 
   public static void ParseEvent(string soapXml)

@@ -1,27 +1,21 @@
 using Dapr.Actors;
 using Dapr.Actors.Client;
 using Grpc.Core;
-using Vms.Cfg;
 using Vms.Onvif;
 using web_vms.Types.Actors;
 
 namespace VmsOnvif;
 
 public class OnvifServiceImpl(
-  CfgService.CfgServiceClient cfgClient,
+  CameraConnCache connCache,
   OnvifEventSubscriptionService subscriptionService) : OnvifService.OnvifServiceBase
 {
-  private readonly CfgService.CfgServiceClient _cfgClient = cfgClient;
-
   public override async Task<GetProfilesResponse> GetProfiles(CameraRequest request, ServerCallContext context)
   {
-    var state = await _cfgClient.GetCameraAsync(
-      new SourceRequest { SourceId = request.SourceId },
-      cancellationToken: context.CancellationToken);
-
+    var data = await connCache.GetAsync(request.SourceId, context.CancellationToken);
     var response = new GetProfilesResponse();
 
-    if (!state.Found || state.Setup?.OnvifConn == null)
+    if (data?.Conn == null)
       return response;
 
     var actor = CameraActorProxy(request.SourceId);
@@ -29,7 +23,7 @@ public class OnvifServiceImpl(
     try
     {
       profiles = await actor.InvokeMethodAsync<CameraConnInfo, List<ProfileInfoDto>>(
-        "GetProfilesAsync", ToConn(state.Setup), context.CancellationToken);
+        "GetProfilesAsync", data.Conn, context.CancellationToken);
     }
     catch (Exception ex)
     {
@@ -49,31 +43,25 @@ public class OnvifServiceImpl(
 
   public override async Task<StreamUriResponse> GetStreamUri(StreamUriRequest request, ServerCallContext context)
   {
-    var state = await _cfgClient.GetCameraAsync(
-      new SourceRequest { SourceId = request.SourceId },
-      cancellationToken: context.CancellationToken);
+    var data = await connCache.GetAsync(request.SourceId, context.CancellationToken);
 
-    if (!state.Found || state.Setup is null)
+    if (data == null)
       return new StreamUriResponse();
 
-    var fallbackUrl = state.Setup.Streams
+    var fallbackUrl = data.Streams
       .FirstOrDefault(s => s.ProfileToken == request.ProfileToken)?.RtspUrl
-      ?? state.Setup.Streams.FirstOrDefault()?.RtspUrl
+      ?? data.Streams.FirstOrDefault()?.RtspUrl
       ?? string.Empty;
 
-    if (state.Setup.OnvifConn == null
-      || string.IsNullOrEmpty(state.Setup.OnvifConn.Ip)
-      || state.Setup.OnvifConn.Port <= 0)
-    {
+    if (data.Conn == null)
       return new StreamUriResponse { RtspUrl = fallbackUrl };
-    }
 
     var actor = CameraActorProxy(request.SourceId);
     GetStreamUriActorResult result;
     try
     {
       result = await actor.InvokeMethodAsync<GetStreamUriActorRequest, GetStreamUriActorResult>(
-        "GetStreamUriAsync", new GetStreamUriActorRequest(ToConn(state.Setup), request.ProfileToken),
+        "GetStreamUriAsync", new GetStreamUriActorRequest(data.Conn, request.ProfileToken),
         context.CancellationToken);
     }
     catch (Exception ex)
@@ -104,10 +92,4 @@ public class OnvifServiceImpl(
   // Non-remoting proxy: uses JSON serialization, no DataContractSerializer
   private static ActorProxy CameraActorProxy(string cameraId) =>
     ActorProxy.Create(new ActorId(cameraId), "CameraActor");
-
-  private static CameraConnInfo ToConn(CameraSetup setup) => new(
-    setup.OnvifConn!.Ip,
-    setup.OnvifConn.Port,
-    setup.Cred?.User ?? string.Empty,
-    setup.Cred?.Pass ?? string.Empty);
 }

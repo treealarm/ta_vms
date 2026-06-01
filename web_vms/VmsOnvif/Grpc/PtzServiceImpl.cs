@@ -1,15 +1,13 @@
 using Dapr.Actors;
 using Dapr.Actors.Client;
 using Grpc.Core;
-using Vms.Cfg;
 using Vms.Onvif;
 using web_vms.Types.Actors;
 
 namespace VmsOnvif;
 
-public class PtzServiceImpl(CfgService.CfgServiceClient cfgClient) : PtzService.PtzServiceBase
+public class PtzServiceImpl(CameraConnCache connCache) : PtzService.PtzServiceBase
 {
-  private readonly CfgService.CfgServiceClient _cfgClient = cfgClient;
 
   public override async Task<PtzCapabilitiesResponse> GetCapabilities(PtzCapabilitiesRequest request, ServerCallContext context)
   {
@@ -119,22 +117,8 @@ public class PtzServiceImpl(CfgService.CfgServiceClient cfgClient) : PtzService.
     }
   }
 
-  private async Task<CameraConnInfo?> GetConn(string sourceId, CancellationToken ct)
-  {
-    var state = await _cfgClient.GetCameraAsync(
-      new SourceRequest { SourceId = sourceId }, cancellationToken: ct);
-
-    if (!state.Found || state.Setup?.OnvifConn == null
-      || string.IsNullOrEmpty(state.Setup.OnvifConn.Ip)
-      || state.Setup.OnvifConn.Port <= 0)
-      return null;
-
-    return new CameraConnInfo(
-      state.Setup.OnvifConn.Ip,
-      state.Setup.OnvifConn.Port,
-      state.Setup.Cred?.User ?? string.Empty,
-      state.Setup.Cred?.Pass ?? string.Empty);
-  }
+  private async Task<CameraConnInfo?> GetConn(string sourceId, CancellationToken ct) =>
+    (await connCache.GetAsync(sourceId, ct))?.Conn;
 
   private static ActorProxy CameraActorProxy(string cameraId) =>
     ActorProxy.Create(new ActorId(cameraId), "CameraActor");

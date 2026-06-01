@@ -46,15 +46,16 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       && Guid.TryParse(camera.MediaMtxServerId, out var parsedMmx) ? parsedMmx : null;
 
     await using (var command = new NpgsqlCommand("""
-      INSERT INTO camera_setup (camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO camera_setup (camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id, disabled)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (camera_id) DO UPDATE SET
         server_id           = EXCLUDED.server_id,
         cred_user           = EXCLUDED.cred_user,
         cred_pass           = EXCLUDED.cred_pass,
         onvif_ip            = EXCLUDED.onvif_ip,
         onvif_port          = EXCLUDED.onvif_port,
-        media_mtx_server_id = EXCLUDED.media_mtx_server_id;
+        media_mtx_server_id = EXCLUDED.media_mtx_server_id,
+        disabled            = EXCLUDED.disabled;
       """, connection, tx))
     {
       command.Parameters.AddWithValue(camera.CameraId);
@@ -64,6 +65,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       command.Parameters.AddWithValue((object?)camera.OnvifConn?.Ip ?? DBNull.Value);
       command.Parameters.AddWithValue((object?)camera.OnvifConn?.Port ?? DBNull.Value);
       command.Parameters.Add(new NpgsqlParameter { Value = (object?)mediaMtxServerId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Uuid });
+      command.Parameters.Add(new NpgsqlParameter { Value = (camera.HasDisabled && camera.Disabled) ? (object)true : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Boolean });
       await command.ExecuteNonQueryAsync(ct);
     }
 
@@ -99,13 +101,14 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
         : null;
 
       await using var cmd = new NpgsqlCommand("""
-        INSERT INTO camera_stream (camera_id, stream_name, profile_token, rtsp_url, web_rtc, recording_profile_id)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO camera_stream (camera_id, stream_name, profile_token, rtsp_url, web_rtc, recording_profile_id, disabled)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         ON CONFLICT (camera_id, stream_name) DO UPDATE SET
           profile_token        = EXCLUDED.profile_token,
           rtsp_url             = EXCLUDED.rtsp_url,
           web_rtc              = EXCLUDED.web_rtc,
-          recording_profile_id = EXCLUDED.recording_profile_id;
+          recording_profile_id = EXCLUDED.recording_profile_id,
+          disabled             = EXCLUDED.disabled;
         """, connection, tx);
       cmd.Parameters.AddWithValue(cameraId);
       cmd.Parameters.AddWithValue(stream.StreamName);
@@ -113,6 +116,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       cmd.Parameters.AddWithValue(stream.RtspUrl ?? string.Empty);
       cmd.Parameters.AddWithValue(stream.WebRtc);
       cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)profileId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Uuid });
+      cmd.Parameters.Add(new NpgsqlParameter { Value = (stream.HasDisabled && stream.Disabled) ? (object)true : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Boolean });
       await cmd.ExecuteNonQueryAsync(ct);
     }
   }
@@ -127,7 +131,8 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id AND s.subscribed = true) AS onvif_events_enabled,
              EXISTS(SELECT 1 FROM onvif_alarm_filter f WHERE f.camera_id = camera_setup.camera_id) AS has_onvif_filters,
-             EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id) AS onvif_managed
+             EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id) AS onvif_managed,
+             disabled
       FROM camera_setup
       WHERE $1 = '' OR server_id = $1
       ORDER BY camera_id;
@@ -153,7 +158,8 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id AND s.subscribed = true) AS onvif_events_enabled,
              EXISTS(SELECT 1 FROM onvif_alarm_filter f WHERE f.camera_id = camera_setup.camera_id) AS has_onvif_filters,
-             EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id) AS onvif_managed
+             EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id) AS onvif_managed,
+             disabled
       FROM camera_setup
       WHERE camera_id = $1;
       """, connection))
@@ -305,7 +311,8 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     await using var cmd = new NpgsqlCommand("""
       SELECT cs.camera_id, cs.stream_name, cs.profile_token, cs.rtsp_url, cs.web_rtc,
              rp.id,  rp.name,  rp.mode,  rp.pre_record_seconds,  rp.post_record_seconds,  rp.segment_seconds,  rp.is_override_preset,  rp.is_builtin,
-             ov.id,  ov.name,  ov.mode,  ov.pre_record_seconds,  ov.post_record_seconds,  ov.segment_seconds,  ov.is_override_preset,  ov.is_builtin
+             ov.id,  ov.name,  ov.mode,  ov.pre_record_seconds,  ov.post_record_seconds,  ov.segment_seconds,  ov.is_override_preset,  ov.is_builtin,
+             cs.disabled
       FROM camera_stream cs
       LEFT JOIN recording_profile rp ON rp.id = cs.recording_profile_id
       LEFT JOIN recording_profile ov ON ov.id = cs.override_profile_id
@@ -333,6 +340,9 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
 
       if (!reader.IsDBNull(13))
         stream.OverrideProfile = ReadRecordingProfileFromRow(reader, offset: 13);
+
+      if (!reader.IsDBNull(21) && reader.GetBoolean(21))
+        stream.Disabled = true;
 
       camera.Streams.Add(stream);
     }
@@ -397,6 +407,8 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     setup.OnvifEventsEnabled = reader.GetBoolean(7);
     setup.HasOnvifFilters    = reader.GetBoolean(8);
     setup.OnvifManaged       = reader.GetBoolean(9);
+    if (!reader.IsDBNull(10) && reader.GetBoolean(10))
+      setup.Disabled = true;
 
     return setup;
   }

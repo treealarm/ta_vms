@@ -67,6 +67,7 @@ public class CameraManager : ICameraManager
         WebRtc           = s.WebRtc,
         RecordingProfile = s.RecordingProfile != null ? ToProfileDto(s.RecordingProfile) : null,
         OverrideProfile  = s.OverrideProfile  != null ? ToProfileDto(s.OverrideProfile)  : null,
+        Disabled         = s.HasDisabled && s.Disabled ? true : null,
       })
       .ToList();
 
@@ -89,6 +90,7 @@ public class CameraManager : ICameraManager
       OnvifEventsEnabled  = setup.OnvifEventsEnabled,
       HasOnvifFilters     = setup.HasOnvifFilters,
       OnvifManaged        = setup.OnvifManaged,
+      Disabled            = setup.HasDisabled && setup.Disabled ? true : null,
     };
   }
 
@@ -163,6 +165,7 @@ public class CameraManager : ICameraManager
       OnvifConn        = dto.OnvifConn == null ? null : new OnvifConnection { Ip = dto.OnvifConn.ip, Port = dto.OnvifConn.port },
       MediaMtxServerId   = dto.MediaMtxServerId ?? string.Empty,
       OnvifEventsEnabled = dto.OnvifEventsEnabled,
+      Disabled           = dto.Disabled == true,
     };
 
     if (dto.Streams.Count > 0)
@@ -175,6 +178,7 @@ public class CameraManager : ICameraManager
           ProfileToken = s.ProfileToken,
           RtspUrl      = s.RtspUrl,
           WebRtc       = s.WebRtc,
+          Disabled     = s.Disabled == true,
         };
         if (s.RecordingProfile != null)
           stream.RecordingProfile = ToProfileProto(s.RecordingProfile);

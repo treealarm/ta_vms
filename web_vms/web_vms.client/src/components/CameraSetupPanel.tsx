@@ -1,5 +1,5 @@
 import { useEffect, useImperativeHandle, useRef, useState } from 'react'
-import { Box, Button, MenuItem, Stack, TextField, Typography } from '@mui/material'
+import { Box, Button, FormControlLabel, MenuItem, Stack, Switch, TextField, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera, changeCameraParent, fetchCameraState, removeCamera } from '../store/liveSlice'
@@ -34,6 +34,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const [pass, setPass] = useState(existing?.cred?.pass ?? '')
   const [onvifIp, setOnvifIp] = useState(existing?.onvifConn?.ip ?? '')
   const [onvifPort, setOnvifPort] = useState(existing?.onvifConn?.port ?? 0)
+  const [disabled, setDisabled] = useState(existing?.disabled === true)
   const setNonNegativeNumber = (raw: string, setter: (n: number) => void) => {
     const value = Number(raw)
     if (!Number.isNaN(value)) setter(Math.max(0, value))
@@ -47,6 +48,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     pass: existing?.cred?.pass ?? '',
     onvifIp: existing?.onvifConn?.ip ?? '',
     onvifPort: existing?.onvifConn?.port ?? 0,
+    disabled: existing?.disabled === true,
   })
 
   const dirty = !isNew && (
@@ -56,6 +58,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     || pass !== snap.current.pass
     || onvifIp !== snap.current.onvifIp
     || onvifPort !== snap.current.onvifPort
+    || disabled !== snap.current.disabled
   )
 
   // WebRTC streams available for preview
@@ -75,6 +78,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     cred: user || pass ? { user, pass } : undefined,
     onvifConn: onvifIp ? { ip: onvifIp, port: onvifPort } : undefined,
     mediaMtxServerId: mediaMtxServerId || undefined,
+    disabled: disabled || undefined,
   })
 
   const applyInternal = async (): Promise<boolean> => {
@@ -84,7 +88,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     const action = serverChanged ? changeCameraParent : addCamera
     const result = await dispatch(action(payload))
     if (!action.rejected.match(result)) {
-      snap.current = { serverId, mediaMtxServerId, user, pass, onvifIp, onvifPort }
+      snap.current = { serverId, mediaMtxServerId, user, pass, onvifIp, onvifPort, disabled }
       await dispatch(fetchCameraState(initialCameraId))
       return true
     }
@@ -110,6 +114,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     setPass(snap.current.pass)
     setOnvifIp(snap.current.onvifIp)
     setOnvifPort(snap.current.onvifPort)
+    setDisabled(snap.current.disabled)
   }
 
   const handleRemove = async () => {
@@ -182,6 +187,11 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
           <TextField label={t('common.user')} value={user} onChange={(e) => setUser(e.target.value)} size="small" />
           <PasswordField pass={pass} setPass={setPass} />
         </Stack>
+
+        <FormControlLabel
+          control={<Switch checked={disabled} onChange={(e) => setDisabled(e.target.checked)} color="warning" />}
+          label={t('cameras.disabled')}
+        />
 
         <Stack direction="row" spacing={1}>
           <Button type="submit" variant="outlined" size="small" disabled={!isNew && !dirty}>

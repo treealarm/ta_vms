@@ -12,15 +12,17 @@ namespace OnvifLib
 
     private readonly TimeSpan _serviceTtl;
 
-    private readonly CustomBinding _binding;
+    private readonly CustomBindingProvider _bindingProvider;
     private readonly string _username;
     private readonly string _password;
+    private readonly Func<SecurityToken>? _tokenFactory;
 
-    public OnvifServiceCache(CustomBinding binding, string username, string password, TimeSpan? ttl = null)
+    public OnvifServiceCache(CustomBindingProvider bindingProvider, string username, string password, Func<SecurityToken>? tokenFactory = null, TimeSpan? ttl = null)
     {
-      _binding = binding;
+      _bindingProvider = bindingProvider;
       _username = username;
       _password = password;
+      _tokenFactory = tokenFactory;
       _serviceTtl = ttl ?? TimeSpan.FromMinutes(10);
     }
 
@@ -38,8 +40,8 @@ namespace OnvifLib
         }
       }
 
-      // Create a new service via OnvifServiceSelector
-      var service = await OnvifServiceSelector.TryCreateService<T>(services, _binding, _username, _password);
+      // Create a new service via OnvifServiceSelector using the current binding
+      var service = await OnvifServiceSelector.TryCreateService<T>(services, _bindingProvider.Current, _username, _password, _tokenFactory);
 
       if (service != null)
       {

@@ -43,13 +43,13 @@ namespace OnvifLib
     }
 
     protected MediaService(
-      string url, 
-      CustomBinding binding, 
-      string username, 
-      string password, 
-      string profile): base(url, binding, username, password, profile) 
+      string url,
+      CustomBinding binding,
+      string username,
+      string password,
+      string profile,
+      Func<SecurityToken>? tokenFactory = null) : base(url, binding, username, password, profile, tokenFactory)
     {
-
     }
 
 
@@ -59,20 +59,21 @@ namespace OnvifLib
     }
 
     public static async Task<MediaService?> CreateAsync(
-      string url, 
-      CustomBinding binding, 
-      string username, 
+      string url,
+      CustomBinding binding,
+      string username,
       string password,
-      string profile)
+      string profile,
+      Func<SecurityToken>? tokenFactory = null)
     {
       if (profile == WSDL_V10)
       {
-        var instance1 = new MediaService1(url, binding, username, password, profile);
+        var instance1 = new MediaService1(url, binding, username, password, profile, tokenFactory);
         await instance1.InitializeAsync();
         return instance1;
       }
-      
-      var instance = new MediaService2(url, binding, username, password, profile);
+
+      var instance = new MediaService2(url, binding, username, password, profile, tokenFactory);
       await instance.InitializeAsync();
       return instance;
     }

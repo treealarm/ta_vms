@@ -12,10 +12,6 @@ namespace OnvifLib
 
     public void AfterReceiveReply(ref Message reply, object correlationState)
     {
-      // Log response (debug)
-      Console.WriteLine("Received Reply: ");
-      Console.WriteLine(reply.ToString());
-
       foreach (var header in reply.Headers)
         if (header.Name.IndexOf("Security", StringComparison.InvariantCulture) != -1 && header.Namespace.Contains(WsseNamespace))
           reply.Headers.UnderstoodHeaders.Add(header);
@@ -23,9 +19,6 @@ namespace OnvifLib
 
     public object BeforeSendRequest(ref Message request, IClientChannel channel)
     {
-      // Log outgoing request (debug)
-      Console.WriteLine("Sending Request: ");
-      Console.WriteLine(request.ToString());
       if (Headers == null)
         return request;
 
