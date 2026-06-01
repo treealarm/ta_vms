@@ -11,6 +11,7 @@ namespace OnvifLib
   {
     private Media2Client? _mediaClient2;
     private List<MediaProfile> _profiles = new();
+    private readonly Dictionary<string, string> _streamUriCache = new();
 
     public MediaService2(
       string url,
@@ -41,22 +42,26 @@ namespace OnvifLib
 
     public override async Task<string> GetStreamUri(string profile_token)
     {
+      if (_streamUriCache.TryGetValue(profile_token, out var cached))
+        return cached;
+
       if (_mediaClient2 == null)
-      {
         return string.Empty;
-      }
-      var profile = _profiles.Where(p => p.token == profile_token).FirstOrDefault();
+
+      var profile = _profiles.FirstOrDefault(p => p.token == profile_token);
       if (profile == null)
-      {
         return string.Empty;
-      }
+
       var streamUriRequest = new GetStreamUriRequest
       {
         Protocol = MediaServiceReference.StreamType.RTPUnicast.ToString(),
         ProfileToken = profile.token
       };
       var streamResponse = await _mediaClient2.GetStreamUriAsync(streamUriRequest);
-      return streamResponse.Uri;
+      var uri = streamResponse.Uri ?? string.Empty;
+      if (!string.IsNullOrEmpty(uri))
+        _streamUriCache[profile_token] = uri;
+      return uri;
     }
     public override List<OnvifProfileInfo> GetProfiles()
     {
