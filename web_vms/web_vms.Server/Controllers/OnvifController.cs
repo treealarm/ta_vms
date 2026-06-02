@@ -182,18 +182,18 @@ public class OnvifController(
   }
 
   [HttpPut("cameras/{cameraId}/subscription")]
-  public async Task<IActionResult> SetArmed(string cameraId, [FromBody] SetArmedBody body, CancellationToken ct)
+  public async Task<IActionResult> SetSubscribed(string cameraId, [FromBody] SetSubscribedBody body, CancellationToken ct)
   {
     try
     {
       await cfgClient.SetOnvifArmedAsync(
-        new SetOnvifArmedRequest { CameraId = cameraId, Armed = body.Armed }, Options(ct));
+        new SetOnvifArmedRequest { CameraId = cameraId, Armed = body.Subscribed }, Options(ct));
       return Ok();
     }
     catch (RpcException ex) { return StatusCode(502, ex.Status.Detail); }
   }
 
-  public record SetArmedBody(bool Armed);
+  public record SetSubscribedBody(bool Subscribed);
 
   // ── ONVIF debug events ────────────────────────────────────────────────────
 

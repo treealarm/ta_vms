@@ -42,8 +42,23 @@ async function removeCamera(cameraId: string) {
   await fetch(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/subscription`, { method: 'DELETE' })
 }
 
-async function setArmed(cameraId: string, armed: boolean) {
+async function setSubscribed(cameraId: string, subscribed: boolean) {
   await fetch(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/subscription`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subscribed }),
+  })
+}
+
+async function fetchArmed(cameraId: string): Promise<boolean> {
+  const r = await fetch(`/api/cameras/${encodeURIComponent(cameraId)}/state`)
+  if (!r.ok) return false
+  const data = (await r.json()) as { armed: boolean }
+  return data.armed
+}
+
+async function setArmed(cameraId: string, armed: boolean) {
+  await fetch(`/api/cameras/${encodeURIComponent(cameraId)}/state`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ armed }),
@@ -55,9 +70,11 @@ async function fetchRecentEvents(cameraId: string): Promise<OnvifEventRecordDto[
   return r.ok ? (r.json() as Promise<OnvifEventRecordDto[]>) : []
 }
 
-function CameraRow({ entry, onRemove, onToggleArmed }: {
+function CameraRow({ entry, armed, onRemove, onToggleSubscribed, onToggleArmed }: {
   entry: OnvifCameraEntryDto
+  armed: boolean
   onRemove: () => void
+  onToggleSubscribed: (subscribed: boolean) => void
   onToggleArmed: (armed: boolean) => void
 }) {
   const { t } = useTranslation()
@@ -102,12 +119,29 @@ function CameraRow({ entry, onRemove, onToggleArmed }: {
               <Switch
                 size="small"
                 checked={entry.subscribed}
-                onChange={(e) => onToggleArmed(e.target.checked)}
+                onChange={(e) => onToggleSubscribed(e.target.checked)}
               />
             }
             label={
               <Typography variant="body2" color={entry.subscribed ? 'success.main' : 'text.secondary'}>
-                {entry.subscribed ? 'Armed' : 'Disarmed'}
+                {entry.subscribed ? 'Enabled' : 'Disabled'}
+              </Typography>
+            }
+          />
+        </TableCell>
+        <TableCell>
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={armed}
+                disabled={!entry.subscribed}
+                onChange={(e) => onToggleArmed(e.target.checked)}
+              />
+            }
+            label={
+              <Typography variant="body2" color={armed && entry.subscribed ? 'warning.main' : 'text.secondary'}>
+                {armed && entry.subscribed ? 'Armed' : 'Disarmed'}
               </Typography>
             }
           />
@@ -122,7 +156,7 @@ function CameraRow({ entry, onRemove, onToggleArmed }: {
       </TableRow>
 
       <TableRow>
-        <TableCell colSpan={5} sx={{ py: 0 }}>
+        <TableCell colSpan={6} sx={{ py: 0 }}>
           <Collapse in={expanded} unmountOnExit>
             <Box sx={{ px: 1, pt: 0.5, pb: 1.5 }}>
               <Tabs
@@ -198,13 +232,22 @@ export default function OnvifSubscriptionsPanel() {
   const { t } = useTranslation()
   const allCameras = useAppSelector((s) => Object.values(s.live.cameraStatesById))
   const [managed, setManaged] = useState<OnvifCameraEntryDto[]>([])
+  const [armedMap, setArmedMap] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
   const [addId, setAddId] = useState('')
 
   const reload = useCallback(async () => {
     setLoading(true)
-    try { setManaged(await fetchManaged()) }
-    finally { setLoading(false) }
+    try {
+      const entries = await fetchManaged()
+      setManaged(entries)
+      const pairs = await Promise.all(
+        entries.map(async (e) => [e.cameraId, await fetchArmed(e.cameraId)] as const)
+      )
+      setArmedMap(Object.fromEntries(pairs))
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => { void reload() }, [reload])
@@ -219,10 +262,16 @@ export default function OnvifSubscriptionsPanel() {
   const handleRemove = async (cameraId: string) => {
     await removeCamera(cameraId)
     setManaged((prev) => prev.filter((e) => e.cameraId !== cameraId))
+    setArmedMap((prev) => { const next = { ...prev }; delete next[cameraId]; return next })
+  }
+
+  const handleToggleSubscribed = async (cameraId: string, subscribed: boolean) => {
+    setManaged((prev) => prev.map((e) => e.cameraId === cameraId ? { ...e, subscribed } : e))
+    await setSubscribed(cameraId, subscribed)
   }
 
   const handleToggleArmed = async (cameraId: string, armed: boolean) => {
-    setManaged((prev) => prev.map((e) => e.cameraId === cameraId ? { ...e, subscribed: armed } : e))
+    setArmedMap((prev) => ({ ...prev, [cameraId]: armed }))
     await setArmed(cameraId, armed)
   }
 
@@ -244,7 +293,8 @@ export default function OnvifSubscriptionsPanel() {
             <TableCell sx={{ width: 32 }} />
             <TableCell>{t('cameras.cameraId')}</TableCell>
             <TableCell>{t('cameras.onvifIp')}</TableCell>
-            <TableCell>Guard</TableCell>
+            <TableCell>Subscription Enabled</TableCell>
+            <TableCell>Armed</TableCell>
             <TableCell />
           </TableRow>
         </TableHead>
@@ -253,7 +303,9 @@ export default function OnvifSubscriptionsPanel() {
             <CameraRow
               key={entry.cameraId}
               entry={entry}
+              armed={armedMap[entry.cameraId] ?? false}
               onRemove={() => void handleRemove(entry.cameraId)}
+              onToggleSubscribed={(subscribed) => void handleToggleSubscribed(entry.cameraId, subscribed)}
               onToggleArmed={(armed) => void handleToggleArmed(entry.cameraId, armed)}
             />
           ))}

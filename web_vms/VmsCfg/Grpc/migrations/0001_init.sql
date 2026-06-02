@@ -107,3 +107,8 @@ CREATE TABLE onvif_event_subscription (
   camera_id  text    PRIMARY KEY REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
   subscribed boolean NOT NULL DEFAULT true
 );
+
+CREATE TABLE camera_states (
+  camera_id text    PRIMARY KEY REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
+  armed     boolean NOT NULL DEFAULT false
+);

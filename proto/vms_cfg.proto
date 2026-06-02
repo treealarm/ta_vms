@@ -36,6 +36,9 @@ service CfgService {
   rpc UnsubscribeOnvifEvents(OnvifSubscriptionRequest) returns (OperationStatus);
   rpc ListOnvifSubscriptions(google.protobuf.Empty) returns (OnvifSubscriptionsResponse);
   rpc SetOnvifArmed(SetOnvifArmedRequest) returns (OperationStatus);
+
+  rpc GetCamState(GetCamStateRequest) returns (GetCamStateResponse);
+  rpc SetCamState(SetCamStateRequest) returns (OperationStatus);
 }
 
 service StorageService {
@@ -298,6 +301,19 @@ message OnvifSubscriptionsResponse {
 }
 
 message SetOnvifArmedRequest {
+  string camera_id = 1;
+  bool   armed     = 2;
+}
+
+message GetCamStateRequest {
+  string camera_id = 1;
+}
+
+message GetCamStateResponse {
+  bool armed = 1;
+}
+
+message SetCamStateRequest {
   string camera_id = 1;
   bool   armed     = 2;
 }

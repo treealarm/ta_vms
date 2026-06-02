@@ -6,10 +6,12 @@ namespace VmsOnvif;
 public sealed class CameraConfigSubscriber(
   DaprPublishSubscribeClient pubSubClient,
   OnvifFilterCache filterCache,
+  CameraArmedCache armedCache,
   CameraConnCache connCache,
   OnvifEventSubscriptionService subscriptionService) : IHostedService, IDisposable
 {
   private const string CameraConfigChangedTopic = "camera-config-changed";
+  private const string CameraStateChangedTopic  = "camera-state-changed";
   private static readonly string PubSubName =
     Environment.GetEnvironmentVariable("PUBSUB_NAME")
       ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
@@ -26,13 +28,21 @@ public sealed class CameraConfigSubscriber(
   {
     try
     {
-      await pubSubClient.SubscribeAsync(
-        PubSubName,
-        CameraConfigChangedTopic,
-        new DaprSubscriptionOptions(
-          new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry)),
-        HandleAsync,
-        ct);
+      await Task.WhenAll(
+        pubSubClient.SubscribeAsync(
+          PubSubName,
+          CameraConfigChangedTopic,
+          new DaprSubscriptionOptions(
+            new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry)),
+          HandleConfigChangedAsync,
+          ct),
+        pubSubClient.SubscribeAsync(
+          PubSubName,
+          CameraStateChangedTopic,
+          new DaprSubscriptionOptions(
+            new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry)),
+          HandleStateChangedAsync,
+          ct));
     }
     catch (OperationCanceledException) { }
     catch (Exception ex)
@@ -41,7 +51,7 @@ public sealed class CameraConfigSubscriber(
     }
   }
 
-  private Task<TopicResponseAction> HandleAsync(TopicMessage message, CancellationToken _)
+  private Task<TopicResponseAction> HandleConfigChangedAsync(TopicMessage message, CancellationToken _)
   {
     try
     {
@@ -52,6 +62,21 @@ public sealed class CameraConfigSubscriber(
         filterCache.Invalidate(cameraId);
         subscriptionService.NotifyConfigChanged(cameraId);
       }
+      return Task.FromResult(TopicResponseAction.Success);
+    }
+    catch
+    {
+      return Task.FromResult(TopicResponseAction.Retry);
+    }
+  }
+
+  private Task<TopicResponseAction> HandleStateChangedAsync(TopicMessage message, CancellationToken _)
+  {
+    try
+    {
+      var cameraId = JsonSerializer.Deserialize<string>(message.Data.Span);
+      if (!string.IsNullOrWhiteSpace(cameraId))
+        armedCache.Invalidate(cameraId);
       return Task.FromResult(TopicResponseAction.Success);
     }
     catch

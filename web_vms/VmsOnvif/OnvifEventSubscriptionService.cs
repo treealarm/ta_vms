@@ -15,6 +15,7 @@ public sealed class OnvifEventSubscriptionService(
   CfgService.CfgServiceClient cfgClient,
   ServerPairRegistry registry,
   OnvifFilterCache filterCache,
+  CameraArmedCache armedCache,
   ILogger<OnvifEventSubscriptionService> logger) : BackgroundService
 {
   private const int RingBufferSize = 250;
@@ -235,6 +236,16 @@ public sealed class OnvifEventSubscriptionService(
         logger.LogDebug(
           "Camera {CameraId}: no filter matched topic='{Topic}' (filters: {Filters})",
           cameraId, topic, string.Join(", ", filters.Select(f => $"'{f.FilterText}'")));
+        return;
+      }
+
+      using var armedCts = new CancellationTokenSource(CfgTimeout);
+      var armed = await armedCache.GetAsync(cameraId, armedCts.Token);
+      if (!armed)
+      {
+        logger.LogDebug(
+          "Camera {CameraId}: filter '{Filter}' matched but camera is not armed — skipping retention",
+          cameraId, matched.FilterText);
         return;
       }
 

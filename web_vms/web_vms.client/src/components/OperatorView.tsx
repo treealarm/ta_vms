@@ -1,16 +1,14 @@
 import { useState } from 'react'
-import { Box, Button, Stack, Tab, Tabs } from '@mui/material'
-import { useNavigate } from 'react-router-dom'
+import { Box, Tab, Tabs } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 
-import { LangToggle } from '../App'
+import ViewControls from './ViewControls'
 import MonitorsView from './MonitorsView'
 import RetentionEventsTab from './RetentionEventsTab'
 import SimulationFab from './SimulationFab'
 
 export default function OperatorView() {
   const { t } = useTranslation()
-  const navigate = useNavigate()
   const [tab, setTab] = useState(0)
 
   return (
@@ -31,31 +29,25 @@ export default function OperatorView() {
           borderColor: 'divider',
           display: 'flex',
           flexDirection: 'column',
-          justifyContent: 'space-between',
         }}
       >
-        <Tabs
-          orientation="vertical"
-          value={tab}
-          onChange={(_, v: number) => setTab(v)}
-          sx={{ '& .MuiTab-root': { minWidth: 90 } }}
-        >
-          <Tab label={t('nav.monitors')} />
-          <Tab label={t('nav.events')} />
-        </Tabs>
+        <ViewControls target="admin" />
 
-        <Stack alignItems="center" spacing={0.5} sx={{ mb: 1 }}>
-          <SimulationFab />
-          <Button
-            size="small"
-            variant="text"
-            onClick={() => navigate('/admin')}
-            sx={{ minWidth: 0, px: 1, py: 0.5, fontSize: '0.7rem', color: 'text.secondary' }}
+        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <Tabs
+            orientation="vertical"
+            value={tab}
+            onChange={(_, v: number) => setTab(v)}
+            sx={{ '& .MuiTab-root': { minWidth: 90 } }}
           >
-            {t('nav.goAdmin')}
-          </Button>
-          <LangToggle />
-        </Stack>
+            <Tab label={t('nav.monitors')} />
+            <Tab label={t('nav.events')} />
+          </Tabs>
+        </Box>
+
+        <Box sx={{ pb: 1, display: 'flex', justifyContent: 'center' }}>
+          <SimulationFab />
+        </Box>
       </Box>
     </Box>
   )
