@@ -8,7 +8,6 @@
 #include "logger.grpc.pb.h"
 
 #include "logger.h"
-#include "file_system/recording_storage.h"
 
 namespace
 {
@@ -23,11 +22,14 @@ logger& logger::instance()
 }
 
 void logger::init(
+  const std::string& app_id,
   log_level minLevel)
 {
-  const std::filesystem::path logFile = "service.log";
+  const char* log_path_env = std::getenv("VMS_LOG_PATH");
+  if (!log_path_env || log_path_env[0] == '\0')
+    throw std::runtime_error("Required environment variable 'VMS_LOG_PATH' is not set");
 
-  m_log_file = recording_storage::resolve_storage_base_path() / logFile;
+  m_log_file = std::filesystem::path(log_path_env) / app_id / (app_id + ".log");
   m_min_level = minLevel;
 
   auto file_sink =

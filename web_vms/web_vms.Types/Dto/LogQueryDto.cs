@@ -7,4 +7,5 @@ public class LogQueryDto
   public uint? Limit { get; set; }
   public string? Level { get; set; }
   public string? Source { get; set; }
+  public string? AppId { get; set; }
 }

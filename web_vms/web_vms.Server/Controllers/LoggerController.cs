@@ -9,6 +9,13 @@ namespace web_vms
   [ApiController]
   public class LoggerController(LogService.LogServiceClient grpcClient) : ControllerBase
   {
+    [HttpGet("sources")]
+    public async Task<IActionResult> GetSources(CancellationToken ct)
+    {
+      var resp = await grpcClient.ListLogSourcesAsync(new Empty(), cancellationToken: ct);
+      return Ok(resp.AppIds);
+    }
+
     [HttpPost("logs")]
     public async Task<IActionResult> GetLogs([FromBody] LogQueryDto query, CancellationToken ct)
     {
@@ -35,6 +42,11 @@ namespace web_vms
       if (!string.IsNullOrWhiteSpace(query.Source))
       {
         request.Source = query.Source;
+      }
+
+      if (!string.IsNullOrWhiteSpace(query.AppId))
+      {
+        request.AppId = query.AppId;
       }
 
       var grpcResponse = await grpcClient.GetLogsAsync(request, cancellationToken: ct);

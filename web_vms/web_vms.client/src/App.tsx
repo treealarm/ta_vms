@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
-import { Button } from '@mui/material'
+import { Box, Button } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import i18n from './i18n'
 
@@ -10,6 +10,7 @@ import { loadMediaMtxServers } from './store/mediaMtxSlice'
 import { useAppDispatch } from './store'
 import OperatorView from './components/OperatorView'
 import AdminView from './components/AdminView'
+import LogDock from './components/LogDock'
 
 function LangToggle() {
   const { t: _t } = useTranslation()
@@ -70,11 +71,16 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/operator" element={<OperatorView />} />
-        <Route path="/admin" element={<AdminView />} />
-        <Route path="*" element={<Navigate to="/operator" replace />} />
-      </Routes>
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden' }}>
+        <Box sx={{ flex: 1, minHeight: 0 }}>
+          <Routes>
+            <Route path="/operator" element={<OperatorView />} />
+            <Route path="/admin" element={<AdminView />} />
+            <Route path="*" element={<Navigate to="/operator" replace />} />
+          </Routes>
+        </Box>
+        <LogDock />
+      </Box>
     </BrowserRouter>
   )
 }

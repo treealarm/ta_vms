@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using VmsCfg;
+using VmsLog;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddVmsLogging();
 
 var grpcPort = RequirePort("CFG_VMS_PORT");
 

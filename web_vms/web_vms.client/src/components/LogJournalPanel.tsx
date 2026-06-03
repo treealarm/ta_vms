@@ -56,9 +56,17 @@ export default function LogJournalPanel() {
   const [rangeSec, setRangeSec] = useState(60)
   const [limit, setLimit] = useState(200)
   const [level, setLevel] = useState('')
-  const [source, setSource] = useState('')
+  const [appId, setAppId] = useState('')
+  const [sources, setSources] = useState<string[]>([])
   const [search, setSearch] = useState('')
   const [autoRefresh, setAutoRefresh] = useState(true)
+
+  const loadSources = () => {
+    fetch('/api/logger/sources')
+      .then((r) => r.ok ? r.json() as Promise<string[]> : [])
+      .then(setSources)
+      .catch(() => {})
+  }
 
   const runFetch = async () => {
     const to = new Date()
@@ -70,36 +78,35 @@ export default function LogJournalPanel() {
         to: to.toISOString(),
         limit,
         level: level || undefined,
-        source: source.trim() || undefined
+        appId: appId || undefined,
       })
     )
   }
 
   useEffect(() => {
+    loadSources()
     void runFetch()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
     if (!autoRefresh) {
       return
     }
     const timer = setInterval(() => {
+      loadSources()
       void runFetch()
     }, 3000)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRefresh, rangeSec, limit, level, source])
+  }, [autoRefresh, rangeSec, limit, level, appId])
 
   const filteredEntries = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) {
-      return entries
-    }
-    return entries.filter((e) => {
-      const line = formatLogLine(e.timestamp, e.level, e.message, e.file, e.function).toLowerCase()
-      return line.includes(q)
-    })
+    const matched = q
+      ? entries.filter((e) => {
+          const line = formatLogLine(e.timestamp, e.level, e.message, e.file, e.function).toLowerCase()
+          return line.includes(q)
+        })
+      : entries
+    // Newest first
+    return [...matched].reverse()
   }, [entries, search])
 
   const onCopy = async () => {
@@ -164,12 +171,18 @@ export default function LogJournalPanel() {
             </TextField>
 
             <TextField
+              select
               size="small"
-              label={t('logs.source')}
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-              sx={{ minWidth: 160 }}
-            />
+              label={t('logs.service')}
+              value={appId}
+              onChange={(e) => setAppId(e.target.value)}
+              sx={{ minWidth: 140 }}
+            >
+              <MenuItem value="">{t('logs.all')}</MenuItem>
+              {sources.map((s) => (
+                <MenuItem key={s} value={s}>{s}</MenuItem>
+              ))}
+            </TextField>
 
             <TextField
               size="small"

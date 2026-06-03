@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
 
 package vms.logger;
 
@@ -8,6 +9,7 @@ option go_package = "grpc/vmslogger;vmslogger";
 
 service LogService {
   rpc GetLogs(LogRequest) returns (LogResponse);
+  rpc ListLogSources(google.protobuf.Empty) returns (ListLogSourcesResponse);
 }
 
 message LogRequest {
@@ -16,8 +18,13 @@ message LogRequest {
 
   uint32 limit = 3;
 
-  optional string level = 4;
+  optional string level  = 4;
   optional string source = 5;
+  optional string app_id = 6;
+}
+
+message ListLogSourcesResponse {
+  repeated string app_ids = 1;
 }
 
 message LogEntry {

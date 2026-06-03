@@ -1,6 +1,8 @@
+using VmsLog;
 using VmsOnvifActors;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddVmsLogging();
 
 builder.Services.AddActors(options =>
 {

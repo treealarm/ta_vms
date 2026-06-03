@@ -11,7 +11,6 @@ import RecordingProfilesPanel from './RecordingProfilesPanel'
 import type { RecordingProfilesHandle } from './RecordingProfilesPanel'
 import MediaMtxServersPanel from './MediaMtxServersPanel'
 import type { MediaMtxServersHandle } from './MediaMtxServersPanel'
-import LogJournalPanel from './LogJournalPanel'
 import SimulationFab from './SimulationFab'
 import OnvifSubscriptionsPanel from './OnvifSubscriptionsPanel'
 
@@ -32,7 +31,7 @@ export default function AdminView() {
   }
 
   return (
-    <Box sx={{ display: 'flex', height: '100dvh', overflow: 'hidden' }}>
+    <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', p: { xs: 2, md: 4 } }}>
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
           {tab === 0 && <CameraControlPanel ref={cameraControlRef} />}
@@ -40,8 +39,7 @@ export default function AdminView() {
           {tab === 2 && <MonitorListPanel />}
           {tab === 3 && <StorageSetupPanel />}
           {tab === 4 && <RecordingProfilesPanel ref={recordingRef} />}
-          {tab === 5 && <LogJournalPanel />}
-          {tab === 6 && <OnvifSubscriptionsPanel />}
+          {tab === 5 && <OnvifSubscriptionsPanel />}
         </Box>
       </Box>
 
@@ -68,7 +66,6 @@ export default function AdminView() {
             <Tab label={t('nav.monitors')} />
             <Tab label={t('nav.storages')} />
             <Tab label={t('nav.recording')} />
-            <Tab label={t('nav.logs')} />
             <Tab label={t('nav.onvif')} />
           </Tabs>
         </Box>

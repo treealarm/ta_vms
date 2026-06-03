@@ -16,6 +16,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\VmsLog\VmsLog.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Protobuf Include="..\..\proto\logger.proto" GrpcServices="Both" />
   </ItemGroup>
 

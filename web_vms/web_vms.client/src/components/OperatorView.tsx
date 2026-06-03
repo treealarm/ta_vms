@@ -12,7 +12,7 @@ export default function OperatorView() {
   const [tab, setTab] = useState(0)
 
   return (
-    <Box sx={{ display: 'flex', height: '100dvh', overflow: 'hidden' }}>
+    <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', p: { xs: 2, md: 4 } }}>
         {tab === 0 && <MonitorsView readOnly />}
         {tab === 1 && (

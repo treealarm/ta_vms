@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\web_vms.Types\web_vms.Types.csproj" />
     <ProjectReference Include="..\OnvifLib\OnvifLib.csproj" />
+    <ProjectReference Include="..\VmsLog\VmsLog.csproj" />
   </ItemGroup>
 
   <ItemGroup>

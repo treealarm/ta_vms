@@ -113,6 +113,7 @@
     "limit": "Limit",
     "level": "Level",
     "all": "all",
+    "service": "Service",
     "source": "Source",
     "search": "Search",
     "auto": "Auto",
