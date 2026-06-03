@@ -71,8 +71,8 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden' }}>
-        <Box sx={{ flex: 1, minHeight: 0 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh' }}>
+        <Box sx={{ height: '100dvh' }}>
           <Routes>
             <Route path="/operator" element={<OperatorView />} />
             <Route path="/admin" element={<AdminView />} />

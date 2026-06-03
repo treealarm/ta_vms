@@ -39,7 +39,7 @@ export default function LogDock() {
       </Stack>
 
       {open && (
-        <Box sx={{ height: '40vh', overflow: 'auto', p: 1, borderTop: 1, borderColor: 'divider' }}>
+        <Box sx={{ p: 1, borderTop: 1, borderColor: 'divider' }}>
           <LogJournalPanel />
         </Box>
       )}
