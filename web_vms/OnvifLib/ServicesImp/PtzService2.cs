@@ -8,8 +8,8 @@ namespace OnvifLib
   {
     public const string WSDL_V20 = "http://www.onvif.org/ver20/ptz/wsdl";
     private PTZClient? _ptzClient;
-    protected PtzService2(string url, CustomBinding binding, string username, string password, string profile, Func<SecurityToken>? tokenFactory = null) :
-      base(url, binding, username, password, profile, tokenFactory)
+    protected PtzService2(string url, CustomBinding binding, string username, string password, string profile, Func<SecurityToken>? tokenFactory = null, IOnvifLogger? logger = null) :
+      base(url, binding, username, password, profile, tokenFactory, logger)
     {
     }
 
@@ -17,9 +17,9 @@ namespace OnvifLib
     {
       return new[] { WSDL_V20 };
     }
-    public static async Task<PtzService2?> CreateAsync(string url, CustomBinding binding, string username, string password, string profile, Func<SecurityToken>? tokenFactory = null)
+    public static async Task<PtzService2?> CreateAsync(string url, CustomBinding binding, string username, string password, string profile, Func<SecurityToken>? tokenFactory = null, IOnvifLogger? logger = null)
     {
-      var instance = new PtzService2(url, binding, username, password, profile, tokenFactory);
+      var instance = new PtzService2(url, binding, username, password, profile, tokenFactory, logger);
       await instance.InitializeAsync();
       return instance;
     }

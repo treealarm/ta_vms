@@ -10,7 +10,8 @@ namespace OnvifLib
       CustomBinding binding,
       string username,
       string password,
-      Func<SecurityToken>? tokenFactory = null)
+      Func<SecurityToken>? tokenFactory = null,
+      IOnvifLogger? logger = null)
       where T : class, IOnvifServiceFactory<T>
     {
       foreach (var wsdl in T.GetSupportedWsdls())
@@ -19,13 +20,13 @@ namespace OnvifLib
         {
           try
           {
-            var instance = await T.CreateAsync(url, binding, username, password, wsdl, tokenFactory);
+            var instance = await T.CreateAsync(url, binding, username, password, wsdl, tokenFactory, logger);
             if (instance != null)
               return instance;
           }
           catch(Exception ex)
           {
-            Console.WriteLine(ex.ToString());
+            logger?.Error(ex.ToString());
           }
         }
       }

@@ -17,7 +17,8 @@ public class Camera
   private readonly string _ip;
 
   private readonly CustomBindingProvider _bindingProvider;
-  private readonly OnvifClientFactory _onvifClientFactory = new OnvifClientFactory();
+  private readonly IOnvifLogger? _logger;
+  private readonly OnvifClientFactory _onvifClientFactory;
   private Task<Dictionary<string, string>?>? _servicesTask;
   private System.DateTime _tokenExpiry = System.DateTime.UtcNow;
   private TimeSpan _deviceClockOffset = TimeSpan.Zero;
@@ -104,22 +105,24 @@ public class Camera
     return $"http://{ip}:{port}/onvif/device_service";
   }
 
-  public static Camera Create(string ip, int port, string username, string password, double timeout = 15)
+  public static Camera Create(string ip, int port, string username, string password, double timeout = 15, IOnvifLogger? logger = null)
   {
-    var cam = new Camera(ip, port, username, password, timeout);
+    var cam = new Camera(ip, port, username, password, timeout, logger);
     cam.InitTask = cam.InitAsync(); // start initialization in the background
     return cam;
   }
-  private Camera(string ip, int port, string username, string password, double timeout)
+  private Camera(string ip, int port, string username, string password, double timeout, IOnvifLogger? logger = null)
   {
     _url = CreateUrl(ip, port);
     _ip = ip;
     _username = username;
     _password = password;
     _port = port;
+    _logger = logger;
 
+    _onvifClientFactory = new OnvifClientFactory(logger);
     _bindingProvider = new CustomBindingProvider(timeout);
-    _serviceCache = new OnvifServiceCache(_bindingProvider, username, password, MakeSecurityToken);
+    _serviceCache = new OnvifServiceCache(_bindingProvider, username, password, MakeSecurityToken, logger: logger);
   }
 
   private SecurityToken MakeSecurityToken()
@@ -169,7 +172,7 @@ public class Camera
 
     if (services != null)
     {
-      return await OnvifServiceSelector.TryCreateService<EventService1>(services, _bindingProvider.Current, _username, _password, MakeSecurityToken);
+      return await OnvifServiceSelector.TryCreateService<EventService1>(services, _bindingProvider.Current, _username, _password, MakeSecurityToken, _logger);
     }
     return null;
   }
@@ -221,13 +224,13 @@ public class Camera
       }
       catch (Exception retryEx)
       {
-        Console.WriteLine(retryEx);
+        _logger?.Error(retryEx.ToString());
         return null;
       }
     }
     catch (Exception ex)
     {
-      Console.WriteLine(ex);
+      _logger?.Error(ex.ToString());
       return null;
     }
   }
