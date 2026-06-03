@@ -20,6 +20,7 @@ builder.Services.AddSingleton(_ =>
 builder.Services.AddSingleton<ServerPairRegistry>();
 
 builder.Services.AddSingleton<OnvifFilterCache>();
+builder.Services.AddSingleton<CameraArmedCache>();
 builder.Services.AddSingleton<OnvifEventSubscriptionService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<OnvifEventSubscriptionService>());
 builder.Services.AddHostedService<CameraConfigSubscriber>();

@@ -6,8 +6,9 @@ namespace VmsCfg
 {
   public class CfgServiceImpl(CameraStorage storage, DaprClient daprClient) : CfgService.CfgServiceBase
   {
-    private const string CameraConfigChangedTopic  = "camera-config-changed";
+    private const string CameraConfigChangedTopic      = "camera-config-changed";
     private const string MediaServerConfigChangedTopic = "media-server-config-changed";
+    private const string CameraStateChangedTopic       = "camera-state-changed";
     private readonly string _pubSubName =
       Environment.GetEnvironmentVariable("PUBSUB_NAME")
         ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
@@ -23,6 +24,21 @@ namespace VmsCfg
         catch (Exception ex)
         {
           Console.Error.WriteLine($"Camera config invalidation publish failed for '{cameraId}': {ex.Message}");
+        }
+      });
+    }
+
+    private void NotifyCameraStateChanged(string cameraId)
+    {
+      _ = Task.Run(async () =>
+      {
+        try
+        {
+          await daprClient.PublishEventAsync(_pubSubName, CameraStateChangedTopic, cameraId);
+        }
+        catch (Exception ex)
+        {
+          Console.Error.WriteLine($"Camera state invalidation publish failed for '{cameraId}': {ex.Message}");
         }
       });
     }
@@ -403,6 +419,21 @@ namespace VmsCfg
     {
       await storage.SetOnvifArmedAsync(request.CameraId, request.Armed, context.CancellationToken);
       InvalidateFsCache(request.CameraId);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<GetCamStateResponse> GetCamState(
+      GetCamStateRequest request, ServerCallContext context)
+    {
+      var armed = await storage.GetCameraArmedAsync(request.CameraId, context.CancellationToken);
+      return new GetCamStateResponse { Armed = armed };
+    }
+
+    public override async Task<OperationStatus> SetCamState(
+      SetCamStateRequest request, ServerCallContext context)
+    {
+      await storage.SetCameraArmedAsync(request.CameraId, request.Armed, context.CancellationToken);
+      NotifyCameraStateChanged(request.CameraId);
       return new OperationStatus { Success = true };
     }
   }

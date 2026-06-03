@@ -76,7 +76,7 @@ export const setOnvifEventsEnabled = createAsyncThunk(
       {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ armed: enabled }),
+        body: JSON.stringify({ subscribed: enabled }),
       }
     )
     if (response.ok)

@@ -280,6 +280,11 @@ export type OnvifCameraEntryDto = {
   subscribed: boolean
 }
 
+export type CameraArmedDto = {
+  cameraId: string
+  armed: boolean
+}
+
 export type OnvifAlarmFilterDto = {
   id?: string
   cameraId: string

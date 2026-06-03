@@ -15,6 +15,10 @@ namespace OnvifLib
       foreach (var header in reply.Headers)
         if (header.Name.IndexOf("Security", StringComparison.InvariantCulture) != -1 && header.Namespace.Contains(WsseNamespace))
           reply.Headers.UnderstoodHeaders.Add(header);
+
+      var buffer = reply.CreateBufferedCopy(int.MaxValue);
+      reply = buffer.CreateMessage();
+      Console.WriteLine("[ONVIF <] " + buffer.CreateMessage());
     }
 
     public object BeforeSendRequest(ref Message request, IClientChannel channel)
@@ -24,6 +28,10 @@ namespace OnvifLib
 
       foreach (var header in Headers)
         request.Headers.Insert(0, header);
+
+      var buffer = request.CreateBufferedCopy(int.MaxValue);
+      request = buffer.CreateMessage();
+      Console.WriteLine("[ONVIF >] " + buffer.CreateMessage());
 
       return request;
     }

@@ -290,6 +290,7 @@
             "stopAll": true,
             "configurations": [
                 "VmsCfg (.NET)",
+                "VmsUtils (.NET)",
                 "VmsOnvif (.NET)",
                 "VmsOnvifActors (.NET)",
                 "VmsFs (.NET)",
@@ -305,6 +306,7 @@
             "stopAll": true,
             "configurations": [
                 "VmsCfg (.NET)",
+                "VmsUtils (.NET)",
                 "VmsOnvif (.NET)",
                 "VmsOnvifActors (.NET)",
                 "VmsFs (.NET)",

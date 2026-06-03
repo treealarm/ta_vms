@@ -1,8 +1,7 @@
 import { useRef, useState } from 'react'
-import { LangToggle } from '../App'
-import { Box, Button, Stack, Tab, Tabs } from '@mui/material'
-import { useNavigate } from 'react-router-dom'
+import { Box, Tab, Tabs } from '@mui/material'
 import { useTranslation } from 'react-i18next'
+import ViewControls from './ViewControls'
 
 import MonitorListPanel from './MonitorListPanel'
 import CameraControlPanel from './CameraControlPanel'
@@ -18,7 +17,6 @@ import OnvifSubscriptionsPanel from './OnvifSubscriptionsPanel'
 
 export default function AdminView() {
   const { t } = useTranslation()
-  const navigate = useNavigate()
 
   const [tab, setTab] = useState(0)
 
@@ -54,36 +52,30 @@ export default function AdminView() {
           borderColor: 'divider',
           display: 'flex',
           flexDirection: 'column',
-          justifyContent: 'space-between',
         }}
       >
-        <Tabs
-          orientation="vertical"
-          value={tab}
-          onChange={(e, v) => void handleTabChange(e, v)}
-          sx={{ '& .MuiTab-root': { minWidth: 90 } }}
-        >
-          <Tab label={t('nav.camSetup')} />
-          <Tab label={t('nav.mediaMtx')} />
-          <Tab label={t('nav.monitors')} />
-          <Tab label={t('nav.storages')} />
-          <Tab label={t('nav.recording')} />
-          <Tab label={t('nav.logs')} />
-          <Tab label={t('nav.onvif')} />
-        </Tabs>
+        <ViewControls target="operator" />
 
-        <Stack alignItems="center" spacing={0.5} sx={{ mb: 1 }}>
-          <SimulationFab />
-          <Button
-            size="small"
-            variant="text"
-            onClick={() => navigate('/operator')}
-            sx={{ minWidth: 0, px: 1, py: 0.5, fontSize: '0.7rem', color: 'text.secondary' }}
+        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <Tabs
+            orientation="vertical"
+            value={tab}
+            onChange={(e, v) => void handleTabChange(e, v)}
+            sx={{ '& .MuiTab-root': { minWidth: 90 } }}
           >
-            {t('nav.goOperator')}
-          </Button>
-          <LangToggle />
-        </Stack>
+            <Tab label={t('nav.camSetup')} />
+            <Tab label={t('nav.mediaMtx')} />
+            <Tab label={t('nav.monitors')} />
+            <Tab label={t('nav.storages')} />
+            <Tab label={t('nav.recording')} />
+            <Tab label={t('nav.logs')} />
+            <Tab label={t('nav.onvif')} />
+          </Tabs>
+        </Box>
+
+        <Box sx={{ pb: 1, display: 'flex', justifyContent: 'center' }}>
+          <SimulationFab />
+        </Box>
       </Box>
     </Box>
   )

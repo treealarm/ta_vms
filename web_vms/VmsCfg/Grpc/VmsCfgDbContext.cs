@@ -7,6 +7,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
   public DbSet<DbCameraStream> CameraStreams { get; set; }
   public DbSet<DbRecordingProfile> RecordingProfiles { get; set; }
   public DbSet<DbOnvifAlarmFilter> OnvifAlarmFilters { get; set; }
+  public DbSet<DbCameraState> CameraStates { get; set; }
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
@@ -42,6 +43,14 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.FilterText).HasColumnName("filter_text");
       e.Property(x => x.TimeoutSeconds).HasColumnName("timeout_seconds");
     });
+
+    modelBuilder.Entity<DbCameraState>(e =>
+    {
+      e.ToTable("camera_states");
+      e.HasKey(x => x.CameraId);
+      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.Armed).HasColumnName("armed");
+    });
   }
 }
 
@@ -67,4 +76,10 @@ public sealed class DbOnvifAlarmFilter
   public string CameraId { get; set; } = string.Empty;
   public string FilterText { get; set; } = string.Empty;
   public int TimeoutSeconds { get; set; }
+}
+
+public sealed class DbCameraState
+{
+  public string CameraId { get; set; } = string.Empty;
+  public bool Armed { get; set; }
 }

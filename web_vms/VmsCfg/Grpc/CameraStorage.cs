@@ -740,4 +740,24 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       result.Add((reader.GetString(0), reader.GetBoolean(1)));
     return result;
   }
+
+  public async Task<bool> GetCameraArmedAsync(string cameraId, CancellationToken ct)
+  {
+    await using var cmd = _dataSource.CreateCommand(
+      "SELECT armed FROM camera_states WHERE camera_id = $1;");
+    cmd.Parameters.AddWithValue(cameraId);
+    var result = await cmd.ExecuteScalarAsync(ct);
+    return result is bool b && b;
+  }
+
+  public async Task SetCameraArmedAsync(string cameraId, bool armed, CancellationToken ct)
+  {
+    await using var cmd = _dataSource.CreateCommand("""
+      INSERT INTO camera_states (camera_id, armed) VALUES ($1, $2)
+      ON CONFLICT (camera_id) DO UPDATE SET armed = EXCLUDED.armed;
+      """);
+    cmd.Parameters.AddWithValue(cameraId);
+    cmd.Parameters.AddWithValue(armed);
+    await cmd.ExecuteNonQueryAsync(ct);
+  }
 }
