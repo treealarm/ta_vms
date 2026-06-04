@@ -69,3 +69,26 @@ In `docker-compose.yml` use `latest` for all third-party images. Do not pin spec
 ## Database columns — no speculative additions
 
 Only add columns that are actively used. Do not add `created_at`, `updated_at`, audit fields, or any other column "just in case" — if it is not read or queried by existing code, it does not belong in the schema. Add it when there is a concrete requirement.
+
+## Square integration (future)
+
+vms_rec будет встроено в основную систему **Square** (`../Square`, мониторинг объектов на карте) как
+видеоподсистема. Интеграция пока **не реализована** — план зафиксирован в
+[`docs/square-integration-plan.md`](docs/square-integration-plan.md). Любое дальнейшее проектирование
+и развитие видеоподсистемы **не должно противоречить** этому плану. Соблюдай инварианты:
+
+- **Автономность обязательна.** vms_rec всегда должен запускаться и работать полностью автономно.
+  Интеграция со Square — опциональная фича, включаемая гейтом по env (нет sink'а Square → поведение
+  standalone, без какой-либо зависимости от Square). Не вводи кода, который ломает автономный запуск.
+- **VmsCfg — единственная точка подключения интеграции** (producer-сторона). Тяжёлое ядро (C++
+  `media_server` и пр.) интеграцией не затрагивается. Не размазывай интеграционную логику по другим
+  сервисам.
+- **Конфиг — только снизу вверх.** Конфигурация камер принадлежит vms_rec и пушится в Square; наружу
+  она read-only. Изменение состояния извне — **только командами** (actions: запись/арм/PTZ/`resync`),
+  никогда не правкой конфига из Square.
+- **root-объект интеграции = Dapr APP_ID** сервиса; команды — через Dapr service invocation,
+  асинхронно (handle/uid сразу, статус позже).
+- **Не конфликтуй с базисом интеграции:** общая шина pub/sub `orderpubsub`, общая docker-сеть
+  Square `common_app_network`, раздельные PostgreSQL, модель самоописывающихся свойств/команд.
+  Перед добавлением новых топиков, портов, env или сервисов сверяйся с планом, чтобы не создавать
+  будущих коллизий.
