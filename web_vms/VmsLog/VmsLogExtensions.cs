@@ -8,7 +8,9 @@ public static class VmsLogExtensions
 {
   public static IHostApplicationBuilder AddVmsLogging(this IHostApplicationBuilder builder)
   {
-    var appId  = Environment.GetEnvironmentVariable("APP_ID") ?? "unknown";
+    var appId  = Environment.GetEnvironmentVariable("APP_ID")
+      ?? throw new InvalidOperationException(
+        "Required environment variable 'APP_ID' is not set");
     var logDir = Environment.GetEnvironmentVariable("VMS_LOG_PATH");
 
     var cfg = new LoggerConfiguration()
