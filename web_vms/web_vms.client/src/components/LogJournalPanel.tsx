@@ -173,9 +173,9 @@ export default function LogJournalPanel() {
   }
 
   return (
-    <Card elevation={4}>
-      <CardContent sx={{ p: 1.5 }}>
-        <Stack spacing={1}>
+    <Card elevation={4} sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <CardContent sx={{ p: 1.5, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', '&:last-child': { pb: 1.5 } }}>
+        <Stack spacing={1} sx={{ flex: 1, minHeight: 0 }}>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
             <Typography variant="subtitle2">{t('logs.title')}</Typography>
             <Chip size="small" label={isBusy ? t('common.loading') : status} />
@@ -263,8 +263,8 @@ export default function LogJournalPanel() {
             </Button>
           </Stack>
 
-          <Stack direction="row" spacing={1} alignItems="flex-start">
-            <Box className="vms-log-journal-body" sx={{ flex: 1, minWidth: 0, maxHeight: 'none !important', overflow: 'hidden' }}>
+          <Stack direction="row" spacing={1} alignItems="stretch" sx={{ flex: 1, minHeight: 0 }}>
+            <Box className="vms-log-journal-body" sx={{ flex: 1, minWidth: 0, height: '100%', maxHeight: 'none !important', overflowY: 'auto', overflowX: 'hidden' }}>
               {filteredEntries.length === 0 && (
                 <Typography variant="caption" className="vms-log-journal-empty">
                   {t('logs.noLogs')}
@@ -297,7 +297,7 @@ export default function LogJournalPanel() {
 
             <Box
               className="vms-log-journal-body"
-              sx={{ flex: 1, minWidth: 0, maxHeight: 'none !important' }}
+              sx={{ flex: 1, minWidth: 0, height: '100%', maxHeight: 'none !important', overflowY: 'auto' }}
             >
               {selected.length === 0 ? (
                 <Typography variant="caption" className="vms-log-journal-empty">

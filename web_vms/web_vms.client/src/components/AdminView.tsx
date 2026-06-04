@@ -12,6 +12,7 @@ import type { RecordingProfilesHandle } from './RecordingProfilesPanel'
 import MediaMtxServersPanel from './MediaMtxServersPanel'
 import type { MediaMtxServersHandle } from './MediaMtxServersPanel'
 import SimulationFab from './SimulationFab'
+import LogToggleButton from './LogToggleButton'
 import OnvifSubscriptionsPanel from './OnvifSubscriptionsPanel'
 
 export default function AdminView() {
@@ -70,9 +71,10 @@ export default function AdminView() {
           </Tabs>
         </Box>
 
-        <Box sx={{ pb: 1, display: 'flex', justifyContent: 'center' }}>
+        <Stack alignItems="center" sx={{ pb: 1 }}>
+          <LogToggleButton />
           <SimulationFab />
-        </Box>
+        </Stack>
       </Box>
     </Box>
   )

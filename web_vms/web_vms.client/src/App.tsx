@@ -7,10 +7,10 @@ import i18n from './i18n'
 import { loadCameras, loadServers } from './store/liveSlice'
 import { loadMonitors } from './store/monitorsSlice'
 import { loadMediaMtxServers } from './store/mediaMtxSlice'
-import { useAppDispatch } from './store'
+import { useAppDispatch, useAppSelector } from './store'
 import OperatorView from './components/OperatorView'
 import AdminView from './components/AdminView'
-import LogDock from './components/LogDock'
+import LogJournalPanel from './components/LogJournalPanel'
 
 function LangToggle() {
   const { t: _t } = useTranslation()
@@ -39,6 +39,7 @@ export { LangToggle }
 
 export default function App() {
   const dispatch = useAppDispatch()
+  const logsOpen = useAppSelector((s) => s.logs.panelOpen)
 
   useEffect(() => {
     let cancelled = false
@@ -79,7 +80,11 @@ export default function App() {
             <Route path="*" element={<Navigate to="/operator" replace />} />
           </Routes>
         </Box>
-        <LogDock />
+        {logsOpen && (
+          <Box sx={{ height: '50vh', flexShrink: 0, borderTop: 1, borderColor: 'divider', p: 1, overflow: 'hidden' }}>
+            <LogJournalPanel />
+          </Box>
+        )}
       </Box>
     </BrowserRouter>
   )
