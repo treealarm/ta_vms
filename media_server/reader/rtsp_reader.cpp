@@ -1,5 +1,6 @@
 #include <chrono>
 #include <format>
+#include <string_view>
 #include <thread>
 #include "interfaces/av_deleters.h"
 #include "rtsp_reader.h"
@@ -9,16 +10,35 @@
 namespace {
 constexpr auto kWatchdogInterval = std::chrono::seconds(5);
 
+constexpr std::string_view kRtspPrefix = "rtsp://";
+
+// True if the URL already carries userinfo (user[:pass]@) in its authority,
+// e.g. rtsp://user:pass@host/path. In that case the stream provides its own
+// credentials and we must not override them with the camera's.
+bool rtsp_url_has_credentials(const std::string& url)
+{
+  if (url.rfind(kRtspPrefix, 0) != 0) return false;
+
+  const std::string_view rest(url.data() + kRtspPrefix.size(),
+    url.size() - kRtspPrefix.size());
+  const auto at = rest.find('@');
+  if (at == std::string_view::npos) return false;
+
+  // userinfo must appear in the authority, before the path/query starts.
+  const auto authority_end = rest.find_first_of("/?");
+  return authority_end == std::string_view::npos || at < authority_end;
+}
+
 std::string build_rtsp_url_with_auth(const std::string& url,
   const std::string& user,
   const std::string& pass)
 {
   if (user.empty()) return url;
 
-  const std::string prefix = "rtsp://";
-  if (url.rfind(prefix, 0) != 0) return url;
+  if (url.rfind(kRtspPrefix, 0) != 0) return url;
 
-  return prefix + user + ":" + pass + "@" + url.substr(prefix.size());
+  return std::string(kRtspPrefix) + user + ":" + pass + "@"
+    + url.substr(kRtspPrefix.size());
 }
 }
 
@@ -50,19 +70,6 @@ bool rtsp_reader::connect()
 {
   disconnect();
 
-  AVDictionary* opts = nullptr;
-  av_dict_set(&opts, "rtsp_transport", "tcp", 0);
-  av_dict_set(&opts, "rtsp_flags", "prefer_tcp", 0);
-  av_dict_set(&opts, "timeout", "5000000", 0);
-  av_dict_set(&opts, "rw_timeout", "5000000", 0);
-
-  if (!m_user.empty()) 
-  {
-    av_dict_set(&opts, "user", m_user.c_str(), 0);
-    av_dict_set(&opts, "password", m_password.c_str(), 0);
-  }
-  AVFormatContext* ctx = nullptr;
-
   if (m_rtsp_url.empty())
   {
     onvif_client c_client;
@@ -70,7 +77,26 @@ bool rtsp_reader::connect()
     c_client.get_uri(m_cam_id, m_profile_token, m_rtsp_url);
   }
 
-  std::string final_url = build_rtsp_url_with_auth(m_rtsp_url, m_user, m_password);
+  AVDictionary* opts = nullptr;
+  av_dict_set(&opts, "rtsp_transport", "tcp", 0);
+  av_dict_set(&opts, "rtsp_flags", "prefer_tcp", 0);
+  av_dict_set(&opts, "timeout", "5000000", 0);
+  av_dict_set(&opts, "rw_timeout", "5000000", 0);
+
+  // If the stream URL already embeds credentials, honour them and skip the
+  // camera-wide ones; otherwise fall back to the camera's user/password.
+  const bool url_has_creds = rtsp_url_has_credentials(m_rtsp_url);
+
+  if (!url_has_creds && !m_user.empty())
+  {
+    av_dict_set(&opts, "user", m_user.c_str(), 0);
+    av_dict_set(&opts, "password", m_password.c_str(), 0);
+  }
+  AVFormatContext* ctx = nullptr;
+
+  std::string final_url = url_has_creds
+    ? m_rtsp_url
+    : build_rtsp_url_with_auth(m_rtsp_url, m_user, m_password);
 
   if (avformat_open_input(&ctx, final_url.c_str(), nullptr, &opts) < 0)
   {
