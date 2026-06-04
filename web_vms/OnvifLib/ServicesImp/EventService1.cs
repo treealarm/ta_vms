@@ -21,8 +21,8 @@ namespace OnvifLib
 
     public event Action<NotificationMessageHolderType[]>? OnEventReceived;
 
-    protected EventService1(string url, CustomBinding binding, string username, string password, string profile, Func<SecurityToken>? tokenFactory = null) :
-      base(url, binding, username, password, profile, tokenFactory)
+    protected EventService1(string url, CustomBinding binding, string username, string password, string profile, Func<SecurityToken>? tokenFactory = null, IOnvifLogger? logger = null) :
+      base(url, binding, username, password, profile, tokenFactory, logger)
     {
     }
 
@@ -33,9 +33,9 @@ namespace OnvifLib
       return [WSDL_EVENTS, WSDL_MEDIA];
     }
 
-    public static async Task<EventService1?> CreateAsync(string url, CustomBinding binding, string username, string password, string profile, Func<SecurityToken>? tokenFactory = null)
+    public static async Task<EventService1?> CreateAsync(string url, CustomBinding binding, string username, string password, string profile, Func<SecurityToken>? tokenFactory = null, IOnvifLogger? logger = null)
     {
-      var instance1 = new EventService1(url, binding, username, password, profile, tokenFactory);
+      var instance1 = new EventService1(url, binding, username, password, profile, tokenFactory, logger);
       await instance1.InitializeAsync();
       return instance1;
     }
@@ -96,7 +96,7 @@ namespace OnvifLib
       }
       catch (FaultException<UnacceptableInitialTerminationTimeFaultType> ex)
       {
-        Console.WriteLine("Relative InitialTerminationTime rejected, retrying with absolute time");
+        _logger?.Warning("Relative InitialTerminationTime rejected, retrying with absolute time");
         lastFault = ex.Detail;
       }
 
@@ -116,7 +116,7 @@ namespace OnvifLib
       }
       catch (FaultException<UnacceptableInitialTerminationTimeFaultType>)
       {
-        Console.WriteLine("Absolute InitialTerminationTime also rejected, retrying without time");
+        _logger?.Warning("Absolute InitialTerminationTime also rejected, retrying without time");
       }
 
       // Try 3: no time — let camera pick its own TTL
@@ -177,7 +177,7 @@ namespace OnvifLib
         }
         catch (Exception ex)
         {
-          Console.WriteLine("Pull/Renew failed: " + ex.Message);
+          _logger?.Warning("Pull/Renew failed: " + ex.Message);
           await Task.Delay(2000);
         }
       }
@@ -190,7 +190,7 @@ namespace OnvifLib
         }
         catch (Exception ex)
         {
-          Console.WriteLine("Unsubscribe failed: " + ex.Message);
+          _logger?.Warning("Unsubscribe failed: " + ex.Message);
         }
       }
       return true;
@@ -210,7 +210,7 @@ namespace OnvifLib
       }
       catch (FaultException<UnacceptableTerminationTimeFaultType> ex)
       {
-        Console.WriteLine("Relative TerminationTime rejected on renew, retrying with absolute time");
+        _logger?.Warning("Relative TerminationTime rejected on renew, retrying with absolute time");
 
         var absTime = DateTime.UtcNow + _terminationTime;
         if (ex.Detail.MinimumTime > absTime) absTime = ex.Detail.MinimumTime;

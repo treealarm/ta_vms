@@ -19,7 +19,8 @@ namespace OnvifLib
       string username,
       string password,
       string profile,
-      Func<SecurityToken>? tokenFactory = null) : base(url, binding, username, password, profile, tokenFactory)
+      Func<SecurityToken>? tokenFactory = null,
+      IOnvifLogger? logger = null) : base(url, binding, username, password, profile, tokenFactory, logger)
     {
     }
 

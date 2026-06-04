@@ -48,7 +48,8 @@ namespace OnvifLib
       string username,
       string password,
       string profile,
-      Func<SecurityToken>? tokenFactory = null) : base(url, binding, username, password, profile, tokenFactory)
+      Func<SecurityToken>? tokenFactory = null,
+      IOnvifLogger? logger = null) : base(url, binding, username, password, profile, tokenFactory, logger)
     {
     }
 
@@ -64,16 +65,17 @@ namespace OnvifLib
       string username,
       string password,
       string profile,
-      Func<SecurityToken>? tokenFactory = null)
+      Func<SecurityToken>? tokenFactory = null,
+      IOnvifLogger? logger = null)
     {
       if (profile == WSDL_V10)
       {
-        var instance1 = new MediaService1(url, binding, username, password, profile, tokenFactory);
+        var instance1 = new MediaService1(url, binding, username, password, profile, tokenFactory, logger);
         await instance1.InitializeAsync();
         return instance1;
       }
 
-      var instance = new MediaService2(url, binding, username, password, profile, tokenFactory);
+      var instance = new MediaService2(url, binding, username, password, profile, tokenFactory, logger);
       await instance.InitializeAsync();
       return instance;
     }

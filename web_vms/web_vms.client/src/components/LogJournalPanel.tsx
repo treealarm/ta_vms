@@ -18,11 +18,41 @@ import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { clearLogs, fetchLogs } from '../store/logSlice'
 import { toLocalDatetimeInputValue } from '../dto/dtos'
+import type { LogEntryDto } from '../dto/dtos'
 
 const LEVEL_OPTIONS = ['', 'debug', 'info', 'warn', 'error']
 
 function formatLogLine(ts: string, level: string, message: string, file: string, func: string): string {
   return `${ts} [${level}] ${message} (${file}::${func})`
+}
+
+function looksLikeXml(s: string): boolean {
+  const t = s.trimStart()
+  return t.startsWith('<') && t.includes('>')
+}
+
+function formatXml(xml: string): string {
+  try {
+    const withBreaks = xml.replace(/(>)(<)(\/*)/g, '$1\n$2$3')
+    let pad = 0
+    return withBreaks
+      .split('\n')
+      .map((node) => {
+        let indent = 0
+        if (/^<\/\w/.test(node)) {
+          pad = Math.max(pad - 1, 0)
+        } else if (/^<\w[^>]*[^/]>.*$/.test(node) && !/<\/\w/.test(node)) {
+          indent = 1
+        }
+        const line = '  '.repeat(pad) + node
+        pad += indent
+        return line
+      })
+      .join('\n')
+      .trim()
+  } catch {
+    return xml
+  }
 }
 
 function normalizeLogLevelKey(level: string): 'error' | 'warn' | 'info' | 'debug' | 'default' {
@@ -56,9 +86,42 @@ export default function LogJournalPanel() {
   const [rangeSec, setRangeSec] = useState(60)
   const [limit, setLimit] = useState(200)
   const [level, setLevel] = useState('')
-  const [source, setSource] = useState('')
+  const [appId, setAppId] = useState('')
+  const [sources, setSources] = useState<string[]>([])
   const [search, setSearch] = useState('')
   const [autoRefresh, setAutoRefresh] = useState(true)
+  const [selected, setSelected] = useState<LogEntryDto[]>([])
+
+  const sameEntry = (a: LogEntryDto, b: LogEntryDto) =>
+    a.timestamp === b.timestamp && a.message === b.message
+
+  const isSelected = (e: LogEntryDto) => selected.some((s) => sameEntry(s, e))
+
+  const toggleSelect = (e: LogEntryDto, additive: boolean) => {
+    setSelected((prev) => {
+      if (additive) {
+        return prev.some((s) => sameEntry(s, e))
+          ? prev.filter((s) => !sameEntry(s, e))
+          : [...prev, e]
+      }
+      return [e]
+    })
+  }
+
+  const detailText = (e: LogEntryDto) => {
+    const meta = `${toLocalDatetimeInputValue(new Date(e.timestamp))} · ${e.level}`
+      + (e.file ? ` · ${e.file}` : '')
+      + (e.function ? `::${e.function}` : '')
+    const body = looksLikeXml(e.message) ? formatXml(e.message) : e.message
+    return `${meta}\n${body}`
+  }
+
+  const loadSources = () => {
+    fetch('/api/logger/sources')
+      .then((r) => r.ok ? r.json() as Promise<string[]> : [])
+      .then(setSources)
+      .catch(() => {})
+  }
 
   const runFetch = async () => {
     const to = new Date()
@@ -70,42 +133,39 @@ export default function LogJournalPanel() {
         to: to.toISOString(),
         limit,
         level: level || undefined,
-        source: source.trim() || undefined
+        appId: appId || undefined,
       })
     )
   }
 
   useEffect(() => {
+    loadSources()
     void runFetch()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
     if (!autoRefresh) {
       return
     }
     const timer = setInterval(() => {
+      loadSources()
       void runFetch()
     }, 3000)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRefresh, rangeSec, limit, level, source])
+  }, [autoRefresh, rangeSec, limit, level, appId])
 
   const filteredEntries = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) {
-      return entries
-    }
-    return entries.filter((e) => {
-      const line = formatLogLine(e.timestamp, e.level, e.message, e.file, e.function).toLowerCase()
-      return line.includes(q)
-    })
+    const matched = q
+      ? entries.filter((e) => {
+          const line = formatLogLine(e.timestamp, e.level, e.message, e.file, e.function).toLowerCase()
+          return line.includes(q)
+        })
+      : entries
+    // Newest first
+    return [...matched].reverse()
   }, [entries, search])
 
   const onCopy = async () => {
-    const text = filteredEntries
-      .map((e) => formatLogLine(e.timestamp, e.level, e.message, e.file, e.function))
-      .join('\n')
+    const text = selected.map(detailText).join('\n\n')
     if (!text) {
       return
     }
@@ -113,9 +173,9 @@ export default function LogJournalPanel() {
   }
 
   return (
-    <Card elevation={4}>
-      <CardContent sx={{ p: 1.5 }}>
-        <Stack spacing={1}>
+    <Card elevation={4} sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <CardContent sx={{ p: 1.5, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', '&:last-child': { pb: 1.5 } }}>
+        <Stack spacing={1} sx={{ flex: 1, minHeight: 0 }}>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
             <Typography variant="subtitle2">{t('logs.title')}</Typography>
             <Chip size="small" label={isBusy ? t('common.loading') : status} />
@@ -164,12 +224,18 @@ export default function LogJournalPanel() {
             </TextField>
 
             <TextField
+              select
               size="small"
-              label={t('logs.source')}
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-              sx={{ minWidth: 160 }}
-            />
+              label={t('logs.service')}
+              value={appId}
+              onChange={(e) => setAppId(e.target.value)}
+              sx={{ minWidth: 140 }}
+            >
+              <MenuItem value="">{t('logs.all')}</MenuItem>
+              {sources.map((s) => (
+                <MenuItem key={s} value={s}>{s}</MenuItem>
+              ))}
+            </TextField>
 
             <TextField
               size="small"
@@ -197,28 +263,66 @@ export default function LogJournalPanel() {
             </Button>
           </Stack>
 
-          <Box className="vms-log-journal-body">
-            {filteredEntries.length === 0 && (
-              <Typography variant="caption" className="vms-log-journal-empty">
-                {t('logs.noLogs')}
-              </Typography>
-            )}
-            {filteredEntries.map((e, idx) => (
-              <Box
-                key={`${e.timestamp}-${idx}`}
-                className="vms-log-line"
-                data-log-level={normalizeLogLevelKey(e.level)}
-              >
-                {formatLogLine(
-                  toLocalDatetimeInputValue(new Date(e.timestamp)),
-                  e.level,
-                  e.message,
-                  e.file,
-                  e.function
-                )}
-              </Box>
-            ))}
-          </Box>
+          <Stack direction="row" spacing={1} alignItems="stretch" sx={{ flex: 1, minHeight: 0 }}>
+            <Box className="vms-log-journal-body" sx={{ flex: 1, minWidth: 0, height: '100%', maxHeight: 'none !important', overflowY: 'auto', overflowX: 'hidden' }}>
+              {filteredEntries.length === 0 && (
+                <Typography variant="caption" className="vms-log-journal-empty">
+                  {t('logs.noLogs')}
+                </Typography>
+              )}
+              {filteredEntries.map((e, idx) => (
+                <Box
+                  key={`${e.timestamp}-${idx}`}
+                  className="vms-log-line"
+                  data-log-level={normalizeLogLevelKey(e.level)}
+                  onClick={(ev) => toggleSelect(e, ev.ctrlKey || ev.metaKey)}
+                  sx={{
+                    cursor: 'pointer',
+                    backgroundColor: isSelected(e) ? 'action.selected' : undefined,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {formatLogLine(
+                    toLocalDatetimeInputValue(new Date(e.timestamp)),
+                    e.level,
+                    e.message,
+                    e.file,
+                    e.function
+                  )}
+                </Box>
+              ))}
+            </Box>
+
+            <Box
+              className="vms-log-journal-body"
+              sx={{ flex: 1, minWidth: 0, height: '100%', maxHeight: 'none !important', overflowY: 'auto' }}
+            >
+              {selected.length === 0 ? (
+                <Typography variant="caption" className="vms-log-journal-empty">
+                  {t('logs.selectHint')}
+                </Typography>
+              ) : (
+                selected.map((s, i) => (
+                  <Box key={`${s.timestamp}-${i}`} sx={{ mb: 1.5 }}>
+                    <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.5 }}>
+                      {toLocalDatetimeInputValue(new Date(s.timestamp))}
+                      {' · '}{s.level}
+                      {s.file ? ` · ${s.file}` : ''}
+                      {s.function ? `::${s.function}` : ''}
+                    </Typography>
+                    <Box
+                      component="pre"
+                      sx={{ m: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'monospace', fontSize: 12 }}
+                    >
+                      {looksLikeXml(s.message) ? formatXml(s.message) : s.message}
+                    </Box>
+                  </Box>
+                ))
+              )}
+            </Box>
+          </Stack>
         </Stack>
       </CardContent>
     </Card>

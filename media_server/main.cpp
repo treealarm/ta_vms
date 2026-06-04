@@ -52,7 +52,8 @@ int main(int argc, char** argv)
     server_address = "0.0.0.0:" + std::string(grpc_vms_port);
   }
 
-  logger::instance().init();
+  const char* app_id = std::getenv("APP_ID");
+  logger::instance().init(app_id ? app_id : "vms");
 
   std::signal(SIGINT, on_signal);
   std::signal(SIGTERM, on_signal);

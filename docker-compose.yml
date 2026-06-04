@@ -49,6 +49,10 @@ services:
       dockerfile: web_vms/VmsUtils/Dockerfile
     env_file:
       - .env
+    environment:
+      APP_ID: vmsutils
+    volumes:
+      - "${PWD}/data:/data"
 
   vmsutils-dapr:
     profiles: [app]
@@ -81,6 +85,8 @@ services:
       dockerfile: web_vms/VmsLogger/Dockerfile
     env_file:
       - .env
+    environment:
+      APP_ID: vmslogger
     volumes:
       - "${PWD}/data:/data"
 
@@ -117,6 +123,9 @@ services:
       - .env
     environment:
       POSTGRES_HOST: postgres
+      APP_ID: vmscfg
+    volumes:
+      - "${PWD}/data:/data"
     depends_on:
       - postgres
 
@@ -151,8 +160,12 @@ services:
       dockerfile: web_vms/VmsOnvif/Dockerfile
     env_file:
       - .env
+    environment:
+      APP_ID: vmsonvif
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - "${PWD}/data:/data"
     depends_on:
       - vmscfg
 
@@ -163,8 +176,12 @@ services:
       dockerfile: web_vms/VmsOnvifActors/Dockerfile
     env_file:
       - .env
+    environment:
+      APP_ID: vmsonvif-actors
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - "${PWD}/data:/data"
     depends_on:
       - vmscfg
 

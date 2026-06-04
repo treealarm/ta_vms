@@ -44,7 +44,9 @@
                 "VMS_WEBRTC_RTSP_BASE_URL": "rtsp://localhost:8554",
                 "VMS_WEBRTC_CLIENT_URL": "http://localhost:8889",
                 "MEDIA_SERVER_PAIRS": "vms:vmsfs,vms-2:vmsfs-2",
-                "DAPR_STATE_STORE_NAME": "statestore"
+                "DAPR_STATE_STORE_NAME": "statestore",
+                "APP_ID": "vmscfg",
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },
         {
@@ -62,7 +64,9 @@
                 "DAPR_HTTP_PORT": "3502",
                 "DAPR_GRPC_PORT": "50003",
                 "DAPR_CFG_APP_ID": "vmscfg",
-                "PUBSUB_NAME": "orderpubsub"
+                "PUBSUB_NAME": "orderpubsub",
+                "APP_ID": "vmsonvif",
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },
         {
@@ -78,7 +82,9 @@
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "ONVIF_ACTORS_PORT": "5141",
                 "DAPR_HTTP_PORT": "3505",
-                "DAPR_GRPC_PORT": "50007"
+                "DAPR_GRPC_PORT": "50007",
+                "APP_ID": "vmsonvif-actors",
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },
         {
@@ -103,7 +109,8 @@
                 "POSTGRES_USER": "postgres",
                 "POSTGRES_PASSWORD": "postgres",
                 "POSTGRES_FS_DB": "ta_fs",
-                "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage"
+                "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage",
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },
         {
@@ -120,7 +127,9 @@
                 "LOGGER_VMS_PORT": "5138",
                 "DAPR_HTTP_PORT": "3510",
                 "DAPR_GRPC_PORT": "50110",
-                "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage"
+                "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage",
+                "APP_ID": "vmslogger",
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },
         {
@@ -138,7 +147,9 @@
                 "DAPR_HTTP_PORT": "3509",
                 "DAPR_GRPC_PORT": "50109",
                 "DAPR_CFG_APP_ID": "vmscfg",
-                "PUBSUB_NAME": "orderpubsub"
+                "PUBSUB_NAME": "orderpubsub",
+                "APP_ID": "vmsutils",
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },
         {
@@ -154,6 +165,10 @@
                 {
                     "name": "VMS_STORAGE_BASE_PATH",
                     "value": "${workspaceFolder}/../media_storage"
+                },
+                {
+                    "name": "VMS_LOG_PATH",
+                    "value": "${workspaceFolder}/../logs"
                 },
                 {
                     "name": "GRPC_VMS_PORT",

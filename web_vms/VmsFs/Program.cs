@@ -6,8 +6,10 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Vms.Cfg;
 using VmsFs;
+using VmsLog;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddVmsLogging();
 
 var cfgAppId = Require("DAPR_CFG_APP_ID");
 var grpcPort = RequirePort("FS_VMS_PORT");

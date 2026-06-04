@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using VmsLog;
 using VmsLogger;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddVmsLogging();
 
 builder.Services.AddGrpc();
 builder.Services.AddSingleton<LogServiceImpl>();

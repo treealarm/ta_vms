@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using VmsLog;
 using VmsUtils;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddVmsLogging();
 
 var grpcPort = int.TryParse(Environment.GetEnvironmentVariable("UTILS_VMS_PORT"), out var p)
   ? p

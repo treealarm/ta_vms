@@ -113,12 +113,14 @@
     "limit": "Límite",
     "level": "Nivel",
     "all": "todos",
+    "service": "Servicio",
     "source": "Fuente",
     "search": "Buscar",
     "auto": "Auto",
     "clear": "Limpiar",
     "copy": "Copiar",
-    "noLogs": "Sin registros"
+    "noLogs": "Sin registros",
+    "selectHint": "Selecciona una línea para ver detalles"
   },
   "events": {
     "title": "Eventos de retención",

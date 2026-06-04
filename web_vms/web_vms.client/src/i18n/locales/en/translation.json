@@ -113,12 +113,14 @@
     "limit": "Limit",
     "level": "Level",
     "all": "all",
+    "service": "Service",
     "source": "Source",
     "search": "Search",
     "auto": "Auto",
     "clear": "Clear",
     "copy": "Copy",
-    "noLogs": "No logs"
+    "noLogs": "No logs",
+    "selectHint": "Select a line to see details"
   },
   "events": {
     "title": "Retention events",

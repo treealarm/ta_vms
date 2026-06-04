@@ -1,18 +1,19 @@
 import { useState } from 'react'
-import { Box, Tab, Tabs } from '@mui/material'
+import { Box, Stack, Tab, Tabs } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 
 import ViewControls from './ViewControls'
 import MonitorsView from './MonitorsView'
 import RetentionEventsTab from './RetentionEventsTab'
 import SimulationFab from './SimulationFab'
+import LogToggleButton from './LogToggleButton'
 
 export default function OperatorView() {
   const { t } = useTranslation()
   const [tab, setTab] = useState(0)
 
   return (
-    <Box sx={{ display: 'flex', height: '100dvh', overflow: 'hidden' }}>
+    <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', p: { xs: 2, md: 4 } }}>
         {tab === 0 && <MonitorsView readOnly />}
         {tab === 1 && (
@@ -45,9 +46,10 @@ export default function OperatorView() {
           </Tabs>
         </Box>
 
-        <Box sx={{ pb: 1, display: 'flex', justifyContent: 'center' }}>
+        <Stack alignItems="center" sx={{ pb: 1 }}>
+          <LogToggleButton />
           <SimulationFab />
-        </Box>
+        </Stack>
       </Box>
     </Box>
   )

@@ -153,7 +153,7 @@ public sealed class OnvifEventSubscriptionService(
       OnvifLib.EventService1? eventSvc = null;
       try
       {
-        var camera = Camera.Create(ip, port, user, pass);
+        var camera = Camera.Create(ip, port, user, pass, logger: new OnvifLoggerAdapter(logger));
         eventSvc = await camera.GetEventService();
         if (eventSvc == null)
         {

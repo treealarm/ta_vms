@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
-import { Button } from '@mui/material'
+import { Box, Button } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import i18n from './i18n'
 
 import { loadCameras, loadServers } from './store/liveSlice'
 import { loadMonitors } from './store/monitorsSlice'
 import { loadMediaMtxServers } from './store/mediaMtxSlice'
-import { useAppDispatch } from './store'
+import { useAppDispatch, useAppSelector } from './store'
 import OperatorView from './components/OperatorView'
 import AdminView from './components/AdminView'
+import LogJournalPanel from './components/LogJournalPanel'
 
 function LangToggle() {
   const { t: _t } = useTranslation()
@@ -38,6 +39,7 @@ export { LangToggle }
 
 export default function App() {
   const dispatch = useAppDispatch()
+  const logsOpen = useAppSelector((s) => s.logs.panelOpen)
 
   useEffect(() => {
     let cancelled = false
@@ -70,11 +72,20 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/operator" element={<OperatorView />} />
-        <Route path="/admin" element={<AdminView />} />
-        <Route path="*" element={<Navigate to="/operator" replace />} />
-      </Routes>
+      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh' }}>
+        <Box sx={{ height: '100dvh' }}>
+          <Routes>
+            <Route path="/operator" element={<OperatorView />} />
+            <Route path="/admin" element={<AdminView />} />
+            <Route path="*" element={<Navigate to="/operator" replace />} />
+          </Routes>
+        </Box>
+        {logsOpen && (
+          <Box sx={{ height: '50vh', flexShrink: 0, borderTop: 1, borderColor: 'divider', p: 1, overflow: 'hidden' }}>
+            <LogJournalPanel />
+          </Box>
+        )}
+      </Box>
     </BrowserRouter>
   )
 }

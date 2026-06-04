@@ -23,6 +23,7 @@ public:
   static logger& instance();
 
   void init(
+    const std::string& app_id,
     log_level min_level = log_level::info);
 
   void log(

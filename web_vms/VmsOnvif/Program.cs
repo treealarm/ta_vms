@@ -2,9 +2,11 @@ using Dapr.Client;
 using Dapr.Messaging.PublishSubscribe.Extensions;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Vms.Cfg;
+using VmsLog;
 using VmsOnvif;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddVmsLogging();
 
 builder.Services.AddGrpc();
 builder.Services.AddDaprPubSubClient();

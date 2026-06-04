@@ -8,6 +8,7 @@ type LogState = {
   isBusy: boolean
   status: string
   lastQuery: LogQueryDto | null
+  panelOpen: boolean
 }
 
 const initialState: LogState = {
@@ -15,7 +16,8 @@ const initialState: LogState = {
   hasMore: false,
   isBusy: false,
   status: 'Ready',
-  lastQuery: null
+  lastQuery: null,
+  panelOpen: false
 }
 
 export const fetchLogs = createAsyncThunk('logs/fetchLogs', async (payload: LogQueryDto) => {
@@ -36,6 +38,9 @@ const logSlice = createSlice({
       state.entries = []
       state.hasMore = false
       state.status = 'Ready'
+    },
+    toggleLogPanel(state) {
+      state.panelOpen = !state.panelOpen
     }
   },
   extraReducers: (builder) => {
@@ -59,5 +64,5 @@ const logSlice = createSlice({
   }
 })
 
-export const { clearLogs } = logSlice.actions
+export const { clearLogs, toggleLogPanel } = logSlice.actions
 export default logSlice.reducer

@@ -216,6 +216,7 @@ export type LogQueryDto = {
   limit?: number
   level?: string
   source?: string
+  appId?: string
 }
 
 export type LogEntryDto = {

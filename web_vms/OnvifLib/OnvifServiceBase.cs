@@ -12,16 +12,18 @@ namespace OnvifLib
     protected readonly CustomBinding _binding;
     protected readonly string _profile;
     protected readonly OnvifClientFactory _onvifClientFactory;
+    protected readonly IOnvifLogger? _logger;
     private readonly Func<SecurityToken>? _tokenFactory;
 
-    protected OnvifServiceBase(string url, CustomBinding binding, string username, string password, string profile, Func<SecurityToken>? tokenFactory = null)
+    protected OnvifServiceBase(string url, CustomBinding binding, string username, string password, string profile, Func<SecurityToken>? tokenFactory = null, IOnvifLogger? logger = null)
     {
       _url = url;
       _binding = binding;
       _username = username;
       _password = password;
       _profile = profile;
-      _onvifClientFactory = new OnvifClientFactory();
+      _logger = logger;
+      _onvifClientFactory = new OnvifClientFactory(logger);
       _tokenFactory = tokenFactory;
     }
     protected virtual async Task InitializeAsync()

@@ -16,14 +16,16 @@ namespace OnvifLib
     private readonly string _username;
     private readonly string _password;
     private readonly Func<SecurityToken>? _tokenFactory;
+    private readonly IOnvifLogger? _logger;
 
-    public OnvifServiceCache(CustomBindingProvider bindingProvider, string username, string password, Func<SecurityToken>? tokenFactory = null, TimeSpan? ttl = null)
+    public OnvifServiceCache(CustomBindingProvider bindingProvider, string username, string password, Func<SecurityToken>? tokenFactory = null, TimeSpan? ttl = null, IOnvifLogger? logger = null)
     {
       _bindingProvider = bindingProvider;
       _username = username;
       _password = password;
       _tokenFactory = tokenFactory;
       _serviceTtl = ttl ?? TimeSpan.FromMinutes(10);
+      _logger = logger;
     }
 
     public async Task<T?> GetServiceAsync<T>(Dictionary<string, string> services)
@@ -41,7 +43,7 @@ namespace OnvifLib
       }
 
       // Create a new service via OnvifServiceSelector using the current binding
-      var service = await OnvifServiceSelector.TryCreateService<T>(services, _bindingProvider.Current, _username, _password, _tokenFactory);
+      var service = await OnvifServiceSelector.TryCreateService<T>(services, _bindingProvider.Current, _username, _password, _tokenFactory, _logger);
 
       if (service != null)
       {

@@ -3,6 +3,7 @@ ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 
 COPY ["web_vms/VmsLogger/VmsLogger.csproj", "web_vms/VmsLogger/"]
+COPY ["web_vms/VmsLog/VmsLog.csproj", "web_vms/VmsLog/"]
 COPY ["proto", "proto"]
 
 RUN dotnet restore "web_vms/VmsLogger/VmsLogger.csproj"
