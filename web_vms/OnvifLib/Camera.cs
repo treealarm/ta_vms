@@ -213,7 +213,7 @@ public class Camera
     {
       // Camera requires HTTP Digest auth — switch once and retry
       _bindingProvider.SwitchToDigest();
-      _serviceCache = new OnvifServiceCache(_bindingProvider, _username, _password, MakeSecurityToken);
+      _serviceCache = new OnvifServiceCache(_bindingProvider, _username, _password, MakeSecurityToken, logger: _logger);
       _onvifClientFactory.SetSecurityToken(null);
       _tokenExpiry = System.DateTime.UtcNow;
       try

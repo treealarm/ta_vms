@@ -56,17 +56,18 @@ function formatXml(xml: string): string {
 }
 
 function normalizeLogLevelKey(level: string): 'error' | 'warn' | 'info' | 'debug' | 'default' {
+  // Backend emits short codes (VRB/DBG/INF/WRN/ERR/FTL); also accept full names.
   const k = level.trim().toLowerCase()
-  if (k === 'error') {
+  if (k.startsWith('err') || k.startsWith('ftl') || k.startsWith('fatal') || k.startsWith('crit')) {
     return 'error'
   }
-  if (k === 'warn' || k === 'warning') {
+  if (k.startsWith('wrn') || k.startsWith('warn')) {
     return 'warn'
   }
-  if (k === 'info') {
+  if (k.startsWith('inf')) {
     return 'info'
   }
-  if (k === 'debug') {
+  if (k.startsWith('dbg') || k.startsWith('debug') || k.startsWith('vrb') || k.startsWith('verb') || k.startsWith('trc') || k.startsWith('trace')) {
     return 'debug'
   }
   return 'default'

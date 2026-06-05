@@ -53,7 +53,7 @@ body,
   --app-scrollbar-fg: rgba(238, 238, 238, 0.35);
 
   /* Log journal */
-  --app-log-panel-bg: #1a1a1a;
+  --app-log-panel-bg: #343434;
   --app-log-panel-fg: #e0e0e0;
   --app-log-empty: #aaa;
   --app-log-error: #ef5350;

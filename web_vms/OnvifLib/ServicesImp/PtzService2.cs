@@ -58,8 +58,9 @@ namespace OnvifLib
           ContinuousMove: configs.Any(c => !string.IsNullOrEmpty(c.DefaultContinuousPanTiltVelocitySpace))
         );
       }
-      catch
+      catch (Exception ex)
       {
+        _logger?.Error($"ONVIF GetCapabilities failed for {_url}: {ex}");
         return new PtzCapabilities(false, false, false);
       }
     }

@@ -21,7 +21,11 @@ namespace OnvifLib
       {
         var buffer = reply.CreateBufferedCopy(int.MaxValue);
         reply = buffer.CreateMessage();
-        logger.Debug("[ONVIF <] " + buffer.CreateMessage());
+        // SOAP faults arrive as a normal HTTP 500 reply — surface them as errors.
+        if (reply.IsFault)
+          logger.Error("[ONVIF <] SOAP fault: " + buffer.CreateMessage());
+        else
+          logger.Debug("[ONVIF <] " + buffer.CreateMessage());
       }
     }
 

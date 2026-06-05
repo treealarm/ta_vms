@@ -77,10 +77,17 @@ namespace OnvifLib
       if (profile == null || _mediaClient1 == null)
         return null;
 
-      var snapShotUriResponse = await _mediaClient1.GetSnapshotUriAsync(profile.token);
-      var data = await DownloadImageAsync(snapShotUriResponse.Uri, _username, _password);
-       // e.g. "jpg", "png", etc.
-      return data;
+      try
+      {
+        var snapShotUriResponse = await _mediaClient1.GetSnapshotUriAsync(profile.token);
+        var data = await DownloadImageAsync(snapShotUriResponse.Uri, _username, _password, _logger);
+        return data;
+      }
+      catch (Exception ex)
+      {
+        _logger?.Error($"ONVIF GetImage (media1) failed for {_url}: {ex}");
+        return null;
+      }
     }
   }
 }

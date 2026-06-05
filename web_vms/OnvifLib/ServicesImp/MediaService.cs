@@ -80,7 +80,7 @@ namespace OnvifLib
       return instance;
     }
 
-    public static async Task<ImageResult> DownloadImageAsync(string url, string username, string password)
+    public static async Task<ImageResult> DownloadImageAsync(string url, string username, string password, IOnvifLogger? logger = null)
     {
       var handler = new HttpClientHandler
       {
@@ -91,6 +91,11 @@ namespace OnvifLib
       using var client = new HttpClient(handler);
 
       var response = await client.GetAsync(url);
+      if (!response.IsSuccessStatusCode)
+      {
+        var body = await response.Content.ReadAsStringAsync();
+        logger?.Error($"ONVIF snapshot download failed: HTTP {(int)response.StatusCode} {response.ReasonPhrase} for {url}. Body: {body}");
+      }
       response.EnsureSuccessStatusCode();
 
       var mime = response.Content.Headers.ContentType?.MediaType;

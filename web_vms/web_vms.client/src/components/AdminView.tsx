@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Box, Tab, Tabs } from '@mui/material'
+import { Box, Stack, Tab, Tabs } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import ViewControls from './ViewControls'
 

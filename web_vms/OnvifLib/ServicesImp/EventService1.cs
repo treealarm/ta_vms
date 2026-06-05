@@ -16,6 +16,10 @@ namespace OnvifLib
     private CancellationTokenSource? _cts;
     private EndpointAddress? _pullPointAddress;
     private TimeSpan _terminationTime = TimeSpan.FromSeconds(30);
+    // ONVIF long-poll duration: the camera holds each PullMessages request up to this long
+    // waiting for an event (returns immediately when one arrives). Must stay well below the
+    // WCF ReceiveTimeout (CustomBindingProvider) and the subscription TTL above.
+    private readonly TimeSpan _pullTimeout = TimeSpan.FromSeconds(5);
     private SubscriptionManagerClient? _subscriptionManagerClient;
     private DateTime _subscriptionExpiry;
 
@@ -51,6 +55,16 @@ namespace OnvifLib
         _password);
       await _eventClient1.OpenAsync();
 
+      await SetupPullPointAsync();
+    }
+
+    /// <summary>
+    /// Creates a fresh pull-point subscription on the (already opened) event client and
+    /// opens the pull / subscription-manager channels for it. Used on first init and on
+    /// re-subscribe after the pull point becomes invalid.
+    /// </summary>
+    private async Task SetupPullPointAsync()
+    {
       var subscriptionResponse = await CreateSubscriptionAsync();
 
       _subscriptionExpiry = subscriptionResponse.TerminationTime ?? DateTime.UtcNow + _terminationTime;
@@ -80,6 +94,31 @@ namespace OnvifLib
 
       await _pullClient.OpenAsync();
       await _subscriptionManagerClient.OpenAsync();
+    }
+
+    /// <summary>
+    /// Tears down the (likely invalid) pull point and subscription manager, then runs the
+    /// full subscribe process again from scratch.
+    /// </summary>
+    private async Task ResubscribeAsync()
+    {
+      _logger?.Info($"Re-subscribing pull point for {_url}");
+
+      try { _pullClient?.Abort(); } catch { }
+      try { _subscriptionManagerClient?.Abort(); } catch { }
+      _pullClient = null;
+      _subscriptionManagerClient = null;
+
+      // The event client may itself be faulted — recreate it so CreateSubscription works.
+      try { _eventClient1?.Abort(); } catch { }
+      _eventClient1 = _onvifClientFactory.CreateClient<EventPortTypeClient, EventPortType>(
+        new EndpointAddress(_url),
+        _binding,
+        _username,
+        _password);
+      await _eventClient1.OpenAsync();
+
+      await SetupPullPointAsync();
     }
 
     private async Task<CreatePullPointSubscriptionResponse> CreateSubscriptionAsync()
@@ -148,23 +187,47 @@ namespace OnvifLib
 
     private async Task<bool> ReceiveLoopAsync(CancellationToken token)
     {
+      var needsResubscribe = false;
       while (!token.IsCancellationRequested)
       {
         try
         {
-          if (_pullClient!.State != CommunicationState.Opened)
+          if (needsResubscribe || _pullClient == null || _pullClient.State == CommunicationState.Faulted)
+          {
+            await ResubscribeAsync();
+            needsResubscribe = false;
+          }
+          else if (_pullClient.State != CommunicationState.Opened)
           {
             await _pullClient.OpenAsync();
           }
 
           var request = new PullMessagesRequest
           {
-            Timeout = "PT1S",
+            Timeout = XmlConvert.ToString(_pullTimeout),
             MessageLimit = 1024
           };
 
-          var response = await _pullClient.PullMessagesAsync(request);
-          OnEventReceived?.Invoke(response.NotificationMessage);
+          var response = await _pullClient!.PullMessagesAsync(request);
+
+          if (response?.NotificationMessage == null)
+          {
+            // Empty long-poll result (timed out with no events) is normal — not a warning.
+            _logger?.Debug($"PullMessages returned no notifications for {_url}");
+          }
+          else
+          {
+            // Dispatch separately: a throwing consumer is the caller's bug, not a
+            // pull/renew failure, and must not trigger the reconnect backoff below.
+            try
+            {
+              OnEventReceived?.Invoke(response.NotificationMessage);
+            }
+            catch (Exception ex)
+            {
+              _logger?.Error($"OnEventReceived handler threw for {_url}: {ex}");
+            }
+          }
 
           if (DateTime.UtcNow + _terminationTime / 2 >= _subscriptionExpiry && _subscriptionManagerClient != null)
           {
@@ -177,7 +240,10 @@ namespace OnvifLib
         }
         catch (Exception ex)
         {
-          _logger?.Warning("Pull/Renew failed: " + ex.Message);
+          // Pull or renew failed — the pull point is likely terminated/invalid.
+          // Force a full re-subscribe on the next iteration instead of hammering a dead endpoint.
+          _logger?.Error($"Pull/Renew failed for {_url}, will re-subscribe: {ex.Message}");
+          needsResubscribe = true;
           await Task.Delay(2000);
         }
       }
@@ -190,7 +256,7 @@ namespace OnvifLib
         }
         catch (Exception ex)
         {
-          _logger?.Warning("Unsubscribe failed: " + ex.Message);
+          _logger?.Error($"Unsubscribe failed for {_url}: {ex}");
         }
       }
       return true;
