@@ -1,6 +1,7 @@
 ﻿using System.Net;
 using System.ServiceModel;
 using System.ServiceModel.Channels;
+using System.ServiceModel.Security;
 using System.Text;
 using System.Xml;
 using System.Xml.Serialization;
@@ -235,14 +236,29 @@ public class Camera
     }
   }
 
-  private static bool IsAuthError(Exception ex)
+  private static bool IsAuthError(Exception? ex)
   {
-    var text = ex.ToString();
-    return text.Contains("401")
-        || text.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase);
+    // Walk the inner-exception chain: a 401 surfaces wrapped (WCF -> Http/Web exception),
+    // and cameras may also report it as a WS-Security MessageSecurityException or SOAP fault.
+    for (var e = ex; e != null; e = e.InnerException)
+    {
+      switch (e)
+      {
+        case MessageSecurityException:
+        case HttpRequestException { StatusCode: HttpStatusCode.Unauthorized }:
+        case WebException { Response: HttpWebResponse { StatusCode: HttpStatusCode.Unauthorized } }:
+          return true;
+      }
+
+      if (e.Message.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase)
+          || e.Message.Contains("NotAuthorized", StringComparison.OrdinalIgnoreCase)
+          || e.Message.Contains("not Authorized", StringComparison.OrdinalIgnoreCase))
+        return true;
+    }
+    return false;
   }
 
-  public static void ParseEvent(string soapXml)
+  public static Notify? ParseEvent(string soapXml)
   {
     var xmlDoc = new XmlDocument();
     xmlDoc.LoadXml(soapXml);
@@ -257,14 +273,6 @@ public class Camera
 
     var serializer = new XmlSerializer(typeof(Notify), "http://docs.oasis-open.org/wsn/b-2");
     using var reader = new XmlNodeReader(notifyNode);
-    var notify =  serializer.Deserialize(reader) as Notify;
-
-    if (notify != null && (notify).NotificationMessage != null)
-    {
-      var n = (notify).NotificationMessage.FirstOrDefault();
-
-      if (n != null)
-        Console.WriteLine("Topic: " + (n).Topic.Any);
-    }    
+    return serializer.Deserialize(reader) as Notify;
   }
 }
