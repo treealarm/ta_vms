@@ -72,7 +72,7 @@ services:
       - "-components-path"
       - "/components"
     volumes:
-      - "./init_files/dapr_components:/components"
+      - "./init_files/dapr_components/docker:/components"
     network_mode: "service:vmsutils"
     depends_on:
       - vmsutils
@@ -108,7 +108,7 @@ services:
       - "-components-path"
       - "/components"
     volumes:
-      - "./init_files/dapr_components:/components"
+      - "./init_files/dapr_components/docker:/components"
     network_mode: "service:vmslogger"
     depends_on:
       - vmslogger
@@ -147,7 +147,7 @@ services:
       - "-components-path"
       - "/components"
     volumes:
-      - "./init_files/dapr_components:/components"
+      - "./init_files/dapr_components/docker:/components"
     network_mode: "service:vmscfg"
     depends_on:
       - vmscfg
@@ -218,7 +218,7 @@ services:
       - "-components-path"
       - "/components"
     volumes:
-      - "./init_files/dapr_components:/components"
+      - "./init_files/dapr_components/docker:/components"
     network_mode: "service:vmsfs"
     depends_on:
       - vmsfs
@@ -244,7 +244,7 @@ services:
       - "-components-path"
       - "/components"
     volumes:
-      - "./init_files/dapr_components:/components"
+      - "./init_files/dapr_components/docker:/components"
     network_mode: "service:vmsonvif"
     depends_on:
       - vmsonvif
@@ -270,7 +270,7 @@ services:
       - "-placement-host-address"
       - "host.docker.internal:50005"
     volumes:
-      - "./init_files/dapr_components:/components"
+      - "./init_files/dapr_components/docker:/components"
     network_mode: "service:vmsonvif-actors"
     depends_on:
       - vmsonvif-actors
@@ -312,7 +312,7 @@ services:
       - "-components-path"
       - "/components"
     volumes:
-      - "./init_files/dapr_components:/components"
+      - "./init_files/dapr_components/docker:/components"
     network_mode: "service:vms"
     depends_on:
       - vms
@@ -350,7 +350,7 @@ services:
       - "-components-path"
       - "/components"
     volumes:
-      - "./init_files/dapr_components:/components"
+      - "./init_files/dapr_components/docker:/components"
     network_mode: "service:web_vms"
     depends_on:
       - web_vms
