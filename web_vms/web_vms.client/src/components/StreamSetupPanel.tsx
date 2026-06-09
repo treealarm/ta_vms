@@ -153,7 +153,10 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
 
   const handleRemove = async () => {
     const filtered = (camera.streams ?? []).filter((s) => s.streamName !== streamName)
-    const result = await dispatch(addCamera({ ...camera, streams: filtered }))
+    // Clear legacy rtspUrl when all streams removed — otherwise ToSetupProto re-creates
+    // a synthetic "main" stream from the top-level rtspUrl field.
+    const payload = filtered.length === 0 ? { ...camera, streams: filtered, rtspUrl: '' } : { ...camera, streams: filtered }
+    const result = await dispatch(addCamera(payload))
     if (!addCamera.rejected.match(result)) await onRemoved()
   }
 

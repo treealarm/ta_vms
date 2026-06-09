@@ -43,7 +43,6 @@ void mediamtx_monitor::poll_loop()
 
       if (readers < 0)
         continue; // VmsUtils unavailable or server has no api_url — leave stream state as-is
-                  // (stream stays running if webrtc=true in config, stays stopped otherwise)
 
       if (readers > 0)
       {
@@ -58,23 +57,47 @@ void mediamtx_monitor::poll_loop()
             logger::instance().warning(std::format("mediamtx_monitor: failed to start WebRTC for '{}': {}", path, err));
         }
       }
-      else
+      else // readers == 0: path exists in MediaMTX but nobody is watching yet
       {
         if (!stream->is_web_rtc_streaming())
+        {
+          // Stream is stopped and nobody is watching; start it so the path exists
+          // in MediaMTX and a viewer can connect. Mark it active now so it gets
+          // the full idle_timeout window before being stopped again.
+          std::string err;
+          if (stream->start_web_rtc(err))
+          {
+            m_last_active[path] = std::chrono::steady_clock::now();
+            logger::instance().info(std::format("mediamtx_monitor: (re)started WebRTC for '{}' (no viewers, path ready)", path));
+          }
+          else
+          {
+            logger::instance().warning(std::format("mediamtx_monitor: failed to start WebRTC for '{}': {}", path, err));
+          }
           continue;
+        }
 
         auto it = m_last_active.find(path);
-        auto idle_since = (it != m_last_active.end())
-          ? it->second
-          : std::chrono::steady_clock::now() - m_idle_timeout - std::chrono::seconds(1);
+        if (it == m_last_active.end())
+        {
+          // Stream is publishing but has never had a reader: start the idle clock now
+          // instead of treating the stream as already past the timeout.
+          m_last_active[path] = std::chrono::steady_clock::now();
+          continue;
+        }
 
-        if (std::chrono::steady_clock::now() - idle_since >= m_idle_timeout)
+        if (std::chrono::steady_clock::now() - it->second >= m_idle_timeout)
         {
           std::string err;
           if (stream->stop_web_rtc(err))
+          {
+            m_last_active.erase(it);
             logger::instance().info(std::format("mediamtx_monitor: stopped WebRTC for '{}' (idle)", path));
+          }
           else
+          {
             logger::instance().warning(std::format("mediamtx_monitor: failed to stop WebRTC for '{}': {}", path, err));
+          }
         }
       }
     }

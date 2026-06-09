@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   alpha, Box, CircularProgress, IconButton, List, ListItemButton, ListItemText,
   ListSubheader, MenuItem, Popover, Select, Stack, Tooltip, Typography, useTheme,
@@ -59,6 +60,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
   ref
 ) {
   const dispatch = useAppDispatch()
+  const { t } = useTranslation()
   const [selected, setSelected] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [pickerTime, setPickerTime] = useState<Dayjs | null>(dayjs())
@@ -87,7 +89,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
       setQueryTime(t)
       setLoaded(false)
     }
-  }, [open])
+  }, [open, timestamp])
 
   useEffect(() => () => { if (acceptRef.current) clearTimeout(acceptRef.current) }, [])
 
@@ -168,13 +170,13 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
 
       {/* Navigation row */}
       <Stack direction="row" alignItems="center" sx={{ px: 0.75, py: 0.5, borderBottom: `1px solid ${divider}`, flexShrink: 0, gap: 0.25 }}>
-        <Tooltip title="Earlier">
+        <Tooltip title={t('recordings.earlier')}>
           <IconButton size="small" onClick={handlePrev} sx={btnSx}>
             <NavigateBeforeIcon sx={{ fontSize: '1rem' }} />
           </IconButton>
         </Tooltip>
 
-        <Tooltip title={`${shownDate} ${shownTime}\nClick to pick date/time`} placement="bottom">
+        <Tooltip title={`${shownDate} ${shownTime}\n${t('recordings.pickDateTime')}`} placement="bottom">
           <IconButton size="small" onClick={(e) => openCalendar(e.currentTarget)} sx={{ ...btnSx, flex: 1, borderRadius: '4px', gap: 0.4 }}>
             <CalendarMonthIcon sx={{ fontSize: '0.85rem', flexShrink: 0 }} />
             <Typography component="span" sx={{ fontSize: '0.65rem', color: txt ?? 'text.primary', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
@@ -183,7 +185,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
           </IconButton>
         </Tooltip>
 
-        <Tooltip title="Later">
+        <Tooltip title={t('recordings.later')}>
           <IconButton size="small" onClick={handleNext} sx={btnSx}>
             <NavigateNextIcon sx={{ fontSize: '1rem' }} />
           </IconButton>
@@ -210,7 +212,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
               } : {}),
             }}
           >
-            <MenuItem value="" sx={{ fontSize: '0.7rem' }}>All streams</MenuItem>
+            <MenuItem value="" sx={{ fontSize: '0.7rem' }}>{t('archive.allStreams')}</MenuItem>
             {streamNames.map((s) => (
               <MenuItem key={s} value={s} sx={{ fontSize: '0.7rem' }}>{s}</MenuItem>
             ))}
@@ -226,7 +228,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
           </Box>
         ) : filteredData.length === 0 ? (
           <Typography sx={{ px: 1, pt: 1.5, fontSize: '0.7rem', color: txtDim, textAlign: 'center' }}>
-            No recordings found
+            {t('recordings.noRecordings')}
           </Typography>
         ) : (
           <List dense disablePadding>
@@ -258,9 +260,9 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
                     title={
                       <Box component="span" sx={{ display: 'block' }}>
                         <div style={{ wordBreak: 'break-all', fontSize: '0.65rem' }}>{first.filePath}</div>
-                        <div>Start: {fmtFull(first.startTime)}</div>
-                        {last?.endTime && <div>End: {fmtFull(last.endTime)}</div>}
-                        <div>Clips: {rec.recordings.length}</div>
+                        <div>{t('recordings.startTime')}: {fmtFull(first.startTime)}</div>
+                        {last?.endTime && <div>{t('recordings.endTime')}: {fmtFull(last.endTime)}</div>}
+                        <div>{t('recordings.clips')}: {rec.recordings.length}</div>
                       </Box>
                     }
                     placement="left"
@@ -309,7 +311,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
       >
         <Box sx={{ px: 1.5, pt: 1, pb: 0.5, bgcolor: 'primary.main' }}>
           <Typography sx={{ fontSize: '0.7rem', color: 'primary.contrastText', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-            Jump to date / time
+            {t('recordings.jumpToDateTime')}
           </Typography>
         </Box>
         <Box sx={{ p: 1 }}>

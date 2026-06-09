@@ -32,6 +32,8 @@ public class UtilsServiceImpl(IHttpClientFactory httpClientFactory, string cfgAp
       var url    = $"{apiUrl}/v3/paths/get/{path}";
 
       using var response = await _http.GetAsync(url, context.CancellationToken);
+      if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        return new GetMediaMtxPathInfoResponse { Success = true, ReadersCount = 0, HasSource = false };
       if (!response.IsSuccessStatusCode)
         return new GetMediaMtxPathInfoResponse { Success = false };
 
