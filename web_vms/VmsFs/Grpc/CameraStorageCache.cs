@@ -10,23 +10,31 @@ public sealed class CameraStorageCache(
 {
   private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(1);
 
-  private record CacheEntry(StorageInfo? Value, DateTime FetchedAt);
+  private record CacheEntry(IReadOnlyList<StorageInfo> Values, DateTime FetchedAt);
 
   private readonly ConcurrentDictionary<string, CacheEntry> _cache = new();
   private readonly ConcurrentDictionary<string, byte> _refreshing = new();
 
-  public async Task<StorageInfo?> GetAsync(string cameraId, CancellationToken ct)
+  // Returns all storages in priority order. First entry is the primary storage.
+  public async Task<IReadOnlyList<StorageInfo>> GetAllAsync(string cameraId, CancellationToken ct)
   {
     if (_cache.TryGetValue(cameraId, out var entry))
     {
       if (DateTime.UtcNow - entry.FetchedAt >= Ttl)
         _ = RefreshInBackgroundAsync(cameraId);
-      return entry.Value;
+      return entry.Values;
     }
 
-    var storage = await FetchAsync(cameraId, ct);
-    _cache[cameraId] = new CacheEntry(storage, DateTime.UtcNow);
-    return storage;
+    var storages = await FetchAsync(cameraId, ct);
+    _cache[cameraId] = new CacheEntry(storages, DateTime.UtcNow);
+    return storages;
+  }
+
+  // Returns the primary (highest-priority) storage, or null if none assigned.
+  public async Task<StorageInfo?> GetAsync(string cameraId, CancellationToken ct)
+  {
+    var all = await GetAllAsync(cameraId, ct);
+    return all.Count > 0 ? all[0] : null;
   }
 
   public void Invalidate(string cameraId) => _cache.TryRemove(cameraId, out _);
@@ -37,8 +45,8 @@ public sealed class CameraStorageCache(
       return;
     try
     {
-      var storage = await FetchAsync(cameraId, CancellationToken.None);
-      _cache[cameraId] = new CacheEntry(storage, DateTime.UtcNow);
+      var storages = await FetchAsync(cameraId, CancellationToken.None);
+      _cache[cameraId] = new CacheEntry(storages, DateTime.UtcNow);
     }
     catch (Exception ex)
     {
@@ -50,7 +58,7 @@ public sealed class CameraStorageCache(
     }
   }
 
-  private async Task<StorageInfo?> FetchAsync(string cameraId, CancellationToken ct)
+  private async Task<IReadOnlyList<StorageInfo>> FetchAsync(string cameraId, CancellationToken ct)
   {
     GetCameraStoragesResponse assignmentsResp;
     try
@@ -60,18 +68,19 @@ public sealed class CameraStorageCache(
     }
     catch
     {
-      return null;
+      return [];
     }
 
-    var storages = await storageListCache.GetAsync(ct);
+    var storageList = await storageListCache.GetAsync(ct);
+    var result = new List<StorageInfo>();
 
     foreach (var assignment in assignmentsResp.Assignments.OrderBy(a => a.Priority))
     {
-      var storage = storageListCache.Find(storages, assignment.StorageId);
+      var storage = storageListCache.Find(storageList, assignment.StorageId);
       if (storage != null)
-        return new StorageInfo { StorageId = storage.StorageId, RootPath = storage.RootPath };
+        result.Add(new StorageInfo { StorageId = storage.StorageId, RootPath = storage.RootPath });
     }
 
-    return null;
+    return result;
   }
 }

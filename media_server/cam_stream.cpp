@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <stdexcept>
 
+#include "grpc_layer/fs_client.h"
 #include "reader/rtsp_reader.h"
 #include "interfaces/web_rtc_utils.h"
 
@@ -71,6 +72,10 @@ void cam_stream::apply_recording_policy(const recording_policy_spec& policy)
     m_recording_policy_mode = policy.mode;
     sink = m_writer;
   }
+
+  // Pre-warm storage cache here (camera_manager thread) so the first call inside
+  // segment_writer::open_new_segment doesn't block the RTSP reader packet loop.
+  fs_client::instance().get_camera_storages(m_camera_id);
 
   m_reader->add_sink(sink);
 }

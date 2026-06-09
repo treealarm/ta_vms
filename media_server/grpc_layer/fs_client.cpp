@@ -401,10 +401,8 @@ bool fs_client::append_outbox_locked(const vms::fs::IngestClipRequest& request) 
   return static_cast<bool>(out);
 }
 
-fs_client::storage_info fs_client::get_camera_storage(const std::string& camera_id)
+std::vector<fs_client::storage_info> fs_client::get_camera_storages(const std::string& camera_id)
 {
-  storage_info cached;
-  bool found        = false;
   bool needs_refresh = false;
 
   {
@@ -412,29 +410,29 @@ fs_client::storage_info fs_client::get_camera_storage(const std::string& camera_
     auto it = m_storage_cache.find(camera_id);
     if (it != m_storage_cache.end())
     {
-      auto age   = std::chrono::steady_clock::now() - it->second.fetched_at;
+      auto age = std::chrono::steady_clock::now() - it->second.fetched_at;
       needs_refresh = (age >= std::chrono::minutes(1));
-      cached = { it->second.storage_id, it->second.root_path };
-      found  = true;
+      if (needs_refresh)
+        trigger_storage_refresh(camera_id);
+      return it->second.storages;
     }
   }
 
-  if (found)
-  {
-    if (needs_refresh)
-      trigger_storage_refresh(camera_id);
-    return cached;
-  }
-
-  auto info = fetch_camera_storage(camera_id);
+  auto storages = fetch_camera_storages(camera_id);
   {
     std::lock_guard lock(m_storage_mutex);
-    m_storage_cache[camera_id] = { info.storage_id, info.root_path, std::chrono::steady_clock::now() };
+    m_storage_cache[camera_id] = { storages, std::chrono::steady_clock::now() };
   }
-  return info;
+  return storages;
 }
 
-fs_client::storage_info fs_client::fetch_camera_storage(const std::string& camera_id)
+fs_client::storage_info fs_client::get_camera_storage(const std::string& camera_id)
+{
+  auto all = get_camera_storages(camera_id);
+  return all.empty() ? storage_info{} : all.front();
+}
+
+std::vector<fs_client::storage_info> fs_client::fetch_camera_storages(const std::string& camera_id)
 {
   if (!m_stub)
     return {};
@@ -448,10 +446,13 @@ fs_client::storage_info fs_client::fetch_camera_storage(const std::string& camer
   context.AddMetadata("dapr-app-id", m_app_id);
 
   const grpc::Status status = m_stub->GetCameraStorage(&context, request, &response);
-  if (!status.ok() || !response.has_storage())
+  if (!status.ok())
     return {};
 
-  return { response.storage().storage_id(), response.storage().root_path() };
+  std::vector<storage_info> result;
+  for (const auto& s : response.storages())
+    result.push_back({ s.storage_id(), s.root_path() });
+  return result;
 }
 
 void fs_client::trigger_storage_refresh(const std::string& camera_id)
@@ -463,9 +464,9 @@ void fs_client::trigger_storage_refresh(const std::string& camera_id)
   }
 
   std::thread([this, camera_id]() {
-    auto info = fetch_camera_storage(camera_id);
+    auto storages = fetch_camera_storages(camera_id);
     std::lock_guard lock(m_storage_mutex);
-    m_storage_cache[camera_id] = { info.storage_id, info.root_path, std::chrono::steady_clock::now() };
+    m_storage_cache[camera_id] = { storages, std::chrono::steady_clock::now() };
     m_storage_refreshing.erase(camera_id);
   }).detach();
 }

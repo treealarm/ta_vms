@@ -76,18 +76,45 @@ void segment_writer::open_new_segment()
 
   recording_storage storage;
 
-  auto cam_storage = fs_client::instance().get_camera_storage(m_camera_id);
-  if (cam_storage.empty())
+  const auto cam_storages = fs_client::instance().get_camera_storages(m_camera_id);
+  if (cam_storages.empty())
   {
     logger::instance().error(std::format(
       "camera '{}' has no storage assigned — segment will not be written", m_camera_id));
     return;
   }
-  const auto storage_root = cam_storage.root_path;
 
   m_segment_rel_path = storage.make_segment_path(m_camera_id, m_stream_name, now);
-  const auto path = std::filesystem::path(storage_root) / m_segment_rel_path;
-  std::filesystem::create_directories(path.parent_path());
+
+  fs_client::storage_info cam_storage;
+  std::filesystem::path path;
+  bool dir_ready = false;
+  for (const auto& s : cam_storages)
+  {
+    std::filesystem::path candidate = std::filesystem::path(s.root_path) / m_segment_rel_path;
+    std::error_code ec;
+    std::filesystem::create_directories(candidate.parent_path(), ec);
+    if (ec)
+    {
+      logger::instance().warning(std::format(
+        "storage '{}' (root '{}') not accessible: {} — trying next",
+        s.storage_id, s.root_path, ec.message()));
+      continue;
+    }
+    cam_storage = s;
+    path = candidate;
+    dir_ready = true;
+    break;
+  }
+
+  if (!dir_ready)
+  {
+    logger::instance().error(std::format(
+      "camera '{}': all {} storage(s) failed create_directories — segment will not be written",
+      m_camera_id, cam_storages.size()));
+    return;
+  }
+
   m_segment_abs_path = path;
 
   AVFormatContext* ctx = nullptr;

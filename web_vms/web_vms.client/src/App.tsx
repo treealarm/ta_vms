@@ -12,6 +12,7 @@ import OperatorView from './components/OperatorView'
 import AdminView from './components/AdminView'
 import LogJournalPanel from './components/LogJournalPanel'
 import OnvifEventsLogPanel from './components/OnvifEventsLogPanel'
+import FsActivityPanel from './components/FsActivityPanel'
 
 function LangToggle() {
   const { t: _t } = useTranslation()
@@ -75,8 +76,8 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh' }}>
-        <Box sx={{ height: '100dvh' }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden' }}>
+        <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <Routes>
             <Route path="/operator" element={<OperatorView />} />
             <Route path="/admin" element={<AdminView />} />
@@ -89,11 +90,13 @@ export default function App() {
               <Tabs value={debugTab} onChange={(_, v: number) => setDebugTab(v)} sx={{ minHeight: 32 }} TabIndicatorProps={{ style: { height: 2 } }}>
                 <Tab label={t('logs.title')} sx={{ minHeight: 32, py: 0.25, fontSize: '0.75rem' }} />
                 <Tab label={t('onvifFilters.tabDebug')} sx={{ minHeight: 32, py: 0.25, fontSize: '0.75rem' }} />
+                <Tab label={t('fsActivity.tabLabel')} sx={{ minHeight: 32, py: 0.25, fontSize: '0.75rem' }} />
               </Tabs>
             </Box>
             <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', p: debugTab === 0 ? 1 : 0 }}>
               {debugTab === 0 && <LogJournalPanel />}
               {debugTab === 1 && <OnvifEventsLogPanel />}
+              {debugTab === 2 && <FsActivityPanel />}
             </Box>
           </Box>
         )}

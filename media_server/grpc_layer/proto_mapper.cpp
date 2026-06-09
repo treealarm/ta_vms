@@ -28,10 +28,12 @@ recording_policy_spec proto_mapper::recording_policy_for_media(
 recording_policy_spec proto_mapper::recording_policy_for_stream(
   const vms::cfg::CameraStream& stream)
 {
-  if (!stream.has_recording_profile())
+  // Use override profile if present, otherwise fall back to the base profile.
+  const bool has_override = stream.has_override_profile();
+  if (!has_override && !stream.has_recording_profile())
     return recording_policy_for_media(vms::cfg::RECORDING_OFF, 0);
 
-  const auto& profile = stream.recording_profile();
+  const auto& profile = has_override ? stream.override_profile() : stream.recording_profile();
   const uint32_t seg = profile.segment_seconds() > 0 ? profile.segment_seconds() : 5;
   return recording_policy_for_media(profile.mode(), seg);
 }

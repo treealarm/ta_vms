@@ -61,4 +61,22 @@
     public bool HasMore { get; set; }
     public DateTime? NextBeforeAlarmStart { get; set; }
   }
+
+  public class FsFileEventDto
+  {
+    public string   ClipUid    { get; init; } = "";
+    public string   FilePath   { get; init; } = "";
+    public string   CameraId   { get; init; } = "";
+    public string   StreamName { get; init; } = "";
+    public bool     Retained   { get; init; }
+    public long     SizeBytes  { get; init; }
+    public DateTime OccurredAt { get; init; }
+    public string   EventType  { get; init; } = "";
+    public DateTime? EndTs     { get; init; }
+  }
+
+  public class FsActivityResponseDto
+  {
+    public List<FsFileEventDto> Events { get; set; } = [];
+  }
 }

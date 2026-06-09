@@ -22,6 +22,8 @@ service FsService {
   rpc GetCameraStorage(GetCameraStorageRequest) returns (GetCameraStorageResponse);
 
   rpc GetClipsForEvent(GetClipsForEventRequest) returns (GetRecordingsResponse);
+
+  rpc GetFsActivity(GetFsActivityRequest) returns (GetFsActivityResponse);
 }
 
 message OperationStatus {
@@ -167,6 +169,7 @@ message GetCameraStorageRequest {
 
 message GetCameraStorageResponse {
   optional StorageInfo storage = 1;
+  repeated StorageInfo storages = 2;
 }
 
 message GetRecordingByUidRequest {
@@ -177,4 +180,23 @@ message GetRecordingByUidResponse {
   repeated Recording recordings = 1;
 }
 
+message FsFileEvent {
+  string clip_uid    = 1;
+  string file_path   = 2;
+  string camera_id   = 3;
+  string stream_name = 4;
+  bool   retained    = 5;
+  int64  size_bytes  = 6;
+  google.protobuf.Timestamp occurred_at = 7;
+  string event_type  = 8;
+  optional google.protobuf.Timestamp end_ts = 9;
+}
+
+message GetFsActivityRequest {
+  uint32 limit = 1;
+}
+
+message GetFsActivityResponse {
+  repeated FsFileEvent events = 1;
+}
 

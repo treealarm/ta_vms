@@ -182,6 +182,8 @@ namespace VmsCfg
 
       await storage.SetStreamOverrideAsync(request.CameraId, request.StreamName, request.ProfileId, context.CancellationToken);
       InvalidateFsCache(request.CameraId);
+      var (_, cam) = await storage.GetCameraAsync(request.CameraId, context.CancellationToken);
+      if (cam is not null) NotifyMediaServer(cam.ServerId);
       return new OperationStatus { Success = true };
     }
 
@@ -194,6 +196,8 @@ namespace VmsCfg
 
       await storage.ClearStreamOverrideAsync(request.CameraId, request.StreamName, context.CancellationToken);
       InvalidateFsCache(request.CameraId);
+      var (_, cam) = await storage.GetCameraAsync(request.CameraId, context.CancellationToken);
+      if (cam is not null) NotifyMediaServer(cam.ServerId);
       return new OperationStatus { Success = true };
     }
 

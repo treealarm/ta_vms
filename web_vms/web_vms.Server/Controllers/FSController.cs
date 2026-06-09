@@ -291,6 +291,41 @@ public sealed class FSController(
     return Ok(new { streams });
   }
 
+  [HttpGet("activity")]
+  public async Task<IActionResult> GetFsActivity([FromQuery] int? limit, CancellationToken ct)
+  {
+    var lim = (uint)(limit ?? 100);
+    var allEvents = new List<FsFileEventDto>();
+    foreach (var fsId in registry.AllFsIds)
+    {
+      var fsClient = new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
+      try
+      {
+        var resp = await fsClient.GetFsActivityAsync(new GetFsActivityRequest { Limit = lim }, cancellationToken: ct);
+        allEvents.AddRange(resp.Events.Select(e => new FsFileEventDto
+        {
+          ClipUid    = e.ClipUid,
+          FilePath   = e.FilePath,
+          CameraId   = e.CameraId,
+          StreamName = e.StreamName,
+          Retained   = e.Retained,
+          SizeBytes  = e.SizeBytes,
+          OccurredAt = e.OccurredAt.ToDateTime(),
+          EventType  = e.EventType,
+          EndTs      = e.EndTs?.ToDateTime(),
+        }));
+      }
+      catch { /* FS unavailable — skip */ }
+    }
+
+    var sorted = allEvents
+      .OrderByDescending(e => e.OccurredAt)
+      .Take((int)lim)
+      .ToList();
+
+    return Ok(new FsActivityResponseDto { Events = sorted });
+  }
+
   [HttpGet("frame-jpeg")]
   public async Task<IActionResult> GetFrameJpeg(
     [FromQuery] string cameraId,

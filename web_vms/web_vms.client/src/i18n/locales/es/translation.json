@@ -55,7 +55,8 @@
     "reservedGb": "Reservado (GB)",
     "required": "Se requieren ID de almacén y ruta raíz",
     "noStorages": "Sin almacenes configurados",
-    "gbReserved": "{{n}} GB reservados"
+    "gbReserved": "{{n}} GB reservados",
+    "saveFailed": "Error al guardar"
   },
   "storageControl": {
     "title": "Asignación de almacén",
@@ -236,7 +237,8 @@
     "showAll": "Mostrar todo",
     "copyRtsp": "Copiar RTSP",
     "copiedRtsp": "¡Copiado!",
-    "retentionActive": "Retención activa"
+    "retentionActive": "Retención activa",
+    "cameraDisabledTip": "Cámara desactivada — armar/PTZ no disponible"
   },
   "recordings": {
     "earlier": "Anterior",
@@ -254,6 +256,26 @@
     "addCamera": "Agregar cámara",
     "removeCamera": "Quitar cámara de la monitorización ONVIF",
     "removeFilter": "Eliminar filtro de alarma"
+  },
+  "fsActivity": {
+    "tabLabel": "Actividad FS",
+    "allCameras": "Todas las cámaras",
+    "filterHint": "Filtrar…",
+    "autoRefresh": "Auto",
+    "noEvents": "Sin eventos de archivo aún",
+    "selectHint": "Selecciona una entrada para ver detalles",
+    "retained": "retenido",
+    "temp": "temp",
+    "deleted": "eliminado",
+    "retainedChip": "retenido",
+    "camera": "Cámara",
+    "stream": "Flujo",
+    "time": "Hora",
+    "endTs": "Hora fin",
+    "size": "Tamaño",
+    "filePath": "Ruta del archivo",
+    "download": "Descargar",
+    "noPreview": "Selecciona un clip retenido para previsualizar"
   },
   "serverSetup": {
     "title": "Configuración de cámara",

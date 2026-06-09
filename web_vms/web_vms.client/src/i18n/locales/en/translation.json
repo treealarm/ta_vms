@@ -55,7 +55,8 @@
     "reservedGb": "Reserved (GB)",
     "required": "Storage ID and root path are required",
     "noStorages": "No storages configured",
-    "gbReserved": "{{n}} GB reserved"
+    "gbReserved": "{{n}} GB reserved",
+    "saveFailed": "Failed to save"
   },
   "storageControl": {
     "title": "Storage assignment",
@@ -236,7 +237,8 @@
     "showAll": "Show all",
     "copyRtsp": "Copy RTSP",
     "copiedRtsp": "Copied!",
-    "retentionActive": "Retention active"
+    "retentionActive": "Retention active",
+    "cameraDisabledTip": "Camera is disabled — arm/PTZ unavailable"
   },
   "recordings": {
     "earlier": "Earlier",
@@ -254,6 +256,26 @@
     "addCamera": "Add camera",
     "removeCamera": "Remove camera from ONVIF monitoring",
     "removeFilter": "Delete alarm filter"
+  },
+  "fsActivity": {
+    "tabLabel": "FS Activity",
+    "allCameras": "All cameras",
+    "filterHint": "Filter…",
+    "autoRefresh": "Auto",
+    "noEvents": "No file events yet",
+    "selectHint": "Select an entry to see details",
+    "retained": "retained",
+    "temp": "temp",
+    "deleted": "deleted",
+    "retainedChip": "retained",
+    "camera": "Camera",
+    "stream": "Stream",
+    "time": "Time",
+    "endTs": "End time",
+    "size": "Size",
+    "filePath": "File path",
+    "download": "Download",
+    "noPreview": "Select a retained clip to preview"
   },
   "serverSetup": {
     "title": "Camera setup",

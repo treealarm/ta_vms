@@ -13,7 +13,8 @@ internal sealed record RecordingWithEvents(
 public sealed class ClipStorage(
   IDbContextFactory<ClipsDbContext> dbFactory,
   NpgsqlDataSource dataSource,
-  CameraConfigCache configCache)
+  CameraConfigCache configCache,
+  FsActivityLog activityLog)
 {
   private static readonly TimeSpan DefaultMaxRecordingRangeWallSpan = TimeSpan.FromMinutes(1);
 
@@ -52,7 +53,12 @@ public sealed class ClipStorage(
     cmd.Parameters.AddWithValue(NpgsqlDbType.Bigint, (long)clip.SizeBytes);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Boolean, retained);
 
-    return (string)(await cmd.ExecuteScalarAsync(ct))!;
+    var returnedUid = (string)(await cmd.ExecuteScalarAsync(ct))!;
+    activityLog.Record(new FsActivityEntry(
+      Guid.TryParse(returnedUid, out var parsedUid) ? parsedUid : clipUid,
+      clip.FilePath, clip.CameraId, clip.StreamName ?? "",
+      retained, (long)clip.SizeBytes, DateTime.UtcNow, "ingested", endTs));
+    return returnedUid;
   }
 
   // Returns the alarm_override_until timestamp (alarm_end + post_record_seconds).

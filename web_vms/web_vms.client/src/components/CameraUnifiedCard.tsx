@@ -92,8 +92,10 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
   const merged: CameraSetupDto = { ...camera, ...(cameraState ?? {}) }
 
   const isOnvifManaged = merged.onvifManaged ?? false
+  const isDisabled = merged.disabled === true
   const effectiveArmed = pendingArmed !== null ? pendingArmed : (merged.armed ?? false)
   const armDisarm = (enabled: boolean) => {
+    if (isDisabled) return
     setPendingArmed(enabled)
     void dispatch(setArmed({ cameraId: merged.cameraId, armed: enabled }))
       .finally(() => setPendingArmed(null))
@@ -185,7 +187,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             </Tooltip>
           )}
 
-          {camera.onvifConn && mode === 'live' && (
+          {camera.onvifConn && mode === 'live' && !isDisabled && (
             <Tooltip title={ptzOpen ? t('cameraCard.ptzClose') : t('cameraCard.ptzOpen')} placement="right">
               <IconButton
                 size="small"
@@ -198,13 +200,20 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
           )}
 
           {isOnvifManaged && (
-            <Tooltip title={effectiveArmed ? t('cameraCard.armedTip') : t('cameraCard.disarmedTip')} placement="right">
+            <Tooltip
+              title={isDisabled ? t('cameraCard.cameraDisabledTip') : (effectiveArmed ? t('cameraCard.armedTip') : t('cameraCard.disarmedTip'))}
+              placement="right"
+            >
               <span>
                 <IconButton
                   size="small"
-                  disabled={pendingArmed !== null}
+                  disabled={pendingArmed !== null || isDisabled}
                   onClick={() => armDisarm(!effectiveArmed)}
-                  sx={{ ...BTN_SX, ...(effectiveArmed ? { color: '#4caf50' } : {}), ...(pendingArmed !== null ? { opacity: 0.5 } : {}) }}
+                  sx={{
+                    ...BTN_SX,
+                    ...(effectiveArmed && !isDisabled ? { color: '#4caf50' } : {}),
+                    ...((pendingArmed !== null || isDisabled) ? { opacity: 0.35 } : {}),
+                  }}
                 >
                   <SecurityIcon sx={{ fontSize: '0.95rem' }} />
                 </IconButton>
@@ -317,7 +326,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
                 <ToggleButtonGroup
                   value={effectiveArmed ? 'armed' : 'disarmed'}
                   exclusive
-                  disabled={pendingArmed !== null}
+                  disabled={pendingArmed !== null || isDisabled}
                   onChange={(_, v) => v && armDisarm(v === 'armed')}
                   size="small" fullWidth
                   sx={{
