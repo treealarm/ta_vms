@@ -402,7 +402,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
           <CameraStream streamName={streamName} baseUrl={merged.mediaMtxWebrtcUrl} />
         )}
         {mode === 'archive' && (
-          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <ArchiveHlsStreamCard cameraId={camera.cameraId} />
           </Box>
         )}

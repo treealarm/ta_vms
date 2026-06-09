@@ -1,9 +1,14 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <filesystem>
 #include <memory>
+#include <mutex>
+#include <queue>
 #include <string>
+#include <thread>
 #include <unordered_map>
 
 extern "C" {
@@ -14,14 +19,26 @@ extern "C" {
 #include "interfaces/media_sink.h"
 #include "writer/sync_packet_transcoder.h"
 
-class segment_writer : public media_sink
+class segment_writer
+  : public media_sink
+  , public std::enable_shared_from_this<segment_writer>
 {
 public:
   segment_writer(
     const std::string& camera_id,
     const std::string& stream_name,
     std::chrono::seconds segment_duration);
+
+  // Must be called once after the object is managed by a shared_ptr (i.e. after make_shared).
+  void start_thread();
+
+  // Signal the writer thread to stop without blocking. Returns immediately.
+  // The thread will finish its current work (flush, close segment) asynchronously.
+  void stop_async();
+
   ~segment_writer() override;
+
+  // Called from the RTSP reader thread — enqueues and returns immediately.
   void on_packet(const std::shared_ptr<media_packet>& media) override;
 
 private:
@@ -32,6 +49,9 @@ private:
     AVMediaType media_type = AVMEDIA_TYPE_UNKNOWN;
   };
 
+  // All methods below run exclusively on m_writer_thread.
+  void process_queue();
+  void process_packet(const std::shared_ptr<media_packet>& media);
   bool ensure_input_stream(const std::shared_ptr<media_packet>& media);
   void write_packet(const std::shared_ptr<media_packet>& media);
   void open_new_segment();
@@ -64,4 +84,12 @@ private:
   };
 
   std::unordered_map<int, stream_timing_state> m_timing;
+
+  // Async packet queue — reader thread enqueues, m_writer_thread consumes.
+  static constexpr std::size_t k_max_queue_depth = 500;
+  std::queue<std::shared_ptr<media_packet>> m_queue;
+  std::mutex m_queue_mutex;
+  std::condition_variable m_queue_cv;
+  std::atomic<bool> m_stopping{false};
+  std::thread m_writer_thread;
 };

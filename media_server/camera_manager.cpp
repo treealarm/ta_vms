@@ -87,10 +87,15 @@ bool camera_manager::configure_camera(
     }
 
     // RTSP source / credentials changed — must reconnect.
-    if (stream->get_source()        != s.rtsp_url       ||
-        stream->get_profile_token() != s.profile_token  ||
-        stream->get_user()          != user             ||
-        stream->get_pass()          != pass)
+    // Only compare non-empty fields: VmsCfg stores "" for ONVIF cameras (URL is resolved
+    // at runtime by LiveController via ONVIF discovery). An empty value in VmsCfg must
+    // NOT be treated as "URL changed" — that would trigger a reconnect with an empty URL,
+    // causing a 5-second libav timeout while m_mutex is held.
+    const bool source_changed  = !s.rtsp_url.empty()      && stream->get_source()        != s.rtsp_url;
+    const bool token_changed   = !s.profile_token.empty() && stream->get_profile_token() != s.profile_token;
+    const bool user_changed    = stream->get_user() != user;
+    const bool pass_changed    = stream->get_pass() != pass;
+    if (source_changed || token_changed || user_changed || pass_changed)
     {
       std::string dummy;
       device->remove_stream(s.stream_name, dummy);
@@ -105,25 +110,23 @@ bool camera_manager::configure_camera(
     }
 
     // Only the WebRTC push URL changed — update in-place without RTSP reconnect.
-    if (stream->get_webrtc_push_url() != s.webrtc_rtsp_push_url)
+    // Use the stream's current streaming state, not s.web_rtc: VmsCfg does not store
+    // WebRTC-enabled state (that is owned by LiveController), so s.web_rtc is always
+    // false from reload_cameras and would incorrectly kill live video.
+    if (!s.webrtc_rtsp_push_url.empty() &&
+        stream->get_webrtc_push_url() != s.webrtc_rtsp_push_url)
     {
       std::string dummy;
-      stream->update_webrtc_push_url(s.webrtc_rtsp_push_url, s.web_rtc, dummy);
+      stream->update_webrtc_push_url(
+        s.webrtc_rtsp_push_url, stream->is_web_rtc_streaming(), dummy);
     }
 
-    // Recording policy and WebRTC enabled flag — hot-update, no reconnect needed.
+    // Recording policy — hot-update, no reconnect needed.
+    // WebRTC lifecycle (start/stop) is managed exclusively by LiveController via
+    // set_camera_state / ensure_web_rtc. Do NOT touch WebRTC here: VmsCfg does not
+    // persist the WebRTC-enabled flag, so managing it from config reload would kill
+    // live video on every config change.
     stream->apply_recording_policy(s.policy);
-    stream->set_web_rtc_enabled(s.web_rtc);
-    if (s.web_rtc && !stream->is_web_rtc_streaming())
-    {
-      std::string dummy;
-      stream->start_web_rtc(dummy);
-    }
-    else if (!s.web_rtc && stream->is_web_rtc_streaming())
-    {
-      std::string dummy;
-      stream->stop_web_rtc(dummy);
-    }
   }
 
   if (any_failed) { error = "one or more streams failed to start"; return false; }
@@ -252,47 +255,24 @@ std::optional<camera_manager::camera_info> camera_manager::get_camera_state(
 bool camera_manager::set_camera_state(
   const std::string& camera_id,
   const std::string& stream_name,
-  const std::string& rtsp_url,
-  const std::string& profile_token,
-  const std::string& user,
-  const std::string& pass,
   const recording_policy_spec& policy,
   bool web_rtc,
-  std::string& error,
-  const std::string& webrtc_rtsp_push_url)
+  std::string& error)
 {
   std::scoped_lock lock(m_mutex);
 
   auto it = m_cameras.find(camera_id);
   if (it == m_cameras.end())
   {
-    auto device = std::make_shared<cam_device>(camera_id);
-    if (!device->add_stream(stream_name, profile_token, rtsp_url, user, pass, policy, web_rtc, error, webrtc_rtsp_push_url))
-      return false;
-    m_cameras.emplace(camera_id, std::move(device));
-    return true;
+    error = "camera not found: " + camera_id;
+    return false;
   }
 
   auto* stream = it->second->get_stream(stream_name);
   if (!stream)
-    return it->second->add_stream(stream_name, profile_token, rtsp_url, user, pass, policy, web_rtc, error, webrtc_rtsp_push_url);
-
-  if (stream->get_source()        != rtsp_url      ||
-      stream->get_profile_token() != profile_token ||
-      stream->get_user()          != user          ||
-      stream->get_pass()          != pass)
   {
-    std::string dummy;
-    it->second->remove_stream(stream_name, dummy);
-    return it->second->add_stream(stream_name, profile_token, rtsp_url, user, pass, policy, web_rtc, error, webrtc_rtsp_push_url);
-  }
-
-  // Push URL changed — update WebRTC in-place without reconnecting to camera source
-  if (stream->get_webrtc_push_url() != webrtc_rtsp_push_url)
-  {
-    stream->update_webrtc_push_url(webrtc_rtsp_push_url, web_rtc, error);
-    stream->apply_recording_policy(policy);
-    return true;
+    error = "stream not found: " + stream_name;
+    return false;
   }
 
   stream->apply_recording_policy(policy);

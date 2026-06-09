@@ -66,6 +66,10 @@ Exceptions where raw SQL is acceptable: complex bulk operations or SQL construct
 
 In `docker-compose.yml` use `latest` for all third-party images. Do not pin specific version tags (e.g. `1.14.4`) — use `latest` instead.
 
+## Protobuf — no `reserved` fields
+
+When removing a field from a `.proto` message, delete it outright. Do not use `reserved` — field numbers are not reused anyway and `reserved` is just noise. Same applies to field name reservations.
+
 ## Database columns — no speculative additions
 
 Only add columns that are actively used. Do not add `created_at`, `updated_at`, audit fields, or any other column "just in case" — if it is not read or queried by existing code, it does not belong in the schema. Add it when there is a concrete requirement.

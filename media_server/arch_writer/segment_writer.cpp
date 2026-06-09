@@ -26,11 +26,36 @@ segment_writer::segment_writer(
       return config;
     }())
 {
+  // Do NOT start the thread here — shared_from_this() is not usable in the constructor
+  // because the shared_ptr hasn't been set up yet. Call start_thread() after make_shared.
+}
+
+void segment_writer::start_thread()
+{
+  // Capture a shared_ptr so the object stays alive until the thread finishes,
+  // even after the last external shared_ptr is released (non-blocking destruction).
+  m_writer_thread = std::thread([sp = shared_from_this()]() { sp->process_queue(); });
+}
+
+void segment_writer::stop_async()
+{
+  std::lock_guard lock(m_queue_mutex);
+  m_stopping = true;
+  m_queue_cv.notify_one();
 }
 
 segment_writer::~segment_writer()
 {
-  close();
+  // If the thread is still running (e.g. stop_async was never called), signal it.
+  // Then detach — the thread holds a shared_ptr to *this and will clean up on its own.
+  // Never join here: this destructor may be called while camera_manager::m_mutex is held
+  // (from configure_camera / stop_recording), and a join would block m_mutex for the
+  // entire duration of the current segment flush, causing deadlocks on other API calls.
+  if (m_writer_thread.joinable())
+  {
+    stop_async();
+    m_writer_thread.detach();
+  }
 }
 
 bool segment_writer::ensure_input_stream(const std::shared_ptr<media_packet>& media)
@@ -254,7 +279,38 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)
 {
   if (!in_media || !in_media->packet)
     return;
+  std::lock_guard lock(m_queue_mutex);
+  if (m_queue.size() >= k_max_queue_depth)
+    return; // drop when writer thread falls behind
+  m_queue.push(in_media);
+  m_queue_cv.notify_one();
+}
 
+void segment_writer::process_queue()
+{
+  while (true)
+  {
+    std::unique_lock lock(m_queue_mutex);
+    m_queue_cv.wait(lock, [this]{ return !m_queue.empty() || m_stopping.load(); });
+
+    // Drain everything currently queued before checking stop.
+    while (!m_queue.empty())
+    {
+      auto pkt = std::move(m_queue.front());
+      m_queue.pop();
+      lock.unlock();
+      process_packet(pkt);
+      lock.lock();
+    }
+
+    if (m_stopping.load())
+      break;
+  }
+  close();
+}
+
+void segment_writer::process_packet(const std::shared_ptr<media_packet>& in_media)
+{
   auto media = m_packet_transcoder.transcode_packet(in_media);
   while (media)
   {

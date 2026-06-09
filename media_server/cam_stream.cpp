@@ -4,7 +4,6 @@
 #include <cstdlib>
 #include <stdexcept>
 
-#include "grpc_layer/fs_client.h"
 #include "reader/rtsp_reader.h"
 #include "interfaces/web_rtc_utils.h"
 
@@ -73,10 +72,8 @@ void cam_stream::apply_recording_policy(const recording_policy_spec& policy)
     sink = m_writer;
   }
 
-  // Pre-warm storage cache here (camera_manager thread) so the first call inside
-  // segment_writer::open_new_segment doesn't block the RTSP reader packet loop.
-  fs_client::instance().get_camera_storages(m_camera_id);
-
+  // start_thread() must be called after make_shared (shared_from_this requires it).
+  sink->start_thread();
   m_reader->add_sink(sink);
 }
 
@@ -93,7 +90,13 @@ void cam_stream::stop_recording()
     m_recording_policy_mode = recording_policy_mode::off;
   }
   if (sink)
+  {
+    sink->stop_async();       // signal writer thread to stop (non-blocking)
     m_reader->remove_sink(sink);
+    // sink goes out of scope here: refcount drops from 2 to 1 (thread still holds a ref).
+    // The thread finishes its current work (flush + close segment) and releases its
+    // shared_ptr, triggering the actual cleanup — without blocking the caller.
+  }
 }
 
 bool cam_stream::start_web_rtc(std::string& error)
@@ -134,6 +137,11 @@ bool cam_stream::stop_web_rtc(std::string& error)
 
 void cam_stream::update_webrtc_push_url(const std::string& new_url, bool web_rtc, std::string& error)
 {
+  // Empty URL means MediaMTX not configured — never clobber an already-set push URL.
+  // VmsCfg returns "" for cameras without a MediaMTX server assignment.
+  if (new_url.empty())
+    return;
+
   const bool was_streaming = is_web_rtc_streaming();
   if (was_streaming)
     stop_web_rtc(error);

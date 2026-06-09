@@ -108,17 +108,12 @@ public sealed class AlarmRecordingService(
       {
         CameraId      = cameraId,
         StreamName    = stream.StreamName,
-        ProfileToken  = stream.ProfileToken,
-        RtspUrl       = stream.RtspUrl,
         WebRtc        = stream.WebRtc,
         RecordingMode = mode,
       };
 
       if (mode == RecordingMode.RecordingPrealarm)
         state.SegmentSeconds = stream.BaseSegmentSeconds > 0 ? stream.BaseSegmentSeconds : 5u;
-
-      if (setup.Cred != null)
-        state.Cred = new Vms.Control.Credentials { User = setup.Cred.User, Pass = setup.Cred.Pass };
 
       try
       {
