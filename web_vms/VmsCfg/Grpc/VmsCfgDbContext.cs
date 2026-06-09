@@ -42,6 +42,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.CameraId).HasColumnName("camera_id");
       e.Property(x => x.FilterText).HasColumnName("filter_text");
       e.Property(x => x.TimeoutSeconds).HasColumnName("timeout_seconds");
+      e.Property(x => x.TextFilter).HasColumnName("text_filter");
     });
 
     modelBuilder.Entity<DbCameraState>(e =>
@@ -76,6 +77,7 @@ public sealed class DbOnvifAlarmFilter
   public string CameraId { get; set; } = string.Empty;
   public string FilterText { get; set; } = string.Empty;
   public int TimeoutSeconds { get; set; }
+  public string TextFilter { get; set; } = string.Empty;
 }
 
 public sealed class DbCameraState

@@ -43,6 +43,18 @@ public sealed class OnvifEventSubscriptionService(
       return [.. buf.Queue.Reverse()];
   }
 
+  public IReadOnlyList<(string CameraId, OnvifEventEntry Entry)> GetAllRecentEvents()
+  {
+    var result = new List<(string, OnvifEventEntry)>();
+    foreach (var (cameraId, buf) in _eventBuffers)
+    {
+      lock (buf.Lock)
+        result.AddRange(buf.Queue.Select(e => (cameraId, e)));
+    }
+    result.Sort((a, b) => b.Item2.ReceivedAt.CompareTo(a.Item2.ReceivedAt));
+    return result;
+  }
+
   protected override async Task ExecuteAsync(CancellationToken stoppingToken)
   {
     await RefreshAllCamerasAsync(stoppingToken);
@@ -227,15 +239,17 @@ public sealed class OnvifEventSubscriptionService(
 
       if (filters.Count == 0) return;
 
-      var searchText = topic + " " + payload;
       var matched = filters.FirstOrDefault(f =>
-        searchText.Contains(f.FilterText, StringComparison.OrdinalIgnoreCase));
+        topic.Contains(f.FilterText, StringComparison.OrdinalIgnoreCase) &&
+        (string.IsNullOrEmpty(f.TextFilter) ||
+         payload.Contains(f.TextFilter, StringComparison.OrdinalIgnoreCase)));
 
       if (matched == null)
       {
         logger.LogDebug(
           "Camera {CameraId}: no filter matched topic='{Topic}' (filters: {Filters})",
-          cameraId, topic, string.Join(", ", filters.Select(f => $"'{f.FilterText}'")));
+          cameraId, topic, string.Join(", ", filters.Select(f =>
+            string.IsNullOrEmpty(f.TextFilter) ? $"'{f.FilterText}'" : $"'{f.FilterText}'+'{f.TextFilter}'")));
         return;
       }
 

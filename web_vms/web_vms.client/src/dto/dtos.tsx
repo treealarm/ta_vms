@@ -121,6 +121,7 @@ export type CameraSetupDto = {
   onvifEventsEnabled?: boolean
   hasOnvifFilters?: boolean
   onvifManaged?: boolean
+  armed?: boolean
   disabled?: boolean
 }
 
@@ -290,6 +291,7 @@ export type OnvifAlarmFilterDto = {
   id?: string
   cameraId: string
   filterText: string
+  textFilter?: string
   timeoutSeconds: number
 }
 
@@ -297,4 +299,5 @@ export type OnvifEventRecordDto = {
   receivedAt: string
   topic: string
   payloadXml: string
+  cameraId?: string
 }

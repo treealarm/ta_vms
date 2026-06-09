@@ -79,6 +79,7 @@ public class OnvifController(
         cameraId       = f.CameraId,
         filterText     = f.FilterText,
         timeoutSeconds = f.TimeoutSeconds,
+        textFilter     = f.TextFilter,
       }));
     }
     catch (RpcException ex)
@@ -102,6 +103,7 @@ public class OnvifController(
           CameraId       = cameraId,
           FilterText     = body.FilterText,
           TimeoutSeconds = body.TimeoutSeconds > 0 ? body.TimeoutSeconds : 30,
+          TextFilter     = body.TextFilter ?? string.Empty,
         },
         Options(ct));
       return Ok(new
@@ -110,6 +112,7 @@ public class OnvifController(
         cameraId       = result.CameraId,
         filterText     = result.FilterText,
         timeoutSeconds = result.TimeoutSeconds,
+        textFilter     = result.TextFilter,
       });
     }
     catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.InvalidArgument)
@@ -197,6 +200,27 @@ public class OnvifController(
 
   // ── ONVIF debug events ────────────────────────────────────────────────────
 
+  [HttpGet("recent-events")]
+  public async Task<IActionResult> GetAllRecentEvents(CancellationToken ct)
+  {
+    try
+    {
+      var resp = await onvifClient.GetAllRecentOnvifEventsAsync(
+        new GetAllRecentOnvifEventsRequest(), Options(ct));
+      return Ok(resp.Events.Select(e => new
+      {
+        cameraId   = e.CameraId,
+        receivedAt = e.ReceivedAt,
+        topic      = e.Topic,
+        payloadXml = e.PayloadXml,
+      }));
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
   [HttpGet("cameras/{cameraId}/recent-events")]
   public async Task<IActionResult> GetRecentEvents(string cameraId, CancellationToken ct)
   {
@@ -218,4 +242,4 @@ public class OnvifController(
   }
 }
 
-public record OnvifAlarmFilterBody(string? Id, string FilterText, int TimeoutSeconds);
+public record OnvifAlarmFilterBody(string? Id, string FilterText, int TimeoutSeconds, string? TextFilter);

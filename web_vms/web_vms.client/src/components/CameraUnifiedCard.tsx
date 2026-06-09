@@ -32,7 +32,7 @@ import ArchiveHlsStreamCard from './ArchiveHlsStreamCard'
 import StreamOverrideRow from './StreamOverrideRow'
 import PtzOverlay from './PtzOverlay'
 import { useAppDispatch, useAppSelector } from '../store'
-import { fetchCameraState, setOnvifEventsEnabled } from '../store/liveSlice'
+import { fetchCameraState, setArmed } from '../store/liveSlice'
 
 const STRIP_W = 28
 const PANEL_W = 182
@@ -92,10 +92,10 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
   const merged: CameraSetupDto = { ...camera, ...(cameraState ?? {}) }
 
   const isOnvifManaged = merged.onvifManaged ?? false
-  const effectiveArmed = pendingArmed !== null ? pendingArmed : (merged.onvifEventsEnabled ?? false)
+  const effectiveArmed = pendingArmed !== null ? pendingArmed : (merged.armed ?? false)
   const armDisarm = (enabled: boolean) => {
     setPendingArmed(enabled)
-    void dispatch(setOnvifEventsEnabled({ cameraId: merged.cameraId, enabled }))
+    void dispatch(setArmed({ cameraId: merged.cameraId, armed: enabled }))
       .finally(() => setPendingArmed(null))
   }
 

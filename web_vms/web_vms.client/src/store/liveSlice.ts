@@ -85,13 +85,34 @@ export const setOnvifEventsEnabled = createAsyncThunk(
 )
 
 export const fetchCameraState = createAsyncThunk('live/fetchCameraState', async (cameraId: string) => {
-  const response = await fetch(`/api/live/cameras/${encodeURIComponent(cameraId)}/state`)
-  const cam = await parseJson<CameraSetupDto>(response)
+  const [camResp, armedResp] = await Promise.all([
+    fetch(`/api/live/cameras/${encodeURIComponent(cameraId)}/state`),
+    fetch(`/api/cameras/${encodeURIComponent(cameraId)}/state`),
+  ])
+  const cam = await parseJson<CameraSetupDto>(camResp)
+  const armedData = armedResp.ok ? (await armedResp.json() as { armed: boolean }) : null
   return {
     ...cam,
-    recordingMode: cam.recordingMode ?? (cam.recording === true ? 'continuous' : 'off')
+    recordingMode: cam.recordingMode ?? (cam.recording === true ? 'continuous' : 'off'),
+    armed: armedData?.armed,
   }
 })
+
+export const setArmed = createAsyncThunk(
+  'live/setArmed',
+  async ({ cameraId, armed }: { cameraId: string; armed: boolean }, { dispatch }) => {
+    const response = await fetch(
+      `/api/cameras/${encodeURIComponent(cameraId)}/state`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ armed }),
+      }
+    )
+    if (response.ok)
+      await dispatch(fetchCameraState(cameraId))
+  }
+)
 
 
 const liveSlice = createSlice({

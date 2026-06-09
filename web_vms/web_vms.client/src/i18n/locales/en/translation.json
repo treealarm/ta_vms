@@ -197,7 +197,9 @@
     "tabSetup": "Setup",
     "tabFilters": "ONVIF Filters",
     "tabDebug": "ONVIF Events",
-    "filterText": "Topic / payload substring",
+    "filterText": "Topic (substring)",
+    "textFilter": "Payload text (optional)",
+    "textFilterPlaceholder": "any",
     "timeoutSec": "Recording duration (sec)",
     "addFilter": "Add",
     "noFilters": "No filters configured",
@@ -206,7 +208,9 @@
     "debugTopic": "Topic",
     "debugRefresh": "Refresh",
     "debugPayload": "Full payload (XML)",
-    "autoRefresh": "Auto-refresh"
+    "autoRefresh": "Auto-refresh",
+    "allCameras": "All cameras",
+    "filterHint": "Filter…"
   },
   "cameraCard": {
     "switchToArchive": "Switch to Archive",
@@ -247,7 +251,9 @@
   "onvifSubs": {
     "description": "Cameras in this list receive ONVIF events. Arm to trigger retention recordings on matching alarm filters.",
     "noCameras": "No cameras added yet.",
-    "addCamera": "Add camera"
+    "addCamera": "Add camera",
+    "removeCamera": "Remove camera from ONVIF monitoring",
+    "removeFilter": "Delete alarm filter"
   },
   "serverSetup": {
     "title": "Camera setup",

@@ -8,7 +8,7 @@ export default function ViewControls({ target }: { target: 'admin' | 'operator' 
   const navigate = useNavigate()
 
   return (
-    <Stack alignItems="center" spacing={0.5} sx={{ pt: 1 }}>
+    <Stack direction="row" alignItems="center" spacing={0.5}>
       <Button
         size="small"
         variant="text"

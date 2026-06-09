@@ -2,31 +2,24 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   Box,
   Button,
+  Chip,
   CircularProgress,
-  Collapse,
   Divider,
   FormControlLabel,
   IconButton,
   MenuItem,
   Stack,
   Switch,
-  Tab,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  Tabs,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from '@mui/material'
-import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
-import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
 import DeleteIcon from '@mui/icons-material/Delete'
 import { useTranslation } from 'react-i18next'
 import { useAppSelector } from '../store'
-import type { OnvifCameraEntryDto, OnvifEventRecordDto } from '../dto/dtos'
+import type { OnvifCameraEntryDto } from '../dto/dtos'
 import OnvifAlarmFiltersPanel from './OnvifAlarmFiltersPanel'
 
 async function fetchManaged(): Promise<OnvifCameraEntryDto[]> {
@@ -53,8 +46,7 @@ async function setSubscribed(cameraId: string, subscribed: boolean) {
 async function fetchArmed(cameraId: string): Promise<boolean> {
   const r = await fetch(`/api/cameras/${encodeURIComponent(cameraId)}/state`)
   if (!r.ok) return false
-  const data = (await r.json()) as { armed: boolean }
-  return data.armed
+  return ((await r.json()) as { armed: boolean }).armed
 }
 
 async function setArmed(cameraId: string, armed: boolean) {
@@ -65,176 +57,16 @@ async function setArmed(cameraId: string, armed: boolean) {
   })
 }
 
-async function fetchRecentEvents(cameraId: string): Promise<OnvifEventRecordDto[]> {
-  const r = await fetch(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/recent-events`)
-  return r.ok ? (r.json() as Promise<OnvifEventRecordDto[]>) : []
-}
-
-function CameraRow({ entry, armed, onRemove, onToggleSubscribed, onToggleArmed }: {
-  entry: OnvifCameraEntryDto
-  armed: boolean
-  onRemove: () => void
-  onToggleSubscribed: (subscribed: boolean) => void
-  onToggleArmed: (armed: boolean) => void
-}) {
-  const { t } = useTranslation()
-  const allCameras = useAppSelector((s) => s.live.cameraStatesById)
-  const cam = allCameras[entry.cameraId]
-
-  const [expanded, setExpanded] = useState(false)
-  const [subTab, setSubTab] = useState(0)
-  const [events, setEvents] = useState<OnvifEventRecordDto[]>([])
-  const [loadingEvents, setLoadingEvents] = useState(false)
-
-  const loadEvents = useCallback(async () => {
-    setLoadingEvents(true)
-    try { setEvents(await fetchRecentEvents(entry.cameraId)) }
-    finally { setLoadingEvents(false) }
-  }, [entry.cameraId])
-
-  useEffect(() => {
-    if (!expanded || subTab !== 1) return
-    void loadEvents()
-  }, [expanded, subTab, loadEvents])
-
-  const onvifAddr = cam?.onvifConn ? `${cam.onvifConn.ip}:${cam.onvifConn.port}` : '—'
-
-  return (
-    <>
-      <TableRow sx={{ '& td': { borderBottom: expanded ? 0 : undefined } }}>
-        <TableCell sx={{ width: 32, pr: 0 }}>
-          <IconButton size="small" onClick={() => setExpanded((v) => !v)}>
-            {expanded ? <KeyboardArrowUpIcon fontSize="small" /> : <KeyboardArrowDownIcon fontSize="small" />}
-          </IconButton>
-        </TableCell>
-        <TableCell>
-          <Typography variant="body2" fontWeight={600}>{entry.cameraId}</Typography>
-        </TableCell>
-        <TableCell>
-          <Typography variant="body2" color="text.secondary">{onvifAddr}</Typography>
-        </TableCell>
-        <TableCell>
-          <FormControlLabel
-            control={
-              <Switch
-                size="small"
-                checked={entry.subscribed}
-                onChange={(e) => onToggleSubscribed(e.target.checked)}
-              />
-            }
-            label={
-              <Typography variant="body2" color={entry.subscribed ? 'success.main' : 'text.secondary'}>
-                {entry.subscribed ? 'Enabled' : 'Disabled'}
-              </Typography>
-            }
-          />
-        </TableCell>
-        <TableCell>
-          <FormControlLabel
-            control={
-              <Switch
-                size="small"
-                checked={armed}
-                disabled={!entry.subscribed}
-                onChange={(e) => onToggleArmed(e.target.checked)}
-              />
-            }
-            label={
-              <Typography variant="body2" color={armed && entry.subscribed ? 'warning.main' : 'text.secondary'}>
-                {armed && entry.subscribed ? 'Armed' : 'Disarmed'}
-              </Typography>
-            }
-          />
-        </TableCell>
-        <TableCell align="right">
-          <Tooltip title={t('common.delete')}>
-            <IconButton size="small" color="error" onClick={onRemove}>
-              <DeleteIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        </TableCell>
-      </TableRow>
-
-      <TableRow>
-        <TableCell colSpan={6} sx={{ py: 0 }}>
-          <Collapse in={expanded} unmountOnExit>
-            <Box sx={{ px: 1, pt: 0.5, pb: 1.5 }}>
-              <Tabs
-                value={subTab}
-                onChange={(_, v: number) => setSubTab(v)}
-                sx={{ mb: 1.5, borderBottom: 1, borderColor: 'divider', minHeight: 36 }}
-                TabIndicatorProps={{ style: { height: 2 } }}
-              >
-                <Tab label={t('onvifFilters.tabFilters')} sx={{ minHeight: 36, py: 0.5, fontSize: '0.75rem' }} />
-                <Tab label={t('onvifFilters.tabDebug')} sx={{ minHeight: 36, py: 0.5, fontSize: '0.75rem' }} />
-              </Tabs>
-
-              {subTab === 0 && <OnvifAlarmFiltersPanel cameraId={entry.cameraId} />}
-
-              {subTab === 1 && (
-                <>
-                  <Stack direction="row" alignItems="center" spacing={1} mb={1}>
-                    <Button size="small" onClick={() => void loadEvents()} disabled={loadingEvents}>
-                      {loadingEvents ? <CircularProgress size={12} /> : t('onvifFilters.debugRefresh')}
-                    </Button>
-                  </Stack>
-                  {events.length === 0
-                    ? <Typography variant="caption" color="text.secondary">{t('onvifFilters.debugNoEvents')}</Typography>
-                    : (
-                      <Table size="small">
-                        <TableHead>
-                          <TableRow>
-                            <TableCell>{t('onvifFilters.debugTime')}</TableCell>
-                            <TableCell>{t('onvifFilters.debugTopic')}</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {events.map((e, i) => (
-                            <EventRow key={i} event={e} />
-                          ))}
-                        </TableBody>
-                      </Table>
-                    )}
-                </>
-              )}
-            </Box>
-          </Collapse>
-        </TableCell>
-      </TableRow>
-    </>
-  )
-}
-
-function EventRow({ event }: { event: OnvifEventRecordDto }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <>
-      <TableRow hover onClick={() => setOpen((v) => !v)} sx={{ cursor: 'pointer' }}>
-        <TableCell sx={{ whiteSpace: 'nowrap', fontSize: '0.75rem' }}>
-          {new Date(event.receivedAt).toLocaleTimeString()}
-        </TableCell>
-        <TableCell sx={{ fontSize: '0.75rem' }}>{event.topic}</TableCell>
-      </TableRow>
-      {open && (
-        <TableRow>
-          <TableCell colSpan={2} sx={{ py: 0.5 }}>
-            <Box component="pre" sx={{ fontSize: '0.65rem', m: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-              {event.payloadXml}
-            </Box>
-          </TableCell>
-        </TableRow>
-      )}
-    </>
-  )
-}
-
 export default function OnvifSubscriptionsPanel() {
   const { t } = useTranslation()
   const allCameras = useAppSelector((s) => Object.values(s.live.cameraStatesById))
+  const allCamerasById = useAppSelector((s) => s.live.cameraStatesById)
+
   const [managed, setManaged] = useState<OnvifCameraEntryDto[]>([])
   const [armedMap, setArmedMap] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
   const [addId, setAddId] = useState('')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -252,6 +84,12 @@ export default function OnvifSubscriptionsPanel() {
 
   useEffect(() => { void reload() }, [reload])
 
+  // Keep selection valid after reload
+  useEffect(() => {
+    if (selectedId && !managed.find((e) => e.cameraId === selectedId))
+      setSelectedId(null)
+  }, [managed, selectedId])
+
   const handleAdd = async () => {
     if (!addId) return
     await addCamera(addId)
@@ -263,6 +101,7 @@ export default function OnvifSubscriptionsPanel() {
     await removeCamera(cameraId)
     setManaged((prev) => prev.filter((e) => e.cameraId !== cameraId))
     setArmedMap((prev) => { const next = { ...prev }; delete next[cameraId]; return next })
+    if (selectedId === cameraId) setSelectedId(null)
   }
 
   const handleToggleSubscribed = async (cameraId: string, subscribed: boolean) => {
@@ -277,71 +116,152 @@ export default function OnvifSubscriptionsPanel() {
 
   const managedIds = new Set(managed.map((e) => e.cameraId))
   const available = allCameras.filter((c) => c.onvifConn?.ip && !managedIds.has(c.cameraId))
+  const selected = managed.find((e) => e.cameraId === selectedId) ?? null
+  const selectedCam = selectedId ? allCamerasById[selectedId] : null
 
   if (loading) return <CircularProgress sx={{ m: 4 }} />
 
   return (
-    <Box>
-      <Typography variant="h6" gutterBottom>{t('nav.onvif')}</Typography>
-      <Typography variant="body2" color="text.secondary" mb={2}>
-        {t('onvifSubs.description')}
-      </Typography>
-
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell sx={{ width: 32 }} />
-            <TableCell>{t('cameras.cameraId')}</TableCell>
-            <TableCell>{t('cameras.onvifIp')}</TableCell>
-            <TableCell>Subscription Enabled</TableCell>
-            <TableCell>Armed</TableCell>
-            <TableCell />
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {managed.map((entry) => (
-            <CameraRow
-              key={entry.cameraId}
-              entry={entry}
-              armed={armedMap[entry.cameraId] ?? false}
-              onRemove={() => void handleRemove(entry.cameraId)}
-              onToggleSubscribed={(subscribed) => void handleToggleSubscribed(entry.cameraId, subscribed)}
-              onToggleArmed={(armed) => void handleToggleArmed(entry.cameraId, armed)}
-            />
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Add camera row */}
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+        <TextField
+          select
+          size="small"
+          label={t('onvifSubs.addCamera')}
+          value={addId}
+          onChange={(e) => setAddId(e.target.value)}
+          sx={{ minWidth: 220 }}
+          disabled={available.length === 0}
+          SelectProps={{ displayEmpty: true }}
+        >
+          {available.map((c) => (
+            <MenuItem key={c.cameraId} value={c.cameraId}>
+              {c.cameraId} ({c.onvifConn!.ip})
+            </MenuItem>
           ))}
-        </TableBody>
-      </Table>
+        </TextField>
+        <Button variant="contained" size="small" disabled={!addId} onClick={() => void handleAdd()}>
+          {t('common.add')}
+        </Button>
+      </Stack>
 
-      {managed.length === 0 && (
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 1 }}>
-          {t('onvifSubs.noCameras')}
-        </Typography>
-      )}
+      {/* Master-detail */}
+      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', gap: 0, border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
+        {/* Left: camera list */}
+        <Box sx={{ width: 220, flexShrink: 0, borderRight: 1, borderColor: 'divider', overflowY: 'auto' }}>
+          {managed.length === 0 && (
+            <Typography variant="body2" color="text.secondary" sx={{ p: 1.5 }}>
+              {t('onvifSubs.noCameras')}
+            </Typography>
+          )}
+          {managed.map((entry) => {
+            const armed = armedMap[entry.cameraId] ?? false
+            return (
+              <Box
+                key={entry.cameraId}
+                onClick={() => setSelectedId(entry.cameraId)}
+                sx={{
+                  px: 1.5,
+                  py: 1,
+                  cursor: 'pointer',
+                  borderBottom: 1,
+                  borderColor: 'divider',
+                  bgcolor: selectedId === entry.cameraId ? 'action.selected' : 'transparent',
+                  '&:hover': { bgcolor: selectedId === entry.cameraId ? 'action.selected' : 'action.hover' },
+                }}
+              >
+                <Typography variant="body2" fontWeight={600} noWrap>{entry.cameraId}</Typography>
+                <Stack direction="row" spacing={0.5} sx={{ mt: 0.5 }}>
+                  <Chip
+                    label={entry.subscribed ? 'ON' : 'OFF'}
+                    size="small"
+                    color={entry.subscribed ? 'success' : 'default'}
+                    sx={{ height: 16, fontSize: '0.6rem' }}
+                  />
+                  {entry.subscribed && (
+                    <Chip
+                      label={armed ? t('cameraCard.armedToggle') : t('cameraCard.disarmedToggle')}
+                      size="small"
+                      color={armed ? 'warning' : 'default'}
+                      sx={{ height: 16, fontSize: '0.6rem' }}
+                    />
+                  )}
+                </Stack>
+              </Box>
+            )
+          })}
+        </Box>
 
-      {available.length > 0 && (
-        <>
-          <Divider sx={{ my: 2 }} />
-          <Stack direction="row" spacing={1} alignItems="center">
-            <TextField
-              select
-              size="small"
-              label={t('onvifSubs.addCamera')}
-              value={addId}
-              onChange={(e) => setAddId(e.target.value)}
-              sx={{ minWidth: 200 }}
-            >
-              {available.map((c) => (
-                <MenuItem key={c.cameraId} value={c.cameraId}>
-                  {c.cameraId} ({c.onvifConn!.ip})
-                </MenuItem>
-              ))}
-            </TextField>
-            <Button variant="contained" size="small" disabled={!addId} onClick={() => void handleAdd()}>
-              {t('common.add')}
-            </Button>
-          </Stack>
-        </>
-      )}
+        {/* Right: detail */}
+        <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
+          {!selected ? (
+            <Typography variant="body2" color="text.secondary">
+              {managed.length > 0 ? t('logs.selectHint') : ''}
+            </Typography>
+          ) : (
+            <Stack spacing={2} sx={{ height: '100%' }}>
+              {/* Header */}
+              <Stack direction="row" alignItems="flex-start" justifyContent="space-between">
+                <Box>
+                  <Typography variant="h6">{selected.cameraId}</Typography>
+                  {selectedCam?.onvifConn && (
+                    <Typography variant="body2" color="text.secondary">
+                      {selectedCam.onvifConn.ip}:{selectedCam.onvifConn.port}
+                    </Typography>
+                  )}
+                </Box>
+                <Tooltip title={t('onvifSubs.removeCamera')}>
+                  <IconButton color="error" size="small" onClick={() => void handleRemove(selected.cameraId)}>
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+
+              {/* Toggles */}
+              <Stack direction="row" spacing={3} alignItems="center">
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={selected.subscribed}
+                      onChange={(e) => void handleToggleSubscribed(selected.cameraId, e.target.checked)}
+                    />
+                  }
+                  label="Subscription"
+                />
+                <Box>
+                  <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                    {t('cameraCard.guardSection')}
+                  </Typography>
+                  <ToggleButtonGroup
+                    exclusive
+                    size="small"
+                    value={(armedMap[selected.cameraId] ?? false) ? 'armed' : 'disarmed'}
+                    disabled={!selected.subscribed}
+                    onChange={(_, v) => v && void handleToggleArmed(selected.cameraId, v === 'armed')}
+                    sx={{
+                      '& .MuiToggleButton-root': { py: 0.25, px: 1.5, fontSize: '0.75rem' },
+                      '& .MuiToggleButton-root[value="armed"].Mui-selected': { color: 'success.main', borderColor: 'success.main' },
+                    }}
+                  >
+                    <ToggleButton value="armed">{t('cameraCard.armedToggle')}</ToggleButton>
+                    <ToggleButton value="disarmed">{t('cameraCard.disarmedToggle')}</ToggleButton>
+                  </ToggleButtonGroup>
+                </Box>
+              </Stack>
+
+              <Divider />
+
+              {/* Filters */}
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="subtitle2" gutterBottom>{t('onvifFilters.tabFilters')}</Typography>
+                <OnvifAlarmFiltersPanel cameraId={selected.cameraId} />
+              </Box>
+
+            </Stack>
+          )}
+        </Box>
+      </Box>
     </Box>
   )
 }

@@ -197,7 +197,9 @@
     "tabSetup": "Configuración",
     "tabFilters": "Filtros ONVIF",
     "tabDebug": "Eventos ONVIF",
-    "filterText": "Subcadena de tópico / carga útil",
+    "filterText": "Tópico (subcadena)",
+    "textFilter": "Texto en carga útil (opcional)",
+    "textFilterPlaceholder": "cualquiera",
     "timeoutSec": "Duración de grabación (seg)",
     "addFilter": "Agregar",
     "noFilters": "Sin filtros configurados",
@@ -206,7 +208,9 @@
     "debugTopic": "Tópico",
     "debugRefresh": "Actualizar",
     "debugPayload": "Carga útil completa (XML)",
-    "autoRefresh": "Auto-actualizar"
+    "autoRefresh": "Auto-actualizar",
+    "allCameras": "Todas las cámaras",
+    "filterHint": "Filtrar…"
   },
   "cameraCard": {
     "switchToArchive": "Cambiar a archivo",
@@ -247,7 +251,9 @@
   "onvifSubs": {
     "description": "Las cámaras de esta lista reciben eventos ONVIF. Activa el guardia para disparar grabaciones de retención con los filtros de alarma.",
     "noCameras": "No hay cámaras agregadas.",
-    "addCamera": "Agregar cámara"
+    "addCamera": "Agregar cámara",
+    "removeCamera": "Quitar cámara de la monitorización ONVIF",
+    "removeFilter": "Eliminar filtro de alarma"
   },
   "serverSetup": {
     "title": "Configuración de cámara",

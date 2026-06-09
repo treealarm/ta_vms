@@ -659,28 +659,25 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
 
   public async Task<OnvifAlarmFilter> UpsertOnvifAlarmFilterAsync(OnvifAlarmFilter filter, CancellationToken ct)
   {
-    await using var command = _dataSource.CreateCommand("""
-      INSERT INTO onvif_alarm_filter (id, camera_id, filter_text, timeout_seconds)
-      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4)
-      ON CONFLICT (id) DO UPDATE SET
-        filter_text     = EXCLUDED.filter_text,
-        timeout_seconds = EXCLUDED.timeout_seconds
-      RETURNING id, camera_id, filter_text, timeout_seconds;
-      """);
-    command.Parameters.AddWithValue(filter.Id ?? string.Empty);
-    command.Parameters.AddWithValue(filter.CameraId);
-    command.Parameters.AddWithValue(filter.FilterText);
-    command.Parameters.AddWithValue(filter.TimeoutSeconds);
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
 
-    await using var reader = await command.ExecuteReaderAsync(ct);
-    await reader.ReadAsync(ct);
-    return new OnvifAlarmFilter
+    DbOnvifAlarmFilter entity;
+    if (Guid.TryParse(filter.Id, out var existingId))
     {
-      Id             = reader.GetGuid(0).ToString(),
-      CameraId       = reader.GetString(1),
-      FilterText     = reader.GetString(2),
-      TimeoutSeconds = reader.GetInt32(3),
-    };
+      entity = await db.OnvifAlarmFilters.FindAsync([existingId], ct)
+               ?? db.OnvifAlarmFilters.Add(new DbOnvifAlarmFilter { Id = existingId, CameraId = filter.CameraId }).Entity;
+    }
+    else
+    {
+      entity = db.OnvifAlarmFilters.Add(new DbOnvifAlarmFilter { Id = Guid.NewGuid(), CameraId = filter.CameraId }).Entity;
+    }
+
+    entity.FilterText     = filter.FilterText;
+    entity.TimeoutSeconds = filter.TimeoutSeconds;
+    entity.TextFilter     = filter.TextFilter;
+
+    await db.SaveChangesAsync(ct);
+    return ToProto(entity);
   }
 
   public async Task<(bool Removed, string? CameraId)> RemoveOnvifAlarmFilterAsync(string id, CancellationToken ct)
@@ -701,6 +698,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       CameraId       = row.CameraId,
       FilterText     = row.FilterText,
       TimeoutSeconds = row.TimeoutSeconds,
+      TextFilter     = row.TextFilter,
     };
 
   public async Task SubscribeOnvifEventsAsync(string cameraId, CancellationToken ct)
