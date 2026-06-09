@@ -18,7 +18,7 @@ export default function OperatorView() {
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', px: { xs: 2, md: 4 }, pt: 1 }}>
           <ViewControls target="admin" />
         </Box>
-        <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', px: { xs: 2, md: 4 }, pt: 1, pb: { xs: 2, md: 4 } }}>
+        <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', px: { xs: 2, md: 4 }, pt: 1, pb: { xs: 2, md: 4 } }}>
           {tab === 0 && <MonitorsView readOnly />}
           {tab === 1 && (
             <Box sx={{ height: '100%', overflow: 'auto' }}>

@@ -177,6 +177,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
           ...PANEL_BG,
           width: listOpen ? 170 : 0,
           flexShrink: 0,
+          minHeight: 0,
           overflow: 'hidden',
           transition: 'width 0.15s ease',
           borderLeft: listOpen ? `1px solid ${alpha(W, 0.08)}` : 'none',
