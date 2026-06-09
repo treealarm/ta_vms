@@ -37,12 +37,12 @@ export default function AdminView() {
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', px: { xs: 2, md: 4 }, pt: 1 }}>
           <ViewControls target="operator" />
         </Box>
-        <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', px: { xs: 2, md: 4 }, pb: { xs: 2, md: 4 } }}>
+        <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', px: { xs: 2, md: 4 }, pb: { xs: 2, md: 4 }, pt: 1, display: 'flex', flexDirection: 'column' }}>
           {tab === 0 && <CameraControlPanel ref={cameraControlRef} />}
-          {tab === 1 && <MediaMtxServersPanel ref={mediaMtxRef} />}
-          {tab === 2 && <MonitorListPanel />}
-          {tab === 3 && <StorageSetupPanel />}
-          {tab === 4 && <RecordingProfilesPanel ref={recordingRef} />}
+          {tab === 1 && <Box sx={{ flex: 1, overflowY: 'auto' }}><MediaMtxServersPanel ref={mediaMtxRef} /></Box>}
+          {tab === 2 && <Box sx={{ flex: 1, overflowY: 'auto' }}><MonitorListPanel /></Box>}
+          {tab === 3 && <Box sx={{ flex: 1, overflowY: 'auto' }}><StorageSetupPanel /></Box>}
+          {tab === 4 && <Box sx={{ flex: 1, overflowY: 'auto' }}><RecordingProfilesPanel ref={recordingRef} /></Box>}
           {tab === 5 && <OnvifSubscriptionsPanel />}
         </Box>
       </Box>
