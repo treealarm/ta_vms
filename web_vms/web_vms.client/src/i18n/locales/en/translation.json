@@ -261,7 +261,10 @@
     "noCameras": "No cameras added yet.",
     "addCamera": "Add camera",
     "removeCamera": "Remove camera from ONVIF monitoring",
-    "removeFilter": "Delete alarm filter"
+    "removeFilter": "Delete alarm filter",
+    "pollConfig": "Event polling",
+    "pollTimeoutSeconds": "Poll timeout (s)",
+    "messageLimit": "Messages per poll"
   },
   "fsActivity": {
     "tabLabel": "FS Activity",

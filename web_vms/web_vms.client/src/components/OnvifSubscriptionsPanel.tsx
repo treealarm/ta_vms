@@ -57,6 +57,14 @@ async function setArmed(cameraId: string, armed: boolean) {
   })
 }
 
+async function setPollConfig(cameraId: string, pollTimeoutSeconds: number, messageLimit: number) {
+  await fetch(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/poll-config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pollTimeoutSeconds, messageLimit }),
+  })
+}
+
 export default function OnvifSubscriptionsPanel() {
   const { t } = useTranslation()
   const allCameras = useAppSelector((s) => Object.values(s.live.cameraStatesById))
@@ -112,6 +120,14 @@ export default function OnvifSubscriptionsPanel() {
   const handleToggleArmed = async (cameraId: string, armed: boolean) => {
     setArmedMap((prev) => ({ ...prev, [cameraId]: armed }))
     await setArmed(cameraId, armed)
+  }
+
+  const handlePollConfigChange = (cameraId: string, field: 'pollTimeoutSeconds' | 'messageLimit', value: number) => {
+    setManaged((prev) => prev.map((e) => e.cameraId === cameraId ? { ...e, [field]: value } : e))
+  }
+
+  const handleSavePollConfig = async (cameraId: string, pollTimeoutSeconds: number, messageLimit: number) => {
+    await setPollConfig(cameraId, pollTimeoutSeconds, messageLimit)
   }
 
   const managedIds = new Set(managed.map((e) => e.cameraId))
@@ -249,6 +265,40 @@ export default function OnvifSubscriptionsPanel() {
                   </ToggleButtonGroup>
                 </Box>
               </Stack>
+
+              <Divider />
+
+              {/* Poll configuration */}
+              <Box>
+                <Typography variant="subtitle2" gutterBottom>{t('onvifSubs.pollConfig')}</Typography>
+                <Stack direction="row" spacing={2} alignItems="center">
+                  <TextField
+                    type="number"
+                    size="small"
+                    label={t('onvifSubs.pollTimeoutSeconds')}
+                    value={selected.pollTimeoutSeconds}
+                    onChange={(e) => handlePollConfigChange(selected.cameraId, 'pollTimeoutSeconds', Math.max(1, Number(e.target.value)))}
+                    sx={{ width: 160 }}
+                    slotProps={{ htmlInput: { min: 1 } }}
+                  />
+                  <TextField
+                    type="number"
+                    size="small"
+                    label={t('onvifSubs.messageLimit')}
+                    value={selected.messageLimit}
+                    onChange={(e) => handlePollConfigChange(selected.cameraId, 'messageLimit', Math.max(1, Number(e.target.value)))}
+                    sx={{ width: 160 }}
+                    slotProps={{ htmlInput: { min: 1 } }}
+                  />
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => void handleSavePollConfig(selected.cameraId, selected.pollTimeoutSeconds, selected.messageLimit)}
+                  >
+                    {t('common.save')}
+                  </Button>
+                </Stack>
+              </Box>
 
               <Divider />
 

@@ -175,6 +175,9 @@ public sealed class OnvifEventSubscriptionService(
           continue;
         }
 
+        eventSvc.PullTimeout = TimeSpan.FromSeconds(setup.OnvifPollTimeoutSeconds > 0 ? setup.OnvifPollTimeoutSeconds : 5);
+        eventSvc.MessageLimit = setup.OnvifMessageLimit > 0 ? setup.OnvifMessageLimit : 1024;
+
         eventSvc.OnEventReceived += messages => OnEventsReceived(cameraId, messages ?? []);
         await eventSvc.StartReceivingAsync();
         await Task.Delay(Timeout.Infinite, ct);
@@ -219,6 +222,15 @@ public sealed class OnvifEventSubscriptionService(
         buf.Queue.Enqueue(record);
         while (buf.Queue.Count > RingBufferSize)
           buf.Queue.Dequeue();
+      }
+
+      // "Initialized" messages are a state snapshot the camera replays on every (re-)subscribe,
+      // not a new state transition — skip alarm triggering to avoid duplicate alarms on resubscribe.
+      if (msg.Message?.GetAttribute("PropertyOperation") == "Initialized")
+      {
+        logger.LogDebug(
+          "Camera {CameraId}: skipping alarm check for 'Initialized' snapshot — topic='{Topic}'", cameraId, topic);
+        continue;
       }
 
       _ = Task.Run(() => CheckAndTriggerAlarmAsync(cameraId, topic, payload));

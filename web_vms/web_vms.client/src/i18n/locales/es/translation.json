@@ -261,7 +261,10 @@
     "noCameras": "No hay cámaras agregadas.",
     "addCamera": "Agregar cámara",
     "removeCamera": "Quitar cámara de la monitorización ONVIF",
-    "removeFilter": "Eliminar filtro de alarma"
+    "removeFilter": "Eliminar filtro de alarma",
+    "pollConfig": "Sondeo de eventos",
+    "pollTimeoutSeconds": "Tiempo de espera (s)",
+    "messageLimit": "Mensajes por sondeo"
   },
   "fsActivity": {
     "tabLabel": "Actividad FS",

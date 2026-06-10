@@ -36,6 +36,7 @@ service CfgService {
   rpc UnsubscribeOnvifEvents(OnvifSubscriptionRequest) returns (OperationStatus);
   rpc ListOnvifSubscriptions(google.protobuf.Empty) returns (OnvifSubscriptionsResponse);
   rpc SetOnvifArmed(SetOnvifArmedRequest) returns (OperationStatus);
+  rpc SetOnvifPollConfig(SetOnvifPollConfigRequest) returns (OperationStatus);
 
   rpc GetCamState(GetCamStateRequest) returns (GetCamStateResponse);
   rpc SetCamState(SetCamStateRequest) returns (OperationStatus);
@@ -101,6 +102,8 @@ message CameraSetup {
   bool has_onvif_filters    = 12;
   bool onvif_managed        = 13;
   optional bool disabled    = 14;
+  int32 onvif_poll_timeout_seconds = 15;
+  int32 onvif_message_limit        = 16;
 }
 
 message RecordingProfileRequest {
@@ -295,6 +298,8 @@ message OnvifSubscriptionRequest {
 message OnvifCameraEntry {
   string camera_id  = 1;
   bool   subscribed = 2;
+  int32  poll_timeout_seconds = 3;
+  int32  message_limit        = 4;
 }
 
 message OnvifSubscriptionsResponse {
@@ -304,6 +309,12 @@ message OnvifSubscriptionsResponse {
 message SetOnvifArmedRequest {
   string camera_id = 1;
   bool   armed     = 2;
+}
+
+message SetOnvifPollConfigRequest {
+  string camera_id           = 1;
+  int32  poll_timeout_seconds = 2;
+  int32  message_limit        = 3;
 }
 
 message GetCamStateRequest {

@@ -289,6 +289,8 @@ export type MonitorDto = {
 export type OnvifCameraEntryDto = {
   cameraId: string
   subscribed: boolean
+  pollTimeoutSeconds: number
+  messageLimit: number
 }
 
 export type CameraArmedDto = {

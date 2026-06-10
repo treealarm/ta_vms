@@ -122,7 +122,7 @@ public class Camera
     _logger = logger;
 
     _onvifClientFactory = new OnvifClientFactory(logger);
-    _bindingProvider = new CustomBindingProvider(timeout);
+    _bindingProvider = new CustomBindingProvider(timeout, cacheKey: _url);
     _serviceCache = new OnvifServiceCache(_bindingProvider, username, password, MakeSecurityToken, logger: logger);
   }
 
@@ -208,12 +208,12 @@ public class Camera
     {
       using var client = await GetDevice();
       var result = await client.GetServicesAsync(true);
+      _bindingProvider.RememberWorking();
       return result.Service.ToDictionary(s => s.Namespace, s => s.XAddr);
     }
-    catch (Exception ex) when (!_bindingProvider.IsDigest && IsAuthError(ex))
+    catch (Exception ex) when (IsAuthError(ex) && SwitchAuthScheme(ex))
     {
-      // Camera requires HTTP Digest auth — switch once and retry
-      _bindingProvider.SwitchToDigest();
+      // Camera challenged with a different auth scheme (Basic/Digest) — switch and retry once.
       _serviceCache = new OnvifServiceCache(_bindingProvider, _username, _password, MakeSecurityToken, logger: _logger);
       _onvifClientFactory.SetSecurityToken(null);
       _tokenExpiry = System.DateTime.UtcNow;
@@ -221,6 +221,7 @@ public class Camera
       {
         using var client = await GetDevice();
         var result = await client.GetServicesAsync(true);
+        _bindingProvider.RememberWorking();
         return result.Service.ToDictionary(s => s.Namespace, s => s.XAddr);
       }
       catch (Exception retryEx)
@@ -234,6 +235,19 @@ public class Camera
       _logger?.Error(ex.ToString());
       return null;
     }
+  }
+
+  /// <summary>
+  /// Switches the binding to the auth scheme the camera challenged for (Basic/Digest),
+  /// or falls back to Digest once if the challenge didn't name a scheme. Returns false
+  /// if the binding is already on the requested scheme (nothing to retry with).
+  /// </summary>
+  private bool SwitchAuthScheme(Exception ex)
+  {
+    if (_bindingProvider.TrySwitchToChallenged(ex))
+      return true;
+
+    return !_bindingProvider.IsDigest && _bindingProvider.SwitchToDigest();
   }
 
   private static bool IsAuthError(Exception? ex)

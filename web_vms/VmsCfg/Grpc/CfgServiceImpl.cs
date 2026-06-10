@@ -414,7 +414,13 @@ namespace VmsCfg
     {
       var list = await storage.ListOnvifSubscriptionsAsync(context.CancellationToken);
       var response = new OnvifSubscriptionsResponse();
-      response.Cameras.AddRange(list.Select(x => new OnvifCameraEntry { CameraId = x.CameraId, Subscribed = x.Subscribed }));
+      response.Cameras.AddRange(list.Select(x => new OnvifCameraEntry
+      {
+        CameraId           = x.CameraId,
+        Subscribed         = x.Subscribed,
+        PollTimeoutSeconds = x.PollTimeoutSeconds,
+        MessageLimit       = x.MessageLimit,
+      }));
       return response;
     }
 
@@ -422,6 +428,17 @@ namespace VmsCfg
       SetOnvifArmedRequest request, ServerCallContext context)
     {
       await storage.SetOnvifArmedAsync(request.CameraId, request.Armed, context.CancellationToken);
+      InvalidateFsCache(request.CameraId);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OperationStatus> SetOnvifPollConfig(
+      SetOnvifPollConfigRequest request, ServerCallContext context)
+    {
+      if (request.PollTimeoutSeconds <= 0 || request.MessageLimit <= 0)
+        return new OperationStatus { Success = false, Message = "poll_timeout_seconds and message_limit must be positive" };
+
+      await storage.SetOnvifPollConfigAsync(request.CameraId, request.PollTimeoutSeconds, request.MessageLimit, context.CancellationToken);
       InvalidateFsCache(request.CameraId);
       return new OperationStatus { Success = true };
     }

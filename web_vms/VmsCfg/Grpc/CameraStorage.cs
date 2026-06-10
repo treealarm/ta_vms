@@ -128,14 +128,17 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     var cameras = new List<CameraSetup>();
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id,
+      SELECT camera_setup.camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id AND s.subscribed = true) AS onvif_events_enabled,
              EXISTS(SELECT 1 FROM onvif_alarm_filter f WHERE f.camera_id = camera_setup.camera_id) AS has_onvif_filters,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id) AS onvif_managed,
-             disabled
+             disabled,
+             COALESCE(oes.poll_timeout_seconds, 5) AS poll_timeout_seconds,
+             COALESCE(oes.message_limit, 1024) AS message_limit
       FROM camera_setup
+      LEFT JOIN onvif_event_subscription oes ON oes.camera_id = camera_setup.camera_id
       WHERE $1 = '' OR server_id = $1
-      ORDER BY camera_id;
+      ORDER BY camera_setup.camera_id;
       """, connection))
     {
       cmd.Parameters.AddWithValue(serverId ?? string.Empty);
@@ -155,13 +158,16 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     CameraSetup? setup = null;
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id,
+      SELECT camera_setup.camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id AND s.subscribed = true) AS onvif_events_enabled,
              EXISTS(SELECT 1 FROM onvif_alarm_filter f WHERE f.camera_id = camera_setup.camera_id) AS has_onvif_filters,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id) AS onvif_managed,
-             disabled
+             disabled,
+             COALESCE(oes.poll_timeout_seconds, 5) AS poll_timeout_seconds,
+             COALESCE(oes.message_limit, 1024) AS message_limit
       FROM camera_setup
-      WHERE camera_id = $1;
+      LEFT JOIN onvif_event_subscription oes ON oes.camera_id = camera_setup.camera_id
+      WHERE camera_setup.camera_id = $1;
       """, connection))
     {
       cmd.Parameters.AddWithValue(cameraId);
@@ -409,6 +415,9 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     setup.OnvifManaged       = reader.GetBoolean(9);
     if (!reader.IsDBNull(10) && reader.GetBoolean(10))
       setup.Disabled = true;
+
+    setup.OnvifPollTimeoutSeconds = reader.GetInt32(11);
+    setup.OnvifMessageLimit       = reader.GetInt32(12);
 
     return setup;
   }
@@ -728,15 +737,25 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     await cmd.ExecuteNonQueryAsync(ct);
   }
 
-  public async Task<List<(string CameraId, bool Subscribed)>> ListOnvifSubscriptionsAsync(CancellationToken ct)
+  public async Task<List<(string CameraId, bool Subscribed, int PollTimeoutSeconds, int MessageLimit)>> ListOnvifSubscriptionsAsync(CancellationToken ct)
   {
     await using var cmd = _dataSource.CreateCommand(
-      "SELECT camera_id, subscribed FROM onvif_event_subscription ORDER BY camera_id;");
-    var result = new List<(string, bool)>();
+      "SELECT camera_id, subscribed, poll_timeout_seconds, message_limit FROM onvif_event_subscription ORDER BY camera_id;");
+    var result = new List<(string, bool, int, int)>();
     await using var reader = await cmd.ExecuteReaderAsync(ct);
     while (await reader.ReadAsync(ct))
-      result.Add((reader.GetString(0), reader.GetBoolean(1)));
+      result.Add((reader.GetString(0), reader.GetBoolean(1), reader.GetInt32(2), reader.GetInt32(3)));
     return result;
+  }
+
+  public async Task SetOnvifPollConfigAsync(string cameraId, int pollTimeoutSeconds, int messageLimit, CancellationToken ct)
+  {
+    await using var cmd = _dataSource.CreateCommand(
+      "UPDATE onvif_event_subscription SET poll_timeout_seconds = $2, message_limit = $3 WHERE camera_id = $1;");
+    cmd.Parameters.AddWithValue(cameraId);
+    cmd.Parameters.AddWithValue(pollTimeoutSeconds);
+    cmd.Parameters.AddWithValue(messageLimit);
+    await cmd.ExecuteNonQueryAsync(ct);
   }
 
   public async Task<bool> GetCameraArmedAsync(string cameraId, CancellationToken ct)

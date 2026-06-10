@@ -155,7 +155,13 @@ public class OnvifController(
     {
       var resp = await cfgClient.ListOnvifSubscriptionsAsync(
         new Google.Protobuf.WellKnownTypes.Empty(), Options(ct));
-      return Ok(resp.Cameras.Select(c => new { cameraId = c.CameraId, subscribed = c.Subscribed }));
+      return Ok(resp.Cameras.Select(c => new
+      {
+        cameraId = c.CameraId,
+        subscribed = c.Subscribed,
+        pollTimeoutSeconds = c.PollTimeoutSeconds,
+        messageLimit = c.MessageLimit,
+      }));
     }
     catch (RpcException ex) { return StatusCode(502, ex.Status.Detail); }
   }
@@ -197,6 +203,28 @@ public class OnvifController(
   }
 
   public record SetSubscribedBody(bool Subscribed);
+
+  [HttpPut("cameras/{cameraId}/poll-config")]
+  public async Task<IActionResult> SetPollConfig(string cameraId, [FromBody] SetPollConfigBody body, CancellationToken ct)
+  {
+    if (body.PollTimeoutSeconds <= 0 || body.MessageLimit <= 0)
+      return BadRequest("poll_timeout_seconds and message_limit must be positive");
+
+    try
+    {
+      await cfgClient.SetOnvifPollConfigAsync(
+        new SetOnvifPollConfigRequest
+        {
+          CameraId           = cameraId,
+          PollTimeoutSeconds = body.PollTimeoutSeconds,
+          MessageLimit       = body.MessageLimit,
+        }, Options(ct));
+      return Ok();
+    }
+    catch (RpcException ex) { return StatusCode(502, ex.Status.Detail); }
+  }
+
+  public record SetPollConfigBody(int PollTimeoutSeconds, int MessageLimit);
 
   // ── ONVIF debug events ────────────────────────────────────────────────────
 
