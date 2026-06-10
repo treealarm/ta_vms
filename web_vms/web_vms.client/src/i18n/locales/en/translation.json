@@ -132,8 +132,12 @@
     "noRows": "No rows.",
     "refresh": "Refresh",
     "loadOlder": "Load older",
-    "archivePreview": "Archive preview (HLS at alarm_start_ts; alarm end shown for reference)",
-    "retry": "Retry"
+    "retry": "Retry",
+    "details": "Details",
+    "duration": "Duration",
+    "streamName": "Stream",
+    "clipsList": "Clips",
+    "active": "Active"
   },
   "stream": {
     "newStream": "New stream on {{camera}}",

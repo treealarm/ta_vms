@@ -62,6 +62,11 @@
     public DateTime? NextBeforeAlarmStart { get; set; }
   }
 
+  public class EventClipsResponseDto
+  {
+    public List<RecordingDto> Clips { get; set; } = [];
+  }
+
   public class FsFileEventDto
   {
     public string   ClipUid    { get; init; } = "";

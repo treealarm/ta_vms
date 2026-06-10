@@ -46,8 +46,8 @@ export default function ArchiveHlsPreview({ selected }: Props) {
         setStreams(entries)
         const preferred = selected.streamName ?? null
         const pick =
-          entries.find((e) => e.streamName === preferred) ??
-          entries.find((e) => e.streamName !== null) ??
+          (preferred && entries.find((e) => e.streamName === preferred)) ||
+          entries.find((e) => e.streamName !== null) ||
           entries[0]
         setActiveStream(pick?.streamName ?? null)
       })

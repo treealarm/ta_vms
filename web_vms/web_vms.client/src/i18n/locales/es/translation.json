@@ -132,8 +132,12 @@
     "noRows": "Sin filas.",
     "refresh": "Actualizar",
     "loadOlder": "Cargar anteriores",
-    "archivePreview": "Vista previa de archivo (HLS en alarm_start_ts; alarm end es solo referencia)",
-    "retry": "Reintentar"
+    "retry": "Reintentar",
+    "details": "Detalles",
+    "duration": "Duración",
+    "streamName": "Stream",
+    "clipsList": "Clips",
+    "active": "Activo"
   },
   "stream": {
     "newStream": "Nuevo flujo en {{camera}}",

@@ -199,6 +199,10 @@ export type RetentionEventsListDto = {
   nextBeforeAlarmStart?: string
 }
 
+export type EventClipsResponseDto = {
+  clips: RecordingDto[]
+}
+
 export type StorageDto = {
   storageId: string
   rootPath: string
