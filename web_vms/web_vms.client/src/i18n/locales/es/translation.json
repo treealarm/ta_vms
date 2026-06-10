@@ -55,7 +55,8 @@
     "reservedGb": "Reservado (GB)",
     "required": "Se requieren ID de almacén y ruta raíz",
     "noStorages": "Sin almacenes configurados",
-    "gbReserved": "{{n}} GB reservados"
+    "gbReserved": "{{n}} GB reservados",
+    "saveFailed": "Error al guardar"
   },
   "storageControl": {
     "title": "Asignación de almacén",
@@ -131,8 +132,12 @@
     "noRows": "Sin filas.",
     "refresh": "Actualizar",
     "loadOlder": "Cargar anteriores",
-    "archivePreview": "Vista previa de archivo (HLS en alarm_start_ts; alarm end es solo referencia)",
-    "retry": "Reintentar"
+    "retry": "Reintentar",
+    "details": "Detalles",
+    "duration": "Duración",
+    "streamName": "Stream",
+    "clipsList": "Clips",
+    "active": "Activo"
   },
   "stream": {
     "newStream": "Nuevo flujo en {{camera}}",
@@ -197,7 +202,9 @@
     "tabSetup": "Configuración",
     "tabFilters": "Filtros ONVIF",
     "tabDebug": "Eventos ONVIF",
-    "filterText": "Subcadena de tópico / carga útil",
+    "filterText": "Tópico (subcadena)",
+    "textFilter": "Texto en carga útil (opcional)",
+    "textFilterPlaceholder": "cualquiera",
     "timeoutSec": "Duración de grabación (seg)",
     "addFilter": "Agregar",
     "noFilters": "Sin filtros configurados",
@@ -206,12 +213,75 @@
     "debugTopic": "Tópico",
     "debugRefresh": "Actualizar",
     "debugPayload": "Carga útil completa (XML)",
-    "autoRefresh": "Auto-actualizar"
+    "autoRefresh": "Auto-actualizar",
+    "allCameras": "Todas las cámaras",
+    "filterHint": "Filtrar…"
+  },
+  "cameraCard": {
+    "switchToArchive": "Cambiar a archivo",
+    "switchToLive": "Cambiar a directo",
+    "cycleStream": "Flujo: {{stream}} — clic para cambiar",
+    "ptzOpen": "Control PTZ",
+    "ptzClose": "Cerrar PTZ",
+    "armedTip": "Armado — clic para desarmar",
+    "disarmedTip": "Desarmado — clic para armar",
+    "controls": "Controles",
+    "streamSection": "Flujo",
+    "modeSection": "Modo",
+    "overrideSection": "Anulación",
+    "overrideSectionForStream": "Anulación — {{stream}}",
+    "guardSection": "Guardia",
+    "cameraWide": "(cámara)",
+    "streamRecordingTip": "Grabando en este flujo",
+    "continuousOn": "Grabación continua — clic para desactivar",
+    "continuousOff": "Clic para activar grabación continua",
+    "armedToggle": "Armado",
+    "disarmedToggle": "Desarmado",
+    "modeLive": "Directo",
+    "modeArchive": "Archivo",
+    "expand": "Expandir",
+    "showAll": "Mostrar todo",
+    "copyRtsp": "Copiar RTSP",
+    "copiedRtsp": "¡Copiado!",
+    "retentionActive": "Retención activa",
+    "cameraDisabledTip": "Cámara desactivada — armar/PTZ no disponible"
+  },
+  "recordings": {
+    "earlier": "Anterior",
+    "later": "Posterior",
+    "pickDateTime": "Clic para seleccionar fecha/hora",
+    "noRecordings": "No se encontraron grabaciones",
+    "startTime": "Inicio",
+    "endTime": "Fin",
+    "clips": "Clips",
+    "jumpToDateTime": "Ir a fecha / hora"
   },
   "onvifSubs": {
     "description": "Las cámaras de esta lista reciben eventos ONVIF. Activa el guardia para disparar grabaciones de retención con los filtros de alarma.",
     "noCameras": "No hay cámaras agregadas.",
-    "addCamera": "Agregar cámara"
+    "addCamera": "Agregar cámara",
+    "removeCamera": "Quitar cámara de la monitorización ONVIF",
+    "removeFilter": "Eliminar filtro de alarma"
+  },
+  "fsActivity": {
+    "tabLabel": "Actividad FS",
+    "allCameras": "Todas las cámaras",
+    "filterHint": "Filtrar…",
+    "autoRefresh": "Auto",
+    "noEvents": "Sin eventos de archivo aún",
+    "selectHint": "Selecciona una entrada para ver detalles",
+    "retained": "retenido",
+    "temp": "temp",
+    "deleted": "eliminado",
+    "retainedChip": "retenido",
+    "camera": "Cámara",
+    "stream": "Flujo",
+    "time": "Hora",
+    "endTs": "Hora fin",
+    "size": "Tamaño",
+    "filePath": "Ruta del archivo",
+    "download": "Descargar",
+    "noPreview": "Selecciona un clip retenido para previsualizar"
   },
   "serverSetup": {
     "title": "Configuración de cámara",

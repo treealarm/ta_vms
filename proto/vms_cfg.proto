@@ -273,6 +273,7 @@ message OnvifAlarmFilter {
   string camera_id       = 2;
   string filter_text     = 3;
   int32  timeout_seconds = 4;
+  string text_filter     = 5;
 }
 
 message ListOnvifAlarmFiltersRequest {

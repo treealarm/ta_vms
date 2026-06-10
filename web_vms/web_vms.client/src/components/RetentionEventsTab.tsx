@@ -4,23 +4,24 @@ import {
   Button,
   Card,
   CardContent,
-  Divider,
   LinearProgress,
+  List,
+  ListItemButton,
+  MenuItem,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
+  TextField,
   Typography
 } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 
 import type { RetentionEventRowDto, RetentionEventsListDto } from '../dto/dtos'
+import { useAppSelector } from '../store'
 import { getErrorMessage } from '../store/api'
 import ArchiveHlsPreview from './ArchiveHlsPreview'
+import EventDetailsPanel from './EventDetailsPanel'
 
 const PAGE_SIZE = 50
+const COLUMN_MAX_HEIGHT = 'min(75vh, 900px)'
 
 async function fetchRetentionEventsPage(params: { before?: string }): Promise<RetentionEventsListDto> {
   const qs = new URLSearchParams()
@@ -37,12 +38,17 @@ async function fetchRetentionEventsPage(params: { before?: string }): Promise<Re
 
 export default function RetentionEventsTab() {
   const { t } = useTranslation()
+  const camerasMap = useAppSelector((s) => s.live.cameraStatesById)
+  const cameraIds = Object.keys(camerasMap).sort()
+
   const [events, setEvents] = useState<RetentionEventRowDto[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [nextBefore, setNextBefore] = useState<string | undefined>(undefined)
   const [selected, setSelected] = useState<RetentionEventRowDto | null>(null)
+  const [cameraFilter, setCameraFilter] = useState('')
+  const [textFilter, setTextFilter] = useState('')
 
   const resetAndLoad = useCallback(async () => {
     setLoading(true)
@@ -69,6 +75,16 @@ export default function RetentionEventsTab() {
     const id = setInterval(() => void resetAndLoad(), 15_000)
     return () => clearInterval(id)
   }, [resetAndLoad])
+
+  const filteredEvents = events.filter((e) => {
+    if (cameraFilter && e.cameraId !== cameraFilter) return false
+    if (textFilter) {
+      const q = textFilter.toLowerCase()
+      if (!e.eventId.toLowerCase().includes(q) && !e.cameraId.toLowerCase().includes(q) && !(e.streamName ?? '').toLowerCase().includes(q))
+        return false
+    }
+    return true
+  })
 
   const loadOlder = async () => {
     if (!nextBefore || loading) {
@@ -109,65 +125,96 @@ export default function RetentionEventsTab() {
             </Typography>
           )}
 
-          <Box
-            sx={{
-              width: '100%',
-              maxHeight: { xs: 220, sm: 260 },
-              overflow: 'auto',
-              border: 1,
-              borderColor: 'divider',
-              borderRadius: 1
-            }}
-          >
-            <Table size="small" stickyHeader>
-              <TableHead>
-                <TableRow>
-                  <TableCell>{t('events.eventId')}</TableCell>
-                  <TableCell>{t('events.camId')}</TableCell>
-                  <TableCell>{t('events.alarmStart')}</TableCell>
-                  <TableCell>{t('events.alarmEnd')}</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {events.map((row) => (
-                  <TableRow
-                    key={row.eventId}
-                    hover
-                    selected={selected?.eventId === row.eventId}
-                    onClick={() => setSelected(row)}
-                    sx={{ cursor: 'pointer' }}
-                  >
-                    <TableCell>{row.eventId}</TableCell>
-                    <TableCell>{row.cameraId}</TableCell>
-                    <TableCell>{new Date(row.alarmStartTs).toLocaleString()}</TableCell>
-                    <TableCell>{row.alarmEndTs ? new Date(row.alarmEndTs).toLocaleString() : '—'}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            {events.length === 0 && !loading && (
-              <Typography variant="body2" color="text.secondary" sx={{ py: 2, px: 1 }}>
-                {t('events.noRows')}
-              </Typography>
-            )}
-          </Box>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="flex-start">
+            {/* Left: compact event list */}
+            <Box sx={{ width: { xs: '100%', md: 260 }, flexShrink: 0 }}>
+              <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+                <TextField
+                  select
+                  size="small"
+                  value={cameraFilter}
+                  onChange={(e) => setCameraFilter(e.target.value)}
+                  sx={{ width: 110 }}
+                  SelectProps={{ displayEmpty: true }}
+                >
+                  <MenuItem value="">{t('fsActivity.allCameras')}</MenuItem>
+                  {cameraIds.map((id) => (
+                    <MenuItem key={id} value={id}>{id}</MenuItem>
+                  ))}
+                </TextField>
+                <TextField
+                  size="small"
+                  placeholder={t('fsActivity.filterHint')}
+                  value={textFilter}
+                  onChange={(e) => setTextFilter(e.target.value)}
+                  sx={{ flex: 1, minWidth: 0 }}
+                />
+              </Stack>
 
-          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-            <Button variant="outlined" size="small" disabled={loading} onClick={() => void resetAndLoad()}>
-              {t('events.refresh')}
-            </Button>
-            <Button variant="outlined" size="small" disabled={loading || !hasMore} onClick={() => void loadOlder()}>
-              {t('events.loadOlder')}
-            </Button>
-            {loading && events.length > 0 && <LinearProgress sx={{ flex: 1, minWidth: 120 }} />}
+              <Box
+                sx={{
+                  maxHeight: { xs: 240, md: COLUMN_MAX_HEIGHT },
+                  overflow: 'auto',
+                  border: 1,
+                  borderColor: 'divider',
+                  borderRadius: 1
+                }}
+              >
+                <List dense disablePadding>
+                  {filteredEvents.map((row) => (
+                    <ListItemButton
+                      key={row.eventId}
+                      selected={selected?.eventId === row.eventId}
+                      onClick={() => setSelected(row)}
+                      sx={{ display: 'block', borderBottom: 1, borderColor: 'divider' }}
+                    >
+                      <Typography variant="body2" fontWeight="medium" noWrap>
+                        {row.cameraId}{row.streamName ? ` / ${row.streamName}` : ''}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" component="div">
+                        {new Date(row.alarmStartTs).toLocaleString()}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" component="div">
+                        {row.alarmEndTs ? new Date(row.alarmEndTs).toLocaleTimeString() : t('events.active')}
+                      </Typography>
+                    </ListItemButton>
+                  ))}
+                </List>
+                {filteredEvents.length === 0 && !loading && (
+                  <Typography variant="body2" color="text.secondary" sx={{ py: 2, px: 1 }}>
+                    {t('events.noRows')}
+                  </Typography>
+                )}
+              </Box>
+
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ mt: 1 }}>
+                <Button variant="outlined" size="small" disabled={loading} onClick={() => void resetAndLoad()}>
+                  {t('events.refresh')}
+                </Button>
+                <Button variant="outlined" size="small" disabled={loading || !hasMore} onClick={() => void loadOlder()}>
+                  {t('events.loadOlder')}
+                </Button>
+                {loading && events.length > 0 && <LinearProgress sx={{ flex: 1, minWidth: 80 }} />}
+              </Stack>
+            </Box>
+
+            {/* Middle: archive preview */}
+            <Box sx={{ flex: 2, minWidth: 0, width: '100%' }}>
+              <ArchiveHlsPreview selected={selected} />
+            </Box>
+
+            {/* Right: extended details */}
+            <Box
+              sx={{
+                width: { xs: '100%', md: 320 },
+                flexShrink: 0,
+                maxHeight: { xs: 'none', md: COLUMN_MAX_HEIGHT },
+                overflow: 'auto'
+              }}
+            >
+              <EventDetailsPanel selected={selected} />
+            </Box>
           </Stack>
-
-          <Divider />
-
-          <Typography variant="subtitle2" color="text.secondary">
-            {t('events.archivePreview')}
-          </Typography>
-          <ArchiveHlsPreview selected={selected} />
         </Stack>
       </CardContent>
     </Card>

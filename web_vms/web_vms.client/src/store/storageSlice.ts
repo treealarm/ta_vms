@@ -33,6 +33,15 @@ export const removeStorage = createAsyncThunk('storage/removeStorage', async (st
   return parseJson<ApiResponseDto>(response)
 })
 
+export const updateStorage = createAsyncThunk('storage/updateStorage', async (dto: StorageDto) => {
+  const response = await fetch(`/api/Storage/${encodeURIComponent(dto.storageId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dto)
+  })
+  return parseJson<ApiResponseDto>(response)
+})
+
 export const loadCameraStorages = createAsyncThunk(
   'storage/loadCameraStorages',
   async (cameraId: string) => {

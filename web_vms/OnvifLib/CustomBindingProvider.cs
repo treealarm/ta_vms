@@ -37,7 +37,7 @@ namespace OnvifLib
     {
       var b = new CustomBinding(
         new TextMessageEncodingBindingElement(MessageVersion.Soap12WSAddressing10, Encoding.UTF8),
-        new HttpTransportBindingElement { AuthenticationScheme = auth }
+        new HttpTransportBindingElement { AuthenticationScheme = auth, MaxReceivedMessageSize = 4 * 1024 * 1024 }
       );
       b.OpenTimeout = b.CloseTimeout = b.SendTimeout = b.ReceiveTimeout =
         TimeSpan.FromSeconds(_timeout);

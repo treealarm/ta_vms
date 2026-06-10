@@ -1,5 +1,9 @@
 # Architecture rules
 
+## Language conventions
+
+Chat communication with the user is in Russian. Code — comments, identifiers, commit messages, log messages, docs — is always in English.
+
 ## MediaMTX API access
 
 All interaction with the MediaMTX REST API goes through **VmsUtils** (`vmsutils` Dapr app-id). No other service (media_server, VmsCfg, web_vms, etc.) calls the MediaMTX API directly.
@@ -65,6 +69,10 @@ Exceptions where raw SQL is acceptable: complex bulk operations or SQL construct
 ## Docker image versions
 
 In `docker-compose.yml` use `latest` for all third-party images. Do not pin specific version tags (e.g. `1.14.4`) — use `latest` instead.
+
+## Protobuf — no `reserved` fields
+
+When removing a field from a `.proto` message, delete it outright. Do not use `reserved` — field numbers are not reused anyway and `reserved` is just noise. Same applies to field name reservations.
 
 ## Database columns — no speculative additions
 

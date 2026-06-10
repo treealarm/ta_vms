@@ -118,7 +118,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
   }, [playlistUrl])
 
   return (
-    <Box sx={{ height: '100%', width: '100%', display: 'flex', overflow: 'hidden' }}>
+    <Box sx={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
       {/* ── Video area ── */}
       <Box sx={{ flex: 1, minWidth: 0, position: 'relative', bgcolor: 'black' }}>
         {hlsError && (
@@ -177,6 +177,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
           ...PANEL_BG,
           width: listOpen ? 170 : 0,
           flexShrink: 0,
+          minHeight: 0,
           overflow: 'hidden',
           transition: 'width 0.15s ease',
           borderLeft: listOpen ? `1px solid ${alpha(W, 0.08)}` : 'none',
@@ -204,7 +205,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
 
         <Divider sx={{ borderColor: alpha(W, 0.1), flexShrink: 0 }} />
 
-        <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <RecordingsList
             ref={listRef}
             open={true}

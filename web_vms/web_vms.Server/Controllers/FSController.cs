@@ -291,6 +291,73 @@ public sealed class FSController(
     return Ok(new { streams });
   }
 
+  [HttpGet("event-clips")]
+  public async Task<IActionResult> GetEventClips([FromQuery] string eventId, CancellationToken ct)
+  {
+    if (string.IsNullOrWhiteSpace(eventId))
+      return BadRequest(new { error = "eventId is required" });
+
+    // Fan-out to all FS instances — event_id is local to the FS that stored it.
+    GetRecordingsResponse? clipsResp = null;
+    foreach (var fsId in registry.AllFsIds)
+    {
+      var fsClient = new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
+      try
+      {
+        clipsResp = await fsClient.GetClipsForEventAsync(
+          new GetClipsForEventRequest { EventId = eventId }, cancellationToken: ct);
+        break;
+      }
+      catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound) { /* try next */ }
+      catch (RpcException) { /* FS unavailable — try next */ }
+    }
+
+    if (clipsResp is null)
+      return NotFound(new { error = "event not found" });
+
+    var clips = clipsResp.Recordings
+      .Select(ToRecordingDto)
+      .OrderBy(c => c.StartTime)
+      .ToList();
+
+    return Ok(new EventClipsResponseDto { Clips = clips });
+  }
+
+  [HttpGet("activity")]
+  public async Task<IActionResult> GetFsActivity([FromQuery] int? limit, CancellationToken ct)
+  {
+    var lim = (uint)(limit ?? 100);
+    var allEvents = new List<FsFileEventDto>();
+    foreach (var fsId in registry.AllFsIds)
+    {
+      var fsClient = new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
+      try
+      {
+        var resp = await fsClient.GetFsActivityAsync(new GetFsActivityRequest { Limit = lim }, cancellationToken: ct);
+        allEvents.AddRange(resp.Events.Select(e => new FsFileEventDto
+        {
+          ClipUid    = e.ClipUid,
+          FilePath   = e.FilePath,
+          CameraId   = e.CameraId,
+          StreamName = e.StreamName,
+          Retained   = e.Retained,
+          SizeBytes  = e.SizeBytes,
+          OccurredAt = e.OccurredAt.ToDateTime(),
+          EventType  = e.EventType,
+          EndTs      = e.EndTs?.ToDateTime(),
+        }));
+      }
+      catch { /* FS unavailable — skip */ }
+    }
+
+    var sorted = allEvents
+      .OrderByDescending(e => e.OccurredAt)
+      .Take((int)lim)
+      .ToList();
+
+    return Ok(new FsActivityResponseDto { Events = sorted });
+  }
+
   [HttpGet("frame-jpeg")]
   public async Task<IActionResult> GetFrameJpeg(
     [FromQuery] string cameraId,

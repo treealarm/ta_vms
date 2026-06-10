@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Box, Stack, Tab, Tabs } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 
@@ -8,19 +8,34 @@ import RetentionEventsTab from './RetentionEventsTab'
 import SimulationFab from './SimulationFab'
 import LogToggleButton from './LogToggleButton'
 
+const TABS = ['monitors', 'events'] as const
+
 export default function OperatorView() {
   const { t } = useTranslation()
-  const [tab, setTab] = useState(0)
+  const navigate = useNavigate()
+  const location = useLocation()
+  const tab = TABS.indexOf(location.pathname.split('/').pop() as typeof TABS[number])
 
   return (
     <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
-      <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', p: { xs: 2, md: 4 } }}>
-        {tab === 0 && <MonitorsView readOnly />}
-        {tab === 1 && (
-          <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-            <RetentionEventsTab />
-          </Box>
-        )}
+      <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', px: { xs: 2, md: 4 }, pt: 1 }}>
+          <ViewControls target="admin" />
+        </Box>
+        <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', px: { xs: 2, md: 4 }, pt: 1, pb: { xs: 2, md: 4 } }}>
+          <Routes>
+            <Route path="monitors" element={<MonitorsView readOnly />} />
+            <Route
+              path="events"
+              element={(
+                <Box sx={{ height: '100%', overflow: 'auto' }}>
+                  <RetentionEventsTab />
+                </Box>
+              )}
+            />
+            <Route path="*" element={<Navigate to="/operator/monitors" replace />} />
+          </Routes>
+        </Box>
       </Box>
 
       <Box
@@ -32,13 +47,11 @@ export default function OperatorView() {
           flexDirection: 'column',
         }}
       >
-        <ViewControls target="admin" />
-
-        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
           <Tabs
             orientation="vertical"
-            value={tab}
-            onChange={(_, v: number) => setTab(v)}
+            value={tab === -1 ? 0 : tab}
+            onChange={(_, v: number) => navigate(`/operator/${TABS[v]}`)}
             sx={{ '& .MuiTab-root': { minWidth: 90 } }}
           >
             <Tab label={t('nav.monitors')} />

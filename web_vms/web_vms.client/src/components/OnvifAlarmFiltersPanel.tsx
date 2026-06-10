@@ -38,6 +38,7 @@ function FilterRow({ filter, cameraId, onSaved, onDeleted }: {
   const { t } = useTranslation()
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(filter.filterText)
+  const [textFilter, setTextFilter] = useState(filter.textFilter ?? '')
   const [timeout, setTimeout] = useState(filter.timeoutSeconds)
   const [saving, setSaving] = useState(false)
 
@@ -45,7 +46,7 @@ function FilterRow({ filter, cameraId, onSaved, onDeleted }: {
     if (!text.trim()) return
     setSaving(true)
     try {
-      await upsertFilter(cameraId, { ...filter, filterText: text.trim(), timeoutSeconds: timeout })
+      await upsertFilter(cameraId, { ...filter, filterText: text.trim(), textFilter: textFilter.trim() || undefined, timeoutSeconds: timeout })
       setEditing(false)
       onSaved()
     } finally {
@@ -55,6 +56,7 @@ function FilterRow({ filter, cameraId, onSaved, onDeleted }: {
 
   const handleCancel = () => {
     setText(filter.filterText)
+    setTextFilter(filter.textFilter ?? '')
     setTimeout(filter.timeoutSeconds)
     setEditing(false)
   }
@@ -70,34 +72,45 @@ function FilterRow({ filter, cameraId, onSaved, onDeleted }: {
   if (editing) {
     return (
       <Box component="form" onSubmit={(e) => { e.preventDefault(); void handleSave() }}>
-        <Stack direction="row" spacing={1} alignItems="center">
-          <TextField
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            size="small"
-            autoFocus
-            sx={{ flex: 1 }}
-          />
-          <TextField
-            type="number"
-            value={timeout}
-            onChange={(e) => setTimeout(Math.max(1, Number(e.target.value)))}
-            size="small"
-            sx={{ width: 100 }}
-            inputProps={{ min: 1 }}
-          />
-          <Tooltip title={t('common.save')}>
-            <span>
-              <IconButton size="small" type="submit" disabled={!text.trim() || saving} color="primary">
-                <CheckIcon fontSize="small" />
+        <Stack spacing={1}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <TextField
+              label={t('onvifFilters.filterText')}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              size="small"
+              autoFocus
+              sx={{ flex: 1 }}
+            />
+            <TextField
+              label={t('onvifFilters.textFilter')}
+              value={textFilter}
+              onChange={(e) => setTextFilter(e.target.value)}
+              size="small"
+              sx={{ flex: 1 }}
+              placeholder={t('onvifFilters.textFilterPlaceholder')}
+            />
+            <TextField
+              type="number"
+              value={timeout}
+              onChange={(e) => setTimeout(Math.max(1, Number(e.target.value)))}
+              size="small"
+              sx={{ width: 90 }}
+              inputProps={{ min: 1 }}
+            />
+            <Tooltip title={t('common.save')}>
+              <span>
+                <IconButton size="small" type="submit" disabled={!text.trim() || saving} color="primary">
+                  <CheckIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title={t('common.cancel')}>
+              <IconButton size="small" onClick={handleCancel}>
+                <CloseIcon fontSize="small" />
               </IconButton>
-            </span>
-          </Tooltip>
-          <Tooltip title={t('common.cancel')}>
-            <IconButton size="small" onClick={handleCancel}>
-              <CloseIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+            </Tooltip>
+          </Stack>
         </Stack>
       </Box>
     )
@@ -105,7 +118,12 @@ function FilterRow({ filter, cameraId, onSaved, onDeleted }: {
 
   return (
     <Stack direction="row" spacing={1} alignItems="center">
-      <Typography variant="body2" sx={{ flex: 1 }}>{filter.filterText}</Typography>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography variant="body2" noWrap>{filter.filterText}</Typography>
+        {filter.textFilter && (
+          <Typography variant="caption" color="text.secondary" noWrap>+ &quot;{filter.textFilter}&quot;</Typography>
+        )}
+      </Box>
       <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
         {filter.timeoutSeconds}s
       </Typography>
@@ -114,7 +132,7 @@ function FilterRow({ filter, cameraId, onSaved, onDeleted }: {
           <EditIcon fontSize="small" />
         </IconButton>
       </Tooltip>
-      <Tooltip title={t('common.delete')}>
+      <Tooltip title={t('onvifSubs.removeFilter')}>
         <IconButton size="small" color="error" onClick={() => void handleDelete()}>
           <DeleteIcon fontSize="small" />
         </IconButton>
@@ -127,6 +145,7 @@ export default function OnvifAlarmFiltersPanel({ cameraId }: Props) {
   const { t } = useTranslation()
   const [filters, setFilters] = useState<OnvifAlarmFilterDto[]>([])
   const [newText, setNewText] = useState('')
+  const [newTextFilter, setNewTextFilter] = useState('')
   const [newTimeout, setNewTimeout] = useState(30)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -151,8 +170,14 @@ export default function OnvifAlarmFiltersPanel({ cameraId }: Props) {
     if (!newText.trim()) return
     setError(null)
     try {
-      await upsertFilter(cameraId, { cameraId, filterText: newText.trim(), timeoutSeconds: newTimeout })
+      await upsertFilter(cameraId, {
+        cameraId,
+        filterText: newText.trim(),
+        textFilter: newTextFilter.trim() || undefined,
+        timeoutSeconds: newTimeout,
+      })
       setNewText('')
+      setNewTextFilter('')
       setNewTimeout(30)
       await load()
     } catch (e) {
@@ -187,6 +212,14 @@ export default function OnvifAlarmFiltersPanel({ cameraId }: Props) {
             onChange={(e) => setNewText(e.target.value)}
             size="small"
             sx={{ flex: 1 }}
+          />
+          <TextField
+            label={t('onvifFilters.textFilter')}
+            value={newTextFilter}
+            onChange={(e) => setNewTextFilter(e.target.value)}
+            size="small"
+            sx={{ flex: 1 }}
+            placeholder={t('onvifFilters.textFilterPlaceholder')}
           />
           <TextField
             label={t('onvifFilters.timeoutSec')}

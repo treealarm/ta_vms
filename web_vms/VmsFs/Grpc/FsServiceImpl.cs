@@ -8,7 +8,8 @@ public sealed class FsServiceImpl(
   ClipStorage storage,
   StorageListCache storageListCache,
   CameraStorageCache storageCache,
-  AlarmRecordingService alarmRecording) : FsService.FsServiceBase
+  AlarmRecordingService alarmRecording,
+  FsActivityLog activityLog) : FsService.FsServiceBase
 {
   private readonly ClipStorage _storage = storage;
   private readonly StorageListCache _storageListCache = storageListCache;
@@ -189,10 +190,11 @@ public sealed class FsServiceImpl(
     GetCameraStorageRequest request,
     ServerCallContext context)
   {
-    var info = await storageCache.GetAsync(request.CameraId, context.CancellationToken);
+    var all = await storageCache.GetAllAsync(request.CameraId, context.CancellationToken);
     var response = new GetCameraStorageResponse();
-    if (info != null)
-      response.Storage = info;
+    if (all.Count > 0)
+      response.Storage = all[0];
+    response.Storages.AddRange(all);
     return response;
   }
 
@@ -304,6 +306,33 @@ public sealed class FsServiceImpl(
     var resp = new GetRecordingsResponse();
     resp.Recordings.AddRange(clips);
     return resp;
+  }
+
+  public override Task<GetFsActivityResponse> GetFsActivity(
+    GetFsActivityRequest request,
+    ServerCallContext context)
+  {
+    var limit = (int)(request.Limit == 0 ? 100u : request.Limit);
+    var entries = activityLog.GetRecent(limit);
+    var response = new GetFsActivityResponse();
+    foreach (var e in entries)
+    {
+      var evt = new FsFileEvent
+      {
+        ClipUid    = e.ClipUid.ToString(),
+        FilePath   = e.FilePath,
+        CameraId   = e.CameraId,
+        StreamName = e.StreamName,
+        Retained   = e.Retained,
+        SizeBytes  = e.SizeBytes,
+        OccurredAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(e.OccurredAt),
+        EventType  = e.EventType,
+      };
+      if (e.EndTs.HasValue)
+        evt.EndTs = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(e.EndTs.Value);
+      response.Events.Add(evt);
+    }
+    return Task.FromResult(response);
   }
 
   private async Task<string?> ResolveAbsolutePathAsync(string storageId, string relativePath, CancellationToken ct)

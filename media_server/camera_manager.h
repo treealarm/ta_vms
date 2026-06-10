@@ -53,17 +53,14 @@ public:
   bool start_recording(const std::string& camera_id, std::string& error);
   bool stop_recording(const std::string& camera_id, std::string& error);
 
+  // Apply recording policy and WebRTC on/off for an existing stream.
+  // Config (rtsp_url, credentials, push URL) comes through configure_camera only.
   bool set_camera_state(
     const std::string& camera_id,
     const std::string& stream_name,
-    const std::string& rtsp_url,
-    const std::string& profile_token,
-    const std::string& user,
-    const std::string& pass,
     const recording_policy_spec& policy,
     bool web_rtc,
-    std::string& error,
-    const std::string& webrtc_rtsp_push_url = "");
+    std::string& error);
 
   std::optional<camera_info> get_camera_state(
     const std::string& camera_id,

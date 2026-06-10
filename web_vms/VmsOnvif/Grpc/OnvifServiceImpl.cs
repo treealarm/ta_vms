@@ -85,6 +85,22 @@ public class OnvifServiceImpl(
       ReceivedAt = e.ReceivedAt.ToString("O"),
       Topic      = e.Topic,
       PayloadXml = e.PayloadXml,
+      CameraId   = request.CameraId,
+    }));
+    return Task.FromResult(response);
+  }
+
+  public override Task<GetAllRecentOnvifEventsResponse> GetAllRecentOnvifEvents(
+    GetAllRecentOnvifEventsRequest request, ServerCallContext context)
+  {
+    var events = subscriptionService.GetAllRecentEvents();
+    var response = new GetAllRecentOnvifEventsResponse();
+    response.Events.AddRange(events.Select(e => new OnvifEventRecord
+    {
+      ReceivedAt = e.Entry.ReceivedAt.ToString("O"),
+      Topic      = e.Entry.Topic,
+      PayloadXml = e.Entry.PayloadXml,
+      CameraId   = e.CameraId,
     }));
     return Task.FromResult(response);
   }

@@ -10,12 +10,11 @@
 
 segment_writer::segment_writer(
   const std::string& camera_id,
-  const std::string& stream_name,
-  std::chrono::seconds segment_duration)
+  const std::string& stream_name)
   :
   m_camera_id(camera_id),
   m_stream_name(stream_name),
-  m_segment_duration(segment_duration.count() > 0 ? segment_duration : std::chrono::seconds(60)),
+  m_segment_duration(std::chrono::seconds(60)),
   m_packet_transcoder([]
     {
       sync_packet_transcoder::codec_config config;
@@ -26,11 +25,40 @@ segment_writer::segment_writer(
       return config;
     }())
 {
+  // Lifetime of *this is owned by cam_stream (one segment_writer per stream, for its
+  // whole lifetime), so capturing a raw `this` is safe: the destructor joins the
+  // thread before the object is destroyed.
+  m_writer_thread = std::thread([this] { process_queue(); });
+}
+
+void segment_writer::set_segment_duration(std::chrono::seconds new_segment_duration)
+{
+  if (new_segment_duration.count() > 0)
+    m_segment_duration.store(new_segment_duration);
+}
+
+void segment_writer::request_close_segment(std::chrono::seconds new_segment_duration)
+{
+  set_segment_duration(new_segment_duration);
+
+  {
+    std::lock_guard lock(m_queue_mutex);
+    m_queue.push(nullptr);
+  }
+  m_queue_cv.notify_one();
+}
+
+void segment_writer::stop_async()
+{
+  std::lock_guard lock(m_queue_mutex);
+  m_stopping = true;
+  m_queue_cv.notify_one();
 }
 
 segment_writer::~segment_writer()
 {
-  close();
+  stop_async();
+  m_writer_thread.join();
 }
 
 bool segment_writer::ensure_input_stream(const std::shared_ptr<media_packet>& media)
@@ -76,18 +104,45 @@ void segment_writer::open_new_segment()
 
   recording_storage storage;
 
-  auto cam_storage = fs_client::instance().get_camera_storage(m_camera_id);
-  if (cam_storage.empty())
+  const auto cam_storages = fs_client::instance().get_camera_storages(m_camera_id);
+  if (cam_storages.empty())
   {
     logger::instance().error(std::format(
       "camera '{}' has no storage assigned — segment will not be written", m_camera_id));
     return;
   }
-  const auto storage_root = cam_storage.root_path;
 
   m_segment_rel_path = storage.make_segment_path(m_camera_id, m_stream_name, now);
-  const auto path = std::filesystem::path(storage_root) / m_segment_rel_path;
-  std::filesystem::create_directories(path.parent_path());
+
+  fs_client::storage_info cam_storage;
+  std::filesystem::path path;
+  bool dir_ready = false;
+  for (const auto& s : cam_storages)
+  {
+    std::filesystem::path candidate = std::filesystem::path(s.root_path) / m_segment_rel_path;
+    std::error_code ec;
+    std::filesystem::create_directories(candidate.parent_path(), ec);
+    if (ec)
+    {
+      logger::instance().warning(std::format(
+        "storage '{}' (root '{}') not accessible: {} — trying next",
+        s.storage_id, s.root_path, ec.message()));
+      continue;
+    }
+    cam_storage = s;
+    path = candidate;
+    dir_ready = true;
+    break;
+  }
+
+  if (!dir_ready)
+  {
+    logger::instance().error(std::format(
+      "camera '{}': all {} storage(s) failed create_directories — segment will not be written",
+      m_camera_id, cam_storages.size()));
+    return;
+  }
+
   m_segment_abs_path = path;
 
   AVFormatContext* ctx = nullptr;
@@ -227,7 +282,57 @@ void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)
 {
   if (!in_media || !in_media->packet)
     return;
+  std::lock_guard lock(m_queue_mutex);
+  if (m_queue.size() >= k_max_queue_depth)
+    return; // drop when writer thread falls behind
+  m_queue.push(in_media);
+  m_queue_cv.notify_one();
+}
 
+void segment_writer::process_queue()
+{
+  while (true)
+  {
+    std::queue<std::shared_ptr<media_packet>> batch;
+    {
+      std::unique_lock lock(m_queue_mutex);
+      m_queue_cv.wait(lock, [this]{ return !m_queue.empty() || m_stopping.load(); });
+      std::swap(batch, m_queue);
+    }
+
+    process_batch(batch);
+
+    if (m_stopping.load())
+      break;
+  }
+
+  // Final drain: a packet may have been pushed between the stop signal and
+  // remove_sink() taking effect. Flush it before closing the segment.
+  std::queue<std::shared_ptr<media_packet>> remaining;
+  {
+    std::lock_guard lock(m_queue_mutex);
+    std::swap(remaining, m_queue);
+  }
+  process_batch(remaining);
+
+  close();
+}
+
+void segment_writer::process_batch(std::queue<std::shared_ptr<media_packet>>& batch)
+{
+  while (!batch.empty())
+  {
+    auto pkt = std::move(batch.front());
+    batch.pop();
+    if (pkt)
+      process_packet(pkt);
+    else
+      close_segment(); // control marker from request_close_segment()
+  }
+}
+
+void segment_writer::process_packet(const std::shared_ptr<media_packet>& in_media)
+{
   auto media = m_packet_transcoder.transcode_packet(in_media);
   while (media)
   {
@@ -256,7 +361,7 @@ void segment_writer::write_packet(const std::shared_ptr<media_packet>& in_media)
   }
 
   auto elapsed = std::chrono::steady_clock::now() - m_segment_start_time;
-  if (elapsed >= m_segment_duration &&
+  if (elapsed >= m_segment_duration.load() &&
     media->media_type == AVMEDIA_TYPE_VIDEO &&
     (pkt->flags & AV_PKT_FLAG_KEY))
   {

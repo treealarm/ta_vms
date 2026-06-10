@@ -41,23 +41,16 @@ public class LiveController(
                                               : $"Media server error: {ex.Status.Detail}"
   };
 
-  private static IReadOnlyList<CameraState> ToControlStates(CameraSetupDto request, string? webrtcRtspPushUrl = null)
+  private static IReadOnlyList<CameraState> ToControlStates(CameraSetupDto request)
   {
-    var cred = request.Cred != null
-      ? new Credentials { User = request.Cred.User, Pass = request.Cred.Pass }
-      : null;
-
     var streams = request.Streams;
     if (streams == null || streams.Count == 0)
     {
       // Legacy single-stream path
       return [new CameraState
       {
-        CameraId            = request.CameraId,
-        RtspUrl             = request.RtspUrl ?? "",
-        WebRtc              = request.WebRtc,
-        Cred                = cred,
-        WebrtcRtspPushUrl   = webrtcRtspPushUrl ?? "",
+        CameraId = request.CameraId,
+        WebRtc   = request.WebRtc,
       }];
     }
 
@@ -74,14 +67,10 @@ public class LiveController(
 
       var state = new CameraState
       {
-        CameraId            = request.CameraId,
-        StreamName          = stream.StreamName,
-        RtspUrl             = stream.RtspUrl ?? "",
-        ProfileToken        = stream.ProfileToken ?? "",
-        WebRtc              = stream.WebRtc,
-        Cred                = cred,
-        RecordingMode       = recordingMode,
-        WebrtcRtspPushUrl   = webrtcRtspPushUrl ?? "",
+        CameraId      = request.CameraId,
+        StreamName    = stream.StreamName,
+        WebRtc        = stream.WebRtc,
+        RecordingMode = recordingMode,
       };
 
       if (recordingMode == RecordingMode.RecordingPrealarm && profile != null)
@@ -92,14 +81,14 @@ public class LiveController(
     return states;
   }
 
-  private async Task<(CameraSetupDto normalized, string? webrtcRtspPushUrl, string? webrtcUrl)>
+  private async Task<(CameraSetupDto normalized, string? webrtcUrl)>
     ResolveWithMediaMtxAsync(CameraSetupDto request, CancellationToken ct)
   {
     var normalized = CameraManager.Normalize(request);
 
     var hasWebRtcStream = normalized.Streams.Any(s => s.WebRtc) || normalized.WebRtc;
     if (!hasWebRtcStream)
-      return (normalized, null, null);
+      return (normalized, null);
 
     MediaMtxServerDto? server;
     if (!string.IsNullOrWhiteSpace(normalized.MediaMtxServerId))
@@ -117,9 +106,9 @@ public class LiveController(
     }
 
     if (server is null)
-      return (normalized, null, null);
+      return (normalized, null);
 
-    return (normalized, server.RtspUrl, server.WebrtcUrl);
+    return (normalized, server.WebrtcUrl);
   }
 
   [HttpPost("cameras")]
@@ -130,7 +119,7 @@ public class LiveController(
       return BadRequest("serverId must not be empty");
     }
 
-    var (normalized, webrtcRtspPushUrl, _) = await ResolveWithMediaMtxAsync(request, ct);
+    var (normalized, _) = await ResolveWithMediaMtxAsync(request, ct);
 
     // Config is the source of truth — save first.
     try
@@ -142,18 +131,8 @@ public class LiveController(
       return Ok(new ApiResponse(false, $"Config service error: {MediaServerError(ex)}"));
     }
 
-    // Notify media server best-effort (don't fail the save if media server is unavailable).
-    var hasStream = normalized.Streams.Count > 0 || !string.IsNullOrEmpty(normalized.RtspUrl);
-    if (hasStream && !string.IsNullOrWhiteSpace(normalized.ServerId))
-    {
-      try
-      {
-        var mediaClient = GetMediaClient(normalized.ServerId);
-        foreach (var controlState in ToControlStates(normalized, webrtcRtspPushUrl))
-          await mediaClient.SetCameraStateAsync(controlState, BestEffortCallOptions(ct));
-      }
-      catch (RpcException) { /* best-effort */ }
-    }
+    // Camera config is delivered to media_server via pub/sub (config_subscriber).
+    // No need for a direct SetCameraState call here — config_subscriber handles it.
 
     return Ok(new ApiResponse(true, "ok"));
   }
@@ -180,7 +159,7 @@ public class LiveController(
       return NotFound();
     }
 
-    var (normalized, webrtcRtspPushUrl, _) = await ResolveWithMediaMtxAsync(request, ct);
+    var (normalized, _) = await ResolveWithMediaMtxAsync(request, ct);
 
     // Config is the source of truth — save first, regardless of media server availability.
     try
@@ -204,17 +183,7 @@ public class LiveController(
       catch (RpcException) { /* best-effort */ }
     }
 
-    // Notify new media server to start the camera (best-effort).
-    if (!string.IsNullOrWhiteSpace(normalized.ServerId))
-    {
-      try
-      {
-        var addClient = GetMediaClient(normalized.ServerId);
-        foreach (var controlState in ToControlStates(normalized, webrtcRtspPushUrl))
-          await addClient.SetCameraStateAsync(controlState, BestEffortCallOptions(ct));
-      }
-      catch (RpcException) { /* best-effort */ }
-    }
+    // Camera config on the new server is delivered via pub/sub (config_subscriber).
 
     return Ok(new ApiResponse(true, "ok"));
   }
@@ -285,18 +254,20 @@ public class LiveController(
       return NotFound();
     }
 
-    var (normalized, webrtcRtspPushUrl, _) = await ResolveWithMediaMtxAsync(
+    var (normalized, _) = await ResolveWithMediaMtxAsync(
       state with { ServerId = targetServerId }, ct);
 
     // Config is the source of truth — save first.
     await _manager.SetSetup(normalized, ct);
 
-    // Notify media server best-effort.
+    // Push recording state + WebRTC flag directly to media_server (best-effort fast path).
+    // Config (rtsp_url, push URL, credentials) is not sent here — config_subscriber handles
+    // that via pub/sub. Only state (recording policy + web_rtc) is set here for immediacy.
     Vms.Control.OperationStatus lastResponse = new() { Success = true, Message = "ok" };
     try
     {
       var stateClient = GetMediaClient(targetServerId);
-      foreach (var controlState in ToControlStates(normalized, webrtcRtspPushUrl))
+      foreach (var controlState in ToControlStates(normalized))
       {
         lastResponse = await stateClient.SetCameraStateAsync(controlState, BestEffortCallOptions(ct));
         if (!lastResponse.Success) break;

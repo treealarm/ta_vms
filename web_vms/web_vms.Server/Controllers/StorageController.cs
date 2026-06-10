@@ -36,6 +36,27 @@ public sealed class StorageController(StorageService.StorageServiceClient storag
     return Ok(new ApiResponse(true, "ok"));
   }
 
+  [HttpPut("{storageId}")]
+  public async Task<IActionResult> UpdateStorage(string storageId, [FromBody] StorageDto dto, CancellationToken ct)
+  {
+    if (storageId != dto.StorageId)
+      return BadRequest(new { error = "storageId mismatch" });
+    if (string.IsNullOrWhiteSpace(dto.RootPath))
+      return BadRequest(new { error = "rootPath is required" });
+
+    var resp = await storageClient.AddStorageAsync(new Storage
+    {
+      StorageId     = dto.StorageId,
+      RootPath      = dto.RootPath,
+      ReservedBytes = dto.ReservedBytes
+    }, cancellationToken: ct);
+
+    if (!resp.Success)
+      return BadRequest(new { error = resp.Message });
+
+    return Ok(new ApiResponse(true, "ok"));
+  }
+
   [HttpDelete("{storageId}")]
   public async Task<IActionResult> RemoveStorage(string storageId, CancellationToken ct)
   {

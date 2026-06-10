@@ -36,6 +36,7 @@ builder.Services.AddSingleton<StorageListCache>();
 builder.Services.AddSingleton<CameraStorageCache>();
 builder.Services.AddHostedService<CameraStorageSubscriber>();
 builder.Services.AddSingleton<DbMigrator>();
+builder.Services.AddSingleton<FsActivityLog>();
 builder.Services.AddSingleton<ClipStorage>();
 builder.Services.AddSingleton<FsServiceImpl>();
 

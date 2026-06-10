@@ -30,14 +30,9 @@ grpc::Status camera_control_service::SetCameraState(
   const bool success = m_manager.set_camera_state(
     request->camera_id(),
     request->stream_name(),
-    request->rtsp_url(),
-    request->profile_token(),
-    request->has_cred() ? request->cred().user() : "",
-    request->has_cred() ? request->cred().pass() : "",
     policy,
     request->web_rtc(),
-    error,
-    request->webrtc_rtsp_push_url());
+    error);
 
   response->set_success(success);
   response->set_message(success ? "camera state updated" : error);

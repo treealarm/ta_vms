@@ -37,17 +37,12 @@ public sealed class StreamStateService(ICameraManager manager)
     {
       CameraId      = cameraId,
       StreamName    = streamName,
-      ProfileToken  = stream.ProfileToken,
-      RtspUrl       = stream.RtspUrl,
       WebRtc        = stream.WebRtc,
       RecordingMode = recordingMode,
     };
 
     if (recordingMode == RecordingMode.RecordingPrealarm && profile != null)
       state.SegmentSeconds = profile.SegmentSeconds > 0 ? profile.SegmentSeconds : 5u;
-
-    if (camera.Cred != null)
-      state.Cred = new Vms.Control.Credentials { User = camera.Cred.User, Pass = camera.Cred.Pass };
 
     try
     {

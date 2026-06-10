@@ -55,7 +55,8 @@
     "reservedGb": "Reserved (GB)",
     "required": "Storage ID and root path are required",
     "noStorages": "No storages configured",
-    "gbReserved": "{{n}} GB reserved"
+    "gbReserved": "{{n}} GB reserved",
+    "saveFailed": "Failed to save"
   },
   "storageControl": {
     "title": "Storage assignment",
@@ -131,8 +132,12 @@
     "noRows": "No rows.",
     "refresh": "Refresh",
     "loadOlder": "Load older",
-    "archivePreview": "Archive preview (HLS at alarm_start_ts; alarm end shown for reference)",
-    "retry": "Retry"
+    "retry": "Retry",
+    "details": "Details",
+    "duration": "Duration",
+    "streamName": "Stream",
+    "clipsList": "Clips",
+    "active": "Active"
   },
   "stream": {
     "newStream": "New stream on {{camera}}",
@@ -197,7 +202,9 @@
     "tabSetup": "Setup",
     "tabFilters": "ONVIF Filters",
     "tabDebug": "ONVIF Events",
-    "filterText": "Topic / payload substring",
+    "filterText": "Topic (substring)",
+    "textFilter": "Payload text (optional)",
+    "textFilterPlaceholder": "any",
     "timeoutSec": "Recording duration (sec)",
     "addFilter": "Add",
     "noFilters": "No filters configured",
@@ -206,12 +213,75 @@
     "debugTopic": "Topic",
     "debugRefresh": "Refresh",
     "debugPayload": "Full payload (XML)",
-    "autoRefresh": "Auto-refresh"
+    "autoRefresh": "Auto-refresh",
+    "allCameras": "All cameras",
+    "filterHint": "Filter…"
+  },
+  "cameraCard": {
+    "switchToArchive": "Switch to Archive",
+    "switchToLive": "Switch to Live",
+    "cycleStream": "Stream: {{stream}} — click to cycle",
+    "ptzOpen": "PTZ control",
+    "ptzClose": "Close PTZ",
+    "armedTip": "Armed — click to disarm",
+    "disarmedTip": "Disarmed — click to arm",
+    "controls": "Controls",
+    "streamSection": "Stream",
+    "modeSection": "Mode",
+    "overrideSection": "Override",
+    "overrideSectionForStream": "Override — {{stream}}",
+    "guardSection": "Guard",
+    "cameraWide": "(camera)",
+    "streamRecordingTip": "Recording on this stream",
+    "continuousOn": "Continuous recording — click to turn off",
+    "continuousOff": "Click to enable continuous recording",
+    "armedToggle": "Armed",
+    "disarmedToggle": "Disarmed",
+    "modeLive": "Live",
+    "modeArchive": "Archive",
+    "expand": "Expand",
+    "showAll": "Show all",
+    "copyRtsp": "Copy RTSP",
+    "copiedRtsp": "Copied!",
+    "retentionActive": "Retention active",
+    "cameraDisabledTip": "Camera is disabled — arm/PTZ unavailable"
+  },
+  "recordings": {
+    "earlier": "Earlier",
+    "later": "Later",
+    "pickDateTime": "Click to pick date/time",
+    "noRecordings": "No recordings found",
+    "startTime": "Start",
+    "endTime": "End",
+    "clips": "Clips",
+    "jumpToDateTime": "Jump to date / time"
   },
   "onvifSubs": {
     "description": "Cameras in this list receive ONVIF events. Arm to trigger retention recordings on matching alarm filters.",
     "noCameras": "No cameras added yet.",
-    "addCamera": "Add camera"
+    "addCamera": "Add camera",
+    "removeCamera": "Remove camera from ONVIF monitoring",
+    "removeFilter": "Delete alarm filter"
+  },
+  "fsActivity": {
+    "tabLabel": "FS Activity",
+    "allCameras": "All cameras",
+    "filterHint": "Filter…",
+    "autoRefresh": "Auto",
+    "noEvents": "No file events yet",
+    "selectHint": "Select an entry to see details",
+    "retained": "retained",
+    "temp": "temp",
+    "deleted": "deleted",
+    "retainedChip": "retained",
+    "camera": "Camera",
+    "stream": "Stream",
+    "time": "Time",
+    "endTs": "End time",
+    "size": "Size",
+    "filePath": "File path",
+    "download": "Download",
+    "noPreview": "Select a retained clip to preview"
   },
   "serverSetup": {
     "title": "Camera setup",

@@ -92,6 +92,11 @@ export type RecordingProfileDto = {
   isBuiltin: boolean
 }
 
+// Well-known built-in recording-profile preset IDs (see VmsCfg migration 0001_init.sql)
+export const RECORDING_PROFILE_CONTINUOUS_ID = '00000000-0000-0000-0000-000000000001'
+export const RECORDING_PROFILE_PREALARM_ID = '00000000-0000-0000-0000-000000000002'
+export const RECORDING_PROFILE_OFF_ID = '00000000-0000-0000-0000-000000000003'
+
 export type CameraStreamDto = {
   streamName: string
   profileToken: string
@@ -121,6 +126,7 @@ export type CameraSetupDto = {
   onvifEventsEnabled?: boolean
   hasOnvifFilters?: boolean
   onvifManaged?: boolean
+  armed?: boolean
   disabled?: boolean
 }
 
@@ -196,6 +202,10 @@ export type RetentionEventsListDto = {
   events: RetentionEventRowDto[]
   hasMore: boolean
   nextBeforeAlarmStart?: string
+}
+
+export type EventClipsResponseDto = {
+  clips: RecordingDto[]
 }
 
 export type StorageDto = {
@@ -290,6 +300,7 @@ export type OnvifAlarmFilterDto = {
   id?: string
   cameraId: string
   filterText: string
+  textFilter?: string
   timeoutSeconds: number
 }
 
@@ -297,4 +308,5 @@ export type OnvifEventRecordDto = {
   receivedAt: string
   topic: string
   payloadXml: string
+  cameraId?: string
 }

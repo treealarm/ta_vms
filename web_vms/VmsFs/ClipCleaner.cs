@@ -4,7 +4,8 @@ public sealed class ClipCleaner(
   ClipStorage storage,
   CameraConfigCache configCache,
   CameraSetupCache setupCache,
-  StorageListCache storageListCache) : IHostedService, IAsyncDisposable
+  StorageListCache storageListCache,
+  FsActivityLog activityLog) : IHostedService, IAsyncDisposable
 {
   // Conservative lower bound: SQL pre-filters clips older than this many seconds.
   // Per-camera pre_record_seconds is then applied in code as the authoritative check.
@@ -96,6 +97,8 @@ public sealed class ClipCleaner(
           if (!TryDeleteAssociatedFiles(basePath, filePath))
             continue;
 
+          activityLog.Record(new FsActivityEntry(
+            clipUid, filePath, group.Key, "", false, 0, DateTime.UtcNow, "deleted", endTs));
           await storage.DeleteClipRecordAsync(clipUid, ct);
           Console.WriteLine($"ClipCleaner: deleted clip {filePath}");
         }
