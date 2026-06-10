@@ -8,6 +8,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
   public DbSet<DbRecordingProfile> RecordingProfiles { get; set; }
   public DbSet<DbOnvifAlarmFilter> OnvifAlarmFilters { get; set; }
   public DbSet<DbCameraState> CameraStates { get; set; }
+  public DbSet<DbStorage> Storages { get; set; }
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
@@ -52,6 +53,15 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.CameraId).HasColumnName("camera_id");
       e.Property(x => x.Armed).HasColumnName("armed");
     });
+
+    modelBuilder.Entity<DbStorage>(e =>
+    {
+      e.ToTable("storage");
+      e.HasKey(x => x.StorageId);
+      e.Property(x => x.StorageId).HasColumnName("storage_id");
+      e.Property(x => x.RootPath).HasColumnName("root_path");
+      e.Property(x => x.ReservedBytes).HasColumnName("reserved_bytes");
+    });
   }
 }
 
@@ -84,4 +94,11 @@ public sealed class DbCameraState
 {
   public string CameraId { get; set; } = string.Empty;
   public bool Armed { get; set; }
+}
+
+public sealed class DbStorage
+{
+  public string StorageId { get; set; } = string.Empty;
+  public string RootPath { get; set; } = string.Empty;
+  public long ReservedBytes { get; set; }
 }

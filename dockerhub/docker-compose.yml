@@ -1,3 +1,6 @@
+x-data-volume: &data-volume
+  - ./data:/data
+
 services:
   postgres:
     image: postgres:latest
@@ -31,8 +34,7 @@ services:
       - .env
     environment:
       APP_ID: vmsutils
-    volumes:
-      - ./data:/data
+    volumes: *data-volume
 
   vmsutils-dapr:
     image: "daprio/daprd:latest"
@@ -63,8 +65,7 @@ services:
       - .env
     environment:
       APP_ID: vmslogger
-    volumes:
-      - ./data:/data
+    volumes: *data-volume
 
   vmslogger-dapr:
     image: "daprio/daprd:latest"
@@ -200,8 +201,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       APP_ID: vmsfs
-    volumes:
-      - ./data:/data
+    volumes: *data-volume
     depends_on:
       - postgres
 
@@ -236,8 +236,7 @@ services:
       - .env
     environment:
       APP_ID: vms
-    volumes:
-      - ./data:/data
+    volumes: *data-volume
     depends_on:
       - vmscfg
       - vmsonvif

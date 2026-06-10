@@ -1,3 +1,5 @@
+x-data-volume: &data-volume
+  - "${PWD}/data:/data"
 
 services:
   dapr-placement:
@@ -51,8 +53,7 @@ services:
       - .env
     environment:
       APP_ID: vmsutils
-    volumes:
-      - "${PWD}/data:/data"
+    volumes: *data-volume
 
   vmsutils-dapr:
     profiles: [app]
@@ -87,8 +88,7 @@ services:
       - .env
     environment:
       APP_ID: vmslogger
-    volumes:
-      - "${PWD}/data:/data"
+    volumes: *data-volume
 
   vmslogger-dapr:
     profiles: [app]
@@ -124,8 +124,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       APP_ID: vmscfg
-    volumes:
-      - "${PWD}/data:/data"
+    volumes: *data-volume
     depends_on:
       - postgres
 
@@ -164,8 +163,7 @@ services:
       APP_ID: vmsonvif
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    volumes:
-      - "${PWD}/data:/data"
+    volumes: *data-volume
     depends_on:
       - vmscfg
 
@@ -180,8 +178,7 @@ services:
       APP_ID: vmsonvif-actors
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    volumes:
-      - "${PWD}/data:/data"
+    volumes: *data-volume
     depends_on:
       - vmscfg
 
@@ -195,8 +192,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       APP_ID: vmsfs
-    volumes:
-      - "${PWD}/data:/data"
+    volumes: *data-volume
     depends_on:
       - postgres
 
@@ -291,8 +287,7 @@ services:
       - vmsonvif
       - vmsfs
       - mediamtx
-    volumes:
-      - "${PWD}/data:/data"
+    volumes: *data-volume
 
   vms-dapr:
     profiles: [app]

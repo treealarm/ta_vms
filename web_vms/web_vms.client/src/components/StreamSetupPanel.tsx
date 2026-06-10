@@ -229,10 +229,7 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
                     onClick={() => {
                       setProfileToken(p.token)
                       if (isNew && !name) {
-                        const suggested = p.name !== p.token
-                          ? p.name.toLowerCase().replace(/[\s-]+/g, '_')
-                          : p.token.toLowerCase()
-                        setName(suggested)
+                        setName(p.token.toLowerCase())
                       }
                     }}
                   />

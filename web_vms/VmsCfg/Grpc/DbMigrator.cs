@@ -1,11 +1,16 @@
+using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
 namespace VmsCfg;
 
-public class DbMigrator(NpgsqlDataSource dataSource, IWebHostEnvironment environment)
+public class DbMigrator(
+  NpgsqlDataSource dataSource,
+  IWebHostEnvironment environment,
+  IDbContextFactory<VmsCfgDbContext> dbContextFactory)
 {
   private readonly NpgsqlDataSource _dataSource = dataSource;
   private readonly IWebHostEnvironment _environment = environment;
+  private readonly IDbContextFactory<VmsCfgDbContext> _dbContextFactory = dbContextFactory;
 
   public async Task MigrateAsync(CancellationToken ct = default)
   {
@@ -57,6 +62,7 @@ public class DbMigrator(NpgsqlDataSource dataSource, IWebHostEnvironment environ
     }
 
     await SeedDefaultMediaMtxServerAsync(connection, ct);
+    await SeedDefaultStorageAsync(ct);
   }
 
   // Inserts a default MediaMTX server from env vars if the table is empty.
@@ -83,6 +89,22 @@ public class DbMigrator(NpgsqlDataSource dataSource, IWebHostEnvironment environ
     insertCmd.Parameters.AddWithValue(rtspUrl ?? "rtsp://localhost:8554");
     insertCmd.Parameters.AddWithValue(clientUrl ?? "http://localhost:8889");
     await insertCmd.ExecuteNonQueryAsync(ct);
+  }
+
+  // Inserts a default storage pointing at VMS_STORAGE_BASE_PATH if the table is empty,
+  // so a fresh deployment has a usable storage instead of an empty list.
+  private async Task SeedDefaultStorageAsync(CancellationToken ct)
+  {
+    var rootPath = Environment.GetEnvironmentVariable("VMS_STORAGE_BASE_PATH");
+    if (string.IsNullOrWhiteSpace(rootPath))
+      return;
+
+    await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+    if (await db.Storages.AnyAsync(ct))
+      return;
+
+    db.Storages.Add(new DbStorage { StorageId = "default", RootPath = rootPath, ReservedBytes = 0 });
+    await db.SaveChangesAsync(ct);
   }
 
   private string GetMigrationsPath()
