@@ -25,10 +25,46 @@ services:
     volumes:
       - ./init_files/config/mediamtx.yml:/mediamtx.yml
 
+  vmsutils:
+    image: treealarm/vmsutils:latest
+    env_file:
+      - .env
+    environment:
+      APP_ID: vmsutils
+    volumes:
+      - ./data:/data
+
+  vmsutils-dapr:
+    image: "daprio/daprd:latest"
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "vmsutils"
+      - "-app-port"
+      - "${UTILS_VMS_PORT}"
+      - "-app-protocol"
+      - "grpc"
+      - "-dapr-http-port"
+      - "3500"
+      - "-dapr-grpc-port"
+      - "50001"
+      - "-components-path"
+      - "/components"
+    volumes:
+      - ./init_files/dapr_components:/components
+    network_mode: "service:vmsutils"
+    depends_on:
+      - vmsutils
+      - redis
+
   vmslogger:
     image: treealarm/vmslogger:latest
     env_file:
       - .env
+    environment:
+      APP_ID: vmslogger
+    volumes:
+      - ./data:/data
 
   vmslogger-dapr:
     image: "daprio/daprd:latest"
@@ -59,6 +95,7 @@ services:
       - .env
     environment:
       POSTGRES_HOST: postgres
+      APP_ID: vmscfg
     depends_on:
       - postgres
 
@@ -89,6 +126,8 @@ services:
     image: treealarm/vmsonvif:latest
     env_file:
       - .env
+    environment:
+      APP_ID: vmsonvif
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -123,6 +162,8 @@ services:
     image: treealarm/vmsonvif-actors:latest
     env_file:
       - .env
+    environment:
+      APP_ID: vmsonvif-actors
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

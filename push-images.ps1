@@ -28,6 +28,7 @@ if ($LASTEXITCODE -ne 0) {
 # IMAGES  local → remote
 # ==============================
 $images = @(
+    @{ local="vms_rec-vmsutils:latest";        remote="$BasePath/vmsutils:latest" },
     @{ local="vms_rec-vmslogger:latest";       remote="$BasePath/vmslogger:latest" },
     @{ local="vms_rec-vmscfg:latest";          remote="$BasePath/vmscfg:latest" },
     @{ local="vms_rec-vmsonvif:latest";        remote="$BasePath/vmsonvif:latest" },

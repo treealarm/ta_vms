@@ -1,10 +1,14 @@
 ﻿import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import checker from 'vite-plugin-checker'
 
 const backendTarget = 'http://127.0.0.1:5134' // local ASP.NET backend (web_vms.Server)
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    checker({ typescript: true }),
+  ],
   server: {
     host: '0.0.0.0',
     port: 5173, // Vite dev-server

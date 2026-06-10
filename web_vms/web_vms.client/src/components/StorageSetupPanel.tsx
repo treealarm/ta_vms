@@ -26,7 +26,7 @@ function StorageRow({ s, onDeleted }: { s: StorageDto; onDeleted: () => void }) 
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState<EditState>({ rootPath: '', reservedGb: '0' })
+  const [form, setForm] = useState<EditState>({ reservedGb: '0' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 

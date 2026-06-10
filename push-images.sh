@@ -22,6 +22,7 @@ echo "$TOKEN" | docker login "$REGISTRY" -u "$DOCKER_USER" --password-stdin
 # IMAGES  local → remote
 # ==============================
 declare -a PAIRS=(
+    "vms_rec-vmsutils:latest       $BASE_PATH/vmsutils:latest"
     "vms_rec-vmslogger:latest      $BASE_PATH/vmslogger:latest"
     "vms_rec-vmscfg:latest         $BASE_PATH/vmscfg:latest"
     "vms_rec-vmsonvif:latest       $BASE_PATH/vmsonvif:latest"

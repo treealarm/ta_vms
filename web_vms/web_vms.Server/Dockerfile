@@ -18,14 +18,18 @@ WORKDIR /src
 # =========================
 # Copy project files and proto
 # =========================
-COPY ["web_vms/web_vms.Server/web_vms.Server.csproj", "web_vms.Server/"]
-COPY ["web_vms/web_vms.client/web_vms.client.esproj", "web_vms.client/"]
+COPY ["web_vms/web_vms.Server/web_vms.Server.csproj", "web_vms/web_vms.Server/"]
+COPY ["web_vms/web_vms.client/web_vms.client.esproj", "web_vms/web_vms.client/"]
+COPY ["web_vms/OnvifLib/OnvifLib.csproj", "web_vms/OnvifLib/"]
+COPY ["web_vms/VmsCfg/VmsCfg.csproj", "web_vms/VmsCfg/"]
+COPY ["web_vms/web_vms.Types/web_vms.Types.csproj", "web_vms/web_vms.Types/"]
+COPY ["web_vms/VmsLog/VmsLog.csproj", "web_vms/VmsLog/"]
 COPY ["proto", "proto"]
 
 # =========================
 # Restore server dependencies
 # =========================
-RUN dotnet restore "web_vms.Server/web_vms.Server.csproj"
+RUN dotnet restore "web_vms/web_vms.Server/web_vms.Server.csproj"
 
 # =========================
 # Copy full source (server + client)
