@@ -92,6 +92,11 @@ export type RecordingProfileDto = {
   isBuiltin: boolean
 }
 
+// Well-known built-in recording-profile preset IDs (see VmsCfg migration 0001_init.sql)
+export const RECORDING_PROFILE_CONTINUOUS_ID = '00000000-0000-0000-0000-000000000001'
+export const RECORDING_PROFILE_PREALARM_ID = '00000000-0000-0000-0000-000000000002'
+export const RECORDING_PROFILE_OFF_ID = '00000000-0000-0000-0000-000000000003'
+
 export type CameraStreamDto = {
   streamName: string
   profileToken: string

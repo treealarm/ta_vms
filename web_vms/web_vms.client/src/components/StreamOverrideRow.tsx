@@ -1,25 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Chip, CircularProgress, MenuItem, Select, Stack, Typography } from '@mui/material'
+import { CircularProgress, MenuItem, Select, Stack, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import type { CameraStreamDto, RecordingProfileDto } from '../dto/dtos'
 import { useAppDispatch } from '../store'
-import { fetchCameraState } from '../store/liveSlice'
+import { setStreamOverride } from '../store/liveSlice'
 
 type Props = {
   cameraId: string
   stream: CameraStreamDto | null
-}
-
-function modeLabel(mode: string): string {
-  if (mode === 'continuous') return 'Rec'
-  if (mode === 'prealarm') return 'Pre-alarm'
-  return 'Off'
-}
-
-function modeColor(mode: string): 'error' | 'warning' | 'default' {
-  if (mode === 'continuous') return 'error'
-  if (mode === 'prealarm') return 'warning'
-  return 'default'
 }
 
 export default function StreamOverrideRow({ cameraId, stream }: Props) {
@@ -38,8 +26,6 @@ export default function StreamOverrideRow({ cameraId, stream }: Props) {
 
   if (!stream) return null
 
-  const effective = stream.overrideProfile ?? stream.recordingProfile
-  const effectiveMode = effective?.mode ?? 'off'
   const isOverride = !!stream.overrideProfile
   const overrideValue = pendingValue !== null ? pendingValue : (stream.overrideProfile?.id ?? '')
 
@@ -47,19 +33,7 @@ export default function StreamOverrideRow({ cameraId, stream }: Props) {
     setPendingValue(profileId)
     setBusy(true)
     try {
-      if (profileId === '') {
-        await fetch(
-          `/api/recording-profiles/stream-override?cameraId=${encodeURIComponent(cameraId)}&streamName=${encodeURIComponent(stream.streamName)}`,
-          { method: 'DELETE' }
-        )
-      } else {
-        await fetch('/api/recording-profiles/stream-override', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cameraId, streamName: stream.streamName, profileId }),
-        })
-      }
-      void dispatch(fetchCameraState(cameraId))
+      await dispatch(setStreamOverride({ cameraId, streamName: stream.streamName, profileId: profileId === '' ? null : profileId }))
     } finally {
       setBusy(false)
       setPendingValue(null)
@@ -68,14 +42,6 @@ export default function StreamOverrideRow({ cameraId, stream }: Props) {
 
   return (
     <Stack direction="row" alignItems="center" spacing={1} sx={{ flexShrink: 0, px: 0.25 }}>
-      {/* active mode status */}
-      <Chip
-        label={modeLabel(effectiveMode)}
-        size="small"
-        color={modeColor(effectiveMode)}
-        variant={isOverride ? 'filled' : 'outlined'}
-        sx={{ fontSize: '0.68rem', height: 20, flexShrink: 0 }}
-      />
       {isOverride && (
         <Typography variant="caption" sx={{ color: 'primary.main', fontSize: '0.68rem', flexShrink: 0 }}>
           {t('streamOverride.override')}
@@ -88,7 +54,7 @@ export default function StreamOverrideRow({ cameraId, stream }: Props) {
         value={overrideValue}
         onChange={(e) => void handleChange(e.target.value)}
         disabled={busy || presets.length === 0}
-        sx={{ fontSize: '0.72rem', height: 22, minWidth: 96, '.MuiSelect-select': { py: 0, px: 0.75 } }}
+        sx={{ flex: 1, fontSize: '0.72rem', height: 22, minWidth: 96, '.MuiSelect-select': { py: 0, px: 0.75 } }}
         renderValue={(v) =>
           v === '' ? (
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>{t('streamOverride.overridePlaceholder')}</Typography>

@@ -26,13 +26,19 @@ import TuneIcon from '@mui/icons-material/Tune'
 import VideoLibraryIcon from '@mui/icons-material/VideoLibrary'
 import ControlCameraIcon from '@mui/icons-material/ControlCamera'
 import SecurityIcon from '@mui/icons-material/Security'
-import { type CameraSetupDto } from '../dto/dtos'
+import {
+  RECORDING_PROFILE_CONTINUOUS_ID,
+  RECORDING_PROFILE_OFF_ID,
+  RECORDING_PROFILE_PREALARM_ID,
+  type CameraSetupDto,
+  type CameraStreamDto,
+} from '../dto/dtos'
 import CameraStream from './CameraStream'
 import ArchiveHlsStreamCard from './ArchiveHlsStreamCard'
 import StreamOverrideRow from './StreamOverrideRow'
 import PtzOverlay from './PtzOverlay'
 import { useAppDispatch, useAppSelector } from '../store'
-import { fetchCameraState, setArmed } from '../store/liveSlice'
+import { fetchCameraState, setArmed, setStreamOverride } from '../store/liveSlice'
 
 const STRIP_W = 28
 const PANEL_W = 182
@@ -94,10 +100,25 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
   const isOnvifManaged = merged.onvifManaged ?? false
   const isDisabled = merged.disabled === true
   const effectiveArmed = pendingArmed !== null ? pendingArmed : (merged.armed ?? false)
+  const effectiveStreamMode = (s: CameraStreamDto) => (s.overrideProfile ?? s.recordingProfile)?.mode ?? 'off'
+  const isStreamRecording = (s: CameraStreamDto) => effectiveStreamMode(s) !== 'off'
   const armDisarm = (enabled: boolean) => {
     if (isDisabled) return
     setPendingArmed(enabled)
+    const streams = merged.streams ?? []
     void dispatch(setArmed({ cameraId: merged.cameraId, armed: enabled }))
+      .then(() => {
+        for (const s of streams) {
+          if (s.disabled) continue
+          if (enabled) {
+            if (!isStreamRecording(s)) {
+              void dispatch(setStreamOverride({ cameraId: merged.cameraId, streamName: s.streamName, profileId: RECORDING_PROFILE_PREALARM_ID }))
+            }
+          } else if (s.overrideProfile?.id === RECORDING_PROFILE_PREALARM_ID) {
+            void dispatch(setStreamOverride({ cameraId: merged.cameraId, streamName: s.streamName, profileId: RECORDING_PROFILE_OFF_ID }))
+          }
+        }
+      })
       .finally(() => setPendingArmed(null))
   }
 
@@ -109,10 +130,24 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
     (merged.streams ?? [])[0] ??
     null
   const activeRetention = merged.activeRetentionWindow === true && recordingMode !== 'off'
+  const anyStreamRecording = (merged.streams ?? []).some(isStreamRecording)
+  const activeStreamContinuous = activeStreamObj ? effectiveStreamMode(activeStreamObj) === 'continuous' : false
+  const activeStreamRecording = activeStreamObj ? isStreamRecording(activeStreamObj) : false
+
+  const [pendingContinuous, setPendingContinuous] = useState(false)
+  const toggleContinuousRecording = () => {
+    if (!activeStreamObj || isDisabled) return
+    const profileId = activeStreamContinuous
+      ? (effectiveArmed ? RECORDING_PROFILE_PREALARM_ID : RECORDING_PROFILE_OFF_ID)
+      : RECORDING_PROFILE_CONTINUOUS_ID
+    setPendingContinuous(true)
+    void dispatch(setStreamOverride({ cameraId: merged.cameraId, streamName: activeStreamObj.streamName, profileId }))
+      .finally(() => setPendingContinuous(false))
+  }
 
   const configuredRtsp = camera.rtspUrl || ''
   useEffect(() => {
-    if (configuredRtsp || !camera.onvifConn) { setOnvifRtsp(''); return }
+    if (configuredRtsp || !camera.onvifConn) return
     const token = activeStreamObj?.profileToken ?? ''
     const qs = token ? `?profileToken=${encodeURIComponent(token)}` : ''
     fetch(`/api/onvif/cameras/${encodeURIComponent(camera.cameraId)}/stream-uri${qs}`)
@@ -121,8 +156,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
       .catch(() => setOnvifRtsp(''))
   }, [camera.cameraId, camera.onvifConn, configuredRtsp, activeStreamObj?.profileToken])
 
-  const rtsp = configuredRtsp || onvifRtsp
-  const rtspIsOnvif = !configuredRtsp && !!onvifRtsp
+  const rtsp = configuredRtsp || (camera.onvifConn ? onvifRtsp : '')
 
   useEffect(() => {
     const id = setInterval(() => void dispatch(fetchCameraState(camera.cameraId)), 5000)
@@ -151,7 +185,12 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
               outlineOffset: '-2px',
               boxShadow: (t) => `0 0 8px ${t.palette.error.main}66`,
             }
-          : {}),
+          : anyStreamRecording
+            ? {
+                outline: (t) => `2px solid ${t.palette.error.main}`,
+                outlineOffset: '-2px',
+              }
+            : {}),
       }}
     >
       {/* ── Left: icon strip (compact) ── */}
@@ -221,9 +260,25 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             </Tooltip>
           )}
 
-          {activeRetention && (
-            <Tooltip title={t('cameraCard.retentionEpisode')} placement="right">
-              <FiberManualRecordIcon sx={{ fontSize: '0.6rem', color: 'error.main', my: 0.25 }} />
+          {activeStreamObj && (
+            <Tooltip
+              title={activeStreamContinuous ? t('cameraCard.continuousOn') : t('cameraCard.continuousOff')}
+              placement="right"
+            >
+              <span>
+                <IconButton
+                  size="small"
+                  disabled={pendingContinuous || isDisabled}
+                  onClick={toggleContinuousRecording}
+                  sx={{
+                    ...BTN_SX,
+                    ...(activeStreamRecording ? { color: 'error.main' } : {}),
+                    ...((pendingContinuous || isDisabled) ? { opacity: 0.35 } : {}),
+                  }}
+                >
+                  <FiberManualRecordIcon sx={{ fontSize: '0.95rem' }} />
+                </IconButton>
+              </span>
             </Tooltip>
           )}
 
@@ -244,17 +299,28 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
         >
           {/* Header */}
           <Stack direction="row" alignItems="center" sx={{ px: 1, pt: 0.75, pb: 0.5, flexShrink: 0 }}>
-            <Tooltip
-              title={rtsp ? (rtspIsOnvif ? t('cameraCard.onvifRtsp', { rtsp }) : rtsp) : t('cameraCard.noRtsp')}
-              placement="right"
+            <Typography
+              variant="body2"
+              sx={{ flex: 1, color: W, fontWeight: 600, fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
             >
-              <Typography
-                variant="body2"
-                sx={{ flex: 1, color: W, fontWeight: 600, fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'default' }}
-              >
-                {camera.cameraId}
-              </Typography>
-            </Tooltip>
+              {camera.cameraId}
+            </Typography>
+            {rtsp && (
+              <Tooltip title={copied ? t('cameraCard.copiedRtsp') : t('cameraCard.copyRtsp')}>
+                <IconButton
+                  size="small"
+                  sx={{ p: '2px', color: copied ? '#4caf50' : alpha(W, 0.5), '&:hover': { color: W } }}
+                  onClick={() => {
+                    void navigator.clipboard.writeText(rtsp).then(() => {
+                      setCopied(true)
+                      setTimeout(() => setCopied(false), 1500)
+                    })
+                  }}
+                >
+                  <ContentCopyIcon sx={{ fontSize: '0.8rem' }} />
+                </IconButton>
+              </Tooltip>
+            )}
             <IconButton
               size="small"
               onClick={() => setPanelOpen(false)}
@@ -274,20 +340,23 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
                 <Typography component="span" sx={CAPTION_SX}>{t('cameraCard.streamSection')}</Typography>
                 <Stack direction="row" flexWrap="wrap" gap={0.5}>
                   {webRtcStreams.map((s) => (
-                    <Chip
-                      key={s.streamName}
-                      label={s.streamName}
-                      size="small"
-                      onClick={() => setSelectedStream(s.streamName)}
-                      variant={activeStream === s.streamName ? 'filled' : 'outlined'}
-                      sx={{
-                        height: 20, fontSize: '0.68rem', cursor: 'pointer',
-                        color: activeStream === s.streamName ? B : alpha(W, 0.75),
-                        bgcolor: activeStream === s.streamName ? alpha(W, 0.9) : 'transparent',
-                        borderColor: alpha(W, 0.3),
-                        '& .MuiChip-label': { px: 0.75 },
-                      }}
-                    />
+                    <Tooltip key={s.streamName} title={isStreamRecording(s) ? t('cameraCard.streamRecordingTip') : ''}>
+                      <Chip
+                        label={s.streamName}
+                        size="small"
+                        icon={isStreamRecording(s) ? <FiberManualRecordIcon /> : undefined}
+                        onClick={() => setSelectedStream(s.streamName)}
+                        variant={activeStream === s.streamName ? 'filled' : 'outlined'}
+                        sx={{
+                          height: 20, fontSize: '0.68rem', cursor: 'pointer',
+                          color: activeStream === s.streamName ? B : alpha(W, 0.75),
+                          bgcolor: activeStream === s.streamName ? alpha(W, 0.9) : 'transparent',
+                          borderColor: isStreamRecording(s) ? 'error.main' : alpha(W, 0.3),
+                          '& .MuiChip-label': { px: 0.75 },
+                          '& .MuiChip-icon': { fontSize: '0.55rem', color: 'error.main', ml: 0.6 },
+                        }}
+                      />
+                    </Tooltip>
                   ))}
                 </Stack>
               </Box>
@@ -314,7 +383,11 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             {/* Override */}
             {mode === 'live' && (
               <Box>
-                <Typography component="span" sx={CAPTION_SX}>{t('cameraCard.overrideSection')}</Typography>
+                <Typography component="span" sx={CAPTION_SX}>
+                  {webRtcStreams.length > 1
+                    ? t('cameraCard.overrideSectionForStream', { stream: activeStream })
+                    : t('cameraCard.overrideSection')}
+                </Typography>
                 <StreamOverrideRow cameraId={camera.cameraId} stream={activeStreamObj} />
               </Box>
             )}
@@ -322,7 +395,9 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             {/* Guard */}
             {isOnvifManaged && (
               <Box>
-                <Typography component="span" sx={CAPTION_SX}>{t('cameraCard.guardSection')}</Typography>
+                <Typography component="span" sx={CAPTION_SX}>
+                  {t('cameraCard.guardSection')} {t('cameraCard.cameraWide')}
+                </Typography>
                 <ToggleButtonGroup
                   value={effectiveArmed ? 'armed' : 'disarmed'}
                   exclusive

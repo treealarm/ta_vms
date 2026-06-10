@@ -114,6 +114,28 @@ export const setArmed = createAsyncThunk(
   }
 )
 
+export const setStreamOverride = createAsyncThunk(
+  'live/setStreamOverride',
+  async (
+    { cameraId, streamName, profileId }: { cameraId: string; streamName: string; profileId: string | null },
+    { dispatch }
+  ) => {
+    const response =
+      profileId === null
+        ? await fetch(
+            `/api/recording-profiles/stream-override?cameraId=${encodeURIComponent(cameraId)}&streamName=${encodeURIComponent(streamName)}`,
+            { method: 'DELETE' }
+          )
+        : await fetch('/api/recording-profiles/stream-override', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cameraId, streamName, profileId }),
+          })
+    if (response.ok)
+      await dispatch(fetchCameraState(cameraId))
+  }
+)
+
 
 const liveSlice = createSlice({
   name: 'live',
