@@ -10,12 +10,11 @@
 
 segment_writer::segment_writer(
   const std::string& camera_id,
-  const std::string& stream_name,
-  std::chrono::seconds segment_duration)
+  const std::string& stream_name)
   :
   m_camera_id(camera_id),
   m_stream_name(stream_name),
-  m_segment_duration(segment_duration.count() > 0 ? segment_duration : std::chrono::seconds(60)),
+  m_segment_duration(std::chrono::seconds(60)),
   m_packet_transcoder([]
     {
       sync_packet_transcoder::codec_config config;
@@ -26,15 +25,27 @@ segment_writer::segment_writer(
       return config;
     }())
 {
-  // Do NOT start the thread here — shared_from_this() is not usable in the constructor
-  // because the shared_ptr hasn't been set up yet. Call start_thread() after make_shared.
+  // Lifetime of *this is owned by cam_stream (one segment_writer per stream, for its
+  // whole lifetime), so capturing a raw `this` is safe: the destructor joins the
+  // thread before the object is destroyed.
+  m_writer_thread = std::thread([this] { process_queue(); });
 }
 
-void segment_writer::start_thread()
+void segment_writer::set_segment_duration(std::chrono::seconds new_segment_duration)
 {
-  // Capture a shared_ptr so the object stays alive until the thread finishes,
-  // even after the last external shared_ptr is released (non-blocking destruction).
-  m_writer_thread = std::thread([sp = shared_from_this()]() { sp->process_queue(); });
+  if (new_segment_duration.count() > 0)
+    m_segment_duration.store(new_segment_duration);
+}
+
+void segment_writer::request_close_segment(std::chrono::seconds new_segment_duration)
+{
+  set_segment_duration(new_segment_duration);
+
+  {
+    std::lock_guard lock(m_queue_mutex);
+    m_queue.push(nullptr);
+  }
+  m_queue_cv.notify_one();
 }
 
 void segment_writer::stop_async()
@@ -46,16 +57,8 @@ void segment_writer::stop_async()
 
 segment_writer::~segment_writer()
 {
-  // If the thread is still running (e.g. stop_async was never called), signal it.
-  // Then detach — the thread holds a shared_ptr to *this and will clean up on its own.
-  // Never join here: this destructor may be called while camera_manager::m_mutex is held
-  // (from configure_camera / stop_recording), and a join would block m_mutex for the
-  // entire duration of the current segment flush, causing deadlocks on other API calls.
-  if (m_writer_thread.joinable())
-  {
-    stop_async();
-    m_writer_thread.detach();
-  }
+  stop_async();
+  m_writer_thread.join();
 }
 
 bool segment_writer::ensure_input_stream(const std::shared_ptr<media_packet>& media)
@@ -290,23 +293,42 @@ void segment_writer::process_queue()
 {
   while (true)
   {
-    std::unique_lock lock(m_queue_mutex);
-    m_queue_cv.wait(lock, [this]{ return !m_queue.empty() || m_stopping.load(); });
-
-    // Drain everything currently queued before checking stop.
-    while (!m_queue.empty())
+    std::queue<std::shared_ptr<media_packet>> batch;
     {
-      auto pkt = std::move(m_queue.front());
-      m_queue.pop();
-      lock.unlock();
-      process_packet(pkt);
-      lock.lock();
+      std::unique_lock lock(m_queue_mutex);
+      m_queue_cv.wait(lock, [this]{ return !m_queue.empty() || m_stopping.load(); });
+      std::swap(batch, m_queue);
     }
+
+    process_batch(batch);
 
     if (m_stopping.load())
       break;
   }
+
+  // Final drain: a packet may have been pushed between the stop signal and
+  // remove_sink() taking effect. Flush it before closing the segment.
+  std::queue<std::shared_ptr<media_packet>> remaining;
+  {
+    std::lock_guard lock(m_queue_mutex);
+    std::swap(remaining, m_queue);
+  }
+  process_batch(remaining);
+
   close();
+}
+
+void segment_writer::process_batch(std::queue<std::shared_ptr<media_packet>>& batch)
+{
+  while (!batch.empty())
+  {
+    auto pkt = std::move(batch.front());
+    batch.pop();
+    if (pkt)
+      process_packet(pkt);
+    else
+      close_segment(); // control marker from request_close_segment()
+  }
 }
 
 void segment_writer::process_packet(const std::shared_ptr<media_packet>& in_media)
@@ -339,7 +361,7 @@ void segment_writer::write_packet(const std::shared_ptr<media_packet>& in_media)
   }
 
   auto elapsed = std::chrono::steady_clock::now() - m_segment_start_time;
-  if (elapsed >= m_segment_duration &&
+  if (elapsed >= m_segment_duration.load() &&
     media->media_type == AVMEDIA_TYPE_VIDEO &&
     (pkt->flags & AV_PKT_FLAG_KEY))
   {

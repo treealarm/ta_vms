@@ -31,6 +31,10 @@ cam_stream::cam_stream(
     throw std::runtime_error("Failed to open media source");
 
   m_reader->start();
+
+  // One segment_writer per stream, for the whole lifetime of cam_stream.
+  // Recording on/off is controlled via add_sink/remove_sink in apply_recording_policy().
+  m_writer = std::make_shared<segment_writer>(m_camera_id, m_stream_name);
 }
 
 cam_stream::~cam_stream()
@@ -40,63 +44,39 @@ cam_stream::~cam_stream()
 
 void cam_stream::apply_recording_policy(const recording_policy_spec& policy)
 {
+  std::scoped_lock lock(m_sinks_mutex);
+
   if (policy.mode == recording_policy_mode::off)
   {
-    stop_recording();
+    if (m_recording_policy_mode == recording_policy_mode::off)
+      return;
+
+    m_reader->remove_sink(m_writer);
+    m_writer->request_close_segment(std::chrono::seconds(60));
+    m_recording_policy_mode = recording_policy_mode::off;
+    m_record_segment_duration = std::chrono::seconds(60);
     return;
   }
 
-  const auto seg = std::max(policy.segment_len, std::chrono::seconds(1));
+  const auto seg = std::max(policy.segment_len, std::chrono::seconds(5));
+  if (m_recording_policy_mode == policy.mode && m_record_segment_duration == seg)
+    return; // already configured as requested
 
-  {
-    std::scoped_lock lock(m_sinks_mutex);
-    if (m_writer &&
-        m_record_segment_duration == seg &&
-        m_recording_policy_mode == policy.mode)
-    {
-      return;
-    }
-  }
+  const bool was_off = (m_recording_policy_mode == recording_policy_mode::off);
 
-  stop_recording();
+  // Just switch the segment duration — keep writing into the current segment
+  // (e.g. prealarm -> continuous), no gap waiting for the next keyframe.
+  m_writer->set_segment_duration(seg);
+  if (was_off)
+    m_reader->add_sink(m_writer);
 
-  std::shared_ptr<segment_writer> sink;
-  {
-    std::scoped_lock lock(m_sinks_mutex);
-    if (m_writer)
-      return;
-
-    m_writer = std::make_shared<segment_writer>(m_camera_id, m_stream_name, seg);
-    m_record_segment_duration = seg;
-    m_recording_policy_mode = policy.mode;
-    sink = m_writer;
-  }
-
-  // start_thread() must be called after make_shared (shared_from_this requires it).
-  sink->start_thread();
-  m_reader->add_sink(sink);
+  m_recording_policy_mode = policy.mode;
+  m_record_segment_duration = seg;
 }
 
 void cam_stream::stop_recording()
 {
-  std::shared_ptr<segment_writer> sink;
-  {
-    std::scoped_lock lock(m_sinks_mutex);
-    if (!m_writer)
-      return;
-    sink = m_writer;
-    m_writer.reset();
-    m_record_segment_duration = std::chrono::seconds(60);
-    m_recording_policy_mode = recording_policy_mode::off;
-  }
-  if (sink)
-  {
-    sink->stop_async();       // signal writer thread to stop (non-blocking)
-    m_reader->remove_sink(sink);
-    // sink goes out of scope here: refcount drops from 2 to 1 (thread still holds a ref).
-    // The thread finishes its current work (flush + close segment) and releases its
-    // shared_ptr, triggering the actual cleanup — without blocking the caller.
-  }
+  apply_recording_policy(recording_policy_spec{ .mode = recording_policy_mode::off });
 }
 
 bool cam_stream::start_web_rtc(std::string& error)

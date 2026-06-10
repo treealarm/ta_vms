@@ -1,5 +1,9 @@
 # Architecture rules
 
+## Language conventions
+
+Chat communication with the user is in Russian. Code — comments, identifiers, commit messages, log messages, docs — is always in English.
+
 ## MediaMTX API access
 
 All interaction with the MediaMTX REST API goes through **VmsUtils** (`vmsutils` Dapr app-id). No other service (media_server, VmsCfg, web_vms, etc.) calls the MediaMTX API directly.

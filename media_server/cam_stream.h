@@ -42,7 +42,7 @@ public:
   std::string get_profile_token() const { return m_profile_token; }
   std::string get_user() const { return m_user; }
   std::string get_pass() const { return m_pass; }
-  bool is_recording() const { return m_writer != nullptr; }
+  bool is_recording() const { return m_recording_policy_mode != recording_policy_mode::off; }
   bool is_web_rtc_streaming() const { return m_webrtc_output_sink != nullptr; }
   bool is_web_rtc_enabled() const { return m_web_rtc_enabled; }
   void set_web_rtc_enabled(bool enabled) { m_web_rtc_enabled = enabled; }

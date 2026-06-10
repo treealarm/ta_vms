@@ -21,25 +21,25 @@ extern "C" {
 
 class segment_writer
   : public media_sink
-  , public std::enable_shared_from_this<segment_writer>
 {
 public:
   segment_writer(
     const std::string& camera_id,
-    const std::string& stream_name,
-    std::chrono::seconds segment_duration);
-
-  // Must be called once after the object is managed by a shared_ptr (i.e. after make_shared).
-  void start_thread();
-
-  // Signal the writer thread to stop without blocking. Returns immediately.
-  // The thread will finish its current work (flush, close segment) asynchronously.
-  void stop_async();
+    const std::string& stream_name);
 
   ~segment_writer() override;
 
   // Called from the RTSP reader thread — enqueues and returns immediately.
   void on_packet(const std::shared_ptr<media_packet>& media) override;
+
+  // Change the segment duration used for periodic rotation. Takes effect for the
+  // current segment too (checked on the next packet). Does not interrupt writing.
+  void set_segment_duration(std::chrono::seconds new_segment_duration);
+
+  // Ask the writer thread to close the current segment (if any) and start a fresh one
+  // on the next keyframe, optionally switching to a new segment duration.
+  // Non-blocking — the close is processed asynchronously, in order with queued packets.
+  void request_close_segment(std::chrono::seconds new_segment_duration);
 
 private:
   struct input_stream_info
@@ -49,8 +49,13 @@ private:
     AVMediaType media_type = AVMEDIA_TYPE_UNKNOWN;
   };
 
+  // Signal the writer thread to stop. Used only from the destructor, before join().
+  void stop_async();
+
   // All methods below run exclusively on m_writer_thread.
   void process_queue();
+  // A null entry is a "close segment" control marker (see request_close_segment).
+  void process_batch(std::queue<std::shared_ptr<media_packet>>& batch);
   void process_packet(const std::shared_ptr<media_packet>& media);
   bool ensure_input_stream(const std::shared_ptr<media_packet>& media);
   void write_packet(const std::shared_ptr<media_packet>& media);
@@ -60,7 +65,7 @@ private:
 
   std::string m_camera_id;
   std::string m_stream_name;
-  std::chrono::seconds m_segment_duration;
+  std::atomic<std::chrono::seconds> m_segment_duration;
 
   std::unordered_map<int, input_stream_info> m_input_streams;
 
