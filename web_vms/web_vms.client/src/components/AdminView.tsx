@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Box, Stack, Tab, Tabs } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import ViewControls from './ViewControls'
@@ -15,20 +16,24 @@ import SimulationFab from './SimulationFab'
 import LogToggleButton from './LogToggleButton'
 import OnvifSubscriptionsPanel from './OnvifSubscriptionsPanel'
 
+const TABS = ['cameras', 'mediamtx', 'monitors', 'storages', 'recording', 'onvif'] as const
+
 export default function AdminView() {
   const { t } = useTranslation()
-
-  const [tab, setTab] = useState(0)
+  const navigate = useNavigate()
+  const location = useLocation()
+  const tab = TABS.indexOf(location.pathname.split('/').pop() as typeof TABS[number])
+  const currentTab = tab === -1 ? 0 : tab
 
   const cameraControlRef = useRef<CameraControlHandle>(null)
   const recordingRef = useRef<RecordingProfilesHandle>(null)
   const mediaMtxRef = useRef<MediaMtxServersHandle>(null)
 
   const handleTabChange = async (_: unknown, v: number) => {
-    if (tab === 0 && !(await cameraControlRef.current?.applyIfDirty() ?? true)) return
-    if (tab === 1 && !(await mediaMtxRef.current?.applyIfDirty() ?? true)) return
-    if (tab === 4 && !(await recordingRef.current?.applyIfDirty() ?? true)) return
-    setTab(v)
+    if (currentTab === 0 && !(await cameraControlRef.current?.applyIfDirty() ?? true)) return
+    if (currentTab === 1 && !(await mediaMtxRef.current?.applyIfDirty() ?? true)) return
+    if (currentTab === 4 && !(await recordingRef.current?.applyIfDirty() ?? true)) return
+    navigate(`/admin/${TABS[v]}`)
   }
 
   return (
@@ -38,12 +43,15 @@ export default function AdminView() {
           <ViewControls target="operator" />
         </Box>
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', px: { xs: 2, md: 4 }, pb: { xs: 2, md: 4 }, pt: 1, display: 'flex', flexDirection: 'column' }}>
-          {tab === 0 && <CameraControlPanel ref={cameraControlRef} />}
-          {tab === 1 && <Box sx={{ flex: 1, overflowY: 'auto' }}><MediaMtxServersPanel ref={mediaMtxRef} /></Box>}
-          {tab === 2 && <Box sx={{ flex: 1, overflowY: 'auto' }}><MonitorListPanel /></Box>}
-          {tab === 3 && <Box sx={{ flex: 1, overflowY: 'auto' }}><StorageSetupPanel /></Box>}
-          {tab === 4 && <Box sx={{ flex: 1, overflowY: 'auto' }}><RecordingProfilesPanel ref={recordingRef} /></Box>}
-          {tab === 5 && <OnvifSubscriptionsPanel />}
+          <Routes>
+            <Route path="cameras" element={<CameraControlPanel ref={cameraControlRef} />} />
+            <Route path="mediamtx" element={<Box sx={{ flex: 1, overflowY: 'auto' }}><MediaMtxServersPanel ref={mediaMtxRef} /></Box>} />
+            <Route path="monitors" element={<Box sx={{ flex: 1, overflowY: 'auto' }}><MonitorListPanel /></Box>} />
+            <Route path="storages" element={<Box sx={{ flex: 1, overflowY: 'auto' }}><StorageSetupPanel /></Box>} />
+            <Route path="recording" element={<Box sx={{ flex: 1, overflowY: 'auto' }}><RecordingProfilesPanel ref={recordingRef} /></Box>} />
+            <Route path="onvif" element={<OnvifSubscriptionsPanel />} />
+            <Route path="*" element={<Navigate to="/admin/cameras" replace />} />
+          </Routes>
         </Box>
       </Box>
 
@@ -59,7 +67,7 @@ export default function AdminView() {
         <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
           <Tabs
             orientation="vertical"
-            value={tab}
+            value={currentTab}
             onChange={(e, v) => void handleTabChange(e, v)}
             sx={{ '& .MuiTab-root': { minWidth: 90 } }}
           >

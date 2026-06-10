@@ -79,9 +79,9 @@ export default function App() {
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden' }}>
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <Routes>
-            <Route path="/operator" element={<OperatorView />} />
-            <Route path="/admin" element={<AdminView />} />
-            <Route path="*" element={<Navigate to="/operator" replace />} />
+            <Route path="/operator/*" element={<OperatorView />} />
+            <Route path="/admin/*" element={<AdminView />} />
+            <Route path="*" element={<Navigate to="/operator/monitors" replace />} />
           </Routes>
         </Box>
         {logsOpen && (
