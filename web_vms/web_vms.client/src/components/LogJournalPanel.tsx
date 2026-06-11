@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Box,
   Button,
@@ -124,9 +124,17 @@ export default function LogJournalPanel() {
       .catch(() => {})
   }
 
-  const runFetch = async () => {
+  const entriesRef = useRef(entries)
+  useEffect(() => {
+    entriesRef.current = entries
+  }, [entries])
+
+  const runFetch = async (merge: boolean) => {
     const to = new Date()
-    const from = new Date(to.getTime() - rangeSec * 1000)
+    const last = entriesRef.current
+    const from = merge && last.length > 0
+      ? new Date(last[last.length - 1].timestamp) // newest entry already shown (entries are oldest-first)
+      : new Date(to.getTime() - rangeSec * 1000)
 
     await dispatch(
       fetchLogs({
@@ -135,19 +143,20 @@ export default function LogJournalPanel() {
         limit,
         level: level || undefined,
         appId: appId || undefined,
+        merge,
       })
     )
   }
 
   useEffect(() => {
     loadSources()
-    void runFetch()
+    void runFetch(false)
     if (!autoRefresh) {
       return
     }
     const timer = setInterval(() => {
       loadSources()
-      void runFetch()
+      void runFetch(true)
     }, 3000)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -253,7 +262,7 @@ export default function LogJournalPanel() {
               label={t('logs.auto')}
             />
 
-            <Button size="small" variant="outlined" onClick={() => void runFetch()}>
+            <Button size="small" variant="outlined" onClick={() => void runFetch(false)}>
               {t('common.refresh')}
             </Button>
             <Button size="small" variant="outlined" onClick={() => dispatch(clearLogs())}>
