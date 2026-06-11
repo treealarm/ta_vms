@@ -59,6 +59,14 @@ namespace VmsCfg
       });
     }
 
+    // A MediaMTX server's connection info (rtsp_url etc.) can be referenced by cameras on
+    // any recording server, so notify all of them to re-resolve the WebRTC push URL.
+    private void NotifyAllMediaServers()
+    {
+      foreach (var (serverId, _) in storage.GetServerPairs())
+        NotifyMediaServer(serverId);
+    }
+
     private static readonly string StateStoreName =
       Environment.GetEnvironmentVariable("DAPR_STATE_STORE_NAME")
         ?? throw new InvalidOperationException("Required environment variable 'DAPR_STATE_STORE_NAME' is not set");
@@ -282,6 +290,7 @@ namespace VmsCfg
 
       await storage.UpsertMediaMtxServerAsync(request, context.CancellationToken);
       logger.LogInformation("MediaMTX server '{Name}' upserted (id={Id})", request.Name, request.Id);
+      NotifyAllMediaServers();
       return new OperationStatus { Success = true };
     }
 
@@ -294,7 +303,10 @@ namespace VmsCfg
 
       var removed = await storage.RemoveMediaMtxServerAsync(request.Id, context.CancellationToken);
       if (removed)
+      {
         logger.LogInformation("MediaMTX server '{Id}' removed", request.Id);
+        NotifyAllMediaServers();
+      }
       return new OperationStatus { Success = removed };
     }
 
