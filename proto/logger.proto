@@ -33,6 +33,7 @@ message LogEntry {
   string file = 3;
   string function = 4;
   string message = 5;
+  string app_id = 6;
 }
 
 message LogResponse {

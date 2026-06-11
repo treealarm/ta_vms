@@ -113,6 +113,8 @@
     "last15m": "Last 15 min",
     "limit": "Limit",
     "level": "Level",
+    "time": "Time",
+    "message": "Message",
     "all": "all",
     "service": "Service",
     "source": "Source",

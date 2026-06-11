@@ -73,7 +73,9 @@ public sealed class LogServiceImpl : LogService.LogServiceBase
         response.HasMore = true;
         break;
       }
-      if (ReadFileTail(file, from, to, levelFilter, sourceFilter, limit, collected, response))
+      // Each service writes into its own VMS_LOG_PATH/<app_id>/ subfolder.
+      var fileAppId = Path.GetFileName(Path.GetDirectoryName(file)) ?? string.Empty;
+      if (ReadFileTail(file, fileAppId, from, to, levelFilter, sourceFilter, limit, collected, response))
         break;
     }
 
@@ -88,6 +90,7 @@ public sealed class LogServiceImpl : LogService.LogServiceBase
   // has been reached); false to continue with the next (older) file.
   private static bool ReadFileTail(
     string file,
+    string appId,
     Timestamp from,
     Timestamp? to,
     string? levelFilter,
@@ -124,6 +127,7 @@ public sealed class LogServiceImpl : LogService.LogServiceBase
         if (!MatchesLevelAndSource(entry, levelFilter, sourceFilter))
           continue;
 
+        entry.AppId = appId;
         collected.Add(entry); // newest-first, same order the caller expects
         remaining--;
         if (remaining == 0)

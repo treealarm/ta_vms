@@ -232,6 +232,7 @@ export type LogQueryDto = {
 export type LogEntryDto = {
   timestamp: string
   level: string
+  appId: string
   file: string
   function: string
   message: string

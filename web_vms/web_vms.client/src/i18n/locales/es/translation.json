@@ -113,6 +113,8 @@
     "last15m": "Últimos 15 min",
     "limit": "Límite",
     "level": "Nivel",
+    "time": "Hora",
+    "message": "Mensaje",
     "all": "todos",
     "service": "Servicio",
     "source": "Fuente",

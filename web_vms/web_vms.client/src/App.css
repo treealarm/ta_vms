@@ -369,11 +369,40 @@ button:disabled {
 }
 
 .vms-log-line {
-  white-space: pre-wrap;
   padding-left: 8px;
   padding-top: 2px;
   padding-bottom: 2px;
   border-left: 2px solid transparent;
+  gap: 8px;
+}
+
+.vms-log-line-header {
+  border-left-color: transparent;
+  position: sticky;
+  top: 0;
+  background-color: var(--app-log-panel-bg);
+}
+
+.vms-log-col-time {
+  flex: 0 0 140px;
+}
+
+.vms-log-col-level {
+  flex: 0 0 60px;
+}
+
+.vms-log-col-service {
+  flex: 0 0 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vms-log-col-message {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .vms-log-line[data-log-level='error'] {
