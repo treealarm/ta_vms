@@ -49,6 +49,7 @@ public:
   const std::string& get_webrtc_push_url() const { return m_webrtc_rtsp_push_url; }
   std::string mediamtx_path() const { return m_camera_id + "/" + m_stream_name; }
   recording_policy_mode get_recording_policy_mode() const { return m_recording_policy_mode; }
+  std::string current_segment_path() const { return m_writer ? m_writer->current_segment_path().string() : std::string(); }
 
 private:
   std::string m_rtsp_url;

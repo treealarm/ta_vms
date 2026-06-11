@@ -1,15 +1,38 @@
 using System.Text.Json;
 using Dapr.Client;
+using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Vms.Cfg;
 using Vms.Utils;
 
 namespace VmsUtils;
 
-public class UtilsServiceImpl(IHttpClientFactory httpClientFactory, string cfgAppId, ILogger<UtilsServiceImpl> logger)
+public class UtilsServiceImpl(
+  IHttpClientFactory httpClientFactory,
+  string cfgAppId,
+  EntityStateRegistry entityStateRegistry,
+  ILogger<UtilsServiceImpl> logger)
   : UtilsService.UtilsServiceBase
 {
   private readonly HttpClient _http = httpClientFactory.CreateClient();
+
+  public override Task<ListEntityStatesResponse> ListEntityStates(Empty request, ServerCallContext context)
+  {
+    var response = new ListEntityStatesResponse();
+    foreach (var (key, entry) in entityStateRegistry.GetAll())
+    {
+      response.Entities.Add(new EntityState
+      {
+        Service = key.Service,
+        EntityType = key.EntityType,
+        EntityId = key.EntityId,
+        StateJson = entry.StateJson,
+        LastSeen = Timestamp.FromDateTime(DateTime.SpecifyKind(entry.LastSeenUtc, DateTimeKind.Utc)),
+        Stale = entry.Stale,
+      });
+    }
+    return Task.FromResult(response);
+  }
 
   public override async Task<GetMediaMtxPathInfoResponse> GetMediaMtxPathInfo(
     GetMediaMtxPathInfoRequest request,

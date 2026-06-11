@@ -43,6 +43,8 @@ set(SOURCES
     grpc_layer/proto_mapper.cpp
     grpc_layer/dapr_publisher.cpp
     grpc_layer/dapr_publisher.h
+    grpc_layer/entity_state_publisher.cpp
+    grpc_layer/entity_state_publisher.h
     grpc_layer/cfg_client.h
     grpc_layer/cfg_client.cpp
     grpc_layer/utils_client.h

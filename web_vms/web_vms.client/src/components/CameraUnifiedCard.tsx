@@ -132,7 +132,6 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
   const activeRetention = merged.activeRetentionWindow === true && recordingMode !== 'off'
   const anyStreamRecording = (merged.streams ?? []).some(isStreamRecording)
   const activeStreamContinuous = activeStreamObj ? effectiveStreamMode(activeStreamObj) === 'continuous' : false
-  const activeStreamRecording = activeStreamObj ? isStreamRecording(activeStreamObj) : false
 
   const [pendingContinuous, setPendingContinuous] = useState(false)
   const toggleContinuousRecording = () => {
@@ -272,7 +271,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
                   onClick={toggleContinuousRecording}
                   sx={{
                     ...BTN_SX,
-                    ...(activeStreamRecording ? { color: 'error.main' } : {}),
+                    ...(activeStreamContinuous ? { color: 'error.main' } : {}),
                     ...((pendingContinuous || isDisabled) ? { opacity: 0.35 } : {}),
                   }}
                 >

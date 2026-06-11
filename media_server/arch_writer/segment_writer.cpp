@@ -144,6 +144,10 @@ void segment_writer::open_new_segment()
   }
 
   m_segment_abs_path = path;
+  {
+    std::lock_guard path_lock(m_segment_path_mutex);
+    m_current_segment_path = path;
+  }
 
   AVFormatContext* ctx = nullptr;
 
@@ -288,6 +292,16 @@ void segment_writer::close_segment()
   m_segment_rel_path.clear();
   m_segment_storage_id.clear();
   m_segment_start_ts = {};
+  {
+    std::lock_guard path_lock(m_segment_path_mutex);
+    m_current_segment_path.clear();
+  }
+}
+
+std::filesystem::path segment_writer::current_segment_path() const
+{
+  std::lock_guard path_lock(m_segment_path_mutex);
+  return m_current_segment_path;
 }
 
 void segment_writer::on_packet(const std::shared_ptr<media_packet>& in_media)

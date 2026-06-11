@@ -3,6 +3,7 @@ import { useDispatch, useSelector, type TypedUseSelectorHook } from 'react-redux
 import liveReducer from './liveSlice'
 import fsReducer from './fsSlice'
 import logsReducer from './logSlice'
+import entityStateReducer from './entityStateSlice'
 import storageReducer from './storageSlice'
 import mediaMtxReducer from './mediaMtxSlice'
 import monitorsReducer from './monitorsSlice'
@@ -13,6 +14,7 @@ export const store = configureStore({
     live: liveReducer,
     fs: fsReducer,
     logs: logsReducer,
+    entityState: entityStateReducer,
     storage: storageReducer,
     mediaMtx: mediaMtxReducer,
     monitors: monitorsReducer,

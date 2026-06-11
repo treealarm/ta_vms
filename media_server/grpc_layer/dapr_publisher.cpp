@@ -21,7 +21,7 @@ std::string require_env(const char* key)
 
 dapr_publisher::dapr_publisher()
   : m_pubsub_name(require_env("PUBSUB_NAME")),
-    m_channel(grpc::CreateChannel("127.0.0.1:50001", grpc::InsecureChannelCredentials())),
+    m_channel(grpc::CreateChannel("127.0.0.1:" + require_env("DAPR_GRPC_PORT"), grpc::InsecureChannelCredentials())),
     m_stub(dapr::proto::runtime::v1::Dapr::NewStub(m_channel))
 {
 }

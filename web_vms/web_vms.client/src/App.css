@@ -429,3 +429,25 @@ button:disabled {
   color: var(--app-log-default);
   border-left-color: var(--app-log-default);
 }
+
+/* -------- Entity state -------- */
+.vms-entity-state-body {
+  height: 100%;
+  overflow-y: auto;
+  background-color: var(--app-log-panel-bg);
+  color: var(--app-log-panel-fg);
+  border-radius: var(--app-radius-sm);
+  padding: 8px;
+  font-family: monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.vms-entity-line[data-entity-status='alive'] {
+  background-color: var(--app-log-debug);
+}
+
+.vms-entity-line[data-entity-status='stale'] {
+  background-color: var(--app-log-empty);
+}

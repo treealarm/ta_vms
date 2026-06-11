@@ -363,6 +363,30 @@ std::vector<camera_manager::camera_info> camera_manager::list_cameras() const
   return result;
 }
 
+std::vector<camera_manager::stream_state> camera_manager::list_stream_states() const
+{
+  std::scoped_lock lock(m_mutex);
+
+  std::vector<stream_state> result;
+  for (const auto& [camera_id, device] : m_cameras)
+  {
+    for (const auto& [stream_name, stream] : device->streams())
+    {
+      result.push_back(stream_state{
+        .camera_id            = camera_id,
+        .stream_name          = stream_name,
+        .is_recording         = stream->is_recording(),
+        .is_web_rtc_streaming = stream->is_web_rtc_streaming(),
+        .is_web_rtc_enabled   = stream->is_web_rtc_enabled(),
+        .recording_policy     = stream->get_recording_policy_mode(),
+        .current_segment      = stream->current_segment_path(),
+      });
+    }
+  }
+
+  return result;
+}
+
 bool camera_manager::ensure_web_rtc(const std::string& camera_id,
                                      const std::string& stream_name,
                                      std::string& error)

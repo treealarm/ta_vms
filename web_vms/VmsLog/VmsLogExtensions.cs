@@ -1,3 +1,5 @@
+using Dapr.Client;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
 using Serilog.Events;
@@ -6,6 +8,15 @@ namespace VmsLog;
 
 public static class VmsLogExtensions
 {
+  // Registers EntityStatePublisher for publishing debug "entity state" reports
+  // to the debug-entity-state pub/sub topic (see CLAUDE.md).
+  public static IHostApplicationBuilder AddVmsDebugState(this IHostApplicationBuilder builder)
+  {
+    builder.Services.AddSingleton(_ => new DaprClientBuilder().Build());
+    builder.Services.AddSingleton<EntityStatePublisher>();
+    return builder;
+  }
+
   public static IHostApplicationBuilder AddVmsLogging(this IHostApplicationBuilder builder)
   {
     var appId  = Environment.GetEnvironmentVariable("APP_ID")

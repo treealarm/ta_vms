@@ -288,6 +288,19 @@
     "download": "Descargar",
     "noPreview": "Selecciona un clip retenido para previsualizar"
   },
+  "entityState": {
+    "tabLabel": "Estado de entidades",
+    "title": "Estado de entidades",
+    "service": "Servicio",
+    "entityType": "Tipo de entidad",
+    "entityId": "ID de entidad",
+    "lastSeen": "Última actualización",
+    "alive": "activo",
+    "stale": "obsoleto",
+    "auto": "Auto",
+    "noEntities": "Aún no se reportaron entidades",
+    "selectHint": "Selecciona una entrada para ver detalles"
+  },
   "serverSetup": {
     "title": "Configuración de cámara",
     "hide": "Ocultar",

@@ -243,6 +243,15 @@ export type LogResponseDto = {
   hasMore: boolean
 }
 
+export type EntityStateDto = {
+  service: string
+  entityType: string
+  entityId: string
+  stateJson: string
+  lastSeen: string
+  stale: boolean
+}
+
 export type MonitorLayout = '1x1' | '1x2' | '2x2' | '3x3'
 
 export const MONITOR_LAYOUTS: MonitorLayout[] = ['1x1', '1x2', '2x2', '3x3']
