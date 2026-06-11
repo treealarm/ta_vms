@@ -96,6 +96,21 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
   return true;
 }
 
+bool rtsp_output_sink::try_init(const std::vector<stream_config>& streams)
+{
+  const auto now = std::chrono::steady_clock::now();
+  if (now < m_next_init_attempt) {
+    return false;
+  }
+
+  if (init(streams)) {
+    return true;
+  }
+
+  m_next_init_attempt = now + kInitRetryInterval;
+  return false;
+}
+
 rtsp_output_sink::stream_state* rtsp_output_sink::find_stream(AVMediaType media_type)
 {
   for (auto& stream : m_streams) {
@@ -171,7 +186,7 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
 
   if (!m_is_initialized) {
     const auto streams = collect_known_streams();
-    if (streams.empty() || !init(streams)) {
+    if (streams.empty() || !try_init(streams)) {
       return;
     }
   }
@@ -179,7 +194,7 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
     auto* existing_stream = find_stream(media->media_type);
     if (!existing_stream || config_changed) {
       const auto streams = collect_known_streams();
-      if (streams.empty() || !init(streams)) {
+      if (streams.empty() || !try_init(streams)) {
         return;
       }
     }

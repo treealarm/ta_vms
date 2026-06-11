@@ -5,7 +5,8 @@ namespace VmsFs;
 
 public sealed class CameraStorageSubscriber(
   DaprPublishSubscribeClient pubSubClient,
-  CameraStorageCache storageCache) : IHostedService, IDisposable
+  CameraStorageCache storageCache,
+  ILogger<CameraStorageSubscriber> logger) : IHostedService, IDisposable
 {
   private const string CameraStorageChangedTopic = "camera-storage-changed";
   private static readonly string PubSubName =
@@ -35,7 +36,7 @@ public sealed class CameraStorageSubscriber(
     catch (OperationCanceledException) { }
     catch (Exception ex)
     {
-      Console.Error.WriteLine($"CameraStorageSubscriber error: {ex}");
+      logger.LogError(ex, "CameraStorageSubscriber error");
     }
   }
 
@@ -45,7 +46,10 @@ public sealed class CameraStorageSubscriber(
     {
       var cameraId = JsonSerializer.Deserialize<string>(message.Data.Span);
       if (!string.IsNullOrWhiteSpace(cameraId))
+      {
         storageCache.Invalidate(cameraId);
+        logger.LogDebug("Camera '{CameraId}' storage cache invalidated", cameraId);
+      }
       return Task.FromResult(TopicResponseAction.Success);
     }
     catch

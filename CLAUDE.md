@@ -56,6 +56,34 @@ When a service needs to react to a configuration change that originated in anoth
 - Add a direct gRPC call from service A to VmsCfg inside a hot path (e.g. per-request, per-packet) to read config that rarely changes — cache it and invalidate via pub/sub instead.
 - Embed config values in event payloads as the authoritative state — events are notifications, not data carriers.
 
+## Debug "entity state" presence registry
+
+For runtime debugging, any service can publish a periodic snapshot of an entity's in-memory
+state (e.g. "camera X stream Y is currently recording into file Z") to the `debug-entity-state`
+topic on the existing `orderpubsub` pub/sub component. This is a **best-effort, non-persistent**
+mechanism — no delivery guarantees, no history, nothing is written to a database.
+
+**Envelope** (raw JSON, one message per entity per tick):
+```json
+{ "service": "vms", "entity_type": "stream", "entity_id": "cam1/main", "state": { "...": "..." } }
+```
+- `service` — publisher's `APP_ID`.
+- `entity_type` / `entity_id` — free-form identifiers chosen by the publisher.
+- `state` — arbitrary JSON object, no fixed schema; each entity publishes whatever fields are
+  relevant to it.
+
+**VmsUtils** owns the in-memory registry: it subscribes to `debug-entity-state`, keys entries by
+`(service, entity_type, entity_id)`, and tracks `last_seen`. `stale` is computed on read
+(`now - last_seen > 30s`); a periodic sweep removes entries not seen for `> 5min`. The registry is
+exposed via the `ListEntityStates` gRPC (consumed by `web_vms.Server`'s `/api/entitystate`
+endpoint and the "Entity State" debug tab in the frontend).
+
+**Publishing:**
+- C# services: call `builder.AddVmsDebugState()` (from `VmsLog`), then inject
+  `EntityStatePublisher` and call `Publish(entityType, entityId, state)`.
+- C++ services: use `entity_state_publisher` (in `media_server/grpc_layer`) which wraps
+  `dapr_publisher::publish_json`.
+
 ## Database access
 
 Use **Entity Framework Core** for all database queries. Do not write raw SQL via `NpgsqlDataSource` / `NpgsqlCommand` in new code. Use `IDbContextFactory<T>` (or the injected `DbContext`) and LINQ for queries.

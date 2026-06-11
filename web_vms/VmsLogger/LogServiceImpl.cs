@@ -1,3 +1,4 @@
+using System.Text;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
@@ -72,7 +73,10 @@ public sealed class LogServiceImpl : LogService.LogServiceBase
         response.HasMore = true;
         break;
       }
-      ReadFileTail(file, from, to, levelFilter, sourceFilter, limit, collected, response);
+      // Each service writes into its own VMS_LOG_PATH/<app_id>/ subfolder.
+      var fileAppId = Path.GetFileName(Path.GetDirectoryName(file)) ?? string.Empty;
+      if (ReadFileTail(file, fileAppId, from, to, levelFilter, sourceFilter, limit, collected, response))
+        break;
     }
 
     // Return in chronological order (oldest-first); the client renders newest on top.
@@ -81,10 +85,12 @@ public sealed class LogServiceImpl : LogService.LogServiceBase
     return Task.FromResult(response);
   }
 
-  // Appends the last (limit - collected.Count) matching entries of `file` to `collected`,
-  // newest-first. Sets HasMore if the file held more matches than were taken.
-  private static void ReadFileTail(
+  // Appends matching entries of `file` to `collected`, newest-first, scanning backward from
+  // EOF. Returns true if the caller should stop iterating files entirely (the overall `limit`
+  // has been reached); false to continue with the next (older) file.
+  private static bool ReadFileTail(
     string file,
+    string appId,
     Timestamp from,
     Timestamp? to,
     string? levelFilter,
@@ -95,57 +101,95 @@ public sealed class LogServiceImpl : LogService.LogServiceBase
   {
     if (!File.Exists(file))
     {
-      return;
+      return false;
     }
 
     var remaining = (int)limit - collected.Count;
     if (remaining <= 0)
     {
       response.HasMore = true;
-      return;
+      return true;
     }
 
-    // Keep only the last `remaining` matching entries (chronological within the file).
-    var tail = new LinkedList<LogEntry>();
-    var matchedInFile = 0L;
     try
     {
-      foreach (var line in ReadLinesShared(file))
+      foreach (var line in ReadLinesReversedShared(file))
       {
         if (!TryParseLogEntry(line, out var entry))
           continue;
-        if (!MatchesFilters(entry, from, to, levelFilter, sourceFilter))
+
+        if (IsAfterTo(entry, to))
+          continue; // newer than `to`, skip but keep scanning backward
+
+        if (IsBeforeFrom(entry, from))
+          return false; // this file is exhausted for [from, to]; move to the next file
+
+        if (!MatchesLevelAndSource(entry, levelFilter, sourceFilter))
           continue;
 
-        matchedInFile++;
-        tail.AddLast(entry);
-        if (tail.Count > remaining)
-          tail.RemoveFirst();
+        entry.AppId = appId;
+        collected.Add(entry); // newest-first, same order the caller expects
+        remaining--;
+        if (remaining == 0)
+        {
+          response.HasMore = true;
+          return true; // limit reached: stop the whole multi-file loop
+        }
       }
     }
     catch (IOException)
     {
       // File may be locked/rotated mid-read by the writing service — skip it
       // rather than failing the whole request.
-      return;
+      return false;
     }
 
-    // Append newest-first.
-    for (var node = tail.Last; node is not null; node = node.Previous)
-      collected.Add(node.Value);
-
-    if (matchedInFile > tail.Count)
-      response.HasMore = true;
+    return false; // reached BOF without hitting `from` or `limit`; continue to next file
   }
 
-  // Reads lines with FileShare.ReadWrite so reading does not fail while the owning
-  // service (C++ spdlog / Serilog) keeps the active log file open for writing.
-  private static IEnumerable<string> ReadLinesShared(string path)
+  private const int ReverseReadBufferSize = 64 * 1024;
+
+  // Reads lines from EOF to BOF, with FileShare.ReadWrite so reading does not fail while the
+  // owning service (C++ spdlog / Serilog) keeps the active log file open for writing.
+  private static IEnumerable<string> ReadLinesReversedShared(string path)
   {
     using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-    using var reader = new StreamReader(stream);
-    while (reader.ReadLine() is { } line)
-      yield return line;
+
+    var position = stream.Length;
+    var leftover = Array.Empty<byte>();
+    var buffer = new byte[ReverseReadBufferSize];
+
+    while (position > 0)
+    {
+      var chunkSize = (int)Math.Min(ReverseReadBufferSize, position);
+      position -= chunkSize;
+      stream.Seek(position, SeekOrigin.Begin);
+      stream.ReadExactly(buffer, 0, chunkSize);
+
+      // `combined` = this chunk followed by the partial line carried over from the chunk
+      // read in the previous iteration (which is later in the file).
+      var combined = new byte[chunkSize + leftover.Length];
+      Buffer.BlockCopy(buffer, 0, combined, 0, chunkSize);
+      Buffer.BlockCopy(leftover, 0, combined, chunkSize, leftover.Length);
+
+      // Splitting raw bytes on 0x0A ('\n') before UTF-8 decoding is safe: 0x0A never occurs
+      // as a continuation or lead byte of a multi-byte UTF-8 sequence (those are all >= 0x80),
+      // so each segment between newlines is independently valid UTF-8.
+      var segmentEnd = combined.Length;
+      for (var i = combined.Length - 1; i >= 0; i--)
+      {
+        if (combined[i] != (byte)'\n')
+          continue;
+
+        yield return Encoding.UTF8.GetString(combined, i + 1, segmentEnd - (i + 1));
+        segmentEnd = i;
+      }
+
+      leftover = combined[..segmentEnd];
+    }
+
+    if (leftover.Length > 0)
+      yield return Encoding.UTF8.GetString(leftover);
   }
 
   private static bool TryParseLogEntry(string line, out LogEntry entry)
@@ -162,23 +206,21 @@ public sealed class LogServiceImpl : LogService.LogServiceBase
     }
   }
 
-  private static bool MatchesFilters(
+  // entry.Timestamp < from -> caller should stop scanning this file (everything earlier
+  // in the file is older too).
+  private static bool IsBeforeFrom(LogEntry entry, Timestamp from) =>
+    CompareTimestamps(entry.Timestamp ?? new Timestamp(), from) < 0;
+
+  // entry.Timestamp > to -> caller should skip this entry but keep scanning backward
+  // (older entries further down may still satisfy <= to).
+  private static bool IsAfterTo(LogEntry entry, Timestamp? to) =>
+    to is not null && CompareTimestamps(entry.Timestamp ?? new Timestamp(), to) > 0;
+
+  private static bool MatchesLevelAndSource(
     LogEntry entry,
-    Timestamp from,
-    Timestamp? to,
     string? levelFilter,
     string? sourceFilter)
   {
-    if (CompareTimestamps(entry.Timestamp ?? new Timestamp(), from) < 0)
-    {
-      return false;
-    }
-
-    if (to is not null && CompareTimestamps(entry.Timestamp ?? new Timestamp(), to) > 0)
-    {
-      return false;
-    }
-
     if (levelFilter is not null)
     {
       // Threshold filter: selecting "warning" also includes error/critical.

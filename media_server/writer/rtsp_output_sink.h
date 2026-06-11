@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -32,6 +33,9 @@ private:
     int64_t last_pts = AV_NOPTS_VALUE;
   };
   bool init(const std::vector<stream_config>& streams);
+  // Wraps init(): throttles retries (and the "failed to write rtsp header"
+  // error log) to once per kInitRetryInterval while the target is unreachable.
+  bool try_init(const std::vector<stream_config>& streams);
   stream_state* find_stream(AVMediaType media_type);
   bool update_stream_config_from_packet(const std::shared_ptr<media_packet>& media);
   std::vector<stream_config> collect_known_streams() const;
@@ -49,4 +53,7 @@ private:
 
   int64_t m_last_master_pts = AV_NOPTS_VALUE;
   AVRational m_master_time_base{ 1, 90000 }; // видео как master
+
+  static constexpr std::chrono::seconds kInitRetryInterval{ 5 };
+  std::chrono::steady_clock::time_point m_next_init_attempt{};
 };

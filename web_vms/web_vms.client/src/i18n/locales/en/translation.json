@@ -113,6 +113,8 @@
     "last15m": "Last 15 min",
     "limit": "Limit",
     "level": "Level",
+    "time": "Time",
+    "message": "Message",
     "all": "all",
     "service": "Service",
     "source": "Source",
@@ -285,6 +287,19 @@
     "filePath": "File path",
     "download": "Download",
     "noPreview": "Select a retained clip to preview"
+  },
+  "entityState": {
+    "tabLabel": "Entity State",
+    "title": "Entity State",
+    "service": "Service",
+    "entityType": "Entity type",
+    "entityId": "Entity ID",
+    "lastSeen": "Last seen",
+    "alive": "alive",
+    "stale": "stale",
+    "auto": "Auto",
+    "noEntities": "No entities reported yet",
+    "selectHint": "Select an entry to see details"
   },
   "serverSetup": {
     "title": "Camera setup",

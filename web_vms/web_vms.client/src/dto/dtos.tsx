@@ -232,6 +232,7 @@ export type LogQueryDto = {
 export type LogEntryDto = {
   timestamp: string
   level: string
+  appId: string
   file: string
   function: string
   message: string
@@ -240,6 +241,15 @@ export type LogEntryDto = {
 export type LogResponseDto = {
   logs: LogEntryDto[]
   hasMore: boolean
+}
+
+export type EntityStateDto = {
+  service: string
+  entityType: string
+  entityId: string
+  stateJson: string
+  lastSeen: string
+  stale: boolean
 }
 
 export type MonitorLayout = '1x1' | '1x2' | '2x2' | '3x3'

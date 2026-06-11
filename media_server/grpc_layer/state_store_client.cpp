@@ -2,13 +2,13 @@
 
 #include <cstdlib>
 #include <format>
-#include <iostream>
 #include <stdexcept>
 
 #include <grpcpp/grpcpp.h>
 
 #include "dapr/proto/common/v1/common.pb.h"
 #include "dapr/proto/runtime/v1/dapr.grpc.pb.h"
+#include "logger/logger.h"
 
 namespace {
 std::string require_env(const char* key)
@@ -46,9 +46,9 @@ void state_store_client::save_heartbeat()
 
   if (!status.ok())
   {
-    std::cerr << std::format(
-      "state_store heartbeat failed for server '{}': {}\n",
+    logger::instance().warning(std::format(
+      "state_store heartbeat failed for server '{}': {}",
       m_server_id,
-      status.error_message());
+      status.error_message()));
   }
 }

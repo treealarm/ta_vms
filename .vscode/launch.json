@@ -18,7 +18,8 @@
                 "DAPR_GRPC_PORT": "50001",
                 "DAPR_LOGGER_APP_ID": "vmslogger",
                 "DAPR_CFG_APP_ID": "vmscfg",
-                "DAPR_ONVIF_APP_ID": "vmsonvif"
+                "DAPR_ONVIF_APP_ID": "vmsonvif",
+                "DAPR_UTILS_APP_ID": "vmsutils"
             }
         },
         {

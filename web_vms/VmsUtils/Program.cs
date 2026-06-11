@@ -1,3 +1,4 @@
+using Dapr.Messaging.PublishSubscribe.Extensions;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using VmsLog;
 using VmsUtils;
@@ -14,8 +15,16 @@ var cfgAppId = Environment.GetEnvironmentVariable("DAPR_CFG_APP_ID")
 
 builder.Services.AddGrpc();
 builder.Services.AddHttpClient();
+builder.Services.AddDaprPubSubClient();
+builder.Services.AddSingleton<EntityStateRegistry>();
+builder.Services.AddHostedService<EntityStateSubscriber>();
+builder.Services.AddHostedService<EntityStateSweepService>();
 builder.Services.AddSingleton<UtilsServiceImpl>(sp =>
-  new UtilsServiceImpl(sp.GetRequiredService<IHttpClientFactory>(), cfgAppId));
+  new UtilsServiceImpl(
+    sp.GetRequiredService<IHttpClientFactory>(),
+    cfgAppId,
+    sp.GetRequiredService<EntityStateRegistry>(),
+    sp.GetRequiredService<ILogger<UtilsServiceImpl>>()));
 
 builder.WebHost.ConfigureKestrel(options =>
 {

@@ -41,6 +41,10 @@ public:
   // Non-blocking — the close is processed asynchronously, in order with queued packets.
   void request_close_segment(std::chrono::seconds new_segment_duration);
 
+  // Absolute path of the segment currently being written, or empty if none is open.
+  // Thread-safe: callable from any thread (e.g. the debug entity-state publisher).
+  std::filesystem::path current_segment_path() const;
+
 private:
   struct input_stream_info
   {
@@ -78,6 +82,11 @@ private:
   std::filesystem::path m_segment_abs_path;
   std::filesystem::path m_segment_rel_path;
   std::string m_segment_storage_id;
+
+  // Snapshot of m_segment_abs_path, kept in sync for thread-safe reads via
+  // current_segment_path() (m_segment_abs_path itself is writer-thread only).
+  mutable std::mutex m_segment_path_mutex;
+  std::filesystem::path m_current_segment_path;
 
   sync_packet_transcoder m_packet_transcoder;
 

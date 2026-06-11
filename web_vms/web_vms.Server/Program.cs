@@ -2,6 +2,7 @@ using Dapr.Client;
 using System.Net;
 using Vms.Cfg;
 using Vms.Onvif;
+using Vms.Utils;
 using web_vms;
 using Vms.Logger;
 
@@ -31,6 +32,10 @@ builder.Services.AddSingleton(_ =>
   new OnvifService.OnvifServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId)));
 builder.Services.AddSingleton(_ =>
   new PtzService.PtzServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId)));
+
+var utilsAppId = Require("DAPR_UTILS_APP_ID");
+builder.Services.AddSingleton(_ =>
+  new UtilsService.UtilsServiceClient(DaprClient.CreateInvocationInvoker(utilsAppId)));
 
 
 builder.Services.AddSingleton<ICameraManager, CameraManager>();

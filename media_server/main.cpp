@@ -13,6 +13,7 @@
 #include "config_subscriber.h"
 #include "grpc_layer/camera_control_service.h"
 #include "grpc_layer/cfg_client.h"
+#include "grpc_layer/entity_state_publisher.h"
 #include "grpc_layer/fs_client.h"
 #include "grpc_layer/proto_mapper.h"
 #include "grpc_layer/state_store_client.h"
@@ -53,7 +54,7 @@ int main(int argc, char** argv)
   }
 
   const char* app_id = std::getenv("APP_ID");
-  logger::instance().init(app_id ? app_id : "vms");
+  logger::instance().init(app_id ? app_id : "vms", log_level::debug);
 
   std::signal(SIGINT, on_signal);
   std::signal(SIGTERM, on_signal);
@@ -83,6 +84,16 @@ int main(int argc, char** argv)
     while (!g_stop_requested) {
       state_client.save_heartbeat();
       for (int i = 0; i < 30 && !g_stop_requested; ++i)
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+  });
+
+  entity_state_publisher entity_pub;
+  std::thread entity_state_thread([&]() {
+    while (!g_stop_requested) {
+      for (const auto& s : manager.list_stream_states())
+        entity_pub.publish_stream_state(s);
+      for (int i = 0; i < 10 && !g_stop_requested; ++i)
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
   });
@@ -182,5 +193,6 @@ int main(int argc, char** argv)
   server->Shutdown();
   server->Wait();
   heartbeat_thread.join();
+  entity_state_thread.join();
   return 0;
 }

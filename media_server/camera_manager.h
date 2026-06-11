@@ -32,6 +32,18 @@ public:
     recording_policy_mode recording_policy = recording_policy_mode::off;
   };
 
+  // Real-time runtime state of a single camera stream, for the debug entity-state publisher.
+  struct stream_state
+  {
+    std::string camera_id;
+    std::string stream_name;
+    bool is_recording = false;
+    bool is_web_rtc_streaming = false;
+    bool is_web_rtc_enabled = false;
+    recording_policy_mode recording_policy = recording_policy_mode::off;
+    std::string current_segment; // empty if no segment is currently being written
+  };
+
   // Load all streams from config (called on startup).
   bool configure_camera(
     const std::string& camera_id,
@@ -69,6 +81,8 @@ public:
   bool remove_camera(const std::string& camera_id, std::string& error);
 
   std::vector<camera_info> list_cameras() const;
+  // Real-time per-stream state for all configured cameras (for debug entity-state publisher).
+  std::vector<stream_state> list_stream_states() const;
   // Starts WebRTC for the given stream if not already streaming. No-op if already running.
   bool ensure_web_rtc(const std::string& camera_id, const std::string& stream_name,
                       std::string& error);

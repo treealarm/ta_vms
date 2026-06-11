@@ -4,7 +4,7 @@ using Vms.Cfg;
 
 namespace VmsCfg
 {
-  public class CfgServiceImpl(CameraStorage storage, DaprClient daprClient) : CfgService.CfgServiceBase
+  public class CfgServiceImpl(CameraStorage storage, DaprClient daprClient, ILogger<CfgServiceImpl> logger) : CfgService.CfgServiceBase
   {
     private const string CameraConfigChangedTopic      = "camera-config-changed";
     private const string MediaServerConfigChangedTopic = "media-server-config-changed";
@@ -23,7 +23,7 @@ namespace VmsCfg
         }
         catch (Exception ex)
         {
-          Console.Error.WriteLine($"Camera config invalidation publish failed for '{cameraId}': {ex.Message}");
+          logger.LogWarning(ex, "Camera config invalidation publish failed for '{CameraId}'", cameraId);
         }
       });
     }
@@ -38,7 +38,7 @@ namespace VmsCfg
         }
         catch (Exception ex)
         {
-          Console.Error.WriteLine($"Camera state invalidation publish failed for '{cameraId}': {ex.Message}");
+          logger.LogWarning(ex, "Camera state invalidation publish failed for '{CameraId}'", cameraId);
         }
       });
     }
@@ -54,9 +54,17 @@ namespace VmsCfg
         }
         catch (Exception ex)
         {
-          Console.Error.WriteLine($"Media server config notification failed for '{serverId}': {ex.Message}");
+          logger.LogWarning(ex, "Media server config notification failed for '{ServerId}'", serverId);
         }
       });
+    }
+
+    // A MediaMTX server's connection info (rtsp_url etc.) can be referenced by cameras on
+    // any recording server, so notify all of them to re-resolve the WebRTC push URL.
+    private void NotifyAllMediaServers()
+    {
+      foreach (var (serverId, _) in storage.GetServerPairs())
+        NotifyMediaServer(serverId);
     }
 
     private static readonly string StateStoreName =
@@ -78,6 +86,7 @@ namespace VmsCfg
       var (_, existing) = await storage.GetCameraAsync(request.CameraId, context.CancellationToken);
 
       await storage.SetupCameraAsync(request, context.CancellationToken);
+      logger.LogInformation("Camera '{CameraId}' configured (server={ServerId})", request.CameraId, request.ServerId);
       InvalidateFsCache(request.CameraId);
       NotifyMediaServer(request.ServerId);
 
@@ -123,6 +132,7 @@ namespace VmsCfg
       var removed = await storage.RemoveCameraAsync(request.SourceId, context.CancellationToken);
       if (removed)
       {
+        logger.LogInformation("Camera '{CameraId}' removed", request.SourceId);
         InvalidateFsCache(request.SourceId);
         if (existing is not null)
           NotifyMediaServer(existing.ServerId);
@@ -156,6 +166,7 @@ namespace VmsCfg
         return new OperationStatus { Success = false, Message = "name must not be empty" };
 
       await storage.UpsertRecordingProfileAsync(request, context.CancellationToken);
+      logger.LogInformation("Recording profile '{Name}' upserted (id={Id}, mode={Mode})", request.Name, request.Id, request.Mode);
       return new OperationStatus { Success = true };
     }
 
@@ -167,6 +178,8 @@ namespace VmsCfg
         return new OperationStatus { Success = false, Message = "id must not be empty" };
 
       var removed = await storage.RemoveRecordingProfileAsync(request.Id, context.CancellationToken);
+      if (removed)
+        logger.LogInformation("Recording profile '{Id}' removed", request.Id);
       return new OperationStatus { Success = removed };
     }
 
@@ -181,6 +194,7 @@ namespace VmsCfg
         return new OperationStatus { Success = false, Message = "profile_id must be a valid UUID" };
 
       await storage.SetStreamOverrideAsync(request.CameraId, request.StreamName, request.ProfileId, context.CancellationToken);
+      logger.LogInformation("Stream override set: camera='{CameraId}' stream='{StreamName}' profile='{ProfileId}'", request.CameraId, request.StreamName, request.ProfileId);
       InvalidateFsCache(request.CameraId);
       var (_, cam) = await storage.GetCameraAsync(request.CameraId, context.CancellationToken);
       if (cam is not null) NotifyMediaServer(cam.ServerId);
@@ -195,6 +209,7 @@ namespace VmsCfg
         return new OperationStatus { Success = false, Message = "camera_id and stream_name are required" };
 
       await storage.ClearStreamOverrideAsync(request.CameraId, request.StreamName, context.CancellationToken);
+      logger.LogInformation("Stream override cleared: camera='{CameraId}' stream='{StreamName}'", request.CameraId, request.StreamName);
       InvalidateFsCache(request.CameraId);
       var (_, cam) = await storage.GetCameraAsync(request.CameraId, context.CancellationToken);
       if (cam is not null) NotifyMediaServer(cam.ServerId);
@@ -214,7 +229,10 @@ namespace VmsCfg
 
       var activated = await storage.ActivateAlarmOverrideAsync(request.CameraId, streamName, until, context.CancellationToken);
       if (activated)
+      {
+        logger.LogInformation("Alarm override activated: camera='{CameraId}' stream='{StreamName}' until={Until}", request.CameraId, streamName, until);
         InvalidateFsCache(request.CameraId);
+      }
       return new ActivateAlarmOverrideResponse { Activated = activated };
     }
 
@@ -227,7 +245,10 @@ namespace VmsCfg
 
       var cleared = await storage.ClearAlarmOverrideAsync(request.CameraId, request.StreamName, context.CancellationToken);
       if (cleared)
+      {
+        logger.LogInformation("Alarm override cleared: camera='{CameraId}' stream='{StreamName}'", request.CameraId, request.StreamName);
         InvalidateFsCache(request.CameraId);
+      }
       return new OperationStatus { Success = true };
     }
 
@@ -268,6 +289,8 @@ namespace VmsCfg
         return new OperationStatus { Success = false, Message = "webrtc_url must not be empty" };
 
       await storage.UpsertMediaMtxServerAsync(request, context.CancellationToken);
+      logger.LogInformation("MediaMTX server '{Name}' upserted (id={Id})", request.Name, request.Id);
+      NotifyAllMediaServers();
       return new OperationStatus { Success = true };
     }
 
@@ -279,6 +302,11 @@ namespace VmsCfg
         return new OperationStatus { Success = false, Message = "id must not be empty" };
 
       var removed = await storage.RemoveMediaMtxServerAsync(request.Id, context.CancellationToken);
+      if (removed)
+      {
+        logger.LogInformation("MediaMTX server '{Id}' removed", request.Id);
+        NotifyAllMediaServers();
+      }
       return new OperationStatus { Success = removed };
     }
 
@@ -313,7 +341,9 @@ namespace VmsCfg
       if (string.IsNullOrWhiteSpace(request.Layout))
         throw new RpcException(new Status(StatusCode.InvalidArgument, "layout must not be empty"));
 
-      return await storage.UpsertMonitorAsync(request, context.CancellationToken);
+      var result = await storage.UpsertMonitorAsync(request, context.CancellationToken);
+      logger.LogInformation("Monitor '{Name}' upserted (id={Id}, layout={Layout})", result.Name, result.MonitorId, result.Layout);
+      return result;
     }
 
     public override async Task<OperationStatus> RemoveMonitor(SourceRequest request, ServerCallContext context)
@@ -322,6 +352,8 @@ namespace VmsCfg
         return new OperationStatus { Success = false, Message = "source_id must not be empty" };
 
       var removed = await storage.RemoveMonitorAsync(request.SourceId, context.CancellationToken);
+      if (removed)
+        logger.LogInformation("Monitor '{Id}' removed", request.SourceId);
       return new OperationStatus { Success = removed };
     }
 
@@ -333,6 +365,7 @@ namespace VmsCfg
         return new OperationStatus { Success = false, Message = "monitor_id must not be empty" };
 
       await storage.SetMonitorCamerasAsync(request.MonitorId, request.CameraIds, context.CancellationToken);
+      logger.LogInformation("Monitor '{MonitorId}' camera pool set ({Count} cameras)", request.MonitorId, request.CameraIds.Count);
       return new OperationStatus { Success = true };
     }
 
@@ -344,6 +377,7 @@ namespace VmsCfg
         return new OperationStatus { Success = false, Message = "monitor_id and camera_id must not be empty" };
 
       await storage.SetMonitorSlotAsync(request.MonitorId, request.SlotIndex, request.CameraId, context.CancellationToken);
+      logger.LogInformation("Monitor '{MonitorId}' slot {SlotIndex} set to camera '{CameraId}'", request.MonitorId, request.SlotIndex, request.CameraId);
       return new OperationStatus { Success = true };
     }
 
@@ -372,6 +406,7 @@ namespace VmsCfg
         request.TimeoutSeconds = 30;
 
       var result = await storage.UpsertOnvifAlarmFilterAsync(request, context.CancellationToken);
+      logger.LogInformation("ONVIF alarm filter '{Id}' upserted for camera '{CameraId}'", result.Id, result.CameraId);
       InvalidateFsCache(result.CameraId);
       return result;
     }
@@ -385,7 +420,10 @@ namespace VmsCfg
 
       var (removed, cameraId) = await storage.RemoveOnvifAlarmFilterAsync(request.Id, context.CancellationToken);
       if (removed && cameraId is not null)
+      {
+        logger.LogInformation("ONVIF alarm filter '{Id}' removed (camera='{CameraId}')", request.Id, cameraId);
         InvalidateFsCache(cameraId);
+      }
       return new OperationStatus { Success = removed };
     }
 
@@ -395,6 +433,7 @@ namespace VmsCfg
       if (string.IsNullOrWhiteSpace(request.CameraId))
         return new OperationStatus { Success = false, Message = "camera_id is required" };
       await storage.SubscribeOnvifEventsAsync(request.CameraId, context.CancellationToken);
+      logger.LogInformation("ONVIF event subscription enabled for camera '{CameraId}'", request.CameraId);
       InvalidateFsCache(request.CameraId);
       return new OperationStatus { Success = true };
     }
@@ -405,6 +444,7 @@ namespace VmsCfg
       if (string.IsNullOrWhiteSpace(request.CameraId))
         return new OperationStatus { Success = false, Message = "camera_id is required" };
       await storage.UnsubscribeOnvifEventsAsync(request.CameraId, context.CancellationToken);
+      logger.LogInformation("ONVIF event subscription disabled for camera '{CameraId}'", request.CameraId);
       InvalidateFsCache(request.CameraId);
       return new OperationStatus { Success = true };
     }
@@ -428,6 +468,7 @@ namespace VmsCfg
       SetOnvifArmedRequest request, ServerCallContext context)
     {
       await storage.SetOnvifArmedAsync(request.CameraId, request.Armed, context.CancellationToken);
+      logger.LogInformation("Camera '{CameraId}' armed state set to {Armed}", request.CameraId, request.Armed);
       InvalidateFsCache(request.CameraId);
       return new OperationStatus { Success = true };
     }
@@ -439,6 +480,7 @@ namespace VmsCfg
         return new OperationStatus { Success = false, Message = "poll_timeout_seconds and message_limit must be positive" };
 
       await storage.SetOnvifPollConfigAsync(request.CameraId, request.PollTimeoutSeconds, request.MessageLimit, context.CancellationToken);
+      logger.LogInformation("Camera '{CameraId}' ONVIF poll config set: timeout={Timeout}s limit={Limit}", request.CameraId, request.PollTimeoutSeconds, request.MessageLimit);
       InvalidateFsCache(request.CameraId);
       return new OperationStatus { Success = true };
     }
@@ -454,6 +496,7 @@ namespace VmsCfg
       SetCamStateRequest request, ServerCallContext context)
     {
       await storage.SetCameraArmedAsync(request.CameraId, request.Armed, context.CancellationToken);
+      logger.LogInformation("Camera '{CameraId}' armed={Armed}", request.CameraId, request.Armed);
       NotifyCameraStateChanged(request.CameraId);
       return new OperationStatus { Success = true };
     }

@@ -58,6 +58,7 @@ namespace web_vms
         {
           Timestamp = l.Timestamp?.ToDateTime() ?? DateTime.UnixEpoch,
           Level = l.Level,
+          AppId = l.AppId,
           File = l.File,
           Function = l.Function,
           Message = l.Message

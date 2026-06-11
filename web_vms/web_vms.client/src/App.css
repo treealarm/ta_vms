@@ -369,11 +369,40 @@ button:disabled {
 }
 
 .vms-log-line {
-  white-space: pre-wrap;
   padding-left: 8px;
   padding-top: 2px;
   padding-bottom: 2px;
   border-left: 2px solid transparent;
+  gap: 8px;
+}
+
+.vms-log-line-header {
+  border-left-color: transparent;
+  position: sticky;
+  top: 0;
+  background-color: var(--app-log-panel-bg);
+}
+
+.vms-log-col-time {
+  flex: 0 0 140px;
+}
+
+.vms-log-col-level {
+  flex: 0 0 60px;
+}
+
+.vms-log-col-service {
+  flex: 0 0 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vms-log-col-message {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .vms-log-line[data-log-level='error'] {
@@ -399,4 +428,26 @@ button:disabled {
 .vms-log-line[data-log-level='default'] {
   color: var(--app-log-default);
   border-left-color: var(--app-log-default);
+}
+
+/* -------- Entity state -------- */
+.vms-entity-state-body {
+  height: 100%;
+  overflow-y: auto;
+  background-color: var(--app-log-panel-bg);
+  color: var(--app-log-panel-fg);
+  border-radius: var(--app-radius-sm);
+  padding: 8px;
+  font-family: monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.vms-entity-line[data-entity-status='alive'] {
+  background-color: var(--app-log-debug);
+}
+
+.vms-entity-line[data-entity-status='stale'] {
+  background-color: var(--app-log-empty);
 }

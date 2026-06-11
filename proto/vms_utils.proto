@@ -1,8 +1,12 @@
 syntax = "proto3";
 package vms.utils;
 
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
 service UtilsService {
   rpc GetMediaMtxPathInfo(GetMediaMtxPathInfoRequest) returns (GetMediaMtxPathInfoResponse);
+  rpc ListEntityStates(google.protobuf.Empty) returns (ListEntityStatesResponse);
 }
 
 message GetMediaMtxPathInfoRequest {
@@ -14,4 +18,17 @@ message GetMediaMtxPathInfoResponse {
   bool  success       = 1;
   int32 readers_count = 2;
   bool  has_source    = 3;
+}
+
+message EntityState {
+  string service = 1;
+  string entity_type = 2;
+  string entity_id = 3;
+  string state_json = 4;
+  google.protobuf.Timestamp last_seen = 5;
+  bool stale = 6;
+}
+
+message ListEntityStatesResponse {
+  repeated EntityState entities = 1;
 }

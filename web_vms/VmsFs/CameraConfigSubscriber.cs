@@ -6,7 +6,8 @@ namespace VmsFs;
 public sealed class CameraConfigSubscriber(
   DaprPublishSubscribeClient pubSubClient,
   CameraConfigCache configCache,
-  CameraSetupCache setupCache) : IHostedService, IDisposable
+  CameraSetupCache setupCache,
+  ILogger<CameraConfigSubscriber> logger) : IHostedService, IDisposable
 {
   private const string CameraConfigChangedTopic = "camera-config-changed";
   private static readonly string PubSubName =
@@ -36,7 +37,7 @@ public sealed class CameraConfigSubscriber(
     catch (OperationCanceledException) { }
     catch (Exception ex)
     {
-      Console.Error.WriteLine($"CameraConfigSubscriber error: {ex}");
+      logger.LogError(ex, "CameraConfigSubscriber error");
     }
   }
 
@@ -49,6 +50,7 @@ public sealed class CameraConfigSubscriber(
       {
         configCache.Invalidate(cameraId);
         setupCache.Invalidate(cameraId);
+        logger.LogDebug("Camera '{CameraId}' config cache invalidated", cameraId);
       }
       return Task.FromResult(TopicResponseAction.Success);
     }

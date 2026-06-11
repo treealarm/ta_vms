@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Box,
   Button,
@@ -22,8 +22,12 @@ import type { LogEntryDto } from '../dto/dtos'
 
 const LEVEL_OPTIONS = ['', 'debug', 'info', 'warn', 'error']
 
-function formatLogLine(ts: string, level: string, message: string, file: string, func: string): string {
-  return `${ts} [${level}] ${message} (${file}::${func})`
+function formatLogLine(ts: string, level: string, appId: string, message: string, file: string, func: string): string {
+  return `${ts} [${level}] [${appId}] ${message} (${file}::${func})`
+}
+
+function formatLocalTime(ts: string): string {
+  return toLocalDatetimeInputValue(new Date(ts)).replace('T', ' ')
 }
 
 function looksLikeXml(s: string): boolean {
@@ -110,7 +114,7 @@ export default function LogJournalPanel() {
   }
 
   const detailText = (e: LogEntryDto) => {
-    const meta = `${toLocalDatetimeInputValue(new Date(e.timestamp))} · ${e.level}`
+    const meta = `${toLocalDatetimeInputValue(new Date(e.timestamp))} · ${e.level} · ${e.appId}`
       + (e.file ? ` · ${e.file}` : '')
       + (e.function ? `::${e.function}` : '')
     const body = looksLikeXml(e.message) ? formatXml(e.message) : e.message
@@ -124,9 +128,17 @@ export default function LogJournalPanel() {
       .catch(() => {})
   }
 
-  const runFetch = async () => {
+  const entriesRef = useRef(entries)
+  useEffect(() => {
+    entriesRef.current = entries
+  }, [entries])
+
+  const runFetch = async (merge: boolean) => {
     const to = new Date()
-    const from = new Date(to.getTime() - rangeSec * 1000)
+    const last = entriesRef.current
+    const from = merge && last.length > 0
+      ? new Date(last[last.length - 1].timestamp) // newest entry already shown (entries are oldest-first)
+      : new Date(to.getTime() - rangeSec * 1000)
 
     await dispatch(
       fetchLogs({
@@ -135,19 +147,20 @@ export default function LogJournalPanel() {
         limit,
         level: level || undefined,
         appId: appId || undefined,
+        merge,
       })
     )
   }
 
   useEffect(() => {
     loadSources()
-    void runFetch()
+    void runFetch(false)
     if (!autoRefresh) {
       return
     }
     const timer = setInterval(() => {
       loadSources()
-      void runFetch()
+      void runFetch(true)
     }, 3000)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -157,7 +170,7 @@ export default function LogJournalPanel() {
     const q = search.trim().toLowerCase()
     const matched = q
       ? entries.filter((e) => {
-          const line = formatLogLine(e.timestamp, e.level, e.message, e.file, e.function).toLowerCase()
+          const line = formatLogLine(e.timestamp, e.level, e.appId, e.message, e.file, e.function).toLowerCase()
           return line.includes(q)
         })
       : entries
@@ -253,7 +266,7 @@ export default function LogJournalPanel() {
               label={t('logs.auto')}
             />
 
-            <Button size="small" variant="outlined" onClick={() => void runFetch()}>
+            <Button size="small" variant="outlined" onClick={() => void runFetch(false)}>
               {t('common.refresh')}
             </Button>
             <Button size="small" variant="outlined" onClick={() => dispatch(clearLogs())}>
@@ -271,6 +284,14 @@ export default function LogJournalPanel() {
                   {t('logs.noLogs')}
                 </Typography>
               )}
+              {filteredEntries.length > 0 && (
+                <Box className="vms-log-line vms-log-line-header" sx={{ display: 'flex', fontWeight: 'bold' }}>
+                  <Box className="vms-log-col-time">{t('logs.time')}</Box>
+                  <Box className="vms-log-col-level">{t('logs.level')}</Box>
+                  <Box className="vms-log-col-service">{t('logs.service')}</Box>
+                  <Box className="vms-log-col-message">{t('logs.message')}</Box>
+                </Box>
+              )}
               {filteredEntries.map((e, idx) => (
                 <Box
                   key={`${e.timestamp}-${idx}`}
@@ -278,20 +299,15 @@ export default function LogJournalPanel() {
                   data-log-level={normalizeLogLevelKey(e.level)}
                   onClick={(ev) => toggleSelect(e, ev.ctrlKey || ev.metaKey)}
                   sx={{
+                    display: 'flex',
                     cursor: 'pointer',
                     backgroundColor: isSelected(e) ? 'action.selected' : undefined,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
                   }}
                 >
-                  {formatLogLine(
-                    toLocalDatetimeInputValue(new Date(e.timestamp)),
-                    e.level,
-                    e.message,
-                    e.file,
-                    e.function
-                  )}
+                  <Box className="vms-log-col-time">{formatLocalTime(e.timestamp)}</Box>
+                  <Box className="vms-log-col-level">{e.level}</Box>
+                  <Box className="vms-log-col-service">{e.appId}</Box>
+                  <Box className="vms-log-col-message">{e.message}</Box>
                 </Box>
               ))}
             </Box>
@@ -310,6 +326,7 @@ export default function LogJournalPanel() {
                     <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.5 }}>
                       {toLocalDatetimeInputValue(new Date(s.timestamp))}
                       {' · '}{s.level}
+                      {' · '}{s.appId}
                       {s.file ? ` · ${s.file}` : ''}
                       {s.function ? `::${s.function}` : ''}
                     </Typography>
