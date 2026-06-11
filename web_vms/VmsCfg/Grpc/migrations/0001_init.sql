@@ -105,8 +105,10 @@ CREATE TABLE onvif_alarm_filter (
 CREATE INDEX idx_onvif_alarm_filter_camera_id ON onvif_alarm_filter (camera_id);
 
 CREATE TABLE onvif_event_subscription (
-  camera_id  text    PRIMARY KEY REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
-  subscribed boolean NOT NULL DEFAULT true
+  camera_id            text    PRIMARY KEY REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
+  subscribed           boolean NOT NULL DEFAULT true,
+  poll_timeout_seconds integer NOT NULL DEFAULT 5,
+  message_limit        integer NOT NULL DEFAULT 1024
 );
 
 CREATE TABLE camera_states (
