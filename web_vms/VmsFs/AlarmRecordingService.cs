@@ -9,7 +9,8 @@ namespace VmsFs;
 
 public sealed class AlarmRecordingService(
   CfgService.CfgServiceClient cfgClient,
-  CameraSetupCache setupCache) : BackgroundService
+  CameraSetupCache setupCache,
+  ILogger<AlarmRecordingService> logger) : BackgroundService
 {
   private static readonly TimeSpan Interval = TimeSpan.FromSeconds(2);
   private static readonly TimeSpan CfgCallTimeout = TimeSpan.FromSeconds(5);
@@ -38,11 +39,14 @@ public sealed class AlarmRecordingService(
 
       var resp = await cfgClient.ActivateAlarmOverrideAsync(req, CfgOptions(ct));
       if (resp.Activated)
+      {
+        logger.LogInformation("Alarm recording activated for camera '{CameraId}' stream='{StreamName}' until={Until}", cameraId, streamName, until);
         await PushCameraStateAsync(cameraId, streamName, RecordingMode.RecordingContinuous, ct);
+      }
     }
     catch (Exception ex)
     {
-      Console.Error.WriteLine($"AlarmRecordingService.TryActivateAsync '{cameraId}': {ex.Message}");
+      logger.LogError(ex, "AlarmRecordingService.TryActivateAsync '{CameraId}'", cameraId);
     }
   }
 
@@ -65,7 +69,7 @@ public sealed class AlarmRecordingService(
     }
     catch (Exception ex)
     {
-      Console.Error.WriteLine($"AlarmRecordingService: ListAlarmOverrideStreams failed: {ex.Message}");
+      logger.LogError(ex, "AlarmRecordingService: ListAlarmOverrideStreams failed");
       return;
     }
 
@@ -77,12 +81,14 @@ public sealed class AlarmRecordingService(
           new ClearAlarmOverrideRequest { CameraId = stream.CameraId, StreamName = stream.StreamName },
           CfgOptions(ct));
         if (resp.Success)
+        {
+          logger.LogInformation("Alarm recording expired for camera '{CameraId}' stream='{StreamName}'", stream.CameraId, stream.StreamName);
           await PushCameraStateAsync(stream.CameraId, stream.StreamName, null, ct);
+        }
       }
       catch (Exception ex)
       {
-        Console.Error.WriteLine(
-          $"AlarmRecordingService: error clearing '{stream.CameraId}/{stream.StreamName}': {ex.Message}");
+        logger.LogError(ex, "AlarmRecordingService: error clearing '{CameraId}/{StreamName}'", stream.CameraId, stream.StreamName);
       }
     }
   }
@@ -94,7 +100,7 @@ public sealed class AlarmRecordingService(
     var setup = await setupCache.GetAsync(cameraId, ct);
     if (setup is null)
     {
-      Console.Error.WriteLine($"AlarmRecordingService: no setup cached for '{cameraId}'");
+      logger.LogWarning("AlarmRecordingService: no setup cached for '{CameraId}'", cameraId);
       return;
     }
 
@@ -121,7 +127,7 @@ public sealed class AlarmRecordingService(
       }
       catch (Exception ex)
       {
-        Console.Error.WriteLine($"AlarmRecordingService: SetCameraState failed for '{cameraId}/{stream.StreamName}' on server '{setup.ServerId}': {ex.Message}");
+        logger.LogError(ex, "AlarmRecordingService: SetCameraState failed for '{CameraId}/{StreamName}' on server '{ServerId}'", cameraId, stream.StreamName, setup.ServerId);
       }
     }
   }

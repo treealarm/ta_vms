@@ -8,6 +8,19 @@
 #include "logger/logger.h"
 #include "vms_control.pb.h"
 
+namespace {
+const char* to_string(recording_policy_mode mode)
+{
+  switch (mode)
+  {
+    case recording_policy_mode::off:        return "off";
+    case recording_policy_mode::continuous: return "continuous";
+    case recording_policy_mode::prealarm:   return "prealarm";
+  }
+  return "unknown";
+}
+}
+
 bool camera_manager::configure_camera(
   const std::string& camera_id,
   const std::string& user,
@@ -44,6 +57,8 @@ bool camera_manager::configure_camera(
       }
     }
     m_cameras.emplace(camera_id, std::move(device));
+    logger::instance().info(std::format(
+      "Camera '{}' configured ({} stream(s))", camera_id, streams.size()));
     if (any_failed) { error = "one or more streams failed to start"; return false; }
     return true;
   }
@@ -66,6 +81,8 @@ bool camera_manager::configure_camera(
   {
     std::string stream_error;
     device->remove_stream(name, stream_error);
+    logger::instance().info(std::format(
+      "Stream '{}' removed for camera '{}'", name, camera_id));
   }
 
   // Add or update each desired stream.
@@ -82,6 +99,11 @@ bool camera_manager::configure_camera(
         logger::instance().error(std::format(
           "Failed to add stream '{}' for camera '{}': {}", s.stream_name, camera_id, stream_error));
         any_failed = true;
+      }
+      else
+      {
+        logger::instance().info(std::format(
+          "Stream '{}' added for camera '{}'", s.stream_name, camera_id));
       }
       continue;
     }
@@ -106,6 +128,11 @@ bool camera_manager::configure_camera(
           "Failed to restart stream '{}' for camera '{}': {}", s.stream_name, camera_id, stream_error));
         any_failed = true;
       }
+      else
+      {
+        logger::instance().info(std::format(
+          "Stream '{}' for camera '{}' restarted (source/credentials changed)", s.stream_name, camera_id));
+      }
       continue;
     }
 
@@ -119,6 +146,8 @@ bool camera_manager::configure_camera(
       std::string dummy;
       stream->update_webrtc_push_url(
         s.webrtc_rtsp_push_url, stream->is_web_rtc_streaming(), dummy);
+      logger::instance().info(std::format(
+        "Stream '{}' for camera '{}' WebRTC push URL updated", s.stream_name, camera_id));
     }
 
     // Recording policy — hot-update, no reconnect needed.
@@ -279,15 +308,16 @@ bool camera_manager::set_camera_state(
 
   stream->set_web_rtc_enabled(web_rtc);
 
+  bool ok = true;
   if (web_rtc != stream->is_web_rtc_streaming())
-  {
-    if (web_rtc)
-      return stream->start_web_rtc(error);
-    else
-      return stream->stop_web_rtc(error);
-  }
+    ok = web_rtc ? stream->start_web_rtc(error) : stream->stop_web_rtc(error);
 
-  return true;
+  if (ok)
+    logger::instance().info(std::format(
+      "Camera '{}' stream '{}' state updated: recording={}, web_rtc={}",
+      camera_id, stream_name, to_string(policy.mode), web_rtc));
+
+  return ok;
 }
 
 bool camera_manager::remove_camera(const std::string& camera_id, std::string& error)
@@ -303,6 +333,7 @@ bool camera_manager::remove_camera(const std::string& camera_id, std::string& er
 
   it->second->shutdown();
   m_cameras.erase(it);
+  logger::instance().info(std::format("Camera '{}' removed", camera_id));
   return true;
 }
 
@@ -355,7 +386,11 @@ bool camera_manager::ensure_web_rtc(const std::string& camera_id,
   if (stream->is_web_rtc_streaming())
     return true;
 
-  return stream->start_web_rtc(error);
+  const bool ok = stream->start_web_rtc(error);
+  if (ok)
+    logger::instance().info(std::format(
+      "Camera '{}' stream '{}' WebRTC streaming started", camera_id, stream_name));
+  return ok;
 }
 
 std::vector<std::shared_ptr<cam_stream>> camera_manager::webrtc_streams_snapshot() const

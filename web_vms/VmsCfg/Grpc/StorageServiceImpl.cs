@@ -4,7 +4,7 @@ using Vms.Cfg;
 
 namespace VmsCfg;
 
-public class StorageServiceImpl(StorageDb db, DaprClient daprClient) : StorageService.StorageServiceBase
+public class StorageServiceImpl(StorageDb db, DaprClient daprClient, ILogger<StorageServiceImpl> logger) : StorageService.StorageServiceBase
 {
   private const string CameraStorageChangedTopic = "camera-storage-changed";
   private static readonly string PubSubName =
@@ -15,7 +15,7 @@ public class StorageServiceImpl(StorageDb db, DaprClient daprClient) : StorageSe
     _ = Task.Run(async () =>
     {
       try { await daprClient.PublishEventAsync(PubSubName, CameraStorageChangedTopic, cameraId); }
-      catch (Exception ex) { Console.Error.WriteLine($"camera-storage-changed publish failed: {ex.Message}"); }
+      catch (Exception ex) { logger.LogWarning(ex, "camera-storage-changed publish failed for '{CameraId}'", cameraId); }
     });
   public override async Task<OperationStatus> AddStorage(Storage request, ServerCallContext context)
   {
@@ -25,12 +25,15 @@ public class StorageServiceImpl(StorageDb db, DaprClient daprClient) : StorageSe
       return new OperationStatus { Success = false, Message = "root_path must not be empty" };
 
     await db.AddStorageAsync(request, context.CancellationToken);
+    logger.LogInformation("Storage '{StorageId}' added (root={RootPath})", request.StorageId, request.RootPath);
     return new OperationStatus { Success = true };
   }
 
   public override async Task<OperationStatus> RemoveStorage(StorageRequest request, ServerCallContext context)
   {
     var removed = await db.RemoveStorageAsync(request.StorageId, context.CancellationToken);
+    if (removed)
+      logger.LogInformation("Storage '{StorageId}' removed", request.StorageId);
     return new OperationStatus { Success = removed, Message = removed ? "" : "Storage not found" };
   }
 
@@ -49,6 +52,7 @@ public class StorageServiceImpl(StorageDb db, DaprClient daprClient) : StorageSe
       return new OperationStatus { Success = false, Message = "camera_id must not be empty" };
 
     await db.SetCameraStoragesAsync(request.CameraId, request.Assignments, context.CancellationToken);
+    logger.LogInformation("Camera '{CameraId}' storage assignments updated ({Count} entries)", request.CameraId, request.Assignments.Count);
     PublishStorageChanged(request.CameraId);
     return new OperationStatus { Success = true };
   }

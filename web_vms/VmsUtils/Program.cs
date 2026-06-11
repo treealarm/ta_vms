@@ -15,7 +15,7 @@ var cfgAppId = Environment.GetEnvironmentVariable("DAPR_CFG_APP_ID")
 builder.Services.AddGrpc();
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<UtilsServiceImpl>(sp =>
-  new UtilsServiceImpl(sp.GetRequiredService<IHttpClientFactory>(), cfgAppId));
+  new UtilsServiceImpl(sp.GetRequiredService<IHttpClientFactory>(), cfgAppId, sp.GetRequiredService<ILogger<UtilsServiceImpl>>()));
 
 builder.WebHost.ConfigureKestrel(options =>
 {

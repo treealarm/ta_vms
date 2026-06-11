@@ -68,6 +68,13 @@ void logger::log(
     json_message);
 }
 
+void logger::debug(
+  const std::string& message,
+  const std::source_location location)
+{
+  log(log_level::debug, message, location);
+}
+
 void logger::info(
   const std::string& message,
   const std::source_location location)

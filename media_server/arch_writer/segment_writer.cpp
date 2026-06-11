@@ -214,6 +214,10 @@ void segment_writer::open_new_segment()
   m_segment_start_ts = now;
   m_segment_storage_id = cam_storage.storage_id;
 
+  logger::instance().debug(std::format(
+    "Segment opened: camera='{}' stream='{}' file='{}'",
+    m_camera_id, m_stream_name, path.string()));
+
   fs_client::instance().enqueue_ingest_clip(
     m_camera_id,
     m_stream_name,
@@ -250,6 +254,10 @@ void segment_writer::close_segment()
         m_segment_abs_path.string(),
         ec.message()));
 
+      logger::instance().debug(std::format(
+        "Segment closed: camera='{}' stream='{}' file='{}'",
+        m_camera_id, m_stream_name, m_segment_abs_path.string()));
+
       fs_client::instance().enqueue_ingest_clip(
         m_camera_id,
         m_stream_name,
@@ -261,6 +269,10 @@ void segment_writer::close_segment()
     }
     else
     {
+      logger::instance().debug(std::format(
+        "Segment closed: camera='{}' stream='{}' file='{}' size={} bytes",
+        m_camera_id, m_stream_name, m_segment_abs_path.string(), size));
+
       fs_client::instance().enqueue_ingest_clip(
         m_camera_id,
         m_stream_name,

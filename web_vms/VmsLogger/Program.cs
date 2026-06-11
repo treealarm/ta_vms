@@ -7,6 +7,7 @@ builder.AddVmsLogging();
 
 builder.Services.AddGrpc();
 builder.Services.AddSingleton<LogServiceImpl>();
+builder.Services.AddHostedService<LogRetentionService>();
 
 if (!int.TryParse(Environment.GetEnvironmentVariable("LOGGER_VMS_PORT"), out var grpcPort))
   throw new InvalidOperationException("Required environment variable 'LOGGER_VMS_PORT' must be a valid integer");

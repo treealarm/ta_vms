@@ -53,7 +53,7 @@ int main(int argc, char** argv)
   }
 
   const char* app_id = std::getenv("APP_ID");
-  logger::instance().init(app_id ? app_id : "vms");
+  logger::instance().init(app_id ? app_id : "vms", log_level::debug);
 
   std::signal(SIGINT, on_signal);
   std::signal(SIGTERM, on_signal);

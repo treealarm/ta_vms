@@ -7,6 +7,7 @@
 #include <grpcpp/grpcpp.h>
 
 #include "dapr/proto/runtime/v1/dapr.grpc.pb.h"
+#include "logger/logger.h"
 
 namespace {
 std::string require_env(const char* key)
@@ -38,8 +39,8 @@ bool dapr_publisher::publish_json(const std::string& topic, const std::string& p
   grpc::Status status = m_stub->PublishEvent(&context, request, &response);
 
   if (!status.ok()) {
-    std::cerr << "dapr publish failed, topic='" << topic
-              << "', error='" << status.error_message() << "'\n";
+    logger::instance().warning(std::format(
+      "dapr publish failed, topic='{}', error='{}'", topic, status.error_message()));
     return false;
   }
 

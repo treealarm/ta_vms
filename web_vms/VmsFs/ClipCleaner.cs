@@ -5,7 +5,8 @@ public sealed class ClipCleaner(
   CameraConfigCache configCache,
   CameraSetupCache setupCache,
   StorageListCache storageListCache,
-  FsActivityLog activityLog) : IHostedService, IAsyncDisposable
+  FsActivityLog activityLog,
+  ILogger<ClipCleaner> logger) : IHostedService, IAsyncDisposable
 {
   // Conservative lower bound: SQL pre-filters clips older than this many seconds.
   // Per-camera pre_record_seconds is then applied in code as the authoritative check.
@@ -39,7 +40,7 @@ public sealed class ClipCleaner(
     catch (OperationCanceledException) { }
     catch (Exception ex)
     {
-      Console.Error.WriteLine($"ClipCleaner fatal error: {ex}");
+      logger.LogError(ex, "ClipCleaner fatal error");
     }
   }
 
@@ -83,14 +84,14 @@ public sealed class ClipCleaner(
 
           if (string.IsNullOrEmpty(storageId))
           {
-            Console.Error.WriteLine($"ClipCleaner: clip {clipUid} has no storageId — skipping");
+            logger.LogWarning("ClipCleaner: clip {ClipUid} has no storageId — skipping", clipUid);
             continue;
           }
 
           var basePath = storageListCache.TryGetRootPath(storageId);
           if (basePath is null)
           {
-            Console.Error.WriteLine($"ClipCleaner: storage '{storageId}' not found in cache — skipping clip {clipUid}");
+            logger.LogWarning("ClipCleaner: storage '{StorageId}' not found in cache — skipping clip {ClipUid}", storageId, clipUid);
             continue;
           }
 
@@ -100,19 +101,19 @@ public sealed class ClipCleaner(
           activityLog.Record(new FsActivityEntry(
             clipUid, filePath, group.Key, "", false, 0, DateTime.UtcNow, "deleted", endTs));
           await storage.DeleteClipRecordAsync(clipUid, ct);
-          Console.WriteLine($"ClipCleaner: deleted clip {filePath}");
+          logger.LogInformation("Clip deleted: camera='{CameraId}' file='{FilePath}'", group.Key, filePath);
         }
       }
     }
     catch (Exception ex) when (!ct.IsCancellationRequested)
     {
-      Console.Error.WriteLine($"ClipCleaner cleanup cycle error: {ex}");
+      logger.LogError(ex, "ClipCleaner cleanup cycle error");
     }
   }
 
   // Deletes the video file and every sidecar file sharing the same base name
   // (e.g. .idx, .jpg, .meta) in the same directory.
-  private static bool TryDeleteAssociatedFiles(string basePath, string relativeFilePath)
+  private bool TryDeleteAssociatedFiles(string basePath, string relativeFilePath)
   {
     var fullPath = Path.GetFullPath(Path.Combine(basePath, relativeFilePath));
     var dir = Path.GetDirectoryName(fullPath);
@@ -132,7 +133,7 @@ public sealed class ClipCleaner(
       }
       catch (Exception ex)
       {
-        Console.Error.WriteLine($"ClipCleaner: cannot delete '{file}': {ex.Message}");
+        logger.LogWarning(ex, "ClipCleaner: cannot delete '{File}'", file);
         return false;
       }
     }

@@ -6,7 +6,7 @@ using Vms.Utils;
 
 namespace VmsUtils;
 
-public class UtilsServiceImpl(IHttpClientFactory httpClientFactory, string cfgAppId)
+public class UtilsServiceImpl(IHttpClientFactory httpClientFactory, string cfgAppId, ILogger<UtilsServiceImpl> logger)
   : UtilsService.UtilsServiceBase
 {
   private readonly HttpClient _http = httpClientFactory.CreateClient();
@@ -54,8 +54,9 @@ public class UtilsServiceImpl(IHttpClientFactory httpClientFactory, string cfgAp
         HasSource    = hasSource,
       };
     }
-    catch
+    catch (Exception ex)
     {
+      logger.LogWarning(ex, "GetMediaMtxPathInfo failed for camera '{CameraId}' stream '{StreamName}'", request.CameraId, request.StreamName);
       return new GetMediaMtxPathInfoResponse { Success = false };
     }
   }
