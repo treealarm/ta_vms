@@ -2,6 +2,12 @@ x-data-volume: &data-volume
   - ./data:/data
 
 services:
+  dapr-placement:
+    image: daprio/dapr:latest
+    command: ["./placement", "-port", "50005"]
+    ports:
+      - "50005:50005"
+
   postgres:
     image: postgres:latest
     environment:
@@ -144,6 +150,7 @@ services:
       APP_ID: vmsonvif
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes: *data-volume
     depends_on:
       - vmscfg
 
@@ -180,6 +187,7 @@ services:
       APP_ID: vmsonvif-actors
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes: *data-volume
     depends_on:
       - vmscfg
 
