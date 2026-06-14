@@ -91,7 +91,7 @@ function ClipPlayer({ clipUid, cameraId }: { clipUid: string; cameraId: string }
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', p: 1, gap: 1 }}>
       {hlsError && <Alert severity="error" onClose={() => setHlsError(null)}>{hlsError}</Alert>}
-      <Box sx={{ flex: 1, borderRadius: 1, overflow: 'hidden', bgcolor: 'black', '& video': { width: '100%', height: '100%', display: 'block', objectFit: 'contain' } }}>
+      <Box sx={{ flex: 1, borderRadius: 1, overflow: 'hidden', bgcolor: 'var(--app-video-bg)', '& video': { width: '100%', height: '100%', display: 'block', objectFit: 'contain' } }}>
         <video
           key={`${clipUid}`}
           ref={videoRef}

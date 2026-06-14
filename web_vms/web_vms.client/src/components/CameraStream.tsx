@@ -203,7 +203,6 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        bgcolor: 'black',
       }}
     >
       <video

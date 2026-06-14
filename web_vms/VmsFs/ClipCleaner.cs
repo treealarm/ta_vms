@@ -13,6 +13,9 @@ public sealed class ClipCleaner(
   private const int SqlMinOlderThanSeconds = 60;
   private const int BatchSize = 100;
   private static readonly TimeSpan Interval = TimeSpan.FromSeconds(5);
+  private static readonly TimeSpan StorageNotFoundWarnInterval = TimeSpan.FromMinutes(1);
+
+  private readonly Dictionary<string, DateTime> _storageNotFoundWarnedAt = new();
 
   // When set, only clean up clips for cameras on this server (prevents cross-instance interference).
   // Set by Program.cs after resolving the paired server_id from VmsCfg.
@@ -91,7 +94,12 @@ public sealed class ClipCleaner(
           var basePath = storageListCache.TryGetRootPath(storageId);
           if (basePath is null)
           {
-            logger.LogWarning("ClipCleaner: storage '{StorageId}' not found in cache — skipping clip {ClipUid}", storageId, clipUid);
+            var now = DateTime.UtcNow;
+            if (!_storageNotFoundWarnedAt.TryGetValue(storageId, out var lastWarnedAt) || now - lastWarnedAt >= StorageNotFoundWarnInterval)
+            {
+              logger.LogWarning("ClipCleaner: storage '{StorageId}' not found in cache — skipping clip {ClipUid}", storageId, clipUid);
+              _storageNotFoundWarnedAt[storageId] = now;
+            }
             continue;
           }
 

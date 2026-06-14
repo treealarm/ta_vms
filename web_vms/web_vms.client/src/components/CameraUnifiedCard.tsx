@@ -46,7 +46,8 @@ const PANEL_W = 182
 const W = '#fff'   // common.white shorthand for video overlays
 const B = '#000'   // common.black shorthand for video overlays
 
-const STRIP_BG = { bgcolor: alpha(B, 0.6), backdropFilter: 'blur(6px)' } as const
+// netTerrainTheme panel.elevated — keep in sync with theme/netTerrainTheme.ts
+const STRIP_BG = { bgcolor: '#434343', backdropFilter: 'blur(6px)' } as const
 
 const BTN_SX = {
   p: '3px',
@@ -177,7 +178,6 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
       sx={{
         height: '100%', width: '100%', overflow: 'hidden',
         display: 'flex', flexDirection: 'row',
-        bgcolor: 'black',
         ...(activeRetention
           ? {
               outline: (t) => `2px solid ${t.palette.error.main}`,
@@ -304,6 +304,17 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             >
               {camera.cameraId}
             </Typography>
+            {camera.onvifConn && mode === 'live' && !isDisabled && (
+              <Tooltip title={ptzOpen ? t('cameraCard.ptzClose') : t('cameraCard.ptzOpen')}>
+                <IconButton
+                  size="small"
+                  onClick={() => setPtzOpen(!ptzOpen)}
+                  sx={{ p: '2px', color: ptzOpen ? W : alpha(W, 0.5), '&:hover': { color: W } }}
+                >
+                  <ControlCameraIcon sx={{ fontSize: '0.9rem' }} />
+                </IconButton>
+              </Tooltip>
+            )}
             {rtsp && (
               <Tooltip title={copied ? t('cameraCard.copiedRtsp') : t('cameraCard.copyRtsp')}>
                 <IconButton

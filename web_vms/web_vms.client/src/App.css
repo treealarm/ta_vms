@@ -49,7 +49,7 @@ body,
   --app-action-selected: rgba(194, 25, 49, 0.18);
   --app-action-disabled-bg: rgba(128, 128, 128, 0.24);
 
-  --app-video-bg: #0a0a0a;
+  --app-video-bg: var(--app-bg-elevated);
   --app-scrollbar-fg: rgba(238, 238, 238, 0.35);
 
   /* Log journal */
@@ -221,6 +221,17 @@ button:disabled {
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius);
   background-color: var(--app-video-bg);
+}
+
+/* Theme the native <video> controls bar (Chromium/WebKit only — no standard cross-browser API).
+   The enclosure overlays the whole video element, so it must stay transparent — only the
+   bottom controls panel gets the themed background. */
+video::-webkit-media-controls-enclosure {
+  background-color: transparent;
+}
+
+video::-webkit-media-controls-panel {
+  background-color: var(--app-bg-elevated);
 }
 
 .vms-archive-video-wrap {

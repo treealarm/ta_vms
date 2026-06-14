@@ -7,9 +7,9 @@ import type { RecordingDto, RecordingRangeDto } from '../dto/dtos'
 import RecordingsList, { type RecordingsListHandle } from './RecordingsList'
 
 const W = '#fff'
-const B = '#000'
 
-const PANEL_BG = { bgcolor: alpha(B, 0.62), backdropFilter: 'blur(6px)' } as const
+// netTerrainTheme panel.elevated — keep in sync with theme/netTerrainTheme.ts
+const PANEL_BG = { bgcolor: '#434343', backdropFilter: 'blur(6px)' } as const
 const BTN = {
   p: '3px',
   color: alpha(W, 0.75),
@@ -120,7 +120,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
   return (
     <Box sx={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
       {/* ── Video area ── */}
-      <Box sx={{ flex: 1, minWidth: 0, position: 'relative', bgcolor: 'black' }}>
+      <Box sx={{ flex: 1, minWidth: 0, position: 'relative', bgcolor: 'var(--app-video-bg)' }}>
         {hlsError && (
           <Alert
             severity="error"

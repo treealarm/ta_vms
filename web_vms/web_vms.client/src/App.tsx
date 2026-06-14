@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
-import { Box, Button, Tab, Tabs } from '@mui/material'
+import { Box, Button, IconButton, Tab, Tabs } from '@mui/material'
+import CloseIcon from '@mui/icons-material/Close'
 import { useTranslation } from 'react-i18next'
 import i18n from './i18n'
 
 import { loadCameras, loadServers } from './store/liveSlice'
 import { loadMonitors } from './store/monitorsSlice'
 import { loadMediaMtxServers } from './store/mediaMtxSlice'
+import { toggleLogPanel } from './store/logSlice'
 import { useAppDispatch, useAppSelector } from './store'
 import OperatorView from './components/OperatorView'
 import AdminView from './components/AdminView'
@@ -87,13 +89,16 @@ export default function App() {
         </Box>
         {logsOpen && (
           <Box sx={{ height: '50vh', flexShrink: 0, borderTop: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1 }}>
-              <Tabs value={debugTab} onChange={(_, v: number) => setDebugTab(v)} sx={{ minHeight: 32 }} TabIndicatorProps={{ style: { height: 2 } }}>
+            <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1, display: 'flex', alignItems: 'center' }}>
+              <Tabs value={debugTab} onChange={(_, v: number) => setDebugTab(v)} sx={{ minHeight: 32, flex: 1 }} TabIndicatorProps={{ style: { height: 2 } }}>
                 <Tab label={t('logs.title')} sx={{ minHeight: 32, py: 0.25, fontSize: '0.75rem' }} />
                 <Tab label={t('onvifFilters.tabDebug')} sx={{ minHeight: 32, py: 0.25, fontSize: '0.75rem' }} />
                 <Tab label={t('fsActivity.tabLabel')} sx={{ minHeight: 32, py: 0.25, fontSize: '0.75rem' }} />
                 <Tab label={t('entityState.tabLabel')} sx={{ minHeight: 32, py: 0.25, fontSize: '0.75rem' }} />
               </Tabs>
+              <IconButton size="small" onClick={() => dispatch(toggleLogPanel())} sx={{ ml: 1 }}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
             </Box>
             <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', p: debugTab === 0 ? 1 : 0 }}>
               {debugTab === 0 && <LogJournalPanel />}

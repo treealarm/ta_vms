@@ -171,7 +171,7 @@ export default function ArchiveHlsPreview({ selected }: Props) {
           maxHeight: 'min(75vh, 900px)',
           borderRadius: 1,
           overflow: 'hidden',
-          bgcolor: 'black',
+          bgcolor: 'var(--app-video-bg)',
           '& video': { width: '100%', height: '100%', display: 'block', objectFit: 'contain' }
         }}
       >
