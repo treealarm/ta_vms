@@ -113,7 +113,7 @@ export default function MonitorEditDialog({ open, monitor, allCameras, onSave, o
           {cameraIds.map((id, idx) => (
             <Stack key={id} direction="row" alignItems="center" spacing={0.5}>
               <Typography variant="body2" sx={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {id}
+                {allCameras.find((c) => c.cameraId === id)?.name || id}
               </Typography>
               <IconButton size="small" onClick={() => moveUp(idx)} disabled={idx === 0}>
                 <ArrowUpwardIcon fontSize="small" />
@@ -137,7 +137,7 @@ export default function MonitorEditDialog({ open, monitor, allCameras, onSave, o
                   onChange={(e) => setAddCameraId(e.target.value)}
                 >
                   {availableToAdd.map((c) => (
-                    <MenuItem key={c.cameraId} value={c.cameraId}>{c.cameraId}</MenuItem>
+                    <MenuItem key={c.cameraId} value={c.cameraId}>{c.name || c.cameraId}</MenuItem>
                   ))}
                 </Select>
               </FormControl>

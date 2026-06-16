@@ -174,7 +174,7 @@ export default function FsActivityPanel() {
           >
             <MenuItem value="">{t('fsActivity.allCameras')}</MenuItem>
             {cameraIds.map((id) => (
-              <MenuItem key={id} value={id}>{id}</MenuItem>
+              <MenuItem key={id} value={id}>{camerasMap[id]?.name || id}</MenuItem>
             ))}
           </TextField>
           <TextField
@@ -226,7 +226,7 @@ export default function FsActivityPanel() {
                 </Typography>
               </Stack>
               <Typography variant="caption" noWrap sx={{ display: 'block', textDecoration: e.eventType === 'deleted' ? 'line-through' : 'none', color: 'text.secondary' }}>
-                {e.cameraId}{e.streamName ? ` / ${e.streamName}` : ''}
+                {(camerasMap[e.cameraId]?.name || e.cameraId)}{e.streamName ? ` / ${e.streamName}` : ''}
               </Typography>
               <Typography variant="caption" noWrap sx={{ display: 'block', fontFamily: 'monospace' }}>
                 {basename(e.filePath)}
@@ -251,7 +251,7 @@ export default function FsActivityPanel() {
 
             <Box>
               <Typography variant="caption" color="text.secondary">{t('fsActivity.camera')}</Typography>
-              <Typography variant="body2">{selected.cameraId || '—'}</Typography>
+              <Typography variant="body2">{(selected.cameraId && (camerasMap[selected.cameraId]?.name || selected.cameraId)) || '—'}</Typography>
             </Box>
 
             {selected.streamName && (

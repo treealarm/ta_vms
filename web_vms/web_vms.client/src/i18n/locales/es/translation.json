@@ -30,6 +30,7 @@
     "newCamera": "Nueva cámara",
     "cameraLabel": "Cámara: {{id}}",
     "cameraId": "ID de cámara",
+    "cameraName": "Nombre de cámara",
     "server": "Servidor",
     "mediaMtxServer": "Media Router",
     "mediaMtxHelper": "Servidor de retransmisión WebRTC",

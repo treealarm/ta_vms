@@ -97,7 +97,7 @@ function CameraSlot({ monitor, slotIndex, soloActive, canSolo, onToggleSolo, all
                 selected={id === activeCameraId}
                 onClick={() => handleSelectCamera(id)}
               >
-                {id}
+                {allCameras[id]?.name || id}
               </MenuItem>
             ))}
           </Menu>

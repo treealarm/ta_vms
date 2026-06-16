@@ -51,6 +51,7 @@ function fmtTime(iso: string) {
 export default function OnvifEventsLogPanel() {
   const { t } = useTranslation()
   const allCameras = useAppSelector((s) => Object.values(s.live.cameraStatesById))
+  const cameraStatesById = useAppSelector((s) => s.live.cameraStatesById)
 
   const [events, setEvents] = useState<OnvifEventRecordDto[]>([])
   const [loading, setLoading] = useState(false)
@@ -115,7 +116,7 @@ export default function OnvifEventsLogPanel() {
         >
           <MenuItem value="">{t('onvifFilters.allCameras')}</MenuItem>
           {subscribedCameraIds.map((id) => (
-            <MenuItem key={id} value={id}>{id}</MenuItem>
+            <MenuItem key={id} value={id}>{cameraStatesById[id]?.name || id}</MenuItem>
           ))}
         </TextField>
 
@@ -188,7 +189,7 @@ export default function OnvifEventsLogPanel() {
                 </Typography>
                 {ev.cameraId && (
                   <Typography variant="caption" color="primary.main" sx={{ whiteSpace: 'nowrap', fontWeight: 600 }}>
-                    {ev.cameraId}
+                    {cameraStatesById[ev.cameraId]?.name || ev.cameraId}
                   </Typography>
                 )}
               </Stack>
@@ -208,7 +209,7 @@ export default function OnvifEventsLogPanel() {
             <Stack spacing={0.5}>
               {selected.cameraId && (
                 <Typography variant="body2">
-                  <strong>{t('cameras.cameraId')}:</strong> {selected.cameraId}
+                  <strong>{t('cameras.cameraName')}:</strong> {cameraStatesById[selected.cameraId]?.name || selected.cameraId}
                 </Typography>
               )}
               <Typography variant="body2">

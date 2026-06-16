@@ -109,6 +109,7 @@ export type CameraStreamDto = {
 
 export type CameraSetupDto = {
   cameraId: string
+  name: string
   serverId?: string
   /** Derived from first stream's profile mode */
   recording?: boolean

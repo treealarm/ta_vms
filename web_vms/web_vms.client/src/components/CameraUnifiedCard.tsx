@@ -302,7 +302,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
               variant="body2"
               sx={{ flex: 1, color: W, fontWeight: 600, fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
             >
-              {camera.cameraId}
+              {camera.name || camera.cameraId}
             </Typography>
             {camera.onvifConn && mode === 'live' && !isDisabled && (
               <Tooltip title={ptzOpen ? t('cameraCard.ptzClose') : t('cameraCard.ptzOpen')}>

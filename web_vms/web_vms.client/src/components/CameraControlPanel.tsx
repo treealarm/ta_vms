@@ -101,7 +101,7 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
                       }
                     >
                       <ListItemText
-                        primary={camera.cameraId}
+                        primary={camera.name || camera.cameraId}
                         primaryTypographyProps={{ noWrap: true }}
                       />
                     </ListItemButton>

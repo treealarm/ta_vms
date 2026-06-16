@@ -44,6 +44,7 @@ public record MediaMtxServerDto
 public record CameraSetupDto
 {
   public required string CameraId { get; init; }
+  public string Name { get; init; } = string.Empty;
   public string? ServerId { get; init; }
   public bool Recording { get; init; }
   /// <summary>Derived from first stream's profile mode; used by media server control.</summary>

@@ -139,7 +139,7 @@ export default function RetentionEventsTab() {
                 >
                   <MenuItem value="">{t('fsActivity.allCameras')}</MenuItem>
                   {cameraIds.map((id) => (
-                    <MenuItem key={id} value={id}>{id}</MenuItem>
+                    <MenuItem key={id} value={id}>{camerasMap[id]?.name || id}</MenuItem>
                   ))}
                 </TextField>
                 <TextField
@@ -169,7 +169,7 @@ export default function RetentionEventsTab() {
                       sx={{ display: 'block', borderBottom: 1, borderColor: 'divider' }}
                     >
                       <Typography variant="body2" fontWeight="medium" noWrap>
-                        {row.cameraId}{row.streamName ? ` / ${row.streamName}` : ''}
+                        {(camerasMap[row.cameraId]?.name || row.cameraId)}{row.streamName ? ` / ${row.streamName}` : ''}
                       </Typography>
                       <Typography variant="caption" color="text.secondary" component="div">
                         {new Date(row.alarmStartTs).toLocaleString()}

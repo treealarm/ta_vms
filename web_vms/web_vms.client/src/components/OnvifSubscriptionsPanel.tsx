@@ -153,7 +153,7 @@ export default function OnvifSubscriptionsPanel() {
         >
           {available.map((c) => (
             <MenuItem key={c.cameraId} value={c.cameraId}>
-              {c.cameraId} ({c.onvifConn!.ip})
+              {c.name || c.cameraId} ({c.onvifConn!.ip})
             </MenuItem>
           ))}
         </TextField>
@@ -187,7 +187,7 @@ export default function OnvifSubscriptionsPanel() {
                   '&:hover': { bgcolor: selectedId === entry.cameraId ? 'action.selected' : 'action.hover' },
                 }}
               >
-                <Typography variant="body2" fontWeight={600} noWrap>{entry.cameraId}</Typography>
+                <Typography variant="body2" fontWeight={600} noWrap>{allCamerasById[entry.cameraId]?.name || entry.cameraId}</Typography>
                 <Stack direction="row" spacing={0.5} sx={{ mt: 0.5 }}>
                   <Chip
                     label={entry.subscribed ? 'ON' : 'OFF'}
@@ -220,7 +220,7 @@ export default function OnvifSubscriptionsPanel() {
               {/* Header */}
               <Stack direction="row" alignItems="flex-start" justifyContent="space-between">
                 <Box>
-                  <Typography variant="h6">{selected.cameraId}</Typography>
+                  <Typography variant="h6">{allCamerasById[selected.cameraId]?.name || selected.cameraId}</Typography>
                   {selectedCam?.onvifConn && (
                     <Typography variant="body2" color="text.secondary">
                       {selectedCam.onvifConn.ip}:{selectedCam.onvifConn.port}

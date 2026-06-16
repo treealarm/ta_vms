@@ -40,17 +40,6 @@ const DEFAULT_PASS = 'elvees'
 const DEFAULT_ONVIF_IP = '192.168.1.150'
 const DEFAULT_ONVIF_PORT = 8899
 
-const getNextCameraId = (cameras: CameraSetupDto[]) => {
-  const existing = new Set(cameras.map((camera) => camera.cameraId))
-  let index = 1
-
-  while (existing.has(`cam${index}`)) {
-    index += 1
-  }
-
-  return `cam${index}`
-}
-
 export default function ServerCameraSetupPanel({
   cameras,
   servers,
@@ -62,7 +51,8 @@ export default function ServerCameraSetupPanel({
   const { t } = useTranslation()
   const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null)
   const [serverId, setServerId] = useState('')
-  const [cameraId, setCameraId] = useState(() => getNextCameraId(cameras))
+  const [cameraId, setCameraId] = useState(() => crypto.randomUUID())
+  const [name, setName] = useState('')
   const [rtspUrl, setRtspUrl] = useState(DEFAULT_RTSP_URL)
   const [user, setUser] = useState(DEFAULT_USER)
   const [pass, setPass] = useState(DEFAULT_PASS)
@@ -107,6 +97,7 @@ export default function ServerCameraSetupPanel({
   const fillFromCamera = (camera: CameraSetupDto) => {
     setSelectedCameraId(camera.cameraId)
     setCameraId(camera.cameraId)
+    setName(camera.name)
     setServerId(camera.serverId || '')
     setRtspUrl(camera.rtspUrl ?? '')
     setUser(camera.cred?.user ?? '')
@@ -118,7 +109,8 @@ export default function ServerCameraSetupPanel({
   const fillDefaultsForServer = (id: string) => {
     setSelectedCameraId(null)
     setServerId(id)
-    setCameraId(getNextCameraId(cameras))
+    setCameraId(crypto.randomUUID())
+    setName('')
     setRtspUrl(DEFAULT_RTSP_URL)
     setUser(DEFAULT_USER)
     setPass(DEFAULT_PASS)
@@ -141,6 +133,7 @@ export default function ServerCameraSetupPanel({
 
   const buildPayload = (): CameraSetupDto => ({
     cameraId,
+    name,
     serverId,
     recordingMode: selectedCamera?.recordingMode ?? 'off',
     recording: selectedCamera?.recording ?? false,
@@ -224,7 +217,7 @@ export default function ServerCameraSetupPanel({
                           onClick={() => fillFromCamera(camera)}
                           sx={{ pl: 4 }}
                         >
-                          <ListItemText primary={camera.cameraId} />
+                          <ListItemText primary={camera.name || camera.cameraId} />
                         </ListItemButton>
                       ))}
                     </Box>
@@ -254,9 +247,9 @@ export default function ServerCameraSetupPanel({
                   </Select>
                 </FormControl>
                 <TextField
-                  label={t('serverSetup.cameraId')}
-                  value={cameraId}
-                  onChange={(event) => setCameraId(event.target.value)}
+                  label={t('cameras.cameraName')}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
                   required
                   fullWidth
                   size="small"

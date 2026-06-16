@@ -29,13 +29,8 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const existing = camerasMap[initialCameraId]
   const isNew = initialCameraId === ''
 
-  const [cameraId, setCameraId] = useState(() => {
-    if (!isNew) return initialCameraId
-    const ids = new Set(Object.keys(camerasMap))
-    let n = ids.size + 1
-    while (ids.has(`cam${n}`)) n++
-    return `cam${n}`
-  })
+  const [cameraId] = useState(() => isNew ? crypto.randomUUID() : initialCameraId)
+  const [name, setName] = useState(existing?.name ?? '')
   const [serverId, setServerId] = useState(initialServerId)
   const [mediaMtxServerId, setMediaMtxServerId] = useState(
     isNew ? (mtxServers[0]?.id ?? '') : (existing?.mediaMtxServerId ?? '')
@@ -66,6 +61,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
 
   // Snapshot of the saved state — used for dirty detection and Cancel
   const snap = useRef({
+    name: existing?.name ?? '',
     serverId: initialServerId,
     mediaMtxServerId: existing?.mediaMtxServerId ?? '',
     user: existing?.cred?.user ?? '',
@@ -76,7 +72,8 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   })
 
   const dirty = !isNew && (
-    serverId !== snap.current.serverId
+    name !== snap.current.name
+    || serverId !== snap.current.serverId
     || mediaMtxServerId !== snap.current.mediaMtxServerId
     || user !== snap.current.user
     || pass !== snap.current.pass
@@ -96,6 +93,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
 
   const buildPayload = (): CameraSetupDto => ({
     cameraId: isNew ? cameraId : initialCameraId,
+    name,
     serverId,
     recordingMode: existing?.recordingMode ?? 'off',
     webRtc: existing?.webRtc ?? false,
@@ -114,7 +112,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     const action = serverChanged ? changeCameraParent : addCamera
     const result = await dispatch(action(payload))
     if (!action.rejected.match(result)) {
-      snap.current = { serverId, mediaMtxServerId, user, pass, onvifIp, onvifPort, disabled }
+      snap.current = { name, serverId, mediaMtxServerId, user, pass, onvifIp, onvifPort, disabled }
       await dispatch(fetchCameraState(initialCameraId))
       return true
     }
@@ -140,6 +138,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   }
 
   const handleCancel = () => {
+    setName(snap.current.name)
     setServerId(snap.current.serverId)
     setMediaMtxServerId(snap.current.mediaMtxServerId)
     setUser(snap.current.user)
@@ -172,14 +171,18 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
       {/* Left: form fields */}
       <Stack spacing={2} sx={{ flex: 1, minWidth: 0, maxWidth: 380 }}>
         <Typography variant="subtitle2" color="text.secondary">
-          {isNew ? t('cameras.newCamera') : t('cameras.cameraLabel', { id: initialCameraId })}
+          {isNew ? t('cameras.newCamera') : (existing?.name || initialCameraId)}
         </Typography>
+        {!isNew && (
+          <Typography variant="caption" color="text.disabled" sx={{ mt: -1 }}>
+            {initialCameraId}
+          </Typography>
+        )}
 
         <TextField
-          label={t('cameras.cameraId')}
-          value={isNew ? cameraId : initialCameraId}
-          onChange={(e) => setCameraId(e.target.value)}
-          disabled={!isNew}
+          label={t('cameras.cameraName')}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
           required
           size="small"
         />

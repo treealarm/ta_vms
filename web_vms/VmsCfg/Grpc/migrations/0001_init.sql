@@ -1,9 +1,11 @@
 CREATE TABLE media_mtx_server (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name        text NOT NULL,
-  rtsp_url    text NOT NULL,
-  webrtc_url  text NOT NULL,
-  api_url     text NOT NULL DEFAULT ''
+  id          uuid    PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        text    NOT NULL,
+  host        text    NOT NULL DEFAULT '',
+  webrtc_host text    NOT NULL DEFAULT '',
+  rtsp_port   integer NOT NULL DEFAULT 8554,
+  webrtc_port integer NOT NULL DEFAULT 8889,
+  api_port    integer NOT NULL DEFAULT 9997
 );
 
 CREATE TABLE camera_setup (
@@ -14,7 +16,8 @@ CREATE TABLE camera_setup (
   onvif_ip            text    NULL,
   onvif_port          integer NULL,
   media_mtx_server_id uuid    NULL REFERENCES media_mtx_server(id) ON DELETE SET NULL,
-  disabled            boolean NULL
+  disabled            boolean NULL,
+  name                text    NOT NULL DEFAULT ''
 );
 
 CREATE TABLE recording_profile (
