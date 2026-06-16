@@ -259,6 +259,19 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     await command.ExecuteNonQueryAsync(ct);
   }
 
+  public async Task SetStreamRecordingProfileAsync(string cameraId, string streamName, string profileId, CancellationToken ct)
+  {
+    await using var command = _dataSource.CreateCommand("""
+      UPDATE camera_stream
+      SET recording_profile_id = $3::uuid
+      WHERE camera_id = $1 AND stream_name = $2;
+      """);
+    command.Parameters.AddWithValue(cameraId);
+    command.Parameters.AddWithValue(streamName);
+    command.Parameters.AddWithValue(profileId);
+    await command.ExecuteNonQueryAsync(ct);
+  }
+
   public async Task<bool> ActivateAlarmOverrideAsync(string cameraId, string? streamName, DateTime until, CancellationToken ct)
   {
     await using var db = await dbFactory.CreateDbContextAsync(ct);

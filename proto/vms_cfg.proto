@@ -16,6 +16,7 @@ service CfgService {
   rpc RemoveRecordingProfile(RecordingProfileRequest) returns (OperationStatus);
   rpc SetStreamOverride(SetStreamOverrideRequest) returns (OperationStatus);
   rpc ClearStreamOverride(ClearStreamOverrideRequest) returns (OperationStatus);
+  rpc SetStreamRecordingProfile(SetStreamRecordingProfileRequest) returns (OperationStatus);
   rpc ActivateAlarmOverride(ActivateAlarmOverrideRequest) returns (ActivateAlarmOverrideResponse);
   rpc ClearAlarmOverride(ClearAlarmOverrideRequest) returns (OperationStatus);
   rpc ListAlarmOverrideStreams(ListAlarmOverrideStreamsRequest) returns (ListAlarmOverrideStreamsResponse);
@@ -120,6 +121,12 @@ message SetStreamOverrideRequest {
 message ClearStreamOverrideRequest {
   string camera_id   = 1;
   string stream_name = 2;
+}
+
+message SetStreamRecordingProfileRequest {
+  string camera_id   = 1;
+  string stream_name = 2;
+  string profile_id  = 3;
 }
 
 message ListRecordingProfilesRequest {}

@@ -216,6 +216,24 @@ namespace VmsCfg
       return new OperationStatus { Success = true };
     }
 
+    public override async Task<OperationStatus> SetStreamRecordingProfile(
+      SetStreamRecordingProfileRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId) || string.IsNullOrWhiteSpace(request.StreamName))
+        return new OperationStatus { Success = false, Message = "camera_id and stream_name are required" };
+
+      if (string.IsNullOrWhiteSpace(request.ProfileId) || !Guid.TryParse(request.ProfileId, out _))
+        return new OperationStatus { Success = false, Message = "profile_id must be a valid UUID" };
+
+      await storage.SetStreamRecordingProfileAsync(request.CameraId, request.StreamName, request.ProfileId, context.CancellationToken);
+      logger.LogInformation("Stream recording profile set: camera='{CameraId}' stream='{StreamName}' profile='{ProfileId}'", request.CameraId, request.StreamName, request.ProfileId);
+      InvalidateFsCache(request.CameraId);
+      var (_, cam) = await storage.GetCameraAsync(request.CameraId, context.CancellationToken);
+      if (cam is not null) NotifyMediaServer(cam.ServerId);
+      return new OperationStatus { Success = true };
+    }
+
     public override async Task<ActivateAlarmOverrideResponse> ActivateAlarmOverride(
       ActivateAlarmOverrideRequest request,
       ServerCallContext context)

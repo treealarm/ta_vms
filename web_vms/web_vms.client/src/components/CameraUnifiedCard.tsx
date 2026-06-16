@@ -36,9 +36,10 @@ import {
 import CameraStream from './CameraStream'
 import ArchiveHlsStreamCard from './ArchiveHlsStreamCard'
 import StreamOverrideRow from './StreamOverrideRow'
+import StreamProfileRow from './StreamProfileRow'
 import PtzOverlay from './PtzOverlay'
 import { useAppDispatch, useAppSelector } from '../store'
-import { fetchCameraState, setArmed, setStreamOverride } from '../store/liveSlice'
+import { fetchCameraState, setArmed, setStreamOverride, setStreamRecordingProfile } from '../store/liveSlice'
 
 const STRIP_W = 28
 const PANEL_W = 182
@@ -113,10 +114,10 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
           if (s.disabled) continue
           if (enabled) {
             if (!isStreamRecording(s)) {
-              void dispatch(setStreamOverride({ cameraId: merged.cameraId, streamName: s.streamName, profileId: RECORDING_PROFILE_PREALARM_ID }))
+              void dispatch(setStreamRecordingProfile({ cameraId: merged.cameraId, streamName: s.streamName, profileId: RECORDING_PROFILE_PREALARM_ID }))
             }
-          } else if (s.overrideProfile?.id === RECORDING_PROFILE_PREALARM_ID) {
-            void dispatch(setStreamOverride({ cameraId: merged.cameraId, streamName: s.streamName, profileId: RECORDING_PROFILE_OFF_ID }))
+          } else if (s.recordingProfile?.id === RECORDING_PROFILE_PREALARM_ID) {
+            void dispatch(setStreamRecordingProfile({ cameraId: merged.cameraId, streamName: s.streamName, profileId: RECORDING_PROFILE_OFF_ID }))
           }
         }
       })
@@ -132,7 +133,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
     null
   const activeRetention = merged.activeRetentionWindow === true && recordingMode !== 'off'
   const anyStreamRecording = (merged.streams ?? []).some(isStreamRecording)
-  const activeStreamContinuous = activeStreamObj ? effectiveStreamMode(activeStreamObj) === 'continuous' : false
+  const activeStreamContinuous = activeStreamObj?.recordingProfile?.mode === 'continuous'
 
   const [pendingContinuous, setPendingContinuous] = useState(false)
   const toggleContinuousRecording = () => {
@@ -141,7 +142,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
       ? (effectiveArmed ? RECORDING_PROFILE_PREALARM_ID : RECORDING_PROFILE_OFF_ID)
       : RECORDING_PROFILE_CONTINUOUS_ID
     setPendingContinuous(true)
-    void dispatch(setStreamOverride({ cameraId: merged.cameraId, streamName: activeStreamObj.streamName, profileId }))
+    void dispatch(setStreamRecordingProfile({ cameraId: merged.cameraId, streamName: activeStreamObj.streamName, profileId }))
       .finally(() => setPendingContinuous(false))
   }
 
@@ -249,7 +250,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
                   onClick={() => armDisarm(!effectiveArmed)}
                   sx={{
                     ...BTN_SX,
-                    ...(effectiveArmed && !isDisabled ? { color: '#4caf50' } : {}),
+                    ...(effectiveArmed && !isDisabled ? { color: '#ff9800' } : {}),
                     ...((pendingArmed !== null || isDisabled) ? { opacity: 0.35 } : {}),
                   }}
                 >
@@ -390,7 +391,21 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
               </ToggleButtonGroup>
             </Box>
 
-            {/* Override */}
+            {/* Recording profile (base) */}
+            {mode === 'live' && activeStreamObj && (
+              <Box>
+                <Typography component="span" sx={CAPTION_SX}>
+                  {webRtcStreams.length > 1
+                    ? t('cameraCard.recordingSectionForStream', { stream: activeStream })
+                    : t('cameraCard.recordingSection')}
+                </Typography>
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ px: 0.25 }}>
+                  <StreamProfileRow cameraId={camera.cameraId} stream={activeStreamObj} />
+                </Stack>
+              </Box>
+            )}
+
+            {/* Override (automation) */}
             {mode === 'live' && (
               <Box>
                 <Typography component="span" sx={CAPTION_SX}>
@@ -420,7 +435,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
                       color: alpha(W, 0.6), borderColor: alpha(W, 0.2),
                       '&.Mui-selected': { color: W, bgcolor: alpha(W, 0.15), borderColor: alpha(W, 0.35) },
                     },
-                    '& .MuiToggleButton-root[value="armed"].Mui-selected': { color: '#4caf50', borderColor: '#4caf50' },
+                    '& .MuiToggleButton-root[value="armed"].Mui-selected': { color: '#ff9800', borderColor: '#ff9800' },
                   }}
                 >
                   <ToggleButton value="armed">{t('cameraCard.armedToggle')}</ToggleButton>
