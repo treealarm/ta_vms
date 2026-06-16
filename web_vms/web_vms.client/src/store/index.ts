@@ -27,3 +27,10 @@ export type AppDispatch = typeof store.dispatch
 
 export const useAppDispatch = () => useDispatch<AppDispatch>()
 export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector
+
+/** Returns the camera's display name, falling back to cameraId when name is absent. */
+export function useCameraName(cameraId: string | null | undefined): string {
+  return useAppSelector((s) =>
+    cameraId ? (s.live.cameraStatesById[cameraId]?.name || cameraId) : ''
+  )
+}

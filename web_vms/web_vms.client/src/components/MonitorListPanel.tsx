@@ -16,7 +16,7 @@ import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
-import { removeMonitor, setMonitorCameras, upsertMonitor } from '../store/monitorsSlice'
+import { removeMonitor, setMonitorCameras, setMonitorSlot, upsertMonitor } from '../store/monitorsSlice'
 import type { MonitorLayout } from '../dto/dtos'
 import MonitorEditDialog from './MonitorEditDialog'
 
@@ -35,7 +35,7 @@ export default function MonitorListPanel() {
   const openEdit = (id: string) => { setEditingId(id); setDialogOpen(true) }
   const closeDialog = () => setDialogOpen(false)
 
-  const handleSave = async (name: string, layout: MonitorLayout, cameraIds: string[]) => {
+  const handleSave = async (name: string, layout: MonitorLayout, slotCameras: string[]) => {
     setDialogOpen(false)
     const existing = editingId ? monitors.find((m) => m.monitorId === editingId) : null
     const result = await dispatch(upsertMonitor({
@@ -45,10 +45,14 @@ export default function MonitorListPanel() {
       cameraIds: existing?.cameraIds ?? [],
       slots: existing?.slots ?? [],
     }))
-    if (upsertMonitor.fulfilled.match(result)) {
-      const savedId = result.payload.monitorId
-      if (cameraIds.join(',') !== (existing?.cameraIds ?? []).join(',')) {
-        await dispatch(setMonitorCameras({ monitorId: savedId, cameraIds }))
+    if (!upsertMonitor.fulfilled.match(result)) return
+
+    const savedId = result.payload.monitorId
+    const poolIds = [...new Set(slotCameras.filter(Boolean))]
+    await dispatch(setMonitorCameras({ monitorId: savedId, cameraIds: poolIds }))
+    for (let i = 0; i < slotCameras.length; i++) {
+      if (slotCameras[i]) {
+        await dispatch(setMonitorSlot({ monitorId: savedId, slotIndex: i, cameraId: slotCameras[i] }))
       }
     }
   }
@@ -112,7 +116,7 @@ export default function MonitorListPanel() {
         open={dialogOpen}
         monitor={editingMonitor}
         allCameras={allCameras}
-        onSave={(name, layout, cameraIds) => void handleSave(name, layout, cameraIds)}
+        onSave={(name, layout, slotCameras) => void handleSave(name, layout, slotCameras)}
         onClose={closeDialog}
       />
     </Stack>

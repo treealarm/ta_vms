@@ -32,16 +32,19 @@ public record StreamOverrideDto
 
 public record MediaMtxServerDto
 {
-  public string Id { get; init; } = string.Empty;
-  public string Name { get; init; } = string.Empty;
-  public string RtspUrl { get; init; } = string.Empty;
-  public string WebrtcUrl { get; init; } = string.Empty;
-  public string ApiUrl { get; init; } = string.Empty;
+  public string Id         { get; init; } = string.Empty;
+  public string Name       { get; init; } = string.Empty;
+  public string Host       { get; init; } = string.Empty;
+  public string WebrtcHost { get; init; } = string.Empty;
+  public int    RtspPort   { get; init; } = 8554;
+  public int    WebrtcPort { get; init; } = 8889;
+  public int    ApiPort    { get; init; } = 9997;
 }
 
 public record CameraSetupDto
 {
   public required string CameraId { get; init; }
+  public string Name { get; init; } = string.Empty;
   public string? ServerId { get; init; }
   public bool Recording { get; init; }
   /// <summary>Derived from first stream's profile mode; used by media server control.</summary>
@@ -56,8 +59,10 @@ public record CameraSetupDto
   public IReadOnlyList<CameraStreamDto> Streams { get; init; } = [];
   /// <summary>Assigned MediaMTX server ID (uuid).</summary>
   public string? MediaMtxServerId { get; init; }
-  /// <summary>WebRTC client URL for this camera's assigned MediaMTX server; filled by web_vms.Server.</summary>
-  public string? MediaMtxWebrtcUrl { get; init; }
+  /// <summary>WebRTC host for this camera's assigned MediaMTX server; empty = use browser hostname. Filled by web_vms.Server.</summary>
+  public string? MediaMtxWebrtcHost { get; init; }
+  /// <summary>WebRTC port for this camera's assigned MediaMTX server. Filled by web_vms.Server.</summary>
+  public int? MediaMtxWebrtcPort { get; init; }
   public bool OnvifEventsEnabled { get; init; }
   public bool HasOnvifFilters    { get; init; }
   public bool OnvifManaged       { get; init; }

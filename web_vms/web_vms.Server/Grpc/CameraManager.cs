@@ -78,6 +78,7 @@ public class CameraManager : ICameraManager
     return new CameraSetupDto
     {
       CameraId         = setup.CameraId,
+      Name             = setup.Name,
       ServerId         = setup.ServerId,
       RecordingMode    = mode,
       Recording        = mode is "continuous" or "prealarm",
@@ -132,20 +133,24 @@ public class CameraManager : ICameraManager
 
   private static MediaMtxServerDto ToMediaMtxDto(MediaMtxServer s) => new()
   {
-    Id        = s.Id,
-    Name      = s.Name,
-    RtspUrl   = s.RtspUrl,
-    WebrtcUrl = s.WebrtcUrl,
-    ApiUrl    = s.ApiUrl,
+    Id         = s.Id,
+    Name       = s.Name,
+    Host       = s.Host,
+    WebrtcHost = s.WebrtcHost,
+    RtspPort   = s.RtspPort != 0 ? s.RtspPort : 8554,
+    WebrtcPort = s.WebrtcPort != 0 ? s.WebrtcPort : 8889,
+    ApiPort    = s.ApiPort != 0 ? s.ApiPort : 9997,
   };
 
   private static MediaMtxServer ToMediaMtxProto(MediaMtxServerDto dto) => new()
   {
-    Id        = dto.Id ?? string.Empty,
-    Name      = dto.Name,
-    RtspUrl   = dto.RtspUrl,
-    WebrtcUrl = dto.WebrtcUrl,
-    ApiUrl    = dto.ApiUrl ?? string.Empty,
+    Id         = dto.Id ?? string.Empty,
+    Name       = dto.Name,
+    Host       = dto.Host,
+    WebrtcHost = dto.WebrtcHost,
+    RtspPort   = dto.RtspPort,
+    WebrtcPort = dto.WebrtcPort,
+    ApiPort    = dto.ApiPort,
   };
 
   private static MediaServerNodeDto ToDto(MediaServerNode server) => new()
@@ -160,6 +165,7 @@ public class CameraManager : ICameraManager
     var setup = new CameraSetup
     {
       CameraId         = dto.CameraId,
+      Name             = dto.Name,
       ServerId         = dto.ServerId ?? string.Empty,
       Cred             = dto.Cred == null ? null : new Credentials { User = dto.Cred.User, Pass = dto.Cred.Pass },
       OnvifConn        = dto.OnvifConn == null ? null : new OnvifConnection { Ip = dto.OnvifConn.ip, Port = dto.OnvifConn.port },

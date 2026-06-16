@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import type { RecordingDto, RetentionEventRowDto } from '../dto/dtos'
 import { getErrorMessage } from '../store/api'
+import { useCameraName } from '../store'
 
 type Props = {
   selected: RetentionEventRowDto | null
@@ -51,6 +52,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 export default function EventDetailsPanel({ selected }: Props) {
   const { t } = useTranslation()
+  const cameraName = useCameraName(selected?.cameraId)
   const [clips, setClips] = useState<RecordingDto[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -96,7 +98,7 @@ export default function EventDetailsPanel({ selected }: Props) {
         <Typography variant="subtitle2" gutterBottom>{t('events.details')}</Typography>
         <Stack spacing={0.5}>
           <DetailRow label={t('events.eventId')} value={selected.eventId} />
-          <DetailRow label={t('events.camId')} value={selected.cameraId} />
+          <DetailRow label={t('cameras.cameraName')} value={cameraName} />
           {selected.streamName && <DetailRow label={t('events.streamName')} value={selected.streamName} />}
           <DetailRow label={t('events.alarmStart')} value={start.toLocaleString()} />
           <DetailRow label={t('events.alarmEnd')} value={end ? end.toLocaleString() : t('events.active')} />

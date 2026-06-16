@@ -16,7 +16,7 @@ function effectiveCameraForSlot(monitor: MonitorDto, slotIndex: number): string 
   if (persisted && monitor.cameraIds.includes(persisted.cameraId)) {
     return persisted.cameraId
   }
-  return monitor.cameraIds[slotIndex] ?? null
+  return null
 }
 
 type SlotProps = {
@@ -97,7 +97,7 @@ function CameraSlot({ monitor, slotIndex, soloActive, canSolo, onToggleSolo, all
                 selected={id === activeCameraId}
                 onClick={() => handleSelectCamera(id)}
               >
-                {id}
+                {allCameras[id]?.name || id}
               </MenuItem>
             ))}
           </Menu>

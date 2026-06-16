@@ -7,9 +7,7 @@
 inline std::string resolve_webrtc_rtsp_base_url()
 {
   const char* value = std::getenv("VMS_WEBRTC_RTSP_BASE_URL");
-  if (!value || value[0] == '\0')
-    throw std::runtime_error("Required environment variable 'VMS_WEBRTC_RTSP_BASE_URL' is not set");
-  return value;
+  return (value && value[0] != '\0') ? value : "";
 }
 
 // Build the RTSP push URL for a given camera/stream.

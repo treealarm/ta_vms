@@ -68,7 +68,7 @@ void config_subscriber::reload_cameras()
 
   std::unordered_map<std::string, std::string> mtx_rtsp_by_id;
   for (const auto& s : mtx_servers)
-    mtx_rtsp_by_id[s.id()] = s.rtsp_url();
+    mtx_rtsp_by_id[s.id()] = "rtsp://" + s.host() + ":" + std::to_string(s.rtsp_port());
 
   // Build set of camera IDs that should be running on this server
   std::unordered_set<std::string> expected_ids;

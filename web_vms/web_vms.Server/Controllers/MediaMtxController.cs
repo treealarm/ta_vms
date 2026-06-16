@@ -19,11 +19,8 @@ public class MediaMtxController(ICameraManager _manager) : ControllerBase
     if (string.IsNullOrWhiteSpace(dto.Name))
       return BadRequest("name must not be empty");
 
-    if (string.IsNullOrWhiteSpace(dto.RtspUrl))
-      return BadRequest("rtspUrl must not be empty");
-
-    if (string.IsNullOrWhiteSpace(dto.WebrtcUrl))
-      return BadRequest("webrtcUrl must not be empty");
+    if (string.IsNullOrWhiteSpace(dto.Host))
+      return BadRequest("host must not be empty");
 
     var ok = await _manager.UpsertMediaMtxServer(dto, ct);
     return Ok(new ApiResponse(ok, ok ? "ok" : "failed"));

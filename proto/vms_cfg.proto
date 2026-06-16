@@ -16,6 +16,7 @@ service CfgService {
   rpc RemoveRecordingProfile(RecordingProfileRequest) returns (OperationStatus);
   rpc SetStreamOverride(SetStreamOverrideRequest) returns (OperationStatus);
   rpc ClearStreamOverride(ClearStreamOverrideRequest) returns (OperationStatus);
+  rpc SetStreamRecordingProfile(SetStreamRecordingProfileRequest) returns (OperationStatus);
   rpc ActivateAlarmOverride(ActivateAlarmOverrideRequest) returns (ActivateAlarmOverrideResponse);
   rpc ClearAlarmOverride(ClearAlarmOverrideRequest) returns (OperationStatus);
   rpc ListAlarmOverrideStreams(ListAlarmOverrideStreamsRequest) returns (ListAlarmOverrideStreamsResponse);
@@ -104,6 +105,7 @@ message CameraSetup {
   optional bool disabled    = 14;
   int32 onvif_poll_timeout_seconds = 15;
   int32 onvif_message_limit        = 16;
+  string name = 17;
 }
 
 message RecordingProfileRequest {
@@ -119,6 +121,12 @@ message SetStreamOverrideRequest {
 message ClearStreamOverrideRequest {
   string camera_id   = 1;
   string stream_name = 2;
+}
+
+message SetStreamRecordingProfileRequest {
+  string camera_id   = 1;
+  string stream_name = 2;
+  string profile_id  = 3;
 }
 
 message ListRecordingProfilesRequest {}
@@ -193,11 +201,13 @@ message GetCameraStoragesResponse {
 }
 
 message MediaMtxServer {
-  string id         = 1;
-  string name       = 2;
-  string rtsp_url   = 3;
-  string webrtc_url = 4;
-  string api_url    = 5;
+  string id          = 1;
+  string name        = 2;
+  string host        = 3;
+  string webrtc_host = 4;  // optional; empty = browser uses window.location.hostname
+  int32  rtsp_port   = 5;
+  int32  webrtc_port = 6;
+  int32  api_port    = 7;
 }
 
 message MediaMtxServerRequest {

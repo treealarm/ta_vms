@@ -22,45 +22,56 @@ import {
 } from '../store/storageSlice'
 import type { CameraStorageAssignmentDto } from '../dto/dtos'
 
-type Props = {
-  cameraId: string
-}
+type Props =
+  | { cameraId: string; value?: undefined; onChange?: undefined }
+  | { cameraId?: undefined; value: CameraStorageAssignmentDto[]; onChange: (v: CameraStorageAssignmentDto[]) => void }
 
-export default function CameraStoragesControl({ cameraId }: Props) {
+export default function CameraStoragesControl({ cameraId, value, onChange }: Props) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const allStorages = useAppSelector((state) => state.storage.storages)
-  const savedAssignments = useAppSelector((state) => state.storage.cameraAssignments[cameraId] ?? [])
+  const savedAssignments = useAppSelector((state) => state.storage.cameraAssignments[cameraId ?? ''] ?? [])
 
-  const [assignments, setAssignments] = useState<CameraStorageAssignmentDto[]>(savedAssignments)
+  const controlled = cameraId === undefined
+
+  const [assignments, setAssignments] = useState<CameraStorageAssignmentDto[]>(
+    controlled ? value : savedAssignments
+  )
   const [selectedStorageId, setSelectedStorageId] = useState('')
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => { void dispatch(loadStorages()) }, [dispatch])
-  useEffect(() => {
-    void dispatch(loadCameraStorages(cameraId))
-  }, [dispatch, cameraId])
 
   useEffect(() => {
-    setAssignments(savedAssignments)
-    setDirty(false)
-  }, [savedAssignments])
+    if (!controlled) void dispatch(loadCameraStorages(cameraId))
+  }, [dispatch, cameraId, controlled])
 
-  // Auto-apply on unmount if dirty
+  useEffect(() => {
+    if (!controlled) {
+      setAssignments(savedAssignments)
+      setDirty(false)
+    }
+  }, [savedAssignments, controlled])
+
+  useEffect(() => {
+    if (controlled) setAssignments(value)
+  }, [value, controlled])
+
+  // Auto-apply on unmount if dirty (uncontrolled mode only)
   const applyRef = useRef(async () => {})
   applyRef.current = async () => {
-    if (!dirty) return
-    await dispatch(setCameraStorages({ cameraId, assignments }))
+    if (controlled || !dirty) return
+    await dispatch(setCameraStorages({ cameraId: cameraId!, assignments }))
   }
   useEffect(() => () => { void applyRef.current() }, [])
 
-  // Warn browser on close when dirty
+  // Warn browser on close when dirty (uncontrolled mode only)
   useEffect(() => {
-    if (!dirty) return
+    if (controlled || !dirty) return
     const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
-  }, [dirty])
+  }, [dirty, controlled])
 
   const assignedIds = new Set(assignments.map((a) => a.storageId))
   const available = allStorages.filter((s) => !assignedIds.has(s.storageId))
@@ -68,19 +79,26 @@ export default function CameraStoragesControl({ cameraId }: Props) {
   const rebuildPriorities = (list: CameraStorageAssignmentDto[]) =>
     list.map((a, i) => ({ ...a, priority: i }))
 
+  const update = (next: CameraStorageAssignmentDto[]) => {
+    setAssignments(next)
+    if (controlled) {
+      onChange(next)
+    } else {
+      setDirty(true)
+    }
+  }
+
   const onAdd = () => {
     if (!selectedStorageId) return
-    setAssignments(rebuildPriorities([
+    update(rebuildPriorities([
       ...assignments,
-      { cameraId, storageId: selectedStorageId, priority: assignments.length }
+      { cameraId: cameraId ?? '', storageId: selectedStorageId, priority: assignments.length }
     ]))
     setSelectedStorageId('')
-    setDirty(true)
   }
 
   const onRemove = (storageId: string) => {
-    setAssignments(rebuildPriorities(assignments.filter((a) => a.storageId !== storageId)))
-    setDirty(true)
+    update(rebuildPriorities(assignments.filter((a) => a.storageId !== storageId)))
   }
 
   const move = (index: number, direction: -1 | 1) => {
@@ -88,12 +106,11 @@ export default function CameraStoragesControl({ cameraId }: Props) {
     const target = index + direction
     if (target < 0 || target >= next.length) return
     ;[next[index], next[target]] = [next[target], next[index]]
-    setAssignments(rebuildPriorities(next))
-    setDirty(true)
+    update(rebuildPriorities(next))
   }
 
   const onApply = async () => {
-    await dispatch(setCameraStorages({ cameraId, assignments }))
+    await dispatch(setCameraStorages({ cameraId: cameraId!, assignments }))
     setDirty(false)
   }
 
@@ -101,8 +118,6 @@ export default function CameraStoragesControl({ cameraId }: Props) {
     setAssignments(savedAssignments)
     setDirty(false)
   }
-
-  if (!cameraId) return null
 
   return (
     <Stack spacing={1}>
@@ -156,12 +171,16 @@ export default function CameraStoragesControl({ cameraId }: Props) {
         <Button variant="outlined" size="small" disabled={!selectedStorageId} onClick={onAdd}>
           {t('common.add')}
         </Button>
-        <Button variant="text" size="small" disabled={!dirty} onClick={onCancel}>
-          {t('common.cancel')}
-        </Button>
-        <Button variant="contained" size="small" disabled={!dirty} onClick={() => void onApply()}>
-          {t('common.apply')}
-        </Button>
+        {!controlled && (
+          <>
+            <Button variant="text" size="small" disabled={!dirty} onClick={onCancel}>
+              {t('common.cancel')}
+            </Button>
+            <Button variant="contained" size="small" disabled={!dirty} onClick={() => void onApply()}>
+              {t('common.apply')}
+            </Button>
+          </>
+        )}
       </Stack>
     </Stack>
   )

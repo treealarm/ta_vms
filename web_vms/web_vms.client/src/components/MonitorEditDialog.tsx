@@ -1,32 +1,27 @@
 import { useEffect, useState } from 'react'
 import {
+  Box,
   Button,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   FormControl,
-  IconButton,
   InputLabel,
   MenuItem,
   Select,
   Stack,
   TextField,
-  Typography,
 } from '@mui/material'
-import AddIcon from '@mui/icons-material/Add'
-import DeleteIcon from '@mui/icons-material/Delete'
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import { useTranslation } from 'react-i18next'
 import type { CameraSetupDto, MonitorDto, MonitorLayout } from '../dto/dtos'
-import { MONITOR_LAYOUTS } from '../dto/dtos'
+import { MONITOR_LAYOUTS, layoutColumns, layoutSlotCount } from '../dto/dtos'
 
 type Props = {
   open: boolean
   monitor: MonitorDto | null
   allCameras: CameraSetupDto[]
-  onSave: (name: string, layout: MonitorLayout, cameraIds: string[]) => void
+  onSave: (name: string, layout: MonitorLayout, slotCameras: string[]) => void
   onClose: () => void
 }
 
@@ -34,50 +29,36 @@ export default function MonitorEditDialog({ open, monitor, allCameras, onSave, o
   const { t } = useTranslation()
   const [name, setName] = useState('')
   const [layout, setLayout] = useState<MonitorLayout>('2x2')
-  const [cameraIds, setCameraIds] = useState<string[]>([])
-  const [addCameraId, setAddCameraId] = useState('')
+  const [slotCameras, setSlotCameras] = useState<string[]>([])
 
   useEffect(() => {
-    if (open) {
-      setName(monitor?.name ?? '')
-      setLayout((monitor?.layout as MonitorLayout) ?? '2x2')
-      setCameraIds(monitor?.cameraIds ? [...monitor.cameraIds] : [])
-      setAddCameraId('')
+    if (!open) return
+    const initialLayout = (monitor?.layout as MonitorLayout) ?? '2x2'
+    setName(monitor?.name ?? '')
+    setLayout(initialLayout)
+    const count = layoutSlotCount(initialLayout)
+    const initial: string[] = Array(count).fill('')
+    for (const slot of monitor?.slots ?? []) {
+      if (slot.slotIndex < count) initial[slot.slotIndex] = slot.cameraId
     }
+    setSlotCameras(initial)
   }, [open, monitor])
 
-  const availableToAdd = allCameras.filter((c) => !cameraIds.includes(c.cameraId))
-
-  const handleAdd = () => {
-    if (!addCameraId || cameraIds.includes(addCameraId)) return
-    setCameraIds((ids) => [...ids, addCameraId])
-    setAddCameraId('')
+  const handleLayoutChange = (newLayout: MonitorLayout) => {
+    setLayout(newLayout)
+    const count = layoutSlotCount(newLayout)
+    setSlotCameras((prev) => Array.from({ length: count }, (_, i) => prev[i] ?? ''))
   }
 
-  const handleRemove = (id: string) => setCameraIds((ids) => ids.filter((x) => x !== id))
-
-  const moveUp = (idx: number) => {
-    if (idx === 0) return
-    setCameraIds((ids) => {
-      const next = [...ids]
-      ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
-      return next
-    })
-  }
-
-  const moveDown = (idx: number) => {
-    setCameraIds((ids) => {
-      if (idx >= ids.length - 1) return ids
-      const next = [...ids]
-      ;[next[idx], next[idx + 1]] = [next[idx + 1], next[idx]]
-      return next
-    })
-  }
+  const setSlot = (index: number, cameraId: string) =>
+    setSlotCameras((prev) => prev.map((v, i) => (i === index ? cameraId : v)))
 
   const handleSave = () => {
     if (!name.trim()) return
-    onSave(name.trim(), layout, cameraIds)
+    onSave(name.trim(), layout, slotCameras)
   }
+
+  const cols = layoutColumns(layout)
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
@@ -98,7 +79,7 @@ export default function MonitorEditDialog({ open, monitor, allCameras, onSave, o
             <Select
               value={layout}
               label={t('monitors.layout')}
-              onChange={(e) => setLayout(e.target.value as MonitorLayout)}
+              onChange={(e) => handleLayoutChange(e.target.value as MonitorLayout)}
             >
               {MONITOR_LAYOUTS.map((l) => (
                 <MenuItem key={l} value={l}>{l}</MenuItem>
@@ -106,46 +87,31 @@ export default function MonitorEditDialog({ open, monitor, allCameras, onSave, o
             </Select>
           </FormControl>
 
-          <Typography variant="subtitle2" color="text.secondary">
-            {t('monitors.cameraPool')}
-          </Typography>
-
-          {cameraIds.map((id, idx) => (
-            <Stack key={id} direction="row" alignItems="center" spacing={0.5}>
-              <Typography variant="body2" sx={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {id}
-              </Typography>
-              <IconButton size="small" onClick={() => moveUp(idx)} disabled={idx === 0}>
-                <ArrowUpwardIcon fontSize="small" />
-              </IconButton>
-              <IconButton size="small" onClick={() => moveDown(idx)} disabled={idx === cameraIds.length - 1}>
-                <ArrowDownwardIcon fontSize="small" />
-              </IconButton>
-              <IconButton size="small" onClick={() => handleRemove(id)}>
-                <DeleteIcon fontSize="small" />
-              </IconButton>
-            </Stack>
-          ))}
-
-          {availableToAdd.length > 0 && (
-            <Stack direction="row" spacing={1} alignItems="center">
-              <FormControl size="small" sx={{ flex: 1 }}>
-                <InputLabel>{t('monitors.addCamera')}</InputLabel>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${cols}, 1fr)`,
+              gap: 1,
+            }}
+          >
+            {slotCameras.map((cameraId, i) => (
+              <FormControl key={i} size="small" fullWidth>
+                <InputLabel>{i + 1}</InputLabel>
                 <Select
-                  value={addCameraId}
-                  label={t('monitors.addCamera')}
-                  onChange={(e) => setAddCameraId(e.target.value)}
+                  value={cameraId}
+                  label={String(i + 1)}
+                  onChange={(e) => setSlot(i, e.target.value)}
                 >
-                  {availableToAdd.map((c) => (
-                    <MenuItem key={c.cameraId} value={c.cameraId}>{c.cameraId}</MenuItem>
+                  <MenuItem value=""><em>—</em></MenuItem>
+                  {allCameras.map((c) => (
+                    <MenuItem key={c.cameraId} value={c.cameraId}>
+                      {c.name || c.cameraId}
+                    </MenuItem>
                   ))}
                 </Select>
               </FormControl>
-              <IconButton onClick={handleAdd} disabled={!addCameraId} color="primary">
-                <AddIcon />
-              </IconButton>
-            </Stack>
-          )}
+            ))}
+          </Box>
         </Stack>
       </DialogContent>
       <DialogActions>

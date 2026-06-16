@@ -49,7 +49,7 @@ body,
   --app-action-selected: rgba(194, 25, 49, 0.18);
   --app-action-disabled-bg: rgba(128, 128, 128, 0.24);
 
-  --app-video-bg: #0a0a0a;
+  --app-video-bg: var(--app-bg-elevated);
   --app-scrollbar-fg: rgba(238, 238, 238, 0.35);
 
   /* Log journal */

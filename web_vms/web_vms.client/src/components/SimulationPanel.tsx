@@ -100,7 +100,7 @@ export default function SimulationPanel({ cameras }: SimulationPanelProps) {
           >
             {cameras.map((camera) => (
               <MenuItem key={camera.cameraId} value={camera.cameraId}>
-                {camera.cameraId}
+                {camera.name || camera.cameraId}
               </MenuItem>
             ))}
           </TextField>

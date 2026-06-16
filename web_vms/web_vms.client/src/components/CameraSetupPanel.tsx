@@ -3,7 +3,8 @@ import { Box, Button, FormControlLabel, MenuItem, Stack, Switch, TextField, Typo
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera, changeCameraParent, fetchCameraState, removeCamera } from '../store/liveSlice'
-import type { CameraSetupDto } from '../dto/dtos'
+import { setCameraStorages } from '../store/storageSlice'
+import type { CameraSetupDto, CameraStorageAssignmentDto } from '../dto/dtos'
 import CameraStoragesControl from './CameraStoragesControl'
 import PasswordField from './PasswordField'
 import CameraStream from './CameraStream'
@@ -23,25 +24,44 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const { t } = useTranslation()
   const servers = useAppSelector((state) => state.live.servers)
   const mtxServers = useAppSelector((state) => state.mediaMtx.servers)
+  const allStorages = useAppSelector((state) => state.storage.storages)
   const camerasMap = useAppSelector((state) => state.live.cameraStatesById)
   const existing = camerasMap[initialCameraId]
   const isNew = initialCameraId === ''
 
-  const [cameraId, setCameraId] = useState(initialCameraId)
+  const [cameraId] = useState(() => isNew ? crypto.randomUUID() : initialCameraId)
+  const [name, setName] = useState(existing?.name ?? '')
   const [serverId, setServerId] = useState(initialServerId)
-  const [mediaMtxServerId, setMediaMtxServerId] = useState(existing?.mediaMtxServerId ?? '')
+  const [mediaMtxServerId, setMediaMtxServerId] = useState(
+    isNew ? (mtxServers[0]?.id ?? '') : (existing?.mediaMtxServerId ?? '')
+  )
   const [user, setUser] = useState(existing?.cred?.user ?? '')
   const [pass, setPass] = useState(existing?.cred?.pass ?? '')
   const [onvifIp, setOnvifIp] = useState(existing?.onvifConn?.ip ?? '')
-  const [onvifPort, setOnvifPort] = useState(existing?.onvifConn?.port ?? 0)
+  const [onvifPort, setOnvifPort] = useState(isNew ? 80 : (existing?.onvifConn?.port ?? 0))
   const [disabled, setDisabled] = useState(existing?.disabled === true)
+  const [pendingStorages, setPendingStorages] = useState<CameraStorageAssignmentDto[]>([])
+
   const setNonNegativeNumber = (raw: string, setter: (n: number) => void) => {
     const value = Number(raw)
     if (!Number.isNaN(value)) setter(Math.max(0, value))
   }
 
+  // Pre-select first MediaMTX server once the list loads (in case store wasn't ready on mount)
+  useEffect(() => {
+    if (isNew && !mediaMtxServerId && mtxServers.length > 0)
+      setMediaMtxServerId(mtxServers[0].id)
+  }, [mtxServers]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pre-populate pending storage with the first available storage
+  useEffect(() => {
+    if (isNew && pendingStorages.length === 0 && allStorages.length > 0)
+      setPendingStorages([{ cameraId: '', storageId: allStorages[0].storageId, priority: 0 }])
+  }, [allStorages]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Snapshot of the saved state — used for dirty detection and Cancel
   const snap = useRef({
+    name: existing?.name ?? '',
     serverId: initialServerId,
     mediaMtxServerId: existing?.mediaMtxServerId ?? '',
     user: existing?.cred?.user ?? '',
@@ -52,7 +72,8 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   })
 
   const dirty = !isNew && (
-    serverId !== snap.current.serverId
+    name !== snap.current.name
+    || serverId !== snap.current.serverId
     || mediaMtxServerId !== snap.current.mediaMtxServerId
     || user !== snap.current.user
     || pass !== snap.current.pass
@@ -64,12 +85,15 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   // WebRTC streams available for preview
   const webRtcStreams = (existing?.streams ?? []).filter((s) => s.webRtc)
 
-  // WebRTC URL: prefer selected MediaMTX server's webrtcUrl, fall back to camera's stored value
+  // WebRTC base URL for preview: use webrtcHost if set, otherwise current browser hostname
   const selectedMtxServer = mtxServers.find((s) => s.id === mediaMtxServerId)
-  const previewBaseUrl = selectedMtxServer?.webrtcUrl ?? existing?.mediaMtxWebrtcUrl
+  const webrtcHost = selectedMtxServer?.webrtcHost || existing?.mediaMtxWebrtcHost || window.location.hostname
+  const webrtcPort = selectedMtxServer?.webrtcPort ?? existing?.mediaMtxWebrtcPort ?? 8889
+  const previewBaseUrl = `${window.location.protocol}//${webrtcHost}:${webrtcPort}`
 
   const buildPayload = (): CameraSetupDto => ({
     cameraId: isNew ? cameraId : initialCameraId,
+    name,
     serverId,
     recordingMode: existing?.recordingMode ?? 'off',
     webRtc: existing?.webRtc ?? false,
@@ -88,7 +112,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     const action = serverChanged ? changeCameraParent : addCamera
     const result = await dispatch(action(payload))
     if (!action.rejected.match(result)) {
-      snap.current = { serverId, mediaMtxServerId, user, pass, onvifIp, onvifPort, disabled }
+      snap.current = { name, serverId, mediaMtxServerId, user, pass, onvifIp, onvifPort, disabled }
       await dispatch(fetchCameraState(initialCameraId))
       return true
     }
@@ -100,7 +124,13 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     if (isNew) {
       const payload = buildPayload()
       const result = await dispatch(addCamera(payload))
-      if (!addCamera.rejected.match(result)) await onSaved()
+      if (!addCamera.rejected.match(result)) {
+        if (pendingStorages.length > 0) {
+          const withId = pendingStorages.map((a, i) => ({ ...a, cameraId: payload.cameraId, priority: i }))
+          await dispatch(setCameraStorages({ cameraId: payload.cameraId, assignments: withId }))
+        }
+        await onSaved()
+      }
     } else {
       const ok = await applyInternal()
       if (ok) await onSaved()
@@ -108,6 +138,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   }
 
   const handleCancel = () => {
+    setName(snap.current.name)
     setServerId(snap.current.serverId)
     setMediaMtxServerId(snap.current.mediaMtxServerId)
     setUser(snap.current.user)
@@ -138,16 +169,20 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const setupForm = (
     <Stack component="form" direction="row" spacing={3} alignItems="flex-start" onSubmit={handleApply}>
       {/* Left: form fields */}
-      <Stack spacing={2} sx={{ flex: 1, minWidth: 0 }}>
+      <Stack spacing={2} sx={{ flex: 1, minWidth: 0, maxWidth: 380 }}>
         <Typography variant="subtitle2" color="text.secondary">
-          {isNew ? t('cameras.newCamera') : t('cameras.cameraLabel', { id: initialCameraId })}
+          {isNew ? t('cameras.newCamera') : (existing?.name || initialCameraId)}
         </Typography>
+        {!isNew && (
+          <Typography variant="caption" color="text.disabled" sx={{ mt: -1 }}>
+            {initialCameraId}
+          </Typography>
+        )}
 
         <TextField
-          label={t('cameras.cameraId')}
-          value={isNew ? cameraId : initialCameraId}
-          onChange={(e) => setCameraId(e.target.value)}
-          disabled={!isNew}
+          label={t('cameras.cameraName')}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
           required
           size="small"
         />
@@ -173,19 +208,19 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
         </TextField>
 
         <Stack direction="row" spacing={1}>
-          <TextField label={t('cameras.onvifIp')} value={onvifIp} onChange={(e) => setOnvifIp(e.target.value)} size="small" />
+          <TextField label={t('cameras.onvifIp')} value={onvifIp} onChange={(e) => setOnvifIp(e.target.value)} size="small" sx={{ flex: 1 }} />
           <TextField
             label={t('cameras.onvifPort')}
             value={onvifPort}
             onChange={(e) => setNonNegativeNumber(e.target.value, setOnvifPort)}
             size="small"
-            sx={{ width: 120 }}
+            sx={{ width: 100 }}
           />
         </Stack>
 
         <Stack direction="row" spacing={1}>
-          <TextField label={t('common.user')} value={user} onChange={(e) => setUser(e.target.value)} size="small" />
-          <PasswordField pass={pass} setPass={setPass} />
+          <TextField label={t('common.user')} value={user} onChange={(e) => setUser(e.target.value)} size="small" sx={{ flex: 1 }} />
+          <Box sx={{ flex: 1 }}><PasswordField pass={pass} setPass={setPass} /></Box>
         </Stack>
 
         <FormControlLabel
@@ -193,23 +228,32 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
           label={t('cameras.disabled')}
         />
 
-        <Stack direction="row" spacing={1}>
-          <Button type="submit" variant="outlined" size="small" disabled={!isNew && !dirty}>
-            {isNew ? t('cameras.addCamera') : t('common.apply')}
-          </Button>
-          {!isNew && (
+        {!isNew && (
+          <Stack direction="row" spacing={1}>
+            <Button type="submit" variant="outlined" size="small" disabled={!dirty}>
+              {t('common.apply')}
+            </Button>
             <Button variant="text" size="small" onClick={handleCancel} disabled={!dirty}>
               {t('common.cancel')}
             </Button>
-          )}
-          {!isNew && (
             <Button color="error" variant="outlined" size="small" onClick={handleRemove}>
               {t('cameras.deleteCamera')}
             </Button>
-          )}
-        </Stack>
+          </Stack>
+        )}
 
-        {!isNew && <CameraStoragesControl cameraId={initialCameraId} />}
+        {isNew
+          ? <CameraStoragesControl value={pendingStorages} onChange={setPendingStorages} />
+          : <CameraStoragesControl cameraId={initialCameraId} />
+        }
+
+        {isNew && (
+          <Stack direction="row">
+            <Button type="submit" variant="outlined" size="small">
+              {t('cameras.addCamera')}
+            </Button>
+          </Stack>
+        )}
       </Stack>
 
       {/* Right: live previews column */}

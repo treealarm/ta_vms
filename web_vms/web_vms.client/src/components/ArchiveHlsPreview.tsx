@@ -4,6 +4,7 @@ import Hls from 'hls.js'
 import { useTranslation } from 'react-i18next'
 
 import type { RetentionEventRowDto } from '../dto/dtos'
+import { useCameraName } from '../store'
 
 type StreamEntry = {
   streamName: string | null  // null = all streams
@@ -23,6 +24,7 @@ async function fetchEventPlaylists(eventId: string, signal: AbortSignal): Promis
 
 export default function ArchiveHlsPreview({ selected }: Props) {
   const { t } = useTranslation()
+  const cameraName = useCameraName(selected?.cameraId)
   const videoRef = useRef<HTMLVideoElement>(null)
   const [streams, setStreams] = useState<StreamEntry[]>([])
   const [activeStream, setActiveStream] = useState<string | null>(null)
@@ -128,7 +130,7 @@ export default function ArchiveHlsPreview({ selected }: Props) {
   return (
     <Stack spacing={1}>
       <Typography variant="subtitle2">
-        Camera <strong>{selected.cameraId}</strong> · alarm start {startLabel} · alarm end {endLabel}
+        Camera <strong>{cameraName}</strong> · alarm start {startLabel} · alarm end {endLabel}
       </Typography>
 
       {loadingStreams && (
@@ -171,7 +173,7 @@ export default function ArchiveHlsPreview({ selected }: Props) {
           maxHeight: 'min(75vh, 900px)',
           borderRadius: 1,
           overflow: 'hidden',
-          bgcolor: 'black',
+          bgcolor: 'var(--app-video-bg)',
           '& video': { width: '100%', height: '100%', display: 'block', objectFit: 'contain' }
         }}
       >

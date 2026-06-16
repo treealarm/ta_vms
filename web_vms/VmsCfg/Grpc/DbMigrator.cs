@@ -65,14 +65,12 @@ public class DbMigrator(
     await SeedDefaultStorageAsync(ct);
   }
 
-  // Inserts a default MediaMTX server from env vars if the table is empty.
-  // Reads VMS_WEBRTC_RTSP_BASE_URL and VMS_WEBRTC_CLIENT_URL.
+  // Inserts a default Media Router from env var VMS_MTX_HOST if the table is empty.
+  // Optional — if VMS_MTX_HOST is not set, no seed is created.
   private static async Task SeedDefaultMediaMtxServerAsync(NpgsqlConnection connection, CancellationToken ct)
   {
-    var rtspUrl   = Environment.GetEnvironmentVariable("VMS_WEBRTC_RTSP_BASE_URL");
-    var clientUrl = Environment.GetEnvironmentVariable("VMS_WEBRTC_CLIENT_URL");
-
-    if (string.IsNullOrWhiteSpace(rtspUrl) && string.IsNullOrWhiteSpace(clientUrl))
+    var host = Environment.GetEnvironmentVariable("VMS_MTX_HOST");
+    if (string.IsNullOrWhiteSpace(host))
       return;
 
     await using var checkCmd = new NpgsqlCommand(
@@ -82,12 +80,11 @@ public class DbMigrator(
       return;
 
     await using var insertCmd = new NpgsqlCommand("""
-      INSERT INTO media_mtx_server (name, rtsp_url, webrtc_url)
-      VALUES ('Default', $1, $2)
+      INSERT INTO media_mtx_server (name, host, webrtc_host, rtsp_port, webrtc_port, api_port)
+      VALUES ('Default', $1, '', 8554, 8889, 9997)
       ON CONFLICT DO NOTHING;
       """, connection);
-    insertCmd.Parameters.AddWithValue(rtspUrl ?? "rtsp://localhost:8554");
-    insertCmd.Parameters.AddWithValue(clientUrl ?? "http://localhost:8889");
+    insertCmd.Parameters.AddWithValue(host);
     await insertCmd.ExecuteNonQueryAsync(ct);
   }
 

@@ -61,6 +61,25 @@ public class RecordingProfileController(
     return Ok(new ApiResponse(response.Success, response.Message));
   }
 
+  [HttpPost("stream-profile")]
+  public async Task<IActionResult> SetStreamRecordingProfile([FromBody] StreamOverrideDto dto, CancellationToken ct)
+  {
+    if (string.IsNullOrWhiteSpace(dto.CameraId) || string.IsNullOrWhiteSpace(dto.StreamName) || string.IsNullOrWhiteSpace(dto.ProfileId))
+      return BadRequest("cameraId, streamName and profileId are required");
+
+    var response = await _cfgClient.SetStreamRecordingProfileAsync(new SetStreamRecordingProfileRequest
+    {
+      CameraId   = dto.CameraId,
+      StreamName = dto.StreamName,
+      ProfileId  = dto.ProfileId,
+    }, CfgOptions(ct));
+
+    if (response.Success)
+      await _streamState.PushStreamStateAsync(dto.CameraId, dto.StreamName, ct);
+
+    return Ok(new ApiResponse(response.Success, response.Message));
+  }
+
   [HttpDelete("stream-override")]
   public async Task<IActionResult> ClearStreamOverride([FromQuery] string cameraId, [FromQuery] string streamName, CancellationToken ct)
   {

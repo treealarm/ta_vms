@@ -47,10 +47,10 @@ public class UtilsServiceImpl(
         new SourceRequest { SourceId = request.CameraId },
         cancellationToken: context.CancellationToken);
 
-      if (!serverReply.Found || string.IsNullOrWhiteSpace(serverReply.Server.ApiUrl))
+      if (!serverReply.Found || string.IsNullOrWhiteSpace(serverReply.Server.Host))
         return new GetMediaMtxPathInfoResponse { Success = false };
 
-      var apiUrl = serverReply.Server.ApiUrl.TrimEnd('/');
+      var apiUrl = $"http://{serverReply.Server.Host}:{serverReply.Server.ApiPort}";
       var path   = $"{request.CameraId}/{request.StreamName}";
       var url    = $"{apiUrl}/v3/paths/get/{path}";
 

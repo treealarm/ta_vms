@@ -60,10 +60,11 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
       <Stack
-        direction={{ xs: 'column', md: 'row' }}
+        direction="row"
         spacing={2}
-        sx={{ flex: 1, minHeight: 0 }}
+        sx={{ height: '100%', minWidth: 520 }}
         alignItems="stretch"
       >
         {/* Tree */}
@@ -100,7 +101,7 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
                       }
                     >
                       <ListItemText
-                        primary={camera.cameraId}
+                        primary={camera.name || camera.cameraId}
                         primaryTypographyProps={{ noWrap: true }}
                       />
                     </ListItemButton>
@@ -145,7 +146,7 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
         </Box>
 
         {/* Detail panel */}
-        <Box sx={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
+        <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }}>
           {selection.kind === 'camera' && (
             <CameraSetupPanel
               ref={detailRef}
@@ -199,6 +200,7 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
           )}
         </Box>
       </Stack>
+      </Box>
 
       <Button variant="outlined" onClick={refresh} size="small" sx={{ alignSelf: 'flex-start' }}>
         {t('common.refresh')}

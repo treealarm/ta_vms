@@ -81,7 +81,7 @@ public class LiveController(
     return states;
   }
 
-  private async Task<(CameraSetupDto normalized, string? webrtcUrl)>
+  private async Task<(CameraSetupDto normalized, MediaMtxServerDto? mtxServer)>
     ResolveWithMediaMtxAsync(CameraSetupDto request, CancellationToken ct)
   {
     var normalized = CameraManager.Normalize(request);
@@ -105,10 +105,7 @@ public class LiveController(
         normalized = normalized with { MediaMtxServerId = server.Id };
     }
 
-    if (server is null)
-      return (normalized, null);
-
-    return (normalized, server.WebrtcUrl);
+    return (normalized, server);
   }
 
   [HttpPost("cameras")]
@@ -225,14 +222,18 @@ public class LiveController(
   {
     var cameras = await _manager.List(ct);
 
-    // Enrich each camera with its assigned MediaMTX WebRTC URL (best-effort; no auto-assign on list)
+    // Enrich each camera with its assigned MediaMTX WebRTC fields (best-effort; no auto-assign on list)
     var allMtxServers = (await _manager.ListMediaMtxServers(ct))
-      .ToDictionary(s => s.Id, s => s.WebrtcUrl);
+      .ToDictionary(s => s.Id);
 
     var enriched = cameras.Select(c =>
     {
-      if (!string.IsNullOrEmpty(c.MediaMtxServerId) && allMtxServers.TryGetValue(c.MediaMtxServerId, out var url))
-        return c with { MediaMtxWebrtcUrl = url };
+      if (!string.IsNullOrEmpty(c.MediaMtxServerId) && allMtxServers.TryGetValue(c.MediaMtxServerId, out var srv))
+        return c with
+        {
+          MediaMtxWebrtcHost = string.IsNullOrEmpty(srv.WebrtcHost) ? null : srv.WebrtcHost,
+          MediaMtxWebrtcPort = srv.WebrtcPort,
+        };
       return c;
     }).ToList();
 
@@ -292,9 +293,13 @@ public class LiveController(
 
     var normalized = CameraManager.Normalize(camera);
 
-    // Enrich with MediaMTX WebRTC URL for the frontend
+    // Enrich with MediaMTX WebRTC fields for the frontend
     var mediaMtxServer = await _manager.GetOrAssignMediaMtxServer(cameraId, ct);
-    normalized = normalized with { MediaMtxWebrtcUrl = mediaMtxServer?.WebrtcUrl };
+    normalized = normalized with
+    {
+      MediaMtxWebrtcHost = string.IsNullOrEmpty(mediaMtxServer?.WebrtcHost) ? null : mediaMtxServer?.WebrtcHost,
+      MediaMtxWebrtcPort = mediaMtxServer?.WebrtcPort,
+    };
 
     // Ensure WebRTC push is active for all webrtc-enabled streams (best-effort)
     var webRtcStreams = normalized.Streams

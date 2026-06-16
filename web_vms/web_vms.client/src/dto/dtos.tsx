@@ -109,6 +109,7 @@ export type CameraStreamDto = {
 
 export type CameraSetupDto = {
   cameraId: string
+  name: string
   serverId?: string
   /** Derived from first stream's profile mode */
   recording?: boolean
@@ -121,8 +122,10 @@ export type CameraSetupDto = {
   activeRetentionWindow?: boolean
   streams?: CameraStreamDto[]
   mediaMtxServerId?: string
-  /** WebRTC client base URL for this camera's assigned MediaMTX server (e.g. http://host:8889) */
-  mediaMtxWebrtcUrl?: string
+  /** WebRTC host for browser connections; empty/absent = use window.location.hostname */
+  mediaMtxWebrtcHost?: string
+  /** WebRTC port for this camera's assigned MediaMTX server */
+  mediaMtxWebrtcPort?: number
   onvifEventsEnabled?: boolean
   hasOnvifFilters?: boolean
   onvifManaged?: boolean
@@ -138,9 +141,11 @@ export type MediaServerNodeDto = {
 export type MediaMtxServerDto = {
   id: string
   name: string
-  rtspUrl: string
-  webrtcUrl: string
-  apiUrl: string
+  host: string
+  webrtcHost: string
+  rtspPort: number
+  webrtcPort: number
+  apiPort: number
 }
 
 /** Built client-side from servers + cameras for Settings tree */

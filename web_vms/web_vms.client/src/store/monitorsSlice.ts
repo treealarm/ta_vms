@@ -94,8 +94,7 @@ const monitorsSlice = createSlice({
         const m = state.monitors.find((x) => x.monitorId === monitorId)
         if (m) {
           m.cameraIds = cameraIds
-          // Remove slot assignments for cameras no longer in pool
-          m.slots = m.slots.filter((s) => cameraIds.includes(s.cameraId))
+          m.slots = []
         }
       })
       .addCase(setMonitorSlot.fulfilled, (state, action) => {
