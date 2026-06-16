@@ -25,7 +25,7 @@ import type { MediaMtxServerDto } from '../dto/dtos'
 
 export type MediaMtxServersHandle = { applyIfDirty: () => Promise<boolean> }
 
-const EMPTY: MediaMtxServerDto = { id: '', name: '', rtspUrl: '', webrtcUrl: '', apiUrl: '' }
+const EMPTY: MediaMtxServerDto = { id: '', name: '', host: '', webrtcHost: '', rtspPort: 8554, webrtcPort: 8889, apiPort: 9997 }
 
 export default function MediaMtxServersPanel({ ref }: { ref?: React.Ref<MediaMtxServersHandle> }) {
   const dispatch = useAppDispatch()
@@ -64,7 +64,7 @@ export default function MediaMtxServersPanel({ ref }: { ref?: React.Ref<MediaMtx
 
   useImperativeHandle(ref, () => ({
     applyIfDirty: () =>
-      editing?.name && editing.rtspUrl && editing.webrtcUrl
+      editing?.name && editing.host
         ? handleSaveInternal()
         : Promise.resolve(true),
   }))
@@ -74,6 +74,13 @@ export default function MediaMtxServersPanel({ ref }: { ref?: React.Ref<MediaMtx
     if (!removeMediaMtxServer.rejected.match(result)) {
       await dispatch(loadMediaMtxServers())
     }
+  }
+
+  const setPort = (field: 'rtspPort' | 'webrtcPort' | 'apiPort', raw: string) => {
+    if (!editing) return
+    const v = parseInt(raw, 10)
+    if (!Number.isNaN(v) && v > 0 && v < 65536)
+      setEditing({ ...editing, [field]: v })
   }
 
   return (
@@ -96,7 +103,7 @@ export default function MediaMtxServersPanel({ ref }: { ref?: React.Ref<MediaMtx
           <Typography variant="subtitle2" gutterBottom>
             {editing.id ? t('mediaMtx.editServer', { name: editing.name }) : t('mediaMtx.newServer')}
           </Typography>
-          <Stack spacing={1.5}>
+          <Stack spacing={1.5} sx={{ maxWidth: 420 }}>
             <TextField
               label={t('common.name')}
               value={editing.name}
@@ -105,31 +112,47 @@ export default function MediaMtxServersPanel({ ref }: { ref?: React.Ref<MediaMtx
               required
             />
             <TextField
-              label={t('mediaMtx.rtspPushUrl')}
-              placeholder={t('mediaMtx.rtspPlaceholder')}
-              value={editing.rtspUrl}
-              onChange={(e) => setEditing({ ...editing, rtspUrl: e.target.value })}
+              label={t('mediaMtx.host')}
+              placeholder="192.168.1.100"
+              value={editing.host}
+              onChange={(e) => setEditing({ ...editing, host: e.target.value })}
               size="small"
               required
-              helperText={t('mediaMtx.rtspHelper')}
             />
             <TextField
-              label={t('mediaMtx.webrtcUrl')}
-              placeholder={t('mediaMtx.webrtcPlaceholder')}
-              value={editing.webrtcUrl}
-              onChange={(e) => setEditing({ ...editing, webrtcUrl: e.target.value })}
+              label={t('mediaMtx.webrtcHost')}
+              placeholder="192.168.1.100"
+              value={editing.webrtcHost}
+              onChange={(e) => setEditing({ ...editing, webrtcHost: e.target.value })}
               size="small"
-              required
-              helperText={t('mediaMtx.webrtcHelper')}
+              helperText={t('mediaMtx.webrtcHostHelper')}
             />
-            <TextField
-              label={t('mediaMtx.apiUrl')}
-              placeholder={t('mediaMtx.apiPlaceholder')}
-              value={editing.apiUrl}
-              onChange={(e) => setEditing({ ...editing, apiUrl: e.target.value })}
-              size="small"
-              helperText={t('mediaMtx.apiHelper')}
-            />
+            <Stack direction="row" spacing={1}>
+              <TextField
+                label={t('mediaMtx.rtspPort')}
+                value={editing.rtspPort}
+                onChange={(e) => setPort('rtspPort', e.target.value)}
+                size="small"
+                sx={{ width: 120 }}
+                type="number"
+              />
+              <TextField
+                label={t('mediaMtx.webrtcPort')}
+                value={editing.webrtcPort}
+                onChange={(e) => setPort('webrtcPort', e.target.value)}
+                size="small"
+                sx={{ width: 120 }}
+                type="number"
+              />
+              <TextField
+                label={t('mediaMtx.apiPort')}
+                value={editing.apiPort}
+                onChange={(e) => setPort('apiPort', e.target.value)}
+                size="small"
+                sx={{ width: 120 }}
+                type="number"
+              />
+            </Stack>
             <Stack direction="row" spacing={1}>
               <Button variant="outlined" size="small" onClick={handleSave} disabled={isBusy}>
                 {t('common.apply')}
@@ -147,6 +170,7 @@ export default function MediaMtxServersPanel({ ref }: { ref?: React.Ref<MediaMtx
           <TableHead>
             <TableRow>
               <TableCell>{t('mediaMtx.colName')}</TableCell>
+              <TableCell>{t('mediaMtx.colHost')}</TableCell>
               <TableCell>{t('mediaMtx.colRtsp')}</TableCell>
               <TableCell>{t('mediaMtx.colWebrtc')}</TableCell>
               <TableCell>{t('mediaMtx.colApi')}</TableCell>
@@ -156,7 +180,7 @@ export default function MediaMtxServersPanel({ ref }: { ref?: React.Ref<MediaMtx
           <TableBody>
             {servers.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4}>
+                <TableCell colSpan={5}>
                   <Box sx={{ color: 'text.secondary', py: 1 }}>{t('mediaMtx.noServers')}</Box>
                 </TableCell>
               </TableRow>
@@ -164,9 +188,12 @@ export default function MediaMtxServersPanel({ ref }: { ref?: React.Ref<MediaMtx
             {servers.map((s) => (
               <TableRow key={s.id}>
                 <TableCell>{s.name}</TableCell>
-                <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{s.rtspUrl}</TableCell>
-                <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{s.webrtcUrl}</TableCell>
-                <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{s.apiUrl}</TableCell>
+                <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                  {s.host}{s.webrtcHost && s.webrtcHost !== s.host ? ` / ${s.webrtcHost}` : ''}
+                </TableCell>
+                <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{s.rtspPort}</TableCell>
+                <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{s.webrtcPort}</TableCell>
+                <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{s.apiPort}</TableCell>
                 <TableCell align="right">
                   <IconButton size="small" onClick={() => handleEdit(s)}>
                     <EditIcon fontSize="small" />

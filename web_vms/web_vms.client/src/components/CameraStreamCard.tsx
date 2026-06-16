@@ -39,7 +39,10 @@ function CameraStreamCard({ camera, onStreamChange }: CameraStreamCardProps) {
           ))}
         </Tabs>
       )}
-      <CameraStream streamName={streamName} baseUrl={camera.mediaMtxWebrtcUrl} />
+      <CameraStream
+        streamName={streamName}
+        baseUrl={`${window.location.protocol}//${camera.mediaMtxWebrtcHost || window.location.hostname}:${camera.mediaMtxWebrtcPort ?? 8889}`}
+      />
     </Box>
   )
 }

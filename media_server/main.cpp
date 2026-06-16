@@ -116,10 +116,10 @@ int main(int argc, char** argv)
   // Best-effort: load MediaMTX server list to resolve RTSP push URLs at startup.
   c_client.list_media_mtx_servers(mtx_servers);
 
-  // Build a lookup map: server_id → rtsp_url
+  // Build a lookup map: server_id → rtsp push base URL
   std::unordered_map<std::string, std::string> mtx_rtsp_by_id;
   for (const auto& s : mtx_servers)
-    mtx_rtsp_by_id[s.id()] = s.rtsp_url();
+    mtx_rtsp_by_id[s.id()] = "rtsp://" + s.host() + ":" + std::to_string(s.rtsp_port());
 
   std::string error;
 

@@ -193,11 +193,13 @@ message GetCameraStoragesResponse {
 }
 
 message MediaMtxServer {
-  string id         = 1;
-  string name       = 2;
-  string rtsp_url   = 3;
-  string webrtc_url = 4;
-  string api_url    = 5;
+  string id          = 1;
+  string name        = 2;
+  string host        = 3;
+  string webrtc_host = 4;  // optional; empty = browser uses window.location.hostname
+  int32  rtsp_port   = 5;
+  int32  webrtc_port = 6;
+  int32  api_port    = 7;
 }
 
 message MediaMtxServerRequest {

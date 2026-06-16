@@ -427,7 +427,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
   public async Task<List<MediaMtxServer>> ListMediaMtxServersAsync(CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      SELECT id, name, rtsp_url, webrtc_url, api_url FROM media_mtx_server ORDER BY name;
+      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port FROM media_mtx_server ORDER BY name;
       """);
 
     var result = new List<MediaMtxServer>();
@@ -440,20 +440,24 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
   public async Task UpsertMediaMtxServerAsync(MediaMtxServer server, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      INSERT INTO media_mtx_server (id, name, rtsp_url, webrtc_url, api_url)
-      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5)
+      INSERT INTO media_mtx_server (id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port)
+      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7)
       ON CONFLICT (id) DO UPDATE SET
-        name       = EXCLUDED.name,
-        rtsp_url   = EXCLUDED.rtsp_url,
-        webrtc_url = EXCLUDED.webrtc_url,
-        api_url    = EXCLUDED.api_url
+        name        = EXCLUDED.name,
+        host        = EXCLUDED.host,
+        webrtc_host = EXCLUDED.webrtc_host,
+        rtsp_port   = EXCLUDED.rtsp_port,
+        webrtc_port = EXCLUDED.webrtc_port,
+        api_port    = EXCLUDED.api_port
       RETURNING id;
       """);
     command.Parameters.AddWithValue(server.Id ?? string.Empty);
     command.Parameters.AddWithValue(server.Name);
-    command.Parameters.AddWithValue(server.RtspUrl);
-    command.Parameters.AddWithValue(server.WebrtcUrl);
-    command.Parameters.AddWithValue(server.ApiUrl);
+    command.Parameters.AddWithValue(server.Host);
+    command.Parameters.AddWithValue(server.WebrtcHost);
+    command.Parameters.AddWithValue(server.RtspPort);
+    command.Parameters.AddWithValue(server.WebrtcPort);
+    command.Parameters.AddWithValue(server.ApiPort);
     var id = await command.ExecuteScalarAsync(ct);
     server.Id = id?.ToString() ?? server.Id;
   }
@@ -472,7 +476,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
 
     // Check if camera already has a server assigned and it still exists
     await using (var cmd = new NpgsqlCommand("""
-      SELECT m.id, m.name, m.rtsp_url, m.webrtc_url, m.api_url
+      SELECT m.id, m.name, m.host, m.webrtc_host, m.rtsp_port, m.webrtc_port, m.api_port
       FROM camera_setup cs
       JOIN media_mtx_server m ON m.id = cs.media_mtx_server_id
       WHERE cs.camera_id = $1;
@@ -489,7 +493,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     MediaMtxServer? picked = null;
 
     await using (var pickCmd = new NpgsqlCommand("""
-      SELECT id, name, rtsp_url, webrtc_url, api_url FROM media_mtx_server ORDER BY random() LIMIT 1;
+      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port FROM media_mtx_server ORDER BY random() LIMIT 1;
       """, connection, tx))
     {
       await using var reader = await pickCmd.ExecuteReaderAsync(ct);
@@ -516,11 +520,13 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
   private static MediaMtxServer ReadMediaMtxServer(NpgsqlDataReader reader) =>
     new()
     {
-      Id        = reader.GetGuid(0).ToString(),
-      Name      = reader.GetString(1),
-      RtspUrl   = reader.GetString(2),
-      WebrtcUrl = reader.GetString(3),
-      ApiUrl    = reader.GetString(4),
+      Id         = reader.GetGuid(0).ToString(),
+      Name       = reader.GetString(1),
+      Host       = reader.GetString(2),
+      WebrtcHost = reader.GetString(3),
+      RtspPort   = reader.GetInt32(4),
+      WebrtcPort = reader.GetInt32(5),
+      ApiPort    = reader.GetInt32(6),
     };
 
   // ── Monitor management ────────────────────────────────────────────────────

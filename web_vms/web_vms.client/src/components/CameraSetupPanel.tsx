@@ -88,9 +88,11 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   // WebRTC streams available for preview
   const webRtcStreams = (existing?.streams ?? []).filter((s) => s.webRtc)
 
-  // WebRTC URL: prefer selected MediaMTX server's webrtcUrl, fall back to camera's stored value
+  // WebRTC base URL for preview: use webrtcHost if set, otherwise current browser hostname
   const selectedMtxServer = mtxServers.find((s) => s.id === mediaMtxServerId)
-  const previewBaseUrl = selectedMtxServer?.webrtcUrl ?? existing?.mediaMtxWebrtcUrl
+  const webrtcHost = selectedMtxServer?.webrtcHost || existing?.mediaMtxWebrtcHost || window.location.hostname
+  const webrtcPort = selectedMtxServer?.webrtcPort ?? existing?.mediaMtxWebrtcPort ?? 8889
+  const previewBaseUrl = `${window.location.protocol}//${webrtcHost}:${webrtcPort}`
 
   const buildPayload = (): CameraSetupDto => ({
     cameraId: isNew ? cameraId : initialCameraId,

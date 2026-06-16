@@ -282,11 +282,8 @@ namespace VmsCfg
       if (string.IsNullOrWhiteSpace(request.Name))
         return new OperationStatus { Success = false, Message = "name must not be empty" };
 
-      if (string.IsNullOrWhiteSpace(request.RtspUrl))
-        return new OperationStatus { Success = false, Message = "rtsp_url must not be empty" };
-
-      if (string.IsNullOrWhiteSpace(request.WebrtcUrl))
-        return new OperationStatus { Success = false, Message = "webrtc_url must not be empty" };
+      if (string.IsNullOrWhiteSpace(request.Host))
+        return new OperationStatus { Success = false, Message = "host must not be empty" };
 
       await storage.UpsertMediaMtxServerAsync(request, context.CancellationToken);
       logger.LogInformation("MediaMTX server '{Name}' upserted (id={Id})", request.Name, request.Id);

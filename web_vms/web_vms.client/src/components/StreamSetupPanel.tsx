@@ -291,7 +291,7 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
           </Typography>
           <CameraStream
             streamName={`${cameraId}/${streamName!}`}
-            baseUrl={camera.mediaMtxWebrtcUrl}
+            baseUrl={`${window.location.protocol}//${camera.mediaMtxWebrtcHost || window.location.hostname}:${camera.mediaMtxWebrtcPort ?? 8889}`}
           />
         </Box>
       )}

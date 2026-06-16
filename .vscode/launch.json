@@ -42,8 +42,7 @@
                 "POSTGRES_USER": "postgres",
                 "POSTGRES_PASSWORD": "postgres",
                 "POSTGRES_CFG_DB": "ta_cfg",
-                "VMS_WEBRTC_RTSP_BASE_URL": "rtsp://localhost:8554",
-                "VMS_WEBRTC_CLIENT_URL": "http://localhost:8889",
+                "VMS_MTX_HOST": "localhost",
                 "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage",
                 "MEDIA_SERVER_PAIRS": "vms:vmsfs,vms-2:vmsfs-2",
                 "DAPR_STATE_STORE_NAME": "statestore",
@@ -207,7 +206,8 @@
                 {
                     "name": "VMS_WEBRTC_RTSP_BASE_URL",
                     "value": "rtsp://localhost:8554"
-                }
+                },
+                { "name": "VMS_MTX_HOST", "value": "localhost" }
             ],
             "cwd": "${workspaceFolder}/media_server",
             "stopAtEntry": false,

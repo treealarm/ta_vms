@@ -484,7 +484,10 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
       {/* ── Right: video / archive ── fills remaining space */}
       <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', overflow: 'hidden', position: 'relative' }}>
         {mode === 'live' && (
-          <CameraStream streamName={streamName} baseUrl={merged.mediaMtxWebrtcUrl} />
+          <CameraStream
+            streamName={streamName}
+            baseUrl={`${window.location.protocol}//${merged.mediaMtxWebrtcHost || window.location.hostname}:${merged.mediaMtxWebrtcPort ?? 8889}`}
+          />
         )}
         {mode === 'archive' && (
           <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
