@@ -30,7 +30,7 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
   const [name, setName] = useState(streamName ?? '')
   const [rtspUrl, setRtspUrl] = useState(existingStream?.rtspUrl ?? '')
   const [profileToken, setProfileToken] = useState(existingStream?.profileToken ?? '')
-  const [webRtc, setWebRtc] = useState(existingStream?.webRtc ?? false)
+  const [webRtc, setWebRtc] = useState(existingStream?.webRtc ?? isNew)
   const [disabled, setDisabled] = useState(existingStream?.disabled === true)
   const [selectedProfileId, setSelectedProfileId] = useState<string>(existingStream?.recordingProfile?.id ?? '')
 

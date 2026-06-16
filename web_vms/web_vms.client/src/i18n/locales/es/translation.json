@@ -32,7 +32,7 @@
     "cameraId": "ID de cámara",
     "server": "Servidor",
     "mediaMtxServer": "Servidor MediaMTX",
-    "mediaMtxHelper": "Servidor de retransmisión WebRTC (asignado automáticamente si está vacío)",
+    "mediaMtxHelper": "Servidor de retransmisión WebRTC",
     "autoAssign": "— asignación automática —",
     "onvifIp": "IP ONVIF",
     "onvifPort": "Puerto ONVIF",

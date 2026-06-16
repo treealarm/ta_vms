@@ -32,7 +32,7 @@
     "cameraId": "Camera ID",
     "server": "Server",
     "mediaMtxServer": "MediaMTX server",
-    "mediaMtxHelper": "Stream relay server for WebRTC (auto-assigned if left empty)",
+    "mediaMtxHelper": "Stream relay server for WebRTC",
     "autoAssign": "— auto-assign —",
     "onvifIp": "ONVIF IP",
     "onvifPort": "ONVIF Port",

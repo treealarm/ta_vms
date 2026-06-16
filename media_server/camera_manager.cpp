@@ -326,10 +326,7 @@ bool camera_manager::remove_camera(const std::string& camera_id, std::string& er
 
   auto it = m_cameras.find(camera_id);
   if (it == m_cameras.end())
-  {
-    error = "camera not found: " + camera_id;
-    return false;
-  }
+    return true;
 
   it->second->shutdown();
   m_cameras.erase(it);
