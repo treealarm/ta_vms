@@ -16,7 +16,7 @@ function effectiveCameraForSlot(monitor: MonitorDto, slotIndex: number): string 
   if (persisted && monitor.cameraIds.includes(persisted.cameraId)) {
     return persisted.cameraId
   }
-  return monitor.cameraIds[slotIndex] ?? null
+  return null
 }
 
 type SlotProps = {

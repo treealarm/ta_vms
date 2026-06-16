@@ -649,6 +649,13 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       await del.ExecuteNonQueryAsync(ct);
     }
 
+    await using (var delSlots = new NpgsqlCommand(
+      "DELETE FROM monitor_slot WHERE monitor_id = $1::uuid;", connection, tx))
+    {
+      delSlots.Parameters.AddWithValue(monitorId);
+      await delSlots.ExecuteNonQueryAsync(ct);
+    }
+
     int pos = 0;
     foreach (var cameraId in cameraIds)
     {

@@ -498,6 +498,19 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
 
       {/* ── Right: video / archive ── fills remaining space */}
       <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', overflow: 'hidden', position: 'relative' }}>
+        {!panelOpen && (
+          <Typography
+            sx={{
+              position: 'absolute', bottom: 4, left: 4, zIndex: 2,
+              fontSize: '0.65rem', color: alpha(W, 0.75),
+              bgcolor: alpha(B, 0.45), px: 0.6, py: 0.15, borderRadius: 0.5,
+              pointerEvents: 'none', lineHeight: 1.4,
+              maxWidth: 'calc(100% - 8px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}
+          >
+            {camera.name || camera.cameraId}
+          </Typography>
+        )}
         {mode === 'live' && (
           <CameraStream
             streamName={streamName}
