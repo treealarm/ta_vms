@@ -9,6 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddVmsLogging();
 
 builder.Services.AddGrpc();
+builder.Services.AddSingleton(_ => new DaprClientBuilder().Build());
 builder.Services.AddDaprPubSubClient();
 builder.Services.AddSingleton<CameraConnCache>();
 builder.Services.AddSingleton<OnvifServiceImpl>();
@@ -23,6 +24,7 @@ builder.Services.AddSingleton<ServerPairRegistry>();
 
 builder.Services.AddSingleton<OnvifFilterCache>();
 builder.Services.AddSingleton<CameraArmedCache>();
+builder.Services.AddSingleton<ObservedTopicsStore>();
 builder.Services.AddSingleton<OnvifEventSubscriptionService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<OnvifEventSubscriptionService>());
 builder.Services.AddHostedService<CameraConfigSubscriber>();

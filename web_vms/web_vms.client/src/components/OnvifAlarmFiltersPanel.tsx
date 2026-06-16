@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
+  Autocomplete,
   Box,
   Button,
   IconButton,
@@ -13,7 +14,43 @@ import CheckIcon from '@mui/icons-material/Check'
 import CloseIcon from '@mui/icons-material/Close'
 import EditIcon from '@mui/icons-material/Edit'
 import { useTranslation } from 'react-i18next'
-import type { OnvifAlarmFilterDto } from '../dto/dtos'
+import type { ObservedTopicDto, OnvifAlarmFilterDto } from '../dto/dtos'
+
+type TopicOption = {
+  filterText: string
+  label: string
+  description: string
+}
+
+const TOPIC_PRESET_KEYS = [
+  { key: 'motion',          filterText: 'Motion' },
+  { key: 'faceDetection',   filterText: 'FaceDetection' },
+  { key: 'lineCrossing',    filterText: 'LineCrossing' },
+  { key: 'fieldDetection',  filterText: 'FieldDetection' },
+  { key: 'alarmList',       filterText: 'AlarmList' },
+  { key: 'objectDetection', filterText: 'ObjectDetection' },
+]
+
+function lastTopicSegment(topic: string): string {
+  return topic.split('/').filter(Boolean).pop() ?? topic
+}
+
+function buildTopicOptions(
+  observed: ObservedTopicDto[],
+  t: (key: string) => string,
+): TopicOption[] {
+  return observed.map(ot => {
+    const matched = TOPIC_PRESET_KEYS.find(p =>
+      ot.topic.toLowerCase().includes(p.filterText.toLowerCase()))
+    return {
+      filterText: ot.topic,
+      label: matched
+        ? t(`onvifFilters.topicPresets.${matched.key}.label`)
+        : lastTopicSegment(ot.topic),
+      description: ot.topic,
+    }
+  })
+}
 
 type Props = { cameraId: string }
 
@@ -29,9 +66,40 @@ async function upsertFilter(cameraId: string, filter: OnvifAlarmFilterDto) {
   if (!resp.ok) throw new Error(await resp.text())
 }
 
-function FilterRow({ filter, cameraId, onSaved, onDeleted }: {
+function TopicAutocomplete({ value, onChange, topicOptions, label, autoFocus }: {
+  value: string
+  onChange: (v: string) => void
+  topicOptions: TopicOption[]
+  label: string
+  autoFocus?: boolean
+}) {
+  return (
+    <Autocomplete
+      freeSolo
+      openOnFocus
+      options={topicOptions}
+      getOptionLabel={(opt) => typeof opt === 'string' ? opt : opt.filterText}
+      groupBy={(opt) => opt.label}
+      inputValue={value}
+      onInputChange={(_, val) => onChange(val)}
+      onChange={(_, val) => { if (val && typeof val !== 'string') onChange(val.filterText) }}
+      sx={{ flex: 1 }}
+      renderInput={(params) => (
+        <TextField {...params} label={label} size="small" autoFocus={autoFocus} />
+      )}
+      renderOption={({ key, ...props }, opt) => (
+        <li key={key} {...props}>
+          <Typography variant="body2" color="text.secondary">{opt.description}</Typography>
+        </li>
+      )}
+    />
+  )
+}
+
+function FilterRow({ filter, cameraId, topicOptions, onSaved, onDeleted }: {
   filter: OnvifAlarmFilterDto
   cameraId: string
+  topicOptions: TopicOption[]
   onSaved: () => void
   onDeleted: () => void
 }) {
@@ -74,13 +142,12 @@ function FilterRow({ filter, cameraId, onSaved, onDeleted }: {
       <Box component="form" onSubmit={(e) => { e.preventDefault(); void handleSave() }}>
         <Stack spacing={1}>
           <Stack direction="row" spacing={1} alignItems="center">
-            <TextField
-              label={t('onvifFilters.filterText')}
+            <TopicAutocomplete
               value={text}
-              onChange={(e) => setText(e.target.value)}
-              size="small"
+              onChange={setText}
+              topicOptions={topicOptions}
+              label={t('onvifFilters.filterText')}
               autoFocus
-              sx={{ flex: 1 }}
             />
             <TextField
               label={t('onvifFilters.textFilter')}
@@ -144,19 +211,29 @@ function FilterRow({ filter, cameraId, onSaved, onDeleted }: {
 export default function OnvifAlarmFiltersPanel({ cameraId }: Props) {
   const { t } = useTranslation()
   const [filters, setFilters] = useState<OnvifAlarmFilterDto[]>([])
+  const [observedTopics, setObservedTopics] = useState<ObservedTopicDto[]>([])
   const [newText, setNewText] = useState('')
   const [newTextFilter, setNewTextFilter] = useState('')
   const [newTimeout, setNewTimeout] = useState(30)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const topicOptions = useMemo(
+    () => buildTopicOptions(observedTopics, t),
+    [observedTopics, t],
+  )
+
   const load = async () => {
     setLoading(true)
     setError(null)
     try {
-      const resp = await fetch(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/alarm-filters`)
-      if (!resp.ok) throw new Error(await resp.text())
-      setFilters(await resp.json())
+      const [filtersResp, topicsResp] = await Promise.all([
+        fetch(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/alarm-filters`),
+        fetch(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/observed-topics`),
+      ])
+      if (!filtersResp.ok) throw new Error(await filtersResp.text())
+      setFilters(await filtersResp.json())
+      if (topicsResp.ok) setObservedTopics(await topicsResp.json())
     } catch (e) {
       setError(String(e))
     } finally {
@@ -199,6 +276,7 @@ export default function OnvifAlarmFiltersPanel({ cameraId }: Props) {
           key={f.id}
           filter={f}
           cameraId={cameraId}
+          topicOptions={topicOptions}
           onSaved={() => void load()}
           onDeleted={() => setFilters((prev) => prev.filter((x) => x.id !== f.id))}
         />
@@ -206,12 +284,11 @@ export default function OnvifAlarmFiltersPanel({ cameraId }: Props) {
 
       <Box component="form" onSubmit={(e) => { e.preventDefault(); void handleAdd() }} sx={{ pt: 0.5 }}>
         <Stack direction="row" spacing={1} alignItems="flex-start">
-          <TextField
-            label={t('onvifFilters.filterText')}
+          <TopicAutocomplete
             value={newText}
-            onChange={(e) => setNewText(e.target.value)}
-            size="small"
-            sx={{ flex: 1 }}
+            onChange={setNewText}
+            topicOptions={topicOptions}
+            label={t('onvifFilters.filterText')}
           />
           <TextField
             label={t('onvifFilters.textFilter')}

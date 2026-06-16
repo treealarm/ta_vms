@@ -8,7 +8,8 @@ namespace VmsOnvif;
 
 public class OnvifServiceImpl(
   CameraConnCache connCache,
-  OnvifEventSubscriptionService subscriptionService) : OnvifService.OnvifServiceBase
+  OnvifEventSubscriptionService subscriptionService,
+  ObservedTopicsStore observedTopics) : OnvifService.OnvifServiceBase
 {
   public override async Task<GetProfilesResponse> GetProfiles(CameraRequest request, ServerCallContext context)
   {
@@ -101,6 +102,20 @@ public class OnvifServiceImpl(
       Topic      = e.Entry.Topic,
       PayloadXml = e.Entry.PayloadXml,
       CameraId   = e.CameraId,
+    }));
+    return Task.FromResult(response);
+  }
+
+  public override Task<GetObservedTopicsResponse> GetObservedTopics(
+    GetObservedTopicsRequest request, ServerCallContext context)
+  {
+    var topics = observedTopics.GetTopics(request.CameraId);
+    var response = new GetObservedTopicsResponse();
+    response.Topics.AddRange(topics.Select(t => new ObservedTopicEntry
+    {
+      Topic     = t.Topic,
+      FirstSeen = t.FirstSeen.ToString("O"),
+      LastSeen  = t.LastSeen.ToString("O"),
     }));
     return Task.FromResult(response);
   }

@@ -9,6 +9,7 @@ service OnvifService {
   rpc GetStreamUri(StreamUriRequest) returns (StreamUriResponse);
   rpc GetRecentOnvifEvents(GetRecentOnvifEventsRequest) returns (GetRecentOnvifEventsResponse);
   rpc GetAllRecentOnvifEvents(GetAllRecentOnvifEventsRequest) returns (GetAllRecentOnvifEventsResponse);
+  rpc GetObservedTopics(GetObservedTopicsRequest) returns (GetObservedTopicsResponse);
 }
 
 service PtzService {
@@ -109,4 +110,18 @@ message GetAllRecentOnvifEventsRequest {}
 
 message GetAllRecentOnvifEventsResponse {
   repeated OnvifEventRecord events = 1;
+}
+
+message GetObservedTopicsRequest {
+  string camera_id = 1;
+}
+
+message ObservedTopicEntry {
+  string topic      = 1;
+  string first_seen = 2;
+  string last_seen  = 3;
+}
+
+message GetObservedTopicsResponse {
+  repeated ObservedTopicEntry topics = 1;
 }
