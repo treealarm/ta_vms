@@ -22,6 +22,7 @@ builder.Services.AddSingleton(_ =>
 
 builder.Services.AddSingleton<ServerPairRegistry>();
 
+builder.Services.AddSingleton<OnvifSettingsService>();
 builder.Services.AddSingleton<OnvifFilterCache>();
 builder.Services.AddSingleton<CameraArmedCache>();
 builder.Services.AddSingleton<ObservedTopicsStore>();

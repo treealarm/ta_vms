@@ -15,8 +15,9 @@ import type { MediaMtxServersHandle } from './MediaMtxServersPanel'
 import SimulationFab from './SimulationFab'
 import LogToggleButton from './LogToggleButton'
 import OnvifSubscriptionsPanel from './OnvifSubscriptionsPanel'
+import OnvifCameraSettingsPanel from './OnvifCameraSettingsPanel'
 
-const TABS = ['cameras', 'mediamtx', 'monitors', 'storages', 'recording', 'onvif'] as const
+const TABS = ['cameras', 'mediamtx', 'monitors', 'storages', 'recording', 'onvif', 'onvif-settings'] as const
 
 export default function AdminView() {
   const { t } = useTranslation()
@@ -50,6 +51,7 @@ export default function AdminView() {
             <Route path="storages" element={<Box sx={{ flex: 1, overflowY: 'auto' }}><StorageSetupPanel /></Box>} />
             <Route path="recording" element={<Box sx={{ flex: 1, overflowY: 'auto' }}><RecordingProfilesPanel ref={recordingRef} /></Box>} />
             <Route path="onvif" element={<OnvifSubscriptionsPanel />} />
+            <Route path="onvif-settings" element={<Box sx={{ flex: 1, overflowY: 'auto' }}><OnvifCameraSettingsPanel /></Box>} />
             <Route path="*" element={<Navigate to="/admin/cameras" replace />} />
           </Routes>
         </Box>
@@ -77,6 +79,7 @@ export default function AdminView() {
             <Tab label={t('nav.storages')} />
             <Tab label={t('nav.recording')} />
             <Tab label={t('nav.onvif')} />
+            <Tab label={t('nav.onvifSettings')} />
           </Tabs>
         </Box>
 

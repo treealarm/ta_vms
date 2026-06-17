@@ -94,6 +94,27 @@ public class Camera
     );
   }
 
+  public async Task<string> RebootAsync()
+  {
+    using var device = await GetDevice();
+    return await device.SystemRebootAsync();
+  }
+
+  public async Task SyncTimeAsync()
+  {
+    var utcNow = System.DateTime.UtcNow;
+    using var device = await GetDevice();
+    await device.SetSystemDateAndTimeAsync(
+      SetDateTimeType.Manual,
+      false,
+      null,
+      new DeviceServiceReference.DateTime
+      {
+        Date = new Date { Year = utcNow.Year, Month = utcNow.Month, Day = utcNow.Day },
+        Time = new Time { Hour = utcNow.Hour, Minute = utcNow.Minute, Second = utcNow.Second },
+      });
+  }
+
   public string Url { get { return _url; } }
   public string User { get { return _username; } }
   public string Password { get { return _password; } }

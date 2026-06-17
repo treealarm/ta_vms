@@ -19,6 +19,7 @@
     "recording": "Rec. profiles",
     "mediaMtx": "Media Routers",
     "onvif": "ONVIF Events",
+    "onvifSettings": "ONVIF Cfg",
     "logs": "Logs",
     "goAdmin": "Admin",
     "goOperator": "Operator"
@@ -326,5 +327,34 @@
     "setup": "Setup",
     "changeParent": "Change parent",
     "refreshList": "Refresh list"
+  },
+  "onvifSettings": {
+    "selectCamera": "Select camera",
+    "resolution": "Resolution",
+    "frameRate": "Frame rate (fps)",
+    "bitrate": "Bitrate (kbps)",
+    "govLength": "GOP length",
+    "h264Profile": "H.264 profile",
+    "encoding": "Encoding",
+    "noConfigs": "No video encoder configurations found",
+    "noCamerasWithOnvif": "No cameras with ONVIF connection configured",
+    "videoTab": "Video",
+    "audioTab": "Audio",
+    "ptzTab": "PTZ Presets",
+    "systemTab": "System",
+    "audioBitrate": "Bitrate (bps)",
+    "audioSampleRate": "Sample rate (Hz)",
+    "noAudioConfigs": "No audio encoder configurations",
+    "selectProfile": "Profile",
+    "noProfiles": "No profiles available",
+    "noPresets": "No presets saved",
+    "presetName": "Preset name",
+    "addPreset": "Save as preset",
+    "gotoPreset": "Go to",
+    "deletePreset": "Delete",
+    "deviceTime": "Device time (UTC)",
+    "syncTime": "Sync to server time",
+    "reboot": "Reboot camera",
+    "rebootConfirm": "Reboot camera? It may take 1–2 minutes to reconnect."
   }
 }

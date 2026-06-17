@@ -333,3 +333,47 @@ export type ObservedTopicDto = {
   firstSeen: string
   lastSeen: string
 }
+
+export type VideoEncoderConfigDto = {
+  token: string
+  name: string
+  encoding: string
+  width: number
+  height: number
+  frameRateLimit: number
+  bitrateLimit: number
+  govLength: number
+  h264Profile: string
+  quality: number
+}
+
+export type VideoEncoderConfigOptionsDto = {
+  encoding: string
+  resolutions: { width: number; height: number }[]
+  minFrameRate: number
+  maxFrameRate: number
+  minBitrate: number
+  maxBitrate: number
+  minGovLength: number
+  maxGovLength: number
+  h264Profiles: string[]
+}
+
+export type AudioEncoderConfigDto = {
+  token: string
+  name: string
+  encoding: string
+  bitrate: number
+  sampleRate: number
+}
+
+export type AudioEncoderConfigOptionsDto = {
+  encoding: string
+  bitrates: number[]
+  sampleRates: number[]
+}
+
+export type PtzPresetDto = {
+  token: string
+  name: string
+}

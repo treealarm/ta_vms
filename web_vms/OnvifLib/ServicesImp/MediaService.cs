@@ -12,6 +12,43 @@ namespace OnvifLib
     string Encoding
   );
 
+  public record OnvifVideoEncoderConfig(
+    string Token,
+    string Name,
+    string Encoding,
+    int Width,
+    int Height,
+    int FrameRateLimit,
+    int BitrateLimit,
+    int GovLength,
+    string H264Profile,
+    float Quality);
+
+  public record OnvifResolutionOption(int Width, int Height);
+
+  public record OnvifVideoEncoderOptions(
+    string Encoding,
+    List<OnvifResolutionOption> Resolutions,
+    int MinFrameRate,
+    int MaxFrameRate,
+    int MinBitrate,
+    int MaxBitrate,
+    int MinGovLength,
+    int MaxGovLength,
+    List<string> H264Profiles);
+
+  public record OnvifAudioEncoderConfig(
+    string Token,
+    string Name,
+    string Encoding,
+    int    Bitrate,
+    int    SampleRate);
+
+  public record OnvifAudioEncoderOption(
+    string    Encoding,
+    List<int> Bitrates,
+    List<int> SampleRates);
+
   public class ImageResult
   {
     public byte[] Data { get; set; } = [];
@@ -31,6 +68,18 @@ namespace OnvifLib
       await Task.CompletedTask;
       return string.Empty;
     }
+    public virtual Task<List<OnvifVideoEncoderConfig>> GetVideoEncoderConfigsAsync()
+      => Task.FromResult<List<OnvifVideoEncoderConfig>>([]);
+    public virtual Task<List<OnvifVideoEncoderOptions>> GetVideoEncoderConfigOptionsAsync(string configToken)
+      => Task.FromResult<List<OnvifVideoEncoderOptions>>([]);
+    public virtual Task SetVideoEncoderConfigAsync(OnvifVideoEncoderConfig config)
+      => Task.CompletedTask;
+    public virtual Task<List<OnvifAudioEncoderConfig>> GetAudioEncoderConfigsAsync()
+      => Task.FromResult<List<OnvifAudioEncoderConfig>>([]);
+    public virtual Task<List<OnvifAudioEncoderOption>> GetAudioEncoderConfigOptionsAsync(string configToken)
+      => Task.FromResult<List<OnvifAudioEncoderOption>>([]);
+    public virtual Task SetAudioEncoderConfigAsync(OnvifAudioEncoderConfig config)
+      => Task.CompletedTask;
     public static string? GetExtensionFromMime(string? mime)
     {
       if (string.IsNullOrWhiteSpace(mime))

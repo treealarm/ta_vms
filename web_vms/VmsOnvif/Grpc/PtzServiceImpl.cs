@@ -6,7 +6,7 @@ using web_vms.Types.Actors;
 
 namespace VmsOnvif;
 
-public class PtzServiceImpl(CameraConnCache connCache) : PtzService.PtzServiceBase
+public class PtzServiceImpl(CameraConnCache connCache, OnvifSettingsService settingsService) : PtzService.PtzServiceBase
 {
 
   public override async Task<PtzCapabilitiesResponse> GetCapabilities(PtzCapabilitiesRequest request, ServerCallContext context)
@@ -109,6 +109,65 @@ public class PtzServiceImpl(CameraConnCache connCache) : PtzService.PtzServiceBa
         "PtzStopAsync",
         new PtzStopActorRequest(conn, request.ProfileToken),
         context.CancellationToken);
+      return Ok();
+    }
+    catch (Exception ex)
+    {
+      return Fail(ex.Message);
+    }
+  }
+
+  public override async Task<PtzPresetsResponse> GetPresets(PtzPresetsRequest request, ServerCallContext context)
+  {
+    try
+    {
+      var presets = await settingsService.GetPresetsAsync(
+        request.SourceId, request.ProfileToken, context.CancellationToken);
+      var response = new PtzPresetsResponse();
+      response.Presets.AddRange(presets.Select(p => new PtzPreset { Token = p.Token, Name = p.Name }));
+      return response;
+    }
+    catch (Exception ex)
+    {
+      throw new RpcException(new Status(StatusCode.Internal, ex.Message));
+    }
+  }
+
+  public override async Task<PtzSetPresetResponse> SetPreset(PtzSetPresetRequest request, ServerCallContext context)
+  {
+    try
+    {
+      var token = await settingsService.SetPresetAsync(
+        request.SourceId, request.ProfileToken, request.PresetName, request.PresetToken,
+        context.CancellationToken);
+      return new PtzSetPresetResponse { Success = true, PresetToken = token };
+    }
+    catch (Exception ex)
+    {
+      return new PtzSetPresetResponse { Success = false, Error = ex.Message };
+    }
+  }
+
+  public override async Task<PtzResponse> GotoPreset(PtzGotoPresetRequest request, ServerCallContext context)
+  {
+    try
+    {
+      await settingsService.GotoPresetAsync(
+        request.SourceId, request.ProfileToken, request.PresetToken, context.CancellationToken);
+      return Ok();
+    }
+    catch (Exception ex)
+    {
+      return Fail(ex.Message);
+    }
+  }
+
+  public override async Task<PtzResponse> RemovePreset(PtzRemovePresetRequest request, ServerCallContext context)
+  {
+    try
+    {
+      await settingsService.RemovePresetAsync(
+        request.SourceId, request.ProfileToken, request.PresetToken, context.CancellationToken);
       return Ok();
     }
     catch (Exception ex)
