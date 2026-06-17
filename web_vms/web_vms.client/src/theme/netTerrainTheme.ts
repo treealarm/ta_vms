@@ -131,7 +131,23 @@ export const netTerrainTheme = createTheme({
         size: 'small',
       },
     },
+    MuiInputLabel: {
+      defaultProps: {
+        shrink: true,
+      },
+    },
+    MuiFormControl: {
+      defaultProps: {
+        // Adds marginTop: 8px so floating labels are never clipped
+        // when a TextField is the first item in an overflow container.
+        margin: 'dense',
+      },
+    },
     MuiOutlinedInput: {
+      defaultProps: {
+        // Keep the notch (gap in the border) in sync with the always-shrunk label.
+        notched: true,
+      },
       styleOverrides: {
         root: {
           backgroundColor: panel.elevated,

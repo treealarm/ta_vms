@@ -64,6 +64,297 @@ public class OnvifController(
     }
   }
 
+  // ── Video encoder configuration ──────────────────────────────────────────
+
+  [HttpGet("cameras/{cameraId}/video-encoder-configs")]
+  public async Task<IActionResult> GetVideoEncoderConfigs(string cameraId, CancellationToken ct)
+  {
+    try
+    {
+      var response = await onvifClient.GetVideoEncoderConfigsAsync(
+        new CameraRequest { SourceId = cameraId }, Options(ct));
+
+      return Ok(response.Configs.Select(c => new
+      {
+        token          = c.Token,
+        name           = c.Name,
+        encoding       = c.Encoding,
+        width          = c.Width,
+        height         = c.Height,
+        frameRateLimit = c.FrameRateLimit,
+        bitrateLimit   = c.BitrateLimit,
+        govLength      = c.GovLength,
+        h264Profile    = c.H264Profile,
+        quality        = c.Quality,
+      }));
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.DeadlineExceeded)
+    {
+      return StatusCode(504, "Camera did not respond within timeout");
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
+  [HttpGet("cameras/{cameraId}/video-encoder-config-options")]
+  public async Task<IActionResult> GetVideoEncoderConfigOptions(
+    string cameraId, [FromQuery] string? configToken, CancellationToken ct)
+  {
+    try
+    {
+      var response = await onvifClient.GetVideoEncoderConfigOptionsAsync(
+        new VideoEncoderConfigOptionsRequest
+        {
+          SourceId    = cameraId,
+          ConfigToken = configToken ?? string.Empty,
+        }, Options(ct));
+
+      return Ok(response.Options.Select(o => new
+      {
+        encoding     = o.Encoding,
+        resolutions  = o.Resolutions.Select(r => new { width = r.Width, height = r.Height }),
+        minFrameRate = o.MinFrameRate,
+        maxFrameRate = o.MaxFrameRate,
+        minBitrate   = o.MinBitrate,
+        maxBitrate   = o.MaxBitrate,
+        minGovLength = o.MinGovLength,
+        maxGovLength = o.MaxGovLength,
+        h264Profiles = o.H264Profiles.ToList(),
+      }));
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.DeadlineExceeded)
+    {
+      return StatusCode(504, "Camera did not respond within timeout");
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
+  [HttpPut("cameras/{cameraId}/video-encoder-configs/{configToken}")]
+  public async Task<IActionResult> SetVideoEncoderConfig(
+    string cameraId, string configToken,
+    [FromBody] SetVideoEncoderConfigBody body,
+    CancellationToken ct)
+  {
+    try
+    {
+      var response = await onvifClient.SetVideoEncoderConfigAsync(
+        new SetVideoEncoderConfigRequest
+        {
+          SourceId = cameraId,
+          Config   = new VideoEncoderConfig
+          {
+            Token          = configToken,
+            Name           = body.Name ?? string.Empty,
+            Encoding       = body.Encoding,
+            Width          = body.Width,
+            Height         = body.Height,
+            FrameRateLimit = body.FrameRateLimit,
+            BitrateLimit   = body.BitrateLimit,
+            GovLength      = body.GovLength,
+            H264Profile    = body.H264Profile ?? string.Empty,
+            Quality        = body.Quality,
+          },
+        }, Options(ct));
+
+      return response.Success ? Ok() : StatusCode(502, response.Error);
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.DeadlineExceeded)
+    {
+      return StatusCode(504, "Camera did not respond within timeout");
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
+  public record SetVideoEncoderConfigBody(
+    string? Name,
+    string  Encoding,
+    int     Width,
+    int     Height,
+    int     FrameRateLimit,
+    int     BitrateLimit,
+    int     GovLength,
+    string? H264Profile,
+    float   Quality);
+
+  // ── Audio encoder configuration ──────────────────────────────────────────
+
+  [HttpGet("cameras/{cameraId}/audio-encoder-configs")]
+  public async Task<IActionResult> GetAudioEncoderConfigs(string cameraId, CancellationToken ct)
+  {
+    try
+    {
+      var response = await onvifClient.GetAudioEncoderConfigsAsync(
+        new CameraRequest { SourceId = cameraId }, Options(ct));
+      return Ok(response.Configs.Select(c => new
+      {
+        token      = c.Token,
+        name       = c.Name,
+        encoding   = c.Encoding,
+        bitrate    = c.Bitrate,
+        sampleRate = c.SampleRate,
+      }));
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.DeadlineExceeded)
+    {
+      return StatusCode(504, "Camera did not respond within timeout");
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
+  [HttpGet("cameras/{cameraId}/audio-encoder-config-options")]
+  public async Task<IActionResult> GetAudioEncoderConfigOptions(
+    string cameraId, [FromQuery] string? configToken, CancellationToken ct)
+  {
+    try
+    {
+      var response = await onvifClient.GetAudioEncoderConfigOptionsAsync(
+        new AudioEncoderConfigOptionsRequest
+        {
+          SourceId    = cameraId,
+          ConfigToken = configToken ?? string.Empty,
+        }, Options(ct));
+      return Ok(response.Options.Select(o => new
+      {
+        encoding    = o.Encoding,
+        bitrates    = o.Bitrates.ToList(),
+        sampleRates = o.SampleRates.ToList(),
+      }));
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.DeadlineExceeded)
+    {
+      return StatusCode(504, "Camera did not respond within timeout");
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
+  [HttpPut("cameras/{cameraId}/audio-encoder-configs/{configToken}")]
+  public async Task<IActionResult> SetAudioEncoderConfig(
+    string cameraId, string configToken,
+    [FromBody] SetAudioEncoderConfigBody body,
+    CancellationToken ct)
+  {
+    try
+    {
+      var response = await onvifClient.SetAudioEncoderConfigAsync(
+        new SetAudioEncoderConfigRequest
+        {
+          SourceId = cameraId,
+          Config   = new AudioEncoderConfig
+          {
+            Token      = configToken,
+            Name       = body.Name ?? string.Empty,
+            Encoding   = body.Encoding,
+            Bitrate    = body.Bitrate,
+            SampleRate = body.SampleRate,
+          },
+        }, Options(ct));
+      return response.Success ? Ok() : StatusCode(502, response.Error);
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.DeadlineExceeded)
+    {
+      return StatusCode(504, "Camera did not respond within timeout");
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
+  public record SetAudioEncoderConfigBody(string? Name, string Encoding, int Bitrate, int SampleRate);
+  public record SetDeviceTimeBody(string UtcTime);
+
+  // ── System ───────────────────────────────────────────────────────────────
+
+  [HttpGet("cameras/{cameraId}/device-time")]
+  public async Task<IActionResult> GetDeviceTime(string cameraId, CancellationToken ct)
+  {
+    try
+    {
+      var response = await onvifClient.GetDeviceTimeAsync(
+        new CameraRequest { SourceId = cameraId }, Options(ct));
+      return Ok(new { utcTime = response.UtcTime });
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.DeadlineExceeded)
+    {
+      return StatusCode(504, "Camera did not respond within timeout");
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
+  [HttpPost("cameras/{cameraId}/sync-time")]
+  public async Task<IActionResult> SyncDeviceTime(string cameraId, CancellationToken ct)
+  {
+    try
+    {
+      var response = await onvifClient.SyncDeviceTimeAsync(
+        new CameraRequest { SourceId = cameraId }, Options(ct));
+      return response.Success ? Ok() : StatusCode(502, response.Error);
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.DeadlineExceeded)
+    {
+      return StatusCode(504, "Camera did not respond within timeout");
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
+  [HttpPost("cameras/{cameraId}/set-time")]
+  public async Task<IActionResult> SetDeviceTime(string cameraId, [FromBody] SetDeviceTimeBody body, CancellationToken ct)
+  {
+    try
+    {
+      var response = await onvifClient.SetDeviceTimeAsync(
+        new SetDeviceTimeRequest { SourceId = cameraId, UtcTime = body.UtcTime }, Options(ct));
+      return response.Success ? Ok() : StatusCode(502, response.Error);
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.DeadlineExceeded)
+    {
+      return StatusCode(504, "Camera did not respond within timeout");
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
+  [HttpPost("cameras/{cameraId}/reboot")]
+  public async Task<IActionResult> RebootDevice(string cameraId, CancellationToken ct)
+  {
+    try
+    {
+      var response = await onvifClient.RebootDeviceAsync(
+        new CameraRequest { SourceId = cameraId }, Options(ct));
+      return response.Success ? Ok(new { message = response.Message }) : StatusCode(502, response.Message);
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.DeadlineExceeded)
+    {
+      return StatusCode(504, "Camera did not respond within timeout");
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
   // ── ONVIF alarm filters ──────────────────────────────────────────────────
 
   [HttpGet("cameras/{cameraId}/alarm-filters")]

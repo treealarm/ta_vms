@@ -84,8 +84,108 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
 
     return response.Success ? Ok() : BadRequest(response.Error);
   }
+  // ── PTZ presets ────────────────────────────────────────────────────────────
+
+  [HttpGet("cameras/{cameraId}/presets")]
+  public async Task<IActionResult> GetPresets(string cameraId, [FromQuery] string profileToken, CancellationToken ct)
+  {
+    try
+    {
+      var response = await ptzClient.GetPresetsAsync(
+        new PtzPresetsRequest { SourceId = cameraId, ProfileToken = profileToken ?? string.Empty },
+        Options(ct));
+      return Ok(response.Presets.Select(p => new { token = p.Token, name = p.Name }));
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.DeadlineExceeded)
+    {
+      return StatusCode(504, "Camera did not respond within timeout");
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
+  [HttpPost("cameras/{cameraId}/presets")]
+  public async Task<IActionResult> SetPreset(string cameraId, [FromBody] SetPresetBody body, CancellationToken ct)
+  {
+    try
+    {
+      var response = await ptzClient.SetPresetAsync(
+        new PtzSetPresetRequest
+        {
+          SourceId     = cameraId,
+          ProfileToken = body.ProfileToken,
+          PresetName   = body.PresetName,
+          PresetToken  = body.PresetToken ?? string.Empty,
+        }, Options(ct));
+      return response.Success
+        ? Ok(new { presetToken = response.PresetToken })
+        : StatusCode(502, response.Error);
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.DeadlineExceeded)
+    {
+      return StatusCode(504, "Camera did not respond within timeout");
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
+  [HttpPost("cameras/{cameraId}/presets/{presetToken}/goto")]
+  public async Task<IActionResult> GotoPreset(
+    string cameraId, string presetToken, [FromBody] GotoPresetBody body, CancellationToken ct)
+  {
+    try
+    {
+      var response = await ptzClient.GotoPresetAsync(
+        new PtzGotoPresetRequest
+        {
+          SourceId     = cameraId,
+          ProfileToken = body.ProfileToken,
+          PresetToken  = presetToken,
+        }, Options(ct));
+      return response.Success ? Ok() : BadRequest(response.Error);
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.DeadlineExceeded)
+    {
+      return StatusCode(504, "Camera did not respond within timeout");
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
+  [HttpDelete("cameras/{cameraId}/presets/{presetToken}")]
+  public async Task<IActionResult> RemovePreset(
+    string cameraId, string presetToken, [FromQuery] string profileToken, CancellationToken ct)
+  {
+    try
+    {
+      var response = await ptzClient.RemovePresetAsync(
+        new PtzRemovePresetRequest
+        {
+          SourceId     = cameraId,
+          ProfileToken = profileToken ?? string.Empty,
+          PresetToken  = presetToken,
+        }, Options(ct));
+      return response.Success ? Ok() : BadRequest(response.Error);
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.DeadlineExceeded)
+    {
+      return StatusCode(504, "Camera did not respond within timeout");
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
 }
 
 public record PtzMoveDto(string CameraId, string? ProfileToken, float Pan, float Tilt, float Zoom);
 public record PtzAbsoluteMoveDto(string CameraId, string? ProfileToken, float Pan, float Tilt, float Zoom, float Speed);
 public record PtzStopDto(string CameraId, string? ProfileToken);
+public record SetPresetBody(string ProfileToken, string PresetName, string? PresetToken);
+public record GotoPresetBody(string ProfileToken);
