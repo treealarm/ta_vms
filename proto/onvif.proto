@@ -18,6 +18,7 @@ service OnvifService {
   rpc SetAudioEncoderConfig(SetAudioEncoderConfigRequest) returns (SetAudioEncoderConfigResponse);
   rpc GetDeviceTime(CameraRequest) returns (GetDeviceTimeResponse);
   rpc SyncDeviceTime(CameraRequest) returns (SyncDeviceTimeResponse);
+  rpc SetDeviceTime(SetDeviceTimeRequest) returns (SyncDeviceTimeResponse);
   rpc RebootDevice(CameraRequest) returns (RebootDeviceResponse);
 }
 
@@ -231,6 +232,11 @@ message SetAudioEncoderConfigResponse {
 
 message GetDeviceTimeResponse {
   string utc_time = 1;
+}
+
+message SetDeviceTimeRequest {
+  string source_id = 1;
+  string utc_time  = 2;
 }
 
 message SyncDeviceTimeResponse {

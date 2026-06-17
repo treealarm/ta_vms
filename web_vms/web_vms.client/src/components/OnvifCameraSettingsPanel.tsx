@@ -376,20 +376,32 @@ function PtzPresetsSection({ cameraId }: { cameraId: string }) {
 
 // ── System section ────────────────────────────────────────────────────────
 
+function toDatetimeLocalValue(utcIso: string): string {
+  const d = new Date(utcIso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 function SystemSection({ cameraId }: { cameraId: string }) {
   const { t } = useTranslation()
   const [deviceTime, setDeviceTime] = useState<string | null>(null)
   const [timeLoading, setTimeLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [settingTime, setSettingTime] = useState(false)
   const [rebooting, setRebooting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [syncOk, setSyncOk] = useState(false)
+  const [setTimeOk, setSetTimeOk] = useState(false)
   const [rebootMsg, setRebootMsg] = useState<string | null>(null)
+  const [manualTime, setManualTime] = useState('')
 
   useEffect(() => {
     setTimeLoading(true)
     apiFetch<{ utcTime: string }>(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/device-time`)
-      .then((r) => setDeviceTime(r.utcTime ? new Date(r.utcTime).toUTCString() : '—'))
+      .then((r) => {
+        setDeviceTime(r.utcTime ? new Date(r.utcTime).toUTCString() : '—')
+        if (r.utcTime) setManualTime(toDatetimeLocalValue(r.utcTime))
+      })
       .catch(() => setDeviceTime('—'))
       .finally(() => setTimeLoading(false))
   }, [cameraId])
@@ -402,6 +414,21 @@ function SystemSection({ cameraId }: { cameraId: string }) {
       setTimeout(() => setSyncOk(false), 3000)
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
     finally { setSyncing(false) }
+  }
+
+  const handleSetTime = async () => {
+    if (!manualTime) return
+    setSettingTime(true); setError(null); setSetTimeOk(false)
+    try {
+      await apiFetch(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/set-time`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ utcTime: new Date(manualTime).toISOString() }),
+      })
+      setSetTimeOk(true)
+      setTimeout(() => setSetTimeOk(false), 3000)
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+    finally { setSettingTime(false) }
   }
 
   const handleReboot = async () => {
@@ -428,6 +455,22 @@ function SystemSection({ cameraId }: { cameraId: string }) {
           {syncing ? <CircularProgress size={16} /> : t('onvifSettings.syncTime')}
         </Button>
         {syncOk && <Typography variant="body2" color="success.main">✓</Typography>}
+      </Stack>
+
+      <Stack direction="row" spacing={1} alignItems="flex-end">
+        <TextField
+          label={t('onvifSettings.setTime')}
+          type="datetime-local"
+          size="small"
+          value={manualTime}
+          onChange={(e) => setManualTime(e.target.value)}
+          InputLabelProps={{ shrink: true }}
+          sx={{ minWidth: 220 }}
+        />
+        <Button variant="outlined" size="small" disabled={settingTime || !manualTime} onClick={() => void handleSetTime()}>
+          {settingTime ? <CircularProgress size={16} /> : t('onvifSettings.setTime')}
+        </Button>
+        {setTimeOk && <Typography variant="body2" color="success.main">✓</Typography>}
       </Stack>
 
       <Box>

@@ -354,6 +354,7 @@
     "deletePreset": "Eliminar",
     "deviceTime": "Hora del dispositivo (UTC)",
     "syncTime": "Sincronizar con hora del servidor",
+    "setTime": "Establecer hora",
     "reboot": "Reiniciar cámara",
     "rebootConfirm": "¿Reiniciar cámara? Puede tardar 1–2 minutos en reconectarse."
   }

@@ -236,6 +236,9 @@ public sealed class OnvifSettingsService(CameraConnCache connCache, ILogger<Onvi
   }
 
   public async Task SyncDeviceTimeAsync(string cameraId, CancellationToken ct)
+    => await SetDeviceTimeAsync(cameraId, DateTime.UtcNow, ct);
+
+  public async Task SetDeviceTimeAsync(string cameraId, DateTime utcTime, CancellationToken ct)
   {
     var data = await connCache.GetAsync(cameraId, ct);
     if (data?.Conn == null)
@@ -243,11 +246,11 @@ public sealed class OnvifSettingsService(CameraConnCache connCache, ILogger<Onvi
     try
     {
       var cam = GetOrCreate(data.Conn);
-      await cam.SyncTimeAsync();
+      await cam.SetTimeAsync(utcTime);
     }
     catch (Exception ex)
     {
-      logger.LogWarning(ex, "SyncDeviceTime failed for camera {CameraId}", cameraId);
+      logger.LogWarning(ex, "SetDeviceTime failed for camera {CameraId}", cameraId);
       Evict(data.Conn);
       throw;
     }

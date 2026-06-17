@@ -100,9 +100,10 @@ public class Camera
     return await device.SystemRebootAsync();
   }
 
-  public async Task SyncTimeAsync()
+  public async Task SyncTimeAsync() => await SetTimeAsync(System.DateTime.UtcNow);
+
+  public async Task SetTimeAsync(System.DateTime utcTime)
   {
-    var utcNow = System.DateTime.UtcNow;
     using var device = await GetDevice();
     await device.SetSystemDateAndTimeAsync(
       SetDateTimeType.Manual,
@@ -110,8 +111,8 @@ public class Camera
       null,
       new DeviceServiceReference.DateTime
       {
-        Date = new Date { Year = utcNow.Year, Month = utcNow.Month, Day = utcNow.Day },
-        Time = new Time { Hour = utcNow.Hour, Minute = utcNow.Minute, Second = utcNow.Second },
+        Date = new Date { Year = utcTime.Year, Month = utcTime.Month, Day = utcTime.Day },
+        Time = new Time { Hour = utcTime.Hour, Minute = utcTime.Minute, Second = utcTime.Second },
       });
   }
 

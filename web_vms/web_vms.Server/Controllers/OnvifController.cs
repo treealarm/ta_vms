@@ -275,6 +275,7 @@ public class OnvifController(
   }
 
   public record SetAudioEncoderConfigBody(string? Name, string Encoding, int Bitrate, int SampleRate);
+  public record SetDeviceTimeBody(string UtcTime);
 
   // ── System ───────────────────────────────────────────────────────────────
 
@@ -304,6 +305,25 @@ public class OnvifController(
     {
       var response = await onvifClient.SyncDeviceTimeAsync(
         new CameraRequest { SourceId = cameraId }, Options(ct));
+      return response.Success ? Ok() : StatusCode(502, response.Error);
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.DeadlineExceeded)
+    {
+      return StatusCode(504, "Camera did not respond within timeout");
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
+
+  [HttpPost("cameras/{cameraId}/set-time")]
+  public async Task<IActionResult> SetDeviceTime(string cameraId, [FromBody] SetDeviceTimeBody body, CancellationToken ct)
+  {
+    try
+    {
+      var response = await onvifClient.SetDeviceTimeAsync(
+        new SetDeviceTimeRequest { SourceId = cameraId, UtcTime = body.UtcTime }, Options(ct));
       return response.Success ? Ok() : StatusCode(502, response.Error);
     }
     catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.DeadlineExceeded)

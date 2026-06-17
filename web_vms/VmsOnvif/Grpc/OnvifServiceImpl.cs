@@ -312,6 +312,22 @@ public class OnvifServiceImpl(
     }
   }
 
+  public override async Task<SyncDeviceTimeResponse> SetDeviceTime(
+    SetDeviceTimeRequest request, ServerCallContext context)
+  {
+    try
+    {
+      if (!DateTimeOffset.TryParse(request.UtcTime, out var dto))
+        return new SyncDeviceTimeResponse { Success = false, Error = "Invalid UTC time format" };
+      await settingsService.SetDeviceTimeAsync(request.SourceId, dto.UtcDateTime, context.CancellationToken);
+      return new SyncDeviceTimeResponse { Success = true };
+    }
+    catch (Exception ex)
+    {
+      return new SyncDeviceTimeResponse { Success = false, Error = ex.Message };
+    }
+  }
+
   public override async Task<RebootDeviceResponse> RebootDevice(
     CameraRequest request, ServerCallContext context)
   {
