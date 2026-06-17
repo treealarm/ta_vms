@@ -16,6 +16,7 @@ public sealed class OnvifEventSubscriptionService(
   ServerPairRegistry registry,
   OnvifFilterCache filterCache,
   CameraArmedCache armedCache,
+  ObservedTopicsStore observedTopics,
   ILogger<OnvifEventSubscriptionService> logger) : BackgroundService
 {
   private const int RingBufferSize = 250;
@@ -160,6 +161,8 @@ public sealed class OnvifEventSubscriptionService(
     logger.LogInformation(
       "Starting ONVIF event subscription for {CameraId} ({Ip}:{Port})", cameraId, ip, port);
 
+    await observedTopics.LoadAsync(cameraId, ct);
+
     while (!ct.IsCancellationRequested)
     {
       OnvifLib.EventService1? eventSvc = null;
@@ -223,6 +226,8 @@ public sealed class OnvifEventSubscriptionService(
         while (buf.Queue.Count > RingBufferSize)
           buf.Queue.Dequeue();
       }
+
+      observedTopics.Record(cameraId, topic);
 
       // "Initialized" messages are a state snapshot the camera replays on every (re-)subscribe,
       // not a new state transition — skip alarm triggering to avoid duplicate alarms on resubscribe.

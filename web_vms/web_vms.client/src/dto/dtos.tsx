@@ -327,3 +327,9 @@ export type OnvifEventRecordDto = {
   payloadXml: string
   cameraId?: string
 }
+
+export type ObservedTopicDto = {
+  topic: string
+  firstSeen: string
+  lastSeen: string
+}

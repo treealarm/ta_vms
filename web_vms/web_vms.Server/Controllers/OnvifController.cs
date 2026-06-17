@@ -268,6 +268,26 @@ public class OnvifController(
       return StatusCode(502, ex.Status.Detail);
     }
   }
+
+  [HttpGet("cameras/{cameraId}/observed-topics")]
+  public async Task<IActionResult> GetObservedTopics(string cameraId, CancellationToken ct)
+  {
+    try
+    {
+      var resp = await onvifClient.GetObservedTopicsAsync(
+        new GetObservedTopicsRequest { CameraId = cameraId }, Options(ct));
+      return Ok(resp.Topics.Select(t => new
+      {
+        topic     = t.Topic,
+        firstSeen = t.FirstSeen,
+        lastSeen  = t.LastSeen,
+      }));
+    }
+    catch (RpcException ex)
+    {
+      return StatusCode(502, ex.Status.Detail);
+    }
+  }
 }
 
 public record OnvifAlarmFilterBody(string? Id, string FilterText, int TimeoutSeconds, string? TextFilter);

@@ -216,7 +216,15 @@
     "debugPayload": "Full payload (XML)",
     "autoRefresh": "Auto-refresh",
     "allCameras": "All cameras",
-    "filterHint": "Filter…"
+    "filterHint": "Filter…",
+    "topicPresets": {
+      "motion":          { "label": "Motion",            "desc": "Motion detection" },
+      "faceDetection":   { "label": "Face Detection",    "desc": "Face detection" },
+      "lineCrossing":    { "label": "Line Crossing",     "desc": "Virtual line crossing" },
+      "fieldDetection":  { "label": "Region Intrusion",  "desc": "Region intrusion / field detection" },
+      "alarmList":       { "label": "Alarm",             "desc": "External alarm / IO input" },
+      "objectDetection": { "label": "Object Detection",  "desc": "Object detection (person, vehicle)" }
+    }
   },
   "cameraCard": {
     "switchToArchive": "Switch to Archive",

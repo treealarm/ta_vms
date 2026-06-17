@@ -216,7 +216,15 @@
     "debugPayload": "Carga útil completa (XML)",
     "autoRefresh": "Auto-actualizar",
     "allCameras": "Todas las cámaras",
-    "filterHint": "Filtrar…"
+    "filterHint": "Filtrar…",
+    "topicPresets": {
+      "motion":          { "label": "Movimiento",           "desc": "Detección de movimiento" },
+      "faceDetection":   { "label": "Detección facial",     "desc": "Detección de rostro" },
+      "lineCrossing":    { "label": "Cruce de línea",       "desc": "Cruce de línea virtual" },
+      "fieldDetection":  { "label": "Intrusión en zona",    "desc": "Detección de intrusión en zona" },
+      "alarmList":       { "label": "Alarma",               "desc": "Alarma externa / entrada E/S" },
+      "objectDetection": { "label": "Detección de objetos", "desc": "Detección de objetos (persona, vehículo)" }
+    }
   },
   "cameraCard": {
     "switchToArchive": "Cambiar a archivo",
