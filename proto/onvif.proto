@@ -10,6 +10,16 @@ service OnvifService {
   rpc GetRecentOnvifEvents(GetRecentOnvifEventsRequest) returns (GetRecentOnvifEventsResponse);
   rpc GetAllRecentOnvifEvents(GetAllRecentOnvifEventsRequest) returns (GetAllRecentOnvifEventsResponse);
   rpc GetObservedTopics(GetObservedTopicsRequest) returns (GetObservedTopicsResponse);
+  rpc GetVideoEncoderConfigs(CameraRequest) returns (GetVideoEncoderConfigsResponse);
+  rpc GetVideoEncoderConfigOptions(VideoEncoderConfigOptionsRequest) returns (VideoEncoderConfigOptionsResponse);
+  rpc SetVideoEncoderConfig(SetVideoEncoderConfigRequest) returns (SetVideoEncoderConfigResponse);
+  rpc GetAudioEncoderConfigs(CameraRequest) returns (GetAudioEncoderConfigsResponse);
+  rpc GetAudioEncoderConfigOptions(AudioEncoderConfigOptionsRequest) returns (AudioEncoderConfigOptionsResponse);
+  rpc SetAudioEncoderConfig(SetAudioEncoderConfigRequest) returns (SetAudioEncoderConfigResponse);
+  rpc GetDeviceTime(CameraRequest) returns (GetDeviceTimeResponse);
+  rpc SyncDeviceTime(CameraRequest) returns (SyncDeviceTimeResponse);
+  rpc SetDeviceTime(SetDeviceTimeRequest) returns (SyncDeviceTimeResponse);
+  rpc RebootDevice(CameraRequest) returns (RebootDeviceResponse);
 }
 
 service PtzService {
@@ -18,6 +28,10 @@ service PtzService {
   rpc AbsoluteMove(PtzAbsoluteMoveRequest) returns (PtzResponse);
   rpc RelativeMove(PtzRelativeMoveRequest) returns (PtzResponse);
   rpc Stop(PtzStopRequest) returns (PtzResponse);
+  rpc GetPresets(PtzPresetsRequest) returns (PtzPresetsResponse);
+  rpc SetPreset(PtzSetPresetRequest) returns (PtzSetPresetResponse);
+  rpc GotoPreset(PtzGotoPresetRequest) returns (PtzResponse);
+  rpc RemovePreset(PtzRemovePresetRequest) returns (PtzResponse);
 }
 
 message CameraRequest {
@@ -124,4 +138,152 @@ message ObservedTopicEntry {
 
 message GetObservedTopicsResponse {
   repeated ObservedTopicEntry topics = 1;
+}
+
+message VideoEncoderConfig {
+  string token           = 1;
+  string name            = 2;
+  string encoding        = 3;
+  int32  width           = 4;
+  int32  height          = 5;
+  int32  frame_rate_limit = 6;
+  int32  bitrate_limit   = 7;
+  int32  gov_length      = 8;
+  string h264_profile    = 9;
+  float  quality         = 10;
+}
+
+message GetVideoEncoderConfigsResponse {
+  repeated VideoEncoderConfig configs = 1;
+}
+
+message VideoEncoderConfigOptionsRequest {
+  string source_id    = 1;
+  string config_token = 2;
+}
+
+message ResolutionOption {
+  int32 width  = 1;
+  int32 height = 2;
+}
+
+message VideoEncoderConfigOptions {
+  string                  encoding      = 1;
+  repeated ResolutionOption resolutions  = 2;
+  int32                   min_frame_rate = 3;
+  int32                   max_frame_rate = 4;
+  int32                   min_bitrate   = 5;
+  int32                   max_bitrate   = 6;
+  int32                   min_gov_length = 7;
+  int32                   max_gov_length = 8;
+  repeated string         h264_profiles  = 9;
+}
+
+message VideoEncoderConfigOptionsResponse {
+  repeated VideoEncoderConfigOptions options = 1;
+}
+
+message SetVideoEncoderConfigRequest {
+  string             source_id = 1;
+  VideoEncoderConfig config    = 2;
+}
+
+message SetVideoEncoderConfigResponse {
+  bool   success = 1;
+  string error   = 2;
+}
+
+message AudioEncoderConfig {
+  string token       = 1;
+  string name        = 2;
+  string encoding    = 3;
+  int32  bitrate     = 4;
+  int32  sample_rate = 5;
+}
+
+message GetAudioEncoderConfigsResponse {
+  repeated AudioEncoderConfig configs = 1;
+}
+
+message AudioEncoderConfigOptionsRequest {
+  string source_id    = 1;
+  string config_token = 2;
+}
+
+message AudioEncoderConfigOptions {
+  string         encoding     = 1;
+  repeated int32 bitrates     = 2;
+  repeated int32 sample_rates = 3;
+}
+
+message AudioEncoderConfigOptionsResponse {
+  repeated AudioEncoderConfigOptions options = 1;
+}
+
+message SetAudioEncoderConfigRequest {
+  string             source_id = 1;
+  AudioEncoderConfig config    = 2;
+}
+
+message SetAudioEncoderConfigResponse {
+  bool   success = 1;
+  string error   = 2;
+}
+
+message GetDeviceTimeResponse {
+  string utc_time = 1;
+}
+
+message SetDeviceTimeRequest {
+  string source_id = 1;
+  string utc_time  = 2;
+}
+
+message SyncDeviceTimeResponse {
+  bool   success = 1;
+  string error   = 2;
+}
+
+message RebootDeviceResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
+message PtzPreset {
+  string token = 1;
+  string name  = 2;
+}
+
+message PtzPresetsRequest {
+  string source_id     = 1;
+  string profile_token = 2;
+}
+
+message PtzPresetsResponse {
+  repeated PtzPreset presets = 1;
+}
+
+message PtzSetPresetRequest {
+  string source_id     = 1;
+  string profile_token = 2;
+  string preset_name   = 3;
+  string preset_token  = 4;
+}
+
+message PtzSetPresetResponse {
+  bool   success      = 1;
+  string error        = 2;
+  string preset_token = 3;
+}
+
+message PtzGotoPresetRequest {
+  string source_id     = 1;
+  string profile_token = 2;
+  string preset_token  = 3;
+}
+
+message PtzRemovePresetRequest {
+  string source_id     = 1;
+  string profile_token = 2;
+  string preset_token  = 3;
 }

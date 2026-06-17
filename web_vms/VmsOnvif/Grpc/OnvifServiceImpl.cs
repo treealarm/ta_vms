@@ -9,7 +9,8 @@ namespace VmsOnvif;
 public class OnvifServiceImpl(
   CameraConnCache connCache,
   OnvifEventSubscriptionService subscriptionService,
-  ObservedTopicsStore observedTopics) : OnvifService.OnvifServiceBase
+  ObservedTopicsStore observedTopics,
+  OnvifSettingsService settingsService) : OnvifService.OnvifServiceBase
 {
   public override async Task<GetProfilesResponse> GetProfiles(CameraRequest request, ServerCallContext context)
   {
@@ -118,6 +119,227 @@ public class OnvifServiceImpl(
       LastSeen  = t.LastSeen.ToString("O"),
     }));
     return Task.FromResult(response);
+  }
+
+  public override async Task<GetVideoEncoderConfigsResponse> GetVideoEncoderConfigs(
+    CameraRequest request, ServerCallContext context)
+  {
+    List<OnvifLib.OnvifVideoEncoderConfig> configs;
+    try
+    {
+      configs = await settingsService.GetConfigsAsync(request.SourceId, context.CancellationToken);
+    }
+    catch (Exception ex)
+    {
+      throw new RpcException(new Status(StatusCode.Internal, ex.Message));
+    }
+
+    var response = new GetVideoEncoderConfigsResponse();
+    response.Configs.AddRange(configs.Select(c => new VideoEncoderConfig
+    {
+      Token          = c.Token,
+      Name           = c.Name,
+      Encoding       = c.Encoding,
+      Width          = c.Width,
+      Height         = c.Height,
+      FrameRateLimit = c.FrameRateLimit,
+      BitrateLimit   = c.BitrateLimit,
+      GovLength      = c.GovLength,
+      H264Profile    = c.H264Profile,
+      Quality        = c.Quality,
+    }));
+    return response;
+  }
+
+  public override async Task<VideoEncoderConfigOptionsResponse> GetVideoEncoderConfigOptions(
+    VideoEncoderConfigOptionsRequest request, ServerCallContext context)
+  {
+    List<OnvifLib.OnvifVideoEncoderOptions> opts;
+    try
+    {
+      opts = await settingsService.GetConfigOptionsAsync(
+        request.SourceId, request.ConfigToken, context.CancellationToken);
+    }
+    catch (Exception ex)
+    {
+      throw new RpcException(new Status(StatusCode.Internal, ex.Message));
+    }
+
+    var response = new VideoEncoderConfigOptionsResponse();
+    response.Options.AddRange(opts.Select(o =>
+    {
+      var entry = new VideoEncoderConfigOptions
+      {
+        Encoding     = o.Encoding,
+        MinFrameRate = o.MinFrameRate,
+        MaxFrameRate = o.MaxFrameRate,
+        MinBitrate   = o.MinBitrate,
+        MaxBitrate   = o.MaxBitrate,
+        MinGovLength = o.MinGovLength,
+        MaxGovLength = o.MaxGovLength,
+      };
+      entry.Resolutions.AddRange(o.Resolutions.Select(r => new ResolutionOption { Width = r.Width, Height = r.Height }));
+      entry.H264Profiles.AddRange(o.H264Profiles);
+      return entry;
+    }));
+    return response;
+  }
+
+  public override async Task<SetVideoEncoderConfigResponse> SetVideoEncoderConfig(
+    SetVideoEncoderConfigRequest request, ServerCallContext context)
+  {
+    if (request.Config == null)
+      return new SetVideoEncoderConfigResponse { Success = false, Error = "Config is required" };
+
+    try
+    {
+      var cfg = new OnvifLib.OnvifVideoEncoderConfig(
+        Token:          request.Config.Token,
+        Name:           request.Config.Name,
+        Encoding:       request.Config.Encoding,
+        Width:          request.Config.Width,
+        Height:         request.Config.Height,
+        FrameRateLimit: request.Config.FrameRateLimit,
+        BitrateLimit:   request.Config.BitrateLimit,
+        GovLength:      request.Config.GovLength,
+        H264Profile:    request.Config.H264Profile,
+        Quality:        request.Config.Quality);
+
+      await settingsService.SetConfigAsync(request.SourceId, cfg, context.CancellationToken);
+      return new SetVideoEncoderConfigResponse { Success = true };
+    }
+    catch (Exception ex)
+    {
+      return new SetVideoEncoderConfigResponse { Success = false, Error = ex.Message };
+    }
+  }
+
+  // ── Audio encoder ────────────────────────────────────────────────────────
+
+  public override async Task<GetAudioEncoderConfigsResponse> GetAudioEncoderConfigs(
+    CameraRequest request, ServerCallContext context)
+  {
+    List<OnvifLib.OnvifAudioEncoderConfig> configs;
+    try
+    {
+      configs = await settingsService.GetAudioConfigsAsync(request.SourceId, context.CancellationToken);
+    }
+    catch (Exception ex)
+    {
+      throw new RpcException(new Status(StatusCode.Internal, ex.Message));
+    }
+    var response = new GetAudioEncoderConfigsResponse();
+    response.Configs.AddRange(configs.Select(c => new AudioEncoderConfig
+    {
+      Token      = c.Token,
+      Name       = c.Name,
+      Encoding   = c.Encoding,
+      Bitrate    = c.Bitrate,
+      SampleRate = c.SampleRate,
+    }));
+    return response;
+  }
+
+  public override async Task<AudioEncoderConfigOptionsResponse> GetAudioEncoderConfigOptions(
+    AudioEncoderConfigOptionsRequest request, ServerCallContext context)
+  {
+    List<OnvifLib.OnvifAudioEncoderOption> opts;
+    try
+    {
+      opts = await settingsService.GetAudioConfigOptionsAsync(
+        request.SourceId, request.ConfigToken, context.CancellationToken);
+    }
+    catch (Exception ex)
+    {
+      throw new RpcException(new Status(StatusCode.Internal, ex.Message));
+    }
+    var response = new AudioEncoderConfigOptionsResponse();
+    response.Options.AddRange(opts.Select(o =>
+    {
+      var entry = new AudioEncoderConfigOptions { Encoding = o.Encoding };
+      entry.Bitrates.AddRange(o.Bitrates);
+      entry.SampleRates.AddRange(o.SampleRates);
+      return entry;
+    }));
+    return response;
+  }
+
+  public override async Task<SetAudioEncoderConfigResponse> SetAudioEncoderConfig(
+    SetAudioEncoderConfigRequest request, ServerCallContext context)
+  {
+    if (request.Config == null)
+      return new SetAudioEncoderConfigResponse { Success = false, Error = "Config is required" };
+    try
+    {
+      var cfg = new OnvifLib.OnvifAudioEncoderConfig(
+        Token:      request.Config.Token,
+        Name:       request.Config.Name,
+        Encoding:   request.Config.Encoding,
+        Bitrate:    request.Config.Bitrate,
+        SampleRate: request.Config.SampleRate);
+      await settingsService.SetAudioConfigAsync(request.SourceId, cfg, context.CancellationToken);
+      return new SetAudioEncoderConfigResponse { Success = true };
+    }
+    catch (Exception ex)
+    {
+      return new SetAudioEncoderConfigResponse { Success = false, Error = ex.Message };
+    }
+  }
+
+  // ── System ───────────────────────────────────────────────────────────────
+
+  public override async Task<GetDeviceTimeResponse> GetDeviceTime(
+    CameraRequest request, ServerCallContext context)
+  {
+    var time = await settingsService.GetDeviceTimeAsync(request.SourceId, context.CancellationToken);
+    return new GetDeviceTimeResponse
+    {
+      UtcTime = time.HasValue ? time.Value.ToString("O") : string.Empty,
+    };
+  }
+
+  public override async Task<SyncDeviceTimeResponse> SyncDeviceTime(
+    CameraRequest request, ServerCallContext context)
+  {
+    try
+    {
+      await settingsService.SyncDeviceTimeAsync(request.SourceId, context.CancellationToken);
+      return new SyncDeviceTimeResponse { Success = true };
+    }
+    catch (Exception ex)
+    {
+      return new SyncDeviceTimeResponse { Success = false, Error = ex.Message };
+    }
+  }
+
+  public override async Task<SyncDeviceTimeResponse> SetDeviceTime(
+    SetDeviceTimeRequest request, ServerCallContext context)
+  {
+    try
+    {
+      if (!DateTimeOffset.TryParse(request.UtcTime, out var dto))
+        return new SyncDeviceTimeResponse { Success = false, Error = "Invalid UTC time format" };
+      await settingsService.SetDeviceTimeAsync(request.SourceId, dto.UtcDateTime, context.CancellationToken);
+      return new SyncDeviceTimeResponse { Success = true };
+    }
+    catch (Exception ex)
+    {
+      return new SyncDeviceTimeResponse { Success = false, Error = ex.Message };
+    }
+  }
+
+  public override async Task<RebootDeviceResponse> RebootDevice(
+    CameraRequest request, ServerCallContext context)
+  {
+    try
+    {
+      var msg = await settingsService.RebootDeviceAsync(request.SourceId, context.CancellationToken);
+      return new RebootDeviceResponse { Success = true, Message = msg ?? string.Empty };
+    }
+    catch (Exception ex)
+    {
+      return new RebootDeviceResponse { Success = false, Message = ex.Message };
+    }
   }
 
   // Non-remoting proxy: uses JSON serialization, no DataContractSerializer

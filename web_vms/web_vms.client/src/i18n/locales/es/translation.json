@@ -19,6 +19,7 @@
     "recording": "Perfiles Grab.",
     "mediaMtx": "Media Routers",
     "onvif": "Eventos ONVIF",
+    "onvifSettings": "Config ONVIF",
     "logs": "Registros",
     "goAdmin": "Admin",
     "goOperator": "Operador"
@@ -326,5 +327,35 @@
     "setup": "Configurar",
     "changeParent": "Cambiar padre",
     "refreshList": "Actualizar lista"
+  },
+  "onvifSettings": {
+    "selectCamera": "Seleccionar cámara",
+    "resolution": "Resolución",
+    "frameRate": "Velocidad de cuadros (fps)",
+    "bitrate": "Tasa de bits (kbps)",
+    "govLength": "Longitud GOP",
+    "h264Profile": "Perfil H.264",
+    "encoding": "Codificación",
+    "noConfigs": "No se encontraron configuraciones de codificador de video",
+    "noCamerasWithOnvif": "No hay cámaras con conexión ONVIF configurada",
+    "videoTab": "Video",
+    "audioTab": "Audio",
+    "ptzTab": "Presets PTZ",
+    "systemTab": "Sistema",
+    "audioBitrate": "Tasa de bits (bps)",
+    "audioSampleRate": "Frecuencia de muestreo (Hz)",
+    "noAudioConfigs": "Sin configuraciones de codificador de audio",
+    "selectProfile": "Perfil",
+    "noProfiles": "Sin perfiles disponibles",
+    "noPresets": "Sin presets guardados",
+    "presetName": "Nombre del preset",
+    "addPreset": "Guardar como preset",
+    "gotoPreset": "Ir a",
+    "deletePreset": "Eliminar",
+    "deviceTime": "Hora del dispositivo (UTC)",
+    "syncTime": "Sincronizar con hora del servidor",
+    "setTime": "Establecer hora (UTC)",
+    "reboot": "Reiniciar cámara",
+    "rebootConfirm": "¿Reiniciar cámara? Puede tardar 1–2 minutos en reconectarse."
   }
 }
