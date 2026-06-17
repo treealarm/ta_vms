@@ -354,7 +354,7 @@
     "deletePreset": "Delete",
     "deviceTime": "Device time (UTC)",
     "syncTime": "Sync to server time",
-    "setTime": "Set time",
+    "setTime": "Set time (UTC)",
     "reboot": "Reboot camera",
     "rebootConfirm": "Reboot camera? It may take 1–2 minutes to reconnect."
   }

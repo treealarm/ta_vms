@@ -379,7 +379,7 @@ function PtzPresetsSection({ cameraId }: { cameraId: string }) {
 function toDatetimeLocalValue(utcIso: string): string {
   const d = new Date(utcIso)
   const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`
 }
 
 function SystemSection({ cameraId }: { cameraId: string }) {
@@ -423,7 +423,7 @@ function SystemSection({ cameraId }: { cameraId: string }) {
       await apiFetch(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/set-time`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ utcTime: new Date(manualTime).toISOString() }),
+        body: JSON.stringify({ utcTime: new Date(manualTime + ':00Z').toISOString() }),
       })
       setSetTimeOk(true)
       setTimeout(() => setSetTimeOk(false), 3000)
