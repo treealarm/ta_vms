@@ -34,11 +34,11 @@ type Props = {
   onRefresh: () => Promise<void>
 }
 
-const DEFAULT_RTSP_URL = 'rtsp://192.168.1.150:554/channel=0_stream=0&onvif=0.sdp?real_stream'
+const DEFAULT_PATH = 'rtsp://192.168.1.150:554/channel=0_stream=0&onvif=0.sdp?real_stream'
 const DEFAULT_USER = 'orwell'
 const DEFAULT_PASS = 'elvees'
-const DEFAULT_ONVIF_IP = '192.168.1.150'
-const DEFAULT_ONVIF_PORT = 8899
+const DEFAULT_IP = '192.168.1.150'
+const DEFAULT_PORT = 8899
 
 export default function ServerCameraSetupPanel({
   cameras,
@@ -53,11 +53,11 @@ export default function ServerCameraSetupPanel({
   const [serverId, setServerId] = useState('')
   const [cameraId, setCameraId] = useState(() => crypto.randomUUID())
   const [name, setName] = useState('')
-  const [rtspUrl, setRtspUrl] = useState(DEFAULT_RTSP_URL)
+  const [path, setPath] = useState(DEFAULT_PATH)
   const [user, setUser] = useState(DEFAULT_USER)
   const [pass, setPass] = useState(DEFAULT_PASS)
-  const [onvifIp, setOnvifIp] = useState(DEFAULT_ONVIF_IP)
-  const [onvifPort, setOnvifPort] = useState(DEFAULT_ONVIF_PORT)
+  const [ip, setIp] = useState(DEFAULT_IP)
+  const [port, setPort] = useState(DEFAULT_PORT)
   const [expanded, setExpanded] = useState(true)
 
   const serverOptions = useMemo(() => {
@@ -99,11 +99,11 @@ export default function ServerCameraSetupPanel({
     setCameraId(camera.cameraId)
     setName(camera.name)
     setServerId(camera.serverId || '')
-    setRtspUrl(camera.rtspUrl ?? '')
+    setPath(camera.path ?? '')
     setUser(camera.cred?.user ?? '')
     setPass(camera.cred?.pass ?? '')
-    setOnvifIp(camera.onvifConn?.ip ?? '')
-    setOnvifPort(camera.onvifConn?.port ?? 0)
+    setIp(camera.onvifConn?.ip ?? '')
+    setPort(camera.onvifConn?.port ?? 0)
   }
 
   const fillDefaultsForServer = (id: string) => {
@@ -111,11 +111,11 @@ export default function ServerCameraSetupPanel({
     setServerId(id)
     setCameraId(crypto.randomUUID())
     setName('')
-    setRtspUrl(DEFAULT_RTSP_URL)
+    setPath(DEFAULT_PATH)
     setUser(DEFAULT_USER)
     setPass(DEFAULT_PASS)
-    setOnvifIp(DEFAULT_ONVIF_IP)
-    setOnvifPort(DEFAULT_ONVIF_PORT)
+    setIp(DEFAULT_IP)
+    setPort(DEFAULT_PORT)
   }
 
   const selectServer = (id: string) => {
@@ -138,17 +138,17 @@ export default function ServerCameraSetupPanel({
     recordingMode: selectedCamera?.recordingMode ?? 'off',
     recording: selectedCamera?.recording ?? false,
     webRtc: selectedCamera?.webRtc ?? true,
-    rtspUrl,
+    path,
     cred: user || pass
       ? {
         user,
         pass
       }
       : undefined,
-    onvifConn: onvifIp
+    onvifConn: ip
       ? {
-        ip: onvifIp,
-        port: onvifPort
+        ip,
+        port
       }
       : undefined,
   })
@@ -258,9 +258,9 @@ export default function ServerCameraSetupPanel({
 
               <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems="center">
                 <TextField
-                  label={t('serverSetup.rtspUrl')}
-                  value={rtspUrl}
-                  onChange={(event) => setRtspUrl(event.target.value)}
+                  label={t('serverSetup.path')}
+                  value={path}
+                  onChange={(event) => setPath(event.target.value)}
                   fullWidth
                   size="small"
                 />
@@ -276,18 +276,18 @@ export default function ServerCameraSetupPanel({
 
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="center">
                 <TextField
-                  label={t('serverSetup.onvifIp')}
-                  value={onvifIp}
-                  onChange={(event) => setOnvifIp(event.target.value)}
+                  label={t('serverSetup.ip')}
+                  value={ip}
+                  onChange={(event) => setIp(event.target.value)}
                   size="small"
                 />
                 <TextField
-                  label={t('serverSetup.onvifPort')}
-                  value={onvifPort}
+                  label={t('serverSetup.port')}
+                  value={port}
                   onChange={(event) => {
                     const value = Number(event.target.value)
                     if (!Number.isNaN(value)) {
-                      setOnvifPort(value)
+                      setPort(value)
                     }
                   }}
                   size="small"

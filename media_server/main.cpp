@@ -144,7 +144,7 @@ int main(int argc, char** argv)
       streams.push_back({
         .stream_name           = s.stream_name(),
         .profile_token         = s.profile_token(),
-        .rtsp_url              = s.rtsp_url(),
+        .rtsp_url              = proto_mapper::resolve_stream_path(s, c),
         .policy                = proto_mapper::recording_policy_for_stream(s),
         .web_rtc               = s.web_rtc(),
         .webrtc_rtsp_push_url  = cam_webrtc_push_url,

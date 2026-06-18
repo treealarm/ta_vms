@@ -100,7 +100,7 @@ export const RECORDING_PROFILE_OFF_ID = '00000000-0000-0000-0000-000000000003'
 export type CameraStreamDto = {
   streamName: string
   profileToken: string
-  rtspUrl: string
+  path: string
   webRtc: boolean
   recordingProfile?: RecordingProfileDto
   overrideProfile?: RecordingProfileDto
@@ -115,7 +115,7 @@ export type CameraSetupDto = {
   recording?: boolean
   recordingMode: RecordingMode
   webRtc: boolean
-  rtspUrl: string
+  path: string
   cred?: CredentialsDto
   onvifConn?: OnvifConnectionDto
   /** True while camera is inside a retention episode from FS (wall clock in [retain_from, retain_until]); new clips ingest as retained */

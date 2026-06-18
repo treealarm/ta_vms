@@ -28,7 +28,7 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
   const isNew = streamName === null
 
   const [name, setName] = useState(streamName ?? '')
-  const [rtspUrl, setRtspUrl] = useState(existingStream?.rtspUrl ?? '')
+  const [path, setPath] = useState(existingStream?.path ?? '')
   const [profileToken, setProfileToken] = useState(existingStream?.profileToken ?? '')
   const [webRtc, setWebRtc] = useState(existingStream?.webRtc ?? isNew)
   const [disabled, setDisabled] = useState(existingStream?.disabled === true)
@@ -43,7 +43,7 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
 
   // Snapshot of the saved state — used for dirty detection and Cancel
   const snap = useRef({
-    rtspUrl: existingStream?.rtspUrl ?? '',
+    path: existingStream?.path ?? '',
     profileToken: existingStream?.profileToken ?? '',
     webRtc: existingStream?.webRtc ?? false,
     disabled: existingStream?.disabled === true,
@@ -51,7 +51,7 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
   })
 
   const dirty = !isNew && (
-    rtspUrl !== snap.current.rtspUrl
+    path !== snap.current.path
     || profileToken !== snap.current.profileToken
     || webRtc !== snap.current.webRtc
     || disabled !== snap.current.disabled
@@ -111,7 +111,7 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
     const profile = recordingProfiles.find((p) => p.id === selectedProfileId)
     const updated: CameraStreamDto = {
       streamName: streamName!,
-      rtspUrl,
+      path,
       profileToken,
       webRtc,
       disabled: disabled || undefined,
@@ -120,7 +120,7 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
     const others = (camera.streams ?? []).filter((s) => s.streamName !== updated.streamName)
     const result = await dispatch(addCamera({ ...camera, streams: [...others, updated] }))
     if (!addCamera.rejected.match(result)) {
-      snap.current = { rtspUrl, profileToken, webRtc, disabled, selectedProfileId }
+      snap.current = { path, profileToken, webRtc, disabled, selectedProfileId }
       await dispatch(fetchCameraState(cameraId))
       return true
     }
@@ -133,7 +133,7 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
     e.preventDefault()
     if (isNew) {
       const profile = recordingProfiles.find((p) => p.id === selectedProfileId)
-      const updated: CameraStreamDto = { streamName: name, rtspUrl, profileToken, webRtc, disabled: disabled || undefined, recordingProfile: profile }
+      const updated: CameraStreamDto = { streamName: name, path, profileToken, webRtc, disabled: disabled || undefined, recordingProfile: profile }
       const others = (camera.streams ?? []).filter((s) => s.streamName !== updated.streamName)
       const result = await dispatch(addCamera({ ...camera, streams: [...others, updated] }))
       if (!addCamera.rejected.match(result)) await onSaved()
@@ -144,7 +144,7 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
   }
 
   const handleCancel = () => {
-    setRtspUrl(snap.current.rtspUrl)
+    setPath(snap.current.path)
     setProfileToken(snap.current.profileToken)
     setWebRtc(snap.current.webRtc)
     setDisabled(snap.current.disabled)
@@ -153,9 +153,9 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
 
   const handleRemove = async () => {
     const filtered = (camera.streams ?? []).filter((s) => s.streamName !== streamName)
-    // Clear legacy rtspUrl when all streams removed — otherwise ToSetupProto re-creates
-    // a synthetic "main" stream from the top-level rtspUrl field.
-    const payload = filtered.length === 0 ? { ...camera, streams: filtered, rtspUrl: '' } : { ...camera, streams: filtered }
+    // Clear legacy path when all streams removed — otherwise ToSetupProto re-creates
+    // a synthetic "main" stream from the top-level path field.
+    const payload = filtered.length === 0 ? { ...camera, streams: filtered, path: '' } : { ...camera, streams: filtered }
     const result = await dispatch(addCamera(payload))
     if (!addCamera.rejected.match(result)) await onRemoved()
   }
@@ -181,11 +181,13 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
         />
 
         <TextField
-          label={t('stream.rtspUrl')}
-          value={rtspUrl}
-          onChange={(e) => setRtspUrl(e.target.value)}
+          label={t('stream.path')}
+          value={path}
+          onChange={(e) => setPath(e.target.value)}
           size="small"
           fullWidth
+          disabled={Boolean(profileToken)}
+          helperText={profileToken ? t('stream.pathHelperTokenSet') : t('stream.pathHelper')}
         />
 
         <Stack spacing={1}>

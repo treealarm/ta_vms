@@ -38,6 +38,28 @@ recording_policy_spec proto_mapper::recording_policy_for_stream(
   return recording_policy_for_media(profile.mode(), seg);
 }
 
+std::string proto_mapper::resolve_stream_path(
+  const vms::cfg::CameraStream& stream,
+  const vms::cfg::CameraSetup& camera)
+{
+  if (!stream.profile_token().empty())
+    return "";
+
+  const std::string& path = stream.path();
+  if (path.empty())
+    return "";
+
+  if (path.find("://") != std::string::npos)
+    return path;
+
+  if (!camera.has_onvif_conn() || camera.onvif_conn().ip().empty())
+    return path;
+
+  const std::string tail = path.front() == '/' ? path : "/" + path;
+  return "rtsp://" + camera.onvif_conn().ip() + ":"
+    + std::to_string(camera.onvif_conn().port()) + tail;
+}
+
 uint32_t proto_mapper::prealarm_segment_seconds(const vms::control::CameraState& state)
 {
   return state.segment_seconds() > 0 ? state.segment_seconds() : 5;

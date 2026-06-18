@@ -121,7 +121,7 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
                       >
                         <ListItemText
                           primary={stream.streamName}
-                          secondary={stream.rtspUrl || stream.profileToken || undefined}
+                          secondary={stream.path || stream.profileToken || undefined}
                           primaryTypographyProps={{ noWrap: true }}
                           secondaryTypographyProps={{ noWrap: true }}
                         />

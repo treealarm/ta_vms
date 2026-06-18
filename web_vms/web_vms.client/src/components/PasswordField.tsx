@@ -29,6 +29,7 @@ const PasswordField = ({ pass, setPass }: PasswordProps) => {
             <IconButton
               onClick={() => setShowPassword((prev) => !prev)}
               edge="end"
+              size="small"
             >
               {showPassword ? <VisibilityOff /> : <Visibility />}
             </IconButton>

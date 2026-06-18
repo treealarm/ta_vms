@@ -103,11 +103,11 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
         : null;
 
       await using var cmd = new NpgsqlCommand("""
-        INSERT INTO camera_stream (camera_id, stream_name, profile_token, rtsp_url, web_rtc, recording_profile_id, disabled)
+        INSERT INTO camera_stream (camera_id, stream_name, profile_token, path, web_rtc, recording_profile_id, disabled)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         ON CONFLICT (camera_id, stream_name) DO UPDATE SET
           profile_token        = EXCLUDED.profile_token,
-          rtsp_url             = EXCLUDED.rtsp_url,
+          path                 = EXCLUDED.path,
           web_rtc              = EXCLUDED.web_rtc,
           recording_profile_id = EXCLUDED.recording_profile_id,
           disabled             = EXCLUDED.disabled;
@@ -115,7 +115,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       cmd.Parameters.AddWithValue(cameraId);
       cmd.Parameters.AddWithValue(stream.StreamName);
       cmd.Parameters.AddWithValue(stream.ProfileToken ?? string.Empty);
-      cmd.Parameters.AddWithValue(stream.RtspUrl ?? string.Empty);
+      cmd.Parameters.AddWithValue(stream.Path ?? string.Empty);
       cmd.Parameters.AddWithValue(stream.WebRtc);
       cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)profileId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Uuid });
       cmd.Parameters.Add(new NpgsqlParameter { Value = (stream.HasDisabled && stream.Disabled) ? (object)true : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Boolean });
@@ -332,7 +332,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     var index = cameras.ToDictionary(c => c.CameraId);
 
     await using var cmd = new NpgsqlCommand("""
-      SELECT cs.camera_id, cs.stream_name, cs.profile_token, cs.rtsp_url, cs.web_rtc,
+      SELECT cs.camera_id, cs.stream_name, cs.profile_token, cs.path, cs.web_rtc,
              rp.id,  rp.name,  rp.mode,  rp.pre_record_seconds,  rp.post_record_seconds,  rp.segment_seconds,  rp.is_override_preset,  rp.is_builtin,
              ov.id,  ov.name,  ov.mode,  ov.pre_record_seconds,  ov.post_record_seconds,  ov.segment_seconds,  ov.is_override_preset,  ov.is_builtin,
              cs.disabled
@@ -354,7 +354,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       {
         StreamName   = reader.GetString(1),
         ProfileToken = reader.GetString(2),
-        RtspUrl      = reader.GetString(3),
+        Path         = reader.GetString(3),
         WebRtc       = reader.GetBoolean(4),
       };
 

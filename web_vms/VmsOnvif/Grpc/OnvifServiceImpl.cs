@@ -51,8 +51,8 @@ public class OnvifServiceImpl(
       return new StreamUriResponse();
 
     var fallbackUrl = data.Streams
-      .FirstOrDefault(s => s.ProfileToken == request.ProfileToken)?.RtspUrl
-      ?? data.Streams.FirstOrDefault()?.RtspUrl
+      .FirstOrDefault(s => s.ProfileToken == request.ProfileToken)?.Path
+      ?? data.Streams.FirstOrDefault()?.Path
       ?? string.Empty;
 
     if (data.Conn == null)

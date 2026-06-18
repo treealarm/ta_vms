@@ -4,7 +4,7 @@ using web_vms.Types.Actors;
 
 namespace VmsOnvif;
 
-public sealed record StreamRtspEntry(string ProfileToken, string RtspUrl);
+public sealed record StreamRtspEntry(string ProfileToken, string Path);
 
 public sealed record CameraConnData(
   CameraConnInfo? Conn,
@@ -48,7 +48,7 @@ public sealed class CameraConnCache(CfgService.CfgServiceClient cfgClient)
     }
 
     var streams = setup.Streams
-      .Select(s => new StreamRtspEntry(s.ProfileToken, s.RtspUrl))
+      .Select(s => new StreamRtspEntry(s.ProfileToken, s.Path))
       .ToList();
 
     var data = new CameraConnData(conn, streams);

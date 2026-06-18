@@ -16,7 +16,7 @@ public record CameraStreamDto
 {
   public required string StreamName { get; init; }
   public string ProfileToken { get; init; } = string.Empty;
-  public string RtspUrl { get; init; } = string.Empty;
+  public string Path { get; init; } = string.Empty;
   public bool WebRtc { get; init; }
   public RecordingProfileDto? RecordingProfile { get; init; }
   public RecordingProfileDto? OverrideProfile { get; init; }
@@ -50,8 +50,8 @@ public record CameraSetupDto
   /// <summary>Derived from first stream's profile mode; used by media server control.</summary>
   public string RecordingMode { get; init; } = "off";
   public bool WebRtc { get; init; }
-  /// <summary>Kept for API backward compat; maps to first stream's RtspUrl.</summary>
-  public string? RtspUrl { get; init; }
+  /// <summary>Kept for API backward compat; maps to first stream's Path.</summary>
+  public string? Path { get; init; }
   public CredentialsDto? Cred { get; init; }
   public OnvifConnectionDto? OnvifConn { get; set; }
   /// <summary>Filled by web_vms.Server when merging FS retention status.</summary>
