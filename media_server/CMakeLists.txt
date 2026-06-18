@@ -66,6 +66,8 @@ set(SOURCES
     reader/rtsp_reader.h
     reader/file_reader.cpp
     reader/file_reader.h
+    reader/file_camera_reader.cpp
+    reader/file_camera_reader.h
     reader/snapshot_reader.cpp
     reader/snapshot_reader.h
     reader/archive_frame_jpeg_reader.cpp

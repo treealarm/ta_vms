@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <stdexcept>
 
+#include "reader/file_camera_reader.h"
 #include "reader/rtsp_reader.h"
 #include "interfaces/web_rtc_utils.h"
 
@@ -25,7 +26,10 @@ cam_stream::cam_stream(
   , m_webrtc_rtsp_push_url(webrtc_rtsp_push_url)
   , m_web_rtc_enabled(web_rtc_enabled)
 {
-  m_reader = std::make_unique<rtsp_reader>(camera_id, profile_token, user, pass);
+  if (profile_token.empty() && file_camera_reader::is_file_source(rtsp_url))
+    m_reader = std::make_unique<file_camera_reader>(camera_id, stream_name);
+  else
+    m_reader = std::make_unique<rtsp_reader>(camera_id, profile_token, user, pass);
 
   if (!m_reader->open(m_rtsp_url))
     throw std::runtime_error("Failed to open media source");
