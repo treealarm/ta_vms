@@ -36,14 +36,26 @@ public sealed class CameraConfigSubscriber(
     {
       try
       {
-        await Task.WhenAll(
-          pubSubClient.SubscribeAsync(
-            PubSubName,
-            CameraConfigChangedTopic,
-            new DaprSubscriptionOptions(
-              new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry)),
-            HandleConfigChangedAsync,
-            ct));
+        var configTask = pubSubClient.SubscribeAsync(
+          PubSubName,
+          CameraConfigChangedTopic,
+          new DaprSubscriptionOptions(
+            new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry)),
+          HandleConfigChangedAsync,
+          ct);
+        // Starting both streaming SubscribeAsync calls in the same instant makes the dapr
+        // sidecar's redis-streams pubsub component spiral into a tight, unthrottled
+        // "connection pool timeout" retry loop (confirmed: pegs the process at 800%+ CPU
+        // and never finishes binding Kestrel). Staggering the second call avoids the race.
+        await Task.Delay(200, ct);
+        var stateTask = pubSubClient.SubscribeAsync(
+          PubSubName,
+          CameraStateChangedTopic,
+          new DaprSubscriptionOptions(
+            new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry)),
+          HandleStateChangedAsync,
+          ct);
+        await Task.WhenAll(configTask, stateTask);
       }
       catch (OperationCanceledException)
       {
