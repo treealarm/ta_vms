@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
-import { Box, Button, Chip, CircularProgress, FormControlLabel, MenuItem, Stack, Switch, TextField, Typography } from '@mui/material'
+import { Box, Button, Chip, CircularProgress, FormControlLabel, IconButton, InputAdornment, MenuItem, Stack, Switch, TextField, Tooltip, Typography } from '@mui/material'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera, fetchCameraState } from '../store/liveSlice'
@@ -14,11 +15,12 @@ type Props = {
   streamName: string | null  // null = new stream
   onSaved: () => Promise<void>
   onRemoved: () => Promise<void>
+  onAddCameraOnServer: (serverId: string) => void
 }
 
 type ProfileInfo = { token: string; name: string; width: number; height: number; encoding: string }
 
-export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, onRemoved }: Props) {
+export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, onRemoved, onAddCameraOnServer }: Props) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const camera = useAppSelector((state) => state.live.cameraStatesById[cameraId])
@@ -40,6 +42,11 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
   const [availableOnvifProfiles, setAvailableOnvifProfiles] = useState<ProfileInfo[]>([])
   const [onvifLoading, setOnvifLoading] = useState(false)
   const [onvifError, setOnvifError] = useState<string | null>(null)
+
+  const [resolvedRtspUrl, setResolvedRtspUrl] = useState<string | null>(null)
+  const [rtspUrlLoading, setRtspUrlLoading] = useState(false)
+  const [rtspUrlError, setRtspUrlError] = useState<string | null>(null)
+  const [rtspUrlCopied, setRtspUrlCopied] = useState(false)
 
   // Snapshot of the saved state — used for dirty detection and Cancel
   const snap = useRef({
@@ -77,6 +84,33 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
       setOnvifLoading(false)
     }
   }, [cameraId])
+
+  const fetchResolvedRtspUrl = useCallback(async () => {
+    setRtspUrlLoading(true)
+    setRtspUrlError(null)
+    setResolvedRtspUrl(null)
+    try {
+      const qs = profileToken ? `?profileToken=${encodeURIComponent(profileToken)}` : ''
+      const response = await fetch(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/stream-uri${qs}`)
+      if (!response.ok) {
+        setRtspUrlError((await response.text()) || `Error ${response.status}`)
+        return
+      }
+      const data = await response.json() as { rtspUrl: string }
+      if (data.rtspUrl) setResolvedRtspUrl(data.rtspUrl)
+      else setRtspUrlError('Camera did not return a stream URL')
+    } catch {
+      setRtspUrlError('Failed to reach the camera')
+    } finally {
+      setRtspUrlLoading(false)
+    }
+  }, [cameraId, profileToken])
+
+  // The resolved URL is only valid for the profile it was fetched for.
+  useEffect(() => {
+    setResolvedRtspUrl(null)
+    setRtspUrlError(null)
+  }, [profileToken])
 
   useEffect(() => {
     setProfilesLoading(true)
@@ -239,6 +273,49 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
               })}
             </Stack>
           )}
+
+          <Stack direction="row" spacing={1} alignItems="flex-start">
+            <Button
+              size="small"
+              variant="text"
+              onClick={() => void fetchResolvedRtspUrl()}
+              disabled={rtspUrlLoading}
+            >
+              {rtspUrlLoading ? <CircularProgress size={16} /> : t('stream.showRtspUrl')}
+            </Button>
+          </Stack>
+
+          {rtspUrlError && (
+            <Typography variant="caption" color="error">{rtspUrlError}</Typography>
+          )}
+
+          {resolvedRtspUrl && (
+            <TextField
+              value={resolvedRtspUrl}
+              size="small"
+              fullWidth
+              InputProps={{
+                readOnly: true,
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <Tooltip title={rtspUrlCopied ? t('stream.rtspUrlCopied') : t('stream.copyRtspUrl')}>
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(resolvedRtspUrl).then(() => {
+                            setRtspUrlCopied(true)
+                            setTimeout(() => setRtspUrlCopied(false), 1500)
+                          })
+                        }}
+                      >
+                        <ContentCopyIcon fontSize="small" color={rtspUrlCopied ? 'success' : 'inherit'} />
+                      </IconButton>
+                    </Tooltip>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          )}
         </Stack>
 
         <TextField
@@ -280,6 +357,16 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
           {!isNew && (
             <Button color="error" variant="outlined" size="small" onClick={handleRemove}>
               {t('stream.deleteStream')}
+            </Button>
+          )}
+          {camera.serverId && (
+            <Button
+              variant="text"
+              size="small"
+              onClick={() => onAddCameraOnServer(camera.serverId!)}
+              sx={{ ml: 'auto' }}
+            >
+              {t('cameraControl.addCameraHere', { server: camera.serverId })}
             </Button>
           )}
         </Stack>

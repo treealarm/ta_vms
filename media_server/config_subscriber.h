@@ -29,9 +29,12 @@ public:
     const dapr::proto::runtime::v1::TopicEventRequest* request,
     dapr::proto::runtime::v1::TopicEventResponse* response) override;
 
-private:
+  // Fetches the current camera config from VmsCfg and reconciles media_server's in-memory
+  // camera set against it (respecting `disabled`). Used both on pub/sub events and at
+  // startup, so there is a single place that knows how to build a camera from config.
   void reload_cameras();
 
+private:
   camera_manager& m_cameras;
   cfg_client&     m_cfg;
   std::string     m_pubsub_name;

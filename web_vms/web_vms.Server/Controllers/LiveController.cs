@@ -301,10 +301,14 @@ public class LiveController(
       MediaMtxWebrtcPort = mediaMtxServer?.WebrtcPort,
     };
 
-    // Ensure WebRTC push is active for all webrtc-enabled streams (best-effort)
-    var webRtcStreams = normalized.Streams
-      .Where(s => s.WebRtc && !string.IsNullOrWhiteSpace(s.StreamName))
-      .ToList();
+    // Ensure WebRTC push is active for all webrtc-enabled streams (best-effort).
+    // Disabled cameras/streams must not be (re)started here — config_subscriber already
+    // tore down their media_server pipeline, and polling this endpoint should not undo that.
+    var webRtcStreams = normalized.Disabled == true
+      ? []
+      : normalized.Streams
+        .Where(s => s.WebRtc && s.Disabled != true && !string.IsNullOrWhiteSpace(s.StreamName))
+        .ToList();
 
     if (webRtcStreams.Count > 0 && !string.IsNullOrWhiteSpace(normalized.ServerId))
     {

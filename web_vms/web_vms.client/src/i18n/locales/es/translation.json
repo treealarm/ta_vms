@@ -49,6 +49,7 @@
     "hide": "Ocultar",
     "newCamera": "+ nueva cámara",
     "addStream": "+ agregar flujo",
+    "addCameraHere": "+ nueva cámara en {{server}}",
     "selectHint": "Seleccione un servidor, cámara o flujo"
   },
   "storage": {
@@ -152,6 +153,9 @@
     "pathHelperTokenSet": "Ignorado — la cámara resuelve su URL automáticamente mediante el perfil ONVIF",
     "onvifToken": "Token de perfil ONVIF",
     "onvifTokenHelper": "Dejar vacío para RTSP directo sin ONVIF",
+    "showRtspUrl": "Mostrar URL RTSP",
+    "copyRtspUrl": "Copiar URL RTSP",
+    "rtspUrlCopied": "¡Copiado!",
     "recordingProfile": "Perfil de grabación",
     "noRecording": "Sin grabación",
     "webrtcLive": "Flujo WebRTC en vivo",

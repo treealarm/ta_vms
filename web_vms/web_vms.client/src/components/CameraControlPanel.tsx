@@ -54,6 +54,15 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
     setSelection(newSel)
   }
 
+  const goToAddCamera = (serverId: string) => void setSelectionSafe({ kind: 'new_camera', serverId })
+
+  // The camera whose streams are currently shown expanded in the tree — collapses
+  // every other camera so the list doesn't grow tall with every camera's streams.
+  const expandedCameraId =
+    selection.kind === 'camera' || selection.kind === 'stream' || selection.kind === 'new_stream'
+      ? selection.cameraId
+      : undefined
+
   useImperativeHandle(ref, () => ({
     applyIfDirty: () => detailRef.current ? detailRef.current.applyIfDirty() : Promise.resolve(true)
   }))
@@ -106,7 +115,7 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
                       />
                     </ListItemButton>
 
-                    {(camera.streams ?? []).map((stream) => (
+                    {camera.cameraId === expandedCameraId && (camera.streams ?? []).map((stream) => (
                       <ListItemButton
                         key={stream.streamName}
                         sx={{ pl: 5, opacity: stream.disabled === true ? 0.45 : 1 }}
@@ -128,16 +137,18 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
                       </ListItemButton>
                     ))}
 
-                    <ListItemButton
-                      sx={{ pl: 5 }}
-                      selected={selection.kind === 'new_stream' && selection.cameraId === camera.cameraId}
-                      onClick={() => void setSelectionSafe({ kind: 'new_stream', cameraId: camera.cameraId })}
-                    >
-                      <ListItemText
-                        primary={t('cameraControl.addStream')}
-                        primaryTypographyProps={{ color: 'primary.main', noWrap: true }}
-                      />
-                    </ListItemButton>
+                    {camera.cameraId === expandedCameraId && (
+                      <ListItemButton
+                        sx={{ pl: 5 }}
+                        selected={selection.kind === 'new_stream' && selection.cameraId === camera.cameraId}
+                        onClick={() => void setSelectionSafe({ kind: 'new_stream', cameraId: camera.cameraId })}
+                      >
+                        <ListItemText
+                          primary={t('cameraControl.addStream')}
+                          primaryTypographyProps={{ color: 'primary.main', noWrap: true }}
+                        />
+                      </ListItemButton>
+                    )}
                   </Box>
                 ))}
               </Box>
@@ -158,6 +169,7 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
                 setSelection({ kind: 'none' })
                 await refresh()
               }}
+              onAddCameraOnServer={goToAddCamera}
             />
           )}
           {selection.kind === 'new_camera' && (
@@ -168,6 +180,7 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
               serverId={selection.serverId}
               onSaved={refresh}
               onRemoved={refresh}
+              onAddCameraOnServer={goToAddCamera}
             />
           )}
           {selection.kind === 'stream' && (
@@ -181,6 +194,7 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
                 setSelection({ kind: 'camera', cameraId: selection.cameraId, serverId: camerasMap[selection.cameraId]?.serverId ?? '' })
                 await refresh()
               }}
+              onAddCameraOnServer={goToAddCamera}
             />
           )}
           {selection.kind === 'new_stream' && (
@@ -191,6 +205,7 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
               streamName={null}
               onSaved={refresh}
               onRemoved={refresh}
+              onAddCameraOnServer={goToAddCamera}
             />
           )}
           {selection.kind === 'none' && (

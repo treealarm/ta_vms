@@ -49,6 +49,7 @@
     "hide": "Hide",
     "newCamera": "+ new camera",
     "addStream": "+ add stream",
+    "addCameraHere": "+ new camera on {{server}}",
     "selectHint": "Select a server, camera, or stream"
   },
   "storage": {
@@ -152,6 +153,9 @@
     "pathHelperTokenSet": "Ignored — the camera resolves its stream URL automatically via the ONVIF profile",
     "onvifToken": "ONVIF profile token",
     "onvifTokenHelper": "Leave empty for direct RTSP without ONVIF",
+    "showRtspUrl": "Show RTSP URL",
+    "copyRtspUrl": "Copy RTSP URL",
+    "rtspUrlCopied": "Copied!",
     "recordingProfile": "Recording profile",
     "noRecording": "No recording",
     "webrtcLive": "WebRTC live stream",

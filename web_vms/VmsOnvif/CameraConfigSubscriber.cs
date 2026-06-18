@@ -8,10 +8,12 @@ public sealed class CameraConfigSubscriber(
   OnvifFilterCache filterCache,
   CameraArmedCache armedCache,
   CameraConnCache connCache,
-  OnvifEventSubscriptionService subscriptionService) : IHostedService, IDisposable
+  OnvifEventSubscriptionService subscriptionService,
+  ILogger<CameraConfigSubscriber> logger) : IHostedService, IDisposable
 {
   private const string CameraConfigChangedTopic = "camera-config-changed";
   private const string CameraStateChangedTopic  = "camera-state-changed";
+  private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(5);
   private static readonly string PubSubName =
     Environment.GetEnvironmentVariable("PUBSUB_NAME")
       ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
@@ -24,30 +26,42 @@ public sealed class CameraConfigSubscriber(
     return Task.CompletedTask;
   }
 
+  // Subscriptions run for the lifetime of the process — if the underlying stream
+  // breaks (sidecar restart, transient redis hiccup, etc.) we must resubscribe,
+  // otherwise CameraConnCache/OnvifFilterCache/CameraArmedCache silently stop
+  // invalidating and start serving stale data forever.
   private async Task RunAsync(CancellationToken ct)
   {
-    try
+    while (!ct.IsCancellationRequested)
     {
-      await Task.WhenAll(
-        pubSubClient.SubscribeAsync(
-          PubSubName,
-          CameraConfigChangedTopic,
-          new DaprSubscriptionOptions(
-            new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry)),
-          HandleConfigChangedAsync,
-          ct),
-        pubSubClient.SubscribeAsync(
-          PubSubName,
-          CameraStateChangedTopic,
-          new DaprSubscriptionOptions(
-            new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry)),
-          HandleStateChangedAsync,
-          ct));
-    }
-    catch (OperationCanceledException) { }
-    catch (Exception ex)
-    {
-      Console.Error.WriteLine($"CameraConfigSubscriber error: {ex}");
+      try
+      {
+        await Task.WhenAll(
+          pubSubClient.SubscribeAsync(
+            PubSubName,
+            CameraConfigChangedTopic,
+            new DaprSubscriptionOptions(
+              new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry)),
+            HandleConfigChangedAsync,
+            ct));
+      }
+      catch (OperationCanceledException)
+      {
+        break;
+      }
+      catch (Exception ex)
+      {
+        logger.LogError(ex,
+          "CameraConfigSubscriber subscription failed, resubscribing in {DelaySeconds}s", RetryDelay.TotalSeconds);
+        try
+        {
+          await Task.Delay(RetryDelay, ct);
+        }
+        catch (OperationCanceledException)
+        {
+          break;
+        }
+      }
     }
   }
 

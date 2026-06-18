@@ -17,9 +17,10 @@ type Props = {
   serverId: string  // pre-selected server
   onSaved: () => Promise<void>
   onRemoved: () => Promise<void>
+  onAddCameraOnServer: (serverId: string) => void
 }
 
-export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serverId: initialServerId, onSaved, onRemoved }: Props) {
+export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serverId: initialServerId, onSaved, onRemoved, onAddCameraOnServer }: Props) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const servers = useAppSelector((state) => state.live.servers)
@@ -238,6 +239,14 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
             </Button>
             <Button color="error" variant="outlined" size="small" onClick={handleRemove}>
               {t('cameras.deleteCamera')}
+            </Button>
+            <Button
+              variant="text"
+              size="small"
+              onClick={() => onAddCameraOnServer(initialServerId)}
+              sx={{ ml: 'auto' }}
+            >
+              {t('cameraControl.addCameraHere', { server: initialServerId })}
             </Button>
           </Stack>
         )}
