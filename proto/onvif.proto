@@ -21,6 +21,9 @@ service OnvifService {
   rpc SetDeviceTime(SetDeviceTimeRequest) returns (SyncDeviceTimeResponse);
   rpc RebootDevice(CameraRequest) returns (RebootDeviceResponse);
   rpc DiscoverDevices(DiscoverDevicesRequest) returns (DiscoverDevicesResponse);
+  // Reads ONVIF profiles directly from ip/port/credentials, without the camera being
+  // configured in VmsCfg — lets the discovery wizard preview streams before committing.
+  rpc GetProfilesByConnection(GetProfilesByConnectionRequest) returns (GetProfilesResponse);
 }
 
 service PtzService {
@@ -50,6 +53,13 @@ message OnvifProfile {
   int32  width    = 3;
   int32  height   = 4;
   string encoding = 5;
+}
+
+message GetProfilesByConnectionRequest {
+  string ip   = 1;
+  int32  port = 2;
+  string user = 3;
+  string pass = 4;
 }
 
 message GetProfilesResponse {

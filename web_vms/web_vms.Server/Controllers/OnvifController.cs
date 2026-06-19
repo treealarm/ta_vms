@@ -257,6 +257,31 @@ public class OnvifController(
     });
   }
 
+  [HttpPost("discover/profiles")]
+  public async Task<IActionResult> GetProfilesByConnection(
+    [FromBody] GetProfilesByConnectionBody body, CancellationToken ct)
+  {
+    var response = await onvifClient.GetProfilesByConnectionAsync(
+      new GetProfilesByConnectionRequest
+      {
+        Ip   = body.Ip,
+        Port = body.Port,
+        User = body.User ?? string.Empty,
+        Pass = body.Pass ?? string.Empty,
+      }, Options(ct));
+
+    return Ok(response.Profiles.Select(p => new
+    {
+      token    = p.Token,
+      name     = p.Name,
+      width    = p.Width,
+      height   = p.Height,
+      encoding = p.Encoding
+    }));
+  }
+
+  public record GetProfilesByConnectionBody(string Ip, int Port, string? User, string? Pass);
+
   // ── ONVIF alarm filters ──────────────────────────────────────────────────
 
   [HttpGet("cameras/{cameraId}/alarm-filters")]

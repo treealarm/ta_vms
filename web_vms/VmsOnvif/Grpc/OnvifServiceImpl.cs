@@ -45,6 +45,30 @@ public class OnvifServiceImpl(
     return response;
   }
 
+  // Used by the discovery wizard to preview a device's streams before the camera is
+  // configured in VmsCfg — talks to the device directly, no CameraConnCache/actor lookup.
+  public override async Task<GetProfilesResponse> GetProfilesByConnection(
+    GetProfilesByConnectionRequest request, ServerCallContext context)
+  {
+    var response = new GetProfilesResponse();
+    var camera = Camera.Create(request.Ip, request.Port, request.User, request.Pass, logger: new OnvifLoggerAdapter(logger));
+    await camera.InitTask;
+
+    var mediaService = await camera.GetMediaService();
+    if (mediaService == null)
+      return response;
+
+    response.Profiles.AddRange(mediaService.GetProfiles().Select(p => new OnvifProfile
+    {
+      Token = p.Token,
+      Name = p.Name,
+      Width = p.Width,
+      Height = p.Height,
+      Encoding = p.Encoding
+    }));
+    return response;
+  }
+
   public override async Task<StreamUriResponse> GetStreamUri(StreamUriRequest request, ServerCallContext context)
   {
     var data = await connCache.GetAsync(request.SourceId, context.CancellationToken);

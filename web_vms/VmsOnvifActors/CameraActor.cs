@@ -106,7 +106,7 @@ public class CameraActor(ActorHost host) : Actor(host), ICameraActor
     var key = $"{conn.Ip}:{conn.Port}:{conn.User}:{conn.Pass}";
     if (_camera is null || _cameraKey != key)
     {
-      _camera = Camera.Create(conn.Ip, conn.Port, conn.User, conn.Pass);
+      _camera = Camera.Create(conn.Ip, conn.Port, conn.User, conn.Pass, logger: new OnvifLoggerAdapter(Logger));
       _cameraKey = key;
     }
     return _camera;

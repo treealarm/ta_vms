@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react'
 import {
   Box,
   Button,
+  Checkbox,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   MenuItem,
   Stack,
   TextField,
@@ -15,7 +17,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera } from '../store/liveSlice'
-import type { DiscoveredDeviceDto } from '../dto/dtos'
+import type { CameraStreamDto, DiscoveredDeviceDto } from '../dto/dtos'
 import PasswordField from './PasswordField'
 
 type Props = {
@@ -24,7 +26,18 @@ type Props = {
   onAdded: () => Promise<void>
 }
 
-type DraftState = { name: string; user: string; pass: string }
+type OnvifProfile = { token: string; name: string; width: number; height: number; encoding: string }
+type StreamDraft = { profile: OnvifProfile; selected: boolean }
+
+type DraftState = {
+  cameraId: string
+  name: string
+  user: string
+  pass: string
+  streams: StreamDraft[] | null // null = not loaded yet
+  loadingStreams: boolean
+  streamsError: string | null
+}
 
 export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) {
   const dispatch = useAppDispatch()
@@ -67,6 +80,17 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
       setDevices(result.devices)
       setScanOk(result.scanOk)
       setHasScanned(true)
+      // Materialize a draft (with its cameraId) for every device right away — draftFor()/
+      // updateDraft() must never independently mint a fresh cameraId on first access, or
+      // a "Load streams" call and a later "Add" call could end up using two different ids
+      // and create two cameras (one of them missing whatever streams were loaded).
+      setDrafts((prev) => {
+        const next = { ...prev }
+        for (const device of result.devices) {
+          if (!next[device.endpointUuid]) next[device.endpointUuid] = defaultDraft(device)
+        }
+        return next
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -74,8 +98,15 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
     }
   }
 
-  const defaultDraft = (device: DiscoveredDeviceDto): DraftState =>
-    ({ name: device.name || device.hardware || device.ip, user: '', pass: '' })
+  const defaultDraft = (device: DiscoveredDeviceDto): DraftState => ({
+    cameraId: crypto.randomUUID(),
+    name: device.name || device.hardware || device.ip,
+    user: '',
+    pass: '',
+    streams: null,
+    loadingStreams: false,
+    streamsError: null,
+  })
 
   const draftFor = (device: DiscoveredDeviceDto): DraftState =>
     drafts[device.endpointUuid] ?? defaultDraft(device)
@@ -86,21 +117,67 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
       [device.endpointUuid]: { ...(prev[device.endpointUuid] ?? defaultDraft(device)), ...patch },
     }))
 
+  const cameraPayload = (device: DiscoveredDeviceDto, draft: DraftState) => ({
+    cameraId: draft.cameraId,
+    name: draft.name,
+    serverId,
+    recordingMode: 'off' as const,
+    webRtc: false,
+    path: '',
+    cred: draft.user || draft.pass ? { user: draft.user, pass: draft.pass } : undefined,
+    onvifConn: { ip: device.ip, port: device.port },
+  })
+
+  // Pure preview — reads profiles directly from the device (ip/port/credentials), with no
+  // side effect on VmsCfg. The camera is only ever created when "Add" is clicked.
+  const handleLoadStreams = async (device: DiscoveredDeviceDto) => {
+    const draft = draftFor(device)
+    updateDraft(device, { loadingStreams: true, streamsError: null })
+    try {
+      const response = await fetch('/api/onvif/discover/profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip: device.ip, port: device.port, user: draft.user, pass: draft.pass }),
+      })
+      if (!response.ok) throw new Error(await response.text())
+      const profiles: OnvifProfile[] = await response.json()
+      const streams = profiles.map((profile) => ({
+        profile,
+        selected: profile.encoding.toUpperCase() !== 'JPEG',
+      }))
+      updateDraft(device, { streams, loadingStreams: false })
+    } catch (e) {
+      updateDraft(device, {
+        loadingStreams: false,
+        streamsError: e instanceof Error ? e.message : String(e),
+      })
+    }
+  }
+
+  const toggleStream = (device: DiscoveredDeviceDto, token: string, selected: boolean) => {
+    const draft = draftFor(device)
+    if (!draft.streams) return
+    updateDraft(device, {
+      streams: draft.streams.map((s) => (s.profile.token === token ? { ...s, selected } : s)),
+    })
+  }
+
   const handleAdd = async (device: DiscoveredDeviceDto) => {
     if (!serverId) return
     const draft = draftFor(device)
     setAddingId(device.endpointUuid)
     try {
-      const result = await dispatch(addCamera({
-        cameraId: crypto.randomUUID(),
-        name: draft.name,
-        serverId,
-        recordingMode: 'off',
-        webRtc: false,
-        path: '',
-        cred: draft.user || draft.pass ? { user: draft.user, pass: draft.pass } : undefined,
-        onvifConn: { ip: device.ip, port: device.port },
-      }))
+      const selected = draft.streams?.filter((s) => s.selected) ?? []
+      const streams: CameraStreamDto[] | undefined = draft.streams
+        ? selected.map((s, i) => ({
+            streamName: s.profile.token.toLowerCase(),
+            profileToken: s.profile.token,
+            path: '',
+            webRtc: i === 0,
+          }))
+        : undefined
+
+      const result = await dispatch(addCamera({ ...cameraPayload(device, draft), streams }))
       if (addCamera.rejected.match(result)) {
         setError(result.error.message ?? String(result.error))
         return
@@ -174,33 +251,79 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
                       {t('cameraControl.alreadyAdded')}
                     </Typography>
                   ) : (
-                    <Stack direction="row" spacing={1} sx={{ mt: 1 }} alignItems="center">
-                      <TextField
-                        label={t('cameras.cameraName')}
-                        value={draft.name}
-                        onChange={(e) => updateDraft(device, { name: e.target.value })}
-                        size="small"
-                        sx={{ flex: 1 }}
-                      />
-                      <TextField
-                        label={t('common.user')}
-                        value={draft.user}
-                        onChange={(e) => updateDraft(device, { user: e.target.value })}
-                        size="small"
-                        sx={{ flex: 1 }}
-                      />
-                      <Box sx={{ flex: 1 }}>
+                    <>
+                      <Stack direction="row" spacing={1} sx={{ mt: 1 }} alignItems="center">
+                        <TextField
+                          label={t('cameras.cameraName')}
+                          value={draft.name}
+                          onChange={(e) => updateDraft(device, { name: e.target.value })}
+                          size="small"
+                          fullWidth
+                        />
+                        <TextField
+                          label={t('common.user')}
+                          value={draft.user}
+                          onChange={(e) => updateDraft(device, { user: e.target.value })}
+                          size="small"
+                          fullWidth
+                        />
                         <PasswordField pass={draft.pass} setPass={(pass) => updateDraft(device, { pass })} />
-                      </Box>
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        disabled={!serverId || !draft.name.trim() || addingId === device.endpointUuid}
-                        onClick={() => void handleAdd(device)}
-                      >
-                        {t('cameraControl.addDevice')}
-                      </Button>
-                    </Stack>
+                      </Stack>
+
+                      <Stack direction="row" spacing={1} sx={{ mt: 1 }} alignItems="center">
+                        <Button
+                          variant="text"
+                          size="small"
+                          disabled={!draft.name.trim() || draft.loadingStreams}
+                          onClick={() => void handleLoadStreams(device)}
+                        >
+                          {draft.loadingStreams ? <CircularProgress size={16} /> : t('cameraControl.loadStreams')}
+                        </Button>
+                        <Box sx={{ flexGrow: 1 }} />
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          disabled={!serverId || !draft.name.trim() || addingId === device.endpointUuid}
+                          onClick={() => void handleAdd(device)}
+                        >
+                          {t('cameraControl.addDevice')}
+                        </Button>
+                      </Stack>
+
+                      {draft.streamsError && (
+                        <Typography variant="caption" color="error" display="block" sx={{ mt: 0.5 }}>
+                          {draft.streamsError}
+                        </Typography>
+                      )}
+
+                      {draft.streams && draft.streams.length === 0 && !draft.streamsError && (
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                          {t('cameraControl.noStreamsFound')}
+                        </Typography>
+                      )}
+
+                      {draft.streams && draft.streams.length > 0 && (
+                        <Stack sx={{ mt: 0.5 }}>
+                          {draft.streams.map((s) => {
+                            const res = s.profile.width && s.profile.height ? ` ${s.profile.width}×${s.profile.height}` : ''
+                            const label = `${s.profile.name || s.profile.token}${res} ${s.profile.encoding}`
+                            return (
+                              <FormControlLabel
+                                key={s.profile.token}
+                                control={
+                                  <Checkbox
+                                    size="small"
+                                    checked={s.selected}
+                                    onChange={(e) => toggleStream(device, s.profile.token, e.target.checked)}
+                                  />
+                                }
+                                label={<Typography variant="caption">{label}</Typography>}
+                              />
+                            )
+                          })}
+                        </Stack>
+                      )}
+                    </>
                   )}
                 </Box>
               )
@@ -209,7 +332,7 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>{t('common.cancel')}</Button>
+        <Button onClick={onClose}>{t('common.close')}</Button>
       </DialogActions>
     </Dialog>
   )

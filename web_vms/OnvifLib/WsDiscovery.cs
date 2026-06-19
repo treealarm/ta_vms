@@ -107,7 +107,13 @@ namespace OnvifLib
         try
         {
           var probe = BuildProbeMessage();
-          await client.SendAsync(probe, probe.Length, new IPEndPoint(MulticastAddress, MulticastPort));
+          var probeEndpoint = new IPEndPoint(MulticastAddress, MulticastPort);
+          await client.SendAsync(probe, probe.Length, probeEndpoint);
+
+          // WS-Discovery runs over UDP multicast with no delivery guarantee — a single probe
+          // (or its reply) is commonly lost, especially over WiFi. Resend a couple of times
+          // while still listening, instead of relying on one shot.
+          var resendTask = ResendProbeAsync(client, probe, probeEndpoint, ct);
 
           while (!ct.IsCancellationRequested)
           {
@@ -134,6 +140,7 @@ namespace OnvifLib
             }
           }
 
+          await resendTask;
           return (devices, true);
         }
         catch (Exception ex)
@@ -141,6 +148,23 @@ namespace OnvifLib
           logger?.Warning($"WS-Discovery: probe on {localAddress} failed: {ex.Message}");
           return (devices, false);
         }
+      }
+    }
+
+    private static async Task ResendProbeAsync(
+      UdpClient client, byte[] probe, IPEndPoint probeEndpoint, CancellationToken ct)
+    {
+      try
+      {
+        for (var i = 0; i < 2; i++)
+        {
+          await Task.Delay(TimeSpan.FromSeconds(1), ct);
+          await client.SendAsync(probe, probe.Length, probeEndpoint);
+        }
+      }
+      catch (OperationCanceledException)
+      {
+        // timeout elapsed before a resend was due — fine, at least one probe was sent
       }
     }
 
@@ -174,6 +198,7 @@ namespace OnvifLib
         return null;
 
       var endpointUuid = probeMatch.Descendants(Wsa + "Address").FirstOrDefault()?.Value?.Trim();
+      var typesRaw = probeMatch.Element(Disc + "Types")?.Value ?? string.Empty;
       var xAddrsRaw = probeMatch.Element(Disc + "XAddrs")?.Value ?? string.Empty;
       var scopesRaw = probeMatch.Element(Disc + "Scopes")?.Value ?? string.Empty;
 
@@ -181,6 +206,14 @@ namespace OnvifLib
       var scopes = scopesRaw.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
       if (xAddrs.Length == 0)
+        return null;
+
+      // Some non-ONVIF devices answer any WS-Discovery Probe regardless of the requested
+      // Types filter (generic/non-compliant WSD stacks, e.g. on routers). Require the reply
+      // to actually self-identify as an ONVIF NetworkVideoTransmitter before trusting it.
+      var declaresOnvif = typesRaw.Contains("NetworkVideoTransmitter", StringComparison.OrdinalIgnoreCase)
+        || scopes.Any(s => s.StartsWith("onvif://", StringComparison.OrdinalIgnoreCase));
+      if (!declaresOnvif)
         return null;
 
       var firstXAddr = new Uri(xAddrs[0]);
