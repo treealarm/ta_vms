@@ -34,14 +34,7 @@ public class OnvifServiceImpl(
       throw new RpcException(new Status(StatusCode.Internal, $"Actor invoke failed: {ex.Message}"));
     }
 
-    response.Profiles.AddRange(profiles.Select(p => new OnvifProfile
-    {
-      Token = p.Token,
-      Name = p.Name,
-      Width = p.Width,
-      Height = p.Height,
-      Encoding = p.Encoding
-    }));
+    response.Profiles.AddRange(profiles.Select(p => ToOnvifProfile(p.Token, p.Name, p.Width, p.Height, p.Encoding)));
     return response;
   }
 
@@ -58,16 +51,19 @@ public class OnvifServiceImpl(
     if (mediaService == null)
       return response;
 
-    response.Profiles.AddRange(mediaService.GetProfiles().Select(p => new OnvifProfile
-    {
-      Token = p.Token,
-      Name = p.Name,
-      Width = p.Width,
-      Height = p.Height,
-      Encoding = p.Encoding
-    }));
+    response.Profiles.AddRange(mediaService.GetProfiles()
+      .Select(p => ToOnvifProfile(p.Token, p.Name, p.Width, p.Height, p.Encoding)));
     return response;
   }
+
+  private static OnvifProfile ToOnvifProfile(string token, string name, int width, int height, string encoding) => new()
+  {
+    Token = token,
+    Name = name,
+    Width = width,
+    Height = height,
+    Encoding = encoding
+  };
 
   public override async Task<StreamUriResponse> GetStreamUri(StreamUriRequest request, ServerCallContext context)
   {

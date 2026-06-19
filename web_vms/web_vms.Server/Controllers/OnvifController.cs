@@ -14,8 +14,17 @@ public class OnvifController(
   private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
   private const int MaxDiscoverTimeoutSeconds = 30;
 
+  // Connecting to a device directly (no cached connection) can chain several sequential
+  // WCF calls — device time, GetServices, an auth-scheme retry, then trying MediaService2
+  // then MediaService1 — each with its own internal ~15s timeout. A slow/unreachable
+  // device can plausibly exceed the generic 15s deadline well before any of those give up.
+  private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(60);
+
   private static CallOptions Options(CancellationToken ct) =>
     new(deadline: DateTime.UtcNow.Add(Timeout), cancellationToken: ct);
+
+  private static CallOptions ConnectOptions(CancellationToken ct) =>
+    new(deadline: DateTime.UtcNow.Add(ConnectTimeout), cancellationToken: ct);
 
   // The probe itself can run as long as requested (clamped); give the call a deadline
   // with margin on top so a long scan doesn't get cut off by the generic 15s deadline.
@@ -32,15 +41,17 @@ public class OnvifController(
     var response = await onvifClient.GetProfilesAsync(
       new CameraRequest { SourceId = cameraId }, Options(ct));
 
-    return Ok(response.Profiles.Select(p => new
-    {
-      token    = p.Token,
-      name     = p.Name,
-      width    = p.Width,
-      height   = p.Height,
-      encoding = p.Encoding
-    }));
+    return Ok(response.Profiles.Select(ToProfileDto));
   }
+
+  private static object ToProfileDto(OnvifProfile p) => new
+  {
+    token    = p.Token,
+    name     = p.Name,
+    width    = p.Width,
+    height   = p.Height,
+    encoding = p.Encoding
+  };
 
   [HttpGet("cameras/{cameraId}/stream-uri")]
   public async Task<IActionResult> GetStreamUri(string cameraId, [FromQuery] string? profileToken, CancellationToken ct)
@@ -268,16 +279,9 @@ public class OnvifController(
         Port = body.Port,
         User = body.User ?? string.Empty,
         Pass = body.Pass ?? string.Empty,
-      }, Options(ct));
+      }, ConnectOptions(ct));
 
-    return Ok(response.Profiles.Select(p => new
-    {
-      token    = p.Token,
-      name     = p.Name,
-      width    = p.Width,
-      height   = p.Height,
-      encoding = p.Encoding
-    }));
+    return Ok(response.Profiles.Select(ToProfileDto));
   }
 
   public record GetProfilesByConnectionBody(string Ip, int Port, string? User, string? Pass);

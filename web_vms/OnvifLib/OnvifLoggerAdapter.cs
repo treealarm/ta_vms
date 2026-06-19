@@ -1,8 +1,8 @@
-using OnvifLib;
+using Microsoft.Extensions.Logging;
 
-namespace VmsOnvif;
+namespace OnvifLib;
 
-/// Forwards OnvifLib's logging abstraction to the host's ILogger (Serilog → file).
+/// Forwards OnvifLib's logging abstraction to a host's ILogger (Serilog → file).
 public sealed class OnvifLoggerAdapter(ILogger logger) : IOnvifLogger
 {
   public void Debug(string message) => logger.LogDebug("{OnvifMessage}", message);

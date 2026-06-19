@@ -54,15 +54,22 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
   const [drafts, setDrafts] = useState<Record<string, DraftState>>({})
   const [addingId, setAddingId] = useState<string | null>(null)
 
-  // Reset scan results when the dialog is reopened, default server to the first one
+  // Reset scan results when the dialog is reopened
   useEffect(() => {
     if (!open) return
     setDevices([])
     setHasScanned(false)
     setDrafts({})
     setError(null)
+  }, [open])
+
+  // Default the server pick to the first one — kept separate from the reset effect above
+  // so it also picks up `servers` arriving late (e.g. still loading when the dialog opens)
+  // without wiping an in-progress scan every time the servers list re-fetches.
+  useEffect(() => {
+    if (!open) return
     setServerId((prev) => prev || servers[0]?.serverId || '')
-  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, servers])
 
   const existingAddrs = new Set(
     Object.values(camerasMap)
@@ -70,27 +77,28 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
       .map((c) => `${c.onvifConn!.ip.trim().toLowerCase()}:${c.onvifConn!.port}`)
   )
 
+  // The backend's RpcExceptionFilter wraps gRPC errors as `{ "error": "..." }` JSON —
+  // unwrap that instead of showing the raw envelope string to the user.
+  const errorMessageFrom = async (response: Response): Promise<string> => {
+    const text = await response.text()
+    try {
+      const parsed = JSON.parse(text) as { error?: string }
+      return parsed.error ?? text
+    } catch {
+      return text
+    }
+  }
+
   const handleScan = async () => {
     setScanning(true)
     setError(null)
     try {
       const response = await fetch('/api/onvif/discover', { method: 'POST' })
-      if (!response.ok) throw new Error(await response.text())
+      if (!response.ok) throw new Error(await errorMessageFrom(response))
       const result: { scanOk: boolean; devices: DiscoveredDeviceDto[] } = await response.json()
       setDevices(result.devices)
       setScanOk(result.scanOk)
       setHasScanned(true)
-      // Materialize a draft (with its cameraId) for every device right away — draftFor()/
-      // updateDraft() must never independently mint a fresh cameraId on first access, or
-      // a "Load streams" call and a later "Add" call could end up using two different ids
-      // and create two cameras (one of them missing whatever streams were loaded).
-      setDrafts((prev) => {
-        const next = { ...prev }
-        for (const device of result.devices) {
-          if (!next[device.endpointUuid]) next[device.endpointUuid] = defaultDraft(device)
-        }
-        return next
-      })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -139,7 +147,7 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ip: device.ip, port: device.port, user: draft.user, pass: draft.pass }),
       })
-      if (!response.ok) throw new Error(await response.text())
+      if (!response.ok) throw new Error(await errorMessageFrom(response))
       const profiles: OnvifProfile[] = await response.json()
       const streams = profiles.map((profile) => ({
         profile,
