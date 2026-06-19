@@ -287,13 +287,16 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
     logger::instance().warning("rtsp output sink: pkt->pts < 0");
   }
   // --- 5. Запись пакета ---
-  if (av_interleaved_write_frame(m_ctx.get(), pkt) < 0) {
+  const int write_result = av_interleaved_write_frame(m_ctx.get(), pkt);
+  if (write_result < 0) {
     ++m_consecutive_write_errors;
 
+    char errbuf[256] = {0};
+    av_strerror(write_result, errbuf, sizeof(errbuf));
     constexpr int critical_write_error_threshold = 3;
     logger::instance().error(std::format(
-      "failed to write packet to rtsp output (consecutive errors: {})",
-      m_consecutive_write_errors));
+      "failed to write packet to rtsp output (consecutive errors: {}): code={} msg={} media_type={}",
+      m_consecutive_write_errors, write_result, errbuf, (int)stream->media_type));
 
     if (m_consecutive_write_errors >= critical_write_error_threshold) {
       logger::instance().warning("rtsp output sink watchdog: closing broken output context for reinit");

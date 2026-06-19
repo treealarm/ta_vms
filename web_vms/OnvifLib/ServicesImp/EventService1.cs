@@ -231,7 +231,16 @@ namespace OnvifLib
             MessageLimit = MessageLimit
           };
 
+          // Some firmware ignores the long-poll Timeout above and returns immediately
+          // regardless of whether events are pending. Without a floor here, such a camera
+          // drives this loop at full speed (thousands of iterations/sec), starving the
+          // process' thread pool. Enforce PullTimeout as a minimum cadence regardless of
+          // how fast the camera actually responds.
+          var pullStarted = DateTime.UtcNow;
           var response = await _pullClient!.PullMessagesAsync(request);
+          var elapsed = DateTime.UtcNow - pullStarted;
+          if (elapsed < PullTimeout)
+            await Task.Delay(PullTimeout - elapsed, token);
 
           if (!_authSchemeConfirmed)
           {

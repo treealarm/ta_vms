@@ -146,7 +146,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
       .finally(() => setPendingContinuous(false))
   }
 
-  const configuredRtsp = camera.rtspUrl || ''
+  const configuredRtsp = camera.path || ''
   useEffect(() => {
     if (configuredRtsp || !camera.onvifConn) return
     const token = activeStreamObj?.profileToken ?? ''

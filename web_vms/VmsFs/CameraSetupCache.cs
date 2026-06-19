@@ -6,7 +6,7 @@ namespace VmsFs;
 public sealed record CameraStreamSetup(
   string StreamName,
   string ProfileToken,
-  string RtspUrl,
+  string Path,
   bool WebRtc,
   RecordingMode BaseMode,
   uint BaseSegmentSeconds);
@@ -51,7 +51,7 @@ public sealed class CameraSetupCache(CfgService.CfgServiceClient cfgClient)
           return new CameraStreamSetup(
             s.StreamName,
             s.ProfileToken,
-            s.RtspUrl,
+            s.Path,
             s.WebRtc,
             profile?.Mode ?? RecordingMode.RecordingOff,
             profile?.SegmentSeconds ?? 5u);

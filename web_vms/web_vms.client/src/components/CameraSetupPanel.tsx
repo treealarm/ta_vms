@@ -17,9 +17,10 @@ type Props = {
   serverId: string  // pre-selected server
   onSaved: () => Promise<void>
   onRemoved: () => Promise<void>
+  onAddCameraOnServer: (serverId: string) => void
 }
 
-export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serverId: initialServerId, onSaved, onRemoved }: Props) {
+export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serverId: initialServerId, onSaved, onRemoved, onAddCameraOnServer }: Props) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const servers = useAppSelector((state) => state.live.servers)
@@ -37,8 +38,8 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   )
   const [user, setUser] = useState(existing?.cred?.user ?? '')
   const [pass, setPass] = useState(existing?.cred?.pass ?? '')
-  const [onvifIp, setOnvifIp] = useState(existing?.onvifConn?.ip ?? '')
-  const [onvifPort, setOnvifPort] = useState(isNew ? 80 : (existing?.onvifConn?.port ?? 0))
+  const [ip, setIp] = useState(existing?.onvifConn?.ip ?? '')
+  const [port, setPort] = useState(isNew ? 80 : (existing?.onvifConn?.port ?? 0))
   const [disabled, setDisabled] = useState(existing?.disabled === true)
   const [pendingStorages, setPendingStorages] = useState<CameraStorageAssignmentDto[]>([])
 
@@ -66,8 +67,8 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     mediaMtxServerId: existing?.mediaMtxServerId ?? '',
     user: existing?.cred?.user ?? '',
     pass: existing?.cred?.pass ?? '',
-    onvifIp: existing?.onvifConn?.ip ?? '',
-    onvifPort: existing?.onvifConn?.port ?? 0,
+    ip: existing?.onvifConn?.ip ?? '',
+    port: existing?.onvifConn?.port ?? 0,
     disabled: existing?.disabled === true,
   })
 
@@ -77,8 +78,8 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     || mediaMtxServerId !== snap.current.mediaMtxServerId
     || user !== snap.current.user
     || pass !== snap.current.pass
-    || onvifIp !== snap.current.onvifIp
-    || onvifPort !== snap.current.onvifPort
+    || ip !== snap.current.ip
+    || port !== snap.current.port
     || disabled !== snap.current.disabled
   )
 
@@ -97,10 +98,10 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     serverId,
     recordingMode: existing?.recordingMode ?? 'off',
     webRtc: existing?.webRtc ?? false,
-    rtspUrl: existing?.rtspUrl ?? '',
+    path: existing?.path ?? '',
     streams: existing?.streams ?? [],
     cred: user || pass ? { user, pass } : undefined,
-    onvifConn: onvifIp ? { ip: onvifIp, port: onvifPort } : undefined,
+    onvifConn: ip ? { ip, port } : undefined,
     mediaMtxServerId: mediaMtxServerId || undefined,
     disabled: disabled || undefined,
   })
@@ -112,7 +113,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     const action = serverChanged ? changeCameraParent : addCamera
     const result = await dispatch(action(payload))
     if (!action.rejected.match(result)) {
-      snap.current = { name, serverId, mediaMtxServerId, user, pass, onvifIp, onvifPort, disabled }
+      snap.current = { name, serverId, mediaMtxServerId, user, pass, ip, port, disabled }
       await dispatch(fetchCameraState(initialCameraId))
       return true
     }
@@ -143,8 +144,8 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     setMediaMtxServerId(snap.current.mediaMtxServerId)
     setUser(snap.current.user)
     setPass(snap.current.pass)
-    setOnvifIp(snap.current.onvifIp)
-    setOnvifPort(snap.current.onvifPort)
+    setIp(snap.current.ip)
+    setPort(snap.current.port)
     setDisabled(snap.current.disabled)
   }
 
@@ -208,11 +209,11 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
         </TextField>
 
         <Stack direction="row" spacing={1}>
-          <TextField label={t('cameras.onvifIp')} value={onvifIp} onChange={(e) => setOnvifIp(e.target.value)} size="small" sx={{ flex: 1 }} />
+          <TextField label={t('cameras.ip')} value={ip} onChange={(e) => setIp(e.target.value)} size="small" sx={{ flex: 1 }} />
           <TextField
-            label={t('cameras.onvifPort')}
-            value={onvifPort}
-            onChange={(e) => setNonNegativeNumber(e.target.value, setOnvifPort)}
+            label={t('cameras.port')}
+            value={port}
+            onChange={(e) => setNonNegativeNumber(e.target.value, setPort)}
             size="small"
             sx={{ width: 100 }}
           />
@@ -238,6 +239,14 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
             </Button>
             <Button color="error" variant="outlined" size="small" onClick={handleRemove}>
               {t('cameras.deleteCamera')}
+            </Button>
+            <Button
+              variant="text"
+              size="small"
+              onClick={() => onAddCameraOnServer(initialServerId)}
+              sx={{ ml: 'auto' }}
+            >
+              {t('cameraControl.addCameraHere', { server: initialServerId })}
             </Button>
           </Stack>
         )}

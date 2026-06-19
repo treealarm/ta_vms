@@ -98,12 +98,11 @@ int main(int argc, char** argv)
     }
   });
 
-  std::vector<vms::cfg::CameraSetup> cfg_list;
-  std::vector<vms::cfg::MediaMtxServer> mtx_servers;
-
-  while (!c_client.list_cameras(cfg_list) && !g_stop_requested)
+  // Wait until VmsCfg is reachable before proceeding.
   {
-    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+    std::vector<vms::cfg::CameraSetup> warmup_list;
+    while (!c_client.list_cameras(warmup_list) && !g_stop_requested)
+      std::this_thread::sleep_for(std::chrono::milliseconds(5000));
   }
 
   {
@@ -113,49 +112,10 @@ int main(int argc, char** argv)
     fs_client::set_fs_app_id(fs_id);
   }
 
-  // Best-effort: load MediaMTX server list to resolve RTSP push URLs at startup.
-  c_client.list_media_mtx_servers(mtx_servers);
-
-  // Build a lookup map: server_id → rtsp push base URL
-  std::unordered_map<std::string, std::string> mtx_rtsp_by_id;
-  for (const auto& s : mtx_servers)
-    mtx_rtsp_by_id[s.id()] = "rtsp://" + s.host() + ":" + std::to_string(s.rtsp_port());
-
-  std::string error;
-
-  for (const auto& c : cfg_list)
-  {
-    const std::string user = c.has_cred() ? c.cred().user() : "";
-    const std::string pass = c.has_cred() ? c.cred().pass() : "";
-
-    // Resolve assigned MediaMTX RTSP push base URL for this camera
-    std::string cam_webrtc_push_url;
-    if (c.has_media_mtx_server_id() && !c.media_mtx_server_id().empty())
-    {
-      auto it = mtx_rtsp_by_id.find(c.media_mtx_server_id());
-      if (it != mtx_rtsp_by_id.end())
-        cam_webrtc_push_url = it->second;
-    }
-
-    std::vector<camera_manager::stream_config> streams;
-    for (int i = 0; i < c.streams_size(); ++i)
-    {
-      const auto& s = c.streams(i);
-      streams.push_back({
-        .stream_name           = s.stream_name(),
-        .profile_token         = s.profile_token(),
-        .rtsp_url              = s.rtsp_url(),
-        .policy                = proto_mapper::recording_policy_for_stream(s),
-        .web_rtc               = s.web_rtc(),
-        .webrtc_rtsp_push_url  = cam_webrtc_push_url,
-      });
-    }
-
-    if (!manager.configure_camera(c.camera_id(), user, pass, streams, error))
-    {
-      logger::instance().error(std::format("Failed to configure camera '{}': {}", c.camera_id(), error));
-    }
-  }
+  // Load the initial camera set through the same path pub/sub updates use, so disabled
+  // cameras/streams are respected here too instead of being configured then immediately
+  // left running until the next unrelated config change.
+  cfg_sub.reload_cameras();
 
   //if (argc > 3)
   //{

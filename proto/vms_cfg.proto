@@ -85,7 +85,7 @@ message RecordingProfile {
 message CameraStream {
   string stream_name                       = 1;
   string profile_token                     = 2;
-  string rtsp_url                          = 3;
+  string path                              = 3;
   bool   web_rtc                           = 4;
   optional RecordingProfile recording_profile  = 5;
   optional RecordingProfile override_profile   = 6;

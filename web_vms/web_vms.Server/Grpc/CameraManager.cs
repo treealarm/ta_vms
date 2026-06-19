@@ -63,7 +63,7 @@ public class CameraManager : ICameraManager
       {
         StreamName       = s.StreamName,
         ProfileToken     = s.ProfileToken,
-        RtspUrl          = s.RtspUrl,
+        Path             = s.Path,
         WebRtc           = s.WebRtc,
         RecordingProfile = s.RecordingProfile != null ? ToProfileDto(s.RecordingProfile) : null,
         OverrideProfile  = s.OverrideProfile  != null ? ToProfileDto(s.OverrideProfile)  : null,
@@ -83,7 +83,7 @@ public class CameraManager : ICameraManager
       RecordingMode    = mode,
       Recording        = mode is "continuous" or "prealarm",
       WebRtc           = firstStream?.WebRtc ?? false,
-      RtspUrl          = firstStream?.RtspUrl,
+      Path             = firstStream?.Path,
       Streams          = streams,
       Cred             = setup.Cred == null ? null : new CredentialsDto { User = setup.Cred.User, Pass = setup.Cred.Pass },
       OnvifConn        = setup.OnvifConn == null ? null : new OnvifConnectionDto { ip = setup.OnvifConn.Ip, port = setup.OnvifConn.Port },
@@ -182,7 +182,7 @@ public class CameraManager : ICameraManager
         {
           StreamName   = s.StreamName,
           ProfileToken = s.ProfileToken,
-          RtspUrl      = s.RtspUrl,
+          Path         = s.Path,
           WebRtc       = s.WebRtc,
           Disabled     = s.Disabled == true,
         };
@@ -191,12 +191,12 @@ public class CameraManager : ICameraManager
         return stream;
       }));
     }
-    else if (!string.IsNullOrEmpty(dto.RtspUrl))
+    else if (!string.IsNullOrEmpty(dto.Path))
     {
       setup.Streams.Add(new CameraStream
       {
         StreamName = "main",
-        RtspUrl    = dto.RtspUrl,
+        Path       = dto.Path,
         WebRtc     = dto.WebRtc,
       });
     }

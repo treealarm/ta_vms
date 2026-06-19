@@ -11,14 +11,7 @@ public class MonitorController(MonitorManager manager) : ControllerBase
   [HttpGet]
   public async Task<IActionResult> List(CancellationToken ct)
   {
-    try
-    {
-      return Ok(await manager.List(ct));
-    }
-    catch (RpcException ex)
-    {
-      return StatusCode(503, new ApiResponse(false, $"Config service error: {ex.Status.Detail}"));
-    }
+    return Ok(await manager.List(ct));
   }
 
   [HttpPost]
@@ -30,43 +23,22 @@ public class MonitorController(MonitorManager manager) : ControllerBase
     if (string.IsNullOrWhiteSpace(dto.Layout))
       return BadRequest("layout must not be empty");
 
-    try
-    {
-      var result = await manager.Upsert(dto, ct);
-      return Ok(result);
-    }
-    catch (RpcException ex)
-    {
-      return StatusCode(503, new ApiResponse(false, $"Config service error: {ex.Status.Detail}"));
-    }
+    var result = await manager.Upsert(dto, ct);
+    return Ok(result);
   }
 
   [HttpDelete("{id}")]
   public async Task<IActionResult> Remove(string id, CancellationToken ct)
   {
-    try
-    {
-      var removed = await manager.Remove(id, ct);
-      return Ok(new ApiResponse(removed, removed ? "ok" : "not found"));
-    }
-    catch (RpcException ex)
-    {
-      return StatusCode(503, new ApiResponse(false, $"Config service error: {ex.Status.Detail}"));
-    }
+    var removed = await manager.Remove(id, ct);
+    return Ok(new ApiResponse(removed, removed ? "ok" : "not found"));
   }
 
   [HttpPut("{id}/cameras")]
   public async Task<IActionResult> SetCameras(string id, [FromBody] SetMonitorCamerasBody body, CancellationToken ct)
   {
-    try
-    {
-      var result = await manager.SetCameras(id, body.CameraIds, ct);
-      return Ok(result);
-    }
-    catch (RpcException ex)
-    {
-      return StatusCode(503, new ApiResponse(false, $"Config service error: {ex.Status.Detail}"));
-    }
+    var result = await manager.SetCameras(id, body.CameraIds, ct);
+    return Ok(result);
   }
 
   [HttpPut("{id}/slots/{slotIndex}")]
@@ -75,14 +47,7 @@ public class MonitorController(MonitorManager manager) : ControllerBase
     if (string.IsNullOrWhiteSpace(body.CameraId))
       return BadRequest("cameraId must not be empty");
 
-    try
-    {
-      var result = await manager.SetSlot(id, slotIndex, body.CameraId, ct);
-      return Ok(result);
-    }
-    catch (RpcException ex)
-    {
-      return StatusCode(503, new ApiResponse(false, $"Config service error: {ex.Status.Detail}"));
-    }
+    var result = await manager.SetSlot(id, slotIndex, body.CameraId, ct);
+    return Ok(result);
   }
 }

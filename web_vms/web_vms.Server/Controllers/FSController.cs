@@ -221,7 +221,7 @@ public sealed class FSController(
           AlarmEndTs   = e.AlarmEndTs?.ToDateTime()
         }));
       }
-      catch { /* FS unavailable — skip */ }
+      catch (RpcException) { /* FS instance unavailable — skip */ }
     }
 
     var sorted = allEvents
@@ -259,8 +259,7 @@ public sealed class FSController(
           new GetClipsForEventRequest { EventId = eventId }, cancellationToken: ct);
         break;
       }
-      catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound) { /* try next */ }
-      catch (RpcException) { /* FS unavailable — try next */ }
+      catch (RpcException) { /* not on this FS instance — try next */ }
     }
 
     if (clipsResp is null)
@@ -308,8 +307,7 @@ public sealed class FSController(
           new GetClipsForEventRequest { EventId = eventId }, cancellationToken: ct);
         break;
       }
-      catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound) { /* try next */ }
-      catch (RpcException) { /* FS unavailable — try next */ }
+      catch (RpcException) { /* not on this FS instance — try next */ }
     }
 
     if (clipsResp is null)
@@ -347,7 +345,7 @@ public sealed class FSController(
           EndTs      = e.EndTs?.ToDateTime(),
         }));
       }
-      catch { /* FS unavailable — skip */ }
+      catch (RpcException) { /* FS instance unavailable — skip */ }
     }
 
     var sorted = allEvents
@@ -393,15 +391,7 @@ public sealed class FSController(
     if (!string.IsNullOrWhiteSpace(streamName))
       fsReq.StreamName = streamName;
 
-    GetRecordingsResponse fsResp;
-    try
-    {
-      fsResp = await jpegFsClient.GetRecordingsAroundAsync(fsReq, cancellationToken: ct);
-    }
-    catch (RpcException ex)
-    {
-      return StatusCode(503, new { error = $"FS service error: {ex.Status.Detail}" });
-    }
+    var fsResp = await jpegFsClient.GetRecordingsAroundAsync(fsReq, cancellationToken: ct);
 
     var rec = fsResp.Recordings
       .Where(r => r.StartTs.ToDateTime() <= tsUtc)
@@ -411,16 +401,8 @@ public sealed class FSController(
     if (rec is null)
       return NotFound(new { error = "no recording found for the given timestamp" });
 
-    StatArchiveTsResponse stat;
-    try
-    {
-      stat = await jpegFsClient.StatArchiveTsAsync(
-        new StatArchiveTsRequest { ClipUid = rec.ClipUid }, cancellationToken: ct);
-    }
-    catch (RpcException ex)
-    {
-      return StatusCode(503, new { error = $"FS service error: {ex.Status.Detail}" });
-    }
+    var stat = await jpegFsClient.StatArchiveTsAsync(
+      new StatArchiveTsRequest { ClipUid = rec.ClipUid }, cancellationToken: ct);
 
     if (!stat.Exists)
       return NotFound(new { error = stat.Message });
@@ -428,24 +410,9 @@ public sealed class FSController(
     var offsetMs = (long)(tsUtc - rec.StartTs.ToDateTime()).TotalMilliseconds;
     if (offsetMs < 0) offsetMs = 0;
 
-    ArchiveFrameJpegResponse mediaResp;
-    try
-    {
-      mediaResp = await GetMediaClient(cam.ServerId).GetArchiveFrameJpegAsync(
-        new ArchiveFrameJpegRequest { FilePath = stat.FilePath, OffsetMs = offsetMs },
-        FrameCallOptions(ct));
-    }
-    catch (RpcException ex)
-    {
-      var status = ex.StatusCode switch
-      {
-        Grpc.Core.StatusCode.NotFound        => 404,
-        Grpc.Core.StatusCode.DeadlineExceeded => 504,
-        Grpc.Core.StatusCode.Unavailable      => 503,
-        _                                     => 500
-      };
-      return StatusCode(status, new { error = ex.Status.Detail });
-    }
+    var mediaResp = await GetMediaClient(cam.ServerId).GetArchiveFrameJpegAsync(
+      new ArchiveFrameJpegRequest { FilePath = stat.FilePath, OffsetMs = offsetMs },
+      FrameCallOptions(ct));
 
     if (!mediaResp.Success)
       return StatusCode(500, new { error = mediaResp.Message });
