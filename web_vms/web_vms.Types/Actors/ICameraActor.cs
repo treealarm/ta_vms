@@ -13,7 +13,7 @@ public interface ICameraActor : IActor
   Task<PtzCapabilitiesDto> GetPtzCapabilitiesAsync(CameraConnInfo conn);
 }
 
-public record CameraConnInfo(string Ip, int Port, string User, string Pass);
+public record CameraConnInfo(string Ip, int Port, string User, string Pass, string Xaddr = "");
 public record ProfileInfoDto(string Token, string Name, int Width, int Height, string Encoding);
 public record GetStreamUriActorRequest(CameraConnInfo Conn, string ProfileToken);
 public record GetStreamUriActorResult(string Uri);

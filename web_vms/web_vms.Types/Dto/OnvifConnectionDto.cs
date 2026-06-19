@@ -4,5 +4,6 @@
   {
     required public string ip { get; set; }
     required public int port { get; set; }
+    public string? xaddr { get; set; }
   }
 }

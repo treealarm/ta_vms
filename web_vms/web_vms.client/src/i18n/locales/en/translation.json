@@ -3,6 +3,7 @@
     "save": "Save",
     "apply": "Apply",
     "cancel": "Cancel",
+    "close": "Close",
     "refresh": "Refresh",
     "add": "Add",
     "delete": "Delete",
@@ -50,7 +51,15 @@
     "newCamera": "+ new camera",
     "addStream": "+ add stream",
     "addCameraHere": "+ new camera on {{server}}",
-    "selectHint": "Select a server, camera, or stream"
+    "selectHint": "Select a server, camera, or stream",
+    "discoverDevices": "Discover devices",
+    "scan": "Scan",
+    "noDevicesFound": "No ONVIF devices found",
+    "scanUnavailable": "Could not scan any network interface — discovery is unavailable in this deployment, this does not mean there are no cameras",
+    "alreadyAdded": "Already added",
+    "addDevice": "Add",
+    "loadStreams": "Load streams",
+    "noStreamsFound": "No ONVIF streams found on this camera"
   },
   "storage": {
     "title": "Storages",

@@ -20,6 +20,10 @@ service OnvifService {
   rpc SyncDeviceTime(CameraRequest) returns (SyncDeviceTimeResponse);
   rpc SetDeviceTime(SetDeviceTimeRequest) returns (SyncDeviceTimeResponse);
   rpc RebootDevice(CameraRequest) returns (RebootDeviceResponse);
+  rpc DiscoverDevices(DiscoverDevicesRequest) returns (DiscoverDevicesResponse);
+  // Reads ONVIF profiles directly from ip/port/credentials, without the camera being
+  // configured in VmsCfg — lets the discovery wizard preview streams before committing.
+  rpc GetProfilesByConnection(GetProfilesByConnectionRequest) returns (GetProfilesResponse);
 }
 
 service PtzService {
@@ -49,6 +53,16 @@ message OnvifProfile {
   int32  width    = 3;
   int32  height   = 4;
   string encoding = 5;
+}
+
+message GetProfilesByConnectionRequest {
+  string ip    = 1;
+  int32  port  = 2;
+  string user  = 3;
+  string pass  = 4;
+  // Full device-service URL, if known (e.g. from WS-Discovery) — overrides the standard
+  // http://{ip}:{port}/onvif/device_service template when the device uses a different path.
+  string xaddr = 5;
 }
 
 message GetProfilesResponse {
@@ -247,6 +261,27 @@ message SyncDeviceTimeResponse {
 message RebootDeviceResponse {
   bool   success = 1;
   string message = 2;
+}
+
+message DiscoverDevicesRequest {
+  int32 timeout_seconds = 1; // 0 = default (4s)
+}
+
+message DiscoveredDevice {
+  string ip            = 1;
+  int32  port          = 2;
+  string endpoint_uuid = 3;
+  repeated string xaddrs = 4;
+  string hardware       = 5;
+  string name           = 6;
+}
+
+message DiscoverDevicesResponse {
+  repeated DiscoveredDevice devices = 1;
+  // False when no network interface could even send a probe (e.g. multicast join
+  // failed everywhere) — lets the caller distinguish "scanned, found nothing" from
+  // "couldn't scan at all" instead of treating both as an empty result.
+  bool scan_ok = 2;
 }
 
 message PtzPreset {

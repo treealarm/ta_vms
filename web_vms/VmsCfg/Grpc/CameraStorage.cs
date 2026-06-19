@@ -46,14 +46,15 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       && Guid.TryParse(camera.MediaMtxServerId, out var parsedMmx) ? parsedMmx : null;
 
     await using (var command = new NpgsqlCommand("""
-      INSERT INTO camera_setup (camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id, disabled, name)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      INSERT INTO camera_setup (camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, onvif_xaddr, media_mtx_server_id, disabled, name)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       ON CONFLICT (camera_id) DO UPDATE SET
         server_id           = EXCLUDED.server_id,
         cred_user           = EXCLUDED.cred_user,
         cred_pass           = EXCLUDED.cred_pass,
         onvif_ip            = EXCLUDED.onvif_ip,
         onvif_port          = EXCLUDED.onvif_port,
+        onvif_xaddr         = EXCLUDED.onvif_xaddr,
         media_mtx_server_id = EXCLUDED.media_mtx_server_id,
         disabled            = EXCLUDED.disabled,
         name                = EXCLUDED.name;
@@ -65,6 +66,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       command.Parameters.AddWithValue((object?)camera.Cred?.Pass ?? DBNull.Value);
       command.Parameters.AddWithValue((object?)camera.OnvifConn?.Ip ?? DBNull.Value);
       command.Parameters.AddWithValue((object?)camera.OnvifConn?.Port ?? DBNull.Value);
+      command.Parameters.AddWithValue((object?)(string.IsNullOrEmpty(camera.OnvifConn?.Xaddr) ? null : camera.OnvifConn.Xaddr) ?? DBNull.Value);
       command.Parameters.Add(new NpgsqlParameter { Value = (object?)mediaMtxServerId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Uuid });
       command.Parameters.Add(new NpgsqlParameter { Value = (camera.HasDisabled && camera.Disabled) ? (object)true : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Boolean });
       command.Parameters.AddWithValue(camera.Name ?? string.Empty);
@@ -130,7 +132,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     var cameras = new List<CameraSetup>();
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_setup.camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id,
+      SELECT camera_setup.camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, onvif_xaddr, media_mtx_server_id,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id AND s.subscribed = true) AS onvif_events_enabled,
              EXISTS(SELECT 1 FROM onvif_alarm_filter f WHERE f.camera_id = camera_setup.camera_id) AS has_onvif_filters,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id) AS onvif_managed,
@@ -161,7 +163,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     CameraSetup? setup = null;
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_setup.camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, media_mtx_server_id,
+      SELECT camera_setup.camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, onvif_xaddr, media_mtx_server_id,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id AND s.subscribed = true) AS onvif_events_enabled,
              EXISTS(SELECT 1 FROM onvif_alarm_filter f WHERE f.camera_id = camera_setup.camera_id) AS has_onvif_filters,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id) AS onvif_managed,
@@ -420,22 +422,23 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     if (!reader.IsDBNull(4))
       setup.OnvifConn = new OnvifConnection
       {
-        Ip   = reader.GetString(4),
-        Port = reader.IsDBNull(5) ? 0 : reader.GetInt32(5)
+        Ip    = reader.GetString(4),
+        Port  = reader.IsDBNull(5) ? 0 : reader.GetInt32(5),
+        Xaddr = reader.IsDBNull(6) ? string.Empty : reader.GetString(6)
       };
 
-    if (!reader.IsDBNull(6))
-      setup.MediaMtxServerId = reader.GetGuid(6).ToString();
+    if (!reader.IsDBNull(7))
+      setup.MediaMtxServerId = reader.GetGuid(7).ToString();
 
-    setup.OnvifEventsEnabled = reader.GetBoolean(7);
-    setup.HasOnvifFilters    = reader.GetBoolean(8);
-    setup.OnvifManaged       = reader.GetBoolean(9);
-    if (!reader.IsDBNull(10) && reader.GetBoolean(10))
+    setup.OnvifEventsEnabled = reader.GetBoolean(8);
+    setup.HasOnvifFilters    = reader.GetBoolean(9);
+    setup.OnvifManaged       = reader.GetBoolean(10);
+    if (!reader.IsDBNull(11) && reader.GetBoolean(11))
       setup.Disabled = true;
 
-    setup.OnvifPollTimeoutSeconds = reader.GetInt32(11);
-    setup.OnvifMessageLimit       = reader.GetInt32(12);
-    setup.Name                    = reader.GetString(13);
+    setup.OnvifPollTimeoutSeconds = reader.GetInt32(12);
+    setup.OnvifMessageLimit       = reader.GetInt32(13);
+    setup.Name                    = reader.GetString(14);
 
     return setup;
   }

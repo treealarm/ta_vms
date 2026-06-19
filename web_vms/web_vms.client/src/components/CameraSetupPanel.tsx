@@ -219,9 +219,9 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
           />
         </Stack>
 
-        <Stack direction="row" spacing={1}>
-          <TextField label={t('common.user')} value={user} onChange={(e) => setUser(e.target.value)} size="small" sx={{ flex: 1 }} />
-          <Box sx={{ flex: 1 }}><PasswordField pass={pass} setPass={setPass} /></Box>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <TextField label={t('common.user')} value={user} onChange={(e) => setUser(e.target.value)} size="small" fullWidth />
+          <PasswordField pass={pass} setPass={setPass} />
         </Stack>
 
         <FormControlLabel

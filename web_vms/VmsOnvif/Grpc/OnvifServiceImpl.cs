@@ -1,6 +1,7 @@
 using Dapr.Actors;
 using Dapr.Actors.Client;
 using Grpc.Core;
+using OnvifLib;
 using Vms.Onvif;
 using web_vms.Types.Actors;
 
@@ -10,7 +11,8 @@ public class OnvifServiceImpl(
   CameraConnCache connCache,
   OnvifEventSubscriptionService subscriptionService,
   ObservedTopicsStore observedTopics,
-  OnvifSettingsService settingsService) : OnvifService.OnvifServiceBase
+  OnvifSettingsService settingsService,
+  ILogger<OnvifServiceImpl> logger) : OnvifService.OnvifServiceBase
 {
   public override async Task<GetProfilesResponse> GetProfiles(CameraRequest request, ServerCallContext context)
   {
@@ -32,16 +34,36 @@ public class OnvifServiceImpl(
       throw new RpcException(new Status(StatusCode.Internal, $"Actor invoke failed: {ex.Message}"));
     }
 
-    response.Profiles.AddRange(profiles.Select(p => new OnvifProfile
-    {
-      Token = p.Token,
-      Name = p.Name,
-      Width = p.Width,
-      Height = p.Height,
-      Encoding = p.Encoding
-    }));
+    response.Profiles.AddRange(profiles.Select(p => ToOnvifProfile(p.Token, p.Name, p.Width, p.Height, p.Encoding)));
     return response;
   }
+
+  // Used by the discovery wizard to preview a device's streams before the camera is
+  // configured in VmsCfg — talks to the device directly, no CameraConnCache/actor lookup.
+  public override async Task<GetProfilesResponse> GetProfilesByConnection(
+    GetProfilesByConnectionRequest request, ServerCallContext context)
+  {
+    var response = new GetProfilesResponse();
+    var camera = Camera.Create(request.Ip, request.Port, request.User, request.Pass, logger: new OnvifLoggerAdapter(logger), xaddr: request.Xaddr);
+    await camera.InitTask;
+
+    var mediaService = await camera.GetMediaService();
+    if (mediaService == null)
+      return response;
+
+    response.Profiles.AddRange(mediaService.GetProfiles()
+      .Select(p => ToOnvifProfile(p.Token, p.Name, p.Width, p.Height, p.Encoding)));
+    return response;
+  }
+
+  private static OnvifProfile ToOnvifProfile(string token, string name, int width, int height, string encoding) => new()
+  {
+    Token = token,
+    Name = name,
+    Width = width,
+    Height = height,
+    Encoding = encoding
+  };
 
   public override async Task<StreamUriResponse> GetStreamUri(StreamUriRequest request, ServerCallContext context)
   {
@@ -59,7 +81,7 @@ public class OnvifServiceImpl(
       return new StreamUriResponse { RtspUrl = fallbackUrl };
 
     var actor = CameraActorProxy(request.SourceId);
-    GetStreamUriActorResult result;
+    GetStreamUriActorResult? result;
     try
     {
       result = await actor.InvokeMethodAsync<GetStreamUriActorRequest, GetStreamUriActorResult>(
@@ -68,12 +90,21 @@ public class OnvifServiceImpl(
     }
     catch (Exception ex)
     {
-      throw new RpcException(new Status(StatusCode.Internal, $"Actor invoke failed: {ex.Message}"));
+      // Degrade to the cached/configured path instead of failing the whole call —
+      // a transient actor/placement hiccup must not take down live video when we
+      // already have a usable URL on hand. But if there's nothing to fall back to,
+      // surface the failure instead of silently returning an empty URL as if it succeeded.
+      if (string.IsNullOrEmpty(fallbackUrl))
+        throw new RpcException(new Status(StatusCode.Internal, $"Actor invoke failed: {ex.Message}"));
+
+      logger.LogWarning(ex,
+        "GetStreamUri actor invoke failed for camera '{CameraId}', falling back to cached path", request.SourceId);
+      result = null;
     }
 
     return new StreamUriResponse
     {
-      RtspUrl = string.IsNullOrEmpty(result.Uri) ? fallbackUrl : result.Uri
+      RtspUrl = string.IsNullOrEmpty(result?.Uri) ? fallbackUrl : result.Uri
     };
   }
 
@@ -340,6 +371,33 @@ public class OnvifServiceImpl(
     {
       return new RebootDeviceResponse { Success = false, Message = ex.Message };
     }
+  }
+
+  public override async Task<DiscoverDevicesResponse> DiscoverDevices(
+    DiscoverDevicesRequest request, ServerCallContext context)
+  {
+    var timeout = request.TimeoutSeconds > 0
+      ? TimeSpan.FromSeconds(request.TimeoutSeconds)
+      : TimeSpan.FromSeconds(4);
+
+    var probeResult = await WsDiscovery.ProbeAsync(
+      timeout, context.CancellationToken, new OnvifLoggerAdapter(logger));
+
+    var response = new DiscoverDevicesResponse { ScanOk = probeResult.ScanOk };
+    foreach (var d in probeResult.Devices)
+    {
+      var proto = new Vms.Onvif.DiscoveredDevice
+      {
+        Ip = d.Ip,
+        Port = d.Port,
+        EndpointUuid = d.EndpointUuid,
+        Hardware = d.Hardware ?? string.Empty,
+        Name = d.Name ?? string.Empty,
+      };
+      proto.Xaddrs.AddRange(d.XAddrs);
+      response.Devices.Add(proto);
+    }
+    return response;
   }
 
   // Non-remoting proxy: uses JSON serialization, no DataContractSerializer

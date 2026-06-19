@@ -14,6 +14,7 @@ import { loadCameras, loadServers } from '../store/liveSlice'
 import { loadMediaMtxServers } from '../store/mediaMtxSlice'
 import CameraSetupPanel from './CameraSetupPanel'
 import type { CameraSetupHandle } from './CameraSetupPanel'
+import OnvifDiscoveryDialog from './OnvifDiscoveryDialog'
 import StreamSetupPanel from './StreamSetupPanel'
 import type { StreamSetupHandle } from './StreamSetupPanel'
 
@@ -34,6 +35,7 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
   const servers = useAppSelector((state) => state.live.servers)
   const camerasMap = useAppSelector((state) => state.live.cameraStatesById)
   const [selection, setSelection] = useState<Selection>({ kind: 'none' })
+  const [discoveryOpen, setDiscoveryOpen] = useState(false)
 
   const detailRef = useRef<DetailHandle>(null)
 
@@ -47,6 +49,12 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
 
   const refresh = async () => {
     await Promise.all([dispatch(loadCameras()), dispatch(loadServers()), dispatch(loadMediaMtxServers())])
+  }
+
+  // Servers/MediaMTX servers don't change when the discovery wizard adds a camera —
+  // only the camera list needs to be re-fetched.
+  const refreshCameras = async () => {
+    await dispatch(loadCameras())
   }
 
   const setSelectionSafe = async (newSel: Selection) => {
@@ -217,9 +225,20 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
       </Stack>
       </Box>
 
-      <Button variant="outlined" onClick={refresh} size="small" sx={{ alignSelf: 'flex-start' }}>
-        {t('common.refresh')}
-      </Button>
+      <Stack direction="row" spacing={1}>
+        <Button variant="outlined" onClick={refresh} size="small" sx={{ alignSelf: 'flex-start' }}>
+          {t('common.refresh')}
+        </Button>
+        <Button variant="outlined" onClick={() => setDiscoveryOpen(true)} size="small" sx={{ alignSelf: 'flex-start' }}>
+          {t('cameraControl.discoverDevices')}
+        </Button>
+      </Stack>
+
+      <OnvifDiscoveryDialog
+        open={discoveryOpen}
+        onClose={() => setDiscoveryOpen(false)}
+        onAdded={refreshCameras}
+      />
     </Box>
   )
 }

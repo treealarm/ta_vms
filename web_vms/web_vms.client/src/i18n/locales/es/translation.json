@@ -3,6 +3,7 @@
     "save": "Guardar",
     "apply": "Aplicar",
     "cancel": "Cancelar",
+    "close": "Cerrar",
     "refresh": "Actualizar",
     "add": "Agregar",
     "delete": "Eliminar",
@@ -50,7 +51,15 @@
     "newCamera": "+ nueva cámara",
     "addStream": "+ agregar flujo",
     "addCameraHere": "+ nueva cámara en {{server}}",
-    "selectHint": "Seleccione un servidor, cámara o flujo"
+    "selectHint": "Seleccione un servidor, cámara o flujo",
+    "discoverDevices": "Descubrir dispositivos",
+    "scan": "Escanear",
+    "noDevicesFound": "No se encontraron dispositivos ONVIF",
+    "scanUnavailable": "No se pudo escanear ninguna interfaz de red — el descubrimiento no está disponible en este despliegue, esto no significa que no haya cámaras",
+    "alreadyAdded": "Ya agregado",
+    "addDevice": "Agregar",
+    "loadStreams": "Cargar flujos",
+    "noStreamsFound": "No se encontraron flujos ONVIF en esta cámara"
   },
   "storage": {
     "title": "Almacenes",
