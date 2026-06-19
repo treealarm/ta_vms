@@ -10,7 +10,8 @@ public class OnvifServiceImpl(
   CameraConnCache connCache,
   OnvifEventSubscriptionService subscriptionService,
   ObservedTopicsStore observedTopics,
-  OnvifSettingsService settingsService) : OnvifService.OnvifServiceBase
+  OnvifSettingsService settingsService,
+  ILogger<OnvifServiceImpl> logger) : OnvifService.OnvifServiceBase
 {
   public override async Task<GetProfilesResponse> GetProfiles(CameraRequest request, ServerCallContext context)
   {
@@ -59,7 +60,7 @@ public class OnvifServiceImpl(
       return new StreamUriResponse { RtspUrl = fallbackUrl };
 
     var actor = CameraActorProxy(request.SourceId);
-    GetStreamUriActorResult result;
+    GetStreamUriActorResult? result;
     try
     {
       result = await actor.InvokeMethodAsync<GetStreamUriActorRequest, GetStreamUriActorResult>(
@@ -68,12 +69,17 @@ public class OnvifServiceImpl(
     }
     catch (Exception ex)
     {
-      throw new RpcException(new Status(StatusCode.Internal, $"Actor invoke failed: {ex.Message}"));
+      // Degrade to the cached/configured path instead of failing the whole call —
+      // a transient actor/placement hiccup must not take down live video when we
+      // already have a usable URL on hand.
+      logger.LogWarning(ex,
+        "GetStreamUri actor invoke failed for camera '{CameraId}', falling back to cached path", request.SourceId);
+      result = null;
     }
 
     return new StreamUriResponse
     {
-      RtspUrl = string.IsNullOrEmpty(result.Uri) ? fallbackUrl : result.Uri
+      RtspUrl = string.IsNullOrEmpty(result?.Uri) ? fallbackUrl : result.Uri
     };
   }
 
