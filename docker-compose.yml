@@ -165,9 +165,12 @@ services:
       APP_ID: vmsonvif
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # WS-Discovery needs to receive multicast replies from cameras on the LAN,
-    # which a bridge-networked container can't see — run on the host network instead.
-    network_mode: host
+    # NOTE: WS-Discovery (camera scan) needs real LAN access to receive multicast
+    # replies, which this bridge-networked container doesn't have. It works when
+    # VmsOnvif runs as a native process (local dev via launch.json). Running it
+    # in this container only sees the camera LAN if the container is given host
+    # networking on a real Linux Docker Engine host — not on Docker Desktop,
+    # where "host" networking is the Desktop VM's network, not the LAN.
     volumes: *data-volume
     depends_on:
       - vmscfg

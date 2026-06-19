@@ -89,9 +89,15 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
         cred: draft.user || draft.pass ? { user: draft.user, pass: draft.pass } : undefined,
         onvifConn: { ip: device.ip, port: device.port },
       }))
-      if (!addCamera.rejected.match(result)) {
-        await onAdded()
+      if (addCamera.rejected.match(result)) {
+        setError(result.error.message ?? String(result.error))
+        return
       }
+      if (!result.payload.success) {
+        setError(result.payload.message)
+        return
+      }
+      await onAdded()
     } finally {
       setAddingId(null)
     }
