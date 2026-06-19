@@ -72,7 +72,11 @@ public class OnvifServiceImpl(
     {
       // Degrade to the cached/configured path instead of failing the whole call —
       // a transient actor/placement hiccup must not take down live video when we
-      // already have a usable URL on hand.
+      // already have a usable URL on hand. But if there's nothing to fall back to,
+      // surface the failure instead of silently returning an empty URL as if it succeeded.
+      if (string.IsNullOrEmpty(fallbackUrl))
+        throw new RpcException(new Status(StatusCode.Internal, $"Actor invoke failed: {ex.Message}"));
+
       logger.LogWarning(ex,
         "GetStreamUri actor invoke failed for camera '{CameraId}', falling back to cached path", request.SourceId);
       result = null;
@@ -356,11 +360,11 @@ public class OnvifServiceImpl(
       ? TimeSpan.FromSeconds(request.TimeoutSeconds)
       : TimeSpan.FromSeconds(4);
 
-    var devices = await WsDiscovery.ProbeAsync(
+    var probeResult = await WsDiscovery.ProbeAsync(
       timeout, context.CancellationToken, new OnvifLoggerAdapter(logger));
 
-    var response = new DiscoverDevicesResponse();
-    foreach (var d in devices)
+    var response = new DiscoverDevicesResponse { ScanOk = probeResult.ScanOk };
+    foreach (var d in probeResult.Devices)
     {
       var proto = new Vms.Onvif.DiscoveredDevice
       {

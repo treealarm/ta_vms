@@ -12,9 +12,19 @@ public class OnvifController(
   CfgService.CfgServiceClient cfgClient) : ControllerBase
 {
   private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
+  private const int MaxDiscoverTimeoutSeconds = 30;
 
   private static CallOptions Options(CancellationToken ct) =>
     new(deadline: DateTime.UtcNow.Add(Timeout), cancellationToken: ct);
+
+  // The probe itself can run as long as requested (clamped); give the call a deadline
+  // with margin on top so a long scan doesn't get cut off by the generic 15s deadline.
+  private static (int ProbeSeconds, CallOptions Options) DiscoverOptions(int timeoutSeconds, CancellationToken ct)
+  {
+    var probeSeconds = Math.Clamp(timeoutSeconds <= 0 ? 4 : timeoutSeconds, 1, MaxDiscoverTimeoutSeconds);
+    var options = new CallOptions(deadline: DateTime.UtcNow.AddSeconds(probeSeconds + 5), cancellationToken: ct);
+    return (probeSeconds, options);
+  }
 
   [HttpGet("cameras/{cameraId}/profiles")]
   public async Task<IActionResult> GetProfiles(string cameraId, CancellationToken ct)
@@ -228,18 +238,23 @@ public class OnvifController(
   [HttpPost("discover")]
   public async Task<IActionResult> DiscoverDevices([FromQuery] int timeoutSeconds, CancellationToken ct)
   {
+    var (probeSeconds, options) = DiscoverOptions(timeoutSeconds, ct);
     var response = await onvifClient.DiscoverDevicesAsync(
-      new DiscoverDevicesRequest { TimeoutSeconds = timeoutSeconds }, Options(ct));
+      new DiscoverDevicesRequest { TimeoutSeconds = probeSeconds }, options);
 
-    return Ok(response.Devices.Select(d => new
+    return Ok(new
     {
-      ip           = d.Ip,
-      port         = d.Port,
-      endpointUuid = d.EndpointUuid,
-      xaddrs       = d.Xaddrs.ToList(),
-      hardware     = d.Hardware,
-      name         = d.Name,
-    }));
+      scanOk = response.ScanOk,
+      devices = response.Devices.Select(d => new
+      {
+        ip           = d.Ip,
+        port         = d.Port,
+        endpointUuid = d.EndpointUuid,
+        xaddrs       = d.Xaddrs.ToList(),
+        hardware     = d.Hardware,
+        name         = d.Name,
+      }),
+    });
   }
 
   // ── ONVIF alarm filters ──────────────────────────────────────────────────

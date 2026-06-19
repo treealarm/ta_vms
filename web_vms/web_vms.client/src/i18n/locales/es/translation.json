@@ -54,6 +54,7 @@
     "discoverDevices": "Descubrir dispositivos",
     "scan": "Escanear",
     "noDevicesFound": "No se encontraron dispositivos ONVIF",
+    "scanUnavailable": "No se pudo escanear ninguna interfaz de red — el descubrimiento no está disponible en este despliegue, esto no significa que no haya cámaras",
     "alreadyAdded": "Ya agregado",
     "addDevice": "Agregar"
   },

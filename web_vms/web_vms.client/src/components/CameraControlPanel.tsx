@@ -51,6 +51,12 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
     await Promise.all([dispatch(loadCameras()), dispatch(loadServers()), dispatch(loadMediaMtxServers())])
   }
 
+  // Servers/MediaMTX servers don't change when the discovery wizard adds a camera —
+  // only the camera list needs to be re-fetched.
+  const refreshCameras = async () => {
+    await dispatch(loadCameras())
+  }
+
   const setSelectionSafe = async (newSel: Selection) => {
     if (detailRef.current) await detailRef.current.applyIfDirty()
     setSelection(newSel)
@@ -231,7 +237,7 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
       <OnvifDiscoveryDialog
         open={discoveryOpen}
         onClose={() => setDiscoveryOpen(false)}
-        onAdded={refresh}
+        onAdded={refreshCameras}
       />
     </Box>
   )

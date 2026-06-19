@@ -265,6 +265,10 @@ message DiscoveredDevice {
 
 message DiscoverDevicesResponse {
   repeated DiscoveredDevice devices = 1;
+  // False when no network interface could even send a probe (e.g. multicast join
+  // failed everywhere) — lets the caller distinguish "scanned, found nothing" from
+  // "couldn't scan at all" instead of treating both as an empty result.
+  bool scan_ok = 2;
 }
 
 message PtzPreset {

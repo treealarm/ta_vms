@@ -35,6 +35,8 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
   const [serverId, setServerId] = useState('')
   const [scanning, setScanning] = useState(false)
   const [devices, setDevices] = useState<DiscoveredDeviceDto[]>([])
+  const [scanOk, setScanOk] = useState(true)
+  const [hasScanned, setHasScanned] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<Record<string, DraftState>>({})
   const [addingId, setAddingId] = useState<string | null>(null)
@@ -43,6 +45,7 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
   useEffect(() => {
     if (!open) return
     setDevices([])
+    setHasScanned(false)
     setDrafts({})
     setError(null)
     setServerId((prev) => prev || servers[0]?.serverId || '')
@@ -51,7 +54,7 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
   const existingAddrs = new Set(
     Object.values(camerasMap)
       .filter((c) => c.onvifConn?.ip)
-      .map((c) => `${c.onvifConn!.ip}:${c.onvifConn!.port}`)
+      .map((c) => `${c.onvifConn!.ip.trim().toLowerCase()}:${c.onvifConn!.port}`)
   )
 
   const handleScan = async () => {
@@ -60,7 +63,10 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
     try {
       const response = await fetch('/api/onvif/discover', { method: 'POST' })
       if (!response.ok) throw new Error(await response.text())
-      setDevices(await response.json())
+      const result: { scanOk: boolean; devices: DiscoveredDeviceDto[] } = await response.json()
+      setDevices(result.devices)
+      setScanOk(result.scanOk)
+      setHasScanned(true)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -68,11 +74,17 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
     }
   }
 
+  const defaultDraft = (device: DiscoveredDeviceDto): DraftState =>
+    ({ name: device.name || device.hardware || device.ip, user: '', pass: '' })
+
   const draftFor = (device: DiscoveredDeviceDto): DraftState =>
-    drafts[device.endpointUuid] ?? { name: device.name || device.hardware || device.ip, user: '', pass: '' }
+    drafts[device.endpointUuid] ?? defaultDraft(device)
 
   const updateDraft = (device: DiscoveredDeviceDto, patch: Partial<DraftState>) =>
-    setDrafts((prev) => ({ ...prev, [device.endpointUuid]: { ...draftFor(device), ...patch } }))
+    setDrafts((prev) => ({
+      ...prev,
+      [device.endpointUuid]: { ...(prev[device.endpointUuid] ?? defaultDraft(device)), ...patch },
+    }))
 
   const handleAdd = async (device: DiscoveredDeviceDto) => {
     if (!serverId) return
@@ -129,7 +141,13 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
 
           {error && <Typography color="error" variant="body2">{error}</Typography>}
 
-          {!scanning && devices.length === 0 && !error && (
+          {!scanning && hasScanned && !error && !scanOk && (
+            <Typography variant="body2" color="error">
+              {t('cameraControl.scanUnavailable')}
+            </Typography>
+          )}
+
+          {!scanning && hasScanned && !error && scanOk && devices.length === 0 && (
             <Typography variant="body2" color="text.secondary">
               {t('cameraControl.noDevicesFound')}
             </Typography>
@@ -137,7 +155,7 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
 
           <Stack spacing={1.5}>
             {devices.map((device) => {
-              const addr = `${device.ip}:${device.port}`
+              const addr = `${device.ip.trim().toLowerCase()}:${device.port}`
               const alreadyAdded = existingAddrs.has(addr)
               const draft = draftFor(device)
               return (

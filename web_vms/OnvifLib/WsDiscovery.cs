@@ -14,6 +14,12 @@ namespace OnvifLib
     string? Hardware,
     string? Name);
 
+  /// `ScanOk` is false when no network interface could even send a probe (e.g. every
+  /// interface failed to join the multicast group, or there were none) — distinguishes
+  /// "scanned, found nothing" from "couldn't scan at all" so callers don't misreport the
+  /// latter as "no cameras on the LAN".
+  public record ProbeResult(List<DiscoveredDevice> Devices, bool ScanOk);
+
   /// WS-Discovery (SOAP-over-UDP multicast) prober. Distinct from CameraScanner — that one
   /// brute-forces an IP range with HTTP, this one asks devices to announce themselves, so it
   /// finds the camera's actual ONVIF port even when it isn't the default.
@@ -27,30 +33,33 @@ namespace OnvifLib
     private static readonly XNamespace Disc = "http://schemas.xmlsoap.org/ws/2005/04/discovery";
     private static readonly XNamespace Dn = "http://www.onvif.org/ver10/network/wsdl";
 
-    public static async Task<List<DiscoveredDevice>> ProbeAsync(
+    public static async Task<ProbeResult> ProbeAsync(
       TimeSpan timeout, CancellationToken ct, IOnvifLogger? logger = null)
     {
-      var found = new Dictionary<string, DiscoveredDevice>();
-      var lockObj = new object();
-
       using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
       cts.CancelAfter(timeout);
 
       var listenTasks = GetCandidateInterfaces()
-        .Select(addr => ListenOnInterfaceAsync(addr, found, lockObj, cts.Token, logger))
+        .Select(addr => ListenOnInterfaceAsync(addr, cts.Token, logger))
         .ToList();
 
-      try
-      {
-        await Task.WhenAll(listenTasks);
-      }
-      catch (OperationCanceledException)
-      {
-        // expected once the timeout elapses
-      }
+      var results = await Task.WhenAll(listenTasks);
 
-      return found.Values.ToList();
+      var devices = results
+        .SelectMany(r => r.Devices)
+        .GroupBy(d => d.EndpointUuid)
+        .Select(g => g.First())
+        .ToList();
+      var scanOk = results.Any(r => r.Probed);
+
+      return new ProbeResult(devices, scanOk);
     }
+
+    // Name fragments of virtual adapters (container bridges, VPN/tunnel interfaces) that can
+    // never reach real LAN cameras — probing them only wastes a multicast join and risks
+    // picking up unrelated WS-Discovery responders (e.g. a router) instead of cameras.
+    private static readonly string[] VirtualInterfaceNameFragments =
+      ["docker", "veth", "br-", "vmnet", "virtualbox", "vbox", "wsl", "wg", "tailscale", "zerotier", "tun", "tap"];
 
     private static IEnumerable<IPAddress> GetCandidateInterfaces()
     {
@@ -58,9 +67,11 @@ namespace OnvifLib
       {
         if (nic.OperationalStatus != OperationalStatus.Up)
           continue;
-        if (nic.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+        if (nic.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel)
           continue;
-        if (!nic.Supports(NetworkInterfaceComponent.IPv4))
+
+        var name = nic.Name.ToLowerInvariant();
+        if (VirtualInterfaceNameFragments.Any(name.Contains))
           continue;
 
         foreach (var ua in nic.GetIPProperties().UnicastAddresses)
@@ -71,14 +82,14 @@ namespace OnvifLib
       }
     }
 
-    private static async Task ListenOnInterfaceAsync(
+    private static async Task<(List<DiscoveredDevice> Devices, bool Probed)> ListenOnInterfaceAsync(
       IPAddress localAddress,
-      Dictionary<string, DiscoveredDevice> found,
-      object lockObj,
       CancellationToken ct,
       IOnvifLogger? logger)
     {
-      UdpClient client;
+      var devices = new List<DiscoveredDevice>();
+
+      UdpClient? client = null;
       try
       {
         client = new UdpClient(new IPEndPoint(localAddress, 0));
@@ -87,7 +98,8 @@ namespace OnvifLib
       catch (Exception ex)
       {
         logger?.Warning($"WS-Discovery: cannot bind/join multicast on {localAddress}: {ex.Message}");
-        return;
+        client?.Dispose();
+        return (devices, false);
       }
 
       using (client)
@@ -114,22 +126,20 @@ namespace OnvifLib
             {
               var device = ParseProbeMatch(result.Buffer);
               if (device != null)
-              {
-                lock (lockObj)
-                {
-                  found[device.EndpointUuid] = device;
-                }
-              }
+                devices.Add(device);
             }
             catch (Exception ex)
             {
               logger?.Debug($"WS-Discovery: failed to parse response from {result.RemoteEndPoint}: {ex.Message}");
             }
           }
+
+          return (devices, true);
         }
         catch (Exception ex)
         {
           logger?.Warning($"WS-Discovery: probe on {localAddress} failed: {ex.Message}");
+          return (devices, false);
         }
       }
     }
