@@ -231,16 +231,8 @@ namespace OnvifLib
             MessageLimit = MessageLimit
           };
 
-          // Some firmware ignores the long-poll Timeout above and returns immediately
-          // regardless of whether events are pending. Without a floor here, such a camera
-          // drives this loop at full speed (thousands of iterations/sec), starving the
-          // process' thread pool. Enforce PullTimeout as a minimum cadence regardless of
-          // how fast the camera actually responds.
           var pullStarted = DateTime.UtcNow;
           var response = await _pullClient!.PullMessagesAsync(request);
-          var elapsed = DateTime.UtcNow - pullStarted;
-          if (elapsed < PullTimeout)
-            await Task.Delay(PullTimeout - elapsed, token);
 
           if (!_authSchemeConfirmed)
           {
@@ -256,6 +248,8 @@ namespace OnvifLib
           }
           else
           {
+            // Dispatch immediately, before the throttle delay below — alarms/events must not
+            // wait out PullTimeout before CheckAndTriggerAlarmAsync records AlarmStartTs.
             // Dispatch separately: a throwing consumer is the caller's bug, not a
             // pull/renew failure, and must not trigger the reconnect backoff below.
             try
@@ -267,6 +261,16 @@ namespace OnvifLib
               _logger?.Error($"OnEventReceived handler threw for {_url}: {ex}");
             }
           }
+
+          // Some firmware ignores the long-poll Timeout above and returns immediately
+          // regardless of whether events are pending. Without a floor here, such a camera
+          // drives this loop at full speed (thousands of iterations/sec), starving the
+          // process' thread pool. Enforce PullTimeout as a minimum cadence regardless of
+          // how fast the camera actually responds — applied after dispatch, so it only
+          // delays the next pull, never the event we just received.
+          var elapsed = DateTime.UtcNow - pullStarted;
+          if (elapsed < PullTimeout)
+            await Task.Delay(PullTimeout - elapsed, token);
 
           if (DateTime.UtcNow + _terminationTime / 2 >= _subscriptionExpiry && _subscriptionManagerClient != null)
           {
