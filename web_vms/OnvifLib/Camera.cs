@@ -123,20 +123,26 @@ public class Camera
   public int Port { get { return _port; } }
 
   //http://192.168.1.150:8899/onvif/device_service
-  public static  string CreateUrl(string ip, int port)
+  public static string CreateUrl(string ip, int port, string? xaddr = null)
   {
-    return $"http://{ip}:{port}/onvif/device_service";
+    // Prefer the address actually discovered (WS-Discovery XAddr) over the standard
+    // template — some devices serve their device_service at a non-standard path.
+    return string.IsNullOrEmpty(xaddr) ? $"http://{ip}:{port}/onvif/device_service" : xaddr;
   }
 
-  public static Camera Create(string ip, int port, string username, string password, double timeout = 15, IOnvifLogger? logger = null)
+  public static Camera Create(
+    string ip, int port, string username, string password,
+    double timeout = 15, IOnvifLogger? logger = null, string? xaddr = null)
   {
-    var cam = new Camera(ip, port, username, password, timeout, logger);
+    var cam = new Camera(ip, port, username, password, timeout, logger, xaddr);
     cam.InitTask = cam.InitAsync(); // start initialization in the background
     return cam;
   }
-  private Camera(string ip, int port, string username, string password, double timeout, IOnvifLogger? logger = null)
+  private Camera(
+    string ip, int port, string username, string password,
+    double timeout, IOnvifLogger? logger = null, string? xaddr = null)
   {
-    _url = CreateUrl(ip, port);
+    _url = CreateUrl(ip, port, xaddr);
     _ip = ip;
     _username = username;
     _password = password;

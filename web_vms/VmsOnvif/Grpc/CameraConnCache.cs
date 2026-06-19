@@ -44,7 +44,8 @@ public sealed class CameraConnCache(CfgService.CfgServiceClient cfgClient)
         setup.OnvifConn.Ip,
         setup.OnvifConn.Port,
         setup.Cred?.User ?? string.Empty,
-        setup.Cred?.Pass ?? string.Empty);
+        setup.Cred?.Pass ?? string.Empty,
+        setup.OnvifConn.Xaddr ?? string.Empty);
     }
 
     var streams = setup.Streams

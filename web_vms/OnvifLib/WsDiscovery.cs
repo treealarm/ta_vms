@@ -202,8 +202,11 @@ namespace OnvifLib
       var xAddrsRaw = probeMatch.Element(Disc + "XAddrs")?.Value ?? string.Empty;
       var scopesRaw = probeMatch.Element(Disc + "Scopes")?.Value ?? string.Empty;
 
-      var xAddrs = xAddrsRaw.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-      var scopes = scopesRaw.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+      // Split on any whitespace, not just a literal space — some devices format these
+      // space-separated lists with newlines/tabs, which a literal-space Split would leave
+      // as one unparseable token (new Uri() would throw on it).
+      var xAddrs = xAddrsRaw.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+      var scopes = scopesRaw.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
       if (xAddrs.Length == 0)
         return null;

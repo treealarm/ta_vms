@@ -77,6 +77,7 @@ export type CredentialsDto = {
 export type OnvifConnectionDto = {
   ip: string
   port: number
+  xaddr?: string
 }
 
 export type DiscoveredDeviceDto = {

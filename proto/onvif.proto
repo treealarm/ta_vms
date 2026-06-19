@@ -56,10 +56,13 @@ message OnvifProfile {
 }
 
 message GetProfilesByConnectionRequest {
-  string ip   = 1;
-  int32  port = 2;
-  string user = 3;
-  string pass = 4;
+  string ip    = 1;
+  int32  port  = 2;
+  string user  = 3;
+  string pass  = 4;
+  // Full device-service URL, if known (e.g. from WS-Discovery) — overrides the standard
+  // http://{ip}:{port}/onvif/device_service template when the device uses a different path.
+  string xaddr = 5;
 }
 
 message GetProfilesResponse {

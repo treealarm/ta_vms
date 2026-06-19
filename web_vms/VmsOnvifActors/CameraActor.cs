@@ -103,10 +103,10 @@ public class CameraActor(ActorHost host) : Actor(host), ICameraActor
 
   private Camera EnsureCamera(CameraConnInfo conn)
   {
-    var key = $"{conn.Ip}:{conn.Port}:{conn.User}:{conn.Pass}";
+    var key = $"{conn.Ip}:{conn.Port}:{conn.User}:{conn.Pass}:{conn.Xaddr}";
     if (_camera is null || _cameraKey != key)
     {
-      _camera = Camera.Create(conn.Ip, conn.Port, conn.User, conn.Pass, logger: new OnvifLoggerAdapter(Logger));
+      _camera = Camera.Create(conn.Ip, conn.Port, conn.User, conn.Pass, logger: new OnvifLoggerAdapter(Logger), xaddr: conn.Xaddr);
       _cameraKey = key;
     }
     return _camera;

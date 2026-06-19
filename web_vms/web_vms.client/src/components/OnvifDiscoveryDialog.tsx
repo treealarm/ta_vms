@@ -125,6 +125,9 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
       [device.endpointUuid]: { ...(prev[device.endpointUuid] ?? defaultDraft(device)), ...patch },
     }))
 
+  // Preserve the discovered XAddr (full device-service URL) — some cameras don't serve it at
+  // the standard http://{ip}:{port}/onvif/device_service path, so falling back to ip/port
+  // alone would silently break those devices despite discovery having found them correctly.
   const cameraPayload = (device: DiscoveredDeviceDto, draft: DraftState) => ({
     cameraId: draft.cameraId,
     name: draft.name,
@@ -133,7 +136,7 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
     webRtc: false,
     path: '',
     cred: draft.user || draft.pass ? { user: draft.user, pass: draft.pass } : undefined,
-    onvifConn: { ip: device.ip, port: device.port },
+    onvifConn: { ip: device.ip, port: device.port, xaddr: device.xaddrs[0] },
   })
 
   // Pure preview — reads profiles directly from the device (ip/port/credentials), with no
@@ -145,7 +148,9 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
       const response = await fetch('/api/onvif/discover/profiles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ip: device.ip, port: device.port, user: draft.user, pass: draft.pass }),
+        body: JSON.stringify({
+          ip: device.ip, port: device.port, user: draft.user, pass: draft.pass, xaddr: device.xaddrs[0],
+        }),
       })
       if (!response.ok) throw new Error(await errorMessageFrom(response))
       const profiles: OnvifProfile[] = await response.json()

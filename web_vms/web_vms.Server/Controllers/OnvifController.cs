@@ -275,16 +275,17 @@ public class OnvifController(
     var response = await onvifClient.GetProfilesByConnectionAsync(
       new GetProfilesByConnectionRequest
       {
-        Ip   = body.Ip,
-        Port = body.Port,
-        User = body.User ?? string.Empty,
-        Pass = body.Pass ?? string.Empty,
+        Ip    = body.Ip,
+        Port  = body.Port,
+        User  = body.User ?? string.Empty,
+        Pass  = body.Pass ?? string.Empty,
+        Xaddr = body.Xaddr ?? string.Empty,
       }, ConnectOptions(ct));
 
     return Ok(response.Profiles.Select(ToProfileDto));
   }
 
-  public record GetProfilesByConnectionBody(string Ip, int Port, string? User, string? Pass);
+  public record GetProfilesByConnectionBody(string Ip, int Port, string? User, string? Pass, string? Xaddr);
 
   // ── ONVIF alarm filters ──────────────────────────────────────────────────
 

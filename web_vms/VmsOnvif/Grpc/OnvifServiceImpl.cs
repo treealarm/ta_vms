@@ -44,7 +44,7 @@ public class OnvifServiceImpl(
     GetProfilesByConnectionRequest request, ServerCallContext context)
   {
     var response = new GetProfilesResponse();
-    var camera = Camera.Create(request.Ip, request.Port, request.User, request.Pass, logger: new OnvifLoggerAdapter(logger));
+    var camera = Camera.Create(request.Ip, request.Port, request.User, request.Pass, logger: new OnvifLoggerAdapter(logger), xaddr: request.Xaddr);
     await camera.InitTask;
 
     var mediaService = await camera.GetMediaService();
