@@ -223,6 +223,25 @@ public class OnvifController(
     return response.Success ? Ok(new { message = response.Message }) : StatusCode(502, response.Message);
   }
 
+  // ── Discovery ────────────────────────────────────────────────────────────
+
+  [HttpPost("discover")]
+  public async Task<IActionResult> DiscoverDevices([FromQuery] int timeoutSeconds, CancellationToken ct)
+  {
+    var response = await onvifClient.DiscoverDevicesAsync(
+      new DiscoverDevicesRequest { TimeoutSeconds = timeoutSeconds }, Options(ct));
+
+    return Ok(response.Devices.Select(d => new
+    {
+      ip           = d.Ip,
+      port         = d.Port,
+      endpointUuid = d.EndpointUuid,
+      xaddrs       = d.Xaddrs.ToList(),
+      hardware     = d.Hardware,
+      name         = d.Name,
+    }));
+  }
+
   // ── ONVIF alarm filters ──────────────────────────────────────────────────
 
   [HttpGet("cameras/{cameraId}/alarm-filters")]

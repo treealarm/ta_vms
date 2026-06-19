@@ -50,7 +50,12 @@
     "newCamera": "+ new camera",
     "addStream": "+ add stream",
     "addCameraHere": "+ new camera on {{server}}",
-    "selectHint": "Select a server, camera, or stream"
+    "selectHint": "Select a server, camera, or stream",
+    "discoverDevices": "Discover devices",
+    "scan": "Scan",
+    "noDevicesFound": "No ONVIF devices found",
+    "alreadyAdded": "Already added",
+    "addDevice": "Add"
   },
   "storage": {
     "title": "Storages",

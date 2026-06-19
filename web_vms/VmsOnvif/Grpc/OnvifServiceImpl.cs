@@ -1,6 +1,7 @@
 using Dapr.Actors;
 using Dapr.Actors.Client;
 using Grpc.Core;
+using OnvifLib;
 using Vms.Onvif;
 using web_vms.Types.Actors;
 
@@ -346,6 +347,33 @@ public class OnvifServiceImpl(
     {
       return new RebootDeviceResponse { Success = false, Message = ex.Message };
     }
+  }
+
+  public override async Task<DiscoverDevicesResponse> DiscoverDevices(
+    DiscoverDevicesRequest request, ServerCallContext context)
+  {
+    var timeout = request.TimeoutSeconds > 0
+      ? TimeSpan.FromSeconds(request.TimeoutSeconds)
+      : TimeSpan.FromSeconds(4);
+
+    var devices = await WsDiscovery.ProbeAsync(
+      timeout, context.CancellationToken, new OnvifLoggerAdapter(logger));
+
+    var response = new DiscoverDevicesResponse();
+    foreach (var d in devices)
+    {
+      var proto = new Vms.Onvif.DiscoveredDevice
+      {
+        Ip = d.Ip,
+        Port = d.Port,
+        EndpointUuid = d.EndpointUuid,
+        Hardware = d.Hardware ?? string.Empty,
+        Name = d.Name ?? string.Empty,
+      };
+      proto.Xaddrs.AddRange(d.XAddrs);
+      response.Devices.Add(proto);
+    }
+    return response;
   }
 
   // Non-remoting proxy: uses JSON serialization, no DataContractSerializer

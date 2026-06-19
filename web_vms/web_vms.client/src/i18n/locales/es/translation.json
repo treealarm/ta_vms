@@ -50,7 +50,12 @@
     "newCamera": "+ nueva cámara",
     "addStream": "+ agregar flujo",
     "addCameraHere": "+ nueva cámara en {{server}}",
-    "selectHint": "Seleccione un servidor, cámara o flujo"
+    "selectHint": "Seleccione un servidor, cámara o flujo",
+    "discoverDevices": "Descubrir dispositivos",
+    "scan": "Escanear",
+    "noDevicesFound": "No se encontraron dispositivos ONVIF",
+    "alreadyAdded": "Ya agregado",
+    "addDevice": "Agregar"
   },
   "storage": {
     "title": "Almacenes",

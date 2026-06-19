@@ -20,6 +20,7 @@ service OnvifService {
   rpc SyncDeviceTime(CameraRequest) returns (SyncDeviceTimeResponse);
   rpc SetDeviceTime(SetDeviceTimeRequest) returns (SyncDeviceTimeResponse);
   rpc RebootDevice(CameraRequest) returns (RebootDeviceResponse);
+  rpc DiscoverDevices(DiscoverDevicesRequest) returns (DiscoverDevicesResponse);
 }
 
 service PtzService {
@@ -247,6 +248,23 @@ message SyncDeviceTimeResponse {
 message RebootDeviceResponse {
   bool   success = 1;
   string message = 2;
+}
+
+message DiscoverDevicesRequest {
+  int32 timeout_seconds = 1; // 0 = default (4s)
+}
+
+message DiscoveredDevice {
+  string ip            = 1;
+  int32  port          = 2;
+  string endpoint_uuid = 3;
+  repeated string xaddrs = 4;
+  string hardware       = 5;
+  string name           = 6;
+}
+
+message DiscoverDevicesResponse {
+  repeated DiscoveredDevice devices = 1;
 }
 
 message PtzPreset {

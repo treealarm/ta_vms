@@ -79,6 +79,15 @@ export type OnvifConnectionDto = {
   port: number
 }
 
+export type DiscoveredDeviceDto = {
+  ip: string
+  port: number
+  endpointUuid: string
+  xaddrs: string[]
+  hardware?: string
+  name?: string
+}
+
 export type RecordingMode = 'off' | 'continuous' | 'prealarm'
 
 export type RecordingProfileDto = {
