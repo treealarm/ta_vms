@@ -56,9 +56,14 @@ namespace OnvifLib
       if (_imagingClient == null) return;
 
       // Fetch existing to preserve unmanaged fields (Exposure/Focus/IrCutFilter/WideDynamicRange/WhiteBalance/BacklightCompensation).
+      // If the camera doesn't return its current settings, refuse rather than push a blank
+      // ImagingSettings20 — some cameras treat absent optional fields in a Set request as
+      // "reset to default" rather than "leave unchanged", which would silently clobber settings
+      // the caller never asked to change.
       var current = await _imagingClient.GetImagingSettingsAsync(
         new GetImagingSettingsRequest { VideoSourceToken = videoSourceToken });
-      var existing = current.ImagingSettings ?? new ImagingSettings20();
+      var existing = current.ImagingSettings
+        ?? throw new InvalidOperationException("Camera did not return current imaging settings; refusing to apply a partial update");
 
       if (settings.Brightness.HasValue)
       {

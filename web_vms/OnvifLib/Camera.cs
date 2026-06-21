@@ -248,14 +248,6 @@ public class Camera
       return null;
     return service.GetProfiles();
   }
-
-  async public Task<ImageResult?> GetSnapshotAsync()
-  {
-    var service = await GetMediaService();
-    if (service == null)
-      return null;
-    return await service.GetImage();
-  }
   public async Task<bool> IsAlive()
   {
     var services = await GetServicesAsync();
@@ -274,7 +266,10 @@ public class Camera
     return new OnvifCapabilities(
       HasPtz:     services.ContainsKey(PtzService2.WSDL_V20),
       HasImaging: services.ContainsKey(ImagingService2.WSDL_V20),
-      HasEvents:  services.ContainsKey(EventService1.WSDL_EVENTS));
+      // Mirror GetEventService()'s own resolution (OnvifServiceSelector tries every WSDL in
+      // EventService1.GetSupportedWsdls()) — some cameras advertise events only under the
+      // media namespace, with no separate dedicated events entry.
+      HasEvents:  EventService1.GetSupportedWsdls().Any(services.ContainsKey));
   }
   private async Task<Dictionary<string, string>?> DoGetServices()
   {

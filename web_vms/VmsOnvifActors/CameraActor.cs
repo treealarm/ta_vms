@@ -86,13 +86,18 @@ public class CameraActor(ActorHost host) : Actor(host), ICameraActor
   public async Task<SnapshotActorResult> GetSnapshotAsync(CameraConnInfo conn)
   {
     var camera = EnsureCamera(conn);
-    var image = await camera.GetSnapshotAsync();
-    if (image == null)
+    var mediaService = await camera.GetMediaService();
+    if (mediaService == null)
     {
+      // Service-resolution failure (auth/connectivity) — the cached Camera is no good, discard it.
       Evict();
       return new SnapshotActorResult([], null);
     }
-    return new SnapshotActorResult(image.Data, image.MimeType);
+
+    // A single failed/empty snapshot doesn't mean the connection itself is broken — don't evict
+    // an otherwise-healthy cached Camera just because one snapshot attempt came back empty.
+    var image = await mediaService.GetImage();
+    return image == null ? new SnapshotActorResult([], null) : new SnapshotActorResult(image.Data, image.MimeType);
   }
 
   private async Task<PtzService2> GetPtzOrThrow(CameraConnInfo conn)

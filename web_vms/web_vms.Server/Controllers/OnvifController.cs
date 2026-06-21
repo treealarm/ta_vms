@@ -220,6 +220,9 @@ public class OnvifController(
       new ImagingSettingsRequest { SourceId = cameraId, VideoSourceToken = videoSourceToken ?? string.Empty },
       Options(ct));
 
+    if (!string.IsNullOrEmpty(response.Error))
+      return StatusCode(502, response.Error);
+
     return Ok(new
     {
       brightness      = response.HasBrightness ? response.Brightness : (float?)null,
@@ -236,6 +239,9 @@ public class OnvifController(
     var response = await onvifClient.GetImagingOptionsAsync(
       new ImagingSettingsRequest { SourceId = cameraId, VideoSourceToken = videoSourceToken ?? string.Empty },
       Options(ct));
+
+    if (!string.IsNullOrEmpty(response.Error))
+      return StatusCode(502, response.Error);
 
     static object? ToRange(FloatRange? r) => r == null ? null : new { min = r.Min, max = r.Max };
 
@@ -300,6 +306,9 @@ public class OnvifController(
   {
     var response = await onvifClient.GetDeviceInformationAsync(
       new CameraRequest { SourceId = cameraId }, Options(ct));
+
+    if (!string.IsNullOrEmpty(response.Error))
+      return StatusCode(502, response.Error);
 
     return Ok(new
     {

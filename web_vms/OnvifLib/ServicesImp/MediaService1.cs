@@ -60,7 +60,8 @@ namespace OnvifLib
         Name: p.Name ?? p.token,
         Width: p.VideoEncoderConfiguration?.Resolution?.Width ?? 0,
         Height: p.VideoEncoderConfiguration?.Resolution?.Height ?? 0,
-        Encoding: p.VideoEncoderConfiguration?.Encoding.ToString() ?? string.Empty
+        Encoding: p.VideoEncoderConfiguration?.Encoding.ToString() ?? string.Empty,
+        VideoSourceToken: p.VideoSourceConfiguration?.token ?? string.Empty
       )).ToList();
     }
     public override async Task<List<OnvifVideoEncoderConfig>> GetVideoEncoderConfigsAsync()

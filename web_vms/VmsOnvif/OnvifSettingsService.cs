@@ -121,6 +121,7 @@ public sealed class OnvifSettingsService(CameraConnCache connCache, ILogger<Onvi
     catch (Exception ex)
     {
       logger.LogWarning(ex, "GetDeviceInformation failed for camera {CameraId}", cameraId);
+      Evict(data.Conn);
       return null;
     }
   }
@@ -136,6 +137,7 @@ public sealed class OnvifSettingsService(CameraConnCache connCache, ILogger<Onvi
     catch (Exception ex)
     {
       logger.LogWarning(ex, "GetCapabilities failed for camera {CameraId}", cameraId);
+      Evict(data.Conn);
       return null;
     }
   }

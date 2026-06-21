@@ -404,8 +404,11 @@ public class OnvifServiceImpl(
   public override async Task<GetDeviceCapabilitiesResponse> GetDeviceCapabilities(
     CameraRequest request, ServerCallContext context)
   {
-    var caps = await settingsService.GetCapabilitiesAsync(request.SourceId, context.CancellationToken);
-    var audioConfigs = await settingsService.GetAudioConfigsAsync(request.SourceId, context.CancellationToken);
+    var capsTask = settingsService.GetCapabilitiesAsync(request.SourceId, context.CancellationToken);
+    var audioConfigsTask = settingsService.GetAudioConfigsAsync(request.SourceId, context.CancellationToken);
+    await Task.WhenAll(capsTask, audioConfigsTask);
+    var caps = capsTask.Result;
+    var audioConfigs = audioConfigsTask.Result;
 
     return new GetDeviceCapabilitiesResponse
     {
@@ -450,7 +453,15 @@ public class OnvifServiceImpl(
     if (string.IsNullOrEmpty(token))
       return new ImagingSettingsResponse { Error = "No video source available" };
 
-    var settings = await settingsService.GetImagingSettingsAsync(request.SourceId, token, context.CancellationToken);
+    OnvifLib.OnvifImagingSettings? settings;
+    try
+    {
+      settings = await settingsService.GetImagingSettingsAsync(request.SourceId, token, context.CancellationToken);
+    }
+    catch (Exception ex)
+    {
+      return new ImagingSettingsResponse { Error = ex.Message };
+    }
     if (settings == null)
       return new ImagingSettingsResponse { Error = "Imaging settings unavailable" };
 
@@ -469,7 +480,15 @@ public class OnvifServiceImpl(
     if (string.IsNullOrEmpty(token))
       return new ImagingOptionsResponse { Error = "No video source available" };
 
-    var options = await settingsService.GetImagingOptionsAsync(request.SourceId, token, context.CancellationToken);
+    OnvifLib.OnvifImagingOptions? options;
+    try
+    {
+      options = await settingsService.GetImagingOptionsAsync(request.SourceId, token, context.CancellationToken);
+    }
+    catch (Exception ex)
+    {
+      return new ImagingOptionsResponse { Error = ex.Message };
+    }
     if (options == null)
       return new ImagingOptionsResponse { Error = "Imaging options unavailable" };
 

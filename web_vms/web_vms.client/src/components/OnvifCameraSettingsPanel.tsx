@@ -638,7 +638,7 @@ function SystemSection({ cameraId }: { cameraId: string }) {
 
 function CameraDetail({ camera }: { camera: CameraSetupDto }) {
   const { t } = useTranslation()
-  const [tab, setTab] = useState(0)
+  const [tabKey, setTabKey] = useState('video')
   const [caps, setCaps] = useState<DeviceCapabilitiesDto | null>(null)
 
   useEffect(() => {
@@ -655,13 +655,17 @@ function CameraDetail({ camera }: { camera: CameraSetupDto }) {
     { key: 'system', label: t('onvifSettings.systemTab'), show: true },
   ].filter((tb) => tb.show)
 
-  useEffect(() => { if (tab >= tabs.length) setTab(0) }, [tabs.length, tab])
-  const activeKey = tabs[tab]?.key
+  // Keyed by tab key (not index) so a shrinking tabs array (e.g. capabilities resolving and
+  // hiding PTZ/Audio) doesn't bounce the user off a tab they're still on, just because its
+  // index changed or moved past the new array length. If the selected tab is temporarily
+  // hidden, fall back to the first visible one for rendering without forgetting `tabKey` —
+  // so the original tab is reselected automatically if it becomes visible again.
+  const activeKey = tabs.some((tb) => tb.key === tabKey) ? tabKey : (tabs[0]?.key ?? 'video')
 
   return (
     <Stack spacing={0} sx={{ height: '100%' }}>
-      <Tabs value={tab} onChange={(_, v: number) => setTab(v)} sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-        {tabs.map((tb) => <Tab key={tb.key} label={tb.label} />)}
+      <Tabs value={activeKey} onChange={(_, v: string) => setTabKey(v)} sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+        {tabs.map((tb) => <Tab key={tb.key} value={tb.key} label={tb.label} />)}
       </Tabs>
       <Box sx={{ flex: 1, overflow: 'auto', pt: 1 }}>
         {activeKey === 'video' && <VideoSection cameraId={camera.cameraId} />}
