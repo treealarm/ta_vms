@@ -21,7 +21,7 @@ public class CameraActor(ActorHost host) : Actor(host), ICameraActor
     }
 
     return mediaService.GetProfiles()
-      .Select(p => new ProfileInfoDto(p.Token, p.Name, p.Width, p.Height, p.Encoding))
+      .Select(p => new ProfileInfoDto(p.Token, p.Name, p.Width, p.Height, p.Encoding, p.VideoSourceToken))
       .ToList();
   }
 
@@ -81,6 +81,18 @@ public class CameraActor(ActorHost host) : Actor(host), ICameraActor
 
     var caps = await ptz.GetCapabilitiesAsync(string.Empty);
     return new PtzCapabilitiesDto(caps.AbsoluteMove, caps.RelativeMove, caps.ContinuousMove);
+  }
+
+  public async Task<SnapshotActorResult> GetSnapshotAsync(CameraConnInfo conn)
+  {
+    var camera = EnsureCamera(conn);
+    var image = await camera.GetSnapshotAsync();
+    if (image == null)
+    {
+      Evict();
+      return new SnapshotActorResult([], null);
+    }
+    return new SnapshotActorResult(image.Data, image.MimeType);
   }
 
   private async Task<PtzService2> GetPtzOrThrow(CameraConnInfo conn)

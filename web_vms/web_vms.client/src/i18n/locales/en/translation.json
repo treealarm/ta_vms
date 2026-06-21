@@ -359,6 +359,7 @@
     "audioTab": "Audio",
     "ptzTab": "PTZ Presets",
     "systemTab": "System",
+    "imagingTab": "Imaging",
     "audioBitrate": "Bitrate (bps)",
     "audioSampleRate": "Sample rate (Hz)",
     "noAudioConfigs": "No audio encoder configurations",
@@ -373,6 +374,17 @@
     "syncTime": "Sync to server time",
     "setTime": "Set time (UTC)",
     "reboot": "Reboot camera",
-    "rebootConfirm": "Reboot camera? It may take 1–2 minutes to reconnect."
+    "rebootConfirm": "Reboot camera? It may take 1–2 minutes to reconnect.",
+    "deviceInfo": "Device information",
+    "manufacturer": "Manufacturer",
+    "model": "Model",
+    "firmwareVersion": "Firmware version",
+    "serialNumber": "Serial number",
+    "hardwareId": "Hardware ID",
+    "brightness": "Brightness",
+    "contrast": "Contrast",
+    "colorSaturation": "Color saturation",
+    "sharpness": "Sharpness",
+    "noImagingSupport": "This camera does not report any adjustable imaging settings"
   }
 }

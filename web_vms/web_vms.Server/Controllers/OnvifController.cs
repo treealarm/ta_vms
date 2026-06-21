@@ -210,6 +210,65 @@ public class OnvifController(
   public record SetAudioEncoderConfigBody(string? Name, string Encoding, int Bitrate, int SampleRate);
   public record SetDeviceTimeBody(string UtcTime);
 
+  // ── Imaging ──────────────────────────────────────────────────────────────
+
+  [HttpGet("cameras/{cameraId}/imaging-settings")]
+  public async Task<IActionResult> GetImagingSettings(
+    string cameraId, [FromQuery] string? videoSourceToken, CancellationToken ct)
+  {
+    var response = await onvifClient.GetImagingSettingsAsync(
+      new ImagingSettingsRequest { SourceId = cameraId, VideoSourceToken = videoSourceToken ?? string.Empty },
+      Options(ct));
+
+    return Ok(new
+    {
+      brightness      = response.HasBrightness ? response.Brightness : (float?)null,
+      contrast        = response.HasContrast ? response.Contrast : (float?)null,
+      colorSaturation = response.HasColorSaturation ? response.ColorSaturation : (float?)null,
+      sharpness       = response.HasSharpness ? response.Sharpness : (float?)null,
+    });
+  }
+
+  [HttpGet("cameras/{cameraId}/imaging-options")]
+  public async Task<IActionResult> GetImagingOptions(
+    string cameraId, [FromQuery] string? videoSourceToken, CancellationToken ct)
+  {
+    var response = await onvifClient.GetImagingOptionsAsync(
+      new ImagingSettingsRequest { SourceId = cameraId, VideoSourceToken = videoSourceToken ?? string.Empty },
+      Options(ct));
+
+    static object? ToRange(FloatRange? r) => r == null ? null : new { min = r.Min, max = r.Max };
+
+    return Ok(new
+    {
+      brightness      = ToRange(response.Brightness),
+      contrast        = ToRange(response.Contrast),
+      colorSaturation = ToRange(response.ColorSaturation),
+      sharpness       = ToRange(response.Sharpness),
+    });
+  }
+
+  [HttpPut("cameras/{cameraId}/imaging-settings")]
+  public async Task<IActionResult> SetImagingSettings(
+    string cameraId, [FromBody] SetImagingSettingsBody body, CancellationToken ct)
+  {
+    var request = new SetImagingSettingsRequest
+    {
+      SourceId         = cameraId,
+      VideoSourceToken = body.VideoSourceToken ?? string.Empty,
+    };
+    if (body.Brightness.HasValue) request.Brightness = body.Brightness.Value;
+    if (body.Contrast.HasValue) request.Contrast = body.Contrast.Value;
+    if (body.ColorSaturation.HasValue) request.ColorSaturation = body.ColorSaturation.Value;
+    if (body.Sharpness.HasValue) request.Sharpness = body.Sharpness.Value;
+
+    var response = await onvifClient.SetImagingSettingsAsync(request, Options(ct));
+    return response.Success ? Ok() : StatusCode(502, response.Error);
+  }
+
+  public record SetImagingSettingsBody(
+    string? VideoSourceToken, float? Brightness, float? Contrast, float? ColorSaturation, float? Sharpness);
+
   // ── System ───────────────────────────────────────────────────────────────
 
   [HttpGet("cameras/{cameraId}/device-time")]
@@ -234,6 +293,37 @@ public class OnvifController(
     var response = await onvifClient.SetDeviceTimeAsync(
       new SetDeviceTimeRequest { SourceId = cameraId, UtcTime = body.UtcTime }, Options(ct));
     return response.Success ? Ok() : StatusCode(502, response.Error);
+  }
+
+  [HttpGet("cameras/{cameraId}/device-info")]
+  public async Task<IActionResult> GetDeviceInformation(string cameraId, CancellationToken ct)
+  {
+    var response = await onvifClient.GetDeviceInformationAsync(
+      new CameraRequest { SourceId = cameraId }, Options(ct));
+
+    return Ok(new
+    {
+      manufacturer    = response.Manufacturer,
+      model           = response.Model,
+      firmwareVersion = response.FirmwareVersion,
+      serialNumber    = response.SerialNumber,
+      hardwareId      = response.HardwareId,
+    });
+  }
+
+  [HttpGet("cameras/{cameraId}/capabilities")]
+  public async Task<IActionResult> GetDeviceCapabilities(string cameraId, CancellationToken ct)
+  {
+    var response = await onvifClient.GetDeviceCapabilitiesAsync(
+      new CameraRequest { SourceId = cameraId }, Options(ct));
+
+    return Ok(new
+    {
+      hasPtz     = response.HasPtz,
+      hasImaging = response.HasImaging,
+      hasEvents  = response.HasEvents,
+      hasAudio   = response.HasAudio,
+    });
   }
 
   [HttpPost("cameras/{cameraId}/reboot")]

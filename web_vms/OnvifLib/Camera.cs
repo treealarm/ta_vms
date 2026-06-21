@@ -100,6 +100,18 @@ public class Camera
     return await device.SystemRebootAsync();
   }
 
+  public async Task<OnvifDeviceInfo> GetDeviceInformationAsync()
+  {
+    using var device = await GetDevice();
+    var resp = await device.GetDeviceInformationAsync(new DeviceServiceReference.GetDeviceInformationRequest());
+    return new OnvifDeviceInfo(
+      resp.Manufacturer ?? string.Empty,
+      resp.Model ?? string.Empty,
+      resp.FirmwareVersion ?? string.Empty,
+      resp.SerialNumber ?? string.Empty,
+      resp.HardwareId ?? string.Empty);
+  }
+
   public async Task SyncTimeAsync() => await SetTimeAsync(System.DateTime.UtcNow);
 
   public async Task SetTimeAsync(System.DateTime utcTime)
@@ -218,6 +230,17 @@ public class Camera
     return null;
   }
 
+  async public Task<ImagingService2?> GetImagingService()
+  {
+    var services = await GetServicesAsync();
+
+    if (services != null)
+    {
+      return await _serviceCache.GetServiceAsync<ImagingService2>(services);
+    }
+    return null;
+  }
+
   async public Task<List<OnvifProfileInfo>?> GetProfiles()
   {
     var service = await GetMediaService();
@@ -225,10 +248,33 @@ public class Camera
       return null;
     return service.GetProfiles();
   }
+
+  async public Task<ImageResult?> GetSnapshotAsync()
+  {
+    var service = await GetMediaService();
+    if (service == null)
+      return null;
+    return await service.GetImage();
+  }
   public async Task<bool> IsAlive()
   {
     var services = await GetServicesAsync();
     return (services != null && services.Count > 0);
+  }
+
+  // Whole-service presence is enumerated by Device.GetServicesAsync(true) (IncludeCapability) —
+  // this is the same information ONVIF's GetCapabilities call exposes (XAddr per category), so
+  // there's no need for a second SOAP round trip just to derive these flags.
+  public async Task<OnvifCapabilities> GetCapabilitiesSummaryAsync()
+  {
+    var services = await GetServicesAsync();
+    if (services == null)
+      return new OnvifCapabilities(false, false, false);
+
+    return new OnvifCapabilities(
+      HasPtz:     services.ContainsKey(PtzService2.WSDL_V20),
+      HasImaging: services.ContainsKey(ImagingService2.WSDL_V20),
+      HasEvents:  services.ContainsKey(EventService1.WSDL_EVENTS));
   }
   private async Task<Dictionary<string, string>?> DoGetServices()
   {

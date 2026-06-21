@@ -9,7 +9,8 @@ namespace OnvifLib
     string Name,
     int Width,
     int Height,
-    string Encoding
+    string Encoding,
+    string VideoSourceToken = ""
   );
 
   public record OnvifVideoEncoderConfig(
@@ -48,6 +49,15 @@ namespace OnvifLib
     string    Encoding,
     List<int> Bitrates,
     List<int> SampleRates);
+
+  public record OnvifDeviceInfo(
+    string Manufacturer,
+    string Model,
+    string FirmwareVersion,
+    string SerialNumber,
+    string HardwareId);
+
+  public record OnvifCapabilities(bool HasPtz, bool HasImaging, bool HasEvents);
 
   public class ImageResult
   {

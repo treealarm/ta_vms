@@ -12,6 +12,7 @@ import {
   IconButton,
   MenuItem,
   Skeleton,
+  Slider,
   Stack,
   Tab,
   Tabs,
@@ -28,6 +29,11 @@ import type {
   AudioEncoderConfigDto,
   AudioEncoderConfigOptionsDto,
   CameraSetupDto,
+  DeviceCapabilitiesDto,
+  DeviceInfoDto,
+  FloatRangeDto,
+  ImagingOptionsDto,
+  ImagingSettingsDto,
   PtzPresetDto,
   VideoEncoderConfigDto,
   VideoEncoderConfigOptionsDto,
@@ -260,6 +266,104 @@ function AudioSection({ cameraId }: { cameraId: string }) {
   return <Stack spacing={2}>{configs.map((cfg) => <AudioCard key={cfg.token} cameraId={cameraId} config={cfg} />)}</Stack>
 }
 
+// ── Imaging section ────────────────────────────────────────────────────────
+
+function ImagingSection({ cameraId }: { cameraId: string }) {
+  const { t } = useTranslation()
+  const [settings, setSettings] = useState<ImagingSettingsDto | null>(null)
+  const [options, setOptions] = useState<ImagingOptionsDto | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveOk, setSaveOk] = useState(false)
+
+  useEffect(() => {
+    setLoading(true); setError(null)
+    Promise.all([
+      apiFetch<ImagingSettingsDto>(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/imaging-settings`),
+      apiFetch<ImagingOptionsDto>(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/imaging-options`),
+    ])
+      .then(([s, o]) => { setSettings(s); setOptions(o) })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false))
+  }, [cameraId])
+
+  const handleSave = async () => {
+    if (!settings) return
+    setSaving(true); setSaveError(null); setSaveOk(false)
+    try {
+      await apiFetch(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/imaging-settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          brightness: settings.brightness ?? null,
+          contrast: settings.contrast ?? null,
+          colorSaturation: settings.colorSaturation ?? null,
+          sharpness: settings.sharpness ?? null,
+        }),
+      })
+      setSaveOk(true)
+      setTimeout(() => setSaveOk(false), 3000)
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return <Stack spacing={1}><Skeleton variant="rounded" height={40} /><Skeleton variant="rounded" height={40} /></Stack>
+  if (error) return <Alert severity="error">{error}</Alert>
+  if (!settings) return <Typography variant="body2" color="text.secondary">{t('onvifSettings.noImagingSupport')}</Typography>
+
+  const allSliders: { key: keyof ImagingSettingsDto; label: string; range?: FloatRangeDto | null }[] = [
+    { key: 'brightness', label: t('onvifSettings.brightness'), range: options?.brightness },
+    { key: 'contrast', label: t('onvifSettings.contrast'), range: options?.contrast },
+    { key: 'colorSaturation', label: t('onvifSettings.colorSaturation'), range: options?.colorSaturation },
+    { key: 'sharpness', label: t('onvifSettings.sharpness'), range: options?.sharpness },
+  ]
+  const sliders = allSliders.filter((s) => s.range != null || settings[s.key] != null)
+
+  if (sliders.length === 0)
+    return <Typography variant="body2" color="text.secondary">{t('onvifSettings.noImagingSupport')}</Typography>
+
+  return (
+    <Card variant="outlined">
+      <CardContent>
+        <Stack spacing={3}>
+          {sliders.map(({ key, label, range }) => {
+            const value = settings[key] ?? null
+            const min = range?.min ?? 0
+            const max = range?.max ?? 100
+            return (
+              <Box key={key}>
+                <Typography variant="body2" gutterBottom>
+                  {label}{value != null ? `: ${value.toFixed(1)}` : ''}
+                </Typography>
+                <Slider
+                  size="small"
+                  min={min}
+                  max={max}
+                  step={(max - min) / 100 || 1}
+                  value={value ?? min}
+                  onChange={(_, v) => setSettings((p) => p ? { ...p, [key]: v as number } : p)}
+                />
+              </Box>
+            )
+          })}
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Button variant="contained" size="small" disabled={saving} onClick={() => void handleSave()}>
+              {saving ? <CircularProgress size={16} /> : t('common.save')}
+            </Button>
+            {saveOk && <Typography variant="body2" color="success.main">✓</Typography>}
+          </Stack>
+          {saveError && <Alert severity="error" onClose={() => setSaveError(null)}>{saveError}</Alert>}
+        </Stack>
+      </CardContent>
+    </Card>
+  )
+}
+
 // ── PTZ presets section ───────────────────────────────────────────────────
 
 type OnvifProfileInfo = { token: string; name: string }
@@ -378,6 +482,45 @@ function PtzPresetsSection({ cameraId }: { cameraId: string }) {
 
 // ── System section ────────────────────────────────────────────────────────
 
+function DeviceInfoBlock({ cameraId }: { cameraId: string }) {
+  const { t } = useTranslation()
+  const [info, setInfo] = useState<DeviceInfoDto | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    apiFetch<DeviceInfoDto>(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/device-info`)
+      .then(setInfo)
+      .catch(() => setInfo(null))
+      .finally(() => setLoading(false))
+  }, [cameraId])
+
+  if (loading) return <Skeleton width={280} height={90} />
+  if (!info) return null
+
+  const rows: [string, string][] = [
+    [t('onvifSettings.manufacturer'), info.manufacturer],
+    [t('onvifSettings.model'), info.model],
+    [t('onvifSettings.firmwareVersion'), info.firmwareVersion],
+    [t('onvifSettings.serialNumber'), info.serialNumber],
+    [t('onvifSettings.hardwareId'), info.hardwareId],
+  ]
+
+  return (
+    <Box>
+      <Typography variant="caption" color="text.secondary">{t('onvifSettings.deviceInfo')}</Typography>
+      <Stack spacing={0.25}>
+        {rows.map(([label, value]) => value && (
+          <Typography key={label} variant="body2">
+            <Typography component="span" color="text.secondary">{label}: </Typography>
+            {value}
+          </Typography>
+        ))}
+      </Stack>
+    </Box>
+  )
+}
+
 function toDatetimeLocalValue(utcIso: string): string {
   const d = new Date(utcIso)
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -445,6 +588,8 @@ function SystemSection({ cameraId }: { cameraId: string }) {
 
   return (
     <Stack spacing={3}>
+      <DeviceInfoBlock cameraId={cameraId} />
+
       <Box>
         <Typography variant="caption" color="text.secondary">{t('onvifSettings.deviceTime')}</Typography>
         <Typography variant="body1">
@@ -494,20 +639,36 @@ function SystemSection({ cameraId }: { cameraId: string }) {
 function CameraDetail({ camera }: { camera: CameraSetupDto }) {
   const { t } = useTranslation()
   const [tab, setTab] = useState(0)
+  const [caps, setCaps] = useState<DeviceCapabilitiesDto | null>(null)
+
+  useEffect(() => {
+    apiFetch<DeviceCapabilitiesDto>(`/api/onvif/cameras/${encodeURIComponent(camera.cameraId)}/capabilities`)
+      .then(setCaps)
+      .catch(() => setCaps(null)) // fail open: unknown capabilities -> show all tabs rather than hide everything
+  }, [camera.cameraId])
+
+  const tabs = [
+    { key: 'video', label: t('onvifSettings.videoTab'), show: true },
+    { key: 'audio', label: t('onvifSettings.audioTab'), show: caps?.hasAudio ?? true },
+    { key: 'imaging', label: t('onvifSettings.imagingTab'), show: caps?.hasImaging ?? true },
+    { key: 'ptz', label: t('onvifSettings.ptzTab'), show: caps?.hasPtz ?? true },
+    { key: 'system', label: t('onvifSettings.systemTab'), show: true },
+  ].filter((tb) => tb.show)
+
+  useEffect(() => { if (tab >= tabs.length) setTab(0) }, [tabs.length, tab])
+  const activeKey = tabs[tab]?.key
 
   return (
     <Stack spacing={0} sx={{ height: '100%' }}>
       <Tabs value={tab} onChange={(_, v: number) => setTab(v)} sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-        <Tab label={t('onvifSettings.videoTab')} />
-        <Tab label={t('onvifSettings.audioTab')} />
-        <Tab label={t('onvifSettings.ptzTab')} />
-        <Tab label={t('onvifSettings.systemTab')} />
+        {tabs.map((tb) => <Tab key={tb.key} label={tb.label} />)}
       </Tabs>
       <Box sx={{ flex: 1, overflow: 'auto', pt: 1 }}>
-        {tab === 0 && <VideoSection cameraId={camera.cameraId} />}
-        {tab === 1 && <AudioSection cameraId={camera.cameraId} />}
-        {tab === 2 && <PtzPresetsSection cameraId={camera.cameraId} />}
-        {tab === 3 && <SystemSection cameraId={camera.cameraId} />}
+        {activeKey === 'video' && <VideoSection cameraId={camera.cameraId} />}
+        {activeKey === 'audio' && <AudioSection cameraId={camera.cameraId} />}
+        {activeKey === 'imaging' && <ImagingSection cameraId={camera.cameraId} />}
+        {activeKey === 'ptz' && <PtzPresetsSection cameraId={camera.cameraId} />}
+        {activeKey === 'system' && <SystemSection cameraId={camera.cameraId} />}
       </Box>
     </Stack>
   )

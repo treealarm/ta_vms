@@ -56,6 +56,31 @@ public class OnvifServiceImpl(
     return response;
   }
 
+  public override async Task<GetSnapshotResponse> GetSnapshot(CameraRequest request, ServerCallContext context)
+  {
+    var data = await connCache.GetAsync(request.SourceId, context.CancellationToken);
+    if (data?.Conn == null)
+      return new GetSnapshotResponse { Error = "No ONVIF connection configured" };
+
+    var actor = CameraActorProxy(request.SourceId);
+    try
+    {
+      var result = await actor.InvokeMethodAsync<CameraConnInfo, SnapshotActorResult>(
+        "GetSnapshotAsync", data.Conn, context.CancellationToken);
+      if (result.Data.Length == 0)
+        return new GetSnapshotResponse { Error = "Snapshot not available" };
+      return new GetSnapshotResponse
+      {
+        Data     = Google.Protobuf.ByteString.CopyFrom(result.Data),
+        MimeType = result.MimeType ?? string.Empty,
+      };
+    }
+    catch (Exception ex)
+    {
+      return new GetSnapshotResponse { Error = ex.Message };
+    }
+  }
+
   private static OnvifProfile ToOnvifProfile(string token, string name, int width, int height, string encoding) => new()
   {
     Token = token,
@@ -356,6 +381,127 @@ public class OnvifServiceImpl(
     catch (Exception ex)
     {
       return new SyncDeviceTimeResponse { Success = false, Error = ex.Message };
+    }
+  }
+
+  public override async Task<GetDeviceInformationResponse> GetDeviceInformation(
+    CameraRequest request, ServerCallContext context)
+  {
+    var info = await settingsService.GetDeviceInfoAsync(request.SourceId, context.CancellationToken);
+    if (info == null)
+      return new GetDeviceInformationResponse { Error = "Device information unavailable" };
+
+    return new GetDeviceInformationResponse
+    {
+      Manufacturer    = info.Manufacturer,
+      Model           = info.Model,
+      FirmwareVersion = info.FirmwareVersion,
+      SerialNumber    = info.SerialNumber,
+      HardwareId      = info.HardwareId,
+    };
+  }
+
+  public override async Task<GetDeviceCapabilitiesResponse> GetDeviceCapabilities(
+    CameraRequest request, ServerCallContext context)
+  {
+    var caps = await settingsService.GetCapabilitiesAsync(request.SourceId, context.CancellationToken);
+    var audioConfigs = await settingsService.GetAudioConfigsAsync(request.SourceId, context.CancellationToken);
+
+    return new GetDeviceCapabilitiesResponse
+    {
+      HasPtz     = caps?.HasPtz ?? false,
+      HasImaging = caps?.HasImaging ?? false,
+      HasEvents  = caps?.HasEvents ?? false,
+      HasAudio   = audioConfigs.Count > 0,
+    };
+  }
+
+  // ── Imaging ──────────────────────────────────────────────────────────────
+
+  // video_source_token is usually unknown to the caller — resolve it server-side from the
+  // camera's first media profile so the frontend doesn't need to know about video sources.
+  private async Task<string> ResolveVideoSourceTokenAsync(string cameraId, string requestedToken, CancellationToken ct)
+  {
+    if (!string.IsNullOrEmpty(requestedToken))
+      return requestedToken;
+
+    var data = await connCache.GetAsync(cameraId, ct);
+    if (data?.Conn == null)
+      return string.Empty;
+
+    try
+    {
+      var actor = CameraActorProxy(cameraId);
+      var profiles = await actor.InvokeMethodAsync<CameraConnInfo, List<ProfileInfoDto>>(
+        "GetProfilesAsync", data.Conn, ct);
+      return profiles.FirstOrDefault()?.VideoSourceToken ?? string.Empty;
+    }
+    catch (Exception ex)
+    {
+      logger.LogWarning(ex, "Failed to resolve video source token for camera {CameraId}", cameraId);
+      return string.Empty;
+    }
+  }
+
+  public override async Task<ImagingSettingsResponse> GetImagingSettings(
+    ImagingSettingsRequest request, ServerCallContext context)
+  {
+    var token = await ResolveVideoSourceTokenAsync(request.SourceId, request.VideoSourceToken, context.CancellationToken);
+    if (string.IsNullOrEmpty(token))
+      return new ImagingSettingsResponse { Error = "No video source available" };
+
+    var settings = await settingsService.GetImagingSettingsAsync(request.SourceId, token, context.CancellationToken);
+    if (settings == null)
+      return new ImagingSettingsResponse { Error = "Imaging settings unavailable" };
+
+    var response = new ImagingSettingsResponse();
+    if (settings.Brightness.HasValue) response.Brightness = settings.Brightness.Value;
+    if (settings.Contrast.HasValue) response.Contrast = settings.Contrast.Value;
+    if (settings.ColorSaturation.HasValue) response.ColorSaturation = settings.ColorSaturation.Value;
+    if (settings.Sharpness.HasValue) response.Sharpness = settings.Sharpness.Value;
+    return response;
+  }
+
+  public override async Task<ImagingOptionsResponse> GetImagingOptions(
+    ImagingSettingsRequest request, ServerCallContext context)
+  {
+    var token = await ResolveVideoSourceTokenAsync(request.SourceId, request.VideoSourceToken, context.CancellationToken);
+    if (string.IsNullOrEmpty(token))
+      return new ImagingOptionsResponse { Error = "No video source available" };
+
+    var options = await settingsService.GetImagingOptionsAsync(request.SourceId, token, context.CancellationToken);
+    if (options == null)
+      return new ImagingOptionsResponse { Error = "Imaging options unavailable" };
+
+    var response = new ImagingOptionsResponse();
+    if (options.Brightness != null) response.Brightness = new FloatRange { Min = options.Brightness.Min, Max = options.Brightness.Max };
+    if (options.Contrast != null) response.Contrast = new FloatRange { Min = options.Contrast.Min, Max = options.Contrast.Max };
+    if (options.ColorSaturation != null) response.ColorSaturation = new FloatRange { Min = options.ColorSaturation.Min, Max = options.ColorSaturation.Max };
+    if (options.Sharpness != null) response.Sharpness = new FloatRange { Min = options.Sharpness.Min, Max = options.Sharpness.Max };
+    return response;
+  }
+
+  public override async Task<SetImagingSettingsResponse> SetImagingSettings(
+    SetImagingSettingsRequest request, ServerCallContext context)
+  {
+    var token = await ResolveVideoSourceTokenAsync(request.SourceId, request.VideoSourceToken, context.CancellationToken);
+    if (string.IsNullOrEmpty(token))
+      return new SetImagingSettingsResponse { Success = false, Error = "No video source available" };
+
+    try
+    {
+      var settings = new OnvifLib.OnvifImagingSettings(
+        request.HasBrightness ? request.Brightness : null,
+        request.HasContrast ? request.Contrast : null,
+        request.HasColorSaturation ? request.ColorSaturation : null,
+        request.HasSharpness ? request.Sharpness : null);
+
+      await settingsService.SetImagingSettingsAsync(request.SourceId, token, settings, context.CancellationToken);
+      return new SetImagingSettingsResponse { Success = true };
+    }
+    catch (Exception ex)
+    {
+      return new SetImagingSettingsResponse { Success = false, Error = ex.Message };
     }
   }
 
