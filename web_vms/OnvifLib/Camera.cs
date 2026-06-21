@@ -263,8 +263,22 @@ public class Camera
     if (services == null)
       return new OnvifCapabilities(false, false, false);
 
+    // Namespace presence alone isn't enough for PTZ: some cameras advertise the PTZ WSDL
+    // without any real move hardware behind it. GetConfigurations (not GetNodes) is the
+    // reliable signal — same reasoning as PtzService2.GetCapabilitiesAsync's own comment.
+    var hasPtz = false;
+    if (services.ContainsKey(PtzService2.WSDL_V20))
+    {
+      var ptz = await GetPtzService();
+      if (ptz != null)
+      {
+        var ptzCaps = await ptz.GetCapabilitiesAsync(string.Empty);
+        hasPtz = ptzCaps.AbsoluteMove || ptzCaps.RelativeMove || ptzCaps.ContinuousMove;
+      }
+    }
+
     return new OnvifCapabilities(
-      HasPtz:     services.ContainsKey(PtzService2.WSDL_V20),
+      HasPtz:     hasPtz,
       HasImaging: services.ContainsKey(ImagingService2.WSDL_V20),
       // Mirror GetEventService()'s own resolution (OnvifServiceSelector tries every WSDL in
       // EventService1.GetSupportedWsdls()) — some cameras advertise events only under the

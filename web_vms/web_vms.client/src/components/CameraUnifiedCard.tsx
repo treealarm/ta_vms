@@ -159,6 +159,19 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
 
   const rtsp = configuredRtsp || (camera.onvifConn ? onvifRtsp : '')
 
+  // A camera can advertise the ONVIF PTZ service without any real move hardware behind it —
+  // gate the joystick on the actual capability check, not just "has an ONVIF connection".
+  const [hasPtz, setHasPtz] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (!camera.onvifConn) { setHasPtz(null); return }
+    fetch(`/api/onvif/cameras/${encodeURIComponent(camera.cameraId)}/capabilities`)
+      .then((r) => (r.ok ? (r.json() as Promise<{ hasPtz: boolean }>) : Promise.reject()))
+      .then((d) => setHasPtz(d.hasPtz))
+      .catch(() => setHasPtz(null)) // unknown -> fail open, same as the ONVIF settings panel
+  }, [camera.cameraId, camera.onvifConn])
+  useEffect(() => { if (hasPtz === false && ptzOpen) setPtzOpen(false) }, [hasPtz, ptzOpen])
+  const showPtzControl = Boolean(camera.onvifConn) && mode === 'live' && !isDisabled && (hasPtz ?? true)
+
   useEffect(() => {
     const id = setInterval(() => void dispatch(fetchCameraState(camera.cameraId)), 5000)
     void dispatch(fetchCameraState(camera.cameraId))
@@ -226,7 +239,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             </Tooltip>
           )}
 
-          {camera.onvifConn && mode === 'live' && !isDisabled && (
+          {showPtzControl && (
             <Tooltip title={ptzOpen ? t('cameraCard.ptzClose') : t('cameraCard.ptzOpen')} placement="right">
               <IconButton
                 size="small"
@@ -305,7 +318,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             >
               {camera.name || camera.cameraId}
             </Typography>
-            {camera.onvifConn && mode === 'live' && !isDisabled && (
+            {showPtzControl && (
               <Tooltip title={ptzOpen ? t('cameraCard.ptzClose') : t('cameraCard.ptzOpen')}>
                 <IconButton
                   size="small"
