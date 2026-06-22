@@ -138,6 +138,16 @@ JWT-валидацию ставим **перед** `web_vms` (reverse-proxy/gate
 проверяющий Keycloak-токены Square. Внутри сети `web_vms` без авторизации, снаружи напрямую
 недоступен. Референс: `Square/LeafletAlarms/Authentication/ConfigureAuthentificationServiceExtensions.cs`.
 
+> **Реализовано (частично, заранее):** логин + роли `admin`/`user` уже сделаны — но валидация JWT
+> стоит **внутри** `web_vms.Server` (как и в самом `LeafletAlarms`, а не отдельный gateway),
+> напрямую через `JwtBearerOptions.Authority`/OIDC discovery, без отдельного reverse-proxy.
+> Использует **тот же realm `myrealm`**, что и Square (общий вход, отдельных пользователей под
+> vms_rec не завели). Включается опционально через `KEYCLOAK_URL` (пусто → standalone, без
+> авторизации, как раньше) — см. `web_vms/web_vms.Server/Authentication/`,
+> `Controllers/AuthController.cs`, `docker-compose.integration.yml` (Phase 0 connectivity).
+> Остаётся на будущее: typelib-интеграция (Phase 1/2) и, если понадобится, вынос валидации на
+> отдельный gateway.
+
 ---
 
 ## Сводка изменений

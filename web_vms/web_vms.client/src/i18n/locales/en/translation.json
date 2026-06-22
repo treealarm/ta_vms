@@ -23,7 +23,16 @@
     "onvifSettings": "ONVIF Cfg",
     "logs": "Logs",
     "goAdmin": "Admin",
-    "goOperator": "Operator"
+    "goOperator": "Operator",
+    "logout": "Log out"
+  },
+  "auth": {
+    "title": "Sign in",
+    "username": "Username",
+    "password": "Password",
+    "signIn": "Sign in",
+    "signingIn": "Signing in…",
+    "invalidCredentials": "Invalid username or password"
   },
   "tests": {
     "title": "Tests"

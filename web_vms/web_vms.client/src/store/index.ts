@@ -1,5 +1,6 @@
 import { configureStore } from '@reduxjs/toolkit'
 import { useDispatch, useSelector, type TypedUseSelectorHook } from 'react-redux'
+import authReducer from './authSlice'
 import liveReducer from './liveSlice'
 import fsReducer from './fsSlice'
 import logsReducer from './logSlice'
@@ -11,6 +12,7 @@ import monitorUiReducer from './monitorUiSlice'
 
 export const store = configureStore({
   reducer: {
+    auth: authReducer,
     live: liveReducer,
     fs: fsReducer,
     logs: logsReducer,

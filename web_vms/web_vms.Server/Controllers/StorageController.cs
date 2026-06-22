@@ -1,10 +1,13 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Cfg;
+using web_vms.Authentication;
 
 namespace web_vms.Server.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Policy = AuthPolicies.AdminOnly)]
 public sealed class StorageController(StorageService.StorageServiceClient storageClient) : ControllerBase
 {
   [HttpGet]

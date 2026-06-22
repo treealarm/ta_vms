@@ -1,0 +1,19 @@
+# Overlay for connecting to Square's shared infrastructure (see docs/square-integration-plan.md,
+# Phase 0). The base docker-compose.yml is never modified for this — vms_rec must keep running
+# fully standalone with `docker compose up` alone.
+#
+# Usage (Square/multitenant_admin's Keycloak must already be up, publishing the
+# `common_app_network` external network):
+#   docker compose -f docker-compose.yml -f docker-compose.integration.yml up
+#
+# Also set KEYCLOAK_URL (and friends) in .env to enable login — see Program.cs.
+
+networks:
+  common_app_network:
+    external: true
+
+services:
+  web_vms:
+    networks:
+      - default
+      - common_app_network

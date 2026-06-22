@@ -1,12 +1,15 @@
 using Grpc.Core;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Cfg;
 using Vms.Onvif;
+using web_vms.Authentication;
 
 namespace web_vms;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Policy = AuthPolicies.AdminOnly)]
 public class OnvifController(
   OnvifService.OnvifServiceClient onvifClient,
   CfgService.CfgServiceClient cfgClient) : ControllerBase
