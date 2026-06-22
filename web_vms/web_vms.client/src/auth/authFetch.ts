@@ -1,6 +1,18 @@
 import { store } from '../store'
 import { logout } from '../store/authSlice'
 
+/**
+ * hls.js loads manifests/segments via its own XHR loader, bypassing window.fetch entirely — pass
+ * this as `xhrSetup` to any `new Hls({...})` config so archive/live playback keeps working once
+ * KEYCLOAK_URL is enabled.
+ */
+export function authXhrSetup(xhr: XMLHttpRequest): void {
+  const token = store.getState().auth.token
+  if (token) {
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+  }
+}
+
 let installed = false
 
 /**

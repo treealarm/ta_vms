@@ -20,7 +20,9 @@ const initialState: AuthState = {
 export function decodeRoles(token: string | null): string[] {
   if (!token) return []
   try {
-    const payload = JSON.parse(atob(token.split('.')[1])) as { realm_access?: { roles?: string[] } }
+    // JWT segments are base64url (uses '-'/'_', no padding) — atob() only understands base64.
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    const payload = JSON.parse(atob(base64)) as { realm_access?: { roles?: string[] } }
     return payload.realm_access?.roles ?? []
   } catch {
     return []

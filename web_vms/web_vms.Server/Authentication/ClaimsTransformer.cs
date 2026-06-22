@@ -25,7 +25,16 @@ namespace web_vms.Authentication
       var realmAccessClaim = identity.FindFirst("realm_access");
       if (realmAccessClaim != null)
       {
-        var realmAccess = JsonSerializer.Deserialize<RealmAccess>(realmAccessClaim.Value);
+        RealmAccess? realmAccess = null;
+        try
+        {
+          realmAccess = JsonSerializer.Deserialize<RealmAccess>(realmAccessClaim.Value);
+        }
+        catch (JsonException)
+        {
+          // Unexpected realm_access shape — treat as no extra roles rather than failing the request.
+        }
+
         foreach (var role in realmAccess?.roles ?? Enumerable.Empty<string>())
         {
           if (!identity.HasClaim(ClaimTypes.Role, role))

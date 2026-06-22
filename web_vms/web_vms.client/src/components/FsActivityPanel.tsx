@@ -15,6 +15,7 @@ import {
 import DownloadIcon from '@mui/icons-material/Download'
 import Hls from 'hls.js'
 import { useTranslation } from 'react-i18next'
+import { authXhrSetup } from '../auth/authFetch'
 import { useAppSelector } from '../store'
 
 interface FsFileEventDto {
@@ -58,7 +59,7 @@ function ClipPlayer({ clipUid, cameraId }: { clipUid: string; cameraId: string }
     const onFatal = (detail: string) => setHlsError(detail)
 
     if (Hls.isSupported()) {
-      hls = new Hls({ enableWorker: true, lowLatencyMode: false })
+      hls = new Hls({ enableWorker: true, lowLatencyMode: false, xhrSetup: authXhrSetup })
       video.addEventListener('canplay', tryPlay, { once: true })
       hls.on(Hls.Events.MEDIA_ATTACHED, () => hls?.loadSource(playlistUrl))
       hls.on(Hls.Events.MANIFEST_PARSED, tryPlay)
