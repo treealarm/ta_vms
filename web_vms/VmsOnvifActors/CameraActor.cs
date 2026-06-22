@@ -21,7 +21,7 @@ public class CameraActor(ActorHost host) : Actor(host), ICameraActor
     }
 
     return mediaService.GetProfiles()
-      .Select(p => new ProfileInfoDto(p.Token, p.Name, p.Width, p.Height, p.Encoding))
+      .Select(p => new ProfileInfoDto(p.Token, p.Name, p.Width, p.Height, p.Encoding, p.VideoSourceToken))
       .ToList();
   }
 
@@ -81,6 +81,23 @@ public class CameraActor(ActorHost host) : Actor(host), ICameraActor
 
     var caps = await ptz.GetCapabilitiesAsync(string.Empty);
     return new PtzCapabilitiesDto(caps.AbsoluteMove, caps.RelativeMove, caps.ContinuousMove);
+  }
+
+  public async Task<SnapshotActorResult> GetSnapshotAsync(CameraConnInfo conn)
+  {
+    var camera = EnsureCamera(conn);
+    var mediaService = await camera.GetMediaService();
+    if (mediaService == null)
+    {
+      // Service-resolution failure (auth/connectivity) — the cached Camera is no good, discard it.
+      Evict();
+      return new SnapshotActorResult([], null);
+    }
+
+    // A single failed/empty snapshot doesn't mean the connection itself is broken — don't evict
+    // an otherwise-healthy cached Camera just because one snapshot attempt came back empty.
+    var image = await mediaService.GetImage();
+    return image == null ? new SnapshotActorResult([], null) : new SnapshotActorResult(image.Data, image.MimeType);
   }
 
   private async Task<PtzService2> GetPtzOrThrow(CameraConnInfo conn)

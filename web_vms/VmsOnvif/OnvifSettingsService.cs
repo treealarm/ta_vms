@@ -62,6 +62,17 @@ public sealed class OnvifSettingsService(CameraConnCache connCache, ILogger<Onvi
   public Task RemovePresetAsync(string cameraId, string profileToken, string presetToken, CancellationToken ct)
     => RequirePtz(cameraId, "RemovePreset", ct, p => p.RemovePresetAsync(profileToken, presetToken));
 
+  // ── Imaging ───────────────────────────────────────────────────────────────────
+
+  public Task<OnvifImagingSettings?> GetImagingSettingsAsync(string cameraId, string videoSourceToken, CancellationToken ct)
+    => WithImaging<OnvifImagingSettings?>(cameraId, "GetImagingSettings", ct, i => i.GetImagingSettingsAsync(videoSourceToken), null);
+
+  public Task<OnvifImagingOptions?> GetImagingOptionsAsync(string cameraId, string videoSourceToken, CancellationToken ct)
+    => WithImaging<OnvifImagingOptions?>(cameraId, "GetImagingOptions", ct, i => i.GetOptionsAsync(videoSourceToken), null);
+
+  public Task SetImagingSettingsAsync(string cameraId, string videoSourceToken, OnvifImagingSettings settings, CancellationToken ct)
+    => RequireImaging(cameraId, "SetImagingSettings", ct, i => i.SetImagingSettingsAsync(videoSourceToken, settings));
+
   // ── System ────────────────────────────────────────────────────────────────────
 
   public async Task<DateTime?> GetDeviceTimeAsync(string cameraId, CancellationToken ct)
@@ -96,6 +107,38 @@ public sealed class OnvifSettingsService(CameraConnCache connCache, ILogger<Onvi
       logger.LogWarning(ex, "SetDeviceTime failed for camera {CameraId}", cameraId);
       Evict(data.Conn);
       throw;
+    }
+  }
+
+  public async Task<OnvifDeviceInfo?> GetDeviceInfoAsync(string cameraId, CancellationToken ct)
+  {
+    var data = await connCache.GetAsync(cameraId, ct);
+    if (data?.Conn == null) return null;
+    try
+    {
+      return await GetOrCreate(data.Conn).GetDeviceInformationAsync();
+    }
+    catch (Exception ex)
+    {
+      logger.LogWarning(ex, "GetDeviceInformation failed for camera {CameraId}", cameraId);
+      Evict(data.Conn);
+      return null;
+    }
+  }
+
+  public async Task<OnvifCapabilities?> GetCapabilitiesAsync(string cameraId, CancellationToken ct)
+  {
+    var data = await connCache.GetAsync(cameraId, ct);
+    if (data?.Conn == null) return null;
+    try
+    {
+      return await GetOrCreate(data.Conn).GetCapabilitiesSummaryAsync();
+    }
+    catch (Exception ex)
+    {
+      logger.LogWarning(ex, "GetCapabilities failed for camera {CameraId}", cameraId);
+      Evict(data.Conn);
+      return null;
     }
   }
 
@@ -204,6 +247,40 @@ public sealed class OnvifSettingsService(CameraConnCache connCache, ILogger<Onvi
     }
   }
 
+  private async Task<T> WithImaging<T>(string cameraId, string opName, CancellationToken ct,
+    Func<ImagingService2, Task<T>> action, T fallback)
+  {
+    var data = await connCache.GetAsync(cameraId, ct);
+    if (data?.Conn == null) return fallback;
+    var imaging = await GetImagingOrNull(data.Conn);
+    if (imaging == null) return fallback;
+    try { return await action(imaging); }
+    catch (Exception ex)
+    {
+      logger.LogWarning(ex, "{Op} failed for camera {CameraId}", opName, cameraId);
+      Evict(data.Conn);
+      throw;
+    }
+  }
+
+  private async Task RequireImaging(string cameraId, string opName, CancellationToken ct,
+    Func<ImagingService2, Task> action)
+  {
+    var data = await connCache.GetAsync(cameraId, ct);
+    if (data?.Conn == null)
+      throw new InvalidOperationException($"No ONVIF connection configured for camera '{cameraId}'");
+    var imaging = await GetImagingOrNull(data.Conn);
+    if (imaging == null)
+      throw new InvalidOperationException($"ONVIF Imaging service unavailable for camera '{cameraId}'");
+    try { await action(imaging); }
+    catch (Exception ex)
+    {
+      logger.LogWarning(ex, "{Op} failed for camera {CameraId}", opName, cameraId);
+      Evict(data.Conn);
+      throw;
+    }
+  }
+
   // ── Low-level accessors ───────────────────────────────────────────────────────
 
   private async Task<MediaService?> GetMediaOrNull(CameraConnInfo conn)
@@ -235,6 +312,23 @@ public sealed class OnvifSettingsService(CameraConnCache connCache, ILogger<Onvi
     catch (Exception ex)
     {
       logger.LogWarning(ex, "ONVIF PTZ service init failed for {Ip}:{Port}", conn.Ip, conn.Port);
+      Evict(conn);
+      return null;
+    }
+  }
+
+  private async Task<ImagingService2?> GetImagingOrNull(CameraConnInfo conn)
+  {
+    try
+    {
+      var cam = GetOrCreate(conn);
+      var imaging = await cam.GetImagingService();
+      if (imaging == null) Evict(conn);
+      return imaging;
+    }
+    catch (Exception ex)
+    {
+      logger.LogWarning(ex, "ONVIF Imaging service init failed for {Ip}:{Port}", conn.Ip, conn.Port);
       Evict(conn);
       return null;
     }

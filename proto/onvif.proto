@@ -24,6 +24,12 @@ service OnvifService {
   // Reads ONVIF profiles directly from ip/port/credentials, without the camera being
   // configured in VmsCfg — lets the discovery wizard preview streams before committing.
   rpc GetProfilesByConnection(GetProfilesByConnectionRequest) returns (GetProfilesResponse);
+  rpc GetSnapshot(CameraRequest) returns (GetSnapshotResponse);
+  rpc GetDeviceInformation(CameraRequest) returns (GetDeviceInformationResponse);
+  rpc GetDeviceCapabilities(CameraRequest) returns (GetDeviceCapabilitiesResponse);
+  rpc GetImagingSettings(ImagingSettingsRequest) returns (ImagingSettingsResponse);
+  rpc GetImagingOptions(ImagingSettingsRequest) returns (ImagingOptionsResponse);
+  rpc SetImagingSettings(SetImagingSettingsRequest) returns (SetImagingSettingsResponse);
 }
 
 service PtzService {
@@ -71,6 +77,69 @@ message GetProfilesResponse {
 
 message StreamUriResponse {
   string rtsp_url = 1;
+}
+
+message GetSnapshotResponse {
+  bytes  data      = 1;
+  string mime_type = 2;
+  string error     = 3;
+}
+
+message GetDeviceInformationResponse {
+  string manufacturer     = 1;
+  string model            = 2;
+  string firmware_version = 3;
+  string serial_number    = 4;
+  string hardware_id      = 5;
+  string error            = 6;
+}
+
+message GetDeviceCapabilitiesResponse {
+  bool   has_ptz     = 1;
+  bool   has_imaging = 2;
+  bool   has_events  = 3;
+  bool   has_audio   = 4;
+  string error       = 5;
+}
+
+message ImagingSettingsRequest {
+  string source_id          = 1;
+  string video_source_token = 2; // empty = resolve server-side from first profile
+}
+
+message ImagingSettingsResponse {
+  optional float brightness       = 1;
+  optional float contrast         = 2;
+  optional float color_saturation = 3;
+  optional float sharpness        = 4;
+  string         error            = 5;
+}
+
+message FloatRange {
+  float min = 1;
+  float max = 2;
+}
+
+message ImagingOptionsResponse {
+  FloatRange brightness       = 1;
+  FloatRange contrast         = 2;
+  FloatRange color_saturation = 3;
+  FloatRange sharpness        = 4;
+  string     error            = 5;
+}
+
+message SetImagingSettingsRequest {
+  string         source_id          = 1;
+  string         video_source_token = 2;
+  optional float brightness         = 3;
+  optional float contrast           = 4;
+  optional float color_saturation   = 5;
+  optional float sharpness          = 6;
+}
+
+message SetImagingSettingsResponse {
+  bool   success = 1;
+  string error   = 2;
 }
 
 message PtzContinuousMoveRequest {

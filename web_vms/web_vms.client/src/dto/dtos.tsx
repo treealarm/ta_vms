@@ -387,3 +387,34 @@ export type PtzPresetDto = {
   token: string
   name: string
 }
+
+export type DeviceInfoDto = {
+  manufacturer: string
+  model: string
+  firmwareVersion: string
+  serialNumber: string
+  hardwareId: string
+}
+
+export type DeviceCapabilitiesDto = {
+  hasPtz: boolean
+  hasImaging: boolean
+  hasEvents: boolean
+  hasAudio: boolean
+}
+
+export type FloatRangeDto = { min: number; max: number }
+
+export type ImagingSettingsDto = {
+  brightness?: number | null
+  contrast?: number | null
+  colorSaturation?: number | null
+  sharpness?: number | null
+}
+
+export type ImagingOptionsDto = {
+  brightness?: FloatRangeDto | null
+  contrast?: FloatRangeDto | null
+  colorSaturation?: FloatRangeDto | null
+  sharpness?: FloatRangeDto | null
+}
