@@ -168,7 +168,11 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
       .then((r) => (r.ok ? (r.json() as Promise<{ hasPtz: boolean }>) : Promise.reject()))
       .then((d) => setHasPtz(d.hasPtz))
       .catch(() => setHasPtz(null)) // unknown -> fail open, same as the ONVIF settings panel
-  }, [camera.cameraId, camera.onvifConn])
+    // camera.onvifConn is a fresh object reference on every cameraState poll (see the
+    // fetchCameraState interval below) even when unchanged — depend on its presence, not its
+    // identity, so this doesn't refetch every 5s.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camera.cameraId, Boolean(camera.onvifConn)])
   useEffect(() => { if (hasPtz === false && ptzOpen) setPtzOpen(false) }, [hasPtz, ptzOpen])
   const showPtzControl = Boolean(camera.onvifConn) && mode === 'live' && !isDisabled && (hasPtz ?? true)
 
@@ -535,7 +539,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             <ArchiveHlsStreamCard cameraId={camera.cameraId} />
           </Box>
         )}
-        {ptzOpen && mode === 'live' && (
+        {showPtzControl && ptzOpen && (
           <PtzOverlay
             cameraId={camera.cameraId}
             profileToken={activeStreamObj?.profileToken ?? ''}

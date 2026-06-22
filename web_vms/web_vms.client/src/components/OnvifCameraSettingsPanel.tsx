@@ -675,6 +675,16 @@ function CameraDetail({ camera }: { camera: CameraSetupDto }) {
   // PTZ joystick, shown under the preview while on the PTZ tab — follows that tab's selected
   // profile (reported up via onProfileTokenChange) rather than duplicating its own selector.
   const [ptzProfileToken, setPtzProfileToken] = useState('')
+  // CameraDetail isn't remounted on camera switch (no `key` on its call site, so tabKey survives
+  // switches by design — see comment above). Without this, ptzProfileToken would keep the
+  // previous camera's token paired with the new camera.cameraId until PtzPresetsSection's async
+  // profile fetch resolves (or forever, if the new camera has zero profiles) — clear it
+  // synchronously the moment the camera changes instead.
+  const [prevCameraId, setPrevCameraId] = useState(camera.cameraId)
+  if (camera.cameraId !== prevCameraId) {
+    setPrevCameraId(camera.cameraId)
+    setPtzProfileToken('')
+  }
 
   return (
     <Stack direction="row" spacing={2} sx={{ height: '100%' }}>

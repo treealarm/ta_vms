@@ -254,18 +254,28 @@ public class Camera
     return (services != null && services.Count > 0);
   }
 
-  // Whole-service presence is enumerated by Device.GetServicesAsync(true) (IncludeCapability) —
-  // this is the same information ONVIF's GetCapabilities call exposes (XAddr per category), so
-  // there's no need for a second SOAP round trip just to derive these flags.
+  private OnvifCapabilities? _capabilitiesCache;
+  private System.DateTime _capabilitiesCacheAt = System.DateTime.MinValue;
+  private static readonly TimeSpan CapabilitiesCacheTtl = TimeSpan.FromMinutes(5);
+
+  // HasImaging/HasEvents are derived purely from namespace presence in the
+  // Device.GetServicesAsync(true) (IncludeCapability) dictionary — no extra SOAP call needed,
+  // since that's the same information ONVIF's GetCapabilities call would expose (XAddr per
+  // category). HasPtz is the exception: namespace presence alone isn't reliable for PTZ (some
+  // cameras advertise the PTZ WSDL without any real move hardware behind it), so it costs one
+  // extra GetConfigurations round trip — cached below since this method is polled frequently
+  // by UI capability checks.
   public async Task<OnvifCapabilities> GetCapabilitiesSummaryAsync()
   {
+    if (_capabilitiesCache != null && System.DateTime.UtcNow - _capabilitiesCacheAt < CapabilitiesCacheTtl)
+      return _capabilitiesCache;
+
     var services = await GetServicesAsync();
     if (services == null)
       return new OnvifCapabilities(false, false, false);
 
-    // Namespace presence alone isn't enough for PTZ: some cameras advertise the PTZ WSDL
-    // without any real move hardware behind it. GetConfigurations (not GetNodes) is the
-    // reliable signal — same reasoning as PtzService2.GetCapabilitiesAsync's own comment.
+    // GetConfigurations (not GetNodes) is the reliable PTZ signal — same reasoning as
+    // PtzService2.GetCapabilitiesAsync's own comment.
     var hasPtz = false;
     if (services.ContainsKey(PtzService2.WSDL_V20))
     {
@@ -277,13 +287,17 @@ public class Camera
       }
     }
 
-    return new OnvifCapabilities(
+    var result = new OnvifCapabilities(
       HasPtz:     hasPtz,
       HasImaging: services.ContainsKey(ImagingService2.WSDL_V20),
       // Mirror GetEventService()'s own resolution (OnvifServiceSelector tries every WSDL in
       // EventService1.GetSupportedWsdls()) — some cameras advertise events only under the
       // media namespace, with no separate dedicated events entry.
       HasEvents:  EventService1.GetSupportedWsdls().Any(services.ContainsKey));
+
+    _capabilitiesCache = result;
+    _capabilitiesCacheAt = System.DateTime.UtcNow;
+    return result;
   }
   private async Task<Dictionary<string, string>?> DoGetServices()
   {

@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { alpha, Box, IconButton, Tooltip, useTheme } from '@mui/material'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
@@ -19,19 +19,21 @@ type Props = {
 const SPEED = 0.5
 
 async function ptzMove(cameraId: string, profileToken: string, pan: number, tilt: number, zoom: number) {
-  await fetch('/api/ptz/continuous-move', {
+  const r = await fetch('/api/ptz/continuous-move', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cameraId, profileToken, pan, tilt, zoom }),
   })
+  if (!r.ok) console.error('PTZ continuous-move failed:', await r.text())
 }
 
 async function ptzStop(cameraId: string, profileToken: string) {
-  await fetch('/api/ptz/stop', {
+  const r = await fetch('/api/ptz/stop', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cameraId, profileToken }),
   })
+  if (!r.ok) console.error('PTZ stop failed:', await r.text())
 }
 
 // Backend ContinuousMove timeout is PT3S; repeat every 2s so camera never auto-stops between refreshes
@@ -68,6 +70,11 @@ function PtzButton({
     if (intervalRef.current !== null) { window.clearInterval(intervalRef.current); intervalRef.current = null }
     void ptzStop(cameraId, profileToken)
   }
+
+  // If this button unmounts while held (e.g. the tab/camera switches away mid-press, so no
+  // mouseup/mouseleave/touchend ever fires), stop the move instead of leaving the interval
+  // running forever in the background.
+  useEffect(() => stop, [])
 
   return (
     <Tooltip title={title} placement="top">
