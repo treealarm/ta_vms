@@ -25,6 +25,8 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import DeleteIcon from '@mui/icons-material/Delete'
 import { useTranslation } from 'react-i18next'
 import { useAppSelector } from '../store'
+import CameraStream from './CameraStream'
+import PtzControlPad from './PtzControlPad'
 import type {
   AudioEncoderConfigDto,
   AudioEncoderConfigOptionsDto,
@@ -368,7 +370,7 @@ function ImagingSection({ cameraId }: { cameraId: string }) {
 
 type OnvifProfileInfo = { token: string; name: string }
 
-function PtzPresetsSection({ cameraId }: { cameraId: string }) {
+function PtzPresetsSection({ cameraId, onProfileTokenChange }: { cameraId: string; onProfileTokenChange?: (token: string) => void }) {
   const { t } = useTranslation()
   const [profiles, setProfiles] = useState<OnvifProfileInfo[]>([])
   const [profileToken, setProfileToken] = useState('')
@@ -381,8 +383,12 @@ function PtzPresetsSection({ cameraId }: { cameraId: string }) {
 
   useEffect(() => {
     apiFetch<OnvifProfileInfo[]>(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/profiles`)
-      .then((p) => { setProfiles(p); if (p.length > 0) setProfileToken(p[0].token) })
+      .then((p) => {
+        setProfiles(p)
+        if (p.length > 0) { setProfileToken(p[0].token); onProfileTokenChange?.(p[0].token) }
+      })
       .catch(() => setProfiles([]))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cameraId])
 
   const loadPresets = useCallback(() => {
@@ -439,7 +445,7 @@ function PtzPresetsSection({ cameraId }: { cameraId: string }) {
     <Stack spacing={2}>
       {profiles.length > 1 && (
         <TextField select size="small" label={t('onvifSettings.selectProfile')} value={profileToken}
-          onChange={(e) => setProfileToken(e.target.value)} sx={{ maxWidth: 300 }}>
+          onChange={(e) => { setProfileToken(e.target.value); onProfileTokenChange?.(e.target.value) }} sx={{ maxWidth: 300 }}>
           {profiles.map((p) => <MenuItem key={p.token} value={p.token}>{p.name || p.token}</MenuItem>)}
         </TextField>
       )}
@@ -662,18 +668,46 @@ function CameraDetail({ camera }: { camera: CameraSetupDto }) {
   // so the original tab is reselected automatically if it becomes visible again.
   const activeKey = tabs.some((tb) => tb.key === tabKey) ? tabKey : (tabs[0]?.key ?? 'video')
 
+  // Primary live stream for the preview pane — same "first webRTC-enabled stream" pick as
+  // CameraUnifiedCard.tsx; deliberately not tied to the PTZ tab's per-profile selector.
+  const webRtcStream = (camera.streams ?? []).find((s) => s.webRtc)
+
+  // PTZ joystick, shown under the preview while on the PTZ tab — follows that tab's selected
+  // profile (reported up via onProfileTokenChange) rather than duplicating its own selector.
+  const [ptzProfileToken, setPtzProfileToken] = useState('')
+
   return (
-    <Stack spacing={0} sx={{ height: '100%' }}>
-      <Tabs value={activeKey} onChange={(_, v: string) => setTabKey(v)} sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-        {tabs.map((tb) => <Tab key={tb.key} value={tb.key} label={tb.label} />)}
-      </Tabs>
-      <Box sx={{ flex: 1, overflow: 'auto', pt: 1 }}>
-        {activeKey === 'video' && <VideoSection cameraId={camera.cameraId} />}
-        {activeKey === 'audio' && <AudioSection cameraId={camera.cameraId} />}
-        {activeKey === 'imaging' && <ImagingSection cameraId={camera.cameraId} />}
-        {activeKey === 'ptz' && <PtzPresetsSection cameraId={camera.cameraId} />}
-        {activeKey === 'system' && <SystemSection cameraId={camera.cameraId} />}
-      </Box>
+    <Stack direction="row" spacing={2} sx={{ height: '100%' }}>
+      <Stack spacing={0} sx={{ flex: 1, minWidth: 0 }}>
+        <Tabs value={activeKey} onChange={(_, v: string) => setTabKey(v)} sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+          {tabs.map((tb) => <Tab key={tb.key} value={tb.key} label={tb.label} />)}
+        </Tabs>
+        <Box sx={{ flex: 1, overflow: 'auto', pt: 1 }}>
+          {activeKey === 'video' && <VideoSection cameraId={camera.cameraId} />}
+          {activeKey === 'audio' && <AudioSection cameraId={camera.cameraId} />}
+          {activeKey === 'imaging' && <ImagingSection cameraId={camera.cameraId} />}
+          {activeKey === 'ptz' && <PtzPresetsSection cameraId={camera.cameraId} onProfileTokenChange={setPtzProfileToken} />}
+          {activeKey === 'system' && <SystemSection cameraId={camera.cameraId} />}
+        </Box>
+      </Stack>
+      {webRtcStream && (
+        <Box sx={{ width: 280, flexShrink: 0, alignSelf: 'flex-start' }}>
+          <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+            {t('stream.livePreview')}
+          </Typography>
+          <Box sx={{ width: '100%', aspectRatio: '16 / 9' }}>
+            <CameraStream
+              streamName={`${camera.cameraId}/${webRtcStream.streamName}`}
+              baseUrl={`${window.location.protocol}//${camera.mediaMtxWebrtcHost || window.location.hostname}:${camera.mediaMtxWebrtcPort ?? 8889}`}
+            />
+          </Box>
+          {activeKey === 'ptz' && ptzProfileToken && (
+            <Box sx={{ mt: 1.5, display: 'flex', justifyContent: 'center' }}>
+              <PtzControlPad cameraId={camera.cameraId} profileToken={ptzProfileToken} />
+            </Box>
+          )}
+        </Box>
+      )}
     </Stack>
   )
 }
