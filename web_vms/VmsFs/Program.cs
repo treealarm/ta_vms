@@ -16,6 +16,7 @@ var grpcPort = RequirePort("FS_VMS_PORT");
 var ownAppId = Environment.GetEnvironmentVariable("APP_ID");
 
 builder.Services.AddGrpc();
+builder.Services.AddDaprClient();
 builder.Services.AddDaprPubSubClient();
 builder.Services.AddHostedService<CameraConfigSubscriber>();
 builder.Services.AddSingleton<ClipCleaner>();

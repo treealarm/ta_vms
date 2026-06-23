@@ -1,6 +1,8 @@
+using Dapr.Messaging.PublishSubscribe.Extensions;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using SquareIntegrationClient;
 using VmsCfg;
 using VmsLog;
 
@@ -21,6 +23,25 @@ builder.Services.AddSingleton<StorageDb>();
 builder.Services.AddSingleton<CfgServiceImpl>();
 builder.Services.AddSingleton<StorageServiceImpl>();
 
+// SQUARE_INTEGRATION_SINK_APP_ID is intentionally optional: when unset, VmsCfg runs fully
+// standalone with no dependency on Square (no-op ISquareIntegration, no subscriber registered).
+// When set, it must name Square's receiving Dapr app-id (its integrationhost service, not the
+// user-facing leafletalarms app) — see docs/square-integration-plan.md.
+var squareSinkAppId = Environment.GetEnvironmentVariable("SQUARE_INTEGRATION_SINK_APP_ID");
+var squareEnabled = !string.IsNullOrEmpty(squareSinkAppId);
+if (squareEnabled)
+{
+  builder.Services.AddSingleton<ISquareIntegration>(
+    _ => new SquareIntegrationGrpcClient(squareSinkAppId!, Require("APP_ID")));
+  builder.Services.AddDaprPubSubClient();
+  builder.Services.AddHostedService<SquareAlarmSubscriber>();
+  builder.Services.AddHostedService<SquareResyncService>();
+}
+else
+{
+  builder.Services.AddSingleton<ISquareIntegration, NoOpSquareIntegration>();
+}
+
 builder.WebHost.ConfigureKestrel(options =>
 {
   options.ListenAnyIP(grpcPort, lo => lo.Protocols = HttpProtocols.Http2);
@@ -30,6 +51,7 @@ var app = builder.Build();
 await app.Services.GetRequiredService<DbMigrator>().MigrateAsync();
 app.MapGrpcService<CfgServiceImpl>();
 app.MapGrpcService<StorageServiceImpl>();
+
 app.Run();
 
 static string Require(string name) =>

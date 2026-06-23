@@ -1,6 +1,13 @@
 x-data-volume: &data-volume
   - "${PWD}/data:/data"
 
+# Same network Square/multitenant_admin use (neither marks it external — whichever stack starts
+# first creates it, the rest just attach by name). Renaming compose's own implicit "default"
+# network this way puts every vms_rec service on it with no per-service changes needed.
+networks:
+  default:
+    name: common_app_network
+
 services:
   dapr-placement:
     image: daprio/dapr:latest
@@ -32,8 +39,12 @@ services:
     depends_on:
       - postgres
 
-  redis:
-    image: redis:latest
+  # No own redis service: vms_rec now shares one network (common_app_network, see above) with
+  # Square/multitenant_admin, and reuses multitenant_admin's "redis" for all of vms_rec's Dapr
+  # pub/sub and state store too — running two same-named "redis" containers on one network makes
+  # Docker's embedded DNS round-robin connections randomly between them (verified empirically),
+  # so there can only be one. This means vms_rec no longer starts standalone without
+  # Square/multitenant_admin's stack also running — an explicit, accepted trade-off.
 
   mediamtx:
     image: bluenviron/mediamtx:latest
@@ -79,7 +90,6 @@ services:
     network_mode: "service:vmsutils"
     depends_on:
       - vmsutils
-      - redis
 
   vmslogger:
     profiles: [app]
@@ -114,7 +124,6 @@ services:
     network_mode: "service:vmslogger"
     depends_on:
       - vmslogger
-      - redis
 
   vmscfg:
     profiles: [app]
@@ -152,7 +161,6 @@ services:
     network_mode: "service:vmscfg"
     depends_on:
       - vmscfg
-      - redis
 
   vmsonvif:
     profiles: [app]
@@ -226,7 +234,6 @@ services:
     network_mode: "service:vmsfs"
     depends_on:
       - vmsfs
-      - redis
 
   vmsonvif-dapr:
     profiles: [app]
@@ -252,7 +259,6 @@ services:
     network_mode: "service:vmsonvif"
     depends_on:
       - vmsonvif
-      - redis
 
   vmsonvif-actors-dapr:
     profiles: [app]
@@ -319,7 +325,6 @@ services:
     network_mode: "service:vms"
     depends_on:
       - vms
-      - redis
 
   web_vms:
     profiles: [app]
@@ -357,5 +362,4 @@ services:
     network_mode: "service:web_vms"
     depends_on:
       - web_vms
-      - redis
 

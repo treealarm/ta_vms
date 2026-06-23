@@ -14,8 +14,8 @@
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "WEB_VMS_PORT": "5134",
-                "DAPR_HTTP_PORT": "3500",
-                "DAPR_GRPC_PORT": "50001",
+                "DAPR_HTTP_PORT": "3600",
+                "DAPR_GRPC_PORT": "51001",
                 "DAPR_LOGGER_APP_ID": "vmslogger",
                 "DAPR_CFG_APP_ID": "vmscfg",
                 "DAPR_ONVIF_APP_ID": "vmsonvif",
@@ -24,7 +24,8 @@
                 "KEYCLOAK_ADMIN_USER": "admin",
                 "KEYCLOAK_ADMIN_PASSWORD": "admin",
                 "KEYCLOAK_REALM_NAME": "myrealm",
-                "KEYCLOAK_CLIENT_ID": "pubclient"
+                "KEYCLOAK_CLIENT_ID": "pubclient",
+                "SQUARE_FRONTEND_ORIGIN": "http://localhost:8002"
             }
         },
         {
@@ -39,8 +40,8 @@
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "CFG_VMS_PORT": "5135",
-                "DAPR_HTTP_PORT": "3501",
-                "DAPR_GRPC_PORT": "50002",
+                "DAPR_HTTP_PORT": "3601",
+                "DAPR_GRPC_PORT": "51002",
                 "PUBSUB_NAME": "orderpubsub",
                 "POSTGRES_HOST": "localhost",
                 "POSTGRES_PORT": "5432",
@@ -52,7 +53,10 @@
                 "MEDIA_SERVER_PAIRS": "vms:vmsfs,vms-2:vmsfs-2",
                 "DAPR_STATE_STORE_NAME": "statestore",
                 "APP_ID": "vmscfg",
-                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs",
+                "SQUARE_INTEGRATION_SINK_APP_ID": "integrationhost",
+                "SQUARE_INTEGRATION_DEFAULT_LAT": "0",
+                "SQUARE_INTEGRATION_DEFAULT_LON": "0"
             }
         },
         {
@@ -67,8 +71,8 @@
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "ONVIF_SRV_PORT": "5136",
-                "DAPR_HTTP_PORT": "3502",
-                "DAPR_GRPC_PORT": "50003",
+                "DAPR_HTTP_PORT": "3602",
+                "DAPR_GRPC_PORT": "51003",
                 "DAPR_CFG_APP_ID": "vmscfg",
                 "PUBSUB_NAME": "orderpubsub",
                 "APP_ID": "vmsonvif",
@@ -87,8 +91,8 @@
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "ONVIF_ACTORS_PORT": "5141",
-                "DAPR_HTTP_PORT": "3505",
-                "DAPR_GRPC_PORT": "50007",
+                "DAPR_HTTP_PORT": "3603",
+                "DAPR_GRPC_PORT": "51004",
                 "APP_ID": "vmsonvif-actors",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
@@ -105,8 +109,8 @@
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "FS_VMS_PORT": "5137",
-                "DAPR_HTTP_PORT": "3504",
-                "DAPR_GRPC_PORT": "50004",
+                "DAPR_HTTP_PORT": "3604",
+                "DAPR_GRPC_PORT": "51005",
                 "DAPR_CFG_APP_ID": "vmscfg",
                 "PUBSUB_NAME": "orderpubsub",
                 "APP_ID": "vmsfs",
@@ -131,8 +135,8 @@
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "LOGGER_VMS_PORT": "5138",
-                "DAPR_HTTP_PORT": "3510",
-                "DAPR_GRPC_PORT": "50110",
+                "DAPR_HTTP_PORT": "3605",
+                "DAPR_GRPC_PORT": "51006",
                 "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage",
                 "APP_ID": "vmslogger",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
@@ -150,8 +154,8 @@
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "UTILS_VMS_PORT": "5139",
-                "DAPR_HTTP_PORT": "3509",
-                "DAPR_GRPC_PORT": "50109",
+                "DAPR_HTTP_PORT": "3606",
+                "DAPR_GRPC_PORT": "51007",
                 "DAPR_CFG_APP_ID": "vmscfg",
                 "PUBSUB_NAME": "orderpubsub",
                 "APP_ID": "vmsutils",
@@ -186,7 +190,7 @@
                 },
                 {
                     "name": "DAPR_GRPC_PORT",
-                    "value": "50011"
+                    "value": "51008"
                 },
                 {
                     "name": "DAPR_CFG_APP_ID",
@@ -260,8 +264,8 @@
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "FS_VMS_PORT": "5142",
-                "DAPR_HTTP_PORT": "3506",
-                "DAPR_GRPC_PORT": "50008",
+                "DAPR_HTTP_PORT": "3608",
+                "DAPR_GRPC_PORT": "51009",
                 "DAPR_CFG_APP_ID": "vmscfg",
                 "PUBSUB_NAME": "orderpubsub",
                 "APP_ID": "vmsfs-2",
@@ -286,7 +290,7 @@
                 { "name": "VMS_STORAGE_BASE_PATH", "value": "${workspaceFolder}/../media_storage" },
                 { "name": "GRPC_VMS_PORT", "value": "50052" },
                 { "name": "APP_ID", "value": "vms-2" },
-                { "name": "DAPR_GRPC_PORT", "value": "50012" },
+                { "name": "DAPR_GRPC_PORT", "value": "51010" },
                 { "name": "DAPR_CFG_APP_ID", "value": "vmscfg" },
                 { "name": "DAPR_ONVIF_APP_ID", "value": "vmsonvif" },
                 { "name": "DAPR_UTILS_APP_ID", "value": "vmsutils" },

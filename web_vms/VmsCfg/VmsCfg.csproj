@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="Dapr.AspNetCore" Version="1.16.0" />
     <PackageReference Include="Dapr.Client" Version="1.16.0" />
+    <PackageReference Include="Dapr.Messaging" Version="1.16.0" />
     <PackageReference Include="Google.Protobuf" Version="3.34.1" />
     <PackageReference Include="Grpc.AspNetCore" Version="2.76.0" />
     <PackageReference Include="Grpc.Tools" Version="2.80.0">
@@ -23,6 +24,7 @@
     <ProjectReference Include="..\web_vms.Types\web_vms.Types.csproj" />
     <ProjectReference Include="..\OnvifLib\OnvifLib.csproj" />
     <ProjectReference Include="..\VmsLog\VmsLog.csproj" />
+    <ProjectReference Include="..\SquareIntegrationClient\SquareIntegrationClient.csproj" />
   </ItemGroup>
 
   <ItemGroup>

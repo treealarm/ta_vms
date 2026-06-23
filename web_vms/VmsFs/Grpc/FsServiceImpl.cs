@@ -1,3 +1,4 @@
+using Dapr.Client;
 using Grpc.Core;
 using Vms.Fs;
 using System.Linq;
@@ -9,10 +10,34 @@ public sealed class FsServiceImpl(
   StorageListCache storageListCache,
   CameraStorageCache storageCache,
   AlarmRecordingService alarmRecording,
-  FsActivityLog activityLog) : FsService.FsServiceBase
+  FsActivityLog activityLog,
+  DaprClient daprClient) : FsService.FsServiceBase
 {
   private readonly ClipStorage _storage = storage;
   private readonly StorageListCache _storageListCache = storageListCache;
+  private const string RetentionEventCreatedTopic = "retention-event-created";
+  private static readonly string PubSubName =
+    Environment.GetEnvironmentVariable("PUBSUB_NAME")
+      ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
+
+  // Best-effort notification for the (optional) Square integration — VmsCfg is the only service
+  // that talks to Square (see CLAUDE.md), so this just signals "a new alarm happened" and lets
+  // VmsCfg's SquareAlarmSubscriber pull it from there. Harmless if nothing is subscribed.
+  private void NotifyRetentionEventCreated(string cameraId, string? streamName, DateTime alarmStartTs)
+  {
+    _ = Task.Run(async () =>
+    {
+      try
+      {
+        await daprClient.PublishEventAsync(PubSubName, RetentionEventCreatedTopic,
+          new { CameraId = cameraId, StreamName = streamName, AlarmStartTs = alarmStartTs });
+      }
+      catch (Exception ex)
+      {
+        Console.Error.WriteLine($"retention-event-created publish failed for '{cameraId}': {ex}");
+      }
+    });
+  }
 
   public override async Task<OperationStatus> IngestClip(
     IngestClipRequest request,
@@ -55,11 +80,9 @@ public sealed class FsServiceImpl(
     try
     {
       var until = await _storage.RetainEventAsync(request, context.CancellationToken);
-      _ = alarmRecording.TryActivateAsync(
-        request.CameraId,
-        request.HasStreamName && !string.IsNullOrWhiteSpace(request.StreamName) ? request.StreamName : null,
-        until,
-        CancellationToken.None);
+      var streamName = request.HasStreamName && !string.IsNullOrWhiteSpace(request.StreamName) ? request.StreamName : null;
+      _ = alarmRecording.TryActivateAsync(request.CameraId, streamName, until, CancellationToken.None);
+      NotifyRetentionEventCreated(request.CameraId, streamName, request.AlarmStartTs.ToDateTime());
       return new OperationStatus { Status = OperationStatus.Types.Status.Success, Message = "ok" };
     }
     catch (RetentionEventClosedException ex)
