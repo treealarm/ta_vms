@@ -49,7 +49,11 @@ export default function App() {
   const { t } = useTranslation()
   const logsOpen = useAppSelector((s) => s.logs.panelOpen)
   const [debugTab, setDebugTab] = useState(0)
+  const authToken = useAppSelector((s) => s.auth.token)
 
+  // Re-runs whenever authToken changes, not just once on mount — otherwise a slow login (login
+  // happens via client-side navigate(), App never remounts) can outlast the retry budget below
+  // and leave every list empty until the user manually reloads the page.
   useEffect(() => {
     let cancelled = false
     let retryTimer: ReturnType<typeof setTimeout> | null = null
@@ -77,7 +81,7 @@ export default function App() {
       cancelled = true
       if (retryTimer != null) clearTimeout(retryTimer)
     }
-  }, [dispatch])
+  }, [dispatch, authToken])
 
   return (
     <BrowserRouter>
