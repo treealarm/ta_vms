@@ -1,9 +1,11 @@
 using Dapr.Client;
+using KeycloakAdmin;
 using System.Net;
 using Vms.Cfg;
 using Vms.Onvif;
 using Vms.Utils;
 using web_vms;
+using web_vms.Authentication;
 using Vms.Logger;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -44,6 +46,27 @@ builder.Services.AddSingleton<IHlsArchiveService, HlsArchiveService>();
 builder.Services.AddSingleton<IArchiveTsStreamer, ArchiveTsStreamer>();
 builder.Services.AddSingleton<StreamStateService>();
 
+// KEYCLOAK_URL is intentionally optional: when unset, login/authorization is disabled entirely
+// and web_vms keeps running standalone (no dependency on Square's Keycloak). When set, the
+// remaining KEYCLOAK_* vars become required so misconfiguration fails fast at startup.
+var keycloakUrl = Environment.GetEnvironmentVariable("KEYCLOAK_URL");
+if (!string.IsNullOrEmpty(keycloakUrl))
+{
+  var keycloakAdminUser = Require("KEYCLOAK_ADMIN_USER");
+  var keycloakAdminPassword = Require("KEYCLOAK_ADMIN_PASSWORD");
+  var keycloakRealmName = Require("KEYCLOAK_REALM_NAME");
+  _ = Require("KEYCLOAK_CLIENT_ID");
+
+  builder.Services.AddSingleton<IKeycloakAdminClient>(_ =>
+    new KeycloakAdminClient(keycloakUrl, keycloakAdminUser, keycloakAdminPassword));
+  builder.Services.AddKeycloakAuth(keycloakUrl, keycloakRealmName);
+}
+
+// Registered unconditionally: see AdminRoleAuthorizationHandler for the KEYCLOAK_URL gate.
+builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationHandler, AdminRoleAuthorizationHandler>();
+builder.Services.AddAuthorizationBuilder()
+  .AddPolicy(AuthPolicies.AdminOnly, policy => policy.Requirements.Add(new AdminRoleRequirement()));
+
 var http_port = RequirePort("WEB_VMS_PORT");
 
 static string Require(string name) =>
@@ -75,6 +98,10 @@ if (app.Environment.IsDevelopment())
   app.UseSwaggerUI();
 }
 
+if (!string.IsNullOrEmpty(keycloakUrl))
+{
+  app.UseAuthentication();
+}
 app.UseAuthorization();
 app.UseMiddleware<HeadRequestMiddleware>();
 

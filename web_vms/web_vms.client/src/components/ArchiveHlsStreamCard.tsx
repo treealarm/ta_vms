@@ -3,6 +3,7 @@ import { alpha, Alert, Box, Divider, IconButton, Stack, Tooltip, Typography } fr
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
 import Hls from 'hls.js'
 
+import { authXhrSetup } from '../auth/authFetch'
 import type { RecordingDto, RecordingRangeDto } from '../dto/dtos'
 import RecordingsList, { type RecordingsListHandle } from './RecordingsList'
 
@@ -82,7 +83,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
       })
 
     if (Hls.isSupported()) {
-      hls = new Hls({ enableWorker: true, lowLatencyMode: false })
+      hls = new Hls({ enableWorker: true, lowLatencyMode: false, xhrSetup: authXhrSetup })
       video.addEventListener('canplay', tryPlay, { once: true })
       video.addEventListener('loadeddata', tryPlay, { once: true })
       hls.on(Hls.Events.MEDIA_ATTACHED, () => hls?.loadSource(playlistUrl))

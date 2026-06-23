@@ -3,6 +3,7 @@ import { Alert, Box, MenuItem, Select, Stack, Typography } from '@mui/material'
 import Hls from 'hls.js'
 import { useTranslation } from 'react-i18next'
 
+import { authXhrSetup } from '../auth/authFetch'
 import type { RetentionEventRowDto } from '../dto/dtos'
 import { useCameraName } from '../store'
 
@@ -79,7 +80,7 @@ export default function ArchiveHlsPreview({ selected }: Props) {
     const onFatal = (detail: string) => setHlsError(detail)
 
     if (Hls.isSupported()) {
-      hls = new Hls({ enableWorker: true, lowLatencyMode: false })
+      hls = new Hls({ enableWorker: true, lowLatencyMode: false, xhrSetup: authXhrSetup })
       video.addEventListener('canplay', tryPlay, { once: true })
       video.addEventListener('loadeddata', tryPlay, { once: true })
       hls.on(Hls.Events.MEDIA_ATTACHED, () => hls?.loadSource(playlistUrl))

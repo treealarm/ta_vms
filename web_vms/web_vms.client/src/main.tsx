@@ -6,7 +6,10 @@ import './i18n'
 import './App.css'
 import App from './App.tsx'
 import { store } from './store'
+import { installAuthFetch } from './auth/authFetch'
 import { netTerrainTheme } from './theme/netTerrainTheme'
+
+installAuthFetch()
 
 const theme = netTerrainTheme
 

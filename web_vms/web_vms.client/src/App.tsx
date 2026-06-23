@@ -10,6 +10,8 @@ import { loadMonitors } from './store/monitorsSlice'
 import { loadMediaMtxServers } from './store/mediaMtxSlice'
 import { toggleLogPanel } from './store/logSlice'
 import { useAppDispatch, useAppSelector } from './store'
+import RequireRole from './auth/RequireRole'
+import LoginPage from './components/LoginPage'
 import OperatorView from './components/OperatorView'
 import AdminView from './components/AdminView'
 import LogJournalPanel from './components/LogJournalPanel'
@@ -82,8 +84,9 @@ export default function App() {
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden' }}>
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <Routes>
-            <Route path="/operator/*" element={<OperatorView />} />
-            <Route path="/admin/*" element={<AdminView />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/operator/*" element={<RequireRole><OperatorView /></RequireRole>} />
+            <Route path="/admin/*" element={<RequireRole role="admin"><AdminView /></RequireRole>} />
             <Route path="*" element={<Navigate to="/operator/monitors" replace />} />
           </Routes>
         </Box>

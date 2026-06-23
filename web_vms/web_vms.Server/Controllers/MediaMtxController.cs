@@ -1,10 +1,13 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using web_vms.Authentication;
 using web_vms.Types.Dto;
 
 namespace web_vms;
 
 [ApiController]
 [Route("api/media-mtx")]
+[Authorize(Policy = AuthPolicies.AdminOnly)]
 public class MediaMtxController(ICameraManager _manager) : ControllerBase
 {
   [HttpGet("servers")]

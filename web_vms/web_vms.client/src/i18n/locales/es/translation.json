@@ -23,7 +23,16 @@
     "onvifSettings": "Config ONVIF",
     "logs": "Registros",
     "goAdmin": "Admin",
-    "goOperator": "Operador"
+    "goOperator": "Operador",
+    "logout": "Cerrar sesión"
+  },
+  "auth": {
+    "title": "Iniciar sesión",
+    "username": "Usuario",
+    "password": "Contraseña",
+    "signIn": "Iniciar sesión",
+    "signingIn": "Iniciando sesión…",
+    "invalidCredentials": "Usuario o contraseña incorrectos"
   },
   "tests": {
     "title": "Pruebas"

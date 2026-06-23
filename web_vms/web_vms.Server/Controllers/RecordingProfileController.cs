@@ -1,6 +1,8 @@
 using Grpc.Core;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Cfg;
+using web_vms.Authentication;
 using web_vms.Types.Dto;
 using RecordingMode = Vms.Cfg.RecordingMode;
 
@@ -8,6 +10,7 @@ namespace web_vms;
 
 [ApiController]
 [Route("api/recording-profiles")]
+[Authorize(Policy = AuthPolicies.AdminOnly)]
 public class RecordingProfileController(
   CfgService.CfgServiceClient _cfgClient,
   StreamStateService _streamState) : ControllerBase
