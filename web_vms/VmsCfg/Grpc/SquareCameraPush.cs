@@ -16,7 +16,10 @@ public static class SquareCameraPush
     ISquareIntegration square, CameraStorage storage, string appId, string cameraId, string cameraName,
     CancellationToken ct)
   {
-    var server = await storage.GetOrAssignMediaMtxServerAsync(cameraId, ct);
+    // Playback details (webrtc host/port, stream names) are NOT pushed here anymore — Square's
+    // Monitor tab fetches them directly from vms_rec's own GET /api/live/cameras (CORS+JWT already
+    // enabled for that), so any future field is available there for free with no push code on
+    // either side. Only what the map's own property panel needs stays here.
     var (found, setup) = await storage.GetCameraAsync(cameraId, ct);
     var primaryStream = found ? setup!.Streams.FirstOrDefault(s => s.WebRtc) : null;
 
@@ -24,12 +27,6 @@ public static class SquareCameraPush
     {
       ["profile_name"] = primaryStream?.RecordingProfile?.Name ?? "",
     };
-    if (server is not null && !string.IsNullOrWhiteSpace(server.WebrtcHost) && primaryStream is not null)
-    {
-      props["webrtc_host"] = server.WebrtcHost;
-      props["webrtc_port"] = server.WebrtcPort.ToString();
-      props["primary_stream_name"] = $"{cameraId}/{primaryStream.StreamName}";
-    }
 
     await square.UpsertCameraFigure(cameraId, cameraName, appId, DefaultLat, DefaultLon, props);
   }

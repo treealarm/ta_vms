@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Alert,
   Box,
@@ -32,8 +33,11 @@ export default function MonitorsView({ readOnly = false }: { readOnly?: boolean 
   const monitors = useAppSelector((state) => state.monitors.monitors)
   const status = useAppSelector((state) => state.monitors.status)
   const allCameras = useAppSelector((state) => Object.values(state.live.cameraStatesById))
+  const [searchParams] = useSearchParams()
 
-  const [selectedMonitorId, setSelectedMonitorId] = useState<string | null>(null)
+  // Seeded from ?monitorId=<id> when arriving via Square's Monitor tab ("Open in vms_rec" link) —
+  // falls back to the usual auto-select-first behavior below if the id doesn't match any monitor.
+  const [selectedMonitorId, setSelectedMonitorId] = useState<string | null>(() => searchParams.get('monitorId'))
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingMonitorId, setEditingMonitorId] = useState<string | null>(null)
 

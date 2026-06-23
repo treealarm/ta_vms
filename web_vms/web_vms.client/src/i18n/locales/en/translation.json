@@ -256,6 +256,7 @@
   "cameraCard": {
     "switchToArchive": "Switch to Archive",
     "switchToLive": "Switch to Live",
+    "openInSquare": "Open in Square",
     "cycleStream": "Stream: {{stream}} — click to cycle",
     "ptzOpen": "PTZ control",
     "ptzClose": "Close PTZ",

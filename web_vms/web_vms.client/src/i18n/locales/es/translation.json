@@ -256,6 +256,7 @@
   "cameraCard": {
     "switchToArchive": "Cambiar a archivo",
     "switchToLive": "Cambiar a directo",
+    "openInSquare": "Abrir en Square",
     "cycleStream": "Flujo: {{stream}} — clic para cambiar",
     "ptzOpen": "Control PTZ",
     "ptzClose": "Cerrar PTZ",

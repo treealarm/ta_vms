@@ -8,6 +8,7 @@ import i18n from './i18n'
 import { loadCameras, loadServers } from './store/liveSlice'
 import { loadMonitors } from './store/monitorsSlice'
 import { loadMediaMtxServers } from './store/mediaMtxSlice'
+import { loadFrontendConfig } from './store/frontendConfigSlice'
 import { toggleLogPanel } from './store/logSlice'
 import { useAppDispatch, useAppSelector } from './store'
 import RequireRole from './auth/RequireRole'
@@ -82,6 +83,11 @@ export default function App() {
       if (retryTimer != null) clearTimeout(retryTimer)
     }
   }, [dispatch, authToken])
+
+  // Anonymous, static config — no auth/retry dance needed, just fetch once.
+  useEffect(() => {
+    void dispatch(loadFrontendConfig())
+  }, [dispatch])
 
   return (
     <BrowserRouter>
