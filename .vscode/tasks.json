@@ -86,63 +86,119 @@
             "problemMatcher": []
         },
         {
+            "label": "kill stale: web_vms (F5)",
+            "detail": "Подчищает зависшие daprd/dotnet от прошлой (аварийно прерванной) сессии — иначе новый запуск не займёт порты.",
+            "type": "shell",
+            "command": "pkill -f \"app-id web-vms\" || true; pkill -f \"web_vms.Server/bin/Debug/net8.0/web_vms.Server.dll\" || true",
+            "problemMatcher": []
+        },
+        {
             "label": "prepare:web_vms",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "kill stale: web_vms (F5)",
                 "dotnet:build",
                 "dapr:web_vms:start"
             ],
             "problemMatcher": []
         },
         {
+            "label": "kill stale: vmscfg (F5)",
+            "detail": "Подчищает зависшие daprd/dotnet от прошлой (аварийно прерванной) сессии — иначе новый запуск не займёт порты.",
+            "type": "shell",
+            "command": "pkill -f \"app-id vmscfg\" || true; pkill -f \"VmsCfg/bin/Debug/net8.0/VmsCfg.dll\" || true",
+            "problemMatcher": []
+        },
+        {
             "label": "prepare:vmscfg",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "kill stale: vmscfg (F5)",
                 "dotnet:build",
                 "dapr:vmscfg:start"
             ],
             "problemMatcher": []
         },
         {
+            "label": "kill stale: vmsonvif (F5)",
+            "detail": "Подчищает зависшие daprd/dotnet от прошлой (аварийно прерванной) сессии — иначе новый запуск не займёт порты.",
+            "type": "shell",
+            "command": "pkill -f \"app-id vmsonvif \" || true; pkill -f \"VmsOnvif/bin/Debug/net8.0/VmsOnvif.dll\" || true",
+            "problemMatcher": []
+        },
+        {
             "label": "prepare:vmsonvif",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "kill stale: vmsonvif (F5)",
                 "dotnet:build",
                 "dapr:vmsonvif:start"
             ],
             "problemMatcher": []
         },
         {
+            "label": "kill stale: vmsfs (F5)",
+            "detail": "Подчищает зависший daprd от прошлой сессии (app-id уникален) — процесс VmsFs.dll не трогаем, тот же бинарник использует и VmsFs-2.",
+            "type": "shell",
+            "command": "pkill -f \"app-id vmsfs \" || true",
+            "problemMatcher": []
+        },
+        {
             "label": "prepare:vmsfs",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "kill stale: vmsfs (F5)",
                 "dotnet:build",
                 "dapr:vmsfs:start"
             ],
             "problemMatcher": []
         },
         {
+            "label": "kill stale: vmslogger (F5)",
+            "detail": "Подчищает зависшие daprd/dotnet от прошлой (аварийно прерванной) сессии — иначе новый запуск не займёт порты.",
+            "type": "shell",
+            "command": "pkill -f \"app-id vmslogger\" || true; pkill -f \"VmsLogger/bin/Debug/net8.0/VmsLogger.dll\" || true",
+            "problemMatcher": []
+        },
+        {
             "label": "prepare:vmslogger",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "kill stale: vmslogger (F5)",
                 "dotnet:build",
                 "dapr:vmslogger:start"
             ],
             "problemMatcher": []
         },
         {
+            "label": "kill stale: vmsutils (F5)",
+            "detail": "Подчищает зависшие daprd/dotnet от прошлой (аварийно прерванной) сессии — иначе новый запуск не займёт порты.",
+            "type": "shell",
+            "command": "pkill -f \"app-id vmsutils\" || true; pkill -f \"VmsUtils/bin/Debug/net8.0/VmsUtils.dll\" || true",
+            "problemMatcher": []
+        },
+        {
             "label": "prepare:vmsutils",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "kill stale: vmsutils (F5)",
                 "dotnet:build",
                 "dapr:vmsutils:start"
             ],
             "problemMatcher": []
         },
         {
+            "label": "kill stale: vms (F5)",
+            "detail": "Подчищает зависший daprd от прошлой сессии (app-id уникален) — процесс media_server (vms) не трогаем, тот же бинарник использует и vms-2.",
+            "type": "shell",
+            "command": "pkill -f \"app-id vms \" || true",
+            "problemMatcher": []
+        },
+        {
             "label": "prepare:vms",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "kill stale: vms (F5)",
                 "cmake:configure:vms",
                 "cmake:build:vms",
                 "dapr:vms:start"
@@ -234,9 +290,17 @@
             "problemMatcher": []
         },
         {
+            "label": "kill stale: vmsonvif-actors (F5)",
+            "detail": "Подчищает зависшие daprd/dotnet от прошлой (аварийно прерванной) сессии — иначе новый запуск не займёт порты.",
+            "type": "shell",
+            "command": "pkill -f \"app-id vmsonvif-actors\" || true; pkill -f \"VmsOnvifActors/bin/Debug/net8.0/VmsOnvifActors.dll\" || true",
+            "problemMatcher": []
+        },
+        {
             "label": "prepare:vmsonvif-actors",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "kill stale: vmsonvif-actors (F5)",
                 "dotnet:build",
                 "dapr:vmsonvif-actors:start"
             ],
@@ -383,9 +447,17 @@
             "problemMatcher": []
         },
         {
+            "label": "kill stale: vmsfs-2 (F5)",
+            "detail": "Подчищает зависший daprd от прошлой сессии — процесс VmsFs.dll не трогаем, тот же бинарник использует и VmsFs.",
+            "type": "shell",
+            "command": "pkill -f \"app-id vmsfs-2\" || true",
+            "problemMatcher": []
+        },
+        {
             "label": "prepare:vmsfs-2",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "kill stale: vmsfs-2 (F5)",
                 "dotnet:build",
                 "dapr:vmsfs-2:start"
             ],
@@ -420,9 +492,17 @@
             "problemMatcher": []
         },
         {
+            "label": "kill stale: vms-2 (F5)",
+            "detail": "Подчищает зависший daprd от прошлой сессии — процесс media_server не трогаем, тот же бинарник использует и vms.",
+            "type": "shell",
+            "command": "pkill -f \"app-id vms-2\" || true",
+            "problemMatcher": []
+        },
+        {
             "label": "prepare:vms-2",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "kill stale: vms-2 (F5)",
                 "cmake:configure:vms",
                 "cmake:build:vms",
                 "dapr:vms-2:start"
