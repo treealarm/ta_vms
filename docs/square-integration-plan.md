@@ -61,17 +61,26 @@ ActionsControl.tsx`):
 - **убрать** старый двунаправленный путь создания конфига из Square
   (`Topics.OnUpdateIntegros`/`OnDeleteIntegros`) — оставить за Square только презентацию + команды.
 
-### 2) Typelib `SquareIntegrationClient` (новый, producer-сторона)
+### 2) Typelib `SquareIntegrationClient` (реализовано, producer-сторона)
 Тонкий клиент поверх Square-API, **gRPC + Dapr service invocation**, за интерфейсом
 `ISquareIntegration` (SOLID + подменяемость):
-- `RegisterRoot(appId, name)` / `UpsertObjects(tree)` / `UpdateProperties(...)` /
-  `DeclareActions(objectId, descriptors)` / `ReportActionStatus(uid, progress, result)` — producer→Square.
-- Входящая сторона: хелпер для хостинга обработчика `ExecuteAction(objectId, name, params, uid)` и
-  `resync`, вызываемого Square по Dapr service invocation на APP_ID producer'а (асинхронно: сразу
-  ack+uid, статус позже через `ReportActionStatus`).
+- `UpsertObjects`/`PushFigures`/`PushProperties`/`PushStates`/`PushEvents`/`PushTracks`/`PushValues`/
+  `RegisterIntegro`/`RegisterIntegroTypes`/`ReportActionStatus`/`GetObjects`/`GetProperties`/
+  `GetIntegroByType`/`GetIntegroByIds`/`GenerateObjectId` — producer→Square и обратное чтение.
+- Входящая сторона: `IObjectActions`/`ActionsServiceImpl` — хостинг обработчика
+  `GetAvailableActions`/`ExecuteActions`/`ExecuteActionGetResult`/`CancelActions`, вызываемого Square
+  по Dapr service invocation на APP_ID producer'а.
 - **No-op реализация** `ISquareIntegration` для автономного режима (sink не задан) — гарантирует, что
   без интеграции producer работает как standalone.
-- Размещение: общий проект/NuGet, переиспользуемый и Square, и vms_rec (тащит протоколы Square).
+- **Размещение: отдельный репозиторий `github.com/treealarm/SquareIntegrationClient`, подключаемый
+  как git submodule** — `vms_rec/web_vms/SquareIntegrationClient` и `Square/SquareIntegrationClient`
+  (по образцу `KeycloakAdmin`, который уже подключён как submodule в обоих репозиториях). Содержит
+  `.proto`-контракт (`integro`/`tracks`/`actions`/`common`/`diagrams`) + сгенерированные gRPC-стабы —
+  единый источник правды вместо вручную синхронизируемых копий. Используется **всеми** продьюсерами
+  протокола: внешним (`vms_rec/VmsCfg`) и внутренними Square-продьюсерами (`AASubService`,
+  `GrpcTracksClient`). Host-side (`Square/IntegrationHost`, `Square/IntegrationServerLib`,
+  `Square/IntegrationUtilsLib/IntegrationSync*.cs`, завязанные на `Square/Domain`) — не переезжает,
+  ссылается на submodule только за proto-типами.
 
 ### 3) VmsCfg — первый producer
 `web_vms/VmsCfg` (`Program.cs`, `Grpc/CfgServiceImpl.cs`) подключает typelib и, **если интеграция
@@ -129,9 +138,14 @@ ActionsControl.tsx`):
 3. Подключить typelib в `VmsCfg`: register root по APP_ID, push дерева/свойств, обработчики команд,
    гейт по env.
 
-Файлы: `Square/Protos/*`, `Square/IntegrationUtilsLib/*`, `Square/Domain/PubSubTopics/Topics.cs`,
-`Square/tree_alarm.client/src/*`; НОВЫЙ общий проект `SquareIntegrationClient` (+ в обоих .sln);
-`vms_rec/web_vms/VmsCfg/Program.cs`+`Grpc/CfgServiceImpl.cs`; env в `.env`/`dockerhub/.env` обоих,
+Файлы (реализовано для протокольного слоя — см. п.2 выше): `github.com/treealarm/
+SquareIntegrationClient` (новый репозиторий, submodule в `vms_rec/web_vms/SquareIntegrationClient`
+и `Square/SquareIntegrationClient`); `Square/IntegrationUtilsLib/{SquareIntegration,Utils,
+IntegrationSync,IntegrationSyncFull}.cs` (host-side, трим), `Square/GrpcDaprLib.csproj` (убраны
+`integro`/`tracks`/`actions` из компиляции), `Square/{AASubService,GrpcTracksClient,ValhallaLib,
+IntegrationServerLib,LeafletAlarms}` (ссылки на submodule); `vms_rec/web_vms/VmsCfg/Program.cs`+
+`Grpc/{CfgServiceImpl,SquareCameraPush,SquareAlarmSubscriber,SquareResyncService}.cs`. Ещё не
+сделано: команды (`ActionsServiceImpl`-хостинг в VmsCfg), env в `.env`/`dockerhub/.env`,
 launch.json'ы (см. CLAUDE.md vms_rec про обязательные места для новых env/сервисов).
 
 ## Phase 2 — Видео в UI Square
@@ -188,8 +202,9 @@ JWT-валидацию ставим **перед** `web_vms` (reverse-proxy/gate
    общий Redis работает независимо.
 2. Что публикует `media_server` (C++) через `dapr_publisher.publish_json` — топики тревог/клипов?
    (`grep -rn publish_json media_server`) — нужны ли они typelib'у для свойства `last_alarm_ts`.
-3. typelib: чистые интерфейсы (SOLID, тестируемость, no-op для standalone) — принято; финализировать
-   набор методов `ISquareIntegration` и схему самоописывающегося свойства/дескриптора команды.
+3. ~~typelib: чистые интерфейсы (SOLID, тестируемость, no-op для standalone); набор методов
+   `ISquareIntegration`; размещение (submodule vs NuGet)~~ — сделано (`SquareIntegrationClient`
+   submodule). Остаётся: схема самоописывающегося свойства/дескриптора команды для VmsCfg.
 4. Финальный reverse-proxy для Phase 2–3 (nginx+oauth2-proxy vs существующий шлюз Square).
 5. Точные имена env-флагов интеграции (напр. `SQUARE_INTEGRATION_SINK_APP_ID`) + добавить во все
    обязательные места (`.env`, `dockerhub/.env`, launch.json'ы) per CLAUDE.md.

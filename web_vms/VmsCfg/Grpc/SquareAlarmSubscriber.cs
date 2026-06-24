@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Dapr.Messaging.PublishSubscribe;
+using Google.Protobuf.WellKnownTypes;
+using LeafletAlarmsGrpc;
 using SquareIntegrationClient;
 
 namespace VmsCfg;
@@ -53,7 +55,7 @@ public sealed class SquareAlarmSubscriber(
       var evt = JsonSerializer.Deserialize<RetentionEventCreated>(message.Data.Span);
       if (evt is not null && !string.IsNullOrWhiteSpace(evt.CameraId))
       {
-        await square.PushAlarmEvent(evt.CameraId, evt.AlarmStartTs, "alarm", evt.StreamName);
+        await PushAlarmEventAsync(evt.CameraId, evt.AlarmStartTs, evt.StreamName);
       }
       return TopicResponseAction.Success;
     }
@@ -61,6 +63,33 @@ public sealed class SquareAlarmSubscriber(
     {
       return TopicResponseAction.Retry;
     }
+  }
+
+  private async Task PushAlarmEventAsync(string cameraId, DateTime alarmStartTs, string? streamName)
+  {
+    var objectId = SquareCameraPush.ToObjectId(cameraId);
+
+    await square.PushEvents(new EventsProto
+    {
+      Events =
+      {
+        new EventProto
+        {
+          Id = Guid.NewGuid().ToString(),
+          ObjectId = objectId,
+          Timestamp = Timestamp.FromDateTime(DateTime.SpecifyKind(alarmStartTs, DateTimeKind.Utc)),
+          EventName = "alarm",
+          EventPriority = 0,
+          Param0 = streamName ?? "",
+          Param1 = "",
+        },
+      },
+    });
+
+    await SquareCameraPush.PushPropertiesAsync(square, cameraId, new Dictionary<string, string>
+    {
+      ["last_alarm_ts"] = alarmStartTs.ToString("O"),
+    });
   }
 
   public Task StopAsync(CancellationToken _)

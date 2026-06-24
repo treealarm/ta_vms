@@ -106,7 +106,7 @@ namespace VmsCfg
       {
         try
         {
-          await square.PushCameraProperties(cameraId, new Dictionary<string, string>
+          await SquareCameraPush.PushPropertiesAsync(square, cameraId, new Dictionary<string, string>
           {
             ["armed"] = armed.ToString(),
           });

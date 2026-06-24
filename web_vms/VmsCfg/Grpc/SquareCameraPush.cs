@@ -1,16 +1,54 @@
+using System.Security.Cryptography;
+using System.Text;
+using LeafletAlarmsGrpc;
 using SquareIntegrationClient;
 using Vms.Cfg;
 
 namespace VmsCfg;
 
-// Shared by CfgServiceImpl (per-camera push on config/state change) and Program.cs's startup
-// resync (full re-push of every camera) — kept in one place so the two don't drift.
+// Shared by CfgServiceImpl (per-camera push on config/state change), Program.cs's startup resync
+// (full re-push of every camera) and SquareAlarmSubscriber (alarm events) — kept in one place so
+// these don't drift. Builds vms_rec's camera tree on top of the generic ISquareIntegration
+// protocol (see SquareIntegrationClient submodule, docs/square-integration-plan.md) — id
+// conversion and figure/property shaping are vms_rec-specific, not part of the shared protocol.
 public static class SquareCameraPush
 {
   public static readonly double DefaultLat =
     double.TryParse(Environment.GetEnvironmentVariable("SQUARE_INTEGRATION_DEFAULT_LAT"), out var lat) ? lat : 0;
   public static readonly double DefaultLon =
     double.TryParse(Environment.GetEnvironmentVariable("SQUARE_INTEGRATION_DEFAULT_LON"), out var lon) ? lon : 0;
+
+  // Square requires object_id to parse as a GUID (Square/Domain/Utils.cs ConvertObjectIdToGuid
+  // silently drops anything else). vms_rec's camera_id is already a GUID in practice (generated
+  // via crypto.randomUUID() when a camera is created, see CameraSetupPanel.tsx) — using it
+  // directly means the same id identifies the camera in both systems, no secondary lookup needed.
+  // The MD5-derived fallback only covers hypothetical non-GUID ids (e.g. hand-edited data); for
+  // those, Square's object_id won't equal the native id, since a hash isn't reversible.
+  public static string ToObjectId(string nativeId)
+  {
+    if (Guid.TryParse(nativeId, out var guid))
+    {
+      return guid.ToString();
+    }
+
+    var hash = MD5.HashData(Encoding.UTF8.GetBytes(nativeId));
+    return new Guid(hash).ToString();
+  }
+
+  private static ProtoObjExtraProperty TextProp(string name, string value) =>
+    new() { PropName = name, StrVal = value, VisualType = "" };
+
+  public static async Task PushPropertiesAsync(
+    ISquareIntegration square, string cameraId, IReadOnlyDictionary<string, string> props)
+  {
+    var objProps = new ProtoObjProps { Id = ToObjectId(cameraId) };
+    foreach (var (key, value) in props)
+    {
+      objProps.Properties.Add(TextProp(key, value));
+    }
+
+    await square.PushProperties(new ProtoObjPropsList { Objects = { objProps }, ReplaceProps = false });
+  }
 
   public static async Task PushCameraAsync(
     ISquareIntegration square, CameraStorage storage, string appId, string cameraId, string cameraName,
@@ -23,18 +61,55 @@ public static class SquareCameraPush
     var (found, setup) = await storage.GetCameraAsync(cameraId, ct);
     var primaryStream = found ? setup!.Streams.FirstOrDefault(s => s.WebRtc) : null;
 
-    var props = new Dictionary<string, string>
-    {
-      ["profile_name"] = primaryStream?.RecordingProfile?.Name ?? "",
-    };
+    var objectId = ToObjectId(cameraId);
+    var parentObjectId = ToObjectId(appId);
 
-    await square.UpsertCameraFigure(cameraId, cameraName, appId, DefaultLat, DefaultLon, props);
+    await square.RegisterIntegro(new IntegroListProto
+    {
+      Objects = { new IntegroProto { ObjectId = objectId, IType = "camera" } }
+    });
+
+    var fig = new ProtoFig
+    {
+      Id = objectId,
+      ParentId = parentObjectId,
+      Name = cameraName,
+      Geometry = new Common.ProtoGeometry
+      {
+        Type = "Point",
+        Coord = { new Common.ProtoCoord { Lat = DefaultLat, Lon = DefaultLon } },
+      },
+      ExtraProps = { TextProp("profile_name", primaryStream?.RecordingProfile?.Name ?? "") },
+    };
+    await square.PushFigures(new ProtoFigures { Figs = { fig }, AddTracks = false });
   }
 
   public static async Task PushAllCamerasAsync(
     ISquareIntegration square, CameraStorage storage, string appId, ILogger logger, CancellationToken ct)
   {
-    await square.RegisterRoot(appId, appId, DefaultLat, DefaultLon);
+    var rootId = ToObjectId(appId);
+    await square.RegisterIntegro(new IntegroListProto
+    {
+      Objects = { new IntegroProto { ObjectId = rootId, IType = "main" } }
+    });
+
+    // RegisterIntegro above only tags rootId with producer metadata (i_name/i_type) — it does NOT
+    // create an actual tree/map object. Without this PushFigures call, cameras whose ParentId
+    // points at rootId are orphaned: the parent never exists as a real object, so they have no
+    // reachable path from Square's top-level (parent_id=null) tree view, even though the camera
+    // objects themselves were created fine and are queryable directly by id.
+    var rootFig = new ProtoFig
+    {
+      Id = rootId,
+      Name = appId,
+      Geometry = new Common.ProtoGeometry
+      {
+        Type = "Point",
+        Coord = { new Common.ProtoCoord { Lat = DefaultLat, Lon = DefaultLon } },
+      },
+    };
+    await square.PushFigures(new ProtoFigures { Figs = { rootFig }, AddTracks = false });
+
     foreach (var (serverId, _) in storage.GetServerPairs())
     {
       foreach (var camera in await storage.ListCamerasAsync(serverId, ct))

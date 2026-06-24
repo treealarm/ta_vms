@@ -1,3 +1,6 @@
 [submodule "web_vms/KeycloakAdmin"]
 	path = web_vms/KeycloakAdmin
 	url = git@github.com:treealarm/KeycloakAdmin.git
+[submodule "web_vms/SquareIntegrationClient"]
+	path = web_vms/SquareIntegrationClient
+	url = git@github.com:treealarm/SquareIntegrationClient.git
