@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Dapr.Client" Version="1.16.0" />
+    <PackageReference Include="Google.Protobuf" Version="3.34.1" />
+    <PackageReference Include="Grpc.Net.Client" Version="2.76.0" />
+    <PackageReference Include="Grpc.Tools" Version="2.80.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="..\..\proto\square\tracks.proto" GrpcServices="Client" ProtoRoot="..\..\proto\square" />
+    <Protobuf Include="..\..\proto\square\integro.proto" GrpcServices="Client" ProtoRoot="..\..\proto\square" />
+    <Protobuf Include="..\..\proto\square\common.proto" GrpcServices="None" ProtoRoot="..\..\proto\square" />
+    <Protobuf Include="..\..\proto\square\diagrams.proto" GrpcServices="None" ProtoRoot="..\..\proto\square" />
+  </ItemGroup>
+
+</Project>

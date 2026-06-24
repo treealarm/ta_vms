@@ -26,6 +26,7 @@ import TuneIcon from '@mui/icons-material/Tune'
 import VideoLibraryIcon from '@mui/icons-material/VideoLibrary'
 import ControlCameraIcon from '@mui/icons-material/ControlCamera'
 import SecurityIcon from '@mui/icons-material/Security'
+import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import {
   RECORDING_PROFILE_CONTINUOUS_ID,
   RECORDING_PROFILE_OFF_ID,
@@ -76,6 +77,8 @@ type Props = {
 export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = false, onToggleGridSolo }: Props) {
   const dispatch = useAppDispatch()
   const cameraState = useAppSelector((s) => s.live.cameraStatesById[camera.cameraId])
+  // Hidden whenever Square integration isn't configured — keeps standalone mode unchanged.
+  const squareFrontendOrigin = useAppSelector((s) => s.frontendConfig.squareFrontendOrigin)
 
   // UI state — persisted in Redux when slotKey provided, local otherwise
   const storeKey = slotKey ?? `standalone-${camera.cameraId}`
@@ -234,6 +237,18 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
                 : <VideoLibraryIcon sx={{ fontSize: '0.95rem' }} />}
             </IconButton>
           </Tooltip>
+
+          {squareFrontendOrigin && (
+            <Tooltip title={t('cameraCard.openInSquare')} placement="right">
+              <IconButton
+                size="small"
+                onClick={() => window.open(`${squareFrontendOrigin}/?selectedId=${encodeURIComponent(camera.cameraId)}`, '_blank')}
+                sx={BTN_SX}
+              >
+                <OpenInNewIcon sx={{ fontSize: '0.95rem' }} />
+              </IconButton>
+            </Tooltip>
+          )}
 
           {webRtcStreams.length > 1 && (
             <Tooltip title={t('cameraCard.cycleStream', { stream: activeStream })} placement="right">

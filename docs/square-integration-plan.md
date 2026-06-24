@@ -96,23 +96,31 @@ ActionsControl.tsx`):
 
 ---
 
-## Phase 0 — Плумбинг: общая сеть + общий Redis + кросс-стек Dapr
+## Phase 0 — Плумбинг: общая сеть + общий Redis + кросс-стек Dapr (выполнено)
 
-Цель: оба стека рядом, делят шину Redis и видят app-id друг друга для service invocation.
-vms_rec — только оверлей и альтернативные Dapr-компоненты (конфиг, не ядро).
+> Реализовано иначе, чем планировалось изначально (оверлей + альтернативные Dapr-компоненты) —
+> ниже описана фактическая, более простая схема. **Важно:** это означает отказ от автономности
+> "из коробки" — `docker compose up` в vms_rec один, без поднятого Square/multitenant_admin,
+> больше не работает (явное, осознанное решение пользователя).
 
-Создать **`vms_rec/docker-compose.integration.yml`** (оверлей поверх базового):
-- внешняя сеть Square `common_app_network` (`external: true`), подключить к ней сервисы, которым
-  нужна кросс-стек связь (минимум `vmscfg` + его сайдкар, `web_vms`);
-- Dapr-сайдкары vms_rec → общий Redis Square: смонтировать альтернативную папку
-  `vms_rec/init_files/dapr_components_integration/` (`orderpubsub.yaml`/`statestore.yaml` с
-  `redisHost: redis:6379`); базовые файлы (`localhost:6379`) остаются для автономного режима;
-- развести host-порты: `mediamtx` публикует `8000`, Square HTTP UI тоже `8000` — убрать/переназначить
-  у mediamtx;
-- раздельные PostgreSQL и `dapr-placement` (placement нужен только акторам; service invocation идёт
-  через mDNS name-resolution в общей сети, не через placement).
+Никакого отдельного оверлей-файла и альтернативных Dapr-компонентов не потребовалось:
+- `vms_rec/docker-compose.yml` переименовывает свою неявную сеть `default` в `common_app_network`
+  (`networks: default: name: common_app_network`, без `external: true` — как и у Square/
+  multitenant_admin: кто поднялся первым, тот её и создаёт). Все сервисы vms_rec оказываются в
+  одной сети с Square/multitenant_admin без единой правки на уровне отдельных сервисов.
+- Собственный `redis`-сервис у vms_rec убран целиком — Dapr pub/sub и state store vms_rec
+  (`init_files/dapr_components/docker/{orderpubsub,statestore}.yaml`, `redisHost: redis:6379`)
+  используют тот же `redis`, что и multitenant_admin. **Причина, не просто стиль:** проверено
+  эмпирически — если в одной сети два разных контейнера оба регистрируют alias `redis`, Docker
+  отвечает на DNS-запросы случайным round-robin между ними; держать свой `redis` параллельно с
+  чужим под тем же именем в одной сети нельзя, это давало бы постоянную, непредсказуемую потерю
+  части сообщений pub/sub.
+- `dapr-placement` остаётся раздельным (нужен только акторам, service invocation идёт через mDNS
+  name-resolution в общей сети, не через placement).
 
-Базовый `vms_rec/docker-compose.yml` не меняется → `docker compose up` = автономный стек.
+`vmscfg`/VmsCfg обращается к Square исключительно через Dapr **service invocation** (gRPC-вызов на
+`integrationhost`-app-id) — pub/sub между стеками не используется, общий Redis нужен только потому,
+что vms_rec теперь физически не имеет своего.
 
 ## Phase 1 — Typelib + Square-API + VmsCfg-producer
 1. Довести Square integration API (раздел «1) Square — хост»): протоколы/consumer/каскад/disable;
@@ -144,24 +152,28 @@ JWT-валидацию ставим **перед** `web_vms` (reverse-proxy/gate
 > Использует **тот же realm `myrealm`**, что и Square (общий вход, отдельных пользователей под
 > vms_rec не завели). Включается опционально через `KEYCLOAK_URL` (пусто → standalone, без
 > авторизации, как раньше) — см. `web_vms/web_vms.Server/Authentication/`,
-> `Controllers/AuthController.cs`, `docker-compose.integration.yml` (Phase 0 connectivity).
+> `Controllers/AuthController.cs`. Сетевая связность — через общую `common_app_network` (Phase 0,
+> теперь часть базового `docker-compose.yml`, без отдельного оверлея).
 > Остаётся на будущее: typelib-интеграция (Phase 1/2) и, если понадобится, вынос валидации на
 > отдельный gateway.
 
 ---
 
 ## Сводка изменений
-- **vms_rec:** оверлей+альт. Dapr-компоненты (Phase 0); правки **только в `VmsCfg`** (подключение
-  typelib, гейт по env) (Phase 1); ничего в тяжёлом ядре.
-- **Square (свободно):** доведённый integration API + consumer/каскад/disable; видео-плеер; proxy.
+- **vms_rec:** общая сеть + общий Redis вместо своего (Phase 0); typelib `SquareIntegrationClient`
+  + правки в `VmsCfg`/`VmsFs` (гейт по env `SQUARE_INTEGRATION_SINK_APP_ID`) (Phase 1, частично);
+  ничего в тяжёлом ядре.
+- **Square:** read-only защита панели свойств для интеграционных объектов, REST-обёртка над
+  `GetListByType`, новая вкладка "Monitor" (Phase 2, частично — см. ниже).
 - **Общий:** новый typelib `SquareIntegrationClient` (`ISquareIntegration` + no-op).
 
 ## Проверка (по этапам)
-- **Автономность (гейт после каждого этапа):** `cd vms_rec && docker compose up` без оверлея и без
-  env интеграции — стек как раньше (`web_vms:5134`, live/архив, VmsCfg обычный).
-- **Phase 0:** поднять Square (создаётся `common_app_network`), затем vms_rec с оверлеем; проверить
-  подключение сайдкаров к общему redis и резолв app-id между стеками (Dapr-инвок `vmscfg` ↔
-  `leafletalarms`), отсутствие конфликта порта 8000.
+- **Phase 0:** `multitenant_admin` создаёт `common_app_network`; vms_rec подключается тем же
+  именем сети (без оверлея, без `external: true`) и без своего Redis — проверить резолв app-id
+  между стеками (Dapr service invocation `vmscfg` → `integrationhost`) и что Dapr pub/sub vms_rec
+  (`orderpubsub`/`statestore`) подключается к общему `redis` от `multitenant_admin`.
+  **vms_rec больше не запускается без поднятого Square/multitenant_admin** — автономность
+  принесена в жертву единой сети по решению пользователя (см. CLAUDE.md).
 - **Phase 1:** включить интеграцию env → в дереве Square появился root `vmscfg` и камеры; изменить
   конфиг камеры в vms_rec → дельта прилетела; команда `start_recording` из Square → запись включилась
   (статус по uid вернулся); `resync` → полный re-push; удалить root в Square → дети исчезли,

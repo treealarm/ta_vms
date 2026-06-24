@@ -1,0 +1,155 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+import "diagrams.proto";
+import "common.proto";
+option csharp_namespace = "LeafletAlarmsGrpc";
+
+package tracks;
+
+service TreeAlarmsGrpcService {
+	rpc UpdateFigures (ProtoFigures) returns (ProtoFigures);
+  rpc RequestProperties (common.ProtoObjectIds) returns (ProtoObjPropsList);
+  rpc UpdateProperties (ProtoObjPropsList) returns (google.protobuf.BoolValue);
+
+	rpc UpdateStates (ProtoObjectStates) returns (google.protobuf.BoolValue);
+	rpc UpdateTracks (TrackPointsProto) returns (google.protobuf.BoolValue);	
+	rpc UpdateEvents (EventsProto) returns (google.protobuf.BoolValue);
+
+  //Values
+  rpc UpdateValues (ValuesProto) returns (ValuesProto);
+  rpc UpdateDiagramTypes(diagrams.DiagramTypesProto) returns (diagrams.DiagramTypesProto);
+  rpc UpdateDiagrams(diagrams.DiagramsProto) returns (diagrams.DiagramsProto);
+
+  rpc UploadFile(UploadFileProto) returns (google.protobuf.BoolValue);
+
+  rpc UpdateObjects (ProtoObjectList) returns (ProtoObjectList);
+  rpc RequestObjects (common.ProtoObjectIds) returns (ProtoObjectList);
+}
+
+
+message ProtoObjExtraProperty {
+  string str_val = 1;
+	string prop_name = 2;
+	string visual_type = 3;
+}
+
+message ProtoObject {
+	string id = 1;
+	optional string parent_id = 2;
+  optional string owner_id = 3;
+	string name = 4;
+}
+
+message ProtoObjectList {
+	repeated ProtoObject objects = 1;
+}
+
+message ProtoObjProps {
+  string id = 1;
+  repeated ProtoObjExtraProperty properties = 2;  
+}
+
+message ProtoObjPropsList {
+	repeated ProtoObjProps objects = 1;
+  bool replace_props = 2;
+}
+
+message ProtoFig {
+	common.ProtoGeometry geometry = 1;
+	optional double radius = 2;
+	optional string zoom_level = 3;
+	repeated ProtoObjExtraProperty extra_props = 4;
+	string id = 5;
+	optional string parent_id = 6;
+	string name = 7;
+}
+
+message ProtoFigures {
+	repeated ProtoFig figs = 1;
+	optional bool add_tracks = 2;
+}
+
+//  States
+message ProtoObjectState
+{
+  string id = 1;
+  repeated string states = 2;
+  google.protobuf.Timestamp  timestamp = 3;
+}
+
+message ProtoObjectStates
+{
+	repeated ProtoObjectState states = 1;
+}
+
+// tracks
+
+message ProtoGeoObject
+{
+  optional string id = 1;
+  common.ProtoGeometry location = 2;
+  optional double radius = 3;
+  optional string zoom_level = 4;
+}
+
+message TrackPointProto
+{
+  string id = 1;
+  ProtoGeoObject figure = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  repeated ProtoObjExtraProperty extra_props = 4;
+}
+
+message TrackPointsProto
+{
+	repeated TrackPointProto tracks = 1;
+}
+
+message EventProto
+{
+  google.protobuf.Timestamp timestamp = 2;
+	string id = 3;
+	string object_id = 4;
+  string event_name = 5;
+	int32 event_priority = 6;
+  string param0 = 7;
+  string param1 = 8;
+  repeated ProtoObjExtraProperty extra_props = 9;
+}
+
+message EventsProto
+{
+	repeated EventProto events = 1;
+}
+
+message ValueProtoType {
+  oneof value {
+    double double_value = 1;
+    int32 int_value = 2;
+    string string_value = 3;
+  }
+}
+
+// Values 
+message ValueProto 
+{
+  string id = 1;        // Уникальный идентификатор объекта
+  string owner_id = 2;  // Объект, который владеет этим значением
+  string name = 3;      // Название значения
+
+  ValueProtoType value = 4; 
+}
+
+message ValuesProto {
+  repeated ValueProto values = 1;
+}
+
+message UploadFileProto {
+  string main_folder = 1;   // Основная папка
+  string path = 2;          // Путь внутри основной папки
+  string file_name = 3;     // Имя файла
+  bytes file_data = 4;      // Данные файла (байтовый массив)
+}

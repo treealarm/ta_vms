@@ -67,6 +67,19 @@ builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationH
 builder.Services.AddAuthorizationBuilder()
   .AddPolicy(AuthPolicies.AdminOnly, policy => policy.Requirements.Add(new AdminRoleRequirement()));
 
+// SQUARE_FRONTEND_ORIGIN is intentionally optional: when unset, no CORS policy is configured and
+// cross-origin requests are rejected by the browser as before — web_vms stays standalone. When
+// set, it enables Square's Monitor tab to call this API directly from its own origin (both apps
+// trust the same Keycloak realm, so a Square-issued bearer token validates here too).
+const string SquareCorsPolicy = "SquareFrontend";
+var squareFrontendOrigin = Environment.GetEnvironmentVariable("SQUARE_FRONTEND_ORIGIN");
+if (!string.IsNullOrEmpty(squareFrontendOrigin))
+{
+  builder.Services.AddCors(options =>
+    options.AddPolicy(SquareCorsPolicy, policy =>
+      policy.WithOrigins(squareFrontendOrigin).AllowAnyHeader().AllowAnyMethod()));
+}
+
 var http_port = RequirePort("WEB_VMS_PORT");
 
 static string Require(string name) =>
@@ -96,6 +109,11 @@ if (app.Environment.IsDevelopment())
 {
   app.UseSwagger();
   app.UseSwaggerUI();
+}
+
+if (!string.IsNullOrEmpty(squareFrontendOrigin))
+{
+  app.UseCors(SquareCorsPolicy);
 }
 
 if (!string.IsNullOrEmpty(keycloakUrl))

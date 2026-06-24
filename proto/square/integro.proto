@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+import "google/protobuf/wrappers.proto";
+import "common.proto";
+option csharp_namespace = "LeafletAlarmsGrpc";
+
+package integro;
+
+service IntegroService {
+  rpc GenerateObjectId (GenerateObjectIdRequest) returns (GenerateObjectIdResponse);
+  rpc UpdateIntegro (IntegroListProto) returns (google.protobuf.BoolValue);
+  rpc GetListByType (GetListByTypeRequest) returns (IntegroListProto);
+  rpc GetListByIds (common.ProtoObjectIds) returns (IntegroListProto);
+  rpc UpdateIntegroTypes(IntegroTypesProto) returns (google.protobuf.BoolValue);
+  rpc UpdateActionResults(ProtoActionExeResultRequest)returns(google.protobuf.BoolValue);
+}
+
+message ProtoActionExeResult{
+  string action_execution_id = 1;
+  int32 progress = 2;
+  string result = 3;
+}
+
+message ProtoActionExeResultRequest{
+  repeated ProtoActionExeResult results = 1;
+}
+
+message IntegroProto{
+  string object_id = 1;
+  string i_name = 2;
+  string i_type = 3;
+}
+
+message IntegroListProto {
+  repeated IntegroProto objects = 1;
+}
+
+message GenerateObjectIdData {
+  string input = 1;
+  string version = 2;
+  string object_id = 3;
+}
+
+message GenerateObjectIdRequest {
+  repeated GenerateObjectIdData input = 1;
+}
+
+message GenerateObjectIdResponse {
+  repeated GenerateObjectIdData output = 1;
+}
+
+message GetListByTypeRequest {
+  string i_name = 1;
+  string i_type = 2;
+}
+
+message IntegroTypeChildProto {
+  string child_i_type = 2;
+}
+
+message IntegroTypeProto {
+  string i_type = 1;
+  string i_name = 2;
+  repeated IntegroTypeChildProto children = 3;
+}
+
+message IntegroTypesProto {
+  repeated IntegroTypeProto types = 2;
+}

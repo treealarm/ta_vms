@@ -8,6 +8,7 @@ import i18n from './i18n'
 import { loadCameras, loadServers } from './store/liveSlice'
 import { loadMonitors } from './store/monitorsSlice'
 import { loadMediaMtxServers } from './store/mediaMtxSlice'
+import { loadFrontendConfig } from './store/frontendConfigSlice'
 import { toggleLogPanel } from './store/logSlice'
 import { useAppDispatch, useAppSelector } from './store'
 import RequireRole from './auth/RequireRole'
@@ -49,7 +50,11 @@ export default function App() {
   const { t } = useTranslation()
   const logsOpen = useAppSelector((s) => s.logs.panelOpen)
   const [debugTab, setDebugTab] = useState(0)
+  const authToken = useAppSelector((s) => s.auth.token)
 
+  // Re-runs whenever authToken changes, not just once on mount — otherwise a slow login (login
+  // happens via client-side navigate(), App never remounts) can outlast the retry budget below
+  // and leave every list empty until the user manually reloads the page.
   useEffect(() => {
     let cancelled = false
     let retryTimer: ReturnType<typeof setTimeout> | null = null
@@ -77,6 +82,11 @@ export default function App() {
       cancelled = true
       if (retryTimer != null) clearTimeout(retryTimer)
     }
+  }, [dispatch, authToken])
+
+  // Anonymous, static config — no auth/retry dance needed, just fetch once.
+  useEffect(() => {
+    void dispatch(loadFrontendConfig())
   }, [dispatch])
 
   return (
