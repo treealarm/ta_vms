@@ -50,30 +50,26 @@ public static class SquareCameraPush
     await square.PushProperties(new ProtoObjPropsList { Objects = { objProps }, ReplaceProps = false });
   }
 
-  public static async Task PushCameraAsync(
-    ISquareIntegration square, CameraStorage storage, string appId, string cameraId, string cameraName,
-    CancellationToken ct)
+  // Takes the already-loaded CameraSetup (with .Streams populated) rather than re-fetching by id —
+  // every caller already has it in hand (CfgServiceImpl's config-change handler just loaded it to
+  // get here; PushAllCamerasAsync's resync loop gets it in bulk from ListCamerasAsync), so an
+  // internal re-fetch here was a redundant DB round-trip per camera.
+  public static async Task PushCameraAsync(ISquareIntegration square, CameraSetup setup, string appId)
   {
     // Playback details (webrtc host/port, stream names) are NOT pushed here anymore — Square's
     // Monitor tab fetches them directly from vms_rec's own GET /api/live/cameras (CORS+JWT already
     // enabled for that), so any future field is available there for free with no push code on
     // either side. Only what the map's own property panel needs stays here.
-    var (found, setup) = await storage.GetCameraAsync(cameraId, ct);
-    var primaryStream = found ? setup!.Streams.FirstOrDefault(s => s.WebRtc) : null;
+    var primaryStream = setup.Streams.FirstOrDefault(s => s.WebRtc);
 
-    var objectId = ToObjectId(cameraId);
+    var objectId = ToObjectId(setup.CameraId);
     var parentObjectId = ToObjectId(appId);
-
-    await square.RegisterIntegro(new IntegroListProto
-    {
-      Objects = { new IntegroProto { ObjectId = objectId, IType = "camera" } }
-    });
 
     var fig = new ProtoFig
     {
       Id = objectId,
       ParentId = parentObjectId,
-      Name = cameraName,
+      Name = setup.Name,
       Geometry = new Common.ProtoGeometry
       {
         Type = "Point",
@@ -81,20 +77,24 @@ public static class SquareCameraPush
       },
       ExtraProps = { TextProp("profile_name", primaryStream?.RecordingProfile?.Name ?? "") },
     };
-    await square.PushFigures(new ProtoFigures { Figs = { fig }, AddTracks = false });
+
+    // RegisterIntegro and PushFigures are independent calls (neither depends on the other's
+    // result) — running them concurrently halves the round-trip latency per camera.
+    await Task.WhenAll(
+      square.RegisterIntegro(new IntegroListProto
+      {
+        Objects = { new IntegroProto { ObjectId = objectId, IType = "camera" } }
+      }),
+      square.PushFigures(new ProtoFigures { Figs = { fig }, AddTracks = false }));
   }
 
   public static async Task PushAllCamerasAsync(
     ISquareIntegration square, CameraStorage storage, string appId, ILogger logger, CancellationToken ct)
   {
     var rootId = ToObjectId(appId);
-    await square.RegisterIntegro(new IntegroListProto
-    {
-      Objects = { new IntegroProto { ObjectId = rootId, IType = "main" } }
-    });
 
     // RegisterIntegro above only tags rootId with producer metadata (i_name/i_type) — it does NOT
-    // create an actual tree/map object. Without this PushFigures call, cameras whose ParentId
+    // create an actual tree/map object. Without the PushFigures call below, cameras whose ParentId
     // points at rootId are orphaned: the parent never exists as a real object, so they have no
     // reachable path from Square's top-level (parent_id=null) tree view, even though the camera
     // objects themselves were created fine and are queryable directly by id.
@@ -108,22 +108,27 @@ public static class SquareCameraPush
         Coord = { new Common.ProtoCoord { Lat = DefaultLat, Lon = DefaultLon } },
       },
     };
-    await square.PushFigures(new ProtoFigures { Figs = { rootFig }, AddTracks = false });
+    await Task.WhenAll(
+      square.RegisterIntegro(new IntegroListProto
+      {
+        Objects = { new IntegroProto { ObjectId = rootId, IType = "main" } }
+      }),
+      square.PushFigures(new ProtoFigures { Figs = { rootFig }, AddTracks = false }));
 
     foreach (var (serverId, _) in storage.GetServerPairs())
     {
-      foreach (var camera in await storage.ListCamerasAsync(serverId, ct))
+      foreach (var setup in await storage.ListCamerasAsync(serverId, ct))
       {
         // One camera's failure must not abort the rest of the batch — otherwise a single
         // persistently-broken camera blocks every camera after it in iteration order, on every
         // resync attempt (this is what silently dropped pushes for camera ids later in the list).
         try
         {
-          await PushCameraAsync(square, storage, appId, camera.CameraId, camera.Name, ct);
+          await PushCameraAsync(square, setup, appId);
         }
         catch (Exception ex)
         {
-          logger.LogWarning(ex, "Square push failed for camera '{CameraId}'", camera.CameraId);
+          logger.LogWarning(ex, "Square push failed for camera '{CameraId}'", setup.CameraId);
         }
       }
     }

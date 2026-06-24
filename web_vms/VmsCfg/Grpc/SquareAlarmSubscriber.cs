@@ -69,7 +69,7 @@ public sealed class SquareAlarmSubscriber(
   {
     var objectId = SquareCameraPush.ToObjectId(cameraId);
 
-    await square.PushEvents(new EventsProto
+    var eventTask = square.PushEvents(new EventsProto
     {
       Events =
       {
@@ -86,10 +86,26 @@ public sealed class SquareAlarmSubscriber(
       },
     });
 
-    await SquareCameraPush.PushPropertiesAsync(square, cameraId, new Dictionary<string, string>
+    var propsTask = SquareCameraPush.PushPropertiesAsync(square, cameraId, new Dictionary<string, string>
     {
       ["last_alarm_ts"] = alarmStartTs.ToString("O"),
     });
+
+    // Awaited separately, not via Task.WhenAll: if the event push itself fails, propagating that
+    // exception is correct — HandleAsync's caller will get Dapr to redeliver, and nothing was sent
+    // yet so a retry is safe. But if only the last_alarm_ts property push fails, letting that
+    // exception propagate too would trigger the same redelivery — and PushAlarmEventAsync would
+    // run again from the top, resending the event with a fresh Guid (Square has no dedup), leaving
+    // a phantom duplicate alarm. The property push is best-effort: log and move on instead.
+    await eventTask;
+    try
+    {
+      await propsTask;
+    }
+    catch (Exception ex)
+    {
+      logger.LogWarning(ex, "Square last_alarm_ts property push failed for camera '{CameraId}'", cameraId);
+    }
   }
 
   public Task StopAsync(CancellationToken _)

@@ -89,7 +89,7 @@ namespace VmsCfg
           var (found, setup) = await storage.GetCameraAsync(cameraId, CancellationToken.None);
           if (!found || setup is null) return;
 
-          await SquareCameraPush.PushCameraAsync(square, storage, SquareAppId, cameraId, setup.Name, CancellationToken.None);
+          await SquareCameraPush.PushCameraAsync(square, setup, SquareAppId);
         }
         catch (Exception ex)
         {
