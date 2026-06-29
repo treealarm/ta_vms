@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
-import { Box, Button, IconButton, Tab, Tabs } from '@mui/material'
+import { Box, Button, CircularProgress, IconButton, Tab, Tabs, Typography } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import { useTranslation } from 'react-i18next'
 import i18n from './i18n'
@@ -13,6 +13,7 @@ import { toggleLogPanel } from './store/logSlice'
 import { useAppDispatch, useAppSelector } from './store'
 import RequireRole from './auth/RequireRole'
 import LoginPage from './components/LoginPage'
+import TestLivePage from './components/TestLivePage'
 import OperatorView from './components/OperatorView'
 import AdminView from './components/AdminView'
 import LogJournalPanel from './components/LogJournalPanel'
@@ -84,10 +85,42 @@ export default function App() {
     }
   }, [dispatch, authToken])
 
-  // Anonymous, static config — no auth/retry dance needed, just fetch once.
+  // Anonymous and cheap — used as the connectivity probe below, so retry indefinitely until the
+  // backend actually responds (no attempt cap, unlike the auth-dependent bootstrap above).
+  const configStatus = useAppSelector((s) => s.frontendConfig.status)
   useEffect(() => {
-    void dispatch(loadFrontendConfig())
+    let cancelled = false
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+
+    const tryLoad = async () => {
+      if (cancelled) return
+      const result = await dispatch(loadFrontendConfig())
+      if (loadFrontendConfig.rejected.match(result) && !cancelled) {
+        retryTimer = setTimeout(() => { void tryLoad() }, 2000)
+      }
+    }
+
+    void tryLoad()
+    return () => {
+      cancelled = true
+      if (retryTimer != null) clearTimeout(retryTimer)
+    }
   }, [dispatch])
+
+  // Don't render login/monitor/etc. until we've confirmed the backend is actually reachable —
+  // otherwise a cold-started frontend briefly shows an empty monitor view (no token yet looks
+  // the same as "auth disabled") instead of a neutral loading state.
+  if (configStatus !== 'succeeded') {
+    return (
+      <Box sx={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        height: '100dvh', gap: 2,
+      }}>
+        <CircularProgress />
+        <Typography color="text.secondary">{t('app.connecting')}</Typography>
+      </Box>
+    )
+  }
 
   return (
     <BrowserRouter>
@@ -95,6 +128,7 @@ export default function App() {
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/test/live" element={<TestLivePage />} />
             <Route path="/operator/*" element={<RequireRole><OperatorView /></RequireRole>} />
             <Route path="/admin/*" element={<RequireRole role="admin"><AdminView /></RequireRole>} />
             <Route path="*" element={<Navigate to="/operator/monitors" replace />} />

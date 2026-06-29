@@ -2,24 +2,35 @@
 import React, { useEffect, useRef } from 'react';
 
 interface CameraStreamProps {
-  streamName: string;
-  baseUrl?: string;
+  whepUrl: string;
 }
 
-const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
+const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const retryTimeoutRef = useRef<number | null>(null);
+  const sessionUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!streamName) {
-      console.error('stream is null');
+    if (!whepUrl) {
+      console.error('whepUrl is null');
       return;
     }
 
     let stopped = false;
     let sessionId = 0;
     let reconnecting = false;
+
+    const closeSession = () => {
+      if (!sessionUrlRef.current) {
+        return;
+      }
+      const url = sessionUrlRef.current;
+      sessionUrlRef.current = null;
+      fetch(url, { method: 'DELETE' }).catch(() => {
+        // best-effort: MediaMTX will time out the session on its own otherwise
+      });
+    };
 
     const cleanupAndRetry = (pc?: RTCPeerConnection) => {
       if (stopped || reconnecting) {
@@ -29,6 +40,8 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
       reconnecting = true;
 
       console.warn('WebRTC disconnected, retrying...');
+
+      closeSession();
 
       if (pc) {
         pc.onconnectionstatechange = null;
@@ -127,14 +140,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
           return;
         }
 
-        const url = `${(
-          baseUrl ||
-          `${window.location.protocol}//${window.location.hostname}:8889`
-        ).replace(/\/$/, '')}/${streamName}/whep`;
-
-        console.log('WHEP url =', url);
-
-        const resp = await fetch(url, {
+        const resp = await fetch(whepUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/sdp',
@@ -149,6 +155,11 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
         if (!resp.ok) {
           throw new Error(`WHEP failed: ${resp.status}`);
         }
+
+        const sessionUrl = resp.headers.get('Location');
+        sessionUrlRef.current = sessionUrl
+          ? new URL(sessionUrl, window.location.origin).toString()
+          : null;
 
         const answerSDP = await resp.text();
 
@@ -189,12 +200,13 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
         pcRef.current.close();
         pcRef.current = null;
       }
+
+      closeSession();
     };
-  }, [streamName, baseUrl]);
+  }, [whepUrl]);
 
   return (
     <Box
-      title={streamName}
       className="vms-video-frame"
       sx={{
         width: '100%',

@@ -86,12 +86,6 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   // WebRTC streams available for preview
   const webRtcStreams = (existing?.streams ?? []).filter((s) => s.webRtc)
 
-  // WebRTC base URL for preview: use webrtcHost if set, otherwise current browser hostname
-  const selectedMtxServer = mtxServers.find((s) => s.id === mediaMtxServerId)
-  const webrtcHost = selectedMtxServer?.webrtcHost || existing?.mediaMtxWebrtcHost || window.location.hostname
-  const webrtcPort = selectedMtxServer?.webrtcPort ?? existing?.mediaMtxWebrtcPort ?? 8889
-  const previewBaseUrl = `${window.location.protocol}//${webrtcHost}:${webrtcPort}`
-
   const buildPayload = (): CameraSetupDto => ({
     cameraId: isNew ? cameraId : initialCameraId,
     name,
@@ -268,15 +262,12 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
       {/* Right: live previews column */}
       {!isNew && webRtcStreams.length > 0 && (
         <Stack spacing={1.5} sx={{ width: 280, flexShrink: 0 }}>
-          {webRtcStreams.map((s) => (
+          {webRtcStreams.filter((s) => s.whepUrl).map((s) => (
             <Box key={s.streamName}>
               <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
                 {t('cameras.livePreview', { stream: s.streamName })}
               </Typography>
-              <CameraStream
-                streamName={`${initialCameraId}/${s.streamName}`}
-                baseUrl={previewBaseUrl}
-              />
+              <CameraStream whepUrl={s.whepUrl!} />
             </Box>
           ))}
         </Stack>

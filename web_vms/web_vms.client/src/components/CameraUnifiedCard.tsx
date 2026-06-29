@@ -191,8 +191,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
     setSelectedStream(webRtcStreams[(idx + 1) % webRtcStreams.length].streamName)
   }
 
-  const streamName =
-    webRtcStreams.length > 0 ? `${camera.cameraId}/${activeStream}` : camera.cameraId
+  const whepUrl = activeStreamObj?.whepUrl
 
   return (
     <Card
@@ -543,12 +542,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             {camera.name || camera.cameraId}
           </Typography>
         )}
-        {mode === 'live' && (
-          <CameraStream
-            streamName={streamName}
-            baseUrl={`${window.location.protocol}//${merged.mediaMtxWebrtcHost || window.location.hostname}:${merged.mediaMtxWebrtcPort ?? 8889}`}
-          />
-        )}
+        {mode === 'live' && whepUrl && <CameraStream whepUrl={whepUrl} />}
         {mode === 'archive' && (
           <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <ArchiveHlsStreamCard cameraId={camera.cameraId} />

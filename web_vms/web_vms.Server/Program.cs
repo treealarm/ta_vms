@@ -46,6 +46,9 @@ builder.Services.AddSingleton<IHlsArchiveService, HlsArchiveService>();
 builder.Services.AddSingleton<IArchiveTsStreamer, ArchiveTsStreamer>();
 builder.Services.AddSingleton<StreamStateService>();
 
+builder.Services.AddHttpClient(WhepProxyService.MediaMtxHttpClientName, c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddSingleton<WhepProxyService>();
+
 // KEYCLOAK_URL is intentionally optional: when unset, login/authorization is disabled entirely
 // and web_vms keeps running standalone (no dependency on Square's Keycloak). When set, the
 // remaining KEYCLOAK_* vars become required so misconfiguration fails fast at startup.

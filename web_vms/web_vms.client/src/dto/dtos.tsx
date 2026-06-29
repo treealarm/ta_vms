@@ -115,6 +115,8 @@ export type CameraStreamDto = {
   recordingProfile?: RecordingProfileDto
   overrideProfile?: RecordingProfileDto
   disabled?: boolean
+  /** Relative URL to our WHEP gateway (proxies to MediaMTX); set by backend when webRtc=true */
+  whepUrl?: string
 }
 
 export type CameraSetupDto = {
@@ -132,10 +134,6 @@ export type CameraSetupDto = {
   activeRetentionWindow?: boolean
   streams?: CameraStreamDto[]
   mediaMtxServerId?: string
-  /** WebRTC host for browser connections; empty/absent = use window.location.hostname */
-  mediaMtxWebrtcHost?: string
-  /** WebRTC port for this camera's assigned MediaMTX server */
-  mediaMtxWebrtcPort?: number
   onvifEventsEnabled?: boolean
   hasOnvifFilters?: boolean
   onvifManaged?: boolean

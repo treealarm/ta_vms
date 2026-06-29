@@ -14,10 +14,7 @@ function CameraStreamCard({ camera, onStreamChange }: CameraStreamCardProps) {
   const [selectedIndex, setSelectedIndex] = useState(0)
 
   const idx = Math.min(selectedIndex, Math.max(0, webRtcStreams.length - 1))
-
-  const streamName = webRtcStreams.length > 0
-    ? `${camera.cameraId}/${webRtcStreams[idx].streamName}`
-    : camera.cameraId
+  const whepUrl = webRtcStreams[idx]?.whepUrl
 
   const handleTabChange = (_: unknown, v: number) => {
     setSelectedIndex(v)
@@ -39,10 +36,7 @@ function CameraStreamCard({ camera, onStreamChange }: CameraStreamCardProps) {
           ))}
         </Tabs>
       )}
-      <CameraStream
-        streamName={streamName}
-        baseUrl={`${window.location.protocol}//${camera.mediaMtxWebrtcHost || window.location.hostname}:${camera.mediaMtxWebrtcPort ?? 8889}`}
-      />
+      {whepUrl && <CameraStream whepUrl={whepUrl} />}
     </Box>
   )
 }
