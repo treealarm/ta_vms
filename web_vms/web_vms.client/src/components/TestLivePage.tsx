@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Box, Typography } from '@mui/material'
+import { Box, Button, Stack, TextField, Typography } from '@mui/material'
 import CameraStream from './CameraStream'
 
 /**
@@ -8,23 +9,41 @@ import CameraStream from './CameraStream'
  * the authenticated api/live/whep/* used by the real monitor/preview.
  */
 export default function TestLivePage() {
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const cameraId = params.get('cameraId') ?? ''
   const streamName = params.get('streamName') ?? ''
+  const [cameraIdInput, setCameraIdInput] = useState(cameraId)
+  const [streamNameInput, setStreamNameInput] = useState(streamName)
 
-  if (!cameraId || !streamName) {
-    return (
-      <Box sx={{ p: 2 }}>
-        <Typography>Usage: /test/live?cameraId=...&amp;streamName=...</Typography>
-      </Box>
-    )
+  const submit = () => {
+    setParams({ cameraId: cameraIdInput, streamName: streamNameInput })
   }
 
-  const whepUrl = `/api/live/whep-test/offer/${cameraId}/${streamName}`
-
   return (
-    <Box sx={{ width: '100vw', height: '100vh', bgcolor: 'black' }}>
-      <CameraStream whepUrl={whepUrl} />
+    <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2, height: '100dvh' }}>
+      <Typography variant="h6">WHEP proxy test player</Typography>
+      <Stack direction="row" spacing={1} alignItems="center">
+        <TextField
+          label="cameraId"
+          size="small"
+          value={cameraIdInput}
+          onChange={(e) => setCameraIdInput(e.target.value)}
+        />
+        <TextField
+          label="streamName"
+          size="small"
+          value={streamNameInput}
+          onChange={(e) => setStreamNameInput(e.target.value)}
+        />
+        <Button variant="contained" onClick={submit} disabled={!cameraIdInput || !streamNameInput}>
+          Play
+        </Button>
+      </Stack>
+      {cameraId && streamName && (
+        <Box sx={{ flex: 1, minHeight: 0, bgcolor: 'black' }}>
+          <CameraStream whepUrl={`/api/live/whep-test/offer/${cameraId}/${streamName}`} />
+        </Box>
+      )}
     </Box>
   )
 }

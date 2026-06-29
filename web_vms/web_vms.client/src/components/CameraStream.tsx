@@ -84,6 +84,33 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl }) => {
       return false;
     };
 
+    // This is a non-trickle WHEP exchange (single offer/answer, no PATCH for late-arriving
+    // candidates), so any candidate gathered after the offer is sent is lost. Wait for gathering
+    // to finish first — capped, so an unreachable STUN server can't stall the connection, since
+    // host candidates (enough for same-LAN viewing) are normally ready almost immediately.
+    const waitForIceGathering = (pc: RTCPeerConnection, timeoutMs: number) =>
+      new Promise<void>((resolve) => {
+        if (pc.iceGatheringState === 'complete') {
+          resolve();
+          return;
+        }
+
+        const onChange = () => {
+          if (pc.iceGatheringState === 'complete') {
+            clearTimeout(timer);
+            pc.removeEventListener('icegatheringstatechange', onChange);
+            resolve();
+          }
+        };
+
+        const timer = window.setTimeout(() => {
+          pc.removeEventListener('icegatheringstatechange', onChange);
+          resolve();
+        }, timeoutMs);
+
+        pc.addEventListener('icegatheringstatechange', onChange);
+      });
+
     const startConnection = async () => {
       if (stopped) {
         return;
@@ -135,6 +162,12 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl }) => {
         }
 
         await pc.setLocalDescription(offer);
+
+        if (isSessionExpired(currentSession, pc)) {
+          return;
+        }
+
+        await waitForIceGathering(pc, 1500);
 
         if (isSessionExpired(currentSession, pc)) {
           return;
