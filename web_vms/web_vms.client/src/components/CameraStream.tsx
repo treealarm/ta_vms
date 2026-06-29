@@ -189,10 +189,10 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl }) => {
           throw new Error(`WHEP failed: ${resp.status}`);
         }
 
-        const sessionUrl = resp.headers.get('Location');
-        sessionUrlRef.current = sessionUrl
-          ? new URL(sessionUrl, window.location.origin).toString()
-          : null;
+        // Keep this relative (don't resolve to an absolute URL): installAuthFetch only attaches
+        // the Bearer token to requests whose URL starts with '/api/', and fetch() already
+        // resolves a relative Location against the current origin on its own.
+        sessionUrlRef.current = resp.headers.get('Location');
 
         const answerSDP = await resp.text();
 
