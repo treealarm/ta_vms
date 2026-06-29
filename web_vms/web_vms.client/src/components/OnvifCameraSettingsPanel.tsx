@@ -700,16 +700,13 @@ function CameraDetail({ camera }: { camera: CameraSetupDto }) {
           {activeKey === 'system' && <SystemSection cameraId={camera.cameraId} />}
         </Box>
       </Stack>
-      {webRtcStream && (
+      {webRtcStream?.whepUrl && (
         <Box sx={{ width: 280, flexShrink: 0, alignSelf: 'flex-start' }}>
           <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
             {t('stream.livePreview')}
           </Typography>
           <Box sx={{ width: '100%', aspectRatio: '16 / 9' }}>
-            <CameraStream
-              streamName={`${camera.cameraId}/${webRtcStream.streamName}`}
-              baseUrl={`${window.location.protocol}//${camera.mediaMtxWebrtcHost || window.location.hostname}:${camera.mediaMtxWebrtcPort ?? 8889}`}
-            />
+            <CameraStream whepUrl={webRtcStream.whepUrl} />
           </Box>
           {activeKey === 'ptz' && ptzProfileToken && (
             <Box sx={{ mt: 1.5, display: 'flex', justifyContent: 'center' }}>

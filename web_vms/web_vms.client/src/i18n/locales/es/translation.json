@@ -1,4 +1,7 @@
 {
+  "app": {
+    "connecting": "Conectando con el servidor..."
+  },
   "common": {
     "save": "Guardar",
     "apply": "Aplicar",

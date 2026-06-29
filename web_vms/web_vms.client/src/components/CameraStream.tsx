@@ -2,24 +2,35 @@
 import React, { useEffect, useRef } from 'react';
 
 interface CameraStreamProps {
-  streamName: string;
-  baseUrl?: string;
+  whepUrl: string;
 }
 
-const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
+const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const retryTimeoutRef = useRef<number | null>(null);
+  const sessionUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!streamName) {
-      console.error('stream is null');
+    if (!whepUrl) {
+      console.error('whepUrl is null');
       return;
     }
 
     let stopped = false;
     let sessionId = 0;
     let reconnecting = false;
+
+    const closeSession = () => {
+      if (!sessionUrlRef.current) {
+        return;
+      }
+      const url = sessionUrlRef.current;
+      sessionUrlRef.current = null;
+      fetch(url, { method: 'DELETE' }).catch(() => {
+        // best-effort: MediaMTX will time out the session on its own otherwise
+      });
+    };
 
     const cleanupAndRetry = (pc?: RTCPeerConnection) => {
       if (stopped || reconnecting) {
@@ -29,6 +40,8 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
       reconnecting = true;
 
       console.warn('WebRTC disconnected, retrying...');
+
+      closeSession();
 
       if (pc) {
         pc.onconnectionstatechange = null;
@@ -70,6 +83,33 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
 
       return false;
     };
+
+    // This is a non-trickle WHEP exchange (single offer/answer, no PATCH for late-arriving
+    // candidates), so any candidate gathered after the offer is sent is lost. Wait for gathering
+    // to finish first — capped, so an unreachable STUN server can't stall the connection, since
+    // host candidates (enough for same-LAN viewing) are normally ready almost immediately.
+    const waitForIceGathering = (pc: RTCPeerConnection, timeoutMs: number) =>
+      new Promise<void>((resolve) => {
+        if (pc.iceGatheringState === 'complete') {
+          resolve();
+          return;
+        }
+
+        const onChange = () => {
+          if (pc.iceGatheringState === 'complete') {
+            clearTimeout(timer);
+            pc.removeEventListener('icegatheringstatechange', onChange);
+            resolve();
+          }
+        };
+
+        const timer = window.setTimeout(() => {
+          pc.removeEventListener('icegatheringstatechange', onChange);
+          resolve();
+        }, timeoutMs);
+
+        pc.addEventListener('icegatheringstatechange', onChange);
+      });
 
     const startConnection = async () => {
       if (stopped) {
@@ -127,14 +167,13 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
           return;
         }
 
-        const url = `${(
-          baseUrl ||
-          `${window.location.protocol}//${window.location.hostname}:8889`
-        ).replace(/\/$/, '')}/${streamName}/whep`;
+        await waitForIceGathering(pc, 1500);
 
-        console.log('WHEP url =', url);
+        if (isSessionExpired(currentSession, pc)) {
+          return;
+        }
 
-        const resp = await fetch(url, {
+        const resp = await fetch(whepUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/sdp',
@@ -149,6 +188,11 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
         if (!resp.ok) {
           throw new Error(`WHEP failed: ${resp.status}`);
         }
+
+        // Keep this relative (don't resolve to an absolute URL): installAuthFetch only attaches
+        // the Bearer token to requests whose URL starts with '/api/', and fetch() already
+        // resolves a relative Location against the current origin on its own.
+        sessionUrlRef.current = resp.headers.get('Location');
 
         const answerSDP = await resp.text();
 
@@ -189,12 +233,13 @@ const CameraStream: React.FC<CameraStreamProps> = ({ streamName, baseUrl }) => {
         pcRef.current.close();
         pcRef.current = null;
       }
+
+      closeSession();
     };
-  }, [streamName, baseUrl]);
+  }, [whepUrl]);
 
   return (
     <Box
-      title={streamName}
       className="vms-video-frame"
       sx={{
         width: '100%',

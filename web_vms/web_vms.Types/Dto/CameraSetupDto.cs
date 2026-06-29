@@ -21,6 +21,8 @@ public record CameraStreamDto
   public RecordingProfileDto? RecordingProfile { get; init; }
   public RecordingProfileDto? OverrideProfile { get; init; }
   public bool? Disabled { get; init; }
+  /// <summary>Relative URL to our WHEP gateway (proxies to MediaMTX). Filled by web_vms.Server when WebRtc=true.</summary>
+  public string? WhepUrl { get; init; }
 }
 
 public record StreamOverrideDto
@@ -59,10 +61,6 @@ public record CameraSetupDto
   public IReadOnlyList<CameraStreamDto> Streams { get; init; } = [];
   /// <summary>Assigned MediaMTX server ID (uuid).</summary>
   public string? MediaMtxServerId { get; init; }
-  /// <summary>WebRTC host for this camera's assigned MediaMTX server; empty = use browser hostname. Filled by web_vms.Server.</summary>
-  public string? MediaMtxWebrtcHost { get; init; }
-  /// <summary>WebRTC port for this camera's assigned MediaMTX server. Filled by web_vms.Server.</summary>
-  public int? MediaMtxWebrtcPort { get; init; }
   public bool OnvifEventsEnabled { get; init; }
   public bool HasOnvifFilters    { get; init; }
   public bool OnvifManaged       { get; init; }

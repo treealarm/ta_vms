@@ -373,15 +373,12 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
       </Stack>
 
       {/* Right: live preview */}
-      {showPreview && (
+      {showPreview && existingStream?.whepUrl && (
         <Box sx={{ width: 280, flexShrink: 0 }}>
           <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
             {t('stream.livePreview')}
           </Typography>
-          <CameraStream
-            streamName={`${cameraId}/${streamName!}`}
-            baseUrl={`${window.location.protocol}//${camera.mediaMtxWebrtcHost || window.location.hostname}:${camera.mediaMtxWebrtcPort ?? 8889}`}
-          />
+          <CameraStream whepUrl={existingStream.whepUrl} />
         </Box>
       )}
     </Stack>

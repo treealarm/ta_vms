@@ -222,23 +222,15 @@ public class LiveController(
   {
     var cameras = await _manager.List(ct);
 
-    // Enrich each camera with its assigned MediaMTX WebRTC fields (best-effort; no auto-assign on list)
-    var allMtxServers = (await _manager.ListMediaMtxServers(ct))
-      .ToDictionary(s => s.Id);
-
-    var enriched = cameras.Select(c =>
-    {
-      if (!string.IsNullOrEmpty(c.MediaMtxServerId) && allMtxServers.TryGetValue(c.MediaMtxServerId, out var srv))
-        return c with
-        {
-          MediaMtxWebrtcHost = string.IsNullOrEmpty(srv.WebrtcHost) ? null : srv.WebrtcHost,
-          MediaMtxWebrtcPort = srv.WebrtcPort,
-        };
-      return c;
-    }).ToList();
+    var enriched = cameras.Select(c => c with { Streams = WithWhepUrls(c.CameraId, c.Streams) }).ToList();
 
     return Ok(enriched);
   }
+
+  private static IReadOnlyList<CameraStreamDto> WithWhepUrls(string cameraId, IReadOnlyList<CameraStreamDto> streams) =>
+    streams.Select(s => s.WebRtc
+      ? s with { WhepUrl = $"/api/live/whep/offer/{cameraId}/{s.StreamName}" }
+      : s).ToList();
 
   [HttpPost("cameras/state")]
   public async Task<IActionResult> SetCameraState([FromBody] CameraSetupDto state, CancellationToken ct)
@@ -292,14 +284,7 @@ public class LiveController(
     }
 
     var normalized = CameraManager.Normalize(camera);
-
-    // Enrich with MediaMTX WebRTC fields for the frontend
-    var mediaMtxServer = await _manager.GetOrAssignMediaMtxServer(cameraId, ct);
-    normalized = normalized with
-    {
-      MediaMtxWebrtcHost = string.IsNullOrEmpty(mediaMtxServer?.WebrtcHost) ? null : mediaMtxServer?.WebrtcHost,
-      MediaMtxWebrtcPort = mediaMtxServer?.WebrtcPort,
-    };
+    normalized = normalized with { Streams = WithWhepUrls(normalized.CameraId, normalized.Streams) };
 
     // Ensure WebRTC push is active for all webrtc-enabled streams (best-effort).
     // Disabled cameras/streams must not be (re)started here — config_subscriber already

@@ -19,7 +19,7 @@ std::string require_env(const char* key)
 
 onvif_client::onvif_client()
   : m_app_id(require_env("DAPR_ONVIF_APP_ID")),
-    m_channel(grpc::CreateChannel("127.0.0.1:50001", grpc::InsecureChannelCredentials())),
+    m_channel(grpc::CreateChannel("127.0.0.1:" + require_env("DAPR_GRPC_PORT"), grpc::InsecureChannelCredentials())),
     m_stub(vms::onvif::OnvifService::NewStub(m_channel))
 {
 }
