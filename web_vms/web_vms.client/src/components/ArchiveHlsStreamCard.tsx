@@ -45,18 +45,21 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
     if (i >= 0) setStartIndex(i)
   }
 
-  const playlistUrl = useMemo(() => {
-    if (ranges.length === 0 || startIndex < 0 || startIndex >= ranges.length) return null
-    const range = ranges[startIndex]
-    const firstClip = range.recordings[0]
-    if (!cameraId || !firstClip?.clipUid) return null
+  const buildPlaylistUrl = (camId: string, range: RecordingRangeDto | undefined) => {
+    const firstClip = range?.recordings[0]
+    if (!camId || !firstClip?.clipUid) return null
     const q = new URLSearchParams({
-      cameraId,
+      cameraId: camId,
       startClipUid: firstClip.clipUid,
-      count: String(range.recordings.length),
+      count: String(range!.recordings.length),
     })
     return `/api/arch/hls/from-files.m3u8?${q.toString()}`
-  }, [cameraId, ranges, startIndex])
+  }
+
+  const playlistUrl = useMemo(
+    () => buildPlaylistUrl(cameraId, ranges[startIndex]),
+    [cameraId, ranges, startIndex]
+  )
 
   const rangeFilePath = ranges[startIndex]?.recordings[0]?.filePath
 
@@ -74,6 +77,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
     if (!video || !playlistUrl) return
 
     let hls: Hls | null = null
+    let prefetched = false
     const tryPlay = () => void video.play().catch(() => {})
     const onFatal = (detail: string) => setHlsError(detail)
     const advanceToNextClip = () =>
@@ -81,6 +85,19 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
         const list = rangesRef.current
         return i < list.length - 1 ? i + 1 : i
       })
+    // The next range's manifest is cheap to warm up (server marks it
+    // `Cache-Control: private, max-age=60`), so firing one extra GET a few
+    // seconds before this range ends lets the browser serve it from cache
+    // instead of paying for clip lookup + sidx parsing right as we switch.
+    // Best-effort only: on failure the normal lazy load on `ended` still runs.
+    const PREFETCH_LEAD_SECONDS = 5
+    const onTimeUpdate = () => {
+      if (prefetched || !Number.isFinite(video.duration)) return
+      if (video.duration - video.currentTime > PREFETCH_LEAD_SECONDS) return
+      prefetched = true
+      const nextUrl = buildPlaylistUrl(cameraId, rangesRef.current[startIndex + 1])
+      if (nextUrl) void fetch(nextUrl).catch(() => {})
+    }
 
     if (Hls.isSupported()) {
       hls = new Hls({ enableWorker: true, lowLatencyMode: false, xhrSetup: authXhrSetup })
@@ -107,8 +124,10 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
     }
 
     video.addEventListener('ended', advanceToNextClip)
+    video.addEventListener('timeupdate', onTimeUpdate)
     return () => {
       video.removeEventListener('ended', advanceToNextClip)
+      video.removeEventListener('timeupdate', onTimeUpdate)
       video.onerror = null
       video.removeEventListener('canplay', tryPlay)
       video.removeEventListener('loadeddata', tryPlay)
@@ -116,7 +135,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
       video.removeAttribute('src')
       video.load()
     }
-  }, [playlistUrl])
+  }, [playlistUrl, cameraId, startIndex])
 
   return (
     <Box sx={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
