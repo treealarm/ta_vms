@@ -164,6 +164,31 @@ public sealed class ClipStorage(
     return rows.Select(ToRecording).ToList();
   }
 
+  public async Task<List<string>> GetRecordingCoverageAsync(GetRecordingCoverageRequest request, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var q = db.Clips.Where(c => c.CameraId == request.CameraId && c.Retained);
+
+    if (request.FromTs != null)
+      q = q.Where(c => c.StartTs >= request.FromTs.ToDateTime().ToUniversalTime());
+    if (request.ToTs != null)
+      q = q.Where(c => c.StartTs < request.ToTs.ToDateTime().ToUniversalTime());
+
+    switch (request.Granularity)
+    {
+      case RecordingCoverageGranularity.RecordingCoverageMonth:
+        var months = await q.Select(c => new { c.StartTs.Year, c.StartTs.Month }).Distinct().ToListAsync(ct);
+        return months.Select(m => $"{m.Year:D4}-{m.Month:D2}").ToList();
+      case RecordingCoverageGranularity.RecordingCoverageDay:
+        var days = await q.Select(c => c.StartTs.Date).Distinct().ToListAsync(ct);
+        return days.Select(d => d.ToString("yyyy-MM-dd")).ToList();
+      case RecordingCoverageGranularity.RecordingCoverageYear:
+      default:
+        var years = await q.Select(c => c.StartTs.Year).Distinct().ToListAsync(ct);
+        return years.Select(y => y.ToString("D4")).ToList();
+    }
+  }
+
   public async Task<List<Recording>> GetRecordingsAroundAsync(GetRecordingsAroundRequest request, CancellationToken ct)
   {
     var limit = request.Limit == 0 ? 100 : (int)request.Limit;

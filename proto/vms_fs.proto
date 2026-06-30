@@ -10,6 +10,7 @@ service FsService {
   rpc GetRecordings(GetRecordingsFromToRequest) returns (GetRecordingsResponse);
   rpc GetRecordingsAround(GetRecordingsAroundRequest) returns (GetRecordingsResponse);
   rpc GetRecordingRanges(GetRecordingRangesRequest) returns (GetRecordingRangesResponse);
+  rpc GetRecordingCoverage(GetRecordingCoverageRequest) returns (GetRecordingCoverageResponse);
   rpc GetClipsFrom(GetClipsFromRequest) returns (GetRecordingsResponse);
   rpc GetCameraRetentionStatus(GetCameraRetentionStatusRequest) returns (GetCameraRetentionStatusResponse);
   rpc ListRetentionEvents(ListRetentionEventsRequest) returns (ListRetentionEventsResponse);
@@ -104,6 +105,24 @@ message RecordingRange {
 
 message GetRecordingRangesResponse {
   repeated RecordingRange ranges = 1;
+}
+
+enum RecordingCoverageGranularity {
+  RECORDING_COVERAGE_YEAR = 0;
+  RECORDING_COVERAGE_MONTH = 1;
+  RECORDING_COVERAGE_DAY = 2;
+}
+
+message GetRecordingCoverageRequest {
+  string camera_id = 1;
+  RecordingCoverageGranularity granularity = 2;
+  optional google.protobuf.Timestamp from_ts = 3;
+  optional google.protobuf.Timestamp to_ts = 4;
+}
+
+message GetRecordingCoverageResponse {
+  // "YYYY", "YYYY-MM" or "YYYY-MM-DD" (UTC), depending on requested granularity.
+  repeated string buckets = 1;
 }
 
 message GetCameraRetentionStatusRequest {

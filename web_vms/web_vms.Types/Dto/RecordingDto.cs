@@ -1,4 +1,6 @@
-﻿namespace web_vms.Types.Dto
+﻿using System.Text.Json.Serialization;
+
+namespace web_vms.Types.Dto
 {
   public class RecordingsQueryDto
   {
@@ -34,6 +36,28 @@
   public class RecordingRangesResponseDto
   {
     public List<RecordingRangeDto> Ranges { get; set; } = [];
+  }
+
+  [JsonConverter(typeof(JsonStringEnumConverter))]
+  public enum RecordingCoverageGranularityDto
+  {
+    Year,
+    Month,
+    Day,
+  }
+
+  public class RecordingCoverageQueryDto
+  {
+    public string CameraId { get; set; } = "cam1";
+    public RecordingCoverageGranularityDto Granularity { get; set; } = RecordingCoverageGranularityDto.Day;
+    public DateTime? FromUtc { get; set; }
+    public DateTime? ToUtc { get; set; }
+  }
+
+  public class RecordingCoverageResponseDto
+  {
+    // "YYYY", "YYYY-MM" or "YYYY-MM-DD" (UTC), matching the requested granularity.
+    public List<string> Buckets { get; set; } = [];
   }
 
   public class RetentionEventDto

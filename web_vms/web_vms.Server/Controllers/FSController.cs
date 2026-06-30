@@ -158,6 +158,37 @@ public sealed class FSController(
     return Ok(dto);
   }
 
+  [HttpPost("recording-coverage")]
+  public async Task<IActionResult> GetRecordingCoverage([FromBody] RecordingCoverageQueryDto query, CancellationToken ct)
+  {
+    if (string.IsNullOrWhiteSpace(query.CameraId))
+      return BadRequest(new { error = "cameraId is required" });
+
+    var coverageCam = await manager.Get(query.CameraId);
+    if (coverageCam is null)
+      return NotFound();
+
+    var fsClient = registry.GetFsClient(coverageCam.ServerId);
+    var grpcReq = new GetRecordingCoverageRequest
+    {
+      CameraId = query.CameraId,
+      Granularity = query.Granularity switch
+      {
+        RecordingCoverageGranularityDto.Year => RecordingCoverageGranularity.RecordingCoverageYear,
+        RecordingCoverageGranularityDto.Month => RecordingCoverageGranularity.RecordingCoverageMonth,
+        _ => RecordingCoverageGranularity.RecordingCoverageDay,
+      },
+    };
+    if (query.FromUtc.HasValue)
+      grpcReq.FromTs = Timestamp.FromDateTime(ToUtc(query.FromUtc.Value));
+    if (query.ToUtc.HasValue)
+      grpcReq.ToTs = Timestamp.FromDateTime(ToUtc(query.ToUtc.Value));
+
+    var grpcResp = await fsClient.GetRecordingCoverageAsync(grpcReq, cancellationToken: ct);
+
+    return Ok(new RecordingCoverageResponseDto { Buckets = grpcResp.Buckets.ToList() });
+  }
+
   [HttpPost("events")]
   public async Task<IActionResult> RetainEvent([FromBody] RetentionEventDto body, CancellationToken ct)
   {

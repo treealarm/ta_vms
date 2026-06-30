@@ -151,6 +151,24 @@ public sealed class FsServiceImpl(
   }
 
 
+  public override async Task<GetRecordingCoverageResponse> GetRecordingCoverage(
+    GetRecordingCoverageRequest request,
+    ServerCallContext context)
+  {
+    try
+    {
+      var buckets = await _storage.GetRecordingCoverageAsync(request, context.CancellationToken);
+      var response = new GetRecordingCoverageResponse();
+      response.Buckets.AddRange(buckets);
+      return response;
+    }
+    catch (Exception ex)
+    {
+      Console.Error.WriteLine($"GetRecordingCoverage failed: {ex}");
+      throw new RpcException(new Status(StatusCode.Internal, ex.Message));
+    }
+  }
+
   public override async Task<GetRecordingsResponse> GetClipsFrom(
     GetClipsFromRequest request,
     ServerCallContext context)

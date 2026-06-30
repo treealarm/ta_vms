@@ -194,6 +194,19 @@ export type RecordingsResponseDto = {
   nearest?: RecordingDto
 }
 
+export type RecordingCoverageGranularity = 'Year' | 'Month' | 'Day'
+
+export type RecordingCoverageQueryDto = {
+  cameraId: string
+  granularity: RecordingCoverageGranularity
+  fromUtc?: string
+  toUtc?: string
+}
+
+export type RecordingCoverageResponseDto = {
+  buckets: string[]
+}
+
 export type RetentionEventDto = {
   eventId?: string
   cameraId: string

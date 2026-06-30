@@ -1,6 +1,8 @@
 import { type AnyAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import type {
   ApiResponseDto,
+  RecordingCoverageQueryDto,
+  RecordingCoverageResponseDto,
   RecordingRangesResponseDto,
   RecordingsQueryDto,
   RecordingsResponseDto,
@@ -11,6 +13,7 @@ import { parseJson } from './api'
 type FsState = {
   recordingsByKey: Record<string, RecordingsResponseDto>
   recordingRangesByKey: Record<string, RecordingRangesResponseDto>
+  recordingCoverageByKey: Record<string, RecordingCoverageResponseDto>
   isBusy: boolean
   status: string
   simulationEventId: string
@@ -18,9 +21,16 @@ type FsState = {
   simulationResult: { ok: boolean; message: string } | null
 }
 
+export const recordingRangesKey = (arg: Pick<RecordingsQueryDto, 'cameraId' | 'timestamp' | 'fromUtc' | 'toUtc'>) =>
+  `${arg.cameraId}:${arg.timestamp ?? `${arg.fromUtc ?? ''}|${arg.toUtc ?? ''}`}`
+
+export const recordingCoverageKey = (arg: Pick<RecordingCoverageQueryDto, 'cameraId' | 'granularity' | 'fromUtc'>) =>
+  `${arg.cameraId}:${arg.granularity}:${arg.fromUtc ?? ''}`
+
 const initialState: FsState = {
   recordingsByKey: {},
   recordingRangesByKey: {},
+  recordingCoverageByKey: {},
   isBusy: false,
   status: 'Ready',
   simulationEventId: `test-alarm-${Date.now()}`,
@@ -48,6 +58,19 @@ export const fetchRecordingRanges = createAsyncThunk(
     })
 
     return parseJson<RecordingRangesResponseDto>(response)
+  }
+)
+
+export const fetchRecordingCoverage = createAsyncThunk(
+  'fs/fetchRecordingCoverage',
+  async (payload: RecordingCoverageQueryDto) => {
+    const response = await fetch('/api/fs/recording-coverage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+
+    return parseJson<RecordingCoverageResponseDto>(response)
   }
 )
 
@@ -80,8 +103,12 @@ const fsSlice = createSlice({
         state.recordingsByKey[key] = action.payload
       })
       .addCase(fetchRecordingRanges.fulfilled, (state, action: AnyAction) => {
-        const key = `${action.meta.arg.cameraId}:${action.meta.arg.timestamp ?? ''}`
+        const key = recordingRangesKey(action.meta.arg as RecordingsQueryDto)
         state.recordingRangesByKey[key] = action.payload
+      })
+      .addCase(fetchRecordingCoverage.fulfilled, (state, action: AnyAction) => {
+        const key = recordingCoverageKey(action.meta.arg as RecordingCoverageQueryDto)
+        state.recordingCoverageByKey[key] = action.payload
       })
       .addCase(sendRetentionEvent.fulfilled, (state, action) => {
         state.status = `Retention event: ${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`

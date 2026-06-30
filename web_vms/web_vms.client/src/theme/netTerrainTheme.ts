@@ -1,4 +1,6 @@
 import { alpha, createTheme } from '@mui/material/styles'
+// Registers MuiPickersDay/MuiYearCalendar/etc. on the `components` theme key below.
+import type {} from '@mui/x-date-pickers/themeAugmentation'
 
 /**
  * MUI needs real hex/rgb colors here (not CSS `var()`): it runs contrast and color-mix in JS.
@@ -168,6 +170,57 @@ export const netTerrainTheme = createTheme({
         root: {
           backgroundColor: panel.paper,
           borderBottom: `1px solid ${panel.border}`,
+        },
+      },
+    },
+    // Compact the archive jump-to-date calendar (RecordingsList) so it doesn't
+    // dwarf the rest of the panel; only date picker usage in the app.
+    MuiPickersDay: {
+      styleOverrides: {
+        root: {
+          width: 28,
+          height: 28,
+          fontSize: '0.7rem',
+          margin: '1px',
+        },
+      },
+    },
+    MuiYearCalendar: {
+      styleOverrides: {
+        root: {
+          '& .MuiYearCalendar-button': {
+            fontSize: '0.75rem',
+            padding: '4px 8px',
+          },
+        },
+      },
+    },
+    MuiMonthCalendar: {
+      styleOverrides: {
+        root: {
+          '& .MuiMonthCalendar-button': {
+            fontSize: '0.75rem',
+            padding: '4px 8px',
+          },
+        },
+      },
+    },
+    MuiPickersCalendarHeader: {
+      styleOverrides: {
+        root: {
+          minHeight: 32,
+          paddingLeft: 8,
+          paddingRight: 4,
+        },
+        label: {
+          fontSize: '0.8rem',
+        },
+      },
+    },
+    MuiDayCalendar: {
+      styleOverrides: {
+        weekDayLabel: {
+          fontSize: '0.7rem',
         },
       },
     },
