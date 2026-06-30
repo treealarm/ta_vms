@@ -21,7 +21,7 @@ import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord'
 import FullscreenIcon from '@mui/icons-material/Fullscreen'
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit'
 import LayersIcon from '@mui/icons-material/Layers'
-import LiveTvIcon from '@mui/icons-material/LiveTv'
+import VideocamIcon from '@mui/icons-material/Videocam'
 import TuneIcon from '@mui/icons-material/Tune'
 import VideoLibraryIcon from '@mui/icons-material/VideoLibrary'
 import ControlCameraIcon from '@mui/icons-material/ControlCamera'
@@ -232,8 +232,8 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
           <Tooltip title={mode === 'live' ? t('cameraCard.switchToArchive') : t('cameraCard.switchToLive')} placement="right">
             <IconButton size="small" onClick={() => setMode(mode === 'live' ? 'archive' : 'live')} sx={BTN_SX}>
               {mode === 'live'
-                ? <LiveTvIcon sx={{ fontSize: '0.95rem' }} />
-                : <VideoLibraryIcon sx={{ fontSize: '0.95rem' }} />}
+                ? <VideoLibraryIcon sx={{ fontSize: '0.95rem' }} />
+                : <VideocamIcon sx={{ fontSize: '0.95rem' }} />}
             </IconButton>
           </Tooltip>
 

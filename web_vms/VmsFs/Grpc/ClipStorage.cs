@@ -16,7 +16,11 @@ public sealed class ClipStorage(
   CameraConfigCache configCache,
   FsActivityLog activityLog)
 {
-  private static readonly TimeSpan DefaultMaxRecordingRangeWallSpan = TimeSpan.FromMinutes(1);
+  // Ranges are grouped purely by gap tolerance (no artificial wall-span cap): a cap here
+  // forces the archive HLS player to rebuild its source every time a range ends, even for
+  // an otherwise uninterrupted recording. Seeking to an exact moment inside a long range is
+  // handled separately via FromFilesHlsPlaylist's `from` parameter.
+  private static readonly TimeSpan DefaultMaxRecordingRangeWallSpan = TimeSpan.Zero;
 
   public async Task<string> IngestAsync(Recording clip, CancellationToken ct)
   {

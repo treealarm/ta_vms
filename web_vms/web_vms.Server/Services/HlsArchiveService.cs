@@ -77,18 +77,13 @@ public sealed class HlsArchiveService(
     if (segments.Count == 0)
       return new HlsPlaylistResult.NotFound("no recordings in range");
 
-    var startOffset = ComputeStartOffset(segments, range.Start);
-    var playlistDur = segments.Sum(s => s.Duration.TotalSeconds);
-    if (playlistDur > 0 && startOffset >= playlistDur)
-      startOffset = playlistDur - 0.001;
-    if (startOffset < 0 || double.IsNaN(startOffset))
-      startOffset = 0;
+    var startOffset = ClampStartOffset(segments, ComputeStartOffset(segments, range.Start));
 
     return new HlsPlaylistResult.Ok(await BuildPlaylistAsync(fsClient, segments, ct, startOffset));
   }
 
   public async Task<HlsPlaylistResult> BuildFilesPlaylistAsync(
-    string cameraId, string startClipUid, uint count, CancellationToken ct)
+    string cameraId, string startClipUid, uint count, CancellationToken ct, DateTime? from = null)
   {
     var fsClient = await ResolveAsync(cameraId, ct);
     if (fsClient is null)
@@ -119,7 +114,11 @@ public sealed class HlsArchiveService(
       return new HlsSegment(rec.ClipUid, null, wall, rec.FilePath ?? "");
     }).ToList();
 
-    return new HlsPlaylistResult.Ok(await BuildPlaylistAsync(fsClient, segments, ct));
+    double? startOffset = from is { } fromWall
+      ? ClampStartOffset(segments, ComputeStartOffset(segments, fromWall))
+      : null;
+
+    return new HlsPlaylistResult.Ok(await BuildPlaylistAsync(fsClient, segments, ct, startOffset));
   }
 
   public async Task<HlsPlaylistResult> BuildEventPlaylistAsync(
@@ -208,20 +207,34 @@ public sealed class HlsArchiveService(
     for (var i = 0; i < segments.Count; i++)
     {
       var s = segments[i];
-      if (i > 0 && s.ClipUid != prevClipUid)
+      var isMp4 = s.FilePath.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase);
+      sidxCache.TryGetValue(s.ClipUid, out var idx);
+
+      if (isMp4 && idx is null)
+      {
+        // Couldn't locate moov/ftyp for this fmp4 clip (corrupt or truncated file,
+        // e.g. one written across a recording interruption) — there is no valid
+        // #EXT-X-MAP to emit for it, and serving its raw bytes without one breaks
+        // MSE parsing (bufferAppendError). Since a range can now stitch many clips
+        // into one HLS source, one bad clip would otherwise take the whole range
+        // down instead of just itself. Skip it; the surrounding clips still play.
+        Console.Error.WriteLine($"AppendSegments: skipping unindexable fmp4 clip {s.ClipUid} ({s.FilePath})");
+        continue;
+      }
+
+      if (prevClipUid.Length > 0 && s.ClipUid != prevClipUid)
         playlist.AppendDiscontinuity();
       prevClipUid = s.ClipUid;
 
-      if (s.FilePath.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) &&
-          sidxCache.TryGetValue(s.ClipUid, out var idx) && idx is not null)
+      if (isMp4)
       {
         if (s.ClipUid != mapEmittedForClip)
         {
-          playlist.AppendMap(BuildSegmentUri(s.ClipUid, new ByteRange(0, idx.InitSize)));
+          playlist.AppendMap(BuildSegmentUri(s.ClipUid, new ByteRange(0, idx!.InitSize)));
           mapEmittedForClip = s.ClipUid;
         }
 
-        if (idx.Fragments.Count > 0)
+        if (idx!.Fragments.Count > 0)
         {
           // sidx found: one EXTINF per moof fragment
           foreach (var frag in idx.Fragments)
@@ -231,7 +244,7 @@ public sealed class HlsArchiveService(
         }
         else
         {
-          // old file without sidx: serve media part as one whole segment
+          // moov found but no mfra index: serve media part as one whole segment
           playlist.AppendSegment(
             BuildSegmentUri(s.ClipUid, new ByteRange(idx.InitSize, 0)),
             s.Duration.TotalSeconds);
@@ -295,5 +308,15 @@ public sealed class HlsArchiveService(
       acc += s.Duration.TotalSeconds;
     }
     return acc;
+  }
+
+  private static double ClampStartOffset(List<HlsSegment> segments, double startOffset)
+  {
+    var playlistDur = segments.Sum(s => s.Duration.TotalSeconds);
+    if (playlistDur > 0 && startOffset >= playlistDur)
+      startOffset = playlistDur - 0.001;
+    if (startOffset < 0 || double.IsNaN(startOffset))
+      startOffset = 0;
+    return startOffset;
   }
 }
