@@ -107,31 +107,35 @@ export default function App() {
     }
   }, [dispatch])
 
-  // Don't render login/monitor/etc. until we've confirmed the backend is actually reachable —
-  // otherwise a cold-started frontend briefly shows an empty monitor view (no token yet looks
-  // the same as "auth disabled") instead of a neutral loading state.
-  if (configStatus !== 'succeeded') {
-    return (
-      <Box sx={{
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        height: '100dvh', gap: 2,
-      }}>
-        <CircularProgress />
-        <Typography color="text.secondary">{t('app.connecting')}</Typography>
-      </Box>
-    )
-  }
-
   return (
     <BrowserRouter>
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden' }}>
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <Routes>
+            {/* Always reachable regardless of the backend connectivity probe below — neither
+                depends on it, and /login must stay reachable even if the backend never responds. */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/test/live" element={<TestLivePage />} />
-            <Route path="/operator/*" element={<RequireRole><OperatorView /></RequireRole>} />
-            <Route path="/admin/*" element={<RequireRole role="admin"><AdminView /></RequireRole>} />
-            <Route path="*" element={<Navigate to="/operator/monitors" replace />} />
+            {configStatus !== 'succeeded' ? (
+              // Don't render monitor/admin views until we've confirmed the backend is actually
+              // reachable — otherwise a cold-started frontend briefly shows an empty monitor view
+              // (no token yet looks the same as "auth disabled") instead of a neutral loading state.
+              <Route path="*" element={
+                <Box sx={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  height: '100%', gap: 2,
+                }}>
+                  <CircularProgress />
+                  <Typography color="text.secondary">{t('app.connecting')}</Typography>
+                </Box>
+              } />
+            ) : (
+              <>
+                <Route path="/operator/*" element={<RequireRole><OperatorView /></RequireRole>} />
+                <Route path="/admin/*" element={<RequireRole role="admin"><AdminView /></RequireRole>} />
+                <Route path="*" element={<Navigate to="/operator/monitors" replace />} />
+              </>
+            )}
           </Routes>
         </Box>
         {logsOpen && (

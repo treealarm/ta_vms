@@ -1,5 +1,6 @@
+using System.Collections.Concurrent;
 using System.Net.Http.Headers;
-using System.Text;
+using System.Security.Cryptography;
 
 namespace web_vms;
 
@@ -10,7 +11,6 @@ public enum WhepProxyOutcome
   CameraNotFound,
   MediaMtxUnavailable,
   InvalidToken,
-  SsrfRejected,
 }
 
 public sealed record WhepOfferResult(
@@ -33,6 +33,13 @@ public sealed class WhepProxyService(ICameraManager _manager, IHttpClientFactory
 {
   public const string MediaMtxHttpClientName = "mediamtx-whep";
 
+  // Session token -> real MediaMTX session URL. The token handed to the browser is an opaque
+  // random key into this table, never the URL itself — so DeleteSessionAsync only ever targets a
+  // URI this service itself constructed in CreateOfferAsync, closing off SSRF-via-forged-token by
+  // construction instead of having to re-validate a client-decodable URL against an allowlist.
+  private static readonly TimeSpan SessionTtl = TimeSpan.FromHours(1);
+  private readonly ConcurrentDictionary<string, (Uri Uri, DateTime CreatedAt)> _sessions = new();
+
   public async Task<WhepOfferResult> CreateOfferAsync(string path, Stream offerSdpBody, CancellationToken ct)
   {
     if (string.IsNullOrWhiteSpace(path))
@@ -47,7 +54,15 @@ public sealed class WhepProxyService(ICameraManager _manager, IHttpClientFactory
     if (server is null || string.IsNullOrWhiteSpace(server.Host))
       return new WhepOfferResult(WhepProxyOutcome.CameraNotFound);
 
-    var targetUri = new Uri($"http://{server.Host}:{server.WebrtcPort}/{path}/whep");
+    Uri targetUri;
+    try
+    {
+      targetUri = new Uri($"http://{server.Host}:{server.WebrtcPort}/{Uri.EscapeDataString(path).Replace("%2F", "/")}/whep");
+    }
+    catch (UriFormatException)
+    {
+      return new WhepOfferResult(WhepProxyOutcome.InvalidPath);
+    }
 
     using var offerContent = new StreamContent(offerSdpBody);
     offerContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/sdp");
@@ -70,7 +85,7 @@ public sealed class WhepProxyService(ICameraManager _manager, IHttpClientFactory
       if (mtxResponse.Headers.Location is { } location)
       {
         var absoluteLocation = location.IsAbsoluteUri ? location : new Uri(targetUri, location);
-        token = EncodeSessionToken(absoluteLocation);
+        token = CreateSessionToken(absoluteLocation);
       }
 
       var body = await mtxResponse.Content.ReadAsByteArrayAsync(ct);
@@ -81,19 +96,11 @@ public sealed class WhepProxyService(ICameraManager _manager, IHttpClientFactory
 
   public async Task<WhepDeleteResult> DeleteSessionAsync(string token, CancellationToken ct)
   {
-    if (!TryDecodeSessionToken(token, out var targetUri))
+    if (!_sessions.TryRemove(token, out var session))
       return new WhepDeleteResult(WhepProxyOutcome.InvalidToken);
 
-    var servers = await _manager.ListMediaMtxServers(ct);
-    var allowed = servers.Any(s =>
-      string.Equals(s.Host, targetUri.Host, StringComparison.OrdinalIgnoreCase) &&
-      s.WebrtcPort == targetUri.Port);
-
-    if (!allowed)
-      return new WhepDeleteResult(WhepProxyOutcome.SsrfRejected);
-
     var client = _httpClientFactory.CreateClient(MediaMtxHttpClientName);
-    using var request = new HttpRequestMessage(HttpMethod.Delete, targetUri);
+    using var request = new HttpRequestMessage(HttpMethod.Delete, session.Uri);
 
     try
     {
@@ -106,25 +113,25 @@ public sealed class WhepProxyService(ICameraManager _manager, IHttpClientFactory
     }
   }
 
-  private static string EncodeSessionToken(Uri absoluteUri)
+  private string CreateSessionToken(Uri sessionUri)
   {
-    var bytes = Encoding.UTF8.GetBytes(absoluteUri.ToString());
-    return Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+    PruneExpiredSessions();
+
+    var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+    _sessions[token] = (sessionUri, DateTime.UtcNow);
+    return token;
   }
 
-  private static bool TryDecodeSessionToken(string token, out Uri targetUri)
+  // Best-effort sweep for sessions whose browser-side cleanup never arrived (e.g. tab closed
+  // mid-stream) — same "no delivery guarantees, periodic sweep" spirit as the debug-entity-state
+  // registry, just in-process and unrelated to it.
+  private void PruneExpiredSessions()
   {
-    targetUri = null!;
-    try
+    var cutoff = DateTime.UtcNow - SessionTtl;
+    foreach (var (key, value) in _sessions)
     {
-      var base64 = token.Replace('-', '+').Replace('_', '/');
-      base64 += (base64.Length % 4) switch { 2 => "==", 3 => "=", _ => "" };
-      var url = Encoding.UTF8.GetString(Convert.FromBase64String(base64));
-      return Uri.TryCreate(url, UriKind.Absolute, out targetUri!);
-    }
-    catch (FormatException)
-    {
-      return false;
+      if (value.CreatedAt < cutoff)
+        _sessions.TryRemove(key, out _);
     }
   }
 }

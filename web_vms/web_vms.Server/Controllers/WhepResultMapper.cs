@@ -29,7 +29,6 @@ internal static class WhepResultMapper
   public static IActionResult ToActionResult(this WhepDeleteResult result, ControllerBase controller) => result.Outcome switch
   {
     WhepProxyOutcome.InvalidToken => controller.BadRequest("invalid session token"),
-    WhepProxyOutcome.SsrfRejected => controller.BadRequest("session target is not a registered MediaMTX server"),
     WhepProxyOutcome.MediaMtxUnavailable => controller.StatusCode(StatusCodes.Status502BadGateway, "MediaMTX is unavailable"),
     _ => controller.StatusCode(result.StatusCode),
   };

@@ -80,7 +80,12 @@ if (!string.IsNullOrEmpty(squareFrontendOrigin))
 {
   builder.Services.AddCors(options =>
     options.AddPolicy(SquareCorsPolicy, policy =>
-      policy.WithOrigins(squareFrontendOrigin).AllowAnyHeader().AllowAnyMethod()));
+      policy.WithOrigins(squareFrontendOrigin).AllowAnyHeader().AllowAnyMethod()
+        // 'Location' isn't in the CORS-safelisted response headers, but the WHEP offer response
+        // carries the session-cleanup URL in it (see WhepResultMapper) — without this, cross-origin
+        // callers can't read it via resp.headers.get('Location') and WHEP sessions never get
+        // explicitly closed.
+        .WithExposedHeaders("Location")));
 }
 
 var http_port = RequirePort("WEB_VMS_PORT");

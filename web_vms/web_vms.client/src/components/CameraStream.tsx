@@ -78,6 +78,9 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl }) => {
         pc.onconnectionstatechange = null;
         pc.ontrack = null;
         pc.close();
+        // A WHEP session may have just been opened (sessionUrlRef set right before this check)
+        // for a connection attempt that's now stale — close it instead of leaking it on MediaMTX.
+        closeSession();
         return true;
       }
 
