@@ -120,7 +120,7 @@ void config_subscriber::reload_cameras()
     {
       logger::instance().info(std::format(
         "config_subscriber: removing camera '{}' (no longer on this server)", camera_info.camera_id));
-      m_cameras.remove_camera(camera_info.camera_id, error);
+      m_cameras.remove_camera(camera_info.camera_id);
     }
   }
 }

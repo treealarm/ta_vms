@@ -78,7 +78,7 @@ public:
     const std::string& camera_id,
     std::string& error);
 
-  bool remove_camera(const std::string& camera_id, std::string& error);
+  bool remove_camera(const std::string& camera_id);
 
   std::vector<camera_info> list_cameras() const;
   // Real-time per-stream state for all configured cameras (for debug entity-state publisher).

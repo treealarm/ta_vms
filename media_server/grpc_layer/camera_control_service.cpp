@@ -10,11 +10,10 @@ grpc::Status camera_control_service::RemoveCamera(
     grpc::ServerContext* /*context*/,
     const vms::control::SourceRequest* request,
     vms::control::OperationStatus* response) {
-  std::string error;
-  const bool success = m_manager.remove_camera(request->source_id(), error);
+  const bool success = m_manager.remove_camera(request->source_id());
 
   response->set_success(success);
-  response->set_message(success ? "camera removed" : error);
+  response->set_message(success ? "camera removed" : "camera not found");
   return grpc::Status::OK;
 }
 

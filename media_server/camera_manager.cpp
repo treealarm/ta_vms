@@ -320,7 +320,7 @@ bool camera_manager::set_camera_state(
   return ok;
 }
 
-bool camera_manager::remove_camera(const std::string& camera_id, std::string& /*error*/)
+bool camera_manager::remove_camera(const std::string& camera_id)
 {
   std::scoped_lock lock(m_mutex);
 
