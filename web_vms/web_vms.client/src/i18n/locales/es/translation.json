@@ -24,6 +24,7 @@
     "mediaMtx": "Media Routers",
     "onvif": "Eventos ONVIF",
     "onvifSettings": "Config ONVIF",
+    "analytics": "Analítica",
     "logs": "Registros",
     "goAdmin": "Admin",
     "goOperator": "Operador",
@@ -108,6 +109,32 @@
     "prePostSeg": "pre {{pre}}s · post {{post}}s · seg {{seg}}s",
     "seg": "seg {{seg}}s",
     "deleteTooltip": "Eliminar"
+  },
+  "analytics": {
+    "title": "Analítica de vídeo",
+    "noWatches": "Aún no hay watches de analítica.",
+    "addWatch": "Agregar watch",
+    "newWatch": "Nuevo watch",
+    "editWatch": "Editar watch",
+    "rtspUrl": "URL RTSP",
+    "credUser": "Usuario",
+    "credPass": "Contraseña",
+    "minConfidence": "Confianza mínima",
+    "sampleFps": "FPS de muestreo",
+    "cameras": "Cámaras",
+    "selectCameras": "Seleccionar cámaras",
+    "noCameras": "sin cámaras vinculadas",
+    "selectClasses": "Seleccionar clases",
+    "enabled": "Habilitado",
+    "disabled": "Deshabilitado",
+    "create": "Crear",
+    "deleteTooltip": "Eliminar",
+    "class": {
+      "person": "Persona",
+      "face": "Rostro",
+      "vehicle": "Vehículo",
+      "license_plate": "Matrícula"
+    }
   },
   "mediaMtx": {
     "title": "Media Routers",

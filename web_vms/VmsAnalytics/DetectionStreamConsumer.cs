@@ -59,10 +59,16 @@ public sealed class DetectionStreamConsumer(
     if (armedCameraIds.Count == 0)
       return;
 
+    logger.LogInformation(
+      "Detection: watch={WatchId} track={TrackId} kind={Kind} confidence={Confidence:F2} plate={PlateText} cameras={CameraIds}",
+      evt.WatchId, evt.TrackId, evt.Kind, evt.Confidence,
+      evt.HasRecognizedText ? evt.RecognizedText : "-",
+      string.Join(",", armedCameraIds));
+
     foreach (var cameraId in armedCameraIds)
     {
       await PersistAsync(cameraId, evt, detectedAt, ct);
-      await RetainAsync(cameraId, detectedAt, ct);
+      await RetainAsync(cameraId, evt, detectedAt, ct);
     }
 
     entityStatePublisher.Publish("detection", $"{evt.WatchId}/{evt.TrackId}", new
@@ -91,7 +97,7 @@ public sealed class DetectionStreamConsumer(
     await db.SaveChangesAsync(ct);
   }
 
-  private async Task RetainAsync(string cameraId, DateTime detectedAt, CancellationToken ct)
+  private async Task RetainAsync(string cameraId, DetectionEvent evt, DateTime detectedAt, CancellationToken ct)
   {
     try
     {
@@ -106,11 +112,13 @@ public sealed class DetectionStreamConsumer(
         TimeoutSeconds = RetainTimeoutSeconds,
       };
       var status = await fsClient.RetainEventAsync(request, cancellationToken: ct);
-      logger.LogInformation("Camera {CameraId}: RetainEvent returned {Status}", cameraId, status.Status);
+      logger.LogInformation(
+        "Camera {CameraId}: RetainEvent returned {Status} (kind={Kind}, confidence={Confidence:F2}, track={TrackId})",
+        cameraId, status.Status, evt.Kind, evt.Confidence, evt.TrackId);
     }
     catch (Exception ex)
     {
-      logger.LogWarning(ex, "RetainEvent failed for camera '{CameraId}'", cameraId);
+      logger.LogWarning(ex, "RetainEvent failed for camera '{CameraId}' (kind={Kind}, confidence={Confidence:F2})", cameraId, evt.Kind, evt.Confidence);
     }
   }
 

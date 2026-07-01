@@ -148,7 +148,7 @@
                 "POSTGRES_ANALYTICS_DB": "ta_analytics",
                 "ANALYTICS_DEBOUNCE_SECONDS": "10",
                 "ANALYTICS_RETAIN_TIMEOUT_SECONDS": "30",
-                "DAPR_ANALYTICS_WORKER_APP_ID": "",
+                "DAPR_ANALYTICS_WORKER_APP_ID": "analytics-worker",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },

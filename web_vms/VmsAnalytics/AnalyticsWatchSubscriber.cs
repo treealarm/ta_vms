@@ -25,6 +25,11 @@ public sealed class AnalyticsWatchSubscriber(
     return Task.CompletedTask;
   }
 
+  // Safety net for the case where the very first refresh at startup fails (e.g. VmsCfg's own
+  // Dapr sidecar isn't up yet) and no analytics-watch-changed/camera-state-changed event happens
+  // to arrive afterward — without this, the cache would stay empty forever.
+  private static readonly TimeSpan FallbackResyncInterval = TimeSpan.FromMinutes(2);
+
   private async Task RunAsync(CancellationToken ct)
   {
     await RefreshAndReconcileAsync(ct);
@@ -35,12 +40,22 @@ public sealed class AnalyticsWatchSubscriber(
         new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry));
       await Task.WhenAll(
         pubSubClient.SubscribeAsync(PubSubName, AnalyticsWatchChangedTopic, options, HandleAsync, ct),
-        pubSubClient.SubscribeAsync(PubSubName, CameraStateChangedTopic, options, HandleAsync, ct));
+        pubSubClient.SubscribeAsync(PubSubName, CameraStateChangedTopic, options, HandleAsync, ct),
+        FallbackResyncLoopAsync(ct));
     }
     catch (OperationCanceledException) { }
     catch (Exception ex)
     {
       logger.LogError(ex, "AnalyticsWatchSubscriber error");
+    }
+  }
+
+  private async Task FallbackResyncLoopAsync(CancellationToken ct)
+  {
+    while (!ct.IsCancellationRequested)
+    {
+      await Task.Delay(FallbackResyncInterval, ct);
+      await RefreshAndReconcileAsync(ct);
     }
   }
 
