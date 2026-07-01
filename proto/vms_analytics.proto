@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package vms.analytics;
+
+// VmsAnalytics' own outward-facing API (internal to vms_rec) — not to be confused with
+// the vendored analytics.proto contract copied from the video_a repository, which VmsAnalytics
+// consumes as a client (see web_vms/VmsAnalytics/proto/analytics.proto).
+service VmsAnalyticsService {
+  rpc ListDetections(ListDetectionsRequest) returns (ListDetectionsResponse);
+}
+
+enum DetectionKind {
+  DETECTION_KIND_UNSPECIFIED = 0;
+  PERSON = 1;
+  FACE = 2;
+  VEHICLE = 3;
+  LICENSE_PLATE = 4;
+}
+
+message Detection {
+  string camera_id = 1;
+  string watch_id = 2;
+  int64 track_id = 3;
+  DetectionKind kind = 4;
+  float confidence = 5;
+  google.protobuf.Timestamp detected_at = 6;
+  string crop_ref = 7;
+  optional string plate_text = 8;
+}
+
+message ListDetectionsRequest {
+  string camera_id = 1;
+  optional google.protobuf.Timestamp from_ts = 2;
+  optional google.protobuf.Timestamp to_ts = 3;
+  uint32 limit = 4;
+  optional string plate_text = 5;
+}
+
+message ListDetectionsResponse {
+  repeated Detection detections = 1;
+}

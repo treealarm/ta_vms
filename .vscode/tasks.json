@@ -154,6 +154,23 @@
             "problemMatcher": []
         },
         {
+            "label": "kill stale: vmsanalytics (F5)",
+            "detail": "Подчищает зависший daprd от прошлой сессии (app-id уникален) — процесс VmsAnalytics.dll не трогаем.",
+            "type": "shell",
+            "command": "pkill -f \"app-id vmsanalytics\" || true",
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmsanalytics",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "kill stale: vmsanalytics (F5)",
+                "dotnet:build",
+                "dapr:vmsanalytics:start"
+            ],
+            "problemMatcher": []
+        },
+        {
             "label": "kill stale: vmslogger (F5)",
             "detail": "Подчищает зависшие daprd/dotnet от прошлой (аварийно прерванной) сессии — иначе новый запуск не займёт порты.",
             "type": "shell",
@@ -355,6 +372,34 @@
             "args": [
                 "-lc",
                 "if [ -f /tmp/web_vms-dapr/vmsfs.pid ]; then kill \"$(cat /tmp/web_vms-dapr/vmsfs.pid)\" 2>/dev/null || true; rm -f /tmp/web_vms-dapr/vmsfs.pid; fi"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmsanalytics:start",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "pid_dir=/tmp/web_vms-dapr; name=vmsanalytics; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmsanalytics -app-port 5140 -components-path ${workspaceFolder}/init_files/dapr_components -app-protocol grpc -dapr-http-port 3610 -dapr-grpc-port 51011 -metrics-port 9200 -dapr-internal-grpc-port 49021 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmsanalytics:stop",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "if [ -f /tmp/web_vms-dapr/vmsanalytics.pid ]; then kill \"$(cat /tmp/web_vms-dapr/vmsanalytics.pid)\" 2>/dev/null || true; rm -f /tmp/web_vms-dapr/vmsanalytics.pid; fi"
             ],
             "presentation": {
                 "reveal": "silent",

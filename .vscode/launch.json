@@ -125,6 +125,34 @@
             }
         },
         {
+            "name": "VmsAnalytics (.NET)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "prepare:vmsanalytics",
+            "postDebugTask": "dapr:vmsanalytics:stop",
+            "program": "${workspaceFolder}/web_vms/VmsAnalytics/bin/Debug/net8.0/VmsAnalytics.dll",
+            "cwd": "${workspaceFolder}/web_vms/VmsAnalytics",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ANALYTICS_VMS_PORT": "5140",
+                "DAPR_HTTP_PORT": "3610",
+                "DAPR_GRPC_PORT": "51011",
+                "DAPR_CFG_APP_ID": "vmscfg",
+                "PUBSUB_NAME": "orderpubsub",
+                "APP_ID": "vmsanalytics",
+                "POSTGRES_HOST": "localhost",
+                "POSTGRES_PORT": "5432",
+                "POSTGRES_USER": "postgres",
+                "POSTGRES_PASSWORD": "postgres",
+                "POSTGRES_ANALYTICS_DB": "ta_analytics",
+                "ANALYTICS_DEBOUNCE_SECONDS": "10",
+                "ANALYTICS_RETAIN_TIMEOUT_SECONDS": "30",
+                "DAPR_ANALYTICS_WORKER_APP_ID": "",
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
+            }
+        },
+        {
             "name": "VmsLogger (.NET)",
             "type": "coreclr",
             "request": "launch",
@@ -321,6 +349,7 @@
                 "VmsOnvif (.NET)",
                 "VmsOnvifActors (.NET)",
                 "VmsFs (.NET)",
+                "VmsAnalytics (.NET)",
                 "VmsLogger (.NET)",
                 "Media Server (C++)",
                 "Backend (.NET)",

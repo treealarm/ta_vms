@@ -41,6 +41,10 @@ service CfgService {
 
   rpc GetCamState(GetCamStateRequest) returns (GetCamStateResponse);
   rpc SetCamState(SetCamStateRequest) returns (OperationStatus);
+
+  rpc ListAnalyticsWatches(ListAnalyticsWatchesRequest) returns (ListAnalyticsWatchesResponse);
+  rpc UpsertAnalyticsWatch(UpsertAnalyticsWatchRequest) returns (OperationStatus);
+  rpc RemoveAnalyticsWatch(RemoveAnalyticsWatchRequest) returns (OperationStatus);
 }
 
 service StorageService {
@@ -342,4 +346,37 @@ message GetCamStateResponse {
 message SetCamStateRequest {
   string camera_id = 1;
   bool   armed     = 2;
+}
+
+message AnalyticsWatchCameraLink {
+  string camera_id = 1;
+  bool   armed     = 2;  // ignored on write; populated from camera_states.armed on read
+}
+
+message AnalyticsWatch {
+  string id              = 1;  // empty in UpsertAnalyticsWatchRequest => create new
+  string rtsp_url         = 2;
+  optional string cred_user = 3;
+  optional string cred_pass = 4;
+  bool   enabled          = 5;
+  repeated string classes = 6;  // "person"/"face"/"vehicle"/"license_plate"
+  float  min_confidence   = 7;
+  uint32 sample_fps       = 8;
+  repeated AnalyticsWatchCameraLink cameras = 9;
+}
+
+message ListAnalyticsWatchesRequest {
+  optional string camera_id = 1;
+}
+
+message ListAnalyticsWatchesResponse {
+  repeated AnalyticsWatch watches = 1;
+}
+
+message UpsertAnalyticsWatchRequest {
+  AnalyticsWatch watch = 1;
+}
+
+message RemoveAnalyticsWatchRequest {
+  string id = 1;
 }

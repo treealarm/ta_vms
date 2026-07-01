@@ -811,4 +811,91 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     cmd.Parameters.AddWithValue(armed);
     await cmd.ExecuteNonQueryAsync(ct);
   }
+
+  // ── Analytics watches (RTSP source -> N cameras, see docs/... plan) ──────
+
+  public async Task<List<AnalyticsWatch>> ListAnalyticsWatchesAsync(string? cameraId, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var query = db.AnalyticsWatches.Include(w => w.Cameras).AsQueryable();
+    if (!string.IsNullOrWhiteSpace(cameraId))
+      query = query.Where(w => w.Cameras.Any(c => c.CameraId == cameraId));
+
+    var rows = await query.OrderBy(w => w.Id).ToListAsync(ct);
+    var result = new List<AnalyticsWatch>();
+    foreach (var row in rows)
+      result.Add(await ToAnalyticsWatchProtoAsync(row, ct));
+    return result;
+  }
+
+  public async Task<AnalyticsWatch> UpsertAnalyticsWatchAsync(AnalyticsWatch watch, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+    DbAnalyticsWatch entity;
+    if (Guid.TryParse(watch.Id, out var existingId))
+    {
+      entity = await db.AnalyticsWatches.Include(w => w.Cameras).FirstOrDefaultAsync(w => w.Id == existingId, ct)
+               ?? db.AnalyticsWatches.Add(new DbAnalyticsWatch { Id = existingId }).Entity;
+    }
+    else
+    {
+      entity = db.AnalyticsWatches.Add(new DbAnalyticsWatch { Id = Guid.NewGuid() }).Entity;
+    }
+
+    entity.RtspUrl = watch.RtspUrl;
+    entity.CredUser = watch.HasCredUser ? watch.CredUser : null;
+    entity.CredPass = watch.HasCredPass ? watch.CredPass : null;
+    entity.Enabled = watch.Enabled;
+    entity.Classes = string.Join(',', watch.Classes);
+    entity.MinConfidence = watch.MinConfidence;
+    entity.SampleFps = (int)watch.SampleFps;
+
+    var keepCameraIds = watch.Cameras.Select(c => c.CameraId).ToHashSet();
+    entity.Cameras.RemoveAll(c => !keepCameraIds.Contains(c.CameraId));
+    var existingCameraIds = entity.Cameras.Select(c => c.CameraId).ToHashSet();
+    foreach (var cameraId in keepCameraIds)
+    {
+      if (!existingCameraIds.Contains(cameraId))
+        entity.Cameras.Add(new DbAnalyticsWatchCamera { WatchId = entity.Id, CameraId = cameraId });
+    }
+
+    await db.SaveChangesAsync(ct);
+    return await ToAnalyticsWatchProtoAsync(entity, ct);
+  }
+
+  public async Task<bool> RemoveAnalyticsWatchAsync(string id, CancellationToken ct)
+  {
+    if (!Guid.TryParse(id, out var guid)) return false;
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var watch = await db.AnalyticsWatches.FindAsync([guid], ct);
+    if (watch == null) return false;
+    db.AnalyticsWatches.Remove(watch);
+    await db.SaveChangesAsync(ct);
+    return true;
+  }
+
+  private async Task<AnalyticsWatch> ToAnalyticsWatchProtoAsync(DbAnalyticsWatch row, CancellationToken ct)
+  {
+    var proto = new AnalyticsWatch
+    {
+      Id             = row.Id.ToString(),
+      RtspUrl        = row.RtspUrl,
+      Enabled        = row.Enabled,
+      MinConfidence  = row.MinConfidence,
+      SampleFps      = (uint)row.SampleFps,
+    };
+    if (row.CredUser is not null) proto.CredUser = row.CredUser;
+    if (row.CredPass is not null) proto.CredPass = row.CredPass;
+    proto.Classes.AddRange(row.Classes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    foreach (var camera in row.Cameras)
+    {
+      proto.Cameras.Add(new AnalyticsWatchCameraLink
+      {
+        CameraId = camera.CameraId,
+        Armed    = await GetCameraArmedAsync(camera.CameraId, ct),
+      });
+    }
+    return proto;
+  }
 }

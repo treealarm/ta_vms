@@ -1,1 +1,2 @@
 CREATE DATABASE ta_fs;
+CREATE DATABASE ta_analytics;
