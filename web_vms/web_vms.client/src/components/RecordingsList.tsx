@@ -1,20 +1,21 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  alpha, Box, CircularProgress, IconButton, List, ListItemButton, ListItemText,
+  alpha, Box, Button, CircularProgress, IconButton, List, ListItemButton, ListItemText,
   ListSubheader, MenuItem, Popover, Select, Stack, Tooltip, Typography, useTheme,
 } from '@mui/material'
 import NavigateBeforeIcon from '@mui/icons-material/NavigateBefore'
 import NavigateNextIcon from '@mui/icons-material/NavigateNext'
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import LayersIcon from '@mui/icons-material/Layers'
-import { type RecordingDto, type RecordingRangeDto } from '../dto/dtos'
-import { fetchRecordingRanges } from '../store/fsSlice'
+import { type RecordingCoverageGranularity, type RecordingDto, type RecordingRangeDto } from '../dto/dtos'
+import { fetchRecordingCoverage, fetchRecordingRanges, recordingCoverageKey } from '../store/fsSlice'
 import { useAppDispatch, useAppSelector } from '../store'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
-import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
+import { DateCalendar } from '@mui/x-date-pickers/DateCalendar'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 import dayjs, { Dayjs } from 'dayjs'
+import DayHourTimeline from './DayHourTimeline'
 
 function fmtTime(iso: string) {
   const d = new Date(iso)
@@ -69,7 +70,8 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
   const [loaded, setLoaded] = useState(false)
   const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null)
   const [streamFilter, setStreamFilter] = useState('')
-  const acceptRef = useRef<number | null>(null)
+  const [calendarYear, setCalendarYear] = useState<Dayjs>(dayjs())
+  const [calendarMonth, setCalendarMonth] = useState<Dayjs>(dayjs())
 
   const theme = useTheme()
   const W = theme.palette.common.white
@@ -90,8 +92,6 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
       setLoaded(false)
     }
   }, [open, timestamp])
-
-  useEffect(() => () => { if (acceptRef.current) clearTimeout(acceptRef.current) }, [])
 
   useEffect(() => {
     if (!open || !queryTime || loaded) return
@@ -130,6 +130,27 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
     if (playbackStartTime) setSelected(playbackStartTime)
   }, [playbackStartTime])
 
+  // After a jump (calendar/timeline pick, prev/next, initial open) the freshly loaded
+  // list is centered on displayTime, but renders with the scroll position at the top —
+  // bring the clip nearest to displayTime into view instead of leaving it off-screen.
+  const listRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!loaded || filteredData.length === 0) return
+    const target = new Date(displayTime).getTime()
+    let nearestStart: string | undefined
+    let minDelta = Infinity
+    for (const r of filteredData) {
+      const start = r.recordings[0]?.startTime
+      if (!start) continue
+      const delta = Math.abs(new Date(start).getTime() - target)
+      if (delta < minDelta) { minDelta = delta; nearestStart = start }
+    }
+    if (!nearestStart) return
+    setSelected(nearestStart)
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-start="${CSS.escape(nearestStart)}"]`)
+    el?.scrollIntoView({ block: 'center' })
+  }, [loaded, filteredData, displayTime])
+
   const requestAt = (time: string) => {
     const d = dayjs(time)
     if (!d.isValid()) return
@@ -138,11 +159,53 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
     onTimeChange?.(iso)
   }
 
-  const handleAccept = (value: Dayjs | null) => {
-    if (!value) return
-    const iso = value.toISOString()
-    if (acceptRef.current) clearTimeout(acceptRef.current)
-    acceptRef.current = window.setTimeout(() => { requestAt(iso); onTimeChange?.(iso) }, 1500)
+  const commitPickerTime = (value: Dayjs) => {
+    requestAt(value.toISOString())
+    setPickerAnchor(null)
+  }
+
+  // Archive coverage (which years/months/days actually have recordings), used to
+  // grey out empty cells in the jump-to-date calendar instead of showing every day as pickable.
+  const coverageByKey = useAppSelector((s) => s.fs.recordingCoverageByKey)
+
+  // Always refetch (no "skip if cached" check): recordings keep arriving in near
+  // real time, so a stale cached set would keep greying out a day/month/year that
+  // just got its first clip. The query itself is a cheap indexed DISTINCT.
+  const loadCoverage = (granularity: RecordingCoverageGranularity, fromUtc?: string, toUtc?: string) => {
+    void dispatch(fetchRecordingCoverage({ cameraId, granularity, fromUtc, toUtc }))
+  }
+
+  const yearBuckets = useMemo(
+    () => new Set(coverageByKey[recordingCoverageKey({ cameraId, granularity: 'Year' })]?.buckets ?? []),
+    [coverageByKey, cameraId]
+  )
+  const monthBuckets = useMemo(() => {
+    const fromUtc = calendarYear.startOf('year').toISOString()
+    return new Set(coverageByKey[recordingCoverageKey({ cameraId, granularity: 'Month', fromUtc })]?.buckets ?? [])
+  }, [coverageByKey, cameraId, calendarYear])
+  const dayBuckets = useMemo(() => {
+    const fromUtc = calendarMonth.startOf('month').toISOString()
+    return new Set(coverageByKey[recordingCoverageKey({ cameraId, granularity: 'Day', fromUtc })]?.buckets ?? [])
+  }, [coverageByKey, cameraId, calendarMonth])
+
+  useEffect(() => {
+    if (!pickerAnchor) return
+    const t = pickerTime ?? dayjs()
+    setCalendarYear(t)
+    setCalendarMonth(t)
+    loadCoverage('Year')
+    loadCoverage('Month', t.startOf('year').toISOString(), t.startOf('year').add(1, 'year').toISOString())
+    loadCoverage('Day', t.startOf('month').toISOString(), t.startOf('month').add(1, 'month').toISOString())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickerAnchor])
+
+  const handleCalendarYearChange = (year: Dayjs) => {
+    setCalendarYear(year)
+    loadCoverage('Month', year.startOf('year').toISOString(), year.startOf('year').add(1, 'year').toISOString())
+  }
+  const handleCalendarMonthChange = (month: Dayjs) => {
+    setCalendarMonth(month)
+    loadCoverage('Day', month.startOf('month').toISOString(), month.startOf('month').add(1, 'month').toISOString())
   }
 
   const handlePrev = () => {
@@ -221,7 +284,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
       )}
 
       {/* Clip list */}
-      <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <Box ref={listRef} sx={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', mt: 1.5 }}>
             <CircularProgress size={18} sx={dark ? { color: alpha(W, 0.5) } : {}} />
@@ -242,7 +305,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
               const isSelected = selected === first.startTime
 
               return (
-                <div key={`${first.startTime}:${last?.endTime ?? ''}`}>
+                <div key={`${first.startTime}:${last?.endTime ?? ''}`} data-start={first.startTime}>
                   {showDate && (
                     <ListSubheader
                       disableSticky
@@ -316,24 +379,38 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
         </Box>
         <Box sx={{ p: 1 }}>
           <LocalizationProvider dateAdapter={AdapterDayjs}>
-            <DateTimePicker
+            <DateCalendar
               value={pickerTime}
-              onChange={(v) => setPickerTime(v)}
-              onAccept={(v) => { handleAccept(v); setPickerAnchor(null) }}
-              timeSteps={{ minutes: 1, seconds: 1 }}
-              views={['day', 'hours', 'minutes', 'seconds']}
-              format="YYYY-MM-DD HH:mm:ss"
+              onChange={(v) => v && setPickerTime(v)}
+              onYearChange={handleCalendarYearChange}
+              onMonthChange={handleCalendarMonthChange}
+              views={['year', 'month', 'day']}
+              openTo="day"
               reduceAnimations
-              slotProps={{
-                textField: {
-                  size: 'small',
-                  autoFocus: true,
-                  sx: { '& input': { fontSize: '0.8rem', py: 0.6 } },
-                },
-                actionBar: { actions: ['accept', 'cancel'] },
-              }}
+              shouldDisableYear={(y) => !yearBuckets.has(y.format('YYYY'))}
+              shouldDisableMonth={(m) => !monthBuckets.has(m.format('YYYY-MM'))}
+              shouldDisableDate={(d) => !dayBuckets.has(d.format('YYYY-MM-DD'))}
             />
           </LocalizationProvider>
+
+          {pickerTime && (
+            <Box sx={{ px: 0.5, pt: 0.25 }}>
+              <DayHourTimeline
+                cameraId={cameraId}
+                day={pickerTime}
+                selectedTime={pickerTime}
+                onPick={commitPickerTime}
+                dark={dark}
+              />
+            </Box>
+          )}
+
+          <Stack direction="row" justifyContent="flex-end" spacing={0.5} sx={{ px: 0.5, pt: 0.75 }}>
+            <Button size="small" onClick={() => setPickerAnchor(null)}>{t('common.cancel')}</Button>
+            <Button size="small" variant="contained" onClick={() => pickerTime && commitPickerTime(pickerTime)}>
+              {t('common.apply')}
+            </Button>
+          </Stack>
         </Box>
       </Popover>
     </Box>

@@ -41,6 +41,7 @@ public partial class ArchController(
     [FromQuery] string cameraId,
     [FromQuery] string startClipUid,
     [FromQuery] uint count = 1,
+    [FromQuery] string? from = null,
     CancellationToken ct = default)
   {
     cameraId = cameraId?.Trim() ?? "";
@@ -51,7 +52,15 @@ public partial class ArchController(
     if (!Guid.TryParse(clipUid, out _))
       return BadRequest(new { error = "startClipUid must be a valid UUID" });
 
-    var result = await hlsService.BuildFilesPlaylistAsync(cameraId, clipUid, count, ct);
+    DateTime? fromDt = null;
+    if (!string.IsNullOrWhiteSpace(from))
+    {
+      if (!DateTime.TryParse(from, null, DateTimeStyles.RoundtripKind, out var parsed))
+        return BadRequest(new { error = "from must be a parseable date/time" });
+      fromDt = ToUtc(parsed);
+    }
+
+    var result = await hlsService.BuildFilesPlaylistAsync(cameraId, clipUid, count, ct, fromDt);
     return PlaylistResult(result);
   }
 

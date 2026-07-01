@@ -18,6 +18,27 @@ const BTN = {
   '&:hover': { color: W, bgcolor: alpha(W, 0.12) },
 } as const
 
+function isWithinRange(iso: string, range: RecordingRangeDto) {
+  const first = range.recordings[0]
+  const last = range.recordings[range.recordings.length - 1]
+  const end = last?.endTime ?? last?.startTime
+  if (!first?.startTime || !end) return false
+  const t = new Date(iso).getTime()
+  return t >= new Date(first.startTime).getTime() && t <= new Date(end).getTime()
+}
+
+function buildPlaylistUrl(camId: string, range: RecordingRangeDto | undefined, seekIso?: string | null) {
+  const firstClip = range?.recordings[0]
+  if (!camId || !firstClip?.clipUid) return null
+  const q = new URLSearchParams({
+    cameraId: camId,
+    startClipUid: firstClip.clipUid,
+    count: String(range!.recordings.length),
+  })
+  if (seekIso && isWithinRange(seekIso, range!)) q.set('from', seekIso)
+  return `/api/arch/hls/from-files.m3u8?${q.toString()}`
+}
+
 type Props = { cameraId: string }
 
 export default function ArchiveHlsStreamCard({ cameraId }: Props) {
@@ -28,39 +49,36 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
   const [anchorTs, setAnchorTs] = useState(() => new Date().toISOString())
   const [ranges, setRanges] = useState<RecordingRangeDto[]>([])
   const [startIndex, setStartIndex] = useState(0)
+  // Ranges are no longer capped to ~1 minute server-side (see ClipStorage.cs), so a single
+  // range can now span an entire uninterrupted recording session. Clicking a clip deep inside
+  // such a range must seek the player to that exact clip, not just to the range's first clip.
+  const [seekTarget, setSeekTarget] = useState<{ iso: string; filePath: string } | null>(null)
   const rangesRef = useRef<RecordingRangeDto[]>([])
   rangesRef.current = ranges
 
   const onRangesChange = useCallback((r: RecordingRangeDto[]) => {
     setRanges(r)
     setStartIndex(0)
+    setSeekTarget(null)
   }, [])
 
   const handleSelectRecording = (rec: RecordingDto) => {
-    const i = ranges.findIndex(
-      (x) =>
-        x.recordings[0]?.filePath === rec.filePath &&
-        x.recordings[0]?.startTime === rec.startTime
+    const i = ranges.findIndex((x) =>
+      x.recordings.some((r) => r.filePath === rec.filePath && r.startTime === rec.startTime)
     )
-    if (i >= 0) setStartIndex(i)
+    if (i < 0) return
+    setStartIndex(i)
+    setSeekTarget({ iso: rec.startTime, filePath: rec.filePath })
   }
 
-  const playlistUrl = useMemo(() => {
-    if (ranges.length === 0 || startIndex < 0 || startIndex >= ranges.length) return null
-    const range = ranges[startIndex]
-    const firstClip = range.recordings[0]
-    if (!cameraId || !firstClip?.clipUid) return null
-    const q = new URLSearchParams({
-      cameraId,
-      startClipUid: firstClip.clipUid,
-      count: String(range.recordings.length),
-    })
-    return `/api/arch/hls/from-files.m3u8?${q.toString()}`
-  }, [cameraId, ranges, startIndex])
+  const playlistUrl = useMemo(
+    () => buildPlaylistUrl(cameraId, ranges[startIndex], seekTarget?.iso),
+    [cameraId, ranges, startIndex, seekTarget]
+  )
 
-  const rangeFilePath = ranges[startIndex]?.recordings[0]?.filePath
+  const rangeFilePath = seekTarget?.filePath ?? ranges[startIndex]?.recordings[0]?.filePath
 
-  const currentClipTime = ranges[startIndex]?.recordings[0]?.startTime
+  const currentClipTime = seekTarget?.iso ?? ranges[startIndex]?.recordings[0]?.startTime
   const formattedTime = currentClipTime
     ? new Date(currentClipTime).toLocaleString(undefined, {
         year: 'numeric', month: '2-digit', day: '2-digit',
@@ -74,13 +92,29 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
     if (!video || !playlistUrl) return
 
     let hls: Hls | null = null
+    let prefetched = false
     const tryPlay = () => void video.play().catch(() => {})
     const onFatal = (detail: string) => setHlsError(detail)
-    const advanceToNextClip = () =>
+    const advanceToNextClip = () => {
+      setSeekTarget(null)
       setStartIndex((i) => {
         const list = rangesRef.current
         return i < list.length - 1 ? i + 1 : i
       })
+    }
+    // The next range's manifest is cheap to warm up (server marks it
+    // `Cache-Control: private, max-age=60`), so firing one extra GET a few
+    // seconds before this range ends lets the browser serve it from cache
+    // instead of paying for clip lookup + sidx parsing right as we switch.
+    // Best-effort only: on failure the normal lazy load on `ended` still runs.
+    const PREFETCH_LEAD_SECONDS = 5
+    const onTimeUpdate = () => {
+      if (prefetched || !Number.isFinite(video.duration)) return
+      if (video.duration - video.currentTime > PREFETCH_LEAD_SECONDS) return
+      prefetched = true
+      const nextUrl = buildPlaylistUrl(cameraId, rangesRef.current[startIndex + 1])
+      if (nextUrl) void fetch(nextUrl).catch(() => {})
+    }
 
     if (Hls.isSupported()) {
       hls = new Hls({ enableWorker: true, lowLatencyMode: false, xhrSetup: authXhrSetup })
@@ -107,8 +141,10 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
     }
 
     video.addEventListener('ended', advanceToNextClip)
+    video.addEventListener('timeupdate', onTimeUpdate)
     return () => {
       video.removeEventListener('ended', advanceToNextClip)
+      video.removeEventListener('timeupdate', onTimeUpdate)
       video.onerror = null
       video.removeEventListener('canplay', tryPlay)
       video.removeEventListener('loadeddata', tryPlay)
@@ -116,7 +152,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
       video.removeAttribute('src')
       video.load()
     }
-  }, [playlistUrl])
+  }, [playlistUrl, cameraId, startIndex])
 
   return (
     <Box sx={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
@@ -213,7 +249,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
             cameraId={cameraId}
             timestamp={anchorTs}
             filePath={rangeFilePath}
-            playbackStartTime={ranges[startIndex]?.recordings[0]?.startTime}
+            playbackStartTime={currentClipTime}
             onSelect={handleSelectRecording}
             onTimeChange={setAnchorTs}
             onRangesChange={onRangesChange}

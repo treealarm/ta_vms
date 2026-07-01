@@ -1,3 +1,10 @@
+# Self-contained: own `redis`, own (default, isolated) docker network, no `profiles:`
+# gating — every service starts on a plain `docker compose up`, independent of
+# Square/multitenant_admin. Serves two roles: (1) the push target for
+# ../push-images.sh / ../push-images.ps1 (pulls `treealarm/...` images built from
+# those scripts), and (2) a ready-to-run standalone/demo deployment — see README.md
+# in this directory. Square integration stays off by default (KEYCLOAK_URL,
+# SQUARE_INTEGRATION_SINK_APP_ID empty in .env) per CLAUDE.md's env-gating rule.
 x-data-volume: &data-volume
   - ./data:/data
 
