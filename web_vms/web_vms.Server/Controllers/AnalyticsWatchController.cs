@@ -1,6 +1,7 @@
 using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Vms.Analytics;
 using Vms.Cfg;
 using web_vms.Authentication;
 using web_vms.Types.Dto;
@@ -10,7 +11,9 @@ namespace web_vms;
 [ApiController]
 [Route("api/analytics-watches")]
 [Authorize(Policy = AuthPolicies.AdminOnly)]
-public class AnalyticsWatchController(CfgService.CfgServiceClient _cfgClient) : ControllerBase
+public class AnalyticsWatchController(
+  CfgService.CfgServiceClient _cfgClient,
+  VmsAnalyticsService.VmsAnalyticsServiceClient _analyticsClient) : ControllerBase
 {
   private static readonly TimeSpan CfgCallTimeout = TimeSpan.FromSeconds(5);
 
@@ -45,26 +48,66 @@ public class AnalyticsWatchController(CfgService.CfgServiceClient _cfgClient) : 
     return Ok(new ApiResponse(response.Success, response.Message));
   }
 
+  // Debug feed: recent detections from VmsAnalytics' in-memory ring buffer (bbox + optional JPEG).
+  [HttpGet("activity")]
+  public async Task<IActionResult> GetActivity([FromQuery] int? limit, CancellationToken ct)
+  {
+    var response = await _analyticsClient.GetAnalyticsActivityAsync(
+      new GetAnalyticsActivityRequest { Limit = (uint)Math.Clamp(limit ?? 50, 1, 100) }, CfgOptions(ct));
+
+    var events = response.Events
+      .Select(e => new AnalyticsActivityEntryDto
+      {
+        CameraId       = e.CameraId,
+        TrackId        = e.TrackId,
+        Kind           = KindToString(e.Kind),
+        Confidence     = e.Confidence,
+        BboxX          = e.Bbox?.X ?? 0,
+        BboxY          = e.Bbox?.Y ?? 0,
+        BboxWidth      = e.Bbox?.Width ?? 0,
+        BboxHeight     = e.Bbox?.Height ?? 0,
+        DetectedAt     = e.DetectedAt.ToDateTime(),
+        PlateText      = e.HasPlateText ? e.PlateText : null,
+        CropJpegBase64 = e.CropJpeg.IsEmpty ? null : Convert.ToBase64String(e.CropJpeg.ToByteArray()),
+        Persisted      = e.Persisted,
+      })
+      .OrderByDescending(e => e.DetectedAt)
+      .ToList();
+
+    return Ok(events);
+  }
+
+  private static string KindToString(DetectionKind kind) => kind switch
+  {
+    DetectionKind.Person => "person",
+    DetectionKind.Face => "face",
+    DetectionKind.Vehicle => "vehicle",
+    DetectionKind.LicensePlate => "license_plate",
+    _ => "unknown",
+  };
+
   private static AnalyticsWatchDto ToDto(AnalyticsWatch w) => new()
   {
-    CameraId      = w.CameraId,
-    StreamName    = w.StreamName,
-    Enabled       = w.Enabled,
-    Classes       = [.. w.Classes],
-    MinConfidence = w.MinConfidence,
-    SampleFps     = w.SampleFps,
-    Armed         = w.Armed,
+    CameraId         = w.CameraId,
+    StreamName       = w.StreamName,
+    Enabled          = w.Enabled,
+    Classes          = [.. w.Classes],
+    MinConfidence    = w.MinConfidence,
+    SampleFps        = w.SampleFps,
+    Armed            = w.Armed,
+    AttachDebugCrops = w.AttachDebugCrops,
   };
 
   private static AnalyticsWatch ToProto(AnalyticsWatchDto dto)
   {
     var watch = new AnalyticsWatch
     {
-      CameraId      = dto.CameraId,
-      StreamName    = dto.StreamName,
-      Enabled       = dto.Enabled,
-      MinConfidence = dto.MinConfidence,
-      SampleFps     = dto.SampleFps,
+      CameraId         = dto.CameraId,
+      StreamName       = dto.StreamName,
+      Enabled          = dto.Enabled,
+      MinConfidence    = dto.MinConfidence,
+      SampleFps        = dto.SampleFps,
+      AttachDebugCrops = dto.AttachDebugCrops,
     };
     watch.Classes.AddRange(dto.Classes);
     return watch;

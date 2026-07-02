@@ -2,10 +2,12 @@ import { useCallback, useEffect, useImperativeHandle, useState } from 'react'
 import {
   Box,
   Button,
+  Checkbox,
   Chip,
   Divider,
   FormControl,
   FormControlLabel,
+  FormGroup,
   IconButton,
   InputLabel,
   List,
@@ -19,7 +21,6 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import type { SelectChangeEvent } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import { useTranslation } from 'react-i18next'
@@ -32,11 +33,12 @@ export type AnalyticsWatchesHandle = { applyIfDirty: () => Promise<boolean> }
 const EMPTY_WATCH: AnalyticsWatchDto = {
   cameraId: '',
   streamName: '',
-  enabled: false,
+  enabled: true,
   classes: ['person'],
   minConfidence: 0.5,
   sampleFps: 1,
   armed: false,
+  attachDebugCrops: false,
 }
 
 export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<AnalyticsWatchesHandle> }) {
@@ -130,13 +132,33 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
     }
   }
 
+  // Cameras without an ONVIF subscription have no armed toggle anywhere else in the UI, and
+  // analytics only runs on armed cameras — so guard state is controllable right from this list.
+  const setArmed = async (cameraId: string, armed: boolean) => {
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await fetch(`/api/cameras/${encodeURIComponent(cameraId)}/state`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ armed }),
+      })
+      if (!r.ok) { setError(`HTTP ${r.status}`); return }
+      await load()
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const setField = <K extends keyof AnalyticsWatchDto>(key: K, value: AnalyticsWatchDto[K]) =>
     setEditing((prev) => prev ? { ...prev, [key]: value } : null)
 
-  const handleClassesChange = (e: SelectChangeEvent<AnalyticsDetectionClass[]>) => {
-    const value = e.target.value
-    setField('classes', typeof value === 'string' ? value.split(',') as AnalyticsDetectionClass[] : value)
-  }
+  const toggleClass = (c: AnalyticsDetectionClass, checked: boolean) =>
+    setEditing((prev) => prev
+      ? { ...prev, classes: checked ? [...prev.classes, c] : prev.classes.filter((x) => x !== c) }
+      : null)
 
   const handleCameraChange = (cameraId: string) => {
     const camera = allCameras.find((c) => c.cameraId === cameraId)
@@ -164,7 +186,16 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
             <ListItem
               disablePadding
               secondaryAction={
-                <Stack direction="row" spacing={0.5}>
+                <Stack direction="row" spacing={0.5} alignItems="center">
+                  <Tooltip title={w.armed ? t('analytics.armedTooltip') : t('analytics.disarmedTooltip')}>
+                    <Switch
+                      size="small"
+                      checked={w.armed}
+                      onChange={(e) => void setArmed(w.cameraId, e.target.checked)}
+                      disabled={busy}
+                      sx={{ '& .MuiSwitch-switchBase.Mui-checked': { color: '#ff9800' }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#ff9800' } }}
+                    />
+                  </Tooltip>
                   <IconButton size="small" onClick={() => startEdit(w)} disabled={busy}>
                     <EditIcon fontSize="small" />
                   </IconButton>
@@ -184,8 +215,8 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
                   <Stack direction="row" spacing={0.5} alignItems="center" component="span">
                     <span>{cameraName(w.cameraId)}</span>
                     <Chip label={w.enabled ? t('analytics.enabled') : t('analytics.disabled')} size="small" color={w.enabled ? 'primary' : 'default'} variant="outlined" />
-                    {!w.armed && (
-                      <Chip label={t('analytics.notArmed')} size="small" variant="outlined" />
+                    {w.enabled && !w.armed && (
+                      <Chip label={t('analytics.notArmed')} size="small" color="warning" variant="outlined" />
                     )}
                   </Stack>
                 }
@@ -249,19 +280,24 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
             </Select>
           </FormControl>
 
-          <Select
-            multiple
-            value={editing.classes}
-            onChange={handleClassesChange}
-            size="small"
-            displayEmpty
-            renderValue={(selected) => selected.map(classLabel).join(', ') || t('analytics.selectClasses')}
-            sx={{ maxWidth: 400 }}
-          >
-            {ANALYTICS_DETECTION_CLASSES.map((c) => (
-              <MenuItem key={c} value={c}>{classLabel(c)}</MenuItem>
-            ))}
-          </Select>
+          <Box>
+            <Typography variant="caption" color="text.secondary">{t('analytics.classes')}</Typography>
+            <FormGroup row>
+              {ANALYTICS_DETECTION_CLASSES.map((c) => (
+                <FormControlLabel
+                  key={c}
+                  control={
+                    <Checkbox
+                      size="small"
+                      checked={editing.classes.includes(c)}
+                      onChange={(e) => toggleClass(c, e.target.checked)}
+                    />
+                  }
+                  label={<Typography variant="body2">{classLabel(c)}</Typography>}
+                />
+              ))}
+            </FormGroup>
+          </Box>
 
           <Stack direction="row" spacing={1}>
             <TextField
@@ -295,12 +331,23 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
             label={<Typography variant="body2">{t('analytics.enabled')}</Typography>}
           />
 
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={editing.attachDebugCrops}
+                onChange={(e) => setField('attachDebugCrops', e.target.checked)}
+              />
+            }
+            label={<Typography variant="body2">{t('analytics.debugCrops')}</Typography>}
+          />
+
           {error && (
             <Typography variant="caption" color="error">{error}</Typography>
           )}
 
           <Stack direction="row" spacing={1}>
-            <Button type="submit" variant="outlined" size="small" disabled={busy || !editing.cameraId || !editing.streamName}>
+            <Button type="submit" variant="outlined" size="small" disabled={busy || !editing.cameraId || !editing.streamName || editing.classes.length === 0}>
               {isNew ? t('analytics.create') : t('common.apply')}
             </Button>
             <Button size="small" onClick={cancel} disabled={busy}>{t('common.cancel')}</Button>

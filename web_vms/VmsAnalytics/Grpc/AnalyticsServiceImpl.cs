@@ -2,12 +2,41 @@ using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
 using Vms.Analytics;
+// The local ring-buffer record VmsAnalytics.AnalyticsActivityEntry shadows the proto message
+// of the same name inside this namespace — alias the proto one explicitly.
+using ProtoActivityEntry = Vms.Analytics.AnalyticsActivityEntry;
 
 namespace VmsAnalytics;
 
-public sealed class AnalyticsServiceImpl(IDbContextFactory<AnalyticsDbContext> dbFactory)
+public sealed class AnalyticsServiceImpl(
+  IDbContextFactory<AnalyticsDbContext> dbFactory,
+  AnalyticsActivityLog activityLog)
   : VmsAnalyticsService.VmsAnalyticsServiceBase
 {
+  public override Task<GetAnalyticsActivityResponse> GetAnalyticsActivity(
+    GetAnalyticsActivityRequest request, ServerCallContext context)
+  {
+    var limit = request.Limit > 0 ? (int)request.Limit : 50;
+    var response = new GetAnalyticsActivityResponse();
+    foreach (var e in activityLog.GetRecent(limit))
+    {
+      var entry = new ProtoActivityEntry
+      {
+        CameraId   = e.CameraId,
+        TrackId    = e.TrackId,
+        Kind       = ParseKind(e.Kind),
+        Confidence = e.Confidence,
+        Bbox       = new BoundingBox { X = e.BboxX, Y = e.BboxY, Width = e.BboxWidth, Height = e.BboxHeight },
+        DetectedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.DetectedAt, DateTimeKind.Utc)),
+        CropJpeg   = Google.Protobuf.ByteString.CopyFrom(e.CropJpeg),
+        Persisted  = e.Persisted,
+      };
+      if (e.PlateText is not null) entry.PlateText = e.PlateText;
+      response.Events.Add(entry);
+    }
+    return Task.FromResult(response);
+  }
+
   public override async Task<ListDetectionsResponse> ListDetections(
     ListDetectionsRequest request, ServerCallContext context)
   {

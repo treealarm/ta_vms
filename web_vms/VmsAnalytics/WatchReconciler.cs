@@ -23,6 +23,9 @@ public sealed class WatchReconciler(
   private static readonly TimeSpan KeepAliveInterval = TimeSpan.FromSeconds(30);
 
   private readonly ConcurrentDictionary<string, AnalyticsWatch> _activeWatches = new();
+  // Cameras already warned about "enabled but not armed" — warn once per transition, not on
+  // every reconcile pass (reconciles also fire on a periodic fallback timer).
+  private readonly ConcurrentDictionary<string, bool> _warnedNotArmed = new();
   private readonly CancellationTokenSource _cts = new();
 
   public Task StartAsync(CancellationToken cancellationToken)
@@ -44,6 +47,18 @@ public sealed class WatchReconciler(
       var shouldRun = watch.Enabled && watch.Armed;
       var isRunning = _activeWatches.ContainsKey(cameraId);
 
+      if (watch.Enabled && !watch.Armed)
+      {
+        if (_warnedNotArmed.TryAdd(cameraId, true))
+          logger.LogWarning(
+            "Analytics is enabled for camera '{CameraId}' but the camera is not armed — no detection will run until it is armed",
+            cameraId);
+      }
+      else
+      {
+        _warnedNotArmed.TryRemove(cameraId, out _);
+      }
+
       if (shouldRun && !isRunning)
       {
         var started = await StartWatchInternalAsync(watch, ct);
@@ -55,11 +70,15 @@ public sealed class WatchReconciler(
       }
       else if (shouldRun && isRunning)
       {
-        // Config may have changed (stream_name/classes/confidence/...) — refresh our cached copy
-        // so the keep-alive loop always uses the current stream_name. Not re-issuing StartWatch
-        // here on every reconcile keeps this cheap; a real config edit is rare enough that video_a
-        // picking it up on the next natural StartWatch (camera re-armed, service restart) is fine.
-        _activeWatches[cameraId] = watch;
+        // Config changed while running (stream_name/classes/confidence/debug crops/...) —
+        // re-issue StartWatch so video_a picks it up; its StartWatch is an idempotent upsert.
+        if (!_activeWatches.TryGetValue(cameraId, out var cached) || !watch.Equals(cached))
+        {
+          var restarted = await StartWatchInternalAsync(watch, ct);
+          if (restarted)
+            logger.LogInformation("Analytics watch for camera '{CameraId}' restarted with updated config", cameraId);
+          _activeWatches[cameraId] = watch;
+        }
       }
       else if (!shouldRun && isRunning)
       {
@@ -88,7 +107,7 @@ public sealed class WatchReconciler(
 
     return await workerClient.StartWatchAsync(
       watch.CameraId, rtspUrl, credUser: null, credPass: null,
-      watch.Classes, watch.MinConfidence, watch.SampleFps, ct);
+      watch.Classes, watch.MinConfidence, watch.SampleFps, watch.AttachDebugCrops, ct);
   }
 
   // Builds the MediaMTX-relayed RTSP URL for camera_id/stream_name (never the camera's own raw

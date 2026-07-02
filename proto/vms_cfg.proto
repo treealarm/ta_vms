@@ -356,6 +356,7 @@ message AnalyticsWatch {
   float  min_confidence   = 5;
   uint32 sample_fps       = 6;
   bool   armed            = 7;  // read-only; populated from camera_states.armed on read
+  bool   attach_debug_crops = 8;  // debug: video_a attaches a JPEG of each detection to the event
 }
 
 message ListAnalyticsWatchesRequest {

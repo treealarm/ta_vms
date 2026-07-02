@@ -14,6 +14,7 @@ public sealed class DetectionStreamConsumer(
   IAnalyticsWorkerClient workerClient,
   AnalyticsWatchCache cache,
   DetectionDebouncer debouncer,
+  AnalyticsActivityLog activityLog,
   IDbContextFactory<AnalyticsDbContext> dbFactory,
   CfgService.CfgServiceClient cfgClient,
   ServerPairRegistry serverPairRegistry,
@@ -54,10 +55,18 @@ public sealed class DetectionStreamConsumer(
       return;
 
     var detectedAt = evt.DetectedAt.ToDateTime();
-    if (!debouncer.ShouldProcess(cameraId, evt.TrackId, detectedAt))
-      return;
+    var persisted = debouncer.ShouldProcess(cameraId, evt.TrackId, detectedAt) && watch.Armed;
 
-    if (!watch.Armed)
+    // Debug ring buffer sees every above-threshold event, including debounced ones — that's the
+    // point of the panel: to show what the detector actually saw, not just what got stored.
+    activityLog.Record(new AnalyticsActivityEntry(
+      detectedAt, cameraId, evt.TrackId, KindToDbString(evt.Kind), evt.Confidence,
+      evt.Bbox?.X ?? 0, evt.Bbox?.Y ?? 0, evt.Bbox?.Width ?? 0, evt.Bbox?.Height ?? 0,
+      evt.HasRecognizedText ? evt.RecognizedText : null,
+      evt.DebugCropJpeg.ToByteArray(),
+      persisted));
+
+    if (!persisted)
       return;
 
     logger.LogInformation(
@@ -74,6 +83,7 @@ public sealed class DetectionStreamConsumer(
       confidence = evt.Confidence,
       detected_at = detectedAt,
       camera_id = cameraId,
+      bbox = new { x = evt.Bbox?.X ?? 0, y = evt.Bbox?.Y ?? 0, width = evt.Bbox?.Width ?? 0, height = evt.Bbox?.Height ?? 0 },
     });
   }
 

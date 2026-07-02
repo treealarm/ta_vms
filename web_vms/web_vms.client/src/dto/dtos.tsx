@@ -347,6 +347,25 @@ export type AnalyticsWatchDto = {
   sampleFps: number
   /** Read-only; populated from camera armed state */
   armed: boolean
+  /** Debug: video_a attaches a JPEG of each detection to the event stream */
+  attachDebugCrops: boolean
+}
+
+export type AnalyticsActivityEntryDto = {
+  cameraId: string
+  trackId: number
+  kind: AnalyticsDetectionClass | 'unknown'
+  confidence: number
+  bboxX: number
+  bboxY: number
+  bboxWidth: number
+  bboxHeight: number
+  detectedAt: string
+  plateText?: string
+  /** Base64 JPEG; absent when the watch has no debug crops enabled */
+  cropJpegBase64?: string
+  /** false = seen by the detector but dropped by debounce/armed check */
+  persisted: boolean
 }
 
 export type OnvifAlarmFilterDto = {

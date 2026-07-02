@@ -17,6 +17,7 @@ public sealed class AnalyticsWorkerClient(AnalyticsService.AnalyticsServiceClien
     IReadOnlyList<string> classes,
     float minConfidence,
     uint sampleFps,
+    bool attachDebugCrops,
     CancellationToken ct)
   {
     var request = new WatchRequest
@@ -25,6 +26,7 @@ public sealed class AnalyticsWorkerClient(AnalyticsService.AnalyticsServiceClien
       RtspUrl = rtspUrl,
       MinConfidence = minConfidence,
       SampleFps = sampleFps,
+      AttachDebugCrops = attachDebugCrops,
     };
     if (!string.IsNullOrEmpty(credUser)) request.CredUser = credUser;
     if (!string.IsNullOrEmpty(credPass)) request.CredPass = credPass;

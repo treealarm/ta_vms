@@ -20,6 +20,7 @@
                 "DAPR_CFG_APP_ID": "vmscfg",
                 "DAPR_ONVIF_APP_ID": "vmsonvif",
                 "DAPR_UTILS_APP_ID": "vmsutils",
+                "DAPR_ANALYTICS_APP_ID": "vmsanalytics",
                 "KEYCLOAK_URL": "http://localhost:8080",
                 "KEYCLOAK_ADMIN_USER": "admin",
                 "KEYCLOAK_ADMIN_PASSWORD": "admin",

@@ -12,6 +12,7 @@ public interface IAnalyticsWorkerClient
     IReadOnlyList<string> classes,
     float minConfidence,
     uint sampleFps,
+    bool attachDebugCrops,
     CancellationToken ct);
 
   Task StopWatchAsync(string watchId, CancellationToken ct);

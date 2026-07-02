@@ -120,10 +120,13 @@
     "stream": "Stream",
     "minConfidence": "Min confidence",
     "sampleFps": "Sample FPS",
-    "selectClasses": "Select classes",
+    "classes": "Detection classes",
     "enabled": "Enabled",
     "disabled": "Disabled",
     "notArmed": "not armed",
+    "armedTooltip": "On guard — analytics running. Click to disarm.",
+    "disarmedTooltip": "Not on guard — analytics paused. Click to arm.",
+    "debugCrops": "Debug crops (JPEG per detection)",
     "create": "Create",
     "deleteTooltip": "Delete",
     "class": {
@@ -132,6 +135,12 @@
       "vehicle": "Vehicle",
       "license_plate": "License plate"
     }
+  },
+  "analyticsActivity": {
+    "tabLabel": "Analytics",
+    "autoRefresh": "Auto-refresh",
+    "noEvents": "No detection events yet.",
+    "debounced": "debounced"
   },
   "mediaMtx": {
     "title": "Media Routers",

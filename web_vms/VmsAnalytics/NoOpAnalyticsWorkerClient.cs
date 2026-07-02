@@ -15,6 +15,7 @@ public sealed class NoOpAnalyticsWorkerClient : IAnalyticsWorkerClient
     IReadOnlyList<string> classes,
     float minConfidence,
     uint sampleFps,
+    bool attachDebugCrops,
     CancellationToken ct) => Task.FromResult(false);
 
   public Task StopWatchAsync(string watchId, CancellationToken ct) => Task.CompletedTask;

@@ -120,10 +120,13 @@
     "stream": "Flujo",
     "minConfidence": "Confianza mínima",
     "sampleFps": "FPS de muestreo",
-    "selectClasses": "Seleccionar clases",
+    "classes": "Clases de detección",
     "enabled": "Habilitado",
     "disabled": "Deshabilitado",
     "notArmed": "no armada",
+    "armedTooltip": "En guardia — analítica activa. Clic para desarmar.",
+    "disarmedTooltip": "No está en guardia — analítica en pausa. Clic para armar.",
+    "debugCrops": "Recortes de depuración (JPEG por detección)",
     "create": "Crear",
     "deleteTooltip": "Eliminar",
     "class": {
@@ -132,6 +135,12 @@
       "vehicle": "Vehículo",
       "license_plate": "Matrícula"
     }
+  },
+  "analyticsActivity": {
+    "tabLabel": "Analítica",
+    "autoRefresh": "Auto-actualizar",
+    "noEvents": "Aún no hay eventos de detección.",
+    "debounced": "descartado"
   },
   "mediaMtx": {
     "title": "Media Routers",

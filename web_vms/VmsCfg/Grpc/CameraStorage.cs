@@ -840,6 +840,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     entity.Classes = string.Join(',', watch.Classes);
     entity.MinConfidence = watch.MinConfidence;
     entity.SampleFps = (int)watch.SampleFps;
+    entity.AttachDebugCrops = watch.AttachDebugCrops;
 
     await db.SaveChangesAsync(ct);
     return await ToAnalyticsWatchProtoAsync(entity, ct);
@@ -859,12 +860,13 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
   {
     var proto = new AnalyticsWatch
     {
-      CameraId      = row.CameraId,
-      StreamName    = row.StreamName,
-      Enabled       = row.Enabled,
-      MinConfidence = row.MinConfidence,
-      SampleFps     = (uint)row.SampleFps,
-      Armed         = await GetCameraArmedAsync(row.CameraId, ct),
+      CameraId         = row.CameraId,
+      StreamName       = row.StreamName,
+      Enabled          = row.Enabled,
+      MinConfidence    = row.MinConfidence,
+      SampleFps        = (uint)row.SampleFps,
+      Armed            = await GetCameraArmedAsync(row.CameraId, ct),
+      AttachDebugCrops = row.AttachDebugCrops,
     };
     proto.Classes.AddRange(row.Classes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     return proto;

@@ -74,6 +74,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.Classes).HasColumnName("classes");
       e.Property(x => x.MinConfidence).HasColumnName("min_confidence");
       e.Property(x => x.SampleFps).HasColumnName("sample_fps");
+      e.Property(x => x.AttachDebugCrops).HasColumnName("attach_debug_crops");
     });
   }
 }
@@ -124,4 +125,5 @@ public sealed class DbAnalyticsWatch
   public string Classes { get; set; } = "person";
   public float MinConfidence { get; set; } = 0.5f;
   public int SampleFps { get; set; } = 1;
+  public bool AttachDebugCrops { get; set; }
 }

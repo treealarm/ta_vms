@@ -46,6 +46,7 @@ else
 }
 
 builder.Services.AddSingleton(_ => new DetectionDebouncer(TimeSpan.FromSeconds(debounceSeconds)));
+builder.Services.AddSingleton<AnalyticsActivityLog>();
 
 var postgresConnStr = BuildPostgresConnectionString();
 builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(postgresConnStr));
