@@ -30,7 +30,7 @@ grpc::Status camera_control_service::SetCameraState(
     request->camera_id(),
     request->stream_name(),
     policy,
-    request->web_rtc(),
+    request->has_web_rtc() ? std::optional<bool>(request->web_rtc()) : std::nullopt,
     error);
 
   response->set_success(success);

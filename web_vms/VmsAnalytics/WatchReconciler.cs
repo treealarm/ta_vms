@@ -40,6 +40,11 @@ public sealed class WatchReconciler(
     return Task.CompletedTask;
   }
 
+  // Called when the StreamDetections channel to video_a drops: the worker may have restarted and
+  // lost its (in-memory-only) watches, so forget what we think is running — the next reconcile
+  // will re-issue StartWatch for everything that should be active.
+  public void ResetAssumedState() => _activeWatches.Clear();
+
   public async Task ReconcileAsync(IReadOnlyDictionary<string, AnalyticsWatch> watches, CancellationToken ct)
   {
     foreach (var (cameraId, watch) in watches)

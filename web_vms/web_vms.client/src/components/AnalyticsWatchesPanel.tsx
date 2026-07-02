@@ -24,8 +24,9 @@ import {
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import { useTranslation } from 'react-i18next'
-import { useAppSelector } from '../store'
-import { ANALYTICS_DETECTION_CLASSES } from '../dto/dtos'
+import { useAppDispatch, useAppSelector } from '../store'
+import { setArmed as setArmedThunk, setStreamRecordingProfile } from '../store/liveSlice'
+import { ANALYTICS_DETECTION_CLASSES, RECORDING_PROFILE_OFF_ID, RECORDING_PROFILE_PREALARM_ID } from '../dto/dtos'
 import type { AnalyticsDetectionClass, AnalyticsWatchDto } from '../dto/dtos'
 
 export type AnalyticsWatchesHandle = { applyIfDirty: () => Promise<boolean> }
@@ -43,6 +44,7 @@ const EMPTY_WATCH: AnalyticsWatchDto = {
 
 export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<AnalyticsWatchesHandle> }) {
   const { t } = useTranslation()
+  const dispatch = useAppDispatch()
   const allCameras = useAppSelector((s) => Object.values(s.live.cameraStatesById))
 
   const [watches, setWatches] = useState<AnalyticsWatchDto[]>([])
@@ -132,18 +134,28 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
     }
   }
 
-  // Cameras without an ONVIF subscription have no armed toggle anywhere else in the UI, and
-  // analytics only runs on armed cameras — so guard state is controllable right from this list.
+  // Same arm/disarm behavior as CameraUnifiedCard.armDisarm: besides camera_states.armed, arming
+  // puts non-recording streams on the prealarm profile (and disarming reverts prealarm to off).
+  // Without a baseline profile the stream pipeline is torn down whenever the alarm override
+  // expires (recording off<->continuous flapping), which kills the MediaMTX push mid-stream and
+  // the analytics RTSP reader with it.
   const setArmed = async (cameraId: string, armed: boolean) => {
     setBusy(true)
     setError(null)
     try {
-      const r = await fetch(`/api/cameras/${encodeURIComponent(cameraId)}/state`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ armed }),
-      })
-      if (!r.ok) { setError(`HTTP ${r.status}`); return }
+      await dispatch(setArmedThunk({ cameraId, armed }))
+      const camera = allCameras.find((c) => c.cameraId === cameraId)
+      const isStreamRecording = (mode?: string) => (mode ?? 'off') !== 'off'
+      for (const s of camera?.streams ?? []) {
+        if (s.disabled) continue
+        const effectiveMode = (s.overrideProfile ?? s.recordingProfile)?.mode
+        if (armed) {
+          if (!isStreamRecording(effectiveMode))
+            await dispatch(setStreamRecordingProfile({ cameraId, streamName: s.streamName, profileId: RECORDING_PROFILE_PREALARM_ID }))
+        } else if (s.recordingProfile?.id === RECORDING_PROFILE_PREALARM_ID) {
+          await dispatch(setStreamRecordingProfile({ cameraId, streamName: s.streamName, profileId: RECORDING_PROFILE_OFF_ID }))
+        }
+      }
       await load()
     } catch (e) {
       setError(String(e))

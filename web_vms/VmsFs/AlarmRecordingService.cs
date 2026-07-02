@@ -110,11 +110,12 @@ public sealed class AlarmRecordingService(
         continue;
       var mode = overrideMode ?? stream.BaseMode;
 
+      // WebRtc deliberately left unset: alarm overrides only change the recording policy, and
+      // setting it would stop a MediaMTX push started on demand (live view, analytics).
       var state = new CameraState
       {
         CameraId      = cameraId,
         StreamName    = stream.StreamName,
-        WebRtc        = stream.WebRtc,
         RecordingMode = mode,
       };
 

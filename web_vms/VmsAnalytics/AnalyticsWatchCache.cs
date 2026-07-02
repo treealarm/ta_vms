@@ -11,16 +11,19 @@ public sealed class AnalyticsWatchCache(CfgService.CfgServiceClient cfg, ILogger
 
   public IReadOnlyDictionary<string, AnalyticsWatch> Watches => _watches;
 
-  public async Task RefreshAsync(CancellationToken ct = default)
+  /// <returns>false when VmsCfg was unreachable and the cache kept its previous contents.</returns>
+  public async Task<bool> RefreshAsync(CancellationToken ct = default)
   {
     try
     {
       var resp = await cfg.ListAnalyticsWatchesAsync(new ListAnalyticsWatchesRequest(), cancellationToken: ct);
       _watches = resp.Watches.ToDictionary(w => w.CameraId);
+      return true;
     }
     catch (Exception ex)
     {
       logger.LogWarning(ex, "AnalyticsWatchCache refresh failed");
+      return false;
     }
   }
 }

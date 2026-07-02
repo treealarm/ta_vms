@@ -32,10 +32,14 @@ public sealed class AnalyticsWatchSubscriber(
 
   private async Task RunAsync(CancellationToken ct)
   {
-    await RefreshAndReconcileAsync(ct);
-
     try
     {
+      // Startup: VmsCfg (or its sidecar) may not be up yet — retry quickly until the first
+      // successful refresh instead of leaving the initial reconcile to the slow fallback tick
+      // (same "retry in 5s" startup pattern as DbMigrator / ServerPairRegistry init).
+      while (!ct.IsCancellationRequested && !await RefreshAndReconcileAsync(ct))
+        await Task.Delay(TimeSpan.FromSeconds(5), ct);
+
       var options = new DaprSubscriptionOptions(
         new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry));
       await Task.WhenAll(
@@ -65,16 +69,18 @@ public sealed class AnalyticsWatchSubscriber(
     return Task.FromResult(TopicResponseAction.Success);
   }
 
-  private async Task RefreshAndReconcileAsync(CancellationToken ct)
+  private async Task<bool> RefreshAndReconcileAsync(CancellationToken ct)
   {
     try
     {
-      await cache.RefreshAsync(ct);
+      var refreshed = await cache.RefreshAsync(ct);
       await reconciler.ReconcileAsync(cache.Watches, ct);
+      return refreshed;
     }
     catch (Exception ex)
     {
       logger.LogWarning(ex, "AnalyticsWatchSubscriber refresh/reconcile failed");
+      return false;
     }
   }
 

@@ -15,6 +15,7 @@ public sealed class DetectionStreamConsumer(
   AnalyticsWatchCache cache,
   DetectionDebouncer debouncer,
   AnalyticsActivityLog activityLog,
+  WatchReconciler reconciler,
   IDbContextFactory<AnalyticsDbContext> dbFactory,
   CfgService.CfgServiceClient cfgClient,
   ServerPairRegistry serverPairRegistry,
@@ -39,7 +40,19 @@ public sealed class DetectionStreamConsumer(
       catch (Exception ex)
       {
         logger.LogWarning(ex, "DetectionStreamConsumer stream error, retrying in 5s");
+        // A dropped stream is the liveness signal for video_a: if it restarted, its in-memory
+        // watches are gone — reset the reconciler's view and keep re-reconciling until the
+        // worker is reachable again and StartWatch succeeds.
+        reconciler.ResetAssumedState();
         await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+        try
+        {
+          await reconciler.ReconcileAsync(cache.Watches, stoppingToken);
+        }
+        catch (Exception reconcileEx)
+        {
+          logger.LogWarning(reconcileEx, "Post-reconnect reconcile failed (worker still down?), will retry");
+        }
       }
     }
   }

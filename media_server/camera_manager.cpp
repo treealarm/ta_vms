@@ -285,7 +285,7 @@ bool camera_manager::set_camera_state(
   const std::string& camera_id,
   const std::string& stream_name,
   const recording_policy_spec& policy,
-  bool web_rtc,
+  std::optional<bool> web_rtc,
   std::string& error)
 {
   std::scoped_lock lock(m_mutex);
@@ -306,16 +306,19 @@ bool camera_manager::set_camera_state(
 
   stream->apply_recording_policy(policy);
 
-  stream->set_web_rtc_enabled(web_rtc);
-
   bool ok = true;
-  if (web_rtc != stream->is_web_rtc_streaming())
-    ok = web_rtc ? stream->start_web_rtc(error) : stream->stop_web_rtc(error);
+  if (web_rtc.has_value())
+  {
+    stream->set_web_rtc_enabled(*web_rtc);
+    if (*web_rtc != stream->is_web_rtc_streaming())
+      ok = *web_rtc ? stream->start_web_rtc(error) : stream->stop_web_rtc(error);
+  }
 
   if (ok)
     logger::instance().info(std::format(
       "Camera '{}' stream '{}' state updated: recording={}, web_rtc={}",
-      camera_id, stream_name, to_string(policy.mode), web_rtc));
+      camera_id, stream_name, to_string(policy.mode),
+      web_rtc.has_value() ? (*web_rtc ? "true" : "false") : "unchanged"));
 
   return ok;
 }
