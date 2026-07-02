@@ -8,8 +8,8 @@ using Vms.Fs;
 namespace VmsAnalytics;
 
 // Holds one long-lived StreamDetections call to video_a (reconnect/backoff on failure). For
-// each DetectionEvent: threshold + per-(watch_id, track_id) debounce, then fan out to every
-// currently-armed camera linked to that watch — persist + RetainEvent per camera.
+// each DetectionEvent: threshold + per-(watch_id, track_id) debounce, then persist + RetainEvent
+// for the camera the watch belongs to (watch_id == camera_id, 1:1 — see project plan).
 public sealed class DetectionStreamConsumer(
   IAnalyticsWorkerClient workerClient,
   AnalyticsWatchCache cache,
@@ -45,38 +45,35 @@ public sealed class DetectionStreamConsumer(
 
   private async Task HandleAsync(DetectionEvent evt, CancellationToken ct)
   {
-    if (!cache.Watches.TryGetValue(evt.WatchId, out var watch))
+    // watch_id == camera_id (1:1 model, see project plan).
+    var cameraId = evt.WatchId;
+    if (!cache.Watches.TryGetValue(cameraId, out var watch))
       return; // race with a StopWatch that already happened
 
     if (evt.Confidence < watch.MinConfidence)
       return;
 
     var detectedAt = evt.DetectedAt.ToDateTime();
-    if (!debouncer.ShouldProcess(evt.WatchId, evt.TrackId, detectedAt))
+    if (!debouncer.ShouldProcess(cameraId, evt.TrackId, detectedAt))
       return;
 
-    var armedCameraIds = watch.Cameras.Where(c => c.Armed).Select(c => c.CameraId).ToList();
-    if (armedCameraIds.Count == 0)
+    if (!watch.Armed)
       return;
 
     logger.LogInformation(
-      "Detection: watch={WatchId} track={TrackId} kind={Kind} confidence={Confidence:F2} plate={PlateText} cameras={CameraIds}",
-      evt.WatchId, evt.TrackId, evt.Kind, evt.Confidence,
-      evt.HasRecognizedText ? evt.RecognizedText : "-",
-      string.Join(",", armedCameraIds));
+      "Detection: camera={CameraId} track={TrackId} kind={Kind} confidence={Confidence:F2} plate={PlateText}",
+      cameraId, evt.TrackId, evt.Kind, evt.Confidence,
+      evt.HasRecognizedText ? evt.RecognizedText : "-");
 
-    foreach (var cameraId in armedCameraIds)
-    {
-      await PersistAsync(cameraId, evt, detectedAt, ct);
-      await RetainAsync(cameraId, evt, detectedAt, ct);
-    }
+    await PersistAsync(cameraId, evt, detectedAt, ct);
+    await RetainAsync(cameraId, evt, detectedAt, ct);
 
-    entityStatePublisher.Publish("detection", $"{evt.WatchId}/{evt.TrackId}", new
+    entityStatePublisher.Publish("detection", $"{cameraId}/{evt.TrackId}", new
     {
       kind = evt.Kind.ToString(),
       confidence = evt.Confidence,
       detected_at = detectedAt,
-      camera_ids = armedCameraIds,
+      camera_id = cameraId,
     });
   }
 
@@ -86,7 +83,6 @@ public sealed class DetectionStreamConsumer(
     db.Detections.Add(new DbDetection
     {
       CameraId = cameraId,
-      WatchId = Guid.Parse(evt.WatchId),
       TrackId = evt.TrackId,
       Kind = KindToDbString(evt.Kind),
       Confidence = evt.Confidence,

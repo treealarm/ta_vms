@@ -4,8 +4,10 @@ import {
   Button,
   Chip,
   Divider,
+  FormControl,
   FormControlLabel,
   IconButton,
+  InputLabel,
   List,
   ListItem,
   ListItemText,
@@ -27,15 +29,14 @@ import type { AnalyticsDetectionClass, AnalyticsWatchDto } from '../dto/dtos'
 
 export type AnalyticsWatchesHandle = { applyIfDirty: () => Promise<boolean> }
 
-const EMPTY_WATCH: Omit<AnalyticsWatchDto, 'id'> = {
-  rtspUrl: '',
-  credUser: '',
-  credPass: '',
+const EMPTY_WATCH: AnalyticsWatchDto = {
+  cameraId: '',
+  streamName: '',
   enabled: false,
   classes: ['person'],
   minConfidence: 0.5,
   sampleFps: 1,
-  cameras: [],
+  armed: false,
 }
 
 export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<AnalyticsWatchesHandle> }) {
@@ -68,13 +69,13 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
   }, [editing])
 
   const startNew = () => {
-    setEditing({ id: '', ...EMPTY_WATCH })
+    setEditing({ ...EMPTY_WATCH })
     setIsNew(true)
     setError(null)
   }
 
   const startEdit = (w: AnalyticsWatchDto) => {
-    setEditing({ ...w, cameras: w.cameras.map((c) => ({ ...c })) })
+    setEditing({ ...w })
     setIsNew(false)
     setError(null)
   }
@@ -110,17 +111,17 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
   }
 
   useImperativeHandle(ref, () => ({
-    applyIfDirty: () => editing?.rtspUrl ? saveInternal() : Promise.resolve(true),
+    applyIfDirty: () => editing?.cameraId ? saveInternal() : Promise.resolve(true),
   }))
 
-  const remove = async (id: string) => {
+  const remove = async (cameraId: string) => {
     setBusy(true)
     setError(null)
     try {
-      const r = await fetch(`/api/analytics-watches/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      const r = await fetch(`/api/analytics-watches/${encodeURIComponent(cameraId)}`, { method: 'DELETE' })
       const body = await r.json() as { success: boolean; message: string }
       if (!body.success) { setError(body.message); return }
-      if (editing?.id === id) setEditing(null)
+      if (editing?.cameraId === cameraId) setEditing(null)
       await load()
     } catch (e) {
       setError(String(e))
@@ -137,14 +138,20 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
     setField('classes', typeof value === 'string' ? value.split(',') as AnalyticsDetectionClass[] : value)
   }
 
-  const handleCamerasChange = (e: SelectChangeEvent<string[]>) => {
-    const value = e.target.value
-    const ids = typeof value === 'string' ? value.split(',') : value
-    setField('cameras', ids.map((cameraId) => ({ cameraId, armed: false })))
+  const handleCameraChange = (cameraId: string) => {
+    const camera = allCameras.find((c) => c.cameraId === cameraId)
+    const firstStream = camera?.streams?.[0]?.streamName ?? ''
+    setEditing((prev) => prev ? { ...prev, cameraId, streamName: firstStream } : null)
   }
 
   const classLabel = (c: AnalyticsDetectionClass) => t(`analytics.class.${c}`)
   const cameraName = (cameraId: string) => allCameras.find((c) => c.cameraId === cameraId)?.name || cameraId
+
+  const usedCameraIds = new Set(watches.map((w) => w.cameraId))
+  const editingCamera = allCameras.find((c) => c.cameraId === editing?.cameraId)
+  const availableCameras = isNew
+    ? allCameras.filter((c) => !usedCameraIds.has(c.cameraId))
+    : allCameras
 
   return (
     <Stack spacing={2} sx={{ maxWidth: 640 }}>
@@ -152,7 +159,7 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
 
       <List disablePadding>
         {watches.map((w, i) => (
-          <Box key={w.id}>
+          <Box key={w.cameraId}>
             {i > 0 && <Divider />}
             <ListItem
               disablePadding
@@ -163,7 +170,7 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
                   </IconButton>
                   <Tooltip title={t('analytics.deleteTooltip')}>
                     <span>
-                      <IconButton size="small" color="error" onClick={() => void remove(w.id)} disabled={busy}>
+                      <IconButton size="small" color="error" onClick={() => void remove(w.cameraId)} disabled={busy}>
                         <DeleteIcon fontSize="small" />
                       </IconButton>
                     </span>
@@ -175,17 +182,18 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
                 sx={{ py: 0.5, pl: 1 }}
                 primary={
                   <Stack direction="row" spacing={0.5} alignItems="center" component="span">
-                    <span>{w.rtspUrl}</span>
+                    <span>{cameraName(w.cameraId)}</span>
                     <Chip label={w.enabled ? t('analytics.enabled') : t('analytics.disabled')} size="small" color={w.enabled ? 'primary' : 'default'} variant="outlined" />
+                    {!w.armed && (
+                      <Chip label={t('analytics.notArmed')} size="small" variant="outlined" />
+                    )}
                   </Stack>
                 }
                 secondary={
                   <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" component="span">
                     {w.classes.map((c) => <Chip key={c} label={classLabel(c)} size="small" />)}
                     <Typography variant="caption" color="text.secondary">
-                      {w.cameras.length > 0
-                        ? w.cameras.map((c) => cameraName(c.cameraId)).join(', ')
-                        : t('analytics.noCameras')}
+                      {w.streamName}
                     </Typography>
                   </Stack>
                 }
@@ -215,32 +223,31 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
             {isNew ? t('analytics.newWatch') : t('analytics.editWatch')}
           </Typography>
 
-          <TextField
-            label={t('analytics.rtspUrl')}
-            value={editing.rtspUrl}
-            onChange={(e) => setField('rtspUrl', e.target.value)}
-            required
-            size="small"
-            fullWidth
-          />
+          <FormControl size="small" fullWidth disabled={!isNew}>
+            <InputLabel>{t('analytics.camera')}</InputLabel>
+            <Select
+              value={editing.cameraId}
+              label={t('analytics.camera')}
+              onChange={(e) => handleCameraChange(e.target.value)}
+            >
+              {availableCameras.map((c) => (
+                <MenuItem key={c.cameraId} value={c.cameraId}>{c.name || c.cameraId}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
 
-          <Stack direction="row" spacing={1}>
-            <TextField
-              label={t('analytics.credUser')}
-              value={editing.credUser ?? ''}
-              onChange={(e) => setField('credUser', e.target.value)}
-              size="small"
-              sx={{ width: 200 }}
-            />
-            <TextField
-              label={t('analytics.credPass')}
-              type="password"
-              value={editing.credPass ?? ''}
-              onChange={(e) => setField('credPass', e.target.value)}
-              size="small"
-              sx={{ width: 200 }}
-            />
-          </Stack>
+          <FormControl size="small" fullWidth disabled={!editing.cameraId}>
+            <InputLabel>{t('analytics.stream')}</InputLabel>
+            <Select
+              value={editing.streamName}
+              label={t('analytics.stream')}
+              onChange={(e) => setField('streamName', e.target.value)}
+            >
+              {(editingCamera?.streams ?? []).map((s) => (
+                <MenuItem key={s.streamName} value={s.streamName}>{s.streamName}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
 
           <Select
             multiple
@@ -277,25 +284,6 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
             />
           </Stack>
 
-          <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-              {t('analytics.cameras')}
-            </Typography>
-            <Select
-              multiple
-              value={editing.cameras.map((c) => c.cameraId)}
-              onChange={handleCamerasChange}
-              size="small"
-              displayEmpty
-              renderValue={(selected) => selected.map(cameraName).join(', ') || t('analytics.selectCameras')}
-              sx={{ maxWidth: 400, width: '100%' }}
-            >
-              {allCameras.map((c) => (
-                <MenuItem key={c.cameraId} value={c.cameraId}>{c.name || c.cameraId}</MenuItem>
-              ))}
-            </Select>
-          </Box>
-
           <FormControlLabel
             control={
               <Switch
@@ -312,7 +300,7 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
           )}
 
           <Stack direction="row" spacing={1}>
-            <Button type="submit" variant="outlined" size="small" disabled={busy}>
+            <Button type="submit" variant="outlined" size="small" disabled={busy || !editing.cameraId || !editing.streamName}>
               {isNew ? t('analytics.create') : t('common.apply')}
             </Button>
             <Button size="small" onClick={cancel} disabled={busy}>{t('common.cancel')}</Button>

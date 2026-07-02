@@ -338,22 +338,15 @@ export type AnalyticsDetectionClass = 'person' | 'face' | 'vehicle' | 'license_p
 
 export const ANALYTICS_DETECTION_CLASSES: AnalyticsDetectionClass[] = ['person', 'face', 'vehicle', 'license_plate']
 
-export type AnalyticsWatchCameraLinkDto = {
-  cameraId: string
-  /** Ignored on write; populated from camera armed state on read */
-  armed: boolean
-}
-
 export type AnalyticsWatchDto = {
-  id: string
-  rtspUrl: string
-  credUser?: string
-  credPass?: string
+  cameraId: string
+  streamName: string
   enabled: boolean
   classes: AnalyticsDetectionClass[]
   minConfidence: number
   sampleFps: number
-  cameras: AnalyticsWatchCameraLinkDto[]
+  /** Read-only; populated from camera armed state */
+  armed: boolean
 }
 
 export type OnvifAlarmFilterDto = {

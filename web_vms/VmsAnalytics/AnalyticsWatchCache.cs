@@ -16,7 +16,7 @@ public sealed class AnalyticsWatchCache(CfgService.CfgServiceClient cfg, ILogger
     try
     {
       var resp = await cfg.ListAnalyticsWatchesAsync(new ListAnalyticsWatchesRequest(), cancellationToken: ct);
-      _watches = resp.Watches.ToDictionary(w => w.Id);
+      _watches = resp.Watches.ToDictionary(w => w.CameraId);
     }
     catch (Exception ex)
     {

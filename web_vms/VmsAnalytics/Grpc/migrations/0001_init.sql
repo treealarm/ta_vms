@@ -1,7 +1,6 @@
 CREATE TABLE detections (
   id           bigserial PRIMARY KEY,
   camera_id    text        NOT NULL,
-  watch_id     uuid        NOT NULL,
   track_id     bigint      NOT NULL,
   kind         text        NOT NULL,
   confidence   real        NOT NULL,

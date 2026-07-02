@@ -44,7 +44,6 @@ public sealed class AnalyticsServiceImpl(IDbContextFactory<AnalyticsDbContext> d
     var detection = new Detection
     {
       CameraId = row.CameraId,
-      WatchId = row.WatchId.ToString(),
       TrackId = row.TrackId,
       Kind = ParseKind(row.Kind),
       Confidence = row.Confidence,

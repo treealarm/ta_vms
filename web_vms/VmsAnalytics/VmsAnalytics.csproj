@@ -28,6 +28,7 @@
     <Protobuf Include="proto\analytics.proto" GrpcServices="Client" />
     <Protobuf Include="..\..\proto\vms_cfg.proto" GrpcServices="Client" />
     <Protobuf Include="..\..\proto\vms_fs.proto" GrpcServices="Client" />
+    <Protobuf Include="..\..\proto\vms_control.proto" GrpcServices="Client" />
     <Protobuf Include="..\..\proto\vms_analytics.proto" GrpcServices="Server" />
   </ItemGroup>
 

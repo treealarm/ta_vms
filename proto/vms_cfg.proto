@@ -348,21 +348,14 @@ message SetCamStateRequest {
   bool   armed     = 2;
 }
 
-message AnalyticsWatchCameraLink {
-  string camera_id = 1;
-  bool   armed     = 2;  // ignored on write; populated from camera_states.armed on read
-}
-
 message AnalyticsWatch {
-  string id              = 1;  // empty in UpsertAnalyticsWatchRequest => create new
-  string rtsp_url         = 2;
-  optional string cred_user = 3;
-  optional string cred_pass = 4;
-  bool   enabled          = 5;
-  repeated string classes = 6;  // "person"/"face"/"vehicle"/"license_plate"
-  float  min_confidence   = 7;
-  uint32 sample_fps       = 8;
-  repeated AnalyticsWatchCameraLink cameras = 9;
+  string camera_id       = 1;  // PK; also the watch_id sent to video_a
+  string stream_name     = 2;
+  bool   enabled          = 3;
+  repeated string classes = 4;  // "person"/"face"/"vehicle"/"license_plate"
+  float  min_confidence   = 5;
+  uint32 sample_fps       = 6;
+  bool   armed            = 7;  // read-only; populated from camera_states.armed on read
 }
 
 message ListAnalyticsWatchesRequest {
@@ -378,5 +371,5 @@ message UpsertAnalyticsWatchRequest {
 }
 
 message RemoveAnalyticsWatchRequest {
-  string id = 1;
+  string camera_id = 1;
 }

@@ -34,6 +34,7 @@ if (!string.IsNullOrEmpty(analyticsWorkerAppId))
       DaprClient.CreateInvocationInvoker(analyticsWorkerAppId))));
   builder.Services.AddSingleton<AnalyticsWatchCache>();
   builder.Services.AddSingleton<WatchReconciler>();
+  builder.Services.AddHostedService(sp => sp.GetRequiredService<WatchReconciler>()); // keep-alive loop
   builder.Services.AddHostedService<AnalyticsWatchSubscriber>();
   builder.Services.AddHostedService<DetectionStreamConsumer>();
 }

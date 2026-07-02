@@ -1,5 +1,6 @@
 using Dapr.Client;
 using Vms.Cfg;
+using Vms.Control;
 using Vms.Fs;
 
 namespace VmsAnalytics;
@@ -27,5 +28,13 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg)
       throw new InvalidOperationException($"No FS paired for server '{serverId}'");
 
     return new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
+  }
+
+  public CameraControlService.CameraControlServiceClient GetMediaClient(string? serverId)
+  {
+    if (string.IsNullOrWhiteSpace(serverId))
+      throw new InvalidOperationException("serverId must not be empty for media server requests");
+
+    return new CameraControlService.CameraControlServiceClient(DaprClient.CreateInvocationInvoker(serverId));
   }
 }

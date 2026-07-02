@@ -598,26 +598,26 @@ namespace VmsCfg
     public override async Task<OperationStatus> UpsertAnalyticsWatch(
       UpsertAnalyticsWatchRequest request, ServerCallContext context)
     {
-      if (string.IsNullOrWhiteSpace(request.Watch?.RtspUrl))
-        return new OperationStatus { Success = false, Message = "rtsp_url must not be empty" };
+      if (string.IsNullOrWhiteSpace(request.Watch?.CameraId))
+        return new OperationStatus { Success = false, Message = "camera_id must not be empty" };
 
       var result = await storage.UpsertAnalyticsWatchAsync(request.Watch, context.CancellationToken);
-      logger.LogInformation("Analytics watch '{Id}' upserted ({CameraCount} cameras)", result.Id, result.Cameras.Count);
-      NotifyAnalyticsWatchChanged(result.Id);
+      logger.LogInformation("Analytics watch for camera '{CameraId}' upserted", result.CameraId);
+      NotifyAnalyticsWatchChanged(result.CameraId);
       return new OperationStatus { Success = true };
     }
 
     public override async Task<OperationStatus> RemoveAnalyticsWatch(
       RemoveAnalyticsWatchRequest request, ServerCallContext context)
     {
-      if (string.IsNullOrWhiteSpace(request.Id))
-        return new OperationStatus { Success = false, Message = "id must not be empty" };
+      if (string.IsNullOrWhiteSpace(request.CameraId))
+        return new OperationStatus { Success = false, Message = "camera_id must not be empty" };
 
-      var removed = await storage.RemoveAnalyticsWatchAsync(request.Id, context.CancellationToken);
+      var removed = await storage.RemoveAnalyticsWatchAsync(request.CameraId, context.CancellationToken);
       if (removed)
       {
-        logger.LogInformation("Analytics watch '{Id}' removed", request.Id);
-        NotifyAnalyticsWatchChanged(request.Id);
+        logger.LogInformation("Analytics watch for camera '{CameraId}' removed", request.CameraId);
+        NotifyAnalyticsWatchChanged(request.CameraId);
       }
       return new OperationStatus { Success = removed };
     }

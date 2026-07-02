@@ -10,7 +10,6 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
   public DbSet<DbCameraState> CameraStates { get; set; }
   public DbSet<DbStorage> Storages { get; set; }
   public DbSet<DbAnalyticsWatch> AnalyticsWatches { get; set; }
-  public DbSet<DbAnalyticsWatchCamera> AnalyticsWatchCameras { get; set; }
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
@@ -68,26 +67,13 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
     modelBuilder.Entity<DbAnalyticsWatch>(e =>
     {
       e.ToTable("analytics_watch");
-      e.HasKey(x => x.Id);
-      e.Property(x => x.Id).HasColumnName("id");
-      e.Property(x => x.RtspUrl).HasColumnName("rtsp_url");
-      e.Property(x => x.CredUser).HasColumnName("cred_user");
-      e.Property(x => x.CredPass).HasColumnName("cred_pass");
+      e.HasKey(x => x.CameraId);
+      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.StreamName).HasColumnName("stream_name");
       e.Property(x => x.Enabled).HasColumnName("enabled");
       e.Property(x => x.Classes).HasColumnName("classes");
       e.Property(x => x.MinConfidence).HasColumnName("min_confidence");
       e.Property(x => x.SampleFps).HasColumnName("sample_fps");
-      e.HasMany(x => x.Cameras)
-       .WithOne()
-       .HasForeignKey(x => x.WatchId);
-    });
-
-    modelBuilder.Entity<DbAnalyticsWatchCamera>(e =>
-    {
-      e.ToTable("analytics_watch_camera");
-      e.HasKey(x => new { x.WatchId, x.CameraId });
-      e.Property(x => x.WatchId).HasColumnName("watch_id");
-      e.Property(x => x.CameraId).HasColumnName("camera_id");
     });
   }
 }
@@ -132,19 +118,10 @@ public sealed class DbStorage
 
 public sealed class DbAnalyticsWatch
 {
-  public Guid Id { get; set; }
-  public string RtspUrl { get; set; } = string.Empty;
-  public string? CredUser { get; set; }
-  public string? CredPass { get; set; }
+  public string CameraId { get; set; } = string.Empty;
+  public string StreamName { get; set; } = string.Empty;
   public bool Enabled { get; set; }
   public string Classes { get; set; } = "person";
   public float MinConfidence { get; set; } = 0.5f;
   public int SampleFps { get; set; } = 1;
-  public List<DbAnalyticsWatchCamera> Cameras { get; set; } = [];
-}
-
-public sealed class DbAnalyticsWatchCamera
-{
-  public Guid WatchId { get; set; }
-  public string CameraId { get; set; } = string.Empty;
 }

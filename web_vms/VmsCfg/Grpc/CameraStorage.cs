@@ -812,16 +812,16 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     await cmd.ExecuteNonQueryAsync(ct);
   }
 
-  // ── Analytics watches (RTSP source -> N cameras, see docs/... plan) ──────
+  // ── Analytics watches (1:1 per camera, mirrors onvif_event_subscription) ─
 
   public async Task<List<AnalyticsWatch>> ListAnalyticsWatchesAsync(string? cameraId, CancellationToken ct)
   {
     await using var db = await dbFactory.CreateDbContextAsync(ct);
-    var query = db.AnalyticsWatches.Include(w => w.Cameras).AsQueryable();
+    var query = db.AnalyticsWatches.AsQueryable();
     if (!string.IsNullOrWhiteSpace(cameraId))
-      query = query.Where(w => w.Cameras.Any(c => c.CameraId == cameraId));
+      query = query.Where(w => w.CameraId == cameraId);
 
-    var rows = await query.OrderBy(w => w.Id).ToListAsync(ct);
+    var rows = await query.OrderBy(w => w.CameraId).ToListAsync(ct);
     var result = new List<AnalyticsWatch>();
     foreach (var row in rows)
       result.Add(await ToAnalyticsWatchProtoAsync(row, ct));
@@ -832,43 +832,23 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
   {
     await using var db = await dbFactory.CreateDbContextAsync(ct);
 
-    DbAnalyticsWatch entity;
-    if (Guid.TryParse(watch.Id, out var existingId))
-    {
-      entity = await db.AnalyticsWatches.Include(w => w.Cameras).FirstOrDefaultAsync(w => w.Id == existingId, ct)
-               ?? db.AnalyticsWatches.Add(new DbAnalyticsWatch { Id = existingId }).Entity;
-    }
-    else
-    {
-      entity = db.AnalyticsWatches.Add(new DbAnalyticsWatch { Id = Guid.NewGuid() }).Entity;
-    }
+    var entity = await db.AnalyticsWatches.FindAsync([watch.CameraId], ct)
+                 ?? db.AnalyticsWatches.Add(new DbAnalyticsWatch { CameraId = watch.CameraId }).Entity;
 
-    entity.RtspUrl = watch.RtspUrl;
-    entity.CredUser = watch.HasCredUser ? watch.CredUser : null;
-    entity.CredPass = watch.HasCredPass ? watch.CredPass : null;
+    entity.StreamName = watch.StreamName;
     entity.Enabled = watch.Enabled;
     entity.Classes = string.Join(',', watch.Classes);
     entity.MinConfidence = watch.MinConfidence;
     entity.SampleFps = (int)watch.SampleFps;
 
-    var keepCameraIds = watch.Cameras.Select(c => c.CameraId).ToHashSet();
-    entity.Cameras.RemoveAll(c => !keepCameraIds.Contains(c.CameraId));
-    var existingCameraIds = entity.Cameras.Select(c => c.CameraId).ToHashSet();
-    foreach (var cameraId in keepCameraIds)
-    {
-      if (!existingCameraIds.Contains(cameraId))
-        entity.Cameras.Add(new DbAnalyticsWatchCamera { WatchId = entity.Id, CameraId = cameraId });
-    }
-
     await db.SaveChangesAsync(ct);
     return await ToAnalyticsWatchProtoAsync(entity, ct);
   }
 
-  public async Task<bool> RemoveAnalyticsWatchAsync(string id, CancellationToken ct)
+  public async Task<bool> RemoveAnalyticsWatchAsync(string cameraId, CancellationToken ct)
   {
-    if (!Guid.TryParse(id, out var guid)) return false;
     await using var db = await dbFactory.CreateDbContextAsync(ct);
-    var watch = await db.AnalyticsWatches.FindAsync([guid], ct);
+    var watch = await db.AnalyticsWatches.FindAsync([cameraId], ct);
     if (watch == null) return false;
     db.AnalyticsWatches.Remove(watch);
     await db.SaveChangesAsync(ct);
@@ -879,23 +859,14 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
   {
     var proto = new AnalyticsWatch
     {
-      Id             = row.Id.ToString(),
-      RtspUrl        = row.RtspUrl,
-      Enabled        = row.Enabled,
-      MinConfidence  = row.MinConfidence,
-      SampleFps      = (uint)row.SampleFps,
+      CameraId      = row.CameraId,
+      StreamName    = row.StreamName,
+      Enabled       = row.Enabled,
+      MinConfidence = row.MinConfidence,
+      SampleFps     = (uint)row.SampleFps,
+      Armed         = await GetCameraArmedAsync(row.CameraId, ct),
     };
-    if (row.CredUser is not null) proto.CredUser = row.CredUser;
-    if (row.CredPass is not null) proto.CredPass = row.CredPass;
     proto.Classes.AddRange(row.Classes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-    foreach (var camera in row.Cameras)
-    {
-      proto.Cameras.Add(new AnalyticsWatchCameraLink
-      {
-        CameraId = camera.CameraId,
-        Armed    = await GetCameraArmedAsync(camera.CameraId, ct),
-      });
-    }
     return proto;
   }
 }

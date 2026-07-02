@@ -21,7 +21,6 @@ enum DetectionKind {
 
 message Detection {
   string camera_id = 1;
-  string watch_id = 2;
   int64 track_id = 3;
   DetectionKind kind = 4;
   float confidence = 5;

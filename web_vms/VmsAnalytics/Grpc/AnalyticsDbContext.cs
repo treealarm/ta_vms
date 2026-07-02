@@ -14,7 +14,6 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
       e.HasKey(x => x.Id);
       e.Property(x => x.Id).HasColumnName("id");
       e.Property(x => x.CameraId).HasColumnName("camera_id");
-      e.Property(x => x.WatchId).HasColumnName("watch_id");
       e.Property(x => x.TrackId).HasColumnName("track_id");
       e.Property(x => x.Kind).HasColumnName("kind");
       e.Property(x => x.Confidence).HasColumnName("confidence");
@@ -30,7 +29,6 @@ public sealed class DbDetection
 {
   public long Id { get; set; }
   public string CameraId { get; set; } = string.Empty;
-  public Guid WatchId { get; set; }
   public long TrackId { get; set; }
   public string Kind { get; set; } = string.Empty;
   public float Confidence { get; set; }
