@@ -18,9 +18,12 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
       e.Property(x => x.Kind).HasColumnName("kind");
       e.Property(x => x.Confidence).HasColumnName("confidence");
       e.Property(x => x.DetectedAt).HasColumnName("detected_at");
-      e.Property(x => x.CropRef).HasColumnName("crop_ref");
+      e.Property(x => x.EventId).HasColumnName("event_id");
+      e.Property(x => x.StorageId).HasColumnName("storage_id");
+      e.Property(x => x.CropPath).HasColumnName("crop_path");
       e.Property(x => x.PlateText).HasColumnName("plate_text");
       e.HasIndex(x => new { x.CameraId, x.DetectedAt });
+      e.HasIndex(x => x.EventId);
     });
   }
 }
@@ -33,6 +36,11 @@ public sealed class DbDetection
   public string Kind { get; set; } = string.Empty;
   public float Confidence { get; set; }
   public DateTime DetectedAt { get; set; }
-  public string? CropRef { get; set; }
+  /// <summary>retention_events.event_id (ta_fs) this detection triggered — the gallery link.</summary>
+  public string? EventId { get; set; }
+  /// <summary>Storage volume the crop was written to; null = no crop saved.</summary>
+  public string? StorageId { get; set; }
+  /// <summary>Path relative to the storage root, like clips' file_path.</summary>
+  public string? CropPath { get; set; }
   public string? PlateText { get; set; }
 }

@@ -1,13 +1,81 @@
 import { useEffect, useState } from 'react'
-import { Box, Chip, Divider, List, ListItem, Stack, Typography } from '@mui/material'
+import { Box, Chip, Dialog, Divider, List, ListItem, Stack, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 
-import type { RecordingDto, RetentionEventRowDto } from '../dto/dtos'
+import type { AnalyticsDetectionDto, RecordingDto, RetentionEventRowDto } from '../dto/dtos'
 import { getErrorMessage } from '../store/api'
 import { useCameraName } from '../store'
 
 type Props = {
   selected: RetentionEventRowDto | null
+}
+
+const isAnalyticsEvent = (eventId: string) => eventId.startsWith('analytics-')
+
+async function fetchEventDetections(eventId: string, signal: AbortSignal): Promise<AnalyticsDetectionDto[]> {
+  const resp = await fetch(`/api/analytics/detections?eventId=${encodeURIComponent(eventId)}&limit=100`, { signal })
+  if (!resp.ok) throw new Error(await getErrorMessage(resp))
+  return (await resp.json()) as AnalyticsDetectionDto[]
+}
+
+function DetectionsBlock({ eventId }: { eventId: string }) {
+  const { t } = useTranslation()
+  const [detections, setDetections] = useState<AnalyticsDetectionDto[]>([])
+  const [zoom, setZoom] = useState<number | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchEventDetections(eventId, controller.signal)
+      .then(setDetections)
+      .catch(() => setDetections([]))
+    return () => controller.abort()
+  }, [eventId])
+
+  if (detections.length === 0) return null
+
+  return (
+    <>
+      <Divider />
+      <Box>
+        <Typography variant="subtitle2" gutterBottom>
+          {t('events.detections')} ({detections.length})
+        </Typography>
+        <Stack spacing={1}>
+          {detections.map((d) => (
+            <Stack key={d.id} direction="row" spacing={1} alignItems="center">
+              {d.hasCrop && (
+                <Box
+                  component="img"
+                  src={`/api/analytics/detections/${d.id}/crop`}
+                  alt={d.kind}
+                  onClick={() => setZoom(d.id)}
+                  sx={{ height: 64, maxWidth: 96, objectFit: 'contain', borderRadius: 0.5, cursor: 'pointer', flexShrink: 0 }}
+                />
+              )}
+              <Stack sx={{ minWidth: 0 }}>
+                <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap">
+                  <Chip label={t(`analytics.class.${d.kind}`, d.kind)} size="small" />
+                  <Typography variant="caption" color="text.secondary">
+                    {(d.confidence * 100).toFixed(0)}%
+                  </Typography>
+                  {d.plateText && <Chip label={d.plateText} size="small" color="primary" variant="outlined" />}
+                </Stack>
+                <Typography variant="caption" color="text.secondary">
+                  {new Date(d.detectedAt).toLocaleTimeString()}
+                </Typography>
+              </Stack>
+            </Stack>
+          ))}
+        </Stack>
+      </Box>
+
+      <Dialog open={zoom !== null} onClose={() => setZoom(null)} maxWidth="md">
+        {zoom !== null && (
+          <Box component="img" src={`/api/analytics/detections/${zoom}/crop`} alt="" sx={{ maxWidth: '90vw', maxHeight: '90vh' }} />
+        )}
+      </Dialog>
+    </>
+  )
 }
 
 function formatBytes(bytes: number): string {
@@ -97,7 +165,7 @@ export default function EventDetailsPanel({ selected }: Props) {
       <Box>
         <Typography variant="subtitle2" gutterBottom>{t('events.details')}</Typography>
         <Stack spacing={0.5}>
-          <DetailRow label={t('events.eventId')} value={selected.eventId} />
+          <DetailRow label={t('events.source')} value={isAnalyticsEvent(selected.eventId) ? t('events.sourceAnalytics') : t('events.sourceOnvif')} />
           <DetailRow label={t('cameras.cameraName')} value={cameraName} />
           {selected.streamName && <DetailRow label={t('events.streamName')} value={selected.streamName} />}
           <DetailRow label={t('events.alarmStart')} value={start.toLocaleString()} />
@@ -105,6 +173,8 @@ export default function EventDetailsPanel({ selected }: Props) {
           {duration && <DetailRow label={t('events.duration')} value={duration} />}
         </Stack>
       </Box>
+
+      {isAnalyticsEvent(selected.eventId) && <DetectionsBlock eventId={selected.eventId} />}
 
       <Divider />
 

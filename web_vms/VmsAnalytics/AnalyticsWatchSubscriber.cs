@@ -9,10 +9,12 @@ public sealed class AnalyticsWatchSubscriber(
   DaprPublishSubscribeClient pubSubClient,
   AnalyticsWatchCache cache,
   WatchReconciler reconciler,
+  CameraStorageResolver storageResolver,
   ILogger<AnalyticsWatchSubscriber> logger) : IHostedService, IDisposable
 {
   private const string AnalyticsWatchChangedTopic = "analytics-watch-changed";
   private const string CameraStateChangedTopic    = "camera-state-changed";
+  private const string StorageConfigChangedTopic  = "storage-config-changed";
   private static readonly string PubSubName =
     Environment.GetEnvironmentVariable("PUBSUB_NAME")
       ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
@@ -45,6 +47,7 @@ public sealed class AnalyticsWatchSubscriber(
       await Task.WhenAll(
         pubSubClient.SubscribeAsync(PubSubName, AnalyticsWatchChangedTopic, options, HandleAsync, ct),
         pubSubClient.SubscribeAsync(PubSubName, CameraStateChangedTopic, options, HandleAsync, ct),
+        pubSubClient.SubscribeAsync(PubSubName, StorageConfigChangedTopic, options, HandleStorageChangedAsync, ct),
         FallbackResyncLoopAsync(ct));
     }
     catch (OperationCanceledException) { }
@@ -66,6 +69,14 @@ public sealed class AnalyticsWatchSubscriber(
   private Task<TopicResponseAction> HandleAsync(TopicMessage message, CancellationToken ct)
   {
     _ = RefreshAndReconcileAsync(ct);
+    return Task.FromResult(TopicResponseAction.Success);
+  }
+
+  private Task<TopicResponseAction> HandleStorageChangedAsync(TopicMessage message, CancellationToken ct)
+  {
+    // Event is only a signal to re-pull (CLAUDE.md pub/sub rule) — drop the caches, the next
+    // crop save / janitor pass re-fetches storage assignments from VmsCfg.
+    storageResolver.InvalidateAll();
     return Task.FromResult(TopicResponseAction.Success);
   }
 

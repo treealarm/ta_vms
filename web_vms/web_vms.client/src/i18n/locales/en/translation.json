@@ -195,7 +195,11 @@
     "duration": "Duration",
     "streamName": "Stream",
     "clipsList": "Clips",
-    "active": "Active"
+    "active": "Active",
+    "source": "Source",
+    "sourceAnalytics": "Analytics",
+    "sourceOnvif": "ONVIF",
+    "detections": "Detections"
   },
   "stream": {
     "newStream": "New stream on {{camera}}",

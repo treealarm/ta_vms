@@ -7,22 +7,25 @@ using SourceRequest = Vms.Cfg.SourceRequest;
 namespace VmsAnalytics;
 
 // Diffs desired watch state (enabled + camera armed) against what's currently believed to be
-// running on video_a, issues StartWatch/StopWatch, and resolves the MediaMTX RTSP URL for the
-// camera on the fly — never stored, always derived (see project plan). Runs a keep-alive loop
-// for active watches because media_server's MediaMTX push is lazy/idle-timeout-based and
-// analytics itself doesn't otherwise look like a "viewer" to it.
-// Not driven by ASP.NET Core's hosted-service startup ordering for reconciliation itself — that
-// stays externally driven by AnalyticsWatchSubscriber on startup and on any relevant pub/sub
-// signal — but IS registered as a hosted service so its keep-alive loop starts/stops with the app.
+// running on each video_a worker, issues StartWatch/StopWatch, and resolves the MediaMTX RTSP
+// URL for the camera on the fly — never stored, always derived (see project plan). Watches are
+// sharded across workers by rendezvous hash (AnalyticsWorkerRegistry.SelectWorker). Runs a
+// keep-alive loop for active watches because media_server's MediaMTX push is lazy/idle-timeout-
+// based and analytics itself doesn't otherwise look like a "viewer" to it.
+// Reconciliation is externally driven by AnalyticsWatchSubscriber (startup + pub/sub signals);
+// registered as a hosted service only so the keep-alive loop starts/stops with the app.
 public sealed class WatchReconciler(
-  IAnalyticsWorkerClient workerClient,
+  AnalyticsWorkerRegistry workers,
   CfgService.CfgServiceClient cfg,
   ServerPairRegistry serverPairRegistry,
   ILogger<WatchReconciler> logger) : IHostedService
 {
   private static readonly TimeSpan KeepAliveInterval = TimeSpan.FromSeconds(30);
 
-  private readonly ConcurrentDictionary<string, AnalyticsWatch> _activeWatches = new();
+  private sealed record ActiveWatch(string WorkerAppId, AnalyticsWatch Watch);
+
+  // camera_id -> where it currently runs and with what config.
+  private readonly ConcurrentDictionary<string, ActiveWatch> _active = new();
   // Cameras already warned about "enabled but not armed" — warn once per transition, not on
   // every reconcile pass (reconciles also fire on a periodic fallback timer).
   private readonly ConcurrentDictionary<string, bool> _warnedNotArmed = new();
@@ -40,17 +43,25 @@ public sealed class WatchReconciler(
     return Task.CompletedTask;
   }
 
-  // Called when the StreamDetections channel to video_a drops: the worker may have restarted and
-  // lost its (in-memory-only) watches, so forget what we think is running — the next reconcile
-  // will re-issue StartWatch for everything that should be active.
-  public void ResetAssumedState() => _activeWatches.Clear();
+  // Called when the StreamDetections channel to a worker drops: that worker may have restarted
+  // and lost its (in-memory-only) watches, so forget what we think runs there — the next
+  // reconcile will re-issue StartWatch for everything assigned to it.
+  public void ResetAssumedState(string workerAppId)
+  {
+    foreach (var (cameraId, active) in _active)
+    {
+      if (active.WorkerAppId == workerAppId)
+        _active.TryRemove(cameraId, out _);
+    }
+  }
 
   public async Task ReconcileAsync(IReadOnlyDictionary<string, AnalyticsWatch> watches, CancellationToken ct)
   {
     foreach (var (cameraId, watch) in watches)
     {
       var shouldRun = watch.Enabled && watch.Armed;
-      var isRunning = _activeWatches.ContainsKey(cameraId);
+      var targetWorker = workers.SelectWorker(cameraId);
+      _active.TryGetValue(cameraId, out var current);
 
       if (watch.Enabled && !watch.Armed)
       {
@@ -64,55 +75,79 @@ public sealed class WatchReconciler(
         _warnedNotArmed.TryRemove(cameraId, out _);
       }
 
-      if (shouldRun && !isRunning)
+      if (shouldRun && current is null)
       {
-        var started = await StartWatchInternalAsync(watch, ct);
-        if (started)
+        if (await StartWatchOnWorkerAsync(targetWorker, watch, ct))
         {
-          _activeWatches[cameraId] = watch;
-          logger.LogInformation("Analytics watch for camera '{CameraId}' started", cameraId);
+          _active[cameraId] = new ActiveWatch(targetWorker, watch);
+          logger.LogInformation("Analytics watch for camera '{CameraId}' started on worker '{Worker}'", cameraId, targetWorker);
         }
       }
-      else if (shouldRun && isRunning)
+      else if (shouldRun && current is not null)
       {
-        // Config changed while running (stream_name/classes/confidence/debug crops/...) —
-        // re-issue StartWatch so video_a picks it up; its StartWatch is an idempotent upsert.
-        if (!_activeWatches.TryGetValue(cameraId, out var cached) || !watch.Equals(cached))
+        if (current.WorkerAppId != targetWorker)
         {
-          var restarted = await StartWatchInternalAsync(watch, ct);
-          if (restarted)
+          // Worker list changed and this camera's rendezvous winner moved.
+          await StopWatchOnWorkerAsync(current.WorkerAppId, cameraId, ct);
+          if (await StartWatchOnWorkerAsync(targetWorker, watch, ct))
+          {
+            _active[cameraId] = new ActiveWatch(targetWorker, watch);
+            logger.LogInformation("Analytics watch for camera '{CameraId}' migrated '{From}' -> '{To}'", cameraId, current.WorkerAppId, targetWorker);
+          }
+          else
+          {
+            _active.TryRemove(cameraId, out _);
+          }
+        }
+        else if (!watch.Equals(current.Watch))
+        {
+          // Config changed while running (stream_name/classes/confidence/debug crops/...) —
+          // re-issue StartWatch so the worker picks it up; StartWatch is an idempotent upsert.
+          if (await StartWatchOnWorkerAsync(targetWorker, watch, ct))
             logger.LogInformation("Analytics watch for camera '{CameraId}' restarted with updated config", cameraId);
-          _activeWatches[cameraId] = watch;
+          _active[cameraId] = new ActiveWatch(targetWorker, watch);
         }
       }
-      else if (!shouldRun && isRunning)
+      else if (!shouldRun && current is not null)
       {
-        await workerClient.StopWatchAsync(cameraId, ct);
-        _activeWatches.TryRemove(cameraId, out _);
+        await StopWatchOnWorkerAsync(current.WorkerAppId, cameraId, ct);
+        _active.TryRemove(cameraId, out _);
         logger.LogInformation("Analytics watch for camera '{CameraId}' stopped (disabled or camera not armed)", cameraId);
       }
     }
 
     // Stop watches that disappeared from VmsCfg entirely (removed via RemoveAnalyticsWatch).
-    foreach (var cameraId in _activeWatches.Keys.ToList())
+    foreach (var (cameraId, active) in _active)
     {
       if (!watches.ContainsKey(cameraId))
       {
-        await workerClient.StopWatchAsync(cameraId, ct);
-        _activeWatches.TryRemove(cameraId, out _);
+        await StopWatchOnWorkerAsync(active.WorkerAppId, cameraId, ct);
+        _active.TryRemove(cameraId, out _);
         logger.LogInformation("Analytics watch for camera '{CameraId}' no longer configured, stopped", cameraId);
       }
     }
   }
 
-  private async Task<bool> StartWatchInternalAsync(AnalyticsWatch watch, CancellationToken ct)
+  private async Task<bool> StartWatchOnWorkerAsync(string workerAppId, AnalyticsWatch watch, CancellationToken ct)
   {
     var rtspUrl = await ResolveRtspUrlAsync(watch.CameraId, watch.StreamName, ct);
     if (rtspUrl is null) return false;
 
-    return await workerClient.StartWatchAsync(
+    return await workers.ClientFor(workerAppId).StartWatchAsync(
       watch.CameraId, rtspUrl, credUser: null, credPass: null,
       watch.Classes, watch.MinConfidence, watch.SampleFps, watch.AttachDebugCrops, ct);
+  }
+
+  private async Task StopWatchOnWorkerAsync(string workerAppId, string cameraId, CancellationToken ct)
+  {
+    try
+    {
+      await workers.ClientFor(workerAppId).StopWatchAsync(cameraId, ct);
+    }
+    catch (Exception ex)
+    {
+      logger.LogWarning(ex, "StopWatch for camera '{CameraId}' on worker '{Worker}' failed", cameraId, workerAppId);
+    }
   }
 
   // Builds the MediaMTX-relayed RTSP URL for camera_id/stream_name (never the camera's own raw
@@ -159,7 +194,7 @@ public sealed class WatchReconciler(
     catch (Exception ex)
     {
       // Best-effort: don't block StartWatch on this — the RTSP URL is still valid even if the
-      // push isn't confirmed live yet; video_a's rtsp_reader will simply retry the connection.
+      // push isn't confirmed live yet; the worker's rtsp_reader will simply retry the connection.
       logger.LogWarning(ex, "Analytics: EnsureWebRtcStreaming failed for camera '{CameraId}'", cameraId);
     }
   }
@@ -169,13 +204,13 @@ public sealed class WatchReconciler(
     while (!ct.IsCancellationRequested)
     {
       await Task.Delay(KeepAliveInterval, ct);
-      foreach (var (cameraId, watch) in _activeWatches)
+      foreach (var (cameraId, active) in _active)
       {
         try
         {
           var camResp = await cfg.GetCameraAsync(new SourceRequest { SourceId = cameraId }, cancellationToken: ct);
           if (!camResp.Found) continue;
-          await EnsurePushAsync(cameraId, watch.StreamName, camResp.Setup.ServerId, ct);
+          await EnsurePushAsync(cameraId, active.Watch.StreamName, camResp.Setup.ServerId, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

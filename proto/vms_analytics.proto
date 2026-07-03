@@ -9,6 +9,8 @@ package vms.analytics;
 // consumes as a client (see web_vms/VmsAnalytics/proto/analytics.proto).
 service VmsAnalyticsService {
   rpc ListDetections(ListDetectionsRequest) returns (ListDetectionsResponse);
+  // Crop JPEG of a detection, read from the storage volume it was saved to.
+  rpc GetDetectionCrop(GetDetectionCropRequest) returns (GetDetectionCropResponse);
   // Debug: recent detection events from the in-memory ring buffer (mirrors VmsFs GetFsActivity) —
   // includes bbox and, when the watch has attach_debug_crops enabled, a JPEG of the object.
   rpc GetAnalyticsActivity(GetAnalyticsActivityRequest) returns (GetAnalyticsActivityResponse);
@@ -23,25 +25,36 @@ enum DetectionKind {
 }
 
 message Detection {
+  int64 id = 2;                // detections.id — addresses the crop via GetDetectionCrop
   string camera_id = 1;
   int64 track_id = 3;
   DetectionKind kind = 4;
   float confidence = 5;
   google.protobuf.Timestamp detected_at = 6;
-  string crop_ref = 7;
+  string event_id = 7;         // retention_events.event_id this detection triggered
   optional string plate_text = 8;
+  bool has_crop = 9;
 }
 
 message ListDetectionsRequest {
-  string camera_id = 1;
+  optional string camera_id = 1;
   optional google.protobuf.Timestamp from_ts = 2;
   optional google.protobuf.Timestamp to_ts = 3;
   uint32 limit = 4;
   optional string plate_text = 5;
+  optional string event_id = 6;
 }
 
 message ListDetectionsResponse {
   repeated Detection detections = 1;
+}
+
+message GetDetectionCropRequest {
+  int64 id = 1;
+}
+
+message GetDetectionCropResponse {
+  bytes jpeg = 1;  // empty when the detection has no saved crop
 }
 
 message BoundingBox {

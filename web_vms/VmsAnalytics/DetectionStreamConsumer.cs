@@ -7,15 +7,17 @@ using Vms.Fs;
 
 namespace VmsAnalytics;
 
-// Holds one long-lived StreamDetections call to video_a (reconnect/backoff on failure). For
-// each DetectionEvent: threshold + per-(watch_id, track_id) debounce, then persist + RetainEvent
-// for the camera the watch belongs to (watch_id == camera_id, 1:1 — see project plan).
+// Holds one long-lived StreamDetections call per analytics worker (reconnect/backoff per worker).
+// For each DetectionEvent: threshold + per-(camera, track) debounce, then persist + crop file on
+// the camera's storage volume + RetainEvent — all linked by one shared analytics-{guid} event id
+// (watch_id == camera_id, 1:1 — see project plan).
 public sealed class DetectionStreamConsumer(
-  IAnalyticsWorkerClient workerClient,
+  AnalyticsWorkerRegistry workers,
   AnalyticsWatchCache cache,
   DetectionDebouncer debouncer,
   AnalyticsActivityLog activityLog,
   WatchReconciler reconciler,
+  CameraStorageResolver storageResolver,
   IDbContextFactory<AnalyticsDbContext> dbFactory,
   CfgService.CfgServiceClient cfgClient,
   ServerPairRegistry serverPairRegistry,
@@ -26,11 +28,16 @@ public sealed class DetectionStreamConsumer(
 
   protected override async Task ExecuteAsync(CancellationToken stoppingToken)
   {
+    await Task.WhenAll(workers.Workers.Select(w => ConsumeWorkerAsync(w.Key, w.Value, stoppingToken)));
+  }
+
+  private async Task ConsumeWorkerAsync(string workerAppId, IAnalyticsWorkerClient client, CancellationToken stoppingToken)
+  {
     while (!stoppingToken.IsCancellationRequested)
     {
       try
       {
-        await foreach (var evt in workerClient.StreamDetectionsAsync(stoppingToken))
+        await foreach (var evt in client.StreamDetectionsAsync(stoppingToken))
           await HandleAsync(evt, stoppingToken);
       }
       catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -39,11 +46,11 @@ public sealed class DetectionStreamConsumer(
       }
       catch (Exception ex)
       {
-        logger.LogWarning(ex, "DetectionStreamConsumer stream error, retrying in 5s");
-        // A dropped stream is the liveness signal for video_a: if it restarted, its in-memory
-        // watches are gone — reset the reconciler's view and keep re-reconciling until the
-        // worker is reachable again and StartWatch succeeds.
-        reconciler.ResetAssumedState();
+        logger.LogWarning(ex, "Detection stream to worker '{Worker}' dropped, retrying in 5s", workerAppId);
+        // A dropped stream is the liveness signal for that worker: if it restarted, its
+        // in-memory watches are gone — reset the reconciler's view of it and keep
+        // re-reconciling until the worker is reachable again and StartWatch succeeds.
+        reconciler.ResetAssumedState(workerAppId);
         await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
         try
         {
@@ -51,7 +58,7 @@ public sealed class DetectionStreamConsumer(
         }
         catch (Exception reconcileEx)
         {
-          logger.LogWarning(reconcileEx, "Post-reconnect reconcile failed (worker still down?), will retry");
+          logger.LogWarning(reconcileEx, "Post-reconnect reconcile failed (worker '{Worker}' still down?), will retry", workerAppId);
         }
       }
     }
@@ -76,19 +83,23 @@ public sealed class DetectionStreamConsumer(
       detectedAt, cameraId, evt.TrackId, KindToDbString(evt.Kind), evt.Confidence,
       evt.Bbox?.X ?? 0, evt.Bbox?.Y ?? 0, evt.Bbox?.Width ?? 0, evt.Bbox?.Height ?? 0,
       evt.HasRecognizedText ? evt.RecognizedText : null,
-      evt.DebugCropJpeg.ToByteArray(),
+      evt.CropJpeg.ToByteArray(),
       persisted));
 
     if (!persisted)
       return;
 
-    logger.LogInformation(
-      "Detection: camera={CameraId} track={TrackId} kind={Kind} confidence={Confidence:F2} plate={PlateText}",
-      cameraId, evt.TrackId, evt.Kind, evt.Confidence,
-      evt.HasRecognizedText ? evt.RecognizedText : "-");
+    // One id links the retention event (ta_fs), the detection row and its crop file.
+    var eventId = $"analytics-{Guid.NewGuid()}";
 
-    await PersistAsync(cameraId, evt, detectedAt, ct);
-    await RetainAsync(cameraId, evt, detectedAt, ct);
+    logger.LogInformation(
+      "Detection: camera={CameraId} track={TrackId} kind={Kind} confidence={Confidence:F2} plate={PlateText} event={EventId}",
+      cameraId, evt.TrackId, evt.Kind, evt.Confidence,
+      evt.HasRecognizedText ? evt.RecognizedText : "-", eventId);
+
+    var (storageId, cropPath) = await SaveCropAsync(cameraId, evt, detectedAt, ct);
+    await PersistAsync(cameraId, evt, detectedAt, eventId, storageId, cropPath, ct);
+    await RetainAsync(cameraId, evt, detectedAt, eventId, ct);
 
     entityStatePublisher.Publish("detection", $"{cameraId}/{evt.TrackId}", new
     {
@@ -96,11 +107,49 @@ public sealed class DetectionStreamConsumer(
       confidence = evt.Confidence,
       detected_at = detectedAt,
       camera_id = cameraId,
+      event_id = eventId,
       bbox = new { x = evt.Bbox?.X ?? 0, y = evt.Bbox?.Y ?? 0, width = evt.Bbox?.Width ?? 0, height = evt.Bbox?.Height ?? 0 },
     });
   }
 
-  private async Task PersistAsync(string cameraId, DetectionEvent evt, DateTime detectedAt, CancellationToken ct)
+  // Writes the crop JPEG onto the camera's primary storage volume (same referencing model as
+  // clips: storage_id + path relative to the storage root). No storage assigned or write failure
+  // never loses the detection — the row is just saved without a crop.
+  private async Task<(string? StorageId, string? CropPath)> SaveCropAsync(
+    string cameraId, DetectionEvent evt, DateTime detectedAt, CancellationToken ct)
+  {
+    if (evt.CropJpeg.IsEmpty)
+      return (null, null);
+
+    var storage = await storageResolver.GetPrimaryAsync(cameraId, ct);
+    if (storage is null)
+    {
+      logger.LogWarning("Camera '{CameraId}' has no storage assigned — detection crop not saved", cameraId);
+      return (null, null);
+    }
+
+    var relative = Path.Combine(
+      "crops", cameraId,
+      detectedAt.ToString("yyyy/MM/dd/HH"),
+      $"{evt.TrackId}_{detectedAt:yyyyMMddTHHmmssfff}.jpg");
+    var fullPath = Path.Combine(storage.RootPath, relative);
+
+    try
+    {
+      Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+      await File.WriteAllBytesAsync(fullPath, evt.CropJpeg.ToByteArray(), ct);
+      return (storage.StorageId, relative);
+    }
+    catch (Exception ex)
+    {
+      logger.LogWarning(ex, "Failed to write detection crop '{Path}'", fullPath);
+      return (null, null);
+    }
+  }
+
+  private async Task PersistAsync(
+    string cameraId, DetectionEvent evt, DateTime detectedAt,
+    string eventId, string? storageId, string? cropPath, CancellationToken ct)
   {
     await using var db = await dbFactory.CreateDbContextAsync(ct);
     db.Detections.Add(new DbDetection
@@ -110,13 +159,15 @@ public sealed class DetectionStreamConsumer(
       Kind = KindToDbString(evt.Kind),
       Confidence = evt.Confidence,
       DetectedAt = detectedAt,
-      CropRef = string.IsNullOrEmpty(evt.CropRef) ? null : evt.CropRef,
+      EventId = eventId,
+      StorageId = storageId,
+      CropPath = cropPath,
       PlateText = evt.HasRecognizedText ? evt.RecognizedText : null,
     });
     await db.SaveChangesAsync(ct);
   }
 
-  private async Task RetainAsync(string cameraId, DetectionEvent evt, DateTime detectedAt, CancellationToken ct)
+  private async Task RetainAsync(string cameraId, DetectionEvent evt, DateTime detectedAt, string eventId, CancellationToken ct)
   {
     try
     {
@@ -125,7 +176,7 @@ public sealed class DetectionStreamConsumer(
       var fsClient = serverPairRegistry.GetFsClient(serverId);
       var request = new RetainEventRequest
       {
-        EventId = $"analytics-{Guid.NewGuid()}",
+        EventId = eventId,
         CameraId = cameraId,
         AlarmStartTs = Timestamp.FromDateTime(DateTime.SpecifyKind(detectedAt, DateTimeKind.Utc)),
         TimeoutSeconds = RetainTimeoutSeconds,

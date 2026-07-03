@@ -22,28 +22,32 @@ builder.AddVmsDebugState();
 
 builder.Services.AddSingleton(_ =>
   new CfgService.CfgServiceClient(DaprClient.CreateInvocationInvoker(cfgAppId)));
+builder.Services.AddSingleton(_ =>
+  new StorageService.StorageServiceClient(DaprClient.CreateInvocationInvoker(cfgAppId)));
 builder.Services.AddSingleton<ServerPairRegistry>();
+builder.Services.AddSingleton<CameraStorageResolver>();
 
-// video_a is optional, mirroring ISquareIntegration/NoOpSquareIntegration in VmsCfg: if not
-// configured, analytics ingestion is simply inactive — no exception, no crash.
-var analyticsWorkerAppId = Environment.GetEnvironmentVariable("DAPR_ANALYTICS_WORKER_APP_ID");
-if (!string.IsNullOrEmpty(analyticsWorkerAppId))
+// video_a workers are optional, mirroring ISquareIntegration/NoOpSquareIntegration in VmsCfg: if
+// none are configured, analytics ingestion is simply inactive — no exception, no crash. Multiple
+// workers (comma-separated app-ids) are sharded by rendezvous hash in AnalyticsWorkerRegistry.
+var workerAppIds = (Environment.GetEnvironmentVariable("DAPR_ANALYTICS_WORKER_APP_IDS") ?? "")
+  .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+if (workerAppIds.Length > 0)
 {
-  builder.Services.AddSingleton<IAnalyticsWorkerClient>(_ =>
-    new AnalyticsWorkerClient(new AnalyticsService.AnalyticsServiceClient(
-      DaprClient.CreateInvocationInvoker(analyticsWorkerAppId))));
+  builder.Services.AddSingleton(_ => new AnalyticsWorkerRegistry(
+    workerAppIds.ToDictionary(
+      appId => appId,
+      IAnalyticsWorkerClient (appId) => new AnalyticsWorkerClient(
+        new AnalyticsService.AnalyticsServiceClient(DaprClient.CreateInvocationInvoker(appId))))));
   builder.Services.AddSingleton<AnalyticsWatchCache>();
   builder.Services.AddSingleton<WatchReconciler>();
   builder.Services.AddHostedService(sp => sp.GetRequiredService<WatchReconciler>()); // keep-alive loop
   builder.Services.AddHostedService<AnalyticsWatchSubscriber>();
   builder.Services.AddHostedService<DetectionStreamConsumer>();
+  builder.Services.AddHostedService<CropJanitor>();
 }
-else
-{
-  builder.Services.AddSingleton<IAnalyticsWorkerClient, NoOpAnalyticsWorkerClient>();
-  // AnalyticsWatchCache/WatchReconciler/AnalyticsWatchSubscriber/DetectionStreamConsumer are not
-  // registered — there is nothing to reconcile against without a worker to call.
-}
+// else: AnalyticsWatchCache/WatchReconciler/subscriber/consumer/janitor are not registered —
+// there is nothing to reconcile against without a worker to call.
 
 builder.Services.AddSingleton(_ => new DetectionDebouncer(TimeSpan.FromSeconds(debounceSeconds)));
 builder.Services.AddSingleton<AnalyticsActivityLog>();

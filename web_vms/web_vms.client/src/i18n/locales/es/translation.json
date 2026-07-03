@@ -195,7 +195,11 @@
     "duration": "Duración",
     "streamName": "Stream",
     "clipsList": "Clips",
-    "active": "Activo"
+    "active": "Activo",
+    "source": "Origen",
+    "sourceAnalytics": "Analítica",
+    "sourceOnvif": "ONVIF",
+    "detections": "Detecciones"
   },
   "stream": {
     "newStream": "Nuevo flujo en {{camera}}",

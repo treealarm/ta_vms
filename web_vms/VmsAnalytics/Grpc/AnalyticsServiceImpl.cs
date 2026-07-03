@@ -10,7 +10,8 @@ namespace VmsAnalytics;
 
 public sealed class AnalyticsServiceImpl(
   IDbContextFactory<AnalyticsDbContext> dbFactory,
-  AnalyticsActivityLog activityLog)
+  AnalyticsActivityLog activityLog,
+  CameraStorageResolver storageResolver)
   : VmsAnalyticsService.VmsAnalyticsServiceBase
 {
   public override Task<GetAnalyticsActivityResponse> GetAnalyticsActivity(
@@ -43,8 +44,10 @@ public sealed class AnalyticsServiceImpl(
     await using var db = await dbFactory.CreateDbContextAsync(context.CancellationToken);
     var query = db.Detections.AsQueryable();
 
-    if (!string.IsNullOrWhiteSpace(request.CameraId))
+    if (request.HasCameraId && !string.IsNullOrWhiteSpace(request.CameraId))
       query = query.Where(d => d.CameraId == request.CameraId);
+    if (request.HasEventId && !string.IsNullOrWhiteSpace(request.EventId))
+      query = query.Where(d => d.EventId == request.EventId);
     if (request.FromTs is not null)
     {
       var from = request.FromTs.ToDateTime();
@@ -68,16 +71,38 @@ public sealed class AnalyticsServiceImpl(
     return response;
   }
 
+  public override async Task<GetDetectionCropResponse> GetDetectionCrop(
+    GetDetectionCropRequest request, ServerCallContext context)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(context.CancellationToken);
+    var row = await db.Detections.FindAsync([request.Id], context.CancellationToken);
+    if (row?.StorageId is null || row.CropPath is null)
+      return new GetDetectionCropResponse();
+
+    var root = await storageResolver.GetRootPathAsync(row.StorageId, context.CancellationToken);
+    if (root is null)
+      return new GetDetectionCropResponse();
+
+    var fullPath = Path.Combine(root, row.CropPath);
+    if (!File.Exists(fullPath))
+      return new GetDetectionCropResponse();
+
+    var bytes = await File.ReadAllBytesAsync(fullPath, context.CancellationToken);
+    return new GetDetectionCropResponse { Jpeg = Google.Protobuf.ByteString.CopyFrom(bytes) };
+  }
+
   private static Detection ToProto(DbDetection row)
   {
     var detection = new Detection
     {
+      Id = row.Id,
       CameraId = row.CameraId,
       TrackId = row.TrackId,
       Kind = ParseKind(row.Kind),
       Confidence = row.Confidence,
       DetectedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(row.DetectedAt, DateTimeKind.Utc)),
-      CropRef = row.CropRef ?? string.Empty,
+      EventId = row.EventId ?? string.Empty,
+      HasCrop = row.CropPath != null,
     };
     if (row.PlateText is not null) detection.PlateText = row.PlateText;
     return detection;

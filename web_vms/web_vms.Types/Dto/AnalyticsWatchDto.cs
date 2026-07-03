@@ -15,6 +15,19 @@ public record AnalyticsWatchDto
   public bool AttachDebugCrops { get; init; }
 }
 
+public record AnalyticsDetectionDto
+{
+  public long Id { get; init; }
+  public required string EventId { get; init; }
+  public required string CameraId { get; init; }
+  public long TrackId { get; init; }
+  public string Kind { get; init; } = string.Empty;
+  public float Confidence { get; init; }
+  public DateTime DetectedAt { get; init; }
+  public string? PlateText { get; init; }
+  public bool HasCrop { get; init; }
+}
+
 public record AnalyticsActivityEntryDto
 {
   public required string CameraId { get; init; }

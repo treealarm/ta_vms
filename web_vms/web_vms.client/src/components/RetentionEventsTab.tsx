@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   LinearProgress,
   List,
   ListItemButton,
@@ -168,9 +169,18 @@ export default function RetentionEventsTab() {
                       onClick={() => setSelected(row)}
                       sx={{ display: 'block', borderBottom: 1, borderColor: 'divider' }}
                     >
-                      <Typography variant="body2" fontWeight="medium" noWrap>
-                        {(camerasMap[row.cameraId]?.name || row.cameraId)}{row.streamName ? ` / ${row.streamName}` : ''}
-                      </Typography>
+                      <Stack direction="row" spacing={0.5} alignItems="center">
+                        <Typography variant="body2" fontWeight="medium" noWrap sx={{ flex: 1, minWidth: 0 }}>
+                          {(camerasMap[row.cameraId]?.name || row.cameraId)}{row.streamName ? ` / ${row.streamName}` : ''}
+                        </Typography>
+                        <Chip
+                          label={row.eventId.startsWith('analytics-') ? t('events.sourceAnalytics') : t('events.sourceOnvif')}
+                          size="small"
+                          variant="outlined"
+                          color={row.eventId.startsWith('analytics-') ? 'primary' : 'default'}
+                          sx={{ height: 18, '& .MuiChip-label': { px: 0.75, fontSize: '0.65rem' } }}
+                        />
+                      </Stack>
                       <Typography variant="caption" color="text.secondary" component="div">
                         {new Date(row.alarmStartTs).toLocaleString()}
                       </Typography>

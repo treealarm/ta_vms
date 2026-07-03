@@ -351,6 +351,18 @@ export type AnalyticsWatchDto = {
   attachDebugCrops: boolean
 }
 
+export type AnalyticsDetectionDto = {
+  id: number
+  eventId: string
+  cameraId: string
+  trackId: number
+  kind: AnalyticsDetectionClass | 'unknown'
+  confidence: number
+  detectedAt: string
+  plateText?: string
+  hasCrop: boolean
+}
+
 export type AnalyticsActivityEntryDto = {
   cameraId: string
   trackId: number
