@@ -24,6 +24,7 @@
     "mediaMtx": "Media Routers",
     "onvif": "ONVIF Events",
     "onvifSettings": "ONVIF Cfg",
+    "analytics": "Analytics",
     "logs": "Logs",
     "goAdmin": "Admin",
     "goOperator": "Operator",
@@ -109,6 +110,38 @@
     "seg": "seg {{seg}}s",
     "deleteTooltip": "Delete"
   },
+  "analytics": {
+    "title": "Video analytics",
+    "noWatches": "No analytics watches yet.",
+    "addWatch": "Add watch",
+    "newWatch": "New watch",
+    "editWatch": "Edit watch",
+    "camera": "Camera",
+    "stream": "Stream",
+    "minConfidence": "Min confidence",
+    "sampleFps": "Sample FPS",
+    "classes": "Detection classes",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "notArmed": "not armed",
+    "armedTooltip": "On guard — analytics running. Click to disarm.",
+    "disarmedTooltip": "Not on guard — analytics paused. Click to arm.",
+    "debugCrops": "Debug crops (JPEG per detection)",
+    "create": "Create",
+    "deleteTooltip": "Delete",
+    "class": {
+      "person": "Person",
+      "face": "Face",
+      "vehicle": "Vehicle",
+      "license_plate": "License plate"
+    }
+  },
+  "analyticsActivity": {
+    "tabLabel": "Analytics",
+    "autoRefresh": "Auto-refresh",
+    "noEvents": "No detection events yet.",
+    "debounced": "debounced"
+  },
   "mediaMtx": {
     "title": "Media Routers",
     "addServer": "Add router",
@@ -162,7 +195,12 @@
     "duration": "Duration",
     "streamName": "Stream",
     "clipsList": "Clips",
-    "active": "Active"
+    "active": "Active",
+    "source": "Source",
+    "sourceAnalytics": "Analytics",
+    "sourceOnvif": "ONVIF",
+    "sourceOther": "Other",
+    "detections": "Detections"
   },
   "stream": {
     "newStream": "New stream on {{camera}}",

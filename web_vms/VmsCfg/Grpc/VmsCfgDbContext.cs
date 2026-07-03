@@ -9,6 +9,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
   public DbSet<DbOnvifAlarmFilter> OnvifAlarmFilters { get; set; }
   public DbSet<DbCameraState> CameraStates { get; set; }
   public DbSet<DbStorage> Storages { get; set; }
+  public DbSet<DbAnalyticsWatch> AnalyticsWatches { get; set; }
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
@@ -62,6 +63,19 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.RootPath).HasColumnName("root_path");
       e.Property(x => x.ReservedBytes).HasColumnName("reserved_bytes");
     });
+
+    modelBuilder.Entity<DbAnalyticsWatch>(e =>
+    {
+      e.ToTable("analytics_watch");
+      e.HasKey(x => x.CameraId);
+      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.StreamName).HasColumnName("stream_name");
+      e.Property(x => x.Enabled).HasColumnName("enabled");
+      e.Property(x => x.Classes).HasColumnName("classes");
+      e.Property(x => x.MinConfidence).HasColumnName("min_confidence");
+      e.Property(x => x.SampleFps).HasColumnName("sample_fps");
+      e.Property(x => x.AttachDebugCrops).HasColumnName("attach_debug_crops");
+    });
   }
 }
 
@@ -101,4 +115,15 @@ public sealed class DbStorage
   public string StorageId { get; set; } = string.Empty;
   public string RootPath { get; set; } = string.Empty;
   public long ReservedBytes { get; set; }
+}
+
+public sealed class DbAnalyticsWatch
+{
+  public string CameraId { get; set; } = string.Empty;
+  public string StreamName { get; set; } = string.Empty;
+  public bool Enabled { get; set; }
+  public string Classes { get; set; } = "person";
+  public float MinConfidence { get; set; } = 0.5f;
+  public int SampleFps { get; set; } = 1;
+  public bool AttachDebugCrops { get; set; }
 }

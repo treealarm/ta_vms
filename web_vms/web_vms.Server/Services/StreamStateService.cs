@@ -33,11 +33,12 @@ public sealed class StreamStateService(ICameraManager manager)
       _            => RecordingMode.RecordingOff,
     };
 
+    // WebRtc deliberately left unset: this is a recording-state push only, and setting it
+    // would stop a MediaMTX push started on demand (live view, analytics).
     var state = new CameraState
     {
       CameraId      = cameraId,
       StreamName    = streamName,
-      WebRtc        = stream.WebRtc,
       RecordingMode = recordingMode,
     };
 

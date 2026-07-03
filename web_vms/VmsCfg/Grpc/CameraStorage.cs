@@ -811,4 +811,64 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     cmd.Parameters.AddWithValue(armed);
     await cmd.ExecuteNonQueryAsync(ct);
   }
+
+  // ── Analytics watches (1:1 per camera, mirrors onvif_event_subscription) ─
+
+  public async Task<List<AnalyticsWatch>> ListAnalyticsWatchesAsync(string? cameraId, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var query = db.AnalyticsWatches.AsQueryable();
+    if (!string.IsNullOrWhiteSpace(cameraId))
+      query = query.Where(w => w.CameraId == cameraId);
+
+    var rows = await query.OrderBy(w => w.CameraId).ToListAsync(ct);
+    var result = new List<AnalyticsWatch>();
+    foreach (var row in rows)
+      result.Add(await ToAnalyticsWatchProtoAsync(row, ct));
+    return result;
+  }
+
+  public async Task<AnalyticsWatch> UpsertAnalyticsWatchAsync(AnalyticsWatch watch, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+    var entity = await db.AnalyticsWatches.FindAsync([watch.CameraId], ct)
+                 ?? db.AnalyticsWatches.Add(new DbAnalyticsWatch { CameraId = watch.CameraId }).Entity;
+
+    entity.StreamName = watch.StreamName;
+    entity.Enabled = watch.Enabled;
+    entity.Classes = string.Join(',', watch.Classes);
+    entity.MinConfidence = watch.MinConfidence;
+    entity.SampleFps = (int)watch.SampleFps;
+    entity.AttachDebugCrops = watch.AttachDebugCrops;
+
+    await db.SaveChangesAsync(ct);
+    return await ToAnalyticsWatchProtoAsync(entity, ct);
+  }
+
+  public async Task<bool> RemoveAnalyticsWatchAsync(string cameraId, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var watch = await db.AnalyticsWatches.FindAsync([cameraId], ct);
+    if (watch == null) return false;
+    db.AnalyticsWatches.Remove(watch);
+    await db.SaveChangesAsync(ct);
+    return true;
+  }
+
+  private async Task<AnalyticsWatch> ToAnalyticsWatchProtoAsync(DbAnalyticsWatch row, CancellationToken ct)
+  {
+    var proto = new AnalyticsWatch
+    {
+      CameraId         = row.CameraId,
+      StreamName       = row.StreamName,
+      Enabled          = row.Enabled,
+      MinConfidence    = row.MinConfidence,
+      SampleFps        = (uint)row.SampleFps,
+      Armed            = await GetCameraArmedAsync(row.CameraId, ct),
+      AttachDebugCrops = row.AttachDebugCrops,
+    };
+    proto.Classes.AddRange(row.Classes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    return proto;
+  }
 }

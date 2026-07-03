@@ -20,6 +20,7 @@ import LogJournalPanel from './components/LogJournalPanel'
 import OnvifEventsLogPanel from './components/OnvifEventsLogPanel'
 import FsActivityPanel from './components/FsActivityPanel'
 import EntityStatePanel from './components/EntityStatePanel'
+import AnalyticsActivityPanel from './components/AnalyticsActivityPanel'
 
 function LangToggle() {
   const { t: _t } = useTranslation()
@@ -146,6 +147,7 @@ export default function App() {
                 <Tab label={t('onvifFilters.tabDebug')} sx={{ minHeight: 32, py: 0.25, fontSize: '0.75rem' }} />
                 <Tab label={t('fsActivity.tabLabel')} sx={{ minHeight: 32, py: 0.25, fontSize: '0.75rem' }} />
                 <Tab label={t('entityState.tabLabel')} sx={{ minHeight: 32, py: 0.25, fontSize: '0.75rem' }} />
+                <Tab label={t('analyticsActivity.tabLabel')} sx={{ minHeight: 32, py: 0.25, fontSize: '0.75rem' }} />
               </Tabs>
               <IconButton size="small" onClick={() => dispatch(toggleLogPanel())} sx={{ ml: 1 }}>
                 <CloseIcon fontSize="small" />
@@ -156,6 +158,7 @@ export default function App() {
               {debugTab === 1 && <OnvifEventsLogPanel />}
               {debugTab === 2 && <FsActivityPanel />}
               {debugTab === 3 && <EntityStatePanel />}
+              {debugTab === 4 && <AnalyticsActivityPanel />}
             </Box>
           </Box>
         )}

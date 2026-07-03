@@ -102,7 +102,6 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
 
   const merged: CameraSetupDto = { ...camera, ...(cameraState ?? {}) }
 
-  const isOnvifManaged = merged.onvifManaged ?? false
   const isDisabled = merged.disabled === true
   const effectiveArmed = pendingArmed !== null ? pendingArmed : (merged.armed ?? false)
   const effectiveStreamMode = (s: CameraStreamDto) => (s.overrideProfile ?? s.recordingProfile)?.mode ?? 'off'
@@ -269,27 +268,27 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             </Tooltip>
           )}
 
-          {isOnvifManaged && (
-            <Tooltip
-              title={isDisabled ? t('cameraCard.cameraDisabledTip') : (effectiveArmed ? t('cameraCard.armedTip') : t('cameraCard.disarmedTip'))}
-              placement="right"
-            >
-              <span>
-                <IconButton
-                  size="small"
-                  disabled={pendingArmed !== null || isDisabled}
-                  onClick={() => armDisarm(!effectiveArmed)}
-                  sx={{
-                    ...BTN_SX,
-                    ...(effectiveArmed && !isDisabled ? { color: '#ff9800' } : {}),
-                    ...((pendingArmed !== null || isDisabled) ? { opacity: 0.35 } : {}),
-                  }}
-                >
-                  <SecurityIcon sx={{ fontSize: '0.95rem' }} />
-                </IconButton>
-              </span>
-            </Tooltip>
-          )}
+          {/* Armed gates both ONVIF events and video analytics now, so it's available for every
+              camera — not just ONVIF-managed ones. */}
+          <Tooltip
+            title={isDisabled ? t('cameraCard.cameraDisabledTip') : (effectiveArmed ? t('cameraCard.armedTip') : t('cameraCard.disarmedTip'))}
+            placement="right"
+          >
+            <span>
+              <IconButton
+                size="small"
+                disabled={pendingArmed !== null || isDisabled}
+                onClick={() => armDisarm(!effectiveArmed)}
+                sx={{
+                  ...BTN_SX,
+                  ...(effectiveArmed && !isDisabled ? { color: '#ff9800' } : {}),
+                  ...((pendingArmed !== null || isDisabled) ? { opacity: 0.35 } : {}),
+                }}
+              >
+                <SecurityIcon sx={{ fontSize: '0.95rem' }} />
+              </IconButton>
+            </span>
+          </Tooltip>
 
           {activeStreamObj && (
             <Tooltip
@@ -448,32 +447,30 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
               </Box>
             )}
 
-            {/* Guard */}
-            {isOnvifManaged && (
-              <Box>
-                <Typography component="span" sx={CAPTION_SX}>
-                  {t('cameraCard.guardSection')} {t('cameraCard.cameraWide')}
-                </Typography>
-                <ToggleButtonGroup
-                  value={effectiveArmed ? 'armed' : 'disarmed'}
-                  exclusive
-                  disabled={pendingArmed !== null || isDisabled}
-                  onChange={(_, v) => v && armDisarm(v === 'armed')}
-                  size="small" fullWidth
-                  sx={{
-                    '& .MuiToggleButton-root': {
-                      flex: 1, py: 0.25, fontSize: '0.7rem',
-                      color: alpha(W, 0.6), borderColor: alpha(W, 0.2),
-                      '&.Mui-selected': { color: W, bgcolor: alpha(W, 0.15), borderColor: alpha(W, 0.35) },
-                    },
-                    '& .MuiToggleButton-root[value="armed"].Mui-selected': { color: '#ff9800', borderColor: '#ff9800' },
-                  }}
-                >
-                  <ToggleButton value="armed">{t('cameraCard.armedToggle')}</ToggleButton>
-                  <ToggleButton value="disarmed">{t('cameraCard.disarmedToggle')}</ToggleButton>
-                </ToggleButtonGroup>
-              </Box>
-            )}
+            {/* Guard — gates both ONVIF events and video analytics, so shown for every camera */}
+            <Box>
+              <Typography component="span" sx={CAPTION_SX}>
+                {t('cameraCard.guardSection')} {t('cameraCard.cameraWide')}
+              </Typography>
+              <ToggleButtonGroup
+                value={effectiveArmed ? 'armed' : 'disarmed'}
+                exclusive
+                disabled={pendingArmed !== null || isDisabled}
+                onChange={(_, v) => v && armDisarm(v === 'armed')}
+                size="small" fullWidth
+                sx={{
+                  '& .MuiToggleButton-root': {
+                    flex: 1, py: 0.25, fontSize: '0.7rem',
+                    color: alpha(W, 0.6), borderColor: alpha(W, 0.2),
+                    '&.Mui-selected': { color: W, bgcolor: alpha(W, 0.15), borderColor: alpha(W, 0.35) },
+                  },
+                  '& .MuiToggleButton-root[value="armed"].Mui-selected': { color: '#ff9800', borderColor: '#ff9800' },
+                }}
+              >
+                <ToggleButton value="armed">{t('cameraCard.armedToggle')}</ToggleButton>
+                <ToggleButton value="disarmed">{t('cameraCard.disarmedToggle')}</ToggleButton>
+              </ToggleButtonGroup>
+            </Box>
 
             {/* Solo */}
             {onToggleGridSolo != null && (

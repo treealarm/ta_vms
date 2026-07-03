@@ -10,28 +10,17 @@ public sealed class ArchiveTsStreamer(ServerPairRegistry registry) : IArchiveTsS
   public async Task<ArchiveStreamResult> OpenAsync(
     string clipUid, ulong offset, ulong length, string? rangeHeader, CancellationToken ct)
   {
-    // Fan-out to all FS instances — clipUid is local to the FS that stored it.
-    FsService.FsServiceClient? owner = null;
-    StatArchiveTsResponse? stat = null;
-    foreach (var fsId in registry.AllFsIds)
-    {
-      var candidate = new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
-      try
-      {
-        var s = await candidate.StatArchiveTsAsync(
-          new StatArchiveTsRequest { ClipUid = clipUid }, cancellationToken: ct);
-        if (s.Exists)
-        {
-          owner = candidate;
-          stat = s;
-          break;
-        }
-      }
-      catch (RpcException) { /* FS unavailable — try next */ }
-    }
+    // Fan-out to all FS instances (parallel, short deadline) — clipUid is local to the FS that
+    // stored it; keep streaming from the instance that owns the clip.
+    var statResults = await registry.FanOutFsAsync(
+      (c, o) => c.StatArchiveTsAsync(new StatArchiveTsRequest { ClipUid = clipUid }, o).ResponseAsync, ct);
+    var ownerHit = statResults.FirstOrDefault(r => r.Value.Exists);
 
-    if (owner is null || stat is null)
+    if (ownerHit is null)
       return new ArchiveStreamResult.NotFound("clip not found");
+
+    var owner = ownerHit.Client;
+    var stat = ownerHit.Value;
 
     var fileSize = stat.SizeBytes;
     if (offset > fileSize)

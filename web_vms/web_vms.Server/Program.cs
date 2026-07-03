@@ -39,6 +39,10 @@ var utilsAppId = Require("DAPR_UTILS_APP_ID");
 builder.Services.AddSingleton(_ =>
   new UtilsService.UtilsServiceClient(DaprClient.CreateInvocationInvoker(utilsAppId)));
 
+var analyticsAppId = Require("DAPR_ANALYTICS_APP_ID");
+builder.Services.AddSingleton(_ =>
+  new Vms.Analytics.VmsAnalyticsService.VmsAnalyticsServiceClient(
+    DaprClient.CreateInvocationInvoker(analyticsAppId)));
 
 builder.Services.AddSingleton<ICameraManager, CameraManager>();
 builder.Services.AddSingleton<MonitorManager>();

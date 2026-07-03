@@ -334,6 +334,52 @@ export type CameraArmedDto = {
   armed: boolean
 }
 
+export type AnalyticsDetectionClass = 'person' | 'face' | 'vehicle' | 'license_plate'
+
+export const ANALYTICS_DETECTION_CLASSES: AnalyticsDetectionClass[] = ['person', 'face', 'vehicle', 'license_plate']
+
+export type AnalyticsWatchDto = {
+  cameraId: string
+  streamName: string
+  enabled: boolean
+  classes: AnalyticsDetectionClass[]
+  minConfidence: number
+  sampleFps: number
+  /** Read-only; populated from camera armed state */
+  armed: boolean
+  /** Debug: video_a attaches a JPEG of each detection to the event stream */
+  attachDebugCrops: boolean
+}
+
+export type AnalyticsDetectionDto = {
+  id: number
+  eventId: string
+  cameraId: string
+  trackId: number
+  kind: AnalyticsDetectionClass | 'unknown'
+  confidence: number
+  detectedAt: string
+  plateText?: string
+  hasCrop: boolean
+}
+
+export type AnalyticsActivityEntryDto = {
+  cameraId: string
+  trackId: number
+  kind: AnalyticsDetectionClass | 'unknown'
+  confidence: number
+  bboxX: number
+  bboxY: number
+  bboxWidth: number
+  bboxHeight: number
+  detectedAt: string
+  plateText?: string
+  /** Base64 JPEG; absent when the watch has no debug crops enabled */
+  cropJpegBase64?: string
+  /** false = seen by the detector but dropped by debounce/armed check */
+  persisted: boolean
+}
+
 export type OnvifAlarmFilterDto = {
   id?: string
   cameraId: string

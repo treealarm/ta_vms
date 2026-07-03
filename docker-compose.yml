@@ -235,6 +235,44 @@ services:
     depends_on:
       - vmsfs
 
+  vmsanalytics:
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: web_vms/VmsAnalytics/Dockerfile
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      APP_ID: vmsanalytics
+    volumes: *data-volume
+    depends_on:
+      - postgres
+      - vmscfg
+
+  vmsanalytics-dapr:
+    profiles: [app]
+    image: "daprio/daprd:latest"
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "vmsanalytics"
+      - "-app-port"
+      - "${ANALYTICS_VMS_PORT}"
+      - "-app-protocol"
+      - "grpc"
+      - "-dapr-http-port"
+      - "3500"
+      - "-dapr-grpc-port"
+      - "50001"
+      - "-components-path"
+      - "/components"
+    volumes:
+      - "./init_files/dapr_components/docker:/components"
+    network_mode: "service:vmsanalytics"
+    depends_on:
+      - vmsanalytics
+
   vmsonvif-dapr:
     profiles: [app]
     image: "daprio/daprd:latest"

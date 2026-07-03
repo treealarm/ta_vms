@@ -16,8 +16,10 @@ import SimulationFab from './SimulationFab'
 import LogToggleButton from './LogToggleButton'
 import OnvifSubscriptionsPanel from './OnvifSubscriptionsPanel'
 import OnvifCameraSettingsPanel from './OnvifCameraSettingsPanel'
+import AnalyticsWatchesPanel from './AnalyticsWatchesPanel'
+import type { AnalyticsWatchesHandle } from './AnalyticsWatchesPanel'
 
-const TABS = ['cameras', 'mediamtx', 'monitors', 'storages', 'recording', 'onvif', 'onvif-settings'] as const
+const TABS = ['cameras', 'mediamtx', 'monitors', 'storages', 'recording', 'onvif', 'onvif-settings', 'analytics'] as const
 
 export default function AdminView() {
   const { t } = useTranslation()
@@ -29,11 +31,13 @@ export default function AdminView() {
   const cameraControlRef = useRef<CameraControlHandle>(null)
   const recordingRef = useRef<RecordingProfilesHandle>(null)
   const mediaMtxRef = useRef<MediaMtxServersHandle>(null)
+  const analyticsRef = useRef<AnalyticsWatchesHandle>(null)
 
   const handleTabChange = async (_: unknown, v: number) => {
     if (currentTab === 0 && !(await cameraControlRef.current?.applyIfDirty() ?? true)) return
     if (currentTab === 1 && !(await mediaMtxRef.current?.applyIfDirty() ?? true)) return
     if (currentTab === 4 && !(await recordingRef.current?.applyIfDirty() ?? true)) return
+    if (currentTab === 7 && !(await analyticsRef.current?.applyIfDirty() ?? true)) return
     navigate(`/admin/${TABS[v]}`)
   }
 
@@ -52,6 +56,7 @@ export default function AdminView() {
             <Route path="recording" element={<Box sx={{ flex: 1, overflowY: 'auto' }}><RecordingProfilesPanel ref={recordingRef} /></Box>} />
             <Route path="onvif" element={<OnvifSubscriptionsPanel />} />
             <Route path="onvif-settings" element={<Box sx={{ flex: 1, overflowY: 'auto' }}><OnvifCameraSettingsPanel /></Box>} />
+            <Route path="analytics" element={<Box sx={{ flex: 1, overflowY: 'auto' }}><AnalyticsWatchesPanel ref={analyticsRef} /></Box>} />
             <Route path="*" element={<Navigate to="/admin/cameras" replace />} />
           </Routes>
         </Box>
@@ -80,6 +85,7 @@ export default function AdminView() {
             <Tab label={t('nav.recording')} />
             <Tab label={t('nav.onvif')} />
             <Tab label={t('nav.onvifSettings')} />
+            <Tab label={t('nav.analytics')} />
           </Tabs>
         </Box>
 

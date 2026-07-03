@@ -30,7 +30,10 @@ message Credentials {
 message CameraState {
   string camera_id              = 1;
   vms.cfg.RecordingMode recording_mode = 2;
-  bool   web_rtc                = 3;
+  // When unset, the runtime WebRTC/MediaMTX push state is left untouched — recording-only
+  // callers (alarm override, profile changes) must not clobber a push started on demand
+  // (live view, analytics). Only LiveController sets this deliberately.
+  optional bool web_rtc         = 3;
   uint32 segment_seconds        = 6;
   string stream_name            = 7;
 }

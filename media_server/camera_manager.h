@@ -3,6 +3,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -65,20 +66,22 @@ public:
   bool start_recording(const std::string& camera_id, std::string& error);
   bool stop_recording(const std::string& camera_id, std::string& error);
 
-  // Apply recording policy and WebRTC on/off for an existing stream.
+  // Apply recording policy and (optionally) WebRTC on/off for an existing stream.
   // Config (rtsp_url, credentials, push URL) comes through configure_camera only.
+  // web_rtc == nullopt leaves the runtime push state untouched — recording-only state
+  // pushes must not stop a push started on demand (live view, analytics).
   bool set_camera_state(
     const std::string& camera_id,
     const std::string& stream_name,
     const recording_policy_spec& policy,
-    bool web_rtc,
+    std::optional<bool> web_rtc,
     std::string& error);
 
   std::optional<camera_info> get_camera_state(
     const std::string& camera_id,
     std::string& error);
 
-  bool remove_camera(const std::string& camera_id, std::string& error);
+  bool remove_camera(const std::string& camera_id);
 
   std::vector<camera_info> list_cameras() const;
   // Real-time per-stream state for all configured cameras (for debug entity-state publisher).

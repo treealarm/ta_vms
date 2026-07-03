@@ -14,6 +14,7 @@ namespace VmsCfg
     private const string CameraConfigChangedTopic      = "camera-config-changed";
     private const string MediaServerConfigChangedTopic = "media-server-config-changed";
     private const string CameraStateChangedTopic       = "camera-state-changed";
+    private const string AnalyticsWatchChangedTopic    = "analytics-watch-changed";
     private readonly string _pubSubName =
       Environment.GetEnvironmentVariable("PUBSUB_NAME")
         ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
@@ -44,6 +45,21 @@ namespace VmsCfg
         catch (Exception ex)
         {
           logger.LogWarning(ex, "Camera state invalidation publish failed for '{CameraId}'", cameraId);
+        }
+      });
+    }
+
+    private void NotifyAnalyticsWatchChanged(string watchId)
+    {
+      _ = Task.Run(async () =>
+      {
+        try
+        {
+          await daprClient.PublishEventAsync(_pubSubName, AnalyticsWatchChangedTopic, watchId);
+        }
+        catch (Exception ex)
+        {
+          logger.LogWarning(ex, "Analytics watch change notification failed for '{WatchId}'", watchId);
         }
       });
     }
@@ -567,6 +583,43 @@ namespace VmsCfg
       NotifyCameraStateChanged(request.CameraId);
       PushCameraStateToSquare(request.CameraId, request.Armed);
       return new OperationStatus { Success = true };
+    }
+
+    public override async Task<ListAnalyticsWatchesResponse> ListAnalyticsWatches(
+      ListAnalyticsWatchesRequest request, ServerCallContext context)
+    {
+      var cameraId = request.HasCameraId ? request.CameraId : null;
+      var watches = await storage.ListAnalyticsWatchesAsync(cameraId, context.CancellationToken);
+      var response = new ListAnalyticsWatchesResponse();
+      response.Watches.AddRange(watches);
+      return response;
+    }
+
+    public override async Task<OperationStatus> UpsertAnalyticsWatch(
+      UpsertAnalyticsWatchRequest request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.Watch?.CameraId))
+        return new OperationStatus { Success = false, Message = "camera_id must not be empty" };
+
+      var result = await storage.UpsertAnalyticsWatchAsync(request.Watch, context.CancellationToken);
+      logger.LogInformation("Analytics watch for camera '{CameraId}' upserted", result.CameraId);
+      NotifyAnalyticsWatchChanged(result.CameraId);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OperationStatus> RemoveAnalyticsWatch(
+      RemoveAnalyticsWatchRequest request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId))
+        return new OperationStatus { Success = false, Message = "camera_id must not be empty" };
+
+      var removed = await storage.RemoveAnalyticsWatchAsync(request.CameraId, context.CancellationToken);
+      if (removed)
+      {
+        logger.LogInformation("Analytics watch for camera '{CameraId}' removed", request.CameraId);
+        NotifyAnalyticsWatchChanged(request.CameraId);
+      }
+      return new OperationStatus { Success = removed };
     }
   }
 }

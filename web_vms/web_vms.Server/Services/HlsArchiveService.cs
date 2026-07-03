@@ -124,25 +124,17 @@ public sealed class HlsArchiveService(
   public async Task<HlsPlaylistResult> BuildEventPlaylistAsync(
     string eventId, string? streamName, CancellationToken ct)
   {
-    // Fan-out to all FS instances — event_id belongs to the FS that stored it.
-    GetRecordingsResponse? clipsResp = null;
-    FsService.FsServiceClient? eventFsClient = null;
-    foreach (var fsId in registry.AllFsIds)
-    {
-      var candidate = new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
-      try
-      {
-        clipsResp = await candidate.GetClipsForEventAsync(
-          new GetClipsForEventRequest { EventId = eventId }, cancellationToken: ct);
-        eventFsClient = candidate;
-        break;
-      }
-      catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound) { /* try next */ }
-      catch (RpcException) { /* FS unavailable — try next */ }
-    }
+    // Fan-out to all FS instances (parallel, short deadline) — event_id belongs to the FS that
+    // stored it; keep talking to the instance that actually has the clips.
+    var clipResults = await registry.FanOutFsAsync(
+      (c, o) => c.GetClipsForEventAsync(new GetClipsForEventRequest { EventId = eventId }, o).ResponseAsync, ct);
+    var hit = clipResults.FirstOrDefault(r => r.Value.Recordings.Count > 0) ?? clipResults.FirstOrDefault();
 
-    if (clipsResp is null || eventFsClient is null)
+    if (hit is null)
       return new HlsPlaylistResult.NotFound("event not found");
+
+    var clipsResp = hit.Value;
+    var eventFsClient = hit.Client;
 
     var clips = clipsResp.Recordings
       .Where(r => !string.IsNullOrWhiteSpace(r.ClipUid))

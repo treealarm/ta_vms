@@ -1,0 +1,75 @@
+// Canonical source: video_a repository, proto/analytics.proto.
+// This is a vendored copy — video_a is an independent, dependency-light C++
+// analytics engine consumed by VmsAnalytics over Dapr service invocation.
+// Keep in sync manually; the contract is small and expected to change rarely.
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package analytics;
+
+service AnalyticsService {
+  rpc StartWatch(WatchRequest) returns (WatchResponse);
+  rpc StopWatch(StopWatchRequest) returns (OperationStatus);
+  rpc StreamDetections(StreamDetectionsRequest) returns (stream DetectionEvent);
+}
+
+enum DetectionKind {
+  DETECTION_KIND_UNSPECIFIED = 0;
+  PERSON = 1;
+  FACE = 2;
+  VEHICLE = 3;
+  LICENSE_PLATE = 4;
+}
+
+message BoundingBox {
+  float x = 1;
+  float y = 2;
+  float width = 3;
+  float height = 4;
+}
+
+message WatchRequest {
+  string watch_id = 1;
+  string rtsp_url = 2;
+  optional string cred_user = 3;
+  optional string cred_pass = 4;
+  repeated DetectionKind classes = 5;
+  float min_confidence = 6;
+  uint32 sample_fps = 7;
+  // FACE / LICENSE_PLATE events always carry crop_jpeg (they are the caller's persistent
+  // artifacts). This debug flag additionally attaches crops to PERSON / VEHICLE events —
+  // off by default, costs one JPEG encode per detection.
+  bool attach_debug_crops = 8;
+}
+
+message WatchResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message StopWatchRequest {
+  string watch_id = 1;
+}
+
+message OperationStatus {
+  bool success = 1;
+  string message = 2;
+}
+
+message StreamDetectionsRequest {}
+
+message DetectionEvent {
+  string watch_id = 1;
+  int64 track_id = 2;
+  DetectionKind kind = 3;
+  float confidence = 4;
+  BoundingBox bbox = 5;
+  google.protobuf.Timestamp detected_at = 6;
+  optional string recognized_text = 8;
+  optional float text_confidence = 9;
+  // JPEG of the detected object's bbox region. Always set for FACE / LICENSE_PLATE; set for
+  // PERSON / VEHICLE only when WatchRequest.attach_debug_crops. The worker keeps no copy —
+  // persisting this is entirely the caller's concern (video_a is stateless).
+  bytes crop_jpeg = 10;
+}

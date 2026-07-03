@@ -41,6 +41,10 @@ service CfgService {
 
   rpc GetCamState(GetCamStateRequest) returns (GetCamStateResponse);
   rpc SetCamState(SetCamStateRequest) returns (OperationStatus);
+
+  rpc ListAnalyticsWatches(ListAnalyticsWatchesRequest) returns (ListAnalyticsWatchesResponse);
+  rpc UpsertAnalyticsWatch(UpsertAnalyticsWatchRequest) returns (OperationStatus);
+  rpc RemoveAnalyticsWatch(RemoveAnalyticsWatchRequest) returns (OperationStatus);
 }
 
 service StorageService {
@@ -342,4 +346,31 @@ message GetCamStateResponse {
 message SetCamStateRequest {
   string camera_id = 1;
   bool   armed     = 2;
+}
+
+message AnalyticsWatch {
+  string camera_id       = 1;  // PK; also the watch_id sent to video_a
+  string stream_name     = 2;
+  bool   enabled          = 3;
+  repeated string classes = 4;  // "person"/"face"/"vehicle"/"license_plate"
+  float  min_confidence   = 5;
+  uint32 sample_fps       = 6;
+  bool   armed            = 7;  // read-only; populated from camera_states.armed on read
+  bool   attach_debug_crops = 8;  // debug: video_a attaches a JPEG of each detection to the event
+}
+
+message ListAnalyticsWatchesRequest {
+  optional string camera_id = 1;
+}
+
+message ListAnalyticsWatchesResponse {
+  repeated AnalyticsWatch watches = 1;
+}
+
+message UpsertAnalyticsWatchRequest {
+  AnalyticsWatch watch = 1;
+}
+
+message RemoveAnalyticsWatchRequest {
+  string camera_id = 1;
 }

@@ -1,13 +1,111 @@
 import { useEffect, useState } from 'react'
-import { Box, Chip, Divider, List, ListItem, Stack, Typography } from '@mui/material'
+import { Box, Chip, Dialog, Divider, List, ListItem, Stack, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 
-import type { RecordingDto, RetentionEventRowDto } from '../dto/dtos'
+import type { AnalyticsDetectionDto, RecordingDto, RetentionEventRowDto } from '../dto/dtos'
 import { getErrorMessage } from '../store/api'
 import { useCameraName } from '../store'
 
 type Props = {
   selected: RetentionEventRowDto | null
+}
+
+export type EventSource = 'analytics' | 'onvif' | 'other'
+
+export function eventSource(eventId: string): EventSource {
+  if (eventId.startsWith('analytics-')) return 'analytics'
+  if (eventId.startsWith('onvif-')) return 'onvif'
+  return 'other'
+}
+
+async function fetchEventDetections(eventId: string, signal: AbortSignal): Promise<AnalyticsDetectionDto[]> {
+  const resp = await fetch(`/api/analytics/detections?eventId=${encodeURIComponent(eventId)}&limit=100`, { signal })
+  if (!resp.ok) throw new Error(await getErrorMessage(resp))
+  return (await resp.json()) as AnalyticsDetectionDto[]
+}
+
+function DetectionsBlock({ eventId }: { eventId: string }) {
+  const { t } = useTranslation()
+  const [detections, setDetections] = useState<AnalyticsDetectionDto[]>([])
+  // <img src="/api/..."> can't carry the Bearer token that the global fetch wrapper adds, so
+  // crops are fetched once into blob URLs shared by the thumbnail and the zoom dialog.
+  const [cropUrls, setCropUrls] = useState<Record<number, string>>({})
+  const [zoom, setZoom] = useState<number | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchEventDetections(eventId, controller.signal)
+      .then(setDetections)
+      .catch(() => setDetections([]))
+    return () => controller.abort()
+  }, [eventId])
+
+  useEffect(() => {
+    let cancelled = false
+    const urls: string[] = []
+    setCropUrls({})
+    for (const d of detections) {
+      if (!d.hasCrop) continue
+      void fetch(`/api/analytics/detections/${d.id}/crop`)
+        .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .then((blob) => {
+          if (cancelled) return
+          const url = URL.createObjectURL(blob)
+          urls.push(url)
+          setCropUrls((prev) => ({ ...prev, [d.id]: url }))
+        })
+        .catch(() => { /* broken crop — placeholder stays */ })
+    }
+    return () => {
+      cancelled = true
+      urls.forEach((u) => URL.revokeObjectURL(u))
+    }
+  }, [detections])
+
+  if (detections.length === 0) return null
+
+  const cropSx = { height: 64, width: 96, objectFit: 'contain', borderRadius: 0.5, flexShrink: 0 } as const
+
+  return (
+    <>
+      <Divider />
+      <Box>
+        <Typography variant="subtitle2" gutterBottom>
+          {t('events.detections')} ({detections.length})
+        </Typography>
+        <Stack spacing={1}>
+          {detections.map((d) => (
+            <Stack key={d.id} direction="row" spacing={1} alignItems="center">
+              {d.hasCrop && (cropUrls[d.id] ? (
+                <Box component="img" src={cropUrls[d.id]} alt={d.kind} onClick={() => setZoom(d.id)}
+                  sx={{ ...cropSx, cursor: 'pointer' }} />
+              ) : (
+                <Box sx={{ ...cropSx, bgcolor: 'action.hover' }} />
+              ))}
+              <Stack sx={{ minWidth: 0 }}>
+                <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap">
+                  <Chip label={t(`analytics.class.${d.kind}`, d.kind)} size="small" />
+                  <Typography variant="caption" color="text.secondary">
+                    {(d.confidence * 100).toFixed(0)}%
+                  </Typography>
+                  {d.plateText && <Chip label={d.plateText} size="small" color="primary" variant="outlined" />}
+                </Stack>
+                <Typography variant="caption" color="text.secondary">
+                  {new Date(d.detectedAt).toLocaleTimeString()}
+                </Typography>
+              </Stack>
+            </Stack>
+          ))}
+        </Stack>
+      </Box>
+
+      <Dialog open={zoom !== null} onClose={() => setZoom(null)} maxWidth="md">
+        {zoom !== null && cropUrls[zoom] && (
+          <Box component="img" src={cropUrls[zoom]} alt="" sx={{ maxWidth: '90vw', maxHeight: '90vh' }} />
+        )}
+      </Dialog>
+    </>
+  )
 }
 
 function formatBytes(bytes: number): string {
@@ -97,7 +195,14 @@ export default function EventDetailsPanel({ selected }: Props) {
       <Box>
         <Typography variant="subtitle2" gutterBottom>{t('events.details')}</Typography>
         <Stack spacing={0.5}>
-          <DetailRow label={t('events.eventId')} value={selected.eventId} />
+          <DetailRow
+            label={t('events.source')}
+            value={{
+              analytics: t('events.sourceAnalytics'),
+              onvif: t('events.sourceOnvif'),
+              other: t('events.sourceOther'),
+            }[eventSource(selected.eventId)]}
+          />
           <DetailRow label={t('cameras.cameraName')} value={cameraName} />
           {selected.streamName && <DetailRow label={t('events.streamName')} value={selected.streamName} />}
           <DetailRow label={t('events.alarmStart')} value={start.toLocaleString()} />
@@ -105,6 +210,8 @@ export default function EventDetailsPanel({ selected }: Props) {
           {duration && <DetailRow label={t('events.duration')} value={duration} />}
         </Stack>
       </Box>
+
+      {eventSource(selected.eventId) === 'analytics' && <DetectionsBlock eventId={selected.eventId} />}
 
       <Divider />
 
