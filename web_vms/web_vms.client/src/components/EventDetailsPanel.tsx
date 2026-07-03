@@ -12,6 +12,33 @@ type Props = {
 
 const isAnalyticsEvent = (eventId: string) => eventId.startsWith('analytics-')
 
+// <img src="/api/..."> can't carry the Bearer token that the global fetch wrapper adds (native
+// image requests have no way to set Authorization), so authenticated crops must be fetched and
+// shown as a blob URL instead.
+function AuthImage({ src, onClick, sx }: { src: string; onClick?: () => void; sx?: object }) {
+  const [url, setUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    let objectUrl: string | null = null
+    let cancelled = false
+    fetch(src)
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((blob) => {
+        if (cancelled) return
+        objectUrl = URL.createObjectURL(blob)
+        setUrl(objectUrl)
+      })
+      .catch(() => { /* broken crop — leave placeholder */ })
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [src])
+
+  if (!url) return <Box sx={{ ...sx, bgcolor: 'action.hover' }} />
+  return <Box component="img" src={url} alt="" onClick={onClick} sx={sx} />
+}
+
 async function fetchEventDetections(eventId: string, signal: AbortSignal): Promise<AnalyticsDetectionDto[]> {
   const resp = await fetch(`/api/analytics/detections?eventId=${encodeURIComponent(eventId)}&limit=100`, { signal })
   if (!resp.ok) throw new Error(await getErrorMessage(resp))
@@ -44,10 +71,8 @@ function DetectionsBlock({ eventId }: { eventId: string }) {
           {detections.map((d) => (
             <Stack key={d.id} direction="row" spacing={1} alignItems="center">
               {d.hasCrop && (
-                <Box
-                  component="img"
+                <AuthImage
                   src={`/api/analytics/detections/${d.id}/crop`}
-                  alt={d.kind}
                   onClick={() => setZoom(d.id)}
                   sx={{ height: 64, maxWidth: 96, objectFit: 'contain', borderRadius: 0.5, cursor: 'pointer', flexShrink: 0 }}
                 />
@@ -71,7 +96,7 @@ function DetectionsBlock({ eventId }: { eventId: string }) {
 
       <Dialog open={zoom !== null} onClose={() => setZoom(null)} maxWidth="md">
         {zoom !== null && (
-          <Box component="img" src={`/api/analytics/detections/${zoom}/crop`} alt="" sx={{ maxWidth: '90vw', maxHeight: '90vh' }} />
+          <AuthImage src={`/api/analytics/detections/${zoom}/crop`} sx={{ maxWidth: '90vw', maxHeight: '90vh' }} />
         )}
       </Dialog>
     </>

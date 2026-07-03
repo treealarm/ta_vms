@@ -16,6 +16,25 @@ public sealed class FSController(
   ServerPairRegistry registry) : ControllerBase
 {
   private static readonly TimeSpan FrameJpegTimeout = TimeSpan.FromSeconds(15);
+  private static readonly TimeSpan FanOutTimeout = TimeSpan.FromSeconds(3);
+
+  // Queries every FS instance in parallel with a short deadline and returns the results that came
+  // back in time. A dead/unreachable instance (e.g. a configured-but-not-running vmsfs-2) fails
+  // its own task fast instead of blocking the others sequentially, so the endpoint's latency is
+  // the slowest *responding* instance, capped at FanOutTimeout — not the sum of all timeouts.
+  private async Task<IReadOnlyList<T>> FanOutFsAsync<T>(
+    Func<FsService.FsServiceClient, CallOptions, Task<T>> call, CancellationToken ct)
+  {
+    var options = new CallOptions(deadline: DateTime.UtcNow.Add(FanOutTimeout), cancellationToken: ct);
+    var tasks = registry.AllFsIds.Select(async fsId =>
+    {
+      var fsClient = new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
+      try { return (ok: true, value: await call(fsClient, options)); }
+      catch (RpcException) { return (ok: false, value: default(T)!); }
+    });
+    var results = await Task.WhenAll(tasks);
+    return results.Where(r => r.ok).Select(r => r.value).ToList();
+  }
 
   private static CameraControlService.CameraControlServiceClient GetMediaClient(string serverId) =>
     new(DaprClient.CreateInvocationInvoker(serverId));
@@ -236,23 +255,18 @@ public sealed class FSController(
     // Fan-out to all FS instances and merge results sorted by alarm_start desc.
     var allEvents = new List<RetentionEventRowDto>();
     var hasMore = false;
-    foreach (var fsId in registry.AllFsIds)
+    var responses = await FanOutFsAsync((c, o) => c.ListRetentionEventsAsync(grpcReq, o).ResponseAsync, ct);
+    foreach (var resp in responses)
     {
-      var fsClient = new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
-      try
+      if (resp.HasMore) hasMore = true;
+      allEvents.AddRange(resp.Events.Select(e => new RetentionEventRowDto
       {
-        var resp = await fsClient.ListRetentionEventsAsync(grpcReq, cancellationToken: ct);
-        if (resp.HasMore) hasMore = true;
-        allEvents.AddRange(resp.Events.Select(e => new RetentionEventRowDto
-        {
-          EventId      = e.EventId,
-          CameraId     = e.CameraId,
-          StreamName   = e.HasStreamName ? e.StreamName : null,
-          AlarmStartTs = e.AlarmStartTs.ToDateTime(),
-          AlarmEndTs   = e.AlarmEndTs?.ToDateTime()
-        }));
-      }
-      catch (RpcException) { /* FS instance unavailable — skip */ }
+        EventId      = e.EventId,
+        CameraId     = e.CameraId,
+        StreamName   = e.HasStreamName ? e.StreamName : null,
+        AlarmStartTs = e.AlarmStartTs.ToDateTime(),
+        AlarmEndTs   = e.AlarmEndTs?.ToDateTime()
+      }));
     }
 
     var sorted = allEvents
@@ -279,19 +293,11 @@ public sealed class FSController(
     if (string.IsNullOrWhiteSpace(eventId))
       return BadRequest(new { error = "eventId is required" });
 
-    // Fan-out to all FS instances — event_id is local to the FS that stored it.
-    GetRecordingsResponse? clipsResp = null;
-    foreach (var fsId in registry.AllFsIds)
-    {
-      var fsClient = new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
-      try
-      {
-        clipsResp = await fsClient.GetClipsForEventAsync(
-          new GetClipsForEventRequest { EventId = eventId }, cancellationToken: ct);
-        break;
-      }
-      catch (RpcException) { /* not on this FS instance — try next */ }
-    }
+    // Fan-out to all FS instances — event_id is local to the FS that stored it; take the one
+    // that actually has clips for it.
+    var clipResponses = await FanOutFsAsync(
+      (c, o) => c.GetClipsForEventAsync(new GetClipsForEventRequest { EventId = eventId }, o).ResponseAsync, ct);
+    var clipsResp = clipResponses.FirstOrDefault(r => r.Recordings.Count > 0) ?? clipResponses.FirstOrDefault();
 
     if (clipsResp is null)
       return NotFound(new { error = "event not found" });
@@ -327,19 +333,11 @@ public sealed class FSController(
     if (string.IsNullOrWhiteSpace(eventId))
       return BadRequest(new { error = "eventId is required" });
 
-    // Fan-out to all FS instances — event_id is local to the FS that stored it.
-    GetRecordingsResponse? clipsResp = null;
-    foreach (var fsId in registry.AllFsIds)
-    {
-      var fsClient = new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
-      try
-      {
-        clipsResp = await fsClient.GetClipsForEventAsync(
-          new GetClipsForEventRequest { EventId = eventId }, cancellationToken: ct);
-        break;
-      }
-      catch (RpcException) { /* not on this FS instance — try next */ }
-    }
+    // Fan-out to all FS instances — event_id is local to the FS that stored it; take the one
+    // that actually has clips for it.
+    var clipResponses = await FanOutFsAsync(
+      (c, o) => c.GetClipsForEventAsync(new GetClipsForEventRequest { EventId = eventId }, o).ResponseAsync, ct);
+    var clipsResp = clipResponses.FirstOrDefault(r => r.Recordings.Count > 0) ?? clipResponses.FirstOrDefault();
 
     if (clipsResp is null)
       return NotFound(new { error = "event not found" });
@@ -357,26 +355,21 @@ public sealed class FSController(
   {
     var lim = (uint)(limit ?? 100);
     var allEvents = new List<FsFileEventDto>();
-    foreach (var fsId in registry.AllFsIds)
+    var responses = await FanOutFsAsync((c, o) => c.GetFsActivityAsync(new GetFsActivityRequest { Limit = lim }, o).ResponseAsync, ct);
+    foreach (var resp in responses)
     {
-      var fsClient = new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
-      try
+      allEvents.AddRange(resp.Events.Select(e => new FsFileEventDto
       {
-        var resp = await fsClient.GetFsActivityAsync(new GetFsActivityRequest { Limit = lim }, cancellationToken: ct);
-        allEvents.AddRange(resp.Events.Select(e => new FsFileEventDto
-        {
-          ClipUid    = e.ClipUid,
-          FilePath   = e.FilePath,
-          CameraId   = e.CameraId,
-          StreamName = e.StreamName,
-          Retained   = e.Retained,
-          SizeBytes  = e.SizeBytes,
-          OccurredAt = e.OccurredAt.ToDateTime(),
-          EventType  = e.EventType,
-          EndTs      = e.EndTs?.ToDateTime(),
-        }));
-      }
-      catch (RpcException) { /* FS instance unavailable — skip */ }
+        ClipUid    = e.ClipUid,
+        FilePath   = e.FilePath,
+        CameraId   = e.CameraId,
+        StreamName = e.StreamName,
+        Retained   = e.Retained,
+        SizeBytes  = e.SizeBytes,
+        OccurredAt = e.OccurredAt.ToDateTime(),
+        EventType  = e.EventType,
+        EndTs      = e.EndTs?.ToDateTime(),
+      }));
     }
 
     var sorted = allEvents
