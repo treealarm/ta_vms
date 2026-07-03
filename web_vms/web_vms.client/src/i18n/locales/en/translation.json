@@ -199,6 +199,7 @@
     "source": "Source",
     "sourceAnalytics": "Analytics",
     "sourceOnvif": "ONVIF",
+    "sourceOther": "Other",
     "detections": "Detections"
   },
   "stream": {

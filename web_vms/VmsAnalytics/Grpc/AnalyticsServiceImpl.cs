@@ -25,7 +25,7 @@ public sealed class AnalyticsServiceImpl(
       {
         CameraId   = e.CameraId,
         TrackId    = e.TrackId,
-        Kind       = ParseKind(e.Kind),
+        Kind       = DetectionKinds.Parse(e.Kind),
         Confidence = e.Confidence,
         Bbox       = new BoundingBox { X = e.BboxX, Y = e.BboxY, Width = e.BboxWidth, Height = e.BboxHeight },
         DetectedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.DetectedAt, DateTimeKind.Utc)),
@@ -61,9 +61,10 @@ public sealed class AnalyticsServiceImpl(
     if (request.HasPlateText && !string.IsNullOrWhiteSpace(request.PlateText))
       query = query.Where(d => d.PlateText == request.PlateText);
 
-    query = query.OrderByDescending(d => d.DetectedAt);
-    if (request.Limit > 0)
-      query = query.Take((int)request.Limit);
+    // Limit == 0 (proto default) must not mean "the whole table" — cap it server-side.
+    query = query
+      .OrderByDescending(d => d.DetectedAt)
+      .Take(request.Limit > 0 ? (int)request.Limit : 100);
 
     var rows = await query.ToListAsync(context.CancellationToken);
     var response = new ListDetectionsResponse();
@@ -98,7 +99,7 @@ public sealed class AnalyticsServiceImpl(
       Id = row.Id,
       CameraId = row.CameraId,
       TrackId = row.TrackId,
-      Kind = ParseKind(row.Kind),
+      Kind = DetectionKinds.Parse(row.Kind),
       Confidence = row.Confidence,
       DetectedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(row.DetectedAt, DateTimeKind.Utc)),
       EventId = row.EventId ?? string.Empty,
@@ -108,12 +109,4 @@ public sealed class AnalyticsServiceImpl(
     return detection;
   }
 
-  private static DetectionKind ParseKind(string kind) => kind switch
-  {
-    "person" => DetectionKind.Person,
-    "face" => DetectionKind.Face,
-    "vehicle" => DetectionKind.Vehicle,
-    "license_plate" => DetectionKind.LicensePlate,
-    _ => DetectionKind.Unspecified,
-  };
 }

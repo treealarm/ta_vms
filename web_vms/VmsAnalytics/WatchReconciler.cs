@@ -26,6 +26,11 @@ public sealed class WatchReconciler(
 
   // camera_id -> where it currently runs and with what config.
   private readonly ConcurrentDictionary<string, ActiveWatch> _active = new();
+  // Reconciles are triggered concurrently (pub/sub handler, fallback timer, startup retry,
+  // per-worker post-reconnect) — serialize the passes so two of them can't both decide a watch
+  // isn't running and double-issue StartWatch (the worker's upsert would tear the pipeline down
+  // mid-stream), or interleave a stop/start during a migration.
+  private readonly SemaphoreSlim _reconcileLock = new(1, 1);
   // Cameras already warned about "enabled but not armed" — warn once per transition, not on
   // every reconcile pass (reconciles also fire on a periodic fallback timer).
   private readonly ConcurrentDictionary<string, bool> _warnedNotArmed = new();
@@ -56,6 +61,19 @@ public sealed class WatchReconciler(
   }
 
   public async Task ReconcileAsync(IReadOnlyDictionary<string, AnalyticsWatch> watches, CancellationToken ct)
+  {
+    await _reconcileLock.WaitAsync(ct);
+    try
+    {
+      await ReconcileLockedAsync(watches, ct);
+    }
+    finally
+    {
+      _reconcileLock.Release();
+    }
+  }
+
+  private async Task ReconcileLockedAsync(IReadOnlyDictionary<string, AnalyticsWatch> watches, CancellationToken ct)
   {
     foreach (var (cameraId, watch) in watches)
     {

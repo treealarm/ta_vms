@@ -10,33 +10,12 @@ type Props = {
   selected: RetentionEventRowDto | null
 }
 
-const isAnalyticsEvent = (eventId: string) => eventId.startsWith('analytics-')
+export type EventSource = 'analytics' | 'onvif' | 'other'
 
-// <img src="/api/..."> can't carry the Bearer token that the global fetch wrapper adds (native
-// image requests have no way to set Authorization), so authenticated crops must be fetched and
-// shown as a blob URL instead.
-function AuthImage({ src, onClick, sx }: { src: string; onClick?: () => void; sx?: object }) {
-  const [url, setUrl] = useState<string | null>(null)
-
-  useEffect(() => {
-    let objectUrl: string | null = null
-    let cancelled = false
-    fetch(src)
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((blob) => {
-        if (cancelled) return
-        objectUrl = URL.createObjectURL(blob)
-        setUrl(objectUrl)
-      })
-      .catch(() => { /* broken crop — leave placeholder */ })
-    return () => {
-      cancelled = true
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
-    }
-  }, [src])
-
-  if (!url) return <Box sx={{ ...sx, bgcolor: 'action.hover' }} />
-  return <Box component="img" src={url} alt="" onClick={onClick} sx={sx} />
+export function eventSource(eventId: string): EventSource {
+  if (eventId.startsWith('analytics-')) return 'analytics'
+  if (eventId.startsWith('onvif-')) return 'onvif'
+  return 'other'
 }
 
 async function fetchEventDetections(eventId: string, signal: AbortSignal): Promise<AnalyticsDetectionDto[]> {
@@ -48,6 +27,9 @@ async function fetchEventDetections(eventId: string, signal: AbortSignal): Promi
 function DetectionsBlock({ eventId }: { eventId: string }) {
   const { t } = useTranslation()
   const [detections, setDetections] = useState<AnalyticsDetectionDto[]>([])
+  // <img src="/api/..."> can't carry the Bearer token that the global fetch wrapper adds, so
+  // crops are fetched once into blob URLs shared by the thumbnail and the zoom dialog.
+  const [cropUrls, setCropUrls] = useState<Record<number, string>>({})
   const [zoom, setZoom] = useState<number | null>(null)
 
   useEffect(() => {
@@ -58,7 +40,31 @@ function DetectionsBlock({ eventId }: { eventId: string }) {
     return () => controller.abort()
   }, [eventId])
 
+  useEffect(() => {
+    let cancelled = false
+    const urls: string[] = []
+    setCropUrls({})
+    for (const d of detections) {
+      if (!d.hasCrop) continue
+      void fetch(`/api/analytics/detections/${d.id}/crop`)
+        .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .then((blob) => {
+          if (cancelled) return
+          const url = URL.createObjectURL(blob)
+          urls.push(url)
+          setCropUrls((prev) => ({ ...prev, [d.id]: url }))
+        })
+        .catch(() => { /* broken crop — placeholder stays */ })
+    }
+    return () => {
+      cancelled = true
+      urls.forEach((u) => URL.revokeObjectURL(u))
+    }
+  }, [detections])
+
   if (detections.length === 0) return null
+
+  const cropSx = { height: 64, width: 96, objectFit: 'contain', borderRadius: 0.5, flexShrink: 0 } as const
 
   return (
     <>
@@ -70,13 +76,12 @@ function DetectionsBlock({ eventId }: { eventId: string }) {
         <Stack spacing={1}>
           {detections.map((d) => (
             <Stack key={d.id} direction="row" spacing={1} alignItems="center">
-              {d.hasCrop && (
-                <AuthImage
-                  src={`/api/analytics/detections/${d.id}/crop`}
-                  onClick={() => setZoom(d.id)}
-                  sx={{ height: 64, maxWidth: 96, objectFit: 'contain', borderRadius: 0.5, cursor: 'pointer', flexShrink: 0 }}
-                />
-              )}
+              {d.hasCrop && (cropUrls[d.id] ? (
+                <Box component="img" src={cropUrls[d.id]} alt={d.kind} onClick={() => setZoom(d.id)}
+                  sx={{ ...cropSx, cursor: 'pointer' }} />
+              ) : (
+                <Box sx={{ ...cropSx, bgcolor: 'action.hover' }} />
+              ))}
               <Stack sx={{ minWidth: 0 }}>
                 <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap">
                   <Chip label={t(`analytics.class.${d.kind}`, d.kind)} size="small" />
@@ -95,8 +100,8 @@ function DetectionsBlock({ eventId }: { eventId: string }) {
       </Box>
 
       <Dialog open={zoom !== null} onClose={() => setZoom(null)} maxWidth="md">
-        {zoom !== null && (
-          <AuthImage src={`/api/analytics/detections/${zoom}/crop`} sx={{ maxWidth: '90vw', maxHeight: '90vh' }} />
+        {zoom !== null && cropUrls[zoom] && (
+          <Box component="img" src={cropUrls[zoom]} alt="" sx={{ maxWidth: '90vw', maxHeight: '90vh' }} />
         )}
       </Dialog>
     </>
@@ -190,7 +195,14 @@ export default function EventDetailsPanel({ selected }: Props) {
       <Box>
         <Typography variant="subtitle2" gutterBottom>{t('events.details')}</Typography>
         <Stack spacing={0.5}>
-          <DetailRow label={t('events.source')} value={isAnalyticsEvent(selected.eventId) ? t('events.sourceAnalytics') : t('events.sourceOnvif')} />
+          <DetailRow
+            label={t('events.source')}
+            value={{
+              analytics: t('events.sourceAnalytics'),
+              onvif: t('events.sourceOnvif'),
+              other: t('events.sourceOther'),
+            }[eventSource(selected.eventId)]}
+          />
           <DetailRow label={t('cameras.cameraName')} value={cameraName} />
           {selected.streamName && <DetailRow label={t('events.streamName')} value={selected.streamName} />}
           <DetailRow label={t('events.alarmStart')} value={start.toLocaleString()} />
@@ -199,7 +211,7 @@ export default function EventDetailsPanel({ selected }: Props) {
         </Stack>
       </Box>
 
-      {isAnalyticsEvent(selected.eventId) && <DetectionsBlock eventId={selected.eventId} />}
+      {eventSource(selected.eventId) === 'analytics' && <DetectionsBlock eventId={selected.eventId} />}
 
       <Divider />
 

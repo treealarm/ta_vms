@@ -25,12 +25,20 @@ public sealed class CameraStorageResolver(
   // in which case the crop is simply not saved (the detection row is still written).
   public async Task<CameraStorage?> GetPrimaryAsync(string cameraId, CancellationToken ct)
   {
-    if (!_assignments.TryGetValue(cameraId, out var entry) || DateTime.UtcNow - entry.FetchedAt >= Ttl)
+    _assignments.TryGetValue(cameraId, out var entry);
+    if (entry is null || DateTime.UtcNow - entry.FetchedAt >= Ttl)
     {
-      entry = new AssignmentEntry(await FetchPrimaryStorageIdAsync(cameraId, ct), DateTime.UtcNow);
-      _assignments[cameraId] = entry;
+      var (ok, storageId) = await FetchPrimaryStorageIdAsync(cameraId, ct);
+      if (ok)
+      {
+        entry = new AssignmentEntry(storageId, DateTime.UtcNow);
+        _assignments[cameraId] = entry;
+      }
+      // A failed fetch is NOT "no storage assigned": don't cache it — fall back to the stale
+      // entry if we have one (crops keep flowing through a transient VmsCfg hiccup) and retry
+      // on the next detection.
     }
-    if (entry.StorageId is null)
+    if (entry?.StorageId is null)
       return null;
 
     var root = await GetRootPathAsync(entry.StorageId, ct);
@@ -61,18 +69,18 @@ public sealed class CameraStorageResolver(
     _storageRootsFetchedAt = DateTime.MinValue;
   }
 
-  private async Task<string?> FetchPrimaryStorageIdAsync(string cameraId, CancellationToken ct)
+  private async Task<(bool Ok, string? StorageId)> FetchPrimaryStorageIdAsync(string cameraId, CancellationToken ct)
   {
     try
     {
       var assignments = await storageClient.GetCameraStoragesAsync(
         new CameraStoragesRequest { CameraId = cameraId }, cancellationToken: ct);
-      return assignments.Assignments.OrderBy(a => a.Priority).FirstOrDefault()?.StorageId;
+      return (true, assignments.Assignments.OrderBy(a => a.Priority).FirstOrDefault()?.StorageId);
     }
     catch (Exception ex)
     {
       logger.LogWarning(ex, "CameraStorageResolver: failed to resolve storage for camera '{CameraId}'", cameraId);
-      return null;
+      return (false, null);
     }
   }
 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Analytics;
 using Google.Protobuf.WellKnownTypes;
 using Microsoft.EntityFrameworkCore;
@@ -80,7 +81,7 @@ public sealed class DetectionStreamConsumer(
     // Debug ring buffer sees every above-threshold event, including debounced ones — that's the
     // point of the panel: to show what the detector actually saw, not just what got stored.
     activityLog.Record(new AnalyticsActivityEntry(
-      detectedAt, cameraId, evt.TrackId, KindToDbString(evt.Kind), evt.Confidence,
+      detectedAt, cameraId, evt.TrackId, DetectionKinds.ToDbString(evt.Kind), evt.Confidence,
       evt.Bbox?.X ?? 0, evt.Bbox?.Y ?? 0, evt.Bbox?.Width ?? 0, evt.Bbox?.Height ?? 0,
       evt.HasRecognizedText ? evt.RecognizedText : null,
       evt.CropJpeg.ToByteArray(),
@@ -128,10 +129,12 @@ public sealed class DetectionStreamConsumer(
       return (null, null);
     }
 
+    // Invariant culture is load-bearing: in custom DateTime formats '/' is the culture's date
+    // separator placeholder, so without it the directory layout would silently vary per host locale.
     var relative = Path.Combine(
       "crops", cameraId,
-      detectedAt.ToString("yyyy/MM/dd/HH"),
-      $"{evt.TrackId}_{detectedAt:yyyyMMddTHHmmssfff}.jpg");
+      detectedAt.ToString("yyyy/MM/dd/HH", CultureInfo.InvariantCulture),
+      $"{evt.TrackId}_{detectedAt.ToString("yyyyMMddTHHmmssfff", CultureInfo.InvariantCulture)}.jpg");
     var fullPath = Path.Combine(storage.RootPath, relative);
 
     try
@@ -156,7 +159,7 @@ public sealed class DetectionStreamConsumer(
     {
       CameraId = cameraId,
       TrackId = evt.TrackId,
-      Kind = KindToDbString(evt.Kind),
+      Kind = DetectionKinds.ToDbString(evt.Kind),
       Confidence = evt.Confidence,
       DetectedAt = detectedAt,
       EventId = eventId,
@@ -192,14 +195,6 @@ public sealed class DetectionStreamConsumer(
     }
   }
 
-  private static string KindToDbString(DetectionKind kind) => kind switch
-  {
-    DetectionKind.Person => "person",
-    DetectionKind.Face => "face",
-    DetectionKind.Vehicle => "vehicle",
-    DetectionKind.LicensePlate => "license_plate",
-    _ => "unknown",
-  };
 
   private static uint RequireUint(string name)
   {

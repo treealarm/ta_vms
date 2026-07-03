@@ -60,7 +60,7 @@ public class AnalyticsWatchController(
       {
         CameraId       = e.CameraId,
         TrackId        = e.TrackId,
-        Kind           = KindToString(e.Kind),
+        Kind           = AnalyticsKindMapper.ToStringId(e.Kind),
         Confidence     = e.Confidence,
         BboxX          = e.Bbox?.X ?? 0,
         BboxY          = e.Bbox?.Y ?? 0,
@@ -77,14 +77,6 @@ public class AnalyticsWatchController(
     return Ok(events);
   }
 
-  private static string KindToString(DetectionKind kind) => kind switch
-  {
-    DetectionKind.Person => "person",
-    DetectionKind.Face => "face",
-    DetectionKind.Vehicle => "vehicle",
-    DetectionKind.LicensePlate => "license_plate",
-    _ => "unknown",
-  };
 
   private static AnalyticsWatchDto ToDto(AnalyticsWatch w) => new()
   {

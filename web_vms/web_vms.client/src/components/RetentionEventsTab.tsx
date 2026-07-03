@@ -19,7 +19,7 @@ import type { RetentionEventRowDto, RetentionEventsListDto } from '../dto/dtos'
 import { useAppSelector } from '../store'
 import { getErrorMessage } from '../store/api'
 import ArchiveHlsPreview from './ArchiveHlsPreview'
-import EventDetailsPanel from './EventDetailsPanel'
+import EventDetailsPanel, { eventSource } from './EventDetailsPanel'
 
 const PAGE_SIZE = 50
 const COLUMN_MAX_HEIGHT = 'min(75vh, 900px)'
@@ -173,13 +173,15 @@ export default function RetentionEventsTab() {
                         <Typography variant="body2" fontWeight="medium" noWrap sx={{ flex: 1, minWidth: 0 }}>
                           {(camerasMap[row.cameraId]?.name || row.cameraId)}{row.streamName ? ` / ${row.streamName}` : ''}
                         </Typography>
-                        <Chip
-                          label={row.eventId.startsWith('analytics-') ? t('events.sourceAnalytics') : t('events.sourceOnvif')}
-                          size="small"
-                          variant="outlined"
-                          color={row.eventId.startsWith('analytics-') ? 'primary' : 'default'}
-                          sx={{ height: 18, '& .MuiChip-label': { px: 0.75, fontSize: '0.65rem' } }}
-                        />
+                        {eventSource(row.eventId) !== 'other' && (
+                          <Chip
+                            label={eventSource(row.eventId) === 'analytics' ? t('events.sourceAnalytics') : t('events.sourceOnvif')}
+                            size="small"
+                            variant="outlined"
+                            color={eventSource(row.eventId) === 'analytics' ? 'primary' : 'default'}
+                            sx={{ height: 18, '& .MuiChip-label': { px: 0.75, fontSize: '0.65rem' } }}
+                          />
+                        )}
                       </Stack>
                       <Typography variant="caption" color="text.secondary" component="div">
                         {new Date(row.alarmStartTs).toLocaleString()}

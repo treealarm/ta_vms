@@ -45,12 +45,25 @@ public sealed class CropJanitor(
     var deletedFiles = 0;
     long freedBytes = 0;
 
-    // 1. Age limit: rows (and their crop files) older than the retention window.
+    // 1. Age limit: rows (and their crop files) older than the retention window. A row whose
+    // crop file can't currently be resolved (VmsCfg down, storage list unavailable) is kept for
+    // the next sweep — deleting it now would orphan the file on disk with nothing left to
+    // reference (and thus clean) it.
     var cutoff = DateTime.UtcNow.AddDays(-RetentionDays);
     var expired = await db.Detections.Where(d => d.DetectedAt < cutoff).ToListAsync(ct);
+    var removable = new List<DbDetection>();
     foreach (var row in expired)
-      freedBytes += await DeleteCropFileAsync(row, () => deletedFiles++, ct);
-    db.Detections.RemoveRange(expired);
+    {
+      if (row.CropPath is not null)
+      {
+        var path = await ResolveCropPathAsync(row, ct);
+        if (path is null)
+          continue; // storage root unknown right now — retry next sweep
+        freedBytes += DeleteCropFile(path, () => deletedFiles++);
+      }
+      removable.Add(row);
+    }
+    db.Detections.RemoveRange(removable);
     await db.SaveChangesAsync(ct);
 
     // 2. Size ring: sum crop file sizes newest-first; everything past the cap is deleted
@@ -64,11 +77,13 @@ public sealed class CropJanitor(
     foreach (var row in withCrops)
     {
       var path = await ResolveCropPathAsync(row, ct);
-      var size = path is not null && File.Exists(path) ? new FileInfo(path).Length : 0;
+      if (path is null)
+        continue; // storage root unknown right now — retry next sweep
+      var size = File.Exists(path) ? new FileInfo(path).Length : 0;
       total += size;
       if (total > MaxBytes)
       {
-        freedBytes += await DeleteCropFileAsync(row, () => deletedFiles++, ct);
+        freedBytes += DeleteCropFile(path, () => deletedFiles++);
         row.StorageId = null;
         row.CropPath = null;
       }
@@ -80,10 +95,8 @@ public sealed class CropJanitor(
         deletedFiles, freedBytes / 1024.0 / 1024.0, expired.Count);
   }
 
-  private async Task<long> DeleteCropFileAsync(DbDetection row, Action onDeleted, CancellationToken ct)
+  private long DeleteCropFile(string path, Action onDeleted)
   {
-    var path = await ResolveCropPathAsync(row, ct);
-    if (path is null) return 0;
     try
     {
       if (!File.Exists(path)) return 0;

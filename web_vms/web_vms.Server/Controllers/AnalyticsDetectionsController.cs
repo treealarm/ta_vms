@@ -34,7 +34,7 @@ public class AnalyticsDetectionsController(
       EventId    = d.EventId,
       CameraId   = d.CameraId,
       TrackId    = d.TrackId,
-      Kind       = KindToString(d.Kind),
+      Kind       = AnalyticsKindMapper.ToStringId(d.Kind),
       Confidence = d.Confidence,
       DetectedAt = d.DetectedAt.ToDateTime(),
       PlateText  = d.HasPlateText ? d.PlateText : null,
@@ -53,12 +53,4 @@ public class AnalyticsDetectionsController(
     return File(response.Jpeg.ToByteArray(), "image/jpeg");
   }
 
-  private static string KindToString(DetectionKind kind) => kind switch
-  {
-    DetectionKind.Person => "person",
-    DetectionKind.Face => "face",
-    DetectionKind.Vehicle => "vehicle",
-    DetectionKind.LicensePlate => "license_plate",
-    _ => "unknown",
-  };
 }
