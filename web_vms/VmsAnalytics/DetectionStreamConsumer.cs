@@ -76,7 +76,7 @@ public sealed class DetectionStreamConsumer(
       return;
 
     var detectedAt = evt.DetectedAt.ToDateTime();
-    var persisted = debouncer.ShouldProcess(cameraId, evt.TrackId, detectedAt) && watch.Armed;
+    var persisted = debouncer.ShouldProcess(cameraId, evt.TrackId, evt.Kind, detectedAt) && watch.Armed;
 
     // Debug ring buffer sees every above-threshold event, including debounced ones — that's the
     // point of the panel: to show what the detector actually saw, not just what got stored.
