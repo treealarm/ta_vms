@@ -157,7 +157,11 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
       .then((r) => (r.ok ? (r.json() as Promise<{ rtspUrl: string }>) : Promise.reject()))
       .then((d) => setOnvifRtsp(d.rtspUrl || ''))
       .catch(() => setOnvifRtsp(''))
-  }, [camera.cameraId, camera.onvifConn, configuredRtsp, activeStreamObj?.profileToken])
+    // Same trap as the capabilities effect below: camera.onvifConn is a fresh object reference
+    // on every cameraState poll, so depending on its identity refires this every 5s — each
+    // refire being a full ONVIF SOAP round-trip to the physical camera via vmsonvif.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camera.cameraId, Boolean(camera.onvifConn), configuredRtsp, activeStreamObj?.profileToken])
 
   const rtsp = configuredRtsp || (camera.onvifConn ? onvifRtsp : '')
 

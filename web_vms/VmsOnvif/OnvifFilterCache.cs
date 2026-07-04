@@ -32,4 +32,6 @@ public sealed class OnvifFilterCache(CfgService.CfgServiceClient cfgClient)
   }
 
   public void Invalidate(string cameraId) => _cache.TryRemove(cameraId, out _);
+
+  public void InvalidateAll() => _cache.Clear();
 }
