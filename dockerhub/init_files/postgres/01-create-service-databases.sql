@@ -1,1 +1,0 @@
-CREATE DATABASE ta_fs;

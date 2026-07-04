@@ -12,11 +12,31 @@ All interaction with the MediaMTX REST API goes through **VmsUtils** (`vmsutils`
 - VmsUtils resolves the assigned MediaMTX server (with its `api_url`) from VmsCfg, then queries the MediaMTX REST API
 - Other services consume the results from VmsUtils — they do not hold or forward MediaMTX API URLs
 
+## Deployment lives in ../ta_install
+
+Production/standalone deployment is a **separate repository** (`../ta_install`, github
+`treealarm/ta_install`): the product compose (prebuilt `treealarm/*` images, own redis, no
+Square), its `.env`, `init_files/`, the image build/push scripts and the analytics model
+fetcher. This repo's root `docker-compose.yml` is **dev only** (build-from-source, joins the
+shared Square network). Never re-grow a prod compose inside vms_rec.
+
+## vms-deps is shared with video_a
+
+`vms-deps` (this repo's `vms-deps/Dockerfile`) is the C++ toolchain + vcpkg base image for **two**
+consumers: this repo's `media_server` (`vms` service) and the separate `video_a` repo's
+`analytics-worker`, which builds `FROM vms-deps` via a sibling checkout (see `video_a/scripts/build.sh`).
+It installs protobuf/grpc/spdlog/ffmpeg for media_server plus openvino for video_a — when changing
+its package list, consider both consumers. It uses an overlay vcpkg triplet
+(`vms-deps/triplets/x64-linux.cmake`) to build release-only (no debug artifacts — vcpkg's
+`VCPKG_BUILD_TYPE` env var is a no-op, it only works from inside a triplet file); consumers must
+still pass `-DCMAKE_BUILD_TYPE=Release` on their own `cmake` configure step to select the release
+libs.
+
 ## Adding a new service
 
 When adding a new service (C# or C++), you **must** update all of the following:
 1. `.env` — add the service's port and any Dapr app-id env vars
-2. `dockerhub/.env` — same as above
+2. `../ta_install`: `docker-compose.yml` (image-based service + dapr sidecar), `.env`, and the image pair in `scripts/push-images.sh`
 3. `docker-compose.yml` — add service + dapr sidecar entries (with `profiles: [app]`)
 4. `.vscode/launch.json` — add a debug launch configuration for local development
 5. `.vscode/tasks.json` — add `prepare:<name>`, `dapr:<name>:start`, `dapr:<name>:stop` tasks (copy pattern from vmslogger)
@@ -28,7 +48,7 @@ Omitting any of these causes a startup crash or missing debug config in dev.
 
 When adding a new required environment variable to any service:
 1. Add it to `.env` (docker-compose local dev values).
-2. Add it to `dockerhub/.env` (production/hub values).
+2. Add it to `../ta_install/.env` (production/installation values).
 3. Add it to **every** `launch.json` that launches that service — both the service-specific one (`web_vms/.vscode/launch.json`, `media_server/.vscode/launch.json`) and the root `.vscode/launch.json`. Missing it in any one of these causes a startup crash in dev.
 
 **No silent fallbacks.** If an environment variable is required, the service must throw (or return non-zero) immediately on startup when it is missing — never silently default to a hardcoded value. A missing required variable is a misconfiguration and must be visible immediately, not discovered at runtime through unexpected behavior.

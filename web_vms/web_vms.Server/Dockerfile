@@ -24,12 +24,16 @@ COPY ["web_vms/OnvifLib/OnvifLib.csproj", "web_vms/OnvifLib/"]
 COPY ["web_vms/VmsCfg/VmsCfg.csproj", "web_vms/VmsCfg/"]
 COPY ["web_vms/web_vms.Types/web_vms.Types.csproj", "web_vms/web_vms.Types/"]
 COPY ["web_vms/VmsLog/VmsLog.csproj", "web_vms/VmsLog/"]
+COPY ["web_vms/KeycloakAdmin/KeycloakAdmin.csproj", "web_vms/KeycloakAdmin/"]
 COPY ["proto", "proto"]
 
 # =========================
-# Restore server dependencies
+# Restore server dependencies (NuGet cache mount: KeycloakAdmin pulls in Keycloak.Net.Core,
+# whose old runtime-graph transitive packages are prone to nuget.org timeouts — persist the
+# global-packages cache across builds so a successful restore doesn't need to repeat)
 # =========================
-RUN dotnet restore "web_vms/web_vms.Server/web_vms.Server.csproj"
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet restore "web_vms/web_vms.Server/web_vms.Server.csproj"
 
 # =========================
 # Copy full source (server + client)
@@ -47,12 +51,14 @@ RUN npm run build
 # Build server
 # =========================
 WORKDIR "/src/web_vms/web_vms.Server"
-RUN dotnet build "web_vms.Server.csproj" -c $BUILD_CONFIGURATION -o /app/build
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet build "web_vms.Server.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
 # =========================
 # Publish server
 # =========================
-RUN dotnet publish "web_vms.Server.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet publish "web_vms.Server.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 # =========================
 # Final runnable image

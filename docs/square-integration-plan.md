@@ -207,4 +207,4 @@ JWT-валидацию ставим **перед** `web_vms` (reverse-proxy/gate
    submodule). Остаётся: схема самоописывающегося свойства/дескриптора команды для VmsCfg.
 4. Финальный reverse-proxy для Phase 2–3 (nginx+oauth2-proxy vs существующий шлюз Square).
 5. Точные имена env-флагов интеграции (напр. `SQUARE_INTEGRATION_SINK_APP_ID`) + добавить во все
-   обязательные места (`.env`, `dockerhub/.env`, launch.json'ы) per CLAUDE.md.
+   обязательные места (`.env`, `../ta_install/.env`, launch.json'ы) per CLAUDE.md.

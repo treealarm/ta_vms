@@ -40,7 +40,7 @@ import StreamOverrideRow from './StreamOverrideRow'
 import StreamProfileRow from './StreamProfileRow'
 import PtzOverlay from './PtzOverlay'
 import { useAppDispatch, useAppSelector } from '../store'
-import { fetchCameraState, setArmed, setStreamOverride, setStreamRecordingProfile } from '../store/liveSlice'
+import { fetchCameraState, setArmed, setStreamRecordingProfile } from '../store/liveSlice'
 
 const STRIP_W = 28
 const PANEL_W = 182

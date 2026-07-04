@@ -8,7 +8,7 @@ COPY . /build
 
 WORKDIR /build/media_server
 
-RUN cmake -B build -G Ninja
+RUN cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 RUN cmake --build build -j1
 
 # сохранить libstdc++

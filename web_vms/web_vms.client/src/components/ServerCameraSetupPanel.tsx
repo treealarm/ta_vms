@@ -51,7 +51,7 @@ export default function ServerCameraSetupPanel({
   const { t } = useTranslation()
   const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null)
   const [serverId, setServerId] = useState('')
-  const [cameraId, setCameraId] = useState(() => crypto.randomUUID())
+  const [cameraId, setCameraId] = useState<string>(() => crypto.randomUUID())
   const [name, setName] = useState('')
   const [path, setPath] = useState(DEFAULT_PATH)
   const [user, setUser] = useState(DEFAULT_USER)
