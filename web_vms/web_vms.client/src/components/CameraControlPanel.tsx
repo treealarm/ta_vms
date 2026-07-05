@@ -1,43 +1,34 @@
 import { useImperativeHandle, useMemo, useRef, useState } from 'react'
-import {
-  Box,
-  Button,
-  List,
-  ListItemButton,
-  ListItemText,
-  Stack,
-  Typography
-} from '@mui/material'
+import { Box, Button, List, Menu, MenuItem, Stack, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { loadCameras, loadServers } from '../store/liveSlice'
 import { loadMediaMtxServers } from '../store/mediaMtxSlice'
 import CameraSetupPanel from './CameraSetupPanel'
-import type { CameraSetupHandle } from './CameraSetupPanel'
 import OnvifDiscoveryDialog from './OnvifDiscoveryDialog'
 import StreamSetupPanel from './StreamSetupPanel'
-import type { StreamSetupHandle } from './StreamSetupPanel'
-
-export type CameraControlHandle = { applyIfDirty: () => Promise<boolean> }
-
-type DetailHandle = CameraSetupHandle | StreamSetupHandle
+import MasterDetailLayout from './settings/MasterDetailLayout'
+import SettingsListItem from './settings/SettingsListItem'
+import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 
 type Selection =
   | { kind: 'none' }
+  | { kind: 'server'; serverId: string }
   | { kind: 'camera'; cameraId: string; serverId: string }
   | { kind: 'new_camera'; serverId: string }
   | { kind: 'stream'; cameraId: string; streamName: string }
   | { kind: 'new_stream'; cameraId: string }
 
-export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraControlHandle> }) {
+export default function CameraControlPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHandle> }) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const servers = useAppSelector((state) => state.live.servers)
   const camerasMap = useAppSelector((state) => state.live.cameraStatesById)
   const [selection, setSelection] = useState<Selection>({ kind: 'none' })
   const [discoveryOpen, setDiscoveryOpen] = useState(false)
+  const [addMenuAnchor, setAddMenuAnchor] = useState<HTMLElement | null>(null)
 
-  const detailRef = useRef<DetailHandle>(null)
+  const detailRef = useRef<ApplyIfDirtyHandle>(null)
 
   const serversTree = useMemo(() => {
     const cams = Object.values(camerasMap)
@@ -58,11 +49,31 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
   }
 
   const setSelectionSafe = async (newSel: Selection) => {
-    if (detailRef.current) await detailRef.current.applyIfDirty()
+    // Block the switch when saving the dirty form failed — the error stays visible
+    if (detailRef.current && !(await detailRef.current.applyIfDirty())) return
     setSelection(newSel)
   }
 
-  const goToAddCamera = (serverId: string) => void setSelectionSafe({ kind: 'new_camera', serverId })
+  // Camera in context for the "+" menu (a stream can be added to it)
+  const contextCameraId =
+    selection.kind === 'camera' || selection.kind === 'stream' || selection.kind === 'new_stream'
+      ? selection.cameraId
+      : undefined
+  const contextServerId = selection.kind === 'server' ? selection.serverId : undefined
+
+  const handleAddClick = (e: React.MouseEvent<HTMLElement>) => {
+    // Single possible action — skip the menu
+    if (!contextCameraId && servers.length === 1) {
+      void setSelectionSafe({ kind: 'new_camera', serverId: servers[0].serverId })
+      return
+    }
+    setAddMenuAnchor(e.currentTarget)
+  }
+
+  const pickAdd = (sel: Selection) => {
+    setAddMenuAnchor(null)
+    void setSelectionSafe(sel)
+  }
 
   // The camera whose streams are currently shown expanded in the tree — collapses
   // every other camera so the list doesn't grow tall with every camera's streams.
@@ -75,170 +86,144 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<CameraCont
     applyIfDirty: () => detailRef.current ? detailRef.current.applyIfDirty() : Promise.resolve(true)
   }))
 
+  const tree = (
+    <List dense disablePadding>
+      {serversTree.map((server) => (
+        <Box key={server.serverId}>
+          <SettingsListItem
+            selected={selection.kind === 'server' && selection.serverId === server.serverId}
+            onClick={() => void setSelectionSafe({ kind: 'server', serverId: server.serverId })}
+            primary={<Box component="span" sx={{ fontWeight: 600 }}>{server.serverId}</Box>}
+          />
+
+          {server.cameras.map((camera) => (
+            <Box key={camera.cameraId}>
+              <SettingsListItem
+                depth={1}
+                dimmed={camera.disabled === true}
+                selected={selection.kind === 'camera' && selection.cameraId === camera.cameraId}
+                onClick={() =>
+                  void setSelectionSafe({ kind: 'camera', cameraId: camera.cameraId, serverId: server.serverId })
+                }
+                primary={camera.name || camera.cameraId}
+                secondary={camera.onvifConn?.ip}
+              />
+
+              {camera.cameraId === expandedCameraId && (camera.streams ?? []).map((stream) => (
+                <SettingsListItem
+                  key={stream.streamName}
+                  depth={2}
+                  dimmed={stream.disabled === true}
+                  selected={
+                    selection.kind === 'stream' &&
+                    selection.cameraId === camera.cameraId &&
+                    selection.streamName === stream.streamName
+                  }
+                  onClick={() =>
+                    void setSelectionSafe({ kind: 'stream', cameraId: camera.cameraId, streamName: stream.streamName })
+                  }
+                  primary={stream.streamName}
+                  secondary={stream.path || stream.profileToken || undefined}
+                />
+              ))}
+            </Box>
+          ))}
+        </Box>
+      ))}
+    </List>
+  )
+
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 1 }}>
-      <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-      <Stack
-        direction="row"
-        spacing={2}
-        sx={{ height: '100%', minWidth: 520 }}
-        alignItems="stretch"
-      >
-        {/* Tree */}
-        <Box sx={{
-          width: 200,
-          flexShrink: 0,
-          border: 1,
-          borderColor: 'divider',
-          borderRadius: 1,
-          overflowY: 'auto',
-        }}>
-          <List dense disablePadding>
-            {serversTree.map((server) => (
-              <Box key={server.serverId}>
-                <ListItemButton
-                  selected={selection.kind === 'new_camera' && selection.serverId === server.serverId}
-                  onClick={() => void setSelectionSafe({ kind: 'new_camera', serverId: server.serverId })}
-                >
-                  <ListItemText
-                    primary={server.serverId}
-                    secondary={t('cameraControl.newCamera')}
-                    primaryTypographyProps={{ fontWeight: 600, noWrap: true }}
-                    secondaryTypographyProps={{ noWrap: true }}
-                  />
-                </ListItemButton>
+    <MasterDetailLayout
+      listTitle={t('cameraControl.listTitle')}
+      listWidth={240}
+      onAdd={handleAddClick}
+      list={tree}
+      footer={
+        <Stack direction="row" spacing={1}>
+          <Button variant="outlined" onClick={refresh} size="small">
+            {t('common.refresh')}
+          </Button>
+          <Button variant="outlined" onClick={() => setDiscoveryOpen(true)} size="small">
+            {t('cameraControl.discoverDevices')}
+          </Button>
+        </Stack>
+      }
+    >
+      {selection.kind === 'camera' && (
+        <CameraSetupPanel
+          ref={detailRef}
+          key={selection.cameraId}
+          cameraId={selection.cameraId}
+          serverId={selection.serverId}
+          onSaved={refresh}
+          onRemoved={async () => {
+            setSelection({ kind: 'none' })
+            await refresh()
+          }}
+        />
+      )}
+      {selection.kind === 'new_camera' && (
+        <CameraSetupPanel
+          ref={detailRef}
+          key={`new@${selection.serverId}`}
+          cameraId=""
+          serverId={selection.serverId}
+          onSaved={refresh}
+          onRemoved={refresh}
+        />
+      )}
+      {selection.kind === 'stream' && (
+        <StreamSetupPanel
+          ref={detailRef}
+          key={`${selection.cameraId}/${selection.streamName}`}
+          cameraId={selection.cameraId}
+          streamName={selection.streamName}
+          onSaved={refresh}
+          onRemoved={async () => {
+            setSelection({ kind: 'camera', cameraId: selection.cameraId, serverId: camerasMap[selection.cameraId]?.serverId ?? '' })
+            await refresh()
+          }}
+        />
+      )}
+      {selection.kind === 'new_stream' && (
+        <StreamSetupPanel
+          ref={detailRef}
+          key={`${selection.cameraId}/new`}
+          cameraId={selection.cameraId}
+          streamName={null}
+          onSaved={refresh}
+          onRemoved={refresh}
+        />
+      )}
+      {(selection.kind === 'none' || selection.kind === 'server') && (
+        <Typography color="text.secondary" sx={{ p: 2 }}>
+          {selection.kind === 'server' ? t('cameraControl.serverHint') : t('cameraControl.selectHint')}
+        </Typography>
+      )}
 
-                {server.cameras.map((camera) => (
-                  <Box key={camera.cameraId}>
-                    <ListItemButton
-                      sx={{ pl: 3, opacity: camera.disabled === true ? 0.45 : 1 }}
-                      selected={selection.kind === 'camera' && selection.cameraId === camera.cameraId}
-                      onClick={() =>
-                        void setSelectionSafe({ kind: 'camera', cameraId: camera.cameraId, serverId: server.serverId })
-                      }
-                    >
-                      <ListItemText
-                        primary={camera.name || camera.cameraId}
-                        primaryTypographyProps={{ noWrap: true }}
-                      />
-                    </ListItemButton>
-
-                    {camera.cameraId === expandedCameraId && (camera.streams ?? []).map((stream) => (
-                      <ListItemButton
-                        key={stream.streamName}
-                        sx={{ pl: 5, opacity: stream.disabled === true ? 0.45 : 1 }}
-                        selected={
-                          selection.kind === 'stream' &&
-                          selection.cameraId === camera.cameraId &&
-                          selection.streamName === stream.streamName
-                        }
-                        onClick={() =>
-                          void setSelectionSafe({ kind: 'stream', cameraId: camera.cameraId, streamName: stream.streamName })
-                        }
-                      >
-                        <ListItemText
-                          primary={stream.streamName}
-                          secondary={stream.path || stream.profileToken || undefined}
-                          primaryTypographyProps={{ noWrap: true }}
-                          secondaryTypographyProps={{ noWrap: true }}
-                        />
-                      </ListItemButton>
-                    ))}
-
-                    {camera.cameraId === expandedCameraId && (
-                      <ListItemButton
-                        sx={{ pl: 5 }}
-                        selected={selection.kind === 'new_stream' && selection.cameraId === camera.cameraId}
-                        onClick={() => void setSelectionSafe({ kind: 'new_stream', cameraId: camera.cameraId })}
-                      >
-                        <ListItemText
-                          primary={t('cameraControl.addStream')}
-                          primaryTypographyProps={{ color: 'primary.main', noWrap: true }}
-                        />
-                      </ListItemButton>
-                    )}
-                  </Box>
-                ))}
-              </Box>
-            ))}
-          </List>
-        </Box>
-
-        {/* Detail panel */}
-        <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }}>
-          {selection.kind === 'camera' && (
-            <CameraSetupPanel
-              ref={detailRef}
-              key={selection.cameraId}
-              cameraId={selection.cameraId}
-              serverId={selection.serverId}
-              onSaved={refresh}
-              onRemoved={async () => {
-                setSelection({ kind: 'none' })
-                await refresh()
-              }}
-              onAddCameraOnServer={goToAddCamera}
-            />
-          )}
-          {selection.kind === 'new_camera' && (
-            <CameraSetupPanel
-              ref={detailRef}
-              key={`new@${selection.serverId}`}
-              cameraId=""
-              serverId={selection.serverId}
-              onSaved={refresh}
-              onRemoved={refresh}
-              onAddCameraOnServer={goToAddCamera}
-            />
-          )}
-          {selection.kind === 'stream' && (
-            <StreamSetupPanel
-              ref={detailRef}
-              key={`${selection.cameraId}/${selection.streamName}`}
-              cameraId={selection.cameraId}
-              streamName={selection.streamName}
-              onSaved={refresh}
-              onRemoved={async () => {
-                setSelection({ kind: 'camera', cameraId: selection.cameraId, serverId: camerasMap[selection.cameraId]?.serverId ?? '' })
-                await refresh()
-              }}
-              onAddCameraOnServer={goToAddCamera}
-            />
-          )}
-          {selection.kind === 'new_stream' && (
-            <StreamSetupPanel
-              ref={detailRef}
-              key={`${selection.cameraId}/new`}
-              cameraId={selection.cameraId}
-              streamName={null}
-              onSaved={refresh}
-              onRemoved={refresh}
-              onAddCameraOnServer={goToAddCamera}
-            />
-          )}
-          {selection.kind === 'none' && (
-            <Typography color="text.secondary" sx={{ pt: 1 }}>
-              {t('cameraControl.selectHint')}
-            </Typography>
-          )}
-        </Box>
-      </Stack>
-      </Box>
-
-      <Stack direction="row" spacing={1}>
-        <Button variant="outlined" onClick={refresh} size="small" sx={{ alignSelf: 'flex-start' }}>
-          {t('common.refresh')}
-        </Button>
-        <Button variant="outlined" onClick={() => setDiscoveryOpen(true)} size="small" sx={{ alignSelf: 'flex-start' }}>
-          {t('cameraControl.discoverDevices')}
-        </Button>
-      </Stack>
+      <Menu anchorEl={addMenuAnchor} open={Boolean(addMenuAnchor)} onClose={() => setAddMenuAnchor(null)}>
+        {contextCameraId && (
+          <MenuItem onClick={() => pickAdd({ kind: 'new_stream', cameraId: contextCameraId })}>
+            {t('cameraControl.newStreamOn', { camera: camerasMap[contextCameraId]?.name || contextCameraId })}
+          </MenuItem>
+        )}
+        {servers.map((s) => (
+          <MenuItem
+            key={s.serverId}
+            selected={s.serverId === contextServerId}
+            onClick={() => pickAdd({ kind: 'new_camera', serverId: s.serverId })}
+          >
+            {t('cameraControl.newCameraOn', { server: s.serverId })}
+          </MenuItem>
+        ))}
+      </Menu>
 
       <OnvifDiscoveryDialog
         open={discoveryOpen}
         onClose={() => setDiscoveryOpen(false)}
         onAdded={refreshCameras}
       />
-    </Box>
+    </MasterDetailLayout>
   )
 }

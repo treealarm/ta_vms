@@ -1,124 +1,71 @@
-import { useState } from 'react'
-import {
-  Box,
-  Button,
-  Divider,
-  IconButton,
-  List,
-  ListItem,
-  ListItemText,
-  Stack,
-  Tooltip,
-  Typography,
-} from '@mui/material'
-import AddIcon from '@mui/icons-material/Add'
-import EditIcon from '@mui/icons-material/Edit'
-import DeleteIcon from '@mui/icons-material/Delete'
+import { useImperativeHandle, useRef, useState } from 'react'
+import { List, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
-import { useAppDispatch, useAppSelector } from '../store'
-import { removeMonitor, setMonitorCameras, setMonitorSlot, upsertMonitor } from '../store/monitorsSlice'
-import type { MonitorLayout } from '../dto/dtos'
-import MonitorEditDialog from './MonitorEditDialog'
+import { useAppSelector } from '../store'
+import MasterDetailLayout from './settings/MasterDetailLayout'
+import MonitorSetupPanel from './MonitorSetupPanel'
+import SettingsListItem from './settings/SettingsListItem'
+import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 
-export default function MonitorListPanel() {
-  const dispatch = useAppDispatch()
+export default function MonitorListPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHandle> }) {
   const { t } = useTranslation()
   const monitors = useAppSelector((s) => s.monitors.monitors)
-  const allCameras = useAppSelector((s) => Object.values(s.live.cameraStatesById))
+  const [selection, setSelection] = useState<string | null>(null)  // monitor id | 'new' | null
 
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
+  const detailRef = useRef<ApplyIfDirtyHandle>(null)
 
-  const editingMonitor = editingId ? (monitors.find((m) => m.monitorId === editingId) ?? null) : null
-
-  const openCreate = () => { setEditingId(null); setDialogOpen(true) }
-  const openEdit = (id: string) => { setEditingId(id); setDialogOpen(true) }
-  const closeDialog = () => setDialogOpen(false)
-
-  const handleSave = async (name: string, layout: MonitorLayout, slotCameras: string[]) => {
-    setDialogOpen(false)
-    const existing = editingId ? monitors.find((m) => m.monitorId === editingId) : null
-    const result = await dispatch(upsertMonitor({
-      monitorId: existing?.monitorId ?? '',
-      name,
-      layout,
-      cameraIds: existing?.cameraIds ?? [],
-      slots: existing?.slots ?? [],
-    }))
-    if (!upsertMonitor.fulfilled.match(result)) return
-
-    const savedId = result.payload.monitorId
-    const poolIds = [...new Set(slotCameras.filter(Boolean))]
-    await dispatch(setMonitorCameras({ monitorId: savedId, cameraIds: poolIds }))
-    for (let i = 0; i < slotCameras.length; i++) {
-      if (slotCameras[i]) {
-        await dispatch(setMonitorSlot({ monitorId: savedId, slotIndex: i, cameraId: slotCameras[i] }))
-      }
-    }
+  const setSelectionSafe = async (sel: string | null) => {
+    if (detailRef.current && !(await detailRef.current.applyIfDirty())) return
+    setSelection(sel)
   }
 
-  const handleDelete = (id: string) => void dispatch(removeMonitor(id))
+  useImperativeHandle(ref, () => ({
+    applyIfDirty: () => detailRef.current ? detailRef.current.applyIfDirty() : Promise.resolve(true)
+  }))
+
+  const selected = selection !== null && selection !== 'new'
+    ? monitors.find((m) => m.monitorId === selection) ?? null
+    : null
+
+  const list = (
+    <List dense disablePadding>
+      {monitors.map((m) => (
+        <SettingsListItem
+          key={m.monitorId}
+          selected={selection === m.monitorId}
+          onClick={() => void setSelectionSafe(m.monitorId)}
+          primary={m.name}
+          secondary={`${m.layout} · ${m.cameraIds.length} ${t('monitors.cameras', { count: m.cameraIds.length })}`}
+        />
+      ))}
+      {monitors.length === 0 && (
+        <Typography variant="body2" color="text.secondary" sx={{ p: 1.5 }}>
+          {t('monitors.noMonitors')}
+        </Typography>
+      )}
+    </List>
+  )
 
   return (
-    <Stack spacing={2} sx={{ maxWidth: 560 }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between">
-        <Typography variant="h6">{t('monitors.title')}</Typography>
-        <Tooltip title={t('monitors.newMonitor')}>
-          <IconButton size="small" onClick={openCreate}>
-            <AddIcon />
-          </IconButton>
-        </Tooltip>
-      </Stack>
-
-      <List disablePadding>
-        {monitors.map((m, i) => (
-          <Box key={m.monitorId}>
-            {i > 0 && <Divider />}
-            <ListItem
-              disablePadding
-              secondaryAction={
-                <Stack direction="row" spacing={0.5}>
-                  <IconButton size="small" onClick={() => openEdit(m.monitorId)}>
-                    <EditIcon fontSize="small" />
-                  </IconButton>
-                  <Tooltip title={t('monitors.deleteMonitor')}>
-                    <IconButton size="small" color="error" onClick={() => handleDelete(m.monitorId)}>
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </Stack>
-              }
-            >
-              <ListItemText
-                sx={{ py: 0.5, pl: 1 }}
-                primary={m.name}
-                secondary={`${m.layout} · ${m.cameraIds.length} ${t('monitors.cameras', { count: m.cameraIds.length })}`}
-              />
-            </ListItem>
-          </Box>
-        ))}
-        {monitors.length === 0 && (
-          <Typography variant="body2" color="text.secondary" sx={{ pl: 1, py: 1 }}>
-            {t('monitors.noMonitors')}
-          </Typography>
-        )}
-      </List>
-
-      {monitors.length === 0 && (
-        <Box>
-          <Button variant="outlined" size="small" onClick={openCreate}>
-            {t('monitors.newMonitor')}
-          </Button>
-        </Box>
+    <MasterDetailLayout
+      listTitle={t('monitors.title')}
+      onAdd={() => void setSelectionSafe('new')}
+      addTooltip={t('monitors.newMonitor')}
+      list={list}
+    >
+      {selection === 'new' || selected ? (
+        <MonitorSetupPanel
+          ref={detailRef}
+          key={selection === 'new' ? 'new' : selected!.monitorId}
+          monitor={selection === 'new' ? null : selected}
+          onSaved={(monitorId) => setSelection(monitorId)}
+          onRemoved={() => setSelection(null)}
+        />
+      ) : (
+        <Typography color="text.secondary" sx={{ p: 2 }}>
+          {t('monitors.selectHint')}
+        </Typography>
       )}
-
-      <MonitorEditDialog
-        open={dialogOpen}
-        monitor={editingMonitor}
-        allCameras={allCameras}
-        onSave={(name, layout, slotCameras) => void handleSave(name, layout, slotCameras)}
-        onClose={closeDialog}
-      />
-    </Stack>
+    </MasterDetailLayout>
   )
 }

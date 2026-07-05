@@ -6,18 +6,15 @@ import ViewControls from './ViewControls'
 
 import MonitorListPanel from './MonitorListPanel'
 import CameraControlPanel from './CameraControlPanel'
-import type { CameraControlHandle } from './CameraControlPanel'
 import StorageSetupPanel from './StorageSetupPanel'
 import RecordingProfilesPanel from './RecordingProfilesPanel'
-import type { RecordingProfilesHandle } from './RecordingProfilesPanel'
 import MediaMtxServersPanel from './MediaMtxServersPanel'
-import type { MediaMtxServersHandle } from './MediaMtxServersPanel'
 import SimulationFab from './SimulationFab'
 import LogToggleButton from './LogToggleButton'
 import OnvifSubscriptionsPanel from './OnvifSubscriptionsPanel'
 import OnvifCameraSettingsPanel from './OnvifCameraSettingsPanel'
 import AnalyticsWatchesPanel from './AnalyticsWatchesPanel'
-import type { AnalyticsWatchesHandle } from './AnalyticsWatchesPanel'
+import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 
 const TABS = ['cameras', 'mediamtx', 'monitors', 'storages', 'recording', 'onvif', 'onvif-settings', 'analytics'] as const
 
@@ -28,16 +25,11 @@ export default function AdminView() {
   const tab = TABS.indexOf(location.pathname.split('/').pop() as typeof TABS[number])
   const currentTab = tab === -1 ? 0 : tab
 
-  const cameraControlRef = useRef<CameraControlHandle>(null)
-  const recordingRef = useRef<RecordingProfilesHandle>(null)
-  const mediaMtxRef = useRef<MediaMtxServersHandle>(null)
-  const analyticsRef = useRef<AnalyticsWatchesHandle>(null)
+  // Only one route is mounted at a time, so a single ref serves every panel
+  const panelRef = useRef<ApplyIfDirtyHandle>(null)
 
   const handleTabChange = async (_: unknown, v: number) => {
-    if (currentTab === 0 && !(await cameraControlRef.current?.applyIfDirty() ?? true)) return
-    if (currentTab === 1 && !(await mediaMtxRef.current?.applyIfDirty() ?? true)) return
-    if (currentTab === 4 && !(await recordingRef.current?.applyIfDirty() ?? true)) return
-    if (currentTab === 7 && !(await analyticsRef.current?.applyIfDirty() ?? true)) return
+    if (!(await panelRef.current?.applyIfDirty() ?? true)) return
     navigate(`/admin/${TABS[v]}`)
   }
 
@@ -49,14 +41,14 @@ export default function AdminView() {
         </Box>
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', px: { xs: 2, md: 4 }, pb: { xs: 2, md: 4 }, pt: 1, display: 'flex', flexDirection: 'column' }}>
           <Routes>
-            <Route path="cameras" element={<CameraControlPanel ref={cameraControlRef} />} />
-            <Route path="mediamtx" element={<Box sx={{ flex: 1, overflowY: 'auto' }}><MediaMtxServersPanel ref={mediaMtxRef} /></Box>} />
-            <Route path="monitors" element={<Box sx={{ flex: 1, overflowY: 'auto' }}><MonitorListPanel /></Box>} />
-            <Route path="storages" element={<Box sx={{ flex: 1, overflowY: 'auto' }}><StorageSetupPanel /></Box>} />
-            <Route path="recording" element={<Box sx={{ flex: 1, overflowY: 'auto' }}><RecordingProfilesPanel ref={recordingRef} /></Box>} />
-            <Route path="onvif" element={<OnvifSubscriptionsPanel />} />
-            <Route path="onvif-settings" element={<Box sx={{ flex: 1, overflowY: 'auto' }}><OnvifCameraSettingsPanel /></Box>} />
-            <Route path="analytics" element={<Box sx={{ flex: 1, overflowY: 'auto' }}><AnalyticsWatchesPanel ref={analyticsRef} /></Box>} />
+            <Route path="cameras" element={<CameraControlPanel ref={panelRef} />} />
+            <Route path="mediamtx" element={<MediaMtxServersPanel ref={panelRef} />} />
+            <Route path="monitors" element={<MonitorListPanel ref={panelRef} />} />
+            <Route path="storages" element={<StorageSetupPanel ref={panelRef} />} />
+            <Route path="recording" element={<RecordingProfilesPanel ref={panelRef} />} />
+            <Route path="onvif" element={<OnvifSubscriptionsPanel ref={panelRef} />} />
+            <Route path="onvif-settings" element={<OnvifCameraSettingsPanel />} />
+            <Route path="analytics" element={<AnalyticsWatchesPanel ref={panelRef} />} />
             <Route path="*" element={<Navigate to="/admin/cameras" replace />} />
           </Routes>
         </Box>
