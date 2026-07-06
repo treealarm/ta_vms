@@ -221,8 +221,13 @@ public class LiveController(
   public async Task<IActionResult> ListCameras(CancellationToken ct)
   {
     var cameras = await _manager.List(ct);
+    var analyticsCams = await _manager.AnalyticsEnabledCameraIds(ct);
 
-    var enriched = cameras.Select(c => c with { Streams = WithWhepUrls(c.CameraId, c.Streams) }).ToList();
+    var enriched = cameras.Select(c => c with
+    {
+      Streams = WithWhepUrls(c.CameraId, c.Streams),
+      HasAnalytics = analyticsCams.Contains(c.CameraId),
+    }).ToList();
 
     return Ok(enriched);
   }

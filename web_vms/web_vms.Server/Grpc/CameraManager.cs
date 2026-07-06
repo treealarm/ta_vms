@@ -36,6 +36,12 @@ public class CameraManager : ICameraManager
     return response.Cameras.Select(ToDto).ToList();
   }
 
+  public async Task<HashSet<string>> AnalyticsEnabledCameraIds(CancellationToken ct = default)
+  {
+    var response = await _cfgClient.ListAnalyticsWatchesAsync(new ListAnalyticsWatchesRequest(), CfgOptions(ct));
+    return response.Watches.Where(w => w.Enabled).Select(w => w.CameraId).ToHashSet();
+  }
+
   public async Task<List<MediaServerNodeDto>> ListServers(CancellationToken ct = default)
   {
     var response = await _cfgClient.ListMediaServersAsync(new ListMediaServersRequest(), CfgOptions(ct));

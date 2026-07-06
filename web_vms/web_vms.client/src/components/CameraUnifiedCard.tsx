@@ -289,8 +289,9 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
           )}
 
           {/* Analytics bbox overlay — keyed by camera, not stream: works even when the monitor
-              shows a sub-stream that has no analytics of its own (it mirrors the main stream). */}
-          {mode === 'live' && !isDisabled && (
+              shows a sub-stream that has no analytics of its own (it mirrors the main stream).
+              Only offered when the camera actually has an enabled analytics watch. */}
+          {mode === 'live' && !isDisabled && camera.hasAnalytics && (
             <Tooltip title={bboxOpen ? t('cameraCard.bboxClose') : t('cameraCard.bboxOpen')} placement="right">
               <IconButton
                 size="small"
@@ -585,7 +586,11 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
           </Typography>
         )}
         {mode === 'live' && whepUrl && (
-          <CameraStream whepUrl={whepUrl} cameraId={camera.cameraId} bboxEnabled={bboxOpen} />
+          <CameraStream
+            whepUrl={whepUrl}
+            cameraId={camera.cameraId}
+            bboxEnabled={bboxOpen && !!camera.hasAnalytics}
+          />
         )}
         {mode === 'archive' && (
           <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>

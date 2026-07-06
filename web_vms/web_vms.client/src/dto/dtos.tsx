@@ -139,6 +139,8 @@ export type CameraSetupDto = {
   onvifManaged?: boolean
   armed?: boolean
   disabled?: boolean
+  /** True when the camera has an enabled analytics watch; gates the live bbox overlay toggle. */
+  hasAnalytics?: boolean
 }
 
 export type MediaServerNodeDto = {

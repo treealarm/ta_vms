@@ -65,4 +65,7 @@ public record CameraSetupDto
   public bool HasOnvifFilters    { get; init; }
   public bool OnvifManaged       { get; init; }
   public bool? Disabled          { get; init; }
+  /// <summary>True when the camera has an enabled analytics watch; filled by web_vms.Server when
+  /// listing cameras. Drives whether the live-video bbox overlay toggle is offered.</summary>
+  public bool HasAnalytics       { get; init; }
 }
