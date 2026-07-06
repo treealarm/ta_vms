@@ -9,6 +9,8 @@ type Props = {
   addTooltip?: string
   addDisabled?: boolean
   listWidth?: number
+  /** Floor for the detail pane; below listWidth+this the split scrolls horizontally. */
+  detailMinWidth?: number
   /** Scrollable left-column content: a <List> of SettingsListItem or a hand-rolled tree. */
   list: React.ReactNode
   /** Optional non-scrolling row below the split view (e.g. page-level buttons). */
@@ -23,12 +25,12 @@ type Props = {
  * The whole layout fills its parent and never overflows the page.
  */
 export default function MasterDetailLayout({
-  listTitle, onAdd, addTooltip, addDisabled, listWidth = 220, list, footer, children,
+  listTitle, onAdd, addTooltip, addDisabled, listWidth = 220, detailMinWidth = 300, list, footer, children,
 }: Props) {
   const { t } = useTranslation()
   return (
     <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
-      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
+      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', border: 1, borderColor: 'divider', borderRadius: 1, overflowX: 'auto', overflowY: 'hidden' }}>
         {/* Left: list column */}
         <Box sx={{ width: listWidth, flexShrink: 0, borderRight: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <Stack direction="row" alignItems="center" sx={{ pl: 1.5, pr: 0.5, py: 0.5, borderBottom: 1, borderColor: 'divider', flexShrink: 0, minHeight: 40 }}>
@@ -47,7 +49,7 @@ export default function MasterDetailLayout({
         </Box>
 
         {/* Right: detail pane */}
-        <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>{children}</Box>
+        <Box sx={{ flex: 1, minWidth: detailMinWidth, minHeight: 0, display: 'flex', flexDirection: 'column' }}>{children}</Box>
       </Box>
       {footer}
     </Box>

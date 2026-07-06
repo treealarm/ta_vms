@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Box,
   Checkbox,
@@ -17,14 +17,15 @@ import {
 } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
-import { setArmed as setArmedThunk, setStreamRecordingProfile } from '../store/liveSlice'
-import { ANALYTICS_DETECTION_CLASSES, RECORDING_PROFILE_OFF_ID, RECORDING_PROFILE_PREALARM_ID } from '../dto/dtos'
+import { setArmedWithPrealarmBaseline } from '../store/liveSlice'
+import { ANALYTICS_DETECTION_CLASSES } from '../dto/dtos'
 import type { AnalyticsDetectionClass, AnalyticsWatchDto, CameraSetupDto } from '../dto/dtos'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
 import SettingsListItem from './settings/SettingsListItem'
 import { useDirtyGuard } from './settings/useDirtyGuard'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
+import { useMasterDetailSelection } from './settings/useMasterDetailSelection'
 
 const EMPTY_WATCH: AnalyticsWatchDto = {
   cameraId: '',
@@ -146,7 +147,9 @@ function AnalyticsWatchForm({ ref, watch, allCameras, takenCameraIds, toolbarExt
 
   const cameraName = formCamera?.name || form.cameraId
 
-  useDirtyGuard(ref, dirty, applyInternal)
+  // For a new form "dirty" means "complete enough to save" — navigation then
+  // auto-creates it instead of silently discarding the entered data
+  useDirtyGuard(ref, isNew ? valid : dirty, applyInternal)
 
   return (
     <Box component="form" onSubmit={(e) => void handleApply(e)} sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -267,11 +270,11 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<ApplyIf
   const allCameras = useAppSelector((s) => Object.values(s.live.cameraStatesById))
 
   const [watches, setWatches] = useState<AnalyticsWatchDto[]>([])
-  const [selection, setSelection] = useState<string | null>(null)  // camera id | 'new' | null
   const [armBusy, setArmBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const detailRef = useRef<ApplyIfDirtyHandle>(null)
+  const { isNew, selected, detailRef, detailKey, select, selectNew, reset } =
+    useMasterDetailSelection(ref, watches, (w) => w.cameraId)
 
   const load = useCallback(async () => {
     try {
@@ -285,37 +288,11 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<ApplyIf
 
   useEffect(() => { void load() }, [load])
 
-  const setSelectionSafe = async (sel: string | null) => {
-    if (detailRef.current && !(await detailRef.current.applyIfDirty())) return
-    setSelection(sel)
-  }
-
-  useImperativeHandle(ref, () => ({
-    applyIfDirty: () => detailRef.current ? detailRef.current.applyIfDirty() : Promise.resolve(true)
-  }))
-
-  // Same arm/disarm behavior as CameraUnifiedCard.armDisarm: besides camera_states.armed, arming
-  // puts non-recording streams on the prealarm profile (and disarming reverts prealarm to off).
-  // Without a baseline profile the stream pipeline is torn down whenever the alarm override
-  // expires (recording off<->continuous flapping), which kills the MediaMTX push mid-stream and
-  // the analytics RTSP reader with it.
   const setArmed = async (cameraId: string, armed: boolean) => {
     setArmBusy(true)
     setError(null)
     try {
-      await dispatch(setArmedThunk({ cameraId, armed }))
-      const camera = allCameras.find((c) => c.cameraId === cameraId)
-      const isStreamRecording = (mode?: string) => (mode ?? 'off') !== 'off'
-      for (const s of camera?.streams ?? []) {
-        if (s.disabled) continue
-        const effectiveMode = (s.overrideProfile ?? s.recordingProfile)?.mode
-        if (armed) {
-          if (!isStreamRecording(effectiveMode))
-            await dispatch(setStreamRecordingProfile({ cameraId, streamName: s.streamName, profileId: RECORDING_PROFILE_PREALARM_ID }))
-        } else if (s.recordingProfile?.id === RECORDING_PROFILE_PREALARM_ID) {
-          await dispatch(setStreamRecordingProfile({ cameraId, streamName: s.streamName, profileId: RECORDING_PROFILE_OFF_ID }))
-        }
-      }
+      await dispatch(setArmedWithPrealarmBaseline({ cameraId, armed })).unwrap()
       await load()
     } catch (e) {
       setError(String(e))
@@ -330,19 +307,16 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<ApplyIf
   const takenCameraIds = watches.map((w) => w.cameraId)
   const availableCameras = allCameras.filter((c) => !takenCameraIds.includes(c.cameraId))
 
-  const selected = selection !== null && selection !== 'new'
-    ? watches.find((w) => w.cameraId === selection) ?? null
-    : null
-
   const list = (
     <List dense disablePadding>
       {watches.map((w) => (
         <SettingsListItem
           key={w.cameraId}
-          selected={selection === w.cameraId}
-          onClick={() => void setSelectionSafe(w.cameraId)}
+          selected={selected?.cameraId === w.cameraId}
+          onClick={() => select(w.cameraId)}
+          wrap
           primary={
-            <Stack direction="row" spacing={0.5} alignItems="center" component="span">
+            <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" component="span">
               <span>{cameraName(w.cameraId)}</span>
               <Chip label={w.enabled ? t('analytics.enabled') : t('analytics.disabled')} size="small" color={w.enabled ? 'primary' : 'default'} variant="outlined" />
               {w.enabled && !w.armed && (
@@ -351,7 +325,7 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<ApplyIf
             </Stack>
           }
           secondary={
-            <Stack direction="row" spacing={0.5} alignItems="center" component="span">
+            <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" component="span" sx={{ rowGap: 0.5 }}>
               {w.classes.map((c) => <Chip key={c} label={classLabel(c)} size="small" />)}
               <Typography variant="caption" color="text.secondary">
                 {w.streamName}
@@ -371,39 +345,43 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<ApplyIf
   return (
     <MasterDetailLayout
       listTitle={t('analytics.title')}
-      onAdd={() => void setSelectionSafe('new')}
+      onAdd={selectNew}
       addTooltip={t('analytics.addWatch')}
       addDisabled={availableCameras.length === 0}
       list={list}
     >
-      {selection === 'new' || selected ? (
+      {isNew || selected ? (
         <AnalyticsWatchForm
           ref={detailRef}
-          key={selection === 'new' ? 'new' : selected!.cameraId}
-          watch={selection === 'new' ? null : selected}
+          key={detailKey}
+          watch={isNew ? null : selected}
           allCameras={allCameras}
           takenCameraIds={takenCameraIds}
           toolbarExtra={selected ? (
-            <FormControlLabel
-              control={
-                <Switch
-                  size="small"
-                  checked={selected.armed}
-                  onChange={(e) => void setArmed(selected.cameraId, e.target.checked)}
-                  disabled={armBusy}
-                  sx={{ '& .MuiSwitch-switchBase.Mui-checked': { color: '#ff9800' }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#ff9800' } }}
-                />
-              }
-              label={<Typography variant="body2">{t('analytics.armSwitch')}</Typography>}
-            />
+            <Stack direction="row" spacing={1} alignItems="center">
+              {/* Arm failures must be visible next to the switch that caused them */}
+              {error && <Typography variant="caption" color="error">{error}</Typography>}
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={selected.armed}
+                    onChange={(e) => void setArmed(selected.cameraId, e.target.checked)}
+                    disabled={armBusy}
+                    sx={{ '& .MuiSwitch-switchBase.Mui-checked': { color: '#ff9800' }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#ff9800' } }}
+                  />
+                }
+                label={<Typography variant="body2">{t('analytics.armSwitch')}</Typography>}
+              />
+            </Stack>
           ) : undefined}
-          onSaved={async (isNew) => {
+          onSaved={async (created) => {
             await load()
-            if (isNew) setSelection(null)
+            if (created) reset()
           }}
           onRemoved={async () => {
             await load()
-            setSelection(null)
+            reset()
           }}
         />
       ) : (

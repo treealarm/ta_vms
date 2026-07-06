@@ -87,6 +87,7 @@
     "saveFailed": "Error al guardar",
     "newStorage": "Nuevo almacén",
     "deleteStorage": "Eliminar almacén",
+    "invalidReserved": "El tamaño reservado debe ser un número no negativo",
     "selectHint": "Seleccione un almacén o pulse + para agregar uno"
   },
   "storageControl": {
@@ -207,6 +208,7 @@
     "newStream": "Nuevo flujo en {{camera}}",
     "streamName": "Nombre del flujo",
     "streamNameHelper": "Único dentro de esta cámara, p.ej. main, sub, hd",
+    "duplicateName": "Ya existe un flujo con este nombre en esta cámara",
     "path": "Ruta",
     "pathHelper": "URL rtsp:// completa, o solo la parte final — se combina con el IP/puerto de la cámara para construir la URL RTSP",
     "pathHelperTokenSet": "Ignorado — la cámara resuelve su URL automáticamente mediante el perfil ONVIF",

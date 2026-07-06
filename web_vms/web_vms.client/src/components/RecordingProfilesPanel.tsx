@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Box,
   Chip,
@@ -17,6 +17,7 @@ import MasterDetailLayout from './settings/MasterDetailLayout'
 import SettingsListItem from './settings/SettingsListItem'
 import { useDirtyGuard } from './settings/useDirtyGuard'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
+import { useMasterDetailSelection } from './settings/useMasterDetailSelection'
 
 const EMPTY_PROFILE: RecordingProfileDto = {
   id: '',
@@ -110,7 +111,9 @@ function RecordingProfileForm({ ref, profile, onSaved, onRemoved }: FormProps) {
     if (!Number.isNaN(v)) setField(key, Math.max(0, Math.floor(v)))
   }
 
-  useDirtyGuard(ref, dirty, applyInternal)
+  // For a new form "dirty" means "complete enough to save" — navigation then
+  // auto-creates it instead of silently discarding the entered data
+  useDirtyGuard(ref, isNew ? Boolean(form.name.trim()) : dirty, applyInternal)
 
   return (
     <Box component="form" onSubmit={(e) => void handleApply(e)} sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -212,10 +215,10 @@ function RecordingProfileForm({ ref, profile, onSaved, onRemoved }: FormProps) {
 export default function RecordingProfilesPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHandle> }) {
   const { t } = useTranslation()
   const [profiles, setProfiles] = useState<RecordingProfileDto[]>([])
-  const [selection, setSelection] = useState<string | null>(null)  // profile id | 'new' | null
   const [error, setError] = useState<string | null>(null)
 
-  const detailRef = useRef<ApplyIfDirtyHandle>(null)
+  const { isNew, selected, detailRef, detailKey, select, selectNew, reset } =
+    useMasterDetailSelection(ref, profiles, (p) => p.id)
 
   const load = useCallback(async () => {
     try {
@@ -229,19 +232,6 @@ export default function RecordingProfilesPanel({ ref }: { ref?: React.Ref<ApplyI
 
   useEffect(() => { void load() }, [load])
 
-  const setSelectionSafe = async (sel: string | null) => {
-    if (detailRef.current && !(await detailRef.current.applyIfDirty())) return
-    setSelection(sel)
-  }
-
-  useImperativeHandle(ref, () => ({
-    applyIfDirty: () => detailRef.current ? detailRef.current.applyIfDirty() : Promise.resolve(true)
-  }))
-
-  const selected = selection !== null && selection !== 'new'
-    ? profiles.find((p) => p.id === selection) ?? null
-    : null
-
   const modeLabel = (mode: RecordingMode) =>
     mode === 'continuous' ? t('recording.continuous') : mode === 'prealarm' ? t('recording.prealarm') : t('recording.off')
 
@@ -250,17 +240,18 @@ export default function RecordingProfilesPanel({ ref }: { ref?: React.Ref<ApplyI
       {profiles.map((p) => (
         <SettingsListItem
           key={p.id}
-          selected={selection === p.id}
-          onClick={() => void setSelectionSafe(p.id)}
+          selected={selected?.id === p.id}
+          onClick={() => select(p.id)}
+          wrap
           primary={
-            <Stack direction="row" spacing={0.5} alignItems="center" component="span">
+            <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" component="span">
               <span>{p.name}</span>
               {p.isBuiltin && <Chip label={t('recording.builtinChip')} size="small" variant="outlined" />}
               {p.isOverridePreset && !p.isBuiltin && <Chip label={t('recording.overridePresetChip')} size="small" color="primary" variant="outlined" />}
             </Stack>
           }
           secondary={
-            <Stack direction="row" spacing={0.5} alignItems="center" component="span">
+            <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" component="span">
               <Chip label={modeLabel(p.mode)} size="small" />
               {p.mode === 'prealarm' && (
                 <Typography variant="caption" color="text.secondary">
@@ -287,22 +278,22 @@ export default function RecordingProfilesPanel({ ref }: { ref?: React.Ref<ApplyI
   return (
     <MasterDetailLayout
       listTitle={t('recording.title')}
-      onAdd={() => void setSelectionSafe('new')}
+      onAdd={selectNew}
       addTooltip={t('recording.addProfile')}
       list={list}
     >
-      {selection === 'new' || selected ? (
+      {isNew || selected ? (
         <RecordingProfileForm
           ref={detailRef}
-          key={selection === 'new' ? 'new' : selected!.id}
-          profile={selection === 'new' ? null : selected}
-          onSaved={async (isNew) => {
+          key={detailKey}
+          profile={isNew ? null : selected}
+          onSaved={async (created) => {
             await load()
-            if (isNew) setSelection(null)
+            if (created) reset()
           }}
           onRemoved={async () => {
             await load()
-            setSelection(null)
+            reset()
           }}
         />
       ) : (

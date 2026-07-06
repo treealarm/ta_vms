@@ -104,7 +104,9 @@ export default function MonitorSetupPanel({ ref, monitor, onSaved, onRemoved }: 
     onRemoved()
   }
 
-  useDirtyGuard(ref, dirty, applyInternal)
+  // For a new form "dirty" means "complete enough to save" — navigation then
+  // auto-creates it instead of silently discarding the entered data
+  useDirtyGuard(ref, isNew ? Boolean(name.trim()) : dirty, applyInternal)
 
   const cols = layoutColumns(layout)
 

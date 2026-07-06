@@ -1,4 +1,3 @@
-import { useImperativeHandle, useRef, useState } from 'react'
 import { List, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppSelector } from '../store'
@@ -6,34 +5,22 @@ import MasterDetailLayout from './settings/MasterDetailLayout'
 import MonitorSetupPanel from './MonitorSetupPanel'
 import SettingsListItem from './settings/SettingsListItem'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
+import { useMasterDetailSelection } from './settings/useMasterDetailSelection'
 
 export default function MonitorListPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHandle> }) {
   const { t } = useTranslation()
   const monitors = useAppSelector((s) => s.monitors.monitors)
-  const [selection, setSelection] = useState<string | null>(null)  // monitor id | 'new' | null
 
-  const detailRef = useRef<ApplyIfDirtyHandle>(null)
-
-  const setSelectionSafe = async (sel: string | null) => {
-    if (detailRef.current && !(await detailRef.current.applyIfDirty())) return
-    setSelection(sel)
-  }
-
-  useImperativeHandle(ref, () => ({
-    applyIfDirty: () => detailRef.current ? detailRef.current.applyIfDirty() : Promise.resolve(true)
-  }))
-
-  const selected = selection !== null && selection !== 'new'
-    ? monitors.find((m) => m.monitorId === selection) ?? null
-    : null
+  const { isNew, selected, detailRef, detailKey, select, selectNew, reset, setId } =
+    useMasterDetailSelection(ref, monitors, (m) => m.monitorId)
 
   const list = (
     <List dense disablePadding>
       {monitors.map((m) => (
         <SettingsListItem
           key={m.monitorId}
-          selected={selection === m.monitorId}
-          onClick={() => void setSelectionSafe(m.monitorId)}
+          selected={selected?.monitorId === m.monitorId}
+          onClick={() => select(m.monitorId)}
           primary={m.name}
           secondary={`${m.layout} · ${m.cameraIds.length} ${t('monitors.cameras', { count: m.cameraIds.length })}`}
         />
@@ -49,17 +36,17 @@ export default function MonitorListPanel({ ref }: { ref?: React.Ref<ApplyIfDirty
   return (
     <MasterDetailLayout
       listTitle={t('monitors.title')}
-      onAdd={() => void setSelectionSafe('new')}
+      onAdd={selectNew}
       addTooltip={t('monitors.newMonitor')}
       list={list}
     >
-      {selection === 'new' || selected ? (
+      {isNew || selected ? (
         <MonitorSetupPanel
           ref={detailRef}
-          key={selection === 'new' ? 'new' : selected!.monitorId}
-          monitor={selection === 'new' ? null : selected}
-          onSaved={(monitorId) => setSelection(monitorId)}
-          onRemoved={() => setSelection(null)}
+          key={detailKey}
+          monitor={isNew ? null : selected}
+          onSaved={setId}
+          onRemoved={reset}
         />
       ) : (
         <Typography color="text.secondary" sx={{ p: 2 }}>

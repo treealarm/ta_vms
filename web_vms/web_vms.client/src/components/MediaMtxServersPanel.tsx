@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Alert, Box, List, Stack, TextField, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
@@ -9,6 +9,7 @@ import MasterDetailLayout from './settings/MasterDetailLayout'
 import SettingsListItem from './settings/SettingsListItem'
 import { useDirtyGuard } from './settings/useDirtyGuard'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
+import { useMasterDetailSelection } from './settings/useMasterDetailSelection'
 
 const EMPTY: MediaMtxServerDto = { id: '', name: '', host: '', webrtcHost: '', rtspPort: 8554, webrtcPort: 8889, apiPort: 9997 }
 
@@ -57,10 +58,11 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
 
   const handleRemove = async () => {
     const result = await dispatch(removeMediaMtxServer(form.id))
-    if (!removeMediaMtxServer.rejected.match(result)) {
-      await dispatch(loadMediaMtxServers())
-      onRemoved()
-    }
+    // A fulfilled-but-unsuccessful delete must keep the form (and its status
+    // Alert) mounted — otherwise the failure message is never seen
+    if (removeMediaMtxServer.rejected.match(result) || !result.payload.success) return
+    await dispatch(loadMediaMtxServers())
+    onRemoved()
   }
 
   const setPort = (field: 'rtspPort' | 'webrtcPort' | 'apiPort', raw: string) => {
@@ -69,7 +71,10 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
       setForm((prev) => ({ ...prev, [field]: v }))
   }
 
-  useDirtyGuard(ref, dirty, applyInternal)
+  // For a new form "dirty" means "complete enough to save" — navigation then
+  // auto-creates it (matching the pre-refactor behavior) instead of silently
+  // discarding the entered data
+  useDirtyGuard(ref, isNew ? Boolean(form.name.trim() && form.host.trim()) : dirty, applyInternal)
 
   return (
     <Box component="form" onSubmit={(e) => void handleApply(e)} sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -151,34 +156,21 @@ export default function MediaMtxServersPanel({ ref }: { ref?: React.Ref<ApplyIfD
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const servers = useAppSelector((s) => s.mediaMtx.servers)
-  const [selection, setSelection] = useState<string | null>(null)  // server id | 'new' | null
 
-  const detailRef = useRef<ApplyIfDirtyHandle>(null)
+  const { isNew, selected, detailRef, detailKey, select, selectNew, reset } =
+    useMasterDetailSelection(ref, servers, (s) => s.id)
 
   useEffect(() => {
     dispatch(loadMediaMtxServers())
   }, [dispatch])
-
-  const setSelectionSafe = async (sel: string | null) => {
-    if (detailRef.current && !(await detailRef.current.applyIfDirty())) return
-    setSelection(sel)
-  }
-
-  useImperativeHandle(ref, () => ({
-    applyIfDirty: () => detailRef.current ? detailRef.current.applyIfDirty() : Promise.resolve(true)
-  }))
-
-  const selected = selection !== null && selection !== 'new'
-    ? servers.find((s) => s.id === selection) ?? null
-    : null
 
   const list = (
     <List dense disablePadding>
       {servers.map((s) => (
         <SettingsListItem
           key={s.id}
-          selected={selection === s.id}
-          onClick={() => void setSelectionSafe(s.id)}
+          selected={selected?.id === s.id}
+          onClick={() => select(s.id)}
           primary={s.name}
           secondary={`${s.host}:${s.rtspPort}`}
         />
@@ -194,17 +186,17 @@ export default function MediaMtxServersPanel({ ref }: { ref?: React.Ref<ApplyIfD
   return (
     <MasterDetailLayout
       listTitle={t('mediaMtx.title')}
-      onAdd={() => void setSelectionSafe('new')}
+      onAdd={selectNew}
       addTooltip={t('mediaMtx.addServer')}
       list={list}
     >
-      {selection === 'new' || selected ? (
+      {isNew || selected ? (
         <MediaMtxServerForm
           ref={detailRef}
-          key={selection === 'new' ? 'new' : selected!.id}
-          server={selection === 'new' ? null : selected}
-          onSaved={() => { if (selection === 'new') setSelection(null) }}
-          onRemoved={() => setSelection(null)}
+          key={detailKey}
+          server={isNew ? null : selected}
+          onSaved={() => { if (isNew) reset() }}
+          onRemoved={reset}
         />
       ) : (
         <Typography color="text.secondary" sx={{ p: 2 }}>

@@ -16,7 +16,7 @@ type Props = {
   ref?: React.Ref<ApplyIfDirtyHandle>
   cameraId: string  // '' = new camera
   serverId: string  // pre-selected server
-  onSaved: () => Promise<void>
+  onSaved: (createdCameraId?: string) => Promise<void>
   onRemoved: () => Promise<void>
 }
 
@@ -101,9 +101,21 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   })
 
   const applyInternal = async (): Promise<boolean> => {
+    if (isNew) {
+      if (!name.trim()) return true  // nothing worth saving — allow discard
+      const payload = buildPayload()
+      const result = await dispatch(addCamera(payload))
+      if (addCamera.rejected.match(result)) return false
+      if (pendingStorages.length > 0) {
+        const withId = pendingStorages.map((a, i) => ({ ...a, cameraId: payload.cameraId, priority: i }))
+        await dispatch(setCameraStorages({ cameraId: payload.cameraId, assignments: withId }))
+      }
+      await onSaved(payload.cameraId)
+      return true
+    }
     if (!dirty) return true
     const payload = buildPayload()
-    const serverChanged = !isNew && existing && serverId !== existing.serverId
+    const serverChanged = existing && serverId !== existing.serverId
     const action = serverChanged ? changeCameraParent : addCamera
     const result = await dispatch(action(payload))
     if (!action.rejected.match(result)) {
@@ -116,20 +128,8 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
 
   const handleApply = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (isNew) {
-      const payload = buildPayload()
-      const result = await dispatch(addCamera(payload))
-      if (!addCamera.rejected.match(result)) {
-        if (pendingStorages.length > 0) {
-          const withId = pendingStorages.map((a, i) => ({ ...a, cameraId: payload.cameraId, priority: i }))
-          await dispatch(setCameraStorages({ cameraId: payload.cameraId, assignments: withId }))
-        }
-        await onSaved()
-      }
-    } else {
-      const ok = await applyInternal()
-      if (ok) await onSaved()
-    }
+    const ok = await applyInternal()
+    if (ok && !isNew) await onSaved()
   }
 
   const handleCancel = () => {
@@ -150,8 +150,10 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     }
   }
 
-  // applyIfDirty for the parent (selection/tab switch) + beforeunload warning
-  useDirtyGuard(ref, dirty, applyInternal)
+  // applyIfDirty for the parent (selection/tab switch) + beforeunload warning.
+  // For a new form "dirty" means "complete enough to save" — navigation then
+  // auto-creates it instead of silently discarding the entered data.
+  useDirtyGuard(ref, isNew ? Boolean(name.trim()) : dirty, applyInternal)
 
   return (
     <Box component="form" onSubmit={(e) => void handleApply(e)} sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>

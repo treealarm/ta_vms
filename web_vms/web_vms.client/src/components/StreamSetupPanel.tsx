@@ -14,7 +14,7 @@ type Props = {
   ref?: React.Ref<ApplyIfDirtyHandle>
   cameraId: string
   streamName: string | null  // null = new stream
-  onSaved: () => Promise<void>
+  onSaved: (createdStreamName?: string) => Promise<void>
   onRemoved: () => Promise<void>
 }
 
@@ -47,6 +47,7 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
   const [rtspUrlLoading, setRtspUrlLoading] = useState(false)
   const [rtspUrlError, setRtspUrlError] = useState<string | null>(null)
   const [rtspUrlCopied, setRtspUrlCopied] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   // Snapshot of the saved state — used for dirty detection and Cancel
   const [snap, setSnap] = useState({
@@ -125,18 +126,47 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
     void fetchOnvifProfiles()
   }, [fetchOnvifProfiles])
 
+  // The recording profile object for the current selection. Falls back to the
+  // stream's already-assigned profile while the /api/recording-profiles fetch
+  // is still in flight — otherwise a quick Apply would silently wipe it.
+  const resolveProfile = () =>
+    recordingProfiles.find((p) => p.id === selectedProfileId)
+      ?? (selectedProfileId && selectedProfileId === existingStream?.recordingProfile?.id
+        ? existingStream?.recordingProfile
+        : undefined)
+
   // Defined before the camera null-guard so the dirty guard can be registered
   // unconditionally; bails out gracefully when the camera is gone.
   const applyInternal = async (): Promise<boolean> => {
-    if (!dirty || !camera) return true
-    const profile = recordingProfiles.find((p) => p.id === selectedProfileId)
+    if (!camera) return true
+    if (isNew) {
+      const newName = name.trim()
+      if (!newName) return true  // nothing worth saving — allow discard
+      if ((camera.streams ?? []).some((s) => s.streamName === newName)) {
+        setSaveError(t('stream.duplicateName'))
+        return false
+      }
+      const updated: CameraStreamDto = {
+        streamName: newName,
+        path,
+        profileToken,
+        webRtc,
+        disabled: disabled || undefined,
+        recordingProfile: resolveProfile(),
+      }
+      const result = await dispatch(addCamera({ ...camera, streams: [...(camera.streams ?? []), updated] }))
+      if (addCamera.rejected.match(result)) return false
+      await onSaved(newName)
+      return true
+    }
+    if (!dirty) return true
     const updated: CameraStreamDto = {
       streamName: streamName!,
       path,
       profileToken,
       webRtc,
       disabled: disabled || undefined,
-      recordingProfile: profile,
+      recordingProfile: resolveProfile(),
     }
     const others = (camera.streams ?? []).filter((s) => s.streamName !== updated.streamName)
     const result = await dispatch(addCamera({ ...camera, streams: [...others, updated] }))
@@ -148,22 +178,17 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
     return false
   }
 
-  useDirtyGuard(ref, dirty, applyInternal)
+  // For a new form "dirty" means "complete enough to save" — navigation then
+  // auto-creates it instead of silently discarding the entered data
+  useDirtyGuard(ref, isNew ? Boolean(name.trim()) : dirty, applyInternal)
 
   if (!camera) return null
 
   const handleApply = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (isNew) {
-      const profile = recordingProfiles.find((p) => p.id === selectedProfileId)
-      const updated: CameraStreamDto = { streamName: name, path, profileToken, webRtc, disabled: disabled || undefined, recordingProfile: profile }
-      const others = (camera.streams ?? []).filter((s) => s.streamName !== updated.streamName)
-      const result = await dispatch(addCamera({ ...camera, streams: [...others, updated] }))
-      if (!addCamera.rejected.match(result)) await onSaved()
-    } else {
-      const ok = await applyInternal()
-      if (ok) await onSaved()
-    }
+    setSaveError(null)
+    const ok = await applyInternal()
+    if (ok && !isNew) await onSaved()
   }
 
   const handleCancel = () => {
@@ -204,12 +229,16 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
             <TextField
               label={t('stream.streamName')}
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => { setName(e.target.value); setSaveError(null) }}
               disabled={!isNew}
               required
               size="small"
               helperText={t('stream.streamNameHelper')}
             />
+
+            {saveError && (
+              <Typography variant="caption" color="error">{saveError}</Typography>
+            )}
 
             <TextField
               label={t('stream.path')}

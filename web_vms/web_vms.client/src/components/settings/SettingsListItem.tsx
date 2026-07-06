@@ -9,11 +9,17 @@ type Props = {
   depth?: 0 | 1 | 2
   /** Renders the row at reduced opacity (disabled cameras/streams). */
   dimmed?: boolean
+  /**
+   * Let content wrap to multiple lines instead of the default single-line
+   * ellipsis. Required for chip rows — ellipsis does not render for flex
+   * children, they would be hard-clipped by the narrow list column.
+   */
+  wrap?: boolean
 }
 
 /** Standard left-list row for admin settings pages. */
 export default function SettingsListItem({
-  selected, onClick, primary, secondary, depth = 0, dimmed,
+  selected, onClick, primary, secondary, depth = 0, dimmed, wrap = false,
 }: Props) {
   return (
     <ListItemButton
@@ -26,8 +32,8 @@ export default function SettingsListItem({
         primary={primary}
         secondary={secondary}
         // div (not span/p) so chips and stacks are valid inside either line
-        primaryTypographyProps={{ noWrap: true, component: 'div' }}
-        secondaryTypographyProps={{ noWrap: true, component: 'div' }}
+        primaryTypographyProps={{ noWrap: !wrap, component: 'div' }}
+        secondaryTypographyProps={{ noWrap: !wrap, component: 'div' }}
       />
     </ListItemButton>
   )

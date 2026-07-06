@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Box, List, Stack, TextField, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
@@ -9,6 +9,7 @@ import MasterDetailLayout from './settings/MasterDetailLayout'
 import SettingsListItem from './settings/SettingsListItem'
 import { useDirtyGuard } from './settings/useDirtyGuard'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
+import { useMasterDetailSelection } from './settings/useMasterDetailSelection'
 
 const GIB = 1024 ** 3
 
@@ -36,14 +37,48 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
   const [snap, setSnap] = useState(toGbString(storage?.reservedBytes ?? 0))
   const dirty = !isNew && reservedGb !== snap
 
+  // A cleared/invalid field must block the save — Number('') is 0 and would
+  // silently wipe the reservation on the auto-apply navigation path
+  const parseReservedBytes = (): number | null => {
+    if (reservedGb.trim() === '') return null
+    const gb = Number(reservedGb)
+    if (Number.isNaN(gb) || gb < 0) return null
+    return Math.round(gb * GIB)
+  }
+
   const applyInternal = async (): Promise<boolean> => {
-    if (isNew || !dirty) return true
-    setSaving(true)
+    if (!isNew && !dirty) return true
     setError('')
+    const reservedBytes = parseReservedBytes()
+    if (reservedBytes === null) {
+      setError(t('storage.invalidReserved'))
+      return false
+    }
+    if (isNew) {
+      if (!storageId.trim() || !rootPath.trim()) {
+        setError(t('storage.required'))
+        return false
+      }
+      setSaving(true)
+      const result = await dispatch(addStorage({
+        storageId: storageId.trim(),
+        rootPath: rootPath.trim(),
+        reservedBytes,
+      }))
+      setSaving(false)
+      if (addStorage.rejected.match(result)) {
+        setError(String(result.error?.message ?? t('storage.saveFailed')))
+        return false
+      }
+      await dispatch(loadStorages())
+      onSaved(storageId.trim())
+      return true
+    }
+    setSaving(true)
     const result = await dispatch(updateStorage({
       storageId: storage.storageId,
       rootPath: storage.rootPath,
-      reservedBytes: Math.round(Number(reservedGb) * GIB),
+      reservedBytes,
     }))
     setSaving(false)
     if (updateStorage.rejected.match(result)) {
@@ -57,39 +92,28 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
 
   const handleApply = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (isNew) {
-      setError('')
-      if (!storageId.trim() || !rootPath.trim()) {
-        setError(t('storage.required'))
-        return
-      }
-      setSaving(true)
-      const result = await dispatch(addStorage({
-        storageId: storageId.trim(),
-        rootPath: rootPath.trim(),
-        reservedBytes: Math.round(Number(reservedGb) * GIB),
-      }))
-      setSaving(false)
-      if (!addStorage.rejected.match(result)) {
-        await dispatch(loadStorages())
-        onSaved(storageId.trim())
-      }
-    } else {
-      await applyInternal()
-    }
+    await applyInternal()
   }
 
-  const handleCancel = () => setReservedGb(snap)
+  const handleCancel = () => {
+    setError('')
+    setReservedGb(snap)
+  }
 
   const handleRemove = async () => {
+    setError('')
     const result = await dispatch(removeStorage(storage!.storageId))
-    if (!removeStorage.rejected.match(result)) {
-      await dispatch(loadStorages())
-      onRemoved()
+    if (removeStorage.rejected.match(result)) {
+      setError(String(result.error?.message ?? t('storage.saveFailed')))
+      return
     }
+    await dispatch(loadStorages())
+    onRemoved()
   }
 
-  useDirtyGuard(ref, dirty, applyInternal)
+  // For a new form "dirty" means "complete enough to save" — navigation then
+  // auto-creates it instead of silently discarding the entered data
+  useDirtyGuard(ref, isNew ? Boolean(storageId.trim() && rootPath.trim()) : dirty, applyInternal)
 
   return (
     <Box component="form" onSubmit={(e) => void handleApply(e)} sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -143,34 +167,21 @@ export default function StorageSetupPanel({ ref }: { ref?: React.Ref<ApplyIfDirt
   const { t } = useTranslation()
   const storages = useAppSelector((state) => state.storage.storages)
   const storeError = useAppSelector((state) => state.storage.status)
-  const [selection, setSelection] = useState<string | null>(null)  // storage id | 'new' | null
 
-  const detailRef = useRef<ApplyIfDirtyHandle>(null)
+  const { isNew, selected, detailRef, detailKey, select, selectNew, reset, setId } =
+    useMasterDetailSelection(ref, storages, (s) => s.storageId)
 
   useEffect(() => {
     dispatch(loadStorages())
   }, [dispatch])
-
-  const setSelectionSafe = async (sel: string | null) => {
-    if (detailRef.current && !(await detailRef.current.applyIfDirty())) return
-    setSelection(sel)
-  }
-
-  useImperativeHandle(ref, () => ({
-    applyIfDirty: () => detailRef.current ? detailRef.current.applyIfDirty() : Promise.resolve(true)
-  }))
-
-  const selected = selection !== null && selection !== 'new'
-    ? storages.find((s) => s.storageId === selection) ?? null
-    : null
 
   const list = (
     <List dense disablePadding>
       {storages.map((s) => (
         <SettingsListItem
           key={s.storageId}
-          selected={selection === s.storageId}
-          onClick={() => void setSelectionSafe(s.storageId)}
+          selected={selected?.storageId === s.storageId}
+          onClick={() => select(s.storageId)}
           primary={s.storageId}
           secondary={s.rootPath}
         />
@@ -186,17 +197,17 @@ export default function StorageSetupPanel({ ref }: { ref?: React.Ref<ApplyIfDirt
   return (
     <MasterDetailLayout
       listTitle={t('storage.title')}
-      onAdd={() => void setSelectionSafe('new')}
+      onAdd={selectNew}
       addTooltip={t('storage.newStorage')}
       list={list}
     >
-      {selection === 'new' || selected ? (
+      {isNew || selected ? (
         <StorageForm
           ref={detailRef}
-          key={selection === 'new' ? 'new' : selected!.storageId}
-          storage={selection === 'new' ? null : selected}
-          onSaved={(storageId) => setSelection(storageId)}
-          onRemoved={() => setSelection(null)}
+          key={detailKey}
+          storage={isNew ? null : selected}
+          onSaved={setId}
+          onRemoved={reset}
         />
       ) : (
         <Box sx={{ p: 2 }}>

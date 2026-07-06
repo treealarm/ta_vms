@@ -1,5 +1,6 @@
 import { type AnyAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
-import type { CameraSetupDto, ApiResponseDto, MediaServerNodeDto } from '../dto/dtos'
+import type { CameraSetupDto, CameraStreamDto, ApiResponseDto, MediaServerNodeDto } from '../dto/dtos'
+import { RECORDING_PROFILE_OFF_ID, RECORDING_PROFILE_PREALARM_ID } from '../dto/dtos'
 import { parseJson } from './api'
 
 type LiveState = {
@@ -149,6 +150,31 @@ export const setStreamRecordingProfile = createAsyncThunk(
     })
     if (response.ok)
       await dispatch(fetchCameraState(cameraId))
+  }
+)
+
+// Arm/disarm plus the prealarm-baseline profile flip, shared by the camera card
+// and the analytics watches panel: arming puts non-recording streams on the
+// prealarm profile (and disarming reverts prealarm back to off). Without a
+// baseline profile the stream pipeline is torn down whenever the alarm override
+// expires (recording off<->continuous flapping), which kills the MediaMTX push
+// mid-stream and the analytics RTSP reader with it.
+export const setArmedWithPrealarmBaseline = createAsyncThunk(
+  'live/setArmedWithPrealarmBaseline',
+  async ({ cameraId, armed }: { cameraId: string; armed: boolean }, { dispatch, getState }) => {
+    await dispatch(setArmed({ cameraId, armed }))
+    const camera = (getState() as { live: LiveState }).live.cameraStatesById[cameraId]
+    const isStreamRecording = (s: CameraStreamDto) =>
+      (((s.overrideProfile ?? s.recordingProfile)?.mode) ?? 'off') !== 'off'
+    for (const s of camera?.streams ?? []) {
+      if (s.disabled) continue
+      if (armed) {
+        if (!isStreamRecording(s))
+          await dispatch(setStreamRecordingProfile({ cameraId, streamName: s.streamName, profileId: RECORDING_PROFILE_PREALARM_ID }))
+      } else if (s.recordingProfile?.id === RECORDING_PROFILE_PREALARM_ID) {
+        await dispatch(setStreamRecordingProfile({ cameraId, streamName: s.streamName, profileId: RECORDING_PROFILE_OFF_ID }))
+      }
+    }
   }
 )
 

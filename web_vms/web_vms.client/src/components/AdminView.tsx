@@ -27,10 +27,19 @@ export default function AdminView() {
 
   // Only one route is mounted at a time, so a single ref serves every panel
   const panelRef = useRef<ApplyIfDirtyHandle>(null)
+  // Serializes tab switches so a rapid second click cannot start a concurrent
+  // applyIfDirty save for the same dirty form
+  const switching = useRef(false)
 
   const handleTabChange = async (_: unknown, v: number) => {
-    if (!(await panelRef.current?.applyIfDirty() ?? true)) return
-    navigate(`/admin/${TABS[v]}`)
+    if (switching.current) return
+    switching.current = true
+    try {
+      if (!(await panelRef.current?.applyIfDirty() ?? true)) return
+      navigate(`/admin/${TABS[v]}`)
+    } finally {
+      switching.current = false
+    }
   }
 
   return (

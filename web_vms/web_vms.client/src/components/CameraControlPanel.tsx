@@ -48,10 +48,20 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<ApplyIfDir
     await dispatch(loadCameras())
   }
 
+  // Serializes guarded switches so a rapid second click cannot start a
+  // concurrent applyIfDirty save for the same dirty form
+  const switching = useRef(false)
+
   const setSelectionSafe = async (newSel: Selection) => {
-    // Block the switch when saving the dirty form failed — the error stays visible
-    if (detailRef.current && !(await detailRef.current.applyIfDirty())) return
-    setSelection(newSel)
+    if (switching.current) return
+    switching.current = true
+    try {
+      // Block the switch when saving the dirty form failed — the error stays visible
+      if (detailRef.current && !(await detailRef.current.applyIfDirty())) return
+      setSelection(newSel)
+    } finally {
+      switching.current = false
+    }
   }
 
   // Camera in context for the "+" menu (a stream can be added to it)
@@ -169,7 +179,12 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<ApplyIfDir
           key={`new@${selection.serverId}`}
           cameraId=""
           serverId={selection.serverId}
-          onSaved={refresh}
+          onSaved={async (createdId) => {
+            await refresh()
+            // Jump to the created camera — staying in create mode would re-upsert
+            // the same generated id on a second Add click
+            if (createdId) setSelection({ kind: 'camera', cameraId: createdId, serverId: selection.serverId })
+          }}
           onRemoved={refresh}
         />
       )}
@@ -192,7 +207,10 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<ApplyIfDir
           key={`${selection.cameraId}/new`}
           cameraId={selection.cameraId}
           streamName={null}
-          onSaved={refresh}
+          onSaved={async (createdName) => {
+            await refresh()
+            if (createdName) setSelection({ kind: 'stream', cameraId: selection.cameraId, streamName: createdName })
+          }}
           onRemoved={refresh}
         />
       )}

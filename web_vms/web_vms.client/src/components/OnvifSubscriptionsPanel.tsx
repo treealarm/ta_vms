@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Box,
   Chip,
@@ -23,6 +23,7 @@ import MasterDetailLayout from './settings/MasterDetailLayout'
 import SettingsListItem from './settings/SettingsListItem'
 import { useDirtyGuard } from './settings/useDirtyGuard'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
+import { useMasterDetailSelection } from './settings/useMasterDetailSelection'
 
 async function fetchManaged(): Promise<OnvifCameraEntryDto[]> {
   const r = await fetch('/api/onvif/subscriptions')
@@ -97,11 +98,6 @@ function SubscriptionDetail({ ref, entry, cam, armed, onRemove, onToggleSubscrib
     return true
   }
 
-  const handleApply = async (e: React.FormEvent) => {
-    e.preventDefault()
-    await applyInternal()
-  }
-
   const handleCancel = () => {
     setPollTimeoutSeconds(snap.pollTimeoutSeconds)
     setMessageLimit(snap.messageLimit)
@@ -109,12 +105,16 @@ function SubscriptionDetail({ ref, entry, cam, armed, onRemove, onToggleSubscrib
 
   useDirtyGuard(ref, dirty, applyInternal)
 
+  // Deliberately NOT component="form": OnvifAlarmFiltersPanel below renders its
+  // own <form>s, and a nested-form submit would bubble up here and phantom-save
+  // a dirty poll config. Apply goes through onApply instead of type=submit.
   return (
-    <Box component="form" onSubmit={(e) => void handleApply(e)} sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <DetailToolbar
         title={cam?.name || entry.cameraId}
         subtitle={cam?.onvifConn ? `${cam.onvifConn.ip}:${cam.onvifConn.port}` : undefined}
         dirty={dirty}
+        onApply={() => void applyInternal()}
         onCancel={handleCancel}
         onDelete={onRemove}
         deleteLabel={t('onvifSubs.removeCamera')}
@@ -202,10 +202,10 @@ export default function OnvifSubscriptionsPanel({ ref }: { ref?: React.Ref<Apply
   const [managed, setManaged] = useState<OnvifCameraEntryDto[]>([])
   const [armedMap, setArmedMap] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [addMenuAnchor, setAddMenuAnchor] = useState<HTMLElement | null>(null)
 
-  const detailRef = useRef<ApplyIfDirtyHandle>(null)
+  const { selected, detailRef, detailKey, select, setId, reset, guard } =
+    useMasterDetailSelection(ref, managed, (e) => e.cameraId)
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -223,28 +223,19 @@ export default function OnvifSubscriptionsPanel({ ref }: { ref?: React.Ref<Apply
 
   useEffect(() => { void reload() }, [reload])
 
-  const setSelectionSafe = async (id: string | null) => {
-    if (detailRef.current && !(await detailRef.current.applyIfDirty())) return
-    setSelectedId(id)
-  }
-
-  useImperativeHandle(ref, () => ({
-    applyIfDirty: () => detailRef.current ? detailRef.current.applyIfDirty() : Promise.resolve(true)
-  }))
-
   const handleAddPick = async (cameraId: string) => {
     setAddMenuAnchor(null)
-    if (detailRef.current && !(await detailRef.current.applyIfDirty())) return
+    if (!(await guard())) return
     await addCamera(cameraId)
     await reload()
-    setSelectedId(cameraId)
+    setId(cameraId)
   }
 
   const handleRemove = async (cameraId: string) => {
     await removeCamera(cameraId)
     setManaged((prev) => prev.filter((e) => e.cameraId !== cameraId))
     setArmedMap((prev) => { const next = { ...prev }; delete next[cameraId]; return next })
-    if (selectedId === cameraId) setSelectedId(null)
+    if (selected?.cameraId === cameraId) reset()
   }
 
   const handleToggleSubscribed = async (cameraId: string, subscribed: boolean) => {
@@ -263,7 +254,6 @@ export default function OnvifSubscriptionsPanel({ ref }: { ref?: React.Ref<Apply
 
   const managedIds = new Set(managed.map((e) => e.cameraId))
   const available = allCameras.filter((c) => c.onvifConn?.ip && !managedIds.has(c.cameraId))
-  const selected = managed.find((e) => e.cameraId === selectedId) ?? null
 
   if (loading) return <CircularProgress sx={{ m: 4 }} />
 
@@ -274,11 +264,12 @@ export default function OnvifSubscriptionsPanel({ ref }: { ref?: React.Ref<Apply
         return (
           <SettingsListItem
             key={entry.cameraId}
-            selected={selectedId === entry.cameraId}
-            onClick={() => void setSelectionSafe(entry.cameraId)}
+            selected={selected?.cameraId === entry.cameraId}
+            onClick={() => select(entry.cameraId)}
+            wrap
             primary={allCamerasById[entry.cameraId]?.name || entry.cameraId}
             secondary={
-              <Stack direction="row" spacing={0.5} component="span" sx={{ mt: 0.25 }}>
+              <Stack direction="row" spacing={0.5} flexWrap="wrap" component="span" sx={{ mt: 0.25 }}>
                 <Chip
                   label={entry.subscribed ? 'ON' : 'OFF'}
                   size="small"
@@ -317,7 +308,7 @@ export default function OnvifSubscriptionsPanel({ ref }: { ref?: React.Ref<Apply
       {selected ? (
         <SubscriptionDetail
           ref={detailRef}
-          key={selected.cameraId}
+          key={detailKey}
           entry={selected}
           cam={allCamerasById[selected.cameraId]}
           armed={armedMap[selected.cameraId] ?? false}
