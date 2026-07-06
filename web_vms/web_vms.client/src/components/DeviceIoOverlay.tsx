@@ -62,11 +62,11 @@ export default function DeviceIoOverlay({ cameraId, onClose }: Props) {
         borderRadius: `${theme.shape.borderRadius}px`,
         p: 1,
         userSelect: 'none',
-        // Default position mirrors PtzOverlay but on the opposite side, so the two overlays
-        // don't default on top of each other if a future change ever allows both to be shown.
+        // Default near the trigger buttons on the left icon strip (same as PtzOverlay). PTZ and
+        // Device I/O are mutually exclusive, so they never render on top of each other anyway.
         ...(pos
           ? { left: pos.left, top: pos.top }
-          : { right: 8, top: '50%', transform: 'translateY(-50%)' }),
+          : { left: 8, top: '50%', transform: 'translateY(-50%)' }),
       }}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>

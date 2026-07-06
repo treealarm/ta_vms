@@ -121,7 +121,7 @@ public class Camera
         r.token,
         r.Properties.Mode.ToString().ToLowerInvariant(),
         r.Properties.IdleState.ToString().ToLowerInvariant(),
-        XsdDurationToMs(r.Properties.DelayTime)))
+        OnvifDuration.ToMs(r.Properties.DelayTime)))
       .ToList();
   }
 
@@ -132,7 +132,7 @@ public class Camera
     {
       Mode = mode.Equals("bistable", StringComparison.OrdinalIgnoreCase) ? RelayMode.Bistable : RelayMode.Monostable,
       IdleState = idleState.Equals("open", StringComparison.OrdinalIgnoreCase) ? RelayIdleState.open : RelayIdleState.closed,
-      DelayTime = MsToXsdDuration(delayMs),
+      DelayTime = OnvifDuration.FromMs(delayMs),
     });
   }
 
@@ -141,11 +141,6 @@ public class Camera
     using var device = await GetDevice();
     await device.SetRelayOutputStateAsync(token, active ? RelayLogicalState.active : RelayLogicalState.inactive);
   }
-
-  private static string MsToXsdDuration(int ms) => System.Xml.XmlConvert.ToString(System.TimeSpan.FromMilliseconds(ms));
-
-  private static int XsdDurationToMs(string? duration) =>
-    string.IsNullOrEmpty(duration) ? 0 : (int)System.Xml.XmlConvert.ToTimeSpan(duration).TotalMilliseconds;
 
   public async Task SyncTimeAsync() => await SetTimeAsync(System.DateTime.UtcNow);
 

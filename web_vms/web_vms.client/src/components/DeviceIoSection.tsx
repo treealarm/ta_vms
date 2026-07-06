@@ -177,7 +177,12 @@ function RelayOutputRow({ cameraId, relay, options }: {
 
   const min = options?.minDelayMs ?? 0
   const max = options?.maxDelayMs ?? 60_000
-  const modes = options?.supportedModes.length ? options.supportedModes : (['monostable', 'bistable'] as RelayMode[])
+  // Always offer both modes, ignoring the camera's reported list. GetRelayOutputOptions.Mode is
+  // spec'd as the *supported* modes, but some cameras (e.g. NVT1) appear to put just the *current*
+  // mode there instead — so a single-entry list can't be trusted to mean "only this is supported".
+  // Since pulse was dropped, monostable/bistable is the entire domain anyway, so restricting by that
+  // list only risks hiding a mode the user can really use. Fixed order for a stable dropdown.
+  const modes: RelayMode[] = ['monostable', 'bistable']
 
   return (
     <Card variant="outlined">

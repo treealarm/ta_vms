@@ -64,7 +64,7 @@ namespace OnvifLib
         {
           var delays = (o.DelayTimes ?? string.Empty)
             .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Select(XsdDurationToMs)
+            .Select(OnvifDuration.ToMs)
             .ToList();
           return new OnvifRelayOutputOptions(
             o.token,
@@ -196,9 +196,6 @@ namespace OnvifLib
         try { factory.Close(); } catch { factory.Abort(); }
       }
     }
-
-    private static int XsdDurationToMs(string duration) =>
-      string.IsNullOrEmpty(duration) ? 0 : (int)XmlConvert.ToTimeSpan(duration).TotalMilliseconds;
 
     public override void Dispose()
     {
