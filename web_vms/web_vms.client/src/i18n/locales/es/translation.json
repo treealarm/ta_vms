@@ -306,6 +306,8 @@
     "ptzClose": "Cerrar PTZ",
     "deviceIoOpen": "E/S del dispositivo",
     "deviceIoClose": "Cerrar E/S del dispositivo",
+    "bboxOpen": "Mostrar cajas de analítica",
+    "bboxClose": "Ocultar cajas de analítica",
     "armedTip": "Armado — clic para desarmar",
     "disarmedTip": "Desarmado — clic para armar",
     "controls": "Controles",

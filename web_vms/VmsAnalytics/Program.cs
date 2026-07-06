@@ -51,6 +51,7 @@ if (workerAppIds.Length > 0)
 
 builder.Services.AddSingleton(_ => new DetectionDebouncer(TimeSpan.FromSeconds(debounceSeconds)));
 builder.Services.AddSingleton<AnalyticsActivityLog>();
+builder.Services.AddSingleton<LiveDetectionBroadcaster>();
 
 var postgresConnStr = BuildPostgresConnectionString();
 builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(postgresConnStr));

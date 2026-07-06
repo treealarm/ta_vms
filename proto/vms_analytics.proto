@@ -14,6 +14,11 @@ service VmsAnalyticsService {
   // Debug: recent detection events from the in-memory ring buffer (mirrors VmsFs GetFsActivity) —
   // includes bbox and, when the watch has attach_debug_crops enabled, a JPEG of the object.
   rpc GetAnalyticsActivity(GetAnalyticsActivityRequest) returns (GetAnalyticsActivityResponse);
+  // Live per-camera detection stream for the "bbox over live video" overlay. Emits every
+  // above-threshold detection for the camera as it arrives (armed or not, debounced or not) so the
+  // overlay tracks smoothly. crop_jpeg is never populated on this stream. Ends when the caller
+  // cancels. Keyed by camera_id (watch_id == camera_id, 1:1).
+  rpc StreamCameraDetections(StreamCameraDetectionsRequest) returns (stream AnalyticsActivityEntry);
 }
 
 enum DetectionKind {
@@ -78,6 +83,10 @@ message AnalyticsActivityEntry {
 
 message GetAnalyticsActivityRequest {
   uint32 limit = 1;
+}
+
+message StreamCameraDetectionsRequest {
+  string camera_id = 1;
 }
 
 message GetAnalyticsActivityResponse {

@@ -17,6 +17,7 @@ public sealed class DetectionStreamConsumer(
   AnalyticsWatchCache cache,
   DetectionDebouncer debouncer,
   AnalyticsActivityLog activityLog,
+  LiveDetectionBroadcaster liveBroadcaster,
   WatchReconciler reconciler,
   CameraStorageResolver storageResolver,
   IDbContextFactory<AnalyticsDbContext> dbFactory,
@@ -80,12 +81,17 @@ public sealed class DetectionStreamConsumer(
 
     // Debug ring buffer sees every above-threshold event, including debounced ones — that's the
     // point of the panel: to show what the detector actually saw, not just what got stored.
-    activityLog.Record(new AnalyticsActivityEntry(
+    var activityEntry = new AnalyticsActivityEntry(
       detectedAt, cameraId, evt.TrackId, DetectionKinds.ToDbString(evt.Kind), evt.Confidence,
       evt.Bbox?.X ?? 0, evt.Bbox?.Y ?? 0, evt.Bbox?.Width ?? 0, evt.Bbox?.Height ?? 0,
       evt.HasRecognizedText ? evt.RecognizedText : null,
       evt.CropJpeg.ToByteArray(),
-      persisted));
+      persisted);
+    activityLog.Record(activityEntry);
+
+    // Feed the live overlay with every above-threshold detection (armed or not, debounced or not)
+    // so bboxes track smoothly — gating this on `persisted` would make boxes flicker.
+    liveBroadcaster.Publish(activityEntry);
 
     if (!persisted)
       return;

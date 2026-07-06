@@ -26,6 +26,7 @@ import TuneIcon from '@mui/icons-material/Tune'
 import VideoLibraryIcon from '@mui/icons-material/VideoLibrary'
 import ControlCameraIcon from '@mui/icons-material/ControlCamera'
 import SensorsIcon from '@mui/icons-material/Sensors'
+import DirectionsRunIcon from '@mui/icons-material/DirectionsRun'
 import SecurityIcon from '@mui/icons-material/Security'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import {
@@ -91,10 +92,12 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
   const panelOpen = slotUi.panelOpen
   const ptzOpen = slotUi.ptzOpen
   const deviceIoOpen = slotUi.deviceIoOpen
+  const bboxOpen = slotUi.bboxOpen
 
   const setMode = (v: 'live' | 'archive') => dispatch(patchSlot({ key: storeKey, mode: v }))
   const setSelectedStream = (v: string) => dispatch(patchSlot({ key: storeKey, selectedStream: v }))
   const setPanelOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, panelOpen: v }))
+  const setBboxOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, bboxOpen: v }))
   // PTZ and Device I/O overlays are mutually exclusive so they never render on top of each other.
   const setPtzOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, ptzOpen: v, ...(v ? { deviceIoOpen: false } : {}) }))
   const setDeviceIoOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, deviceIoOpen: v, ...(v ? { ptzOpen: false } : {}) }))
@@ -281,6 +284,20 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
                 sx={{ ...BTN_SX, ...(deviceIoOpen ? { color: W, bgcolor: alpha(W, 0.2) } : {}) }}
               >
                 <SensorsIcon sx={{ fontSize: '0.95rem' }} />
+              </IconButton>
+            </Tooltip>
+          )}
+
+          {/* Analytics bbox overlay — keyed by camera, not stream: works even when the monitor
+              shows a sub-stream that has no analytics of its own (it mirrors the main stream). */}
+          {mode === 'live' && !isDisabled && (
+            <Tooltip title={bboxOpen ? t('cameraCard.bboxClose') : t('cameraCard.bboxOpen')} placement="right">
+              <IconButton
+                size="small"
+                onClick={() => setBboxOpen(!bboxOpen)}
+                sx={{ ...BTN_SX, ...(bboxOpen ? { color: W, bgcolor: alpha(W, 0.2) } : {}) }}
+              >
+                <DirectionsRunIcon sx={{ fontSize: '0.95rem' }} />
               </IconButton>
             </Tooltip>
           )}
@@ -567,7 +584,9 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             {camera.name || camera.cameraId}
           </Typography>
         )}
-        {mode === 'live' && whepUrl && <CameraStream whepUrl={whepUrl} />}
+        {mode === 'live' && whepUrl && (
+          <CameraStream whepUrl={whepUrl} cameraId={camera.cameraId} bboxEnabled={bboxOpen} />
+        )}
         {mode === 'archive' && (
           <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <ArchiveHlsStreamCard cameraId={camera.cameraId} />

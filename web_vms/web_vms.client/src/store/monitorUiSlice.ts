@@ -7,9 +7,10 @@ type SlotUiState = {
   panelOpen: boolean
   ptzOpen: boolean
   deviceIoOpen: boolean
+  bboxOpen: boolean
 }
 
-const DEFAULT_SLOT: SlotUiState = { mode: 'live', selectedStream: '', panelOpen: false, ptzOpen: false, deviceIoOpen: false }
+const DEFAULT_SLOT: SlotUiState = { mode: 'live', selectedStream: '', panelOpen: false, ptzOpen: false, deviceIoOpen: false, bboxOpen: false }
 
 const monitorUiSlice = createSlice({
   name: 'monitorUi',

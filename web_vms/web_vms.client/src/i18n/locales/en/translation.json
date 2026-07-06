@@ -306,6 +306,8 @@
     "ptzClose": "Close PTZ",
     "deviceIoOpen": "Device I/O",
     "deviceIoClose": "Close Device I/O",
+    "bboxOpen": "Show analytics boxes",
+    "bboxClose": "Hide analytics boxes",
     "armedTip": "Armed — click to disarm",
     "disarmedTip": "Disarmed — click to arm",
     "controls": "Controls",

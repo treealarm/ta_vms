@@ -11,6 +11,7 @@ namespace VmsAnalytics;
 public sealed class AnalyticsServiceImpl(
   IDbContextFactory<AnalyticsDbContext> dbFactory,
   AnalyticsActivityLog activityLog,
+  LiveDetectionBroadcaster liveBroadcaster,
   CameraStorageResolver storageResolver)
   : VmsAnalyticsService.VmsAnalyticsServiceBase
 {
@@ -21,21 +22,38 @@ public sealed class AnalyticsServiceImpl(
     var response = new GetAnalyticsActivityResponse();
     foreach (var e in activityLog.GetRecent(limit))
     {
-      var entry = new ProtoActivityEntry
-      {
-        CameraId   = e.CameraId,
-        TrackId    = e.TrackId,
-        Kind       = DetectionKinds.Parse(e.Kind),
-        Confidence = e.Confidence,
-        Bbox       = new BoundingBox { X = e.BboxX, Y = e.BboxY, Width = e.BboxWidth, Height = e.BboxHeight },
-        DetectedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.DetectedAt, DateTimeKind.Utc)),
-        CropJpeg   = Google.Protobuf.ByteString.CopyFrom(e.CropJpeg),
-        Persisted  = e.Persisted,
-      };
-      if (e.PlateText is not null) entry.PlateText = e.PlateText;
+      var entry = ToProto(e, includeCrop: true);
       response.Events.Add(entry);
     }
     return Task.FromResult(response);
+  }
+
+  public override async Task StreamCameraDetections(
+    StreamCameraDetectionsRequest request,
+    IServerStreamWriter<ProtoActivityEntry> responseStream,
+    ServerCallContext context)
+  {
+    // crop_jpeg is intentionally dropped here — the overlay only needs geometry + labels, and the
+    // crop can be several KB per detection.
+    await foreach (var e in liveBroadcaster.Subscribe(request.CameraId, context.CancellationToken))
+      await responseStream.WriteAsync(ToProto(e, includeCrop: false));
+  }
+
+  private static ProtoActivityEntry ToProto(AnalyticsActivityEntry e, bool includeCrop)
+  {
+    var entry = new ProtoActivityEntry
+    {
+      CameraId   = e.CameraId,
+      TrackId    = e.TrackId,
+      Kind       = DetectionKinds.Parse(e.Kind),
+      Confidence = e.Confidence,
+      Bbox       = new BoundingBox { X = e.BboxX, Y = e.BboxY, Width = e.BboxWidth, Height = e.BboxHeight },
+      DetectedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.DetectedAt, DateTimeKind.Utc)),
+      CropJpeg   = includeCrop ? Google.Protobuf.ByteString.CopyFrom(e.CropJpeg) : Google.Protobuf.ByteString.Empty,
+      Persisted  = e.Persisted,
+    };
+    if (e.PlateText is not null) entry.PlateText = e.PlateText;
+    return entry;
   }
 
   public override async Task<ListDetectionsResponse> ListDetections(

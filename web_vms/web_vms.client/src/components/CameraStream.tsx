@@ -1,11 +1,16 @@
 ﻿import { Box } from '@mui/material';
 import React, { useEffect, useRef } from 'react';
+import BboxOverlay from './BboxOverlay';
 
 interface CameraStreamProps {
   whepUrl: string;
+  /** Camera to pull analytics bboxes for; only used when bboxEnabled. */
+  cameraId?: string;
+  /** When true, overlays live analytics bboxes on the video (opt-in per card). */
+  bboxEnabled?: boolean;
 }
 
-const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl }) => {
+const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnabled = false }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const retryTimeoutRef = useRef<number | null>(null);
@@ -265,6 +270,12 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl }) => {
           objectFit: 'contain',
         }}
       />
+      {/* Analytics bbox overlay — a separate SSE channel + <canvas> layer, fully decoupled from the
+          WebRTC pipeline above (and it owns the detection hook, so detection updates never re-render
+          this component or the <video>), so enabling it never adds latency to the live video. */}
+      {bboxEnabled && cameraId && (
+        <BboxOverlay videoRef={videoRef} cameraId={cameraId} enabled={bboxEnabled} />
+      )}
     </Box>
   );
 };
