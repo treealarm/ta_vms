@@ -27,6 +27,8 @@ import { useTranslation } from 'react-i18next'
 import { useAppSelector } from '../store'
 import CameraStream from './CameraStream'
 import PtzControlPad from './PtzControlPad'
+import DetailToolbar from './settings/DetailToolbar'
+import MasterDetailLayout from './settings/MasterDetailLayout'
 import type {
   AudioEncoderConfigDto,
   AudioEncoderConfigOptionsDto,
@@ -805,34 +807,42 @@ export default function OnvifCameraSettingsPanel() {
   }
 
   return (
-    <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden', border: 1, borderColor: 'divider', borderRadius: 1 }}>
-      <Box sx={{ width: 220, flexShrink: 0, borderRight: 1, borderColor: 'divider', overflowY: 'auto' }}>
-        {serverIds.map((serverId) => (
-          <ServerGroup
-            key={serverId}
-            serverId={serverId}
-            cameras={groups[serverId]}
-            selectedId={selectedId}
-            isOpen={openServerId === serverId}
-            onOpen={() => setOpenServerId(serverId)}
-            onSelect={setSelectedId}
+    <MasterDetailLayout
+      listTitle={t('onvifSettings.listTitle')}
+      list={
+        <Box>
+          {serverIds.map((serverId) => (
+            <ServerGroup
+              key={serverId}
+              serverId={serverId}
+              cameras={groups[serverId]}
+              selectedId={selectedId}
+              isOpen={openServerId === serverId}
+              onOpen={() => setOpenServerId(serverId)}
+              onSelect={setSelectedId}
+            />
+          ))}
+        </Box>
+      }
+    >
+      {!selectedCamera ? (
+        <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+          {t('onvifSettings.selectCamera')}
+        </Typography>
+      ) : (
+        <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          {/* No panel-wide Apply here — each ONVIF card saves independently against the camera */}
+          <DetailToolbar
+            title={selectedCamera.name || selectedCamera.cameraId}
+            subtitle={`${selectedCamera.onvifConn?.ip}:${selectedCamera.onvifConn?.port}`}
+            dirty={false}
+            hideApply
           />
-        ))}
-      </Box>
-
-      <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
-        {!selectedCamera ? (
-          <Typography variant="body2" color="text.secondary">{t('onvifSettings.selectCamera')}</Typography>
-        ) : (
-          <Stack spacing={1} sx={{ height: '100%' }}>
-            <Typography variant="h6">{selectedCamera.name || selectedCamera.cameraId}</Typography>
-            <Typography variant="body2" color="text.secondary">
-              {selectedCamera.onvifConn?.ip}:{selectedCamera.onvifConn?.port}
-            </Typography>
+          <Box sx={{ flex: 1, minHeight: 0, p: 2 }}>
             <CameraDetail camera={selectedCamera} />
-          </Stack>
-        )}
-      </Box>
-    </Box>
+          </Box>
+        </Box>
+      )}
+    </MasterDetailLayout>
   )
 }

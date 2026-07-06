@@ -1,5 +1,5 @@
-import { useEffect, useImperativeHandle, useRef, useState } from 'react'
-import { Box, Button, FormControlLabel, MenuItem, Stack, Switch, TextField, Typography } from '@mui/material'
+import { useEffect, useState } from 'react'
+import { Box, FormControlLabel, MenuItem, Stack, Switch, TextField, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera, changeCameraParent, fetchCameraState, removeCamera } from '../store/liveSlice'
@@ -8,19 +8,19 @@ import type { CameraSetupDto, CameraStorageAssignmentDto } from '../dto/dtos'
 import CameraStoragesControl from './CameraStoragesControl'
 import PasswordField from './PasswordField'
 import CameraStream from './CameraStream'
-
-export type CameraSetupHandle = { applyIfDirty: () => Promise<boolean> }
+import DetailToolbar from './settings/DetailToolbar'
+import { useDirtyGuard } from './settings/useDirtyGuard'
+import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 
 type Props = {
-  ref?: React.Ref<CameraSetupHandle>
+  ref?: React.Ref<ApplyIfDirtyHandle>
   cameraId: string  // '' = new camera
   serverId: string  // pre-selected server
-  onSaved: () => Promise<void>
+  onSaved: (createdCameraId?: string) => Promise<void>
   onRemoved: () => Promise<void>
-  onAddCameraOnServer: (serverId: string) => void
 }
 
-export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serverId: initialServerId, onSaved, onRemoved, onAddCameraOnServer }: Props) {
+export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serverId: initialServerId, onSaved, onRemoved }: Props) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const servers = useAppSelector((state) => state.live.servers)
@@ -61,7 +61,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   }, [allStorages]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Snapshot of the saved state — used for dirty detection and Cancel
-  const snap = useRef({
+  const [snap, setSnap] = useState({
     name: existing?.name ?? '',
     serverId: initialServerId,
     mediaMtxServerId: existing?.mediaMtxServerId ?? '',
@@ -73,14 +73,14 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   })
 
   const dirty = !isNew && (
-    name !== snap.current.name
-    || serverId !== snap.current.serverId
-    || mediaMtxServerId !== snap.current.mediaMtxServerId
-    || user !== snap.current.user
-    || pass !== snap.current.pass
-    || ip !== snap.current.ip
-    || port !== snap.current.port
-    || disabled !== snap.current.disabled
+    name !== snap.name
+    || serverId !== snap.serverId
+    || mediaMtxServerId !== snap.mediaMtxServerId
+    || user !== snap.user
+    || pass !== snap.pass
+    || ip !== snap.ip
+    || port !== snap.port
+    || disabled !== snap.disabled
   )
 
   // WebRTC streams available for preview
@@ -101,13 +101,25 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   })
 
   const applyInternal = async (): Promise<boolean> => {
+    if (isNew) {
+      if (!name.trim()) return true  // nothing worth saving — allow discard
+      const payload = buildPayload()
+      const result = await dispatch(addCamera(payload))
+      if (addCamera.rejected.match(result)) return false
+      if (pendingStorages.length > 0) {
+        const withId = pendingStorages.map((a, i) => ({ ...a, cameraId: payload.cameraId, priority: i }))
+        await dispatch(setCameraStorages({ cameraId: payload.cameraId, assignments: withId }))
+      }
+      await onSaved(payload.cameraId)
+      return true
+    }
     if (!dirty) return true
     const payload = buildPayload()
-    const serverChanged = !isNew && existing && serverId !== existing.serverId
+    const serverChanged = existing && serverId !== existing.serverId
     const action = serverChanged ? changeCameraParent : addCamera
     const result = await dispatch(action(payload))
     if (!action.rejected.match(result)) {
-      snap.current = { name, serverId, mediaMtxServerId, user, pass, ip, port, disabled }
+      setSnap({ name, serverId, mediaMtxServerId, user, pass, ip, port, disabled })
       await dispatch(fetchCameraState(initialCameraId))
       return true
     }
@@ -116,31 +128,19 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
 
   const handleApply = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (isNew) {
-      const payload = buildPayload()
-      const result = await dispatch(addCamera(payload))
-      if (!addCamera.rejected.match(result)) {
-        if (pendingStorages.length > 0) {
-          const withId = pendingStorages.map((a, i) => ({ ...a, cameraId: payload.cameraId, priority: i }))
-          await dispatch(setCameraStorages({ cameraId: payload.cameraId, assignments: withId }))
-        }
-        await onSaved()
-      }
-    } else {
-      const ok = await applyInternal()
-      if (ok) await onSaved()
-    }
+    const ok = await applyInternal()
+    if (ok && !isNew) await onSaved()
   }
 
   const handleCancel = () => {
-    setName(snap.current.name)
-    setServerId(snap.current.serverId)
-    setMediaMtxServerId(snap.current.mediaMtxServerId)
-    setUser(snap.current.user)
-    setPass(snap.current.pass)
-    setIp(snap.current.ip)
-    setPort(snap.current.port)
-    setDisabled(snap.current.disabled)
+    setName(snap.name)
+    setServerId(snap.serverId)
+    setMediaMtxServerId(snap.mediaMtxServerId)
+    setUser(snap.user)
+    setPass(snap.pass)
+    setIp(snap.ip)
+    setPort(snap.port)
+    setDisabled(snap.disabled)
   }
 
   const handleRemove = async () => {
@@ -150,130 +150,97 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     }
   }
 
-  // Expose applyIfDirty for parent (CameraControlPanel) to call before switching selection
-  useImperativeHandle(ref, () => ({ applyIfDirty: () => applyInternal() }))
+  // applyIfDirty for the parent (selection/tab switch) + beforeunload warning.
+  // For a new form "dirty" means "complete enough to save" — navigation then
+  // auto-creates it instead of silently discarding the entered data.
+  useDirtyGuard(ref, isNew ? Boolean(name.trim()) : dirty, applyInternal)
 
-  // Warn browser on close when dirty
-  useEffect(() => {
-    if (!dirty) return
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
-  }, [dirty])
+  return (
+    <Box component="form" onSubmit={(e) => void handleApply(e)} sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <DetailToolbar
+        title={isNew ? t('cameras.newCamera') : (existing?.name || initialCameraId)}
+        subtitle={isNew ? undefined : initialCameraId}
+        dirty={isNew ? true : dirty}
+        applyLabel={isNew ? t('cameras.addCamera') : undefined}
+        onCancel={isNew ? undefined : handleCancel}
+        onDelete={isNew ? undefined : () => void handleRemove()}
+        deleteLabel={t('cameras.deleteCamera')}
+      />
 
-  const setupForm = (
-    <Stack component="form" direction="row" spacing={3} alignItems="flex-start" onSubmit={handleApply}>
-      {/* Left: form fields */}
-      <Stack spacing={2} sx={{ flex: 1, minWidth: 0, maxWidth: 380 }}>
-        <Typography variant="subtitle2" color="text.secondary">
-          {isNew ? t('cameras.newCamera') : (existing?.name || initialCameraId)}
-        </Typography>
-        {!isNew && (
-          <Typography variant="caption" color="text.disabled" sx={{ mt: -1 }}>
-            {initialCameraId}
-          </Typography>
-        )}
-
-        <TextField
-          label={t('cameras.cameraName')}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-          size="small"
-        />
-
-        <TextField select label={t('cameras.server')} value={serverId} onChange={(e) => setServerId(e.target.value)} size="small">
-          {servers.map((s) => (
-            <MenuItem key={s.serverId} value={s.serverId}>{s.serverId}</MenuItem>
-          ))}
-        </TextField>
-
-        <TextField
-          select
-          label={t('cameras.mediaMtxServer')}
-          value={mediaMtxServerId}
-          onChange={(e) => setMediaMtxServerId(e.target.value)}
-          size="small"
-          helperText={t('cameras.mediaMtxHelper')}
-        >
-          <MenuItem value="">{t('cameras.autoAssign')}</MenuItem>
-          {mtxServers.map((s) => (
-            <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
-          ))}
-        </TextField>
-
-        <Stack direction="row" spacing={1}>
-          <TextField label={t('cameras.ip')} value={ip} onChange={(e) => setIp(e.target.value)} size="small" sx={{ flex: 1 }} />
-          <TextField
-            label={t('cameras.port')}
-            value={port}
-            onChange={(e) => setNonNegativeNumber(e.target.value, setPort)}
-            size="small"
-            sx={{ width: 100 }}
-          />
-        </Stack>
-
-        <Stack direction="row" spacing={1} alignItems="center">
-          <TextField label={t('common.user')} value={user} onChange={(e) => setUser(e.target.value)} size="small" fullWidth />
-          <PasswordField pass={pass} setPass={setPass} />
-        </Stack>
-
-        <FormControlLabel
-          control={<Switch checked={disabled} onChange={(e) => setDisabled(e.target.checked)} color="warning" />}
-          label={t('cameras.disabled')}
-        />
-
-        {!isNew && (
-          <Stack direction="row" spacing={1}>
-            <Button type="submit" variant="outlined" size="small" disabled={!dirty}>
-              {t('common.apply')}
-            </Button>
-            <Button variant="text" size="small" onClick={handleCancel} disabled={!dirty}>
-              {t('common.cancel')}
-            </Button>
-            <Button color="error" variant="outlined" size="small" onClick={handleRemove}>
-              {t('cameras.deleteCamera')}
-            </Button>
-            <Button
-              variant="text"
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 2 }}>
+        <Stack direction="row" spacing={3} alignItems="flex-start">
+          {/* Left: form fields */}
+          <Stack spacing={2} sx={{ flex: 1, minWidth: 0, maxWidth: 380 }}>
+            <TextField
+              label={t('cameras.cameraName')}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
               size="small"
-              onClick={() => onAddCameraOnServer(initialServerId)}
-              sx={{ ml: 'auto' }}
+            />
+
+            <TextField select label={t('cameras.server')} value={serverId} onChange={(e) => setServerId(e.target.value)} size="small">
+              {servers.map((s) => (
+                <MenuItem key={s.serverId} value={s.serverId}>{s.serverId}</MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              select
+              label={t('cameras.mediaMtxServer')}
+              value={mediaMtxServerId}
+              onChange={(e) => setMediaMtxServerId(e.target.value)}
+              size="small"
+              helperText={t('cameras.mediaMtxHelper')}
             >
-              {t('cameraControl.addCameraHere', { server: initialServerId })}
-            </Button>
+              <MenuItem value="">{t('cameras.autoAssign')}</MenuItem>
+              {mtxServers.map((s) => (
+                <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+              ))}
+            </TextField>
+
+            <Stack direction="row" spacing={1}>
+              <TextField label={t('cameras.ip')} value={ip} onChange={(e) => setIp(e.target.value)} size="small" sx={{ flex: 1 }} />
+              <TextField
+                label={t('cameras.port')}
+                value={port}
+                onChange={(e) => setNonNegativeNumber(e.target.value, setPort)}
+                size="small"
+                sx={{ width: 100 }}
+              />
+            </Stack>
+
+            <Stack direction="row" spacing={1} alignItems="center">
+              <TextField label={t('common.user')} value={user} onChange={(e) => setUser(e.target.value)} size="small" fullWidth />
+              <PasswordField pass={pass} setPass={setPass} />
+            </Stack>
+
+            <FormControlLabel
+              control={<Switch checked={disabled} onChange={(e) => setDisabled(e.target.checked)} color="warning" />}
+              label={t('cameras.disabled')}
+            />
+
+            {isNew
+              ? <CameraStoragesControl value={pendingStorages} onChange={setPendingStorages} />
+              : <CameraStoragesControl cameraId={initialCameraId} />
+            }
           </Stack>
-        )}
 
-        {isNew
-          ? <CameraStoragesControl value={pendingStorages} onChange={setPendingStorages} />
-          : <CameraStoragesControl cameraId={initialCameraId} />
-        }
-
-        {isNew && (
-          <Stack direction="row">
-            <Button type="submit" variant="outlined" size="small">
-              {t('cameras.addCamera')}
-            </Button>
-          </Stack>
-        )}
-      </Stack>
-
-      {/* Right: live previews column */}
-      {!isNew && webRtcStreams.length > 0 && (
-        <Stack spacing={1.5} sx={{ width: 280, flexShrink: 0 }}>
-          {webRtcStreams.filter((s) => s.whepUrl).map((s) => (
-            <Box key={s.streamName}>
-              <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-                {t('cameras.livePreview', { stream: s.streamName })}
-              </Typography>
-              <CameraStream whepUrl={s.whepUrl!} />
-            </Box>
-          ))}
+          {/* Right: live previews column */}
+          {!isNew && webRtcStreams.length > 0 && (
+            <Stack spacing={1.5} sx={{ width: 280, flexShrink: 0 }}>
+              {webRtcStreams.filter((s) => s.whepUrl).map((s) => (
+                <Box key={s.streamName}>
+                  <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                    {t('cameras.livePreview', { stream: s.streamName })}
+                  </Typography>
+                  <CameraStream whepUrl={s.whepUrl!} />
+                </Box>
+              ))}
+            </Stack>
+          )}
         </Stack>
-      )}
-    </Stack>
+      </Box>
+    </Box>
   )
-
-  return setupForm
 }

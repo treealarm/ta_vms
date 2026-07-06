@@ -1,195 +1,220 @@
 import { useEffect, useState } from 'react'
-import {
-  Box,
-  Button,
-  Card,
-  CardContent,
-  IconButton,
-  Stack,
-  TextField,
-  Typography,
-} from '@mui/material'
-import DeleteIcon from '@mui/icons-material/Delete'
-import EditIcon from '@mui/icons-material/Edit'
-import CheckIcon from '@mui/icons-material/Check'
-import CloseIcon from '@mui/icons-material/Close'
+import { Box, List, Stack, TextField, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addStorage, loadStorages, removeStorage, updateStorage } from '../store/storageSlice'
 import type { StorageDto } from '../dto/dtos'
+import DetailToolbar from './settings/DetailToolbar'
+import MasterDetailLayout from './settings/MasterDetailLayout'
+import SettingsListItem from './settings/SettingsListItem'
+import { useDirtyGuard } from './settings/useDirtyGuard'
+import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
+import { useMasterDetailSelection } from './settings/useMasterDetailSelection'
 
-interface EditState {
-  reservedGb: string
+const GIB = 1024 ** 3
+
+const toGbString = (bytes: number) => bytes > 0 ? (bytes / GIB).toFixed(1) : '0'
+
+type FormProps = {
+  ref?: React.Ref<ApplyIfDirtyHandle>
+  storage: StorageDto | null  // null = new
+  onSaved: (storageId: string) => void
+  onRemoved: () => void
 }
 
-function StorageRow({ s, onDeleted }: { s: StorageDto; onDeleted: () => void }) {
+function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
-  const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState<EditState>({ reservedGb: '0' })
+  const isNew = storage === null
+
+  const [storageId, setStorageId] = useState(storage?.storageId ?? '')
+  const [rootPath, setRootPath] = useState(storage?.rootPath ?? '')
+  const [reservedGb, setReservedGb] = useState(toGbString(storage?.reservedBytes ?? 0))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  const startEdit = () => {
-    setForm({
-      reservedGb: s.reservedBytes > 0 ? (s.reservedBytes / (1024 ** 3)).toFixed(1) : '0',
-    })
-    setError('')
-    setEditing(true)
+  // Snapshot for dirty detection and Cancel — only reservedGb is editable on existing storages
+  const [snap, setSnap] = useState(toGbString(storage?.reservedBytes ?? 0))
+  const dirty = !isNew && reservedGb !== snap
+
+  // A cleared/invalid field must block the save — Number('') is 0 and would
+  // silently wipe the reservation on the auto-apply navigation path
+  const parseReservedBytes = (): number | null => {
+    if (reservedGb.trim() === '') return null
+    const gb = Number(reservedGb)
+    if (Number.isNaN(gb) || gb < 0) return null
+    return Math.round(gb * GIB)
   }
 
-  const cancelEdit = () => { setEditing(false); setError('') }
-
-  const save = async () => {
+  const applyInternal = async (): Promise<boolean> => {
+    if (!isNew && !dirty) return true
+    setError('')
+    const reservedBytes = parseReservedBytes()
+    if (reservedBytes === null) {
+      setError(t('storage.invalidReserved'))
+      return false
+    }
+    if (isNew) {
+      if (!storageId.trim() || !rootPath.trim()) {
+        setError(t('storage.required'))
+        return false
+      }
+      setSaving(true)
+      const result = await dispatch(addStorage({
+        storageId: storageId.trim(),
+        rootPath: rootPath.trim(),
+        reservedBytes,
+      }))
+      setSaving(false)
+      if (addStorage.rejected.match(result)) {
+        setError(String(result.error?.message ?? t('storage.saveFailed')))
+        return false
+      }
+      await dispatch(loadStorages())
+      onSaved(storageId.trim())
+      return true
+    }
     setSaving(true)
     const result = await dispatch(updateStorage({
-      storageId: s.storageId,
-      rootPath: s.rootPath,
-      reservedBytes: Math.round(Number(form.reservedGb) * 1024 * 1024 * 1024),
+      storageId: storage.storageId,
+      rootPath: storage.rootPath,
+      reservedBytes,
     }))
     setSaving(false)
     if (updateStorage.rejected.match(result)) {
       setError(String(result.error?.message ?? t('storage.saveFailed')))
+      return false
+    }
+    setSnap(reservedGb)
+    await dispatch(loadStorages())
+    return true
+  }
+
+  const handleApply = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await applyInternal()
+  }
+
+  const handleCancel = () => {
+    setError('')
+    setReservedGb(snap)
+  }
+
+  const handleRemove = async () => {
+    setError('')
+    const result = await dispatch(removeStorage(storage!.storageId))
+    if (removeStorage.rejected.match(result)) {
+      setError(String(result.error?.message ?? t('storage.saveFailed')))
       return
     }
-    setEditing(false)
-    onDeleted() // reuse to trigger reload
+    await dispatch(loadStorages())
+    onRemoved()
   }
 
-  if (editing) {
-    return (
-      <Stack spacing={0.5} sx={{ px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 100 }}>{s.storageId}</Typography>
-          <Typography variant="body2" sx={{ flex: 1 }} color="text.secondary">{s.rootPath}</Typography>
-          <TextField
-            size="small"
-            label={t('storage.reservedGb')}
-            type="number"
-            value={form.reservedGb}
-            onChange={(e) => setForm((f) => ({ ...f, reservedGb: e.target.value }))}
-            sx={{ width: 120 }}
-            inputProps={{ min: 0, step: 0.5 }}
-          />
-          <IconButton size="small" onClick={() => void save()} disabled={saving} color="primary">
-            <CheckIcon fontSize="small" />
-          </IconButton>
-          <IconButton size="small" onClick={cancelEdit} disabled={saving}>
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </Stack>
-        {error && <Typography variant="caption" color="error">{error}</Typography>}
-      </Stack>
-    )
-  }
+  // For a new form "dirty" means "complete enough to save" — navigation then
+  // auto-creates it instead of silently discarding the entered data
+  useDirtyGuard(ref, isNew ? Boolean(storageId.trim() && rootPath.trim()) : dirty, applyInternal)
 
   return (
-    <Stack
-      direction="row"
-      alignItems="center"
-      spacing={2}
-      sx={{ px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider' }}
-    >
-      <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 100 }}>{s.storageId}</Typography>
-      <Typography variant="body2" sx={{ flex: 1 }} color="text.secondary">{s.rootPath}</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ minWidth: 80, textAlign: 'right' }}>
-        {s.reservedBytes > 0
-          ? t('storage.gbReserved', { n: (s.reservedBytes / (1024 ** 3)).toFixed(1) })
-          : '—'}
-      </Typography>
-      <IconButton size="small" onClick={startEdit}>
-        <EditIcon fontSize="small" />
-      </IconButton>
-      <IconButton size="small" onClick={() => void dispatch(removeStorage(s.storageId)).then(onDeleted)}>
-        <DeleteIcon fontSize="small" />
-      </IconButton>
-    </Stack>
+    <Box component="form" onSubmit={(e) => void handleApply(e)} sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <DetailToolbar
+        title={isNew ? t('storage.newStorage') : storage.storageId}
+        subtitle={isNew ? undefined : storage.rootPath}
+        dirty={isNew ? Boolean(storageId.trim() && rootPath.trim()) : dirty}
+        busy={saving}
+        applyLabel={isNew ? t('common.add') : undefined}
+        onCancel={isNew ? undefined : handleCancel}
+        onDelete={isNew ? undefined : () => void handleRemove()}
+        deleteLabel={t('storage.deleteStorage')}
+      />
+
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 2 }}>
+        <Stack spacing={2} sx={{ maxWidth: 420 }}>
+          <TextField
+            label={t('storage.storageId')}
+            value={storageId}
+            onChange={(e) => setStorageId(e.target.value)}
+            size="small"
+            disabled={!isNew}
+            required
+          />
+          <TextField
+            label={t('storage.rootPath')}
+            value={rootPath}
+            onChange={(e) => setRootPath(e.target.value)}
+            size="small"
+            disabled={!isNew}
+            required
+          />
+          <TextField
+            label={t('storage.reservedGb')}
+            type="number"
+            value={reservedGb}
+            onChange={(e) => setReservedGb(e.target.value)}
+            size="small"
+            sx={{ width: 140 }}
+            inputProps={{ min: 0, step: 0.5 }}
+          />
+          {error && <Typography variant="caption" color="error">{error}</Typography>}
+        </Stack>
+      </Box>
+    </Box>
   )
 }
 
-export default function StorageSetupPanel() {
+export default function StorageSetupPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHandle> }) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const storages = useAppSelector((state) => state.storage.storages)
   const storeError = useAppSelector((state) => state.storage.status)
 
-  const [storageId, setStorageId] = useState('')
-  const [rootPath, setRootPath] = useState('')
-  const [reservedGb, setReservedGb] = useState(0)
-  const [localError, setLocalError] = useState('')
+  const { isNew, selected, detailRef, detailKey, select, selectNew, reset, setId } =
+    useMasterDetailSelection(ref, storages, (s) => s.storageId)
 
-  const reload = () => void dispatch(loadStorages())
+  useEffect(() => {
+    dispatch(loadStorages())
+  }, [dispatch])
 
-  useEffect(reload, [dispatch])
-
-  const onAdd = async () => {
-    setLocalError('')
-    if (!storageId.trim() || !rootPath.trim()) {
-      setLocalError(t('storage.required'))
-      return
-    }
-    const result = await dispatch(addStorage({
-      storageId: storageId.trim(),
-      rootPath: rootPath.trim(),
-      reservedBytes: reservedGb * 1024 * 1024 * 1024
-    }))
-    if (!addStorage.rejected.match(result)) {
-      setStorageId('')
-      setRootPath('')
-      setReservedGb(0)
-      reload()
-    }
-  }
-
-  const error = localError || storeError
+  const list = (
+    <List dense disablePadding>
+      {storages.map((s) => (
+        <SettingsListItem
+          key={s.storageId}
+          selected={selected?.storageId === s.storageId}
+          onClick={() => select(s.storageId)}
+          primary={s.storageId}
+          secondary={s.rootPath}
+        />
+      ))}
+      {storages.length === 0 && (
+        <Typography variant="body2" color="text.secondary" sx={{ p: 1.5 }}>
+          {t('storage.noStorages')}
+        </Typography>
+      )}
+    </List>
+  )
 
   return (
-    <Card>
-      <CardContent>
-        <Stack spacing={2}>
-          <Typography variant="subtitle1">{t('storage.title')}</Typography>
-
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="flex-end">
-            <TextField
-              label={t('storage.storageId')}
-              value={storageId}
-              onChange={(e) => setStorageId(e.target.value)}
-              size="small"
-            />
-            <TextField
-              label={t('storage.rootPath')}
-              value={rootPath}
-              onChange={(e) => setRootPath(e.target.value)}
-              size="small"
-              sx={{ flex: 1 }}
-            />
-            <TextField
-              label={t('storage.reservedGb')}
-              type="number"
-              value={reservedGb}
-              onChange={(e) => setReservedGb(Number(e.target.value))}
-              size="small"
-              sx={{ width: 140 }}
-              inputProps={{ min: 0, step: 0.5 }}
-            />
-            <Button variant="outlined" onClick={() => void onAdd()}>
-              {t('common.add')}
-            </Button>
-          </Stack>
-
-          {error && <Typography color="error" variant="body2">{error}</Typography>}
-
-          {storages.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">{t('storage.noStorages')}</Typography>
-          ) : (
-            <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, '& > *:first-of-type': { borderTop: 0 } }}>
-              {storages.map((s) => (
-                <StorageRow key={s.storageId} s={s} onDeleted={reload} />
-              ))}
-            </Box>
-          )}
-        </Stack>
-      </CardContent>
-    </Card>
+    <MasterDetailLayout
+      listTitle={t('storage.title')}
+      onAdd={selectNew}
+      addTooltip={t('storage.newStorage')}
+      list={list}
+    >
+      {isNew || selected ? (
+        <StorageForm
+          ref={detailRef}
+          key={detailKey}
+          storage={isNew ? null : selected}
+          onSaved={setId}
+          onRemoved={reset}
+        />
+      ) : (
+        <Box sx={{ p: 2 }}>
+          <Typography color="text.secondary">{t('storage.selectHint')}</Typography>
+          {storeError && <Typography color="error" variant="body2" sx={{ mt: 1 }}>{storeError}</Typography>}
+        </Box>
+      )}
+    </MasterDetailLayout>
   )
 }

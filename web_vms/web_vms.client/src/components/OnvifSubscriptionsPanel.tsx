@@ -1,26 +1,29 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   Box,
-  Button,
   Chip,
   CircularProgress,
   Divider,
   FormControlLabel,
-  IconButton,
+  Menu,
   MenuItem,
   Stack,
   Switch,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
-  Tooltip,
   Typography,
 } from '@mui/material'
-import DeleteIcon from '@mui/icons-material/Delete'
 import { useTranslation } from 'react-i18next'
 import { useAppSelector } from '../store'
-import type { OnvifCameraEntryDto } from '../dto/dtos'
+import type { CameraSetupDto, OnvifCameraEntryDto } from '../dto/dtos'
 import OnvifAlarmFiltersPanel from './OnvifAlarmFiltersPanel'
+import DetailToolbar from './settings/DetailToolbar'
+import MasterDetailLayout from './settings/MasterDetailLayout'
+import SettingsListItem from './settings/SettingsListItem'
+import { useDirtyGuard } from './settings/useDirtyGuard'
+import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
+import { useMasterDetailSelection } from './settings/useMasterDetailSelection'
 
 async function fetchManaged(): Promise<OnvifCameraEntryDto[]> {
   const r = await fetch('/api/onvif/subscriptions')
@@ -65,7 +68,133 @@ async function setPollConfig(cameraId: string, pollTimeoutSeconds: number, messa
   })
 }
 
-export default function OnvifSubscriptionsPanel() {
+type DetailProps = {
+  ref?: React.Ref<ApplyIfDirtyHandle>
+  entry: OnvifCameraEntryDto
+  cam: CameraSetupDto | undefined
+  armed: boolean
+  onRemove: () => void
+  onToggleSubscribed: (subscribed: boolean) => void
+  onToggleArmed: (armed: boolean) => void
+  onPollConfigSaved: (pollTimeoutSeconds: number, messageLimit: number) => void
+}
+
+function SubscriptionDetail({ ref, entry, cam, armed, onRemove, onToggleSubscribed, onToggleArmed, onPollConfigSaved }: DetailProps) {
+  const { t } = useTranslation()
+
+  // Poll config is the only "draft" state here — everything else acts immediately
+  const [pollTimeoutSeconds, setPollTimeoutSeconds] = useState(entry.pollTimeoutSeconds)
+  const [messageLimit, setMessageLimit] = useState(entry.messageLimit)
+  const [snap, setSnap] = useState({ pollTimeoutSeconds: entry.pollTimeoutSeconds, messageLimit: entry.messageLimit })
+
+  const dirty = pollTimeoutSeconds !== snap.pollTimeoutSeconds
+    || messageLimit !== snap.messageLimit
+
+  const applyInternal = async (): Promise<boolean> => {
+    if (!dirty) return true
+    await setPollConfig(entry.cameraId, pollTimeoutSeconds, messageLimit)
+    setSnap({ pollTimeoutSeconds, messageLimit })
+    onPollConfigSaved(pollTimeoutSeconds, messageLimit)
+    return true
+  }
+
+  const handleCancel = () => {
+    setPollTimeoutSeconds(snap.pollTimeoutSeconds)
+    setMessageLimit(snap.messageLimit)
+  }
+
+  useDirtyGuard(ref, dirty, applyInternal)
+
+  // Deliberately NOT component="form": OnvifAlarmFiltersPanel below renders its
+  // own <form>s, and a nested-form submit would bubble up here and phantom-save
+  // a dirty poll config. Apply goes through onApply instead of type=submit.
+  return (
+    <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <DetailToolbar
+        title={cam?.name || entry.cameraId}
+        subtitle={cam?.onvifConn ? `${cam.onvifConn.ip}:${cam.onvifConn.port}` : undefined}
+        dirty={dirty}
+        onApply={() => void applyInternal()}
+        onCancel={handleCancel}
+        onDelete={onRemove}
+        deleteLabel={t('onvifSubs.removeCamera')}
+        extra={
+          <FormControlLabel
+            control={
+              <Switch
+                checked={entry.subscribed}
+                onChange={(e) => onToggleSubscribed(e.target.checked)}
+              />
+            }
+            label="Subscription"
+          />
+        }
+      />
+
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 2 }}>
+        <Stack spacing={2}>
+          {/* Guard toggle — immediate action */}
+          <Box>
+            <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+              {t('cameraCard.guardSection')}
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              value={armed ? 'armed' : 'disarmed'}
+              disabled={!entry.subscribed}
+              onChange={(_, v) => v && onToggleArmed(v === 'armed')}
+              sx={{
+                '& .MuiToggleButton-root': { py: 0.25, px: 1.5, fontSize: '0.75rem' },
+                '& .MuiToggleButton-root[value="armed"].Mui-selected': { color: 'success.main', borderColor: 'success.main' },
+              }}
+            >
+              <ToggleButton value="armed">{t('cameraCard.armedToggle')}</ToggleButton>
+              <ToggleButton value="disarmed">{t('cameraCard.disarmedToggle')}</ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+
+          <Divider />
+
+          {/* Poll configuration — saved via the toolbar Apply */}
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>{t('onvifSubs.pollConfig')}</Typography>
+            <Stack direction="row" spacing={2} alignItems="center">
+              <TextField
+                type="number"
+                size="small"
+                label={t('onvifSubs.pollTimeoutSeconds')}
+                value={pollTimeoutSeconds}
+                onChange={(e) => setPollTimeoutSeconds(Math.max(1, Number(e.target.value)))}
+                sx={{ width: 160 }}
+                slotProps={{ htmlInput: { min: 1 } }}
+              />
+              <TextField
+                type="number"
+                size="small"
+                label={t('onvifSubs.messageLimit')}
+                value={messageLimit}
+                onChange={(e) => setMessageLimit(Math.max(1, Number(e.target.value)))}
+                sx={{ width: 160 }}
+                slotProps={{ htmlInput: { min: 1 } }}
+              />
+            </Stack>
+          </Box>
+
+          <Divider />
+
+          {/* Filters */}
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>{t('onvifFilters.tabFilters')}</Typography>
+            <OnvifAlarmFiltersPanel cameraId={entry.cameraId} />
+          </Box>
+        </Stack>
+      </Box>
+    </Box>
+  )
+}
+
+export default function OnvifSubscriptionsPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHandle> }) {
   const { t } = useTranslation()
   const allCameras = useAppSelector((s) => Object.values(s.live.cameraStatesById))
   const allCamerasById = useAppSelector((s) => s.live.cameraStatesById)
@@ -73,8 +202,10 @@ export default function OnvifSubscriptionsPanel() {
   const [managed, setManaged] = useState<OnvifCameraEntryDto[]>([])
   const [armedMap, setArmedMap] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
-  const [addId, setAddId] = useState('')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [addMenuAnchor, setAddMenuAnchor] = useState<HTMLElement | null>(null)
+
+  const { selected, detailRef, detailKey, select, setId, reset, guard } =
+    useMasterDetailSelection(ref, managed, (e) => e.cameraId)
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -92,24 +223,19 @@ export default function OnvifSubscriptionsPanel() {
 
   useEffect(() => { void reload() }, [reload])
 
-  // Keep selection valid after reload
-  useEffect(() => {
-    if (selectedId && !managed.find((e) => e.cameraId === selectedId))
-      setSelectedId(null)
-  }, [managed, selectedId])
-
-  const handleAdd = async () => {
-    if (!addId) return
-    await addCamera(addId)
-    setAddId('')
+  const handleAddPick = async (cameraId: string) => {
+    setAddMenuAnchor(null)
+    if (!(await guard())) return
+    await addCamera(cameraId)
     await reload()
+    setId(cameraId)
   }
 
   const handleRemove = async (cameraId: string) => {
     await removeCamera(cameraId)
     setManaged((prev) => prev.filter((e) => e.cameraId !== cameraId))
     setArmedMap((prev) => { const next = { ...prev }; delete next[cameraId]; return next })
-    if (selectedId === cameraId) setSelectedId(null)
+    if (selected?.cameraId === cameraId) reset()
   }
 
   const handleToggleSubscribed = async (cameraId: string, subscribed: boolean) => {
@@ -122,196 +248,89 @@ export default function OnvifSubscriptionsPanel() {
     await setArmed(cameraId, armed)
   }
 
-  const handlePollConfigChange = (cameraId: string, field: 'pollTimeoutSeconds' | 'messageLimit', value: number) => {
-    setManaged((prev) => prev.map((e) => e.cameraId === cameraId ? { ...e, [field]: value } : e))
-  }
-
-  const handleSavePollConfig = async (cameraId: string, pollTimeoutSeconds: number, messageLimit: number) => {
-    await setPollConfig(cameraId, pollTimeoutSeconds, messageLimit)
+  const handlePollConfigSaved = (cameraId: string, pollTimeoutSeconds: number, messageLimit: number) => {
+    setManaged((prev) => prev.map((e) => e.cameraId === cameraId ? { ...e, pollTimeoutSeconds, messageLimit } : e))
   }
 
   const managedIds = new Set(managed.map((e) => e.cameraId))
   const available = allCameras.filter((c) => c.onvifConn?.ip && !managedIds.has(c.cameraId))
-  const selected = managed.find((e) => e.cameraId === selectedId) ?? null
-  const selectedCam = selectedId ? allCamerasById[selectedId] : null
 
   if (loading) return <CircularProgress sx={{ m: 4 }} />
 
-  return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Add camera row */}
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
-        <TextField
-          select
-          size="small"
-          label={t('onvifSubs.addCamera')}
-          value={addId}
-          onChange={(e) => setAddId(e.target.value)}
-          sx={{ minWidth: 220 }}
-          disabled={available.length === 0}
-          SelectProps={{ displayEmpty: true }}
-        >
-          {available.map((c) => (
-            <MenuItem key={c.cameraId} value={c.cameraId}>
-              {c.name || c.cameraId} ({c.onvifConn!.ip})
-            </MenuItem>
-          ))}
-        </TextField>
-        <Button variant="contained" size="small" disabled={!addId} onClick={() => void handleAdd()}>
-          {t('common.add')}
-        </Button>
-      </Stack>
-
-      {/* Master-detail */}
-      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', gap: 0, border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
-        {/* Left: camera list */}
-        <Box sx={{ width: 220, flexShrink: 0, borderRight: 1, borderColor: 'divider', overflowY: 'auto' }}>
-          {managed.length === 0 && (
-            <Typography variant="body2" color="text.secondary" sx={{ p: 1.5 }}>
-              {t('onvifSubs.noCameras')}
-            </Typography>
-          )}
-          {managed.map((entry) => {
-            const armed = armedMap[entry.cameraId] ?? false
-            return (
-              <Box
-                key={entry.cameraId}
-                onClick={() => setSelectedId(entry.cameraId)}
-                sx={{
-                  px: 1.5,
-                  py: 1,
-                  cursor: 'pointer',
-                  borderBottom: 1,
-                  borderColor: 'divider',
-                  bgcolor: selectedId === entry.cameraId ? 'action.selected' : 'transparent',
-                  '&:hover': { bgcolor: selectedId === entry.cameraId ? 'action.selected' : 'action.hover' },
-                }}
-              >
-                <Typography variant="body2" fontWeight={600} noWrap>{allCamerasById[entry.cameraId]?.name || entry.cameraId}</Typography>
-                <Stack direction="row" spacing={0.5} sx={{ mt: 0.5 }}>
+  const list = (
+    <Box>
+      {managed.map((entry) => {
+        const armed = armedMap[entry.cameraId] ?? false
+        return (
+          <SettingsListItem
+            key={entry.cameraId}
+            selected={selected?.cameraId === entry.cameraId}
+            onClick={() => select(entry.cameraId)}
+            wrap
+            primary={allCamerasById[entry.cameraId]?.name || entry.cameraId}
+            secondary={
+              <Stack direction="row" spacing={0.5} flexWrap="wrap" component="span" sx={{ mt: 0.25 }}>
+                <Chip
+                  label={entry.subscribed ? 'ON' : 'OFF'}
+                  size="small"
+                  color={entry.subscribed ? 'success' : 'default'}
+                  sx={{ height: 16, fontSize: '0.6rem' }}
+                />
+                {entry.subscribed && (
                   <Chip
-                    label={entry.subscribed ? 'ON' : 'OFF'}
+                    label={armed ? t('cameraCard.armedToggle') : t('cameraCard.disarmedToggle')}
                     size="small"
-                    color={entry.subscribed ? 'success' : 'default'}
+                    color={armed ? 'warning' : 'default'}
                     sx={{ height: 16, fontSize: '0.6rem' }}
                   />
-                  {entry.subscribed && (
-                    <Chip
-                      label={armed ? t('cameraCard.armedToggle') : t('cameraCard.disarmedToggle')}
-                      size="small"
-                      color={armed ? 'warning' : 'default'}
-                      sx={{ height: 16, fontSize: '0.6rem' }}
-                    />
-                  )}
-                </Stack>
-              </Box>
-            )
-          })}
-        </Box>
-
-        {/* Right: detail */}
-        <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
-          {!selected ? (
-            <Typography variant="body2" color="text.secondary">
-              {managed.length > 0 ? t('logs.selectHint') : ''}
-            </Typography>
-          ) : (
-            <Stack spacing={2} sx={{ height: '100%' }}>
-              {/* Header */}
-              <Stack direction="row" alignItems="flex-start" justifyContent="space-between">
-                <Box>
-                  <Typography variant="h6">{allCamerasById[selected.cameraId]?.name || selected.cameraId}</Typography>
-                  {selectedCam?.onvifConn && (
-                    <Typography variant="body2" color="text.secondary">
-                      {selectedCam.onvifConn.ip}:{selectedCam.onvifConn.port}
-                    </Typography>
-                  )}
-                </Box>
-                <Tooltip title={t('onvifSubs.removeCamera')}>
-                  <IconButton color="error" size="small" onClick={() => void handleRemove(selected.cameraId)}>
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+                )}
               </Stack>
-
-              {/* Toggles */}
-              <Stack direction="row" spacing={3} alignItems="center">
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={selected.subscribed}
-                      onChange={(e) => void handleToggleSubscribed(selected.cameraId, e.target.checked)}
-                    />
-                  }
-                  label="Subscription"
-                />
-                <Box>
-                  <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-                    {t('cameraCard.guardSection')}
-                  </Typography>
-                  <ToggleButtonGroup
-                    exclusive
-                    size="small"
-                    value={(armedMap[selected.cameraId] ?? false) ? 'armed' : 'disarmed'}
-                    disabled={!selected.subscribed}
-                    onChange={(_, v) => v && void handleToggleArmed(selected.cameraId, v === 'armed')}
-                    sx={{
-                      '& .MuiToggleButton-root': { py: 0.25, px: 1.5, fontSize: '0.75rem' },
-                      '& .MuiToggleButton-root[value="armed"].Mui-selected': { color: 'success.main', borderColor: 'success.main' },
-                    }}
-                  >
-                    <ToggleButton value="armed">{t('cameraCard.armedToggle')}</ToggleButton>
-                    <ToggleButton value="disarmed">{t('cameraCard.disarmedToggle')}</ToggleButton>
-                  </ToggleButtonGroup>
-                </Box>
-              </Stack>
-
-              <Divider />
-
-              {/* Poll configuration */}
-              <Box>
-                <Typography variant="subtitle2" gutterBottom>{t('onvifSubs.pollConfig')}</Typography>
-                <Stack direction="row" spacing={2} alignItems="center">
-                  <TextField
-                    type="number"
-                    size="small"
-                    label={t('onvifSubs.pollTimeoutSeconds')}
-                    value={selected.pollTimeoutSeconds}
-                    onChange={(e) => handlePollConfigChange(selected.cameraId, 'pollTimeoutSeconds', Math.max(1, Number(e.target.value)))}
-                    sx={{ width: 160 }}
-                    slotProps={{ htmlInput: { min: 1 } }}
-                  />
-                  <TextField
-                    type="number"
-                    size="small"
-                    label={t('onvifSubs.messageLimit')}
-                    value={selected.messageLimit}
-                    onChange={(e) => handlePollConfigChange(selected.cameraId, 'messageLimit', Math.max(1, Number(e.target.value)))}
-                    sx={{ width: 160 }}
-                    slotProps={{ htmlInput: { min: 1 } }}
-                  />
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={() => void handleSavePollConfig(selected.cameraId, selected.pollTimeoutSeconds, selected.messageLimit)}
-                  >
-                    {t('common.save')}
-                  </Button>
-                </Stack>
-              </Box>
-
-              <Divider />
-
-              {/* Filters */}
-              <Box sx={{ flex: 1 }}>
-                <Typography variant="subtitle2" gutterBottom>{t('onvifFilters.tabFilters')}</Typography>
-                <OnvifAlarmFiltersPanel cameraId={selected.cameraId} />
-              </Box>
-
-            </Stack>
-          )}
-        </Box>
-      </Box>
+            }
+          />
+        )
+      })}
+      {managed.length === 0 && (
+        <Typography variant="body2" color="text.secondary" sx={{ p: 1.5 }}>
+          {t('onvifSubs.noCameras')}
+        </Typography>
+      )}
     </Box>
+  )
+
+  return (
+    <MasterDetailLayout
+      listTitle={t('onvifSubs.listTitle')}
+      onAdd={(e) => setAddMenuAnchor(e.currentTarget)}
+      addTooltip={t('onvifSubs.addCamera')}
+      addDisabled={available.length === 0}
+      list={list}
+    >
+      {selected ? (
+        <SubscriptionDetail
+          ref={detailRef}
+          key={detailKey}
+          entry={selected}
+          cam={allCamerasById[selected.cameraId]}
+          armed={armedMap[selected.cameraId] ?? false}
+          onRemove={() => void handleRemove(selected.cameraId)}
+          onToggleSubscribed={(subscribed) => void handleToggleSubscribed(selected.cameraId, subscribed)}
+          onToggleArmed={(armed) => void handleToggleArmed(selected.cameraId, armed)}
+          onPollConfigSaved={(pollTimeoutSeconds, messageLimit) =>
+            handlePollConfigSaved(selected.cameraId, pollTimeoutSeconds, messageLimit)}
+        />
+      ) : (
+        <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+          {managed.length > 0 ? t('onvifSubs.selectHint') : ''}
+        </Typography>
+      )}
+
+      <Menu anchorEl={addMenuAnchor} open={Boolean(addMenuAnchor)} onClose={() => setAddMenuAnchor(null)}>
+        {available.map((c) => (
+          <MenuItem key={c.cameraId} onClick={() => void handleAddPick(c.cameraId)}>
+            {c.name || c.cameraId} ({c.onvifConn!.ip})
+          </MenuItem>
+        ))}
+      </Menu>
+    </MasterDetailLayout>
   )
 }

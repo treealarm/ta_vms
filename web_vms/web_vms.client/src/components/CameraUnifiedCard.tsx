@@ -40,7 +40,7 @@ import StreamOverrideRow from './StreamOverrideRow'
 import StreamProfileRow from './StreamProfileRow'
 import PtzOverlay from './PtzOverlay'
 import { useAppDispatch, useAppSelector } from '../store'
-import { fetchCameraState, setArmed, setStreamRecordingProfile } from '../store/liveSlice'
+import { fetchCameraState, setArmedWithPrealarmBaseline, setStreamRecordingProfile } from '../store/liveSlice'
 
 const STRIP_W = 28
 const PANEL_W = 182
@@ -109,20 +109,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
   const armDisarm = (enabled: boolean) => {
     if (isDisabled) return
     setPendingArmed(enabled)
-    const streams = merged.streams ?? []
-    void dispatch(setArmed({ cameraId: merged.cameraId, armed: enabled }))
-      .then(() => {
-        for (const s of streams) {
-          if (s.disabled) continue
-          if (enabled) {
-            if (!isStreamRecording(s)) {
-              void dispatch(setStreamRecordingProfile({ cameraId: merged.cameraId, streamName: s.streamName, profileId: RECORDING_PROFILE_PREALARM_ID }))
-            }
-          } else if (s.recordingProfile?.id === RECORDING_PROFILE_PREALARM_ID) {
-            void dispatch(setStreamRecordingProfile({ cameraId: merged.cameraId, streamName: s.streamName, profileId: RECORDING_PROFILE_OFF_ID }))
-          }
-        }
-      })
+    void dispatch(setArmedWithPrealarmBaseline({ cameraId: merged.cameraId, armed: enabled }))
       .finally(() => setPendingArmed(null))
   }
 

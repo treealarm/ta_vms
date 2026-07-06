@@ -194,7 +194,7 @@ function FilterRow({ filter, cameraId, topicOptions, onSaved, onDeleted }: {
       <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
         {filter.timeoutSeconds}s
       </Typography>
-      <Tooltip title={t('recording.deleteTooltip')}>
+      <Tooltip title={t('common.edit')}>
         <IconButton size="small" onClick={() => setEditing(true)}>
           <EditIcon fontSize="small" />
         </IconButton>

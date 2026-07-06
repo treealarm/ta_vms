@@ -1,29 +1,26 @@
-import { useCallback, useEffect, useImperativeHandle, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Box,
-  Button,
   Chip,
-  Divider,
   FormControlLabel,
-  IconButton,
   List,
-  ListItem,
-  ListItemText,
   MenuItem,
   Stack,
   Switch,
   TextField,
-  Tooltip,
   Typography,
 } from '@mui/material'
-import DeleteIcon from '@mui/icons-material/Delete'
-import EditIcon from '@mui/icons-material/Edit'
 import { useTranslation } from 'react-i18next'
 import type { RecordingProfileDto, RecordingMode } from '../dto/dtos'
+import DetailToolbar from './settings/DetailToolbar'
+import MasterDetailLayout from './settings/MasterDetailLayout'
+import SettingsListItem from './settings/SettingsListItem'
+import { useDirtyGuard } from './settings/useDirtyGuard'
+import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
+import { useMasterDetailSelection } from './settings/useMasterDetailSelection'
 
-export type RecordingProfilesHandle = { applyIfDirty: () => Promise<boolean> }
-
-const EMPTY_PROFILE: Omit<RecordingProfileDto, 'id'> = {
+const EMPTY_PROFILE: RecordingProfileDto = {
+  id: '',
   name: '',
   mode: 'continuous',
   preRecordSeconds: 0,
@@ -33,13 +30,195 @@ const EMPTY_PROFILE: Omit<RecordingProfileDto, 'id'> = {
   isBuiltin: false,
 }
 
-export default function RecordingProfilesPanel({ ref }: { ref?: React.Ref<RecordingProfilesHandle> }) {
+type FormProps = {
+  ref?: React.Ref<ApplyIfDirtyHandle>
+  profile: RecordingProfileDto | null  // null = new
+  onSaved: (isNew: boolean) => Promise<void>
+  onRemoved: () => Promise<void>
+}
+
+function RecordingProfileForm({ ref, profile, onSaved, onRemoved }: FormProps) {
   const { t } = useTranslation()
-  const [profiles, setProfiles] = useState<RecordingProfileDto[]>([])
-  const [editing, setEditing] = useState<RecordingProfileDto | null>(null)
-  const [isNew, setIsNew] = useState(false)
+  const isNew = profile === null
+  const readOnly = profile?.isBuiltin === true
+
+  const [form, setForm] = useState<RecordingProfileDto>(profile ?? { ...EMPTY_PROFILE })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Snapshot of the saved state — used for dirty detection and Cancel
+  const [snap, setSnap] = useState<RecordingProfileDto>(profile ?? { ...EMPTY_PROFILE })
+
+  const dirty = !isNew && !readOnly && (
+    form.name !== snap.name
+    || form.mode !== snap.mode
+    || form.preRecordSeconds !== snap.preRecordSeconds
+    || form.postRecordSeconds !== snap.postRecordSeconds
+    || form.segmentSeconds !== snap.segmentSeconds
+    || form.isOverridePreset !== snap.isOverridePreset
+  )
+
+  const applyInternal = async (): Promise<boolean> => {
+    if (!isNew && !dirty) return true
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await fetch('/api/recording-profiles', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+      const body = await r.json() as { success: boolean; message: string }
+      if (!body.success) { setError(body.message); return false }
+      setSnap({ ...form })
+      await onSaved(isNew)
+      return true
+    } catch (e) {
+      setError(String(e))
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleApply = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await applyInternal()
+  }
+
+  const handleCancel = () => setForm({ ...snap })
+
+  const handleRemove = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await fetch(`/api/recording-profiles/${encodeURIComponent(form.id)}`, { method: 'DELETE' })
+      const body = await r.json() as { success: boolean; message: string }
+      if (!body.success) { setError(body.message); return }
+      await onRemoved()
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const setField = <K extends keyof RecordingProfileDto>(key: K, value: RecordingProfileDto[K]) =>
+    setForm((prev) => ({ ...prev, [key]: value }))
+
+  const setNonNeg = (key: 'preRecordSeconds' | 'postRecordSeconds' | 'segmentSeconds', raw: string) => {
+    const v = Number(raw)
+    if (!Number.isNaN(v)) setField(key, Math.max(0, Math.floor(v)))
+  }
+
+  // For a new form "dirty" means "complete enough to save" — navigation then
+  // auto-creates it instead of silently discarding the entered data
+  useDirtyGuard(ref, isNew ? Boolean(form.name.trim()) : dirty, applyInternal)
+
+  return (
+    <Box component="form" onSubmit={(e) => void handleApply(e)} sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <DetailToolbar
+        title={isNew ? t('recording.newProfile') : profile.name}
+        dirty={isNew ? Boolean(form.name.trim()) : dirty}
+        busy={busy}
+        applyLabel={isNew ? t('recording.create') : undefined}
+        hideApply={readOnly}
+        onCancel={isNew || readOnly ? undefined : handleCancel}
+        onDelete={isNew || readOnly ? undefined : () => void handleRemove()}
+        deleteLabel={t('recording.deleteProfile')}
+        extra={readOnly ? <Chip label={t('recording.builtinChip')} size="small" variant="outlined" /> : undefined}
+      />
+
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 2 }}>
+        <Stack spacing={2} sx={{ maxWidth: 420 }}>
+          <TextField
+            label={t('common.name')}
+            value={form.name}
+            onChange={(e) => setField('name', e.target.value)}
+            required
+            size="small"
+            disabled={readOnly}
+            sx={{ maxWidth: 260 }}
+          />
+
+          <TextField
+            select
+            label={t('recording.mode')}
+            value={form.mode}
+            onChange={(e) => setField('mode', e.target.value as RecordingMode)}
+            size="small"
+            disabled={readOnly}
+            sx={{ maxWidth: 200 }}
+          >
+            <MenuItem value="continuous">{t('recording.continuous')}</MenuItem>
+            <MenuItem value="prealarm">{t('recording.prealarm')}</MenuItem>
+            {readOnly && form.mode === 'off' && <MenuItem value="off">{t('recording.off')}</MenuItem>}
+          </TextField>
+
+          {form.mode === 'prealarm' && (
+            <Stack direction="row" spacing={1}>
+              <TextField
+                label={t('recording.preRecordSec')}
+                type="number"
+                value={form.preRecordSeconds}
+                onChange={(e) => setNonNeg('preRecordSeconds', e.target.value)}
+                size="small"
+                disabled={readOnly}
+                slotProps={{ htmlInput: { min: 0 } }}
+                sx={{ width: 140 }}
+              />
+              <TextField
+                label={t('recording.postRecordSec')}
+                type="number"
+                value={form.postRecordSeconds}
+                onChange={(e) => setNonNeg('postRecordSeconds', e.target.value)}
+                size="small"
+                disabled={readOnly}
+                slotProps={{ htmlInput: { min: 0 } }}
+                sx={{ width: 140 }}
+              />
+            </Stack>
+          )}
+
+          <TextField
+            label={t('recording.segmentSec')}
+            type="number"
+            value={form.segmentSeconds}
+            onChange={(e) => setNonNeg('segmentSeconds', e.target.value)}
+            size="small"
+            disabled={readOnly}
+            slotProps={{ htmlInput: { min: 1 } }}
+            sx={{ width: 140 }}
+          />
+
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={form.isOverridePreset}
+                onChange={(e) => setField('isOverridePreset', e.target.checked)}
+                disabled={readOnly}
+              />
+            }
+            label={<Typography variant="body2">{t('recording.overridePreset')}</Typography>}
+          />
+
+          {error && (
+            <Typography variant="caption" color="error">{error}</Typography>
+          )}
+        </Stack>
+      </Box>
+    </Box>
+  )
+}
+
+export default function RecordingProfilesPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHandle> }) {
+  const { t } = useTranslation()
+  const [profiles, setProfiles] = useState<RecordingProfileDto[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  const { isNew, selected, detailRef, detailKey, select, selectNew, reset } =
+    useMasterDetailSelection(ref, profiles, (p) => p.id)
 
   const load = useCallback(async () => {
     try {
@@ -53,245 +232,76 @@ export default function RecordingProfilesPanel({ ref }: { ref?: React.Ref<Record
 
   useEffect(() => { void load() }, [load])
 
-  // Warn browser on close when editing
-  useEffect(() => {
-    if (!editing) return
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
-  }, [editing])
-
-  const startNew = () => {
-    setEditing({ id: '', ...EMPTY_PROFILE })
-    setIsNew(true)
-    setError(null)
-  }
-
-  const startEdit = (p: RecordingProfileDto) => {
-    setEditing({ ...p })
-    setIsNew(false)
-    setError(null)
-  }
-
-  const cancel = () => { setEditing(null); setError(null) }
-
-  const saveInternal = async (): Promise<boolean> => {
-    if (!editing) return true
-    setBusy(true)
-    setError(null)
-    try {
-      const r = await fetch('/api/recording-profiles', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editing),
-      })
-      const body = await r.json() as { success: boolean; message: string }
-      if (!body.success) { setError(body.message); return false }
-      setEditing(null)
-      await load()
-      return true
-    } catch (e) {
-      setError(String(e))
-      return false
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault()
-    await saveInternal()
-  }
-
-  useImperativeHandle(ref, () => ({
-    applyIfDirty: () => editing?.name ? saveInternal() : Promise.resolve(true),
-  }))
-
-  const remove = async (id: string) => {
-    setBusy(true)
-    setError(null)
-    try {
-      const r = await fetch(`/api/recording-profiles/${encodeURIComponent(id)}`, { method: 'DELETE' })
-      const body = await r.json() as { success: boolean; message: string }
-      if (!body.success) { setError(body.message); return }
-      if (editing?.id === id) setEditing(null)
-      await load()
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const setField = <K extends keyof RecordingProfileDto>(key: K, value: RecordingProfileDto[K]) =>
-    setEditing((prev) => prev ? { ...prev, [key]: value } : null)
-
-  const setNonNeg = (key: 'preRecordSeconds' | 'postRecordSeconds' | 'segmentSeconds', raw: string) => {
-    const v = Number(raw)
-    if (!Number.isNaN(v)) setField(key, Math.max(0, Math.floor(v)))
-  }
-
   const modeLabel = (mode: RecordingMode) =>
     mode === 'continuous' ? t('recording.continuous') : mode === 'prealarm' ? t('recording.prealarm') : t('recording.off')
 
+  const list = (
+    <List dense disablePadding>
+      {profiles.map((p) => (
+        <SettingsListItem
+          key={p.id}
+          selected={selected?.id === p.id}
+          onClick={() => select(p.id)}
+          wrap
+          primary={
+            <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" component="span">
+              <span>{p.name}</span>
+              {p.isBuiltin && <Chip label={t('recording.builtinChip')} size="small" variant="outlined" />}
+              {p.isOverridePreset && !p.isBuiltin && <Chip label={t('recording.overridePresetChip')} size="small" color="primary" variant="outlined" />}
+            </Stack>
+          }
+          secondary={
+            <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" component="span">
+              <Chip label={modeLabel(p.mode)} size="small" />
+              {p.mode === 'prealarm' && (
+                <Typography variant="caption" color="text.secondary">
+                  {t('recording.prePostSeg', { pre: p.preRecordSeconds, post: p.postRecordSeconds, seg: p.segmentSeconds })}
+                </Typography>
+              )}
+              {p.mode === 'continuous' && (
+                <Typography variant="caption" color="text.secondary">
+                  {t('recording.seg', { seg: p.segmentSeconds })}
+                </Typography>
+              )}
+            </Stack>
+          }
+        />
+      ))}
+      {profiles.length === 0 && (
+        <Typography variant="body2" color="text.secondary" sx={{ p: 1.5 }}>
+          {t('recording.noProfiles')}
+        </Typography>
+      )}
+    </List>
+  )
+
   return (
-    <Stack spacing={2} sx={{ maxWidth: 560 }}>
-      <Typography variant="h6">{t('recording.title')}</Typography>
-
-      <List disablePadding>
-        {profiles.map((p, i) => (
-          <Box key={p.id}>
-            {i > 0 && <Divider />}
-            <ListItem
-              disablePadding
-              secondaryAction={
-                !p.isBuiltin && (
-                  <Stack direction="row" spacing={0.5}>
-                    <IconButton size="small" onClick={() => startEdit(p)} disabled={busy}>
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <Tooltip title={t('recording.deleteTooltip')}>
-                      <span>
-                        <IconButton size="small" color="error" onClick={() => void remove(p.id)} disabled={busy}>
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  </Stack>
-                )
-              }
-            >
-              <ListItemText
-                sx={{ py: 0.5, pl: 1 }}
-                primary={
-                  <Stack direction="row" spacing={0.5} alignItems="center" component="span">
-                    <span>{p.name}</span>
-                    {p.isBuiltin && <Chip label={t('recording.builtinChip')} size="small" variant="outlined" />}
-                    {p.isOverridePreset && !p.isBuiltin && <Chip label={t('recording.overridePresetChip')} size="small" color="primary" variant="outlined" />}
-                  </Stack>
-                }
-                secondary={
-                  <Stack direction="row" spacing={0.5} alignItems="center" component="span">
-                    <Chip label={modeLabel(p.mode)} size="small" />
-                    {p.mode === 'prealarm' && (
-                      <Typography variant="caption" color="text.secondary">
-                        {t('recording.prePostSeg', { pre: p.preRecordSeconds, post: p.postRecordSeconds, seg: p.segmentSeconds })}
-                      </Typography>
-                    )}
-                    {p.mode === 'continuous' && (
-                      <Typography variant="caption" color="text.secondary">
-                        {t('recording.seg', { seg: p.segmentSeconds })}
-                      </Typography>
-                    )}
-                  </Stack>
-                }
-              />
-            </ListItem>
-          </Box>
-        ))}
-        {profiles.length === 0 && (
-          <Typography variant="body2" color="text.secondary" sx={{ pl: 1, py: 1 }}>
-            {t('recording.noProfiles')}
-          </Typography>
-        )}
-      </List>
-
-      {!editing && (
-        <Box>
-          <Button variant="outlined" size="small" onClick={startNew}>
-            {t('recording.addProfile')}
-          </Button>
+    <MasterDetailLayout
+      listTitle={t('recording.title')}
+      onAdd={selectNew}
+      addTooltip={t('recording.addProfile')}
+      list={list}
+    >
+      {isNew || selected ? (
+        <RecordingProfileForm
+          ref={detailRef}
+          key={detailKey}
+          profile={isNew ? null : selected}
+          onSaved={async (created) => {
+            await load()
+            if (created) reset()
+          }}
+          onRemoved={async () => {
+            await load()
+            reset()
+          }}
+        />
+      ) : (
+        <Box sx={{ p: 2 }}>
+          <Typography color="text.secondary">{t('recording.selectHint')}</Typography>
+          {error && <Typography variant="caption" color="error" display="block" sx={{ mt: 1 }}>{error}</Typography>}
         </Box>
       )}
-
-      {editing && (
-        <Stack component="form" spacing={2} onSubmit={(e) => void save(e)}
-          sx={{ pt: 1, borderTop: 1, borderColor: 'divider' }}>
-          <Typography variant="subtitle2">
-            {isNew ? t('recording.newProfile') : t('recording.editProfile', { name: profiles.find((p) => p.id === editing.id)?.name ?? editing.name })}
-          </Typography>
-
-          <TextField
-            label={t('common.name')}
-            value={editing.name}
-            onChange={(e) => setField('name', e.target.value)}
-            required
-            size="small"
-            sx={{ maxWidth: 260 }}
-          />
-
-          <TextField
-            select
-            label={t('recording.mode')}
-            value={editing.mode}
-            onChange={(e) => setField('mode', e.target.value as RecordingMode)}
-            size="small"
-            sx={{ maxWidth: 200 }}
-          >
-            <MenuItem value="continuous">{t('recording.continuous')}</MenuItem>
-            <MenuItem value="prealarm">{t('recording.prealarm')}</MenuItem>
-          </TextField>
-
-          {editing.mode === 'prealarm' && (
-            <Stack direction="row" spacing={1}>
-              <TextField
-                label={t('recording.preRecordSec')}
-                type="number"
-                value={editing.preRecordSeconds}
-                onChange={(e) => setNonNeg('preRecordSeconds', e.target.value)}
-                size="small"
-                slotProps={{ htmlInput: { min: 0 } }}
-                sx={{ width: 140 }}
-              />
-              <TextField
-                label={t('recording.postRecordSec')}
-                type="number"
-                value={editing.postRecordSeconds}
-                onChange={(e) => setNonNeg('postRecordSeconds', e.target.value)}
-                size="small"
-                slotProps={{ htmlInput: { min: 0 } }}
-                sx={{ width: 140 }}
-              />
-            </Stack>
-          )}
-
-          <TextField
-            label={t('recording.segmentSec')}
-            type="number"
-            value={editing.segmentSeconds}
-            onChange={(e) => setNonNeg('segmentSeconds', e.target.value)}
-            size="small"
-            slotProps={{ htmlInput: { min: 1 } }}
-            sx={{ width: 140 }}
-          />
-
-          <FormControlLabel
-            control={
-              <Switch
-                size="small"
-                checked={editing.isOverridePreset}
-                onChange={(e) => setField('isOverridePreset', e.target.checked)}
-              />
-            }
-            label={<Typography variant="body2">{t('recording.overridePreset')}</Typography>}
-          />
-
-          {error && (
-            <Typography variant="caption" color="error">{error}</Typography>
-          )}
-
-          <Stack direction="row" spacing={1}>
-            <Button type="submit" variant="outlined" size="small" disabled={busy}>
-              {isNew ? t('recording.create') : t('common.apply')}
-            </Button>
-            <Button size="small" onClick={cancel} disabled={busy}>{t('common.cancel')}</Button>
-          </Stack>
-        </Stack>
-      )}
-
-      {error && !editing && (
-        <Typography variant="caption" color="error">{error}</Typography>
-      )}
-    </Stack>
+    </MasterDetailLayout>
   )
 }

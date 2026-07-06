@@ -1,35 +1,31 @@
-import { useCallback, useEffect, useImperativeHandle, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Box,
-  Button,
   Checkbox,
   Chip,
-  Divider,
   FormControl,
   FormControlLabel,
   FormGroup,
-  IconButton,
   InputLabel,
   List,
-  ListItem,
-  ListItemText,
   MenuItem,
   Select,
   Stack,
   Switch,
   TextField,
-  Tooltip,
   Typography,
 } from '@mui/material'
-import DeleteIcon from '@mui/icons-material/Delete'
-import EditIcon from '@mui/icons-material/Edit'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
-import { setArmed as setArmedThunk, setStreamRecordingProfile } from '../store/liveSlice'
-import { ANALYTICS_DETECTION_CLASSES, RECORDING_PROFILE_OFF_ID, RECORDING_PROFILE_PREALARM_ID } from '../dto/dtos'
-import type { AnalyticsDetectionClass, AnalyticsWatchDto } from '../dto/dtos'
-
-export type AnalyticsWatchesHandle = { applyIfDirty: () => Promise<boolean> }
+import { setArmedWithPrealarmBaseline } from '../store/liveSlice'
+import { ANALYTICS_DETECTION_CLASSES } from '../dto/dtos'
+import type { AnalyticsDetectionClass, AnalyticsWatchDto, CameraSetupDto } from '../dto/dtos'
+import DetailToolbar from './settings/DetailToolbar'
+import MasterDetailLayout from './settings/MasterDetailLayout'
+import SettingsListItem from './settings/SettingsListItem'
+import { useDirtyGuard } from './settings/useDirtyGuard'
+import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
+import { useMasterDetailSelection } from './settings/useMasterDetailSelection'
 
 const EMPTY_WATCH: AnalyticsWatchDto = {
   cameraId: '',
@@ -42,64 +38,63 @@ const EMPTY_WATCH: AnalyticsWatchDto = {
   attachDebugCrops: false,
 }
 
-export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<AnalyticsWatchesHandle> }) {
-  const { t } = useTranslation()
-  const dispatch = useAppDispatch()
-  const allCameras = useAppSelector((s) => Object.values(s.live.cameraStatesById))
+type FormProps = {
+  ref?: React.Ref<ApplyIfDirtyHandle>
+  watch: AnalyticsWatchDto | null  // null = new
+  allCameras: CameraSetupDto[]
+  takenCameraIds: string[]         // cameras that already have a watch (for the new-watch camera select)
+  toolbarExtra?: React.ReactNode   // arm/disarm switch, owned by the container
+  onSaved: (isNew: boolean) => Promise<void>
+  onRemoved: () => Promise<void>
+}
 
-  const [watches, setWatches] = useState<AnalyticsWatchDto[]>([])
-  const [editing, setEditing] = useState<AnalyticsWatchDto | null>(null)
-  const [isNew, setIsNew] = useState(false)
+function AnalyticsWatchForm({ ref, watch, allCameras, takenCameraIds, toolbarExtra, onSaved, onRemoved }: FormProps) {
+  const { t } = useTranslation()
+  const isNew = watch === null
+
+  const [form, setForm] = useState<AnalyticsWatchDto>(watch ?? { ...EMPTY_WATCH })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    try {
-      const r = await fetch('/api/analytics-watches')
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      setWatches(await r.json() as AnalyticsWatchDto[])
-    } catch (e) {
-      setError(String(e))
+  // Snapshot of the saved state — used for dirty detection and Cancel
+  const [snap, setSnap] = useState<AnalyticsWatchDto>(watch ?? { ...EMPTY_WATCH })
+
+  const classesChanged =
+    form.classes.length !== snap.classes.length
+    || form.classes.some((c) => !snap.classes.includes(c))
+
+  const dirty = !isNew && (
+    form.streamName !== snap.streamName
+    || form.enabled !== snap.enabled
+    || classesChanged
+    || form.minConfidence !== snap.minConfidence
+    || form.sampleFps !== snap.sampleFps
+    || form.attachDebugCrops !== snap.attachDebugCrops
+  )
+
+  const valid = Boolean(form.cameraId && form.streamName && form.classes.length > 0)
+
+  const applyInternal = async (): Promise<boolean> => {
+    if (!isNew && !dirty) return true
+    if (!valid) {
+      setError(t('analytics.invalidWatch'))
+      return false
     }
-  }, [])
-
-  useEffect(() => { void load() }, [load])
-
-  useEffect(() => {
-    if (!editing) return
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
-  }, [editing])
-
-  const startNew = () => {
-    setEditing({ ...EMPTY_WATCH })
-    setIsNew(true)
-    setError(null)
-  }
-
-  const startEdit = (w: AnalyticsWatchDto) => {
-    setEditing({ ...w })
-    setIsNew(false)
-    setError(null)
-  }
-
-  const cancel = () => { setEditing(null); setError(null) }
-
-  const saveInternal = async (): Promise<boolean> => {
-    if (!editing) return true
     setBusy(true)
     setError(null)
     try {
+      // `armed` is flipped directly from the toolbar switch — always send the
+      // current value from the store, not the form-mount-time snapshot.
+      const payload: AnalyticsWatchDto = { ...form, armed: watch?.armed ?? form.armed }
       const r = await fetch('/api/analytics-watches', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editing),
+        body: JSON.stringify(payload),
       })
       const body = await r.json() as { success: boolean; message: string }
       if (!body.success) { setError(body.message); return false }
-      setEditing(null)
-      await load()
+      setSnap({ ...form })
+      await onSaved(isNew)
       return true
     } catch (e) {
       setError(String(e))
@@ -109,54 +104,21 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
     }
   }
 
-  const save = async (e: React.FormEvent) => {
+  const handleApply = async (e: React.FormEvent) => {
     e.preventDefault()
-    await saveInternal()
+    await applyInternal()
   }
 
-  useImperativeHandle(ref, () => ({
-    applyIfDirty: () => editing?.cameraId ? saveInternal() : Promise.resolve(true),
-  }))
+  const handleCancel = () => setForm({ ...snap })
 
-  const remove = async (cameraId: string) => {
+  const handleRemove = async () => {
     setBusy(true)
     setError(null)
     try {
-      const r = await fetch(`/api/analytics-watches/${encodeURIComponent(cameraId)}`, { method: 'DELETE' })
+      const r = await fetch(`/api/analytics-watches/${encodeURIComponent(form.cameraId)}`, { method: 'DELETE' })
       const body = await r.json() as { success: boolean; message: string }
       if (!body.success) { setError(body.message); return }
-      if (editing?.cameraId === cameraId) setEditing(null)
-      await load()
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  // Same arm/disarm behavior as CameraUnifiedCard.armDisarm: besides camera_states.armed, arming
-  // puts non-recording streams on the prealarm profile (and disarming reverts prealarm to off).
-  // Without a baseline profile the stream pipeline is torn down whenever the alarm override
-  // expires (recording off<->continuous flapping), which kills the MediaMTX push mid-stream and
-  // the analytics RTSP reader with it.
-  const setArmed = async (cameraId: string, armed: boolean) => {
-    setBusy(true)
-    setError(null)
-    try {
-      await dispatch(setArmedThunk({ cameraId, armed }))
-      const camera = allCameras.find((c) => c.cameraId === cameraId)
-      const isStreamRecording = (mode?: string) => (mode ?? 'off') !== 'off'
-      for (const s of camera?.streams ?? []) {
-        if (s.disabled) continue
-        const effectiveMode = (s.overrideProfile ?? s.recordingProfile)?.mode
-        if (armed) {
-          if (!isStreamRecording(effectiveMode))
-            await dispatch(setStreamRecordingProfile({ cameraId, streamName: s.streamName, profileId: RECORDING_PROFILE_PREALARM_ID }))
-        } else if (s.recordingProfile?.id === RECORDING_PROFILE_PREALARM_ID) {
-          await dispatch(setStreamRecordingProfile({ cameraId, streamName: s.streamName, profileId: RECORDING_PROFILE_OFF_ID }))
-        }
-      }
-      await load()
+      await onRemoved()
     } catch (e) {
       setError(String(e))
     } finally {
@@ -165,128 +127,67 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
   }
 
   const setField = <K extends keyof AnalyticsWatchDto>(key: K, value: AnalyticsWatchDto[K]) =>
-    setEditing((prev) => prev ? { ...prev, [key]: value } : null)
+    setForm((prev) => ({ ...prev, [key]: value }))
 
   const toggleClass = (c: AnalyticsDetectionClass, checked: boolean) =>
-    setEditing((prev) => prev
-      ? { ...prev, classes: checked ? [...prev.classes, c] : prev.classes.filter((x) => x !== c) }
-      : null)
+    setForm((prev) => ({ ...prev, classes: checked ? [...prev.classes, c] : prev.classes.filter((x) => x !== c) }))
 
   const handleCameraChange = (cameraId: string) => {
     const camera = allCameras.find((c) => c.cameraId === cameraId)
     const firstStream = camera?.streams?.[0]?.streamName ?? ''
-    setEditing((prev) => prev ? { ...prev, cameraId, streamName: firstStream } : null)
+    setForm((prev) => ({ ...prev, cameraId, streamName: firstStream }))
   }
 
   const classLabel = (c: AnalyticsDetectionClass) => t(`analytics.class.${c}`)
-  const cameraName = (cameraId: string) => allCameras.find((c) => c.cameraId === cameraId)?.name || cameraId
 
-  const usedCameraIds = new Set(watches.map((w) => w.cameraId))
-  const editingCamera = allCameras.find((c) => c.cameraId === editing?.cameraId)
-  const availableCameras = isNew
-    ? allCameras.filter((c) => !usedCameraIds.has(c.cameraId))
+  const formCamera = allCameras.find((c) => c.cameraId === form.cameraId)
+  const cameraOptions = isNew
+    ? allCameras.filter((c) => !takenCameraIds.includes(c.cameraId))
     : allCameras
 
+  const cameraName = formCamera?.name || form.cameraId
+
+  // For a new form "dirty" means "complete enough to save" — navigation then
+  // auto-creates it instead of silently discarding the entered data
+  useDirtyGuard(ref, isNew ? valid : dirty, applyInternal)
+
   return (
-    <Stack spacing={2} sx={{ maxWidth: 640 }}>
-      <Typography variant="h6">{t('analytics.title')}</Typography>
+    <Box component="form" onSubmit={(e) => void handleApply(e)} sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <DetailToolbar
+        title={isNew ? t('analytics.newWatch') : cameraName}
+        subtitle={isNew ? undefined : form.streamName}
+        dirty={isNew ? valid : dirty}
+        busy={busy}
+        applyLabel={isNew ? t('analytics.create') : undefined}
+        onCancel={isNew ? undefined : handleCancel}
+        onDelete={isNew ? undefined : () => void handleRemove()}
+        deleteLabel={t('analytics.deleteWatch')}
+        extra={toolbarExtra}
+      />
 
-      <List disablePadding>
-        {watches.map((w, i) => (
-          <Box key={w.cameraId}>
-            {i > 0 && <Divider />}
-            <ListItem
-              disablePadding
-              secondaryAction={
-                <Stack direction="row" spacing={0.5} alignItems="center">
-                  <Tooltip title={w.armed ? t('analytics.armedTooltip') : t('analytics.disarmedTooltip')}>
-                    <Switch
-                      size="small"
-                      checked={w.armed}
-                      onChange={(e) => void setArmed(w.cameraId, e.target.checked)}
-                      disabled={busy}
-                      sx={{ '& .MuiSwitch-switchBase.Mui-checked': { color: '#ff9800' }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#ff9800' } }}
-                    />
-                  </Tooltip>
-                  <IconButton size="small" onClick={() => startEdit(w)} disabled={busy}>
-                    <EditIcon fontSize="small" />
-                  </IconButton>
-                  <Tooltip title={t('analytics.deleteTooltip')}>
-                    <span>
-                      <IconButton size="small" color="error" onClick={() => void remove(w.cameraId)} disabled={busy}>
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-                </Stack>
-              }
-            >
-              <ListItemText
-                sx={{ py: 0.5, pl: 1 }}
-                primary={
-                  <Stack direction="row" spacing={0.5} alignItems="center" component="span">
-                    <span>{cameraName(w.cameraId)}</span>
-                    <Chip label={w.enabled ? t('analytics.enabled') : t('analytics.disabled')} size="small" color={w.enabled ? 'primary' : 'default'} variant="outlined" />
-                    {w.enabled && !w.armed && (
-                      <Chip label={t('analytics.notArmed')} size="small" color="warning" variant="outlined" />
-                    )}
-                  </Stack>
-                }
-                secondary={
-                  <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" component="span">
-                    {w.classes.map((c) => <Chip key={c} label={classLabel(c)} size="small" />)}
-                    <Typography variant="caption" color="text.secondary">
-                      {w.streamName}
-                    </Typography>
-                  </Stack>
-                }
-              />
-            </ListItem>
-          </Box>
-        ))}
-        {watches.length === 0 && (
-          <Typography variant="body2" color="text.secondary" sx={{ pl: 1, py: 1 }}>
-            {t('analytics.noWatches')}
-          </Typography>
-        )}
-      </List>
-
-      {!editing && (
-        <Box>
-          <Button variant="outlined" size="small" onClick={startNew}>
-            {t('analytics.addWatch')}
-          </Button>
-        </Box>
-      )}
-
-      {editing && (
-        <Stack component="form" spacing={2} onSubmit={(e) => void save(e)}
-          sx={{ pt: 1, borderTop: 1, borderColor: 'divider' }}>
-          <Typography variant="subtitle2">
-            {isNew ? t('analytics.newWatch') : t('analytics.editWatch')}
-          </Typography>
-
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 2 }}>
+        <Stack spacing={2} sx={{ maxWidth: 480 }}>
           <FormControl size="small" fullWidth disabled={!isNew}>
             <InputLabel>{t('analytics.camera')}</InputLabel>
             <Select
-              value={editing.cameraId}
+              value={form.cameraId}
               label={t('analytics.camera')}
               onChange={(e) => handleCameraChange(e.target.value)}
             >
-              {availableCameras.map((c) => (
+              {cameraOptions.map((c) => (
                 <MenuItem key={c.cameraId} value={c.cameraId}>{c.name || c.cameraId}</MenuItem>
               ))}
             </Select>
           </FormControl>
 
-          <FormControl size="small" fullWidth disabled={!editing.cameraId}>
+          <FormControl size="small" fullWidth disabled={!form.cameraId}>
             <InputLabel>{t('analytics.stream')}</InputLabel>
             <Select
-              value={editing.streamName}
+              value={form.streamName}
               label={t('analytics.stream')}
               onChange={(e) => setField('streamName', e.target.value)}
             >
-              {(editingCamera?.streams ?? []).map((s) => (
+              {(formCamera?.streams ?? []).map((s) => (
                 <MenuItem key={s.streamName} value={s.streamName}>{s.streamName}</MenuItem>
               ))}
             </Select>
@@ -301,7 +202,7 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
                   control={
                     <Checkbox
                       size="small"
-                      checked={editing.classes.includes(c)}
+                      checked={form.classes.includes(c)}
                       onChange={(e) => toggleClass(c, e.target.checked)}
                     />
                   }
@@ -315,7 +216,7 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
             <TextField
               label={t('analytics.minConfidence')}
               type="number"
-              value={editing.minConfidence}
+              value={form.minConfidence}
               onChange={(e) => setField('minConfidence', Math.min(1, Math.max(0, Number(e.target.value))))}
               size="small"
               slotProps={{ htmlInput: { min: 0, max: 1, step: 0.05 } }}
@@ -324,7 +225,7 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
             <TextField
               label={t('analytics.sampleFps')}
               type="number"
-              value={editing.sampleFps}
+              value={form.sampleFps}
               onChange={(e) => setField('sampleFps', Math.max(1, Math.floor(Number(e.target.value))))}
               size="small"
               slotProps={{ htmlInput: { min: 1 } }}
@@ -336,7 +237,7 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
             control={
               <Switch
                 size="small"
-                checked={editing.enabled}
+                checked={form.enabled}
                 onChange={(e) => setField('enabled', e.target.checked)}
               />
             }
@@ -347,7 +248,7 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
             control={
               <Switch
                 size="small"
-                checked={editing.attachDebugCrops}
+                checked={form.attachDebugCrops}
                 onChange={(e) => setField('attachDebugCrops', e.target.checked)}
               />
             }
@@ -357,19 +258,138 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<Analyti
           {error && (
             <Typography variant="caption" color="error">{error}</Typography>
           )}
-
-          <Stack direction="row" spacing={1}>
-            <Button type="submit" variant="outlined" size="small" disabled={busy || !editing.cameraId || !editing.streamName || editing.classes.length === 0}>
-              {isNew ? t('analytics.create') : t('common.apply')}
-            </Button>
-            <Button size="small" onClick={cancel} disabled={busy}>{t('common.cancel')}</Button>
-          </Stack>
         </Stack>
-      )}
+      </Box>
+    </Box>
+  )
+}
 
-      {error && !editing && (
-        <Typography variant="caption" color="error">{error}</Typography>
+export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHandle> }) {
+  const { t } = useTranslation()
+  const dispatch = useAppDispatch()
+  const allCameras = useAppSelector((s) => Object.values(s.live.cameraStatesById))
+
+  const [watches, setWatches] = useState<AnalyticsWatchDto[]>([])
+  const [armBusy, setArmBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const { isNew, selected, detailRef, detailKey, select, selectNew, reset } =
+    useMasterDetailSelection(ref, watches, (w) => w.cameraId)
+
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch('/api/analytics-watches')
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      setWatches(await r.json() as AnalyticsWatchDto[])
+    } catch (e) {
+      setError(String(e))
+    }
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  const setArmed = async (cameraId: string, armed: boolean) => {
+    setArmBusy(true)
+    setError(null)
+    try {
+      await dispatch(setArmedWithPrealarmBaseline({ cameraId, armed })).unwrap()
+      await load()
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setArmBusy(false)
+    }
+  }
+
+  const classLabel = (c: AnalyticsDetectionClass) => t(`analytics.class.${c}`)
+  const cameraName = (cameraId: string) => allCameras.find((c) => c.cameraId === cameraId)?.name || cameraId
+
+  const takenCameraIds = watches.map((w) => w.cameraId)
+  const availableCameras = allCameras.filter((c) => !takenCameraIds.includes(c.cameraId))
+
+  const list = (
+    <List dense disablePadding>
+      {watches.map((w) => (
+        <SettingsListItem
+          key={w.cameraId}
+          selected={selected?.cameraId === w.cameraId}
+          onClick={() => select(w.cameraId)}
+          wrap
+          primary={
+            <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" component="span">
+              <span>{cameraName(w.cameraId)}</span>
+              <Chip label={w.enabled ? t('analytics.enabled') : t('analytics.disabled')} size="small" color={w.enabled ? 'primary' : 'default'} variant="outlined" />
+              {w.enabled && !w.armed && (
+                <Chip label={t('analytics.notArmed')} size="small" color="warning" variant="outlined" />
+              )}
+            </Stack>
+          }
+          secondary={
+            <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" component="span" sx={{ rowGap: 0.5 }}>
+              {w.classes.map((c) => <Chip key={c} label={classLabel(c)} size="small" />)}
+              <Typography variant="caption" color="text.secondary">
+                {w.streamName}
+              </Typography>
+            </Stack>
+          }
+        />
+      ))}
+      {watches.length === 0 && (
+        <Typography variant="body2" color="text.secondary" sx={{ p: 1.5 }}>
+          {t('analytics.noWatches')}
+        </Typography>
       )}
-    </Stack>
+    </List>
+  )
+
+  return (
+    <MasterDetailLayout
+      listTitle={t('analytics.title')}
+      onAdd={selectNew}
+      addTooltip={t('analytics.addWatch')}
+      addDisabled={availableCameras.length === 0}
+      list={list}
+    >
+      {isNew || selected ? (
+        <AnalyticsWatchForm
+          ref={detailRef}
+          key={detailKey}
+          watch={isNew ? null : selected}
+          allCameras={allCameras}
+          takenCameraIds={takenCameraIds}
+          toolbarExtra={selected ? (
+            <Stack direction="row" spacing={1} alignItems="center">
+              {/* Arm failures must be visible next to the switch that caused them */}
+              {error && <Typography variant="caption" color="error">{error}</Typography>}
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={selected.armed}
+                    onChange={(e) => void setArmed(selected.cameraId, e.target.checked)}
+                    disabled={armBusy}
+                    sx={{ '& .MuiSwitch-switchBase.Mui-checked': { color: '#ff9800' }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#ff9800' } }}
+                  />
+                }
+                label={<Typography variant="body2">{t('analytics.armSwitch')}</Typography>}
+              />
+            </Stack>
+          ) : undefined}
+          onSaved={async (created) => {
+            await load()
+            if (created) reset()
+          }}
+          onRemoved={async () => {
+            await load()
+            reset()
+          }}
+        />
+      ) : (
+        <Box sx={{ p: 2 }}>
+          <Typography color="text.secondary">{t('analytics.selectHint')}</Typography>
+          {error && <Typography variant="caption" color="error" display="block" sx={{ mt: 1 }}>{error}</Typography>}
+        </Box>
+      )}
+    </MasterDetailLayout>
   )
 }
