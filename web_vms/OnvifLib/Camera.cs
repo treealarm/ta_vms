@@ -119,9 +119,12 @@ public class Camera
     return (resp.RelayOutputs ?? [])
       .Select(r => new OnvifRelayOutput(
         r.token,
-        r.Properties.Mode.ToString().ToLowerInvariant(),
-        r.Properties.IdleState.ToString().ToLowerInvariant(),
-        OnvifDuration.ToMs(r.Properties.DelayTime)))
+        // Properties is required by the ONVIF schema, but tolerate a non-compliant camera that
+        // omits it rather than NRE-ing the whole relay list — default to bistable (no auto-revert
+        // timer, plain manual on/off) since the mode/idle/delay are then unknown.
+        r.Properties?.Mode.ToString().ToLowerInvariant() ?? "bistable",
+        r.Properties?.IdleState.ToString().ToLowerInvariant() ?? "closed",
+        r.Properties != null ? OnvifDuration.ToMs(r.Properties.DelayTime) : 0))
       .ToList();
   }
 

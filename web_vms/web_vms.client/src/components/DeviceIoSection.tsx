@@ -92,13 +92,17 @@ function DigitalInputsGroup({ cameraId }: { cameraId: string }) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    setError(null)
-    Promise.all([
-      apiFetch<DigitalInputDto[]>(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/digital-inputs`),
-      apiFetch<DigitalInputOptionsDto[]>(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/digital-inputs/options`),
-    ])
-      .then(([i, o]) => { setInputs(i); setOptions(o) })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+    let cancelled = false
+    apiFetch<DigitalInputDto[]>(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/digital-inputs`)
+      .then((i) => { if (!cancelled) { setInputs(i); setError(null) } })
+      // Resolve the loading skeleton to empty on error too; the Alert above carries the reason.
+      .catch((e: unknown) => { if (!cancelled) { setInputs([]); setError(e instanceof Error ? e.message : String(e)) } })
+    // Options are advisory (they only gate the idle-state editor). Load them separately and
+    // degrade to "none" on failure, so an options error never hides the inputs list itself.
+    apiFetch<DigitalInputOptionsDto[]>(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/digital-inputs/options`)
+      .then((o) => { if (!cancelled) setOptions(o) })
+      .catch(() => { if (!cancelled) setOptions([]) })
+    return () => { cancelled = true }
   }, [cameraId])
 
   return (
@@ -239,13 +243,17 @@ function RelayOutputsGroup({ cameraId }: { cameraId: string }) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    setError(null)
-    Promise.all([
-      apiFetch<RelayOutputDto[]>(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/relay-outputs`),
-      apiFetch<RelayOutputOptionsDto[]>(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/relay-outputs/options`),
-    ])
-      .then(([r, o]) => { setRelays(r); setOptions(o) })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+    let cancelled = false
+    apiFetch<RelayOutputDto[]>(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/relay-outputs`)
+      .then((r) => { if (!cancelled) { setRelays(r); setError(null) } })
+      // Resolve the loading skeleton to empty on error too; the Alert above carries the reason.
+      .catch((e: unknown) => { if (!cancelled) { setRelays([]); setError(e instanceof Error ? e.message : String(e)) } })
+    // Options are advisory (delay bounds; modes are shown fixed). Load them separately and degrade
+    // to "none" on failure, so an options error never hides the relay list itself.
+    apiFetch<RelayOutputOptionsDto[]>(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/relay-outputs/options`)
+      .then((o) => { if (!cancelled) setOptions(o) })
+      .catch(() => { if (!cancelled) setOptions([]) })
+    return () => { cancelled = true }
   }, [cameraId])
 
   return (

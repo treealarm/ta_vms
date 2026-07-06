@@ -80,14 +80,38 @@ public sealed class OnvifSettingsService(CameraConnCache connCache, ILogger<Onvi
 
   public async Task<List<OnvifDigitalInputOptions>> GetDigitalInputOptionsAsync(string cameraId, CancellationToken ct)
   {
-    var inputs = await GetDigitalInputsAsync(cameraId, ct);
+    // Resolve the Device I/O service once (rather than per token via WithDeviceIO) and list inputs
+    // from it directly, avoiding a duplicate GetDigitalInputs + a fresh conn resolution per token.
+    var data = await connCache.GetAsync(cameraId, ct);
+    if (data?.Conn == null) return [];
+    var deviceIO = await GetDeviceIOOrNull(data.Conn);
+    if (deviceIO == null) return [];
+
     var options = new List<OnvifDigitalInputOptions>();
-    foreach (var input in inputs)
+    try
     {
-      var opt = await WithDeviceIO<OnvifDigitalInputOptions?>(
-        cameraId, "GetDigitalInputConfigurationOptions", ct,
-        d => d.GetDigitalInputConfigurationOptionsAsync(input.Token), null);
-      if (opt != null) options.Add(opt);
+      var inputs = await deviceIO.GetDigitalInputsAsync();
+      foreach (var input in inputs)
+      {
+        try
+        {
+          var opt = await deviceIO.GetDigitalInputConfigurationOptionsAsync(input.Token);
+          if (opt != null) options.Add(opt);
+        }
+        catch (Exception ex)
+        {
+          // Options are advisory (they only gate the idle-state editor). A camera that supports
+          // GetDigitalInputs but faults on GetDigitalInputConfigurationOptions for one input must
+          // not blank the whole list — treat that input as non-configurable and continue.
+          logger.LogWarning(ex, "GetDigitalInputConfigurationOptions failed for camera {CameraId} input {Token}", cameraId, input.Token);
+        }
+      }
+    }
+    catch (Exception ex)
+    {
+      logger.LogWarning(ex, "GetDigitalInputOptions failed for camera {CameraId}", cameraId);
+      Evict(data.Conn);
+      throw;
     }
     return options;
   }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Alert, Box, CircularProgress, Stack, Switch, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
+import { apiFetch } from '../api/apiFetch'
 import type { DigitalInputDto, RelayOutputDto } from '../dto/dtos'
 import { setRelayOutputState, useRelayToggle } from '../hooks/useRelayToggle'
 
@@ -60,17 +61,23 @@ export default function DeviceIoPanel({ cameraId }: Props) {
 
   useEffect(() => {
     let cancelled = false
-    setError(null)
-    Promise.all([
-      fetch(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/relay-outputs`)
-        .then((r) => (r.ok ? (r.json() as Promise<RelayOutputDto[]>) : Promise.reject(new Error(t('onvifSettings.deviceIoNoRelays'))))),
-      fetch(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/digital-inputs`)
-        .then((r) => (r.ok ? (r.json() as Promise<DigitalInputDto[]>) : Promise.reject(new Error(t('onvifSettings.deviceIoNoSensors'))))),
-    ])
-      .then(([r, i]) => { if (!cancelled) { setRelays(r); setInputs(i) } })
-      .catch((e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)) })
+    // Load the two lists independently: a failure on one must not hide the other, and the real
+    // camera error text (returned in the response body) must reach the user — not a generic label.
+    Promise.allSettled([
+      apiFetch<RelayOutputDto[]>(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/relay-outputs`),
+      apiFetch<DigitalInputDto[]>(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/digital-inputs`),
+    ]).then(([rRes, iRes]) => {
+      if (cancelled) return
+      setRelays(rRes.status === 'fulfilled' ? rRes.value : [])
+      setInputs(iRes.status === 'fulfilled' ? iRes.value : [])
+      const errs = [rRes, iRes]
+        .filter((x): x is PromiseRejectedResult => x.status === 'rejected')
+        .map((x) => (x.reason instanceof Error ? x.reason.message : String(x.reason)))
+        .filter((m) => m)
+      setError(errs.length ? Array.from(new Set(errs)).join('; ') : null)
+    })
     return () => { cancelled = true }
-  }, [cameraId, t])
+  }, [cameraId])
 
   const loading = relays === null || inputs === null
 
