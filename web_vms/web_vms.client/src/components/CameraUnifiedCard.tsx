@@ -25,6 +25,7 @@ import VideocamIcon from '@mui/icons-material/Videocam'
 import TuneIcon from '@mui/icons-material/Tune'
 import VideoLibraryIcon from '@mui/icons-material/VideoLibrary'
 import ControlCameraIcon from '@mui/icons-material/ControlCamera'
+import SensorsIcon from '@mui/icons-material/Sensors'
 import SecurityIcon from '@mui/icons-material/Security'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import {
@@ -39,6 +40,7 @@ import ArchiveHlsStreamCard from './ArchiveHlsStreamCard'
 import StreamOverrideRow from './StreamOverrideRow'
 import StreamProfileRow from './StreamProfileRow'
 import PtzOverlay from './PtzOverlay'
+import DeviceIoOverlay from './DeviceIoOverlay'
 import { useAppDispatch, useAppSelector } from '../store'
 import { fetchCameraState, setArmedWithPrealarmBaseline, setStreamRecordingProfile } from '../store/liveSlice'
 
@@ -88,11 +90,14 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
   const selectedStream = slotUi.selectedStream
   const panelOpen = slotUi.panelOpen
   const ptzOpen = slotUi.ptzOpen
+  const deviceIoOpen = slotUi.deviceIoOpen
 
   const setMode = (v: 'live' | 'archive') => dispatch(patchSlot({ key: storeKey, mode: v }))
   const setSelectedStream = (v: string) => dispatch(patchSlot({ key: storeKey, selectedStream: v }))
   const setPanelOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, panelOpen: v }))
-  const setPtzOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, ptzOpen: v }))
+  // PTZ and Device I/O overlays are mutually exclusive so they never render on top of each other.
+  const setPtzOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, ptzOpen: v, ...(v ? { deviceIoOpen: false } : {}) }))
+  const setDeviceIoOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, deviceIoOpen: v, ...(v ? { ptzOpen: false } : {}) }))
 
   const { t } = useTranslation()
 
@@ -155,19 +160,28 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
   // A camera can advertise the ONVIF PTZ service without any real move hardware behind it —
   // gate the joystick on the actual capability check, not just "has an ONVIF connection".
   const [hasPtz, setHasPtz] = useState<boolean | null>(null)
+  const [hasRelayOutputs, setHasRelayOutputs] = useState<boolean | null>(null)
+  const [hasDigitalInputs, setHasDigitalInputs] = useState<boolean | null>(null)
   useEffect(() => {
-    if (!camera.onvifConn) { setHasPtz(null); return }
+    if (!camera.onvifConn) { setHasPtz(null); setHasRelayOutputs(null); setHasDigitalInputs(null); return }
     fetch(`/api/onvif/cameras/${encodeURIComponent(camera.cameraId)}/capabilities`)
-      .then((r) => (r.ok ? (r.json() as Promise<{ hasPtz: boolean }>) : Promise.reject()))
-      .then((d) => setHasPtz(d.hasPtz))
-      .catch(() => setHasPtz(null)) // unknown -> fail open, same as the ONVIF settings panel
+      .then((r) => (r.ok
+        ? (r.json() as Promise<{ hasPtz: boolean; hasRelayOutputs: boolean; hasDigitalInputs: boolean }>)
+        : Promise.reject()))
+      .then((d) => { setHasPtz(d.hasPtz); setHasRelayOutputs(d.hasRelayOutputs); setHasDigitalInputs(d.hasDigitalInputs) })
+      .catch(() => { setHasPtz(null); setHasRelayOutputs(null); setHasDigitalInputs(null) }) // unknown -> fail open, same as the ONVIF settings panel
     // camera.onvifConn is a fresh object reference on every cameraState poll (see the
     // fetchCameraState interval below) even when unchanged — depend on its presence, not its
     // identity, so this doesn't refetch every 5s.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camera.cameraId, Boolean(camera.onvifConn)])
   useEffect(() => { if (hasPtz === false && ptzOpen) setPtzOpen(false) }, [hasPtz, ptzOpen])
+  useEffect(() => {
+    if (hasRelayOutputs === false && hasDigitalInputs === false && deviceIoOpen) setDeviceIoOpen(false)
+  }, [hasRelayOutputs, hasDigitalInputs, deviceIoOpen])
   const showPtzControl = Boolean(camera.onvifConn) && mode === 'live' && !isDisabled && (hasPtz ?? true)
+  const showDeviceIoControl = Boolean(camera.onvifConn) && mode === 'live' && !isDisabled
+    && ((hasRelayOutputs ?? true) || (hasDigitalInputs ?? true))
 
   useEffect(() => {
     const id = setInterval(() => void dispatch(fetchCameraState(camera.cameraId)), 5000)
@@ -259,6 +273,18 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             </Tooltip>
           )}
 
+          {showDeviceIoControl && (
+            <Tooltip title={deviceIoOpen ? t('cameraCard.deviceIoClose') : t('cameraCard.deviceIoOpen')} placement="right">
+              <IconButton
+                size="small"
+                onClick={() => setDeviceIoOpen(!deviceIoOpen)}
+                sx={{ ...BTN_SX, ...(deviceIoOpen ? { color: W, bgcolor: alpha(W, 0.2) } : {}) }}
+              >
+                <SensorsIcon sx={{ fontSize: '0.95rem' }} />
+              </IconButton>
+            </Tooltip>
+          )}
+
           {/* Armed gates both ONVIF events and video analytics now, so it's available for every
               camera — not just ONVIF-managed ones. */}
           <Tooltip
@@ -334,6 +360,17 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
                   sx={{ p: '2px', color: ptzOpen ? W : alpha(W, 0.5), '&:hover': { color: W } }}
                 >
                   <ControlCameraIcon sx={{ fontSize: '0.9rem' }} />
+                </IconButton>
+              </Tooltip>
+            )}
+            {showDeviceIoControl && (
+              <Tooltip title={deviceIoOpen ? t('cameraCard.deviceIoClose') : t('cameraCard.deviceIoOpen')}>
+                <IconButton
+                  size="small"
+                  onClick={() => setDeviceIoOpen(!deviceIoOpen)}
+                  sx={{ p: '2px', color: deviceIoOpen ? W : alpha(W, 0.5), '&:hover': { color: W } }}
+                >
+                  <SensorsIcon sx={{ fontSize: '0.9rem' }} />
                 </IconButton>
               </Tooltip>
             )}
@@ -541,6 +578,12 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             cameraId={camera.cameraId}
             profileToken={activeStreamObj?.profileToken ?? ''}
             onClose={() => setPtzOpen(false)}
+          />
+        )}
+        {showDeviceIoControl && deviceIoOpen && (
+          <DeviceIoOverlay
+            cameraId={camera.cameraId}
+            onClose={() => setDeviceIoOpen(false)}
           />
         )}
       </Box>

@@ -57,7 +57,7 @@ namespace OnvifLib
     string SerialNumber,
     string HardwareId);
 
-  public record OnvifCapabilities(bool HasPtz, bool HasImaging, bool HasEvents);
+  public record OnvifCapabilities(bool HasPtz, bool HasImaging, bool HasEvents, bool HasDigitalInputs);
 
   public class ImageResult
   {

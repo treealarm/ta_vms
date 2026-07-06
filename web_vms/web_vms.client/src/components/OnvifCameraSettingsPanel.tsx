@@ -24,9 +24,11 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import DeleteIcon from '@mui/icons-material/Delete'
 import { useTranslation } from 'react-i18next'
+import { apiFetch } from '../api/apiFetch'
 import { useAppSelector } from '../store'
 import CameraStream from './CameraStream'
 import PtzControlPad from './PtzControlPad'
+import DeviceIoSection from './DeviceIoSection'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
 import type {
@@ -42,17 +44,6 @@ import type {
   VideoEncoderConfigDto,
   VideoEncoderConfigOptionsDto,
 } from '../dto/dtos'
-
-// ── API helpers ────────────────────────────────────────────────────────────
-
-async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(url, init)
-  if (!r.ok) throw new Error(await r.text())
-  // Several endpoints (set-config, PTZ goto, sync-time, ...) return 200 with no body —
-  // r.json() throws "Unexpected end of JSON input" on those, even though the call succeeded.
-  const text = await r.text()
-  return (text ? JSON.parse(text) : undefined) as T
-}
 
 // ── Video encoder section ──────────────────────────────────────────────────
 
@@ -660,6 +651,7 @@ function CameraDetail({ camera }: { camera: CameraSetupDto }) {
     { key: 'audio', label: t('onvifSettings.audioTab'), show: caps?.hasAudio ?? true },
     { key: 'imaging', label: t('onvifSettings.imagingTab'), show: caps?.hasImaging ?? true },
     { key: 'ptz', label: t('onvifSettings.ptzTab'), show: caps?.hasPtz ?? true },
+    { key: 'deviceio', label: t('onvifSettings.deviceIoTab'), show: (caps?.hasRelayOutputs ?? true) || (caps?.hasDigitalInputs ?? true) },
     { key: 'system', label: t('onvifSettings.systemTab'), show: true },
   ].filter((tb) => tb.show)
 
@@ -699,6 +691,7 @@ function CameraDetail({ camera }: { camera: CameraSetupDto }) {
           {activeKey === 'audio' && <AudioSection cameraId={camera.cameraId} />}
           {activeKey === 'imaging' && <ImagingSection cameraId={camera.cameraId} />}
           {activeKey === 'ptz' && <PtzPresetsSection cameraId={camera.cameraId} onProfileTokenChange={setPtzProfileToken} />}
+          {activeKey === 'deviceio' && <DeviceIoSection cameraId={camera.cameraId} />}
           {activeKey === 'system' && <SystemSection cameraId={camera.cameraId} />}
         </Box>
       </Stack>

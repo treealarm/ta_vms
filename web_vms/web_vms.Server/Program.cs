@@ -34,6 +34,8 @@ builder.Services.AddSingleton(_ =>
   new OnvifService.OnvifServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId)));
 builder.Services.AddSingleton(_ =>
   new PtzService.PtzServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId)));
+builder.Services.AddSingleton(_ =>
+  new DeviceIoService.DeviceIoServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId)));
 
 var utilsAppId = Require("DAPR_UTILS_APP_ID");
 builder.Services.AddSingleton(_ =>
