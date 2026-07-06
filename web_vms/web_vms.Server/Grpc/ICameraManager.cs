@@ -9,6 +9,8 @@ namespace web_vms
     Task<List<CameraSetupDto>> List(CancellationToken ct = default);
     /// <summary>Camera ids that have an enabled analytics watch (used to gate the live bbox overlay).</summary>
     Task<HashSet<string>> AnalyticsEnabledCameraIds(CancellationToken ct = default);
+    /// <summary>Whether one camera has an enabled analytics watch (per-camera variant for the state poll).</summary>
+    Task<bool> HasEnabledAnalyticsWatch(string cameraId, CancellationToken ct = default);
     Task<List<MediaServerNodeDto>> ListServers(CancellationToken ct = default);
     Task<bool> SetSetup(CameraSetupDto dto, CancellationToken ct = default);
     Task<CameraSetupDto?> Get(string id, CancellationToken ct = default);

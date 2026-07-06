@@ -289,7 +289,13 @@ public class LiveController(
     }
 
     var normalized = CameraManager.Normalize(camera);
-    normalized = normalized with { Streams = WithWhepUrls(normalized.CameraId, normalized.Streams) };
+    normalized = normalized with
+    {
+      Streams = WithWhepUrls(normalized.CameraId, normalized.Streams),
+      // The monitor renders cameras from this per-camera state poll (not the /cameras list), so the
+      // bbox-overlay gate flag has to be set here too — preserved through the `with` copies below.
+      HasAnalytics = await _manager.HasEnabledAnalyticsWatch(cameraId, ct),
+    };
 
     // Ensure WebRTC push is active for all webrtc-enabled streams (best-effort).
     // Disabled cameras/streams must not be (re)started here — config_subscriber already
