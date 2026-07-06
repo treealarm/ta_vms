@@ -95,11 +95,13 @@ message GetDeviceInformationResponse {
 }
 
 message GetDeviceCapabilitiesResponse {
-  bool   has_ptz     = 1;
-  bool   has_imaging = 2;
-  bool   has_events  = 3;
-  bool   has_audio   = 4;
-  string error       = 5;
+  bool   has_ptz            = 1;
+  bool   has_imaging        = 2;
+  bool   has_events         = 3;
+  bool   has_audio          = 4;
+  string error              = 5;
+  bool   has_relay_outputs  = 6;
+  bool   has_digital_inputs = 7;
 }
 
 message ImagingSettingsRequest {
@@ -390,4 +392,106 @@ message PtzRemovePresetRequest {
   string source_id     = 1;
   string profile_token = 2;
   string preset_token  = 3;
+}
+
+// ── Device I/O (digital inputs / relay outputs) ─────────────────────────────
+// A separate service from OnvifService/PtzService, same reasoning as PTZ being split out:
+// Device I/O is a large, semantically distinct sub-domain.
+
+enum RelayMode {
+  MONOSTABLE = 0;
+  BISTABLE   = 1;
+}
+
+enum IdleState {
+  CLOSED = 0;
+  OPEN   = 1;
+}
+
+service DeviceIoService {
+  rpc GetRelayOutputs(CameraRequest) returns (GetRelayOutputsResponse);
+  rpc GetRelayOutputOptions(CameraRequest) returns (GetRelayOutputOptionsResponse);
+  rpc SetRelayOutputState(SetRelayOutputStateRequest) returns (DeviceIoResponse);
+  rpc SetRelayOutputSettings(SetRelayOutputSettingsRequest) returns (DeviceIoResponse);
+  rpc GetDigitalInputs(CameraRequest) returns (GetDigitalInputsResponse);
+  rpc GetDigitalInputOptions(CameraRequest) returns (GetDigitalInputOptionsResponse);
+  rpc SetDigitalInputIdleState(SetDigitalInputIdleStateRequest) returns (DeviceIoResponse);
+}
+
+message DeviceIoResponse {
+  bool   success = 1;
+  string error   = 2;
+}
+
+// ONVIF's GetRelayOutputs has no field for the relay's current logical (active/inactive) state —
+// only its configured Mode/DelayTime/IdleState (see RelayOutputSettings in onvif.xsd). Live state
+// can only be tracked client-side after a command, never polled.
+message RelayOutput {
+  string    token     = 1;
+  RelayMode mode      = 2;
+  IdleState idle_state = 3;
+  int32     delay_ms  = 4;
+}
+
+message GetRelayOutputsResponse {
+  repeated RelayOutput relays = 1;
+  string               error  = 2;
+}
+
+message RelayOutputOptions {
+  string         token              = 1;
+  repeated RelayMode supported_modes = 2;
+  bool           discrete           = 3;
+  int32          min_delay_ms       = 4;
+  int32          max_delay_ms       = 5;
+  repeated int32 discrete_delays_ms = 6;
+}
+
+message GetRelayOutputOptionsResponse {
+  repeated RelayOutputOptions options = 1;
+  string                      error   = 2;
+}
+
+message SetRelayOutputStateRequest {
+  string source_id = 1;
+  string token      = 2;
+  bool   active     = 3;
+}
+
+message SetRelayOutputSettingsRequest {
+  string    source_id = 1;
+  string    token      = 2;
+  RelayMode mode       = 3;
+  IdleState idle_state = 4;
+  int32     delay_ms   = 5;
+}
+
+// GetDigitalInputs has no live logical-state field either (per onvif.xsd DigitalInput) — only
+// the idle-state configuration. has_idle_state is false when the camera didn't report it at all
+// (IdleStateSpecified == false on the wire).
+message DigitalInput {
+  string    token          = 1;
+  IdleState idle_state     = 2;
+  bool      has_idle_state = 3;
+}
+
+message GetDigitalInputsResponse {
+  repeated DigitalInput inputs = 1;
+  string                error  = 2;
+}
+
+message DigitalInputOptions {
+  string token                   = 1;
+  bool   idle_state_configurable = 2;
+}
+
+message GetDigitalInputOptionsResponse {
+  repeated DigitalInputOptions options = 1;
+  string                       error   = 2;
+}
+
+message SetDigitalInputIdleStateRequest {
+  string    source_id = 1;
+  string    token      = 2;
+  IdleState idle_state = 3;
 }

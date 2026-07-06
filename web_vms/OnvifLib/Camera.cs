@@ -112,6 +112,39 @@ public class Camera
       resp.HardwareId ?? string.Empty);
   }
 
+  public async Task<List<OnvifRelayOutput>> GetRelayOutputsAsync()
+  {
+    using var device = await GetDevice();
+    var resp = await device.GetRelayOutputsAsync();
+    return (resp.RelayOutputs ?? [])
+      .Select(r => new OnvifRelayOutput(
+        r.token,
+        // Properties is required by the ONVIF schema, but tolerate a non-compliant camera that
+        // omits it rather than NRE-ing the whole relay list — default to bistable (no auto-revert
+        // timer, plain manual on/off) since the mode/idle/delay are then unknown.
+        r.Properties?.Mode.ToString().ToLowerInvariant() ?? "bistable",
+        r.Properties?.IdleState.ToString().ToLowerInvariant() ?? "closed",
+        r.Properties != null ? OnvifDuration.ToMs(r.Properties.DelayTime) : 0))
+      .ToList();
+  }
+
+  public async Task SetRelayOutputSettingsAsync(string token, string mode, string idleState, int delayMs)
+  {
+    using var device = await GetDevice();
+    await device.SetRelayOutputSettingsAsync(token, new RelayOutputSettings
+    {
+      Mode = mode.Equals("bistable", StringComparison.OrdinalIgnoreCase) ? RelayMode.Bistable : RelayMode.Monostable,
+      IdleState = idleState.Equals("open", StringComparison.OrdinalIgnoreCase) ? RelayIdleState.open : RelayIdleState.closed,
+      DelayTime = OnvifDuration.FromMs(delayMs),
+    });
+  }
+
+  public async Task SetRelayOutputStateAsync(string token, bool active)
+  {
+    using var device = await GetDevice();
+    await device.SetRelayOutputStateAsync(token, active ? RelayLogicalState.active : RelayLogicalState.inactive);
+  }
+
   public async Task SyncTimeAsync() => await SetTimeAsync(System.DateTime.UtcNow);
 
   public async Task SetTimeAsync(System.DateTime utcTime)
@@ -248,6 +281,17 @@ public class Camera
     return null;
   }
 
+  async public Task<DeviceIOService2?> GetDeviceIOService()
+  {
+    var services = await GetServicesAsync();
+
+    if (services != null)
+    {
+      return await _serviceCache.GetServiceAsync<DeviceIOService2>(services);
+    }
+    return null;
+  }
+
   async public Task<List<OnvifProfileInfo>?> GetProfiles()
   {
     var service = await GetMediaService();
@@ -279,7 +323,7 @@ public class Camera
 
     var services = await GetServicesAsync();
     if (services == null)
-      return new OnvifCapabilities(false, false, false);
+      return new OnvifCapabilities(false, false, false, false);
 
     // GetConfigurations (not GetNodes) is the reliable PTZ signal — same reasoning as
     // PtzService2.GetCapabilitiesAsync's own comment.
@@ -300,7 +344,10 @@ public class Camera
       // Mirror GetEventService()'s own resolution (OnvifServiceSelector tries every WSDL in
       // EventService1.GetSupportedWsdls()) — some cameras advertise events only under the
       // media namespace, with no separate dedicated events entry.
-      HasEvents:  EventService1.GetSupportedWsdls().Any(services.ContainsKey));
+      HasEvents:  EventService1.GetSupportedWsdls().Any(services.ContainsKey),
+      // Namespace presence alone is a reliable signal here (unlike PTZ): Device I/O is a genuinely
+      // optional, separate ONVIF service, not something advertised without real hardware behind it.
+      HasDigitalInputs: services.ContainsKey(DeviceIOService2.WSDL_V10));
 
     _capabilitiesCache = result;
     _capabilitiesCacheAt = System.DateTime.UtcNow;

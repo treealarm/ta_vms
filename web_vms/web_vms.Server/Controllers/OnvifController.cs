@@ -331,10 +331,12 @@ public class OnvifController(
 
     return Ok(new
     {
-      hasPtz     = response.HasPtz,
-      hasImaging = response.HasImaging,
-      hasEvents  = response.HasEvents,
-      hasAudio   = response.HasAudio,
+      hasPtz           = response.HasPtz,
+      hasImaging       = response.HasImaging,
+      hasEvents        = response.HasEvents,
+      hasAudio         = response.HasAudio,
+      hasRelayOutputs  = response.HasRelayOutputs,
+      hasDigitalInputs = response.HasDigitalInputs,
     });
   }
 

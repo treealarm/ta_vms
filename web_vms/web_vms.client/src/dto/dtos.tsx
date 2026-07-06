@@ -458,6 +458,41 @@ export type DeviceCapabilitiesDto = {
   hasImaging: boolean
   hasEvents: boolean
   hasAudio: boolean
+  hasRelayOutputs: boolean
+  hasDigitalInputs: boolean
+}
+
+export type RelayMode = 'monostable' | 'bistable'
+export type IdleState = 'open' | 'closed'
+
+// ONVIF has no operation to read a relay's current logical (active/inactive) state — only its
+// configured Mode/DelayTime/IdleState. Live state is tracked client-side after a command, never
+// fetched from the server.
+export type RelayOutputDto = {
+  token: string
+  mode: RelayMode
+  idleState: IdleState
+  delayMs: number
+}
+
+export type RelayOutputOptionsDto = {
+  token: string
+  supportedModes: RelayMode[]
+  discrete: boolean
+  minDelayMs: number
+  maxDelayMs: number
+  discreteDelaysMs?: number[]
+}
+
+// idleState is null when the camera didn't report it at all.
+export type DigitalInputDto = {
+  token: string
+  idleState: IdleState | null
+}
+
+export type DigitalInputOptionsDto = {
+  token: string
+  idleStateConfigurable: boolean
 }
 
 export type FloatRangeDto = { min: number; max: number }

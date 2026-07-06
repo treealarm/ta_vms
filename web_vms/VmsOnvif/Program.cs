@@ -14,6 +14,7 @@ builder.Services.AddDaprPubSubClient();
 builder.Services.AddSingleton<CameraConnCache>();
 builder.Services.AddSingleton<OnvifServiceImpl>();
 builder.Services.AddSingleton<PtzServiceImpl>();
+builder.Services.AddSingleton<DeviceIoServiceImpl>();
 
 var cfgAppId = Require("DAPR_CFG_APP_ID");
 builder.Services.AddSingleton(_ =>
@@ -56,6 +57,7 @@ await RetryAsync(() => registry.InitAsync());
 
 app.MapGrpcService<OnvifServiceImpl>();
 app.MapGrpcService<PtzServiceImpl>();
+app.MapGrpcService<DeviceIoServiceImpl>();
 app.Run();
 
 static async Task RetryAsync(Func<Task> action)

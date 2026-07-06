@@ -406,16 +406,19 @@ public class OnvifServiceImpl(
   {
     var capsTask = settingsService.GetCapabilitiesAsync(request.SourceId, context.CancellationToken);
     var audioConfigsTask = settingsService.GetAudioConfigsAsync(request.SourceId, context.CancellationToken);
-    await Task.WhenAll(capsTask, audioConfigsTask);
+    var hasRelayOutputsTask = settingsService.HasRelayOutputsAsync(request.SourceId, context.CancellationToken);
+    await Task.WhenAll(capsTask, audioConfigsTask, hasRelayOutputsTask);
     var caps = capsTask.Result;
     var audioConfigs = audioConfigsTask.Result;
 
     return new GetDeviceCapabilitiesResponse
     {
-      HasPtz     = caps?.HasPtz ?? false,
-      HasImaging = caps?.HasImaging ?? false,
-      HasEvents  = caps?.HasEvents ?? false,
-      HasAudio   = audioConfigs.Count > 0,
+      HasPtz           = caps?.HasPtz ?? false,
+      HasImaging       = caps?.HasImaging ?? false,
+      HasEvents        = caps?.HasEvents ?? false,
+      HasAudio         = audioConfigs.Count > 0,
+      HasRelayOutputs  = hasRelayOutputsTask.Result,
+      HasDigitalInputs = caps?.HasDigitalInputs ?? false,
     };
   }
 
