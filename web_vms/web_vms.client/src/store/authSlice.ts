@@ -55,6 +55,14 @@ const authSlice = createSlice({
       localStorage.removeItem(TOKEN_KEY)
       localStorage.removeItem(REFRESH_TOKEN_KEY)
     },
+    // Applied after a silent token refresh (see installAuthFetch) — Keycloak rotates the refresh
+    // token too, so both are replaced.
+    setTokens(state, action: { payload: { token: string; refreshToken: string } }) {
+      state.token = action.payload.token
+      state.refreshToken = action.payload.refreshToken
+      localStorage.setItem(TOKEN_KEY, action.payload.token)
+      localStorage.setItem(REFRESH_TOKEN_KEY, action.payload.refreshToken)
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -74,5 +82,5 @@ const authSlice = createSlice({
   },
 })
 
-export const { logout } = authSlice.actions
+export const { logout, setTokens } = authSlice.actions
 export default authSlice.reducer
