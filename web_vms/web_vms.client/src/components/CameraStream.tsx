@@ -273,9 +273,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
       {/* Analytics bbox overlay — a separate SSE channel + <canvas> layer, fully decoupled from the
           WebRTC pipeline above (and it owns the detection hook, so detection updates never re-render
           this component or the <video>), so enabling it never adds latency to the live video. */}
-      {bboxEnabled && cameraId && (
-        <BboxOverlay videoRef={videoRef} cameraId={cameraId} enabled={bboxEnabled} />
-      )}
+      {bboxEnabled && cameraId && <BboxOverlay videoRef={videoRef} cameraId={cameraId} />}
     </Box>
   );
 };

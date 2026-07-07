@@ -22,8 +22,7 @@ public sealed class AnalyticsServiceImpl(
     var response = new GetAnalyticsActivityResponse();
     foreach (var e in activityLog.GetRecent(limit))
     {
-      var entry = ToProto(e, includeCrop: true);
-      response.Events.Add(entry);
+      response.Events.Add(ToProto(e));
     }
     return Task.FromResult(response);
   }
@@ -33,13 +32,28 @@ public sealed class AnalyticsServiceImpl(
     IServerStreamWriter<ProtoActivityEntry> responseStream,
     ServerCallContext context)
   {
-    // crop_jpeg is intentionally dropped here — the overlay only needs geometry + labels, and the
-    // crop can be several KB per detection.
-    await foreach (var e in liveBroadcaster.Subscribe(request.CameraId, context.CancellationToken))
-      await responseStream.WriteAsync(ToProto(e, includeCrop: false));
+    // Empty camera_id means "all cameras" — the frontend multiplexes one stream for the whole
+    // monitor rather than opening one connection per camera. crop_jpeg is never populated (the
+    // broadcaster already carries a geometry-only projection).
+    var cameraId = string.IsNullOrEmpty(request.CameraId) ? null : request.CameraId;
+    await foreach (var e in liveBroadcaster.Subscribe(cameraId, context.CancellationToken))
+    {
+      var entry = new ProtoActivityEntry
+      {
+        CameraId   = e.CameraId,
+        TrackId    = e.TrackId,
+        Kind       = DetectionKinds.Parse(e.Kind),
+        Confidence = e.Confidence,
+        Bbox       = new BoundingBox { X = e.BboxX, Y = e.BboxY, Width = e.BboxWidth, Height = e.BboxHeight },
+        DetectedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.DetectedAt, DateTimeKind.Utc)),
+        Persisted  = e.Persisted,
+      };
+      if (e.PlateText is not null) entry.PlateText = e.PlateText;
+      await responseStream.WriteAsync(entry);
+    }
   }
 
-  private static ProtoActivityEntry ToProto(AnalyticsActivityEntry e, bool includeCrop)
+  private static ProtoActivityEntry ToProto(AnalyticsActivityEntry e)
   {
     var entry = new ProtoActivityEntry
     {
@@ -49,7 +63,7 @@ public sealed class AnalyticsServiceImpl(
       Confidence = e.Confidence,
       Bbox       = new BoundingBox { X = e.BboxX, Y = e.BboxY, Width = e.BboxWidth, Height = e.BboxHeight },
       DetectedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.DetectedAt, DateTimeKind.Utc)),
-      CropJpeg   = includeCrop ? Google.Protobuf.ByteString.CopyFrom(e.CropJpeg) : Google.Protobuf.ByteString.Empty,
+      CropJpeg   = Google.Protobuf.ByteString.CopyFrom(e.CropJpeg),
       Persisted  = e.Persisted,
     };
     if (e.PlateText is not null) entry.PlateText = e.PlateText;

@@ -56,21 +56,7 @@ public class AnalyticsWatchController(
       new GetAnalyticsActivityRequest { Limit = (uint)Math.Clamp(limit ?? 50, 1, 100) }, CfgOptions(ct));
 
     var events = response.Events
-      .Select(e => new AnalyticsActivityEntryDto
-      {
-        CameraId       = e.CameraId,
-        TrackId        = e.TrackId,
-        Kind           = AnalyticsKindMapper.ToStringId(e.Kind),
-        Confidence     = e.Confidence,
-        BboxX          = e.Bbox?.X ?? 0,
-        BboxY          = e.Bbox?.Y ?? 0,
-        BboxWidth      = e.Bbox?.Width ?? 0,
-        BboxHeight     = e.Bbox?.Height ?? 0,
-        DetectedAt     = e.DetectedAt.ToDateTime(),
-        PlateText      = e.HasPlateText ? e.PlateText : null,
-        CropJpegBase64 = e.CropJpeg.IsEmpty ? null : Convert.ToBase64String(e.CropJpeg.ToByteArray()),
-        Persisted      = e.Persisted,
-      })
+      .Select(e => AnalyticsActivityMapper.ToDto(e, includeCrop: true))
       .OrderByDescending(e => e.DetectedAt)
       .ToList();
 

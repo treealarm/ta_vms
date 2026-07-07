@@ -9,14 +9,53 @@ public class CameraManager : ICameraManager
   private static readonly TimeSpan CfgCallTimeout = TimeSpan.FromSeconds(5);
 
   private readonly CfgService.CfgServiceClient _cfgClient;
+  private readonly ILogger<CameraManager> _logger;
 
-  public CameraManager(CfgService.CfgServiceClient cfgClient)
+  public CameraManager(CfgService.CfgServiceClient cfgClient, ILogger<CameraManager> logger)
   {
     _cfgClient = cfgClient;
+    _logger = logger;
   }
 
   private static CallOptions CfgOptions(CancellationToken ct = default) =>
     new(deadline: DateTime.UtcNow.Add(CfgCallTimeout), cancellationToken: ct);
+
+  // Short-lived cache of the enabled-analytics-watch camera set. It gates the live bbox overlay
+  // toggle and is read on the per-camera state poll (every 5s per open card) as well as the camera
+  // list — reading it uncached would hammer VmsCfg with a config lookup that rarely changes, which
+  // CLAUDE.md forbids on hot paths. A refresh failure keeps the last good set instead of throwing,
+  // so a VmsCfg/analytics hiccup never fails the core camera list/state endpoints.
+  private static readonly TimeSpan AnalyticsCacheTtl = TimeSpan.FromSeconds(15);
+  private readonly SemaphoreSlim _analyticsRefreshLock = new(1, 1);
+  private volatile HashSet<string> _analyticsEnabled = new();
+  private DateTime _analyticsCachedAtUtc = DateTime.MinValue;
+
+  private async Task<HashSet<string>> GetAnalyticsEnabledAsync(CancellationToken ct)
+  {
+    if (DateTime.UtcNow - _analyticsCachedAtUtc < AnalyticsCacheTtl)
+      return _analyticsEnabled;
+
+    await _analyticsRefreshLock.WaitAsync(ct);
+    try
+    {
+      if (DateTime.UtcNow - _analyticsCachedAtUtc < AnalyticsCacheTtl)
+        return _analyticsEnabled;
+
+      var response = await _cfgClient.ListAnalyticsWatchesAsync(new ListAnalyticsWatchesRequest(), CfgOptions(ct));
+      _analyticsEnabled = response.Watches.Where(w => w.Enabled).Select(w => w.CameraId).ToHashSet();
+      _analyticsCachedAtUtc = DateTime.UtcNow;
+    }
+    catch (Exception ex)
+    {
+      // Keep serving the last-known set — the overlay flag is not worth failing a camera query over.
+      _logger.LogWarning(ex, "Failed to refresh analytics-watch cache; serving stale set");
+    }
+    finally
+    {
+      _analyticsRefreshLock.Release();
+    }
+    return _analyticsEnabled;
+  }
 
   public async Task<bool> Add(CameraSetupDto dto, CancellationToken ct = default)
   {
@@ -36,18 +75,11 @@ public class CameraManager : ICameraManager
     return response.Cameras.Select(ToDto).ToList();
   }
 
-  public async Task<HashSet<string>> AnalyticsEnabledCameraIds(CancellationToken ct = default)
-  {
-    var response = await _cfgClient.ListAnalyticsWatchesAsync(new ListAnalyticsWatchesRequest(), CfgOptions(ct));
-    return response.Watches.Where(w => w.Enabled).Select(w => w.CameraId).ToHashSet();
-  }
+  public async Task<HashSet<string>> AnalyticsEnabledCameraIds(CancellationToken ct = default) =>
+    await GetAnalyticsEnabledAsync(ct);
 
-  public async Task<bool> HasEnabledAnalyticsWatch(string cameraId, CancellationToken ct = default)
-  {
-    var response = await _cfgClient.ListAnalyticsWatchesAsync(
-      new ListAnalyticsWatchesRequest { CameraId = cameraId }, CfgOptions(ct));
-    return response.Watches.Any(w => w.Enabled);
-  }
+  public async Task<bool> HasEnabledAnalyticsWatch(string cameraId, CancellationToken ct = default) =>
+    (await GetAnalyticsEnabledAsync(ct)).Contains(cameraId);
 
   public async Task<List<MediaServerNodeDto>> ListServers(CancellationToken ct = default)
   {

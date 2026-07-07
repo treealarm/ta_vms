@@ -4,13 +4,13 @@ import { useLiveDetections } from '../hooks/useLiveDetections'
 interface Props {
   videoRef: RefObject<HTMLVideoElement | null>
   cameraId: string
-  enabled: boolean
 }
 
 // Deterministic, well-spread color per track (golden-angle hue rotation). A track and its child
 // face/plate share trackId, so they intentionally get the same color.
 function trackColor(trackId: number): string {
-  const hue = ((trackId % 360) * 137.508) % 360
+  // Golden-angle hue rotation spreads adjacent track ids far apart on the color wheel.
+  const hue = (trackId * 137.508) % 360
   return `hsl(${hue}, 85%, 55%)`
 }
 
@@ -35,8 +35,8 @@ const LINE = FONT_PX + 2
  * Reads the video's intrinsic size vs. its rendered size to undo objectFit:contain letterboxing so
  * normalized (0..1) bboxes land on the actual image, not the black bars.
  */
-export default function BboxOverlay({ videoRef, cameraId, enabled }: Props) {
-  const detections = useLiveDetections(cameraId, enabled)
+export default function BboxOverlay({ videoRef, cameraId }: Props) {
+  const detections = useLiveDetections(cameraId)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const detectionsRef = useRef(detections)
 

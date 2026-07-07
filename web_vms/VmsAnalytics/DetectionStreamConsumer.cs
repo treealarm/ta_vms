@@ -90,8 +90,12 @@ public sealed class DetectionStreamConsumer(
     activityLog.Record(activityEntry);
 
     // Feed the live overlay with every above-threshold detection (armed or not, debounced or not)
-    // so bboxes track smoothly — gating this on `persisted` would make boxes flicker.
-    liveBroadcaster.Publish(activityEntry);
+    // so bboxes track smoothly — gating this on `persisted` would make boxes flicker. A geometry-only
+    // projection (no crop bytes) is published so the overlay channels stay small.
+    liveBroadcaster.Publish(new LiveDetection(
+      cameraId, evt.TrackId, DetectionKinds.ToDbString(evt.Kind), evt.Confidence,
+      evt.Bbox?.X ?? 0, evt.Bbox?.Y ?? 0, evt.Bbox?.Width ?? 0, evt.Bbox?.Height ?? 0,
+      detectedAt, evt.HasRecognizedText ? evt.RecognizedText : null, persisted));
 
     if (!persisted)
       return;
