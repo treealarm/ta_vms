@@ -10,7 +10,11 @@ public sealed class LogServiceImpl : LogService.LogServiceBase
 {
   private const uint DefaultLimit = 100;
   private const uint MaxLimit = 10000;
-  private static readonly JsonParser Parser = JsonParser.Default;
+  // Ignore unknown fields: older log files carry fields the proto no longer has (e.g.
+  // "exception"), and a failed parse both hides the entry and defeats the early-exit on
+  // entries older than `from`, forcing a full-file backward scan.
+  private static readonly JsonParser Parser =
+    new(JsonParser.Settings.Default.WithIgnoreUnknownFields(true));
 
   public override Task<ListLogSourcesResponse> ListLogSources(
     Empty request, ServerCallContext context)
@@ -80,8 +84,13 @@ public sealed class LogServiceImpl : LogService.LogServiceBase
     }
 
     // Return in chronological order (oldest-first); the client renders newest on top.
+    // `collected` is grouped by file (services interleave arbitrarily), so a global sort
+    // is required. Reverse() first restores write order within each file, and the sort is
+    // stable, so entries with equal timestamps keep it.
     collected.Reverse();
-    response.Logs.AddRange(collected);
+    response.Logs.AddRange(collected
+      .OrderBy(e => e.Timestamp?.Seconds ?? 0)
+      .ThenBy(e => e.Timestamp?.Nanos ?? 0));
     return Task.FromResult(response);
   }
 

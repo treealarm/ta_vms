@@ -367,7 +367,8 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
     {
       const auto gap_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         write_started_at - m_last_video_write_at).count();
-      if (gap_ms > 150)
+      // Source jitter up to a few hundred ms is normal; flag only real stalls.
+      if (gap_ms > 1000)
       {
         const auto audio_ms = m_last_audio_write_at == std::chrono::steady_clock::time_point{}
           ? -1
@@ -388,7 +389,7 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
   const int write_result = av_interleaved_write_frame(m_ctx.get(), pkt);
   const auto write_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
     std::chrono::steady_clock::now() - write_started_at).count();
-  if (write_ms > 40)
+  if (write_ms > 200)
     logger::instance().warning(std::format(
       "DIAG rtsp_output_sink: slow mux write={}ms type={} key={}",
       write_ms, (int)stream->media_type, (int)((pkt->flags & AV_PKT_FLAG_KEY) != 0)));

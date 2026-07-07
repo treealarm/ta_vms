@@ -227,7 +227,9 @@ void rtsp_reader::read_loop()
       {
         const auto gap_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
           now - last_video_at).count();
-        if (gap_ms > 150)
+        // Cameras with an overloaded encoder legitimately pace frames unevenly
+        // (~75-300ms observed); only a second-long hole is a real delivery stall.
+        if (gap_ms > 1000)
           logger::instance().warning(std::format(
             "DIAG rtsp_reader: video source gap={}ms key={} [cam={}]",
             gap_ms, (int)((pkt->flags & AV_PKT_FLAG_KEY) != 0), m_cam_id));

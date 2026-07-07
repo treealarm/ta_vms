@@ -59,7 +59,9 @@ webrtc_output_sink::webrtc_output_sink(std::string rtsp_url)
         send_to_sinks(qp);
         const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::steady_clock::now() - t0).count();
-        if (ms > 40 || depth > 8)
+        // Keyframe transcode legitimately takes ~40-60ms; flag only stalls that
+        // eat multiple frame intervals or a backlog nearing the drop threshold.
+        if (ms > 200 || depth > 24)
           logger::instance().warning(std::format(
             "DIAG webrtc_output_sink: process={}ms backlog={} key={}",
             ms, depth,

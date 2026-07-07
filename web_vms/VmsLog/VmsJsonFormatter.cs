@@ -19,12 +19,12 @@ internal sealed class VmsJsonFormatter : ITextFormatter
     output.Write("\",\"file\":");
     JsonValueFormatter.WriteQuotedJsonString(SourceContext(logEvent), output);
     output.Write(",\"function\":\"\",\"message\":");
-    JsonValueFormatter.WriteQuotedJsonString(logEvent.RenderMessage(), output);
-    if (logEvent.Exception is not null)
-    {
-      output.Write(",\"exception\":");
-      JsonValueFormatter.WriteQuotedJsonString(logEvent.Exception.ToString(), output);
-    }
+    // The exception goes into "message" rather than a separate field: LogEntry in
+    // logger.proto has no "exception" field, and VmsLogger drops unknown fields.
+    var message = logEvent.Exception is null
+      ? logEvent.RenderMessage()
+      : logEvent.RenderMessage() + "\n" + logEvent.Exception;
+    JsonValueFormatter.WriteQuotedJsonString(message, output);
     output.Write("}\n");
   }
 
