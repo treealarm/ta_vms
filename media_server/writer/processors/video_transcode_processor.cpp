@@ -1,5 +1,6 @@
 #include "writer/processors/video_transcode_processor.h"
 
+#include <algorithm>
 #include <format>
 
 extern "C" {
@@ -54,7 +55,7 @@ video_transcode_processor::~video_transcode_processor()
   }
 }
 
-bool video_transcode_processor::init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base, emit_fn emit)
+bool video_transcode_processor::init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base, AVRational frame_rate, emit_fn emit)
 {
   if (!codec_parameters) {
     logger::instance().warning("video_transcode_processor: empty codec parameters");
@@ -102,10 +103,30 @@ bool video_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
   m_encoder_ctx->height = m_decoder_ctx->height;
   m_encoder_ctx->sample_aspect_ratio = m_decoder_ctx->sample_aspect_ratio;
   m_encoder_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
+  // Keep the source (90kHz) time_base for PTS precision; rate control fps comes from `framerate`.
   m_encoder_ctx->time_base = time_base.num > 0 ? time_base : AVRational{ 1, 25 };
-  m_encoder_ctx->framerate = av_inv_q(m_encoder_ctx->time_base);
   m_encoder_ctx->max_b_frames = 0;
   m_encoder_ctx->gop_size = m_decoder_ctx->gop_size >= 1 ? m_decoder_ctx->gop_size : 25;
+
+  // Real frame rate for correct rate-control calibration. Deriving fps from the RTSP time_base
+  // (a 90kHz clock) would give ~90000 fps and wreck the VBV model below — use the stream's actual
+  // frame rate, falling back to 25 when it isn't advertised.
+  const AVRational fps = (frame_rate.num > 0 && frame_rate.den > 0) ? frame_rate : AVRational{ 25, 1 };
+  m_encoder_ctx->framerate = fps;
+  const double fps_d = av_q2d(fps);
+
+  // Cap the peak bitrate (VBV) so keyframes don't burst ~10-20x the average and stall the WebRTC
+  // client's jitter buffer (the periodic freeze on HEVC->H264 streams). Encoding stays in CRF mode,
+  // so average quality is unchanged — only the largest I-frame spikes get spread over the ~1s VBV
+  // buffer. The ceiling is generous: from the source bitrate when advertised, else resolution x fps.
+  const int64_t src_rate = m_decoder_ctx->bit_rate > 0 ? m_decoder_ctx->bit_rate
+                         : (codec_parameters->bit_rate > 0 ? codec_parameters->bit_rate : 0);
+  int64_t max_rate = src_rate > 0
+    ? src_rate * 2 // HEVC->H264 headroom plus peak allowance
+    : static_cast<int64_t>(static_cast<double>(m_encoder_ctx->width) * m_encoder_ctx->height * fps_d * 0.15);
+  max_rate = std::clamp<int64_t>(max_rate, 1'000'000, 20'000'000); // 1..20 Mbps sanity bounds
+  m_encoder_ctx->rc_max_rate = max_rate;
+  m_encoder_ctx->rc_buffer_size = max_rate; // ~1s VBV window smooths the I-frame spike
 
   av_opt_set(m_encoder_ctx->priv_data, "preset", "veryfast", 0);
   av_opt_set(m_encoder_ctx->priv_data, "tune", "zerolatency", 0);

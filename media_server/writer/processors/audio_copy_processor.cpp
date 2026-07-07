@@ -2,7 +2,7 @@
 
 #include "interfaces/media_packet.h"
 
-bool audio_copy_processor::init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base, emit_fn emit)
+bool audio_copy_processor::init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base, AVRational, emit_fn emit)
 {
   m_emit = std::move(emit);
   m_out_codec_parameters = codec_parameters;

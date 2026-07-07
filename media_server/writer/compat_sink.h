@@ -25,7 +25,7 @@ public:
 private:
   std::unique_ptr<stream_processor> create_processor(const avcodec_parameters_ptr& codec_parameters) const;
   void emit_packet(const std::shared_ptr<media_packet>& media);
-  bool init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base);
+  bool init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base, AVRational frame_rate);
   bool should_reinitialize(const std::shared_ptr<media_packet>& media) const;
 
   mutable std::mutex m_mutex;

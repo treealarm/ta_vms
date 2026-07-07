@@ -95,6 +95,8 @@ set(SOURCES
     writer/processors/audio_transcode_processor.h
     writer/rtsp_output_sink.cpp
     writer/rtsp_output_sink.h
+    writer/rtsp_timeline_cache.cpp
+    writer/rtsp_timeline_cache.h
     writer/webrtc_output_sink.cpp
     writer/webrtc_output_sink.h
     writer/sync_packet_transcoder.cpp

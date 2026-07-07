@@ -17,7 +17,7 @@ public:
 
   virtual ~stream_processor() = default;
 
-  virtual bool init(const avcodec_parameters_ptr&, AVRational, emit_fn) = 0;
+  virtual bool init(const avcodec_parameters_ptr&, AVRational time_base, AVRational frame_rate, emit_fn) = 0;
   virtual void process(const std::shared_ptr<media_packet>&) = 0;
   virtual void flush() = 0;
 

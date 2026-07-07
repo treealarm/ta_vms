@@ -71,7 +71,7 @@ audio_transcode_processor::~audio_transcode_processor()
   }
 }
 
-bool audio_transcode_processor::init(const avcodec_parameters_ptr& codec_parameters, AVRational, emit_fn emit)
+bool audio_transcode_processor::init(const avcodec_parameters_ptr& codec_parameters, AVRational, AVRational, emit_fn emit)
 {
   if (!codec_parameters) {
     logger::instance().warning("audio_transcode_processor: empty codec parameters");

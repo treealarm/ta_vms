@@ -1,10 +1,37 @@
 ﻿#include <format>
+#include <cstdlib>
 
+#include "rtsp_timeline_cache.h"
 #include "writer/rtsp_output_sink.h"
 #include "av_utils/need_reinit.h"
 #include "logger/logger.h"
 
+namespace {
+avcodec_parameters_ptr copy_codec_parameters(const AVCodecParameters* source)
+{
+  if (!source) {
+    return nullptr;
+  }
+  avcodec_parameters_ptr copy(
+    avcodec_parameters_alloc(),
+    [](AVCodecParameters* params) { avcodec_parameters_free(&params); });
+  if (!copy || avcodec_parameters_copy(copy.get(), source) < 0) {
+    return nullptr;
+  }
+  return copy;
+}
 
+bool codecpar_ready_for_mux(const AVCodecParameters* par)
+{
+  if (!par || par->codec_type == AVMEDIA_TYPE_UNKNOWN) {
+    return false;
+  }
+  if (par->codec_type == AVMEDIA_TYPE_VIDEO && par->width <= 0 && par->height <= 0) {
+    return false;
+  }
+  return true;
+}
+}  // namespace
 
 rtsp_output_sink::rtsp_output_sink(std::string rtsp_url)
   : m_rtsp_url(std::move(rtsp_url))
@@ -15,7 +42,7 @@ rtsp_output_sink::rtsp_output_sink(std::string rtsp_url)
 
 rtsp_output_sink::~rtsp_output_sink()
 {
-  close();
+  close_unlocked();
 }
 
 bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
@@ -23,17 +50,18 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
   const auto video_config = m_video_config;
   const auto audio_config = m_audio_config;
 
-  close();
+  close_unlocked();
 
   m_video_config = video_config;
   m_audio_config = audio_config;
+  m_last_master_pts = AV_NOPTS_VALUE;
 
   if (streams.empty() || m_rtsp_url.empty()) {
     return false;
   }
   AVFormatContext* ctx = nullptr;
 
-  if (avformat_alloc_output_context2(&ctx, nullptr, "rtsp", m_rtsp_url.c_str()) < 0 || !ctx) 
+  if (avformat_alloc_output_context2(&ctx, nullptr, "rtsp", m_rtsp_url.c_str()) < 0 || !ctx)
   {
     logger::instance().error("failed to allocate rtsp output context");
     return false;
@@ -42,24 +70,30 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
 
   m_streams.clear();
   m_streams.reserve(streams.size());
+  bool restored_master_timing = false;
 
   for (const auto& stream : streams) {
     if (!stream.codec_parameters) {
+      continue;
+    }
+    if (!codecpar_ready_for_mux(stream.codec_parameters.get())) {
+      logger::instance().warning("rtsp output sink: codec parameters not ready for mux");
       continue;
     }
 
     AVStream* out_stream = avformat_new_stream(m_ctx.get(), nullptr);
     if (!out_stream) {
       logger::instance().error("failed to create rtsp output stream");
-      close();
+      close_unlocked();
       return false;
     }
 
     if (avcodec_parameters_copy(out_stream->codecpar, stream.codec_parameters.get()) < 0) {
       logger::instance().error("failed to copy codec parameters");
-      close();
+      close_unlocked();
       return false;
     }
+    out_stream->codecpar->codec_tag = 0;
 
     out_stream->time_base = m_master_time_base;
 
@@ -67,11 +101,24 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
     state.media_type = stream.media_type;
     state.out_stream = out_stream;
     state.input_time_base = stream.time_base;
+    const bool can_restore_timing =
+      state.media_type == AVMEDIA_TYPE_VIDEO || !m_video_config.codec_parameters ||
+      restored_master_timing;
+    const bool restored_timing = can_restore_timing
+      && rtsp_timeline_cache::instance().restore(
+        m_rtsp_url, state.media_type, state.last_dts, state.last_pts);
+    if (restored_timing) {
+      state.pending_timestamp_offset = true;
+      if (state.media_type == AVMEDIA_TYPE_VIDEO) {
+        m_last_master_pts = state.last_pts;
+        restored_master_timing = true;
+      }
+    }
     m_streams.push_back(state);
   }
 
   if (m_streams.empty()) {
-    close();
+    close_unlocked();
     return false;
   }
 
@@ -84,7 +131,7 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
   if (avformat_write_header(m_ctx.get(), &opts) < 0) {
     logger::instance().error("failed to write rtsp header");
     av_dict_free(&opts);
-    close();
+    close_unlocked();
     return false;
   }
 
@@ -94,21 +141,6 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
   m_wait_keyframe = true;
   m_consecutive_write_errors = 0;
   return true;
-}
-
-bool rtsp_output_sink::try_init(const std::vector<stream_config>& streams)
-{
-  const auto now = std::chrono::steady_clock::now();
-  if (now < m_next_init_attempt) {
-    return false;
-  }
-
-  if (init(streams)) {
-    return true;
-  }
-
-  m_next_init_attempt = now + kInitRetryInterval;
-  return false;
 }
 
 rtsp_output_sink::stream_state* rtsp_output_sink::find_stream(AVMediaType media_type)
@@ -151,7 +183,11 @@ bool rtsp_output_sink::update_stream_config_from_packet(const std::shared_ptr<me
       media->time_base
     );
 
-  config->codec_parameters = media->codec_parameters;
+  auto copied = copy_codec_parameters(media->codec_parameters.get());
+  if (!copied) {
+    return changed;
+  }
+  config->codec_parameters = std::move(copied);
   config->time_base = media->time_base;
 
   return changed;
@@ -178,6 +214,8 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
     return;
   }
 
+  std::lock_guard<std::mutex> lock(m_mutex);
+
   auto media = clone_media_packet(in_media);
   if (!media)
     return;
@@ -186,7 +224,7 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
 
   if (!m_is_initialized) {
     const auto streams = collect_known_streams();
-    if (streams.empty() || !try_init(streams)) {
+    if (streams.empty() || !init(streams)) {
       return;
     }
   }
@@ -194,7 +232,7 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
     auto* existing_stream = find_stream(media->media_type);
     if (!existing_stream || config_changed) {
       const auto streams = collect_known_streams();
-      if (streams.empty() || !try_init(streams)) {
+      if (streams.empty() || !init(streams)) {
         return;
       }
     }
@@ -214,38 +252,50 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
       return; // ждём keyframe
     }
     m_wait_keyframe = false;
-
-    if (pkt->pts <= 0)
-    {
-      m_last_master_pts = 0;
-    }
-    else
-    {
-      m_last_master_pts = pkt->pts;
-    }
   }
 
   // --- 1. Рескейл в out_stream->time_base (как раньше) ---
   av_packet_rescale_ts(pkt, media->time_base, stream->out_stream->time_base);
 
-
-  // --- 2. Подгонка PTS/DTS под master (видео) ---
-  if (stream->media_type != AVMEDIA_TYPE_VIDEO)
-  {
-    const int64_t threshold = 180; // ~2 мс в timebase 1/90000
-    int64_t offset = m_last_master_pts - pkt->pts;
-
-    if (std::abs(offset) > threshold)
-    {
-      // сильный рассинхрон → подгоняем
-      pkt->pts = m_last_master_pts;
-      pkt->dts = m_last_master_pts;
-    }
-  }
-
-  // --- 3. Восстановление отсутствующих PTS/DTS ---
   int64_t step = pkt->duration > 0 ? pkt->duration : 1;
 
+  // File loop: source PTS restarts near zero; bump forward so muxer DTS stays monotonic.
+  // Live RTSP never jumps backward by ~10 s — threshold avoids false positives.
+  constexpr int64_t kLoopBackwardThreshold = 900000; // ~10 s at 1/90000
+  if (stream->last_pts != AV_NOPTS_VALUE
+    && pkt->pts != AV_NOPTS_VALUE
+    && pkt->pts + kLoopBackwardThreshold < stream->last_pts)
+  {
+    const int64_t base_ts = pkt->pts;
+    const int64_t target_next = stream->last_pts + step;
+    const int64_t timestamp_offset = target_next - base_ts;
+
+    if (pkt->pts != AV_NOPTS_VALUE) {
+      pkt->pts += timestamp_offset;
+    }
+    if (pkt->dts != AV_NOPTS_VALUE) {
+      pkt->dts += timestamp_offset;
+    }
+    stream->pending_timestamp_offset = false;
+  }
+
+  if (stream->pending_timestamp_offset
+    && (pkt->pts != AV_NOPTS_VALUE || pkt->dts != AV_NOPTS_VALUE)) {
+    const int64_t base_ts = pkt->pts != AV_NOPTS_VALUE ? pkt->pts : pkt->dts;
+    const int64_t target_next = stream->last_pts != AV_NOPTS_VALUE ? stream->last_pts + step : base_ts;
+    const int64_t timestamp_offset = target_next - base_ts;
+
+    if (pkt->pts != AV_NOPTS_VALUE) {
+      pkt->pts += timestamp_offset;
+    }
+    if (pkt->dts != AV_NOPTS_VALUE) {
+      pkt->dts += timestamp_offset;
+    }
+
+    stream->pending_timestamp_offset = false;
+  }
+
+  // --- 2. Восстановление отсутствующих PTS/DTS ---
   if (pkt->pts <= 0 && pkt->dts <= 0) {
     int64_t next = (stream->last_dts != AV_NOPTS_VALUE) ? stream->last_dts + step : 0;
     pkt->pts = pkt->dts = next;
@@ -255,6 +305,19 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
   }
   else if (pkt->dts <= 0) {
     pkt->dts = pkt->pts;
+  }
+
+  // --- 3. Подгонка PTS/DTS под master (видео) ---
+  if (stream->media_type != AVMEDIA_TYPE_VIDEO && m_last_master_pts != AV_NOPTS_VALUE)
+  {
+    const int64_t threshold = 180; // ~2 ms at 1/90000
+    int64_t offset = m_last_master_pts - pkt->pts;
+
+    if (std::abs(offset) > threshold)
+    {
+      pkt->pts = m_last_master_pts;
+      pkt->dts = m_last_master_pts;
+    }
   }
 
   // --- 4. Монотонность внутри потока ---
@@ -270,14 +333,11 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
     pkt->pts = pkt->dts;
   }
 
-
   pkt->stream_index = stream->out_stream->index;
 
-  // --- 6. Обновляем last_pts/last_dts ---
   stream->last_dts = pkt->dts;
   stream->last_pts = pkt->pts;
 
-  // --- 7. Обновляем master PTS если это видео ---
   if (stream->media_type == AVMEDIA_TYPE_VIDEO) {
     m_last_master_pts = pkt->pts;
   }
@@ -286,29 +346,39 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
   {
     logger::instance().warning("rtsp output sink: pkt->pts < 0");
   }
-  // --- 5. Запись пакета ---
-  const int write_result = av_interleaved_write_frame(m_ctx.get(), pkt);
-  if (write_result < 0) {
+  if (av_interleaved_write_frame(m_ctx.get(), pkt) < 0) {
     ++m_consecutive_write_errors;
 
-    char errbuf[256] = {0};
-    av_strerror(write_result, errbuf, sizeof(errbuf));
     constexpr int critical_write_error_threshold = 3;
     logger::instance().error(std::format(
-      "failed to write packet to rtsp output (consecutive errors: {}): code={} msg={} media_type={}",
-      m_consecutive_write_errors, write_result, errbuf, (int)stream->media_type));
+      "failed to write packet to rtsp output (consecutive errors: {})",
+      m_consecutive_write_errors));
 
     if (m_consecutive_write_errors >= critical_write_error_threshold) {
       logger::instance().warning("rtsp output sink watchdog: closing broken output context for reinit");
-      close();
+      close_unlocked();
     }
     return;
   }
 
   m_consecutive_write_errors = 0;
+  rtsp_timeline_cache::instance().persist(
+    m_rtsp_url, stream->media_type, stream->last_dts, stream->last_pts);
+}
+
+void rtsp_output_sink::request_video_keyframe()
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+  m_wait_keyframe = true;
 }
 
 void rtsp_output_sink::close()
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+  close_unlocked();
+}
+
+void rtsp_output_sink::close_unlocked()
 {
   if (!m_ctx) {
     m_streams.clear();

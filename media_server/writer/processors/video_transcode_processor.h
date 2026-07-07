@@ -11,7 +11,7 @@ public:
   explicit video_transcode_processor(AVCodecID codec_id = AV_CODEC_ID_H264);
   ~video_transcode_processor() override;
 
-  bool init(const avcodec_parameters_ptr&, AVRational, emit_fn) override;
+  bool init(const avcodec_parameters_ptr&, AVRational time_base, AVRational frame_rate, emit_fn) override;
   void process(const std::shared_ptr<media_packet>&) override;
   void flush() override;
   const avcodec_parameters_ptr& output_codec_parameters() const override;

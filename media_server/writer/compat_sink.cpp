@@ -15,21 +15,21 @@ compat_sink::~compat_sink()
   close();
 }
 
-bool compat_sink::init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base)
+bool compat_sink::init(const avcodec_parameters_ptr& codec_parameters, AVRational time_base, AVRational frame_rate)
 {
   close();
 
   std::lock_guard<std::mutex> lock(m_mutex);
 
   m_processor = create_processor(codec_parameters);
-  if (!m_processor) 
+  if (!m_processor)
   {
     logger::instance().warning("compat_sink: failed to create stream processor");
     return false;
   }
 
-  if (!m_processor->init(codec_parameters, time_base, [this](const std::shared_ptr<media_packet>& media)
-    { emit_packet(media); })) 
+  if (!m_processor->init(codec_parameters, time_base, frame_rate, [this](const std::shared_ptr<media_packet>& media)
+    { emit_packet(media); }))
   {
     logger::instance().warning("compat_sink: processor initialization failed");
     m_processor.reset();
@@ -110,7 +110,7 @@ void compat_sink::on_packet(const std::shared_ptr<media_packet>& media)
 
   if (should_reinitialize(media)) 
   {
-    if (!init(media->codec_parameters, media->time_base)) 
+    if (!init(media->codec_parameters, media->time_base, media->frame_rate))
     {
       logger::instance().warning("compat_sink: reinitialization failed, dropping packet");
       return;

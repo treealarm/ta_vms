@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include <chrono>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -23,6 +23,8 @@ public:
 
   void on_packet(const std::shared_ptr<media_packet>& media) override;
   void close();
+  /// After dropping queued packets, muxer must restart from the next keyframe.
+  void request_video_keyframe();
 
 private:
   struct stream_state {
@@ -31,11 +33,10 @@ private:
     AVRational input_time_base{};
     int64_t last_dts = AV_NOPTS_VALUE;
     int64_t last_pts = AV_NOPTS_VALUE;
+    bool pending_timestamp_offset = false;
   };
   bool init(const std::vector<stream_config>& streams);
-  // Wraps init(): throttles retries (and the "failed to write rtsp header"
-  // error log) to once per kInitRetryInterval while the target is unreachable.
-  bool try_init(const std::vector<stream_config>& streams);
+  void close_unlocked();
   stream_state* find_stream(AVMediaType media_type);
   bool update_stream_config_from_packet(const std::shared_ptr<media_packet>& media);
   std::vector<stream_config> collect_known_streams() const;
@@ -53,7 +54,5 @@ private:
 
   int64_t m_last_master_pts = AV_NOPTS_VALUE;
   AVRational m_master_time_base{ 1, 90000 }; // видео как master
-
-  static constexpr std::chrono::seconds kInitRetryInterval{ 5 };
-  std::chrono::steady_clock::time_point m_next_init_attempt{};
+  mutable std::mutex m_mutex;
 };

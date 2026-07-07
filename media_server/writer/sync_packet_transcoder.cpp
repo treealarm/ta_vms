@@ -84,7 +84,7 @@ bool sync_packet_transcoder::init_state(processor_state& state, const std::share
     return false;
   }
 
-  if (!processor->init(media->codec_parameters, media->time_base, [this, &state](const std::shared_ptr<media_packet>& out_media)
+  if (!processor->init(media->codec_parameters, media->time_base, media->frame_rate, [this, &state](const std::shared_ptr<media_packet>& out_media)
     {
       if (!out_media)
       {
