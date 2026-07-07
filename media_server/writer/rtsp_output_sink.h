@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <chrono>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -53,6 +54,11 @@ private:
   stream_config m_audio_config;
 
   int64_t m_last_master_pts = AV_NOPTS_VALUE;
-  AVRational m_master_time_base{ 1, 90000 }; // видео как master
+  AVRational m_master_time_base{ 1, 90000 }; // video is the master clock
   mutable std::mutex m_mutex;
+
+  // DIAG: cadence of packets handed to the muxer, to spot delivery gaps/bursts
+  // towards MediaMTX (e.g. interleave buffering starved by a sparse audio track).
+  std::chrono::steady_clock::time_point m_last_video_write_at{};
+  std::chrono::steady_clock::time_point m_last_audio_write_at{};
 };

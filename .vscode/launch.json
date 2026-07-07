@@ -246,7 +246,8 @@
                     "name": "VMS_WEBRTC_RTSP_BASE_URL",
                     "value": "rtsp://localhost:8554"
                 },
-                { "name": "VMS_MTX_HOST", "value": "localhost" }
+                { "name": "VMS_MTX_HOST", "value": "localhost" },
+                { "name": "VMS_WEBRTC_PUBLISH_AUDIO", "value": "0" }
             ],
             "cwd": "${workspaceFolder}/media_server",
             "stopAtEntry": false,

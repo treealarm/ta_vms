@@ -24,6 +24,10 @@ struct media_packet {
   int sample_rate = 0;
   int nb_samples = 0;
   avcodec_parameters_ptr codec_parameters;
+  // Monotonic receive time in microseconds (av_gettime_relative), -1 = unknown.
+  // Live re-timing uses it as the authoritative clock when the source stamps
+  // packets with a broken pts pace (see video_transcode_processor).
+  int64_t arrival_us = -1;
 };
 
 
@@ -49,6 +53,7 @@ inline std::shared_ptr<media_packet> clone_media_packet(const std::shared_ptr<me
   dst->nb_samples = src->nb_samples;
 
   dst->codec_parameters = src->codec_parameters;
+  dst->arrival_us = src->arrival_us;
 
   return dst;
 }

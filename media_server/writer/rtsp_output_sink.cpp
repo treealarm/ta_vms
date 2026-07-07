@@ -1,4 +1,5 @@
-﻿#include <format>
+﻿#include <chrono>
+#include <format>
 #include <cstdlib>
 
 #include "rtsp_timeline_cache.h"
@@ -140,6 +141,15 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
   m_is_initialized = true;
   m_wait_keyframe = true;
   m_consecutive_write_errors = 0;
+
+  bool has_video = false;
+  bool has_audio = false;
+  for (const auto& stream : m_streams) {
+    has_video = has_video || stream.media_type == AVMEDIA_TYPE_VIDEO;
+    has_audio = has_audio || stream.media_type == AVMEDIA_TYPE_AUDIO;
+  }
+  logger::instance().info(std::format(
+    "rtsp output sink initialized: video={} audio={}", has_video, has_audio));
   return true;
 }
 
@@ -346,7 +356,44 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
   {
     logger::instance().warning("rtsp output sink: pkt->pts < 0");
   }
-  if (av_interleaved_write_frame(m_ctx.get(), pkt) < 0) {
+
+  // DIAG: gap since the previous video packet handed to the muxer and time spent
+  // inside av_interleaved_write_frame. A large gap with a smooth reader means the
+  // stall is between transcode and mux; a long write means MediaMTX backpressure.
+  const auto write_started_at = std::chrono::steady_clock::now();
+  if (stream->media_type == AVMEDIA_TYPE_VIDEO)
+  {
+    if (m_last_video_write_at != std::chrono::steady_clock::time_point{})
+    {
+      const auto gap_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        write_started_at - m_last_video_write_at).count();
+      if (gap_ms > 150)
+      {
+        const auto audio_ms = m_last_audio_write_at == std::chrono::steady_clock::time_point{}
+          ? -1
+          : std::chrono::duration_cast<std::chrono::milliseconds>(
+              write_started_at - m_last_audio_write_at).count();
+        logger::instance().warning(std::format(
+          "DIAG rtsp_output_sink: video mux gap={}ms key={} since_last_audio={}ms",
+          gap_ms, (int)((pkt->flags & AV_PKT_FLAG_KEY) != 0), audio_ms));
+      }
+    }
+    m_last_video_write_at = write_started_at;
+  }
+  else if (stream->media_type == AVMEDIA_TYPE_AUDIO)
+  {
+    m_last_audio_write_at = write_started_at;
+  }
+
+  const int write_result = av_interleaved_write_frame(m_ctx.get(), pkt);
+  const auto write_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+    std::chrono::steady_clock::now() - write_started_at).count();
+  if (write_ms > 40)
+    logger::instance().warning(std::format(
+      "DIAG rtsp_output_sink: slow mux write={}ms type={} key={}",
+      write_ms, (int)stream->media_type, (int)((pkt->flags & AV_PKT_FLAG_KEY) != 0)));
+
+  if (write_result < 0) {
     ++m_consecutive_write_errors;
 
     constexpr int critical_write_error_threshold = 3;

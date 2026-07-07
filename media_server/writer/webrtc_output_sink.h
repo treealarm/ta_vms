@@ -27,7 +27,14 @@ private:
   std::mutex m_queue_mutex;
   std::condition_variable m_cv;
 
-  size_t m_max_queue = 200; // ןמהבטנאועס
+  // ~25fps: m_drop_to_live_at is ~1.8s of backlog, m_max_queue is a ~3.6s hard cap.
+  size_t m_max_queue = 90;
+  size_t m_drop_to_live_at = 45;
+  // Set when the queue overflowed mid-GOP; packets are discarded until the
+  // next keyframe, which then triggers a clean drop-to-live.
+  bool m_dropping_until_keyframe = false; // guarded by m_queue_mutex
+  // Optional VMS_WEBRTC_PUBLISH_AUDIO=0 disables audio in the WebRTC publish.
+  bool m_publish_audio = true;
   std::atomic_bool m_running{ true };
 
   std::thread m_worker;

@@ -185,16 +185,20 @@ void rtsp_reader::stop()
 void rtsp_reader::read_loop()
 {
   auto last_frame_at = std::chrono::steady_clock::now();
+  // DIAG: wall-clock gaps between video packets from the source. A gap here
+  // means the stall is upstream of every sink (camera, network, av_read_frame).
+  std::chrono::steady_clock::time_point last_video_at{};
 
   while (m_running) {
-    if (!m_ctx || m_video_index < 0 || m_forward_stream_indexes.empty()) 
+    if (!m_ctx || m_video_index < 0 || m_forward_stream_indexes.empty())
     {
-      if (!connect()) 
+      if (!connect())
       {
         std::this_thread::sleep_for(kWatchdogInterval);
         continue;
       }
       last_frame_at = std::chrono::steady_clock::now();
+      last_video_at = {};
     }
 
     avpacket_ptr pkt(av_packet_alloc(), avpacket_deleter{});
@@ -216,8 +220,24 @@ void rtsp_reader::read_loop()
 
     last_frame_at = std::chrono::steady_clock::now();
 
+    if (pkt->stream_index == m_video_index)
+    {
+      const auto now = std::chrono::steady_clock::now();
+      if (last_video_at != std::chrono::steady_clock::time_point{})
+      {
+        const auto gap_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+          now - last_video_at).count();
+        if (gap_ms > 150)
+          logger::instance().warning(std::format(
+            "DIAG rtsp_reader: video source gap={}ms key={} [cam={}]",
+            gap_ms, (int)((pkt->flags & AV_PKT_FLAG_KEY) != 0), m_cam_id));
+      }
+      last_video_at = now;
+    }
+
     auto media = std::make_shared<media_packet>();
     media->packet = pkt;
+    media->arrival_us = av_gettime_relative();
     media->stream_index = pkt->stream_index;
     media->time_base = m_ctx->streams[pkt->stream_index]->time_base;
     media->media_type = m_ctx->streams[pkt->stream_index]->codecpar->codec_type;

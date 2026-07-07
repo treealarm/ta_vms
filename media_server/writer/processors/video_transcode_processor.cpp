@@ -173,7 +173,76 @@ bool video_transcode_processor::init(const avcodec_parameters_ptr& codec_paramet
   }
 
   m_out_time_base = m_encoder_ctx->time_base;
+
+  m_in_time_base = (time_base.num > 0 && time_base.den > 0) ? time_base : m_encoder_ctx->time_base;
+  m_frame_step = std::max<int64_t>(1, av_rescale_q(1, av_inv_q(fps), m_encoder_ctx->time_base));
+  m_last_out_pts = AV_NOPTS_VALUE;
+  m_last_in_ts = AV_NOPTS_VALUE;
+  m_wallclock_base_us = -1;
+  m_wallclock_base_pts = 0;
   return true;
+}
+
+void video_transcode_processor::note_input_timestamp(const AVPacket* packet, AVRational time_base)
+{
+  const int64_t in_ts = packet->pts != AV_NOPTS_VALUE ? packet->pts : packet->dts;
+  if (in_ts == AV_NOPTS_VALUE) {
+    return;
+  }
+
+  // A backward jump of more than 5s means the source timeline restarted (RTSP
+  // reconnect): let the output pts restart with it instead of clamping every
+  // following frame to last+1.
+  const int64_t restart_threshold = av_rescale_q(5, AVRational{ 1, 1 }, time_base);
+  if (m_last_in_ts != AV_NOPTS_VALUE && in_ts + restart_threshold < m_last_in_ts) {
+    m_last_out_pts = AV_NOPTS_VALUE;
+  }
+  m_last_in_ts = in_ts;
+}
+
+int64_t video_transcode_processor::next_output_pts(const AVFrame* decoded, AVRational src_time_base, int64_t arrival_us)
+{
+  // Live path: the receive clock is authoritative when available. Overloaded
+  // cameras stamp frames at the nominal frame interval (e.g. 50ms at "20fps")
+  // while actually delivering slower (~75ms), then resync their clock with a
+  // multi-second forward pts jump — any pts-honoring player freezes on every
+  // jump. Arrival time has jitter but neither drift nor jumps.
+  if (arrival_us >= 0) {
+    if (m_wallclock_base_us < 0) {
+      m_wallclock_base_us = arrival_us;
+      m_wallclock_base_pts = m_last_out_pts == AV_NOPTS_VALUE ? 0 : m_last_out_pts + m_frame_step;
+    }
+    int64_t out_pts = m_wallclock_base_pts + av_rescale_q(
+      arrival_us - m_wallclock_base_us, AVRational{ 1, 1'000'000 }, m_encoder_ctx->time_base);
+    if (m_last_out_pts != AV_NOPTS_VALUE && out_pts <= m_last_out_pts) {
+      out_pts = m_last_out_pts + 1;
+    }
+    m_last_out_pts = out_pts;
+    return out_pts;
+  }
+
+  int64_t src_pts = decoded->best_effort_timestamp;
+  if (src_pts == AV_NOPTS_VALUE) {
+    src_pts = decoded->pts;
+  }
+
+  int64_t out_pts;
+  if (src_pts == AV_NOPTS_VALUE) {
+    // No usable timestamp on the frame — extrapolate one frame forward instead
+    // of feeding av_rescale_q(AV_NOPTS_VALUE) garbage to the encoder.
+    out_pts = m_last_out_pts == AV_NOPTS_VALUE ? 0 : m_last_out_pts + m_frame_step;
+  } else {
+    out_pts = av_rescale_q(src_pts, src_time_base, m_encoder_ctx->time_base);
+    // x264 requires strictly increasing pts; on equal/backward stamps
+    // (timestamp jitter, duplicated frames) it rejects the frame and the
+    // viewer sees a stutter with nothing in the log.
+    if (m_last_out_pts != AV_NOPTS_VALUE && out_pts <= m_last_out_pts) {
+      out_pts = m_last_out_pts + 1;
+    }
+  }
+
+  m_last_out_pts = out_pts;
+  return out_pts;
 }
 
 void video_transcode_processor::process(const std::shared_ptr<media_packet>& media)
@@ -181,6 +250,8 @@ void video_transcode_processor::process(const std::shared_ptr<media_packet>& med
   if (!media || !media->packet || !m_decoder_ctx || !m_encoder_ctx) {
     return;
   }
+
+  note_input_timestamp(media->packet.get(), media->time_base);
 
   if (avcodec_send_packet(m_decoder_ctx, media->packet.get()) < 0) {
     return;
@@ -204,7 +275,7 @@ void video_transcode_processor::process(const std::shared_ptr<media_packet>& med
       m_scaled_frame->data,
       m_scaled_frame->linesize);
 
-    m_scaled_frame->pts = av_rescale_q(decoded->pts, media->time_base, m_encoder_ctx->time_base);
+    m_scaled_frame->pts = next_output_pts(decoded, media->time_base, media->arrival_us);
     encode_frame(m_scaled_frame);
     av_frame_unref(decoded);
   }
@@ -235,7 +306,7 @@ void video_transcode_processor::flush()
         m_scaled_frame->data,
         m_scaled_frame->linesize);
 
-      m_scaled_frame->pts = av_rescale_q(decoded->pts, m_decoder_ctx->time_base, m_encoder_ctx->time_base);
+      m_scaled_frame->pts = next_output_pts(decoded, m_in_time_base, -1);
       encode_frame(m_scaled_frame);
       av_frame_unref(decoded);
     }
@@ -249,7 +320,12 @@ void video_transcode_processor::flush()
 
 void video_transcode_processor::encode_frame(AVFrame* frame)
 {
-  if (avcodec_send_frame(m_encoder_ctx, frame) < 0) {
+  const int err = avcodec_send_frame(m_encoder_ctx, frame);
+  if (err < 0) {
+    // A rejected frame is a dropped frame on the viewer's screen — make it visible.
+    logger::instance().warning(std::format(
+      "video_transcode_processor: encoder rejected frame (err={}, pts={})",
+      err, frame ? frame->pts : AV_NOPTS_VALUE));
     return;
   }
 
