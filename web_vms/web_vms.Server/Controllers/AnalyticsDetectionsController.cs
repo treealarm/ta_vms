@@ -15,12 +15,13 @@ public class AnalyticsDetectionsController(
 {
   [HttpGet]
   public async Task<IActionResult> List(
-    [FromQuery] string? eventId, [FromQuery] string? cameraId,
+    [FromQuery] string? eventId, [FromQuery] string? eventUuid, [FromQuery] string? cameraId,
     [FromQuery] string? from, [FromQuery] string? to,
     [FromQuery] int? limit, CancellationToken ct)
   {
     var request = new ListDetectionsRequest { Limit = (uint)Math.Clamp(limit ?? 50, 1, 500) };
     if (!string.IsNullOrWhiteSpace(eventId)) request.EventId = eventId;
+    if (!string.IsNullOrWhiteSpace(eventUuid)) request.EventUuid = eventUuid;
     if (!string.IsNullOrWhiteSpace(cameraId)) request.CameraId = cameraId;
     if (DateTime.TryParse(from, null, System.Globalization.DateTimeStyles.RoundtripKind, out var fromTs))
       request.FromTs = Timestamp.FromDateTime(fromTs.ToUniversalTime());
@@ -32,6 +33,8 @@ public class AnalyticsDetectionsController(
     {
       Id         = d.Id,
       EventId    = d.EventId,
+      EventUuid  = d.EventUuid,
+      ObjectId   = d.HasObjectId ? d.ObjectId : null,
       CameraId   = d.CameraId,
       TrackId    = d.TrackId,
       Kind       = AnalyticsKindMapper.ToStringId(d.Kind),

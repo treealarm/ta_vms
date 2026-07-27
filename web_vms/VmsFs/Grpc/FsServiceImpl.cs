@@ -79,15 +79,11 @@ public sealed class FsServiceImpl(
   {
     try
     {
-      var until = await _storage.RetainEventAsync(request, context.CancellationToken);
+      var (eventUuid, until) = await _storage.RetainEventAsync(request, context.CancellationToken);
       var streamName = request.HasStreamName && !string.IsNullOrWhiteSpace(request.StreamName) ? request.StreamName : null;
       _ = alarmRecording.TryActivateAsync(request.CameraId, streamName, until, CancellationToken.None);
       NotifyRetentionEventCreated(request.CameraId, streamName, request.AlarmStartTs.ToDateTime());
-      return new OperationStatus { Status = OperationStatus.Types.Status.Success, Message = "ok" };
-    }
-    catch (RetentionEventClosedException ex)
-    {
-      return new OperationStatus { Status = OperationStatus.Types.Status.PermanentFailure, Message = ex.Message };
+      return new OperationStatus { Status = OperationStatus.Types.Status.Success, Message = "ok", EventUuid = eventUuid.ToString() };
     }
     catch (Exception ex)
     {
@@ -337,10 +333,10 @@ public sealed class FsServiceImpl(
     GetClipsForEventRequest request,
     ServerCallContext context)
   {
-    if (string.IsNullOrWhiteSpace(request.EventId))
-      throw new RpcException(new Status(StatusCode.InvalidArgument, "event_id is required"));
+    if (!Guid.TryParse(request.EventUuid, out var eventUuid))
+      throw new RpcException(new Status(StatusCode.InvalidArgument, "valid event_uuid is required"));
 
-    var clips = await _storage.GetClipsForEventAsync(request.EventId, context.CancellationToken);
+    var clips = await _storage.GetClipsForEventAsync(eventUuid, context.CancellationToken);
     if (clips is null)
       throw new RpcException(new Status(StatusCode.NotFound, "event not found"));
 

@@ -17,7 +17,8 @@ public sealed record LiveDetection(
   float BboxHeight,
   DateTime DetectedAt,
   string? PlateText,
-  bool Persisted);
+  bool Persisted,
+  string? ObjectId);
 
 // In-process fan-out of live detections to subscribers (the "bbox over live video" overlay).
 // DetectionStreamConsumer publishes every above-threshold detection here; each subscriber holds a

@@ -23,6 +23,8 @@ public sealed class DetectionStreamConsumer(
   IDbContextFactory<AnalyticsDbContext> dbFactory,
   CfgService.CfgServiceClient cfgClient,
   ServerPairRegistry serverPairRegistry,
+  IObjectIdentityResolver objectResolver,
+  ObjectSessionService sessions,
   VmsLog.EntityStatePublisher entityStatePublisher,
   ILogger<DetectionStreamConsumer> logger) : BackgroundService
 {
@@ -91,26 +93,33 @@ public sealed class DetectionStreamConsumer(
 
     // Feed the live overlay with every above-threshold detection (armed or not, debounced or not)
     // so bboxes track smoothly — gating this on `persisted` would make boxes flicker. A geometry-only
-    // projection (no crop bytes) is published so the overlay channels stay small.
+    // projection (no crop bytes) is published so the overlay channels stay small. object_id is a
+    // read-only peek: it appears on the box once re-id has resolved this track (via a persisted
+    // detection), letting the operator see whether a reappearance is the same physical object.
     liveBroadcaster.Publish(new LiveDetection(
       cameraId, evt.TrackId, DetectionKinds.ToDbString(evt.Kind), evt.Confidence,
       evt.Bbox?.X ?? 0, evt.Bbox?.Y ?? 0, evt.Bbox?.Width ?? 0, evt.Bbox?.Height ?? 0,
-      detectedAt, evt.HasRecognizedText ? evt.RecognizedText : null, persisted));
+      detectedAt, evt.HasRecognizedText ? evt.RecognizedText : null, persisted,
+      objectResolver.Peek(cameraId, evt.TrackId)));
 
     if (!persisted)
       return;
 
-    // One id links the retention event (ta_fs), the detection row and its crop file.
-    var eventId = $"analytics-{Guid.NewGuid()}";
+    // Resolve the physical object (re-id), then pick its group label. VmsFs turns event_id into a
+    // concrete episode (event_uuid) — extending the open one or opening a new one — so RetainEvent
+    // must run before Persist, which stores the returned event_uuid on the detection row.
+    var objectId = objectResolver.Resolve(
+      evt.Kind, evt.Embedding, cameraId, evt.TrackId, evt.HasRecognizedText ? evt.RecognizedText : null);
+    var eventId = sessions.SelectEventId(objectId, detectedAt);
 
     logger.LogInformation(
-      "Detection: camera={CameraId} track={TrackId} kind={Kind} confidence={Confidence:F2} plate={PlateText} event={EventId}",
+      "Detection: camera={CameraId} track={TrackId} kind={Kind} confidence={Confidence:F2} plate={PlateText} event={EventId} object={ObjectId}",
       cameraId, evt.TrackId, evt.Kind, evt.Confidence,
-      evt.HasRecognizedText ? evt.RecognizedText : "-", eventId);
+      evt.HasRecognizedText ? evt.RecognizedText : "-", eventId, objectId);
 
     var (storageId, cropPath) = await SaveCropAsync(cameraId, evt, detectedAt, ct);
-    await PersistAsync(cameraId, evt, detectedAt, eventId, storageId, cropPath, ct);
-    await RetainAsync(cameraId, evt, detectedAt, eventId, ct);
+    var eventUuid = await RetainAsync(cameraId, evt, detectedAt, eventId, objectId, ct);
+    await PersistAsync(cameraId, evt, detectedAt, eventId, eventUuid, objectId, storageId, cropPath, ct);
 
     entityStatePublisher.Publish("detection", $"{cameraId}/{evt.TrackId}", new
     {
@@ -119,6 +128,8 @@ public sealed class DetectionStreamConsumer(
       detected_at = detectedAt,
       camera_id = cameraId,
       event_id = eventId,
+      event_uuid = eventUuid,
+      object_id = objectId,
       bbox = new { x = evt.Bbox?.X ?? 0, y = evt.Bbox?.Y ?? 0, width = evt.Bbox?.Width ?? 0, height = evt.Bbox?.Height ?? 0 },
     });
   }
@@ -162,7 +173,7 @@ public sealed class DetectionStreamConsumer(
 
   private async Task PersistAsync(
     string cameraId, DetectionEvent evt, DateTime detectedAt,
-    string eventId, string? storageId, string? cropPath, CancellationToken ct)
+    string eventId, Guid? eventUuid, string objectId, string? storageId, string? cropPath, CancellationToken ct)
   {
     await using var db = await dbFactory.CreateDbContextAsync(ct);
     db.Detections.Add(new DbDetection
@@ -173,6 +184,8 @@ public sealed class DetectionStreamConsumer(
       Confidence = evt.Confidence,
       DetectedAt = detectedAt,
       EventId = eventId,
+      EventUuid = eventUuid,
+      ObjectId = objectId,
       StorageId = storageId,
       CropPath = cropPath,
       PlateText = evt.HasRecognizedText ? evt.RecognizedText : null,
@@ -180,7 +193,8 @@ public sealed class DetectionStreamConsumer(
     await db.SaveChangesAsync(ct);
   }
 
-  private async Task RetainAsync(string cameraId, DetectionEvent evt, DateTime detectedAt, string eventId, CancellationToken ct)
+  // Returns the episode (event_uuid) the retention call opened or extended, or null on failure.
+  private async Task<Guid?> RetainAsync(string cameraId, DetectionEvent evt, DateTime detectedAt, string eventId, string objectId, CancellationToken ct)
   {
     try
     {
@@ -193,15 +207,18 @@ public sealed class DetectionStreamConsumer(
         CameraId = cameraId,
         AlarmStartTs = Timestamp.FromDateTime(DateTime.SpecifyKind(detectedAt, DateTimeKind.Utc)),
         TimeoutSeconds = RetainTimeoutSeconds,
+        ObjectId = objectId,
       };
       var status = await fsClient.RetainEventAsync(request, cancellationToken: ct);
       logger.LogInformation(
         "Camera {CameraId}: RetainEvent returned {Status} (kind={Kind}, confidence={Confidence:F2}, track={TrackId})",
         cameraId, status.Status, evt.Kind, evt.Confidence, evt.TrackId);
+      return Guid.TryParse(status.EventUuid, out var uuid) ? uuid : null;
     }
     catch (Exception ex)
     {
       logger.LogWarning(ex, "RetainEvent failed for camera '{CameraId}' (kind={Kind}, confidence={Confidence:F2})", cameraId, evt.Kind, evt.Confidence);
+      return null;
     }
   }
 

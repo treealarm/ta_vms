@@ -2,29 +2,31 @@ import { useEffect, useState } from 'react'
 import { Box, Chip, Dialog, Divider, List, ListItem, Stack, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 
-import type { AnalyticsDetectionDto, RecordingDto, RetentionEventRowDto } from '../dto/dtos'
+import type { AnalyticsDetectionDto, EpisodeDto, RecordingDto } from '../dto/dtos'
 import { getErrorMessage } from '../store/api'
 import { useCameraName } from '../store'
 
 type Props = {
-  selected: RetentionEventRowDto | null
+  selected: EpisodeDto | null
 }
 
 export type EventSource = 'analytics' | 'onvif' | 'other'
 
-export function eventSource(eventId: string): EventSource {
-  if (eventId.startsWith('analytics-')) return 'analytics'
-  if (eventId.startsWith('onvif-')) return 'onvif'
+// Source is derived from real fields, not the (now opaque) event id: analytics episodes carry an
+// object_id from re-identification; ONVIF still uses an "onvif-" prefixed event_id.
+export function eventSource(ep: { eventId: string; objectId?: string }): EventSource {
+  if (ep.objectId) return 'analytics'
+  if (ep.eventId.startsWith('onvif-')) return 'onvif'
   return 'other'
 }
 
-async function fetchEventDetections(eventId: string, signal: AbortSignal): Promise<AnalyticsDetectionDto[]> {
-  const resp = await fetch(`/api/analytics/detections?eventId=${encodeURIComponent(eventId)}&limit=100`, { signal })
+async function fetchEventDetections(eventUuid: string, signal: AbortSignal): Promise<AnalyticsDetectionDto[]> {
+  const resp = await fetch(`/api/analytics/detections?eventUuid=${encodeURIComponent(eventUuid)}&limit=100`, { signal })
   if (!resp.ok) throw new Error(await getErrorMessage(resp))
   return (await resp.json()) as AnalyticsDetectionDto[]
 }
 
-function DetectionsBlock({ eventId }: { eventId: string }) {
+function DetectionsBlock({ eventUuid }: { eventUuid: string }) {
   const { t } = useTranslation()
   const [detections, setDetections] = useState<AnalyticsDetectionDto[]>([])
   // <img src="/api/..."> can't carry the Bearer token that the global fetch wrapper adds, so
@@ -34,11 +36,11 @@ function DetectionsBlock({ eventId }: { eventId: string }) {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchEventDetections(eventId, controller.signal)
+    fetchEventDetections(eventUuid, controller.signal)
       .then(setDetections)
       .catch(() => setDetections([]))
     return () => controller.abort()
-  }, [eventId])
+  }, [eventUuid])
 
   useEffect(() => {
     let cancelled = false
@@ -132,8 +134,8 @@ function formatDuration(ms: number): string {
   return parts.join(' ')
 }
 
-async function fetchEventClips(eventId: string, signal: AbortSignal): Promise<RecordingDto[]> {
-  const resp = await fetch(`/api/fs/event-clips?eventId=${encodeURIComponent(eventId)}`, { signal })
+async function fetchEventClips(eventUuid: string, signal: AbortSignal): Promise<RecordingDto[]> {
+  const resp = await fetch(`/api/fs/event-clips?eventUuid=${encodeURIComponent(eventUuid)}`, { signal })
   if (!resp.ok) throw new Error(await getErrorMessage(resp))
   const data = (await resp.json()) as { clips: RecordingDto[] }
   return data.clips
@@ -166,7 +168,7 @@ export default function EventDetailsPanel({ selected }: Props) {
     setError(null)
     const controller = new AbortController()
 
-    fetchEventClips(selected.eventId, controller.signal)
+    fetchEventClips(selected.eventUuid, controller.signal)
       .then(setClips)
       .catch((e: unknown) => {
         if (e instanceof DOMException && e.name === 'AbortError') return
@@ -201,7 +203,7 @@ export default function EventDetailsPanel({ selected }: Props) {
               analytics: t('events.sourceAnalytics'),
               onvif: t('events.sourceOnvif'),
               other: t('events.sourceOther'),
-            }[eventSource(selected.eventId)]}
+            }[eventSource(selected)]}
           />
           <DetailRow label={t('cameras.cameraName')} value={cameraName} />
           {selected.streamName && <DetailRow label={t('events.streamName')} value={selected.streamName} />}
@@ -211,7 +213,7 @@ export default function EventDetailsPanel({ selected }: Props) {
         </Stack>
       </Box>
 
-      {eventSource(selected.eventId) === 'analytics' && <DetectionsBlock eventId={selected.eventId} />}
+      {eventSource(selected) === 'analytics' && <DetectionsBlock eventUuid={selected.eventUuid} />}
 
       <Divider />
 

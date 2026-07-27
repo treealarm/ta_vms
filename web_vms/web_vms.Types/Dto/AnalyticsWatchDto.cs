@@ -19,6 +19,8 @@ public record AnalyticsDetectionDto
 {
   public long Id { get; init; }
   public required string EventId { get; init; }
+  public string EventUuid { get; init; } = string.Empty;
+  public string? ObjectId { get; init; }
   public required string CameraId { get; init; }
   public long TrackId { get; init; }
   public string Kind { get; init; } = string.Empty;
@@ -43,4 +45,6 @@ public record AnalyticsActivityEntryDto
   /// <summary>Base64 JPEG; null when the watch has no debug crops enabled.</summary>
   public string? CropJpegBase64 { get; init; }
   public bool Persisted { get; init; }
+  /// <summary>Re-identification label of the physical object, when resolved for this track.</summary>
+  public string? ObjectId { get; init; }
 }

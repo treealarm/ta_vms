@@ -86,6 +86,38 @@ namespace web_vms.Types.Dto
     public DateTime? NextBeforeAlarmStart { get; set; }
   }
 
+  // One episode = one retention open->close cycle (one retention_events row). The user selects an
+  // episode; archive/details load by its EventUuid.
+  public class EpisodeDto
+  {
+    public string EventUuid { get; set; } = default!;
+    public string EventId { get; set; } = default!;
+    public string? ObjectId { get; set; }
+    public string CameraId { get; set; } = default!;
+    public string? StreamName { get; set; }
+    public DateTime AlarmStartTs { get; set; }
+    public DateTime? AlarmEndTs { get; set; }
+  }
+
+  // A group = all episodes sharing one EventId (a time-clustered session of one object, possibly
+  // across cameras). Rendered as a tree row with a "+N" badge; Episodes are ordered oldest-first.
+  public class EventGroupDto
+  {
+    public string EventId { get; set; } = default!;
+    public string? ObjectId { get; set; }
+    public string RepresentativeCameraId { get; set; } = default!;
+    public DateTime EarliestAlarmStart { get; set; }
+    public DateTime LatestAlarmStart { get; set; }
+    public List<EpisodeDto> Episodes { get; set; } = [];
+  }
+
+  public class RetentionEventGroupsListDto
+  {
+    public List<EventGroupDto> Groups { get; set; } = [];
+    public bool HasMore { get; set; }
+    public DateTime? NextBeforeAlarmStart { get; set; }
+  }
+
   public class EventClipsResponseDto
   {
     public List<RecordingDto> Clips { get; set; } = [];

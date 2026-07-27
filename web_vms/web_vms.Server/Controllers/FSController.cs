@@ -224,8 +224,11 @@ public sealed class FSController(
   [HttpGet("retention-events")]
   public async Task<IActionResult> ListRetentionEvents([FromQuery] int? limit, [FromQuery] string? before, CancellationToken ct)
   {
-    var pageLimit = (uint)(limit ?? 50);
-    var grpcReq = new ListRetentionEventsRequest { Limit = pageLimit };
+    var pageLimit = Math.Clamp(limit ?? 50, 1, 200);
+    // Over-fetch episodes per instance so we can assemble reasonably complete groups from a fan-out
+    // where one group's episodes may live on different FS instances. Pagination stays group-granular.
+    var fetchLimit = (uint)Math.Min(200, pageLimit * 5);
+    var grpcReq = new ListRetentionEventsRequest { Limit = fetchLimit };
     if (!string.IsNullOrWhiteSpace(before))
     {
       if (!DateTime.TryParse(before, null, System.Globalization.DateTimeStyles.RoundtripKind, out var bt))
@@ -233,16 +236,17 @@ public sealed class FSController(
       grpcReq.BeforeAlarmStartTs = Timestamp.FromDateTime(ToUtc(bt));
     }
 
-    // Fan-out to all FS instances and merge results sorted by alarm_start desc.
-    var allEvents = new List<RetentionEventRowDto>();
-    var hasMore = false;
+    // Fan-out to all FS instances, then group the merged episodes by event_id (the group label
+    // minted by the single-DB VmsAnalytics, so it is globally consistent across instances).
+    var episodes = new List<EpisodeDto>();
     var responses = await registry.FanOutFsAsync((c, o) => c.ListRetentionEventsAsync(grpcReq, o).ResponseAsync, ct);
     foreach (var resp in responses.Select(r => r.Value))
     {
-      if (resp.HasMore) hasMore = true;
-      allEvents.AddRange(resp.Events.Select(e => new RetentionEventRowDto
+      episodes.AddRange(resp.Events.Select(e => new EpisodeDto
       {
+        EventUuid    = e.EventUuid,
         EventId      = e.EventId,
+        ObjectId     = e.HasObjectId ? e.ObjectId : null,
         CameraId     = e.CameraId,
         StreamName   = e.HasStreamName ? e.StreamName : null,
         AlarmStartTs = e.AlarmStartTs.ToDateTime(),
@@ -250,74 +254,130 @@ public sealed class FSController(
       }));
     }
 
-    var sorted = allEvents
+    var allGroups = episodes
       .GroupBy(e => e.EventId)
-      .Select(g => g.First())
-      .OrderByDescending(e => e.AlarmStartTs)
-      .Take((int)pageLimit)
+      .Select(g =>
+      {
+        var ordered = g.OrderBy(e => e.AlarmStartTs).ToList();
+        return new EventGroupDto
+        {
+          EventId                = g.Key,
+          ObjectId               = ordered.Select(e => e.ObjectId).FirstOrDefault(o => o is not null),
+          RepresentativeCameraId = ordered[0].CameraId,
+          EarliestAlarmStart     = ordered[0].AlarmStartTs,
+          LatestAlarmStart       = ordered[^1].AlarmStartTs,
+          Episodes               = ordered,
+        };
+      })
+      .OrderByDescending(g => g.LatestAlarmStart)
       .ToList();
 
-    var hasMoreResult = hasMore || allEvents.Count > (int)pageLimit;
-    return Ok(new RetentionEventsListDto
+    var groups = allGroups.Take(pageLimit).ToList();
+    var hasMore = allGroups.Count > pageLimit;
+    return Ok(new RetentionEventGroupsListDto
     {
-      HasMore = hasMoreResult,
-      Events  = sorted,
-      NextBeforeAlarmStart = hasMoreResult && sorted.Count > 0
-        ? sorted[^1].AlarmStartTs
-        : null,
+      HasMore = hasMore,
+      Groups  = groups,
+      NextBeforeAlarmStart = hasMore && groups.Count > 0 ? groups[^1].EarliestAlarmStart : null,
     });
   }
 
   [HttpGet("event-playlists")]
-  public async Task<IActionResult> GetEventPlaylists([FromQuery] string eventId, CancellationToken ct)
+  public async Task<IActionResult> GetEventPlaylists([FromQuery] string eventUuid, CancellationToken ct)
   {
-    if (string.IsNullOrWhiteSpace(eventId))
-      return BadRequest(new { error = "eventId is required" });
+    if (string.IsNullOrWhiteSpace(eventUuid))
+      return BadRequest(new { error = "eventUuid is required" });
 
-    // Fan-out to all FS instances — event_id is local to the FS that stored it; take the one
+    // Fan-out to all FS instances — an episode lives on the FS that stored it; take the one
     // that actually has clips for it.
     var clipResponses = await registry.FanOutFsAsync(
-      (c, o) => c.GetClipsForEventAsync(new GetClipsForEventRequest { EventId = eventId }, o).ResponseAsync, ct);
+      (c, o) => c.GetClipsForEventAsync(new GetClipsForEventRequest { EventUuid = eventUuid }, o).ResponseAsync, ct);
     var clipsResp = (clipResponses.FirstOrDefault(r => r.Value.Recordings.Count > 0) ?? clipResponses.FirstOrDefault())?.Value;
 
     if (clipsResp is null)
       return NotFound(new { error = "event not found" });
 
-    var streamNames = clipsResp.Recordings
-      .Select(r => r.StreamName)
-      .Distinct()
-      .OrderBy(s => s)
-      .ToList();
+    // Split a long event into <=3-min playback chunks: building one HLS source over hundreds of
+    // clips reads a sidx per clip and trips the player's manifest timeout. Each (chunk, stream) is a
+    // separate selectable source; a short event stays a single whole-event source per stream.
+    var chunks = ChunkWindows(clipsResp.Recordings, TimeSpan.FromMinutes(3));
 
-    var perStream = streamNames.Select(s => new
+    string Url(string? stream, (DateTime From, DateTime To)? win)
     {
-      streamName  = (string?)s,
-      playlistUrl = $"/api/arch/hls/event.m3u8?eventId={Uri.EscapeDataString(eventId)}&streamName={Uri.EscapeDataString(s)}"
-    });
+      var qs = $"eventUuid={Uri.EscapeDataString(eventUuid)}";
+      if (stream is not null) qs += $"&streamName={Uri.EscapeDataString(stream)}";
+      if (win is { } w) qs += $"&from={Uri.EscapeDataString(w.From.ToString("o"))}&to={Uri.EscapeDataString(w.To.ToString("o"))}";
+      return $"/api/arch/hls/event.m3u8?{qs}";
+    }
 
-    var allEntry = new
+    object Entry(string? stream, (DateTime From, DateTime To)? win) => new
     {
-      streamName  = (string?)null,
-      playlistUrl = $"/api/arch/hls/event.m3u8?eventId={Uri.EscapeDataString(eventId)}"
+      streamName  = stream,
+      playlistUrl = Url(stream, win),
+      fromTs      = win is { } w ? w.From : (DateTime?)null,
+      toTs        = win is { } w2 ? w2.To : (DateTime?)null,
     };
 
-    var streams = streamNames.Count > 1
-      ? perStream.Prepend(allEntry).ToList<object>()
-      : perStream.ToList<object>();
+    var entries = new List<object>();
+    if (chunks.Count <= 1)
+    {
+      var streamNames = clipsResp.Recordings.Select(r => r.StreamName).Distinct().OrderBy(s => s).ToList();
+      if (streamNames.Count > 1) entries.Add(Entry(null, null));
+      entries.AddRange(streamNames.Select(s => Entry(s, null)));
+    }
+    else
+    {
+      foreach (var w in chunks)
+      {
+        var streamsInChunk = clipsResp.Recordings
+          .Where(r => { var t = r.StartTs.ToDateTime().ToUniversalTime(); return t >= w.From && t <= w.To; })
+          .Select(r => r.StreamName).Distinct().OrderBy(s => s).ToList();
+        if (streamsInChunk.Count > 1) entries.Add(Entry(null, w));
+        entries.AddRange(streamsInChunk.Select(s => Entry(s, w)));
+      }
+    }
 
-    return Ok(new { streams });
+    return Ok(new { streams = entries });
+  }
+
+  // Groups an event's clips into consecutive windows no longer than maxSpan, split on clip-start
+  // boundaries so each clip belongs to exactly one window (returns [firstStart, lastStart] per window).
+  private static List<(DateTime From, DateTime To)> ChunkWindows(IEnumerable<Vms.Fs.Recording> recordings, TimeSpan maxSpan)
+  {
+    var starts = recordings
+      .Where(r => !string.IsNullOrWhiteSpace(r.ClipUid))
+      .Select(r => r.StartTs.ToDateTime().ToUniversalTime())
+      .OrderBy(t => t)
+      .ToList();
+
+    var chunks = new List<(DateTime From, DateTime To)>();
+    if (starts.Count == 0) return chunks;
+
+    var from = starts[0];
+    var last = starts[0];
+    foreach (var t in starts)
+    {
+      if (t - from >= maxSpan)
+      {
+        chunks.Add((from, last));
+        from = t;
+      }
+      last = t;
+    }
+    chunks.Add((from, last));
+    return chunks;
   }
 
   [HttpGet("event-clips")]
-  public async Task<IActionResult> GetEventClips([FromQuery] string eventId, CancellationToken ct)
+  public async Task<IActionResult> GetEventClips([FromQuery] string eventUuid, CancellationToken ct)
   {
-    if (string.IsNullOrWhiteSpace(eventId))
-      return BadRequest(new { error = "eventId is required" });
+    if (string.IsNullOrWhiteSpace(eventUuid))
+      return BadRequest(new { error = "eventUuid is required" });
 
-    // Fan-out to all FS instances — event_id is local to the FS that stored it; take the one
+    // Fan-out to all FS instances — an episode lives on the FS that stored it; take the one
     // that actually has clips for it.
     var clipResponses = await registry.FanOutFsAsync(
-      (c, o) => c.GetClipsForEventAsync(new GetClipsForEventRequest { EventId = eventId }, o).ResponseAsync, ct);
+      (c, o) => c.GetClipsForEventAsync(new GetClipsForEventRequest { EventUuid = eventUuid }, o).ResponseAsync, ct);
     var clipsResp = (clipResponses.FirstOrDefault(r => r.Value.Recordings.Count > 0) ?? clipResponses.FirstOrDefault())?.Value;
 
     if (clipsResp is null)

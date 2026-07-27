@@ -37,6 +37,9 @@ message OperationStatus {
   Status status = 1;
   string message = 2;
   string clip_uid = 3;
+  // RetainEvent only: the episode (retention_events.event_uuid) this call extended or opened.
+  // VmsFs owns episode identity and generates this — the caller never supplies it.
+  string event_uuid = 4;
 }
 
 message Recording {
@@ -55,12 +58,17 @@ message IngestClipRequest {
 }
 
 message RetainEventRequest {
+  // Group label supplied by the caller (analytics/onvif/manual). While the latest episode for
+  // (event_id, camera_id) is still open it is extended; once closed a new episode is opened under
+  // the same event_id. The caller never supplies event_uuid — VmsFs generates it and returns it.
   string event_id = 1;
   string camera_id = 2;
   google.protobuf.Timestamp alarm_start_ts = 3;
   optional google.protobuf.Timestamp alarm_end_ts = 4;
   uint32 timeout_seconds = 7;
   optional string stream_name = 5;
+  // Re-identification label of the physical object (analytics only); stored on the episode row.
+  optional string object_id = 6;
 }
 
 message GetRecordingsFromToRequest {
@@ -134,11 +142,14 @@ message GetCameraRetentionStatusResponse {
 }
 
 message RetentionEventRow {
+  // event_id is the GROUP label; event_uuid is the specific episode (one open->close cycle).
   string event_id = 1;
   string camera_id = 2;
   google.protobuf.Timestamp alarm_start_ts = 3;
   optional google.protobuf.Timestamp alarm_end_ts = 4;
   optional string stream_name = 5;
+  string event_uuid = 6;
+  optional string object_id = 7;
 }
 
 message ListRetentionEventsRequest {
@@ -153,7 +164,8 @@ message ListRetentionEventsResponse {
 }
 
 message GetClipsForEventRequest {
-  string event_id = 1;
+  // Clips are fetched for a specific episode (one row the user selected), not the whole group.
+  string event_uuid = 1;
 }
 
 message StatArchiveTsRequest {

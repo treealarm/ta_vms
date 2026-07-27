@@ -122,12 +122,12 @@ public sealed class HlsArchiveService(
   }
 
   public async Task<HlsPlaylistResult> BuildEventPlaylistAsync(
-    string eventId, string? streamName, CancellationToken ct)
+    string eventUuid, string? streamName, DateTime? fromTs, DateTime? toTs, CancellationToken ct)
   {
-    // Fan-out to all FS instances (parallel, short deadline) — event_id belongs to the FS that
+    // Fan-out to all FS instances (parallel, short deadline) — the episode belongs to the FS that
     // stored it; keep talking to the instance that actually has the clips.
     var clipResults = await registry.FanOutFsAsync(
-      (c, o) => c.GetClipsForEventAsync(new GetClipsForEventRequest { EventId = eventId }, o).ResponseAsync, ct);
+      (c, o) => c.GetClipsForEventAsync(new GetClipsForEventRequest { EventUuid = eventUuid }, o).ResponseAsync, ct);
     var hit = clipResults.FirstOrDefault(r => r.Value.Recordings.Count > 0) ?? clipResults.FirstOrDefault();
 
     if (hit is null)
@@ -139,6 +139,8 @@ public sealed class HlsArchiveService(
     var clips = clipsResp.Recordings
       .Where(r => !string.IsNullOrWhiteSpace(r.ClipUid))
       .Where(r => streamName is null || r.StreamName == streamName)
+      .Where(r => fromTs is null || r.StartTs.ToDateTime().ToUniversalTime() >= fromTs)
+      .Where(r => toTs is null || r.StartTs.ToDateTime().ToUniversalTime() <= toTs)
       .OrderBy(r => r.StartTs.ToDateTime())
       .ToList();
 
@@ -177,16 +179,30 @@ public sealed class HlsArchiveService(
     return playlist.Build();
   }
 
+  // Reading the fmp4 index is one gRPC + disk seek per clip. A long range or a multi-minute event
+  // can reference 100+ clips, so a strictly sequential read makes the manifest take tens of seconds
+  // and trips the player's manifestLoadTimeout. Read them concurrently with a bounded fan-out so a
+  // big playlist builds in a fraction of the time without overwhelming VmsFs/disk.
+  private const int SidxReadConcurrency = 12;
+
   private static async Task<Dictionary<string, Fmp4SidxParser.SegmentIndex?>> BuildSidxCacheAsync(
     FsService.FsServiceClient fsClient, List<HlsSegment> segments, CancellationToken ct)
   {
-    var cache = new Dictionary<string, Fmp4SidxParser.SegmentIndex?>();
-    foreach (var s in segments)
+    var clipUids = segments
+      .Where(s => s.FilePath.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase))
+      .Select(s => s.ClipUid)
+      .Distinct()
+      .ToList();
+
+    using var gate = new SemaphoreSlim(SidxReadConcurrency);
+    var tasks = clipUids.Select(async uid =>
     {
-      if (s.FilePath.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) && !cache.ContainsKey(s.ClipUid))
-        cache[s.ClipUid] = await Fmp4SidxParser.ReadAsync(fsClient, s.ClipUid, ct);
-    }
-    return cache;
+      await gate.WaitAsync(ct);
+      try { return (uid, idx: await Fmp4SidxParser.ReadAsync(fsClient, uid, ct)); }
+      finally { gate.Release(); }
+    });
+    var results = await Task.WhenAll(tasks);
+    return results.ToDictionary(r => r.uid, r => r.idx);
   }
 
   private void AppendSegments(
