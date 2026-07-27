@@ -113,7 +113,6 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
   const isDisabled = merged.disabled === true
   const effectiveArmed = pendingArmed !== null ? pendingArmed : (merged.armed ?? false)
   const effectiveStreamMode = (s: CameraStreamDto) => (s.overrideProfile ?? s.recordingProfile)?.mode ?? 'off'
-  const isStreamRecording = (s: CameraStreamDto) => effectiveStreamMode(s) !== 'off'
   const armDisarm = (enabled: boolean) => {
     if (isDisabled) return
     setPendingArmed(enabled)
@@ -129,7 +128,10 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
     (merged.streams ?? [])[0] ??
     null
   const activeRetention = merged.activeRetentionWindow === true && recordingMode !== 'off'
-  const anyStreamRecording = (merged.streams ?? []).some(isStreamRecording)
+  // Red = actually retained (kept on disk), not merely armed/prealarm buffering to a temp file.
+  const isStreamRetained = (s: CameraStreamDto) =>
+    effectiveStreamMode(s) === 'continuous' || (effectiveStreamMode(s) !== 'off' && activeRetention)
+  const anyStreamRetained = (merged.streams ?? []).some(isStreamRetained)
   const activeStreamContinuous = activeStreamObj?.recordingProfile?.mode === 'continuous'
 
   const [pendingContinuous, setPendingContinuous] = useState(false)
@@ -211,7 +213,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
               outlineOffset: '-2px',
               boxShadow: (t) => `0 0 8px ${t.palette.error.main}66`,
             }
-          : anyStreamRecording
+          : anyStreamRetained
             ? {
                 outline: (t) => `2px solid ${t.palette.error.main}`,
                 outlineOffset: '-2px',
@@ -427,18 +429,18 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
                 <Typography component="span" sx={CAPTION_SX}>{t('cameraCard.streamSection')}</Typography>
                 <Stack direction="row" flexWrap="wrap" gap={0.5}>
                   {webRtcStreams.map((s) => (
-                    <Tooltip key={s.streamName} title={isStreamRecording(s) ? t('cameraCard.streamRecordingTip') : ''}>
+                    <Tooltip key={s.streamName} title={isStreamRetained(s) ? t('cameraCard.streamRecordingTip') : ''}>
                       <Chip
                         label={s.streamName}
                         size="small"
-                        icon={isStreamRecording(s) ? <FiberManualRecordIcon /> : undefined}
+                        icon={isStreamRetained(s) ? <FiberManualRecordIcon /> : undefined}
                         onClick={() => setSelectedStream(s.streamName)}
                         variant={activeStream === s.streamName ? 'filled' : 'outlined'}
                         sx={{
                           height: 20, fontSize: '0.68rem', cursor: 'pointer',
                           color: activeStream === s.streamName ? B : alpha(W, 0.75),
                           bgcolor: activeStream === s.streamName ? alpha(W, 0.9) : 'transparent',
-                          borderColor: isStreamRecording(s) ? 'error.main' : alpha(W, 0.3),
+                          borderColor: isStreamRetained(s) ? 'error.main' : alpha(W, 0.3),
                           '& .MuiChip-label': { px: 0.75 },
                           '& .MuiChip-icon': { fontSize: '0.55rem', color: 'error.main', ml: 0.6 },
                         }}
