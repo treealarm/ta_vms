@@ -5,16 +5,20 @@ import {
   Card,
   CardContent,
   Chip,
+  FormControlLabel,
   IconButton,
   LinearProgress,
   List,
   ListItemButton,
   MenuItem,
   Stack,
+  Switch,
   TextField,
   Typography
 } from '@mui/material'
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
+import FirstPageIcon from '@mui/icons-material/FirstPage'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord'
 import SubdirectoryArrowRightIcon from '@mui/icons-material/SubdirectoryArrowRight'
@@ -26,15 +30,14 @@ import { getErrorMessage } from '../store/api'
 import ArchiveHlsPreview from './ArchiveHlsPreview'
 import EventDetailsPanel, { eventSource } from './EventDetailsPanel'
 
-const PAGE_SIZE = 50
+const PAGE_SIZE = 20
 const COLUMN_MAX_HEIGHT = 'min(75vh, 900px)'
+const AUTO_REFRESH_MS = 15_000
 
-async function fetchRetentionEventGroupsPage(params: { before?: string }): Promise<RetentionEventGroupsListDto> {
+async function fetchRetentionEventGroupsPage(before: string | undefined): Promise<RetentionEventGroupsListDto> {
   const qs = new URLSearchParams()
   qs.set('limit', String(PAGE_SIZE))
-  if (params.before) {
-    qs.set('before', params.before)
-  }
+  if (before) qs.set('before', before)
   const response = await fetch(`/api/fs/retention-events?${qs.toString()}`)
   if (!response.ok) {
     throw new Error(await getErrorMessage(response))
@@ -50,38 +53,50 @@ export default function RetentionEventsTab() {
   const [groups, setGroups] = useState<EventGroupDto[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [page, setPage] = useState(0)
+  // cursors[i] is the `before` value that fetches page i (cursors[0] === undefined = newest page).
+  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined])
   const [hasMore, setHasMore] = useState(false)
-  const [nextBefore, setNextBefore] = useState<string | undefined>(undefined)
+  const [autoRefresh, setAutoRefresh] = useState(true)
   const [selected, setSelected] = useState<EpisodeDto | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [cameraFilter, setCameraFilter] = useState('')
   const [textFilter, setTextFilter] = useState('')
 
-  const resetAndLoad = useCallback(async () => {
+  const loadPage = useCallback(async (pageIndex: number, cursor: string | undefined) => {
     setLoading(true)
     setError(null)
     try {
-      const page = await fetchRetentionEventGroupsPage({})
-      setGroups(page.groups)
-      setHasMore(page.hasMore)
-      setNextBefore(page.nextBeforeAlarmStart)
-      setSelected((prev) => prev ?? page.groups[0]?.episodes[0] ?? null)
+      const resp = await fetchRetentionEventGroupsPage(cursor)
+      setGroups(resp.groups)
+      setPage(pageIndex)
+      setHasMore(resp.hasMore)
+      setCursors((prev) => {
+        const next = prev.slice(0, pageIndex + 1)
+        next[pageIndex] = cursor
+        if (resp.hasMore && resp.nextBeforeAlarmStart) next[pageIndex + 1] = resp.nextBeforeAlarmStart
+        return next
+      })
+      setSelected((prev) => prev ?? resp.groups[0]?.episodes[0] ?? null)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setGroups([])
       setHasMore(false)
-      setNextBefore(undefined)
-      setSelected(null)
     } finally {
       setLoading(false)
     }
   }, [])
 
+  // Initial load (newest page).
+  useEffect(() => { void loadPage(0, undefined) }, [loadPage])
+
+  // Optional auto-refresh: re-fetch the CURRENT page (non-disruptive — keeps your place and selection)
+  // rather than snapping back to the newest page.
   useEffect(() => {
-    void resetAndLoad()
-    const id = setInterval(() => void resetAndLoad(), 15_000)
+    if (!autoRefresh) return
+    const id = setInterval(() => void loadPage(page, cursors[page]), AUTO_REFRESH_MS)
     return () => clearInterval(id)
-  }, [resetAndLoad])
+  }, [autoRefresh, page, cursors, loadPage])
 
   const cameraLabel = (id: string) => camerasMap[id]?.name || id
 
@@ -96,30 +111,6 @@ export default function RetentionEventsTab() {
     }
     return true
   }), [groups, cameraFilter, textFilter])
-
-  const loadOlder = async () => {
-    if (!nextBefore || loading) {
-      return
-    }
-    setLoading(true)
-    setError(null)
-    try {
-      const page = await fetchRetentionEventGroupsPage({ before: nextBefore })
-      setGroups((prev) => {
-        const merged = [...prev, ...page.groups]
-        const seen = new Set<string>()
-        return merged
-          .filter((g) => seen.has(g.eventId) ? false : (seen.add(g.eventId), true))
-          .sort((a, b) => new Date(b.latestAlarmStart).getTime() - new Date(a.latestAlarmStart).getTime())
-      })
-      setHasMore(page.hasMore)
-      setNextBefore(page.nextBeforeAlarmStart)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const toggleExpanded = (eventId: string) => setExpanded((prev) => {
     const next = new Set(prev)
@@ -193,16 +184,21 @@ export default function RetentionEventsTab() {
           {error && (
             <Typography color="error">
               {error}{' '}
-              <Button size="small" onClick={() => void resetAndLoad()}>
+              <Button size="small" onClick={() => void loadPage(page, cursors[page])}>
                 {t('events.retry')}
               </Button>
             </Typography>
           )}
 
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="flex-start">
-            {/* Left: grouped event tree */}
-            <Box sx={{ width: { xs: '100%', md: 260 }, flexShrink: 0 }}>
-              <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+            {/* Left: grouped event list, paged. Flex column bounded to the panel height so the list
+                scrolls internally and the pager/refresh controls stay pinned in view below it. */}
+            <Box sx={{
+              width: { xs: '100%', md: 260 }, flexShrink: 0,
+              display: 'flex', flexDirection: 'column',
+              maxHeight: { md: COLUMN_MAX_HEIGHT }
+            }}>
+              <Stack direction="row" spacing={1} sx={{ mb: 1, flexShrink: 0 }}>
                 <TextField
                   select
                   size="small"
@@ -227,11 +223,15 @@ export default function RetentionEventsTab() {
 
               <Box
                 sx={{
-                  maxHeight: { xs: 240, md: COLUMN_MAX_HEIGHT },
-                  overflow: 'auto',
                   border: 1,
                   borderColor: 'divider',
-                  borderRadius: 1
+                  borderRadius: 1,
+                  // Take the remaining column height and scroll internally (minHeight:0 lets the flex
+                  // child shrink); mobile keeps a fixed cap.
+                  flex: 1,
+                  minHeight: 0,
+                  maxHeight: { xs: 320, md: 'none' },
+                  overflow: 'auto'
                 }}
               >
                 <List dense disablePadding>
@@ -260,14 +260,30 @@ export default function RetentionEventsTab() {
                 )}
               </Box>
 
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ mt: 1 }}>
-                <Button variant="outlined" size="small" disabled={loading} onClick={() => void resetAndLoad()}>
+              {/* Pager */}
+              <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 1, flexShrink: 0 }}>
+                <Button variant="outlined" size="small" disabled={loading} onClick={() => void loadPage(page, cursors[page])}>
                   {t('events.refresh')}
                 </Button>
-                <Button variant="outlined" size="small" disabled={loading || !hasMore} onClick={() => void loadOlder()}>
-                  {t('events.loadOlder')}
-                </Button>
-                {loading && groups.length > 0 && <LinearProgress sx={{ flex: 1, minWidth: 80 }} />}
+                <Box sx={{ flex: 1 }} />
+                <IconButton size="small" disabled={loading || page === 0} onClick={() => void loadPage(0, undefined)}>
+                  <FirstPageIcon fontSize="small" />
+                </IconButton>
+                <IconButton size="small" disabled={loading || page === 0} onClick={() => void loadPage(page - 1, cursors[page - 1])}>
+                  <ChevronLeftIcon fontSize="small" />
+                </IconButton>
+                <Typography variant="body2" color="text.secondary">{page + 1}</Typography>
+                <IconButton size="small" disabled={loading || !hasMore} onClick={() => void loadPage(page + 1, cursors[page + 1])}>
+                  <ChevronRightIcon fontSize="small" />
+                </IconButton>
+              </Stack>
+
+              <Stack direction="row" alignItems="center" sx={{ mt: 0.5, flexShrink: 0 }}>
+                <FormControlLabel
+                  control={<Switch size="small" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />}
+                  label={<Typography variant="caption" color="text.secondary">{t('events.autoRefresh', 'Auto-refresh')}</Typography>}
+                />
+                {loading && groups.length > 0 && <LinearProgress sx={{ flex: 1, minWidth: 60, ml: 1 }} />}
               </Stack>
             </Box>
 
