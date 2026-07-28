@@ -322,8 +322,11 @@ public sealed class FSController(
   [HttpGet("event-playlists")]
   public async Task<IActionResult> GetEventPlaylists([FromQuery] string eventUuid, CancellationToken ct)
   {
-    if (string.IsNullOrWhiteSpace(eventUuid))
-      return BadRequest(new { error = "eventUuid is required" });
+    // Validate before fan-out: a malformed uuid would be rejected by VmsFs as InvalidArgument, which
+    // FanOutFsAsync would treat as an unreachable instance and cool it down — hiding data from other
+    // requests. A bad link/typo must not do that.
+    if (!Guid.TryParse(eventUuid, out _))
+      return BadRequest(new { error = "valid eventUuid is required" });
 
     // Fan-out to all FS instances — an episode lives on the FS that stored it; take the one
     // that actually has clips for it.
@@ -408,8 +411,11 @@ public sealed class FSController(
   [HttpGet("event-clips")]
   public async Task<IActionResult> GetEventClips([FromQuery] string eventUuid, CancellationToken ct)
   {
-    if (string.IsNullOrWhiteSpace(eventUuid))
-      return BadRequest(new { error = "eventUuid is required" });
+    // Validate before fan-out: a malformed uuid would be rejected by VmsFs as InvalidArgument, which
+    // FanOutFsAsync would treat as an unreachable instance and cool it down — hiding data from other
+    // requests. A bad link/typo must not do that.
+    if (!Guid.TryParse(eventUuid, out _))
+      return BadRequest(new { error = "valid eventUuid is required" });
 
     // Fan-out to all FS instances — an episode lives on the FS that stored it; take the one
     // that actually has clips for it.

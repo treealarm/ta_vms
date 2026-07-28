@@ -74,8 +74,9 @@ public partial class ArchController(
   {
     eventUuid  = eventUuid?.Trim() ?? "";
     streamName = streamName?.Trim();
-    if (string.IsNullOrEmpty(eventUuid))
-      return BadRequest(new { error = "eventUuid is required" });
+    // Validate before fan-out so a malformed uuid can't cool down an FS instance (see FSController).
+    if (!Guid.TryParse(eventUuid, out _))
+      return BadRequest(new { error = "valid eventUuid is required" });
 
     // Optional [from, to] restricts the source to one playback chunk of a long event (see
     // FSController.GetEventPlaylists). Absent => the whole event.

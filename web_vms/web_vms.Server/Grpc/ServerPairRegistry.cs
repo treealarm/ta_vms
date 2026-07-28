@@ -70,9 +70,10 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
       }
       catch (RpcException ex)
       {
-        // NotFound is a legitimate "not on this instance" answer and Cancelled means the caller
-        // aborted — neither indicates an outage, so they don't trip the cooldown.
-        if (ex.StatusCode is not (StatusCode.NotFound or StatusCode.Cancelled))
+        // NotFound is a legitimate "not on this instance" answer, Cancelled means the caller aborted,
+        // and InvalidArgument is a bad-request (client) error — none indicate an outage, so they don't
+        // trip the cooldown (a single malformed id must not suppress an instance for everyone).
+        if (ex.StatusCode is not (StatusCode.NotFound or StatusCode.Cancelled or StatusCode.InvalidArgument))
         {
           var firstFailure = !_unreachableSince.ContainsKey(fsId);
           _unreachableSince[fsId] = DateTime.UtcNow;
