@@ -109,7 +109,8 @@ public sealed class DetectionStreamConsumer(
     // concrete episode (event_uuid) — extending the open one or opening a new one — so RetainEvent
     // must run before Persist, which stores the returned event_uuid on the detection row.
     var objectId = objectResolver.Resolve(
-      evt.Kind, evt.Embedding, cameraId, evt.TrackId, evt.HasRecognizedText ? evt.RecognizedText : null);
+      evt.Kind, evt.Embedding, evt.EmbeddingIsFresh, cameraId, evt.TrackId,
+      evt.HasRecognizedText ? evt.RecognizedText : null);
     var eventId = sessions.SelectEventId(objectId, detectedAt);
 
     logger.LogInformation(

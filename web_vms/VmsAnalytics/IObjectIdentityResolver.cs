@@ -11,9 +11,12 @@ namespace VmsAnalytics;
 // ("obj-{guid}") ids coexist.
 public interface IObjectIdentityResolver
 {
-  // embedding is the L2-normalized appearance vector from video_a (empty when the worker attached
-  // none — most non-START frames of a track). recognizedText is the plate/OCR text when present.
-  string Resolve(DetectionKind kind, IReadOnlyList<float> embedding, string cameraId, long trackId, string? recognizedText);
+  // embedding is the L2-normalized appearance vector from video_a (carried on every frame of a
+  // track; empty when no embedder model). embeddingIsFresh is true only on the frame it was actually
+  // recomputed, so the resolver records a gallery sighting per real observation, not per frame.
+  // recognizedText is the plate/OCR text when present.
+  string Resolve(DetectionKind kind, IReadOnlyList<float> embedding, bool embeddingIsFresh,
+    string cameraId, long trackId, string? recognizedText);
 
   // Read-only: the object_id already resolved for this (camera, track), or null if none yet. Used by
   // the live overlay to label boxes without minting new ids or touching the gallery.

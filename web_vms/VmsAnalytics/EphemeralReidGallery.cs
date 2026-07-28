@@ -50,7 +50,8 @@ public sealed class EphemeralReidGallery : IObjectIdentityResolver
     }
   }
 
-  public string Resolve(DetectionKind kind, IReadOnlyList<float> embedding, string cameraId, long trackId, string? recognizedText)
+  public string Resolve(DetectionKind kind, IReadOnlyList<float> embedding, bool embeddingIsFresh,
+    string cameraId, long trackId, string? recognizedText)
   {
     var now = DateTime.UtcNow;
     var trackKey = (cameraId, trackId);
@@ -60,11 +61,28 @@ public sealed class EphemeralReidGallery : IObjectIdentityResolver
       Evict(now);
 
       // Only PERSON carries a body embedding today; use it to link across cameras/gaps.
+      // The vector rides on every frame of a track, but a gallery sighting is recorded only on a
+      // fresh recompute (embeddingIsFresh) — recording every frame would blow the size cap and
+      // collapse the time window (see the embedding_is_fresh contract in analytics.proto).
       if (kind == DetectionKind.Person && embedding.Count > 0)
       {
+        // Already-identified track: identity is fixed; only re-register a sighting on a fresh frame
+        // so the object stays matchable while the track is alive (a long track outlives the window).
+        if (_trackToObject.TryGetValue(trackKey, out var known))
+        {
+          if (embeddingIsFresh)
+            _gallery.AddLast(new Entry(known.ObjectId, embedding as float[] ?? embedding.ToArray(), now));
+          _trackToObject[trackKey] = known with { SeenAt = now };
+          return known.ObjectId;
+        }
+
+        // First embedding seen for this track: match it against the gallery to (re-)identify.
         var vec = embedding as float[] ?? embedding.ToArray();
-        var objectId = BestMatch(vec, now) ?? NewObjectId();
-        _gallery.AddLast(new Entry(objectId, vec, now));
+        var matched = BestMatch(vec, now);
+        var objectId = matched ?? NewObjectId();
+        // Record a sighting on a real observation, or for a brand-new object so it becomes matchable.
+        if (embeddingIsFresh || matched is null)
+          _gallery.AddLast(new Entry(objectId, vec, now));
         _trackToObject[trackKey] = new TrackLink(objectId, now);
         return objectId;
       }
