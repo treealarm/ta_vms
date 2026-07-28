@@ -129,8 +129,13 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
     null
   const activeRetention = merged.activeRetentionWindow === true && recordingMode !== 'off'
   // Red = actually retained (kept on disk), not merely armed/prealarm buffering to a temp file.
-  const isStreamRetained = (s: CameraStreamDto) =>
-    effectiveStreamMode(s) === 'continuous' || (effectiveStreamMode(s) !== 'off' && activeRetention)
+  // Alarm retention is per-stream: a camera-wide window (no specific stream) retains all streams,
+  // otherwise only the named ones — so an alarm on one stream no longer lights its siblings.
+  const isStreamRetained = (s: CameraStreamDto) => {
+    if (effectiveStreamMode(s) === 'continuous') return true
+    if (effectiveStreamMode(s) === 'off' || recordingMode === 'off') return false
+    return merged.allStreamsRetained === true || (merged.retainedStreams ?? []).includes(s.streamName)
+  }
   const anyStreamRetained = (merged.streams ?? []).some(isStreamRetained)
   const activeStreamContinuous = activeStreamObj?.recordingProfile?.mode === 'continuous'
 

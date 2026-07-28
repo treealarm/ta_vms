@@ -423,6 +423,34 @@ public sealed class ClipStorage(
       .ExecuteUpdateAsync(s => s.SetProperty(c => c.FragIndex, json), ct);
   }
 
+  // Per-stream retention breakdown for a camera: a retention_events row with NULL stream_name retains
+  // every stream (AllStreams=true), otherwise only the named streams are retained right now.
+  public async Task<(bool AllStreams, List<string> Streams)> GetRetainedStreamsAsync(string cameraId, CancellationToken ct)
+  {
+    var config = await configCache.GetAsync(cameraId, ct);
+    var post = config?.PostRecordSeconds ?? 30;
+
+    await using var cmd = dataSource.CreateCommand("""
+      SELECT stream_name FROM retention_events
+      WHERE camera_id = $1
+        AND alarm_start_ts <= now()
+        AND alarm_end_ts + ($2 * interval '1 second') >= now()
+      GROUP BY stream_name;
+      """);
+    cmd.Parameters.AddWithValue(cameraId);
+    cmd.Parameters.AddWithValue(post);
+
+    var allStreams = false;
+    var streams = new List<string>();
+    await using var reader = await cmd.ExecuteReaderAsync(ct);
+    while (await reader.ReadAsync(ct))
+    {
+      if (reader.IsDBNull(0)) allStreams = true;
+      else streams.Add(reader.GetString(0));
+    }
+    return (allStreams, streams);
+  }
+
   public async Task<bool> HasActiveRetentionWindowAsync(string cameraId, CancellationToken ct)
   {
     var config = await configCache.GetAsync(cameraId, ct);
@@ -439,6 +467,40 @@ public sealed class ClipStorage(
     cmd.Parameters.AddWithValue(cameraId);
     cmd.Parameters.AddWithValue(post);
     return (bool)(await cmd.ExecuteScalarAsync(ct))!;
+  }
+
+  // All episodes for the given event_id groups — used to complete groups whose episodes straddle the
+  // gateway's paged window (so badge counts / earliest timestamps are accurate).
+  public async Task<List<RetentionEventRow>> GetEpisodesByEventIdsAsync(IReadOnlyList<string> eventIds, CancellationToken ct)
+  {
+    if (eventIds.Count == 0)
+      return [];
+
+    await using var cmd = dataSource.CreateCommand("""
+      SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id
+      FROM retention_events
+      WHERE event_id = ANY($1)
+      ORDER BY alarm_start_ts DESC, event_uuid DESC;
+      """);
+    cmd.Parameters.AddWithValue(eventIds.ToArray());
+
+    var events = new List<RetentionEventRow>();
+    await using var reader = await cmd.ExecuteReaderAsync(ct);
+    while (await reader.ReadAsync(ct))
+    {
+      var row = new RetentionEventRow
+      {
+        EventId      = reader.GetString(0),
+        CameraId     = reader.GetString(1),
+        AlarmStartTs = Timestamp.FromDateTime(reader.GetDateTime(3).ToUniversalTime()),
+        EventUuid    = reader.GetString(5)
+      };
+      if (!reader.IsDBNull(2)) row.StreamName = reader.GetString(2);
+      if (!reader.IsDBNull(4)) row.AlarmEndTs = Timestamp.FromDateTime(reader.GetDateTime(4).ToUniversalTime());
+      if (!reader.IsDBNull(6)) row.ObjectId = reader.GetString(6);
+      events.Add(row);
+    }
+    return events;
   }
 
   public async Task<(List<RetentionEventRow> Events, bool HasMore, Timestamp? NextBefore)> ListRetentionEventsAsync(

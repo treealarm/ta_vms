@@ -236,6 +236,31 @@ public sealed class FSController(
       grpcReq.BeforeAlarmStartTs = Timestamp.FromDateTime(ToUtc(bt));
     }
 
+    static EpisodeDto ToEpisode(RetentionEventRow e) => new()
+    {
+      EventUuid    = e.EventUuid,
+      EventId      = e.EventId,
+      ObjectId     = e.HasObjectId ? e.ObjectId : null,
+      CameraId     = e.CameraId,
+      StreamName   = e.HasStreamName ? e.StreamName : null,
+      AlarmStartTs = e.AlarmStartTs.ToDateTime(),
+      AlarmEndTs   = e.AlarmEndTs?.ToDateTime()
+    };
+
+    static EventGroupDto BuildGroup(string eventId, List<EpisodeDto> eps)
+    {
+      var ordered = eps.OrderBy(e => e.AlarmStartTs).ToList();
+      return new EventGroupDto
+      {
+        EventId                = eventId,
+        ObjectId               = ordered.Select(e => e.ObjectId).FirstOrDefault(o => o is not null),
+        RepresentativeCameraId = ordered[0].CameraId,
+        EarliestAlarmStart     = ordered[0].AlarmStartTs,
+        LatestAlarmStart       = ordered[^1].AlarmStartTs,
+        Episodes               = ordered,
+      };
+    }
+
     // Fan-out to all FS instances, then group the merged episodes by event_id (the group label
     // minted by the single-DB VmsAnalytics, so it is globally consistent across instances).
     var episodes = new List<EpisodeDto>();
@@ -244,33 +269,12 @@ public sealed class FSController(
     foreach (var resp in responses.Select(r => r.Value))
     {
       if (resp.HasMore) moreOnInstance = true;
-      episodes.AddRange(resp.Events.Select(e => new EpisodeDto
-      {
-        EventUuid    = e.EventUuid,
-        EventId      = e.EventId,
-        ObjectId     = e.HasObjectId ? e.ObjectId : null,
-        CameraId     = e.CameraId,
-        StreamName   = e.HasStreamName ? e.StreamName : null,
-        AlarmStartTs = e.AlarmStartTs.ToDateTime(),
-        AlarmEndTs   = e.AlarmEndTs?.ToDateTime()
-      }));
+      episodes.AddRange(resp.Events.Select(ToEpisode));
     }
 
     var allGroups = episodes
       .GroupBy(e => e.EventId)
-      .Select(g =>
-      {
-        var ordered = g.OrderBy(e => e.AlarmStartTs).ToList();
-        return new EventGroupDto
-        {
-          EventId                = g.Key,
-          ObjectId               = ordered.Select(e => e.ObjectId).FirstOrDefault(o => o is not null),
-          RepresentativeCameraId = ordered[0].CameraId,
-          EarliestAlarmStart     = ordered[0].AlarmStartTs,
-          LatestAlarmStart       = ordered[^1].AlarmStartTs,
-          Episodes               = ordered,
-        };
-      })
+      .Select(g => BuildGroup(g.Key, g.ToList()))
       .OrderByDescending(g => g.LatestAlarmStart)
       .ToList();
 
@@ -278,6 +282,31 @@ public sealed class FSController(
     // hasMore must also honor an instance that had more rows beyond fetchLimit — otherwise, when the
     // fetched episodes collapse into <= pageLimit groups, older events would become unreachable.
     var hasMore = moreOnInstance || allGroups.Count > pageLimit;
+
+    // A shown group whose oldest fetched episode sits at the fetch floor may have older episodes past
+    // the paged window, making its badge/earliest/episode-tree wrong. When that can happen, re-fetch
+    // the full episode set for exactly the shown groups and rebuild them complete. (Common case: no
+    // group touches the floor -> no extra round-trip.)
+    if (moreOnInstance && groups.Count > 0)
+    {
+      var oldestFetched = episodes.Min(e => e.AlarmStartTs);
+      var incompleteIds = groups.Where(g => g.EarliestAlarmStart <= oldestFetched).Select(g => g.EventId).ToList();
+      if (incompleteIds.Count > 0)
+      {
+        var fullReq = new ListRetentionEventsRequest();
+        fullReq.EventIds.AddRange(incompleteIds);
+        var fullResponses = await registry.FanOutFsAsync((c, o) => c.ListRetentionEventsAsync(fullReq, o).ResponseAsync, ct);
+        var episodesByEvent = fullResponses
+          .SelectMany(r => r.Value.Events)
+          .Select(ToEpisode)
+          .GroupBy(e => e.EventId)
+          .ToDictionary(g => g.Key, g => g.ToList());
+        groups = groups
+          .Select(g => episodesByEvent.TryGetValue(g.EventId, out var eps) ? BuildGroup(g.EventId, eps) : g)
+          .ToList();
+      }
+    }
+
     // Cursor by the last shown group's LATEST alarm_start (consistent with the ordering). Using its
     // EARLIEST would skip any group whose episodes fall between that earliest and latest. The trade-off
     // is that a group straddling the boundary can reappear (partially) on the next page rather than be

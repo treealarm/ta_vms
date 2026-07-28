@@ -1,4 +1,5 @@
 using Analytics;
+using Microsoft.EntityFrameworkCore;
 
 namespace VmsAnalytics;
 
@@ -18,14 +19,35 @@ public sealed class EphemeralReidGallery : IObjectIdentityResolver
   private readonly object _lock = new();
   private readonly LinkedList<Entry> _gallery = new(); // oldest first
   private readonly Dictionary<(string CameraId, long TrackId), TrackLink> _trackToObject = new();
+  private long _nextObjectNum; // guarded by _lock
 
   private sealed record Entry(string ObjectId, float[] Embedding, DateTime SeenAt);
   private sealed record TrackLink(string ObjectId, DateTime SeenAt);
 
-  public EphemeralReidGallery()
+  public EphemeralReidGallery(IDbContextFactory<AnalyticsDbContext> dbFactory)
   {
     _minScore = RequireDouble("ANALYTICS_REID_MATCH_MIN_SCORE");
     _window = TimeSpan.FromSeconds(RequireUint("ANALYTICS_REID_GALLERY_WINDOW_SECONDS"));
+    // Object ids are human-readable running numbers ("obj-1", "obj-2", ...). They are persisted on
+    // detections/retention_events, so the counter must continue past the highest id ever assigned —
+    // a reset to 1 after a restart would reuse a number for a different physical object.
+    _nextObjectNum = SeedObjectCounter(dbFactory);
+  }
+
+  private static long SeedObjectCounter(IDbContextFactory<AnalyticsDbContext> dbFactory)
+  {
+    try
+    {
+      using var db = dbFactory.CreateDbContext();
+      return db.Database
+        .SqlQueryRaw<long>("SELECT COALESCE(MAX(substring(object_id from 5)::bigint), 0) AS \"Value\" FROM detections WHERE object_id ~ '^obj-[0-9]+$'")
+        .AsEnumerable()
+        .FirstOrDefault();
+    }
+    catch
+    {
+      return 0; // fresh/unavailable DB — start from obj-1
+    }
   }
 
   public string Resolve(DetectionKind kind, IReadOnlyList<float> embedding, string cameraId, long trackId, string? recognizedText)
@@ -104,7 +126,8 @@ public sealed class EphemeralReidGallery : IObjectIdentityResolver
     }
   }
 
-  private static string NewObjectId() => $"obj-{Guid.NewGuid()}";
+  // Callers hold _lock, so the increment is safe.
+  private string NewObjectId() => $"obj-{++_nextObjectNum}";
 
   private static uint RequireUint(string name)
   {

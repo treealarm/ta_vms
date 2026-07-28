@@ -194,8 +194,14 @@ public sealed class FsServiceImpl(
   {
     try
     {
-      var active = await _storage.HasActiveRetentionWindowAsync(request.CameraId, context.CancellationToken);
-      return new GetCameraRetentionStatusResponse { ActiveRetentionWindow = active };
+      var (allStreams, streams) = await _storage.GetRetainedStreamsAsync(request.CameraId, context.CancellationToken);
+      var resp = new GetCameraRetentionStatusResponse
+      {
+        ActiveRetentionWindow = allStreams || streams.Count > 0,
+        AllStreamsRetained = allStreams,
+      };
+      resp.RetainedStreams.AddRange(streams);
+      return resp;
     }
     catch (Exception ex)
     {
@@ -210,6 +216,15 @@ public sealed class FsServiceImpl(
   {
     try
     {
+      // event_ids set => the gateway is completing groups; return all their episodes, unpaged.
+      if (request.EventIds.Count > 0)
+      {
+        var all = await _storage.GetEpisodesByEventIdsAsync(request.EventIds, context.CancellationToken);
+        var byIds = new ListRetentionEventsResponse { HasMore = false };
+        byIds.Events.AddRange(all);
+        return byIds;
+      }
+
       var (events, hasMore, nextBefore) = await _storage.ListRetentionEventsAsync(
         request.Limit,
         request.BeforeAlarmStartTs,

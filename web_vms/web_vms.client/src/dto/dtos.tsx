@@ -132,6 +132,10 @@ export type CameraSetupDto = {
   onvifConn?: OnvifConnectionDto
   /** True while camera is inside a retention episode from FS (wall clock in [retain_from, retain_until]); new clips ingest as retained */
   activeRetentionWindow?: boolean
+  /** An active retention window with no specific stream retains every stream. */
+  allStreamsRetained?: boolean
+  /** Specific stream names currently retained (an alarm scoped to those streams). */
+  retainedStreams?: string[]
   streams?: CameraStreamDto[]
   mediaMtxServerId?: string
   onvifEventsEnabled?: boolean

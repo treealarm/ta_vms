@@ -142,7 +142,9 @@ message GetCameraRetentionStatusRequest {
 }
 
 message GetCameraRetentionStatusResponse {
-  bool active_retention_window = 1;
+  bool active_retention_window = 1;                // any active window on the camera
+  bool all_streams_retained = 2;                   // an active window with no specific stream => all streams
+  repeated string retained_streams = 3;            // specific stream_names with an active window
 }
 
 message RetentionEventRow {
@@ -159,6 +161,9 @@ message RetentionEventRow {
 message ListRetentionEventsRequest {
   uint32 limit = 1;
   optional google.protobuf.Timestamp before_alarm_start_ts = 2;
+  // When non-empty, return ALL episodes for these event_id groups (ignoring limit/before) so the
+  // gateway can complete groups whose episodes straddle the paged window.
+  repeated string event_ids = 3;
 }
 
 message ListRetentionEventsResponse {

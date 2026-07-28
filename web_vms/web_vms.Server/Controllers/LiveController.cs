@@ -323,7 +323,7 @@ public class LiveController(
 
     if (string.Equals(normalized.RecordingMode, "off", StringComparison.OrdinalIgnoreCase))
     {
-      return Ok(normalized with { ActiveRetentionWindow = false });
+      return Ok(normalized with { ActiveRetentionWindow = false, AllStreamsRetained = false, RetainedStreams = [] });
     }
 
     try
@@ -332,11 +332,16 @@ public class LiveController(
       var retention = await fsClient.GetCameraRetentionStatusAsync(
         new GetCameraRetentionStatusRequest { CameraId = cameraId },
         cancellationToken: ct);
-      return Ok(normalized with { ActiveRetentionWindow = retention.ActiveRetentionWindow });
+      return Ok(normalized with
+      {
+        ActiveRetentionWindow = retention.ActiveRetentionWindow,
+        AllStreamsRetained = retention.AllStreamsRetained,
+        RetainedStreams = retention.RetainedStreams.ToList(),
+      });
     }
     catch (RpcException)
     {
-      return Ok(normalized with { ActiveRetentionWindow = false });
+      return Ok(normalized with { ActiveRetentionWindow = false, AllStreamsRetained = false, RetainedStreams = [] });
     }
   }
 }
