@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Box, Chip, Dialog, Divider, List, ListItem, Stack, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 
@@ -26,13 +26,66 @@ async function fetchEventDetections(eventUuid: string, signal: AbortSignal): Pro
   return (await resp.json()) as AnalyticsDetectionDto[]
 }
 
+const cropSx = { height: 64, width: 96, objectFit: 'contain', borderRadius: 0.5, flexShrink: 0 } as const
+
+// One detection row. Its crop is fetched only once the row scrolls into view (a long event can have
+// 100+ detections; eagerly fetching every crop is ~0.15s each and floods the connection). onRequest
+// is idempotent and deduped by the parent.
+function DetectionRow({ d, cropUrl, onRequest, onZoom }: {
+  d: AnalyticsDetectionDto
+  cropUrl: string | undefined
+  onRequest: (id: number) => void
+  onZoom: (id: number) => void
+}) {
+  const { t } = useTranslation()
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !d.hasCrop) return
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        onRequest(d.id)
+        io.disconnect()
+      }
+    }, { rootMargin: '150px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [d.id, d.hasCrop, onRequest])
+
+  return (
+    <Stack ref={ref} direction="row" spacing={1} alignItems="center">
+      {d.hasCrop && (cropUrl ? (
+        <Box component="img" src={cropUrl} alt={d.kind} onClick={() => onZoom(d.id)}
+          sx={{ ...cropSx, cursor: 'pointer' }} />
+      ) : (
+        <Box sx={{ ...cropSx, bgcolor: 'action.hover' }} />
+      ))}
+      <Stack sx={{ minWidth: 0 }}>
+        <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap">
+          <Chip label={t(`analytics.class.${d.kind}`, d.kind)} size="small" />
+          <Typography variant="caption" color="text.secondary">
+            {(d.confidence * 100).toFixed(0)}%
+          </Typography>
+          {d.plateText && <Chip label={d.plateText} size="small" color="primary" variant="outlined" />}
+        </Stack>
+        <Typography variant="caption" color="text.secondary">
+          {new Date(d.detectedAt).toLocaleTimeString()}
+        </Typography>
+      </Stack>
+    </Stack>
+  )
+}
+
 function DetectionsBlock({ eventUuid }: { eventUuid: string }) {
   const { t } = useTranslation()
   const [detections, setDetections] = useState<AnalyticsDetectionDto[]>([])
-  // <img src="/api/..."> can't carry the Bearer token that the global fetch wrapper adds, so
-  // crops are fetched once into blob URLs shared by the thumbnail and the zoom dialog.
+  // <img src="/api/..."> can't carry the Bearer token that the global fetch wrapper adds, so crops
+  // are fetched (lazily, per DetectionRow) into blob URLs shared by the thumbnail and zoom dialog.
   const [cropUrls, setCropUrls] = useState<Record<number, string>>({})
   const [zoom, setZoom] = useState<number | null>(null)
+  const objectUrls = useRef<string[]>([])
+  const requested = useRef<Set<number>>(new Set())
 
   useEffect(() => {
     const controller = new AbortController()
@@ -42,31 +95,30 @@ function DetectionsBlock({ eventUuid }: { eventUuid: string }) {
     return () => controller.abort()
   }, [eventUuid])
 
+  // Reset crop state and revoke blob URLs when switching events.
   useEffect(() => {
-    let cancelled = false
-    const urls: string[] = []
     setCropUrls({})
-    for (const d of detections) {
-      if (!d.hasCrop) continue
-      void fetch(`/api/analytics/detections/${d.id}/crop`)
-        .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
-        .then((blob) => {
-          if (cancelled) return
-          const url = URL.createObjectURL(blob)
-          urls.push(url)
-          setCropUrls((prev) => ({ ...prev, [d.id]: url }))
-        })
-        .catch(() => { /* broken crop — placeholder stays */ })
-    }
+    requested.current = new Set()
     return () => {
-      cancelled = true
-      urls.forEach((u) => URL.revokeObjectURL(u))
+      objectUrls.current.forEach((u) => URL.revokeObjectURL(u))
+      objectUrls.current = []
     }
-  }, [detections])
+  }, [eventUuid])
+
+  const requestCrop = useCallback((id: number) => {
+    if (requested.current.has(id)) return
+    requested.current.add(id)
+    void fetch(`/api/analytics/detections/${id}/crop`)
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((blob) => {
+        const url = URL.createObjectURL(blob)
+        objectUrls.current.push(url)
+        setCropUrls((prev) => ({ ...prev, [id]: url }))
+      })
+      .catch(() => { requested.current.delete(id) /* allow a later retry */ })
+  }, [])
 
   if (detections.length === 0) return null
-
-  const cropSx = { height: 64, width: 96, objectFit: 'contain', borderRadius: 0.5, flexShrink: 0 } as const
 
   return (
     <>
@@ -77,26 +129,7 @@ function DetectionsBlock({ eventUuid }: { eventUuid: string }) {
         </Typography>
         <Stack spacing={1}>
           {detections.map((d) => (
-            <Stack key={d.id} direction="row" spacing={1} alignItems="center">
-              {d.hasCrop && (cropUrls[d.id] ? (
-                <Box component="img" src={cropUrls[d.id]} alt={d.kind} onClick={() => setZoom(d.id)}
-                  sx={{ ...cropSx, cursor: 'pointer' }} />
-              ) : (
-                <Box sx={{ ...cropSx, bgcolor: 'action.hover' }} />
-              ))}
-              <Stack sx={{ minWidth: 0 }}>
-                <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap">
-                  <Chip label={t(`analytics.class.${d.kind}`, d.kind)} size="small" />
-                  <Typography variant="caption" color="text.secondary">
-                    {(d.confidence * 100).toFixed(0)}%
-                  </Typography>
-                  {d.plateText && <Chip label={d.plateText} size="small" color="primary" variant="outlined" />}
-                </Stack>
-                <Typography variant="caption" color="text.secondary">
-                  {new Date(d.detectedAt).toLocaleTimeString()}
-                </Typography>
-              </Stack>
-            </Stack>
+            <DetectionRow key={d.id} d={d} cropUrl={cropUrls[d.id]} onRequest={requestCrop} onZoom={setZoom} />
           ))}
         </Stack>
       </Box>
@@ -156,9 +189,20 @@ export default function EventDetailsPanel({ selected }: Props) {
   const [clips, setClips] = useState<RecordingDto[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Debounce loading the details (clips + detections + crops): each selection resets the timer, so
+  // rapidly clicking through the event list doesn't fire a burst of detail requests for events the
+  // user is only passing over — only the one they settle on loads.
+  const [detailsReady, setDetailsReady] = useState(false)
 
   useEffect(() => {
-    if (!selected) {
+    setDetailsReady(false)
+    if (!selected) return
+    const id = window.setTimeout(() => setDetailsReady(true), 200)
+    return () => window.clearTimeout(id)
+  }, [selected])
+
+  useEffect(() => {
+    if (!selected || !detailsReady) {
       setClips([])
       setError(null)
       return
@@ -178,7 +222,7 @@ export default function EventDetailsPanel({ selected }: Props) {
       .finally(() => setLoading(false))
 
     return () => controller.abort()
-  }, [selected])
+  }, [selected, detailsReady])
 
   if (!selected) {
     return (
@@ -210,10 +254,12 @@ export default function EventDetailsPanel({ selected }: Props) {
           <DetailRow label={t('events.alarmStart')} value={start.toLocaleString()} />
           <DetailRow label={t('events.alarmEnd')} value={end ? end.toLocaleString() : t('events.active')} />
           {duration && <DetailRow label={t('events.duration')} value={duration} />}
+          <DetailRow label={t('events.eventId', 'Event ID')} value={selected.eventId} />
+          {selected.objectId && <DetailRow label={t('events.objectId', 'Object ID')} value={selected.objectId} />}
         </Stack>
       </Box>
 
-      {eventSource(selected) === 'analytics' && <DetectionsBlock eventUuid={selected.eventUuid} />}
+      {detailsReady && eventSource(selected) === 'analytics' && <DetectionsBlock eventUuid={selected.eventUuid} />}
 
       <Divider />
 

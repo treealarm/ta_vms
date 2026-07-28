@@ -397,6 +397,24 @@ public sealed class ClipStorage(
     return rows.Select(r => r.Recording).ToList();
   }
 
+  public async Task<Dictionary<Guid, (string StorageId, string FilePath, string? FragIndex)>> GetClipsForIndexAsync(
+    IReadOnlyList<Guid> uids, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var rows = await db.Clips
+      .Where(c => uids.Contains(c.ClipUid))
+      .Select(c => new { c.ClipUid, c.StorageId, c.FilePath, c.FragIndex })
+      .ToListAsync(ct);
+    return rows.ToDictionary(r => r.ClipUid, r => (r.StorageId, r.FilePath, r.FragIndex));
+  }
+
+  public async Task SaveFragIndexAsync(Guid uid, string json, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    await db.Clips.Where(c => c.ClipUid == uid)
+      .ExecuteUpdateAsync(s => s.SetProperty(c => c.FragIndex, json), ct);
+  }
+
   public async Task<bool> HasActiveRetentionWindowAsync(string cameraId, CancellationToken ct)
   {
     var config = await configCache.GetAsync(cameraId, ct);

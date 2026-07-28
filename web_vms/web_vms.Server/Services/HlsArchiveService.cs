@@ -179,12 +179,10 @@ public sealed class HlsArchiveService(
     return playlist.Build();
   }
 
-  // Reading the fmp4 index is one gRPC + disk seek per clip. A long range or a multi-minute event
-  // can reference 100+ clips, so a strictly sequential read makes the manifest take tens of seconds
-  // and trips the player's manifestLoadTimeout. Read them concurrently with a bounded fan-out so a
-  // big playlist builds in a fraction of the time without overwhelming VmsFs/disk.
-  private const int SidxReadConcurrency = 12;
-
+  // The fmp4 index (init size + per-moof offsets) of every clip in the playlist, fetched in ONE
+  // batch call. VmsFs reads/parses each clip locally and caches the result, so building a manifest
+  // over 100+ clips costs a single round-trip instead of several file-range reads per clip (which
+  // used to take tens of seconds and trip the player's manifestLoadTimeout).
   private static async Task<Dictionary<string, Fmp4SidxParser.SegmentIndex?>> BuildSidxCacheAsync(
     FsService.FsServiceClient fsClient, List<HlsSegment> segments, CancellationToken ct)
   {
@@ -194,15 +192,22 @@ public sealed class HlsArchiveService(
       .Distinct()
       .ToList();
 
-    using var gate = new SemaphoreSlim(SidxReadConcurrency);
-    var tasks = clipUids.Select(async uid =>
+    var cache = new Dictionary<string, Fmp4SidxParser.SegmentIndex?>();
+    if (clipUids.Count == 0) return cache;
+
+    var req = new GetClipIndexesRequest();
+    req.ClipUids.AddRange(clipUids);
+    var resp = await fsClient.GetClipIndexesAsync(req, cancellationToken: ct);
+
+    foreach (var ci in resp.Indexes)
     {
-      await gate.WaitAsync(ct);
-      try { return (uid, idx: await Fmp4SidxParser.ReadAsync(fsClient, uid, ct)); }
-      finally { gate.Release(); }
-    });
-    var results = await Task.WhenAll(tasks);
-    return results.ToDictionary(r => r.uid, r => r.idx);
+      cache[ci.ClipUid] = ci.Found
+        ? new Fmp4SidxParser.SegmentIndex(
+            ci.InitSize,
+            ci.Fragments.Select(f => new Fmp4SidxParser.FragmentEntry(f.Offset, f.Size, f.Duration)).ToList())
+        : null;
+    }
+    return cache;
   }
 
   private void AppendSegments(

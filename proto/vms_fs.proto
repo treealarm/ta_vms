@@ -25,6 +25,10 @@ service FsService {
   rpc GetClipsForEvent(GetClipsForEventRequest) returns (GetRecordingsResponse);
 
   rpc GetFsActivity(GetFsActivityRequest) returns (GetFsActivityResponse);
+
+  // Batch fmp4 fragment index for a set of clips, so a manifest is built with one call instead of
+  // several file-range reads per clip. VmsFs reads/parses locally and caches the result.
+  rpc GetClipIndexes(GetClipIndexesRequest) returns (GetClipIndexesResponse);
 }
 
 message OperationStatus {
@@ -166,6 +170,27 @@ message ListRetentionEventsResponse {
 message GetClipsForEventRequest {
   // Clips are fetched for a specific episode (one row the user selected), not the whole group.
   string event_uuid = 1;
+}
+
+message GetClipIndexesRequest {
+  repeated string clip_uids = 1;
+}
+
+message ClipFragment {
+  uint64 offset   = 1;
+  uint64 size     = 2;
+  double duration = 3;
+}
+
+message ClipIndex {
+  string clip_uid = 1;
+  bool   found    = 2;   // false if the clip is missing or not parseable as fmp4
+  uint64 init_size = 3;  // byte length of the ftyp+moov init section (EXT-X-MAP)
+  repeated ClipFragment fragments = 4;
+}
+
+message GetClipIndexesResponse {
+  repeated ClipIndex indexes = 1;
 }
 
 message StatArchiveTsRequest {

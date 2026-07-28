@@ -11,6 +11,7 @@ public sealed class FsServiceImpl(
   CameraStorageCache storageCache,
   AlarmRecordingService alarmRecording,
   FsActivityLog activityLog,
+  FragIndexWarmer fragWarmer,
   DaprClient daprClient) : FsService.FsServiceBase
 {
   private readonly ClipStorage _storage = storage;
@@ -58,6 +59,10 @@ public sealed class FsServiceImpl(
     try
     {
       var clipUid = await _storage.IngestAsync(request.Clip, context.CancellationToken);
+      // A finalized clip (end_ts set) has its full mfra written, so warm its fragment index now to
+      // spare the first playback the parse. Best-effort: dropped if the warmer queue is full.
+      if (request.Clip.EndTs is not null && Guid.TryParse(clipUid, out var uid))
+        fragWarmer.Enqueue(uid);
       return new OperationStatus
       {
         Status = OperationStatus.Types.Status.Success,
@@ -342,6 +347,59 @@ public sealed class FsServiceImpl(
 
     var resp = new GetRecordingsResponse();
     resp.Recordings.AddRange(clips);
+    return resp;
+  }
+
+  public override async Task<GetClipIndexesResponse> GetClipIndexes(
+    GetClipIndexesRequest request, ServerCallContext context)
+  {
+    var ct = context.CancellationToken;
+    var resp = new GetClipIndexesResponse();
+
+    var uids = new List<Guid>();
+    foreach (var s in request.ClipUids)
+      if (Guid.TryParse(s, out var g)) uids.Add(g);
+
+    var clips = await _storage.GetClipsForIndexAsync(uids, ct);
+
+    // Cached entries deserialize instantly; uncached ones are parsed from the local file (bounded
+    // concurrency — these are cheap local reads) and persisted so later playbacks skip the parse.
+    var indexByUid = new System.Collections.Concurrent.ConcurrentDictionary<Guid, ClipIndexParser.SegmentIndex>();
+    using var gate = new SemaphoreSlim(8);
+    await Task.WhenAll(clips.Select(async kv =>
+    {
+      var (uid, info) = (kv.Key, kv.Value);
+      var idx = info.FragIndex is not null ? ClipIndexParser.Deserialize(info.FragIndex) : null;
+      if (idx is null)
+      {
+        await gate.WaitAsync(ct);
+        try
+        {
+          var abs = await ResolveAbsolutePathAsync(info.StorageId, info.FilePath, ct);
+          if (abs is not null)
+          {
+            idx = await ClipIndexParser.ReadAsync(abs, ct);
+            if (idx is not null)
+              await _storage.SaveFragIndexAsync(uid, ClipIndexParser.Serialize(idx), ct);
+          }
+        }
+        finally { gate.Release(); }
+      }
+      if (idx is not null) indexByUid[uid] = idx;
+    }));
+
+    foreach (var s in request.ClipUids)
+    {
+      var ci = new ClipIndex { ClipUid = s };
+      if (Guid.TryParse(s, out var uid) && indexByUid.TryGetValue(uid, out var idx))
+      {
+        ci.Found = true;
+        ci.InitSize = idx.InitSize;
+        foreach (var f in idx.Fragments)
+          ci.Fragments.Add(new ClipFragment { Offset = f.Offset, Size = f.Size, Duration = f.Duration });
+      }
+      resp.Indexes.Add(ci);
+    }
     return resp;
   }
 
