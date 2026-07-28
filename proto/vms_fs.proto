@@ -25,6 +25,10 @@ service FsService {
   rpc GetClipsForEvent(GetClipsForEventRequest) returns (GetRecordingsResponse);
 
   rpc GetFsActivity(GetFsActivityRequest) returns (GetFsActivityResponse);
+
+  // Batch fmp4 fragment index for a set of clips, so a manifest is built with one call instead of
+  // several file-range reads per clip. VmsFs reads/parses locally and caches the result.
+  rpc GetClipIndexes(GetClipIndexesRequest) returns (GetClipIndexesResponse);
 }
 
 message OperationStatus {
@@ -37,6 +41,9 @@ message OperationStatus {
   Status status = 1;
   string message = 2;
   string clip_uid = 3;
+  // RetainEvent only: the episode (retention_events.event_uuid) this call extended or opened.
+  // VmsFs owns episode identity and generates this — the caller never supplies it.
+  string event_uuid = 4;
 }
 
 message Recording {
@@ -55,12 +62,17 @@ message IngestClipRequest {
 }
 
 message RetainEventRequest {
+  // Group label supplied by the caller (analytics/onvif/manual). While the latest episode for
+  // (event_id, camera_id) is still open it is extended; once closed a new episode is opened under
+  // the same event_id. The caller never supplies event_uuid — VmsFs generates it and returns it.
   string event_id = 1;
   string camera_id = 2;
   google.protobuf.Timestamp alarm_start_ts = 3;
   optional google.protobuf.Timestamp alarm_end_ts = 4;
   uint32 timeout_seconds = 7;
   optional string stream_name = 5;
+  // Re-identification label of the physical object (analytics only); stored on the episode row.
+  optional string object_id = 6;
 }
 
 message GetRecordingsFromToRequest {
@@ -130,20 +142,28 @@ message GetCameraRetentionStatusRequest {
 }
 
 message GetCameraRetentionStatusResponse {
-  bool active_retention_window = 1;
+  bool active_retention_window = 1;                // any active window on the camera
+  bool all_streams_retained = 2;                   // an active window with no specific stream => all streams
+  repeated string retained_streams = 3;            // specific stream_names with an active window
 }
 
 message RetentionEventRow {
+  // event_id is the GROUP label; event_uuid is the specific episode (one open->close cycle).
   string event_id = 1;
   string camera_id = 2;
   google.protobuf.Timestamp alarm_start_ts = 3;
   optional google.protobuf.Timestamp alarm_end_ts = 4;
   optional string stream_name = 5;
+  string event_uuid = 6;
+  optional string object_id = 7;
 }
 
 message ListRetentionEventsRequest {
   uint32 limit = 1;
   optional google.protobuf.Timestamp before_alarm_start_ts = 2;
+  // When non-empty, return ALL episodes for these event_id groups (ignoring limit/before) so the
+  // gateway can complete groups whose episodes straddle the paged window.
+  repeated string event_ids = 3;
 }
 
 message ListRetentionEventsResponse {
@@ -153,7 +173,29 @@ message ListRetentionEventsResponse {
 }
 
 message GetClipsForEventRequest {
-  string event_id = 1;
+  // Clips are fetched for a specific episode (one row the user selected), not the whole group.
+  string event_uuid = 1;
+}
+
+message GetClipIndexesRequest {
+  repeated string clip_uids = 1;
+}
+
+message ClipFragment {
+  uint64 offset   = 1;
+  uint64 size     = 2;
+  double duration = 3;
+}
+
+message ClipIndex {
+  string clip_uid = 1;
+  bool   found    = 2;   // false if the clip is missing or not parseable as fmp4
+  uint64 init_size = 3;  // byte length of the ftyp+moov init section (EXT-X-MAP)
+  repeated ClipFragment fragments = 4;
+}
+
+message GetClipIndexesResponse {
+  repeated ClipIndex indexes = 1;
 }
 
 message StatArchiveTsRequest {

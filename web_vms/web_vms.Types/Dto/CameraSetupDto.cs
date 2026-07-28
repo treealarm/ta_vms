@@ -58,6 +58,10 @@ public record CameraSetupDto
   public OnvifConnectionDto? OnvifConn { get; set; }
   /// <summary>Filled by web_vms.Server when merging FS retention status.</summary>
   public bool? ActiveRetentionWindow { get; init; }
+  /// <summary>An active retention window with no specific stream retains every stream.</summary>
+  public bool? AllStreamsRetained { get; init; }
+  /// <summary>Specific stream_names currently retained (an alarm scoped to those streams).</summary>
+  public IReadOnlyList<string>? RetainedStreams { get; init; }
   public IReadOnlyList<CameraStreamDto> Streams { get; init; } = [];
   /// <summary>Assigned MediaMTX server ID (uuid).</summary>
   public string? MediaMtxServerId { get; init; }

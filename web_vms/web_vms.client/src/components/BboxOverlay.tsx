@@ -21,6 +21,13 @@ const KIND_LABEL: Record<string, string> = {
   license_plate: 'plate',
 }
 
+// Compact form of the re-id object_id for the overlay: ephemeral ids look like "obj-<guid>" (show a
+// short stable slice so a reappearance of the same object reads the same), enrolled ids like
+// "person:john" / "plate:A123BC" are already short and shown as-is.
+function shortObjectId(id: string): string {
+  return id.startsWith('obj-') ? `obj ${id.slice(4, 10)}` : id
+}
+
 const FONT_PX = 11
 const PAD = 3
 const LINE = FONT_PX + 2
@@ -92,6 +99,7 @@ export default function BboxOverlay({ videoRef, cameraId }: Props) {
         KIND_LABEL[d.kind] ?? d.kind,
         `#${d.trackId}`,
         `${Math.round(d.confidence * 100)}%`,
+        d.objectId ? shortObjectId(d.objectId) : null,
         d.plateText,
       ]
         .filter(Boolean)

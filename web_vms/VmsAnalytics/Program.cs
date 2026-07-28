@@ -52,6 +52,10 @@ if (workerAppIds.Length > 0)
 builder.Services.AddSingleton(_ => new DetectionDebouncer(TimeSpan.FromSeconds(debounceSeconds)));
 builder.Services.AddSingleton<AnalyticsActivityLog>();
 builder.Services.AddSingleton<LiveDetectionBroadcaster>();
+// Re-identification: resolves object_id from embeddings (in-memory gallery) and picks the event_id
+// group by time gap. Both are in-memory only (see their class docs); env vars validated on startup.
+builder.Services.AddSingleton<IObjectIdentityResolver, EphemeralReidGallery>();
+builder.Services.AddSingleton<ObjectSessionService>();
 
 var postgresConnStr = BuildPostgresConnectionString();
 builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(postgresConnStr));

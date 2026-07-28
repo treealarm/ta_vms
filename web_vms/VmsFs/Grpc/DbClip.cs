@@ -33,4 +33,9 @@ public sealed class DbClip
 
   [Column("retained")]
   public bool Retained { get; set; } = true;
+
+  // Cached fmp4 fragment index (JSON), parsed once from the file and reused for HLS manifest builds
+  // so playback never re-reads the file to enumerate segments. Null until first parsed.
+  [Column("frag_index")]
+  public string? FragIndex { get; set; }
 }

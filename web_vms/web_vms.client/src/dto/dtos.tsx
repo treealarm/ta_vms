@@ -132,6 +132,10 @@ export type CameraSetupDto = {
   onvifConn?: OnvifConnectionDto
   /** True while camera is inside a retention episode from FS (wall clock in [retain_from, retain_until]); new clips ingest as retained */
   activeRetentionWindow?: boolean
+  /** An active retention window with no specific stream retains every stream. */
+  allStreamsRetained?: boolean
+  /** Specific stream names currently retained (an alarm scoped to those streams). */
+  retainedStreams?: string[]
   streams?: CameraStreamDto[]
   mediaMtxServerId?: string
   onvifEventsEnabled?: boolean
@@ -228,6 +232,34 @@ export type RetentionEventRowDto = {
 
 export type RetentionEventsListDto = {
   events: RetentionEventRowDto[]
+  hasMore: boolean
+  nextBeforeAlarmStart?: string
+}
+
+// One episode = one retention open->close cycle. Selected by the user; archive/details load by eventUuid.
+export type EpisodeDto = {
+  eventUuid: string
+  eventId: string
+  objectId?: string
+  cameraId: string
+  streamName?: string
+  alarmStartTs: string
+  alarmEndTs?: string
+}
+
+// A group = all episodes sharing one eventId (a time-clustered session of one object, possibly
+// across cameras). Rendered as a tree row with a "+N" badge; episodes ordered oldest-first.
+export type EventGroupDto = {
+  eventId: string
+  objectId?: string
+  representativeCameraId: string
+  earliestAlarmStart: string
+  latestAlarmStart: string
+  episodes: EpisodeDto[]
+}
+
+export type RetentionEventGroupsListDto = {
+  groups: EventGroupDto[]
   hasMore: boolean
   nextBeforeAlarmStart?: string
 }
@@ -356,6 +388,8 @@ export type AnalyticsWatchDto = {
 export type AnalyticsDetectionDto = {
   id: number
   eventId: string
+  eventUuid: string
+  objectId?: string
   cameraId: string
   trackId: number
   kind: AnalyticsDetectionClass | 'unknown'
@@ -380,6 +414,8 @@ export type AnalyticsActivityEntryDto = {
   cropJpegBase64?: string
   /** false = seen by the detector but dropped by debounce/armed check */
   persisted: boolean
+  /** Re-identification label of the physical object, when resolved for this track */
+  objectId?: string
 }
 
 export type OnvifAlarmFilterDto = {

@@ -4,23 +4,35 @@ import Hls from 'hls.js'
 import { useTranslation } from 'react-i18next'
 
 import { authXhrSetup } from '../auth/authFetch'
-import type { RetentionEventRowDto } from '../dto/dtos'
+import type { EpisodeDto } from '../dto/dtos'
 import { useCameraName } from '../store'
 
 type StreamEntry = {
   streamName: string | null  // null = all streams
   playlistUrl: string
+  // Present only for a long event split into <=3-min playback chunks; then the label carries the
+  // time range and each (stream, chunk) is its own selectable source.
+  fromTs?: string
+  toTs?: string
 }
 
 type Props = {
-  selected: RetentionEventRowDto | null
+  selected: EpisodeDto | null
 }
 
-async function fetchEventPlaylists(eventId: string, signal: AbortSignal): Promise<StreamEntry[]> {
-  const resp = await fetch(`/api/fs/event-playlists?eventId=${encodeURIComponent(eventId)}`, { signal })
+async function fetchEventPlaylists(eventUuid: string, signal: AbortSignal): Promise<StreamEntry[]> {
+  const resp = await fetch(`/api/fs/event-playlists?eventUuid=${encodeURIComponent(eventUuid)}`, { signal })
   if (!resp.ok) throw new Error(`Failed to load streams: ${resp.status}`)
   const data = (await resp.json()) as { streams: StreamEntry[] }
   return data.streams
+}
+
+function entryLabel(e: StreamEntry, allStreamsLabel: string, defaultLabel: string): string {
+  const streamPart = e.streamName === null ? allStreamsLabel : (e.streamName || defaultLabel)
+  if (!e.fromTs) return streamPart
+  const from = new Date(e.fromTs).toLocaleTimeString()
+  const to = e.toTs ? new Date(e.toTs).toLocaleTimeString() : ''
+  return `${streamPart} · ${from}–${to}`
 }
 
 export default function ArchiveHlsPreview({ selected }: Props) {
@@ -28,14 +40,16 @@ export default function ArchiveHlsPreview({ selected }: Props) {
   const cameraName = useCameraName(selected?.cameraId)
   const videoRef = useRef<HTMLVideoElement>(null)
   const [streams, setStreams] = useState<StreamEntry[]>([])
-  const [activeStream, setActiveStream] = useState<string | null>(null)
+  // The selected source is keyed by its playlist URL, not stream name: a long event has several
+  // (stream, time-chunk) sources that can share a stream name.
+  const [activeUrl, setActiveUrl] = useState<string | null>(null)
   const [loadingStreams, setLoadingStreams] = useState(false)
   const [hlsError, setHlsError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!selected) {
       setStreams([])
-      setActiveStream('')
+      setActiveUrl(null)
       return
     }
 
@@ -44,7 +58,7 @@ export default function ArchiveHlsPreview({ selected }: Props) {
 
     const controller = new AbortController()
 
-    fetchEventPlaylists(selected.eventId, controller.signal)
+    fetchEventPlaylists(selected.eventUuid, controller.signal)
       .then((entries) => {
         setStreams(entries)
         const preferred = selected.streamName ?? null
@@ -52,13 +66,13 @@ export default function ArchiveHlsPreview({ selected }: Props) {
           (preferred && entries.find((e) => e.streamName === preferred)) ||
           entries.find((e) => e.streamName !== null) ||
           entries[0]
-        setActiveStream(pick?.streamName ?? null)
+        setActiveUrl(pick?.playlistUrl ?? null)
       })
       .catch((e: unknown) => {
         if (e instanceof DOMException && e.name === 'AbortError') return
         setHlsError(e instanceof Error ? e.message : String(e))
         setStreams([])
-        setActiveStream(null)
+        setActiveUrl(null)
       })
       .finally(() => setLoadingStreams(false))
 
@@ -67,9 +81,9 @@ export default function ArchiveHlsPreview({ selected }: Props) {
 
   useEffect(() => {
     const video = videoRef.current
-    if (!video || !selected || activeStream === undefined) return
+    if (!video || !selected || !activeUrl) return
 
-    const entry = streams.find((s) => s.streamName === activeStream)
+    const entry = streams.find((s) => s.playlistUrl === activeUrl)
     if (!entry) return
 
     setHlsError(null)
@@ -115,7 +129,7 @@ export default function ArchiveHlsPreview({ selected }: Props) {
       video.removeAttribute('src')
       video.load()
     }
-  }, [selected, activeStream, streams])
+  }, [selected, activeUrl, streams])
 
   if (!selected) {
     return (
@@ -143,13 +157,13 @@ export default function ArchiveHlsPreview({ selected }: Props) {
       {!loadingStreams && streams.length > 1 && (
         <Select
           size="small"
-          value={activeStream ?? ''}
-          onChange={(e) => setActiveStream(e.target.value === '' ? null : e.target.value)}
+          value={activeUrl ?? ''}
+          onChange={(e) => setActiveUrl(e.target.value || null)}
           sx={{ fontSize: '0.8rem', height: 28, alignSelf: 'flex-start', minWidth: 140 }}
         >
           {streams.map((s) => (
-            <MenuItem key={s.streamName ?? '__all__'} value={s.streamName ?? ''} sx={{ fontSize: '0.8rem' }}>
-              {s.streamName === null ? t('archive.allStreams') : s.streamName || t('archive.default')}
+            <MenuItem key={s.playlistUrl} value={s.playlistUrl} sx={{ fontSize: '0.8rem' }}>
+              {entryLabel(s, t('archive.allStreams'), t('archive.default'))}
             </MenuItem>
           ))}
         </Select>
@@ -179,7 +193,7 @@ export default function ArchiveHlsPreview({ selected }: Props) {
         }}
       >
         <video
-          key={`${selected.eventId}-${activeStream ?? '__all__'}`}
+          key={activeUrl ?? selected.eventUuid}
           ref={videoRef}
           controls
           playsInline

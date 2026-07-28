@@ -49,6 +49,7 @@ public sealed class AnalyticsServiceImpl(
         Persisted  = e.Persisted,
       };
       if (e.PlateText is not null) entry.PlateText = e.PlateText;
+      if (e.ObjectId is not null) entry.ObjectId = e.ObjectId;
       await responseStream.WriteAsync(entry);
     }
   }
@@ -80,6 +81,8 @@ public sealed class AnalyticsServiceImpl(
       query = query.Where(d => d.CameraId == request.CameraId);
     if (request.HasEventId && !string.IsNullOrWhiteSpace(request.EventId))
       query = query.Where(d => d.EventId == request.EventId);
+    if (request.HasEventUuid && Guid.TryParse(request.EventUuid, out var eventUuid))
+      query = query.Where(d => d.EventUuid == eventUuid);
     if (request.FromTs is not null)
     {
       var from = request.FromTs.ToDateTime();
@@ -135,9 +138,11 @@ public sealed class AnalyticsServiceImpl(
       Confidence = row.Confidence,
       DetectedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(row.DetectedAt, DateTimeKind.Utc)),
       EventId = row.EventId ?? string.Empty,
+      EventUuid = row.EventUuid?.ToString() ?? string.Empty,
       HasCrop = row.CropPath != null,
     };
     if (row.PlateText is not null) detection.PlateText = row.PlateText;
+    if (row.ObjectId is not null) detection.ObjectId = row.ObjectId;
     return detection;
   }
 

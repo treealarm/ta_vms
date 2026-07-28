@@ -36,9 +36,11 @@ message Detection {
   DetectionKind kind = 4;
   float confidence = 5;
   google.protobuf.Timestamp detected_at = 6;
-  string event_id = 7;         // retention_events.event_id this detection triggered
+  string event_id = 7;         // retention_events.event_id — the GROUP this detection belongs to
   optional string plate_text = 8;
   bool has_crop = 9;
+  string event_uuid = 10;      // retention_events.event_uuid — the specific episode it triggered
+  optional string object_id = 11;
 }
 
 message ListDetectionsRequest {
@@ -48,6 +50,7 @@ message ListDetectionsRequest {
   uint32 limit = 4;
   optional string plate_text = 5;
   optional string event_id = 6;
+  optional string event_uuid = 7;
 }
 
 message ListDetectionsResponse {
@@ -79,6 +82,9 @@ message AnalyticsActivityEntry {
   optional string plate_text = 7;
   bytes crop_jpeg = 8;    // empty unless the watch has attach_debug_crops enabled
   bool persisted = 9;     // false = dropped by debounce/armed check, seen but not stored
+  // Re-identification label of the physical object, when known for this track (populated on the
+  // live overlay stream once re-id has resolved the track). Absent for unarmed/unresolved tracks.
+  optional string object_id = 10;
 }
 
 message GetAnalyticsActivityRequest {

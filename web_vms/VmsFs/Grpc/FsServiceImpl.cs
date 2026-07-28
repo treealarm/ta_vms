@@ -11,6 +11,7 @@ public sealed class FsServiceImpl(
   CameraStorageCache storageCache,
   AlarmRecordingService alarmRecording,
   FsActivityLog activityLog,
+  FragIndexWarmer fragWarmer,
   DaprClient daprClient) : FsService.FsServiceBase
 {
   private readonly ClipStorage _storage = storage;
@@ -58,6 +59,10 @@ public sealed class FsServiceImpl(
     try
     {
       var clipUid = await _storage.IngestAsync(request.Clip, context.CancellationToken);
+      // A finalized clip (end_ts set) has its full mfra written, so warm its fragment index now to
+      // spare the first playback the parse. Best-effort: dropped if the warmer queue is full.
+      if (request.Clip.EndTs is not null && Guid.TryParse(clipUid, out var uid))
+        fragWarmer.Enqueue(uid);
       return new OperationStatus
       {
         Status = OperationStatus.Types.Status.Success,
@@ -79,15 +84,11 @@ public sealed class FsServiceImpl(
   {
     try
     {
-      var until = await _storage.RetainEventAsync(request, context.CancellationToken);
+      var (eventUuid, until) = await _storage.RetainEventAsync(request, context.CancellationToken);
       var streamName = request.HasStreamName && !string.IsNullOrWhiteSpace(request.StreamName) ? request.StreamName : null;
       _ = alarmRecording.TryActivateAsync(request.CameraId, streamName, until, CancellationToken.None);
       NotifyRetentionEventCreated(request.CameraId, streamName, request.AlarmStartTs.ToDateTime());
-      return new OperationStatus { Status = OperationStatus.Types.Status.Success, Message = "ok" };
-    }
-    catch (RetentionEventClosedException ex)
-    {
-      return new OperationStatus { Status = OperationStatus.Types.Status.PermanentFailure, Message = ex.Message };
+      return new OperationStatus { Status = OperationStatus.Types.Status.Success, Message = "ok", EventUuid = eventUuid.ToString() };
     }
     catch (Exception ex)
     {
@@ -193,8 +194,14 @@ public sealed class FsServiceImpl(
   {
     try
     {
-      var active = await _storage.HasActiveRetentionWindowAsync(request.CameraId, context.CancellationToken);
-      return new GetCameraRetentionStatusResponse { ActiveRetentionWindow = active };
+      var (allStreams, streams) = await _storage.GetRetainedStreamsAsync(request.CameraId, context.CancellationToken);
+      var resp = new GetCameraRetentionStatusResponse
+      {
+        ActiveRetentionWindow = allStreams || streams.Count > 0,
+        AllStreamsRetained = allStreams,
+      };
+      resp.RetainedStreams.AddRange(streams);
+      return resp;
     }
     catch (Exception ex)
     {
@@ -209,6 +216,15 @@ public sealed class FsServiceImpl(
   {
     try
     {
+      // event_ids set => the gateway is completing groups; return all their episodes, unpaged.
+      if (request.EventIds.Count > 0)
+      {
+        var all = await _storage.GetEpisodesByEventIdsAsync(request.EventIds, context.CancellationToken);
+        var byIds = new ListRetentionEventsResponse { HasMore = false };
+        byIds.Events.AddRange(all);
+        return byIds;
+      }
+
       var (events, hasMore, nextBefore) = await _storage.ListRetentionEventsAsync(
         request.Limit,
         request.BeforeAlarmStartTs,
@@ -337,15 +353,68 @@ public sealed class FsServiceImpl(
     GetClipsForEventRequest request,
     ServerCallContext context)
   {
-    if (string.IsNullOrWhiteSpace(request.EventId))
-      throw new RpcException(new Status(StatusCode.InvalidArgument, "event_id is required"));
+    if (!Guid.TryParse(request.EventUuid, out var eventUuid))
+      throw new RpcException(new Status(StatusCode.InvalidArgument, "valid event_uuid is required"));
 
-    var clips = await _storage.GetClipsForEventAsync(request.EventId, context.CancellationToken);
+    var clips = await _storage.GetClipsForEventAsync(eventUuid, context.CancellationToken);
     if (clips is null)
       throw new RpcException(new Status(StatusCode.NotFound, "event not found"));
 
     var resp = new GetRecordingsResponse();
     resp.Recordings.AddRange(clips);
+    return resp;
+  }
+
+  public override async Task<GetClipIndexesResponse> GetClipIndexes(
+    GetClipIndexesRequest request, ServerCallContext context)
+  {
+    var ct = context.CancellationToken;
+    var resp = new GetClipIndexesResponse();
+
+    var uids = new List<Guid>();
+    foreach (var s in request.ClipUids)
+      if (Guid.TryParse(s, out var g)) uids.Add(g);
+
+    var clips = await _storage.GetClipsForIndexAsync(uids, ct);
+
+    // Cached entries deserialize instantly; uncached ones are parsed from the local file (bounded
+    // concurrency — these are cheap local reads) and persisted so later playbacks skip the parse.
+    var indexByUid = new System.Collections.Concurrent.ConcurrentDictionary<Guid, ClipIndexParser.SegmentIndex>();
+    using var gate = new SemaphoreSlim(8);
+    await Task.WhenAll(clips.Select(async kv =>
+    {
+      var (uid, info) = (kv.Key, kv.Value);
+      var idx = info.FragIndex is not null ? ClipIndexParser.Deserialize(info.FragIndex) : null;
+      if (idx is null)
+      {
+        await gate.WaitAsync(ct);
+        try
+        {
+          var abs = await ResolveAbsolutePathAsync(info.StorageId, info.FilePath, ct);
+          if (abs is not null)
+          {
+            idx = await ClipIndexParser.ReadAsync(abs, ct);
+            if (idx is not null)
+              await _storage.SaveFragIndexAsync(uid, ClipIndexParser.Serialize(idx), ct);
+          }
+        }
+        finally { gate.Release(); }
+      }
+      if (idx is not null) indexByUid[uid] = idx;
+    }));
+
+    foreach (var s in request.ClipUids)
+    {
+      var ci = new ClipIndex { ClipUid = s };
+      if (Guid.TryParse(s, out var uid) && indexByUid.TryGetValue(uid, out var idx))
+      {
+        ci.Found = true;
+        ci.InitSize = idx.InitSize;
+        foreach (var f in idx.Fragments)
+          ci.Fragments.Add(new ClipFragment { Offset = f.Offset, Size = f.Size, Duration = f.Duration });
+      }
+      resp.Indexes.Add(ci);
+    }
     return resp;
   }
 

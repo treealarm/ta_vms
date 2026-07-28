@@ -149,6 +149,9 @@
                 "POSTGRES_ANALYTICS_DB": "ta_analytics",
                 "ANALYTICS_DEBOUNCE_SECONDS": "10",
                 "ANALYTICS_RETAIN_TIMEOUT_SECONDS": "30",
+                "ANALYTICS_REID_MATCH_MIN_SCORE": "0.6",
+                "ANALYTICS_REID_GALLERY_WINDOW_SECONDS": "900",
+                "ANALYTICS_EVENT_GROUP_GAP_SECONDS": "300",
                 "DAPR_ANALYTICS_WORKER_APP_IDS": "analytics-worker",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }

@@ -66,16 +66,24 @@ public partial class ArchController(
 
   [HttpGet("hls/event.m3u8")]
   public async Task<IActionResult> EventHlsPlaylist(
-    [FromQuery] string eventId,
+    [FromQuery] string eventUuid,
     [FromQuery] string? streamName,
+    [FromQuery] string? from,
+    [FromQuery] string? to,
     CancellationToken ct)
   {
-    eventId    = eventId?.Trim() ?? "";
+    eventUuid  = eventUuid?.Trim() ?? "";
     streamName = streamName?.Trim();
-    if (string.IsNullOrEmpty(eventId))
-      return BadRequest(new { error = "eventId is required" });
+    // Validate before fan-out so a malformed uuid can't cool down an FS instance (see FSController).
+    if (!Guid.TryParse(eventUuid, out _))
+      return BadRequest(new { error = "valid eventUuid is required" });
 
-    var result = await hlsService.BuildEventPlaylistAsync(eventId, streamName, ct);
+    // Optional [from, to] restricts the source to one playback chunk of a long event (see
+    // FSController.GetEventPlaylists). Absent => the whole event.
+    DateTime? fromTs = DateTime.TryParse(from, null, System.Globalization.DateTimeStyles.RoundtripKind, out var f) ? f.ToUniversalTime() : null;
+    DateTime? toTs   = DateTime.TryParse(to, null, System.Globalization.DateTimeStyles.RoundtripKind, out var tt) ? tt.ToUniversalTime() : null;
+
+    var result = await hlsService.BuildEventPlaylistAsync(eventUuid, streamName, fromTs, toTs, ct);
     return PlaylistResult(result);
   }
 

@@ -16,11 +16,19 @@ public sealed class ClipStorage(
   CameraConfigCache configCache,
   FsActivityLog activityLog)
 {
-  // Ranges are grouped purely by gap tolerance (no artificial wall-span cap): a cap here
-  // forces the archive HLS player to rebuild its source every time a range ends, even for
-  // an otherwise uninterrupted recording. Seeking to an exact moment inside a long range is
-  // handled separately via FromFilesHlsPlaylist's `from` parameter.
-  private static readonly TimeSpan DefaultMaxRecordingRangeWallSpan = TimeSpan.Zero;
+  // Cap on how long one contiguous archive range (a single HLS source) may span. Uncapped, an
+  // uninterrupted multi-hour recording becomes one HLS source with thousands of segments, and
+  // building that manifest reads a sidx per clip — it grows to tens of seconds and trips the
+  // player's manifestLoadTimeout. Capping the span bounds each source (the player rebuilds at each
+  // boundary — a brief re-buffer every few minutes, the accepted trade for playable archive).
+  private static readonly TimeSpan DefaultMaxRecordingRangeWallSpan = TimeSpan.FromMinutes(3);
+
+  // Safety-net cap on how long a single retention episode can keep extending, for callers that
+  // reuse one event_id indefinitely (ONVIF / manual REST). Analytics is already bounded upstream by
+  // VmsAnalytics minting a fresh event_id every few minutes, but a runaway event_id would otherwise
+  // grow one episode's clip list — and its HLS manifest — without bound. Past this, RetainEvent
+  // rolls over into a new episode (new event_uuid, same event_id group).
+  private static readonly TimeSpan MaxEpisodeDuration = TimeSpan.FromMinutes(3);
 
   public async Task<string> IngestAsync(Recording clip, CancellationToken ct)
   {
@@ -65,8 +73,11 @@ public sealed class ClipStorage(
     return returnedUid;
   }
 
-  // Returns the alarm_override_until timestamp (alarm_end + post_record_seconds).
-  public async Task<DateTime> RetainEventAsync(RetainEventRequest req, CancellationToken ct)
+  // Opens or extends a retention episode for (event_id, camera_id) and returns the episode's
+  // event_uuid plus the alarm-override-until timestamp (alarm_end + post_record_seconds). While the
+  // latest episode for this (event_id, camera_id) is still open it is extended (same event_uuid);
+  // once it has expired, a fresh episode (new event_uuid) is opened under the same event_id group.
+  public async Task<(Guid EventUuid, DateTime OverrideUntil)> RetainEventAsync(RetainEventRequest req, CancellationToken ct)
   {
     var eventId = string.IsNullOrWhiteSpace(req.EventId)
       ? $"{req.CameraId}-{req.AlarmStartTs.ToDateTime().ToUniversalTime().Ticks}"
@@ -79,6 +90,8 @@ public sealed class ClipStorage(
       : alarmStart.AddSeconds(timeout);
     var streamName = req.HasStreamName && !string.IsNullOrWhiteSpace(req.StreamName)
       ? req.StreamName : null;
+    var objectId = req.HasObjectId && !string.IsNullOrWhiteSpace(req.ObjectId)
+      ? req.ObjectId : null;
 
     var config = await configCache.GetAsync(req.CameraId, ct);
     var preSeconds  = config?.PreRecordSeconds  ?? 30;
@@ -87,34 +100,71 @@ public sealed class ClipStorage(
     await using var conn = await dataSource.OpenConnectionAsync(ct);
     await using var tx = await conn.BeginTransactionAsync(ct);
 
-    // Check for an existing event with the same ID and lock it for the transaction.
-    await using (var checkCmd = new NpgsqlCommand(
-      "SELECT alarm_end_ts FROM retention_events WHERE event_id = $1 FOR UPDATE",
-      conn, tx))
+    // Serialize concurrent RetainEvent for the same (event_id, camera_id). A plain SELECT ... FOR
+    // UPDATE below only locks an EXISTING episode row — for the very first call (no row yet) two
+    // concurrent transactions would both find nothing and both INSERT a duplicate episode. A
+    // transaction-scoped advisory lock covers that gap; it auto-releases on commit/rollback.
+    await using (var lockCmd = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtext($1))", conn, tx))
     {
-      checkCmd.Parameters.AddWithValue(eventId);
-      var existing = await checkCmd.ExecuteScalarAsync(ct);
-      if (existing is DateTime existingEnd && existingEnd.ToUniversalTime() <= DateTime.UtcNow)
+      lockCmd.Parameters.AddWithValue($"{eventId}|{req.CameraId}");
+      await lockCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    // Find the latest episode for this (event_id, camera_id). If it is still open, extend it;
+    // otherwise open a new one.
+    Guid? openUuid = null;
+    await using (var findCmd = new NpgsqlCommand("""
+      SELECT event_uuid, alarm_end_ts, alarm_start_ts
+      FROM retention_events
+      WHERE event_id = $1 AND camera_id = $2
+      ORDER BY alarm_start_ts DESC
+      LIMIT 1
+      """, conn, tx))
+    {
+      findCmd.Parameters.AddWithValue(eventId);
+      findCmd.Parameters.AddWithValue(req.CameraId);
+      await using var reader = await findCmd.ExecuteReaderAsync(ct);
+      if (await reader.ReadAsync(ct))
       {
-        await tx.RollbackAsync(ct);
-        throw new RetentionEventClosedException(eventId, existingEnd);
+        var openEnd   = reader.GetDateTime(1).ToUniversalTime();
+        var openStart = reader.GetDateTime(2).ToUniversalTime();
+        // Extend only while the episode is still open AND under the duration cap; past the cap, fall
+        // through to open a fresh episode (same event_id group) so no single episode grows unbounded.
+        if (openEnd > DateTime.UtcNow && DateTime.UtcNow - openStart < MaxEpisodeDuration)
+          openUuid = reader.GetGuid(0);
       }
     }
 
-    await using (var upsert = new NpgsqlCommand("""
-      INSERT INTO retention_events(event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts)
-      VALUES($1, $2, $3, $4, COALESCE($5::timestamptz, $4 + ($6 * interval '1 second')))
-      ON CONFLICT(event_id) DO UPDATE SET
-        alarm_end_ts = GREATEST(retention_events.alarm_end_ts, EXCLUDED.alarm_end_ts);
-      """, conn, tx))
+    Guid eventUuid;
+    if (openUuid is Guid existing)
     {
-      upsert.Parameters.AddWithValue(eventId);
-      upsert.Parameters.AddWithValue(req.CameraId);
-      upsert.Parameters.AddWithValue((object?)streamName ?? DBNull.Value);
-      upsert.Parameters.AddWithValue(alarmStart);
-      upsert.Parameters.AddWithValue(req.AlarmEndTs is null ? DBNull.Value : req.AlarmEndTs.ToDateTime());
-      upsert.Parameters.AddWithValue((int)timeout);
-      await upsert.ExecuteNonQueryAsync(ct);
+      eventUuid = existing;
+      await using var ext = new NpgsqlCommand("""
+        UPDATE retention_events
+        SET alarm_end_ts = GREATEST(alarm_end_ts, $2),
+            object_id = COALESCE($3, object_id)
+        WHERE event_uuid = $1;
+        """, conn, tx);
+      ext.Parameters.AddWithValue(eventUuid);
+      ext.Parameters.AddWithValue(alarmEnd);
+      ext.Parameters.AddWithValue((object?)objectId ?? DBNull.Value);
+      await ext.ExecuteNonQueryAsync(ct);
+    }
+    else
+    {
+      eventUuid = Guid.NewGuid();
+      await using var ins = new NpgsqlCommand("""
+        INSERT INTO retention_events(event_uuid, event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, object_id)
+        VALUES($1, $2, $3, $4, $5, $6, $7);
+        """, conn, tx);
+      ins.Parameters.AddWithValue(eventUuid);
+      ins.Parameters.AddWithValue(eventId);
+      ins.Parameters.AddWithValue(req.CameraId);
+      ins.Parameters.AddWithValue((object?)streamName ?? DBNull.Value);
+      ins.Parameters.AddWithValue(alarmStart);
+      ins.Parameters.AddWithValue(alarmEnd);
+      ins.Parameters.AddWithValue((object?)objectId ?? DBNull.Value);
+      await ins.ExecuteNonQueryAsync(ct);
     }
 
     // When stream_name is specified retain only that stream's clips, otherwise all streams
@@ -139,7 +189,7 @@ public sealed class ClipStorage(
     }
 
     await tx.CommitAsync(ct);
-    return alarmEnd.AddSeconds(postSeconds);
+    return (eventUuid, alarmEnd.AddSeconds(postSeconds));
   }
 
   public async Task<List<Recording>> GetRecordingsFromToAsync(GetRecordingsFromToRequest request, CancellationToken ct)
@@ -320,13 +370,14 @@ public sealed class ClipStorage(
     await db.Clips.Where(c => c.ClipUid == clipUid).ExecuteDeleteAsync(ct);
   }
 
-  // Returns null when the event does not exist; empty list when event exists but has no retained clips yet.
-  public async Task<List<Recording>?> GetClipsForEventAsync(string eventId, CancellationToken ct)
+  // Returns null when the episode does not exist; empty list when it exists but has no retained
+  // clips yet. Scoped to a single episode (event_uuid), i.e. the one row the user selected.
+  public async Task<List<Recording>?> GetClipsForEventAsync(Guid eventUuid, CancellationToken ct)
   {
     await using var evtCmd = dataSource.CreateCommand("""
-      SELECT camera_id FROM retention_events WHERE event_id = $1;
+      SELECT camera_id FROM retention_events WHERE event_uuid = $1;
       """);
-    evtCmd.Parameters.AddWithValue(eventId);
+    evtCmd.Parameters.AddWithValue(eventUuid);
     var cameraId = (string?)await evtCmd.ExecuteScalarAsync(ct);
     if (cameraId is null)
       return null;
@@ -339,19 +390,65 @@ public sealed class ClipStorage(
       SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id,
              ''
       FROM clips c
-      JOIN retention_events re ON re.event_id = $1
+      JOIN retention_events re ON re.event_uuid = $1
         AND re.camera_id = c.camera_id
         AND c.start_ts <= re.alarm_end_ts + ($2 * interval '1 second')
         AND COALESCE(c.end_ts, c.start_ts) >= re.alarm_start_ts - ($3 * interval '1 second')
       WHERE c.retained = TRUE
       ORDER BY c.stream_name, c.start_ts;
       """);
-    cmd.Parameters.AddWithValue(eventId);
+    cmd.Parameters.AddWithValue(eventUuid);
     cmd.Parameters.AddWithValue(post);
     cmd.Parameters.AddWithValue(pre);
 
     var rows = await ReadRecordingWithEventsAsync(cmd, ct);
     return rows.Select(r => r.Recording).ToList();
+  }
+
+  public async Task<Dictionary<Guid, (string StorageId, string FilePath, string? FragIndex)>> GetClipsForIndexAsync(
+    IReadOnlyList<Guid> uids, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var rows = await db.Clips
+      .Where(c => uids.Contains(c.ClipUid))
+      .Select(c => new { c.ClipUid, c.StorageId, c.FilePath, c.FragIndex })
+      .ToListAsync(ct);
+    return rows.ToDictionary(r => r.ClipUid, r => (r.StorageId, r.FilePath, r.FragIndex));
+  }
+
+  public async Task SaveFragIndexAsync(Guid uid, string json, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    await db.Clips.Where(c => c.ClipUid == uid)
+      .ExecuteUpdateAsync(s => s.SetProperty(c => c.FragIndex, json), ct);
+  }
+
+  // Per-stream retention breakdown for a camera: a retention_events row with NULL stream_name retains
+  // every stream (AllStreams=true), otherwise only the named streams are retained right now.
+  public async Task<(bool AllStreams, List<string> Streams)> GetRetainedStreamsAsync(string cameraId, CancellationToken ct)
+  {
+    var config = await configCache.GetAsync(cameraId, ct);
+    var post = config?.PostRecordSeconds ?? 30;
+
+    await using var cmd = dataSource.CreateCommand("""
+      SELECT stream_name FROM retention_events
+      WHERE camera_id = $1
+        AND alarm_start_ts <= now()
+        AND alarm_end_ts + ($2 * interval '1 second') >= now()
+      GROUP BY stream_name;
+      """);
+    cmd.Parameters.AddWithValue(cameraId);
+    cmd.Parameters.AddWithValue(post);
+
+    var allStreams = false;
+    var streams = new List<string>();
+    await using var reader = await cmd.ExecuteReaderAsync(ct);
+    while (await reader.ReadAsync(ct))
+    {
+      if (reader.IsDBNull(0)) allStreams = true;
+      else streams.Add(reader.GetString(0));
+    }
+    return (allStreams, streams);
   }
 
   public async Task<bool> HasActiveRetentionWindowAsync(string cameraId, CancellationToken ct)
@@ -372,6 +469,40 @@ public sealed class ClipStorage(
     return (bool)(await cmd.ExecuteScalarAsync(ct))!;
   }
 
+  // All episodes for the given event_id groups — used to complete groups whose episodes straddle the
+  // gateway's paged window (so badge counts / earliest timestamps are accurate).
+  public async Task<List<RetentionEventRow>> GetEpisodesByEventIdsAsync(IReadOnlyList<string> eventIds, CancellationToken ct)
+  {
+    if (eventIds.Count == 0)
+      return [];
+
+    await using var cmd = dataSource.CreateCommand("""
+      SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id
+      FROM retention_events
+      WHERE event_id = ANY($1)
+      ORDER BY alarm_start_ts DESC, event_uuid DESC;
+      """);
+    cmd.Parameters.AddWithValue(eventIds.ToArray());
+
+    var events = new List<RetentionEventRow>();
+    await using var reader = await cmd.ExecuteReaderAsync(ct);
+    while (await reader.ReadAsync(ct))
+    {
+      var row = new RetentionEventRow
+      {
+        EventId      = reader.GetString(0),
+        CameraId     = reader.GetString(1),
+        AlarmStartTs = Timestamp.FromDateTime(reader.GetDateTime(3).ToUniversalTime()),
+        EventUuid    = reader.GetString(5)
+      };
+      if (!reader.IsDBNull(2)) row.StreamName = reader.GetString(2);
+      if (!reader.IsDBNull(4)) row.AlarmEndTs = Timestamp.FromDateTime(reader.GetDateTime(4).ToUniversalTime());
+      if (!reader.IsDBNull(6)) row.ObjectId = reader.GetString(6);
+      events.Add(row);
+    }
+    return events;
+  }
+
   public async Task<(List<RetentionEventRow> Events, bool HasMore, Timestamp? NextBefore)> ListRetentionEventsAsync(
     uint limit,
     Timestamp? beforeAlarmStart,
@@ -381,16 +512,16 @@ public sealed class ClipStorage(
 
     await using var cmd = beforeAlarmStart is null
       ? dataSource.CreateCommand("""
-        SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts
+        SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id
         FROM retention_events
-        ORDER BY alarm_start_ts DESC, event_id DESC
+        ORDER BY alarm_start_ts DESC, event_uuid DESC
         LIMIT $1;
         """)
       : dataSource.CreateCommand("""
-        SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts
+        SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id
         FROM retention_events
         WHERE alarm_start_ts < $1
-        ORDER BY alarm_start_ts DESC, event_id DESC
+        ORDER BY alarm_start_ts DESC, event_uuid DESC
         LIMIT $2;
         """);
 
@@ -410,10 +541,12 @@ public sealed class ClipStorage(
       {
         EventId      = reader.GetString(0),
         CameraId     = reader.GetString(1),
-        AlarmStartTs = Timestamp.FromDateTime(reader.GetDateTime(3).ToUniversalTime())
+        AlarmStartTs = Timestamp.FromDateTime(reader.GetDateTime(3).ToUniversalTime()),
+        EventUuid    = reader.GetString(5)
       };
       if (!reader.IsDBNull(2)) row.StreamName = reader.GetString(2);
       if (!reader.IsDBNull(4)) row.AlarmEndTs = Timestamp.FromDateTime(reader.GetDateTime(4).ToUniversalTime());
+      if (!reader.IsDBNull(6)) row.ObjectId = reader.GetString(6);
       events.Add(row);
     }
 
@@ -665,11 +798,4 @@ public sealed class ClipStorage(
     ClipUid    = c.ClipUid.ToString(),
     StorageId  = c.StorageId
   };
-}
-
-public sealed class RetentionEventClosedException(string eventId, DateTime closedAt)
-  : Exception($"Retention event '{eventId}' is already closed (alarm_end_ts={closedAt:O})")
-{
-  public string EventId { get; } = eventId;
-  public DateTime ClosedAt { get; } = closedAt;
 }
