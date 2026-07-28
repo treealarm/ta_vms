@@ -239,9 +239,11 @@ public sealed class FSController(
     // Fan-out to all FS instances, then group the merged episodes by event_id (the group label
     // minted by the single-DB VmsAnalytics, so it is globally consistent across instances).
     var episodes = new List<EpisodeDto>();
+    var moreOnInstance = false;
     var responses = await registry.FanOutFsAsync((c, o) => c.ListRetentionEventsAsync(grpcReq, o).ResponseAsync, ct);
     foreach (var resp in responses.Select(r => r.Value))
     {
+      if (resp.HasMore) moreOnInstance = true;
       episodes.AddRange(resp.Events.Select(e => new EpisodeDto
       {
         EventUuid    = e.EventUuid,
@@ -273,12 +275,18 @@ public sealed class FSController(
       .ToList();
 
     var groups = allGroups.Take(pageLimit).ToList();
-    var hasMore = allGroups.Count > pageLimit;
+    // hasMore must also honor an instance that had more rows beyond fetchLimit — otherwise, when the
+    // fetched episodes collapse into <= pageLimit groups, older events would become unreachable.
+    var hasMore = moreOnInstance || allGroups.Count > pageLimit;
+    // Cursor by the last shown group's LATEST alarm_start (consistent with the ordering). Using its
+    // EARLIEST would skip any group whose episodes fall between that earliest and latest. The trade-off
+    // is that a group straddling the boundary can reappear (partially) on the next page rather than be
+    // hidden — an overlap is far preferable to silently dropping events.
     return Ok(new RetentionEventGroupsListDto
     {
       HasMore = hasMore,
       Groups  = groups,
-      NextBeforeAlarmStart = hasMore && groups.Count > 0 ? groups[^1].EarliestAlarmStart : null,
+      NextBeforeAlarmStart = hasMore && groups.Count > 0 ? groups[^1].LatestAlarmStart : null,
     });
   }
 

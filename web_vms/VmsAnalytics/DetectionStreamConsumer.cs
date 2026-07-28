@@ -119,6 +119,10 @@ public sealed class DetectionStreamConsumer(
 
     var (storageId, cropPath) = await SaveCropAsync(cameraId, evt, detectedAt, ct);
     var eventUuid = await RetainAsync(cameraId, evt, detectedAt, eventId, objectId, ct);
+    // If RetainEvent failed (FS unreachable) eventUuid is null: no episode was created and the clip
+    // isn't retained either, so this detection has no episode to belong to. We still persist it (with
+    // its event_id group) so the row isn't lost — it just can't appear in the per-episode details
+    // panel, which is correct: there is no episode. The next successful detection opens one.
     await PersistAsync(cameraId, evt, detectedAt, eventId, eventUuid, objectId, storageId, cropPath, ct);
 
     entityStatePublisher.Publish("detection", $"{cameraId}/{evt.TrackId}", new

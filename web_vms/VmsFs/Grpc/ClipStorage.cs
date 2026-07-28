@@ -100,9 +100,18 @@ public sealed class ClipStorage(
     await using var conn = await dataSource.OpenConnectionAsync(ct);
     await using var tx = await conn.BeginTransactionAsync(ct);
 
-    // Lock the latest episode for this (event_id, camera_id). If it is still open, extend it;
-    // otherwise open a new one. FOR UPDATE serializes concurrent RetainEvent calls for the same
-    // group so two of them can't both decide to insert a new episode.
+    // Serialize concurrent RetainEvent for the same (event_id, camera_id). A plain SELECT ... FOR
+    // UPDATE below only locks an EXISTING episode row — for the very first call (no row yet) two
+    // concurrent transactions would both find nothing and both INSERT a duplicate episode. A
+    // transaction-scoped advisory lock covers that gap; it auto-releases on commit/rollback.
+    await using (var lockCmd = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtext($1))", conn, tx))
+    {
+      lockCmd.Parameters.AddWithValue($"{eventId}|{req.CameraId}");
+      await lockCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    // Find the latest episode for this (event_id, camera_id). If it is still open, extend it;
+    // otherwise open a new one.
     Guid? openUuid = null;
     await using (var findCmd = new NpgsqlCommand("""
       SELECT event_uuid, alarm_end_ts, alarm_start_ts
@@ -110,7 +119,6 @@ public sealed class ClipStorage(
       WHERE event_id = $1 AND camera_id = $2
       ORDER BY alarm_start_ts DESC
       LIMIT 1
-      FOR UPDATE
       """, conn, tx))
     {
       findCmd.Parameters.AddWithValue(eventId);
