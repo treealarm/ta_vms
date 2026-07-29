@@ -1,5 +1,6 @@
 using Dapr.Client;
 using Grpc.Core;
+using Npgsql;
 using SquareIntegrationClient;
 using Vms.Cfg;
 
@@ -15,6 +16,11 @@ namespace VmsCfg
     private const string MediaServerConfigChangedTopic = "media-server-config-changed";
     private const string CameraStateChangedTopic       = "camera-state-changed";
     private const string AnalyticsWatchChangedTopic    = "analytics-watch-changed";
+
+    // Investigation boards are operator-created and never expire on their own, so the number one
+    // person can accumulate is capped. Walls are unaffected — they are admin-managed.
+    private const int MaxInvestigationBoardsPerOwner = 8;
+
     private readonly string _pubSubName =
       Environment.GetEnvironmentVariable("PUBSUB_NAME")
         ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
@@ -412,7 +418,7 @@ namespace VmsCfg
       ServerCallContext context)
     {
       var response = new ListMonitorsResponse();
-      response.Monitors.AddRange(await storage.ListMonitorsAsync(context.CancellationToken));
+      response.Monitors.AddRange(await storage.ListMonitorsAsync(request.Owner, context.CancellationToken));
       return response;
     }
 
@@ -424,20 +430,48 @@ namespace VmsCfg
       if (string.IsNullOrWhiteSpace(request.Layout))
         throw new RpcException(new Status(StatusCode.InvalidArgument, "layout must not be empty"));
 
-      var result = await storage.UpsertMonitorAsync(request, context.CancellationToken);
-      logger.LogInformation("Monitor '{Name}' upserted (id={Id}, layout={Layout})", result.Name, result.MonitorId, result.Layout);
+      // Boards are created freely by operators, so the cap is enforced here rather than left to
+      // the UI — only on creation, so an existing set of boards stays editable.
+      if (request.Kind == CameraStorage.MonitorKindInvestigation && string.IsNullOrEmpty(request.MonitorId))
+      {
+        var existing = await storage.CountInvestigationBoardsAsync(request.Owner, context.CancellationToken);
+        if (existing >= MaxInvestigationBoardsPerOwner)
+          throw new RpcException(new Status(
+            StatusCode.FailedPrecondition,
+            $"investigation board limit reached ({MaxInvestigationBoardsPerOwner})"));
+      }
+
+      MonitorSetup? result;
+      try
+      {
+        result = await storage.UpsertMonitorAsync(request, context.CancellationToken);
+      }
+      // ON CONFLICT resolves a clash on the id; a clash on (name, kind, owner) is a different row
+      // entirely and surfaces as a unique violation. Reachable in ordinary use — two tabs both
+      // auto-naming a new board pick "Investigation 1" from their own stale list — so it has to
+      // come back as a stated reason, not as an unhandled 500.
+      catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+      {
+        throw new RpcException(new Status(StatusCode.AlreadyExists, $"a monitor named '{request.Name}' already exists"));
+      }
+
+      if (result is null)
+        throw new RpcException(new Status(StatusCode.PermissionDenied, "monitor belongs to another user"));
+
+      logger.LogInformation("Monitor '{Name}' upserted (id={Id}, layout={Layout}, kind={Kind})",
+        result.Name, result.MonitorId, result.Layout, result.Kind);
       return result;
     }
 
-    public override async Task<OperationStatus> RemoveMonitor(SourceRequest request, ServerCallContext context)
+    public override async Task<OperationStatus> RemoveMonitor(RemoveMonitorRequest request, ServerCallContext context)
     {
-      if (string.IsNullOrWhiteSpace(request.SourceId))
-        return new OperationStatus { Success = false, Message = "source_id must not be empty" };
+      if (string.IsNullOrWhiteSpace(request.MonitorId))
+        return new OperationStatus { Success = false, Message = "monitor_id must not be empty" };
 
-      var removed = await storage.RemoveMonitorAsync(request.SourceId, context.CancellationToken);
+      var removed = await storage.RemoveMonitorAsync(request.MonitorId, request.Owner, context.CancellationToken);
       if (removed)
-        logger.LogInformation("Monitor '{Id}' removed", request.SourceId);
-      return new OperationStatus { Success = removed };
+        logger.LogInformation("Monitor '{Id}' removed", request.MonitorId);
+      return new OperationStatus { Success = removed, Message = removed ? "ok" : "not found" };
     }
 
     public override async Task<OperationStatus> SetMonitorCameras(
@@ -447,7 +481,11 @@ namespace VmsCfg
       if (string.IsNullOrWhiteSpace(request.MonitorId))
         return new OperationStatus { Success = false, Message = "monitor_id must not be empty" };
 
-      await storage.SetMonitorCamerasAsync(request.MonitorId, request.CameraIds, context.CancellationToken);
+      var ok = await storage.SetMonitorCamerasAsync(
+        request.MonitorId, request.CameraIds, request.Owner, context.CancellationToken);
+      if (!ok)
+        return new OperationStatus { Success = false, Message = "monitor not found" };
+
       logger.LogInformation("Monitor '{MonitorId}' camera pool set ({Count} cameras)", request.MonitorId, request.CameraIds.Count);
       return new OperationStatus { Success = true };
     }
@@ -459,9 +497,48 @@ namespace VmsCfg
       if (string.IsNullOrWhiteSpace(request.MonitorId) || string.IsNullOrWhiteSpace(request.CameraId))
         return new OperationStatus { Success = false, Message = "monitor_id and camera_id must not be empty" };
 
-      await storage.SetMonitorSlotAsync(request.MonitorId, request.SlotIndex, request.CameraId, context.CancellationToken);
+      var ok = await storage.SetMonitorSlotAsync(
+        request.MonitorId, request.SlotIndex, request.CameraId, request.Owner, context.CancellationToken);
+      if (!ok)
+        return new OperationStatus { Success = false, Message = "monitor not found" };
+
       logger.LogInformation("Monitor '{MonitorId}' slot {SlotIndex} set to camera '{CameraId}'", request.MonitorId, request.SlotIndex, request.CameraId);
       return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OperationStatus> ClearMonitorSlot(
+      ClearMonitorSlotRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.MonitorId))
+        return new OperationStatus { Success = false, Message = "monitor_id must not be empty" };
+
+      // Deleting a cell that is already empty is not a failure — dragging the last camera out of a
+      // slot and dragging it back is a perfectly ordinary thing to do.
+      await storage.ClearMonitorSlotAsync(
+        request.MonitorId, request.SlotIndex, request.Owner, context.CancellationToken);
+      logger.LogInformation("Monitor '{MonitorId}' slot {SlotIndex} cleared", request.MonitorId, request.SlotIndex);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<MonitorSetup> CopyMonitor(CopyMonitorRequest request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.MonitorId))
+        throw new RpcException(new Status(StatusCode.InvalidArgument, "monitor_id must not be empty"));
+
+      var existing = await storage.CountInvestigationBoardsAsync(request.TargetOwner, context.CancellationToken);
+      if (existing >= MaxInvestigationBoardsPerOwner)
+        throw new RpcException(new Status(
+          StatusCode.FailedPrecondition,
+          $"recipient already has {MaxInvestigationBoardsPerOwner} investigation boards"));
+
+      var copy = await storage.CopyMonitorAsync(
+                   request.MonitorId, request.Owner, request.TargetOwner, context.CancellationToken)
+                 ?? throw new RpcException(new Status(StatusCode.PermissionDenied, "monitor is not yours to share"));
+
+      logger.LogInformation("Monitor '{Id}' copied to '{Target}' as '{Name}'",
+        request.MonitorId, request.TargetOwner, copy.Name);
+      return copy;
     }
 
     public override async Task<ListOnvifAlarmFiltersResponse> ListOnvifAlarmFilters(

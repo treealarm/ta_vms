@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { List, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppSelector } from '../store'
@@ -9,7 +10,10 @@ import { useMasterDetailSelection } from './settings/useMasterDetailSelection'
 
 export default function MonitorListPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHandle> }) {
   const { t } = useTranslation()
-  const monitors = useAppSelector((s) => s.monitors.monitors)
+  const allMonitors = useAppSelector((s) => s.monitors.monitors)
+  // Walls only. Investigation boards belong to whoever is logged in and are managed from the
+  // operator's own tab — they have no business in the admin monitor list.
+  const monitors = useMemo(() => allMonitors.filter((m) => m.kind === 'wall'), [allMonitors])
 
   const { isNew, selected, detailRef, detailKey, select, selectNew, reset, setId } =
     useMasterDetailSelection(ref, monitors, (m) => m.monitorId)

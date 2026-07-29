@@ -11,6 +11,7 @@ service FsService {
   rpc GetRecordingsAround(GetRecordingsAroundRequest) returns (GetRecordingsResponse);
   rpc GetRecordingRanges(GetRecordingRangesRequest) returns (GetRecordingRangesResponse);
   rpc GetRecordingCoverage(GetRecordingCoverageRequest) returns (GetRecordingCoverageResponse);
+  rpc GetRecordingTimeline(GetRecordingTimelineRequest) returns (GetRecordingTimelineResponse);
   rpc GetClipsFrom(GetClipsFromRequest) returns (GetRecordingsResponse);
   rpc GetCameraRetentionStatus(GetCameraRetentionStatusRequest) returns (GetCameraRetentionStatusResponse);
   rpc ListRetentionEvents(ListRetentionEventsRequest) returns (ListRetentionEventsResponse);
@@ -119,6 +120,36 @@ message GetRecordingRangesResponse {
   repeated RecordingRange ranges = 1;
 }
 
+// Archive coverage as bare wall-clock intervals, for drawing a timeline.
+//
+// Deliberately NOT GetRecordingRanges: that returns whole clips (a day of continuous recording is
+// 1440 of them, ~300 KB of JSON per camera) and caps each range at 3 minutes regardless of
+// continuity, so the client would have to re-merge them anyway. Here the merge happens next to the
+// data and only the resulting boundaries travel.
+message GetRecordingTimelineRequest {
+  repeated string camera_ids = 1;
+  optional string stream_name = 2;
+  google.protobuf.Timestamp from_ts = 3;
+  google.protobuf.Timestamp to_ts = 4;
+  // Gaps at or below this are treated as continuous. Callers pass the wall time of one screen
+  // pixel, so the response size is bounded by the timeline's width rather than by the zoom level.
+  uint32 min_gap_ms = 5;
+}
+
+message RecordingInterval {
+  google.protobuf.Timestamp start_ts = 1;
+  google.protobuf.Timestamp end_ts = 2;
+}
+
+message RecordingTimelineTrack {
+  string camera_id = 1;
+  repeated RecordingInterval intervals = 2;
+}
+
+message GetRecordingTimelineResponse {
+  repeated RecordingTimelineTrack tracks = 1;
+}
+
 enum RecordingCoverageGranularity {
   RECORDING_COVERAGE_YEAR = 0;
   RECORDING_COVERAGE_MONTH = 1;
@@ -164,6 +195,11 @@ message ListRetentionEventsRequest {
   // When non-empty, return ALL episodes for these event_id groups (ignoring limit/before) so the
   // gateway can complete groups whose episodes straddle the paged window.
   repeated string event_ids = 3;
+  // Narrow to one camera. Without it, filtering had to happen client-side after paging, which
+  // silently showed a subset of one page instead of that camera's newest events.
+  optional string camera_id = 4;
+  // Lower bound, so a caller can ask for a window rather than only "everything before X".
+  optional google.protobuf.Timestamp from_alarm_start_ts = 5;
 }
 
 message ListRetentionEventsResponse {

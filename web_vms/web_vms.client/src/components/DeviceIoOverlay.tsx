@@ -53,6 +53,9 @@ export default function DeviceIoOverlay({ cameraId, onClose }: Props) {
   return (
     <Box
       ref={overlayRef}
+      // Dragged around the video by its own grip — keep the monitor grid from reading that as
+      // dragging the whole tile to another cell (see NO_TILE_DRAG in MonitorGrid).
+      data-nodrag
       sx={{
         position: 'absolute',
         zIndex: 10,

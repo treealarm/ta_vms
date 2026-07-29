@@ -213,6 +213,33 @@ export type RecordingCoverageResponseDto = {
   buckets: string[]
 }
 
+/**
+ * Timeline coverage: continuous stretches of archive, several cameras per call.
+ * Unlike recording-ranges this carries no clips — the timeline only ever needs boundaries.
+ */
+export type RecordingTimelineQueryDto = {
+  cameraIds: string[]
+  streamName?: string
+  fromUtc: string
+  toUtc: string
+  /** Gaps at or below this are drawn as continuous — normally the wall time of one screen pixel. */
+  minGapMs: number
+}
+
+export type RecordingIntervalDto = {
+  startTime: string
+  endTime: string
+}
+
+export type RecordingTimelineTrackDto = {
+  cameraId: string
+  intervals: RecordingIntervalDto[]
+}
+
+export type RecordingTimelineResponseDto = {
+  tracks: RecordingTimelineTrackDto[]
+}
+
 export type RetentionEventDto = {
   eventId?: string
   cameraId: string
@@ -312,15 +339,22 @@ export type EntityStateDto = {
   stale: boolean
 }
 
-export type MonitorLayout = '1x1' | '1x2' | '2x2' | '3x3'
+/**
+ * Uniform grids, plus the classic "feature" layouts: one large cell with smaller ones filling the
+ * remaining column and row. '1+5' is a 3x3 with a 2x2 feature, '1+7' a 4x4 with a 3x3 feature —
+ * the counts are the usual VMS naming (one big, N small).
+ */
+export type MonitorLayout = '1x1' | '1x2' | '2x2' | '1+5' | '1+7' | '3x3'
 
-export const MONITOR_LAYOUTS: MonitorLayout[] = ['1x1', '1x2', '2x2', '3x3']
+export const MONITOR_LAYOUTS: MonitorLayout[] = ['1x1', '1x2', '2x2', '1+5', '1+7', '3x3']
 
 export function layoutSlotCount(layout: MonitorLayout): number {
   switch (layout) {
     case '1x1': return 1
     case '1x2': return 2
     case '2x2': return 4
+    case '1+5': return 6
+    case '1+7': return 8
     case '3x3': return 9
   }
 }
@@ -330,6 +364,8 @@ export function layoutColumns(layout: MonitorLayout): number {
     case '1x1': return 1
     case '1x2': return 2
     case '2x2': return 2
+    case '1+5': return 3
+    case '1+7': return 4
     case '3x3': return 3
   }
 }
@@ -339,7 +375,24 @@ export function layoutRows(layout: MonitorLayout): number {
     case '1x1': return 1
     case '1x2': return 1
     case '2x2': return 2
+    case '1+5': return 3
+    case '1+7': return 4
     case '3x3': return 3
+  }
+}
+
+/**
+ * How many rows and columns the first slot spans, or 0 for a uniform grid.
+ *
+ * Only the first slot is placed explicitly; the rest are left to CSS grid auto-placement, which
+ * fills the leftover column and bottom row in slot order — exactly the classic arrangement, with
+ * no per-slot coordinate table to keep in step with the layout list.
+ */
+export function layoutFeatureSpan(layout: MonitorLayout): number {
+  switch (layout) {
+    case '1+5': return 2
+    case '1+7': return 3
+    default: return 0
   }
 }
 
@@ -348,12 +401,38 @@ export type MonitorSlotDto = {
   cameraId: string
 }
 
+/**
+ * 'wall' — the shared, admin-defined video wall. 'investigation' — a private board an operator
+ * creates while working through an incident: same grid and timeline, but its own camera set,
+ * visible only to its owner, and always in playback.
+ */
+export type MonitorKind = 'wall' | 'investigation'
+
 export type MonitorDto = {
   monitorId: string
   name: string
   layout: MonitorLayout
   cameraIds: string[]
   slots: MonitorSlotDto[]
+  kind: MonitorKind
+  /** Server-assigned; empty when authentication is disabled. Ignored on writes. */
+  owner: string
+}
+
+/**
+ * The next larger layout, or null when there is nowhere left to grow — boards grow as cameras are
+ * added to them. A feature layout grows into the next feature layout rather than flattening into a
+ * uniform grid: growing a board should add room, not silently rearrange what the operator chose.
+ */
+export function nextLayoutUp(layout: MonitorLayout): MonitorLayout | null {
+  switch (layout) {
+    case '1x1': return '1x2'
+    case '1x2': return '2x2'
+    case '2x2': return '3x3'
+    case '1+5': return '1+7'
+    case '1+7': return '3x3'
+    case '3x3': return null
+  }
 }
 
 export type OnvifCameraEntryDto = {
@@ -383,6 +462,8 @@ export type AnalyticsWatchDto = {
   armed: boolean
   /** Debug: video_a attaches a JPEG of each detection to the event stream */
   attachDebugCrops: boolean
+  /** Seconds of recording kept after the last detection before the event closes itself. */
+  timeoutSeconds: number
 }
 
 export type AnalyticsDetectionDto = {

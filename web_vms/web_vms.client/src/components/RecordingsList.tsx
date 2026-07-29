@@ -1,21 +1,18 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  alpha, Box, Button, CircularProgress, IconButton, List, ListItemButton, ListItemText,
+  alpha, Box, CircularProgress, IconButton, List, ListItemButton, ListItemText,
   ListSubheader, MenuItem, Popover, Select, Stack, Tooltip, Typography, useTheme,
 } from '@mui/material'
 import NavigateBeforeIcon from '@mui/icons-material/NavigateBefore'
 import NavigateNextIcon from '@mui/icons-material/NavigateNext'
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import LayersIcon from '@mui/icons-material/Layers'
-import { type RecordingCoverageGranularity, type RecordingDto, type RecordingRangeDto } from '../dto/dtos'
-import { fetchRecordingCoverage, fetchRecordingRanges, recordingCoverageKey } from '../store/fsSlice'
+import { type RecordingDto, type RecordingRangeDto } from '../dto/dtos'
+import { fetchRecordingRanges } from '../store/fsSlice'
 import { useAppDispatch, useAppSelector } from '../store'
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
-import { DateCalendar } from '@mui/x-date-pickers/DateCalendar'
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 import dayjs, { Dayjs } from 'dayjs'
-import DayHourTimeline from './DayHourTimeline'
+import ArchiveDateTimePicker from './ArchiveDateTimePicker'
 
 function fmtTime(iso: string) {
   const d = new Date(iso)
@@ -70,8 +67,6 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
   const [loaded, setLoaded] = useState(false)
   const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null)
   const [streamFilter, setStreamFilter] = useState('')
-  const [calendarYear, setCalendarYear] = useState<Dayjs>(dayjs())
-  const [calendarMonth, setCalendarMonth] = useState<Dayjs>(dayjs())
 
   const theme = useTheme()
   const W = theme.palette.common.white
@@ -162,50 +157,6 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
   const commitPickerTime = (value: Dayjs) => {
     requestAt(value.toISOString())
     setPickerAnchor(null)
-  }
-
-  // Archive coverage (which years/months/days actually have recordings), used to
-  // grey out empty cells in the jump-to-date calendar instead of showing every day as pickable.
-  const coverageByKey = useAppSelector((s) => s.fs.recordingCoverageByKey)
-
-  // Always refetch (no "skip if cached" check): recordings keep arriving in near
-  // real time, so a stale cached set would keep greying out a day/month/year that
-  // just got its first clip. The query itself is a cheap indexed DISTINCT.
-  const loadCoverage = (granularity: RecordingCoverageGranularity, fromUtc?: string, toUtc?: string) => {
-    void dispatch(fetchRecordingCoverage({ cameraId, granularity, fromUtc, toUtc }))
-  }
-
-  const yearBuckets = useMemo(
-    () => new Set(coverageByKey[recordingCoverageKey({ cameraId, granularity: 'Year' })]?.buckets ?? []),
-    [coverageByKey, cameraId]
-  )
-  const monthBuckets = useMemo(() => {
-    const fromUtc = calendarYear.startOf('year').toISOString()
-    return new Set(coverageByKey[recordingCoverageKey({ cameraId, granularity: 'Month', fromUtc })]?.buckets ?? [])
-  }, [coverageByKey, cameraId, calendarYear])
-  const dayBuckets = useMemo(() => {
-    const fromUtc = calendarMonth.startOf('month').toISOString()
-    return new Set(coverageByKey[recordingCoverageKey({ cameraId, granularity: 'Day', fromUtc })]?.buckets ?? [])
-  }, [coverageByKey, cameraId, calendarMonth])
-
-  useEffect(() => {
-    if (!pickerAnchor) return
-    const t = pickerTime ?? dayjs()
-    setCalendarYear(t)
-    setCalendarMonth(t)
-    loadCoverage('Year')
-    loadCoverage('Month', t.startOf('year').toISOString(), t.startOf('year').add(1, 'year').toISOString())
-    loadCoverage('Day', t.startOf('month').toISOString(), t.startOf('month').add(1, 'month').toISOString())
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pickerAnchor])
-
-  const handleCalendarYearChange = (year: Dayjs) => {
-    setCalendarYear(year)
-    loadCoverage('Month', year.startOf('year').toISOString(), year.startOf('year').add(1, 'year').toISOString())
-  }
-  const handleCalendarMonthChange = (month: Dayjs) => {
-    setCalendarMonth(month)
-    loadCoverage('Day', month.startOf('month').toISOString(), month.startOf('month').add(1, 'month').toISOString())
   }
 
   const handlePrev = () => {
@@ -372,46 +323,15 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
         transformOrigin={{ vertical: 'top', horizontal: 'center' }}
         slotProps={{ paper: { sx: { overflow: 'hidden', borderRadius: 2 } } }}
       >
-        <Box sx={{ px: 1.5, pt: 1, pb: 0.5, bgcolor: 'primary.main' }}>
-          <Typography sx={{ fontSize: '0.7rem', color: 'primary.contrastText', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-            {t('recordings.jumpToDateTime')}
-          </Typography>
-        </Box>
-        <Box sx={{ p: 1 }}>
-          <LocalizationProvider dateAdapter={AdapterDayjs}>
-            <DateCalendar
-              value={pickerTime}
-              onChange={(v) => v && setPickerTime(v)}
-              onYearChange={handleCalendarYearChange}
-              onMonthChange={handleCalendarMonthChange}
-              views={['year', 'month', 'day']}
-              openTo="day"
-              reduceAnimations
-              shouldDisableYear={(y) => !yearBuckets.has(y.format('YYYY'))}
-              shouldDisableMonth={(m) => !monthBuckets.has(m.format('YYYY-MM'))}
-              shouldDisableDate={(d) => !dayBuckets.has(d.format('YYYY-MM-DD'))}
-            />
-          </LocalizationProvider>
-
-          {pickerTime && (
-            <Box sx={{ px: 0.5, pt: 0.25 }}>
-              <DayHourTimeline
-                cameraId={cameraId}
-                day={pickerTime}
-                selectedTime={pickerTime}
-                onPick={commitPickerTime}
-                dark={dark}
-              />
-            </Box>
-          )}
-
-          <Stack direction="row" justifyContent="flex-end" spacing={0.5} sx={{ px: 0.5, pt: 0.75 }}>
-            <Button size="small" onClick={() => setPickerAnchor(null)}>{t('common.cancel')}</Button>
-            <Button size="small" variant="contained" onClick={() => pickerTime && commitPickerTime(pickerTime)}>
-              {t('common.apply')}
-            </Button>
-          </Stack>
-        </Box>
+        {pickerAnchor && (
+          <ArchiveDateTimePicker
+            cameraId={cameraId}
+            value={pickerTime ?? dayjs()}
+            onApply={commitPickerTime}
+            onCancel={() => setPickerAnchor(null)}
+            dark={dark}
+          />
+        )}
       </Popover>
     </Box>
   )

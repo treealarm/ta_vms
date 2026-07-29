@@ -170,6 +170,24 @@ public sealed class FsServiceImpl(
     }
   }
 
+  public override async Task<GetRecordingTimelineResponse> GetRecordingTimeline(
+    GetRecordingTimelineRequest request,
+    ServerCallContext context)
+  {
+    try
+    {
+      var tracks = await _storage.GetRecordingTimelineAsync(request, context.CancellationToken);
+      var response = new GetRecordingTimelineResponse();
+      response.Tracks.AddRange(tracks);
+      return response;
+    }
+    catch (Exception ex)
+    {
+      Console.Error.WriteLine($"GetRecordingTimeline failed: {ex}");
+      throw new RpcException(new Status(StatusCode.Internal, ex.Message));
+    }
+  }
+
   public override async Task<GetRecordingsResponse> GetClipsFrom(
     GetClipsFromRequest request,
     ServerCallContext context)
@@ -219,7 +237,8 @@ public sealed class FsServiceImpl(
       // event_ids set => the gateway is completing groups; return all their episodes, unpaged.
       if (request.EventIds.Count > 0)
       {
-        var all = await _storage.GetEpisodesByEventIdsAsync(request.EventIds, context.CancellationToken);
+        var all = await _storage.GetEpisodesByEventIdsAsync(
+          request.EventIds, request.HasCameraId ? request.CameraId : null, context.CancellationToken);
         var byIds = new ListRetentionEventsResponse { HasMore = false };
         byIds.Events.AddRange(all);
         return byIds;
@@ -228,6 +247,8 @@ public sealed class FsServiceImpl(
       var (events, hasMore, nextBefore) = await _storage.ListRetentionEventsAsync(
         request.Limit,
         request.BeforeAlarmStartTs,
+        request.HasCameraId ? request.CameraId : null,
+        request.FromAlarmStartTs,
         context.CancellationToken);
 
       var response = new ListRetentionEventsResponse { HasMore = hasMore };

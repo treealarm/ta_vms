@@ -45,6 +45,30 @@ export const setMonitorCameras = createAsyncThunk(
   }
 )
 
+export const clearMonitorSlot = createAsyncThunk(
+  'monitors/clearSlot',
+  async ({ monitorId, slotIndex }: { monitorId: string; slotIndex: number }) => {
+    const response = await fetch(
+      `/api/monitor/${encodeURIComponent(monitorId)}/slots/${slotIndex}`,
+      { method: 'DELETE' }
+    )
+    return { monitorId, slotIndex, result: await parseJson<ApiResponseDto>(response) }
+  }
+)
+
+/** Sharing an investigation board hands the recipient an independent copy they then own. */
+export const copyMonitorTo = createAsyncThunk(
+  'monitors/copyTo',
+  async ({ monitorId, username }: { monitorId: string; username: string }) => {
+    const response = await fetch(`/api/monitor/${encodeURIComponent(monitorId)}/copy-to`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username }),
+    })
+    return parseJson<MonitorDto>(response)
+  }
+)
+
 export const setMonitorSlot = createAsyncThunk(
   'monitors/setSlot',
   async ({ monitorId, slotIndex, cameraId }: { monitorId: string; slotIndex: number; cameraId: string }) => {
@@ -94,7 +118,9 @@ const monitorsSlice = createSlice({
         const m = state.monitors.find((x) => x.monitorId === monitorId)
         if (m) {
           m.cameraIds = cameraIds
-          m.slots = []
+          // Mirrors the server: only slots whose camera left the pool are dropped, so adding a
+          // camera to a board does not blank the cells already placed on it.
+          m.slots = m.slots.filter((s) => cameraIds.includes(s.cameraId))
         }
       })
       .addCase(setMonitorSlot.fulfilled, (state, action) => {
@@ -105,6 +131,11 @@ const monitorsSlice = createSlice({
           if (existingSlot) existingSlot.cameraId = cameraId
           else m.slots.push({ slotIndex, cameraId })
         }
+      })
+      .addCase(clearMonitorSlot.fulfilled, (state, action) => {
+        const { monitorId, slotIndex } = action.payload
+        const m = state.monitors.find((x) => x.monitorId === monitorId)
+        if (m) m.slots = m.slots.filter((s) => s.slotIndex !== slotIndex)
       })
       .addMatcher(
         (action: AnyAction) => action.type.startsWith('monitors/') && action.type.endsWith('/pending'),
