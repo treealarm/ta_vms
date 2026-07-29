@@ -131,12 +131,26 @@ export function useHlsPlayer(
 
       hls.attachMedia(video)
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Native HLS gives us no fragment list, so PDT-based following is unavailable. Callers must
-      // degrade to coarse behaviour rather than waiting for a map that will never arrive.
+      // Native HLS exposes no fragment list, so there is no per-segment PDT to map with. What it
+      // does expose is getStartDate(): the playlist's EXT-X-PROGRAM-DATE-TIME anchor. That gives a
+      // single whole-playlist fragment — enough for the cell to publish a wall clock and so to be
+      // eligible to drive the wall, which it otherwise never could.
+      //
+      // It is deliberately coarse: one fragment means wall time is interpolated linearly across the
+      // playlist, so it drifts by however much recorded time the gaps between clips swallow (the
+      // very thing per-fragment PDT exists to avoid — see playlistTime.ts). Followers on this path
+      // therefore stay on the coarse branch in decideFollow instead of seeking through this map.
       patch({ nativeHls: true })
       const onLoaded = () => {
         if (disposed) return
-        patch({ ready: true })
+        const startedAt = (video as HTMLVideoElement & { getStartDate?: () => Date }).getStartDate?.()
+        const anchorMs = startedAt instanceof Date ? startedAt.getTime() : NaN
+        patch({
+          ready: true,
+          playlistMap: Number.isFinite(anchorMs) && Number.isFinite(video.duration) && video.duration > 0
+            ? { url, fragments: [{ startMediaSec: 0, durationSec: video.duration, wallMs: anchorMs }] }
+            : null,
+        })
         tryPlay()
       }
       video.addEventListener('loadedmetadata', onLoaded)

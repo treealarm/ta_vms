@@ -16,6 +16,8 @@ type Args = {
   map: PlaylistMap | null
   segments: readonly Segment[]
   nativeHls: boolean
+  /** Wall span the loaded playlist was requested for; drives the owner's extend decision. */
+  requestBounds: { startMs: number; endMs: number } | null
   /** Asks the owner component to rebuild its playlist around this wall instant. */
   onRebuild: (aroundWallMs: number) => void
 }
@@ -36,6 +38,7 @@ export function useWallFollow({
   map,
   segments,
   nativeHls,
+  requestBounds,
   onRebuild,
 }: Args): FollowStatus {
   const [status, setStatus] = useState<FollowStatus>('idle')
@@ -47,10 +50,10 @@ export function useWallFollow({
 
   // Latest values for the timer, without making it a dependency-driven effect that restarts every
   // time the playlist map or coverage is replaced.
-  const latest = useRef({ armed, map, segments, nativeHls, onRebuild })
+  const latest = useRef({ armed, map, segments, nativeHls, requestBounds, onRebuild })
   useEffect(() => {
-    latest.current = { armed, map, segments, nativeHls, onRebuild }
-  }, [armed, map, segments, nativeHls, onRebuild])
+    latest.current = { armed, map, segments, nativeHls, requestBounds, onRebuild }
+  }, [armed, map, segments, nativeHls, requestBounds, onRebuild])
 
   useEffect(() => wallClockBus.subscribePlayhead((ms) => { playheadRef.current = ms }), [])
 
@@ -65,8 +68,8 @@ export function useWallFollow({
       else unchangedTicksRef.current = 0
       lastSeenPlayheadRef.current = playheadMs
 
-      const { armed: isArmed, map: pMap, segments: segs, nativeHls: isNative, onRebuild: rebuild } =
-        latest.current
+      const { armed: isArmed, map: pMap, segments: segs, nativeHls: isNative,
+              requestBounds: reqBounds, onRebuild: rebuild } = latest.current
 
       const action = decideFollow({
         isOwner,
@@ -79,6 +82,7 @@ export function useWallFollow({
         segments: segs,
         msSinceLastRebuild: Date.now() - lastRebuildAtRef.current,
         nativeHls: isNative,
+        requestBounds: reqBounds,
       })
 
       switch (action.kind) {

@@ -9,7 +9,7 @@ import { wallClockBus } from '../../hooks/wallClockBus'
 import { useHlsPlayer } from '../../hooks/useHlsPlayer'
 import { useWallFollow } from '../../hooks/useWallFollow'
 import { useWallCoverage } from '../../hooks/useWallCoverage'
-import { buildWallPlaylistUrl } from '../../utils/playlistUrl'
+import { buildWallPlaylistUrl, wallPlaylistRequestBounds } from '../../utils/playlistUrl'
 import { mediaTimeAtOrAfterWallMs, wallMsAtMediaTime } from '../../utils/playlistTime'
 
 // Resolution of the shared coverage query; must match what WallTimeline asks for so both hit the
@@ -66,6 +66,11 @@ export default function ArchiveWallPlayer({
     [cameraId, streamName, anchorMs]
   )
 
+  // What that URL asked the server for. Derived from the same anchor, so it always describes the
+  // playlist currently loaded — the anchor is what the URL is built from, and a changed URL blanks
+  // the map until the new one parses.
+  const requestBounds = useMemo(() => wallPlaylistRequestBounds(anchorMs), [anchorMs])
+
   const { error, playlistMap, ready, nativeHls } = useHlsPlayer(videoRef, url, {
     autoPlay: wall.armed,
     playEpoch: wall.playEpoch,
@@ -98,19 +103,25 @@ export default function ArchiveWallPlayer({
   // The playlist is fetched with a minute of lead-in for context, and the server's #EXT-X-START
   // points at the start of that window — so left alone the player opens up to a minute early,
   // typically at the beginning of whatever clip covers the lead-in. PDT is the only exact mapping
-  // we have, so the seek is applied here once per committed position.
-  const appliedSeekRef = useRef<number | null>(null)
+  // we have, so the position is applied here whenever the playlist is (re)built.
+  //
+  // Keyed on the ANCHOR, not on the committed seek: a rebuild keeps the same wall.seekMs but loads
+  // a playlist around a later instant, and a guard that only tracked the seek would decline to
+  // reposition — leaving the cell wherever #EXT-X-START dropped it, i.e. up to a minute earlier
+  // than it already was. On a short recording that rewind lands before the rebuild threshold, so
+  // the cell rebuilds, rewinds, replays the same minute and never reaches the next one.
+  const appliedAnchorRef = useRef<number | null>(null)
   useEffect(() => {
     const video = videoRef.current
     if (!video || !playlistMap) return
-    if (appliedSeekRef.current === wall.seekMs) return
+    if (appliedAnchorRef.current === anchorMs) return
 
-    const target = mediaTimeAtOrAfterWallMs(playlistMap, wall.seekMs)
+    const target = mediaTimeAtOrAfterWallMs(playlistMap, anchorMs)
     if (target === null) return
 
-    appliedSeekRef.current = wall.seekMs
+    appliedAnchorRef.current = anchorMs
     if (Math.abs(video.currentTime - target) > 0.25) video.currentTime = target
-  }, [playlistMap, wall.seekMs])
+  }, [playlistMap, anchorMs])
 
   const publish = useCallback(() => {
     if (!isOwner) return
@@ -137,6 +148,7 @@ export default function ArchiveWallPlayer({
     map: playlistMap,
     segments,
     nativeHls,
+    requestBounds,
     onRebuild: handleRebuild,
   })
 
