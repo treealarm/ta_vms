@@ -74,6 +74,7 @@ public class AnalyticsWatchController(
     SampleFps        = w.SampleFps,
     Armed            = w.Armed,
     AttachDebugCrops = w.AttachDebugCrops,
+    TimeoutSeconds   = w.TimeoutSeconds,
   };
 
   private static AnalyticsWatch ToProto(AnalyticsWatchDto dto)
@@ -86,6 +87,7 @@ public class AnalyticsWatchController(
       MinConfidence    = dto.MinConfidence,
       SampleFps        = dto.SampleFps,
       AttachDebugCrops = dto.AttachDebugCrops,
+      TimeoutSeconds   = dto.TimeoutSeconds,
     };
     watch.Classes.AddRange(dto.Classes);
     return watch;

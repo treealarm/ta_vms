@@ -410,6 +410,8 @@ export type AnalyticsWatchDto = {
   armed: boolean
   /** Debug: video_a attaches a JPEG of each detection to the event stream */
   attachDebugCrops: boolean
+  /** Seconds of recording kept after the last detection before the event closes itself. */
+  timeoutSeconds: number
 }
 
 export type AnalyticsDetectionDto = {

@@ -195,6 +195,11 @@ message ListRetentionEventsRequest {
   // When non-empty, return ALL episodes for these event_id groups (ignoring limit/before) so the
   // gateway can complete groups whose episodes straddle the paged window.
   repeated string event_ids = 3;
+  // Narrow to one camera. Without it, filtering had to happen client-side after paging, which
+  // silently showed a subset of one page instead of that camera's newest events.
+  optional string camera_id = 4;
+  // Lower bound, so a caller can ask for a window rather than only "everything before X".
+  optional google.protobuf.Timestamp from_alarm_start_ts = 5;
 }
 
 message ListRetentionEventsResponse {

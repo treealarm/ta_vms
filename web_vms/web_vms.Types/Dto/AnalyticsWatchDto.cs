@@ -13,6 +13,8 @@ public record AnalyticsWatchDto
   public bool Armed { get; init; }
   /// <summary>Debug: video_a attaches a JPEG of each detection to the event stream.</summary>
   public bool AttachDebugCrops { get; init; }
+  /// <summary>Seconds of recording kept after the last detection before the event closes.</summary>
+  public uint TimeoutSeconds { get; init; } = 10;
 }
 
 public record AnalyticsDetectionDto

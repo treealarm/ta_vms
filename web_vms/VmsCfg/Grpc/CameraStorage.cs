@@ -841,6 +841,9 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     entity.MinConfidence = watch.MinConfidence;
     entity.SampleFps = (int)watch.SampleFps;
     entity.AttachDebugCrops = watch.AttachDebugCrops;
+    // 0 means "not supplied" (proto3 scalars have no presence) — keep whatever is stored rather
+    // than silently collapsing an existing timeout to zero.
+    if (watch.TimeoutSeconds > 0) entity.TimeoutSeconds = (int)watch.TimeoutSeconds;
 
     await db.SaveChangesAsync(ct);
     return await ToAnalyticsWatchProtoAsync(entity, ct);
@@ -867,6 +870,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       SampleFps        = (uint)row.SampleFps,
       Armed            = await GetCameraArmedAsync(row.CameraId, ct),
       AttachDebugCrops = row.AttachDebugCrops,
+      TimeoutSeconds   = (uint)row.TimeoutSeconds,
     };
     proto.Classes.AddRange(row.Classes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     return proto;

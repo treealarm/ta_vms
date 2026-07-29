@@ -78,3 +78,23 @@ export function mediaTimeAtWallMs(map: PlaylistMap | null | undefined, wallMs: n
   if (!frag) return null
   return frag.startMediaSec + (wallMs - frag.wallMs) / 1000
 }
+
+/**
+ * Media time for `wallMs`, falling forward to the next fragment when the instant lands in a hole.
+ *
+ * Used for positioning after a seek: clicking an empty second between two recordings should open
+ * the recording that follows, not refuse to move. Following logic must keep using
+ * `mediaTimeAtWallMs`, where a hole has to stay distinguishable so the cell pauses instead of
+ * silently jumping ahead of the wall.
+ */
+export function mediaTimeAtOrAfterWallMs(
+  map: PlaylistMap | null | undefined,
+  wallMs: number
+): number | null {
+  const exact = mediaTimeAtWallMs(map, wallMs)
+  if (exact !== null) return exact
+  if (!map?.fragments.length) return null
+
+  const next = map.fragments.find((f) => f.wallMs >= wallMs)
+  return next ? next.startMediaSec : null
+}

@@ -290,8 +290,33 @@ public sealed class FSController(
     return Ok(new ApiResponse(true, "ok"));
   }
 
+  // Events for one camera come from the single FS instance that owns it; without a camera the
+  // query has to fan out. Returned in the shape FanOutFsAsync produces so the caller is unaware.
+  private async Task<IReadOnlyList<FsFanOutResult<ListRetentionEventsResponse>>> ListEventsSourcesAsync(
+    string? cameraId, ListRetentionEventsRequest grpcReq, CancellationToken ct)
+  {
+    if (!string.IsNullOrWhiteSpace(cameraId))
+    {
+      var cam = await manager.Get(cameraId, ct);
+      if (cam?.ServerId is { } serverId)
+      {
+        var client = registry.GetFsClient(serverId);
+        var resp = await client.ListRetentionEventsAsync(grpcReq, cancellationToken: ct);
+        return [new FsFanOutResult<ListRetentionEventsResponse>(serverId, client, resp)];
+      }
+      return [];
+    }
+
+    return await registry.FanOutFsAsync((c, o) => c.ListRetentionEventsAsync(grpcReq, o).ResponseAsync, ct);
+  }
+
   [HttpGet("retention-events")]
-  public async Task<IActionResult> ListRetentionEvents([FromQuery] int? limit, [FromQuery] string? before, CancellationToken ct)
+  public async Task<IActionResult> ListRetentionEvents(
+    [FromQuery] int? limit,
+    [FromQuery] string? before,
+    [FromQuery] string? cameraId,
+    [FromQuery] string? from,
+    CancellationToken ct)
   {
     var pageLimit = Math.Clamp(limit ?? 50, 1, 200);
     // Over-fetch episodes per instance so we can assemble reasonably complete groups from a fan-out
@@ -304,6 +329,14 @@ public sealed class FSController(
         return BadRequest(new { error = "before must be RFC3339" });
       grpcReq.BeforeAlarmStartTs = Timestamp.FromDateTime(ToUtc(bt));
     }
+    if (!string.IsNullOrWhiteSpace(from))
+    {
+      if (!DateTime.TryParse(from, null, System.Globalization.DateTimeStyles.RoundtripKind, out var ft))
+        return BadRequest(new { error = "from must be RFC3339" });
+      grpcReq.FromAlarmStartTs = Timestamp.FromDateTime(ToUtc(ft));
+    }
+    if (!string.IsNullOrWhiteSpace(cameraId))
+      grpcReq.CameraId = cameraId;
 
     static EpisodeDto ToEpisode(RetentionEventRow e) => new()
     {
@@ -334,7 +367,9 @@ public sealed class FSController(
     // minted by the single-DB VmsAnalytics, so it is globally consistent across instances).
     var episodes = new List<EpisodeDto>();
     var moreOnInstance = false;
-    var responses = await registry.FanOutFsAsync((c, o) => c.ListRetentionEventsAsync(grpcReq, o).ResponseAsync, ct);
+    // A named camera lives on exactly one FS instance — ask it directly instead of fanning out to
+    // every instance and discarding most of the answers.
+    var responses = await ListEventsSourcesAsync(cameraId, grpcReq, ct);
     foreach (var resp in responses.Select(r => r.Value))
     {
       if (resp.HasMore) moreOnInstance = true;
@@ -364,7 +399,12 @@ public sealed class FSController(
       {
         var fullReq = new ListRetentionEventsRequest();
         fullReq.EventIds.AddRange(incompleteIds);
-        var fullResponses = await registry.FanOutFsAsync((c, o) => c.ListRetentionEventsAsync(fullReq, o).ResponseAsync, ct);
+        // An analytics event_id groups one physical object, which may have been seen by SEVERAL
+        // cameras — so the completion pass has to carry the camera filter too, or a camera-scoped
+        // query would come back with other cameras' episodes attached.
+        if (!string.IsNullOrWhiteSpace(cameraId))
+          fullReq.CameraId = cameraId;
+        var fullResponses = await ListEventsSourcesAsync(cameraId, fullReq, ct);
         var episodesByEvent = fullResponses
           .SelectMany(r => r.Value.Events)
           .Select(ToEpisode)

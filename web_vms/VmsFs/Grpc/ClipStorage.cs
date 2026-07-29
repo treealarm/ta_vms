@@ -556,18 +556,23 @@ public sealed class ClipStorage(
 
   // All episodes for the given event_id groups — used to complete groups whose episodes straddle the
   // gateway's paged window (so badge counts / earliest timestamps are accurate).
-  public async Task<List<RetentionEventRow>> GetEpisodesByEventIdsAsync(IReadOnlyList<string> eventIds, CancellationToken ct)
+  public async Task<List<RetentionEventRow>> GetEpisodesByEventIdsAsync(
+    IReadOnlyList<string> eventIds, string? cameraId, CancellationToken ct)
   {
     if (eventIds.Count == 0)
       return [];
 
-    await using var cmd = dataSource.CreateCommand("""
+    // An event_id groups one object, which analytics may have tracked across several cameras, so a
+    // camera-scoped caller must be able to say so here as well.
+    var byCamera = !string.IsNullOrWhiteSpace(cameraId);
+    await using var cmd = dataSource.CreateCommand($"""
       SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id
       FROM retention_events
-      WHERE event_id = ANY($1)
+      WHERE event_id = ANY($1){(byCamera ? " AND camera_id = $2" : "")}
       ORDER BY alarm_start_ts DESC, event_uuid DESC;
       """);
     cmd.Parameters.AddWithValue(eventIds.ToArray());
+    if (byCamera) cmd.Parameters.AddWithValue(cameraId!);
 
     var events = new List<RetentionEventRow>();
     await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -591,32 +596,44 @@ public sealed class ClipStorage(
   public async Task<(List<RetentionEventRow> Events, bool HasMore, Timestamp? NextBefore)> ListRetentionEventsAsync(
     uint limit,
     Timestamp? beforeAlarmStart,
+    string? cameraId,
+    Timestamp? fromAlarmStart,
     CancellationToken ct)
   {
     var lim = limit == 0 || limit > 200 ? 50 : (int)limit;
 
-    await using var cmd = beforeAlarmStart is null
-      ? dataSource.CreateCommand("""
-        SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id
-        FROM retention_events
-        ORDER BY alarm_start_ts DESC, event_uuid DESC
-        LIMIT $1;
-        """)
-      : dataSource.CreateCommand("""
-        SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id
-        FROM retention_events
-        WHERE alarm_start_ts < $1
-        ORDER BY alarm_start_ts DESC, event_uuid DESC
-        LIMIT $2;
-        """);
+    // Built up rather than written out: the four filter combinations the timeline and the events
+    // tab need would otherwise be four near-identical literals. Values stay parameterized.
+    var where = new List<string>();
+    var values = new List<object>();
 
-    if (beforeAlarmStart is null)
-      cmd.Parameters.AddWithValue(lim);
-    else
+    if (beforeAlarmStart is not null)
     {
-      cmd.Parameters.AddWithValue(beforeAlarmStart.ToDateTime());
-      cmd.Parameters.AddWithValue(lim);
+      values.Add(beforeAlarmStart.ToDateTime());
+      where.Add($"alarm_start_ts < ${values.Count}");
     }
+    if (!string.IsNullOrWhiteSpace(cameraId))
+    {
+      values.Add(cameraId);
+      where.Add($"camera_id = ${values.Count}");
+    }
+    if (fromAlarmStart is not null)
+    {
+      values.Add(fromAlarmStart.ToDateTime());
+      where.Add($"alarm_start_ts >= ${values.Count}");
+    }
+
+    values.Add(lim);
+    var sql = $"""
+      SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id
+      FROM retention_events
+      {(where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "")}
+      ORDER BY alarm_start_ts DESC, event_uuid DESC
+      LIMIT ${values.Count};
+      """;
+
+    await using var cmd = dataSource.CreateCommand(sql);
+    foreach (var v in values) cmd.Parameters.AddWithValue(v);
 
     var events = new List<RetentionEventRow>();
     await using var reader = await cmd.ExecuteReaderAsync(ct);

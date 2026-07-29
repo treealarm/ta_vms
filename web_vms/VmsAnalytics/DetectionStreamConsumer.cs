@@ -28,8 +28,6 @@ public sealed class DetectionStreamConsumer(
   VmsLog.EntityStatePublisher entityStatePublisher,
   ILogger<DetectionStreamConsumer> logger) : BackgroundService
 {
-  private static readonly uint RetainTimeoutSeconds = RequireUint("ANALYTICS_RETAIN_TIMEOUT_SECONDS");
-
   protected override async Task ExecuteAsync(CancellationToken stoppingToken)
   {
     await Task.WhenAll(workers.Workers.Select(w => ConsumeWorkerAsync(w.Key, w.Value, stoppingToken)));
@@ -119,7 +117,7 @@ public sealed class DetectionStreamConsumer(
       evt.HasRecognizedText ? evt.RecognizedText : "-", eventId, objectId);
 
     var (storageId, cropPath) = await SaveCropAsync(cameraId, evt, detectedAt, ct);
-    var eventUuid = await RetainAsync(cameraId, evt, detectedAt, eventId, objectId, ct);
+    var eventUuid = await RetainAsync(cameraId, evt, detectedAt, eventId, objectId, watch.TimeoutSeconds, ct);
     // If RetainEvent failed (FS unreachable) eventUuid is null: no episode was created and the clip
     // isn't retained either, so this detection has no episode to belong to. We still persist it (with
     // its event_id group) so the row isn't lost — it just can't appear in the per-episode details
@@ -199,7 +197,9 @@ public sealed class DetectionStreamConsumer(
   }
 
   // Returns the episode (event_uuid) the retention call opened or extended, or null on failure.
-  private async Task<Guid?> RetainAsync(string cameraId, DetectionEvent evt, DateTime detectedAt, string eventId, string objectId, CancellationToken ct)
+  private async Task<Guid?> RetainAsync(
+    string cameraId, DetectionEvent evt, DateTime detectedAt, string eventId, string objectId,
+    uint timeoutSeconds, CancellationToken ct)
   {
     try
     {
@@ -211,7 +211,9 @@ public sealed class DetectionStreamConsumer(
         EventId = eventId,
         CameraId = cameraId,
         AlarmStartTs = Timestamp.FromDateTime(DateTime.SpecifyKind(detectedAt, DateTimeKind.Utc)),
-        TimeoutSeconds = RetainTimeoutSeconds,
+        // Per-watch, configured alongside the rest of the watch — the mirror of
+        // OnvifAlarmFilter.timeout_seconds for the analytics source.
+        TimeoutSeconds = Math.Max(1u, timeoutSeconds),
         ObjectId = objectId,
       };
       var status = await fsClient.RetainEventAsync(request, cancellationToken: ct);
@@ -227,13 +229,4 @@ public sealed class DetectionStreamConsumer(
     }
   }
 
-
-  private static uint RequireUint(string name)
-  {
-    var raw = Environment.GetEnvironmentVariable(name)
-      ?? throw new InvalidOperationException($"Required environment variable '{name}' is not set");
-    return uint.TryParse(raw, out var value)
-      ? value
-      : throw new InvalidOperationException($"Required environment variable '{name}' must be a non-negative integer");
-  }
 }

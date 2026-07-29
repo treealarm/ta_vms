@@ -4,7 +4,7 @@ import Hls from 'hls.js'
 import { authXhrSetup } from '../auth/authFetch'
 import type { PlaylistMap } from '../utils/playlistTime'
 
-export type HlsErrorKind = 'network' | 'media' | 'other'
+export type HlsErrorKind = 'notFound' | 'network' | 'media' | 'other'
 export type HlsPlayerError = { kind: HlsErrorKind; detail: string }
 
 export type UseHlsPlayerResult = {
@@ -114,12 +114,18 @@ export function useHlsPlayer(
           }
         }
 
+        // hls.js reports an HTTP 404 as a generic network error, but for us it is not a failure at
+        // all: it is the server saying this camera has nothing recorded in the requested window.
+        // Showing "network error" there sends the operator chasing a connectivity problem.
+        const status = data.response?.code
         const kind: HlsErrorKind =
-          data.type === Hls.ErrorTypes.NETWORK_ERROR
-            ? 'network'
-            : data.type === Hls.ErrorTypes.MEDIA_ERROR
-              ? 'media'
-              : 'other'
+          status === 404
+            ? 'notFound'
+            : data.type === Hls.ErrorTypes.NETWORK_ERROR
+              ? 'network'
+              : data.type === Hls.ErrorTypes.MEDIA_ERROR
+                ? 'media'
+                : 'other'
         patch({ error: { kind, detail } })
       })
 
@@ -157,12 +163,16 @@ export function useHlsPlayer(
     }
   }, [url, videoRef])
 
-  // A new play epoch means "play was (re-)authorized" — re-issue play() even when `url` is unchanged.
+  // Drives the element's play/pause state from the wall's `armed` flag. A new play epoch means
+  // "play was (re-)authorized" and re-issues play() even when `url` and `autoPlay` are unchanged.
+  // Pausing has to be explicit: dropping autoPlay only stops us from starting playback, it does not
+  // stop a video that is already running.
   const canPlay = current.ready
   useEffect(() => {
     const video = videoRef.current
-    if (!video || !opts.autoPlay || !canPlay) return
-    void video.play().catch(() => {})
+    if (!video || !canPlay) return
+    if (opts.autoPlay) void video.play().catch(() => {})
+    else if (!video.paused) video.pause()
   }, [opts.autoPlay, opts.playEpoch, canPlay, videoRef])
 
   return {

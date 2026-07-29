@@ -5,8 +5,8 @@ import { useAppDispatch, useAppSelector } from '../../store'
 import { clearInitialJump, selectWall, seekTo, setWindow } from '../../store/wallPlaybackSlice'
 import { useWallCoverage } from '../../hooks/useWallCoverage'
 import { wallClockBus } from '../../hooks/wallClockBus'
-import { lastCoveredMs, segmentAt } from '../../utils/archiveRanges'
-import { addLocalDays, DAY_MS, localDayStartMs } from '../../utils/wallTime'
+import { fitWindowToDay, lastCoveredMs, segmentAt } from '../../utils/archiveRanges'
+import { DAY_MS, MINUTE_MS } from '../../utils/wallTime'
 import type { MonitorDto } from '../../dto/dtos'
 import WallPlaybackBar from './WallPlaybackBar'
 import WallTimeline from './WallTimeline'
@@ -17,10 +17,9 @@ import WallTimeline from './WallTimeline'
 const DAY_NAV_SPAN_MS = 90 * DAY_MS
 const DAY_NAV_PSEUDO_WIDTH = 1200
 
-// The automatic jump opens on the whole local day holding the latest archive. A few hours would be
-// tighter to scrub, but recording is scattered across the day in bursts — a narrow start lands on
-// the most recent burst and hides every earlier one, which reads as "there is no archive".
-const STARTUP_WINDOW_DAYS = 1
+// Floor for the fitted startup window, so a day holding a single short clip does not open zoomed
+// down to seconds.
+const MIN_STARTUP_WINDOW_MS = 30 * MINUTE_MS
 
 function cameraForSlot(monitor: MonitorDto, slotIndex: number | null): string | null {
   if (slotIndex === null) return null
@@ -85,15 +84,19 @@ export default function WallPlaybackPanel({ monitor }: { monitor: MonitorDto }) 
     dispatch(seekTo({ monitorId, seekMs: target, arm: false }))
     // Recenter explicitly. A plain seek deliberately leaves the window alone (rescrolling under
     // the operator on every click would be maddening), but an automatic jump must bring its
-    // destination into view — and on the whole day, not at whatever zoom was left over.
-    const dayStart = localDayStartMs(target)
-    const dayEnd = addLocalDays(dayStart, STARTUP_WINDOW_DAYS)
-    dispatch(setWindow({ monitorId, startMs: dayStart, widthMs: dayEnd - dayStart }))
+    // destination into view — framed on the day's actual recordings rather than on 24 hours of
+    // mostly-empty time.
+    const fit = fitWindowToDay(focusedSegments, target, { minWidthMs: MIN_STARTUP_WINDOW_MS })
+    dispatch(setWindow({ monitorId, startMs: fit.startMs, widthMs: fit.widthMs }))
   }, [dispatch, monitorId, wall.mode, wall.initialJumpPending, wall.seekMs, dayNav.loading, focusedSegments])
 
   return (
     <Box sx={{ flexShrink: 0, pt: 1 }}>
-      <WallPlaybackBar monitorId={monitorId} focusedSegments={focusedSegments} />
+      <WallPlaybackBar
+        monitorId={monitorId}
+        focusedSegments={focusedSegments}
+        focusedCameraId={focusedCameraId}
+      />
       {wall.mode === 'playback' && (
         <WallTimeline
           monitorId={monitorId}

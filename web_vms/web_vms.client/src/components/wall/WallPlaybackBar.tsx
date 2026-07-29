@@ -19,11 +19,10 @@ import ZoomOutMapIcon from '@mui/icons-material/ZoomOutMap'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import EventIcon from '@mui/icons-material/Event'
+import VolumeUpIcon from '@mui/icons-material/VolumeUp'
+import VolumeOffIcon from '@mui/icons-material/VolumeOff'
 import KeyboardDoubleArrowLeftIcon from '@mui/icons-material/KeyboardDoubleArrowLeft'
 import KeyboardDoubleArrowRightIcon from '@mui/icons-material/KeyboardDoubleArrowRight'
-import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 import dayjs from 'dayjs'
 import { useTranslation } from 'react-i18next'
 
@@ -37,27 +36,33 @@ import {
   seekTo,
   selectWall,
   setArmed,
+  setAudioEnabled,
   setWindow,
   zoomWindow,
   type WallMode,
 } from '../../store/wallPlaybackSlice'
 import { wallClockBus } from '../../hooks/wallClockBus'
 import { adjacentCoveredDay, coveredDayKeys } from '../../utils/adjacentDay'
-import { panWindowToCoverage } from '../../utils/archiveRanges'
-import { dayKeyLocal, dayKeyToLocalMidnightMs } from '../../utils/wallTime'
+import { firstCoveredInRange, fitWindowToDay, panWindowToCoverage } from '../../utils/archiveRanges'
+import { dayKeyLocal, dayKeyToLocalMidnightMs, localDayEndMs, MINUTE_MS } from '../../utils/wallTime'
 import type { Segment } from '../../utils/archiveRanges'
+import ArchiveDateTimePicker from '../ArchiveDateTimePicker'
 import PlayheadClock from './PlayheadClock'
 
 const NUDGE_MS = 30_000
+// Floor for the window a day jump opens, so a day holding one short clip is not zoomed to seconds.
+const MIN_JUMP_WINDOW_MS = 30 * MINUTE_MS
 const ZOOM_STEP = 0.5
 
 type Props = {
   monitorId: string
   /** Coverage of the focused camera — day navigation follows the camera the operator is watching. */
   focusedSegments: readonly Segment[]
+  /** Camera the jump-to picker reports archive coverage for; null disables it. */
+  focusedCameraId: string | null
 }
 
-export default function WallPlaybackBar({ monitorId, focusedSegments }: Props) {
+export default function WallPlaybackBar({ monitorId, focusedSegments, focusedCameraId }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const wall = useAppSelector(selectWall(monitorId))
@@ -77,15 +82,23 @@ export default function WallPlaybackBar({ monitorId, focusedSegments }: Props) {
     dispatch(nudgeSeek({ monitorId, deltaMs }))
   }
 
-  // Steps to the next day that actually holds archive, skipping empty ones however many there are,
-  // and lands on its local midnight without arming playback.
+  // Steps to the next day that actually holds archive, skipping empty ones however many there are.
+  // Lands on that day's first recording rather than on its midnight, which is nearly always empty,
+  // and frames the window on the day's actual material. Playback is left disarmed.
   const handleDayStep = (dir: -1 | 1) => {
     const key = adjacentCoveredDay(dayKeys, dayKeyLocal(wall.seekMs), dir)
     if (!key) return
     const dayStartMs = dayKeyToLocalMidnightMs(key)
     if (!Number.isFinite(dayStartMs)) return
-    wallClockBus.reset(dayStartMs)
-    dispatch(jumpToDay({ monitorId, dayStartMs }))
+
+    const seekMs = firstCoveredInRange(focusedSegments, dayStartMs, localDayEndMs(dayStartMs))
+    const landing = seekMs ?? dayStartMs
+
+    wallClockBus.reset(landing)
+    dispatch(jumpToDay({ monitorId, dayStartMs, seekMs: landing }))
+
+    const fit = fitWindowToDay(focusedSegments, landing, { minWidthMs: MIN_JUMP_WINDOW_MS })
+    dispatch(setWindow({ monitorId, startMs: fit.startMs, widthMs: fit.widthMs }))
   }
 
   const canStepBack = adjacentCoveredDay(dayKeys, dayKeyLocal(wall.seekMs), -1) !== null
@@ -153,6 +166,17 @@ export default function WallPlaybackBar({ monitorId, focusedSegments }: Props) {
             </span>
           </Tooltip>
 
+          {/* Sound follows the clock owner — the cell driving the playhead. Only one cell is ever
+              audible; a wall of simultaneous audio is unusable. */}
+          <Tooltip title={wall.audioEnabled ? t('wall.muteAudio') : t('wall.unmuteAudio')}>
+            <IconButton
+              size="small"
+              onClick={() => dispatch(setAudioEnabled({ monitorId, enabled: !wall.audioEnabled }))}
+            >
+              {wall.audioEnabled ? <VolumeUpIcon fontSize="small" /> : <VolumeOffIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
+
           <PlayheadClock fallbackMs={wall.seekMs} />
 
           <Box sx={{ flex: 1 }} />
@@ -176,10 +200,16 @@ export default function WallPlaybackBar({ monitorId, focusedSegments }: Props) {
             </span>
           </Tooltip>
 
-          <Tooltip title={t('wall.jumpTo')}>
-            <IconButton size="small" onClick={(e) => setPickerAnchor(e.currentTarget)}>
-              <EventIcon fontSize="small" />
-            </IconButton>
+          <Tooltip title={focusedCameraId ? t('wall.jumpTo') : t('wall.jumpToNeedsCamera')}>
+            <span>
+              <IconButton
+                size="small"
+                disabled={!focusedCameraId}
+                onClick={(e) => setPickerAnchor(e.currentTarget)}
+              >
+                <EventIcon fontSize="small" />
+              </IconButton>
+            </span>
           </Tooltip>
 
           <Tooltip title={t('wall.zoomOut')}>
@@ -207,25 +237,24 @@ export default function WallPlaybackBar({ monitorId, focusedSegments }: Props) {
             anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
             transformOrigin={{ vertical: 'bottom', horizontal: 'right' }}
           >
-            <Box sx={{ p: 1.5 }}>
-              {/* The pickers need their own localization context — the app has no global
-                  LocalizationProvider, each picker site supplies one (same as RecordingsList). */}
-              <LocalizationProvider dateAdapter={AdapterDayjs}>
-                <DateTimePicker
-                  ampm={false}
-                  value={dayjs(wall.seekMs)}
-                  onChange={(v) => {
-                    if (!v?.isValid()) return
-                    // Loads the target paused: jumping straight into playback at an arbitrary
-                    // instant would run off the end of the archive before the operator can look
-                    // at it.
-                    wallClockBus.reset(v.valueOf())
-                    dispatch(seekTo({ monitorId, seekMs: v.valueOf(), arm: false }))
-                    setPickerAnchor(null)
-                  }}
-                />
-              </LocalizationProvider>
-            </Box>
+            {/* Same picker the per-cell recordings list uses: days and months without archive are
+                greyed out and the hour strip shows where the day's material sits, so the operator
+                cannot land on empty time. Fine positioning is then done on the timeline itself. */}
+            {pickerAnchor && focusedCameraId && (
+              <ArchiveDateTimePicker
+                cameraId={focusedCameraId}
+                value={dayjs(wall.seekMs)}
+                onApply={(v) => {
+                  if (!v?.isValid()) return
+                  // Loads the target paused: jumping straight into playback at an arbitrary
+                  // instant would run off the end of the archive before the operator can look at it.
+                  wallClockBus.reset(v.valueOf())
+                  dispatch(seekTo({ monitorId, seekMs: v.valueOf(), arm: false }))
+                  setPickerAnchor(null)
+                }}
+                onCancel={() => setPickerAnchor(null)}
+              />
+            )}
           </Popover>
         </>
       )}

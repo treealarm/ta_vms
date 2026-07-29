@@ -36,6 +36,7 @@ const EMPTY_WATCH: AnalyticsWatchDto = {
   sampleFps: 1,
   armed: false,
   attachDebugCrops: false,
+  timeoutSeconds: 10,
 }
 
 type FormProps = {
@@ -70,6 +71,7 @@ function AnalyticsWatchForm({ ref, watch, allCameras, takenCameraIds, toolbarExt
     || form.minConfidence !== snap.minConfidence
     || form.sampleFps !== snap.sampleFps
     || form.attachDebugCrops !== snap.attachDebugCrops
+    || form.timeoutSeconds !== snap.timeoutSeconds
   )
 
   const valid = Boolean(form.cameraId && form.streamName && form.classes.length > 0)
@@ -230,6 +232,16 @@ function AnalyticsWatchForm({ ref, watch, allCameras, takenCameraIds, toolbarExt
               size="small"
               slotProps={{ htmlInput: { min: 1 } }}
               sx={{ width: 140 }}
+            />
+            <TextField
+              label={t('analytics.timeoutSeconds')}
+              helperText={t('analytics.timeoutSecondsHelper')}
+              type="number"
+              value={form.timeoutSeconds}
+              onChange={(e) => setField('timeoutSeconds', Math.max(1, Math.floor(Number(e.target.value))))}
+              size="small"
+              slotProps={{ htmlInput: { min: 1 } }}
+              sx={{ width: 180 }}
             />
           </Stack>
 

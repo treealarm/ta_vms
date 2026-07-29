@@ -39,8 +39,13 @@ export default function DayHourTimeline({ cameraId, day, selectedTime, onPick, d
       for (const rec of range.recordings) {
         const startMin = dayjs(rec.startTime).diff(dayStart, 'minute')
         const endMin = dayjs(rec.endTime ?? rec.startTime).diff(dayStart, 'minute')
-        const firstHour = Math.max(0, Math.floor(Math.min(startMin, endMin) / 60))
-        const lastHour = Math.min(HOURS - 1, Math.ceil(Math.max(startMin, endMin) / 60))
+        const fromMin = Math.min(startMin, endMin)
+        const toMin = Math.max(startMin, endMin)
+        const firstHour = Math.max(0, Math.floor(fromMin / 60))
+        // The interval is half-open: a clip running 14:36–14:41 belongs to hour 14 only, and one
+        // ending exactly at 15:00 does not reach into hour 15. Rounding the end up instead marked
+        // an empty hour as recorded, and clicking it landed on nothing.
+        const lastHour = Math.min(HOURS - 1, Math.floor(Math.max(fromMin, toMin - 1) / 60))
         for (let h = firstHour; h <= lastHour; h++) flags[h] = true
       }
     }

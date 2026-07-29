@@ -10,8 +10,10 @@ import { buildTicks, msToX, xToMs } from '../../utils/timelineTicks'
 import { DAY_MS, isSameLocalDay } from '../../utils/wallTime'
 import type { WallRange } from '../../utils/wallTime'
 import WallTimelineTrack from './WallTimelineTrack'
+import EventBrackets from './EventBrackets'
+import { useWallEvents } from '../../hooks/useWallEvents'
 
-const TICKS_H = 18
+const TICKS_H = 22
 const TRACK_H = 16
 const ZOOM_STEP = 0.8
 
@@ -57,6 +59,8 @@ export default function WallTimeline({ monitorId, cameraIds, focusedCameraId }: 
     () => buildTicks(win, pxWidth, focusedSegments),
     [win, pxWidth, focusedSegments]
   )
+
+  const events = useWallEvents(focusedCameraId, windowStartMs, windowWidthMs)
 
   // The playhead is moved by mutating style rather than by re-rendering: it ticks several times a
   // second and this component sits above the whole wall.
@@ -173,28 +177,30 @@ export default function WallTimeline({ monitorId, cameraIds, focusedCameraId }: 
                     sx={{
                       position: 'absolute',
                       bottom: 0,
-                      width: '1px',
-                      height: tick.kind === 'major' ? 8 : tick.kind === 'edge' ? 10 : 4,
+                      width: tick.kind === 'minor' ? '1px' : '2px',
+                      height: tick.kind === 'minor' ? 5 : tick.kind === 'edge' ? 12 : 10,
                       bgcolor: (th) =>
                         tick.kind === 'edge'
-                          ? th.palette.primary.main
-                          : alpha(th.palette.text.primary, tick.kind === 'major' ? 0.5 : 0.25),
+                          ? th.palette.warning.main
+                          : alpha(th.palette.text.primary, tick.kind === 'major' ? 0.85 : 0.45),
                     }}
                   />
-                  <Typography
-                    sx={{
-                      position: 'absolute',
-                      bottom: 9,
-                      left: 2,
-                      fontSize: '0.55rem',
-                      lineHeight: 1,
-                      whiteSpace: 'nowrap',
-                      color: tick.showDate ? 'text.primary' : 'text.secondary',
-                      fontWeight: tick.showDate ? 600 : 400,
-                    }}
-                  >
-                    {tick.label}
-                  </Typography>
+                  {tick.showLabel && (
+                    <Typography
+                      sx={{
+                        position: 'absolute',
+                        bottom: 11,
+                        left: 3,
+                        fontSize: '0.65rem',
+                        lineHeight: 1,
+                        whiteSpace: 'nowrap',
+                        color: tick.showDate ? 'text.primary' : 'text.secondary',
+                        fontWeight: tick.showDate ? 700 : 500,
+                      }}
+                    >
+                      {tick.label}
+                    </Typography>
+                  )}
                 </Box>
               )
             })}
@@ -212,7 +218,20 @@ export default function WallTimeline({ monitorId, cameraIds, focusedCameraId }: 
           height={TRACK_H}
           emphasis
           disabled={!focusedCameraId}
-        />
+        >
+          {focusedCameraId && (
+            <EventBrackets
+              events={events}
+              segments={focusedSegments}
+              win={win}
+              pxWidth={pxWidth}
+              onPick={(ms) => {
+                wallClockBus.reset(ms)
+                dispatch(seekTo({ monitorId, seekMs: ms, arm: true }))
+              }}
+            />
+          )}
+        </WallTimelineTrack>
 
         <WallTimelineTrack
           label={t('wall.allCameras')}

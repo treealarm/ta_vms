@@ -357,6 +357,9 @@ message AnalyticsWatch {
   uint32 sample_fps       = 6;
   bool   armed            = 7;  // read-only; populated from camera_states.armed on read
   bool   attach_debug_crops = 8;  // debug: video_a attaches a JPEG of each detection to the event
+  // Seconds of recording kept after the last detection before the retention event closes itself.
+  // Mirrors OnvifAlarmFilter.timeout_seconds — the same knob for the analytics source.
+  uint32 timeout_seconds  = 9;
 }
 
 message ListAnalyticsWatchesRequest {

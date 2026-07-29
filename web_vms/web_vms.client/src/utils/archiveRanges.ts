@@ -131,6 +131,25 @@ export function resolveWithinDay(segs: readonly Segment[], ms: number): number |
   return null
 }
 
+/**
+ * First recorded instant inside [fromMs, toMs), or null when that span holds nothing.
+ *
+ * Used after picking an hour: the hour strip reports "13:00", but the recording in that hour may
+ * start at 13:49, and landing on the hour mark drops the operator into empty time.
+ */
+export function firstCoveredInRange(
+  segs: readonly Segment[],
+  fromMs: number,
+  toMs: number
+): number | null {
+  for (const s of segs) {
+    if (s.endMs <= fromMs) continue
+    if (s.startMs >= toMs) break
+    return Math.max(s.startMs, fromMs)
+  }
+  return null
+}
+
 export function clampIntoSegment(seg: Segment, ms: number): number {
   if (ms < seg.startMs) return seg.startMs
   if (ms >= seg.endMs) return Math.max(seg.startMs, seg.endMs - 1)
@@ -152,6 +171,48 @@ export function lastCoveredMs(segs: readonly Segment[]): number | null {
 
 export function hasCoverageOnDay(segs: readonly Segment[], ms: number): boolean {
   return segs.some((s) => isSameLocalDay(s.startMs, ms) || (s.startMs <= ms && s.endMs > ms))
+}
+
+/**
+ * Window that frames the archive around `ms` instead of a fixed span.
+ *
+ * Opening the whole day when recording only spans an hour of it wastes most of the width on empty
+ * time and squeezes the material into a sliver. This fits the window to the recordings of that
+ * local day, with margins — and falls back to the full day when the archive really does run from
+ * one end of it to the other, or when there is nothing to fit.
+ */
+export function fitWindowToDay(
+  segs: readonly Segment[],
+  ms: number,
+  opts: { minWidthMs: number; marginRatio?: number }
+): { startMs: number; widthMs: number } {
+  const dayStart = localDayStartMs(ms)
+  const dayEnd = localDayEndMs(ms)
+  const fullDay = { startMs: dayStart, widthMs: dayEnd - dayStart }
+
+  const onDay = segs.filter((s) => s.endMs > dayStart && s.startMs < dayEnd)
+  if (onDay.length === 0) return fullDay
+
+  const first = Math.max(dayStart, Math.min(...onDay.map((s) => s.startMs)))
+  const last = Math.min(dayEnd, Math.max(...onDay.map((s) => s.endMs)))
+
+  const span = last - first
+  const margin = Math.max(opts.minWidthMs * 0.1, span * (opts.marginRatio ?? 0.08))
+
+  let startMs = first - margin
+  let endMs = last + margin
+
+  if (endMs - startMs < opts.minWidthMs) {
+    const centre = (first + last) / 2
+    startMs = centre - opts.minWidthMs / 2
+    endMs = centre + opts.minWidthMs / 2
+  }
+
+  // Once the fit covers most of the day, the day itself is the tidier frame — its boundaries are
+  // meaningful to the operator, arbitrary margins are not.
+  if (endMs - startMs >= (dayEnd - dayStart) * 0.8) return fullDay
+
+  return { startMs, widthMs: endMs - startMs }
 }
 
 function windowIntersectsCoverage(

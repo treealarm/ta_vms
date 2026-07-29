@@ -7,7 +7,7 @@
 //    ones, which are only being crossed.
 
 import type { Segment } from './archiveRanges'
-import { DAY_MS, HOUR_MS, MINUTE_MS, SECOND_MS, isSameLocalDay, localDayStartMs, dayKeyLocal } from './wallTime'
+import { DAY_MS, HOUR_MS, MINUTE_MS, SECOND_MS, localDayStartMs, dayKeyLocal } from './wallTime'
 import type { WallRange } from './wallTime'
 
 export type TickKind = 'major' | 'minor' | 'edge'
@@ -18,6 +18,11 @@ export type Tick = {
   kind: TickKind
   /** True only where the label must carry the calendar date, not just the time. */
   showDate: boolean
+  /**
+   * Whether the label is drawn. The mark itself always is — a hairline never collides, but text
+   * does, and overlapping timestamps are worse than none.
+   */
+  showLabel: boolean
 }
 
 export function msToX(ms: number, win: WallRange, pxWidth: number): number {
@@ -45,8 +50,10 @@ const STEPS = [
   DAY_MS, 2 * DAY_MS, 7 * DAY_MS,
 ]
 
-const MIN_PX_BETWEEN_DENSE = 70
-const SPARSE_MULTIPLIER = 4
+const MIN_PX_BETWEEN_DENSE = 62
+// Empty stretches get every other tick. A larger factor was tried and leaves a whole day carrying
+// almost no readings once the dense step is already hours wide.
+const SPARSE_MULTIPLIER = 2
 
 function stepAtLeast(minMs: number): number {
   for (const s of STEPS) if (s >= minMs) return s
@@ -87,61 +94,101 @@ function coveredAt(segments: readonly Segment[], ms: number): boolean {
  * `edge` ticks mark where a recording starts or stops next to a long gap — without them a stretch
  * of archive floating in empty space has no readable boundary time.
  */
+// Rough on-screen width of a label, in pixels: enough to reserve space without measuring text.
+// Deliberately generous — a gap that is slightly too wide costs one label, one too narrow makes
+// two timestamps collide, which is exactly what we are here to prevent.
+const CHAR_PX = 6.2
+const LABEL_GAP_PX = 10
+
+function labelWidthPx(label: string): number {
+  return label.length * CHAR_PX + LABEL_GAP_PX
+}
+
+// Which labels win when there is not room for all of them. Dates orient the operator, the coarse
+// ruler carries the reading, recording boundaries are useful but optional, and fine ticks are the
+// first to lose their text.
+const PRIORITY: Record<TickKind, number> = { major: 1, edge: 2, minor: 3 }
+
+/**
+ * Ticks for the visible window.
+ *
+ * Marks are laid out first, then labels are assigned greedily by priority so no two ever overlap:
+ * at a coarse zoom a recording boundary keeps its mark but loses its timestamp rather than printing
+ * it on top of the hour beside it.
+ */
 export function buildTicks(win: WallRange, pxWidth: number, segments: readonly Segment[]): Tick[] {
   const span = win.endMs - win.startMs
   if (span <= 0 || pxWidth <= 0) return []
 
   const { denseStepMs, sparseStepMs, majorStepMs } = pickTickStep(win, pxWidth)
-  const singleDay = isSameLocalDay(win.startMs, win.endMs)
 
-  const out: Tick[] = []
-  const seen = new Set<number>()
+  const candidates = new Map<number, Tick>()
 
-  const push = (ms: number, kind: TickKind, stepMs: number, showDate: boolean) => {
-    if (ms < win.startMs || ms > win.endMs || seen.has(ms)) return
-    seen.add(ms)
-    out.push({ ms, kind, label: showDate ? dayKeyLocal(ms) : timeLabel(ms, stepMs), showDate })
+  const add = (ms: number, kind: TickKind, stepMs: number, showDate: boolean) => {
+    if (ms < win.startMs || ms > win.endMs) return
+    const existing = candidates.get(ms)
+    // A day boundary outranks whatever the regular ruler put at the same instant.
+    if (existing && !(showDate && !existing.showDate)) return
+    candidates.set(ms, {
+      ms,
+      kind,
+      label: showDate ? dayKeyLocal(ms) : timeLabel(ms, stepMs),
+      showDate,
+      showLabel: false,
+    })
   }
 
   // Regular ruler. Step depends on whether that spot has archive under it.
   let cursor = Math.ceil(win.startMs / denseStepMs) * denseStepMs
   while (cursor <= win.endMs) {
     const dense = coveredAt(segments, cursor)
-    const step = dense ? denseStepMs : sparseStepMs
-
     if (dense || cursor % sparseStepMs === 0) {
       const kind: TickKind = cursor % majorStepMs === 0 ? 'major' : 'minor'
-      push(cursor, kind, step, false)
+      add(cursor, kind, dense ? denseStepMs : sparseStepMs, false)
     }
     cursor += denseStepMs
   }
 
-  // Day boundaries carry the date — and they are the only ticks that do, unless the whole window
-  // sits inside one day, in which case the window's first tick states which day that is.
+  // The date appears at day boundaries and nowhere else. Repeating it on every tick makes the ruler
+  // unreadable, and inside a single day it says nothing the neighbouring tick does not.
   let day = localDayStartMs(win.startMs)
   if (day < win.startMs) day += DAY_MS
+  let dayBoundaries = 0
   while (day <= win.endMs) {
-    seen.delete(day)
-    out.push({ ms: day, kind: 'major', label: dayKeyLocal(day), showDate: true })
-    seen.add(day)
+    add(day, 'major', majorStepMs, true)
+    dayBoundaries += 1
     day = localDayStartMs(day + DAY_MS + HOUR_MS)
   }
 
-  if (singleDay && out.length > 0) {
-    const first = out.reduce((a, b) => (a.ms <= b.ms ? a : b))
-    first.showDate = true
-    first.label = `${dayKeyLocal(first.ms)} ${timeLabel(first.ms, denseStepMs)}`
-  }
+  // When no midnight is on screen there is nothing to say which day this is, so the date goes at
+  // the very start of the ruler — as its own marker, not glued onto a time label.
+  if (dayBoundaries === 0) add(win.startMs, 'major', majorStepMs, true)
 
-  // Boundaries of recorded stretches that sit next to a real hole.
+  // Boundaries of recorded stretches.
   for (const seg of segments) {
-    for (const boundary of [seg.startMs, seg.endMs]) {
-      if (boundary < win.startMs || boundary > win.endMs) continue
-      if (seen.has(boundary)) continue
-      seen.add(boundary)
-      out.push({ ms: boundary, kind: 'edge', label: timeLabel(boundary, denseStepMs), showDate: false })
-    }
+    add(seg.startMs, 'edge', denseStepMs, false)
+    add(seg.endMs, 'edge', denseStepMs, false)
   }
 
-  return out.sort((a, b) => a.ms - b.ms)
+  const ticks = [...candidates.values()].sort((a, b) => a.ms - b.ms)
+
+  // Greedy label placement: highest priority first, each label claiming its horizontal span.
+  const claimed: { from: number; to: number }[] = []
+  const ordered = [...ticks].sort((a, b) => {
+    const pa = a.showDate ? 0 : PRIORITY[a.kind]
+    const pb = b.showDate ? 0 : PRIORITY[b.kind]
+    return pa !== pb ? pa - pb : a.ms - b.ms
+  })
+
+  for (const tick of ordered) {
+    const x = msToX(tick.ms, win, pxWidth)
+    const from = x
+    const to = x + labelWidthPx(tick.label)
+    if (to > pxWidth + LABEL_GAP_PX) continue
+    if (claimed.some((c) => from < c.to && to > c.from)) continue
+    claimed.push({ from, to })
+    tick.showLabel = true
+  }
+
+  return ticks
 }

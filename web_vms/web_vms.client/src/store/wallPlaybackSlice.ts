@@ -20,6 +20,11 @@ export type WallState = {
   windowWidthMs: number
   focusedSlotIndex: number | null
   /**
+   * Sound for the clock owner only. Nine cells playing audio at once is unusable, and the owner is
+   * the cell whose timeline the operator is actually following.
+   */
+  audioEnabled: boolean
+  /**
    * Set once on entering playback: if the focused camera has nothing recorded today, the wall jumps
    * to the last available archive. Cleared after the first positioning or any manual seek, so
    * switching focus later never moves the wall's day on its own.
@@ -40,6 +45,7 @@ function makeWallState(nowMs: number): WallState {
     windowStartMs: nowMs - DEFAULT_WINDOW_MS / 2,
     windowWidthMs: DEFAULT_WINDOW_MS,
     focusedSlotIndex: null,
+    audioEnabled: false,
     initialJumpPending: false,
   }
 }
@@ -89,6 +95,7 @@ const wallPlaybackSlice = createSlice({
       const w = ensure(state, payload.monitorId)
       w.mode = 'live'
       w.armed = false
+      w.audioEnabled = false
       w.initialJumpPending = false
     },
 
@@ -144,14 +151,15 @@ const wallPlaybackSlice = createSlice({
     },
 
     /**
-     * Land on a specific local midnight. Deliberately does NOT arm playback and does NOT snap the
-     * target to already-loaded coverage: a snap window wide enough to be useful mid-day would pull
-     * a midnight target back into the previous day, undoing the jump.
+     * Land on a day, at `seekMs` when the caller knows where that day's footage starts — midnight is
+     * usually empty. Never snaps outside the target day: pulling the position to nearby coverage
+     * could drag it back into the previous day and undo the jump. Playback stays disarmed.
      */
-    jumpToDay(state, { payload }: PayloadAction<Id & { dayStartMs: number }>) {
+    jumpToDay(state, { payload }: PayloadAction<Id & { dayStartMs: number; seekMs?: number }>) {
       const w = ensure(state, payload.monitorId)
       const start = localDayStartMs(payload.dayStartMs)
-      w.seekMs = start
+      const target = payload.seekMs
+      w.seekMs = target !== undefined && localDayStartMs(target) === start ? target : start
       w.armed = false
       w.initialJumpPending = false
       showLocalDay(w, start)
@@ -159,6 +167,10 @@ const wallPlaybackSlice = createSlice({
 
     setFocusedSlot(state, { payload }: PayloadAction<Id & { slotIndex: number | null }>) {
       ensure(state, payload.monitorId).focusedSlotIndex = payload.slotIndex
+    },
+
+    setAudioEnabled(state, { payload }: PayloadAction<Id & { enabled: boolean }>) {
+      ensure(state, payload.monitorId).audioEnabled = payload.enabled
     },
 
     clearInitialJump(state, { payload }: PayloadAction<Id>) {
@@ -180,6 +192,7 @@ export const {
   resetZoom,
   jumpToDay,
   setFocusedSlot,
+  setAudioEnabled,
   clearInitialJump,
 } = wallPlaybackSlice.actions
 
