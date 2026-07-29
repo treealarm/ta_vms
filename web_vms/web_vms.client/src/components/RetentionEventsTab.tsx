@@ -119,12 +119,21 @@ export default function RetentionEventsTab() {
 
   // Loads page 0: on mount at the cursor a timeline bracket asked for, and again whenever the
   // camera filter changes — a different filter is a different result set, so the collected page
-  // cursors no longer mean anything. Read from a ref so paging steps don't retrigger it, and clear
-  // it after the first run: only the arriving link gets to choose where paging starts.
-  const initialCursor = useRef(searchParams.get('before') ?? undefined)
+  // cursors no longer mean anything.
+  //
+  // Whether the link's cursor still applies is decided by comparing the filter, never by counting
+  // runs: under StrictMode this effect fires twice on mount, and a "use it once then clear it"
+  // flag would spend the cursor on the first run and load the newest page on the second — landing
+  // the operator on the latest event instead of the one they clicked. The latch below only ever
+  // goes from false to true, so running it twice changes nothing.
+  const linkCursor = searchParams.get('before') ?? undefined
+  const initialFilter = useRef(cameraFilter)
+  const filterChanged = useRef(false)
   useEffect(() => {
-    void loadPage(0, initialCursor.current)
-    initialCursor.current = undefined
+    if (cameraFilter !== initialFilter.current) filterChanged.current = true
+    void loadPage(0, filterChanged.current ? undefined : linkCursor)
+    // linkCursor is fixed for the life of this route; loadPage changes with the filter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadPage])
 
   // Bring the requested row into view. The list scrolls internally, so it is found by attribute

@@ -20,7 +20,8 @@ type Props = {
 }
 
 // Descendants that must keep the pointer for themselves instead of starting a tile drag.
-const NO_TILE_DRAG = 'button, [role="button"], input, [data-nodrag]'
+// MUI's Select renders a div with role="combobox", not a <select>, so it needs naming explicitly.
+const NO_TILE_DRAG = 'button, [role="button"], [role="combobox"], input, select, [data-nodrag]'
 
 function effectiveCameraForSlot(monitor: MonitorDto, slotIndex: number): string | null {
   const persisted = monitor.slots.find((s) => s.slotIndex === slotIndex)

@@ -33,7 +33,9 @@ public class MonitorController(MonitorManager manager) : ControllerBase
       var result = await manager.Upsert(dto, Owner, ct);
       return Ok(result);
     }
-    catch (RpcException ex) when (ex.StatusCode is Grpc.Core.StatusCode.FailedPrecondition or Grpc.Core.StatusCode.PermissionDenied)
+    catch (RpcException ex) when (ex.StatusCode is Grpc.Core.StatusCode.FailedPrecondition
+                                                or Grpc.Core.StatusCode.PermissionDenied
+                                                or Grpc.Core.StatusCode.AlreadyExists)
     {
       return BadRequest(ex.Status.Detail);
     }

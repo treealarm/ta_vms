@@ -1,5 +1,6 @@
 using Dapr.Client;
 using Grpc.Core;
+using Npgsql;
 using SquareIntegrationClient;
 using Vms.Cfg;
 
@@ -440,8 +441,23 @@ namespace VmsCfg
             $"investigation board limit reached ({MaxInvestigationBoardsPerOwner})"));
       }
 
-      var result = await storage.UpsertMonitorAsync(request, context.CancellationToken)
-                   ?? throw new RpcException(new Status(StatusCode.PermissionDenied, "monitor belongs to another user"));
+      MonitorSetup? result;
+      try
+      {
+        result = await storage.UpsertMonitorAsync(request, context.CancellationToken);
+      }
+      // ON CONFLICT resolves a clash on the id; a clash on (name, kind, owner) is a different row
+      // entirely and surfaces as a unique violation. Reachable in ordinary use — two tabs both
+      // auto-naming a new board pick "Investigation 1" from their own stale list — so it has to
+      // come back as a stated reason, not as an unhandled 500.
+      catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+      {
+        throw new RpcException(new Status(StatusCode.AlreadyExists, $"a monitor named '{request.Name}' already exists"));
+      }
+
+      if (result is null)
+        throw new RpcException(new Status(StatusCode.PermissionDenied, "monitor belongs to another user"));
+
       logger.LogInformation("Monitor '{Name}' upserted (id={Id}, layout={Layout}, kind={Kind})",
         result.Name, result.MonitorId, result.Layout, result.Kind);
       return result;
