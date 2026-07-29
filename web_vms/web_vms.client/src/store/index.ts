@@ -9,6 +9,8 @@ import storageReducer from './storageSlice'
 import mediaMtxReducer from './mediaMtxSlice'
 import monitorsReducer from './monitorsSlice'
 import monitorUiReducer from './monitorUiSlice'
+import wallPlaybackReducer from './wallPlaybackSlice'
+import wallCoverageReducer from './wallCoverageSlice'
 import frontendConfigReducer from './frontendConfigSlice'
 
 export const store = configureStore({
@@ -22,6 +24,8 @@ export const store = configureStore({
     mediaMtx: mediaMtxReducer,
     monitors: monitorsReducer,
     monitorUi: monitorUiReducer,
+    wallPlayback: wallPlaybackReducer,
+    wallCoverage: wallCoverageReducer,
     frontendConfig: frontendConfigReducer,
   }
 })

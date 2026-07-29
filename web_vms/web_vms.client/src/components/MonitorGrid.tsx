@@ -6,6 +6,8 @@ import { layoutColumns, layoutRows, layoutSlotCount } from '../dto/dtos'
 import CameraUnifiedCard from './CameraUnifiedCard'
 import { useAppDispatch, useAppSelector } from '../store'
 import { setMonitorSlot } from '../store/monitorsSlice'
+import { selectFocusedSlot, selectWallMode, setFocusedSlot } from '../store/wallPlaybackSlice'
+import { wallClockBus } from '../hooks/wallClockBus'
 
 type Props = {
   monitor: MonitorDto
@@ -24,13 +26,15 @@ type SlotProps = {
   slotIndex: number
   soloActive: boolean
   canSolo: boolean
+  focused: boolean
   onToggleSolo: () => void
   allCameras: Record<string, CameraSetupDto>
 }
 
-function CameraSlot({ monitor, slotIndex, soloActive, canSolo, onToggleSolo, allCameras }: SlotProps) {
+function CameraSlot({ monitor, slotIndex, soloActive, canSolo, focused, onToggleSolo, allCameras }: SlotProps) {
   const dispatch = useAppDispatch()
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
+  const wallMode = useAppSelector(selectWallMode(monitor.monitorId))
 
   const activeCameraId = effectiveCameraForSlot(monitor, slotIndex)
   const camera = activeCameraId ? allCameras[activeCameraId] : null
@@ -41,12 +45,35 @@ function CameraSlot({ monitor, slotIndex, soloActive, canSolo, onToggleSolo, all
   }
 
   return (
-    <Box sx={{ position: 'relative', minWidth: 0, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
+    <Box
+      // Selecting a slot only moves focus — it drives the frame and the timeline's track, and never
+      // swaps which camera a cell shows.
+      onClick={() => dispatch(setFocusedSlot({ monitorId: monitor.monitorId, slotIndex }))}
+      // Snapshot and other per-slot lookups address the video through this attribute; indexing the
+      // Nth <video> in the DOM breaks as soon as an earlier slot is empty.
+      data-slot-index={slotIndex}
+      sx={{
+        position: 'relative',
+        minWidth: 0,
+        minHeight: 0,
+        display: 'flex',
+        borderRadius: 1,
+        // Focus must stay distinguishable from the retention indicator, which CameraUnifiedCard
+        // draws as a red (palette.error) outline inset by 2px — and in this theme primary is red
+        // too. So focus is a light outline drawn OUTSIDE the card, in the grid gap: different
+        // colour, different position, and both are visible at once on a recording camera.
+        outline: focused ? '2px solid' : 'none',
+        outlineColor: 'common.white',
+        outlineOffset: '2px',
+      }}
+    >
       {camera ? (
         <CameraUnifiedCard
           key={camera.cameraId}
           slotKey={`${monitor.monitorId}-${slotIndex}`}
+          monitorId={monitor.monitorId}
           camera={camera}
+          wallMode={wallMode}
           gridSoloActive={soloActive}
           onToggleGridSolo={canSolo ? onToggleSolo : undefined}
         />
@@ -110,8 +137,14 @@ function CameraSlot({ monitor, slotIndex, soloActive, canSolo, onToggleSolo, all
 export default function MonitorGrid({ monitor }: Props) {
   const [soloSlot, setSoloSlot] = useState<number | null>(null)
   const allCameras = useAppSelector((state) => state.live.cameraStatesById)
+  const focusedSlot = useAppSelector(selectFocusedSlot(monitor.monitorId))
 
   const slotCount = layoutSlotCount(monitor.layout)
+
+  // The clock bus prefers the focused cell as playhead owner, so keep it in sync with the wall.
+  useEffect(() => {
+    wallClockBus.setFocused(focusedSlot === null ? null : `${monitor.monitorId}-${focusedSlot}`)
+  }, [monitor.monitorId, focusedSlot])
 
   // Reset solo when switching monitors or changing layout (stale index would point at non-existent slot)
   useEffect(() => {
@@ -160,6 +193,7 @@ export default function MonitorGrid({ monitor }: Props) {
           slotIndex={slotIndex}
           soloActive={soloSlot === slotIndex}
           canSolo={slotCount > 1}
+          focused={focusedSlot === slotIndex}
           onToggleSolo={() => setSoloSlot((s) => (s === slotIndex ? null : slotIndex))}
           allCameras={allCameras}
         />

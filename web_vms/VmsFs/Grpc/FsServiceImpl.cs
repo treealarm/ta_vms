@@ -170,6 +170,24 @@ public sealed class FsServiceImpl(
     }
   }
 
+  public override async Task<GetRecordingTimelineResponse> GetRecordingTimeline(
+    GetRecordingTimelineRequest request,
+    ServerCallContext context)
+  {
+    try
+    {
+      var tracks = await _storage.GetRecordingTimelineAsync(request, context.CancellationToken);
+      var response = new GetRecordingTimelineResponse();
+      response.Tracks.AddRange(tracks);
+      return response;
+    }
+    catch (Exception ex)
+    {
+      Console.Error.WriteLine($"GetRecordingTimeline failed: {ex}");
+      throw new RpcException(new Status(StatusCode.Internal, ex.Message));
+    }
+  }
+
   public override async Task<GetRecordingsResponse> GetClipsFrom(
     GetClipsFromRequest request,
     ServerCallContext context)

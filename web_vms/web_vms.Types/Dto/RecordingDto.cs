@@ -60,6 +60,34 @@ namespace web_vms.Types.Dto
     public List<string> Buckets { get; set; } = [];
   }
 
+  public class RecordingTimelineQueryDto
+  {
+    public List<string> CameraIds { get; set; } = [];
+    public string? StreamName { get; set; }
+    public DateTime FromUtc { get; set; }
+    public DateTime ToUtc { get; set; }
+    /// Gaps at or below this are drawn as continuous. Callers pass the wall time of one screen
+    /// pixel so the response stays small no matter how far the timeline is zoomed out.
+    public int MinGapMs { get; set; }
+  }
+
+  public class RecordingIntervalDto
+  {
+    public DateTime StartTime { get; set; }
+    public DateTime EndTime { get; set; }
+  }
+
+  public class RecordingTimelineTrackDto
+  {
+    public string CameraId { get; set; } = default!;
+    public List<RecordingIntervalDto> Intervals { get; set; } = [];
+  }
+
+  public class RecordingTimelineResponseDto
+  {
+    public List<RecordingTimelineTrackDto> Tracks { get; set; } = [];
+  }
+
   public class RetentionEventDto
   {
     public string? EventId { get; set; }

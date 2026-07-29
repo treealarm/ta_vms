@@ -243,6 +243,91 @@ public sealed class ClipStorage(
     }
   }
 
+  // Timeline coverage: only the boundaries of continuous recording, for drawing.
+  //
+  // The query projects start/end and nothing else — a day of continuous recording is 1440 clips,
+  // and materializing their paths and uids just to collapse them into a handful of intervals is
+  // what made the ranges endpoint unusable for a timeline. Merging happens here, so the wire
+  // carries intervals, not clips.
+  public async Task<List<RecordingTimelineTrack>> GetRecordingTimelineAsync(
+    GetRecordingTimelineRequest request, CancellationToken ct)
+  {
+    var from = request.FromTs.ToDateTime().ToUniversalTime();
+    var to = request.ToTs.ToDateTime().ToUniversalTime();
+    var minGap = TimeSpan.FromMilliseconds(request.MinGapMs);
+    var streamName = request.HasStreamName ? request.StreamName : null;
+    var cameraIds = request.CameraIds.Distinct().ToList();
+
+    var tracks = new List<RecordingTimelineTrack>(cameraIds.Count);
+    if (cameraIds.Count == 0) return tracks;
+
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+    foreach (var cameraId in cameraIds)
+    {
+      var q = db.Clips.Where(c => c.CameraId == cameraId && c.Retained);
+
+      if (!string.IsNullOrEmpty(streamName))
+        q = q.Where(c => c.StreamName == streamName);
+
+      // A clip that starts before the window but reaches into it still draws inside it.
+      q = q.Where(c => (c.EndTs ?? c.StartTs.AddMinutes(1)) >= from && c.StartTs <= to);
+
+      var bounds = await q
+        .OrderBy(c => c.StartTs)
+        .Select(c => new { c.StartTs, c.EndTs })
+        .ToListAsync(ct);
+
+      var track = new RecordingTimelineTrack { CameraId = cameraId };
+      track.Intervals.AddRange(MergeIntervals(
+        bounds.Select(b => (b.StartTs, b.EndTs ?? b.StartTs.AddMinutes(1))), minGap));
+      tracks.Add(track);
+    }
+
+    return tracks;
+  }
+
+  private static List<RecordingInterval> MergeIntervals(
+    IEnumerable<(DateTime Start, DateTime End)> ordered, TimeSpan minGap)
+  {
+    var merged = new List<RecordingInterval>();
+    DateTime? curStart = null;
+    DateTime curEnd = default;
+
+    foreach (var (start, end) in ordered)
+    {
+      if (end <= start) continue;
+
+      if (curStart is null)
+      {
+        curStart = start;
+        curEnd = end;
+        continue;
+      }
+
+      if (start - curEnd <= minGap)
+      {
+        if (end > curEnd) curEnd = end;
+        continue;
+      }
+
+      merged.Add(ToInterval(curStart.Value, curEnd));
+      curStart = start;
+      curEnd = end;
+    }
+
+    if (curStart is not null)
+      merged.Add(ToInterval(curStart.Value, curEnd));
+
+    return merged;
+  }
+
+  private static RecordingInterval ToInterval(DateTime start, DateTime end) => new()
+  {
+    StartTs = Timestamp.FromDateTime(DateTime.SpecifyKind(start, DateTimeKind.Utc)),
+    EndTs = Timestamp.FromDateTime(DateTime.SpecifyKind(end, DateTimeKind.Utc)),
+  };
+
   public async Task<List<Recording>> GetRecordingsAroundAsync(GetRecordingsAroundRequest request, CancellationToken ct)
   {
     var limit = request.Limit == 0 ? 100 : (int)request.Limit;

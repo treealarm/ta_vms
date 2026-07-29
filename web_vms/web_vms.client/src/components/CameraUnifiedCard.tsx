@@ -38,6 +38,7 @@ import {
 } from '../dto/dtos'
 import CameraStream from './CameraStream'
 import ArchiveHlsStreamCard from './ArchiveHlsStreamCard'
+import ArchiveWallPlayer from './wall/ArchiveWallPlayer'
 import StreamOverrideRow from './StreamOverrideRow'
 import StreamProfileRow from './StreamProfileRow'
 import PtzOverlay from './PtzOverlay'
@@ -73,11 +74,25 @@ const CAPTION_SX = {
 type Props = {
   camera: CameraSetupDto
   slotKey?: string
+  /** Set when the card sits in a monitor wall; enables wall-wide playback. */
+  monitorId?: string
+  /**
+   * Wall-level mode. While it is 'playback' the cell follows the wall's shared clock and the
+   * per-cell live/archive mode below is only suspended, not overwritten — it comes back on exit.
+   */
+  wallMode?: 'live' | 'playback'
   gridSoloActive?: boolean
   onToggleGridSolo?: () => void
 }
 
-export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = false, onToggleGridSolo }: Props) {
+export default function CameraUnifiedCard({
+  camera,
+  slotKey,
+  monitorId,
+  wallMode = 'live',
+  gridSoloActive = false,
+  onToggleGridSolo,
+}: Props) {
   const dispatch = useAppDispatch()
   const cameraState = useAppSelector((s) => s.live.cameraStatesById[camera.cameraId])
   // Hidden whenever Square integration isn't configured — keeps standalone mode unchanged.
@@ -88,6 +103,7 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
   const slotUi = useAppSelector(selectSlotUi(storeKey))
 
   const mode = slotUi.mode
+  const wallPlayback = wallMode === 'playback' && !!monitorId
   const selectedStream = slotUi.selectedStream
   const panelOpen = slotUi.panelOpen
   const ptzOpen = slotUi.ptzOpen
@@ -189,8 +205,10 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
   useEffect(() => {
     if (hasRelayOutputs === false && hasDigitalInputs === false && deviceIoOpen) setDeviceIoOpen(false)
   }, [hasRelayOutputs, hasDigitalInputs, deviceIoOpen])
-  const showPtzControl = Boolean(camera.onvifConn) && mode === 'live' && !isDisabled && (hasPtz ?? true)
-  const showDeviceIoControl = Boolean(camera.onvifConn) && mode === 'live' && !isDisabled
+  // Live-only controls: in wall playback the cell shows recorded video, so PTZ and device I/O have
+  // nothing to act on.
+  const showPtzControl = Boolean(camera.onvifConn) && mode === 'live' && !wallPlayback && !isDisabled && (hasPtz ?? true)
+  const showDeviceIoControl = Boolean(camera.onvifConn) && mode === 'live' && !wallPlayback && !isDisabled
     && ((hasRelayOutputs ?? true) || (hasDigitalInputs ?? true))
 
   useEffect(() => {
@@ -592,17 +610,30 @@ export default function CameraUnifiedCard({ camera, slotKey, gridSoloActive = fa
             {camera.name || camera.cameraId}
           </Typography>
         )}
-        {mode === 'live' && whepUrl && (
-          <CameraStream
-            whepUrl={whepUrl}
-            cameraId={camera.cameraId}
-            bboxEnabled={bboxOpen && !!camera.hasAnalytics}
-          />
-        )}
-        {mode === 'archive' && (
+        {wallPlayback ? (
           <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <ArchiveHlsStreamCard cameraId={camera.cameraId} />
+            <ArchiveWallPlayer
+              monitorId={monitorId!}
+              slotKey={storeKey}
+              cameraId={camera.cameraId}
+              streamName={activeStreamObj?.streamName}
+            />
           </Box>
+        ) : (
+          <>
+            {mode === 'live' && whepUrl && (
+              <CameraStream
+                whepUrl={whepUrl}
+                cameraId={camera.cameraId}
+                bboxEnabled={bboxOpen && !!camera.hasAnalytics}
+              />
+            )}
+            {mode === 'archive' && (
+              <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <ArchiveHlsStreamCard cameraId={camera.cameraId} />
+              </Box>
+            )}
+          </>
         )}
         {showPtzControl && ptzOpen && (
           <PtzOverlay

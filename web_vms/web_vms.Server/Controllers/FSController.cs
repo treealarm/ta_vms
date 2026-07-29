@@ -189,6 +189,75 @@ public sealed class FSController(
     return Ok(new RecordingCoverageResponseDto { Buckets = grpcResp.Buckets.ToList() });
   }
 
+  // Coverage for the wall timeline: intervals only, several cameras at once.
+  //
+  // One call covers the whole wall — a 3x3 grid would otherwise mean nine round-trips for the
+  // "all cameras" track alone. Cameras can be assigned to different FS instances, so the request
+  // is split per instance and the answers are stitched back together.
+  [HttpPost("recording-timeline")]
+  public async Task<IActionResult> GetRecordingTimeline([FromBody] RecordingTimelineQueryDto query, CancellationToken ct)
+  {
+    var cameraIds = (query.CameraIds ?? [])
+      .Where(id => !string.IsNullOrWhiteSpace(id))
+      .Distinct()
+      .ToList();
+
+    if (cameraIds.Count == 0)
+      return BadRequest(new { error = "cameraIds is required" });
+
+    var fromUtc = ToUtc(query.FromUtc);
+    var toUtc = ToUtc(query.ToUtc);
+    if (fromUtc >= toUtc)
+      return BadRequest(new { error = "fromUtc must be before toUtc" });
+
+    var byServer = new Dictionary<string, List<string>>();
+    foreach (var cameraId in cameraIds)
+    {
+      var cam = await manager.Get(cameraId, ct);
+      if (cam?.ServerId is not { } serverId) continue;
+      if (!byServer.TryGetValue(serverId, out var list))
+        byServer[serverId] = list = [];
+      list.Add(cameraId);
+    }
+
+    if (byServer.Count == 0)
+      return Ok(new RecordingTimelineResponseDto());
+
+    var calls = byServer.Select(async pair =>
+    {
+      var grpcReq = new GetRecordingTimelineRequest
+      {
+        FromTs = Timestamp.FromDateTime(fromUtc),
+        ToTs = Timestamp.FromDateTime(toUtc),
+        MinGapMs = (uint)Math.Max(0, query.MinGapMs),
+      };
+      grpcReq.CameraIds.AddRange(pair.Value);
+      if (!string.IsNullOrEmpty(query.StreamName))
+        grpcReq.StreamName = query.StreamName;
+
+      var resp = await registry.GetFsClient(pair.Key)
+        .GetRecordingTimelineAsync(grpcReq, cancellationToken: ct);
+      return resp.Tracks;
+    });
+
+    var results = await Task.WhenAll(calls);
+
+    var dto = new RecordingTimelineResponseDto
+    {
+      Tracks = results.SelectMany(t => t).Select(t => new RecordingTimelineTrackDto
+      {
+        CameraId = t.CameraId,
+        Intervals = t.Intervals.Select(i => new RecordingIntervalDto
+        {
+          StartTime = i.StartTs.ToDateTime(),
+          EndTime = i.EndTs.ToDateTime(),
+        }).ToList(),
+      }).ToList(),
+    };
+
+    return Ok(dto);
+  }
+
   [HttpPost("events")]
   public async Task<IActionResult> RetainEvent([FromBody] RetentionEventDto body, CancellationToken ct)
   {

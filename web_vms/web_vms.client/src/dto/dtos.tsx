@@ -213,6 +213,33 @@ export type RecordingCoverageResponseDto = {
   buckets: string[]
 }
 
+/**
+ * Timeline coverage: continuous stretches of archive, several cameras per call.
+ * Unlike recording-ranges this carries no clips — the timeline only ever needs boundaries.
+ */
+export type RecordingTimelineQueryDto = {
+  cameraIds: string[]
+  streamName?: string
+  fromUtc: string
+  toUtc: string
+  /** Gaps at or below this are drawn as continuous — normally the wall time of one screen pixel. */
+  minGapMs: number
+}
+
+export type RecordingIntervalDto = {
+  startTime: string
+  endTime: string
+}
+
+export type RecordingTimelineTrackDto = {
+  cameraId: string
+  intervals: RecordingIntervalDto[]
+}
+
+export type RecordingTimelineResponseDto = {
+  tracks: RecordingTimelineTrackDto[]
+}
+
 export type RetentionEventDto = {
   eventId?: string
   cameraId: string

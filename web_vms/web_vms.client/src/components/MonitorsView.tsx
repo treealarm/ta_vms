@@ -26,6 +26,7 @@ import {
 import type { MonitorLayout } from '../dto/dtos'
 import MonitorGrid from './MonitorGrid'
 import MonitorEditDialog from './MonitorEditDialog'
+import WallPlaybackPanel from './wall/WallPlaybackPanel'
 
 export default function MonitorsView({ readOnly = false }: { readOnly?: boolean }) {
   const dispatch = useAppDispatch()
@@ -147,7 +148,10 @@ export default function MonitorsView({ readOnly = false }: { readOnly?: boolean 
 
           {/* Monitor grid */}
           {selectedMonitor ? (
-            <MonitorGrid monitor={selectedMonitor} />
+            <>
+              <MonitorGrid monitor={selectedMonitor} />
+              <WallPlaybackPanel monitor={selectedMonitor} />
+            </>
           ) : (
             <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Stack alignItems="center" spacing={1}>
