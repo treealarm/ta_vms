@@ -29,7 +29,8 @@
     "logs": "Registros",
     "goAdmin": "Admin",
     "goOperator": "Operador",
-    "logout": "Cerrar sesión"
+    "logout": "Cerrar sesión",
+    "investigations": "Investigaciones"
   },
   "auth": {
     "title": "Iniciar sesión",
@@ -246,7 +247,13 @@
     "cameraPool": "Pool de cámaras (ordenado)",
     "addCamera": "Agregar cámara",
     "cameras_one": "cámara",
-    "cameras_other": "cámaras"
+    "cameras_other": "cámaras",
+    "newBoard": "Nuevo panel",
+    "deleteBoard": "Eliminar panel",
+    "shareBoard": "Enviar una copia a…",
+    "noBoards": "Sin paneles de investigación",
+    "boardHint": "Pulse + y elija una cámara: el panel se crea con ella",
+    "boardName": "Investigación {{index}}"
   },
   "simulation": {
     "title": "Acciones de prueba",
@@ -498,7 +505,19 @@
     "snapshot": "Captura",
     "events": "Eventos",
     "noEvents": "Sin eventos",
-    "openOnMonitor": "Abrir en el monitor",
+    "openOnMonitor": "Abrir en reproducción",
+    "newBoardWithCamera": "Nuevo panel de investigación",
+    "addToBoard": "Añadir a \"{{name}}\"",
+    "openOnWall": "Abrir en el monitor \"{{name}}\"",
+    "openInEvents": "Abrir en Eventos",
+    "hintZoom": "Ctrl + rueda sobre la línea de tiempo amplía alrededor del puntero",
+    "hintPan": "La rueda —o Mayús + arrastrar— desplaza la línea de tiempo",
+    "hintSeek": "Al hacer clic en la línea de tiempo se salta a ese punto",
+    "boardFull": "Este panel está lleno",
+    "eventStart": "Inicio",
+    "eventEnd": "Fin",
+    "eventOngoing": "en curso",
+    "eventObject": "Objeto",
     "noDayWithArchive": "No hay más días con archivo",
     "jumpedToLastArchive": "Saltado al archivo más reciente"
   }

@@ -1,16 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Box, IconButton, Menu, MenuItem, Tooltip, Typography } from '@mui/material'
 import SwitchCameraIcon from '@mui/icons-material/SwitchCamera'
+import { useTranslation } from 'react-i18next'
 import type { CameraSetupDto, MonitorDto } from '../dto/dtos'
-import { layoutColumns, layoutRows, layoutSlotCount } from '../dto/dtos'
+import { layoutColumns, layoutFeatureSpan, layoutRows, layoutSlotCount } from '../dto/dtos'
 import CameraUnifiedCard from './CameraUnifiedCard'
 import { useAppDispatch, useAppSelector } from '../store'
-import { setMonitorSlot } from '../store/monitorsSlice'
+import { setMonitorCameras, setMonitorSlot } from '../store/monitorsSlice'
 import { selectFocusedSlot, selectWall, setFocusedSlot } from '../store/wallPlaybackSlice'
 import { wallClockBus } from '../hooks/wallClockBus'
 
 type Props = {
   monitor: MonitorDto
+  /**
+   * Investigation boards draw from every camera in the system rather than from a pre-assigned
+   * pool: the point of a board is that its camera set is discovered while working, not planned.
+   */
+  openCameraPool?: boolean
 }
 
 function effectiveCameraForSlot(monitor: MonitorDto, slotIndex: number): string | null {
@@ -26,6 +32,9 @@ type SlotProps = {
   slotIndex: number
   /** Every camera on the wall — cells share one coverage query keyed on this list. */
   wallCameraIds: string[]
+  openCameraPool: boolean
+  /** Rows and columns this cell occupies in a feature layout; 0 for an ordinary one-cell slot. */
+  span: number
   soloActive: boolean
   canSolo: boolean
   focused: boolean
@@ -33,16 +42,27 @@ type SlotProps = {
   allCameras: Record<string, CameraSetupDto>
 }
 
-function CameraSlot({ monitor, slotIndex, wallCameraIds, soloActive, canSolo, focused, onToggleSolo, allCameras }: SlotProps) {
+function CameraSlot({ monitor, slotIndex, wallCameraIds, openCameraPool, span, soloActive, canSolo, focused, onToggleSolo, allCameras }: SlotProps) {
   const dispatch = useAppDispatch()
+  const { t } = useTranslation()
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const wall = useAppSelector(selectWall(monitor.monitorId))
 
   const activeCameraId = effectiveCameraForSlot(monitor, slotIndex)
   const camera = activeCameraId ? allCameras[activeCameraId] : null
 
-  const handleSelectCamera = (cameraId: string) => {
+  const selectableCameraIds = openCameraPool ? Object.keys(allCameras).sort() : monitor.cameraIds
+
+  const handleSelectCamera = async (cameraId: string) => {
     setMenuAnchor(null)
+    // A camera picked from outside the pool has to join it first — the pool is what the wall's
+    // coverage query and the "all cameras" timeline lane are built from.
+    if (!monitor.cameraIds.includes(cameraId)) {
+      await dispatch(setMonitorCameras({
+        monitorId: monitor.monitorId,
+        cameraIds: [...monitor.cameraIds, cameraId],
+      }))
+    }
     void dispatch(setMonitorSlot({ monitorId: monitor.monitorId, slotIndex, cameraId }))
   }
 
@@ -60,6 +80,7 @@ function CameraSlot({ monitor, slotIndex, wallCameraIds, soloActive, canSolo, fo
         minHeight: 0,
         display: 'flex',
         borderRadius: 1,
+        ...(span > 0 ? { gridColumn: `span ${span}`, gridRow: `span ${span}` } : {}),
         // Focus must stay distinguishable from the retention indicator, which CameraUnifiedCard
         // draws as a red (palette.error) outline inset by 2px — and in this theme primary is red
         // too. So focus is a light outline drawn OUTSIDE the card, in the grid gap: different
@@ -84,6 +105,9 @@ function CameraSlot({ monitor, slotIndex, wallCameraIds, soloActive, canSolo, fo
         />
       ) : (
         <Box
+          // On a board an empty cell is the way to add a camera, so the whole cell is the target
+          // rather than a small icon in its corner.
+          onClick={openCameraPool ? (e) => setMenuAnchor(e.currentTarget) : undefined}
           sx={{
             flex: 1,
             display: 'flex',
@@ -92,54 +116,58 @@ function CameraSlot({ monitor, slotIndex, wallCameraIds, soloActive, canSolo, fo
             border: '1px dashed',
             borderColor: 'divider',
             borderRadius: 1,
+            ...(openCameraPool && !activeCameraId
+              ? { cursor: 'pointer', '&:hover': { borderColor: 'text.secondary' } }
+              : {}),
           }}
         >
           <Typography variant="body2" color="text.disabled">
-            {activeCameraId ? `Camera "${activeCameraId}" not found` : 'Empty slot'}
+            {activeCameraId
+              ? `Camera "${activeCameraId}" not found`
+              : openCameraPool ? t('monitors.addCamera') : 'Empty slot'}
           </Typography>
         </Box>
       )}
 
-      {monitor.cameraIds.length > 1 && (
-        <>
-          <Tooltip title="Switch camera" placement="top">
-            <IconButton
-              size="small"
-              onClick={(e) => setMenuAnchor(e.currentTarget)}
-              sx={{
-                position: 'absolute',
-                top: 4,
-                right: 4,
-                bgcolor: 'background.paper',
-                opacity: 0.85,
-                '&:hover': { opacity: 1 },
-              }}
-            >
-              <SwitchCameraIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <Menu
-            anchorEl={menuAnchor}
-            open={Boolean(menuAnchor)}
-            onClose={() => setMenuAnchor(null)}
+      {selectableCameraIds.length > 1 && camera && (
+        <Tooltip title="Switch camera" placement="top">
+          <IconButton
+            size="small"
+            onClick={(e) => setMenuAnchor(e.currentTarget)}
+            sx={{
+              position: 'absolute',
+              top: 4,
+              right: 4,
+              bgcolor: 'background.paper',
+              opacity: 0.85,
+              '&:hover': { opacity: 1 },
+            }}
           >
-            {monitor.cameraIds.map((id) => (
-              <MenuItem
-                key={id}
-                selected={id === activeCameraId}
-                onClick={() => handleSelectCamera(id)}
-              >
-                {allCameras[id]?.name || id}
-              </MenuItem>
-            ))}
-          </Menu>
-        </>
+            <SwitchCameraIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
       )}
+
+      <Menu
+        anchorEl={menuAnchor}
+        open={Boolean(menuAnchor)}
+        onClose={() => setMenuAnchor(null)}
+      >
+        {selectableCameraIds.map((id) => (
+          <MenuItem
+            key={id}
+            selected={id === activeCameraId}
+            onClick={() => void handleSelectCamera(id)}
+          >
+            {allCameras[id]?.name || id}
+          </MenuItem>
+        ))}
+      </Menu>
     </Box>
   )
 }
 
-export default function MonitorGrid({ monitor }: Props) {
+export default function MonitorGrid({ monitor, openCameraPool = false }: Props) {
   const [soloSlot, setSoloSlot] = useState<number | null>(null)
   const allCameras = useAppSelector((state) => state.live.cameraStatesById)
   const focusedSlot = useAppSelector(selectFocusedSlot(monitor.monitorId))
@@ -157,6 +185,7 @@ export default function MonitorGrid({ monitor }: Props) {
   }, [monitor.monitorId, slotCount])
   const cols = layoutColumns(monitor.layout)
   const rows = layoutRows(monitor.layout)
+  const featureSpan = layoutFeatureSpan(monitor.layout)
 
   const slots = useMemo(
     () => Array.from({ length: slotCount }, (_, i) => i),
@@ -204,6 +233,10 @@ export default function MonitorGrid({ monitor }: Props) {
           monitor={monitor}
           slotIndex={slotIndex}
           wallCameraIds={wallCameraIds}
+          openCameraPool={openCameraPool}
+          // Only the feature cell is placed by hand; the rest auto-fill around it. Suppressed in
+          // solo, where the grid is a single cell and a span would overflow it.
+          span={soloSlot === null && slotIndex === 0 ? featureSpan : 0}
           soloActive={soloSlot === slotIndex}
           canSolo={slotCount > 1}
           focused={focusedSlot === slotIndex}

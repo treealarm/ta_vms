@@ -29,7 +29,8 @@
     "logs": "Logs",
     "goAdmin": "Admin",
     "goOperator": "Operator",
-    "logout": "Log out"
+    "logout": "Log out",
+    "investigations": "Investigations"
   },
   "auth": {
     "title": "Sign in",
@@ -246,7 +247,13 @@
     "cameraPool": "Camera pool (ordered)",
     "addCamera": "Add camera",
     "cameras_one": "camera",
-    "cameras_other": "cameras"
+    "cameras_other": "cameras",
+    "newBoard": "New board",
+    "deleteBoard": "Delete board",
+    "shareBoard": "Send a copy to…",
+    "noBoards": "No investigation boards",
+    "boardHint": "Press + and pick a camera — the board is created with it",
+    "boardName": "Investigation {{index}}"
   },
   "simulation": {
     "title": "Test actions",
@@ -498,7 +505,19 @@
     "snapshot": "Snapshot",
     "events": "Events",
     "noEvents": "No events",
-    "openOnMonitor": "Open on monitor",
+    "openOnMonitor": "Open in playback",
+    "newBoardWithCamera": "New investigation board",
+    "addToBoard": "Add to \"{{name}}\"",
+    "openOnWall": "Open on monitor \"{{name}}\"",
+    "openInEvents": "Open in Events",
+    "hintZoom": "Ctrl + wheel over the timeline zooms around the pointer",
+    "hintPan": "Wheel — or Shift + drag — scrolls the timeline",
+    "hintSeek": "Clicking the timeline seeks there",
+    "boardFull": "This board is full",
+    "eventStart": "Start",
+    "eventEnd": "End",
+    "eventOngoing": "ongoing",
+    "eventObject": "Object",
     "noDayWithArchive": "No further day with archive",
     "jumpedToLastArchive": "Jumped to the latest archive"
   }

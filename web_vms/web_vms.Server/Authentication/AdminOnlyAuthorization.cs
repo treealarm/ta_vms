@@ -8,10 +8,34 @@ namespace web_vms.Authentication
   public static class AuthPolicies
   {
     public const string AdminOnly = "AdminOnly";
+    public const string Authenticated = "Authenticated";
   }
 
   public class AdminRoleRequirement : IAuthorizationRequirement
   {
+  }
+
+  // Any logged-in user, admin or operator. Same KEYCLOAK_URL gate as AdminOnly: with
+  // authentication disabled there is nobody to identify, so the requirement passes.
+  public class AuthenticatedRequirement : IAuthorizationRequirement
+  {
+  }
+
+  public class AuthenticatedAuthorizationHandler : AuthorizationHandler<AuthenticatedRequirement>
+  {
+    protected override Task HandleRequirementAsync(
+      AuthorizationHandlerContext context,
+      AuthenticatedRequirement requirement)
+    {
+      var keycloakEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("KEYCLOAK_URL"));
+
+      if (!keycloakEnabled || context.User.Identity?.IsAuthenticated == true)
+      {
+        context.Succeed(requirement);
+      }
+
+      return Task.CompletedTask;
+    }
   }
 
   public class AdminRoleAuthorizationHandler : AuthorizationHandler<AdminRoleRequirement>

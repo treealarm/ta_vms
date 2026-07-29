@@ -552,7 +552,14 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
 
   // ── Monitor management ────────────────────────────────────────────────────
 
-  public async Task<List<MonitorSetup>> ListMonitorsAsync(CancellationToken ct)
+  public const string MonitorKindWall = "wall";
+  public const string MonitorKindInvestigation = "investigation";
+
+  /// <summary>
+  /// Walls are visible to everyone; investigation boards only to their owner. This filter is the
+  /// access boundary for private boards, so it lives in SQL rather than in the calling service.
+  /// </summary>
+  public async Task<List<MonitorSetup>> ListMonitorsAsync(string owner, CancellationToken ct)
   {
     await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
@@ -560,9 +567,12 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     var order    = new List<Guid>();
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT id, name, layout FROM monitor ORDER BY name;
+      SELECT id, name, layout, kind, owner FROM monitor
+      WHERE kind = 'wall' OR owner = $1
+      ORDER BY kind, name;
       """, connection))
     {
+      cmd.Parameters.AddWithValue(owner);
       await using var reader = await cmd.ExecuteReaderAsync(ct);
       while (await reader.ReadAsync(ct))
       {
@@ -572,6 +582,8 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
           MonitorId = id.ToString(),
           Name      = reader.GetString(1),
           Layout    = reader.GetString(2),
+          Kind      = reader.GetString(3),
+          Owner     = reader.GetString(4),
         };
         order.Add(id);
       }
@@ -614,36 +626,60 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     return order.Select(id => monitors[id]).ToList();
   }
 
-  public async Task<MonitorSetup> UpsertMonitorAsync(MonitorSetup request, CancellationToken ct)
+  public async Task<int> CountInvestigationBoardsAsync(string owner, CancellationToken ct)
+  {
+    await using var command = _dataSource.CreateCommand(
+      "SELECT COUNT(*) FROM monitor WHERE kind = 'investigation' AND owner = $1;");
+    command.Parameters.AddWithValue(owner);
+    return (int)(long)(await command.ExecuteScalarAsync(ct) ?? 0L);
+  }
+
+  /// <summary>
+  /// Returns null when the monitor exists but belongs to somebody else. kind and owner are set on
+  /// insert only — an update never reassigns them, so ownership cannot be taken over by upserting
+  /// over an existing id.
+  /// </summary>
+  public async Task<MonitorSetup?> UpsertMonitorAsync(MonitorSetup request, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      INSERT INTO monitor (id, name, layout)
-      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3)
+      INSERT INTO monitor (id, name, layout, kind, owner)
+      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5)
       ON CONFLICT (id) DO UPDATE SET
         name   = EXCLUDED.name,
         layout = EXCLUDED.layout
+      WHERE monitor.kind = 'wall' OR monitor.owner = $5
       RETURNING id;
       """);
     command.Parameters.AddWithValue(request.MonitorId ?? string.Empty);
     command.Parameters.AddWithValue(request.Name);
     command.Parameters.AddWithValue(request.Layout);
+    command.Parameters.AddWithValue(string.IsNullOrEmpty(request.Kind) ? MonitorKindWall : request.Kind);
+    command.Parameters.AddWithValue(request.Owner ?? string.Empty);
     var id = await command.ExecuteScalarAsync(ct);
-    request.MonitorId = id?.ToString() ?? request.MonitorId;
+    // No row back means the ON CONFLICT update was filtered out — the id exists and is not ours.
+    if (id is null)
+      return null;
+
+    request.MonitorId = id.ToString() ?? request.MonitorId;
     return request;
   }
 
-  public async Task<bool> RemoveMonitorAsync(string monitorId, CancellationToken ct)
+  public async Task<bool> RemoveMonitorAsync(string monitorId, string owner, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand(
-      "DELETE FROM monitor WHERE id = $1::uuid;");
+      "DELETE FROM monitor WHERE id = $1::uuid AND (kind = 'wall' OR owner = $2);");
     command.Parameters.AddWithValue(monitorId);
+    command.Parameters.AddWithValue(owner);
     return await command.ExecuteNonQueryAsync(ct) > 0;
   }
 
-  public async Task SetMonitorCamerasAsync(string monitorId, IEnumerable<string> cameraIds, CancellationToken ct)
+  public async Task<bool> SetMonitorCamerasAsync(string monitorId, IEnumerable<string> cameraIds, string owner, CancellationToken ct)
   {
     await using var connection = await _dataSource.OpenConnectionAsync(ct);
     await using var tx = await connection.BeginTransactionAsync(ct);
+
+    if (!await IsWritableAsync(connection, tx, monitorId, owner, ct))
+      return false;
 
     await using (var del = new NpgsqlCommand(
       "DELETE FROM monitor_camera WHERE monitor_id = $1::uuid;", connection, tx))
@@ -652,15 +688,21 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       await del.ExecuteNonQueryAsync(ct);
     }
 
+    var pool = cameraIds as IList<string> ?? cameraIds.ToList();
+
+    // Only slots whose camera left the pool are dropped. Clearing every slot here would empty the
+    // whole grid each time one camera is added, which is exactly what adding a camera to an
+    // investigation board does.
     await using (var delSlots = new NpgsqlCommand(
-      "DELETE FROM monitor_slot WHERE monitor_id = $1::uuid;", connection, tx))
+      "DELETE FROM monitor_slot WHERE monitor_id = $1::uuid AND camera_id <> ALL($2);", connection, tx))
     {
       delSlots.Parameters.AddWithValue(monitorId);
+      delSlots.Parameters.Add(new NpgsqlParameter { Value = pool.ToArray(), NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text });
       await delSlots.ExecuteNonQueryAsync(ct);
     }
 
     int pos = 0;
-    foreach (var cameraId in cameraIds)
+    foreach (var cameraId in pool)
     {
       await using var ins = new NpgsqlCommand("""
         INSERT INTO monitor_camera (monitor_id, camera_id, position)
@@ -673,19 +715,137 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     }
 
     await tx.CommitAsync(ct);
+    return true;
   }
 
-  public async Task SetMonitorSlotAsync(string monitorId, int slotIndex, string cameraId, CancellationToken ct)
+  public async Task<bool> SetMonitorSlotAsync(string monitorId, int slotIndex, string cameraId, string owner, CancellationToken ct)
   {
+    // The ownership check is part of the same statement rather than a preceding SELECT: a slot
+    // change is a single write and must not be racing a concurrent delete of the board.
     await using var command = _dataSource.CreateCommand("""
       INSERT INTO monitor_slot (monitor_id, slot_index, camera_id)
-      VALUES ($1::uuid, $2, $3)
+      SELECT $1::uuid, $2, $3
+      WHERE EXISTS (
+        SELECT 1 FROM monitor WHERE id = $1::uuid AND (kind = 'wall' OR owner = $4))
       ON CONFLICT (monitor_id, slot_index) DO UPDATE SET camera_id = EXCLUDED.camera_id;
       """);
     command.Parameters.AddWithValue(monitorId);
     command.Parameters.AddWithValue(slotIndex);
     command.Parameters.AddWithValue(cameraId);
-    await command.ExecuteNonQueryAsync(ct);
+    command.Parameters.AddWithValue(owner);
+    return await command.ExecuteNonQueryAsync(ct) > 0;
+  }
+
+  /// <summary>
+  /// Copies a board to another user, who becomes its owner — sharing an investigation hands over
+  /// an independent board rather than granting access to the original.
+  /// Returns null when the source is not the caller's to copy.
+  /// </summary>
+  public async Task<MonitorSetup?> CopyMonitorAsync(
+    string monitorId,
+    string owner,
+    string targetOwner,
+    CancellationToken ct)
+  {
+    await using var connection = await _dataSource.OpenConnectionAsync(ct);
+    await using var tx = await connection.BeginTransactionAsync(ct);
+
+    string sourceName;
+    string sourceLayout;
+    await using (var cmd = new NpgsqlCommand(
+      "SELECT name, layout FROM monitor WHERE id = $1::uuid AND owner = $2;", connection, tx))
+    {
+      cmd.Parameters.AddWithValue(monitorId);
+      cmd.Parameters.AddWithValue(owner);
+      await using var reader = await cmd.ExecuteReaderAsync(ct);
+      if (!await reader.ReadAsync(ct))
+        return null;
+      sourceName   = reader.GetString(0);
+      sourceLayout = reader.GetString(1);
+    }
+
+    var baseName = string.IsNullOrEmpty(owner) ? sourceName : $"{sourceName} (from {owner})";
+    var name = await FreeMonitorNameAsync(connection, tx, baseName, targetOwner, ct);
+
+    Guid newId;
+    await using (var cmd = new NpgsqlCommand("""
+      INSERT INTO monitor (name, layout, kind, owner)
+      VALUES ($1, $2, 'investigation', $3)
+      RETURNING id;
+      """, connection, tx))
+    {
+      cmd.Parameters.AddWithValue(name);
+      cmd.Parameters.AddWithValue(sourceLayout);
+      cmd.Parameters.AddWithValue(targetOwner);
+      newId = (Guid)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
+    await using (var cmd = new NpgsqlCommand("""
+      INSERT INTO monitor_camera (monitor_id, position, camera_id)
+      SELECT $1::uuid, position, camera_id FROM monitor_camera WHERE monitor_id = $2::uuid;
+      """, connection, tx))
+    {
+      cmd.Parameters.AddWithValue(newId);
+      cmd.Parameters.AddWithValue(monitorId);
+      await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    await using (var cmd = new NpgsqlCommand("""
+      INSERT INTO monitor_slot (monitor_id, slot_index, camera_id)
+      SELECT $1::uuid, slot_index, camera_id FROM monitor_slot WHERE monitor_id = $2::uuid;
+      """, connection, tx))
+    {
+      cmd.Parameters.AddWithValue(newId);
+      cmd.Parameters.AddWithValue(monitorId);
+      await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    await tx.CommitAsync(ct);
+
+    var copy = new MonitorSetup
+    {
+      MonitorId = newId.ToString(),
+      Name      = name,
+      Layout    = sourceLayout,
+      Kind      = MonitorKindInvestigation,
+      Owner     = targetOwner,
+    };
+    return copy;
+  }
+
+  private static async Task<bool> IsWritableAsync(
+    NpgsqlConnection connection,
+    NpgsqlTransaction tx,
+    string monitorId,
+    string owner,
+    CancellationToken ct)
+  {
+    await using var cmd = new NpgsqlCommand(
+      "SELECT 1 FROM monitor WHERE id = $1::uuid AND (kind = 'wall' OR owner = $2);", connection, tx);
+    cmd.Parameters.AddWithValue(monitorId);
+    cmd.Parameters.AddWithValue(owner);
+    return await cmd.ExecuteScalarAsync(ct) is not null;
+  }
+
+  // Names are unique per (name, kind, owner); a copy sent twice must not fail on the second send.
+  private static async Task<string> FreeMonitorNameAsync(
+    NpgsqlConnection connection,
+    NpgsqlTransaction tx,
+    string baseName,
+    string owner,
+    CancellationToken ct)
+  {
+    for (var attempt = 1; ; attempt++)
+    {
+      var candidate = attempt == 1 ? baseName : $"{baseName} {attempt}";
+      await using var cmd = new NpgsqlCommand(
+        "SELECT 1 FROM monitor WHERE name = $1 AND kind = 'investigation' AND owner = $2;",
+        connection, tx);
+      cmd.Parameters.AddWithValue(candidate);
+      cmd.Parameters.AddWithValue(owner);
+      if (await cmd.ExecuteScalarAsync(ct) is null)
+        return candidate;
+    }
   }
 
   // ── ONVIF alarm filters ───────────────────────────────────────────────────

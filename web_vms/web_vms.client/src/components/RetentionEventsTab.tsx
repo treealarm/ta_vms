@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Box,
   Button,
@@ -23,21 +23,30 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord'
 import SubdirectoryArrowRightIcon from '@mui/icons-material/SubdirectoryArrowRight'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 
 import type { EpisodeDto, EventGroupDto, RetentionEventGroupsListDto } from '../dto/dtos'
 import { useAppSelector } from '../store'
 import { getErrorMessage } from '../store/api'
 import ArchiveHlsPreview from './ArchiveHlsPreview'
 import EventDetailsPanel, { eventSource } from './EventDetailsPanel'
+import EventOpenInPlayback from './EventOpenInPlayback'
 
 const PAGE_SIZE = 20
 const COLUMN_MAX_HEIGHT = 'min(75vh, 900px)'
 const AUTO_REFRESH_MS = 15_000
 
-async function fetchRetentionEventGroupsPage(before: string | undefined): Promise<RetentionEventGroupsListDto> {
+// The camera filter goes to the server, not to the rendered list: a page is PAGE_SIZE groups
+// picked globally, so filtering it here leaves a near-empty page and paging walks through other
+// cameras' events. With the filter applied server-side every page is full of this camera's events.
+async function fetchRetentionEventGroupsPage(
+  before: string | undefined,
+  cameraId: string
+): Promise<RetentionEventGroupsListDto> {
   const qs = new URLSearchParams()
   qs.set('limit', String(PAGE_SIZE))
   if (before) qs.set('before', before)
+  if (cameraId) qs.set('cameraId', cameraId)
   const response = await fetch(`/api/fs/retention-events?${qs.toString()}`)
   if (!response.ok) {
     throw new Error(await getErrorMessage(response))
@@ -49,25 +58,32 @@ export default function RetentionEventsTab() {
   const { t } = useTranslation()
   const camerasMap = useAppSelector((s) => s.live.cameraStatesById)
   const cameraIds = Object.keys(camerasMap).sort()
+  // Set when arriving from an event bracket on the timeline: which camera, which page, which row.
+  const [searchParams] = useSearchParams()
+  const wantedUuid = searchParams.get('eventUuid')
 
   const [groups, setGroups] = useState<EventGroupDto[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(0)
   // cursors[i] is the `before` value that fetches page i (cursors[0] === undefined = newest page).
-  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined])
+  const [cursors, setCursors] = useState<(string | undefined)[]>([searchParams.get('before') ?? undefined])
   const [hasMore, setHasMore] = useState(false)
-  const [autoRefresh, setAutoRefresh] = useState(true)
+  // Off when arriving from a timeline bracket: the operator came to look at one specific episode
+  // on a page anchored in the past, and a refresh every 15s only risks moving the ground under it.
+  const [autoRefresh, setAutoRefresh] = useState(!searchParams.get('eventUuid'))
   const [selected, setSelected] = useState<EpisodeDto | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [cameraFilter, setCameraFilter] = useState('')
+  const [cameraFilter, setCameraFilter] = useState(searchParams.get('cameraId') ?? '')
   const [textFilter, setTextFilter] = useState('')
+  const wantedApplied = useRef(false)
+  const listRef = useRef<HTMLDivElement>(null)
 
   const loadPage = useCallback(async (pageIndex: number, cursor: string | undefined) => {
     setLoading(true)
     setError(null)
     try {
-      const resp = await fetchRetentionEventGroupsPage(cursor)
+      const resp = await fetchRetentionEventGroupsPage(cursor, cameraFilter)
       setGroups(resp.groups)
       setPage(pageIndex)
       setHasMore(resp.hasMore)
@@ -77,7 +93,21 @@ export default function RetentionEventsTab() {
         if (resp.hasMore && resp.nextBeforeAlarmStart) next[pageIndex + 1] = resp.nextBeforeAlarmStart
         return next
       })
-      setSelected((prev) => prev ?? resp.groups[0]?.episodes[0] ?? null)
+      // A requested episode wins over "keep what was selected": it is why this page was loaded.
+      // Only on the first load that finds it, so the auto-refresh below does not keep dragging the
+      // selection back after the operator has clicked elsewhere.
+      const wantedGroup = wantedUuid && !wantedApplied.current
+        ? resp.groups.find((g) => g.episodes.some((e) => e.eventUuid === wantedUuid))
+        : undefined
+      const wanted = wantedGroup?.episodes.find((e) => e.eventUuid === wantedUuid)
+      if (wantedGroup && wanted) {
+        wantedApplied.current = true
+        // A group is rendered by its FIRST episode with the rest collapsed underneath. Without
+        // expanding it, an episode deeper in the group is selected but invisible, and the group's
+        // first episode is the row the operator actually sees highlighted.
+        setExpanded((prev) => new Set(prev).add(wantedGroup.eventId))
+      }
+      setSelected((prev) => wanted ?? prev ?? resp.groups[0]?.episodes[0] ?? null)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setGroups([])
@@ -85,10 +115,26 @@ export default function RetentionEventsTab() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [wantedUuid, cameraFilter])
 
-  // Initial load (newest page).
-  useEffect(() => { void loadPage(0, undefined) }, [loadPage])
+  // Loads page 0: on mount at the cursor a timeline bracket asked for, and again whenever the
+  // camera filter changes — a different filter is a different result set, so the collected page
+  // cursors no longer mean anything. Read from a ref so paging steps don't retrigger it, and clear
+  // it after the first run: only the arriving link gets to choose where paging starts.
+  const initialCursor = useRef(searchParams.get('before') ?? undefined)
+  useEffect(() => {
+    void loadPage(0, initialCursor.current)
+    initialCursor.current = undefined
+  }, [loadPage])
+
+  // Bring the requested row into view. The list scrolls internally, so it is found by attribute
+  // inside the scroller rather than by holding a ref to a row that may not be mounted yet.
+  useEffect(() => {
+    if (!wantedUuid || selected?.eventUuid !== wantedUuid) return
+    listRef.current
+      ?.querySelector(`[data-event-uuid="${wantedUuid}"]`)
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [wantedUuid, selected, groups, expanded])
 
   // Optional auto-refresh: re-fetch the CURRENT page (non-disruptive — keeps your place and selection)
   // rather than snapping back to the newest page.
@@ -100,8 +146,9 @@ export default function RetentionEventsTab() {
 
   const cameraLabel = (id: string) => camerasMap[id]?.name || id
 
+  // Camera filtering happens server-side (see fetchRetentionEventGroupsPage); only the free-text
+  // filter narrows the fetched page here.
   const filteredGroups = useMemo(() => groups.filter((g) => {
-    if (cameraFilter && !g.episodes.some((e) => e.cameraId === cameraFilter)) return false
     if (textFilter) {
       const q = textFilter.toLowerCase()
       const hit = g.eventId.toLowerCase().includes(q)
@@ -110,7 +157,7 @@ export default function RetentionEventsTab() {
       if (!hit) return false
     }
     return true
-  }), [groups, cameraFilter, textFilter])
+  }), [groups, textFilter])
 
   const toggleExpanded = (eventId: string) => setExpanded((prev) => {
     const next = new Set(prev)
@@ -122,6 +169,7 @@ export default function RetentionEventsTab() {
   const renderEpisode = (ep: EpisodeDto, opts: { child?: boolean; badge?: number; onToggle?: () => void; isOpen?: boolean }) => (
     <ListItemButton
       key={ep.eventUuid}
+      data-event-uuid={ep.eventUuid}
       selected={selected?.eventUuid === ep.eventUuid}
       onClick={() => setSelected(ep)}
       sx={{ display: 'block', borderBottom: 1, borderColor: 'divider', pl: opts.child ? 4.5 : 1 }}
@@ -233,6 +281,7 @@ export default function RetentionEventsTab() {
                   maxHeight: { xs: 320, md: 'none' },
                   overflow: 'auto'
                 }}
+                ref={listRef}
               >
                 <List dense disablePadding>
                   {filteredGroups.map((g) => {
@@ -289,6 +338,9 @@ export default function RetentionEventsTab() {
 
             {/* Middle: archive preview */}
             <Box sx={{ flex: 2, minWidth: 0, width: '100%' }}>
+              <Stack direction="row" justifyContent="flex-end" sx={{ mb: 1 }}>
+                <EventOpenInPlayback episode={selected} />
+              </Stack>
               <ArchiveHlsPreview selected={selected} />
             </Box>
 

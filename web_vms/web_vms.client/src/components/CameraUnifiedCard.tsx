@@ -62,6 +62,13 @@ const BTN_SX = {
   '&:hover': { color: W, bgcolor: alpha(W, 0.12) },
 } as const
 
+// Separates the control groups in the compact strip (cell / device / camera state).
+const GROUP_DIVIDER_SX = {
+  width: '65%',
+  borderColor: alpha(W, 0.2),
+  my: 0.25,
+} as const
+
 const CAPTION_SX = {
   display: 'block',
   fontSize: '0.6rem',
@@ -218,6 +225,25 @@ export default function CameraUnifiedCard({
   const showDeviceIoControl = Boolean(camera.onvifConn) && mode === 'live' && !wallPlayback && !isDisabled
     && ((hasRelayOutputs ?? true) || (hasDigitalInputs ?? true))
 
+  // The controls are grouped by what they act on, and each group only appears when it has
+  // something to show — otherwise the separators between them would dangle.
+  //
+  //   1. cell    — changes what THIS tile displays, never touches the camera
+  //   2. device  — drives the physical camera right now, so it needs live video
+  //   3. state   — writes camera configuration and doubles as its indicator
+  //
+  // In wall playback the per-cell live/archive toggle is suspended (the wall owns the mode) and
+  // the bbox overlay only exists on the live WebRTC element, so both would be dead controls.
+  const showModeToggle = !wallPlayback
+  const showBboxToggle = mode === 'live' && !wallPlayback && !isDisabled && Boolean(camera.hasAnalytics)
+  // Recording profile and override act on configuration, which is meaningful whatever the tile is
+  // currently showing — but in the standalone card they follow the card's own mode.
+  const showStateConfigRows = wallPlayback || mode === 'live'
+
+  const hasCellGroup = onToggleGridSolo != null || showModeToggle || webRtcStreams.length > 1
+    || showBboxToggle || Boolean(squareFrontendOrigin)
+  const hasDeviceGroup = showPtzControl || showDeviceIoControl
+
   useEffect(() => {
     const id = setInterval(() => void dispatch(fetchCameraState(camera.cameraId)), 5000)
     void dispatch(fetchCameraState(camera.cameraId))
@@ -258,6 +284,7 @@ export default function CameraUnifiedCard({
           spacing={0.25}
           sx={{ ...STRIP_BG, width: STRIP_W, flexShrink: 0, py: 0.5, zIndex: 1 }}
         >
+          {/* ── Group 1: the cell ── */}
           {onToggleGridSolo != null && (
             <Tooltip title={gridSoloActive ? t('cameraCard.showAll') : t('cameraCard.expand')} placement="right">
               <IconButton size="small" onClick={onToggleGridSolo} sx={BTN_SX}>
@@ -268,13 +295,38 @@ export default function CameraUnifiedCard({
             </Tooltip>
           )}
 
-          <Tooltip title={mode === 'live' ? t('cameraCard.switchToArchive') : t('cameraCard.switchToLive')} placement="right">
-            <IconButton size="small" onClick={() => setMode(mode === 'live' ? 'archive' : 'live')} sx={BTN_SX}>
-              {mode === 'live'
-                ? <VideoLibraryIcon sx={{ fontSize: '0.95rem' }} />
-                : <VideocamIcon sx={{ fontSize: '0.95rem' }} />}
-            </IconButton>
-          </Tooltip>
+          {showModeToggle && (
+            <Tooltip title={mode === 'live' ? t('cameraCard.switchToArchive') : t('cameraCard.switchToLive')} placement="right">
+              <IconButton size="small" onClick={() => setMode(mode === 'live' ? 'archive' : 'live')} sx={BTN_SX}>
+                {mode === 'live'
+                  ? <VideoLibraryIcon sx={{ fontSize: '0.95rem' }} />
+                  : <VideocamIcon sx={{ fontSize: '0.95rem' }} />}
+              </IconButton>
+            </Tooltip>
+          )}
+
+          {webRtcStreams.length > 1 && (
+            <Tooltip title={t('cameraCard.cycleStream', { stream: activeStream })} placement="right">
+              <IconButton size="small" onClick={cycleStream} sx={BTN_SX}>
+                <LayersIcon sx={{ fontSize: '0.95rem' }} />
+              </IconButton>
+            </Tooltip>
+          )}
+
+          {/* Analytics bbox overlay — keyed by camera, not stream: works even when the monitor
+              shows a sub-stream that has no analytics of its own (it mirrors the main stream).
+              Only offered when the camera actually has an enabled analytics watch. */}
+          {showBboxToggle && (
+            <Tooltip title={bboxOpen ? t('cameraCard.bboxClose') : t('cameraCard.bboxOpen')} placement="right">
+              <IconButton
+                size="small"
+                onClick={() => setBboxOpen(!bboxOpen)}
+                sx={{ ...BTN_SX, ...(bboxOpen ? { color: W, bgcolor: alpha(W, 0.2) } : {}) }}
+              >
+                <DirectionsRunIcon sx={{ fontSize: '0.95rem' }} />
+              </IconButton>
+            </Tooltip>
+          )}
 
           {squareFrontendOrigin && (
             <Tooltip title={t('cameraCard.openInSquare')} placement="right">
@@ -288,13 +340,8 @@ export default function CameraUnifiedCard({
             </Tooltip>
           )}
 
-          {webRtcStreams.length > 1 && (
-            <Tooltip title={t('cameraCard.cycleStream', { stream: activeStream })} placement="right">
-              <IconButton size="small" onClick={cycleStream} sx={BTN_SX}>
-                <LayersIcon sx={{ fontSize: '0.95rem' }} />
-              </IconButton>
-            </Tooltip>
-          )}
+          {/* ── Group 2: live control of the physical device ── */}
+          {hasDeviceGroup && hasCellGroup && <Divider sx={GROUP_DIVIDER_SX} />}
 
           {showPtzControl && (
             <Tooltip title={ptzOpen ? t('cameraCard.ptzClose') : t('cameraCard.ptzOpen')} placement="right">
@@ -320,20 +367,8 @@ export default function CameraUnifiedCard({
             </Tooltip>
           )}
 
-          {/* Analytics bbox overlay — keyed by camera, not stream: works even when the monitor
-              shows a sub-stream that has no analytics of its own (it mirrors the main stream).
-              Only offered when the camera actually has an enabled analytics watch. */}
-          {mode === 'live' && !isDisabled && camera.hasAnalytics && (
-            <Tooltip title={bboxOpen ? t('cameraCard.bboxClose') : t('cameraCard.bboxOpen')} placement="right">
-              <IconButton
-                size="small"
-                onClick={() => setBboxOpen(!bboxOpen)}
-                sx={{ ...BTN_SX, ...(bboxOpen ? { color: W, bgcolor: alpha(W, 0.2) } : {}) }}
-              >
-                <DirectionsRunIcon sx={{ fontSize: '0.95rem' }} />
-              </IconButton>
-            </Tooltip>
-          )}
+          {/* ── Group 3: camera state — each button both performs and indicates ── */}
+          {(hasCellGroup || hasDeviceGroup) && <Divider sx={GROUP_DIVIDER_SX} />}
 
           {/* Armed gates both ONVIF events and video analytics now, so it's available for every
               camera — not just ONVIF-managed ones. */}
@@ -481,26 +516,50 @@ export default function CameraUnifiedCard({
               </Box>
             )}
 
-            {/* Mode */}
-            <Box>
-              <Typography component="span" sx={CAPTION_SX}>{t('cameraCard.modeSection')}</Typography>
-              <ToggleButtonGroup
-                value={mode} exclusive onChange={(_, v) => v && setMode(v)} size="small" fullWidth
+            {/* Mode — suspended in wall playback, where the wall owns the mode */}
+            {showModeToggle && (
+              <Box>
+                <Typography component="span" sx={CAPTION_SX}>{t('cameraCard.modeSection')}</Typography>
+                <ToggleButtonGroup
+                  value={mode} exclusive onChange={(_, v) => v && setMode(v)} size="small" fullWidth
+                  sx={{
+                    '& .MuiToggleButton-root': {
+                      flex: 1, py: 0.25, fontSize: '0.7rem',
+                      color: alpha(W, 0.6), borderColor: alpha(W, 0.2),
+                      '&.Mui-selected': { color: W, bgcolor: alpha(W, 0.15), borderColor: alpha(W, 0.35) },
+                    },
+                  }}
+                >
+                  <ToggleButton value="live">{t('cameraCard.modeLive')}</ToggleButton>
+                  <ToggleButton value="archive">{t('cameraCard.modeArchive')}</ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
+            )}
+
+            {/* Solo — like the toggles above, this only rearranges the wall, not the camera */}
+            {onToggleGridSolo != null && (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={gridSoloActive ? <FullscreenExitIcon /> : <FullscreenIcon />}
+                onClick={onToggleGridSolo}
+                fullWidth
                 sx={{
-                  '& .MuiToggleButton-root': {
-                    flex: 1, py: 0.25, fontSize: '0.7rem',
-                    color: alpha(W, 0.6), borderColor: alpha(W, 0.2),
-                    '&.Mui-selected': { color: W, bgcolor: alpha(W, 0.15), borderColor: alpha(W, 0.35) },
-                  },
+                  fontSize: '0.7rem',
+                  color: alpha(W, 0.7), borderColor: alpha(W, 0.2),
+                  '&:hover': { color: W, borderColor: alpha(W, 0.5), bgcolor: alpha(W, 0.07) },
                 }}
               >
-                <ToggleButton value="live">{t('cameraCard.modeLive')}</ToggleButton>
-                <ToggleButton value="archive">{t('cameraCard.modeArchive')}</ToggleButton>
-              </ToggleButtonGroup>
-            </Box>
+                {gridSoloActive ? t('cameraCard.showAll') : t('cameraCard.expand')}
+              </Button>
+            )}
+
+            <Divider sx={{ borderColor: alpha(W, 0.12) }} />
+
+            {/* ── Camera state: everything below writes camera configuration ── */}
 
             {/* Recording profile (base) */}
-            {mode === 'live' && activeStreamObj && (
+            {showStateConfigRows && activeStreamObj && (
               <Box>
                 <Typography component="span" sx={CAPTION_SX}>
                   {webRtcStreams.length > 1
@@ -514,7 +573,7 @@ export default function CameraUnifiedCard({
             )}
 
             {/* Override (automation) */}
-            {mode === 'live' && (
+            {showStateConfigRows && (
               <Box>
                 <Typography component="span" sx={CAPTION_SX}>
                   {webRtcStreams.length > 1
@@ -549,24 +608,6 @@ export default function CameraUnifiedCard({
                 <ToggleButton value="disarmed">{t('cameraCard.disarmedToggle')}</ToggleButton>
               </ToggleButtonGroup>
             </Box>
-
-            {/* Solo */}
-            {onToggleGridSolo != null && (
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={gridSoloActive ? <FullscreenExitIcon /> : <FullscreenIcon />}
-                onClick={onToggleGridSolo}
-                fullWidth
-                sx={{
-                  fontSize: '0.7rem',
-                  color: alpha(W, 0.7), borderColor: alpha(W, 0.2),
-                  '&:hover': { color: W, borderColor: alpha(W, 0.5), bgcolor: alpha(W, 0.07) },
-                }}
-              >
-                {gridSoloActive ? t('cameraCard.showAll') : t('cameraCard.expand')}
-              </Button>
-            )}
 
             {/* RTSP copy */}
             {rtsp && (

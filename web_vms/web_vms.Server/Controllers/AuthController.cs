@@ -1,6 +1,7 @@
 using KeycloakAdmin;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using web_vms.Authentication;
 
 namespace web_vms.Controllers;
 
@@ -72,6 +73,37 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
     catch (Exception)
     {
       return Unauthorized();
+    }
+  }
+
+  /// <summary>
+  /// Usernames in the realm, for picking who to send a copy of an investigation board to.
+  /// Empty when Keycloak isn't configured — there are no users to name, and the UI hides sharing.
+  /// </summary>
+  [HttpGet("users")]
+  [Authorize(Policy = AuthPolicies.Authenticated)]
+  public async Task<IActionResult> Users()
+  {
+    if (kcAdmin == null)
+    {
+      return Ok(Array.Empty<string>());
+    }
+
+    var realm = RequireEnv("KEYCLOAK_REALM_NAME");
+    var me = User.Identity?.Name;
+    try
+    {
+      var users = await kcAdmin.GetUsersAsync(realm);
+      var names = users
+        .Select(u => u.UserName)
+        .Where(n => !string.IsNullOrWhiteSpace(n) && n != me)
+        .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+      return Ok(names);
+    }
+    catch (Exception)
+    {
+      return Ok(Array.Empty<string>());
     }
   }
 }

@@ -8,7 +8,7 @@ import RetentionEventsTab from './RetentionEventsTab'
 import SimulationFab from './SimulationFab'
 import LogToggleButton from './LogToggleButton'
 
-const TABS = ['monitors', 'events'] as const
+const TABS = ['monitors', 'investigations', 'events'] as const
 
 export default function OperatorView() {
   const { t } = useTranslation()
@@ -25,6 +25,7 @@ export default function OperatorView() {
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', px: { xs: 2, md: 4 }, pt: 1, pb: { xs: 2, md: 4 } }}>
           <Routes>
             <Route path="monitors" element={<MonitorsView readOnly />} />
+            <Route path="investigations" element={<MonitorsView readOnly kind="investigation" />} />
             <Route
               path="events"
               element={(
@@ -55,6 +56,7 @@ export default function OperatorView() {
             sx={{ '& .MuiTab-root': { minWidth: 90 } }}
           >
             <Tab label={t('nav.monitors')} />
+            <Tab label={t('nav.investigations')} />
             <Tab label={t('nav.events')} />
           </Tabs>
         </Box>

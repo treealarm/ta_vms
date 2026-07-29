@@ -73,8 +73,10 @@ if (!string.IsNullOrEmpty(keycloakUrl))
 
 // Registered unconditionally: see AdminRoleAuthorizationHandler for the KEYCLOAK_URL gate.
 builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationHandler, AdminRoleAuthorizationHandler>();
+builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationHandler, AuthenticatedAuthorizationHandler>();
 builder.Services.AddAuthorizationBuilder()
-  .AddPolicy(AuthPolicies.AdminOnly, policy => policy.Requirements.Add(new AdminRoleRequirement()));
+  .AddPolicy(AuthPolicies.AdminOnly, policy => policy.Requirements.Add(new AdminRoleRequirement()))
+  .AddPolicy(AuthPolicies.Authenticated, policy => policy.Requirements.Add(new AuthenticatedRequirement()));
 
 // SQUARE_FRONTEND_ORIGIN is intentionally optional: when unset, no CORS policy is configured and
 // cross-origin requests are rejected by the browser as before — web_vms stays standalone. When

@@ -45,6 +45,19 @@ export const setMonitorCameras = createAsyncThunk(
   }
 )
 
+/** Sharing an investigation board hands the recipient an independent copy they then own. */
+export const copyMonitorTo = createAsyncThunk(
+  'monitors/copyTo',
+  async ({ monitorId, username }: { monitorId: string; username: string }) => {
+    const response = await fetch(`/api/monitor/${encodeURIComponent(monitorId)}/copy-to`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username }),
+    })
+    return parseJson<MonitorDto>(response)
+  }
+)
+
 export const setMonitorSlot = createAsyncThunk(
   'monitors/setSlot',
   async ({ monitorId, slotIndex, cameraId }: { monitorId: string; slotIndex: number; cameraId: string }) => {
@@ -94,7 +107,9 @@ const monitorsSlice = createSlice({
         const m = state.monitors.find((x) => x.monitorId === monitorId)
         if (m) {
           m.cameraIds = cameraIds
-          m.slots = []
+          // Mirrors the server: only slots whose camera left the pool are dropped, so adding a
+          // camera to a board does not blank the cells already placed on it.
+          m.slots = m.slots.filter((s) => cameraIds.includes(s.cameraId))
         }
       })
       .addCase(setMonitorSlot.fulfilled, (state, action) => {

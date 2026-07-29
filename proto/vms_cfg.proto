@@ -26,9 +26,10 @@ service CfgService {
   rpc GetOrAssignMediaMtxServer(SourceRequest) returns (GetOrAssignMediaMtxServerResponse);
   rpc ListMonitors(ListMonitorsRequest) returns (ListMonitorsResponse);
   rpc UpsertMonitor(MonitorSetup) returns (MonitorSetup);
-  rpc RemoveMonitor(SourceRequest) returns (OperationStatus);
+  rpc RemoveMonitor(RemoveMonitorRequest) returns (OperationStatus);
   rpc SetMonitorCameras(SetMonitorCamerasRequest) returns (OperationStatus);
   rpc SetMonitorSlot(SetMonitorSlotRequest) returns (OperationStatus);
+  rpc CopyMonitor(CopyMonitorRequest) returns (MonitorSetup);
   rpc ListOnvifAlarmFilters(ListOnvifAlarmFiltersRequest) returns (ListOnvifAlarmFiltersResponse);
   rpc UpsertOnvifAlarmFilter(OnvifAlarmFilter) returns (OnvifAlarmFilter);
   rpc RemoveOnvifAlarmFilter(OnvifAlarmFilterRequest) returns (OperationStatus);
@@ -244,23 +245,47 @@ message MonitorSetup {
   string           layout     = 3;
   repeated string  camera_ids = 4;
   repeated MonitorSlot slots  = 5;
+  // "wall" (shared, admin-managed) or "investigation" (private to owner).
+  string           kind       = 6;
+  // Keycloak preferred_username of the owner, empty when authentication is disabled. Always taken
+  // from the caller's token by web_vms — never trusted from a client-supplied body.
+  string           owner      = 7;
 }
 
-message ListMonitorsRequest {}
+// owner scopes the answer: walls are returned to everyone, investigation boards only to their
+// owner. It is the access boundary, so it is applied in SQL rather than by the caller.
+message ListMonitorsRequest {
+  string owner = 1;
+}
 
 message ListMonitorsResponse {
   repeated MonitorSetup monitors = 1;
 }
 
+message RemoveMonitorRequest {
+  string monitor_id = 1;
+  string owner      = 2;
+}
+
 message SetMonitorCamerasRequest {
   string          monitor_id = 1;
   repeated string camera_ids = 2;
+  string          owner      = 3;
 }
 
 message SetMonitorSlotRequest {
   string monitor_id = 1;
   int32  slot_index  = 2;
   string camera_id  = 3;
+  string owner      = 4;
+}
+
+// Sharing a board is a copy, not a grant: the recipient becomes the owner of an independent board
+// and can edit or delete it without affecting the original.
+message CopyMonitorRequest {
+  string monitor_id   = 1;
+  string owner        = 2;
+  string target_owner = 3;
 }
 
 message ActivateAlarmOverrideRequest {

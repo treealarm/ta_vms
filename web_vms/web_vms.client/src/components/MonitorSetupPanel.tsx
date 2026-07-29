@@ -72,6 +72,8 @@ export default function MonitorSetupPanel({ ref, monitor, onSaved, onRemoved }: 
       layout,
       cameraIds: monitor?.cameraIds ?? [],
       slots: monitor?.slots ?? [],
+      kind: 'wall',
+      owner: '',
     }))
     if (!upsertMonitor.fulfilled.match(result)) return false
 

@@ -17,7 +17,8 @@ CREATE TABLE camera_setup (
   onvif_port          integer NULL,
   media_mtx_server_id uuid    NULL REFERENCES media_mtx_server(id) ON DELETE SET NULL,
   disabled            boolean NULL,
-  name                text    NOT NULL DEFAULT ''
+  name                text    NOT NULL DEFAULT '',
+  onvif_xaddr         text    NULL
 );
 
 CREATE TABLE recording_profile (
@@ -41,7 +42,7 @@ CREATE TABLE camera_stream (
   camera_id             text        NOT NULL REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
   stream_name           text        NOT NULL,
   profile_token         text        NOT NULL DEFAULT '',
-  rtsp_url              text        NOT NULL DEFAULT '',
+  path                  text        NOT NULL DEFAULT '',
   web_rtc               boolean     NOT NULL DEFAULT false,
   recording_profile_id  uuid        NULL REFERENCES recording_profile(id) ON DELETE SET NULL,
   override_profile_id   uuid        NULL REFERENCES recording_profile(id) ON DELETE SET NULL,
@@ -73,11 +74,24 @@ CREATE TABLE camera_storage (
 CREATE INDEX idx_camera_storage_priority
   ON camera_storage (camera_id, priority ASC);
 
+-- 'wall' monitors are the shared, admin-managed video walls. 'investigation' boards belong to the
+-- operator who created them and are only ever listed back to that operator.
+--
+-- owner is a Keycloak preferred_username, deliberately allowed to be empty: KEYCLOAK_URL is
+-- optional, and with authentication disabled there is no identity at all — everything then lands in
+-- the shared '' bucket, which is the expected standalone behaviour.
 CREATE TABLE monitor (
   id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name    text NOT NULL UNIQUE,
-  layout  text NOT NULL DEFAULT '2x2'
+  name    text NOT NULL,
+  layout  text NOT NULL DEFAULT '2x2',
+  kind    text NOT NULL DEFAULT 'wall',
+  owner   text NOT NULL DEFAULT '',
+  -- Names only have to be unique within one owner's set: two operators may each keep their own
+  -- "Investigation 1", and neither should block the other from creating it.
+  CONSTRAINT monitor_name_kind_owner_key UNIQUE (name, kind, owner)
 );
+
+CREATE INDEX idx_monitor_kind_owner ON monitor (kind, owner);
 
 -- Ordered pool of cameras assigned to a monitor (more cameras can exist than layout slots)
 CREATE TABLE monitor_camera (
@@ -117,4 +131,17 @@ CREATE TABLE onvif_event_subscription (
 CREATE TABLE camera_states (
   camera_id text    PRIMARY KEY REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
   armed     boolean NOT NULL DEFAULT false
+);
+
+-- Per-camera video analytics watch. timeout_seconds is the retention timeout for events this watch
+-- raises; its default matches onvif_alarm_filter.timeout_seconds so both event sources behave alike.
+CREATE TABLE analytics_watch (
+  camera_id          text    PRIMARY KEY REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
+  stream_name        text    NOT NULL,
+  enabled            boolean NOT NULL DEFAULT false,
+  classes            text    NOT NULL DEFAULT 'person',
+  min_confidence     real    NOT NULL DEFAULT 0.5,
+  sample_fps         integer NOT NULL DEFAULT 1,
+  attach_debug_crops boolean NOT NULL DEFAULT false,
+  timeout_seconds    integer NOT NULL DEFAULT 10
 );

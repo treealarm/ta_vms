@@ -18,12 +18,14 @@ import ZoomOutMapIcon from '@mui/icons-material/ZoomOutMap'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import EventIcon from '@mui/icons-material/Event'
+import FormatListBulletedIcon from '@mui/icons-material/FormatListBulleted'
 import VolumeUpIcon from '@mui/icons-material/VolumeUp'
 import VolumeOffIcon from '@mui/icons-material/VolumeOff'
 import KeyboardDoubleArrowLeftIcon from '@mui/icons-material/KeyboardDoubleArrowLeft'
 import KeyboardDoubleArrowRightIcon from '@mui/icons-material/KeyboardDoubleArrowRight'
 import dayjs from 'dayjs'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 
 import { useAppDispatch, useAppSelector } from '../../store'
 import {
@@ -48,6 +50,24 @@ import type { Segment } from '../../utils/archiveRanges'
 import ArchiveDateTimePicker from '../ArchiveDateTimePicker'
 import PlayheadClock from './PlayheadClock'
 
+/**
+ * Tooltip body that also names the mouse gesture doing the same thing on the timeline itself.
+ *
+ * The gestures have existed since the timeline was built but nothing announced them, so the
+ * buttons read as the only way to zoom or scroll. The tooltip is where an operator already looks
+ * to find out what a button does — it is also where they should find out they need not use it.
+ */
+function TipWithHint({ label, hint }: { label: string; hint: string }) {
+  return (
+    <>
+      {label}
+      <Box component="span" sx={{ display: 'block', mt: 0.25, opacity: 0.7, fontSize: '0.68rem' }}>
+        {hint}
+      </Box>
+    </>
+  )
+}
+
 const NUDGE_MS = 30_000
 // Floor for the window a day jump opens, so a day holding one short clip is not zoomed to seconds.
 const MIN_JUMP_WINDOW_MS = 30 * MINUTE_MS
@@ -59,11 +79,14 @@ type Props = {
   focusedSegments: readonly Segment[]
   /** Camera the jump-to picker reports archive coverage for; null disables it. */
   focusedCameraId: string | null
+  /** Investigation boards exist only to review archive, so they hide the live/playback switch. */
+  fixedPlayback?: boolean
 }
 
-export default function WallPlaybackBar({ monitorId, focusedSegments, focusedCameraId }: Props) {
+export default function WallPlaybackBar({ monitorId, focusedSegments, focusedCameraId, fixedPlayback = false }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
   const wall = useAppSelector(selectWall(monitorId))
   const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null)
 
@@ -125,14 +148,16 @@ export default function WallPlaybackBar({ monitorId, focusedSegments, focusedCam
 
   return (
     <Stack direction="row" alignItems="center" spacing={0.5} sx={{ px: 0.5, py: 0.5 }}>
-      <ToggleButtonGroup size="small" exclusive value={wall.mode} onChange={handleMode}>
-        <ToggleButton value="live" sx={{ px: 1.25, py: 0.25, fontSize: '0.7rem' }}>
-          {t('wall.modeLive')}
-        </ToggleButton>
-        <ToggleButton value="playback" sx={{ px: 1.25, py: 0.25, fontSize: '0.7rem' }}>
-          {t('wall.modePlayback')}
-        </ToggleButton>
-      </ToggleButtonGroup>
+      {!fixedPlayback && (
+        <ToggleButtonGroup size="small" exclusive value={wall.mode} onChange={handleMode}>
+          <ToggleButton value="live" sx={{ px: 1.25, py: 0.25, fontSize: '0.7rem' }}>
+            {t('wall.modeLive')}
+          </ToggleButton>
+          <ToggleButton value="playback" sx={{ px: 1.25, py: 0.25, fontSize: '0.7rem' }}>
+            {t('wall.modePlayback')}
+          </ToggleButton>
+        </ToggleButtonGroup>
+      )}
 
       {playback && (
         <>
@@ -188,7 +213,7 @@ export default function WallPlaybackBar({ monitorId, focusedSegments, focusedCam
           {/* Scroll the visible window without moving the playhead. Half a window per click while
               there is still archive in view; past that it skips to the nearest recording rather
               than crawling across empty hours. Disabled when there is nothing that way. */}
-          <Tooltip title={t('wall.panBack')}>
+          <Tooltip title={<TipWithHint label={t('wall.panBack')} hint={t('wall.hintPan')} />}>
             <span>
               <IconButton size="small" disabled={panBackTarget === null} onClick={() => handlePan(-1)}>
                 <KeyboardDoubleArrowLeftIcon fontSize="small" />
@@ -196,7 +221,7 @@ export default function WallPlaybackBar({ monitorId, focusedSegments, focusedCam
             </span>
           </Tooltip>
 
-          <Tooltip title={t('wall.panForward')}>
+          <Tooltip title={<TipWithHint label={t('wall.panForward')} hint={t('wall.hintPan')} />}>
             <span>
               <IconButton size="small" disabled={panFwdTarget === null} onClick={() => handlePan(1)}>
                 <KeyboardDoubleArrowRightIcon fontSize="small" />
@@ -204,7 +229,31 @@ export default function WallPlaybackBar({ monitorId, focusedSegments, focusedCam
             </span>
           </Tooltip>
 
-          <Tooltip title={focusedCameraId ? t('wall.jumpTo') : t('wall.jumpToNeedsCamera')}>
+          {/* Board-level way into the events tab. The bracket popover on the timeline covers "this
+              event", but only exists where an event was actually drawn — this covers "what else
+              happened on this camera", landing on the page around the current position. */}
+          <Tooltip title={focusedCameraId ? t('wall.events') : t('wall.jumpToNeedsCamera')}>
+            <span>
+              <IconButton
+                size="small"
+                disabled={!focusedCameraId}
+                onClick={() => {
+                  if (!focusedCameraId) return
+                  const qs = new URLSearchParams({
+                    cameraId: focusedCameraId,
+                    before: new Date(wall.seekMs + 1).toISOString(),
+                  })
+                  navigate(`/operator/events?${qs.toString()}`)
+                }}
+              >
+                <FormatListBulletedIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+
+          <Tooltip title={focusedCameraId
+              ? <TipWithHint label={t('wall.jumpTo')} hint={t('wall.hintSeek')} />
+              : t('wall.jumpToNeedsCamera')}>
             <span>
               <IconButton
                 size="small"
@@ -216,19 +265,19 @@ export default function WallPlaybackBar({ monitorId, focusedSegments, focusedCam
             </span>
           </Tooltip>
 
-          <Tooltip title={t('wall.zoomOut')}>
+          <Tooltip title={<TipWithHint label={t('wall.zoomOut')} hint={t('wall.hintZoom')} />}>
             <IconButton size="small" onClick={() => dispatch(zoomWindow({ monitorId, factor: 1 / ZOOM_STEP }))}>
               <ZoomOutIcon fontSize="small" />
             </IconButton>
           </Tooltip>
 
-          <Tooltip title={t('wall.zoomIn')}>
+          <Tooltip title={<TipWithHint label={t('wall.zoomIn')} hint={t('wall.hintZoom')} />}>
             <IconButton size="small" onClick={() => dispatch(zoomWindow({ monitorId, factor: ZOOM_STEP }))}>
               <ZoomInIcon fontSize="small" />
             </IconButton>
           </Tooltip>
 
-          <Tooltip title={t('wall.zoomReset')}>
+          <Tooltip title={<TipWithHint label={t('wall.zoomReset')} hint={t('wall.hintZoom')} />}>
             <IconButton size="small" onClick={() => dispatch(resetZoom({ monitorId }))}>
               <ZoomOutMapIcon fontSize="small" />
             </IconButton>
