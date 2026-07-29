@@ -6,7 +6,7 @@ import type { CameraSetupDto, MonitorDto } from '../dto/dtos'
 import { layoutColumns, layoutFeatureSpan, layoutRows, layoutSlotCount } from '../dto/dtos'
 import CameraUnifiedCard from './CameraUnifiedCard'
 import { useAppDispatch, useAppSelector } from '../store'
-import { setMonitorCameras, setMonitorSlot } from '../store/monitorsSlice'
+import { clearMonitorSlot, setMonitorCameras, setMonitorSlot } from '../store/monitorsSlice'
 import { selectFocusedSlot, selectWall, setFocusedSlot } from '../store/wallPlaybackSlice'
 import { wallClockBus } from '../hooks/wallClockBus'
 
@@ -18,6 +18,9 @@ type Props = {
    */
   openCameraPool?: boolean
 }
+
+// Descendants that must keep the pointer for themselves instead of starting a tile drag.
+const NO_TILE_DRAG = 'button, [role="button"], input, [data-nodrag]'
 
 function effectiveCameraForSlot(monitor: MonitorDto, slotIndex: number): string | null {
   const persisted = monitor.slots.find((s) => s.slotIndex === slotIndex)
@@ -40,9 +43,17 @@ type SlotProps = {
   focused: boolean
   onToggleSolo: () => void
   allCameras: Record<string, CameraSetupDto>
+  dragOver: boolean
+  onDragSlotStart: () => void
+  onDragSlotEnd: () => void
+  onDragSlotOver: () => void
+  onDropSlot: () => void
 }
 
-function CameraSlot({ monitor, slotIndex, wallCameraIds, openCameraPool, span, soloActive, canSolo, focused, onToggleSolo, allCameras }: SlotProps) {
+function CameraSlot({
+  monitor, slotIndex, wallCameraIds, openCameraPool, span, soloActive, canSolo, focused,
+  onToggleSolo, allCameras, dragOver, onDragSlotStart, onDragSlotEnd, onDragSlotOver, onDropSlot,
+}: SlotProps) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
@@ -74,6 +85,32 @@ function CameraSlot({ monitor, slotIndex, wallCameraIds, openCameraPool, span, s
       // Snapshot and other per-slot lookups address the video through this attribute; indexing the
       // Nth <video> in the DOM breaks as soon as an earlier slot is empty.
       data-slot-index={slotIndex}
+      draggable={camera !== null}
+      onDragStart={(e) => {
+        // The cell is the drag handle, but it is full of things that own the pointer themselves —
+        // the control strip's buttons, and the PTZ / device-I/O overlays, which are dragged around
+        // the video by their own grips. Starting a tile drag from any of those would make them
+        // unusable, so the gesture is refused there and the child keeps the pointer.
+        if ((e.target as HTMLElement).closest?.(NO_TILE_DRAG)) {
+          e.preventDefault()
+          return
+        }
+        // Firefox ignores dragstart unless some data is set.
+        e.dataTransfer.setData('text/plain', String(slotIndex))
+        e.dataTransfer.effectAllowed = 'move'
+        onDragSlotStart()
+      }}
+      onDragEnd={onDragSlotEnd}
+      onDragOver={(e) => {
+        // preventDefault is what marks an element as a drop target at all.
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        onDragSlotOver()
+      }}
+      onDrop={(e) => {
+        e.preventDefault()
+        onDropSlot()
+      }}
       sx={{
         position: 'relative',
         minWidth: 0,
@@ -81,6 +118,9 @@ function CameraSlot({ monitor, slotIndex, wallCameraIds, openCameraPool, span, s
         display: 'flex',
         borderRadius: 1,
         ...(span > 0 ? { gridColumn: `span ${span}`, gridRow: `span ${span}` } : {}),
+        ...(dragOver
+          ? { boxShadow: (th) => `inset 0 0 0 3px ${th.palette.primary.main}`, opacity: 0.75 }
+          : {}),
         // Focus must stay distinguishable from the retention indicator, which CameraUnifiedCard
         // draws as a red (palette.error) outline inset by 2px — and in this theme primary is red
         // too. So focus is a light outline drawn OUTSIDE the card, in the grid gap: different
@@ -168,7 +208,9 @@ function CameraSlot({ monitor, slotIndex, wallCameraIds, openCameraPool, span, s
 }
 
 export default function MonitorGrid({ monitor, openCameraPool = false }: Props) {
+  const dispatch = useAppDispatch()
   const [soloSlot, setSoloSlot] = useState<number | null>(null)
+  const [drag, setDrag] = useState<{ from: number; over: number | null } | null>(null)
   const allCameras = useAppSelector((state) => state.live.cameraStatesById)
   const focusedSlot = useAppSelector(selectFocusedSlot(monitor.monitorId))
 
@@ -200,6 +242,34 @@ export default function MonitorGrid({ monitor, openCameraPool = false }: Props) 
   )
 
   const visibleSlots = soloSlot !== null ? [soloSlot] : slots
+
+  /**
+   * Rearranges the wall by dropping one cell onto another: the two cameras trade places, or the
+   * camera moves when the target cell is empty.
+   *
+   * Both cells are written even for a move — the vacated one has to be cleared, not left holding a
+   * stale row, which is why clearing a slot exists as its own operation.
+   */
+  const handleDrop = (from: number, to: number) => {
+    setDrag(null)
+    if (from === to) return
+
+    const monitorId = monitor.monitorId
+    const fromCamera = effectiveCameraForSlot(monitor, from)
+    const toCamera = effectiveCameraForSlot(monitor, to)
+    if (!fromCamera) return
+
+    void dispatch(setMonitorSlot({ monitorId, slotIndex: to, cameraId: fromCamera }))
+    if (toCamera) {
+      void dispatch(setMonitorSlot({ monitorId, slotIndex: from, cameraId: toCamera }))
+    } else {
+      void dispatch(clearMonitorSlot({ monitorId, slotIndex: from }))
+    }
+
+    // Focus follows the camera the operator was dragging, not the cell it used to sit in.
+    if (focusedSlot === from) dispatch(setFocusedSlot({ monitorId, slotIndex: to }))
+    else if (focusedSlot === to) dispatch(setFocusedSlot({ monitorId, slotIndex: from }))
+  }
 
   const gridSx = useMemo(() => {
     const base = {
@@ -242,6 +312,11 @@ export default function MonitorGrid({ monitor, openCameraPool = false }: Props) 
           focused={focusedSlot === slotIndex}
           onToggleSolo={() => setSoloSlot((s) => (s === slotIndex ? null : slotIndex))}
           allCameras={allCameras}
+          dragOver={drag !== null && drag.over === slotIndex && drag.from !== slotIndex}
+          onDragSlotStart={() => setDrag({ from: slotIndex, over: null })}
+          onDragSlotEnd={() => setDrag(null)}
+          onDragSlotOver={() => setDrag((d) => (d && d.over !== slotIndex ? { ...d, over: slotIndex } : d))}
+          onDropSlot={() => drag && handleDrop(drag.from, slotIndex)}
         />
       ))}
     </Box>

@@ -52,6 +52,9 @@ export default function PtzOverlay({ cameraId, profileToken, onClose }: Props) {
   return (
     <Box
       ref={overlayRef}
+      // The overlay is moved around the video by its own grip; without this the monitor grid would
+      // read that as dragging the whole tile to another cell (see NO_TILE_DRAG in MonitorGrid).
+      data-nodrag
       sx={{
         position: 'absolute',
         zIndex: 10,

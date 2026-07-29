@@ -736,6 +736,20 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     return await command.ExecuteNonQueryAsync(ct) > 0;
   }
 
+  public async Task<bool> ClearMonitorSlotAsync(string monitorId, int slotIndex, string owner, CancellationToken ct)
+  {
+    await using var command = _dataSource.CreateCommand("""
+      DELETE FROM monitor_slot
+      WHERE monitor_id = $1::uuid AND slot_index = $2
+        AND EXISTS (
+          SELECT 1 FROM monitor WHERE id = $1::uuid AND (kind = 'wall' OR owner = $3));
+      """);
+    command.Parameters.AddWithValue(monitorId);
+    command.Parameters.AddWithValue(slotIndex);
+    command.Parameters.AddWithValue(owner);
+    return await command.ExecuteNonQueryAsync(ct) > 0;
+  }
+
   /// <summary>
   /// Copies a board to another user, who becomes its owner — sharing an investigation hands over
   /// an independent board rather than granting access to the original.

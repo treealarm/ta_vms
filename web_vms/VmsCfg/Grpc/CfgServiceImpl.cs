@@ -490,6 +490,21 @@ namespace VmsCfg
       return new OperationStatus { Success = true };
     }
 
+    public override async Task<OperationStatus> ClearMonitorSlot(
+      ClearMonitorSlotRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.MonitorId))
+        return new OperationStatus { Success = false, Message = "monitor_id must not be empty" };
+
+      // Deleting a cell that is already empty is not a failure — dragging the last camera out of a
+      // slot and dragging it back is a perfectly ordinary thing to do.
+      await storage.ClearMonitorSlotAsync(
+        request.MonitorId, request.SlotIndex, request.Owner, context.CancellationToken);
+      logger.LogInformation("Monitor '{MonitorId}' slot {SlotIndex} cleared", request.MonitorId, request.SlotIndex);
+      return new OperationStatus { Success = true };
+    }
+
     public override async Task<MonitorSetup> CopyMonitor(CopyMonitorRequest request, ServerCallContext context)
     {
       if (string.IsNullOrWhiteSpace(request.MonitorId))

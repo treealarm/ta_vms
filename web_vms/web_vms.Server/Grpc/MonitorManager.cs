@@ -49,6 +49,14 @@ public class MonitorManager(CfgService.CfgServiceClient cfgClient)
     return new ApiResponse(response.Success, response.Message);
   }
 
+  public async Task<ApiResponse> ClearSlot(string monitorId, int slotIndex, string owner, CancellationToken ct = default)
+  {
+    var response = await cfgClient.ClearMonitorSlotAsync(
+      new ClearMonitorSlotRequest { MonitorId = monitorId, SlotIndex = slotIndex, Owner = owner },
+      CfgOptions(ct));
+    return new ApiResponse(response.Success, response.Message);
+  }
+
   public async Task<MonitorDto> CopyTo(string monitorId, string owner, string targetOwner, CancellationToken ct = default)
   {
     var result = await cfgClient.CopyMonitorAsync(

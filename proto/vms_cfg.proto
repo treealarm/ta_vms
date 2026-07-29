@@ -29,6 +29,7 @@ service CfgService {
   rpc RemoveMonitor(RemoveMonitorRequest) returns (OperationStatus);
   rpc SetMonitorCameras(SetMonitorCamerasRequest) returns (OperationStatus);
   rpc SetMonitorSlot(SetMonitorSlotRequest) returns (OperationStatus);
+  rpc ClearMonitorSlot(ClearMonitorSlotRequest) returns (OperationStatus);
   rpc CopyMonitor(CopyMonitorRequest) returns (MonitorSetup);
   rpc ListOnvifAlarmFilters(ListOnvifAlarmFiltersRequest) returns (ListOnvifAlarmFiltersResponse);
   rpc UpsertOnvifAlarmFilter(OnvifAlarmFilter) returns (OnvifAlarmFilter);
@@ -278,6 +279,15 @@ message SetMonitorSlotRequest {
   int32  slot_index  = 2;
   string camera_id  = 3;
   string owner      = 4;
+}
+
+// Empties one cell. Separate from SetMonitorSlot rather than an empty camera_id there: "no camera
+// in this cell" is a deletion, and an upsert with a blank id is exactly the kind of write that
+// silently creates junk rows when a caller forgets to fill something in.
+message ClearMonitorSlotRequest {
+  string monitor_id = 1;
+  int32  slot_index = 2;
+  string owner      = 3;
 }
 
 // Sharing a board is a copy, not a grant: the recipient becomes the owner of an independent board

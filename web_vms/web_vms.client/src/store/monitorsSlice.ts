@@ -45,6 +45,17 @@ export const setMonitorCameras = createAsyncThunk(
   }
 )
 
+export const clearMonitorSlot = createAsyncThunk(
+  'monitors/clearSlot',
+  async ({ monitorId, slotIndex }: { monitorId: string; slotIndex: number }) => {
+    const response = await fetch(
+      `/api/monitor/${encodeURIComponent(monitorId)}/slots/${slotIndex}`,
+      { method: 'DELETE' }
+    )
+    return { monitorId, slotIndex, result: await parseJson<ApiResponseDto>(response) }
+  }
+)
+
 /** Sharing an investigation board hands the recipient an independent copy they then own. */
 export const copyMonitorTo = createAsyncThunk(
   'monitors/copyTo',
@@ -120,6 +131,11 @@ const monitorsSlice = createSlice({
           if (existingSlot) existingSlot.cameraId = cameraId
           else m.slots.push({ slotIndex, cameraId })
         }
+      })
+      .addCase(clearMonitorSlot.fulfilled, (state, action) => {
+        const { monitorId, slotIndex } = action.payload
+        const m = state.monitors.find((x) => x.monitorId === monitorId)
+        if (m) m.slots = m.slots.filter((s) => s.slotIndex !== slotIndex)
       })
       .addMatcher(
         (action: AnyAction) => action.type.startsWith('monitors/') && action.type.endsWith('/pending'),

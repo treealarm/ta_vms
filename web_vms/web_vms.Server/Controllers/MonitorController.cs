@@ -63,6 +63,12 @@ public class MonitorController(MonitorManager manager) : ControllerBase
     return Ok(result);
   }
 
+  [HttpDelete("{id}/slots/{slotIndex}")]
+  public async Task<IActionResult> ClearSlot(string id, int slotIndex, CancellationToken ct)
+  {
+    return Ok(await manager.ClearSlot(id, slotIndex, Owner, ct));
+  }
+
   /// <summary>
   /// Hands a copy of an investigation board to another user, who becomes its owner. Sharing is a
   /// copy rather than a grant, so neither side can disturb the other's board afterwards.
