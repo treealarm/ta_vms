@@ -6,7 +6,7 @@ import { layoutColumns, layoutRows, layoutSlotCount } from '../dto/dtos'
 import CameraUnifiedCard from './CameraUnifiedCard'
 import { useAppDispatch, useAppSelector } from '../store'
 import { setMonitorSlot } from '../store/monitorsSlice'
-import { selectFocusedSlot, selectWallMode, setFocusedSlot } from '../store/wallPlaybackSlice'
+import { selectFocusedSlot, selectWall, setFocusedSlot } from '../store/wallPlaybackSlice'
 import { wallClockBus } from '../hooks/wallClockBus'
 
 type Props = {
@@ -24,6 +24,8 @@ function effectiveCameraForSlot(monitor: MonitorDto, slotIndex: number): string 
 type SlotProps = {
   monitor: MonitorDto
   slotIndex: number
+  /** Every camera on the wall — cells share one coverage query keyed on this list. */
+  wallCameraIds: string[]
   soloActive: boolean
   canSolo: boolean
   focused: boolean
@@ -31,10 +33,10 @@ type SlotProps = {
   allCameras: Record<string, CameraSetupDto>
 }
 
-function CameraSlot({ monitor, slotIndex, soloActive, canSolo, focused, onToggleSolo, allCameras }: SlotProps) {
+function CameraSlot({ monitor, slotIndex, wallCameraIds, soloActive, canSolo, focused, onToggleSolo, allCameras }: SlotProps) {
   const dispatch = useAppDispatch()
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
-  const wallMode = useAppSelector(selectWallMode(monitor.monitorId))
+  const wall = useAppSelector(selectWall(monitor.monitorId))
 
   const activeCameraId = effectiveCameraForSlot(monitor, slotIndex)
   const camera = activeCameraId ? allCameras[activeCameraId] : null
@@ -73,7 +75,10 @@ function CameraSlot({ monitor, slotIndex, soloActive, canSolo, focused, onToggle
           slotKey={`${monitor.monitorId}-${slotIndex}`}
           monitorId={monitor.monitorId}
           camera={camera}
-          wallMode={wallMode}
+          wallMode={wall.mode}
+          wallCameraIds={wallCameraIds}
+          coverageWindowStartMs={wall.windowStartMs}
+          coverageWindowWidthMs={wall.windowWidthMs}
           gridSoloActive={soloActive}
           onToggleGridSolo={canSolo ? onToggleSolo : undefined}
         />
@@ -158,6 +163,13 @@ export default function MonitorGrid({ monitor }: Props) {
     [slotCount]
   )
 
+  // Cameras actually placed in slots, shared by every cell so their coverage query collapses into
+  // a single batched request instead of one per cell.
+  const wallCameraIds = useMemo(
+    () => [...new Set(monitor.slots.map((s) => s.cameraId).filter((id) => monitor.cameraIds.includes(id)))],
+    [monitor.slots, monitor.cameraIds]
+  )
+
   const visibleSlots = soloSlot !== null ? [soloSlot] : slots
 
   const gridSx = useMemo(() => {
@@ -191,6 +203,7 @@ export default function MonitorGrid({ monitor }: Props) {
           key={`${monitor.monitorId}-${slotIndex}`}
           monitor={monitor}
           slotIndex={slotIndex}
+          wallCameraIds={wallCameraIds}
           soloActive={soloSlot === slotIndex}
           canSolo={slotCount > 1}
           focused={focusedSlot === slotIndex}

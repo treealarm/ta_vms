@@ -76,6 +76,10 @@ type Props = {
   slotKey?: string
   /** Set when the card sits in a monitor wall; enables wall-wide playback. */
   monitorId?: string
+  /** Wall-wide coverage query inputs, shared by every cell so it is fetched once. */
+  wallCameraIds?: readonly string[]
+  coverageWindowStartMs?: number
+  coverageWindowWidthMs?: number
   /**
    * Wall-level mode. While it is 'playback' the cell follows the wall's shared clock and the
    * per-cell live/archive mode below is only suspended, not overwritten — it comes back on exit.
@@ -89,6 +93,9 @@ export default function CameraUnifiedCard({
   camera,
   slotKey,
   monitorId,
+  wallCameraIds,
+  coverageWindowStartMs,
+  coverageWindowWidthMs,
   wallMode = 'live',
   gridSoloActive = false,
   onToggleGridSolo,
@@ -616,7 +623,13 @@ export default function CameraUnifiedCard({
               monitorId={monitorId!}
               slotKey={storeKey}
               cameraId={camera.cameraId}
-              streamName={activeStreamObj?.streamName}
+              // Required, not optional: without a stream filter the preview playlist interleaves
+              // main and sub clips into one overlapping source — the exact corruption the parameter
+              // exists to prevent. Falls back to the camera's first stream.
+              streamName={activeStreamObj?.streamName || (merged.streams ?? [])[0]?.streamName || ''}
+              wallCameraIds={wallCameraIds ?? []}
+              coverageWindowStartMs={coverageWindowStartMs ?? 0}
+              coverageWindowWidthMs={coverageWindowWidthMs ?? 0}
             />
           </Box>
         ) : (

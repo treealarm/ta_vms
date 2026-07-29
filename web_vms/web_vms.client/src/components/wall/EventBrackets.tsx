@@ -83,7 +83,10 @@ export default function EventBrackets({ events, segments, win, pxWidth, onPick }
         return (
           <Tooltip key={ev.eventUuid} title={title} placement="top">
             <Box
-              onClick={(e) => {
+              // Handled on pointerup, not click: the timeline seeks on its own pointerup, which
+              // fires before any click event — stopping propagation there is too late, and the wall
+              // would take two seeks and rebuild every cell's pipeline twice.
+              onPointerUp={(e) => {
                 e.stopPropagation()
                 onPick(clipped.startMs)
               }}

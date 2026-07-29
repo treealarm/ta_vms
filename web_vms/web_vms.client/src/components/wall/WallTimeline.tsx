@@ -16,6 +16,8 @@ import { useWallEvents } from '../../hooks/useWallEvents'
 const TICKS_H = 22
 const TRACK_H = 16
 const ZOOM_STEP = 0.8
+// Must match ArchiveWallPlayer's, so both share one cache entry.
+const COVERAGE_PSEUDO_WIDTH = 1200
 
 type Props = {
   monitorId: string
@@ -49,7 +51,9 @@ export default function WallTimeline({ monitorId, cameraIds, focusedCameraId }: 
     return () => ro.disconnect()
   }, [])
 
-  const coverage = useWallCoverage(cameraIds, windowStartMs, windowWidthMs, pxWidth)
+  // Fixed resolution rather than the measured width: the cells request the same coverage, and a
+  // key that shifted with the container size would split one batched request into several.
+  const coverage = useWallCoverage(cameraIds, windowStartMs, windowWidthMs, COVERAGE_PSEUDO_WIDTH)
   const focusedSegments = useMemo(
     () => (focusedCameraId ? (coverage.byCamera[focusedCameraId] ?? []) : []),
     [focusedCameraId, coverage.byCamera]
@@ -68,6 +72,10 @@ export default function WallTimeline({ monitorId, cameraIds, focusedCameraId }: 
     return wallClockBus.subscribePlayhead((ms) => {
       const el = playheadRef.current
       if (!el) return
+      if (ms === null) {
+        el.style.visibility = 'hidden'
+        return
+      }
       const ratio = (ms - windowStartMs) / windowWidthMs
       el.style.visibility = ratio < 0 || ratio > 1 ? 'hidden' : 'visible'
       el.style.left = `${ratio * 100}%`
@@ -79,6 +87,7 @@ export default function WallTimeline({ monitorId, cameraIds, focusedCameraId }: 
   // is a stale clock from a cell that has not caught up yet, and is ignored outright.
   useEffect(() => {
     return wallClockBus.subscribePlayhead((ms) => {
+      if (ms === null) return
       if (Math.abs(ms - seekMs) > DAY_MS) return
       if (!isSameLocalDay(ms, seekMs)) return
       if (ms >= windowStartMs && ms <= windowStartMs + windowWidthMs) return

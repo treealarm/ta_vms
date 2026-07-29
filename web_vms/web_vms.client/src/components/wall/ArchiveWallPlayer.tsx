@@ -11,17 +11,21 @@ import { useWallFollow } from '../../hooks/useWallFollow'
 import { useWallCoverage } from '../../hooks/useWallCoverage'
 import { buildWallPlaylistUrl } from '../../utils/playlistUrl'
 import { mediaTimeAtOrAfterWallMs, wallMsAtMediaTime } from '../../utils/playlistTime'
-import { HOUR_MS } from '../../utils/wallTime'
 
-// Coverage window this cell keeps loaded to answer "do I have anything at the playhead?".
-const COVERAGE_SPAN_MS = 6 * HOUR_MS
-const COVERAGE_PSEUDO_WIDTH = 600
+// Resolution of the shared coverage query; must match what WallTimeline asks for so both hit the
+// same cache entry.
+const COVERAGE_PSEUDO_WIDTH = 1200
 
 type Props = {
   monitorId: string
   slotKey: string
   cameraId: string
   streamName?: string
+  /** Every camera on the wall, so all cells and the timeline share one coverage query. */
+  wallCameraIds: readonly string[]
+  /** Timeline window, so the shared query is keyed identically for every consumer. */
+  coverageWindowStartMs: number
+  coverageWindowWidthMs: number
 }
 
 /**
@@ -31,7 +35,15 @@ type Props = {
  * rebuild — never on the moving playhead, which would tear down and recreate the HLS source
  * several times a second.
  */
-export default function ArchiveWallPlayer({ monitorId, slotKey, cameraId, streamName }: Props) {
+export default function ArchiveWallPlayer({
+  monitorId,
+  slotKey,
+  cameraId,
+  streamName,
+  wallCameraIds,
+  coverageWindowStartMs,
+  coverageWindowWidthMs,
+}: Props) {
   const { t } = useTranslation()
   const videoRef = useRef<HTMLVideoElement>(null)
   const wall = useAppSelector(selectWall(monitorId))
@@ -59,11 +71,14 @@ export default function ArchiveWallPlayer({ monitorId, slotKey, cameraId, stream
     playEpoch: wall.playEpoch,
   })
 
-  const cameraIds = useMemo(() => [cameraId], [cameraId])
+  // Deliberately the WALL's camera list and window, not this cell's: an identical query key means
+  // the nine cells of a 3x3 wall and the timeline all resolve to a single batched request instead
+  // of nine single-camera ones per seek.
+  const cameraIds = useMemo(() => [...wallCameraIds], [wallCameraIds])
   const coverage = useWallCoverage(
     cameraIds,
-    wall.seekMs - COVERAGE_SPAN_MS / 2,
-    COVERAGE_SPAN_MS,
+    coverageWindowStartMs,
+    coverageWindowWidthMs,
     COVERAGE_PSEUDO_WIDTH
   )
   const segments = useMemo(() => coverage.byCamera[cameraId] ?? [], [coverage.byCamera, cameraId])

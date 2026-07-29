@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
   Box,
-  Chip,
   IconButton,
   Popover,
   Stack,
@@ -72,8 +71,15 @@ export default function WallPlaybackBar({ monitorId, focusedSegments, focusedCam
 
   const handleMode = (_e: React.MouseEvent<HTMLElement>, next: WallMode | null) => {
     if (!next || next === wall.mode) return
-    if (next === 'playback') dispatch(enterPlayback({ monitorId }))
-    else dispatch(exitPlayback({ monitorId }))
+    if (next === 'playback') {
+      // Seed the shared clock with where playback is about to start, so nothing from a previous
+      // session is shown while the cells load.
+      wallClockBus.reset(Date.now())
+      dispatch(enterPlayback({ monitorId }))
+    } else {
+      wallClockBus.clear()
+      dispatch(exitPlayback({ monitorId }))
+    }
   }
 
   const handleNudge = (deltaMs: number) => {
@@ -130,8 +136,6 @@ export default function WallPlaybackBar({ monitorId, focusedSegments, focusedCam
 
       {playback && (
         <>
-          <Chip size="small" color="primary" variant="outlined" label={t('wall.badgePlayback')} />
-
           <Tooltip title={t('wall.prevDay')}>
             <span>
               <IconButton size="small" disabled={!canStepBack} onClick={() => handleDayStep(-1)}>

@@ -31,17 +31,38 @@ export const wallEventsKey = (q: WallEventsQuery) => `${q.cameraId}|${q.fromUtc}
 
 const initialState: WallEventsState = { byKey: {}, loadingKeys: [], status: 'Ready' }
 
+// The server answers newest-first with a LIMIT, so one page of a busy camera stops short of the
+// window's start and the OLDEST events silently disappear from the timeline. Page backwards until
+// the window is covered, bounded so a pathological camera cannot spin here forever.
+const MAX_PAGES = 5
+
 export const fetchWallEvents = createAsyncThunk('wallEvents/fetch', async (q: WallEventsQuery) => {
-  // cameraId is passed to the server rather than filtered here: a global "newest N" page is mostly
-  // other cameras' events, so the ones being looked for would be crowded out before arrival.
-  const params = new URLSearchParams({
-    cameraId: q.cameraId,
-    from: q.fromUtc,
-    before: q.toUtc,
-    limit: String(q.limit ?? 200),
-  })
-  const response = await fetch(`/api/fs/retention-events?${params.toString()}`)
-  return parseJson<RetentionEventGroupsListDto>(response)
+  const limit = q.limit ?? 200
+  const merged: RetentionEventGroupsListDto = { groups: [], hasMore: false }
+  let before = q.toUtc
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    // cameraId goes to the server rather than being filtered here: a global "newest N" page is
+    // mostly other cameras' events, so the wanted ones would be crowded out before arrival.
+    const params = new URLSearchParams({
+      cameraId: q.cameraId,
+      from: q.fromUtc,
+      before,
+      limit: String(limit),
+    })
+    const response = await fetch(`/api/fs/retention-events?${params.toString()}`)
+    const dto = await parseJson<RetentionEventGroupsListDto>(response)
+
+    merged.groups.push(...(dto.groups ?? []))
+    if (!dto.hasMore || !dto.nextBeforeAlarmStart) break
+    // Reached back past the window we care about.
+    if (Date.parse(dto.nextBeforeAlarmStart) <= Date.parse(q.fromUtc)) break
+    // No forward progress — stop rather than request the same page again.
+    if (dto.nextBeforeAlarmStart === before) break
+    before = dto.nextBeforeAlarmStart
+  }
+
+  return merged
 })
 
 function toWallEvent(ep: EpisodeDto): WallEvent | null {

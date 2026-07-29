@@ -20,6 +20,15 @@ export const REBUILD_COOLDOWN_MS = 5_000
 /** Consecutive unchanged playhead samples that mean the master is not advancing. */
 export const STALL_TICKS = 2
 
+/**
+ * How close to the end of its own playlist the clock owner may get before extending it.
+ *
+ * The owner is exempt from following (it *is* the playhead), but its playlist is a bounded window
+ * ending in #EXT-X-ENDLIST. Without this it simply stops at that end, and every follower then sees
+ * a frozen playhead and pauses — the whole wall dies a few minutes after each seek.
+ */
+export const OWNER_REBUILD_LEAD_MS = 45_000
+
 export type FollowInput = {
   playheadMs: number | null
   /** How many consecutive ticks the playhead has not moved. */
@@ -33,6 +42,8 @@ export type FollowInput = {
   msSinceLastRebuild: number
   /** Safari-style native HLS: no fragment list, so PDT mapping is unavailable. */
   nativeHls: boolean
+  /** This cell drives the shared playhead; it follows nothing, but still has to extend its window. */
+  isOwner: boolean
 }
 
 export type PauseReason = 'masterStalled' | 'holdAtRangeEnd' | 'hole'
@@ -47,6 +58,16 @@ export type FollowAction =
 
 export function decideFollow(i: FollowInput): FollowAction {
   if (i.playheadMs === null) return { kind: 'none' }
+
+  // The owner never chases anything, but it must keep material ahead of itself.
+  if (i.isOwner) {
+    const ownBounds = playlistWallBounds(i.map)
+    if (!ownBounds) return { kind: 'none' }
+    const nearEnd = i.playheadMs >= ownBounds.endMs - OWNER_REBUILD_LEAD_MS
+    return nearEnd && i.msSinceLastRebuild >= REBUILD_COOLDOWN_MS
+      ? { kind: 'rebuild', aroundWallMs: i.playheadMs }
+      : { kind: 'none' }
+  }
 
   // The master is paused, buffering, or sitting at the end of its own material. Followers hold
   // position rather than running on without it.

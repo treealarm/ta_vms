@@ -468,7 +468,6 @@
   "wall": {
     "modeLive": "Live",
     "modePlayback": "Playback",
-    "badgePlayback": "Playback",
     "play": "Play",
     "pause": "Pause",
     "back30": "Back 30 s",

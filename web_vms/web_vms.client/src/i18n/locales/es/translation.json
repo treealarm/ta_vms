@@ -468,7 +468,6 @@
   "wall": {
     "modeLive": "En vivo",
     "modePlayback": "Reproducción",
-    "badgePlayback": "Reproducción",
     "play": "Reproducir",
     "pause": "Pausar",
     "back30": "Atrás 30 s",

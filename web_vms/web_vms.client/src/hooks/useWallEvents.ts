@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo } from 'react'
 
 import { useAppDispatch, useAppSelector } from '../store'
 import { fetchWallEvents, selectWallEvents, wallEventsKey, type WallEvent } from '../store/wallEventsSlice'
 
 const DEBOUNCE_MS = 400
+
+// Module-level so several consumers of the same window collapse into one request.
+const inFlight = new Set<string>()
 const EMPTY: WallEvent[] = []
 
 function quantize(ms: number, stepMs: number): number {
@@ -36,13 +39,14 @@ export function useWallEvents(
 
   const key = query ? wallEventsKey(query) : ''
   const cached = useAppSelector(selectWallEvents(key))
-  const requestedRef = useRef<Set<string>>(new Set())
-
   useEffect(() => {
-    if (!query || cached || requestedRef.current.has(key)) return
+    if (!query || cached || inFlight.has(key)) return
     const timer = window.setTimeout(() => {
-      requestedRef.current.add(key)
-      void dispatch(fetchWallEvents(query))
+      if (inFlight.has(key)) return
+      inFlight.add(key)
+      // Released on failure too, so a transient error does not make the camera look like it had no
+      // alarms in this window until the operator pans away and back.
+      void dispatch(fetchWallEvents(query)).finally(() => inFlight.delete(key))
     }, DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [dispatch, query, key, cached])

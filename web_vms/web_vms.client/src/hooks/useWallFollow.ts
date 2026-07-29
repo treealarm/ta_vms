@@ -59,11 +59,7 @@ export function useWallFollow({
       const video = videoRef.current
       if (!video) return
 
-      if (wallClockBus.isOwner(slotKey)) {
-        setStatus((s) => (s === 'following' ? s : 'following'))
-        return
-      }
-
+      const isOwner = wallClockBus.isOwner(slotKey)
       const playheadMs = playheadRef.current
       if (playheadMs === lastSeenPlayheadRef.current) unchangedTicksRef.current += 1
       else unchangedTicksRef.current = 0
@@ -73,6 +69,7 @@ export function useWallFollow({
         latest.current
 
       const action = decideFollow({
+        isOwner,
         playheadMs,
         playheadUnchangedTicks: unchangedTicksRef.current,
         armed: isArmed,
@@ -86,6 +83,7 @@ export function useWallFollow({
 
       switch (action.kind) {
         case 'none':
+          if (isOwner) setStatus('following')
           break
         case 'play':
           void video.play().catch(() => {})

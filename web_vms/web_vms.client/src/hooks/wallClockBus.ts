@@ -10,7 +10,7 @@
 //  - the focused cell owns the clock if it is a candidate;
 //  - otherwise the longest-registered candidate owns it.
 
-type PlayheadListener = (wallMs: number) => void
+type PlayheadListener = (wallMs: number | null) => void
 type OwnerListener = (ownerKey: string | null) => void
 
 const PUBLISH_COALESCE_MS = 250
@@ -91,10 +91,26 @@ class WallClockBus {
 
   subscribePlayhead(cb: PlayheadListener): () => void {
     this.playheadListeners.add(cb)
-    if (this.playheadMs !== null) cb(this.playheadMs)
+    cb(this.playheadMs)
     return () => {
       this.playheadListeners.delete(cb)
     }
+  }
+
+  /**
+   * Drops the playhead entirely. Called when playback ends: a stale timestamp from the previous
+   * session would otherwise be displayed — and copied to the clipboard — on the next entry, before
+   * any cell has published.
+   */
+  clear(): void {
+    if (this.pendingEmit !== undefined) {
+      clearTimeout(this.pendingEmit)
+      this.pendingEmit = undefined
+    }
+    this.playheadMs = null
+    this.lastEmitAt = 0
+    // Subscribers have to hear the clearing, or they keep showing the old timestamp.
+    for (const cb of this.playheadListeners) cb(null)
   }
 
   /** Hard reset on a committed seek: the playhead jumps immediately instead of easing over. */

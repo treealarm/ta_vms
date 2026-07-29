@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo } from 'react'
 
 import { useAppDispatch, useAppSelector } from '../store'
 import {
@@ -12,6 +12,11 @@ import type { Segment } from '../utils/archiveRanges'
 import { unionSegments } from '../utils/archiveRanges'
 
 const DEBOUNCE_MS = 300
+
+// Module-level, NOT per-hook: every cell on the wall plus the timeline ask for the same coverage
+// with the same key, and a per-instance guard would still let each of them fire its own request —
+// exactly the fan-out the batched endpoint exists to avoid.
+const inFlight = new Set<string>()
 
 /** Quantizes the window so panning by a few pixels does not mint a fresh cache key every frame. */
 function quantize(ms: number, stepMs: number): number {
@@ -63,14 +68,16 @@ export function useWallCoverage(
   const cached = useAppSelector(selectWallCoverage(key))
   const loading = useAppSelector(selectWallCoverageLoading(key))
 
-  const requestedRef = useRef<Set<string>>(new Set())
-
   useEffect(() => {
-    if (!query || cached || requestedRef.current.has(key)) return
+    if (!query || cached || inFlight.has(key)) return
 
     const timer = window.setTimeout(() => {
-      requestedRef.current.add(key)
-      void dispatch(fetchRecordingTimeline(query))
+      if (inFlight.has(key)) return
+      inFlight.add(key)
+      // Released either way: on success the Redux cache answers subsequent renders, and on failure
+      // the key must become requestable again — otherwise one transient error leaves this window
+      // permanently blank, which also blocks the wall's initial jump.
+      void dispatch(fetchRecordingTimeline(query)).finally(() => inFlight.delete(key))
     }, DEBOUNCE_MS)
 
     return () => clearTimeout(timer)
@@ -79,5 +86,5 @@ export function useWallCoverage(
   const byCamera = cached ?? EMPTY
   const union = useMemo(() => unionSegments(Object.values(byCamera)), [byCamera])
 
-  return { byCamera, union, loading: loading || (!cached && !!query) }
+  return { byCamera, union, loading }
 }
