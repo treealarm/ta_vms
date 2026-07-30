@@ -132,7 +132,7 @@
     "leadInHint": "Switch recording on this many seconds early",
     "effectHint": "While a window is open the camera records continuously, overriding its stream profiles and any manual or alarm override.",
     "exactFor": "Exact ranges — {{row}}",
-    "exactHint": "Painting snaps to 15 minutes; type here for exact values, up to seconds. Use 24:00 to end at midnight.",
+    "exactHint": "Painting snaps to 15 minutes; type here for exact values, down to seconds. Digits are enough — 0930 becomes 09:30. Use 24:00 to end at midnight.",
     "addRange": "Add range",
     "noRanges": "Nothing scheduled on this day.",
     "from": "From",

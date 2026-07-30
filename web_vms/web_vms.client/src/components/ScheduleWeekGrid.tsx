@@ -160,6 +160,8 @@ function DayStrip({
           bgcolor: 'action.hover',
           opacity: disabled ? 0.5 : 1,
           cursor: disabled ? 'default' : 'pointer',
+          // Let a touch drag paint instead of scrolling the page.
+          touchAction: 'none',
           outline: selected ? 1 : 0,
           outlineColor: 'primary.light',
           outlineStyle: 'solid',
