@@ -41,8 +41,14 @@ public sealed class CameraConfigCache(CfgService.CfgServiceClient cfgClient)
 
     var profile = stream?.OverrideProfile ?? stream?.RecordingProfile;
 
+    // An open recording schedule window forces continuous recording, so every clip ingested while
+    // it lasts must be retained regardless of the configured profile.
+    var mode = resp.Setup.ScheduleActive
+      ? RecordingMode.RecordingContinuous
+      : profile?.Mode ?? RecordingMode.RecordingOff;
+
     var config = new CameraConfig(
-      profile?.Mode ?? RecordingMode.RecordingOff,
+      mode,
       profile != null ? (int)profile.PreRecordSeconds : 0,
       profile != null ? (int)profile.PostRecordSeconds : 0);
 

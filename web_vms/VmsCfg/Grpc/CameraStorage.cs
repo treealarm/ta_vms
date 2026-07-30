@@ -5,7 +5,10 @@ using Vms.Cfg;
 
 namespace VmsCfg;
 
-public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfgDbContext> dbFactory)
+public class CameraStorage(
+  NpgsqlDataSource dataSource,
+  IDbContextFactory<VmsCfgDbContext> dbFactory,
+  ScheduleCache scheduleCache)
 {
   private readonly NpgsqlDataSource _dataSource = dataSource;
   private static readonly Guid BuiltinContinuousProfileId = new("00000000-0000-0000-0000-000000000001");
@@ -153,6 +156,7 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
     }
 
     await LoadStreamsAsync(connection, cameras, ct);
+    ApplySchedules(cameras);
     return cameras;
   }
 
@@ -186,7 +190,22 @@ public class CameraStorage(NpgsqlDataSource dataSource, IDbContextFactory<VmsCfg
       return (false, null);
 
     await LoadStreamsAsync(connection, [setup], ct);
+    ApplySchedules([setup]);
     return (true, setup);
+  }
+
+  /// The single place where a schedule becomes a fact: schedule_active is resolved from the wall
+  /// clock every time a setup is read, and never stored. Consumers (media_server, VmsFs,
+  /// web_vms.Server) treat it as "record continuously, overriding profile and overrides".
+  private void ApplySchedules(IReadOnlyList<CameraSetup> cameras)
+  {
+    var now = DateTime.UtcNow;
+    foreach (var camera in cameras)
+    {
+      camera.ScheduleIds.Clear();
+      camera.ScheduleIds.AddRange(scheduleCache.GetCameraScheduleIds(camera.CameraId));
+      camera.ScheduleActive = scheduleCache.IsCameraActive(camera.CameraId, now);
+    }
   }
 
   public async Task<bool> RemoveCameraAsync(string cameraId, CancellationToken ct)

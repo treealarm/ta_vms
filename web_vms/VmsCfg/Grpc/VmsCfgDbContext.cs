@@ -10,6 +10,10 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
   public DbSet<DbCameraState> CameraStates { get; set; }
   public DbSet<DbStorage> Storages { get; set; }
   public DbSet<DbAnalyticsWatch> AnalyticsWatches { get; set; }
+  public DbSet<DbRecordingSchedule> RecordingSchedules { get; set; }
+  public DbSet<DbRecordingScheduleWindow> RecordingScheduleWindows { get; set; }
+  public DbSet<DbCameraSchedule> CameraSchedules { get; set; }
+  public DbSet<DbCameraSetup> CameraSetups { get; set; }
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
@@ -77,6 +81,50 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.AttachDebugCrops).HasColumnName("attach_debug_crops");
       e.Property(x => x.TimeoutSeconds).HasColumnName("timeout_seconds");
     });
+
+    modelBuilder.Entity<DbRecordingSchedule>(e =>
+    {
+      e.ToTable("recording_schedule");
+      e.HasKey(x => x.Id);
+      e.Property(x => x.Id).HasColumnName("id");
+      e.Property(x => x.Name).HasColumnName("name");
+      e.Property(x => x.Timezone).HasColumnName("timezone");
+      e.Property(x => x.LeadInSeconds).HasColumnName("lead_in_seconds");
+      e.HasMany(x => x.Windows)
+       .WithOne()
+       .HasForeignKey(x => x.ScheduleId);
+    });
+
+    modelBuilder.Entity<DbRecordingScheduleWindow>(e =>
+    {
+      e.ToTable("recording_schedule_window");
+      e.HasKey(x => x.Id);
+      e.Property(x => x.Id).HasColumnName("id");
+      e.Property(x => x.ScheduleId).HasColumnName("schedule_id");
+      e.Property(x => x.Kind).HasColumnName("kind");
+      e.Property(x => x.DayOfWeek).HasColumnName("day_of_week");
+      e.Property(x => x.DateValue).HasColumnName("date_value");
+      e.Property(x => x.StartSecond).HasColumnName("start_second");
+      e.Property(x => x.EndSecond).HasColumnName("end_second");
+    });
+
+    modelBuilder.Entity<DbCameraSchedule>(e =>
+    {
+      e.ToTable("camera_schedule");
+      e.HasKey(x => new { x.CameraId, x.ScheduleId });
+      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.ScheduleId).HasColumnName("schedule_id");
+    });
+
+    // Read-only projection of camera_setup: the schedule ticker needs each camera's media server
+    // to notify. The rest of camera_setup is still handled by raw SQL in CameraStorage.
+    modelBuilder.Entity<DbCameraSetup>(e =>
+    {
+      e.ToTable("camera_setup");
+      e.HasKey(x => x.CameraId);
+      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.ServerId).HasColumnName("server_id");
+    });
   }
 }
 
@@ -129,4 +177,41 @@ public sealed class DbAnalyticsWatch
   public bool AttachDebugCrops { get; set; }
   /// Seconds of recording kept after the last detection before the event closes.
   public int TimeoutSeconds { get; set; } = 10;
+}
+
+public sealed class DbRecordingSchedule
+{
+  public Guid Id { get; set; }
+  public string Name { get; set; } = string.Empty;
+  public string Timezone { get; set; } = "UTC";
+  public int LeadInSeconds { get; set; } = 5;
+  public List<DbRecordingScheduleWindow> Windows { get; set; } = [];
+}
+
+public sealed class DbRecordingScheduleWindow
+{
+  public Guid Id { get; set; }
+  public Guid ScheduleId { get; set; }
+  /// "weekly" | "date".
+  public string Kind { get; set; } = "weekly";
+  /// 0=Sunday..6=Saturday for "weekly", null for "date".
+  public short? DayOfWeek { get; set; }
+  /// Set for "date" windows only.
+  public DateOnly? DateValue { get; set; }
+  /// Seconds from local midnight (0..86400). EndSecond is exclusive; EndSecond <= StartSecond
+  /// wraps past midnight.
+  public int StartSecond { get; set; }
+  public int EndSecond { get; set; }
+}
+
+public sealed class DbCameraSchedule
+{
+  public string CameraId { get; set; } = string.Empty;
+  public Guid ScheduleId { get; set; }
+}
+
+public sealed class DbCameraSetup
+{
+  public string CameraId { get; set; } = string.Empty;
+  public string ServerId { get; set; } = string.Empty;
 }

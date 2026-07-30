@@ -8,6 +8,8 @@ namespace VmsCfg
 {
   public class CfgServiceImpl(
     CameraStorage storage,
+    ScheduleDb scheduleDb,
+    ScheduleCache scheduleCache,
     DaprClient daprClient,
     ISquareIntegration square,
     ILogger<CfgServiceImpl> logger) : CfgService.CfgServiceBase
@@ -84,6 +86,21 @@ namespace VmsCfg
           logger.LogWarning(ex, "Media server config notification failed for '{ServerId}'", serverId);
         }
       });
+    }
+
+    /// Tells everyone downstream that these cameras' effective recording state may have changed:
+    /// VmsFs drops its config caches, and each camera's media server reloads its configuration.
+    /// Used by the schedule paths, where nothing in the camera's own config row changed.
+    internal async Task NotifyCamerasChangedAsync(IReadOnlyList<string> cameraIds, CancellationToken ct)
+    {
+      if (cameraIds.Count == 0)
+        return;
+
+      var servers = await scheduleDb.ListCameraServersAsync(cameraIds, ct);
+      foreach (var cameraId in cameraIds)
+        InvalidateFsCache(cameraId);
+      foreach (var serverId in servers.Values.Distinct())
+        NotifyMediaServer(serverId);
     }
 
     // A MediaMTX server's connection info (rtsp_url etc.) can be referenced by cameras on
@@ -305,6 +322,78 @@ namespace VmsCfg
       InvalidateFsCache(request.CameraId);
       var (_, cam) = await storage.GetCameraAsync(request.CameraId, context.CancellationToken);
       if (cam is not null) NotifyMediaServer(cam.ServerId);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<ListRecordingSchedulesResponse> ListRecordingSchedules(
+      ListRecordingSchedulesRequest request,
+      ServerCallContext context)
+    {
+      var response = new ListRecordingSchedulesResponse();
+      response.Schedules.AddRange(await scheduleDb.ListSchedulesAsync(context.CancellationToken));
+      return response;
+    }
+
+    public override async Task<OperationStatus> UpsertRecordingSchedule(
+      RecordingSchedule request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.Name))
+        return new OperationStatus { Success = false, Message = "name must not be empty" };
+
+      var ct = context.CancellationToken;
+      var id = await scheduleDb.UpsertScheduleAsync(request, ct);
+      logger.LogInformation(
+        "Recording schedule '{Name}' upserted (id={Id}, tz={Timezone}, windows={Windows}, lead_in={LeadIn}s)",
+        request.Name, id, request.Timezone, request.Windows.Count, request.LeadInSeconds);
+
+      await scheduleCache.ReloadAndSignalAsync(ct);
+      await NotifyCamerasChangedAsync(await scheduleDb.ListCamerasUsingScheduleAsync(id, ct), ct);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OperationStatus> RemoveRecordingSchedule(
+      RecordingScheduleRequest request,
+      ServerCallContext context)
+    {
+      if (!Guid.TryParse(request.Id, out var id))
+        return new OperationStatus { Success = false, Message = "id must be a valid UUID" };
+
+      var ct = context.CancellationToken;
+      // Collected before the delete cascades camera_schedule away.
+      var affected = await scheduleDb.ListCamerasUsingScheduleAsync(id, ct);
+
+      var removed = await scheduleDb.RemoveScheduleAsync(id, ct);
+      if (!removed)
+        return new OperationStatus { Success = false, Message = "schedule not found" };
+
+      logger.LogInformation("Recording schedule '{Id}' removed", id);
+      await scheduleCache.ReloadAndSignalAsync(ct);
+      await NotifyCamerasChangedAsync(affected, ct);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OperationStatus> SetCameraSchedules(
+      SetCameraSchedulesRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId))
+        return new OperationStatus { Success = false, Message = "camera_id must not be empty" };
+
+      foreach (var raw in request.ScheduleIds)
+      {
+        if (!Guid.TryParse(raw, out _))
+          return new OperationStatus { Success = false, Message = $"schedule id '{raw}' is not a valid UUID" };
+      }
+
+      var ct = context.CancellationToken;
+      await scheduleDb.SetCameraSchedulesAsync(request.CameraId, request.ScheduleIds, ct);
+      logger.LogInformation(
+        "Camera '{CameraId}' schedules set: [{ScheduleIds}]",
+        request.CameraId, string.Join(", ", request.ScheduleIds));
+
+      await scheduleCache.ReloadAndSignalAsync(ct);
+      await NotifyCamerasChangedAsync([request.CameraId], ct);
       return new OperationStatus { Success = true };
     }
 

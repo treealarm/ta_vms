@@ -22,6 +22,7 @@
     "events": "Eventos",
     "storages": "Almacenes",
     "recording": "Perfiles Grab.",
+    "schedules": "Horarios grab.",
     "mediaMtx": "Media Routers",
     "onvif": "Eventos ONVIF",
     "onvifSettings": "Config ONVIF",
@@ -116,6 +117,39 @@
     "seg": "seg {{seg}}s",
     "deleteProfile": "Eliminar perfil",
     "selectHint": "Seleccione un perfil de grabación"
+  },
+  "schedule": {
+    "title": "Horarios de grabación",
+    "noSchedules": "Aún no hay horarios.",
+    "addSchedule": "Añadir horario",
+    "newSchedule": "Nuevo horario",
+    "create": "Crear",
+    "deleteSchedule": "Eliminar horario",
+    "selectHint": "Seleccione un horario de grabación",
+    "timezone": "Zona horaria",
+    "timezoneHint": "Id IANA, p. ej. Europe/Madrid",
+    "leadInSec": "Adelanto, s",
+    "leadInHint": "Activar la grabación estos segundos antes",
+    "effectHint": "Mientras una ventana está abierta la cámara graba de forma continua, por encima de los perfiles del flujo y de cualquier anulación manual o por alarma.",
+    "exactFor": "Intervalos exactos — {{row}}",
+    "exactHint": "El pincel se ajusta a 15 minutos; escriba aquí valores exactos, hasta segundos. Use 24:00 para terminar a medianoche.",
+    "addRange": "Añadir intervalo",
+    "noRanges": "Nada programado este día.",
+    "from": "Desde",
+    "to": "Hasta",
+    "weekly": "Semanal",
+    "dates": "Fechas concretas",
+    "datesHint": "Ventanas adicionales en fechas concretas, sumadas a las semanales.",
+    "addDate": "Fecha",
+    "add": "Añadir",
+    "windowCount": "{{count}} ventana",
+    "windowCount_plural": "{{count}} ventanas"
+  },
+  "scheduleControl": {
+    "title": "Horarios de grabación",
+    "noSchedules": "Sin horarios asignados",
+    "addSchedule": "Añadir horario",
+    "activeNow": "grabando ahora"
   },
   "analytics": {
     "title": "Analítica de vídeo",
@@ -341,7 +375,8 @@
     "copyRtsp": "Copiar RTSP",
     "copiedRtsp": "¡Copiado!",
     "retentionActive": "Retención activa",
-    "cameraDisabledTip": "Cámara desactivada — armar/PTZ no disponible"
+    "cameraDisabledTip": "Cámara desactivada — armar/PTZ no disponible",
+    "scheduleActive": "Grabando por horario — prevalece sobre el perfil del flujo"
   },
   "recordings": {
     "earlier": "Anterior",

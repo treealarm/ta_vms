@@ -107,6 +107,30 @@ export const RECORDING_PROFILE_CONTINUOUS_ID = '00000000-0000-0000-0000-00000000
 export const RECORDING_PROFILE_PREALARM_ID = '00000000-0000-0000-0000-000000000002'
 export const RECORDING_PROFILE_OFF_ID = '00000000-0000-0000-0000-000000000003'
 
+export type ScheduleWindowKind = 'weekly' | 'date'
+
+/** Seconds are counted from local midnight in the schedule's timezone (0..86400); endSecond is
+ *  exclusive and endSecond <= startSecond means the window wraps past midnight. */
+export type ScheduleWindowDto = {
+  kind: ScheduleWindowKind
+  /** 0=Sunday..6=Saturday; used for 'weekly' windows */
+  dayOfWeek: number
+  /** 'YYYY-MM-DD'; used for 'date' windows */
+  date: string
+  startSecond: number
+  endSecond: number
+}
+
+export type RecordingScheduleDto = {
+  id?: string
+  name: string
+  /** IANA timezone id, e.g. 'Europe/Moscow' */
+  timezone: string
+  /** Seconds before a window start at which recording is switched on */
+  leadInSeconds: number
+  windows: ScheduleWindowDto[]
+}
+
 export type CameraStreamDto = {
   streamName: string
   profileToken: string
@@ -145,6 +169,11 @@ export type CameraSetupDto = {
   disabled?: boolean
   /** True when the camera has an enabled analytics watch; gates the live bbox overlay toggle. */
   hasAnalytics?: boolean
+  /** Recording schedules assigned to this camera (uuids). */
+  scheduleIds?: string[]
+  /** True while one of the assigned schedule windows is open. Recomputed server-side from the wall
+   *  clock; while true the camera records continuously, overriding profile and overrides. */
+  scheduleActive?: boolean
 }
 
 export type MediaServerNodeDto = {

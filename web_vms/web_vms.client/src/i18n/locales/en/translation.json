@@ -22,6 +22,7 @@
     "events": "Events",
     "storages": "Storages",
     "recording": "Rec. profiles",
+    "schedules": "Rec. schedules",
     "mediaMtx": "Media Routers",
     "onvif": "ONVIF Events",
     "onvifSettings": "ONVIF Cfg",
@@ -116,6 +117,39 @@
     "seg": "seg {{seg}}s",
     "deleteProfile": "Delete profile",
     "selectHint": "Select a recording profile"
+  },
+  "schedule": {
+    "title": "Recording schedules",
+    "noSchedules": "No schedules yet.",
+    "addSchedule": "Add schedule",
+    "newSchedule": "New schedule",
+    "create": "Create",
+    "deleteSchedule": "Delete schedule",
+    "selectHint": "Select a recording schedule",
+    "timezone": "Timezone",
+    "timezoneHint": "IANA id, e.g. Europe/Moscow",
+    "leadInSec": "Lead-in, sec",
+    "leadInHint": "Switch recording on this many seconds early",
+    "effectHint": "While a window is open the camera records continuously, overriding its stream profiles and any manual or alarm override.",
+    "exactFor": "Exact ranges — {{row}}",
+    "exactHint": "Painting snaps to 15 minutes; type here for exact values, up to seconds. Use 24:00 to end at midnight.",
+    "addRange": "Add range",
+    "noRanges": "Nothing scheduled on this day.",
+    "from": "From",
+    "to": "To",
+    "weekly": "Weekly",
+    "dates": "Specific dates",
+    "datesHint": "Extra windows on individual dates, added to the weekly ones.",
+    "addDate": "Date",
+    "add": "Add",
+    "windowCount": "{{count}} window",
+    "windowCount_plural": "{{count}} windows"
+  },
+  "scheduleControl": {
+    "title": "Recording schedules",
+    "noSchedules": "No schedules assigned",
+    "addSchedule": "Add schedule",
+    "activeNow": "recording now"
   },
   "analytics": {
     "title": "Video analytics",
@@ -341,7 +375,8 @@
     "copyRtsp": "Copy RTSP",
     "copiedRtsp": "Copied!",
     "retentionActive": "Retention active",
-    "cameraDisabledTip": "Camera is disabled — arm/PTZ unavailable"
+    "cameraDisabledTip": "Camera is disabled — arm/PTZ unavailable",
+    "scheduleActive": "Recording by schedule — overrides the stream profile"
   },
   "recordings": {
     "earlier": "Earlier",

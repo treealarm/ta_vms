@@ -26,8 +26,14 @@ recording_policy_spec proto_mapper::recording_policy_for_media(
 }
 
 recording_policy_spec proto_mapper::recording_policy_for_stream(
-  const vms::cfg::CameraStream& stream)
+  const vms::cfg::CameraStream& stream,
+  bool schedule_active)
 {
+  // An open recording schedule window wins over everything else, including a manual or alarm
+  // override: while the window lasts the stream records continuously.
+  if (schedule_active)
+    return recording_policy_for_media(vms::cfg::RECORDING_CONTINUOUS, 0);
+
   // Use override profile if present, otherwise fall back to the base profile.
   const bool has_override = stream.has_override_profile();
   if (!has_override && !stream.has_recording_profile())

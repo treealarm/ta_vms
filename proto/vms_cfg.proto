@@ -20,6 +20,10 @@ service CfgService {
   rpc ActivateAlarmOverride(ActivateAlarmOverrideRequest) returns (ActivateAlarmOverrideResponse);
   rpc ClearAlarmOverride(ClearAlarmOverrideRequest) returns (OperationStatus);
   rpc ListAlarmOverrideStreams(ListAlarmOverrideStreamsRequest) returns (ListAlarmOverrideStreamsResponse);
+  rpc ListRecordingSchedules(ListRecordingSchedulesRequest) returns (ListRecordingSchedulesResponse);
+  rpc UpsertRecordingSchedule(RecordingSchedule) returns (OperationStatus);
+  rpc RemoveRecordingSchedule(RecordingScheduleRequest) returns (OperationStatus);
+  rpc SetCameraSchedules(SetCameraSchedulesRequest) returns (OperationStatus);
   rpc ListMediaMtxServers(ListMediaMtxServersRequest) returns (ListMediaMtxServersResponse);
   rpc UpsertMediaMtxServer(MediaMtxServer) returns (OperationStatus);
   rpc RemoveMediaMtxServer(MediaMtxServerRequest) returns (OperationStatus);
@@ -92,6 +96,32 @@ message RecordingProfile {
   bool   is_builtin          = 8;
 }
 
+enum ScheduleWindowKind {
+  SCHEDULE_WINDOW_WEEKLY = 0;
+  SCHEDULE_WINDOW_DATE   = 1;
+}
+
+// One recording window. Seconds are counted from local midnight in the schedule's timezone (so
+// 0..86400); end_second is exclusive and end_second <= start_second means the window wraps past
+// midnight.
+message ScheduleWindow {
+  ScheduleWindowKind kind = 1;
+  uint32 day_of_week  = 2;  // 0=Sunday..6=Saturday, WEEKLY only
+  string date         = 3;  // "YYYY-MM-DD", DATE only
+  uint32 start_second = 4;
+  uint32 end_second   = 5;
+}
+
+message RecordingSchedule {
+  string id       = 1;
+  string name     = 2;
+  string timezone = 3;         // IANA id, e.g. "Europe/Moscow"
+  // How many seconds before a window starts recording is switched on, so that the keyframe wait
+  // and the notification round-trip are absorbed and recording is already running at start_second.
+  uint32 lead_in_seconds = 4;
+  repeated ScheduleWindow windows = 5;
+}
+
 message CameraStream {
   string stream_name                       = 1;
   string profile_token                     = 2;
@@ -116,6 +146,12 @@ message CameraSetup {
   int32 onvif_poll_timeout_seconds = 15;
   int32 onvif_message_limit        = 16;
   string name = 17;
+  // Recording schedules assigned to this camera (for the admin UI).
+  repeated string schedule_ids = 18;
+  // Whether any assigned schedule window is open right now — computed by VmsCfg when the setup is
+  // read, never stored. While true the camera records continuously, overriding both the base
+  // profile and any manual/alarm override.
+  bool schedule_active = 19;
 }
 
 message RecordingProfileRequest {
@@ -143,6 +179,21 @@ message ListRecordingProfilesRequest {}
 
 message ListRecordingProfilesResponse {
   repeated RecordingProfile profiles = 1;
+}
+
+message RecordingScheduleRequest {
+  string id = 1;
+}
+
+message ListRecordingSchedulesRequest {}
+
+message ListRecordingSchedulesResponse {
+  repeated RecordingSchedule schedules = 1;
+}
+
+message SetCameraSchedulesRequest {
+  string camera_id = 1;
+  repeated string schedule_ids = 2;
 }
 
 message GetCameraResponse {

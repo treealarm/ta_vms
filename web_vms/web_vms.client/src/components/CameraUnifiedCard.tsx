@@ -142,7 +142,11 @@ export default function CameraUnifiedCard({
 
   const isDisabled = merged.disabled === true
   const effectiveArmed = pendingArmed !== null ? pendingArmed : (merged.armed ?? false)
-  const effectiveStreamMode = (s: CameraStreamDto) => (s.overrideProfile ?? s.recordingProfile)?.mode ?? 'off'
+  // An open recording schedule window forces continuous recording on every stream, ahead of the
+  // profile and of any manual or alarm override.
+  const scheduleActive = merged.scheduleActive === true
+  const effectiveStreamMode = (s: CameraStreamDto) =>
+    scheduleActive ? 'continuous' : (s.overrideProfile ?? s.recordingProfile)?.mode ?? 'off'
   const armDisarm = (enabled: boolean) => {
     if (isDisabled) return
     setPendingArmed(enabled)
@@ -171,7 +175,8 @@ export default function CameraUnifiedCard({
 
   const [pendingContinuous, setPendingContinuous] = useState(false)
   const toggleContinuousRecording = () => {
-    if (!activeStreamObj || isDisabled) return
+    // A schedule window outranks the profile, so toggling it would have no visible effect.
+    if (!activeStreamObj || isDisabled || scheduleActive) return
     const profileId = activeStreamContinuous
       ? (effectiveArmed ? RECORDING_PROFILE_PREALARM_ID : RECORDING_PROFILE_OFF_ID)
       : RECORDING_PROFILE_CONTINUOUS_ID
@@ -394,17 +399,21 @@ export default function CameraUnifiedCard({
 
           {activeStreamObj && (
             <Tooltip
-              title={activeStreamContinuous ? t('cameraCard.continuousOn') : t('cameraCard.continuousOff')}
+              title={
+                scheduleActive
+                  ? t('cameraCard.scheduleActive')
+                  : activeStreamContinuous ? t('cameraCard.continuousOn') : t('cameraCard.continuousOff')
+              }
               placement="right"
             >
               <span>
                 <IconButton
                   size="small"
-                  disabled={pendingContinuous || isDisabled}
+                  disabled={pendingContinuous || isDisabled || scheduleActive}
                   onClick={toggleContinuousRecording}
                   sx={{
                     ...BTN_SX,
-                    ...(activeStreamContinuous ? { color: 'error.main' } : {}),
+                    ...(scheduleActive || activeStreamContinuous ? { color: 'error.main' } : {}),
                     ...((pendingContinuous || isDisabled) ? { opacity: 0.35 } : {}),
                   }}
                 >
