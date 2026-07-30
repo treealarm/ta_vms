@@ -4,8 +4,10 @@ import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera, changeCameraParent, fetchCameraState, removeCamera } from '../store/liveSlice'
 import { setCameraStorages } from '../store/storageSlice'
+import { setCameraSchedules } from '../store/scheduleSlice'
 import type { CameraSetupDto, CameraStorageAssignmentDto } from '../dto/dtos'
 import CameraStoragesControl from './CameraStoragesControl'
+import CameraSchedulesControl from './CameraSchedulesControl'
 import PasswordField from './PasswordField'
 import CameraStream from './CameraStream'
 import DetailToolbar from './settings/DetailToolbar'
@@ -42,6 +44,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const [port, setPort] = useState(isNew ? 80 : (existing?.onvifConn?.port ?? 0))
   const [disabled, setDisabled] = useState(existing?.disabled === true)
   const [pendingStorages, setPendingStorages] = useState<CameraStorageAssignmentDto[]>([])
+  const [pendingSchedules, setPendingSchedules] = useState<string[]>([])
 
   const setNonNegativeNumber = (raw: string, setter: (n: number) => void) => {
     const value = Number(raw)
@@ -110,6 +113,8 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
         const withId = pendingStorages.map((a, i) => ({ ...a, cameraId: payload.cameraId, priority: i }))
         await dispatch(setCameraStorages({ cameraId: payload.cameraId, assignments: withId }))
       }
+      if (pendingSchedules.length > 0)
+        await dispatch(setCameraSchedules({ cameraId: payload.cameraId, scheduleIds: pendingSchedules }))
       await onSaved(payload.cameraId)
       return true
     }
@@ -223,6 +228,11 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
             {isNew
               ? <CameraStoragesControl value={pendingStorages} onChange={setPendingStorages} />
               : <CameraStoragesControl cameraId={initialCameraId} />
+            }
+
+            {isNew
+              ? <CameraSchedulesControl value={pendingSchedules} onChange={setPendingSchedules} />
+              : <CameraSchedulesControl cameraId={initialCameraId} />
             }
           </Stack>
 

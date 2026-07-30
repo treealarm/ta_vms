@@ -102,7 +102,7 @@ void config_subscriber::reload_cameras()
         .stream_name          = s.stream_name(),
         .profile_token        = s.profile_token(),
         .rtsp_url             = proto_mapper::resolve_stream_path(s, c),
-        .policy               = proto_mapper::recording_policy_for_stream(s),
+        .policy               = proto_mapper::recording_policy_for_stream(s, c.schedule_active()),
         .web_rtc              = s.web_rtc(),
         .webrtc_rtsp_push_url = push_url,
       });

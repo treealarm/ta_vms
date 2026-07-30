@@ -18,10 +18,13 @@ builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(postgresConnStr));
 builder.Services.AddDbContextFactory<VmsCfgDbContext>(options =>
   options.UseNpgsql(postgresConnStr));
 builder.Services.AddSingleton<DbMigrator>();
+builder.Services.AddSingleton<ScheduleDb>();
+builder.Services.AddSingleton<ScheduleCache>();
 builder.Services.AddSingleton<CameraStorage>();
 builder.Services.AddSingleton<StorageDb>();
 builder.Services.AddSingleton<CfgServiceImpl>();
 builder.Services.AddSingleton<StorageServiceImpl>();
+builder.Services.AddHostedService<RecordingScheduleService>();
 
 // SQUARE_INTEGRATION_SINK_APP_ID is intentionally optional: when unset, VmsCfg runs fully
 // standalone with no dependency on Square (no-op ISquareIntegration, no subscriber registered).
@@ -49,6 +52,9 @@ builder.WebHost.ConfigureKestrel(options =>
 
 var app = builder.Build();
 await app.Services.GetRequiredService<DbMigrator>().MigrateAsync();
+// Loaded before the first request: ListCameras resolves schedule_active from this cache, and an
+// empty cache would report "not recording" for a camera whose window is currently open.
+await app.Services.GetRequiredService<ScheduleCache>().ReloadAsync(CancellationToken.None);
 app.MapGrpcService<CfgServiceImpl>();
 app.MapGrpcService<StorageServiceImpl>();
 

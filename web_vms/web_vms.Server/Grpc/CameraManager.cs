@@ -118,7 +118,9 @@ public class CameraManager : ICameraManager
 
     var firstStream = streams.FirstOrDefault();
     var effectiveProfile = firstStream?.OverrideProfile ?? firstStream?.RecordingProfile;
-    var mode = effectiveProfile?.Mode ?? "off";
+    // An open recording schedule window forces continuous recording on every stream of the camera,
+    // ahead of the profile and of any manual or alarm override.
+    var mode = setup.ScheduleActive ? "continuous" : effectiveProfile?.Mode ?? "off";
 
     return new CameraSetupDto
     {
@@ -137,6 +139,8 @@ public class CameraManager : ICameraManager
       HasOnvifFilters     = setup.HasOnvifFilters,
       OnvifManaged        = setup.OnvifManaged,
       Disabled            = setup.HasDisabled && setup.Disabled ? true : null,
+      ScheduleIds         = setup.ScheduleIds.ToList(),
+      ScheduleActive      = setup.ScheduleActive,
     };
   }
 

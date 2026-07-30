@@ -72,4 +72,10 @@ public record CameraSetupDto
   /// <summary>True when the camera has an enabled analytics watch; filled by web_vms.Server when
   /// listing cameras. Drives whether the live-video bbox overlay toggle is offered.</summary>
   public bool HasAnalytics       { get; init; }
+  /// <summary>Recording schedules assigned to this camera (uuids).</summary>
+  public IReadOnlyList<string> ScheduleIds { get; init; } = [];
+  /// <summary>True while one of the assigned schedule windows is open. Recomputed by VmsCfg on
+  /// every read, never stored. While true the camera records continuously, overriding both the
+  /// stream profile and any manual or alarm override.</summary>
+  public bool ScheduleActive     { get; init; }
 }

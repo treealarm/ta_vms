@@ -6,6 +6,7 @@ import fsReducer from './fsSlice'
 import logsReducer from './logSlice'
 import entityStateReducer from './entityStateSlice'
 import storageReducer from './storageSlice'
+import scheduleReducer from './scheduleSlice'
 import mediaMtxReducer from './mediaMtxSlice'
 import monitorsReducer from './monitorsSlice'
 import monitorUiReducer from './monitorUiSlice'
@@ -22,6 +23,7 @@ export const store = configureStore({
     logs: logsReducer,
     entityState: entityStateReducer,
     storage: storageReducer,
+    schedule: scheduleReducer,
     mediaMtx: mediaMtxReducer,
     monitors: monitorsReducer,
     monitorUi: monitorUiReducer,

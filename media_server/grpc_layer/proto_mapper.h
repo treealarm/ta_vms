@@ -14,8 +14,11 @@ public:
     vms::cfg::RecordingMode mode,
     uint32_t prealarm_segment_seconds);
 
+  // schedule_active comes from CameraSetup: while a recording schedule window is open the stream
+  // records continuously regardless of its profile or any override.
   static recording_policy_spec recording_policy_for_stream(
-    const vms::cfg::CameraStream& stream);
+    const vms::cfg::CameraStream& stream,
+    bool schedule_active);
 
   // Resolves a stream's configured "path" into the final RTSP URL to connect with.
   // - profile_token set        -> "" (camera resolves its own URL via ONVIF at connect time)

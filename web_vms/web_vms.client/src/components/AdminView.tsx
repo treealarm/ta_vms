@@ -8,6 +8,7 @@ import MonitorListPanel from './MonitorListPanel'
 import CameraControlPanel from './CameraControlPanel'
 import StorageSetupPanel from './StorageSetupPanel'
 import RecordingProfilesPanel from './RecordingProfilesPanel'
+import RecordingSchedulesPanel from './RecordingSchedulesPanel'
 import MediaMtxServersPanel from './MediaMtxServersPanel'
 import SimulationFab from './SimulationFab'
 import LogToggleButton from './LogToggleButton'
@@ -16,7 +17,7 @@ import OnvifCameraSettingsPanel from './OnvifCameraSettingsPanel'
 import AnalyticsWatchesPanel from './AnalyticsWatchesPanel'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 
-const TABS = ['cameras', 'mediamtx', 'monitors', 'storages', 'recording', 'onvif', 'onvif-settings', 'analytics'] as const
+const TABS = ['cameras', 'mediamtx', 'monitors', 'storages', 'recording', 'schedules', 'onvif', 'onvif-settings', 'analytics'] as const
 
 export default function AdminView() {
   const { t } = useTranslation()
@@ -55,6 +56,7 @@ export default function AdminView() {
             <Route path="monitors" element={<MonitorListPanel ref={panelRef} />} />
             <Route path="storages" element={<StorageSetupPanel ref={panelRef} />} />
             <Route path="recording" element={<RecordingProfilesPanel ref={panelRef} />} />
+            <Route path="schedules" element={<RecordingSchedulesPanel ref={panelRef} />} />
             <Route path="onvif" element={<OnvifSubscriptionsPanel ref={panelRef} />} />
             <Route path="onvif-settings" element={<OnvifCameraSettingsPanel />} />
             <Route path="analytics" element={<AnalyticsWatchesPanel ref={panelRef} />} />
@@ -84,6 +86,7 @@ export default function AdminView() {
             <Tab label={t('nav.monitors')} />
             <Tab label={t('nav.storages')} />
             <Tab label={t('nav.recording')} />
+            <Tab label={t('nav.schedules')} />
             <Tab label={t('nav.onvif')} />
             <Tab label={t('nav.onvifSettings')} />
             <Tab label={t('nav.analytics')} />

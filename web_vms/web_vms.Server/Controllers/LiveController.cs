@@ -58,12 +58,15 @@ public class LiveController(
     foreach (var stream in streams)
     {
       var profile = stream.OverrideProfile ?? stream.RecordingProfile;
-      var recordingMode = profile?.Mode switch
-      {
-        "continuous" => RecordingMode.RecordingContinuous,
-        "prealarm"   => RecordingMode.RecordingPrealarm,
-        _            => RecordingMode.RecordingOff,
-      };
+      // An open recording schedule window wins over the profile and over any override.
+      var recordingMode = request.ScheduleActive
+        ? RecordingMode.RecordingContinuous
+        : profile?.Mode switch
+          {
+            "continuous" => RecordingMode.RecordingContinuous,
+            "prealarm"   => RecordingMode.RecordingPrealarm,
+            _            => RecordingMode.RecordingOff,
+          };
 
       var state = new CameraState
       {
@@ -252,8 +255,11 @@ public class LiveController(
       return NotFound();
     }
 
+    // ScheduleActive is server-side truth (VmsCfg recomputes it from the wall clock), so take it
+    // from the stored camera rather than from the request body — otherwise saving a camera inside
+    // an open schedule window would push "off" to the media server.
     var (normalized, _) = await ResolveWithMediaMtxAsync(
-      state with { ServerId = targetServerId }, ct);
+      state with { ServerId = targetServerId, ScheduleActive = curState?.ScheduleActive ?? false }, ct);
 
     // Config is the source of truth — save first.
     await _manager.SetSetup(normalized, ct);

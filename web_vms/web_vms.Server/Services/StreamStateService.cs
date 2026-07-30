@@ -26,12 +26,15 @@ public sealed class StreamStateService(ICameraManager manager)
     if (stream is null) return;
 
     var profile = stream.OverrideProfile ?? stream.RecordingProfile;
-    var recordingMode = profile?.Mode switch
-    {
-      "continuous" => RecordingMode.RecordingContinuous,
-      "prealarm"   => RecordingMode.RecordingPrealarm,
-      _            => RecordingMode.RecordingOff,
-    };
+    // An open recording schedule window wins over the profile and over any override.
+    var recordingMode = camera.ScheduleActive
+      ? RecordingMode.RecordingContinuous
+      : profile?.Mode switch
+        {
+          "continuous" => RecordingMode.RecordingContinuous,
+          "prealarm"   => RecordingMode.RecordingPrealarm,
+          _            => RecordingMode.RecordingOff,
+        };
 
     // WebRtc deliberately left unset: this is a recording-state push only, and setting it
     // would stop a MediaMTX push started on demand (live view, analytics).
