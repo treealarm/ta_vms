@@ -134,6 +134,7 @@
     "exactFor": "Intervalos exactos — {{row}}",
     "exactHint": "El pincel se ajusta a 15 minutos; escriba aquí valores exactos, hasta segundos. Basta con los dígitos: 0930 se convierte en 09:30. Use 24:00 para terminar a medianoche.",
     "addRange": "Añadir intervalo",
+    "dayFull": "El día entero ya está cubierto",
     "noRanges": "Nada programado este día.",
     "from": "Desde",
     "to": "Hasta",
@@ -142,8 +143,8 @@
     "datesHint": "Ventanas adicionales en fechas concretas, sumadas a las semanales.",
     "addDate": "Fecha",
     "add": "Añadir",
-    "windowCount": "{{count}} ventana",
-    "windowCount_plural": "{{count}} ventanas"
+    "windowCount_one": "{{count}} ventana",
+    "windowCount_other": "{{count}} ventanas"
   },
   "scheduleControl": {
     "title": "Horarios de grabación",

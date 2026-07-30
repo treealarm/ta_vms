@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Box, Chip, List, Stack, TextField, Typography } from '@mui/material'
+import { Autocomplete, Box, Chip, List, Stack, TextField, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { loadSchedules, removeSchedule, upsertSchedule } from '../store/scheduleSlice'
@@ -19,6 +19,18 @@ function localTimezone(): string {
     return 'UTC'
   }
 }
+
+/** IANA ids known to the browser. Older engines lack supportedValuesOf, hence the fallback to
+ *  whatever the browser reports for this machine plus UTC. */
+const TIMEZONES: string[] = (() => {
+  try {
+    const supported = (Intl as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf
+    if (supported) return ['UTC', ...supported('timeZone').filter((tz) => tz !== 'UTC')]
+  } catch {
+    // fall through
+  }
+  return [...new Set(['UTC', localTimezone()])]
+})()
 
 const emptySchedule = (): RecordingScheduleDto => ({
   id: '',
@@ -122,13 +134,23 @@ function RecordingScheduleForm({ ref, schedule, onSaved, onRemoved }: FormProps)
               size="small"
               sx={{ width: 260 }}
             />
-            <TextField
-              label={t('schedule.timezone')}
+            {/* Picked from a list rather than typed: a typo like "Moscow" instead of
+                "Europe/Moscow" would shift every window by hours. The server rejects unknown ids
+                too, this just keeps it from happening. */}
+            <Autocomplete
+              options={TIMEZONES}
               value={form.timezone}
-              onChange={(e) => setField('timezone', e.target.value)}
+              onChange={(_, value) => setField('timezone', value ?? 'UTC')}
+              disableClearable
               size="small"
-              helperText={t('schedule.timezoneHint')}
-              sx={{ width: 220 }}
+              sx={{ width: 260 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label={t('schedule.timezone')}
+                  helperText={t('schedule.timezoneHint')}
+                />
+              )}
             />
             <TextField
               label={t('schedule.leadInSec')}

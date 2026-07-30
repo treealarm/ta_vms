@@ -38,8 +38,18 @@ public sealed class ScheduleCache(ScheduleDb scheduleDb)
   public async Task ReloadAndSignalAsync(CancellationToken ct)
   {
     await ReloadAsync(ct);
-    if (_changed.CurrentCount == 0)
+
+    // A coalescing signal: one pending wake-up is enough, and two concurrent edits must not throw.
+    // Checking CurrentCount first would be a check-then-act race — both callers could see 0 and the
+    // second Release would blow up inside an rpc handler whose DB write has already committed.
+    try
+    {
       _changed.Release();
+    }
+    catch (SemaphoreFullException)
+    {
+      // The ticker has not consumed the previous signal yet, which is exactly what we wanted.
+    }
   }
 
   /// Sleeps for at most <paramref name="timeout"/>, returning early when schedules change.

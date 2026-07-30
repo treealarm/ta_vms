@@ -52,6 +52,21 @@ export const covers = (ranges: Range[], second: number) =>
 export const sameRanges = (a: Range[], b: Range[]) =>
   a.length === b.length && a.every((r, i) => r.start === b[i].start && r.end === b[i].end)
 
+/**
+ * First stretch of the day not covered by any range, or null when the day is fully covered.
+ * Used by "add range" so the new range lands somewhere visible instead of being swallowed by
+ * normalize().
+ */
+export function firstGap(ranges: Range[]): Range | null {
+  const sorted = normalize(ranges)
+  let cursor = 0
+  for (const r of sorted) {
+    if (r.start > cursor) return { start: cursor, end: r.start }
+    cursor = Math.max(cursor, r.end)
+  }
+  return cursor < DAY ? { start: cursor, end: DAY } : null
+}
+
 /** The paint cell containing a point in time. */
 export function snapCell(second: number): Range {
   const start = Math.max(0, Math.min(DAY - PAINT_STEP, Math.floor(second / PAINT_STEP) * PAINT_STEP))

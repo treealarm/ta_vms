@@ -114,6 +114,23 @@ public static class RecordingScheduleEvaluator
     return TimeZoneInfo.ConvertTimeToUtc(unspecified, tz);
   }
 
+  /// Whether the id names a timezone this machine knows. Upserts are validated with this so a typo
+  /// is refused at the API instead of silently shifting every window of the schedule.
+  public static bool IsKnownTimeZone(string id)
+  {
+    if (string.IsNullOrWhiteSpace(id))
+      return false;
+    try
+    {
+      TimeZoneInfo.FindSystemTimeZoneById(id);
+      return true;
+    }
+    catch (Exception)
+    {
+      return false;
+    }
+  }
+
   private static TimeZoneInfo ResolveTimeZone(string id)
   {
     if (string.IsNullOrWhiteSpace(id))
@@ -127,10 +144,12 @@ public static class RecordingScheduleEvaluator
       }
       catch (Exception ex)
       {
-        // Logged once per unknown id thanks to the cache; falling back to UTC keeps the schedule
-        // working rather than silently disabling recording.
+        // Unreachable for schedules written through CfgService, which rejects an unknown id up
+        // front. This only covers a row that predates that validation or was edited in the
+        // database by hand: keep evaluating in UTC rather than crash the ticker, and shout about it.
         Console.Error.WriteLine(
-          $"VmsCfg: unknown schedule timezone '{key}', falling back to UTC: {ex.Message}");
+          $"VmsCfg: schedule timezone '{key}' is unknown to this machine, evaluating it as UTC — " +
+          $"fix the schedule's timezone: {ex.Message}");
         return TimeZoneInfo.Utc;
       }
     });

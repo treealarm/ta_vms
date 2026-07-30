@@ -12,6 +12,7 @@ import {
   applySpan,
   covers,
   dateKey,
+  firstGap,
   formatTime,
   isDateRow,
   maskTimeInput,
@@ -275,12 +276,18 @@ export default function ScheduleWeekGrid({ windows, onChange, disabled }: Props)
     return true
   }
 
+  /** Adds a range into the first free stretch of the day, so the new row is always visible. An
+   *  empty day defaults to a working day; a fully covered one has nothing to add. */
   const addRow = (key: RowKey) => {
     const ranges = rangesOf(key)
-    const last = ranges[ranges.length - 1]
-    // Append after the existing ranges, or default to a working day.
-    const start = last ? Math.min(DAY - 3600, last.end + 3600) : 9 * 3600
-    setRow(key, addRange(ranges, { start, end: Math.min(DAY, start + 3600) }))
+    if (ranges.length === 0) {
+      setRow(key, [{ start: 9 * 3600, end: 18 * 3600 }])
+      return
+    }
+
+    const gap = firstGap(ranges)
+    if (!gap) return
+    setRow(key, addRange(ranges, { start: gap.start, end: Math.min(gap.end, gap.start + 3600) }))
   }
 
   const addDate = () => {
@@ -298,6 +305,7 @@ export default function ScheduleWeekGrid({ windows, onChange, disabled }: Props)
   }
 
   const selectedRanges = rangesOf(selectedRow)
+  const dayIsFull = selectedRanges.length > 0 && firstGap(selectedRanges) === null
   const labelWidth = 88
 
   const strip = (key: RowKey, action?: React.ReactNode) => (
@@ -364,10 +372,16 @@ export default function ScheduleWeekGrid({ windows, onChange, disabled }: Props)
           <Typography variant="subtitle2" sx={{ flex: 1 }}>
             {t('schedule.exactFor', { row: rowLabel(selectedRow) })}
           </Typography>
-          <Tooltip title={t('schedule.addRange')}>
-            <IconButton size="small" disabled={disabled} onClick={() => addRow(selectedRow)}>
-              <AddIcon fontSize="small" />
-            </IconButton>
+          <Tooltip title={dayIsFull ? t('schedule.dayFull') : t('schedule.addRange')}>
+            <span>
+              <IconButton
+                size="small"
+                disabled={disabled || dayIsFull}
+                onClick={() => addRow(selectedRow)}
+              >
+                <AddIcon fontSize="small" />
+              </IconButton>
+            </span>
           </Tooltip>
         </Stack>
 

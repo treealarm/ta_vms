@@ -91,16 +91,33 @@ namespace VmsCfg
     /// Tells everyone downstream that these cameras' effective recording state may have changed:
     /// VmsFs drops its config caches, and each camera's media server reloads its configuration.
     /// Used by the schedule paths, where nothing in the camera's own config row changed.
-    internal async Task NotifyCamerasChangedAsync(IReadOnlyList<string> cameraIds, CancellationToken ct)
+    ///
+    /// Unlike the fire-and-forget helpers above this awaits the publishes and reports failure, so
+    /// the schedule ticker can retry a window boundary instead of losing it: media_server only
+    /// learns about the new policy from these events.
+    internal async Task<bool> NotifyCamerasChangedAsync(IReadOnlyList<string> cameraIds, CancellationToken ct)
     {
       if (cameraIds.Count == 0)
-        return;
+        return true;
 
-      var servers = await scheduleDb.ListCameraServersAsync(cameraIds, ct);
-      foreach (var cameraId in cameraIds)
-        InvalidateFsCache(cameraId);
-      foreach (var serverId in servers.Values.Distinct())
-        NotifyMediaServer(serverId);
+      try
+      {
+        var servers = await scheduleDb.ListCameraServersAsync(cameraIds, ct);
+
+        foreach (var cameraId in cameraIds)
+          await daprClient.PublishEventAsync(_pubSubName, CameraConfigChangedTopic, cameraId, ct);
+
+        foreach (var serverId in servers.Values.Distinct().Where(s => !string.IsNullOrWhiteSpace(s)))
+          await daprClient.PublishEventAsync(_pubSubName, MediaServerConfigChangedTopic, serverId, ct);
+
+        return true;
+      }
+      catch (Exception ex)
+      {
+        logger.LogWarning(ex, "Notifying cameras of a recording-schedule change failed: [{CameraIds}]",
+          string.Join(", ", cameraIds));
+        return false;
+      }
     }
 
     // A MediaMTX server's connection info (rtsp_url etc.) can be referenced by cameras on
@@ -338,11 +355,26 @@ namespace VmsCfg
       RecordingSchedule request,
       ServerCallContext context)
     {
-      if (string.IsNullOrWhiteSpace(request.Name))
-        return new OperationStatus { Success = false, Message = "name must not be empty" };
+      var invalid = ValidateSchedule(request);
+      if (invalid is not null)
+        return new OperationStatus { Success = false, Message = invalid };
 
       var ct = context.CancellationToken;
-      var id = await scheduleDb.UpsertScheduleAsync(request, ct);
+
+      Guid id;
+      try
+      {
+        id = await scheduleDb.UpsertScheduleAsync(request, ct);
+      }
+      catch (Exception ex) when (IsUniqueViolation(ex))
+      {
+        return new OperationStatus
+        {
+          Success = false,
+          Message = $"a recording schedule named '{request.Name}' already exists",
+        };
+      }
+
       logger.LogInformation(
         "Recording schedule '{Name}' upserted (id={Id}, tz={Timezone}, windows={Windows}, lead_in={LeadIn}s)",
         request.Name, id, request.Timezone, request.Windows.Count, request.LeadInSeconds);
@@ -350,6 +382,69 @@ namespace VmsCfg
       await scheduleCache.ReloadAndSignalAsync(ct);
       await NotifyCamerasChangedAsync(await scheduleDb.ListCamerasUsingScheduleAsync(id, ct), ct);
       return new OperationStatus { Success = true };
+    }
+
+    /// Returns an error message, or null when the schedule is valid. Everything the evaluator would
+    /// otherwise have to guess about is rejected here instead: a bad timezone would silently shift
+    /// every window, and a zero-length window would read as a full 24 hours.
+    private static string? ValidateSchedule(RecordingSchedule schedule)
+    {
+      if (string.IsNullOrWhiteSpace(schedule.Name))
+        return "name must not be empty";
+
+      if (string.IsNullOrWhiteSpace(schedule.Timezone))
+        return "timezone must not be empty";
+
+      if (!RecordingScheduleEvaluator.IsKnownTimeZone(schedule.Timezone))
+        return $"unknown timezone '{schedule.Timezone}': expected an IANA id such as 'Europe/Moscow'";
+
+      if (schedule.LeadInSeconds > SecondsPerDay)
+        return "lead_in_seconds must not exceed one day";
+
+      foreach (var w in schedule.Windows)
+      {
+        if (w.StartSecond >= SecondsPerDay)
+          return $"window start {w.StartSecond} is out of range (0..{SecondsPerDay - 1})";
+
+        if (w.EndSecond > SecondsPerDay)
+          return $"window end {w.EndSecond} is out of range (0..{SecondsPerDay})";
+
+        // end < start is a window wrapping past midnight; end == start would be indistinguishable
+        // from a full day, so it is rejected rather than guessed.
+        if (w.EndSecond == w.StartSecond)
+          return "window end must differ from its start";
+
+        if (w.Kind == ScheduleWindowKind.ScheduleWindowDate)
+        {
+          if (!DateOnly.TryParse(w.Date, out _))
+            return $"window date '{w.Date}' is not a valid YYYY-MM-DD date";
+        }
+        else if (w.DayOfWeek > 6)
+        {
+          return $"window day_of_week {w.DayOfWeek} is out of range (0=Sunday..6=Saturday)";
+        }
+      }
+
+      return null;
+    }
+
+    private const uint SecondsPerDay = 24 * 60 * 60;
+
+    /// Postgres unique-violation (23505) anywhere in the exception chain — EF wraps it in
+    /// DbUpdateException.
+    private static bool IsUniqueViolation(Exception ex) => HasSqlState(ex, "23505");
+
+    /// Postgres foreign-key violation (23503).
+    private static bool IsForeignKeyViolation(Exception ex) => HasSqlState(ex, "23503");
+
+    private static bool HasSqlState(Exception? ex, string sqlState)
+    {
+      for (; ex is not null; ex = ex.InnerException)
+      {
+        if (ex is PostgresException pg && pg.SqlState == sqlState)
+          return true;
+      }
+      return false;
     }
 
     public override async Task<OperationStatus> RemoveRecordingSchedule(
@@ -387,7 +482,20 @@ namespace VmsCfg
       }
 
       var ct = context.CancellationToken;
-      await scheduleDb.SetCameraSchedulesAsync(request.CameraId, request.ScheduleIds, ct);
+      try
+      {
+        await scheduleDb.SetCameraSchedulesAsync(request.CameraId, request.ScheduleIds, ct);
+      }
+      catch (Exception ex) when (IsForeignKeyViolation(ex))
+      {
+        // Either the camera or one of the schedules was removed between listing and assigning.
+        return new OperationStatus
+        {
+          Success = false,
+          Message = "camera or schedule no longer exists",
+        };
+      }
+
       logger.LogInformation(
         "Camera '{CameraId}' schedules set: [{ScheduleIds}]",
         request.CameraId, string.Join(", ", request.ScheduleIds));

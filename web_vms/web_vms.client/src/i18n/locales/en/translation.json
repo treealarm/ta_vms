@@ -134,6 +134,7 @@
     "exactFor": "Exact ranges — {{row}}",
     "exactHint": "Painting snaps to 15 minutes; type here for exact values, down to seconds. Digits are enough — 0930 becomes 09:30. Use 24:00 to end at midnight.",
     "addRange": "Add range",
+    "dayFull": "The whole day is already covered",
     "noRanges": "Nothing scheduled on this day.",
     "from": "From",
     "to": "To",
@@ -142,8 +143,8 @@
     "datesHint": "Extra windows on individual dates, added to the weekly ones.",
     "addDate": "Date",
     "add": "Add",
-    "windowCount": "{{count}} window",
-    "windowCount_plural": "{{count}} windows"
+    "windowCount_one": "{{count}} window",
+    "windowCount_other": "{{count}} windows"
   },
   "scheduleControl": {
     "title": "Recording schedules",
