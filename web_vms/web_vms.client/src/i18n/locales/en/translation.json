@@ -201,6 +201,8 @@
     "rtspPort": "RTSP port",
     "webrtcPort": "WebRTC port",
     "apiPort": "API port",
+    "setDefaults": "Set defaults",
+    "setDefaultsHelper": "Fills the ports and the public STUN URL; name and hosts are left as they are",
     "deleteServer": "Delete router",
     "noServers": "No routers configured",
     "selectHint": "Select a router or press + to add one"

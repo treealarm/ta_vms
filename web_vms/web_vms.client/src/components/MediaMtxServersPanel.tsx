@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Alert, Box, IconButton, InputAdornment, List, Stack, TextField, Tooltip, Typography } from '@mui/material'
+import { Alert, Box, Button, IconButton, InputAdornment, List, Stack, TextField, Tooltip, Typography } from '@mui/material'
 import ClearIcon from '@mui/icons-material/Clear'
+import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import { useTranslation } from 'react-i18next'
 import { DEFAULT_STUN_URL, isValidStunUrl } from '../utils/iceServers'
 import { useAppDispatch, useAppSelector } from '../store'
@@ -80,6 +81,16 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
     onRemoved()
   }
 
+  // Fills in everything that has a sensible default (ports + public STUN) and leaves the fields
+  // that identify this particular router — name, host, WebRTC host — alone.
+  const applyDefaults = () => setForm((prev) => ({
+    ...prev,
+    rtspPort: EMPTY.rtspPort,
+    webrtcPort: EMPTY.webrtcPort,
+    apiPort: EMPTY.apiPort,
+    stunUrl: DEFAULT_STUN_URL,
+  }))
+
   const setPort = (field: 'rtspPort' | 'webrtcPort' | 'apiPort', raw: string) => {
     const v = parseInt(raw, 10)
     if (!Number.isNaN(v) && v > 0 && v < 65536)
@@ -139,8 +150,7 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
           />
           <TextField
             label={t('mediaMtx.stunUrl')}
-            placeholder={DEFAULT_STUN_URL}
-            value={form.stunUrl ?? ''}
+            value={form.stunUrl}
             onChange={(e) => setForm((prev) => ({ ...prev, stunUrl: e.target.value }))}
             size="small"
             error={stunUrlInvalid}
@@ -187,6 +197,15 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
               type="number"
             />
           </Stack>
+
+          <Box>
+            <Button size="small" variant="outlined" startIcon={<RestartAltIcon />} onClick={applyDefaults}>
+              {t('mediaMtx.setDefaults')}
+            </Button>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+              {t('mediaMtx.setDefaultsHelper')}
+            </Typography>
+          </Box>
         </Stack>
       </Box>
     </Box>
