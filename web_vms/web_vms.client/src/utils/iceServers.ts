@@ -4,6 +4,14 @@
 export const DEFAULT_STUN_URL = 'stun:stun.l.google.com:19302'
 
 /**
+ * Only stun:/stuns: is accepted: an unparsable URL makes the RTCPeerConnection constructor throw,
+ * and turn: would additionally need credentials, which the media router config does not carry.
+ */
+export function isValidStunUrl(stunUrl: string): boolean {
+  return /^stuns?:\S+$/.test(stunUrl.trim())
+}
+
+/**
  * Builds the ICE config for WHEP playback from a media router's STUN URL.
  *
  * - undefined/null (no router assigned) → the public default, preserving the old behavior

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, Box, IconButton, InputAdornment, List, Stack, TextField, Tooltip, Typography } from '@mui/material'
 import ClearIcon from '@mui/icons-material/Clear'
 import { useTranslation } from 'react-i18next'
-import { DEFAULT_STUN_URL } from '../utils/iceServers'
+import { DEFAULT_STUN_URL, isValidStunUrl } from '../utils/iceServers'
 import { useAppDispatch, useAppSelector } from '../store'
 import { loadMediaMtxServers, removeMediaMtxServer, upsertMediaMtxServer } from '../store/mediaMtxSlice'
 import type { MediaMtxServerDto } from '../dto/dtos'
@@ -48,7 +48,13 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
     || form.stunUrl !== snap.stunUrl
   )
 
+  // Empty is a valid choice ("no STUN, LAN only"); anything else has to be a URL the browser's
+  // RTCPeerConnection can actually parse, otherwise live playback dies on every camera behind
+  // this router.
+  const stunUrlInvalid = Boolean(form.stunUrl.trim()) && !isValidStunUrl(form.stunUrl)
+
   const applyInternal = async (): Promise<boolean> => {
+    if (stunUrlInvalid) return false
     if (!isNew && !dirty) return true
     const result = await dispatch(upsertMediaMtxServer(form))
     if (upsertMediaMtxServer.rejected.match(result) || !result.payload.success) return false
@@ -83,14 +89,16 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
   // For a new form "dirty" means "complete enough to save" — navigation then
   // auto-creates it (matching the pre-refactor behavior) instead of silently
   // discarding the entered data
-  useDirtyGuard(ref, isNew ? Boolean(form.name.trim() && form.host.trim()) : dirty, applyInternal)
+  const canApply = (isNew ? Boolean(form.name.trim() && form.host.trim()) : dirty) && !stunUrlInvalid
+
+  useDirtyGuard(ref, canApply, applyInternal)
 
   return (
     <Box component="form" onSubmit={(e) => void handleApply(e)} sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <DetailToolbar
         title={isNew ? t('mediaMtx.newServer') : server.name}
         subtitle={isNew ? undefined : `${server.host}:${server.rtspPort}`}
-        dirty={isNew ? Boolean(form.name.trim() && form.host.trim()) : dirty}
+        dirty={canApply}
         busy={isBusy}
         applyLabel={isNew ? t('common.add') : undefined}
         onCancel={isNew ? undefined : handleCancel}
@@ -135,7 +143,12 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
             value={form.stunUrl ?? ''}
             onChange={(e) => setForm((prev) => ({ ...prev, stunUrl: e.target.value }))}
             size="small"
-            helperText={form.stunUrl?.trim() ? t('mediaMtx.stunUrlHelper') : t('mediaMtx.stunUrlEmptyHelper')}
+            error={stunUrlInvalid}
+            helperText={
+              stunUrlInvalid
+                ? t('mediaMtx.stunUrlInvalid')
+                : form.stunUrl.trim() ? t('mediaMtx.stunUrlHelper') : t('mediaMtx.stunUrlEmptyHelper')
+            }
             InputProps={{
               endAdornment: form.stunUrl ? (
                 <InputAdornment position="end">

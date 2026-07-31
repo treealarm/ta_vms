@@ -197,6 +197,7 @@
     "stunUrlHelper": "Servidor STUN que el navegador usa para negociar WebRTC en vivo",
     "stunUrlEmptyHelper": "Vacío: sin STUN — reproducción solo en LAN (lo más rápido en red local)",
     "stunUrlClear": "Borrar: sin STUN, solo LAN",
+    "stunUrlInvalid": "Debe ser una URL stun: o stuns:, p. ej. stun:stun.example.org:19302",
     "rtspPort": "Puerto RTSP",
     "webrtcPort": "Puerto WebRTC",
     "apiPort": "Puerto API",

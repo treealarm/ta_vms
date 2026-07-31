@@ -197,6 +197,7 @@
     "stunUrlHelper": "STUN server the browser uses to negotiate live WebRTC",
     "stunUrlEmptyHelper": "Empty: no STUN — LAN-only playback (fastest on a local network)",
     "stunUrlClear": "Clear: no STUN, LAN only",
+    "stunUrlInvalid": "Must be a stun: or stuns: URL, e.g. stun:stun.example.org:19302",
     "rtspPort": "RTSP port",
     "webrtcPort": "WebRTC port",
     "apiPort": "API port",
