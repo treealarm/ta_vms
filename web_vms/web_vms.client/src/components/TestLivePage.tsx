@@ -12,11 +12,18 @@ export default function TestLivePage() {
   const [params, setParams] = useSearchParams()
   const cameraId = params.get('cameraId') ?? ''
   const streamName = params.get('streamName') ?? ''
+  // This page has no camera config (it runs anonymously), so the router's STUN URL can't be
+  // resolved: `?stun=<url>` overrides it, `?stun=` forces LAN-only, absent = public default.
+  const stunUrl = params.get('stun')
   const [cameraIdInput, setCameraIdInput] = useState(cameraId)
   const [streamNameInput, setStreamNameInput] = useState(streamName)
 
   const submit = () => {
-    setParams({ cameraId: cameraIdInput, streamName: streamNameInput })
+    setParams({
+      cameraId: cameraIdInput,
+      streamName: streamNameInput,
+      ...(stunUrl === null ? {} : { stun: stunUrl }),
+    })
   }
 
   return (
@@ -41,7 +48,7 @@ export default function TestLivePage() {
       </Stack>
       {cameraId && streamName && (
         <Box sx={{ flex: 1, minHeight: 0, bgcolor: 'black' }}>
-          <CameraStream whepUrl={`/api/live/whep-test/offer/${cameraId}/${streamName}`} />
+          <CameraStream whepUrl={`/api/live/whep-test/offer/${cameraId}/${streamName}`} stunUrl={stunUrl} />
         </Box>
       )}
     </Box>

@@ -108,6 +108,11 @@ public class LiveController(
         normalized = normalized with { MediaMtxServerId = server.Id };
     }
 
+    // Read-only field: the client never sends it, so fill it from the resolved router — otherwise
+    // an add/save response would come back without the ICE config its live preview needs.
+    if (server is not null)
+      normalized = normalized with { EffectiveWebrtcStunUrl = server.StunUrl };
+
     return (normalized, server);
   }
 

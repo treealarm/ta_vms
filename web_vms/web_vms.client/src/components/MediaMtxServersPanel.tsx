@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Alert, Box, List, Stack, TextField, Typography } from '@mui/material'
+import { Alert, Box, IconButton, InputAdornment, List, Stack, TextField, Tooltip, Typography } from '@mui/material'
+import ClearIcon from '@mui/icons-material/Clear'
 import { useTranslation } from 'react-i18next'
+import { DEFAULT_STUN_URL } from '../utils/iceServers'
 import { useAppDispatch, useAppSelector } from '../store'
 import { loadMediaMtxServers, removeMediaMtxServer, upsertMediaMtxServer } from '../store/mediaMtxSlice'
 import type { MediaMtxServerDto } from '../dto/dtos'
@@ -11,7 +13,13 @@ import { useDirtyGuard } from './settings/useDirtyGuard'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 import { useMasterDetailSelection } from './settings/useMasterDetailSelection'
 
-const EMPTY: MediaMtxServerDto = { id: '', name: '', host: '', webrtcHost: '', rtspPort: 8554, webrtcPort: 8889, apiPort: 9997 }
+const EMPTY: MediaMtxServerDto = {
+  id: '', name: '', host: '', webrtcHost: '',
+  rtspPort: 8554, webrtcPort: 8889, apiPort: 9997,
+  // New routers start on the public STUN (what the client used to hardcode); clearing the field
+  // is the explicit "LAN only, no STUN" choice.
+  stunUrl: DEFAULT_STUN_URL,
+}
 
 type FormProps = {
   ref?: React.Ref<ApplyIfDirtyHandle>
@@ -37,6 +45,7 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
     || form.rtspPort !== snap.rtspPort
     || form.webrtcPort !== snap.webrtcPort
     || form.apiPort !== snap.apiPort
+    || form.stunUrl !== snap.stunUrl
   )
 
   const applyInternal = async (): Promise<boolean> => {
@@ -119,6 +128,25 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
             onChange={(e) => setForm((prev) => ({ ...prev, webrtcHost: e.target.value }))}
             size="small"
             helperText={t('mediaMtx.webrtcHostHelper')}
+          />
+          <TextField
+            label={t('mediaMtx.stunUrl')}
+            placeholder={DEFAULT_STUN_URL}
+            value={form.stunUrl ?? ''}
+            onChange={(e) => setForm((prev) => ({ ...prev, stunUrl: e.target.value }))}
+            size="small"
+            helperText={form.stunUrl?.trim() ? t('mediaMtx.stunUrlHelper') : t('mediaMtx.stunUrlEmptyHelper')}
+            InputProps={{
+              endAdornment: form.stunUrl ? (
+                <InputAdornment position="end">
+                  <Tooltip title={t('mediaMtx.stunUrlClear')}>
+                    <IconButton size="small" onClick={() => setForm((prev) => ({ ...prev, stunUrl: '' }))}>
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </InputAdornment>
+              ) : undefined,
+            }}
           />
           <Stack direction="row" spacing={1}>
             <TextField

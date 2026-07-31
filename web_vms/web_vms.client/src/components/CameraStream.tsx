@@ -1,6 +1,7 @@
 ﻿import { Box } from '@mui/material';
 import React, { useEffect, useRef } from 'react';
 import BboxOverlay from './BboxOverlay';
+import { iceServersFromStunUrl } from '../utils/iceServers';
 
 interface CameraStreamProps {
   whepUrl: string;
@@ -8,9 +9,12 @@ interface CameraStreamProps {
   cameraId?: string;
   /** When true, overlays live analytics bboxes on the video (opt-in per card). */
   bboxEnabled?: boolean;
+  /** STUN URL from the camera's media router (effectiveWebrtcStunUrl): undefined = public
+   *  default, empty string = no STUN (LAN only). */
+  stunUrl?: string | null;
 }
 
-const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnabled = false }) => {
+const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnabled = false, stunUrl }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const retryTimeoutRef = useRef<number | null>(null);
@@ -134,11 +138,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
       }
 
       const pc = new RTCPeerConnection({
-        iceServers: [
-          {
-            urls: 'stun:stun.l.google.com:19302',
-          },
-        ],
+        iceServers: iceServersFromStunUrl(stunUrl),
       });
 
       pcRef.current = pc;
@@ -244,7 +244,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
 
       closeSession();
     };
-  }, [whepUrl]);
+  }, [whepUrl, stunUrl]);
 
   return (
     <Box

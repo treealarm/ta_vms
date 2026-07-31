@@ -142,9 +142,11 @@ public class CameraStorage(
              disabled,
              COALESCE(oes.poll_timeout_seconds, 5) AS poll_timeout_seconds,
              COALESCE(oes.message_limit, 1024) AS message_limit,
-             camera_setup.name
+             camera_setup.name,
+             mtx.stun_url
       FROM camera_setup
       LEFT JOIN onvif_event_subscription oes ON oes.camera_id = camera_setup.camera_id
+      LEFT JOIN media_mtx_server mtx ON mtx.id = camera_setup.media_mtx_server_id
       WHERE $1 = '' OR server_id = $1
       ORDER BY camera_setup.name, camera_setup.camera_id;
       """, connection))
@@ -174,9 +176,11 @@ public class CameraStorage(
              disabled,
              COALESCE(oes.poll_timeout_seconds, 5) AS poll_timeout_seconds,
              COALESCE(oes.message_limit, 1024) AS message_limit,
-             camera_setup.name
+             camera_setup.name,
+             mtx.stun_url
       FROM camera_setup
       LEFT JOIN onvif_event_subscription oes ON oes.camera_id = camera_setup.camera_id
+      LEFT JOIN media_mtx_server mtx ON mtx.id = camera_setup.media_mtx_server_id
       WHERE camera_setup.camera_id = $1;
       """, connection))
     {
@@ -459,6 +463,11 @@ public class CameraStorage(
     setup.OnvifMessageLimit       = reader.GetInt32(13);
     setup.Name                    = reader.GetString(14);
 
+    // Left unset when no media router is assigned — the browser then falls back to its default
+    // ICE config instead of reading "no router" as "no STUN".
+    if (!reader.IsDBNull(15))
+      setup.EffectiveWebrtcStunUrl = reader.GetString(15);
+
     return setup;
   }
 
@@ -467,7 +476,7 @@ public class CameraStorage(
   public async Task<List<MediaMtxServer>> ListMediaMtxServersAsync(CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port FROM media_mtx_server ORDER BY name;
+      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url FROM media_mtx_server ORDER BY name;
       """);
 
     var result = new List<MediaMtxServer>();
@@ -480,15 +489,16 @@ public class CameraStorage(
   public async Task UpsertMediaMtxServerAsync(MediaMtxServer server, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      INSERT INTO media_mtx_server (id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port)
-      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7)
+      INSERT INTO media_mtx_server (id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url)
+      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (id) DO UPDATE SET
         name        = EXCLUDED.name,
         host        = EXCLUDED.host,
         webrtc_host = EXCLUDED.webrtc_host,
         rtsp_port   = EXCLUDED.rtsp_port,
         webrtc_port = EXCLUDED.webrtc_port,
-        api_port    = EXCLUDED.api_port
+        api_port    = EXCLUDED.api_port,
+        stun_url    = EXCLUDED.stun_url
       RETURNING id;
       """);
     command.Parameters.AddWithValue(server.Id ?? string.Empty);
@@ -498,6 +508,7 @@ public class CameraStorage(
     command.Parameters.AddWithValue(server.RtspPort);
     command.Parameters.AddWithValue(server.WebrtcPort);
     command.Parameters.AddWithValue(server.ApiPort);
+    command.Parameters.AddWithValue(server.StunUrl ?? string.Empty);
     var id = await command.ExecuteScalarAsync(ct);
     server.Id = id?.ToString() ?? server.Id;
   }
@@ -516,7 +527,7 @@ public class CameraStorage(
 
     // Check if camera already has a server assigned and it still exists
     await using (var cmd = new NpgsqlCommand("""
-      SELECT m.id, m.name, m.host, m.webrtc_host, m.rtsp_port, m.webrtc_port, m.api_port
+      SELECT m.id, m.name, m.host, m.webrtc_host, m.rtsp_port, m.webrtc_port, m.api_port, m.stun_url
       FROM camera_setup cs
       JOIN media_mtx_server m ON m.id = cs.media_mtx_server_id
       WHERE cs.camera_id = $1;
@@ -533,7 +544,7 @@ public class CameraStorage(
     MediaMtxServer? picked = null;
 
     await using (var pickCmd = new NpgsqlCommand("""
-      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port FROM media_mtx_server ORDER BY random() LIMIT 1;
+      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url FROM media_mtx_server ORDER BY random() LIMIT 1;
       """, connection, tx))
     {
       await using var reader = await pickCmd.ExecuteReaderAsync(ct);
@@ -567,6 +578,7 @@ public class CameraStorage(
       RtspPort   = reader.GetInt32(4),
       WebrtcPort = reader.GetInt32(5),
       ApiPort    = reader.GetInt32(6),
+      StunUrl    = reader.GetString(7),
     };
 
   // ── Monitor management ────────────────────────────────────────────────────

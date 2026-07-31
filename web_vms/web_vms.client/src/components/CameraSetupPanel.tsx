@@ -244,7 +244,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
                   <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
                     {t('cameras.livePreview', { stream: s.streamName })}
                   </Typography>
-                  <CameraStream whepUrl={s.whepUrl!} />
+                  <CameraStream whepUrl={s.whepUrl!} stunUrl={existing?.effectiveWebrtcStunUrl} />
                 </Box>
               ))}
             </Stack>

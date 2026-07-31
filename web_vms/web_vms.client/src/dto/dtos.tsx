@@ -162,6 +162,9 @@ export type CameraSetupDto = {
   retainedStreams?: string[]
   streams?: CameraStreamDto[]
   mediaMtxServerId?: string
+  /** Read-only mirror of the assigned media router's STUN URL, used to build the WHEP ICE config.
+   *  undefined/null = no router assigned; empty string = no STUN (LAN only). */
+  effectiveWebrtcStunUrl?: string | null
   onvifEventsEnabled?: boolean
   hasOnvifFilters?: boolean
   onvifManaged?: boolean
@@ -189,6 +192,8 @@ export type MediaMtxServerDto = {
   rtspPort: number
   webrtcPort: number
   apiPort: number
+  /** STUN server the browser uses for WHEP; empty = no STUN, LAN host candidates only */
+  stunUrl: string
 }
 
 /** Built client-side from servers + cameras for Settings tree */

@@ -152,6 +152,9 @@ message CameraSetup {
   // read, never stored. While true the camera records continuously, overriding both the base
   // profile and any manual/alarm override.
   bool schedule_active = 19;
+  // Read-only mirror of the assigned media router's stun_url, so the browser can build its ICE
+  // config from the camera alone. Unset = no router assigned; empty = no STUN (LAN only).
+  optional string effective_webrtc_stun_url = 20;
 }
 
 message RecordingProfileRequest {
@@ -269,6 +272,9 @@ message MediaMtxServer {
   int32  rtsp_port   = 5;
   int32  webrtc_port = 6;
   int32  api_port    = 7;
+  // STUN server the browser uses when negotiating WHEP playback. Empty = no STUN at all,
+  // i.e. host candidates only (LAN-only viewing, no public server round-trip).
+  string stun_url    = 8;
 }
 
 message MediaMtxServerRequest {
