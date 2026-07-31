@@ -49,11 +49,17 @@ services:
   mediamtx:
     image: bluenviron/mediamtx:latest
     container_name: mediamtx
+    # Passwords for the vms_publish / vms_read accounts declared in mediamtx.yml. MediaMTX merges
+    # these into the yml entries by index, so the file keeps the users and permissions while the
+    # secrets stay in .env. Both ports below now require one of those accounts.
+    environment:
+      MTX_AUTHINTERNALUSERS_0_PASS: "${VMS_MEDIAMTX_PUBLISH_PASS}"
+      MTX_AUTHINTERNALUSERS_1_PASS: "${VMS_MEDIAMTX_READ_PASS}"
     ports:
-      - "8889:8889"       # WebRTC UI доступен с хоста
+      - "8889:8889"       # WHEP — published because in dev the backend runs on the host and
+                          # proxies to localhost:8889 (see .vscode/launch.json VMS_MTX_HOST)
       - "8554:8554"       # RTSP
-      - "8000:8000"       # HTTP API (опционально)
-      - "8189:8189/udp"  # ICE/UDP медиапоток
+      - "8189:8189/udp"  # ICE/UDP медиапоток — идёт прямо на браузер, минуя gateway
     volumes:
       - ./init_files/config/mediamtx.yml:/mediamtx.yml
 

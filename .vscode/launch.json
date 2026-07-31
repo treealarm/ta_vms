@@ -12,6 +12,8 @@
             "cwd": "${workspaceFolder}/web_vms/web_vms.Server",
             "stopAtEntry": false,
             "env": {
+                "VMS_MEDIAMTX_READ_USER": "vms_read",
+                "VMS_MEDIAMTX_READ_PASS": "dev_read_pass",
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "WEB_VMS_PORT": "5134",
                 "DAPR_HTTP_PORT": "3600",
@@ -135,6 +137,8 @@
             "cwd": "${workspaceFolder}/web_vms/VmsAnalytics",
             "stopAtEntry": false,
             "env": {
+                "VMS_MEDIAMTX_READ_USER": "vms_read",
+                "VMS_MEDIAMTX_READ_PASS": "dev_read_pass",
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "ANALYTICS_VMS_PORT": "5140",
                 "DAPR_HTTP_PORT": "3610",
@@ -184,6 +188,8 @@
             "cwd": "${workspaceFolder}/web_vms/VmsUtils",
             "stopAtEntry": false,
             "env": {
+                "VMS_MEDIAMTX_READ_USER": "vms_read",
+                "VMS_MEDIAMTX_READ_PASS": "dev_read_pass",
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "UTILS_VMS_PORT": "5139",
                 "DAPR_HTTP_PORT": "3606",
@@ -203,6 +209,8 @@
             "program": "${workspaceFolder}/media_server/build/vms",
             "args": [],
             "environment": [
+                { "name": "VMS_MEDIAMTX_PUBLISH_USER", "value": "vms_publish" },
+                { "name": "VMS_MEDIAMTX_PUBLISH_PASS", "value": "dev_publish_pass" },
                 { "name": "DEBUGINFOD_URLS", "value": "" },
                 {
                     "name": "VMS_STORAGE_BASE_PATH",
@@ -319,6 +327,8 @@
             "program": "${workspaceFolder}/media_server/build/vms",
             "args": [],
             "environment": [
+                { "name": "VMS_MEDIAMTX_PUBLISH_USER", "value": "vms_publish" },
+                { "name": "VMS_MEDIAMTX_PUBLISH_PASS", "value": "dev_publish_pass" },
                 { "name": "DEBUGINFOD_URLS", "value": "" },
                 { "name": "VMS_STORAGE_BASE_PATH", "value": "${workspaceFolder}/../media_storage" },
                 { "name": "GRPC_VMS_PORT", "value": "50052" },
