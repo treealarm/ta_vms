@@ -14,21 +14,40 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
   private static readonly TimeSpan UnreachableCooldown = TimeSpan.FromSeconds(30);
 
   private IReadOnlyDictionary<string, string>? _serverToFs;
+  private volatile string? _lastInitError;
   // Instances that recently failed a fan-out call — skipped for UnreachableCooldown so a
   // configured-but-dead FS doesn't cost every request the full FanOutTimeout.
   private readonly ConcurrentDictionary<string, DateTime> _unreachableSince = new();
 
+  /// <summary>False until the server↔FS map has been read from VmsCfg at least once.</summary>
+  public bool IsInitialized => _serverToFs is not null;
+
+  /// <summary>Why the last initialization attempt failed, for the health endpoint. Null once it succeeded.</summary>
+  public string? LastInitError => _lastInitError;
+
   public async Task InitAsync(CancellationToken ct = default)
   {
-    var resp = await cfg.ListMediaServersAsync(new ListMediaServersRequest(), cancellationToken: ct);
-    _serverToFs = resp.Servers
-      .Where(s => !string.IsNullOrWhiteSpace(s.FsId))
-      .ToDictionary(s => s.ServerId, s => s.FsId, StringComparer.OrdinalIgnoreCase);
+    try
+    {
+      var resp = await cfg.ListMediaServersAsync(new ListMediaServersRequest(), cancellationToken: ct);
+      _serverToFs = resp.Servers
+        .Where(s => !string.IsNullOrWhiteSpace(s.FsId))
+        .ToDictionary(s => s.ServerId, s => s.FsId, StringComparer.OrdinalIgnoreCase);
+      _lastInitError = null;
+    }
+    catch (Exception ex)
+    {
+      // Kept verbatim: this is the only place the reason (VmsCfg down, its database missing, …)
+      // is visible to anything but the log.
+      _lastInitError = ex is RpcException rpc ? rpc.Status.Detail : ex.Message;
+      throw;
+    }
   }
 
   public FsService.FsServiceClient GetFsClient(string? serverId)
   {
-    var map = _serverToFs ?? throw new InvalidOperationException("ServerPairRegistry not initialized");
+    var map = _serverToFs ?? throw new ServiceNotReadyException(
+      "Configuration service (VmsCfg) has not answered yet — see GET /api/health", _lastInitError);
 
     if (string.IsNullOrWhiteSpace(serverId))
       throw new InvalidOperationException("serverId must not be empty for FS client lookup");
@@ -39,8 +58,12 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
     return new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
   }
 
+  // Same "not ready yet" answer as GetFsClient: every fan-out endpoint (clips, retention events,
+  // HLS, FS activity) goes through here, and a bare 500 would hide the reason the whole health
+  // mechanism exists to report.
   public IReadOnlyCollection<string> AllFsIds =>
-    (_serverToFs ?? throw new InvalidOperationException("ServerPairRegistry not initialized"))
+    (_serverToFs ?? throw new ServiceNotReadyException(
+      "Configuration service (VmsCfg) has not answered yet — see GET /api/health", _lastInitError))
       .Values.Distinct().ToList();
 
   // Queries every FS instance in parallel with a short deadline and returns the results that came

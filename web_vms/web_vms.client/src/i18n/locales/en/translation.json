@@ -1,6 +1,9 @@
 {
   "app": {
-    "connecting": "Connecting to backend..."
+    "connecting": "Connecting to backend...",
+    "backendUnreachable": "The backend is not responding.",
+    "backendUnreachableHint": "Check that web_vms.Server is running, and that VmsCfg and its database are up.",
+    "dependencyDown": "A backend service is unavailable: {{services}}. Cameras and archive will stay empty until it recovers."
   },
   "common": {
     "save": "Save",
@@ -230,7 +233,9 @@
     "enforceOffHelper": "Off: every signed-in user reaches every camera",
     "enforceOnHelper": "On: users only reach the cameras granted to them",
     "enforceOnWarning": "Users without grants will immediately lose access to all cameras, including any Square users signing in against this realm.",
-    "enforceConfirm": "Enable camera permissions?"
+    "enforceConfirm": "Enable camera permissions?",
+    "administrator": "Administrator — all cameras",
+    "adminBypass": "This user has the admin role: they reach every camera and every action regardless of what is set here. Remove the admin role in Keycloak to make these permissions apply."
   },
   "logs": {
     "title": "Log Journal",

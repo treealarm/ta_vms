@@ -2,9 +2,15 @@ import { type AnyAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import type { ApiResponseDto, UserCameraPermissionsDto } from '../dto/dtos'
 import { parseJson } from './api'
 
+export type RealmUserDto = {
+  username: string
+  /** Admins bypass camera permissions entirely; null = Keycloak did not say. */
+  isAdmin?: boolean | null
+}
+
 type CameraPermissionsState = {
-  /** Realm usernames from Keycloak — this panel assigns rights, it does not create users. */
-  usernames: string[]
+  /** Realm users from Keycloak — this panel assigns rights, it does not create users. */
+  users: RealmUserDto[]
   /** Grants keyed by username; only the users that have any are present. */
   byUser: Record<string, UserCameraPermissionsDto>
   aclEnforced: boolean
@@ -13,7 +19,7 @@ type CameraPermissionsState = {
 }
 
 const initialState: CameraPermissionsState = {
-  usernames: [],
+  users: [],
   byUser: {},
   aclEnforced: false,
   isBusy: false,
@@ -22,8 +28,9 @@ const initialState: CameraPermissionsState = {
 
 export const loadPermissionUsers = createAsyncThunk('cameraPermissions/loadUsers', async () => {
   // includeSelf: an admin editing permissions has to see their own row, unlike board sharing.
-  const response = await fetch('/api/auth/users?includeSelf=true')
-  return parseJson<string[]>(response)
+  // withRoles: so the panel can say outright that grants do not apply to administrators.
+  const response = await fetch('/api/auth/users?includeSelf=true&withRoles=true')
+  return parseJson<RealmUserDto[]>(response)
 })
 
 export const loadAllPermissions = createAsyncThunk('cameraPermissions/loadAll', async () => {
@@ -64,7 +71,7 @@ const cameraPermissionsSlice = createSlice({
   extraReducers: (builder) => {
     builder
       .addCase(loadPermissionUsers.fulfilled, (state, action) => {
-        state.usernames = action.payload
+        state.users = action.payload
       })
       .addCase(loadAllPermissions.fulfilled, (state, action) => {
         state.byUser = Object.fromEntries(action.payload.map((u) => [u.username, u]))

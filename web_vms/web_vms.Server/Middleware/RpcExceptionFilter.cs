@@ -10,6 +10,18 @@ public sealed class RpcExceptionFilter : IExceptionFilter
 {
   public void OnException(ExceptionContext context)
   {
+    // A dependency that never came up: answer 503 with the reason instead of a bare 500, so the
+    // client can say what is wrong rather than just "request failed".
+    if (context.Exception is ServiceNotReadyException notReady)
+    {
+      context.Result = new ObjectResult(new { error = notReady.Message, detail = notReady.Detail })
+      {
+        StatusCode = StatusCodes.Status503ServiceUnavailable,
+      };
+      context.ExceptionHandled = true;
+      return;
+    }
+
     if (context.Exception is not RpcException ex)
       return;
 

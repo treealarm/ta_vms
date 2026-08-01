@@ -1,6 +1,9 @@
 {
   "app": {
-    "connecting": "Conectando con el servidor..."
+    "connecting": "Conectando con el servidor...",
+    "backendUnreachable": "El servidor no responde.",
+    "backendUnreachableHint": "Compruebe que web_vms.Server esté en marcha y que VmsCfg y su base de datos estén disponibles.",
+    "dependencyDown": "Un servicio del backend no está disponible: {{services}}. Las cámaras y el archivo estarán vacíos hasta que se restablezca."
   },
   "common": {
     "save": "Guardar",
@@ -230,7 +233,9 @@
     "enforceOffHelper": "Desactivado: todo usuario autenticado ve todas las cámaras",
     "enforceOnHelper": "Activado: cada usuario solo ve las cámaras concedidas",
     "enforceOnWarning": "Los usuarios sin permisos perderán de inmediato el acceso a todas las cámaras, incluidos los usuarios de Square que inicien sesión en este realm.",
-    "enforceConfirm": "¿Activar los permisos de cámara?"
+    "enforceConfirm": "¿Activar los permisos de cámara?",
+    "administrator": "Administrador — todas las cámaras",
+    "adminBypass": "Este usuario tiene el rol admin: accede a todas las cámaras y acciones sin importar lo que se marque aquí. Quite el rol admin en Keycloak para que estos permisos se apliquen."
   },
   "logs": {
     "title": "Diario de registros",

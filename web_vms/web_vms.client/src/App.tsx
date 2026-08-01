@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
-import { Box, Button, CircularProgress, IconButton, Tab, Tabs, Typography } from '@mui/material'
+import { Alert, Box, Button, CircularProgress, IconButton, Tab, Tabs, Typography } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import { useTranslation } from 'react-i18next'
 import i18n from './i18n'
@@ -8,7 +8,7 @@ import i18n from './i18n'
 import { loadCameras, loadServers } from './store/liveSlice'
 import { loadMonitors } from './store/monitorsSlice'
 import { loadMediaMtxServers } from './store/mediaMtxSlice'
-import { loadFrontendConfig } from './store/frontendConfigSlice'
+import { loadFrontendConfig, loadHealth } from './store/frontendConfigSlice'
 import { toggleLogPanel } from './store/logSlice'
 import { useAppDispatch, useAppSelector } from './store'
 import RequireRole from './auth/RequireRole'
@@ -90,6 +90,9 @@ export default function App() {
   // backend actually responds (no attempt cap, unlike the auth-dependent bootstrap above).
   const configStatus = useAppSelector((s) => s.frontendConfig.status)
   const liveTestPlayer = useAppSelector((s) => s.frontendConfig.liveTestPlayer)
+  const probeError = useAppSelector((s) => s.frontendConfig.lastError)
+  const failedAttempts = useAppSelector((s) => s.frontendConfig.failedAttempts)
+  const brokenDependencies = useAppSelector((s) => s.frontendConfig.brokenDependencies)
   useEffect(() => {
     let cancelled = false
     let retryTimer: ReturnType<typeof setTimeout> | null = null
@@ -99,19 +102,38 @@ export default function App() {
       const result = await dispatch(loadFrontendConfig())
       if (loadFrontendConfig.rejected.match(result) && !cancelled) {
         retryTimer = setTimeout(() => { void tryLoad() }, 2000)
+        return
       }
+      // The gateway answers even while its own dependencies are down, so ask what is actually
+      // broken instead of leaving the user with a page that loads but cannot show any camera.
+      if (!cancelled) void dispatch(loadHealth())
     }
 
     void tryLoad()
+    // Kept polling rather than probed once: a restart race would otherwise pin a stale "vmscfg
+    // unavailable" banner for the whole session, and a dependency that dies later would never
+    // raise one. The endpoint answers from a 5s server-side cache, so this stays cheap.
+    const healthTimer = setInterval(() => { void dispatch(loadHealth()) }, 15000)
+
     return () => {
       cancelled = true
       if (retryTimer != null) clearTimeout(retryTimer)
+      clearInterval(healthTimer)
     }
   }, [dispatch])
 
   return (
     <BrowserRouter>
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden' }}>
+        {/* The gateway is up but something it needs is not, so the app would load and then show
+            nothing but empty lists — say which service is broken instead. */}
+        {brokenDependencies.length > 0 && (
+          <Alert severity="warning" square sx={{ flexShrink: 0, py: 0.25 }}>
+            {t('app.dependencyDown', {
+              services: brokenDependencies.map((d) => `${d.name} (${d.error})`).join(', '),
+            })}
+          </Alert>
+        )}
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <Routes>
             {/* Always reachable regardless of the backend connectivity probe below — neither
@@ -127,10 +149,27 @@ export default function App() {
               <Route path="*" element={
                 <Box sx={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  height: '100%', gap: 2,
+                  height: '100%', gap: 2, px: 3, textAlign: 'center',
                 }}>
                   <CircularProgress />
                   <Typography color="text.secondary">{t('app.connecting')}</Typography>
+                  {/* Quiet for the first few seconds: a cold start races the backend and an error
+                      shown then would be noise. After that, silence is the unhelpful answer. */}
+                  {failedAttempts >= 3 && (
+                    <Box sx={{ maxWidth: 520 }}>
+                      <Typography variant="body2" color="error">
+                        {t('app.backendUnreachable')}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                        {t('app.backendUnreachableHint')}
+                      </Typography>
+                      {probeError && (
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                          {probeError}
+                        </Typography>
+                      )}
+                    </Box>
+                  )}
                 </Box>
               } />
             ) : (

@@ -28,9 +28,11 @@ const NO_FLAGS: CameraPermissionFlagsDto = {
 const hasAny = (f: CameraPermissionFlagsDto | null | undefined) =>
   f != null && ACTIONS.some((a) => f[a])
 
-function CameraPermissionsForm({ ref, username }: {
+function CameraPermissionsForm({ ref, username, isAdmin }: {
   ref?: React.Ref<ApplyIfDirtyHandle>
   username: string
+  /** Admins bypass the ACL, so their grants are shown as "everything, not editable". */
+  isAdmin: boolean
 }) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
@@ -55,7 +57,8 @@ function CameraPermissionsForm({ ref, username }: {
     setSnap(snapshot)
   }, [snapshot])
 
-  const dirty = JSON.stringify(form) !== JSON.stringify(snap)
+  // Nothing to save for an administrator: the checkboxes below only mirror the bypass.
+  const dirty = !isAdmin && JSON.stringify(form) !== JSON.stringify(snap)
 
   const cameraList = useMemo(() => {
     const needle = filter.trim().toLowerCase()
@@ -66,7 +69,11 @@ function CameraPermissionsForm({ ref, username }: {
       .sort((a, b) => (a.name || a.cameraId).localeCompare(b.name || b.cameraId))
   }, [cameras, filter])
 
-  const blanket = form.allCameras ?? NO_FLAGS
+  // An admin is allowed everything by role, so every box reads as checked regardless of what is
+  // stored — showing empty boxes next to "sees all cameras" is exactly the confusion to avoid.
+  const blanket = isAdmin
+    ? { viewLive: true, viewArchive: true, ptz: true, control: true, export: true }
+    : form.allCameras ?? NO_FLAGS
 
   const setBlanket = (action: Action, value: boolean) =>
     setForm((prev) => {
@@ -118,16 +125,23 @@ function CameraPermissionsForm({ ref, username }: {
     >
       <DetailToolbar
         title={username}
-        subtitle={hasAny(form.allCameras)
-          ? t('permissions.allCameras')
-          : t('permissions.nCameras', { count: grantedCount })}
+        subtitle={isAdmin
+          ? t('permissions.administrator')
+          : hasAny(form.allCameras)
+            ? t('permissions.allCameras')
+            : t('permissions.nCameras', { count: grantedCount })}
         dirty={dirty}
         busy={isBusy}
-        onCancel={() => setForm(snap)}
+        hideApply={isAdmin}
+        onCancel={isAdmin ? undefined : () => setForm(snap)}
       />
 
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 2 }}>
         <Stack spacing={2}>
+          {isAdmin && (
+            <Alert severity="info">{t('permissions.adminBypass')}</Alert>
+          )}
+
           {status !== 'Ready' && (
             <Alert severity={status.startsWith('Error') || status.startsWith('Fail') ? 'error' : 'success'}>
               {status}
@@ -147,6 +161,7 @@ function CameraPermissionsForm({ ref, username }: {
                     <Checkbox
                       size="small"
                       checked={blanket[action]}
+                      disabled={isAdmin}
                       onChange={(e) => setBlanket(action, e.target.checked)}
                     />
                   )}
@@ -176,7 +191,7 @@ function CameraPermissionsForm({ ref, username }: {
                         <Tooltip title={t('permissions.toggleColumn')}>
                           <Checkbox
                             size="small"
-                            disabled={blanket[action] || cameraList.length === 0}
+                            disabled={isAdmin || blanket[action] || cameraList.length === 0}
                             checked={cameraList.length > 0
                               && cameraList.every((c) => form.cameras[c.cameraId]?.[action])}
                             onChange={(e) => setColumn(action, e.target.checked)}
@@ -192,7 +207,7 @@ function CameraPermissionsForm({ ref, username }: {
                   <TableRow key={camera.cameraId} hover>
                     <TableCell>{camera.name || camera.cameraId}</TableCell>
                     {ACTIONS.map((action) => {
-                      const grantedByBlanket = blanket[action]
+                      const grantedByBlanket = isAdmin || blanket[action]
                       const cell = (
                         <Checkbox
                           size="small"
@@ -282,9 +297,7 @@ function AclModeSwitch() {
 export default function CameraPermissionsPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHandle> }) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
-  const { usernames, byUser } = useAppSelector((s) => s.cameraPermissions)
-
-  const users = useMemo(() => usernames.map((username) => ({ username })), [usernames])
+  const { users, byUser } = useAppSelector((s) => s.cameraPermissions)
   const { selected, detailRef, detailKey, select } =
     useMasterDetailSelection(ref, users, (u) => u.username)
 
@@ -296,7 +309,8 @@ export default function CameraPermissionsPanel({ ref }: { ref?: React.Ref<ApplyI
     void dispatch(loadCameras())
   }, [dispatch])
 
-  const summaryFor = (username: string) => {
+  const summaryFor = (username: string, isAdmin?: boolean | null) => {
+    if (isAdmin) return t('permissions.administrator')
     const grants = byUser[username]
     if (hasAny(grants?.allCameras)) return t('permissions.allCameras')
     const count = Object.keys(grants?.cameras ?? {}).length
@@ -311,7 +325,7 @@ export default function CameraPermissionsPanel({ ref }: { ref?: React.Ref<ApplyI
           selected={selected?.username === u.username}
           onClick={() => select(u.username)}
           primary={u.username}
-          secondary={summaryFor(u.username)}
+          secondary={summaryFor(u.username, u.isAdmin)}
         />
       ))}
       {users.length === 0 && (
@@ -330,7 +344,12 @@ export default function CameraPermissionsPanel({ ref }: { ref?: React.Ref<ApplyI
       footer={<AclModeSwitch />}
     >
       {selected ? (
-        <CameraPermissionsForm ref={detailRef} key={detailKey} username={selected.username} />
+        <CameraPermissionsForm
+          ref={detailRef}
+          key={detailKey}
+          username={selected.username}
+          isAdmin={selected.isAdmin === true}
+        />
       ) : (
         <Typography color="text.secondary" sx={{ p: 2 }}>
           {t('permissions.selectHint')}
