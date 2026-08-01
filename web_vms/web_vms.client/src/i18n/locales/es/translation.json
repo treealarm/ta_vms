@@ -31,7 +31,8 @@
     "goAdmin": "Admin",
     "goOperator": "Operador",
     "logout": "Cerrar sesión",
-    "investigations": "Investigaciones"
+    "investigations": "Investigaciones",
+    "permissions": "Permisos"
   },
   "auth": {
     "title": "Iniciar sesión",
@@ -207,6 +208,30 @@
     "noServers": "Sin routers configurados",
     "selectHint": "Seleccione un router o pulse + para agregar uno"
   },
+  "permissions": {
+    "title": "Permisos de cámara",
+    "users": "Usuarios",
+    "noUsers": "No hay usuarios en el realm",
+    "selectHint": "Seleccione un usuario para editar sus permisos de cámara",
+    "allCameras": "Todas las cámaras",
+    "allCamerasHelper": "También se aplica a las cámaras añadidas más adelante",
+    "viewLive": "En vivo",
+    "viewArchive": "Archivo",
+    "ptz": "PTZ",
+    "control": "Control",
+    "export": "Exportar",
+    "searchCameras": "Buscar cámaras",
+    "toggleColumn": "Conceder en todas las cámaras listadas",
+    "grantedByAllCameras": "Concedido por la regla «Todas las cámaras»",
+    "noCameras": "Sin cámaras",
+    "noGrants": "Sin acceso",
+    "nCameras": "{{count}} cámaras",
+    "enforce": "Aplicar permisos de cámara",
+    "enforceOffHelper": "Desactivado: todo usuario autenticado ve todas las cámaras",
+    "enforceOnHelper": "Activado: cada usuario solo ve las cámaras concedidas",
+    "enforceOnWarning": "Los usuarios sin permisos perderán de inmediato el acceso a todas las cámaras, incluidos los usuarios de Square que inicien sesión en este realm.",
+    "enforceConfirm": "¿Activar los permisos de cámara?"
+  },
   "logs": {
     "title": "Diario de registros",
     "hasMore": "hay más",
@@ -341,12 +366,30 @@
     "noCameraSelected": "Ninguna cámara seleccionada",
     "filterHint": "Filtrar…",
     "topicPresets": {
-      "motion":          { "label": "Movimiento",           "desc": "Detección de movimiento" },
-      "faceDetection":   { "label": "Detección facial",     "desc": "Detección de rostro" },
-      "lineCrossing":    { "label": "Cruce de línea",       "desc": "Cruce de línea virtual" },
-      "fieldDetection":  { "label": "Intrusión en zona",    "desc": "Detección de intrusión en zona" },
-      "alarmList":       { "label": "Alarma",               "desc": "Alarma externa / entrada E/S" },
-      "objectDetection": { "label": "Detección de objetos", "desc": "Detección de objetos (persona, vehículo)" }
+      "motion": {
+        "label": "Movimiento",
+        "desc": "Detección de movimiento"
+      },
+      "faceDetection": {
+        "label": "Detección facial",
+        "desc": "Detección de rostro"
+      },
+      "lineCrossing": {
+        "label": "Cruce de línea",
+        "desc": "Cruce de línea virtual"
+      },
+      "fieldDetection": {
+        "label": "Intrusión en zona",
+        "desc": "Detección de intrusión en zona"
+      },
+      "alarmList": {
+        "label": "Alarma",
+        "desc": "Alarma externa / entrada E/S"
+      },
+      "objectDetection": {
+        "label": "Detección de objetos",
+        "desc": "Detección de objetos (persona, vehículo)"
+      }
     }
   },
   "cameraCard": {

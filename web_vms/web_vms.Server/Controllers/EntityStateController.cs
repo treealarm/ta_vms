@@ -2,6 +2,7 @@ using Google.Protobuf.WellKnownTypes;
 using Microsoft.AspNetCore.Mvc;
 using web_vms.Types.Dto;
 using Vms.Utils;
+using web_vms.Authorization;
 
 namespace web_vms
 {
@@ -9,6 +10,7 @@ namespace web_vms
   [ApiController]
   public class EntityStateController(UtilsService.UtilsServiceClient grpcClient) : ControllerBase
   {
+    [NoCameraAccess("debug registry of in-memory service state, not camera video")]
     [HttpGet]
     public async Task<IActionResult> GetEntityStates(CancellationToken ct)
     {

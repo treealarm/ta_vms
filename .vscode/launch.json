@@ -23,13 +23,17 @@
                 "DAPR_ONVIF_APP_ID": "vmsonvif",
                 "DAPR_UTILS_APP_ID": "vmsutils",
                 "DAPR_ANALYTICS_APP_ID": "vmsanalytics",
+                "PUBSUB_NAME": "orderpubsub",
                 "KEYCLOAK_URL": "http://localhost:8080",
                 "KEYCLOAK_ADMIN_USER": "admin",
                 "KEYCLOAK_ADMIN_PASSWORD": "admin",
                 "KEYCLOAK_REALM_NAME": "myrealm",
                 "KEYCLOAK_CLIENT_ID": "pubclient",
                 "SQUARE_FRONTEND_ORIGIN": "http://localhost:8002",
-                "VMS_LIVE_TEST_PLAYER": "true"
+                // The anonymous WHEP test player plays any camera without a login, so the backend
+                // refuses to start with it enabled alongside KEYCLOAK_URL above. To use /test/live,
+                // clear KEYCLOAK_URL in this configuration and set this back to "true".
+                "VMS_LIVE_TEST_PLAYER": ""
             }
         },
         {

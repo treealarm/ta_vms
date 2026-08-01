@@ -89,6 +89,7 @@ export default function App() {
   // Anonymous and cheap — used as the connectivity probe below, so retry indefinitely until the
   // backend actually responds (no attempt cap, unlike the auth-dependent bootstrap above).
   const configStatus = useAppSelector((s) => s.frontendConfig.status)
+  const liveTestPlayer = useAppSelector((s) => s.frontendConfig.liveTestPlayer)
   useEffect(() => {
     let cancelled = false
     let retryTimer: ReturnType<typeof setTimeout> | null = null
@@ -116,7 +117,9 @@ export default function App() {
             {/* Always reachable regardless of the backend connectivity probe below — neither
                 depends on it, and /login must stay reachable even if the backend never responds. */}
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/test/live" element={<TestLivePage />} />
+            {/* Dev-only and anonymous end to end: the backend refuses to enable it alongside
+                Keycloak, so don't offer the page when it says the endpoints aren't there. */}
+            {liveTestPlayer && <Route path="/test/live" element={<TestLivePage />} />}
             {configStatus !== 'succeeded' ? (
               // Don't render monitor/admin views until we've confirmed the backend is actually
               // reachable — otherwise a cold-started frontend briefly shows an empty monitor view

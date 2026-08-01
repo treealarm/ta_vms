@@ -2,6 +2,7 @@ using Google.Protobuf.WellKnownTypes;
 using Microsoft.AspNetCore.Mvc;
 using web_vms.Types.Dto;
 using Vms.Logger;
+using web_vms.Authorization;
 
 namespace web_vms
 {
@@ -9,6 +10,7 @@ namespace web_vms
   [ApiController]
   public class LoggerController(LogService.LogServiceClient grpcClient) : ControllerBase
   {
+    [NoCameraAccess("service log sources, not camera video")]
     [HttpGet("sources")]
     public async Task<IActionResult> GetSources(CancellationToken ct)
     {
@@ -16,6 +18,7 @@ namespace web_vms
       return Ok(resp.AppIds);
     }
 
+    [NoCameraAccess("service logs, not camera video")]
     [HttpPost("logs")]
     public async Task<IActionResult> GetLogs([FromBody] LogQueryDto query, CancellationToken ct)
     {

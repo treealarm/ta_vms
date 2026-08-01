@@ -179,6 +179,34 @@ export type CameraSetupDto = {
   scheduleActive?: boolean
 }
 
+/** What a user may do with a camera. All false = no access. */
+export type CameraPermissionFlagsDto = {
+  viewLive: boolean
+  viewArchive: boolean
+  ptz: boolean
+  /** Arming, recording overrides, manual retention, relay outputs. */
+  control: boolean
+  /** Downloading a clip as a file. */
+  export: boolean
+}
+
+/** Effective permission on a camera is the OR of allCameras and the matching cameras entry. */
+export type UserCameraPermissionsDto = {
+  username: string
+  /** null/undefined = no blanket grant; a blanket grant also covers cameras added later. */
+  allCameras?: CameraPermissionFlagsDto | null
+  cameras: Record<string, CameraPermissionFlagsDto>
+}
+
+/** Answer to "what may I do", used to hide affordances. The server still checks every request. */
+export type MyPermissionsDto = {
+  username: string
+  isAdmin: boolean
+  aclEnforced: boolean
+  allCameras?: CameraPermissionFlagsDto | null
+  cameras: Record<string, CameraPermissionFlagsDto>
+}
+
 export type MediaServerNodeDto = {
   serverId: string
   status: string

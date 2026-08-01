@@ -2,6 +2,7 @@ using KeycloakAdmin;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using web_vms.Authentication;
+using web_vms.Types.Dto;
 
 namespace web_vms.Controllers;
 
@@ -80,9 +81,13 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
   /// Usernames in the realm, for picking who to send a copy of an investigation board to.
   /// Empty when Keycloak isn't configured — there are no users to name, and the UI hides sharing.
   /// </summary>
+  /// <param name="includeSelf">
+  /// Board sharing must not offer "send to myself", so self is excluded by default; the camera
+  /// permissions admin panel needs the full list and asks for it explicitly.
+  /// </param>
   [HttpGet("users")]
   [Authorize(Policy = AuthPolicies.Authenticated)]
-  public async Task<IActionResult> Users()
+  public async Task<IActionResult> Users([FromQuery] bool includeSelf = false)
   {
     if (kcAdmin == null)
     {
@@ -96,7 +101,7 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
       var users = await kcAdmin.GetUsersAsync(realm);
       var names = users
         .Select(u => u.UserName)
-        .Where(n => !string.IsNullOrWhiteSpace(n) && n != me)
+        .Where(n => !string.IsNullOrWhiteSpace(n) && (includeSelf || n != me))
         .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
         .ToArray();
       return Ok(names);
@@ -105,5 +110,34 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
     {
       return Ok(Array.Empty<string>());
     }
+  }
+
+  /// <summary>
+  /// What the caller may do, so the SPA can hide controls it would only get a 403 from. Purely
+  /// advisory: every endpoint checks permissions on its own regardless of what this returned.
+  /// </summary>
+  [HttpGet("me")]
+  [Authorize(Policy = AuthPolicies.Authenticated)]
+  public async Task<ActionResult<MyPermissionsDto>> Me(
+    [FromServices] IPermissionManager permissions, CancellationToken ct)
+  {
+    var username = User.Identity?.Name ?? string.Empty;
+    // With authentication off there is no identity to scope anything to, and every policy already
+    // succeeds — report it as unrestricted rather than as an anonymous user with no grants.
+    var isAdmin = !AuthGate.KeycloakEnabled || User.IsInRole(web_vms.Authentication.RoleConstants.Admin);
+    var enforced = AuthGate.KeycloakEnabled && await permissions.GetAclEnforced(ct);
+
+    if (!enforced || isAdmin)
+      return Ok(new MyPermissionsDto { Username = username, IsAdmin = isAdmin, AclEnforced = enforced });
+
+    var mine = await permissions.GetForUser(username, ct);
+    return Ok(new MyPermissionsDto
+    {
+      Username    = username,
+      IsAdmin     = false,
+      AclEnforced = true,
+      AllCameras  = mine.AllCameras,
+      Cameras     = mine.Cameras,
+    });
   }
 }

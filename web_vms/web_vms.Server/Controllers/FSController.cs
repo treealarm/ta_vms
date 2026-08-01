@@ -6,6 +6,9 @@ using Vms.Control;
 using Vms.Fs;
 using web_vms;
 using web_vms.Types.Dto;
+using web_vms.Authorization;
+using web_vms.Authentication;
+using Microsoft.AspNetCore.Authorization;
 
 namespace web_vms.Server.Controllers;
 
@@ -13,7 +16,8 @@ namespace web_vms.Server.Controllers;
 [ApiController]
 public sealed class FSController(
   ICameraManager manager,
-  ServerPairRegistry registry) : ControllerBase
+  ServerPairRegistry registry,
+  ICameraAccessService access) : ControllerBase
 {
   private static readonly TimeSpan FrameJpegTimeout = TimeSpan.FromSeconds(15);
 
@@ -63,6 +67,7 @@ public sealed class FSController(
 
   private static long AbsMillis(TimeSpan d) => Math.Abs((long)d.TotalMilliseconds);
 
+  [CameraAccess(CameraAction.ViewArchive, Source = CameraIdSource.Body)]
   [HttpPost("recordings")]
   public async Task<IActionResult> GetRecordings([FromBody] RecordingsQueryDto query, CancellationToken ct)
   {
@@ -115,6 +120,7 @@ public sealed class FSController(
     return Ok(dto);
   }
 
+  [CameraAccess(CameraAction.ViewArchive, Source = CameraIdSource.Body)]
   [HttpPost("recording-ranges")]
   public async Task<IActionResult> GetRecordingRanges([FromBody] RecordingsQueryDto query, CancellationToken ct)
   {
@@ -158,6 +164,7 @@ public sealed class FSController(
     return Ok(dto);
   }
 
+  [CameraAccess(CameraAction.ViewArchive, Source = CameraIdSource.Body)]
   [HttpPost("recording-coverage")]
   public async Task<IActionResult> GetRecordingCoverage([FromBody] RecordingCoverageQueryDto query, CancellationToken ct)
   {
@@ -194,6 +201,8 @@ public sealed class FSController(
   // One call covers the whole wall — a 3x3 grid would otherwise mean nine round-trips for the
   // "all cameras" track alone. Cameras can be assigned to different FS instances, so the request
   // is split per instance and the answers are stitched back together.
+  // Many cameras per request, so the action filters the id list itself.
+  [CameraAccess(CameraAction.ViewArchive, Source = CameraIdSource.Action)]
   [HttpPost("recording-timeline")]
   public async Task<IActionResult> GetRecordingTimeline([FromBody] RecordingTimelineQueryDto query, CancellationToken ct)
   {
@@ -204,6 +213,13 @@ public sealed class FSController(
 
     if (cameraIds.Count == 0)
       return BadRequest(new { error = "cameraIds is required" });
+
+    // A wall can name cameras this operator cannot see; drop those tracks instead of failing the
+    // whole timeline, but say no when nothing at all is permitted.
+    var scope = await access.ScopeAsync(User, CameraAction.ViewArchive, ct);
+    cameraIds = [.. cameraIds.Where(scope.Contains)];
+    if (cameraIds.Count == 0)
+      return StatusCode(StatusCodes.Status403Forbidden);
 
     var fromUtc = ToUtc(query.FromUtc);
     var toUtc = ToUtc(query.ToUtc);
@@ -258,6 +274,8 @@ public sealed class FSController(
     return Ok(dto);
   }
 
+  // Opening or closing a retention episode changes what gets kept — a control action.
+  [CameraAccess(CameraAction.Control, Source = CameraIdSource.Body)]
   [HttpPost("events")]
   public async Task<IActionResult> RetainEvent([FromBody] RetentionEventDto body, CancellationToken ct)
   {
@@ -310,6 +328,8 @@ public sealed class FSController(
     return await registry.FanOutFsAsync((c, o) => c.ListRetentionEventsAsync(grpcReq, o).ResponseAsync, ct);
   }
 
+  // cameraId is an optional filter here; without it the action scopes the fan-out itself.
+  [CameraAccess(CameraAction.ViewArchive, Source = CameraIdSource.Action)]
   [HttpGet("retention-events")]
   public async Task<IActionResult> ListRetentionEvents(
     [FromQuery] int? limit,
@@ -318,6 +338,10 @@ public sealed class FSController(
     [FromQuery] string? from,
     CancellationToken ct)
   {
+    var eventScope = await access.ScopeAsync(User, CameraAction.ViewArchive, ct);
+    if (!string.IsNullOrWhiteSpace(cameraId) && !eventScope.Contains(cameraId))
+      return StatusCode(StatusCodes.Status403Forbidden);
+
     var pageLimit = Math.Clamp(limit ?? 50, 1, 200);
     // Over-fetch episodes per instance so we can assemble reasonably complete groups from a fan-out
     // where one group's episodes may live on different FS instances. Pagination stays group-granular.
@@ -373,7 +397,9 @@ public sealed class FSController(
     foreach (var resp in responses.Select(r => r.Value))
     {
       if (resp.HasMore) moreOnInstance = true;
-      episodes.AddRange(resp.Events.Select(ToEpisode));
+      // Filtered after the fan-out rather than pushed into the VmsFs query, so a caller who may see
+      // few of many cameras can get short pages — correctness first, page fill second.
+      episodes.AddRange(resp.Events.Select(ToEpisode).Where(e => eventScope.Contains(e.CameraId)));
     }
 
     var allGroups = episodes
@@ -408,6 +434,7 @@ public sealed class FSController(
         var episodesByEvent = fullResponses
           .SelectMany(r => r.Value.Events)
           .Select(ToEpisode)
+          .Where(e => eventScope.Contains(e.CameraId))
           .GroupBy(e => e.EventId)
           .ToDictionary(g => g.Key, g => g.ToList());
         groups = groups
@@ -428,6 +455,7 @@ public sealed class FSController(
     });
   }
 
+  [CameraAccess(CameraAction.ViewArchive, Source = CameraIdSource.Action)]
   [HttpGet("event-playlists")]
   public async Task<IActionResult> GetEventPlaylists([FromQuery] string eventUuid, CancellationToken ct)
   {
@@ -444,6 +472,14 @@ public sealed class FSController(
     var clipsResp = (clipResponses.FirstOrDefault(r => r.Value.Recordings.Count > 0) ?? clipResponses.FirstOrDefault())?.Value;
 
     if (clipsResp is null)
+      return NotFound(new { error = "event not found" });
+
+    // An episode belongs to exactly one camera, so this is a check rather than a filter. Denials
+    // answer 404 like a missing episode would: a 403 here would confirm that the episode exists on
+    // a camera the caller cannot see.
+    var episodeCamera = clipsResp.Recordings.FirstOrDefault()?.CameraId;
+    if (episodeCamera is not null
+      && !await access.IsAllowedAsync(User, episodeCamera, CameraAction.ViewArchive, ct))
       return NotFound(new { error = "event not found" });
 
     // Split a long event into <=3-min playback chunks: building one HLS source over hundreds of
@@ -517,6 +553,7 @@ public sealed class FSController(
     return chunks;
   }
 
+  [CameraAccess(CameraAction.ViewArchive, Source = CameraIdSource.Action)]
   [HttpGet("event-clips")]
   public async Task<IActionResult> GetEventClips([FromQuery] string eventUuid, CancellationToken ct)
   {
@@ -535,6 +572,14 @@ public sealed class FSController(
     if (clipsResp is null)
       return NotFound(new { error = "event not found" });
 
+    // An episode belongs to exactly one camera, so this is a check rather than a filter. Denials
+    // answer 404 like a missing episode would: a 403 here would confirm that the episode exists on
+    // a camera the caller cannot see.
+    var episodeCamera = clipsResp.Recordings.FirstOrDefault()?.CameraId;
+    if (episodeCamera is not null
+      && !await access.IsAllowedAsync(User, episodeCamera, CameraAction.ViewArchive, ct))
+      return NotFound(new { error = "event not found" });
+
     var clips = clipsResp.Recordings
       .Select(ToRecordingDto)
       .OrderBy(c => c.StartTime)
@@ -543,6 +588,7 @@ public sealed class FSController(
     return Ok(new EventClipsResponseDto { Clips = clips });
   }
 
+  [Authorize(Policy = AuthPolicies.AdminOnly)]
   [HttpGet("activity")]
   public async Task<IActionResult> GetFsActivity([FromQuery] int? limit, CancellationToken ct)
   {
@@ -573,6 +619,7 @@ public sealed class FSController(
     return Ok(new FsActivityResponseDto { Events = sorted });
   }
 
+  [CameraAccess(CameraAction.ViewArchive)]
   [HttpGet("frame-jpeg")]
   public async Task<IActionResult> GetFrameJpeg(
     [FromQuery] string cameraId,

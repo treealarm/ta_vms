@@ -51,6 +51,10 @@ message ListDetectionsRequest {
   optional string plate_text = 5;
   optional string event_id = 6;
   optional string event_uuid = 7;
+  // Restrict the result to these cameras (empty = no restriction). Distinct from camera_id, which
+  // selects exactly one: this is the caller's visible set, pushed down so paging stays correct for
+  // a user who may see only a few of many cameras.
+  repeated string camera_ids = 8;
 }
 
 message ListDetectionsResponse {
@@ -63,6 +67,9 @@ message GetDetectionCropRequest {
 
 message GetDetectionCropResponse {
   bytes jpeg = 1;  // empty when the detection has no saved crop
+  // Owning camera, so the gateway can apply per-camera permissions without a second lookup.
+  // Empty when the detection id is unknown.
+  string camera_id = 2;
 }
 
 message BoundingBox {

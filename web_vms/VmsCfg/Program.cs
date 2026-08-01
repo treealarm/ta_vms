@@ -22,6 +22,7 @@ builder.Services.AddSingleton<ScheduleDb>();
 builder.Services.AddSingleton<ScheduleCache>();
 builder.Services.AddSingleton<CameraStorage>();
 builder.Services.AddSingleton<StorageDb>();
+builder.Services.AddSingleton<PermissionDb>();
 builder.Services.AddSingleton<CfgServiceImpl>();
 builder.Services.AddSingleton<StorageServiceImpl>();
 builder.Services.AddHostedService<RecordingScheduleService>();

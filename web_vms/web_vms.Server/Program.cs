@@ -8,11 +8,22 @@ using Vms.Onvif;
 using Vms.Utils;
 using web_vms;
 using web_vms.Authentication;
+using web_vms.Authorization;
+using Dapr.Messaging.PublishSubscribe.Extensions;
 using Vms.Logger;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers(o => o.Filters.Add<RpcExceptionFilter>());
+// CameraAccessFilter is global on purpose: it is what guarantees no endpoint reaches video without
+// having declared which permission it needs (see the fail-closed branch in the filter).
+builder.Services.AddControllers(o =>
+{
+  o.Filters.Add<RpcExceptionFilter>();
+  o.Filters.Add<CameraAccessFilter>();
+});
+builder.Services.AddSingleton<ICameraAccessService, CameraAccessService>();
+builder.Services.AddDaprPubSubClient();
+builder.Services.AddHostedService<CameraPermissionSubscriber>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -49,7 +60,9 @@ builder.Services.AddSingleton(_ =>
     DaprClient.CreateInvocationInvoker(analyticsAppId)));
 
 builder.Services.AddSingleton<ICameraManager, CameraManager>();
+builder.Services.AddSingleton<IPermissionManager, PermissionManager>();
 builder.Services.AddSingleton<MonitorManager>();
+builder.Services.AddSingleton<ArchiveOwnershipCache>();
 builder.Services.AddSingleton<IHlsArchiveService, HlsArchiveService>();
 builder.Services.AddSingleton<IArchiveTsStreamer, ArchiveTsStreamer>();
 builder.Services.AddSingleton<StreamStateService>();
@@ -71,6 +84,17 @@ builder.Services.AddSingleton<WhepProxyService>();
 // and web_vms keeps running standalone (no dependency on Square's Keycloak). When set, the
 // remaining KEYCLOAK_* vars become required so misconfiguration fails fast at startup.
 var keycloakUrl = Environment.GetEnvironmentVariable("KEYCLOAK_URL");
+
+// VMS_LIVE_TEST_PLAYER opens an anonymous WHEP mirror (WhepTestController) that can play any
+// camera by id — it bypasses login and every per-camera permission. Refusing to start makes the
+// dangerous combination impossible to reach by accident instead of leaving a quiet hole.
+if (!string.IsNullOrEmpty(keycloakUrl) && web_vms.Controllers.FrontendConfigController.LiveTestPlayerEnabled)
+{
+  throw new InvalidOperationException(
+    "VMS_LIVE_TEST_PLAYER=true cannot be combined with KEYCLOAK_URL: it exposes an anonymous WHEP "
+    + "endpoint for every camera. Unset VMS_LIVE_TEST_PLAYER in any deployment that has authentication.");
+}
+
 if (!string.IsNullOrEmpty(keycloakUrl))
 {
   var keycloakAdminUser = Require("KEYCLOAK_ADMIN_USER");

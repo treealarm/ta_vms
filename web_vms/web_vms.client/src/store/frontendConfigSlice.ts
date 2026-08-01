@@ -3,16 +3,20 @@ import { parseJson } from './api'
 
 type FrontendConfigDto = {
   squareFrontendOrigin?: string | null
+  liveTestPlayer?: boolean
 }
 
 type FrontendConfigState = {
   squareFrontendOrigin: string | null
+  /** Whether the backend serves the dev-only anonymous WHEP test endpoints at all. */
+  liveTestPlayer: boolean
   /** This endpoint is anonymous, so 'failed' means the backend itself is unreachable, not 401. */
   status: 'idle' | 'pending' | 'succeeded' | 'failed'
 }
 
 const initialState: FrontendConfigState = {
   squareFrontendOrigin: null,
+  liveTestPlayer: false,
   status: 'idle',
 }
 
@@ -33,6 +37,7 @@ const frontendConfigSlice = createSlice({
       .addCase(loadFrontendConfig.fulfilled, (state, action) => {
         state.status = 'succeeded'
         state.squareFrontendOrigin = action.payload.squareFrontendOrigin || null
+        state.liveTestPlayer = action.payload.liveTestPlayer === true
       })
       .addCase(loadFrontendConfig.rejected, (state) => {
         state.status = 'failed'

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Grpc.Core;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Analytics;
+using web_vms.Authorization;
 using web_vms.Types.Dto;
 
 namespace web_vms;
@@ -10,18 +11,19 @@ namespace web_vms;
 // live video in the monitor. The frontend opens ONE connection for the whole monitor and routes
 // events to the right camera overlay by cameraId (a per-camera connection would exhaust the browser
 // HTTP/1.1 connection pool on large grids). Consumed via fetch-streaming (not EventSource), so the
-// existing Bearer wrapper still applies. Anonymous to match the sibling live-view endpoints (WHEP
-// video, camera state): the video itself is served without [Authorize], so gating its annotations
-// behind auth would be inconsistent and pointless.
+// existing Bearer wrapper still applies — like every non-anonymous endpoint here, it needs a valid
+// token, and each event is additionally filtered against the caller's camera permissions.
 [ApiController]
 [Route("api/analytics")]
 public class AnalyticsLiveController(
-  VmsAnalyticsService.VmsAnalyticsServiceClient _analyticsClient) : ControllerBase
+  VmsAnalyticsService.VmsAnalyticsServiceClient _analyticsClient,
+  ICameraAccessService _access) : ControllerBase
 {
   private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
   // Keep-alive comment cadence: without traffic, an idle intermediary could close the connection.
   private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(15);
 
+  [CameraAccess(CameraAction.ViewLive, Source = CameraIdSource.Action)]
   [HttpGet("live")]
   public async Task Live(CancellationToken ct)
   {
@@ -56,8 +58,14 @@ public class AnalyticsLiveController(
         if (!await moveNext)
           break; // stream ended cleanly
 
-        var dto = AnalyticsActivityMapper.ToDto(stream.Current, includeCrop: false);
-        await WriteRawAsync($"data: {JsonSerializer.Serialize(dto, JsonOpts)}\n\n", ct);
+        // Re-read the scope per event rather than once per connection: it is a cache lookup, and it
+        // means a revocation takes effect on an already-open stream without tearing it down.
+        var scope = await _access.ScopeAsync(User, CameraAction.ViewLive, ct);
+        if (scope.Contains(stream.Current.CameraId))
+        {
+          var dto = AnalyticsActivityMapper.ToDto(stream.Current, includeCrop: false);
+          await WriteRawAsync($"data: {JsonSerializer.Serialize(dto, JsonOpts)}\n\n", ct);
+        }
         moveNext = stream.MoveNext(ct);
       }
     }

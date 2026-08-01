@@ -1,5 +1,7 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
+using Vms.Fs;
+using web_vms.Authorization;
 
 namespace web_vms;
 
@@ -7,9 +9,13 @@ namespace web_vms;
 [Route("api/[controller]")]
 public partial class ArchController(
   IHlsArchiveService hlsService,
-  IArchiveTsStreamer tsStreamer) : ControllerBase
+  IArchiveTsStreamer tsStreamer,
+  ArchiveOwnershipCache ownership,
+  ServerPairRegistry registry,
+  ICameraAccessService access) : ControllerBase
 {
 
+  [CameraAccess(CameraAction.ViewArchive)]
   [HttpGet("hls/preview.m3u8")]
   public async Task<IActionResult> PreviewHlsPlaylist(
     [FromQuery] string cameraId,
@@ -38,6 +44,7 @@ public partial class ArchController(
     return PlaylistResult(result);
   }
 
+  [CameraAccess(CameraAction.ViewArchive)]
   [HttpGet("hls/from-files.m3u8")]
   public async Task<IActionResult> FromFilesHlsPlaylist(
     [FromQuery] string cameraId,
@@ -66,6 +73,8 @@ public partial class ArchController(
     return PlaylistResult(result);
   }
 
+  // Addressed by episode, so the camera has to be resolved from the clips first.
+  [CameraAccess(CameraAction.ViewArchive, Source = CameraIdSource.Action)]
   [HttpGet("hls/event.m3u8")]
   public async Task<IActionResult> EventHlsPlaylist(
     [FromQuery] string eventUuid,
@@ -80,6 +89,9 @@ public partial class ArchController(
     if (!Guid.TryParse(eventUuid, out _))
       return BadRequest(new { error = "valid eventUuid is required" });
 
+    if (!await MayViewEventAsync(eventUuid, ct))
+      return NotFound(new { error = "event not found" });
+
     // Optional [from, to] restricts the source to one playback chunk of a long event (see
     // FSController.GetEventPlaylists). Absent => the whole event.
     DateTime? fromTs = DateTime.TryParse(from, null, System.Globalization.DateTimeStyles.RoundtripKind, out var f) ? f.ToUniversalTime() : null;
@@ -89,6 +101,9 @@ public partial class ArchController(
     return PlaylistResult(result);
   }
 
+  // Addressed by clip, and hit once per segment — the owning camera comes from the cache the
+  // playlist build primed, with an RPC only on a cold miss.
+  [CameraAccess(CameraAction.ViewArchive, Source = CameraIdSource.Action)]
   [HttpGet("hls/ts")]
   [HttpHead("hls/ts")]
   public async Task<IActionResult> ServeArchiveTs(
@@ -103,6 +118,17 @@ public partial class ArchController(
 
     if (!Guid.TryParse(clipUid, out _))
       return BadRequest(new { error = "clipUid must be a valid UUID" });
+
+    // A whole-file request (no offset/length, no Range) is a download, not playback — that is the
+    // export permission. Playlist segments always carry a byte window.
+    var isWholeFileDownload = offset == 0 && length == 0
+      && string.IsNullOrEmpty(Request.Headers["Range"].ToString());
+    var action = isWholeFileDownload ? CameraAction.Export : CameraAction.ViewArchive;
+
+    var clipCamera = await ResolveClipCameraAsync(clipUid, ct);
+    // Unknown clip and forbidden clip answer alike: a 403 would confirm the clip exists.
+    if (clipCamera is null || !await access.IsAllowedAsync(User, clipCamera, action, ct))
+      return NotFound(new { error = "clip not found" });
 
     var result = await tsStreamer.OpenAsync(clipUid, offset, length, Request.Headers["Range"].ToString(), ct);
 
@@ -139,6 +165,51 @@ public partial class ArchController(
     }
 
     return StatusCode(StatusCodes.Status500InternalServerError);
+  }
+
+  /// <summary>
+  /// Clip -> camera. Served from the cache the playlist build primed; a miss (deep link, restart,
+  /// eviction) costs one fan-out lookup, which then primes the cache for the rest of the playback.
+  /// </summary>
+  private async Task<string?> ResolveClipCameraAsync(string clipUid, CancellationToken ct)
+  {
+    if (ownership.TryGetClipCamera(clipUid, out var cached))
+      return cached;
+
+    var responses = await registry.FanOutFsAsync(
+      (c, o) => c.GetRecordingByUidAsync(
+        new GetRecordingByUidRequest { ClipUids = { clipUid } }, o).ResponseAsync, ct);
+
+    var recording = responses
+      .SelectMany(r => r.Value.Recordings)
+      .FirstOrDefault(r => r.ClipUid == clipUid);
+
+    if (recording is null || string.IsNullOrEmpty(recording.CameraId))
+      return null;
+
+    ownership.PrimeClips([recording]);
+    return recording.CameraId;
+  }
+
+  private async Task<bool> MayViewEventAsync(string eventUuid, CancellationToken ct)
+  {
+    if (!ownership.TryGetEventCamera(eventUuid, out var cameraId))
+    {
+      var responses = await registry.FanOutFsAsync(
+        (c, o) => c.GetClipsForEventAsync(new GetClipsForEventRequest { EventUuid = eventUuid }, o).ResponseAsync, ct);
+
+      var recording = responses
+        .SelectMany(r => r.Value.Recordings)
+        .FirstOrDefault(r => !string.IsNullOrEmpty(r.CameraId));
+
+      if (recording is null)
+        return false;
+
+      cameraId = recording.CameraId;
+      ownership.PrimeEvent(eventUuid, cameraId);
+    }
+
+    return await access.IsAllowedAsync(User, cameraId, CameraAction.ViewArchive, ct);
   }
 
   private IActionResult PlaylistResult(HlsPlaylistResult result)

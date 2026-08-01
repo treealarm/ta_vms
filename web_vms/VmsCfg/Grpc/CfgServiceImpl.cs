@@ -10,6 +10,7 @@ namespace VmsCfg
     CameraStorage storage,
     ScheduleDb scheduleDb,
     ScheduleCache scheduleCache,
+    PermissionDb permissionDb,
     DaprClient daprClient,
     ISquareIntegration square,
     ILogger<CfgServiceImpl> logger) : CfgService.CfgServiceBase
@@ -18,6 +19,7 @@ namespace VmsCfg
     private const string MediaServerConfigChangedTopic = "media-server-config-changed";
     private const string CameraStateChangedTopic       = "camera-state-changed";
     private const string AnalyticsWatchChangedTopic    = "analytics-watch-changed";
+    private const string CameraPermissionsChangedTopic = "camera-permissions-changed";
 
     // Investigation boards are operator-created and never expire on their own, so the number one
     // person can accumulate is capped. Walls are unaffected — they are admin-managed.
@@ -68,6 +70,23 @@ namespace VmsCfg
         catch (Exception ex)
         {
           logger.LogWarning(ex, "Analytics watch change notification failed for '{WatchId}'", watchId);
+        }
+      });
+    }
+
+    // Payload is the affected username, or "" when the ACL mode changed and every cached decision
+    // is stale. Subscribers use it only as a signal to re-fetch, never as the new state.
+    private void NotifyCameraPermissionsChanged(string username)
+    {
+      _ = Task.Run(async () =>
+      {
+        try
+        {
+          await daprClient.PublishEventAsync(_pubSubName, CameraPermissionsChangedTopic, username);
+        }
+        catch (Exception ex)
+        {
+          logger.LogWarning(ex, "Camera permission change notification failed for '{Username}'", username);
         }
       });
     }
@@ -894,6 +913,49 @@ namespace VmsCfg
         NotifyAnalyticsWatchChanged(request.CameraId);
       }
       return new OperationStatus { Success = removed };
+    }
+
+    // ── Per-camera permissions ────────────────────────────────────────────────
+
+    public override async Task<ListCameraPermissionsResponse> ListCameraPermissions(
+      ListCameraPermissionsRequest request, ServerCallContext context)
+    {
+      var username = request.HasUsername ? request.Username : null;
+      var response = new ListCameraPermissionsResponse();
+      response.Users.AddRange(await permissionDb.ListAsync(username, context.CancellationToken));
+      return response;
+    }
+
+    public override async Task<OperationStatus> SetUserCameraPermissions(
+      SetUserCameraPermissionsRequest request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.Permissions?.Username))
+        return new OperationStatus { Success = false, Message = "username must not be empty" };
+
+      await permissionDb.ReplaceUserAsync(request.Permissions, context.CancellationToken);
+      logger.LogInformation(
+        "Camera permissions for '{Username}' replaced: {CameraCount} cameras, blanket grant {Blanket}",
+        request.Permissions.Username,
+        request.Permissions.Cameras.Count,
+        request.Permissions.AllCameras is null ? "none" : "set");
+      NotifyCameraPermissionsChanged(request.Permissions.Username);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<GetCameraAclModeResponse> GetCameraAclMode(
+      Google.Protobuf.WellKnownTypes.Empty request, ServerCallContext context)
+    {
+      return new GetCameraAclModeResponse { Mode = await permissionDb.GetModeAsync(context.CancellationToken) };
+    }
+
+    public override async Task<OperationStatus> SetCameraAclMode(
+      SetCameraAclModeRequest request, ServerCallContext context)
+    {
+      await permissionDb.SetModeAsync(request.Mode, context.CancellationToken);
+      logger.LogInformation("Camera ACL mode set to {Mode}", request.Mode);
+      // Empty payload: a mode flip invalidates every cached decision, not one user's.
+      NotifyCameraPermissionsChanged(string.Empty);
+      return new OperationStatus { Success = true };
     }
   }
 }

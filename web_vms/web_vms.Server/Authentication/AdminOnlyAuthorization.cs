@@ -11,6 +11,17 @@ namespace web_vms.Authentication
     public const string Authenticated = "Authenticated";
   }
 
+  /// <summary>
+  /// The one place that answers "is there an identity at all in this deployment". Everything that
+  /// has to stay open when authentication is disabled — the policy handlers here, and the
+  /// per-camera permission checks — asks this rather than re-reading the env var.
+  /// </summary>
+  public static class AuthGate
+  {
+    public static bool KeycloakEnabled =>
+      !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("KEYCLOAK_URL"));
+  }
+
   public class AdminRoleRequirement : IAuthorizationRequirement
   {
   }
@@ -27,9 +38,7 @@ namespace web_vms.Authentication
       AuthorizationHandlerContext context,
       AuthenticatedRequirement requirement)
     {
-      var keycloakEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("KEYCLOAK_URL"));
-
-      if (!keycloakEnabled || context.User.Identity?.IsAuthenticated == true)
+      if (!AuthGate.KeycloakEnabled || context.User.Identity?.IsAuthenticated == true)
       {
         context.Succeed(requirement);
       }
@@ -44,9 +53,7 @@ namespace web_vms.Authentication
       AuthorizationHandlerContext context,
       AdminRoleRequirement requirement)
     {
-      var keycloakEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("KEYCLOAK_URL"));
-
-      if (!keycloakEnabled || context.User.IsInRole(RoleConstants.Admin))
+      if (!AuthGate.KeycloakEnabled || context.User.IsInRole(RoleConstants.Admin))
       {
         context.Succeed(requirement);
       }

@@ -31,7 +31,8 @@
     "goAdmin": "Admin",
     "goOperator": "Operator",
     "logout": "Log out",
-    "investigations": "Investigations"
+    "investigations": "Investigations",
+    "permissions": "Permissions"
   },
   "auth": {
     "title": "Sign in",
@@ -207,6 +208,30 @@
     "noServers": "No routers configured",
     "selectHint": "Select a router or press + to add one"
   },
+  "permissions": {
+    "title": "Camera permissions",
+    "users": "Users",
+    "noUsers": "No users in the realm",
+    "selectHint": "Select a user to edit their camera permissions",
+    "allCameras": "All cameras",
+    "allCamerasHelper": "Also applies to cameras added later",
+    "viewLive": "Live",
+    "viewArchive": "Archive",
+    "ptz": "PTZ",
+    "control": "Control",
+    "export": "Export",
+    "searchCameras": "Search cameras",
+    "toggleColumn": "Grant on every listed camera",
+    "grantedByAllCameras": "Granted by the “All cameras” rule",
+    "noCameras": "No cameras",
+    "noGrants": "No access",
+    "nCameras": "{{count}} cameras",
+    "enforce": "Enforce camera permissions",
+    "enforceOffHelper": "Off: every signed-in user reaches every camera",
+    "enforceOnHelper": "On: users only reach the cameras granted to them",
+    "enforceOnWarning": "Users without grants will immediately lose access to all cameras, including any Square users signing in against this realm.",
+    "enforceConfirm": "Enable camera permissions?"
+  },
   "logs": {
     "title": "Log Journal",
     "hasMore": "has more",
@@ -341,12 +366,30 @@
     "noCameraSelected": "No camera selected",
     "filterHint": "Filter…",
     "topicPresets": {
-      "motion":          { "label": "Motion",            "desc": "Motion detection" },
-      "faceDetection":   { "label": "Face Detection",    "desc": "Face detection" },
-      "lineCrossing":    { "label": "Line Crossing",     "desc": "Virtual line crossing" },
-      "fieldDetection":  { "label": "Region Intrusion",  "desc": "Region intrusion / field detection" },
-      "alarmList":       { "label": "Alarm",             "desc": "External alarm / IO input" },
-      "objectDetection": { "label": "Object Detection",  "desc": "Object detection (person, vehicle)" }
+      "motion": {
+        "label": "Motion",
+        "desc": "Motion detection"
+      },
+      "faceDetection": {
+        "label": "Face Detection",
+        "desc": "Face detection"
+      },
+      "lineCrossing": {
+        "label": "Line Crossing",
+        "desc": "Virtual line crossing"
+      },
+      "fieldDetection": {
+        "label": "Region Intrusion",
+        "desc": "Region intrusion / field detection"
+      },
+      "alarmList": {
+        "label": "Alarm",
+        "desc": "External alarm / IO input"
+      },
+      "objectDetection": {
+        "label": "Object Detection",
+        "desc": "Object detection (person, vehicle)"
+      }
     }
   },
   "cameraCard": {
