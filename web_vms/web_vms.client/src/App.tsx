@@ -23,7 +23,8 @@ import EntityStatePanel from './components/EntityStatePanel'
 import AnalyticsActivityPanel from './components/AnalyticsActivityPanel'
 
 function LangToggle() {
-  const { t: _t } = useTranslation()
+  // The button label is the language code itself, so nothing here needs translating — i18n is
+  // driven directly through the i18n instance below.
   const [lang, setLang] = useState<'en' | 'es'>(
     () => (localStorage.getItem('lang') === 'es' ? 'es' : 'en')
   )
