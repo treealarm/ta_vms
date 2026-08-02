@@ -55,6 +55,9 @@ public sealed class CameraAccessService(
   private string? _lastSeenVersion;
   private DateTime _versionCheckedAtUtc = DateTime.MinValue;
 
+  // Incremented by every invalidation; see the check around the cache write in GetGrantsAsync.
+  private int _generation;
+
   private sealed record CachedGrants(UserCameraPermissionsDto Grants, DateTime FetchedAtUtc);
 
   private readonly ConcurrentDictionary<string, CachedGrants> _byUser = new(StringComparer.Ordinal);
@@ -112,6 +115,11 @@ public sealed class CameraAccessService(
 
   public void Invalidate(string username)
   {
+    // Bumped before the removal so a fetch that is already in flight — started against the old
+    // grants, landing after the flush — notices it is stale and does not re-insert what was just
+    // dropped, which would keep a revoked grant alive for another full TTL.
+    Interlocked.Increment(ref _generation);
+
     if (string.IsNullOrEmpty(username))
     {
       _byUser.Clear();
@@ -230,8 +238,14 @@ public sealed class CameraAccessService(
       if (_byUser.TryGetValue(username, out cached) && DateTime.UtcNow - cached.FetchedAtUtc < CacheTtl)
         return cached.Grants;
 
+      var generation = Volatile.Read(ref _generation);
       var fresh = await permissions.GetForUser(username, ct);
-      _byUser[username] = new CachedGrants(fresh, DateTime.UtcNow);
+
+      // Serve what was read, but only cache it if nothing was invalidated while it was in flight —
+      // otherwise this write would restore grants the flush had just deleted.
+      if (Volatile.Read(ref _generation) == generation)
+        _byUser[username] = new CachedGrants(fresh, DateTime.UtcNow);
+
       return fresh;
     }
     catch (Exception ex)

@@ -28,9 +28,10 @@ public sealed record WhepDeleteResult(WhepProxyOutcome Outcome, int StatusCode =
 /// (anonymous, dev-only).
 ///
 /// Holds no session state: the token handed to the browser is the session, sealed with AES-GCM
-/// (see <see cref="WhepSessionToken"/>). That keeps DeleteSessionAsync targeting only URIs this
-/// service itself constructed — the anti-SSRF guarantee a lookup table used to give — while
-/// letting any replica close a session that any other replica opened.
+/// (see <see cref="WhepSessionToken"/>), so any replica can close a session that any other replica
+/// opened. Both directions resolve the MediaMTX address from the camera's configuration, so a
+/// request can only ever reach a configured MediaMTX no matter what the client sends — the
+/// anti-SSRF guarantee the old lookup table gave by construction, kept by construction.
 /// </summary>
 public sealed class WhepProxyService(
   ICameraManager _manager, IHttpClientFactory _httpClientFactory, WhepSessionToken _tokens)
@@ -91,8 +92,10 @@ public sealed class WhepProxyService(
       string? token = null;
       if (mtxResponse.Headers.Location is { } location)
       {
+        // Only the path is sealed. The host is re-derived from the camera's configuration when the
+        // session is closed, so the token cannot carry a destination anywhere.
         var absoluteLocation = location.IsAbsoluteUri ? location : new Uri(targetUri, location);
-        token = _tokens.Seal(absoluteLocation, owner, DateTime.UtcNow + SessionTtl);
+        token = _tokens.Seal(cameraId, absoluteLocation.PathAndQuery, owner, DateTime.UtcNow + SessionTtl);
       }
 
       var body = await mtxResponse.Content.ReadAsByteArrayAsync(ct);
@@ -106,8 +109,20 @@ public sealed class WhepProxyService(
     // A foreign token is answered exactly like an unopenable one, so tokens can't be probed and one
     // viewer can't tear down another's stream. Unlike the old in-memory table this is idempotent:
     // closing twice proxies twice and MediaMTX answers 404 the second time.
-    if (!_tokens.TryOpen(token, out var sessionUri, out var sealedOwner)
+    if (!_tokens.TryOpen(token, out var cameraId, out var sessionPath, out var sealedOwner)
       || !string.Equals(sealedOwner, owner, StringComparison.Ordinal))
+      return new WhepDeleteResult(WhepProxyOutcome.InvalidToken);
+
+    // Where to send the DELETE comes from the camera's configuration, never from the token — the
+    // request the client controls can only ever reach the MediaMTX this camera is assigned to. The
+    // sealed path is confined to that camera's own namespace on it, checked after normalization so
+    // "/cam1/../something" cannot climb out.
+    var server = await _manager.GetOrAssignMediaMtxServer(cameraId, ct);
+    if (server is null || string.IsNullOrWhiteSpace(server.Host))
+      return new WhepDeleteResult(WhepProxyOutcome.CameraNotFound);
+
+    if (!Uri.TryCreate($"http://{server.Host}:{server.WebrtcPort}{sessionPath}", UriKind.Absolute, out var sessionUri)
+      || !sessionUri.AbsolutePath.StartsWith($"/{cameraId}/", StringComparison.Ordinal))
       return new WhepDeleteResult(WhepProxyOutcome.InvalidToken);
 
     var client = _httpClientFactory.CreateClient(MediaMtxHttpClientName);

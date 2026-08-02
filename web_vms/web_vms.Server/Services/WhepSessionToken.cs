@@ -4,17 +4,19 @@ using System.Text;
 namespace web_vms;
 
 /// <summary>
-/// Seals a WHEP session (the real MediaMTX session URL plus its owner) into the opaque token the
-/// browser gets back, and opens it again when the browser asks to close the session.
+/// Seals a WHEP session (its camera, the session path MediaMTX handed out, and the owner) into the
+/// opaque token the browser gets back, and opens it again when the browser asks to close it.
 ///
 /// The token carries its own contents instead of being a key into a per-process table, so any
 /// replica can close a session opened by any other one — a table would make the gateway require
 /// session affinity, which is the one thing keeping it from scaling horizontally.
 ///
-/// AES-GCM rather than a plain signature: the sealed payload names an internal MediaMTX host and
-/// port, and there is no reason to hand that to the browser. Authentication comes with it — a
-/// token that opens is proof the URL inside was produced by <see cref="WhepProxyService"/> itself,
-/// which is exactly the anti-SSRF property the old lookup table provided by construction.
+/// It deliberately does <b>not</b> carry a host: the MediaMTX address is always re-resolved from
+/// the camera's configuration when the session is closed (see <see cref="WhepProxyService"/>). A
+/// token therefore cannot name a destination, no matter what it contains, which keeps "the gateway
+/// only ever calls a MediaMTX it was configured to call" true by construction rather than by trust
+/// in the sealing key. AES-GCM on top of that authenticates the camera and owner and keeps the
+/// path opaque to the browser.
 /// </summary>
 public sealed class WhepSessionToken
 {
@@ -49,10 +51,13 @@ public sealed class WhepSessionToken
     return new WhepSessionToken(key);
   }
 
-  public string Seal(Uri sessionUri, string owner, DateTime expiresUtc)
+  /// <param name="sessionPath">
+  /// Path (with query, if any) of the session URL MediaMTX returned — never its host.
+  /// </param>
+  public string Seal(string cameraId, string sessionPath, string owner, DateTime expiresUtc)
   {
     var payload = Encoding.UTF8.GetBytes(
-      $"{new DateTimeOffset(expiresUtc, TimeSpan.Zero).ToUnixTimeSeconds()}\n{owner}\n{sessionUri.AbsoluteUri}");
+      $"{new DateTimeOffset(expiresUtc, TimeSpan.Zero).ToUnixTimeSeconds()}\n{owner}\n{cameraId}\n{sessionPath}");
 
     var token = new byte[NonceSize + TagSize + payload.Length];
     var nonce = token.AsSpan(0, NonceSize);
@@ -70,9 +75,10 @@ public sealed class WhepSessionToken
   /// False for anything that is not a live token this key sealed — malformed, tampered with, or
   /// expired all look the same, so a token cannot be probed for which of those it is.
   /// </summary>
-  public bool TryOpen(string token, out Uri sessionUri, out string owner)
+  public bool TryOpen(string token, out string cameraId, out string sessionPath, out string owner)
   {
-    sessionUri = null!;
+    cameraId = string.Empty;
+    sessionPath = string.Empty;
     owner = string.Empty;
 
     if (!TryFromBase64Url(token, out var raw) || raw.Length <= NonceSize + TagSize)
@@ -93,21 +99,20 @@ public sealed class WhepSessionToken
       return false;
     }
 
-    var text = Encoding.UTF8.GetString(payload);
-    var firstBreak = text.IndexOf('\n');
-    if (firstBreak < 0) return false;
-    var secondBreak = text.IndexOf('\n', firstBreak + 1);
-    if (secondBreak < 0) return false;
+    var fields = Encoding.UTF8.GetString(payload).Split('\n', 4);
+    if (fields.Length != 4)
+      return false;
 
-    if (!long.TryParse(text.AsSpan(0, firstBreak), out var expiresUnix)
+    if (!long.TryParse(fields[0], out var expiresUnix)
       || DateTimeOffset.FromUnixTimeSeconds(expiresUnix) < DateTimeOffset.UtcNow)
       return false;
 
-    if (!Uri.TryCreate(text[(secondBreak + 1)..], UriKind.Absolute, out var uri))
+    if (fields[2].Length == 0 || fields[3].Length == 0)
       return false;
 
-    sessionUri = uri;
-    owner = text[(firstBreak + 1)..secondBreak];
+    owner = fields[1];
+    cameraId = fields[2];
+    sessionPath = fields[3];
     return true;
   }
 
