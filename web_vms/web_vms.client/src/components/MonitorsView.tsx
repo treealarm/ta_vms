@@ -57,7 +57,7 @@ export default function MonitorsView({ readOnly = false, kind = 'wall' }: Props)
   const investigation = kind === 'investigation'
   const monitors = useMemo(() => allMonitors.filter((m) => m.kind === kind), [allMonitors, kind])
 
-  // Seeded from ?monitorId=<id> when arriving via Square's Monitor tab ("Open in vms_rec" link) or
+  // Seeded from ?monitorId=<id> when arriving via Square's Monitor tab deep-link or
   // from an event — falls back to the usual auto-select-first behavior below if the id doesn't
   // match any monitor.
   const [selectedMonitorId, setSelectedMonitorId] = useState<string | null>(() => searchParams.get('monitorId'))

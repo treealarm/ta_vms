@@ -26,10 +26,10 @@ if (-not $?) {
 }
 
 # 2️⃣ Сборка проекта через docker-compose
-Write-Host "=== Building vms_rec via docker-compose ==="
+Write-Host "=== Building ta_vms via docker-compose ==="
 Set-Location $RootDir
 docker compose --profile app build
 
 # 3️⃣ Запуск контейнеров
-Write-Host "=== Starting vms_rec containers ==="
+Write-Host "=== Starting ta_vms containers ==="
 docker compose --profile app up

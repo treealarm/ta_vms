@@ -1,9 +1,14 @@
+# Pinned here rather than derived from the checkout directory: it fixes the built image prefix
+# (ta_vms-<service>, which ../ta_install/scripts/push-images.sh re-tags) and the container names no
+# matter what the folder is called or which cwd compose is invoked from.
+name: ta_vms
+
 x-data-volume: &data-volume
   - "${PWD}/data:/data"
 
 # Same network Square/multitenant_admin use (neither marks it external — whichever stack starts
 # first creates it, the rest just attach by name). Renaming compose's own implicit "default"
-# network this way puts every vms_rec service on it with no per-service changes needed.
+# network this way puts every ta_vms service on it with no per-service changes needed.
 networks:
   default:
     name: common_app_network
@@ -39,11 +44,11 @@ services:
     depends_on:
       - postgres
 
-  # No own redis service: vms_rec now shares one network (common_app_network, see above) with
-  # Square/multitenant_admin, and reuses multitenant_admin's "redis" for all of vms_rec's Dapr
+  # No own redis service: ta_vms now shares one network (common_app_network, see above) with
+  # Square/multitenant_admin, and reuses multitenant_admin's "redis" for all of ta_vms's Dapr
   # pub/sub and state store too — running two same-named "redis" containers on one network makes
   # Docker's embedded DNS round-robin connections randomly between them (verified empirically),
-  # so there can only be one. This means vms_rec no longer starts standalone without
+  # so there can only be one. This means ta_vms no longer starts standalone without
   # Square/multitenant_admin's stack also running — an explicit, accepted trade-off.
 
   mediamtx:

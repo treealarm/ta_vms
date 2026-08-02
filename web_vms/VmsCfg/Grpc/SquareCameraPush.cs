@@ -8,9 +8,9 @@ namespace VmsCfg;
 
 // Shared by CfgServiceImpl (per-camera push on config/state change), Program.cs's startup resync
 // (full re-push of every camera) and SquareAlarmSubscriber (alarm events) — kept in one place so
-// these don't drift. Builds vms_rec's camera tree on top of the generic ISquareIntegration
+// these don't drift. Builds ta_vms's camera tree on top of the generic ISquareIntegration
 // protocol (see SquareIntegrationClient submodule, docs/square-integration-plan.md) — id
-// conversion and figure/property shaping are vms_rec-specific, not part of the shared protocol.
+// conversion and figure/property shaping are ta_vms-specific, not part of the shared protocol.
 public static class SquareCameraPush
 {
   public static readonly double DefaultLat =
@@ -19,7 +19,7 @@ public static class SquareCameraPush
     double.TryParse(Environment.GetEnvironmentVariable("SQUARE_INTEGRATION_DEFAULT_LON"), out var lon) ? lon : 0;
 
   // Square requires object_id to parse as a GUID (Square/Domain/Utils.cs ConvertObjectIdToGuid
-  // silently drops anything else). vms_rec's camera_id is already a GUID in practice (generated
+  // silently drops anything else). ta_vms's camera_id is already a GUID in practice (generated
   // via crypto.randomUUID() when a camera is created, see CameraSetupPanel.tsx) — using it
   // directly means the same id identifies the camera in both systems, no secondary lookup needed.
   // The MD5-derived fallback only covers hypothetical non-GUID ids (e.g. hand-edited data); for
@@ -57,7 +57,7 @@ public static class SquareCameraPush
   public static async Task PushCameraAsync(ISquareIntegration square, CameraSetup setup, string appId)
   {
     // Playback details (webrtc host/port, stream names) are NOT pushed here anymore — Square's
-    // Monitor tab fetches them directly from vms_rec's own GET /api/live/cameras (CORS+JWT already
+    // Monitor tab fetches them directly from ta_vms's own GET /api/live/cameras (CORS+JWT already
     // enabled for that), so any future field is available there for free with no push code on
     // either side. Only what the map's own property panel needs stays here.
     var primaryStream = setup.Streams.FirstOrDefault(s => s.WebRtc);

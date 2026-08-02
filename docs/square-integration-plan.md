@@ -1,4 +1,4 @@
-# Интеграция vms_rec в Square: typelib-клиент + VmsCfg как producer
+# Интеграция ta_vms в Square: typelib-клиент + VmsCfg как producer
 
 > Статус: **план на будущее, не реализован.** Документ — ориентир для развития видеоподсистемы.
 > Текущая разработка не должна противоречить этому плану (см. раздел «Square integration (future)»
@@ -6,22 +6,22 @@
 
 ## Context
 
-`/mnt/wdblue/tests/vms_rec` — распределённая VMS (запись/стриминг на базе MediaMTX).
+`/mnt/wdblue/tests/ta_vms` — распределённая VMS (запись/стриминг на базе MediaMTX).
 Square (соседний проект `../Square`) — основная система мониторинга объектов на карте (Leaflet).
 Родственные проекты одного вендора с почти идентичным стеком: **Dapr + Redis (pub/sub) +
-PostgreSQL + .NET 8 + gRPC + React**. Нужно встроить vms_rec в Square так, чтобы vms_rec
+PostgreSQL + .NET 8 + gRPC + React**. Нужно встроить ta_vms в Square так, чтобы ta_vms
 **по-прежнему запускался полностью автономно**.
 
 Согласованные решения:
 - **Глубина:** поэтапно, в итоге всё (события/команды → видео в UI → единый вход).
-- **Конфиг/камеры:** vms_rec — владелец функционального конфига; конфиг **пушится снизу вверх**
-  (vms_rec → Square), в Square — read-only. Square владеет «презентацией» (позиция/имя/группировка).
+- **Конфиг/камеры:** ta_vms — владелец функционального конфига; конфиг **пушится снизу вверх**
+  (ta_vms → Square), в Square — read-only. Square владеет «презентацией» (позиция/имя/группировка).
   Менять состояние из Square — **только командами**.
 - **Инфраструктура:** общая шина Redis (pub/sub) + общая docker-сеть, **раздельные PostgreSQL**.
 - **Форма слоя:** Square — хост интеграции с расширяемым **gRPC + Dapr** API (+ REST). Producer —
   переиспользуемый **typelib-клиент** (аналог `IntegrationUtilsLib`, но со стороны отдающего),
   который подключает `VmsCfg`. Протокол — **напрямую протокол Square** (не нейтральный).
-- **Связанность:** Square свободно перерабатываем; vms_rec — трогаем **только `VmsCfg`** (подключение
+- **Связанность:** Square свободно перерабатываем; ta_vms — трогаем **только `VmsCfg`** (подключение
   typelib), а автономность сохраняем **гейтом по env** (нет sink'а Square → ведёт себя как раньше).
   Тяжёлое ядро (C++ media_server и пр.) не трогаем.
 - **Модель объекта:** root-объект = **Dapr APP_ID** процесса (`vmscfg`); дети — камеры. Дерево
@@ -44,7 +44,7 @@ resolution Dapr) service invocation между стеками по APP_ID — б
 ```
             typelib SquareIntegrationClient (gRPC+Dapr, за интерфейсом ISquareIntegration)
   VmsCfg ──register root(APP_ID)/push objects+props/report action status──►  Square (integration API)
- (vms_rec) ◄──ExecuteAction(uid)/resync  (Dapr service invocation на app-id vmscfg)──
+ (ta_vms) ◄──ExecuteAction(uid)/resync  (Dapr service invocation на app-id vmscfg)──
 ```
 
 ### 1) Square — хост интеграции (расширяемый API, протокол Square)
@@ -73,11 +73,11 @@ ActionsControl.tsx`):
 - **No-op реализация** `ISquareIntegration` для автономного режима (sink не задан) — гарантирует, что
   без интеграции producer работает как standalone.
 - **Размещение: отдельный репозиторий `github.com/treealarm/SquareIntegrationClient`, подключаемый
-  как git submodule** — `vms_rec/web_vms/SquareIntegrationClient` и `Square/SquareIntegrationClient`
+  как git submodule** — `ta_vms/web_vms/SquareIntegrationClient` и `Square/SquareIntegrationClient`
   (по образцу `KeycloakAdmin`, который уже подключён как submodule в обоих репозиториях). Содержит
   `.proto`-контракт (`integro`/`tracks`/`actions`/`common`/`diagrams`) + сгенерированные gRPC-стабы —
   единый источник правды вместо вручную синхронизируемых копий. Используется **всеми** продьюсерами
-  протокола: внешним (`vms_rec/VmsCfg`) и внутренними Square-продьюсерами (`AASubService`,
+  протокола: внешним (`ta_vms/VmsCfg`) и внутренними Square-продьюсерами (`AASubService`,
   `GrpcTracksClient`). Host-side (`Square/IntegrationHost`, `Square/IntegrationServerLib`,
   `Square/IntegrationUtilsLib/IntegrationSync*.cs`, завязанные на `Square/Domain`) — не переезжает,
   ссылается на submodule только за proto-типами.
@@ -90,7 +90,7 @@ ActionsControl.tsx`):
   (уже публикуются в `CfgServiceImpl`) — push дельт;
 - объявляет команды: камера — `start/stop_recording`, `arm/disarm`, (позже) PTZ; root — `resync`;
 - реализует обработчики команд через существующую внутреннюю логику cfg / вызовы других сервисов
-  vms_rec (`CameraControlService.SetCameraState` `proto/vms_control.proto`, `web_vms`
+  ta_vms (`CameraControlService.SetCameraState` `proto/vms_control.proto`, `web_vms`
   `CameraStateController`, PTZ `proto/onvif.proto`).
 - **Автономность:** флаг не задан → typelib = no-op, VmsCfg ведёт себя ровно как сейчас. Соответствует
   правилу CLAUDE.md «no silent fallback»: интеграция — явная опциональная фича, документируется.
@@ -100,7 +100,7 @@ ActionsControl.tsx`):
   `live_url`, `has_archive`, `disk_usage`. Square рендерит как состояния, не интерпретируя.
 - **Команды:** только переключение состояния (запись/арм/PTZ) + `resync`. Существенный конфиг
   командами не меняется.
-- **Граница владения:** функциональный конфиг — у vms_rec (в Square RO); позиция/имя/группировка — у
+- **Граница владения:** функциональный конфиг — у ta_vms (в Square RO); позиция/имя/группировка — у
   Square.
 
 ---
@@ -109,15 +109,15 @@ ActionsControl.tsx`):
 
 > Реализовано иначе, чем планировалось изначально (оверлей + альтернативные Dapr-компоненты) —
 > ниже описана фактическая, более простая схема. **Важно:** это означает отказ от автономности
-> "из коробки" — `docker compose up` в vms_rec один, без поднятого Square/multitenant_admin,
+> "из коробки" — `docker compose up` в ta_vms один, без поднятого Square/multitenant_admin,
 > больше не работает (явное, осознанное решение пользователя).
 
 Никакого отдельного оверлей-файла и альтернативных Dapr-компонентов не потребовалось:
-- `vms_rec/docker-compose.yml` переименовывает свою неявную сеть `default` в `common_app_network`
+- `ta_vms/docker-compose.yml` переименовывает свою неявную сеть `default` в `common_app_network`
   (`networks: default: name: common_app_network`, без `external: true` — как и у Square/
-  multitenant_admin: кто поднялся первым, тот её и создаёт). Все сервисы vms_rec оказываются в
+  multitenant_admin: кто поднялся первым, тот её и создаёт). Все сервисы ta_vms оказываются в
   одной сети с Square/multitenant_admin без единой правки на уровне отдельных сервисов.
-- Собственный `redis`-сервис у vms_rec убран целиком — Dapr pub/sub и state store vms_rec
+- Собственный `redis`-сервис у ta_vms убран целиком — Dapr pub/sub и state store ta_vms
   (`init_files/dapr_components/docker/{orderpubsub,statestore}.yaml`, `redisHost: redis:6379`)
   используют тот же `redis`, что и multitenant_admin. **Причина, не просто стиль:** проверено
   эмпирически — если в одной сети два разных контейнера оба регистрируют alias `redis`, Docker
@@ -129,7 +129,7 @@ ActionsControl.tsx`):
 
 `vmscfg`/VmsCfg обращается к Square исключительно через Dapr **service invocation** (gRPC-вызов на
 `integrationhost`-app-id) — pub/sub между стеками не используется, общий Redis нужен только потому,
-что vms_rec теперь физически не имеет своего.
+что ta_vms теперь физически не имеет своего.
 
 ## Phase 1 — Typelib + Square-API + VmsCfg-producer
 1. Довести Square integration API (раздел «1) Square — хост»): протоколы/consumer/каскад/disable;
@@ -139,17 +139,17 @@ ActionsControl.tsx`):
    гейт по env.
 
 Файлы (реализовано для протокольного слоя — см. п.2 выше): `github.com/treealarm/
-SquareIntegrationClient` (новый репозиторий, submodule в `vms_rec/web_vms/SquareIntegrationClient`
+SquareIntegrationClient` (новый репозиторий, submodule в `ta_vms/web_vms/SquareIntegrationClient`
 и `Square/SquareIntegrationClient`); `Square/IntegrationUtilsLib/{SquareIntegration,Utils,
 IntegrationSync,IntegrationSyncFull}.cs` (host-side, трим), `Square/GrpcDaprLib.csproj` (убраны
 `integro`/`tracks`/`actions` из компиляции), `Square/{AASubService,GrpcTracksClient,ValhallaLib,
-IntegrationServerLib,LeafletAlarms}` (ссылки на submodule); `vms_rec/web_vms/VmsCfg/Program.cs`+
+IntegrationServerLib,LeafletAlarms}` (ссылки на submodule); `ta_vms/web_vms/VmsCfg/Program.cs`+
 `Grpc/{CfgServiceImpl,SquareCameraPush,SquareAlarmSubscriber,SquareResyncService}.cs`. Ещё не
 сделано: команды (`ActionsServiceImpl`-хостинг в VmsCfg), env в `.env`/`dockerhub/.env`,
-launch.json'ы (см. CLAUDE.md vms_rec про обязательные места для новых env/сервисов).
+launch.json'ы (см. CLAUDE.md ta_vms про обязательные места для новых env/сервисов).
 
 ## Phase 2 — Видео в UI Square
-vms_rec уже отдаёт WebRTC live + HLS-архив через `web_vms` — в vms_rec писать ничего не нужно.
+ta_vms уже отдаёт WebRTC live + HLS-архив через `web_vms` — в ta_vms писать ничего не нужно.
 - В `Square/tree_alarm.client/src/` плеер: по свойству `live_url`/`vms_camera_id` строит URL к
   `web_vms`. Базовый URL — через конфиг фронта.
 - Доступ из браузера: `web_vms` за reverse-proxy на том же origin, что Square (или CORS).
@@ -164,7 +164,7 @@ JWT-валидацию ставим **перед** `web_vms` (reverse-proxy/gate
 > стоит **внутри** `web_vms.Server` (как и в самом `LeafletAlarms`, а не отдельный gateway),
 > напрямую через `JwtBearerOptions.Authority`/OIDC discovery, без отдельного reverse-proxy.
 > Использует **тот же realm `myrealm`**, что и Square (общий вход, отдельных пользователей под
-> vms_rec не завели). Включается опционально через `KEYCLOAK_URL` (пусто → standalone, без
+> ta_vms не завели). Включается опционально через `KEYCLOAK_URL` (пусто → standalone, без
 > авторизации, как раньше) — см. `web_vms/web_vms.Server/Authentication/`,
 > `Controllers/AuthController.cs`. Сетевая связность — через общую `common_app_network` (Phase 0,
 > теперь часть базового `docker-compose.yml`, без отдельного оверлея).
@@ -174,7 +174,7 @@ JWT-валидацию ставим **перед** `web_vms` (reverse-proxy/gate
 ---
 
 ## Сводка изменений
-- **vms_rec:** общая сеть + общий Redis вместо своего (Phase 0); typelib `SquareIntegrationClient`
+- **ta_vms:** общая сеть + общий Redis вместо своего (Phase 0); typelib `SquareIntegrationClient`
   + правки в `VmsCfg`/`VmsFs` (гейт по env `SQUARE_INTEGRATION_SINK_APP_ID`) (Phase 1, частично);
   ничего в тяжёлом ядре.
 - **Square:** read-only защита панели свойств для интеграционных объектов, REST-обёртка над
@@ -182,14 +182,14 @@ JWT-валидацию ставим **перед** `web_vms` (reverse-proxy/gate
 - **Общий:** новый typelib `SquareIntegrationClient` (`ISquareIntegration` + no-op).
 
 ## Проверка (по этапам)
-- **Phase 0:** `multitenant_admin` создаёт `common_app_network`; vms_rec подключается тем же
+- **Phase 0:** `multitenant_admin` создаёт `common_app_network`; ta_vms подключается тем же
   именем сети (без оверлея, без `external: true`) и без своего Redis — проверить резолв app-id
-  между стеками (Dapr service invocation `vmscfg` → `integrationhost`) и что Dapr pub/sub vms_rec
+  между стеками (Dapr service invocation `vmscfg` → `integrationhost`) и что Dapr pub/sub ta_vms
   (`orderpubsub`/`statestore`) подключается к общему `redis` от `multitenant_admin`.
-  **vms_rec больше не запускается без поднятого Square/multitenant_admin** — автономность
+  **ta_vms больше не запускается без поднятого Square/multitenant_admin** — автономность
   принесена в жертву единой сети по решению пользователя (см. CLAUDE.md).
 - **Phase 1:** включить интеграцию env → в дереве Square появился root `vmscfg` и камеры; изменить
-  конфиг камеры в vms_rec → дельта прилетела; команда `start_recording` из Square → запись включилась
+  конфиг камеры в ta_vms → дельта прилетела; команда `start_recording` из Square → запись включилась
   (статус по uid вернулся); `resync` → полный re-push; удалить root в Square → дети исчезли,
   интеграция разорвана; per-object disable работает.
 - **Phase 2:** в UI Square live (WebRTC) и архив (HLS) играют через `web_vms`.

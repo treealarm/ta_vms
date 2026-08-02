@@ -6,7 +6,7 @@ namespace VmsAnalytics;
 
 // Talks to the video_a repository's AnalyticsService over Dapr service invocation
 // (DaprClient.CreateInvocationInvoker) — same pattern as CfgServiceClient/FsServiceClient.
-// video_a knows nothing about vms_rec's camera model; classes are translated here.
+// video_a knows nothing about ta_vms's camera model; classes are translated here.
 public sealed class AnalyticsWorkerClient(AnalyticsService.AnalyticsServiceClient client) : IAnalyticsWorkerClient
 {
   public async Task<bool> StartWatchAsync(

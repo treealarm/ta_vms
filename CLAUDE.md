@@ -18,7 +18,7 @@ Production/standalone deployment is a **separate repository** (`../ta_install`, 
 `treealarm/ta_install`): the product compose (prebuilt `treealarm/*` images, own redis, no
 Square), its `.env`, `init_files/`, the image build/push scripts and the analytics model
 fetcher. This repo's root `docker-compose.yml` is **dev only** (build-from-source, joins the
-shared Square network). Never re-grow a prod compose inside vms_rec.
+shared Square network). Never re-grow a prod compose inside ta_vms.
 
 ## vms-deps is shared with video_a
 
@@ -128,17 +128,17 @@ Only add columns that are actively used. Do not add `created_at`, `updated_at`, 
 
 ## Square integration
 
-vms_rec встраивается в основную систему **Square** (`../Square`, мониторинг объектов на карте) как
+ta_vms встраивается в основную систему **Square** (`../Square`, мониторинг объектов на карте) как
 видеоподсистема. Логин и базовый Phase 1/2 (камеры на карте, свойства, алармы, вкладка "Monitor" в
 Square) реализованы; план — [`docs/square-integration-plan.md`](docs/square-integration-plan.md).
 Любое дальнейшее проектирование и развитие видеоподсистемы **не должно противоречить** этому плану.
 Соблюдай инварианты:
 
-- **Автономность принесена в жертву единой сети — явное, осознанное решение.** vms_rec теперь
+- **Автономность принесена в жертву единой сети — явное, осознанное решение.** ta_vms теперь
   **всегда** живёт в общей docker-сети `common_app_network` (тот же `name:`, что у Square/
   `multitenant_admin`, без `external: true` — кто поднялся первым, тот её и создаёт) и **не имеет
-  собственного Redis**: Dapr pub/sub/state store vms_rec используют тот же `redis`, что и
-  `multitenant_admin`. Простой `docker compose up` в одном vms_rec, без поднятого
+  собственного Redis**: Dapr pub/sub/state store ta_vms используют тот же `redis`, что и
+  `multitenant_admin`. Простой `docker compose up` в одном ta_vms, без поднятого
   Square/`multitenant_admin`, **больше не работает** — это ожидаемо, не баг. Причина отказа от
   отдельного Redis не стилистическая: два разных контейнера с одинаковым alias `redis` в одной
   сети заставляют Docker отвечать на DNS-запросы случайным round-robin между ними (проверено
@@ -149,7 +149,7 @@ Square) реализованы; план — [`docs/square-integration-plan.md`]
 - **VmsCfg — единственная точка подключения интеграции** (producer-сторона). Тяжёлое ядро (C++
   `media_server` и пр.) интеграцией не затрагивается. Не размазывай интеграционную логику по другим
   сервисам.
-- **Конфиг — только снизу вверх.** Конфигурация камер принадлежит vms_rec и пушится в Square; наружу
+- **Конфиг — только снизу вверх.** Конфигурация камер принадлежит ta_vms и пушится в Square; наружу
   она read-only. Изменение состояния извне — **только командами** (actions: запись/арм/PTZ/`resync`),
   никогда не правкой конфига из Square. В Square для интеграционных объектов (с `i_name`) панель
   свойств — read-only, и для них не регистрируется иерархия типов (`UpdateIntegroTypes`), чтобы
