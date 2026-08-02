@@ -135,6 +135,7 @@ public class CameraManager : ICameraManager
       Cred             = setup.Cred == null ? null : new CredentialsDto { User = setup.Cred.User, Pass = setup.Cred.Pass },
       OnvifConn        = setup.OnvifConn == null ? null : new OnvifConnectionDto { ip = setup.OnvifConn.Ip, port = setup.OnvifConn.Port, xaddr = setup.OnvifConn.Xaddr },
       MediaMtxServerId    = setup.HasMediaMtxServerId ? setup.MediaMtxServerId : null,
+      EffectiveWebrtcStunUrl = setup.HasEffectiveWebrtcStunUrl ? setup.EffectiveWebrtcStunUrl : null,
       OnvifEventsEnabled  = setup.OnvifEventsEnabled,
       HasOnvifFilters     = setup.HasOnvifFilters,
       OnvifManaged        = setup.OnvifManaged,
@@ -189,6 +190,7 @@ public class CameraManager : ICameraManager
     RtspPort   = s.RtspPort != 0 ? s.RtspPort : 8554,
     WebrtcPort = s.WebrtcPort != 0 ? s.WebrtcPort : 8889,
     ApiPort    = s.ApiPort != 0 ? s.ApiPort : 9997,
+    StunUrl    = s.StunUrl,
   };
 
   private static MediaMtxServer ToMediaMtxProto(MediaMtxServerDto dto) => new()
@@ -200,6 +202,7 @@ public class CameraManager : ICameraManager
     RtspPort   = dto.RtspPort,
     WebrtcPort = dto.WebrtcPort,
     ApiPort    = dto.ApiPort,
+    StunUrl    = dto.StunUrl ?? string.Empty,
   };
 
   private static MediaServerNodeDto ToDto(MediaServerNode server) => new()

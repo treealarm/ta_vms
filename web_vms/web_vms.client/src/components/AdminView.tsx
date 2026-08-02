@@ -14,10 +14,11 @@ import SimulationFab from './SimulationFab'
 import LogToggleButton from './LogToggleButton'
 import OnvifSubscriptionsPanel from './OnvifSubscriptionsPanel'
 import OnvifCameraSettingsPanel from './OnvifCameraSettingsPanel'
+import CameraPermissionsPanel from './CameraPermissionsPanel'
 import AnalyticsWatchesPanel from './AnalyticsWatchesPanel'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 
-const TABS = ['cameras', 'mediamtx', 'monitors', 'storages', 'recording', 'schedules', 'onvif', 'onvif-settings', 'analytics'] as const
+const TABS = ['cameras', 'mediamtx', 'monitors', 'storages', 'recording', 'schedules', 'onvif', 'onvif-settings', 'analytics', 'permissions'] as const
 
 export default function AdminView() {
   const { t } = useTranslation()
@@ -60,6 +61,7 @@ export default function AdminView() {
             <Route path="onvif" element={<OnvifSubscriptionsPanel ref={panelRef} />} />
             <Route path="onvif-settings" element={<OnvifCameraSettingsPanel />} />
             <Route path="analytics" element={<AnalyticsWatchesPanel ref={panelRef} />} />
+            <Route path="permissions" element={<CameraPermissionsPanel ref={panelRef} />} />
             <Route path="*" element={<Navigate to="/admin/cameras" replace />} />
           </Routes>
         </Box>
@@ -90,6 +92,7 @@ export default function AdminView() {
             <Tab label={t('nav.onvif')} />
             <Tab label={t('nav.onvifSettings')} />
             <Tab label={t('nav.analytics')} />
+            <Tab label={t('nav.permissions')} />
           </Tabs>
         </Box>
 

@@ -1,10 +1,13 @@
 using Dapr.Client;
 using Grpc.Core;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using web_vms.Authentication;
 using Vms.Control;
 using Vms.Fs;
 using web_vms.Types.Dto;
 using RecordingMode = Vms.Cfg.RecordingMode;
+using web_vms.Authorization;
 
 namespace web_vms;
 
@@ -12,7 +15,8 @@ namespace web_vms;
 [Route("api/[controller]")]
 public class LiveController(
   ICameraManager _manager,
-  ServerPairRegistry _registry
+  ServerPairRegistry _registry,
+  ICameraAccessService _access
   ) : ControllerBase
 {
   private static readonly TimeSpan MediaCallTimeout    = TimeSpan.FromSeconds(5);
@@ -112,6 +116,7 @@ public class LiveController(
   }
 
   [HttpPost("cameras")]
+  [Authorize(Policy = AuthPolicies.AdminOnly)]
   public async Task<IActionResult> AddCamera([FromBody] CameraSetupDto request, CancellationToken ct)
   {
     if (string.IsNullOrWhiteSpace(request.ServerId))
@@ -138,6 +143,7 @@ public class LiveController(
   }
 
   [HttpPut("cameras/{cameraId}/parent")]
+  [Authorize(Policy = AuthPolicies.AdminOnly)]
   public async Task<IActionResult> ChangeCameraParent(
     string cameraId,
     [FromBody] CameraSetupDto request,
@@ -189,6 +195,7 @@ public class LiveController(
   }
 
   [HttpDelete("cameras/{cameraId}")]
+  [Authorize(Policy = AuthPolicies.AdminOnly)]
   public async Task<IActionResult> RemoveCamera(string cameraId, CancellationToken ct)
   {
     var current = await _manager.Get(cameraId);
@@ -215,18 +222,25 @@ public class LiveController(
   }
 
   [HttpGet("servers")]
+  [Authorize(Policy = AuthPolicies.AdminOnly)]
   public async Task<IActionResult> ListServers(CancellationToken ct)
   {
     return Ok(await _manager.ListServers());
   }
 
   [HttpGet("cameras")]
+  [CameraAccess(CameraAction.ViewLive, Source = CameraIdSource.Action)]
   public async Task<IActionResult> ListCameras(CancellationToken ct)
   {
     var cameras = await _manager.List(ct);
     var analyticsCams = await _manager.AnalyticsEnabledCameraIds(ct);
 
-    var enriched = cameras.Select(c => c with
+    // Filtered here rather than in the client: this list is what every operator surface builds on
+    // (monitor grids, camera pickers), so cameras the caller may not view must never leave the
+    // server in the first place.
+    var scope = await _access.ScopeAsync(User, CameraAction.ViewLive, ct);
+
+    var enriched = scope.Filter(cameras, c => c.CameraId).Select(c => c with
     {
       Streams = WithWhepUrls(c.CameraId, c.Streams),
       HasAnalytics = analyticsCams.Contains(c.CameraId),
@@ -240,7 +254,11 @@ public class LiveController(
       ? s with { WhepUrl = $"/api/live/whep/offer/{cameraId}/{s.StreamName}" }
       : s).ToList();
 
+  // Writes the whole camera setup (streams, profiles, WebRTC flag) and pushes it to the media
+  // server — camera configuration, so admin-only. Operators arm cameras through
+  // PUT /api/cameras/{id}/state, which is gated on the Control permission instead.
   [HttpPost("cameras/state")]
+  [Authorize(Policy = AuthPolicies.AdminOnly)]
   public async Task<IActionResult> SetCameraState([FromBody] CameraSetupDto state, CancellationToken ct)
   {
     var curState = await _manager.Get(state.CameraId);
@@ -286,6 +304,7 @@ public class LiveController(
   }
 
   [HttpGet("cameras/{cameraId}/state")]
+  [CameraAccess(CameraAction.ViewLive)]
   public async Task<IActionResult> GetCameraState(string cameraId, CancellationToken ct)
   {
     var camera = await _manager.Get(cameraId);

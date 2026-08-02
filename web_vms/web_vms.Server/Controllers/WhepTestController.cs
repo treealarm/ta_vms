@@ -13,8 +13,7 @@ namespace web_vms;
 [AllowAnonymous]
 public class WhepTestController(WhepProxyService _proxy) : ControllerBase
 {
-  private static readonly bool Enabled = string.Equals(
-    Environment.GetEnvironmentVariable("VMS_LIVE_TEST_PLAYER"), "true", StringComparison.OrdinalIgnoreCase);
+  private static bool Enabled => Controllers.FrontendConfigController.LiveTestPlayerEnabled;
 
   [HttpPost("offer/{*path}")]
   public async Task<IActionResult> CreateOffer(string path, CancellationToken ct)
@@ -22,7 +21,10 @@ public class WhepTestController(WhepProxyService _proxy) : ControllerBase
     if (!Enabled)
       return NotFound();
 
-    var result = await _proxy.CreateOfferAsync(path, Request.Body, ct);
+    // No identity here by construction (the controller is anonymous), so every test session lands
+    // in one shared bucket. Safe only because this controller refuses to coexist with Keycloak —
+    // see the startup check in Program.cs.
+    var result = await _proxy.CreateOfferAsync(path, Request.Body, string.Empty, ct);
     return await result.WriteTo(this, "/api/live/whep-test/session/", ct);
   }
 
@@ -32,7 +34,7 @@ public class WhepTestController(WhepProxyService _proxy) : ControllerBase
     if (!Enabled)
       return NotFound();
 
-    var result = await _proxy.DeleteSessionAsync(token, ct);
+    var result = await _proxy.DeleteSessionAsync(token, string.Empty, ct);
     return result.ToActionResult(this);
   }
 }

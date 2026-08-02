@@ -6,6 +6,8 @@ namespace web_vms.Controllers;
 public class FrontendConfigDto
 {
   public string? SquareFrontendOrigin { get; set; }
+  /// <summary>Whether the dev-only anonymous WHEP test page is served at all.</summary>
+  public bool LiveTestPlayer { get; set; }
 }
 
 // Relays SQUARE_FRONTEND_ORIGIN (a backend runtime env var, see Program.cs's CORS gate) to the SPA.
@@ -18,12 +20,21 @@ public class FrontendConfigDto
 [AllowAnonymous]
 public class FrontendConfigController : ControllerBase
 {
+  /// <summary>
+  /// Single source of truth for the VMS_LIVE_TEST_PLAYER gate: read once, consumed by
+  /// WhepTestController, by the startup check in Program.cs that forbids combining it with
+  /// Keycloak, and by the SPA so it doesn't mount /test/live against a backend that has it off.
+  /// </summary>
+  public static readonly bool LiveTestPlayerEnabled = string.Equals(
+    Environment.GetEnvironmentVariable("VMS_LIVE_TEST_PLAYER"), "true", StringComparison.OrdinalIgnoreCase);
+
   [HttpGet("frontend")]
   public ActionResult<FrontendConfigDto> GetConfig()
   {
     return Ok(new FrontendConfigDto
     {
       SquareFrontendOrigin = Environment.GetEnvironmentVariable("SQUARE_FRONTEND_ORIGIN"),
+      LiveTestPlayer = LiveTestPlayerEnabled,
     });
   }
 }

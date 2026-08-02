@@ -1,6 +1,7 @@
 using Grpc.Core;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Onvif;
+using web_vms.Authorization;
 
 namespace web_vms;
 
@@ -14,6 +15,7 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
     new(deadline: DateTime.UtcNow.Add(Timeout), cancellationToken: ct);
 
   [HttpPost("continuous-move")]
+  [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
   public async Task<IActionResult> ContinuousMove([FromBody] PtzMoveDto dto, CancellationToken ct)
   {
     var response = await ptzClient.ContinuousMoveAsync(new PtzContinuousMoveRequest
@@ -29,6 +31,7 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
   }
 
   [HttpPost("absolute-move")]
+  [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
   public async Task<IActionResult> AbsoluteMove([FromBody] PtzAbsoluteMoveDto dto, CancellationToken ct)
   {
     var response = await ptzClient.AbsoluteMoveAsync(new PtzAbsoluteMoveRequest
@@ -45,6 +48,7 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
   }
 
   [HttpPost("relative-move")]
+  [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
   public async Task<IActionResult> RelativeMove([FromBody] PtzMoveDto dto, CancellationToken ct)
   {
     var response = await ptzClient.RelativeMoveAsync(new PtzRelativeMoveRequest
@@ -59,7 +63,9 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
     return response.Success ? Ok() : BadRequest(response.Error);
   }
 
+  // Reading what the camera supports drives the live view layout, so it follows viewing rights.
   [HttpGet("capabilities")]
+  [CameraAccess(CameraAction.ViewLive)]
   public async Task<IActionResult> GetCapabilities([FromQuery] string cameraId, CancellationToken ct)
   {
     var response = await ptzClient.GetCapabilitiesAsync(
@@ -74,6 +80,7 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
   }
 
   [HttpPost("stop")]
+  [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
   public async Task<IActionResult> Stop([FromBody] PtzStopDto dto, CancellationToken ct)
   {
     var response = await ptzClient.StopAsync(new PtzStopRequest
@@ -87,6 +94,7 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
   // ── PTZ presets ────────────────────────────────────────────────────────────
 
   [HttpGet("cameras/{cameraId}/presets")]
+  [CameraAccess(CameraAction.Ptz)]
   public async Task<IActionResult> GetPresets(string cameraId, [FromQuery] string profileToken, CancellationToken ct)
   {
     var response = await ptzClient.GetPresetsAsync(
@@ -96,6 +104,7 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
   }
 
   [HttpPost("cameras/{cameraId}/presets")]
+  [CameraAccess(CameraAction.Ptz)]
   public async Task<IActionResult> SetPreset(string cameraId, [FromBody] SetPresetBody body, CancellationToken ct)
   {
     var response = await ptzClient.SetPresetAsync(
@@ -112,6 +121,7 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
   }
 
   [HttpPost("cameras/{cameraId}/presets/{presetToken}/goto")]
+  [CameraAccess(CameraAction.Ptz)]
   public async Task<IActionResult> GotoPreset(
     string cameraId, string presetToken, [FromBody] GotoPresetBody body, CancellationToken ct)
   {
@@ -126,6 +136,7 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
   }
 
   [HttpDelete("cameras/{cameraId}/presets/{presetToken}")]
+  [CameraAccess(CameraAction.Ptz)]
   public async Task<IActionResult> RemovePreset(
     string cameraId, string presetToken, [FromQuery] string profileToken, CancellationToken ct)
   {

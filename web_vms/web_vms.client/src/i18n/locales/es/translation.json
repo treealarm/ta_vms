@@ -1,6 +1,9 @@
 {
   "app": {
-    "connecting": "Conectando con el servidor..."
+    "connecting": "Conectando con el servidor...",
+    "backendUnreachable": "El servidor no responde.",
+    "backendUnreachableHint": "Compruebe que web_vms.Server esté en marcha y que VmsCfg y su base de datos estén disponibles.",
+    "dependencyDown": "Un servicio del backend no está disponible: {{services}}. Las cámaras y el archivo estarán vacíos hasta que se restablezca."
   },
   "common": {
     "save": "Guardar",
@@ -31,7 +34,8 @@
     "goAdmin": "Admin",
     "goOperator": "Operador",
     "logout": "Cerrar sesión",
-    "investigations": "Investigaciones"
+    "investigations": "Investigaciones",
+    "permissions": "Permisos"
   },
   "auth": {
     "title": "Iniciar sesión",
@@ -193,12 +197,45 @@
     "host": "Host",
     "webrtcHost": "Host WebRTC (opcional)",
     "webrtcHostHelper": "Dejar vacío para usar la IP actual del navegador (recomendado para VPN/acceso local)",
+    "stunUrl": "URL STUN (opcional)",
+    "stunUrlHelper": "Servidor STUN que el navegador usa para negociar WebRTC en vivo",
+    "stunUrlEmptyHelper": "Vacío: sin STUN — reproducción solo en LAN (lo más rápido en red local)",
+    "stunUrlClear": "Borrar: sin STUN, solo LAN",
+    "stunUrlInvalid": "Debe ser una URL stun: o stuns:, p. ej. stun:stun.example.org:19302",
     "rtspPort": "Puerto RTSP",
     "webrtcPort": "Puerto WebRTC",
     "apiPort": "Puerto API",
+    "setDefaults": "Valores por defecto",
+    "setDefaultsHelper": "Rellena los puertos y la URL STUN pública; el nombre y los hosts no se tocan",
     "deleteServer": "Eliminar router",
     "noServers": "Sin routers configurados",
     "selectHint": "Seleccione un router o pulse + para agregar uno"
+  },
+  "permissions": {
+    "title": "Permisos de cámara",
+    "users": "Usuarios",
+    "noUsers": "No hay usuarios en el realm",
+    "selectHint": "Seleccione un usuario para editar sus permisos de cámara",
+    "allCameras": "Todas las cámaras",
+    "allCamerasHelper": "También se aplica a las cámaras añadidas más adelante",
+    "viewLive": "En vivo",
+    "viewArchive": "Archivo",
+    "ptz": "PTZ",
+    "control": "Control",
+    "export": "Exportar",
+    "searchCameras": "Buscar cámaras",
+    "toggleColumn": "Conceder en todas las cámaras listadas",
+    "grantedByAllCameras": "Concedido por la regla «Todas las cámaras»",
+    "noCameras": "Sin cámaras",
+    "noGrants": "Sin acceso",
+    "nCameras": "{{count}} cámaras",
+    "enforce": "Aplicar permisos de cámara",
+    "enforceOffHelper": "Desactivado: todo usuario autenticado ve todas las cámaras",
+    "enforceOnHelper": "Activado: cada usuario solo ve las cámaras concedidas",
+    "enforceOnWarning": "Los usuarios sin permisos perderán de inmediato el acceso a todas las cámaras, incluidos los usuarios de Square que inicien sesión en este realm.",
+    "enforceConfirm": "¿Activar los permisos de cámara?",
+    "administrator": "Administrador — todas las cámaras",
+    "adminBypass": "Este usuario tiene el rol admin: accede a todas las cámaras y acciones sin importar lo que se marque aquí. Quite el rol admin en Keycloak para que estos permisos se apliquen."
   },
   "logs": {
     "title": "Diario de registros",
@@ -334,12 +371,30 @@
     "noCameraSelected": "Ninguna cámara seleccionada",
     "filterHint": "Filtrar…",
     "topicPresets": {
-      "motion":          { "label": "Movimiento",           "desc": "Detección de movimiento" },
-      "faceDetection":   { "label": "Detección facial",     "desc": "Detección de rostro" },
-      "lineCrossing":    { "label": "Cruce de línea",       "desc": "Cruce de línea virtual" },
-      "fieldDetection":  { "label": "Intrusión en zona",    "desc": "Detección de intrusión en zona" },
-      "alarmList":       { "label": "Alarma",               "desc": "Alarma externa / entrada E/S" },
-      "objectDetection": { "label": "Detección de objetos", "desc": "Detección de objetos (persona, vehículo)" }
+      "motion": {
+        "label": "Movimiento",
+        "desc": "Detección de movimiento"
+      },
+      "faceDetection": {
+        "label": "Detección facial",
+        "desc": "Detección de rostro"
+      },
+      "lineCrossing": {
+        "label": "Cruce de línea",
+        "desc": "Cruce de línea virtual"
+      },
+      "fieldDetection": {
+        "label": "Intrusión en zona",
+        "desc": "Detección de intrusión en zona"
+      },
+      "alarmList": {
+        "label": "Alarma",
+        "desc": "Alarma externa / entrada E/S"
+      },
+      "objectDetection": {
+        "label": "Detección de objetos",
+        "desc": "Detección de objetos (persona, vehículo)"
+      }
     }
   },
   "cameraCard": {

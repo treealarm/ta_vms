@@ -1,6 +1,7 @@
 using Grpc.Core;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Onvif;
+using web_vms.Authorization;
 
 namespace web_vms;
 
@@ -14,6 +15,7 @@ public class DeviceIoController(DeviceIoService.DeviceIoServiceClient deviceIoCl
     new(deadline: DateTime.UtcNow.Add(Timeout), cancellationToken: ct);
 
   [HttpGet("cameras/{cameraId}/relay-outputs")]
+  [CameraAccess(CameraAction.ViewLive)]
   public async Task<IActionResult> GetRelayOutputs(string cameraId, CancellationToken ct)
   {
     var response = await deviceIoClient.GetRelayOutputsAsync(
@@ -32,6 +34,7 @@ public class DeviceIoController(DeviceIoService.DeviceIoServiceClient deviceIoCl
   }
 
   [HttpGet("cameras/{cameraId}/relay-outputs/options")]
+  [CameraAccess(CameraAction.ViewLive)]
   public async Task<IActionResult> GetRelayOutputOptions(string cameraId, CancellationToken ct)
   {
     var response = await deviceIoClient.GetRelayOutputOptionsAsync(
@@ -51,7 +54,9 @@ public class DeviceIoController(DeviceIoService.DeviceIoServiceClient deviceIoCl
     }));
   }
 
+  // Driving a relay acts on the site itself — control, not viewing.
   [HttpPost("cameras/{cameraId}/relay-outputs/{token}/state")]
+  [CameraAccess(CameraAction.Control)]
   public async Task<IActionResult> SetRelayState(
     string cameraId, string token, [FromBody] SetRelayStateBody body, CancellationToken ct)
   {
@@ -63,6 +68,7 @@ public class DeviceIoController(DeviceIoService.DeviceIoServiceClient deviceIoCl
   }
 
   [HttpPost("cameras/{cameraId}/relay-outputs/{token}/settings")]
+  [CameraAccess(CameraAction.Control)]
   public async Task<IActionResult> SetRelaySettings(
     string cameraId, string token, [FromBody] SetRelaySettingsBody body, CancellationToken ct)
   {
@@ -80,6 +86,7 @@ public class DeviceIoController(DeviceIoService.DeviceIoServiceClient deviceIoCl
   }
 
   [HttpGet("cameras/{cameraId}/digital-inputs")]
+  [CameraAccess(CameraAction.ViewLive)]
   public async Task<IActionResult> GetDigitalInputs(string cameraId, CancellationToken ct)
   {
     var response = await deviceIoClient.GetDigitalInputsAsync(
@@ -96,6 +103,7 @@ public class DeviceIoController(DeviceIoService.DeviceIoServiceClient deviceIoCl
   }
 
   [HttpGet("cameras/{cameraId}/digital-inputs/options")]
+  [CameraAccess(CameraAction.ViewLive)]
   public async Task<IActionResult> GetDigitalInputOptions(string cameraId, CancellationToken ct)
   {
     var response = await deviceIoClient.GetDigitalInputOptionsAsync(
@@ -112,6 +120,7 @@ public class DeviceIoController(DeviceIoService.DeviceIoServiceClient deviceIoCl
   }
 
   [HttpPost("cameras/{cameraId}/digital-inputs/{token}/idle-state")]
+  [CameraAccess(CameraAction.Control)]
   public async Task<IActionResult> SetDigitalInputIdleState(
     string cameraId, string token, [FromBody] SetIdleStateBody body, CancellationToken ct)
   {

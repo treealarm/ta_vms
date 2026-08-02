@@ -36,7 +36,7 @@ function CameraStreamCard({ camera, onStreamChange }: CameraStreamCardProps) {
           ))}
         </Tabs>
       )}
-      {whepUrl && <CameraStream whepUrl={whepUrl} />}
+      {whepUrl && <CameraStream whepUrl={whepUrl} stunUrl={camera.effectiveWebrtcStunUrl} />}
     </Box>
   )
 }

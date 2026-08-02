@@ -1,6 +1,9 @@
 {
   "app": {
-    "connecting": "Connecting to backend..."
+    "connecting": "Connecting to backend...",
+    "backendUnreachable": "The backend is not responding.",
+    "backendUnreachableHint": "Check that web_vms.Server is running, and that VmsCfg and its database are up.",
+    "dependencyDown": "A backend service is unavailable: {{services}}. Cameras and archive will stay empty until it recovers."
   },
   "common": {
     "save": "Save",
@@ -31,7 +34,8 @@
     "goAdmin": "Admin",
     "goOperator": "Operator",
     "logout": "Log out",
-    "investigations": "Investigations"
+    "investigations": "Investigations",
+    "permissions": "Permissions"
   },
   "auth": {
     "title": "Sign in",
@@ -193,12 +197,45 @@
     "host": "Host",
     "webrtcHost": "WebRTC host (optional)",
     "webrtcHostHelper": "Leave empty to use the browser's current IP (recommended for VPN/local access)",
+    "stunUrl": "STUN URL (optional)",
+    "stunUrlHelper": "STUN server the browser uses to negotiate live WebRTC",
+    "stunUrlEmptyHelper": "Empty: no STUN — LAN-only playback (fastest on a local network)",
+    "stunUrlClear": "Clear: no STUN, LAN only",
+    "stunUrlInvalid": "Must be a stun: or stuns: URL, e.g. stun:stun.example.org:19302",
     "rtspPort": "RTSP port",
     "webrtcPort": "WebRTC port",
     "apiPort": "API port",
+    "setDefaults": "Set defaults",
+    "setDefaultsHelper": "Fills the ports and the public STUN URL; name and hosts are left as they are",
     "deleteServer": "Delete router",
     "noServers": "No routers configured",
     "selectHint": "Select a router or press + to add one"
+  },
+  "permissions": {
+    "title": "Camera permissions",
+    "users": "Users",
+    "noUsers": "No users in the realm",
+    "selectHint": "Select a user to edit their camera permissions",
+    "allCameras": "All cameras",
+    "allCamerasHelper": "Also applies to cameras added later",
+    "viewLive": "Live",
+    "viewArchive": "Archive",
+    "ptz": "PTZ",
+    "control": "Control",
+    "export": "Export",
+    "searchCameras": "Search cameras",
+    "toggleColumn": "Grant on every listed camera",
+    "grantedByAllCameras": "Granted by the “All cameras” rule",
+    "noCameras": "No cameras",
+    "noGrants": "No access",
+    "nCameras": "{{count}} cameras",
+    "enforce": "Enforce camera permissions",
+    "enforceOffHelper": "Off: every signed-in user reaches every camera",
+    "enforceOnHelper": "On: users only reach the cameras granted to them",
+    "enforceOnWarning": "Users without grants will immediately lose access to all cameras, including any Square users signing in against this realm.",
+    "enforceConfirm": "Enable camera permissions?",
+    "administrator": "Administrator — all cameras",
+    "adminBypass": "This user has the admin role: they reach every camera and every action regardless of what is set here. Remove the admin role in Keycloak to make these permissions apply."
   },
   "logs": {
     "title": "Log Journal",
@@ -334,12 +371,30 @@
     "noCameraSelected": "No camera selected",
     "filterHint": "Filter…",
     "topicPresets": {
-      "motion":          { "label": "Motion",            "desc": "Motion detection" },
-      "faceDetection":   { "label": "Face Detection",    "desc": "Face detection" },
-      "lineCrossing":    { "label": "Line Crossing",     "desc": "Virtual line crossing" },
-      "fieldDetection":  { "label": "Region Intrusion",  "desc": "Region intrusion / field detection" },
-      "alarmList":       { "label": "Alarm",             "desc": "External alarm / IO input" },
-      "objectDetection": { "label": "Object Detection",  "desc": "Object detection (person, vehicle)" }
+      "motion": {
+        "label": "Motion",
+        "desc": "Motion detection"
+      },
+      "faceDetection": {
+        "label": "Face Detection",
+        "desc": "Face detection"
+      },
+      "lineCrossing": {
+        "label": "Line Crossing",
+        "desc": "Virtual line crossing"
+      },
+      "fieldDetection": {
+        "label": "Region Intrusion",
+        "desc": "Region intrusion / field detection"
+      },
+      "alarmList": {
+        "label": "Alarm",
+        "desc": "External alarm / IO input"
+      },
+      "objectDetection": {
+        "label": "Object Detection",
+        "desc": "Object detection (person, vehicle)"
+      }
     }
   },
   "cameraCard": {

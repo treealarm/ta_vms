@@ -51,6 +51,11 @@ service CfgService {
   rpc ListAnalyticsWatches(ListAnalyticsWatchesRequest) returns (ListAnalyticsWatchesResponse);
   rpc UpsertAnalyticsWatch(UpsertAnalyticsWatchRequest) returns (OperationStatus);
   rpc RemoveAnalyticsWatch(RemoveAnalyticsWatchRequest) returns (OperationStatus);
+
+  rpc ListCameraPermissions(ListCameraPermissionsRequest) returns (ListCameraPermissionsResponse);
+  rpc SetUserCameraPermissions(SetUserCameraPermissionsRequest) returns (OperationStatus);
+  rpc GetCameraAclMode(google.protobuf.Empty) returns (GetCameraAclModeResponse);
+  rpc SetCameraAclMode(SetCameraAclModeRequest) returns (OperationStatus);
 }
 
 service StorageService {
@@ -152,6 +157,9 @@ message CameraSetup {
   // read, never stored. While true the camera records continuously, overriding both the base
   // profile and any manual/alarm override.
   bool schedule_active = 19;
+  // Read-only mirror of the assigned media router's stun_url, so the browser can build its ICE
+  // config from the camera alone. Unset = no router assigned; empty = no STUN (LAN only).
+  optional string effective_webrtc_stun_url = 20;
 }
 
 message RecordingProfileRequest {
@@ -269,6 +277,9 @@ message MediaMtxServer {
   int32  rtsp_port   = 5;
   int32  webrtc_port = 6;
   int32  api_port    = 7;
+  // STUN server the browser uses when negotiating WHEP playback. Empty = no STUN at all,
+  // i.e. host candidates only (LAN-only viewing, no public server round-trip).
+  string stun_url    = 8;
 }
 
 message MediaMtxServerRequest {
@@ -462,4 +473,56 @@ message UpsertAnalyticsWatchRequest {
 
 message RemoveAnalyticsWatchRequest {
   string camera_id = 1;
+}
+
+// ── Per-camera user permissions ──────────────────────────────────────────────
+// Grants are keyed by Keycloak preferred_username, the same identity string monitor.owner uses.
+// The admin role bypasses all of this, and so does the 'open' ACL mode.
+
+message CameraPermissionFlags {
+  bool view_live    = 1;
+  bool view_archive = 2;
+  bool ptz          = 3;
+  bool control      = 4;  // arming, recording overrides, manual retention, relay outputs
+  bool export       = 5;  // downloading a clip as a file
+}
+
+message CameraPermission {
+  string camera_id = 1;
+  CameraPermissionFlags flags = 2;
+}
+
+// Effective permission on a camera is the OR of all_cameras and the matching cameras entry.
+message UserCameraPermissions {
+  string username = 1;
+  optional CameraPermissionFlags all_cameras = 2;  // unset = no blanket grant
+  repeated CameraPermission cameras = 3;
+}
+
+// Empty username = every user holding any grant (admin UI); set = one user (gateway cache fill).
+message ListCameraPermissionsRequest {
+  optional string username = 1;
+}
+
+message ListCameraPermissionsResponse {
+  repeated UserCameraPermissions users = 1;
+}
+
+// Replaces that user's grants wholesale — the admin UI edits the whole matrix and applies it.
+message SetUserCameraPermissionsRequest {
+  UserCameraPermissions permissions = 1;
+}
+
+enum CameraAclMode {
+  // Pre-ACL behaviour: every authenticated user reaches every camera.
+  CAMERA_ACL_OPEN     = 0;
+  CAMERA_ACL_ENFORCED = 1;
+}
+
+message GetCameraAclModeResponse {
+  CameraAclMode mode = 1;
+}
+
+message SetCameraAclModeRequest {
+  CameraAclMode mode = 1;
 }

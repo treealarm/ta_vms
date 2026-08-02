@@ -21,6 +21,7 @@ public sealed record HlsSegment(
 public sealed class HlsArchiveService(
   ICameraManager cameraManager,
   ServerPairRegistry registry,
+  ArchiveOwnershipCache ownership,
   LinkGenerator linkGenerator) : IHlsArchiveService
 {
   private async Task<FsService.FsServiceClient?> ResolveAsync(string cameraId, CancellationToken ct)
@@ -70,6 +71,10 @@ public sealed class HlsArchiveService(
     if (kept.Count == 0)
       return new HlsPlaylistResult.NotFound("no recordings in range");
 
+    // The recordings are already here and carry their camera — record who owns each clip so the
+    // segment endpoint can authorize it without a lookup of its own.
+    ownership.PrimeClips(kept);
+
     // Clip existence is answered by GetClipIndexes (Found=false for a missing or unreadable file),
     // so there is no separate StatArchiveTs pass — that used to cost one gRPC round-trip per clip,
     // per cell, on every seek.
@@ -112,6 +117,7 @@ public sealed class HlsArchiveService(
       return new HlsPlaylistResult.NotFound("no clips found");
 
     var ordered = clipsResp.Recordings.OrderBy(r => r.StartTs.ToDateTime()).ToList();
+    ownership.PrimeClips(ordered);
 
     var cacheResult = await BuildSidxCacheAsync(fsClient, ordered.Select(r => r.ClipUid), ct);
     if (cacheResult.Error is { } cacheErr)
@@ -142,6 +148,10 @@ public sealed class HlsArchiveService(
 
     var clipsResp = hit.Value;
     var eventFsClient = hit.Client;
+
+    ownership.PrimeClips(clipsResp.Recordings);
+    if (clipsResp.Recordings.FirstOrDefault()?.CameraId is { } eventCamera)
+      ownership.PrimeEvent(eventUuid, eventCamera);
 
     var clips = clipsResp.Recordings
       .Where(r => !string.IsNullOrWhiteSpace(r.ClipUid))

@@ -162,6 +162,9 @@ export type CameraSetupDto = {
   retainedStreams?: string[]
   streams?: CameraStreamDto[]
   mediaMtxServerId?: string
+  /** Read-only mirror of the assigned media router's STUN URL, used to build the WHEP ICE config.
+   *  undefined/null = no router assigned; empty string = no STUN (LAN only). */
+  effectiveWebrtcStunUrl?: string | null
   onvifEventsEnabled?: boolean
   hasOnvifFilters?: boolean
   onvifManaged?: boolean
@@ -174,6 +177,34 @@ export type CameraSetupDto = {
   /** True while one of the assigned schedule windows is open. Recomputed server-side from the wall
    *  clock; while true the camera records continuously, overriding profile and overrides. */
   scheduleActive?: boolean
+}
+
+/** What a user may do with a camera. All false = no access. */
+export type CameraPermissionFlagsDto = {
+  viewLive: boolean
+  viewArchive: boolean
+  ptz: boolean
+  /** Arming, recording overrides, manual retention, relay outputs. */
+  control: boolean
+  /** Downloading a clip as a file. */
+  export: boolean
+}
+
+/** Effective permission on a camera is the OR of allCameras and the matching cameras entry. */
+export type UserCameraPermissionsDto = {
+  username: string
+  /** null/undefined = no blanket grant; a blanket grant also covers cameras added later. */
+  allCameras?: CameraPermissionFlagsDto | null
+  cameras: Record<string, CameraPermissionFlagsDto>
+}
+
+/** Answer to "what may I do", used to hide affordances. The server still checks every request. */
+export type MyPermissionsDto = {
+  username: string
+  isAdmin: boolean
+  aclEnforced: boolean
+  allCameras?: CameraPermissionFlagsDto | null
+  cameras: Record<string, CameraPermissionFlagsDto>
 }
 
 export type MediaServerNodeDto = {
@@ -189,6 +220,8 @@ export type MediaMtxServerDto = {
   rtspPort: number
   webrtcPort: number
   apiPort: number
+  /** STUN server the browser uses for WHEP; empty = no STUN, LAN host candidates only */
+  stunUrl: string
 }
 
 /** Built client-side from servers + cameras for Settings tree */

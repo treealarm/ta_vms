@@ -79,6 +79,12 @@ public sealed class AnalyticsServiceImpl(
 
     if (request.HasCameraId && !string.IsNullOrWhiteSpace(request.CameraId))
       query = query.Where(d => d.CameraId == request.CameraId);
+    // Caller's visible set, applied in SQL so a restricted user still gets full pages.
+    if (request.CameraIds.Count > 0)
+    {
+      var visible = request.CameraIds.ToList();
+      query = query.Where(d => visible.Contains(d.CameraId));
+    }
     if (request.HasEventId && !string.IsNullOrWhiteSpace(request.EventId))
       query = query.Where(d => d.EventId == request.EventId);
     if (request.HasEventUuid && Guid.TryParse(request.EventUuid, out var eventUuid))
@@ -112,19 +118,27 @@ public sealed class AnalyticsServiceImpl(
   {
     await using var db = await dbFactory.CreateDbContextAsync(context.CancellationToken);
     var row = await db.Detections.FindAsync([request.Id], context.CancellationToken);
-    if (row?.StorageId is null || row.CropPath is null)
+    if (row is null)
       return new GetDetectionCropResponse();
+
+    // Always report the owning camera, even when there is no crop to return: the gateway decides
+    // whether this caller may see the detection at all before it looks at the bytes.
+    var response = new GetDetectionCropResponse { CameraId = row.CameraId };
+
+    if (row.StorageId is null || row.CropPath is null)
+      return response;
 
     var root = await storageResolver.GetRootPathAsync(row.StorageId, context.CancellationToken);
     if (root is null)
-      return new GetDetectionCropResponse();
+      return response;
 
     var fullPath = Path.Combine(root, row.CropPath);
     if (!File.Exists(fullPath))
-      return new GetDetectionCropResponse();
+      return response;
 
-    var bytes = await File.ReadAllBytesAsync(fullPath, context.CancellationToken);
-    return new GetDetectionCropResponse { Jpeg = Google.Protobuf.ByteString.CopyFrom(bytes) };
+    response.Jpeg = Google.Protobuf.ByteString.CopyFrom(
+      await File.ReadAllBytesAsync(fullPath, context.CancellationToken));
+    return response;
   }
 
   private static Detection ToProto(DbDetection row)

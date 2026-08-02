@@ -1,6 +1,7 @@
 ﻿import { Box } from '@mui/material';
 import React, { useEffect, useRef } from 'react';
 import BboxOverlay from './BboxOverlay';
+import { iceServersFromStunUrl } from '../utils/iceServers';
 
 interface CameraStreamProps {
   whepUrl: string;
@@ -8,13 +9,15 @@ interface CameraStreamProps {
   cameraId?: string;
   /** When true, overlays live analytics bboxes on the video (opt-in per card). */
   bboxEnabled?: boolean;
+  /** STUN URL from the camera's media router (effectiveWebrtcStunUrl): undefined = public
+   *  default, empty string = no STUN (LAN only). */
+  stunUrl?: string | null;
 }
 
-const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnabled = false }) => {
+const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnabled = false, stunUrl }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const retryTimeoutRef = useRef<number | null>(null);
-  const sessionUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!whepUrl) {
@@ -25,13 +28,16 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
     let stopped = false;
     let sessionId = 0;
     let reconnecting = false;
+    // Scoped to this effect run, not a ref: when the effect re-runs (whepUrl/stunUrl change), the
+    // old run's cleanup must only ever DELETE the session it opened itself, never the new one's.
+    let sessionUrl: string | null = null;
 
     const closeSession = () => {
-      if (!sessionUrlRef.current) {
+      if (!sessionUrl) {
         return;
       }
-      const url = sessionUrlRef.current;
-      sessionUrlRef.current = null;
+      const url = sessionUrl;
+      sessionUrl = null;
       fetch(url, { method: 'DELETE' }).catch(() => {
         // best-effort: MediaMTX will time out the session on its own otherwise
       });
@@ -83,7 +89,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
         pc.onconnectionstatechange = null;
         pc.ontrack = null;
         pc.close();
-        // A WHEP session may have just been opened (sessionUrlRef set right before this check)
+        // A WHEP session may have just been opened (sessionUrl set right before this check)
         // for a connection attempt that's now stale — close it instead of leaking it on MediaMTX.
         closeSession();
         return true;
@@ -133,13 +139,15 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
         pcRef.current = null;
       }
 
-      const pc = new RTCPeerConnection({
-        iceServers: [
-          {
-            urls: 'stun:stun.l.google.com:19302',
-          },
-        ],
-      });
+      let pc: RTCPeerConnection;
+      try {
+        pc = new RTCPeerConnection({ iceServers: iceServersFromStunUrl(stunUrl) });
+      } catch (err) {
+        // A malformed STUN URL in the media router config makes every attempt throw the same way,
+        // so retrying would just spin — report it and leave playback stopped instead.
+        console.error('Invalid ICE configuration, live playback disabled:', stunUrl, err);
+        return;
+      }
 
       pcRef.current = pc;
 
@@ -200,7 +208,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
         // Keep this relative (don't resolve to an absolute URL): installAuthFetch only attaches
         // the Bearer token to requests whose URL starts with '/api/', and fetch() already
         // resolves a relative Location against the current origin on its own.
-        sessionUrlRef.current = resp.headers.get('Location');
+        sessionUrl = resp.headers.get('Location');
 
         const answerSDP = await resp.text();
 
@@ -244,7 +252,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
 
       closeSession();
     };
-  }, [whepUrl]);
+  }, [whepUrl, stunUrl]);
 
   return (
     <Box

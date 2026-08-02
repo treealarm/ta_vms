@@ -80,8 +80,8 @@ public class DbMigrator(
       return;
 
     await using var insertCmd = new NpgsqlCommand("""
-      INSERT INTO media_mtx_server (name, host, webrtc_host, rtsp_port, webrtc_port, api_port)
-      VALUES ('Default', $1, '', 8554, 8889, 9997)
+      INSERT INTO media_mtx_server (name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url)
+      VALUES ('Default', $1, '', 8554, 8889, 9997, 'stun:stun.l.google.com:19302')
       ON CONFLICT DO NOTHING;
       """, connection);
     insertCmd.Parameters.AddWithValue(host);

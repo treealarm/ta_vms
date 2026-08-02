@@ -38,9 +38,14 @@ public sealed class WhepProxyService(ICameraManager _manager, IHttpClientFactory
   // URI this service itself constructed in CreateOfferAsync, closing off SSRF-via-forged-token by
   // construction instead of having to re-validate a client-decodable URL against an allowlist.
   private static readonly TimeSpan SessionTtl = TimeSpan.FromHours(1);
-  private readonly ConcurrentDictionary<string, (Uri Uri, DateTime CreatedAt)> _sessions = new();
+  private readonly ConcurrentDictionary<string, (Uri Uri, DateTime CreatedAt, string Owner)> _sessions = new();
 
-  public async Task<WhepOfferResult> CreateOfferAsync(string path, Stream offerSdpBody, CancellationToken ct)
+  /// <param name="owner">
+  /// Keycloak preferred_username of the caller, empty when authentication is disabled — the same
+  /// identity idiom monitors use. Only this owner may later delete the session.
+  /// </param>
+  public async Task<WhepOfferResult> CreateOfferAsync(
+    string path, Stream offerSdpBody, string owner, CancellationToken ct)
   {
     if (string.IsNullOrWhiteSpace(path))
       return new WhepOfferResult(WhepProxyOutcome.InvalidPath);
@@ -85,7 +90,7 @@ public sealed class WhepProxyService(ICameraManager _manager, IHttpClientFactory
       if (mtxResponse.Headers.Location is { } location)
       {
         var absoluteLocation = location.IsAbsoluteUri ? location : new Uri(targetUri, location);
-        token = CreateSessionToken(absoluteLocation);
+        token = CreateSessionToken(absoluteLocation, owner);
       }
 
       var body = await mtxResponse.Content.ReadAsByteArrayAsync(ct);
@@ -94,9 +99,13 @@ public sealed class WhepProxyService(ICameraManager _manager, IHttpClientFactory
     }
   }
 
-  public async Task<WhepDeleteResult> DeleteSessionAsync(string token, CancellationToken ct)
+  public async Task<WhepDeleteResult> DeleteSessionAsync(string token, string owner, CancellationToken ct)
   {
-    if (!_sessions.TryRemove(token, out var session))
+    // Check ownership before removing, and answer a foreign token exactly like an unknown one, so
+    // tokens can't be probed for existence and one viewer can't tear down another's stream.
+    if (!_sessions.TryGetValue(token, out var session)
+      || !string.Equals(session.Owner, owner, StringComparison.Ordinal)
+      || !_sessions.TryRemove(token, out session))
       return new WhepDeleteResult(WhepProxyOutcome.InvalidToken);
 
     var client = _httpClientFactory.CreateClient(MediaMtxHttpClientName);
@@ -113,12 +122,12 @@ public sealed class WhepProxyService(ICameraManager _manager, IHttpClientFactory
     }
   }
 
-  private string CreateSessionToken(Uri sessionUri)
+  private string CreateSessionToken(Uri sessionUri, string owner)
   {
     PruneExpiredSessions();
 
     var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
-    _sessions[token] = (sessionUri, DateTime.UtcNow);
+    _sessions[token] = (sessionUri, DateTime.UtcNow, owner);
     return token;
   }
 

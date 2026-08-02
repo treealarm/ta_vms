@@ -36,6 +36,13 @@ public sealed class WatchReconciler(
   private readonly ConcurrentDictionary<string, bool> _warnedNotArmed = new();
   private readonly CancellationTokenSource _cts = new();
 
+  private readonly string _mediaMtxReadUser =
+    Environment.GetEnvironmentVariable("VMS_MEDIAMTX_READ_USER")
+    ?? throw new InvalidOperationException("Required environment variable 'VMS_MEDIAMTX_READ_USER' is not set");
+  private readonly string _mediaMtxReadPass =
+    Environment.GetEnvironmentVariable("VMS_MEDIAMTX_READ_PASS")
+    ?? throw new InvalidOperationException("Required environment variable 'VMS_MEDIAMTX_READ_PASS' is not set");
+
   public Task StartAsync(CancellationToken cancellationToken)
   {
     _ = KeepAliveLoopAsync(_cts.Token);
@@ -151,8 +158,11 @@ public sealed class WatchReconciler(
     var rtspUrl = await ResolveRtspUrlAsync(watch.CameraId, watch.StreamName, ct);
     if (rtspUrl is null) return false;
 
+    // The relayed stream lives on MediaMTX, which no longer allows anonymous reads, so the worker
+    // gets the vms_read service account. Passed as credentials rather than spliced into the URL so
+    // the RTSP address stays safe to log on both sides.
     return await workers.ClientFor(workerAppId).StartWatchAsync(
-      watch.CameraId, rtspUrl, credUser: null, credPass: null,
+      watch.CameraId, rtspUrl, _mediaMtxReadUser, _mediaMtxReadPass,
       watch.Classes, watch.MinConfidence, watch.SampleFps, watch.AttachDebugCrops, ct);
   }
 

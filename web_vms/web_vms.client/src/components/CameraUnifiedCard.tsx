@@ -687,6 +687,7 @@ export default function CameraUnifiedCard({
             {mode === 'live' && whepUrl && (
               <CameraStream
                 whepUrl={whepUrl}
+                stunUrl={camera.effectiveWebrtcStunUrl}
                 cameraId={camera.cameraId}
                 bboxEnabled={bboxOpen && !!camera.hasAnalytics}
               />

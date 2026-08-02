@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using web_vms.Authentication;
@@ -8,8 +9,11 @@ namespace web_vms;
 [ApiController]
 [Route("api/media-mtx")]
 [Authorize(Policy = AuthPolicies.AdminOnly)]
-public class MediaMtxController(ICameraManager _manager) : ControllerBase
+public partial class MediaMtxController(ICameraManager _manager) : ControllerBase
 {
+  [GeneratedRegex(@"^stuns?:\S+$")]
+  private static partial Regex StunUrlPattern();
+
   [HttpGet("servers")]
   public async Task<IActionResult> ListServers(CancellationToken ct)
   {
@@ -24,6 +28,12 @@ public class MediaMtxController(ICameraManager _manager) : ControllerBase
 
     if (string.IsNullOrWhiteSpace(dto.Host))
       return BadRequest("host must not be empty");
+
+    // Empty means "no STUN, LAN only". Anything else has to be a URL the browser can parse:
+    // RTCPeerConnection throws on a malformed one, killing live playback for every camera on
+    // this router. turn: is rejected too — it needs credentials this config does not carry.
+    if (!string.IsNullOrWhiteSpace(dto.StunUrl) && !StunUrlPattern().IsMatch(dto.StunUrl.Trim()))
+      return BadRequest("stunUrl must be a stun: or stuns: URL, e.g. stun:stun.example.org:19302");
 
     var ok = await _manager.UpsertMediaMtxServer(dto, ct);
     return Ok(new ApiResponse(ok, ok ? "ok" : "failed"));

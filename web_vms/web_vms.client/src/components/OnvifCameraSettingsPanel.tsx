@@ -701,7 +701,7 @@ function CameraDetail({ camera }: { camera: CameraSetupDto }) {
             {t('stream.livePreview')}
           </Typography>
           <Box sx={{ width: '100%', aspectRatio: '16 / 9' }}>
-            <CameraStream whepUrl={webRtcStream.whepUrl} />
+            <CameraStream whepUrl={webRtcStream.whepUrl} stunUrl={camera.effectiveWebrtcStunUrl} />
           </Box>
           {activeKey === 'ptz' && ptzProfileToken && (
             <Box sx={{ mt: 1.5, display: 'flex', justifyContent: 'center' }}>

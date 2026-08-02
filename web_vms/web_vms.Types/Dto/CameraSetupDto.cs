@@ -41,6 +41,8 @@ public record MediaMtxServerDto
   public int    RtspPort   { get; init; } = 8554;
   public int    WebrtcPort { get; init; } = 8889;
   public int    ApiPort    { get; init; } = 9997;
+  /// <summary>STUN server used by the browser for WHEP playback. Empty = no STUN (LAN only).</summary>
+  public string StunUrl    { get; init; } = string.Empty;
 }
 
 public record CameraSetupDto
@@ -65,6 +67,9 @@ public record CameraSetupDto
   public IReadOnlyList<CameraStreamDto> Streams { get; init; } = [];
   /// <summary>Assigned MediaMTX server ID (uuid).</summary>
   public string? MediaMtxServerId { get; init; }
+  /// <summary>Read-only mirror of the assigned media router's STUN URL, used by the browser to
+  /// build its WHEP ICE config. null = no router assigned; empty = no STUN (LAN only).</summary>
+  public string? EffectiveWebrtcStunUrl { get; init; }
   public bool OnvifEventsEnabled { get; init; }
   public bool HasOnvifFilters    { get; init; }
   public bool OnvifManaged       { get; init; }

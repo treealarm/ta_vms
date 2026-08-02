@@ -1,16 +1,29 @@
 using Dapr.Client;
 using KeycloakAdmin;
 using System.Net;
+using System.Net.Http.Headers;
+using System.Text;
 using Vms.Cfg;
 using Vms.Onvif;
 using Vms.Utils;
 using web_vms;
 using web_vms.Authentication;
+using web_vms.Authorization;
+using Dapr.Messaging.PublishSubscribe.Extensions;
 using Vms.Logger;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers(o => o.Filters.Add<RpcExceptionFilter>());
+// CameraAccessFilter is global on purpose: it is what guarantees no endpoint reaches video without
+// having declared which permission it needs (see the fail-closed branch in the filter).
+builder.Services.AddControllers(o =>
+{
+  o.Filters.Add<RpcExceptionFilter>();
+  o.Filters.Add<CameraAccessFilter>();
+});
+builder.Services.AddSingleton<ICameraAccessService, CameraAccessService>();
+builder.Services.AddDaprPubSubClient();
+builder.Services.AddHostedService<CameraPermissionSubscriber>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -28,6 +41,10 @@ builder.Services.AddSingleton(_ =>
     DaprClient.CreateInvocationInvoker(cfgAppId)));
 
 builder.Services.AddSingleton<ServerPairRegistry>();
+builder.Services.AddSingleton<CfgHealthProbe>();
+// Loaded in the background so the gateway serves (and can explain itself via /api/health) even
+// while VmsCfg is unavailable — see ServerPairInitializer.
+builder.Services.AddHostedService<ServerPairInitializer>();
 
 var onvifAppId = Require("DAPR_ONVIF_APP_ID");
 builder.Services.AddSingleton(_ =>
@@ -47,18 +64,41 @@ builder.Services.AddSingleton(_ =>
     DaprClient.CreateInvocationInvoker(analyticsAppId)));
 
 builder.Services.AddSingleton<ICameraManager, CameraManager>();
+builder.Services.AddSingleton<IPermissionManager, PermissionManager>();
 builder.Services.AddSingleton<MonitorManager>();
+builder.Services.AddSingleton<ArchiveOwnershipCache>();
 builder.Services.AddSingleton<IHlsArchiveService, HlsArchiveService>();
 builder.Services.AddSingleton<IArchiveTsStreamer, ArchiveTsStreamer>();
 builder.Services.AddSingleton<StreamStateService>();
 
-builder.Services.AddHttpClient(WhepProxyService.MediaMtxHttpClientName, c => c.Timeout = TimeSpan.FromSeconds(10));
+// MediaMTX has no anonymous access: the gateway authenticates with the vms_read service account
+// on the browser's behalf. The user's JWT is checked by us and never travels to MediaMTX — these
+// are two separate credential worlds, and the browser never sees this one.
+var mtxBasic = Convert.ToBase64String(
+  Encoding.UTF8.GetBytes($"{Require("VMS_MEDIAMTX_READ_USER")}:{Require("VMS_MEDIAMTX_READ_PASS")}"));
+
+builder.Services.AddHttpClient(WhepProxyService.MediaMtxHttpClientName, c =>
+{
+  c.Timeout = TimeSpan.FromSeconds(10);
+  c.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", mtxBasic);
+});
 builder.Services.AddSingleton<WhepProxyService>();
 
 // KEYCLOAK_URL is intentionally optional: when unset, login/authorization is disabled entirely
 // and web_vms keeps running standalone (no dependency on Square's Keycloak). When set, the
 // remaining KEYCLOAK_* vars become required so misconfiguration fails fast at startup.
 var keycloakUrl = Environment.GetEnvironmentVariable("KEYCLOAK_URL");
+
+// VMS_LIVE_TEST_PLAYER opens an anonymous WHEP mirror (WhepTestController) that can play any
+// camera by id — it bypasses login and every per-camera permission. Refusing to start makes the
+// dangerous combination impossible to reach by accident instead of leaving a quiet hole.
+if (!string.IsNullOrEmpty(keycloakUrl) && web_vms.Controllers.FrontendConfigController.LiveTestPlayerEnabled)
+{
+  throw new InvalidOperationException(
+    "VMS_LIVE_TEST_PLAYER=true cannot be combined with KEYCLOAK_URL: it exposes an anonymous WHEP "
+    + "endpoint for every camera. Unset VMS_LIVE_TEST_PLAYER in any deployment that has authentication.");
+}
+
 if (!string.IsNullOrEmpty(keycloakUrl))
 {
   var keycloakAdminUser = Require("KEYCLOAK_ADMIN_USER");
@@ -114,9 +154,6 @@ builder.WebHost.ConfigureKestrel(options =>
 
 var app = builder.Build();
 
-var registry = app.Services.GetRequiredService<ServerPairRegistry>();
-await RetryAsync(() => registry.InitAsync());
-
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseWebSockets();
@@ -144,16 +181,3 @@ app.MapControllers();
 app.MapFallbackToFile("/index.html");
 
 app.Run();
-
-static async Task RetryAsync(Func<Task> action)
-{
-  while (true)
-  {
-    try { await action(); return; }
-    catch (Exception ex)
-    {
-      Console.Error.WriteLine($"Startup init failed, retrying in 5s: {ex.Message}");
-      await Task.Delay(5_000);
-    }
-  }
-}

@@ -14,7 +14,10 @@ public class UtilsServiceImpl(
   ILogger<UtilsServiceImpl> logger)
   : UtilsService.UtilsServiceBase
 {
-  private readonly HttpClient _http = httpClientFactory.CreateClient();
+  /// <summary>Carries the vms_read Basic credentials MediaMTX's Control API requires.</summary>
+  public const string MediaMtxHttpClientName = "mediamtx-api";
+
+  private readonly HttpClient _http = httpClientFactory.CreateClient(MediaMtxHttpClientName);
 
   public override Task<ListEntityStatesResponse> ListEntityStates(Empty request, ServerCallContext context)
   {

@@ -76,8 +76,8 @@ export default function MonitorsView({ readOnly = false, kind = 'wall' }: Props)
   useEffect(() => {
     if (!investigation) return
     fetch('/api/auth/users')
-      .then((r) => (r.ok ? (r.json() as Promise<string[]>) : []))
-      .then(setUsers)
+      .then((r) => (r.ok ? (r.json() as Promise<{ username: string }[]>) : []))
+      .then((list) => setUsers(list.map((u) => u.username)))
       .catch(() => setUsers([]))
   }, [investigation])
 
