@@ -114,9 +114,13 @@ ActionsControl.tsx`):
 
 Никакого отдельного оверлей-файла и альтернативных Dapr-компонентов не потребовалось:
 - `ta_vms/docker-compose.yml` переименовывает свою неявную сеть `default` в `common_app_network`
-  (`networks: default: name: common_app_network`, без `external: true` — как и у Square/
-  multitenant_admin: кто поднялся первым, тот её и создаёт). Все сервисы ta_vms оказываются в
-  одной сети с Square/multitenant_admin без единой правки на уровне отдельных сервисов.
+  (`networks: default: name: common_app_network`, с `external: true`). Все сервисы ta_vms
+  оказываются в одной сети с Square/multitenant_admin без единой правки на уровне отдельных
+  сервисов. `external: true` здесь обязателен: свой ключ сети у ta_vms — `default`, у Square/
+  multitenant_admin — `shared_network`, а compose пишет ключ в метку
+  `com.docker.compose.network` и отказывается адоптировать сеть с чужим значением метки
+  («network common_app_network was found but has incorrect label …»). Следствие: сеть создаёт
+  Square/multitenant_admin, их стек должен стартовать первым.
 - Собственный `redis`-сервис у ta_vms убран целиком — Dapr pub/sub и state store ta_vms
   (`init_files/dapr_components/docker/{orderpubsub,statestore}.yaml`, `redisHost: redis:6379`)
   используют тот же `redis`, что и multitenant_admin. **Причина, не просто стиль:** проверено
@@ -183,7 +187,7 @@ JWT-валидацию ставим **перед** `web_vms` (reverse-proxy/gate
 
 ## Проверка (по этапам)
 - **Phase 0:** `multitenant_admin` создаёт `common_app_network`; ta_vms подключается тем же
-  именем сети (без оверлея, без `external: true`) и без своего Redis — проверить резолв app-id
+  именем сети (без оверлея, `external: true`) и без своего Redis — проверить резолв app-id
   между стеками (Dapr service invocation `vmscfg` → `integrationhost`) и что Dapr pub/sub ta_vms
   (`orderpubsub`/`statestore`) подключается к общему `redis` от `multitenant_admin`.
   **ta_vms больше не запускается без поднятого Square/multitenant_admin** — автономность

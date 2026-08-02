@@ -6,19 +6,28 @@ name: ta_vms
 x-data-volume: &data-volume
   - "${PWD}/data:/data"
 
-# Same network Square/multitenant_admin use (neither marks it external — whichever stack starts
-# first creates it, the rest just attach by name). Renaming compose's own implicit "default"
-# network this way puts every ta_vms service on it with no per-service changes needed.
+# Same network Square/multitenant_admin use. Renaming compose's own implicit "default" network
+# this way puts every ta_vms service on it with no per-service changes needed — but it also means
+# our network *key* is "default" while Square/multitenant_admin declare theirs under the key
+# "shared_network". Compose stamps the key into the com.docker.compose.network label and refuses
+# to adopt a network whose label disagrees, so the only way to share one network across projects
+# with different keys is to mark it external here. Consequence: multitenant_admin (or Square) must
+# be up first — which is required anyway, ta_vms has no redis of its own and uses theirs.
 networks:
   default:
     name: common_app_network
+    external: true
 
 services:
+  # Part of the "app" profile, not of the infra services started by a bare `docker compose up`:
+  # actor placement for locally debugged (F5) services is already provided by the host's
+  # `dapr init` placement on 50005, and a second one cannot bind that port. Reached over the
+  # shared network by service name instead of a published host port for the same reason — this
+  # way the fully dockerized stack and a host `dapr init` can coexist.
   dapr-placement:
+    profiles: [app]
     image: daprio/dapr:latest
     command: ["./placement", "-port", "50005"]
-    ports:
-      - "50005:50005"
 
   postgres:
     image: postgres:latest
@@ -31,18 +40,6 @@ services:
     volumes:
       - ./data/postgres:/var/lib/postgresql
       - ./init_files/postgres:/docker-entrypoint-initdb.d:ro
-
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    environment:
-      PGADMIN_DEFAULT_EMAIL: "${PGADMIN_EMAIL:-admin@admin.com}"
-      PGADMIN_DEFAULT_PASSWORD: "${PGADMIN_PASSWORD:-admin123}"
-    ports:
-      - "${PGADMIN_PORT:-5050}:80"
-    volumes:
-      - ./init_files/pgadmin/servers.json:/pgadmin4/servers.json:ro
-    depends_on:
-      - postgres
 
   # No own redis service: ta_vms now shares one network (common_app_network, see above) with
   # Square/multitenant_admin, and reuses multitenant_admin's "redis" for all of ta_vms's Dapr
@@ -303,7 +300,7 @@ services:
       - "-dapr-grpc-port"
       - "50001"
       - "-placement-host-address"
-      - "host.docker.internal:50005"
+      - "dapr-placement:50005"
       - "-components-path"
       - "/components"
     volumes:
@@ -330,7 +327,7 @@ services:
       - "-components-path"
       - "/components"
       - "-placement-host-address"
-      - "host.docker.internal:50005"
+      - "dapr-placement:50005"
     volumes:
       - "./init_files/dapr_components/docker:/components"
     network_mode: "service:vmsonvif-actors"

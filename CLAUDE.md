@@ -136,7 +136,10 @@ Square) реализованы; план — [`docs/square-integration-plan.md`]
 
 - **Автономность принесена в жертву единой сети — явное, осознанное решение.** ta_vms теперь
   **всегда** живёт в общей docker-сети `common_app_network` (тот же `name:`, что у Square/
-  `multitenant_admin`, без `external: true` — кто поднялся первым, тот её и создаёт) и **не имеет
+  `multitenant_admin`, но `external: true` — сеть создаёт Square/`multitenant_admin`, они должны
+  подняться первыми; свой ключ сети у ta_vms `default`, у них `shared_network`, а compose
+  отказывается подхватывать чужую сеть с несовпадающим ключом в метке
+  `com.docker.compose.network`) и **не имеет
   собственного Redis**: Dapr pub/sub/state store ta_vms используют тот же `redis`, что и
   `multitenant_admin`. Простой `docker compose up` в одном ta_vms, без поднятого
   Square/`multitenant_admin`, **больше не работает** — это ожидаемо, не баг. Причина отказа от
