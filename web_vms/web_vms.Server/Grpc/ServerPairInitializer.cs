@@ -1,7 +1,11 @@
 namespace web_vms;
 
 /// <summary>
-/// Reads the server↔FS pairing from VmsCfg in the background, retrying until it answers.
+/// Reads the server↔FS pairing from VmsCfg in the background, retrying until it answers, then keeps
+/// re-reading it so a media server added or re-paired later is picked up without a restart. VmsCfg
+/// announces such changes on <c>media-server-config-changed</c>, but the gateway may run in several
+/// replicas and each event would reach only one of them, so it polls instead — the map is a handful
+/// of rows and rarely changes.
 ///
 /// Deliberately not awaited during startup: doing that kept Kestrel from listening at all while
 /// VmsCfg was down, so the browser only ever saw a bare 502 from the dev proxy and the real cause
@@ -14,6 +18,7 @@ public sealed class ServerPairInitializer(
   ILogger<ServerPairInitializer> logger) : IHostedService, IDisposable
 {
   private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(5);
+  private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(30);
 
   private readonly CancellationTokenSource _cts = new();
 
@@ -26,13 +31,22 @@ public sealed class ServerPairInitializer(
   private async Task RunAsync(CancellationToken ct)
   {
     var attempt = 0;
+    var loaded = false;
+
     while (!ct.IsCancellationRequested)
     {
       try
       {
         await registry.InitAsync(ct);
-        logger.LogInformation("Server/FS pairing loaded from VmsCfg");
-        return;
+        // Only the first load is worth a line; after that this runs every RefreshInterval and the
+        // map almost never changes. A failed refresh keeps the previous map (InitAsync throws
+        // before assigning), so the gateway degrades to staleness, never to "not ready".
+        if (!loaded)
+        {
+          logger.LogInformation("Server/FS pairing loaded from VmsCfg");
+          loaded = true;
+        }
+        attempt = 0;
       }
       catch (OperationCanceledException)
       {
@@ -45,10 +59,10 @@ public sealed class ServerPairInitializer(
         // a couple of attempts, but a genuine outage should not bury the log.
         if (attempt is 1 or 12 || attempt % 60 == 0)
           logger.LogWarning(ex, "Loading server/FS pairing from VmsCfg failed (attempt {Attempt})", attempt);
-
-        try { await Task.Delay(RetryDelay, ct); }
-        catch (OperationCanceledException) { return; }
       }
+
+      try { await Task.Delay(loaded ? RefreshInterval : RetryDelay, ct); }
+      catch (OperationCanceledException) { return; }
     }
   }
 

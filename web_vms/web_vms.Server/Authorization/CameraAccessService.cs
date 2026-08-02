@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Security.Claims;
+using Dapr.Client;
 using web_vms.Authentication;
 using web_vms.Types.Dto;
 
@@ -24,14 +25,35 @@ public interface ICameraAccessService
 /// The single place that answers "may this caller touch this camera". Reads grants from VmsCfg
 /// through <see cref="IPermissionManager"/> and caches them per user, because this sits on every
 /// request — including per-camera state polls and archive segment fetches — and CLAUDE.md forbids
-/// a config round-trip on a hot path. Freshness comes from pub/sub invalidation
-/// (<see cref="CameraPermissionSubscriber"/>); the TTL is only a backstop.
+/// a config round-trip on a hot path.
+///
+/// Freshness comes from a version key VmsCfg rewrites on every permission or ACL-mode change: this
+/// service re-reads it at most once a second and drops the whole cache when it moved. That is a
+/// shared signal rather than a per-instance one, so every replica converges within a second — a
+/// pub/sub subscription could not, since all replicas share one Dapr consumer group and only one of
+/// them would ever be told. The TTL below stays as the backstop for a state store hiccup.
 /// </summary>
 public sealed class CameraAccessService(
   IPermissionManager permissions,
+  DaprClient dapr,
   ILogger<CameraAccessService> logger) : ICameraAccessService
 {
   private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
+
+  // Cheap enough to do on a hot path (a few bytes out of Redis) once per interval per replica,
+  // which bounds how long a revoked grant can survive anywhere in the cluster.
+  private static readonly TimeSpan VersionProbeInterval = TimeSpan.FromSeconds(1);
+  private const string VersionKey = "cam-perm-version";
+
+  // Read per instance, not into a static field: a missing variable in a static initializer surfaces
+  // as a TypeInitializationException from DI, which says nothing about which variable is missing.
+  private readonly string _stateStoreName =
+    Environment.GetEnvironmentVariable("DAPR_STATE_STORE_NAME")
+      ?? throw new InvalidOperationException("Required environment variable 'DAPR_STATE_STORE_NAME' is not set");
+
+  private readonly SemaphoreSlim _versionLock = new(1, 1);
+  private string? _lastSeenVersion;
+  private DateTime _versionCheckedAtUtc = DateTime.MinValue;
 
   private sealed record CachedGrants(UserCameraPermissionsDto Grants, DateTime FetchedAtUtc);
 
@@ -62,6 +84,9 @@ public sealed class CameraAccessService(
 
     if (user.IsInRole(RoleConstants.Admin))
       return CameraScope.Everything;
+
+    // From here on the answer is served from cache, so this is where it has to be proven current.
+    await EnsureFreshAsync(ct);
 
     if (!await IsEnforcedAsync(ct))
       return CameraScope.Everything;
@@ -97,6 +122,56 @@ public sealed class CameraAccessService(
 
     _byUser.TryRemove(username, out _);
     logger.LogInformation("Camera permissions for '{Username}' invalidated", username);
+  }
+
+  /// <summary>
+  /// Drops the cache when VmsCfg has rewritten the shared permission version since the last probe.
+  /// Never throws: a state store that cannot be read leaves the cache in place, so an infrastructure
+  /// hiccup slows propagation down to <see cref="CacheTtl"/> instead of locking operators out.
+  /// </summary>
+  private async Task EnsureFreshAsync(CancellationToken ct)
+  {
+    if (DateTime.UtcNow - _versionCheckedAtUtc < VersionProbeInterval)
+      return;
+
+    await _versionLock.WaitAsync(ct);
+    try
+    {
+      if (DateTime.UtcNow - _versionCheckedAtUtc < VersionProbeInterval)
+        return;
+
+      var version = await dapr.GetStateAsync<string>(_stateStoreName, VersionKey, cancellationToken: ct) ?? string.Empty;
+      _versionCheckedAtUtc = DateTime.UtcNow;
+
+      // First read only records where the counter stands — the cache is empty anyway, and flushing
+      // on it would throw away every replica's warm cache on restart for nothing.
+      if (_lastSeenVersion is null)
+      {
+        _lastSeenVersion = version;
+        return;
+      }
+
+      if (string.Equals(_lastSeenVersion, version, StringComparison.Ordinal))
+        return;
+
+      _lastSeenVersion = version;
+      Invalidate(string.Empty);
+    }
+    catch (OperationCanceledException)
+    {
+      throw;
+    }
+    catch (Exception ex)
+    {
+      // Back off exactly as if the probe had succeeded, so a state store outage doesn't turn every
+      // single request into a failing round-trip.
+      _versionCheckedAtUtc = DateTime.UtcNow;
+      logger.LogWarning(ex, "Reading the camera permission version failed; serving cached grants");
+    }
+    finally
+    {
+      _versionLock.Release();
+    }
   }
 
   private static bool Allows(CameraPermissionFlagsDto? flags, CameraAction action) => action switch

@@ -19,7 +19,10 @@ namespace VmsCfg
     private const string MediaServerConfigChangedTopic = "media-server-config-changed";
     private const string CameraStateChangedTopic       = "camera-state-changed";
     private const string AnalyticsWatchChangedTopic    = "analytics-watch-changed";
-    private const string CameraPermissionsChangedTopic = "camera-permissions-changed";
+
+    // Shared state store key whose value changes on every permission or ACL-mode write; web_vms
+    // watches it to know when to drop its cached grants. See BumpCameraPermissionsVersionAsync.
+    private const string CameraPermissionsVersionKey   = "cam-perm-version";
 
     // Investigation boards are operator-created and never expire on their own, so the number one
     // person can accumulate is capped. Walls are unaffected — they are admin-managed.
@@ -74,21 +77,28 @@ namespace VmsCfg
       });
     }
 
-    // Payload is the affected username, or "" when the ACL mode changed and every cached decision
-    // is stale. Subscribers use it only as a signal to re-fetch, never as the new state.
-    private void NotifyCameraPermissionsChanged(string username)
+    /// <summary>
+    /// Marks every cached permission decision in every web_vms replica as stale by writing a new
+    /// value to a shared key. Deliberately not a pub/sub event: all replicas of a service share one
+    /// Dapr app id, hence one consumer group, so an event would reach exactly one of them and the
+    /// rest would keep enforcing revoked grants until their TTL expired. A key everybody reads has
+    /// no such asymmetry. The value carries no meaning — only "differs from the last one seen".
+    ///
+    /// Awaited rather than fire-and-forget: permission writes are rare admin actions, and a lost
+    /// bump silently degrades revocation to the consumer's TTL backstop.
+    /// </summary>
+    private async Task BumpCameraPermissionsVersionAsync(CancellationToken ct)
     {
-      _ = Task.Run(async () =>
+      try
       {
-        try
-        {
-          await daprClient.PublishEventAsync(_pubSubName, CameraPermissionsChangedTopic, username);
-        }
-        catch (Exception ex)
-        {
-          logger.LogWarning(ex, "Camera permission change notification failed for '{Username}'", username);
-        }
-      });
+        await daprClient.SaveStateAsync(
+          StateStoreName, CameraPermissionsVersionKey, Guid.NewGuid().ToString("N"), cancellationToken: ct);
+      }
+      catch (Exception ex)
+      {
+        // The permissions themselves are already committed; only their propagation speed suffers.
+        logger.LogWarning(ex, "Bumping the camera permission version failed — replicas will pick the change up by TTL");
+      }
     }
 
     private void NotifyMediaServer(string serverId)
@@ -938,7 +948,7 @@ namespace VmsCfg
         request.Permissions.Username,
         request.Permissions.Cameras.Count,
         request.Permissions.AllCameras is null ? "none" : "set");
-      NotifyCameraPermissionsChanged(request.Permissions.Username);
+      await BumpCameraPermissionsVersionAsync(context.CancellationToken);
       return new OperationStatus { Success = true };
     }
 
@@ -953,8 +963,7 @@ namespace VmsCfg
     {
       await permissionDb.SetModeAsync(request.Mode, context.CancellationToken);
       logger.LogInformation("Camera ACL mode set to {Mode}", request.Mode);
-      // Empty payload: a mode flip invalidates every cached decision, not one user's.
-      NotifyCameraPermissionsChanged(string.Empty);
+      await BumpCameraPermissionsVersionAsync(context.CancellationToken);
       return new OperationStatus { Success = true };
     }
   }

@@ -1,6 +1,4 @@
-using System.Collections.Concurrent;
 using System.Net.Http.Headers;
-using System.Security.Cryptography;
 
 namespace web_vms;
 
@@ -28,17 +26,21 @@ public sealed record WhepDeleteResult(WhepProxyOutcome Outcome, int StatusCode =
 /// DELETE (end session) are proxied — current WHEP clients in this app use non-trickle ICE, so
 /// no PATCH is needed. Shared by `WhepController` (authenticated) and `WhepTestController`
 /// (anonymous, dev-only).
+///
+/// Holds no session state: the token handed to the browser is the session, sealed with AES-GCM
+/// (see <see cref="WhepSessionToken"/>). That keeps DeleteSessionAsync targeting only URIs this
+/// service itself constructed — the anti-SSRF guarantee a lookup table used to give — while
+/// letting any replica close a session that any other replica opened.
 /// </summary>
-public sealed class WhepProxyService(ICameraManager _manager, IHttpClientFactory _httpClientFactory)
+public sealed class WhepProxyService(
+  ICameraManager _manager, IHttpClientFactory _httpClientFactory, WhepSessionToken _tokens)
 {
   public const string MediaMtxHttpClientName = "mediamtx-whep";
 
-  // Session token -> real MediaMTX session URL. The token handed to the browser is an opaque
-  // random key into this table, never the URL itself — so DeleteSessionAsync only ever targets a
-  // URI this service itself constructed in CreateOfferAsync, closing off SSRF-via-forged-token by
-  // construction instead of having to re-validate a client-decodable URL against an allowlist.
+  // How long a session token stays usable. It is the token's own expiry (see WhepSessionToken) —
+  // nothing is stored here, so a session whose browser never came back to close it costs nothing
+  // and needs no sweeping; MediaMTX times the abandoned WebRTC session out on its own.
   private static readonly TimeSpan SessionTtl = TimeSpan.FromHours(1);
-  private readonly ConcurrentDictionary<string, (Uri Uri, DateTime CreatedAt, string Owner)> _sessions = new();
 
   /// <param name="owner">
   /// Keycloak preferred_username of the caller, empty when authentication is disabled — the same
@@ -90,7 +92,7 @@ public sealed class WhepProxyService(ICameraManager _manager, IHttpClientFactory
       if (mtxResponse.Headers.Location is { } location)
       {
         var absoluteLocation = location.IsAbsoluteUri ? location : new Uri(targetUri, location);
-        token = CreateSessionToken(absoluteLocation, owner);
+        token = _tokens.Seal(absoluteLocation, owner, DateTime.UtcNow + SessionTtl);
       }
 
       var body = await mtxResponse.Content.ReadAsByteArrayAsync(ct);
@@ -101,15 +103,15 @@ public sealed class WhepProxyService(ICameraManager _manager, IHttpClientFactory
 
   public async Task<WhepDeleteResult> DeleteSessionAsync(string token, string owner, CancellationToken ct)
   {
-    // Check ownership before removing, and answer a foreign token exactly like an unknown one, so
-    // tokens can't be probed for existence and one viewer can't tear down another's stream.
-    if (!_sessions.TryGetValue(token, out var session)
-      || !string.Equals(session.Owner, owner, StringComparison.Ordinal)
-      || !_sessions.TryRemove(token, out session))
+    // A foreign token is answered exactly like an unopenable one, so tokens can't be probed and one
+    // viewer can't tear down another's stream. Unlike the old in-memory table this is idempotent:
+    // closing twice proxies twice and MediaMTX answers 404 the second time.
+    if (!_tokens.TryOpen(token, out var sessionUri, out var sealedOwner)
+      || !string.Equals(sealedOwner, owner, StringComparison.Ordinal))
       return new WhepDeleteResult(WhepProxyOutcome.InvalidToken);
 
     var client = _httpClientFactory.CreateClient(MediaMtxHttpClientName);
-    using var request = new HttpRequestMessage(HttpMethod.Delete, session.Uri);
+    using var request = new HttpRequestMessage(HttpMethod.Delete, sessionUri);
 
     try
     {
@@ -122,25 +124,4 @@ public sealed class WhepProxyService(ICameraManager _manager, IHttpClientFactory
     }
   }
 
-  private string CreateSessionToken(Uri sessionUri, string owner)
-  {
-    PruneExpiredSessions();
-
-    var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
-    _sessions[token] = (sessionUri, DateTime.UtcNow, owner);
-    return token;
-  }
-
-  // Best-effort sweep for sessions whose browser-side cleanup never arrived (e.g. tab closed
-  // mid-stream) — same "no delivery guarantees, periodic sweep" spirit as the debug-entity-state
-  // registry, just in-process and unrelated to it.
-  private void PruneExpiredSessions()
-  {
-    var cutoff = DateTime.UtcNow - SessionTtl;
-    foreach (var (key, value) in _sessions)
-    {
-      if (value.CreatedAt < cutoff)
-        _sessions.TryRemove(key, out _);
-    }
-  }
 }
