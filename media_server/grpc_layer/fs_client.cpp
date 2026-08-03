@@ -104,9 +104,11 @@ void fs_client::enqueue_ingest_clip(
   const std::string& file_path,
   std::chrono::system_clock::time_point start_ts,
   std::optional<std::chrono::system_clock::time_point> end_ts,
-  std::uint64_t size_bytes)
+  std::uint64_t size_bytes,
+  bool force_retained)
 {
   vms::fs::IngestClipRequest request;
+  request.set_force_retained(force_retained);
   auto* clip = request.mutable_clip();
   clip->set_camera_id(camera_id);
   clip->set_stream_name(stream_name);

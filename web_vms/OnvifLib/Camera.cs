@@ -145,6 +145,44 @@ public class Camera
     await device.SetRelayOutputStateAsync(token, active ? RelayLogicalState.active : RelayLogicalState.inactive);
   }
 
+  // ── Camera-side storage (SD card) ─────────────────────────────────────────────
+  // Lives on the Device Management service, not on a Profile G service of its own.
+
+  public async Task<OnvifDeviceStorageSupport> GetStorageSupportAsync()
+  {
+    using var device = await GetDevice();
+    var caps = await device.GetServiceCapabilitiesAsync();
+    var system = caps?.System;
+    return new OnvifDeviceStorageSupport(
+      system?.StorageConfigurationSpecified == true && system.StorageConfiguration,
+      system?.MaxStorageConfigurationsSpecified == true ? system.MaxStorageConfigurations : 0,
+      (caps?.Misc?.AuxiliaryCommands ?? []).ToList());
+  }
+
+  public async Task<List<OnvifEdgeStorageConfiguration>> GetStorageConfigurationsAsync()
+  {
+    using var device = await GetDevice();
+    var resp = await device.GetStorageConfigurationsAsync();
+    return (resp.StorageConfigurations ?? [])
+      .Select(s => new OnvifEdgeStorageConfiguration(
+        s.token ?? string.Empty,
+        s.Data?.type ?? string.Empty,
+        s.Data?.LocalPath ?? string.Empty,
+        s.Data?.StorageUri ?? string.Empty,
+        s.Data?.User?.UserName ?? string.Empty))
+      .ToList();
+  }
+
+  /// <summary>
+  /// Sends a vendor auxiliary command (ONVIF defines the transport, not the command strings).
+  /// Formatting storage is one of these — irreversible on the device, so callers must confirm.
+  /// </summary>
+  public async Task<string> SendAuxiliaryCommandAsync(string command)
+  {
+    using var device = await GetDevice();
+    return await device.SendAuxiliaryCommandAsync(command) ?? string.Empty;
+  }
+
   public async Task SyncTimeAsync() => await SetTimeAsync(System.DateTime.UtcNow);
 
   public async Task SetTimeAsync(System.DateTime utcTime)
@@ -292,6 +330,39 @@ public class Camera
     return null;
   }
 
+  async public Task<RecordingService?> GetRecordingService()
+  {
+    var services = await GetServicesAsync();
+
+    if (services != null)
+    {
+      return await _serviceCache.GetServiceAsync<RecordingService>(services);
+    }
+    return null;
+  }
+
+  async public Task<SearchService?> GetSearchService()
+  {
+    var services = await GetServicesAsync();
+
+    if (services != null)
+    {
+      return await _serviceCache.GetServiceAsync<SearchService>(services);
+    }
+    return null;
+  }
+
+  async public Task<ReplayService?> GetReplayService()
+  {
+    var services = await GetServicesAsync();
+
+    if (services != null)
+    {
+      return await _serviceCache.GetServiceAsync<ReplayService>(services);
+    }
+    return null;
+  }
+
   async public Task<List<OnvifProfileInfo>?> GetProfiles()
   {
     var service = await GetMediaService();
@@ -323,7 +394,7 @@ public class Camera
 
     var services = await GetServicesAsync();
     if (services == null)
-      return new OnvifCapabilities(false, false, false, false);
+      return new OnvifCapabilities(false, false, false, false, false);
 
     // GetConfigurations (not GetNodes) is the reliable PTZ signal — same reasoning as
     // PtzService2.GetCapabilitiesAsync's own comment.
@@ -347,7 +418,10 @@ public class Camera
       HasEvents:  EventService1.GetSupportedWsdls().Any(services.ContainsKey),
       // Namespace presence alone is a reliable signal here (unlike PTZ): Device I/O is a genuinely
       // optional, separate ONVIF service, not something advertised without real hardware behind it.
-      HasDigitalInputs: services.ContainsKey(DeviceIOService2.WSDL_V10));
+      HasDigitalInputs: services.ContainsKey(DeviceIOService2.WSDL_V10),
+      // Profile G is only usable when the camera can both tell us what it has (search) and play it
+      // back (replay); the recording service alone would let us list recordings we cannot fetch.
+      HasEdgeRecording: services.ContainsKey(SearchService.WSDL_V10) && services.ContainsKey(ReplayService.WSDL_V10));
 
     _capabilitiesCache = result;
     _capabilitiesCacheAt = System.DateTime.UtcNow;

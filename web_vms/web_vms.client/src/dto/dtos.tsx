@@ -691,3 +691,145 @@ export type ImagingOptionsDto = {
   colorSaturation?: FloatRangeDto | null
   sharpness?: FloatRangeDto | null
 }
+
+// ── Camera-side (SD card) archive, ONVIF Profile G ────────────────────────────
+// Timestamps stay ISO 8601 strings: they come from the device and are only displayed or echoed
+// back, so parsing them into Date would invent precision the camera never reported.
+
+export type EdgeCapabilitiesDto = {
+  recording: boolean
+  search: boolean
+  replay: boolean
+  /** Both search and replay — the minimum for browsing and importing. */
+  supported: boolean
+  dynamicRecordings: boolean
+  dynamicTracks: boolean
+  storageConfiguration: boolean
+  auxiliaryCommands: boolean
+  maxRecordings: number
+  supportedAuxiliaryCommands: string[]
+  /** Why Profile G is unavailable, when it is. Shown instead of empty panels. */
+  message: string
+}
+
+export type EdgeSummaryDto = {
+  dataFrom: string
+  dataUntil: string
+  numberRecordings: number
+  supported: boolean
+  message: string
+}
+
+export type EdgeTrackDto = {
+  trackToken: string
+  trackType: string
+  description: string
+  dataFrom: string
+  dataTo: string
+}
+
+export type EdgeRecordingDto = {
+  recordingToken: string
+  sourceName: string
+  sourceDescription: string
+  earliestRecording: string
+  latestRecording: string
+  content: string
+  recordingStatus: string
+  tracks: EdgeTrackDto[]
+}
+
+export type EdgeRecordingsDto = {
+  recordings: EdgeRecordingDto[]
+  message: string
+}
+
+export type EdgeIntervalDto = {
+  recordingToken: string
+  trackToken: string
+  startTime: string
+  endTime: string
+}
+
+export type EdgeIntervalsDto = {
+  intervals: EdgeIntervalDto[]
+  searched: boolean
+  message: string
+}
+
+export type EdgeRecordingJobDto = {
+  jobToken: string
+  recordingToken: string
+  mode: string
+  sourceToken: string
+}
+
+export type EdgeRecordingConfigurationDto = {
+  recordingToken: string
+  sourceId: string
+  sourceName: string
+  sourceLocation: string
+  sourceDescription: string
+  sourceAddress: string
+  content: string
+  /** ISO 8601 duration; PT0S means unlimited retention on the device. */
+  maximumRetentionTime: string
+}
+
+export type EdgeRecordingJobsDto = {
+  jobs: EdgeRecordingJobDto[]
+  configurations: EdgeRecordingConfigurationDto[]
+  message: string
+}
+
+export type EdgeStorageConfigurationDto = {
+  token: string
+  type: string
+  localPath: string
+  storageUri: string
+  user: string
+}
+
+export type EdgeStorageDto = {
+  configurations: EdgeStorageConfigurationDto[]
+  supported: boolean
+  formatSupported: boolean
+  /** The exact vendor auxiliary command a format would send — shown before confirming. */
+  formatCommand: string
+  message: string
+}
+
+export type EdgeImportRequestDto = {
+  recordingToken: string
+  streamName?: string
+  startTime: string
+  endTime: string
+  /** Start of the recording the token addresses; the RTSP seek is an offset from it. */
+  recordingStartTime: string
+  exportToFile?: boolean
+  segmentSeconds?: number
+}
+
+export type EdgeImportJobState = 'running' | 'completed' | 'failed' | 'cancelled' | 'unknown'
+
+export type EdgeImportJobDto = {
+  jobId: string
+  cameraId: string
+  streamName: string
+  state: EdgeImportJobState
+  startTime: string | null
+  endTime: string | null
+  /** Wall clock reached so far; progress is its position within [startTime, endTime]. */
+  position: string | null
+  clipsWritten: number
+  bytesWritten: number
+  message: string
+  exportPath: string
+}
+
+export type EdgeExportDto = {
+  relPath: string
+  cameraId: string
+  sizeBytes: number
+  createdAt: string | null
+}

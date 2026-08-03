@@ -132,6 +132,8 @@
                 "POSTGRES_PASSWORD": "postgres",
                 "POSTGRES_FS_DB": "ta_fs",
                 "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage",
+                "VMS_EXPORT_BASE_PATH": "${workspaceFolder}/../exports",
+                "VMS_EDGE_EXPORT_TTL_HOURS": "24",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },
@@ -223,6 +225,10 @@
                 {
                     "name": "VMS_STORAGE_BASE_PATH",
                     "value": "${workspaceFolder}/../media_storage"
+                },
+                {
+                    "name": "VMS_EXPORT_BASE_PATH",
+                    "value": "${workspaceFolder}/../exports"
                 },
                 {
                     "name": "VMS_LOG_PATH",
@@ -323,7 +329,9 @@
                 "POSTGRES_USER": "postgres",
                 "POSTGRES_PASSWORD": "postgres",
                 "POSTGRES_FS_DB": "ta_fs",
-                "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage"
+                "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage",
+                "VMS_EXPORT_BASE_PATH": "${workspaceFolder}/../exports",
+                "VMS_EDGE_EXPORT_TTL_HOURS": "24"
             }
         },
         {
@@ -339,6 +347,7 @@
                 { "name": "VMS_MEDIAMTX_PUBLISH_PASS", "value": "dev_publish_pass" },
                 { "name": "DEBUGINFOD_URLS", "value": "" },
                 { "name": "VMS_STORAGE_BASE_PATH", "value": "${workspaceFolder}/../media_storage" },
+                { "name": "VMS_EXPORT_BASE_PATH", "value": "${workspaceFolder}/../exports" },
                 { "name": "GRPC_VMS_PORT", "value": "50052" },
                 { "name": "APP_ID", "value": "vms-2" },
                 { "name": "DAPR_GRPC_PORT", "value": "51010" },

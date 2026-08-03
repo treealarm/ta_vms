@@ -19,6 +19,16 @@ service FsService {
   rpc StatArchiveTs(StatArchiveTsRequest) returns (StatArchiveTsResponse);
   rpc ReadArchiveTs(ReadArchiveTsRequest) returns (stream ReadArchiveTsChunk);
 
+  // ── Camera-side import exports ──────────────────────────────────────────────
+  // mp4 files produced by an edge import with export_to_file. They are deliberately NOT clips:
+  // adding them to the clips table would double the camera's timeline coverage and hand them to
+  // ClipCleaner. There is no database row at all — the listing is a directory walk, which also
+  // means an export survives a media_server restart that drops the in-memory job registry.
+  rpc ListExportFiles(ListExportFilesRequest) returns (ListExportFilesResponse);
+  rpc StatExportFile(ExportFileRequest) returns (StatExportFileResponse);
+  rpc ReadExportFile(ReadExportFileRequest) returns (stream ReadArchiveTsChunk);
+  rpc DeleteExportFile(ExportFileRequest) returns (DeleteExportFileResponse);
+
   rpc GetRecordingByUid(GetRecordingByUidRequest) returns (GetRecordingByUidResponse);
 
   rpc GetCameraStorage(GetCameraStorageRequest) returns (GetCameraStorageResponse);
@@ -60,6 +70,10 @@ message Recording {
 
 message IngestClipRequest {
   Recording clip = 1;
+  // Set by camera-side (edge) import: the operator asked for this range explicitly, so it must be
+  // kept regardless of the camera's recording policy. Normal live ingest leaves it unset and lets
+  // VmsFs derive retention from the policy and retention events.
+  bool force_retained = 2;
 }
 
 message RetainEventRequest {
@@ -253,6 +267,46 @@ message ReadArchiveTsRequest {
 
 message ReadArchiveTsChunk {
   bytes data = 1;
+}
+
+// Export files are addressed by their path relative to VMS_EXPORT_BASE_PATH: "<camera_id>/<job_id>.mp4".
+// The camera id is part of the path, which is what lets the gateway authorize a download without
+// any stored state.
+message ExportFileRequest {
+  string rel_path = 1;
+}
+
+message ExportFileInfo {
+  string rel_path    = 1;
+  string camera_id   = 2;
+  uint64 size_bytes  = 3;
+  google.protobuf.Timestamp created_ts = 4;
+}
+
+message ListExportFilesRequest {
+  // Empty lists exports for every camera on this node.
+  string camera_id = 1;
+}
+
+message ListExportFilesResponse {
+  repeated ExportFileInfo files = 1;
+}
+
+message StatExportFileResponse {
+  bool   exists     = 1;
+  uint64 size_bytes = 2;
+  string message    = 3;
+}
+
+message ReadExportFileRequest {
+  string rel_path = 1;
+  uint64 offset   = 2;
+  uint64 length   = 3;
+}
+
+message DeleteExportFileResponse {
+  bool   success = 1;
+  string message = 2;
 }
 
 message StorageInfo {

@@ -11,6 +11,70 @@ service CameraControlService {
   rpc EnsureWebRtcStreaming(EnsureWebRtcStreamingRequest) returns (OperationStatus);
 
   rpc GetArchiveFrameJpeg(ArchiveFrameJpegRequest) returns (ArchiveFrameJpegResponse);
+
+  // ── Camera-side (edge / SD card) archive import ─────────────────────────────
+  // Job state lives in media_server memory, not in a database: an import is an operator-initiated
+  // foreground action whose product (clips or an export file) is itself the durable result.
+  rpc StartEdgeImport(EdgeImportRequest) returns (EdgeImportJob);
+  rpc GetEdgeImportJob(EdgeImportJobKey) returns (EdgeImportJob);
+  rpc CancelEdgeImport(EdgeImportJobKey) returns (OperationStatus);
+  rpc ListEdgeImportJobs(ListEdgeImportJobsRequest) returns (ListEdgeImportJobsResponse);
+}
+
+enum EdgeImportState {
+  EDGE_IMPORT_STATE_UNSPECIFIED = 0;
+  EDGE_IMPORT_STATE_RUNNING     = 1;
+  EDGE_IMPORT_STATE_COMPLETED   = 2;
+  EDGE_IMPORT_STATE_FAILED      = 3;
+  EDGE_IMPORT_STATE_CANCELLED   = 4;
+}
+
+message EdgeImportRequest {
+  string camera_id   = 1;
+  string stream_name = 2;
+  // ONVIF Replay RTSP URI, resolved by VmsOnvif immediately before the call — devices commonly
+  // hand out single-use URIs.
+  string replay_uri  = 3;
+  optional Credentials cred = 4;
+  int64  start_unix_ms = 5;
+  int64  end_unix_ms   = 6;
+  // Start of the recording the replay URI addresses. Required: the RTSP seek is expressed as an
+  // offset from it, and without it a mid-recording window would be stamped with the wrong wall
+  // clock and silently corrupt the archive timeline.
+  int64  recording_start_unix_ms = 7;
+  // When true the pull is muxed into a single downloadable mp4 under VMS_EXPORT_BASE_PATH instead
+  // of being written into the archive as clips.
+  bool   export_to_file  = 8;
+  uint32 segment_seconds = 9;
+}
+
+message EdgeImportJobKey {
+  string job_id = 1;
+}
+
+message ListEdgeImportJobsRequest {
+  // Empty lists jobs for every camera on this media server.
+  string camera_id = 1;
+}
+
+message EdgeImportJob {
+  string          job_id        = 1;
+  string          camera_id     = 2;
+  string          stream_name   = 3;
+  EdgeImportState state         = 4;
+  int64           start_unix_ms = 5;
+  int64           end_unix_ms   = 6;
+  // Wall clock reached so far — the UI renders progress as position within [start, end].
+  int64           position_unix_ms = 7;
+  uint32          clips_written = 8;
+  uint64          bytes_written = 9;
+  string          message       = 10;
+  // Relative to VMS_EXPORT_BASE_PATH; empty unless export_to_file was requested.
+  string          export_path   = 11;
+}
+
+message ListEdgeImportJobsResponse {
+  repeated EdgeImportJob jobs = 1;
 }
 
 message OperationStatus {

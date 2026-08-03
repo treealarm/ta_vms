@@ -30,6 +30,26 @@ service OnvifService {
   rpc GetImagingSettings(ImagingSettingsRequest) returns (ImagingSettingsResponse);
   rpc GetImagingOptions(ImagingSettingsRequest) returns (ImagingOptionsResponse);
   rpc SetImagingSettings(SetImagingSettingsRequest) returns (SetImagingSettingsResponse);
+
+  // ── Profile G: the camera's own recordings (SD card) ────────────────────────
+  // Read RPCs never fail the call for a camera that simply cannot do Profile G — they answer with
+  // `message` filled in, so the UI can tell "unsupported" from "service broken".
+  rpc GetEdgeCapabilities(CameraRequest) returns (EdgeCapabilitiesResponse);
+  rpc GetEdgeRecordingSummary(CameraRequest) returns (EdgeRecordingSummaryResponse);
+  rpc ListEdgeRecordings(CameraRequest) returns (ListEdgeRecordingsResponse);
+  rpc ListEdgeRecordingIntervals(EdgeIntervalsRequest) returns (EdgeIntervalsResponse);
+  rpc GetEdgeReplayUri(EdgeReplayUriRequest) returns (EdgeReplayUriResponse);
+
+  // Write RPCs act on the device and are irreversible; they report failure in `error`.
+  rpc ListEdgeRecordingJobs(CameraRequest) returns (EdgeRecordingJobsResponse);
+  rpc SetEdgeRecordingJobMode(EdgeSetJobModeRequest) returns (EdgeMutationResponse);
+  rpc SetEdgeRecordingConfiguration(EdgeSetRecordingConfigurationRequest) returns (EdgeMutationResponse);
+  rpc DeleteEdgeRecording(EdgeRecordingTokenRequest) returns (EdgeMutationResponse);
+  rpc DeleteEdgeTrack(EdgeTrackRequest) returns (EdgeMutationResponse);
+  rpc DeleteEdgeRecordingJob(EdgeJobRequest) returns (EdgeMutationResponse);
+
+  rpc ListEdgeStorage(CameraRequest) returns (EdgeStorageResponse);
+  rpc FormatEdgeStorage(EdgeFormatStorageRequest) returns (EdgeMutationResponse);
 }
 
 service PtzService {
@@ -102,6 +122,8 @@ message GetDeviceCapabilitiesResponse {
   string error              = 5;
   bool   has_relay_outputs  = 6;
   bool   has_digital_inputs = 7;
+  // Camera keeps its own recordings (Profile G search + replay); gates the Edge Archive UI.
+  bool   has_edge_recording = 8;
 }
 
 message ImagingSettingsRequest {
@@ -494,4 +516,181 @@ message SetDigitalInputIdleStateRequest {
   string    source_id = 1;
   string    token      = 2;
   IdleState idle_state = 3;
+}
+
+// ── Profile G: camera-side ("edge") recordings ────────────────────────────────
+// Timestamps are ISO 8601 UTC strings, matching how the device itself reports them; empty means
+// "not reported". They are only ever passed through to the UI, never used for arithmetic here.
+
+message EdgeCapabilitiesResponse {
+  bool   recording             = 1;
+  bool   search                = 2;
+  bool   replay                = 3;
+  // Recording/DynamicRecordings: CreateRecording and DeleteRecording are available.
+  bool   dynamic_recordings    = 4;
+  // Recording/DynamicTracks: CreateTrack and DeleteTrack are available.
+  bool   dynamic_tracks        = 5;
+  // Device service exposes GetStorageConfigurations.
+  bool   storage_configuration = 6;
+  // Device advertises auxiliary commands, one of which may format local storage.
+  bool   auxiliary_commands    = 7;
+  // Maximum recordings the device can hold, 0 when not advertised.
+  uint32 max_recordings        = 8;
+  repeated string supported_auxiliary_commands = 9;
+  // Set when probing failed or the camera cannot do Profile G; the UI shows it instead of
+  // empty tabs. Not a transport error — the call itself succeeds.
+  string message               = 10;
+}
+
+message EdgeRecordingSummaryResponse {
+  string data_from          = 1;
+  string data_until         = 2;
+  uint32 number_recordings  = 3;
+  bool   supported          = 4;
+  string message            = 5;
+}
+
+message EdgeTrack {
+  string track_token = 1;
+  string track_type  = 2; // video | audio | metadata | extended
+  string description = 3;
+  string data_from   = 4;
+  string data_to     = 5;
+}
+
+// One recording object on the device; a Profile G recording aggregates many files.
+message EdgeRecording {
+  string recording_token   = 1;
+  string source_name       = 2;
+  string source_description = 3;
+  string earliest_recording = 4;
+  string latest_recording   = 5;
+  string content            = 6;
+  string recording_status   = 7;
+  repeated EdgeTrack tracks = 8;
+}
+
+message ListEdgeRecordingsResponse {
+  repeated EdgeRecording recordings = 1;
+  string message = 2;
+}
+
+message EdgeIntervalsRequest {
+  string source_id       = 1;
+  // Optional ISO 8601 UTC window; empty values fall back to the recording summary span.
+  string start_time      = 2;
+  string end_time        = 3;
+  // Restrict to one recording; empty searches every recording on the device.
+  string recording_token = 4;
+  uint32 max_results     = 5;
+}
+
+// A contiguous span the device reports as recorded. Spans still being written are closed at the
+// search window end so clients can import them.
+message EdgeInterval {
+  string recording_token = 1;
+  string track_token     = 2;
+  string start_time      = 3;
+  string end_time        = 4;
+}
+
+message EdgeIntervalsResponse {
+  repeated EdgeInterval intervals = 1;
+  // True when the device answered, even if it reported no spans in the window.
+  bool   searched = 2;
+  string message  = 3;
+}
+
+message EdgeReplayUriRequest {
+  string source_id       = 1;
+  string recording_token = 2;
+  string transport       = 3; // RTSP (default), HTTP or TCP
+}
+
+message EdgeReplayUriResponse {
+  string uri     = 1;
+  string message = 2;
+}
+
+message EdgeRecordingJob {
+  string job_token       = 1;
+  string recording_token = 2;
+  string mode            = 3; // Active | Idle, or the raw device value
+  string source_token    = 4;
+}
+
+message EdgeRecordingConfiguration {
+  string recording_token         = 1;
+  string source_id               = 2;
+  string source_name             = 3;
+  string source_location         = 4;
+  string source_description      = 5;
+  string source_address          = 6;
+  string content                 = 7;
+  // ISO 8601 duration; PT0S means unlimited retention on the device.
+  string maximum_retention_time  = 8;
+}
+
+message EdgeRecordingJobsResponse {
+  repeated EdgeRecordingJob jobs = 1;
+  repeated EdgeRecordingConfiguration configurations = 2;
+  string message = 3;
+}
+
+message EdgeSetJobModeRequest {
+  string source_id = 1;
+  string job_token = 2;
+  string mode      = 3; // Active starts the job, Idle stops it
+}
+
+message EdgeSetRecordingConfigurationRequest {
+  string source_id              = 1;
+  string recording_token        = 2;
+  string content                = 3;
+  string maximum_retention_time = 4;
+}
+
+message EdgeRecordingTokenRequest {
+  string source_id       = 1;
+  string recording_token = 2;
+}
+
+message EdgeTrackRequest {
+  string source_id       = 1;
+  string recording_token = 2;
+  string track_token     = 3;
+}
+
+message EdgeJobRequest {
+  string source_id = 1;
+  string job_token = 2;
+}
+
+message EdgeStorageConfiguration {
+  string token       = 1;
+  string type        = 2;
+  string local_path  = 3;
+  string storage_uri = 4;
+  string user        = 5;
+}
+
+message EdgeStorageResponse {
+  repeated EdgeStorageConfiguration configurations = 1;
+  bool   supported        = 2;
+  // True when a vendor auxiliary command can format local storage.
+  bool   format_supported = 3;
+  // The exact auxiliary command a format request would send — shown in the UI before confirming.
+  string format_command   = 4;
+  string message          = 5;
+}
+
+message EdgeFormatStorageRequest {
+  string source_id = 1;
+  // Auxiliary command to send; empty uses the one reported by ListEdgeStorage.
+  string command   = 2;
+}
+
+message EdgeMutationResponse {
+  bool   success = 1;
+  string error   = 2;
 }

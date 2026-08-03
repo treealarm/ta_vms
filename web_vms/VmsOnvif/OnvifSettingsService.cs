@@ -4,12 +4,14 @@ using web_vms.Types.Actors;
 
 namespace VmsOnvif;
 
-public sealed class OnvifSettingsService(CameraConnCache connCache, ILogger<OnvifSettingsService> logger)
+// Profile G ("edge recording") lives in OnvifEdgeSettings.cs — same class, kept apart because it is
+// a self-contained feature with its own service clients.
+public sealed partial class OnvifSettingsService(CameraConnCache connCache, ILogger<OnvifSettingsService> logger)
 {
   private readonly ConcurrentDictionary<string, (Camera Cam, DateTime Created)> _cache = new();
   private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
 
-  private static string CacheKey(CameraConnInfo conn) => $"{conn.Ip}:{conn.Port}:{conn.User}:{conn.Pass}";
+  private static string CacheKey(CameraConnInfo conn) => $"{conn.Ip}:{conn.Port}:{conn.User}:{conn.Pass}:{conn.Xaddr}";
 
   private Camera GetOrCreate(CameraConnInfo conn)
   {
@@ -19,7 +21,10 @@ public sealed class OnvifSettingsService(CameraConnCache connCache, ILogger<Onvi
       return entry.Cam;
     // Two concurrent callers may both reach here; last write wins.
     // Camera holds no IDisposable resources so the abandoned instance is benign.
-    var cam = Camera.Create(conn.Ip, conn.Port, conn.User, conn.Pass);
+    // Xaddr must be passed (as CameraActor.EnsureCamera does): on cameras whose device service
+    // is not at the default /onvif/device_service path, deriving the URL from ip:port resolves
+    // no services at all.
+    var cam = Camera.Create(conn.Ip, conn.Port, conn.User, conn.Pass, xaddr: conn.Xaddr);
     _cache[key] = (cam, now);
     return cam;
   }

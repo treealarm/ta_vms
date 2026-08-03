@@ -30,14 +30,20 @@ public sealed class ClipStorage(
   // rolls over into a new episode (new event_uuid, same event_id group).
   private static readonly TimeSpan MaxEpisodeDuration = TimeSpan.FromMinutes(3);
 
-  public async Task<string> IngestAsync(Recording clip, CancellationToken ct)
+  public async Task<string> IngestAsync(Recording clip, CancellationToken ct, bool forceRetained = false)
   {
     if (string.IsNullOrWhiteSpace(clip.CameraId) || string.IsNullOrWhiteSpace(clip.FilePath) || clip.StartTs is null)
       throw new ArgumentException("camera_id, file_path and start_ts are required");
 
     var clipUid = string.IsNullOrWhiteSpace(clip.ClipUid) ? Guid.NewGuid() : Guid.Parse(clip.ClipUid);
-    var config = await configCache.GetAsync(clip.CameraId, ct, clip.StreamName);
-    var retained = await ResolveRetainedAsync(clip, config, ct);
+    // Edge import bypasses the policy: an operator asked for this exact range, so retention rules
+    // derived from the camera's recording mode do not apply to it.
+    var retained = forceRetained;
+    if (!forceRetained)
+    {
+      var config = await configCache.GetAsync(clip.CameraId, ct, clip.StreamName);
+      retained = await ResolveRetainedAsync(clip, config, ct);
+    }
     var startTs = clip.StartTs.ToDateTime().ToUniversalTime();
     var endTs = clip.EndTs?.ToDateTime().ToUniversalTime();
 
