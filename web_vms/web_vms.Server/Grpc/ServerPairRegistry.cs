@@ -13,7 +13,9 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
   private static readonly TimeSpan FanOutTimeout = TimeSpan.FromSeconds(3);
   private static readonly TimeSpan UnreachableCooldown = TimeSpan.FromSeconds(30);
 
-  private IReadOnlyDictionary<string, string>? _serverToFs;
+  // volatile: ServerPairInitializer replaces this reference every refresh while request threads
+  // read it without any lock.
+  private volatile IReadOnlyDictionary<string, string>? _serverToFs;
   private volatile string? _lastInitError;
   // Instances that recently failed a fan-out call — skipped for UnreachableCooldown so a
   // configured-but-dead FS doesn't cost every request the full FanOutTimeout.

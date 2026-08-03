@@ -38,10 +38,12 @@ public sealed class WhepProxyService(
 {
   public const string MediaMtxHttpClientName = "mediamtx-whep";
 
-  // How long a session token stays usable. It is the token's own expiry (see WhepSessionToken) —
-  // nothing is stored here, so a session whose browser never came back to close it costs nothing
-  // and needs no sweeping; MediaMTX times the abandoned WebRTC session out on its own.
-  private static readonly TimeSpan SessionTtl = TimeSpan.FromHours(1);
+  // How long a session token stays usable — it is the token's own expiry (see WhepSessionToken),
+  // nothing is stored here. Generous by design: this is not a security window (an expired token
+  // could only close its own session, and MediaMTX times an abandoned WebRTC session out anyway)
+  // but a ceiling on how long a viewer may run before it can no longer close what it opened. A
+  // video wall left on the same layout for days must still tear its sessions down when it changes.
+  private static readonly TimeSpan SessionTtl = TimeSpan.FromDays(30);
 
   /// <param name="owner">
   /// Keycloak preferred_username of the caller, empty when authentication is disabled — the same
@@ -92,10 +94,12 @@ public sealed class WhepProxyService(
       string? token = null;
       if (mtxResponse.Headers.Location is { } location)
       {
-        // Only the path is sealed. The host is re-derived from the camera's configuration when the
-        // session is closed, so the token cannot carry a destination anywhere.
+        // What is sealed identifies the session, never a destination: the host to send the teardown
+        // to is looked up from the configured MediaMTX servers by the sealed id when the time comes.
         var absoluteLocation = location.IsAbsoluteUri ? location : new Uri(targetUri, location);
-        token = _tokens.Seal(cameraId, absoluteLocation.PathAndQuery, owner, DateTime.UtcNow + SessionTtl);
+        token = _tokens.Seal(
+          new WhepSession(cameraId, server.Id, owner, absoluteLocation.PathAndQuery),
+          DateTime.UtcNow + SessionTtl);
       }
 
       var body = await mtxResponse.Content.ReadAsByteArrayAsync(ct);
@@ -109,20 +113,22 @@ public sealed class WhepProxyService(
     // A foreign token is answered exactly like an unopenable one, so tokens can't be probed and one
     // viewer can't tear down another's stream. Unlike the old in-memory table this is idempotent:
     // closing twice proxies twice and MediaMTX answers 404 the second time.
-    if (!_tokens.TryOpen(token, out var cameraId, out var sessionPath, out var sealedOwner)
-      || !string.Equals(sealedOwner, owner, StringComparison.Ordinal))
+    if (!_tokens.TryOpen(token, out var session)
+      || !string.Equals(session.Owner, owner, StringComparison.Ordinal))
       return new WhepDeleteResult(WhepProxyOutcome.InvalidToken);
 
-    // Where to send the DELETE comes from the camera's configuration, never from the token — the
-    // request the client controls can only ever reach the MediaMTX this camera is assigned to. The
-    // sealed path is confined to that camera's own namespace on it, checked after normalization so
-    // "/cam1/../something" cannot climb out.
-    var server = await _manager.GetOrAssignMediaMtxServer(cameraId, ct);
+    // The address comes from the configured MediaMTX servers, never from the token, so the request
+    // can only ever reach a MediaMTX this deployment knows about. Looked up read-only on purpose:
+    // GetOrAssignMediaMtxServer would *assign* a server as a side effect, and this endpoint is
+    // reachable with nothing but a session token. The sealed path is then confined to the session's
+    // own camera, checked after normalization so "/cam1/../something" cannot climb out.
+    var servers = await _manager.ListMediaMtxServers(ct);
+    var server = servers.FirstOrDefault(s => string.Equals(s.Id, session.ServerId, StringComparison.Ordinal));
     if (server is null || string.IsNullOrWhiteSpace(server.Host))
       return new WhepDeleteResult(WhepProxyOutcome.CameraNotFound);
 
-    if (!Uri.TryCreate($"http://{server.Host}:{server.WebrtcPort}{sessionPath}", UriKind.Absolute, out var sessionUri)
-      || !sessionUri.AbsolutePath.StartsWith($"/{cameraId}/", StringComparison.Ordinal))
+    if (!Uri.TryCreate($"http://{server.Host}:{server.WebrtcPort}{session.SessionPath}", UriKind.Absolute, out var sessionUri)
+      || !sessionUri.AbsolutePath.StartsWith($"/{session.CameraId}/", StringComparison.Ordinal))
       return new WhepDeleteResult(WhepProxyOutcome.InvalidToken);
 
     var client = _httpClientFactory.CreateClient(MediaMtxHttpClientName);

@@ -241,13 +241,18 @@ namespace VmsCfg
       var response = new ListMediaServersResponse();
       foreach (var (serverId, fsId) in storage.GetServerPairs())
       {
+        // A missing key is the normal "no heartbeat within its TTL" answer. Anything else — the
+        // state store being down, or a heartbeat written in a shape this cannot read — is reported
+        // as offline too, but it is a fault and must not pass silently: swallowing it is exactly
+        // how every media server came to be displayed as offline for as long as it did.
         string status;
         try
         {
           status = await daprClient.GetStateAsync<string>(StateStoreName, $"ms-status-{serverId}", cancellationToken: context.CancellationToken) ?? "offline";
         }
-        catch
+        catch (Exception ex)
         {
+          logger.LogWarning(ex, "Reading the heartbeat of media server '{ServerId}' failed; reporting it offline", serverId);
           status = "offline";
         }
         response.Servers.Add(new MediaServerNode { ServerId = serverId, FsId = fsId, Status = status });

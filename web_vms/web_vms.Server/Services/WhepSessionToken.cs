@@ -3,6 +3,19 @@ using System.Text;
 
 namespace web_vms;
 
+/// <param name="ServerId">
+/// MediaMTX server the session was opened on. Kept with the session rather than looked up by
+/// camera when it is closed: reassigning the camera afterwards must not send the teardown to a
+/// server that never had this session.
+/// </param>
+/// <param name="SessionPath">
+/// Path (with query, if any) of the session URL MediaMTX returned — never its host.
+/// </param>
+/// <param name="Owner">
+/// Keycloak preferred_username of whoever opened it, empty when authentication is disabled.
+/// </param>
+public sealed record WhepSession(string CameraId, string ServerId, string Owner, string SessionPath);
+
 /// <summary>
 /// Seals a WHEP session (its camera, the session path MediaMTX handed out, and the owner) into the
 /// opaque token the browser gets back, and opens it again when the browser asks to close it.
@@ -51,13 +64,14 @@ public sealed class WhepSessionToken
     return new WhepSessionToken(key);
   }
 
-  /// <param name="sessionPath">
-  /// Path (with query, if any) of the session URL MediaMTX returned — never its host.
-  /// </param>
-  public string Seal(string cameraId, string sessionPath, string owner, DateTime expiresUtc)
+  public string Seal(WhepSession session, DateTime expiresUtc)
   {
-    var payload = Encoding.UTF8.GetBytes(
-      $"{new DateTimeOffset(expiresUtc, TimeSpan.Zero).ToUnixTimeSeconds()}\n{owner}\n{cameraId}\n{sessionPath}");
+    var payload = Encoding.UTF8.GetBytes(string.Join('\n',
+      new DateTimeOffset(expiresUtc, TimeSpan.Zero).ToUnixTimeSeconds().ToString(),
+      session.Owner,
+      session.CameraId,
+      session.ServerId,
+      session.SessionPath));
 
     var token = new byte[NonceSize + TagSize + payload.Length];
     var nonce = token.AsSpan(0, NonceSize);
@@ -75,11 +89,9 @@ public sealed class WhepSessionToken
   /// False for anything that is not a live token this key sealed — malformed, tampered with, or
   /// expired all look the same, so a token cannot be probed for which of those it is.
   /// </summary>
-  public bool TryOpen(string token, out string cameraId, out string sessionPath, out string owner)
+  public bool TryOpen(string token, out WhepSession session)
   {
-    cameraId = string.Empty;
-    sessionPath = string.Empty;
-    owner = string.Empty;
+    session = null!;
 
     if (!TryFromBase64Url(token, out var raw) || raw.Length <= NonceSize + TagSize)
       return false;
@@ -99,20 +111,19 @@ public sealed class WhepSessionToken
       return false;
     }
 
-    var fields = Encoding.UTF8.GetString(payload).Split('\n', 4);
-    if (fields.Length != 4)
+    var fields = Encoding.UTF8.GetString(payload).Split('\n', 5);
+    if (fields.Length != 5)
       return false;
 
     if (!long.TryParse(fields[0], out var expiresUnix)
       || DateTimeOffset.FromUnixTimeSeconds(expiresUnix) < DateTimeOffset.UtcNow)
       return false;
 
-    if (fields[2].Length == 0 || fields[3].Length == 0)
+    // Owner may legitimately be empty (no Keycloak); the rest identify the session and may not be.
+    if (fields[2].Length == 0 || fields[3].Length == 0 || fields[4].Length == 0)
       return false;
 
-    owner = fields[1];
-    cameraId = fields[2];
-    sessionPath = fields[3];
+    session = new WhepSession(fields[2], fields[3], fields[1], fields[4]);
     return true;
   }
 
