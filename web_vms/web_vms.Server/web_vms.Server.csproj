@@ -11,10 +11,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- State store access only (the shared permission version key) and Dapr service invocation.
+         The gateway neither publishes nor subscribes: it may run in several replicas, and a
+         subscription would reach exactly one of them. -->
     <PackageReference Include="Dapr.Client" Version="1.16.0" />
-    <!-- Subscribing to camera-permissions-changed, so a grant or revocation reaches the gateway's
-         authorization cache immediately instead of after its TTL. -->
-    <PackageReference Include="Dapr.Messaging" Version="1.16.0" />
     <PackageReference Include="Google.Protobuf" Version="3.34.1" />
     <PackageReference Include="Grpc.AspNetCore" Version="2.76.0" />
     <PackageReference Include="Grpc.Net.Client" Version="2.76.0" />

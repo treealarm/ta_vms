@@ -35,7 +35,10 @@ void state_store_client::save_heartbeat()
 
   auto* item = request.add_states();
   item->set_key("ms-status-" + m_server_id);
-  item->set_value("online");
+  // JSON-quoted on purpose: the reader is VmsCfg's GetStateAsync<string>, and the Dapr .NET SDK
+  // always runs the value through its JSON serializer. A bare `online` fails to deserialize there,
+  // which used to surface as "this server is offline" instead of as an error.
+  item->set_value("\"online\"");
   (*item->mutable_metadata())["ttlInSeconds"] = "60";
 
   google::protobuf::Empty response;

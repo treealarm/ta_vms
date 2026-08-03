@@ -9,7 +9,6 @@ using Vms.Utils;
 using web_vms;
 using web_vms.Authentication;
 using web_vms.Authorization;
-using Dapr.Messaging.PublishSubscribe.Extensions;
 using Vms.Logger;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,8 +21,10 @@ builder.Services.AddControllers(o =>
   o.Filters.Add<CameraAccessFilter>();
 });
 builder.Services.AddSingleton<ICameraAccessService, CameraAccessService>();
-builder.Services.AddDaprPubSubClient();
-builder.Services.AddHostedService<CameraPermissionSubscriber>();
+// State store access only: the gateway publishes nothing and subscribes to nothing. Permission
+// freshness is a shared version key it polls (see CameraAccessService) precisely because a
+// subscription would reach one replica out of N.
+builder.Services.AddDaprClient();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -82,6 +83,11 @@ builder.Services.AddHttpClient(WhepProxyService.MediaMtxHttpClientName, c =>
   c.Timeout = TimeSpan.FromSeconds(10);
   c.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", mtxBasic);
 });
+
+// Sealing key for WHEP session tokens. Required rather than generated per process on purpose: a
+// per-process key would work perfectly on one instance and quietly break session teardown the day
+// a second replica is added, which is the failure this token format exists to remove.
+builder.Services.AddSingleton(WhepSessionToken.FromBase64Key(Require("VMS_WHEP_SESSION_KEY")));
 builder.Services.AddSingleton<WhepProxyService>();
 
 // KEYCLOAK_URL is intentionally optional: when unset, login/authorization is disabled entirely

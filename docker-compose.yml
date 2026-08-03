@@ -50,7 +50,10 @@ services:
 
   mediamtx:
     image: bluenviron/mediamtx:latest
-    container_name: mediamtx
+    # No container_name on purpose: that namespace is global to the docker host, and the older
+    # vms_rec project (/mnt/wdblue/seenaptec/vms_rec) pins the same "mediamtx" name, so whichever
+    # stack came up last used to fail. Services reach it by its compose service name anyway
+    # (VMS_MTX_HOST=mediamtx resolves through the network alias, not the container name).
     # Passwords for the vms_publish / vms_read accounts declared in mediamtx.yml. MediaMTX merges
     # these into the yml entries by index, so the file keeps the users and permissions while the
     # secrets stay in .env. Both ports below now require one of those accounts.

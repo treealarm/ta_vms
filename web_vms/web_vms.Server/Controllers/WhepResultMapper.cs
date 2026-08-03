@@ -29,6 +29,9 @@ internal static class WhepResultMapper
   public static IActionResult ToActionResult(this WhepDeleteResult result, ControllerBase controller) => result.Outcome switch
   {
     WhepProxyOutcome.InvalidToken => controller.BadRequest("invalid session token"),
+    // The camera the token names has lost its MediaMTX assignment since the session started, so
+    // there is nowhere to send the teardown — the session is MediaMTX's to time out now.
+    WhepProxyOutcome.CameraNotFound => controller.NotFound("No MediaMTX server assigned to this camera"),
     WhepProxyOutcome.MediaMtxUnavailable => controller.StatusCode(StatusCodes.Status502BadGateway, "MediaMTX is unavailable"),
     _ => controller.StatusCode(result.StatusCode),
   };

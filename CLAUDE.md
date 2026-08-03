@@ -4,6 +4,8 @@
 
 Chat communication with the user is in Russian. Code — comments, identifiers, commit messages, log messages, docs — is always in English.
 
+Everything addressed to the user rather than to the codebase follows the chat, not the code: **implementation plans (including plan files) and code-review findings are written in Russian.** The code they talk about stays English, so quoted identifiers, file paths and code snippets are of course unchanged.
+
 ## MediaMTX API access
 
 All interaction with the MediaMTX REST API goes through **VmsUtils** (`vmsutils` Dapr app-id). No other service (media_server, VmsCfg, web_vms, etc.) calls the MediaMTX API directly.
@@ -75,6 +77,39 @@ When a service needs to react to a configuration change that originated in anoth
 **Do not:**
 - Add a direct gRPC call from service A to VmsCfg inside a hot path (e.g. per-request, per-packet) to read config that rarely changes — cache it and invalidate via pub/sub instead.
 - Embed config values in event payloads as the authoritative state — events are notifications, not data carriers.
+
+### Exception: services that may run in more than one replica
+
+Pub/sub invalidation only works for a **single-instance** consumer. All replicas of a service share
+one Dapr app id and therefore one Redis consumer group, so each event is delivered to exactly one
+replica — the others never learn and keep serving stale data until their TTL runs out. That is a
+work queue, and cache invalidation needs a broadcast.
+
+For a service that can be scaled horizontally (today: `web_vms.Server`), use a **version key in the
+shared state store** instead:
+1. VmsCfg writes a new value to a well-known key after the write succeeds (`cam-perm-version`, see
+   `CfgServiceImpl.BumpCameraPermissionsVersionAsync`) — the value is meaningless, only "different
+   from last time" matters.
+2. The consumer re-reads that key at most once per short interval and drops its cache when it moved
+   (`CameraAccessService.EnsureFreshAsync`), keeping its own TTL as the backstop for a state store
+   outage.
+
+Do not "fix" this with a per-instance `consumerID`: it works, but leaves an orphaned Redis consumer
+group behind on every restart.
+
+### Scaling model per service
+
+- `web_vms.Server` — stateless, scales by **replicas**. Keep it that way: no per-instance session
+  tables (WHEP session state travels in an AES-GCM sealed token, see `WhepSessionToken`), no
+  subscriptions, no local files.
+- `media_server` (`vms`) and `VmsFs` — scale by **sharding**: one pair per node, pinned to that
+  node's storage. More capacity means another server↔FS pair, never a second replica of the same
+  app id.
+- `VmsCfg`, `VmsUtils`, `VmsOnvif`, `VmsAnalytics`, `VmsLogger` — **single instance**. Each owns
+  in-memory state or a background job that must not run twice (recording-schedule ticker,
+  entity-state registry, ONVIF event pumps, live detection broadcaster, log retention). Scaling any
+  of these needs leader election or the state moved out first.
+- `VmsOnvifActors` — scales through Dapr actor placement; that is what it is for.
 
 ## Debug "entity state" presence registry
 
