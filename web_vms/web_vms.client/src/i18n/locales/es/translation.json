@@ -680,6 +680,7 @@
     "formatStorageTitle": "¿Formatear el almacenamiento de la cámara?",
     "formatCommandIs": "Comando auxiliar del fabricante: {{command}}",
     "formatStorageWarning": "Se enviará el comando '{{command}}' a la cámara. Se borrará todo el material de su tarjeta. Esto no se puede deshacer.",
-    "formatUnsupported": "Esta cámara no anuncia ningún comando auxiliar que formatee el almacenamiento"
+    "formatUnsupported": "Esta cámara no anuncia ningún comando auxiliar que formatee el almacenamiento",
+    "unknownRecordingStart": "La cámara no informó cuándo comienza esta grabación, por lo que el rango de importación no puede ubicarse de forma fiable."
   }
 }

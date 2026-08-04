@@ -3,7 +3,7 @@ import { Alert, Box, Chip, Stack, Tab, Tabs, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 
 import { useAppDispatch, useAppSelector } from '../store'
-import { clearEdgeCamera, fetchEdgeCapabilities, fetchEdgeSummary } from '../store/edgeArchiveSlice'
+import { fetchEdgeCapabilities, fetchEdgeSummary, selectEdgeCamera } from '../store/edgeArchiveSlice'
 import MasterDetailLayout from './settings/MasterDetailLayout'
 import SettingsListItem from './settings/SettingsListItem'
 import DetailToolbar from './settings/DetailToolbar'
@@ -33,7 +33,9 @@ export default function EdgeArchivePanel() {
   const selected = selectedId ? onvifCameras.find((c) => c.cameraId === selectedId) ?? null : null
 
   useEffect(() => {
-    dispatch(clearEdgeCamera())
+    // Sets the camera the slice accepts answers for, so a slow response for the previous one is
+    // dropped instead of overwriting this camera's state.
+    dispatch(selectEdgeCamera(selectedId))
     if (!selectedId) return
     void dispatch(fetchEdgeCapabilities(selectedId))
     void dispatch(fetchEdgeSummary(selectedId))

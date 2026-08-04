@@ -15,6 +15,7 @@ public:
   explicit libav_replay_source(replay_source_settings settings);
 
   [[nodiscard]] bool open(std::string& error) override;
+  [[nodiscard]] bool last_failure_was_device_busy() const override { return m_device_busy; }
   [[nodiscard]] bool read(AVPacket* packet, std::string& error) override;
   [[nodiscard]] AVFormatContext* format_context() const override { return m_input.get(); }
   [[nodiscard]] std::chrono::milliseconds packet_offset(const AVPacket* packet) override;
@@ -27,4 +28,5 @@ private:
   replay_source_settings m_settings;
   avformat_context_ptr m_input = nullptr;
   int64_t m_first_packet_offset_ms = -1;
+  bool m_device_busy = false;
 };

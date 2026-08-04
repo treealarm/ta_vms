@@ -30,6 +30,11 @@ public:
   /// continuing from wherever the device happened to be, which would mis-stamp wall clock.
   [[nodiscard]] virtual bool open(std::string& error) = 0;
 
+  /// True when the last failed open() was the device refusing another RTSP session (it is out of
+  /// them, typically because live streaming holds them) rather than a real error. Cameras have very
+  /// few sessions to give, so this is worth retrying — see edge_import_manager.
+  [[nodiscard]] virtual bool last_failure_was_device_busy() const = 0;
+
   /// Reads the next packet into `packet`. Returns false at end of stream or on error
   /// (`error` empty means a clean end).
   [[nodiscard]] virtual bool read(AVPacket* packet, std::string& error) = 0;

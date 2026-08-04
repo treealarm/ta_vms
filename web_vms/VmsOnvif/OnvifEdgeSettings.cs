@@ -17,9 +17,32 @@ namespace VmsOnvif;
 public sealed partial class OnvifSettingsService
 {
   // FindRecordings costs several SOAP round trips and the browse UI re-queries it on every window
-  // change. VmsOnvif is single-instance by contract, so a process-wide cache is safe.
+  // change. VmsOnvif is single-instance by contract, so a process-wide cache is safe — but the key
+  // includes an operator-chosen window, so entries must be reclaimed or the dictionary grows without
+  // bound for as long as the service runs.
   private readonly ConcurrentDictionary<string, (List<OnvifEdgeInterval> Intervals, DateTime At)> _edgeIntervalCache = new();
   private static readonly TimeSpan EdgeIntervalCacheTtl = TimeSpan.FromSeconds(60);
+  private const int EdgeIntervalCacheMaxEntries = 256;
+
+  private void StoreIntervals(string key, List<OnvifEdgeInterval> intervals)
+  {
+    var now = DateTime.UtcNow;
+    _edgeIntervalCache[key] = (intervals, now);
+
+    if (_edgeIntervalCache.Count <= EdgeIntervalCacheMaxEntries)
+      return;
+
+    // Drop what the TTL already invalidated; if that is not enough (a burst of distinct windows
+    // inside one TTL), drop the oldest until the cap holds.
+    foreach (var stale in _edgeIntervalCache.Where(e => now - e.Value.At >= EdgeIntervalCacheTtl).ToList())
+      _edgeIntervalCache.TryRemove(stale.Key, out _);
+
+    foreach (var oldest in _edgeIntervalCache
+               .OrderBy(e => e.Value.At)
+               .Take(Math.Max(0, _edgeIntervalCache.Count - EdgeIntervalCacheMaxEntries))
+               .ToList())
+      _edgeIntervalCache.TryRemove(oldest.Key, out _);
+  }
 
   public async Task<(OnvifEdgeCapabilities? Caps, string Message)> GetEdgeCapabilitiesAsync(string cameraId, CancellationToken ct)
   {
@@ -177,7 +200,7 @@ public sealed partial class OnvifSettingsService
 
       var found = await search.FindRecordingsAsync(from.Value, to.Value, recordingToken, maxResults, ct);
       var intervals = SearchService.ToIntervals(found, to);
-      _edgeIntervalCache[key] = (intervals, DateTime.UtcNow);
+      StoreIntervals(key, intervals);
       return (intervals, true, string.Empty);
     }
     catch (Exception ex)

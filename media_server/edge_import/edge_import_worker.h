@@ -51,6 +51,8 @@ struct edge_import_outcome
 {
   bool success = false;
   bool cancelled = false;
+  /// The device refused another RTSP session (it is out of them). Retryable, unlike a real error.
+  bool device_busy = false;
   std::string message;
   edge_import_progress progress;
 };
@@ -73,8 +75,6 @@ private:
   struct output_stream_state
   {
     AVStream* stream = nullptr;
-    int64_t first_pts = AV_NOPTS_VALUE;
-    int64_t first_dts = AV_NOPTS_VALUE;
     int64_t last_pts = AV_NOPTS_VALUE;
     int64_t last_dts = AV_NOPTS_VALUE;
   };
@@ -85,6 +85,7 @@ private:
   [[nodiscard]] bool open_segment(std::chrono::system_clock::time_point ts, std::string& error);
   void close_segment();
   [[nodiscard]] bool write_packet(AVPacket* packet);
+  [[nodiscard]] bool is_video_stream(int stream_index) const;
 
   edge_import_settings m_settings;
   const std::atomic_bool& m_cancel;
@@ -96,6 +97,12 @@ private:
 
   std::chrono::milliseconds m_window{};
   bool m_window_covered = false;
+  /// The device ended the stream cleanly — it simply had nothing more in the range.
+  bool m_reached_eof = false;
+  /// Shared origin for output timestamps, in the source stream's own time base per stream. Taken
+  /// once for the whole import so audio and video keep their relative offsets (a per-stream zero
+  /// would silently shift one against the other).
+  std::chrono::microseconds m_pts_origin{ -1 };
   std::chrono::milliseconds m_segment_start_offset{ 0 };
   std::chrono::system_clock::time_point m_segment_start_ts{};
   std::chrono::system_clock::time_point m_segment_last_ts{};

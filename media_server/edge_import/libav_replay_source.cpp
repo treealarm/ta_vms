@@ -93,9 +93,16 @@ bool libav_replay_source::open_input(std::string& error)
   av_dict_free(&opts);
   if (open_rc < 0)
   {
-    error = std::format("open replay uri: {}", av_error_text(open_rc));
+    const auto text = av_error_text(open_rc);
+    // libavformat collapses every RTSP 4xx into one generic "4XX Client Error" AVERROR, so the
+    // status code itself is unavailable here. In practice the only 4xx a well-formed replay request
+    // draws is 453 Not Enough Bandwidth — the camera is out of RTSP sessions because live streaming
+    // holds them — which is worth retrying rather than failing outright.
+    m_device_busy = text.find("4XX Client Error") != std::string::npos;
+    error = std::format("open replay uri: {}", text);
     return false;
   }
+  m_device_busy = false;
   m_input.reset(ctx);
 
   const int info_rc = avformat_find_stream_info(m_input.get(), nullptr);

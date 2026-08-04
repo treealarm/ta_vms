@@ -374,8 +374,24 @@ public sealed class EdgeArchiveController(
     if (camera is null || string.IsNullOrWhiteSpace(camera.ServerId))
       return NotFound(new { message = $"camera '{cameraId}' not found" });
 
-    var r = await GetMediaClient(camera.ServerId)
-      .CancelEdgeImportAsync(new EdgeImportJobKey { JobId = jobId }, Options(ct));
+    var client = GetMediaClient(camera.ServerId);
+
+    // Job ids are opaque and global to the media server, and permission was granted for THIS
+    // camera — without this check, Control on one camera would cancel another camera's import on
+    // the same node.
+    EdgeImportJob job;
+    try
+    {
+      job = await client.GetEdgeImportJobAsync(new EdgeImportJobKey { JobId = jobId }, Options(ct));
+    }
+    catch (RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound)
+    {
+      return NotFound(new { message = "unknown import job" });
+    }
+    if (!string.Equals(job.CameraId, cameraId, StringComparison.Ordinal))
+      return NotFound(new { message = "unknown import job" });
+
+    var r = await client.CancelEdgeImportAsync(new EdgeImportJobKey { JobId = jobId }, Options(ct));
     return r.Success ? Ok(new { message = r.Message }) : NotFound(new { message = r.Message });
   }
 

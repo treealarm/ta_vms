@@ -1,4 +1,4 @@
-import { type AnyAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
+import { type AnyAction, type PayloadAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import type {
   EdgeCapabilitiesDto,
   EdgeExportDto,
@@ -13,6 +13,8 @@ import type {
 import { parseJson } from './api'
 
 type EdgeArchiveState = {
+  /** Camera the stored data belongs to; responses for any other camera are dropped. */
+  cameraId: string | null
   capabilities: EdgeCapabilitiesDto | null
   summary: EdgeSummaryDto | null
   recordings: EdgeRecordingsDto | null
@@ -27,6 +29,7 @@ type EdgeArchiveState = {
 }
 
 const initialState: EdgeArchiveState = {
+  cameraId: null,
   capabilities: null,
   summary: null,
   recordings: null,
@@ -160,12 +163,29 @@ export const fetchEdgeExports = createAsyncThunk(
     parseJson<EdgeExportDto[]>(await fetch(`${base}/${encodeURIComponent(cameraId)}/exports`))
 )
 
+/** Camera a thunk was dispatched for: either the bare argument or the cameraId of its argument object. */
+function argCameraId(arg: unknown): string | null {
+  if (typeof arg === 'string') return arg
+  if (arg && typeof arg === 'object' && 'cameraId' in arg) {
+    const value = (arg as { cameraId?: unknown }).cameraId
+    return typeof value === 'string' ? value : null
+  }
+  return null
+}
+
+function isCurrent(state: EdgeArchiveState, action: { meta: { arg: unknown } }): boolean {
+  return argCameraId(action.meta.arg) === state.cameraId
+}
+
 const edgeArchiveSlice = createSlice({
   name: 'edgeArchive',
   initialState,
   reducers: {
-    // Selecting another camera must not leave the previous one's recordings on screen.
-    clearEdgeCamera: (state) => {
+    // Selecting another camera must not leave the previous one's data on screen, and must also
+    // invalidate requests already in flight — a slow answer for the old camera would otherwise land
+    // on top of the new one's state.
+    selectEdgeCamera: (state, action: PayloadAction<string | null>) => {
+      state.cameraId = action.payload
       state.capabilities = null
       state.summary = null
       state.recordings = null
@@ -179,14 +199,30 @@ const edgeArchiveSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchEdgeCapabilities.fulfilled, (state, action) => { state.capabilities = action.payload })
-      .addCase(fetchEdgeSummary.fulfilled, (state, action) => { state.summary = action.payload })
-      .addCase(fetchEdgeRecordings.fulfilled, (state, action) => { state.recordings = action.payload })
-      .addCase(fetchEdgeIntervals.fulfilled, (state, action) => { state.intervals = action.payload })
-      .addCase(fetchEdgeRecordingJobs.fulfilled, (state, action) => { state.recordingJobs = action.payload })
-      .addCase(fetchEdgeStorage.fulfilled, (state, action) => { state.storage = action.payload })
-      .addCase(fetchEdgeImports.fulfilled, (state, action) => { state.jobs = action.payload })
-      .addCase(fetchEdgeExports.fulfilled, (state, action) => { state.exports = action.payload })
+      .addCase(fetchEdgeCapabilities.fulfilled, (state, action) => {
+        if (isCurrent(state, action)) state.capabilities = action.payload
+      })
+      .addCase(fetchEdgeSummary.fulfilled, (state, action) => {
+        if (isCurrent(state, action)) state.summary = action.payload
+      })
+      .addCase(fetchEdgeRecordings.fulfilled, (state, action) => {
+        if (isCurrent(state, action)) state.recordings = action.payload
+      })
+      .addCase(fetchEdgeIntervals.fulfilled, (state, action) => {
+        if (isCurrent(state, action)) state.intervals = action.payload
+      })
+      .addCase(fetchEdgeRecordingJobs.fulfilled, (state, action) => {
+        if (isCurrent(state, action)) state.recordingJobs = action.payload
+      })
+      .addCase(fetchEdgeStorage.fulfilled, (state, action) => {
+        if (isCurrent(state, action)) state.storage = action.payload
+      })
+      .addCase(fetchEdgeImports.fulfilled, (state, action) => {
+        if (isCurrent(state, action)) state.jobs = action.payload
+      })
+      .addCase(fetchEdgeExports.fulfilled, (state, action) => {
+        if (isCurrent(state, action)) state.exports = action.payload
+      })
       .addMatcher((a: AnyAction) => a.type.startsWith('edgeArchive/') && a.type.endsWith('/pending'), (state) => {
         state.isBusy = true
       })
@@ -201,5 +237,5 @@ const edgeArchiveSlice = createSlice({
   }
 })
 
-export const { clearEdgeCamera } = edgeArchiveSlice.actions
+export const { selectEdgeCamera } = edgeArchiveSlice.actions
 export default edgeArchiveSlice.reducer

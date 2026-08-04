@@ -23,17 +23,6 @@ std::string make_job_id()
   return std::format("{:016x}{:016x}", high, low);
 }
 
-/// The device is out of RTSP sessions, not broken — worth retrying. Detected by text because
-/// libavformat collapses every RTSP status into a generic "4XX Client Error" AVERROR.
-bool looks_like_device_busy(const std::string& message)
-{
-  static constexpr std::string_view markers[] = {
-    "453", "Not Enough Bandwidth", "4XX Client Error", "Server returned 5",
-  };
-  return std::ranges::any_of(markers, [&message](std::string_view marker)
-                             { return message.find(marker) != std::string::npos; });
-}
-
 }  // namespace
 
 edge_import_manager& edge_import_manager::instance()
@@ -110,6 +99,22 @@ std::optional<edge_import_status> edge_import_manager::start(
     }
     prune_finished_locked();
     m_jobs.push_back(entry);
+
+    // Started under the same lock that published the job: a thread assigned afterwards races with
+    // prune_finished_locked() reading entry->worker, and a throwing std::thread constructor would
+    // strand the job in `running` forever, blocking every later import for this camera.
+    try
+    {
+      entry->worker = std::thread(
+        [this, entry, settings]() mutable { run_job(entry, std::move(settings)); });
+    }
+    catch (const std::exception& ex)
+    {
+      entry->status.state = edge_import_state::failed;
+      entry->status.message = std::format("could not start import thread: {}", ex.what());
+      error = entry->status.message;
+      return std::nullopt;
+    }
     snapshot = entry->status;
   }
 
@@ -117,8 +122,6 @@ std::optional<edge_import_status> edge_import_manager::start(
     "edge import: started job='{}' camera='{}' stream='{}' export={}",
     snapshot.job_id, snapshot.camera_id, snapshot.stream_name, settings.export_to_file));
 
-  entry->worker = std::thread(
-    [this, entry, settings]() mutable { run_job(entry, std::move(settings)); });
   return snapshot;
 }
 
@@ -149,7 +152,9 @@ void edge_import_manager::run_job(
       });
 
     outcome = worker.run();
-    if (outcome.success || outcome.cancelled || !looks_like_device_busy(outcome.message))
+    // Only an explicit "the device refused another session" is retried. Matching the message text
+    // would also catch our own progress wording and re-run a finished import over its own files.
+    if (outcome.success || outcome.cancelled || !outcome.device_busy)
     {
       break;
     }

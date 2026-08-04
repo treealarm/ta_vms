@@ -128,14 +128,16 @@ export default function EdgeArchiveBrowsePanel({ cameraId, dataFrom, dataUntil }
     setImportError(null)
   }
 
-  const runImport = async (exportToFile: boolean) => {
-    if (!selected || !importFrom || !importTo) return
-    setImportError(null)
+  // The camera seeks by offset from the recording's own start, so that origin has to be exact.
+  // Substituting the span start would silently shift the seek and stamp the footage with someone
+  // else's wall clock, so an unknown origin blocks the import instead.
+  const recordingStart = selected
+    ? recordings?.recordings.find((r) => r.recordingToken === selected.recordingToken)?.earliestRecording ?? ''
+    : ''
 
-    // The camera seeks by offset from the recording's own start, so that origin must be sent.
-    const recordingStart =
-      recordings?.recordings.find((r) => r.recordingToken === selected.recordingToken)?.earliestRecording
-      || selected.startTime
+  const runImport = async (exportToFile: boolean) => {
+    if (!selected || !importFrom || !importTo || !recordingStart) return
+    setImportError(null)
 
     const action = await dispatch(
       startEdgeImport({
@@ -156,7 +158,8 @@ export default function EdgeArchiveBrowsePanel({ cameraId, dataFrom, dataUntil }
     void dispatch(fetchEdgeImports(cameraId))
   }
 
-  const importInvalid = !selected || !importFrom || !importTo || !importTo.isAfter(importFrom)
+  const importInvalid =
+    !selected || !importFrom || !importTo || !importTo.isAfter(importFrom) || !recordingStart
 
   return (
     <Stack spacing={2} sx={{ p: 2, overflowY: 'auto' }}>
@@ -281,6 +284,9 @@ export default function EdgeArchiveBrowsePanel({ cameraId, dataFrom, dataUntil }
             <Typography variant="caption" color="text.secondary">
               {t('edge.oneImportPerCamera')}
             </Typography>
+          )}
+          {selected && !recordingStart && (
+            <Alert severity="warning" sx={{ mt: 1 }}>{t('edge.unknownRecordingStart')}</Alert>
           )}
           {importError && <Alert severity="error" sx={{ mt: 1 }}>{importError}</Alert>}
         </Box>

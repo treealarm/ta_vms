@@ -101,6 +101,7 @@ edge_import_outcome edge_import_worker::run()
   {
     close_segment();
     outcome.message = error;
+    outcome.device_busy = m_source->last_failure_was_device_busy();
     outcome.progress = m_progress;
     return outcome;
   }
@@ -122,18 +123,32 @@ edge_import_outcome edge_import_worker::run()
   }
   if (m_progress.clips_written == 0)
   {
+    // Nothing was produced at all: no video keyframe in the window, an empty stream, or a seek that
+    // landed past the available data.
     outcome.message = "replay produced no output (no keyframe in window or empty stream)";
     return outcome;
   }
+
+  const auto covered_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+    m_progress.position - m_settings.start_ts);
+
   if (!m_window_covered)
   {
-    // EOF before covering the window is not success: the device dropped the stream, the replay URI
-    // expired, or the seek landed past the available data.
+    if (!m_reached_eof)
+    {
+      // The stream stopped mid-window without ending cleanly — the device dropped it or the replay
+      // URI expired. What was written stays, but the job is a failure.
+      outcome.message = std::format(
+        "replay stopped before the requested window was covered (reached {}ms of {}ms)",
+        covered_ms.count(), m_window.count());
+      return outcome;
+    }
+    // Clean EOF short of the window: the camera simply has no more footage in that range. The
+    // common case when the request runs to "now" or past the start of the card's history.
+    outcome.success = true;
     outcome.message = std::format(
-      "replay ended before the requested window was covered (reached {}ms of {}ms)",
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-        m_progress.position - m_settings.start_ts).count(),
-      m_window.count());
+      "imported {} clip(s); device had {}ms of the {}ms requested",
+      m_progress.clips_written, covered_ms.count(), m_window.count());
     return outcome;
   }
   outcome.success = true;
@@ -149,7 +164,17 @@ bool edge_import_worker::resolve_target(std::string& error)
   {
     // Export files are not archive clips: they never reach the clips table, so they must live
     // outside the storage roots or they would double the camera's timeline coverage.
-    m_target_root = std::filesystem::path(require_env("VMS_EXPORT_BASE_PATH"));
+    // Caught here rather than propagated: run() executes on a detached job thread, where an escaping
+    // exception would std::terminate the whole media server over one misconfigured job.
+    try
+    {
+      m_target_root = std::filesystem::path(require_env("VMS_EXPORT_BASE_PATH"));
+    }
+    catch (const std::exception& ex)
+    {
+      error = ex.what();
+      return false;
+    }
     return true;
   }
 
@@ -180,7 +205,10 @@ bool edge_import_worker::read_loop(std::string& error)
   {
     if (!m_source->read(packet.get(), error))
     {
-      // Empty error means a clean end of stream.
+      // Empty error means a clean end of stream: the device has nothing left in the range. That is
+      // the normal ending when the requested window runs past what the card holds, so it is not a
+      // failure — run() reports how much was actually covered.
+      m_reached_eof = error.empty();
       return error.empty();
     }
 
@@ -193,16 +221,19 @@ bool edge_import_worker::read_loop(std::string& error)
     }
 
     const auto wall_ts = m_settings.start_ts + offset;
-    const bool is_key = (packet->flags & AV_PKT_FLAG_KEY) != 0;
+    // Only a video keyframe can start a decodable clip. Audio packets carry AV_PKT_FLAG_KEY too,
+    // so gating on the flag alone would open a segment on audio and leave the video mid-GOP —
+    // same rule as the live path in segment_writer::write_packet.
+    const bool is_video_key = is_video_stream(packet->stream_index)
+      && (packet->flags & AV_PKT_FLAG_KEY) != 0;
     // Export mode writes one continuous file; only the archive path rotates.
     const bool rotate_due = !m_settings.export_to_file &&
       offset - m_segment_start_offset >= m_settings.segment_duration;
 
-    if (!m_output || (is_key && rotate_due))
+    if (!m_output || (is_video_key && rotate_due))
     {
-      if (!m_output && !is_key)
+      if (!m_output && !is_video_key)
       {
-        // Every output has to start on a keyframe or playback cannot decode it.
         av_packet_unref(packet.get());
         continue;
       }
@@ -347,6 +378,16 @@ bool edge_import_worker::open_segment(
   return true;
 }
 
+bool edge_import_worker::is_video_stream(int stream_index) const
+{
+  const AVFormatContext* input = m_source ? m_source->format_context() : nullptr;
+  if (!input || stream_index < 0 || stream_index >= static_cast<int>(input->nb_streams))
+  {
+    return false;
+  }
+  return input->streams[stream_index]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO;
+}
+
 bool edge_import_worker::write_packet(AVPacket* packet)
 {
   if (!m_output || !packet)
@@ -362,23 +403,33 @@ bool edge_import_worker::write_packet(AVPacket* packet)
   output_stream_state& state = it->second;
 
   const AVRational in_tb = m_source->format_context()->streams[packet->stream_index]->time_base;
-  av_packet_rescale_ts(packet, in_tb, state.stream->time_base);
 
   if (packet->pts == AV_NOPTS_VALUE || packet->dts == AV_NOPTS_VALUE)
   {
+    av_packet_rescale_ts(packet, in_tb, state.stream->time_base);
     const int64_t next = state.last_pts != AV_NOPTS_VALUE ? state.last_pts + 1 : 0;
     packet->pts = next;
     packet->dts = next;
   }
   else
   {
-    if (state.first_pts == AV_NOPTS_VALUE)
+    // Rebase every stream against ONE origin, expressed in wall time rather than in either
+    // stream's ticks. Zeroing each stream on its own first packet would erase the offset between
+    // audio and video and desync them — and doing it per segment would re-desync at every rotation.
+    const auto pts_us = std::chrono::microseconds(
+      av_rescale_q(packet->pts, in_tb, AVRational{ 1, 1000000 }));
+    const auto dts_us = std::chrono::microseconds(
+      av_rescale_q(packet->dts, in_tb, AVRational{ 1, 1000000 }));
+    if (m_pts_origin.count() < 0)
     {
-      state.first_pts = packet->pts;
-      state.first_dts = packet->dts;
+      m_pts_origin = std::min(pts_us, dts_us);
     }
-    packet->pts -= state.first_pts;
-    packet->dts -= state.first_dts;
+
+    const AVRational us_tb{ 1, 1000000 };
+    packet->pts = av_rescale_q((pts_us - m_pts_origin).count(), us_tb, state.stream->time_base);
+    packet->dts = av_rescale_q((dts_us - m_pts_origin).count(), us_tb, state.stream->time_base);
+    packet->duration = av_rescale_q(packet->duration, in_tb, state.stream->time_base);
+
     if (state.last_pts != AV_NOPTS_VALUE && packet->pts <= state.last_pts)
     {
       packet->pts = state.last_pts + 1;

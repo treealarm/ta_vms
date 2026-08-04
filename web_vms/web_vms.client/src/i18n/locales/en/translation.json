@@ -680,6 +680,7 @@
     "formatStorageTitle": "Format camera storage?",
     "formatCommandIs": "Vendor auxiliary command: {{command}}",
     "formatStorageWarning": "The command '{{command}}' will be sent to the camera. All footage on its card will be erased. This cannot be undone.",
-    "formatUnsupported": "This camera advertises no auxiliary command that formats storage"
+    "formatUnsupported": "This camera advertises no auxiliary command that formats storage",
+    "unknownRecordingStart": "The camera did not report when this recording starts, so the import range cannot be located reliably."
   }
 }
