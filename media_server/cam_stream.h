@@ -51,6 +51,14 @@ public:
   recording_policy_mode get_recording_policy_mode() const { return m_recording_policy_mode; }
   std::string current_segment_path() const { return m_writer ? m_writer->current_segment_path().string() : std::string(); }
 
+  /// Snapshot of whether the source is currently delivering media. Safe from any thread.
+  source_liveness liveness() const { return m_reader ? m_reader->liveness() : source_liveness{}; }
+
+  /// Closes the current segment so it ends on the last real frame instead of spanning the outage.
+  /// Called when the source is seen to have dropped: a clip stretched across a gap makes the
+  /// archive claim footage it does not have, and hides the gap from detection entirely.
+  void close_segment_on_source_loss();
+
 private:
   std::string m_rtsp_url;
   std::string m_camera_id;

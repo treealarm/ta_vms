@@ -67,6 +67,22 @@ public:
     std::uint64_t size_bytes,
     bool force_retained = false);
 
+  struct liveness_entry
+  {
+    std::string camera_id;
+    std::string stream_name;
+    bool alive = false;
+    std::optional<std::chrono::system_clock::time_point> last_frame_ts;
+    bool recording_expected = false;
+  };
+
+  // Fire-and-forget: a lost report is corrected by the next one, so no outbox is involved. Called
+  // from the reporting timer, never from a reader thread — the RPC has a deadline and would stall
+  // the read loop.
+  void report_source_liveness(
+    const std::string& server_id,
+    const std::vector<liveness_entry>& streams);
+
   bool ingest_clip(
     const recording& clip,
     std::string& clip_uid,

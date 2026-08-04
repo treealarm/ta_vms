@@ -59,6 +59,48 @@ export function mergeSegments(segs: readonly Segment[], joinToleranceMs: number)
   return out
 }
 
+/**
+ * The holes: what `win` covers and `segs` does not.
+ *
+ * `joinToleranceMs` drops gaps too thin to see — at timeline scale a one-pixel gap is noise, and
+ * drawing it makes solid coverage look shredded.
+ */
+export function complementSegments(
+  segs: readonly Segment[],
+  win: Segment,
+  joinToleranceMs = 0
+): Segment[] {
+  if (win.endMs <= win.startMs) return []
+
+  const merged = mergeSegments(
+    segs.filter((s) => s.endMs > win.startMs && s.startMs < win.endMs),
+    joinToleranceMs
+  )
+
+  const out: Segment[] = []
+  let cursor = win.startMs
+  for (const s of merged) {
+    const start = Math.max(s.startMs, win.startMs)
+    if (start - cursor > joinToleranceMs) out.push({ startMs: cursor, endMs: start })
+    cursor = Math.max(cursor, Math.min(s.endMs, win.endMs))
+  }
+  if (win.endMs - cursor > joinToleranceMs) out.push({ startMs: cursor, endMs: win.endMs })
+  return out
+}
+
+/** `a` minus `b` — e.g. an outage minus what has already been pulled back from the camera. */
+export function subtractSegments(
+  a: readonly Segment[],
+  b: readonly Segment[],
+  joinToleranceMs = 0
+): Segment[] {
+  const out: Segment[] = []
+  for (const seg of mergeSegments(a, 0)) {
+    out.push(...complementSegments(b, seg, joinToleranceMs))
+  }
+  return out
+}
+
 export function segmentAt(segs: readonly Segment[], ms: number): Segment | null {
   for (const s of segs) {
     if (ms >= s.startMs && ms < s.endMs) return s

@@ -5,7 +5,8 @@ using System.Linq;
 
 namespace VmsFs;
 
-// Camera-side import exports are served from ExportFileHandlers.cs — same class, separate file.
+// Camera-side import exports are served from ExportFileHandlers.cs and source heartbeats from
+// SourceLivenessHandler.cs — same class, separate files.
 public sealed partial class FsServiceImpl(
   ClipStorage storage,
   StorageListCache storageListCache,
@@ -14,6 +15,8 @@ public sealed partial class FsServiceImpl(
   FsActivityLog activityLog,
   FragIndexWarmer fragWarmer,
   ExportFileStore exportStore,
+  SourceLivenessTracker livenessTracker,
+  SourceOutageStore outageStore,
   DaprClient daprClient) : FsService.FsServiceBase
 {
   private readonly ClipStorage _storage = storage;

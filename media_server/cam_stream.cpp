@@ -137,6 +137,15 @@ void cam_stream::update_webrtc_push_url(const std::string& new_url, bool web_rtc
     start_web_rtc(error);
 }
 
+void cam_stream::close_segment_on_source_loss()
+{
+  if (!m_writer || m_recording_policy_mode == recording_policy_mode::off)
+    return;
+  // Non-blocking and processed in order with the packet queue — which is empty during an outage,
+  // so the close happens right away.
+  m_writer->request_close_segment(m_record_segment_duration);
+}
+
 void cam_stream::shutdown()
 {
   stop_recording();

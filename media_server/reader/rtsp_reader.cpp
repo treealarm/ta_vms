@@ -66,6 +66,18 @@ bool rtsp_reader::open(const std::string& url)
 }
 
 
+source_liveness rtsp_reader::liveness() const
+{
+  source_liveness out;
+  out.alive = m_source_alive.load();
+  const auto us = m_last_frame_us.load();
+  if (us != 0)
+  {
+    out.last_frame_ts = std::chrono::system_clock::time_point(std::chrono::microseconds(us));
+  }
+  return out;
+}
+
 bool rtsp_reader::connect() 
 {
   disconnect();
@@ -209,6 +221,10 @@ void rtsp_reader::read_loop()
       const auto now = std::chrono::steady_clock::now();
       if (now - last_frame_at >= kWatchdogInterval)
       {
+        // Dead from here, not from the first failed read: a single error is normal, five seconds
+        // of them is a lost source. This only decides *that* it happened — *when* comes from
+        // m_last_frame_us, which still holds the last real packet.
+        m_source_alive.store(false);
         logger::instance().warning(std::format("RTSP watchdog: reconnecting [cam={}]: {}", m_cam_id, m_rtsp_url));
         disconnect();
       }
@@ -219,6 +235,11 @@ void rtsp_reader::read_loop()
       continue;
 
     last_frame_at = std::chrono::steady_clock::now();
+    // Liveness is declared here, not in connect(): that returns true before a single packet has
+    // arrived, so "connected but silent" would otherwise read as healthy.
+    m_last_frame_us.store(std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count());
+    m_source_alive.store(true);
 
     if (pkt->stream_index == m_video_index)
     {

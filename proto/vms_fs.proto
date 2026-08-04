@@ -16,6 +16,13 @@ service FsService {
   rpc GetCameraRetentionStatus(GetCameraRetentionStatusRequest) returns (GetCameraRetentionStatusResponse);
   rpc ListRetentionEvents(ListRetentionEventsRequest) returns (ListRetentionEventsResponse);
 
+  // ── Source liveness ─────────────────────────────────────────────────────────
+  // media_server reports current state; VmsFs derives outage intervals from the transitions and
+  // from silence. Deliberately not intervals: "no signal" then covers both a dead camera and a dead
+  // media server, and nothing can be left half-open by a crash.
+  rpc ReportSourceLiveness(ReportSourceLivenessRequest) returns (OperationStatus);
+  rpc ListSourceOutages(ListSourceOutagesRequest) returns (ListSourceOutagesResponse);
+
   rpc StatArchiveTs(StatArchiveTsRequest) returns (StatArchiveTsResponse);
   rpc ReadArchiveTs(ReadArchiveTsRequest) returns (stream ReadArchiveTsChunk);
 
@@ -351,3 +358,50 @@ message GetFsActivityResponse {
   repeated FsFileEvent events = 1;
 }
 
+
+// One stream's current state. Batched per node: one call instead of one per stream.
+message SourceLiveness {
+  string camera_id   = 1;
+  string stream_name = 2;
+  bool   alive       = 3;
+  // Last packet actually received. THE boundary of an outage — the report time is never used for
+  // that, or every interval would be off by up to one heartbeat period at each end.
+  optional google.protobuf.Timestamp last_frame_ts = 4;
+  // Whether recording was supposed to be running at this moment (recording_policy != off, which
+  // already accounts for schedules and overrides). A heartbeat gap with this set is an archive gap;
+  // without it, merely a camera that was offline while nothing was being recorded anyway.
+  bool   recording_expected = 5;
+}
+
+message ReportSourceLivenessRequest {
+  string server_id = 1;
+  repeated SourceLiveness streams = 2;
+}
+
+// One recorded interval of source unavailability. ended_ts unset = happening right now.
+message SourceOutageRow {
+  string outage_uid  = 1;
+  string camera_id   = 2;
+  string stream_name = 3;
+  google.protobuf.Timestamp started_ts = 4;
+  optional google.protobuf.Timestamp ended_ts = 5;
+  string cause = 6;                 // link_lost | server_down
+  bool   recording_expected = 7;    // false => an offline camera, not an archive gap
+  string state = 8;                 // open | filling | filled | exhausted | partial | held | ignored
+  int64  filled_ms = 9;             // display-only cache; clips are the source of truth
+  int32  attempts  = 10;
+  string message   = 11;
+}
+
+message ListSourceOutagesRequest {
+  optional string camera_id = 1;
+  // Window overlap, not containment: an outage that started before `from` and is still open must
+  // show up, otherwise the one gap the operator cares about is the one they cannot see.
+  optional google.protobuf.Timestamp from_ts = 2;
+  optional google.protobuf.Timestamp to_ts = 3;
+  uint32 limit = 4;
+}
+
+message ListSourceOutagesResponse {
+  repeated SourceOutageRow outages = 1;
+}

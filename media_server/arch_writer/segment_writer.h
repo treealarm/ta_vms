@@ -79,6 +79,11 @@ private:
 
   std::chrono::steady_clock::time_point m_segment_start_time;
   std::chrono::system_clock::time_point m_segment_start_ts{};
+  // Wall clock of the last packet actually written. The clip's end_ts is stamped from this rather
+  // than from the moment of closing: when a source drops, the segment is closed some seconds later,
+  // and using "now" would make the clip claim time for which no footage exists — enough to hide the
+  // outage from gap detection entirely.
+  std::chrono::system_clock::time_point m_last_write_ts{};
   std::filesystem::path m_segment_abs_path;
   std::filesystem::path m_segment_rel_path;
   std::string m_segment_storage_id;

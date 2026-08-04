@@ -1,4 +1,5 @@
 ﻿#include <csignal>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -32,6 +33,15 @@ namespace
   void on_signal(int /*signal*/) 
   {
     g_stop_requested = true;
+  }
+
+  // Numeric env reader for optional tuning knobs. Required variables use require_env instead — a
+  // missing one there is a misconfiguration and must fail loudly rather than pick a default.
+  int env_int(const char* key, int fallback)
+  {
+    const char* raw = std::getenv(key);
+    if (!raw || *raw == '\0') return fallback;
+    try { return std::stoi(raw); } catch (...) { return fallback; }
   }
 }  // namespace
 
@@ -112,6 +122,37 @@ int main(int argc, char** argv)
     fs_client::set_fs_app_id(fs_id);
   }
 
+  // Source liveness. Started only here, after set_fs_app_id above — fs_client's constructor throws
+  // if used before that. Deliberately a separate timer rather than the reader threads: the RPC has
+  // a deadline and would stall an RTSP read loop.
+  const auto liveness_period = std::chrono::seconds(
+    std::max(1, env_int("VMS_SOURCE_LIVENESS_PERIOD_SECONDS", 15)));
+  const std::string own_server_id = app_id ? app_id : "";
+  std::thread liveness_thread([&, liveness_period, own_server_id]() {
+    while (!g_stop_requested) {
+      // A dropped source must not leave its clip spanning the outage: the archive would claim
+      // footage it does not have, and the gap would never be detected.
+      manager.close_segments_on_source_loss();
+
+      std::vector<fs_client::liveness_entry> batch;
+      for (const auto& s : manager.list_stream_states())
+      {
+        batch.push_back(fs_client::liveness_entry{
+          .camera_id = s.camera_id,
+          .stream_name = s.stream_name,
+          .alive = s.source_alive,
+          .last_frame_ts = s.last_frame_ts,
+          .recording_expected = s.is_recording,
+        });
+      }
+      fs_client::instance().report_source_liveness(own_server_id, batch);
+
+      for (auto i = std::chrono::seconds::zero(); i < liveness_period && !g_stop_requested;
+           i += std::chrono::seconds(1))
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+  });
+
   // Load the initial camera set through the same path pub/sub updates use, so disabled
   // cameras/streams are respected here too instead of being configured then immediately
   // left running until the next unrelated config change.
@@ -153,6 +194,7 @@ int main(int argc, char** argv)
   server->Shutdown();
   server->Wait();
   heartbeat_thread.join();
+  if (liveness_thread.joinable()) liveness_thread.join();
   entity_state_thread.join();
   return 0;
 }

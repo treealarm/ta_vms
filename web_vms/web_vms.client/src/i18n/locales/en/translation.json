@@ -36,7 +36,8 @@
     "logout": "Log out",
     "investigations": "Investigations",
     "permissions": "Permissions",
-    "edgeArchive": "Edge archive"
+    "edgeArchive": "Edge archive",
+    "gaps": "Archive gaps"
   },
   "auth": {
     "title": "Sign in",
@@ -696,5 +697,38 @@
     "playbackFailed": "Playback failed",
     "hlsUnsupported": "HLS is not supported in this browser",
     "previewPlaceholder": "Pick a finished import or an exported file to play it here."
+  },
+  "gaps": {
+    "title": "Archive gaps",
+    "noRows": "No outages in this window",
+    "noSelection": "Select an outage",
+    "ongoing": "ongoing",
+    "recordingOnly": "Only gaps in recording",
+    "notRecorded": "recording was off",
+    "notRecordedHint": "Recording was not running at the time, so this outage cost no footage.",
+    "covered": "Covered by the archive: {{pct}}%",
+    "from": "From",
+    "to": "To",
+    "causeLabel": "Cause",
+    "stateLabel": "State",
+    "attempts": "attempts: {{count}}",
+    "window": {
+      "24h": "24 h",
+      "7d": "7 days",
+      "30d": "30 days"
+    },
+    "cause": {
+      "link_lost": "Lost connection to the camera",
+      "server_down": "Media server was down"
+    },
+    "state": {
+      "open": "Not filled",
+      "filling": "Filling",
+      "filled": "Filled",
+      "exhausted": "Nothing left on the camera",
+      "partial": "Partially filled",
+      "held": "Held by operator",
+      "ignored": "Ignored"
+    }
   }
 }

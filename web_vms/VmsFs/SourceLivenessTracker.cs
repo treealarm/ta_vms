@@ -1,0 +1,158 @@
+using System.Collections.Concurrent;
+
+namespace VmsFs;
+
+/// <summary>
+/// Turns per-stream heartbeats from media_server into outage intervals.
+/// </summary>
+/// <remarks>
+/// Current state of live streams is held in memory on purpose; only intervals reach the database.
+/// "No signal" then means one thing whether the camera died or the media server did, and nothing can
+/// be left half-open by a crash — the open rows themselves are the state that survives a restart.
+///
+/// Boundaries always come from <c>last_frame_ts</c>, never from when a report arrived. Otherwise
+/// every interval would be up to one heartbeat period late at each end, and a backfill would re-pull
+/// footage the archive already has.
+/// </remarks>
+public sealed class SourceLivenessTracker(
+  SourceOutageStore outages,
+  ILogger<SourceLivenessTracker> logger)
+{
+  /// <summary>An outage shorter than this is a blink and is never materialised.</summary>
+  public static readonly TimeSpan Grace = TimeSpan.FromSeconds(
+    int.TryParse(Environment.GetEnvironmentVariable("VMS_SOURCE_OUTAGE_GRACE_SECONDS"), out var g) && g > 0
+      ? g : 15);
+
+  /// <summary>Silence longer than this means the source is gone, however it went.</summary>
+  public static readonly TimeSpan Stale = TimeSpan.FromSeconds(
+    int.TryParse(Environment.GetEnvironmentVariable("VMS_SOURCE_LIVENESS_STALE_SECONDS"), out var s) && s > 0
+      ? s : 60);
+
+  private sealed record StreamState(
+    DateTime LastReportUtc,
+    DateTime? LastFrameUtc,
+    bool RecordingExpected,
+    bool Alive,
+    DateTime? PendingSinceUtc);
+
+  private readonly ConcurrentDictionary<(string Camera, string Stream), StreamState> _state = new();
+  private readonly ConcurrentDictionary<(string Camera, string Stream), byte> _openOutages = new();
+
+  public static (string Camera, string Stream) Key(string cameraId, string streamName) =>
+    (cameraId, streamName ?? string.Empty);
+
+  /// <summary>Rebuilds "which streams are silent" from the open rows after a restart.</summary>
+  public async Task LoadOpenAsync(CancellationToken ct)
+  {
+    foreach (var (camera, stream) in await outages.ListOpenAsync(ct))
+      _openOutages[Key(camera, stream)] = 0;
+  }
+
+  /// <summary>Applies one heartbeat. Called from the gRPC handler.</summary>
+  public async Task ApplyAsync(
+    string cameraId, string streamName, bool alive, DateTime? lastFrameUtc, bool recordingExpected,
+    CancellationToken ct)
+  {
+    var key = Key(cameraId, streamName);
+    var now = DateTime.UtcNow;
+    var previous = _state.TryGetValue(key, out var p) ? p : null;
+
+    if (alive)
+    {
+      _state[key] = new StreamState(now, lastFrameUtc, recordingExpected, true, null);
+      // The end is the first frame after the pause — which is exactly what last_frame_ts holds at
+      // the moment of recovery.
+      if (_openOutages.TryRemove(key, out _))
+        await outages.CloseAsync(cameraId, streamName, lastFrameUtc ?? now, ct);
+      return;
+    }
+
+    // Dead. The interval starts at the last frame we ever saw, not now.
+    var startedAt = lastFrameUtc ?? previous?.LastFrameUtc ?? await FallbackStartAsync(cameraId, streamName, ct);
+    var pendingSince = previous?.PendingSinceUtc ?? now;
+    _state[key] = new StreamState(now, lastFrameUtc ?? previous?.LastFrameUtc,
+      previous?.RecordingExpected ?? recordingExpected, false, pendingSince);
+
+    // Held back until the grace window passes, so a blink never reaches the table.
+    if (now - pendingSince < Grace || _openOutages.ContainsKey(key))
+      return;
+
+    await OpenAsync(cameraId, streamName, startedAt,
+      cause: "link_lost",
+      recordingExpected: previous?.RecordingExpected ?? recordingExpected, ct);
+  }
+
+  /// <summary>
+  /// Opens an interval for a stream that has stopped reporting altogether.
+  /// </summary>
+  /// <param name="configRecordingExpected">
+  /// Whether the configuration says this stream should be recording. Used only when no heartbeat
+  /// ever reached this process — after a node-wide restart, which is exactly the case where the gap
+  /// matters most, so defaulting it to false would hide the whole outage from the archive-gap view.
+  /// </param>
+  public async Task OpenForSilenceAsync(
+    string cameraId, string streamName, string cause, bool configRecordingExpected, CancellationToken ct)
+  {
+    var key = Key(cameraId, streamName);
+    if (_openOutages.ContainsKey(key))
+      return;
+
+    var previous = _state.TryGetValue(key, out var p) ? p : null;
+    var startedAt = previous?.LastFrameUtc ?? await FallbackStartAsync(cameraId, streamName, ct);
+    await OpenAsync(cameraId, streamName, startedAt, cause,
+      previous?.RecordingExpected ?? configRecordingExpected, ct);
+  }
+
+  /// <summary>Streams heard from within <see cref="Stale"/>, so the sweeper can skip them.</summary>
+  public bool IsFresh((string Camera, string Stream) key, DateTime nowUtc) =>
+    _state.TryGetValue(key, out var s) && nowUtc - s.LastReportUtc < Stale;
+
+  public bool HasOpenOutage((string Camera, string Stream) key) => _openOutages.ContainsKey(key);
+
+  /// <summary>
+  /// Drops in-memory state for streams that are no longer configured. Their open intervals are
+  /// closed separately by the sweeper; this only stops the map growing for every stream ever seen.
+  /// </summary>
+  public void PruneTo(IReadOnlySet<(string Camera, string Stream)> expected)
+  {
+    foreach (var key in _state.Keys)
+      if (!expected.Contains(key))
+        _state.TryRemove(key, out _);
+  }
+
+  /// <summary>Forgets a stream that left the configuration and closes its interval if any.</summary>
+  public async Task ForgetAsync(string cameraId, string streamName, CancellationToken ct)
+  {
+    var key = Key(cameraId, streamName);
+    _state.TryRemove(key, out _);
+    if (_openOutages.TryRemove(key, out _))
+      await outages.CloseAsync(cameraId, streamName, DateTime.UtcNow, ct);
+  }
+
+  private async Task OpenAsync(
+    string cameraId, string streamName, DateTime startedAt, string cause, bool recordingExpected,
+    CancellationToken ct)
+  {
+    try
+    {
+      await outages.OpenAsync(cameraId, streamName, startedAt, cause, recordingExpected, Grace, ct);
+      _openOutages[Key(cameraId, streamName)] = 0;
+      logger.LogInformation(
+        "Source outage opened for {CameraId}/{StreamName} at {StartedAt:o} ({Cause}, recording={Recording})",
+        cameraId, streamName, startedAt, cause, recordingExpected);
+    }
+    catch (Exception ex)
+    {
+      // Not fatal: the next tick sees the same silence and tries again, and the boundary is taken
+      // from the frame timestamp rather than from when the write happened to succeed.
+      logger.LogWarning(ex, "Could not open source outage for {CameraId}/{StreamName}", cameraId, streamName);
+    }
+  }
+
+  /// <summary>
+  /// Where an interval starts when no in-memory frame timestamp survived — i.e. after the whole node
+  /// went down. The last clip's end is not an estimate: the archive stopped exactly there.
+  /// </summary>
+  private async Task<DateTime> FallbackStartAsync(string cameraId, string streamName, CancellationToken ct)
+    => await outages.LastClipEndAsync(cameraId, streamName, ct) ?? DateTime.UtcNow;
+}

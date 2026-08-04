@@ -363,6 +363,21 @@ std::vector<camera_manager::camera_info> camera_manager::list_cameras() const
   return result;
 }
 
+void camera_manager::close_segments_on_source_loss()
+{
+  std::scoped_lock lock(m_mutex);
+  for (const auto& [camera_id, device] : m_cameras)
+  {
+    for (const auto& [stream_name, stream] : device->streams())
+    {
+      if (!stream->liveness().alive)
+      {
+        stream->close_segment_on_source_loss();
+      }
+    }
+  }
+}
+
 std::vector<camera_manager::stream_state> camera_manager::list_stream_states() const
 {
   std::scoped_lock lock(m_mutex);
@@ -372,6 +387,7 @@ std::vector<camera_manager::stream_state> camera_manager::list_stream_states() c
   {
     for (const auto& [stream_name, stream] : device->streams())
     {
+      const auto live = stream->liveness();
       result.push_back(stream_state{
         .camera_id            = camera_id,
         .stream_name          = stream_name,
@@ -380,6 +396,8 @@ std::vector<camera_manager::stream_state> camera_manager::list_stream_states() c
         .is_web_rtc_enabled   = stream->is_web_rtc_enabled(),
         .recording_policy     = stream->get_recording_policy_mode(),
         .current_segment      = stream->current_segment_path(),
+        .source_alive         = live.alive,
+        .last_frame_ts        = live.last_frame_ts,
       });
     }
   }

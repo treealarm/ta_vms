@@ -137,6 +137,45 @@ void fs_client::enqueue_ingest_clip(
   m_cv.notify_one();
 }
 
+void fs_client::report_source_liveness(
+  const std::string& server_id,
+  const std::vector<liveness_entry>& streams)
+{
+  if (!m_stub || streams.empty())
+  {
+    return;
+  }
+
+  vms::fs::ReportSourceLivenessRequest request;
+  request.set_server_id(server_id);
+  for (const auto& s : streams)
+  {
+    auto* item = request.add_streams();
+    item->set_camera_id(s.camera_id);
+    item->set_stream_name(s.stream_name);
+    item->set_alive(s.alive);
+    item->set_recording_expected(s.recording_expected);
+    if (s.last_frame_ts.has_value())
+    {
+      *item->mutable_last_frame_ts() = to_proto_ts(*s.last_frame_ts);
+    }
+  }
+
+  vms::fs::OperationStatus response;
+  grpc::ClientContext context;
+  context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(2));
+  context.AddMetadata("dapr-app-id", m_app_id);
+
+  const grpc::Status status = m_stub->ReportSourceLiveness(&context, request, &response);
+  if (!status.ok())
+  {
+    // Warned, not retried: the next tick carries the same state, and an outage boundary comes from
+    // last_frame_ts rather than from when the report happened to arrive.
+    logger::instance().warning(std::format(
+      "ReportSourceLiveness via Dapr app '{}' failed: {}", m_app_id, status.error_message()));
+  }
+}
+
 bool fs_client::ingest_clip(
   const recording& clip,
   std::string& clip_uid,

@@ -36,7 +36,8 @@
     "logout": "Cerrar sesión",
     "investigations": "Investigaciones",
     "permissions": "Permisos",
-    "edgeArchive": "Archivo en cámara"
+    "edgeArchive": "Archivo en cámara",
+    "gaps": "Huecos"
   },
   "auth": {
     "title": "Iniciar sesión",
@@ -696,5 +697,38 @@
     "playbackFailed": "Fallo la reproducción",
     "hlsUnsupported": "Este navegador no admite HLS",
     "previewPlaceholder": "Elija una importación terminada o un archivo exportado para reproducirlo aquí."
+  },
+  "gaps": {
+    "title": "Huecos del archivo",
+    "noRows": "Sin cortes en este periodo",
+    "noSelection": "Seleccione un corte",
+    "ongoing": "en curso",
+    "recordingOnly": "Solo huecos de grabación",
+    "notRecorded": "grabación apagada",
+    "notRecordedHint": "La grabación no estaba activa, así que este corte no costó vídeo.",
+    "covered": "Cubierto por el archivo: {{pct}}%",
+    "from": "Desde",
+    "to": "Hasta",
+    "causeLabel": "Causa",
+    "stateLabel": "Estado",
+    "attempts": "intentos: {{count}}",
+    "window": {
+      "24h": "24 h",
+      "7d": "7 días",
+      "30d": "30 días"
+    },
+    "cause": {
+      "link_lost": "Conexión con la cámara perdida",
+      "server_down": "Servidor de medios caído"
+    },
+    "state": {
+      "open": "Sin rellenar",
+      "filling": "Rellenando",
+      "filled": "Rellenado",
+      "exhausted": "Nada queda en la cámara",
+      "partial": "Parcialmente rellenado",
+      "held": "Retenido por el operador",
+      "ignored": "Ignorado"
+    }
   }
 }

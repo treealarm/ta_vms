@@ -216,6 +216,7 @@ void segment_writer::open_new_segment()
 
   m_segment_start_time = std::chrono::steady_clock::now();
   m_segment_start_ts = now;
+  m_last_write_ts = {};
   m_segment_storage_id = cam_storage.storage_id;
 
   logger::instance().debug(std::format(
@@ -242,7 +243,11 @@ void segment_writer::close_segment()
   if (!(m_ctx->oformat->flags & AVFMT_NOFILE))
     avio_closep(&m_ctx->pb);
 
-  const auto segment_end_ts = std::chrono::system_clock::now();
+  // Last written packet, not "now": see m_last_write_ts. Falls back to now only for a segment that
+  // was opened and closed without a single packet getting through.
+  const auto segment_end_ts = m_last_write_ts.time_since_epoch().count() != 0
+    ? m_last_write_ts
+    : std::chrono::system_clock::now();
 
   m_ctx.reset();
   m_output_streams.clear();
@@ -432,7 +437,12 @@ void segment_writer::write_packet(const std::shared_ptr<media_packet>& in_media)
   pkt->stream_index = out_stream->index;
 
   if (av_interleaved_write_frame(m_ctx.get(), pkt) < 0)
+  {
     logger::instance().error("write_frame failed");
+    return;
+  }
+
+  m_last_write_ts = std::chrono::system_clock::now();
 }
 
 void segment_writer::close()

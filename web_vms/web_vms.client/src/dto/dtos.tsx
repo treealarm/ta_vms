@@ -302,6 +302,30 @@ export type RecordingTimelineResponseDto = {
   tracks: RecordingTimelineTrackDto[]
 }
 
+/**
+ * One interval a camera's source was unavailable — why the archive has a hole there.
+ *
+ * `recordingExpected` is what separates an archive gap from plain camera-health history: an outage
+ * while recording was off cost nothing.
+ */
+export type SourceOutageDto = {
+  outageUid: string
+  cameraId: string
+  streamName?: string
+  startedTs: string
+  /** Absent = the source is down right now. */
+  endedTs?: string
+  /** `link_lost` (this camera) or `server_down` (the whole node went quiet). */
+  cause: string
+  recordingExpected: boolean
+  /** `open|filling|filled|exhausted|partial|held|ignored`. */
+  state: string
+  /** Covered by clips, for display only — decisions are made from the archive itself. */
+  filledMs: number
+  attempts: number
+  message: string
+}
+
 export type RetentionEventDto = {
   eventId?: string
   cameraId: string
