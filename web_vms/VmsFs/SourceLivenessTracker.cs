@@ -67,15 +67,20 @@ public sealed class SourceLivenessTracker(
       return;
     }
 
-    // Dead. The interval starts at the last frame we ever saw, not now.
-    var startedAt = lastFrameUtc ?? previous?.LastFrameUtc ?? await FallbackStartAsync(cameraId, streamName, ct);
+    // Dead.
     var pendingSince = previous?.PendingSinceUtc ?? now;
-    _state[key] = new StreamState(now, lastFrameUtc ?? previous?.LastFrameUtc,
+    var lastFrame = lastFrameUtc ?? previous?.LastFrameUtc;
+    _state[key] = new StreamState(now, lastFrame,
       previous?.RecordingExpected ?? recordingExpected, false, pendingSince);
 
     // Held back until the grace window passes, so a blink never reaches the table.
     if (now - pendingSince < Grace || _openOutages.ContainsKey(key))
       return;
+
+    // Resolved only once the interval is actually going to be written: while the source stays dead
+    // this runs on every heartbeat, and the fallback is a query over clips.
+    // The interval starts at the last frame we ever saw, never at now.
+    var startedAt = lastFrame ?? await FallbackStartAsync(cameraId, streamName, ct);
 
     await OpenAsync(cameraId, streamName, startedAt,
       cause: "link_lost",

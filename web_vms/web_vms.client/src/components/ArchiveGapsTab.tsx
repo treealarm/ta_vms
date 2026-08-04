@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Box,
   Button,
@@ -93,8 +93,6 @@ export default function ArchiveGapsTab() {
   // Re-rendered every tick would move every open outage's end under the operator's cursor; this is
   // sampled once per load instead.
   const [nowMs, setNowMs] = useState(() => Date.now())
-  const selectedRef = useRef<string | null>(null)
-  selectedRef.current = selectedUid
 
   const windowMs = WINDOWS.find((w) => w.key === windowKey)?.ms ?? WINDOWS[0].ms
 
@@ -227,7 +225,7 @@ export default function ArchiveGapsTab() {
     const win = gapWindow(selected, nowMs)
     const padded = paddedWindow(win)
     const view = { startMs: padded.startMs, endMs: padded.endMs }
-    const band = (seg: Segment, color: string, hatched: boolean, key: string) => {
+    const band = (seg: Segment, tone: 'warning' | 'error', hatched: boolean, key: string) => {
       const left = msToX(Math.max(seg.startMs, view.startMs), view, TRACK_PX)
       const right = msToX(Math.min(seg.endMs, view.endMs), view, TRACK_PX)
       if (right <= 0 || left >= TRACK_PX) return null
@@ -242,7 +240,7 @@ export default function ArchiveGapsTab() {
             width: `${Math.max(1, right - left)}px`,
             // Hatching, not a fourth colour: primary and warning already mean something on this
             // timeline, and one more flat shade would be read as another kind of coverage.
-            backgroundColor: (th) => alpha(th.palette[color === 'error' ? 'error' : 'warning'].main, 0.25),
+            backgroundColor: (th) => alpha(th.palette[tone].main, 0.25),
             backgroundImage: hatched
               ? 'repeating-linear-gradient(45deg, rgba(255,255,255,.35) 0 3px, transparent 3px 6px)'
               : undefined,
