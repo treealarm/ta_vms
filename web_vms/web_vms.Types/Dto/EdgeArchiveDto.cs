@@ -176,3 +176,10 @@ public record EdgeExportDto
   public ulong SizeBytes { get; init; }
   public DateTime? CreatedAt { get; init; }
 }
+
+public record EdgeExportLinkDto
+{
+  /// <summary>Relative URL carrying a sealed grant; usable directly as a media element source.</summary>
+  public string Url { get; init; } = string.Empty;
+  public DateTime ExpiresAt { get; init; }
+}

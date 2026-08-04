@@ -28,11 +28,20 @@ public sealed class EdgeArchiveController(
   ICameraManager manager,
   ServerPairRegistry registry,
   ICameraAccessService access,
+  EdgeExportToken exportToken,
   ILogger<EdgeArchiveController> logger) : ControllerBase
 {
   private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
   // A search walks several SOAP round trips on the device, each with its own internal timeout.
   private static readonly TimeSpan SearchTimeout = TimeSpan.FromSeconds(60);
+
+  // One export file per this many seconds. An hour of 2688x1520 is roughly 2 GB in a single piece,
+  // which is awkward to download and cannot be previewed without pulling all of it.
+  private static readonly uint ExportChunkSeconds =
+    uint.TryParse(Environment.GetEnvironmentVariable("VMS_EDGE_EXPORT_CHUNK_SECONDS"), out var chunk) && chunk > 0
+      ? chunk
+      : throw new InvalidOperationException(
+          "Required environment variable 'VMS_EDGE_EXPORT_CHUNK_SECONDS' is not set or is not a positive integer");
 
   private static CallOptions Options(CancellationToken ct) =>
     new(deadline: DateTime.UtcNow.Add(Timeout), cancellationToken: ct);
@@ -338,6 +347,7 @@ public sealed class EdgeArchiveController(
       RecordingStartUnixMs = ToUnixMs(recordingStart),
       ExportToFile = body.ExportToFile,
       SegmentSeconds = body.SegmentSeconds,
+      ExportChunkSeconds = ExportChunkSeconds,
     };
     if (camera.Cred is { } cred)
       request.Cred = new Vms.Control.Credentials { User = cred.User ?? string.Empty, Pass = cred.Pass ?? string.Empty };
@@ -419,39 +429,127 @@ public sealed class EdgeArchiveController(
   }
 
   /// <summary>
-  /// Streams an exported mp4. The camera id is the first path segment of relPath, which is what
-  /// makes the permission check possible without any stored job state.
+  /// Mints a short-lived URL for an exported file. A media element cannot send an Authorization
+  /// header, so playing an export directly needs the grant in the URL itself.
   /// </summary>
-  [HttpGet("exports/{**relPath}")]
+  [HttpPost("export-link")]
   [CameraAccess(CameraAction.Export, Source = CameraIdSource.Action)]
-  public async Task<IActionResult> DownloadExport(string relPath, CancellationToken ct)
+  public async Task<IActionResult> CreateExportLink([FromQuery] string relPath, CancellationToken ct)
   {
-    var cameraId = relPath?.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-    if (string.IsNullOrWhiteSpace(cameraId))
+    var cameraId = CameraIdOfExport(relPath);
+    if (cameraId is null || !await access.IsAllowedAsync(User, cameraId, CameraAction.Export, ct))
       return NotFound();
 
-    // An unknown export and a forbidden one answer the same way: a 403 here would confirm that
-    // some other tenant's export exists at that path.
-    if (!await access.IsAllowedAsync(User, cameraId, CameraAction.Export, ct))
+    var expires = DateTime.UtcNow.Add(EdgeExportToken.Lifetime);
+    var token = exportToken.Seal(relPath, User.Identity?.Name ?? string.Empty, expires);
+    return Ok(new EdgeExportLinkDto
+    {
+      Url = $"/api/edge-archive/exports/{relPath}?token={Uri.EscapeDataString(token)}",
+      ExpiresAt = expires,
+    });
+  }
+
+  /// <summary>
+  /// Streams an exported mp4, with Range support so the browser can seek without pulling the whole
+  /// file. Authorized either by the caller's own permission or by a sealed link token; the camera id
+  /// is the first path segment, which is what makes the check possible with no stored job state.
+  /// </summary>
+  [HttpGet("exports/{**relPath}")]
+  [AllowAnonymous]
+  [CameraAccess(CameraAction.Export, Source = CameraIdSource.Action)]
+  public async Task<IActionResult> DownloadExport(
+    string relPath, [FromQuery] string? token, [FromQuery] bool download, CancellationToken ct)
+  {
+    var cameraId = CameraIdOfExport(relPath);
+    if (cameraId is null)
+      return NotFound();
+
+    // An unknown export and a forbidden one answer the same way: a 403 would confirm that someone
+    // else's export exists at that path.
+    var allowed = !string.IsNullOrEmpty(token)
+      ? exportToken.IsValidFor(token, relPath)
+      : await access.IsAllowedAsync(User, cameraId, CameraAction.Export, ct);
+    if (!allowed)
       return NotFound();
 
     var owner = (await registry.FanOutFsAsync(
-      (client, options) => client.StatExportFileAsync(new ExportFileRequest { RelPath = relPath! }, options).ResponseAsync,
+      (client, options) => client.StatExportFileAsync(new ExportFileRequest { RelPath = relPath }, options).ResponseAsync,
       ct)).FirstOrDefault(r => r.Value.Exists);
 
     if (owner is null)
       return NotFound();
 
-    Response.ContentType = "video/mp4";
-    Response.ContentLength = (long)owner.Value.SizeBytes;
-    Response.Headers.ContentDisposition =
-      $"attachment; filename=\"{Path.GetFileName(relPath)}\"";
+    var size = (long)owner.Value.SizeBytes;
+    var (offset, length) = ParseRange(Request.Headers.Range, size);
+    if (length < 0)
+    {
+      Response.Headers.ContentRange = $"bytes */{size}";
+      return StatusCode(StatusCodes.Status416RangeNotSatisfiable);
+    }
 
-    using var call = owner.Client.ReadExportFile(new ReadExportFileRequest { RelPath = relPath! }, cancellationToken: ct);
+    Response.ContentType = "video/mp4";
+    Response.Headers.AcceptRanges = "bytes";
+    Response.ContentLength = length;
+    // Inline by default so the player can use the same URL; only an explicit download detaches it.
+    Response.Headers.ContentDisposition =
+      $"{(download ? "attachment" : "inline")}; filename=\"{Path.GetFileName(relPath)}\"";
+
+    if (offset > 0 || length != size)
+    {
+      Response.StatusCode = StatusCodes.Status206PartialContent;
+      Response.Headers.ContentRange = $"bytes {offset}-{offset + length - 1}/{size}";
+    }
+
+    using var call = owner.Client.ReadExportFile(
+      new ReadExportFileRequest { RelPath = relPath, Offset = (ulong)offset, Length = (ulong)length },
+      cancellationToken: ct);
     await foreach (var chunk in call.ResponseStream.ReadAllAsync(ct))
       await Response.Body.WriteAsync(chunk.Data.Memory, ct);
 
     return new EmptyResult();
+  }
+
+  private static string? CameraIdOfExport(string? relPath)
+  {
+    var cameraId = relPath?.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+    return string.IsNullOrWhiteSpace(cameraId) ? null : cameraId;
+  }
+
+  /// <summary>
+  /// Single `bytes=` range against a known size. Returns the whole file when no usable range was
+  /// asked for, and a negative length when the request cannot be satisfied.
+  /// </summary>
+  private static (long Offset, long Length) ParseRange(string? header, long size)
+  {
+    if (string.IsNullOrWhiteSpace(header) || !header.StartsWith("bytes=", StringComparison.OrdinalIgnoreCase))
+      return (0, size);
+
+    var spec = header["bytes=".Length..].Split(',')[0].Trim();
+    var dash = spec.IndexOf('-');
+    if (dash < 0)
+      return (0, size);
+
+    var fromText = spec[..dash];
+    var toText = spec[(dash + 1)..];
+
+    if (fromText.Length == 0)
+    {
+      // Suffix form: the last N bytes.
+      if (!long.TryParse(toText, out var suffix) || suffix <= 0)
+        return (0, size);
+      var start = Math.Max(0, size - suffix);
+      return (start, size - start);
+    }
+
+    if (!long.TryParse(fromText, out var offset) || offset < 0)
+      return (0, size);
+    if (offset >= size)
+      return (0, -1);
+
+    var end = toText.Length > 0 && long.TryParse(toText, out var parsedEnd)
+      ? Math.Min(parsedEnd, size - 1)
+      : size - 1;
+    return end < offset ? (0, -1) : (offset, end - offset + 1);
   }
 
   // ── Plumbing ─────────────────────────────────────────────────────────────────

@@ -42,10 +42,14 @@ message EdgeImportRequest {
   // offset from it, and without it a mid-recording window would be stamped with the wrong wall
   // clock and silently corrupt the archive timeline.
   int64  recording_start_unix_ms = 7;
-  // When true the pull is muxed into a single downloadable mp4 under VMS_EXPORT_BASE_PATH instead
-  // of being written into the archive as clips.
+  // When true the pull is muxed into downloadable mp4 files under VMS_EXPORT_BASE_PATH instead of
+  // being written into the archive as clips.
   bool   export_to_file  = 8;
   uint32 segment_seconds = 9;
+  // Length of one exported file. An hour of 2688x1520 is roughly 2 GB in one piece, which is
+  // awkward to download and impossible to preview cheaply, so exports rotate like archive clips do.
+  // 0 falls back to segment_seconds.
+  uint32 export_chunk_seconds = 10;
 }
 
 message EdgeImportJobKey {

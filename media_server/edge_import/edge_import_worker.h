@@ -36,6 +36,8 @@ struct edge_import_settings
   /// Mux the whole window into one downloadable mp4 instead of writing archive clips.
   bool export_to_file = false;
   std::chrono::seconds segment_duration{ 60 };
+  /// Length of one exported file; exports rotate for the same reason archive clips do.
+  std::chrono::seconds export_chunk_duration{ 60 };
 };
 
 struct edge_import_progress
@@ -106,6 +108,8 @@ private:
   std::chrono::milliseconds m_segment_start_offset{ 0 };
   std::chrono::system_clock::time_point m_segment_start_ts{};
   std::chrono::system_clock::time_point m_segment_last_ts{};
+  /// 1-based index of the exported file being written, so parts sort in playback order.
+  uint32_t m_export_part = 0;
   std::filesystem::path m_segment_abs_path;
   std::filesystem::path m_segment_rel_path;
   std::string m_storage_id;

@@ -833,3 +833,9 @@ export type EdgeExportDto = {
   sizeBytes: number
   createdAt: string | null
 }
+
+export type EdgeExportLinkDto = {
+  /** Relative URL carrying a sealed grant; usable directly as a media element source. */
+  url: string
+  expiresAt: string
+}

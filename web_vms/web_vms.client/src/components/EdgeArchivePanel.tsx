@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Box, Chip, Stack, Tab, Tabs, Typography } from '@mui/material'
+import { Alert, Box, Chip, CircularProgress, Stack, Tab, Tabs, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 
 import { useAppDispatch, useAppSelector } from '../store'
@@ -24,6 +24,7 @@ export default function EdgeArchivePanel() {
   const cameras = useAppSelector((s) => Object.values(s.live.cameraStatesById))
   const capabilities = useAppSelector((s) => s.edgeArchive.capabilities)
   const summary = useAppSelector((s) => s.edgeArchive.summary)
+  const status = useAppSelector((s) => s.edgeArchive.status)
 
   // Only ONVIF-reachable cameras can have an edge archive at all; the rest would just show errors.
   const onvifCameras = cameras.filter((c) => c.onvifConn?.ip)
@@ -49,7 +50,9 @@ export default function EdgeArchivePanel() {
     )
   }
 
-  const supported = capabilities?.supported ?? false
+  // null means the probe has not answered yet, which is not the same as "the camera cannot do it" —
+  // treating it as unsupported flashed a wrong verdict on every camera switch.
+  const probing = selected !== null && capabilities === null && !status
 
   return (
     <MasterDetailLayout
@@ -81,11 +84,21 @@ export default function EdgeArchivePanel() {
             hideApply
           />
 
-          {/* A camera without Profile G gets the reason, not three empty tabs. */}
-          {!supported ? (
+          {/* Three states, deliberately distinct: still asking the camera, it answered "no", or it
+              answered "yes". A camera without Profile G gets the reason, not three empty tabs. */}
+          {probing ? (
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ p: 2 }}>
+              <CircularProgress size={18} />
+              <Typography variant="body2" color="text.secondary">{t('edge.probing')}</Typography>
+            </Stack>
+          ) : capabilities === null ? (
+            <Box sx={{ p: 2 }}>
+              <Alert severity="error">{status || t('edge.probeFailed')}</Alert>
+            </Box>
+          ) : !capabilities.supported ? (
             <Box sx={{ p: 2 }}>
               <Alert severity="info">
-                {capabilities?.message || t('edge.notSupported')}
+                {capabilities.message || t('edge.notSupported')}
               </Alert>
             </Box>
           ) : (

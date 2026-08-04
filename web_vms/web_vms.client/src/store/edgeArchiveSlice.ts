@@ -24,8 +24,14 @@ type EdgeArchiveState = {
   jobs: EdgeImportJobDto[]
   exports: EdgeExportDto[]
   isBusy: boolean
-  /** Set to the search/import error so the panel can surface it; cleared on the next success. */
+  /** Error from a camera-facing call (capabilities, search, storage); cleared on the next success. */
   status: string
+  /**
+   * Error from a media-server-facing call (import jobs and exports). Kept apart from `status`
+   * because browsing what the camera holds needs only VmsOnvif — a media server that is down must
+   * degrade importing alone, not make the whole panel look broken.
+   */
+  importsError: string
 }
 
 const initialState: EdgeArchiveState = {
@@ -39,7 +45,8 @@ const initialState: EdgeArchiveState = {
   jobs: [],
   exports: [],
   isBusy: false,
-  status: ''
+  status: '',
+  importsError: ''
 }
 
 const base = '/api/edge-archive/cameras'
@@ -177,6 +184,16 @@ function isCurrent(state: EdgeArchiveState, action: { meta: { arg: unknown } }):
   return argCameraId(action.meta.arg) === state.cameraId
 }
 
+/** Thunks that reach the media server rather than the camera. */
+const IMPORT_ACTION_PREFIXES = [
+  'edgeArchive/fetchImports',
+  'edgeArchive/fetchExports',
+  'edgeArchive/startImport',
+  'edgeArchive/cancelImport',
+]
+
+const isImportAction = (type: string) => IMPORT_ACTION_PREFIXES.some((p) => type.startsWith(p))
+
 const edgeArchiveSlice = createSlice({
   name: 'edgeArchive',
   initialState,
@@ -186,6 +203,7 @@ const edgeArchiveSlice = createSlice({
     // on top of the new one's state.
     selectEdgeCamera: (state, action: PayloadAction<string | null>) => {
       state.cameraId = action.payload
+      state.importsError = ''
       state.capabilities = null
       state.summary = null
       state.recordings = null
@@ -226,13 +244,16 @@ const edgeArchiveSlice = createSlice({
       .addMatcher((a: AnyAction) => a.type.startsWith('edgeArchive/') && a.type.endsWith('/pending'), (state) => {
         state.isBusy = true
       })
-      .addMatcher((a: AnyAction) => a.type.startsWith('edgeArchive/') && a.type.endsWith('/fulfilled'), (state) => {
+      .addMatcher((a: AnyAction) => a.type.startsWith('edgeArchive/') && a.type.endsWith('/fulfilled'), (state, action: AnyAction) => {
         state.isBusy = false
-        state.status = ''
+        if (isImportAction(action.type)) state.importsError = ''
+        else state.status = ''
       })
       .addMatcher((a: AnyAction) => a.type.startsWith('edgeArchive/') && a.type.endsWith('/rejected'), (state, action: AnyAction) => {
         state.isBusy = false
-        state.status = action.error?.message ?? 'Unknown error'
+        const message = action.error?.message ?? 'Unknown error'
+        if (isImportAction(action.type)) state.importsError = message
+        else state.status = message
       })
   }
 })

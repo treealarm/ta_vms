@@ -429,6 +429,10 @@ std::vector<fs_client::storage_info> fs_client::get_camera_storages(const std::s
   }
 
   auto storages = fetch_camera_storages(camera_id);
+  // An empty result is not cached: a momentary RPC failure looks exactly like "nothing assigned",
+  // and caching it would keep recording and imports broken for a further minute after the cause is
+  // gone. A real "no storages" answer costs one cheap round trip per call instead.
+  if (!storages.empty())
   {
     std::lock_guard lock(m_storage_mutex);
     m_storage_cache[camera_id] = { storages, std::chrono::steady_clock::now() };
@@ -457,11 +461,25 @@ std::vector<fs_client::storage_info> fs_client::fetch_camera_storages(const std:
 
   const grpc::Status status = m_stub->GetCameraStorage(&context, request, &response);
   if (!status.ok())
+  {
+    // Logged because the caller cannot tell this apart from "the camera has no storage assigned",
+    // and both surface to the operator as the same "no writable storage" message.
+    logger::instance().warning(std::format(
+      "GetCameraStorage RPC via Dapr failed for app '{}' camera='{}': {}",
+      m_app_id, camera_id, status.error_message()));
     return {};
+  }
 
   std::vector<storage_info> result;
   for (const auto& s : response.storages())
     result.push_back({ s.storage_id(), s.root_path() });
+
+  if (result.empty())
+  {
+    logger::instance().warning(std::format(
+      "no storage is assigned to camera '{}' — recording and archive import have nowhere to write",
+      camera_id));
+  }
   return result;
 }
 

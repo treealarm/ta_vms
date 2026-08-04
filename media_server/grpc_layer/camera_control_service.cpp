@@ -154,6 +154,9 @@ grpc::Status camera_control_service::StartEdgeImport(
   {
     settings.segment_duration = std::chrono::seconds(request->segment_seconds());
   }
+  settings.export_chunk_duration = std::chrono::seconds(
+    request->export_chunk_seconds() > 0 ? request->export_chunk_seconds()
+                                        : request->segment_seconds());
 
   std::string error;
   const auto started = edge_import_manager::instance().start(std::move(settings), error);

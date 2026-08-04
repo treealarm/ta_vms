@@ -634,8 +634,6 @@
     "recording": "Recording",
     "recordings": "Recordings",
     "tracks": "Tracks",
-    "importSlice": "Import range",
-    "importSliceHint": "Pick a span above, then narrow the range to import only part of it.",
     "importToArchive": "Import into archive",
     "downloadMp4": "Download mp4",
     "oneImportPerCamera": "One import at a time per camera — live video keeps priority on the device.",
@@ -681,6 +679,22 @@
     "formatCommandIs": "Vendor auxiliary command: {{command}}",
     "formatStorageWarning": "The command '{{command}}' will be sent to the camera. All footage on its card will be erased. This cannot be undone.",
     "formatUnsupported": "This camera advertises no auxiliary command that formats storage",
-    "unknownRecordingStart": "The camera did not report when this recording starts, so the import range cannot be located reliably."
+    "unknownRecordingStart": "The camera did not report when this recording starts, so the import range cannot be located reliably.",
+    "probing": "Asking the camera what it supports…",
+    "probeFailed": "Could not ask the camera what it supports",
+    "importsUnavailable": "The media server for this camera is unavailable, so imports cannot be listed or started ({{error}}).",
+    "selectSpanFirst": "Select a span in the table above to import.",
+    "invalidRange": "The import range must end after it starts.",
+    "importingQueue": "Importing span {{index}} of {{total}}…",
+    "tableRangeHint": "Tick the spans to import. “Available from/to” is what the camera reports; narrow the range to import with the slider. Imports run one after another.",
+    "availableFrom": "Available from",
+    "availableTo": "Available to",
+    "importRange": "Import range",
+    "wholeSpan": "whole span",
+    "play": "Play",
+    "preview": "Preview",
+    "playbackFailed": "Playback failed",
+    "hlsUnsupported": "HLS is not supported in this browser",
+    "previewPlaceholder": "Pick a finished import or an exported file to play it here."
   }
 }

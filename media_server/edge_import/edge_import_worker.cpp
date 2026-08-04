@@ -226,9 +226,13 @@ bool edge_import_worker::read_loop(std::string& error)
     // same rule as the live path in segment_writer::write_packet.
     const bool is_video_key = is_video_stream(packet->stream_index)
       && (packet->flags & AV_PKT_FLAG_KEY) != 0;
-    // Export mode writes one continuous file; only the archive path rotates.
-    const bool rotate_due = !m_settings.export_to_file &&
-      offset - m_segment_start_offset >= m_settings.segment_duration;
+    // Both paths rotate; only the length differs. A single multi-gigabyte export is awkward to
+    // download and cannot be previewed without pulling all of it.
+    const auto rotate_after = m_settings.export_to_file
+      ? m_settings.export_chunk_duration
+      : m_settings.segment_duration;
+    const bool rotate_due = rotate_after > std::chrono::seconds::zero()
+      && offset - m_segment_start_offset >= rotate_after;
 
     if (!m_output || (is_video_key && rotate_due))
     {
@@ -269,8 +273,12 @@ bool edge_import_worker::open_segment(
 {
   if (m_settings.export_to_file)
   {
+    // Numbered parts under the job id: they list and sort in playback order, and the directory walk
+    // in VmsFs picks them up without the job having to enumerate them.
+    m_export_part++;
     m_segment_rel_path = std::filesystem::path(m_settings.camera_id) /
-                         (m_settings.job_id + std::string(recording_storage::k_ext));
+                         std::format("{}_{:03}{}", m_settings.job_id, m_export_part,
+                                     std::string(recording_storage::k_ext));
   }
   else
   {
@@ -439,9 +447,21 @@ bool edge_import_worker::write_packet(AVPacket* packet)
       packet->dts = state.last_dts + 1;
     }
   }
+
+  // Order matters here. Clamping dts to pts can undo the monotonicity bump above and re-emit the
+  // previous dts, which ffmpeg only warns about but browsers reject outright — the resulting mp4
+  // simply refuses to play. Re-check after the clamp, and push pts along if it would fall behind.
   if (packet->dts > packet->pts)
   {
     packet->dts = packet->pts;
+  }
+  if (state.last_dts != AV_NOPTS_VALUE && packet->dts <= state.last_dts)
+  {
+    packet->dts = state.last_dts + 1;
+    if (packet->pts < packet->dts)
+    {
+      packet->pts = packet->dts;
+    }
   }
   state.last_pts = packet->pts;
   state.last_dts = packet->dts;
@@ -483,10 +503,13 @@ void edge_import_worker::close_segment()
 
   if (m_settings.export_to_file)
   {
-    m_progress.export_path = m_segment_rel_path.string();
-    m_progress.bytes_written = bytes;
-    // clips_written doubles as "produced something"; an export is one artefact.
-    m_progress.clips_written = 1;
+    // The first part is what the UI plays; the rest are found by listing the export directory.
+    if (m_progress.export_path.empty())
+    {
+      m_progress.export_path = m_segment_rel_path.string();
+    }
+    m_progress.bytes_written += bytes;
+    m_progress.clips_written += 1;
   }
   else
   {

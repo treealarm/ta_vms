@@ -634,8 +634,6 @@
     "recording": "Grabación",
     "recordings": "Grabaciones",
     "tracks": "Pistas",
-    "importSlice": "Rango de importación",
-    "importSliceHint": "Seleccione un intervalo arriba y luego acote el rango para importar solo una parte.",
     "importToArchive": "Importar al archivo",
     "downloadMp4": "Descargar mp4",
     "oneImportPerCamera": "Una importación a la vez por cámara: el vídeo en directo mantiene la prioridad en el dispositivo.",
@@ -681,6 +679,22 @@
     "formatCommandIs": "Comando auxiliar del fabricante: {{command}}",
     "formatStorageWarning": "Se enviará el comando '{{command}}' a la cámara. Se borrará todo el material de su tarjeta. Esto no se puede deshacer.",
     "formatUnsupported": "Esta cámara no anuncia ningún comando auxiliar que formatee el almacenamiento",
-    "unknownRecordingStart": "La cámara no informó cuándo comienza esta grabación, por lo que el rango de importación no puede ubicarse de forma fiable."
+    "unknownRecordingStart": "La cámara no informó cuándo comienza esta grabación, por lo que el rango de importación no puede ubicarse de forma fiable.",
+    "probing": "Consultando a la cámara qué admite…",
+    "probeFailed": "No se pudo consultar a la cámara qué admite",
+    "importsUnavailable": "El servidor multimedia de esta cámara no está disponible, por lo que no se pueden listar ni iniciar importaciones ({{error}}).",
+    "selectSpanFirst": "Seleccione un intervalo en la tabla de arriba para importar.",
+    "invalidRange": "El rango de importación debe terminar después de empezar.",
+    "importingQueue": "Importando intervalo {{index}} de {{total}}…",
+    "tableRangeHint": "Marque los intervalos a importar. «Disponible desde/hasta» es lo que informa la cámara; acote el rango con el control deslizante. Las importaciones se ejecutan una tras otra.",
+    "availableFrom": "Disponible desde",
+    "availableTo": "Disponible hasta",
+    "importRange": "Rango a importar",
+    "wholeSpan": "intervalo completo",
+    "play": "Reproducir",
+    "preview": "Vista previa",
+    "playbackFailed": "Fallo la reproducción",
+    "hlsUnsupported": "Este navegador no admite HLS",
+    "previewPlaceholder": "Elija una importación terminada o un archivo exportado para reproducirlo aquí."
   }
 }

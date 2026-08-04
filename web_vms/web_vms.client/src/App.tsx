@@ -48,6 +48,9 @@ function LangToggle() {
 
 export { LangToggle }
 
+/** Health poll interval; also the delay before a persistent outage is surfaced (see persistentlyBroken). */
+const HEALTH_POLL_MS = 15000
+
 export default function App() {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
@@ -94,6 +97,11 @@ export default function App() {
   const probeError = useAppSelector((s) => s.frontendConfig.lastError)
   const failedAttempts = useAppSelector((s) => s.frontendConfig.failedAttempts)
   const brokenDependencies = useAppSelector((s) => s.frontendConfig.brokenDependencies)
+  // Everything is "unavailable" for the first few seconds while the services warm up, so a single
+  // failing poll is not worth alarming about. Requiring a second consecutive one delays the banner
+  // by exactly one health interval (see HEALTH_POLL_MS) — long enough to skip startup, short enough
+  // that a real outage is still reported promptly.
+  const persistentlyBroken = brokenDependencies.filter((d) => d.consecutive >= 2)
   useEffect(() => {
     let cancelled = false
     let retryTimer: ReturnType<typeof setTimeout> | null = null
@@ -114,7 +122,7 @@ export default function App() {
     // Kept polling rather than probed once: a restart race would otherwise pin a stale "vmscfg
     // unavailable" banner for the whole session, and a dependency that dies later would never
     // raise one. The endpoint answers from a 5s server-side cache, so this stays cheap.
-    const healthTimer = setInterval(() => { void dispatch(loadHealth()) }, 15000)
+    const healthTimer = setInterval(() => { void dispatch(loadHealth()) }, HEALTH_POLL_MS)
 
     return () => {
       cancelled = true
@@ -128,10 +136,10 @@ export default function App() {
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden' }}>
         {/* The gateway is up but something it needs is not, so the app would load and then show
             nothing but empty lists — say which service is broken instead. */}
-        {brokenDependencies.length > 0 && (
+        {persistentlyBroken.length > 0 && (
           <Alert severity="warning" square sx={{ flexShrink: 0, py: 0.25 }}>
             {t('app.dependencyDown', {
-              services: brokenDependencies.map((d) => `${d.name} (${d.error})`).join(', '),
+              services: persistentlyBroken.map((d) => `${d.name} (${d.error})`).join(', '),
             })}
           </Alert>
         )}

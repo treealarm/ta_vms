@@ -88,6 +88,8 @@ builder.Services.AddHttpClient(WhepProxyService.MediaMtxHttpClientName, c =>
 // per-process key would work perfectly on one instance and quietly break session teardown the day
 // a second replica is added, which is the failure this token format exists to remove.
 builder.Services.AddSingleton(WhepSessionToken.FromBase64Key(Require("VMS_WHEP_SESSION_KEY")));
+// Same key, different token type — see EdgeExportToken for why they share it.
+builder.Services.AddSingleton(new EdgeExportToken(Require("VMS_WHEP_SESSION_KEY")));
 builder.Services.AddSingleton<WhepProxyService>();
 
 // KEYCLOAK_URL is intentionally optional: when unset, login/authorization is disabled entirely
