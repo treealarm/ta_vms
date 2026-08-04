@@ -696,7 +696,9 @@
     "preview": "Preview",
     "playbackFailed": "Playback failed",
     "hlsUnsupported": "HLS is not supported in this browser",
-    "previewPlaceholder": "Pick a finished import or an exported file to play it here."
+    "previewPlaceholder": "Pick a finished import or an exported file to play it here.",
+    "clockOffset": "Camera clock {{offset}}",
+    "clockUnknown": "Camera clock unknown"
   },
   "gaps": {
     "title": "Archive gaps",

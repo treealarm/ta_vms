@@ -548,6 +548,11 @@ message EdgeRecordingSummaryResponse {
   uint32 number_recordings  = 3;
   bool   supported          = 4;
   string message            = 5;
+// Camera clock minus server clock, as measured just now. Absent = the device does not report its
+// time, and then every timestamp here is the device's own scale, uncorrected — a caller about to
+// fetch footage must refuse rather than guess. Present values mean all timestamps in this message
+// have already been converted to server time.
+  optional int64 clock_offset_ms = 6;
 }
 
 message EdgeTrack {
@@ -573,6 +578,7 @@ message EdgeRecording {
 message ListEdgeRecordingsResponse {
   repeated EdgeRecording recordings = 1;
   string message = 2;
+  optional int64 clock_offset_ms = 3;
 }
 
 message EdgeIntervalsRequest {
@@ -599,6 +605,7 @@ message EdgeIntervalsResponse {
   // True when the device answered, even if it reported no spans in the window.
   bool   searched = 2;
   string message  = 3;
+  optional int64 clock_offset_ms = 4;
 }
 
 message EdgeReplayUriRequest {
@@ -610,6 +617,7 @@ message EdgeReplayUriRequest {
 message EdgeReplayUriResponse {
   string uri     = 1;
   string message = 2;
+  optional int64 clock_offset_ms = 3;
 }
 
 message EdgeRecordingJob {

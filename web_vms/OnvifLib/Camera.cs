@@ -66,12 +66,18 @@ public class Camera
   }
   public async Task<System.DateTime?> GetDeviceTimeAsync()
   {
+    // Clears the shared token because the token being replaced is exactly the one whose timestamp
+    // this call exists to correct. Callers on the authentication path own that state; anything that
+    // only wants to read the clock must use ReadDeviceTimeAsync instead — see MeasureClockAsync.
     _onvifClientFactory.SetSecurityToken(null);
-    var endpoint = new EndpointAddress(_url);
+    return await ReadDeviceTimeAsync(_onvifClientFactory);
+  }
 
-    using var deviceClient = _onvifClientFactory.
+  private async Task<System.DateTime?> ReadDeviceTimeAsync(OnvifClientFactory factory)
+  {
+    using var deviceClient = factory.
       CreateClient<DeviceClient, DeviceServiceReference.Device>(
-        endpoint,
+        new EndpointAddress(_url),
         _bindingProvider.Current,
         _username,
         _password
@@ -92,6 +98,39 @@ public class Camera
         0,
         DateTimeKind.Utc
     );
+  }
+
+  /// <summary>
+  /// Measures the camera's clock against ours, or returns null when the device does not report UTC.
+  /// </summary>
+  /// <remarks>
+  /// Null is a real answer and must not be turned into "no difference": a camera whose clock we
+  /// cannot read is exactly the camera whose archive we would fetch from the wrong hour. The
+  /// authentication path above may fall back to our own time — a missing timestamp there only costs
+  /// a rejected token — but nothing that addresses recorded footage may.
+  ///
+  /// ONVIF reports whole seconds, so the result is good to about ±0.5 s plus half the round trip.
+  /// That is far below the granularity anything here cares about, and far above what any in-band
+  /// alternative can offer (see <see cref="CameraClockReading"/>).
+  /// </remarks>
+  public async Task<CameraClockReading?> MeasureClockAsync()
+  {
+    // Its own factory, not the shared one. GetSystemDateAndTime has to go out unauthenticated (the
+    // camera's clock is what we are trying to learn, so we cannot stamp a valid token yet), and
+    // clearing the token on the shared factory would strip the security header off any request
+    // another thread happens to build at that moment.
+    var factory = new OnvifClientFactory(_logger);
+    var before = System.DateTime.UtcNow;
+    var cameraUtc = await ReadDeviceTimeAsync(factory);
+    var after = System.DateTime.UtcNow;
+    if (cameraUtc is not { } utc)
+      return null;
+
+    // Compared against the midpoint of the call, splitting the round trip evenly between the two
+    // directions — the same assumption NTP makes.
+    var midpoint = before + (after - before) / 2;
+    _deviceClockOffset = utc - midpoint;
+    return new CameraClockReading(utc, midpoint, after - before);
   }
 
   public async Task<string> RebootAsync()

@@ -33,6 +33,22 @@ export default function EdgeArchivePanel() {
 
   const selected = selectedId ? onvifCameras.find((c) => c.cameraId === selectedId) ?? null : null
 
+  // Shown only when it matters: a second or two is measurement noise, but hours mean the card is
+  // indexed in a wholly different scale, and "unknown" means imports are refused.
+  const clockOffsetLabel = (() => {
+    if (!summary?.supported) return null
+    const ms = summary.clockOffsetMs
+    if (ms == null) return t('edge.clockUnknown')
+    if (Math.abs(ms) < 5_000) return null
+    const sign = ms > 0 ? '+' : '−'
+    const abs = Math.abs(ms)
+    const h = Math.floor(abs / 3600_000)
+    const m = Math.floor((abs % 3600_000) / 60_000)
+    const sec = Math.round((abs % 60_000) / 1000)
+    const span = h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${sec}s` : `${sec}s`
+    return t('edge.clockOffset', { offset: `${sign}${span}` })
+  })()
+
   useEffect(() => {
     // Sets the camera the slice accepts answers for, so a slow response for the previous one is
     // dropped instead of overwriting this camera's state.
@@ -114,6 +130,17 @@ export default function EdgeArchivePanel() {
                 {capabilities?.maxRecordings ? (
                   <Chip size="small" variant="outlined" label={t('edge.maxRecordings', { count: capabilities.maxRecordings })} />
                 ) : null}
+                {/* The card is indexed in the camera's clock. A large offset is not an error — the
+                    times shown here are already corrected — but it explains why they differ from
+                    what the camera's own web UI reports, and an unknown one blocks importing. */}
+                {summary?.supported && clockOffsetLabel && (
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    color={summary.clockOffsetMs == null ? 'error' : 'warning'}
+                    label={clockOffsetLabel}
+                  />
+                )}
               </Stack>
               <Tabs
                 value={SECTIONS.indexOf(section)}

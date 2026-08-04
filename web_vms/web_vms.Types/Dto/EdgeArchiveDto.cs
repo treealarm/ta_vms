@@ -27,7 +27,11 @@ public record EdgeSummaryDto
   public string DataUntil { get; init; } = string.Empty;
   public uint NumberRecordings { get; init; }
   public bool Supported { get; init; }
-  public string Message { get; init; } = string.Empty;
+  public string Message { get; init; } = string.Empty;  /// <summary>
+  /// Camera clock minus ours, in milliseconds, as measured while answering. Null = the camera does
+  /// not report its time, and then the timestamps here are the camera's own scale, uncorrected.
+  /// </summary>
+  public long? ClockOffsetMs { get; init; }
 }
 
 public record EdgeTrackDto
@@ -54,7 +58,11 @@ public record EdgeRecordingDto
 public record EdgeRecordingsDto
 {
   public IReadOnlyList<EdgeRecordingDto> Recordings { get; init; } = [];
-  public string Message { get; init; } = string.Empty;
+  public string Message { get; init; } = string.Empty;  /// <summary>
+  /// Camera clock minus ours, in milliseconds, as measured while answering. Null = the camera does
+  /// not report its time, and then the timestamps here are the camera's own scale, uncorrected.
+  /// </summary>
+  public long? ClockOffsetMs { get; init; }
 }
 
 public record EdgeIntervalDto
@@ -69,7 +77,11 @@ public record EdgeIntervalsDto
 {
   public IReadOnlyList<EdgeIntervalDto> Intervals { get; init; } = [];
   public bool Searched { get; init; }
-  public string Message { get; init; } = string.Empty;
+  public string Message { get; init; } = string.Empty;  /// <summary>
+  /// Camera clock minus ours, in milliseconds, as measured while answering. Null = the camera does
+  /// not report its time, and then the timestamps here are the camera's own scale, uncorrected.
+  /// </summary>
+  public long? ClockOffsetMs { get; init; }
 }
 
 public record EdgeRecordingJobDto

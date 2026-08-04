@@ -84,6 +84,7 @@ public sealed class EdgeArchiveController(
       NumberRecordings = r.NumberRecordings,
       Supported = r.Supported,
       Message = r.Message,
+      ClockOffsetMs = r.HasClockOffsetMs ? r.ClockOffsetMs : null,
     });
   }
 
@@ -95,6 +96,7 @@ public sealed class EdgeArchiveController(
     return Ok(new EdgeRecordingsDto
     {
       Message = r.Message,
+      ClockOffsetMs = r.HasClockOffsetMs ? r.ClockOffsetMs : null,
       Recordings = r.Recordings.Select(rec => new EdgeRecordingDto
       {
         RecordingToken = rec.RecordingToken,
@@ -139,6 +141,7 @@ public sealed class EdgeArchiveController(
     {
       Searched = r.Searched,
       Message = r.Message,
+      ClockOffsetMs = r.HasClockOffsetMs ? r.ClockOffsetMs : null,
       Intervals = r.Intervals.Select(i => new EdgeIntervalDto
       {
         RecordingToken = i.RecordingToken,
@@ -336,6 +339,16 @@ public sealed class EdgeArchiveController(
     if (string.IsNullOrWhiteSpace(replay.Uri))
       return StatusCode(StatusCodes.Status502BadGateway,
         new { message = string.IsNullOrWhiteSpace(replay.Message) ? "camera returned an empty replay uri" : replay.Message });
+
+    // The window below is in server time, and the device indexes its card in its own clock. Without
+    // a measured offset the two cannot be reconciled, and the pull would quietly land on a different
+    // stretch of footage than the one asked for — worse than not pulling at all.
+    if (!replay.HasClockOffsetMs)
+      return StatusCode(StatusCodes.Status502BadGateway, new
+      {
+        message = $"camera '{cameraId}' does not report its clock (ONVIF GetSystemDateAndTime), "
+          + "so the requested time range cannot be located on its storage",
+      });
 
     var request = new Vms.Control.EdgeImportRequest
     {

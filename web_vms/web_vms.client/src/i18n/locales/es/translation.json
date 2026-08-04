@@ -696,7 +696,9 @@
     "preview": "Vista previa",
     "playbackFailed": "Fallo la reproducción",
     "hlsUnsupported": "Este navegador no admite HLS",
-    "previewPlaceholder": "Elija una importación terminada o un archivo exportado para reproducirlo aquí."
+    "previewPlaceholder": "Elija una importación terminada o un archivo exportado para reproducirlo aquí.",
+    "clockOffset": "Reloj de la cámara {{offset}}",
+    "clockUnknown": "Reloj de la cámara desconocido"
   },
   "gaps": {
     "title": "Huecos del archivo",

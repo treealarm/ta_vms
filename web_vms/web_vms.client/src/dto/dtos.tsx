@@ -742,6 +742,9 @@ export type EdgeSummaryDto = {
   numberRecordings: number
   supported: boolean
   message: string
+  /** Camera clock minus ours, in ms, measured while answering. Null = the camera does not report
+   *  its time, and then these timestamps are the camera's own uncorrected scale. */
+  clockOffsetMs?: number | null
 }
 
 export type EdgeTrackDto = {
@@ -766,6 +769,9 @@ export type EdgeRecordingDto = {
 export type EdgeRecordingsDto = {
   recordings: EdgeRecordingDto[]
   message: string
+  /** Camera clock minus ours, in ms, measured while answering. Null = the camera does not report
+   *  its time, and then these timestamps are the camera's own uncorrected scale. */
+  clockOffsetMs?: number | null
 }
 
 export type EdgeIntervalDto = {
@@ -779,6 +785,9 @@ export type EdgeIntervalsDto = {
   intervals: EdgeIntervalDto[]
   searched: boolean
   message: string
+  /** Camera clock minus ours, in ms, measured while answering. Null = the camera does not report
+   *  its time, and then these timestamps are the camera's own uncorrected scale. */
+  clockOffsetMs?: number | null
 }
 
 export type EdgeRecordingJobDto = {

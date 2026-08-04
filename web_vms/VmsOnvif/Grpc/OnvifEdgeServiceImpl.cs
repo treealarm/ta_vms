@@ -40,8 +40,9 @@ public partial class OnvifServiceImpl
   public override async Task<EdgeRecordingSummaryResponse> GetEdgeRecordingSummary(
     CameraRequest request, ServerCallContext context)
   {
-    var (summary, message) = await settingsService.GetEdgeRecordingSummaryAsync(request.SourceId, context.CancellationToken);
-    return new EdgeRecordingSummaryResponse
+    var (summary, offset, message) = await settingsService.GetEdgeRecordingSummaryAsync(
+      request.SourceId, context.CancellationToken);
+    var response = new EdgeRecordingSummaryResponse
     {
       DataFrom         = Iso(summary?.DataFrom),
       DataUntil        = Iso(summary?.DataUntil),
@@ -49,13 +50,19 @@ public partial class OnvifServiceImpl
       Supported        = summary != null,
       Message          = message,
     };
+    if (offset is { } off)
+      response.ClockOffsetMs = (long)off.TotalMilliseconds;
+    return response;
   }
 
   public override async Task<ListEdgeRecordingsResponse> ListEdgeRecordings(
     CameraRequest request, ServerCallContext context)
   {
-    var (recordings, message) = await settingsService.ListEdgeRecordingsAsync(request.SourceId, context.CancellationToken);
+    var (recordings, offset, message) = await settingsService.ListEdgeRecordingsAsync(
+      request.SourceId, context.CancellationToken);
     var response = new ListEdgeRecordingsResponse { Message = message };
+    if (offset is { } recordingsOffset)
+      response.ClockOffsetMs = (long)recordingsOffset.TotalMilliseconds;
     foreach (var rec in recordings)
     {
       var item = new EdgeRecording
@@ -89,10 +96,12 @@ public partial class OnvifServiceImpl
     if (!TryParseIso(request.EndTime, out var to))
       return new EdgeIntervalsResponse { Message = "end_time is not a valid ISO 8601 timestamp" };
 
-    var (intervals, searched, message) = await settingsService.ListEdgeIntervalsAsync(
+    var (intervals, searched, offset, message) = await settingsService.ListEdgeIntervalsAsync(
       request.SourceId, from, to, request.RecordingToken, (int)request.MaxResults, context.CancellationToken);
 
     var response = new EdgeIntervalsResponse { Searched = searched, Message = message };
+    if (offset is { } off)
+      response.ClockOffsetMs = (long)off.TotalMilliseconds;
     response.Intervals.AddRange(intervals.Select(i => new EdgeInterval
     {
       RecordingToken = i.RecordingToken,
@@ -109,9 +118,12 @@ public partial class OnvifServiceImpl
     if (string.IsNullOrWhiteSpace(request.RecordingToken))
       return new EdgeReplayUriResponse { Message = "recording_token is required" };
 
-    var (uri, message) = await settingsService.GetEdgeReplayUriAsync(
+    var (uri, offset, message) = await settingsService.GetEdgeReplayUriAsync(
       request.SourceId, request.RecordingToken, request.Transport, context.CancellationToken);
-    return new EdgeReplayUriResponse { Uri = uri, Message = message };
+    var response = new EdgeReplayUriResponse { Uri = uri, Message = message };
+    if (offset is { } off)
+      response.ClockOffsetMs = (long)off.TotalMilliseconds;
+    return response;
   }
 
   public override async Task<EdgeRecordingJobsResponse> ListEdgeRecordingJobs(

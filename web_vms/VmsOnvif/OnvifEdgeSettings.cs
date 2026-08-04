@@ -96,22 +96,28 @@ public sealed partial class OnvifSettingsService
     }
   }
 
-  public async Task<(OnvifEdgeRecordingSummary? Summary, string Message)> GetEdgeRecordingSummaryAsync(string cameraId, CancellationToken ct)
+  public async Task<(OnvifEdgeRecordingSummary? Summary, TimeSpan? ClockOffset, string Message)>
+    GetEdgeRecordingSummaryAsync(string cameraId, CancellationToken ct)
   {
     var data = await connCache.GetAsync(cameraId, ct);
     if (data?.Conn == null)
-      return (null, $"No ONVIF connection configured for camera '{cameraId}'");
+      return (null, null, $"No ONVIF connection configured for camera '{cameraId}'");
 
     var search = await GetSearchOrNull(data.Conn);
     if (search == null)
-      return (null, "Camera does not expose the ONVIF RecordingSearch service");
+      return (null, null, "Camera does not expose the ONVIF RecordingSearch service");
 
-    try { return (await search.GetRecordingSummaryAsync(), string.Empty); }
+    var offset = await GetClockOffsetAsync(cameraId, ct);
+    try
+    {
+      var summary = await search.GetRecordingSummaryAsync();
+      return (ToServerTime(summary, offset), offset, string.Empty);
+    }
     catch (Exception ex)
     {
       logger.LogWarning(ex, "GetEdgeRecordingSummary failed for camera {CameraId}", cameraId);
       Evict(data.Conn);
-      return (null, ex.Message);
+      return (null, offset, ex.Message);
     }
   }
 
@@ -119,18 +125,20 @@ public sealed partial class OnvifSettingsService
   /// Lists the camera's recordings. Tokens come from the Recording service; per-recording tracks and
   /// time span come from RecordingSearch, which is the only place the device reports them.
   /// </summary>
-  public async Task<(List<OnvifEdgeRecording> Recordings, string Message)> ListEdgeRecordingsAsync(string cameraId, CancellationToken ct)
+  public async Task<(List<OnvifEdgeRecording> Recordings, TimeSpan? ClockOffset, string Message)>
+    ListEdgeRecordingsAsync(string cameraId, CancellationToken ct)
   {
     var data = await connCache.GetAsync(cameraId, ct);
     if (data?.Conn == null)
-      return ([], $"No ONVIF connection configured for camera '{cameraId}'");
+      return ([], null, $"No ONVIF connection configured for camera '{cameraId}'");
 
+    var offset = await GetClockOffsetAsync(cameraId, ct);
     try
     {
       var cam = GetOrCreate(data.Conn);
       var recording = await cam.GetRecordingService();
       if (recording == null)
-        return ([], "Camera does not expose the ONVIF Recording service");
+        return ([], offset, "Camera does not expose the ONVIF Recording service");
 
       var configs = await recording.GetRecordingsAsync();
       var search = await GetSearchOrNull(data.Conn);
@@ -160,54 +168,69 @@ public sealed partial class OnvifSettingsService
           string.Empty,
           []));
       }
-      return (result, string.Empty);
+      return (result.Select(r => ToServerTime(r, offset)).ToList(), offset, string.Empty);
     }
     catch (Exception ex)
     {
       logger.LogWarning(ex, "ListEdgeRecordings failed for camera {CameraId}", cameraId);
       Evict(data.Conn);
-      return ([], ex.Message);
+      return ([], offset, ex.Message);
     }
   }
 
-  public async Task<(List<OnvifEdgeInterval> Intervals, bool Searched, string Message)> ListEdgeIntervalsAsync(
-    string cameraId, DateTime? from, DateTime? to, string? recordingToken, int maxResults, CancellationToken ct)
+  /// <summary>
+  /// Recorded spans on the card. The window comes in — and the spans go out — in server time; the
+  /// camera only ever sees its own clock (see <see cref="GetClockOffsetAsync"/>).
+  /// </summary>
+  public async Task<(List<OnvifEdgeInterval> Intervals, bool Searched, TimeSpan? ClockOffset, string Message)>
+    ListEdgeIntervalsAsync(
+      string cameraId, DateTime? from, DateTime? to, string? recordingToken, int maxResults, CancellationToken ct)
   {
     var data = await connCache.GetAsync(cameraId, ct);
     if (data?.Conn == null)
-      return ([], false, $"No ONVIF connection configured for camera '{cameraId}'");
+      return ([], false, null, $"No ONVIF connection configured for camera '{cameraId}'");
 
     var search = await GetSearchOrNull(data.Conn);
     if (search == null)
-      return ([], false, "Camera does not expose the ONVIF RecordingSearch service");
+      return ([], false, null, "Camera does not expose the ONVIF RecordingSearch service");
 
+    var offset = await GetClockOffsetAsync(cameraId, ct);
     try
     {
+      var cameraFrom = ToCameraTime(from, offset);
+      var cameraTo = ToCameraTime(to, offset);
+
       // An unbounded request means "whatever is on the card" — resolve it against the summary so
-      // the XPath filter always carries a real window.
-      if (from == null || to == null)
+      // the XPath filter always carries a real window. Summary is the device's own scale, which is
+      // the scale of everything below this line.
+      if (cameraFrom == null || cameraTo == null)
       {
         var summary = await search.GetRecordingSummaryAsync();
-        from ??= summary?.DataFrom;
-        to ??= summary?.DataUntil;
-        if (from == null || to == null)
-          return ([], true, string.Empty);
+        cameraFrom ??= summary?.DataFrom;
+        cameraTo ??= summary?.DataUntil;
+        if (cameraFrom == null || cameraTo == null)
+          return ([], true, offset, string.Empty);
       }
 
-      var key = $"{cameraId}|{recordingToken}|{from:O}|{to:O}|{maxResults}";
+      // Keyed on the camera-scale window: the same operator window measured against a slightly
+      // different offset is a different query to the device, and reusing the old answer for it
+      // would show spans that are off by the difference.
+      var key = $"{cameraId}|{recordingToken}|{cameraFrom:O}|{cameraTo:O}|{maxResults}";
       if (_edgeIntervalCache.TryGetValue(key, out var hit) && DateTime.UtcNow - hit.At < EdgeIntervalCacheTtl)
-        return (hit.Intervals, true, string.Empty);
+        return (ToServerTime(hit.Intervals, offset), true, offset, string.Empty);
 
-      var found = await search.FindRecordingsAsync(from.Value, to.Value, recordingToken, maxResults, ct);
-      var intervals = SearchService.ToIntervals(found, to);
+      var found = await search.FindRecordingsAsync(cameraFrom.Value, cameraTo.Value, recordingToken, maxResults, ct);
+      var intervals = SearchService.ToIntervals(found, cameraTo);
+      // Cached in camera scale, converted on the way out: the cache then survives a re-measured
+      // offset instead of holding answers corrected by a value nobody remembers.
       StoreIntervals(key, intervals);
-      return (intervals, true, string.Empty);
+      return (ToServerTime(intervals, offset), true, offset, string.Empty);
     }
     catch (Exception ex)
     {
       logger.LogWarning(ex, "ListEdgeIntervals failed for camera {CameraId}", cameraId);
       Evict(data.Conn);
-      return ([], false, ex.Message);
+      return ([], false, offset, ex.Message);
     }
   }
 
@@ -215,26 +238,29 @@ public sealed partial class OnvifSettingsService
   /// Resolves a replay URI. Devices commonly hand out single-use URIs, so callers must fetch one
   /// immediately before starting a pull rather than caching it.
   /// </summary>
-  public async Task<(string Uri, string Message)> GetEdgeReplayUriAsync(
+  public async Task<(string Uri, TimeSpan? ClockOffset, string Message)> GetEdgeReplayUriAsync(
     string cameraId, string recordingToken, string transport, CancellationToken ct)
   {
     var data = await connCache.GetAsync(cameraId, ct);
     if (data?.Conn == null)
-      return (string.Empty, $"No ONVIF connection configured for camera '{cameraId}'");
+      return (string.Empty, null, $"No ONVIF connection configured for camera '{cameraId}'");
 
+    // Reported alongside the URI so the caller starting a pull can refuse to guess: an unknown
+    // offset means an unknown position on the card.
+    var offset = await GetClockOffsetAsync(cameraId, ct);
     try
     {
       var replay = await GetReplayOrNull(data.Conn);
       if (replay == null)
-        return (string.Empty, "Camera does not expose the ONVIF Replay service");
+        return (string.Empty, offset, "Camera does not expose the ONVIF Replay service");
       var uri = await replay.GetReplayUriAsync(recordingToken, string.IsNullOrWhiteSpace(transport) ? "RTSP" : transport);
-      return (uri, string.IsNullOrWhiteSpace(uri) ? "Camera returned an empty replay uri" : string.Empty);
+      return (uri, offset, string.IsNullOrWhiteSpace(uri) ? "Camera returned an empty replay uri" : string.Empty);
     }
     catch (Exception ex)
     {
       logger.LogWarning(ex, "GetEdgeReplayUri failed for camera {CameraId}", cameraId);
       Evict(data.Conn);
-      return (string.Empty, ex.Message);
+      return (string.Empty, offset, ex.Message);
     }
   }
 
