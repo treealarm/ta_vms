@@ -13,13 +13,14 @@ extern "C" {
 
 /// Where an edge import reads camera-side footage from.
 ///
-/// The libav implementation plays ONVIF Replay at the device's own pace, because libavformat's RTSP
-/// demuxer cannot send the `Rate-Control: no` header the ONVIF Replay spec defines for
-/// faster-than-realtime pulls (its PLAY only ever carries `Range: npt=`). Measured against a
-/// F-IC-2642C2MSZ4: realtime ~530 KiB/s, `Rate-Control: no` ~2150-2600 KiB/s — i.e. roughly 4x, and
-/// that is the device's ceiling (`Scale: 8.0` reaches the same number). A hand-rolled RTSP client
-/// that can send those headers is the only way to get it, so the read path is kept behind this
-/// interface: swapping the implementation must not touch the worker, the remuxer or anything above.
+/// Implemented by onvif_replay_source, which speaks RTSP itself. libavformat cannot: its PLAY only
+/// ever carries `Range: npt=` (an offset from the start of the recording, which devices accept and
+/// then ignore, streaming from the beginning of the card) and it has no way to send
+/// `Require: onvif-replay` or `Rate-Control: no`. The latter is also what makes a pull run faster
+/// than realtime — measured against a F-IC-2642C2MSZ4: ~530 KiB/s at realtime against
+/// ~2150-2600 KiB/s, i.e. roughly 4x, which is the device's ceiling (`Scale: 8.0` reaches the same
+/// number). The read path stays behind this interface so a future implementation does not touch the
+/// worker, the remuxer or anything above.
 class replay_source
 {
 public:
@@ -51,7 +52,14 @@ struct replay_source_settings
   std::string replay_uri;
   std::string user;
   std::string password;
+  /// The window in OUR clock — what imported clips are stamped with.
   std::chrono::system_clock::time_point start_ts{};
-  /// Start of the recording the replay URI addresses; the seek offset is computed from it.
+  std::chrono::system_clock::time_point end_ts{};
+  /// The same window in the CAMERA's clock — what the device is asked for. Unset (epoch) means the
+  /// two clocks agree and start_ts/end_ts are used as they are.
+  std::chrono::system_clock::time_point seek_start_ts{};
+  std::chrono::system_clock::time_point seek_end_ts{};
+  /// Start of the recording the replay URI addresses. Diagnostics only since the position is sent
+  /// as an absolute clock range rather than as an offset from it.
   std::chrono::system_clock::time_point recording_start_ts{};
 };

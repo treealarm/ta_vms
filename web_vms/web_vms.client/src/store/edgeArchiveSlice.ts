@@ -23,7 +23,14 @@ type EdgeArchiveState = {
   storage: EdgeStorageDto | null
   jobs: EdgeImportJobDto[]
   exports: EdgeExportDto[]
+  /**
+   * A camera-facing request is in flight — what the browse controls disable themselves on.
+   * Deliberately blind to the import/export polling: that runs on a timer for as long as an import
+   * lasts, and letting it drive this flag made the Search button blink and go dead between ticks.
+   */
   isBusy: boolean
+  /** Depth behind isBusy: selecting a camera issues several camera-facing requests at once. */
+  busyCount: number
   /** Error from a camera-facing call (capabilities, search, storage); cleared on the next success. */
   status: string
   /**
@@ -45,6 +52,7 @@ const initialState: EdgeArchiveState = {
   jobs: [],
   exports: [],
   isBusy: false,
+  busyCount: 0,
   status: '',
   importsError: ''
 }
@@ -213,6 +221,10 @@ const edgeArchiveSlice = createSlice({
       state.jobs = []
       state.exports = []
       state.status = ''
+      // Answers still in flight belong to the previous camera and are dropped on arrival, so their
+      // completions must not be waited for either.
+      state.busyCount = 0
+      state.isBusy = false
     }
   },
   extraReducers: (builder) => {
@@ -241,19 +253,33 @@ const edgeArchiveSlice = createSlice({
       .addCase(fetchEdgeExports.fulfilled, (state, action) => {
         if (isCurrent(state, action)) state.exports = action.payload
       })
-      .addMatcher((a: AnyAction) => a.type.startsWith('edgeArchive/') && a.type.endsWith('/pending'), (state) => {
+      .addMatcher((a: AnyAction) => a.type.startsWith('edgeArchive/') && a.type.endsWith('/pending'), (state, action: AnyAction) => {
+        if (isImportAction(action.type)) return
+        // Counted, not set: selecting a camera fires capabilities, summary and intervals together,
+        // and a plain boolean clears on the first answer while the others are still running.
+        state.busyCount += 1
         state.isBusy = true
       })
       .addMatcher((a: AnyAction) => a.type.startsWith('edgeArchive/') && a.type.endsWith('/fulfilled'), (state, action: AnyAction) => {
-        state.isBusy = false
-        if (isImportAction(action.type)) state.importsError = ''
-        else state.status = ''
+        if (isImportAction(action.type))
+        {
+          state.importsError = ''
+          return
+        }
+        state.busyCount = Math.max(0, state.busyCount - 1)
+        state.isBusy = state.busyCount > 0
+        state.status = ''
       })
       .addMatcher((a: AnyAction) => a.type.startsWith('edgeArchive/') && a.type.endsWith('/rejected'), (state, action: AnyAction) => {
-        state.isBusy = false
         const message = action.error?.message ?? 'Unknown error'
-        if (isImportAction(action.type)) state.importsError = message
-        else state.status = message
+        if (isImportAction(action.type))
+        {
+          state.importsError = message
+          return
+        }
+        state.busyCount = Math.max(0, state.busyCount - 1)
+        state.isBusy = state.busyCount > 0
+        state.status = message
       })
   }
 })

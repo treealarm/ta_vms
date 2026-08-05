@@ -11,7 +11,7 @@ extern "C" {
 #include <libavutil/error.h>
 }
 
-#include "edge_import/libav_replay_source.h"
+#include "edge_import/onvif_replay_source.h"
 #include "file_system/recording_storage.h"
 #include "grpc_layer/fs_client.h"
 #include "logger/logger.h"
@@ -89,11 +89,14 @@ edge_import_outcome edge_import_worker::run()
     return outcome;
   }
 
-  m_source = std::make_unique<libav_replay_source>(replay_source_settings{
+  m_source = std::make_unique<onvif_replay_source>(replay_source_settings{
     .replay_uri = m_settings.replay_uri,
     .user = m_settings.user,
     .password = m_settings.password,
     .start_ts = m_settings.start_ts,
+    .end_ts = m_settings.end_ts,
+    .seek_start_ts = m_settings.seek_start_ts,
+    .seek_end_ts = m_settings.seek_end_ts,
     .recording_start_ts = m_settings.recording_start_ts,
   });
 
@@ -315,6 +318,18 @@ bool edge_import_worker::open_segment(
     const AVMediaType type = in_stream->codecpar->codec_type;
     if (type != AVMEDIA_TYPE_VIDEO && type != AVMEDIA_TYPE_AUDIO)
     {
+      continue;
+    }
+    // Imports are a pure remux, while live recording transcodes audio to AAC (see segment_writer's
+    // codec_config). Copying G.711 or G.726 into an archive clip would therefore produce a track no
+    // browser can decode and break playback of the whole clip, so such audio is dropped until the
+    // import path can transcode it too.
+    if (type == AVMEDIA_TYPE_AUDIO && in_stream->codecpar->codec_id != AV_CODEC_ID_AAC)
+    {
+      logger::instance().warning(std::format(
+        "edge import: dropping audio track of camera '{}' — {} cannot be remuxed into the archive",
+        m_settings.camera_id,
+        avcodec_get_name(in_stream->codecpar->codec_id)));
       continue;
     }
     AVStream* out_stream = avformat_new_stream(m_output.get(), nullptr);

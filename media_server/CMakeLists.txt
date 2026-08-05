@@ -80,8 +80,12 @@ set(SOURCES
     arch_writer/segment_writer.h
 
     edge_import/replay_source.h
-    edge_import/libav_replay_source.cpp
-    edge_import/libav_replay_source.h
+    edge_import/onvif_replay_source.cpp
+    edge_import/onvif_replay_source.h
+    edge_import/tcp_socket.cpp
+    edge_import/tcp_socket.h
+    edge_import/onvif_replay_rtsp.cpp
+    edge_import/onvif_replay_rtsp.h
     edge_import/edge_import_worker.cpp
     edge_import/edge_import_worker.h
     edge_import/edge_import_manager.cpp

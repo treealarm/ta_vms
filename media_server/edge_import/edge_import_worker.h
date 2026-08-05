@@ -29,9 +29,14 @@ struct edge_import_settings
   std::string replay_uri;
   std::string user;
   std::string password;
+  /// The window in OUR clock: what the imported clips are stamped with.
   std::chrono::system_clock::time_point start_ts{};
   std::chrono::system_clock::time_point end_ts{};
-  /// Start of the recording the replay URI addresses; used to compute the RTSP seek.
+  /// The same window in the CAMERA's clock, which is what the device is asked for. Unset when the
+  /// two agree. The card is indexed in the camera's time, and cameras are routinely hours off.
+  std::chrono::system_clock::time_point seek_start_ts{};
+  std::chrono::system_clock::time_point seek_end_ts{};
+  /// Start of the recording the replay URI addresses; diagnostics only.
   std::chrono::system_clock::time_point recording_start_ts{};
   /// Mux the whole window into one downloadable mp4 instead of writing archive clips.
   bool export_to_file = false;

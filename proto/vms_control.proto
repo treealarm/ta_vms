@@ -38,10 +38,15 @@ message EdgeImportRequest {
   optional Credentials cred = 4;
   int64  start_unix_ms = 5;
   int64  end_unix_ms   = 6;
-  // Start of the recording the replay URI addresses. Required: the RTSP seek is expressed as an
-  // offset from it, and without it a mid-recording window would be stamped with the wrong wall
-  // clock and silently corrupt the archive timeline.
+  // Start of the recording the replay URI addresses. Diagnostics only now that the position is
+  // sent as an absolute clock range rather than as an offset from it.
   int64  recording_start_unix_ms = 7;
+  // The same window as start/end_unix_ms, but in the CAMERA's clock — what goes into ONVIF
+  // `Range: clock=`. The card is indexed in the device's time, which is often hours away from ours,
+  // and asking in the wrong scale returns whatever the camera holds at that moment in ITS day.
+  // Unset means the two clocks agree.
+  optional int64 seek_start_unix_ms = 11;
+  optional int64 seek_end_unix_ms   = 12;
   // When true the pull is muxed into downloadable mp4 files under VMS_EXPORT_BASE_PATH instead of
   // being written into the archive as clips.
   bool   export_to_file  = 8;

@@ -149,6 +149,16 @@ grpc::Status camera_control_service::StartEdgeImport(
   settings.start_ts = from_unix_ms(request->start_unix_ms());
   settings.end_ts = from_unix_ms(request->end_unix_ms());
   settings.recording_start_ts = from_unix_ms(request->recording_start_unix_ms());
+  // Absent = the gateway could not measure the camera's clock offset, which it only allows when the
+  // two clocks agree; the window then goes to the device unchanged.
+  if (request->has_seek_start_unix_ms())
+  {
+    settings.seek_start_ts = from_unix_ms(request->seek_start_unix_ms());
+  }
+  if (request->has_seek_end_unix_ms())
+  {
+    settings.seek_end_ts = from_unix_ms(request->seek_end_unix_ms());
+  }
   settings.export_to_file = request->export_to_file();
   if (request->segment_seconds() > 0)
   {

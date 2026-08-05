@@ -358,6 +358,10 @@ public sealed class EdgeArchiveController(
       StartUnixMs = ToUnixMs(start),
       EndUnixMs = ToUnixMs(end),
       RecordingStartUnixMs = ToUnixMs(recordingStart),
+      // The same window in the camera's clock: the card is indexed in the device's time, and the
+      // ONVIF PLAY range must be expressed in it or the pull lands on a different hour entirely.
+      SeekStartUnixMs = ToUnixMs(start) + replay.ClockOffsetMs,
+      SeekEndUnixMs = ToUnixMs(end) + replay.ClockOffsetMs,
       ExportToFile = body.ExportToFile,
       SegmentSeconds = body.SegmentSeconds,
       ExportChunkSeconds = ExportChunkSeconds,
