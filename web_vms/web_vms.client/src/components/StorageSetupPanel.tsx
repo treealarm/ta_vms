@@ -12,6 +12,10 @@ import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 import { useMasterDetailSelection } from './settings/useMasterDetailSelection'
 
 const GIB = 1024 ** 3
+// What a new storage reserves unless told otherwise. Zero means recording is free to fill the
+// volume to the last byte, and a disk with no room left takes down more than the archive — the
+// database and the logs live there too on a single-box install.
+const DEFAULT_RESERVED_GB = 5
 
 const toGbString = (bytes: number) => bytes > 0 ? (bytes / GIB).toFixed(1) : '0'
 
@@ -29,12 +33,13 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
 
   const [storageId, setStorageId] = useState(storage?.storageId ?? '')
   const [rootPath, setRootPath] = useState(storage?.rootPath ?? '')
-  const [reservedGb, setReservedGb] = useState(toGbString(storage?.reservedBytes ?? 0))
+  const [reservedGb, setReservedGb] =
+    useState(toGbString(storage?.reservedBytes ?? DEFAULT_RESERVED_GB * GIB))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   // Snapshot for dirty detection and Cancel — only reservedGb is editable on existing storages
-  const [snap, setSnap] = useState(toGbString(storage?.reservedBytes ?? 0))
+  const [snap, setSnap] = useState(toGbString(storage?.reservedBytes ?? DEFAULT_RESERVED_GB * GIB))
   const dirty = !isNew && reservedGb !== snap
 
   // A cleared/invalid field must block the save — Number('') is 0 and would
