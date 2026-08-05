@@ -117,6 +117,29 @@ edge_import_outcome edge_import_worker::run()
     return outcome;
   }
 
+  // Archive clips carry AAC and nothing else — that is what the live path stores and the only audio
+  // HLS can deliver. Anything else the camera recorded is re-encoded on the way in; the video is
+  // never touched.
+  if (const AVFormatContext* input = m_source->format_context())
+  {
+    for (unsigned i = 0; i < input->nb_streams; ++i)
+    {
+      const AVCodecParameters* par = input->streams[i]->codecpar;
+      if (par->codec_type == AVMEDIA_TYPE_AUDIO && par->codec_id != AV_CODEC_ID_AAC)
+      {
+        m_transcode_audio = true;
+        sync_packet_transcoder::codec_config config;
+        config.audio_codec = AV_CODEC_ID_AAC;
+        config.allow_all_audio_passthrough = false;
+        m_audio_transcoder = std::make_unique<sync_packet_transcoder>(config);
+        logger::instance().info(std::format(
+          "edge import: re-encoding {} audio to AAC for camera='{}'",
+          avcodec_get_name(par->codec_id), m_settings.camera_id));
+        break;
+      }
+    }
+  }
+
   const bool read_ok = read_loop(error);
   close_segment();
 
@@ -232,11 +255,59 @@ bool edge_import_worker::read_loop(std::string& error)
     }
 
     const auto wall_ts = m_settings.start_ts + offset;
+
+    // Audio goes through the encoder before anything else looks at it, including while the first
+    // segment is still waiting to open: its output parameters are what that segment needs in order
+    // to declare the track at all.
+    std::shared_ptr<media_packet> encoded_audio;
+    if (m_transcode_audio && is_audio_stream(packet->stream_index))
+    {
+      encoded_audio = transcode_audio(packet.get());
+      av_packet_unref(packet.get());
+      if (!encoded_audio || !encoded_audio->packet)
+      {
+        continue;
+      }
+      if (!m_output)
+      {
+        // Nowhere to put it yet; the encoder has been primed, which is what this pass was for.
+        continue;
+      }
+      if (!write_packet(encoded_audio->packet.get()))
+      {
+        error = "write imported audio packet";
+        return false;
+      }
+      continue;
+    }
+
     // Only a video keyframe can start a decodable clip. Audio packets carry AV_PKT_FLAG_KEY too,
     // so gating on the flag alone would open a segment on audio and leave the video mid-GOP —
     // same rule as the live path in segment_writer::write_packet.
     const bool is_video_key = is_video_stream(packet->stream_index)
       && (packet->flags & AV_PKT_FLAG_KEY) != 0;
+
+    // Waiting for the encoder to describe itself. Video is held rather than dropped: the wait is a
+    // fraction of a second, but throwing away the keyframe would cost a whole GOP and leave the
+    // start of the gap uncovered for the next attempt to fetch again.
+    if (m_transcode_audio && !m_audio_out_params && !m_output)
+    {
+      if (is_video_key || !m_pending_video.empty())
+      {
+        avpacket_ptr held(av_packet_alloc(), avpacket_deleter{});
+        if (held && av_packet_ref(held.get(), packet.get()) >= 0 && m_pending_video.size() < 512)
+        {
+          if (m_pending_video.empty())
+          {
+            m_pending_start_ts = wall_ts;
+            m_pending_start_offset = offset;
+          }
+          m_pending_video.push_back(std::move(held));
+        }
+      }
+      av_packet_unref(packet.get());
+      continue;
+    }
     // Both paths rotate; only the length differs. A single multi-gigabyte export is awkward to
     // download and cannot be previewed without pulling all of it.
     const auto rotate_after = m_settings.export_to_file
@@ -253,12 +324,26 @@ bool edge_import_worker::read_loop(std::string& error)
         continue;
       }
       close_segment();
-      m_segment_start_offset = offset;
-      if (!open_segment(wall_ts, error))
+      // Held footage predates this packet, so the segment belongs to where that run began.
+      const bool resuming_held = !m_pending_video.empty();
+      m_segment_start_offset = resuming_held ? m_pending_start_offset : offset;
+      if (!open_segment(resuming_held ? m_pending_start_ts : wall_ts, error))
       {
         av_packet_unref(packet.get());
         return false;
       }
+    }
+
+    if (!m_pending_video.empty())
+    {
+      for (auto& held : m_pending_video)
+      {
+        if (held && held->size > 0)
+        {
+          (void)write_packet(held.get());
+        }
+      }
+      m_pending_video.clear();
     }
 
     m_segment_last_ts = wall_ts;
@@ -329,16 +414,11 @@ bool edge_import_worker::open_segment(
     {
       continue;
     }
-    // Imports are a pure remux, while live recording transcodes audio to AAC (see segment_writer's
-    // codec_config). Copying G.711 or G.726 into an archive clip would therefore produce a track no
-    // browser can decode and break playback of the whole clip, so such audio is dropped until the
-    // import path can transcode it too.
-    if (type == AVMEDIA_TYPE_AUDIO && in_stream->codecpar->codec_id != AV_CODEC_ID_AAC)
+    // The muxer's header fixes the codec parameters, so a transcoded track can only be declared
+    // once the encoder has produced something. The read loop holds the segment back until then.
+    const bool transcoded_audio = type == AVMEDIA_TYPE_AUDIO && m_transcode_audio;
+    if (transcoded_audio && !m_audio_out_params)
     {
-      logger::instance().warning(std::format(
-        "edge import: dropping audio track of camera '{}' — {} cannot be remuxed into the archive",
-        m_settings.camera_id,
-        avcodec_get_name(in_stream->codecpar->codec_id)));
       continue;
     }
     AVStream* out_stream = avformat_new_stream(m_output.get(), nullptr);
@@ -348,7 +428,10 @@ bool edge_import_worker::open_segment(
       m_output.reset();
       return false;
     }
-    if (avcodec_parameters_copy(out_stream->codecpar, in_stream->codecpar) < 0)
+    const AVCodecParameters* source_params = transcoded_audio
+      ? m_audio_out_params.get()
+      : in_stream->codecpar;
+    if (avcodec_parameters_copy(out_stream->codecpar, source_params) < 0)
     {
       error = "copy codec parameters";
       m_output.reset();
@@ -418,6 +501,58 @@ bool edge_import_worker::is_video_stream(int stream_index) const
     return false;
   }
   return input->streams[stream_index]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO;
+}
+
+bool edge_import_worker::is_audio_stream(int stream_index) const
+{
+  const AVFormatContext* input = m_source ? m_source->format_context() : nullptr;
+  if (!input || stream_index < 0 || stream_index >= static_cast<int>(input->nb_streams))
+  {
+    return false;
+  }
+  return input->streams[stream_index]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO;
+}
+
+std::shared_ptr<media_packet> edge_import_worker::transcode_audio(const AVPacket* packet)
+{
+  const AVFormatContext* input = m_source ? m_source->format_context() : nullptr;
+  if (!m_audio_transcoder || !input || !packet)
+  {
+    return nullptr;
+  }
+  const AVStream* in_stream = input->streams[packet->stream_index];
+
+  avpacket_ptr copy(av_packet_alloc(), avpacket_deleter{});
+  if (!copy || av_packet_ref(copy.get(), packet) < 0)
+  {
+    return nullptr;
+  }
+
+  auto media = std::make_shared<media_packet>();
+  media->packet = std::move(copy);
+  media->stream_index = packet->stream_index;
+  media->time_base = in_stream->time_base;
+  media->media_type = AVMEDIA_TYPE_AUDIO;
+  media->sample_rate = in_stream->codecpar->sample_rate;
+  avcodec_parameters_ptr params(avcodec_parameters_alloc(),
+    [](AVCodecParameters* p) { avcodec_parameters_free(&p); });
+  if (!params || avcodec_parameters_copy(params.get(), in_stream->codecpar) < 0)
+  {
+    return nullptr;
+  }
+  media->codec_parameters = std::move(params);
+
+  auto out = m_audio_transcoder->transcode_packet(media);
+  if (out && out->codec_parameters && !m_audio_out_params)
+  {
+    avcodec_parameters_ptr cached(avcodec_parameters_alloc(),
+      [](AVCodecParameters* p) { avcodec_parameters_free(&p); });
+    if (cached && avcodec_parameters_copy(cached.get(), out->codec_parameters.get()) >= 0)
+    {
+      m_audio_out_params = std::move(cached);
+    }
+  }
+  return out;
 }
 
 bool edge_import_worker::write_packet(AVPacket* packet)

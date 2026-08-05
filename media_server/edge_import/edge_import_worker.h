@@ -14,6 +14,7 @@ extern "C" {
 }
 
 #include "edge_import/replay_source.h"
+#include "writer/sync_packet_transcoder.h"
 #include "interfaces/media_packet.h"
 
 /// One pull of a camera-side (edge / SD card) recording.
@@ -93,6 +94,9 @@ private:
   void close_segment();
   [[nodiscard]] bool write_packet(AVPacket* packet);
   [[nodiscard]] bool is_video_stream(int stream_index) const;
+  [[nodiscard]] bool is_audio_stream(int stream_index) const;
+  /// Runs one audio packet through the encoder, returning what came out (may be nothing yet).
+  [[nodiscard]] std::shared_ptr<media_packet> transcode_audio(const AVPacket* packet);
 
   edge_import_settings m_settings;
   const std::atomic_bool& m_cancel;
@@ -101,6 +105,23 @@ private:
   std::unique_ptr<replay_source> m_source;
   avformat_context_ptr m_output = nullptr;
   std::unordered_map<int, output_stream_state> m_streams;
+
+  /// Set when the camera's audio has to be re-encoded before it can go into the archive.
+  ///
+  /// The live path always stores AAC (segment_writer's codec_config), and HLS carries nothing else
+  /// anyway — G.711 or G.726 copied verbatim would give a clip no browser can play, and the failure
+  /// is not "no sound" but the whole clip refusing to start.
+  bool m_transcode_audio = false;
+  /// Output parameters of the audio encoder. Known only once it has produced a packet, and needed
+  /// before the muxer's header is written — hence the wait in the read loop.
+  avcodec_parameters_ptr m_audio_out_params;
+  std::unique_ptr<sync_packet_transcoder> m_audio_transcoder;
+  /// Video held back while waiting for those parameters, so the wait costs no footage.
+  std::vector<avpacket_ptr> m_pending_video;
+  /// Where the held run begins. The clip must be stamped from it, not from the packet that happened
+  /// to open the segment, or it would claim to start later than the footage inside it.
+  std::chrono::system_clock::time_point m_pending_start_ts{};
+  std::chrono::milliseconds m_pending_start_offset{};
 
   std::chrono::milliseconds m_window{};
   bool m_window_covered = false;
