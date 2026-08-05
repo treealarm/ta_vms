@@ -107,8 +107,10 @@ public sealed class LivenessSweeper(
     }
 
     var now = DateTime.UtcNow;
+    // Every configured stream, for deciding what "silent" means…
     var expected = new List<(string Camera, string Stream)>();
-    var recordingByKey = new Dictionary<(string Camera, string Stream), bool>();
+    // …and the subset that is supposed to be recording, which is the only kind worth a row.
+    var recording = new HashSet<(string Camera, string Stream)>();
     foreach (var camera in cameras)
     {
       if (camera.HasDisabled && camera.Disabled)
@@ -119,7 +121,8 @@ public sealed class LivenessSweeper(
           continue;
         var key = SourceLivenessTracker.Key(camera.CameraId, stream.StreamName);
         expected.Add(key);
-        recordingByKey[key] = RecordingExpected(camera, stream);
+        if (RecordingExpected(camera, stream))
+          recording.Add(key);
       }
     }
 
@@ -131,10 +134,11 @@ public sealed class LivenessSweeper(
 
     foreach (var key in silent)
     {
-      if (tracker.HasOpenOutage(key))
+      // A silent stream with recording off is not a gap: nothing was going to be written, so there
+      // is nothing to restore from the camera later.
+      if (!recording.Contains(key) || tracker.HasOpenOutage(key))
         continue;
-      await tracker.OpenForSilenceAsync(
-        key.Camera, key.Stream, cause, recordingByKey.GetValueOrDefault(key), ct);
+      await tracker.OpenForSilenceAsync(key.Camera, key.Stream, cause, ct);
     }
 
     // A stream that left the configuration was taken out deliberately — that is not an outage.
@@ -154,7 +158,7 @@ public sealed class LivenessSweeper(
   /// <summary>
   /// Whether the configuration says this stream should be recording — the same precedence
   /// media_server applies (an open schedule window beats an override, which beats the base
-  /// profile). Only a fallback: a live heartbeat carries the observed flag and is preferred.
+  /// profile). Used for silence, where no heartbeat is available to say so.
   /// </summary>
   private static bool RecordingExpected(CfgCameraSetup camera, CameraStream stream)
   {

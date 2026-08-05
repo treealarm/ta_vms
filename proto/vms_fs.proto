@@ -367,6 +367,10 @@ message SourceLiveness {
   // Last packet actually received. THE boundary of an outage — the report time is never used for
   // that, or every interval would be off by up to one heartbeat period at each end.
   optional google.protobuf.Timestamp last_frame_ts = 4;
+  // First packet after the source came back. Where an open outage ends — last_frame_ts cannot say,
+  // because it keeps advancing and by report time points at the newest packet, which would stretch
+  // the recorded gap by up to one heartbeat period.
+  optional google.protobuf.Timestamp recovered_frame_ts = 6;
   // Whether recording was supposed to be running at this moment (recording_policy != off, which
   // already accounts for schedules and overrides). A heartbeat gap with this set is an archive gap;
   // without it, merely a camera that was offline while nothing was being recorded anyway.
@@ -379,6 +383,8 @@ message ReportSourceLivenessRequest {
 }
 
 // One recorded interval of source unavailability. ended_ts unset = happening right now.
+// Only streams that were supposed to be recording get one: an outage with recording off costs no
+// footage, so it is never written.
 message SourceOutageRow {
   string outage_uid  = 1;
   string camera_id   = 2;
@@ -386,11 +392,10 @@ message SourceOutageRow {
   google.protobuf.Timestamp started_ts = 4;
   optional google.protobuf.Timestamp ended_ts = 5;
   string cause = 6;                 // link_lost | server_down
-  bool   recording_expected = 7;    // false => an offline camera, not an archive gap
-  string state = 8;                 // open | filling | filled | exhausted | partial | held | ignored
-  int64  filled_ms = 9;             // display-only cache; clips are the source of truth
-  int32  attempts  = 10;
-  string message   = 11;
+  string state = 7;                 // open | filling | filled | exhausted | partial | held | ignored
+  int64  filled_ms = 8;             // display-only cache; clips are the source of truth
+  int32  attempts  = 9;
+  string message   = 10;
 }
 
 message ListSourceOutagesRequest {

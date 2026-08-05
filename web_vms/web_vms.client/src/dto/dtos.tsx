@@ -305,8 +305,8 @@ export type RecordingTimelineResponseDto = {
 /**
  * One interval a camera's source was unavailable — why the archive has a hole there.
  *
- * `recordingExpected` is what separates an archive gap from plain camera-health history: an outage
- * while recording was off cost nothing.
+ * Only streams that were supposed to be recording produce one: with recording off nothing was going
+ * to be written, so there is nothing to restore from the camera and no gap to report.
  */
 export type SourceOutageDto = {
   outageUid: string
@@ -317,7 +317,6 @@ export type SourceOutageDto = {
   endedTs?: string
   /** `link_lost` (this camera) or `server_down` (the whole node went quiet). */
   cause: string
-  recordingExpected: boolean
   /** `open|filling|filled|exhausted|partial|held|ignored`. */
   state: string
   /** Covered by clips, for display only — decisions are made from the archive itself. */

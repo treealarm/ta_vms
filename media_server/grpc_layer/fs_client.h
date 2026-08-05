@@ -73,6 +73,7 @@ public:
     std::string stream_name;
     bool alive = false;
     std::optional<std::chrono::system_clock::time_point> last_frame_ts;
+    std::optional<std::chrono::system_clock::time_point> recovered_frame_ts;
     bool recording_expected = false;
   };
 

@@ -39,7 +39,6 @@ public sealed class ArchiveGapsController(
     StartedTs = r.StartedTs.ToDateTime(),
     EndedTs = r.EndedTs?.ToDateTime(),
     Cause = r.Cause,
-    RecordingExpected = r.RecordingExpected,
     State = r.State,
     FilledMs = r.FilledMs,
     Attempts = r.Attempts,
@@ -73,9 +72,6 @@ public sealed class ArchiveGapsController(
     [FromQuery] string? from,
     [FromQuery] string? to,
     [FromQuery] int? limit,
-    // Camera health is the whole picture; the archive-gap view wants only the intervals that
-    // actually cost recordings.
-    [FromQuery] bool? recordingOnly,
     CancellationToken ct)
   {
     var scope = await access.ScopeAsync(User, CameraAction.ViewArchive, ct);
@@ -104,7 +100,6 @@ public sealed class ArchiveGapsController(
       // Filtered after the query rather than inside VmsFs, so an instance never has to know which
       // cameras this particular caller may see.
       .Where(o => scope.Contains(o.CameraId))
-      .Where(o => recordingOnly != true || o.RecordingExpected)
       .Select(ToDto)
       .OrderByDescending(o => o.StartedTs)
       .ToList();

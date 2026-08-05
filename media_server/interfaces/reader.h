@@ -18,6 +18,9 @@ struct source_liveness
 {
   bool alive = false;
   std::optional<std::chrono::system_clock::time_point> last_frame_ts;
+  /// First packet received after the source came back — where the outage ended. Unset until a
+  /// recovery has happened at least once.
+  std::optional<std::chrono::system_clock::time_point> recovered_frame_ts;
 };
 
 class reader : public sink_container {

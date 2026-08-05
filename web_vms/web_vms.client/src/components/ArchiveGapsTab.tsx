@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Box,
   Button,
@@ -19,19 +19,29 @@ import {
 } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 
-import type { EpisodeDto, SourceOutageDto } from '../dto/dtos'
+import type {
+  EdgeImportJobDto,
+  EdgeIntervalsDto,
+  EpisodeDto,
+  SourceOutageDto
+} from '../dto/dtos'
 import { useAppDispatch, useAppSelector } from '../store'
 import { getErrorMessage } from '../store/api'
 import { fetchRecordingTimeline, selectWallCoverage, wallCoverageKey } from '../store/wallCoverageSlice'
-import { complementSegments, type Segment } from '../utils/archiveRanges'
-import { msToX } from '../utils/timelineTicks'
+import { complementSegments, intersectSegments, type Segment } from '../utils/archiveRanges'
+import EdgeMediaPreview, { type EdgePreviewTarget } from './EdgeMediaPreview'
 import EventOpenInPlayback from './EventOpenInPlayback'
-import WallTimelineTrack from './wall/WallTimelineTrack'
 
-const COLUMN_MAX_HEIGHT = 'min(75vh, 900px)'
+// Fixed, not a maximum: with a max the list shrinks to its content and drags the controls beneath
+// it up and down as rows come and go. The controls belong in one place regardless of what is in the
+// list, so the column keeps its height and the list scrolls inside it.
+const COLUMN_HEIGHT = 'min(75vh, 900px)'
 const AUTO_REFRESH_MS = 15_000
-const TRACK_PX = 640
-const TRACK_HEIGHT = 22
+// Nominal width the band is quantised against: gaps thinner than one pixel of it are not worth
+// drawing, and asking the server for them only makes the answer bigger.
+const BAND_PX = 640
+
+const IMPORT_POLL_MS = 2000
 
 const WINDOWS = [
   { key: '24h', ms: 24 * 3600_000 },
@@ -39,19 +49,10 @@ const WINDOWS = [
   { key: '30d', ms: 30 * 24 * 3600_000 },
 ] as const
 
-/** Context around the outage, so its edges are visible against the recording on either side. */
-const PAD_RATIO = 0.25
-const MIN_PAD_MS = 60_000
-
 function gapWindow(gap: SourceOutageDto, nowMs: number): Segment {
   const startMs = Date.parse(gap.startedTs)
   const endMs = gap.endedTs ? Date.parse(gap.endedTs) : nowMs
   return { startMs, endMs: Math.max(endMs, startMs + 1000) }
-}
-
-function paddedWindow(win: Segment): Segment {
-  const pad = Math.max(MIN_PAD_MS, (win.endMs - win.startMs) * PAD_RATIO)
-  return { startMs: win.startMs - pad, endMs: win.endMs + pad }
 }
 
 function formatDuration(ms: number): string {
@@ -74,6 +75,33 @@ function stateColor(state: string): 'default' | 'success' | 'warning' | 'error' 
   }
 }
 
+
+/** What the camera still holds inside a window, as plain intervals plus the token to replay them. */
+type CameraSpan = Segment & { recordingToken: string }
+
+async function fetchCameraSpans(
+  cameraId: string,
+  win: Segment,
+  signal: AbortSignal
+): Promise<CameraSpan[]> {
+  const qs = new URLSearchParams({
+    from: new Date(win.startMs).toISOString(),
+    to: new Date(win.endMs).toISOString(),
+    maxResults: '200',
+  })
+  const response = await fetch(
+    `/api/edge-archive/cameras/${encodeURIComponent(cameraId)}/intervals?${qs}`, { signal })
+  if (!response.ok) throw new Error(await getErrorMessage(response))
+  const body = (await response.json()) as EdgeIntervalsDto
+  return (body.intervals ?? [])
+    .map((i) => ({
+      startMs: Date.parse(i.startTime),
+      endMs: Date.parse(i.endTime),
+      recordingToken: i.recordingToken,
+    }))
+    .filter((s) => Number.isFinite(s.startMs) && Number.isFinite(s.endMs) && s.endMs > s.startMs)
+}
+
 export default function ArchiveGapsTab() {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
@@ -85,14 +113,18 @@ export default function ArchiveGapsTab() {
   const [error, setError] = useState<string | null>(null)
   const [cameraFilter, setCameraFilter] = useState('')
   const [windowKey, setWindowKey] = useState<typeof WINDOWS[number]['key']>('24h')
-  // On by default: the tab exists to explain holes in the archive, and outages while nothing was
-  // being recorded are camera history rather than lost footage.
-  const [recordingOnly, setRecordingOnly] = useState(true)
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [selectedUid, setSelectedUid] = useState<string | null>(null)
   // Re-rendered every tick would move every open outage's end under the operator's cursor; this is
   // sampled once per load instead.
   const [nowMs, setNowMs] = useState(() => Date.now())
+  const [refill, setRefill] =
+    useState<{ done: number; total: number; label: string; fraction: number } | null>(null)
+  const [refillError, setRefillError] = useState<string | null>(null)
+  const [preview, setPreview] = useState<EdgePreviewTarget | null>(null)
+  // Set by the Cancel button and read between pieces; the job already running is cancelled through
+  // the API, and the loop stops rather than starting the next one.
+  const cancelRefill = useRef(false)
 
   const windowMs = WINDOWS.find((w) => w.key === windowKey)?.ms ?? WINDOWS[0].ms
 
@@ -105,7 +137,6 @@ export default function ArchiveGapsTab() {
       qs.set('from', new Date(now - windowMs).toISOString())
       qs.set('to', new Date(now).toISOString())
       if (cameraFilter) qs.set('cameraId', cameraFilter)
-      if (recordingOnly) qs.set('recordingOnly', 'true')
       const response = await fetch(`/api/gaps?${qs.toString()}`)
       if (!response.ok) throw new Error(await getErrorMessage(response))
       const rows = (await response.json()) as SourceOutageDto[]
@@ -119,7 +150,7 @@ export default function ArchiveGapsTab() {
     } finally {
       setLoading(false)
     }
-  }, [cameraFilter, recordingOnly, windowMs])
+  }, [cameraFilter, windowMs])
 
   useEffect(() => { void load() }, [load])
 
@@ -138,13 +169,13 @@ export default function ArchiveGapsTab() {
   // only honest answer to "how much of this has been patched" — filledMs is a cache and may lag.
   const coverageQuery = useMemo(() => {
     if (!selected) return null
-    const padded = paddedWindow(gapWindow(selected, nowMs))
+    const win = gapWindow(selected, nowMs)
     return {
       cameraIds: [selected.cameraId],
       streamName: selected.streamName || undefined,
-      fromUtc: new Date(padded.startMs).toISOString(),
-      toUtc: new Date(padded.endMs).toISOString(),
-      minGapMs: Math.max(1000, Math.round((padded.endMs - padded.startMs) / TRACK_PX)),
+      fromUtc: new Date(win.startMs).toISOString(),
+      toUtc: new Date(win.endMs).toISOString(),
+      minGapMs: Math.max(1000, Math.round((win.endMs - win.startMs) / BAND_PX)),
     }
   }, [selected, nowMs])
 
@@ -163,6 +194,135 @@ export default function ArchiveGapsTab() {
     if (!selected) return []
     return complementSegments(coverage, gapWindow(selected, nowMs))
   }, [coverage, selected, nowMs])
+
+  /**
+   * Pulls the parts of the gap the archive is missing back from the camera, one at a time.
+   *
+   * What is still missing is recomputed from the archive before every piece, so an interrupted run
+   * resumes where it stopped instead of starting over — clips already written are simply no longer
+   * missing. Intersecting with what the camera reports also stops the job from asking for footage
+   * the card has already overwritten.
+   */
+  const runRefill = useCallback(async () => {
+    if (!selected) return
+    cancelRefill.current = false
+    setRefillError(null)
+
+    const controller = new AbortController()
+    const win = gapWindow(selected, Date.now())
+    try {
+      const available = await fetchCameraSpans(selected.cameraId, win, controller.signal)
+      if (available.length === 0) {
+        setRefillError(t('gaps.nothingOnCamera'))
+        return
+      }
+
+      // Planned once for the progress count; each piece is re-checked against the archive below.
+      const planned = intersectSegments(complementSegments(coverage, win), available)
+      if (planned.length === 0) {
+        setRefillError(t('gaps.alreadyComplete'))
+        return
+      }
+
+      for (let i = 0; i < planned.length; i += 1) {
+        if (cancelRefill.current) break
+        setRefill({
+          done: i,
+          total: planned.length,
+          label: new Date(planned[i].startMs).toLocaleTimeString(),
+          fraction: 0,
+        })
+
+        // Fresh coverage, so a piece finished by a previous run — or partially written before a
+        // failure — is not pulled again.
+        const fresh = await dispatch(fetchRecordingTimeline({
+          cameraIds: [selected.cameraId],
+          streamName: selected.streamName || undefined,
+          fromUtc: new Date(planned[i].startMs).toISOString(),
+          toUtc: new Date(planned[i].endMs).toISOString(),
+          minGapMs: 1000,
+        })).unwrap()
+        const have: Segment[] = (fresh.tracks ?? [])
+          .flatMap((track) => track.intervals ?? [])
+          .map((iv) => ({ startMs: Date.parse(iv.startTime), endMs: Date.parse(iv.endTime) }))
+          .filter((seg) => Number.isFinite(seg.startMs) && Number.isFinite(seg.endMs))
+        const todo = intersectSegments(complementSegments(have, planned[i]), available)
+        if (todo.length === 0) continue
+
+        for (const piece of todo) {
+          if (cancelRefill.current) break
+          const token = available.find((a) => a.startMs <= piece.startMs && a.endMs >= piece.endMs)
+            ?? available.find((a) => a.endMs > piece.startMs && a.startMs < piece.endMs)
+          if (!token) continue
+
+          const started = await fetch(
+            `/api/edge-archive/cameras/${encodeURIComponent(selected.cameraId)}/imports`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                recordingToken: token.recordingToken,
+                streamName: selected.streamName || undefined,
+                startTime: new Date(piece.startMs).toISOString(),
+                endTime: new Date(piece.endMs).toISOString(),
+                exportToFile: false,
+              }),
+            })
+          if (!started.ok) {
+            setRefillError(await getErrorMessage(started))
+            return
+          }
+          const { jobId } = (await started.json()) as { jobId: string }
+          if (!(await awaitJob(selected.cameraId, jobId, piece))) return
+        }
+      }
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') {
+        setRefillError(e instanceof Error ? e.message : String(e))
+      }
+    } finally {
+      setRefill(null)
+      void load()
+      // The coverage behind the band is cached by query, and a closed gap's query does not change —
+      // without an explicit refetch the bar would keep showing what was there before the import.
+      if (coverageQuery) void dispatch(fetchRecordingTimeline(coverageQuery))
+    }
+  }, [selected, coverage, coverageQuery, dispatch, load, t])
+
+  /** Waits for one import to finish, reporting its progress. False = failed, cancelled or aborted. */
+  const awaitJob = useCallback(async (
+    cameraId: string, jobId: string, piece: Segment): Promise<boolean> => {
+    for (;;) {
+      if (cancelRefill.current)
+      {
+        // The device runs one import at a time; leaving it running would block everything after.
+        await fetch(`/api/edge-archive/cameras/${encodeURIComponent(cameraId)}/imports/${jobId}`,
+          { method: 'DELETE' }).catch(() => undefined)
+        return false
+      }
+      await new Promise((resolve) => setTimeout(resolve, IMPORT_POLL_MS))
+      const response = await fetch(`/api/edge-archive/cameras/${encodeURIComponent(cameraId)}/imports`)
+      if (!response.ok) return false
+      const jobs = (await response.json()) as EdgeImportJobDto[]
+      const job = jobs.find((j) => j.jobId === jobId)
+      if (!job) return false
+      if (job.state === 'running')
+      {
+        // How far into this piece the pull has got. Without it a long stretch would show a bar
+        // pinned at whatever the piece counter says for minutes on end.
+        const at = job.position ? Date.parse(job.position) : NaN
+        if (Number.isFinite(at) && piece.endMs > piece.startMs)
+        {
+          const fraction = Math.min(1, Math.max(0, (at - piece.startMs) / (piece.endMs - piece.startMs)))
+          setRefill((prev) => (prev ? { ...prev, fraction } : prev))
+        }
+        continue
+      }
+      if (job.state === 'completed') return true
+      setRefillError(job.message || t('gaps.refillFailed'))
+      return false
+    }
+  }, [t])
 
   const cameraLabel = (id: string) => camerasMap[id]?.name || id
 
@@ -201,7 +361,6 @@ export default function ArchiveGapsTab() {
         </Typography>
         <Typography variant="caption" color="text.secondary" component="div">
           {t(`gaps.cause.${gap.cause}`, gap.cause)}
-          {!gap.recordingExpected ? ` · ${t('gaps.notRecorded')}` : ''}
         </Typography>
       </ListItemButton>
     )
@@ -220,63 +379,85 @@ export default function ArchiveGapsTab() {
       }
     : null
 
-  const renderTimeline = () => {
+  const renderBand = () => {
     if (!selected) return null
     const win = gapWindow(selected, nowMs)
-    const padded = paddedWindow(win)
-    const view = { startMs: padded.startMs, endMs: padded.endMs }
-    const band = (seg: Segment, tone: 'warning' | 'error', hatched: boolean, key: string) => {
-      const left = msToX(Math.max(seg.startMs, view.startMs), view, TRACK_PX)
-      const right = msToX(Math.min(seg.endMs, view.endMs), view, TRACK_PX)
-      if (right <= 0 || left >= TRACK_PX) return null
-      return (
-        <Box
-          key={key}
-          sx={{
-            position: 'absolute',
-            top: 0,
-            bottom: 0,
-            left: `${left}px`,
-            width: `${Math.max(1, right - left)}px`,
-            // Hatching, not a fourth colour: primary and warning already mean something on this
-            // timeline, and one more flat shade would be read as another kind of coverage.
-            backgroundColor: (th) => alpha(th.palette[tone].main, 0.25),
-            backgroundImage: hatched
-              ? 'repeating-linear-gradient(45deg, rgba(255,255,255,.35) 0 3px, transparent 3px 6px)'
-              : undefined,
-          }}
-        />
-      )
-    }
+    const span = Math.max(1, win.endMs - win.startMs)
+    // Only what lies inside the gap. The surrounding archive is deliberately not drawn: it answers a
+    // question this tab does not ask (the monitor shows it), and mixing it in made the band read as
+    // "recording coverage" rather than "how much of this hole has been filled".
+    const filled = intersectSegments(coverage, [win])
+    const pct = Math.round((filled.reduce((a, sg) => a + (sg.endMs - sg.startMs), 0) / span) * 100)
 
-    const coveredInGap = Math.max(0, (win.endMs - win.startMs) - missing.reduce((a, s) => a + (s.endMs - s.startMs), 0))
-    const pct = win.endMs > win.startMs ? Math.round((coveredInGap / (win.endMs - win.startMs)) * 100) : 0
+    const piece = (seg: Segment, key: string, patched: boolean) => (
+      <Box
+        key={key}
+        onClick={patched ? () => setPreview({
+          kind: 'archive',
+          cameraId: selected.cameraId,
+          from: new Date(seg.startMs).toISOString(),
+          to: new Date(seg.endMs).toISOString(),
+          label: `${new Date(seg.startMs).toLocaleTimeString()} — ${new Date(seg.endMs).toLocaleTimeString()}`,
+        }) : undefined}
+        title={patched ? t('gaps.playPatched') : undefined}
+        sx={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: `${((Math.max(seg.startMs, win.startMs) - win.startMs) / span) * 100}%`,
+          width: `${Math.max(0.5, ((Math.min(seg.endMs, win.endMs) - Math.max(seg.startMs, win.startMs)) / span) * 100)}%`,
+          bgcolor: (th) => alpha(patched ? th.palette.success.main : th.palette.error.main, patched ? 0.7 : 0.25),
+          backgroundImage: patched
+            ? undefined
+            : 'repeating-linear-gradient(45deg, rgba(255,255,255,.35) 0 3px, transparent 3px 6px)',
+          cursor: patched ? 'pointer' : 'default',
+        }}
+      />
+    )
 
     return (
-      <Stack spacing={1}>
-        <Box sx={{ width: TRACK_PX, maxWidth: '100%' }}>
-          <WallTimelineTrack
-            label={cameraLabel(selected.cameraId)}
-            segments={coverage}
-            win={view}
-            pxWidth={TRACK_PX}
-            height={TRACK_HEIGHT}
-            emphasis
-          >
-            {band(win, 'warning', false, 'outage')}
-            {missing.map((s, i) => band(s, 'error', true, `missing-${i}`))}
-          </WallTimelineTrack>
+      <Stack spacing={0.75}>
+        <Box sx={{
+          position: 'relative',
+          height: 26,
+          borderRadius: '3px',
+          overflow: 'hidden',
+          bgcolor: (th) => alpha(th.palette.text.primary, 0.06),
+        }}>
+          {missing.map((sg, i) => piece(sg, `missing-${i}`, false))}
+          {filled.map((sg, i) => piece(sg, `filled-${i}`, true))}
         </Box>
-        <Stack direction="row" spacing={2}>
+
+        <Stack direction="row" spacing={1}>
           <Typography variant="caption" color="text.secondary">
-            {new Date(view.startMs).toLocaleTimeString()}
+            {new Date(win.startMs).toLocaleString()}
           </Typography>
           <Box sx={{ flex: 1 }} />
           <Typography variant="caption" color="text.secondary">
-            {new Date(view.endMs).toLocaleTimeString()}
+            {selected.endedTs ? new Date(win.endMs).toLocaleString() : t('gaps.ongoing')}
           </Typography>
         </Stack>
-        <Typography variant="body2">{t('gaps.covered', { pct })}</Typography>
+
+        {/* Named rather than left to colour alone: the band shows two things and only two. */}
+        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Box sx={{ width: 12, height: 12, borderRadius: '2px',
+              bgcolor: (th) => alpha(th.palette.success.main, 0.7) }} />
+            <Typography variant="caption" color="text.secondary">{t('gaps.legendPatched')}</Typography>
+          </Stack>
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Box sx={{
+              width: 12, height: 12, borderRadius: '2px',
+              bgcolor: (th) => alpha(th.palette.error.main, 0.25),
+              backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,.35) 0 3px, transparent 3px 6px)',
+            }} />
+            <Typography variant="caption" color="text.secondary">{t('gaps.legendMissing')}</Typography>
+          </Stack>
+          <Box sx={{ flex: 1 }} />
+          <Typography variant="body2">
+            {t('gaps.covered', { pct })} · {formatDuration(span)}
+          </Typography>
+        </Stack>
       </Stack>
     )
   }
@@ -297,7 +478,7 @@ export default function ArchiveGapsTab() {
             <Box sx={{
               width: { xs: '100%', md: 280 }, flexShrink: 0,
               display: 'flex', flexDirection: 'column',
-              maxHeight: { md: COLUMN_MAX_HEIGHT }
+              height: { xs: 'auto', md: COLUMN_HEIGHT }
             }}>
               <Stack direction="row" spacing={1} sx={{ mb: 1, flexShrink: 0 }}>
                 <TextField
@@ -328,7 +509,7 @@ export default function ArchiveGapsTab() {
 
               <Box sx={{
                 border: 1, borderColor: 'divider', borderRadius: 1,
-                flex: 1, minHeight: 0, maxHeight: { xs: 320, md: 'none' }, overflow: 'auto'
+                flex: 1, minHeight: 0, height: { xs: 320, md: 'auto' }, overflow: 'auto'
               }}>
                 <List dense disablePadding>
                   {gaps.map(renderGap)}
@@ -349,10 +530,6 @@ export default function ArchiveGapsTab() {
 
               <Stack sx={{ mt: 0.5, flexShrink: 0 }}>
                 <FormControlLabel
-                  control={<Switch size="small" checked={recordingOnly} onChange={(e) => setRecordingOnly(e.target.checked)} />}
-                  label={<Typography variant="caption" color="text.secondary">{t('gaps.recordingOnly')}</Typography>}
-                />
-                <FormControlLabel
                   control={<Switch size="small" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />}
                   label={<Typography variant="caption" color="text.secondary">{t('events.autoRefresh', 'Auto-refresh')}</Typography>}
                 />
@@ -367,10 +544,37 @@ export default function ArchiveGapsTab() {
                       {cameraLabel(selected.cameraId)}
                       {selected.streamName ? ` / ${selected.streamName}` : ''}
                     </Typography>
+                    {refill ? (
+                      <Button size="small" color="warning" onClick={() => { cancelRefill.current = true }}>
+                        {t('gaps.cancelRefill')}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="small"
+                        variant="contained"
+                        disabled={missing.length === 0}
+                        onClick={() => void runRefill()}
+                      >
+                        {t('gaps.refill')}
+                      </Button>
+                    )}
                     <EventOpenInPlayback episode={asEpisode} />
                   </Stack>
 
-                  {renderTimeline()}
+                  {refill && (
+                    <Stack spacing={0.5}>
+                      <Typography variant="caption" color="text.secondary">
+                        {t('gaps.refilling', { done: refill.done + 1, total: refill.total, at: refill.label })}
+                      </Typography>
+                      <LinearProgress
+                        variant="determinate"
+                        value={Math.round(((refill.done + refill.fraction) / Math.max(1, refill.total)) * 100)}
+                      />
+                    </Stack>
+                  )}
+                  {refillError && <Typography variant="body2" color="error">{refillError}</Typography>}
+
+                  {renderBand()}
 
                   <Divider />
 
@@ -382,15 +586,16 @@ export default function ArchiveGapsTab() {
                       {t('gaps.to')}: {selected.endedTs ? new Date(selected.endedTs).toLocaleString() : t('gaps.ongoing')}
                     </Typography>
                     <Typography variant="body2">
+                      {t('gaps.duration')}: {formatDuration(
+                        gapWindow(selected, nowMs).endMs - gapWindow(selected, nowMs).startMs)}
+                    </Typography>
+                    <Typography variant="body2">
                       {t('gaps.causeLabel')}: {t(`gaps.cause.${selected.cause}`, selected.cause)}
                     </Typography>
                     <Typography variant="body2">
                       {t('gaps.stateLabel')}: {t(`gaps.state.${selected.state}`, selected.state)}
                       {selected.attempts > 0 ? ` (${t('gaps.attempts', { count: selected.attempts })})` : ''}
                     </Typography>
-                    {!selected.recordingExpected && (
-                      <Typography variant="body2" color="text.secondary">{t('gaps.notRecordedHint')}</Typography>
-                    )}
                     {selected.message && (
                       <Typography variant="body2" color="text.secondary">{selected.message}</Typography>
                     )}
@@ -398,6 +603,21 @@ export default function ArchiveGapsTab() {
                 </Stack>
               ) : (
                 <Typography variant="body2" color="text.secondary">{t('gaps.noSelection')}</Typography>
+              )}
+            </Box>
+
+            {/* Right: what has actually been recovered, played back without leaving the page. */}
+            <Box sx={{
+              width: { xs: '100%', md: 380 }, flexShrink: 0,
+              maxHeight: { xs: 'none', md: COLUMN_HEIGHT }, overflow: 'auto'
+            }}>
+              {preview ? (
+                <Stack spacing={1}>
+                  <Typography variant="subtitle2">{preview.label}</Typography>
+                  <EdgeMediaPreview target={preview} />
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary">{t('gaps.previewPlaceholder')}</Typography>
               )}
             </Box>
           </Stack>

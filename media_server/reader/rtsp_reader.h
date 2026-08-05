@@ -65,6 +65,10 @@ private:
   // Microseconds since the epoch; 0 = no packet has ever arrived. A time_point is not trivially
   // copyable enough for std::atomic on every toolchain, so the count travels instead.
   std::atomic_int64_t m_last_frame_us{ 0 };
+  // First packet after the source came back, which is where the outage actually ended. Not the same
+  // as m_last_frame_us: that one keeps advancing, so by the time a heartbeat goes out it points at
+  // whatever arrived last, and the recorded gap would stretch to the next report.
+  std::atomic_int64_t m_recovered_frame_us{ 0 };
 
   std::string m_cam_id;
   std::string m_profile_token;

@@ -48,6 +48,7 @@ public:
     // exact boundary of an outage; the report time is deliberately not used for that.
     bool source_alive = false;
     std::optional<std::chrono::system_clock::time_point> last_frame_ts;
+    std::optional<std::chrono::system_clock::time_point> recovered_frame_ts;
   };
 
   /// Closes the open segment of every stream whose source has dropped, so the clip ends on the last

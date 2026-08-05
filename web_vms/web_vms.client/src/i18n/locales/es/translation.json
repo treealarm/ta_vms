@@ -705,10 +705,7 @@
     "noRows": "Sin cortes en este periodo",
     "noSelection": "Seleccione un corte",
     "ongoing": "en curso",
-    "recordingOnly": "Solo huecos de grabación",
-    "notRecorded": "grabación apagada",
-    "notRecordedHint": "La grabación no estaba activa, así que este corte no costó vídeo.",
-    "covered": "Cubierto por el archivo: {{pct}}%",
+    "covered": "Restaurado: {{pct}}%",
     "from": "Desde",
     "to": "Hasta",
     "causeLabel": "Causa",
@@ -731,6 +728,17 @@
       "partial": "Parcialmente rellenado",
       "held": "Retenido por el operador",
       "ignored": "Ignorado"
-    }
+    },
+    "refill": "Restaurar desde la cámara",
+    "cancelRefill": "Cancelar",
+    "refilling": "Restaurando {{done}} de {{total}} (desde {{at}})",
+    "refillFailed": "La importación falló",
+    "nothingOnCamera": "La cámara ya no conserva este periodo",
+    "alreadyComplete": "No falta nada en este hueco",
+    "duration": "Duración",
+    "legendPatched": "Restaurado en el archivo",
+    "legendMissing": "Todavía falta",
+    "playPatched": "Reproducir este fragmento",
+    "previewPlaceholder": "Pulse un fragmento restaurado de la barra para reproducirlo"
   }
 }

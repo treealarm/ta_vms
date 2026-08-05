@@ -75,6 +75,12 @@ source_liveness rtsp_reader::liveness() const
   {
     out.last_frame_ts = std::chrono::system_clock::time_point(std::chrono::microseconds(us));
   }
+  const auto recovered_us = m_recovered_frame_us.load();
+  if (recovered_us != 0)
+  {
+    out.recovered_frame_ts =
+      std::chrono::system_clock::time_point(std::chrono::microseconds(recovered_us));
+  }
   return out;
 }
 
@@ -237,9 +243,16 @@ void rtsp_reader::read_loop()
     last_frame_at = std::chrono::steady_clock::now();
     // Liveness is declared here, not in connect(): that returns true before a single packet has
     // arrived, so "connected but silent" would otherwise read as healthy.
-    m_last_frame_us.store(std::chrono::duration_cast<std::chrono::microseconds>(
-      std::chrono::system_clock::now().time_since_epoch()).count());
-    m_source_alive.store(true);
+    const auto frame_us = std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count();
+    // Wall clock of this host, deliberately: the camera's own clock is frequently hours off, and
+    // these timestamps become archive boundaries.
+    m_last_frame_us.store(frame_us);
+    if (!m_source_alive.exchange(true))
+    {
+      // The transition, so this is the first frame after the silence — the instant the gap closed.
+      m_recovered_frame_us.store(frame_us);
+    }
 
     if (pkt->stream_index == m_video_index)
     {

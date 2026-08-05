@@ -142,6 +142,7 @@ int main(int argc, char** argv)
           .stream_name = s.stream_name,
           .alive = s.source_alive,
           .last_frame_ts = s.last_frame_ts,
+          .recovered_frame_ts = s.recovered_frame_ts,
           .recording_expected = s.is_recording,
         });
       }

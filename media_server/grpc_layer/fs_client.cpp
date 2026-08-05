@@ -159,6 +159,10 @@ void fs_client::report_source_liveness(
     {
       *item->mutable_last_frame_ts() = to_proto_ts(*s.last_frame_ts);
     }
+    if (s.recovered_frame_ts.has_value())
+    {
+      *item->mutable_recovered_frame_ts() = to_proto_ts(*s.recovered_frame_ts);
+    }
   }
 
   vms::fs::OperationStatus response;

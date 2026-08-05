@@ -101,6 +101,25 @@ export function subtractSegments(
   return out
 }
 
+/** Overlap of two sets of intervals — e.g. "missing from the archive" against "still on the card". */
+export function intersectSegments(a: readonly Segment[], b: readonly Segment[]): Segment[] {
+  const left = mergeSegments(a, 0)
+  const right = mergeSegments(b, 0)
+  const out: Segment[] = []
+
+  let i = 0
+  let j = 0
+  while (i < left.length && j < right.length) {
+    const startMs = Math.max(left[i].startMs, right[j].startMs)
+    const endMs = Math.min(left[i].endMs, right[j].endMs)
+    if (endMs > startMs) out.push({ startMs, endMs })
+    // Advance whichever ends first: the other may still overlap what comes next.
+    if (left[i].endMs < right[j].endMs) i += 1
+    else j += 1
+  }
+  return out
+}
+
 export function segmentAt(segs: readonly Segment[], ms: number): Segment | null {
   for (const s of segs) {
     if (ms >= s.startMs && ms < s.endMs) return s

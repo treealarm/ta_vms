@@ -11,7 +11,6 @@ public sealed record SourceOutage(
   DateTime StartedTs,
   DateTime? EndedTs,
   string Cause,
-  bool RecordingExpected,
   string State,
   long FilledMs,
   int Attempts,
@@ -40,7 +39,6 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
     string streamName,
     DateTime startedTs,
     string cause,
-    bool recordingExpected,
     TimeSpan coalesceWindow,
     CancellationToken ct)
   {
@@ -50,7 +48,7 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
         FROM source_outages
         WHERE camera_id = $1 AND stream_name = $2
           AND ended_ts IS NOT NULL
-          AND ended_ts >= $3 - $6::interval
+          AND ended_ts >= $3 - $5::interval
         ORDER BY started_ts DESC
         LIMIT 1
       ), reopened AS (
@@ -58,8 +56,8 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
         WHERE outage_uid = (SELECT outage_uid FROM recent)
         RETURNING started_ts
       ), inserted AS (
-        INSERT INTO source_outages (camera_id, stream_name, started_ts, cause, recording_expected)
-        SELECT $1, $2, $3, $4, $5
+        INSERT INTO source_outages (camera_id, stream_name, started_ts, cause)
+        SELECT $1, $2, $3, $4
         WHERE NOT EXISTS (SELECT 1 FROM recent)
         ON CONFLICT (camera_id, stream_name, started_ts) DO NOTHING
         RETURNING started_ts
@@ -76,7 +74,6 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
     cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
     cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, startedTs);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cause);
-    cmd.Parameters.AddWithValue(NpgsqlDbType.Boolean, recordingExpected);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Interval, coalesceWindow);
 
     var result = await cmd.ExecuteScalarAsync(ct);
@@ -129,7 +126,7 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
   {
     await using var cmd = dataSource.CreateCommand("""
       SELECT outage_uid, camera_id, stream_name, started_ts, ended_ts, cause,
-             recording_expected, state, filled_ms, attempts, message
+             state, filled_ms, attempts, message
       FROM source_outages
       WHERE ($1::text IS NULL OR camera_id = $1)
         AND ($2::timestamptz IS NULL OR COALESCE(ended_ts, now()) >= $2)
@@ -153,11 +150,10 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
         reader.GetDateTime(3),
         reader.IsDBNull(4) ? null : reader.GetDateTime(4),
         reader.GetString(5),
-        reader.GetBoolean(6),
-        reader.GetString(7),
-        reader.GetInt64(8),
-        reader.GetInt32(9),
-        reader.GetString(10)));
+        reader.GetString(6),
+        reader.GetInt64(7),
+        reader.GetInt32(8),
+        reader.GetString(9)));
     }
     return result;
   }

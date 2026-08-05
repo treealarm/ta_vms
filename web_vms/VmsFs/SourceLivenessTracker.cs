@@ -10,9 +10,14 @@ namespace VmsFs;
 /// "No signal" then means one thing whether the camera died or the media server did, and nothing can
 /// be left half-open by a crash — the open rows themselves are the state that survives a restart.
 ///
-/// Boundaries always come from <c>last_frame_ts</c>, never from when a report arrived. Otherwise
-/// every interval would be up to one heartbeat period late at each end, and a backfill would re-pull
-/// footage the archive already has.
+/// Boundaries come from the frames themselves, never from when a report arrived: an interval starts
+/// at the last packet received before the silence and ends at the first one after it. Otherwise both
+/// ends would be up to one heartbeat period out, and a backfill would re-pull footage the archive
+/// already has.
+///
+/// Only streams that were supposed to be recording produce a row. With recording off — no schedule
+/// window, no arming, no alarm — an outage costs no footage, so there is nothing to restore and
+/// nothing worth remembering.
 /// </remarks>
 public sealed class SourceLivenessTracker(
   SourceOutageStore outages,
@@ -50,8 +55,8 @@ public sealed class SourceLivenessTracker(
 
   /// <summary>Applies one heartbeat. Called from the gRPC handler.</summary>
   public async Task ApplyAsync(
-    string cameraId, string streamName, bool alive, DateTime? lastFrameUtc, bool recordingExpected,
-    CancellationToken ct)
+    string cameraId, string streamName, bool alive, DateTime? lastFrameUtc,
+    DateTime? recoveredFrameUtc, bool recordingExpected, CancellationToken ct)
   {
     var key = Key(cameraId, streamName);
     var now = DateTime.UtcNow;
@@ -60,21 +65,28 @@ public sealed class SourceLivenessTracker(
     if (alive)
     {
       _state[key] = new StreamState(now, lastFrameUtc, recordingExpected, true, null);
-      // The end is the first frame after the pause — which is exactly what last_frame_ts holds at
-      // the moment of recovery.
+      // Closed on the FIRST frame after the pause, which media_server reports separately.
+      // last_frame_ts would not do: it advances with every packet, so by the time this report was
+      // assembled it points at the newest one, and the gap would be recorded up to a full heartbeat
+      // period longer than it was — then a backfill would re-pull footage the archive already has.
       if (_openOutages.TryRemove(key, out _))
-        await outages.CloseAsync(cameraId, streamName, lastFrameUtc ?? now, ct);
+        await outages.CloseAsync(cameraId, streamName, recoveredFrameUtc ?? lastFrameUtc ?? now, ct);
       return;
     }
 
     // Dead.
     var pendingSince = previous?.PendingSinceUtc ?? now;
     var lastFrame = lastFrameUtc ?? previous?.LastFrameUtc;
-    _state[key] = new StreamState(now, lastFrame,
-      previous?.RecordingExpected ?? recordingExpected, false, pendingSince);
+    _state[key] = new StreamState(now, lastFrame, recordingExpected, false, pendingSince);
 
     // Held back until the grace window passes, so a blink never reaches the table.
     if (now - pendingSince < Grace || _openOutages.ContainsKey(key))
+      return;
+
+    // The flag as media_server reports it now, not as it was when the source died: it comes from
+    // the stream's recording policy, which the media server still knows while the camera is down.
+    // So a camera that goes offline unrecorded and is armed later does start producing a row.
+    if (!recordingExpected)
       return;
 
     // Resolved only once the interval is actually going to be written: while the source stays dead
@@ -82,21 +94,19 @@ public sealed class SourceLivenessTracker(
     // The interval starts at the last frame we ever saw, never at now.
     var startedAt = lastFrame ?? await FallbackStartAsync(cameraId, streamName, ct);
 
-    await OpenAsync(cameraId, streamName, startedAt,
-      cause: "link_lost",
-      recordingExpected: previous?.RecordingExpected ?? recordingExpected, ct);
+    await OpenAsync(cameraId, streamName, startedAt, cause: "link_lost", ct);
   }
 
   /// <summary>
   /// Opens an interval for a stream that has stopped reporting altogether.
   /// </summary>
-  /// <param name="configRecordingExpected">
-  /// Whether the configuration says this stream should be recording. Used only when no heartbeat
-  /// ever reached this process — after a node-wide restart, which is exactly the case where the gap
-  /// matters most, so defaulting it to false would hide the whole outage from the archive-gap view.
-  /// </param>
+  /// <remarks>
+  /// The caller decides whether the stream was supposed to be recording — from configuration, since
+  /// after a node-wide restart no heartbeat ever reached this process, and that restart is exactly
+  /// the case the whole feature exists for.
+  /// </remarks>
   public async Task OpenForSilenceAsync(
-    string cameraId, string streamName, string cause, bool configRecordingExpected, CancellationToken ct)
+    string cameraId, string streamName, string cause, CancellationToken ct)
   {
     var key = Key(cameraId, streamName);
     if (_openOutages.ContainsKey(key))
@@ -104,8 +114,7 @@ public sealed class SourceLivenessTracker(
 
     var previous = _state.TryGetValue(key, out var p) ? p : null;
     var startedAt = previous?.LastFrameUtc ?? await FallbackStartAsync(cameraId, streamName, ct);
-    await OpenAsync(cameraId, streamName, startedAt, cause,
-      previous?.RecordingExpected ?? configRecordingExpected, ct);
+    await OpenAsync(cameraId, streamName, startedAt, cause, ct);
   }
 
   /// <summary>Streams heard from within <see cref="Stale"/>, so the sweeper can skip them.</summary>
@@ -135,16 +144,15 @@ public sealed class SourceLivenessTracker(
   }
 
   private async Task OpenAsync(
-    string cameraId, string streamName, DateTime startedAt, string cause, bool recordingExpected,
-    CancellationToken ct)
+    string cameraId, string streamName, DateTime startedAt, string cause, CancellationToken ct)
   {
     try
     {
-      await outages.OpenAsync(cameraId, streamName, startedAt, cause, recordingExpected, Grace, ct);
+      await outages.OpenAsync(cameraId, streamName, startedAt, cause, Grace, ct);
       _openOutages[Key(cameraId, streamName)] = 0;
       logger.LogInformation(
-        "Source outage opened for {CameraId}/{StreamName} at {StartedAt:o} ({Cause}, recording={Recording})",
-        cameraId, streamName, startedAt, cause, recordingExpected);
+        "Source outage opened for {CameraId}/{StreamName} at {StartedAt:o} ({Cause})",
+        cameraId, streamName, startedAt, cause);
     }
     catch (Exception ex)
     {

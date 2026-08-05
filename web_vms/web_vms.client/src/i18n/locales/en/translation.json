@@ -705,10 +705,7 @@
     "noRows": "No outages in this window",
     "noSelection": "Select an outage",
     "ongoing": "ongoing",
-    "recordingOnly": "Only gaps in recording",
-    "notRecorded": "recording was off",
-    "notRecordedHint": "Recording was not running at the time, so this outage cost no footage.",
-    "covered": "Covered by the archive: {{pct}}%",
+    "covered": "Restored: {{pct}}%",
     "from": "From",
     "to": "To",
     "causeLabel": "Cause",
@@ -731,6 +728,17 @@
       "partial": "Partially filled",
       "held": "Held by operator",
       "ignored": "Ignored"
-    }
+    },
+    "refill": "Restore from camera",
+    "cancelRefill": "Cancel",
+    "refilling": "Restoring {{done}} of {{total}} (from {{at}})",
+    "refillFailed": "Import failed",
+    "nothingOnCamera": "The camera no longer holds this period",
+    "alreadyComplete": "Nothing is missing in this gap",
+    "duration": "Duration",
+    "legendPatched": "Restored into the archive",
+    "legendMissing": "Still missing",
+    "playPatched": "Play this piece",
+    "previewPlaceholder": "Click a restored piece on the bar to play it"
   }
 }

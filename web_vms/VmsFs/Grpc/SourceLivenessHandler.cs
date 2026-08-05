@@ -19,6 +19,7 @@ public sealed partial class FsServiceImpl
         s.StreamName ?? string.Empty,
         s.Alive,
         s.LastFrameTs?.ToDateTime(),
+        s.RecoveredFrameTs?.ToDateTime(),
         s.RecordingExpected,
         context.CancellationToken);
     }
@@ -46,7 +47,6 @@ public sealed partial class FsServiceImpl
         StreamName = r.StreamName,
         StartedTs = Timestamp.FromDateTime(DateTime.SpecifyKind(r.StartedTs, DateTimeKind.Utc)),
         Cause = r.Cause,
-        RecordingExpected = r.RecordingExpected,
         State = r.State,
         FilledMs = r.FilledMs,
         Attempts = r.Attempts,

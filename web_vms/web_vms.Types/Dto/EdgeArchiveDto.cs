@@ -156,8 +156,8 @@ public record EdgeImportRequestDto
   public string StartTime { get; init; } = string.Empty;
   public string EndTime { get; init; } = string.Empty;
   /// <summary>
-  /// Start of the recording the token addresses. Required: the RTSP seek is an offset from it, and
-  /// without it a mid-recording window lands on the timeline at the wrong wall clock.
+  /// Start of the recording the token addresses. Optional — diagnostics only, since the position is
+  /// sent to the camera as an absolute clock range rather than as an offset from this.
   /// </summary>
   public string RecordingStartTime { get; init; } = string.Empty;
   /// <summary>Produce a downloadable mp4 instead of writing archive clips.</summary>

@@ -312,11 +312,11 @@ public sealed class EdgeArchiveController(
       return BadRequest(new { message = "startTime and endTime must be ISO 8601 timestamps" });
     if (end <= start)
       return BadRequest(new { message = "endTime must be after startTime" });
-    // Without the recording origin the RTSP seek is forced to zero and a mid-recording window would
-    // be stamped with the wrong wall clock — silently corrupting the archive timeline.
-    if (!TryParseUtc(body.RecordingStartTime, out var recordingStart))
-      return BadRequest(new { message = "recordingStartTime is required (ISO 8601)" });
-    if (recordingStart > start)
+    // Optional now: the position goes to the camera as an absolute ONVIF clock range, so it is no
+    // longer derived from the recording's origin. Kept for diagnostics, and still validated when
+    // given, because a caller that supplies a nonsense origin has a bug worth surfacing.
+    var hasRecordingStart = TryParseUtc(body.RecordingStartTime, out var recordingStart);
+    if (hasRecordingStart && recordingStart > start)
       return BadRequest(new { message = "recordingStartTime must be at or before startTime" });
 
     var camera = await manager.Get(cameraId, ct);
@@ -357,7 +357,7 @@ public sealed class EdgeArchiveController(
       ReplayUri = replay.Uri,
       StartUnixMs = ToUnixMs(start),
       EndUnixMs = ToUnixMs(end),
-      RecordingStartUnixMs = ToUnixMs(recordingStart),
+      RecordingStartUnixMs = hasRecordingStart ? ToUnixMs(recordingStart) : 0,
       // The same window in the camera's clock: the card is indexed in the device's time, and the
       // ONVIF PLAY range must be expressed in it or the pull lands on a different hour entirely.
       SeekStartUnixMs = ToUnixMs(start) + replay.ClockOffsetMs,
