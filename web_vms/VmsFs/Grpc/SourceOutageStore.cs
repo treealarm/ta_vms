@@ -84,13 +84,42 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
   public async Task CloseAsync(string cameraId, string streamName, DateTime endedTs, CancellationToken ct)
   {
     await using var cmd = dataSource.CreateCommand("""
-      UPDATE source_outages SET ended_ts = $3
+      -- An interval can never end before it began. The two boundaries come from different reports,
+      -- and one of them being stale must not produce a row that reads backwards.
+      UPDATE source_outages SET ended_ts = GREATEST($3, started_ts)
       WHERE camera_id = $1 AND stream_name = $2 AND ended_ts IS NULL;
       """);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
     cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, endedTs);
     await cmd.ExecuteNonQueryAsync(ct);
+  }
+
+  /// <summary>
+  /// Puts closed gaps back into automation after the coverage they were judged against shrank.
+  /// </summary>
+  /// <remarks>
+  /// "Filled" is terminal on purpose — nothing rescans the whole history. But the verdict is only
+  /// as good as what the archive claimed at the time, and finishing a clip left open by a crash
+  /// removes the minute it was assumed to cover. A gap judged against that assumption has to be
+  /// judged again, or the footage behind it is never fetched.
+  /// </remarks>
+  public async Task<int> ReopenFilledAsync(
+    string cameraId, string streamName, DateTime from, DateTime to, CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand("""
+      UPDATE source_outages
+      SET state = 'open', next_retry_ts = NULL, message = ''
+      WHERE camera_id = $1 AND stream_name = $2
+        AND state = 'filled'
+        AND started_ts < $4
+        AND COALESCE(ended_ts, now()) > $3;
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, from);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, to);
+    return await cmd.ExecuteNonQueryAsync(ct);
   }
 
   /// <summary>Streams that are silent right now — the tracker's state after a restart.</summary>
@@ -109,14 +138,44 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
   /// Last clip end for a stream — the only honest interval start after a node-wide restart, when
   /// no in-memory last-frame timestamp survived. The archive stopped exactly there.
   /// </summary>
-  public async Task<DateTime?> LastClipEndAsync(string cameraId, string streamName, CancellationToken ct)
+  /// <param name="startedBefore">
+  /// Only clips that began before this moment. Without the bound the answer includes recordings the
+  /// stream made *after* the outage — the new run's first clip, for one — and using that as "when
+  /// recording stopped" pushes the start of the gap past its own end.
+  /// </param>
+  public async Task<DateTime?> LastClipEndAsync(
+    string cameraId, string streamName, DateTime startedBefore, CancellationToken ct)
   {
     await using var cmd = dataSource.CreateCommand("""
       SELECT MAX(COALESCE(end_ts, start_ts)) FROM clips
-      WHERE camera_id = $1 AND stream_name = $2;
+      WHERE camera_id = $1 AND stream_name = $2 AND start_ts <= $3;
       """);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, startedBefore);
+    var value = await cmd.ExecuteScalarAsync(ct);
+    return value is DateTime dt ? dt : null;
+  }
+
+  /// <summary>
+  /// When the archive resumed after <paramref name="after"/> — the start of the next clip.
+  /// </summary>
+  /// <remarks>
+  /// For a media server that died and came back, this is the honest end of the hole: the moment
+  /// recording actually resumed, not the moment packets started arriving again. The first frames
+  /// after a reconnect are not written until a keyframe turns up, and nothing before it exists to
+  /// play.
+  /// </remarks>
+  public async Task<DateTime?> FirstClipStartAfterAsync(
+    string cameraId, string streamName, DateTime after, CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand("""
+      SELECT MIN(start_ts) FROM clips
+      WHERE camera_id = $1 AND stream_name = $2 AND start_ts > $3;
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, after);
     var value = await cmd.ExecuteScalarAsync(ct);
     return value is DateTime dt ? dt : null;
   }

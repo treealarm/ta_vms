@@ -709,7 +709,7 @@
     "noRows": "No outages in this window",
     "noSelection": "Select an outage",
     "ongoing": "ongoing",
-    "covered": "Restored: {{pct}}%",
+    "covered": "Covered by the archive: {{pct}}%",
     "from": "From",
     "to": "To",
     "causeLabel": "Cause",
@@ -740,13 +740,15 @@
     "nothingOnCamera": "The camera no longer holds this period",
     "alreadyComplete": "Nothing is missing in this gap",
     "duration": "Duration",
-    "legendPatched": "Restored into the archive",
+    "legendPatched": "Recovered from the camera",
     "legendMissing": "Still missing",
     "playPatched": "Play this piece",
     "previewPlaceholder": "Click a restored piece on the bar to play it",
     "resume": "Return to automatic",
     "recheck": "Re-check status",
     "autoRefilling": "Restoring automatically — reached {{at}}",
-    "recoveredClips": "Recovered clips: {{count}}"
+    "recoveredClips": "Recovered clips: {{count}}",
+    "ofWhichRestored": "recovered from the camera: {{pct}}%",
+    "legendHeld": "Already in the archive"
   }
 }

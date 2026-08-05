@@ -30,7 +30,12 @@ import type {
 import { useAppDispatch, useAppSelector } from '../store'
 import { getErrorMessage } from '../store/api'
 import { fetchRecordingTimeline, selectWallCoverage, wallCoverageKey } from '../store/wallCoverageSlice'
-import { complementSegments, intersectSegments, type Segment } from '../utils/archiveRanges'
+import {
+  complementSegments,
+  intersectSegments,
+  subtractSegments,
+  type Segment
+} from '../utils/archiveRanges'
 import EdgeMediaPreview, { type EdgePreviewTarget } from './EdgeMediaPreview'
 import EventOpenInPlayback from './EventOpenInPlayback'
 
@@ -48,6 +53,9 @@ const IMPORT_POLL_MS = 2000
 // piece cut exactly to the boundary loses the frames around the seam; a second of overlap with the
 // live footage either side costs nothing, since clips are played in order of their own start.
 const IMPORT_MARGIN_MS = 1000
+// Slivers below this are not holes: clip boundaries land on keyframes while the outage came from a
+// report, so the two never agree to the millisecond. Same tolerance the backend applies.
+const FILL_TOLERANCE_MS = 1000
 
 const WINDOWS = [
   { key: '24h', ms: 24 * 3600_000 },
@@ -203,9 +211,15 @@ export default function ArchiveGapsTab() {
     if (coverageQuery) void dispatch(fetchRecordingTimeline(coverageQuery))
   }, [dispatch, coverageQuery])
 
+  // Only footage recovered from the camera closes a gap — the live clips inside one are what the
+  // failing source produced, so they are the reason it exists rather than a repair for it. Same
+  // rule the scheduler and the gateway apply, or the button and the automation would disagree
+  // about what is left to do.
   const missing = useMemo(() => {
     if (!selected) return []
-    return complementSegments(coverage, gapWindow(selected, nowMs))
+    return complementSegments(
+      coverage.filter((seg) => seg.origin === 'edge'), gapWindow(selected, nowMs))
+      .filter((seg) => seg.endMs - seg.startMs >= FILL_TOLERANCE_MS)
   }, [coverage, selected, nowMs])
 
   /**
@@ -415,8 +429,10 @@ export default function ArchiveGapsTab() {
           body: JSON.stringify({
             cameraId: selected.cameraId,
             streamName: selected.streamName || undefined,
-            fromUtc: new Date(win.startMs).toISOString(),
-            toUtc: new Date(win.endMs).toISOString(),
+            // Widened by the same margin the import asks for, or the clip that starts just before
+            // the gap — which is most of them — would not be listed as recovered at all.
+            fromUtc: new Date(win.startMs - IMPORT_MARGIN_MS * 2).toISOString(),
+            toUtc: new Date(win.endMs + IMPORT_MARGIN_MS * 2).toISOString(),
             limit: 50,
           }),
         })
@@ -493,9 +509,27 @@ export default function ArchiveGapsTab() {
     // question this tab does not ask (the monitor shows it), and mixing it in made the band read as
     // "recording coverage" rather than "how much of this hole has been filled".
     const filled = intersectSegments(coverage, [win])
-    const pct = Math.round((filled.reduce((a, sg) => a + (sg.endMs - sg.startMs), 0) / span) * 100)
 
-    const piece = (seg: Segment, key: string, patched: boolean) => (
+    // Split by where the footage came from. Coverage is judged from every clip regardless of origin
+    // — otherwise a gap whose material is already in the archive would be fetched from the camera
+    // again — but calling all of it "restored" claims credit for recordings that were always there.
+    const fromCamera = intersectSegments(
+      recovered
+        .map((clip) => ({
+          startMs: Date.parse(clip.startTime),
+          endMs: clip.endTime ? Date.parse(clip.endTime) : win.endMs,
+        }))
+        .filter((sg) => Number.isFinite(sg.startMs) && Number.isFinite(sg.endMs)),
+      [win])
+    const alreadyHeld = subtractSegments(filled, fromCamera)
+
+    const covered = (segs: Segment[]) => segs.reduce((a, sg) => a + (sg.endMs - sg.startMs), 0)
+    const pct = Math.round((covered(filled) / span) * 100)
+    const restoredPct = Math.round((covered(fromCamera) / span) * 100)
+
+    const piece = (seg: Segment, key: string, kind: 'restored' | 'held' | 'missing') => {
+      const patched = kind !== 'missing'
+      return (
       <Box
         key={key}
         onClick={patched ? () => setPreview({
@@ -512,14 +546,17 @@ export default function ArchiveGapsTab() {
           bottom: 0,
           left: `${((Math.max(seg.startMs, win.startMs) - win.startMs) / span) * 100}%`,
           width: `${Math.max(0.5, ((Math.min(seg.endMs, win.endMs) - Math.max(seg.startMs, win.startMs)) / span) * 100)}%`,
-          bgcolor: (th) => alpha(patched ? th.palette.success.main : th.palette.error.main, patched ? 0.7 : 0.25),
-          backgroundImage: patched
-            ? undefined
-            : 'repeating-linear-gradient(45deg, rgba(255,255,255,.35) 0 3px, transparent 3px 6px)',
+          bgcolor: (th) => kind === 'restored' ? alpha(th.palette.success.main, 0.75)
+            : kind === 'held' ? alpha(th.palette.primary.main, 0.55)
+            : alpha(th.palette.error.main, 0.25),
+          backgroundImage: kind === 'missing'
+            ? 'repeating-linear-gradient(45deg, rgba(255,255,255,.35) 0 3px, transparent 3px 6px)'
+            : undefined,
           cursor: patched ? 'pointer' : 'default',
         }}
       />
-    )
+      )
+    }
 
     return (
       <Stack spacing={0.75}>
@@ -530,8 +567,9 @@ export default function ArchiveGapsTab() {
           overflow: 'hidden',
           bgcolor: (th) => alpha(th.palette.text.primary, 0.06),
         }}>
-          {missing.map((sg, i) => piece(sg, `missing-${i}`, false))}
-          {filled.map((sg, i) => piece(sg, `filled-${i}`, true))}
+          {missing.map((sg, i) => piece(sg, `missing-${i}`, 'missing'))}
+          {alreadyHeld.map((sg, i) => piece(sg, `held-${i}`, 'held'))}
+          {fromCamera.map((sg, i) => piece(sg, `restored-${i}`, 'restored'))}
         </Box>
 
         <Stack direction="row" spacing={1}>
@@ -548,8 +586,13 @@ export default function ArchiveGapsTab() {
         <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
           <Stack direction="row" spacing={0.5} alignItems="center">
             <Box sx={{ width: 12, height: 12, borderRadius: '2px',
-              bgcolor: (th) => alpha(th.palette.success.main, 0.7) }} />
+              bgcolor: (th) => alpha(th.palette.success.main, 0.75) }} />
             <Typography variant="caption" color="text.secondary">{t('gaps.legendPatched')}</Typography>
+          </Stack>
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Box sx={{ width: 12, height: 12, borderRadius: '2px',
+              bgcolor: (th) => alpha(th.palette.primary.main, 0.55) }} />
+            <Typography variant="caption" color="text.secondary">{t('gaps.legendHeld')}</Typography>
           </Stack>
           <Stack direction="row" spacing={0.5} alignItems="center">
             <Box sx={{
@@ -561,7 +604,9 @@ export default function ArchiveGapsTab() {
           </Stack>
           <Box sx={{ flex: 1 }} />
           <Typography variant="body2">
-            {t('gaps.covered', { pct })} · {formatDuration(span)}
+            {t('gaps.covered', { pct })}
+            {restoredPct > 0 ? ` (${t('gaps.ofWhichRestored', { pct: restoredPct })})` : ''}
+            {' · '}{formatDuration(span)}
           </Typography>
         </Stack>
       </Stack>

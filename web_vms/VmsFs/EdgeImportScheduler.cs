@@ -55,6 +55,14 @@ public sealed class EdgeImportScheduler(
   /// <summary>Asked for slightly wider than the hole, so no frames are lost at the seams.</summary>
   private static readonly TimeSpan Margin = TimeSpan.FromSeconds(1);
 
+  /// <summary>
+  /// Slivers shorter than this are not holes. Clip boundaries land on keyframes and the recorded
+  /// interval on a report, so the two never agree to the millisecond; without a tolerance a gap
+  /// covered but for a few milliseconds is retried until its budget runs out, and each retry costs
+  /// one of the camera's few RTSP sessions to fetch nothing.
+  /// </summary>
+  private static readonly TimeSpan FillTolerance = TimeSpan.FromSeconds(1);
+
   private readonly CancellationTokenSource _cts = new();
   private Task? _task;
 
@@ -349,8 +357,12 @@ public sealed class EdgeImportScheduler(
     };
 
     var tracks = await clips.GetRecordingTimelineAsync(request, ct);
+    // Only footage brought back from the camera closes a gap. Live clips that happen to fall inside
+    // the window are exactly the ones written while the source was failing — truncated, or ending
+    // mid-write — so treating them as coverage leaves the hole half-filled with what broke it.
     var covered = tracks
       .SelectMany(t => t.Intervals)
+      .Where(i => i.Origin == "edge")
       .Select(i => (Start: i.StartTs.ToDateTime(), End: i.EndTs.ToDateTime()))
       .OrderBy(i => i.Start)
       .ToList();
@@ -368,7 +380,7 @@ public sealed class EdgeImportScheduler(
     }
     if (cursor < endedTs)
       result.Add((cursor, endedTs));
-    return result;
+    return result.Where(r => r.Item2 - r.Item1 >= FillTolerance).ToList();
   }
 
   /// <summary>

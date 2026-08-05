@@ -74,27 +74,41 @@ public sealed class SourceLivenessTracker(
         && previous.InstanceId != instanceId
         && previous.LastFrameUtc is { } lastFrameFromHeartbeat)
     {
+      // Starting points, refined from the archive just below.
       var restoredAt = recoveredFrameUtc ?? lastFrameUtc ?? now;
       var lastSeen = lastFrameFromHeartbeat;
 
       // The clip the dead run was writing is still marked as open, and an open clip is read as
       // covering the next minute — which is precisely the stretch that has just been lost. Closed
       // first, or the gap below would be judged already filled and nothing would be recovered.
-      var healed = await clips.FinalizeDanglingClipsAsync(cameraId, streamName, lastSeen, ct);
+      var (healed, healedFrom, healedTo) =
+        await clips.FinalizeDanglingClipsAsync(cameraId, streamName, lastSeen, ct);
       if (healed > 0)
       {
+        // Gaps closed on the strength of the old, larger assumption are no longer settled.
+        var reopened = await outages.ReopenFilledAsync(cameraId, streamName, healedFrom, healedTo, ct);
         logger.LogInformation(
-          "Measured {Count} clip(s) left open by the previous run of {CameraId}/{StreamName}",
-          healed, cameraId, streamName);
+          "Measured {Count} clip(s) left open by the previous run of {CameraId}/{StreamName}; "
+            + "reopened {Reopened} gap(s) judged against them",
+          healed, cameraId, streamName, reopened);
       }
 
       // The heartbeat that survived the crash can be a whole period old, and the archive kept
       // recording after it — so the clip written by the previous run is the better witness of when
       // footage actually stopped. Whichever reaches further is the honest start; claiming the
       // earlier one would report a hole over material that is right there.
-      var lastClip = await outages.LastClipEndAsync(cameraId, streamName, ct);
-      if (lastClip is { } clipEnd && clipEnd > lastSeen && clipEnd < restoredAt)
+      // Both boundaries come from the archive, not from the heartbeats. A process that died between
+      // two reports left the heartbeats unable to say anything precise, while the clips are exact:
+      // recording stopped where the interrupted one ends — now measurable, since it was just
+      // finished from its own fragments — and resumed where the next one begins. A frame received
+      // in between is not footage: nothing is written until a keyframe arrives.
+      var lastClip = await outages.LastClipEndAsync(cameraId, streamName, lastSeen, ct);
+      if (lastClip is { } clipEnd && clipEnd < restoredAt)
         lastSeen = clipEnd;
+
+      var nextClip = await outages.FirstClipStartAfterAsync(cameraId, streamName, lastSeen, ct);
+      if (nextClip is { } resumedAt && resumedAt > lastSeen)
+        restoredAt = resumedAt;
 
       // Only when it cost footage, and only when it is long enough to be a hole rather than the
       // rounding between two frames.
@@ -199,6 +213,15 @@ public sealed class SourceLivenessTracker(
   {
     try
     {
+      // The archive is the last word on when recording actually stopped. A start earlier than the
+      // final clip's end would claim a hole over footage that is right there — and now that a gap
+      // is only closed by recovered material, that stretch would be pulled from the camera again.
+      var lastClip = await outages.LastClipEndAsync(cameraId, streamName, startedAt, ct);
+      if (lastClip is { } clipEnd && clipEnd > startedAt && clipEnd < DateTime.UtcNow)
+      {
+        startedAt = clipEnd;
+      }
+
       await outages.OpenAsync(cameraId, streamName, startedAt, cause, Grace, ct);
       _openOutages[Key(cameraId, streamName)] = 0;
       logger.LogInformation(
@@ -218,5 +241,5 @@ public sealed class SourceLivenessTracker(
   /// went down. The last clip's end is not an estimate: the archive stopped exactly there.
   /// </summary>
   private async Task<DateTime> FallbackStartAsync(string cameraId, string streamName, CancellationToken ct)
-    => await outages.LastClipEndAsync(cameraId, streamName, ct) ?? DateTime.UtcNow;
+    => await outages.LastClipEndAsync(cameraId, streamName, DateTime.UtcNow, ct) ?? DateTime.UtcNow;
 }

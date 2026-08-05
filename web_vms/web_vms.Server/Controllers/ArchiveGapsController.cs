@@ -38,6 +38,12 @@ public sealed class ArchiveGapsController(
   /// </summary>
   private const int MaxFruitlessAttempts = 3;
 
+  /// <summary>
+  /// Slivers shorter than this are not holes: clip boundaries land on keyframes while the recorded
+  /// interval comes from a report, so the two never agree to the millisecond.
+  /// </summary>
+  private static readonly TimeSpan FillTolerance = TimeSpan.FromSeconds(1);
+
   private static DateTime ToUtc(DateTime dt) => dt.Kind switch
   {
     DateTimeKind.Utc => dt,
@@ -156,11 +162,16 @@ public sealed class ArchiveGapsController(
       MinGapMs = 1000,
     }, cancellationToken: ct);
 
+    // Only footage recovered from the camera counts: the live clips inside a gap are the ones the
+    // failing source produced, and they are the reason the gap exists.
     var covered = timeline.Tracks
       .SelectMany(t => t.Intervals)
+      .Where(i => i.Origin == "edge")
       .Select(i => (Start: i.StartTs.ToDateTime(), End: i.EndTs.ToDateTime()))
       .ToList();
-    var missing = Complement(covered, startedTs, endedTs);
+    var missing = Complement(covered, startedTs, endedTs)
+      .Where(m => m.End - m.Start >= FillTolerance)
+      .ToList();
     var filledMs = (long)(endedTs - startedTs - missing.Aggregate(
       TimeSpan.Zero, (acc, m) => acc + (m.End - m.Start))).TotalMilliseconds;
     var progressed = filledMs > row.FilledMs;

@@ -709,7 +709,7 @@
     "noRows": "Sin cortes en este periodo",
     "noSelection": "Seleccione un corte",
     "ongoing": "en curso",
-    "covered": "Restaurado: {{pct}}%",
+    "covered": "Cubierto por el archivo: {{pct}}%",
     "from": "Desde",
     "to": "Hasta",
     "causeLabel": "Causa",
@@ -740,13 +740,15 @@
     "nothingOnCamera": "La cámara ya no conserva este periodo",
     "alreadyComplete": "No falta nada en este hueco",
     "duration": "Duración",
-    "legendPatched": "Restaurado en el archivo",
+    "legendPatched": "Recuperado de la cámara",
     "legendMissing": "Todavía falta",
     "playPatched": "Reproducir este fragmento",
     "previewPlaceholder": "Pulse un fragmento restaurado de la barra para reproducirlo",
     "resume": "Devolver a automático",
     "recheck": "Comprobar estado",
     "autoRefilling": "Restaurando automáticamente — hasta {{at}}",
-    "recoveredClips": "Clips recuperados: {{count}}"
+    "recoveredClips": "Clips recuperados: {{count}}",
+    "ofWhichRestored": "recuperado de la cámara: {{pct}}%",
+    "legendHeld": "Ya estaba en el archivo"
   }
 }

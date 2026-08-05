@@ -540,7 +540,11 @@ public sealed class ClipStorage(
   /// tells the truth about coverage and makes the recording playable, which without an index it is
   /// not.
   /// </remarks>
-  public async Task<int> FinalizeDanglingClipsAsync(
+  /// <returns>
+  /// How many rows were repaired, and the span the archive had been assuming for them — a gap
+  /// already judged against that assumption has to be looked at again.
+  /// </returns>
+  public async Task<(int Repaired, DateTime From, DateTime To)> FinalizeDanglingClipsAsync(
     string cameraId, string streamName, DateTime notAfter, CancellationToken ct)
   {
     await using var db = await dbFactory.CreateDbContextAsync(ct);
@@ -551,7 +555,7 @@ public sealed class ClipStorage(
         && c.StartTs <= notAfter)
       .ToListAsync(ct);
     if (dangling.Count == 0)
-      return 0;
+      return (0, default, default);
 
     var storages = await storageListCache.GetAsync(ct);
     var repaired = 0;
@@ -583,7 +587,12 @@ public sealed class ClipStorage(
     }
 
     await db.SaveChangesAsync(ct);
-    return repaired;
+
+    // An unfinished clip was read as covering the minute after its start; that is the window whose
+    // verdicts were based on something no longer true.
+    var from = dangling.Min(c => c.StartTs);
+    var to = dangling.Max(c => c.StartTs).AddMinutes(1);
+    return (repaired, from, to);
   }
 
   public async Task SaveFragIndexAsync(Guid uid, string json, CancellationToken ct)
