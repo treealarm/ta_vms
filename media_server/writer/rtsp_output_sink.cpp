@@ -413,13 +413,6 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
   rtsp_timeline_cache::instance().persist(
     m_rtsp_url, stream->media_type, stream->last_dts, stream->last_pts);
 }
-
-void rtsp_output_sink::request_video_keyframe()
-{
-  std::lock_guard<std::mutex> lock(m_mutex);
-  m_wait_keyframe = true;
-}
-
 void rtsp_output_sink::close()
 {
   std::lock_guard<std::mutex> lock(m_mutex);

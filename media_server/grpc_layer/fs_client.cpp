@@ -489,13 +489,6 @@ std::vector<fs_client::storage_info> fs_client::get_camera_storages(const std::s
   }
   return storages;
 }
-
-fs_client::storage_info fs_client::get_camera_storage(const std::string& camera_id)
-{
-  auto all = get_camera_storages(camera_id);
-  return all.empty() ? storage_info{} : all.front();
-}
-
 std::vector<fs_client::storage_info> fs_client::fetch_camera_storages(const std::string& camera_id)
 {
   if (!m_stub)

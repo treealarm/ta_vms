@@ -45,12 +45,6 @@ public:
     bool empty() const { return root_path.empty(); }
   };
 
-  // Returns the primary storage for the camera (storage_id + root_path).
-  // On cache hit: returns immediately and triggers background refresh if stale.
-  // On cache miss: fetches synchronously.
-  // Returns empty storage_info if no storage is assigned.
-  storage_info get_camera_storage(const std::string& camera_id);
-
   // Returns all storages assigned to the camera in priority order (lowest priority number first).
   // Falls back gracefully: returns empty vector if no storages are assigned or VmsFs is unavailable.
   std::vector<storage_info> get_camera_storages(const std::string& camera_id);

@@ -24,9 +24,6 @@ public:
 
   void on_packet(const std::shared_ptr<media_packet>& media) override;
   void close();
-  /// After dropping queued packets, muxer must restart from the next keyframe.
-  void request_video_keyframe();
-
 private:
   struct stream_state {
     AVMediaType media_type = AVMEDIA_TYPE_UNKNOWN;

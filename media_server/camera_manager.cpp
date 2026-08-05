@@ -192,36 +192,6 @@ bool camera_manager::add_camera(
 
   return it->second->add_stream("", "", rtsp_url, user, pass, policy, web_rtc, error);
 }
-
-bool camera_manager::start_recording(const std::string& camera_id, std::string& error)
-{
-  std::scoped_lock lock(m_mutex);
-
-  auto it = m_cameras.find(camera_id);
-  if (it == m_cameras.end())
-  {
-    error = "camera not found: " + camera_id;
-    return false;
-  }
-
-  auto* stream = it->second->first_stream();
-  if (!stream)
-  {
-    error = "camera has no streams: " + camera_id;
-    return false;
-  }
-
-  if (stream->is_recording())
-  {
-    error = "camera already recording: " + camera_id;
-    return false;
-  }
-
-  stream->apply_recording_policy(proto_mapper::recording_policy_for_media(
-    vms::cfg::RECORDING_CONTINUOUS, 0));
-  return true;
-}
-
 bool camera_manager::stop_recording(const std::string& camera_id, std::string& error)
 {
   std::scoped_lock lock(m_mutex);

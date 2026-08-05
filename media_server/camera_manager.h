@@ -73,7 +73,6 @@ public:
     bool web_rtc,
     std::string& error);
 
-  bool start_recording(const std::string& camera_id, std::string& error);
   bool stop_recording(const std::string& camera_id, std::string& error);
 
   // Apply recording policy and (optionally) WebRTC on/off for an existing stream.
