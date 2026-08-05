@@ -14,6 +14,7 @@ public sealed class ClipStorage(
   IDbContextFactory<ClipsDbContext> dbFactory,
   NpgsqlDataSource dataSource,
   CameraConfigCache configCache,
+  StorageListCache storageListCache,
   FsActivityLog activityLog)
 {
   // Cap on how long one contiguous archive range (a single HLS source) may span. Uncapped, an
@@ -525,6 +526,64 @@ public sealed class ClipStorage(
       .Select(c => new { c.ClipUid, c.StorageId, c.FilePath, c.FragIndex })
       .ToListAsync(ct);
     return rows.ToDictionary(r => r.ClipUid, r => (r.StorageId, r.FilePath, r.FragIndex));
+  }
+
+  /// <summary>
+  /// Finishes clip rows the previous run of the media server left open, from the files themselves.
+  /// Returns how many were repaired.
+  /// </summary>
+  /// <remarks>
+  /// A killed writer never sends the finalizing ingest, so its last clip keeps <c>end_ts</c> NULL
+  /// and size 0 — and an unfinished clip is read as covering the next minute, which is exactly the
+  /// stretch the restart lost. The footage is really there, though: the fragments are written as
+  /// they go and only the trailer is missing, so the extent is measured by walking them. That both
+  /// tells the truth about coverage and makes the recording playable, which without an index it is
+  /// not.
+  /// </remarks>
+  public async Task<int> FinalizeDanglingClipsAsync(
+    string cameraId, string streamName, DateTime notAfter, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var dangling = await db.Clips
+      .Where(c => c.CameraId == cameraId
+        && c.StreamName == streamName
+        && c.EndTs == null
+        && c.StartTs <= notAfter)
+      .ToListAsync(ct);
+    if (dangling.Count == 0)
+      return 0;
+
+    var storages = await storageListCache.GetAsync(ct);
+    var repaired = 0;
+
+    foreach (var clip in dangling)
+    {
+      var root = storageListCache.Find(storages, clip.StorageId)?.RootPath;
+      var absPath = string.IsNullOrWhiteSpace(root) ? null : Path.Combine(root, clip.FilePath);
+
+      // Nothing to measure — the row claims no time rather than a minute of it.
+      var end = clip.StartTs;
+      long size = clip.SizeBytes;
+
+      if (absPath is not null && File.Exists(absPath))
+      {
+        size = new FileInfo(absPath).Length;
+        var idx = await ClipIndexParser.ReadAsync(absPath, ct);
+        if (idx is { Fragments.Count: > 0 })
+        {
+          var seconds = idx.Fragments.Sum(f => f.Duration);
+          end = clip.StartTs.AddSeconds(seconds);
+          clip.FragIndex = ClipIndexParser.Serialize(idx);
+        }
+      }
+
+      clip.EndTs = end;
+      clip.SizeBytes = size;
+      repaired++;
+    }
+
+    await db.SaveChangesAsync(ct);
+    return repaired;
   }
 
   public async Task SaveFragIndexAsync(Guid uid, string json, CancellationToken ct)

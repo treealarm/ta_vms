@@ -144,6 +144,7 @@ void fs_client::enqueue_ingest_clip(
 
 void fs_client::report_source_liveness(
   const std::string& server_id,
+  const std::string& instance_id,
   const std::vector<liveness_entry>& streams)
 {
   if (!m_stub || streams.empty())
@@ -153,6 +154,7 @@ void fs_client::report_source_liveness(
 
   vms::fs::ReportSourceLivenessRequest request;
   request.set_server_id(server_id);
+  request.set_instance_id(instance_id);
   for (const auto& s : streams)
   {
     auto* item = request.add_streams();

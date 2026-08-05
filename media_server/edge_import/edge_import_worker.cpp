@@ -128,6 +128,7 @@ edge_import_outcome edge_import_worker::run()
       if (par->codec_type == AVMEDIA_TYPE_AUDIO && par->codec_id != AV_CODEC_ID_AAC)
       {
         m_transcode_audio = true;
+        m_audio_source_index = static_cast<int>(i);
         sync_packet_transcoder::codec_config config;
         config.audio_codec = AV_CODEC_ID_AAC;
         config.allow_all_audio_passthrough = false;
@@ -273,7 +274,10 @@ bool edge_import_worker::read_loop(std::string& error)
         // Nowhere to put it yet; the encoder has been primed, which is what this pass was for.
         continue;
       }
-      if (!write_packet(encoded_audio->packet.get()))
+      // Written through its own path: an encoder numbers its output from zero and stamps it in its
+      // own time base, so handing it to write_packet would file the audio under the video track and
+      // rescale it from 1/90000.
+      if (!write_encoded_audio(*encoded_audio))
       {
         error = "write imported audio packet";
         return false;
@@ -511,6 +515,42 @@ bool edge_import_worker::is_audio_stream(int stream_index) const
     return false;
   }
   return input->streams[stream_index]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO;
+}
+
+bool edge_import_worker::write_encoded_audio(const media_packet& media)
+{
+  if (!m_output || !media.packet)
+  {
+    return false;
+  }
+  auto it = m_streams.find(m_audio_source_index);
+  if (it == m_streams.end())
+  {
+    // The segment was opened before the encoder described itself, so it has no audio track.
+    return true;
+  }
+  output_stream_state& state = it->second;
+
+  // The packet carries the encoder's own time base, which has nothing to do with the source's.
+  av_packet_rescale_ts(media.packet.get(), media.time_base, state.stream->time_base);
+  media.packet->stream_index = state.stream->index;
+  media.packet->pos = -1;
+
+  if (state.last_pts != AV_NOPTS_VALUE && media.packet->pts <= state.last_pts)
+  {
+    // Same rule the video path applies: a muxer rejects a track whose timestamps do not advance.
+    media.packet->pts = state.last_pts + 1;
+    media.packet->dts = media.packet->pts;
+  }
+  state.last_pts = media.packet->pts;
+
+  const int rc = av_interleaved_write_frame(m_output.get(), media.packet.get());
+  if (rc < 0)
+  {
+    logger::instance().warning(std::format(
+      "edge import: write audio packet failed: {}", av_error_text(rc)));
+  }
+  return true;
 }
 
 std::shared_ptr<media_packet> edge_import_worker::transcode_audio(const AVPacket* packet)

@@ -128,30 +128,44 @@ int main(int argc, char** argv)
   const auto liveness_period = std::chrono::seconds(
     std::max(1, env_int("VMS_SOURCE_LIVENESS_PERIOD_SECONDS", 15)));
   const std::string own_server_id = app_id ? app_id : "";
-  std::thread liveness_thread([&, liveness_period, own_server_id]() {
+  // Identifies this run to VmsFs. A process that dies and comes back inside one heartbeat period
+  // never looks silent, so the archive's hole would go unrecorded; a changed id is what says
+  // "everything between the last frame you saw and the first one now is missing".
+  const std::string instance_id = std::format("{}-{}", own_server_id,
+    std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count());
+  auto send_liveness = [&manager, own_server_id, instance_id]() {
+    std::vector<fs_client::liveness_entry> batch;
+    for (const auto& s : manager.list_stream_states())
+    {
+      batch.push_back(fs_client::liveness_entry{
+        .camera_id = s.camera_id,
+        .stream_name = s.stream_name,
+        .alive = s.source_alive,
+        .last_frame_ts = s.last_frame_ts,
+        .recovered_frame_ts = s.recovered_frame_ts,
+        .recording_expected = s.is_recording,
+      });
+    }
+    fs_client::instance().report_source_liveness(own_server_id, instance_id, batch);
+  };
+
+  std::thread liveness_thread([&, liveness_period]() {
     while (!g_stop_requested) {
       // A dropped source must not leave its clip spanning the outage: the archive would claim
       // footage it does not have, and the gap would never be detected.
       manager.close_segments_on_source_loss();
-
-      std::vector<fs_client::liveness_entry> batch;
-      for (const auto& s : manager.list_stream_states())
-      {
-        batch.push_back(fs_client::liveness_entry{
-          .camera_id = s.camera_id,
-          .stream_name = s.stream_name,
-          .alive = s.source_alive,
-          .last_frame_ts = s.last_frame_ts,
-          .recovered_frame_ts = s.recovered_frame_ts,
-          .recording_expected = s.is_recording,
-        });
-      }
-      fs_client::instance().report_source_liveness(own_server_id, batch);
+      send_liveness();
 
       for (auto i = std::chrono::seconds::zero(); i < liveness_period && !g_stop_requested;
            i += std::chrono::seconds(1))
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
+
+    // One last report on the way out. Without it the newest frame VmsFs knows about is up to a
+    // whole period old, and a restart is recorded as having begun that much earlier than it did —
+    // claiming a hole over footage the archive actually has.
+    send_liveness();
   });
 
   // Load the initial camera set through the same path pub/sub updates use, so disabled

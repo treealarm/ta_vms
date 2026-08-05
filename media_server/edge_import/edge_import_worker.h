@@ -97,6 +97,8 @@ private:
   [[nodiscard]] bool is_audio_stream(int stream_index) const;
   /// Runs one audio packet through the encoder, returning what came out (may be nothing yet).
   [[nodiscard]] std::shared_ptr<media_packet> transcode_audio(const AVPacket* packet);
+  /// Writes an encoder's output into the audio track it belongs to.
+  [[nodiscard]] bool write_encoded_audio(const media_packet& media);
 
   edge_import_settings m_settings;
   const std::atomic_bool& m_cancel;
@@ -112,6 +114,9 @@ private:
   /// anyway — G.711 or G.726 copied verbatim would give a clip no browser can play, and the failure
   /// is not "no sound" but the whole clip refusing to start.
   bool m_transcode_audio = false;
+  /// Index of the source's audio stream — the key its output track is filed under. The encoder
+  /// numbers its own packets from zero, so they cannot say where they belong.
+  int m_audio_source_index = -1;
   /// Output parameters of the audio encoder. Known only once it has produced a packet, and needed
   /// before the muxer's header is written — hence the wait in the read loop.
   avcodec_parameters_ptr m_audio_out_params;

@@ -49,25 +49,45 @@ public static class ClipIndexParser
     if (!TryParseHeader(headerData, out var initSize, out var timescale, out var videoTrackId)) return null;
 
     if (fileSize < 16) return null;
-    // mfro is the last 16 bytes; its box_size field gives the total mfra container size.
-    var mfroData = await ReadRangeAsync(absPath, fileSize - 16, 16, ct);
-    if (mfroData == null || mfroData.Length < 16) return null;
-    if (ReadUInt32Be(mfroData, 0) != 16 || ReadFourCc(mfroData, 4) != "mfro") return null;
-    var mfraBoxSize = ReadUInt32Be(mfroData, 12);
-    if (mfraBoxSize > fileSize || mfraBoxSize < 16) return null;
 
-    var mfraStart = fileSize - mfraBoxSize;
-    var mfraData = await ReadRangeAsync(absPath, mfraStart, mfraBoxSize, ct);
-    if (mfraData == null) return null;
-    var entries = ParseMfra(mfraData, videoTrackId);
-    if (entries == null || entries.Count == 0)
+    // The index normally comes from the trailer, which is one cheap read at the end of the file.
+    var indexEnd = fileSize;
+    List<TfraEntry>? entries = null;
+
+    var mfroData = await ReadRangeAsync(absPath, fileSize - 16, 16, ct);
+    if (mfroData is { Length: 16 }
+        && ReadUInt32Be(mfroData, 0) == 16
+        && ReadFourCc(mfroData, 4) == "mfro")
+    {
+      var mfraBoxSize = ReadUInt32Be(mfroData, 12);
+      if (mfraBoxSize <= fileSize && mfraBoxSize >= 16)
+      {
+        var mfraStart = fileSize - mfraBoxSize;
+        var mfraData = await ReadRangeAsync(absPath, mfraStart, mfraBoxSize, ct);
+        if (mfraData != null)
+        {
+          entries = ParseMfra(mfraData, videoTrackId);
+          if (entries is { Count: > 0 })
+            indexEnd = mfraStart;
+        }
+      }
+    }
+
+    // No trailer means the writer was killed before it could finish the file. The fragments
+    // themselves are all there and self-describing, so the index is rebuilt by walking them —
+    // otherwise the recording would be unplayable and would look to everything else like time the
+    // archive simply does not have.
+    if (entries is not { Count: > 0 })
+      entries = await ScanFragmentsAsync(absPath, fileSize, initSize, videoTrackId, ct);
+
+    if (entries is not { Count: > 0 })
       return new SegmentIndex(initSize, Array.Empty<FragmentEntry>());
 
     var fragments = new List<FragmentEntry>(entries.Count);
     for (int i = 0; i < entries.Count; i++)
     {
       var (time, moofOffset) = entries[i];
-      ulong fragEnd = i + 1 < entries.Count ? entries[i + 1].MoofOffset : mfraStart;
+      ulong fragEnd = i + 1 < entries.Count ? entries[i + 1].MoofOffset : indexEnd;
       ulong fragSize = fragEnd > moofOffset ? fragEnd - moofOffset : 0;
 
       double duration;
@@ -81,6 +101,108 @@ public static class ClipIndexParser
     }
 
     return new SegmentIndex(initSize, fragments);
+  }
+
+
+  /// <summary>
+  /// Rebuilds the fragment list by walking the file, for recordings that have no trailer.
+  /// </summary>
+  /// <remarks>
+  /// Only the box headers and the small moof boxes are read; the media payload is skipped over. A
+  /// truncated final box ends the walk — a process that was killed mid-write leaves one, and the
+  /// fragments before it are perfectly good.
+  /// </remarks>
+  private static async Task<List<TfraEntry>> ScanFragmentsAsync(
+    string absPath, ulong fileSize, ulong initSize, uint videoTrackId, CancellationToken ct)
+  {
+    var entries = new List<TfraEntry>();
+    var offset = initSize;
+
+    while (offset + 8 <= fileSize && entries.Count < 100_000)
+    {
+      ct.ThrowIfCancellationRequested();
+
+      var header = await ReadRangeAsync(absPath, offset, 8, ct);
+      if (header is not { Length: 8 })
+        break;
+
+      ulong boxSize = ReadUInt32Be(header, 0);
+      var type = ReadFourCc(header, 4);
+      if (boxSize == 1)
+      {
+        var large = await ReadRangeAsync(absPath, offset + 8, 8, ct);
+        if (large is not { Length: 8 })
+          break;
+        boxSize = ReadUInt64Be(large, 0);
+      }
+      // Zero means "to end of file" and anything shorter than a header is corruption; either way
+      // there is nothing further to walk.
+      if (boxSize < 8 || offset + boxSize > fileSize)
+        break;
+
+      if (type == "moof")
+      {
+        var moof = await ReadRangeAsync(absPath, offset, boxSize, ct);
+        if (moof is null)
+          break;
+        if (TryReadFragmentTime(moof, videoTrackId, out var time))
+          entries.Add(new TfraEntry(time, offset));
+      }
+
+      offset += boxSize;
+    }
+
+    return entries;
+  }
+
+  /// <summary>Decode time of a fragment, from the tfdt of its video track.</summary>
+  private static bool TryReadFragmentTime(byte[] moof, uint videoTrackId, out ulong time)
+  {
+    time = 0;
+    // moof -> traf -> { tfhd (which track), tfdt (when) }
+    for (var pos = 8; pos + 8 <= moof.Length;)
+    {
+      var size = (int)ReadUInt32Be(moof, (ulong)pos);
+      if (size < 8 || pos + size > moof.Length)
+        return false;
+      if (ReadFourCc(moof, (ulong)(pos + 4)) != "traf")
+      {
+        pos += size;
+        continue;
+      }
+
+      uint trackId = 0;
+      ulong baseTime = 0;
+      var haveTime = false;
+      for (var inner = pos + 8; inner + 8 <= pos + size;)
+      {
+        var innerSize = (int)ReadUInt32Be(moof, (ulong)inner);
+        if (innerSize < 8 || inner + innerSize > pos + size)
+          break;
+        var innerType = ReadFourCc(moof, (ulong)(inner + 4));
+        if (innerType == "tfhd" && inner + 16 <= moof.Length)
+        {
+          trackId = ReadUInt32Be(moof, (ulong)(inner + 12));
+        }
+        else if (innerType == "tfdt" && inner + 16 <= moof.Length)
+        {
+          var version = moof[inner + 8];
+          baseTime = version == 1 && inner + 20 <= moof.Length
+            ? ReadUInt64Be(moof, (ulong)(inner + 12))
+            : ReadUInt32Be(moof, (ulong)(inner + 12));
+          haveTime = true;
+        }
+        inner += innerSize;
+      }
+
+      if (haveTime && (videoTrackId == 0 || trackId == videoTrackId))
+      {
+        time = baseTime;
+        return true;
+      }
+      pos += size;
+    }
+    return false;
   }
 
   private static async Task<byte[]?> ReadRangeAsync(string absPath, ulong offset, ulong length, CancellationToken ct)

@@ -21,6 +21,7 @@ namespace VmsFs;
 /// </remarks>
 public sealed class SourceLivenessTracker(
   SourceOutageStore outages,
+  ClipStorage clips,
   ILogger<SourceLivenessTracker> logger)
 {
   /// <summary>An outage shorter than this is a blink and is never materialised.</summary>
@@ -38,7 +39,8 @@ public sealed class SourceLivenessTracker(
     DateTime? LastFrameUtc,
     bool RecordingExpected,
     bool Alive,
-    DateTime? PendingSinceUtc);
+    DateTime? PendingSinceUtc,
+    string InstanceId);
 
   private readonly ConcurrentDictionary<(string Camera, string Stream), StreamState> _state = new();
   private readonly ConcurrentDictionary<(string Camera, string Stream), byte> _openOutages = new();
@@ -56,15 +58,64 @@ public sealed class SourceLivenessTracker(
   /// <summary>Applies one heartbeat. Called from the gRPC handler.</summary>
   public async Task ApplyAsync(
     string cameraId, string streamName, bool alive, DateTime? lastFrameUtc,
-    DateTime? recoveredFrameUtc, bool recordingExpected, CancellationToken ct)
+    DateTime? recoveredFrameUtc, bool recordingExpected, string instanceId, CancellationToken ct)
   {
     var key = Key(cameraId, streamName);
     var now = DateTime.UtcNow;
     var previous = _state.TryGetValue(key, out var p) ? p : null;
 
+    // A media server that restarted between two heartbeats never looked silent, so nothing above
+    // would ever notice — while the archive stopped for as long as the process was away. The report
+    // carries which run it comes from, and a change of that is exactly the missing stretch: from
+    // the last frame the previous run saw to the first frame this one has.
+    if (previous is not null
+        && !string.IsNullOrEmpty(instanceId)
+        && !string.IsNullOrEmpty(previous.InstanceId)
+        && previous.InstanceId != instanceId
+        && previous.LastFrameUtc is { } lastFrameFromHeartbeat)
+    {
+      var restoredAt = recoveredFrameUtc ?? lastFrameUtc ?? now;
+      var lastSeen = lastFrameFromHeartbeat;
+
+      // The clip the dead run was writing is still marked as open, and an open clip is read as
+      // covering the next minute — which is precisely the stretch that has just been lost. Closed
+      // first, or the gap below would be judged already filled and nothing would be recovered.
+      var healed = await clips.FinalizeDanglingClipsAsync(cameraId, streamName, lastSeen, ct);
+      if (healed > 0)
+      {
+        logger.LogInformation(
+          "Measured {Count} clip(s) left open by the previous run of {CameraId}/{StreamName}",
+          healed, cameraId, streamName);
+      }
+
+      // The heartbeat that survived the crash can be a whole period old, and the archive kept
+      // recording after it — so the clip written by the previous run is the better witness of when
+      // footage actually stopped. Whichever reaches further is the honest start; claiming the
+      // earlier one would report a hole over material that is right there.
+      var lastClip = await outages.LastClipEndAsync(cameraId, streamName, ct);
+      if (lastClip is { } clipEnd && clipEnd > lastSeen && clipEnd < restoredAt)
+        lastSeen = clipEnd;
+
+      // Only when it cost footage, and only when it is long enough to be a hole rather than the
+      // rounding between two frames.
+      if (previous.RecordingExpected
+          && restoredAt - lastSeen >= TimeSpan.FromSeconds(1)
+          && !_openOutages.ContainsKey(key))
+      {
+        logger.LogInformation(
+          "Media server restart detected for {CameraId}/{StreamName}: archive gap {From:o}..{To:o}",
+          cameraId, streamName, lastSeen, restoredAt);
+        await OpenAsync(cameraId, streamName, lastSeen, cause: "server_down", ct);
+        // Bounded on both sides already, so it is closed straight away rather than waiting for a
+        // recovery report that has, in effect, already happened.
+        if (_openOutages.TryRemove(key, out _))
+          await outages.CloseAsync(cameraId, streamName, restoredAt, ct);
+      }
+    }
+
     if (alive)
     {
-      _state[key] = new StreamState(now, lastFrameUtc, recordingExpected, true, null);
+      _state[key] = new StreamState(now, lastFrameUtc, recordingExpected, true, null, instanceId);
       // Closed on the FIRST frame after the pause, which media_server reports separately.
       // last_frame_ts would not do: it advances with every packet, so by the time this report was
       // assembled it points at the newest one, and the gap would be recorded up to a full heartbeat
@@ -77,7 +128,7 @@ public sealed class SourceLivenessTracker(
     // Dead.
     var pendingSince = previous?.PendingSinceUtc ?? now;
     var lastFrame = lastFrameUtc ?? previous?.LastFrameUtc;
-    _state[key] = new StreamState(now, lastFrame, recordingExpected, false, pendingSince);
+    _state[key] = new StreamState(now, lastFrame, recordingExpected, false, pendingSince, instanceId);
 
     // Held back until the grace window passes, so a blink never reaches the table.
     if (now - pendingSince < Grace || _openOutages.ContainsKey(key))

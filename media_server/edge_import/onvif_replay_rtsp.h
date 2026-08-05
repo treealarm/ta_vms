@@ -204,8 +204,14 @@ private:
   std::vector<uint8_t> m_jpeg_buf;
   uint32_t m_jpeg_rtp_ts = 0;
   bool m_jpeg_active = false;
-  /// In-band HEVC SPS while waiting for PPS (VPS kept in m_fu_buf).
-  std::vector<uint8_t> m_hevc_sps_buf;
+  /// Parameter sets seen in the stream while extradata is still being assembled.
+  ///
+  /// Kept apart from the FU reassembly buffer on purpose: every single-NAL packet resets that one,
+  /// including the packet carrying the next parameter set, so a stash placed there is wiped exactly
+  /// when it is about to be used. Cameras whose SDP has no sprop-parameter-sets depend on this
+  /// path — without it they produce no packets at all.
+  std::vector<uint8_t> m_param_vps;
+  std::vector<uint8_t> m_param_sps;
 
   int m_width = 0;
   int m_height = 0;

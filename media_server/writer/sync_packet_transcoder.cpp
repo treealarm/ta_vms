@@ -158,7 +158,22 @@ std::shared_ptr<media_packet> sync_packet_transcoder::transcode_packet(const std
       state->current_frame_rate = media->frame_rate;
       state->current_sample_rate = media->sample_rate;
 
+      // Everything the processor emits for this input belongs to the same moment in wall clock.
+      // The processors build fresh packets and cannot know it — and losing it means a re-encoded
+      // track falls back to "whenever this was written", which is what clip boundaries must never
+      // be. Off by at most the encoder's own delay, which is a frame.
+      const auto emitted_from = m_pending_packets.size();
       state->processor->process(media);
+      if (media->wall_ts.has_value())
+      {
+        for (auto i = emitted_from; i < m_pending_packets.size(); ++i)
+        {
+          if (m_pending_packets[i] && !m_pending_packets[i]->wall_ts.has_value())
+          {
+            m_pending_packets[i]->wall_ts = media->wall_ts;
+          }
+        }
+      }
     }
     else
     {

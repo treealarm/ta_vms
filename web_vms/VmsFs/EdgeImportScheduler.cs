@@ -99,7 +99,10 @@ public sealed class EdgeImportScheduler(
   private async Task SweepAsync(CancellationToken ct)
   {
     var now = DateTime.UtcNow;
-    var pending = await outages.ListPendingAsync(now - Settle, now - Lookback, 20, ct);
+    // A pull has a hard deadline of JobTimeout; a row still marked as running well past that
+    // belongs to a process that is no longer here.
+    var pending = await outages.ListPendingAsync(
+      now - Settle, now - Lookback, now - JobTimeout, 20, ct);
     if (pending.Count == 0)
       return;
 
@@ -194,12 +197,25 @@ public sealed class EdgeImportScheduler(
       outage.OutageUid, "filling", outage.FilledMs, outage.Attempts, string.Empty, ct);
 
     var pulledAnything = false;
-    foreach (var piece in available)
+    try
     {
-      if (ct.IsCancellationRequested)
-        break;
-      if (await PullAsync(outage, piece, ct))
-        pulledAnything = true;
+      foreach (var piece in available)
+      {
+        if (ct.IsCancellationRequested)
+          break;
+        if (await PullAsync(outage, piece, ct))
+          pulledAnything = true;
+      }
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException)
+    {
+      // Whatever went wrong, the gap must not be left saying "filling": only `open` rows are ever
+      // picked up again, so a single failed call would remove it from automation for good and leave
+      // the operator a state that nothing can move.
+      logger.LogWarning(ex, "Edge backfill: pull failed for {CameraId}", outage.CameraId);
+      await outages.UpdateOutcomeAsync(outage.OutageUid, "open", outage.FilledMs,
+        outage.Attempts + 1, ex.Message, CancellationToken.None);
+      return;
     }
 
     // The outcome is judged from the archive afterwards, never from "the job reported success":

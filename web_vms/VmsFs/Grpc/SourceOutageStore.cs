@@ -169,24 +169,33 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
   /// Only gaps that ended before this. A camera does not offer a just-recorded stretch for replay
   /// immediately; asking too early returns nothing and burns an attempt.
   /// </param>
+  /// <param name="abandonedBefore">
+  /// A row still saying <c>filling</c> whose retry moment passed this long ago has no run behind it
+  /// any more — the process that set it is gone. Without reclaiming those, a restart mid-pull takes
+  /// the gap out of automation for good, since only open rows are ever selected.
+  /// </param>
   public async Task<List<SourceOutage>> ListPendingAsync(
-    DateTime settledBefore, DateTime notOlderThan, int limit, CancellationToken ct)
+    DateTime settledBefore, DateTime notOlderThan, DateTime abandonedBefore, int limit,
+    CancellationToken ct)
   {
     await using var cmd = dataSource.CreateCommand("""
       SELECT outage_uid, camera_id, stream_name, started_ts, ended_ts, cause,
              state, filled_ms, attempts, message
       FROM source_outages
-      WHERE state = 'open'
-        AND ended_ts IS NOT NULL
+      WHERE ended_ts IS NOT NULL
         AND ended_ts <= $1
         AND started_ts >= $2
-        AND (next_retry_ts IS NULL OR next_retry_ts <= now())
+        AND (
+          (state = 'open' AND (next_retry_ts IS NULL OR next_retry_ts <= now()))
+          OR (state = 'filling' AND next_retry_ts IS NOT NULL AND next_retry_ts <= $4)
+        )
       ORDER BY started_ts
       LIMIT $3;
       """);
     cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, settledBefore);
     cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, notOlderThan);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Integer, limit <= 0 ? 10 : limit);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, abandonedBefore);
 
     var result = new List<SourceOutage>();
     await using var reader = await cmd.ExecuteReaderAsync(ct);

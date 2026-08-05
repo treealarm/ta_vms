@@ -746,6 +746,7 @@
     "previewPlaceholder": "Pulse un fragmento restaurado de la barra para reproducirlo",
     "resume": "Devolver a automático",
     "recheck": "Comprobar estado",
-    "autoRefilling": "Restaurando automáticamente — hasta {{at}}"
+    "autoRefilling": "Restaurando automáticamente — hasta {{at}}",
+    "recoveredClips": "Clips recuperados: {{count}}"
   }
 }

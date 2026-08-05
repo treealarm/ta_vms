@@ -21,6 +21,7 @@ public sealed partial class FsServiceImpl
         s.LastFrameTs?.ToDateTime(),
         s.RecoveredFrameTs?.ToDateTime(),
         s.RecordingExpected,
+        request.InstanceId,
         context.CancellationToken);
     }
 

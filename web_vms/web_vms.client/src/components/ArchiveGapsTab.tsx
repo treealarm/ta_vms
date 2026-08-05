@@ -23,6 +23,8 @@ import type {
   EdgeImportJobDto,
   EdgeIntervalsDto,
   EpisodeDto,
+  RecordingDto,
+  RecordingsResponseDto,
   SourceOutageDto
 } from '../dto/dtos'
 import { useAppDispatch, useAppSelector } from '../store'
@@ -130,6 +132,9 @@ export default function ArchiveGapsTab() {
   // progress; one started by automation is only visible as the job on the media server, so the tab
   // watches that instead of showing a bare "Filling" and nothing else.
   const [autoJob, setAutoJob] = useState<EdgeImportJobDto | null>(null)
+  // The clips that were actually written for this gap. Shown by name because "restored" is easier
+  // to trust when you can see what it produced and where it went.
+  const [recovered, setRecovered] = useState<RecordingDto[]>([])
   // Set by the Cancel button and read between pieces; the job already running is cancelled through
   // the API, and the loop stops rather than starting the next one.
   const cancelRefill = useRef(false)
@@ -393,6 +398,37 @@ export default function ArchiveGapsTab() {
     setAutoJob(null)
     void load()
   }, [selected, autoJob, load])
+
+  useEffect(() => {
+    if (!selected) {
+      setRecovered([])
+      return
+    }
+
+    let dropped = false
+    const win = gapWindow(selected, nowMs)
+    void (async () => {
+      try {
+        const response = await fetch('/api/fs/recordings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cameraId: selected.cameraId,
+            streamName: selected.streamName || undefined,
+            fromUtc: new Date(win.startMs).toISOString(),
+            toUtc: new Date(win.endMs).toISOString(),
+            limit: 50,
+          }),
+        })
+        if (!response.ok) return
+        const body = (await response.json()) as RecordingsResponseDto
+        if (!dropped) {
+          setRecovered((body.recordings ?? []).filter((r) => r.origin === 'edge'))
+        }
+      } catch { /* the panel simply shows nothing */ }
+    })()
+    return () => { dropped = true }
+  }, [selected, nowMs, refill])
 
   const cameraLabel = (id: string) => camerasMap[id]?.name || id
 
@@ -705,6 +741,32 @@ export default function ArchiveGapsTab() {
                     </Typography>
                     {selected.message && (
                       <Typography variant="body2" color="text.secondary">{selected.message}</Typography>
+                    )}
+
+                    {recovered.length > 0 && (
+                      <>
+                        <Typography variant="body2" sx={{ mt: 1 }}>
+                          {t('gaps.recoveredClips', { count: recovered.length })}
+                        </Typography>
+                        {recovered.map((clip) => (
+                          <Typography
+                            key={clip.clipUid || clip.filePath}
+                            variant="caption"
+                            color="text.secondary"
+                            component="div"
+                            sx={{ wordBreak: 'break-all', cursor: 'pointer' }}
+                            onClick={() => setPreview({
+                              kind: 'archive',
+                              cameraId: selected.cameraId,
+                              from: clip.startTime,
+                              to: clip.endTime ?? new Date(gapWindow(selected, nowMs).endMs).toISOString(),
+                              label: clip.filePath,
+                            })}
+                          >
+                            {new Date(clip.startTime).toLocaleTimeString()} — {clip.filePath}
+                          </Typography>
+                        ))}
+                      </>
                     )}
                   </Stack>
                 </Stack>

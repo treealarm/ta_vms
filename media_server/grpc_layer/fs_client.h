@@ -83,6 +83,7 @@ public:
   // the read loop.
   void report_source_liveness(
     const std::string& server_id,
+    const std::string& instance_id,
     const std::vector<liveness_entry>& streams);
 
   bool ingest_clip(

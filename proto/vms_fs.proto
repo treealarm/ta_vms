@@ -389,6 +389,11 @@ message SourceLiveness {
 message ReportSourceLivenessRequest {
   string server_id = 1;
   repeated SourceLiveness streams = 2;
+  // Identifies this run of the media server. A restart short enough to fit between two heartbeats
+  // is invisible otherwise — nothing ever falls silent for long enough to notice — while the
+  // archive certainly has a hole for as long as the process was gone. A value different from the
+  // previous report is that hole, bounded by the last frame before it and the first frame after.
+  string instance_id = 3;
 }
 
 // One recorded interval of source unavailability. ended_ts unset = happening right now.

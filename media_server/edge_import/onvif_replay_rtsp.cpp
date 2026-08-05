@@ -370,7 +370,8 @@ void onvif_replay_rtsp::close()
   m_rx_pending.clear();
   reset_fu();
   reset_jpeg();
-  m_hevc_sps_buf.clear();
+  m_param_vps.clear();
+  m_param_sps.clear();
   m_codec = video_codec::unknown;
 }
 
@@ -1631,23 +1632,21 @@ int onvif_replay_rtsp::handle_h264_payload(
       (void)probe_dimensions_from_sps(sps);
       if (m_extradata.empty())
       {
-        m_fu_buf = sps;
-        m_fu_active = false;
+        m_param_sps = sps;
       }
       return AVERROR(EAGAIN);
     }
     if (nal_type == 8 && m_extradata.empty())
     {
-      if (m_fu_buf.empty() || (m_fu_buf[0] & 0x1F) != 7)
+      if (m_param_sps.empty())
       {
         return AVERROR(EAGAIN);
       }
-      const auto sps = m_fu_buf;
       const std::vector<uint8_t> pps(nal, nal + nal_size);
-      m_extradata = build_avcc(sps, pps);
-      (void)probe_dimensions_from_sps(sps);
+      m_extradata = build_avcc(m_param_sps, pps);
+      (void)probe_dimensions_from_sps(m_param_sps);
       apply_extradata_to_stream();
-      m_fu_buf.clear();
+      m_param_sps.clear();
       return AVERROR(EAGAIN);
     }
     return AVERROR(EAGAIN);
@@ -1763,24 +1762,15 @@ int onvif_replay_rtsp::handle_hevc_payload(
   };
   auto is_hevc_vcl = [](int t) { return t <= 31; };
 
-  static std::vector<uint8_t> pending_vps;
-  static std::vector<uint8_t> pending_sps;
-  // Avoid function-static across sessions: use m_fu_buf only for FU; store VPS/SPS
-  // in dedicated members would be better. Use m_jpeg_buf as scratch? No.
-  // Keep VPS in m_fu_buf when not FU-active is messy. Use class members via
-  // m_fu_buf for SPS and a side vector — add nothing; store VPS as first of
-  // extradata path using pending locals is WRONG for concurrent imports.
-  // Edge import is one job at a time per worker, but two workers could run.
-  // Use instance fields: reuse m_fu_buf for param stash when !m_fu_active.
-
   auto on_param = [&](const uint8_t* nal, int nal_size) -> int {
     const int t = hevc_type(nal);
+    // hvcC needs all three, and they arrive as separate packets, so each is kept until the last
+    // one turns up.
     if (t == 32)
     {  // VPS
       if (m_extradata.empty())
       {
-        m_fu_buf.assign(nal, nal + nal_size);  // stash VPS
-        m_fu_active = false;
+        m_param_vps.assign(nal, nal + nal_size);
       }
       return AVERROR(EAGAIN);
     }
@@ -1788,30 +1778,22 @@ int onvif_replay_rtsp::handle_hevc_payload(
     {  // SPS
       if (m_extradata.empty())
       {
-        // Append marker: if m_fu_buf holds VPS, keep it; stash SPS after 0xFF
-        // separator — too hacky. Rebuild: require VPS then SPS then PPS.
-        if (!m_fu_buf.empty() && hevc_type(m_fu_buf.data()) == 32)
-        {
-          // Keep VPS in m_fu_buf; store SPS length-prefixed in jpeg buf temporarily
-          m_jpeg_buf.assign(nal, nal + nal_size);
-        }
+        m_param_sps.assign(nal, nal + nal_size);
       }
       return AVERROR(EAGAIN);
     }
     if (t == 34 && m_extradata.empty())
     {  // PPS
-      if (m_fu_buf.empty() || hevc_type(m_fu_buf.data()) != 32 || m_jpeg_buf.empty())
+      if (m_param_vps.empty() || m_param_sps.empty())
       {
         return AVERROR(EAGAIN);
       }
-      const auto vps = m_fu_buf;
-      const auto sps = m_jpeg_buf;
       const std::vector<uint8_t> pps(nal, nal + nal_size);
-      m_extradata = build_hvcc(vps, sps, pps);
+      m_extradata = build_hvcc(m_param_vps, m_param_sps, pps);
       (void)probe_dims_from_extradata(AV_CODEC_ID_HEVC);
       apply_extradata_to_stream();
-      m_fu_buf.clear();
-      m_jpeg_buf.clear();
+      m_param_vps.clear();
+      m_param_sps.clear();
       return AVERROR(EAGAIN);
     }
     return AVERROR(EAGAIN);
