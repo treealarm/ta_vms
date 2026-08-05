@@ -93,7 +93,11 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
     let cancelled = false
     const load = async () => {
       setLoading(true)
-      await dispatch(fetchRecordingRanges({ cameraId, timestamp: queryTime, limit: 50 }))
+      // Raised from 50 as a stopgap. The server returns ranges from the oldest end and ignores the
+      // timestamp as an anchor, so the limit truncates the NEWEST recordings — a day of short gaps
+      // and their imports was enough to hide everything from the last hour. Paging is the real fix
+      // and needs that anchoring first.
+      await dispatch(fetchRecordingRanges({ cameraId, timestamp: queryTime, limit: 200 }))
       if (!cancelled) { setLoading(false); setLoaded(true) }
     }
     void load()

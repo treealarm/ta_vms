@@ -129,6 +129,27 @@ public sealed class SourceLivenessTracker(
 
     if (alive)
     {
+      // A short outage can end before anything above notices it: the reader needs its watchdog to
+      // declare the source dead, that verdict waits for the next heartbeat, and the grace window
+      // waits again — some thirty-five seconds in all, while the recovery report may arrive first.
+      // It carries both boundaries, though, so the interval is written here from the frame before
+      // the silence to the frame after it. Measured on a real cable pull: 21 s of missing archive
+      // that no other path recorded.
+      if (previous is { Alive: false, RecordingExpected: true, LastFrameUtc: { } silentFrom }
+          && !_openOutages.ContainsKey(key))
+      {
+        var silentUntil = recoveredFrameUtc ?? lastFrameUtc ?? now;
+        if (silentUntil - silentFrom >= Grace)
+        {
+          logger.LogInformation(
+            "Short outage recovered for {CameraId}/{StreamName}: {From:o}..{To:o}",
+            cameraId, streamName, silentFrom, silentUntil);
+          await OpenAsync(cameraId, streamName, silentFrom, cause: "link_lost", ct);
+          if (_openOutages.TryRemove(key, out _))
+            await outages.CloseAsync(cameraId, streamName, silentUntil, ct);
+        }
+      }
+
       _state[key] = new StreamState(now, lastFrameUtc, recordingExpected, true, null, instanceId);
       // Closed on the FIRST frame after the pause, which media_server reports separately.
       // last_frame_ts would not do: it advances with every packet, so by the time this report was
