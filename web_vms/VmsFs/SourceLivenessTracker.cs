@@ -63,6 +63,9 @@ public sealed class SourceLivenessTracker(
     var key = Key(cameraId, streamName);
     var now = DateTime.UtcNow;
     var previous = _state.TryGetValue(key, out var p) ? p : null;
+    // A restart is also a recovery: both branches below would otherwise write the same hole, from
+    // slightly different boundaries, as two rows.
+    var recordedHere = false;
 
     // A media server that restarted between two heartbeats never looked silent, so nothing above
     // would ever notice — while the archive stopped for as long as the process was away. The report
@@ -93,10 +96,6 @@ public sealed class SourceLivenessTracker(
           healed, cameraId, streamName, reopened);
       }
 
-      // The heartbeat that survived the crash can be a whole period old, and the archive kept
-      // recording after it — so the clip written by the previous run is the better witness of when
-      // footage actually stopped. Whichever reaches further is the honest start; claiming the
-      // earlier one would report a hole over material that is right there.
       // Both boundaries come from the archive, not from the heartbeats. A process that died between
       // two reports left the heartbeats unable to say anything precise, while the clips are exact:
       // recording stopped where the interrupted one ends — now measurable, since it was just
@@ -124,6 +123,7 @@ public sealed class SourceLivenessTracker(
         // recovery report that has, in effect, already happened.
         if (_openOutages.TryRemove(key, out _))
           await outages.CloseAsync(cameraId, streamName, restoredAt, ct);
+        recordedHere = true;
       }
     }
 
@@ -135,7 +135,8 @@ public sealed class SourceLivenessTracker(
       // It carries both boundaries, though, so the interval is written here from the frame before
       // the silence to the frame after it. Measured on a real cable pull: 21 s of missing archive
       // that no other path recorded.
-      if (previous is { Alive: false, RecordingExpected: true, LastFrameUtc: { } silentFrom }
+      if (!recordedHere
+          && previous is { Alive: false, RecordingExpected: true, LastFrameUtc: { } silentFrom }
           && !_openOutages.ContainsKey(key))
       {
         var silentUntil = recoveredFrameUtc ?? lastFrameUtc ?? now;
