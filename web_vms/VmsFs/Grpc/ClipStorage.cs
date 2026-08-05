@@ -48,8 +48,8 @@ public sealed class ClipStorage(
     var endTs = clip.EndTs?.ToDateTime().ToUniversalTime();
 
     await using var cmd = dataSource.CreateCommand("""
-      INSERT INTO clips (clip_uid, file_path, camera_id, stream_name, storage_id, start_ts, end_ts, size_bytes, retained)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      INSERT INTO clips (clip_uid, file_path, camera_id, stream_name, storage_id, start_ts, end_ts, size_bytes, retained, origin)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       ON CONFLICT (file_path) DO UPDATE SET
         camera_id   = EXCLUDED.camera_id,
         stream_name = EXCLUDED.stream_name,
@@ -57,7 +57,8 @@ public sealed class ClipStorage(
         start_ts    = EXCLUDED.start_ts,
         end_ts      = COALESCE(EXCLUDED.end_ts, clips.end_ts),
         size_bytes  = GREATEST(clips.size_bytes, EXCLUDED.size_bytes),
-        retained    = clips.retained OR EXCLUDED.retained
+        retained    = clips.retained OR EXCLUDED.retained,
+        origin      = EXCLUDED.origin
       RETURNING clip_uid::text;
       """);
 
@@ -70,6 +71,8 @@ public sealed class ClipStorage(
     cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, endTs is null ? DBNull.Value : endTs.Value);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Bigint, (long)clip.SizeBytes);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Boolean, retained);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text,
+      string.IsNullOrWhiteSpace(clip.Origin) ? "live" : clip.Origin);
 
     var returnedUid = (string)(await cmd.ExecuteScalarAsync(ct))!;
     activityLog.Record(new FsActivityEntry(
@@ -281,12 +284,13 @@ public sealed class ClipStorage(
 
       var bounds = await q
         .OrderBy(c => c.StartTs)
-        .Select(c => new { c.StartTs, c.EndTs })
+        .Select(c => new { c.StartTs, c.EndTs, c.Origin })
         .ToListAsync(ct);
 
       var track = new RecordingTimelineTrack { CameraId = cameraId };
       track.Intervals.AddRange(MergeIntervals(
-        bounds.Select(b => (b.StartTs, b.EndTs ?? b.StartTs.AddMinutes(1))), minGap));
+        bounds.Select(b => (b.StartTs, b.EndTs ?? b.StartTs.AddMinutes(1),
+          string.IsNullOrWhiteSpace(b.Origin) ? "live" : b.Origin)), minGap));
       tracks.Add(track);
     }
 
@@ -294,13 +298,14 @@ public sealed class ClipStorage(
   }
 
   private static List<RecordingInterval> MergeIntervals(
-    IEnumerable<(DateTime Start, DateTime End)> ordered, TimeSpan minGap)
+    IEnumerable<(DateTime Start, DateTime End, string Origin)> ordered, TimeSpan minGap)
   {
     var merged = new List<RecordingInterval>();
     DateTime? curStart = null;
     DateTime curEnd = default;
+    var curOrigin = "live";
 
-    foreach (var (start, end) in ordered)
+    foreach (var (start, end, origin) in ordered)
     {
       if (end <= start) continue;
 
@@ -308,30 +313,35 @@ public sealed class ClipStorage(
       {
         curStart = start;
         curEnd = end;
+        curOrigin = origin;
         continue;
       }
 
-      if (start - curEnd <= minGap)
+      // Provenance breaks a run even when the clips touch: an insert from the camera's own storage
+      // is a different kind of footage and the operator has to be able to see where it sits.
+      if (start - curEnd <= minGap && string.Equals(origin, curOrigin, StringComparison.Ordinal))
       {
         if (end > curEnd) curEnd = end;
         continue;
       }
 
-      merged.Add(ToInterval(curStart.Value, curEnd));
+      merged.Add(ToInterval(curStart.Value, curEnd, curOrigin));
       curStart = start;
       curEnd = end;
+      curOrigin = origin;
     }
 
     if (curStart is not null)
-      merged.Add(ToInterval(curStart.Value, curEnd));
+      merged.Add(ToInterval(curStart.Value, curEnd, curOrigin));
 
     return merged;
   }
 
-  private static RecordingInterval ToInterval(DateTime start, DateTime end) => new()
+  private static RecordingInterval ToInterval(DateTime start, DateTime end, string origin) => new()
   {
     StartTs = Timestamp.FromDateTime(DateTime.SpecifyKind(start, DateTimeKind.Utc)),
     EndTs = Timestamp.FromDateTime(DateTime.SpecifyKind(end, DateTimeKind.Utc)),
+    Origin = origin,
   };
 
   public async Task<List<Recording>> GetRecordingsAroundAsync(GetRecordingsAroundRequest request, CancellationToken ct)
@@ -478,7 +488,7 @@ public sealed class ClipStorage(
     var post = config?.PostRecordSeconds ?? 30;
 
     await using var cmd = dataSource.CreateCommand("""
-      SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id,
+      SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id, c.origin,
              ''
       FROM clips c
       JOIN retention_events re ON re.event_uuid = $1
@@ -680,7 +690,7 @@ public sealed class ClipStorage(
 
     var streamFilter = string.IsNullOrEmpty(streamName) ? "" : "AND c.stream_name = $7";
     await using var cmd = dataSource.CreateCommand($"""
-      SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id,
+      SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id, c.origin,
              COALESCE(string_agg(DISTINCT re.event_id, ','), '')
       FROM clips c
       LEFT JOIN retention_events re ON re.camera_id = c.camera_id
@@ -745,7 +755,7 @@ public sealed class ClipStorage(
     var streamFilter = string.IsNullOrEmpty(streamName) ? "" : "AND c.stream_name = $6";
 
     await using var cmd = dataSource.CreateCommand($"""
-      SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id,
+      SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id, c.origin,
              COALESCE(string_agg(DISTINCT re.event_id, ','), '')
       FROM clips c
       LEFT JOIN retention_events re ON re.camera_id = c.camera_id
@@ -782,12 +792,13 @@ public sealed class ClipStorage(
         StartTs    = Timestamp.FromDateTime(reader.GetDateTime(3).ToUniversalTime()),
         SizeBytes  = (ulong)reader.GetInt64(5),
         ClipUid    = reader.IsDBNull(6) ? "" : reader.GetString(6),
-        StorageId  = reader.IsDBNull(7) ? "" : reader.GetString(7)
+        StorageId  = reader.IsDBNull(7) ? "" : reader.GetString(7),
+        Origin     = reader.IsDBNull(8) ? "" : reader.GetString(8)
       };
       if (!reader.IsDBNull(4))
         rec.EndTs = Timestamp.FromDateTime(reader.GetDateTime(4).ToUniversalTime());
 
-      var ev = reader.IsDBNull(8) ? "" : reader.GetString(8);
+      var ev = reader.IsDBNull(9) ? "" : reader.GetString(9);
       var ids = string.IsNullOrEmpty(ev)
         ? new List<string>()
         : ev.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToList();
@@ -795,6 +806,9 @@ public sealed class ClipStorage(
     }
     return list;
   }
+
+  private static string NormalizedOrigin(Recording clip) =>
+    string.IsNullOrWhiteSpace(clip.Origin) ? "live" : clip.Origin;
 
   private static List<RecordingRange> GroupRecordingRanges(
     List<RecordingWithEvents> clips,
@@ -844,7 +858,13 @@ public sealed class ClipStorage(
       else
         pauseTooLong = start - prevStart > TimeSpan.FromSeconds(degenerateMaxInterStartSeconds);
 
-      if (spanExceeded || pauseTooLong)
+      // An insert pulled off the camera is its own range even when it butts up against live
+      // footage: it was recorded elsewhere, and it is allowed to overlap by a second or two, which
+      // a single continuous range cannot express.
+      var originChanged = !string.Equals(
+        NormalizedOrigin(prevRec), NormalizedOrigin(clip), StringComparison.Ordinal);
+
+      if (spanExceeded || pauseTooLong || originChanged)
       {
         var r = new RecordingRange();
         r.Recordings.Add(clip);

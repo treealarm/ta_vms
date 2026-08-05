@@ -277,6 +277,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
                         <div>{t('recordings.startTime')}: {fmtFull(first.startTime)}</div>
                         {last?.endTime && <div>{t('recordings.endTime')}: {fmtFull(last.endTime)}</div>}
                         <div>{t('recordings.clips')}: {rec.recordings.length}</div>
+                        {first.origin === 'edge' && <div>{t('recordings.recovered')}</div>}
                       </Box>
                     }
                     placement="left"
@@ -292,7 +293,9 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
                       }}
                     >
                       <ListItemText
-                        primary={fmtTime(first.startTime)}
+                        primary={first.origin === 'edge'
+                          ? `${fmtTime(first.startTime)} ⤵`
+                          : fmtTime(first.startTime)}
                         slotProps={{
                           primary: {
                             variant: 'body2',
@@ -300,7 +303,13 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
                             sx: {
                               fontVariantNumeric: 'tabular-nums',
                               fontSize: '0.76rem', lineHeight: 1.25,
-                              color: dark ? (isSelected ? W : alpha(W, 0.8)) : undefined,
+                              // An insert recovered from the camera is a different kind of footage
+                              // and never continuous with what surrounds it, so the row says so
+                              // rather than looking like one more stretch of live recording.
+                              color: first.origin === 'edge'
+                                ? theme.palette.warning.main
+                                : (dark ? (isSelected ? W : alpha(W, 0.8)) : undefined),
+                              fontStyle: first.origin === 'edge' ? 'italic' : undefined,
                               fontWeight: isNearest ? 600 : undefined,
                             },
                           },

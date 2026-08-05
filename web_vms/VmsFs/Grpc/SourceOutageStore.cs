@@ -122,7 +122,8 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
   }
 
   public async Task<List<SourceOutage>> ListAsync(
-    string? cameraId, DateTime? fromTs, DateTime? toTs, int limit, CancellationToken ct)
+    string? cameraId, DateTime? fromTs, DateTime? toTs, int limit, CancellationToken ct,
+    Guid? outageUid = null)
   {
     await using var cmd = dataSource.CreateCommand("""
       SELECT outage_uid, camera_id, stream_name, started_ts, ended_ts, cause,
@@ -131,6 +132,7 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
       WHERE ($1::text IS NULL OR camera_id = $1)
         AND ($2::timestamptz IS NULL OR COALESCE(ended_ts, now()) >= $2)
         AND ($3::timestamptz IS NULL OR started_ts <= $3)
+        AND ($5::uuid IS NULL OR outage_uid = $5)
       ORDER BY started_ts DESC
       LIMIT $4;
       """);
@@ -138,6 +140,7 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
     cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, (object?)fromTs ?? DBNull.Value);
     cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, (object?)toTs ?? DBNull.Value);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Integer, limit <= 0 ? 200 : limit);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Uuid, (object?)outageUid ?? DBNull.Value);
 
     var result = new List<SourceOutage>();
     await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -156,6 +159,25 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
         reader.GetString(9)));
     }
     return result;
+  }
+
+  /// <summary>
+  /// Records the outcome of a restore attempt. Returns false when the row is gone (retention).
+  /// </summary>
+  public async Task<bool> UpdateOutcomeAsync(
+    Guid outageUid, string state, long filledMs, int attempts, string message, CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand("""
+      UPDATE source_outages
+      SET state = $2, filled_ms = $3, attempts = $4, message = $5
+      WHERE outage_uid = $1;
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Uuid, outageUid);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, state);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Bigint, filledMs);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Integer, attempts);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, message ?? string.Empty);
+    return await cmd.ExecuteNonQueryAsync(ct) > 0;
   }
 
   /// <summary>

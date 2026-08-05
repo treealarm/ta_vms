@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <unordered_set>
 #include <memory>
 #include <mutex>
@@ -69,6 +70,9 @@ private:
   // as m_last_frame_us: that one keeps advancing, so by the time a heartbeat goes out it points at
   // whatever arrived last, and the recorded gap would stretch to the next report.
   std::atomic_int64_t m_recovered_frame_us{ 0 };
+
+  /// False until the first packet of the current session has been stamped. Reader thread only.
+  bool m_stamped_since_connect = false;
 
   std::string m_cam_id;
   std::string m_profile_token;

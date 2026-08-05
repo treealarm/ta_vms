@@ -105,7 +105,8 @@ void fs_client::enqueue_ingest_clip(
   std::chrono::system_clock::time_point start_ts,
   std::optional<std::chrono::system_clock::time_point> end_ts,
   std::uint64_t size_bytes,
-  bool force_retained)
+  bool force_retained,
+  const std::string& origin)
 {
   vms::fs::IngestClipRequest request;
   request.set_force_retained(force_retained);
@@ -114,6 +115,10 @@ void fs_client::enqueue_ingest_clip(
   clip->set_stream_name(stream_name);
   clip->set_storage_id(storage_id);
   clip->set_file_path(file_path);
+  if (!origin.empty())
+  {
+    clip->set_origin(origin);
+  }
   *clip->mutable_start_ts() = to_proto_ts(start_ts);
   if (end_ts.has_value())
   {

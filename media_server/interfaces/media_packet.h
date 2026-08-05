@@ -1,5 +1,7 @@
 #pragma once
+#include <chrono>
 #include <memory>
+#include <optional>
 
 extern "C" {
 #include <libavcodec/codec_par.h>
@@ -24,6 +26,11 @@ struct media_packet {
   int sample_rate = 0;
   int nb_samples = 0;
   avcodec_parameters_ptr codec_parameters;
+  // When the frame was captured, mapped onto this host's wall clock from the source's PTS pace.
+  // Unset for sources that cannot say (file readers, imports). Arrival time is NOT a substitute: on
+  // a degrading link packets queue up and turn up seconds after the moment they show, which would
+  // then be written into the archive as the clip's boundaries.
+  std::optional<std::chrono::system_clock::time_point> wall_ts;
   // Monotonic receive time in microseconds (av_gettime_relative), -1 = unknown.
   // Live re-timing uses it as the authoritative clock when the source stamps
   // packets with a broken pts pace (see video_transcode_processor).
@@ -46,6 +53,7 @@ inline std::shared_ptr<media_packet> clone_media_packet(const std::shared_ptr<me
   auto dst = std::make_shared<media_packet>();
   dst->packet = std::move(pkt_copy);
   dst->stream_index = src->stream_index;
+  dst->wall_ts = src->wall_ts;
   dst->time_base = src->time_base;
   dst->media_type = src->media_type;
   dst->frame_rate = src->frame_rate;

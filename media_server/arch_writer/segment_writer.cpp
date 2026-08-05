@@ -442,7 +442,17 @@ void segment_writer::write_packet(const std::shared_ptr<media_packet>& in_media)
     return;
   }
 
-  m_last_write_ts = std::chrono::system_clock::now();
+  // Capture time, not the moment this thread got round to writing: the queue in front of this
+  // writer and the network in front of the reader both add delay, and a clip whose stamps disagree
+  // with the footage inside it makes the player drift and the gap detector miss the hole.
+  const auto write_ts = media->wall_ts.value_or(std::chrono::system_clock::now());
+  if (m_last_write_ts.time_since_epoch().count() == 0)
+  {
+    // First packet of the segment: the file was opened a moment earlier, waiting for a keyframe,
+    // and claiming that earlier moment would hand the clip time it holds no footage for.
+    m_segment_start_ts = write_ts;
+  }
+  m_last_write_ts = write_ts;
 }
 
 void segment_writer::close()

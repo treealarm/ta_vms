@@ -42,6 +42,10 @@ const AUTO_REFRESH_MS = 15_000
 const BAND_PX = 640
 
 const IMPORT_POLL_MS = 2000
+// Asked for slightly wider than the hole. The camera starts a replay at the keyframe it can, and a
+// piece cut exactly to the boundary loses the frames around the seam; a second of overlap with the
+// live footage either side costs nothing, since clips are played in order of their own start.
+const IMPORT_MARGIN_MS = 1000
 
 const WINDOWS = [
   { key: '24h', ms: 24 * 3600_000 },
@@ -211,6 +215,16 @@ export default function ArchiveGapsTab() {
     const controller = new AbortController()
     const win = gapWindow(selected, Date.now())
     try {
+      // Nothing missing: no reason to ask the camera anything, but the row still has to be told —
+      // the outcome is written in the finally below, which is what turns "not filled" into "filled".
+      if (missing.length === 0)
+        return
+
+      // Visible to anyone else looking at the tab, and the marker automation will read before
+      // taking a gap of its own accord.
+      await fetch(`/api/gaps/${encodeURIComponent(selected.outageUid)}/filling`, { method: 'POST' })
+        .catch(() => undefined)
+
       const available = await fetchCameraSpans(selected.cameraId, win, controller.signal)
       if (available.length === 0) {
         setRefillError(t('gaps.nothingOnCamera'))
@@ -263,8 +277,8 @@ export default function ArchiveGapsTab() {
               body: JSON.stringify({
                 recordingToken: token.recordingToken,
                 streamName: selected.streamName || undefined,
-                startTime: new Date(piece.startMs).toISOString(),
-                endTime: new Date(piece.endMs).toISOString(),
+                startTime: new Date(piece.startMs - IMPORT_MARGIN_MS).toISOString(),
+                endTime: new Date(piece.endMs + IMPORT_MARGIN_MS).toISOString(),
                 exportToFile: false,
               }),
             })
@@ -282,6 +296,18 @@ export default function ArchiveGapsTab() {
       }
     } finally {
       setRefill(null)
+      // What the run achieved is judged from the archive and the camera, not from "the job said OK":
+      // a job can finish successfully and still have recovered nothing. Without this the gap would
+      // stay "not filled" forever, and automation would keep retrying footage the card has already
+      // overwritten.
+      await fetch(`/api/gaps/${encodeURIComponent(selected.outageUid)}/refresh`, { method: 'POST' })
+        .catch(() => undefined)
+      if (cancelRefill.current) {
+        // Cancelling is a decision, not a failure: the gap is parked until the operator hands it
+        // back, so automation does not simply pick it up again on the next tick.
+        await fetch(`/api/gaps/${encodeURIComponent(selected.outageUid)}/hold`, { method: 'POST' })
+          .catch(() => undefined)
+      }
       void load()
       // The coverage behind the band is cached by query, and a closed gap's query does not change —
       // without an explicit refetch the bar would keep showing what was there before the import.
@@ -548,14 +574,29 @@ export default function ArchiveGapsTab() {
                       <Button size="small" color="warning" onClick={() => { cancelRefill.current = true }}>
                         {t('gaps.cancelRefill')}
                       </Button>
+                    ) : selected.state === 'held' ? (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => void (async () => {
+                          await fetch(`/api/gaps/${encodeURIComponent(selected.outageUid)}/resume`,
+                            { method: 'POST' }).catch(() => undefined)
+                          void load()
+                        })()}
+                      >
+                        {t('gaps.resume')}
+                      </Button>
                     ) : (
                       <Button
                         size="small"
                         variant="contained"
-                        disabled={missing.length === 0}
+                        // Enabled even with nothing missing: pressing it then only re-reads the
+                        // state, which is how a gap filled by an earlier run stops claiming it is
+                        // not. Exhausted is terminal — the footage is gone from the card for good.
+                        disabled={selected.state === 'exhausted'}
                         onClick={() => void runRefill()}
                       >
-                        {t('gaps.refill')}
+                        {missing.length === 0 ? t('gaps.recheck') : t('gaps.refill')}
                       </Button>
                     )}
                     <EventOpenInPlayback episode={asEpisode} />

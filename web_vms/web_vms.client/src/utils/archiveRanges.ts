@@ -8,7 +8,16 @@
 import type { RecordingRangeDto } from '../dto/dtos'
 import { isSameLocalDay, localDayEndMs, localDayStartMs } from './wallTime'
 
-export type Segment = { startMs: number; endMs: number }
+export type Segment = {
+  startMs: number
+  endMs: number
+  /**
+   * Where the footage came from — `edge` for a range recovered off the camera's own storage.
+   * Only carried by coverage that is going to be drawn; the interval maths ignores it, because a
+   * hole is a hole regardless of who would have filled it.
+   */
+  origin?: string
+}
 
 /** Clips whose end is unknown are assumed to run until the next clip starts, or 60 s (one clip). */
 const ASSUMED_CLIP_MS = 60_000

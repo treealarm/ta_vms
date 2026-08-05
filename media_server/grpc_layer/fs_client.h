@@ -65,7 +65,8 @@ public:
     std::chrono::system_clock::time_point start_ts,
     std::optional<std::chrono::system_clock::time_point> end_ts,
     std::uint64_t size_bytes,
-    bool force_retained = false);
+    bool force_retained = false,
+    const std::string& origin = {});
 
   struct liveness_entry
   {

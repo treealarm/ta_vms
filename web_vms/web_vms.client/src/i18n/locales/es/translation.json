@@ -444,7 +444,8 @@
     "startTime": "Inicio",
     "endTime": "Fin",
     "clips": "Clips",
-    "jumpToDateTime": "Ir a fecha / hora"
+    "jumpToDateTime": "Ir a fecha / hora",
+    "recovered": "Recuperado de la cámara"
   },
   "onvifSubs": {
     "description": "Las cámaras de esta lista reciben eventos ONVIF. Activa el guardia para disparar grabaciones de retención con los filtros de alarma.",
@@ -739,6 +740,8 @@
     "legendPatched": "Restaurado en el archivo",
     "legendMissing": "Todavía falta",
     "playPatched": "Reproducir este fragmento",
-    "previewPlaceholder": "Pulse un fragmento restaurado de la barra para reproducirlo"
+    "previewPlaceholder": "Pulse un fragmento restaurado de la barra para reproducirlo",
+    "resume": "Devolver a automático",
+    "recheck": "Comprobar estado"
   }
 }

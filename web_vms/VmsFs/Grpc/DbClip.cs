@@ -22,6 +22,10 @@ public sealed class DbClip
   [Column("storage_id")]
   public string StorageId { get; set; } = "";
 
+  /// <summary>"live" or "edge" — see the 0004 migration.</summary>
+  [Column("origin")]
+  public string Origin { get; set; } = "live";
+
   [Column("start_ts")]
   public DateTime StartTs { get; set; }
 

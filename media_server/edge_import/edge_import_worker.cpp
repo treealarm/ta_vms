@@ -538,7 +538,8 @@ void edge_import_worker::close_segment()
       m_segment_start_ts,
       m_segment_last_ts,
       bytes,
-      true);
+      true,
+      "edge");
 
     m_progress.clips_written += 1;
     m_progress.bytes_written += bytes;

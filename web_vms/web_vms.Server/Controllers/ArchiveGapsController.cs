@@ -1,7 +1,9 @@
 using Google.Protobuf.WellKnownTypes;
+using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Fs;
+using Vms.Onvif;
 using web_vms.Authorization;
 using web_vms.Types.Dto;
 
@@ -22,8 +24,20 @@ namespace web_vms.Server.Controllers;
 public sealed class ArchiveGapsController(
   ICameraManager manager,
   ServerPairRegistry registry,
-  ICameraAccessService access) : ControllerBase
+  ICameraAccessService access,
+  OnvifService.OnvifServiceClient onvifClient,
+  ILogger<ArchiveGapsController> logger) : ControllerBase
 {
+  // A search walks several SOAP round trips on the device, each with its own internal timeout.
+  private static readonly TimeSpan SearchTimeout = TimeSpan.FromSeconds(60);
+
+  /// <summary>
+  /// Consecutive fruitless attempts before a gap stops being offered to automation. Reset by any
+  /// progress at all, so a long gap recovered piece by piece never runs out precisely because it is
+  /// succeeding.
+  /// </summary>
+  private const int MaxFruitlessAttempts = 3;
+
   private static DateTime ToUtc(DateTime dt) => dt.Kind switch
   {
     DateTimeKind.Utc => dt,
@@ -105,5 +119,209 @@ public sealed class ArchiveGapsController(
       .ToList();
 
     return Ok(outages);
+  }
+
+  /// <summary>
+  /// Re-reads what the archive holds for a gap and what the camera still has, and records the
+  /// outcome on the row.
+  /// </summary>
+  /// <remarks>
+  /// Called after a restore run. Without it every gap stays "not filled" forever, and — once
+  /// automation exists — a gap whose footage the camera has already overwritten would be retried
+  /// until the end of time. The judgement is deliberately made from the archive and the device
+  /// rather than from "did the job report success": a job can succeed and still recover nothing.
+  /// </remarks>
+  [CameraAccess(CameraAction.Control, Source = CameraIdSource.Action)]
+  [HttpPost("{outageUid}/refresh")]
+  public async Task<IActionResult> Refresh(string outageUid, CancellationToken ct)
+  {
+    var (row, client) = await FindAsync(outageUid, ct);
+    if (row is null || client is null)
+      return NotFound(new { message = "gap not found" });
+    if (!await access.IsAllowedAsync(User, row.CameraId, CameraAction.Control, ct))
+      return Forbid();
+
+    var startedTs = row.StartedTs.ToDateTime();
+    var endedTs = row.EndedTs?.ToDateTime() ?? DateTime.UtcNow;
+    if (endedTs <= startedTs)
+      return Ok(ToDto(row));
+
+    // What the archive actually holds inside the gap.
+    var timeline = await client.GetRecordingTimelineAsync(new GetRecordingTimelineRequest
+    {
+      CameraIds = { row.CameraId },
+      StreamName = row.StreamName ?? string.Empty,
+      FromTs = Timestamp.FromDateTime(startedTs),
+      ToTs = Timestamp.FromDateTime(endedTs),
+      MinGapMs = 1000,
+    }, cancellationToken: ct);
+
+    var covered = timeline.Tracks
+      .SelectMany(t => t.Intervals)
+      .Select(i => (Start: i.StartTs.ToDateTime(), End: i.EndTs.ToDateTime()))
+      .ToList();
+    var missing = Complement(covered, startedTs, endedTs);
+    var filledMs = (long)(endedTs - startedTs - missing.Aggregate(
+      TimeSpan.Zero, (acc, m) => acc + (m.End - m.Start))).TotalMilliseconds;
+    var progressed = filledMs > row.FilledMs;
+
+    string state;
+    var message = string.Empty;
+    var attempts = row.Attempts;
+
+    if (missing.Count == 0)
+    {
+      state = "filled";
+    }
+    else if (await StillOnCameraAsync(row.CameraId, missing, ct) is { } fillable && fillable.Count == 0)
+    {
+      // Terminal, and safe to be: the card is a ring buffer, so footage that is gone never returns.
+      state = "exhausted";
+      message = "the camera no longer holds the missing period";
+    }
+    else
+    {
+      // Counts only fruitless tries: any recovered footage means the run is working, however slowly.
+      attempts = progressed ? 0 : row.Attempts + 1;
+      state = attempts >= MaxFruitlessAttempts ? "partial" : "open";
+      if (state == "partial")
+        message = "no progress after repeated attempts";
+    }
+
+    await client.UpdateSourceOutageAsync(new UpdateSourceOutageRequest
+    {
+      OutageUid = row.OutageUid,
+      State = state,
+      FilledMs = Math.Max(0, filledMs),
+      Attempts = attempts,
+      Message = message,
+    }, cancellationToken: ct);
+
+    var (updated, _) = await FindAsync(outageUid, ct);
+    return Ok(updated is null ? ToDto(row) : ToDto(updated));
+  }
+
+  /// <summary>
+  /// Marks a restore as under way, so the gap says so to anyone else looking at the tab.
+  /// </summary>
+  /// <remarks>
+  /// Also what keeps a manual run and an automatic one from fighting over the same camera: whoever
+  /// takes the gap first is visible, and the device would refuse the second job anyway.
+  /// </remarks>
+  [CameraAccess(CameraAction.Control, Source = CameraIdSource.Action)]
+  [HttpPost("{outageUid}/filling")]
+  public Task<IActionResult> MarkFilling(string outageUid, CancellationToken ct) =>
+    SetStateAsync(outageUid, "filling", string.Empty, ct, keepAttempts: true);
+
+  /// <summary>Takes a gap out of automation's reach until the operator hands it back.</summary>
+  [CameraAccess(CameraAction.Control, Source = CameraIdSource.Action)]
+  [HttpPost("{outageUid}/hold")]
+  public Task<IActionResult> Hold(string outageUid, CancellationToken ct) =>
+    SetStateAsync(outageUid, "held", "held by the operator", ct);
+
+  /// <summary>Returns a held gap to automation.</summary>
+  [CameraAccess(CameraAction.Control, Source = CameraIdSource.Action)]
+  [HttpPost("{outageUid}/resume")]
+  public Task<IActionResult> Resume(string outageUid, CancellationToken ct) =>
+    SetStateAsync(outageUid, "open", string.Empty, ct);
+
+  private async Task<IActionResult> SetStateAsync(
+    string outageUid, string state, string message, CancellationToken ct, bool keepAttempts = false)
+  {
+    var (row, client) = await FindAsync(outageUid, ct);
+    if (row is null || client is null)
+      return NotFound(new { message = "gap not found" });
+    if (!await access.IsAllowedAsync(User, row.CameraId, CameraAction.Control, ct))
+      return Forbid();
+
+    await client.UpdateSourceOutageAsync(new UpdateSourceOutageRequest
+    {
+      OutageUid = row.OutageUid,
+      State = state,
+      FilledMs = row.FilledMs,
+      // Cleared on hold and resume alike: the operator taking charge says nothing about whether the
+      // previous automatic attempts were fruitless. A run that is merely starting has not earned a
+      // reset yet — that is decided from what it recovers.
+      Attempts = keepAttempts ? row.Attempts : 0,
+      Message = message,
+    }, cancellationToken: ct);
+
+    var (updated, _) = await FindAsync(outageUid, ct);
+    return Ok(updated is null ? ToDto(row) : ToDto(updated));
+  }
+
+  // The row lives on exactly one FS instance and nothing but its uid is known, so this fans out.
+  private async Task<(SourceOutageRow? Row, FsService.FsServiceClient? Client)> FindAsync(
+    string outageUid, CancellationToken ct)
+  {
+    var req = new ListSourceOutagesRequest { OutageUid = outageUid, Limit = 1 };
+    var results = await registry.FanOutFsAsync(
+      (c, o) => c.ListSourceOutagesAsync(req, o).ResponseAsync, ct);
+    foreach (var result in results)
+    {
+      var row = result.Value.Outages.FirstOrDefault();
+      if (row is not null)
+        return (row, result.Client);
+    }
+    return (null, null);
+  }
+
+  /// <summary>What of `missing` the camera still has, or null when it could not be asked.</summary>
+  private async Task<List<(DateTime Start, DateTime End)>?> StillOnCameraAsync(
+    string cameraId, List<(DateTime Start, DateTime End)> missing, CancellationToken ct)
+  {
+    if (missing.Count == 0)
+      return [];
+
+    try
+    {
+      var resp = await onvifClient.ListEdgeRecordingIntervalsAsync(new EdgeIntervalsRequest
+      {
+        SourceId = cameraId,
+        StartTime = missing[0].Start.ToString("O"),
+        EndTime = missing[^1].End.ToString("O"),
+        MaxResults = 200,
+      }, new CallOptions(deadline: DateTime.UtcNow.Add(SearchTimeout), cancellationToken: ct));
+
+      if (!resp.Searched)
+        return null;
+
+      var available = resp.Intervals
+        .Select(i => (Start: DateTime.Parse(i.StartTime).ToUniversalTime(),
+                      End: DateTime.Parse(i.EndTime).ToUniversalTime()))
+        .ToList();
+
+      return missing
+        .SelectMany(m => available
+          .Select(a => (Start: m.Start > a.Start ? m.Start : a.Start, End: m.End < a.End ? m.End : a.End))
+          .Where(x => x.End > x.Start))
+        .ToList();
+    }
+    catch (Exception ex)
+    {
+      // A camera that cannot be asked is not a camera that has nothing: never conclude "exhausted"
+      // from a failed query, or one network hiccup would close a gap that is still recoverable.
+      logger.LogWarning(ex, "Could not ask camera {CameraId} what it still holds", cameraId);
+      return null;
+    }
+  }
+
+  private static List<(DateTime Start, DateTime End)> Complement(
+    List<(DateTime Start, DateTime End)> covered, DateTime from, DateTime to)
+  {
+    var result = new List<(DateTime, DateTime)>();
+    var cursor = from;
+    foreach (var (start, end) in covered.OrderBy(c => c.Start))
+    {
+      if (start > cursor)
+        result.Add((cursor, start < to ? start : to));
+      if (end > cursor)
+        cursor = end;
+      if (cursor >= to)
+        break;
+    }
+    if (cursor < to)
+      result.Add((cursor, to));
+    return result;
   }
 }

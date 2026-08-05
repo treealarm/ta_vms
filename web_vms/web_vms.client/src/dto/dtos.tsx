@@ -238,6 +238,8 @@ export type RecordingDto = {
   endTime?: string
   sizeBytes: number
   clipUid: string
+  /** `live`, or `edge` for a range recovered from the camera's own storage. */
+  origin?: string
 }
 
 export type RecordingRangeDto = {
@@ -291,6 +293,8 @@ export type RecordingTimelineQueryDto = {
 export type RecordingIntervalDto = {
   startTime: string
   endTime: string
+  /** `live`, or `edge` for footage recovered from the camera's own storage. */
+  origin?: string
 }
 
 export type RecordingTimelineTrackDto = {
