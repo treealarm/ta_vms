@@ -44,6 +44,19 @@ public sealed class ArchiveGapsController(
   /// </summary>
   private static readonly TimeSpan FillTolerance = TimeSpan.FromSeconds(1);
 
+  /// <summary>
+  /// How old a gap must be before an empty answer from the camera may be read as "gone for good".
+  /// </summary>
+  /// <remarks>
+  /// The card is a ring buffer, so material only ever disappears — but that is true of old footage.
+  /// A stretch recorded minutes ago can be missing from a search simply because the device has not
+  /// finished indexing it, and calling that "exhausted" is irreversible: the gap would never be
+  /// attempted again although the footage is right there.
+  /// </remarks>
+  private static readonly TimeSpan ExhaustAfter = TimeSpan.FromSeconds(
+    int.TryParse(Environment.GetEnvironmentVariable("VMS_BACKFILL_EXHAUST_AFTER_SECONDS"), out var e) && e > 0
+      ? e : 900);
+
   private static DateTime ToUtc(DateTime dt) => dt.Kind switch
   {
     DateTimeKind.Utc => dt,
@@ -184,9 +197,14 @@ public sealed class ArchiveGapsController(
     {
       state = "filled";
     }
-    else if (await StillOnCameraAsync(row.CameraId, missing, ct) is { } fillable && fillable.Count == 0)
+    else if (await StillOnCameraAsync(row.CameraId, missing, ct) is { } fillable
+             && fillable.Count == 0
+             && DateTime.UtcNow - endedTs >= ExhaustAfter
+             // One empty answer can be the network rather than the card; it takes a repeat.
+             && row.Attempts >= 1)
     {
-      // Terminal, and safe to be: the card is a ring buffer, so footage that is gone never returns.
+      // Terminal, and safe to be once the gap is old enough: the card is a ring buffer, so footage
+      // that is gone never returns. Said too early it would be a lie — see ExhaustAfter.
       state = "exhausted";
       message = "the camera no longer holds the missing period";
     }

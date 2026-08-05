@@ -63,6 +63,17 @@ public sealed class EdgeImportScheduler(
   /// </summary>
   private static readonly TimeSpan FillTolerance = TimeSpan.FromSeconds(1);
 
+  /// <summary>
+  /// How old a gap must be before an empty answer from the camera may be read as "gone for good".
+  /// </summary>
+  /// <remarks>
+  /// The card is a ring buffer, so material only ever disappears — but that is true of old footage.
+  /// A stretch recorded minutes ago can be missing from a search simply because the device has not
+  /// finished indexing it, and calling that "exhausted" is irreversible: the gap would never be
+  /// attempted again although the footage is right there.
+  /// </remarks>
+  private static readonly TimeSpan ExhaustAfter = EnvSeconds("VMS_BACKFILL_EXHAUST_AFTER_SECONDS", 900);
+
   private readonly CancellationTokenSource _cts = new();
   private Task? _task;
 
@@ -193,6 +204,18 @@ public sealed class EdgeImportScheduler(
     }
     if (available.Count == 0)
     {
+      // Two independent reasons not to believe a single empty answer. The device may still be
+      // indexing what it has just recorded — and a camera in trouble answers a search without
+      // finding anything at all, which is a statement about the network, not about the card.
+      // Declaring it exhausted is irreversible, so it takes both age and a repeat.
+      if (DateTime.UtcNow - endedTs < ExhaustAfter || outage.Attempts < 1)
+      {
+        logger.LogDebug("Edge backfill: {CameraId} has nothing for the gap yet, will retry",
+          outage.CameraId);
+        await outages.UpdateOutcomeAsync(outage.OutageUid, "open", outage.FilledMs,
+          outage.Attempts + 1, "the camera returned nothing for this period", ct);
+        return;
+      }
       await FinishAsync(outage, "exhausted", "the camera no longer holds the missing period", ct);
       return;
     }

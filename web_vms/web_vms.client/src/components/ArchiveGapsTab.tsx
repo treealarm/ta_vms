@@ -30,12 +30,7 @@ import type {
 import { useAppDispatch, useAppSelector } from '../store'
 import { getErrorMessage } from '../store/api'
 import { fetchRecordingTimeline, selectWallCoverage, wallCoverageKey } from '../store/wallCoverageSlice'
-import {
-  complementSegments,
-  intersectSegments,
-  subtractSegments,
-  type Segment
-} from '../utils/archiveRanges'
+import { complementSegments, intersectSegments, type Segment } from '../utils/archiveRanges'
 import EdgeMediaPreview, { type EdgePreviewTarget } from './EdgeMediaPreview'
 import EventOpenInPlayback from './EventOpenInPlayback'
 
@@ -508,26 +503,18 @@ export default function ArchiveGapsTab() {
     // Only what lies inside the gap. The surrounding archive is deliberately not drawn: it answers a
     // question this tab does not ask (the monitor shows it), and mixing it in made the band read as
     // "recording coverage" rather than "how much of this hole has been filled".
-    const filled = intersectSegments(coverage, [win])
+    // Only two things matter here: what the import brought back, and what is still missing. Footage
+    // that happened to be inside the window from ordinary recording is not a repair — and since a
+    // gap is closed by recovered material alone, it counts as missing and is drawn that way.
+    // Taken from the same coverage the verdict is computed from, not from a second query. Two
+    // sources answering the same question is how the bar came to disagree with the state: a clip
+    // recovered with the import's margin starts before the gap and fell outside the other lookup,
+    // so its footage was drawn as if it had always been there.
+    const fromCamera = intersectSegments(coverage.filter((seg) => seg.origin === 'edge'), [win])
+    const restoredPct = Math.round(
+      (fromCamera.reduce((a, sg) => a + (sg.endMs - sg.startMs), 0) / span) * 100)
 
-    // Split by where the footage came from. Coverage is judged from every clip regardless of origin
-    // — otherwise a gap whose material is already in the archive would be fetched from the camera
-    // again — but calling all of it "restored" claims credit for recordings that were always there.
-    const fromCamera = intersectSegments(
-      recovered
-        .map((clip) => ({
-          startMs: Date.parse(clip.startTime),
-          endMs: clip.endTime ? Date.parse(clip.endTime) : win.endMs,
-        }))
-        .filter((sg) => Number.isFinite(sg.startMs) && Number.isFinite(sg.endMs)),
-      [win])
-    const alreadyHeld = subtractSegments(filled, fromCamera)
-
-    const covered = (segs: Segment[]) => segs.reduce((a, sg) => a + (sg.endMs - sg.startMs), 0)
-    const pct = Math.round((covered(filled) / span) * 100)
-    const restoredPct = Math.round((covered(fromCamera) / span) * 100)
-
-    const piece = (seg: Segment, key: string, kind: 'restored' | 'held' | 'missing') => {
+    const piece = (seg: Segment, key: string, kind: 'restored' | 'missing') => {
       const patched = kind !== 'missing'
       return (
       <Box
@@ -546,9 +533,9 @@ export default function ArchiveGapsTab() {
           bottom: 0,
           left: `${((Math.max(seg.startMs, win.startMs) - win.startMs) / span) * 100}%`,
           width: `${Math.max(0.5, ((Math.min(seg.endMs, win.endMs) - Math.max(seg.startMs, win.startMs)) / span) * 100)}%`,
-          bgcolor: (th) => kind === 'restored' ? alpha(th.palette.success.main, 0.75)
-            : kind === 'held' ? alpha(th.palette.primary.main, 0.55)
-            : alpha(th.palette.error.main, 0.25),
+          bgcolor: (th) => alpha(
+            kind === 'restored' ? th.palette.success.main : th.palette.error.main,
+            kind === 'restored' ? 0.75 : 0.25),
           backgroundImage: kind === 'missing'
             ? 'repeating-linear-gradient(45deg, rgba(255,255,255,.35) 0 3px, transparent 3px 6px)'
             : undefined,
@@ -568,7 +555,6 @@ export default function ArchiveGapsTab() {
           bgcolor: (th) => alpha(th.palette.text.primary, 0.06),
         }}>
           {missing.map((sg, i) => piece(sg, `missing-${i}`, 'missing'))}
-          {alreadyHeld.map((sg, i) => piece(sg, `held-${i}`, 'held'))}
           {fromCamera.map((sg, i) => piece(sg, `restored-${i}`, 'restored'))}
         </Box>
 
@@ -590,11 +576,6 @@ export default function ArchiveGapsTab() {
             <Typography variant="caption" color="text.secondary">{t('gaps.legendPatched')}</Typography>
           </Stack>
           <Stack direction="row" spacing={0.5} alignItems="center">
-            <Box sx={{ width: 12, height: 12, borderRadius: '2px',
-              bgcolor: (th) => alpha(th.palette.primary.main, 0.55) }} />
-            <Typography variant="caption" color="text.secondary">{t('gaps.legendHeld')}</Typography>
-          </Stack>
-          <Stack direction="row" spacing={0.5} alignItems="center">
             <Box sx={{
               width: 12, height: 12, borderRadius: '2px',
               bgcolor: (th) => alpha(th.palette.error.main, 0.25),
@@ -604,9 +585,7 @@ export default function ArchiveGapsTab() {
           </Stack>
           <Box sx={{ flex: 1 }} />
           <Typography variant="body2">
-            {t('gaps.covered', { pct })}
-            {restoredPct > 0 ? ` (${t('gaps.ofWhichRestored', { pct: restoredPct })})` : ''}
-            {' · '}{formatDuration(span)}
+            {t('gaps.covered', { pct: restoredPct })} · {formatDuration(span)}
           </Typography>
         </Stack>
       </Stack>
@@ -703,7 +682,7 @@ export default function ArchiveGapsTab() {
                       <Button size="small" color="warning" onClick={() => void cancelAutoJob()}>
                         {t('gaps.cancelRefill')}
                       </Button>
-                    ) : selected.state === 'held' ? (
+                    ) : selected.state !== 'open' && selected.state !== 'filling' ? (
                       <Button
                         size="small"
                         variant="outlined"
@@ -719,10 +698,10 @@ export default function ArchiveGapsTab() {
                       <Button
                         size="small"
                         variant="contained"
-                        // Enabled even with nothing missing: pressing it then only re-reads the
-                        // state, which is how a gap filled by an earlier run stops claiming it is
-                        // not. Exhausted is terminal — the footage is gone from the card for good.
-                        disabled={selected.state === 'exhausted'}
+                        // Never disabled. With nothing missing it only re-reads the state, which is
+                        // how a gap filled earlier stops claiming it is not; and "nothing left on
+                        // the camera" is a verdict from one search, which a camera that was merely
+                        // unreachable can produce — asking again costs a session and nothing else.
                         onClick={() => void runRefill()}
                       >
                         {missing.length === 0 ? t('gaps.recheck') : t('gaps.refill')}

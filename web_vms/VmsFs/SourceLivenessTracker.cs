@@ -241,5 +241,15 @@ public sealed class SourceLivenessTracker(
   /// went down. The last clip's end is not an estimate: the archive stopped exactly there.
   /// </summary>
   private async Task<DateTime> FallbackStartAsync(string cameraId, string streamName, CancellationToken ct)
-    => await outages.LastClipEndAsync(cameraId, streamName, DateTime.UtcNow, ct) ?? DateTime.UtcNow;
+  {
+    // Without a frame timestamp in memory the only defensible claim is "this stream has been quiet
+    // for at least as long as it takes to notice". The archive's last clip refines that — but only
+    // within that window: reaching further back would invent a gap over a period when nothing was
+    // supposed to be recorded at all, which is exactly what happens when recording is switched on
+    // after the server spent an hour idle.
+    var now = DateTime.UtcNow;
+    var earliest = now - Stale;
+    var lastClip = await outages.LastClipEndAsync(cameraId, streamName, now, ct);
+    return lastClip is { } clipEnd && clipEnd > earliest ? clipEnd : earliest;
+  }
 }

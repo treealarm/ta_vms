@@ -709,7 +709,7 @@
     "noRows": "Sin cortes en este periodo",
     "noSelection": "Seleccione un corte",
     "ongoing": "en curso",
-    "covered": "Cubierto por el archivo: {{pct}}%",
+    "covered": "Recuperado de la cámara: {{pct}}%",
     "from": "Desde",
     "to": "Hasta",
     "causeLabel": "Causa",
@@ -747,8 +747,6 @@
     "resume": "Devolver a automático",
     "recheck": "Comprobar estado",
     "autoRefilling": "Restaurando automáticamente — hasta {{at}}",
-    "recoveredClips": "Clips recuperados: {{count}}",
-    "ofWhichRestored": "recuperado de la cámara: {{pct}}%",
-    "legendHeld": "Ya estaba en el archivo"
+    "recoveredClips": "Clips recuperados: {{count}}"
   }
 }

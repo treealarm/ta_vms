@@ -709,7 +709,7 @@
     "noRows": "No outages in this window",
     "noSelection": "Select an outage",
     "ongoing": "ongoing",
-    "covered": "Covered by the archive: {{pct}}%",
+    "covered": "Recovered from the camera: {{pct}}%",
     "from": "From",
     "to": "To",
     "causeLabel": "Cause",
@@ -747,8 +747,6 @@
     "resume": "Return to automatic",
     "recheck": "Re-check status",
     "autoRefilling": "Restoring automatically — reached {{at}}",
-    "recoveredClips": "Recovered clips: {{count}}",
-    "ofWhichRestored": "recovered from the camera: {{pct}}%",
-    "legendHeld": "Already in the archive"
+    "recoveredClips": "Recovered clips: {{count}}"
   }
 }
