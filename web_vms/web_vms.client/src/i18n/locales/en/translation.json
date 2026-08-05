@@ -65,7 +65,10 @@
     "deleteCamera": "Delete camera",
     "disabled": "Disable camera",
     "livePreview": "Live preview ({{stream}})",
-    "onvifEventsEnabled": "Subscribe to ONVIF events"
+    "onvifEventsEnabled": "Subscribe to ONVIF events",
+    "edgeBackfill": "Auto-recover gaps from the camera",
+    "edgeBackfillOff": "Off",
+    "edgeBackfillHint": "The camera records one stream onto its storage — pick the one it records"
   },
   "cameraControl": {
     "showControls": "Show camera controls",
@@ -742,6 +745,7 @@
     "playPatched": "Play this piece",
     "previewPlaceholder": "Click a restored piece on the bar to play it",
     "resume": "Return to automatic",
-    "recheck": "Re-check status"
+    "recheck": "Re-check status",
+    "autoRefilling": "Restoring automatically — reached {{at}}"
   }
 }

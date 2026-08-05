@@ -56,7 +56,17 @@ public sealed class ClipStorage(
         storage_id  = EXCLUDED.storage_id,
         start_ts    = EXCLUDED.start_ts,
         end_ts      = COALESCE(EXCLUDED.end_ts, clips.end_ts),
-        size_bytes  = GREATEST(clips.size_bytes, EXCLUDED.size_bytes),
+        -- GREATEST only while the clip is still being written: live ingest announces it at open
+        -- with size 0 and again at close with the real size. A finalized ingest for a path that
+        -- already exists means the file was rewritten, and keeping the larger of the two sizes
+        -- would describe a file that is no longer there.
+        size_bytes  = CASE WHEN EXCLUDED.end_ts IS NOT NULL
+                        THEN EXCLUDED.size_bytes
+                        ELSE GREATEST(clips.size_bytes, EXCLUDED.size_bytes) END,
+        -- Same reason: an index parsed from the previous file points past the end of the new one,
+        -- and every playback of it fails on the first fragment. Dropped here and rebuilt lazily or
+        -- by the warmer.
+        frag_index  = CASE WHEN EXCLUDED.end_ts IS NOT NULL THEN NULL ELSE clips.frag_index END,
         retained    = clips.retained OR EXCLUDED.retained,
         origin      = EXCLUDED.origin
       RETURNING clip_uid::text;

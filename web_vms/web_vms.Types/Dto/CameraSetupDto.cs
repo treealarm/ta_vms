@@ -58,6 +58,13 @@ public record CameraSetupDto
   public string? Path { get; init; }
   public CredentialsDto? Cred { get; init; }
   public OnvifConnectionDto? OnvifConn { get; set; }
+  /// <summary>
+  /// Which stream to recover from the camera's own storage when the archive has a gap; empty
+  /// disables it. On the camera rather than the stream: the card holds one archive, and which
+  /// stream goes into it is chosen in the camera itself.
+  /// </summary>
+  public string EdgeBackfillStream { get; init; } = string.Empty;
+
   /// <summary>Filled by web_vms.Server when merging FS retention status.</summary>
   public bool? ActiveRetentionWindow { get; init; }
   /// <summary>An active retention window with no specific stream retains every stream.</summary>

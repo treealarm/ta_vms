@@ -286,10 +286,23 @@ public sealed class ArchiveGapsController(
       if (!resp.Searched)
         return null;
 
-      var available = resp.Intervals
+      // One interval per track (video, audio, metadata) describes the same stretch, so they are
+      // collapsed before being compared with what is missing.
+      var available = new List<(DateTime Start, DateTime End)>();
+      foreach (var span in resp.Intervals
         .Select(i => (Start: DateTime.Parse(i.StartTime).ToUniversalTime(),
                       End: DateTime.Parse(i.EndTime).ToUniversalTime()))
-        .ToList();
+        .Where(s => s.End > s.Start)
+        .OrderBy(s => s.Start))
+      {
+        if (available.Count > 0 && span.Start <= available[^1].End)
+        {
+          if (span.End > available[^1].End)
+            available[^1] = (available[^1].Start, span.End);
+          continue;
+        }
+        available.Add(span);
+      }
 
       return missing
         .SelectMany(m => available

@@ -65,7 +65,10 @@
     "deleteCamera": "Eliminar cámara",
     "disabled": "Deshabilitar cámara",
     "livePreview": "Vista en vivo ({{stream}})",
-    "onvifEventsEnabled": "Suscribirse a eventos ONVIF"
+    "onvifEventsEnabled": "Suscribirse a eventos ONVIF",
+    "edgeBackfill": "Recuperar huecos desde la cámara",
+    "edgeBackfillOff": "Desactivado",
+    "edgeBackfillHint": "La cámara graba un solo flujo en su almacenamiento — elija cuál"
   },
   "cameraControl": {
     "showControls": "Mostrar controles de cámara",
@@ -742,6 +745,7 @@
     "playPatched": "Reproducir este fragmento",
     "previewPlaceholder": "Pulse un fragmento restaurado de la barra para reproducirlo",
     "resume": "Devolver a automático",
-    "recheck": "Comprobar estado"
+    "recheck": "Comprobar estado",
+    "autoRefilling": "Restaurando automáticamente — hasta {{at}}"
   }
 }

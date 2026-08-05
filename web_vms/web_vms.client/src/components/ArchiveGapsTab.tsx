@@ -126,6 +126,10 @@ export default function ArchiveGapsTab() {
     useState<{ done: number; total: number; label: string; fraction: number } | null>(null)
   const [refillError, setRefillError] = useState<string | null>(null)
   const [preview, setPreview] = useState<EdgePreviewTarget | null>(null)
+  // The import the scheduler is running right now, if any. A run started here reports its own
+  // progress; one started by automation is only visible as the job on the media server, so the tab
+  // watches that instead of showing a bare "Filling" and nothing else.
+  const [autoJob, setAutoJob] = useState<EdgeImportJobDto | null>(null)
   // Set by the Cancel button and read between pieces; the job already running is cancelled through
   // the API, and the loop stops rather than starting the next one.
   const cancelRefill = useRef(false)
@@ -349,6 +353,46 @@ export default function ArchiveGapsTab() {
       return false
     }
   }, [t])
+
+  useEffect(() => {
+    if (!selected || selected.state !== 'filling' || refill) {
+      setAutoJob(null)
+      return
+    }
+
+    let dropped = false
+    const win = gapWindow(selected, nowMs)
+    const poll = async () => {
+      try {
+        const response = await fetch(
+          `/api/edge-archive/cameras/${encodeURIComponent(selected.cameraId)}/imports`)
+        if (!response.ok) return
+        const jobs = (await response.json()) as EdgeImportJobDto[]
+        // Matched by overlap rather than by id: the row does not record which job is filling it,
+        // and the camera runs one import at a time anyway.
+        const running = jobs.find((j) => j.state === 'running'
+          && j.startTime && j.endTime
+          && Date.parse(j.endTime) > win.startMs && Date.parse(j.startTime) < win.endMs)
+        if (!dropped) setAutoJob(running ?? null)
+      } catch { /* the next tick tries again */ }
+    }
+
+    void poll()
+    const timer = window.setInterval(() => void poll(), IMPORT_POLL_MS)
+    return () => { dropped = true; window.clearInterval(timer) }
+  }, [selected, refill, nowMs])
+
+  /** Stops the scheduler's run and parks the gap, so it is not picked up again on the next tick. */
+  const cancelAutoJob = useCallback(async () => {
+    if (!selected || !autoJob) return
+    await fetch(
+      `/api/edge-archive/cameras/${encodeURIComponent(selected.cameraId)}/imports/${autoJob.jobId}`,
+      { method: 'DELETE' }).catch(() => undefined)
+    await fetch(`/api/gaps/${encodeURIComponent(selected.outageUid)}/hold`, { method: 'POST' })
+      .catch(() => undefined)
+    setAutoJob(null)
+    void load()
+  }, [selected, autoJob, load])
 
   const cameraLabel = (id: string) => camerasMap[id]?.name || id
 
@@ -574,6 +618,10 @@ export default function ArchiveGapsTab() {
                       <Button size="small" color="warning" onClick={() => { cancelRefill.current = true }}>
                         {t('gaps.cancelRefill')}
                       </Button>
+                    ) : autoJob ? (
+                      <Button size="small" color="warning" onClick={() => void cancelAutoJob()}>
+                        {t('gaps.cancelRefill')}
+                      </Button>
                     ) : selected.state === 'held' ? (
                       <Button
                         size="small"
@@ -613,6 +661,24 @@ export default function ArchiveGapsTab() {
                       />
                     </Stack>
                   )}
+                  {!refill && autoJob && (() => {
+                    const from = autoJob.startTime ? Date.parse(autoJob.startTime) : NaN
+                    const to = autoJob.endTime ? Date.parse(autoJob.endTime) : NaN
+                    const at = autoJob.position ? Date.parse(autoJob.position) : NaN
+                    const pct = Number.isFinite(from) && Number.isFinite(to) && to > from && Number.isFinite(at)
+                      ? Math.min(100, Math.max(0, Math.round(((at - from) / (to - from)) * 100)))
+                      : 0
+                    return (
+                      <Stack spacing={0.5}>
+                        <Typography variant="caption" color="text.secondary">
+                          {t('gaps.autoRefilling', {
+                            at: Number.isFinite(at) ? new Date(at).toLocaleTimeString() : '—',
+                          })}
+                        </Typography>
+                        <LinearProgress variant="determinate" value={pct} />
+                      </Stack>
+                    )
+                  })()}
                   {refillError && <Typography variant="body2" color="error">{refillError}</Typography>}
 
                   {renderBand()}

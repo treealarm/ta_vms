@@ -177,6 +177,8 @@ export type CameraSetupDto = {
   /** True while one of the assigned schedule windows is open. Recomputed server-side from the wall
    *  clock; while true the camera records continuously, overriding profile and overrides. */
   scheduleActive?: boolean
+  /** Which stream to recover from the camera's own storage when the archive has a gap; empty = off. */
+  edgeBackfillStream?: string
 }
 
 /** What a user may do with a camera. All false = no access. */

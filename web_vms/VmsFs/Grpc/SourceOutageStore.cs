@@ -145,20 +145,64 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
     var result = new List<SourceOutage>();
     await using var reader = await cmd.ExecuteReaderAsync(ct);
     while (await reader.ReadAsync(ct))
-    {
-      result.Add(new SourceOutage(
-        reader.GetGuid(0),
-        reader.GetString(1),
-        reader.GetString(2),
-        reader.GetDateTime(3),
-        reader.IsDBNull(4) ? null : reader.GetDateTime(4),
-        reader.GetString(5),
-        reader.GetString(6),
-        reader.GetInt64(7),
-        reader.GetInt32(8),
-        reader.GetString(9)));
-    }
+      result.Add(ReadOutage(reader));
     return result;
+  }
+
+  private static SourceOutage ReadOutage(NpgsqlDataReader reader) => new(
+    reader.GetGuid(0),
+    reader.GetString(1),
+    reader.GetString(2),
+    reader.GetDateTime(3),
+    reader.IsDBNull(4) ? null : reader.GetDateTime(4),
+    reader.GetString(5),
+    reader.GetString(6),
+    reader.GetInt64(7),
+    reader.GetInt32(8),
+    reader.GetString(9));
+
+  /// <summary>
+  /// Closed gaps that are still worth trying, oldest first. The camera holds about an hour, so a
+  /// backlog is worked from the oldest end — that is the part about to disappear.
+  /// </summary>
+  /// <param name="settledBefore">
+  /// Only gaps that ended before this. A camera does not offer a just-recorded stretch for replay
+  /// immediately; asking too early returns nothing and burns an attempt.
+  /// </param>
+  public async Task<List<SourceOutage>> ListPendingAsync(
+    DateTime settledBefore, DateTime notOlderThan, int limit, CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand("""
+      SELECT outage_uid, camera_id, stream_name, started_ts, ended_ts, cause,
+             state, filled_ms, attempts, message
+      FROM source_outages
+      WHERE state = 'open'
+        AND ended_ts IS NOT NULL
+        AND ended_ts <= $1
+        AND started_ts >= $2
+        AND (next_retry_ts IS NULL OR next_retry_ts <= now())
+      ORDER BY started_ts
+      LIMIT $3;
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, settledBefore);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, notOlderThan);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Integer, limit <= 0 ? 10 : limit);
+
+    var result = new List<SourceOutage>();
+    await using var reader = await cmd.ExecuteReaderAsync(ct);
+    while (await reader.ReadAsync(ct))
+      result.Add(ReadOutage(reader));
+    return result;
+  }
+
+  /// <summary>Holds a gap back until <paramref name="retryAt"/>, so retries are spaced out.</summary>
+  public async Task SetNextRetryAsync(Guid outageUid, DateTime retryAt, CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand(
+      "UPDATE source_outages SET next_retry_ts = $2 WHERE outage_uid = $1;");
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Uuid, outageUid);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, retryAt);
+    await cmd.ExecuteNonQueryAsync(ct);
   }
 
   /// <summary>

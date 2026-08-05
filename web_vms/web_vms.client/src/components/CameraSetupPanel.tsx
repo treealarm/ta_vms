@@ -43,6 +43,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const [ip, setIp] = useState(existing?.onvifConn?.ip ?? '')
   const [port, setPort] = useState(isNew ? 80 : (existing?.onvifConn?.port ?? 0))
   const [disabled, setDisabled] = useState(existing?.disabled === true)
+  const [edgeBackfillStream, setEdgeBackfillStream] = useState(existing?.edgeBackfillStream ?? '')
   const [pendingStorages, setPendingStorages] = useState<CameraStorageAssignmentDto[]>([])
   const [pendingSchedules, setPendingSchedules] = useState<string[]>([])
 
@@ -73,6 +74,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     ip: existing?.onvifConn?.ip ?? '',
     port: existing?.onvifConn?.port ?? 0,
     disabled: existing?.disabled === true,
+    edgeBackfillStream: existing?.edgeBackfillStream ?? '',
   })
 
   const dirty = !isNew && (
@@ -84,7 +86,13 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     || ip !== snap.ip
     || port !== snap.port
     || disabled !== snap.disabled
+    || edgeBackfillStream !== snap.edgeBackfillStream
   )
+
+  // Which of this camera's streams the camera itself records onto its storage. Empty = the feature
+  // is off. Camera-level and single-valued because the card holds one archive, and which stream
+  // goes into it is chosen in the camera, not here.
+  const cameraStreams = existing?.streams ?? []
 
   // WebRTC streams available for preview
   const webRtcStreams = (existing?.streams ?? []).filter((s) => s.webRtc)
@@ -101,6 +109,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     onvifConn: ip ? { ip, port } : undefined,
     mediaMtxServerId: mediaMtxServerId || undefined,
     disabled: disabled || undefined,
+    edgeBackfillStream,
   })
 
   const applyInternal = async (): Promise<boolean> => {
@@ -124,7 +133,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     const action = serverChanged ? changeCameraParent : addCamera
     const result = await dispatch(action(payload))
     if (!action.rejected.match(result)) {
-      setSnap({ name, serverId, mediaMtxServerId, user, pass, ip, port, disabled })
+      setSnap({ name, serverId, mediaMtxServerId, user, pass, ip, port, disabled, edgeBackfillStream })
       await dispatch(fetchCameraState(initialCameraId))
       return true
     }
@@ -224,6 +233,25 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
               control={<Switch checked={disabled} onChange={(e) => setDisabled(e.target.checked)} color="warning" />}
               label={t('cameras.disabled')}
             />
+
+            {/* One stream, chosen here, because the camera's storage holds a single archive and
+                ONVIF does not report which stream went into it. */}
+            {cameraStreams.length > 0 && (
+              <TextField
+                select
+                size="small"
+                fullWidth
+                label={t('cameras.edgeBackfill')}
+                value={cameraStreams.some((s) => s.streamName === edgeBackfillStream) ? edgeBackfillStream : ''}
+                onChange={(e) => setEdgeBackfillStream(e.target.value)}
+                helperText={t('cameras.edgeBackfillHint')}
+              >
+                <MenuItem value="">{t('cameras.edgeBackfillOff')}</MenuItem>
+                {cameraStreams.map((s) => (
+                  <MenuItem key={s.streamName} value={s.streamName}>{s.streamName}</MenuItem>
+                ))}
+              </TextField>
+            )}
 
             {isNew
               ? <CameraStoragesControl value={pendingStorages} onChange={setPendingStorages} />

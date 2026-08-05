@@ -32,10 +32,18 @@ std::string av_error_text(int errnum)
 /// Inserts an `_edge` marker before the extension so an imported clip can never overwrite a live
 /// segment written for the same second — clips.file_path is unique in the database, the file on
 /// disk is not.
-std::filesystem::path with_edge_marker(const std::filesystem::path& path)
+/// Marks the file as recovered footage and makes it unique to this job.
+///
+/// The marker alone is not enough. Segment paths are derived from the clip's start second, so two
+/// pulls of the same stretch produce the same name, and the second truncates a file the first one's
+/// clip row — and its cached fragment index — still describe. The archive then serves byte ranges
+/// past the end of the file and playback fails outright.
+std::filesystem::path with_edge_marker(const std::filesystem::path& path, const std::string& job_id)
 {
   auto marked = path;
-  marked.replace_filename(path.stem().string() + "_edge" + path.extension().string());
+  const auto suffix = job_id.size() > 8 ? job_id.substr(0, 8) : job_id;
+  marked.replace_filename(
+    path.stem().string() + "_edge" + (suffix.empty() ? "" : "_" + suffix) + path.extension().string());
   return marked;
 }
 
@@ -287,7 +295,8 @@ bool edge_import_worker::open_segment(
   {
     recording_storage storage;
     m_segment_rel_path = with_edge_marker(
-      storage.make_segment_path(m_settings.camera_id, m_settings.stream_name, ts));
+      storage.make_segment_path(m_settings.camera_id, m_settings.stream_name, ts),
+      m_settings.job_id);
   }
   m_segment_abs_path = m_target_root / m_segment_rel_path;
 

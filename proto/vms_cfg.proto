@@ -160,6 +160,10 @@ message CameraSetup {
   // Read-only mirror of the assigned media router's stun_url, so the browser can build its ICE
   // config from the camera alone. Unset = no router assigned; empty = no STUN (LAN only).
   optional string effective_webrtc_stun_url = 20;
+  // Which of this camera's streams to recover from the camera's own storage when its archive has a
+  // gap; empty disables it. Camera-level because the card holds ONE archive: the camera records
+  // either its main or its sub stream, chosen in the camera itself, and ONVIF does not say which.
+  string edge_backfill_stream = 21;
 }
 
 message RecordingProfileRequest {

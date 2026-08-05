@@ -137,6 +137,10 @@
                 "VMS_EDGE_EXPORT_TTL_HOURS": "24",
                 "VMS_SOURCE_LIVENESS_STALE_SECONDS": "60",
                 "VMS_SOURCE_OUTAGE_GRACE_SECONDS": "15",
+                "DAPR_ONVIF_APP_ID": "vmsonvif",
+                "VMS_BACKFILL_SETTLE_SECONDS": "60",
+                "VMS_BACKFILL_RETRY_SECONDS": "300",
+                "VMS_BACKFILL_LOOKBACK_HOURS": "48",
                 "VMS_OUTAGE_RETENTION_DAYS": "90",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
@@ -339,6 +343,10 @@
                 "VMS_EDGE_EXPORT_TTL_HOURS": "24",
                 "VMS_SOURCE_LIVENESS_STALE_SECONDS": "60",
                 "VMS_SOURCE_OUTAGE_GRACE_SECONDS": "15",
+                "DAPR_ONVIF_APP_ID": "vmsonvif",
+                "VMS_BACKFILL_SETTLE_SECONDS": "60",
+                "VMS_BACKFILL_RETRY_SECONDS": "300",
+                "VMS_BACKFILL_LOOKBACK_HOURS": "48",
                 "VMS_OUTAGE_RETENTION_DAYS": "90"
             }
         },
