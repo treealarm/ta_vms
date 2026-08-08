@@ -1,7 +1,9 @@
+using Dapr.Client;
 using Dapr.Messaging.PublishSubscribe.Extensions;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using System.Net.Http.Headers;
 using System.Text;
+using Vms.Cfg;
 using VmsLog;
 using VmsUtils;
 
@@ -32,12 +34,14 @@ builder.Services.AddDaprPubSubClient();
 builder.Services.AddSingleton<EntityStateRegistry>();
 builder.Services.AddHostedService<EntityStateSubscriber>();
 builder.Services.AddHostedService<EntityStateSweepService>();
-builder.Services.AddSingleton<UtilsServiceImpl>(sp =>
-  new UtilsServiceImpl(
-    sp.GetRequiredService<IHttpClientFactory>(),
-    cfgAppId,
-    sp.GetRequiredService<EntityStateRegistry>(),
-    sp.GetRequiredService<ILogger<UtilsServiceImpl>>()));
+// One client for the lifetime of the process: the previous per-request construction churned a Dapr
+// invocation channel on every reader-count poll.
+builder.Services.AddSingleton(_ =>
+  new CfgService.CfgServiceClient(DaprClient.CreateInvocationInvoker(cfgAppId)));
+builder.Services.AddSingleton<MediaMtxServerCache>();
+builder.Services.AddSingleton<MediaMtxPathSnapshotCache>();
+builder.Services.AddHostedService<MediaMtxConfigSubscriber>();
+builder.Services.AddSingleton<UtilsServiceImpl>();
 
 builder.WebHost.ConfigureKestrel(options =>
 {
