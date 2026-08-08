@@ -15,7 +15,8 @@ public sealed record AbandonedClip(
   string CameraId,
   string StreamName,
   DateTime StartTs,
-  DateTime ResumedAt);
+  /// <summary>When the archive picked up again, or null while it still has not.</summary>
+  DateTime? ResumedAt);
 
 public sealed class ClipStorage(
   IDbContextFactory<ClipsDbContext> dbFactory,
@@ -679,11 +680,13 @@ public sealed class ClipStorage(
     await using var reader = await cmd.ExecuteReaderAsync(ct);
     while (await reader.ReadAsync(ct))
     {
-      // No later clip means the writer may still be filling this one — leave it alone.
-      if (reader.IsDBNull(3))
-        continue;
+      // A later clip is not required. Nothing has written to this one since the run that owned it
+      // went away, and that is established by the file being quiet rather than by recording having
+      // resumed — waiting for the next clip would leave the hole unrecorded for as long as the
+      // camera stays down, which is exactly when an operator goes looking for it.
       result.Add(new AbandonedClip(
-        reader.GetString(0), reader.GetString(1), reader.GetDateTime(2), reader.GetDateTime(3)));
+        reader.GetString(0), reader.GetString(1), reader.GetDateTime(2),
+        reader.IsDBNull(3) ? null : reader.GetDateTime(3)));
     }
     return result;
   }

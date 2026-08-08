@@ -129,7 +129,7 @@ public sealed class LivenessSweeper(
     // Before judging silence: a restart of the whole node leaves no heartbeat to compare against,
     // so that hole is read off the archive instead. Cheap — it only finds anything when a clip was
     // left unfinished, and finishing it is what stops it being found again.
-    await tracker.RecoverAbandonedAsync(cameras.Select(c => c.CameraId).ToList(), ct);
+    await tracker.RecoverAbandonedAsync(cameras.Select(c => c.CameraId).ToList(), recording, ct);
 
     var silent = expected.Where(k => !tracker.IsFresh(k, now)).ToList();
 

@@ -257,7 +257,10 @@ public sealed class SourceLivenessTracker(
   /// the clip exists at all is itself the proof that recording was expected — nothing else opens a
   /// segment — so no configuration needs to be consulted.
   /// </remarks>
-  public async Task RecoverAbandonedAsync(IReadOnlyCollection<string> cameraIds, CancellationToken ct)
+  public async Task RecoverAbandonedAsync(
+    IReadOnlyCollection<string> cameraIds,
+    IReadOnlySet<(string Camera, string Stream)> recording,
+    CancellationToken ct)
   {
     List<AbandonedClip> abandoned;
     try
@@ -276,30 +279,51 @@ public sealed class SourceLivenessTracker(
         return;
       try
       {
+        // Without a successor the hole has no end yet, so the archive is read up to now.
+        var boundary = clip.ResumedAt ?? DateTime.UtcNow;
         var (healed, _, _, _) = await clips.FinalizeDanglingClipsAsync(
-          clip.CameraId, clip.StreamName, clip.ResumedAt, ct);
+          clip.CameraId, clip.StreamName, boundary, ct);
         if (healed == 0)
           continue;
 
         // Re-read rather than trust the measurement: the same pass may have finished several clips,
         // and the gap starts at the end of the last of them.
         var stoppedAt = await outages.LastClipEndAsync(
-          clip.CameraId, clip.StreamName, clip.ResumedAt, ct);
-        if (stoppedAt is not { } lastFrame || clip.ResumedAt - lastFrame < TimeSpan.FromSeconds(1))
+          clip.CameraId, clip.StreamName, boundary, ct);
+        if (stoppedAt is not { } lastFrame)
           continue;
 
         // An outage still open for this stream is the present, not the past — leave it to the
         // heartbeat path, which owns the live interval and will close it on the first frame back.
-        if (_openOutages.ContainsKey(Key(clip.CameraId, clip.StreamName)))
+        var key = Key(clip.CameraId, clip.StreamName);
+        if (_openOutages.ContainsKey(key))
           continue;
 
-        var written = await outages.RecordRecoveredAsync(
-          clip.CameraId, clip.StreamName, lastFrame, clip.ResumedAt, "server_down", ct);
-        if (written)
-          logger.LogInformation(
-            "Archive gap recovered from the clips of {CameraId}/{StreamName}: {From:o}..{To:o} — "
-              + "the previous run left a clip unfinished and nothing observed the restart",
-            clip.CameraId, clip.StreamName, lastFrame, clip.ResumedAt);
+        if (clip.ResumedAt is { } resumedAt)
+        {
+          if (resumedAt - lastFrame < TimeSpan.FromSeconds(1))
+            continue;
+          var written = await outages.RecordRecoveredAsync(
+            clip.CameraId, clip.StreamName, lastFrame, resumedAt, "server_down", ct);
+          if (written)
+            logger.LogInformation(
+              "Archive gap recovered from the clips of {CameraId}/{StreamName}: {From:o}..{To:o} — "
+                + "the previous run left a clip unfinished and nothing observed the restart",
+              clip.CameraId, clip.StreamName, lastFrame, resumedAt);
+          continue;
+        }
+
+        // Nothing has been recorded since, so the hole is still open. Only worth a row if the stream
+        // is supposed to be recording right now — otherwise the archive simply ends there because
+        // somebody switched recording off, which is not an outage.
+        if (!recording.Contains(key))
+          continue;
+
+        await OpenAsync(clip.CameraId, clip.StreamName, lastFrame, cause: "server_down", ct);
+        logger.LogInformation(
+          "Archive gap opened from the clips of {CameraId}/{StreamName} at {From:o} — a clip was "
+            + "left unfinished and recording has not resumed",
+          clip.CameraId, clip.StreamName, lastFrame);
       }
       catch (Exception ex)
       {
