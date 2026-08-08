@@ -25,6 +25,11 @@ namespace VmsCfg
     // watches it to know when to drop its cached grants. See BumpCameraPermissionsVersionAsync.
     private const string CameraPermissionsVersionKey   = "cam-perm-version";
 
+    // Bumped when a camera's media server changes. web_vms.Server caches camera → node to route
+    // ONVIF calls, and it runs in several replicas, so a pub/sub event would reach exactly one of
+    // them; a key everyone reads has no such asymmetry. Same mechanism as the permission version.
+    private const string CameraNodeVersionKey          = "cam-node-version";
+
     // Investigation boards are operator-created and never expire on their own, so the number one
     // person can accumulate is capped. Walls are unaffected — they are admin-managed.
     private const int MaxInvestigationBoardsPerOwner = 8;
@@ -99,6 +104,22 @@ namespace VmsCfg
       {
         // The permissions themselves are already committed; only their propagation speed suffers.
         logger.LogWarning(ex, "Bumping the camera permission version failed — replicas will pick the change up by TTL");
+      }
+    }
+
+    /// Tells web_vms replicas that a camera may have moved between nodes, so their ONVIF routing
+    /// cache stops pointing at the old one. Awaited: camera moves are rare admin actions, and a lost
+    /// bump leaves PTZ going to the wrong node until the cache's own TTL expires.
+    private async Task BumpCameraNodeVersionAsync(CancellationToken ct)
+    {
+      try
+      {
+        await daprClient.SaveStateAsync(
+          StateStoreName, CameraNodeVersionKey, Guid.NewGuid().ToString("N"), cancellationToken: ct);
+      }
+      catch (Exception ex)
+      {
+        logger.LogWarning(ex, "Bumping the camera node version failed — replicas will pick the move up by TTL");
       }
     }
 
@@ -232,6 +253,10 @@ namespace VmsCfg
       // Notify old server so it removes the camera
       if (existing is not null && existing.ServerId != request.ServerId)
         NotifyMediaServer(existing.ServerId);
+
+      // A new camera has no cached route yet; a moved one has a stale one.
+      if (existing is null || existing.ServerId != request.ServerId)
+        await BumpCameraNodeVersionAsync(context.CancellationToken);
 
       return new OperationStatus { Success = true };
     }

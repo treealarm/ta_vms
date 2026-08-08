@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Vms.Cfg;
 using VmsLog;
 using VmsOnvif;
+using web_vms.Types.Actors;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddVmsLogging();
@@ -15,20 +16,23 @@ builder.Services.AddDaprPubSubClient();
 // This instance serves exactly one node: ONVIF reaches a camera over the same local subnet RTSP
 // does, so it can only work with the cameras assigned to the media server it sits next to.
 var ownServerId = Require("OWN_SERVER_ID");
+// Rejected at startup rather than on the first PTZ command: the value becomes part of the Dapr
+// actor type name, and validating it lazily would let the service come up looking healthy and then
+// fail every camera call.
+var cameraActorType = CameraActorType.For(ownServerId);
 
-builder.Services.AddSingleton(sp =>
-  new CameraConnCache(sp.GetRequiredService<CfgService.CfgServiceClient>(), ownServerId));
+builder.Services.AddSingleton<CameraConnCache>();
 builder.Services.AddSingleton(sp => new OnvifServiceImpl(
   sp.GetRequiredService<CameraConnCache>(),
   sp.GetRequiredService<OnvifEventSubscriptionService>(),
   sp.GetRequiredService<ObservedTopicsStore>(),
   sp.GetRequiredService<OnvifSettingsService>(),
-  ownServerId,
+  cameraActorType,
   sp.GetRequiredService<ILogger<OnvifServiceImpl>>()));
 builder.Services.AddSingleton(sp => new PtzServiceImpl(
   sp.GetRequiredService<CameraConnCache>(),
   sp.GetRequiredService<OnvifSettingsService>(),
-  ownServerId));
+  cameraActorType));
 builder.Services.AddSingleton<DeviceIoServiceImpl>();
 
 var cfgAppId = Require("DAPR_CFG_APP_ID");

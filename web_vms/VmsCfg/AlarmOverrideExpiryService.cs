@@ -15,11 +15,19 @@ public sealed class AlarmOverrideExpiryService(
 {
   private static readonly TimeSpan Interval = TimeSpan.FromSeconds(2);
 
+  /// Floor on how often the notification goes out. Each one makes every media server on the affected
+  /// node re-read its whole configuration, so a steady stream of alarms would otherwise reload it
+  /// every tick. Clearing still happens at Interval, keeping what ListCameras reports accurate; only
+  /// the announcement is batched, which at worst leaves a camera recording a few seconds longer than
+  /// its window — the safe direction to err in.
+  private static readonly TimeSpan MinNotifyInterval = TimeSpan.FromSeconds(5);
+
   // Cameras already cleared in the database whose notification has not gone out yet. The clear is
   // committed before the publish, and a cleared row no longer looks expired, so re-reading the
   // table cannot recover a failed publish — holding the ids here is what keeps media_server from
   // being left in continuous recording after a transient pub/sub failure.
   private readonly HashSet<string> _pendingNotify = new(StringComparer.Ordinal);
+  private DateTime _lastNotifyUtc = DateTime.MinValue;
 
   protected override async Task ExecuteAsync(CancellationToken stoppingToken)
   {
@@ -53,12 +61,17 @@ public sealed class AlarmOverrideExpiryService(
       _pendingNotify.Add(cameraId);
     }
 
-    if (_pendingNotify.Count == 0)
+    if (_pendingNotify.Count == 0 || DateTime.UtcNow - _lastNotifyUtc < MinNotifyInterval)
       return;
 
     if (await cfgService.NotifyCamerasChangedAsync([.. _pendingNotify], ct))
+    {
+      _lastNotifyUtc = DateTime.UtcNow;
       _pendingNotify.Clear();
+    }
     else
+    {
       logger.LogWarning("Alarm override expiry notification failed, retrying shortly");
+    }
   }
 }

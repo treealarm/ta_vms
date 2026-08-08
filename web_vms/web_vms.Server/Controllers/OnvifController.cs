@@ -1,4 +1,3 @@
-using Dapr.Client;
 using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -360,6 +359,9 @@ public class OnvifController(
   public async Task<IActionResult> DiscoverDevices(
     [FromQuery] int timeoutSeconds, [FromQuery] string serverId, CancellationToken ct)
   {
+    if (string.IsNullOrWhiteSpace(serverId))
+      return BadRequest("serverId is required: discovery probes one node's camera subnet");
+
     var (probeSeconds, options) = DiscoverOptions(timeoutSeconds, ct);
     var response = await registry.GetOnvifClient(serverId).DiscoverDevicesAsync(
       new DiscoverDevicesRequest { TimeoutSeconds = probeSeconds }, options);
@@ -384,6 +386,9 @@ public class OnvifController(
   public async Task<IActionResult> GetProfilesByConnection(
     [FromBody] GetProfilesByConnectionBody body, [FromQuery] string serverId, CancellationToken ct)
   {
+    if (string.IsNullOrWhiteSpace(serverId))
+      return BadRequest("serverId is required: the device is only routable from its own node");
+
     var response = await registry.GetOnvifClient(serverId).GetProfilesByConnectionAsync(
       new GetProfilesByConnectionRequest
       {
@@ -528,7 +533,7 @@ public class OnvifController(
     {
       try
       {
-        var client = new OnvifService.OnvifServiceClient(DaprClient.CreateInvocationInvoker(onvifId));
+        var client = registry.OnvifClientFor(onvifId);
         var resp = await client.GetAllRecentOnvifEventsAsync(new GetAllRecentOnvifEventsRequest(), Options(ct));
         return resp.Events.AsEnumerable();
       }

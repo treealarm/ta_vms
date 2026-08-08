@@ -146,7 +146,8 @@ public class CameraStorage(
     var cameras = new List<CameraSetup>();
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_setup.camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, onvif_xaddr, media_mtx_server_id,
+      SELECT camera_setup.camera_id, camera_setup.server_id, cred_user, cred_pass, onvif_ip, onvif_port,
+             onvif_xaddr, media_mtx_server_id,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id AND s.subscribed = true) AS onvif_events_enabled,
              EXISTS(SELECT 1 FROM onvif_alarm_filter f WHERE f.camera_id = camera_setup.camera_id) AS has_onvif_filters,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id) AS onvif_managed,
@@ -159,7 +160,7 @@ public class CameraStorage(
       FROM camera_setup
       LEFT JOIN onvif_event_subscription oes ON oes.camera_id = camera_setup.camera_id
       LEFT JOIN media_mtx_server mtx ON mtx.id = camera_setup.media_mtx_server_id
-      WHERE $1 = '' OR server_id = $1
+      WHERE $1 = '' OR camera_setup.server_id = $1
       ORDER BY camera_setup.name, camera_setup.camera_id;
       """, connection))
     {
@@ -181,7 +182,8 @@ public class CameraStorage(
     CameraSetup? setup = null;
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_setup.camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, onvif_xaddr, media_mtx_server_id,
+      SELECT camera_setup.camera_id, camera_setup.server_id, cred_user, cred_pass, onvif_ip, onvif_port,
+             onvif_xaddr, media_mtx_server_id,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id AND s.subscribed = true) AS onvif_events_enabled,
              EXISTS(SELECT 1 FROM onvif_alarm_filter f WHERE f.camera_id = camera_setup.camera_id) AS has_onvif_filters,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id) AS onvif_managed,

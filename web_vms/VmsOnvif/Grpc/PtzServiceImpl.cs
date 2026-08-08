@@ -9,7 +9,7 @@ namespace VmsOnvif;
 public class PtzServiceImpl(
   CameraConnCache connCache,
   OnvifSettingsService settingsService,
-  string ownServerId) : PtzService.PtzServiceBase
+  string cameraActorType) : PtzService.PtzServiceBase
 {
 
   public override async Task<PtzCapabilitiesResponse> GetCapabilities(PtzCapabilitiesRequest request, ServerCallContext context)
@@ -184,7 +184,7 @@ public class PtzServiceImpl(
 
   // The type name carries this node — see CameraActorType.
   private ActorProxy CameraActorProxy(string cameraId) =>
-    ActorProxy.Create(new ActorId(cameraId), CameraActorType.For(ownServerId));
+    ActorProxy.Create(new ActorId(cameraId), cameraActorType);
 
   private static PtzResponse Ok() => new() { Success = true };
   private static PtzResponse Fail(string error) => new() { Success = false, Error = error };

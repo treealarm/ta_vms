@@ -22,6 +22,7 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
   // Instances that recently failed a fan-out call — skipped for UnreachableCooldown so a
   // configured-but-dead FS doesn't cost every request the full FanOutTimeout.
   private readonly ConcurrentDictionary<string, DateTime> _unreachableSince = new();
+  private readonly ConcurrentDictionary<string, CallInvoker> _invokers = new(StringComparer.Ordinal);
 
   /// <summary>False until the server↔FS map has been read from VmsCfg at least once.</summary>
   public bool IsInitialized => _serverToFs is not null;
@@ -62,20 +63,29 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
     if (!map.TryGetValue(serverId, out var fsId) || string.IsNullOrWhiteSpace(fsId))
       throw new InvalidOperationException($"No FS paired for server '{serverId}'");
 
-    return new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
+    return new FsService.FsServiceClient(Invoker(fsId));
   }
+
+  // One invoker per app id, kept for the process lifetime. Each CreateInvocationInvoker builds a
+  // GrpcChannel, and nothing disposes the ones handed out per request — on the PTZ path that is a
+  // new connection to daprd for every joystick message. The clients wrapping an invoker are cheap.
+  private CallInvoker Invoker(string appId) =>
+    _invokers.GetOrAdd(appId, static id => DaprClient.CreateInvocationInvoker(id));
 
   // ONVIF only reaches a camera from its own node's subnet, so a PTZ or snapshot call has to go to
   // the VmsOnvif sitting next to that camera's media server. There is no instance that can serve
   // them all, and no fan-out either: a camera belongs to exactly one node.
   public OnvifService.OnvifServiceClient GetOnvifClient(string? serverId) =>
-    new(DaprClient.CreateInvocationInvoker(ResolveOnvifId(serverId)));
+    new(Invoker(ResolveOnvifId(serverId)));
 
   public PtzService.PtzServiceClient GetPtzClient(string? serverId) =>
-    new(DaprClient.CreateInvocationInvoker(ResolveOnvifId(serverId)));
+    new(Invoker(ResolveOnvifId(serverId)));
 
   public DeviceIoService.DeviceIoServiceClient GetDeviceIoClient(string? serverId) =>
-    new(DaprClient.CreateInvocationInvoker(ResolveOnvifId(serverId)));
+    new(Invoker(ResolveOnvifId(serverId)));
+
+  /// For fan-out over AllOnvifIds, where the app id is already known.
+  public OnvifService.OnvifServiceClient OnvifClientFor(string onvifId) => new(Invoker(onvifId));
 
   // For the few operations that are not about one camera: recent-event dumps have to be collected
   // from every node, since each instance only sees its own cameras' events.
@@ -124,7 +134,7 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
     var options = new CallOptions(deadline: DateTime.UtcNow.Add(FanOutTimeout), cancellationToken: ct);
     var tasks = candidates.Select(async fsId =>
     {
-      var client = new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
+      var client = new FsService.FsServiceClient(Invoker(fsId));
       try
       {
         var value = await call(client, options);
