@@ -382,8 +382,16 @@ std::string onvif_replay_rtsp::format_clock(std::chrono::system_clock::time_poin
                     tp.time_since_epoch())
                     .count() %
                   1000;
+  // Both spellings of the thread-safe UTC conversion: POSIX has gmtime_r, Windows has gmtime_s with
+  // the arguments the other way round. Plain gmtime is the one thing that must not be used here —
+  // it hands back a pointer into shared storage, and this runs on the import thread while other
+  // threads format their own timestamps.
   std::tm tm{};
+#ifdef _WIN32
+  gmtime_s(&tm, &sec);
+#else
   gmtime_r(&sec, &tm);
+#endif
   return std::format(
     "{:04d}{:02d}{:02d}T{:02d}{:02d}{:02d}.{:03d}Z",
     tm.tm_year + 1900,

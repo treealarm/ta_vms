@@ -248,14 +248,47 @@ public sealed class ArchiveGapsController(
   public Task<IActionResult> Hold(string outageUid, CancellationToken ct) =>
     SetStateAsync(outageUid, "held", "held by the operator", ct);
 
-  /// <summary>Returns a held gap to automation.</summary>
+  /// <summary>Returns a gap the operator had taken out of automation — held or ignored alike.</summary>
   [CameraAccess(CameraAction.Control, Source = CameraIdSource.Action)]
   [HttpPost("{outageUid}/resume")]
   public Task<IActionResult> Resume(string outageUid, CancellationToken ct) =>
     SetStateAsync(outageUid, "open", string.Empty, ct);
 
+  /// <summary>
+  /// Declares a gap not worth recovering, so it stops being work.
+  /// </summary>
+  /// <remarks>
+  /// A judgement about value, which nothing else in the system can make: planned maintenance, a
+  /// camera switched off on purpose, footage nobody wants. Unlike <c>exhausted</c> — which says the
+  /// card no longer holds the material and is a discovered fact — this is a decision, so
+  /// <see cref="Resume"/> takes it back.
+  /// </remarks>
+  [CameraAccess(CameraAction.Control, Source = CameraIdSource.Action)]
+  [HttpPost("{outageUid}/ignore")]
+  public Task<IActionResult> Ignore(string outageUid, CancellationToken ct) =>
+    SetStateAsync(outageUid, "ignored", "ignored by the operator", ct);
+
+  /// <summary>
+  /// Asks for the missing footage to be fetched now.
+  /// </summary>
+  /// <remarks>
+  /// Deliberately does not pull anything itself: it hands the gap back to the scheduler and clears
+  /// the wait, so operator and automation reach the camera down one path. Two paths would race for
+  /// the device's single import slot and the loser is refused, which is a button that works or not
+  /// depending on timing the operator cannot see; and work started straight from a request is a live
+  /// call rather than a row, so a restart mid-pull loses it instead of resuming.
+  ///
+  /// The scheduler decides what is actually missing when it picks the gap up, subtracting what the
+  /// archive already holds, so pressing this twice costs nothing.
+  /// </remarks>
+  [CameraAccess(CameraAction.Control, Source = CameraIdSource.Action)]
+  [HttpPost("{outageUid}/refill")]
+  public Task<IActionResult> Refill(string outageUid, CancellationToken ct) =>
+    SetStateAsync(outageUid, "open", string.Empty, ct, retryNow: true);
+
   private async Task<IActionResult> SetStateAsync(
-    string outageUid, string state, string message, CancellationToken ct, bool keepAttempts = false)
+    string outageUid, string state, string message, CancellationToken ct,
+    bool keepAttempts = false, bool retryNow = false)
   {
     var (row, client) = await FindAsync(outageUid, ct);
     if (row is null || client is null)
@@ -273,6 +306,7 @@ public sealed class ArchiveGapsController(
       // reset yet — that is decided from what it recovers.
       Attempts = keepAttempts ? row.Attempts : 0,
       Message = message,
+      RetryNow = retryNow,
     }, cancellationToken: ct);
 
     var (updated, _) = await FindAsync(outageUid, ct);

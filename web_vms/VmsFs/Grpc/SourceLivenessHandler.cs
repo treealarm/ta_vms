@@ -76,6 +76,12 @@ public sealed partial class FsServiceImpl
       uid, request.State, request.FilledMs, request.Attempts, request.Message,
       context.CancellationToken);
 
+    // Only ever brings the moment forward. The backoff exists because a camera that answered with
+    // nothing will answer the same way a second later; an operator asking for the gap now is new
+    // information, and nothing else in the system is entitled to skip the wait.
+    if (updated && request.RetryNow)
+      await outageStore.SetNextRetryAsync(uid, DateTime.UtcNow, context.CancellationToken);
+
     return new OperationStatus
     {
       // Gone rather than broken: retention removes closed rows, and a caller reporting on one that

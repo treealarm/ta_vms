@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Box,
   Button,
@@ -21,7 +21,6 @@ import { useTranslation } from 'react-i18next'
 
 import type {
   EdgeImportJobDto,
-  EdgeIntervalsDto,
   EpisodeDto,
   RecordingDto,
   RecordingsResponseDto,
@@ -85,31 +84,6 @@ function stateColor(state: string): 'default' | 'success' | 'warning' | 'error' 
 }
 
 
-/** What the camera still holds inside a window, as plain intervals plus the token to replay them. */
-type CameraSpan = Segment & { recordingToken: string }
-
-async function fetchCameraSpans(
-  cameraId: string,
-  win: Segment,
-  signal: AbortSignal
-): Promise<CameraSpan[]> {
-  const qs = new URLSearchParams({
-    from: new Date(win.startMs).toISOString(),
-    to: new Date(win.endMs).toISOString(),
-    maxResults: '200',
-  })
-  const response = await fetch(
-    `/api/edge-archive/cameras/${encodeURIComponent(cameraId)}/intervals?${qs}`, { signal })
-  if (!response.ok) throw new Error(await getErrorMessage(response))
-  const body = (await response.json()) as EdgeIntervalsDto
-  return (body.intervals ?? [])
-    .map((i) => ({
-      startMs: Date.parse(i.startTime),
-      endMs: Date.parse(i.endTime),
-      recordingToken: i.recordingToken,
-    }))
-    .filter((s) => Number.isFinite(s.startMs) && Number.isFinite(s.endMs) && s.endMs > s.startMs)
-}
 
 export default function ArchiveGapsTab() {
   const { t } = useTranslation()
@@ -127,8 +101,6 @@ export default function ArchiveGapsTab() {
   // Re-rendered every tick would move every open outage's end under the operator's cursor; this is
   // sampled once per load instead.
   const [nowMs, setNowMs] = useState(() => Date.now())
-  const [refill, setRefill] =
-    useState<{ done: number; total: number; label: string; fraction: number } | null>(null)
   const [refillError, setRefillError] = useState<string | null>(null)
   const [preview, setPreview] = useState<EdgePreviewTarget | null>(null)
   // The import the scheduler is running right now, if any. A run started here reports its own
@@ -138,10 +110,6 @@ export default function ArchiveGapsTab() {
   // The clips that were actually written for this gap. Shown by name because "restored" is easier
   // to trust when you can see what it produced and where it went.
   const [recovered, setRecovered] = useState<RecordingDto[]>([])
-  // Set by the Cancel button and read between pieces; the job already running is cancelled through
-  // the API, and the loop stops rather than starting the next one.
-  const cancelRefill = useRef(false)
-
   const windowMs = WINDOWS.find((w) => w.key === windowKey)?.ms ?? WINDOWS[0].ms
 
   const load = useCallback(async () => {
@@ -218,158 +186,39 @@ export default function ArchiveGapsTab() {
   }, [coverage, selected, nowMs])
 
   /**
-   * Pulls the parts of the gap the archive is missing back from the camera, one at a time.
+   * Asks for the missing footage to be fetched — by handing the gap to the scheduler, not by
+   * pulling anything from here.
    *
-   * What is still missing is recomputed from the archive before every piece, so an interrupted run
-   * resumes where it stopped instead of starting over — clips already written are simply no longer
-   * missing. Intersecting with what the camera reports also stops the job from asking for footage
-   * the card has already overwritten.
+   * This used to drive the whole recovery from the browser: ask the camera what it holds, plan the
+   * pieces, re-check coverage before each one, start an import and poll it. That is the scheduler's
+   * job, and doing it twice meant two routes racing for the device's single import slot — whoever
+   * lost was refused, so the button worked or not depending on timing nobody could see. Work started
+   * from a click was also just a live request: close the tab or restart a service mid-pull and it
+   * was gone, while a queued job survives on an expired lease.
+   *
+   * Everything that made the old loop careful still happens, one layer down: what is missing is
+   * recomputed from the archive before each piece and intersected with what the camera still holds.
    */
   const runRefill = useCallback(async () => {
     if (!selected) return
-    cancelRefill.current = false
     setRefillError(null)
-
-    const controller = new AbortController()
-    const win = gapWindow(selected, Date.now())
     try {
-      // Nothing missing: no reason to ask the camera anything, but the row still has to be told —
-      // the outcome is written in the finally below, which is what turns "not filled" into "filled".
-      if (missing.length === 0)
+      const response = await fetch(
+        `/api/gaps/${encodeURIComponent(selected.outageUid)}/refill`, { method: 'POST' })
+      if (!response.ok) {
+        setRefillError(await getErrorMessage(response))
         return
-
-      // Visible to anyone else looking at the tab, and the marker automation will read before
-      // taking a gap of its own accord.
-      await fetch(`/api/gaps/${encodeURIComponent(selected.outageUid)}/filling`, { method: 'POST' })
-        .catch(() => undefined)
-
-      const available = await fetchCameraSpans(selected.cameraId, win, controller.signal)
-      if (available.length === 0) {
-        setRefillError(t('gaps.nothingOnCamera'))
-        return
-      }
-
-      // Planned once for the progress count; each piece is re-checked against the archive below.
-      const planned = intersectSegments(complementSegments(coverage, win), available)
-      if (planned.length === 0) {
-        setRefillError(t('gaps.alreadyComplete'))
-        return
-      }
-
-      for (let i = 0; i < planned.length; i += 1) {
-        if (cancelRefill.current) break
-        setRefill({
-          done: i,
-          total: planned.length,
-          label: new Date(planned[i].startMs).toLocaleTimeString(),
-          fraction: 0,
-        })
-
-        // Fresh coverage, so a piece finished by a previous run — or partially written before a
-        // failure — is not pulled again.
-        const fresh = await dispatch(fetchRecordingTimeline({
-          cameraIds: [selected.cameraId],
-          streamName: selected.streamName || undefined,
-          fromUtc: new Date(planned[i].startMs).toISOString(),
-          toUtc: new Date(planned[i].endMs).toISOString(),
-          minGapMs: 1000,
-        })).unwrap()
-        const have: Segment[] = (fresh.tracks ?? [])
-          .flatMap((track) => track.intervals ?? [])
-          .map((iv) => ({ startMs: Date.parse(iv.startTime), endMs: Date.parse(iv.endTime) }))
-          .filter((seg) => Number.isFinite(seg.startMs) && Number.isFinite(seg.endMs))
-        const todo = intersectSegments(complementSegments(have, planned[i]), available)
-        if (todo.length === 0) continue
-
-        for (const piece of todo) {
-          if (cancelRefill.current) break
-          const token = available.find((a) => a.startMs <= piece.startMs && a.endMs >= piece.endMs)
-            ?? available.find((a) => a.endMs > piece.startMs && a.startMs < piece.endMs)
-          if (!token) continue
-
-          const started = await fetch(
-            `/api/edge-archive/cameras/${encodeURIComponent(selected.cameraId)}/imports`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                recordingToken: token.recordingToken,
-                streamName: selected.streamName || undefined,
-                startTime: new Date(piece.startMs - IMPORT_MARGIN_MS).toISOString(),
-                endTime: new Date(piece.endMs + IMPORT_MARGIN_MS).toISOString(),
-                exportToFile: false,
-              }),
-            })
-          if (!started.ok) {
-            setRefillError(await getErrorMessage(started))
-            return
-          }
-          const { jobId } = (await started.json()) as { jobId: string }
-          if (!(await awaitJob(selected.cameraId, jobId, piece))) return
-        }
       }
     } catch (e) {
-      if ((e as Error).name !== 'AbortError') {
-        setRefillError(e instanceof Error ? e.message : String(e))
-      }
+      setRefillError(e instanceof Error ? e.message : String(e))
     } finally {
-      setRefill(null)
-      // What the run achieved is judged from the archive and the camera, not from "the job said OK":
-      // a job can finish successfully and still have recovered nothing. Without this the gap would
-      // stay "not filled" forever, and automation would keep retrying footage the card has already
-      // overwritten.
-      await fetch(`/api/gaps/${encodeURIComponent(selected.outageUid)}/refresh`, { method: 'POST' })
-        .catch(() => undefined)
-      if (cancelRefill.current) {
-        // Cancelling is a decision, not a failure: the gap is parked until the operator hands it
-        // back, so automation does not simply pick it up again on the next tick.
-        await fetch(`/api/gaps/${encodeURIComponent(selected.outageUid)}/hold`, { method: 'POST' })
-          .catch(() => undefined)
-      }
       void load()
-      // The coverage behind the band is cached by query, and a closed gap's query does not change —
-      // without an explicit refetch the bar would keep showing what was there before the import.
-      if (coverageQuery) void dispatch(fetchRecordingTimeline(coverageQuery))
     }
-  }, [selected, coverage, coverageQuery, dispatch, load, t])
+  }, [selected, load])
 
-  /** Waits for one import to finish, reporting its progress. False = failed, cancelled or aborted. */
-  const awaitJob = useCallback(async (
-    cameraId: string, jobId: string, piece: Segment): Promise<boolean> => {
-    for (;;) {
-      if (cancelRefill.current)
-      {
-        // The device runs one import at a time; leaving it running would block everything after.
-        await fetch(`/api/edge-archive/cameras/${encodeURIComponent(cameraId)}/imports/${jobId}`,
-          { method: 'DELETE' }).catch(() => undefined)
-        return false
-      }
-      await new Promise((resolve) => setTimeout(resolve, IMPORT_POLL_MS))
-      const response = await fetch(`/api/edge-archive/cameras/${encodeURIComponent(cameraId)}/imports`)
-      if (!response.ok) return false
-      const jobs = (await response.json()) as EdgeImportJobDto[]
-      const job = jobs.find((j) => j.jobId === jobId)
-      if (!job) return false
-      if (job.state === 'running')
-      {
-        // How far into this piece the pull has got. Without it a long stretch would show a bar
-        // pinned at whatever the piece counter says for minutes on end.
-        const at = job.position ? Date.parse(job.position) : NaN
-        if (Number.isFinite(at) && piece.endMs > piece.startMs)
-        {
-          const fraction = Math.min(1, Math.max(0, (at - piece.startMs) / (piece.endMs - piece.startMs)))
-          setRefill((prev) => (prev ? { ...prev, fraction } : prev))
-        }
-        continue
-      }
-      if (job.state === 'completed') return true
-      setRefillError(job.message || t('gaps.refillFailed'))
-      return false
-    }
-  }, [t])
 
   useEffect(() => {
-    if (!selected || selected.state !== 'filling' || refill) {
+    if (!selected || selected.state !== 'filling') {
       setAutoJob(null)
       return
     }
@@ -394,7 +243,7 @@ export default function ArchiveGapsTab() {
     void poll()
     const timer = window.setInterval(() => void poll(), IMPORT_POLL_MS)
     return () => { dropped = true; window.clearInterval(timer) }
-  }, [selected, refill, nowMs])
+  }, [selected, nowMs])
 
   /** Stops the scheduler's run and parks the gap, so it is not picked up again on the next tick. */
   const cancelAutoJob = useCallback(async () => {
@@ -439,7 +288,7 @@ export default function ArchiveGapsTab() {
       } catch { /* the panel simply shows nothing */ }
     })()
     return () => { dropped = true }
-  }, [selected, nowMs, refill])
+  }, [selected, nowMs])
 
   const cameraLabel = (id: string) => camerasMap[id]?.name || id
 
@@ -674,11 +523,7 @@ export default function ArchiveGapsTab() {
                       {cameraLabel(selected.cameraId)}
                       {selected.streamName ? ` / ${selected.streamName}` : ''}
                     </Typography>
-                    {refill ? (
-                      <Button size="small" color="warning" onClick={() => { cancelRefill.current = true }}>
-                        {t('gaps.cancelRefill')}
-                      </Button>
-                    ) : autoJob ? (
+                    {autoJob ? (
                       <Button size="small" color="warning" onClick={() => void cancelAutoJob()}>
                         {t('gaps.cancelRefill')}
                       </Button>
@@ -695,33 +540,37 @@ export default function ArchiveGapsTab() {
                         {t('gaps.resume')}
                       </Button>
                     ) : (
-                      <Button
-                        size="small"
-                        variant="contained"
-                        // Never disabled. With nothing missing it only re-reads the state, which is
-                        // how a gap filled earlier stops claiming it is not; and "nothing left on
-                        // the camera" is a verdict from one search, which a camera that was merely
-                        // unreachable can produce — asking again costs a session and nothing else.
-                        onClick={() => void runRefill()}
-                      >
-                        {missing.length === 0 ? t('gaps.recheck') : t('gaps.refill')}
-                      </Button>
+                      <>
+                        {/* A judgement about value, not about the archive: the footage is not wanted,
+                            so the gap stops being work. Reversible through Resume above — a misclick
+                            must not cost a recovery that was still possible. */}
+                        <Button
+                          size="small"
+                          onClick={() => void (async () => {
+                            await fetch(`/api/gaps/${encodeURIComponent(selected.outageUid)}/ignore`,
+                              { method: 'POST' }).catch(() => undefined)
+                            void load()
+                          })()}
+                        >
+                          {t('gaps.ignore')}
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          // Never disabled. With nothing missing it only re-reads the state, which is
+                          // how a gap filled earlier stops claiming it is not; and "nothing left on
+                          // the camera" is a verdict from one search, which a camera that was merely
+                          // unreachable can produce — asking again costs a session and nothing else.
+                          onClick={() => void runRefill()}
+                        >
+                          {missing.length === 0 ? t('gaps.recheck') : t('gaps.refill')}
+                        </Button>
+                      </>
                     )}
                     <EventOpenInPlayback episode={asEpisode} />
                   </Stack>
 
-                  {refill && (
-                    <Stack spacing={0.5}>
-                      <Typography variant="caption" color="text.secondary">
-                        {t('gaps.refilling', { done: refill.done + 1, total: refill.total, at: refill.label })}
-                      </Typography>
-                      <LinearProgress
-                        variant="determinate"
-                        value={Math.round(((refill.done + refill.fraction) / Math.max(1, refill.total)) * 100)}
-                      />
-                    </Stack>
-                  )}
-                  {!refill && autoJob && (() => {
+                  {autoJob && (() => {
                     const from = autoJob.startTime ? Date.parse(autoJob.startTime) : NaN
                     const to = autoJob.endTime ? Date.parse(autoJob.endTime) : NaN
                     const at = autoJob.position ? Date.parse(autoJob.position) : NaN
