@@ -63,7 +63,7 @@
                 "POSTGRES_CFG_DB": "ta_cfg",
                 "VMS_MTX_HOST": "localhost",
                 "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage",
-                "MEDIA_SERVER_PAIRS": "vms:vmsfs,vms-2:vmsfs-2",
+                "MEDIA_SERVER_PAIRS": "vms:vmsfs:vmsonvif,vms-2:vmsfs-2:vmsonvif-2",
                 "DAPR_STATE_STORE_NAME": "statestore",
                 "APP_ID": "vmscfg",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs",
@@ -89,6 +89,7 @@
                 "DAPR_CFG_APP_ID": "vmscfg",
                 "PUBSUB_NAME": "orderpubsub",
                 "APP_ID": "vmsonvif",
+                "OWN_SERVER_ID": "vms",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },
@@ -107,6 +108,7 @@
                 "DAPR_HTTP_PORT": "3603",
                 "DAPR_GRPC_PORT": "51004",
                 "APP_ID": "vmsonvif-actors",
+                "OWN_SERVER_ID": "vms",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },

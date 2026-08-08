@@ -10,7 +10,7 @@ public sealed record CameraConnData(
   CameraConnInfo? Conn,
   IReadOnlyList<StreamRtspEntry> Streams);
 
-public sealed class CameraConnCache(CfgService.CfgServiceClient cfgClient)
+public sealed class CameraConnCache(CfgService.CfgServiceClient cfgClient, string ownServerId)
 {
   private readonly ConcurrentDictionary<string, CameraConnData> _cache = new();
 
@@ -45,7 +45,8 @@ public sealed class CameraConnCache(CfgService.CfgServiceClient cfgClient)
         setup.OnvifConn.Port,
         setup.Cred?.User ?? string.Empty,
         setup.Cred?.Pass ?? string.Empty,
-        setup.OnvifConn.Xaddr ?? string.Empty);
+        setup.OnvifConn.Xaddr ?? string.Empty,
+        ownServerId);
     }
 
     var streams = setup.Streams

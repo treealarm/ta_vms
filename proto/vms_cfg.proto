@@ -215,6 +215,10 @@ message MediaServerNode {
   string server_id = 1;
   string status    = 2;
   string fs_id     = 3;
+  // The VmsOnvif instance that shares this node's camera network. ONVIF reaches cameras over the
+  // same local subnet RTSP does, so a call for a camera must go to its own node's instance — a
+  // central one has no route to it.
+  string onvif_id  = 4;
 }
 
 message ListMediaServersRequest {}

@@ -17,6 +17,7 @@ public sealed class OnvifEventSubscriptionService(
   OnvifFilterCache filterCache,
   CameraArmedCache armedCache,
   ObservedTopicsStore observedTopics,
+  string ownServerId,
   ILogger<OnvifEventSubscriptionService> logger) : BackgroundService
 {
   private const int RingBufferSize = 250;
@@ -94,7 +95,10 @@ public sealed class OnvifEventSubscriptionService(
     try
     {
       var opts = new CallOptions(deadline: DateTime.UtcNow.Add(CfgTimeout), cancellationToken: ct);
-      var resp = await cfgClient.ListCamerasAsync(new ListCamerasRequest(), opts);
+      // Scoped to this node. ONVIF reaches a camera over the same local subnet RTSP does, so another
+      // node's cameras are not merely someone else's business — they have no route from here, and
+      // subscribing to them would produce nothing but connection timeouts.
+      var resp = await cfgClient.ListCamerasAsync(new ListCamerasRequest { ServerId = ownServerId }, opts);
       // ListCameras already carries the full CameraSetup, onvif_conn and onvif_events_enabled
       // included, so the list is applied as-is: a GetCamera per camera would add a round trip per
       // camera on every refresh interval and return what we are already holding.
@@ -309,11 +313,9 @@ public sealed class OnvifEventSubscriptionService(
         TimeoutSeconds = (uint)Math.Max(1, matched.TimeoutSeconds),
       };
 
-      using var camCts = new CancellationTokenSource(CfgTimeout);
-      var camResp = await cfgClient.GetCameraAsync(new SourceRequest { SourceId = cameraId }, new CallOptions(cancellationToken: camCts.Token));
-      var serverId = camResp.Found ? camResp.Setup.ServerId : null;
-
-      var fsClient = registry.GetFsClient(serverId);
+      // No lookup of the camera's server: this instance only ever subscribes to its own node's
+      // cameras, so the archive that must retain the footage is its own node's VmsFs.
+      var fsClient = registry.GetFsClient();
       var fsOpts = new CallOptions(deadline: DateTime.UtcNow.Add(FsTimeout));
       var status = await fsClient.RetainEventAsync(req, fsOpts);
       logger.LogInformation(

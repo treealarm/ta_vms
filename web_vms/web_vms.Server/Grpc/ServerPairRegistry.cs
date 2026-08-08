@@ -3,6 +3,7 @@ using Dapr.Client;
 using Grpc.Core;
 using Vms.Cfg;
 using Vms.Fs;
+using Vms.Onvif;
 
 namespace web_vms;
 
@@ -16,6 +17,7 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
   // volatile: ServerPairInitializer replaces this reference every refresh while request threads
   // read it without any lock.
   private volatile IReadOnlyDictionary<string, string>? _serverToFs;
+  private volatile IReadOnlyDictionary<string, string>? _serverToOnvif;
   private volatile string? _lastInitError;
   // Instances that recently failed a fan-out call — skipped for UnreachableCooldown so a
   // configured-but-dead FS doesn't cost every request the full FanOutTimeout.
@@ -35,6 +37,9 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
       _serverToFs = resp.Servers
         .Where(s => !string.IsNullOrWhiteSpace(s.FsId))
         .ToDictionary(s => s.ServerId, s => s.FsId, StringComparer.OrdinalIgnoreCase);
+      _serverToOnvif = resp.Servers
+        .Where(s => !string.IsNullOrWhiteSpace(s.OnvifId))
+        .ToDictionary(s => s.ServerId, s => s.OnvifId, StringComparer.OrdinalIgnoreCase);
       _lastInitError = null;
     }
     catch (Exception ex)
@@ -58,6 +63,39 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
       throw new InvalidOperationException($"No FS paired for server '{serverId}'");
 
     return new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
+  }
+
+  // ONVIF only reaches a camera from its own node's subnet, so a PTZ or snapshot call has to go to
+  // the VmsOnvif sitting next to that camera's media server. There is no instance that can serve
+  // them all, and no fan-out either: a camera belongs to exactly one node.
+  public OnvifService.OnvifServiceClient GetOnvifClient(string? serverId) =>
+    new(DaprClient.CreateInvocationInvoker(ResolveOnvifId(serverId)));
+
+  public PtzService.PtzServiceClient GetPtzClient(string? serverId) =>
+    new(DaprClient.CreateInvocationInvoker(ResolveOnvifId(serverId)));
+
+  public DeviceIoService.DeviceIoServiceClient GetDeviceIoClient(string? serverId) =>
+    new(DaprClient.CreateInvocationInvoker(ResolveOnvifId(serverId)));
+
+  // For the few operations that are not about one camera: recent-event dumps have to be collected
+  // from every node, since each instance only sees its own cameras' events.
+  public IReadOnlyCollection<string> AllOnvifIds =>
+    (_serverToOnvif ?? throw new ServiceNotReadyException(
+      "Configuration service (VmsCfg) has not answered yet — see GET /api/health", _lastInitError))
+      .Values.Distinct().ToList();
+
+  private string ResolveOnvifId(string? serverId)
+  {
+    var map = _serverToOnvif ?? throw new ServiceNotReadyException(
+      "Configuration service (VmsCfg) has not answered yet — see GET /api/health", _lastInitError);
+
+    if (string.IsNullOrWhiteSpace(serverId))
+      throw new InvalidOperationException("serverId must not be empty for ONVIF client lookup");
+
+    if (!map.TryGetValue(serverId, out var onvifId) || string.IsNullOrWhiteSpace(onvifId))
+      throw new InvalidOperationException($"No VmsOnvif paired for server '{serverId}'");
+
+    return onvifId;
   }
 
   // Same "not ready yet" answer as GetFsClient: every fan-out endpoint (clips, retention events,

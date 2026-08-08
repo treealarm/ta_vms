@@ -115,7 +115,7 @@ public static class SquareCameraPush
       }),
       square.PushFigures(new ProtoFigures { Figs = { rootFig }, AddTracks = false }));
 
-    foreach (var (serverId, _) in storage.GetServerPairs())
+    foreach (var (serverId, _, _) in storage.GetServerPairs())
     {
       foreach (var setup in await storage.ListCamerasAsync(serverId, ct))
       {

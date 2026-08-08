@@ -47,13 +47,9 @@ builder.Services.AddSingleton<CfgHealthProbe>();
 // while VmsCfg is unavailable — see ServerPairInitializer.
 builder.Services.AddHostedService<ServerPairInitializer>();
 
-var onvifAppId = Require("DAPR_ONVIF_APP_ID");
-builder.Services.AddSingleton(_ =>
-  new OnvifService.OnvifServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId)));
-builder.Services.AddSingleton(_ =>
-  new PtzService.PtzServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId)));
-builder.Services.AddSingleton(_ =>
-  new DeviceIoService.DeviceIoServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId)));
+// No single ONVIF app id any more: VmsOnvif runs one instance per node, and which one can reach a
+// camera follows from which media server owns it. OnvifRouter does that lookup per call.
+builder.Services.AddSingleton<OnvifRouter>();
 
 var utilsAppId = Require("DAPR_UTILS_APP_ID");
 builder.Services.AddSingleton(_ =>

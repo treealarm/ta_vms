@@ -1,3 +1,4 @@
+using Dapr.Client;
 using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,8 +12,10 @@ namespace web_vms;
 [Route("api/[controller]")]
 [Authorize(Policy = AuthPolicies.AdminOnly)]
 public class OnvifController(
-  OnvifService.OnvifServiceClient onvifClient,
-  CfgService.CfgServiceClient cfgClient) : ControllerBase
+  OnvifRouter router,
+  ServerPairRegistry registry,
+  CfgService.CfgServiceClient cfgClient,
+  ILogger<OnvifController> logger) : ControllerBase
 {
   private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
   private const int MaxDiscoverTimeoutSeconds = 30;
@@ -41,7 +44,7 @@ public class OnvifController(
   [HttpGet("cameras/{cameraId}/profiles")]
   public async Task<IActionResult> GetProfiles(string cameraId, CancellationToken ct)
   {
-    var response = await onvifClient.GetProfilesAsync(
+    var response = await (await router.OnvifAsync(cameraId, ct)).GetProfilesAsync(
       new CameraRequest { SourceId = cameraId }, Options(ct));
 
     return Ok(response.Profiles.Select(ToProfileDto));
@@ -59,7 +62,7 @@ public class OnvifController(
   [HttpGet("cameras/{cameraId}/stream-uri")]
   public async Task<IActionResult> GetStreamUri(string cameraId, [FromQuery] string? profileToken, CancellationToken ct)
   {
-    var response = await onvifClient.GetStreamUriAsync(
+    var response = await (await router.OnvifAsync(cameraId, ct)).GetStreamUriAsync(
       new StreamUriRequest { SourceId = cameraId, ProfileToken = profileToken ?? "" },
       Options(ct));
 
@@ -71,7 +74,7 @@ public class OnvifController(
   [HttpGet("cameras/{cameraId}/video-encoder-configs")]
   public async Task<IActionResult> GetVideoEncoderConfigs(string cameraId, CancellationToken ct)
   {
-    var response = await onvifClient.GetVideoEncoderConfigsAsync(
+    var response = await (await router.OnvifAsync(cameraId, ct)).GetVideoEncoderConfigsAsync(
       new CameraRequest { SourceId = cameraId }, Options(ct));
 
     return Ok(response.Configs.Select(c => new
@@ -93,7 +96,7 @@ public class OnvifController(
   public async Task<IActionResult> GetVideoEncoderConfigOptions(
     string cameraId, [FromQuery] string? configToken, CancellationToken ct)
   {
-    var response = await onvifClient.GetVideoEncoderConfigOptionsAsync(
+    var response = await (await router.OnvifAsync(cameraId, ct)).GetVideoEncoderConfigOptionsAsync(
       new VideoEncoderConfigOptionsRequest
       {
         SourceId    = cameraId,
@@ -120,7 +123,7 @@ public class OnvifController(
     [FromBody] SetVideoEncoderConfigBody body,
     CancellationToken ct)
   {
-    var response = await onvifClient.SetVideoEncoderConfigAsync(
+    var response = await (await router.OnvifAsync(cameraId, ct)).SetVideoEncoderConfigAsync(
       new SetVideoEncoderConfigRequest
       {
         SourceId = cameraId,
@@ -158,7 +161,7 @@ public class OnvifController(
   [HttpGet("cameras/{cameraId}/audio-encoder-configs")]
   public async Task<IActionResult> GetAudioEncoderConfigs(string cameraId, CancellationToken ct)
   {
-    var response = await onvifClient.GetAudioEncoderConfigsAsync(
+    var response = await (await router.OnvifAsync(cameraId, ct)).GetAudioEncoderConfigsAsync(
       new CameraRequest { SourceId = cameraId }, Options(ct));
     return Ok(response.Configs.Select(c => new
     {
@@ -174,7 +177,7 @@ public class OnvifController(
   public async Task<IActionResult> GetAudioEncoderConfigOptions(
     string cameraId, [FromQuery] string? configToken, CancellationToken ct)
   {
-    var response = await onvifClient.GetAudioEncoderConfigOptionsAsync(
+    var response = await (await router.OnvifAsync(cameraId, ct)).GetAudioEncoderConfigOptionsAsync(
       new AudioEncoderConfigOptionsRequest
       {
         SourceId    = cameraId,
@@ -194,7 +197,7 @@ public class OnvifController(
     [FromBody] SetAudioEncoderConfigBody body,
     CancellationToken ct)
   {
-    var response = await onvifClient.SetAudioEncoderConfigAsync(
+    var response = await (await router.OnvifAsync(cameraId, ct)).SetAudioEncoderConfigAsync(
       new SetAudioEncoderConfigRequest
       {
         SourceId = cameraId,
@@ -219,7 +222,7 @@ public class OnvifController(
   public async Task<IActionResult> GetImagingSettings(
     string cameraId, [FromQuery] string? videoSourceToken, CancellationToken ct)
   {
-    var response = await onvifClient.GetImagingSettingsAsync(
+    var response = await (await router.OnvifAsync(cameraId, ct)).GetImagingSettingsAsync(
       new ImagingSettingsRequest { SourceId = cameraId, VideoSourceToken = videoSourceToken ?? string.Empty },
       Options(ct));
 
@@ -239,7 +242,7 @@ public class OnvifController(
   public async Task<IActionResult> GetImagingOptions(
     string cameraId, [FromQuery] string? videoSourceToken, CancellationToken ct)
   {
-    var response = await onvifClient.GetImagingOptionsAsync(
+    var response = await (await router.OnvifAsync(cameraId, ct)).GetImagingOptionsAsync(
       new ImagingSettingsRequest { SourceId = cameraId, VideoSourceToken = videoSourceToken ?? string.Empty },
       Options(ct));
 
@@ -271,7 +274,7 @@ public class OnvifController(
     if (body.ColorSaturation.HasValue) request.ColorSaturation = body.ColorSaturation.Value;
     if (body.Sharpness.HasValue) request.Sharpness = body.Sharpness.Value;
 
-    var response = await onvifClient.SetImagingSettingsAsync(request, Options(ct));
+    var response = await (await router.OnvifAsync(cameraId, ct)).SetImagingSettingsAsync(request, Options(ct));
     return response.Success ? Ok() : StatusCode(502, response.Error);
   }
 
@@ -283,7 +286,7 @@ public class OnvifController(
   [HttpGet("cameras/{cameraId}/device-time")]
   public async Task<IActionResult> GetDeviceTime(string cameraId, CancellationToken ct)
   {
-    var response = await onvifClient.GetDeviceTimeAsync(
+    var response = await (await router.OnvifAsync(cameraId, ct)).GetDeviceTimeAsync(
       new CameraRequest { SourceId = cameraId }, Options(ct));
     return Ok(new { utcTime = response.UtcTime });
   }
@@ -291,7 +294,7 @@ public class OnvifController(
   [HttpPost("cameras/{cameraId}/sync-time")]
   public async Task<IActionResult> SyncDeviceTime(string cameraId, CancellationToken ct)
   {
-    var response = await onvifClient.SyncDeviceTimeAsync(
+    var response = await (await router.OnvifAsync(cameraId, ct)).SyncDeviceTimeAsync(
       new CameraRequest { SourceId = cameraId }, Options(ct));
     return response.Success ? Ok() : StatusCode(502, response.Error);
   }
@@ -299,7 +302,7 @@ public class OnvifController(
   [HttpPost("cameras/{cameraId}/set-time")]
   public async Task<IActionResult> SetDeviceTime(string cameraId, [FromBody] SetDeviceTimeBody body, CancellationToken ct)
   {
-    var response = await onvifClient.SetDeviceTimeAsync(
+    var response = await (await router.OnvifAsync(cameraId, ct)).SetDeviceTimeAsync(
       new SetDeviceTimeRequest { SourceId = cameraId, UtcTime = body.UtcTime }, Options(ct));
     return response.Success ? Ok() : StatusCode(502, response.Error);
   }
@@ -307,7 +310,7 @@ public class OnvifController(
   [HttpGet("cameras/{cameraId}/device-info")]
   public async Task<IActionResult> GetDeviceInformation(string cameraId, CancellationToken ct)
   {
-    var response = await onvifClient.GetDeviceInformationAsync(
+    var response = await (await router.OnvifAsync(cameraId, ct)).GetDeviceInformationAsync(
       new CameraRequest { SourceId = cameraId }, Options(ct));
 
     if (!string.IsNullOrEmpty(response.Error))
@@ -326,7 +329,7 @@ public class OnvifController(
   [HttpGet("cameras/{cameraId}/capabilities")]
   public async Task<IActionResult> GetDeviceCapabilities(string cameraId, CancellationToken ct)
   {
-    var response = await onvifClient.GetDeviceCapabilitiesAsync(
+    var response = await (await router.OnvifAsync(cameraId, ct)).GetDeviceCapabilitiesAsync(
       new CameraRequest { SourceId = cameraId }, Options(ct));
 
     return Ok(new
@@ -343,7 +346,7 @@ public class OnvifController(
   [HttpPost("cameras/{cameraId}/reboot")]
   public async Task<IActionResult> RebootDevice(string cameraId, CancellationToken ct)
   {
-    var response = await onvifClient.RebootDeviceAsync(
+    var response = await (await router.OnvifAsync(cameraId, ct)).RebootDeviceAsync(
       new CameraRequest { SourceId = cameraId }, Options(ct));
     return response.Success ? Ok(new { message = response.Message }) : StatusCode(502, response.Message);
   }
@@ -351,10 +354,14 @@ public class OnvifController(
   // ── Discovery ────────────────────────────────────────────────────────────
 
   [HttpPost("discover")]
-  public async Task<IActionResult> DiscoverDevices([FromQuery] int timeoutSeconds, CancellationToken ct)
+  // serverId is required, not defaulted: discovery is a multicast probe of one node's camera
+  // subnet, so "which node" decides which cameras can be found at all. Picking one silently would
+  // return an empty list for every other site and look like a network fault.
+  public async Task<IActionResult> DiscoverDevices(
+    [FromQuery] int timeoutSeconds, [FromQuery] string serverId, CancellationToken ct)
   {
     var (probeSeconds, options) = DiscoverOptions(timeoutSeconds, ct);
-    var response = await onvifClient.DiscoverDevicesAsync(
+    var response = await registry.GetOnvifClient(serverId).DiscoverDevicesAsync(
       new DiscoverDevicesRequest { TimeoutSeconds = probeSeconds }, options);
 
     return Ok(new
@@ -373,10 +380,11 @@ public class OnvifController(
   }
 
   [HttpPost("discover/profiles")]
+  // Same reason as discovery: the address is only routable from its own node.
   public async Task<IActionResult> GetProfilesByConnection(
-    [FromBody] GetProfilesByConnectionBody body, CancellationToken ct)
+    [FromBody] GetProfilesByConnectionBody body, [FromQuery] string serverId, CancellationToken ct)
   {
-    var response = await onvifClient.GetProfilesByConnectionAsync(
+    var response = await registry.GetOnvifClient(serverId).GetProfilesByConnectionAsync(
       new GetProfilesByConnectionRequest
       {
         Ip    = body.Ip,
@@ -511,23 +519,42 @@ public class OnvifController(
   // ── ONVIF debug events ────────────────────────────────────────────────────
 
   [HttpGet("recent-events")]
+  // Collected from every node: each VmsOnvif only subscribes to its own cameras, so no single
+  // instance holds the whole picture. A node that cannot be reached is skipped rather than failing
+  // the request — this is a debug view, and a partial answer beats none.
   public async Task<IActionResult> GetAllRecentEvents(CancellationToken ct)
   {
-    var resp = await onvifClient.GetAllRecentOnvifEventsAsync(
-      new GetAllRecentOnvifEventsRequest(), Options(ct));
-    return Ok(resp.Events.Select(e => new
+    var perNode = await Task.WhenAll(registry.AllOnvifIds.Select(async onvifId =>
     {
-      cameraId   = e.CameraId,
-      receivedAt = e.ReceivedAt,
-      topic      = e.Topic,
-      payloadXml = e.PayloadXml,
+      try
+      {
+        var client = new OnvifService.OnvifServiceClient(DaprClient.CreateInvocationInvoker(onvifId));
+        var resp = await client.GetAllRecentOnvifEventsAsync(new GetAllRecentOnvifEventsRequest(), Options(ct));
+        return resp.Events.AsEnumerable();
+      }
+      catch (RpcException ex)
+      {
+        logger.LogWarning(ex, "Recent ONVIF events unavailable from '{OnvifId}'", onvifId);
+        return [];
+      }
     }));
+
+    return Ok(perNode
+      .SelectMany(e => e)
+      .OrderByDescending(e => e.ReceivedAt, StringComparer.Ordinal)
+      .Select(e => new
+      {
+        cameraId   = e.CameraId,
+        receivedAt = e.ReceivedAt,
+        topic      = e.Topic,
+        payloadXml = e.PayloadXml,
+      }));
   }
 
   [HttpGet("cameras/{cameraId}/recent-events")]
   public async Task<IActionResult> GetRecentEvents(string cameraId, CancellationToken ct)
   {
-    var resp = await onvifClient.GetRecentOnvifEventsAsync(
+    var resp = await (await router.OnvifAsync(cameraId, ct)).GetRecentOnvifEventsAsync(
       new GetRecentOnvifEventsRequest { CameraId = cameraId }, Options(ct));
     return Ok(resp.Events.Select(e => new
     {
@@ -540,7 +567,7 @@ public class OnvifController(
   [HttpGet("cameras/{cameraId}/observed-topics")]
   public async Task<IActionResult> GetObservedTopics(string cameraId, CancellationToken ct)
   {
-    var resp = await onvifClient.GetObservedTopicsAsync(
+    var resp = await (await router.OnvifAsync(cameraId, ct)).GetObservedTopicsAsync(
       new GetObservedTopicsRequest { CameraId = cameraId }, Options(ct));
     return Ok(resp.Topics.Select(t => new
     {

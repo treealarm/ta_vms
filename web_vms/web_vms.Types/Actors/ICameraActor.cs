@@ -14,7 +14,11 @@ public interface ICameraActor : IActor
   Task<SnapshotActorResult> GetSnapshotAsync(CameraConnInfo conn);
 }
 
-public record CameraConnInfo(string Ip, int Port, string User, string Pass, string Xaddr = "");
+/// Domain is the node whose camera subnet this connection belongs to. The actor checks it against
+/// its own: distinct actor type names already keep a call from reaching another node's host, but two
+/// nodes accidentally configured with the same OWN_SERVER_ID would share one ring, and a camera
+/// handled from the wrong side of the network looks exactly like a camera that stopped answering.
+public record CameraConnInfo(string Ip, int Port, string User, string Pass, string Xaddr = "", string Domain = "");
 public record ProfileInfoDto(string Token, string Name, int Width, int Height, string Encoding, string VideoSourceToken = "");
 public record GetStreamUriActorRequest(CameraConnInfo Conn, string ProfileToken);
 public record GetStreamUriActorResult(string Uri);

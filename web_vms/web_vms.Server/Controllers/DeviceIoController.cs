@@ -7,7 +7,7 @@ namespace web_vms;
 
 [ApiController]
 [Route("api/[controller]")]
-public class DeviceIoController(DeviceIoService.DeviceIoServiceClient deviceIoClient) : ControllerBase
+public class DeviceIoController(OnvifRouter router) : ControllerBase
 {
   private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
 
@@ -18,7 +18,7 @@ public class DeviceIoController(DeviceIoService.DeviceIoServiceClient deviceIoCl
   [CameraAccess(CameraAction.ViewLive)]
   public async Task<IActionResult> GetRelayOutputs(string cameraId, CancellationToken ct)
   {
-    var response = await deviceIoClient.GetRelayOutputsAsync(
+    var response = await (await router.DeviceIoAsync(cameraId, ct)).GetRelayOutputsAsync(
       new CameraRequest { SourceId = cameraId }, Options(ct));
 
     if (!string.IsNullOrEmpty(response.Error))
@@ -37,7 +37,7 @@ public class DeviceIoController(DeviceIoService.DeviceIoServiceClient deviceIoCl
   [CameraAccess(CameraAction.ViewLive)]
   public async Task<IActionResult> GetRelayOutputOptions(string cameraId, CancellationToken ct)
   {
-    var response = await deviceIoClient.GetRelayOutputOptionsAsync(
+    var response = await (await router.DeviceIoAsync(cameraId, ct)).GetRelayOutputOptionsAsync(
       new CameraRequest { SourceId = cameraId }, Options(ct));
 
     if (!string.IsNullOrEmpty(response.Error))
@@ -60,7 +60,7 @@ public class DeviceIoController(DeviceIoService.DeviceIoServiceClient deviceIoCl
   public async Task<IActionResult> SetRelayState(
     string cameraId, string token, [FromBody] SetRelayStateBody body, CancellationToken ct)
   {
-    var response = await deviceIoClient.SetRelayOutputStateAsync(
+    var response = await (await router.DeviceIoAsync(cameraId, ct)).SetRelayOutputStateAsync(
       new SetRelayOutputStateRequest { SourceId = cameraId, Token = token, Active = body.Active },
       Options(ct));
 
@@ -72,7 +72,7 @@ public class DeviceIoController(DeviceIoService.DeviceIoServiceClient deviceIoCl
   public async Task<IActionResult> SetRelaySettings(
     string cameraId, string token, [FromBody] SetRelaySettingsBody body, CancellationToken ct)
   {
-    var response = await deviceIoClient.SetRelayOutputSettingsAsync(
+    var response = await (await router.DeviceIoAsync(cameraId, ct)).SetRelayOutputSettingsAsync(
       new SetRelayOutputSettingsRequest
       {
         SourceId  = cameraId,
@@ -89,7 +89,7 @@ public class DeviceIoController(DeviceIoService.DeviceIoServiceClient deviceIoCl
   [CameraAccess(CameraAction.ViewLive)]
   public async Task<IActionResult> GetDigitalInputs(string cameraId, CancellationToken ct)
   {
-    var response = await deviceIoClient.GetDigitalInputsAsync(
+    var response = await (await router.DeviceIoAsync(cameraId, ct)).GetDigitalInputsAsync(
       new CameraRequest { SourceId = cameraId }, Options(ct));
 
     if (!string.IsNullOrEmpty(response.Error))
@@ -106,7 +106,7 @@ public class DeviceIoController(DeviceIoService.DeviceIoServiceClient deviceIoCl
   [CameraAccess(CameraAction.ViewLive)]
   public async Task<IActionResult> GetDigitalInputOptions(string cameraId, CancellationToken ct)
   {
-    var response = await deviceIoClient.GetDigitalInputOptionsAsync(
+    var response = await (await router.DeviceIoAsync(cameraId, ct)).GetDigitalInputOptionsAsync(
       new CameraRequest { SourceId = cameraId }, Options(ct));
 
     if (!string.IsNullOrEmpty(response.Error))
@@ -124,7 +124,7 @@ public class DeviceIoController(DeviceIoService.DeviceIoServiceClient deviceIoCl
   public async Task<IActionResult> SetDigitalInputIdleState(
     string cameraId, string token, [FromBody] SetIdleStateBody body, CancellationToken ct)
   {
-    var response = await deviceIoClient.SetDigitalInputIdleStateAsync(
+    var response = await (await router.DeviceIoAsync(cameraId, ct)).SetDigitalInputIdleStateAsync(
       new SetDigitalInputIdleStateRequest { SourceId = cameraId, Token = token, IdleState = ParseIdleState(body.IdleState) },
       Options(ct));
 

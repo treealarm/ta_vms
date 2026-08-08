@@ -4,28 +4,34 @@ using Vms.Fs;
 
 namespace VmsOnvif;
 
-public class ServerPairRegistry(CfgService.CfgServiceClient cfg)
+/// The VmsFs this instance talks to.
+///
+/// One entry rather than a map: VmsOnvif is pinned to a node now, and the only cameras it ever sees
+/// are that node's, so every FS call goes to that node's VmsFs. Resolved from VmsCfg at startup so
+/// the pairing stays declared in one place (MEDIA_SERVER_PAIRS) instead of a second env var that
+/// could drift from it.
+public class ServerPairRegistry(CfgService.CfgServiceClient cfg, string ownServerId)
 {
-  private IReadOnlyDictionary<string, string>? _serverToFs;
+  private string? _fsId;
 
   public async Task InitAsync(CancellationToken ct = default)
   {
     var resp = await cfg.ListMediaServersAsync(new ListMediaServersRequest(), cancellationToken: ct);
-    _serverToFs = resp.Servers
-      .Where(s => !string.IsNullOrWhiteSpace(s.FsId))
-      .ToDictionary(s => s.ServerId, s => s.FsId, StringComparer.OrdinalIgnoreCase);
+
+    var own = resp.Servers.FirstOrDefault(
+      s => string.Equals(s.ServerId, ownServerId, StringComparison.OrdinalIgnoreCase));
+    if (own is null)
+      throw new InvalidOperationException(
+        $"Server '{ownServerId}' is not listed in MEDIA_SERVER_PAIRS — check OWN_SERVER_ID");
+    if (string.IsNullOrWhiteSpace(own.FsId))
+      throw new InvalidOperationException($"Server '{ownServerId}' has no FS paired in MEDIA_SERVER_PAIRS");
+
+    _fsId = own.FsId;
   }
 
-  public FsService.FsServiceClient GetFsClient(string? serverId)
+  public FsService.FsServiceClient GetFsClient()
   {
-    var map = _serverToFs ?? throw new InvalidOperationException("ServerPairRegistry not initialized");
-
-    if (string.IsNullOrWhiteSpace(serverId))
-      throw new InvalidOperationException("serverId must not be empty for FS client lookup");
-
-    if (!map.TryGetValue(serverId, out var fsId) || string.IsNullOrWhiteSpace(fsId))
-      throw new InvalidOperationException($"No FS paired for server '{serverId}'");
-
+    var fsId = _fsId ?? throw new InvalidOperationException("ServerPairRegistry not initialized");
     return new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
   }
 }
