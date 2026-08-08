@@ -95,8 +95,11 @@ public sealed class OnvifEventSubscriptionService(
     {
       var opts = new CallOptions(deadline: DateTime.UtcNow.Add(CfgTimeout), cancellationToken: ct);
       var resp = await cfgClient.ListCamerasAsync(new ListCamerasRequest(), opts);
+      // ListCameras already carries the full CameraSetup, onvif_conn and onvif_events_enabled
+      // included, so the list is applied as-is: a GetCamera per camera would add a round trip per
+      // camera on every refresh interval and return what we are already holding.
       foreach (var cam in resp.Cameras)
-        await RefreshCameraAsync(cam.CameraId, ct);
+        ApplyCameraSetup(cam.CameraId, cam, forceRestart: false);
     }
     catch (Exception ex)
     {
@@ -104,18 +107,32 @@ public sealed class OnvifEventSubscriptionService(
     }
   }
 
+  /// Re-reads one camera. Only the config-changed path needs this — the periodic sweep works off
+  /// the list it has already fetched.
   private async Task RefreshCameraAsync(string cameraId, CancellationToken ct, bool forceRestart = false)
   {
     try
     {
       var opts = new CallOptions(deadline: DateTime.UtcNow.Add(CfgTimeout), cancellationToken: ct);
       var resp = await cfgClient.GetCameraAsync(new SourceRequest { SourceId = cameraId }, opts);
+      ApplyCameraSetup(cameraId, resp.Found ? resp.Setup : null, forceRestart);
+    }
+    catch (Exception ex)
+    {
+      logger.LogError(ex, "Failed to refresh camera {CameraId} ONVIF subscription", cameraId);
+    }
+  }
 
-      bool hasOnvif = resp.Found
-        && resp.Setup?.OnvifEventsEnabled == true
-        && resp.Setup.OnvifConn != null
-        && !string.IsNullOrEmpty(resp.Setup.OnvifConn.Ip)
-        && resp.Setup.OnvifConn.Port > 0;
+  /// Brings the camera's subscription in line with its config. setup is null when the camera is
+  /// gone or unreadable, which stops the subscription just like ONVIF events being switched off.
+  private void ApplyCameraSetup(string cameraId, CameraSetup? setup, bool forceRestart)
+  {
+    try
+    {
+      bool hasOnvif = setup?.OnvifEventsEnabled == true
+        && setup.OnvifConn != null
+        && !string.IsNullOrEmpty(setup.OnvifConn.Ip)
+        && setup.OnvifConn.Port > 0;
 
       if (!hasOnvif)
       {
@@ -131,13 +148,13 @@ public sealed class OnvifEventSubscriptionService(
 
       var cts = new CancellationTokenSource();
       if (_cameraCts.TryAdd(cameraId, cts))
-        _ = RunCameraSubscriptionAsync(cameraId, resp.Setup!, cts.Token);
+        _ = RunCameraSubscriptionAsync(cameraId, setup!, cts.Token);
       else
         cts.Dispose();
     }
     catch (Exception ex)
     {
-      logger.LogError(ex, "Failed to refresh camera {CameraId} ONVIF subscription", cameraId);
+      logger.LogError(ex, "Failed to apply ONVIF subscription state for camera {CameraId}", cameraId);
     }
   }
 
