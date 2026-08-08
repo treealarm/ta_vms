@@ -84,8 +84,14 @@ public sealed class SourceLivenessTracker(
       // The clip the dead run was writing is still marked as open, and an open clip is read as
       // covering the next minute — which is precisely the stretch that has just been lost. Closed
       // first, or the gap below would be judged already filled and nothing would be recovered.
-      var (healed, healedFrom, healedTo) =
-        await clips.FinalizeDanglingClipsAsync(cameraId, streamName, lastSeen, ct);
+      //
+      // Bounded by this run's first frame, not by the last heartbeat: everything the dead run wrote
+      // began before that frame, while its own segment cannot have started earlier. The heartbeat
+      // is the wrong bound — a segment opened in the seconds between the last report and the crash
+      // would be skipped and stay unfinished for good, which with short pre-alarm segments is not
+      // the exception but the usual case.
+      var (healed, _, healedFrom, healedTo) =
+        await clips.FinalizeDanglingClipsAsync(cameraId, streamName, restoredAt, ct);
       if (healed > 0)
       {
         // Gaps closed on the strength of the old, larger assumption are no longer settled.
@@ -101,7 +107,9 @@ public sealed class SourceLivenessTracker(
       // recording stopped where the interrupted one ends — now measurable, since it was just
       // finished from its own fragments — and resumed where the next one begins. A frame received
       // in between is not footage: nothing is written until a keyframe arrives.
-      var lastClip = await outages.LastClipEndAsync(cameraId, streamName, lastSeen, ct);
+      // Same bound, for the same reason: asking only about clips older than the last heartbeat
+      // would ignore the one that was just measured and hand back a boundary from before the crash.
+      var lastClip = await outages.LastClipEndAsync(cameraId, streamName, restoredAt, ct);
       if (lastClip is { } clipEnd && clipEnd < restoredAt)
         lastSeen = clipEnd;
 
@@ -111,19 +119,31 @@ public sealed class SourceLivenessTracker(
 
       // Only when it cost footage, and only when it is long enough to be a hole rather than the
       // rounding between two frames.
-      if (previous.RecordingExpected
-          && restoredAt - lastSeen >= TimeSpan.FromSeconds(1)
-          && !_openOutages.ContainsKey(key))
+      if (previous.RecordingExpected && restoredAt - lastSeen >= TimeSpan.FromSeconds(1))
       {
-        logger.LogInformation(
-          "Media server restart detected for {CameraId}/{StreamName}: archive gap {From:o}..{To:o}",
-          cameraId, streamName, lastSeen, restoredAt);
-        await OpenAsync(cameraId, streamName, lastSeen, cause: "server_down", ct);
-        // Bounded on both sides already, so it is closed straight away rather than waiting for a
-        // recovery report that has, in effect, already happened.
-        if (_openOutages.TryRemove(key, out _))
-          await outages.CloseAsync(cameraId, streamName, restoredAt, ct);
-        recordedHere = true;
+        if (!_openOutages.ContainsKey(key))
+        {
+          logger.LogInformation(
+            "Media server restart detected for {CameraId}/{StreamName}: archive gap {From:o}..{To:o}",
+            cameraId, streamName, lastSeen, restoredAt);
+          await OpenAsync(cameraId, streamName, lastSeen, cause: "server_down", ct);
+          // Bounded on both sides already, so it is closed straight away rather than waiting for a
+          // recovery report that has, in effect, already happened.
+          if (_openOutages.TryRemove(key, out _))
+            await outages.CloseAsync(cameraId, streamName, restoredAt, ct);
+          recordedHere = true;
+        }
+        else
+        {
+          // The sweeper noticed the silence first and opened the row from the last heartbeat, which
+          // predates the last written frame by up to one heartbeat period. The interrupted clip has
+          // just been measured, so the boundary can now be taken from the archive instead of a guess.
+          var moved = await outages.AdvanceOpenStartAsync(cameraId, streamName, lastSeen, ct);
+          if (moved > 0)
+            logger.LogInformation(
+              "Gap start for {CameraId}/{StreamName} corrected to {From:o} — where the clip left open "
+                + "by the previous run actually ends", cameraId, streamName, lastSeen);
+        }
       }
     }
 
@@ -199,9 +219,94 @@ public sealed class SourceLivenessTracker(
     if (_openOutages.ContainsKey(key))
       return;
 
+    // Silence was judged on a list the sweeper built at the start of its pass, and a media server
+    // coming back reports the moment its first frame arrives. Between those two instants the stream
+    // can go from silent to alive, and writing then records an outage on a source that is demonstrably
+    // running — one that the very next report closes microseconds later, leaving a row saying the
+    // server was down for no time at all.
+    if (IsFresh(key, DateTime.UtcNow))
+      return;
+
+    // The boundary is about to be read off the archive, and an unfinished clip lies about it: every
+    // query treats a null end as no time at all, so the last clip of the dead run reads as ending
+    // where it began and the hole is claimed over footage that exists. Measure it first — and if it
+    // cannot be measured yet, wait rather than guess. Nothing is lost by waiting: the boundary comes
+    // from the frames, not from the moment we noticed.
+    var (_, deferred, _, _) =
+      await clips.FinalizeDanglingClipsAsync(cameraId, streamName, DateTime.UtcNow, ct);
+    if (deferred > 0)
+      return;
+
     var previous = _state.TryGetValue(key, out var p) ? p : null;
     var startedAt = previous?.LastFrameUtc ?? await FallbackStartAsync(cameraId, streamName, ct);
     await OpenAsync(cameraId, streamName, startedAt, cause, ct);
+  }
+
+  /// <summary>
+  /// Recovers the holes a node-wide restart leaves behind, reading them off the archive.
+  /// </summary>
+  /// <remarks>
+  /// The heartbeat path cannot see this case even in principle. It recognises a restart by the
+  /// instance id changing between two reports, and when the whole node goes down VmsFs goes with it:
+  /// there is no earlier report left to compare against, so no restart is ever detected and the clip
+  /// the writer had open stays unfinished — read, as an open clip is, as covering the minute after it
+  /// starts, which is exactly the minute that was lost.
+  ///
+  /// What survives is the archive. A clip with no end and a later clip behind it was abandoned; its
+  /// real length is in its own fragments, and from there to the next clip nothing was recorded. That
+  /// the clip exists at all is itself the proof that recording was expected — nothing else opens a
+  /// segment — so no configuration needs to be consulted.
+  /// </remarks>
+  public async Task RecoverAbandonedAsync(IReadOnlyCollection<string> cameraIds, CancellationToken ct)
+  {
+    List<AbandonedClip> abandoned;
+    try
+    {
+      abandoned = await clips.ListAbandonedAsync(cameraIds, ct);
+    }
+    catch (Exception ex)
+    {
+      logger.LogWarning(ex, "Could not look for clips left open by a previous run");
+      return;
+    }
+
+    foreach (var clip in abandoned)
+    {
+      if (ct.IsCancellationRequested)
+        return;
+      try
+      {
+        var (healed, _, _, _) = await clips.FinalizeDanglingClipsAsync(
+          clip.CameraId, clip.StreamName, clip.ResumedAt, ct);
+        if (healed == 0)
+          continue;
+
+        // Re-read rather than trust the measurement: the same pass may have finished several clips,
+        // and the gap starts at the end of the last of them.
+        var stoppedAt = await outages.LastClipEndAsync(
+          clip.CameraId, clip.StreamName, clip.ResumedAt, ct);
+        if (stoppedAt is not { } lastFrame || clip.ResumedAt - lastFrame < TimeSpan.FromSeconds(1))
+          continue;
+
+        // An outage still open for this stream is the present, not the past — leave it to the
+        // heartbeat path, which owns the live interval and will close it on the first frame back.
+        if (_openOutages.ContainsKey(Key(clip.CameraId, clip.StreamName)))
+          continue;
+
+        var written = await outages.RecordRecoveredAsync(
+          clip.CameraId, clip.StreamName, lastFrame, clip.ResumedAt, "server_down", ct);
+        if (written)
+          logger.LogInformation(
+            "Archive gap recovered from the clips of {CameraId}/{StreamName}: {From:o}..{To:o} — "
+              + "the previous run left a clip unfinished and nothing observed the restart",
+            clip.CameraId, clip.StreamName, lastFrame, clip.ResumedAt);
+      }
+      catch (Exception ex)
+      {
+        logger.LogWarning(ex, "Could not recover the gap around the clip {CameraId}/{StreamName} at {At:o}",
+          clip.CameraId, clip.StreamName, clip.StartTs);
+      }
+    }
   }
 
   /// <summary>Streams heard from within <see cref="Stale"/>, so the sweeper can skip them.</summary>

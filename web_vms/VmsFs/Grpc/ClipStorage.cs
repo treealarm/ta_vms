@@ -10,6 +10,13 @@ internal sealed record RecordingWithEvents(
   Recording Recording,
   List<string> EventIds);
 
+/// <summary>A clip a dead run left open, and the moment the archive picked up again.</summary>
+public sealed record AbandonedClip(
+  string CameraId,
+  string StreamName,
+  DateTime StartTs,
+  DateTime ResumedAt);
+
 public sealed class ClipStorage(
   IDbContextFactory<ClipsDbContext> dbFactory,
   NpgsqlDataSource dataSource,
@@ -17,6 +24,12 @@ public sealed class ClipStorage(
   StorageListCache storageListCache,
   FsActivityLog activityLog)
 {
+  /// <summary>
+  /// How recently a clip's file must have been touched to count as still being written. Longer than
+  /// the liveness heartbeat, so a live writer is never mistaken for a dead one during a quiet moment.
+  /// </summary>
+  private static readonly TimeSpan StillBeingWritten = TimeSpan.FromSeconds(25);
+
   // Cap on how long one contiguous archive range (a single HLS source) may span. Uncapped, an
   // uninterrupted multi-hour recording becomes one HLS source with thousands of segments, and
   // building that manifest reads a sidx per clip — it grows to tens of seconds and trips the
@@ -544,7 +557,7 @@ public sealed class ClipStorage(
   /// How many rows were repaired, and the span the archive had been assuming for them — a gap
   /// already judged against that assumption has to be looked at again.
   /// </returns>
-  public async Task<(int Repaired, DateTime From, DateTime To)> FinalizeDanglingClipsAsync(
+  public async Task<(int Repaired, int Deferred, DateTime From, DateTime To)> FinalizeDanglingClipsAsync(
     string cameraId, string streamName, DateTime notAfter, CancellationToken ct)
   {
     await using var db = await dbFactory.CreateDbContextAsync(ct);
@@ -555,22 +568,41 @@ public sealed class ClipStorage(
         && c.StartTs <= notAfter)
       .ToListAsync(ct);
     if (dangling.Count == 0)
-      return (0, default, default);
+      return (0, 0, default, default);
 
     var storages = await storageListCache.GetAsync(ct);
     var repaired = 0;
+    var deferred = 0;
 
     foreach (var clip in dangling)
     {
       var root = storageListCache.Find(storages, clip.StorageId)?.RootPath;
       var absPath = string.IsNullOrWhiteSpace(root) ? null : Path.Combine(root, clip.FilePath);
 
+      // The storage list has not loaded yet, which says nothing about the clip. Writing it off as
+      // zero-length would be permanent — the row stops being dangling and is never looked at again —
+      // so it waits for a pass that can actually open the file.
+      if (absPath is null)
+      {
+        deferred++;
+        continue;
+      }
+
       // Nothing to measure — the row claims no time rather than a minute of it.
       var end = clip.StartTs;
       long size = clip.SizeBytes;
 
-      if (absPath is not null && File.Exists(absPath))
+      if (File.Exists(absPath))
       {
+        // A file that was touched a moment ago has a writer on it: the run that owns it is alive and
+        // its length is not final yet. Only quiet on disk proves otherwise, and there is no hurry —
+        // the boundary comes from the archive, not from when we happened to look.
+        if (DateTime.UtcNow - File.GetLastWriteTimeUtc(absPath) < StillBeingWritten)
+        {
+          deferred++;
+          continue;
+        }
+
         size = new FileInfo(absPath).Length;
         var idx = await ClipIndexParser.ReadAsync(absPath, ct);
         if (idx is { Fragments.Count: > 0 })
@@ -592,7 +624,48 @@ public sealed class ClipStorage(
     // verdicts were based on something no longer true.
     var from = dangling.Min(c => c.StartTs);
     var to = dangling.Max(c => c.StartTs).AddMinutes(1);
-    return (repaired, from, to);
+    return (repaired, deferred, from, to);
+  }
+
+  /// <summary>
+  /// Clips left open by a run that is gone, together with the moment recording resumed.
+  /// </summary>
+  /// <remarks>
+  /// A later clip on the same stream is the proof: a writer that moved on to a new segment is never
+  /// coming back to this one, so the row can be measured and the stretch between the two treated as
+  /// lost. Nothing else in the system can say this after a node-wide restart — the heartbeats and the
+  /// instance id they carry live in memory that went down with the media server, while the archive
+  /// is still on disk.
+  /// </remarks>
+  public async Task<List<AbandonedClip>> ListAbandonedAsync(
+    IReadOnlyCollection<string> cameraIds, CancellationToken ct)
+  {
+    if (cameraIds.Count == 0)
+      return [];
+
+    await using var cmd = dataSource.CreateCommand("""
+      SELECT c.camera_id, c.stream_name, c.start_ts,
+             (SELECT MIN(n.start_ts) FROM clips n
+               WHERE n.camera_id = c.camera_id
+                 AND n.stream_name = c.stream_name
+                 AND n.start_ts > c.start_ts) AS resumed_at
+      FROM clips c
+      WHERE c.end_ts IS NULL AND c.camera_id = ANY($1)
+      ORDER BY c.start_ts;
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Array | NpgsqlDbType.Text, cameraIds.ToArray());
+
+    var result = new List<AbandonedClip>();
+    await using var reader = await cmd.ExecuteReaderAsync(ct);
+    while (await reader.ReadAsync(ct))
+    {
+      // No later clip means the writer may still be filling this one — leave it alone.
+      if (reader.IsDBNull(3))
+        continue;
+      result.Add(new AbandonedClip(
+        reader.GetString(0), reader.GetString(1), reader.GetDateTime(2), reader.GetDateTime(3)));
+    }
+    return result;
   }
 
   public async Task SaveFragIndexAsync(Guid uid, string json, CancellationToken ct)

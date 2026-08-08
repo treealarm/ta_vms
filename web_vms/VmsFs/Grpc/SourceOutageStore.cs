@@ -122,6 +122,73 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
     return await cmd.ExecuteNonQueryAsync(ct);
   }
 
+  /// <summary>
+  /// Moves the start of the open interval forward to where the archive actually stops.
+  /// </summary>
+  /// <remarks>
+  /// This corrects a provisional boundary, it does not track progress. A row opened because a media
+  /// server fell silent begins at the last heartbeat, which on a crash is up to one heartbeat period
+  /// older than the last frame that reached the disk — the clip being written at that moment was
+  /// still unmeasured. Once it has been finished from its own fragments the archive can say where
+  /// recording really stopped, and leaving the earlier guess in place would claim a hole over
+  /// footage that is right there and have it pulled from the camera again.
+  /// </remarks>
+  public async Task<int> AdvanceOpenStartAsync(
+    string cameraId, string streamName, DateTime startedTs, CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand("""
+      UPDATE source_outages o SET started_ts = $3
+      WHERE o.camera_id = $1 AND o.stream_name = $2
+        AND o.ended_ts IS NULL
+        AND o.started_ts < $3
+        -- (camera, stream, start) is unique, and a closed row may already sit on that instant.
+        AND NOT EXISTS (
+          SELECT 1 FROM source_outages c
+          WHERE c.camera_id = $1 AND c.stream_name = $2 AND c.started_ts = $3);
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, startedTs);
+    return await cmd.ExecuteNonQueryAsync(ct);
+  }
+
+  /// <summary>
+  /// Writes an interval that is already over, reconstructed from the archive after the fact.
+  /// </summary>
+  /// <remarks>
+  /// Deliberately not <see cref="OpenAsync"/>: that one coalesces with whatever ended recently,
+  /// which is right for an outage happening now and wrong for one being filled in behind it — the
+  /// newest row would be reopened and handed this interval's identity.
+  ///
+  /// Degenerate rows inside the span are dropped on the way. Nothing legitimate is shorter than the
+  /// grace window, so an interval measured in microseconds never happened: it is the residue of a
+  /// sweep that raced a media server coming back, and leaving it beside the real one tells the
+  /// operator the node went down twice. Open rows are never touched — a NULL end makes the
+  /// comparison NULL, which is not true.
+  /// </remarks>
+  public async Task<bool> RecordRecoveredAsync(
+    string cameraId, string streamName, DateTime startedTs, DateTime endedTs, string cause,
+    CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand("""
+      WITH dropped AS (
+        DELETE FROM source_outages
+        WHERE camera_id = $1 AND stream_name = $2
+          AND ended_ts - started_ts < interval '1 second'
+          AND started_ts BETWEEN $3 AND $4
+      )
+      INSERT INTO source_outages (camera_id, stream_name, started_ts, ended_ts, cause)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (camera_id, stream_name, started_ts) DO NOTHING;
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, startedTs);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, endedTs);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cause);
+    return await cmd.ExecuteNonQueryAsync(ct) > 0;
+  }
+
   /// <summary>Streams that are silent right now — the tracker's state after a restart.</summary>
   public async Task<List<(string CameraId, string StreamName)>> ListOpenAsync(CancellationToken ct)
   {
@@ -141,14 +208,17 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
   /// <param name="startedBefore">
   /// Only clips that began before this moment. Without the bound the answer includes recordings the
   /// stream made *after* the outage — the new run's first clip, for one — and using that as "when
-  /// recording stopped" pushes the start of the gap past its own end.
+  /// recording stopped" pushes the start of the gap past its own end. Strictly before, because the
+  /// caller passes the first frame of the run that came back and the segment that run opened starts
+  /// on exactly that frame: including it would return an end past the outage and the archive-derived
+  /// boundary would be thrown away.
   /// </param>
   public async Task<DateTime?> LastClipEndAsync(
     string cameraId, string streamName, DateTime startedBefore, CancellationToken ct)
   {
     await using var cmd = dataSource.CreateCommand("""
       SELECT MAX(COALESCE(end_ts, start_ts)) FROM clips
-      WHERE camera_id = $1 AND stream_name = $2 AND start_ts <= $3;
+      WHERE camera_id = $1 AND stream_name = $2 AND start_ts < $3;
       """);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);

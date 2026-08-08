@@ -212,7 +212,10 @@ public sealed class EdgeImportScheduler(
     var missing = await MissingAsync(outage, endedTs, ct);
     if (missing.Count == 0)
     {
-      await FinishAsync(outage, "filled", string.Empty, ct);
+      // The whole interval, not the counter the row came in with: this is the path a gap takes when
+      // the jobs that recovered it have already finished, and leaving the old value there shows the
+      // operator a filled gap as 0 % recovered.
+      await FinishAsync(outage, "filled", string.Empty, ct, SpanMs(outage.StartedTs, endedTs));
       return;
     }
 
@@ -260,9 +263,8 @@ public sealed class EdgeImportScheduler(
     // The outcome is judged from the archive afterwards, never from "the job reported success":
     // a job can finish cleanly and have recovered nothing.
     var stillMissing = await MissingAsync(outage, endedTs, ct);
-    var filledMs = (long)(endedTs - outage.StartedTs - stillMissing.Aggregate(
-      TimeSpan.Zero, (acc, m) => acc + (m.End - m.Start))).TotalMilliseconds;
-    var progressed = filledMs > outage.FilledMs;
+    var filledMs = SpanMs(outage.StartedTs, endedTs) - stillMissing.Aggregate(
+      0L, (acc, m) => acc + SpanMs(m.Start, m.End));
 
     if (stillMissing.Count == 0)
     {
@@ -270,10 +272,13 @@ public sealed class EdgeImportScheduler(
       return;
     }
 
-    // Counts only fruitless attempts; any progress resets it, so a long gap recovered piece by piece
-    // never runs out of budget precisely because it is succeeding.
     // Left as filling while its jobs are outstanding; the run that drains them decides the rest.
+    // Attempts are not touched here — only a camera that answered with nothing counts as a fruitless
+    // try, so a long gap recovered piece by piece never runs out of budget while it is succeeding.
   }
+
+  /// <summary>How much of the wall clock an interval covers, in the units <c>filled_ms</c> holds.</summary>
+  private static long SpanMs(DateTime from, DateTime to) => (long)(to - from).TotalMilliseconds;
 
   /// <summary>
   /// Runs one queued import to completion. True when something was taken on, so the sweep stops
