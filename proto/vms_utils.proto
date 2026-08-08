@@ -18,6 +18,10 @@ message GetMediaMtxPathInfoResponse {
   bool  success       = 1;
   int32 readers_count = 2;
   bool  has_source    = 3;
+  // Whether the assigned MediaMTX server exposes its control API at all. Without it nobody can be
+  // asked who is watching, so reader counts mean nothing and the caller must publish unconditionally
+  // rather than infer "no viewers" from silence.
+  bool  api_configured = 4;
 }
 
 message EntityState {
