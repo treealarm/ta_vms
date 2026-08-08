@@ -26,6 +26,7 @@ builder.Services.AddSingleton<PermissionDb>();
 builder.Services.AddSingleton<CfgServiceImpl>();
 builder.Services.AddSingleton<StorageServiceImpl>();
 builder.Services.AddHostedService<RecordingScheduleService>();
+builder.Services.AddHostedService<AlarmOverrideExpiryService>();
 
 // SQUARE_INTEGRATION_SINK_APP_ID is intentionally optional: when unset, VmsCfg runs fully
 // standalone with no dependency on Square (no-op ISquareIntegration, no subscriber registered).

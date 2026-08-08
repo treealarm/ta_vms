@@ -23,7 +23,6 @@ builder.Services.AddHostedService<CameraConfigSubscriber>();
 builder.Services.AddSingleton<ClipCleaner>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ClipCleaner>());
 builder.Services.AddSingleton<AlarmRecordingService>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<AlarmRecordingService>());
 var postgresConnStr = BuildPostgresConnectionString();
 builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(postgresConnStr));
 builder.Services.AddDbContextFactory<ClipsDbContext>(options =>

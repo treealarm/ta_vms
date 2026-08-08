@@ -7,12 +7,14 @@ using RecordingMode = Vms.Cfg.RecordingMode;
 
 namespace VmsFs;
 
+// Activates alarm recording overrides. Expiry is not handled here: it is global periodic work over
+// VmsCfg's own table and lives in VmsCfg.AlarmOverrideExpiryService, so it runs once for the whole
+// system instead of once per VmsFs instance.
 public sealed class AlarmRecordingService(
   CfgService.CfgServiceClient cfgClient,
   CameraSetupCache setupCache,
-  ILogger<AlarmRecordingService> logger) : BackgroundService
+  ILogger<AlarmRecordingService> logger)
 {
-  private static readonly TimeSpan Interval = TimeSpan.FromSeconds(2);
   private static readonly TimeSpan CfgCallTimeout = TimeSpan.FromSeconds(5);
   private static readonly TimeSpan MediaCallTimeout = TimeSpan.FromSeconds(5);
 
@@ -41,7 +43,7 @@ public sealed class AlarmRecordingService(
       if (resp.Activated)
       {
         logger.LogInformation("Alarm recording activated for camera '{CameraId}' stream='{StreamName}' until={Until}", cameraId, streamName, until);
-        await PushCameraStateAsync(cameraId, streamName, RecordingMode.RecordingContinuous, ct);
+        await PushCameraStateAsync(cameraId, streamName, ct);
       }
     }
     catch (Exception ex)
@@ -50,52 +52,10 @@ public sealed class AlarmRecordingService(
     }
   }
 
-  protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-  {
-    while (!stoppingToken.IsCancellationRequested)
-    {
-      await Task.Delay(Interval, stoppingToken).ConfigureAwait(false);
-      await SweepExpiredAsync(stoppingToken).ConfigureAwait(false);
-    }
-  }
-
-  private async Task SweepExpiredAsync(CancellationToken ct)
-  {
-    ListAlarmOverrideStreamsResponse expired;
-    try
-    {
-      expired = await cfgClient.ListAlarmOverrideStreamsAsync(
-        new ListAlarmOverrideStreamsRequest(), CfgOptions(ct));
-    }
-    catch (Exception ex)
-    {
-      logger.LogError(ex, "AlarmRecordingService: ListAlarmOverrideStreams failed");
-      return;
-    }
-
-    foreach (var stream in expired.Streams)
-    {
-      try
-      {
-        var resp = await cfgClient.ClearAlarmOverrideAsync(
-          new ClearAlarmOverrideRequest { CameraId = stream.CameraId, StreamName = stream.StreamName },
-          CfgOptions(ct));
-        if (resp.Success)
-        {
-          logger.LogInformation("Alarm recording expired for camera '{CameraId}' stream='{StreamName}'", stream.CameraId, stream.StreamName);
-          await PushCameraStateAsync(stream.CameraId, stream.StreamName, null, ct);
-        }
-      }
-      catch (Exception ex)
-      {
-        logger.LogError(ex, "AlarmRecordingService: error clearing '{CameraId}/{StreamName}'", stream.CameraId, stream.StreamName);
-      }
-    }
-  }
-
+  // Pushes the override straight to the owning media_server rather than going through a config
+  // change event: an alarm has to start recording now, and the server is on this same node.
   // streamName: null = all streams on the camera; non-null = only that stream.
-  // overrideMode: the mode to push (null = read from cached base profile).
-  private async Task PushCameraStateAsync(string cameraId, string? streamName, RecordingMode? overrideMode, CancellationToken ct)
+  private async Task PushCameraStateAsync(string cameraId, string? streamName, CancellationToken ct)
   {
     var setup = await setupCache.GetAsync(cameraId, ct);
     if (setup is null)
@@ -108,7 +68,6 @@ public sealed class AlarmRecordingService(
     {
       if (streamName is not null && stream.StreamName != streamName)
         continue;
-      var mode = overrideMode ?? stream.BaseMode;
 
       // WebRtc deliberately left unset: alarm overrides only change the recording policy, and
       // setting it would stop a MediaMTX push started on demand (live view, analytics).
@@ -116,11 +75,8 @@ public sealed class AlarmRecordingService(
       {
         CameraId      = cameraId,
         StreamName    = stream.StreamName,
-        RecordingMode = mode,
+        RecordingMode = RecordingMode.RecordingContinuous,
       };
-
-      if (mode == RecordingMode.RecordingPrealarm)
-        state.SegmentSeconds = stream.BaseSegmentSeconds > 0 ? stream.BaseSegmentSeconds : 5u;
 
       try
       {

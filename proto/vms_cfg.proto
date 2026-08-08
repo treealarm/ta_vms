@@ -18,8 +18,6 @@ service CfgService {
   rpc ClearStreamOverride(ClearStreamOverrideRequest) returns (OperationStatus);
   rpc SetStreamRecordingProfile(SetStreamRecordingProfileRequest) returns (OperationStatus);
   rpc ActivateAlarmOverride(ActivateAlarmOverrideRequest) returns (ActivateAlarmOverrideResponse);
-  rpc ClearAlarmOverride(ClearAlarmOverrideRequest) returns (OperationStatus);
-  rpc ListAlarmOverrideStreams(ListAlarmOverrideStreamsRequest) returns (ListAlarmOverrideStreamsResponse);
   rpc ListRecordingSchedules(ListRecordingSchedulesRequest) returns (ListRecordingSchedulesResponse);
   rpc UpsertRecordingSchedule(RecordingSchedule) returns (OperationStatus);
   rpc RemoveRecordingSchedule(RecordingScheduleRequest) returns (OperationStatus);
@@ -372,22 +370,6 @@ message ActivateAlarmOverrideRequest {
 
 message ActivateAlarmOverrideResponse {
   bool activated = 1;
-}
-
-message ClearAlarmOverrideRequest {
-  string camera_id   = 1;
-  string stream_name = 2;
-}
-
-message AlarmOverrideStream {
-  string camera_id   = 1;
-  string stream_name = 2;
-}
-
-message ListAlarmOverrideStreamsRequest {}
-
-message ListAlarmOverrideStreamsResponse {
-  repeated AlarmOverrideStream streams = 1;
 }
 
 message OnvifAlarmFilter {
