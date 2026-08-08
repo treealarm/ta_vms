@@ -42,8 +42,39 @@ public sealed class EdgeImportScheduler(
   /// <summary>How long to leave a gap alone after it closed, before asking the camera for it.</summary>
   private static readonly TimeSpan Settle = EnvSeconds("VMS_BACKFILL_SETTLE_SECONDS", 60);
 
-  /// <summary>Minimum spacing between attempts on the same gap.</summary>
+  /// <summary>Spacing between the first attempts on the same gap; it doubles from there.</summary>
   private static readonly TimeSpan RetryInterval = EnvSeconds("VMS_BACKFILL_RETRY_SECONDS", 300);
+
+  /// <summary>Ceiling for the backoff — beyond this, waiting longer buys nothing.</summary>
+  private static readonly TimeSpan MaxRetryInterval = TimeSpan.FromHours(6);
+
+  /// <summary>
+  /// Consecutive attempts that recovered nothing before the gap is left to the operator.
+  /// </summary>
+  /// <remarks>
+  /// Counts only fruitless ones: any growth in coverage resets it, so a long gap being recovered
+  /// piece by piece never runs out of budget precisely because it is succeeding.
+  /// </remarks>
+  private const int MaxFruitlessAttempts = 3;
+
+  /// <summary>
+  /// How long to wait before asking again, after this many fruitless attempts.
+  /// </summary>
+  /// <remarks>
+  /// Doubling rather than a flat interval: a camera that cannot deliver a stretch now will almost
+  /// certainly answer the same way a minute later, and the device has very few RTSP sessions —
+  /// spending one every five minutes for ever on a gap that is not moving costs live viewing.
+  /// </remarks>
+  private static TimeSpan BackoffFor(int attempts)
+  {
+    if (attempts <= 0)
+      return RetryInterval;
+    // Shifting rather than Math.Pow: the exponent is small and bounded, and doubling past the
+    // ceiling would overflow the tick count long before the ceiling itself is reached.
+    var capped = Math.Min(attempts, 16);
+    var scaled = RetryInterval * (1L << capped);
+    return scaled > MaxRetryInterval ? MaxRetryInterval : scaled;
+  }
 
   /// <summary>Nothing older than this is attempted — the card cannot possibly still hold it.</summary>
   private static readonly TimeSpan Lookback = TimeSpan.FromHours(
@@ -162,8 +193,9 @@ public sealed class EdgeImportScheduler(
         continue;
 
       // Spaced regardless of the outcome, so a failing camera is retried on a schedule rather than
-      // as fast as the loop can go.
-      await outages.SetNextRetryAsync(outage.OutageUid, DateTime.UtcNow + RetryInterval, ct);
+      // as fast as the loop can go, and the spacing widens with each fruitless attempt.
+      await outages.SetNextRetryAsync(
+        outage.OutageUid, DateTime.UtcNow + BackoffFor(outage.Attempts), ct);
       await AttemptAsync(outage, ct);
     }
   }
@@ -219,6 +251,23 @@ public sealed class EdgeImportScheduler(
       return;
     }
 
+    // Whether the last round achieved anything, judged from the archive rather than from what the
+    // jobs reported: one can finish cleanly and have recovered nothing.
+    var recovered = SpanMs(outage.StartedTs, endedTs)
+      - missing.Aggregate(0L, (acc, m) => acc + SpanMs(m.Start, m.End));
+    var attempts = recovered > outage.FilledMs ? 0 : outage.Attempts;
+
+    // Still something to fetch, and nothing to show for the last few tries. Automation stops here
+    // rather than holding the camera's only import slot for ever; the operator can still ask for it
+    // by hand, which is a statement that something has changed.
+    if (attempts >= MaxFruitlessAttempts)
+    {
+      await FinishAsync(
+        outage, "partial", "recovered nothing in several attempts — left to the operator", ct,
+        recovered);
+      return;
+    }
+
     var available = await OnCameraAsync(outage.CameraId, missing, ct);
     if (available is null)
     {
@@ -232,12 +281,12 @@ public sealed class EdgeImportScheduler(
       // indexing what it has just recorded — and a camera in trouble answers a search without
       // finding anything at all, which is a statement about the network, not about the card.
       // Declaring it exhausted is irreversible, so it takes both age and a repeat.
-      if (DateTime.UtcNow - endedTs < ExhaustAfter || outage.Attempts < 1)
+      if (DateTime.UtcNow - endedTs < ExhaustAfter || attempts < 1)
       {
         logger.LogDebug("Edge backfill: {CameraId} has nothing for the gap yet, will retry",
           outage.CameraId);
         await outages.UpdateOutcomeAsync(outage.OutageUid, "open", outage.FilledMs,
-          outage.Attempts + 1, "the camera returned nothing for this period", ct);
+          attempts + 1, "the camera returned nothing for this period", ct);
         return;
       }
       await FinishAsync(outage, "exhausted", "the camera no longer holds the missing period", ct);
@@ -258,7 +307,7 @@ public sealed class EdgeImportScheduler(
     }
 
     await outages.UpdateOutcomeAsync(
-      outage.OutageUid, "filling", outage.FilledMs, outage.Attempts, string.Empty, ct);
+      outage.OutageUid, "filling", outage.FilledMs, attempts, string.Empty, ct);
 
     // The outcome is judged from the archive afterwards, never from "the job reported success":
     // a job can finish cleanly and have recovered nothing.
