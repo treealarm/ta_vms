@@ -102,8 +102,23 @@ public sealed class OnvifEventSubscriptionService(
       // ListCameras already carries the full CameraSetup, onvif_conn and onvif_events_enabled
       // included, so the list is applied as-is: a GetCamera per camera would add a round trip per
       // camera on every refresh interval and return what we are already holding.
+      var mine = new HashSet<string>(StringComparer.Ordinal);
       foreach (var cam in resp.Cameras)
+      {
+        mine.Add(cam.CameraId);
         ApplyCameraSetup(cam.CameraId, cam, forceRestart: false);
+      }
+
+      // Anything still subscribed that the list no longer mentions has left this node — moved to
+      // another server or deleted — and must be released here. Nothing else can notice: a camera
+      // that is gone is simply absent, so iterating the list alone would hold its pull point open
+      // forever, and after a move both nodes would be polling the same camera.
+      foreach (var cameraId in _cameraCts.Keys.Where(id => !mine.Contains(id)).ToList())
+      {
+        logger.LogInformation(
+          "Camera {CameraId} is no longer assigned to this node — dropping its ONVIF subscription", cameraId);
+        StopCameraSubscription(cameraId);
+      }
     }
     catch (Exception ex)
     {
@@ -119,7 +134,14 @@ public sealed class OnvifEventSubscriptionService(
     {
       var opts = new CallOptions(deadline: DateTime.UtcNow.Add(CfgTimeout), cancellationToken: ct);
       var resp = await cfgClient.GetCameraAsync(new SourceRequest { SourceId = cameraId }, opts);
-      ApplyCameraSetup(cameraId, resp.Found ? resp.Setup : null, forceRestart);
+
+      // camera-config-changed carries only a camera id and reaches every VmsOnvif — each instance
+      // has its own app id and therefore its own subscription — so ownership has to be checked here.
+      // Applied unconditionally, one edit would make every node subscribe to the same camera, and a
+      // camera moved between nodes would end up polled from both.
+      var mine = resp.Found
+        && string.Equals(resp.Setup?.ServerId, ownServerId, StringComparison.OrdinalIgnoreCase);
+      ApplyCameraSetup(cameraId, mine ? resp.Setup : null, forceRestart);
     }
     catch (Exception ex)
     {

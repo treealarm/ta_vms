@@ -322,6 +322,46 @@
             "webRoot": "${workspaceFolder}/web_vms/web_vms.client/src"
         },
         {
+            "name": "VmsOnvif-2 (.NET)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "prepare:vmsonvif-2",
+            "postDebugTask": "dapr:vmsonvif-2:stop",
+            "program": "${workspaceFolder}/web_vms/VmsOnvif/bin/Debug/net8.0/VmsOnvif.dll",
+            "cwd": "${workspaceFolder}/web_vms/VmsOnvif",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ONVIF_SRV_PORT": "5143",
+                "DAPR_HTTP_PORT": "3611",
+                "DAPR_GRPC_PORT": "51012",
+                "DAPR_CFG_APP_ID": "vmscfg",
+                "PUBSUB_NAME": "orderpubsub",
+                "APP_ID": "vmsonvif-2",
+                "OWN_SERVER_ID": "vms-2",
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
+            }
+        },
+        {
+            "name": "VmsOnvifActors-2 (.NET)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "prepare:vmsonvif-actors-2",
+            "postDebugTask": "dapr:vmsonvif-actors-2:stop",
+            "program": "${workspaceFolder}/web_vms/VmsOnvifActors/bin/Debug/net8.0/VmsOnvifActors.dll",
+            "cwd": "${workspaceFolder}/web_vms/VmsOnvifActors",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ONVIF_ACTORS_PORT": "5144",
+                "DAPR_HTTP_PORT": "3612",
+                "DAPR_GRPC_PORT": "51013",
+                "APP_ID": "vmsonvif-actors-2",
+                "OWN_SERVER_ID": "vms-2",
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
+            }
+        },
+        {
             "name": "VmsFs-2 (.NET)",
             "type": "coreclr",
             "request": "launch",
