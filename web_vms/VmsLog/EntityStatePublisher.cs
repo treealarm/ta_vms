@@ -16,8 +16,19 @@ public sealed class EntityStatePublisher(DaprClient daprClient, ILogger<EntitySt
   private static readonly string PubSubName = Environment.GetEnvironmentVariable("PUBSUB_NAME")
     ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
 
+  // The same switch media_server reads for its periodic feed: unset or non-positive means the debug
+  // entity-state feed is off, and Publish becomes a no-op. Only the on/off half of the setting
+  // applies here — these reports go out on events, not on a timer, so they have no period of their
+  // own.
+  private static readonly bool Enabled =
+    int.TryParse(Environment.GetEnvironmentVariable("VMS_DEBUG_ENTITY_STATE_SECONDS"), out var period)
+      && period > 0;
+
   public void Publish(string entityType, string entityId, object state)
   {
+    if (!Enabled)
+      return;
+
     _ = Task.Run(async () =>
     {
       try

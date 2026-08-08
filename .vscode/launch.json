@@ -175,6 +175,7 @@
                 "ANALYTICS_REID_GALLERY_WINDOW_SECONDS": "900",
                 "ANALYTICS_EVENT_GROUP_GAP_SECONDS": "300",
                 "DAPR_ANALYTICS_WORKER_APP_IDS": "analytics-worker",
+                "VMS_DEBUG_ENTITY_STATE_SECONDS": "10",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },
@@ -280,6 +281,7 @@
                     "value": "rtsp://localhost:8554"
                 },
                 { "name": "VMS_SOURCE_LIVENESS_PERIOD_SECONDS", "value": "15" },
+                { "name": "VMS_DEBUG_ENTITY_STATE_SECONDS", "value": "10" },
                 { "name": "VMS_MTX_HOST", "value": "localhost" },
                 { "name": "VMS_WEBRTC_PUBLISH_AUDIO", "value": "0" }
             ],
@@ -375,7 +377,8 @@
                 { "name": "DAPR_STATE_STORE_NAME", "value": "statestore" },
                 { "name": "PUBSUB_NAME", "value": "orderpubsub" },
                 { "name": "VMS_WEBRTC_RTSP_BASE_URL", "value": "rtsp://localhost:8554" },
-                { "name": "VMS_SOURCE_LIVENESS_PERIOD_SECONDS", "value": "15" }
+                { "name": "VMS_SOURCE_LIVENESS_PERIOD_SECONDS", "value": "15" },
+                { "name": "VMS_DEBUG_ENTITY_STATE_SECONDS", "value": "10" }
             ],
             "cwd": "${workspaceFolder}/media_server",
             "stopAtEntry": false,
