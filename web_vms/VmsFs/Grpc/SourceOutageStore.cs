@@ -1,0 +1,378 @@
+using Npgsql;
+using NpgsqlTypes;
+
+namespace VmsFs;
+
+/// <summary>One row of <c>source_outages</c>, as the rest of VmsFs needs it.</summary>
+public sealed record SourceOutage(
+  Guid OutageUid,
+  string CameraId,
+  string StreamName,
+  DateTime StartedTs,
+  DateTime? EndedTs,
+  string Cause,
+  string State,
+  long FilledMs,
+  int Attempts,
+  string Message);
+
+/// <summary>
+/// Reads and writes the outage intervals derived from source heartbeats.
+/// </summary>
+/// <remarks>
+/// Raw SQL rather than EF here for the same reason <see cref="ClipStorage"/> uses it: every write is
+/// an upsert keyed on <c>(camera_id, stream_name, started_ts)</c>, which EF cannot express.
+/// </remarks>
+public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
+{
+  /// <summary>
+  /// Opens an outage, or extends the previous one when the source was only briefly alive between
+  /// them. Returns the row's start, which the caller uses as the interval's identity.
+  /// </summary>
+  /// <remarks>
+  /// The coalescing is not cosmetic: a camera flapping every 20 s past a 15 s threshold would
+  /// otherwise mint some 4000 rows a day on its own. A blink shorter than the grace window is not a
+  /// recovery, and treating it as one makes the table unbounded and the operator's view unreadable.
+  /// </remarks>
+  public async Task<DateTime> OpenAsync(
+    string cameraId,
+    string streamName,
+    DateTime startedTs,
+    string cause,
+    TimeSpan coalesceWindow,
+    CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand("""
+      WITH recent AS (
+        SELECT outage_uid, started_ts
+        FROM source_outages
+        WHERE camera_id = $1 AND stream_name = $2
+          AND ended_ts IS NOT NULL
+          AND ended_ts >= $3 - $5::interval
+        ORDER BY started_ts DESC
+        LIMIT 1
+      ), reopened AS (
+        UPDATE source_outages SET ended_ts = NULL
+        WHERE outage_uid = (SELECT outage_uid FROM recent)
+        RETURNING started_ts
+      ), inserted AS (
+        INSERT INTO source_outages (camera_id, stream_name, started_ts, cause)
+        SELECT $1, $2, $3, $4
+        WHERE NOT EXISTS (SELECT 1 FROM recent)
+        ON CONFLICT (camera_id, stream_name, started_ts) DO NOTHING
+        RETURNING started_ts
+      )
+      -- Explicit priority rather than relying on UNION ALL evaluation order: reopened wins over
+      -- inserted, and $3 is only the answer when neither branch produced a row.
+      SELECT started_ts FROM (
+        SELECT 0 AS pri, started_ts FROM reopened
+        UNION ALL SELECT 1, started_ts FROM inserted
+        UNION ALL SELECT 2, $3
+      ) x ORDER BY pri LIMIT 1;
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, startedTs);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cause);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Interval, coalesceWindow);
+
+    var result = await cmd.ExecuteScalarAsync(ct);
+    return result is DateTime dt ? dt : startedTs;
+  }
+
+  /// <summary>Closes the open interval of a stream. No-op when nothing is open.</summary>
+  public async Task CloseAsync(string cameraId, string streamName, DateTime endedTs, CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand("""
+      -- An interval can never end before it began. The two boundaries come from different reports,
+      -- and one of them being stale must not produce a row that reads backwards.
+      UPDATE source_outages SET ended_ts = GREATEST($3, started_ts)
+      WHERE camera_id = $1 AND stream_name = $2 AND ended_ts IS NULL;
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, endedTs);
+    await cmd.ExecuteNonQueryAsync(ct);
+  }
+
+  /// <summary>
+  /// Puts closed gaps back into automation after the coverage they were judged against shrank.
+  /// </summary>
+  /// <remarks>
+  /// "Filled" is terminal on purpose — nothing rescans the whole history. But the verdict is only
+  /// as good as what the archive claimed at the time, and finishing a clip left open by a crash
+  /// removes the minute it was assumed to cover. A gap judged against that assumption has to be
+  /// judged again, or the footage behind it is never fetched.
+  /// </remarks>
+  public async Task<int> ReopenFilledAsync(
+    string cameraId, string streamName, DateTime from, DateTime to, CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand("""
+      UPDATE source_outages
+      SET state = 'open', next_retry_ts = NULL, message = ''
+      WHERE camera_id = $1 AND stream_name = $2
+        AND state = 'filled'
+        AND started_ts < $4
+        AND COALESCE(ended_ts, now()) > $3;
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, from);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, to);
+    return await cmd.ExecuteNonQueryAsync(ct);
+  }
+
+  /// <summary>
+  /// Moves the start of the open interval forward to where the archive actually stops.
+  /// </summary>
+  /// <remarks>
+  /// This corrects a provisional boundary, it does not track progress. A row opened because a media
+  /// server fell silent begins at the last heartbeat, which on a crash is up to one heartbeat period
+  /// older than the last frame that reached the disk — the clip being written at that moment was
+  /// still unmeasured. Once it has been finished from its own fragments the archive can say where
+  /// recording really stopped, and leaving the earlier guess in place would claim a hole over
+  /// footage that is right there and have it pulled from the camera again.
+  /// </remarks>
+  public async Task<int> AdvanceOpenStartAsync(
+    string cameraId, string streamName, DateTime startedTs, CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand("""
+      UPDATE source_outages o SET started_ts = $3
+      WHERE o.camera_id = $1 AND o.stream_name = $2
+        AND o.ended_ts IS NULL
+        AND o.started_ts < $3
+        -- (camera, stream, start) is unique, and a closed row may already sit on that instant.
+        AND NOT EXISTS (
+          SELECT 1 FROM source_outages c
+          WHERE c.camera_id = $1 AND c.stream_name = $2 AND c.started_ts = $3);
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, startedTs);
+    return await cmd.ExecuteNonQueryAsync(ct);
+  }
+
+  /// <summary>
+  /// Writes an interval that is already over, reconstructed from the archive after the fact.
+  /// </summary>
+  /// <remarks>
+  /// Deliberately not <see cref="OpenAsync"/>: that one coalesces with whatever ended recently,
+  /// which is right for an outage happening now and wrong for one being filled in behind it — the
+  /// newest row would be reopened and handed this interval's identity.
+  ///
+  /// Degenerate rows inside the span are dropped on the way. Nothing legitimate is shorter than the
+  /// grace window, so an interval measured in microseconds never happened: it is the residue of a
+  /// sweep that raced a media server coming back, and leaving it beside the real one tells the
+  /// operator the node went down twice. Open rows are never touched — a NULL end makes the
+  /// comparison NULL, which is not true.
+  /// </remarks>
+  public async Task<bool> RecordRecoveredAsync(
+    string cameraId, string streamName, DateTime startedTs, DateTime endedTs, string cause,
+    CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand("""
+      WITH dropped AS (
+        DELETE FROM source_outages
+        WHERE camera_id = $1 AND stream_name = $2
+          AND ended_ts - started_ts < interval '1 second'
+          AND started_ts BETWEEN $3 AND $4
+      )
+      INSERT INTO source_outages (camera_id, stream_name, started_ts, ended_ts, cause)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (camera_id, stream_name, started_ts) DO NOTHING;
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, startedTs);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, endedTs);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cause);
+    return await cmd.ExecuteNonQueryAsync(ct) > 0;
+  }
+
+  /// <summary>Streams that are silent right now — the tracker's state after a restart.</summary>
+  public async Task<List<(string CameraId, string StreamName)>> ListOpenAsync(CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand(
+      "SELECT camera_id, stream_name FROM source_outages WHERE ended_ts IS NULL;");
+    var result = new List<(string, string)>();
+    await using var reader = await cmd.ExecuteReaderAsync(ct);
+    while (await reader.ReadAsync(ct))
+      result.Add((reader.GetString(0), reader.GetString(1)));
+    return result;
+  }
+
+  /// <summary>
+  /// Last clip end for a stream — the only honest interval start after a node-wide restart, when
+  /// no in-memory last-frame timestamp survived. The archive stopped exactly there.
+  /// </summary>
+  /// <param name="startedBefore">
+  /// Only clips that began before this moment. Without the bound the answer includes recordings the
+  /// stream made *after* the outage — the new run's first clip, for one — and using that as "when
+  /// recording stopped" pushes the start of the gap past its own end. Strictly before, because the
+  /// caller passes the first frame of the run that came back and the segment that run opened starts
+  /// on exactly that frame: including it would return an end past the outage and the archive-derived
+  /// boundary would be thrown away.
+  /// </param>
+  public async Task<DateTime?> LastClipEndAsync(
+    string cameraId, string streamName, DateTime startedBefore, CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand("""
+      SELECT MAX(COALESCE(end_ts, start_ts)) FROM clips
+      WHERE camera_id = $1 AND stream_name = $2 AND start_ts < $3;
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, startedBefore);
+    var value = await cmd.ExecuteScalarAsync(ct);
+    return value is DateTime dt ? dt : null;
+  }
+
+  /// <summary>
+  /// When the archive resumed after <paramref name="after"/> — the start of the next clip.
+  /// </summary>
+  /// <remarks>
+  /// For a media server that died and came back, this is the honest end of the hole: the moment
+  /// recording actually resumed, not the moment packets started arriving again. The first frames
+  /// after a reconnect are not written until a keyframe turns up, and nothing before it exists to
+  /// play.
+  /// </remarks>
+  public async Task<DateTime?> FirstClipStartAfterAsync(
+    string cameraId, string streamName, DateTime after, CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand("""
+      SELECT MIN(start_ts) FROM clips
+      WHERE camera_id = $1 AND stream_name = $2 AND start_ts > $3;
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, after);
+    var value = await cmd.ExecuteScalarAsync(ct);
+    return value is DateTime dt ? dt : null;
+  }
+
+  public async Task<List<SourceOutage>> ListAsync(
+    string? cameraId, DateTime? fromTs, DateTime? toTs, int limit, CancellationToken ct,
+    Guid? outageUid = null)
+  {
+    await using var cmd = dataSource.CreateCommand("""
+      SELECT outage_uid, camera_id, stream_name, started_ts, ended_ts, cause,
+             state, filled_ms, attempts, message
+      FROM source_outages
+      WHERE ($1::text IS NULL OR camera_id = $1)
+        AND ($2::timestamptz IS NULL OR COALESCE(ended_ts, now()) >= $2)
+        AND ($3::timestamptz IS NULL OR started_ts <= $3)
+        AND ($5::uuid IS NULL OR outage_uid = $5)
+      ORDER BY started_ts DESC
+      LIMIT $4;
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, (object?)cameraId ?? DBNull.Value);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, (object?)fromTs ?? DBNull.Value);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, (object?)toTs ?? DBNull.Value);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Integer, limit <= 0 ? 200 : limit);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Uuid, (object?)outageUid ?? DBNull.Value);
+
+    var result = new List<SourceOutage>();
+    await using var reader = await cmd.ExecuteReaderAsync(ct);
+    while (await reader.ReadAsync(ct))
+      result.Add(ReadOutage(reader));
+    return result;
+  }
+
+  private static SourceOutage ReadOutage(NpgsqlDataReader reader) => new(
+    reader.GetGuid(0),
+    reader.GetString(1),
+    reader.GetString(2),
+    reader.GetDateTime(3),
+    reader.IsDBNull(4) ? null : reader.GetDateTime(4),
+    reader.GetString(5),
+    reader.GetString(6),
+    reader.GetInt64(7),
+    reader.GetInt32(8),
+    reader.GetString(9));
+
+  /// <summary>
+  /// Closed gaps that are still worth trying, oldest first. The camera holds about an hour, so a
+  /// backlog is worked from the oldest end — that is the part about to disappear.
+  /// </summary>
+  /// <param name="settledBefore">
+  /// Only gaps that ended before this. A camera does not offer a just-recorded stretch for replay
+  /// immediately; asking too early returns nothing and burns an attempt.
+  /// </param>
+  /// <param name="abandonedBefore">
+  /// A row still saying <c>filling</c> whose retry moment passed this long ago has no run behind it
+  /// any more — the process that set it is gone. Without reclaiming those, a restart mid-pull takes
+  /// the gap out of automation for good, since only open rows are ever selected.
+  /// </param>
+  public async Task<List<SourceOutage>> ListPendingAsync(
+    DateTime settledBefore, DateTime notOlderThan, DateTime abandonedBefore, int limit,
+    CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand("""
+      SELECT outage_uid, camera_id, stream_name, started_ts, ended_ts, cause,
+             state, filled_ms, attempts, message
+      FROM source_outages
+      WHERE ended_ts IS NOT NULL
+        AND ended_ts <= $1
+        AND started_ts >= $2
+        AND (
+          (state = 'open' AND (next_retry_ts IS NULL OR next_retry_ts <= now()))
+          OR (state = 'filling' AND next_retry_ts IS NOT NULL AND next_retry_ts <= $4)
+        )
+      ORDER BY started_ts
+      LIMIT $3;
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, settledBefore);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, notOlderThan);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Integer, limit <= 0 ? 10 : limit);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, abandonedBefore);
+
+    var result = new List<SourceOutage>();
+    await using var reader = await cmd.ExecuteReaderAsync(ct);
+    while (await reader.ReadAsync(ct))
+      result.Add(ReadOutage(reader));
+    return result;
+  }
+
+  /// <summary>Holds a gap back until <paramref name="retryAt"/>, so retries are spaced out.</summary>
+  public async Task SetNextRetryAsync(Guid outageUid, DateTime retryAt, CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand(
+      "UPDATE source_outages SET next_retry_ts = $2 WHERE outage_uid = $1;");
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Uuid, outageUid);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, retryAt);
+    await cmd.ExecuteNonQueryAsync(ct);
+  }
+
+  /// <summary>
+  /// Records the outcome of a restore attempt. Returns false when the row is gone (retention).
+  /// </summary>
+  public async Task<bool> UpdateOutcomeAsync(
+    Guid outageUid, string state, long filledMs, int attempts, string message, CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand("""
+      UPDATE source_outages
+      SET state = $2, filled_ms = $3, attempts = $4, message = $5
+      WHERE outage_uid = $1;
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Uuid, outageUid);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, state);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Bigint, filledMs);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Integer, attempts);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text, message ?? string.Empty);
+    return await cmd.ExecuteNonQueryAsync(ct) > 0;
+  }
+
+  /// <summary>
+  /// Removes closed intervals older than the retention window. Rows still open are never removed
+  /// regardless of age: forgetting an outage that is happening right now would make the system
+  /// report everything as healthy. State plays no part — an unpatched gap this old is unpatchable
+  /// anyway, since the camera holds about an hour.
+  /// </summary>
+  public async Task<int> DeleteClosedOlderThanAsync(DateTime cutoffUtc, CancellationToken ct)
+  {
+    await using var cmd = dataSource.CreateCommand(
+      "DELETE FROM source_outages WHERE ended_ts IS NOT NULL AND ended_ts < $1;");
+    cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, cutoffUtc);
+    return await cmd.ExecuteNonQueryAsync(ct);
+  }
+}

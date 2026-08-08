@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <unordered_set>
 #include <memory>
 #include <mutex>
@@ -39,6 +40,7 @@ public:
   {
     return m_running;
   }
+  source_liveness liveness() const override;
   void step(int32_t /*steps*/) override {};
   void set_speed(double /*speed*/) override {};
   AVStream* video_stream() const override;
@@ -57,6 +59,20 @@ private:
 
   std::thread m_thread;
   std::atomic_bool m_running{ false };
+
+  // Read by the reporting timer from another thread, written only by the read loop — hence atomic.
+  // Kept here rather than derived from m_ctx because those members are plain and reader-thread-only.
+  std::atomic_bool m_source_alive{ false };
+  // Microseconds since the epoch; 0 = no packet has ever arrived. A time_point is not trivially
+  // copyable enough for std::atomic on every toolchain, so the count travels instead.
+  std::atomic_int64_t m_last_frame_us{ 0 };
+  // First packet after the source came back, which is where the outage actually ended. Not the same
+  // as m_last_frame_us: that one keeps advancing, so by the time a heartbeat goes out it points at
+  // whatever arrived last, and the recorded gap would stretch to the next report.
+  std::atomic_int64_t m_recovered_frame_us{ 0 };
+
+  /// False until the first packet of the current session has been stamped. Reader thread only.
+  bool m_stamped_since_connect = false;
 
   std::string m_cam_id;
   std::string m_profile_token;

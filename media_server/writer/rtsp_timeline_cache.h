@@ -29,8 +29,6 @@ public:
     int64_t last_dts,
     int64_t last_pts);
 
-  void invalidate(const std::string& rtsp_url);
-
 private:
   struct stream_timing {
     int64_t last_dts = AV_NOPTS_VALUE;

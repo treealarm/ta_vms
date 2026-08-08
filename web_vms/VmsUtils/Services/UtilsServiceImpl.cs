@@ -53,13 +53,24 @@ public class UtilsServiceImpl(
       if (!serverReply.Found || string.IsNullOrWhiteSpace(serverReply.Server.Host))
         return new GetMediaMtxPathInfoResponse { Success = false };
 
+      // No control API on this server: an answer about viewers is unobtainable, and saying "nobody
+      // is watching" would be a guess. Reported as a successful answer of a different kind, so the
+      // caller can tell it apart from the API being momentarily unreachable.
+      if (serverReply.Server.ApiPort <= 0)
+        return new GetMediaMtxPathInfoResponse { Success = true, ApiConfigured = false };
+
       var apiUrl = $"http://{serverReply.Server.Host}:{serverReply.Server.ApiPort}";
       var path   = $"{request.CameraId}/{request.StreamName}";
       var url    = $"{apiUrl}/v3/paths/get/{path}";
 
       using var response = await _http.GetAsync(url, context.CancellationToken);
+      // The path exists only while something publishes to it or someone waits on it; absent means
+      // both are true of nobody.
       if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-        return new GetMediaMtxPathInfoResponse { Success = true, ReadersCount = 0, HasSource = false };
+        return new GetMediaMtxPathInfoResponse
+        {
+          Success = true, ApiConfigured = true, ReadersCount = 0, HasSource = false,
+        };
       if (!response.IsSuccessStatusCode)
         return new GetMediaMtxPathInfoResponse { Success = false };
 
@@ -75,9 +86,10 @@ public class UtilsServiceImpl(
 
       return new GetMediaMtxPathInfoResponse
       {
-        Success      = true,
-        ReadersCount = readersCount,
-        HasSource    = hasSource,
+        Success       = true,
+        ApiConfigured = true,
+        ReadersCount  = readersCount,
+        HasSource     = hasSource,
       };
     }
     catch (Exception ex)

@@ -93,6 +93,10 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
     let cancelled = false
     const load = async () => {
       setLoading(true)
+      // A page, not the whole archive: the server centres this many ranges on the anchor, and the
+      // arrows above move the anchor to reach the rest. It used to ask for 200 because the server
+      // truncated from the oldest end and hid everything recent — a day of short gaps and their
+      // imports was enough to lose the last hour.
       await dispatch(fetchRecordingRanges({ cameraId, timestamp: queryTime, limit: 50 }))
       if (!cancelled) { setLoading(false); setLoaded(true) }
     }
@@ -159,13 +163,19 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
     setPickerAnchor(null)
   }
 
+  // Paging moves the anchor past the edge of what is on screen, by a millisecond: the server returns
+  // a window centred on it, so anchoring exactly on the edge would hand back the same page. The
+  // boundary range stays visible at the far end, which is what makes a jump readable on a timeline.
   const handlePrev = () => {
-    const first = data[0]
-    if (first?.recordings[0]) requestAt(new Date(first.recordings[0].startTime).toISOString())
+    const first = data[0]?.recordings[0]
+    if (first) requestAt(new Date(new Date(first.startTime).getTime() - 1).toISOString())
   }
   const handleNext = () => {
-    const last = data[data.length - 1]
-    if (last?.recordings[0]) requestAt(new Date(last.recordings[0].startTime).toISOString())
+    const clips = data[data.length - 1]?.recordings
+    const last = clips?.[clips.length - 1]
+    // An unfinished clip has no end yet; its start is the latest instant the archive can vouch for.
+    const edge = last?.endTime ?? last?.startTime
+    if (edge) requestAt(new Date(new Date(edge).getTime() + 1).toISOString())
   }
   const openCalendar = (anchor: HTMLElement) => {
     setPickerTime(dayjs(displayTime))
@@ -277,6 +287,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
                         <div>{t('recordings.startTime')}: {fmtFull(first.startTime)}</div>
                         {last?.endTime && <div>{t('recordings.endTime')}: {fmtFull(last.endTime)}</div>}
                         <div>{t('recordings.clips')}: {rec.recordings.length}</div>
+                        {first.origin === 'edge' && <div>{t('recordings.recovered')}</div>}
                       </Box>
                     }
                     placement="left"
@@ -292,7 +303,9 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
                       }}
                     >
                       <ListItemText
-                        primary={fmtTime(first.startTime)}
+                        primary={first.origin === 'edge'
+                          ? `${fmtTime(first.startTime)} ⤵`
+                          : fmtTime(first.startTime)}
                         slotProps={{
                           primary: {
                             variant: 'body2',
@@ -300,7 +313,13 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
                             sx: {
                               fontVariantNumeric: 'tabular-nums',
                               fontSize: '0.76rem', lineHeight: 1.25,
-                              color: dark ? (isSelected ? W : alpha(W, 0.8)) : undefined,
+                              // An insert recovered from the camera is a different kind of footage
+                              // and never continuous with what surrounds it, so the row says so
+                              // rather than looking like one more stretch of live recording.
+                              color: first.origin === 'edge'
+                                ? theme.palette.warning.main
+                                : (dark ? (isSelected ? W : alpha(W, 0.8)) : undefined),
+                              fontStyle: first.origin === 'edge' ? 'italic' : undefined,
                               fontWeight: isNearest ? 600 : undefined,
                             },
                           },

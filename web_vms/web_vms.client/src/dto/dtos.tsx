@@ -177,6 +177,8 @@ export type CameraSetupDto = {
   /** True while one of the assigned schedule windows is open. Recomputed server-side from the wall
    *  clock; while true the camera records continuously, overriding profile and overrides. */
   scheduleActive?: boolean
+  /** Which stream to recover from the camera's own storage when the archive has a gap; empty = off. */
+  edgeBackfillStream?: string
 }
 
 /** What a user may do with a camera. All false = no access. */
@@ -238,6 +240,8 @@ export type RecordingDto = {
   endTime?: string
   sizeBytes: number
   clipUid: string
+  /** `live`, or `edge` for a range recovered from the camera's own storage. */
+  origin?: string
 }
 
 export type RecordingRangeDto = {
@@ -291,6 +295,8 @@ export type RecordingTimelineQueryDto = {
 export type RecordingIntervalDto = {
   startTime: string
   endTime: string
+  /** `live`, or `edge` for footage recovered from the camera's own storage. */
+  origin?: string
 }
 
 export type RecordingTimelineTrackDto = {
@@ -300,6 +306,29 @@ export type RecordingTimelineTrackDto = {
 
 export type RecordingTimelineResponseDto = {
   tracks: RecordingTimelineTrackDto[]
+}
+
+/**
+ * One interval a camera's source was unavailable — why the archive has a hole there.
+ *
+ * Only streams that were supposed to be recording produce one: with recording off nothing was going
+ * to be written, so there is nothing to restore from the camera and no gap to report.
+ */
+export type SourceOutageDto = {
+  outageUid: string
+  cameraId: string
+  streamName?: string
+  startedTs: string
+  /** Absent = the source is down right now. */
+  endedTs?: string
+  /** `link_lost` (this camera) or `server_down` (the whole node went quiet). */
+  cause: string
+  /** `open|filling|filled|exhausted|partial|held|ignored`. */
+  state: string
+  /** Covered by clips, for display only — decisions are made from the archive itself. */
+  filledMs: number
+  attempts: number
+  message: string
 }
 
 export type RetentionEventDto = {
@@ -690,4 +719,161 @@ export type ImagingOptionsDto = {
   contrast?: FloatRangeDto | null
   colorSaturation?: FloatRangeDto | null
   sharpness?: FloatRangeDto | null
+}
+
+// ── Camera-side (SD card) archive, ONVIF Profile G ────────────────────────────
+// Timestamps stay ISO 8601 strings: they come from the device and are only displayed or echoed
+// back, so parsing them into Date would invent precision the camera never reported.
+
+export type EdgeCapabilitiesDto = {
+  recording: boolean
+  search: boolean
+  replay: boolean
+  /** Both search and replay — the minimum for browsing and importing. */
+  supported: boolean
+  dynamicRecordings: boolean
+  dynamicTracks: boolean
+  storageConfiguration: boolean
+  auxiliaryCommands: boolean
+  maxRecordings: number
+  supportedAuxiliaryCommands: string[]
+  /** Why Profile G is unavailable, when it is. Shown instead of empty panels. */
+  message: string
+}
+
+export type EdgeSummaryDto = {
+  dataFrom: string
+  dataUntil: string
+  numberRecordings: number
+  supported: boolean
+  message: string
+  /** Camera clock minus ours, in ms, measured while answering. Null = the camera does not report
+   *  its time, and then these timestamps are the camera's own uncorrected scale. */
+  clockOffsetMs?: number | null
+}
+
+export type EdgeTrackDto = {
+  trackToken: string
+  trackType: string
+  description: string
+  dataFrom: string
+  dataTo: string
+}
+
+export type EdgeRecordingDto = {
+  recordingToken: string
+  sourceName: string
+  sourceDescription: string
+  earliestRecording: string
+  latestRecording: string
+  content: string
+  recordingStatus: string
+  tracks: EdgeTrackDto[]
+}
+
+export type EdgeRecordingsDto = {
+  recordings: EdgeRecordingDto[]
+  message: string
+  /** Camera clock minus ours, in ms, measured while answering. Null = the camera does not report
+   *  its time, and then these timestamps are the camera's own uncorrected scale. */
+  clockOffsetMs?: number | null
+}
+
+export type EdgeIntervalDto = {
+  recordingToken: string
+  trackToken: string
+  startTime: string
+  endTime: string
+}
+
+export type EdgeIntervalsDto = {
+  intervals: EdgeIntervalDto[]
+  searched: boolean
+  message: string
+  /** Camera clock minus ours, in ms, measured while answering. Null = the camera does not report
+   *  its time, and then these timestamps are the camera's own uncorrected scale. */
+  clockOffsetMs?: number | null
+}
+
+export type EdgeRecordingJobDto = {
+  jobToken: string
+  recordingToken: string
+  mode: string
+  sourceToken: string
+}
+
+export type EdgeRecordingConfigurationDto = {
+  recordingToken: string
+  sourceId: string
+  sourceName: string
+  sourceLocation: string
+  sourceDescription: string
+  sourceAddress: string
+  content: string
+  /** ISO 8601 duration; PT0S means unlimited retention on the device. */
+  maximumRetentionTime: string
+}
+
+export type EdgeRecordingJobsDto = {
+  jobs: EdgeRecordingJobDto[]
+  configurations: EdgeRecordingConfigurationDto[]
+  message: string
+}
+
+export type EdgeStorageConfigurationDto = {
+  token: string
+  type: string
+  localPath: string
+  storageUri: string
+  user: string
+}
+
+export type EdgeStorageDto = {
+  configurations: EdgeStorageConfigurationDto[]
+  supported: boolean
+  formatSupported: boolean
+  /** The exact vendor auxiliary command a format would send — shown before confirming. */
+  formatCommand: string
+  message: string
+}
+
+export type EdgeImportRequestDto = {
+  recordingToken: string
+  streamName?: string
+  startTime: string
+  endTime: string
+  /** Start of the recording the token addresses; the RTSP seek is an offset from it. */
+  recordingStartTime: string
+  exportToFile?: boolean
+  segmentSeconds?: number
+}
+
+export type EdgeImportJobState = 'running' | 'completed' | 'failed' | 'cancelled' | 'unknown'
+
+export type EdgeImportJobDto = {
+  jobId: string
+  cameraId: string
+  streamName: string
+  state: EdgeImportJobState
+  startTime: string | null
+  endTime: string | null
+  /** Wall clock reached so far; progress is its position within [startTime, endTime]. */
+  position: string | null
+  clipsWritten: number
+  bytesWritten: number
+  message: string
+  exportPath: string
+}
+
+export type EdgeExportDto = {
+  relPath: string
+  cameraId: string
+  sizeBytes: number
+  createdAt: string | null
+}
+
+export type EdgeExportLinkDto = {
+  /** Relative URL carrying a sealed grant; usable directly as a media element source. */
+  url: string
+  expiresAt: string
 }

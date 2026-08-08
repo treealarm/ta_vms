@@ -8,7 +8,16 @@
 import type { RecordingRangeDto } from '../dto/dtos'
 import { isSameLocalDay, localDayEndMs, localDayStartMs } from './wallTime'
 
-export type Segment = { startMs: number; endMs: number }
+export type Segment = {
+  startMs: number
+  endMs: number
+  /**
+   * Where the footage came from — `edge` for a range recovered off the camera's own storage.
+   * Only carried by coverage that is going to be drawn; the interval maths ignores it, because a
+   * hole is a hole regardless of who would have filled it.
+   */
+  origin?: string
+}
 
 /** Clips whose end is unknown are assumed to run until the next clip starts, or 60 s (one clip). */
 const ASSUMED_CLIP_MS = 60_000
@@ -55,6 +64,67 @@ export function mergeSegments(segs: readonly Segment[], joinToleranceMs: number)
     } else {
       out.push({ ...cur })
     }
+  }
+  return out
+}
+
+/**
+ * The holes: what `win` covers and `segs` does not.
+ *
+ * `joinToleranceMs` drops gaps too thin to see — at timeline scale a one-pixel gap is noise, and
+ * drawing it makes solid coverage look shredded.
+ */
+export function complementSegments(
+  segs: readonly Segment[],
+  win: Segment,
+  joinToleranceMs = 0
+): Segment[] {
+  if (win.endMs <= win.startMs) return []
+
+  const merged = mergeSegments(
+    segs.filter((s) => s.endMs > win.startMs && s.startMs < win.endMs),
+    joinToleranceMs
+  )
+
+  const out: Segment[] = []
+  let cursor = win.startMs
+  for (const s of merged) {
+    const start = Math.max(s.startMs, win.startMs)
+    if (start - cursor > joinToleranceMs) out.push({ startMs: cursor, endMs: start })
+    cursor = Math.max(cursor, Math.min(s.endMs, win.endMs))
+  }
+  if (win.endMs - cursor > joinToleranceMs) out.push({ startMs: cursor, endMs: win.endMs })
+  return out
+}
+
+/** `a` minus `b` — e.g. an outage minus what has already been pulled back from the camera. */
+export function subtractSegments(
+  a: readonly Segment[],
+  b: readonly Segment[],
+  joinToleranceMs = 0
+): Segment[] {
+  const out: Segment[] = []
+  for (const seg of mergeSegments(a, 0)) {
+    out.push(...complementSegments(b, seg, joinToleranceMs))
+  }
+  return out
+}
+
+/** Overlap of two sets of intervals — e.g. "missing from the archive" against "still on the card". */
+export function intersectSegments(a: readonly Segment[], b: readonly Segment[]): Segment[] {
+  const left = mergeSegments(a, 0)
+  const right = mergeSegments(b, 0)
+  const out: Segment[] = []
+
+  let i = 0
+  let j = 0
+  while (i < left.length && j < right.length) {
+    const startMs = Math.max(left[i].startMs, right[j].startMs)
+    const endMs = Math.min(left[i].endMs, right[j].endMs)
+    if (endMs > startMs) out.push({ startMs, endMs })
+    // Advance whichever ends first: the other may still overlap what comes next.
+    if (left[i].endMs < right[j].endMs) i += 1
+    else j += 1
   }
   return out
 }

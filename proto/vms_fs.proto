@@ -16,8 +16,26 @@ service FsService {
   rpc GetCameraRetentionStatus(GetCameraRetentionStatusRequest) returns (GetCameraRetentionStatusResponse);
   rpc ListRetentionEvents(ListRetentionEventsRequest) returns (ListRetentionEventsResponse);
 
+  // ── Source liveness ─────────────────────────────────────────────────────────
+  // media_server reports current state; VmsFs derives outage intervals from the transitions and
+  // from silence. Deliberately not intervals: "no signal" then covers both a dead camera and a dead
+  // media server, and nothing can be left half-open by a crash.
+  rpc ReportSourceLiveness(ReportSourceLivenessRequest) returns (OperationStatus);
+  rpc ListSourceOutages(ListSourceOutagesRequest) returns (ListSourceOutagesResponse);
+  rpc UpdateSourceOutage(UpdateSourceOutageRequest) returns (OperationStatus);
+
   rpc StatArchiveTs(StatArchiveTsRequest) returns (StatArchiveTsResponse);
   rpc ReadArchiveTs(ReadArchiveTsRequest) returns (stream ReadArchiveTsChunk);
+
+  // ── Camera-side import exports ──────────────────────────────────────────────
+  // mp4 files produced by an edge import with export_to_file. They are deliberately NOT clips:
+  // adding them to the clips table would double the camera's timeline coverage and hand them to
+  // ClipCleaner. There is no database row at all — the listing is a directory walk, which also
+  // means an export survives a media_server restart that drops the in-memory job registry.
+  rpc ListExportFiles(ListExportFilesRequest) returns (ListExportFilesResponse);
+  rpc StatExportFile(ExportFileRequest) returns (StatExportFileResponse);
+  rpc ReadExportFile(ReadExportFileRequest) returns (stream ReadArchiveTsChunk);
+  rpc DeleteExportFile(ExportFileRequest) returns (DeleteExportFileResponse);
 
   rpc GetRecordingByUid(GetRecordingByUidRequest) returns (GetRecordingByUidResponse);
 
@@ -56,10 +74,19 @@ message Recording {
   string clip_uid   = 6;
   string storage_id = 7;
   string stream_name = 8;
+  // Where the footage came from: empty or "live" for the camera's live stream, "edge" for a range
+  // pulled back off the camera's own storage. An insert is not continuous with what surrounds it —
+  // it was recorded by a different device, arrives later, and may overlap its neighbours — so it is
+  // kept visibly separate rather than merged into the same stretch of archive.
+  string origin = 9;
 }
 
 message IngestClipRequest {
   Recording clip = 1;
+  // Set by camera-side (edge) import: the operator asked for this range explicitly, so it must be
+  // kept regardless of the camera's recording policy. Normal live ingest leaves it unset and lets
+  // VmsFs derive retention from the policy and retention events.
+  bool force_retained = 2;
 }
 
 message RetainEventRequest {
@@ -139,6 +166,9 @@ message GetRecordingTimelineRequest {
 message RecordingInterval {
   google.protobuf.Timestamp start_ts = 1;
   google.protobuf.Timestamp end_ts = 2;
+  // "live" or "edge". Intervals of different provenance are never merged into one: an insert
+  // recovered from the camera has to stay visible as an insert.
+  string origin = 3;
 }
 
 message RecordingTimelineTrack {
@@ -255,6 +285,46 @@ message ReadArchiveTsChunk {
   bytes data = 1;
 }
 
+// Export files are addressed by their path relative to VMS_EXPORT_BASE_PATH: "<camera_id>/<job_id>.mp4".
+// The camera id is part of the path, which is what lets the gateway authorize a download without
+// any stored state.
+message ExportFileRequest {
+  string rel_path = 1;
+}
+
+message ExportFileInfo {
+  string rel_path    = 1;
+  string camera_id   = 2;
+  uint64 size_bytes  = 3;
+  google.protobuf.Timestamp created_ts = 4;
+}
+
+message ListExportFilesRequest {
+  // Empty lists exports for every camera on this node.
+  string camera_id = 1;
+}
+
+message ListExportFilesResponse {
+  repeated ExportFileInfo files = 1;
+}
+
+message StatExportFileResponse {
+  bool   exists     = 1;
+  uint64 size_bytes = 2;
+  string message    = 3;
+}
+
+message ReadExportFileRequest {
+  string rel_path = 1;
+  uint64 offset   = 2;
+  uint64 length   = 3;
+}
+
+message DeleteExportFileResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
 message StorageInfo {
   string storage_id = 1;
   string root_path  = 2;
@@ -297,3 +367,78 @@ message GetFsActivityResponse {
   repeated FsFileEvent events = 1;
 }
 
+
+// One stream's current state. Batched per node: one call instead of one per stream.
+message SourceLiveness {
+  string camera_id   = 1;
+  string stream_name = 2;
+  bool   alive       = 3;
+  // Last packet actually received. THE boundary of an outage — the report time is never used for
+  // that, or every interval would be off by up to one heartbeat period at each end.
+  optional google.protobuf.Timestamp last_frame_ts = 4;
+  // First packet after the source came back. Where an open outage ends — last_frame_ts cannot say,
+  // because it keeps advancing and by report time points at the newest packet, which would stretch
+  // the recorded gap by up to one heartbeat period.
+  optional google.protobuf.Timestamp recovered_frame_ts = 6;
+  // Whether recording was supposed to be running at this moment (recording_policy != off, which
+  // already accounts for schedules and overrides). A heartbeat gap with this set is an archive gap;
+  // without it, merely a camera that was offline while nothing was being recorded anyway.
+  bool   recording_expected = 5;
+}
+
+message ReportSourceLivenessRequest {
+  string server_id = 1;
+  repeated SourceLiveness streams = 2;
+  // Identifies this run of the media server. A restart short enough to fit between two heartbeats
+  // is invisible otherwise — nothing ever falls silent for long enough to notice — while the
+  // archive certainly has a hole for as long as the process was gone. A value different from the
+  // previous report is that hole, bounded by the last frame before it and the first frame after.
+  string instance_id = 3;
+}
+
+// One recorded interval of source unavailability. ended_ts unset = happening right now.
+// Only streams that were supposed to be recording get one: an outage with recording off costs no
+// footage, so it is never written.
+message SourceOutageRow {
+  string outage_uid  = 1;
+  string camera_id   = 2;
+  string stream_name = 3;
+  google.protobuf.Timestamp started_ts = 4;
+  optional google.protobuf.Timestamp ended_ts = 5;
+  string cause = 6;                 // link_lost | server_down
+  string state = 7;                 // open | filling | filled | exhausted | partial | held | ignored
+  int64  filled_ms = 8;             // display-only cache; clips are the source of truth
+  int32  attempts  = 9;
+  string message   = 10;
+}
+
+// Records what a restore attempt achieved, so the gap stops being "not filled" once it is, and so
+// automation can tell "still worth trying" from "the camera no longer has it".
+message UpdateSourceOutageRequest {
+  string outage_uid = 1;
+  string state      = 2;   // open | filling | filled | exhausted | partial | held | ignored
+  int64  filled_ms  = 3;
+  // Consecutive fruitless attempts. Absolute rather than a delta: the caller compares coverage
+  // before and after, and only it can tell whether anything was actually recovered.
+  int32  attempts   = 4;
+  string message    = 5;
+  // Make the gap eligible for the scheduler's very next sweep instead of waiting out the backoff it
+  // was given. Set when an operator asks for the work to be done now: the request goes through the
+  // same queue as automation, so "start it" can only mean "stop waiting".
+  bool   retry_now  = 6;
+}
+
+message ListSourceOutagesRequest {
+  optional string camera_id = 1;
+  // One specific interval, for re-reading a row after acting on it.
+  optional string outage_uid = 5;
+  // Window overlap, not containment: an outage that started before `from` and is still open must
+  // show up, otherwise the one gap the operator cares about is the one they cannot see.
+  optional google.protobuf.Timestamp from_ts = 2;
+  optional google.protobuf.Timestamp to_ts = 3;
+  uint32 limit = 4;
+}
+
+message ListSourceOutagesResponse {
+  repeated SourceOutageRow outages = 1;
+}

@@ -66,9 +66,28 @@ bool rtsp_reader::open(const std::string& url)
 }
 
 
+source_liveness rtsp_reader::liveness() const
+{
+  source_liveness out;
+  out.alive = m_source_alive.load();
+  const auto us = m_last_frame_us.load();
+  if (us != 0)
+  {
+    out.last_frame_ts = std::chrono::system_clock::time_point(std::chrono::microseconds(us));
+  }
+  const auto recovered_us = m_recovered_frame_us.load();
+  if (recovered_us != 0)
+  {
+    out.recovered_frame_ts =
+      std::chrono::system_clock::time_point(std::chrono::microseconds(recovered_us));
+  }
+  return out;
+}
+
 bool rtsp_reader::connect() 
 {
   disconnect();
+  m_stamped_since_connect = false;
 
   if (m_rtsp_url.empty())
   {
@@ -202,6 +221,12 @@ void rtsp_reader::read_loop()
     }
 
     avpacket_ptr pkt(av_packet_alloc(), avpacket_deleter{});
+    // Taken BEFORE the read, because av_read_frame blocks: a source that dies mid-stream can still
+    // deliver one straggler seconds later (measured: 5.1 s of silence, then a packet carrying a
+    // frame from before the silence). Stamping that packet with its arrival moves the start of the
+    // outage past footage the archive never got. The instant we began waiting is the last moment
+    // the source was demonstrably alive, so that is what the frame is stamped with.
+    const auto wait_started = std::chrono::system_clock::now();
     const int read_result = av_read_frame(m_ctx.get(), pkt.get());
 
     if (read_result < 0) 
@@ -209,6 +234,10 @@ void rtsp_reader::read_loop()
       const auto now = std::chrono::steady_clock::now();
       if (now - last_frame_at >= kWatchdogInterval)
       {
+        // Dead from here, not from the first failed read: a single error is normal, five seconds
+        // of them is a lost source. This only decides *that* it happened — *when* comes from
+        // m_last_frame_us, which still holds the last real packet.
+        m_source_alive.store(false);
         logger::instance().warning(std::format("RTSP watchdog: reconnecting [cam={}]: {}", m_cam_id, m_rtsp_url));
         disconnect();
       }
@@ -219,6 +248,24 @@ void rtsp_reader::read_loop()
       continue;
 
     last_frame_at = std::chrono::steady_clock::now();
+    // Liveness is declared here, not in connect(): that returns true before a single packet has
+    // arrived, so "connected but silent" would otherwise read as healthy.
+    // Wall clock of this host, deliberately: the camera's own clock is frequently hours off, and
+    // these timestamps become archive boundaries. The first packet of a session is the exception:
+    // waiting for it started at connect, well before the stream actually began, so it is stamped
+    // with its own arrival instead.
+    const auto frame_wall = m_stamped_since_connect
+      ? wait_started
+      : std::chrono::system_clock::now();
+    m_stamped_since_connect = true;
+    const auto frame_us = std::chrono::duration_cast<std::chrono::microseconds>(
+      frame_wall.time_since_epoch()).count();
+    m_last_frame_us.store(frame_us);
+    if (!m_source_alive.exchange(true))
+    {
+      // The transition, so this is the first frame after the silence — the instant the gap closed.
+      m_recovered_frame_us.store(frame_us);
+    }
 
     if (pkt->stream_index == m_video_index)
     {
@@ -239,6 +286,7 @@ void rtsp_reader::read_loop()
 
     auto media = std::make_shared<media_packet>();
     media->packet = pkt;
+    media->wall_ts = frame_wall;
     media->arrival_us = av_gettime_relative();
     media->stream_index = pkt->stream_index;
     media->time_base = m_ctx->streams[pkt->stream_index]->time_base;

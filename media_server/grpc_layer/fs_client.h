@@ -45,16 +45,12 @@ public:
     bool empty() const { return root_path.empty(); }
   };
 
-  // Returns the primary storage for the camera (storage_id + root_path).
-  // On cache hit: returns immediately and triggers background refresh if stale.
-  // On cache miss: fetches synchronously.
-  // Returns empty storage_info if no storage is assigned.
-  storage_info get_camera_storage(const std::string& camera_id);
-
   // Returns all storages assigned to the camera in priority order (lowest priority number first).
   // Falls back gracefully: returns empty vector if no storages are assigned or VmsFs is unavailable.
   std::vector<storage_info> get_camera_storages(const std::string& camera_id);
 
+  // force_retained is set by camera-side (edge) import: the operator asked for that range
+  // explicitly, so VmsFs must keep the clip regardless of the camera's recording policy.
   void enqueue_ingest_clip(
     const std::string& camera_id,
     const std::string& stream_name,
@@ -62,7 +58,27 @@ public:
     const std::string& file_path,
     std::chrono::system_clock::time_point start_ts,
     std::optional<std::chrono::system_clock::time_point> end_ts,
-    std::uint64_t size_bytes);
+    std::uint64_t size_bytes,
+    bool force_retained = false,
+    const std::string& origin = {});
+
+  struct liveness_entry
+  {
+    std::string camera_id;
+    std::string stream_name;
+    bool alive = false;
+    std::optional<std::chrono::system_clock::time_point> last_frame_ts;
+    std::optional<std::chrono::system_clock::time_point> recovered_frame_ts;
+    bool recording_expected = false;
+  };
+
+  // Fire-and-forget: a lost report is corrected by the next one, so no outbox is involved. Called
+  // from the reporting timer, never from a reader thread — the RPC has a deadline and would stall
+  // the read loop.
+  void report_source_liveness(
+    const std::string& server_id,
+    const std::string& instance_id,
+    const std::vector<liveness_entry>& streams);
 
   bool ingest_clip(
     const recording& clip,

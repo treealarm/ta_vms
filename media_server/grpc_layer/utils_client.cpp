@@ -24,7 +24,8 @@ utils_client::utils_client()
 {
 }
 
-int utils_client::get_mediamtx_readers(const std::string& camera_id, const std::string& stream_name)
+utils_client::path_info utils_client::get_mediamtx_path(
+  const std::string& camera_id, const std::string& stream_name)
 {
   vms::utils::GetMediaMtxPathInfoRequest request;
   request.set_camera_id(camera_id);
@@ -41,11 +42,11 @@ int utils_client::get_mediamtx_readers(const std::string& camera_id, const std::
   {
     logger::instance().warning(std::format(
       "GetMediaMtxPathInfo RPC failed (app '{}'): {}", m_app_id, status.error_message()));
-    return -1;
+    return {};
   }
 
   if (!response.success())
-    return -1;
+    return {};
 
-  return response.readers_count();
+  return { true, response.api_configured(), response.readers_count() };
 }

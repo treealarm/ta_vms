@@ -10,12 +10,27 @@ internal sealed record RecordingWithEvents(
   Recording Recording,
   List<string> EventIds);
 
+/// <summary>A clip a dead run left open, and the moment the archive picked up again.</summary>
+public sealed record AbandonedClip(
+  string CameraId,
+  string StreamName,
+  DateTime StartTs,
+  /// <summary>When the archive picked up again, or null while it still has not.</summary>
+  DateTime? ResumedAt);
+
 public sealed class ClipStorage(
   IDbContextFactory<ClipsDbContext> dbFactory,
   NpgsqlDataSource dataSource,
   CameraConfigCache configCache,
+  StorageListCache storageListCache,
   FsActivityLog activityLog)
 {
+  /// <summary>
+  /// How recently a clip's file must have been touched to count as still being written. Longer than
+  /// the liveness heartbeat, so a live writer is never mistaken for a dead one during a quiet moment.
+  /// </summary>
+  private static readonly TimeSpan StillBeingWritten = TimeSpan.FromSeconds(25);
+
   // Cap on how long one contiguous archive range (a single HLS source) may span. Uncapped, an
   // uninterrupted multi-hour recording becomes one HLS source with thousands of segments, and
   // building that manifest reads a sidx per clip — it grows to tens of seconds and trips the
@@ -30,28 +45,45 @@ public sealed class ClipStorage(
   // rolls over into a new episode (new event_uuid, same event_id group).
   private static readonly TimeSpan MaxEpisodeDuration = TimeSpan.FromMinutes(3);
 
-  public async Task<string> IngestAsync(Recording clip, CancellationToken ct)
+  public async Task<string> IngestAsync(Recording clip, CancellationToken ct, bool forceRetained = false)
   {
     if (string.IsNullOrWhiteSpace(clip.CameraId) || string.IsNullOrWhiteSpace(clip.FilePath) || clip.StartTs is null)
       throw new ArgumentException("camera_id, file_path and start_ts are required");
 
     var clipUid = string.IsNullOrWhiteSpace(clip.ClipUid) ? Guid.NewGuid() : Guid.Parse(clip.ClipUid);
-    var config = await configCache.GetAsync(clip.CameraId, ct, clip.StreamName);
-    var retained = await ResolveRetainedAsync(clip, config, ct);
+    // Edge import bypasses the policy: an operator asked for this exact range, so retention rules
+    // derived from the camera's recording mode do not apply to it.
+    var retained = forceRetained;
+    if (!forceRetained)
+    {
+      var config = await configCache.GetAsync(clip.CameraId, ct, clip.StreamName);
+      retained = await ResolveRetainedAsync(clip, config, ct);
+    }
     var startTs = clip.StartTs.ToDateTime().ToUniversalTime();
     var endTs = clip.EndTs?.ToDateTime().ToUniversalTime();
 
     await using var cmd = dataSource.CreateCommand("""
-      INSERT INTO clips (clip_uid, file_path, camera_id, stream_name, storage_id, start_ts, end_ts, size_bytes, retained)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      INSERT INTO clips (clip_uid, file_path, camera_id, stream_name, storage_id, start_ts, end_ts, size_bytes, retained, origin)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       ON CONFLICT (file_path) DO UPDATE SET
         camera_id   = EXCLUDED.camera_id,
         stream_name = EXCLUDED.stream_name,
         storage_id  = EXCLUDED.storage_id,
         start_ts    = EXCLUDED.start_ts,
         end_ts      = COALESCE(EXCLUDED.end_ts, clips.end_ts),
-        size_bytes  = GREATEST(clips.size_bytes, EXCLUDED.size_bytes),
-        retained    = clips.retained OR EXCLUDED.retained
+        -- GREATEST only while the clip is still being written: live ingest announces it at open
+        -- with size 0 and again at close with the real size. A finalized ingest for a path that
+        -- already exists means the file was rewritten, and keeping the larger of the two sizes
+        -- would describe a file that is no longer there.
+        size_bytes  = CASE WHEN EXCLUDED.end_ts IS NOT NULL
+                        THEN EXCLUDED.size_bytes
+                        ELSE GREATEST(clips.size_bytes, EXCLUDED.size_bytes) END,
+        -- Same reason: an index parsed from the previous file points past the end of the new one,
+        -- and every playback of it fails on the first fragment. Dropped here and rebuilt lazily or
+        -- by the warmer.
+        frag_index  = CASE WHEN EXCLUDED.end_ts IS NOT NULL THEN NULL ELSE clips.frag_index END,
+        retained    = clips.retained OR EXCLUDED.retained,
+        origin      = EXCLUDED.origin
       RETURNING clip_uid::text;
       """);
 
@@ -64,6 +96,8 @@ public sealed class ClipStorage(
     cmd.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, endTs is null ? DBNull.Value : endTs.Value);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Bigint, (long)clip.SizeBytes);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Boolean, retained);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Text,
+      string.IsNullOrWhiteSpace(clip.Origin) ? "live" : clip.Origin);
 
     var returnedUid = (string)(await cmd.ExecuteScalarAsync(ct))!;
     activityLog.Record(new FsActivityEntry(
@@ -275,12 +309,13 @@ public sealed class ClipStorage(
 
       var bounds = await q
         .OrderBy(c => c.StartTs)
-        .Select(c => new { c.StartTs, c.EndTs })
+        .Select(c => new { c.StartTs, c.EndTs, c.Origin })
         .ToListAsync(ct);
 
       var track = new RecordingTimelineTrack { CameraId = cameraId };
       track.Intervals.AddRange(MergeIntervals(
-        bounds.Select(b => (b.StartTs, b.EndTs ?? b.StartTs.AddMinutes(1))), minGap));
+        bounds.Select(b => (b.StartTs, b.EndTs ?? b.StartTs.AddMinutes(1),
+          string.IsNullOrWhiteSpace(b.Origin) ? "live" : b.Origin)), minGap));
       tracks.Add(track);
     }
 
@@ -288,13 +323,14 @@ public sealed class ClipStorage(
   }
 
   private static List<RecordingInterval> MergeIntervals(
-    IEnumerable<(DateTime Start, DateTime End)> ordered, TimeSpan minGap)
+    IEnumerable<(DateTime Start, DateTime End, string Origin)> ordered, TimeSpan minGap)
   {
     var merged = new List<RecordingInterval>();
     DateTime? curStart = null;
     DateTime curEnd = default;
+    var curOrigin = "live";
 
-    foreach (var (start, end) in ordered)
+    foreach (var (start, end, origin) in ordered)
     {
       if (end <= start) continue;
 
@@ -302,30 +338,35 @@ public sealed class ClipStorage(
       {
         curStart = start;
         curEnd = end;
+        curOrigin = origin;
         continue;
       }
 
-      if (start - curEnd <= minGap)
+      // Provenance breaks a run even when the clips touch: an insert from the camera's own storage
+      // is a different kind of footage and the operator has to be able to see where it sits.
+      if (start - curEnd <= minGap && string.Equals(origin, curOrigin, StringComparison.Ordinal))
       {
         if (end > curEnd) curEnd = end;
         continue;
       }
 
-      merged.Add(ToInterval(curStart.Value, curEnd));
+      merged.Add(ToInterval(curStart.Value, curEnd, curOrigin));
       curStart = start;
       curEnd = end;
+      curOrigin = origin;
     }
 
     if (curStart is not null)
-      merged.Add(ToInterval(curStart.Value, curEnd));
+      merged.Add(ToInterval(curStart.Value, curEnd, curOrigin));
 
     return merged;
   }
 
-  private static RecordingInterval ToInterval(DateTime start, DateTime end) => new()
+  private static RecordingInterval ToInterval(DateTime start, DateTime end, string origin) => new()
   {
     StartTs = Timestamp.FromDateTime(DateTime.SpecifyKind(start, DateTimeKind.Utc)),
     EndTs = Timestamp.FromDateTime(DateTime.SpecifyKind(end, DateTimeKind.Utc)),
+    Origin = origin,
   };
 
   public async Task<List<Recording>> GetRecordingsAroundAsync(GetRecordingsAroundRequest request, CancellationToken ct)
@@ -385,7 +426,27 @@ public sealed class ClipStorage(
       .ToList();
 
     if (ranges.Count > limit)
-      ranges = ranges.GetRange(0, limit);
+    {
+      // Which end to drop is the whole question. Keeping the first N — what this used to do — throws
+      // away the newest recordings, so a day of short outages and their imports is enough to hide
+      // everything from the last hour: the clips are in the database and returned by the query, yet
+      // invisible in the monitor.
+      if (request.Timestamp != null)
+      {
+        // A moment was asked about, so the window is centred on it.
+        var ts = request.Timestamp.ToDateTime().ToUniversalTime();
+        var pivot = ranges.FindLastIndex(r => r.Recordings[0].StartTs.ToDateTime() <= ts);
+        if (pivot < 0)
+          pivot = 0;
+        var start = Math.Clamp(pivot - limit / 2, 0, ranges.Count - limit);
+        ranges = ranges.GetRange(start, limit);
+      }
+      else
+      {
+        // No anchor: the newest is what an operator opening the archive is looking for.
+        ranges = ranges.GetRange(ranges.Count - limit, limit);
+      }
+    }
     return ranges;
   }
 
@@ -472,7 +533,7 @@ public sealed class ClipStorage(
     var post = config?.PostRecordSeconds ?? 30;
 
     await using var cmd = dataSource.CreateCommand("""
-      SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id,
+      SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id, c.origin,
              ''
       FROM clips c
       JOIN retention_events re ON re.event_uuid = $1
@@ -499,6 +560,135 @@ public sealed class ClipStorage(
       .Select(c => new { c.ClipUid, c.StorageId, c.FilePath, c.FragIndex })
       .ToListAsync(ct);
     return rows.ToDictionary(r => r.ClipUid, r => (r.StorageId, r.FilePath, r.FragIndex));
+  }
+
+  /// <summary>
+  /// Finishes clip rows the previous run of the media server left open, from the files themselves.
+  /// Returns how many were repaired.
+  /// </summary>
+  /// <remarks>
+  /// A killed writer never sends the finalizing ingest, so its last clip keeps <c>end_ts</c> NULL
+  /// and size 0 — and an unfinished clip is read as covering the next minute, which is exactly the
+  /// stretch the restart lost. The footage is really there, though: the fragments are written as
+  /// they go and only the trailer is missing, so the extent is measured by walking them. That both
+  /// tells the truth about coverage and makes the recording playable, which without an index it is
+  /// not.
+  /// </remarks>
+  /// <returns>
+  /// How many rows were repaired, and the span the archive had been assuming for them — a gap
+  /// already judged against that assumption has to be looked at again.
+  /// </returns>
+  public async Task<(int Repaired, int Deferred, DateTime From, DateTime To)> FinalizeDanglingClipsAsync(
+    string cameraId, string streamName, DateTime notAfter, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var dangling = await db.Clips
+      .Where(c => c.CameraId == cameraId
+        && c.StreamName == streamName
+        && c.EndTs == null
+        && c.StartTs <= notAfter)
+      .ToListAsync(ct);
+    if (dangling.Count == 0)
+      return (0, 0, default, default);
+
+    var storages = await storageListCache.GetAsync(ct);
+    var repaired = 0;
+    var deferred = 0;
+
+    foreach (var clip in dangling)
+    {
+      var root = storageListCache.Find(storages, clip.StorageId)?.RootPath;
+      var absPath = string.IsNullOrWhiteSpace(root) ? null : Path.Combine(root, clip.FilePath);
+
+      // The storage list has not loaded yet, which says nothing about the clip. Writing it off as
+      // zero-length would be permanent — the row stops being dangling and is never looked at again —
+      // so it waits for a pass that can actually open the file.
+      if (absPath is null)
+      {
+        deferred++;
+        continue;
+      }
+
+      // Nothing to measure — the row claims no time rather than a minute of it.
+      var end = clip.StartTs;
+      long size = clip.SizeBytes;
+
+      if (File.Exists(absPath))
+      {
+        // A file that was touched a moment ago has a writer on it: the run that owns it is alive and
+        // its length is not final yet. Only quiet on disk proves otherwise, and there is no hurry —
+        // the boundary comes from the archive, not from when we happened to look.
+        if (DateTime.UtcNow - File.GetLastWriteTimeUtc(absPath) < StillBeingWritten)
+        {
+          deferred++;
+          continue;
+        }
+
+        size = new FileInfo(absPath).Length;
+        var idx = await ClipIndexParser.ReadAsync(absPath, ct);
+        if (idx is { Fragments.Count: > 0 })
+        {
+          var seconds = idx.Fragments.Sum(f => f.Duration);
+          end = clip.StartTs.AddSeconds(seconds);
+          clip.FragIndex = ClipIndexParser.Serialize(idx);
+        }
+      }
+
+      clip.EndTs = end;
+      clip.SizeBytes = size;
+      repaired++;
+    }
+
+    await db.SaveChangesAsync(ct);
+
+    // An unfinished clip was read as covering the minute after its start; that is the window whose
+    // verdicts were based on something no longer true.
+    var from = dangling.Min(c => c.StartTs);
+    var to = dangling.Max(c => c.StartTs).AddMinutes(1);
+    return (repaired, deferred, from, to);
+  }
+
+  /// <summary>
+  /// Clips left open by a run that is gone, together with the moment recording resumed.
+  /// </summary>
+  /// <remarks>
+  /// A later clip on the same stream is the proof: a writer that moved on to a new segment is never
+  /// coming back to this one, so the row can be measured and the stretch between the two treated as
+  /// lost. Nothing else in the system can say this after a node-wide restart — the heartbeats and the
+  /// instance id they carry live in memory that went down with the media server, while the archive
+  /// is still on disk.
+  /// </remarks>
+  public async Task<List<AbandonedClip>> ListAbandonedAsync(
+    IReadOnlyCollection<string> cameraIds, CancellationToken ct)
+  {
+    if (cameraIds.Count == 0)
+      return [];
+
+    await using var cmd = dataSource.CreateCommand("""
+      SELECT c.camera_id, c.stream_name, c.start_ts,
+             (SELECT MIN(n.start_ts) FROM clips n
+               WHERE n.camera_id = c.camera_id
+                 AND n.stream_name = c.stream_name
+                 AND n.start_ts > c.start_ts) AS resumed_at
+      FROM clips c
+      WHERE c.end_ts IS NULL AND c.camera_id = ANY($1)
+      ORDER BY c.start_ts;
+      """);
+    cmd.Parameters.AddWithValue(NpgsqlDbType.Array | NpgsqlDbType.Text, cameraIds.ToArray());
+
+    var result = new List<AbandonedClip>();
+    await using var reader = await cmd.ExecuteReaderAsync(ct);
+    while (await reader.ReadAsync(ct))
+    {
+      // A later clip is not required. Nothing has written to this one since the run that owned it
+      // went away, and that is established by the file being quiet rather than by recording having
+      // resumed — waiting for the next clip would leave the hole unrecorded for as long as the
+      // camera stays down, which is exactly when an operator goes looking for it.
+      result.Add(new AbandonedClip(
+        reader.GetString(0), reader.GetString(1), reader.GetDateTime(2),
+        reader.IsDBNull(3) ? null : reader.GetDateTime(3)));
+    }
+    return result;
   }
 
   public async Task SaveFragIndexAsync(Guid uid, string json, CancellationToken ct)
@@ -674,7 +864,7 @@ public sealed class ClipStorage(
 
     var streamFilter = string.IsNullOrEmpty(streamName) ? "" : "AND c.stream_name = $7";
     await using var cmd = dataSource.CreateCommand($"""
-      SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id,
+      SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id, c.origin,
              COALESCE(string_agg(DISTINCT re.event_id, ','), '')
       FROM clips c
       LEFT JOIN retention_events re ON re.camera_id = c.camera_id
@@ -739,7 +929,7 @@ public sealed class ClipStorage(
     var streamFilter = string.IsNullOrEmpty(streamName) ? "" : "AND c.stream_name = $6";
 
     await using var cmd = dataSource.CreateCommand($"""
-      SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id,
+      SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id, c.origin,
              COALESCE(string_agg(DISTINCT re.event_id, ','), '')
       FROM clips c
       LEFT JOIN retention_events re ON re.camera_id = c.camera_id
@@ -776,12 +966,13 @@ public sealed class ClipStorage(
         StartTs    = Timestamp.FromDateTime(reader.GetDateTime(3).ToUniversalTime()),
         SizeBytes  = (ulong)reader.GetInt64(5),
         ClipUid    = reader.IsDBNull(6) ? "" : reader.GetString(6),
-        StorageId  = reader.IsDBNull(7) ? "" : reader.GetString(7)
+        StorageId  = reader.IsDBNull(7) ? "" : reader.GetString(7),
+        Origin     = reader.IsDBNull(8) ? "" : reader.GetString(8)
       };
       if (!reader.IsDBNull(4))
         rec.EndTs = Timestamp.FromDateTime(reader.GetDateTime(4).ToUniversalTime());
 
-      var ev = reader.IsDBNull(8) ? "" : reader.GetString(8);
+      var ev = reader.IsDBNull(9) ? "" : reader.GetString(9);
       var ids = string.IsNullOrEmpty(ev)
         ? new List<string>()
         : ev.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToList();
@@ -789,6 +980,9 @@ public sealed class ClipStorage(
     }
     return list;
   }
+
+  private static string NormalizedOrigin(Recording clip) =>
+    string.IsNullOrWhiteSpace(clip.Origin) ? "live" : clip.Origin;
 
   private static List<RecordingRange> GroupRecordingRanges(
     List<RecordingWithEvents> clips,
@@ -838,7 +1032,13 @@ public sealed class ClipStorage(
       else
         pauseTooLong = start - prevStart > TimeSpan.FromSeconds(degenerateMaxInterStartSeconds);
 
-      if (spanExceeded || pauseTooLong)
+      // An insert pulled off the camera is its own range even when it butts up against live
+      // footage: it was recorded elsewhere, and it is allowed to overlap by a second or two, which
+      // a single continuous range cannot express.
+      var originChanged = !string.Equals(
+        NormalizedOrigin(prevRec), NormalizedOrigin(clip), StringComparison.Ordinal);
+
+      if (spanExceeded || pauseTooLong || originChanged)
       {
         var r = new RecordingRange();
         r.Recordings.Add(clip);

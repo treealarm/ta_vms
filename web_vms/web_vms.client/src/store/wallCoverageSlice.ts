@@ -52,7 +52,11 @@ const wallCoverageSlice = createSlice({
         const byCamera: Record<string, Segment[]> = {}
         for (const track of action.payload.tracks ?? []) {
           byCamera[track.cameraId] = (track.intervals ?? [])
-            .map((i) => ({ startMs: Date.parse(i.startTime), endMs: Date.parse(i.endTime) }))
+            .map((i) => ({
+              startMs: Date.parse(i.startTime),
+              endMs: Date.parse(i.endTime),
+              origin: i.origin,
+            }))
             .filter((s) => Number.isFinite(s.startMs) && Number.isFinite(s.endMs) && s.endMs > s.startMs)
         }
         // Cameras the server knew nothing about must still resolve to "no coverage" rather than

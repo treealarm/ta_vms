@@ -5,10 +5,11 @@ import { useTranslation } from 'react-i18next'
 import ViewControls from './ViewControls'
 import MonitorsView from './MonitorsView'
 import RetentionEventsTab from './RetentionEventsTab'
+import ArchiveGapsTab from './ArchiveGapsTab'
 import SimulationFab from './SimulationFab'
 import LogToggleButton from './LogToggleButton'
 
-const TABS = ['monitors', 'investigations', 'events'] as const
+const TABS = ['monitors', 'investigations', 'events', 'gaps'] as const
 
 export default function OperatorView() {
   const { t } = useTranslation()
@@ -31,6 +32,14 @@ export default function OperatorView() {
               element={(
                 <Box sx={{ height: '100%', overflow: 'auto' }}>
                   <RetentionEventsTab />
+                </Box>
+              )}
+            />
+            <Route
+              path="gaps"
+              element={(
+                <Box sx={{ height: '100%', overflow: 'auto' }}>
+                  <ArchiveGapsTab />
                 </Box>
               )}
             />
@@ -58,6 +67,7 @@ export default function OperatorView() {
             <Tab label={t('nav.monitors')} />
             <Tab label={t('nav.investigations')} />
             <Tab label={t('nav.events')} />
+            <Tab label={t('nav.gaps')} />
           </Tabs>
         </Box>
 

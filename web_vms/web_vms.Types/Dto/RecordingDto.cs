@@ -20,6 +20,8 @@ namespace web_vms.Types.Dto
     public DateTime? EndTime { get; set; }
     public ulong SizeBytes { get; set; }
     public string ClipUid { get; set; } = "";
+    /// <summary>"live", or "edge" for a range recovered from the camera's own storage.</summary>
+    public string Origin { get; set; } = "live";
   }
 
   public class RecordingsResponseDto
@@ -75,6 +77,8 @@ namespace web_vms.Types.Dto
   {
     public DateTime StartTime { get; set; }
     public DateTime EndTime { get; set; }
+    /// <summary>"live", or "edge" for footage recovered from the camera's own storage.</summary>
+    public string Origin { get; set; } = "live";
   }
 
   public class RecordingTimelineTrackDto

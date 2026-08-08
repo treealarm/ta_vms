@@ -22,7 +22,12 @@ type FrontendConfigState = {
   /** How many probes have failed in a row — the UI stays quiet for the first couple. */
   failedAttempts: number
   /** Dependencies the backend reports as broken (empty when everything is fine or unknown). */
-  brokenDependencies: { name: string; error: string }[]
+  /**
+   * Dependencies the gateway currently reports as down, with how many consecutive health polls have
+   * said so. The count is what lets the UI ignore the normal startup window, when services are
+   * still coming up and every dependency is briefly "unavailable".
+   */
+  brokenDependencies: { name: string; error: string; consecutive: number }[]
 }
 
 const initialState: FrontendConfigState = {
@@ -67,9 +72,16 @@ const frontendConfigSlice = createSlice({
         state.lastError = action.error?.message ?? 'unknown error'
       })
       .addCase(loadHealth.fulfilled, (state, action) => {
+        // Counting per name, not per poll: a dependency that recovers and breaks again starts over,
+        // and one that just broke is not masked by another that has been down for a while.
+        const previous = new Map(state.brokenDependencies.map((d) => [d.name, d.consecutive]))
         state.brokenDependencies = action.payload.dependencies
           .filter((d) => !d.ok)
-          .map((d) => ({ name: d.name, error: d.error || 'unavailable' }))
+          .map((d) => ({
+            name: d.name,
+            error: d.error || 'unavailable',
+            consecutive: (previous.get(d.name) ?? 0) + 1,
+          }))
       })
       .addCase(loadHealth.rejected, (state) => {
         // The health endpoint itself is unreachable — the config probe already covers that case.

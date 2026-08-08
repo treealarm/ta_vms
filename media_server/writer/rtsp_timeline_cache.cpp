@@ -55,13 +55,3 @@ void rtsp_timeline_cache::persist(
     .updated_at = std::chrono::steady_clock::now(),
   };
 }
-
-void rtsp_timeline_cache::invalidate(const std::string& rtsp_url)
-{
-  if (rtsp_url.empty())
-  {
-    return;
-  }
-  std::lock_guard lock(m_mutex);
-  m_timelines.erase(rtsp_url);
-}

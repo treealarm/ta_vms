@@ -7,7 +7,9 @@ using web_vms.Types.Actors;
 
 namespace VmsOnvif;
 
-public class OnvifServiceImpl(
+// Profile G handlers live in OnvifEdgeServiceImpl.cs — same class, kept apart as a self-contained
+// feature.
+public partial class OnvifServiceImpl(
   CameraConnCache connCache,
   OnvifEventSubscriptionService subscriptionService,
   ObservedTopicsStore observedTopics,
@@ -419,6 +421,7 @@ public class OnvifServiceImpl(
       HasAudio         = audioConfigs.Count > 0,
       HasRelayOutputs  = hasRelayOutputsTask.Result,
       HasDigitalInputs = caps?.HasDigitalInputs ?? false,
+      HasEdgeRecording = caps?.HasEdgeRecording ?? false,
     };
   }
 

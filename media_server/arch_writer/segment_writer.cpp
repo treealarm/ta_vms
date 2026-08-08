@@ -216,6 +216,7 @@ void segment_writer::open_new_segment()
 
   m_segment_start_time = std::chrono::steady_clock::now();
   m_segment_start_ts = now;
+  m_last_write_ts = {};
   m_segment_storage_id = cam_storage.storage_id;
 
   logger::instance().debug(std::format(
@@ -242,7 +243,11 @@ void segment_writer::close_segment()
   if (!(m_ctx->oformat->flags & AVFMT_NOFILE))
     avio_closep(&m_ctx->pb);
 
-  const auto segment_end_ts = std::chrono::system_clock::now();
+  // Last written packet, not "now": see m_last_write_ts. Falls back to now only for a segment that
+  // was opened and closed without a single packet getting through.
+  const auto segment_end_ts = m_last_write_ts.time_since_epoch().count() != 0
+    ? m_last_write_ts
+    : std::chrono::system_clock::now();
 
   m_ctx.reset();
   m_output_streams.clear();
@@ -432,7 +437,30 @@ void segment_writer::write_packet(const std::shared_ptr<media_packet>& in_media)
   pkt->stream_index = out_stream->index;
 
   if (av_interleaved_write_frame(m_ctx.get(), pkt) < 0)
+  {
     logger::instance().error("write_frame failed");
+    return;
+  }
+
+  // Capture time, not the moment this thread got round to writing: the queue in front of this
+  // writer and the network in front of the reader both add delay, and a clip whose stamps disagree
+  // with the footage inside it makes the player drift and the gap detector miss the hole.
+  // A packet that cannot say when it was captured leaves the boundary where it was: falling back
+  // to "now" would hand the clip the time spent queued in front of this writer.
+  if (media->wall_ts.has_value())
+  {
+    const auto write_ts = *media->wall_ts;
+    if (m_last_write_ts.time_since_epoch().count() == 0)
+    {
+      // First packet of the segment: the file was opened a moment earlier, waiting for a keyframe,
+      // and claiming that earlier moment would hand the clip time it holds no footage for.
+      m_segment_start_ts = write_ts;
+    }
+    if (write_ts > m_last_write_ts)
+    {
+      m_last_write_ts = write_ts;
+    }
+  }
 }
 
 void segment_writer::close()

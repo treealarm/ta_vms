@@ -100,7 +100,16 @@ public class DbMigrator(
     if (await db.Storages.AnyAsync(ct))
       return;
 
-    db.Storages.Add(new DbStorage { StorageId = "default", RootPath = rootPath, ReservedBytes = 0 });
+    // Same reservation a storage created by hand starts with: recording must not be allowed to
+    // consume the last byte of the volume, which on a single-box install also holds the database
+    // and the logs.
+    const long defaultReservedBytes = 5L * 1024 * 1024 * 1024;
+    db.Storages.Add(new DbStorage
+    {
+      StorageId = "default",
+      RootPath = rootPath,
+      ReservedBytes = defaultReservedBytes,
+    });
     await db.SaveChangesAsync(ct);
   }
 

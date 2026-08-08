@@ -37,6 +37,7 @@
                 // The anonymous WHEP test player plays any camera without a login, so the backend
                 // refuses to start with it enabled alongside KEYCLOAK_URL above. To use /test/live,
                 // clear KEYCLOAK_URL in this configuration and set this back to "true".
+                "VMS_EDGE_EXPORT_CHUNK_SECONDS": "60",
                 "VMS_LIVE_TEST_PLAYER": ""
             }
         },
@@ -132,6 +133,16 @@
                 "POSTGRES_PASSWORD": "postgres",
                 "POSTGRES_FS_DB": "ta_fs",
                 "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage",
+                "VMS_EXPORT_BASE_PATH": "${workspaceFolder}/../exports",
+                "VMS_EDGE_EXPORT_TTL_HOURS": "24",
+                "VMS_SOURCE_LIVENESS_STALE_SECONDS": "60",
+                "VMS_SOURCE_OUTAGE_GRACE_SECONDS": "15",
+                "DAPR_ONVIF_APP_ID": "vmsonvif",
+                "VMS_BACKFILL_SETTLE_SECONDS": "60",
+                "VMS_BACKFILL_RETRY_SECONDS": "300",
+                "VMS_BACKFILL_LOOKBACK_HOURS": "48",
+                "VMS_BACKFILL_JOB_RETENTION_HOURS": "24",
+                "VMS_OUTAGE_RETENTION_DAYS": "90",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },
@@ -225,6 +236,10 @@
                     "value": "${workspaceFolder}/../media_storage"
                 },
                 {
+                    "name": "VMS_EXPORT_BASE_PATH",
+                    "value": "${workspaceFolder}/../exports"
+                },
+                {
                     "name": "VMS_LOG_PATH",
                     "value": "${workspaceFolder}/../logs"
                 },
@@ -264,6 +279,7 @@
                     "name": "VMS_WEBRTC_RTSP_BASE_URL",
                     "value": "rtsp://localhost:8554"
                 },
+                { "name": "VMS_SOURCE_LIVENESS_PERIOD_SECONDS", "value": "15" },
                 { "name": "VMS_MTX_HOST", "value": "localhost" },
                 { "name": "VMS_WEBRTC_PUBLISH_AUDIO", "value": "0" }
             ],
@@ -323,7 +339,17 @@
                 "POSTGRES_USER": "postgres",
                 "POSTGRES_PASSWORD": "postgres",
                 "POSTGRES_FS_DB": "ta_fs",
-                "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage"
+                "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage",
+                "VMS_EXPORT_BASE_PATH": "${workspaceFolder}/../exports",
+                "VMS_EDGE_EXPORT_TTL_HOURS": "24",
+                "VMS_SOURCE_LIVENESS_STALE_SECONDS": "60",
+                "VMS_SOURCE_OUTAGE_GRACE_SECONDS": "15",
+                "DAPR_ONVIF_APP_ID": "vmsonvif",
+                "VMS_BACKFILL_SETTLE_SECONDS": "60",
+                "VMS_BACKFILL_RETRY_SECONDS": "300",
+                "VMS_BACKFILL_LOOKBACK_HOURS": "48",
+                "VMS_BACKFILL_JOB_RETENTION_HOURS": "24",
+                "VMS_OUTAGE_RETENTION_DAYS": "90"
             }
         },
         {
@@ -339,6 +365,7 @@
                 { "name": "VMS_MEDIAMTX_PUBLISH_PASS", "value": "dev_publish_pass" },
                 { "name": "DEBUGINFOD_URLS", "value": "" },
                 { "name": "VMS_STORAGE_BASE_PATH", "value": "${workspaceFolder}/../media_storage" },
+                { "name": "VMS_EXPORT_BASE_PATH", "value": "${workspaceFolder}/../exports" },
                 { "name": "GRPC_VMS_PORT", "value": "50052" },
                 { "name": "APP_ID", "value": "vms-2" },
                 { "name": "DAPR_GRPC_PORT", "value": "51010" },
@@ -347,7 +374,8 @@
                 { "name": "DAPR_UTILS_APP_ID", "value": "vmsutils" },
                 { "name": "DAPR_STATE_STORE_NAME", "value": "statestore" },
                 { "name": "PUBSUB_NAME", "value": "orderpubsub" },
-                { "name": "VMS_WEBRTC_RTSP_BASE_URL", "value": "rtsp://localhost:8554" }
+                { "name": "VMS_WEBRTC_RTSP_BASE_URL", "value": "rtsp://localhost:8554" },
+                { "name": "VMS_SOURCE_LIVENESS_PERIOD_SECONDS", "value": "15" }
             ],
             "cwd": "${workspaceFolder}/media_server",
             "stopAtEntry": false,

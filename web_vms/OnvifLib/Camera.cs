@@ -66,12 +66,18 @@ public class Camera
   }
   public async Task<System.DateTime?> GetDeviceTimeAsync()
   {
+    // Clears the shared token because the token being replaced is exactly the one whose timestamp
+    // this call exists to correct. Callers on the authentication path own that state; anything that
+    // only wants to read the clock must use ReadDeviceTimeAsync instead — see MeasureClockAsync.
     _onvifClientFactory.SetSecurityToken(null);
-    var endpoint = new EndpointAddress(_url);
+    return await ReadDeviceTimeAsync(_onvifClientFactory);
+  }
 
-    using var deviceClient = _onvifClientFactory.
+  private async Task<System.DateTime?> ReadDeviceTimeAsync(OnvifClientFactory factory)
+  {
+    using var deviceClient = factory.
       CreateClient<DeviceClient, DeviceServiceReference.Device>(
-        endpoint,
+        new EndpointAddress(_url),
         _bindingProvider.Current,
         _username,
         _password
@@ -92,6 +98,39 @@ public class Camera
         0,
         DateTimeKind.Utc
     );
+  }
+
+  /// <summary>
+  /// Measures the camera's clock against ours, or returns null when the device does not report UTC.
+  /// </summary>
+  /// <remarks>
+  /// Null is a real answer and must not be turned into "no difference": a camera whose clock we
+  /// cannot read is exactly the camera whose archive we would fetch from the wrong hour. The
+  /// authentication path above may fall back to our own time — a missing timestamp there only costs
+  /// a rejected token — but nothing that addresses recorded footage may.
+  ///
+  /// ONVIF reports whole seconds, so the result is good to about ±0.5 s plus half the round trip.
+  /// That is far below the granularity anything here cares about, and far above what any in-band
+  /// alternative can offer (see <see cref="CameraClockReading"/>).
+  /// </remarks>
+  public async Task<CameraClockReading?> MeasureClockAsync()
+  {
+    // Its own factory, not the shared one. GetSystemDateAndTime has to go out unauthenticated (the
+    // camera's clock is what we are trying to learn, so we cannot stamp a valid token yet), and
+    // clearing the token on the shared factory would strip the security header off any request
+    // another thread happens to build at that moment.
+    var factory = new OnvifClientFactory(_logger);
+    var before = System.DateTime.UtcNow;
+    var cameraUtc = await ReadDeviceTimeAsync(factory);
+    var after = System.DateTime.UtcNow;
+    if (cameraUtc is not { } utc)
+      return null;
+
+    // Compared against the midpoint of the call, splitting the round trip evenly between the two
+    // directions — the same assumption NTP makes.
+    var midpoint = before + (after - before) / 2;
+    _deviceClockOffset = utc - midpoint;
+    return new CameraClockReading(utc, midpoint, after - before);
   }
 
   public async Task<string> RebootAsync()
@@ -143,6 +182,44 @@ public class Camera
   {
     using var device = await GetDevice();
     await device.SetRelayOutputStateAsync(token, active ? RelayLogicalState.active : RelayLogicalState.inactive);
+  }
+
+  // ── Camera-side storage (SD card) ─────────────────────────────────────────────
+  // Lives on the Device Management service, not on a Profile G service of its own.
+
+  public async Task<OnvifDeviceStorageSupport> GetStorageSupportAsync()
+  {
+    using var device = await GetDevice();
+    var caps = await device.GetServiceCapabilitiesAsync();
+    var system = caps?.System;
+    return new OnvifDeviceStorageSupport(
+      system?.StorageConfigurationSpecified == true && system.StorageConfiguration,
+      system?.MaxStorageConfigurationsSpecified == true ? system.MaxStorageConfigurations : 0,
+      (caps?.Misc?.AuxiliaryCommands ?? []).ToList());
+  }
+
+  public async Task<List<OnvifEdgeStorageConfiguration>> GetStorageConfigurationsAsync()
+  {
+    using var device = await GetDevice();
+    var resp = await device.GetStorageConfigurationsAsync();
+    return (resp.StorageConfigurations ?? [])
+      .Select(s => new OnvifEdgeStorageConfiguration(
+        s.token ?? string.Empty,
+        s.Data?.type ?? string.Empty,
+        s.Data?.LocalPath ?? string.Empty,
+        s.Data?.StorageUri ?? string.Empty,
+        s.Data?.User?.UserName ?? string.Empty))
+      .ToList();
+  }
+
+  /// <summary>
+  /// Sends a vendor auxiliary command (ONVIF defines the transport, not the command strings).
+  /// Formatting storage is one of these — irreversible on the device, so callers must confirm.
+  /// </summary>
+  public async Task<string> SendAuxiliaryCommandAsync(string command)
+  {
+    using var device = await GetDevice();
+    return await device.SendAuxiliaryCommandAsync(command) ?? string.Empty;
   }
 
   public async Task SyncTimeAsync() => await SetTimeAsync(System.DateTime.UtcNow);
@@ -292,6 +369,39 @@ public class Camera
     return null;
   }
 
+  async public Task<RecordingService?> GetRecordingService()
+  {
+    var services = await GetServicesAsync();
+
+    if (services != null)
+    {
+      return await _serviceCache.GetServiceAsync<RecordingService>(services);
+    }
+    return null;
+  }
+
+  async public Task<SearchService?> GetSearchService()
+  {
+    var services = await GetServicesAsync();
+
+    if (services != null)
+    {
+      return await _serviceCache.GetServiceAsync<SearchService>(services);
+    }
+    return null;
+  }
+
+  async public Task<ReplayService?> GetReplayService()
+  {
+    var services = await GetServicesAsync();
+
+    if (services != null)
+    {
+      return await _serviceCache.GetServiceAsync<ReplayService>(services);
+    }
+    return null;
+  }
+
   async public Task<List<OnvifProfileInfo>?> GetProfiles()
   {
     var service = await GetMediaService();
@@ -323,7 +433,7 @@ public class Camera
 
     var services = await GetServicesAsync();
     if (services == null)
-      return new OnvifCapabilities(false, false, false, false);
+      return new OnvifCapabilities(false, false, false, false, false);
 
     // GetConfigurations (not GetNodes) is the reliable PTZ signal — same reasoning as
     // PtzService2.GetCapabilitiesAsync's own comment.
@@ -347,7 +457,10 @@ public class Camera
       HasEvents:  EventService1.GetSupportedWsdls().Any(services.ContainsKey),
       // Namespace presence alone is a reliable signal here (unlike PTZ): Device I/O is a genuinely
       // optional, separate ONVIF service, not something advertised without real hardware behind it.
-      HasDigitalInputs: services.ContainsKey(DeviceIOService2.WSDL_V10));
+      HasDigitalInputs: services.ContainsKey(DeviceIOService2.WSDL_V10),
+      // Profile G is only usable when the camera can both tell us what it has (search) and play it
+      // back (replay); the recording service alone would let us list recordings we cannot fetch.
+      HasEdgeRecording: services.ContainsKey(SearchService.WSDL_V10) && services.ContainsKey(ReplayService.WSDL_V10));
 
     _capabilitiesCache = result;
     _capabilitiesCacheAt = System.DateTime.UtcNow;

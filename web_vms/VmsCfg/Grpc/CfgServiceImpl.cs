@@ -8,6 +8,7 @@ namespace VmsCfg
 {
   public class CfgServiceImpl(
     CameraStorage storage,
+    StorageDb storageDb,
     ScheduleDb scheduleDb,
     ScheduleCache scheduleCache,
     PermissionDb permissionDb,
@@ -223,6 +224,7 @@ namespace VmsCfg
 
       await storage.SetupCameraAsync(request, context.CancellationToken);
       logger.LogInformation("Camera '{CameraId}' configured (server={ServerId})", request.CameraId, request.ServerId);
+      await EnsureCameraHasStorageAsync(request.CameraId, context.CancellationToken);
       InvalidateFsCache(request.CameraId);
       NotifyMediaServer(request.ServerId);
       PushCameraToSquare(request.CameraId);
@@ -232,6 +234,50 @@ namespace VmsCfg
         NotifyMediaServer(existing.ServerId);
 
       return new OperationStatus { Success = true };
+    }
+
+
+    /// <summary>
+    /// Gives a camera with no storage assignment the first configured storage.
+    /// </summary>
+    /// <remarks>
+    /// A camera without one silently records nothing and cannot receive an archive import — the
+    /// failure only surfaces much later as "no writable storage", long after whoever added the
+    /// camera has moved on. An explicit assignment is still respected: this only fills a gap, and
+    /// only when a storage exists to fill it with.
+    /// </remarks>
+    private async Task EnsureCameraHasStorageAsync(string cameraId, CancellationToken ct)
+    {
+      try
+      {
+        var assigned = await storageDb.GetCameraStoragesAsync(cameraId, ct);
+        if (assigned.Count > 0)
+          return;
+
+        var storages = await storageDb.ListStoragesAsync(ct);
+        if (storages.Count == 0)
+        {
+          logger.LogWarning(
+            "Camera '{CameraId}' has no storage assigned and none is configured — it will record nothing",
+            cameraId);
+          return;
+        }
+
+        var fallback = storages[0];
+        await storageDb.SetCameraStoragesAsync(
+          cameraId,
+          [new CameraStorageAssignment { StorageId = fallback.StorageId, Priority = 0 }],
+          ct);
+        logger.LogInformation(
+          "Camera '{CameraId}' had no storage assigned; defaulted it to '{StorageId}'",
+          cameraId, fallback.StorageId);
+      }
+      catch (Exception ex)
+      {
+        // Never fail camera setup over this — the camera is still usable, just without a place to
+        // record until someone assigns one.
+        logger.LogWarning(ex, "Could not assign a default storage to camera '{CameraId}'", cameraId);
+      }
     }
 
     public override async Task<ListMediaServersResponse> ListMediaServers(

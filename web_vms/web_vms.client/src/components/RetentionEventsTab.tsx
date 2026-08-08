@@ -33,7 +33,10 @@ import EventDetailsPanel, { eventSource } from './EventDetailsPanel'
 import EventOpenInPlayback from './EventOpenInPlayback'
 
 const PAGE_SIZE = 20
-const COLUMN_MAX_HEIGHT = 'min(75vh, 900px)'
+// The left column's height is fixed rather than capped: with a cap it shrinks to fit the list, and
+// the pager and refresh controls under it move up and down as events come and go. Controls stay put
+// and the list scrolls inside the space it is given.
+const COLUMN_HEIGHT = 'min(75vh, 900px)'
 const AUTO_REFRESH_MS = 15_000
 
 // The camera filter goes to the server, not to the rendered list: a page is PAGE_SIZE groups
@@ -253,7 +256,7 @@ export default function RetentionEventsTab() {
             <Box sx={{
               width: { xs: '100%', md: 260 }, flexShrink: 0,
               display: 'flex', flexDirection: 'column',
-              maxHeight: { md: COLUMN_MAX_HEIGHT }
+              height: { xs: 'auto', md: COLUMN_HEIGHT }
             }}>
               <Stack direction="row" spacing={1} sx={{ mb: 1, flexShrink: 0 }}>
                 <TextField
@@ -287,7 +290,7 @@ export default function RetentionEventsTab() {
                   // child shrink); mobile keeps a fixed cap.
                   flex: 1,
                   minHeight: 0,
-                  maxHeight: { xs: 320, md: 'none' },
+                  height: { xs: 320, md: 'auto' },
                   overflow: 'auto'
                 }}
                 ref={listRef}
@@ -358,7 +361,7 @@ export default function RetentionEventsTab() {
               sx={{
                 width: { xs: '100%', md: 320 },
                 flexShrink: 0,
-                maxHeight: { xs: 'none', md: COLUMN_MAX_HEIGHT },
+                maxHeight: { xs: 'none', md: COLUMN_HEIGHT },
                 overflow: 'auto'
               }}
             >

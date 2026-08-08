@@ -42,9 +42,14 @@ export default function WallTimelineTrack({
           const left = msToX(Math.max(seg.startMs, win.startMs), win, pxWidth)
           const right = msToX(Math.min(seg.endMs, win.endMs), win, pxWidth)
           if (right <= 0 || left >= pxWidth) return null
+          // Footage recovered from the camera's own storage is drawn hatched rather than in another
+          // colour: the lane's colours already mean "this camera" and "the selected one", and a
+          // third shade would read as a third camera instead of a different provenance.
+          const recovered = seg.origin === 'edge'
           return (
             <Box
               key={`${seg.startMs}-${i}`}
+              title={recovered ? 'Recovered from the camera' : undefined}
               sx={{
                 position: 'absolute',
                 top: 0,
@@ -54,6 +59,9 @@ export default function WallTimelineTrack({
                 width: `${Math.max(1, right - left)}px`,
                 bgcolor: emphasis ? 'primary.main' : 'primary.light',
                 opacity: emphasis ? 0.85 : 0.5,
+                backgroundImage: recovered
+                  ? 'repeating-linear-gradient(45deg, rgba(255,255,255,.55) 0 3px, transparent 3px 7px)'
+                  : undefined,
               }}
             />
           )

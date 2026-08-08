@@ -27,6 +27,22 @@ public:
     const vms::control::ArchiveFrameJpegRequest* request,
     vms::control::ArchiveFrameJpegResponse* response) override;
 
+  grpc::Status StartEdgeImport(grpc::ServerContext* context,
+                               const vms::control::EdgeImportRequest* request,
+                               vms::control::EdgeImportJob* response) override;
+
+  grpc::Status GetEdgeImportJob(grpc::ServerContext* context,
+                                const vms::control::EdgeImportJobKey* request,
+                                vms::control::EdgeImportJob* response) override;
+
+  grpc::Status CancelEdgeImport(grpc::ServerContext* context,
+                                const vms::control::EdgeImportJobKey* request,
+                                vms::control::OperationStatus* response) override;
+
+  grpc::Status ListEdgeImportJobs(grpc::ServerContext* context,
+                                  const vms::control::ListEdgeImportJobsRequest* request,
+                                  vms::control::ListEdgeImportJobsResponse* response) override;
+
 private:
   camera_manager& m_manager;
 };

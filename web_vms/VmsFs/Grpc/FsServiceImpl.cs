@@ -5,13 +5,18 @@ using System.Linq;
 
 namespace VmsFs;
 
-public sealed class FsServiceImpl(
+// Camera-side import exports are served from ExportFileHandlers.cs and source heartbeats from
+// SourceLivenessHandler.cs — same class, separate files.
+public sealed partial class FsServiceImpl(
   ClipStorage storage,
   StorageListCache storageListCache,
   CameraStorageCache storageCache,
   AlarmRecordingService alarmRecording,
   FsActivityLog activityLog,
   FragIndexWarmer fragWarmer,
+  ExportFileStore exportStore,
+  SourceLivenessTracker livenessTracker,
+  SourceOutageStore outageStore,
   DaprClient daprClient) : FsService.FsServiceBase
 {
   private readonly ClipStorage _storage = storage;
@@ -58,7 +63,7 @@ public sealed class FsServiceImpl(
 
     try
     {
-      var clipUid = await _storage.IngestAsync(request.Clip, context.CancellationToken);
+      var clipUid = await _storage.IngestAsync(request.Clip, context.CancellationToken, request.ForceRetained);
       // A finalized clip (end_ts set) has its full mfra written, so warm its fragment index now to
       // spare the first playback the parse. Best-effort: dropped if the warmer queue is full.
       if (request.Clip.EndTs is not null && Guid.TryParse(clipUid, out var uid))

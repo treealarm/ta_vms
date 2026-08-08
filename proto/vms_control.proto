@@ -11,6 +11,79 @@ service CameraControlService {
   rpc EnsureWebRtcStreaming(EnsureWebRtcStreamingRequest) returns (OperationStatus);
 
   rpc GetArchiveFrameJpeg(ArchiveFrameJpegRequest) returns (ArchiveFrameJpegResponse);
+
+  // ── Camera-side (edge / SD card) archive import ─────────────────────────────
+  // Job state lives in media_server memory, not in a database: an import is an operator-initiated
+  // foreground action whose product (clips or an export file) is itself the durable result.
+  rpc StartEdgeImport(EdgeImportRequest) returns (EdgeImportJob);
+  rpc GetEdgeImportJob(EdgeImportJobKey) returns (EdgeImportJob);
+  rpc CancelEdgeImport(EdgeImportJobKey) returns (OperationStatus);
+  rpc ListEdgeImportJobs(ListEdgeImportJobsRequest) returns (ListEdgeImportJobsResponse);
+}
+
+enum EdgeImportState {
+  EDGE_IMPORT_STATE_UNSPECIFIED = 0;
+  EDGE_IMPORT_STATE_RUNNING     = 1;
+  EDGE_IMPORT_STATE_COMPLETED   = 2;
+  EDGE_IMPORT_STATE_FAILED      = 3;
+  EDGE_IMPORT_STATE_CANCELLED   = 4;
+}
+
+message EdgeImportRequest {
+  string camera_id   = 1;
+  string stream_name = 2;
+  // ONVIF Replay RTSP URI, resolved by VmsOnvif immediately before the call — devices commonly
+  // hand out single-use URIs.
+  string replay_uri  = 3;
+  optional Credentials cred = 4;
+  int64  start_unix_ms = 5;
+  int64  end_unix_ms   = 6;
+  // Start of the recording the replay URI addresses. Diagnostics only now that the position is
+  // sent as an absolute clock range rather than as an offset from it.
+  int64  recording_start_unix_ms = 7;
+  // The same window as start/end_unix_ms, but in the CAMERA's clock — what goes into ONVIF
+  // `Range: clock=`. The card is indexed in the device's time, which is often hours away from ours,
+  // and asking in the wrong scale returns whatever the camera holds at that moment in ITS day.
+  // Unset means the two clocks agree.
+  optional int64 seek_start_unix_ms = 11;
+  optional int64 seek_end_unix_ms   = 12;
+  // When true the pull is muxed into downloadable mp4 files under VMS_EXPORT_BASE_PATH instead of
+  // being written into the archive as clips.
+  bool   export_to_file  = 8;
+  uint32 segment_seconds = 9;
+  // Length of one exported file. An hour of 2688x1520 is roughly 2 GB in one piece, which is
+  // awkward to download and impossible to preview cheaply, so exports rotate like archive clips do.
+  // 0 falls back to segment_seconds.
+  uint32 export_chunk_seconds = 10;
+}
+
+message EdgeImportJobKey {
+  string job_id = 1;
+}
+
+message ListEdgeImportJobsRequest {
+  // Empty lists jobs for every camera on this media server.
+  string camera_id = 1;
+}
+
+message EdgeImportJob {
+  string          job_id        = 1;
+  string          camera_id     = 2;
+  string          stream_name   = 3;
+  EdgeImportState state         = 4;
+  int64           start_unix_ms = 5;
+  int64           end_unix_ms   = 6;
+  // Wall clock reached so far — the UI renders progress as position within [start, end].
+  int64           position_unix_ms = 7;
+  uint32          clips_written = 8;
+  uint64          bytes_written = 9;
+  string          message       = 10;
+  // Relative to VMS_EXPORT_BASE_PATH; empty unless export_to_file was requested.
+  string          export_path   = 11;
+}
+
+message ListEdgeImportJobsResponse {
+  repeated EdgeImportJob jobs = 1;
 }
 
 message OperationStatus {

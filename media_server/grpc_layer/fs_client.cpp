@@ -104,14 +104,21 @@ void fs_client::enqueue_ingest_clip(
   const std::string& file_path,
   std::chrono::system_clock::time_point start_ts,
   std::optional<std::chrono::system_clock::time_point> end_ts,
-  std::uint64_t size_bytes)
+  std::uint64_t size_bytes,
+  bool force_retained,
+  const std::string& origin)
 {
   vms::fs::IngestClipRequest request;
+  request.set_force_retained(force_retained);
   auto* clip = request.mutable_clip();
   clip->set_camera_id(camera_id);
   clip->set_stream_name(stream_name);
   clip->set_storage_id(storage_id);
   clip->set_file_path(file_path);
+  if (!origin.empty())
+  {
+    clip->set_origin(origin);
+  }
   *clip->mutable_start_ts() = to_proto_ts(start_ts);
   if (end_ts.has_value())
   {
@@ -133,6 +140,51 @@ void fs_client::enqueue_ingest_clip(
     m_queue.push(std::move(request));
   }
   m_cv.notify_one();
+}
+
+void fs_client::report_source_liveness(
+  const std::string& server_id,
+  const std::string& instance_id,
+  const std::vector<liveness_entry>& streams)
+{
+  if (!m_stub || streams.empty())
+  {
+    return;
+  }
+
+  vms::fs::ReportSourceLivenessRequest request;
+  request.set_server_id(server_id);
+  request.set_instance_id(instance_id);
+  for (const auto& s : streams)
+  {
+    auto* item = request.add_streams();
+    item->set_camera_id(s.camera_id);
+    item->set_stream_name(s.stream_name);
+    item->set_alive(s.alive);
+    item->set_recording_expected(s.recording_expected);
+    if (s.last_frame_ts.has_value())
+    {
+      *item->mutable_last_frame_ts() = to_proto_ts(*s.last_frame_ts);
+    }
+    if (s.recovered_frame_ts.has_value())
+    {
+      *item->mutable_recovered_frame_ts() = to_proto_ts(*s.recovered_frame_ts);
+    }
+  }
+
+  vms::fs::OperationStatus response;
+  grpc::ClientContext context;
+  context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(2));
+  context.AddMetadata("dapr-app-id", m_app_id);
+
+  const grpc::Status status = m_stub->ReportSourceLiveness(&context, request, &response);
+  if (!status.ok())
+  {
+    // Warned, not retried: the next tick carries the same state, and an outage boundary comes from
+    // last_frame_ts rather than from when the report happened to arrive.
+    logger::instance().warning(std::format(
+      "ReportSourceLiveness via Dapr app '{}' failed: {}", m_app_id, status.error_message()));
+  }
 }
 
 bool fs_client::ingest_clip(
@@ -427,19 +479,16 @@ std::vector<fs_client::storage_info> fs_client::get_camera_storages(const std::s
   }
 
   auto storages = fetch_camera_storages(camera_id);
+  // An empty result is not cached: a momentary RPC failure looks exactly like "nothing assigned",
+  // and caching it would keep recording and imports broken for a further minute after the cause is
+  // gone. A real "no storages" answer costs one cheap round trip per call instead.
+  if (!storages.empty())
   {
     std::lock_guard lock(m_storage_mutex);
     m_storage_cache[camera_id] = { storages, std::chrono::steady_clock::now() };
   }
   return storages;
 }
-
-fs_client::storage_info fs_client::get_camera_storage(const std::string& camera_id)
-{
-  auto all = get_camera_storages(camera_id);
-  return all.empty() ? storage_info{} : all.front();
-}
-
 std::vector<fs_client::storage_info> fs_client::fetch_camera_storages(const std::string& camera_id)
 {
   if (!m_stub)
@@ -455,11 +504,25 @@ std::vector<fs_client::storage_info> fs_client::fetch_camera_storages(const std:
 
   const grpc::Status status = m_stub->GetCameraStorage(&context, request, &response);
   if (!status.ok())
+  {
+    // Logged because the caller cannot tell this apart from "the camera has no storage assigned",
+    // and both surface to the operator as the same "no writable storage" message.
+    logger::instance().warning(std::format(
+      "GetCameraStorage RPC via Dapr failed for app '{}' camera='{}': {}",
+      m_app_id, camera_id, status.error_message()));
     return {};
+  }
 
   std::vector<storage_info> result;
   for (const auto& s : response.storages())
     result.push_back({ s.storage_id(), s.root_path() });
+
+  if (result.empty())
+  {
+    logger::instance().warning(std::format(
+      "no storage is assigned to camera '{}' — recording and archive import have nowhere to write",
+      camera_id));
+  }
   return result;
 }
 

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Vms.Cfg;
+using Vms.Onvif;
 using VmsFs;
 using VmsLog;
 
@@ -41,6 +42,17 @@ builder.Services.AddSingleton<FsActivityLog>();
 builder.Services.AddSingleton<ClipStorage>();
 builder.Services.AddSingleton<FragIndexWarmer>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<FragIndexWarmer>());
+builder.Services.AddSingleton<ExportFileStore>();
+builder.Services.AddSingleton<SourceOutageStore>();
+builder.Services.AddSingleton<EdgeImportJobStore>();
+builder.Services.AddSingleton<SourceLivenessTracker>();
+builder.Services.AddSingleton<LivenessSweeper>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<LivenessSweeper>());
+builder.Services.AddSingleton(_ =>
+  new OnvifService.OnvifServiceClient(DaprClient.CreateInvocationInvoker(Require("DAPR_ONVIF_APP_ID"))));
+builder.Services.AddSingleton<EdgeImportScheduler>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<EdgeImportScheduler>());
+builder.Services.AddHostedService<EdgeExportCleaner>();
 builder.Services.AddSingleton<FsServiceImpl>();
 
 builder.WebHost.ConfigureKestrel(options =>
@@ -60,8 +72,19 @@ if (!string.IsNullOrWhiteSpace(ownAppId))
   var clipCleaner = app.Services.GetRequiredService<ClipCleaner>();
   _ = Task.Run(async () =>
   {
-    clipCleaner.OwnServerId = await ResolveOwnServerIdAsync(cfg, ownAppId);
+    var ownServerId = await ResolveOwnServerIdAsync(cfg, ownAppId);
+    clipCleaner.OwnServerId = ownServerId;
+    // Both VmsFs instances share one ta_fs database, so every background service must scope itself
+    // to its own node or they would fight over each other's cameras.
+    app.Services.GetRequiredService<LivenessSweeper>().SetScope(ownServerId);
+    app.Services.GetRequiredService<EdgeImportScheduler>().SetScope(ownServerId);
   });
+}
+else
+{
+  // No APP_ID means no pairing to resolve — a single FS instance owning everything.
+  app.Services.GetRequiredService<LivenessSweeper>().SetScope(null);
+  app.Services.GetRequiredService<EdgeImportScheduler>().SetScope(null);
 }
 
 app.Run();

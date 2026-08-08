@@ -1,5 +1,7 @@
 #pragma once
 
+#include <chrono>
+#include <optional>
 #include <string>
 
 #include "interfaces/sink_container.h"
@@ -8,9 +10,26 @@ extern "C" {
 #include <libavformat/avformat.h>
 }
 
+/// Whether the reader is currently receiving media, and when it last did.
+///
+/// Wall clock, not steady: this leaves the process and becomes the boundary of a recorded outage,
+/// so it has to mean an absolute moment. `last_frame_ts` is unset until the very first packet.
+struct source_liveness
+{
+  bool alive = false;
+  std::optional<std::chrono::system_clock::time_point> last_frame_ts;
+  /// First packet received after the source came back — where the outage ended. Unset until a
+  /// recovery has happened at least once.
+  std::optional<std::chrono::system_clock::time_point> recovered_frame_ts;
+};
+
 class reader : public sink_container {
 public:
   virtual ~reader() = default;
+
+  /// Thread-safe snapshot for the reporting timer. Readers that cannot lose a source (files) may
+  /// report themselves permanently alive.
+  virtual source_liveness liveness() const { return { true, std::nullopt }; }
 
   virtual bool open(const std::string& source) = 0;
   virtual AVStream* video_stream() const = 0;

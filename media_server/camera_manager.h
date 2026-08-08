@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -43,7 +44,16 @@ public:
     bool is_web_rtc_enabled = false;
     recording_policy_mode recording_policy = recording_policy_mode::off;
     std::string current_segment; // empty if no segment is currently being written
+    // Source liveness, reported to VmsFs so it can derive outage intervals. `last_frame_ts` is the
+    // exact boundary of an outage; the report time is deliberately not used for that.
+    bool source_alive = false;
+    std::optional<std::chrono::system_clock::time_point> last_frame_ts;
+    std::optional<std::chrono::system_clock::time_point> recovered_frame_ts;
   };
+
+  /// Closes the open segment of every stream whose source has dropped, so the clip ends on the last
+  /// real frame. Idempotent — request_close_segment on an already-closed writer is a no-op.
+  void close_segments_on_source_loss();
 
   // Load all streams from config (called on startup).
   bool configure_camera(
@@ -63,7 +73,6 @@ public:
     bool web_rtc,
     std::string& error);
 
-  bool start_recording(const std::string& camera_id, std::string& error);
   bool stop_recording(const std::string& camera_id, std::string& error);
 
   // Apply recording policy and (optionally) WebRTC on/off for an existing stream.
