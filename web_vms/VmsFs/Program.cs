@@ -44,6 +44,7 @@ builder.Services.AddSingleton<FragIndexWarmer>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<FragIndexWarmer>());
 builder.Services.AddSingleton<ExportFileStore>();
 builder.Services.AddSingleton<SourceOutageStore>();
+builder.Services.AddSingleton<EdgeImportJobStore>();
 builder.Services.AddSingleton<SourceLivenessTracker>();
 builder.Services.AddSingleton<LivenessSweeper>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LivenessSweeper>());

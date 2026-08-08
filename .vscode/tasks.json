@@ -242,7 +242,7 @@
             "command": "bash",
             "args": [
                 "-lc",
-                "if [ -f /tmp/web_vms-dapr/web_vms.pid ]; then kill \"$(cat /tmp/web_vms-dapr/web_vms.pid)\" 2>/dev/null || true; rm -f /tmp/web_vms-dapr/web_vms.pid; fi"
+                "if [ -f /tmp/web_vms-dapr/web_vms.pid ]; then p=$(cat /tmp/web_vms-dapr/web_vms.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/web_vms.pid; fi"
             ],
             "presentation": {
                 "reveal": "silent",
@@ -270,7 +270,7 @@
             "command": "bash",
             "args": [
                 "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmscfg.pid ]; then kill \"$(cat /tmp/web_vms-dapr/vmscfg.pid)\" 2>/dev/null || true; rm -f /tmp/web_vms-dapr/vmscfg.pid; fi"
+                "if [ -f /tmp/web_vms-dapr/vmscfg.pid ]; then p=$(cat /tmp/web_vms-dapr/vmscfg.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmscfg.pid; fi"
             ],
             "presentation": {
                 "reveal": "silent",
@@ -298,7 +298,7 @@
             "command": "bash",
             "args": [
                 "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmsonvif.pid ]; then kill \"$(cat /tmp/web_vms-dapr/vmsonvif.pid)\" 2>/dev/null || true; rm -f /tmp/web_vms-dapr/vmsonvif.pid; fi"
+                "if [ -f /tmp/web_vms-dapr/vmsonvif.pid ]; then p=$(cat /tmp/web_vms-dapr/vmsonvif.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmsonvif.pid; fi"
             ],
             "presentation": {
                 "reveal": "silent",
@@ -343,7 +343,7 @@
             "command": "bash",
             "args": [
                 "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmsonvif-actors.pid ]; then kill \"$(cat /tmp/web_vms-dapr/vmsonvif-actors.pid)\" 2>/dev/null || true; rm -f /tmp/web_vms-dapr/vmsonvif-actors.pid; fi"
+                "if [ -f /tmp/web_vms-dapr/vmsonvif-actors.pid ]; then p=$(cat /tmp/web_vms-dapr/vmsonvif-actors.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmsonvif-actors.pid; fi"
             ],
             "presentation": {
                 "reveal": "silent",
@@ -371,7 +371,7 @@
             "command": "bash",
             "args": [
                 "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmsfs.pid ]; then kill \"$(cat /tmp/web_vms-dapr/vmsfs.pid)\" 2>/dev/null || true; rm -f /tmp/web_vms-dapr/vmsfs.pid; fi"
+                "if [ -f /tmp/web_vms-dapr/vmsfs.pid ]; then p=$(cat /tmp/web_vms-dapr/vmsfs.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmsfs.pid; fi"
             ],
             "presentation": {
                 "reveal": "silent",
@@ -399,7 +399,7 @@
             "command": "bash",
             "args": [
                 "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmsanalytics.pid ]; then kill \"$(cat /tmp/web_vms-dapr/vmsanalytics.pid)\" 2>/dev/null || true; rm -f /tmp/web_vms-dapr/vmsanalytics.pid; fi"
+                "if [ -f /tmp/web_vms-dapr/vmsanalytics.pid ]; then p=$(cat /tmp/web_vms-dapr/vmsanalytics.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmsanalytics.pid; fi"
             ],
             "presentation": {
                 "reveal": "silent",
@@ -427,7 +427,7 @@
             "command": "bash",
             "args": [
                 "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmslogger.pid ]; then kill \"$(cat /tmp/web_vms-dapr/vmslogger.pid)\" 2>/dev/null || true; rm -f /tmp/web_vms-dapr/vmslogger.pid; fi"
+                "if [ -f /tmp/web_vms-dapr/vmslogger.pid ]; then p=$(cat /tmp/web_vms-dapr/vmslogger.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmslogger.pid; fi"
             ],
             "presentation": {
                 "reveal": "silent",
@@ -455,7 +455,7 @@
             "command": "bash",
             "args": [
                 "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmsutils.pid ]; then kill \"$(cat /tmp/web_vms-dapr/vmsutils.pid)\" 2>/dev/null || true; rm -f /tmp/web_vms-dapr/vmsutils.pid; fi"
+                "if [ -f /tmp/web_vms-dapr/vmsutils.pid ]; then p=$(cat /tmp/web_vms-dapr/vmsutils.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmsutils.pid; fi"
             ],
             "presentation": {
                 "reveal": "silent",
@@ -483,7 +483,7 @@
             "command": "bash",
             "args": [
                 "-lc",
-                "if [ -f /tmp/web_vms-dapr/vms.pid ]; then kill \"$(cat /tmp/web_vms-dapr/vms.pid)\" 2>/dev/null || true; rm -f /tmp/web_vms-dapr/vms.pid; fi"
+                "if [ -f /tmp/web_vms-dapr/vms.pid ]; then p=$(cat /tmp/web_vms-dapr/vms.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vms.pid; fi"
             ],
             "presentation": {
                 "reveal": "silent",
@@ -528,7 +528,7 @@
             "command": "bash",
             "args": [
                 "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmsfs-2.pid ]; then kill \"$(cat /tmp/web_vms-dapr/vmsfs-2.pid)\" 2>/dev/null || true; rm -f /tmp/web_vms-dapr/vmsfs-2.pid; fi"
+                "if [ -f /tmp/web_vms-dapr/vmsfs-2.pid ]; then p=$(cat /tmp/web_vms-dapr/vmsfs-2.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmsfs-2.pid; fi"
             ],
             "presentation": {
                 "reveal": "silent",
@@ -574,7 +574,7 @@
             "command": "bash",
             "args": [
                 "-lc",
-                "if [ -f /tmp/web_vms-dapr/vms-2.pid ]; then kill \"$(cat /tmp/web_vms-dapr/vms-2.pid)\" 2>/dev/null || true; rm -f /tmp/web_vms-dapr/vms-2.pid; fi"
+                "if [ -f /tmp/web_vms-dapr/vms-2.pid ]; then p=$(cat /tmp/web_vms-dapr/vms-2.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vms-2.pid; fi"
             ],
             "presentation": {
                 "reveal": "silent",

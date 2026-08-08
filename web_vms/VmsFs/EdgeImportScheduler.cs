@@ -29,6 +29,7 @@ namespace VmsFs;
 /// </remarks>
 public sealed class EdgeImportScheduler(
   SourceOutageStore outages,
+  EdgeImportJobStore jobs,
   CfgService.CfgServiceClient cfg,
   OnvifService.OnvifServiceClient onvif,
   ClipStorage clips,
@@ -50,6 +51,17 @@ public sealed class EdgeImportScheduler(
       ? h : 48);
 
   private static readonly TimeSpan Tick = TimeSpan.FromSeconds(30);
+  /// <summary>
+  /// How long a claimed job stays claimed. Renewed while it runs; once it lapses the job is free
+  /// again, which is how a pull interrupted by a restart finds its way back into the queue.
+  /// </summary>
+  private static readonly TimeSpan JobLease = TimeSpan.FromMinutes(2);
+  /// <summary>Finished jobs are operational history, not archive — they age out quickly.</summary>
+  private static readonly TimeSpan JobRetention = TimeSpan.FromHours(
+    int.TryParse(Environment.GetEnvironmentVariable("VMS_BACKFILL_JOB_RETENTION_HOURS"), out var jr) && jr > 0
+      ? jr : 24);
+  private static readonly TimeSpan CleanupInterval = TimeSpan.FromHours(1);
+  private DateTime _lastCleanup = DateTime.MinValue;
   private static readonly TimeSpan JobPoll = TimeSpan.FromSeconds(5);
   private static readonly TimeSpan JobTimeout = TimeSpan.FromMinutes(30);
   /// <summary>Asked for slightly wider than the hole, so no frames are lost at the seams.</summary>
@@ -117,6 +129,16 @@ public sealed class EdgeImportScheduler(
 
   private async Task SweepAsync(CancellationToken ct)
   {
+    var enabledStreams = await EnabledStreamsAsync(ct);
+    var enabledCameras = enabledStreams.Select(k => k.Camera).Distinct().ToList();
+
+    // Anything already queued comes first — including work a previous run of this process left
+    // behind, which is now simply a job whose lease has lapsed.
+    if (enabledCameras.Count > 0 && await RunQueuedAsync(enabledCameras, ct))
+      return;
+
+    await CleanupAsync(ct);
+
     var now = DateTime.UtcNow;
     // A pull has a hard deadline of JobTimeout; a row still marked as running well past that
     // belongs to a process that is no longer here.
@@ -125,8 +147,7 @@ public sealed class EdgeImportScheduler(
     if (pending.Count == 0)
       return;
 
-    var enabled = await EnabledStreamsAsync(ct);
-    if (enabled.Count == 0)
+    if (enabledStreams.Count == 0)
       return;
 
     // One camera per sweep at most: the device has very few RTSP sessions, and a second job would be
@@ -137,7 +158,7 @@ public sealed class EdgeImportScheduler(
       if (ct.IsCancellationRequested)
         return;
       var key = (outage.CameraId, outage.StreamName ?? string.Empty);
-      if (!enabled.Contains(key) || !busyCameras.Add(outage.CameraId))
+      if (!enabledStreams.Contains(key) || !busyCameras.Add(outage.CameraId))
         continue;
 
       // Spaced regardless of the outcome, so a failing camera is retried on a schedule rather than
@@ -224,30 +245,17 @@ public sealed class EdgeImportScheduler(
       "Edge backfill: camera {CameraId}/{StreamName} gap {From:o}..{To:o}, {Count} piece(s) to pull",
       outage.CameraId, outage.StreamName, outage.StartedTs, endedTs, available.Count);
 
+    // Queued, not pulled here. The unit of work becomes a row, so a restart in the middle of a
+    // twenty-minute recovery resumes it instead of starting over — and the same queue is where the
+    // manual button will put its work, so the two can never fight over the camera.
+    foreach (var piece in available)
+    {
+      await jobs.EnqueueAsync(outage.CameraId, outage.StreamName ?? string.Empty,
+        piece.Start, piece.End, outage.OutageUid, ct);
+    }
+
     await outages.UpdateOutcomeAsync(
       outage.OutageUid, "filling", outage.FilledMs, outage.Attempts, string.Empty, ct);
-
-    var pulledAnything = false;
-    try
-    {
-      foreach (var piece in available)
-      {
-        if (ct.IsCancellationRequested)
-          break;
-        if (await PullAsync(outage, piece, ct))
-          pulledAnything = true;
-      }
-    }
-    catch (Exception ex) when (ex is not OperationCanceledException)
-    {
-      // Whatever went wrong, the gap must not be left saying "filling": only `open` rows are ever
-      // picked up again, so a single failed call would remove it from automation for good and leave
-      // the operator a state that nothing can move.
-      logger.LogWarning(ex, "Edge backfill: pull failed for {CameraId}", outage.CameraId);
-      await outages.UpdateOutcomeAsync(outage.OutageUid, "open", outage.FilledMs,
-        outage.Attempts + 1, ex.Message, CancellationToken.None);
-      return;
-    }
 
     // The outcome is judged from the archive afterwards, never from "the job reported success":
     // a job can finish cleanly and have recovered nothing.
@@ -264,13 +272,75 @@ public sealed class EdgeImportScheduler(
 
     // Counts only fruitless attempts; any progress resets it, so a long gap recovered piece by piece
     // never runs out of budget precisely because it is succeeding.
-    var attempts = progressed ? 0 : outage.Attempts + 1;
-    var state = attempts >= 3 ? "partial" : "open";
-    await outages.UpdateOutcomeAsync(outage.OutageUid, state, Math.Max(0, filledMs), attempts,
-      state == "partial" ? "no progress after repeated attempts" : string.Empty, ct);
+    // Left as filling while its jobs are outstanding; the run that drains them decides the rest.
+  }
 
-    if (!pulledAnything)
-      logger.LogDebug("Edge backfill: nothing recovered for {CameraId} this round", outage.CameraId);
+  /// <summary>
+  /// Runs one queued import to completion. True when something was taken on, so the sweep stops
+  /// there — the camera serves one replay at a time and there is no point planning more work while
+  /// a pull is in flight.
+  /// </summary>
+  private async Task<bool> RunQueuedAsync(IReadOnlyCollection<string> cameras, CancellationToken ct)
+  {
+    var job = await jobs.ClaimAsync(cameras, JobLease, ct);
+    if (job is null)
+      return false;
+
+    // The operator's decision outranks anything already queued: a gap they took charge of must not
+    // keep being worked on just because the work was planned before they pressed the button.
+    if (job.OutageUid is { } gapUid)
+    {
+      var rows = await outages.ListAsync(null, null, null, 1, ct, gapUid);
+      var state = rows.FirstOrDefault()?.State;
+      if (state is "held" or "ignored")
+      {
+        await jobs.FinishAsync(job.JobUid, "cancelled", $"gap is {state}", ct);
+        return true;
+      }
+    }
+
+    logger.LogInformation("Edge backfill: running job {JobUid} for {CameraId} {From:o}..{To:o}",
+      job.JobUid, job.CameraId, job.RangeStart, job.RangeEnd);
+
+    try
+    {
+      var ok = await PullAsync(job, ct);
+      await jobs.FinishAsync(job.JobUid, ok ? "succeeded" : "failed",
+        ok ? string.Empty : "the camera did not deliver this range", ct);
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException)
+    {
+      logger.LogWarning(ex, "Edge backfill: job {JobUid} failed", job.JobUid);
+      await jobs.FinishAsync(job.JobUid, "failed", ex.Message, CancellationToken.None);
+    }
+
+    // Handed back as open so the next sweep re-judges it from the archive. Merely clearing the
+    // retry time is not enough: a row left saying "filling" is only reconsidered once its runner is
+    // presumed dead, half an hour later — so a gap whose work had just finished sat there with the
+    // recovered footage already in place and nothing to notice it.
+    if (job.OutageUid is { } outageUid)
+    {
+      var rows = await outages.ListAsync(null, null, null, 1, CancellationToken.None, outageUid);
+      if (rows.FirstOrDefault() is { } gap && gap.State == "filling")
+      {
+        await outages.UpdateOutcomeAsync(
+          outageUid, "open", gap.FilledMs, gap.Attempts, string.Empty, CancellationToken.None);
+      }
+      await outages.SetNextRetryAsync(outageUid, DateTime.UtcNow, CancellationToken.None);
+    }
+
+    return true;
+  }
+
+  private async Task CleanupAsync(CancellationToken ct)
+  {
+    if (DateTime.UtcNow - _lastCleanup < CleanupInterval)
+      return;
+    _lastCleanup = DateTime.UtcNow;
+
+    var removed = await jobs.DeleteFinishedOlderThanAsync(DateTime.UtcNow - JobRetention, ct);
+    if (removed > 0)
+      logger.LogInformation("Removed {Count} finished edge import job(s)", removed);
   }
 
   private async Task FinishAsync(
@@ -283,18 +353,25 @@ public sealed class EdgeImportScheduler(
   }
 
   /// <summary>Runs one import and waits for it, because the camera can only serve one at a time.</summary>
-  private async Task<bool> PullAsync(
-    SourceOutage outage, (DateTime Start, DateTime End, string RecordingToken) piece, CancellationToken ct)
+  private async Task<bool> PullAsync(EdgeImportJob job, CancellationToken ct)
   {
+    // Which recording holds this stretch is asked for now rather than remembered from planning:
+    // replay URIs are commonly single-use, and a queued job may be run much later than it was made.
+    var onCamera = await OnCameraAsync(job.CameraId,
+      [(job.RangeStart, job.RangeEnd)], ct);
+    if (onCamera is null || onCamera.Count == 0)
+      return false;
+    var piece = onCamera[0];
+
     var camera = await cfg.GetCameraAsync(
-      new Vms.Cfg.SourceRequest { SourceId = outage.CameraId }, cancellationToken: ct);
+      new Vms.Cfg.SourceRequest { SourceId = job.CameraId }, cancellationToken: ct);
     if (!camera.Found || camera.Setup is not { } setup || string.IsNullOrWhiteSpace(setup.ServerId))
       return false;
 
     // Resolved immediately before use: devices commonly hand out single-use replay URIs.
     var replay = await onvif.GetEdgeReplayUriAsync(new EdgeReplayUriRequest
     {
-      SourceId = outage.CameraId,
+      SourceId = job.CameraId,
       RecordingToken = piece.RecordingToken,
     }, cancellationToken: ct);
 
@@ -305,7 +382,7 @@ public sealed class EdgeImportScheduler(
       // The card is indexed in the camera's clock. Without knowing the difference the pull would
       // land on a different stretch of footage, which is worse than not pulling at all.
       logger.LogWarning("Edge backfill: camera {CameraId} does not report its clock; skipping",
-        outage.CameraId);
+        job.CameraId);
       return false;
     }
 
@@ -315,8 +392,8 @@ public sealed class EdgeImportScheduler(
 
     var request = new EdgeImportRequest
     {
-      CameraId = outage.CameraId,
-      StreamName = outage.StreamName ?? string.Empty,
+      CameraId = job.CameraId,
+      StreamName = job.StreamName,
       ReplayUri = replay.Uri,
       StartUnixMs = ToUnixMs(start),
       EndUnixMs = ToUnixMs(end),
@@ -336,30 +413,38 @@ public sealed class EdgeImportScheduler(
 
     try
     {
-      var job = await control.StartEdgeImportAsync(request, cancellationToken: ct);
-      return await AwaitJobAsync(control, job.JobId, ct);
+      var started = await control.StartEdgeImportAsync(request, cancellationToken: ct);
+      // Recorded before waiting, so a runner that takes this job over after a restart can tell that
+      // a media-server job was already started for it.
+      await jobs.SetMediaJobAsync(job.JobUid, started.JobId, CancellationToken.None);
+      return await AwaitJobAsync(control, job.JobUid, started.JobId, ct);
     }
     catch (Exception ex)
     {
       // A camera out of RTSP sessions answers 453 and the job is refused; that is worth retrying
       // later, not worth failing the gap over.
-      logger.LogInformation(ex, "Edge backfill: import refused for {CameraId}", outage.CameraId);
+      logger.LogInformation(ex, "Edge backfill: import refused for {CameraId}", job.CameraId);
       return false;
     }
   }
 
   private async Task<bool> AwaitJobAsync(
-    CameraControlService.CameraControlServiceClient control, string jobId, CancellationToken ct)
+    CameraControlService.CameraControlServiceClient control, Guid jobUid, string mediaJobId,
+    CancellationToken ct)
   {
     var deadline = DateTime.UtcNow + JobTimeout;
     while (DateTime.UtcNow < deadline)
     {
       await Task.Delay(JobPoll, ct);
-      var job = await control.GetEdgeImportJobAsync(
-        new EdgeImportJobKey { JobId = jobId }, cancellationToken: ct);
-      if (job.State == EdgeImportState.Running)
+      // The lease is what tells everyone else this work still has an owner; a long pull would
+      // otherwise look abandoned and be claimed a second time.
+      await jobs.RenewAsync(jobUid, JobLease, CancellationToken.None);
+
+      var state = await control.GetEdgeImportJobAsync(
+        new EdgeImportJobKey { JobId = mediaJobId }, cancellationToken: ct);
+      if (state.State == EdgeImportState.Running)
         continue;
-      return job.State == EdgeImportState.Completed;
+      return state.State == EdgeImportState.Completed;
     }
     return false;
   }

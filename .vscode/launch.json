@@ -141,6 +141,7 @@
                 "VMS_BACKFILL_SETTLE_SECONDS": "60",
                 "VMS_BACKFILL_RETRY_SECONDS": "300",
                 "VMS_BACKFILL_LOOKBACK_HOURS": "48",
+                "VMS_BACKFILL_JOB_RETENTION_HOURS": "24",
                 "VMS_OUTAGE_RETENTION_DAYS": "90",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
@@ -347,6 +348,7 @@
                 "VMS_BACKFILL_SETTLE_SECONDS": "60",
                 "VMS_BACKFILL_RETRY_SECONDS": "300",
                 "VMS_BACKFILL_LOOKBACK_HOURS": "48",
+                "VMS_BACKFILL_JOB_RETENTION_HOURS": "24",
                 "VMS_OUTAGE_RETENTION_DAYS": "90"
             }
         },
