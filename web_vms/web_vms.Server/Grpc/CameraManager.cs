@@ -192,6 +192,7 @@ public class CameraManager : ICameraManager
     WebrtcPort = s.WebrtcPort != 0 ? s.WebrtcPort : 8889,
     ApiPort    = s.ApiPort != 0 ? s.ApiPort : 9997,
     StunUrl    = s.StunUrl,
+    ServerId   = s.ServerId,
   };
 
   private static MediaMtxServer ToMediaMtxProto(MediaMtxServerDto dto) => new()
@@ -204,6 +205,7 @@ public class CameraManager : ICameraManager
     WebrtcPort = dto.WebrtcPort,
     ApiPort    = dto.ApiPort,
     StunUrl    = dto.StunUrl ?? string.Empty,
+    ServerId   = dto.ServerId ?? string.Empty,
   };
 
   private static MediaServerNodeDto ToDto(MediaServerNode server) => new()

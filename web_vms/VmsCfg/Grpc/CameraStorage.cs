@@ -8,7 +8,8 @@ namespace VmsCfg;
 public class CameraStorage(
   NpgsqlDataSource dataSource,
   IDbContextFactory<VmsCfgDbContext> dbFactory,
-  ScheduleCache scheduleCache)
+  ScheduleCache scheduleCache,
+  ILogger<CameraStorage> logger)
 {
   private readonly NpgsqlDataSource _dataSource = dataSource;
   private static readonly Guid BuiltinContinuousProfileId = new("00000000-0000-0000-0000-000000000001");
@@ -490,7 +491,8 @@ public class CameraStorage(
   public async Task<List<MediaMtxServer>> ListMediaMtxServersAsync(CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url FROM media_mtx_server ORDER BY name;
+      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url, server_id
+      FROM media_mtx_server ORDER BY name;
       """);
 
     var result = new List<MediaMtxServer>();
@@ -503,8 +505,8 @@ public class CameraStorage(
   public async Task UpsertMediaMtxServerAsync(MediaMtxServer server, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      INSERT INTO media_mtx_server (id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url)
-      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO media_mtx_server (id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url, server_id)
+      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''))
       ON CONFLICT (id) DO UPDATE SET
         name        = EXCLUDED.name,
         host        = EXCLUDED.host,
@@ -512,7 +514,8 @@ public class CameraStorage(
         rtsp_port   = EXCLUDED.rtsp_port,
         webrtc_port = EXCLUDED.webrtc_port,
         api_port    = EXCLUDED.api_port,
-        stun_url    = EXCLUDED.stun_url
+        stun_url    = EXCLUDED.stun_url,
+        server_id   = EXCLUDED.server_id
       RETURNING id;
       """);
     command.Parameters.AddWithValue(server.Id ?? string.Empty);
@@ -523,6 +526,7 @@ public class CameraStorage(
     command.Parameters.AddWithValue(server.WebrtcPort);
     command.Parameters.AddWithValue(server.ApiPort);
     command.Parameters.AddWithValue(server.StunUrl ?? string.Empty);
+    command.Parameters.AddWithValue(server.ServerId ?? string.Empty);
     var id = await command.ExecuteScalarAsync(ct);
     server.Id = id?.ToString() ?? server.Id;
   }
@@ -535,39 +539,79 @@ public class CameraStorage(
     return await command.ExecuteNonQueryAsync(ct) > 0;
   }
 
+  /// <summary>
+  /// The MediaMTX a camera publishes to, assigning one on first use.
+  ///
+  /// A camera is only ever given a server that belongs to its own node or is shared (server_id
+  /// NULL): media_server pushes the stream to whatever is assigned here, so picking across nodes
+  /// would carry video over the link between them. An assignment already made is left alone — a
+  /// camera that later moves nodes is re-pointed by an administrator, not silently on a read — but
+  /// the mismatch is logged so it does not stay invisible.
+  /// </summary>
   public async Task<MediaMtxServer?> GetOrAssignMediaMtxServerAsync(string cameraId, CancellationToken ct)
   {
     await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
-    // Check if camera already has a server assigned and it still exists
+    string? cameraServerId = null;
+
+    // One query for both questions: which node the camera is on, and whether it already has a
+    // server. LEFT JOIN so an unassigned camera still reports its node for the pick below.
     await using (var cmd = new NpgsqlCommand("""
-      SELECT m.id, m.name, m.host, m.webrtc_host, m.rtsp_port, m.webrtc_port, m.api_port, m.stun_url
+      SELECT cs.server_id,
+             m.id, m.name, m.host, m.webrtc_host, m.rtsp_port, m.webrtc_port, m.api_port, m.stun_url, m.server_id
       FROM camera_setup cs
-      JOIN media_mtx_server m ON m.id = cs.media_mtx_server_id
+      LEFT JOIN media_mtx_server m ON m.id = cs.media_mtx_server_id
       WHERE cs.camera_id = $1;
       """, connection))
     {
       cmd.Parameters.AddWithValue(cameraId);
       await using var reader = await cmd.ExecuteReaderAsync(ct);
-      if (await reader.ReadAsync(ct))
-        return ReadMediaMtxServer(reader);
+      if (!await reader.ReadAsync(ct))
+        return null;
+
+      cameraServerId = reader.IsDBNull(0) ? null : reader.GetString(0);
+      if (!reader.IsDBNull(1))
+      {
+        var assigned = ReadMediaMtxServer(reader, offset: 1);
+        if (!string.IsNullOrEmpty(assigned.ServerId)
+          && !string.Equals(assigned.ServerId, cameraServerId, StringComparison.OrdinalIgnoreCase))
+        {
+          logger.LogWarning(
+            "Camera '{CameraId}' on node '{CameraNode}' publishes to MediaMTX '{Name}' of node "
+            + "'{MtxNode}' — its stream crosses the link between them; reassign it",
+            cameraId, cameraServerId, assigned.Name, assigned.ServerId);
+        }
+        return assigned;
+      }
     }
 
-    // Pick a random available server and assign it
+    // Pick among the servers that can serve this node: its own, or a shared one.
     await using var tx = await connection.BeginTransactionAsync(ct);
     MediaMtxServer? picked = null;
 
     await using (var pickCmd = new NpgsqlCommand("""
-      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url FROM media_mtx_server ORDER BY random() LIMIT 1;
+      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url, server_id
+      FROM media_mtx_server
+      WHERE server_id IS NULL OR server_id = $1
+      ORDER BY random() LIMIT 1;
       """, connection, tx))
     {
+      pickCmd.Parameters.AddWithValue((object?)cameraServerId ?? DBNull.Value);
       await using var reader = await pickCmd.ExecuteReaderAsync(ct);
       if (await reader.ReadAsync(ct))
         picked = ReadMediaMtxServer(reader);
     }
 
     if (picked is null)
+    {
+      // Deliberately not falling back to another node's server: that would look like it worked
+      // while quietly sending the camera's video across the link.
+      logger.LogWarning(
+        "No MediaMTX server available for camera '{CameraId}' on node '{CameraNode}' — configure one "
+        + "for that node, or leave a server's node empty to share it",
+        cameraId, cameraServerId);
       return null;
+    }
 
     await using (var assignCmd = new NpgsqlCommand("""
       UPDATE camera_setup SET media_mtx_server_id = $2::uuid WHERE camera_id = $1;
@@ -582,17 +626,20 @@ public class CameraStorage(
     return picked;
   }
 
-  private static MediaMtxServer ReadMediaMtxServer(NpgsqlDataReader reader) =>
+  /// offset lets the same mapper read the server columns when they sit behind other columns in a
+  /// joined row.
+  private static MediaMtxServer ReadMediaMtxServer(NpgsqlDataReader reader, int offset = 0) =>
     new()
     {
-      Id         = reader.GetGuid(0).ToString(),
-      Name       = reader.GetString(1),
-      Host       = reader.GetString(2),
-      WebrtcHost = reader.GetString(3),
-      RtspPort   = reader.GetInt32(4),
-      WebrtcPort = reader.GetInt32(5),
-      ApiPort    = reader.GetInt32(6),
-      StunUrl    = reader.GetString(7),
+      Id         = reader.GetGuid(offset).ToString(),
+      Name       = reader.GetString(offset + 1),
+      Host       = reader.GetString(offset + 2),
+      WebrtcHost = reader.GetString(offset + 3),
+      RtspPort   = reader.GetInt32(offset + 4),
+      WebrtcPort = reader.GetInt32(offset + 5),
+      ApiPort    = reader.GetInt32(offset + 6),
+      StunUrl    = reader.GetString(offset + 7),
+      ServerId   = reader.IsDBNull(offset + 8) ? string.Empty : reader.GetString(offset + 8),
     };
 
   // ── Monitor management ────────────────────────────────────────────────────

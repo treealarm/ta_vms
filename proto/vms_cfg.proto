@@ -286,6 +286,11 @@ message MediaMtxServer {
   // STUN server the browser uses when negotiating WHEP playback. Empty = no STUN at all,
   // i.e. host candidates only (LAN-only viewing, no public server round-trip).
   string stun_url    = 8;
+  // The media server node this MediaMTX serves. Empty means shared — it answers for any node,
+  // which is what a single-box installation wants. Cameras are only assigned a server that is
+  // either theirs or shared: the push travels from media_server to MediaMTX, so a cross-node
+  // assignment would carry video over whatever link separates the two.
+  string server_id   = 9;
 }
 
 message MediaMtxServerRequest {
