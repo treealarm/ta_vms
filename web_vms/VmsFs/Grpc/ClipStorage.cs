@@ -425,7 +425,27 @@ public sealed class ClipStorage(
       .ToList();
 
     if (ranges.Count > limit)
-      ranges = ranges.GetRange(0, limit);
+    {
+      // Which end to drop is the whole question. Keeping the first N — what this used to do — throws
+      // away the newest recordings, so a day of short outages and their imports is enough to hide
+      // everything from the last hour: the clips are in the database and returned by the query, yet
+      // invisible in the monitor.
+      if (request.Timestamp != null)
+      {
+        // A moment was asked about, so the window is centred on it.
+        var ts = request.Timestamp.ToDateTime().ToUniversalTime();
+        var pivot = ranges.FindLastIndex(r => r.Recordings[0].StartTs.ToDateTime() <= ts);
+        if (pivot < 0)
+          pivot = 0;
+        var start = Math.Clamp(pivot - limit / 2, 0, ranges.Count - limit);
+        ranges = ranges.GetRange(start, limit);
+      }
+      else
+      {
+        // No anchor: the newest is what an operator opening the archive is looking for.
+        ranges = ranges.GetRange(ranges.Count - limit, limit);
+      }
+    }
     return ranges;
   }
 

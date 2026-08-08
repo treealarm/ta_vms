@@ -93,11 +93,11 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
     let cancelled = false
     const load = async () => {
       setLoading(true)
-      // Raised from 50 as a stopgap. The server returns ranges from the oldest end and ignores the
-      // timestamp as an anchor, so the limit truncates the NEWEST recordings — a day of short gaps
-      // and their imports was enough to hide everything from the last hour. Paging is the real fix
-      // and needs that anchoring first.
-      await dispatch(fetchRecordingRanges({ cameraId, timestamp: queryTime, limit: 200 }))
+      // A page, not the whole archive: the server centres this many ranges on the anchor, and the
+      // arrows above move the anchor to reach the rest. It used to ask for 200 because the server
+      // truncated from the oldest end and hid everything recent — a day of short gaps and their
+      // imports was enough to lose the last hour.
+      await dispatch(fetchRecordingRanges({ cameraId, timestamp: queryTime, limit: 50 }))
       if (!cancelled) { setLoading(false); setLoaded(true) }
     }
     void load()
@@ -163,13 +163,19 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
     setPickerAnchor(null)
   }
 
+  // Paging moves the anchor past the edge of what is on screen, by a millisecond: the server returns
+  // a window centred on it, so anchoring exactly on the edge would hand back the same page. The
+  // boundary range stays visible at the far end, which is what makes a jump readable on a timeline.
   const handlePrev = () => {
-    const first = data[0]
-    if (first?.recordings[0]) requestAt(new Date(first.recordings[0].startTime).toISOString())
+    const first = data[0]?.recordings[0]
+    if (first) requestAt(new Date(new Date(first.startTime).getTime() - 1).toISOString())
   }
   const handleNext = () => {
-    const last = data[data.length - 1]
-    if (last?.recordings[0]) requestAt(new Date(last.recordings[0].startTime).toISOString())
+    const clips = data[data.length - 1]?.recordings
+    const last = clips?.[clips.length - 1]
+    // An unfinished clip has no end yet; its start is the latest instant the archive can vouch for.
+    const edge = last?.endTime ?? last?.startTime
+    if (edge) requestAt(new Date(new Date(edge).getTime() + 1).toISOString())
   }
   const openCalendar = (anchor: HTMLElement) => {
     setPickerTime(dayjs(displayTime))
