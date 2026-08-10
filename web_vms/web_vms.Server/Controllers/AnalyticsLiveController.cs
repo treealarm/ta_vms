@@ -75,7 +75,7 @@ public class AnalyticsLiveController(
     }
     catch (RpcException)
     {
-      // gRPC stream cancelled or VmsAnalytics unavailable/restarting — the response has already
+      // gRPC stream cancelled or VmsAnalyticsSingleton unavailable/restarting — the response has already
       // started, so there's nothing to return; just end the stream and let the client reconnect.
     }
   }

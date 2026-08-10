@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 // The set of video_a workers this instance drives (DAPR_ANALYTICS_WORKER_APP_IDS, comma-separated).
 // Watch-to-worker assignment uses rendezvous hashing: stable and stateless — adding/removing a

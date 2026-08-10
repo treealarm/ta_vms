@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 // Ring-style cleanup for detection rows and their crop files on the storage volumes: everything
 // older than ANALYTICS_CROP_RETENTION_DAYS goes, and if the crops still exceed

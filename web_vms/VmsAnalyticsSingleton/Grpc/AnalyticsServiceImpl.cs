@@ -2,11 +2,11 @@ using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
 using Vms.Analytics;
-// The local ring-buffer record VmsAnalytics.AnalyticsActivityEntry shadows the proto message
+// The local ring-buffer record VmsAnalyticsSingleton.AnalyticsActivityEntry shadows the proto message
 // of the same name inside this namespace — alias the proto one explicitly.
 using ProtoActivityEntry = Vms.Analytics.AnalyticsActivityEntry;
 
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 public sealed class AnalyticsServiceImpl(
   IDbContextFactory<AnalyticsDbContext> dbFactory,

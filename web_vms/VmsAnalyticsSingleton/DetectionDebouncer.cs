@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using Analytics;
 
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 // Per-(watch_id, track_id, kind) cooldown — the same physical detection shouldn't retrigger
 // RetainEvent/persist every sampled frame while the track stays in view. Keyed per-kind too:

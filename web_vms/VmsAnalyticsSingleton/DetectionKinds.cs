@@ -1,6 +1,6 @@
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
-// The single source of the kind<->string mapping inside VmsAnalytics — both proto enums (the
+// The single source of the kind<->string mapping inside VmsAnalyticsSingleton — both proto enums (the
 // vendored video_a contract and vms_analytics.proto) serialize kinds to the same db/UI strings.
 public static class DetectionKinds
 {

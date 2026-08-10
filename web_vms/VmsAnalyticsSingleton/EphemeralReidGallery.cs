@@ -1,7 +1,7 @@
 using Analytics;
 using Microsoft.EntityFrameworkCore;
 
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 // In-memory re-identification: matches an incoming body embedding against recent sightings by
 // cosine similarity (dot product — the worker L2-normalizes) and reuses that object's id, else

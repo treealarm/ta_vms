@@ -45,7 +45,7 @@ ORDER = [
     "vmsonvif",
     "vmsonvif-actors",
     "vmsfs",
-    "vmsanalytics",
+    "vmsanalyticssingleton",
     "vms",
     "web_vms",
 ]

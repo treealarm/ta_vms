@@ -1,6 +1,6 @@
 using Analytics;
 
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 // Resolves a stable object_id (the physical object across cameras and time) for a detection.
 //

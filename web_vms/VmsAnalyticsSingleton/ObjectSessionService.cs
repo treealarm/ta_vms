@@ -1,4 +1,4 @@
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 // Chooses the event_id (group label) for a detection given its object_id. A reappearance of the
 // same object within ANALYTICS_EVENT_GROUP_GAP_SECONDS reuses the same event_id (its episodes group

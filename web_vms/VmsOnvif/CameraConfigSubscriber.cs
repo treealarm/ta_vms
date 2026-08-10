@@ -32,7 +32,7 @@ public sealed class CameraConfigSubscriber(
     return Task.CompletedTask;
   }
 
-  // Subscribe ONCE, never in a loop (mirrors VmsAnalytics.AnalyticsWatchSubscriber). The
+  // Subscribe ONCE, never in a loop (mirrors VmsAnalyticsSingleton.AnalyticsWatchSubscriber). The
   // streaming SubscribeAsync task can complete silently (no exception) when the sidecar ends
   // the stream — a resubscribe loop around that spins every few seconds, and each iteration
   // registers a fresh redis-streams consumer in the sidecar without the old one being torn

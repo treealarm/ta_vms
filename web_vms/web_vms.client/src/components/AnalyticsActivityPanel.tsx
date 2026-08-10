@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { useAppSelector } from '../store'
 import type { AnalyticsActivityEntryDto } from '../dto/dtos'
 
-// Debug feed of recent analytics detections (in-memory ring buffer in VmsAnalytics, mirrors
+// Debug feed of recent analytics detections (in-memory ring buffer in VmsAnalyticsSingleton, mirrors
 // FsActivityPanel): bbox + confidence per event, plus the detection JPEG when the watch has
 // "debug crops" enabled. Nothing here is persisted.
 export default function AnalyticsActivityPanel() {

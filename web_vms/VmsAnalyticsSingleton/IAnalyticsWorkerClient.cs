@@ -1,6 +1,6 @@
 using Analytics;
 
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 public interface IAnalyticsWorkerClient
 {

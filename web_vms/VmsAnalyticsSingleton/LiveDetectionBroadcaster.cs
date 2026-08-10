@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
 
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 // A geometry-only projection of a detection for the live overlay. Deliberately omits the crop JPEG
 // that AnalyticsActivityEntry carries: the overlay only needs boxes + labels, so keeping multi-KB

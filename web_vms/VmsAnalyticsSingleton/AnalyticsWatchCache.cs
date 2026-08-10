@@ -1,6 +1,6 @@
 using Vms.Cfg;
 
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 // Holds the latest ListAnalyticsWatches() snapshot from VmsCfg. Refreshed wholesale (not
 // patched) on any signal — analytics-watch-changed / camera-state-changed are only signals to

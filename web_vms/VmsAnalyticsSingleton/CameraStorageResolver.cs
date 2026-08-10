@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using Vms.Cfg;
 
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 public sealed record CameraStorage(string StorageId, string RootPath);
 

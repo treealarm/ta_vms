@@ -3,7 +3,7 @@ using Vms.Cfg;
 using Vms.Control;
 using Vms.Fs;
 
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 public class ServerPairRegistry(CfgService.CfgServiceClient cfg)
 {

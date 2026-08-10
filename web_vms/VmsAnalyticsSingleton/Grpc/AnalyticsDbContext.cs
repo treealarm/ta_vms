@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> options) : DbContext(options)
 {

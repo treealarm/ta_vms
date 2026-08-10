@@ -2,7 +2,7 @@ using System.Runtime.CompilerServices;
 using Analytics;
 using Grpc.Core;
 
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 // Talks to the video_a repository's AnalyticsService over Dapr service invocation
 // (DaprClient.CreateInvocationInvoker) — same pattern as CfgServiceClient/FsServiceClient.

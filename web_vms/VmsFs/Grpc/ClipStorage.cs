@@ -40,7 +40,7 @@ public sealed class ClipStorage(
 
   // Safety-net cap on how long a single retention episode can keep extending, for callers that
   // reuse one event_id indefinitely (ONVIF / manual REST). Analytics is already bounded upstream by
-  // VmsAnalytics minting a fresh event_id every few minutes, but a runaway event_id would otherwise
+  // VmsAnalyticsSingleton minting a fresh event_id every few minutes, but a runaway event_id would otherwise
   // grow one episode's clip list — and its HLS manifest — without bound. Past this, RetainEvent
   // rolls over into a new episode (new event_uuid, same event_id group).
   private static readonly TimeSpan MaxEpisodeDuration = TimeSpan.FromMinutes(3);

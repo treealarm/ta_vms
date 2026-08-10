@@ -4,7 +4,7 @@ using Vms.Cfg;
 using Vms.Control;
 using SourceRequest = Vms.Cfg.SourceRequest;
 
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 // Diffs desired watch state (enabled + camera armed) against what's currently believed to be
 // running on each video_a worker, issues StartWatch/StopWatch, and resolves the MediaMTX RTSP

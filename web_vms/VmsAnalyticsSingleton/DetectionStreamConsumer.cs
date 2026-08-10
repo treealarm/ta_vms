@@ -6,7 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Vms.Cfg;
 using Vms.Fs;
 
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 // Holds one long-lived StreamDetections call per analytics worker (reconnect/backoff per worker).
 // For each DetectionEvent: threshold + per-(camera, track) debounce, then persist + crop file on

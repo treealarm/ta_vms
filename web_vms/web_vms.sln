@@ -19,7 +19,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VmsOnvif", "VmsOnvif\VmsOnv
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VmsFs", "VmsFs\VmsFs.csproj", "{90E0FE3D-857E-44C3-9044-564BD3775D47}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VmsAnalytics", "VmsAnalytics\VmsAnalytics.csproj", "{EA580E88-0418-4C35-A2E5-D1CE4FDE437F}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VmsAnalyticsSingleton", "VmsAnalyticsSingleton\VmsAnalyticsSingleton.csproj", "{EA580E88-0418-4C35-A2E5-D1CE4FDE437F}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VmsLogger", "VmsLogger\VmsLogger.csproj", "{2F1EB1E4-3DE4-474F-AF0F-30CEF9F0301A}"
 EndProject

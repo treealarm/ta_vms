@@ -1,6 +1,6 @@
 using Dapr.Messaging.PublishSubscribe;
 
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 // On startup and whenever analytics-watch-changed or camera-state-changed fires, refreshes
 // AnalyticsWatchCache wholesale and re-runs WatchReconciler — mirrors the full-reconciliation

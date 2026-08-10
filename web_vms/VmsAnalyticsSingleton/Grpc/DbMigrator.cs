@@ -1,6 +1,6 @@
 using Npgsql;
 
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 public class DbMigrator(NpgsqlDataSource dataSource, IWebHostEnvironment environment)
 {
@@ -19,7 +19,7 @@ public class DbMigrator(NpgsqlDataSource dataSource, IWebHostEnvironment environ
       }
       catch (NpgsqlException ex)
       {
-        Console.Error.WriteLine($"VmsAnalytics: Postgres not ready, retrying in 5s: {ex.Message}");
+        Console.Error.WriteLine($"VmsAnalyticsSingleton: Postgres not ready, retrying in 5s: {ex.Message}");
         await Task.Delay(5_000, ct);
       }
     }

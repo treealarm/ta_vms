@@ -1,4 +1,4 @@
-namespace VmsAnalytics;
+namespace VmsAnalyticsSingleton;
 
 // In-memory, best-effort ring buffer of recent detection events for the debug panel — mirrors
 // VmsFs.FsActivityLog. Never persisted: crops/bboxes here are debugging aids, the durable record

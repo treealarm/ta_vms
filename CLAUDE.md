@@ -135,10 +135,17 @@ group behind on every restart.
   second copy would split rather than share (all replicas of one app id share a Dapr consumer group,
   so each would see half the events). Anything that does not need that property must not go here —
   otherwise it becomes a dumping ground and the guarantee stops meaning anything.
-- `VmsCfg`, `VmsUtils`, `VmsAnalytics`, `VmsLogger` — single instance today, but for different
-  reasons, and not all of them permanent. `VmsCfg` and `VmsUtils` are being made replicable (their
-  once-only work moves to `VmsSingleton`); `VmsAnalytics` holds the `obj-N` counter and `VmsLogger`
-  reads node-local files, so both still need work before they can be scaled.
+- `VmsAnalyticsSingleton` — also exactly one instance, but for its own reason: it is the control
+  plane of analytics, not a worker. It decides which `analytics-worker` watches which camera and
+  holds one long-lived `StreamDetections` per worker — and a stream, unlike a queue, is delivered to
+  every subscriber in full, so a second instance would duplicate every detection: the row, the crop
+  file and the `RetainEvent`. Its re-identification gallery, event grouping and debounce are shared
+  state in the same way. **The scaling axis is the workers**, which are already sharded across
+  `DAPR_ANALYTICS_WORKER_APP_IDS` by rendezvous hash. Sharding this service by camera is possible but
+  costs cross-camera re-identification between shards — decide that deliberately, not by adding a
+  replica.
+- `VmsCfg`, `VmsUtils`, `VmsLogger` — `VmsCfg` and `VmsUtils` are replicable (their once-only work
+  lives in `VmsSingleton`); `VmsLogger` is sharded by node, because it reads node-local files.
 
 **Naming rule:** a service that cannot be replicated carries `Singleton` in its project name and Dapr
 app-id. A reader must be able to tell the scaling class from the name alone, without reading

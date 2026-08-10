@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Vms.Cfg;
-using VmsAnalytics;
+using VmsAnalyticsSingleton;
 using VmsLog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -85,7 +85,7 @@ _ = Task.Run(async () =>
     }
     catch (Exception ex)
     {
-      Console.Error.WriteLine($"VmsAnalytics: ServerPairRegistry init failed, retrying in 5s: {ex.Message}");
+      Console.Error.WriteLine($"VmsAnalyticsSingleton: ServerPairRegistry init failed, retrying in 5s: {ex.Message}");
       await Task.Delay(5_000);
     }
   }
