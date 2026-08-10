@@ -52,4 +52,7 @@ public sealed class CameraSetupCache(CfgService.CfgServiceClient cfgClient)
   }
 
   public void Invalidate(string cameraId) => _cache.TryRemove(cameraId, out _);
+
+  /// For "everything on this node changed", where the event names no cameras.
+  public void InvalidateAll() => _cache.Clear();
 }

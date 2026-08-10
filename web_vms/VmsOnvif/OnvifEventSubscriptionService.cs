@@ -34,6 +34,12 @@ public sealed class OnvifEventSubscriptionService(
   private readonly Channel<string> _configChangedChannel =
     Channel.CreateUnbounded<string>(new UnboundedChannelOptions { SingleReader = true });
 
+  /// Ask for a full reconciliation now — used when an event says the node changed without naming
+  /// cameras. The sentinel rides the same channel so the sweep and the event path stay serialised.
+  public void NotifyAllCamerasChanged() => _configChangedChannel.Writer.TryWrite(AllCamerasSentinel);
+
+  internal const string AllCamerasSentinel = "*";
+
   public void NotifyConfigChanged(string cameraId) =>
     _configChangedChannel.Writer.TryWrite(cameraId);
 
@@ -85,7 +91,12 @@ public sealed class OnvifEventSubscriptionService(
     try
     {
       await foreach (var cameraId in _configChangedChannel.Reader.ReadAllAsync(ct))
-        await RefreshCameraAsync(cameraId, ct, forceRestart: true);
+      {
+        if (cameraId == AllCamerasSentinel)
+          await RefreshAllCamerasAsync(ct);
+        else
+          await RefreshCameraAsync(cameraId, ct, forceRestart: true);
+      }
     }
     catch (OperationCanceledException) { }
   }
@@ -135,10 +146,9 @@ public sealed class OnvifEventSubscriptionService(
       var opts = new CallOptions(deadline: DateTime.UtcNow.Add(CfgTimeout), cancellationToken: ct);
       var resp = await cfgClient.GetCameraAsync(new SourceRequest { SourceId = cameraId }, opts);
 
-      // camera-config-changed carries only a camera id and reaches every VmsOnvif — each instance
-      // has its own app id and therefore its own subscription — so ownership has to be checked here.
-      // Applied unconditionally, one edit would make every node subscribe to the same camera, and a
-      // camera moved between nodes would end up polled from both.
+      // The event names a node, but a camera that moved away is announced to the node it left as
+      // well — so being addressed is not proof of ownership, and it is re-checked against the camera
+      // itself. Applied blindly, a camera moved between nodes would end up polled from both.
       var mine = resp.Found
         && string.Equals(resp.Setup?.ServerId, ownServerId, StringComparison.OrdinalIgnoreCase);
       ApplyCameraSetup(cameraId, mine ? resp.Setup : null, forceRestart);

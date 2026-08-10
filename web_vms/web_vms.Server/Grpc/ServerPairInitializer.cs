@@ -3,7 +3,7 @@ namespace web_vms;
 /// <summary>
 /// Reads the server↔FS pairing from VmsCfg in the background, retrying until it answers, then keeps
 /// re-reading it so a media server added or re-paired later is picked up without a restart. VmsCfg
-/// announces such changes on <c>media-server-config-changed</c>, but the gateway may run in several
+/// announces such changes on <c>server-config-changed</c>, but the gateway may run in several
 /// replicas and each event would reach only one of them, so it polls instead — the map is a handful
 /// of rows and rarely changes.
 ///

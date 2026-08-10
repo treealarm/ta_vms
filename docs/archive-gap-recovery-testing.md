@@ -35,8 +35,8 @@ profiles: `…0001` continuous, `…0002` prealarm, `…0003` off), then send th
 sent, and media_server refetches the configuration itself:
 
 ```bash
-curl -X POST localhost:3600/v1.0/publish/orderpubsub/media-server-config-changed \
-  -H 'Content-Type: application/json' -d '"vms"'
+curl -X POST localhost:3600/v1.0/publish/orderpubsub/server-config-changed \
+  -H 'Content-Type: application/json' -d '{"server_id":"vms","camera_ids":[]}'
 ```
 
 **Raise an alarm.** Call `FsService.RetainEvent` on VmsFs (`:5137`) — that is exactly what VmsOnvif

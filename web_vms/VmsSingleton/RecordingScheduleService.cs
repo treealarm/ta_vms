@@ -9,7 +9,7 @@ namespace VmsSingleton;
 ///
 /// Holds no authoritative state: schedule_active is always recomputed from the wall clock by whoever
 /// reads a CameraSetup. This loop only exists so that nobody has to poll — at a boundary VmsCfg
-/// publishes the existing camera-config-changed / media-server-config-changed events, media_server
+/// publishes the existing server-config-changed event, media_server
 /// reloads and applies the new policy, and VmsFs drops its caches.
 ///
 /// It lives here rather than in VmsCfg because VmsCfg is replicated: every replica would keep its own

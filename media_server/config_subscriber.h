@@ -12,8 +12,10 @@
 #include "dapr/proto/runtime/v1/appcallback.grpc.pb.h"
 
 // Implements Dapr AppCallback to receive pub/sub events.
-// Subscribes to "media-server-config-changed" and reloads camera config
-// when the event payload matches this server's APP_ID.
+// Subscribes to "server-config-changed" and reloads camera config when the event names this
+// server. The event carries `{"server_id": "...", "camera_ids": [...]}`; the camera list is
+// addressing for subscribers that act per camera, not state — here the whole config is re-read
+// anyway, so only server_id is looked at.
 class config_subscriber final : public dapr::proto::runtime::v1::AppCallback::Service
 {
 public:
@@ -39,5 +41,5 @@ private:
   cfg_client&     m_cfg;
   std::string     m_pubsub_name;
 
-  static constexpr const char* k_topic = "media-server-config-changed";
+  static constexpr const char* k_topic = "server-config-changed";
 };

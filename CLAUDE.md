@@ -66,13 +66,33 @@ When a service needs to react to a configuration change that originated in anoth
 **Rule:** VmsCfg is the single source of truth for all configuration (cameras, storages, recording profiles, MediaMTX servers, etc.). Any other service that caches or acts on this configuration must subscribe to change events published by VmsCfg, then fetch the updated data itself.
 
 **Pattern:**
-1. VmsCfg publishes an event to a topic (e.g. `camera-config-changed`, `storage-config-changed`) after a write operation succeeds.
+1. VmsCfg publishes an event to a topic (e.g. `server-config-changed`, `storage-config-changed`) after a write operation succeeds.
 2. The subscriber receives the event and invalidates its local cache or re-fetches the relevant slice of config from VmsCfg via gRPC.
 3. The subscriber never assumes the event payload contains the full new state — it only uses the event as a signal to pull fresh data.
 
 **Existing examples in this codebase:**
-- `CfgServiceImpl.InvalidateFsCache` publishes `camera-config-changed` → `VmsFs.CameraConfigSubscriber` re-fetches camera config.
+- `CfgServiceImpl.InvalidateFsCache` publishes `server-config-changed` → `VmsFs.CameraConfigSubscriber` re-fetches camera config.
 - `StorageServiceImpl` publishes `storage-config-changed` → `VmsFs.CameraStorageSubscriber` re-fetches storage assignments.
+
+### Config-change events are addressed to a node, not to a camera
+
+Camera configuration changes travel on a single topic, `server-config-changed`, with the payload
+`{"server_id": "...", "camera_ids": [...]}`. One event per affected server, not per camera.
+
+The event is delivered to every subscriber — each service has its own Dapr app id and therefore its
+own subscription — so `server_id` is what lets a node-scoped subscriber (`media_server`, `VmsOnvif`)
+drop what is not its business *before* doing any work. Deciding that by fetching the camera from
+VmsCfg would cost one round trip on every instance in the deployment, all but one of which throws
+the answer away.
+
+`camera_ids` is **addressing, not state**: it narrows which cache entries to drop, and nothing more.
+The subscriber still fetches the current configuration from VmsCfg — an event that arrives late or
+out of order must not be able to install a stale value. An empty list means "something node-wide
+changed" (a MediaMTX row, a pairing) and asks for a full reconcile.
+
+Do not add a per-server or per-camera suffix to the topic name. A subscriber that needs cameras
+outside its own node — `VmsSquareSingleton` does — would then have to know every server id in the
+deployment just to subscribe.
 
 **Do not:**
 - Add a direct gRPC call from service A to VmsCfg inside a hot path (e.g. per-request, per-packet) to read config that rarely changes — cache it and invalidate via pub/sub instead.
@@ -200,7 +220,7 @@ Square) реализованы; план — [`docs/square-integration-plan.md`]
 - **`VmsSquareSingleton` — единственная точка подключения интеграции** (producer-сторона). Тяжёлое
   ядро (C++ `media_server` и пр.) интеграцией не затрагивается. Не размазывай интеграционную логику
   по другим сервисам: `VmsCfg` про Square не знает вообще и лишь публикует свои обычные события
-  (`camera-config-changed`, `camera-state-changed`), на которые интегратор подписан.
+  (`server-config-changed`, `camera-state-changed`), на которые интегратор подписан.
 - **Идентичность продьюсера в дереве Square — `SQUARE_INTEGRATION_PRODUCER_ID`, а не `APP_ID`
   процесса.** Из этого значения детерминированно выводится id корневого объекта, поэтому обе стороны
   задают его конфигурацией и ничем не обмениваются в рантайме. Значение постоянно: смена

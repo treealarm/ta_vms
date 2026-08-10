@@ -8,7 +8,7 @@ namespace VmsSquareSingleton;
 /// Pushes a camera to Square whenever its configuration or armed state changes.
 ///
 /// These pushes used to sit inline in VmsCfg's write handlers, which made the config service know
-/// about Square. It does not need to: it already announces both changes — camera-config-changed and
+/// about Square. It does not need to: it already announces both changes — server-config-changed and
 /// camera-state-changed — for VmsFs and media_server, and this service is simply another subscriber.
 /// VmsCfg is left as what it should be, a gRPC interface to its database.
 ///
@@ -21,7 +21,7 @@ public sealed class CameraChangeSubscriber(
   SquareProducerId producerId,
   ILogger<CameraChangeSubscriber> logger) : IHostedService, IDisposable
 {
-  private const string CameraConfigChangedTopic = "camera-config-changed";
+  private const string ServerConfigChangedTopic = "server-config-changed";
   private const string CameraStateChangedTopic = "camera-state-changed";
 
   private static readonly string PubSubName =
@@ -32,7 +32,7 @@ public sealed class CameraChangeSubscriber(
 
   public Task StartAsync(CancellationToken cancellationToken)
   {
-    _ = RunAsync(CameraConfigChangedTopic, HandleConfigChangedAsync, _cts.Token);
+    _ = RunAsync(ServerConfigChangedTopic, HandleConfigChangedAsync, _cts.Token);
     _ = RunAsync(CameraStateChangedTopic, HandleStateChangedAsync, _cts.Token);
     return Task.CompletedTask;
   }
@@ -56,23 +56,32 @@ public sealed class CameraChangeSubscriber(
     }
   }
 
+  // Wire shape of server-config-changed; VmsCfg owns it. The server is ignored here — Square holds
+  // every node's cameras under one root, so this service is the one subscriber that cares about all
+  // of them. An empty camera list means something node-wide changed (a media router, say), which
+  // does not alter what Square shows.
+  private sealed record ServerConfigChanged(string? ServerId, IReadOnlyList<string>? CameraIds);
+
   private async Task<TopicResponseAction> HandleConfigChangedAsync(TopicMessage message, CancellationToken ct)
   {
-    var cameraId = ReadCameraId(message);
-    if (string.IsNullOrWhiteSpace(cameraId))
+    var evt = ReadPayload<ServerConfigChanged>(message);
+    if (evt is null)
       return TopicResponseAction.Drop;
 
-    try
+    foreach (var cameraId in evt.CameraIds ?? [])
     {
-      var resp = await cfgClient.GetCameraAsync(new SourceRequest { SourceId = cameraId }, cancellationToken: ct);
-      if (!resp.Found || resp.Setup is null)
-        return TopicResponseAction.Success;
+      try
+      {
+        var resp = await cfgClient.GetCameraAsync(new SourceRequest { SourceId = cameraId }, cancellationToken: ct);
+        if (!resp.Found || resp.Setup is null)
+          continue;
 
-      await SquareCameraPush.PushCameraAsync(square, resp.Setup, producerId.Value);
-    }
-    catch (Exception ex)
-    {
-      logger.LogWarning(ex, "Square push failed for camera '{CameraId}'", cameraId);
+        await SquareCameraPush.PushCameraAsync(square, resp.Setup, producerId.Value);
+      }
+      catch (Exception ex)
+      {
+        logger.LogWarning(ex, "Square push failed for camera '{CameraId}'", cameraId);
+      }
     }
     return TopicResponseAction.Success;
   }
@@ -100,19 +109,25 @@ public sealed class CameraChangeSubscriber(
     return TopicResponseAction.Success;
   }
 
-  // Both topics carry a bare JSON string: the camera id.
-  private string? ReadCameraId(TopicMessage message)
+  // camera-state-changed still carries a bare camera id; server-config-changed carries the record
+  // above.
+  private static readonly JsonSerializerOptions JsonOptions =
+    new() { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
+
+  private T? ReadPayload<T>(TopicMessage message)
   {
     try
     {
-      return JsonSerializer.Deserialize<string>(message.Data.Span);
+      return JsonSerializer.Deserialize<T>(message.Data.Span, JsonOptions);
     }
     catch (JsonException ex)
     {
-      logger.LogWarning(ex, "Dropping malformed camera-change message");
-      return null;
+      logger.LogWarning(ex, "Dropping malformed message");
+      return default;
     }
   }
+
+  private string? ReadCameraId(TopicMessage message) => ReadPayload<string>(message);
 
   public Task StopAsync(CancellationToken _)
   {

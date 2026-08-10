@@ -6,19 +6,16 @@ namespace VmsUtils;
 /// Keeps MediaMtxServerCache honest by listening to the config-change events VmsCfg already
 /// publishes, rather than re-reading the assignment on every poll.
 ///
-/// camera-config-changed carries the camera id, so only that entry is dropped.
-/// media-server-config-changed carries a media server id and is what VmsCfg publishes when a
-/// MediaMTX row itself is added, edited or removed (NotifyAllMediaServers) — it does not say which
-/// cameras are affected and a changed host or api_port invalidates every entry pointing at that
-/// server, so the whole cache goes. Both are rare, so dropping everything costs one re-resolve per
-/// camera on the next poll.
+/// server-config-changed names the cameras that changed, so only those entries are dropped. An empty
+/// camera list means the node itself changed — a MediaMTX row added, edited or removed, where a new
+/// host or api_port invalidates every entry pointing at that server — so there the whole cache goes.
+/// That is rare, and costs one re-resolve per camera on the next poll.
 public sealed class MediaMtxConfigSubscriber(
   DaprPublishSubscribeClient pubSubClient,
   MediaMtxServerCache serverCache,
   ILogger<MediaMtxConfigSubscriber> logger) : IHostedService, IDisposable
 {
-  private const string CameraConfigChangedTopic = "camera-config-changed";
-  private const string MediaServerConfigChangedTopic = "media-server-config-changed";
+  private const string ServerConfigChangedTopic = "server-config-changed";
 
   private static readonly string PubSubName =
     Environment.GetEnvironmentVariable("PUBSUB_NAME")
@@ -28,8 +25,7 @@ public sealed class MediaMtxConfigSubscriber(
 
   public Task StartAsync(CancellationToken cancellationToken)
   {
-    _ = RunAsync(CameraConfigChangedTopic, HandleCameraChangedAsync, _cts.Token);
-    _ = RunAsync(MediaServerConfigChangedTopic, HandleMediaServerChangedAsync, _cts.Token);
+    _ = RunAsync(ServerConfigChangedTopic, HandleServerConfigChangedAsync, _cts.Token);
     return Task.CompletedTask;
   }
 
@@ -52,26 +48,34 @@ public sealed class MediaMtxConfigSubscriber(
     }
   }
 
-  private Task<TopicResponseAction> HandleCameraChangedAsync(TopicMessage message, CancellationToken _)
+  // Wire shape of server-config-changed; VmsCfg owns it. Empty CameraIds means everything on the
+  // node — the only case that still justifies dropping the whole map, which is what every event used
+  // to do because none of them said who was affected.
+  private sealed record ServerConfigChanged(string? ServerId, IReadOnlyList<string>? CameraIds);
+
+  private static readonly JsonSerializerOptions JsonOptions =
+    new() { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
+
+  private Task<TopicResponseAction> HandleServerConfigChangedAsync(TopicMessage message, CancellationToken _)
   {
-    var cameraId = ReadStringPayload(message);
-    if (!string.IsNullOrWhiteSpace(cameraId))
-      serverCache.Invalidate(cameraId);
+    var evt = ReadEvent(message);
+    if (evt is null)
+      return Task.FromResult(TopicResponseAction.Drop);
+
+    if (evt.CameraIds is not { Count: > 0 })
+      serverCache.Clear();
+    else
+      foreach (var cameraId in evt.CameraIds)
+        serverCache.Invalidate(cameraId);
+
     return Task.FromResult(TopicResponseAction.Success);
   }
 
-  private Task<TopicResponseAction> HandleMediaServerChangedAsync(TopicMessage message, CancellationToken _)
-  {
-    serverCache.Clear();
-    return Task.FromResult(TopicResponseAction.Success);
-  }
-
-  // Both topics carry a bare JSON string, e.g. "vms".
-  private string? ReadStringPayload(TopicMessage message)
+  private ServerConfigChanged? ReadEvent(TopicMessage message)
   {
     try
     {
-      return JsonSerializer.Deserialize<string>(message.Data.Span);
+      return JsonSerializer.Deserialize<ServerConfigChanged>(message.Data.Span, JsonOptions);
     }
     catch (JsonException ex)
     {

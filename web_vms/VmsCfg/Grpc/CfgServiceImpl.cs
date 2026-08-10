@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Dapr.Client;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
@@ -15,8 +16,16 @@ namespace VmsCfg
     DaprClient daprClient,
     ILogger<CfgServiceImpl> logger) : CfgService.CfgServiceBase
   {
-    private const string CameraConfigChangedTopic      = "camera-config-changed";
-    private const string MediaServerConfigChangedTopic = "media-server-config-changed";
+    // One event for "something changed on this node, here is what". Replaces the old pair of
+    // per-camera and per-server topics: the bulk paths published both anyway, one message per
+    // camera, and every subscriber received every message. Now a schedule boundary is one message
+    // per affected node instead of one per camera, and a node-scoped subscriber can tell at a glance
+    // whether an event concerns it — before, deciding that cost a GetCamera round trip per instance.
+    //
+    // Payload: { "server_id": "...", "camera_ids": [...] }. An empty camera_ids means everything on
+    // that node. The ids are addressing, not state: a receiver still re-reads the configuration it
+    // needs, so a late or reordered message cannot make it act on a stale snapshot.
+    private const string ServerConfigChangedTopic = "server-config-changed";
     private const string CameraStateChangedTopic       = "camera-state-changed";
     private const string AnalyticsWatchChangedTopic    = "analytics-watch-changed";
     // Wakes the ticker in VmsSingleton after a schedule edit. It has its own app id, hence its own
@@ -42,19 +51,39 @@ namespace VmsCfg
       Environment.GetEnvironmentVariable("PUBSUB_NAME")
         ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
 
+    // Field names are spelled out rather than left to a naming policy: DaprClient serializes with
+    // web defaults (camelCase), the subscribers — one of them a hand-rolled C++ reader — expect
+    // snake_case, and the mismatch does not fail. It deserializes into an all-null record and the
+    // event is dropped in silence by every consumer at once.
+    private sealed record ServerConfigChanged(
+      [property: JsonPropertyName("server_id")] string ServerId,
+      [property: JsonPropertyName("camera_ids")] IReadOnlyList<string> CameraIds);
+
+    /// One camera changed. The owning node is resolved here rather than threaded through every
+    /// write handler: it is one indexed lookup on a path a human triggers, and it keeps all twelve
+    /// call sites unaware of the topic's shape.
     private void InvalidateFsCache(string cameraId)
     {
       _ = Task.Run(async () =>
       {
         try
         {
-          await daprClient.PublishEventAsync(_pubSubName, CameraConfigChangedTopic, cameraId);
+          var servers = await scheduleDb.ListCameraServersAsync([cameraId], CancellationToken.None);
+          servers.TryGetValue(cameraId, out var serverId);
+          await PublishServerConfigChangedAsync(serverId ?? string.Empty, [cameraId], CancellationToken.None);
         }
         catch (Exception ex)
         {
           logger.LogWarning(ex, "Camera config invalidation publish failed for '{CameraId}'", cameraId);
         }
       });
+    }
+
+    private async Task PublishServerConfigChangedAsync(
+      string serverId, IReadOnlyList<string> cameraIds, CancellationToken ct)
+    {
+      await daprClient.PublishEventAsync(
+        _pubSubName, ServerConfigChangedTopic, new ServerConfigChanged(serverId, cameraIds), ct);
     }
 
     private void NotifyCameraStateChanged(string cameraId)
@@ -158,6 +187,26 @@ namespace VmsCfg
       });
     }
 
+    /// One camera changed on a node the caller already knows — used where InvalidateFsCache cannot
+    /// resolve it from the database, either because the row is gone or because the node it names is
+    /// the one the camera just left.
+    private void NotifyCameraChanged(string serverId, string cameraId)
+    {
+      if (string.IsNullOrWhiteSpace(serverId)) return;
+      _ = Task.Run(async () =>
+      {
+        try
+        {
+          await PublishServerConfigChangedAsync(serverId, [cameraId], CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+          logger.LogWarning(ex, "Camera config notification failed for '{CameraId}'", cameraId);
+        }
+      });
+    }
+
+    /// Everything on this node may have changed — an empty camera list says so.
     private void NotifyMediaServer(string serverId)
     {
       if (string.IsNullOrWhiteSpace(serverId)) return;
@@ -165,7 +214,7 @@ namespace VmsCfg
       {
         try
         {
-          await daprClient.PublishEventAsync(_pubSubName, MediaServerConfigChangedTopic, serverId);
+          await PublishServerConfigChangedAsync(serverId, [], CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -190,11 +239,15 @@ namespace VmsCfg
       {
         var servers = await scheduleDb.ListCameraServersAsync(cameraIds, ct);
 
-        foreach (var cameraId in cameraIds)
-          await daprClient.PublishEventAsync(_pubSubName, CameraConfigChangedTopic, cameraId, ct);
+        // Grouped by node, so a boundary that flips every camera in the system costs one message per
+        // node rather than one per camera — which is also what keeps this loop from turning into
+        // thousands of sequential publishes to the sidecar.
+        var byServer = cameraIds
+          .Where(id => servers.TryGetValue(id, out var s) && !string.IsNullOrWhiteSpace(s))
+          .GroupBy(id => servers[id], StringComparer.Ordinal);
 
-        foreach (var serverId in servers.Values.Distinct().Where(s => !string.IsNullOrWhiteSpace(s)))
-          await daprClient.PublishEventAsync(_pubSubName, MediaServerConfigChangedTopic, serverId, ct);
+        foreach (var group in byServer)
+          await PublishServerConfigChangedAsync(group.Key, group.ToList(), ct);
 
         return true;
       }
@@ -238,12 +291,15 @@ namespace VmsCfg
       await storage.SetupCameraAsync(request, context.CancellationToken);
       logger.LogInformation("Camera '{CameraId}' configured (server={ServerId})", request.CameraId, request.ServerId);
       await EnsureCameraHasStorageAsync(request.CameraId, context.CancellationToken);
+      // The camera's own event already names this node — InvalidateFsCache resolves it from the
+      // row just written — so there is no second, node-wide notification here. That one would make
+      // every subscriber drop its whole cache on an ordinary camera edit.
       InvalidateFsCache(request.CameraId);
-      NotifyMediaServer(request.ServerId);
 
-      // Notify old server so it removes the camera
+      // The node it left hears about the camera by name, so it can release it at once instead of
+      // waiting for its next reconciliation sweep.
       if (existing is not null && existing.ServerId != request.ServerId)
-        NotifyMediaServer(existing.ServerId);
+        NotifyCameraChanged(existing.ServerId, request.CameraId);
 
       // A new camera has no cached route yet; a moved one has a stale one.
       if (existing is null || existing.ServerId != request.ServerId)
@@ -375,9 +431,8 @@ namespace VmsCfg
       if (removed)
       {
         logger.LogInformation("Camera '{CameraId}' removed", request.SourceId);
-        InvalidateFsCache(request.SourceId);
         if (existing is not null)
-          NotifyMediaServer(existing.ServerId);
+          NotifyCameraChanged(existing.ServerId, request.SourceId);
       }
       return new OperationStatus { Success = removed };
     }
@@ -438,8 +493,6 @@ namespace VmsCfg
       await storage.SetStreamOverrideAsync(request.CameraId, request.StreamName, request.ProfileId, context.CancellationToken);
       logger.LogInformation("Stream override set: camera='{CameraId}' stream='{StreamName}' profile='{ProfileId}'", request.CameraId, request.StreamName, request.ProfileId);
       InvalidateFsCache(request.CameraId);
-      var (_, cam) = await storage.GetCameraAsync(request.CameraId, context.CancellationToken);
-      if (cam is not null) NotifyMediaServer(cam.ServerId);
       return new OperationStatus { Success = true };
     }
 
@@ -453,8 +506,6 @@ namespace VmsCfg
       await storage.ClearStreamOverrideAsync(request.CameraId, request.StreamName, context.CancellationToken);
       logger.LogInformation("Stream override cleared: camera='{CameraId}' stream='{StreamName}'", request.CameraId, request.StreamName);
       InvalidateFsCache(request.CameraId);
-      var (_, cam) = await storage.GetCameraAsync(request.CameraId, context.CancellationToken);
-      if (cam is not null) NotifyMediaServer(cam.ServerId);
       return new OperationStatus { Success = true };
     }
 
@@ -471,8 +522,6 @@ namespace VmsCfg
       await storage.SetStreamRecordingProfileAsync(request.CameraId, request.StreamName, request.ProfileId, context.CancellationToken);
       logger.LogInformation("Stream recording profile set: camera='{CameraId}' stream='{StreamName}' profile='{ProfileId}'", request.CameraId, request.StreamName, request.ProfileId);
       InvalidateFsCache(request.CameraId);
-      var (_, cam) = await storage.GetCameraAsync(request.CameraId, context.CancellationToken);
-      if (cam is not null) NotifyMediaServer(cam.ServerId);
       return new OperationStatus { Success = true };
     }
 

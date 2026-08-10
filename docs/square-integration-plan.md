@@ -95,7 +95,7 @@ ActionsControl.tsx`):
 `web_vms/VmsCfg` (`Program.cs`, `Grpc/CfgServiceImpl.cs`) подключает typelib и, **если интеграция
 включена env-флагом** (напр. `SQUARE_INTEGRATION_SINK_APP_ID`):
 - на старте: `RegisterRoot("vmscfg")` + полный push дерева камер и свойств из своего DbContext;
-- на своих событиях `camera-config-changed`/`camera-state-changed`/`media-server-config-changed`
+- на своих событиях `server-config-changed`/`camera-state-changed`
   (уже публикуются в `CfgServiceImpl`) — push дельт;
 - объявляет команды: камера — `start/stop_recording`, `arm/disarm`, (позже) PTZ; root — `resync`;
 - реализует обработчики команд через существующую внутреннюю логику cfg / вызовы других сервисов

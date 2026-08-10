@@ -56,7 +56,14 @@ builder.Services.AddSingleton(sp => new OnvifEventSubscriptionService(
   ownServerId,
   sp.GetRequiredService<ILogger<OnvifEventSubscriptionService>>()));
 builder.Services.AddHostedService(sp => sp.GetRequiredService<OnvifEventSubscriptionService>());
-builder.Services.AddHostedService<CameraConfigSubscriber>();
+builder.Services.AddHostedService(sp => new CameraConfigSubscriber(
+  sp.GetRequiredService<Dapr.Messaging.PublishSubscribe.DaprPublishSubscribeClient>(),
+  sp.GetRequiredService<OnvifFilterCache>(),
+  sp.GetRequiredService<CameraArmedCache>(),
+  sp.GetRequiredService<CameraConnCache>(),
+  sp.GetRequiredService<OnvifEventSubscriptionService>(),
+  ownServerId,
+  sp.GetRequiredService<ILogger<CameraConfigSubscriber>>()));
 
 var grpcPort = RequirePort("ONVIF_SRV_PORT");
 
