@@ -15,39 +15,27 @@ public sealed class EphemeralReidGallery : IObjectIdentityResolver
   private readonly double _minScore;
   private readonly TimeSpan _window;
   private const int MaxEntries = 2000;
+  // Must match INCREMENT BY on detections_object_num_seq.
+  private const int ObjectNumBlockSize = 100;
 
   private readonly object _lock = new();
   private readonly LinkedList<Entry> _gallery = new(); // oldest first
   private readonly Dictionary<(string CameraId, long TrackId), TrackLink> _trackToObject = new();
-  private long _nextObjectNum; // guarded by _lock
+
+  private readonly IDbContextFactory<AnalyticsDbContext> _dbFactory;
+  // Next number to hand out and the first number this process may no longer use. Both guarded by
+  // _lock; when they meet, another block is taken from the sequence.
+  private long _nextObjectNum;
+  private long _blockEnd;
 
   private sealed record Entry(string ObjectId, float[] Embedding, DateTime SeenAt);
   private sealed record TrackLink(string ObjectId, DateTime SeenAt);
 
   public EphemeralReidGallery(IDbContextFactory<AnalyticsDbContext> dbFactory)
   {
+    _dbFactory = dbFactory;
     _minScore = RequireDouble("ANALYTICS_REID_MATCH_MIN_SCORE");
     _window = TimeSpan.FromSeconds(RequireUint("ANALYTICS_REID_GALLERY_WINDOW_SECONDS"));
-    // Object ids are human-readable running numbers ("obj-1", "obj-2", ...). They are persisted on
-    // detections/retention_events, so the counter must continue past the highest id ever assigned —
-    // a reset to 1 after a restart would reuse a number for a different physical object.
-    _nextObjectNum = SeedObjectCounter(dbFactory);
-  }
-
-  private static long SeedObjectCounter(IDbContextFactory<AnalyticsDbContext> dbFactory)
-  {
-    try
-    {
-      using var db = dbFactory.CreateDbContext();
-      return db.Database
-        .SqlQueryRaw<long>("SELECT COALESCE(MAX(substring(object_id from 5)::bigint), 0) AS \"Value\" FROM detections WHERE object_id ~ '^obj-[0-9]+$'")
-        .AsEnumerable()
-        .FirstOrDefault();
-    }
-    catch
-    {
-      return 0; // fresh/unavailable DB — start from obj-1
-    }
   }
 
   public string Resolve(DetectionKind kind, IReadOnlyList<float> embedding, bool embeddingIsFresh,
@@ -144,8 +132,31 @@ public sealed class EphemeralReidGallery : IObjectIdentityResolver
     }
   }
 
+  // Object ids are human-readable running numbers ("obj-1", "obj-2", ...) and are persisted on
+  // detections and retention_events, so a number must never be handed to two different physical
+  // objects. The numbers come from a database sequence that gives out a block at a time
+  // (detections_object_num_seq, INCREMENT BY 100): no two processes can be inside the same block,
+  // and the database is touched once per hundred objects rather than on the detection path.
+  //
   // Callers hold _lock, so the increment is safe.
-  private string NewObjectId() => $"obj-{++_nextObjectNum}";
+  private string NewObjectId()
+  {
+    if (_nextObjectNum >= _blockEnd)
+      TakeBlock();
+    return $"obj-{_nextObjectNum++}";
+  }
+
+  // Caller holds _lock.
+  private void TakeBlock()
+  {
+    using var db = _dbFactory.CreateDbContext();
+    var start = db.Database
+      .SqlQueryRaw<long>("SELECT nextval('detections_object_num_seq') AS \"Value\"")
+      .AsEnumerable()
+      .First();
+    _nextObjectNum = start;
+    _blockEnd = start + ObjectNumBlockSize;
+  }
 
   private static uint RequireUint(string name)
   {
