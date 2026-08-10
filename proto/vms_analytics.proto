@@ -19,6 +19,11 @@ service VmsAnalyticsService {
   // crop_jpeg is never populated on this stream. Ends when the caller cancels. An empty camera_id
   // means "all cameras" — the frontend multiplexes one stream for the whole monitor.
   rpc StreamCameraDetections(StreamCameraDetectionsRequest) returns (stream AnalyticsActivityEntry);
+  // Scene Description the camera produced itself, already parsed and normalized by VmsOnvif (see
+  // PushMetadataDocuments in onvif.proto for the raw end of that path). Fed into the same live
+  // overlay as the CV pipeline. Batched by the caller so a chatty camera costs a few RPCs per
+  // second rather than one per frame.
+  rpc PushOnvifDetections(OnvifDetectionBatch) returns (PushOnvifDetectionsResponse);
 }
 
 enum DetectionKind {
@@ -92,7 +97,30 @@ message AnalyticsActivityEntry {
   // Re-identification label of the physical object, when known for this track (populated on the
   // live overlay stream once re-id has resolved the track). Absent for unarmed/unresolved tracks.
   optional string object_id = 10;
+  // Where the box came from: "cv" (video_a detector) or "onvif" (the camera's own Scene
+  // Description). The two number their tracks independently, so the overlay has to key on the
+  // source as well or a camera running both would have them overwrite each other.
+  string source = 11;
 }
+
+// One object the camera reported, in the overlay's coordinate space (0..1, origin top-left) —
+// the same geometry the CV detector emits, so both feed one overlay unchanged.
+message OnvifDetection {
+  string camera_id = 1;
+  int64 track_id = 2;
+  DetectionKind kind = 3;
+  float confidence = 4;
+  BoundingBox bbox = 5;
+  // When the document arrived, not the camera's own UtcTime: camera clocks are frequently hours
+  // off, and the overlay only cares about "now".
+  google.protobuf.Timestamp detected_at = 6;
+}
+
+message OnvifDetectionBatch {
+  repeated OnvifDetection detections = 1;
+}
+
+message PushOnvifDetectionsResponse {}
 
 message GetAnalyticsActivityRequest {
   uint32 limit = 1;

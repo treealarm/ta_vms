@@ -93,10 +93,17 @@ export default function BboxOverlay({ videoRef, cameraId }: Props) {
       ctx.globalAlpha = d.opacity
       ctx.strokeStyle = color
       ctx.lineWidth = 2
+      // Boxes the camera reported itself are dashed, so an operator can tell at a glance which
+      // ones come from the CV detector and which from the camera's own analytics. Both keep the
+      // per-track color, since a dashed and a solid box on the same object should still read as
+      // related rather than as two unrelated colors.
+      ctx.setLineDash(d.source === 'onvif' ? [6, 4] : [])
       ctx.strokeRect(x, y, w, h)
+      ctx.setLineDash([])
 
       const main = [
         KIND_LABEL[d.kind] ?? d.kind,
+        d.source === 'onvif' ? 'cam' : null,
         `#${d.trackId}`,
         `${Math.round(d.confidence * 100)}%`,
         d.objectId ? shortObjectId(d.objectId) : null,

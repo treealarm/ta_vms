@@ -36,6 +36,11 @@ public sealed class OnvifRouter(ICameraManager cameras, ServerPairRegistry regis
   public async Task<OnvifService.OnvifServiceClient> OnvifAsync(string cameraId, CancellationToken ct) =>
     registry.GetOnvifClient(await ServerIdAsync(cameraId, ct));
 
+  /// Which node owns this camera. For callers that need to group several cameras into one call per
+  /// node — the client objects above are created per call, so they cannot be grouped on directly.
+  public Task<string> ResolveServerIdAsync(string cameraId, CancellationToken ct) =>
+    ServerIdAsync(cameraId, ct);
+
   public async Task<PtzService.PtzServiceClient> PtzAsync(string cameraId, CancellationToken ct) =>
     registry.GetPtzClient(await ServerIdAsync(cameraId, ct));
 

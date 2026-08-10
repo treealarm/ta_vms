@@ -18,7 +18,11 @@ public sealed record LiveDetection(
   DateTime DetectedAt,
   string? PlateText,
   bool Persisted,
-  string? ObjectId);
+  string? ObjectId,
+  // "cv" for the video_a detector, "onvif" for the camera's own Scene Description. The two number
+  // their tracks independently, so a camera running both would have their boxes overwrite each
+  // other downstream unless the overlay keys on this as well.
+  string Source);
 
 // In-process fan-out of live detections to subscribers (the "bbox over live video" overlay).
 // DetectionStreamConsumer publishes every above-threshold detection here; each subscriber holds a

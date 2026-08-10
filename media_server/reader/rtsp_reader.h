@@ -2,15 +2,18 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <unordered_set>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 
 #include "interfaces/media_packet.h"
 #include "interfaces/media_sink.h"
 #include "interfaces/reader.h"
 
+#include "reader/onvif_metadata_assembler.h"
 #include "sink_container/sink_container_impl.h"
 
 extern "C" {
@@ -42,6 +45,11 @@ public:
   }
   source_liveness liveness() const override;
   void set_source_lost_handler(source_lost_handler handler) override { m_on_source_lost = std::move(handler); }
+
+  using metadata_handler = std::function<void(std::string&&)>;
+  /// Receives every ONVIF metadata document reassembled off the stream's metadata track. Set once
+  /// before start(), like set_source_lost_handler; without it the track is read and discarded.
+  void set_metadata_handler(metadata_handler handler) { m_on_metadata = std::move(handler); }
   void step(int32_t /*steps*/) override {};
   void set_speed(double /*speed*/) override {};
   AVStream* video_stream() const override;
@@ -54,6 +62,10 @@ private:
   std::string m_rtsp_url;
   avformat_context_ptr m_ctx = nullptr;
   int m_video_index = -1;
+  /// ONVIF metadata track, when the camera publishes one. Deliberately NOT part of
+  /// m_forward_stream_indexes: that set feeds the sinks, and every sink (recording, WebRTC push,
+  /// RTSP output, JPEG) branches on VIDEO/AUDIO only.
+  int m_metadata_index = -1;
   std::unordered_set<int> m_forward_stream_indexes;
 
   sink_container_impl m_sinks_helper;
@@ -77,6 +89,9 @@ private:
 
   /// Set once before start(), then only read by the reader thread — no synchronisation needed.
   source_lost_handler m_on_source_lost;
+  metadata_handler m_on_metadata;
+  /// Reader thread only. Created lazily on the first metadata packet of a session.
+  std::unique_ptr<onvif_metadata_assembler> m_metadata_assembler;
 
   std::string m_cam_id;
   std::string m_profile_token;

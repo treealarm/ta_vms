@@ -27,6 +27,8 @@ builder.Services.AddSingleton(sp => new OnvifServiceImpl(
   sp.GetRequiredService<OnvifEventSubscriptionService>(),
   sp.GetRequiredService<ObservedTopicsStore>(),
   sp.GetRequiredService<OnvifSettingsService>(),
+  sp.GetRequiredService<MetadataStateCache>(),
+  sp.GetRequiredService<VmsOnvif.Onvif.OnvifMetadataIngestor>(),
   cameraActorType,
   sp.GetRequiredService<ILogger<OnvifServiceImpl>>()));
 builder.Services.AddSingleton(sp => new PtzServiceImpl(
@@ -43,6 +45,19 @@ builder.Services.AddSingleton(_ =>
 builder.Services.AddSingleton(sp =>
   new ServerPairRegistry(sp.GetRequiredService<CfgService.CfgServiceClient>(), ownServerId));
 
+builder.Services.AddSingleton<MetadataStateCache>();
+
+// Scene Description forwarding. Optional on purpose (the CLAUDE.md exception for feature-gating
+// variables): without an analytics service there is nothing to send camera-reported boxes to, and
+// that must not stop VmsOnvif from serving PTZ, events and settings. Mirrors how
+// VmsAnalyticsSingleton treats DAPR_ANALYTICS_WORKER_APP_IDS.
+var analyticsAppId = Environment.GetEnvironmentVariable("DAPR_ANALYTICS_APP_ID");
+builder.Services.AddSingleton(sp => new VmsOnvif.Onvif.OnvifMetadataIngestor(
+  string.IsNullOrWhiteSpace(analyticsAppId)
+    ? null
+    : new Vms.Analytics.VmsAnalyticsService.VmsAnalyticsServiceClient(
+        DaprClient.CreateInvocationInvoker(analyticsAppId)),
+  sp.GetRequiredService<ILogger<VmsOnvif.Onvif.OnvifMetadataIngestor>>()));
 builder.Services.AddSingleton<OnvifSettingsService>();
 builder.Services.AddSingleton<OnvifFilterCache>();
 builder.Services.AddSingleton<CameraArmedCache>();

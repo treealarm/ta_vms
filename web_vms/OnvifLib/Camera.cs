@@ -358,6 +358,17 @@ public class Camera
     return null;
   }
 
+  async public Task<AnalyticsService?> GetAnalyticsService()
+  {
+    var services = await GetServicesAsync();
+
+    if (services != null)
+    {
+      return await _serviceCache.GetServiceAsync<AnalyticsService>(services);
+    }
+    return null;
+  }
+
   async public Task<DeviceIOService2?> GetDeviceIOService()
   {
     var services = await GetServicesAsync();
@@ -433,7 +444,7 @@ public class Camera
 
     var services = await GetServicesAsync();
     if (services == null)
-      return new OnvifCapabilities(false, false, false, false, false);
+      return new OnvifCapabilities(false, false, false, false, false, false);
 
     // GetConfigurations (not GetNodes) is the reliable PTZ signal — same reasoning as
     // PtzService2.GetCapabilitiesAsync's own comment.
@@ -460,7 +471,10 @@ public class Camera
       HasDigitalInputs: services.ContainsKey(DeviceIOService2.WSDL_V10),
       // Profile G is only usable when the camera can both tell us what it has (search) and play it
       // back (replay); the recording service alone would let us list recordings we cannot fetch.
-      HasEdgeRecording: services.ContainsKey(SearchService.WSDL_V10) && services.ContainsKey(ReplayService.WSDL_V10));
+      HasEdgeRecording: services.ContainsKey(SearchService.WSDL_V10) && services.ContainsKey(ReplayService.WSDL_V10),
+      // Same reasoning as Device I/O: the analytics service is a separate optional ONVIF service,
+      // so advertising the namespace means the camera really runs an analytics engine.
+      HasAnalytics: services.ContainsKey(AnalyticsService.WSDL_V20));
 
     _capabilitiesCache = result;
     _capabilitiesCacheAt = System.DateTime.UtcNow;

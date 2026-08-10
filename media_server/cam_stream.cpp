@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <stdexcept>
 
+#include "grpc_layer/onvif_metadata_client.h"
 #include "reader/file_camera_reader.h"
 #include "reader/rtsp_reader.h"
 #include "interfaces/web_rtc_utils.h"
@@ -27,9 +28,31 @@ cam_stream::cam_stream(
   , m_web_rtc_enabled(web_rtc_enabled)
 {
   if (profile_token.empty() && file_camera_reader::is_file_source(rtsp_url))
+  {
     m_reader = std::make_unique<file_camera_reader>(camera_id, stream_name);
+  }
   else
-    m_reader = std::make_unique<rtsp_reader>(camera_id, profile_token, user, pass);
+  {
+    auto rtsp = std::make_unique<rtsp_reader>(camera_id, profile_token, user, pass);
+    // Only a live camera can carry a metadata track, so the handler is attached on the concrete
+    // reader rather than widened into the reader interface. It fires on the reader thread, which
+    // is also the only thread allowed to touch video_stream() — hence reading the resolution here
+    // instead of caching it.
+    rtsp->set_metadata_handler(
+      [this, raw = rtsp.get()](std::string&& document)
+      {
+        int width = 0;
+        int height = 0;
+        if (const AVStream* video = raw->video_stream())
+        {
+          width = video->codecpar->width;
+          height = video->codecpar->height;
+        }
+        onvif_metadata_client::instance().enqueue(
+          m_camera_id, m_stream_name, std::move(document), width, height);
+      });
+    m_reader = std::move(rtsp);
+  }
 
   if (!m_reader->open(m_rtsp_url))
     throw std::runtime_error("Failed to open media source");

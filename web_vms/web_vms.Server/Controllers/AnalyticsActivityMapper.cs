@@ -24,5 +24,6 @@ public static class AnalyticsActivityMapper
     CropJpegBase64 = includeCrop && !e.CropJpeg.IsEmpty ? Convert.ToBase64String(e.CropJpeg.ToByteArray()) : null,
     Persisted      = e.Persisted,
     ObjectId       = e.HasObjectId ? e.ObjectId : null,
+    Source         = string.IsNullOrEmpty(e.Source) ? "cv" : e.Source,
   };
 }

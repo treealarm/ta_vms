@@ -16,6 +16,7 @@
 #include "grpc_layer/cfg_client.h"
 #include "grpc_layer/entity_state_publisher.h"
 #include "grpc_layer/fs_client.h"
+#include "grpc_layer/onvif_metadata_client.h"
 #include "grpc_layer/proto_mapper.h"
 #include "grpc_layer/state_store_client.h"
 #include "grpc_layer/utils_client.h"
@@ -68,6 +69,19 @@ int main(int argc, char** argv)
 
   std::signal(SIGINT, on_signal);
   std::signal(SIGTERM, on_signal);
+
+  // Started here rather than on the first metadata packet, so a broken environment shows up at
+  // startup instead of hours later on the first camera that speaks metadata. It needs nothing
+  // onvif_client does not already require.
+  try
+  {
+    onvif_metadata_client::instance().start();
+  }
+  catch (const std::exception& ex)
+  {
+    logger::instance().error(ex.what());
+    return 1;
+  }
 
   camera_manager manager;
   cfg_client c_client;
@@ -217,6 +231,8 @@ int main(int argc, char** argv)
 
   if (monitor) monitor->stop();
   manager.stop_all();
+  // After stop_all, so no reader thread is still queueing documents into a sender being torn down.
+  onvif_metadata_client::instance().stop();
   server->Shutdown();
   server->Wait();
   heartbeat_thread.join();

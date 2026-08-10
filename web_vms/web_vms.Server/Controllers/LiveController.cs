@@ -16,7 +16,8 @@ namespace web_vms;
 public class LiveController(
   ICameraManager _manager,
   ServerPairRegistry _registry,
-  ICameraAccessService _access
+  ICameraAccessService _access,
+  OnvifRouter _onvifRouter
   ) : ControllerBase
 {
   private static readonly TimeSpan MediaCallTimeout    = TimeSpan.FromSeconds(5);
@@ -249,6 +250,75 @@ public class LiveController(
     return Ok(enriched);
   }
 
+  /// <summary>
+  /// Which of these cameras are currently configured to stream their own object boxes, so the
+  /// monitor knows whether to light the "show boxes" button on each live slot.
+  /// </summary>
+  /// <remarks>
+  /// Batched rather than one call per slot: a 16-slot grid would otherwise open 16 requests on
+  /// mount. Answers come from VmsOnvif's cache — a camera it has not probed yet is simply missing
+  /// from the map (not reported false), and the client asks again once the probe lands. Lives here
+  /// rather than on OnvifController because that one is admin-only and operators are not admins.
+  /// </remarks>
+  [HttpPost("onvif-bbox-capable")]
+  public async Task<IActionResult> OnvifBboxCapable(
+    [FromBody] OnvifBboxCapableBody body, CancellationToken ct)
+  {
+    var scope = await _access.ScopeAsync(User, CameraAction.ViewLive, ct);
+    var cameraIds = scope.Filter(body.CameraIds ?? [], id => id).Distinct().ToList();
+    if (cameraIds.Count == 0)
+      return Ok(new Dictionary<string, bool>());
+
+    var result = new Dictionary<string, bool>();
+    // One call per node, not per camera: only the VmsOnvif next to a camera holds its cached state,
+    // but a node answers for all of its own cameras at once.
+    foreach (var (serverId, ids) in await GroupByOnvifNodeAsync(cameraIds, ct))
+    {
+      try
+      {
+        var request = new Vms.Onvif.MetadataStatesRequest();
+        request.CameraIds.AddRange(ids);
+        var resp = await _registry.GetOnvifClient(serverId)
+          .GetMetadataStatesAsync(request, BestEffortCallOptions(ct));
+        foreach (var pair in resp.BboxCapable)
+          result[pair.Key] = pair.Value;
+      }
+      catch (RpcException)
+      {
+        // A node that is down simply contributes nothing: the button stays dark, which is the
+        // right answer for cameras nobody can reach anyway.
+      }
+    }
+
+    return Ok(result);
+  }
+
+  // Grouped by node id rather than by client object: OnvifRouter hands out a fresh client per
+  // call, so grouping on those would silently degrade back to one request per camera.
+  private async Task<Dictionary<string, List<string>>> GroupByOnvifNodeAsync(
+    IEnumerable<string> cameraIds, CancellationToken ct)
+  {
+    var groups = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+    foreach (var cameraId in cameraIds)
+    {
+      string serverId;
+      try
+      {
+        serverId = await _onvifRouter.ResolveServerIdAsync(cameraId, ct);
+      }
+      catch (InvalidOperationException)
+      {
+        // Camera with no media server assigned — no node to ask.
+        continue;
+      }
+
+      if (!groups.TryGetValue(serverId, out var list))
+        groups[serverId] = list = [];
+      list.Add(cameraId);
+    }
+    return groups;
+  }
+
   private static IReadOnlyList<CameraStreamDto> WithWhepUrls(string cameraId, IReadOnlyList<CameraStreamDto> streams) =>
     streams.Select(s => s.WebRtc
       ? s with { WhepUrl = $"/api/live/whep/offer/{cameraId}/{s.StreamName}" }
@@ -370,3 +440,5 @@ public class LiveController(
     }
   }
 }
+
+public record OnvifBboxCapableBody(List<string>? CameraIds);

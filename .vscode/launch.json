@@ -86,6 +86,7 @@
                 "DAPR_CFG_APP_ID": "vmscfg",
                 "PUBSUB_NAME": "orderpubsub",
                 "APP_ID": "vmsonvif",
+                "DAPR_ANALYTICS_APP_ID": "vmsanalyticssingleton",
                 "OWN_SERVER_ID": "vms",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
@@ -423,6 +424,7 @@
                 "DAPR_CFG_APP_ID": "vmscfg",
                 "PUBSUB_NAME": "orderpubsub",
                 "APP_ID": "vmsonvif-2",
+                "DAPR_ANALYTICS_APP_ID": "vmsanalyticssingleton",
                 "OWN_SERVER_ID": "vms-2",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs-node2"
             }

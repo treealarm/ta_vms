@@ -43,6 +43,7 @@ import StreamOverrideRow from './StreamOverrideRow'
 import StreamProfileRow from './StreamProfileRow'
 import PtzOverlay from './PtzOverlay'
 import DeviceIoOverlay from './DeviceIoOverlay'
+import { useOnvifBboxCapable } from '../hooks/useOnvifBboxCapable'
 import { useAppDispatch, useAppSelector } from '../store'
 import { fetchCameraState, setArmedWithPrealarmBaseline, setStreamRecordingProfile } from '../store/liveSlice'
 
@@ -240,7 +241,14 @@ export default function CameraUnifiedCard({
   // In wall playback the per-cell live/archive toggle is suspended (the wall owns the mode) and
   // the bbox overlay only exists on the live WebRTC element, so both would be dead controls.
   const showModeToggle = !wallPlayback
-  const showBboxToggle = mode === 'live' && !wallPlayback && !isDisabled && Boolean(camera.hasAnalytics)
+  // Two independent box sources feed the same overlay: the CV detector (a watch configured in
+  // admin, reported on the camera) and the camera's own ONVIF Scene Description (configured on the
+  // device itself, so it has to be probed — see useOnvifBboxCapable). Either one is reason enough
+  // to offer the toggle.
+  const onvifBboxCapable = useOnvifBboxCapable(
+    camera.cameraId, mode === 'live' && !wallPlayback && !isDisabled)
+  const hasBoxSource = Boolean(camera.hasAnalytics) || onvifBboxCapable
+  const showBboxToggle = mode === 'live' && !wallPlayback && !isDisabled && hasBoxSource
   // Recording profile and override act on configuration, which is meaningful whatever the tile is
   // currently showing — but in the standalone card they follow the card's own mode.
   const showStateConfigRows = wallPlayback || mode === 'live'
@@ -689,7 +697,7 @@ export default function CameraUnifiedCard({
                 whepUrl={whepUrl}
                 stunUrl={camera.effectiveWebrtcStunUrl}
                 cameraId={camera.cameraId}
-                bboxEnabled={bboxOpen && !!camera.hasAnalytics}
+                bboxEnabled={bboxOpen && hasBoxSource}
               />
             )}
             {mode === 'archive' && (

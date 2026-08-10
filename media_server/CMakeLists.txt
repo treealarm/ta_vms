@@ -53,6 +53,8 @@ set(SOURCES
     grpc_layer/state_store_client.cpp
     grpc_layer/onvif_client.h
     grpc_layer/onvif_client.cpp
+    grpc_layer/onvif_metadata_client.h
+    grpc_layer/onvif_metadata_client.cpp
     grpc_layer/fs_client.h
     grpc_layer/fs_client.cpp
     interfaces/av_deleters.h
@@ -64,6 +66,8 @@ set(SOURCES
 
     reader/rtsp_reader.cpp
     reader/rtsp_reader.h
+    reader/onvif_metadata_assembler.cpp
+    reader/onvif_metadata_assembler.h
     reader/file_reader.cpp
     reader/file_reader.h
     reader/file_camera_reader.cpp

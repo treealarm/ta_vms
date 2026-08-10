@@ -29,6 +29,7 @@ import { useAppSelector } from '../store'
 import CameraStream from './CameraStream'
 import PtzControlPad from './PtzControlPad'
 import DeviceIoSection from './DeviceIoSection'
+import OnvifMetadataSection from './OnvifMetadataSection'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
 import type {
@@ -652,6 +653,7 @@ function CameraDetail({ camera }: { camera: CameraSetupDto }) {
     { key: 'imaging', label: t('onvifSettings.imagingTab'), show: caps?.hasImaging ?? true },
     { key: 'ptz', label: t('onvifSettings.ptzTab'), show: caps?.hasPtz ?? true },
     { key: 'deviceio', label: t('onvifSettings.deviceIoTab'), show: (caps?.hasRelayOutputs ?? true) || (caps?.hasDigitalInputs ?? true) },
+    { key: 'metadata', label: t('onvifSettings.metadataTab'), show: caps?.hasAnalytics ?? true },
     { key: 'system', label: t('onvifSettings.systemTab'), show: true },
   ].filter((tb) => tb.show)
 
@@ -692,6 +694,7 @@ function CameraDetail({ camera }: { camera: CameraSetupDto }) {
           {activeKey === 'imaging' && <ImagingSection cameraId={camera.cameraId} />}
           {activeKey === 'ptz' && <PtzPresetsSection cameraId={camera.cameraId} onProfileTokenChange={setPtzProfileToken} />}
           {activeKey === 'deviceio' && <DeviceIoSection cameraId={camera.cameraId} />}
+          {activeKey === 'metadata' && <OnvifMetadataSection cameraId={camera.cameraId} />}
           {activeKey === 'system' && <SystemSection cameraId={camera.cameraId} />}
         </Box>
       </Stack>

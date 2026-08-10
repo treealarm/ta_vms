@@ -590,7 +590,15 @@ export type AnalyticsActivityEntryDto = {
   persisted: boolean
   /** Re-identification label of the physical object, when resolved for this track */
   objectId?: string
+  /**
+   * Where the box came from: 'cv' (the video_a detector) or 'onvif' (the camera's own Scene
+   * Description). The two number their tracks independently, so a camera running both needs this
+   * in the overlay's key or the boxes overwrite each other.
+   */
+  source: AnalyticsDetectionSource
 }
+
+export type AnalyticsDetectionSource = 'cv' | 'onvif'
 
 export type OnvifAlarmFilterDto = {
   id?: string
@@ -672,6 +680,87 @@ export type DeviceCapabilitiesDto = {
   hasAudio: boolean
   hasRelayOutputs: boolean
   hasDigitalInputs: boolean
+  /** Camera runs its own analytics engine (ONVIF ver20 Analytics) — gates the Metadata tab. */
+  hasAnalytics: boolean
+}
+
+// ── ONVIF Profile M: metadata / analytics ───────────────────────────────────
+
+export type MetadataConfigDto = {
+  token: string
+  name: string
+  /** The flag that decides whether the metadata track carries object boxes at all. */
+  analytics: boolean
+  ptzStatus: boolean
+  events: boolean
+  geoLocation: boolean
+  shapePolygon: boolean
+  sessionTimeout?: string
+  compressionType?: string
+  /** Profiles this configuration is attached to; empty means it changes no stream. */
+  attachedProfileTokens: string[]
+}
+
+export type MetadataConfigsResponseDto = {
+  configs: MetadataConfigDto[]
+  /** The camera's own wording when it refused; the list is empty in that case. */
+  error?: string
+}
+
+export type MetadataConfigOptionsDto = {
+  supportsPtzStatus: boolean
+  compressionTypes: string[]
+  error?: string
+}
+
+export type OnvifAnalyticsConfigDto = {
+  token: string
+  name: string
+  attachedProfileTokens: string[]
+}
+
+export type OnvifAnalyticsConfigsResponseDto = {
+  configs: OnvifAnalyticsConfigDto[]
+  error?: string
+}
+
+export type AnalyticsSimpleItemDto = {
+  name: string
+  value: string
+}
+
+/** A configured analytics module or rule on the camera. */
+export type OnvifAnalyticsModuleDto = {
+  name: string
+  type: string
+  simpleItems: AnalyticsSimpleItemDto[]
+  /**
+   * Structured parameters (polygons, line segments, schedules) as raw XML. Not modelled: they have
+   * no fixed schema across vendors, and they must round-trip untouched or a Modify would silently
+   * drop whatever the UI did not understand.
+   */
+  elementItemsXml: string[]
+}
+
+export type OnvifAnalyticsModulesResponseDto = {
+  modules: OnvifAnalyticsModuleDto[]
+  error?: string
+}
+
+export type AnalyticsParameterDescriptionDto = {
+  name: string
+  type: string
+}
+
+export type OnvifAnalyticsModuleDescriptionDto = {
+  type: string
+  maxInstances?: string
+  parameters: AnalyticsParameterDescriptionDto[]
+}
+
+export type OnvifAnalyticsModuleDescriptionsResponseDto = {
+  descriptions: OnvifAnalyticsModuleDescriptionDto[]
+  error?: string
 }
 
 export type RelayMode = 'monostable' | 'bistable'

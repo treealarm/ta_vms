@@ -137,13 +137,23 @@ bool rtsp_reader::connect()
   }
 
   m_video_index = -1;
+  m_metadata_index = -1;
   m_forward_stream_indexes.clear();
-  for (unsigned i = 0; i < m_ctx->nb_streams; ++i) 
+  for (unsigned i = 0; i < m_ctx->nb_streams; ++i)
   {
     const AVMediaType media_type = m_ctx->streams[i]->codecpar->codec_type;
     if (media_type == AVMEDIA_TYPE_VIDEO && m_video_index < 0)
     {
       m_video_index = static_cast<int>(i);
+    }
+
+    // An "m=application" line in the SDP lands here as AVMEDIA_TYPE_DATA. The only application
+    // track ONVIF cameras publish is the metadata one, and the assembler validates the document
+    // root anyway, so no attempt is made to match the rtpmap encoding name — libavformat does not
+    // surface it for payloads it has no depacketizer for.
+    if (media_type == AVMEDIA_TYPE_DATA && m_metadata_index < 0)
+    {
+      m_metadata_index = static_cast<int>(i);
     }
 
     if (media_type == AVMEDIA_TYPE_VIDEO || media_type == AVMEDIA_TYPE_AUDIO)
@@ -159,12 +169,22 @@ bool rtsp_reader::connect()
     return false;
   }
 
+  if (m_metadata_index >= 0)
+  {
+    logger::instance().info(std::format(
+      "ONVIF metadata track found [cam={}] stream_index={}", m_cam_id, m_metadata_index));
+  }
+
   logger::instance().info(std::format("RTSP connected [cam={}]: {}", m_cam_id, m_rtsp_url));
   return true;
 }
 
 void rtsp_reader::disconnect() {
   m_video_index = -1;
+  m_metadata_index = -1;
+  // A half-assembled document from the old session would corrupt the first document of the new
+  // one, so the assembler is dropped rather than carried across the reconnect.
+  m_metadata_assembler.reset();
   m_forward_stream_indexes.clear();
   m_ctx.reset();
 }
@@ -246,6 +266,20 @@ void rtsp_reader::read_loop()
         if (was_alive && m_on_source_lost)
           m_on_source_lost();
       }
+      continue;
+    }
+
+    // Handled before the forward whitelist and before the liveness stamp below, deliberately on
+    // both counts: no sink is prepared for a data packet, and metadata must not keep the watchdog
+    // happy — a camera that keeps narrating the scene after its video died is still a dead source.
+    if (m_on_metadata && pkt->stream_index == m_metadata_index)
+    {
+      if (!m_metadata_assembler)
+      {
+        m_metadata_assembler = std::make_unique<onvif_metadata_assembler>(
+          [this](std::string&& document) { m_on_metadata(std::move(document)); });
+      }
+      m_metadata_assembler->push(pkt->data, static_cast<size_t>(pkt->size));
       continue;
     }
 

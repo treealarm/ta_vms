@@ -49,4 +49,10 @@ public record AnalyticsActivityEntryDto
   public bool Persisted { get; init; }
   /// <summary>Re-identification label of the physical object, when resolved for this track.</summary>
   public string? ObjectId { get; init; }
+  /// <summary>
+  /// Where the box came from: "cv" (the video_a detector) or "onvif" (the camera's own Scene
+  /// Description). The two number their tracks independently, so the overlay has to key on this as
+  /// well or a camera running both would have them overwrite each other.
+  /// </summary>
+  public string Source { get; init; } = "cv";
 }
