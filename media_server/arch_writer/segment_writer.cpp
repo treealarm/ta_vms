@@ -107,11 +107,16 @@ bool segment_writer::ensure_input_stream(const std::shared_ptr<media_packet>& me
     // fresh encoder configuration, and the old behaviour kept the stale one — every one of them was
     // written into a container built for the previous session or rejected outright, which is
     // archive silently lost for as long as the segment stayed open.
+    //
+    // Every stream is forgotten, not just this one: a reconnect usually re-announces video and
+    // audio together, and dropping them one at a time closes the segment once per stream. The
+    // second close lands on a file the first packet has only just opened, leaving a sub-second clip
+    // and an ingest row for it. One change means one new session.
     logger::instance().info(std::format(
       "segment_writer: stream {} changed its encoding — starting a new segment [cam={}/{}]",
       media->stream_index, m_camera_id, m_stream_name));
     close_segment();
-    m_input_streams.erase(it);
+    m_input_streams.clear();
   }
 
   avcodec_parameters_ptr codec_copy(avcodec_parameters_alloc(),

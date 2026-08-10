@@ -387,6 +387,32 @@ namespace VmsCfg
       return new OperationStatus { Success = ok, Message = ok ? string.Empty : "publish failed" };
     }
 
+    /// Clears the overrides whose window has elapsed. Driven from VmsSingleton: the sweep is
+    /// periodic global work and does not belong in a replicated service, while the SQL does belong
+    /// here, over VmsCfg's own table. ClearAlarmOverrideAsync is a compare-and-swap on
+    /// alarm_override_until, so only the caller that actually cleared a row hears about it — this
+    /// stays correct even if two sweeps ever overlap.
+    ///
+    /// Announcing is left to the caller, which batches: every notification makes a media server
+    /// re-read its whole configuration, and a steady stream of alarms would otherwise reload it on
+    /// every tick.
+    public override async Task<ExpireAlarmOverridesResponse> ExpireAlarmOverrides(
+      Empty request,
+      ServerCallContext context)
+    {
+      var response = new ExpireAlarmOverridesResponse();
+      foreach (var (cameraId, streamName) in await storage.ListAlarmOverrideStreamsAsync(context.CancellationToken))
+      {
+        if (!await storage.ClearAlarmOverrideAsync(cameraId, streamName, context.CancellationToken))
+          continue;
+
+        logger.LogInformation(
+          "Alarm recording expired for camera '{CameraId}' stream='{StreamName}'", cameraId, streamName);
+        response.Expired.Add(new ExpiredAlarmOverride { CameraId = cameraId, StreamName = streamName });
+      }
+      return response;
+    }
+
     public override async Task<ListMediaServersResponse> ListMediaServers(
       ListMediaServersRequest request,
       ServerCallContext context)

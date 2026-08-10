@@ -30,6 +30,7 @@ builder.Services.AddSingleton(_ =>
 builder.Services.AddSingleton<ScheduleChangeSignal>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ScheduleChangeSignal>());
 builder.Services.AddHostedService<RecordingScheduleService>();
+builder.Services.AddHostedService<AlarmOverrideExpiryService>();
 
 builder.WebHost.ConfigureKestrel(options =>
 {

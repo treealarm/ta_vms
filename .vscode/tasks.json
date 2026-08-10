@@ -104,9 +104,9 @@
         },
         {
             "label": "kill stale: vmscfg (F5)",
-            "detail": "Подчищает зависшие daprd/dotnet от прошлой (аварийно прерванной) сессии — иначе новый запуск не займёт порты.",
+            "detail": "Матчится по dapr-http-port, а не по app-id: у реплики vmscfg-2 он тот же (vmscfg), и pkill по нему убил бы обе. Процесс VmsCfg.dll не трогаем по той же причине — тот же бинарник использует и реплика.",
             "type": "shell",
-            "command": "pkill -f \"app-id vmscfg\" || true; pkill -f \"VmsCfg/bin/Debug/net8.0/VmsCfg.dll\" || true",
+            "command": "pkill -f \"dapr-http-port 3601\" || true",
             "problemMatcher": []
         },
         {
@@ -121,9 +121,9 @@
         },
         {
             "label": "kill stale: vmsonvif (F5)",
-            "detail": "Подчищает зависшие daprd/dotnet от прошлой (аварийно прерванной) сессии — иначе новый запуск не займёт порты.",
+            "detail": "Пробел в конце app-id обязателен: без него шаблон совпадает и с vmsonvif-2. Процесс VmsOnvif.dll не трогаем — тот же бинарник у второго узла.",
             "type": "shell",
-            "command": "pkill -f \"app-id vmsonvif \" || true; pkill -f \"VmsOnvif/bin/Debug/net8.0/VmsOnvif.dll\" || true",
+            "command": "pkill -f \"app-id vmsonvif \" || true",
             "problemMatcher": []
         },
         {
@@ -172,9 +172,9 @@
         },
         {
             "label": "kill stale: vmslogger (F5)",
-            "detail": "Подчищает зависшие daprd/dotnet от прошлой (аварийно прерванной) сессии — иначе новый запуск не займёт порты.",
+            "detail": "Пробел в конце app-id обязателен: без него шаблон совпадает и с vmslogger-2. Процесс VmsLogger.dll не трогаем — тот же бинарник использует логгер второго узла.",
             "type": "shell",
-            "command": "pkill -f \"app-id vmslogger\" || true; pkill -f \"VmsLogger/bin/Debug/net8.0/VmsLogger.dll\" || true",
+            "command": "pkill -f \"app-id vmslogger \" || true",
             "problemMatcher": []
         },
         {
@@ -308,9 +308,9 @@
         },
         {
             "label": "kill stale: vmsonvif-actors (F5)",
-            "detail": "Подчищает зависшие daprd/dotnet от прошлой (аварийно прерванной) сессии — иначе новый запуск не займёт порты.",
+            "detail": "Пробел в конце app-id обязателен: без него шаблон совпадает и с vmsonvif-actors-2. Процесс VmsOnvifActors.dll не трогаем — тот же бинарник у второго узла.",
             "type": "shell",
-            "command": "pkill -f \"app-id vmsonvif-actors\" || true; pkill -f \"VmsOnvifActors/bin/Debug/net8.0/VmsOnvifActors.dll\" || true",
+            "command": "pkill -f \"app-id vmsonvif-actors \" || true",
             "problemMatcher": []
         },
         {

@@ -24,7 +24,6 @@ builder.Services.AddSingleton<StorageDb>();
 builder.Services.AddSingleton<PermissionDb>();
 builder.Services.AddSingleton<CfgServiceImpl>();
 builder.Services.AddSingleton<StorageServiceImpl>();
-builder.Services.AddHostedService<AlarmOverrideExpiryService>();
 
 builder.WebHost.ConfigureKestrel(options =>
 {

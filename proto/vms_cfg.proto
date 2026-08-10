@@ -25,6 +25,11 @@ service CfgService {
   // Announces that these cameras' effective recording state may have changed. Publishing stays here
   // so topic names and the camera→server lookup do not get duplicated in a second service.
   rpc NotifyCamerasChanged(NotifyCamerasChangedRequest) returns (OperationStatus);
+  // Clears every alarm recording override whose window has elapsed and answers with the ones it
+  // actually cleared. The sweep is driven from VmsSingleton — it is periodic global work — but the
+  // clearing itself stays here, over VmsCfg's own table, and is a compare-and-swap, so a caller
+  // never sees a row someone else cleared.
+  rpc ExpireAlarmOverrides(google.protobuf.Empty) returns (ExpireAlarmOverridesResponse);
   rpc ListRecordingSchedules(ListRecordingSchedulesRequest) returns (ListRecordingSchedulesResponse);
   rpc UpsertRecordingSchedule(RecordingSchedule) returns (OperationStatus);
   rpc RemoveRecordingSchedule(RecordingScheduleRequest) returns (OperationStatus);
@@ -221,6 +226,15 @@ message RecordingScheduleStateResponse {
 
 message NotifyCamerasChangedRequest {
   repeated string camera_ids = 1;
+}
+
+message ExpiredAlarmOverride {
+  string camera_id = 1;
+  string stream_name = 2;
+}
+
+message ExpireAlarmOverridesResponse {
+  repeated ExpiredAlarmOverride expired = 1;
 }
 
 message SetCameraSchedulesRequest {

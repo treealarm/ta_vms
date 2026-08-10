@@ -1,4 +1,7 @@
-namespace VmsCfg;
+using Google.Protobuf.WellKnownTypes;
+using Vms.Cfg;
+
+namespace VmsSingleton;
 
 /// Clears alarm recording overrides whose window has elapsed and tells the owning media_server to
 /// re-read its config.
@@ -6,11 +9,14 @@ namespace VmsCfg;
 /// An override is stored as state on camera_stream (override_profile_id + alarm_override_until),
 /// not as a timer, so nothing expires it on its own: without this sweep the first alarm would pin
 /// a camera to continuous recording forever. Activation stays in VmsFs, which is where the
-/// retention deadline is computed — only the expiry lives here, next to the recording-schedule
-/// ticker, because it is global periodic work over VmsCfg's own table and must run exactly once.
+/// retention deadline is computed.
+///
+/// The sweep lives here rather than in VmsCfg for the same reason as the schedule ticker: VmsCfg is
+/// replicated, and periodic global work in a replicated service means every replica doing it. The
+/// clearing itself is still VmsCfg's — ExpireAlarmOverrides runs the SQL over its own table and
+/// answers with the rows it actually cleared — so no second service touches the schema.
 public sealed class AlarmOverrideExpiryService(
-  CameraStorage storage,
-  CfgServiceImpl cfgService,
+  CfgService.CfgServiceClient cfgClient,
   ILogger<AlarmOverrideExpiryService> logger) : BackgroundService
 {
   private static readonly TimeSpan Interval = TimeSpan.FromSeconds(2);
@@ -51,20 +57,17 @@ public sealed class AlarmOverrideExpiryService(
 
   private async Task TickAsync(CancellationToken ct)
   {
-    foreach (var (cameraId, streamName) in await storage.ListAlarmOverrideStreamsAsync(ct))
-    {
-      if (!await storage.ClearAlarmOverrideAsync(cameraId, streamName, ct))
-        continue;
-
-      logger.LogInformation(
-        "Alarm recording expired for camera '{CameraId}' stream='{StreamName}'", cameraId, streamName);
-      _pendingNotify.Add(cameraId);
-    }
+    var expired = await cfgClient.ExpireAlarmOverridesAsync(new Empty(), cancellationToken: ct);
+    foreach (var row in expired.Expired)
+      _pendingNotify.Add(row.CameraId);
 
     if (_pendingNotify.Count == 0 || DateTime.UtcNow - _lastNotifyUtc < MinNotifyInterval)
       return;
 
-    if (await cfgService.NotifyCamerasChangedAsync([.. _pendingNotify], ct))
+    var status = await cfgClient.NotifyCamerasChangedAsync(
+      new NotifyCamerasChangedRequest { CameraIds = { _pendingNotify } }, cancellationToken: ct);
+
+    if (status.Success)
     {
       _lastNotifyUtc = DateTime.UtcNow;
       _pendingNotify.Clear();

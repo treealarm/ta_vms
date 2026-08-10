@@ -23,6 +23,7 @@ public sealed class EphemeralReidGallery : IObjectIdentityResolver
   private readonly Dictionary<(string CameraId, long TrackId), TrackLink> _trackToObject = new();
 
   private readonly IDbContextFactory<AnalyticsDbContext> _dbFactory;
+  private readonly ILogger<EphemeralReidGallery> _logger;
   // Next number to hand out and the first number this process may no longer use. Both guarded by
   // _lock; when they meet, another block is taken from the sequence.
   private long _nextObjectNum;
@@ -31,11 +32,16 @@ public sealed class EphemeralReidGallery : IObjectIdentityResolver
   private sealed record Entry(string ObjectId, float[] Embedding, DateTime SeenAt);
   private sealed record TrackLink(string ObjectId, DateTime SeenAt);
 
-  public EphemeralReidGallery(IDbContextFactory<AnalyticsDbContext> dbFactory)
+  public EphemeralReidGallery(
+    IDbContextFactory<AnalyticsDbContext> dbFactory, ILogger<EphemeralReidGallery> logger)
   {
     _dbFactory = dbFactory;
+    _logger = logger;
     _minScore = RequireDouble("ANALYTICS_REID_MATCH_MIN_SCORE");
     _window = TimeSpan.FromSeconds(RequireUint("ANALYTICS_REID_GALLERY_WINDOW_SECONDS"));
+    // Take the first block at startup, where waiting on the database costs nothing. Failure is not
+    // fatal: NewObjectId falls back, and the next block is taken when one is needed.
+    TryTakeBlock();
   }
 
   public string Resolve(DetectionKind kind, IReadOnlyList<float> embedding, bool embeddingIsFresh,
@@ -141,21 +147,41 @@ public sealed class EphemeralReidGallery : IObjectIdentityResolver
   // Callers hold _lock, so the increment is safe.
   private string NewObjectId()
   {
-    if (_nextObjectNum >= _blockEnd)
-      TakeBlock();
+    if (_nextObjectNum >= _blockEnd && !TryTakeBlock())
+    {
+      // The database is unreachable and the current block is spent. A running number cannot be
+      // invented safely — another process may be inside the same range — but a unique id still can,
+      // and the contract already allows non-numeric ones (see IObjectIdentityResolver). Throwing
+      // instead would surface as the worker's detection stream dropping and re-reconciling every
+      // five seconds, which loses live detections over a fault that does not have to stop anything.
+      _logger.LogWarning("Object-id sequence unavailable — falling back to a unique non-numeric id");
+      return $"obj-{Guid.NewGuid():N}";
+    }
     return $"obj-{_nextObjectNum++}";
   }
 
-  // Caller holds _lock.
-  private void TakeBlock()
+  /// Reserves the next block of numbers. Caller holds _lock (or is the constructor). The database is
+  /// touched once per ObjectNumBlockSize new objects, and the timeout bounds how long the lock can
+  /// be held when Postgres is slow rather than down.
+  private bool TryTakeBlock()
   {
-    using var db = _dbFactory.CreateDbContext();
-    var start = db.Database
-      .SqlQueryRaw<long>("SELECT nextval('detections_object_num_seq') AS \"Value\"")
-      .AsEnumerable()
-      .First();
-    _nextObjectNum = start;
-    _blockEnd = start + ObjectNumBlockSize;
+    try
+    {
+      using var db = _dbFactory.CreateDbContext();
+      db.Database.SetCommandTimeout(TimeSpan.FromSeconds(5));
+      var start = db.Database
+        .SqlQueryRaw<long>("SELECT nextval('detections_object_num_seq') AS \"Value\"")
+        .AsEnumerable()
+        .First();
+      _nextObjectNum = start;
+      _blockEnd = start + ObjectNumBlockSize;
+      return true;
+    }
+    catch (Exception ex)
+    {
+      _logger.LogWarning(ex, "Could not reserve a block of object ids");
+      return false;
+    }
   }
 
   private static uint RequireUint(string name)

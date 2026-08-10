@@ -29,6 +29,10 @@ public sealed class ScheduleCache(ScheduleDb scheduleDb, DaprClient dapr, ILogge
   private DateTime _versionCheckedAtUtc = DateTime.MinValue;
   private DateTime _reloadedAtUtc = DateTime.MinValue;
   private string? _lastSeenVersion;
+  /// Whether _lastSeenVersion is an answer at all. A missing key is a real answer — "nobody has
+  /// edited a schedule yet" — and null alone cannot tell it apart from "never asked", which is what
+  /// made the first edit after a boot register as a baseline instead of a change.
+  private bool _hasVersionBaseline;
 
   private sealed record Snapshot(
     IReadOnlyDictionary<Guid, RecordingSchedule> Schedules,
@@ -72,9 +76,11 @@ public sealed class ScheduleCache(ScheduleDb scheduleDb, DaprClient dapr, ILogge
         return;
 
       string? version = null;
+      var probed = false;
       try
       {
         version = await dapr.GetStateAsync<string>(StateStoreName, VersionKey, cancellationToken: ct);
+        probed = true;
         _versionCheckedAtUtc = DateTime.UtcNow;
       }
       catch (Exception ex)
@@ -84,16 +90,20 @@ public sealed class ScheduleCache(ScheduleDb scheduleDb, DaprClient dapr, ILogge
         logger.LogDebug(ex, "Reading the schedule version failed; falling back to the cache TTL");
       }
 
-      var changed = version is not null
-        && _lastSeenVersion is not null
+      // A failed probe must not move the baseline, or the next successful one would look like a
+      // change and reload for nothing.
+      var changed = probed
+        && _hasVersionBaseline
         && !string.Equals(version, _lastSeenVersion, StringComparison.Ordinal);
-      _lastSeenVersion ??= version;
+
+      if (probed)
+      {
+        _lastSeenVersion = version;
+        _hasVersionBaseline = true;
+      }
 
       if (changed || staleByTtl)
-      {
-        _lastSeenVersion = version ?? _lastSeenVersion;
         await ReloadAsync(ct);
-      }
     }
     finally
     {

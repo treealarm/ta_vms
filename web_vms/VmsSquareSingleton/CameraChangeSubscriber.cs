@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Threading.Channels;
 using Dapr.Messaging.PublishSubscribe;
 using SquareIntegrationClient;
 using Vms.Cfg;
@@ -30,11 +31,67 @@ public sealed class CameraChangeSubscriber(
 
   private readonly CancellationTokenSource _cts = new();
 
+  // Pushing happens off the delivery path. A message carries every camera of a node — a schedule
+  // boundary can flip hundreds at once — and each one costs a round trip to VmsCfg plus one to
+  // Square, while the subscription's handling policy drops a message that takes longer than ten
+  // seconds. Done inline, the tail of a large batch was simply lost, with no retry.
+  private readonly Channel<string> _pending =
+    Channel.CreateUnbounded<string>(new UnboundedChannelOptions { SingleReader = true });
+
+  // What was last pushed for a camera, so an event that changes nothing Square can see costs
+  // nothing. Most of them are exactly that: the figure carries the name and the base recording
+  // profile, and neither moves when a schedule window opens or an alarm override expires.
+  private readonly Dictionary<string, string> _lastPushed = new(StringComparer.Ordinal);
+
   public Task StartAsync(CancellationToken cancellationToken)
   {
     _ = RunAsync(ServerConfigChangedTopic, HandleConfigChangedAsync, _cts.Token);
     _ = RunAsync(CameraStateChangedTopic, HandleStateChangedAsync, _cts.Token);
+    _ = PushLoopAsync(_cts.Token);
     return Task.CompletedTask;
+  }
+
+  private async Task PushLoopAsync(CancellationToken ct)
+  {
+    try
+    {
+      await foreach (var cameraId in _pending.Reader.ReadAllAsync(ct))
+      {
+        try
+        {
+          var resp = await cfgClient.GetCameraAsync(
+            new SourceRequest { SourceId = cameraId }, cancellationToken: ct);
+          if (!resp.Found || resp.Setup is null)
+            continue;
+
+          // The event is a signal, never data: the current camera is read here, so a message that
+          // arrives late or out of order still results in the present state being pushed.
+          var fingerprint = Fingerprint(resp.Setup);
+          if (_lastPushed.TryGetValue(cameraId, out var last) && last == fingerprint)
+            continue;
+
+          await SquareCameraPush.PushCameraAsync(square, resp.Setup, producerId.Value);
+          _lastPushed[cameraId] = fingerprint;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+          // Dropped from the cache so the next event for this camera retries rather than being
+          // skipped as unchanged.
+          _lastPushed.Remove(cameraId);
+          logger.LogWarning(ex, "Square push failed for camera '{CameraId}'", cameraId);
+        }
+      }
+    }
+    catch (OperationCanceledException) { }
+  }
+
+  /// Everything SquareCameraPush actually puts into the figure. Anything not in here cannot make
+  /// the pushed object differ, so a change to it must not cost a round trip.
+  private static string Fingerprint(CameraSetup setup)
+  {
+    var primary = setup.Streams.FirstOrDefault(s => s.WebRtc);
+    return $"{setup.Name}\u001f{primary?.RecordingProfile?.Name ?? string.Empty}";
   }
 
   private async Task RunAsync(string topic, TopicMessageHandler handler, CancellationToken ct)
@@ -62,28 +119,16 @@ public sealed class CameraChangeSubscriber(
   // does not alter what Square shows.
   private sealed record ServerConfigChanged(string? ServerId, IReadOnlyList<string>? CameraIds);
 
-  private async Task<TopicResponseAction> HandleConfigChangedAsync(TopicMessage message, CancellationToken ct)
+  private Task<TopicResponseAction> HandleConfigChangedAsync(TopicMessage message, CancellationToken ct)
   {
     var evt = ReadPayload<ServerConfigChanged>(message);
     if (evt is null)
-      return TopicResponseAction.Drop;
+      return Task.FromResult(TopicResponseAction.Drop);
 
     foreach (var cameraId in evt.CameraIds ?? [])
-    {
-      try
-      {
-        var resp = await cfgClient.GetCameraAsync(new SourceRequest { SourceId = cameraId }, cancellationToken: ct);
-        if (!resp.Found || resp.Setup is null)
-          continue;
+      _pending.Writer.TryWrite(cameraId);
 
-        await SquareCameraPush.PushCameraAsync(square, resp.Setup, producerId.Value);
-      }
-      catch (Exception ex)
-      {
-        logger.LogWarning(ex, "Square push failed for camera '{CameraId}'", cameraId);
-      }
-    }
-    return TopicResponseAction.Success;
+    return Task.FromResult(TopicResponseAction.Success);
   }
 
   private async Task<TopicResponseAction> HandleStateChangedAsync(TopicMessage message, CancellationToken ct)

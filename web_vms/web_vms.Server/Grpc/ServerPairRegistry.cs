@@ -96,10 +96,14 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
   /// written to local disk, so an instance only ever sees the machine it runs on and a complete
   /// answer means asking all of them. Deduplicated, since a single-host install names the same
   /// instance for both.
+  ///
+  /// Deliberately does not throw when the pairing has not loaded yet, unlike the routing helpers
+  /// above: this is the log viewer, and VmsCfg being unreachable is one of the things an operator
+  /// opens it to investigate. Without the per-node map the answer covers this host only, which is
+  /// still the machine holding the logs of whatever failed to answer.
   public IReadOnlyCollection<string> AllLoggerIds(string centralLoggerId)
   {
-    var perNode = _serverToLogger ?? throw new ServiceNotReadyException(
-      "Configuration service (VmsCfg) has not answered yet — see GET /api/health", _lastInitError);
+    var perNode = _serverToLogger ?? new Dictionary<string, string>();
 
     return perNode.Values
       .Append(centralLoggerId)
