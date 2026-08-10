@@ -29,7 +29,14 @@ public:
 
   /// Thread-safe snapshot for the reporting timer. Readers that cannot lose a source (files) may
   /// report themselves permanently alive.
-  virtual source_liveness liveness() const { return { true, std::nullopt }; }
+  /// Not brace-initialised: naming only `alive` leaves the two optionals to their default member
+  /// initializers, which is exactly the intent, but gcc reports that as a missing initializer.
+  virtual source_liveness liveness() const
+  {
+    source_liveness state;
+    state.alive = true;
+    return state;
+  }
 
   virtual bool open(const std::string& source) = 0;
   virtual AVStream* video_stream() const = 0;
