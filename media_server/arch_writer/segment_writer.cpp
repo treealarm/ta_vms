@@ -1,5 +1,6 @@
 ﻿#include "segment_writer.h"
 
+#include <cstring>
 #include <format>
 #include "file_system/recording_storage.h"
 #include <optional>
@@ -7,6 +8,31 @@
 
 #include "grpc_layer/fs_client.h"
 #include "logger/logger.h"
+
+namespace {
+
+/// Whether a stream's encoding has changed in a way the open container cannot absorb. Its output
+/// streams were created from the parameters seen when the segment was opened, so anything that
+/// alters the decoder configuration — a different codec, resolution, or a new SPS/PPS after the
+/// camera restarted its encoder — has to go into a new file.
+bool codec_parameters_differ(const AVCodecParameters& a, const AVCodecParameters& b)
+{
+  if (a.codec_id != b.codec_id || a.codec_type != b.codec_type
+    || a.width != b.width || a.height != b.height
+    || a.format != b.format || a.sample_rate != b.sample_rate
+    || a.extradata_size != b.extradata_size)
+    return true;
+
+  if (a.extradata_size <= 0)
+    return false;
+
+  if (!a.extradata || !b.extradata)
+    return true;
+
+  return std::memcmp(a.extradata, b.extradata, static_cast<std::size_t>(a.extradata_size)) != 0;
+}
+
+}  // namespace
 
 segment_writer::segment_writer(
   const std::string& camera_id,
@@ -68,9 +94,29 @@ bool segment_writer::ensure_input_stream(const std::shared_ptr<media_packet>& me
     return false;
   }
 
-  if (m_input_streams.contains(media->stream_index))
+  if (auto it = m_input_streams.find(media->stream_index); it != m_input_streams.end())
   {
-    return true;
+    const bool same = it->second.codec_parameters
+      && !codec_parameters_differ(*it->second.codec_parameters, *media->codec_parameters)
+      && it->second.time_base.num == media->time_base.num
+      && it->second.time_base.den == media->time_base.den;
+    if (same)
+      return true;
+
+    // Re-registered rather than refused. The packets arriving after a camera reconnects can carry a
+    // fresh encoder configuration, and the old behaviour kept the stale one — every one of them was
+    // written into a container built for the previous session or rejected outright, which is
+    // archive silently lost for as long as the segment stayed open.
+    //
+    // Every stream is forgotten, not just this one: a reconnect usually re-announces video and
+    // audio together, and dropping them one at a time closes the segment once per stream. The
+    // second close lands on a file the first packet has only just opened, leaving a sub-second clip
+    // and an ingest row for it. One change means one new session.
+    logger::instance().info(std::format(
+      "segment_writer: stream {} changed its encoding — starting a new segment [cam={}/{}]",
+      media->stream_index, m_camera_id, m_stream_name));
+    close_segment();
+    m_input_streams.clear();
   }
 
   avcodec_parameters_ptr codec_copy(avcodec_parameters_alloc(),

@@ -17,6 +17,7 @@ public sealed class OnvifEventSubscriptionService(
   OnvifFilterCache filterCache,
   CameraArmedCache armedCache,
   ObservedTopicsStore observedTopics,
+  string ownServerId,
   ILogger<OnvifEventSubscriptionService> logger) : BackgroundService
 {
   private const int RingBufferSize = 250;
@@ -32,6 +33,12 @@ public sealed class OnvifEventSubscriptionService(
 
   private readonly Channel<string> _configChangedChannel =
     Channel.CreateUnbounded<string>(new UnboundedChannelOptions { SingleReader = true });
+
+  /// Ask for a full reconciliation now — used when an event says the node changed without naming
+  /// cameras. The sentinel rides the same channel so the sweep and the event path stay serialised.
+  public void NotifyAllCamerasChanged() => _configChangedChannel.Writer.TryWrite(AllCamerasSentinel);
+
+  internal const string AllCamerasSentinel = "*";
 
   public void NotifyConfigChanged(string cameraId) =>
     _configChangedChannel.Writer.TryWrite(cameraId);
@@ -84,7 +91,12 @@ public sealed class OnvifEventSubscriptionService(
     try
     {
       await foreach (var cameraId in _configChangedChannel.Reader.ReadAllAsync(ct))
-        await RefreshCameraAsync(cameraId, ct, forceRestart: true);
+      {
+        if (cameraId == AllCamerasSentinel)
+          await RefreshAllCamerasAsync(ct);
+        else
+          await RefreshCameraAsync(cameraId, ct, forceRestart: true);
+      }
     }
     catch (OperationCanceledException) { }
   }
@@ -94,9 +106,30 @@ public sealed class OnvifEventSubscriptionService(
     try
     {
       var opts = new CallOptions(deadline: DateTime.UtcNow.Add(CfgTimeout), cancellationToken: ct);
-      var resp = await cfgClient.ListCamerasAsync(new ListCamerasRequest(), opts);
+      // Scoped to this node. ONVIF reaches a camera over the same local subnet RTSP does, so another
+      // node's cameras are not merely someone else's business — they have no route from here, and
+      // subscribing to them would produce nothing but connection timeouts.
+      var resp = await cfgClient.ListCamerasAsync(new ListCamerasRequest { ServerId = ownServerId }, opts);
+      // ListCameras already carries the full CameraSetup, onvif_conn and onvif_events_enabled
+      // included, so the list is applied as-is: a GetCamera per camera would add a round trip per
+      // camera on every refresh interval and return what we are already holding.
+      var mine = new HashSet<string>(StringComparer.Ordinal);
       foreach (var cam in resp.Cameras)
-        await RefreshCameraAsync(cam.CameraId, ct);
+      {
+        mine.Add(cam.CameraId);
+        ApplyCameraSetup(cam.CameraId, cam, forceRestart: false);
+      }
+
+      // Anything still subscribed that the list no longer mentions has left this node — moved to
+      // another server or deleted — and must be released here. Nothing else can notice: a camera
+      // that is gone is simply absent, so iterating the list alone would hold its pull point open
+      // forever, and after a move both nodes would be polling the same camera.
+      foreach (var cameraId in _cameraCts.Keys.Where(id => !mine.Contains(id)).ToList())
+      {
+        logger.LogInformation(
+          "Camera {CameraId} is no longer assigned to this node — dropping its ONVIF subscription", cameraId);
+        StopCameraSubscription(cameraId);
+      }
     }
     catch (Exception ex)
     {
@@ -104,6 +137,8 @@ public sealed class OnvifEventSubscriptionService(
     }
   }
 
+  /// Re-reads one camera. Only the config-changed path needs this — the periodic sweep works off
+  /// the list it has already fetched.
   private async Task RefreshCameraAsync(string cameraId, CancellationToken ct, bool forceRestart = false)
   {
     try
@@ -111,11 +146,29 @@ public sealed class OnvifEventSubscriptionService(
       var opts = new CallOptions(deadline: DateTime.UtcNow.Add(CfgTimeout), cancellationToken: ct);
       var resp = await cfgClient.GetCameraAsync(new SourceRequest { SourceId = cameraId }, opts);
 
-      bool hasOnvif = resp.Found
-        && resp.Setup?.OnvifEventsEnabled == true
-        && resp.Setup.OnvifConn != null
-        && !string.IsNullOrEmpty(resp.Setup.OnvifConn.Ip)
-        && resp.Setup.OnvifConn.Port > 0;
+      // The event names a node, but a camera that moved away is announced to the node it left as
+      // well — so being addressed is not proof of ownership, and it is re-checked against the camera
+      // itself. Applied blindly, a camera moved between nodes would end up polled from both.
+      var mine = resp.Found
+        && string.Equals(resp.Setup?.ServerId, ownServerId, StringComparison.OrdinalIgnoreCase);
+      ApplyCameraSetup(cameraId, mine ? resp.Setup : null, forceRestart);
+    }
+    catch (Exception ex)
+    {
+      logger.LogError(ex, "Failed to refresh camera {CameraId} ONVIF subscription", cameraId);
+    }
+  }
+
+  /// Brings the camera's subscription in line with its config. setup is null when the camera is
+  /// gone or unreadable, which stops the subscription just like ONVIF events being switched off.
+  private void ApplyCameraSetup(string cameraId, CameraSetup? setup, bool forceRestart)
+  {
+    try
+    {
+      bool hasOnvif = setup?.OnvifEventsEnabled == true
+        && setup.OnvifConn != null
+        && !string.IsNullOrEmpty(setup.OnvifConn.Ip)
+        && setup.OnvifConn.Port > 0;
 
       if (!hasOnvif)
       {
@@ -131,13 +184,13 @@ public sealed class OnvifEventSubscriptionService(
 
       var cts = new CancellationTokenSource();
       if (_cameraCts.TryAdd(cameraId, cts))
-        _ = RunCameraSubscriptionAsync(cameraId, resp.Setup!, cts.Token);
+        _ = RunCameraSubscriptionAsync(cameraId, setup!, cts.Token);
       else
         cts.Dispose();
     }
     catch (Exception ex)
     {
-      logger.LogError(ex, "Failed to refresh camera {CameraId} ONVIF subscription", cameraId);
+      logger.LogError(ex, "Failed to apply ONVIF subscription state for camera {CameraId}", cameraId);
     }
   }
 
@@ -292,11 +345,9 @@ public sealed class OnvifEventSubscriptionService(
         TimeoutSeconds = (uint)Math.Max(1, matched.TimeoutSeconds),
       };
 
-      using var camCts = new CancellationTokenSource(CfgTimeout);
-      var camResp = await cfgClient.GetCameraAsync(new SourceRequest { SourceId = cameraId }, new CallOptions(cancellationToken: camCts.Token));
-      var serverId = camResp.Found ? camResp.Setup.ServerId : null;
-
-      var fsClient = registry.GetFsClient(serverId);
+      // No lookup of the camera's server: this instance only ever subscribes to its own node's
+      // cameras, so the archive that must retain the footage is its own node's VmsFs.
+      var fsClient = registry.GetFsClient();
       var fsOpts = new CallOptions(deadline: DateTime.UtcNow.Add(FsTimeout));
       var status = await fsClient.RetainEventAsync(req, fsOpts);
       logger.LogInformation(

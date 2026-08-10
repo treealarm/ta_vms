@@ -98,15 +98,26 @@ int main(int argc, char** argv)
     }
   });
 
+  // Optional debug feed: one message per stream per period, so its volume is the stream count
+  // divided by the period, on a bus shared with the rest of the system. Off unless
+  // VMS_DEBUG_ENTITY_STATE_SECONDS names a positive period — the "Entity State" tab is a debugging
+  // aid, not something a deployment should pay for by default.
+  const int entity_state_period = env_int("VMS_DEBUG_ENTITY_STATE_SECONDS", 0);
   entity_state_publisher entity_pub;
-  std::thread entity_state_thread([&]() {
-    while (!g_stop_requested) {
-      for (const auto& s : manager.list_stream_states())
-        entity_pub.publish_stream_state(s);
-      for (int i = 0; i < 10 && !g_stop_requested; ++i)
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-  });
+  std::thread entity_state_thread;
+  if (entity_state_period > 0)
+  {
+    logger::instance().info(std::format(
+      "debug entity-state publishing every {}s", entity_state_period));
+    entity_state_thread = std::thread([&, entity_state_period]() {
+      while (!g_stop_requested) {
+        for (const auto& s : manager.list_stream_states())
+          entity_pub.publish_stream_state(s);
+        for (int i = 0; i < entity_state_period && !g_stop_requested; ++i)
+          std::this_thread::sleep_for(std::chrono::seconds(1));
+      }
+    });
+  }
 
   // Wait until VmsCfg is reachable before proceeding.
   {
@@ -210,6 +221,6 @@ int main(int argc, char** argv)
   server->Wait();
   heartbeat_thread.join();
   if (liveness_thread.joinable()) liveness_thread.join();
-  entity_state_thread.join();
+  if (entity_state_thread.joinable()) entity_state_thread.join();
   return 0;
 }

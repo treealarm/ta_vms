@@ -24,7 +24,7 @@ namespace web_vms.Server.Controllers;
 [Route("api/edge-archive")]
 [Authorize]
 public sealed class EdgeArchiveController(
-  OnvifService.OnvifServiceClient onvifClient,
+  OnvifRouter router,
   ICameraManager manager,
   ServerPairRegistry registry,
   ICameraAccessService access,
@@ -55,7 +55,7 @@ public sealed class EdgeArchiveController(
   [CameraAccess(CameraAction.ViewArchive)]
   public async Task<IActionResult> GetCapabilities(string cameraId, CancellationToken ct)
   {
-    var r = await onvifClient.GetEdgeCapabilitiesAsync(new CameraRequest { SourceId = cameraId }, Options(ct));
+    var r = await (await router.OnvifAsync(cameraId, ct)).GetEdgeCapabilitiesAsync(new CameraRequest { SourceId = cameraId }, Options(ct));
     return Ok(new EdgeCapabilitiesDto
     {
       Recording = r.Recording,
@@ -76,7 +76,7 @@ public sealed class EdgeArchiveController(
   [CameraAccess(CameraAction.ViewArchive)]
   public async Task<IActionResult> GetSummary(string cameraId, CancellationToken ct)
   {
-    var r = await onvifClient.GetEdgeRecordingSummaryAsync(new CameraRequest { SourceId = cameraId }, Options(ct));
+    var r = await (await router.OnvifAsync(cameraId, ct)).GetEdgeRecordingSummaryAsync(new CameraRequest { SourceId = cameraId }, Options(ct));
     return Ok(new EdgeSummaryDto
     {
       DataFrom = r.DataFrom,
@@ -92,7 +92,7 @@ public sealed class EdgeArchiveController(
   [CameraAccess(CameraAction.ViewArchive)]
   public async Task<IActionResult> ListRecordings(string cameraId, CancellationToken ct)
   {
-    var r = await onvifClient.ListEdgeRecordingsAsync(new CameraRequest { SourceId = cameraId }, SearchOptions(ct));
+    var r = await (await router.OnvifAsync(cameraId, ct)).ListEdgeRecordingsAsync(new CameraRequest { SourceId = cameraId }, SearchOptions(ct));
     return Ok(new EdgeRecordingsDto
     {
       Message = r.Message,
@@ -128,7 +128,7 @@ public sealed class EdgeArchiveController(
     [FromQuery] int maxResults,
     CancellationToken ct)
   {
-    var r = await onvifClient.ListEdgeRecordingIntervalsAsync(new EdgeIntervalsRequest
+    var r = await (await router.OnvifAsync(cameraId, ct)).ListEdgeRecordingIntervalsAsync(new EdgeIntervalsRequest
     {
       SourceId = cameraId,
       StartTime = from ?? string.Empty,
@@ -158,7 +158,7 @@ public sealed class EdgeArchiveController(
   [CameraAccess(CameraAction.Control)]
   public async Task<IActionResult> ListRecordingJobs(string cameraId, CancellationToken ct)
   {
-    var r = await onvifClient.ListEdgeRecordingJobsAsync(new CameraRequest { SourceId = cameraId }, Options(ct));
+    var r = await (await router.OnvifAsync(cameraId, ct)).ListEdgeRecordingJobsAsync(new CameraRequest { SourceId = cameraId }, Options(ct));
     return Ok(new EdgeRecordingJobsDto
     {
       Message = r.Message,
@@ -192,7 +192,7 @@ public sealed class EdgeArchiveController(
       return BadRequest(new { message = "mode is required (Active or Idle)" });
 
     logger.LogInformation("Setting camera {CameraId} recording job {JobToken} mode to {Mode}", cameraId, jobToken, body.Mode);
-    var r = await onvifClient.SetEdgeRecordingJobModeAsync(new EdgeSetJobModeRequest
+    var r = await (await router.OnvifAsync(cameraId, ct)).SetEdgeRecordingJobModeAsync(new EdgeSetJobModeRequest
     {
       SourceId = cameraId, JobToken = jobToken, Mode = body.Mode,
     }, Options(ct));
@@ -205,7 +205,7 @@ public sealed class EdgeArchiveController(
     string cameraId, string recordingToken, [FromBody] EdgeRecordingConfigRequestDto body, CancellationToken ct)
   {
     logger.LogInformation("Updating camera {CameraId} recording {Token} configuration", cameraId, recordingToken);
-    var r = await onvifClient.SetEdgeRecordingConfigurationAsync(new EdgeSetRecordingConfigurationRequest
+    var r = await (await router.OnvifAsync(cameraId, ct)).SetEdgeRecordingConfigurationAsync(new EdgeSetRecordingConfigurationRequest
     {
       SourceId = cameraId,
       RecordingToken = recordingToken,
@@ -220,7 +220,7 @@ public sealed class EdgeArchiveController(
   public async Task<IActionResult> DeleteRecording(string cameraId, string recordingToken, CancellationToken ct)
   {
     logger.LogWarning("Deleting recording {Token} on camera {CameraId}", recordingToken, cameraId);
-    var r = await onvifClient.DeleteEdgeRecordingAsync(new EdgeRecordingTokenRequest
+    var r = await (await router.OnvifAsync(cameraId, ct)).DeleteEdgeRecordingAsync(new EdgeRecordingTokenRequest
     {
       SourceId = cameraId, RecordingToken = recordingToken,
     }, Options(ct));
@@ -232,7 +232,7 @@ public sealed class EdgeArchiveController(
   public async Task<IActionResult> DeleteTrack(string cameraId, string recordingToken, string trackToken, CancellationToken ct)
   {
     logger.LogWarning("Deleting track {Track} of recording {Token} on camera {CameraId}", trackToken, recordingToken, cameraId);
-    var r = await onvifClient.DeleteEdgeTrackAsync(new EdgeTrackRequest
+    var r = await (await router.OnvifAsync(cameraId, ct)).DeleteEdgeTrackAsync(new EdgeTrackRequest
     {
       SourceId = cameraId, RecordingToken = recordingToken, TrackToken = trackToken,
     }, Options(ct));
@@ -244,7 +244,7 @@ public sealed class EdgeArchiveController(
   public async Task<IActionResult> DeleteRecordingJob(string cameraId, string jobToken, CancellationToken ct)
   {
     logger.LogWarning("Deleting recording job {JobToken} on camera {CameraId}", jobToken, cameraId);
-    var r = await onvifClient.DeleteEdgeRecordingJobAsync(new EdgeJobRequest
+    var r = await (await router.OnvifAsync(cameraId, ct)).DeleteEdgeRecordingJobAsync(new EdgeJobRequest
     {
       SourceId = cameraId, JobToken = jobToken,
     }, Options(ct));
@@ -257,7 +257,7 @@ public sealed class EdgeArchiveController(
   [CameraAccess(CameraAction.Control)]
   public async Task<IActionResult> ListStorage(string cameraId, CancellationToken ct)
   {
-    var r = await onvifClient.ListEdgeStorageAsync(new CameraRequest { SourceId = cameraId }, Options(ct));
+    var r = await (await router.OnvifAsync(cameraId, ct)).ListEdgeStorageAsync(new CameraRequest { SourceId = cameraId }, Options(ct));
     return Ok(new EdgeStorageDto
     {
       Supported = r.Supported,
@@ -282,7 +282,7 @@ public sealed class EdgeArchiveController(
   {
     logger.LogWarning("Formatting camera-side storage on {CameraId} (command '{Command}')",
       cameraId, body?.Command ?? "<device default>");
-    var r = await onvifClient.FormatEdgeStorageAsync(new EdgeFormatStorageRequest
+    var r = await (await router.OnvifAsync(cameraId, ct)).FormatEdgeStorageAsync(new EdgeFormatStorageRequest
     {
       SourceId = cameraId, Command = body?.Command ?? string.Empty,
     }, Options(ct));
@@ -332,7 +332,7 @@ public sealed class EdgeArchiveController(
       return BadRequest(new { message = "streamName is required (camera has no configured streams)" });
 
     // Resolved here rather than cached: many devices hand out single-use replay URIs.
-    var replay = await onvifClient.GetEdgeReplayUriAsync(new EdgeReplayUriRequest
+    var replay = await (await router.OnvifAsync(cameraId, ct)).GetEdgeReplayUriAsync(new EdgeReplayUriRequest
     {
       SourceId = cameraId, RecordingToken = body.RecordingToken,
     }, Options(ct));

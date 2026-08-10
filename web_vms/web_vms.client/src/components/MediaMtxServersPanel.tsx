@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Box, Button, IconButton, InputAdornment, List, Stack, TextField, Tooltip, Typography } from '@mui/material'
+import { Alert, Box, Button, IconButton, InputAdornment, List, MenuItem, Stack, TextField, Tooltip, Typography } from '@mui/material'
 import ClearIcon from '@mui/icons-material/Clear'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import { useTranslation } from 'react-i18next'
@@ -20,6 +20,8 @@ const EMPTY: MediaMtxServerDto = {
   // New routers start on the public STUN (what the client used to hardcode); clearing the field
   // is the explicit "LAN only, no STUN" choice.
   stunUrl: DEFAULT_STUN_URL,
+  // Empty means shared: usable by cameras of any node, which is what a single-box install wants.
+  serverId: '',
 }
 
 type FormProps = {
@@ -33,6 +35,8 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const { isBusy, status } = useAppSelector((s) => s.mediaMtx)
+  // The nodes a router can be pinned to — same list the camera form offers.
+  const mediaServers = useAppSelector((s) => s.live.servers)
   const isNew = server === null
 
   const [form, setForm] = useState<MediaMtxServerDto>(server ?? { ...EMPTY })
@@ -47,6 +51,7 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
     || form.webrtcPort !== snap.webrtcPort
     || form.apiPort !== snap.apiPort
     || form.stunUrl !== snap.stunUrl
+    || form.serverId !== snap.serverId
   )
 
   // Empty is a valid choice ("no STUN, LAN only"); anything else has to be a URL the browser's
@@ -148,6 +153,19 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
             size="small"
             helperText={t('mediaMtx.webrtcHostHelper')}
           />
+          <TextField
+            select
+            label={t('mediaMtx.nodeServerId')}
+            value={form.serverId}
+            onChange={(e) => setForm((prev) => ({ ...prev, serverId: e.target.value }))}
+            size="small"
+            helperText={t('mediaMtx.nodeServerIdHelper')}
+          >
+            <MenuItem value="">{t('mediaMtx.nodeServerIdShared')}</MenuItem>
+            {mediaServers.map((s) => (
+              <MenuItem key={s.serverId} value={s.serverId}>{s.serverId}</MenuItem>
+            ))}
+          </TextField>
           <TextField
             label={t('mediaMtx.stunUrl')}
             value={form.stunUrl}

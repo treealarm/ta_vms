@@ -6,6 +6,44 @@
 #include "grpc_layer/proto_mapper.h"
 #include "logger/logger.h"
 
+namespace {
+
+// Reads the value of a top-level string field out of the event payload. media_server has no JSON
+// parser and needs exactly one field out of a message this repository also writes, so pulling in a
+// library (and rebuilding the vms-deps base image shared with video_a) for it is not worth it.
+// Anything unexpected yields an empty string, which the caller treats as "not for us".
+std::string read_json_string_field(const std::string& json, const std::string& field)
+{
+  const std::string key = "\"" + field + "\"";
+  const auto key_pos = json.find(key);
+  if (key_pos == std::string::npos)
+    return {};
+
+  auto pos = json.find(':', key_pos + key.size());
+  if (pos == std::string::npos)
+    return {};
+
+  pos = json.find('"', pos + 1);
+  if (pos == std::string::npos)
+    return {};
+
+  std::string value;
+  for (++pos; pos < json.size(); ++pos)
+  {
+    if (json[pos] == '\\' && pos + 1 < json.size())
+    {
+      value += json[++pos];
+      continue;
+    }
+    if (json[pos] == '"')
+      return value;
+    value += json[pos];
+  }
+  return {};
+}
+
+}  // namespace
+
 config_subscriber::config_subscriber(
   camera_manager& cameras, cfg_client& cfg, std::string pubsub_name)
   : m_cameras(cameras)
@@ -29,17 +67,12 @@ grpc::Status config_subscriber::OnTopicEvent(
   const dapr::proto::runtime::v1::TopicEventRequest* request,
   dapr::proto::runtime::v1::TopicEventResponse* response)
 {
-  // Payload is the server_id that changed — only react if it's ours.
-  // Dapr wraps the JSON string payload in a CloudEvent envelope; the raw data field
-  // contains the JSON-encoded string e.g. "\"vms\"".
-  const std::string& data = request->data();
+  // Payload names the server whose configuration changed — only react if it's ours. Dapr unwraps
+  // the CloudEvent envelope, so the data field holds the object VmsCfg published:
+  // {"server_id":"vms","camera_ids":["cam1"]}.
+  const std::string server_id = read_json_string_field(request->data(), "server_id");
 
-  // Strip JSON string quotes if present
-  std::string server_id = data;
-  if (server_id.size() >= 2 && server_id.front() == '"' && server_id.back() == '"')
-    server_id = server_id.substr(1, server_id.size() - 2);
-
-  if (server_id != m_cfg.server_id())
+  if (server_id.empty() || server_id != m_cfg.server_id())
   {
     response->set_status(dapr::proto::runtime::v1::TopicEventResponse::SUCCESS);
     return grpc::Status::OK;

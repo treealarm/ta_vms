@@ -1,101 +1,102 @@
-using System.Text.Json;
-using Dapr.Client;
-using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
-using Vms.Cfg;
 using Vms.Utils;
 
 namespace VmsUtils;
 
 public class UtilsServiceImpl(
-  IHttpClientFactory httpClientFactory,
-  string cfgAppId,
-  EntityStateRegistry entityStateRegistry,
+  MediaMtxServerCache serverCache,
+  MediaMtxPathSnapshotCache snapshotCache,
   ILogger<UtilsServiceImpl> logger)
   : UtilsService.UtilsServiceBase
 {
   /// <summary>Carries the vms_read Basic credentials MediaMTX's Control API requires.</summary>
   public const string MediaMtxHttpClientName = "mediamtx-api";
 
-  private readonly HttpClient _http = httpClientFactory.CreateClient(MediaMtxHttpClientName);
 
-  public override Task<ListEntityStatesResponse> ListEntityStates(Empty request, ServerCallContext context)
-  {
-    var response = new ListEntityStatesResponse();
-    foreach (var (key, entry) in entityStateRegistry.GetAll())
-    {
-      response.Entities.Add(new EntityState
-      {
-        Service = key.Service,
-        EntityType = key.EntityType,
-        EntityId = key.EntityId,
-        StateJson = entry.StateJson,
-        LastSeen = Timestamp.FromDateTime(DateTime.SpecifyKind(entry.LastSeenUtc, DateTimeKind.Utc)),
-        Stale = entry.Stale,
-      });
-    }
-    return Task.FromResult(response);
-  }
-
-  public override async Task<GetMediaMtxPathInfoResponse> GetMediaMtxPathInfo(
-    GetMediaMtxPathInfoRequest request,
+  public override async Task<GetMediaMtxPathsInfoResponse> GetMediaMtxPathsInfo(
+    GetMediaMtxPathsInfoRequest request,
     ServerCallContext context)
   {
-    try
-    {
-      // Ask VmsCfg which MediaMTX server is assigned to this camera
-      var invoker = DaprClient.CreateInvocationInvoker(cfgAppId);
-      var cfgClient = new CfgService.CfgServiceClient(invoker);
-      var serverReply = await cfgClient.GetOrAssignMediaMtxServerAsync(
-        new SourceRequest { SourceId = request.CameraId },
-        cancellationToken: context.CancellationToken);
+    var ct = context.CancellationToken;
+    var response = new GetMediaMtxPathsInfoResponse();
 
-      if (!serverReply.Found || string.IsNullOrWhiteSpace(serverReply.Server.Host))
-        return new GetMediaMtxPathInfoResponse { Success = false };
+    // Resolve every camera's server first, then take one snapshot per distinct server: the caller's
+    // paths usually all live on the same MediaMTX, so this is a single list request for the batch.
+    var servers = new Dictionary<string, MediaMtxServerRef?>(StringComparer.Ordinal);
+    foreach (var pathRef in request.Paths)
+    {
+      if (servers.ContainsKey(pathRef.CameraId))
+        continue;
+
+      try
+      {
+        var server = await serverCache.GetAsync(pathRef.CameraId, ct);
+        servers[pathRef.CameraId] = server is null
+          ? null
+          : new MediaMtxServerRef(
+              server.ApiPort > 0 ? $"http://{server.Host}:{server.ApiPort}" : null);
+      }
+      catch (Exception ex)
+      {
+        logger.LogWarning(ex, "Resolving the MediaMTX server for camera '{CameraId}' failed", pathRef.CameraId);
+        servers[pathRef.CameraId] = null;
+      }
+    }
+
+    var snapshots = new Dictionary<string, IReadOnlyDictionary<string, MediaMtxPathState>?>(StringComparer.Ordinal);
+    foreach (var apiUrl in servers.Values.OfType<MediaMtxServerRef>()
+               .Select(s => s.ApiUrl).OfType<string>().Distinct(StringComparer.Ordinal))
+    {
+      snapshots[apiUrl] = await snapshotCache.GetAsync(apiUrl, ct);
+    }
+
+    foreach (var pathRef in request.Paths)
+    {
+      var info = new MediaMtxPathInfo
+      {
+        CameraId   = pathRef.CameraId,
+        StreamName = pathRef.StreamName,
+      };
+
+      // No server assigned, or resolving it failed: nothing can be said about viewers.
+      if (servers[pathRef.CameraId] is not { } server)
+      {
+        response.Paths.Add(info);
+        continue;
+      }
 
       // No control API on this server: an answer about viewers is unobtainable, and saying "nobody
       // is watching" would be a guess. Reported as a successful answer of a different kind, so the
       // caller can tell it apart from the API being momentarily unreachable.
-      if (serverReply.Server.ApiPort <= 0)
-        return new GetMediaMtxPathInfoResponse { Success = true, ApiConfigured = false };
-
-      var apiUrl = $"http://{serverReply.Server.Host}:{serverReply.Server.ApiPort}";
-      var path   = $"{request.CameraId}/{request.StreamName}";
-      var url    = $"{apiUrl}/v3/paths/get/{path}";
-
-      using var response = await _http.GetAsync(url, context.CancellationToken);
-      // The path exists only while something publishes to it or someone waits on it; absent means
-      // both are true of nobody.
-      if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-        return new GetMediaMtxPathInfoResponse
-        {
-          Success = true, ApiConfigured = true, ReadersCount = 0, HasSource = false,
-        };
-      if (!response.IsSuccessStatusCode)
-        return new GetMediaMtxPathInfoResponse { Success = false };
-
-      using var doc = JsonDocument.Parse(
-        await response.Content.ReadAsStreamAsync(context.CancellationToken));
-
-      var root = doc.RootElement;
-      var readersCount = root.TryGetProperty("readers", out var readers)
-        ? readers.GetArrayLength()
-        : 0;
-      var hasSource = root.TryGetProperty("source", out var source)
-        && source.ValueKind != JsonValueKind.Null;
-
-      return new GetMediaMtxPathInfoResponse
+      if (server.ApiUrl is null)
       {
-        Success       = true,
-        ApiConfigured = true,
-        ReadersCount  = readersCount,
-        HasSource     = hasSource,
-      };
+        info.Success = true;
+        response.Paths.Add(info);
+        continue;
+      }
+
+      if (snapshots[server.ApiUrl] is not { } paths)
+      {
+        response.Paths.Add(info);
+        continue;
+      }
+
+      info.Success = true;
+      info.ApiConfigured = true;
+      // A path exists only while something publishes to it or someone waits on it, so one missing
+      // from the snapshot means both are true of nobody.
+      if (paths.TryGetValue($"{pathRef.CameraId}/{pathRef.StreamName}", out var state))
+      {
+        info.ReadersCount = state.ReadersCount;
+        info.HasSource = state.HasSource;
+      }
+
+      response.Paths.Add(info);
     }
-    catch (Exception ex)
-    {
-      logger.LogWarning(ex, "GetMediaMtxPathInfo failed for camera '{CameraId}' stream '{StreamName}'", request.CameraId, request.StreamName);
-      return new GetMediaMtxPathInfoResponse { Success = false };
-    }
+
+    return response;
   }
+
+  /// ApiUrl is null when the assigned server has no control API port.
+  private sealed record MediaMtxServerRef(string? ApiUrl);
 }

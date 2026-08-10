@@ -6,7 +6,10 @@ using web_vms.Types.Actors;
 
 namespace VmsOnvif;
 
-public class PtzServiceImpl(CameraConnCache connCache, OnvifSettingsService settingsService) : PtzService.PtzServiceBase
+public class PtzServiceImpl(
+  CameraConnCache connCache,
+  OnvifSettingsService settingsService,
+  string cameraActorType) : PtzService.PtzServiceBase
 {
 
   public override async Task<PtzCapabilitiesResponse> GetCapabilities(PtzCapabilitiesRequest request, ServerCallContext context)
@@ -179,8 +182,9 @@ public class PtzServiceImpl(CameraConnCache connCache, OnvifSettingsService sett
   private async Task<CameraConnInfo?> GetConn(string sourceId, CancellationToken ct) =>
     (await connCache.GetAsync(sourceId, ct))?.Conn;
 
-  private static ActorProxy CameraActorProxy(string cameraId) =>
-    ActorProxy.Create(new ActorId(cameraId), "CameraActor");
+  // The type name carries this node — see CameraActorType.
+  private ActorProxy CameraActorProxy(string cameraId) =>
+    ActorProxy.Create(new ActorId(cameraId), cameraActorType);
 
   private static PtzResponse Ok() => new() { Success = true };
   private static PtzResponse Fail(string error) => new() { Success = false, Error = error };

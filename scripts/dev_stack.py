@@ -10,7 +10,7 @@ Infrastructure (postgres, redis, mediamtx, dapr placement) is not managed here; 
 compose and is expected to be up already.
 
 Usage:
-    dev_stack.py up [--build] [service ...]
+    dev_stack.py up [--build] [--two-nodes] [service ...]
     dev_stack.py down [service ...]
     dev_stack.py restart [--build] service [service ...]
     dev_stack.py status
@@ -36,15 +36,34 @@ PID_DIR = Path("/tmp/web_vms-dapr")
 # services, then the media server, then the gateway that fans out to all of them.
 ORDER = [
     "vmscfg",
+    "vmscfg-2",
     "vmslogger",
+    "vmslogger-2",
     "vmsutils",
+    "vmssingleton",
+    "vmssquaresingleton",
     "vmsonvif",
     "vmsonvif-actors",
     "vmsfs",
-    "vmsanalytics",
+    "vmsanalyticssingleton",
     "vms",
     "web_vms",
 ]
+
+# The second node: its own media_server, VmsFs, VmsOnvif and actor host, pinned to server id
+# "vms-2". Off unless --two-nodes is given — most work needs one node, and this doubles the process
+# count — but anything touching per-node sharding has to be tried here, because a single node
+# cannot show a camera being handed from one to another.
+NODE2 = [
+    "vmsonvif-2",
+    "vmsonvif-actors-2",
+    "vmsfs-2",
+    "vms-2",
+]
+
+# Everything that can be running, in start order. `down` and `status` work off this rather than
+# ORDER: a second node started earlier must not be left behind by a plain `down`.
+ALL = ORDER + NODE2
 
 
 def _load_jsonc(path: Path) -> dict:
@@ -221,7 +240,7 @@ def build(services: list[dict]) -> None:
 
 
 def status(services: dict[str, dict]) -> None:
-    for key in ORDER:
+    for key in ALL:
         service = services[key]
         app = _pid(PID_DIR / f"{key}.app.pid")
         dapr = _pid(PID_DIR / f"{key}.pid")
@@ -236,13 +255,17 @@ def main() -> None:
         sys.exit(__doc__)
     action, argv = argv[0], argv[1:]
     do_build = "--build" in argv
+    two_nodes = "--two-nodes" in argv
     names = [a for a in argv if not a.startswith("-")]
 
     services = _services()
     unknown = [n for n in names if n not in services]
     if unknown:
         sys.exit(f"unknown service(s): {', '.join(unknown)}\nknown: {', '.join(services)}")
-    selected = names or ORDER
+    # Stopping defaults to everything, starting to one node: a leftover second node is a surprise,
+    # an unstarted one is not.
+    default = ALL if (two_nodes or action == "down") else ORDER
+    selected = names or default
     chosen = [services[k] for k in selected]
 
     if action == "status":

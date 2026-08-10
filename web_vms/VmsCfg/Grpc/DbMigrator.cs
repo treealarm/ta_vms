@@ -29,6 +29,21 @@ public class DbMigrator(
       }
     }
     await using var _ = connection;
+
+    // One replica migrates, the rest wait and then find nothing left to do. Reading
+    // schema_migrations and applying a file are not atomic together, so two instances starting on
+    // the same database would both see the file as missing; the second would then fail on the
+    // primary key of schema_migrations, or — worse, for the seeds below — insert a second "default"
+    // row. A session-level advisory lock is the cheapest way to serialise a step that only runs at
+    // startup; it is released explicitly at the end, and by the connection closing if we throw.
+    await using (var lockCmd = new NpgsqlCommand(
+      "SELECT pg_advisory_lock(hashtext('ta_vms_schema_migrations'));", connection))
+    {
+      await lockCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    try
+    {
     await EnsureMigrationsTableAsync(connection, ct);
 
     var applied = await LoadAppliedMigrationsAsync(connection, ct);
@@ -63,6 +78,13 @@ public class DbMigrator(
 
     await SeedDefaultMediaMtxServerAsync(connection, ct);
     await SeedDefaultStorageAsync(ct);
+    }
+    finally
+    {
+      await using var unlockCmd = new NpgsqlCommand(
+        "SELECT pg_advisory_unlock(hashtext('ta_vms_schema_migrations'));", connection);
+      await unlockCmd.ExecuteNonQueryAsync(CancellationToken.None);
+    }
   }
 
   // Inserts a default Media Router from env var VMS_MTX_HOST if the table is empty.

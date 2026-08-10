@@ -66,13 +66,33 @@ When a service needs to react to a configuration change that originated in anoth
 **Rule:** VmsCfg is the single source of truth for all configuration (cameras, storages, recording profiles, MediaMTX servers, etc.). Any other service that caches or acts on this configuration must subscribe to change events published by VmsCfg, then fetch the updated data itself.
 
 **Pattern:**
-1. VmsCfg publishes an event to a topic (e.g. `camera-config-changed`, `storage-config-changed`) after a write operation succeeds.
+1. VmsCfg publishes an event to a topic (e.g. `server-config-changed`, `storage-config-changed`) after a write operation succeeds.
 2. The subscriber receives the event and invalidates its local cache or re-fetches the relevant slice of config from VmsCfg via gRPC.
 3. The subscriber never assumes the event payload contains the full new state — it only uses the event as a signal to pull fresh data.
 
 **Existing examples in this codebase:**
-- `CfgServiceImpl.InvalidateFsCache` publishes `camera-config-changed` → `VmsFs.CameraConfigSubscriber` re-fetches camera config.
+- `CfgServiceImpl.InvalidateFsCache` publishes `server-config-changed` → `VmsFs.CameraConfigSubscriber` re-fetches camera config.
 - `StorageServiceImpl` publishes `storage-config-changed` → `VmsFs.CameraStorageSubscriber` re-fetches storage assignments.
+
+### Config-change events are addressed to a node, not to a camera
+
+Camera configuration changes travel on a single topic, `server-config-changed`, with the payload
+`{"server_id": "...", "camera_ids": [...]}`. One event per affected server, not per camera.
+
+The event is delivered to every subscriber — each service has its own Dapr app id and therefore its
+own subscription — so `server_id` is what lets a node-scoped subscriber (`media_server`, `VmsOnvif`)
+drop what is not its business *before* doing any work. Deciding that by fetching the camera from
+VmsCfg would cost one round trip on every instance in the deployment, all but one of which throws
+the answer away.
+
+`camera_ids` is **addressing, not state**: it narrows which cache entries to drop, and nothing more.
+The subscriber still fetches the current configuration from VmsCfg — an event that arrives late or
+out of order must not be able to install a stale value. An empty list means "something node-wide
+changed" (a MediaMTX row, a pairing) and asks for a full reconcile.
+
+Do not add a per-server or per-camera suffix to the topic name. A subscriber that needs cameras
+outside its own node — `VmsSquareSingleton` does — would then have to know every server id in the
+deployment just to subscribe.
 
 **Do not:**
 - Add a direct gRPC call from service A to VmsCfg inside a hot path (e.g. per-request, per-packet) to read config that rarely changes — cache it and invalidate via pub/sub instead.
@@ -105,11 +125,31 @@ group behind on every restart.
 - `media_server` (`vms`) and `VmsFs` — scale by **sharding**: one pair per node, pinned to that
   node's storage. More capacity means another server↔FS pair, never a second replica of the same
   app id.
-- `VmsCfg`, `VmsUtils`, `VmsOnvif`, `VmsAnalytics`, `VmsLogger` — **single instance**. Each owns
-  in-memory state or a background job that must not run twice (recording-schedule ticker,
-  entity-state registry, ONVIF event pumps, live detection broadcaster, log retention). Scaling any
-  of these needs leader election or the state moved out first.
-- `VmsOnvifActors` — scales through Dapr actor placement; that is what it is for.
+- `VmsOnvif` and `VmsOnvifActors` — also **sharded by node**, for a different reason: ONVIF reaches a
+  camera over the same local subnet RTSP does, so an instance can only serve the cameras of the media
+  server it sits next to. `OWN_SERVER_ID` names that node; the actor type name carries it too
+  (`CameraActorType`), because Dapr placement routes actors by type name and would otherwise put a
+  camera's actor on a host with no route to it.
+- `VmsSingleton` — **exactly one instance, ever.** The suffix is the deployment contract: this is
+  where work that must happen once for the whole system lives, together with in-memory aggregation a
+  second copy would split rather than share (all replicas of one app id share a Dapr consumer group,
+  so each would see half the events). Anything that does not need that property must not go here —
+  otherwise it becomes a dumping ground and the guarantee stops meaning anything.
+- `VmsAnalyticsSingleton` — also exactly one instance, but for its own reason: it is the control
+  plane of analytics, not a worker. It decides which `analytics-worker` watches which camera and
+  holds one long-lived `StreamDetections` per worker — and a stream, unlike a queue, is delivered to
+  every subscriber in full, so a second instance would duplicate every detection: the row, the crop
+  file and the `RetainEvent`. Its re-identification gallery, event grouping and debounce are shared
+  state in the same way. **The scaling axis is the workers**, which are already sharded across
+  `DAPR_ANALYTICS_WORKER_APP_IDS` by rendezvous hash. Sharding this service by camera is possible but
+  costs cross-camera re-identification between shards — decide that deliberately, not by adding a
+  replica.
+- `VmsCfg`, `VmsUtils`, `VmsLogger` — `VmsCfg` and `VmsUtils` are replicable (their once-only work
+  lives in `VmsSingleton`); `VmsLogger` is sharded by node, because it reads node-local files.
+
+**Naming rule:** a service that cannot be replicated carries `Singleton` in its project name and Dapr
+app-id. A reader must be able to tell the scaling class from the name alone, without reading
+`Program.cs` to discover a background job hiding inside.
 
 ## Debug "entity state" presence registry
 
@@ -127,7 +167,7 @@ mechanism — no delivery guarantees, no history, nothing is written to a databa
 - `state` — arbitrary JSON object, no fixed schema; each entity publishes whatever fields are
   relevant to it.
 
-**VmsUtils** owns the in-memory registry: it subscribes to `debug-entity-state`, keys entries by
+**VmsSingleton** owns the in-memory registry: it subscribes to `debug-entity-state`, keys entries by
 `(service, entity_type, entity_id)`, and tracks `last_seen`. `stale` is computed on read
 (`now - last_seen > 30s`); a periodic sweep removes entries not seen for `> 5min`. The registry is
 exposed via the `ListEntityStates` gRPC (consumed by `web_vms.Server`'s `/api/entitystate`
@@ -184,16 +224,22 @@ Square) реализованы; план — [`docs/square-integration-plan.md`]
   Функции, не связанные с интеграцией (login, push в Square), всё ещё гейтятся по env
   (`KEYCLOAK_URL`, `SQUARE_INTEGRATION_SINK_APP_ID`) — но сетевая/Redis-связность теперь
   безусловна, не за гейтом.
-- **VmsCfg — единственная точка подключения интеграции** (producer-сторона). Тяжёлое ядро (C++
-  `media_server` и пр.) интеграцией не затрагивается. Не размазывай интеграционную логику по другим
-  сервисам.
+- **`VmsSquareSingleton` — единственная точка подключения интеграции** (producer-сторона). Тяжёлое
+  ядро (C++ `media_server` и пр.) интеграцией не затрагивается. Не размазывай интеграционную логику
+  по другим сервисам: `VmsCfg` про Square не знает вообще и лишь публикует свои обычные события
+  (`server-config-changed`, `camera-state-changed`), на которые интегратор подписан.
+- **Идентичность продьюсера в дереве Square — `SQUARE_INTEGRATION_PRODUCER_ID`, а не `APP_ID`
+  процесса.** Из этого значения детерминированно выводится id корневого объекта, поэтому обе стороны
+  задают его конфигурацией и ничем не обмениваются в рантайме. Значение постоянно: смена
+  осиротит всё поддерево, уже зарегистрированное под старым корнем.
 - **Конфиг — только снизу вверх.** Конфигурация камер принадлежит ta_vms и пушится в Square; наружу
   она read-only. Изменение состояния извне — **только командами** (actions: запись/арм/PTZ/`resync`),
   никогда не правкой конфига из Square. В Square для интеграционных объектов (с `i_name`) панель
   свойств — read-only, и для них не регистрируется иерархия типов (`UpdateIntegroTypes`), чтобы
   нельзя было создать их руками из дерева Square.
-- **root-объект интеграции = Dapr APP_ID** сервиса; команды — через Dapr service invocation,
-  асинхронно (handle/uid сразу, статус позже).
+- **root-объект интеграции = `SQUARE_INTEGRATION_PRODUCER_ID`** (историческое значение — `vmscfg`,
+  когда продьюсером была `VmsCfg`); команды — через Dapr service invocation, асинхронно
+  (handle/uid сразу, статус позже). Обработчики команд ещё не подключены.
 - **Не конфликтуй с базисом интеграции:** общая шина pub/sub `orderpubsub` и общий Redis с Square/
   `multitenant_admin`, общая docker-сеть `common_app_network`, раздельные PostgreSQL, модель
   самоописывающихся свойств/команд. Перед добавлением новых топиков, портов, env или сервисов

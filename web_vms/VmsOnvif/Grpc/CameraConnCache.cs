@@ -45,7 +45,11 @@ public sealed class CameraConnCache(CfgService.CfgServiceClient cfgClient)
         setup.OnvifConn.Port,
         setup.Cred?.User ?? string.Empty,
         setup.Cred?.Pass ?? string.Empty,
-        setup.OnvifConn.Xaddr ?? string.Empty);
+        setup.OnvifConn.Xaddr ?? string.Empty,
+        // The camera's own node, not this instance's: the actor compares it against the node it
+        // serves, so carrying our own id here would compare a value with itself and never detect
+        // anything.
+        setup.ServerId ?? string.Empty);
     }
 
     var streams = setup.Streams

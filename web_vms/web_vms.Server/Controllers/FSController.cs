@@ -390,7 +390,7 @@ public sealed class FSController(
     }
 
     // Fan-out to all FS instances, then group the merged episodes by event_id (the group label
-    // minted by the single-DB VmsAnalytics, so it is globally consistent across instances).
+    // minted by the single-DB VmsAnalyticsSingleton, so it is globally consistent across instances).
     var episodes = new List<EpisodeDto>();
     var moreOnInstance = false;
     // A named camera lives on exactly one FS instance — ask it directly instead of fanning out to

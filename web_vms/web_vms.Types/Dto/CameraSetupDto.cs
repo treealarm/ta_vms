@@ -43,6 +43,8 @@ public record MediaMtxServerDto
   public int    ApiPort    { get; init; } = 9997;
   /// <summary>STUN server used by the browser for WHEP playback. Empty = no STUN (LAN only).</summary>
   public string StunUrl    { get; init; } = string.Empty;
+  /// <summary>Media server node this MediaMTX serves. Empty = shared, usable by any node.</summary>
+  public string ServerId   { get; init; } = string.Empty;
 }
 
 public record CameraSetupDto

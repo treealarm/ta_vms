@@ -7,7 +7,7 @@ namespace web_vms;
 
 [ApiController]
 [Route("api/[controller]")]
-public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBase
+public class PtzController(OnvifRouter router) : ControllerBase
 {
   private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
 
@@ -18,7 +18,7 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
   [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
   public async Task<IActionResult> ContinuousMove([FromBody] PtzMoveDto dto, CancellationToken ct)
   {
-    var response = await ptzClient.ContinuousMoveAsync(new PtzContinuousMoveRequest
+    var response = await (await router.PtzAsync(dto.CameraId, ct)).ContinuousMoveAsync(new PtzContinuousMoveRequest
     {
       SourceId     = dto.CameraId,
       ProfileToken = dto.ProfileToken ?? string.Empty,
@@ -34,7 +34,7 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
   [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
   public async Task<IActionResult> AbsoluteMove([FromBody] PtzAbsoluteMoveDto dto, CancellationToken ct)
   {
-    var response = await ptzClient.AbsoluteMoveAsync(new PtzAbsoluteMoveRequest
+    var response = await (await router.PtzAsync(dto.CameraId, ct)).AbsoluteMoveAsync(new PtzAbsoluteMoveRequest
     {
       SourceId     = dto.CameraId,
       ProfileToken = dto.ProfileToken ?? string.Empty,
@@ -51,7 +51,7 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
   [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
   public async Task<IActionResult> RelativeMove([FromBody] PtzMoveDto dto, CancellationToken ct)
   {
-    var response = await ptzClient.RelativeMoveAsync(new PtzRelativeMoveRequest
+    var response = await (await router.PtzAsync(dto.CameraId, ct)).RelativeMoveAsync(new PtzRelativeMoveRequest
     {
       SourceId     = dto.CameraId,
       ProfileToken = dto.ProfileToken ?? string.Empty,
@@ -68,7 +68,7 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
   [CameraAccess(CameraAction.ViewLive)]
   public async Task<IActionResult> GetCapabilities([FromQuery] string cameraId, CancellationToken ct)
   {
-    var response = await ptzClient.GetCapabilitiesAsync(
+    var response = await (await router.PtzAsync(cameraId, ct)).GetCapabilitiesAsync(
       new PtzCapabilitiesRequest { SourceId = cameraId }, Options(ct));
 
     return Ok(new
@@ -83,7 +83,7 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
   [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
   public async Task<IActionResult> Stop([FromBody] PtzStopDto dto, CancellationToken ct)
   {
-    var response = await ptzClient.StopAsync(new PtzStopRequest
+    var response = await (await router.PtzAsync(dto.CameraId, ct)).StopAsync(new PtzStopRequest
     {
       SourceId     = dto.CameraId,
       ProfileToken = dto.ProfileToken ?? string.Empty
@@ -97,7 +97,7 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
   [CameraAccess(CameraAction.Ptz)]
   public async Task<IActionResult> GetPresets(string cameraId, [FromQuery] string profileToken, CancellationToken ct)
   {
-    var response = await ptzClient.GetPresetsAsync(
+    var response = await (await router.PtzAsync(cameraId, ct)).GetPresetsAsync(
       new PtzPresetsRequest { SourceId = cameraId, ProfileToken = profileToken ?? string.Empty },
       Options(ct));
     return Ok(response.Presets.Select(p => new { token = p.Token, name = p.Name }));
@@ -107,7 +107,7 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
   [CameraAccess(CameraAction.Ptz)]
   public async Task<IActionResult> SetPreset(string cameraId, [FromBody] SetPresetBody body, CancellationToken ct)
   {
-    var response = await ptzClient.SetPresetAsync(
+    var response = await (await router.PtzAsync(cameraId, ct)).SetPresetAsync(
       new PtzSetPresetRequest
       {
         SourceId     = cameraId,
@@ -125,7 +125,7 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
   public async Task<IActionResult> GotoPreset(
     string cameraId, string presetToken, [FromBody] GotoPresetBody body, CancellationToken ct)
   {
-    var response = await ptzClient.GotoPresetAsync(
+    var response = await (await router.PtzAsync(cameraId, ct)).GotoPresetAsync(
       new PtzGotoPresetRequest
       {
         SourceId     = cameraId,
@@ -140,7 +140,7 @@ public class PtzController(PtzService.PtzServiceClient ptzClient) : ControllerBa
   public async Task<IActionResult> RemovePreset(
     string cameraId, string presetToken, [FromQuery] string profileToken, CancellationToken ct)
   {
-    var response = await ptzClient.RemovePresetAsync(
+    var response = await (await router.PtzAsync(cameraId, ct)).RemovePresetAsync(
       new PtzRemovePresetRequest
       {
         SourceId     = cameraId,

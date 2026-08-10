@@ -18,8 +18,18 @@ service CfgService {
   rpc ClearStreamOverride(ClearStreamOverrideRequest) returns (OperationStatus);
   rpc SetStreamRecordingProfile(SetStreamRecordingProfileRequest) returns (OperationStatus);
   rpc ActivateAlarmOverride(ActivateAlarmOverrideRequest) returns (ActivateAlarmOverrideResponse);
-  rpc ClearAlarmOverride(ClearAlarmOverrideRequest) returns (OperationStatus);
-  rpc ListAlarmOverrideStreams(ListAlarmOverrideStreamsRequest) returns (ListAlarmOverrideStreamsResponse);
+  // For the schedule ticker in VmsSingleton. All schedule evaluation stays here, where the schema
+  // and the evaluator live: the ticker only detects transitions and announces them, so it needs no
+  // copy of the rules and no second cache.
+  rpc GetRecordingScheduleState(google.protobuf.Empty) returns (RecordingScheduleStateResponse);
+  // Announces that these cameras' effective recording state may have changed. Publishing stays here
+  // so topic names and the camera→server lookup do not get duplicated in a second service.
+  rpc NotifyCamerasChanged(NotifyCamerasChangedRequest) returns (OperationStatus);
+  // Clears every alarm recording override whose window has elapsed and answers with the ones it
+  // actually cleared. The sweep is driven from VmsSingleton — it is periodic global work — but the
+  // clearing itself stays here, over VmsCfg's own table, and is a compare-and-swap, so a caller
+  // never sees a row someone else cleared.
+  rpc ExpireAlarmOverrides(google.protobuf.Empty) returns (ExpireAlarmOverridesResponse);
   rpc ListRecordingSchedules(ListRecordingSchedulesRequest) returns (ListRecordingSchedulesResponse);
   rpc UpsertRecordingSchedule(RecordingSchedule) returns (OperationStatus);
   rpc RemoveRecordingSchedule(RecordingScheduleRequest) returns (OperationStatus);
@@ -203,6 +213,30 @@ message ListRecordingSchedulesResponse {
   repeated RecordingSchedule schedules = 1;
 }
 
+// Everything the schedule ticker needs in one answer, resolved against the wall clock here.
+message RecordingScheduleStateResponse {
+  // Cameras with at least one schedule assigned. A camera that drops off this list has lost its
+  // last assignment, and the ticker forgets it so a re-assignment reads as a fresh transition.
+  repeated string scheduled_camera_ids = 1;
+  // Of those, the ones whose window is open right now.
+  repeated string active_camera_ids = 2;
+  // Earliest upcoming boundary across every assigned schedule; absent when none is scheduled.
+  optional google.protobuf.Timestamp next_transition = 3;
+}
+
+message NotifyCamerasChangedRequest {
+  repeated string camera_ids = 1;
+}
+
+message ExpiredAlarmOverride {
+  string camera_id = 1;
+  string stream_name = 2;
+}
+
+message ExpireAlarmOverridesResponse {
+  repeated ExpiredAlarmOverride expired = 1;
+}
+
 message SetCameraSchedulesRequest {
   string camera_id = 1;
   repeated string schedule_ids = 2;
@@ -217,6 +251,13 @@ message MediaServerNode {
   string server_id = 1;
   string status    = 2;
   string fs_id     = 3;
+  // The VmsOnvif instance that shares this node's camera network. ONVIF reaches cameras over the
+  // same local subnet RTSP does, so a call for a camera must go to its own node's instance — a
+  // central one has no route to it.
+  string onvif_id  = 4;
+  // The VmsLogger instance that can read this node's log files. Logs are written to local disk, so
+  // one instance only ever sees the machine it runs on.
+  string logger_id = 5;
 }
 
 message ListMediaServersRequest {}
@@ -284,6 +325,11 @@ message MediaMtxServer {
   // STUN server the browser uses when negotiating WHEP playback. Empty = no STUN at all,
   // i.e. host candidates only (LAN-only viewing, no public server round-trip).
   string stun_url    = 8;
+  // The media server node this MediaMTX serves. Empty means shared — it answers for any node,
+  // which is what a single-box installation wants. Cameras are only assigned a server that is
+  // either theirs or shared: the push travels from media_server to MediaMTX, so a cross-node
+  // assignment would carry video over whatever link separates the two.
+  string server_id   = 9;
 }
 
 message MediaMtxServerRequest {
@@ -372,22 +418,6 @@ message ActivateAlarmOverrideRequest {
 
 message ActivateAlarmOverrideResponse {
   bool activated = 1;
-}
-
-message ClearAlarmOverrideRequest {
-  string camera_id   = 1;
-  string stream_name = 2;
-}
-
-message AlarmOverrideStream {
-  string camera_id   = 1;
-  string stream_name = 2;
-}
-
-message ListAlarmOverrideStreamsRequest {}
-
-message ListAlarmOverrideStreamsResponse {
-  repeated AlarmOverrideStream streams = 1;
 }
 
 message OnvifAlarmFilter {

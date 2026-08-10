@@ -48,7 +48,7 @@ public class AnalyticsWatchController(
     return Ok(new ApiResponse(response.Success, response.Message));
   }
 
-  // Debug feed: recent detections from VmsAnalytics' in-memory ring buffer (bbox + optional JPEG).
+  // Debug feed: recent detections from VmsAnalyticsSingleton's in-memory ring buffer (bbox + optional JPEG).
   [HttpGet("activity")]
   public async Task<IActionResult> GetActivity([FromQuery] int? limit, CancellationToken ct)
   {

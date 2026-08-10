@@ -1,14 +1,14 @@
 using Google.Protobuf.WellKnownTypes;
 using Microsoft.AspNetCore.Mvc;
 using web_vms.Types.Dto;
-using Vms.Utils;
+using Vms.Singleton;
 using web_vms.Authorization;
 
 namespace web_vms
 {
   [Route("api/[controller]")]
   [ApiController]
-  public class EntityStateController(UtilsService.UtilsServiceClient grpcClient) : ControllerBase
+  public class EntityStateController(SingletonService.SingletonServiceClient grpcClient) : ControllerBase
   {
     [NoCameraAccess("debug registry of in-memory service state, not camera video")]
     [HttpGet]

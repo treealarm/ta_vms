@@ -35,11 +35,21 @@ void mediamtx_monitor::poll_loop()
   {
     auto streams = m_cameras.webrtc_streams_snapshot();
 
+    // One call for the whole set. Asking per stream made the request rate — and the load it put on
+    // VmsUtils, VmsCfg and the MediaMTX control API — grow with the number of published streams.
+    std::vector<utils_client::path_ref> refs;
+    refs.reserve(streams.size());
+    for (const auto& stream : streams)
+      refs.push_back({ stream->get_camera_id(), stream->get_stream_name() });
+
+    const auto infos = m_utils.get_mediamtx_paths(refs);
+
     for (const auto& stream : streams)
     {
+      // mediamtx_path() is "camera_id/stream_name", which is how the batch keys its answers.
       const std::string path = stream->mediamtx_path();
-      const auto info = m_utils.get_mediamtx_path(
-        stream->get_camera_id(), stream->get_stream_name());
+      const auto info_it = infos.find(path);
+      const auto info = info_it != infos.end() ? info_it->second : utils_client::path_info{};
 
       // Nothing was learned this round — VmsUtils or the API is unreachable. Silence is not an
       // answer about viewers, so the stream is left exactly as it is.

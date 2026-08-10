@@ -14,6 +14,7 @@ public partial class OnvifServiceImpl(
   OnvifEventSubscriptionService subscriptionService,
   ObservedTopicsStore observedTopics,
   OnvifSettingsService settingsService,
+  string cameraActorType,
   ILogger<OnvifServiceImpl> logger) : OnvifService.OnvifServiceBase
 {
   public override async Task<GetProfilesResponse> GetProfiles(CameraRequest request, ServerCallContext context)
@@ -571,7 +572,8 @@ public partial class OnvifServiceImpl(
     return response;
   }
 
-  // Non-remoting proxy: uses JSON serialization, no DataContractSerializer
-  private static ActorProxy CameraActorProxy(string cameraId) =>
-    ActorProxy.Create(new ActorId(cameraId), "CameraActor");
+  // Non-remoting proxy: uses JSON serialization, no DataContractSerializer.
+  // The type name carries this node, so placement can only pick a host on our own camera subnet.
+  private ActorProxy CameraActorProxy(string cameraId) =>
+    ActorProxy.Create(new ActorId(cameraId), cameraActorType);
 }

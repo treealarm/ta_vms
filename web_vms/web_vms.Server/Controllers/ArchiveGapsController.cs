@@ -25,7 +25,7 @@ public sealed class ArchiveGapsController(
   ICameraManager manager,
   ServerPairRegistry registry,
   ICameraAccessService access,
-  OnvifService.OnvifServiceClient onvifClient,
+  OnvifRouter router,
   ILogger<ArchiveGapsController> logger) : ControllerBase
 {
   // A search walks several SOAP round trips on the device, each with its own internal timeout.
@@ -338,7 +338,7 @@ public sealed class ArchiveGapsController(
 
     try
     {
-      var resp = await onvifClient.ListEdgeRecordingIntervalsAsync(new EdgeIntervalsRequest
+      var resp = await (await router.OnvifAsync(cameraId, ct)).ListEdgeRecordingIntervalsAsync(new EdgeIntervalsRequest
       {
         SourceId = cameraId,
         StartTime = missing[0].Start.ToString("O"),

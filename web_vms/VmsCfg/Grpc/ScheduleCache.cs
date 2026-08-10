@@ -1,3 +1,4 @@
+using Dapr.Client;
 using Vms.Cfg;
 
 namespace VmsCfg;
@@ -5,19 +6,40 @@ namespace VmsCfg;
 /// In-memory snapshot of all recording schedules and their camera assignments.
 ///
 /// ListCameras/GetCamera resolve schedule_active on every read, so that path must not touch the
-/// database. The snapshot is reloaded on startup, after every schedule edit, and on each tick of
-/// RecordingScheduleService.
-public sealed class ScheduleCache(ScheduleDb scheduleDb)
+/// database — hence a cache rather than a query. It is per replica, so the copy that did not handle
+/// an edit has to learn about it somehow: VmsCfg writes a new value to the shared schedule-version
+/// key on every edit, and each replica drops its snapshot when that value moves. Deliberately not
+/// pub/sub — all replicas share one app id and therefore one consumer group, so an event would reach
+/// exactly one of them and the rest would keep answering with the old windows.
+public sealed class ScheduleCache(ScheduleDb scheduleDb, DaprClient dapr, ILogger<ScheduleCache> logger)
 {
+  public const string VersionKey = "schedule-version";
+
+  private static readonly TimeSpan VersionProbeInterval = TimeSpan.FromSeconds(5);
+  /// Backstop for a state store that cannot be read: the snapshot is rebuilt at least this often
+  /// even if the version can never be fetched, so an infrastructure fault degrades freshness
+  /// instead of freezing it.
+  private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(1);
+
+  private static readonly string StateStoreName =
+    Environment.GetEnvironmentVariable("DAPR_STATE_STORE_NAME")
+      ?? throw new InvalidOperationException("Required environment variable 'DAPR_STATE_STORE_NAME' is not set");
+
+  private readonly SemaphoreSlim _refreshLock = new(1, 1);
+  private DateTime _versionCheckedAtUtc = DateTime.MinValue;
+  private DateTime _reloadedAtUtc = DateTime.MinValue;
+  private string? _lastSeenVersion;
+  /// Whether _lastSeenVersion is an answer at all. A missing key is a real answer — "nobody has
+  /// edited a schedule yet" — and null alone cannot tell it apart from "never asked", which is what
+  /// made the first edit after a boot register as a baseline instead of a change.
+  private bool _hasVersionBaseline;
+
   private sealed record Snapshot(
     IReadOnlyDictionary<Guid, RecordingSchedule> Schedules,
     IReadOnlyDictionary<string, List<Guid>> CameraAssignments);
 
   private Snapshot _snapshot = new(new Dictionary<Guid, RecordingSchedule>(), new Dictionary<string, List<Guid>>());
 
-  // Released whenever schedules change, so the ticker can recompute its next boundary immediately
-  // instead of sleeping on a stale one.
-  private readonly SemaphoreSlim _changed = new(0, 1);
 
   public async Task ReloadAsync(CancellationToken ct)
   {
@@ -32,38 +54,64 @@ public sealed class ScheduleCache(ScheduleDb scheduleDb)
     }
 
     _snapshot = new Snapshot(byId, assignments);
+    _reloadedAtUtc = DateTime.UtcNow;
   }
 
-  /// Reload after an edit and wake the ticker.
-  public async Task ReloadAndSignalAsync(CancellationToken ct)
+  /// Rebuilds the snapshot when another replica has edited a schedule since the last probe. Cheap
+  /// enough for the read path: one state-store get every VersionProbeInterval at most, and a reload
+  /// only when the value actually moved.
+  public async Task EnsureFreshAsync(CancellationToken ct)
   {
-    await ReloadAsync(ct);
+    if (DateTime.UtcNow - _versionCheckedAtUtc < VersionProbeInterval
+      && DateTime.UtcNow - _reloadedAtUtc < CacheTtl)
+    {
+      return;
+    }
 
-    // A coalescing signal: one pending wake-up is enough, and two concurrent edits must not throw.
-    // Checking CurrentCount first would be a check-then-act race — both callers could see 0 and the
-    // second Release would blow up inside an rpc handler whose DB write has already committed.
+    await _refreshLock.WaitAsync(ct);
     try
     {
-      _changed.Release();
+      var staleByTtl = DateTime.UtcNow - _reloadedAtUtc >= CacheTtl;
+      if (DateTime.UtcNow - _versionCheckedAtUtc < VersionProbeInterval && !staleByTtl)
+        return;
+
+      string? version = null;
+      var probed = false;
+      try
+      {
+        version = await dapr.GetStateAsync<string>(StateStoreName, VersionKey, cancellationToken: ct);
+        probed = true;
+        _versionCheckedAtUtc = DateTime.UtcNow;
+      }
+      catch (Exception ex)
+      {
+        // Leave _versionCheckedAtUtc alone so the next read retries rather than waiting the
+        // interval; the TTL below still guarantees the snapshot is rebuilt.
+        logger.LogDebug(ex, "Reading the schedule version failed; falling back to the cache TTL");
+      }
+
+      // A failed probe must not move the baseline, or the next successful one would look like a
+      // change and reload for nothing.
+      var changed = probed
+        && _hasVersionBaseline
+        && !string.Equals(version, _lastSeenVersion, StringComparison.Ordinal);
+
+      if (probed)
+      {
+        _lastSeenVersion = version;
+        _hasVersionBaseline = true;
+      }
+
+      if (changed || staleByTtl)
+        await ReloadAsync(ct);
     }
-    catch (SemaphoreFullException)
+    finally
     {
-      // The ticker has not consumed the previous signal yet, which is exactly what we wanted.
+      _refreshLock.Release();
     }
   }
 
-  /// Sleeps for at most <paramref name="timeout"/>, returning early when schedules change.
-  public async Task WaitForChangeAsync(TimeSpan timeout, CancellationToken ct)
-  {
-    try
-    {
-      await _changed.WaitAsync(timeout, ct);
-    }
-    catch (OperationCanceledException)
-    {
-      // Shutdown — the caller's loop checks the token.
-    }
-  }
+
 
   public IReadOnlyList<string> GetCameraScheduleIds(string cameraId)
   {

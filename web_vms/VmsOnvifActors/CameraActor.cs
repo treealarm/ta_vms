@@ -4,7 +4,11 @@ using web_vms.Types.Actors;
 
 namespace VmsOnvifActors;
 
-public class CameraActor(ActorHost host) : Actor(host), ICameraActor
+/// The node this actor host serves. Injected so the actor can reject a camera from another node
+/// rather than time out trying to reach it.
+public sealed record CameraActorDomain(string OwnServerId);
+
+public class CameraActor(ActorHost host, CameraActorDomain domain) : Actor(host), ICameraActor
 {
   private Camera? _camera;
   private string _cameraKey = string.Empty;
@@ -120,6 +124,17 @@ public class CameraActor(ActorHost host) : Actor(host), ICameraActor
 
   private Camera EnsureCamera(CameraConnInfo conn)
   {
+    // Distinct actor type names already stop a call from crossing nodes; this catches the one case
+    // they cannot — two nodes sharing an OWN_SERVER_ID, hence one ring. Without it the camera is
+    // simply unreachable from here and the failure is indistinguishable from a dead camera.
+    if (!string.IsNullOrEmpty(conn.Domain)
+      && !string.Equals(conn.Domain, domain.OwnServerId, StringComparison.OrdinalIgnoreCase))
+    {
+      throw new InvalidOperationException(
+        $"Camera belongs to node '{conn.Domain}' but this actor host serves '{domain.OwnServerId}' — "
+        + "two nodes are configured with the same OWN_SERVER_ID");
+    }
+
     var key = $"{conn.Ip}:{conn.Port}:{conn.User}:{conn.Pass}:{conn.Xaddr}";
     if (_camera is null || _cameraKey != key)
     {

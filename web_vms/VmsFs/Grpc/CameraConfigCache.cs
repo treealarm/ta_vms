@@ -61,4 +61,7 @@ public sealed class CameraConfigCache(CfgService.CfgServiceClient cfgClient)
     foreach (var key in _cache.Keys.Where(k => k == cameraId || k.StartsWith($"{cameraId}:")))
       _cache.TryRemove(key, out _);
   }
+
+  /// For "everything on this node changed", where the event names no cameras.
+  public void InvalidateAll() => _cache.Clear();
 }

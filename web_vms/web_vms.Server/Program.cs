@@ -5,6 +5,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using Vms.Cfg;
 using Vms.Onvif;
+using Vms.Singleton;
 using Vms.Utils;
 using web_vms;
 using web_vms.Authentication;
@@ -47,13 +48,15 @@ builder.Services.AddSingleton<CfgHealthProbe>();
 // while VmsCfg is unavailable — see ServerPairInitializer.
 builder.Services.AddHostedService<ServerPairInitializer>();
 
-var onvifAppId = Require("DAPR_ONVIF_APP_ID");
+// No single ONVIF app id any more: VmsOnvif runs one instance per node, and which one can reach a
+// camera follows from which media server owns it. OnvifRouter does that lookup per call.
+builder.Services.AddSingleton<OnvifRouter>();
+
+// The debug entity-state registry lives in the singleton, not in VmsUtils: it aggregates pub/sub
+// reports from the whole system in memory, which only one instance can do.
+var singletonAppId = Require("DAPR_SINGLETON_APP_ID");
 builder.Services.AddSingleton(_ =>
-  new OnvifService.OnvifServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId)));
-builder.Services.AddSingleton(_ =>
-  new PtzService.PtzServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId)));
-builder.Services.AddSingleton(_ =>
-  new DeviceIoService.DeviceIoServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId)));
+  new SingletonService.SingletonServiceClient(DaprClient.CreateInvocationInvoker(singletonAppId)));
 
 var utilsAppId = Require("DAPR_UTILS_APP_ID");
 builder.Services.AddSingleton(_ =>

@@ -1,5 +1,14 @@
 # Интеграция ta_vms в Square: typelib-клиент + VmsCfg как producer
 
+> **Обновление (2026-08-10).** Producer переехал из `VmsCfg` в отдельный сервис
+> `VmsSquareSingleton`: `VmsCfg` стала реплицируемым stateless-интерфейсом к БД и про Square не
+> знает — интегратор подписан на её обычные события. Идентичность продьюсера больше не выводится из
+> `APP_ID` процесса, а задаётся `SQUARE_INTEGRATION_PRODUCER_ID` (значение `vmscfg` сохранено, чтобы
+> уже зарегистрированное дерево осталось на месте). Модель ниже — root-объект, самоописывающиеся
+> свойства, команды через service invocation — не изменилась; изменилось только то, какой процесс
+> исполняет роль producer и откуда берётся его имя.
+
+
 > Статус: **план на будущее, не реализован.** Документ — ориентир для развития видеоподсистемы.
 > Текущая разработка не должна противоречить этому плану (см. раздел «Square integration (future)»
 > в `CLAUDE.md`). Саму интеграцию выполняем позже, отдельной задачей.
@@ -86,7 +95,7 @@ ActionsControl.tsx`):
 `web_vms/VmsCfg` (`Program.cs`, `Grpc/CfgServiceImpl.cs`) подключает typelib и, **если интеграция
 включена env-флагом** (напр. `SQUARE_INTEGRATION_SINK_APP_ID`):
 - на старте: `RegisterRoot("vmscfg")` + полный push дерева камер и свойств из своего DbContext;
-- на своих событиях `camera-config-changed`/`camera-state-changed`/`media-server-config-changed`
+- на своих событиях `server-config-changed`/`camera-state-changed`
   (уже публикуются в `CfgServiceImpl`) — push дельт;
 - объявляет команды: камера — `start/stop_recording`, `arm/disarm`, (позже) PTZ; root — `resync`;
 - реализует обработчики команд через существующую внутреннюю логику cfg / вызовы других сервисов

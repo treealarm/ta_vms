@@ -1,38 +1,38 @@
 syntax = "proto3";
 package vms.utils;
 
-import "google/protobuf/empty.proto";
-import "google/protobuf/timestamp.proto";
-
 service UtilsService {
-  rpc GetMediaMtxPathInfo(GetMediaMtxPathInfoRequest) returns (GetMediaMtxPathInfoResponse);
-  rpc ListEntityStates(google.protobuf.Empty) returns (ListEntityStatesResponse);
+  // Asked once per poll for every published stream of a media server, so it takes the whole set at
+  // once: per-path calls made the request rate — and with it the load on VmsCfg and on the MediaMTX
+  // control API — grow with the number of streams times the number of servers.
+  rpc GetMediaMtxPathsInfo(GetMediaMtxPathsInfoRequest) returns (GetMediaMtxPathsInfoResponse);
 }
 
-message GetMediaMtxPathInfoRequest {
+message MediaMtxPathRef {
   string camera_id   = 1;
   string stream_name = 2;
 }
 
-message GetMediaMtxPathInfoResponse {
-  bool  success       = 1;
-  int32 readers_count = 2;
-  bool  has_source    = 3;
+message GetMediaMtxPathsInfoRequest {
+  repeated MediaMtxPathRef paths = 1;
+}
+
+message MediaMtxPathInfo {
+  string camera_id   = 1;
+  string stream_name = 2;
+  // False when the question could not be put at all — the assigned server is unknown or its API is
+  // unreachable. Says nothing about viewers.
+  bool  success       = 3;
+  int32 readers_count = 4;
+  bool  has_source    = 5;
   // Whether the assigned MediaMTX server exposes its control API at all. Without it nobody can be
   // asked who is watching, so reader counts mean nothing and the caller must publish unconditionally
   // rather than infer "no viewers" from silence.
-  bool  api_configured = 4;
+  bool  api_configured = 6;
 }
 
-message EntityState {
-  string service = 1;
-  string entity_type = 2;
-  string entity_id = 3;
-  string state_json = 4;
-  google.protobuf.Timestamp last_seen = 5;
-  bool stale = 6;
+message GetMediaMtxPathsInfoResponse {
+  repeated MediaMtxPathInfo paths = 1;
 }
 
-message ListEntityStatesResponse {
-  repeated EntityState entities = 1;
-}
+

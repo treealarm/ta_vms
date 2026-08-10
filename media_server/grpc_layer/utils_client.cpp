@@ -24,29 +24,46 @@ utils_client::utils_client()
 {
 }
 
-utils_client::path_info utils_client::get_mediamtx_path(
-  const std::string& camera_id, const std::string& stream_name)
+std::unordered_map<std::string, utils_client::path_info> utils_client::get_mediamtx_paths(
+  const std::vector<path_ref>& paths)
 {
-  vms::utils::GetMediaMtxPathInfoRequest request;
-  request.set_camera_id(camera_id);
-  request.set_stream_name(stream_name);
+  std::unordered_map<std::string, path_info> result;
+  if (paths.empty())
+    return result;
 
-  vms::utils::GetMediaMtxPathInfoResponse response;
+  vms::utils::GetMediaMtxPathsInfoRequest request;
+  for (const auto& ref : paths)
+  {
+    auto* entry = request.add_paths();
+    entry->set_camera_id(ref.camera_id);
+    entry->set_stream_name(ref.stream_name);
+  }
+
+  vms::utils::GetMediaMtxPathsInfoResponse response;
   grpc::ClientContext context;
-  context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(2));
+  // Scales with the batch rather than with one path: VmsUtils may have to resolve several servers
+  // and list each of them before it can answer.
+  context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(10));
   context.AddMetadata("dapr-app-id", m_app_id);
 
-  grpc::Status status = m_stub->GetMediaMtxPathInfo(&context, request, &response);
+  grpc::Status status = m_stub->GetMediaMtxPathsInfo(&context, request, &response);
 
   if (!status.ok())
   {
     logger::instance().warning(std::format(
-      "GetMediaMtxPathInfo RPC failed (app '{}'): {}", m_app_id, status.error_message()));
-    return {};
+      "GetMediaMtxPathsInfo RPC failed (app '{}'): {}", m_app_id, status.error_message()));
+    return result;
   }
 
-  if (!response.success())
-    return {};
+  for (const auto& info : response.paths())
+  {
+    if (!info.success())
+      continue;
 
-  return { true, response.api_configured(), response.readers_count() };
+    result.emplace(
+      info.camera_id() + "/" + info.stream_name(),
+      path_info{ true, info.api_configured(), info.readers_count() });
+  }
+
+  return result;
 }

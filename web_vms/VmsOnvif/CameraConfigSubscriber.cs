@@ -9,9 +9,10 @@ public sealed class CameraConfigSubscriber(
   CameraArmedCache armedCache,
   CameraConnCache connCache,
   OnvifEventSubscriptionService subscriptionService,
+  string ownServerId,
   ILogger<CameraConfigSubscriber> logger) : IHostedService, IDisposable
 {
-  private const string CameraConfigChangedTopic = "camera-config-changed";
+  private const string ServerConfigChangedTopic = "server-config-changed";
   private const string CameraStateChangedTopic  = "camera-state-changed";
   private static readonly string PubSubName =
     Environment.GetEnvironmentVariable("PUBSUB_NAME")
@@ -31,7 +32,7 @@ public sealed class CameraConfigSubscriber(
     return Task.CompletedTask;
   }
 
-  // Subscribe ONCE, never in a loop (mirrors VmsAnalytics.AnalyticsWatchSubscriber). The
+  // Subscribe ONCE, never in a loop (mirrors VmsAnalyticsSingleton.AnalyticsWatchSubscriber). The
   // streaming SubscribeAsync task can complete silently (no exception) when the sidecar ends
   // the stream — a resubscribe loop around that spins every few seconds, and each iteration
   // registers a fresh redis-streams consumer in the sidecar without the old one being torn
@@ -50,7 +51,7 @@ public sealed class CameraConfigSubscriber(
       // "connection pool timeout" retry loop (confirmed: pegs the process at 800%+ CPU
       // and never finishes binding Kestrel). Staggering the second call avoids the race.
       var configTask = pubSubClient.SubscribeAsync(
-        PubSubName, CameraConfigChangedTopic, options, HandleConfigChangedAsync, ct);
+        PubSubName, ServerConfigChangedTopic, options, HandleConfigChangedAsync, ct);
       await Task.Delay(200, ct);
       var stateTask = pubSubClient.SubscribeAsync(
         PubSubName, CameraStateChangedTopic, options, HandleStateChangedAsync, ct);
@@ -82,17 +83,46 @@ public sealed class CameraConfigSubscriber(
     catch (OperationCanceledException) { }
   }
 
+  // Wire shape of server-config-changed; VmsCfg owns it. Empty CameraIds means everything on the
+  // node.
+  private sealed record ServerConfigChanged(string? ServerId, IReadOnlyList<string>? CameraIds);
+
+  private static readonly JsonSerializerOptions JsonOptions =
+    new() { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
+
   private Task<TopicResponseAction> HandleConfigChangedAsync(TopicMessage message, CancellationToken _)
   {
     try
     {
-      var cameraId = JsonSerializer.Deserialize<string>(message.Data.Span);
-      if (!string.IsNullOrWhiteSpace(cameraId))
+      var evt = JsonSerializer.Deserialize<ServerConfigChanged>(message.Data.Span, JsonOptions);
+      if (evt is null)
+        return Task.FromResult(TopicResponseAction.Drop);
+
+      // Another node's change: dropped here, before any work. This is the whole point of the server
+      // travelling with the event — deciding ownership used to mean fetching the camera from VmsCfg,
+      // so a single edit cost one round trip on every instance in the deployment, all but one of
+      // which then threw the answer away.
+      // A camera that left this node is announced twice — once under its new owner, which is
+      // dropped here, and once under the old one, which is not, so the subscription it leaves behind
+      // is released without waiting for the sweep.
+      if (!string.Equals(evt.ServerId, ownServerId, StringComparison.OrdinalIgnoreCase))
+        return Task.FromResult(TopicResponseAction.Success);
+
+      // Nothing named: the periodic sweep reconciles the whole set anyway, so ask it to run now.
+      if (evt.CameraIds is not { Count: > 0 })
+      {
+        logger.LogDebug("Node-wide config change on '{ServerId}' — reconciling every camera", evt.ServerId);
+        subscriptionService.NotifyAllCamerasChanged();
+        return Task.FromResult(TopicResponseAction.Success);
+      }
+
+      foreach (var cameraId in evt.CameraIds)
       {
         connCache.Invalidate(cameraId);
         filterCache.Invalidate(cameraId);
         subscriptionService.NotifyConfigChanged(cameraId);
       }
+      logger.LogDebug("ONVIF caches invalidated for {Count} camera(s)", evt.CameraIds.Count);
       return Task.FromResult(TopicResponseAction.Success);
     }
     catch

@@ -8,34 +8,44 @@ namespace VmsCfg;
 public class CameraStorage(
   NpgsqlDataSource dataSource,
   IDbContextFactory<VmsCfgDbContext> dbFactory,
-  ScheduleCache scheduleCache)
+  ScheduleCache scheduleCache,
+  ILogger<CameraStorage> logger)
 {
   private readonly NpgsqlDataSource _dataSource = dataSource;
   private static readonly Guid BuiltinContinuousProfileId = new("00000000-0000-0000-0000-000000000001");
 
-  private readonly IReadOnlyList<(string ServerId, string FsId)> _serverPairs = ParseServerPairs();
+  private readonly IReadOnlyList<(string ServerId, string FsId, string OnvifId, string LoggerId)> _serverPairs = ParseServerPairs();
 
-  private static IReadOnlyList<(string ServerId, string FsId)> ParseServerPairs()
+  /// One entry per node: the media server, the VmsFs that owns its archive volume, the VmsOnvif that
+  /// shares its camera subnet, and the VmsLogger that can read its log files. All four are pinned to
+  /// the same machine, so the entry is the node — there is no arrangement in which they can be
+  /// picked independently.
+  private static IReadOnlyList<(string ServerId, string FsId, string OnvifId, string LoggerId)> ParseServerPairs()
   {
     var raw = Environment.GetEnvironmentVariable("MEDIA_SERVER_PAIRS")
       ?? throw new InvalidOperationException("Required environment variable 'MEDIA_SERVER_PAIRS' is not set");
 
-    var pairs = new List<(string, string)>();
+    var pairs = new List<(string, string, string, string)>();
     foreach (var entry in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
     {
-      var sep = entry.IndexOf(':');
-      if (sep < 1)
-        throw new InvalidOperationException($"Invalid MEDIA_SERVER_PAIRS entry '{entry}': expected 'server_id:fs_id'");
-      pairs.Add((entry[..sep], entry[(sep + 1)..]));
+      // Rejected rather than defaulted: an entry missing a part leaves web_vms.Server with no
+      // instance to send PTZ to, or no instance that can read that node's logs, and there is nothing
+      // sensible to guess — a central instance can reach neither.
+      var parts = entry.Split(':', StringSplitOptions.TrimEntries);
+      if (parts.Length != 4 || parts.Any(string.IsNullOrEmpty))
+        throw new InvalidOperationException(
+          $"Invalid MEDIA_SERVER_PAIRS entry '{entry}': expected 'server_id:fs_id:onvif_id:logger_id'");
+      pairs.Add((parts[0], parts[1], parts[2], parts[3]));
     }
 
     if (pairs.Count == 0)
-      throw new InvalidOperationException("MEDIA_SERVER_PAIRS must contain at least one 'server_id:fs_id' pair");
+      throw new InvalidOperationException(
+        "MEDIA_SERVER_PAIRS must contain at least one 'server_id:fs_id:onvif_id:logger_id' entry");
 
     return pairs;
   }
 
-  public IReadOnlyList<(string ServerId, string FsId)> GetServerPairs() => _serverPairs;
+  public IReadOnlyList<(string ServerId, string FsId, string OnvifId, string LoggerId)> GetServerPairs() => _serverPairs;
 
   public bool IsValidServerId(string serverId) =>
     _serverPairs.Any(p => p.ServerId == serverId);
@@ -137,7 +147,8 @@ public class CameraStorage(
     var cameras = new List<CameraSetup>();
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_setup.camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, onvif_xaddr, media_mtx_server_id,
+      SELECT camera_setup.camera_id, camera_setup.server_id, cred_user, cred_pass, onvif_ip, onvif_port,
+             onvif_xaddr, media_mtx_server_id,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id AND s.subscribed = true) AS onvif_events_enabled,
              EXISTS(SELECT 1 FROM onvif_alarm_filter f WHERE f.camera_id = camera_setup.camera_id) AS has_onvif_filters,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id) AS onvif_managed,
@@ -150,7 +161,7 @@ public class CameraStorage(
       FROM camera_setup
       LEFT JOIN onvif_event_subscription oes ON oes.camera_id = camera_setup.camera_id
       LEFT JOIN media_mtx_server mtx ON mtx.id = camera_setup.media_mtx_server_id
-      WHERE $1 = '' OR server_id = $1
+      WHERE $1 = '' OR camera_setup.server_id = $1
       ORDER BY camera_setup.name, camera_setup.camera_id;
       """, connection))
     {
@@ -161,6 +172,7 @@ public class CameraStorage(
     }
 
     await LoadStreamsAsync(connection, cameras, ct);
+    await scheduleCache.EnsureFreshAsync(ct);
     ApplySchedules(cameras);
     return cameras;
   }
@@ -172,7 +184,8 @@ public class CameraStorage(
     CameraSetup? setup = null;
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_setup.camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, onvif_xaddr, media_mtx_server_id,
+      SELECT camera_setup.camera_id, camera_setup.server_id, cred_user, cred_pass, onvif_ip, onvif_port,
+             onvif_xaddr, media_mtx_server_id,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id AND s.subscribed = true) AS onvif_events_enabled,
              EXISTS(SELECT 1 FROM onvif_alarm_filter f WHERE f.camera_id = camera_setup.camera_id) AS has_onvif_filters,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id) AS onvif_managed,
@@ -198,6 +211,7 @@ public class CameraStorage(
       return (false, null);
 
     await LoadStreamsAsync(connection, [setup], ct);
+    await scheduleCache.EnsureFreshAsync(ct);
     ApplySchedules([setup]);
     return (true, setup);
   }
@@ -266,8 +280,10 @@ public class CameraStorage(
   public async Task SetStreamOverrideAsync(string cameraId, string streamName, string profileId, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
+      -- alarm_override_until is cleared with it: a manual override lasts until it is taken away,
+      -- and inheriting a deadline left by a timed one would end it at a moment nobody chose.
       UPDATE camera_stream
-      SET override_profile_id = $3::uuid
+      SET override_profile_id = $3::uuid, alarm_override_until = NULL
       WHERE camera_id = $1 AND stream_name = $2;
       """);
     command.Parameters.AddWithValue(cameraId);
@@ -279,8 +295,10 @@ public class CameraStorage(
   public async Task ClearStreamOverrideAsync(string cameraId, string streamName, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
+      -- Also drops the deadline: leaving it behind would have the expiry sweep act on a stream
+      -- whose override is already gone.
       UPDATE camera_stream
-      SET override_profile_id = NULL
+      SET override_profile_id = NULL, alarm_override_until = NULL
       WHERE camera_id = $1 AND stream_name = $2;
       """);
     command.Parameters.AddWithValue(cameraId);
@@ -319,11 +337,19 @@ public class CameraStorage(
     return rows > 0;
   }
 
+  /// Ends a timed override whose deadline has passed, returning the stream to its base profile.
+  ///
+  /// The deadline is re-checked in the UPDATE rather than trusted from the caller's earlier read:
+  /// between listing an expired row and clearing it the override can be renewed — an alarm re-fires,
+  /// or an operator extends the window — and an unconditional clear would then wipe a deadline that
+  /// is once again in the future, cutting short recording somebody deliberately asked for.
   public async Task<bool> ClearAlarmOverrideAsync(string cameraId, string streamName, CancellationToken ct)
   {
     await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var now = DateTime.UtcNow;
     var rows = await db.CameraStreams
-      .Where(cs => cs.CameraId == cameraId && cs.StreamName == streamName && cs.AlarmOverrideUntil != null)
+      .Where(cs => cs.CameraId == cameraId && cs.StreamName == streamName
+                && cs.AlarmOverrideUntil != null && cs.AlarmOverrideUntil < now)
       .ExecuteUpdateAsync(s => s
         .SetProperty(cs => cs.OverrideProfileId, (Guid?)null)
         .SetProperty(cs => cs.AlarmOverrideUntil, (DateTime?)null),
@@ -482,7 +508,8 @@ public class CameraStorage(
   public async Task<List<MediaMtxServer>> ListMediaMtxServersAsync(CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url FROM media_mtx_server ORDER BY name;
+      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url, server_id
+      FROM media_mtx_server ORDER BY name;
       """);
 
     var result = new List<MediaMtxServer>();
@@ -495,8 +522,8 @@ public class CameraStorage(
   public async Task UpsertMediaMtxServerAsync(MediaMtxServer server, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      INSERT INTO media_mtx_server (id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url)
-      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO media_mtx_server (id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url, server_id)
+      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''))
       ON CONFLICT (id) DO UPDATE SET
         name        = EXCLUDED.name,
         host        = EXCLUDED.host,
@@ -504,7 +531,8 @@ public class CameraStorage(
         rtsp_port   = EXCLUDED.rtsp_port,
         webrtc_port = EXCLUDED.webrtc_port,
         api_port    = EXCLUDED.api_port,
-        stun_url    = EXCLUDED.stun_url
+        stun_url    = EXCLUDED.stun_url,
+        server_id   = EXCLUDED.server_id
       RETURNING id;
       """);
     command.Parameters.AddWithValue(server.Id ?? string.Empty);
@@ -515,6 +543,7 @@ public class CameraStorage(
     command.Parameters.AddWithValue(server.WebrtcPort);
     command.Parameters.AddWithValue(server.ApiPort);
     command.Parameters.AddWithValue(server.StunUrl ?? string.Empty);
+    command.Parameters.AddWithValue(server.ServerId ?? string.Empty);
     var id = await command.ExecuteScalarAsync(ct);
     server.Id = id?.ToString() ?? server.Id;
   }
@@ -527,39 +556,79 @@ public class CameraStorage(
     return await command.ExecuteNonQueryAsync(ct) > 0;
   }
 
+  /// <summary>
+  /// The MediaMTX a camera publishes to, assigning one on first use.
+  ///
+  /// A camera is only ever given a server that belongs to its own node or is shared (server_id
+  /// NULL): media_server pushes the stream to whatever is assigned here, so picking across nodes
+  /// would carry video over the link between them. An assignment already made is left alone — a
+  /// camera that later moves nodes is re-pointed by an administrator, not silently on a read — but
+  /// the mismatch is logged so it does not stay invisible.
+  /// </summary>
   public async Task<MediaMtxServer?> GetOrAssignMediaMtxServerAsync(string cameraId, CancellationToken ct)
   {
     await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
-    // Check if camera already has a server assigned and it still exists
+    string? cameraServerId = null;
+
+    // One query for both questions: which node the camera is on, and whether it already has a
+    // server. LEFT JOIN so an unassigned camera still reports its node for the pick below.
     await using (var cmd = new NpgsqlCommand("""
-      SELECT m.id, m.name, m.host, m.webrtc_host, m.rtsp_port, m.webrtc_port, m.api_port, m.stun_url
+      SELECT cs.server_id,
+             m.id, m.name, m.host, m.webrtc_host, m.rtsp_port, m.webrtc_port, m.api_port, m.stun_url, m.server_id
       FROM camera_setup cs
-      JOIN media_mtx_server m ON m.id = cs.media_mtx_server_id
+      LEFT JOIN media_mtx_server m ON m.id = cs.media_mtx_server_id
       WHERE cs.camera_id = $1;
       """, connection))
     {
       cmd.Parameters.AddWithValue(cameraId);
       await using var reader = await cmd.ExecuteReaderAsync(ct);
-      if (await reader.ReadAsync(ct))
-        return ReadMediaMtxServer(reader);
+      if (!await reader.ReadAsync(ct))
+        return null;
+
+      cameraServerId = reader.IsDBNull(0) ? null : reader.GetString(0);
+      if (!reader.IsDBNull(1))
+      {
+        var assigned = ReadMediaMtxServer(reader, offset: 1);
+        if (!string.IsNullOrEmpty(assigned.ServerId)
+          && !string.Equals(assigned.ServerId, cameraServerId, StringComparison.OrdinalIgnoreCase))
+        {
+          logger.LogWarning(
+            "Camera '{CameraId}' on node '{CameraNode}' publishes to MediaMTX '{Name}' of node "
+            + "'{MtxNode}' — its stream crosses the link between them; reassign it",
+            cameraId, cameraServerId, assigned.Name, assigned.ServerId);
+        }
+        return assigned;
+      }
     }
 
-    // Pick a random available server and assign it
+    // Pick among the servers that can serve this node: its own, or a shared one.
     await using var tx = await connection.BeginTransactionAsync(ct);
     MediaMtxServer? picked = null;
 
     await using (var pickCmd = new NpgsqlCommand("""
-      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url FROM media_mtx_server ORDER BY random() LIMIT 1;
+      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url, server_id
+      FROM media_mtx_server
+      WHERE server_id IS NULL OR server_id = $1
+      ORDER BY random() LIMIT 1;
       """, connection, tx))
     {
+      pickCmd.Parameters.AddWithValue((object?)cameraServerId ?? DBNull.Value);
       await using var reader = await pickCmd.ExecuteReaderAsync(ct);
       if (await reader.ReadAsync(ct))
         picked = ReadMediaMtxServer(reader);
     }
 
     if (picked is null)
+    {
+      // Deliberately not falling back to another node's server: that would look like it worked
+      // while quietly sending the camera's video across the link.
+      logger.LogWarning(
+        "No MediaMTX server available for camera '{CameraId}' on node '{CameraNode}' — configure one "
+        + "for that node, or leave a server's node empty to share it",
+        cameraId, cameraServerId);
       return null;
+    }
 
     await using (var assignCmd = new NpgsqlCommand("""
       UPDATE camera_setup SET media_mtx_server_id = $2::uuid WHERE camera_id = $1;
@@ -574,17 +643,20 @@ public class CameraStorage(
     return picked;
   }
 
-  private static MediaMtxServer ReadMediaMtxServer(NpgsqlDataReader reader) =>
+  /// offset lets the same mapper read the server columns when they sit behind other columns in a
+  /// joined row.
+  private static MediaMtxServer ReadMediaMtxServer(NpgsqlDataReader reader, int offset = 0) =>
     new()
     {
-      Id         = reader.GetGuid(0).ToString(),
-      Name       = reader.GetString(1),
-      Host       = reader.GetString(2),
-      WebrtcHost = reader.GetString(3),
-      RtspPort   = reader.GetInt32(4),
-      WebrtcPort = reader.GetInt32(5),
-      ApiPort    = reader.GetInt32(6),
-      StunUrl    = reader.GetString(7),
+      Id         = reader.GetGuid(offset).ToString(),
+      Name       = reader.GetString(offset + 1),
+      Host       = reader.GetString(offset + 2),
+      WebrtcHost = reader.GetString(offset + 3),
+      RtspPort   = reader.GetInt32(offset + 4),
+      WebrtcPort = reader.GetInt32(offset + 5),
+      ApiPort    = reader.GetInt32(offset + 6),
+      StunUrl    = reader.GetString(offset + 7),
+      ServerId   = reader.IsDBNull(offset + 8) ? string.Empty : reader.GetString(offset + 8),
     };
 
   // ── Monitor management ────────────────────────────────────────────────────

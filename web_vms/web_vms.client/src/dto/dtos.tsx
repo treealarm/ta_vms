@@ -224,6 +224,8 @@ export type MediaMtxServerDto = {
   apiPort: number
   /** STUN server the browser uses for WHEP; empty = no STUN, LAN host candidates only */
   stunUrl: string
+  /** Media server node this MediaMTX serves; empty = shared, usable by any node */
+  serverId: string
 }
 
 /** Built client-side from servers + cameras for Settings tree */

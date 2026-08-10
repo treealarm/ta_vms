@@ -2,6 +2,8 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 #include <grpcpp/grpcpp.h>
 
@@ -12,8 +14,6 @@ class utils_client
 public:
   utils_client();
 
-  // Returns the number of WebRTC/RTSP readers for the given camera stream.
-  // Returns -1 if UtilsService is unavailable or the request fails.
   // What MediaMTX can currently say about one path.
   struct path_info
   {
@@ -26,7 +26,16 @@ public:
     int  readers = 0;
   };
 
-  path_info get_mediamtx_path(const std::string& camera_id, const std::string& stream_name);
+  struct path_ref
+  {
+    std::string camera_id;
+    std::string stream_name;
+  };
+
+  // Asks about every path in one call. Keyed by "camera_id/stream_name" in the result; a path the
+  // response does not mention is absent from the map, which the caller treats as "no answer".
+  // The whole map is empty when the RPC itself failed.
+  std::unordered_map<std::string, path_info> get_mediamtx_paths(const std::vector<path_ref>& paths);
 
 private:
   std::string m_app_id;

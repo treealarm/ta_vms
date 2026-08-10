@@ -3,6 +3,8 @@ using Dapr.Client;
 using Grpc.Core;
 using Vms.Cfg;
 using Vms.Fs;
+using Vms.Logger;
+using Vms.Onvif;
 
 namespace web_vms;
 
@@ -16,10 +18,13 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
   // volatile: ServerPairInitializer replaces this reference every refresh while request threads
   // read it without any lock.
   private volatile IReadOnlyDictionary<string, string>? _serverToFs;
+  private volatile IReadOnlyDictionary<string, string>? _serverToOnvif;
+  private volatile IReadOnlyDictionary<string, string>? _serverToLogger;
   private volatile string? _lastInitError;
   // Instances that recently failed a fan-out call — skipped for UnreachableCooldown so a
   // configured-but-dead FS doesn't cost every request the full FanOutTimeout.
   private readonly ConcurrentDictionary<string, DateTime> _unreachableSince = new();
+  private readonly ConcurrentDictionary<string, CallInvoker> _invokers = new(StringComparer.Ordinal);
 
   /// <summary>False until the server↔FS map has been read from VmsCfg at least once.</summary>
   public bool IsInitialized => _serverToFs is not null;
@@ -35,6 +40,12 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
       _serverToFs = resp.Servers
         .Where(s => !string.IsNullOrWhiteSpace(s.FsId))
         .ToDictionary(s => s.ServerId, s => s.FsId, StringComparer.OrdinalIgnoreCase);
+      _serverToOnvif = resp.Servers
+        .Where(s => !string.IsNullOrWhiteSpace(s.OnvifId))
+        .ToDictionary(s => s.ServerId, s => s.OnvifId, StringComparer.OrdinalIgnoreCase);
+      _serverToLogger = resp.Servers
+        .Where(s => !string.IsNullOrWhiteSpace(s.LoggerId))
+        .ToDictionary(s => s.ServerId, s => s.LoggerId, StringComparer.OrdinalIgnoreCase);
       _lastInitError = null;
     }
     catch (Exception ex)
@@ -57,7 +68,71 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
     if (!map.TryGetValue(serverId, out var fsId) || string.IsNullOrWhiteSpace(fsId))
       throw new InvalidOperationException($"No FS paired for server '{serverId}'");
 
-    return new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
+    return new FsService.FsServiceClient(Invoker(fsId));
+  }
+
+  // One invoker per app id, kept for the process lifetime. Each CreateInvocationInvoker builds a
+  // GrpcChannel, and nothing disposes the ones handed out per request — on the PTZ path that is a
+  // new connection to daprd for every joystick message. The clients wrapping an invoker are cheap.
+  private CallInvoker Invoker(string appId) =>
+    _invokers.GetOrAdd(appId, static id => DaprClient.CreateInvocationInvoker(id));
+
+  // ONVIF only reaches a camera from its own node's subnet, so a PTZ or snapshot call has to go to
+  // the VmsOnvif sitting next to that camera's media server. There is no instance that can serve
+  // them all, and no fan-out either: a camera belongs to exactly one node.
+  public OnvifService.OnvifServiceClient GetOnvifClient(string? serverId) =>
+    new(Invoker(ResolveOnvifId(serverId)));
+
+  public PtzService.PtzServiceClient GetPtzClient(string? serverId) =>
+    new(Invoker(ResolveOnvifId(serverId)));
+
+  public DeviceIoService.DeviceIoServiceClient GetDeviceIoClient(string? serverId) =>
+    new(Invoker(ResolveOnvifId(serverId)));
+
+  /// For fan-out over AllOnvifIds, where the app id is already known.
+  public OnvifService.OnvifServiceClient OnvifClientFor(string onvifId) => new(Invoker(onvifId));
+
+  /// Every VmsLogger in the deployment: the one next to this gateway plus one per node. Logs are
+  /// written to local disk, so an instance only ever sees the machine it runs on and a complete
+  /// answer means asking all of them. Deduplicated, since a single-host install names the same
+  /// instance for both.
+  ///
+  /// Deliberately does not throw when the pairing has not loaded yet, unlike the routing helpers
+  /// above: this is the log viewer, and VmsCfg being unreachable is one of the things an operator
+  /// opens it to investigate. Without the per-node map the answer covers this host only, which is
+  /// still the machine holding the logs of whatever failed to answer.
+  public IReadOnlyCollection<string> AllLoggerIds(string centralLoggerId)
+  {
+    var perNode = _serverToLogger ?? new Dictionary<string, string>();
+
+    return perNode.Values
+      .Append(centralLoggerId)
+      .Where(id => !string.IsNullOrWhiteSpace(id))
+      .Distinct(StringComparer.OrdinalIgnoreCase)
+      .ToList();
+  }
+
+  public LogService.LogServiceClient LogClientFor(string loggerId) => new(Invoker(loggerId));
+
+  // For the few operations that are not about one camera: recent-event dumps have to be collected
+  // from every node, since each instance only sees its own cameras' events.
+  public IReadOnlyCollection<string> AllOnvifIds =>
+    (_serverToOnvif ?? throw new ServiceNotReadyException(
+      "Configuration service (VmsCfg) has not answered yet — see GET /api/health", _lastInitError))
+      .Values.Distinct().ToList();
+
+  private string ResolveOnvifId(string? serverId)
+  {
+    var map = _serverToOnvif ?? throw new ServiceNotReadyException(
+      "Configuration service (VmsCfg) has not answered yet — see GET /api/health", _lastInitError);
+
+    if (string.IsNullOrWhiteSpace(serverId))
+      throw new InvalidOperationException("serverId must not be empty for ONVIF client lookup");
+
+    if (!map.TryGetValue(serverId, out var onvifId) || string.IsNullOrWhiteSpace(onvifId))
+      throw new InvalidOperationException($"No VmsOnvif paired for server '{serverId}'");
+
+    return onvifId;
   }
 
   // Same "not ready yet" answer as GetFsClient: every fan-out endpoint (clips, retention events,
@@ -86,7 +161,7 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
     var options = new CallOptions(deadline: DateTime.UtcNow.Add(FanOutTimeout), cancellationToken: ct);
     var tasks = candidates.Select(async fsId =>
     {
-      var client = new FsService.FsServiceClient(DaprClient.CreateInvocationInvoker(fsId));
+      var client = new FsService.FsServiceClient(Invoker(fsId));
       try
       {
         var value = await call(client, options);

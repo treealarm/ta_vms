@@ -93,7 +93,10 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
     setScanning(true)
     setError(null)
     try {
-      const response = await fetch('/api/onvif/discover', { method: 'POST' })
+      // Discovery is a multicast probe of one node's camera subnet, so the selected server
+      // decides which cameras can be seen at all.
+      const response = await fetch(
+        `/api/onvif/discover?serverId=${encodeURIComponent(serverId)}`, { method: 'POST' })
       if (!response.ok) throw new Error(await errorMessageFrom(response))
       const result: { scanOk: boolean; devices: DiscoveredDeviceDto[] } = await response.json()
       setDevices(result.devices)
@@ -145,7 +148,8 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
     const draft = draftFor(device)
     updateDraft(device, { loadingStreams: true, streamsError: null })
     try {
-      const response = await fetch('/api/onvif/discover/profiles', {
+      const response = await fetch(
+        `/api/onvif/discover/profiles?serverId=${encodeURIComponent(serverId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
