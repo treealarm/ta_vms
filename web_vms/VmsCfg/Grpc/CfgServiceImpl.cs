@@ -129,6 +129,22 @@ namespace VmsCfg
       }
     }
 
+    /// Tells the other VmsCfg replicas that their schedule snapshot is stale. Awaited, like the
+    /// permission version: schedule edits are rare admin actions, and a lost bump leaves a replica
+    /// answering with the old windows until its TTL runs out.
+    private async Task BumpScheduleVersionAsync(CancellationToken ct)
+    {
+      try
+      {
+        await daprClient.SaveStateAsync(
+          StateStoreName, ScheduleCache.VersionKey, Guid.NewGuid().ToString("N"), cancellationToken: ct);
+      }
+      catch (Exception ex)
+      {
+        logger.LogWarning(ex, "Bumping the schedule version failed — other replicas will reload by TTL");
+      }
+    }
+
     private void NotifyRecordingScheduleChanged()
     {
       _ = Task.Run(async () =>
@@ -544,6 +560,7 @@ namespace VmsCfg
         request.Name, id, request.Timezone, request.Windows.Count, request.LeadInSeconds);
 
       await scheduleCache.ReloadAsync(ct);
+      await BumpScheduleVersionAsync(ct);
       NotifyRecordingScheduleChanged();
       await NotifyCamerasChangedAsync(await scheduleDb.ListCamerasUsingScheduleAsync(id, ct), ct);
       return new OperationStatus { Success = true };
@@ -629,6 +646,7 @@ namespace VmsCfg
 
       logger.LogInformation("Recording schedule '{Id}' removed", id);
       await scheduleCache.ReloadAsync(ct);
+      await BumpScheduleVersionAsync(ct);
       NotifyRecordingScheduleChanged();
       await NotifyCamerasChangedAsync(affected, ct);
       return new OperationStatus { Success = true };
@@ -667,6 +685,7 @@ namespace VmsCfg
         request.CameraId, string.Join(", ", request.ScheduleIds));
 
       await scheduleCache.ReloadAsync(ct);
+      await BumpScheduleVersionAsync(ct);
       NotifyRecordingScheduleChanged();
       await NotifyCamerasChangedAsync([request.CameraId], ct);
       return new OperationStatus { Success = true };

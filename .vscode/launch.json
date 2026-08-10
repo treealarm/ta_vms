@@ -342,6 +342,37 @@
             "webRoot": "${workspaceFolder}/web_vms/web_vms.client/src"
         },
         {
+            "name": "VmsCfg-2 (.NET)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "prepare:vmscfg-2",
+            "postDebugTask": "dapr:vmscfg-2:stop",
+            "program": "${workspaceFolder}/web_vms/VmsCfg/bin/Debug/net8.0/VmsCfg.dll",
+            "cwd": "${workspaceFolder}/web_vms/VmsCfg",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "CFG_VMS_PORT": "5146",
+                "DAPR_HTTP_PORT": "3614",
+                "DAPR_GRPC_PORT": "51015",
+                "PUBSUB_NAME": "orderpubsub",
+                "POSTGRES_HOST": "localhost",
+                "POSTGRES_PORT": "5432",
+                "POSTGRES_USER": "postgres",
+                "POSTGRES_PASSWORD": "postgres",
+                "POSTGRES_CFG_DB": "ta_cfg",
+                "VMS_MTX_HOST": "localhost",
+                "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage",
+                "MEDIA_SERVER_PAIRS": "vms:vmsfs:vmsonvif,vms-2:vmsfs-2:vmsonvif-2",
+                "DAPR_STATE_STORE_NAME": "statestore",
+                "APP_ID": "vmscfg",
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs",
+                "SQUARE_INTEGRATION_SINK_APP_ID": "integrationhost",
+                "SQUARE_INTEGRATION_DEFAULT_LAT": "0",
+                "SQUARE_INTEGRATION_DEFAULT_LON": "0"
+            }
+        },
+        {
             "name": "VmsOnvif-2 (.NET)",
             "type": "coreclr",
             "request": "launch",

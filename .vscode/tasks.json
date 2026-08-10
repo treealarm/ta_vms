@@ -492,6 +492,45 @@
             "problemMatcher": []
         },
         {
+            "label": "kill stale: vmscfg-2 (F5)",
+            "detail": "Матчится по dapr-http-port, а не по app-id: у реплики он тот же (vmscfg), и pkill по нему убил бы обе.",
+            "type": "shell",
+            "command": "pkill -f \"dapr-http-port 3614\" || true",
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmscfg-2",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "kill stale: vmscfg-2 (F5)",
+                "dotnet:build",
+                "dapr:vmscfg-2:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmscfg-2:start",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "pid_dir=/tmp/web_vms-dapr; name=vmscfg-2; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmscfg -app-port 5146 -components-path ${workspaceFolder}/init_files/dapr_components -app-protocol grpc -dapr-http-port 3614 -dapr-grpc-port 51015 -metrics-port 9204 -placement-host-address localhost:50005 -dapr-internal-grpc-port 19025 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
+            ],
+            "presentation": { "reveal": "silent", "panel": "dedicated" },
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmscfg-2:stop",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "if [ -f /tmp/web_vms-dapr/vmscfg-2.pid ]; then p=$(cat /tmp/web_vms-dapr/vmscfg-2.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmscfg-2.pid; fi"
+            ],
+            "presentation": { "reveal": "silent", "panel": "dedicated" },
+            "problemMatcher": []
+        },
+        {
             "label": "kill stale: vmssingleton (F5)",
             "detail": "Подчищает зависший daprd от прошлой сессии (app-id уникален).",
             "type": "shell",

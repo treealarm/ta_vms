@@ -171,6 +171,7 @@ public class CameraStorage(
     }
 
     await LoadStreamsAsync(connection, cameras, ct);
+    await scheduleCache.EnsureFreshAsync(ct);
     ApplySchedules(cameras);
     return cameras;
   }
@@ -209,6 +210,7 @@ public class CameraStorage(
       return (false, null);
 
     await LoadStreamsAsync(connection, [setup], ct);
+    await scheduleCache.EnsureFreshAsync(ct);
     ApplySchedules([setup]);
     return (true, setup);
   }

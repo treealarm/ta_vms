@@ -36,6 +36,7 @@ PID_DIR = Path("/tmp/web_vms-dapr")
 # services, then the media server, then the gateway that fans out to all of them.
 ORDER = [
     "vmscfg",
+    "vmscfg-2",
     "vmslogger",
     "vmsutils",
     "vmssingleton",
