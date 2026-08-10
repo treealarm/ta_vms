@@ -67,9 +67,7 @@
                 "DAPR_STATE_STORE_NAME": "statestore",
                 "APP_ID": "vmscfg",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs",
-                "SQUARE_INTEGRATION_SINK_APP_ID": "integrationhost",
-                "SQUARE_INTEGRATION_DEFAULT_LAT": "0",
-                "SQUARE_INTEGRATION_DEFAULT_LON": "0"
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },
         {
@@ -221,6 +219,30 @@
             }
         },
         {
+            "name": "VmsSquareSingleton (.NET)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "prepare:vmssquaresingleton",
+            "postDebugTask": "dapr:vmssquaresingleton:stop",
+            "program": "${workspaceFolder}/web_vms/VmsSquareSingleton/bin/Debug/net8.0/VmsSquareSingleton.dll",
+            "cwd": "${workspaceFolder}/web_vms/VmsSquareSingleton",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "SQUARE_SINGLETON_VMS_PORT": "5147",
+                "DAPR_HTTP_PORT": "3615",
+                "DAPR_GRPC_PORT": "51016",
+                "DAPR_CFG_APP_ID": "vmscfg",
+                "PUBSUB_NAME": "orderpubsub",
+                "APP_ID": "vmssquaresingleton",
+                "SQUARE_INTEGRATION_SINK_APP_ID": "integrationhost",
+                "SQUARE_INTEGRATION_PRODUCER_ID": "vmscfg",
+                "SQUARE_INTEGRATION_DEFAULT_LAT": "0",
+                "SQUARE_INTEGRATION_DEFAULT_LON": "0",
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
+            }
+        },
+        {
             "name": "VmsUtils (.NET)",
             "type": "coreclr",
             "request": "launch",
@@ -366,10 +388,7 @@
                 "MEDIA_SERVER_PAIRS": "vms:vmsfs:vmsonvif,vms-2:vmsfs-2:vmsonvif-2",
                 "DAPR_STATE_STORE_NAME": "statestore",
                 "APP_ID": "vmscfg",
-                "VMS_LOG_PATH": "${workspaceFolder}/../logs",
-                "SQUARE_INTEGRATION_SINK_APP_ID": "integrationhost",
-                "SQUARE_INTEGRATION_DEFAULT_LAT": "0",
-                "SQUARE_INTEGRATION_DEFAULT_LON": "0"
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },
         {

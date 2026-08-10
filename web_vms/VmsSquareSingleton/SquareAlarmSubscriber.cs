@@ -4,7 +4,7 @@ using Google.Protobuf.WellKnownTypes;
 using LeafletAlarmsGrpc;
 using SquareIntegrationClient;
 
-namespace VmsCfg;
+namespace VmsSquareSingleton;
 
 // Only registered when Square integration is enabled (see Program.cs) — bridges VmsFs's
 // retention-event-created notifications into a Square point-in-time event + last_alarm_ts

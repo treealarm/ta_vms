@@ -1,14 +1,15 @@
 using SquareIntegrationClient;
+using Vms.Cfg;
 
-namespace VmsCfg;
+namespace VmsSquareSingleton;
 
 // Retries the full Square resync (root object + every camera) on a short interval until it
-// succeeds once. After that it stops — ongoing updates flow through the existing per-change
-// pushes (CfgServiceImpl.PushCameraToSquare/PushCameraStateToSquare, SquareAlarmSubscriber), so
-// there is no need to keep polling once the initial sync has landed. Only registered when Square
-// integration is enabled (see Program.cs).
+// succeeds once. After that it stops — ongoing updates flow through CameraChangeSubscriber and
+// SquareAlarmSubscriber, so there is no need to keep polling once the initial sync has landed.
+// Only registered when Square integration is enabled (see Program.cs).
 public sealed class SquareResyncService(
   IServiceProvider services,
+  SquareProducerId producerId,
   ILogger<SquareResyncService> logger) : IHostedService, IDisposable
 {
   // "Not less often than every 30s" — retrying well inside that bound for faster convergence.
@@ -24,17 +25,15 @@ public sealed class SquareResyncService(
 
   private async Task RunAsync(CancellationToken ct)
   {
-    var appId = Environment.GetEnvironmentVariable("APP_ID") ?? "vmscfg";
-
     while (!ct.IsCancellationRequested)
     {
       using var scope = services.CreateScope();
       var square = scope.ServiceProvider.GetRequiredService<ISquareIntegration>();
-      var storage = scope.ServiceProvider.GetRequiredService<CameraStorage>();
+      var cfgClient = scope.ServiceProvider.GetRequiredService<CfgService.CfgServiceClient>();
 
       try
       {
-        await SquareCameraPush.PushAllCamerasAsync(square, storage, appId, logger, ct);
+        await SquareCameraPush.PushAllCamerasAsync(square, cfgClient, producerId.Value, logger, ct);
         logger.LogInformation("Square resync completed");
         return;
       }

@@ -40,6 +40,7 @@ ORDER = [
     "vmslogger",
     "vmsutils",
     "vmssingleton",
+    "vmssquaresingleton",
     "vmsonvif",
     "vmsonvif-actors",
     "vmsfs",

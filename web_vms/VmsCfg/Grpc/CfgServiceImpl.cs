@@ -2,7 +2,6 @@ using Dapr.Client;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Npgsql;
-using SquareIntegrationClient;
 using Vms.Cfg;
 
 namespace VmsCfg
@@ -14,7 +13,6 @@ namespace VmsCfg
     ScheduleCache scheduleCache,
     PermissionDb permissionDb,
     DaprClient daprClient,
-    ISquareIntegration square,
     ILogger<CfgServiceImpl> logger) : CfgService.CfgServiceBase
   {
     private const string CameraConfigChangedTopic      = "camera-config-changed";
@@ -216,51 +214,8 @@ namespace VmsCfg
         NotifyMediaServer(serverId);
     }
 
-    private static readonly string SquareAppId = Environment.GetEnvironmentVariable("APP_ID") ?? "vmscfg";
 
-    // Best-effort push to Square (see SquareIntegrationClient/SquareCameraPush) — never blocks or
-    // fails the camera-setup RPC. No-op when SQUARE_INTEGRATION_SINK_APP_ID is unset
-    // (square.Enabled == false). Re-fetches camera_name from storage since the raw request
-    // doesn't carry the DB-joined recording profile name needed for the push.
-    private void PushCameraToSquare(string cameraId)
-    {
-      if (!square.Enabled) return;
 
-      _ = Task.Run(async () =>
-      {
-        try
-        {
-          var (found, setup) = await storage.GetCameraAsync(cameraId, CancellationToken.None);
-          if (!found || setup is null) return;
-
-          await SquareCameraPush.PushCameraAsync(square, setup, SquareAppId);
-        }
-        catch (Exception ex)
-        {
-          logger.LogWarning(ex, "Square push failed for camera '{CameraId}'", cameraId);
-        }
-      });
-    }
-
-    private void PushCameraStateToSquare(string cameraId, bool armed)
-    {
-      if (!square.Enabled) return;
-
-      _ = Task.Run(async () =>
-      {
-        try
-        {
-          await SquareCameraPush.PushPropertiesAsync(square, cameraId, new Dictionary<string, string>
-          {
-            ["armed"] = armed.ToString(),
-          });
-        }
-        catch (Exception ex)
-        {
-          logger.LogWarning(ex, "Square property push failed for camera '{CameraId}'", cameraId);
-        }
-      });
-    }
 
     private static readonly string StateStoreName =
       Environment.GetEnvironmentVariable("DAPR_STATE_STORE_NAME")
@@ -285,7 +240,6 @@ namespace VmsCfg
       await EnsureCameraHasStorageAsync(request.CameraId, context.CancellationToken);
       InvalidateFsCache(request.CameraId);
       NotifyMediaServer(request.ServerId);
-      PushCameraToSquare(request.CameraId);
 
       // Notify old server so it removes the camera
       if (existing is not null && existing.ServerId != request.ServerId)
@@ -1011,7 +965,6 @@ namespace VmsCfg
       await storage.SetCameraArmedAsync(request.CameraId, request.Armed, context.CancellationToken);
       logger.LogInformation("Camera '{CameraId}' armed={Armed}", request.CameraId, request.Armed);
       NotifyCameraStateChanged(request.CameraId);
-      PushCameraStateToSquare(request.CameraId, request.Armed);
       return new OperationStatus { Success = true };
     }
 

@@ -33,6 +33,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SquareIntegrationClient", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VmsSingleton", "VmsSingleton\VmsSingleton.csproj", "{64C1189E-489C-4D73-8D2A-487F6BF5DCE0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VmsSquareSingleton", "VmsSquareSingleton\VmsSquareSingleton.csproj", "{17D949D8-FAF4-477E-8DD7-F35B5AD26209}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -221,6 +223,18 @@ Global
 		{64C1189E-489C-4D73-8D2A-487F6BF5DCE0}.Release|x64.Build.0 = Release|Any CPU
 		{64C1189E-489C-4D73-8D2A-487F6BF5DCE0}.Release|x86.ActiveCfg = Release|Any CPU
 		{64C1189E-489C-4D73-8D2A-487F6BF5DCE0}.Release|x86.Build.0 = Release|Any CPU
+		{17D949D8-FAF4-477E-8DD7-F35B5AD26209}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{17D949D8-FAF4-477E-8DD7-F35B5AD26209}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{17D949D8-FAF4-477E-8DD7-F35B5AD26209}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{17D949D8-FAF4-477E-8DD7-F35B5AD26209}.Debug|x64.Build.0 = Debug|Any CPU
+		{17D949D8-FAF4-477E-8DD7-F35B5AD26209}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{17D949D8-FAF4-477E-8DD7-F35B5AD26209}.Debug|x86.Build.0 = Debug|Any CPU
+		{17D949D8-FAF4-477E-8DD7-F35B5AD26209}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{17D949D8-FAF4-477E-8DD7-F35B5AD26209}.Release|Any CPU.Build.0 = Release|Any CPU
+		{17D949D8-FAF4-477E-8DD7-F35B5AD26209}.Release|x64.ActiveCfg = Release|Any CPU
+		{17D949D8-FAF4-477E-8DD7-F35B5AD26209}.Release|x64.Build.0 = Release|Any CPU
+		{17D949D8-FAF4-477E-8DD7-F35B5AD26209}.Release|x86.ActiveCfg = Release|Any CPU
+		{17D949D8-FAF4-477E-8DD7-F35B5AD26209}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

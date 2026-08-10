@@ -4,9 +4,9 @@ using LeafletAlarmsGrpc;
 using SquareIntegrationClient;
 using Vms.Cfg;
 
-namespace VmsCfg;
+namespace VmsSquareSingleton;
 
-// Shared by CfgServiceImpl (per-camera push on config/state change), Program.cs's startup resync
+// Shared by the change subscribers (per-camera push on config/state change), the startup resync
 // (full re-push of every camera) and SquareAlarmSubscriber (alarm events) — kept in one place so
 // these don't drift. Builds ta_vms's camera tree on top of the generic ISquareIntegration
 // protocol (see SquareIntegrationClient submodule, docs/square-integration-plan.md) — id
@@ -54,7 +54,7 @@ public static class SquareCameraPush
   // every caller already has it in hand (CfgServiceImpl's config-change handler just loaded it to
   // get here; PushAllCamerasAsync's resync loop gets it in bulk from ListCamerasAsync), so an
   // internal re-fetch here was a redundant DB round-trip per camera.
-  public static async Task PushCameraAsync(ISquareIntegration square, CameraSetup setup, string appId)
+  public static async Task PushCameraAsync(ISquareIntegration square, CameraSetup setup, string producerId)
   {
     // Playback details (webrtc host/port, stream names) are NOT pushed here anymore — Square's
     // Monitor tab fetches them directly from ta_vms's own GET /api/live/cameras (CORS+JWT already
@@ -63,7 +63,7 @@ public static class SquareCameraPush
     var primaryStream = setup.Streams.FirstOrDefault(s => s.WebRtc);
 
     var objectId = ToObjectId(setup.CameraId);
-    var parentObjectId = ToObjectId(appId);
+    var parentObjectId = ToObjectId(producerId);
 
     var fig = new ProtoFig
     {
@@ -89,9 +89,10 @@ public static class SquareCameraPush
   }
 
   public static async Task PushAllCamerasAsync(
-    ISquareIntegration square, CameraStorage storage, string appId, ILogger logger, CancellationToken ct)
+    ISquareIntegration square, CfgService.CfgServiceClient cfgClient, string producerId,
+    ILogger logger, CancellationToken ct)
   {
-    var rootId = ToObjectId(appId);
+    var rootId = ToObjectId(producerId);
 
     // RegisterIntegro above only tags rootId with producer metadata (i_name/i_type) — it does NOT
     // create an actual tree/map object. Without the PushFigures call below, cameras whose ParentId
@@ -101,7 +102,7 @@ public static class SquareCameraPush
     var rootFig = new ProtoFig
     {
       Id = rootId,
-      Name = appId,
+      Name = producerId,
       Geometry = new Common.ProtoGeometry
       {
         Type = "Point",
@@ -115,21 +116,23 @@ public static class SquareCameraPush
       }),
       square.PushFigures(new ProtoFigures { Figs = { rootFig }, AddTracks = false }));
 
-    foreach (var (serverId, _, _) in storage.GetServerPairs())
+    // An empty server_id asks for every camera of every node — this service is not per node, and
+    // the config now comes over gRPC rather than from a database this process no longer owns.
+    var cameras = await cfgClient.ListCamerasAsync(
+      new ListCamerasRequest(), cancellationToken: ct);
+
+    foreach (var setup in cameras.Cameras)
     {
-      foreach (var setup in await storage.ListCamerasAsync(serverId, ct))
+      // One camera's failure must not abort the rest of the batch — otherwise a single
+      // persistently-broken camera blocks every camera after it in iteration order, on every
+      // resync attempt (this is what silently dropped pushes for camera ids later in the list).
+      try
       {
-        // One camera's failure must not abort the rest of the batch — otherwise a single
-        // persistently-broken camera blocks every camera after it in iteration order, on every
-        // resync attempt (this is what silently dropped pushes for camera ids later in the list).
-        try
-        {
-          await PushCameraAsync(square, setup, appId);
-        }
-        catch (Exception ex)
-        {
-          logger.LogWarning(ex, "Square push failed for camera '{CameraId}'", setup.CameraId);
-        }
+        await PushCameraAsync(square, setup, producerId);
+      }
+      catch (Exception ex)
+      {
+        logger.LogWarning(ex, "Square push failed for camera '{CameraId}'", setup.CameraId);
       }
     }
   }

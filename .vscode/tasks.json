@@ -531,6 +531,45 @@
             "problemMatcher": []
         },
         {
+            "label": "kill stale: vmssquaresingleton (F5)",
+            "detail": "Подчищает зависший daprd от прошлой сессии (app-id уникален).",
+            "type": "shell",
+            "command": "pkill -f \"app-id vmssquaresingleton\" || true",
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmssquaresingleton",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "kill stale: vmssquaresingleton (F5)",
+                "dotnet:build",
+                "dapr:vmssquaresingleton:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmssquaresingleton:start",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "pid_dir=/tmp/web_vms-dapr; name=vmssquaresingleton; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmssquaresingleton -app-port 5147 -components-path ${workspaceFolder}/init_files/dapr_components -app-protocol grpc -dapr-http-port 3615 -dapr-grpc-port 51016 -metrics-port 9205 -placement-host-address localhost:50005 -dapr-internal-grpc-port 19026 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
+            ],
+            "presentation": { "reveal": "silent", "panel": "dedicated" },
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmssquaresingleton:stop",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "if [ -f /tmp/web_vms-dapr/vmssquaresingleton.pid ]; then p=$(cat /tmp/web_vms-dapr/vmssquaresingleton.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmssquaresingleton.pid; fi"
+            ],
+            "presentation": { "reveal": "silent", "panel": "dedicated" },
+            "problemMatcher": []
+        },
+        {
             "label": "kill stale: vmssingleton (F5)",
             "detail": "Подчищает зависший daprd от прошлой сессии (app-id уникален).",
             "type": "shell",
