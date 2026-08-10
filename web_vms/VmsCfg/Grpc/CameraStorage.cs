@@ -277,8 +277,10 @@ public class CameraStorage(
   public async Task SetStreamOverrideAsync(string cameraId, string streamName, string profileId, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
+      -- alarm_override_until is cleared with it: a manual override lasts until it is taken away,
+      -- and inheriting a deadline left by a timed one would end it at a moment nobody chose.
       UPDATE camera_stream
-      SET override_profile_id = $3::uuid
+      SET override_profile_id = $3::uuid, alarm_override_until = NULL
       WHERE camera_id = $1 AND stream_name = $2;
       """);
     command.Parameters.AddWithValue(cameraId);
@@ -290,8 +292,10 @@ public class CameraStorage(
   public async Task ClearStreamOverrideAsync(string cameraId, string streamName, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
+      -- Also drops the deadline: leaving it behind would have the expiry sweep act on a stream
+      -- whose override is already gone.
       UPDATE camera_stream
-      SET override_profile_id = NULL
+      SET override_profile_id = NULL, alarm_override_until = NULL
       WHERE camera_id = $1 AND stream_name = $2;
       """);
     command.Parameters.AddWithValue(cameraId);
@@ -330,11 +334,19 @@ public class CameraStorage(
     return rows > 0;
   }
 
+  /// Ends a timed override whose deadline has passed, returning the stream to its base profile.
+  ///
+  /// The deadline is re-checked in the UPDATE rather than trusted from the caller's earlier read:
+  /// between listing an expired row and clearing it the override can be renewed — an alarm re-fires,
+  /// or an operator extends the window — and an unconditional clear would then wipe a deadline that
+  /// is once again in the future, cutting short recording somebody deliberately asked for.
   public async Task<bool> ClearAlarmOverrideAsync(string cameraId, string streamName, CancellationToken ct)
   {
     await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var now = DateTime.UtcNow;
     var rows = await db.CameraStreams
-      .Where(cs => cs.CameraId == cameraId && cs.StreamName == streamName && cs.AlarmOverrideUntil != null)
+      .Where(cs => cs.CameraId == cameraId && cs.StreamName == streamName
+                && cs.AlarmOverrideUntil != null && cs.AlarmOverrideUntil < now)
       .ExecuteUpdateAsync(s => s
         .SetProperty(cs => cs.OverrideProfileId, (Guid?)null)
         .SetProperty(cs => cs.AlarmOverrideUntil, (DateTime?)null),
