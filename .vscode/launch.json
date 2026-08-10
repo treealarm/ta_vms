@@ -192,7 +192,6 @@
                 "LOGGER_VMS_PORT": "5138",
                 "DAPR_HTTP_PORT": "3605",
                 "DAPR_GRPC_PORT": "51006",
-                "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage",
                 "APP_ID": "vmslogger",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
@@ -425,7 +424,7 @@
                 "PUBSUB_NAME": "orderpubsub",
                 "APP_ID": "vmsonvif-2",
                 "OWN_SERVER_ID": "vms-2",
-                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs-node2"
             }
         },
         {
@@ -444,7 +443,7 @@
                 "DAPR_GRPC_PORT": "51013",
                 "APP_ID": "vmsonvif-actors-2",
                 "OWN_SERVER_ID": "vms-2",
-                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs-node2"
             }
         },
         {
@@ -479,7 +478,8 @@
                 "VMS_BACKFILL_RETRY_SECONDS": "300",
                 "VMS_BACKFILL_LOOKBACK_HOURS": "48",
                 "VMS_BACKFILL_JOB_RETENTION_HOURS": "24",
-                "VMS_OUTAGE_RETENTION_DAYS": "90"
+                "VMS_OUTAGE_RETENTION_DAYS": "90",
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs-node2"
             }
         },
         {
@@ -506,7 +506,7 @@
                 { "name": "PUBSUB_NAME", "value": "orderpubsub" },
                 { "name": "VMS_WEBRTC_RTSP_BASE_URL", "value": "rtsp://localhost:8554" },
                 { "name": "VMS_MTX_HOST", "value": "localhost" },
-                { "name": "VMS_LOG_PATH", "value": "${workspaceFolder}/../logs" },
+                { "name": "VMS_LOG_PATH", "value": "${workspaceFolder}/../logs-node2" },
                 { "name": "VMS_SOURCE_LIVENESS_PERIOD_SECONDS", "value": "15" },
                 { "name": "VMS_DEBUG_ENTITY_STATE_SECONDS", "value": "10" }
             ],
