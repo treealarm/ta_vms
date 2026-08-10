@@ -25,7 +25,6 @@ builder.Services.AddSingleton<StorageDb>();
 builder.Services.AddSingleton<PermissionDb>();
 builder.Services.AddSingleton<CfgServiceImpl>();
 builder.Services.AddSingleton<StorageServiceImpl>();
-builder.Services.AddHostedService<RecordingScheduleService>();
 builder.Services.AddHostedService<AlarmOverrideExpiryService>();
 
 // SQUARE_INTEGRATION_SINK_APP_ID is intentionally optional: when unset, VmsCfg runs fully

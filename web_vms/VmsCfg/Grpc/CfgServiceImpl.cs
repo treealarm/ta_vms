@@ -1,4 +1,5 @@
 using Dapr.Client;
+using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Npgsql;
 using SquareIntegrationClient;
@@ -20,6 +21,11 @@ namespace VmsCfg
     private const string MediaServerConfigChangedTopic = "media-server-config-changed";
     private const string CameraStateChangedTopic       = "camera-state-changed";
     private const string AnalyticsWatchChangedTopic    = "analytics-watch-changed";
+    // Wakes the ticker in VmsSingleton after a schedule edit. It has its own app id, hence its own
+    // subscription, so a topic reaches it — unlike VmsCfg's own replicas, which share one consumer
+    // group and use version keys instead. Without it a new window opening in seconds would wait for
+    // the ticker's next poll.
+    private const string RecordingScheduleChangedTopic = "recording-schedule-changed";
 
     // Shared state store key whose value changes on every permission or ACL-mode write; web_vms
     // watches it to know when to drop its cached grants. See BumpCameraPermissionsVersionAsync.
@@ -121,6 +127,21 @@ namespace VmsCfg
       {
         logger.LogWarning(ex, "Bumping the camera node version failed — replicas will pick the move up by TTL");
       }
+    }
+
+    private void NotifyRecordingScheduleChanged()
+    {
+      _ = Task.Run(async () =>
+      {
+        try
+        {
+          await daprClient.PublishEventAsync(_pubSubName, RecordingScheduleChangedTopic, string.Empty);
+        }
+        catch (Exception ex)
+        {
+          logger.LogWarning(ex, "Recording schedule change notification failed");
+        }
+      });
     }
 
     private void NotifyMediaServer(string serverId)
@@ -305,6 +326,41 @@ namespace VmsCfg
       }
     }
 
+    /// Everything the schedule ticker in VmsSingleton needs, resolved here against the wall clock.
+    /// The evaluator and the schedule cache stay in this service — the ticker only spots transitions
+    /// and announces them, so it carries no copy of the rules.
+    public override async Task<RecordingScheduleStateResponse> GetRecordingScheduleState(
+      Google.Protobuf.WellKnownTypes.Empty request,
+      ServerCallContext context)
+    {
+      var ct = context.CancellationToken;
+      await scheduleCache.ReloadAsync(ct);
+
+      var now = DateTime.UtcNow;
+      var response = new RecordingScheduleStateResponse();
+
+      foreach (var (cameraId, _) in await scheduleDb.ListCamerasWithSchedulesAsync(ct))
+      {
+        response.ScheduledCameraIds.Add(cameraId);
+        if (scheduleCache.IsCameraActive(cameraId, now))
+          response.ActiveCameraIds.Add(cameraId);
+      }
+
+      var next = scheduleCache.NextTransitionUtc(now);
+      if (next is not null)
+        response.NextTransition = Timestamp.FromDateTime(DateTime.SpecifyKind(next.Value, DateTimeKind.Utc));
+
+      return response;
+    }
+
+    public override async Task<OperationStatus> NotifyCamerasChanged(
+      NotifyCamerasChangedRequest request,
+      ServerCallContext context)
+    {
+      var ok = await NotifyCamerasChangedAsync(request.CameraIds, context.CancellationToken);
+      return new OperationStatus { Success = ok, Message = ok ? string.Empty : "publish failed" };
+    }
+
     public override async Task<ListMediaServersResponse> ListMediaServers(
       ListMediaServersRequest request,
       ServerCallContext context)
@@ -487,7 +543,8 @@ namespace VmsCfg
         "Recording schedule '{Name}' upserted (id={Id}, tz={Timezone}, windows={Windows}, lead_in={LeadIn}s)",
         request.Name, id, request.Timezone, request.Windows.Count, request.LeadInSeconds);
 
-      await scheduleCache.ReloadAndSignalAsync(ct);
+      await scheduleCache.ReloadAsync(ct);
+      NotifyRecordingScheduleChanged();
       await NotifyCamerasChangedAsync(await scheduleDb.ListCamerasUsingScheduleAsync(id, ct), ct);
       return new OperationStatus { Success = true };
     }
@@ -571,7 +628,8 @@ namespace VmsCfg
         return new OperationStatus { Success = false, Message = "schedule not found" };
 
       logger.LogInformation("Recording schedule '{Id}' removed", id);
-      await scheduleCache.ReloadAndSignalAsync(ct);
+      await scheduleCache.ReloadAsync(ct);
+      NotifyRecordingScheduleChanged();
       await NotifyCamerasChangedAsync(affected, ct);
       return new OperationStatus { Success = true };
     }
@@ -608,7 +666,8 @@ namespace VmsCfg
         "Camera '{CameraId}' schedules set: [{ScheduleIds}]",
         request.CameraId, string.Join(", ", request.ScheduleIds));
 
-      await scheduleCache.ReloadAndSignalAsync(ct);
+      await scheduleCache.ReloadAsync(ct);
+      NotifyRecordingScheduleChanged();
       await NotifyCamerasChangedAsync([request.CameraId], ct);
       return new OperationStatus { Success = true };
     }

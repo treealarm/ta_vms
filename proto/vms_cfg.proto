@@ -18,6 +18,13 @@ service CfgService {
   rpc ClearStreamOverride(ClearStreamOverrideRequest) returns (OperationStatus);
   rpc SetStreamRecordingProfile(SetStreamRecordingProfileRequest) returns (OperationStatus);
   rpc ActivateAlarmOverride(ActivateAlarmOverrideRequest) returns (ActivateAlarmOverrideResponse);
+  // For the schedule ticker in VmsSingleton. All schedule evaluation stays here, where the schema
+  // and the evaluator live: the ticker only detects transitions and announces them, so it needs no
+  // copy of the rules and no second cache.
+  rpc GetRecordingScheduleState(google.protobuf.Empty) returns (RecordingScheduleStateResponse);
+  // Announces that these cameras' effective recording state may have changed. Publishing stays here
+  // so topic names and the camera→server lookup do not get duplicated in a second service.
+  rpc NotifyCamerasChanged(NotifyCamerasChangedRequest) returns (OperationStatus);
   rpc ListRecordingSchedules(ListRecordingSchedulesRequest) returns (ListRecordingSchedulesResponse);
   rpc UpsertRecordingSchedule(RecordingSchedule) returns (OperationStatus);
   rpc RemoveRecordingSchedule(RecordingScheduleRequest) returns (OperationStatus);
@@ -199,6 +206,21 @@ message ListRecordingSchedulesRequest {}
 
 message ListRecordingSchedulesResponse {
   repeated RecordingSchedule schedules = 1;
+}
+
+// Everything the schedule ticker needs in one answer, resolved against the wall clock here.
+message RecordingScheduleStateResponse {
+  // Cameras with at least one schedule assigned. A camera that drops off this list has lost its
+  // last assignment, and the ticker forgets it so a re-assignment reads as a fresh transition.
+  repeated string scheduled_camera_ids = 1;
+  // Of those, the ones whose window is open right now.
+  repeated string active_camera_ids = 2;
+  // Earliest upcoming boundary across every assigned schedule; absent when none is scheduled.
+  optional google.protobuf.Timestamp next_transition = 3;
+}
+
+message NotifyCamerasChangedRequest {
+  repeated string camera_ids = 1;
 }
 
 message SetCameraSchedulesRequest {

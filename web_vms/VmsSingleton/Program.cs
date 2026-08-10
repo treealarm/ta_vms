@@ -1,5 +1,7 @@
+using Dapr.Client;
 using Dapr.Messaging.PublishSubscribe.Extensions;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Vms.Cfg;
 using VmsLog;
 using VmsSingleton;
 
@@ -19,6 +21,16 @@ builder.Services.AddHostedService<EntityStateSubscriber>();
 builder.Services.AddHostedService<EntityStateSweepService>();
 builder.Services.AddSingleton<SingletonServiceImpl>();
 
+var cfgAppId = Require("DAPR_CFG_APP_ID");
+builder.Services.AddSingleton(_ =>
+  new CfgService.CfgServiceClient(DaprClient.CreateInvocationInvoker(cfgAppId)));
+
+// The schedule ticker: one window boundary must produce one announcement, which is exactly the
+// guarantee this service exists to give. Evaluation stays in VmsCfg — see RecordingScheduleService.
+builder.Services.AddSingleton<ScheduleChangeSignal>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ScheduleChangeSignal>());
+builder.Services.AddHostedService<RecordingScheduleService>();
+
 builder.WebHost.ConfigureKestrel(options =>
 {
   options.ListenAnyIP(grpcPort, lo => lo.Protocols = HttpProtocols.Http2);
@@ -27,6 +39,10 @@ builder.WebHost.ConfigureKestrel(options =>
 var app = builder.Build();
 app.MapGrpcService<SingletonServiceImpl>();
 app.Run();
+
+static string Require(string name) =>
+  Environment.GetEnvironmentVariable(name)
+    ?? throw new InvalidOperationException($"Required environment variable '{name}' is not set");
 
 static int RequirePort(string name) =>
   int.TryParse(Environment.GetEnvironmentVariable(name), out var p)
