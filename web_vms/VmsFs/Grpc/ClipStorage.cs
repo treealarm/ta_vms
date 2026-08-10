@@ -863,19 +863,27 @@ public sealed class ClipStorage(
     var post = config?.PostRecordSeconds ?? 30;
 
     var streamFilter = string.IsNullOrEmpty(streamName) ? "" : "AND c.stream_name = $7";
+    // The limit takes from the NEWEST end and the result is turned back around afterwards. Taking
+    // the oldest rows instead — which is what an ascending LIMIT does — silently hides the most
+    // recent footage the moment the window holds more clips than the limit: they are in the
+    // database and matched by the query, yet absent from the answer. Callers still receive the page
+    // in ascending order, which is what the range grouping expects.
     await using var cmd = dataSource.CreateCommand($"""
-      SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id, c.origin,
-             COALESCE(string_agg(DISTINCT re.event_id, ','), '')
-      FROM clips c
-      LEFT JOIN retention_events re ON re.camera_id = c.camera_id
-        AND c.start_ts <= re.alarm_end_ts + ($5 * interval '1 second')
-        AND COALESCE(c.end_ts, c.start_ts) >= re.alarm_start_ts - ($6 * interval '1 second')
-      WHERE c.camera_id = $1 AND c.retained = TRUE {streamFilter}
-        AND ($2::timestamptz IS NULL OR COALESCE(c.end_ts, c.start_ts + interval '1 minute') >= $2)
-        AND ($3::timestamptz IS NULL OR c.start_ts <= $3)
-      GROUP BY c.clip_uid
-      ORDER BY c.start_ts ASC
-      LIMIT $4;
+      SELECT * FROM (
+        SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id, c.origin,
+               COALESCE(string_agg(DISTINCT re.event_id, ','), '') AS event_ids
+        FROM clips c
+        LEFT JOIN retention_events re ON re.camera_id = c.camera_id
+          AND c.start_ts <= re.alarm_end_ts + ($5 * interval '1 second')
+          AND COALESCE(c.end_ts, c.start_ts) >= re.alarm_start_ts - ($6 * interval '1 second')
+        WHERE c.camera_id = $1 AND c.retained = TRUE {streamFilter}
+          AND ($2::timestamptz IS NULL OR COALESCE(c.end_ts, c.start_ts + interval '1 minute') >= $2)
+          AND ($3::timestamptz IS NULL OR c.start_ts <= $3)
+        GROUP BY c.clip_uid
+        ORDER BY c.start_ts DESC
+        LIMIT $4
+      ) page
+      ORDER BY start_ts ASC;
       """);
 
     cmd.Parameters.AddWithValue(cameraId);
