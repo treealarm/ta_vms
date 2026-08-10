@@ -34,11 +34,18 @@ cam_stream::cam_stream(
   if (!m_reader->open(m_rtsp_url))
     throw std::runtime_error("Failed to open media source");
 
-  m_reader->start();
-
   // One segment_writer per stream, for the whole lifetime of cam_stream.
   // Recording on/off is controlled via add_sink/remove_sink in apply_recording_policy().
+  // Built before the reader runs: the source-lost handler below reaches for it from the reader
+  // thread, which must not race with this assignment.
   m_writer = std::make_shared<segment_writer>(m_camera_id, m_stream_name);
+
+  // The reader knows it lost the source seconds before the liveness sweep asks. Closing the clip
+  // at the transition is what keeps the footage that arrives after a reconnect out of a segment
+  // opened for the previous session — see close_segment_on_source_loss.
+  m_reader->set_source_lost_handler([this] { close_segment_on_source_loss(); });
+
+  m_reader->start();
 }
 
 cam_stream::~cam_stream()
@@ -142,7 +149,9 @@ void cam_stream::close_segment_on_source_loss()
   if (!m_writer || m_recording_policy_mode == recording_policy_mode::off)
     return;
   // Non-blocking and processed in order with the packet queue — which is empty during an outage,
-  // so the close happens right away.
+  // so the close happens right away. Called from two places: the reader, at the instant it declares
+  // the source lost, and the periodic liveness sweep, which stays as a backstop for sources that
+  // never report a transition. Idempotent, so both firing costs nothing.
   m_writer->request_close_segment(m_record_segment_duration);
 }
 

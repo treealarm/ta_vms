@@ -41,6 +41,7 @@ public:
     return m_running;
   }
   source_liveness liveness() const override;
+  void set_source_lost_handler(source_lost_handler handler) override { m_on_source_lost = std::move(handler); }
   void step(int32_t /*steps*/) override {};
   void set_speed(double /*speed*/) override {};
   AVStream* video_stream() const override;
@@ -73,6 +74,9 @@ private:
 
   /// False until the first packet of the current session has been stamped. Reader thread only.
   bool m_stamped_since_connect = false;
+
+  /// Set once before start(), then only read by the reader thread — no synchronisation needed.
+  source_lost_handler m_on_source_lost;
 
   std::string m_cam_id;
   std::string m_profile_token;

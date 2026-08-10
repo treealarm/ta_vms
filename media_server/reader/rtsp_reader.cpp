@@ -237,9 +237,14 @@ void rtsp_reader::read_loop()
         // Dead from here, not from the first failed read: a single error is normal, five seconds
         // of them is a lost source. This only decides *that* it happened — *when* comes from
         // m_last_frame_us, which still holds the last real packet.
-        m_source_alive.store(false);
+        const bool was_alive = m_source_alive.exchange(false);
         logger::instance().warning(std::format("RTSP watchdog: reconnecting [cam={}]: {}", m_cam_id, m_rtsp_url));
         disconnect();
+        // Announced at the transition rather than left to the liveness poll: the open clip has to
+        // stop here, and until it does, packets from after the reconnect are written into a segment
+        // opened for the old session — or dropped outright.
+        if (was_alive && m_on_source_lost)
+          m_on_source_lost();
       }
       continue;
     }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
 #include <optional>
 #include <string>
 
@@ -37,6 +38,13 @@ public:
     state.alive = true;
     return state;
   }
+
+  /// Called once, from the reader thread, at the moment the source is declared lost — the
+  /// alive→dead transition the reader detects in its own watchdog. Lets the owner react then and
+  /// there instead of waiting for the next liveness poll, which is seconds away. Must be cheap and
+  /// must not block the reader thread. Readers that cannot lose a source ignore it.
+  using source_lost_handler = std::function<void()>;
+  virtual void set_source_lost_handler(source_lost_handler /*handler*/) {}
 
   virtual bool open(const std::string& source) = 0;
   virtual AVStream* video_stream() const = 0;
