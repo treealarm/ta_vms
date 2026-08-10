@@ -14,37 +14,38 @@ public class CameraStorage(
   private readonly NpgsqlDataSource _dataSource = dataSource;
   private static readonly Guid BuiltinContinuousProfileId = new("00000000-0000-0000-0000-000000000001");
 
-  private readonly IReadOnlyList<(string ServerId, string FsId, string OnvifId)> _serverPairs = ParseServerPairs();
+  private readonly IReadOnlyList<(string ServerId, string FsId, string OnvifId, string LoggerId)> _serverPairs = ParseServerPairs();
 
-  /// One entry per node: the media server, the VmsFs that owns its archive volume, and the VmsOnvif
-  /// that shares its camera subnet. All three are pinned to the same machine, so the triple is the
-  /// node — there is no arrangement in which they can be picked independently.
-  private static IReadOnlyList<(string ServerId, string FsId, string OnvifId)> ParseServerPairs()
+  /// One entry per node: the media server, the VmsFs that owns its archive volume, the VmsOnvif that
+  /// shares its camera subnet, and the VmsLogger that can read its log files. All four are pinned to
+  /// the same machine, so the entry is the node — there is no arrangement in which they can be
+  /// picked independently.
+  private static IReadOnlyList<(string ServerId, string FsId, string OnvifId, string LoggerId)> ParseServerPairs()
   {
     var raw = Environment.GetEnvironmentVariable("MEDIA_SERVER_PAIRS")
       ?? throw new InvalidOperationException("Required environment variable 'MEDIA_SERVER_PAIRS' is not set");
 
-    var pairs = new List<(string, string, string)>();
+    var pairs = new List<(string, string, string, string)>();
     foreach (var entry in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
     {
-      // Rejected rather than defaulted: an entry without an ONVIF id leaves web_vms.Server with no
-      // instance to send PTZ and snapshots to for that node's cameras, and there is nothing sensible
-      // to guess — a central instance would have no route to them.
+      // Rejected rather than defaulted: an entry missing a part leaves web_vms.Server with no
+      // instance to send PTZ to, or no instance that can read that node's logs, and there is nothing
+      // sensible to guess — a central instance can reach neither.
       var parts = entry.Split(':', StringSplitOptions.TrimEntries);
-      if (parts.Length != 3 || parts.Any(string.IsNullOrEmpty))
+      if (parts.Length != 4 || parts.Any(string.IsNullOrEmpty))
         throw new InvalidOperationException(
-          $"Invalid MEDIA_SERVER_PAIRS entry '{entry}': expected 'server_id:fs_id:onvif_id'");
-      pairs.Add((parts[0], parts[1], parts[2]));
+          $"Invalid MEDIA_SERVER_PAIRS entry '{entry}': expected 'server_id:fs_id:onvif_id:logger_id'");
+      pairs.Add((parts[0], parts[1], parts[2], parts[3]));
     }
 
     if (pairs.Count == 0)
       throw new InvalidOperationException(
-        "MEDIA_SERVER_PAIRS must contain at least one 'server_id:fs_id:onvif_id' triple");
+        "MEDIA_SERVER_PAIRS must contain at least one 'server_id:fs_id:onvif_id:logger_id' entry");
 
     return pairs;
   }
 
-  public IReadOnlyList<(string ServerId, string FsId, string OnvifId)> GetServerPairs() => _serverPairs;
+  public IReadOnlyList<(string ServerId, string FsId, string OnvifId, string LoggerId)> GetServerPairs() => _serverPairs;
 
   public bool IsValidServerId(string serverId) =>
     _serverPairs.Any(p => p.ServerId == serverId);

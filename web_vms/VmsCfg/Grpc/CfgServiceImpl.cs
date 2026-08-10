@@ -210,7 +210,7 @@ namespace VmsCfg
     // any recording server, so notify all of them to re-resolve the WebRTC push URL.
     private void NotifyAllMediaServers()
     {
-      foreach (var (serverId, _, _) in storage.GetServerPairs())
+      foreach (var (serverId, _, _, _) in storage.GetServerPairs())
         NotifyMediaServer(serverId);
     }
 
@@ -336,7 +336,7 @@ namespace VmsCfg
       ServerCallContext context)
     {
       var response = new ListMediaServersResponse();
-      foreach (var (serverId, fsId, onvifId) in storage.GetServerPairs())
+      foreach (var (serverId, fsId, onvifId, loggerId) in storage.GetServerPairs())
       {
         // A missing key is the normal "no heartbeat within its TTL" answer. Anything else — the
         // state store being down, or a heartbeat written in a shape this cannot read — is reported
@@ -354,7 +354,7 @@ namespace VmsCfg
         }
         response.Servers.Add(new MediaServerNode
         {
-          ServerId = serverId, FsId = fsId, OnvifId = onvifId, Status = status,
+          ServerId = serverId, FsId = fsId, OnvifId = onvifId, LoggerId = loggerId, Status = status,
         });
       }
       return response;

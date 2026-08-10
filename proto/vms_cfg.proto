@@ -241,6 +241,9 @@ message MediaServerNode {
   // same local subnet RTSP does, so a call for a camera must go to its own node's instance — a
   // central one has no route to it.
   string onvif_id  = 4;
+  // The VmsLogger instance that can read this node's log files. Logs are written to local disk, so
+  // one instance only ever sees the machine it runs on.
+  string logger_id = 5;
 }
 
 message ListMediaServersRequest {}

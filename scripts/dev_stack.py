@@ -38,6 +38,7 @@ ORDER = [
     "vmscfg",
     "vmscfg-2",
     "vmslogger",
+    "vmslogger-2",
     "vmsutils",
     "vmssingleton",
     "vmssquaresingleton",

@@ -3,6 +3,7 @@ using Dapr.Client;
 using Grpc.Core;
 using Vms.Cfg;
 using Vms.Fs;
+using Vms.Logger;
 using Vms.Onvif;
 
 namespace web_vms;
@@ -18,6 +19,7 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
   // read it without any lock.
   private volatile IReadOnlyDictionary<string, string>? _serverToFs;
   private volatile IReadOnlyDictionary<string, string>? _serverToOnvif;
+  private volatile IReadOnlyDictionary<string, string>? _serverToLogger;
   private volatile string? _lastInitError;
   // Instances that recently failed a fan-out call — skipped for UnreachableCooldown so a
   // configured-but-dead FS doesn't cost every request the full FanOutTimeout.
@@ -41,6 +43,9 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
       _serverToOnvif = resp.Servers
         .Where(s => !string.IsNullOrWhiteSpace(s.OnvifId))
         .ToDictionary(s => s.ServerId, s => s.OnvifId, StringComparer.OrdinalIgnoreCase);
+      _serverToLogger = resp.Servers
+        .Where(s => !string.IsNullOrWhiteSpace(s.LoggerId))
+        .ToDictionary(s => s.ServerId, s => s.LoggerId, StringComparer.OrdinalIgnoreCase);
       _lastInitError = null;
     }
     catch (Exception ex)
@@ -86,6 +91,24 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
 
   /// For fan-out over AllOnvifIds, where the app id is already known.
   public OnvifService.OnvifServiceClient OnvifClientFor(string onvifId) => new(Invoker(onvifId));
+
+  /// Every VmsLogger in the deployment: the one next to this gateway plus one per node. Logs are
+  /// written to local disk, so an instance only ever sees the machine it runs on and a complete
+  /// answer means asking all of them. Deduplicated, since a single-host install names the same
+  /// instance for both.
+  public IReadOnlyCollection<string> AllLoggerIds(string centralLoggerId)
+  {
+    var perNode = _serverToLogger ?? throw new ServiceNotReadyException(
+      "Configuration service (VmsCfg) has not answered yet — see GET /api/health", _lastInitError);
+
+    return perNode.Values
+      .Append(centralLoggerId)
+      .Where(id => !string.IsNullOrWhiteSpace(id))
+      .Distinct(StringComparer.OrdinalIgnoreCase)
+      .ToList();
+  }
+
+  public LogService.LogServiceClient LogClientFor(string loggerId) => new(Invoker(loggerId));
 
   // For the few operations that are not about one camera: recent-event dumps have to be collected
   // from every node, since each instance only sees its own cameras' events.
