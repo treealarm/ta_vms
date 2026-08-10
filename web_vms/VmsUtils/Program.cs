@@ -31,9 +31,6 @@ builder.Services.AddHttpClient(UtilsServiceImpl.MediaMtxHttpClientName, c =>
   c.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
     "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{mtxReadUser}:{mtxReadPass}"))));
 builder.Services.AddDaprPubSubClient();
-builder.Services.AddSingleton<EntityStateRegistry>();
-builder.Services.AddHostedService<EntityStateSubscriber>();
-builder.Services.AddHostedService<EntityStateSweepService>();
 // One client for the lifetime of the process: the previous per-request construction churned a Dapr
 // invocation channel on every reader-count poll.
 builder.Services.AddSingleton(_ =>

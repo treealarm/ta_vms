@@ -1,0 +1,25 @@
+syntax = "proto3";
+package vms.singleton;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// Work that must happen exactly once for the whole system, and the in-memory state that goes with
+// it. Deliberately a service of its own rather than a corner of another one: the name is the
+// deployment contract — this is the process nobody may replicate. See CLAUDE.md.
+service SingletonService {
+  rpc ListEntityStates(google.protobuf.Empty) returns (ListEntityStatesResponse);
+}
+
+message EntityState {
+  string service = 1;
+  string entity_type = 2;
+  string entity_id = 3;
+  string state_json = 4;
+  google.protobuf.Timestamp last_seen = 5;
+  bool stale = 6;
+}
+
+message ListEntityStatesResponse {
+  repeated EntityState entities = 1;
+}

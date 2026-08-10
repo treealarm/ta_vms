@@ -21,6 +21,7 @@
                 "DAPR_LOGGER_APP_ID": "vmslogger",
                 "DAPR_CFG_APP_ID": "vmscfg",
                 "DAPR_UTILS_APP_ID": "vmsutils",
+                "DAPR_SINGLETON_APP_ID": "vmssingleton",
                 "DAPR_ANALYTICS_APP_ID": "vmsanalytics",
                 "PUBSUB_NAME": "orderpubsub",
                 "DAPR_STATE_STORE_NAME": "statestore",
@@ -196,6 +197,25 @@
                 "DAPR_GRPC_PORT": "51006",
                 "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage",
                 "APP_ID": "vmslogger",
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
+            }
+        },
+        {
+            "name": "VmsSingleton (.NET)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "prepare:vmssingleton",
+            "postDebugTask": "dapr:vmssingleton:stop",
+            "program": "${workspaceFolder}/web_vms/VmsSingleton/bin/Debug/net8.0/VmsSingleton.dll",
+            "cwd": "${workspaceFolder}/web_vms/VmsSingleton",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "SINGLETON_VMS_PORT": "5145",
+                "DAPR_HTTP_PORT": "3613",
+                "DAPR_GRPC_PORT": "51014",
+                "PUBSUB_NAME": "orderpubsub",
+                "APP_ID": "vmssingleton",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },

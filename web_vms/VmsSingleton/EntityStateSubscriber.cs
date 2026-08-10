@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Dapr.Messaging.PublishSubscribe;
 
-namespace VmsUtils;
+namespace VmsSingleton;
 
 // Subscribes to the debug-entity-state topic: any entity in any service can
 // periodically publish its real in-memory runtime state here for debugging.

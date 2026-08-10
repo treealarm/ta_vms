@@ -105,11 +105,24 @@ group behind on every restart.
 - `media_server` (`vms`) and `VmsFs` — scale by **sharding**: one pair per node, pinned to that
   node's storage. More capacity means another server↔FS pair, never a second replica of the same
   app id.
-- `VmsCfg`, `VmsUtils`, `VmsOnvif`, `VmsAnalytics`, `VmsLogger` — **single instance**. Each owns
-  in-memory state or a background job that must not run twice (recording-schedule ticker,
-  entity-state registry, ONVIF event pumps, live detection broadcaster, log retention). Scaling any
-  of these needs leader election or the state moved out first.
-- `VmsOnvifActors` — scales through Dapr actor placement; that is what it is for.
+- `VmsOnvif` and `VmsOnvifActors` — also **sharded by node**, for a different reason: ONVIF reaches a
+  camera over the same local subnet RTSP does, so an instance can only serve the cameras of the media
+  server it sits next to. `OWN_SERVER_ID` names that node; the actor type name carries it too
+  (`CameraActorType`), because Dapr placement routes actors by type name and would otherwise put a
+  camera's actor on a host with no route to it.
+- `VmsSingleton` — **exactly one instance, ever.** The suffix is the deployment contract: this is
+  where work that must happen once for the whole system lives, together with in-memory aggregation a
+  second copy would split rather than share (all replicas of one app id share a Dapr consumer group,
+  so each would see half the events). Anything that does not need that property must not go here —
+  otherwise it becomes a dumping ground and the guarantee stops meaning anything.
+- `VmsCfg`, `VmsUtils`, `VmsAnalytics`, `VmsLogger` — single instance today, but for different
+  reasons, and not all of them permanent. `VmsCfg` and `VmsUtils` are being made replicable (their
+  once-only work moves to `VmsSingleton`); `VmsAnalytics` holds the `obj-N` counter and `VmsLogger`
+  reads node-local files, so both still need work before they can be scaled.
+
+**Naming rule:** a service that cannot be replicated carries `Singleton` in its project name and Dapr
+app-id. A reader must be able to tell the scaling class from the name alone, without reading
+`Program.cs` to discover a background job hiding inside.
 
 ## Debug "entity state" presence registry
 
@@ -127,7 +140,7 @@ mechanism — no delivery guarantees, no history, nothing is written to a databa
 - `state` — arbitrary JSON object, no fixed schema; each entity publishes whatever fields are
   relevant to it.
 
-**VmsUtils** owns the in-memory registry: it subscribes to `debug-entity-state`, keys entries by
+**VmsSingleton** owns the in-memory registry: it subscribes to `debug-entity-state`, keys entries by
 `(service, entity_type, entity_id)`, and tracks `last_seen`. `stale` is computed on read
 (`now - last_seen > 30s`); a periodic sweep removes entries not seen for `> 5min`. The registry is
 exposed via the `ListEntityStates` gRPC (consumed by `web_vms.Server`'s `/api/entitystate`

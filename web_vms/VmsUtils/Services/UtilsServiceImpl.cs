@@ -1,4 +1,3 @@
-using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Vms.Utils;
 
@@ -7,30 +6,12 @@ namespace VmsUtils;
 public class UtilsServiceImpl(
   MediaMtxServerCache serverCache,
   MediaMtxPathSnapshotCache snapshotCache,
-  EntityStateRegistry entityStateRegistry,
   ILogger<UtilsServiceImpl> logger)
   : UtilsService.UtilsServiceBase
 {
   /// <summary>Carries the vms_read Basic credentials MediaMTX's Control API requires.</summary>
   public const string MediaMtxHttpClientName = "mediamtx-api";
 
-  public override Task<ListEntityStatesResponse> ListEntityStates(Empty request, ServerCallContext context)
-  {
-    var response = new ListEntityStatesResponse();
-    foreach (var (key, entry) in entityStateRegistry.GetAll())
-    {
-      response.Entities.Add(new EntityState
-      {
-        Service = key.Service,
-        EntityType = key.EntityType,
-        EntityId = key.EntityId,
-        StateJson = entry.StateJson,
-        LastSeen = Timestamp.FromDateTime(DateTime.SpecifyKind(entry.LastSeenUtc, DateTimeKind.Utc)),
-        Stale = entry.Stale,
-      });
-    }
-    return Task.FromResult(response);
-  }
 
   public override async Task<GetMediaMtxPathsInfoResponse> GetMediaMtxPathsInfo(
     GetMediaMtxPathsInfoRequest request,

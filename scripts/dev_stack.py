@@ -38,6 +38,7 @@ ORDER = [
     "vmscfg",
     "vmslogger",
     "vmsutils",
+    "vmssingleton",
     "vmsonvif",
     "vmsonvif-actors",
     "vmsfs",

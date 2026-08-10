@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace VmsUtils;
+namespace VmsSingleton;
 
 // In-memory registry of debug "entity state" reports received over the
 // debug-entity-state pub/sub topic. Best-effort, non-persistent: entries

@@ -1,4 +1,4 @@
-namespace VmsUtils;
+namespace VmsSingleton;
 
 // Periodically removes debug-entity-state entries that haven't been refreshed
 // for a long time, so the registry doesn't grow unbounded across restarts of producers.

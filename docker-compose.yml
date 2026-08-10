@@ -105,6 +105,42 @@ services:
     depends_on:
       - vmsutils
 
+  vmssingleton:
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: web_vms/VmsSingleton/Dockerfile
+    env_file:
+      - .env
+    environment:
+      APP_ID: vmssingleton
+    # Exactly one instance, always — see CLAUDE.md. It runs work that must not happen twice and
+    # aggregates pub/sub reports in memory, which a second replica would split rather than share.
+    volumes: *data-volume
+
+  vmssingleton-dapr:
+    profiles: [app]
+    image: "daprio/daprd:latest"
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "vmssingleton"
+      - "-app-port"
+      - "${SINGLETON_VMS_PORT}"
+      - "-app-protocol"
+      - "grpc"
+      - "-dapr-http-port"
+      - "3500"
+      - "-dapr-grpc-port"
+      - "50001"
+      - "-components-path"
+      - "/components"
+    volumes:
+      - "./init_files/dapr_components/docker:/components"
+    network_mode: "service:vmssingleton"
+    depends_on:
+      - vmssingleton
+
   vmslogger:
     profiles: [app]
     build:
