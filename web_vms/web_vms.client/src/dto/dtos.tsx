@@ -348,6 +348,12 @@ export type RetentionEventRowDto = {
   streamName?: string
   alarmStartTs: string
   alarmEndTs?: string
+  /**
+   * What set the alarm off, in the producer's own words — the ONVIF topic
+   * ('tns1:RuleEngine/CellMotionDetector/Motion') for an ONVIF alarm. Absent for producers that
+   * name no cause.
+   */
+  trigger?: string
 }
 
 export type RetentionEventsListDto = {
@@ -365,6 +371,8 @@ export type EpisodeDto = {
   streamName?: string
   alarmStartTs: string
   alarmEndTs?: string
+  /** What set the alarm off — the ONVIF topic for an ONVIF alarm. Absent when none was named. */
+  trigger?: string
 }
 
 // A group = all episodes sharing one eventId (a time-clustered session of one object, possibly

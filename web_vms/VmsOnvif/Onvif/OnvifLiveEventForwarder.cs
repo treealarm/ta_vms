@@ -1,4 +1,4 @@
-using System.Xml.Linq;
+using System.Threading.Channels;
 using Google.Protobuf.WellKnownTypes;
 using Vms.Analytics;
 
@@ -17,50 +17,102 @@ namespace VmsOnvif.Onvif;
 /// events read from a per-node service would leave the (replicated) gateway merging one stream per
 /// node. Nothing is stored here or there; this is a relay.
 ///
-/// Best-effort: forwarding runs off the subscription thread and its failures are logged, never
-/// raised. Losing a banner must not disturb the subscription that also drives alarms.
+/// Events are queued and flushed as a batch, exactly like media_server's metadata client: one RPC
+/// per event would put a round trip on the critical path of a subscription that also drives alarms,
+/// and a camera announcing the same condition several times inside one window has nothing new to
+/// say. Repeats of a (camera, topic) inside a flush collapse to the last one, so a clearing edge
+/// that lands in the same window correctly wins over the start it cancels.
+///
+/// Best-effort: the queue is bounded and drops its oldest entries rather than blocking the receive
+/// loop, and forwarding failures are logged, never raised. Losing a banner must not disturb the
+/// subscription.
 /// </remarks>
 public sealed class OnvifLiveEventForwarder(
   VmsAnalyticsService.VmsAnalyticsServiceClient? analyticsClient,
-  ILogger<OnvifLiveEventForwarder> logger)
+  ILogger<OnvifLiveEventForwarder> logger) : BackgroundService
 {
   private static readonly TimeSpan ForwardTimeout = TimeSpan.FromSeconds(2);
+
+  // Short enough that a banner still reads as immediate, long enough that a burst costs one RPC.
+  private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(200);
+
+  // Roughly a second of the noisiest camera park worth queueing; past that the link is not keeping
+  // up and the oldest banners are the least worth showing.
+  private const int QueueCapacity = 500;
+  private const int MaxBatch = 128;
+
+  private readonly Channel<LiveEvent> _queue = Channel.CreateBounded<LiveEvent>(
+    new BoundedChannelOptions(QueueCapacity)
+    {
+      FullMode = BoundedChannelFullMode.DropOldest,
+      SingleReader = true,
+      SingleWriter = false,
+    });
 
   public bool Enabled => analyticsClient is not null;
 
   /// <summary>
-  /// Queues one event for the monitor. Returns immediately — the caller is the pull-point receive
-  /// loop, which must not wait on anything downstream of it.
+  /// Queues one event for the monitor. Safe from any thread and never blocks — the caller is the
+  /// pull-point receive loop, which must not wait on anything downstream of it.
   /// </summary>
-  public void Forward(string cameraId, string topic, string payloadXml)
+  public void Forward(string cameraId, string topic, bool active)
   {
     if (analyticsClient is null || string.IsNullOrEmpty(cameraId))
       return;
 
-    var evt = new LiveEvent
+    _queue.Writer.TryWrite(new LiveEvent
     {
       CameraId   = cameraId,
       Topic      = topic ?? string.Empty,
       Label      = LabelFrom(topic),
-      Active     = IsActiveState(payloadXml),
+      Active     = active,
       ReceivedAt = Timestamp.FromDateTime(DateTime.UtcNow),
-    };
+    });
+  }
 
-    _ = Task.Run(async () =>
+  protected override async Task ExecuteAsync(CancellationToken ct)
+  {
+    if (analyticsClient is null)
+      return;
+
+    // Keyed by (camera, topic) so a condition announced repeatedly inside one window is sent once.
+    var pending = new Dictionary<(string Camera, string Topic), LiveEvent>();
+
+    while (!ct.IsCancellationRequested)
     {
       try
       {
+        if (!await _queue.Reader.WaitToReadAsync(ct))
+          return;
+
+        // Let a burst gather before sending, rather than racing the first event out of the door.
+        await Task.Delay(FlushInterval, ct);
+
+        while (pending.Count < MaxBatch && _queue.Reader.TryRead(out var evt))
+          pending[(evt.CameraId, evt.Topic)] = evt;
+
+        if (pending.Count == 0)
+          continue;
+
         var batch = new OnvifEventBatch();
-        batch.Events.Add(evt);
-        using var cts = new CancellationTokenSource(ForwardTimeout);
+        batch.Events.AddRange(pending.Values);
+        pending.Clear();
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(ForwardTimeout);
         await analyticsClient.PushOnvifEventsAsync(batch, cancellationToken: cts.Token);
+      }
+      catch (OperationCanceledException) when (ct.IsCancellationRequested)
+      {
+        return;
       }
       catch (Exception ex)
       {
-        logger.LogDebug(ex,
-          "Failed to forward ONVIF event to the analytics service for camera {CameraId}", cameraId);
+        // Not retried: a banner that arrives late is worth less than the ones behind it.
+        pending.Clear();
+        logger.LogDebug(ex, "Failed to forward ONVIF events to the analytics service");
       }
-    });
+    }
   }
 
   /// <summary>
@@ -77,63 +129,5 @@ public sealed class OnvifLiveEventForwarder(
     // Drop a namespace prefix on a single-segment topic ("tns1:Something").
     var colon = last.LastIndexOf(':');
     return colon >= 0 && colon < last.Length - 1 ? last[(colon + 1)..] : last;
-  }
-
-  /// <summary>
-  /// Whether the condition is starting or clearing. Shared with the alarm path, which must not
-  /// treat "motion stopped" as a reason to start recording. ONVIF state events carry it as a boolean
-  /// SimpleItem under tt:Data — the item's name varies by rule ("IsMotion", "IsTamper", "State"),
-  /// so the value is what is matched on, not the name. Events with no boolean at all are
-  /// momentary, and reported as active so they show up.
-  /// </summary>
-  public static bool IsActiveState(string? payloadXml)
-  {
-    if (string.IsNullOrWhiteSpace(payloadXml))
-      return true;
-
-    try
-    {
-      var doc = XDocument.Parse(payloadXml);
-      foreach (var item in doc.Descendants().Where(e => e.Name.LocalName == "SimpleItem"))
-      {
-        var value = (string?)item.Attribute("Value");
-        if (bool.TryParse(value, out var parsed))
-          return parsed;
-      }
-    }
-    catch (System.Xml.XmlException)
-    {
-      // Malformed payload — treat as a momentary event rather than losing it.
-    }
-
-    return true;
-  }
-
-  /// <summary>
-  /// Identifies which source the event is about — the tt:Source items, joined. On a multi-channel
-  /// encoder two channels report the same topic, and only these tell their alarms apart. Empty for
-  /// events that name no source, which is correct: they are all about the device as a whole.
-  /// </summary>
-  public static string SourceKey(string? payloadXml)
-  {
-    if (string.IsNullOrWhiteSpace(payloadXml))
-      return string.Empty;
-
-    try
-    {
-      var doc = XDocument.Parse(payloadXml);
-      var source = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "Source");
-      if (source is null)
-        return string.Empty;
-
-      return string.Join(",", source.Descendants()
-        .Where(e => e.Name.LocalName == "SimpleItem")
-        .Select(e => $"{(string?)e.Attribute("Name")}={(string?)e.Attribute("Value")}")
-        .Order(StringComparer.Ordinal));
-    }
-    catch (System.Xml.XmlException)
-    {
-      return string.Empty;
-    }
   }
 }

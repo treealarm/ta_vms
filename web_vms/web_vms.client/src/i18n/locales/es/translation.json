@@ -285,7 +285,8 @@
     "sourceAnalytics": "Analítica",
     "sourceOnvif": "ONVIF",
     "sourceOther": "Otro",
-    "detections": "Detecciones"
+    "detections": "Detecciones",
+    "trigger": "Disparador"
   },
   "stream": {
     "newStream": "Nuevo flujo en {{camera}}",

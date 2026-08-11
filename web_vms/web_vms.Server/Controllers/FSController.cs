@@ -372,6 +372,7 @@ public sealed class FSController(
       CameraId     = e.CameraId,
       StreamName   = e.HasStreamName ? e.StreamName : null,
       AlarmStartTs = e.AlarmStartTs.ToDateTime(),
+      Trigger      = e.HasTrigger ? e.Trigger : null,
       AlarmEndTs   = e.AlarmEndTs?.ToDateTime()
     };
 

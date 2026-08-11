@@ -109,6 +109,11 @@ namespace web_vms.Types.Dto
     public string? StreamName { get; set; }
     public DateTime AlarmStartTs { get; set; }
     public DateTime? AlarmEndTs { get; set; }
+    /// <summary>
+    /// What set the alarm off, in the producer's own words — the ONVIF topic for an ONVIF alarm.
+    /// Null for producers that name no cause.
+    /// </summary>
+    public string? Trigger { get; set; }
   }
 
   public class RetentionEventsListDto
@@ -129,6 +134,8 @@ namespace web_vms.Types.Dto
     public string? StreamName { get; set; }
     public DateTime AlarmStartTs { get; set; }
     public DateTime? AlarmEndTs { get; set; }
+    /// <summary>What set the alarm off — the ONVIF topic for an ONVIF alarm; null when unnamed.</summary>
+    public string? Trigger { get; set; }
   }
 
   // A group = all episodes sharing one EventId (a time-clustered session of one object, possibly

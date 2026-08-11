@@ -285,7 +285,8 @@
     "sourceAnalytics": "Analytics",
     "sourceOnvif": "ONVIF",
     "sourceOther": "Other",
-    "detections": "Detections"
+    "detections": "Detections",
+    "trigger": "Trigger"
   },
   "stream": {
     "newStream": "New stream on {{camera}}",

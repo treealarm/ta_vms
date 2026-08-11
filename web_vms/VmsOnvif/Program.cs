@@ -62,6 +62,9 @@ builder.Services.AddSingleton(sp => new VmsOnvif.Onvif.OnvifMetadataIngestor(
 // Same gate, same target: cameras that cannot draw boxes still have events worth showing.
 builder.Services.AddSingleton(sp => new VmsOnvif.Onvif.OnvifLiveEventForwarder(
   analyticsClient, sp.GetRequiredService<ILogger<VmsOnvif.Onvif.OnvifLiveEventForwarder>>()));
+// Also hosted: it now batches on its own loop instead of firing an RPC per event.
+builder.Services.AddHostedService(sp =>
+  sp.GetRequiredService<VmsOnvif.Onvif.OnvifLiveEventForwarder>());
 builder.Services.AddSingleton<OnvifSettingsService>();
 builder.Services.AddSingleton<AlarmEpisodeTracker>();
 builder.Services.AddSingleton<OnvifFilterCache>();

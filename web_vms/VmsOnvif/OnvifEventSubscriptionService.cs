@@ -324,11 +324,15 @@ public sealed class OnvifEventSubscriptionService(
         (string.IsNullOrEmpty(f.TextFilter) ||
          payload.Contains(f.TextFilter, StringComparison.OrdinalIgnoreCase)));
 
+      // Parsed once and reused by everything below — the banner, the clearing-edge check and the
+      // episode key all need it, and the XML is the only per-event cost of any size here.
+      var parsed = VmsOnvif.Onvif.OnvifEventPayload.Parse(payload);
+
       // With no filters configured at all the operator has declared nothing, so everything is
       // shown: a camera announces topics you cannot guess, and seeing them is how you learn what
       // to write a filter for. Once even one filter exists, it is the whole answer.
       if (filters.Count == 0 || matched != null)
-        liveEvents.Forward(cameraId, topic, payload);
+        liveEvents.Forward(cameraId, topic, parsed.Active);
 
       // Nothing declared means nothing to retain either — the banner above is the whole effect.
       if (filters.Count == 0) return;
@@ -355,9 +359,9 @@ public sealed class OnvifEventSubscriptionService(
       // A property event carries its own state, and the clearing edge is not an alarm: motion
       // stopping must not start recording. It closes the episode so the next start opens a new one.
       var timeout = TimeSpan.FromSeconds(Math.Max(1, matched.TimeoutSeconds));
-      var episodeKey = EpisodeKey(cameraId, matched.FilterText, topic, payload);
+      var episodeKey = EpisodeKey(cameraId, matched.FilterText, topic, parsed.SourceKey);
 
-      if (!VmsOnvif.Onvif.OnvifLiveEventForwarder.IsActiveState(payload))
+      if (!parsed.Active)
       {
         episodes.Clear(episodeKey);
         logger.LogDebug(
@@ -392,6 +396,9 @@ public sealed class OnvifEventSubscriptionService(
         CameraId       = cameraId,
         AlarmStartTs   = Timestamp.FromDateTime(DateTime.UtcNow),
         TimeoutSeconds = (uint)Math.Max(1, matched.TimeoutSeconds),
+        // The camera's own words for what happened. An episode that records only "something on this
+        // camera" cannot be told from a tamper alarm once several filters are armed at once.
+        Trigger        = topic,
       };
 
       // No lookup of the camera's server: this instance only ever subscribes to its own node's
@@ -411,8 +418,8 @@ public sealed class OnvifEventSubscriptionService(
   /// What makes two events "the same condition": the camera, the filter that matched, the topic,
   /// and the event's own Source items — the last of these is what tells two channels of a
   /// multi-channel encoder apart when they share a topic.
-  private static string EpisodeKey(string cameraId, string filterText, string topic, string payload)
-    => $"{cameraId}|{filterText}|{topic}|{VmsOnvif.Onvif.OnvifLiveEventForwarder.SourceKey(payload)}";
+  private static string EpisodeKey(string cameraId, string filterText, string topic, string sourceKey)
+    => $"{cameraId}|{filterText}|{topic}|{sourceKey}";
 
   private static string ExtractTopicText(TopicExpressionType? topic)
   {
