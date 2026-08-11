@@ -21,6 +21,8 @@ public static class DetectionKinds
     Vms.Analytics.DetectionKind.Face => "face",
     Vms.Analytics.DetectionKind.Vehicle => "vehicle",
     Vms.Analytics.DetectionKind.LicensePlate => "license_plate",
+    // Only a camera's own analytics ever reports this — video_a has no animal model.
+    Vms.Analytics.DetectionKind.Animal => "animal",
     _ => "unknown",
   };
 
@@ -30,6 +32,7 @@ public static class DetectionKinds
     "face" => Vms.Analytics.DetectionKind.Face,
     "vehicle" => Vms.Analytics.DetectionKind.Vehicle,
     "license_plate" => Vms.Analytics.DetectionKind.LicensePlate,
+    "animal" => Vms.Analytics.DetectionKind.Animal,
     _ => Vms.Analytics.DetectionKind.Unspecified,
   };
 }

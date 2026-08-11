@@ -694,7 +694,9 @@ function CameraDetail({ camera }: { camera: CameraSetupDto }) {
           {activeKey === 'imaging' && <ImagingSection cameraId={camera.cameraId} />}
           {activeKey === 'ptz' && <PtzPresetsSection cameraId={camera.cameraId} onProfileTokenChange={setPtzProfileToken} />}
           {activeKey === 'deviceio' && <DeviceIoSection cameraId={camera.cameraId} />}
-          {activeKey === 'metadata' && <OnvifMetadataSection cameraId={camera.cameraId} />}
+          {activeKey === 'metadata' && (
+            <OnvifMetadataSection cameraId={camera.cameraId} streams={camera.streams ?? []} />
+          )}
           {activeKey === 'system' && <SystemSection cameraId={camera.cameraId} />}
         </Box>
       </Stack>

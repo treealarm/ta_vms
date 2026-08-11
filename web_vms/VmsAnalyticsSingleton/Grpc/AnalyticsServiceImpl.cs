@@ -12,6 +12,7 @@ public sealed class AnalyticsServiceImpl(
   IDbContextFactory<AnalyticsDbContext> dbFactory,
   AnalyticsActivityLog activityLog,
   LiveDetectionBroadcaster liveBroadcaster,
+  LiveEventBroadcaster liveEventBroadcaster,
   CameraStorageResolver storageResolver)
   : VmsAnalyticsService.VmsAnalyticsServiceBase
 {
@@ -27,9 +28,44 @@ public sealed class AnalyticsServiceImpl(
         d.CameraId, d.TrackId, DetectionKinds.ToDbString(d.Kind), d.Confidence,
         d.Bbox?.X ?? 0, d.Bbox?.Y ?? 0, d.Bbox?.Width ?? 0, d.Bbox?.Height ?? 0,
         d.DetectedAt?.ToDateTime() ?? DateTime.UtcNow,
-        PlateText: null, Persisted: false, ObjectId: null, Source: "onvif"));
+        d.HasPlateText ? d.PlateText : null,
+        Persisted: false, ObjectId: null, Source: "onvif",
+        Label: d.HasLabel ? d.Label : null));
     }
     return Task.FromResult(new PushOnvifDetectionsResponse());
+  }
+
+  // ONVIF events forwarded by VmsOnvif. Same relay shape as PushOnvifDetections: nothing is
+  // stored, and the reply is empty because the caller is fire-and-forget.
+  public override Task<PushOnvifEventsResponse> PushOnvifEvents(
+    OnvifEventBatch request, ServerCallContext context)
+  {
+    foreach (var e in request.Events)
+    {
+      liveEventBroadcaster.Publish(new LiveCameraEvent(
+        e.CameraId, e.Topic, e.Label, e.Active,
+        e.ReceivedAt?.ToDateTime() ?? DateTime.UtcNow));
+    }
+    return Task.FromResult(new PushOnvifEventsResponse());
+  }
+
+  public override async Task StreamCameraEvents(
+    StreamCameraEventsRequest request,
+    IServerStreamWriter<LiveEvent> responseStream,
+    ServerCallContext context)
+  {
+    var cameraId = string.IsNullOrEmpty(request.CameraId) ? null : request.CameraId;
+    await foreach (var e in liveEventBroadcaster.Subscribe(cameraId, context.CancellationToken))
+    {
+      await responseStream.WriteAsync(new LiveEvent
+      {
+        CameraId   = e.CameraId,
+        Topic      = e.Topic,
+        Label      = e.Label,
+        Active     = e.Active,
+        ReceivedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.ReceivedAt, DateTimeKind.Utc)),
+      });
+    }
   }
 
   public override Task<GetAnalyticsActivityResponse> GetAnalyticsActivity(
@@ -68,6 +104,7 @@ public sealed class AnalyticsServiceImpl(
       };
       if (e.PlateText is not null) entry.PlateText = e.PlateText;
       if (e.ObjectId is not null) entry.ObjectId = e.ObjectId;
+      if (e.Label is not null) entry.Label = e.Label;
       await responseStream.WriteAsync(entry);
     }
   }

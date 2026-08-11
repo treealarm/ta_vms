@@ -540,7 +540,15 @@ export type CameraArmedDto = {
   armed: boolean
 }
 
+/** Classes the CV detector can be configured to look for — the choices offered on a watch. */
 export type AnalyticsDetectionClass = 'person' | 'face' | 'vehicle' | 'license_plate'
+
+/**
+ * Every class a detection can actually arrive with. A superset of the watch classes: a camera's own
+ * analytics reports kinds the CV detector has no model for ('animal' is part of ONVIF's own
+ * vocabulary), and anything it cannot place at all still gets drawn as 'unknown'.
+ */
+export type AnalyticsDetectionKind = AnalyticsDetectionClass | 'animal' | 'unknown'
 
 export const ANALYTICS_DETECTION_CLASSES: AnalyticsDetectionClass[] = ['person', 'face', 'vehicle', 'license_plate']
 
@@ -566,7 +574,7 @@ export type AnalyticsDetectionDto = {
   objectId?: string
   cameraId: string
   trackId: number
-  kind: AnalyticsDetectionClass | 'unknown'
+  kind: AnalyticsDetectionKind
   confidence: number
   detectedAt: string
   plateText?: string
@@ -576,7 +584,7 @@ export type AnalyticsDetectionDto = {
 export type AnalyticsActivityEntryDto = {
   cameraId: string
   trackId: number
-  kind: AnalyticsDetectionClass | 'unknown'
+  kind: AnalyticsDetectionKind
   confidence: number
   bboxX: number
   bboxY: number
@@ -596,9 +604,30 @@ export type AnalyticsActivityEntryDto = {
    * in the overlay's key or the boxes overwrite each other.
    */
   source: AnalyticsDetectionSource
+  /**
+   * The producer's own word for the class when it says more than `kind` does — 'Truck' under
+   * vehicle, 'Bag' under unknown. ONVIF lets cameras report free-form classes alongside its
+   * five-value enum, so this is where the detail that does not fit `kind` survives.
+   */
+  label?: string
 }
 
 export type AnalyticsDetectionSource = 'cv' | 'onvif'
+
+/**
+ * An ONVIF event shown over live video. Carries no geometry: cameras whose analytics is cell motion
+ * or tamper have nothing to outline, and the event is the whole statement they can make.
+ */
+export type LiveCameraEventDto = {
+  cameraId: string
+  /** Full ONVIF topic, the same string the alarm filters are written against. */
+  topic: string
+  /** Short name from the last topic segment ('Motion', 'Tamper'). */
+  label: string
+  /** True when the condition started, false when it cleared. */
+  active: boolean
+  receivedAt: string
+}
 
 export type OnvifAlarmFilterDto = {
   id?: string

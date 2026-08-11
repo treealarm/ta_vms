@@ -311,7 +311,8 @@
   "streamOverride": {
     "override": "anulación",
     "clearOverride": "Limpiar anulación",
-    "overridePlaceholder": "Anular…"
+    "overridePlaceholder": "Anular…",
+    "appliesToAllStreams": "Se aplica a todos los flujos de esta cámara"
   },
   "monitors": {
     "title": "Monitores",
@@ -440,7 +441,8 @@
     "copiedRtsp": "¡Copiado!",
     "retentionActive": "Retención activa",
     "cameraDisabledTip": "Cámara desactivada — armar/PTZ no disponible",
-    "scheduleActive": "Grabando por horario — prevalece sobre el perfil del flujo"
+    "scheduleActive": "Grabando por horario — prevalece sobre el perfil del flujo",
+    "onvifEvent": "{{label}}"
   },
   "recordings": {
     "earlier": "Anterior",
@@ -592,7 +594,9 @@
     "metadataNoAnalyticsConfigs": "La cámara no reporta configuraciones de analítica",
     "metadataNoModules": "Ninguno configurado",
     "metadataNoParameters": "Sin parámetros simples",
-    "metadataStructuredParams": "{{count}} parámetro(s) estructurado(s) conservado(s) sin cambios"
+    "metadataStructuredParams": "{{count}} parámetro(s) estructurado(s) conservado(s) sin cambios",
+    "metadataStreamedBy": "transmitido como \"{{streams}}\"",
+    "metadataProfileNotStreamed": "El VMS no toma este perfil de esta cámara. Una configuración de metadatos adjunta aquí no llegará al grabador y no aparecerán recuadros en el monitor: elija un perfil marcado como transmitido."
   },
   "wall": {
     "modeLive": "En vivo",

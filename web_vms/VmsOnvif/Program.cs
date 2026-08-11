@@ -52,13 +52,18 @@ builder.Services.AddSingleton<MetadataStateCache>();
 // that must not stop VmsOnvif from serving PTZ, events and settings. Mirrors how
 // VmsAnalyticsSingleton treats DAPR_ANALYTICS_WORKER_APP_IDS.
 var analyticsAppId = Environment.GetEnvironmentVariable("DAPR_ANALYTICS_APP_ID");
-builder.Services.AddSingleton(sp => new VmsOnvif.Onvif.OnvifMetadataIngestor(
+Vms.Analytics.VmsAnalyticsService.VmsAnalyticsServiceClient? analyticsClient =
   string.IsNullOrWhiteSpace(analyticsAppId)
     ? null
     : new Vms.Analytics.VmsAnalyticsService.VmsAnalyticsServiceClient(
-        DaprClient.CreateInvocationInvoker(analyticsAppId)),
-  sp.GetRequiredService<ILogger<VmsOnvif.Onvif.OnvifMetadataIngestor>>()));
+        DaprClient.CreateInvocationInvoker(analyticsAppId));
+builder.Services.AddSingleton(sp => new VmsOnvif.Onvif.OnvifMetadataIngestor(
+  analyticsClient, sp.GetRequiredService<ILogger<VmsOnvif.Onvif.OnvifMetadataIngestor>>()));
+// Same gate, same target: cameras that cannot draw boxes still have events worth showing.
+builder.Services.AddSingleton(sp => new VmsOnvif.Onvif.OnvifLiveEventForwarder(
+  analyticsClient, sp.GetRequiredService<ILogger<VmsOnvif.Onvif.OnvifLiveEventForwarder>>()));
 builder.Services.AddSingleton<OnvifSettingsService>();
+builder.Services.AddSingleton<AlarmEpisodeTracker>();
 builder.Services.AddSingleton<OnvifFilterCache>();
 builder.Services.AddSingleton<CameraArmedCache>();
 builder.Services.AddSingleton<ObservedTopicsStore>();
@@ -68,6 +73,8 @@ builder.Services.AddSingleton(sp => new OnvifEventSubscriptionService(
   sp.GetRequiredService<OnvifFilterCache>(),
   sp.GetRequiredService<CameraArmedCache>(),
   sp.GetRequiredService<ObservedTopicsStore>(),
+  sp.GetRequiredService<VmsOnvif.Onvif.OnvifLiveEventForwarder>(),
+  sp.GetRequiredService<AlarmEpisodeTracker>(),
   ownServerId,
   sp.GetRequiredService<ILogger<OnvifEventSubscriptionService>>()));
 builder.Services.AddHostedService(sp => sp.GetRequiredService<OnvifEventSubscriptionService>());

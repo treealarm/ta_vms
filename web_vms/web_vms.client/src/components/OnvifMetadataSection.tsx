@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Box,
@@ -28,6 +28,7 @@ import type {
   OnvifAnalyticsModuleDescriptionsResponseDto,
   OnvifAnalyticsModuleDescriptionDto,
   OnvifAnalyticsModulesResponseDto,
+  CameraStreamDto,
 } from '../dto/dtos'
 
 // Same shape the other ONVIF sections read from /profiles — only token and name are used here.
@@ -339,7 +340,9 @@ function ModuleGroup({ cameraId, kind, configToken, title }: {
  * rules produce the objects). Both are driven from here, which is why the profile selector sits at
  * the top rather than inside either group.
  */
-export default function OnvifMetadataSection({ cameraId }: { cameraId: string }) {
+export default function OnvifMetadataSection(
+  { cameraId, streams }: { cameraId: string; streams: CameraStreamDto[] },
+) {
   const { t } = useTranslation()
   const [profiles, setProfiles] = useState<OnvifProfileInfo[]>([])
   const [profileToken, setProfileToken] = useState('')
@@ -351,12 +354,27 @@ export default function OnvifMetadataSection({ cameraId }: { cameraId: string })
 
   const refresh = useCallback(() => setReload((n) => n + 1), [])
 
+  // Which profiles the VMS actually pulls. This is the whole game: a metadata configuration only
+  // reaches us if it is attached to the profile media_server opens, and that is rarely the camera's
+  // first profile — VMS streams are commonly configured against the sub stream. Defaulting to
+  // profiles[0] would quietly send an operator to configure the wrong one.
+  const streamedTokens = useMemo(
+    () => streams.filter((s) => !s.disabled).map((s) => s.profileToken).filter(Boolean),
+    [streams])
+
+  const streamNameFor = (token: string) =>
+    streams.filter((s) => s.profileToken === token).map((s) => s.streamName).join(', ')
+
   useEffect(() => {
     setProfileToken('')
     apiFetch<OnvifProfileInfo[]>(`${base(cameraId)}/profiles`)
-      .then((p) => { setProfiles(p); setProfileToken(p[0]?.token ?? '') })
+      .then((p) => {
+        setProfiles(p)
+        const streamed = p.find((x) => streamedTokens.includes(x.token))
+        setProfileToken((streamed ?? p[0])?.token ?? '')
+      })
       .catch(() => { setProfiles([]); setProfileToken('') })
-  }, [cameraId])
+  }, [cameraId, streamedTokens])
 
   useEffect(() => {
     let cancelled = false
@@ -410,9 +428,18 @@ export default function OnvifMetadataSection({ cameraId }: { cameraId: string })
         sx={{ maxWidth: 320 }}
       >
         {profiles.map((p) => (
-          <MenuItem key={p.token} value={p.token}>{p.name || p.token}</MenuItem>
+          <MenuItem key={p.token} value={p.token}>
+            {p.name || p.token}
+            {streamedTokens.includes(p.token)
+              ? ` — ${t('onvifSettings.metadataStreamedBy', { streams: streamNameFor(p.token) })}`
+              : ''}
+          </MenuItem>
         ))}
       </TextField>
+
+      {profileToken && streamedTokens.length > 0 && !streamedTokens.includes(profileToken) && (
+        <Alert severity="warning" sx={{ py: 0 }}>{t('onvifSettings.metadataProfileNotStreamed')}</Alert>
+      )}
 
       <Stack spacing={1}>
         <Typography variant="subtitle2">{t('onvifSettings.metadataConfigsGroup')}</Typography>

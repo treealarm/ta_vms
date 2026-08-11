@@ -80,6 +80,65 @@ public class AnalyticsLiveController(
     }
   }
 
+  // The same stream shape for ONVIF events, which cameras with no object analytics produce instead
+  // of boxes (cell motion, tamper, line/field crossings). A second endpoint rather than a
+  // discriminated union on /live: the two have different payloads and different lifetimes on
+  // screen, and a monitor showing only boxes should not pay for event traffic it discards.
+  [CameraAccess(CameraAction.ViewLive, Source = CameraIdSource.Action)]
+  [HttpGet("live-events")]
+  public async Task LiveEvents(CancellationToken ct)
+  {
+    Response.Headers.ContentType = "text/event-stream";
+    Response.Headers.CacheControl = "no-cache";
+    Response.Headers["X-Accel-Buffering"] = "no";
+
+    using var call = _analyticsClient.StreamCameraEvents(
+      new StreamCameraEventsRequest { CameraId = "" },
+      new CallOptions(cancellationToken: ct));
+
+    try
+    {
+      await WriteRawAsync(": connected\n\n", ct);
+
+      var stream = call.ResponseStream;
+      var moveNext = stream.MoveNext(ct);
+      while (true)
+      {
+        var finished = await Task.WhenAny(moveNext, Task.Delay(HeartbeatInterval, ct));
+        if (finished != moveNext)
+        {
+          await WriteRawAsync(":\n\n", ct);
+          continue;
+        }
+
+        if (!await moveNext)
+          break;
+
+        var scope = await _access.ScopeAsync(User, CameraAction.ViewLive, ct);
+        if (scope.Contains(stream.Current.CameraId))
+        {
+          var e = stream.Current;
+          var dto = new LiveCameraEventDto
+          {
+            CameraId   = e.CameraId,
+            Topic      = e.Topic,
+            Label      = e.Label,
+            Active     = e.Active,
+            ReceivedAt = e.ReceivedAt.ToDateTime(),
+          };
+          await WriteRawAsync($"data: {JsonSerializer.Serialize(dto, JsonOpts)}\n\n", ct);
+        }
+        moveNext = stream.MoveNext(ct);
+      }
+    }
+    catch (OperationCanceledException)
+    {
+    }
+    catch (RpcException)
+    {
+    }
+  }
+
   private async Task WriteRawAsync(string s, CancellationToken ct)
   {
     await Response.WriteAsync(s, ct);

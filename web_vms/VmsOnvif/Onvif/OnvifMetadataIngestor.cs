@@ -28,6 +28,60 @@ public sealed class OnvifMetadataIngestor(
   // forwarded whole — no second queue on this side.
   private static readonly TimeSpan ForwardTimeout = TimeSpan.FromSeconds(2);
 
+  // Diagnostics for the one question this path always raises — "the camera says it supports this,
+  // so why are there no boxes?". Logged once per camera per state change rather than per document:
+  // a chatty camera would otherwise bury the log.
+  private enum Seen { None, Classified, Unclassified, DocumentsOnly }
+
+  // Enough of the document to see how a firmware lays out its classification, short enough that a
+  // chatty camera cannot flood the log with it.
+  private const int SampleChars = 4000;
+  private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Seen> _seen = new();
+
+  private void Report(string cameraId, IReadOnlyList<OnvifSceneObject> objects, string xml)
+  {
+    var state = objects.Count == 0
+      ? Seen.DocumentsOnly
+      : objects.Any(o => o.Kind != "unknown") ? Seen.Classified : Seen.Unclassified;
+
+    if (_seen.TryGetValue(cameraId, out var previous) && previous == state)
+      return;
+    _seen[cameraId] = state;
+
+    if (state == Seen.Classified)
+    {
+      logger.LogInformation(
+        "ONVIF metadata: camera {CameraId} is reporting scene objects", cameraId);
+    }
+    else if (state == Seen.Unclassified)
+    {
+      // Boxes arrive but nothing says what they are. Every classification route ONVIF defines is
+      // already read (tt:Class, tt:Extension/tt:OtherTypes, and the shape of tt:Appearance), so a
+      // firmware landing here is putting the class somewhere non-standard. The document itself is
+      // the only way to find out where, hence the sample.
+      logger.LogWarning(
+        "ONVIF metadata: camera {CameraId} reports {Count} object(s) but no class this build "
+        + "recognises — they will draw as \"unknown\". Document sample: {Xml}",
+        cameraId, objects.Count, Truncate(xml));
+    }
+    else
+    {
+      // The metadata track is flowing but describes no objects. Almost always one of: analytics
+      // switched off on the metadata configuration, no analytics configuration attached to the
+      // streamed profile, or no analytics module configured to run — all of them fixable from the
+      // Metadata tab, none of them visible without saying so here.
+      logger.LogWarning(
+        "ONVIF metadata: camera {CameraId} streams metadata but reports no scene objects — check "
+        + "that Analytics is enabled on the metadata configuration, that an analytics configuration "
+        + "is attached to the streamed profile, and that an analytics module is configured. "
+        + "Document sample: {Xml}",
+        cameraId, Truncate(xml));
+    }
+  }
+
+  private static string Truncate(string xml) =>
+    xml.Length <= SampleChars ? xml : xml[..SampleChars] + "…";
+
   public bool ForwardingEnabled => analyticsClient is not null;
 
   public async Task IngestAsync(MetadataDocumentBatch batch, CancellationToken ct)
@@ -56,13 +110,17 @@ public sealed class OnvifMetadataIngestor(
         continue;
       }
 
+      Report(document.CameraId, objects, document.Xml);
+      if (objects.Count == 0)
+        continue;
+
       // The document's own UtcTime is ignored: camera clocks are frequently hours off, and this
       // timestamp only ever feeds an overlay that ages boxes out after a couple of seconds.
       var detectedAt = document.ReceivedAt ?? Timestamp.FromDateTime(DateTime.UtcNow);
 
       foreach (var obj in objects)
       {
-        request.Detections.Add(new OnvifDetection
+        var detection = new OnvifDetection
         {
           CameraId   = document.CameraId,
           TrackId    = obj.TrackId,
@@ -73,7 +131,12 @@ public sealed class OnvifMetadataIngestor(
             X = obj.BboxX, Y = obj.BboxY, Width = obj.BboxWidth, Height = obj.BboxHeight,
           },
           DetectedAt = detectedAt,
-        });
+        };
+        if (obj.PlateText is not null)
+          detection.PlateText = obj.PlateText;
+        if (obj.Label is not null)
+          detection.Label = obj.Label;
+        request.Detections.Add(detection);
       }
     }
 
@@ -102,6 +165,7 @@ public sealed class OnvifMetadataIngestor(
     "face"          => DetectionKind.Face,
     "vehicle"       => DetectionKind.Vehicle,
     "license_plate" => DetectionKind.LicensePlate,
+    "animal"        => DetectionKind.Animal,
     _               => DetectionKind.Unspecified,
   };
 }

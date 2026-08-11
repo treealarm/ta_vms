@@ -52,6 +52,9 @@ if (workerAppIds.Length > 0)
 builder.Services.AddSingleton(_ => new DetectionDebouncer(TimeSpan.FromSeconds(debounceSeconds)));
 builder.Services.AddSingleton<AnalyticsActivityLog>();
 builder.Services.AddSingleton<LiveDetectionBroadcaster>();
+// ONVIF events for the monitor. Registered unconditionally, like the broadcaster above: it needs no
+// analytics worker, only a camera with an event subscription.
+builder.Services.AddSingleton<LiveEventBroadcaster>();
 // Re-identification: resolves object_id from embeddings (in-memory gallery) and picks the event_id
 // group by time gap. Both are in-memory only (see their class docs); env vars validated on startup.
 builder.Services.AddSingleton<IObjectIdentityResolver, EphemeralReidGallery>();

@@ -12,7 +12,13 @@ public sealed record OnvifSceneObject(
   float BboxX,
   float BboxY,
   float BboxWidth,
-  float BboxHeight);
+  float BboxHeight,
+  // Plate text when the camera ran ANPR on this object (tt:LicensePlateInfo/tt:PlateNumber).
+  string? PlateText = null,
+  // The camera's own word for the class when it says more than Kind does — "Truck" rather than
+  // just "vehicle", or "Bag" where Kind had to fall back to "unknown". Null when the camera only
+  // offered one of ONVIF's coarse names, which would add nothing to the label.
+  string? Label = null);
 
 // Turns an ONVIF metadata document (tt:MetadataStream) into overlay-ready boxes.
 //
@@ -134,10 +140,11 @@ public static class OnvifSceneParser
     if (w <= 0.0 || h <= 0.0)
       return null;
 
-    var (kind, confidence) = ReadClass(obj);
+    var (kind, confidence, label) = ReadClass(obj);
 
     return new OnvifSceneObject(
-      ReadTrackId(obj), kind, confidence, (float)x, (float)y, (float)w, (float)h);
+      ReadTrackId(obj), kind, confidence, (float)x, (float)y, (float)w, (float)h,
+      ReadPlateText(obj), label);
   }
 
   private static bool WithinNormalizedRange(params double[] values) =>
@@ -156,35 +163,123 @@ public static class OnvifSceneParser
     return Math.Abs((long)raw.GetHashCode());
   }
 
-  private static (string Kind, float Confidence) ReadClass(XElement obj)
+  /// <summary>
+  /// Works out what the object is. Two independent sources, in order of authority:
+  /// <list type="number">
+  /// <item>tt:Class — tt:ClassCandidate carries a value from tt:ClassType, whose whole vocabulary is
+  /// Animal/Face/Human/Vehical/Other (yes, "Vehical" — that misspelling is in the ONVIF schema
+  /// itself). Because that list is far too coarse to be useful, the standard also allows finer,
+  /// free-form names under tt:Extension/tt:OtherTypes, which is where "Car", "Truck", "Bicycle" and
+  /// the like actually turn up. Both are ranked together by likelihood and the best one that maps
+  /// to a kind we can draw wins — so a candidate list of {Other: 0.9, Human: 0.4} still yields a
+  /// person rather than falling through to unknown.</item>
+  /// <item>The structure of tt:Appearance itself. A camera that reports tt:LicensePlateInfo or
+  /// tt:HumanFace has told us what the object is just as plainly as a class name would, and some
+  /// firmwares fill those in while leaving tt:Class off entirely.</item>
+  /// </list>
+  /// </summary>
+  private static (string Kind, float Confidence, string? Label) ReadClass(XElement obj)
   {
-    // Preferred form: tt:Class/tt:ClassCandidate{tt:Type, tt:Likelihood}, most likely candidate
-    // first. Falls back to a bare tt:Type, then to any element named ObjectType (vendor extension).
-    var best = Descendants(obj, "ClassCandidate")
-      .Select(c => (
-        Type: Descendants(c, "Type").FirstOrDefault()?.Value,
-        Likelihood: ParseFloat(Descendants(c, "Likelihood").FirstOrDefault()?.Value)))
-      .Where(c => !string.IsNullOrWhiteSpace(c.Type))
-      .OrderByDescending(c => c.Likelihood ?? 0f)
-      .FirstOrDefault();
+    var appearance = obj.Elements().FirstOrDefault(e => LocalName(e) == "Appearance");
+    var classDescriptor = appearance?.Elements().FirstOrDefault(e => LocalName(e) == "Class");
 
-    if (best.Type is not null)
-      return (MapKind(best.Type), best.Likelihood ?? 1f);
+    if (classDescriptor is not null)
+    {
+      // tt:ClassCandidate and tt:Extension/tt:OtherTypes have the same {Type, Likelihood} shape.
+      var candidates = Descendants(classDescriptor, "ClassCandidate")
+        .Concat(Descendants(classDescriptor, "OtherTypes"))
+        .Select(c => (
+          Type: Descendants(c, "Type").FirstOrDefault()?.Value,
+          Likelihood: ParseFloat(Descendants(c, "Likelihood").FirstOrDefault()?.Value)))
+        .Where(c => !string.IsNullOrWhiteSpace(c.Type))
+        .OrderByDescending(c => c.Likelihood ?? 0f)
+        .ToList();
 
-    var type = Descendants(obj, "Type").FirstOrDefault()?.Value
-      ?? Descendants(obj, "ObjectType").FirstOrDefault()?.Value;
+      foreach (var candidate in candidates)
+      {
+        var kind = MapKind(candidate.Type);
+        if (kind != "unknown")
+          return (kind, candidate.Likelihood ?? 1f, Label(candidate.Type));
+      }
 
-    return (MapKind(type), 1f);
+      // Some firmwares put a bare tt:Type straight under tt:Class instead of wrapping it.
+      var bare = classDescriptor.Elements().FirstOrDefault(e => LocalName(e) == "Type")?.Value;
+      if (MapKind(bare) is var bareKind && bareKind != "unknown")
+        return (bareKind, 1f, Label(bare));
+
+      // Nothing mapped, but the camera did name the object — keep its word so the operator sees
+      // "Bag" instead of a bare "unknown".
+      if (candidates.Count > 0)
+        return ("unknown", candidates[0].Likelihood ?? 1f, Label(candidates[0].Type));
+    }
+
+    return (KindFromAppearance(appearance), 1f, null);
   }
 
-  // ONVIF class names onto the four kinds the overlay knows. Anything else stays "unknown", which
-  // the frontend renders verbatim rather than dropping.
+  /// <summary>
+  /// The camera's own class name, or null when it adds nothing. ONVIF's coarse vocabulary is
+  /// already what <c>kind</c> expresses, so echoing "Human" next to "person" would be noise —
+  /// only a narrower or unrecognised word is worth carrying.
+  /// </summary>
+  private static string? Label(string? type)
+  {
+    var trimmed = type?.Trim();
+    if (string.IsNullOrEmpty(trimmed))
+      return null;
+
+    return trimmed.ToLowerInvariant() switch
+    {
+      "human" or "humanoid" or "person" or "pedestrian" or "face" or "vehical" or "vehicle"
+        or "animal" or "licenseplate" or "license_plate" or "plate" or "other" => null,
+      _ => trimmed,
+    };
+  }
+
+  private static string KindFromAppearance(XElement? appearance)
+  {
+    if (appearance is null)
+      return "unknown";
+
+    // Ordered narrowest-first: a plate belongs to a vehicle and a face to a body, so the more
+    // specific structure has to win when a camera reports both on one object.
+    foreach (var (element, kind) in new[]
+             {
+               ("LicensePlateInfo", "license_plate"),
+               ("HumanFace", "face"),
+               ("HumanBody", "person"),
+               ("VehicleInfo", "vehicle"),
+             })
+    {
+      if (appearance.Elements().Any(e => LocalName(e) == element))
+        return kind;
+    }
+
+    return "unknown";
+  }
+
+  /// <summary>Plate text, when the camera ran ANPR on this object.</summary>
+  private static string? ReadPlateText(XElement obj)
+  {
+    var plate = Descendants(obj, "LicensePlateInfo")
+      .SelectMany(i => Descendants(i, "PlateNumber"))
+      .FirstOrDefault()?.Value?.Trim();
+    return string.IsNullOrEmpty(plate) ? null : plate;
+  }
+
+  /// <summary>
+  /// ONVIF class names onto the kinds the overlay can draw. Covers both the tt:ClassType
+  /// vocabulary and the free-form names that show up in tt:OtherTypes. Anything narrower folds
+  /// into its nearest kind and keeps its own wording in Label; anything unrecognised stays
+  /// "unknown", which the frontend draws all the same.
+  /// </summary>
   private static string MapKind(string? type) => type?.Trim().ToLowerInvariant() switch
   {
-    "human" or "person" or "pedestrian" => "person",
+    "human" or "humanoid" or "person" or "pedestrian" => "person",
+    "animal" => "animal",
     "face" => "face",
-    "vehicle" or "car" or "truck" or "bus" or "van" or "motorcycle" or "motorbike"
-      or "bike" or "bicycle" => "vehicle",
+    // "vehical" is not a typo here — it is the spelling in the tt:ClassType enumeration.
+    "vehical" or "vehicle" or "car" or "truck" or "bus" or "van" or "motorcycle" or "motorbike"
+      or "bike" or "bicycle" or "twowheelvehicle" => "vehicle",
     "licenseplate" or "license_plate" or "plate" => "license_plate",
     _ => "unknown",
   };

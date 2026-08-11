@@ -311,7 +311,8 @@
   "streamOverride": {
     "override": "override",
     "clearOverride": "Clear override",
-    "overridePlaceholder": "Override…"
+    "overridePlaceholder": "Override…",
+    "appliesToAllStreams": "Applies to every stream of this camera"
   },
   "monitors": {
     "title": "Monitors",
@@ -440,7 +441,8 @@
     "copiedRtsp": "Copied!",
     "retentionActive": "Retention active",
     "cameraDisabledTip": "Camera is disabled — arm/PTZ unavailable",
-    "scheduleActive": "Recording by schedule — overrides the stream profile"
+    "scheduleActive": "Recording by schedule — overrides the stream profile",
+    "onvifEvent": "{{label}}"
   },
   "recordings": {
     "earlier": "Earlier",
@@ -592,7 +594,9 @@
     "metadataNoAnalyticsConfigs": "The camera reports no analytics configurations",
     "metadataNoModules": "None configured",
     "metadataNoParameters": "No simple parameters",
-    "metadataStructuredParams": "{{count}} structured parameter(s) kept unchanged"
+    "metadataStructuredParams": "{{count}} structured parameter(s) kept unchanged",
+    "metadataStreamedBy": "streamed as \"{{streams}}\"",
+    "metadataProfileNotStreamed": "This profile is not one the VMS pulls from this camera. A metadata configuration attached here will not reach the recorder, so no boxes will appear on the monitor — pick a profile marked as streamed."
   },
   "wall": {
     "modeLive": "Live",

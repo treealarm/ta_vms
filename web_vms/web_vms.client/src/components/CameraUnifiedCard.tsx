@@ -597,7 +597,7 @@ export default function CameraUnifiedCard({
                     ? t('cameraCard.overrideSectionForStream', { stream: activeStream })
                     : t('cameraCard.overrideSection')}
                 </Typography>
-                <StreamOverrideRow cameraId={camera.cameraId} stream={activeStreamObj} />
+                <StreamOverrideRow cameraId={camera.cameraId} streams={merged.streams ?? []} />
               </Box>
             )}
 

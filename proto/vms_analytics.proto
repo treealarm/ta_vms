@@ -24,14 +24,27 @@ service VmsAnalyticsService {
   // overlay as the CV pipeline. Batched by the caller so a chatty camera costs a few RPCs per
   // second rather than one per frame.
   rpc PushOnvifDetections(OnvifDetectionBatch) returns (PushOnvifDetectionsResponse);
+  // Live ONVIF events (motion, tamper, line/field crossings) forwarded by VmsOnvif from its
+  // pull-point subscriptions. Cameras whose analytics only does cell motion have no geometry to
+  // draw — an event is the only thing they can say, so the monitor shows it as text instead.
+  rpc PushOnvifEvents(OnvifEventBatch) returns (PushOnvifEventsResponse);
+  // The events above, fanned out to the monitor. Same shape as StreamCameraDetections: an empty
+  // camera_id means "all cameras", and the frontend multiplexes one stream for the whole grid.
+  rpc StreamCameraEvents(StreamCameraEventsRequest) returns (stream LiveEvent);
 }
 
+// The coarse taxonomy every box is drawn as, shared by both producers. The CV detector emits the
+// first four; ANIMAL only ever comes from a camera's own analytics (it is part of ONVIF's
+// tt:ClassType, which video_a has no model for). Finer classes a camera may report — "Truck",
+// "Bicycle", "Bag" — are free-form in ONVIF and cannot be enumerated; they fold into the nearest
+// kind here and keep their own wording in `label`.
 enum DetectionKind {
   DETECTION_KIND_UNSPECIFIED = 0;
   PERSON = 1;
   FACE = 2;
   VEHICLE = 3;
   LICENSE_PLATE = 4;
+  ANIMAL = 5;
 }
 
 message Detection {
@@ -101,6 +114,10 @@ message AnalyticsActivityEntry {
   // Description). The two number their tracks independently, so the overlay has to key on the
   // source as well or a camera running both would have them overwrite each other.
   string source = 11;
+  // The producer's own word for the class, when it says more than `kind` does — "Truck" under
+  // VEHICLE, "Bag" under UNSPECIFIED. ONVIF lets cameras report free-form classes alongside its
+  // five-value enum, and folding those into the enum would throw the detail away.
+  optional string label = 12;
 }
 
 // One object the camera reported, in the overlay's coordinate space (0..1, origin top-left) —
@@ -114,6 +131,10 @@ message OnvifDetection {
   // When the document arrived, not the camera's own UtcTime: camera clocks are frequently hours
   // off, and the overlay only cares about "now".
   google.protobuf.Timestamp detected_at = 6;
+  // Set when the camera ran ANPR on the object itself (tt:LicensePlateInfo/tt:PlateNumber).
+  optional string plate_text = 7;
+  // The camera's own word for the class when it is narrower than `kind` (tt:OtherTypes).
+  optional string label = 8;
 }
 
 message OnvifDetectionBatch {
@@ -121,6 +142,30 @@ message OnvifDetectionBatch {
 }
 
 message PushOnvifDetectionsResponse {}
+
+// One thing the camera announced about itself, with no geometry attached.
+message LiveEvent {
+  string camera_id = 1;
+  // Full ONVIF topic, e.g. "tns1:RuleEngine/CellMotionDetector/Motion" — kept verbatim so an
+  // operator can match it against the alarm filters, which are written against the same strings.
+  string topic = 2;
+  // Short human-readable name taken from the last topic segment ("Motion", "Tamper").
+  string label = 3;
+  // State events carry a boolean: true when the condition started, false when it cleared. Cameras
+  // send both edges, and showing the clear is what lets a banner disappear on its own.
+  bool active = 4;
+  google.protobuf.Timestamp received_at = 5;
+}
+
+message OnvifEventBatch {
+  repeated LiveEvent events = 1;
+}
+
+message PushOnvifEventsResponse {}
+
+message StreamCameraEventsRequest {
+  string camera_id = 1;
+}
 
 message GetAnalyticsActivityRequest {
   uint32 limit = 1;

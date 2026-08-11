@@ -147,6 +147,15 @@ void onvif_metadata_assembler::drain()
     m_buffer.erase(0, end);
     ++m_documents_emitted;
 
+    // Once per session. Finding the track only proves the camera offered it; this proves data is
+    // actually flowing, which is the difference between "misconfigured" and "nothing arriving" when
+    // no boxes show up on the monitor.
+    if (m_documents_emitted == 1)
+    {
+      logger::instance().info(std::format(
+        "ONVIF metadata: first document assembled, {} bytes", document.size()));
+    }
+
     if (m_on_document)
       m_on_document(std::move(document));
   }

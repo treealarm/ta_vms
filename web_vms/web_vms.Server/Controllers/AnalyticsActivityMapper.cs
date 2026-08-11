@@ -25,5 +25,6 @@ public static class AnalyticsActivityMapper
     Persisted      = e.Persisted,
     ObjectId       = e.HasObjectId ? e.ObjectId : null,
     Source         = string.IsNullOrEmpty(e.Source) ? "cv" : e.Source,
+    Label          = e.HasLabel ? e.Label : null,
   };
 }
