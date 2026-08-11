@@ -10,6 +10,11 @@ import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import LayersIcon from '@mui/icons-material/Layers'
 import { type RecordingDto, type RecordingRangeDto } from '../dto/dtos'
 import { fetchRecordingRanges } from '../store/fsSlice'
+
+// How many ranges one page holds. Also the test for "this is the whole archive": the server centres
+// a window of this size on the anchor, so a short page can only mean there was nothing more to fill
+// it with.
+const PAGE_LIMIT = 50
 import { useAppDispatch, useAppSelector } from '../store'
 import dayjs, { Dayjs } from 'dayjs'
 import ArchiveDateTimePicker from './ArchiveDateTimePicker'
@@ -97,7 +102,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
       // arrows above move the anchor to reach the rest. It used to ask for 200 because the server
       // truncated from the oldest end and hid everything recent — a day of short gaps and their
       // imports was enough to lose the last hour.
-      await dispatch(fetchRecordingRanges({ cameraId, timestamp: queryTime, limit: 50 }))
+      await dispatch(fetchRecordingRanges({ cameraId, timestamp: queryTime, limit: PAGE_LIMIT }))
       if (!cancelled) { setLoading(false); setLoaded(true) }
     }
     void load()
@@ -150,13 +155,49 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
     el?.scrollIntoView({ block: 'center' })
   }, [loaded, filteredData, displayTime])
 
+  // Which way we last paged and what the edge was when we did. The server centres its window on the
+  // anchor and clamps it to the archive, so asking past the last range legitimately hands back the
+  // same page — comparing the edge afterwards is the only way to tell "the archive ends here" from
+  // "the button did nothing", and an operator must not have to guess which.
+  const pagingRef = useRef<{ dir: 'earlier' | 'later'; edge: string } | null>(null)
+  const [atEarliest, setAtEarliest] = useState(false)
+  const [atLatest, setAtLatest] = useState(false)
+
   const requestAt = (time: string) => {
     const d = dayjs(time)
     if (!d.isValid()) return
     const iso = d.toISOString()
+    // A new anchor makes both edges unknown again; the effect below re-establishes them.
+    setAtEarliest(false); setAtLatest(false)
     setQueryTime(iso); setPickerTime(d); setDisplayTime(iso); setLoaded(false)
     onTimeChange?.(iso)
   }
+
+  const edgesOf = (ranges: typeof data) => {
+    const lastClips = ranges[ranges.length - 1]?.recordings
+    const last = lastClips?.[lastClips.length - 1]
+    return {
+      first: ranges[0]?.recordings[0]?.startTime,
+      // An unfinished clip has no end yet; its start is the latest instant the archive can vouch for.
+      last: last?.endTime ?? last?.startTime,
+    }
+  }
+
+  useEffect(() => {
+    if (!loaded) return
+    const pending = pagingRef.current
+    if (!pending) return
+    pagingRef.current = null
+
+    const edges = edgesOf(data)
+    const now = pending.dir === 'earlier' ? edges.first : edges.last
+    // The page did not move, so there is nothing beyond it in that direction.
+    if (now === pending.edge) {
+      if (pending.dir === 'earlier') setAtEarliest(true)
+      else setAtLatest(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, data])
 
   const commitPickerTime = (value: Dayjs) => {
     requestAt(value.toISOString())
@@ -167,15 +208,16 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
   // a window centred on it, so anchoring exactly on the edge would hand back the same page. The
   // boundary range stays visible at the far end, which is what makes a jump readable on a timeline.
   const handlePrev = () => {
-    const first = data[0]?.recordings[0]
-    if (first) requestAt(new Date(new Date(first.startTime).getTime() - 1).toISOString())
+    const edge = edgesOf(data).first
+    if (!edge) return
+    pagingRef.current = { dir: 'earlier', edge }
+    requestAt(new Date(new Date(edge).getTime() - 1).toISOString())
   }
   const handleNext = () => {
-    const clips = data[data.length - 1]?.recordings
-    const last = clips?.[clips.length - 1]
-    // An unfinished clip has no end yet; its start is the latest instant the archive can vouch for.
-    const edge = last?.endTime ?? last?.startTime
-    if (edge) requestAt(new Date(new Date(edge).getTime() + 1).toISOString())
+    const edge = edgesOf(data).last
+    if (!edge) return
+    pagingRef.current = { dir: 'later', edge }
+    requestAt(new Date(new Date(edge).getTime() + 1).toISOString())
   }
   const openCalendar = (anchor: HTMLElement) => {
     setPickerTime(dayjs(displayTime))
@@ -190,24 +232,37 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
   // top, "Later" past the bottom. The header keeps its arrows, but they sit next to the calendar
   // where they read as decoration — an operator scrolling to the end of a page has no reason to
   // look back up, and would sooner believe the archive ends there.
-  const PageButton = ({ dir }: { dir: 'earlier' | 'later' }) => (
-    <ListItemButton
-      onClick={dir === 'earlier' ? handlePrev : handleNext}
-      sx={{
-        justifyContent: 'center', py: 0.4,
-        ...(dark ? { '&:hover': { bgcolor: alpha(W, 0.08) } } : {}),
-      }}
-    >
-      <Typography
-        component="span"
-        sx={{ fontSize: '0.68rem', color: txtDim, display: 'flex', alignItems: 'center', gap: 0.3 }}
+  //
+  // A plain function, not a component: declared inside the body it would be a new component type on
+  // every render, and React would tear down and rebuild the buttons each time — losing focus, and
+  // losing a click that happened to straddle a render.
+  const renderPageButton = (dir: 'earlier' | 'later') => {
+    // Everything fits in one page, or paging that way already came back unchanged.
+    const exhausted = (loaded && data.length < PAGE_LIMIT)
+      || (dir === 'earlier' ? atEarliest : atLatest)
+
+    return (
+      <ListItemButton
+        onClick={dir === 'earlier' ? handlePrev : handleNext}
+        disabled={exhausted}
+        sx={{
+          justifyContent: 'center', py: 0.4,
+          ...(dark ? { '&:hover': { bgcolor: alpha(W, 0.08) } } : {}),
+        }}
       >
-        {dir === 'earlier'
-          ? <><NavigateBeforeIcon sx={{ fontSize: '0.9rem' }} />{t('recordings.earlier')}</>
-          : <>{t('recordings.later')}<NavigateNextIcon sx={{ fontSize: '0.9rem' }} /></>}
-      </Typography>
-    </ListItemButton>
-  )
+        <Typography
+          component="span"
+          sx={{ fontSize: '0.68rem', color: txtDim, display: 'flex', alignItems: 'center', gap: 0.3 }}
+        >
+          {exhausted
+            ? t('recordings.archiveEdge')
+            : dir === 'earlier'
+              ? <><NavigateBeforeIcon sx={{ fontSize: '0.9rem' }} />{t('recordings.earlier')}</>
+              : <>{t('recordings.later')}<NavigateNextIcon sx={{ fontSize: '0.9rem' }} /></>}
+        </Typography>
+      </ListItemButton>
+    )
+  }
 
   const shownDate = new Date(displayTime).toLocaleDateString('sv-SE')
   const shownTime = new Date(displayTime).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
@@ -279,7 +334,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
           </Typography>
         ) : (
           <List dense disablePadding>
-            <PageButton dir="earlier" />
+            {renderPageButton('earlier')}
             {filteredData.map((rec, index) => {
               const first = rec.recordings[0]
               if (!first) return null
@@ -354,7 +409,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
                 </div>
               )
             })}
-            <PageButton dir="later" />
+            {renderPageButton('later')}
           </List>
         )}
       </Box>

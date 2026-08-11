@@ -454,7 +454,8 @@
     "endTime": "End",
     "clips": "Clips",
     "jumpToDateTime": "Jump to date / time",
-    "recovered": "Recovered from the camera"
+    "recovered": "Recovered from the camera",
+    "archiveEdge": "No more recordings"
   },
   "onvifSubs": {
     "description": "Cameras in this list receive ONVIF events. Arm to trigger retention recordings on matching alarm filters.",
