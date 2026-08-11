@@ -186,6 +186,29 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
 
   if (!open) return null
 
+  // The list runs oldest-first, so paging reads the way the list does: "Earlier" continues past the
+  // top, "Later" past the bottom. The header keeps its arrows, but they sit next to the calendar
+  // where they read as decoration — an operator scrolling to the end of a page has no reason to
+  // look back up, and would sooner believe the archive ends there.
+  const PageButton = ({ dir }: { dir: 'earlier' | 'later' }) => (
+    <ListItemButton
+      onClick={dir === 'earlier' ? handlePrev : handleNext}
+      sx={{
+        justifyContent: 'center', py: 0.4,
+        ...(dark ? { '&:hover': { bgcolor: alpha(W, 0.08) } } : {}),
+      }}
+    >
+      <Typography
+        component="span"
+        sx={{ fontSize: '0.68rem', color: txtDim, display: 'flex', alignItems: 'center', gap: 0.3 }}
+      >
+        {dir === 'earlier'
+          ? <><NavigateBeforeIcon sx={{ fontSize: '0.9rem' }} />{t('recordings.earlier')}</>
+          : <>{t('recordings.later')}<NavigateNextIcon sx={{ fontSize: '0.9rem' }} /></>}
+      </Typography>
+    </ListItemButton>
+  )
+
   const shownDate = new Date(displayTime).toLocaleDateString('sv-SE')
   const shownTime = new Date(displayTime).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
 
@@ -256,6 +279,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
           </Typography>
         ) : (
           <List dense disablePadding>
+            <PageButton dir="earlier" />
             {filteredData.map((rec, index) => {
               const first = rec.recordings[0]
               if (!first) return null
@@ -330,6 +354,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
                 </div>
               )
             })}
+            <PageButton dir="later" />
           </List>
         )}
       </Box>
