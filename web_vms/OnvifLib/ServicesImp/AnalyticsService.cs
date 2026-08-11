@@ -16,7 +16,7 @@ namespace OnvifLib
   public record OnvifElementItem(string Name, string Xml);
 
   /// <summary>
-  /// A configured analytics module or rule. <paramref name="ElementItemsXml"/> carries the
+  /// A configured analytics module or rule. <paramref name="ElementItems"/> carries the
   /// structured parameters (polygons, line segments, schedules) as raw XML: they have no fixed
   /// schema across vendors, and round-tripping them untouched is the only way a Modify call can
   /// avoid silently dropping whatever it did not understand.
