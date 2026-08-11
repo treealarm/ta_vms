@@ -11,9 +11,7 @@ import LayersIcon from '@mui/icons-material/Layers'
 import { type RecordingDto, type RecordingRangeDto } from '../dto/dtos'
 import { fetchRecordingRanges } from '../store/fsSlice'
 
-// How many ranges one page holds. Also the test for "this is the whole archive": the server centres
-// a window of this size on the anchor, so a short page can only mean there was nothing more to fill
-// it with.
+// How many ranges one page holds.
 const PAGE_LIMIT = 50
 import { useAppDispatch, useAppSelector } from '../store'
 import dayjs, { Dayjs } from 'dayjs'
@@ -237,9 +235,10 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
   // every render, and React would tear down and rebuild the buttons each time — losing focus, and
   // losing a click that happened to straddle a render.
   const renderPageButton = (dir: 'earlier' | 'later') => {
-    // Everything fits in one page, or paging that way already came back unchanged.
-    const exhausted = (loaded && data.length < PAGE_LIMIT)
-      || (dir === 'earlier' ? atEarliest : atLatest)
+    // Only "paging that way already came back unchanged" is sound. A short page proves nothing:
+    // the server fetches limit*10 CLIPS and only then groups them into ranges, so a long continuous
+    // recording legitimately yields a handful of ranges with plenty of archive on either side.
+    const exhausted = dir === 'earlier' ? atEarliest : atLatest
 
     return (
       <ListItemButton

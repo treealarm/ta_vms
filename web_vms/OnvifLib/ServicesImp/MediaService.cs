@@ -159,6 +159,14 @@ namespace OnvifLib
     // track. The VideoAnalyticsConfiguration is what actually runs the detector behind it, and it
     // has to be attached to the same profile.
 
+    /// <summary>
+    /// Re-reads the camera's profiles. The attachment lists reported below are derived from them,
+    /// and the profile snapshot is otherwise taken once at connect and kept for the lifetime of the
+    /// cached Camera — so without this, attaching a configuration would keep reading back as
+    /// "not attached" for as long as the connection stayed cached.
+    /// </summary>
+    public virtual Task RefreshProfilesAsync() => Task.CompletedTask;
+
     public virtual Task<List<OnvifMetadataConfig>> GetMetadataConfigsAsync()
       => Task.FromResult<List<OnvifMetadataConfig>>([]);
     public virtual Task<OnvifMetadataConfigOptions?> GetMetadataConfigOptionsAsync(string configToken)

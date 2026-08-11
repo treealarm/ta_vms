@@ -14,9 +14,16 @@ const BATCH_MS = 120
 // false. Asking again after this picks up the probe's result, which is why a miss is not cached.
 const RETRY_MS = 4_000
 
+// How many times a camera may come back missing before we stop asking. A probe that never lands
+// means the node cannot answer at all — LiveController swallows that as an absent entry — and
+// retrying on a timer would then poll for as long as the page stays open. Giving up leaves the
+// button dark, which is the right answer for a camera nobody can reach; a remount asks again.
+const MAX_MISSES = 3
+
 type Entry = { capable: boolean; at: number }
 
 const cache = new Map<string, Entry>()
+const misses = new Map<string, number>()
 const listeners = new Map<string, Set<() => void>>()
 let pending = new Set<string>()
 let timer: number | undefined
@@ -41,10 +48,15 @@ async function flush() {
     for (const cameraId of batch) {
       const capable = result?.[cameraId]
       if (capable === undefined) {
-        // Not probed on the server yet — ask again shortly instead of caching a "no".
-        window.setTimeout(() => request(cameraId), RETRY_MS)
+        // Not probed on the server yet — ask again shortly instead of caching a "no", but only
+        // while somebody is still listening and only a few times.
+        const seen = (misses.get(cameraId) ?? 0) + 1
+        misses.set(cameraId, seen)
+        if (seen <= MAX_MISSES && (listeners.get(cameraId)?.size ?? 0) > 0)
+          window.setTimeout(() => request(cameraId), RETRY_MS)
         continue
       }
+      misses.delete(cameraId)
       cache.set(cameraId, { capable, at: now })
       notify(cameraId)
     }
@@ -76,8 +88,13 @@ export function useOnvifBboxCapable(cameraId: string | undefined, enabled: boole
     if (!set) listeners.set(cameraId, set = new Set())
     set.add(onChange)
 
+    // A fresh subscriber is a fresh chance: clear the give-up counter so a node that has come back
+    // is asked again.
     const cached = cache.get(cameraId)
-    if (!cached || Date.now() - cached.at >= CACHE_MS) request(cameraId)
+    if (!cached || Date.now() - cached.at >= CACHE_MS) {
+      misses.delete(cameraId)
+      request(cameraId)
+    }
 
     return () => {
       set.delete(onChange)

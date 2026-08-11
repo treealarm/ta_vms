@@ -203,6 +203,14 @@ namespace OnvifLib
       return snapShotUriResponse.Uri;
     }
 
+    public override async Task RefreshProfilesAsync()
+    {
+      if (_mediaClient2 == null) return;
+      var request = new MediaServiceReference.GetProfilesRequest { Type = ["All"] };
+      var profilesResponse = await _mediaClient2.GetProfilesAsync(request);
+      _profiles = profilesResponse.Profiles.ToList();
+    }
+
     // ---- Metadata / analytics configurations -------------------------------------------------
     // Unlike ver10, Media2 has no per-kind Add/Remove pair. Configurations are attached to and
     // detached from a profile through the generic AddConfiguration/RemoveConfiguration, with the
@@ -214,6 +222,8 @@ namespace OnvifLib
     public override async Task<List<OnvifMetadataConfig>> GetMetadataConfigsAsync()
     {
       if (_mediaClient2 == null) return [];
+      // The attachment list below is read off the profiles, so they have to be current.
+      await RefreshProfilesAsync();
       var resp = await _mediaClient2.GetMetadataConfigurationsAsync(new MediaServiceReference.GetMetadataConfigurationsRequest());
       return (resp.Configurations ?? [])
         .Where(c => c != null)
@@ -279,6 +289,7 @@ namespace OnvifLib
     public override async Task<List<OnvifAnalyticsConfig>> GetAnalyticsConfigsAsync()
     {
       if (_mediaClient2 == null) return [];
+      await RefreshProfilesAsync();
       var resp = await _mediaClient2.GetAnalyticsConfigurationsAsync(new MediaServiceReference.GetAnalyticsConfigurationsRequest());
       return (resp.Configurations ?? [])
         .Where(c => c != null)

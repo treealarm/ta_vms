@@ -24,6 +24,14 @@ public readonly record struct OnvifEventPayload(bool Active, string SourceKey)
   /// meant parsing the same payload two or three times per event — the kind of per-message cost
   /// that decides whether a chatty camera is free or expensive.
   /// </summary>
+  private static IEnumerable<XElement> SimpleItemsUnder(XDocument doc, string parentLocalName)
+  {
+    var parent = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == parentLocalName);
+    return parent is null
+      ? []
+      : parent.Descendants().Where(e => e.Name.LocalName == "SimpleItem");
+  }
+
   public static OnvifEventPayload Parse(string? payloadXml)
   {
     if (string.IsNullOrWhiteSpace(payloadXml))
@@ -40,30 +48,25 @@ public readonly record struct OnvifEventPayload(bool Active, string SourceKey)
       return Momentary;
     }
 
+    // Read from the two elements by name rather than by "everything except Source". A message also
+    // carries tt:Key, and a boolean there — or in any element a vendor adds later — would otherwise
+    // be taken for the condition: one stray `false` would make every event look like a clearing
+    // edge and silently switch that camera's retention off.
     var active = true;
-    var sourceItems = new List<string>();
-    var source = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "Source");
-    var activeFound = false;
-
-    foreach (var item in doc.Descendants().Where(e => e.Name.LocalName == "SimpleItem"))
+    foreach (var item in SimpleItemsUnder(doc, "Data"))
     {
-      var isSourceItem = source is not null && item.Ancestors().Contains(source);
-      if (isSourceItem)
-      {
-        sourceItems.Add($"{(string?)item.Attribute("Name")}={(string?)item.Attribute("Value")}");
-        continue;
-      }
-
-      // The state lives in tt:Data, never in tt:Source — a source token that happens to parse as a
-      // boolean must not be mistaken for the condition.
-      if (!activeFound && bool.TryParse((string?)item.Attribute("Value"), out var parsed))
+      if (bool.TryParse((string?)item.Attribute("Value"), out var parsed))
       {
         active = parsed;
-        activeFound = true;
+        break;
       }
     }
 
+    var sourceItems = SimpleItemsUnder(doc, "Source")
+      .Select(e => $"{(string?)e.Attribute("Name")}={(string?)e.Attribute("Value")}")
+      .ToList();
     sourceItems.Sort(StringComparer.Ordinal);
+
     return new OnvifEventPayload(active, string.Join(",", sourceItems));
   }
 }

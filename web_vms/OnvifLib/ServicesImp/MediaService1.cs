@@ -220,11 +220,20 @@ namespace OnvifLib
       return snapShotUriResponse.Uri;
     }
 
+    public override async Task RefreshProfilesAsync()
+    {
+      if (_mediaClient1 == null) return;
+      var profilesResponse = await _mediaClient1.GetProfilesAsync();
+      _profiles = profilesResponse.Profiles.ToList();
+    }
+
     // ---- Metadata / analytics configurations -------------------------------------------------
 
     public override async Task<List<OnvifMetadataConfig>> GetMetadataConfigsAsync()
     {
       if (_mediaClient1 == null) return [];
+      // The attachment list below is read off the profiles, so they have to be current.
+      await RefreshProfilesAsync();
       var resp = await _mediaClient1.GetMetadataConfigurationsAsync();
       return (resp.Configurations ?? [])
         .Where(c => c != null)
@@ -291,6 +300,7 @@ namespace OnvifLib
     public override async Task<List<OnvifAnalyticsConfig>> GetAnalyticsConfigsAsync()
     {
       if (_mediaClient1 == null) return [];
+      await RefreshProfilesAsync();
       var resp = await _mediaClient1.GetVideoAnalyticsConfigurationsAsync();
       return (resp.Configurations ?? [])
         .Where(c => c != null)

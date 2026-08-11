@@ -132,11 +132,20 @@ public static class OnvifSceneParser
 
   private static OnvifSceneObject? Build(XElement obj, double x1, double x2, double y1, double y2)
   {
-    var x = Math.Clamp(Math.Min(x1, x2), 0.0, 1.0);
-    var y = Math.Clamp(Math.Min(y1, y2), 0.0, 1.0);
-    var w = Math.Clamp(Math.Abs(x2 - x1), 0.0, 1.0 - x);
-    var h = Math.Clamp(Math.Abs(y2 - y1), 0.0, 1.0 - y);
+    // Both edges are clamped before the size is taken, not the origin alone: an object partly
+    // outside the frame arrives with a corner beyond 0..1, and clamping only the origin while
+    // keeping the full width would draw it wider than the part that is actually visible.
+    var left   = Math.Clamp(Math.Min(x1, x2), 0.0, 1.0);
+    var right  = Math.Clamp(Math.Max(x1, x2), 0.0, 1.0);
+    var top    = Math.Clamp(Math.Min(y1, y2), 0.0, 1.0);
+    var bottom = Math.Clamp(Math.Max(y1, y2), 0.0, 1.0);
 
+    var x = left;
+    var y = top;
+    var w = right - left;
+    var h = bottom - top;
+
+    // Entirely outside the frame, or degenerate — nothing to draw.
     if (w <= 0.0 || h <= 0.0)
       return null;
 

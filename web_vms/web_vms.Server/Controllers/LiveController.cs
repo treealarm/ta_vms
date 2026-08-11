@@ -260,6 +260,10 @@ public class LiveController(
   /// from the map (not reported false), and the client asks again once the probe lands. Lives here
   /// rather than on OnvifController because that one is admin-only and operators are not admins.
   /// </remarks>
+  // The action scopes the answer itself (it filters the requested ids through ScopeAsync below),
+  // which is what CameraIdSource.Action declares. Without an attribute the global CameraAccessFilter
+  // fails closed and answers 403 to everything — see its own comment.
+  [CameraAccess(CameraAction.ViewLive, Source = CameraIdSource.Action)]
   [HttpPost("onvif-bbox-capable")]
   public async Task<IActionResult> OnvifBboxCapable(
     [FromBody] OnvifBboxCapableBody body, CancellationToken ct)

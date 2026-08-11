@@ -325,39 +325,71 @@ public class CameraStorage(
   /// camera on the node, several times a second, to re-apply a recording mode that was already in
   /// force. Only the transition is news; extending a deadline changes nothing anyone downstream
   /// can observe.
+  /// Outcome of an alarm activation. The distinction matters far more than it looks: a chatty
+  /// motion detector re-fires every second or two, and treating each re-fire as a fresh activation
+  /// made every one of them publish a config change and push camera state — a full reload of every
+  /// camera on the node, several times a second, to re-apply a recording mode that was already in
+  /// force. Only the transition is news; extending a deadline changes nothing anyone downstream
+  /// can observe.
   public readonly record struct AlarmOverrideOutcome(bool Started, bool Extended);
 
+  /// <summary>
+  /// Puts the camera's eligible streams under an alarm override until <paramref name="until"/>, and
+  /// reports which of them were not already under one.
+  /// </summary>
+  /// <remarks>
+  /// One statement, deliberately. Reading the previous state and writing the new one has to be
+  /// atomic: AlarmOverrideExpiryService clears expired overrides concurrently, and doing this as
+  /// two passes (one for "not yet overridden", one for "extend the existing") let a sweep land in
+  /// between — the row matched neither pass, the activation was reported as "nothing happened", and
+  /// AlarmEpisodeTracker then suppressed every repeat for the rest of the episode. The alarm was
+  /// lost outright.
+  ///
+  /// Raw SQL because EF cannot express it: the answer depends on each row's value *before* the
+  /// update, which needs a data-modifying CTE (see the raw-SQL exception in CLAUDE.md).
+  ///
+  /// Eligibility is unchanged from before: a stream already under an alarm override (so its
+  /// deadline is pushed out), or one with no manual override and a base profile that is off or
+  /// absent. A stream someone is deliberately recording is left alone.
+  /// </remarks>
   public async Task<AlarmOverrideOutcome> ActivateAlarmOverrideAsync(string cameraId, string? streamName, DateTime until, CancellationToken ct)
   {
-    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    await using var command = _dataSource.CreateCommand("""
+      WITH target AS (
+        SELECT cs.stream_name, cs.alarm_override_until AS was_until
+        FROM camera_stream cs
+        LEFT JOIN recording_profile rp ON rp.id = cs.recording_profile_id
+        WHERE cs.camera_id = $1
+          AND ($2::text IS NULL OR cs.stream_name = $2)
+          AND (cs.alarm_override_until IS NOT NULL
+               OR (cs.override_profile_id IS NULL
+                   AND (cs.recording_profile_id IS NULL OR rp.mode = 'off')))
+      ),
+      applied AS (
+        UPDATE camera_stream cs
+        SET override_profile_id  = $3,
+            -- Never pull a deadline in: a longer window already granted outlives this alarm.
+            alarm_override_until = GREATEST(COALESCE(cs.alarm_override_until, $4), $4)
+        FROM target t
+        WHERE cs.camera_id = $1 AND cs.stream_name = t.stream_name
+        RETURNING t.was_until
+      )
+      SELECT
+        count(*) FILTER (WHERE was_until IS NULL)     AS started,
+        count(*) FILTER (WHERE was_until IS NOT NULL) AS extended
+      FROM applied;
+      """);
 
-    // Streams not currently under an alarm override, and free to take one: no manual override, and
-    // a base profile that is off or absent. These are the real transitions.
-    var started = await db.CameraStreams
-      .Where(cs => cs.CameraId == cameraId
-                && (streamName == null || cs.StreamName == streamName)
-                && cs.AlarmOverrideUntil == null
-                && cs.OverrideProfileId == null
-                && (cs.RecordingProfileId == null
-                    || cs.RecordingProfile!.Mode == "off"))
-      .ExecuteUpdateAsync(s => s
-        .SetProperty(cs => cs.OverrideProfileId, BuiltinContinuousProfileId)
-        .SetProperty(cs => cs.AlarmOverrideUntil, until),
-        ct);
+    command.Parameters.AddWithValue(cameraId);
+    command.Parameters.AddWithValue((object?)streamName ?? DBNull.Value);
+    command.Parameters.AddWithValue(BuiltinContinuousProfileId);
+    command.Parameters.AddWithValue(until);
 
-    // Already recording under an alarm: push the deadline out, never pull it in. Nothing observable
-    // changes, so this is reported separately and does not wake anybody up.
-    var extended = await db.CameraStreams
-      .Where(cs => cs.CameraId == cameraId
-                && (streamName == null || cs.StreamName == streamName)
-                && cs.AlarmOverrideUntil != null
-                && cs.AlarmOverrideUntil < until)
-      .ExecuteUpdateAsync(s => s
-        .SetProperty(cs => cs.OverrideProfileId, BuiltinContinuousProfileId)
-        .SetProperty(cs => cs.AlarmOverrideUntil, until),
-        ct);
+    await using var reader = await command.ExecuteReaderAsync(ct);
+    if (!await reader.ReadAsync(ct))
+      return new AlarmOverrideOutcome(false, false);
 
-    return new AlarmOverrideOutcome(started > 0, extended > 0);
+    return new AlarmOverrideOutcome(reader.GetInt64(0) > 0, reader.GetInt64(1) > 0);
   }
 
   /// Ends a timed override whose deadline has passed, returning the stream to its base profile.
