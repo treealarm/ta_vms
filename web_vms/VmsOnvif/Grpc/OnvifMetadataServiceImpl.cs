@@ -265,6 +265,14 @@ public partial class OnvifServiceImpl
           Type = d.Type,
           MaxInstances = d.MaxInstances ?? string.Empty,
         };
+        if (d.CellLayout is { } layout)
+        {
+          proto.CellLayout = new AnalyticsCellLayout
+          {
+            Columns = layout.Columns,
+            Rows = layout.Rows,
+          };
+        }
         proto.Parameters.AddRange(d.Parameters.Select(
           p => new AnalyticsParameterDescription { Name = p.Name, Type = p.Type }));
         response.Descriptions.Add(proto);

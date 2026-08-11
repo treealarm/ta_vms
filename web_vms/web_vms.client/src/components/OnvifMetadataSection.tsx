@@ -29,6 +29,7 @@ import type {
   OnvifAnalyticsModuleDescriptionDto,
   OnvifAnalyticsModulesResponseDto,
   CameraStreamDto,
+  AnalyticsCellLayoutDto,
 } from '../dto/dtos'
 
 // Same shape the other ONVIF sections read from /profiles — only token and name are used here.
@@ -37,6 +38,198 @@ type OnvifProfileInfo = { token: string; name: string }
 const base = (cameraId: string) => `/api/onvif/cameras/${encodeURIComponent(cameraId)}`
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+// ── Typed parameter editing ─────────────────────────────────────────────────
+//
+// A camera reports each parameter's XSD type but not what the type means, so the meaning is
+// resolved here. Rendering everything as free text — which is what this did — left an operator
+// guessing at "Direction" and staring at base64 for the motion grid.
+
+// ONVIF enumerations, taken from the vendored schema (wsdl/ver10/schema/onvif.xsd). The camera
+// sends only the type name; the members are not on the wire.
+const ONVIF_ENUMS: Record<string, string[]> = {
+  Direction: ['Left', 'Right', 'Any', 'Entering', 'Exiting', 'Approaching', 'Departing'],
+}
+
+const NUMERIC_TYPES = new Set([
+  'integer', 'int', 'long', 'short', 'byte', 'float', 'double', 'decimal',
+  'nonNegativeInteger', 'positiveInteger', 'unsignedInt', 'unsignedShort', 'unsignedByte',
+])
+
+const countBits = (bytes: Uint8Array) => {
+  let n = 0
+  for (const b of bytes) for (let i = 0; i < 8; i++) if (b & (1 << i)) n++
+  return n
+}
+
+const decodeCells = (value: string): Uint8Array => {
+  try {
+    const bin = atob(value)
+    return Uint8Array.from(bin, (c) => c.charCodeAt(0))
+  } catch {
+    return new Uint8Array()
+  }
+}
+
+const encodeCells = (bytes: Uint8Array) =>
+  btoa(String.fromCharCode(...bytes))
+
+/**
+ * The motion-detection cell mask (ONVIF `ActiveCells`) — a packed bitmask of the cells taking part
+ * in detection, one bit each, in the camera's own order.
+ *
+ * Shown as a strip of toggles rather than a rectangle, deliberately. Laying the bits out in two
+ * dimensions needs the camera's CellLayout (columns × rows), and ONVIF offers three ways to learn
+ * it — GetAnalyticsModuleOptions, the rule's ConfigDescription, and tt:MotionInCells in the
+ * metadata stream. The cameras here provide none of them, so any rectangle drawn would put cells
+ * where they are not. A strip claims no geometry while still giving full control of every bit.
+ *
+ * For the same reason the count is reported against the mask size in bits, not "cells": the mask
+ * is at least as large as the grid and the surplus bits are padding we cannot identify.
+ */
+function CellMaskField({ value, layout, onChange }: {
+  value: string
+  layout?: AnalyticsCellLayoutDto
+  onChange: (v: string) => void
+}) {
+  const { t } = useTranslation()
+  const bytes = decodeCells(value)
+  const total = bytes.length * 8
+  const active = countBits(bytes)
+
+  const setAll = (on: boolean) =>
+    onChange(encodeCells(bytes.map(() => (on ? 0xff : 0x00))))
+
+  // Bit order follows ONVIF: cell n is bit (n % 8) of byte (n / 8).
+  const isSet = (n: number) => (bytes[n >> 3] & (1 << (n % 8))) !== 0
+
+  const toggle = (n: number) => {
+    const next = Uint8Array.from(bytes)
+    next[n >> 3] ^= 1 << (n % 8)
+    onChange(encodeCells(next))
+  }
+
+  return (
+    <Stack spacing={0.5} sx={{ minWidth: 240 }}>
+      <Stack direction="row" spacing={1} alignItems="center">
+        <Typography variant="caption" color="text.secondary">
+          {t('onvifSettings.metadataActiveCells')}
+        </Typography>
+        <Typography variant="caption" color="text.secondary" title={value}>
+          {total > 0 ? t('onvifSettings.metadataCellsActive', { active, total }) : '—'}
+        </Typography>
+        <Button size="small" disabled={total === 0} onClick={() => setAll(true)}>
+          {t('onvifSettings.metadataCellsAll')}
+        </Button>
+        <Button size="small" disabled={total === 0} onClick={() => setAll(false)}>
+          {t('onvifSettings.metadataCellsNone')}
+        </Button>
+      </Stack>
+
+      {/* With a layout the cells sit where the camera puts them: row-major, columns per row, and
+          only the first columns*rows bits belong to the grid — the rest of the mask is padding and
+          is deliberately not drawn. Without one they are a strip, which claims no geometry. */}
+      <Box
+        sx={layout
+          ? {
+              display: 'grid',
+              gridTemplateColumns: `repeat(${layout.columns}, 1fr)`,
+              gap: '2px',
+              width: Math.min(320, layout.columns * 16),
+            }
+          : { display: 'flex', flexWrap: 'wrap', gap: '2px', maxWidth: 320 }}
+      >
+        {Array.from({ length: layout ? Math.min(total, layout.columns * layout.rows) : total }, (_, n) => (
+          <Box
+            key={n}
+            component="button"
+            type="button"
+            onClick={() => toggle(n)}
+            title={layout
+              ? t('onvifSettings.metadataCellAt', {
+                  row: Math.floor(n / layout.columns) + 1,
+                  col: (n % layout.columns) + 1,
+                })
+              : t('onvifSettings.metadataCellNumber', { n: n + 1 })}
+            sx={{
+              aspectRatio: layout ? '1 / 1' : undefined,
+              width: layout ? undefined : 14,
+              height: layout ? undefined : 14,
+              p: 0, cursor: 'pointer', minWidth: 0,
+              border: (th) => `1px solid ${th.palette.divider}`,
+              borderRadius: '2px',
+              bgcolor: (th) => (isSet(n) ? th.palette.primary.main : 'transparent'),
+            }}
+          />
+        ))}
+      </Box>
+
+      {total > 0 && (
+        <Typography variant="caption" color="text.secondary">
+          {layout
+            ? t('onvifSettings.metadataCellsLayout', { columns: layout.columns, rows: layout.rows })
+            : t('onvifSettings.metadataCellsNoLayout')}
+        </Typography>
+      )}
+    </Stack>
+  )
+}
+
+function ParamField({ name, type, layout, value, onChange }: {
+  name: string
+  type?: string
+  layout?: AnalyticsCellLayoutDto
+  value: string
+  onChange: (v: string) => void
+}) {
+  // The type arrives as a local XSD name ("integer", "Direction"); a vendor may qualify it.
+  const local = (type ?? '').split(':').pop() ?? ''
+
+  if (local === 'base64Binary')
+    return <CellMaskField value={value} layout={layout} onChange={onChange} />
+
+  const choices = ONVIF_ENUMS[local]
+  if (choices) {
+    return (
+      <TextField
+        select size="small" label={name} value={value}
+        onChange={(e) => onChange(e.target.value)} sx={{ minWidth: 160 }}
+      >
+        {/* The camera may hold a value outside the schema's list; showing it beats losing it. */}
+        {(choices.includes(value) || !value ? choices : [value, ...choices]).map((c) => (
+          <MenuItem key={c} value={c}>{c}</MenuItem>
+        ))}
+      </TextField>
+    )
+  }
+
+  if (local === 'boolean') {
+    return (
+      <FormControlLabel
+        control={
+          <Checkbox
+            size="small"
+            checked={value === 'true'}
+            onChange={(e) => onChange(e.target.checked ? 'true' : 'false')}
+          />
+        }
+        label={name}
+      />
+    )
+  }
+
+  return (
+    <TextField
+      size="small"
+      label={name}
+      type={NUMERIC_TYPES.has(local) ? 'number' : 'text'}
+      helperText={local || undefined}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      sx={{ minWidth: 160 }}
+    />
+  )
+}
 
 // ── Metadata configurations ─────────────────────────────────────────────────
 
@@ -188,15 +381,14 @@ function ModuleEditor({ cameraId, kind, configToken, module, descriptions, onCha
       </Stack>
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
         {items.map((item, idx) => (
-          <TextField
+          <ParamField
             key={item.name}
-            size="small"
-            label={item.name}
-            helperText={description?.parameters.find((p) => p.name === item.name)?.type}
+            name={item.name}
+            type={description?.parameters.find((p) => p.name === item.name)?.type}
+            layout={description?.cellLayout}
             value={item.value}
-            onChange={(e) => setItems(items.map((it, i) =>
-              i === idx ? { ...it, value: e.target.value } : it))}
-            sx={{ minWidth: 160 }}
+            onChange={(v) => setItems(items.map((it, i) =>
+              i === idx ? { ...it, value: v } : it))}
           />
         ))}
         {items.length === 0 && (

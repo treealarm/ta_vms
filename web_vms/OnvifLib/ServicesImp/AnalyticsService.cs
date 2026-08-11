@@ -22,11 +22,20 @@ namespace OnvifLib
   /// <summary>One parameter a module/rule type accepts, as advertised by the camera.</summary>
   public record OnvifParameterDescription(string Name, string Type);
 
+  /// <summary>
+  /// How a camera lays out its motion-detection cells. Needed to make sense of an ActiveCells
+  /// bitmask: the mask is a flat run of bits, and only these two numbers say which cell is where.
+  /// </summary>
+  public record OnvifCellLayout(int Columns, int Rows);
+
   /// <summary>A module or rule type the camera says it supports, with its parameter list.</summary>
   public record OnvifModuleDescription(
     string Type,
     string? MaxInstances,
-    IReadOnlyList<OnvifParameterDescription> Parameters);
+    IReadOnlyList<OnvifParameterDescription> Parameters,
+    // Present only for types with a cell mask, and only when the camera reveals the layout —
+    // it is optional in ONVIF and many firmwares omit it entirely.
+    OnvifCellLayout? CellLayout = null);
 
   /// <summary>
   /// ONVIF ver20 Analytics: the modules a camera runs over a VideoAnalyticsConfiguration and the
@@ -80,7 +89,8 @@ namespace OnvifLib
       if (_modulesClient == null) return [];
       var resp = await _modulesClient.GetSupportedAnalyticsModulesAsync(
         new GetSupportedAnalyticsModulesRequest { ConfigurationToken = configurationToken });
-      return ToDescriptions(resp.SupportedAnalyticsModules?.AnalyticsModuleDescription);
+      var described = ToDescriptions(resp.SupportedAnalyticsModules?.AnalyticsModuleDescription);
+      return await WithCellLayoutsAsync(described, configurationToken, ModuleOptionsCellLayoutAsync);
     }
 
     public async Task<IReadOnlyList<OnvifAnalyticsModule>> GetAnalyticsModulesAsync(string configurationToken)
@@ -128,7 +138,8 @@ namespace OnvifLib
       if (_rulesClient == null) return [];
       var resp = await _rulesClient.GetSupportedRulesAsync(
         new GetSupportedRulesRequest { ConfigurationToken = configurationToken });
-      return ToDescriptions(resp.SupportedRules?.RuleDescription);
+      var described = ToDescriptions(resp.SupportedRules?.RuleDescription);
+      return await WithCellLayoutsAsync(described, configurationToken, RuleOptionsCellLayoutAsync);
     }
 
     public async Task<IReadOnlyList<OnvifAnalyticsModule>> GetRulesAsync(string configurationToken)
@@ -169,7 +180,149 @@ namespace OnvifLib
       });
     }
 
-    // ---- Mapping -----------------------------------------------------------------------------
+    /// <summary>
+    /// What values a module/rule type will accept, as the camera describes them. ONVIF returns this
+    /// as arbitrary XML (ConfigOptions.Any) because the constraints are schema-defined per type, so
+    /// it is handed back raw for the caller to interpret.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> GetAnalyticsModuleOptionsXmlAsync(string type, string configurationToken)
+    {
+      if (_modulesClient == null) return [];
+      var resp = await _modulesClient.GetAnalyticsModuleOptionsAsync(new GetAnalyticsModuleOptionsRequest
+      {
+        Type = new System.Xml.XmlQualifiedName(type),
+        ConfigurationToken = configurationToken,
+      });
+      return (resp.Options ?? []).Select(o => o.Any?.OuterXml ?? string.Empty).ToList();
+    }
+
+    public async Task<IReadOnlyList<string>> GetRuleOptionsXmlAsync(string ruleType, string configurationToken)
+    {
+      if (_rulesClient == null) return [];
+      var resp = await _rulesClient.GetRuleOptionsAsync(new GetRuleOptionsRequest
+      {
+        RuleType = new System.Xml.XmlQualifiedName(ruleType),
+        ConfigurationToken = configurationToken,
+      });
+      return (resp.RuleOptions ?? []).Select(o => o.Any?.OuterXml ?? string.Empty).ToList();
+    }
+
+  /// <summary>Diagnostic: the camera's rule descriptions exactly as sent, including any extension
+    /// content the typed mapping below drops.</summary>
+    public async Task<IReadOnlyList<string>> GetSupportedRulesXmlAsync(string configurationToken)
+    {
+      if (_rulesClient == null) return [];
+      var resp = await _rulesClient.GetSupportedRulesAsync(
+        new GetSupportedRulesRequest { ConfigurationToken = configurationToken });
+      var serializer = new System.Xml.Serialization.XmlSerializer(typeof(ConfigDescription));
+      var result = new List<string>();
+      foreach (var d in resp.SupportedRules?.RuleDescription ?? [])
+      {
+        using var sw = new StringWriter();
+        serializer.Serialize(sw, d);
+        result.Add(sw.ToString());
+      }
+      return result;
+    }
+
+  /// <summary>
+    /// Fills in the cell layout for the types that need one. Only types carrying a base64Binary
+    /// parameter are asked about: the layout is meaningless for the rest, and the options call it
+    /// takes is optional in ONVIF — most firmwares answer it with a fault, which is not worth
+    /// provoking once per type on every read of the tab.
+    /// </summary>
+    private static async Task<IReadOnlyList<OnvifModuleDescription>> WithCellLayoutsAsync(
+      IReadOnlyList<OnvifModuleDescription> described,
+      string configurationToken,
+      Func<string, string, Task<OnvifCellLayout?>> fromOptions)
+    {
+      var result = new List<OnvifModuleDescription>(described.Count);
+      foreach (var d in described)
+      {
+        if (d.CellLayout is not null || !HasCellMask(d))
+        {
+          result.Add(d);
+          continue;
+        }
+
+        var layout = await fromOptions(d.Type, configurationToken);
+        result.Add(layout is null ? d : d with { CellLayout = layout });
+      }
+      return result;
+    }
+
+    private static bool HasCellMask(OnvifModuleDescription d) =>
+      d.Parameters.Any(p => p.Type.EndsWith("base64Binary", StringComparison.OrdinalIgnoreCase));
+
+    private async Task<OnvifCellLayout?> ModuleOptionsCellLayoutAsync(string type, string configurationToken)
+    {
+      if (_modulesClient == null) return null;
+      try
+      {
+        var resp = await _modulesClient.GetAnalyticsModuleOptionsAsync(new GetAnalyticsModuleOptionsRequest
+        {
+          Type = new System.Xml.XmlQualifiedName(type),
+          ConfigurationToken = configurationToken,
+        });
+        return FindCellLayout((resp.Options ?? []).Select(o => o.Any));
+      }
+      catch (Exception)
+      {
+        // Optional operation; a fault here means "this camera will not say", not a failure.
+        return null;
+      }
+    }
+
+    private async Task<OnvifCellLayout?> RuleOptionsCellLayoutAsync(string ruleType, string configurationToken)
+    {
+      if (_rulesClient == null) return null;
+      try
+      {
+        var resp = await _rulesClient.GetRuleOptionsAsync(new GetRuleOptionsRequest
+        {
+          RuleType = new System.Xml.XmlQualifiedName(ruleType),
+          ConfigurationToken = configurationToken,
+        });
+        return FindCellLayout((resp.RuleOptions ?? []).Select(o => o.Any));
+      }
+      catch (Exception)
+      {
+        return null;
+      }
+    }
+
+    /// <summary>
+    /// Finds a tt:CellLayout anywhere in the given XML. Vendors nest it differently and the
+    /// surrounding option shape is schema-defined per type, so the search is by local name rather
+    /// than by a fixed path.
+    /// </summary>
+    private static OnvifCellLayout? FindCellLayout(IEnumerable<System.Xml.XmlElement?> elements)
+    {
+      foreach (var element in elements)
+      {
+        if (element is null) continue;
+
+        var nodes = element.LocalName == "CellLayout"
+          ? [element]
+          : element.GetElementsByTagName("*").Cast<System.Xml.XmlNode>()
+              .OfType<System.Xml.XmlElement>()
+              .Where(e => e.LocalName == "CellLayout")
+              .ToArray();
+
+        foreach (var node in nodes)
+        {
+          if (int.TryParse(node.GetAttribute("Columns"), out var columns) &&
+              int.TryParse(node.GetAttribute("Rows"), out var rows) &&
+              columns > 0 && rows > 0)
+          {
+            return new OnvifCellLayout(columns, rows);
+          }
+        }
+      }
+      return null;
+    }
+
+  // ---- Mapping -----------------------------------------------------------------------------
 
     private static IReadOnlyList<OnvifAnalyticsModule> ToModules(Config[]? configs)
     {
@@ -208,7 +361,10 @@ namespace OnvifLib
           (d.Parameters?.SimpleItemDescription ?? [])
             .Where(p => p?.Name != null)
             .Select(p => new OnvifParameterDescription(p.Name, p.Type?.Name ?? string.Empty))
-            .ToList()));
+            .ToList(),
+          // Some firmwares put the layout straight into the description's extension, which costs
+          // nothing to read — it is already in this response.
+          FindCellLayout(d.Extension?.Any ?? [])));
       }
       return result;
     }

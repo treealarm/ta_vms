@@ -598,7 +598,15 @@
     "metadataNoParameters": "No simple parameters",
     "metadataStructuredParams": "{{count}} structured parameter(s) kept unchanged",
     "metadataStreamedBy": "streamed as \"{{streams}}\"",
-    "metadataProfileNotStreamed": "This profile is not one the VMS pulls from this camera. A metadata configuration attached here will not reach the recorder, so no boxes will appear on the monitor — pick a profile marked as streamed."
+    "metadataProfileNotStreamed": "This profile is not one the VMS pulls from this camera. A metadata configuration attached here will not reach the recorder, so no boxes will appear on the monitor — pick a profile marked as streamed.",
+    "metadataActiveCells": "Motion grid",
+    "metadataCellsActive": "{{active}} of {{total}} bits set",
+    "metadataCellsAll": "All",
+    "metadataCellsNone": "None",
+    "metadataCellNumber": "Cell {{n}}",
+    "metadataCellsNoLayout": "The camera does not report the grid layout, so cells are shown in its own order.",
+    "metadataCellAt": "Row {{row}}, column {{col}}",
+    "metadataCellsLayout": "Grid {{columns}} × {{rows}}, as reported by the camera"
   },
   "wall": {
     "modeLive": "Live",

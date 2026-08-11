@@ -845,10 +845,20 @@ message AnalyticsParameterDescription {
   string type = 2;
 }
 
+// How a camera lays out its motion-detection cells. An ActiveCells bitmask is a flat run of bits,
+// and only these two numbers say which cell is where — without them a UI cannot honestly draw a
+// grid. Optional in ONVIF and absent on many firmwares, hence zero when unknown.
+message AnalyticsCellLayout {
+  int32 columns = 1;
+  int32 rows    = 2;
+}
+
 message AnalyticsModuleDescription {
   string type          = 1;
   string max_instances = 2;
   repeated AnalyticsParameterDescription parameters = 3;
+  // Set only for types with a cell mask, and only when the camera reveals it.
+  optional AnalyticsCellLayout cell_layout = 4;
 }
 
 message AnalyticsModuleDescriptionsResponse {

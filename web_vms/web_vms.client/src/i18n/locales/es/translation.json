@@ -598,7 +598,15 @@
     "metadataNoParameters": "Sin parámetros simples",
     "metadataStructuredParams": "{{count}} parámetro(s) estructurado(s) conservado(s) sin cambios",
     "metadataStreamedBy": "transmitido como \"{{streams}}\"",
-    "metadataProfileNotStreamed": "El VMS no toma este perfil de esta cámara. Una configuración de metadatos adjunta aquí no llegará al grabador y no aparecerán recuadros en el monitor: elija un perfil marcado como transmitido."
+    "metadataProfileNotStreamed": "El VMS no toma este perfil de esta cámara. Una configuración de metadatos adjunta aquí no llegará al grabador y no aparecerán recuadros en el monitor: elija un perfil marcado como transmitido.",
+    "metadataActiveCells": "Rejilla de movimiento",
+    "metadataCellsActive": "{{active}} de {{total}} bits activos",
+    "metadataCellsAll": "Todas",
+    "metadataCellsNone": "Ninguna",
+    "metadataCellNumber": "Celda {{n}}",
+    "metadataCellsNoLayout": "La cámara no informa la disposición de la rejilla; las celdas se muestran en su propio orden.",
+    "metadataCellAt": "Fila {{row}}, columna {{col}}",
+    "metadataCellsLayout": "Rejilla {{columns}} × {{rows}}, según informa la cámara"
   },
   "wall": {
     "modeLive": "En vivo",

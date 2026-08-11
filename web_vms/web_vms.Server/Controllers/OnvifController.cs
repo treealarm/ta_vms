@@ -833,6 +833,9 @@ public class OnvifController(
       type         = d.Type,
       maxInstances = d.MaxInstances,
       parameters   = d.Parameters.Select(p => new { name = p.Name, type = p.Type }),
+      cellLayout   = d.CellLayout is null
+        ? null
+        : new { columns = d.CellLayout.Columns, rows = d.CellLayout.Rows },
     }),
   };
 

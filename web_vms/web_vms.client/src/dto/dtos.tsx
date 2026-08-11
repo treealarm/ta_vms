@@ -789,10 +789,21 @@ export type AnalyticsParameterDescriptionDto = {
   type: string
 }
 
+/**
+ * How the camera lays out its motion-detection cells. An ActiveCells bitmask is a flat run of bits;
+ * only these two numbers say which cell is where. Optional in ONVIF and absent on many firmwares,
+ * so a UI must be able to do without it.
+ */
+export type AnalyticsCellLayoutDto = {
+  columns: number
+  rows: number
+}
+
 export type OnvifAnalyticsModuleDescriptionDto = {
   type: string
   maxInstances?: string
   parameters: AnalyticsParameterDescriptionDto[]
+  cellLayout?: AnalyticsCellLayoutDto
 }
 
 export type OnvifAnalyticsModuleDescriptionsResponseDto = {
