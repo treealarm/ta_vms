@@ -285,7 +285,8 @@
     "sourceAnalytics": "Analytics",
     "sourceOnvif": "ONVIF",
     "sourceOther": "Other",
-    "detections": "Detections"
+    "detections": "Detections",
+    "trigger": "Trigger"
   },
   "stream": {
     "newStream": "New stream on {{camera}}",
@@ -311,7 +312,8 @@
   "streamOverride": {
     "override": "override",
     "clearOverride": "Clear override",
-    "overridePlaceholder": "Override…"
+    "overridePlaceholder": "Override…",
+    "appliesToAllStreams": "Applies to every stream of this camera"
   },
   "monitors": {
     "title": "Monitors",
@@ -440,7 +442,8 @@
     "copiedRtsp": "Copied!",
     "retentionActive": "Retention active",
     "cameraDisabledTip": "Camera is disabled — arm/PTZ unavailable",
-    "scheduleActive": "Recording by schedule — overrides the stream profile"
+    "scheduleActive": "Recording by schedule — overrides the stream profile",
+    "onvifEvent": "{{label}}"
   },
   "recordings": {
     "earlier": "Earlier",
@@ -451,7 +454,8 @@
     "endTime": "End",
     "clips": "Clips",
     "jumpToDateTime": "Jump to date / time",
-    "recovered": "Recovered from the camera"
+    "recovered": "Recovered from the camera",
+    "archiveEdge": "No more recordings"
   },
   "onvifSubs": {
     "description": "Cameras in this list receive ONVIF events. Arm to trigger retention recordings on matching alarm filters.",
@@ -570,7 +574,39 @@
     "contrast": "Contrast",
     "colorSaturation": "Color saturation",
     "sharpness": "Sharpness",
-    "noImagingSupport": "This camera does not report any adjustable imaging settings"
+    "noImagingSupport": "This camera does not report any adjustable imaging settings",
+    "metadataTab": "Metadata",
+    "metadataHint": "The camera streams object boxes only when a metadata configuration with Analytics enabled AND an analytics configuration are both attached to the profile the stream is pulled from.",
+    "metadataProfile": "Media profile",
+    "metadataConfigsGroup": "Metadata configurations",
+    "metadataAnalyticsGroup": "Analytics configuration",
+    "metadataModulesGroup": "Analytics modules",
+    "metadataRulesGroup": "Rules",
+    "metadataAnalytics": "Analytics (object boxes)",
+    "metadataPtzStatus": "PTZ status",
+    "metadataEvents": "Events",
+    "metadataShapePolygon": "Polygons",
+    "metadataAttach": "Attach to profile",
+    "metadataDetach": "Detach",
+    "metadataSave": "Save",
+    "metadataAdd": "Add",
+    "metadataModuleType": "Type",
+    "metadataModuleName": "Name",
+    "metadataNoConfigs": "The camera reports no metadata configurations",
+    "metadataNoAnalyticsConfigs": "The camera reports no analytics configurations",
+    "metadataNoModules": "None configured",
+    "metadataNoParameters": "No simple parameters",
+    "metadataStructuredParams": "{{count}} structured parameter(s) kept unchanged",
+    "metadataStreamedBy": "streamed as \"{{streams}}\"",
+    "metadataProfileNotStreamed": "This profile is not one the VMS pulls from this camera. A metadata configuration attached here will not reach the recorder, so no boxes will appear on the monitor — pick a profile marked as streamed.",
+    "metadataActiveCells": "Motion grid",
+    "metadataCellsActive": "{{active}} of {{total}} bits set",
+    "metadataCellsAll": "All",
+    "metadataCellsNone": "None",
+    "metadataCellNumber": "Cell {{n}}",
+    "metadataCellsNoLayout": "The camera does not report the grid layout, so cells are shown in its own order.",
+    "metadataCellAt": "Row {{row}}, column {{col}}",
+    "metadataCellsLayout": "Grid {{columns}} × {{rows}}, as reported by the camera"
   },
   "wall": {
     "modeLive": "Live",

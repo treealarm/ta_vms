@@ -19,6 +19,7 @@ const KIND_LABEL: Record<string, string> = {
   face: 'face',
   vehicle: 'vehicle',
   license_plate: 'plate',
+  animal: 'animal',
 }
 
 // Compact form of the re-id object_id for the overlay: ephemeral ids look like "obj-<guid>" (show a
@@ -93,10 +94,23 @@ export default function BboxOverlay({ videoRef, cameraId }: Props) {
       ctx.globalAlpha = d.opacity
       ctx.strokeStyle = color
       ctx.lineWidth = 2
+      // Boxes the camera reported itself are dashed, so an operator can tell at a glance which
+      // ones come from the CV detector and which from the camera's own analytics. Both keep the
+      // per-track color, since a dashed and a solid box on the same object should still read as
+      // related rather than as two unrelated colors.
+      ctx.setLineDash(d.source === 'onvif' ? [6, 4] : [])
       ctx.strokeRect(x, y, w, h)
+      ctx.setLineDash([])
 
       const main = [
-        KIND_LABEL[d.kind] ?? d.kind,
+        // 'unknown' means the producer did not say what the object is — most often a camera that
+        // tracks motion without classifying it. Printing the word would read as a failure, so the
+        // label just starts with the track id instead.
+        d.kind === 'unknown' ? null : KIND_LABEL[d.kind] ?? d.kind,
+        // The producer's own, narrower word ('Truck' under vehicle) when it has one — this is
+        // where a camera's free-form ONVIF class survives the coarse kind enum.
+        d.label ? `(${d.label})` : null,
+        d.source === 'onvif' ? 'cam' : null,
         `#${d.trackId}`,
         `${Math.round(d.confidence * 100)}%`,
         d.objectId ? shortObjectId(d.objectId) : null,

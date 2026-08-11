@@ -1,5 +1,11 @@
 syntax = "proto3";
 
+// The rest of this file passes device timestamps around as ISO-8601 strings, because that is what
+// the camera itself reports and the UI shows verbatim. MetadataDocument.received_at is different:
+// it is our own clock, produced in C++ and consumed in C#, so it uses the well-known type rather
+// than a format both ends would have to parse.
+import "google/protobuf/timestamp.proto";
+
 package vms.onvif;
 
 option go_package = "grpc/vmsonvif;vmsonvif";
@@ -50,6 +56,42 @@ service OnvifService {
 
   rpc ListEdgeStorage(CameraRequest) returns (EdgeStorageResponse);
   rpc FormatEdgeStorage(EdgeFormatStorageRequest) returns (EdgeMutationResponse);
+
+  // ── Profile M: the camera's own metadata / analytics ────────────────────────
+  // Turning Scene Description on takes two attachments to the streaming profile: a
+  // MetadataConfiguration with analytics=true (so the RTSP session carries a metadata track at
+  // all) and a VideoAnalyticsConfiguration (the engine whose modules produce the objects).
+  rpc GetMetadataConfigs(CameraRequest) returns (MetadataConfigsResponse);
+  rpc GetMetadataConfigOptions(MetadataConfigOptionsRequest) returns (MetadataConfigOptionsResponse);
+  rpc SetMetadataConfig(SetMetadataConfigRequest) returns (OnvifMutationResponse);
+  rpc AttachMetadataConfig(AttachConfigRequest) returns (OnvifMutationResponse);
+  rpc DetachMetadataConfig(AttachConfigRequest) returns (OnvifMutationResponse);
+  rpc GetAnalyticsConfigs(CameraRequest) returns (AnalyticsConfigsResponse);
+  rpc AttachAnalyticsConfig(AttachConfigRequest) returns (OnvifMutationResponse);
+  rpc DetachAnalyticsConfig(AttachConfigRequest) returns (OnvifMutationResponse);
+
+  rpc GetSupportedAnalyticsModules(AnalyticsConfigRequest) returns (AnalyticsModuleDescriptionsResponse);
+  rpc GetAnalyticsModules(AnalyticsConfigRequest) returns (AnalyticsModulesResponse);
+  rpc CreateAnalyticsModule(AnalyticsModuleRequest) returns (OnvifMutationResponse);
+  rpc ModifyAnalyticsModule(AnalyticsModuleRequest) returns (OnvifMutationResponse);
+  rpc DeleteAnalyticsModule(AnalyticsModuleNameRequest) returns (OnvifMutationResponse);
+
+  rpc GetSupportedRules(AnalyticsConfigRequest) returns (AnalyticsModuleDescriptionsResponse);
+  rpc GetRules(AnalyticsConfigRequest) returns (AnalyticsModulesResponse);
+  rpc CreateRule(AnalyticsModuleRequest) returns (OnvifMutationResponse);
+  rpc ModifyRule(AnalyticsModuleRequest) returns (OnvifMutationResponse);
+  rpc DeleteRule(AnalyticsModuleNameRequest) returns (OnvifMutationResponse);
+
+  // Cheap "can this camera draw boxes right now" probe for the monitor's overlay button. Answers
+  // from cache and probes missing cameras in the background, so a full monitor never waits on a
+  // round of device round-trips.
+  rpc GetMetadataStates(MetadataStatesRequest) returns (MetadataStatesResponse);
+
+  // Raw Scene Description documents media_server reassembled off the camera's RTSP metadata track.
+  // Parsed here, where the rest of the ONVIF schema knowledge already lives, then forwarded to
+  // VmsAnalyticsSingleton as normalized boxes (PushOnvifDetections in vms_analytics.proto).
+  // Batched by the caller so a chatty camera costs a few RPCs per second, not one per document.
+  rpc PushMetadataDocuments(MetadataDocumentBatch) returns (PushMetadataDocumentsResponse);
 }
 
 service PtzService {
@@ -124,6 +166,8 @@ message GetDeviceCapabilitiesResponse {
   bool   has_digital_inputs = 7;
   // Camera keeps its own recordings (Profile G search + replay); gates the Edge Archive UI.
   bool   has_edge_recording = 8;
+  // Camera runs its own analytics engine (ver20 Analytics service); gates the Metadata tab.
+  bool   has_analytics      = 9;
 }
 
 message ImagingSettingsRequest {
@@ -702,3 +746,163 @@ message EdgeMutationResponse {
   bool   success = 1;
   string error   = 2;
 }
+
+// ── Profile M: metadata / analytics configuration ─────────────────────────────
+
+message OnvifMutationResponse {
+  bool   success = 1;
+  string error   = 2;
+}
+
+message MetadataConfig {
+  string token            = 1;
+  string name             = 2;
+  // The one flag that matters for the live overlay: without it the metadata track carries no
+  // Scene Description, only events/PTZ status.
+  bool   analytics        = 3;
+  bool   ptz_status       = 4;
+  bool   events           = 5;
+  bool   geo_location     = 6;
+  bool   shape_polygon    = 7;
+  string session_timeout  = 8;
+  string compression_type = 9;
+  // Profile tokens this configuration is currently attached to.
+  repeated string attached_profile_tokens = 10;
+}
+
+message MetadataConfigsResponse {
+  repeated MetadataConfig configs = 1;
+  string error = 2;
+}
+
+message MetadataConfigOptionsRequest {
+  string source_id            = 1;
+  string configuration_token  = 2;
+}
+
+message MetadataConfigOptionsResponse {
+  bool   supports_ptz_status       = 1;
+  repeated string compression_types = 2;
+  string error                     = 3;
+}
+
+message SetMetadataConfigRequest {
+  string source_id           = 1;
+  string configuration_token = 2;
+  // Only the fields present are changed; the rest are read back from the camera and re-sent
+  // unchanged, because some firmwares treat an omitted optional field as "reset to default".
+  optional bool   analytics        = 3;
+  optional bool   ptz_status       = 4;
+  optional string session_timeout  = 5;
+  optional string compression_type = 6;
+}
+
+message AttachConfigRequest {
+  string source_id           = 1;
+  string profile_token       = 2;
+  string configuration_token = 3;
+}
+
+message AnalyticsConfig {
+  string token = 1;
+  string name  = 2;
+  // Profile tokens this configuration is currently attached to.
+  repeated string attached_profile_tokens = 3;
+}
+
+message AnalyticsConfigsResponse {
+  repeated AnalyticsConfig configs = 1;
+  string error = 2;
+}
+
+message AnalyticsConfigRequest {
+  string source_id           = 1;
+  string configuration_token = 2;
+}
+
+message AnalyticsSimpleItem {
+  string name  = 1;
+  string value = 2;
+}
+
+message AnalyticsModule {
+  string name = 1;
+  string type = 2;
+  repeated AnalyticsSimpleItem simple_items = 3;
+  // Structured parameters (polygons, line segments, schedules) as raw XML. They have no fixed
+  // schema across vendors, so they travel untouched rather than being modelled here — a Modify
+  // that dropped what it did not understand would silently reconfigure the camera.
+  repeated string element_items_xml = 4;
+}
+
+message AnalyticsModulesResponse {
+  repeated AnalyticsModule modules = 1;
+  string error = 2;
+}
+
+message AnalyticsParameterDescription {
+  string name = 1;
+  string type = 2;
+}
+
+// How a camera lays out its motion-detection cells. An ActiveCells bitmask is a flat run of bits,
+// and only these two numbers say which cell is where — without them a UI cannot honestly draw a
+// grid. Optional in ONVIF and absent on many firmwares, hence zero when unknown.
+message AnalyticsCellLayout {
+  int32 columns = 1;
+  int32 rows    = 2;
+}
+
+message AnalyticsModuleDescription {
+  string type          = 1;
+  string max_instances = 2;
+  repeated AnalyticsParameterDescription parameters = 3;
+  // Set only for types with a cell mask, and only when the camera reveals it.
+  optional AnalyticsCellLayout cell_layout = 4;
+}
+
+message AnalyticsModuleDescriptionsResponse {
+  repeated AnalyticsModuleDescription descriptions = 1;
+  string error = 2;
+}
+
+message AnalyticsModuleRequest {
+  string source_id           = 1;
+  string configuration_token = 2;
+  AnalyticsModule module     = 3;
+}
+
+message AnalyticsModuleNameRequest {
+  string source_id           = 1;
+  string configuration_token = 2;
+  string module_name         = 3;
+}
+
+message MetadataStatesRequest {
+  repeated string camera_ids = 1;
+}
+
+message MetadataStatesResponse {
+  // camera_id -> "this camera is currently configured to stream object boxes". Cameras still
+  // being probed are simply absent rather than reported as false, so the caller can ask again.
+  map<string, bool> bbox_capable = 1;
+}
+
+// One reassembled ONVIF metadata document, exactly as it came off the wire.
+message MetadataDocument {
+  string camera_id = 1;
+  string stream_name = 2;
+  // When media_server finished reassembling the document.
+  google.protobuf.Timestamp received_at = 3;
+  string xml = 4;
+  // Video track resolution, so the parser can normalize cameras that emit raw pixel coordinates
+  // without a tt:Transformation (Hikvision does this). Zero when unknown.
+  int32 frame_width = 5;
+  int32 frame_height = 6;
+}
+
+message MetadataDocumentBatch {
+  repeated MetadataDocument documents = 1;
+}
+
+message PushMetadataDocumentsResponse {}

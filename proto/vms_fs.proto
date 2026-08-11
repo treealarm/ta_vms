@@ -101,6 +101,11 @@ message RetainEventRequest {
   optional string stream_name = 5;
   // Re-identification label of the physical object (analytics only); stored on the episode row.
   optional string object_id = 6;
+  // What actually set the alarm off, in the producer's own words — the ONVIF topic
+  // ("tns1:RuleEngine/CellMotionDetector/Motion") for an ONVIF alarm. Without it an episode says
+  // only that something happened on a camera, which is not enough to tell motion from tamper when
+  // several filters are armed at once.
+  optional string trigger = 8;
 }
 
 message GetRecordingsFromToRequest {
@@ -217,6 +222,7 @@ message RetentionEventRow {
   optional string stream_name = 5;
   string event_uuid = 6;
   optional string object_id = 7;
+  optional string trigger = 8;
 }
 
 message ListRetentionEventsRequest {

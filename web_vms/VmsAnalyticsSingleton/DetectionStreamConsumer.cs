@@ -98,7 +98,7 @@ public sealed class DetectionStreamConsumer(
       cameraId, evt.TrackId, DetectionKinds.ToDbString(evt.Kind), evt.Confidence,
       evt.Bbox?.X ?? 0, evt.Bbox?.Y ?? 0, evt.Bbox?.Width ?? 0, evt.Bbox?.Height ?? 0,
       detectedAt, evt.HasRecognizedText ? evt.RecognizedText : null, persisted,
-      objectResolver.Peek(cameraId, evt.TrackId)));
+      objectResolver.Peek(cameraId, evt.TrackId), Source: "cv"));
 
     if (!persisted)
       return;

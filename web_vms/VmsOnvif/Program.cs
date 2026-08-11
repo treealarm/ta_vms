@@ -27,6 +27,8 @@ builder.Services.AddSingleton(sp => new OnvifServiceImpl(
   sp.GetRequiredService<OnvifEventSubscriptionService>(),
   sp.GetRequiredService<ObservedTopicsStore>(),
   sp.GetRequiredService<OnvifSettingsService>(),
+  sp.GetRequiredService<MetadataStateCache>(),
+  sp.GetRequiredService<VmsOnvif.Onvif.OnvifMetadataIngestor>(),
   cameraActorType,
   sp.GetRequiredService<ILogger<OnvifServiceImpl>>()));
 builder.Services.AddSingleton(sp => new PtzServiceImpl(
@@ -43,7 +45,28 @@ builder.Services.AddSingleton(_ =>
 builder.Services.AddSingleton(sp =>
   new ServerPairRegistry(sp.GetRequiredService<CfgService.CfgServiceClient>(), ownServerId));
 
+builder.Services.AddSingleton<MetadataStateCache>();
+
+// Scene Description forwarding. Optional on purpose (the CLAUDE.md exception for feature-gating
+// variables): without an analytics service there is nothing to send camera-reported boxes to, and
+// that must not stop VmsOnvif from serving PTZ, events and settings. Mirrors how
+// VmsAnalyticsSingleton treats DAPR_ANALYTICS_WORKER_APP_IDS.
+var analyticsAppId = Environment.GetEnvironmentVariable("DAPR_ANALYTICS_APP_ID");
+Vms.Analytics.VmsAnalyticsService.VmsAnalyticsServiceClient? analyticsClient =
+  string.IsNullOrWhiteSpace(analyticsAppId)
+    ? null
+    : new Vms.Analytics.VmsAnalyticsService.VmsAnalyticsServiceClient(
+        DaprClient.CreateInvocationInvoker(analyticsAppId));
+builder.Services.AddSingleton(sp => new VmsOnvif.Onvif.OnvifMetadataIngestor(
+  analyticsClient, sp.GetRequiredService<ILogger<VmsOnvif.Onvif.OnvifMetadataIngestor>>()));
+// Same gate, same target: cameras that cannot draw boxes still have events worth showing.
+builder.Services.AddSingleton(sp => new VmsOnvif.Onvif.OnvifLiveEventForwarder(
+  analyticsClient, sp.GetRequiredService<ILogger<VmsOnvif.Onvif.OnvifLiveEventForwarder>>()));
+// Also hosted: it now batches on its own loop instead of firing an RPC per event.
+builder.Services.AddHostedService(sp =>
+  sp.GetRequiredService<VmsOnvif.Onvif.OnvifLiveEventForwarder>());
 builder.Services.AddSingleton<OnvifSettingsService>();
+builder.Services.AddSingleton<AlarmEpisodeTracker>();
 builder.Services.AddSingleton<OnvifFilterCache>();
 builder.Services.AddSingleton<CameraArmedCache>();
 builder.Services.AddSingleton<ObservedTopicsStore>();
@@ -53,6 +76,8 @@ builder.Services.AddSingleton(sp => new OnvifEventSubscriptionService(
   sp.GetRequiredService<OnvifFilterCache>(),
   sp.GetRequiredService<CameraArmedCache>(),
   sp.GetRequiredService<ObservedTopicsStore>(),
+  sp.GetRequiredService<VmsOnvif.Onvif.OnvifLiveEventForwarder>(),
+  sp.GetRequiredService<AlarmEpisodeTracker>(),
   ownServerId,
   sp.GetRequiredService<ILogger<OnvifEventSubscriptionService>>()));
 builder.Services.AddHostedService(sp => sp.GetRequiredService<OnvifEventSubscriptionService>());

@@ -17,6 +17,8 @@ public sealed class OnvifEventSubscriptionService(
   OnvifFilterCache filterCache,
   CameraArmedCache armedCache,
   ObservedTopicsStore observedTopics,
+  VmsOnvif.Onvif.OnvifLiveEventForwarder liveEvents,
+  AlarmEpisodeTracker episodes,
   string ownServerId,
   ILogger<OnvifEventSubscriptionService> logger) : BackgroundService
 {
@@ -282,8 +284,10 @@ public sealed class OnvifEventSubscriptionService(
 
       observedTopics.Record(cameraId, topic);
 
+
       // "Initialized" messages are a state snapshot the camera replays on every (re-)subscribe,
-      // not a new state transition — skip alarm triggering to avoid duplicate alarms on resubscribe.
+      // not a new state transition — skip alarm triggering to avoid duplicate alarms on resubscribe,
+      // and skip the live banner for the same reason.
       if (msg.Message?.GetAttribute("PropertyOperation") == "Initialized")
       {
         logger.LogDebug(
@@ -291,11 +295,19 @@ public sealed class OnvifEventSubscriptionService(
         continue;
       }
 
-      _ = Task.Run(() => CheckAndTriggerAlarmAsync(cameraId, topic, payload));
+      _ = Task.Run(() => HandleEventAsync(cameraId, topic, payload));
     }
   }
 
-  private async Task CheckAndTriggerAlarmAsync(string cameraId, string topic, string payload)
+  /// One event, decided once. The camera's alarm filters are what the operator has declared worth
+  /// noticing on this camera, so they govern the monitor banner exactly as they govern retention —
+  /// matching them once here and handing the result to both keeps the two from drifting apart, and
+  /// spares a second cache read per event.
+  ///
+  /// The two differ in one respect only: retention additionally requires the camera to be armed,
+  /// because it writes to disk. Showing an operator what the camera just said does not, so a
+  /// disarmed camera still gets its banners.
+  private async Task HandleEventAsync(string cameraId, string topic, string payload)
   {
     try
     {
@@ -307,12 +319,23 @@ public sealed class OnvifEventSubscriptionService(
         "Camera {CameraId}: checking {Count} filter(s) against topic='{Topic}'",
         cameraId, filters.Count, topic);
 
-      if (filters.Count == 0) return;
-
       var matched = filters.FirstOrDefault(f =>
         topic.Contains(f.FilterText, StringComparison.OrdinalIgnoreCase) &&
         (string.IsNullOrEmpty(f.TextFilter) ||
          payload.Contains(f.TextFilter, StringComparison.OrdinalIgnoreCase)));
+
+      // Parsed once and reused by everything below — the banner, the clearing-edge check and the
+      // episode key all need it, and the XML is the only per-event cost of any size here.
+      var parsed = VmsOnvif.Onvif.OnvifEventPayload.Parse(payload);
+
+      // With no filters configured at all the operator has declared nothing, so everything is
+      // shown: a camera announces topics you cannot guess, and seeing them is how you learn what
+      // to write a filter for. Once even one filter exists, it is the whole answer.
+      if (filters.Count == 0 || matched != null)
+        liveEvents.Forward(cameraId, topic, parsed.Active);
+
+      // Nothing declared means nothing to retain either — the banner above is the whole effect.
+      if (filters.Count == 0) return;
 
       if (matched == null)
       {
@@ -333,16 +356,49 @@ public sealed class OnvifEventSubscriptionService(
         return;
       }
 
-      logger.LogInformation(
-        "Camera {CameraId}: ONVIF alarm triggered by filter '{Filter}'",
-        cameraId, matched.FilterText);
+      // A property event carries its own state, and the clearing edge is not an alarm: motion
+      // stopping must not start recording. It closes the episode so the next start opens a new one.
+      var timeout = TimeSpan.FromSeconds(Math.Max(1, matched.TimeoutSeconds));
+      var episodeKey = EpisodeKey(cameraId, matched.FilterText, topic, parsed.SourceKey);
+
+      if (!parsed.Active)
+      {
+        episodes.Clear(episodeKey);
+        logger.LogDebug(
+          "Camera {CameraId}: filter '{Filter}' matched a clearing edge — episode closed",
+          cameraId, matched.FilterText);
+        return;
+      }
+
+      // Repeats of a condition that is already alarming cost nothing here: the episode is extended
+      // in memory, and the archive's window is renewed only as it approaches its end.
+      var decision = episodes.Evaluate(episodeKey, timeout, DateTime.UtcNow);
+      if (!decision.Send)
+        return;
+
+      if (decision.IsNewEpisode)
+      {
+        logger.LogInformation(
+          "Camera {CameraId}: ONVIF alarm triggered by filter '{Filter}'",
+          cameraId, matched.FilterText);
+      }
+      else
+      {
+        logger.LogDebug(
+          "Camera {CameraId}: extending alarm episode {EventId}", cameraId, decision.EventId);
+      }
 
       var req = new RetainEventRequest
       {
-        EventId        = $"onvif-{Guid.NewGuid()}",
+        // Stable for the life of the episode, so VmsFs extends the retention window it already has
+        // instead of opening a new one for every announcement of the same motion.
+        EventId        = decision.EventId,
         CameraId       = cameraId,
         AlarmStartTs   = Timestamp.FromDateTime(DateTime.UtcNow),
         TimeoutSeconds = (uint)Math.Max(1, matched.TimeoutSeconds),
+        // The camera's own words for what happened. An episode that records only "something on this
+        // camera" cannot be told from a tamper alarm once several filters are armed at once.
+        Trigger        = topic,
       };
 
       // No lookup of the camera's server: this instance only ever subscribes to its own node's
@@ -355,9 +411,15 @@ public sealed class OnvifEventSubscriptionService(
     }
     catch (Exception ex)
     {
-      logger.LogError(ex, "CheckAndTriggerAlarmAsync failed for {CameraId}", cameraId);
+      logger.LogError(ex, "HandleEventAsync failed for {CameraId}", cameraId);
     }
   }
+
+  /// What makes two events "the same condition": the camera, the filter that matched, the topic,
+  /// and the event's own Source items — the last of these is what tells two channels of a
+  /// multi-channel encoder apart when they share a topic.
+  private static string EpisodeKey(string cameraId, string filterText, string topic, string sourceKey)
+    => $"{cameraId}|{filterText}|{topic}|{sourceKey}";
 
   private static string ExtractTopicText(TopicExpressionType? topic)
   {

@@ -285,7 +285,8 @@
     "sourceAnalytics": "Analítica",
     "sourceOnvif": "ONVIF",
     "sourceOther": "Otro",
-    "detections": "Detecciones"
+    "detections": "Detecciones",
+    "trigger": "Disparador"
   },
   "stream": {
     "newStream": "Nuevo flujo en {{camera}}",
@@ -311,7 +312,8 @@
   "streamOverride": {
     "override": "anulación",
     "clearOverride": "Limpiar anulación",
-    "overridePlaceholder": "Anular…"
+    "overridePlaceholder": "Anular…",
+    "appliesToAllStreams": "Se aplica a todos los flujos de esta cámara"
   },
   "monitors": {
     "title": "Monitores",
@@ -440,7 +442,8 @@
     "copiedRtsp": "¡Copiado!",
     "retentionActive": "Retención activa",
     "cameraDisabledTip": "Cámara desactivada — armar/PTZ no disponible",
-    "scheduleActive": "Grabando por horario — prevalece sobre el perfil del flujo"
+    "scheduleActive": "Grabando por horario — prevalece sobre el perfil del flujo",
+    "onvifEvent": "{{label}}"
   },
   "recordings": {
     "earlier": "Anterior",
@@ -451,7 +454,8 @@
     "endTime": "Fin",
     "clips": "Clips",
     "jumpToDateTime": "Ir a fecha / hora",
-    "recovered": "Recuperado de la cámara"
+    "recovered": "Recuperado de la cámara",
+    "archiveEdge": "No hay más grabaciones"
   },
   "onvifSubs": {
     "description": "Las cámaras de esta lista reciben eventos ONVIF. Activa el guardia para disparar grabaciones de retención con los filtros de alarma.",
@@ -570,7 +574,39 @@
     "contrast": "Contraste",
     "colorSaturation": "Saturación de color",
     "sharpness": "Nitidez",
-    "noImagingSupport": "Esta cámara no reporta ajustes de imagen disponibles"
+    "noImagingSupport": "Esta cámara no reporta ajustes de imagen disponibles",
+    "metadataTab": "Metadatos",
+    "metadataHint": "La cámara transmite recuadros de objetos solo si el perfil del que se toma el flujo tiene adjuntas una configuración de metadatos con Analítica activada Y una configuración de analítica.",
+    "metadataProfile": "Perfil multimedia",
+    "metadataConfigsGroup": "Configuraciones de metadatos",
+    "metadataAnalyticsGroup": "Configuración de analítica",
+    "metadataModulesGroup": "Módulos de analítica",
+    "metadataRulesGroup": "Reglas",
+    "metadataAnalytics": "Analítica (recuadros de objetos)",
+    "metadataPtzStatus": "Estado PTZ",
+    "metadataEvents": "Eventos",
+    "metadataShapePolygon": "Polígonos",
+    "metadataAttach": "Adjuntar al perfil",
+    "metadataDetach": "Desadjuntar",
+    "metadataSave": "Guardar",
+    "metadataAdd": "Añadir",
+    "metadataModuleType": "Tipo",
+    "metadataModuleName": "Nombre",
+    "metadataNoConfigs": "La cámara no reporta configuraciones de metadatos",
+    "metadataNoAnalyticsConfigs": "La cámara no reporta configuraciones de analítica",
+    "metadataNoModules": "Ninguno configurado",
+    "metadataNoParameters": "Sin parámetros simples",
+    "metadataStructuredParams": "{{count}} parámetro(s) estructurado(s) conservado(s) sin cambios",
+    "metadataStreamedBy": "transmitido como \"{{streams}}\"",
+    "metadataProfileNotStreamed": "El VMS no toma este perfil de esta cámara. Una configuración de metadatos adjunta aquí no llegará al grabador y no aparecerán recuadros en el monitor: elija un perfil marcado como transmitido.",
+    "metadataActiveCells": "Rejilla de movimiento",
+    "metadataCellsActive": "{{active}} de {{total}} bits activos",
+    "metadataCellsAll": "Todas",
+    "metadataCellsNone": "Ninguna",
+    "metadataCellNumber": "Celda {{n}}",
+    "metadataCellsNoLayout": "La cámara no informa la disposición de la rejilla; las celdas se muestran en su propio orden.",
+    "metadataCellAt": "Fila {{row}}, columna {{col}}",
+    "metadataCellsLayout": "Rejilla {{columns}} × {{rows}}, según informa la cámara"
   },
   "wall": {
     "modeLive": "En vivo",

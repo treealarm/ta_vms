@@ -49,4 +49,32 @@ public record AnalyticsActivityEntryDto
   public bool Persisted { get; init; }
   /// <summary>Re-identification label of the physical object, when resolved for this track.</summary>
   public string? ObjectId { get; init; }
+  /// <summary>
+  /// Where the box came from: "cv" (the video_a detector) or "onvif" (the camera's own Scene
+  /// Description). The two number their tracks independently, so the overlay has to key on this as
+  /// well or a camera running both would have them overwrite each other.
+  /// </summary>
+  public string Source { get; init; } = "cv";
+  /// <summary>
+  /// The producer's own word for the class when it says more than <see cref="Kind"/> does —
+  /// "Truck" under vehicle, "Bag" under unknown. ONVIF lets a camera report free-form classes
+  /// alongside its five-value enum; folding those into the enum would throw the detail away.
+  /// </summary>
+  public string? Label { get; init; }
+}
+
+/// <summary>
+/// An ONVIF event on its way to the live monitor. Carries no geometry: cameras whose analytics is
+/// cell motion or tamper have nothing to draw, and the event is the whole statement they can make.
+/// </summary>
+public record LiveCameraEventDto
+{
+  public required string CameraId { get; init; }
+  /// <summary>Full ONVIF topic, matching what the alarm filters are written against.</summary>
+  public string Topic { get; init; } = string.Empty;
+  /// <summary>Short name from the last topic segment ("Motion", "Tamper").</summary>
+  public string Label { get; init; } = string.Empty;
+  /// <summary>True when the condition started, false when it cleared.</summary>
+  public bool Active { get; init; }
+  public DateTime ReceivedAt { get; init; }
 }

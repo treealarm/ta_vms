@@ -14,6 +14,8 @@ public partial class OnvifServiceImpl(
   OnvifEventSubscriptionService subscriptionService,
   ObservedTopicsStore observedTopics,
   OnvifSettingsService settingsService,
+  MetadataStateCache metadataStateCache,
+  VmsOnvif.Onvif.OnvifMetadataIngestor metadataIngestor,
   string cameraActorType,
   ILogger<OnvifServiceImpl> logger) : OnvifService.OnvifServiceBase
 {
@@ -423,6 +425,7 @@ public partial class OnvifServiceImpl(
       HasRelayOutputs  = hasRelayOutputsTask.Result,
       HasDigitalInputs = caps?.HasDigitalInputs ?? false,
       HasEdgeRecording = caps?.HasEdgeRecording ?? false,
+      HasAnalytics     = caps?.HasAnalytics ?? false,
     };
   }
 

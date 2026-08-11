@@ -12,6 +12,7 @@ public static class AnalyticsKindMapper
     DetectionKind.Face => "face",
     DetectionKind.Vehicle => "vehicle",
     DetectionKind.LicensePlate => "license_plate",
+    DetectionKind.Animal => "animal",
     _ => "unknown",
   };
 }

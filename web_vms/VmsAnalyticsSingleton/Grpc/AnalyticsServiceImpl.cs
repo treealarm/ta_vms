@@ -12,9 +12,62 @@ public sealed class AnalyticsServiceImpl(
   IDbContextFactory<AnalyticsDbContext> dbFactory,
   AnalyticsActivityLog activityLog,
   LiveDetectionBroadcaster liveBroadcaster,
+  LiveEventBroadcaster liveEventBroadcaster,
   CameraStorageResolver storageResolver)
   : VmsAnalyticsService.VmsAnalyticsServiceBase
 {
+  // Boxes the camera reported itself, already parsed and normalized by VmsOnvif (which owns the
+  // ONVIF schema knowledge). Straight into the same fan-out the CV pipeline feeds — nothing is
+  // stored, and the reply carries nothing, because the caller never retries.
+  public override Task<PushOnvifDetectionsResponse> PushOnvifDetections(
+    OnvifDetectionBatch request, ServerCallContext context)
+  {
+    foreach (var d in request.Detections)
+    {
+      liveBroadcaster.Publish(new LiveDetection(
+        d.CameraId, d.TrackId, DetectionKinds.ToDbString(d.Kind), d.Confidence,
+        d.Bbox?.X ?? 0, d.Bbox?.Y ?? 0, d.Bbox?.Width ?? 0, d.Bbox?.Height ?? 0,
+        d.DetectedAt?.ToDateTime() ?? DateTime.UtcNow,
+        d.HasPlateText ? d.PlateText : null,
+        Persisted: false, ObjectId: null, Source: "onvif",
+        Label: d.HasLabel ? d.Label : null));
+    }
+    return Task.FromResult(new PushOnvifDetectionsResponse());
+  }
+
+  // ONVIF events forwarded by VmsOnvif. Same relay shape as PushOnvifDetections: nothing is
+  // stored, and the reply is empty because the caller is fire-and-forget.
+  public override Task<PushOnvifEventsResponse> PushOnvifEvents(
+    OnvifEventBatch request, ServerCallContext context)
+  {
+    foreach (var e in request.Events)
+    {
+      liveEventBroadcaster.Publish(new LiveCameraEvent(
+        e.CameraId, e.Topic, e.Label, e.Active,
+        e.ReceivedAt?.ToDateTime() ?? DateTime.UtcNow));
+    }
+    return Task.FromResult(new PushOnvifEventsResponse());
+  }
+
+  public override async Task StreamCameraEvents(
+    StreamCameraEventsRequest request,
+    IServerStreamWriter<LiveEvent> responseStream,
+    ServerCallContext context)
+  {
+    var cameraId = string.IsNullOrEmpty(request.CameraId) ? null : request.CameraId;
+    await foreach (var e in liveEventBroadcaster.Subscribe(cameraId, context.CancellationToken))
+    {
+      await responseStream.WriteAsync(new LiveEvent
+      {
+        CameraId   = e.CameraId,
+        Topic      = e.Topic,
+        Label      = e.Label,
+        Active     = e.Active,
+        ReceivedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.ReceivedAt, DateTimeKind.Utc)),
+      });
+    }
+  }
+
   public override Task<GetAnalyticsActivityResponse> GetAnalyticsActivity(
     GetAnalyticsActivityRequest request, ServerCallContext context)
   {
@@ -47,9 +100,11 @@ public sealed class AnalyticsServiceImpl(
         Bbox       = new BoundingBox { X = e.BboxX, Y = e.BboxY, Width = e.BboxWidth, Height = e.BboxHeight },
         DetectedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.DetectedAt, DateTimeKind.Utc)),
         Persisted  = e.Persisted,
+        Source     = e.Source,
       };
       if (e.PlateText is not null) entry.PlateText = e.PlateText;
       if (e.ObjectId is not null) entry.ObjectId = e.ObjectId;
+      if (e.Label is not null) entry.Label = e.Label;
       await responseStream.WriteAsync(entry);
     }
   }
@@ -66,6 +121,9 @@ public sealed class AnalyticsServiceImpl(
       DetectedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.DetectedAt, DateTimeKind.Utc)),
       CropJpeg   = Google.Protobuf.ByteString.CopyFrom(e.CropJpeg),
       Persisted  = e.Persisted,
+      // The ring buffer only ever holds CV detections — ONVIF metadata is published straight to
+      // the live overlay and never recorded here.
+      Source     = "cv",
     };
     if (e.PlateText is not null) entry.PlateText = e.PlateText;
     return entry;

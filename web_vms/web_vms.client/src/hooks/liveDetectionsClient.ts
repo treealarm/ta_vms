@@ -1,4 +1,4 @@
-import type { AnalyticsActivityEntryDto } from '../dto/dtos'
+import type { AnalyticsActivityEntryDto, AnalyticsDetectionSource } from '../dto/dtos'
 
 /** A detection ready to draw: the DTO plus a fade multiplier in [0,1] recomputed as it ages out. */
 export type LiveDetection = AnalyticsActivityEntryDto & { opacity: number }
@@ -7,21 +7,30 @@ type StoredDetection = AnalyticsActivityEntryDto & { receivedAt: number }
 type Listener = (detections: LiveDetection[]) => void
 
 // How long a detection stays on screen after its last update, and how long it fades before that.
-const TTL_MS = 1500
+// The CV detector re-emits a live track several times a second, so 1.5 s means "the detector went
+// quiet". A camera's own metadata can legitimately arrive as slowly as once a second, and the same
+// budget there would make every box blink between updates — hence the longer grace for onvif.
+const TTL_BY_SOURCE: Record<AnalyticsDetectionSource, number> = { cv: 1500, onvif: 3000 }
+const DEFAULT_TTL_MS = 1500
 const FADE_MS = 500
 const TICK_MS = 120
 const RECONNECT_MS = 2000
 
-function opacityFor(receivedAt: number, now: number): number {
+const ttlFor = (source: AnalyticsDetectionSource | undefined): number =>
+  (source && TTL_BY_SOURCE[source]) || DEFAULT_TTL_MS
+
+function opacityFor(receivedAt: number, now: number, ttl: number): number {
   const age = now - receivedAt
-  if (age <= TTL_MS - FADE_MS) return 1
-  if (age >= TTL_MS) return 0
-  return (TTL_MS - age) / FADE_MS
+  if (age <= ttl - FADE_MS) return 1
+  if (age >= ttl) return 0
+  return (ttl - age) / FADE_MS
 }
 
-// A detection's identity is (track, kind): a person and the face on the same track share trackId
-// but are distinct boxes.
-const keyOf = (d: { trackId: number; kind: string }) => `${d.trackId}:${d.kind}`
+// A detection's identity is (source, track, kind): a person and the face on the same track share
+// trackId but are distinct boxes, and the CV detector and the camera number their tracks
+// independently, so a camera running both would otherwise have them collide.
+const keyOf = (d: { trackId: number; kind: string; source: AnalyticsDetectionSource }) =>
+  `${d.source}:${d.trackId}:${d.kind}`
 
 // One process-wide SSE connection to /api/analytics/live carries detections for ALL cameras; each
 // camera overlay subscribes to just its slice. This is deliberately a singleton, not a per-camera
@@ -66,7 +75,7 @@ class LiveDetectionsClient {
     const now = performance.now()
     const out: LiveDetection[] = []
     for (const d of m.values()) {
-      const opacity = opacityFor(d.receivedAt, now)
+      const opacity = opacityFor(d.receivedAt, now, ttlFor(d.source))
       if (opacity > 0) out.push({ ...d, opacity })
     }
     return out
@@ -105,10 +114,11 @@ class LiveDetectionsClient {
       let fading = false
       for (const [k, d] of m) {
         const age = now - d.receivedAt
-        if (age > TTL_MS) {
+        const ttl = ttlFor(d.source)
+        if (age > ttl) {
           m.delete(k)
           changed = true
-        } else if (age > TTL_MS - FADE_MS) {
+        } else if (age > ttl - FADE_MS) {
           fading = true
         }
       }

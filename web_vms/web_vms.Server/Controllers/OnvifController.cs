@@ -339,6 +339,7 @@ public class OnvifController(
       hasAudio         = response.HasAudio,
       hasRelayOutputs  = response.HasRelayOutputs,
       hasDigitalInputs = response.HasDigitalInputs,
+      hasAnalytics     = response.HasAnalytics,
     });
   }
 
@@ -581,6 +582,277 @@ public class OnvifController(
       lastSeen  = t.LastSeen,
     }));
   }
+
+  // ── Profile M: metadata / analytics ──────────────────────────────────────
+  // Reads carry the device's own error text in `error` instead of failing the request, so the tab
+  // can say "this camera cannot do it" rather than showing a generic 502.
+
+  [HttpGet("cameras/{cameraId}/metadata-configs")]
+  public async Task<IActionResult> GetMetadataConfigs(string cameraId, CancellationToken ct)
+  {
+    var resp = await (await router.OnvifAsync(cameraId, ct)).GetMetadataConfigsAsync(
+      new CameraRequest { SourceId = cameraId }, Options(ct));
+    return Ok(new
+    {
+      error   = resp.Error,
+      configs = resp.Configs.Select(c => new
+      {
+        token                 = c.Token,
+        name                  = c.Name,
+        analytics             = c.Analytics,
+        ptzStatus             = c.PtzStatus,
+        events                = c.Events,
+        geoLocation           = c.GeoLocation,
+        shapePolygon          = c.ShapePolygon,
+        sessionTimeout        = c.SessionTimeout,
+        compressionType       = c.CompressionType,
+        attachedProfileTokens = c.AttachedProfileTokens,
+      }),
+    });
+  }
+
+  [HttpGet("cameras/{cameraId}/metadata-config-options")]
+  public async Task<IActionResult> GetMetadataConfigOptions(
+    string cameraId, [FromQuery] string configToken, CancellationToken ct)
+  {
+    var resp = await (await router.OnvifAsync(cameraId, ct)).GetMetadataConfigOptionsAsync(
+      new MetadataConfigOptionsRequest { SourceId = cameraId, ConfigurationToken = configToken },
+      Options(ct));
+    return Ok(new
+    {
+      supportsPtzStatus = resp.SupportsPtzStatus,
+      compressionTypes  = resp.CompressionTypes,
+      error             = resp.Error,
+    });
+  }
+
+  [HttpPut("cameras/{cameraId}/metadata-configs/{configToken}")]
+  public async Task<IActionResult> SetMetadataConfig(
+    string cameraId, string configToken, [FromBody] SetMetadataConfigBody body, CancellationToken ct)
+  {
+    var request = new SetMetadataConfigRequest { SourceId = cameraId, ConfigurationToken = configToken };
+    if (body.Analytics.HasValue) request.Analytics = body.Analytics.Value;
+    if (body.PtzStatus.HasValue) request.PtzStatus = body.PtzStatus.Value;
+    if (body.SessionTimeout != null) request.SessionTimeout = body.SessionTimeout;
+    if (body.CompressionType != null) request.CompressionType = body.CompressionType;
+
+    var resp = await (await router.OnvifAsync(cameraId, ct)).SetMetadataConfigAsync(request, Options(ct));
+    return Mutation(resp);
+  }
+
+  [HttpPost("cameras/{cameraId}/profiles/{profileToken}/metadata-config")]
+  public async Task<IActionResult> AttachMetadataConfig(
+    string cameraId, string profileToken, [FromQuery] string configToken, CancellationToken ct)
+  {
+    var resp = await (await router.OnvifAsync(cameraId, ct)).AttachMetadataConfigAsync(
+      Attach(cameraId, profileToken, configToken), Options(ct));
+    return Mutation(resp);
+  }
+
+  [HttpDelete("cameras/{cameraId}/profiles/{profileToken}/metadata-config")]
+  public async Task<IActionResult> DetachMetadataConfig(
+    string cameraId, string profileToken, [FromQuery] string configToken, CancellationToken ct)
+  {
+    var resp = await (await router.OnvifAsync(cameraId, ct)).DetachMetadataConfigAsync(
+      Attach(cameraId, profileToken, configToken), Options(ct));
+    return Mutation(resp);
+  }
+
+  [HttpGet("cameras/{cameraId}/analytics-configs")]
+  public async Task<IActionResult> GetAnalyticsConfigs(string cameraId, CancellationToken ct)
+  {
+    var resp = await (await router.OnvifAsync(cameraId, ct)).GetAnalyticsConfigsAsync(
+      new CameraRequest { SourceId = cameraId }, Options(ct));
+    return Ok(new
+    {
+      error   = resp.Error,
+      configs = resp.Configs.Select(c => new
+      {
+        token                 = c.Token,
+        name                  = c.Name,
+        attachedProfileTokens = c.AttachedProfileTokens,
+      }),
+    });
+  }
+
+  [HttpPost("cameras/{cameraId}/profiles/{profileToken}/analytics-config")]
+  public async Task<IActionResult> AttachAnalyticsConfig(
+    string cameraId, string profileToken, [FromQuery] string configToken, CancellationToken ct)
+  {
+    var resp = await (await router.OnvifAsync(cameraId, ct)).AttachAnalyticsConfigAsync(
+      Attach(cameraId, profileToken, configToken), Options(ct));
+    return Mutation(resp);
+  }
+
+  [HttpDelete("cameras/{cameraId}/profiles/{profileToken}/analytics-config")]
+  public async Task<IActionResult> DetachAnalyticsConfig(
+    string cameraId, string profileToken, [FromQuery] string configToken, CancellationToken ct)
+  {
+    var resp = await (await router.OnvifAsync(cameraId, ct)).DetachAnalyticsConfigAsync(
+      Attach(cameraId, profileToken, configToken), Options(ct));
+    return Mutation(resp);
+  }
+
+  [HttpGet("cameras/{cameraId}/analytics-modules")]
+  public async Task<IActionResult> GetAnalyticsModules(
+    string cameraId, [FromQuery] string configToken, CancellationToken ct)
+  {
+    var resp = await (await router.OnvifAsync(cameraId, ct)).GetAnalyticsModulesAsync(
+      AnalyticsConfig(cameraId, configToken), Options(ct));
+    return Ok(ModulesPayload(resp.Modules, resp.Error));
+  }
+
+  [HttpGet("cameras/{cameraId}/analytics-modules/supported")]
+  public async Task<IActionResult> GetSupportedAnalyticsModules(
+    string cameraId, [FromQuery] string configToken, CancellationToken ct)
+  {
+    var resp = await (await router.OnvifAsync(cameraId, ct)).GetSupportedAnalyticsModulesAsync(
+      AnalyticsConfig(cameraId, configToken), Options(ct));
+    return Ok(DescriptionsPayload(resp.Descriptions, resp.Error));
+  }
+
+  [HttpPost("cameras/{cameraId}/analytics-modules")]
+  public async Task<IActionResult> CreateAnalyticsModule(
+    string cameraId, [FromQuery] string configToken,
+    [FromBody] AnalyticsModuleBody body, CancellationToken ct)
+  {
+    var resp = await (await router.OnvifAsync(cameraId, ct)).CreateAnalyticsModuleAsync(
+      ModuleRequest(cameraId, configToken, body), Options(ct));
+    return Mutation(resp);
+  }
+
+  [HttpPut("cameras/{cameraId}/analytics-modules")]
+  public async Task<IActionResult> ModifyAnalyticsModule(
+    string cameraId, [FromQuery] string configToken,
+    [FromBody] AnalyticsModuleBody body, CancellationToken ct)
+  {
+    var resp = await (await router.OnvifAsync(cameraId, ct)).ModifyAnalyticsModuleAsync(
+      ModuleRequest(cameraId, configToken, body), Options(ct));
+    return Mutation(resp);
+  }
+
+  [HttpDelete("cameras/{cameraId}/analytics-modules/{moduleName}")]
+  public async Task<IActionResult> DeleteAnalyticsModule(
+    string cameraId, string moduleName, [FromQuery] string configToken, CancellationToken ct)
+  {
+    var resp = await (await router.OnvifAsync(cameraId, ct)).DeleteAnalyticsModuleAsync(
+      new AnalyticsModuleNameRequest
+      {
+        SourceId = cameraId, ConfigurationToken = configToken, ModuleName = moduleName,
+      }, Options(ct));
+    return Mutation(resp);
+  }
+
+  [HttpGet("cameras/{cameraId}/rules")]
+  public async Task<IActionResult> GetRules(
+    string cameraId, [FromQuery] string configToken, CancellationToken ct)
+  {
+    var resp = await (await router.OnvifAsync(cameraId, ct)).GetRulesAsync(
+      AnalyticsConfig(cameraId, configToken), Options(ct));
+    return Ok(ModulesPayload(resp.Modules, resp.Error));
+  }
+
+  [HttpGet("cameras/{cameraId}/rules/supported")]
+  public async Task<IActionResult> GetSupportedRules(
+    string cameraId, [FromQuery] string configToken, CancellationToken ct)
+  {
+    var resp = await (await router.OnvifAsync(cameraId, ct)).GetSupportedRulesAsync(
+      AnalyticsConfig(cameraId, configToken), Options(ct));
+    return Ok(DescriptionsPayload(resp.Descriptions, resp.Error));
+  }
+
+  [HttpPost("cameras/{cameraId}/rules")]
+  public async Task<IActionResult> CreateRule(
+    string cameraId, [FromQuery] string configToken,
+    [FromBody] AnalyticsModuleBody body, CancellationToken ct)
+  {
+    var resp = await (await router.OnvifAsync(cameraId, ct)).CreateRuleAsync(
+      ModuleRequest(cameraId, configToken, body), Options(ct));
+    return Mutation(resp);
+  }
+
+  [HttpPut("cameras/{cameraId}/rules")]
+  public async Task<IActionResult> ModifyRule(
+    string cameraId, [FromQuery] string configToken,
+    [FromBody] AnalyticsModuleBody body, CancellationToken ct)
+  {
+    var resp = await (await router.OnvifAsync(cameraId, ct)).ModifyRuleAsync(
+      ModuleRequest(cameraId, configToken, body), Options(ct));
+    return Mutation(resp);
+  }
+
+  [HttpDelete("cameras/{cameraId}/rules/{ruleName}")]
+  public async Task<IActionResult> DeleteRule(
+    string cameraId, string ruleName, [FromQuery] string configToken, CancellationToken ct)
+  {
+    var resp = await (await router.OnvifAsync(cameraId, ct)).DeleteRuleAsync(
+      new AnalyticsModuleNameRequest
+      {
+        SourceId = cameraId, ConfigurationToken = configToken, ModuleName = ruleName,
+      }, Options(ct));
+    return Mutation(resp);
+  }
+
+  private static AttachConfigRequest Attach(string cameraId, string profileToken, string configToken) =>
+    new() { SourceId = cameraId, ProfileToken = profileToken, ConfigurationToken = configToken };
+
+  private static AnalyticsConfigRequest AnalyticsConfig(string cameraId, string configToken) =>
+    new() { SourceId = cameraId, ConfigurationToken = configToken };
+
+  private static AnalyticsModuleRequest ModuleRequest(
+    string cameraId, string configToken, AnalyticsModuleBody body)
+  {
+    var module = new Vms.Onvif.AnalyticsModule { Name = body.Name, Type = body.Type };
+    module.SimpleItems.AddRange((body.SimpleItems ?? [])
+      .Select(i => new AnalyticsSimpleItem { Name = i.Name, Value = i.Value }));
+    module.ElementItemsXml.AddRange(body.ElementItemsXml ?? []);
+    return new AnalyticsModuleRequest
+    {
+      SourceId = cameraId, ConfigurationToken = configToken, Module = module,
+    };
+  }
+
+  private static object ModulesPayload(IEnumerable<Vms.Onvif.AnalyticsModule> modules, string error) => new
+  {
+    error,
+    modules = modules.Select(m => new
+    {
+      name            = m.Name,
+      type            = m.Type,
+      simpleItems     = m.SimpleItems.Select(i => new { name = i.Name, value = i.Value }),
+      elementItemsXml = m.ElementItemsXml,
+    }),
+  };
+
+  private static object DescriptionsPayload(
+    IEnumerable<Vms.Onvif.AnalyticsModuleDescription> descriptions, string error) => new
+  {
+    error,
+    descriptions = descriptions.Select(d => new
+    {
+      type         = d.Type,
+      maxInstances = d.MaxInstances,
+      parameters   = d.Parameters.Select(p => new { name = p.Name, type = p.Type }),
+      cellLayout   = d.CellLayout is null
+        ? null
+        : new { columns = d.CellLayout.Columns, rows = d.CellLayout.Rows },
+    }),
+  };
+
+  // The device's own wording is what the operator needs to see, so a refusal comes back as 502
+  // with that text rather than as a bare status code.
+  private IActionResult Mutation(OnvifMutationResponse response) =>
+    response.Success ? Ok(new { success = true }) : StatusCode(502, response.Error);
 }
+
+public record SetMetadataConfigBody(
+  bool? Analytics, bool? PtzStatus, string? SessionTimeout, string? CompressionType);
+
+public record AnalyticsSimpleItemBody(string Name, string Value);
+
+public record AnalyticsModuleBody(
+  string Name, string Type,
+  List<AnalyticsSimpleItemBody>? SimpleItems,
+  List<string>? ElementItemsXml);
 
 public record OnvifAlarmFilterBody(string? Id, string FilterText, int TimeoutSeconds, string? TextFilter);

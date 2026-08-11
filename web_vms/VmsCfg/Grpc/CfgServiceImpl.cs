@@ -731,13 +731,25 @@ namespace VmsCfg
         ? request.StreamName : null;
       var until = request.Until.ToDateTime().ToUniversalTime();
 
-      var activated = await storage.ActivateAlarmOverrideAsync(request.CameraId, streamName, until, context.CancellationToken);
-      if (activated)
+      var outcome = await storage.ActivateAlarmOverrideAsync(request.CameraId, streamName, until, context.CancellationToken);
+
+      if (outcome.Started)
       {
         logger.LogInformation("Alarm override activated: camera='{CameraId}' stream='{StreamName}' until={Until}", request.CameraId, streamName, until);
         InvalidateFsCache(request.CameraId);
       }
-      return new ActivateAlarmOverrideResponse { Activated = activated };
+      else if (outcome.Extended)
+      {
+        // Deliberately quiet, and deliberately without InvalidateFsCache: the stream is already
+        // recording, so a config change here would make every re-fire of a motion detector reload
+        // every camera on the node for no visible effect. The new deadline matters only to
+        // AlarmOverrideExpiryService, which reads the table directly.
+        logger.LogDebug("Alarm override extended: camera='{CameraId}' stream='{StreamName}' until={Until}", request.CameraId, streamName, until);
+      }
+
+      // Reported as activated only on the transition — the caller (VmsFs) pushes camera state on
+      // the strength of this, and re-pushing an unchanged state is exactly the storm above.
+      return new ActivateAlarmOverrideResponse { Activated = outcome.Started };
     }
 
     public override async Task<ListMediaMtxServersResponse> ListMediaMtxServers(

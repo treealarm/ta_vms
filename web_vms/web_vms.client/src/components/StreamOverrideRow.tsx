@@ -7,10 +7,17 @@ import { setStreamOverride } from '../store/liveSlice'
 
 type Props = {
   cameraId: string
-  stream: CameraStreamDto | null
+  /**
+   * Every stream of the camera, not just the visible one. An alarm override is applied to the whole
+   * camera (ActivateAlarmOverride leaves stream_name empty), so a control that could only clear the
+   * stream being watched left the override stuck on any stream without WebRTC — recording forever,
+   * with the card outlined red, and nothing in the monitor able to touch it. The API stays
+   * per-stream; this control is simply the camera-wide one.
+   */
+  streams: CameraStreamDto[]
 }
 
-export default function StreamOverrideRow({ cameraId, stream }: Props) {
+export default function StreamOverrideRow({ cameraId, streams }: Props) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const [presets, setPresets] = useState<RecordingProfileDto[]>([])
@@ -24,16 +31,27 @@ export default function StreamOverrideRow({ cameraId, stream }: Props) {
       .catch(() => {})
   }, [])
 
-  if (!stream) return null
+  if (streams.length === 0) return null
 
-  const isOverride = !!stream.overrideProfile
-  const overrideValue = pendingValue !== null ? pendingValue : (stream.overrideProfile?.id ?? '')
+  // Any stream carrying an override counts. Deliberately not "all of them": a leftover on a stream
+  // the monitor cannot show is exactly the case that has to stay visible and clearable.
+  const overridden = streams.find((s) => s.overrideProfile)
+  const isOverride = !!overridden
+  const overrideValue = pendingValue !== null ? pendingValue : (overridden?.overrideProfile?.id ?? '')
 
   const handleChange = async (profileId: string) => {
     setPendingValue(profileId)
     setBusy(true)
     try {
-      await dispatch(setStreamOverride({ cameraId, streamName: stream.streamName, profileId: profileId === '' ? null : profileId }))
+      // Sequential rather than parallel: each call rewrites the camera's config in VmsCfg, and
+      // firing them together would have them race over the same rows.
+      for (const s of streams) {
+        await dispatch(setStreamOverride({
+          cameraId,
+          streamName: s.streamName,
+          profileId: profileId === '' ? null : profileId,
+        }))
+      }
     } finally {
       setBusy(false)
       setPendingValue(null)
@@ -41,7 +59,13 @@ export default function StreamOverrideRow({ cameraId, stream }: Props) {
   }
 
   return (
-    <Stack direction="row" alignItems="center" spacing={1} sx={{ flexShrink: 0, px: 0.25 }}>
+    <Stack
+      direction="row"
+      alignItems="center"
+      spacing={1}
+      title={streams.length > 1 ? t('streamOverride.appliesToAllStreams') : undefined}
+      sx={{ flexShrink: 0, px: 0.25 }}
+    >
       {isOverride && (
         <Typography variant="caption" sx={{ color: 'primary.main', fontSize: '0.68rem', flexShrink: 0 }}>
           {t('streamOverride.override')}

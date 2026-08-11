@@ -124,6 +124,9 @@ public sealed class ClipStorage(
       : alarmStart.AddSeconds(timeout);
     var streamName = req.HasStreamName && !string.IsNullOrWhiteSpace(req.StreamName)
       ? req.StreamName : null;
+    var trigger = req.HasTrigger && !string.IsNullOrWhiteSpace(req.Trigger)
+      ? req.Trigger
+      : null;
     var objectId = req.HasObjectId && !string.IsNullOrWhiteSpace(req.ObjectId)
       ? req.ObjectId : null;
 
@@ -176,20 +179,24 @@ public sealed class ClipStorage(
       await using var ext = new NpgsqlCommand("""
         UPDATE retention_events
         SET alarm_end_ts = GREATEST(alarm_end_ts, $2),
-            object_id = COALESCE($3, object_id)
+            object_id = COALESCE($3, object_id),
+            -- COALESCE keeps whatever opened the episode: a renewal that omits the cause must not
+            -- erase it, and the first trigger is the one that describes why the episode exists.
+            trigger = COALESCE(trigger, $4)
         WHERE event_uuid = $1;
         """, conn, tx);
       ext.Parameters.AddWithValue(eventUuid);
       ext.Parameters.AddWithValue(alarmEnd);
       ext.Parameters.AddWithValue((object?)objectId ?? DBNull.Value);
+      ext.Parameters.AddWithValue((object?)trigger ?? DBNull.Value);
       await ext.ExecuteNonQueryAsync(ct);
     }
     else
     {
       eventUuid = Guid.NewGuid();
       await using var ins = new NpgsqlCommand("""
-        INSERT INTO retention_events(event_uuid, event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, object_id)
-        VALUES($1, $2, $3, $4, $5, $6, $7);
+        INSERT INTO retention_events(event_uuid, event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, object_id, trigger)
+        VALUES($1, $2, $3, $4, $5, $6, $7, $8);
         """, conn, tx);
       ins.Parameters.AddWithValue(eventUuid);
       ins.Parameters.AddWithValue(eventId);
@@ -198,6 +205,7 @@ public sealed class ClipStorage(
       ins.Parameters.AddWithValue(alarmStart);
       ins.Parameters.AddWithValue(alarmEnd);
       ins.Parameters.AddWithValue((object?)objectId ?? DBNull.Value);
+      ins.Parameters.AddWithValue((object?)trigger ?? DBNull.Value);
       await ins.ExecuteNonQueryAsync(ct);
     }
 
@@ -756,7 +764,7 @@ public sealed class ClipStorage(
     // camera-scoped caller must be able to say so here as well.
     var byCamera = !string.IsNullOrWhiteSpace(cameraId);
     await using var cmd = dataSource.CreateCommand($"""
-      SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id
+      SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id, trigger
       FROM retention_events
       WHERE event_id = ANY($1){(byCamera ? " AND camera_id = $2" : "")}
       ORDER BY alarm_start_ts DESC, event_uuid DESC;
@@ -778,6 +786,7 @@ public sealed class ClipStorage(
       if (!reader.IsDBNull(2)) row.StreamName = reader.GetString(2);
       if (!reader.IsDBNull(4)) row.AlarmEndTs = Timestamp.FromDateTime(reader.GetDateTime(4).ToUniversalTime());
       if (!reader.IsDBNull(6)) row.ObjectId = reader.GetString(6);
+      if (!reader.IsDBNull(7)) row.Trigger = reader.GetString(7);
       events.Add(row);
     }
     return events;
@@ -815,7 +824,7 @@ public sealed class ClipStorage(
 
     values.Add(lim);
     var sql = $"""
-      SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id
+      SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id, trigger
       FROM retention_events
       {(where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "")}
       ORDER BY alarm_start_ts DESC, event_uuid DESC
@@ -839,6 +848,7 @@ public sealed class ClipStorage(
       if (!reader.IsDBNull(2)) row.StreamName = reader.GetString(2);
       if (!reader.IsDBNull(4)) row.AlarmEndTs = Timestamp.FromDateTime(reader.GetDateTime(4).ToUniversalTime());
       if (!reader.IsDBNull(6)) row.ObjectId = reader.GetString(6);
+      if (!reader.IsDBNull(7)) row.Trigger = reader.GetString(7);
       events.Add(row);
     }
 

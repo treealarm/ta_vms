@@ -4,9 +4,13 @@ using web_vms.Types.Actors;
 
 namespace VmsOnvif;
 
-// Profile G ("edge recording") lives in OnvifEdgeSettings.cs — same class, kept apart because it is
-// a self-contained feature with its own service clients.
-public sealed partial class OnvifSettingsService(CameraConnCache connCache, ILogger<OnvifSettingsService> logger)
+// Profile G ("edge recording") lives in OnvifEdgeSettings.cs and Profile M (metadata/analytics) in
+// OnvifMetadataSettings.cs — same class, kept apart because each is a self-contained feature with
+// its own service clients.
+public sealed partial class OnvifSettingsService(
+  CameraConnCache connCache,
+  MetadataStateCache metadataStateCache,
+  ILogger<OnvifSettingsService> logger)
 {
   private readonly ConcurrentDictionary<string, (Camera Cam, DateTime Created)> _cache = new();
   private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);

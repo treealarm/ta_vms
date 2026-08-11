@@ -348,6 +348,12 @@ export type RetentionEventRowDto = {
   streamName?: string
   alarmStartTs: string
   alarmEndTs?: string
+  /**
+   * What set the alarm off, in the producer's own words — the ONVIF topic
+   * ('tns1:RuleEngine/CellMotionDetector/Motion') for an ONVIF alarm. Absent for producers that
+   * name no cause.
+   */
+  trigger?: string
 }
 
 export type RetentionEventsListDto = {
@@ -365,6 +371,8 @@ export type EpisodeDto = {
   streamName?: string
   alarmStartTs: string
   alarmEndTs?: string
+  /** What set the alarm off — the ONVIF topic for an ONVIF alarm. Absent when none was named. */
+  trigger?: string
 }
 
 // A group = all episodes sharing one eventId (a time-clustered session of one object, possibly
@@ -540,7 +548,15 @@ export type CameraArmedDto = {
   armed: boolean
 }
 
+/** Classes the CV detector can be configured to look for — the choices offered on a watch. */
 export type AnalyticsDetectionClass = 'person' | 'face' | 'vehicle' | 'license_plate'
+
+/**
+ * Every class a detection can actually arrive with. A superset of the watch classes: a camera's own
+ * analytics reports kinds the CV detector has no model for ('animal' is part of ONVIF's own
+ * vocabulary), and anything it cannot place at all still gets drawn as 'unknown'.
+ */
+export type AnalyticsDetectionKind = AnalyticsDetectionClass | 'animal' | 'unknown'
 
 export const ANALYTICS_DETECTION_CLASSES: AnalyticsDetectionClass[] = ['person', 'face', 'vehicle', 'license_plate']
 
@@ -566,7 +582,7 @@ export type AnalyticsDetectionDto = {
   objectId?: string
   cameraId: string
   trackId: number
-  kind: AnalyticsDetectionClass | 'unknown'
+  kind: AnalyticsDetectionKind
   confidence: number
   detectedAt: string
   plateText?: string
@@ -576,7 +592,7 @@ export type AnalyticsDetectionDto = {
 export type AnalyticsActivityEntryDto = {
   cameraId: string
   trackId: number
-  kind: AnalyticsDetectionClass | 'unknown'
+  kind: AnalyticsDetectionKind
   confidence: number
   bboxX: number
   bboxY: number
@@ -590,6 +606,35 @@ export type AnalyticsActivityEntryDto = {
   persisted: boolean
   /** Re-identification label of the physical object, when resolved for this track */
   objectId?: string
+  /**
+   * Where the box came from: 'cv' (the video_a detector) or 'onvif' (the camera's own Scene
+   * Description). The two number their tracks independently, so a camera running both needs this
+   * in the overlay's key or the boxes overwrite each other.
+   */
+  source: AnalyticsDetectionSource
+  /**
+   * The producer's own word for the class when it says more than `kind` does — 'Truck' under
+   * vehicle, 'Bag' under unknown. ONVIF lets cameras report free-form classes alongside its
+   * five-value enum, so this is where the detail that does not fit `kind` survives.
+   */
+  label?: string
+}
+
+export type AnalyticsDetectionSource = 'cv' | 'onvif'
+
+/**
+ * An ONVIF event shown over live video. Carries no geometry: cameras whose analytics is cell motion
+ * or tamper have nothing to outline, and the event is the whole statement they can make.
+ */
+export type LiveCameraEventDto = {
+  cameraId: string
+  /** Full ONVIF topic, the same string the alarm filters are written against. */
+  topic: string
+  /** Short name from the last topic segment ('Motion', 'Tamper'). */
+  label: string
+  /** True when the condition started, false when it cleared. */
+  active: boolean
+  receivedAt: string
 }
 
 export type OnvifAlarmFilterDto = {
@@ -672,6 +717,98 @@ export type DeviceCapabilitiesDto = {
   hasAudio: boolean
   hasRelayOutputs: boolean
   hasDigitalInputs: boolean
+  /** Camera runs its own analytics engine (ONVIF ver20 Analytics) — gates the Metadata tab. */
+  hasAnalytics: boolean
+}
+
+// ── ONVIF Profile M: metadata / analytics ───────────────────────────────────
+
+export type MetadataConfigDto = {
+  token: string
+  name: string
+  /** The flag that decides whether the metadata track carries object boxes at all. */
+  analytics: boolean
+  ptzStatus: boolean
+  events: boolean
+  geoLocation: boolean
+  shapePolygon: boolean
+  sessionTimeout?: string
+  compressionType?: string
+  /** Profiles this configuration is attached to; empty means it changes no stream. */
+  attachedProfileTokens: string[]
+}
+
+export type MetadataConfigsResponseDto = {
+  configs: MetadataConfigDto[]
+  /** The camera's own wording when it refused; the list is empty in that case. */
+  error?: string
+}
+
+export type MetadataConfigOptionsDto = {
+  supportsPtzStatus: boolean
+  compressionTypes: string[]
+  error?: string
+}
+
+export type OnvifAnalyticsConfigDto = {
+  token: string
+  name: string
+  attachedProfileTokens: string[]
+}
+
+export type OnvifAnalyticsConfigsResponseDto = {
+  configs: OnvifAnalyticsConfigDto[]
+  error?: string
+}
+
+export type AnalyticsSimpleItemDto = {
+  name: string
+  value: string
+}
+
+/** A configured analytics module or rule on the camera. */
+export type OnvifAnalyticsModuleDto = {
+  name: string
+  type: string
+  simpleItems: AnalyticsSimpleItemDto[]
+  /**
+   * Structured parameters (polygons, line segments, schedules) as raw XML. Not modelled: they have
+   * no fixed schema across vendors, and they must round-trip untouched or a Modify would silently
+   * drop whatever the UI did not understand.
+   */
+  elementItemsXml: string[]
+}
+
+export type OnvifAnalyticsModulesResponseDto = {
+  modules: OnvifAnalyticsModuleDto[]
+  error?: string
+}
+
+export type AnalyticsParameterDescriptionDto = {
+  name: string
+  type: string
+}
+
+/**
+ * How the camera lays out its motion-detection cells. An ActiveCells bitmask is a flat run of bits;
+ * only these two numbers say which cell is where. Optional in ONVIF and absent on many firmwares,
+ * so a UI must be able to do without it.
+ */
+export type AnalyticsCellLayoutDto = {
+  columns: number
+  rows: number
+}
+
+export type OnvifAnalyticsModuleDescriptionDto = {
+  type: string
+  maxInstances?: string
+  parameters: AnalyticsParameterDescriptionDto[]
+  cellLayout?: AnalyticsCellLayoutDto
+}
+
+export type OnvifAnalyticsModuleDescriptionsResponseDto = {
+  descriptions: OnvifAnalyticsModuleDescriptionDto[]
+  error?: string
 }
 
 export type RelayMode = 'monostable' | 'bistable'

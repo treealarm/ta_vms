@@ -251,6 +251,7 @@ export default function EventDetailsPanel({ selected }: Props) {
           />
           <DetailRow label={t('cameras.cameraName')} value={cameraName} />
           {selected.streamName && <DetailRow label={t('events.streamName')} value={selected.streamName} />}
+          {selected.trigger && <DetailRow label={t('events.trigger')} value={selected.trigger} />}
           <DetailRow label={t('events.alarmStart')} value={start.toLocaleString()} />
           <DetailRow label={t('events.alarmEnd')} value={end ? end.toLocaleString() : t('events.active')} />
           {duration && <DetailRow label={t('events.duration')} value={duration} />}

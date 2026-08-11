@@ -1,6 +1,7 @@
 ﻿import { Box } from '@mui/material';
 import React, { useEffect, useRef } from 'react';
-import BboxOverlay from './BboxOverlay';
+import BboxOverlay from './BboxOverlay'
+import EventOverlay from './EventOverlay';
 import { iceServersFromStunUrl } from '../utils/iceServers';
 
 interface CameraStreamProps {
@@ -282,6 +283,10 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
           WebRTC pipeline above (and it owns the detection hook, so detection updates never re-render
           this component or the <video>), so enabling it never adds latency to the live video. */}
       {bboxEnabled && cameraId && <BboxOverlay videoRef={videoRef} cameraId={cameraId} />}
+      {/* Same switch, the other half of the picture: cameras whose analytics produces no geometry
+          (cell motion, tamper) announce a condition instead, and it shows as text where a box
+          would be. */}
+      {bboxEnabled && cameraId && <EventOverlay cameraId={cameraId} enabled />}
     </Box>
   );
 };
