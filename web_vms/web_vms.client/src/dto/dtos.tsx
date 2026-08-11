@@ -772,11 +772,18 @@ export type OnvifAnalyticsModuleDto = {
   type: string
   simpleItems: AnalyticsSimpleItemDto[]
   /**
-   * Structured parameters (polygons, line segments, schedules) as raw XML. Not modelled: they have
-   * no fixed schema across vendors, and they must round-trip untouched or a Modify would silently
-   * drop whatever the UI did not understand.
+   * Structured parameters (polygons, line segments, schedules). Not modelled beyond name + XML:
+   * they have no fixed schema across vendors, and they must round-trip untouched or a Modify would
+   * silently drop whatever the UI did not understand. The name is the camera's label for the slot
+   * ('Field') and is independent of the XML inside it ('Polygon') — deriving one from the other
+   * renames the parameter.
    */
-  elementItemsXml: string[]
+  elementItems: AnalyticsElementItemDto[]
+}
+
+export type AnalyticsElementItemDto = {
+  name: string
+  xml: string
 }
 
 export type OnvifAnalyticsModulesResponseDto = {

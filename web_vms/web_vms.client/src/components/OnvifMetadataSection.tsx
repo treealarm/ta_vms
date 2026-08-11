@@ -334,13 +334,14 @@ function ModuleEditor({ cameraId, kind, configToken, module, descriptions, onCha
       await apiFetch(`${base(cameraId)}/${kind}?configToken=${encodeURIComponent(configToken)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        // elementItemsXml is echoed back untouched: the camera's structured parameters are not
-        // editable here, and dropping them would silently reconfigure the module.
+        // elementItems are echoed back untouched, names included: the camera's structured
+        // parameters are not editable here, and dropping or renaming them would silently
+        // reconfigure the module.
         body: JSON.stringify({
           name: module.name,
           type: module.type,
           simpleItems: items,
-          elementItemsXml: module.elementItemsXml,
+          elementItems: module.elementItems,
         }),
       })
       onChanged()
@@ -397,9 +398,10 @@ function ModuleEditor({ cameraId, kind, configToken, module, descriptions, onCha
           </Typography>
         )}
       </Stack>
-      {module.elementItemsXml.length > 0 && (
+      {module.elementItems.length > 0 && (
         <Typography variant="caption" color="text.secondary">
-          {t('onvifSettings.metadataStructuredParams', { count: module.elementItemsXml.length })}
+          {t('onvifSettings.metadataStructuredParams', { count: module.elementItems.length })}
+          {': '}{module.elementItems.map((i) => i.name).join(', ')}
         </Typography>
       )}
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
@@ -453,7 +455,7 @@ function ModuleGroup({ cameraId, kind, configToken, title }: {
           name: newName,
           type: newType,
           simpleItems: (description?.parameters ?? []).map((p) => ({ name: p.name, value: '' })),
-          elementItemsXml: [],
+          elementItems: [],
         }),
       })
       setNewName('')
