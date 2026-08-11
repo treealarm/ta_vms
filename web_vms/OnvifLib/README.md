@@ -20,7 +20,7 @@
 - 🎞️ Profile G: the camera's own recordings — search, replay and recording jobs
 - 🔌 Device I/O: relay outputs and digital inputs
 - 🔐 WS-Security (UsernameToken) support
-- ✅ Targets .NET 8
+- ✅ Targets .NET 10
 
 ---
 

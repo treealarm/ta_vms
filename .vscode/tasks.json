@@ -89,7 +89,7 @@
             "label": "kill stale: web_vms (F5)",
             "detail": "Подчищает зависшие daprd/dotnet от прошлой (аварийно прерванной) сессии — иначе новый запуск не займёт порты.",
             "type": "shell",
-            "command": "pkill -f \"app-id web-vms\" || true; pkill -f \"web_vms.Server/bin/Debug/net8.0/web_vms.Server.dll\" || true",
+            "command": "pkill -f \"app-id web-vms\" || true; pkill -f \"web_vms.Server/bin/Debug/net10.0/web_vms.Server.dll\" || true",
             "problemMatcher": []
         },
         {
@@ -191,7 +191,7 @@
             "label": "kill stale: vmsutils (F5)",
             "detail": "Подчищает зависшие daprd/dotnet от прошлой (аварийно прерванной) сессии — иначе новый запуск не займёт порты.",
             "type": "shell",
-            "command": "pkill -f \"app-id vmsutils\" || true; pkill -f \"VmsUtils/bin/Debug/net8.0/VmsUtils.dll\" || true",
+            "command": "pkill -f \"app-id vmsutils\" || true; pkill -f \"VmsUtils/bin/Debug/net10.0/VmsUtils.dll\" || true",
             "problemMatcher": []
         },
         {
