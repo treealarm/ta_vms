@@ -99,7 +99,21 @@
     "newStorage": "New storage",
     "deleteStorage": "Delete storage",
     "invalidReserved": "Reserved size must be a non-negative number",
-    "selectHint": "Select a storage or press + to add one"
+    "selectHint": "Select a storage or press + to add one",
+    "browse": "Browse…",
+    "browseTitle": "Select a storage directory",
+    "browseVolumes": "Volumes",
+    "browseUp": "Up one level",
+    "browseSelect": "Select",
+    "browseSelectCurrent": "Select this directory",
+    "browseSpace": "{{free}} free of {{total}}",
+    "browseSpaceUnknown": "Size unknown",
+    "browseEmpty": "No subdirectories",
+    "browseNoVolumes": "No volume is visible on this node",
+    "browseNoServer": "No recording server is configured",
+    "rootPathHint": "Absolute path on the recording node — /srv/video or D:\\video",
+    "pathNotAbsolute": "Root path must be absolute, e.g. /srv/video or D:\\video",
+    "browseNotWritable": "Not writable — open it to look inside"
   },
   "storageControl": {
     "title": "Storage assignment",

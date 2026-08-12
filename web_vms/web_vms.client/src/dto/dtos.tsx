@@ -402,6 +402,28 @@ export type StorageDto = {
   reservedBytes: number
 }
 
+/** One writable directory on a recording node's disk. `path` is that node's own path style. */
+export type DirectoryEntryDto = {
+  path: string
+  name: string
+  freeBytes: number
+  totalBytes: number
+  /** Only a writable directory can be picked. The rest are listed so their contents stay reachable
+   *  — a volume root is routinely off limits while the directory to record into sits inside it. */
+  writable: boolean
+}
+
+export type DirectoryListingDto = {
+  path: string
+  /** Empty means "up goes back to the volume roots" — also the case for a volume root itself. */
+  parentPath: string
+  entries: DirectoryEntryDto[]
+  /** Non-fatal note from the node: truncated listing, unreadable path, nothing writable found. */
+  message: string
+  /** Whether `path` itself can be picked as a storage root. */
+  writable: boolean
+}
+
 export type CameraStorageAssignmentDto = {
   cameraId: string
   storageId: string

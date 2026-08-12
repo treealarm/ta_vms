@@ -99,7 +99,21 @@
     "newStorage": "Nuevo almacén",
     "deleteStorage": "Eliminar almacén",
     "invalidReserved": "El tamaño reservado debe ser un número no negativo",
-    "selectHint": "Seleccione un almacén o pulse + para agregar uno"
+    "selectHint": "Seleccione un almacén o pulse + para agregar uno",
+    "browse": "Examinar…",
+    "browseTitle": "Seleccionar un directorio de almacenamiento",
+    "browseVolumes": "Volúmenes",
+    "browseUp": "Subir un nivel",
+    "browseSelect": "Seleccionar",
+    "browseSelectCurrent": "Seleccionar este directorio",
+    "browseSpace": "{{free}} libres de {{total}}",
+    "browseSpaceUnknown": "Tamaño desconocido",
+    "browseEmpty": "Sin subdirectorios",
+    "browseNoVolumes": "No hay ningún volumen visible en este nodo",
+    "browseNoServer": "No hay ningún servidor de grabación configurado",
+    "rootPathHint": "Ruta absoluta en el nodo de grabación: /srv/video o D:\\video",
+    "pathNotAbsolute": "La ruta raíz debe ser absoluta, p. ej. /srv/video o D:\\video",
+    "browseNotWritable": "Sin permiso de escritura: ábralo para ver su contenido"
   },
   "storageControl": {
     "title": "Asignación de almacén",

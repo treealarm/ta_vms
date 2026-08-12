@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\VmsLog\VmsLog.csproj" />
+    <ProjectReference Include="..\web_vms.Types\web_vms.Types.csproj" />
   </ItemGroup>
 
   <ItemGroup>
