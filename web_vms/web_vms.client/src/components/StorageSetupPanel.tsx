@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react'
-import { Box, List, Stack, TextField, Typography } from '@mui/material'
+import { Box, Button, List, Stack, TextField, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addStorage, loadStorages, removeStorage, updateStorage } from '../store/storageSlice'
+import { loadServers } from '../store/liveSlice'
 import type { StorageDto } from '../dto/dtos'
+import { isAbsoluteHostPath } from '../utils/hostPath'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
 import SettingsListItem from './settings/SettingsListItem'
+import StoragePathBrowserDialog from './StoragePathBrowserDialog'
 import { useDirtyGuard } from './settings/useDirtyGuard'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 import { useMasterDetailSelection } from './settings/useMasterDetailSelection'
@@ -37,6 +40,7 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
     useState(toGbString(storage?.reservedBytes ?? DEFAULT_RESERVED_GB * GIB))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [browsing, setBrowsing] = useState(false)
 
   // Snapshot for dirty detection and Cancel — only reservedGb is editable on existing storages
   const [snap, setSnap] = useState(toGbString(storage?.reservedBytes ?? DEFAULT_RESERVED_GB * GIB))
@@ -62,6 +66,12 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
     if (isNew) {
       if (!storageId.trim() || !rootPath.trim()) {
         setError(t('storage.required'))
+        return false
+      }
+      // Both path styles are accepted: the value belongs to the recording node, not to whichever
+      // OS this browser or the config service happens to run on.
+      if (!isAbsoluteHostPath(rootPath)) {
+        setError(t('storage.pathNotAbsolute'))
         return false
       }
       setSaving(true)
@@ -143,14 +153,33 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
             disabled={!isNew}
             required
           />
-          <TextField
-            label={t('storage.rootPath')}
-            value={rootPath}
-            onChange={(e) => setRootPath(e.target.value)}
-            size="small"
-            disabled={!isNew}
-            required
-          />
+          <Stack direction="row" spacing={1} alignItems="flex-start">
+            <TextField
+              label={t('storage.rootPath')}
+              value={rootPath}
+              onChange={(e) => setRootPath(e.target.value)}
+              size="small"
+              disabled={!isNew}
+              required
+              fullWidth
+              helperText={isNew ? t('storage.rootPathHint') : undefined}
+            />
+            {/* Browsing only makes sense while the root is still editable — an existing storage's
+                path is fixed, moving it would orphan every clip already recorded under it. */}
+            {isNew && (
+              <Button variant="outlined" size="small" sx={{ mt: 0.5 }} onClick={() => setBrowsing(true)}>
+                {t('storage.browse')}
+              </Button>
+            )}
+          </Stack>
+
+          {isNew && (
+            <StoragePathBrowserDialog
+              open={browsing}
+              onClose={() => setBrowsing(false)}
+              onPick={(picked) => setRootPath(picked)}
+            />
+          )}
           <TextField
             label={t('storage.reservedGb')}
             type="number"
@@ -178,6 +207,9 @@ export default function StorageSetupPanel({ ref }: { ref?: React.Ref<ApplyIfDirt
 
   useEffect(() => {
     dispatch(loadStorages())
+    // The browse dialog picks the node whose disk to walk; refreshed here so it is populated even
+    // when this panel is the first admin surface opened.
+    dispatch(loadServers())
   }, [dispatch])
 
   const list = (

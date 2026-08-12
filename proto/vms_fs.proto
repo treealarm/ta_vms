@@ -39,6 +39,11 @@ service FsService {
 
   rpc GetRecordingByUid(GetRecordingByUidRequest) returns (GetRecordingByUidResponse);
 
+  // Directory browser for picking a storage root in the admin UI. VmsFs is the service that
+  // actually writes the archive, so it is the only one whose answer means anything: a directory
+  // listed here is one this process just proved it can create a file in, on this node's disk.
+  rpc ListDirectories(ListDirectoriesRequest) returns (ListDirectoriesResponse);
+
   rpc GetCameraStorage(GetCameraStorageRequest) returns (GetCameraStorageResponse);
 
   rpc GetClipsForEvent(GetClipsForEventRequest) returns (GetRecordingsResponse);
@@ -351,6 +356,38 @@ message GetRecordingByUidRequest {
 
 message GetRecordingByUidResponse {
   repeated Recording recordings = 1;
+}
+
+// Empty path asks for the writable volume roots (mount points on Linux, drive letters on Windows).
+// Anything else must be an absolute path on THIS node, in that node's own path style — it is passed
+// to the filesystem verbatim, never normalized or translated between POSIX and Windows separators.
+message ListDirectoriesRequest {
+  string path = 1;
+}
+
+message DirectoryEntry {
+  string path        = 1;   // absolute, ready to be stored as a storage root
+  string name        = 2;   // display label: leaf name, or the volume itself for a root
+  uint64 free_bytes  = 3;   // 0 when the volume could not be queried
+  uint64 total_bytes = 4;
+  // Whether the file service just created and removed a file here. Only a writable directory may
+  // be chosen as a storage root — but the ones that are not are still listed, because a volume
+  // root is routinely off limits ("/" is root-owned) while the directory to record into sits
+  // inside it. Dropping them would make that directory unreachable by browsing at all.
+  bool   writable    = 5;
+}
+
+message ListDirectoriesResponse {
+  string path        = 1;   // echo of the listed path; empty for the roots listing
+  // Empty means "up goes back to the roots list" — which is also the answer when path is a volume
+  // root itself, because the directory above a mount point belongs to a different volume.
+  string parent_path = 2;
+  repeated DirectoryEntry entries = 3;
+  // Non-fatal note for the operator: truncated listing, unreadable path, no writable volume found.
+  string message     = 4;
+  // Whether `path` itself may be chosen as a storage root. Answered here as well as per entry,
+  // because a directory can also be arrived at by going up, where nothing described it.
+  bool   writable    = 5;
 }
 
 message FsFileEvent {

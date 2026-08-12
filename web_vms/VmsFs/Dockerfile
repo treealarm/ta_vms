@@ -4,6 +4,7 @@ WORKDIR /src
 
 COPY ["web_vms/VmsFs/VmsFs.csproj", "web_vms/VmsFs/"]
 COPY ["web_vms/VmsLog/VmsLog.csproj", "web_vms/VmsLog/"]
+COPY ["web_vms/web_vms.Types/web_vms.Types.csproj", "web_vms/web_vms.Types/"]
 COPY ["proto", "proto"]
 
 RUN dotnet restore "web_vms/VmsFs/VmsFs.csproj"
