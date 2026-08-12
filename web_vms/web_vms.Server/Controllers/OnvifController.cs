@@ -805,7 +805,8 @@ public class OnvifController(
     var module = new Vms.Onvif.AnalyticsModule { Name = body.Name, Type = body.Type };
     module.SimpleItems.AddRange((body.SimpleItems ?? [])
       .Select(i => new AnalyticsSimpleItem { Name = i.Name, Value = i.Value }));
-    module.ElementItemsXml.AddRange(body.ElementItemsXml ?? []);
+    module.ElementItems.AddRange((body.ElementItems ?? [])
+      .Select(i => new AnalyticsElementItem { Name = i.Name, Xml = i.Xml }));
     return new AnalyticsModuleRequest
     {
       SourceId = cameraId, ConfigurationToken = configToken, Module = module,
@@ -820,7 +821,7 @@ public class OnvifController(
       name            = m.Name,
       type            = m.Type,
       simpleItems     = m.SimpleItems.Select(i => new { name = i.Name, value = i.Value }),
-      elementItemsXml = m.ElementItemsXml,
+      elementItems    = m.ElementItems.Select(i => new { name = i.Name, xml = i.Xml }),
     }),
   };
 
@@ -850,9 +851,11 @@ public record SetMetadataConfigBody(
 
 public record AnalyticsSimpleItemBody(string Name, string Value);
 
+public record AnalyticsElementItemBody(string Name, string Xml);
+
 public record AnalyticsModuleBody(
   string Name, string Type,
   List<AnalyticsSimpleItemBody>? SimpleItems,
-  List<string>? ElementItemsXml);
+  List<AnalyticsElementItemBody>? ElementItems);
 
 public record OnvifAlarmFilterBody(string? Id, string FilterText, int TimeoutSeconds, string? TextFilter);

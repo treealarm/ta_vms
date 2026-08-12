@@ -18,7 +18,11 @@ const RETRY_MS = 4_000
 // means the node cannot answer at all — LiveController swallows that as an absent entry — and
 // retrying on a timer would then poll for as long as the page stays open. Giving up leaves the
 // button dark, which is the right answer for a camera nobody can reach; a remount asks again.
-const MAX_MISSES = 3
+//
+// The count has to outlast the server's own attempt: MetadataStateCache gives a probe 15 s, so
+// stopping earlier would abandon a slow-but-healthy camera moments before its answer lands, and
+// the button would stay dark until the card remounted. 5 × 4 s asks once more at 20 s.
+const MAX_MISSES = 5
 
 type Entry = { capable: boolean; at: number }
 

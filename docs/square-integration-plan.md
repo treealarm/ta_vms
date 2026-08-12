@@ -18,7 +18,7 @@
 `/mnt/wdblue/tests/ta_vms` — распределённая VMS (запись/стриминг на базе MediaMTX).
 Square (соседний проект `../Square`) — основная система мониторинга объектов на карте (Leaflet).
 Родственные проекты одного вендора с почти идентичным стеком: **Dapr + Redis (pub/sub) +
-PostgreSQL + .NET 8 + gRPC + React**. Нужно встроить ta_vms в Square так, чтобы ta_vms
+PostgreSQL + .NET 10 + gRPC + React**. Нужно встроить ta_vms в Square так, чтобы ta_vms
 **по-прежнему запускался полностью автономно**.
 
 Согласованные решения:

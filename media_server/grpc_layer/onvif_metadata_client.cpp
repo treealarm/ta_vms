@@ -124,7 +124,16 @@ void onvif_metadata_client::send_loop()
     uint64_t dropped_snapshot = 0;
     {
       std::unique_lock<std::mutex> lock(m_mutex);
-      m_cv.wait_for(lock, kFlushInterval, [this] { return !m_running || !m_queue.empty(); });
+
+      // Two waits, and the split is the whole point of the queue. The first blocks until there is
+      // anything at all to send. The second is the batching window: enqueue() signals on every
+      // document, so waking on "queue is non-empty" a second time would drain after the first
+      // arrival and turn each document back into its own RPC. Only a stop cuts this one short.
+      m_cv.wait(lock, [this] { return !m_running || !m_queue.empty(); });
+      if (!m_running && m_queue.empty())
+        return;
+
+      m_cv.wait_for(lock, kFlushInterval, [this] { return !m_running; });
       if (!m_running && m_queue.empty())
         return;
 

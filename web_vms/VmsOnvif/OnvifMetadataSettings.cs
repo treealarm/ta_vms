@@ -125,14 +125,29 @@ public sealed partial class OnvifSettingsService
   // ── Overlay-button probe ──────────────────────────────────────────────────────
 
   /// <summary>
-  /// Whether the camera is configured right now to stream object boxes: a MetadataConfiguration
-  /// with Analytics=true attached to at least one profile. Talks to the camera — callers that
-  /// cannot wait should go through <see cref="MetadataStateCache"/>.
+  /// Whether the camera is configured right now to stream object boxes. Talks to the camera —
+  /// callers that cannot wait should go through <see cref="MetadataStateCache"/>.
   /// </summary>
+  /// <remarks>
+  /// Both halves have to meet on the same profile. A MetadataConfiguration with Analytics=true puts
+  /// a metadata track in that profile's RTSP session, but nothing fills it unless a
+  /// VideoAnalyticsConfiguration is attached to the same profile — the engine is what produces the
+  /// objects. Checking only the metadata half lights the monitor's overlay button for a camera that
+  /// will never draw anything.
+  /// </remarks>
   public async Task<bool> ProbeBboxCapableAsync(string cameraId, CancellationToken ct)
   {
-    var configs = await GetMetadataConfigsAsync(cameraId, ct);
-    return configs.Any(c => c.Analytics && c.AttachedProfileTokens.Count > 0);
+    var metadata = await GetMetadataConfigsAsync(cameraId, ct);
+    var withAnalytics = metadata
+      .Where(c => c.Analytics)
+      .SelectMany(c => c.AttachedProfileTokens)
+      .ToHashSet(StringComparer.Ordinal);
+
+    if (withAnalytics.Count == 0)
+      return false;
+
+    var engines = await GetAnalyticsConfigsAsync(cameraId, ct);
+    return engines.Any(e => e.AttachedProfileTokens.Any(withAnalytics.Contains));
   }
 
   // ── Execute helpers ───────────────────────────────────────────────────────────

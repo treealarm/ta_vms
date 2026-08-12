@@ -825,6 +825,14 @@ message AnalyticsSimpleItem {
   string value = 2;
 }
 
+// One structured parameter. The name is the camera's label for the slot ("Field"); the XML inside
+// it is a different thing entirely ("Polygon"), so the two travel together — deriving one from the
+// other renames the parameter and the camera then rejects or misapplies the Modify.
+message AnalyticsElementItem {
+  string name = 1;
+  string xml  = 2;
+}
+
 message AnalyticsModule {
   string name = 1;
   string type = 2;
@@ -832,7 +840,7 @@ message AnalyticsModule {
   // Structured parameters (polygons, line segments, schedules) as raw XML. They have no fixed
   // schema across vendors, so they travel untouched rather than being modelled here — a Modify
   // that dropped what it did not understand would silently reconfigure the camera.
-  repeated string element_items_xml = 4;
+  repeated AnalyticsElementItem element_items = 5;
 }
 
 message AnalyticsModulesResponse {

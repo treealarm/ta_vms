@@ -241,7 +241,8 @@ public partial class OnvifServiceImpl
         var proto = new Vms.Onvif.AnalyticsModule { Name = m.Name, Type = m.Type };
         proto.SimpleItems.AddRange(
           m.SimpleItems.Select(i => new AnalyticsSimpleItem { Name = i.Name, Value = i.Value }));
-        proto.ElementItemsXml.AddRange(m.ElementItemsXml);
+        proto.ElementItems.AddRange(m.ElementItems.Select(
+          i => new AnalyticsElementItem { Name = i.Name, Xml = i.Xml }));
         response.Modules.Add(proto);
       }
     }
@@ -289,5 +290,5 @@ public partial class OnvifServiceImpl
     new(module?.Name ?? string.Empty,
         module?.Type ?? string.Empty,
         module?.SimpleItems.Select(i => new OnvifSimpleItem(i.Name, i.Value)).ToList() ?? [],
-        module?.ElementItemsXml.ToList() ?? []);
+        module?.ElementItems.Select(i => new OnvifElementItem(i.Name, i.Xml)).ToList() ?? []);
 }
