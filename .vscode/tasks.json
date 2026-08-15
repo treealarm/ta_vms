@@ -2,6 +2,1315 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "dapr: sidecars up",
+            "detail": "Every sidecar at once, from web_vms/dapr.yaml. The file declares no `command`, so the services themselves are started by the debugger. About 90 MB per sidecar.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "-f",
+                "."
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr: sidecars down",
+            "detail": "Stops everything started by 'dapr: sidecars up'.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "-f",
+                "."
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:web_vms:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "web-vms",
+                "--app-port",
+                "5134",
+                "--app-protocol",
+                "http",
+                "--dapr-http-port",
+                "3600",
+                "--dapr-grpc-port",
+                "51001",
+                "--metrics-port",
+                "9190",
+                "--dapr-internal-grpc-port",
+                "19011",
+                "--resources-path",
+                "../init_files/dapr_components"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:web_vms:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "web-vms"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:web_vms",
+            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dapr:web_vms:stop",
+                "dapr:web_vms:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmscfg:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "vmscfg",
+                "--app-port",
+                "5135",
+                "--app-protocol",
+                "grpc",
+                "--dapr-http-port",
+                "3601",
+                "--dapr-grpc-port",
+                "51002",
+                "--metrics-port",
+                "9191",
+                "--dapr-internal-grpc-port",
+                "19012",
+                "--resources-path",
+                "../init_files/dapr_components"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:vmscfg:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "vmscfg"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmscfg",
+            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dapr:vmscfg:stop",
+                "dapr:vmscfg:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmsutils:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "vmsutils",
+                "--app-port",
+                "5139",
+                "--app-protocol",
+                "grpc",
+                "--dapr-http-port",
+                "3606",
+                "--dapr-grpc-port",
+                "51007",
+                "--metrics-port",
+                "9196",
+                "--dapr-internal-grpc-port",
+                "19017",
+                "--resources-path",
+                "../init_files/dapr_components"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:vmsutils:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "vmsutils"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmsutils",
+            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dapr:vmsutils:stop",
+                "dapr:vmsutils:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmsonvif:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "vmsonvif",
+                "--app-port",
+                "5136",
+                "--app-protocol",
+                "grpc",
+                "--dapr-http-port",
+                "3602",
+                "--dapr-grpc-port",
+                "51003",
+                "--metrics-port",
+                "9192",
+                "--dapr-internal-grpc-port",
+                "19013",
+                "--resources-path",
+                "../init_files/dapr_components",
+                "--placement-host-address",
+                "localhost:6050"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:vmsonvif:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "vmsonvif"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmsonvif",
+            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dapr:vmsonvif:stop",
+                "dapr:vmsonvif:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmsonvif-actors:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "vmsonvif-actors",
+                "--app-port",
+                "5141",
+                "--app-protocol",
+                "http",
+                "--dapr-http-port",
+                "3603",
+                "--dapr-grpc-port",
+                "51004",
+                "--metrics-port",
+                "9193",
+                "--dapr-internal-grpc-port",
+                "19014",
+                "--resources-path",
+                "../init_files/dapr_components",
+                "--placement-host-address",
+                "localhost:6050"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:vmsonvif-actors:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "vmsonvif-actors"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmsonvif-actors",
+            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dapr:vmsonvif-actors:stop",
+                "dapr:vmsonvif-actors:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmsfs:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "vmsfs",
+                "--app-port",
+                "5137",
+                "--app-protocol",
+                "grpc",
+                "--dapr-http-port",
+                "3604",
+                "--dapr-grpc-port",
+                "51005",
+                "--metrics-port",
+                "9194",
+                "--dapr-internal-grpc-port",
+                "19015",
+                "--resources-path",
+                "../init_files/dapr_components"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:vmsfs:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "vmsfs"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmsfs",
+            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dapr:vmsfs:stop",
+                "dapr:vmsfs:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmsanalyticssingleton:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "vmsanalyticssingleton",
+                "--app-port",
+                "5140",
+                "--app-protocol",
+                "grpc",
+                "--dapr-http-port",
+                "3610",
+                "--dapr-grpc-port",
+                "51011",
+                "--metrics-port",
+                "9200",
+                "--dapr-internal-grpc-port",
+                "19021",
+                "--resources-path",
+                "../init_files/dapr_components"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:vmsanalyticssingleton:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "vmsanalyticssingleton"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmsanalyticssingleton",
+            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dapr:vmsanalyticssingleton:stop",
+                "dapr:vmsanalyticssingleton:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmslogger:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "vmslogger",
+                "--app-port",
+                "5138",
+                "--app-protocol",
+                "grpc",
+                "--dapr-http-port",
+                "3605",
+                "--dapr-grpc-port",
+                "51006",
+                "--metrics-port",
+                "9195",
+                "--dapr-internal-grpc-port",
+                "19016",
+                "--resources-path",
+                "../init_files/dapr_components"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:vmslogger:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "vmslogger"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmslogger",
+            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dapr:vmslogger:stop",
+                "dapr:vmslogger:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmssingleton:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "vmssingleton",
+                "--app-port",
+                "5145",
+                "--app-protocol",
+                "grpc",
+                "--dapr-http-port",
+                "3613",
+                "--dapr-grpc-port",
+                "51014",
+                "--metrics-port",
+                "9203",
+                "--dapr-internal-grpc-port",
+                "19024",
+                "--resources-path",
+                "../init_files/dapr_components",
+                "--placement-host-address",
+                "localhost:6050"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:vmssingleton:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "vmssingleton"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmssingleton",
+            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dapr:vmssingleton:stop",
+                "dapr:vmssingleton:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmssquaresingleton:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "vmssquaresingleton",
+                "--app-port",
+                "5147",
+                "--app-protocol",
+                "grpc",
+                "--dapr-http-port",
+                "3615",
+                "--dapr-grpc-port",
+                "51016",
+                "--metrics-port",
+                "9205",
+                "--dapr-internal-grpc-port",
+                "19026",
+                "--resources-path",
+                "../init_files/dapr_components",
+                "--placement-host-address",
+                "localhost:6050"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:vmssquaresingleton:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "vmssquaresingleton"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmssquaresingleton",
+            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dapr:vmssquaresingleton:stop",
+                "dapr:vmssquaresingleton:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vms:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "vms",
+                "--app-port",
+                "50051",
+                "--app-protocol",
+                "grpc",
+                "--dapr-http-port",
+                "3607",
+                "--dapr-grpc-port",
+                "51008",
+                "--metrics-port",
+                "9197",
+                "--dapr-internal-grpc-port",
+                "19018",
+                "--resources-path",
+                "../init_files/dapr_components"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:vms:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "vms"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vms",
+            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dapr:vms:stop",
+                "dapr:vms:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmslogger-2:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "vmslogger-2",
+                "--app-port",
+                "5148",
+                "--app-protocol",
+                "grpc",
+                "--dapr-http-port",
+                "3616",
+                "--dapr-grpc-port",
+                "51017",
+                "--metrics-port",
+                "9206",
+                "--dapr-internal-grpc-port",
+                "19027",
+                "--resources-path",
+                "../init_files/dapr_components",
+                "--placement-host-address",
+                "localhost:50005"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:vmslogger-2:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "vmslogger-2"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmslogger-2",
+            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dapr:vmslogger-2:stop",
+                "dapr:vmslogger-2:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmscfg-2:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "vmscfg",
+                "--app-port",
+                "5146",
+                "--app-protocol",
+                "grpc",
+                "--dapr-http-port",
+                "3614",
+                "--dapr-grpc-port",
+                "51015",
+                "--metrics-port",
+                "9204",
+                "--dapr-internal-grpc-port",
+                "19025",
+                "--resources-path",
+                "../init_files/dapr_components",
+                "--placement-host-address",
+                "localhost:50005"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:vmscfg-2:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "vmscfg"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmscfg-2",
+            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dapr:vmscfg-2:stop",
+                "dapr:vmscfg-2:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmsonvif-2:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "vmsonvif-2",
+                "--app-port",
+                "5143",
+                "--app-protocol",
+                "grpc",
+                "--dapr-http-port",
+                "3611",
+                "--dapr-grpc-port",
+                "51012",
+                "--metrics-port",
+                "9201",
+                "--dapr-internal-grpc-port",
+                "19022",
+                "--resources-path",
+                "../init_files/dapr_components",
+                "--placement-host-address",
+                "localhost:50005"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:vmsonvif-2:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "vmsonvif-2"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmsonvif-2",
+            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dapr:vmsonvif-2:stop",
+                "dapr:vmsonvif-2:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmsonvif-actors-2:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "vmsonvif-actors-2",
+                "--app-port",
+                "5144",
+                "--app-protocol",
+                "http",
+                "--dapr-http-port",
+                "3612",
+                "--dapr-grpc-port",
+                "51013",
+                "--metrics-port",
+                "9202",
+                "--dapr-internal-grpc-port",
+                "19023",
+                "--resources-path",
+                "../init_files/dapr_components",
+                "--placement-host-address",
+                "localhost:50005"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:vmsonvif-actors-2:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "vmsonvif-actors-2"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmsonvif-actors-2",
+            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dapr:vmsonvif-actors-2:stop",
+                "dapr:vmsonvif-actors-2:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vmsfs-2:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "vmsfs-2",
+                "--app-port",
+                "5142",
+                "--app-protocol",
+                "grpc",
+                "--dapr-http-port",
+                "3608",
+                "--dapr-grpc-port",
+                "51009",
+                "--metrics-port",
+                "9198",
+                "--dapr-internal-grpc-port",
+                "19019",
+                "--resources-path",
+                "../init_files/dapr_components"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:vmsfs-2:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "vmsfs-2"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmsfs-2",
+            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dapr:vmsfs-2:stop",
+                "dapr:vmsfs-2:start"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr:vms-2:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "vms-2",
+                "--app-port",
+                "50052",
+                "--app-protocol",
+                "grpc",
+                "--dapr-http-port",
+                "3609",
+                "--dapr-grpc-port",
+                "51010",
+                "--metrics-port",
+                "9199",
+                "--dapr-internal-grpc-port",
+                "19020",
+                "--resources-path",
+                "../init_files/dapr_components"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:vms-2:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "vms-2"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vms-2",
+            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "dapr:vms-2:stop",
+                "dapr:vms-2:start"
+            ],
+            "problemMatcher": []
+        },
+        {
             "label": "dotnet:build",
             "command": "dotnet",
             "type": "process",
@@ -82,755 +1391,6 @@
             "group": {
                 "kind": "build",
                 "isDefault": true
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "kill stale: web_vms (F5)",
-            "detail": "Подчищает зависшие daprd/dotnet от прошлой (аварийно прерванной) сессии — иначе новый запуск не займёт порты.",
-            "type": "shell",
-            "command": "pkill -f \"app-id web-vms\" || true; pkill -f \"web_vms.Server/bin/Debug/net10.0/web_vms.Server.dll\" || true",
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:web_vms",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "kill stale: web_vms (F5)",
-                "dotnet:build",
-                "dapr:web_vms:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "kill stale: vmscfg (F5)",
-            "detail": "Матчится по dapr-http-port, а не по app-id: у реплики vmscfg-2 он тот же (vmscfg), и pkill по нему убил бы обе. Процесс VmsCfg.dll не трогаем по той же причине — тот же бинарник использует и реплика.",
-            "type": "shell",
-            "command": "pkill -f \"dapr-http-port 3601\" || true",
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmscfg",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "kill stale: vmscfg (F5)",
-                "dotnet:build",
-                "dapr:vmscfg:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "kill stale: vmsonvif (F5)",
-            "detail": "Пробел в конце app-id обязателен: без него шаблон совпадает и с vmsonvif-2. Процесс VmsOnvif.dll не трогаем — тот же бинарник у второго узла.",
-            "type": "shell",
-            "command": "pkill -f \"app-id vmsonvif \" || true",
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmsonvif",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "kill stale: vmsonvif (F5)",
-                "dotnet:build",
-                "dapr:vmsonvif:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "kill stale: vmsfs (F5)",
-            "detail": "Подчищает зависший daprd от прошлой сессии (app-id уникален) — процесс VmsFs.dll не трогаем, тот же бинарник использует и VmsFs-2.",
-            "type": "shell",
-            "command": "pkill -f \"app-id vmsfs \" || true",
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmsfs",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "kill stale: vmsfs (F5)",
-                "dotnet:build",
-                "dapr:vmsfs:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "kill stale: vmsanalyticssingleton (F5)",
-            "detail": "Подчищает зависший daprd от прошлой сессии (app-id уникален) — процесс VmsAnalyticsSingleton.dll не трогаем.",
-            "type": "shell",
-            "command": "pkill -f \"app-id vmsanalyticssingleton\" || true",
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmsanalyticssingleton",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "kill stale: vmsanalyticssingleton (F5)",
-                "dotnet:build",
-                "dapr:vmsanalyticssingleton:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "kill stale: vmslogger (F5)",
-            "detail": "Пробел в конце app-id обязателен: без него шаблон совпадает и с vmslogger-2. Процесс VmsLogger.dll не трогаем — тот же бинарник использует логгер второго узла.",
-            "type": "shell",
-            "command": "pkill -f \"app-id vmslogger \" || true",
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmslogger",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "kill stale: vmslogger (F5)",
-                "dotnet:build",
-                "dapr:vmslogger:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "kill stale: vmsutils (F5)",
-            "detail": "Подчищает зависшие daprd/dotnet от прошлой (аварийно прерванной) сессии — иначе новый запуск не займёт порты.",
-            "type": "shell",
-            "command": "pkill -f \"app-id vmsutils\" || true; pkill -f \"VmsUtils/bin/Debug/net10.0/VmsUtils.dll\" || true",
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmsutils",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "kill stale: vmsutils (F5)",
-                "dotnet:build",
-                "dapr:vmsutils:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "kill stale: vms (F5)",
-            "detail": "Подчищает зависший daprd от прошлой сессии (app-id уникален) — процесс media_server (vms) не трогаем, тот же бинарник использует и vms-2.",
-            "type": "shell",
-            "command": "pkill -f \"app-id vms \" || true",
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vms",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "kill stale: vms (F5)",
-                "cmake:configure:vms",
-                "cmake:build:vms",
-                "dapr:vms:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:web_vms:start",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=web_vms; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id web-vms -components-path ${workspaceFolder}/init_files/dapr_components -app-port 5134 -app-protocol http -dapr-http-port 3600 -dapr-grpc-port 51001 -metrics-port 9190 -dapr-internal-grpc-port 19011 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:web_vms:stop",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "if [ -f /tmp/web_vms-dapr/web_vms.pid ]; then p=$(cat /tmp/web_vms-dapr/web_vms.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/web_vms.pid; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmscfg:start",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=vmscfg; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmscfg -components-path ${workspaceFolder}/init_files/dapr_components -app-port 5135 -app-protocol grpc -dapr-http-port 3601 -dapr-grpc-port 51002 -metrics-port 9191 -dapr-internal-grpc-port 19012 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmscfg:stop",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmscfg.pid ]; then p=$(cat /tmp/web_vms-dapr/vmscfg.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmscfg.pid; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsonvif:start",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=vmsonvif; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmsonvif -app-port 5136 -components-path ${workspaceFolder}/init_files/dapr_components -app-protocol grpc -dapr-http-port 3602 -dapr-grpc-port 51003 -metrics-port 9192 -placement-host-address localhost:50005 -dapr-internal-grpc-port 19013 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsonvif:stop",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmsonvif.pid ]; then p=$(cat /tmp/web_vms-dapr/vmsonvif.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmsonvif.pid; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "kill stale: vmsonvif-actors (F5)",
-            "detail": "Пробел в конце app-id обязателен: без него шаблон совпадает и с vmsonvif-actors-2. Процесс VmsOnvifActors.dll не трогаем — тот же бинарник у второго узла.",
-            "type": "shell",
-            "command": "pkill -f \"app-id vmsonvif-actors \" || true",
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmsonvif-actors",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "kill stale: vmsonvif-actors (F5)",
-                "dotnet:build",
-                "dapr:vmsonvif-actors:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsonvif-actors:start",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=vmsonvif-actors; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmsonvif-actors -app-port 5141 -app-protocol http -dapr-http-port 3603 -dapr-grpc-port 51004 -metrics-port 9193 -components-path ${workspaceFolder}/init_files/dapr_components -placement-host-address localhost:50005 -dapr-internal-grpc-port 19014 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsonvif-actors:stop",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmsonvif-actors.pid ]; then p=$(cat /tmp/web_vms-dapr/vmsonvif-actors.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmsonvif-actors.pid; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsfs:start",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=vmsfs; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmsfs -app-port 5137 -components-path ${workspaceFolder}/init_files/dapr_components -app-protocol grpc -dapr-http-port 3604 -dapr-grpc-port 51005 -metrics-port 9194 -dapr-internal-grpc-port 19015 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsfs:stop",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmsfs.pid ]; then p=$(cat /tmp/web_vms-dapr/vmsfs.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmsfs.pid; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsanalyticssingleton:start",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=vmsanalyticssingleton; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmsanalyticssingleton -app-port 5140 -components-path ${workspaceFolder}/init_files/dapr_components -app-protocol grpc -dapr-http-port 3610 -dapr-grpc-port 51011 -metrics-port 9200 -dapr-internal-grpc-port 19021 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsanalyticssingleton:stop",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmsanalyticssingleton.pid ]; then p=$(cat /tmp/web_vms-dapr/vmsanalyticssingleton.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmsanalyticssingleton.pid; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmslogger:start",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=vmslogger; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmslogger -app-port 5138 -app-protocol grpc -dapr-http-port 3605 -dapr-grpc-port 51006 -metrics-port 9195 -dapr-internal-grpc-port 19016 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmslogger:stop",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmslogger.pid ]; then p=$(cat /tmp/web_vms-dapr/vmslogger.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmslogger.pid; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsutils:start",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=vmsutils; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmsutils -components-path ${workspaceFolder}/init_files/dapr_components -app-port 5139 -app-protocol grpc -dapr-http-port 3606 -dapr-grpc-port 51007 -metrics-port 9196 -dapr-internal-grpc-port 19017 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsutils:stop",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmsutils.pid ]; then p=$(cat /tmp/web_vms-dapr/vmsutils.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmsutils.pid; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vms:start",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=vms; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vms -app-port 50051 -app-protocol grpc -dapr-http-port 3607 -dapr-grpc-port 51008 -metrics-port 9197 -components-path ${workspaceFolder}/init_files/dapr_components -dapr-internal-grpc-port 19018 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vms:stop",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "if [ -f /tmp/web_vms-dapr/vms.pid ]; then p=$(cat /tmp/web_vms-dapr/vms.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vms.pid; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "kill stale: vmslogger-2 (F5)",
-            "detail": "Подчищает зависший daprd от прошлой сессии — процесс VmsLogger.dll не трогаем, тот же бинарник использует и vmslogger.",
-            "type": "shell",
-            "command": "pkill -f \"app-id vmslogger-2\" || true",
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmslogger-2",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "kill stale: vmslogger-2 (F5)",
-                "dotnet:build",
-                "dapr:vmslogger-2:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmslogger-2:start",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=vmslogger-2; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmslogger-2 -app-port 5148 -components-path ${workspaceFolder}/init_files/dapr_components -app-protocol grpc -dapr-http-port 3616 -dapr-grpc-port 51017 -metrics-port 9206 -placement-host-address localhost:50005 -dapr-internal-grpc-port 19027 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
-            ],
-            "presentation": { "reveal": "silent", "panel": "dedicated" },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmslogger-2:stop",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmslogger-2.pid ]; then p=$(cat /tmp/web_vms-dapr/vmslogger-2.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmslogger-2.pid; fi"
-            ],
-            "presentation": { "reveal": "silent", "panel": "dedicated" },
-            "problemMatcher": []
-        },
-        {
-            "label": "kill stale: vmscfg-2 (F5)",
-            "detail": "Матчится по dapr-http-port, а не по app-id: у реплики он тот же (vmscfg), и pkill по нему убил бы обе.",
-            "type": "shell",
-            "command": "pkill -f \"dapr-http-port 3614\" || true",
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmscfg-2",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "kill stale: vmscfg-2 (F5)",
-                "dotnet:build",
-                "dapr:vmscfg-2:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmscfg-2:start",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=vmscfg-2; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmscfg -app-port 5146 -components-path ${workspaceFolder}/init_files/dapr_components -app-protocol grpc -dapr-http-port 3614 -dapr-grpc-port 51015 -metrics-port 9204 -placement-host-address localhost:50005 -dapr-internal-grpc-port 19025 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
-            ],
-            "presentation": { "reveal": "silent", "panel": "dedicated" },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmscfg-2:stop",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmscfg-2.pid ]; then p=$(cat /tmp/web_vms-dapr/vmscfg-2.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmscfg-2.pid; fi"
-            ],
-            "presentation": { "reveal": "silent", "panel": "dedicated" },
-            "problemMatcher": []
-        },
-        {
-            "label": "kill stale: vmssquaresingleton (F5)",
-            "detail": "Подчищает зависший daprd от прошлой сессии (app-id уникален).",
-            "type": "shell",
-            "command": "pkill -f \"app-id vmssquaresingleton\" || true",
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmssquaresingleton",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "kill stale: vmssquaresingleton (F5)",
-                "dotnet:build",
-                "dapr:vmssquaresingleton:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmssquaresingleton:start",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=vmssquaresingleton; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmssquaresingleton -app-port 5147 -components-path ${workspaceFolder}/init_files/dapr_components -app-protocol grpc -dapr-http-port 3615 -dapr-grpc-port 51016 -metrics-port 9205 -placement-host-address localhost:50005 -dapr-internal-grpc-port 19026 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
-            ],
-            "presentation": { "reveal": "silent", "panel": "dedicated" },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmssquaresingleton:stop",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmssquaresingleton.pid ]; then p=$(cat /tmp/web_vms-dapr/vmssquaresingleton.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmssquaresingleton.pid; fi"
-            ],
-            "presentation": { "reveal": "silent", "panel": "dedicated" },
-            "problemMatcher": []
-        },
-        {
-            "label": "kill stale: vmssingleton (F5)",
-            "detail": "Подчищает зависший daprd от прошлой сессии (app-id уникален).",
-            "type": "shell",
-            "command": "pkill -f \"app-id vmssingleton\" || true",
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmssingleton",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "kill stale: vmssingleton (F5)",
-                "dotnet:build",
-                "dapr:vmssingleton:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmssingleton:start",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=vmssingleton; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmssingleton -app-port 5145 -components-path ${workspaceFolder}/init_files/dapr_components -app-protocol grpc -dapr-http-port 3613 -dapr-grpc-port 51014 -metrics-port 9203 -placement-host-address localhost:50005 -dapr-internal-grpc-port 19024 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmssingleton:stop",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmssingleton.pid ]; then p=$(cat /tmp/web_vms-dapr/vmssingleton.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmssingleton.pid; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "kill stale: vmsonvif-2 (F5)",
-            "detail": "Подчищает зависший daprd от прошлой сессии — процесс VmsOnvif.dll не трогаем, тот же бинарник использует и vmsonvif.",
-            "type": "shell",
-            "command": "pkill -f \"app-id vmsonvif-2\" || true",
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmsonvif-2",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "kill stale: vmsonvif-2 (F5)",
-                "dotnet:build",
-                "dapr:vmsonvif-2:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsonvif-2:start",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=vmsonvif-2; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmsonvif-2 -app-port 5143 -components-path ${workspaceFolder}/init_files/dapr_components -app-protocol grpc -dapr-http-port 3611 -dapr-grpc-port 51012 -metrics-port 9201 -placement-host-address localhost:50005 -dapr-internal-grpc-port 19022 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsonvif-2:stop",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmsonvif-2.pid ]; then p=$(cat /tmp/web_vms-dapr/vmsonvif-2.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmsonvif-2.pid; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "kill stale: vmsonvif-actors-2 (F5)",
-            "detail": "Подчищает зависший daprd от прошлой сессии — процесс VmsOnvifActors.dll не трогаем, тот же бинарник использует и vmsonvif-actors.",
-            "type": "shell",
-            "command": "pkill -f \"app-id vmsonvif-actors-2\" || true",
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmsonvif-actors-2",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "kill stale: vmsonvif-actors-2 (F5)",
-                "dotnet:build",
-                "dapr:vmsonvif-actors-2:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsonvif-actors-2:start",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=vmsonvif-actors-2; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmsonvif-actors-2 -app-port 5144 -app-protocol http -dapr-http-port 3612 -dapr-grpc-port 51013 -metrics-port 9202 -components-path ${workspaceFolder}/init_files/dapr_components -placement-host-address localhost:50005 -dapr-internal-grpc-port 19023 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsonvif-actors-2:stop",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmsonvif-actors-2.pid ]; then p=$(cat /tmp/web_vms-dapr/vmsonvif-actors-2.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmsonvif-actors-2.pid; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "kill stale: vmsfs-2 (F5)",
-            "detail": "Подчищает зависший daprd от прошлой сессии — процесс VmsFs.dll не трогаем, тот же бинарник использует и VmsFs.",
-            "type": "shell",
-            "command": "pkill -f \"app-id vmsfs-2\" || true",
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmsfs-2",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "kill stale: vmsfs-2 (F5)",
-                "dotnet:build",
-                "dapr:vmsfs-2:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsfs-2:start",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=vmsfs-2; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vmsfs-2 -app-port 5142 -components-path ${workspaceFolder}/init_files/dapr_components -app-protocol grpc -dapr-http-port 3608 -dapr-grpc-port 51009 -metrics-port 9198 -dapr-internal-grpc-port 19019 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsfs-2:stop",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "if [ -f /tmp/web_vms-dapr/vmsfs-2.pid ]; then p=$(cat /tmp/web_vms-dapr/vmsfs-2.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vmsfs-2.pid; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "kill stale: vms-2 (F5)",
-            "detail": "Подчищает зависший daprd от прошлой сессии — процесс media_server не трогаем, тот же бинарник использует и vms.",
-            "type": "shell",
-            "command": "pkill -f \"app-id vms-2\" || true",
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vms-2",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "kill stale: vms-2 (F5)",
-                "cmake:configure:vms",
-                "cmake:build:vms",
-                "dapr:vms-2:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vms-2:start",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "pid_dir=/tmp/web_vms-dapr; name=vms-2; pid_file=\"$pid_dir/$name.pid\"; log_file=\"$pid_dir/$name.log\"; daprd_bin=\"$(command -v daprd || true)\"; if [ -z \"$daprd_bin\" ] && [ -x \"$HOME/.dapr/bin/daprd\" ]; then daprd_bin=\"$HOME/.dapr/bin/daprd\"; fi; mkdir -p \"$pid_dir\"; if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then exit 0; fi; rm -f \"$pid_file\"; if [ -z \"$daprd_bin\" ]; then echo \"daprd not found in PATH or \\$HOME/.dapr/bin\" > \"$log_file\"; exit 1; fi; nohup \"$daprd_bin\" -app-id vms-2 -app-port 50052 -app-protocol grpc -dapr-http-port 3609 -dapr-grpc-port 51010 -metrics-port 9199 -components-path ${workspaceFolder}/init_files/dapr_components -dapr-internal-grpc-port 19020 > \"$log_file\" 2>&1 & echo $! > \"$pid_file\"; sleep 2; if ! kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"daprd for $name failed to stay running. Log:\"; sed -n '1,120p' \"$log_file\"; exit 1; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vms-2:stop",
-            "type": "shell",
-            "command": "bash",
-            "args": [
-                "-lc",
-                "if [ -f /tmp/web_vms-dapr/vms-2.pid ]; then p=$(cat /tmp/web_vms-dapr/vms-2.pid); kill \"$p\" 2>/dev/null || true; for i in $(seq 50); do kill -0 \"$p\" 2>/dev/null || break; sleep 0.1; done; kill -0 \"$p\" 2>/dev/null && kill -9 \"$p\" 2>/dev/null; rm -f /tmp/web_vms-dapr/vms-2.pid; fi"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
             },
             "problemMatcher": []
         }
