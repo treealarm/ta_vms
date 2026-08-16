@@ -51,8 +51,10 @@ apps:
     daprGRPCPort: 51003
     metricsPort: 9192
     daprInternalGRPCPort: 19013
-    # Windows `dapr init` publishes placement as host:6050 -> container:50005 (Linux stays on 50005).
-    placementHostAddress: localhost:6050
+    # Hostname without a port on purpose: the CLI appends the platform's own default — 6050 on
+    # Windows, where `dapr init` publishes placement there, 50005 everywhere else. Pinning either
+    # number here leaves the actor sidecar with "placement: disconnected" on the other OS.
+    placementHostAddress: localhost
     daprdLogDestination: console
 
   - appID: vmsonvif-actors
@@ -63,8 +65,10 @@ apps:
     daprGRPCPort: 51004
     metricsPort: 9193
     daprInternalGRPCPort: 19014
-    # Windows `dapr init` publishes placement as host:6050 -> container:50005 (Linux stays on 50005).
-    placementHostAddress: localhost:6050
+    # Hostname without a port on purpose: the CLI appends the platform's own default — 6050 on
+    # Windows, where `dapr init` publishes placement there, 50005 everywhere else. Pinning either
+    # number here leaves the actor sidecar with "placement: disconnected" on the other OS.
+    placementHostAddress: localhost
     daprdLogDestination: console
 
   - appID: vmsfs
@@ -105,8 +109,10 @@ apps:
     daprGRPCPort: 51014
     metricsPort: 9203
     daprInternalGRPCPort: 19024
-    # Windows `dapr init` publishes placement as host:6050 -> container:50005 (Linux stays on 50005).
-    placementHostAddress: localhost:6050
+    # Hostname without a port on purpose: the CLI appends the platform's own default — 6050 on
+    # Windows, where `dapr init` publishes placement there, 50005 everywhere else. Pinning either
+    # number here leaves the actor sidecar with "placement: disconnected" on the other OS.
+    placementHostAddress: localhost
     daprdLogDestination: console
 
   - appID: vmssquaresingleton
@@ -117,8 +123,10 @@ apps:
     daprGRPCPort: 51016
     metricsPort: 9205
     daprInternalGRPCPort: 19026
-    # Windows `dapr init` publishes placement as host:6050 -> container:50005 (Linux stays on 50005).
-    placementHostAddress: localhost:6050
+    # Hostname without a port on purpose: the CLI appends the platform's own default — 6050 on
+    # Windows, where `dapr init` publishes placement there, 50005 everywhere else. Pinning either
+    # number here leaves the actor sidecar with "placement: disconnected" on the other OS.
+    placementHostAddress: localhost
     daprdLogDestination: console
 
   - appID: vms

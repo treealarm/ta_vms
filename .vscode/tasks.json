@@ -399,7 +399,7 @@
                 "--resources-path",
                 "../init_files/dapr_components",
                 "--placement-host-address",
-                "localhost:6050"
+                "localhost"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/web_vms"
@@ -474,7 +474,7 @@
                 "--resources-path",
                 "../init_files/dapr_components",
                 "--placement-host-address",
-                "localhost:6050"
+                "localhost"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/web_vms"
@@ -768,7 +768,7 @@
                 "--resources-path",
                 "../init_files/dapr_components",
                 "--placement-host-address",
-                "localhost:6050"
+                "localhost"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/web_vms"
@@ -843,7 +843,7 @@
                 "--resources-path",
                 "../init_files/dapr_components",
                 "--placement-host-address",
-                "localhost:6050"
+                "localhost"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/web_vms"
