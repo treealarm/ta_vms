@@ -54,6 +54,109 @@
             "problemMatcher": []
         },
         {
+            "label": "browser: free debug port",
+            "detail": "Kills whatever still holds port 9222. Needed because the browser debug port is pinned (see the launch configuration), and a session that ends without closing its browser leaves one squatting — after a few of those every launch fails with 'Could not connect to debug target'.",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-Command",
+                "Get-NetTCPConnection -State Listen -LocalPort 9222 -EA SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -EA SilentlyContinue }; exit 0"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": [],
+            "linux": {
+                "command": "bash",
+                "args": [
+                    "-lc",
+                    "fuser -k 9222/tcp 2>/dev/null; true"
+                ]
+            },
+            "osx": {
+                "command": "bash",
+                "args": [
+                    "-lc",
+                    "fuser -k 9222/tcp 2>/dev/null; true"
+                ]
+            }
+        },
+        {
+            "label": "browser: prepare",
+            "detail": "Frees the debug port, then waits until the stack actually serves.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "browser: free debug port",
+                "wait: stack ready"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "wait: stack ready",
+            "detail": "Waits until VmsCfg is actually serving, so the browser does not call the API while the stack is still starting. A Dapr sidecar's /v1.0/healthz answers 204 only once its app is up, and 500 while it is still waiting for it — which is exactly the readiness signal, and needs no script.",
+            "type": "shell",
+            "command": "curl",
+            "args": [
+                "--silent",
+                "--show-error",
+                "--fail",
+                "--retry-all-errors",
+                "--retry-connrefused",
+                "--retry",
+                "90",
+                "--retry-delay",
+                "1",
+                "--max-time",
+                "180",
+                "--output",
+                "NUL",
+                "http://localhost:3601/v1.0/healthz"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": [],
+            "linux": {
+                "args": [
+                    "--silent",
+                    "--show-error",
+                    "--fail",
+                    "--retry-all-errors",
+                    "--retry-connrefused",
+                    "--retry",
+                    "90",
+                    "--retry-delay",
+                    "1",
+                    "--max-time",
+                    "180",
+                    "--output",
+                    "/dev/null",
+                    "http://localhost:3601/v1.0/healthz"
+                ]
+            },
+            "osx": {
+                "args": [
+                    "--silent",
+                    "--show-error",
+                    "--fail",
+                    "--retry-all-errors",
+                    "--retry-connrefused",
+                    "--retry",
+                    "90",
+                    "--retry-delay",
+                    "1",
+                    "--max-time",
+                    "180",
+                    "--output",
+                    "/dev/null",
+                    "http://localhost:3601/v1.0/healthz"
+                ]
+            }
+        },
+        {
             "label": "dapr:web_vms:start",
             "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
             "type": "shell",
@@ -861,452 +964,6 @@
             "dependsOn": [
                 "dapr:vms:stop",
                 "dapr:vms:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmslogger-2:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
-            "type": "shell",
-            "command": "dapr",
-            "args": [
-                "run",
-                "--app-id",
-                "vmslogger-2",
-                "--app-port",
-                "5148",
-                "--app-protocol",
-                "grpc",
-                "--dapr-http-port",
-                "3616",
-                "--dapr-grpc-port",
-                "51017",
-                "--metrics-port",
-                "9206",
-                "--dapr-internal-grpc-port",
-                "19027",
-                "--resources-path",
-                "../init_files/dapr_components",
-                "--placement-host-address",
-                "localhost:50005"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}/web_vms"
-            },
-            "isBackground": true,
-            "presentation": {
-                "reveal": "always",
-                "panel": "dedicated",
-                "group": "dapr"
-            },
-            "problemMatcher": {
-                "pattern": {
-                    "regexp": "^(?:\\s*)$",
-                    "file": 1,
-                    "location": 1,
-                    "message": 1
-                },
-                "background": {
-                    "activeOnStart": true,
-                    "beginsPattern": "Starting Dapr with id",
-                    "endsPattern": "(You're up and running|Initialized name resolution)"
-                }
-            }
-        },
-        {
-            "label": "dapr:vmslogger-2:stop",
-            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
-            "type": "shell",
-            "command": "dapr",
-            "args": [
-                "stop",
-                "--app-id",
-                "vmslogger-2"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmslogger-2",
-            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "dapr:vmslogger-2:stop",
-                "dapr:vmslogger-2:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmscfg-2:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
-            "type": "shell",
-            "command": "dapr",
-            "args": [
-                "run",
-                "--app-id",
-                "vmscfg",
-                "--app-port",
-                "5146",
-                "--app-protocol",
-                "grpc",
-                "--dapr-http-port",
-                "3614",
-                "--dapr-grpc-port",
-                "51015",
-                "--metrics-port",
-                "9204",
-                "--dapr-internal-grpc-port",
-                "19025",
-                "--resources-path",
-                "../init_files/dapr_components",
-                "--placement-host-address",
-                "localhost:50005"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}/web_vms"
-            },
-            "isBackground": true,
-            "presentation": {
-                "reveal": "always",
-                "panel": "dedicated",
-                "group": "dapr"
-            },
-            "problemMatcher": {
-                "pattern": {
-                    "regexp": "^(?:\\s*)$",
-                    "file": 1,
-                    "location": 1,
-                    "message": 1
-                },
-                "background": {
-                    "activeOnStart": true,
-                    "beginsPattern": "Starting Dapr with id",
-                    "endsPattern": "(You're up and running|Initialized name resolution)"
-                }
-            }
-        },
-        {
-            "label": "dapr:vmscfg-2:stop",
-            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
-            "type": "shell",
-            "command": "dapr",
-            "args": [
-                "stop",
-                "--app-id",
-                "vmscfg"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmscfg-2",
-            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "dapr:vmscfg-2:stop",
-                "dapr:vmscfg-2:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsonvif-2:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
-            "type": "shell",
-            "command": "dapr",
-            "args": [
-                "run",
-                "--app-id",
-                "vmsonvif-2",
-                "--app-port",
-                "5143",
-                "--app-protocol",
-                "grpc",
-                "--dapr-http-port",
-                "3611",
-                "--dapr-grpc-port",
-                "51012",
-                "--metrics-port",
-                "9201",
-                "--dapr-internal-grpc-port",
-                "19022",
-                "--resources-path",
-                "../init_files/dapr_components",
-                "--placement-host-address",
-                "localhost:50005"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}/web_vms"
-            },
-            "isBackground": true,
-            "presentation": {
-                "reveal": "always",
-                "panel": "dedicated",
-                "group": "dapr"
-            },
-            "problemMatcher": {
-                "pattern": {
-                    "regexp": "^(?:\\s*)$",
-                    "file": 1,
-                    "location": 1,
-                    "message": 1
-                },
-                "background": {
-                    "activeOnStart": true,
-                    "beginsPattern": "Starting Dapr with id",
-                    "endsPattern": "(You're up and running|Initialized name resolution)"
-                }
-            }
-        },
-        {
-            "label": "dapr:vmsonvif-2:stop",
-            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
-            "type": "shell",
-            "command": "dapr",
-            "args": [
-                "stop",
-                "--app-id",
-                "vmsonvif-2"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmsonvif-2",
-            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "dapr:vmsonvif-2:stop",
-                "dapr:vmsonvif-2:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsonvif-actors-2:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
-            "type": "shell",
-            "command": "dapr",
-            "args": [
-                "run",
-                "--app-id",
-                "vmsonvif-actors-2",
-                "--app-port",
-                "5144",
-                "--app-protocol",
-                "http",
-                "--dapr-http-port",
-                "3612",
-                "--dapr-grpc-port",
-                "51013",
-                "--metrics-port",
-                "9202",
-                "--dapr-internal-grpc-port",
-                "19023",
-                "--resources-path",
-                "../init_files/dapr_components",
-                "--placement-host-address",
-                "localhost:50005"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}/web_vms"
-            },
-            "isBackground": true,
-            "presentation": {
-                "reveal": "always",
-                "panel": "dedicated",
-                "group": "dapr"
-            },
-            "problemMatcher": {
-                "pattern": {
-                    "regexp": "^(?:\\s*)$",
-                    "file": 1,
-                    "location": 1,
-                    "message": 1
-                },
-                "background": {
-                    "activeOnStart": true,
-                    "beginsPattern": "Starting Dapr with id",
-                    "endsPattern": "(You're up and running|Initialized name resolution)"
-                }
-            }
-        },
-        {
-            "label": "dapr:vmsonvif-actors-2:stop",
-            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
-            "type": "shell",
-            "command": "dapr",
-            "args": [
-                "stop",
-                "--app-id",
-                "vmsonvif-actors-2"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmsonvif-actors-2",
-            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "dapr:vmsonvif-actors-2:stop",
-                "dapr:vmsonvif-actors-2:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vmsfs-2:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
-            "type": "shell",
-            "command": "dapr",
-            "args": [
-                "run",
-                "--app-id",
-                "vmsfs-2",
-                "--app-port",
-                "5142",
-                "--app-protocol",
-                "grpc",
-                "--dapr-http-port",
-                "3608",
-                "--dapr-grpc-port",
-                "51009",
-                "--metrics-port",
-                "9198",
-                "--dapr-internal-grpc-port",
-                "19019",
-                "--resources-path",
-                "../init_files/dapr_components"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}/web_vms"
-            },
-            "isBackground": true,
-            "presentation": {
-                "reveal": "always",
-                "panel": "dedicated",
-                "group": "dapr"
-            },
-            "problemMatcher": {
-                "pattern": {
-                    "regexp": "^(?:\\s*)$",
-                    "file": 1,
-                    "location": 1,
-                    "message": 1
-                },
-                "background": {
-                    "activeOnStart": true,
-                    "beginsPattern": "Starting Dapr with id",
-                    "endsPattern": "(You're up and running|Initialized name resolution)"
-                }
-            }
-        },
-        {
-            "label": "dapr:vmsfs-2:stop",
-            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
-            "type": "shell",
-            "command": "dapr",
-            "args": [
-                "stop",
-                "--app-id",
-                "vmsfs-2"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmsfs-2",
-            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "dapr:vmsfs-2:stop",
-                "dapr:vmsfs-2:start"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "dapr:vms-2:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
-            "type": "shell",
-            "command": "dapr",
-            "args": [
-                "run",
-                "--app-id",
-                "vms-2",
-                "--app-port",
-                "50052",
-                "--app-protocol",
-                "grpc",
-                "--dapr-http-port",
-                "3609",
-                "--dapr-grpc-port",
-                "51010",
-                "--metrics-port",
-                "9199",
-                "--dapr-internal-grpc-port",
-                "19020",
-                "--resources-path",
-                "../init_files/dapr_components"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}/web_vms"
-            },
-            "isBackground": true,
-            "presentation": {
-                "reveal": "always",
-                "panel": "dedicated",
-                "group": "dapr"
-            },
-            "problemMatcher": {
-                "pattern": {
-                    "regexp": "^(?:\\s*)$",
-                    "file": 1,
-                    "location": 1,
-                    "message": 1
-                },
-                "background": {
-                    "activeOnStart": true,
-                    "beginsPattern": "Starting Dapr with id",
-                    "endsPattern": "(You're up and running|Initialized name resolution)"
-                }
-            }
-        },
-        {
-            "label": "dapr:vms-2:stop",
-            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
-            "type": "shell",
-            "command": "dapr",
-            "args": [
-                "stop",
-                "--app-id",
-                "vms-2"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vms-2",
-            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "dapr:vms-2:stop",
-                "dapr:vms-2:start"
             ],
             "problemMatcher": []
         },

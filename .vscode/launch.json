@@ -374,248 +374,6 @@
             "console": "integratedTerminal",
             "skipFiles": [
                 "<node_internals>/**"
-            ],
-            "serverReadyAction": {
-                "pattern": "Local.*?(\\d{4,5})",
-                "action": "startDebugging",
-                "name": "Frontend Debug (Chromium)"
-            }
-        },
-        {
-            "name": "Frontend Debug (Chromium)",
-            "type": "chrome",
-            "request": "launch",
-            "url": "http://localhost:5173",
-            "webRoot": "${workspaceFolder}/web_vms/web_vms.client/src",
-            "userDataDir": "${env:LOCALAPPDATA}/ta_vms-chrome-debug",
-            "port": 9222,
-            "timeout": 60000
-        },
-        {
-            "name": "VmsCfg-2 (.NET)",
-            "type": "coreclr",
-            "request": "launch",
-            "preLaunchTask": "prepare:vmscfg-2",
-            "postDebugTask": "dapr:vmscfg-2:stop",
-            "program": "${workspaceFolder}/web_vms/VmsCfg/bin/Debug/net10.0/VmsCfg.dll",
-            "cwd": "${workspaceFolder}/web_vms/VmsCfg",
-            "stopAtEntry": false,
-            "env": {
-                "ASPNETCORE_ENVIRONMENT": "Development",
-                "CFG_VMS_PORT": "5146",
-                "DAPR_HTTP_PORT": "3614",
-                "DAPR_GRPC_PORT": "51015",
-                "PUBSUB_NAME": "orderpubsub",
-                "POSTGRES_HOST": "localhost",
-                "POSTGRES_PORT": "5432",
-                "POSTGRES_USER": "postgres",
-                "POSTGRES_PASSWORD": "postgres",
-                "POSTGRES_CFG_DB": "ta_cfg",
-                "VMS_MTX_HOST": "localhost",
-                "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage",
-                "MEDIA_SERVER_PAIRS": "vms:vmsfs:vmsonvif:vmslogger,vms-2:vmsfs-2:vmsonvif-2:vmslogger-2",
-                "DAPR_STATE_STORE_NAME": "statestore",
-                "APP_ID": "vmscfg",
-                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
-            }
-        },
-        {
-            "name": "VmsLogger-2 (.NET)",
-            "type": "coreclr",
-            "request": "launch",
-            "preLaunchTask": "prepare:vmslogger-2",
-            "postDebugTask": "dapr:vmslogger-2:stop",
-            "program": "${workspaceFolder}/web_vms/VmsLogger/bin/Debug/net10.0/VmsLogger.dll",
-            "cwd": "${workspaceFolder}/web_vms/VmsLogger",
-            "stopAtEntry": false,
-            "env": {
-                "ASPNETCORE_ENVIRONMENT": "Development",
-                "LOGGER_VMS_PORT": "5148",
-                "DAPR_HTTP_PORT": "3616",
-                "DAPR_GRPC_PORT": "51017",
-                "APP_ID": "vmslogger-2",
-                "VMS_LOG_PATH": "${workspaceFolder}/../logs-node2"
-            }
-        },
-        {
-            "name": "VmsOnvif-2 (.NET)",
-            "type": "coreclr",
-            "request": "launch",
-            "preLaunchTask": "prepare:vmsonvif-2",
-            "postDebugTask": "dapr:vmsonvif-2:stop",
-            "program": "${workspaceFolder}/web_vms/VmsOnvif/bin/Debug/net10.0/VmsOnvif.dll",
-            "cwd": "${workspaceFolder}/web_vms/VmsOnvif",
-            "stopAtEntry": false,
-            "env": {
-                "ASPNETCORE_ENVIRONMENT": "Development",
-                "ONVIF_SRV_PORT": "5143",
-                "DAPR_HTTP_PORT": "3611",
-                "DAPR_GRPC_PORT": "51012",
-                "DAPR_CFG_APP_ID": "vmscfg",
-                "PUBSUB_NAME": "orderpubsub",
-                "APP_ID": "vmsonvif-2",
-                "DAPR_ANALYTICS_APP_ID": "vmsanalyticssingleton",
-                "OWN_SERVER_ID": "vms-2",
-                "VMS_LOG_PATH": "${workspaceFolder}/../logs-node2"
-            }
-        },
-        {
-            "name": "VmsOnvifActors-2 (.NET)",
-            "type": "coreclr",
-            "request": "launch",
-            "preLaunchTask": "prepare:vmsonvif-actors-2",
-            "postDebugTask": "dapr:vmsonvif-actors-2:stop",
-            "program": "${workspaceFolder}/web_vms/VmsOnvifActors/bin/Debug/net10.0/VmsOnvifActors.dll",
-            "cwd": "${workspaceFolder}/web_vms/VmsOnvifActors",
-            "stopAtEntry": false,
-            "env": {
-                "ASPNETCORE_ENVIRONMENT": "Development",
-                "ONVIF_ACTORS_PORT": "5144",
-                "DAPR_HTTP_PORT": "3612",
-                "DAPR_GRPC_PORT": "51013",
-                "APP_ID": "vmsonvif-actors-2",
-                "OWN_SERVER_ID": "vms-2",
-                "VMS_LOG_PATH": "${workspaceFolder}/../logs-node2"
-            }
-        },
-        {
-            "name": "VmsFs-2 (.NET)",
-            "type": "coreclr",
-            "request": "launch",
-            "preLaunchTask": "prepare:vmsfs-2",
-            "postDebugTask": "dapr:vmsfs-2:stop",
-            "program": "${workspaceFolder}/web_vms/VmsFs/bin/Debug/net10.0/VmsFs.dll",
-            "cwd": "${workspaceFolder}/web_vms/VmsFs",
-            "stopAtEntry": false,
-            "env": {
-                "ASPNETCORE_ENVIRONMENT": "Development",
-                "FS_VMS_PORT": "5142",
-                "DAPR_HTTP_PORT": "3608",
-                "DAPR_GRPC_PORT": "51009",
-                "DAPR_CFG_APP_ID": "vmscfg",
-                "PUBSUB_NAME": "orderpubsub",
-                "APP_ID": "vmsfs-2",
-                "POSTGRES_HOST": "localhost",
-                "POSTGRES_PORT": "5432",
-                "POSTGRES_USER": "postgres",
-                "POSTGRES_PASSWORD": "postgres",
-                "POSTGRES_FS_DB": "ta_fs",
-                "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage",
-                "VMS_EXPORT_BASE_PATH": "${workspaceFolder}/../exports",
-                "VMS_EDGE_EXPORT_TTL_HOURS": "24",
-                "VMS_SOURCE_LIVENESS_STALE_SECONDS": "60",
-                "VMS_SOURCE_OUTAGE_GRACE_SECONDS": "15",
-                "DAPR_ONVIF_APP_ID": "vmsonvif-2",
-                "VMS_BACKFILL_SETTLE_SECONDS": "60",
-                "VMS_BACKFILL_RETRY_SECONDS": "300",
-                "VMS_BACKFILL_LOOKBACK_HOURS": "48",
-                "VMS_BACKFILL_JOB_RETENTION_HOURS": "24",
-                "VMS_OUTAGE_RETENTION_DAYS": "90",
-                "VMS_LOG_PATH": "${workspaceFolder}/../logs-node2"
-            }
-        },
-        {
-            "name": "Media Server 2 (C++)",
-            "type": "cppdbg",
-            "request": "launch",
-            "preLaunchTask": "prepare:vms-2",
-            "postDebugTask": "dapr:vms-2:stop",
-            "program": "${workspaceFolder}/media_server/build/vms",
-            "args": [],
-            "environment": [
-                {
-                    "name": "VMS_MEDIAMTX_PUBLISH_USER",
-                    "value": "vms_publish"
-                },
-                {
-                    "name": "VMS_MEDIAMTX_PUBLISH_PASS",
-                    "value": "dev_publish_pass"
-                },
-                {
-                    "name": "DEBUGINFOD_URLS",
-                    "value": ""
-                },
-                {
-                    "name": "VMS_STORAGE_BASE_PATH",
-                    "value": "${workspaceFolder}/../media_storage"
-                },
-                {
-                    "name": "VMS_EXPORT_BASE_PATH",
-                    "value": "${workspaceFolder}/../exports"
-                },
-                {
-                    "name": "GRPC_VMS_PORT",
-                    "value": "50052"
-                },
-                {
-                    "name": "APP_ID",
-                    "value": "vms-2"
-                },
-                {
-                    "name": "DAPR_GRPC_PORT",
-                    "value": "51010"
-                },
-                {
-                    "name": "DAPR_CFG_APP_ID",
-                    "value": "vmscfg"
-                },
-                {
-                    "name": "DAPR_ONVIF_APP_ID",
-                    "value": "vmsonvif-2"
-                },
-                {
-                    "name": "DAPR_UTILS_APP_ID",
-                    "value": "vmsutils"
-                },
-                {
-                    "name": "DAPR_STATE_STORE_NAME",
-                    "value": "statestore"
-                },
-                {
-                    "name": "PUBSUB_NAME",
-                    "value": "orderpubsub"
-                },
-                {
-                    "name": "VMS_WEBRTC_RTSP_BASE_URL",
-                    "value": "rtsp://localhost:8554"
-                },
-                {
-                    "name": "VMS_MTX_HOST",
-                    "value": "localhost"
-                },
-                {
-                    "name": "VMS_LOG_PATH",
-                    "value": "${workspaceFolder}/../logs-node2"
-                },
-                {
-                    "name": "VMS_SOURCE_LIVENESS_PERIOD_SECONDS",
-                    "value": "15"
-                },
-                {
-                    "name": "VMS_DEBUG_ENTITY_STATE_SECONDS",
-                    "value": "10"
-                }
-            ],
-            "cwd": "${workspaceFolder}/media_server",
-            "stopAtEntry": false,
-            "MIMode": "gdb",
-            "externalConsole": false,
-            "setupCommands": [
-                {
-                    "text": "-enable-pretty-printing"
-                },
-                {
-                    "text": "set debuginfod enabled off",
-                    "ignoreFailures": true
-                },
-                {
-                    "text": "set debuginfod urls \"\"",
-                    "ignoreFailures": true
-                },
-                {
-                    "text": "set debuginfod verbose 0",
-                    "ignoreFailures": true
-                }
             ]
         },
         {
@@ -701,86 +459,20 @@
             "console": "integratedTerminal"
         },
         {
-            "name": "Media Server 2 (C++) [Windows]",
-            "type": "cppvsdbg",
+            "name": "Frontend Debug (Chromium)",
+            "type": "chrome",
             "request": "launch",
-            "preLaunchTask": "prepare:vms-2",
-            "postDebugTask": "dapr:vms-2:stop",
-            "program": "${workspaceFolder}/media_server/build/vms.exe",
-            "args": [],
-            "environment": [
-                {
-                    "name": "VMS_MEDIAMTX_PUBLISH_USER",
-                    "value": "vms_publish"
-                },
-                {
-                    "name": "VMS_MEDIAMTX_PUBLISH_PASS",
-                    "value": "dev_publish_pass"
-                },
-                {
-                    "name": "VMS_STORAGE_BASE_PATH",
-                    "value": "${workspaceFolder}/../media_storage"
-                },
-                {
-                    "name": "VMS_EXPORT_BASE_PATH",
-                    "value": "${workspaceFolder}/../exports"
-                },
-                {
-                    "name": "GRPC_VMS_PORT",
-                    "value": "50052"
-                },
-                {
-                    "name": "APP_ID",
-                    "value": "vms-2"
-                },
-                {
-                    "name": "DAPR_GRPC_PORT",
-                    "value": "51010"
-                },
-                {
-                    "name": "DAPR_CFG_APP_ID",
-                    "value": "vmscfg"
-                },
-                {
-                    "name": "DAPR_ONVIF_APP_ID",
-                    "value": "vmsonvif-2"
-                },
-                {
-                    "name": "DAPR_UTILS_APP_ID",
-                    "value": "vmsutils"
-                },
-                {
-                    "name": "DAPR_STATE_STORE_NAME",
-                    "value": "statestore"
-                },
-                {
-                    "name": "PUBSUB_NAME",
-                    "value": "orderpubsub"
-                },
-                {
-                    "name": "VMS_WEBRTC_RTSP_BASE_URL",
-                    "value": "rtsp://localhost:8554"
-                },
-                {
-                    "name": "VMS_MTX_HOST",
-                    "value": "localhost"
-                },
-                {
-                    "name": "VMS_LOG_PATH",
-                    "value": "${workspaceFolder}/../logs-node2"
-                },
-                {
-                    "name": "VMS_SOURCE_LIVENESS_PERIOD_SECONDS",
-                    "value": "15"
-                },
-                {
-                    "name": "VMS_DEBUG_ENTITY_STATE_SECONDS",
-                    "value": "10"
-                }
-            ],
-            "cwd": "${workspaceFolder}/media_server",
-            "stopAtEntry": false,
-            "console": "integratedTerminal"
+            "url": "http://localhost:5173",
+            "webRoot": "${workspaceFolder}/web_vms/web_vms.client/src"
+        },
+        {
+            "name": "Frontend Debug (Edge) [Windows]",
+            "type": "msedge",
+            "request": "launch",
+            "url": "http://localhost:5173",
+            "webRoot": "${workspaceFolder}/web_vms/web_vms.client/src",
+            "userDataDir": "${env:LOCALAPPDATA}/ta_vms-edge-debug",
+            "preLaunchTask": "wait: stack ready"
         }
     ],
     "compounds": [
@@ -797,24 +489,8 @@
                 "VmsLogger (.NET)",
                 "Media Server (C++)",
                 "Backend (.NET)",
-                "Frontend (Vite)"
-            ]
-        },
-        {
-            "name": "Full stack 2-pair (F5)",
-            "stopAll": true,
-            "configurations": [
-                "VmsCfg (.NET)",
-                "VmsUtils (.NET)",
-                "VmsOnvif (.NET)",
-                "VmsOnvifActors (.NET)",
-                "VmsFs (.NET)",
-                "VmsFs-2 (.NET)",
-                "VmsLogger (.NET)",
-                "Media Server (C++)",
-                "Media Server 2 (C++)",
-                "Backend (.NET)",
-                "Frontend (Vite)"
+                "Frontend (Vite)",
+                "Frontend Debug (Chromium)"
             ]
         },
         {
@@ -830,24 +506,8 @@
                 "VmsLogger (.NET)",
                 "Media Server (C++) [Windows]",
                 "Backend (.NET)",
-                "Frontend (Vite)"
-            ]
-        },
-        {
-            "name": "Full stack 2-pair (F5) [Windows]",
-            "stopAll": true,
-            "configurations": [
-                "VmsCfg (.NET)",
-                "VmsUtils (.NET)",
-                "VmsOnvif (.NET)",
-                "VmsOnvifActors (.NET)",
-                "VmsFs (.NET)",
-                "VmsFs-2 (.NET)",
-                "VmsLogger (.NET)",
-                "Media Server (C++) [Windows]",
-                "Media Server 2 (C++) [Windows]",
-                "Backend (.NET)",
-                "Frontend (Vite)"
+                "Frontend (Vite)",
+                "Frontend Debug (Edge) [Windows]"
             ]
         }
     ]
