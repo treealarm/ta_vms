@@ -17,7 +17,7 @@ All interaction with the MediaMTX REST API goes through **VmsUtils** (`vmsutils`
 ## Deployment lives in ../ta_install
 
 Production/standalone deployment is a **separate repository** (`../ta_install`, github
-`treealarm/ta_install`): the product compose (prebuilt `treealarm/*` images, own redis, no
+`treealarm/ta_install`): the product compose (prebuilt `treealarm/*` images, own broker, no
 Square), its `.env`, `init_files/`, the image build/push scripts and the analytics model
 fetcher. This repo's root `docker-compose.yml` is **dev only** (build-from-source, joins the
 shared Square network). Never re-grow a prod compose inside ta_vms.
@@ -101,9 +101,11 @@ deployment just to subscribe.
 ### Exception: services that may run in more than one replica
 
 Pub/sub invalidation only works for a **single-instance** consumer. All replicas of a service share
-one Dapr app id and therefore one Redis consumer group, so each event is delivered to exactly one
-replica — the others never learn and keep serving stale data until their TTL runs out. That is a
-work queue, and cache invalidation needs a broadcast.
+one Dapr app id, and the app id is the `consumerID` — so on RabbitMQ they all consume the same
+queue, and each event is delivered to exactly one replica. The others never learn and keep serving
+stale data until their TTL runs out. That is a work queue, and cache invalidation needs a broadcast.
+(This was equally true of the Redis Streams consumer group the bus used before, and is not a
+property of the broker: it is what one app id means.)
 
 For a service that can be scaled horizontally (today: `web_vms.Server`), use a **version key in the
 shared state store** instead:
@@ -114,8 +116,9 @@ shared state store** instead:
    (`CameraAccessService.EnsureFreshAsync`), keeping its own TTL as the backstop for a state store
    outage.
 
-Do not "fix" this with a per-instance `consumerID`: it works, but leaves an orphaned Redis consumer
-group behind on every restart.
+Do not "fix" this with a per-instance `consumerID`: it works, but leaves an orphaned queue behind on
+every restart — one per instance that ever started, each still bound to the topic exchange and each
+accumulating messages nobody reads.
 
 ### Scaling model per service
 
@@ -185,6 +188,22 @@ Use **Entity Framework Core** for all database queries. Do not write raw SQL via
 
 Exceptions where raw SQL is acceptable: complex bulk operations or SQL constructs that EF cannot express (e.g. `INSERT … ON CONFLICT DO UPDATE`), but keep them minimal and isolated inside repository methods.
 
+### Creating a database: name it in `.env`, nothing else
+
+Databases are created by exactly one thing — `scripts/prepare-databases.sh`, run as the `db-init`
+compose service — and it creates **every** database named by a `POSTGRES_*_DB` variable in the
+environment. So a new service's database is added by putting `POSTGRES_<NAME>_DB` into `.env` (and
+`../ta_install/.env`), and by nothing else.
+
+Do **not** go back to `docker-entrypoint-initdb.d`: that hook only fires when the data directory is
+initialised from empty, so anything added to it is silently skipped on every deployment that
+already has data — which is all of them after the first. And do not hardcode a list of database
+names anywhere: names are stamped per tenant (see `multitenant_admin/mt_admin/DbAdmin`), so a fixed
+list is wrong by construction.
+
+`DbMigrator` migrates the schema *inside* an existing database; it does not create one. A missing
+database now fails fast with a message naming it, instead of retrying "Postgres not ready" forever.
+
 ## VmsOnvifActors — actors only
 
 `VmsOnvifActors` hosts **only Dapr Actors** (currently `CameraActor` for PTZ). Do not add BackgroundServices, controllers, pub/sub subscribers, or any non-actor logic to this project. Business logic that needs ONVIF camera access but is not actor-based belongs in `VmsOnvif`.
@@ -209,21 +228,24 @@ Square) реализованы; план — [`docs/square-integration-plan.md`]
 Любое дальнейшее проектирование и развитие видеоподсистемы **не должно противоречить** этому плану.
 Соблюдай инварианты:
 
-- **Автономность принесена в жертву единой сети — явное, осознанное решение.** ta_vms теперь
-  **всегда** живёт в общей docker-сети `common_app_network` (тот же `name:`, что у Square/
+- **Общая с Square docker-сеть обязательна, но данных ta_vms в чужих контейнерах больше нет.**
+  ta_vms **всегда** живёт в сети `common_app_network` (тот же `name:`, что у Square/
   `multitenant_admin`, но `external: true` — сеть создаёт Square/`multitenant_admin`, они должны
   подняться первыми; свой ключ сети у ta_vms `default`, у них `shared_network`, а compose
   отказывается подхватывать чужую сеть с несовпадающим ключом в метке
-  `com.docker.compose.network`) и **не имеет
-  собственного Redis**: Dapr pub/sub/state store ta_vms используют тот же `redis`, что и
-  `multitenant_admin`. Простой `docker compose up` в одном ta_vms, без поднятого
-  Square/`multitenant_admin`, **больше не работает** — это ожидаемо, не баг. Причина отказа от
-  отдельного Redis не стилистическая: два разных контейнера с одинаковым alias `redis` в одной
-  сети заставляют Docker отвечать на DNS-запросы случайным round-robin между ними (проверено
-  эмпирически), то есть свой Redis параллельно с чужим под тем же именем держать нельзя.
-  Функции, не связанные с интеграцией (login, push в Square), всё ещё гейтятся по env
-  (`KEYCLOAK_URL`, `SQUARE_INTEGRATION_SINK_APP_ID`) — но сетевая/Redis-связность теперь
-  безусловна, не за гейтом.
+  `com.docker.compose.network`). Нужна она **только** для Dapr service invocation в Square и
+  резолва app-id через mDNS.
+  Всё состояние и вся шина — свои: **state store** это собственный PostgreSQL (база
+  `POSTGRES_STATE_DB`, компонент `init_files/dapr_components/statestore.yaml`), **pub/sub** — свой
+  `rabbitmq` (`init_files/dapr_components/orderpubsub.yaml`). Чужому `redis` не место ни там, ни
+  там: он объявлен без volume, а при штамповке баз под тенанта общий Redis с `keyPrefix: "name"`
+  давал бы всем тенантам один и тот же ключ `cam-perm-version`. Отдельно про Redis: два разных
+  контейнера с одинаковым alias `redis` в одной сети заставляют Docker отвечать на DNS-запросы
+  случайным round-robin между ними (проверено эмпирически) — поэтому свой Redis рядом с чужим
+  держать было нельзя, и это одна из причин, по которым брокером стал RabbitMQ (вторая — под
+  Windows Redis нативно не ставится, а в планах автономный инсталлятор).
+  Функции, не связанные с интеграцией (login, push в Square), гейтятся по env
+  (`KEYCLOAK_URL`, `SQUARE_INTEGRATION_SINK_APP_ID`) — сетевая связность безусловна, не за гейтом.
 - **`VmsSquareSingleton` — единственная точка подключения интеграции** (producer-сторона). Тяжёлое
   ядро (C++ `media_server` и пр.) интеграцией не затрагивается. Не размазывай интеграционную логику
   по другим сервисам: `VmsCfg` про Square не знает вообще и лишь публикует свои обычные события
@@ -240,7 +262,10 @@ Square) реализованы; план — [`docs/square-integration-plan.md`]
 - **root-объект интеграции = `SQUARE_INTEGRATION_PRODUCER_ID`** (историческое значение — `vmscfg`,
   когда продьюсером была `VmsCfg`); команды — через Dapr service invocation, асинхронно
   (handle/uid сразу, статус позже). Обработчики команд ещё не подключены.
-- **Не конфликтуй с базисом интеграции:** общая шина pub/sub `orderpubsub` и общий Redis с Square/
-  `multitenant_admin`, общая docker-сеть `common_app_network`, раздельные PostgreSQL, модель
+- **Не конфликтуй с базисом интеграции:** общая docker-сеть `common_app_network` и Dapr service
+  invocation поверх неё (сообщениями по шине стороны не обмениваются: `VmsSquareSingleton` подписан
+  только на собственные топики ta_vms, а в Square ходит вызовами — поэтому шина ta_vms своя,
+  RabbitMQ, и имя компонента `orderpubsub` совпадает со Square лишь исторически), раздельные
+  PostgreSQL и раздельные брокеры, модель
   самоописывающихся свойств/команд. Перед добавлением новых топиков, портов, env или сервисов
   сверяйся с планом, чтобы не создавать будущих коллизий.

@@ -40,8 +40,10 @@ public sealed class CameraAccessService(
 {
   private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
 
-  // Cheap enough to do on a hot path (a few bytes out of Redis) once per interval per replica,
-  // which bounds how long a revoked grant can survive anywhere in the cluster.
+  // Cheap enough to do on a hot path once per interval per replica, which bounds how long a
+  // revoked grant can survive anywhere in the cluster. The state store is PostgreSQL, so this
+  // is a primary-key lookup rather than the Redis GET it used to be — still one small indexed
+  // read per second per replica, but worth remembering if the probe interval is ever shortened.
   private static readonly TimeSpan VersionProbeInterval = TimeSpan.FromSeconds(1);
   private const string VersionKey = "cam-perm-version";
 

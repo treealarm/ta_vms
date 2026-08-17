@@ -7,7 +7,17 @@ public sealed record ObservedTopicInfo(string Topic, DateTime FirstSeen, DateTim
 
 public sealed class ObservedTopicsStore(DaprClient dapr, ILogger<ObservedTopicsStore> logger)
 {
-  private const string StateStoreName   = "statestore";
+  // Read from the environment like every other state store consumer, rather than hardcoded:
+  // a hardcoded name keeps working only for as long as it happens to match, and CLAUDE.md
+  // forbids silent fallbacks for required configuration.
+  // Per instance, not into a static field: a missing variable in a static initializer surfaces
+  // as a TypeInitializationException from DI, which says nothing about which variable is missing
+  // (same reason as in web_vms.Server's CameraAccessService).
+  private readonly string _stateStoreName =
+    Environment.GetEnvironmentVariable("DAPR_STATE_STORE_NAME")
+    ?? throw new InvalidOperationException(
+      "Required environment variable 'DAPR_STATE_STORE_NAME' is not set");
+
   private const int    TtlDays          = 10;
   private static readonly TimeSpan FlushDebounce = TimeSpan.FromSeconds(5);
 
@@ -23,7 +33,7 @@ public sealed class ObservedTopicsStore(DaprClient dapr, ILogger<ObservedTopicsS
     try
     {
       var stored = await dapr.GetStateAsync<List<StoredEntry>>(
-        StateStoreName, StateKey(cameraId), cancellationToken: ct);
+        _stateStoreName, StateKey(cameraId), cancellationToken: ct);
       if (stored == null) return;
 
       var cameraTopics = _data.GetOrAdd(cameraId, _ => new ConcurrentDictionary<string, ObservedTopicInfo>());
@@ -74,7 +84,7 @@ public sealed class ObservedTopicsStore(DaprClient dapr, ILogger<ObservedTopicsS
         .ToList();
       var metadata = new Dictionary<string, string>
         { { "ttlInSeconds", (TtlDays * 86400).ToString() } };
-      await dapr.SaveStateAsync(StateStoreName, StateKey(cameraId), entries, metadata: metadata);
+      await dapr.SaveStateAsync(_stateStoreName, StateKey(cameraId), entries, metadata: metadata);
     }
     catch (Exception ex)
     {

@@ -3,19 +3,40 @@ kind: Component
 metadata:
   name: statestore
 spec:
-  type: state.redis
+  # PostgreSQL rather than the Redis this used to be — the first of the two components to leave
+  # it, the bus followed later (see orderpubsub.yaml). Two reasons, neither cosmetic: that Redis
+  # was not ours (it belongs to Square/multitenant_admin, and in ta_install it was declared with
+  # no volume at all), while onvif-observed-topics-<cameraId> is accumulated data with a 10-day
+  # TTL; and once databases are stamped per tenant, a shared Redis keyed by component name gives
+  # every tenant the *same* "cam-perm-version" key, whereas a per-tenant database separates them
+  # for free.
+  #
+  # v1, not v2: v1 stores the value in a JSONB column. media_server writes its heartbeat as the
+  # quoted string "online" from C++ (see media_server/grpc_layer/state_store_client.cpp), which
+  # is valid JSON and so survives; v2 stores values differently and has not been tested against
+  # that non-SDK writer.
+  #
+  # The host is literal because Dapr does not substitute environment variables in component
+  # metadata. That is also why there is a docker/ copy of this file — see it for the in-network
+  # host. Per-namespace component files are the established pattern anyway (multitenant_admin's
+  # k8s/myrealm/ does the same), so a tenant deployment templates this file with its own database.
+  type: state.postgresql
   version: v1
   metadata:
-  - name: redisHost
-    value: localhost:6379
-  - name: redisPassword
-    value: ""
+  # Database name must match POSTGRES_STATE_DB in .env — that variable is what makes
+  # scripts/prepare-databases.sh create it.
+  - name: connectionString
+    value: "host=localhost port=5432 user=postgres password=postgres database=ta_state sslmode=disable"
+  # Required by vmsonvif-actors: without it the actor runtime refuses to start and every
+  # ONVIF/PTZ call fails. Verified against this component — the actor runtime initialises and
+  # runs its reminder migration against the PostgreSQL store.
   - name: actorStateStore
     value: "true"
   # Dapr's default is keyPrefix=appid, which silently namespaces every key by the writer's app id:
   # VmsCfg would write "vmscfg||cam-perm-version" while web_vms read "web-vms||cam-perm-version",
   # and media_server's heartbeat ("vms||ms-status-<id>") never reached VmsCfg either. Several keys
   # here are deliberately shared between services, so the store is keyed by the component name
-  # instead — one namespace per state store, not per app.
+  # instead — one namespace per state store, not per app. Verified on PostgreSQL: rows land under
+  # "statestore||<key>" and one app id reads what another wrote.
   - name: keyPrefix
     value: "name"

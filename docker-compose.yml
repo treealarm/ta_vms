@@ -12,7 +12,8 @@ x-data-volume: &data-volume
 # "shared_network". Compose stamps the key into the com.docker.compose.network label and refuses
 # to adopt a network whose label disagrees, so the only way to share one network across projects
 # with different keys is to mark it external here. Consequence: multitenant_admin (or Square) must
-# be up first — which is required anyway, ta_vms has no redis of its own and uses theirs.
+# be up first — the network is theirs to create. ta_vms no longer borrows anything else from that
+# stack: its state store is its own postgres and its bus is its own rabbitmq, both below.
 networks:
   default:
     name: common_app_network
@@ -37,16 +38,79 @@ services:
       POSTGRES_DB: "${POSTGRES_CFG_DB:-ta_cfg}"
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
+    # No docker-entrypoint-initdb.d mount: that hook only fires when the data directory is
+    # initialised from empty, so it could never create a database added later, and a hardcoded
+    # list of names is wrong anyway once databases are stamped per tenant. The db-init service
+    # below is the single thing that creates them, and it reads their names from the environment.
     volumes:
       - ./data/postgres:/var/lib/postgresql
-      - ./init_files/postgres:/docker-entrypoint-initdb.d:ro
 
-  # No own redis service: ta_vms now shares one network (common_app_network, see above) with
-  # Square/multitenant_admin, and reuses multitenant_admin's "redis" for all of ta_vms's Dapr
-  # pub/sub and state store too — running two same-named "redis" containers on one network makes
-  # Docker's embedded DNS round-robin connections randomly between them (verified empirically),
-  # so there can only be one. This means ta_vms no longer starts standalone without
-  # Square/multitenant_admin's stack also running — an explicit, accepted trade-off.
+  # Creates the service databases that docker-entrypoint-initdb.d cannot: that hook only runs
+  # when the data directory is initialised from empty, so on every deployment past the first a
+  # newly added database would never appear. Deliberately outside the "app" profile — a bare
+  # `docker compose up` brings up the infra, and the databases are part of the infra being
+  # ready. Runs to completion and exits; idempotent, so repeating it on every start is free.
+  # Also invocable on its own: docker compose run --rm db-init
+  # (add --check to report without creating anything).
+  db-init:
+    image: postgres:latest
+    env_file:
+      - .env
+    environment:
+      # .env says localhost, which is right for services debugged on the host but not from
+      # inside the network — same override the vmscfg/vmsfs/vmsanalyticssingleton services make.
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    # Kept in scripts/ rather than init_files/postgres/ so it can never be picked up by
+    # docker-entrypoint-initdb.d, which executes *.sh too: running there would mean running
+    # during initdb, before the server accepts TCP connections.
+    volumes:
+      - ./scripts:/init:ro
+      # Read-only, and only to compare: the state store's connection string is a literal (Dapr
+      # does not expand environment variables in component metadata), so it is the one place
+      # where the database name and credentials are duplicated. The script fails here rather
+      # than letting Dapr discover the drift as a state store that never worked.
+      - ./init_files/dapr_components:/components:ro
+    # Invoked through bash rather than executed directly: the exec bit does not survive a bind
+    # mount from a Windows host.
+    entrypoint: ["bash", "/init/prepare-databases.sh"]
+    working_dir: /init
+    restart: "no"
+    depends_on:
+      - postgres
+
+  # The Dapr pub/sub broker. Ours, and no longer multitenant_admin's redis: the state store had
+  # already moved to our own postgres above, and this was the last thing ta_vms borrowed from
+  # Square's stack. Redis also has no native Windows build, which blocks the eventual Docker-free
+  # installer; RabbitMQ covers docker, Kubernetes and a plain machine alike.
+  # Nothing about the bus semantics changes — see init_files/dapr_components/orderpubsub.yaml.
+  rabbitmq:
+    image: rabbitmq:management
+    environment:
+      # The built-in "guest" is refused from anywhere but localhost, so a sidecar in a container
+      # could never use it. These must match the credentials in the orderpubsub components.
+      RABBITMQ_DEFAULT_USER: "${RABBITMQ_DEFAULT_USER:-vms}"
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_DEFAULT_PASS:-vms}"
+    ports:
+      # Published for the sidecars of services debugged on the host (F5). Not on 5672/15672:
+      # this developer machine already runs another RabbitMQ there — same reasoning as the
+      # mediamtx note above, the host port namespace is shared with every other project.
+      - "${RABBITMQ_PORT:-5674}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15674}:15672"
+    volumes:
+      # Queues are durable and are meant to hold events across a subscriber restart; without a
+      # volume they would be re-created empty on every `docker compose up`.
+      - ./data/rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  # The shared network above is still required, but only for Dapr service invocation into Square
+  # (SQUARE_INTEGRATION_SINK_APP_ID). ta_vms no longer keeps any data of its own in a container it
+  # does not own: the state store is the postgres above, the bus is the rabbitmq above.
 
   mediamtx:
     image: bluenviron/mediamtx:latest
@@ -81,6 +145,18 @@ services:
     environment:
       APP_ID: vmsutils
     volumes: *data-volume
+    # Waits for the infrastructure even though this service has no database of its own: its Dapr
+    # sidecar loads every component in /components — state store and pub/sub alike — and daprd
+    # exits when a component fails to initialise (spec.ignoreErrors is false by default), without
+    # retrying. Started before ta_state exists or before the broker accepts connections, the
+    # sidecar would simply die. The sidecars inherit this wait through their depends_on on the
+    # app, so the rule is: every app service waits for db-init and rabbitmq, directly or through
+    # another service that does.
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
 
   vmsutils-dapr:
     profiles: [app]
@@ -117,6 +193,12 @@ services:
     # Exactly one instance, always — see CLAUDE.md. It runs work that must not happen twice and
     # aggregates pub/sub reports in memory, which a second replica would split rather than share.
     volumes: *data-volume
+    # For its sidecar's components, not for itself — see vmsutils above.
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
 
   vmssingleton-dapr:
     profiles: [app]
@@ -189,6 +271,12 @@ services:
     environment:
       APP_ID: vmslogger
     volumes: *data-volume
+    # For its sidecar's components, not for itself — see vmsutils above.
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
 
   vmslogger-dapr:
     profiles: [app]
@@ -224,8 +312,16 @@ services:
       POSTGRES_HOST: postgres
       APP_ID: vmscfg
     volumes: *data-volume
+    # Waits for db-init to finish, not just for postgres to be up: without the database this
+    # service now fails fast with a clear message instead of retrying, so starting it early
+    # would turn a working deployment into a crash loop.
     depends_on:
-      - postgres
+      postgres:
+        condition: service_started
+      db-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
 
   vmscfg-dapr:
     profiles: [app]
@@ -304,7 +400,12 @@ services:
       APP_ID: vmsfs
     volumes: *data-volume
     depends_on:
-      - postgres
+      postgres:
+        condition: service_started
+      db-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
 
   vmsfs-dapr:
     profiles: [app]
@@ -341,8 +442,14 @@ services:
       APP_ID: vmsanalyticssingleton
     volumes: *data-volume
     depends_on:
-      - postgres
-      - vmscfg
+      postgres:
+        condition: service_started
+      db-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      vmscfg:
+        condition: service_started
 
   vmsanalyticssingleton-dapr:
     profiles: [app]

@@ -17,8 +17,9 @@
 
 `/mnt/wdblue/tests/ta_vms` — распределённая VMS (запись/стриминг на базе MediaMTX).
 Square (соседний проект `../Square`) — основная система мониторинга объектов на карте (Leaflet).
-Родственные проекты одного вендора с почти идентичным стеком: **Dapr + Redis (pub/sub) +
-PostgreSQL + .NET 10 + gRPC + React**. Нужно встроить ta_vms в Square так, чтобы ta_vms
+Родственные проекты одного вендора с почти идентичным стеком: **Dapr + брокер шины +
+PostgreSQL + .NET 10 + gRPC + React** (у Square брокер — Redis, у ta_vms — RabbitMQ; см. ниже,
+сообщениями стороны не обмениваются). Нужно встроить ta_vms в Square так, чтобы ta_vms
 **по-прежнему запускался полностью автономно**.
 
 Согласованные решения:
@@ -26,7 +27,9 @@ PostgreSQL + .NET 10 + gRPC + React**. Нужно встроить ta_vms в Squ
 - **Конфиг/камеры:** ta_vms — владелец функционального конфига; конфиг **пушится снизу вверх**
   (ta_vms → Square), в Square — read-only. Square владеет «презентацией» (позиция/имя/группировка).
   Менять состояние из Square — **только командами**.
-- **Инфраструктура:** общая шина Redis (pub/sub) + общая docker-сеть, **раздельные PostgreSQL**.
+- **Инфраструктура:** общая docker-сеть, **раздельные PostgreSQL** и **раздельные брокеры** — в
+  своём PostgreSQL у ta_vms лежит Dapr state store, своя же и шина (RabbitMQ). Общей шины нет и
+  не требуется: стороны общаются вызовами, а не сообщениями.
 - **Форма слоя:** Square — хост интеграции с расширяемым **gRPC + Dapr** API (+ REST). Producer —
   переиспользуемый **typelib-клиент** (аналог `IntegrationUtilsLib`, но со стороны отдающего),
   который подключает `VmsCfg`. Протокол — **напрямую протокол Square** (не нейтральный).
@@ -42,9 +45,10 @@ PostgreSQL + .NET 10 + gRPC + React**. Нужно встроить ta_vms в Squ
   возвращает handle (uid) сразу, статус прилетает позже (как `ProtoActionExe.uid` +
   `UpdateActionResults` в `Square/Protos/integro.proto`). Re-push конфига = команда `resync` на root.
 
-Ключевое везение: оба стека уже используют Dapr pub/sub-компонент с одинаковым именем
-`orderpubsub`. При общей docker-сети и общем Redis работают и pub/sub, и (через mDNS name
-resolution Dapr) service invocation между стеками по APP_ID — без переименований.
+Обе стороны объявляют pub/sub-компонент с одинаковым именем `orderpubsub`, но это совпадение
+имён, а не общая шина: `VmsSquareSingleton` подписан только на собственные топики ta_vms, а в
+Square ходит через Dapr service invocation. Поэтому от общей инфраструктуры нужна ровно одна вещь —
+общая docker-сеть, чтобы работал резолв APP_ID через mDNS name resolution Dapr.
 
 ---
 
@@ -114,12 +118,12 @@ ActionsControl.tsx`):
 
 ---
 
-## Phase 0 — Плумбинг: общая сеть + общий Redis + кросс-стек Dapr (выполнено)
+## Phase 0 — Плумбинг: общая сеть + кросс-стек Dapr (выполнено)
 
 > Реализовано иначе, чем планировалось изначально (оверлей + альтернативные Dapr-компоненты) —
-> ниже описана фактическая, более простая схема. **Важно:** это означает отказ от автономности
-> "из коробки" — `docker compose up` в ta_vms один, без поднятого Square/multitenant_admin,
-> больше не работает (явное, осознанное решение пользователя).
+> ниже описана фактическая, более простая схема. **Важно:** `docker compose up` в ta_vms один,
+> без поднятого Square/multitenant_admin, не работает — но уже только из-за сети (`external: true`,
+> создаёт её их стек). Данных ta_vms в чужих контейнерах не осталось: и state store, и шина свои.
 
 Никакого отдельного оверлей-файла и альтернативных Dapr-компонентов не потребовалось:
 - `ta_vms/docker-compose.yml` переименовывает свою неявную сеть `default` в `common_app_network`
@@ -130,19 +134,31 @@ ActionsControl.tsx`):
   `com.docker.compose.network` и отказывается адоптировать сеть с чужим значением метки
   («network common_app_network was found but has incorrect label …»). Следствие: сеть создаёт
   Square/multitenant_admin, их стек должен стартовать первым.
-- Собственный `redis`-сервис у ta_vms убран целиком — Dapr pub/sub и state store ta_vms
-  (`init_files/dapr_components/docker/{orderpubsub,statestore}.yaml`, `redisHost: redis:6379`)
-  используют тот же `redis`, что и multitenant_admin. **Причина, не просто стиль:** проверено
-  эмпирически — если в одной сети два разных контейнера оба регистрируют alias `redis`, Docker
-  отвечает на DNS-запросы случайным round-robin между ними; держать свой `redis` параллельно с
-  чужим под тем же именем в одной сети нельзя, это давало бы постоянную, непредсказуемую потерю
-  части сообщений pub/sub.
+- Собственный `redis`-сервис у ta_vms был убран целиком, и какое-то время шина ta_vms работала
+  на `redis` от multitenant_admin. **Причина, не просто стиль:** проверено эмпирически — если в
+  одной сети два разных контейнера оба регистрируют alias `redis`, Docker отвечает на DNS-запросы
+  случайным round-robin между ними; держать свой `redis` параллельно с чужим под тем же именем в
+  одной сети нельзя, это давало бы постоянную, непредсказуемую потерю части сообщений pub/sub.
+  **Позже шина ушла с Redis совсем** — `init_files/dapr_components/{,docker/}orderpubsub.yaml`
+  теперь `pubsub.rabbitmq` поверх собственного `rabbitmq` ta_vms. Коллизия alias'ов при этом
+  исчезает сама (имя `rabbitmq` в чужих стеках не занято), а главный мотив — дорожная карта
+  развёртывания: docker → Kubernetes → автономный инсталлятор без Docker, а нативной сборки Redis
+  под Windows не существует. Семантика шины не изменилась: `consumerID` по умолчанию равен app-id,
+  Dapr заводит fanout-exchange на топик и durable-очередь на пару (app-id, топик) — ровно то, что
+  раньше давала consumer group Redis Streams.
+- **State store ta_vms на общий `redis` не переехал и позже был уведён с него совсем** —
+  `init_files/dapr_components/{,docker/}statestore.yaml` теперь `state.postgresql` поверх
+  собственного PostgreSQL ta_vms (база `POSTGRES_STATE_DB`). Две причины: у `multitenant_admin`
+  этот `redis` без volume, а состояние вроде `onvif-observed-topics-<cameraId>` (TTL 10 суток)
+  переживать перезапуск обязано; и при штамповке баз под тенанта общий `redis` с
+  `keyPrefix: "name"` выдавал бы всем тенантам один и тот же ключ `cam-perm-version`, тогда как
+  отдельная база разделяет их даром.
 - `dapr-placement` остаётся раздельным (нужен только акторам, service invocation идёт через mDNS
   name-resolution в общей сети, не через placement).
 
 `vmscfg`/VmsCfg обращается к Square исключительно через Dapr **service invocation** (gRPC-вызов на
-`integrationhost`-app-id) — pub/sub между стеками не используется, общий Redis нужен только потому,
-что ta_vms теперь физически не имеет своего.
+`integrationhost`-app-id) — pub/sub между стеками не используется вообще. Именно поэтому уход шины
+ta_vms на свой RabbitMQ интеграцию не задел: общей от инфраструктуры осталась только сеть.
 
 ## Phase 1 — Typelib + Square-API + VmsCfg-producer
 1. Довести Square integration API (раздел «1) Square — хост»): протоколы/consumer/каскад/disable;
@@ -187,7 +203,7 @@ JWT-валидацию ставим **перед** `web_vms` (reverse-proxy/gate
 ---
 
 ## Сводка изменений
-- **ta_vms:** общая сеть + общий Redis вместо своего (Phase 0); typelib `SquareIntegrationClient`
+- **ta_vms:** общая сеть (Phase 0; шина и state store при этом свои); typelib `SquareIntegrationClient`
   + правки в `VmsCfg`/`VmsFs` (гейт по env `SQUARE_INTEGRATION_SINK_APP_ID`) (Phase 1, частично);
   ничего в тяжёлом ядре.
 - **Square:** read-only защита панели свойств для интеграционных объектов, REST-обёртка над
@@ -196,11 +212,11 @@ JWT-валидацию ставим **перед** `web_vms` (reverse-proxy/gate
 
 ## Проверка (по этапам)
 - **Phase 0:** `multitenant_admin` создаёт `common_app_network`; ta_vms подключается тем же
-  именем сети (без оверлея, `external: true`) и без своего Redis — проверить резолв app-id
-  между стеками (Dapr service invocation `vmscfg` → `integrationhost`) и что Dapr pub/sub ta_vms
-  (`orderpubsub`/`statestore`) подключается к общему `redis` от `multitenant_admin`.
-  **ta_vms больше не запускается без поднятого Square/multitenant_admin** — автономность
-  принесена в жертву единой сети по решению пользователя (см. CLAUDE.md).
+  именем сети (без оверлея, `external: true`) — проверить резолв app-id между стеками (Dapr
+  service invocation `vmscfg` → `integrationhost`). Шина и state store ta_vms при этом на чужие
+  контейнеры смотреть не должны: `orderpubsub` — свой `rabbitmq`, `statestore` — свой PostgreSQL.
+  **ta_vms по-прежнему не запускается без поднятого Square/multitenant_admin**, но теперь ровно
+  по одной причине — сеть объявлена `external` и создаётся их стеком (см. CLAUDE.md).
 - **Phase 1:** включить интеграцию env → в дереве Square появился root `vmscfg` и камеры; изменить
   конфиг камеры в ta_vms → дельта прилетела; команда `start_recording` из Square → запись включилась
   (статус по uid вернулся); `resync` → полный re-push; удалить root в Square → дети исчезли,
@@ -211,8 +227,8 @@ JWT-валидацию ставим **перед** `web_vms` (reverse-proxy/gate
 
 ## Открытые вопросы для этапа реализации
 1. **Кросс-стек Dapr service invocation:** подтвердить, что при общей сети дефолтный mDNS-резолвер
-   Dapr находит app-id обоих стеков (иначе настроить общий name-resolution компонент). Pub/sub через
-   общий Redis работает независимо.
+   Dapr находит app-id обоих стеков (иначе настроить общий name-resolution компонент). Шины сторон
+   при этом независимы и друг о друге не знают.
 2. Что публикует `media_server` (C++) через `dapr_publisher.publish_json` — топики тревог/клипов?
    (`grep -rn publish_json media_server`) — нужны ли они typelib'у для свойства `last_alarm_ts`.
 3. ~~typelib: чистые интерфейсы (SOLID, тестируемость, no-op для standalone); набор методов

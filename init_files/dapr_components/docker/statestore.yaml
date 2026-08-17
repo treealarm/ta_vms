@@ -3,13 +3,18 @@ kind: Component
 metadata:
   name: statestore
 spec:
-  type: state.redis
+  # In-network twin of ../statestore.yaml — that file carries the full rationale for choosing
+  # PostgreSQL over the Redis this used to be, and for pinning v1. The only difference is the host:
+  # "postgres" is the compose service name, reachable from sidecars running in containers.
+  type: state.postgresql
   version: v1
+  # Database name must match POSTGRES_STATE_DB in .env — that variable is what makes
+  # scripts/prepare-databases.sh create it.
   metadata:
-  - name: redisHost
-    value: redis:6379
-  - name: redisPassword
-    value: ""
+  - name: connectionString
+    value: "host=postgres port=5432 user=postgres password=postgres database=ta_state sslmode=disable"
+  # Required by vmsonvif-actors: without it the actor runtime refuses to start and every
+  # ONVIF/PTZ call fails.
   - name: actorStateStore
     value: "true"
   # Dapr's default is keyPrefix=appid, which silently namespaces every key by the writer's app id:

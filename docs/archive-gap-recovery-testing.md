@@ -11,9 +11,10 @@ This is the procedure for exercising it against a real camera.
 
 ## Prerequisites
 
-**Infrastructure** (docker compose, must be up first): Postgres with `ta_cfg` and `ta_fs`, Redis,
-MediaMTX, dapr placement. The dev stack joins Square's shared network, so `multitenant_admin` has to
-be running — see `CLAUDE.md`.
+**Infrastructure** (docker compose, must be up first): Postgres with `ta_cfg`, `ta_fs` and
+`ta_state` (the `db-init` service creates them — a bare `docker compose up` runs it), RabbitMQ
+for pub/sub, MediaMTX, dapr placement. The dev stack joins Square's shared network, so
+`multitenant_admin` has to be running — see `CLAUDE.md`.
 
 **Camera.** A device with ONVIF Profile G (Recording / RecordingSearch / Replay) and an SD card.
 Reference device: FIS `F-IC-2642C2MSZ4` at `192.168.2.64`, roughly an hour of on-board archive. The

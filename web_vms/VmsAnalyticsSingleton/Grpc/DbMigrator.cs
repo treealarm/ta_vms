@@ -17,6 +17,14 @@ public class DbMigrator(NpgsqlDataSource dataSource, IWebHostEnvironment environ
         connection = await _dataSource.OpenConnectionAsync(ct);
         break;
       }
+      catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.InvalidCatalogName)
+      {
+        // The server answered, it just has no such database — retrying cannot fix that. Without
+        // this the failure is indistinguishable from an unreachable server and shows up as
+        // "Postgres not ready" forever, which sends everyone looking in the wrong place.
+        throw new InvalidOperationException(
+          MissingDatabaseMessage(_dataSource, "VmsAnalyticsSingleton"), ex);
+      }
       catch (NpgsqlException ex)
       {
         Console.Error.WriteLine($"VmsAnalyticsSingleton: Postgres not ready, retrying in 5s: {ex.Message}");
@@ -66,6 +74,16 @@ public class DbMigrator(NpgsqlDataSource dataSource, IWebHostEnvironment environ
       await using var unlockCmd = new NpgsqlCommand("SELECT pg_advisory_unlock(7743512880);", connection);
       await unlockCmd.ExecuteNonQueryAsync(ct);
     }
+  }
+
+  // Kept local to each service's DbMigrator, the same way BuildPostgresConnectionString is —
+  // these three migrators are deliberately independent copies, not a shared base class.
+  private static string MissingDatabaseMessage(NpgsqlDataSource dataSource, string service)
+  {
+    var database = new NpgsqlConnectionStringBuilder(dataSource.ConnectionString).Database;
+    return $"{service}: database '{database}' does not exist on the configured Postgres server. " +
+      "Create it with the preparation step — `docker compose run --rm db-init`, or " +
+      "scripts/prepare-databases.sh against the target server.";
   }
 
   private string GetMigrationsPath()
