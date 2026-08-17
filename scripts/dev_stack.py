@@ -1,17 +1,27 @@
 #!/usr/bin/env python3
 """Bring the dev stack up, down or back up again without VS Code.
 
-Ports, environment and daprd flags are read from `.vscode/launch.json` and `.vscode/tasks.json` —
-the very files F5 uses — so this script cannot drift away from the IDE. It also shares their pid
-files and process names, which is what lets the two be mixed: a stack started here can be stopped
-by F5's "kill stale" tasks and the other way round.
+Everything is read from the files F5 itself uses, so this cannot drift away from the IDE:
+`web_vms/dapr.yaml` gives each sidecar its app id and ports, `.vscode/launch.json` gives the
+application its program, cwd and environment. The two are joined on the project directory —
+dapr.yaml's `appDirPath` and the launch configuration's `cwd` resolve to the same path.
 
-Infrastructure (postgres, redis, mediamtx, dapr placement) is not managed here; it lives in docker
+It used to take the daprd flags out of the `dapr:<app>:start` tasks in tasks.json instead. That
+stopped working when those tasks became `dapr run` (they no longer spell out a daprd command
+line), which left this script seeing zero services and failing with a KeyError. dapr.yaml is the
+better source anyway: it is now the one file that lists every sidecar.
+
+Sidecars started here are plain daprd processes with their own pid files, not `dapr run -f`, so
+they can be started and stopped one service at a time — which is the point of this script. F5
+starts the same sidecars through the Dapr CLI, so do not run both at once: they would fight over
+the same ports.
+
+Infrastructure (postgres, rabbitmq, mediamtx, dapr placement) is not managed here; it lives in docker
 compose and is expected to be up already — including `db-init`, which creates the service
 databases and which a bare `docker compose up` runs on its own.
 
 Usage:
-    dev_stack.py up [--build] [--two-nodes] [service ...]
+    dev_stack.py up [--build] [service ...]
     dev_stack.py down [service ...]
     dev_stack.py restart [--build] service [service ...]
     dev_stack.py status
@@ -22,7 +32,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shlex
 import signal
 import socket
 import subprocess
@@ -32,14 +41,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PID_DIR = Path("/tmp/web_vms-dapr")
+RUN_FILE = ROOT / "web_vms" / "dapr.yaml"
 
-# Start order: config first (everyone resolves cameras and storages through it), then the leaf
-# services, then the media server, then the gateway that fans out to all of them.
+# Start order, by app id: config first (everyone resolves cameras and storages through it), then
+# the leaf services, then the media server, then the gateway that fans out to all of them.
+# Anything present in dapr.yaml but missing here still works, it just starts last.
 ORDER = [
     "vmscfg",
-    "vmscfg-2",
     "vmslogger",
-    "vmslogger-2",
     "vmsutils",
     "vmssingleton",
     "vmssquaresingleton",
@@ -48,23 +57,14 @@ ORDER = [
     "vmsfs",
     "vmsanalyticssingleton",
     "vms",
-    "web_vms",
+    "web-vms",
 ]
 
-# The second node: its own media_server, VmsFs, VmsOnvif and actor host, pinned to server id
-# "vms-2". Off unless --two-nodes is given — most work needs one node, and this doubles the process
-# count — but anything touching per-node sharding has to be tried here, because a single node
-# cannot show a camera being handed from one to another.
-NODE2 = [
-    "vmsonvif-2",
-    "vmsonvif-actors-2",
-    "vmsfs-2",
-    "vms-2",
-]
-
-# Everything that can be running, in start order. `down` and `status` work off this rather than
-# ORDER: a second node started earlier must not be left behind by a plain `down`.
-ALL = ORDER + NODE2
+# The second node (its own media_server, VmsFs, VmsOnvif and actor host, pinned to server id
+# "vms-2") used to be startable with --two-nodes. Its launch configurations were removed from
+# .vscode/launch.json, so there is nothing left to start; bringing it back means adding those
+# configurations and matching entries in web_vms/dapr.yaml, after which they appear here on their
+# own. Sharding work needs it — a single node cannot show a camera handed from one to another.
 
 
 def _load_jsonc(path: Path) -> dict:
@@ -77,28 +77,86 @@ def _expand(value: str) -> str:
     return value.replace("${workspaceFolder}", str(ROOT))
 
 
-def _services() -> dict[str, dict]:
-    """Builds the service table out of the launch configurations and their dapr tasks."""
-    launch = _load_jsonc(ROOT / ".vscode" / "launch.json")
-    tasks = _load_jsonc(ROOT / ".vscode" / "tasks.json")
+def _run_file() -> tuple[list[dict], Path]:
+    """The apps declared in web_vms/dapr.yaml, plus the resources path they share.
 
-    dapr_args: dict[str, list[str]] = {}
-    for task in tasks["tasks"]:
-        match = re.fullmatch(r"dapr:(.+):start", task.get("label", ""))
-        if not match:
+    Parsed by hand rather than with PyYAML: the script has no dependencies today and the shape it
+    needs is a flat list of `key: value` under `- appID:`.
+    """
+    apps: list[dict] = []
+    resources = RUN_FILE.parent / "../init_files/dapr_components"
+    current: dict | None = None
+    in_common = False
+    for raw in RUN_FILE.read_text().splitlines():
+        line = raw.split("#", 1)[0].rstrip()
+        if not line.strip():
             continue
-        script = task["args"][1]
-        args = re.search(r'nohup "\$daprd_bin" (.*?) > "\$log_file"', script)
-        if args:
-            dapr_args[match.group(1)] = [_expand(a) for a in shlex.split(args.group(1))]
+        if not line.startswith((" ", "\t")):
+            in_common = line.startswith("common:")
+            if line.startswith("apps:"):
+                current = None
+            continue
+        stripped = line.strip()
+        if stripped.startswith("- appID:"):
+            in_common = False
+            current = {"appID": stripped.split(":", 1)[1].strip()}
+            apps.append(current)
+            continue
+        if ":" not in stripped:
+            continue
+        key, value = (part.strip() for part in stripped.split(":", 1))
+        if in_common and key == "resourcesPath":
+            resources = RUN_FILE.parent / value
+        elif current is not None:
+            current[key] = value
+    return apps, resources.resolve()
+
+
+def _daprd_args(app: dict, resources: Path) -> list[str]:
+    """The daprd command line matching one entry of the run file."""
+    args = [
+        "-app-id", app["appID"],
+        "-app-port", app["appPort"],
+        "-app-protocol", app.get("appProtocol", "http"),
+        "-dapr-http-port", app["daprHTTPPort"],
+        "-dapr-grpc-port", app["daprGRPCPort"],
+        "-resources-path", str(resources),
+    ]
+    for flag, field in (("-metrics-port", "metricsPort"),
+                        ("-dapr-internal-grpc-port", "daprInternalGRPCPort")):
+        if field in app:
+            args += [flag, app[field]]
+    if "placementHostAddress" in app:
+        # The run file gives a bare hostname on purpose (the CLI appends each platform's default
+        # port); daprd itself does not, so the Linux default goes in here.
+        host = app["placementHostAddress"]
+        args += ["-placement-host-address", host if ":" in host else f"{host}:50005"]
+    return args
+
+
+def _services() -> dict[str, dict]:
+    """Builds the service table by joining dapr.yaml (sidecar) with launch.json (application).
+
+    The join key is the project directory: dapr.yaml's appDirPath is relative to web_vms/, and a
+    launch configuration's cwd points at the same place. Nothing else ties the two files together
+    — app ids do not appear in launch.json for the .NET services.
+    """
+    launch = _load_jsonc(ROOT / ".vscode" / "launch.json")
+    apps, resources = _run_file()
+
+    by_dir: dict[Path, dict] = {}
+    for cfg in launch["configurations"]:
+        # Two configurations share media_server/: the Windows one only differs in how it is
+        # debugged, and this script runs the binary itself.
+        if not cfg.get("cwd") or cfg["name"].endswith("[Windows]"):
+            continue
+        by_dir[Path(_expand(cfg["cwd"])).resolve()] = cfg
 
     services: dict[str, dict] = {}
-    for cfg in launch["configurations"]:
-        prepare = cfg.get("preLaunchTask", "")
-        if not prepare.startswith("prepare:"):
-            continue
-        key = prepare[len("prepare:"):]
-        if key not in dapr_args:
+    for app in apps:
+        app_dir = (RUN_FILE.parent / app.get("appDirPath", ".")).resolve()
+        cfg = by_dir.get(app_dir)
+        if cfg is None:
             continue
 
         if cfg["type"] == "cppdbg":
@@ -108,18 +166,24 @@ def _services() -> dict[str, dict]:
             env = {k: _expand(v) for k, v in (cfg.get("env") or {}).items()}
             command = ["dotnet", _expand(cfg["program"])]
 
-        args = dapr_args[key]
+        key = app["appID"]
         services[key] = {
             "key": key,
             "name": cfg["name"],
             "command": command,
             "cwd": _expand(cfg["cwd"]),
             "env": env,
-            "dapr": args,
-            "app_port": int(args[args.index("-app-port") + 1]),
+            "dapr": _daprd_args(app, resources),
+            "app_port": int(app["appPort"]),
             "dotnet": cfg["type"] != "cppdbg",
         }
     return services
+
+
+def _in_order(services: dict[str, dict]) -> list[str]:
+    """Known services in start order, with anything not named in ORDER appended."""
+    known = [k for k in ORDER if k in services]
+    return known + [k for k in services if k not in known]
 
 
 def _pid(path: Path) -> int | None:
@@ -241,7 +305,7 @@ def build(services: list[dict]) -> None:
 
 
 def status(services: dict[str, dict]) -> None:
-    for key in ALL:
+    for key in _in_order(services):
         service = services[key]
         app = _pid(PID_DIR / f"{key}.app.pid")
         dapr = _pid(PID_DIR / f"{key}.pid")
@@ -256,18 +320,16 @@ def main() -> None:
         sys.exit(__doc__)
     action, argv = argv[0], argv[1:]
     do_build = "--build" in argv
-    two_nodes = "--two-nodes" in argv
     names = [a for a in argv if not a.startswith("-")]
 
     services = _services()
+    if not services:
+        sys.exit(f"no services found — {RUN_FILE.name} and .vscode/launch.json do not line up "
+                 f"on any project directory")
     unknown = [n for n in names if n not in services]
     if unknown:
         sys.exit(f"unknown service(s): {', '.join(unknown)}\nknown: {', '.join(services)}")
-    # Stopping defaults to everything, starting to one node: a leftover second node is a surprise,
-    # an unstarted one is not.
-    default = ALL if (two_nodes or action == "down") else ORDER
-    selected = names or default
-    chosen = [services[k] for k in selected]
+    chosen = [services[k] for k in (names or _in_order(services))]
 
     if action == "status":
         status(services)
