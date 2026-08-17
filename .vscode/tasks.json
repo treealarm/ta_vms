@@ -12,7 +12,31 @@
                 "."
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms"
+                "cwd": "${workspaceFolder}/web_vms",
+                // Pin the address each sidecar advertises for itself. Unset, Dapr walks the
+                // network interfaces and takes the first non-loopback address it finds; this box
+                // offers eleven, among them an AmneziaVPN tunnel, ZeroTier, two VMware host-only
+                // adapters, two Hyper-V/WSL switches and a disconnected adapter holding a 169.254
+                // address. A VPN interface that drops and returns is the kind of thing that makes
+                // an advertised address go stale, and mDNS gives each lookup only one second
+                // (browseOneTimeout in components-contrib/nameresolution/mdns) with no negative
+                // caching, so a sidecar can then keep failing to resolve an app id: media_server
+                // was seen retrying ListCameras 117 times over 13.6 minutes, every attempt
+                // "timeout waiting for address for app id vmscfg", until its sidecar was
+                // restarted. Everything F5 starts lives on this machine, so loopback is both
+                // reachable and unambiguous. Verified to be what mDNS then announces:
+                // "local service entry announced: vmscfg -> 127.0.0.1:19012".
+                //
+                // Honest about the limits: this is determinism, not a proven cure. That stall
+                // could not be reproduced synthetically — with two sidecars, and with all eleven
+                // started at once, resolution recovered in about a second either way.
+                //
+                // Deliberately NOT in .env, docker-compose.yml or ta_install: in a container or
+                // in Kubernetes a sidecar must advertise an address its peers can reach, and
+                // 127.0.0.1 is emphatically not that. This belongs to F5 and nowhere else.
+                "env": {
+                    "DAPR_HOST_IP": "127.0.0.1"
+                }
             },
             "isBackground": true,
             "presentation": {
@@ -181,7 +205,12 @@
                 "../init_files/dapr_components"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms"
+                "cwd": "${workspaceFolder}/web_vms",
+                // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
+                // never be set for docker or Kubernetes.
+                "env": {
+                    "DAPR_HOST_IP": "127.0.0.1"
+                }
             },
             "isBackground": true,
             "presentation": {
@@ -221,10 +250,10 @@
         },
         {
             "label": "prepare:web_vms",
-            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
-                "dotnet:build",
+                "build:all",
                 "dapr:web_vms:stop",
                 "dapr:web_vms:start"
             ],
@@ -255,7 +284,12 @@
                 "../init_files/dapr_components"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms"
+                "cwd": "${workspaceFolder}/web_vms",
+                // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
+                // never be set for docker or Kubernetes.
+                "env": {
+                    "DAPR_HOST_IP": "127.0.0.1"
+                }
             },
             "isBackground": true,
             "presentation": {
@@ -295,10 +329,10 @@
         },
         {
             "label": "prepare:vmscfg",
-            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
-                "dotnet:build",
+                "build:all",
                 "dapr:vmscfg:stop",
                 "dapr:vmscfg:start"
             ],
@@ -329,7 +363,12 @@
                 "../init_files/dapr_components"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms"
+                "cwd": "${workspaceFolder}/web_vms",
+                // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
+                // never be set for docker or Kubernetes.
+                "env": {
+                    "DAPR_HOST_IP": "127.0.0.1"
+                }
             },
             "isBackground": true,
             "presentation": {
@@ -369,10 +408,10 @@
         },
         {
             "label": "prepare:vmsutils",
-            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
-                "dotnet:build",
+                "build:all",
                 "dapr:vmsutils:stop",
                 "dapr:vmsutils:start"
             ],
@@ -405,7 +444,12 @@
                 "localhost"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms"
+                "cwd": "${workspaceFolder}/web_vms",
+                // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
+                // never be set for docker or Kubernetes.
+                "env": {
+                    "DAPR_HOST_IP": "127.0.0.1"
+                }
             },
             "isBackground": true,
             "presentation": {
@@ -445,10 +489,10 @@
         },
         {
             "label": "prepare:vmsonvif",
-            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
-                "dotnet:build",
+                "build:all",
                 "dapr:vmsonvif:stop",
                 "dapr:vmsonvif:start"
             ],
@@ -481,7 +525,12 @@
                 "localhost"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms"
+                "cwd": "${workspaceFolder}/web_vms",
+                // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
+                // never be set for docker or Kubernetes.
+                "env": {
+                    "DAPR_HOST_IP": "127.0.0.1"
+                }
             },
             "isBackground": true,
             "presentation": {
@@ -521,10 +570,10 @@
         },
         {
             "label": "prepare:vmsonvif-actors",
-            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
-                "dotnet:build",
+                "build:all",
                 "dapr:vmsonvif-actors:stop",
                 "dapr:vmsonvif-actors:start"
             ],
@@ -555,7 +604,12 @@
                 "../init_files/dapr_components"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms"
+                "cwd": "${workspaceFolder}/web_vms",
+                // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
+                // never be set for docker or Kubernetes.
+                "env": {
+                    "DAPR_HOST_IP": "127.0.0.1"
+                }
             },
             "isBackground": true,
             "presentation": {
@@ -595,10 +649,10 @@
         },
         {
             "label": "prepare:vmsfs",
-            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
-                "dotnet:build",
+                "build:all",
                 "dapr:vmsfs:stop",
                 "dapr:vmsfs:start"
             ],
@@ -629,7 +683,12 @@
                 "../init_files/dapr_components"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms"
+                "cwd": "${workspaceFolder}/web_vms",
+                // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
+                // never be set for docker or Kubernetes.
+                "env": {
+                    "DAPR_HOST_IP": "127.0.0.1"
+                }
             },
             "isBackground": true,
             "presentation": {
@@ -669,10 +728,10 @@
         },
         {
             "label": "prepare:vmsanalyticssingleton",
-            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
-                "dotnet:build",
+                "build:all",
                 "dapr:vmsanalyticssingleton:stop",
                 "dapr:vmsanalyticssingleton:start"
             ],
@@ -703,7 +762,12 @@
                 "../init_files/dapr_components"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms"
+                "cwd": "${workspaceFolder}/web_vms",
+                // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
+                // never be set for docker or Kubernetes.
+                "env": {
+                    "DAPR_HOST_IP": "127.0.0.1"
+                }
             },
             "isBackground": true,
             "presentation": {
@@ -743,10 +807,10 @@
         },
         {
             "label": "prepare:vmslogger",
-            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
-                "dotnet:build",
+                "build:all",
                 "dapr:vmslogger:stop",
                 "dapr:vmslogger:start"
             ],
@@ -779,7 +843,12 @@
                 "localhost"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms"
+                "cwd": "${workspaceFolder}/web_vms",
+                // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
+                // never be set for docker or Kubernetes.
+                "env": {
+                    "DAPR_HOST_IP": "127.0.0.1"
+                }
             },
             "isBackground": true,
             "presentation": {
@@ -819,10 +888,10 @@
         },
         {
             "label": "prepare:vmssingleton",
-            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
-                "dotnet:build",
+                "build:all",
                 "dapr:vmssingleton:stop",
                 "dapr:vmssingleton:start"
             ],
@@ -855,7 +924,12 @@
                 "localhost"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms"
+                "cwd": "${workspaceFolder}/web_vms",
+                // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
+                // never be set for docker or Kubernetes.
+                "env": {
+                    "DAPR_HOST_IP": "127.0.0.1"
+                }
             },
             "isBackground": true,
             "presentation": {
@@ -895,10 +969,10 @@
         },
         {
             "label": "prepare:vmssquaresingleton",
-            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
-                "dotnet:build",
+                "build:all",
                 "dapr:vmssquaresingleton:stop",
                 "dapr:vmssquaresingleton:start"
             ],
@@ -929,7 +1003,12 @@
                 "../init_files/dapr_components"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms"
+                "cwd": "${workspaceFolder}/web_vms",
+                // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
+                // never be set for docker or Kubernetes.
+                "env": {
+                    "DAPR_HOST_IP": "127.0.0.1"
+                }
             },
             "isBackground": true,
             "presentation": {
@@ -969,11 +1048,10 @@
         },
         {
             "label": "prepare:vms",
-            "detail": "Builds vms, then clears any leftover sidecar for this app id and starts a fresh one.",
+            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
-                "cmake:configure:vms",
-                "cmake:build:vms",
+                "build:all",
                 "dapr:vms:stop",
                 "dapr:vms:start"
             ],

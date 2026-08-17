@@ -480,6 +480,14 @@
         {
             "name": "Full stack (F5)",
             "stopAll": true,
+            // Build everything once, before any configuration starts. Each prepare:<app> task
+            // still depends on its own build, but by the time they run there is nothing left to
+            // do, so all the sidecars come up within the same second. Without this the C++ build
+            // finishes in about a second while ten .NET launches queue behind one dotnet:build,
+            // and the vms sidecar ends up starting some 30 seconds ahead of vmscfg — a gap that
+            // has been observed to leave it unable to resolve app id vmscfg at all, so
+            // media_server never gets its camera list and no stream is ever published.
+            "preLaunchTask": "build:all",
             "configurations": [
                 "VmsCfg (.NET)",
                 "VmsUtils (.NET)",
@@ -497,6 +505,8 @@
         {
             "name": "Full stack (F5) [Windows]",
             "stopAll": true,
+            // See the Linux compound above: builds once up front so every sidecar starts together.
+            "preLaunchTask": "build:all",
             "configurations": [
                 "VmsCfg (.NET)",
                 "VmsUtils (.NET)",
