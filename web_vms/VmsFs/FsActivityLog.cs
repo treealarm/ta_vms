@@ -8,7 +8,9 @@ public sealed record FsActivityEntry(
   bool     Retained,
   long     SizeBytes,
   DateTime OccurredAt,
-  string   EventType,  // "ingested" | "deleted"
+  // "ingested" | "deleted" | "metadata-dropped" (SizeBytes carries the dropped frame count, and
+  // ClipUid/FilePath are empty — the frames landed on no clip, which is the point of the entry).
+  string   EventType,
   DateTime? EndTs);
 
 public sealed class FsActivityLog

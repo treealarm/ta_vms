@@ -89,7 +89,8 @@ void onvif_metadata_client::enqueue(
   const std::string& stream_name,
   std::string&& xml,
   int frame_width,
-  int frame_height)
+  int frame_height,
+  std::chrono::system_clock::time_point captured_at)
 {
   if (!m_running)
     return;
@@ -100,7 +101,11 @@ void onvif_metadata_client::enqueue(
   document.set_xml(std::move(xml));
   document.set_frame_width(frame_width);
   document.set_frame_height(frame_height);
-  *document.mutable_received_at() = to_proto_ts(std::chrono::system_clock::now());
+  // The reader's stamp, not now(): a document is assembled from several RTP packets and then sits
+  // in this queue for up to a batching window, so now() would place a box later than the frame it
+  // describes by however long both took. The boxes are drawn over archived video, whose boundaries
+  // come off exactly this clock.
+  *document.mutable_received_at() = to_proto_ts(captured_at);
 
   {
     std::lock_guard<std::mutex> lock(m_mutex);

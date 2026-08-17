@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Box, MenuItem, Select, Stack, Typography } from '@mui/material'
-import Hls from 'hls.js'
+import { Alert, Box, IconButton, MenuItem, Select, Stack, Tooltip, Typography } from '@mui/material'
+import DirectionsRunIcon from '@mui/icons-material/DirectionsRun'
 import { useTranslation } from 'react-i18next'
 
-import { authXhrSetup } from '../auth/authFetch'
 import type { EpisodeDto } from '../dto/dtos'
 import { useCameraName } from '../store'
+import { useHlsPlayer } from '../hooks/useHlsPlayer'
+import { playlistWallBounds } from '../utils/playlistTime'
+import ArchiveBboxOverlay from './bbox/ArchiveBboxOverlay'
+import { useArchiveMetadataCoverage } from '../hooks/archiveMetadataClient'
 
 type StreamEntry = {
   streamName: string | null  // null = all streams
@@ -44,7 +47,7 @@ export default function ArchiveHlsPreview({ selected }: Props) {
   // (stream, time-chunk) sources that can share a stream name.
   const [activeUrl, setActiveUrl] = useState<string | null>(null)
   const [loadingStreams, setLoadingStreams] = useState(false)
-  const [hlsError, setHlsError] = useState<string | null>(null)
+  const [streamsError, setStreamsError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!selected) {
@@ -54,7 +57,7 @@ export default function ArchiveHlsPreview({ selected }: Props) {
     }
 
     setLoadingStreams(true)
-    setHlsError(null)
+    setStreamsError(null)
 
     const controller = new AbortController()
 
@@ -70,7 +73,7 @@ export default function ArchiveHlsPreview({ selected }: Props) {
       })
       .catch((e: unknown) => {
         if (e instanceof DOMException && e.name === 'AbortError') return
-        setHlsError(e instanceof Error ? e.message : String(e))
+        setStreamsError(e instanceof Error ? e.message : String(e))
         setStreams([])
         setActiveUrl(null)
       })
@@ -79,57 +82,34 @@ export default function ArchiveHlsPreview({ selected }: Props) {
     return () => controller.abort()
   }, [selected])
 
-  useEffect(() => {
-    const video = videoRef.current
-    if (!video || !selected || !activeUrl) return
+  const activeEntry = streams.find((s) => s.playlistUrl === activeUrl) ?? null
+  const { error, playlistMap } = useHlsPlayer(videoRef, activeEntry?.playlistUrl ?? null, { autoPlay: true })
 
-    const entry = streams.find((s) => s.playlistUrl === activeUrl)
-    if (!entry) return
+  const hlsError = error
+    ? t(
+        error.kind === 'notFound'
+          ? 'wall.noRecordingAtTime'
+          : error.kind === 'network'
+            ? 'wall.errorNetwork'
+            : error.kind === 'media'
+              ? 'wall.errorMedia'
+              : 'wall.errorGeneric'
+      )
+    : null
 
-    setHlsError(null)
-    const { playlistUrl } = entry
-    let hls: Hls | null = null
-
-    const tryPlay = () => void video.play().catch(() => {})
-    const onFatal = (detail: string) => setHlsError(detail)
-
-    if (Hls.isSupported()) {
-      hls = new Hls({ enableWorker: true, lowLatencyMode: false, xhrSetup: authXhrSetup })
-      video.addEventListener('canplay', tryPlay, { once: true })
-      video.addEventListener('loadeddata', tryPlay, { once: true })
-      hls.on(Hls.Events.MEDIA_ATTACHED, () => hls?.loadSource(playlistUrl))
-      hls.on(Hls.Events.MANIFEST_PARSED, tryPlay)
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        if (!data.fatal) return
-        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-          onFatal(`Media error (${data.details})`)
-          try { hls?.recoverMediaError() } catch { /* ignore */ }
-        } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-          onFatal(`Network error (${data.details}). Check API / proxy.`)
-        } else {
-          onFatal(`Playback error: ${data.type} ${data.details ?? ''}`)
-        }
-      })
-      hls.attachMedia(video)
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.addEventListener('canplay', tryPlay, { once: true })
-      video.addEventListener('loadeddata', tryPlay, { once: true })
-      video.src = playlistUrl
-      video.onerror = () => onFatal('Native HLS failed to load')
-    } else {
-      setHlsError('HLS is not supported in this browser')
-      return
-    }
-
-    return () => {
-      video.onerror = null
-      video.removeEventListener('canplay', tryPlay)
-      video.removeEventListener('loadeddata', tryPlay)
-      hls?.destroy()
-      video.removeAttribute('src')
-      video.load()
-    }
-  }, [selected, activeUrl, streams])
+  // The window the loaded playlist actually covers, which is what decides whether this episode has
+  // any recorded geometry to offer.
+  const wallBounds = playlistWallBounds(playlistMap)
+  const coverage = useArchiveMetadataCoverage(
+    selected?.cameraId,
+    activeEntry?.streamName ?? '',
+    wallBounds?.startMs ?? null,
+    wallBounds?.endMs ?? null
+  )
+  // Local state, not the monitor's slot UI: this panel is opened from the events tab and has no
+  // slot, and inventing a key for it would leave entries in monitorUi.slots that nothing cleans up.
+  const [bboxOpen, setBboxOpen] = useState(false)
+  const showBboxToggle = coverage === 'some'
 
   if (!selected) {
     return (
@@ -154,28 +134,43 @@ export default function ArchiveHlsPreview({ selected }: Props) {
         </Typography>
       )}
 
-      {!loadingStreams && streams.length > 1 && (
-        <Select
-          size="small"
-          value={activeUrl ?? ''}
-          onChange={(e) => setActiveUrl(e.target.value || null)}
-          sx={{ fontSize: '0.8rem', height: 28, alignSelf: 'flex-start', minWidth: 140 }}
-        >
-          {streams.map((s) => (
-            <MenuItem key={s.playlistUrl} value={s.playlistUrl} sx={{ fontSize: '0.8rem' }}>
-              {entryLabel(s, t('archive.allStreams'), t('archive.default'))}
-            </MenuItem>
-          ))}
-        </Select>
+      {!loadingStreams && (streams.length > 1 || showBboxToggle) && (
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ alignSelf: 'flex-start' }}>
+          {streams.length > 1 && (
+            <Select
+              size="small"
+              value={activeUrl ?? ''}
+              onChange={(e) => setActiveUrl(e.target.value || null)}
+              sx={{ fontSize: '0.8rem', height: 28, minWidth: 140 }}
+            >
+              {streams.map((s) => (
+                <MenuItem key={s.playlistUrl} value={s.playlistUrl} sx={{ fontSize: '0.8rem' }}>
+                  {entryLabel(s, t('archive.allStreams'), t('archive.default'))}
+                </MenuItem>
+              ))}
+            </Select>
+          )}
+          {showBboxToggle && (
+            <Tooltip title={bboxOpen ? t('cameraCard.bboxClose') : t('cameraCard.bboxOpen')}>
+              <IconButton
+                size="small"
+                onClick={() => setBboxOpen(!bboxOpen)}
+                color={bboxOpen ? 'primary' : 'default'}
+              >
+                <DirectionsRunIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+        </Stack>
       )}
 
-      {hlsError && (
-        <Alert severity="error" onClose={() => setHlsError(null)}>
-          {hlsError}
+      {(streamsError ?? hlsError) && (
+        <Alert severity="error" onClose={() => setStreamsError(null)}>
+          {streamsError ?? hlsError}
         </Alert>
       )}
 
-      {!loadingStreams && streams.length === 0 && !hlsError && (
+      {!loadingStreams && streams.length === 0 && !streamsError && (
         <Typography variant="body2" color="text.secondary">
           {t('archive.noClips')}
         </Typography>
@@ -183,6 +178,7 @@ export default function ArchiveHlsPreview({ selected }: Props) {
 
       <Box
         sx={{
+          position: 'relative',
           width: '100%',
           aspectRatio: '16 / 9',
           maxHeight: 'min(75vh, 900px)',
@@ -192,12 +188,15 @@ export default function ArchiveHlsPreview({ selected }: Props) {
           '& video': { width: '100%', height: '100%', display: 'block', objectFit: 'contain' }
         }}
       >
-        <video
-          key={activeUrl ?? selected.eventUuid}
-          ref={videoRef}
-          controls
-          playsInline
-          muted
+        {/* No `key` on the element: useHlsPlayer keys its own state by URL and tears the previous
+            source down itself, so remounting here would run the teardown twice. */}
+        <video ref={videoRef} controls playsInline muted />
+        <ArchiveBboxOverlay
+          videoRef={videoRef}
+          cameraId={selected.cameraId}
+          streamName={activeEntry?.streamName ?? ''}
+          playlistMap={playlistMap}
+          enabled={bboxOpen && showBboxToggle}
         />
       </Box>
     </Stack>

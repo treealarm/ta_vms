@@ -39,7 +39,7 @@ cam_stream::cam_stream(
     // is also the only thread allowed to touch video_stream() — hence reading the resolution here
     // instead of caching it.
     rtsp->set_metadata_handler(
-      [this, raw = rtsp.get()](std::string&& document)
+      [this, raw = rtsp.get()](std::string&& document, std::chrono::system_clock::time_point stamp)
       {
         int width = 0;
         int height = 0;
@@ -49,7 +49,7 @@ cam_stream::cam_stream(
           height = video->codecpar->height;
         }
         onvif_metadata_client::instance().enqueue(
-          m_camera_id, m_stream_name, std::move(document), width, height);
+          m_camera_id, m_stream_name, std::move(document), width, height, stamp);
       });
     m_reader = std::move(rtsp);
   }

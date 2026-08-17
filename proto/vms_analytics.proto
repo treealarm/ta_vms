@@ -135,6 +135,9 @@ message OnvifDetection {
   optional string plate_text = 7;
   // The camera's own word for the class when it is narrower than `kind` (tt:OtherTypes).
   optional string label = 8;
+  // Which stream the metadata track belonged to. The live overlay ignores it (it keys boxes by
+  // camera), but the archive cannot: clips are split per stream, and main/sub must not be crossed.
+  string stream_name = 9;
 }
 
 message OnvifDetectionBatch {

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { alpha, Alert, Box, Divider, IconButton, Stack, Tooltip, Typography } from '@mui/material'
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
-import Hls from 'hls.js'
+import { useTranslation } from 'react-i18next'
 
-import { authXhrSetup } from '../auth/authFetch'
 import type { RecordingDto, RecordingRangeDto } from '../dto/dtos'
 import RecordingsList, { type RecordingsListHandle } from './RecordingsList'
+import { useHlsPlayer } from '../hooks/useHlsPlayer'
+import { playlistWallBounds, wallMsAtMediaTime } from '../utils/playlistTime'
+import ArchiveBboxOverlay from './bbox/ArchiveBboxOverlay'
 
 const W = '#fff'
 
@@ -39,12 +41,26 @@ function buildPlaylistUrl(camId: string, range: RecordingRangeDto | undefined, s
   return `/api/arch/hls/from-files.m3u8?${q.toString()}`
 }
 
-type Props = { cameraId: string }
+type Props = {
+  cameraId: string
+  /** Whether the operator asked for analytics boxes over this player. */
+  bboxEnabled?: boolean
+  /**
+   * The wall-clock span the loaded playlist covers. Reported upward because the card owns the
+   * overlay toggle but only this component knows which stretch of archive is on screen.
+   */
+  onWallBoundsChange?: (bounds: { startMs: number; endMs: number } | null) => void
+}
 
-export default function ArchiveHlsStreamCard({ cameraId }: Props) {
+export default function ArchiveHlsStreamCard({
+  cameraId,
+  bboxEnabled = false,
+  onWallBoundsChange,
+}: Props) {
+  const { t } = useTranslation()
   const videoRef = useRef<HTMLVideoElement>(null)
   const listRef = useRef<RecordingsListHandle>(null)
-  const [hlsError, setHlsError] = useState<string | null>(null)
+  const [dismissedError, setDismissedError] = useState<string | null>(null)
   const [listOpen, setListOpen] = useState(true)
   const [anchorTs, setAnchorTs] = useState(() => new Date().toISOString())
   const [ranges, setRanges] = useState<RecordingRangeDto[]>([])
@@ -78,23 +94,72 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
 
   const rangeFilePath = seekTarget?.filePath ?? ranges[startIndex]?.recordings[0]?.filePath
 
-  const currentClipTime = seekTarget?.iso ?? ranges[startIndex]?.recordings[0]?.startTime
-  const formattedTime = currentClipTime
-    ? new Date(currentClipTime).toLocaleString(undefined, {
+  const { error, playlistMap } = useHlsPlayer(videoRef, playlistUrl, { autoPlay: true })
+
+  const hlsError = error && error.detail !== dismissedError
+    ? t(
+        error.kind === 'notFound'
+          ? 'wall.noRecordingAtTime'
+          : error.kind === 'network'
+            ? 'wall.errorNetwork'
+            : error.kind === 'media'
+              ? 'wall.errorMedia'
+              : 'wall.errorGeneric'
+      )
+    : null
+
+  // What is actually on screen, from the playlist's PROGRAM-DATE-TIME. It used to be the start time
+  // of the selected clip, which stood still while the video played — a discrepancy that becomes
+  // glaring once boxes are drawn next to it, since they move on the real playhead.
+  const [playheadMs, setPlayheadMs] = useState<number | null>(null)
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !playlistMap) return
+
+    // Quantized to the second the label actually shows. `timeupdate` fires about four times a
+    // second, and this card re-renders RecordingsList with it — the overlay does not read this
+    // state (it runs its own animation-frame clock), so there is nothing to gain from finer steps.
+    const publish = () => {
+      const ms = wallMsAtMediaTime(playlistMap, video.currentTime)
+      setPlayheadMs((prev) => {
+        if (ms === null) return null
+        if (prev !== null && Math.floor(prev / 1000) === Math.floor(ms / 1000)) return prev
+        return ms
+      })
+    }
+    const raf = requestAnimationFrame(publish)
+    video.addEventListener('timeupdate', publish)
+    video.addEventListener('seeked', publish)
+    return () => {
+      cancelAnimationFrame(raf)
+      video.removeEventListener('timeupdate', publish)
+      video.removeEventListener('seeked', publish)
+    }
+  }, [playlistMap])
+
+  useEffect(() => {
+    onWallBoundsChange?.(playlistWallBounds(playlistMap))
+  }, [playlistMap, onWallBoundsChange])
+
+  const fallbackClipTime = seekTarget?.iso ?? ranges[startIndex]?.recordings[0]?.startTime
+  // Derived, not cleared in the effect: an instant from a playlist that has been torn down must not
+  // survive into the next one, and resetting it through state would be a render cascade.
+  const displayMs = (playlistMap ? playheadMs : null)
+    ?? (fallbackClipTime ? Date.parse(fallbackClipTime) : null)
+  const formattedTime = displayMs !== null && Number.isFinite(displayMs)
+    ? new Date(displayMs).toLocaleString(undefined, {
         year: 'numeric', month: '2-digit', day: '2-digit',
         hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
       })
     : null
 
+  // Two behaviours useHlsPlayer does not own, because they belong to this card rather than to HLS:
+  // advancing to the next range when one ends, and warming the next manifest just before that.
   useEffect(() => {
     const video = videoRef.current
-    setHlsError(null)
     if (!video || !playlistUrl) return
 
-    let hls: Hls | null = null
     let prefetched = false
-    const tryPlay = () => void video.play().catch(() => {})
-    const onFatal = (detail: string) => setHlsError(detail)
     const advanceToNextClip = () => {
       setSeekTarget(null)
       setStartIndex((i) => {
@@ -116,41 +181,11 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
       if (nextUrl) void fetch(nextUrl).catch(() => {})
     }
 
-    if (Hls.isSupported()) {
-      hls = new Hls({ enableWorker: true, lowLatencyMode: false, xhrSetup: authXhrSetup })
-      video.addEventListener('canplay', tryPlay, { once: true })
-      video.addEventListener('loadeddata', tryPlay, { once: true })
-      hls.on(Hls.Events.MEDIA_ATTACHED, () => hls?.loadSource(playlistUrl))
-      hls.on(Hls.Events.MANIFEST_PARSED, () => tryPlay())
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal) {
-          if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-            try { hls?.recoverMediaError() } catch {}
-          }
-          onFatal(`${data.type}: ${data.details ?? ''}`)
-        }
-      })
-      hls.attachMedia(video)
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.addEventListener('canplay', tryPlay, { once: true })
-      video.src = playlistUrl
-      video.onerror = () => onFatal('Native HLS failed')
-    } else {
-      setHlsError('HLS not supported in this browser')
-      return
-    }
-
     video.addEventListener('ended', advanceToNextClip)
     video.addEventListener('timeupdate', onTimeUpdate)
     return () => {
       video.removeEventListener('ended', advanceToNextClip)
       video.removeEventListener('timeupdate', onTimeUpdate)
-      video.onerror = null
-      video.removeEventListener('canplay', tryPlay)
-      video.removeEventListener('loadeddata', tryPlay)
-      hls?.destroy()
-      video.removeAttribute('src')
-      video.load()
     }
   }, [playlistUrl, cameraId, startIndex])
 
@@ -161,7 +196,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
         {hlsError && (
           <Alert
             severity="error"
-            onClose={() => setHlsError(null)}
+            onClose={() => setDismissedError(error?.detail ?? null)}
             sx={{ position: 'absolute', top: 4, left: 4, right: listOpen ? 'auto' : 32, zIndex: 2, fontSize: '0.72rem', py: 0.25 }}
           >
             {hlsError}
@@ -176,11 +211,19 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
               color: alpha(W, 0.35), fontSize: '0.78rem', textAlign: 'center', px: 2,
             }}
           >
-            Open the recordings list →
+            {t('archive.openRecordingsList')}
           </Box>
         ) : (
           <Box sx={{ width: '100%', height: '100%', '& video': { width: '100%', height: '100%', display: 'block', objectFit: 'contain' } }}>
-            <video key={playlistUrl} ref={videoRef} controls playsInline muted />
+            {/* No `key` on the element: useHlsPlayer keys its own state by URL and tears the
+                previous source down itself, so remounting here would run the teardown twice. */}
+            <video ref={videoRef} controls playsInline muted />
+            <ArchiveBboxOverlay
+              videoRef={videoRef}
+              cameraId={cameraId}
+              playlistMap={playlistMap}
+              enabled={bboxEnabled}
+            />
           </Box>
         )}
       </Box>
@@ -200,7 +243,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
 
           <Box sx={{ flex: 1 }} />
 
-          <Tooltip title={formattedTime ? `Archive · ${formattedTime}` : 'Open recordings'} placement="left">
+          <Tooltip title={formattedTime ? `${t('archive.title')} · ${formattedTime}` : t('archive.openRecordings')} placement="left">
             <IconButton size="small" onClick={() => setListOpen(true)} sx={BTN}>
               <span style={{ fontSize: '0.85rem', lineHeight: 1 }}>☰</span>
             </IconButton>
@@ -227,7 +270,7 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
           {formattedTime && (
             <Tooltip title={formattedTime} placement="left">
               <Typography sx={{ fontSize: '0.6rem', color: alpha(W, 0.45), mr: 0.75, cursor: 'default', whiteSpace: 'nowrap' }}>
-                {new Date(currentClipTime!).toLocaleDateString('sv-SE')}
+                {new Date(displayMs!).toLocaleDateString('sv-SE')}
               </Typography>
             </Tooltip>
           )}
@@ -249,7 +292,10 @@ export default function ArchiveHlsStreamCard({ cameraId }: Props) {
             cameraId={cameraId}
             timestamp={anchorTs}
             filePath={rangeFilePath}
-            playbackStartTime={currentClipTime}
+            // The clip being played, not the playhead: RecordingsList uses this to highlight a row,
+            // and feeding it a moving instant would both re-render the list on every timeupdate and
+            // stop matching any recording's startTime.
+            playbackStartTime={fallbackClipTime}
             onSelect={handleSelectRecording}
             onTimeChange={setAnchorTs}
             onRangesChange={onRangesChange}

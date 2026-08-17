@@ -123,6 +123,10 @@ public sealed class OnvifMetadataIngestor(
         var detection = new OnvifDetection
         {
           CameraId   = document.CameraId,
+          // Carried through for the archive: clips are split per stream, so geometry recorded
+          // against the wrong one would draw sub-stream boxes over main-stream video. The live
+          // overlay ignores it — it keys boxes by camera.
+          StreamName = document.StreamName ?? string.Empty,
           TrackId    = obj.TrackId,
           Kind       = ToProtoKind(obj.Kind),
           Confidence = obj.Confidence,

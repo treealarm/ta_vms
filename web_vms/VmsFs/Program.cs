@@ -39,6 +39,7 @@ builder.Services.AddHostedService<CameraStorageSubscriber>();
 builder.Services.AddSingleton<DbMigrator>();
 builder.Services.AddSingleton<FsActivityLog>();
 builder.Services.AddSingleton<ClipStorage>();
+builder.Services.AddSingleton<MetadataSampleStore>();
 builder.Services.AddSingleton<FragIndexWarmer>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<FragIndexWarmer>());
 builder.Services.AddSingleton<ExportFileStore>();

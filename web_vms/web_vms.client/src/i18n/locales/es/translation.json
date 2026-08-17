@@ -373,7 +373,10 @@
     "allStreams": "Todos los flujos",
     "default": "(predeterminado)",
     "noClips": "No se encontraron clips para este evento.",
-    "cameraAlarm": "Cámara <1>{{camera}}</1> · inicio de alarma {{start}} · fin de alarma {{end}}"
+    "cameraAlarm": "Cámara <1>{{camera}}</1> · inicio de alarma {{start}} · fin de alarma {{end}}",
+    "title": "Archivo",
+    "openRecordings": "Abrir grabaciones",
+    "openRecordingsList": "Abrir la lista de grabaciones →"
   },
   "onvifFilters": {
     "tabSetup": "Configuración",

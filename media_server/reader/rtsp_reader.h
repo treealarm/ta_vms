@@ -46,9 +46,11 @@ public:
   source_liveness liveness() const override;
   void set_source_lost_handler(source_lost_handler handler) override { m_on_source_lost = std::move(handler); }
 
-  using metadata_handler = std::function<void(std::string&&)>;
-  /// Receives every ONVIF metadata document reassembled off the stream's metadata track. Set once
-  /// before start(), like set_source_lost_handler; without it the track is read and discarded.
+  using metadata_handler = std::function<void(std::string&&, std::chrono::system_clock::time_point)>;
+  /// Receives every ONVIF metadata document reassembled off the stream's metadata track, together
+  /// with the wall clock of the first packet that carried it — the same stamping the video packets
+  /// get, so a box can be placed on the frame it describes. Set once before start(), like
+  /// set_source_lost_handler; without it the track is read and discarded.
   void set_metadata_handler(metadata_handler handler) { m_on_metadata = std::move(handler); }
   void step(int32_t /*steps*/) override {};
   void set_speed(double /*speed*/) override {};

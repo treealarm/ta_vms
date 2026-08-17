@@ -53,6 +53,15 @@ service FsService {
   // Batch fmp4 fragment index for a set of clips, so a manifest is built with one call instead of
   // several file-range reads per clip. VmsFs reads/parses locally and caches the result.
   rpc GetClipIndexes(GetClipIndexesRequest) returns (GetClipIndexesResponse);
+
+  // Analytics geometry recorded against the archive timeline. Frames that land outside every clip
+  // are dropped rather than stored: with no video to draw on, a box has nothing to describe.
+  rpc PushMetadataSamples(PushMetadataSamplesRequest) returns (OperationStatus);
+  rpc GetMetadataSamples(GetMetadataSamplesRequest) returns (GetMetadataSamplesResponse);
+  // Cheap "is there anything at all in this window", for deciding whether to offer the overlay
+  // toggle. Asked on every archive window, unlike GetMetadataSamples, which is asked only when the
+  // overlay is actually on.
+  rpc GetMetadataCoverage(GetMetadataCoverageRequest) returns (GetMetadataCoverageResponse);
 }
 
 message OperationStatus {
@@ -484,4 +493,68 @@ message ListSourceOutagesRequest {
 
 message ListSourceOutagesResponse {
   repeated SourceOutageRow outages = 1;
+}
+
+// One object as the producer saw it at one instant. Coordinates are normalized 0..1 from the
+// top-left corner — the same convention the live overlay already draws with.
+message MetadataBox {
+  int64 track_id = 1;
+  // DetectionKinds.ToDbString: "person" | "face" | "vehicle" | "license_plate" | "animal" |
+  // "unknown". A string rather than an enum on purpose: vms_fs.proto has no business importing
+  // vms_analytics.proto for a taxonomy that is, to the archive, an opaque label.
+  string kind = 2;
+  float confidence = 3;
+  float x = 4;
+  float y = 5;
+  float width = 6;
+  float height = 7;
+  // The producer's own, narrower word for the class when it has one ("Truck" under vehicle).
+  optional string label = 8;
+  optional string plate_text = 9;
+}
+
+// Everything one producer saw at one instant. `ts` is on the same wall clock that bounds clips and
+// is emitted as EXT-X-PROGRAM-DATE-TIME, so a frame can be looked up by the playhead directly.
+message MetadataFrame {
+  google.protobuf.Timestamp ts = 1;
+  repeated MetadataBox boxes = 2;
+}
+
+message PushMetadataSamplesRequest {
+  string camera_id = 1;
+  string stream_name = 2;
+  // "cv" | "onvif". Kept separate all the way to the renderer: the two number their tracks
+  // independently, and their timestamps come from different clocks.
+  string source = 3;
+  // Ascending by ts. May span a clip boundary; VmsFs splits it.
+  repeated MetadataFrame frames = 4;
+}
+
+message GetMetadataSamplesRequest {
+  string camera_id = 1;
+  optional string stream_name = 2;
+  google.protobuf.Timestamp from_ts = 3;
+  google.protobuf.Timestamp to_ts = 4;
+}
+
+message MetadataSourceFrames {
+  string source = 1;
+  // Ascending by ts.
+  repeated MetadataFrame frames = 2;
+}
+
+message GetMetadataSamplesResponse {
+  repeated MetadataSourceFrames sources = 1;
+}
+
+message GetMetadataCoverageRequest {
+  string camera_id = 1;
+  optional string stream_name = 2;
+  google.protobuf.Timestamp from_ts = 3;
+  google.protobuf.Timestamp to_ts = 4;
+}
+
+message GetMetadataCoverageResponse {
+  bool has_cv = 1;
+  bool has_onvif = 2;
 }

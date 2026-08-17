@@ -109,10 +109,16 @@ onvif_metadata_assembler::onvif_metadata_assembler(document_handler on_document)
 {
 }
 
-void onvif_metadata_assembler::push(const uint8_t* data, size_t len)
+void onvif_metadata_assembler::push(
+  const uint8_t* data, size_t len, std::chrono::system_clock::time_point arrived_at)
 {
   if (!data || len == 0)
     return;
+
+  // An empty buffer means this packet opens a document, so its arrival is that document's stamp.
+  if (m_buffer.empty())
+    m_pending_stamp = arrived_at;
+  m_last_stamp = arrived_at;
 
   m_buffer.append(reinterpret_cast<const char*>(data), len);
   drain();
@@ -145,6 +151,10 @@ void onvif_metadata_assembler::drain()
 
     std::string document = m_buffer.substr(0, end);
     m_buffer.erase(0, end);
+    const auto stamp = m_pending_stamp;
+    // Whatever is left over arrived in the packet we were just handed, so that is where the next
+    // document starts.
+    m_pending_stamp = m_last_stamp;
     ++m_documents_emitted;
 
     // Once per session. Finding the track only proves the camera offered it; this proves data is
@@ -157,11 +167,13 @@ void onvif_metadata_assembler::drain()
     }
 
     if (m_on_document)
-      m_on_document(std::move(document));
+      m_on_document(std::move(document), stamp);
   }
 }
 
 void onvif_metadata_assembler::reset()
 {
   m_buffer.clear();
+  m_pending_stamp = {};
+  m_last_stamp = {};
 }

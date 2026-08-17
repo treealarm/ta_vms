@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <memory>
@@ -42,12 +43,18 @@ public:
   void stop();
 
   /// Queues one reassembled document. Safe from any thread; never blocks.
+  ///
+  /// `captured_at` is the wall clock of the first packet that carried the document, taken by the
+  /// RTSP reader from the same stamping the video packets get. It is passed in rather than taken
+  /// here because by this point the document has already been reassembled and is about to be
+  /// batched — both of which happen after the moment the camera actually described the scene.
   void enqueue(
     const std::string& camera_id,
     const std::string& stream_name,
     std::string&& xml,
     int frame_width,
-    int frame_height);
+    int frame_height,
+    std::chrono::system_clock::time_point captured_at);
 
 private:
   onvif_metadata_client() = default;

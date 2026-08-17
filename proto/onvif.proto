@@ -2,8 +2,9 @@ syntax = "proto3";
 
 // The rest of this file passes device timestamps around as ISO-8601 strings, because that is what
 // the camera itself reports and the UI shows verbatim. MetadataDocument.received_at is different:
-// it is our own clock, produced in C++ and consumed in C#, so it uses the well-known type rather
-// than a format both ends would have to parse.
+// it is our own capture clock — the one that also bounds archive clips — produced in C++ and
+// consumed in C#, so it uses the well-known type rather than a format both ends would have to
+// parse.
 import "google/protobuf/timestamp.proto";
 
 package vms.onvif;
@@ -900,7 +901,11 @@ message MetadataStatesResponse {
 message MetadataDocument {
   string camera_id = 1;
   string stream_name = 2;
-  // When media_server finished reassembling the document.
+  // Wall clock of the first packet that carried the document, taken by the RTSP reader from the
+  // same stamping the video packets get — so a box can be placed on the frame it describes. Not
+  // the moment reassembly finished, and not the moment it was sent: both come after the camera
+  // described the scene, and these boxes are drawn over archived video whose boundaries come off
+  // exactly this clock.
   google.protobuf.Timestamp received_at = 3;
   string xml = 4;
   // Video track resolution, so the parser can normalize cameras that emit raw pixel coordinates

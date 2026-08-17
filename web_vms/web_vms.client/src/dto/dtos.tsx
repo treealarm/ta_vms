@@ -644,6 +644,43 @@ export type AnalyticsActivityEntryDto = {
 
 export type AnalyticsDetectionSource = 'cv' | 'onvif'
 
+/** One object as its producer saw it, normalized 0..1 from the top-left corner. */
+export type ArchiveMetadataBoxDto = {
+  trackId: number
+  kind: AnalyticsDetectionKind
+  confidence: number
+  bboxX: number
+  bboxY: number
+  bboxWidth: number
+  bboxHeight: number
+  label?: string
+  plateText?: string
+}
+
+/** Everything one producer saw at one instant, on the same wall clock the playlist's PDT carries. */
+export type ArchiveMetadataFrameDto = {
+  ts: string
+  boxes: ArchiveMetadataBoxDto[]
+}
+
+/**
+ * Frames from one producer, ascending by time. The two sources stay apart all the way to the
+ * renderer: they number their tracks independently, and their timestamps come off different clocks.
+ */
+export type ArchiveMetadataSourceDto = {
+  source: AnalyticsDetectionSource
+  frames: ArchiveMetadataFrameDto[]
+}
+
+export type ArchiveMetadataResponseDto = {
+  sources: ArchiveMetadataSourceDto[]
+}
+
+export type ArchiveMetadataCoverageDto = {
+  hasCv: boolean
+  hasOnvif: boolean
+}
+
 /**
  * An ONVIF event shown over live video. Carries no geometry: cameras whose analytics is cell motion
  * or tamper have nothing to outline, and the event is the whole statement they can make.

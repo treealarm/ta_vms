@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -21,12 +22,16 @@
 /// Not thread-safe: one instance per reader, touched only by that reader's thread.
 class onvif_metadata_assembler {
 public:
-  using document_handler = std::function<void(std::string&&)>;
+  using document_handler = std::function<void(std::string&&, std::chrono::system_clock::time_point)>;
 
   explicit onvif_metadata_assembler(document_handler on_document);
 
-  /// Feeds one RTP payload. Emits every complete document it completes, in order.
-  void push(const uint8_t* data, size_t len);
+  /// Feeds one RTP payload, stamped with the wall clock of its arrival. Emits every document it
+  /// completes, in order, each carrying the stamp of the packet that *started* it — not the one
+  /// that finished it. A document spanning several packets describes the scene as of the moment
+  /// the camera began sending it, and stamping it at completion would push a box later than the
+  /// frame it belongs to by however long the transfer took.
+  void push(const uint8_t* data, size_t len, std::chrono::system_clock::time_point arrived_at);
 
   /// Drops whatever is half-assembled. Called when the RTSP session ends: the next session starts
   /// at a document boundary, and a torso from the old one would corrupt the first new document.
@@ -41,6 +46,10 @@ private:
 
   document_handler m_on_document;
   std::string m_buffer;
+  /// Arrival of the packet that began the document currently being assembled.
+  std::chrono::system_clock::time_point m_pending_stamp{};
+  /// Arrival of the most recent packet, which is where any leftover after a drain came from.
+  std::chrono::system_clock::time_point m_last_stamp{};
   uint64_t m_documents_emitted = 0;
   uint64_t m_documents_dropped = 0;
 };

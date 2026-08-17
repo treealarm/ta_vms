@@ -21,8 +21,9 @@ public sealed class DetectionStreamConsumer(
   WatchReconciler reconciler,
   CameraStorageResolver storageResolver,
   IDbContextFactory<AnalyticsDbContext> dbFactory,
-  CfgService.CfgServiceClient cfgClient,
+  CameraServerCache serverCache,
   ServerPairRegistry serverPairRegistry,
+  MetadataArchiveWriter metadataWriter,
   IObjectIdentityResolver objectResolver,
   ObjectSessionService sessions,
   VmsLog.EntityStatePublisher entityStatePublisher,
@@ -99,6 +100,17 @@ public sealed class DetectionStreamConsumer(
       evt.Bbox?.X ?? 0, evt.Bbox?.Y ?? 0, evt.Bbox?.Width ?? 0, evt.Bbox?.Height ?? 0,
       detectedAt, evt.HasRecognizedText ? evt.RecognizedText : null, persisted,
       objectResolver.Peek(cameraId, evt.TrackId), Source: "cv"));
+
+    // Recorded for the archive overlay before the debounce gate, for the same reason the live
+    // overlay is fed before it: debounce exists to stop one object from minting an event every
+    // frame, not to thin out geometry. Gating here would leave the archive with one box every ten
+    // seconds, which is not an overlay.
+    metadataWriter.Offer(new MetadataSample(
+      cameraId, watch.StreamName ?? string.Empty, "cv", detectedAt,
+      evt.TrackId, DetectionKinds.ToDbString(evt.Kind), evt.Confidence,
+      evt.Bbox?.X ?? 0, evt.Bbox?.Y ?? 0, evt.Bbox?.Width ?? 0, evt.Bbox?.Height ?? 0,
+      Label: null,
+      PlateText: evt.HasRecognizedText ? evt.RecognizedText : null));
 
     if (!persisted)
       return;
@@ -203,8 +215,7 @@ public sealed class DetectionStreamConsumer(
   {
     try
     {
-      var camResp = await cfgClient.GetCameraAsync(new SourceRequest { SourceId = cameraId }, cancellationToken: ct);
-      var serverId = camResp.Found ? camResp.Setup.ServerId : null;
+      var serverId = await serverCache.GetServerIdAsync(cameraId, ct);
       var fsClient = serverPairRegistry.GetFsClient(serverId);
       var request = new RetainEventRequest
       {

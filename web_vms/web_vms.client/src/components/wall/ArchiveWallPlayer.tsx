@@ -7,6 +7,7 @@ import { useAppSelector } from '../../store'
 import { selectWall } from '../../store/wallPlaybackSlice'
 import { wallClockBus } from '../../hooks/wallClockBus'
 import { useHlsPlayer } from '../../hooks/useHlsPlayer'
+import ArchiveBboxOverlay from '../bbox/ArchiveBboxOverlay'
 import { useWallFollow } from '../../hooks/useWallFollow'
 import { useWallCoverage } from '../../hooks/useWallCoverage'
 import { buildWallPlaylistUrl, wallPlaylistRequestBounds } from '../../utils/playlistUrl'
@@ -26,6 +27,8 @@ type Props = {
   /** Timeline window, so the shared query is keyed identically for every consumer. */
   coverageWindowStartMs: number
   coverageWindowWidthMs: number
+  /** Whether the operator asked for analytics boxes over this cell. */
+  bboxEnabled?: boolean
 }
 
 /**
@@ -43,6 +46,7 @@ export default function ArchiveWallPlayer({
   wallCameraIds,
   coverageWindowStartMs,
   coverageWindowWidthMs,
+  bboxEnabled = false,
 }: Props) {
   const { t } = useTranslation()
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -183,6 +187,14 @@ export default function ArchiveWallPlayer({
       >
         <video ref={videoRef} playsInline muted={!audible} />
       </Box>
+
+      <ArchiveBboxOverlay
+        videoRef={videoRef}
+        cameraId={cameraId}
+        streamName={streamName}
+        playlistMap={playlistMap}
+        enabled={bboxEnabled}
+      />
 
       {/* Which cell you are hearing is otherwise invisible — the clock owner can move between cells
           as focus or media availability changes. */}

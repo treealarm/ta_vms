@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { patchSlot, selectSlotUi } from '../store/monitorUiSlice'
 import {
@@ -44,6 +44,9 @@ import StreamProfileRow from './StreamProfileRow'
 import PtzOverlay from './PtzOverlay'
 import DeviceIoOverlay from './DeviceIoOverlay'
 import { useOnvifBboxCapable } from '../hooks/useOnvifBboxCapable'
+import { useArchiveMetadataCoverage } from '../hooks/archiveMetadataClient'
+import { wallPlaylistRequestBounds } from '../utils/playlistUrl'
+import { selectWallSeekMs } from '../store/wallPlaybackSlice'
 import { useAppDispatch, useAppSelector } from '../store'
 import { fetchCameraState, setArmedWithPrealarmBaseline, setStreamRecordingProfile } from '../store/liveSlice'
 
@@ -238,17 +241,42 @@ export default function CameraUnifiedCard({
   //   2. device  — drives the physical camera right now, so it needs live video
   //   3. state   — writes camera configuration and doubles as its indicator
   //
-  // In wall playback the per-cell live/archive toggle is suspended (the wall owns the mode) and
-  // the bbox overlay only exists on the live WebRTC element, so both would be dead controls.
+  // In wall playback the per-cell live/archive toggle is suspended (the wall owns the mode).
   const showModeToggle = !wallPlayback
+  const isLiveContext = mode === 'live' && !wallPlayback
   // Two independent box sources feed the same overlay: the CV detector (a watch configured in
   // admin, reported on the camera) and the camera's own ONVIF Scene Description (configured on the
   // device itself, so it has to be probed — see useOnvifBboxCapable). Either one is reason enough
   // to offer the toggle.
-  const onvifBboxCapable = useOnvifBboxCapable(
-    camera.cameraId, mode === 'live' && !wallPlayback && !isDisabled)
+  const onvifBboxCapable = useOnvifBboxCapable(camera.cameraId, isLiveContext && !isDisabled)
   const hasBoxSource = Boolean(camera.hasAnalytics) || onvifBboxCapable
-  const showBboxToggle = mode === 'live' && !wallPlayback && !isDisabled && hasBoxSource
+
+  // In an archive context the live test is the wrong question. It describes the camera *now*, while
+  // the operator may be looking at a period before the watch existed — or after it was deleted.
+  // Whether boxes exist is a property of (camera, stream, time range), so it is asked of the
+  // archive over whatever window is currently loaded.
+  const archiveStreamName =
+    activeStreamObj?.streamName || (merged.streams ?? [])[0]?.streamName || ''
+  const [cardArchiveBounds, setCardArchiveBounds] = useState<{ startMs: number; endMs: number } | null>(null)
+  // For the wall the window is derivable without asking the player: it is built from the same
+  // anchor the playlist URL is.
+  const wallSeekMs = useAppSelector(selectWallSeekMs(monitorId ?? ''))
+  const wallBounds = useMemo(
+    () => (wallPlayback ? wallPlaylistRequestBounds(wallSeekMs) : null),
+    [wallPlayback, wallSeekMs]
+  )
+  const archiveBounds = wallPlayback ? wallBounds : cardArchiveBounds
+  const archiveCoverage = useArchiveMetadataCoverage(
+    !isLiveContext && !isDisabled ? camera.cameraId : undefined,
+    archiveStreamName,
+    archiveBounds?.startMs ?? null,
+    archiveBounds?.endMs ?? null
+  )
+  // 'unknown' means the answer has not landed yet — offer the control optimistically when the
+  // camera has any box source at all. A button that shows up late is worse than one that shows up
+  // and is then found to have nothing behind it.
+  const archiveHasBoxes = archiveCoverage === 'some' || (archiveCoverage === 'unknown' && hasBoxSource)
+  const showBboxToggle = !isDisabled && (isLiveContext ? hasBoxSource : archiveHasBoxes)
   // Recording profile and override act on configuration, which is meaningful whatever the tile is
   // currently showing — but in the standalone card they follow the card's own mode.
   const showStateConfigRows = wallPlayback || mode === 'live'
@@ -688,6 +716,7 @@ export default function CameraUnifiedCard({
               wallCameraIds={wallCameraIds ?? []}
               coverageWindowStartMs={coverageWindowStartMs ?? 0}
               coverageWindowWidthMs={coverageWindowWidthMs ?? 0}
+              bboxEnabled={bboxOpen && archiveHasBoxes}
             />
           </Box>
         ) : (
@@ -702,7 +731,11 @@ export default function CameraUnifiedCard({
             )}
             {mode === 'archive' && (
               <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <ArchiveHlsStreamCard cameraId={camera.cameraId} />
+                <ArchiveHlsStreamCard
+                  cameraId={camera.cameraId}
+                  bboxEnabled={bboxOpen && archiveHasBoxes}
+                  onWallBoundsChange={setCardArchiveBounds}
+                />
               </Box>
             )}
           </>

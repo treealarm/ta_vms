@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Dapr.Messaging.PublishSubscribe;
 
 namespace VmsAnalyticsSingleton;
@@ -10,11 +11,13 @@ public sealed class AnalyticsWatchSubscriber(
   AnalyticsWatchCache cache,
   WatchReconciler reconciler,
   CameraStorageResolver storageResolver,
+  CameraServerCache serverCache,
   ILogger<AnalyticsWatchSubscriber> logger) : IHostedService, IDisposable
 {
   private const string AnalyticsWatchChangedTopic = "analytics-watch-changed";
   private const string CameraStateChangedTopic    = "camera-state-changed";
   private const string StorageConfigChangedTopic  = "storage-config-changed";
+  private const string ServerConfigChangedTopic   = "server-config-changed";
   private static readonly string PubSubName =
     Environment.GetEnvironmentVariable("PUBSUB_NAME")
       ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
@@ -48,6 +51,7 @@ public sealed class AnalyticsWatchSubscriber(
         pubSubClient.SubscribeAsync(PubSubName, AnalyticsWatchChangedTopic, options, HandleAsync, ct),
         pubSubClient.SubscribeAsync(PubSubName, CameraStateChangedTopic, options, HandleAsync, ct),
         pubSubClient.SubscribeAsync(PubSubName, StorageConfigChangedTopic, options, HandleStorageChangedAsync, ct),
+        pubSubClient.SubscribeAsync(PubSubName, ServerConfigChangedTopic, options, HandleServerChangedAsync, ct),
         FallbackResyncLoopAsync(ct));
     }
     catch (OperationCanceledException) { }
@@ -70,6 +74,34 @@ public sealed class AnalyticsWatchSubscriber(
   {
     _ = RefreshAndReconcileAsync(ct);
     return Task.FromResult(TopicResponseAction.Success);
+  }
+
+  // Wire shape of server-config-changed; VmsCfg owns it. Empty CameraIds means "something node-wide
+  // moved". Not filtered by server_id: this service is the one instance for the whole deployment,
+  // so every node's cameras are its business.
+  private sealed record ServerConfigChanged(string? ServerId, IReadOnlyList<string>? CameraIds);
+
+  private static readonly JsonSerializerOptions JsonOptions =
+    new() { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
+
+  private Task<TopicResponseAction> HandleServerChangedAsync(TopicMessage message, CancellationToken _)
+  {
+    // A camera moving to another node changes which VmsFs its detections and metadata belong to.
+    // The event is only a signal to re-pull (CLAUDE.md pub/sub rule) — drop the entries and let the
+    // next detection resolve the current owner.
+    try
+    {
+      var evt = JsonSerializer.Deserialize<ServerConfigChanged>(message.Data.Span, JsonOptions);
+      if (evt is null)
+        return Task.FromResult(TopicResponseAction.Drop);
+
+      serverCache.Invalidate(evt.CameraIds ?? []);
+      return Task.FromResult(TopicResponseAction.Success);
+    }
+    catch
+    {
+      return Task.FromResult(TopicResponseAction.Retry);
+    }
   }
 
   private Task<TopicResponseAction> HandleStorageChangedAsync(TopicMessage message, CancellationToken ct)

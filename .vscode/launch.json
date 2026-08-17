@@ -169,6 +169,7 @@
                 "ANALYTICS_REID_MATCH_MIN_SCORE": "0.6",
                 "ANALYTICS_REID_GALLERY_WINDOW_SECONDS": "900",
                 "ANALYTICS_EVENT_GROUP_GAP_SECONDS": "300",
+                "ANALYTICS_METADATA_MAX_SAMPLE_HZ": "5",
                 "DAPR_ANALYTICS_WORKER_APP_IDS": "analytics-worker",
                 "VMS_DEBUG_ENTITY_STATE_SECONDS": "10",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"

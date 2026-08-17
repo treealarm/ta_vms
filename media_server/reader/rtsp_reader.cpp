@@ -269,17 +269,29 @@ void rtsp_reader::read_loop()
       continue;
     }
 
-    // Handled before the forward whitelist and before the liveness stamp below, deliberately on
-    // both counts: no sink is prepared for a data packet, and metadata must not keep the watchdog
-    // happy — a camera that keeps narrating the scene after its video died is still a dead source.
+    // Handled before the forward whitelist and before the liveness bookkeeping below, deliberately
+    // on both counts: no sink is prepared for a data packet, and metadata must not keep the
+    // watchdog happy — a camera that keeps narrating the scene after its video died is still a dead
+    // source.
+    //
+    // It IS stamped, though, and from the same `wait_started` the video packets below use: these
+    // boxes are drawn over archived video, and a box is only ever on its object if its timestamp
+    // and the frame's come off the same clock. What it deliberately does not do is touch
+    // m_stamped_since_connect — the "first packet of a session gets its own arrival" rule belongs
+    // to the video timeline, and letting a metadata packet consume it would mis-stamp the frame
+    // that actually opens the segment.
     if (m_on_metadata && pkt->stream_index == m_metadata_index)
     {
+      const auto meta_wall = m_stamped_since_connect
+        ? wait_started
+        : std::chrono::system_clock::now();
       if (!m_metadata_assembler)
       {
         m_metadata_assembler = std::make_unique<onvif_metadata_assembler>(
-          [this](std::string&& document) { m_on_metadata(std::move(document)); });
+          [this](std::string&& document, std::chrono::system_clock::time_point stamp)
+          { m_on_metadata(std::move(document), stamp); });
       }
-      m_metadata_assembler->push(pkt->data, static_cast<size_t>(pkt->size));
+      m_metadata_assembler->push(pkt->data, static_cast<size_t>(pkt->size), meta_wall);
       continue;
     }
 

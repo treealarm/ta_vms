@@ -13,24 +13,37 @@ public sealed class AnalyticsServiceImpl(
   AnalyticsActivityLog activityLog,
   LiveDetectionBroadcaster liveBroadcaster,
   LiveEventBroadcaster liveEventBroadcaster,
+  MetadataArchiveWriter metadataWriter,
   CameraStorageResolver storageResolver)
   : VmsAnalyticsService.VmsAnalyticsServiceBase
 {
   // Boxes the camera reported itself, already parsed and normalized by VmsOnvif (which owns the
-  // ONVIF schema knowledge). Straight into the same fan-out the CV pipeline feeds — nothing is
-  // stored, and the reply carries nothing, because the caller never retries.
+  // ONVIF schema knowledge). Straight into the same fan-out the CV pipeline feeds, plus the archive
+  // writer's queue. The reply still carries nothing and the call is still not retried: both
+  // destinations are best-effort, and a metadata document that arrives late is worthless to the
+  // overlay and unattributable to a clip.
   public override Task<PushOnvifDetectionsResponse> PushOnvifDetections(
     OnvifDetectionBatch request, ServerCallContext context)
   {
     foreach (var d in request.Detections)
     {
+      var kind = DetectionKinds.ToDbString(d.Kind);
+      var detectedAt = d.DetectedAt?.ToDateTime() ?? DateTime.UtcNow;
+      var label = d.HasLabel ? d.Label : null;
+      var plateText = d.HasPlateText ? d.PlateText : null;
+
       liveBroadcaster.Publish(new LiveDetection(
-        d.CameraId, d.TrackId, DetectionKinds.ToDbString(d.Kind), d.Confidence,
+        d.CameraId, d.TrackId, kind, d.Confidence,
         d.Bbox?.X ?? 0, d.Bbox?.Y ?? 0, d.Bbox?.Width ?? 0, d.Bbox?.Height ?? 0,
-        d.DetectedAt?.ToDateTime() ?? DateTime.UtcNow,
-        d.HasPlateText ? d.PlateText : null,
+        detectedAt, plateText,
         Persisted: false, ObjectId: null, Source: "onvif",
-        Label: d.HasLabel ? d.Label : null));
+        Label: label));
+
+      metadataWriter.Offer(new MetadataSample(
+        d.CameraId, d.StreamName ?? string.Empty, "onvif", detectedAt,
+        d.TrackId, kind, d.Confidence,
+        d.Bbox?.X ?? 0, d.Bbox?.Y ?? 0, d.Bbox?.Width ?? 0, d.Bbox?.Height ?? 0,
+        label, plateText));
     }
     return Task.FromResult(new PushOnvifDetectionsResponse());
   }

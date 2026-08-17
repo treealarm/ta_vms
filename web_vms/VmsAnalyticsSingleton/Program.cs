@@ -26,6 +26,11 @@ builder.Services.AddSingleton(_ =>
   new StorageService.StorageServiceClient(DaprClient.CreateInvocationInvoker(cfgAppId)));
 builder.Services.AddSingleton<ServerPairRegistry>();
 builder.Services.AddSingleton<CameraStorageResolver>();
+builder.Services.AddSingleton<CameraServerCache>();
+// Registered outside the "are there any analytics workers" block below: the ONVIF source reaches
+// AnalyticsServiceImpl regardless of whether a CV worker exists.
+builder.Services.AddSingleton<MetadataArchiveWriter>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<MetadataArchiveWriter>());
 
 // video_a workers are optional, mirroring ISquareIntegration/NoOpSquareIntegration in VmsCfg: if
 // none are configured, analytics ingestion is simply inactive — no exception, no crash. Multiple
