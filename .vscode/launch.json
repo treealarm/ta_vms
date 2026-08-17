@@ -5,8 +5,8 @@
             "name": "Backend (.NET)",
             "type": "coreclr",
             "request": "launch",
-            "preLaunchTask": "prepare:web_vms",
-            "postDebugTask": "dapr:web_vms:stop",
+            "preLaunchTask": "build:all",
+            "postDebugTask": "dapr: sidecars down",
             "program": "${workspaceFolder}/web_vms/web_vms.Server/bin/Debug/net10.0/web_vms.Server.dll",
             "cwd": "${workspaceFolder}/web_vms/web_vms.Server",
             "stopAtEntry": false,
@@ -39,8 +39,8 @@
             "name": "VmsCfg (.NET)",
             "type": "coreclr",
             "request": "launch",
-            "preLaunchTask": "prepare:vmscfg",
-            "postDebugTask": "dapr:vmscfg:stop",
+            "preLaunchTask": "build:all",
+            "postDebugTask": "dapr: sidecars down",
             "program": "${workspaceFolder}/web_vms/VmsCfg/bin/Debug/net10.0/VmsCfg.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsCfg",
             "stopAtEntry": false,
@@ -67,8 +67,8 @@
             "name": "VmsOnvif (.NET)",
             "type": "coreclr",
             "request": "launch",
-            "preLaunchTask": "prepare:vmsonvif",
-            "postDebugTask": "dapr:vmsonvif:stop",
+            "preLaunchTask": "build:all",
+            "postDebugTask": "dapr: sidecars down",
             "program": "${workspaceFolder}/web_vms/VmsOnvif/bin/Debug/net10.0/VmsOnvif.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsOnvif",
             "stopAtEntry": false,
@@ -90,8 +90,8 @@
             "name": "VmsOnvifActors (.NET)",
             "type": "coreclr",
             "request": "launch",
-            "preLaunchTask": "prepare:vmsonvif-actors",
-            "postDebugTask": "dapr:vmsonvif-actors:stop",
+            "preLaunchTask": "build:all",
+            "postDebugTask": "dapr: sidecars down",
             "program": "${workspaceFolder}/web_vms/VmsOnvifActors/bin/Debug/net10.0/VmsOnvifActors.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsOnvifActors",
             "stopAtEntry": false,
@@ -109,8 +109,8 @@
             "name": "VmsFs (.NET)",
             "type": "coreclr",
             "request": "launch",
-            "preLaunchTask": "prepare:vmsfs",
-            "postDebugTask": "dapr:vmsfs:stop",
+            "preLaunchTask": "build:all",
+            "postDebugTask": "dapr: sidecars down",
             "program": "${workspaceFolder}/web_vms/VmsFs/bin/Debug/net10.0/VmsFs.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsFs",
             "stopAtEntry": false,
@@ -145,8 +145,8 @@
             "name": "VmsAnalyticsSingleton (.NET)",
             "type": "coreclr",
             "request": "launch",
-            "preLaunchTask": "prepare:vmsanalyticssingleton",
-            "postDebugTask": "dapr:vmsanalyticssingleton:stop",
+            "preLaunchTask": "build:all",
+            "postDebugTask": "dapr: sidecars down",
             "program": "${workspaceFolder}/web_vms/VmsAnalyticsSingleton/bin/Debug/net10.0/VmsAnalyticsSingleton.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsAnalyticsSingleton",
             "stopAtEntry": false,
@@ -178,8 +178,8 @@
             "name": "VmsLogger (.NET)",
             "type": "coreclr",
             "request": "launch",
-            "preLaunchTask": "prepare:vmslogger",
-            "postDebugTask": "dapr:vmslogger:stop",
+            "preLaunchTask": "build:all",
+            "postDebugTask": "dapr: sidecars down",
             "program": "${workspaceFolder}/web_vms/VmsLogger/bin/Debug/net10.0/VmsLogger.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsLogger",
             "stopAtEntry": false,
@@ -196,8 +196,8 @@
             "name": "VmsSingleton (.NET)",
             "type": "coreclr",
             "request": "launch",
-            "preLaunchTask": "prepare:vmssingleton",
-            "postDebugTask": "dapr:vmssingleton:stop",
+            "preLaunchTask": "build:all",
+            "postDebugTask": "dapr: sidecars down",
             "program": "${workspaceFolder}/web_vms/VmsSingleton/bin/Debug/net10.0/VmsSingleton.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsSingleton",
             "stopAtEntry": false,
@@ -216,8 +216,8 @@
             "name": "VmsSquareSingleton (.NET)",
             "type": "coreclr",
             "request": "launch",
-            "preLaunchTask": "prepare:vmssquaresingleton",
-            "postDebugTask": "dapr:vmssquaresingleton:stop",
+            "preLaunchTask": "build:all",
+            "postDebugTask": "dapr: sidecars down",
             "program": "${workspaceFolder}/web_vms/VmsSquareSingleton/bin/Debug/net10.0/VmsSquareSingleton.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsSquareSingleton",
             "stopAtEntry": false,
@@ -240,8 +240,8 @@
             "name": "VmsUtils (.NET)",
             "type": "coreclr",
             "request": "launch",
-            "preLaunchTask": "prepare:vmsutils",
-            "postDebugTask": "dapr:vmsutils:stop",
+            "preLaunchTask": "build:all",
+            "postDebugTask": "dapr: sidecars down",
             "program": "${workspaceFolder}/web_vms/VmsUtils/bin/Debug/net10.0/VmsUtils.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsUtils",
             "stopAtEntry": false,
@@ -262,8 +262,8 @@
             "name": "Media Server (C++)",
             "type": "cppdbg",
             "request": "launch",
-            "preLaunchTask": "prepare:vms",
-            "postDebugTask": "dapr:vms:stop",
+            "preLaunchTask": "build:all",
+            "postDebugTask": "dapr: sidecars down",
             "program": "${workspaceFolder}/media_server/build/vms",
             "args": [],
             "environment": [
@@ -381,8 +381,8 @@
             "name": "Media Server (C++) [Windows]",
             "type": "cppvsdbg",
             "request": "launch",
-            "preLaunchTask": "prepare:vms",
-            "postDebugTask": "dapr:vms:stop",
+            "preLaunchTask": "build:all",
+            "postDebugTask": "dapr: sidecars down",
             "program": "${workspaceFolder}/media_server/build/vms.exe",
             "args": [],
             "environment": [
@@ -480,14 +480,16 @@
         {
             "name": "Full stack (F5)",
             "stopAll": true,
-            // Build everything once, before any configuration starts. Each prepare:<app> task
-            // still depends on its own build, but by the time they run there is nothing left to
-            // do, so all the sidecars come up within the same second. Without this the C++ build
-            // finishes in about a second while ten .NET launches queue behind one dotnet:build,
-            // and the vms sidecar ends up starting some 30 seconds ahead of vmscfg — a gap that
-            // has been observed to leave it unable to resolve app id vmscfg at all, so
-            // media_server never gets its camera list and no stream is ever published.
-            "preLaunchTask": "build:all",
+            // Builds everything once and brings up every sidecar in one terminal, before any
+            // configuration starts. Two reasons. Ordering: without a single build up front the
+            // C++ build finishes in about a second while ten .NET launches queue behind one
+            // dotnet:build, and the vms sidecar ends up starting some 30 seconds ahead of vmscfg
+            // — a gap that has been observed to leave it unable to resolve app id vmscfg at all,
+            // so media_server never gets its camera list and no stream is ever published.
+            // Teardown: VS Code does not stop tasks when a debug session ends, so a per-service
+            // sidecar task means one surviving terminal per service to close by hand after Stop
+            // (stopAll governs debug sessions only). One task leaves one terminal.
+            "preLaunchTask": "prepare: stack",
             "configurations": [
                 "VmsCfg (.NET)",
                 "VmsUtils (.NET)",
@@ -506,7 +508,7 @@
             "name": "Full stack (F5) [Windows]",
             "stopAll": true,
             // See the Linux compound above: builds once up front so every sidecar starts together.
-            "preLaunchTask": "build:all",
+            "preLaunchTask": "prepare: stack",
             "configurations": [
                 "VmsCfg (.NET)",
                 "VmsUtils (.NET)",

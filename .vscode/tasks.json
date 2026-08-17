@@ -250,7 +250,7 @@
         },
         {
             "label": "prepare:web_vms",
-            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
+            "detail": "Manual, for debugging one service on its own: builds everything, then clears and restarts just this app id's sidecar. F5 does not use these — the compound brings every sidecar up in one terminal via 'prepare: stack', so that Stop does not leave a terminal per service behind.",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "build:all",
@@ -329,7 +329,7 @@
         },
         {
             "label": "prepare:vmscfg",
-            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
+            "detail": "Manual, for debugging one service on its own: builds everything, then clears and restarts just this app id's sidecar. F5 does not use these — the compound brings every sidecar up in one terminal via 'prepare: stack', so that Stop does not leave a terminal per service behind.",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "build:all",
@@ -408,7 +408,7 @@
         },
         {
             "label": "prepare:vmsutils",
-            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
+            "detail": "Manual, for debugging one service on its own: builds everything, then clears and restarts just this app id's sidecar. F5 does not use these — the compound brings every sidecar up in one terminal via 'prepare: stack', so that Stop does not leave a terminal per service behind.",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "build:all",
@@ -489,7 +489,7 @@
         },
         {
             "label": "prepare:vmsonvif",
-            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
+            "detail": "Manual, for debugging one service on its own: builds everything, then clears and restarts just this app id's sidecar. F5 does not use these — the compound brings every sidecar up in one terminal via 'prepare: stack', so that Stop does not leave a terminal per service behind.",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "build:all",
@@ -570,7 +570,7 @@
         },
         {
             "label": "prepare:vmsonvif-actors",
-            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
+            "detail": "Manual, for debugging one service on its own: builds everything, then clears and restarts just this app id's sidecar. F5 does not use these — the compound brings every sidecar up in one terminal via 'prepare: stack', so that Stop does not leave a terminal per service behind.",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "build:all",
@@ -649,7 +649,7 @@
         },
         {
             "label": "prepare:vmsfs",
-            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
+            "detail": "Manual, for debugging one service on its own: builds everything, then clears and restarts just this app id's sidecar. F5 does not use these — the compound brings every sidecar up in one terminal via 'prepare: stack', so that Stop does not leave a terminal per service behind.",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "build:all",
@@ -728,7 +728,7 @@
         },
         {
             "label": "prepare:vmsanalyticssingleton",
-            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
+            "detail": "Manual, for debugging one service on its own: builds everything, then clears and restarts just this app id's sidecar. F5 does not use these — the compound brings every sidecar up in one terminal via 'prepare: stack', so that Stop does not leave a terminal per service behind.",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "build:all",
@@ -807,7 +807,7 @@
         },
         {
             "label": "prepare:vmslogger",
-            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
+            "detail": "Manual, for debugging one service on its own: builds everything, then clears and restarts just this app id's sidecar. F5 does not use these — the compound brings every sidecar up in one terminal via 'prepare: stack', so that Stop does not leave a terminal per service behind.",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "build:all",
@@ -888,7 +888,7 @@
         },
         {
             "label": "prepare:vmssingleton",
-            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
+            "detail": "Manual, for debugging one service on its own: builds everything, then clears and restarts just this app id's sidecar. F5 does not use these — the compound brings every sidecar up in one terminal via 'prepare: stack', so that Stop does not leave a terminal per service behind.",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "build:all",
@@ -969,7 +969,7 @@
         },
         {
             "label": "prepare:vmssquaresingleton",
-            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
+            "detail": "Manual, for debugging one service on its own: builds everything, then clears and restarts just this app id's sidecar. F5 does not use these — the compound brings every sidecar up in one terminal via 'prepare: stack', so that Stop does not leave a terminal per service behind.",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "build:all",
@@ -1048,7 +1048,7 @@
         },
         {
             "label": "prepare:vms",
-            "detail": "Builds everything (build:all — the same task for every service, so no launch can get ahead of the others), then clears any leftover sidecar for this app id and starts a fresh one.",
+            "detail": "Manual, for debugging one service on its own: builds everything, then clears and restarts just this app id's sidecar. F5 does not use these — the compound brings every sidecar up in one terminal via 'prepare: stack', so that Stop does not leave a terminal per service behind.",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "build:all",
@@ -1155,6 +1155,24 @@
                 "kind": "build",
                 "isDefault": true
             },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare: stack",
+            "detail": "What F5 runs before the compound: build everything, clear any sidecars left over from an interrupted session, then bring all of them up in a single terminal.",
+            // One task rather than one per service, and this is the whole point of it. VS Code
+            // never stops a task when a debug session ends, so eleven `dapr run` terminals used to
+            // survive Stop and had to be closed by hand one at a time — `stopAll` only governs
+            // debug sessions, not tasks. With a single 'dapr: sidecars up' there is at most one
+            // terminal left, and stopping it takes every sidecar down with it.
+            // 'dapr: sidecars down' runs first for the same reason it used to run per service: a
+            // sidecar left behind by an interrupted session still holds its ports.
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "build:all",
+                "dapr: sidecars down",
+                "dapr: sidecars up"
+            ],
             "problemMatcher": []
         }
     ]
