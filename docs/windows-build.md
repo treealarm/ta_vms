@@ -91,6 +91,13 @@ Each of these was hit in practice, and the script works around it.
 - **`git` blocks on a credential prompt** when a remote needs authentication and none is
   configured. `GIT_TERMINAL_PROMPT=0` turns that into an immediate failure, which is what
   makes the HTTPS fallback above possible and keeps `-Yes` runs from hanging forever.
+- **CRLF in files that Linux containers read.** Git for Windows checks out text files with
+  CRLF by default (`core.autocrlf=true`), and `scripts/*.sh` is bind-mounted straight into
+  the `db-init` container. A CRLF shell script does not fail cleanly: `set -euo pipefail`
+  itself is rejected, so none of the shell's error handling is enabled and the script still
+  exits 0 with nothing done. `.gitattributes` pins the line endings per extension, so this
+  is handled — but a working tree cloned before that was added keeps its CRLF. Fix such a
+  checkout once with `git add --renormalize . && git checkout .`.
 
 ## What has not been exercised
 
@@ -116,3 +123,10 @@ there for IDE convenience.
 Building is not enough to start the stack: that also needs Docker (PostgreSQL, MediaMTX,
 Dapr placement, and the Redis shared with the Square stack) and the Dapr CLI with
 `dapr init`. From VS Code, use the **Full stack (F5) [Windows]** compound.
+
+`docker compose up` also runs `db-init`, which creates the service databases — including the
+one behind the Dapr state store — and then exits. The services debugged on the host connect to
+`localhost:5432`, and so does the state store component (`init_files/dapr_components/statestore.yaml`),
+so make sure the published port belongs to *this* stack's PostgreSQL: `multitenant_admin`
+publishes 5432 as well, and whichever container started first owns it. `docker compose run --rm
+db-init --check` reports which server it actually reached and what is missing.

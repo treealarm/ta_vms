@@ -65,6 +65,11 @@ services:
     # during initdb, before the server accepts TCP connections.
     volumes:
       - ./scripts:/init:ro
+      # Read-only, and only to compare: the state store's connection string is a literal (Dapr
+      # does not expand environment variables in component metadata), so it is the one place
+      # where the database name and credentials are duplicated. The script fails here rather
+      # than letting Dapr discover the drift as a state store that never worked.
+      - ./init_files/dapr_components:/components:ro
     # Invoked through bash rather than executed directly: the exec bit does not survive a bind
     # mount from a Windows host.
     entrypoint: ["bash", "/init/prepare-databases.sh"]
@@ -117,6 +122,15 @@ services:
     environment:
       APP_ID: vmsutils
     volumes: *data-volume
+    # Waits for db-init even though this service has no database of its own: its Dapr sidecar
+    # loads every component in /components, including the state store, and daprd exits when a
+    # component fails to initialise (spec.ignoreErrors is false by default) — it does not retry.
+    # Started before ta_state exists, the sidecar would simply die. The sidecars inherit this
+    # wait through their depends_on on the app, so the rule is: every app service waits for
+    # db-init, directly or through another service that does.
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
 
   vmsutils-dapr:
     profiles: [app]
@@ -153,6 +167,10 @@ services:
     # Exactly one instance, always — see CLAUDE.md. It runs work that must not happen twice and
     # aggregates pub/sub reports in memory, which a second replica would split rather than share.
     volumes: *data-volume
+    # For its sidecar's state store component, not for itself — see vmsutils above.
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
 
   vmssingleton-dapr:
     profiles: [app]
@@ -225,6 +243,10 @@ services:
     environment:
       APP_ID: vmslogger
     volumes: *data-volume
+    # For its sidecar's state store component, not for itself — see vmsutils above.
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
 
   vmslogger-dapr:
     profiles: [app]
