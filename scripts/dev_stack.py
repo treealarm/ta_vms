@@ -7,7 +7,8 @@ files and process names, which is what lets the two be mixed: a stack started he
 by F5's "kill stale" tasks and the other way round.
 
 Infrastructure (postgres, redis, mediamtx, dapr placement) is not managed here; it lives in docker
-compose and is expected to be up already.
+compose and is expected to be up already — including `db-init`, which creates the service
+databases and which a bare `docker compose up` runs on its own.
 
 Usage:
     dev_stack.py up [--build] [--two-nodes] [service ...]

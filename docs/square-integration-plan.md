@@ -26,7 +26,8 @@ PostgreSQL + .NET 10 + gRPC + React**. Нужно встроить ta_vms в Squ
 - **Конфиг/камеры:** ta_vms — владелец функционального конфига; конфиг **пушится снизу вверх**
   (ta_vms → Square), в Square — read-only. Square владеет «презентацией» (позиция/имя/группировка).
   Менять состояние из Square — **только командами**.
-- **Инфраструктура:** общая шина Redis (pub/sub) + общая docker-сеть, **раздельные PostgreSQL**.
+- **Инфраструктура:** общая шина Redis (**только** pub/sub) + общая docker-сеть, **раздельные
+  PostgreSQL** — в своём же PostgreSQL у ta_vms лежит и Dapr state store.
 - **Форма слоя:** Square — хост интеграции с расширяемым **gRPC + Dapr** API (+ REST). Producer —
   переиспользуемый **typelib-клиент** (аналог `IntegrationUtilsLib`, но со стороны отдающего),
   который подключает `VmsCfg`. Протокол — **напрямую протокол Square** (не нейтральный).
@@ -130,13 +131,20 @@ ActionsControl.tsx`):
   `com.docker.compose.network` и отказывается адоптировать сеть с чужим значением метки
   («network common_app_network was found but has incorrect label …»). Следствие: сеть создаёт
   Square/multitenant_admin, их стек должен стартовать первым.
-- Собственный `redis`-сервис у ta_vms убран целиком — Dapr pub/sub и state store ta_vms
-  (`init_files/dapr_components/docker/{orderpubsub,statestore}.yaml`, `redisHost: redis:6379`)
-  используют тот же `redis`, что и multitenant_admin. **Причина, не просто стиль:** проверено
+- Собственный `redis`-сервис у ta_vms убран целиком — Dapr pub/sub ta_vms
+  (`init_files/dapr_components/docker/orderpubsub.yaml`, `redisHost: redis:6379`)
+  использует тот же `redis`, что и multitenant_admin. **Причина, не просто стиль:** проверено
   эмпирически — если в одной сети два разных контейнера оба регистрируют alias `redis`, Docker
   отвечает на DNS-запросы случайным round-robin между ними; держать свой `redis` параллельно с
   чужим под тем же именем в одной сети нельзя, это давало бы постоянную, непредсказуемую потерю
   части сообщений pub/sub.
+- **State store ta_vms на общий `redis` не переехал и позже был уведён с него совсем** —
+  `init_files/dapr_components/{,docker/}statestore.yaml` теперь `state.postgresql` поверх
+  собственного PostgreSQL ta_vms (база `POSTGRES_STATE_DB`). Две причины: у `multitenant_admin`
+  этот `redis` без volume, а состояние вроде `onvif-observed-topics-<cameraId>` (TTL 10 суток)
+  переживать перезапуск обязано; и при штамповке баз под тенанта общий `redis` с
+  `keyPrefix: "name"` выдавал бы всем тенантам один и тот же ключ `cam-perm-version`, тогда как
+  отдельная база разделяет их даром.
 - `dapr-placement` остаётся раздельным (нужен только акторам, service invocation идёт через mDNS
   name-resolution в общей сети, не через placement).
 
@@ -198,7 +206,8 @@ JWT-валидацию ставим **перед** `web_vms` (reverse-proxy/gate
 - **Phase 0:** `multitenant_admin` создаёт `common_app_network`; ta_vms подключается тем же
   именем сети (без оверлея, `external: true`) и без своего Redis — проверить резолв app-id
   между стеками (Dapr service invocation `vmscfg` → `integrationhost`) и что Dapr pub/sub ta_vms
-  (`orderpubsub`/`statestore`) подключается к общему `redis` от `multitenant_admin`.
+  (`orderpubsub`) подключается к общему `redis` от `multitenant_admin`. State store при этом
+  на общий `redis` смотреть не должен — он на собственном PostgreSQL ta_vms.
   **ta_vms больше не запускается без поднятого Square/multitenant_admin** — автономность
   принесена в жертву единой сети по решению пользователя (см. CLAUDE.md).
 - **Phase 1:** включить интеграцию env → в дереве Square появился root `vmscfg` и камеры; изменить

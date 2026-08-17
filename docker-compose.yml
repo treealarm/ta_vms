@@ -37,16 +37,52 @@ services:
       POSTGRES_DB: "${POSTGRES_CFG_DB:-ta_cfg}"
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
+    # No docker-entrypoint-initdb.d mount: that hook only fires when the data directory is
+    # initialised from empty, so it could never create a database added later, and a hardcoded
+    # list of names is wrong anyway once databases are stamped per tenant. The db-init service
+    # below is the single thing that creates them, and it reads their names from the environment.
     volumes:
       - ./data/postgres:/var/lib/postgresql
-      - ./init_files/postgres:/docker-entrypoint-initdb.d:ro
+
+  # Creates the service databases that docker-entrypoint-initdb.d cannot: that hook only runs
+  # when the data directory is initialised from empty, so on every deployment past the first a
+  # newly added database would never appear. Deliberately outside the "app" profile — a bare
+  # `docker compose up` brings up the infra, and the databases are part of the infra being
+  # ready. Runs to completion and exits; idempotent, so repeating it on every start is free.
+  # Also invocable on its own: docker compose run --rm db-init
+  # (add --check to report without creating anything).
+  db-init:
+    image: postgres:latest
+    env_file:
+      - .env
+    environment:
+      # .env says localhost, which is right for services debugged on the host but not from
+      # inside the network — same override the vmscfg/vmsfs/vmsanalyticssingleton services make.
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    # Kept in scripts/ rather than init_files/postgres/ so it can never be picked up by
+    # docker-entrypoint-initdb.d, which executes *.sh too: running there would mean running
+    # during initdb, before the server accepts TCP connections.
+    volumes:
+      - ./scripts:/init:ro
+    # Invoked through bash rather than executed directly: the exec bit does not survive a bind
+    # mount from a Windows host.
+    entrypoint: ["bash", "/init/prepare-databases.sh"]
+    working_dir: /init
+    restart: "no"
+    depends_on:
+      - postgres
 
   # No own redis service: ta_vms now shares one network (common_app_network, see above) with
-  # Square/multitenant_admin, and reuses multitenant_admin's "redis" for all of ta_vms's Dapr
-  # pub/sub and state store too — running two same-named "redis" containers on one network makes
-  # Docker's embedded DNS round-robin connections randomly between them (verified empirically),
-  # so there can only be one. This means ta_vms no longer starts standalone without
-  # Square/multitenant_admin's stack also running — an explicit, accepted trade-off.
+  # Square/multitenant_admin, and reuses multitenant_admin's "redis" for ta_vms's Dapr pub/sub —
+  # running two same-named "redis" containers on one network makes Docker's embedded DNS
+  # round-robin connections randomly between them (verified empirically), so there can only be
+  # one. This means ta_vms no longer starts standalone without Square/multitenant_admin's stack
+  # also running — an explicit, accepted trade-off.
+  # The Dapr *state store* is no longer part of that bargain: it lives in our own postgres above
+  # (see init_files/dapr_components/statestore.yaml), because state that outlives a restart has
+  # no business in a container we do not own, and per-tenant databases isolate what a shared
+  # redis keyed by component name would not.
 
   mediamtx:
     image: bluenviron/mediamtx:latest
@@ -224,8 +260,14 @@ services:
       POSTGRES_HOST: postgres
       APP_ID: vmscfg
     volumes: *data-volume
+    # Waits for db-init to finish, not just for postgres to be up: without the database this
+    # service now fails fast with a clear message instead of retrying, so starting it early
+    # would turn a working deployment into a crash loop.
     depends_on:
-      - postgres
+      postgres:
+        condition: service_started
+      db-init:
+        condition: service_completed_successfully
 
   vmscfg-dapr:
     profiles: [app]
@@ -304,7 +346,10 @@ services:
       APP_ID: vmsfs
     volumes: *data-volume
     depends_on:
-      - postgres
+      postgres:
+        condition: service_started
+      db-init:
+        condition: service_completed_successfully
 
   vmsfs-dapr:
     profiles: [app]
@@ -341,8 +386,12 @@ services:
       APP_ID: vmsanalyticssingleton
     volumes: *data-volume
     depends_on:
-      - postgres
-      - vmscfg
+      postgres:
+        condition: service_started
+      db-init:
+        condition: service_completed_successfully
+      vmscfg:
+        condition: service_started
 
   vmsanalyticssingleton-dapr:
     profiles: [app]

@@ -185,6 +185,22 @@ Use **Entity Framework Core** for all database queries. Do not write raw SQL via
 
 Exceptions where raw SQL is acceptable: complex bulk operations or SQL constructs that EF cannot express (e.g. `INSERT … ON CONFLICT DO UPDATE`), but keep them minimal and isolated inside repository methods.
 
+### Creating a database: name it in `.env`, nothing else
+
+Databases are created by exactly one thing — `scripts/prepare-databases.sh`, run as the `db-init`
+compose service — and it creates **every** database named by a `POSTGRES_*_DB` variable in the
+environment. So a new service's database is added by putting `POSTGRES_<NAME>_DB` into `.env` (and
+`../ta_install/.env`), and by nothing else.
+
+Do **not** go back to `docker-entrypoint-initdb.d`: that hook only fires when the data directory is
+initialised from empty, so anything added to it is silently skipped on every deployment that
+already has data — which is all of them after the first. And do not hardcode a list of database
+names anywhere: names are stamped per tenant (see `multitenant_admin/mt_admin/DbAdmin`), so a fixed
+list is wrong by construction.
+
+`DbMigrator` migrates the schema *inside* an existing database; it does not create one. A missing
+database now fails fast with a message naming it, instead of retrying "Postgres not ready" forever.
+
 ## VmsOnvifActors — actors only
 
 `VmsOnvifActors` hosts **only Dapr Actors** (currently `CameraActor` for PTZ). Do not add BackgroundServices, controllers, pub/sub subscribers, or any non-actor logic to this project. Business logic that needs ONVIF camera access but is not actor-based belongs in `VmsOnvif`.
@@ -215,8 +231,12 @@ Square) реализованы; план — [`docs/square-integration-plan.md`]
   подняться первыми; свой ключ сети у ta_vms `default`, у них `shared_network`, а compose
   отказывается подхватывать чужую сеть с несовпадающим ключом в метке
   `com.docker.compose.network`) и **не имеет
-  собственного Redis**: Dapr pub/sub/state store ta_vms используют тот же `redis`, что и
-  `multitenant_admin`. Простой `docker compose up` в одном ta_vms, без поднятого
+  собственного Redis**: Dapr pub/sub ta_vms использует тот же `redis`, что и
+  `multitenant_admin`. **State store — уже не Redis, а собственный PostgreSQL** (база
+  `POSTGRES_STATE_DB`, компонент `init_files/dapr_components/statestore.yaml`): в чужом
+  контейнере без volume ему не место, а при штамповке баз под тенанта общий Redis с
+  `keyPrefix: "name"` давал бы всем тенантам один и тот же ключ `cam-perm-version`.
+  Простой `docker compose up` в одном ta_vms, без поднятого
   Square/`multitenant_admin`, **больше не работает** — это ожидаемо, не баг. Причина отказа от
   отдельного Redis не стилистическая: два разных контейнера с одинаковым alias `redis` в одной
   сети заставляют Docker отвечать на DNS-запросы случайным round-robin между ними (проверено
@@ -241,6 +261,7 @@ Square) реализованы; план — [`docs/square-integration-plan.md`]
   когда продьюсером была `VmsCfg`); команды — через Dapr service invocation, асинхронно
   (handle/uid сразу, статус позже). Обработчики команд ещё не подключены.
 - **Не конфликтуй с базисом интеграции:** общая шина pub/sub `orderpubsub` и общий Redis с Square/
-  `multitenant_admin`, общая docker-сеть `common_app_network`, раздельные PostgreSQL, модель
+  `multitenant_admin` (только ради шины — state store ta_vms живёт в своём PostgreSQL), общая
+  docker-сеть `common_app_network`, раздельные PostgreSQL, модель
   самоописывающихся свойств/команд. Перед добавлением новых топиков, портов, env или сервисов
   сверяйся с планом, чтобы не создавать будущих коллизий.

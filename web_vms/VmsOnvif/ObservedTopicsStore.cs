@@ -7,7 +7,14 @@ public sealed record ObservedTopicInfo(string Topic, DateTime FirstSeen, DateTim
 
 public sealed class ObservedTopicsStore(DaprClient dapr, ILogger<ObservedTopicsStore> logger)
 {
-  private const string StateStoreName   = "statestore";
+  // Read from the environment like every other state store consumer, rather than hardcoded:
+  // a hardcoded name keeps working only for as long as it happens to match, and CLAUDE.md
+  // forbids silent fallbacks for required configuration.
+  private static readonly string StateStoreName =
+    Environment.GetEnvironmentVariable("DAPR_STATE_STORE_NAME")
+    ?? throw new InvalidOperationException(
+      "Required environment variable 'DAPR_STATE_STORE_NAME' is not set");
+
   private const int    TtlDays          = 10;
   private static readonly TimeSpan FlushDebounce = TimeSpan.FromSeconds(5);
 

@@ -224,6 +224,7 @@
             "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "dotnet:build",
                 "dapr:web_vms:stop",
                 "dapr:web_vms:start"
             ],
@@ -297,6 +298,7 @@
             "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "dotnet:build",
                 "dapr:vmscfg:stop",
                 "dapr:vmscfg:start"
             ],
@@ -370,6 +372,7 @@
             "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "dotnet:build",
                 "dapr:vmsutils:stop",
                 "dapr:vmsutils:start"
             ],
@@ -445,6 +448,7 @@
             "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "dotnet:build",
                 "dapr:vmsonvif:stop",
                 "dapr:vmsonvif:start"
             ],
@@ -520,6 +524,7 @@
             "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "dotnet:build",
                 "dapr:vmsonvif-actors:stop",
                 "dapr:vmsonvif-actors:start"
             ],
@@ -593,6 +598,7 @@
             "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "dotnet:build",
                 "dapr:vmsfs:stop",
                 "dapr:vmsfs:start"
             ],
@@ -666,6 +672,7 @@
             "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "dotnet:build",
                 "dapr:vmsanalyticssingleton:stop",
                 "dapr:vmsanalyticssingleton:start"
             ],
@@ -739,6 +746,7 @@
             "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "dotnet:build",
                 "dapr:vmslogger:stop",
                 "dapr:vmslogger:start"
             ],
@@ -814,6 +822,7 @@
             "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "dotnet:build",
                 "dapr:vmssingleton:stop",
                 "dapr:vmssingleton:start"
             ],
@@ -889,6 +898,7 @@
             "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "dotnet:build",
                 "dapr:vmssquaresingleton:stop",
                 "dapr:vmssquaresingleton:start"
             ],
@@ -959,9 +969,11 @@
         },
         {
             "label": "prepare:vms",
-            "detail": "Clears any leftover sidecar for this app id, then starts a fresh one.",
+            "detail": "Builds vms, then clears any leftover sidecar for this app id and starts a fresh one.",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "cmake:configure:vms",
+                "cmake:build:vms",
                 "dapr:vms:stop",
                 "dapr:vms:start"
             ],
@@ -1014,12 +1026,23 @@
         },
         {
             "label": "cmake:configure:vms",
+            "detail": "Cheap to repeat: with the cache already present cmake re-runs in about a second.",
             "type": "process",
             "command": "cmake",
             "args": [
                 "--preset",
                 "linux-default"
             ],
+            "windows": {
+                "args": [
+                    "--preset",
+                    "windows-default",
+                    // windows-default generates single-config Ninja, which takes the build type
+                    // from the cache rather than from --build --config. Without this the build
+                    // fails while parsing its own rules file.
+                    "-DCMAKE_BUILD_TYPE=Debug"
+                ]
+            },
             "options": {
                 "cwd": "${workspaceFolder}/media_server"
             },
@@ -1035,7 +1058,12 @@
                 "--target",
                 "vms"
             ],
-            "problemMatcher": "$gcc"
+            // Both, so compiler errors are clickable on either platform: the one that does not
+            // match the current compiler's output simply finds nothing.
+            "problemMatcher": [
+                "$gcc",
+                "$msCompile"
+            ]
         },
         {
             "label": "build:all",

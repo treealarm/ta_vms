@@ -79,6 +79,7 @@
                 "DAPR_GRPC_PORT": "51003",
                 "DAPR_CFG_APP_ID": "vmscfg",
                 "PUBSUB_NAME": "orderpubsub",
+                "DAPR_STATE_STORE_NAME": "statestore",
                 "APP_ID": "vmsonvif",
                 "DAPR_ANALYTICS_APP_ID": "vmsanalyticssingleton",
                 "OWN_SERVER_ID": "vms",
