@@ -121,7 +121,7 @@ there for IDE convenience.
 ## Running
 
 Building is not enough to start the stack: that also needs Docker (PostgreSQL, MediaMTX,
-Dapr placement, and the Redis shared with the Square stack) and the Dapr CLI with
+Dapr placement, and RabbitMQ for the Dapr bus) and the Dapr CLI with
 `dapr init`. From VS Code, use the **Full stack (F5) [Windows]** compound.
 
 `docker compose up` also runs `db-init`, which creates the service databases — including the

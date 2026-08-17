@@ -3,12 +3,13 @@ kind: Component
 metadata:
   name: statestore
 spec:
-  # PostgreSQL rather than the Redis that carries orderpubsub. Two reasons, neither cosmetic:
-  # the Redis here is not ours (it belongs to Square/multitenant_admin, and in ta_install it is
-  # declared with no volume at all), while onvif-observed-topics-<cameraId> is accumulated data
-  # with a 10-day TTL; and once databases are stamped per tenant, a shared Redis keyed by
-  # component name gives every tenant the *same* "cam-perm-version" key, whereas a per-tenant
-  # database separates them for free.
+  # PostgreSQL rather than the Redis this used to be — the first of the two components to leave
+  # it, the bus followed later (see orderpubsub.yaml). Two reasons, neither cosmetic: that Redis
+  # was not ours (it belongs to Square/multitenant_admin, and in ta_install it was declared with
+  # no volume at all), while onvif-observed-topics-<cameraId> is accumulated data with a 10-day
+  # TTL; and once databases are stamped per tenant, a shared Redis keyed by component name gives
+  # every tenant the *same* "cam-perm-version" key, whereas a per-tenant database separates them
+  # for free.
   #
   # v1, not v2: v1 stores the value in a JSONB column. media_server writes its heartbeat as the
   # quoted string "online" from C++ (see media_server/grpc_layer/state_store_client.cpp), which

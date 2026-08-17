@@ -4,7 +4,7 @@ metadata:
   name: statestore
 spec:
   # In-network twin of ../statestore.yaml — that file carries the full rationale for choosing
-  # PostgreSQL over the shared Redis and for pinning v1. The only difference is the host:
+  # PostgreSQL over the Redis this used to be, and for pinning v1. The only difference is the host:
   # "postgres" is the compose service name, reachable from sidecars running in containers.
   type: state.postgresql
   version: v1

@@ -8,7 +8,8 @@
 #   dapr run -f web_vms/dapr.yaml
 #
 # Ports and app-ids match .vscode/tasks.json. Node-2 sidecars are not listed here.
-# Redis (and the rest of the shared Square stack) must already be up.
+# The infra from docker compose (rabbitmq for the bus, postgres for the state store) must
+# already be up; so must Square's stack, for service invocation into it.
 version: 1
 common:
   resourcesPath: ../init_files/dapr_components
