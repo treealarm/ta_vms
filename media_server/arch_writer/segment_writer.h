@@ -63,7 +63,13 @@ private:
   void process_packet(const std::shared_ptr<media_packet>& media);
   bool ensure_input_stream(const std::shared_ptr<media_packet>& media);
   void write_packet(const std::shared_ptr<media_packet>& media);
-  void open_new_segment();
+  /// Opens a segment for `first_frame_wall` — the capture wall clock of the keyframe that is about
+  /// to become its first written packet. Passed in rather than read here so the clip's start, and
+  /// the file name derived from it, name the moment of the footage inside rather than the moment
+  /// this thread got around to it: the reader stamps a packet before it blocks on av_read_frame,
+  /// and it then crosses this writer's queue and the transcoder's reordering buffer before arriving
+  /// here, which was measured at several hundred milliseconds.
+  void open_new_segment(std::chrono::system_clock::time_point first_frame_wall);
   void close_segment();
   void close();
 

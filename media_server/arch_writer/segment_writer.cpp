@@ -135,7 +135,7 @@ bool segment_writer::ensure_input_stream(const std::shared_ptr<media_packet>& me
   return true;
 }
 
-void segment_writer::open_new_segment()
+void segment_writer::open_new_segment(std::chrono::system_clock::time_point first_frame_wall)
 {
   m_timing.clear();
   close_segment();
@@ -146,7 +146,11 @@ void segment_writer::open_new_segment()
     return;
   }
 
-  const auto now = std::chrono::floor<std::chrono::milliseconds>(std::chrono::system_clock::now());
+  // The keyframe's own capture time when it has one; only a packet that cannot say when it was
+  // captured falls back to this thread's clock.
+  const auto now = std::chrono::floor<std::chrono::milliseconds>(
+    first_frame_wall.time_since_epoch().count() != 0 ? first_frame_wall
+                                                     : std::chrono::system_clock::now());
 
   recording_storage storage;
 
@@ -433,7 +437,7 @@ void segment_writer::write_packet(const std::shared_ptr<media_packet>& in_media)
   {
     if (media->media_type != AVMEDIA_TYPE_VIDEO || !(pkt->flags & AV_PKT_FLAG_KEY))
       return;
-    open_new_segment();
+    open_new_segment(media->wall_ts.value_or(std::chrono::system_clock::time_point{}));
     if (!m_ctx) return;
   }
 
@@ -442,7 +446,7 @@ void segment_writer::write_packet(const std::shared_ptr<media_packet>& in_media)
     media->media_type == AVMEDIA_TYPE_VIDEO &&
     (pkt->flags & AV_PKT_FLAG_KEY))
   {
-    open_new_segment();
+    open_new_segment(media->wall_ts.value_or(std::chrono::system_clock::time_point{}));
     if (!m_ctx) return;
   }
 
@@ -498,8 +502,9 @@ void segment_writer::write_packet(const std::shared_ptr<media_packet>& in_media)
     const auto write_ts = *media->wall_ts;
     if (m_last_write_ts.time_since_epoch().count() == 0)
     {
-      // First packet of the segment: the file was opened a moment earlier, waiting for a keyframe,
-      // and claiming that earlier moment would hand the clip time it holds no footage for.
+      // First packet of the segment. Normally a no-op now that open_new_segment() is handed this
+      // very packet's capture time: it still matters for a first packet that arrived without a
+      // wall_ts, where the segment was opened on this thread's clock instead.
       m_segment_start_ts = write_ts;
     }
     if (write_ts > m_last_write_ts)

@@ -41,6 +41,11 @@ public sealed class MetadataSampleStore(
   /// </summary>
   private static readonly TimeSpan BoundaryGrace = TimeSpan.FromMilliseconds(1500);
 
+  /// <summary>How often a "frames dropped" warning may repeat per (camera, stream).</summary>
+  private static readonly TimeSpan DropLogInterval = TimeSpan.FromSeconds(30);
+
+  private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _dropLoggedAt = new();
+
   private static readonly JsonSerializerOptions JsonOpts = new()
   {
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -87,12 +92,19 @@ public sealed class MetadataSampleStore(
 
     await using var db = await dbFactory.CreateDbContextAsync(ct);
 
+    // Widened by the boundary grace on both ends, because Resolve may attach a frame to a clip it
+    // falls just outside of. Querying the bare [from, to] window would leave the grace rule unable
+    // to fire in the case it exists for: a batch sitting entirely just before a clip's start, which
+    // is exactly what the boxes that triggered the recording look like.
+    var queryFrom = from - BoundaryGrace;
+    var queryTo = to + BoundaryGrace;
+
     // 'infinity' for an open clip, expressed in LINQ as "no end yet" — see the class remarks.
     var clips = (await db.Clips
         .Where(c => c.CameraId == req.CameraId
                  && c.StreamName == streamName
-                 && c.StartTs <= to
-                 && (c.EndTs == null || c.EndTs >= from))
+                 && c.StartTs <= queryTo
+                 && (c.EndTs == null || c.EndTs >= queryFrom))
         .OrderBy(c => c.StartTs)
         .Select(c => new { c.ClipUid, c.StartTs, c.EndTs })
         .ToListAsync(ct))
@@ -126,6 +138,25 @@ public sealed class MetadataSampleStore(
       activityLog.Record(new FsActivityEntry(
         Guid.Empty, "", req.CameraId, streamName, false, dropped, DateTime.UtcNow,
         "metadata-dropped", null));
+
+      // Also to the log, and not only to the in-memory activity ring: that ring dies with the
+      // process, so a question asked after the fact ("there were boxes on the monitor, why is the
+      // archive empty?") had no evidence left to answer it. Rate-limited per (camera, stream) so a
+      // camera narrating outside every recording window cannot flood the log, and it names the
+      // clips that were considered, since "no covering clip" is nearly always about the boundary.
+      var logKey = $"{req.CameraId}|{streamName}";
+      var now = DateTime.UtcNow;
+      if (!_dropLoggedAt.TryGetValue(logKey, out var last) || now - last >= DropLogInterval)
+      {
+        _dropLoggedAt[logKey] = now;
+        var considered = clips.Count == 0
+          ? "none"
+          : string.Join(", ", clips.Take(4).Select(c => $"[{c.StartTs:HH:mm:ss.fff}..{(c.EndTs?.ToString("HH:mm:ss.fff") ?? "open")}]"));
+        logger.LogWarning(
+          "Metadata: dropped {Dropped}/{Total} frame(s) for camera '{CameraId}' stream '{StreamName}' "
+          + "covering {From:HH:mm:ss.fff}..{To:HH:mm:ss.fff} — no clip covers them (clips considered: {Considered})",
+          dropped, frames.Count, req.CameraId, streamName, from, to, considered);
+      }
     }
 
     if (byClip.Count == 0)
