@@ -18,6 +18,8 @@ service RoiTranscode {
   rpc EncodeStream (stream StreamRequest) returns (stream StreamResponse);
 }
 
+// Which backend encodes. Says nothing about the codec -- the same silicon does
+// both, and the old ENCODER_X265 name stopped being true once H.264 existed.
 enum Encoder {
   // Tries Quick Sync, then VA-API, then CPU. What actually opened is reported
   // back: on this hardware the difference is large enough to want to know.
@@ -25,7 +27,16 @@ enum Encoder {
   ENCODER_QSV   = 1;
   ENCODER_VAAPI = 2;
   ENCODER_NVENC = 3;
-  ENCODER_X265  = 4;
+  // libx264 or libx265, whichever the codec asks for.
+  ENCODER_CPU   = 4;
+}
+
+// What comes out. HEVC saves more, but a ta_vms archive is H.264 and one HLS
+// playlist stitches many clips: re-encoding only some of them to HEVC would
+// leave a single playlist carrying two codecs, which browsers handle badly.
+enum Codec {
+  CODEC_H265 = 0;
+  CODEC_H264 = 1;
 }
 
 enum InputCodec {
@@ -88,6 +99,7 @@ message RoiQuality {
 // Shared by both entry points so a file job and a stream cannot drift apart.
 message Settings {
   Encoder    encoder = 1;
+  Codec      codec   = 6;
   // Constant quantizer / CRF. 0 takes the built-in default.
   int32      crf     = 2;
   // Keyframe interval in frames. 0 means two seconds.
