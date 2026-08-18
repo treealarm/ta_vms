@@ -260,6 +260,39 @@
             }
         },
         {
+            "name": "ROI Transcode (C++)",
+            "type": "cppdbg",
+            "request": "launch",
+            "preLaunchTask": "build:all",
+            "postDebugTask": "dapr: sidecars down",
+            "program": "${workspaceFolder}/roi_transcode/build/roi-transcode-svc",
+            "args": [],
+            "environment": [
+                { "name": "APP_ID", "value": "roitrc" },
+                { "name": "GRPC_ROI_BIND", "value": "127.0.0.1" },
+                { "name": "GRPC_ROI_PORT", "value": "5142" },
+                // Under F5 the archive lives in the checkout, not in /data.
+                { "name": "ROI_ALLOWED_ROOTS", "value": "${workspaceFolder}/data:/tmp" },
+                // This service's own sidecar, per web_vms/dapr.yaml.
+                { "name": "DAPR_GRPC_PORT", "value": "51009" },
+                { "name": "PUBSUB_NAME", "value": "orderpubsub" },
+                // Intel's driver, unpacked by roi_transcode/scripts/fetch-intel-qsv.sh.
+                // Without it the encoder falls back to the CPU and still works.
+                { "name": "LIBVA_DRIVER_NAME", "value": "iHD" },
+                { "name": "LIBVA_DRIVERS_PATH", "value": "${workspaceFolder}/roi_transcode/runtime/intel-qsv/usr/lib/x86_64-linux-gnu/dri" },
+                { "name": "LD_LIBRARY_PATH", "value": "${workspaceFolder}/roi_transcode/runtime/intel-qsv/usr/lib/x86_64-linux-gnu" },
+                { "name": "ONEVPL_SEARCH_PATH", "value": "${workspaceFolder}/roi_transcode/runtime/intel-qsv/usr/lib/x86_64-linux-gnu" }
+            ],
+            "cwd": "${workspaceFolder}/roi_transcode",
+            "stopAtEntry": false,
+            "MIMode": "gdb",
+            "externalConsole": false,
+            "setupCommands": [
+                { "text": "-enable-pretty-printing" },
+                { "text": "set debuginfod enabled off", "ignoreFailures": true }
+            ]
+        },
+        {
             "name": "Media Server (C++)",
             "type": "cppdbg",
             "request": "launch",
@@ -377,6 +410,25 @@
             "skipFiles": [
                 "<node_internals>/**"
             ]
+        },
+        {
+            "name": "ROI Transcode (C++) [Windows]",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "preLaunchTask": "build:all",
+            "postDebugTask": "dapr: sidecars down",
+            "program": "${workspaceFolder}/roi_transcode/build/roi-transcode-svc.exe",
+            "args": [],
+            "environment": [
+                { "name": "APP_ID", "value": "roitrc" },
+                { "name": "GRPC_ROI_BIND", "value": "127.0.0.1" },
+                { "name": "GRPC_ROI_PORT", "value": "5142" },
+                { "name": "ROI_ALLOWED_ROOTS", "value": "${workspaceFolder}/data" },
+                { "name": "DAPR_GRPC_PORT", "value": "51009" },
+                { "name": "PUBSUB_NAME", "value": "orderpubsub" }
+            ],
+            "cwd": "${workspaceFolder}/roi_transcode",
+            "console": "internalConsole"
         },
         {
             "name": "Media Server (C++) [Windows]",
@@ -500,6 +552,7 @@
                 "VmsAnalyticsSingleton (.NET)",
                 "VmsLogger (.NET)",
                 "Media Server (C++)",
+                "ROI Transcode (C++)",
                 "Backend (.NET)",
                 "Frontend (Vite)",
                 "Frontend Debug (Chromium)"
@@ -519,6 +572,7 @@
                 "VmsAnalyticsSingleton (.NET)",
                 "VmsLogger (.NET)",
                 "Media Server (C++) [Windows]",
+                "ROI Transcode (C++) [Windows]",
                 "Backend (.NET)",
                 "Frontend (Vite)",
                 "Frontend Debug (Edge) [Windows]"

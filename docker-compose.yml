@@ -542,6 +542,51 @@ services:
       - mediamtx
     volumes: *data-volume
 
+  roitrc:
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: Dockerfile.roi
+    env_file:
+      - .env
+    environment:
+      APP_ID: roitrc
+    # The only service in the stack that touches the GPU. Without the device it
+    # still runs -- the encoder falls back to libx264 -- just far slower, so this
+    # is a performance dependency rather than a hard one. `render` owns
+    # /dev/dri/renderD128 on the host.
+    devices:
+      - "/dev/dri:/dev/dri"
+    group_add:
+      - "render"
+    volumes: *data-volume
+    depends_on:
+      - vmscfg
+
+  roitrc-dapr:
+    profiles: [app]
+    image: "daprio/daprd:latest"
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "roitrc"
+      - "-app-port"
+      - "${GRPC_ROI_PORT}"
+      - "-app-protocol"
+      - "grpc"
+      - "-dapr-http-port"
+      - "3500"
+      - "-dapr-grpc-port"
+      - "50001"
+      - "-components-path"
+      - "/components"
+    volumes:
+      - "./init_files/dapr_components/docker:/components"
+    # Shares the app's network namespace, so it must not also get the device.
+    network_mode: "service:roitrc"
+    depends_on:
+      - roitrc
+
   vms-dapr:
     profiles: [app]
     image: "daprio/daprd:latest"

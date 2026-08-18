@@ -1,0 +1,46 @@
+# roi-transcode-svc: ROI-aware re-encoding of finished archive clips.
+#
+# Separate from the media_server Dockerfile for one reason: this is the only
+# service that touches the GPU, and its runtime image therefore needs a VA-API
+# driver that the others have no use for.
+
+FROM vms-deps AS builder
+
+WORKDIR /build
+COPY . /build
+
+WORKDIR /build/roi_transcode
+
+# Release, deliberately: vms-deps uses a release-only vcpkg overlay triplet, so a
+# Debug configure would look for debug libraries that were never built.
+RUN cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DROI_BUILD_SVC=ON
+RUN cmake --build build -j1 --target roi-transcode-svc
+
+RUN mkdir -p /runtime-libs && \
+    cp $(g++ -print-file-name=libstdc++.so.6) /runtime-libs/ && \
+    cp $(g++ -print-file-name=libgcc_s.so.1) /runtime-libs/
+
+# =========================
+# Runtime
+# =========================
+# 24.04 rather than the 22.04 the other C++ image uses: the Intel media driver
+# packaged there is the one this needs, and 22.04's is too old to encode at all.
+# Its HEVC limitation does not bite us -- the archive is H.264, which is what
+# this service is asked to produce.
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    intel-media-va-driver-non-free \
+    libva2 \
+    libva-drm2 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY --from=builder /build/roi_transcode/build/roi-transcode-svc /app/
+COPY --from=builder /runtime-libs /app/
+
+ENV LD_LIBRARY_PATH=/app
+ENV LIBVA_DRIVER_NAME=iHD
+
+CMD ["./roi-transcode-svc"]

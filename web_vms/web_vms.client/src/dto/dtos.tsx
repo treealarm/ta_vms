@@ -179,6 +179,8 @@ export type CameraSetupDto = {
   scheduleActive?: boolean
   /** Which stream to recover from the camera's own storage when the archive has a gap; empty = off. */
   edgeBackfillStream?: string
+  /** Re-encode finished clips with ROI, keeping detector boxes sharp. */
+  roiTranscode?: boolean
 }
 
 /** What a user may do with a camera. All false = no access. */

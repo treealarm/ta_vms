@@ -59,8 +59,8 @@ public class CameraStorage(
       && Guid.TryParse(camera.MediaMtxServerId, out var parsedMmx) ? parsedMmx : null;
 
     await using (var command = new NpgsqlCommand("""
-      INSERT INTO camera_setup (camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, onvif_xaddr, media_mtx_server_id, disabled, name, edge_backfill_stream)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      INSERT INTO camera_setup (camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, onvif_xaddr, media_mtx_server_id, disabled, name, edge_backfill_stream, roi_transcode)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       ON CONFLICT (camera_id) DO UPDATE SET
         server_id           = EXCLUDED.server_id,
         cred_user           = EXCLUDED.cred_user,
@@ -71,7 +71,8 @@ public class CameraStorage(
         media_mtx_server_id = EXCLUDED.media_mtx_server_id,
         disabled            = EXCLUDED.disabled,
         name                = EXCLUDED.name,
-        edge_backfill_stream = EXCLUDED.edge_backfill_stream;
+        edge_backfill_stream = EXCLUDED.edge_backfill_stream,
+        roi_transcode       = EXCLUDED.roi_transcode;
       """, connection, tx))
     {
       command.Parameters.AddWithValue(camera.CameraId);
@@ -85,6 +86,7 @@ public class CameraStorage(
       command.Parameters.Add(new NpgsqlParameter { Value = (camera.HasDisabled && camera.Disabled) ? (object)true : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Boolean });
       command.Parameters.AddWithValue(camera.Name ?? string.Empty);
       command.Parameters.AddWithValue(camera.EdgeBackfillStream ?? string.Empty);
+      command.Parameters.AddWithValue(camera.RoiTranscode);
       await command.ExecuteNonQueryAsync(ct);
     }
 
@@ -157,7 +159,8 @@ public class CameraStorage(
              COALESCE(oes.message_limit, 1024) AS message_limit,
              camera_setup.name,
              mtx.stun_url,
-             camera_setup.edge_backfill_stream
+             camera_setup.edge_backfill_stream,
+             camera_setup.roi_transcode
       FROM camera_setup
       LEFT JOIN onvif_event_subscription oes ON oes.camera_id = camera_setup.camera_id
       LEFT JOIN media_mtx_server mtx ON mtx.id = camera_setup.media_mtx_server_id
@@ -194,7 +197,8 @@ public class CameraStorage(
              COALESCE(oes.message_limit, 1024) AS message_limit,
              camera_setup.name,
              mtx.stun_url,
-             camera_setup.edge_backfill_stream
+             camera_setup.edge_backfill_stream,
+             camera_setup.roi_transcode
       FROM camera_setup
       LEFT JOIN onvif_event_subscription oes ON oes.camera_id = camera_setup.camera_id
       LEFT JOIN media_mtx_server mtx ON mtx.id = camera_setup.media_mtx_server_id
@@ -554,6 +558,7 @@ public class CameraStorage(
       setup.EffectiveWebrtcStunUrl = reader.GetString(15);
 
     setup.EdgeBackfillStream = reader.IsDBNull(16) ? string.Empty : reader.GetString(16);
+    setup.RoiTranscode = !reader.IsDBNull(17) && reader.GetBoolean(17);
 
     return setup;
   }

@@ -139,3 +139,12 @@ apps:
     metricsPort: 9197
     daprInternalGRPCPort: 19018
     daprdLogDestination: console
+  - appID: roitrc
+    appDirPath: ../roi_transcode
+    appProtocol: grpc
+    appPort: 5142
+    daprHTTPPort: 3608
+    daprGRPCPort: 51009
+    metricsPort: 9198
+    daprInternalGRPCPort: 19019
+    daprdLogDestination: console

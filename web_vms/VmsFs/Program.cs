@@ -52,6 +52,8 @@ builder.Services.AddSingleton(_ =>
   new OnvifService.OnvifServiceClient(DaprClient.CreateInvocationInvoker(Require("DAPR_ONVIF_APP_ID"))));
 builder.Services.AddSingleton<EdgeImportScheduler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<EdgeImportScheduler>());
+builder.Services.AddSingleton<RoiTranscodeScheduler>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RoiTranscodeScheduler>());
 builder.Services.AddHostedService<EdgeExportCleaner>();
 builder.Services.AddSingleton<FsServiceImpl>();
 
@@ -78,6 +80,7 @@ if (!string.IsNullOrWhiteSpace(ownAppId))
     // to its own node or they would fight over each other's cameras.
     app.Services.GetRequiredService<LivenessSweeper>().SetScope(ownServerId);
     app.Services.GetRequiredService<EdgeImportScheduler>().SetScope(ownServerId);
+    app.Services.GetRequiredService<RoiTranscodeScheduler>().SetScope(ownServerId);
   });
 }
 else
@@ -85,6 +88,7 @@ else
   // No APP_ID means no pairing to resolve — a single FS instance owning everything.
   app.Services.GetRequiredService<LivenessSweeper>().SetScope(null);
   app.Services.GetRequiredService<EdgeImportScheduler>().SetScope(null);
+  app.Services.GetRequiredService<RoiTranscodeScheduler>().SetScope(null);
 }
 
 app.Run();

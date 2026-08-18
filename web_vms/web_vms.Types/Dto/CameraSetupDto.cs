@@ -67,6 +67,12 @@ public record CameraSetupDto
   /// </summary>
   public string EdgeBackfillStream { get; init; } = string.Empty;
 
+  /// <summary>
+  /// Re-encode this camera's finished clips with ROI, keeping the detector's boxes sharp
+  /// and spending fewer bits elsewhere. Does nothing for clips that have no boxes.
+  /// </summary>
+  public bool RoiTranscode { get; init; }
+
   /// <summary>Filled by web_vms.Server when merging FS retention status.</summary>
   public bool? ActiveRetentionWindow { get; init; }
   /// <summary>An active retention window with no specific stream retains every stream.</summary>

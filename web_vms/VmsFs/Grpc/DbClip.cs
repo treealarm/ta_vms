@@ -42,4 +42,17 @@ public sealed class DbClip
   // so playback never re-reads the file to enumerate segments. Null until first parsed.
   [Column("frag_index")]
   public string? FragIndex { get; set; }
+
+  /// <summary>
+  /// Whether this clip has been re-encoded with ROI: pending | done | skipped | failed.
+  /// See the 0009 migration for why it happens at most once.
+  /// </summary>
+  [Column("roi_state")]
+  public string RoiState { get; set; } = "pending";
+
+  [Column("roi_attempts")]
+  public int RoiAttempts { get; set; }
+
+  [Column("roi_next_attempt_ts")]
+  public DateTime? RoiNextAttemptTs { get; set; }
 }

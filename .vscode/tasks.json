@@ -1103,6 +1103,69 @@
             "problemMatcher": "$msCompile"
         },
         {
+            "label": "dapr:roitrc:start",
+            "detail": "Just this one sidecar, for debugging the ROI service alone. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run", "--app-id", "roitrc",
+                "--app-port", "5142",
+                "--app-protocol", "grpc",
+                "--dapr-http-port", "3608",
+                "--dapr-grpc-port", "51009",
+                "--metrics-port", "9198",
+                "--dapr-internal-grpc-port", "19019",
+                "--resources-path", "../init_files/dapr_components"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms",
+                "env": { "DAPR_HOST_IP": "127.0.0.1" }
+            },
+            "isBackground": true,
+            "presentation": { "reveal": "always", "panel": "dedicated", "group": "dapr" },
+            "problemMatcher": {
+                "pattern": { "regexp": "^(?:\\s*)$", "file": 1, "location": 1, "message": 1 },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:roitrc:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [ "stop", "--app-id", "roitrc" ],
+            "presentation": { "reveal": "silent", "panel": "dedicated" },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:roitrc",
+            "detail": "Manual, for debugging the ROI service on its own: builds everything, then clears and restarts just this app id's sidecar.",
+            "dependsOrder": "sequence",
+            "dependsOn": [ "build:all", "dapr:roitrc:stop", "dapr:roitrc:start" ],
+            "problemMatcher": []
+        },
+        {
+            "label": "cmake:configure:roitrc",
+            "detail": "Cheap to repeat: with the cache already present cmake re-runs in about a second.",
+            "type": "process",
+            "command": "cmake",
+            "args": [ "--preset", "linux-default" ],
+            "windows": { "args": [ "--preset", "windows-default" ] },
+            "options": { "cwd": "${workspaceFolder}/roi_transcode" },
+            "problemMatcher": []
+        },
+        {
+            "label": "cmake:build:roitrc",
+            "type": "process",
+            "command": "cmake",
+            "args": [ "--build", "${workspaceFolder}/roi_transcode/build", "--target", "roi-transcode-svc" ],
+            "problemMatcher": [ "$gcc", "$msCompile" ]
+        },
+        {
             "label": "cmake:configure:vms",
             "detail": "Cheap to repeat: with the cache already present cmake re-runs in about a second.",
             "type": "process",
@@ -1149,7 +1212,9 @@
             "dependsOn": [
                 "dotnet:build",
                 "cmake:configure:vms",
-                "cmake:build:vms"
+                "cmake:build:vms",
+                "cmake:configure:roitrc",
+                "cmake:build:roitrc"
             ],
             "group": {
                 "kind": "build",

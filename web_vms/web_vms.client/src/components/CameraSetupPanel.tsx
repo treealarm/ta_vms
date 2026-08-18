@@ -44,6 +44,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const [port, setPort] = useState(isNew ? 80 : (existing?.onvifConn?.port ?? 0))
   const [disabled, setDisabled] = useState(existing?.disabled === true)
   const [edgeBackfillStream, setEdgeBackfillStream] = useState(existing?.edgeBackfillStream ?? '')
+  const [roiTranscode, setRoiTranscode] = useState(existing?.roiTranscode === true)
   const [pendingStorages, setPendingStorages] = useState<CameraStorageAssignmentDto[]>([])
   const [pendingSchedules, setPendingSchedules] = useState<string[]>([])
 
@@ -75,6 +76,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     port: existing?.onvifConn?.port ?? 0,
     disabled: existing?.disabled === true,
     edgeBackfillStream: existing?.edgeBackfillStream ?? '',
+    roiTranscode: existing?.roiTranscode === true,
   })
 
   const dirty = !isNew && (
@@ -87,6 +89,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     || port !== snap.port
     || disabled !== snap.disabled
     || edgeBackfillStream !== snap.edgeBackfillStream
+    || roiTranscode !== snap.roiTranscode
   )
 
   // Which of this camera's streams the camera itself records onto its storage. Empty = the feature
@@ -110,6 +113,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     mediaMtxServerId: mediaMtxServerId || undefined,
     disabled: disabled || undefined,
     edgeBackfillStream,
+    roiTranscode,
   })
 
   const applyInternal = async (): Promise<boolean> => {
@@ -133,7 +137,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     const action = serverChanged ? changeCameraParent : addCamera
     const result = await dispatch(action(payload))
     if (!action.rejected.match(result)) {
-      setSnap({ name, serverId, mediaMtxServerId, user, pass, ip, port, disabled, edgeBackfillStream })
+      setSnap({ name, serverId, mediaMtxServerId, user, pass, ip, port, disabled, edgeBackfillStream, roiTranscode })
       await dispatch(fetchCameraState(initialCameraId))
       return true
     }
@@ -155,6 +159,9 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     setIp(snap.ip)
     setPort(snap.port)
     setDisabled(snap.disabled)
+    // These two were missing, so Cancel used to leave the form dirty.
+    setEdgeBackfillStream(snap.edgeBackfillStream)
+    setRoiTranscode(snap.roiTranscode)
   }
 
   const handleRemove = async () => {
@@ -232,6 +239,10 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
             <FormControlLabel
               control={<Switch checked={disabled} onChange={(e) => setDisabled(e.target.checked)} color="warning" />}
               label={t('cameras.disabled')}
+            />
+            <FormControlLabel
+              control={<Switch checked={roiTranscode} onChange={(e) => setRoiTranscode(e.target.checked)} />}
+              label={t('cameras.roiTranscode')}
             />
 
             {/* One stream, chosen here, because the camera's storage holds a single archive and

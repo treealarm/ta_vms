@@ -12,7 +12,8 @@ public sealed record CameraStreamSetup(
 public sealed record CameraSetup(
   string ServerId,
   IReadOnlyList<CameraStreamSetup> Streams,
-  Credentials? Cred);
+  Credentials? Cred,
+  bool RoiTranscode);
 
 public sealed class CameraSetupCache(CfgService.CfgServiceClient cfgClient)
 {
@@ -45,7 +46,8 @@ public sealed class CameraSetupCache(CfgService.CfgServiceClient cfgClient)
       resp.Setup.Streams
         .Select(s => new CameraStreamSetup(s.StreamName, s.ProfileToken, s.Path, s.WebRtc))
         .ToList(),
-      resp.Setup.Cred);
+      resp.Setup.Cred,
+      resp.Setup.RoiTranscode);
 
     _cache.TryAdd(cameraId, setup);
     return setup;

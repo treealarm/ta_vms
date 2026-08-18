@@ -505,6 +505,116 @@ public sealed class ClipStorage(
     return rows.Select(r => (r.ClipUid, r.FilePath, r.CameraId, r.StorageId, r.EndTs)).ToList();
   }
 
+  /// <summary>
+  /// Cameras that have at least one clip still waiting on a ROI pass. Asked
+  /// first so the camera config is fetched for a handful of cameras rather than
+  /// for every camera in the archive.
+  /// </summary>
+  public async Task<List<string>> GetRoiCameraIdsAsync(CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    return await db.Clips
+      .Where(c => c.RoiState == "pending" && c.EndTs != null)
+      .Select(c => c.CameraId)
+      .Distinct()
+      .ToListAsync(ct);
+  }
+
+  /// <summary>Whether the clip row is still there. ClipCleaner may have removed it.</summary>
+  public async Task<bool> ExistsAsync(Guid clipUid, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    return await db.Clips.AnyAsync(c => c.ClipUid == clipUid, ct);
+  }
+
+  /// <summary>One clip waiting to be re-encoded with ROI, or null if there is nothing to do.</summary>
+  public sealed record RoiCandidate(
+    Guid ClipUid,
+    string FilePath,
+    string CameraId,
+    string StreamName,
+    string StorageId,
+    DateTime StartTs,
+    DateTime EndTs,
+    int Attempts);
+
+  /// <summary>
+  /// Finished clips on this node that nobody has re-encoded yet. Deliberately not
+  /// reusing GetRecordingsFromToAsync: that one filters on `retained`, and the
+  /// clips worth shrinking are the ordinary ones.
+  /// </summary>
+  public async Task<List<RoiCandidate>> GetRoiCandidatesAsync(
+    IReadOnlyCollection<string> cameraIds,
+    int settleSeconds,
+    int batchSize,
+    CancellationToken ct)
+  {
+    if (cameraIds.Count == 0)
+      return [];
+
+    var now = DateTime.UtcNow;
+    var settled = now.AddSeconds(-settleSeconds);
+
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var rows = await db.Clips
+      .Where(c => cameraIds.Contains(c.CameraId)
+        && c.RoiState == "pending"
+        && c.EndTs != null
+        && c.EndTs < settled
+        && (c.RoiNextAttemptTs == null || c.RoiNextAttemptTs <= now))
+      .OrderBy(c => c.EndTs)
+      .Take(batchSize)
+      .Select(c => new RoiCandidate(
+        c.ClipUid, c.FilePath, c.CameraId, c.StreamName, c.StorageId,
+        c.StartTs, c.EndTs!.Value, c.RoiAttempts))
+      .ToListAsync(ct);
+
+    return rows;
+  }
+
+  /// <summary>
+  /// Records the outcome without touching the file's own columns. `state` is one
+  /// of the values the 0009 migration lists.
+  /// </summary>
+  public async Task SetRoiStateAsync(
+    Guid clipUid, string state, DateTime? nextAttempt, bool countAttempt, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    await db.Clips
+      .Where(c => c.ClipUid == clipUid)
+      .ExecuteUpdateAsync(u => u
+        .SetProperty(c => c.RoiState, state)
+        .SetProperty(c => c.RoiNextAttemptTs, nextAttempt)
+        .SetProperty(c => c.RoiAttempts, c => countAttempt ? c.RoiAttempts + 1 : c.RoiAttempts),
+        ct);
+  }
+
+  /// <summary>
+  /// The clip's file has been replaced by a smaller one. Updates only what the
+  /// new file changed.
+  ///
+  /// start_ts and end_ts are deliberately untouched: the 0008 trigger purges
+  /// clip_metadata_chunks outside the clip's window whenever either moves, which
+  /// would delete the very boxes the re-encode was built from. frag_index goes to
+  /// null because the cached fragment byte ranges describe the old file.
+  ///
+  /// Returns false when the clip row is gone -- ClipCleaner may have deleted it
+  /// while the job ran, and that is an ordinary outcome, not an error.
+  /// </summary>
+  public async Task<bool> CompleteRoiTranscodeAsync(Guid clipUid, long sizeBytes, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var affected = await db.Clips
+      .Where(c => c.ClipUid == clipUid)
+      .ExecuteUpdateAsync(u => u
+        .SetProperty(c => c.SizeBytes, sizeBytes)
+        .SetProperty(c => c.FragIndex, (string?)null)
+        .SetProperty(c => c.RoiState, "done")
+        .SetProperty(c => c.RoiNextAttemptTs, (DateTime?)null),
+        ct);
+    return affected > 0;
+  }
+
   public async Task<List<Recording>> GetRecordingsByUidsAsync(IReadOnlyList<Guid> clipUids, CancellationToken ct)
   {
     if (clipUids.Count == 0)

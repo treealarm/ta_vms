@@ -68,7 +68,9 @@
     "onvifEventsEnabled": "Suscribirse a eventos ONVIF",
     "edgeBackfill": "Recuperar huecos desde la cámara",
     "edgeBackfillOff": "Desactivado",
-    "edgeBackfillHint": "La cámara graba un solo flujo en su almacenamiento — elija cuál"
+    "edgeBackfillHint": "La cámara graba un solo flujo en su almacenamiento — elija cuál",
+    "roiTranscode": "Recomprimir grabaciones con ROI",
+    "roiTranscodeHint": "Recodifica los clips terminados manteniendo nítidos los objetos detectados y comprimiendo más el resto. Solo se procesan los clips que tienen detecciones."
   },
   "cameraControl": {
     "showControls": "Mostrar controles de cámara",
