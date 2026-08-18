@@ -12,6 +12,12 @@ import { type RecordingDto, type RecordingRangeDto } from '../dto/dtos'
 import { fetchRecordingRanges } from '../store/fsSlice'
 
 // How many ranges one page holds.
+// Module scope, and emphatically not a fresh [] per render: this value is handed to onRangesChange
+// as an identity, and a new array each render made the consumer treat "still loading" as "the
+// ranges changed" on every paint — which in ArchiveHlsStreamCard resets the selection back to the
+// oldest range on the page.
+const EMPTY_RANGES: RecordingRangeDto[] = []
+
 const PAGE_LIMIT = 50
 import { useAppDispatch, useAppSelector } from '../store'
 import dayjs, { Dayjs } from 'dayjs'
@@ -108,8 +114,7 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
   }, [cameraId, dispatch, loaded, open, queryTime])
 
   const recordingsKey = queryTime ? `${cameraId}:${queryTime}` : ''
-  const EMPTY: RecordingRangeDto[] = []
-  const data = useAppSelector((s) => s.fs.recordingRangesByKey[recordingsKey]?.ranges ?? EMPTY)
+  const data = useAppSelector((s) => s.fs.recordingRangesByKey[recordingsKey]?.ranges ?? EMPTY_RANGES)
 
   useEffect(() => { onRangesChange?.(data) }, [data, onRangesChange])
 

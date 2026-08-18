@@ -74,6 +74,9 @@ export default function ArchiveHlsStreamCard({
 
   const onRangesChange = useCallback((r: RecordingRangeDto[]) => {
     setRanges(r)
+    // An empty list is "the page has not loaded yet", not "the operator's choice is void" — resetting
+    // on it threw away a freshly picked clip and dropped playback back to the oldest range.
+    if (r.length === 0) return
     setStartIndex(0)
     setSeekTarget(null)
   }, [])

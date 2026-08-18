@@ -1,6 +1,7 @@
-import { useMemo, type RefObject } from 'react'
-import { useLiveDetections } from '../hooks/useLiveDetections'
+import { useEffect, useState, type RefObject } from 'react'
+import { liveDetectionsClient } from '../hooks/liveDetectionsClient'
 import BboxCanvas from './bbox/BboxCanvas'
+import { boxesNow } from './bbox/extrapolate'
 import type { DrawableBox } from './bbox/bboxDraw'
 
 interface Props {
@@ -11,37 +12,37 @@ interface Props {
 /**
  * Draws analytics bounding boxes over the live <video>.
  *
- * The live adapter of the shared overlay: it turns the SSE stream's TTL-aged detections into
- * drawable boxes and hands them to BboxCanvas. The TTL/fade model stays here rather than in the
- * shared layer because it is an artefact of *live* — with no next sample to look at, the only way
- * to know a box is stale is to time it out. The archive overlay knows both neighbours and
- * interpolates instead.
- *
- * The detection hook lives here (not in CameraStream) so frequent detection updates re-render only
- * this component, leaving the <video> element's subtree untouched.
+ * Boxes are drawn the moment they arrive and then carried forward along their last known velocity,
+ * so they glide between samples instead of stepping. Deliberately NOT the archive's interpolation:
+ * that needs the sample after the instant being drawn, which on a live stream only exists if the
+ * picture is held back to wait for it. Leading the object beats trailing it — see extrapolate.ts.
  */
 export default function BboxOverlay({ videoRef, cameraId }: Props) {
-  const detections = useLiveDetections(cameraId)
+  const [boxes, setBoxes] = useState<DrawableBox[]>([])
 
-  const boxes = useMemo<DrawableBox[]>(
-    () =>
-      detections.map((d) => ({
-        trackId: d.trackId,
-        kind: d.kind,
-        confidence: d.confidence,
-        bboxX: d.bboxX,
-        bboxY: d.bboxY,
-        bboxWidth: d.bboxWidth,
-        bboxHeight: d.bboxHeight,
-        source: d.source,
-        label: d.label,
-        plateText: d.plateText,
-        objectId: d.objectId,
-        opacity: d.opacity,
-        timeMs: Date.parse(d.detectedAt),
-      })),
-    [detections]
-  )
+  useEffect(() => {
+    let raf = 0
+    let disposed = false
+
+    // The subscription exists to keep the shared SSE stream open for this camera; the redraw is
+    // driven by the animation frame instead, because the box positions keep advancing between
+    // samples rather than only when one arrives.
+    const unsubscribe = liveDetectionsClient.subscribeFrames(cameraId, () => {})
+
+    const tick = () => {
+      if (disposed) return
+      const next = boxesNow(liveDetectionsClient.framesFor(cameraId), performance.now())
+      setBoxes((prev) => (prev.length === 0 && next.length === 0 ? prev : next))
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+
+    return () => {
+      disposed = true
+      cancelAnimationFrame(raf)
+      unsubscribe()
+    }
+  }, [cameraId])
 
   return <BboxCanvas videoRef={videoRef} boxes={boxes} />
 }

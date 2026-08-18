@@ -28,8 +28,14 @@ function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t
 }
 
-/** Boxes from one source at `tMs`, or an empty list when the source has nothing to say there. */
-function interpolateSource(
+/**
+ * Boxes from one source at `tMs`, or an empty list when the source has nothing to say there.
+ *
+ * Exported because live and archive want different composition rules over the same maths: the
+ * archive lets ONVIF displace CV (see boxesAt), while the live overlay draws both at once and tells
+ * them apart by the dash pattern.
+ */
+export function boxesAtForSource(
   frames: ArchiveFrame[],
   source: AnalyticsDetectionSource,
   tMs: number
@@ -102,7 +108,7 @@ function interpolateSource(
   return out
 }
 
-type Sampled = ArchiveFrame['boxes'][number]
+type Sampled = ArchiveFrame['boxes'][number] & { objectId?: string | null }
 
 function pickNearest(a: Sampled, b: Sampled, t: number): Pick<DrawableBox, 'kind' | 'confidence' | 'label' | 'plateText'> {
   const near = t < 0.5 ? a : b
@@ -120,6 +126,7 @@ function toDrawable(box: Sampled, source: AnalyticsDetectionSource, tMs: number)
     bboxHeight: box.bboxHeight,
     label: box.label,
     plateText: box.plateText,
+    objectId: box.objectId,
     source,
     opacity: 1,
     timeMs: tMs,
@@ -139,7 +146,7 @@ function asDrawable(frame: ArchiveFrame, source: AnalyticsDetectionSource, tMs: 
  * CV detector stamps after inference on another host — so its boxes can sit behind the frame.
  */
 export function boxesAt(framesBySource: FramesBySource, tMs: number): DrawableBox[] {
-  const onvif = interpolateSource(framesBySource.onvif ?? [], 'onvif', tMs)
+  const onvif = boxesAtForSource(framesBySource.onvif ?? [], 'onvif', tMs)
   if (onvif.length > 0) return onvif
-  return interpolateSource(framesBySource.cv ?? [], 'cv', tMs)
+  return boxesAtForSource(framesBySource.cv ?? [], 'cv', tMs)
 }

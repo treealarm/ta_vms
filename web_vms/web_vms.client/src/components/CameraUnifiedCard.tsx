@@ -272,10 +272,15 @@ export default function CameraUnifiedCard({
     archiveBounds?.startMs ?? null,
     archiveBounds?.endMs ?? null
   )
-  // 'unknown' means the answer has not landed yet — offer the control optimistically when the
-  // camera has any box source at all. A button that shows up late is worse than one that shows up
-  // and is then found to have nothing behind it.
-  const archiveHasBoxes = archiveCoverage === 'some' || (archiveCoverage === 'unknown' && hasBoxSource)
+  // Hidden only on a definitive "nothing recorded here"; while the answer is still outstanding the
+  // control is offered, because a button that appears late is worse than one that appears and turns
+  // out to have nothing behind it.
+  //
+  // Deliberately NOT falling back to hasBoxSource here: onvifBboxCapable is probed only in a live
+  // context, so in the archive that test collapses to camera.hasAnalytics — which is false for a
+  // camera whose boxes come solely from its own ONVIF Scene Description. Gating on it hid the
+  // button outright for exactly the cameras this feature was built for.
+  const archiveHasBoxes = archiveCoverage !== 'none'
   const showBboxToggle = !isDisabled && (isLiveContext ? hasBoxSource : archiveHasBoxes)
   // Recording profile and override act on configuration, which is meaningful whatever the tile is
   // currently showing — but in the standalone card they follow the card's own mode.
