@@ -32,11 +32,6 @@ google::protobuf::Timestamp to_proto_ts(std::chrono::system_clock::time_point va
   return timestamp;
 }
 
-/// How long documents are allowed to sit in the queue before a flush. Short enough that the
-/// overlay still reads as live, long enough that a busy node sends a handful of RPCs per second
-/// instead of hundreds.
-constexpr auto kFlushInterval = std::chrono::milliseconds(200);
-
 /// Queue ceiling. Roughly a second of the noisiest cameras a node is likely to carry; past that
 /// the sidecar is not keeping up and the oldest documents are the least worth keeping.
 constexpr size_t kMaxQueued = 200;
@@ -101,10 +96,10 @@ void onvif_metadata_client::enqueue(
   document.set_xml(std::move(xml));
   document.set_frame_width(frame_width);
   document.set_frame_height(frame_height);
-  // The reader's stamp, not now(): a document is assembled from several RTP packets and then sits
-  // in this queue for up to a batching window, so now() would place a box later than the frame it
-  // describes by however long both took. The boxes are drawn over archived video, whose boundaries
-  // come off exactly this clock.
+  // The reader's stamp, not now(): a document is assembled from several RTP packets and then waits
+  // its turn in this queue, so now() would place a box later than the frame it describes by however
+  // long both took. These boxes are drawn over video — live and archived — whose own timeline comes
+  // off exactly this clock.
   *document.mutable_received_at() = to_proto_ts(captured_at);
 
   {
@@ -130,15 +125,17 @@ void onvif_metadata_client::send_loop()
     {
       std::unique_lock<std::mutex> lock(m_mutex);
 
-      // Two waits, and the split is the whole point of the queue. The first blocks until there is
-      // anything at all to send. The second is the batching window: enqueue() signals on every
-      // document, so waking on "queue is non-empty" a second time would drain after the first
-      // arrival and turn each document back into its own RPC. Only a stop cuts this one short.
+      // Wait for something to send, then send it — with no batching window on top.
+      //
+      // Batching still happens, it is just self-clocking: send_batch() runs with this lock
+      // released, so everything a chatty camera produces while an RPC is in flight is picked up by
+      // the next pass as one batch. Under load that coalesces exactly as a fixed window would,
+      // while a lone document goes out immediately instead of waiting out the window.
+      //
+      // The window used to be unconditional, and that made it a flat addition to every box's age:
+      // these boxes are drawn over live video, and the picture reaches the browser by a path that
+      // does not stop here. Boxes visibly trailed the objects they described.
       m_cv.wait(lock, [this] { return !m_running || !m_queue.empty(); });
-      if (!m_running && m_queue.empty())
-        return;
-
-      m_cv.wait_for(lock, kFlushInterval, [this] { return !m_running; });
       if (!m_running && m_queue.empty())
         return;
 

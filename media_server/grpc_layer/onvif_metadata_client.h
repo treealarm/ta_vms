@@ -21,9 +21,11 @@
 /// converging on a single instance), and media_server already talks to it — see onvif_client — so
 /// this adds no new dependency to the C++ core, only another RPC on a channel it already opens.
 ///
-/// Documents are queued and flushed as a batch a few times a second rather than sent one per RPC:
-/// a chatty camera emits several documents per second, and one unary call each would put a
-/// per-frame round trip on a service that is already the fan-in point for every node.
+/// Documents are queued and sent as soon as the sender thread is free, with whatever else piled up
+/// behind them going out in the same RPC. The batching is therefore self-clocking rather than timed:
+/// a busy node coalesces because documents accumulate while a call is in flight, and a quiet one
+/// pays no latency for the privilege. An unconditional flush window used to sit here instead, and
+/// it added its full duration to every box drawn over live video.
 ///
 /// Best-effort by construction. The queue is bounded and drops its oldest entries when the link to
 /// the sidecar stalls — the RTSP reader thread must never block on the overlay, and a metadata

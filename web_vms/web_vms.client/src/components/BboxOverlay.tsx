@@ -1,7 +1,7 @@
 import { useEffect, useState, type RefObject } from 'react'
 import { liveDetectionsClient } from '../hooks/liveDetectionsClient'
 import BboxCanvas from './bbox/BboxCanvas'
-import { boxesNow } from './bbox/extrapolate'
+import { boxesNow } from './bbox/liveBoxes'
 import type { DrawableBox } from './bbox/bboxDraw'
 
 interface Props {
@@ -9,38 +9,32 @@ interface Props {
   cameraId: string
 }
 
+/** How often boxes are re-evaluated so an ageing one fades and then disappears on time. */
+const FADE_TICK_MS = 120
+
 /**
  * Draws analytics bounding boxes over the live <video>.
  *
- * Boxes are drawn the moment they arrive and then carried forward along their last known velocity,
- * so they glide between samples instead of stepping. Deliberately NOT the archive's interpolation:
- * that needs the sample after the instant being drawn, which on a live stream only exists if the
- * picture is held back to wait for it. Leading the object beats trailing it — see extrapolate.ts.
+ * Redrawn when a sample arrives, plus a slow tick for the fade-out — not on every animation frame:
+ * the boxes do not move between samples (see liveBoxes.ts), so a per-frame loop would repaint an
+ * unchanged canvas for every cell of the wall.
  */
 export default function BboxOverlay({ videoRef, cameraId }: Props) {
   const [boxes, setBoxes] = useState<DrawableBox[]>([])
 
   useEffect(() => {
-    let raf = 0
-    let disposed = false
-
-    // The subscription exists to keep the shared SSE stream open for this camera; the redraw is
-    // driven by the animation frame instead, because the box positions keep advancing between
-    // samples rather than only when one arrives.
-    const unsubscribe = liveDetectionsClient.subscribeFrames(cameraId, () => {})
-
-    const tick = () => {
-      if (disposed) return
+    const refresh = () => {
       const next = boxesNow(liveDetectionsClient.framesFor(cameraId), performance.now())
       setBoxes((prev) => (prev.length === 0 && next.length === 0 ? prev : next))
-      raf = requestAnimationFrame(tick)
     }
-    raf = requestAnimationFrame(tick)
+
+    const unsubscribe = liveDetectionsClient.subscribeFrames(cameraId, refresh)
+    const timer = window.setInterval(refresh, FADE_TICK_MS)
+    refresh()
 
     return () => {
-      disposed = true
-      cancelAnimationFrame(raf)
       unsubscribe()
+      clearInterval(timer)
     }
   }, [cameraId])
 
