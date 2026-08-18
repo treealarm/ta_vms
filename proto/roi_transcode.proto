@@ -2,83 +2,209 @@ syntax = "proto3";
 
 package roi.transcode;
 
-// Offline ROI HEVC job API. Same shape as media_server EdgeImport: start returns a job
-// immediately, poll with Get, cancel best-effort, list recent jobs. Job state is in-process
-// memory; the durable result is the output file.
-
-service RoiTranscodeService {
-  rpc StartRoiTranscode(RoiTranscodeRequest) returns (RoiTranscodeJob);
-  rpc GetRoiTranscodeJob(RoiTranscodeJobKey) returns (RoiTranscodeJob);
-  rpc CancelRoiTranscode(RoiTranscodeJobKey) returns (OperationStatus);
-  rpc ListRoiTranscodeJobs(ListRoiTranscodeJobsRequest) returns (ListRoiTranscodeJobsResponse);
+// ROI-aware HEVC encoding, offered two ways.
+//
+// A file job is fire-and-poll, the same shape as media_server's EdgeImport:
+// start returns immediately, poll with GetJob, cancel is best effort. Job state
+// lives in process memory; the durable result is the output file.
+//
+// A stream carries frames instead of a path, for a caller that has no file --
+// open once, then push frames and take packets back.
+service RoiTranscode {
+  rpc StartFileJob (FileJobRequest)       returns (Job);
+  rpc GetJob       (JobId)                returns (Job);
+  rpc CancelJob    (JobId)                returns (Status);
+  rpc ListJobs     (ListJobsRequest)      returns (ListJobsResponse);
+  rpc EncodeStream (stream StreamRequest) returns (stream StreamResponse);
 }
 
-enum RoiTranscodeState {
-  ROI_TRANSCODE_STATE_UNSPECIFIED = 0;
-  ROI_TRANSCODE_STATE_RUNNING = 1;
-  ROI_TRANSCODE_STATE_COMPLETED = 2;
-  ROI_TRANSCODE_STATE_FAILED = 3;
-  ROI_TRANSCODE_STATE_CANCELLED = 4;
+enum Encoder {
+  // Tries Quick Sync, then VA-API, then CPU. What actually opened is reported
+  // back: on this hardware the difference is large enough to want to know.
+  ENCODER_AUTO  = 0;
+  ENCODER_QSV   = 1;
+  ENCODER_VAAPI = 2;
+  ENCODER_NVENC = 3;
+  ENCODER_X265  = 4;
 }
 
-message RoiBox {
-  // Seconds from start of the input file (same as track_samples / roi.json `t`).
-  double t = 1;
-  string kind = 2;
-  // Normalized 0..1, same as VMS track_samples.
-  float bbox_x = 3;
-  float bbox_y = 4;
-  float bbox_w = 5;
-  float bbox_h = 6;
+enum InputCodec {
+  // Tightly packed planes in the pixel format named by StreamOpen.pix_fmt.
+  INPUT_CODEC_RAW  = 0;
+  INPUT_CODEC_H264 = 1;
+  INPUT_CODEC_H265 = 2;
+  INPUT_CODEC_JPEG = 3;
 }
 
-message RoiKindConfig {
+// One region worth keeping sharp. Coordinates are normalized 0..1 from the
+// top-left corner -- the same convention ta_vms archives boxes in.
+message Box {
+  // Seconds from the start of the input. File jobs only: a streamed frame
+  // carries the boxes that belong to it.
+  double t      = 1;
+  string kind   = 2;
+  float  x      = 3;
+  float  y      = 4;
+  float  width  = 5;
+  float  height = 6;
+}
+
+message BoxList {
+  repeated Box boxes = 1;
+}
+
+// 8-bit region mask at any resolution: 0 is background, 255 is maximum quality.
+// It is sampled onto the frame, so it need not match the frame's size.
+message Mask {
+  int32 width  = 1;
+  int32 height = 2;
+  bytes data   = 3;
+}
+
+// Per-kind override of how much better than the background that kind gets.
+message KindQuality {
   string kind = 1;
-  optional int32 qp_delta = 2;
-  optional double pad_norm = 3;
+  // QP delta: negative is sharper. Optional so it can be left to the default
+  // rather than meaning zero.
+  optional int32  qp_delta = 2;
+  // Halo around the box, as a fraction of the frame, encoded at half the box's
+  // delta. Softens the QP step at the edge.
+  optional double pad      = 3;
 }
 
-message RoiTranscodeRequest {
-  string input_path = 1;
-  string output_path = 2;
-  // Optional path to roi.json. If set, samples/kinds below are ignored unless empty.
-  string roi_json_path = 3;
-  repeated RoiBox boxes = 4;
-  repeated RoiKindConfig kinds = 5;
-  // optional so 0 can disable the full-frame background ROI (proto3 default 0 is unset).
-  optional int32 background_qp_delta = 6;
-  optional double hold_sec = 7;
-  // auto | qsv | vaapi | nvenc | x265
-  string encoder = 8;
-  int32 crf = 9;
-  int32 gop = 10;
-  string preset = 11;
+message RoiQuality {
+  // How much worse the background gets. Optional because 0 is meaningful: it
+  // says leave the background alone, which is not the same as "unset".
+  optional int32  background_qp_delta = 1;
+  // How long a box keeps applying after its sample, in seconds. Also optional
+  // for the same reason.
+  optional double hold_sec            = 2;
+  // Cap on regions handed to the encoder. mfxExtEncoderROI takes at most 256
+  // and a VA-API driver usually far fewer; 0 takes the built-in default.
+  int32           max_regions         = 3;
+  repeated KindQuality kinds          = 4;
 }
 
-message RoiTranscodeJobKey {
-  string job_id = 1;
+// Shared by both entry points so a file job and a stream cannot drift apart.
+message Settings {
+  Encoder    encoder = 1;
+  // Constant quantizer / CRF. 0 takes the built-in default.
+  int32      crf     = 2;
+  // Keyframe interval in frames. 0 means two seconds.
+  int32      gop     = 3;
+  string     preset  = 4;
+  RoiQuality roi     = 5;
 }
 
-message ListRoiTranscodeJobsRequest {
-  // Reserved for future filters; empty lists all remembered jobs.
+// ---------------------------------------------------------------- file jobs
+
+message FileJobRequest {
+  string   input_path  = 1;
+  string   output_path = 2;
+  // Either a path to a roi.json, or the boxes inline. The path wins if both
+  // are given.
+  string   roi_json_path = 3;
+  repeated Box boxes     = 4;
+  Settings settings      = 5;
+  // Muxer "movflags". Empty leaves the container default; a ta_vms archive clip
+  // needs "frag_keyframe+empty_moov+default_base_moof" to stay playable.
+  string   movflags      = 6;
 }
 
-message RoiTranscodeJob {
-  string job_id = 1;
-  string input_path = 2;
-  string output_path = 3;
-  RoiTranscodeState state = 4;
-  int64 start_unix_ms = 5;
-  int64 end_unix_ms = 6;
-  string message = 7;
-  string encoder_used = 8;
+enum JobState {
+  JOB_STATE_UNSPECIFIED = 0;
+  JOB_STATE_RUNNING     = 1;
+  JOB_STATE_COMPLETED   = 2;
+  JOB_STATE_FAILED      = 3;
+  JOB_STATE_CANCELLED   = 4;
 }
 
-message ListRoiTranscodeJobsResponse {
-  repeated RoiTranscodeJob jobs = 1;
+message Job {
+  string   job_id        = 1;
+  string   input_path    = 2;
+  string   output_path   = 3;
+  JobState state         = 4;
+  int64    start_unix_ms = 5;
+  int64    end_unix_ms   = 6;
+  string   message       = 7;
+  // Which backend actually opened, once it has.
+  string   encoder_used  = 8;
 }
 
-message OperationStatus {
-  bool success = 1;
-  string message = 2;
+message JobId          { string job_id = 1; }
+message ListJobsRequest {}
+message ListJobsResponse { repeated Job jobs = 1; }
+message Status          { bool success = 1; string message = 2; }
+
+// ------------------------------------------------------------------ stream
+
+message StreamOpen {
+  int32      width          = 1;
+  int32      height         = 2;
+  // Units of StreamFrame.pts.
+  int32      time_base_num  = 3;
+  int32      time_base_den  = 4;
+  // Only sets the encoder's frame rate and the default GOP.
+  int32      fps_num        = 5;
+  int32      fps_den        = 6;
+  InputCodec codec          = 7;
+  // Codec configuration for AVCC/HVCC input; empty for Annex-B or raw.
+  bytes      extradata      = 8;
+  Settings   settings       = 9;
+  // When set, packets are muxed into this file and not streamed back. Subject
+  // to the same sandbox as a file job.
+  string     output_path    = 10;
+  // AVPixelFormat value, raw input only.
+  int32      pix_fmt        = 11;
+  string     movflags       = 12;
+}
+
+message StreamFrame {
+  int64 pts  = 1;
+  // Tightly packed planes, or one encoded access unit.
+  bytes data = 2;
+  // Frames may carry neither, in which case only the background applies.
+  oneof regions {
+    Mask    mask  = 3;
+    BoxList boxes = 4;
+  }
+}
+
+message StreamRequest {
+  // The first message must be `open`; every one after it must be `frame`.
+  oneof msg {
+    StreamOpen  open  = 1;
+    StreamFrame frame = 2;
+  }
+}
+
+message Opened {
+  Encoder encoder_used = 1;
+  string  encoder_name = 2;
+  // Codec configuration for the output, before any packet. A remote consumer
+  // needs it to decode what follows.
+  bytes   extradata    = 3;
+}
+
+message Packet {
+  int64 pts  = 1;
+  int64 dts  = 2;
+  bool  key  = 3;
+  bytes data = 4;
+}
+
+message Done {
+  int64 frames          = 1;
+  int64 packets         = 2;
+  int64 bytes           = 3;
+  // Regions the encoder's budget could not take.
+  int64 regions_dropped = 4;
+}
+
+message StreamResponse {
+  oneof msg {
+    Opened opened = 1;
+    Packet packet = 2;
+    Done   done   = 3;
+  }
 }
