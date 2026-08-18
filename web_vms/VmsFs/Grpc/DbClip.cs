@@ -55,4 +55,11 @@ public sealed class DbClip
 
   [Column("roi_next_attempt_ts")]
   public DateTime? RoiNextAttemptTs { get; set; }
+
+  /// <summary>
+  /// Fraction of the clip's duration covered by detection boxes, or null before the
+  /// pass has looked. Recorded even for skipped clips — see the 0010 migration.
+  /// </summary>
+  [Column("roi_coverage")]
+  public float? RoiCoverage { get; set; }
 }

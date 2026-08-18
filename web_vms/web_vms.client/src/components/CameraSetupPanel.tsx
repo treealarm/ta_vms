@@ -45,6 +45,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const [disabled, setDisabled] = useState(existing?.disabled === true)
   const [edgeBackfillStream, setEdgeBackfillStream] = useState(existing?.edgeBackfillStream ?? '')
   const [roiTranscode, setRoiTranscode] = useState(existing?.roiTranscode === true)
+  const [roiDelayHours, setRoiDelayHours] = useState(String(existing?.roiDelayHours ?? 0))
   const [pendingStorages, setPendingStorages] = useState<CameraStorageAssignmentDto[]>([])
   const [pendingSchedules, setPendingSchedules] = useState<string[]>([])
 
@@ -77,6 +78,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     disabled: existing?.disabled === true,
     edgeBackfillStream: existing?.edgeBackfillStream ?? '',
     roiTranscode: existing?.roiTranscode === true,
+    roiDelayHours: String(existing?.roiDelayHours ?? 0),
   })
 
   const dirty = !isNew && (
@@ -90,6 +92,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     || disabled !== snap.disabled
     || edgeBackfillStream !== snap.edgeBackfillStream
     || roiTranscode !== snap.roiTranscode
+    || roiDelayHours !== snap.roiDelayHours
   )
 
   // Which of this camera's streams the camera itself records onto its storage. Empty = the feature
@@ -114,6 +117,8 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     disabled: disabled || undefined,
     edgeBackfillStream,
     roiTranscode,
+    // Kept as text while editing so a half-typed "0." is not thrown away.
+    roiDelayHours: Number(roiDelayHours) || 0,
   })
 
   const applyInternal = async (): Promise<boolean> => {
@@ -137,7 +142,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     const action = serverChanged ? changeCameraParent : addCamera
     const result = await dispatch(action(payload))
     if (!action.rejected.match(result)) {
-      setSnap({ name, serverId, mediaMtxServerId, user, pass, ip, port, disabled, edgeBackfillStream, roiTranscode })
+      setSnap({ name, serverId, mediaMtxServerId, user, pass, ip, port, disabled, edgeBackfillStream, roiTranscode, roiDelayHours })
       await dispatch(fetchCameraState(initialCameraId))
       return true
     }
@@ -162,6 +167,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     // These two were missing, so Cancel used to leave the form dirty.
     setEdgeBackfillStream(snap.edgeBackfillStream)
     setRoiTranscode(snap.roiTranscode)
+    setRoiDelayHours(snap.roiDelayHours)
   }
 
   const handleRemove = async () => {
@@ -244,6 +250,17 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
               control={<Switch checked={roiTranscode} onChange={(e) => setRoiTranscode(e.target.checked)} />}
               label={t('cameras.roiTranscode')}
             />
+            {roiTranscode && (
+              <TextField
+                label={t('cameras.roiDelayHours')}
+                helperText={t('cameras.roiDelayHoursHint')}
+                type="number"
+                size="small"
+                value={roiDelayHours}
+                onChange={(e) => setRoiDelayHours(e.target.value)}
+                slotProps={{ htmlInput: { min: 0, step: 0.5 } }}
+              />
+            )}
 
             {/* One stream, chosen here, because the camera's storage holds a single archive and
                 ONVIF does not report which stream went into it. */}

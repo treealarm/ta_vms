@@ -180,6 +180,13 @@ message CameraSetup {
   // not one of its encodings, and a box has no meaning outside the frame it was
   // found in.
   bool roi_transcode = 22;
+
+  // How long after a clip closes before it may be re-encoded, in hours; 0 means
+  // as soon as the pass notices it. Per camera because how long fresh footage
+  // must stay untouched is a property of what the camera watches, not of the
+  // node. Fractional on purpose: useful values here are minutes as often as
+  // hours.
+  double roi_delay_hours = 23;
 }
 
 message RecordingProfileRequest {

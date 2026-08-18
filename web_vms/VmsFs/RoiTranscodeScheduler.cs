@@ -29,7 +29,10 @@ public sealed class RoiTranscodeScheduler(
   // Generous: a long clip on the CPU fallback is minutes of work, and giving up
   // early would leave the service encoding into a file nobody waits for.
   private static readonly TimeSpan JobTimeout = TimeSpan.FromMinutes(30);
-  private const int BatchSize = 20;
+  // A camera may ask for no delay at all, but the clip still has to be closed and
+  // its boxes written -- MetadataArchiveWriter holds samples briefly and flushes
+  // in batches. This is a correctness floor, so it is not configurable.
+  private static readonly TimeSpan MinDelay = TimeSpan.FromSeconds(60);
   private const long MaxRetrySeconds = 6 * 60 * 60;
 
   private static int EnvInt(string name, int fallback)
@@ -41,8 +44,10 @@ public sealed class RoiTranscodeScheduler(
   private static double EnvDouble(string name, double fallback)
   {
     var raw = Environment.GetEnvironmentVariable(name);
+    // Zero is a legitimate setting here -- a coverage floor of 0 means "take
+    // anything with a box" -- so only a negative or unparsable value falls back.
     return double.TryParse(raw, System.Globalization.NumberStyles.Float,
-      System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0 ? v : fallback;
+      System.Globalization.CultureInfo.InvariantCulture, out var v) && v >= 0 ? v : fallback;
   }
 
   private static int EnvSigned(string name, int fallback)
@@ -51,8 +56,18 @@ public sealed class RoiTranscodeScheduler(
     return int.TryParse(raw, out var v) ? v : fallback;
   }
 
-  private readonly int _settleSeconds = EnvInt("VMS_ROI_SETTLE_SECONDS", 300);
   private readonly int _retrySeconds = EnvInt("VMS_ROI_RETRY_SECONDS", 600);
+  // Must be the number the encoder is given too: coverage below is measured with
+  // it, and a scheduler measuring one window while the encoder protects another
+  // would put the thresholds on a lie. Tied to ANALYTICS_METADATA_MAX_SAMPLE_HZ:
+  // below half the interval between samples, gaps open up between them.
+  private readonly double _holdSec = EnvDouble("VMS_ROI_HOLD_SEC", 0.5);
+  // The working range. Below the floor the detector barely saw anything and
+  // crushing the rest would be taking its word for the whole clip; above the
+  // ceiling there is little background left to crush, so the pass would spend a
+  // generation of quality for almost nothing.
+  private readonly double _minCoverage = EnvDouble("VMS_ROI_MIN_COVERAGE", 0.01);
+  private readonly double _maxCoverage = EnvDouble("VMS_ROI_MAX_COVERAGE", 0.90);
   private readonly int _maxAttempts = EnvInt("VMS_ROI_MAX_ATTEMPTS", 3);
   private readonly int _crf = EnvInt("VMS_ROI_CRF", 28);
   private readonly int _qpDelta = EnvSigned("VMS_ROI_QP_DELTA", -8);
@@ -120,8 +135,23 @@ public sealed class RoiTranscodeScheduler(
     if (enabled.Count == 0)
       return;
 
-    var candidates = await clips.GetRoiCandidatesAsync(enabled, _settleSeconds, BatchSize, ct);
-    foreach (var clip in candidates)
+    // One candidate per camera, each with that camera's own cutoff, then the
+    // oldest of them. Asking per camera keeps a camera with a long delay from
+    // crowding out one with a short delay, and taking the oldest keeps the
+    // backlog in order.
+    var now = DateTime.UtcNow;
+    var candidates = new List<ClipStorage.RoiCandidate>();
+    foreach (var (cameraId, delayHours) in enabled)
+    {
+      if (ct.IsCancellationRequested)
+        return;
+      var candidate = await clips.GetOldestRoiCandidateAsync(
+        cameraId, now - DelayFor(delayHours), ct);
+      if (candidate is not null)
+        candidates.Add(candidate);
+    }
+
+    foreach (var clip in candidates.OrderBy(c => c.EndTs))
     {
       if (ct.IsCancellationRequested)
         return;
@@ -133,10 +163,11 @@ public sealed class RoiTranscodeScheduler(
   }
 
   /// <summary>Cameras on this node whose owner asked for ROI re-compression.</summary>
-  private async Task<List<string>> EnabledCamerasAsync(CancellationToken ct)
+  private async Task<List<(string CameraId, double DelayHours)>> EnabledCamerasAsync(
+    CancellationToken ct)
   {
     var ids = await clips.GetRoiCameraIdsAsync(ct);
-    var enabled = new List<string>();
+    var enabled = new List<(string, double)>();
     foreach (var cameraId in ids)
     {
       var setup = await cameras.GetAsync(cameraId, ct);
@@ -145,21 +176,35 @@ public sealed class RoiTranscodeScheduler(
       if (!string.IsNullOrEmpty(OwnServerId)
         && !string.Equals(setup.ServerId, OwnServerId, StringComparison.OrdinalIgnoreCase))
         continue;
-      enabled.Add(cameraId);
+      enabled.Add((cameraId, setup.RoiDelayHours));
     }
     return enabled;
+  }
+
+  /// <summary>A camera's configured delay, never shorter than the floor.</summary>
+  private static TimeSpan DelayFor(double hours)
+  {
+    if (double.IsNaN(hours) || hours <= 0)
+      return MinDelay;
+    var asked = TimeSpan.FromHours(hours);
+    return asked < MinDelay ? MinDelay : asked;
   }
 
   private async Task<bool> ProcessAsync(
     RoiTranscode.RoiTranscodeClient client, ClipStorage.RoiCandidate clip, CancellationToken ct)
   {
     var boxes = await BoxesForAsync(clip, ct);
-    if (boxes.Count == 0)
+    var duration = (clip.EndTs - clip.StartTs).TotalSeconds;
+    var coverage = (float)RoiCoverage.Fraction(
+      boxes.Select(b => b.T).ToList(), duration, _holdSec);
+
+    // Outside the working range the clip is left alone, but the measurement is
+    // still written: the thresholds are guesses until there is a distribution
+    // from real cameras, and this is how that gets collected.
+    if (coverage < _minCoverage || coverage > _maxCoverage)
     {
-      // Nothing to protect. Marked rather than retried: the boxes are written
-      // shortly after the clip closes, so by the settle window they are either
-      // there or they never will be.
-      await clips.SetRoiStateAsync(clip.ClipUid, "skipped", null, false, CancellationToken.None);
+      await clips.SetRoiStateAsync(
+        clip.ClipUid, "skipped", null, false, coverage, CancellationToken.None);
       return false;
     }
 
@@ -173,7 +218,10 @@ public sealed class RoiTranscodeScheduler(
     var input = Path.Combine(root, clip.FilePath);
     if (!File.Exists(input))
     {
-      await clips.SetRoiStateAsync(clip.ClipUid, "skipped", null, false, CancellationToken.None);
+      // The row outlived its file, which ClipCleaner will sort out. Coverage is
+      // still recorded: it was measured, and it says something about the clip.
+      await clips.SetRoiStateAsync(
+        clip.ClipUid, "skipped", null, false, coverage, CancellationToken.None);
       return false;
     }
 
@@ -203,7 +251,7 @@ public sealed class RoiTranscodeScheduler(
       return true;
     }
 
-    await ReplaceAsync(clip, input, output, ct);
+    await ReplaceAsync(clip, input, output, coverage, ct);
     return true;
   }
 
@@ -226,6 +274,8 @@ public sealed class RoiTranscodeScheduler(
         Roi = new RoiQuality
         {
           BackgroundQpDelta = _backgroundQpDelta,
+          // The same window Coverage() measured with; see _holdSec.
+          HoldSec = _holdSec,
           MaxRegions = 32,
         },
       },
@@ -306,7 +356,8 @@ public sealed class RoiTranscodeScheduler(
 
   /// <summary>Puts the smaller file in the clip's place, or throws none of it away if it cannot.</summary>
   private async Task ReplaceAsync(
-    ClipStorage.RoiCandidate clip, string input, string output, CancellationToken ct)
+    ClipStorage.RoiCandidate clip, string input, string output, float coverage,
+    CancellationToken ct)
   {
     long size;
     try
@@ -334,7 +385,7 @@ public sealed class RoiTranscodeScheduler(
       return;
     }
 
-    if (!await clips.CompleteRoiTranscodeAsync(clip.ClipUid, size, CancellationToken.None))
+    if (!await clips.CompleteRoiTranscodeAsync(clip.ClipUid, size, coverage, CancellationToken.None))
     {
       // The row went away between the check and here. The file is already
       // replaced, which is harmless: ClipCleaner deletes by path.
@@ -342,7 +393,9 @@ public sealed class RoiTranscodeScheduler(
       return;
     }
 
-    logger.LogInformation("ROI transcode: clip {ClipUid} re-encoded, {Size} bytes", clip.ClipUid, size);
+    logger.LogInformation(
+      "ROI transcode: clip {ClipUid} re-encoded, {Size} bytes, coverage {Coverage:P1}",
+      clip.ClipUid, size, coverage);
   }
 
   private async Task FailAsync(ClipStorage.RoiCandidate clip, CancellationToken ct)
@@ -350,13 +403,14 @@ public sealed class RoiTranscodeScheduler(
     var attempts = clip.Attempts + 1;
     if (attempts >= _maxAttempts)
     {
-      await clips.SetRoiStateAsync(clip.ClipUid, "failed", null, true, CancellationToken.None);
+      await clips.SetRoiStateAsync(clip.ClipUid, "failed", null, true, null, CancellationToken.None);
       return;
     }
     var capped = Math.Min(attempts, 16);
     var backoff = Math.Min((long)_retrySeconds << capped, MaxRetrySeconds);
     await clips.SetRoiStateAsync(
-      clip.ClipUid, "pending", DateTime.UtcNow.AddSeconds(backoff), true, CancellationToken.None);
+      clip.ClipUid, "pending", DateTime.UtcNow.AddSeconds(backoff), true, null,
+      CancellationToken.None);
   }
 
   private async Task<string?> RootPathAsync(string storageId, CancellationToken ct)

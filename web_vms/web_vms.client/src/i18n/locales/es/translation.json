@@ -70,7 +70,9 @@
     "edgeBackfillOff": "Desactivado",
     "edgeBackfillHint": "La cámara graba un solo flujo en su almacenamiento — elija cuál",
     "roiTranscode": "Recomprimir grabaciones con ROI",
-    "roiTranscodeHint": "Recodifica los clips terminados manteniendo nítidos los objetos detectados y comprimiendo más el resto. Solo se procesan los clips que tienen detecciones."
+    "roiTranscodeHint": "Recodifica los clips terminados manteniendo nítidos los objetos detectados y comprimiendo más el resto. Solo se procesan los clips que tienen detecciones.",
+    "roiDelayHours": "Retraso antes de recomprimir, horas",
+    "roiDelayHoursHint": "0 recomprime en cuanto el clip se cierra y sus detecciones están guardadas. Se admiten valores fraccionarios."
   },
   "cameraControl": {
     "showControls": "Mostrar controles de cámara",

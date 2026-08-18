@@ -181,6 +181,8 @@ export type CameraSetupDto = {
   edgeBackfillStream?: string
   /** Re-encode finished clips with ROI, keeping detector boxes sharp. */
   roiTranscode?: boolean
+  /** Hours before a closed clip may be re-encoded; 0 means as soon as possible. */
+  roiDelayHours?: number
 }
 
 /** What a user may do with a camera. All false = no access. */

@@ -542,34 +542,31 @@ public sealed class ClipStorage(
   /// Finished clips on this node that nobody has re-encoded yet. Deliberately not
   /// reusing GetRecordingsFromToAsync: that one filters on `retained`, and the
   /// clips worth shrinking are the ordinary ones.
+  ///
+  /// Asked per camera, with that camera's own cutoff. A shared query over all of
+  /// them would have to use the loosest cutoff and filter afterwards, and a
+  /// camera with a long delay and a busy schedule would then fill every batch
+  /// with clips that are not eligible yet, starving the cameras that are.
   /// </summary>
-  public async Task<List<RoiCandidate>> GetRoiCandidatesAsync(
-    IReadOnlyCollection<string> cameraIds,
-    int settleSeconds,
-    int batchSize,
+  public async Task<RoiCandidate?> GetOldestRoiCandidateAsync(
+    string cameraId,
+    DateTime closedBefore,
     CancellationToken ct)
   {
-    if (cameraIds.Count == 0)
-      return [];
-
     var now = DateTime.UtcNow;
-    var settled = now.AddSeconds(-settleSeconds);
 
     await using var db = await dbFactory.CreateDbContextAsync(ct);
-    var rows = await db.Clips
-      .Where(c => cameraIds.Contains(c.CameraId)
+    return await db.Clips
+      .Where(c => c.CameraId == cameraId
         && c.RoiState == "pending"
         && c.EndTs != null
-        && c.EndTs < settled
+        && c.EndTs < closedBefore
         && (c.RoiNextAttemptTs == null || c.RoiNextAttemptTs <= now))
       .OrderBy(c => c.EndTs)
-      .Take(batchSize)
       .Select(c => new RoiCandidate(
         c.ClipUid, c.FilePath, c.CameraId, c.StreamName, c.StorageId,
         c.StartTs, c.EndTs!.Value, c.RoiAttempts))
-      .ToListAsync(ct);
-
-    return rows;
+      .FirstOrDefaultAsync(ct);
   }
 
   /// <summary>
@@ -577,7 +574,8 @@ public sealed class ClipStorage(
   /// of the values the 0009 migration lists.
   /// </summary>
   public async Task SetRoiStateAsync(
-    Guid clipUid, string state, DateTime? nextAttempt, bool countAttempt, CancellationToken ct)
+    Guid clipUid, string state, DateTime? nextAttempt, bool countAttempt,
+    float? coverage, CancellationToken ct)
   {
     await using var db = await dbFactory.CreateDbContextAsync(ct);
     await db.Clips
@@ -585,7 +583,8 @@ public sealed class ClipStorage(
       .ExecuteUpdateAsync(u => u
         .SetProperty(c => c.RoiState, state)
         .SetProperty(c => c.RoiNextAttemptTs, nextAttempt)
-        .SetProperty(c => c.RoiAttempts, c => countAttempt ? c.RoiAttempts + 1 : c.RoiAttempts),
+        .SetProperty(c => c.RoiAttempts, c => countAttempt ? c.RoiAttempts + 1 : c.RoiAttempts)
+        .SetProperty(c => c.RoiCoverage, c => coverage ?? c.RoiCoverage),
         ct);
   }
 
@@ -601,7 +600,8 @@ public sealed class ClipStorage(
   /// Returns false when the clip row is gone -- ClipCleaner may have deleted it
   /// while the job ran, and that is an ordinary outcome, not an error.
   /// </summary>
-  public async Task<bool> CompleteRoiTranscodeAsync(Guid clipUid, long sizeBytes, CancellationToken ct)
+  public async Task<bool> CompleteRoiTranscodeAsync(
+    Guid clipUid, long sizeBytes, float coverage, CancellationToken ct)
   {
     await using var db = await dbFactory.CreateDbContextAsync(ct);
     var affected = await db.Clips
@@ -610,6 +610,7 @@ public sealed class ClipStorage(
         .SetProperty(c => c.SizeBytes, sizeBytes)
         .SetProperty(c => c.FragIndex, (string?)null)
         .SetProperty(c => c.RoiState, "done")
+        .SetProperty(c => c.RoiCoverage, coverage)
         .SetProperty(c => c.RoiNextAttemptTs, (DateTime?)null),
         ct);
     return affected > 0;

@@ -70,7 +70,9 @@
     "edgeBackfillOff": "Off",
     "edgeBackfillHint": "The camera records one stream onto its storage — pick the one it records",
     "roiTranscode": "Re-compress recordings with ROI",
-    "roiTranscodeHint": "Re-encodes finished clips, keeping detected objects sharp and compressing the rest harder. Only clips that have detection boxes are touched."
+    "roiTranscodeHint": "Re-encodes finished clips, keeping detected objects sharp and compressing the rest harder. Only clips that have detection boxes are touched.",
+    "roiDelayHours": "Delay before re-compressing, hours",
+    "roiDelayHoursHint": "0 re-compresses as soon as the clip is closed and its detections are stored. Fractional values are allowed."
   },
   "cameraControl": {
     "showControls": "Show camera controls",

@@ -73,6 +73,12 @@ public record CameraSetupDto
   /// </summary>
   public bool RoiTranscode { get; init; }
 
+  /// <summary>
+  /// Hours a clip stays untouched before it may be re-encoded; 0 means as soon as the
+  /// pass notices it. Fractional -- the useful values are as often minutes as hours.
+  /// </summary>
+  public double RoiDelayHours { get; init; }
+
   /// <summary>Filled by web_vms.Server when merging FS retention status.</summary>
   public bool? ActiveRetentionWindow { get; init; }
   /// <summary>An active retention window with no specific stream retains every stream.</summary>
