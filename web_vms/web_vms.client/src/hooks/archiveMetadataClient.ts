@@ -31,8 +31,19 @@ const PREFETCH_AFTER_MS = 90_000
  * 10 minutes after a seek, so following it would pull ten minutes of geometry to draw ten seconds.
  */
 
-/** Buckets kept before the oldest is evicted (~1 hour of archive per camera/stream). */
-const MAX_BUCKETS = 60
+/**
+ * Buckets kept across the whole page before the oldest is evicted — not per camera.
+ *
+ * Sized for the worst wall rather than for one cell: every cell holds roughly three buckets at a
+ * time, so a 5x5 wall alone needs ~75 and a 32-slot one ~96. A cap that only fitted a single
+ * player made each cell's fetch evict buckets its neighbours were still drawing from, and they
+ * re-fetched them immediately.
+ */
+const MAX_BUCKETS = 256
+
+/** How long after a failed fetch the same range may be tried again, and how many times. */
+const RETRY_MS = 3000
+const MAX_RETRIES = 3
 
 /**
  * A bucket whose end is within this of now is still being written into, so an empty answer for it
@@ -89,7 +100,8 @@ async function fetchRange(
   cameraId: string,
   streamName: string,
   firstBucketMs: number,
-  lastBucketMs: number
+  lastBucketMs: number,
+  attempt = 0
 ): Promise<void> {
   const keys: string[] = []
   for (let b = firstBucketMs; b <= lastBucketMs; b += BUCKET_MS)
@@ -135,7 +147,16 @@ async function fetchRange(
     evictIfNeeded()
     notify(seriesKey(cameraId, streamName))
   } catch {
-    // Nothing cached on failure — the next tick asks again.
+    // Nothing is cached on failure, so the buckets stay "missing" — but nothing would ask for them
+    // again on its own: ensureLoaded only runs when the playhead crosses into another bucket, which
+    // on a paused player never happens. Without this the overlay would stay blank until the operator
+    // scrubbed, or indefinitely.
+    if (attempt + 1 < MAX_RETRIES) {
+      window.setTimeout(
+        () => void fetchRange(cameraId, streamName, firstBucketMs, lastBucketMs, attempt + 1),
+        RETRY_MS
+      )
+    }
   } finally {
     keys.forEach((k) => inFlight.delete(k))
   }

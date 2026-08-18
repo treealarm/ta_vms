@@ -39,35 +39,55 @@ function opacityFor(age: number, ttl: number): number {
   return (ttl - age) / FADE_MS
 }
 
+/**
+ * A box's identity within a source: a person and the face on the same track share a trackId but are
+ * distinct boxes.
+ */
+const keyOf = (b: { trackId: number; kind: string }) => `${b.trackId}|${b.kind}`
+
 function boxesNowForSource(
   frames: LiveFrame[],
   source: AnalyticsDetectionSource,
   nowPerf: number
 ): DrawableBox[] {
-  const last = frames[frames.length - 1]
-  if (!last) return []
+  const ttl = ttlFor(source)
 
-  const opacity = opacityFor(nowPerf - last.arrivedAt, ttlFor(source))
-  if (opacity <= 0) return []
+  // Each box ages on its own, from the frame that last carried it — not from the newest frame in
+  // the buffer. Two things depend on that. A producer that stamps each detection separately puts
+  // the objects of one video frame into several LiveFrames, and taking only the last would draw one
+  // box out of a crowded scene. And a track merely omitted from one report has not gone away; it
+  // must fade on its own schedule, which is the behaviour the per-track TTL always had.
+  const latest = new Map<string, { box: LiveFrame['boxes'][number]; arrivedAt: number }>()
+  for (let i = frames.length - 1; i >= 0; i--) {
+    const frame = frames[i]
+    if (nowPerf - frame.arrivedAt >= ttl) break // older frames can only be staler
+    for (const box of frame.boxes) {
+      const key = keyOf(box)
+      if (!latest.has(key)) latest.set(key, { box, arrivedAt: frame.arrivedAt })
+    }
+  }
 
-  return last.boxes.map(
-    (b) =>
-      ({
-        trackId: b.trackId,
-        kind: b.kind,
-        confidence: b.confidence,
-        bboxX: b.bboxX,
-        bboxY: b.bboxY,
-        bboxWidth: b.bboxWidth,
-        bboxHeight: b.bboxHeight,
-        label: b.label,
-        plateText: b.plateText,
-        objectId: b.objectId,
-        source,
-        opacity,
-        timeMs: Date.parse(b.detectedAt),
-      }) satisfies DrawableBox
-  )
+  const out: DrawableBox[] = []
+  for (const { box: b, arrivedAt } of latest.values()) {
+    const opacity = opacityFor(nowPerf - arrivedAt, ttl)
+    if (opacity <= 0) continue
+    out.push({
+      trackId: b.trackId,
+      kind: b.kind,
+      confidence: b.confidence,
+      bboxX: b.bboxX,
+      bboxY: b.bboxY,
+      bboxWidth: b.bboxWidth,
+      bboxHeight: b.bboxHeight,
+      label: b.label,
+      plateText: b.plateText,
+      objectId: b.objectId,
+      source,
+      opacity,
+      timeMs: Date.parse(b.detectedAt),
+    })
+  }
+  return out
 }
 
 /**

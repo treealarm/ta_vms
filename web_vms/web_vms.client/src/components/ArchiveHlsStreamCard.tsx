@@ -97,6 +97,14 @@ export default function ArchiveHlsStreamCard({
 
   const rangeFilePath = seekTarget?.filePath ?? ranges[startIndex]?.recordings[0]?.filePath
 
+  // Which stream is on screen. Without it the overlay would ask for the camera's geometry across
+  // every stream and interpolate main against sub — two independently numbered sets of track ids
+  // drawn over one picture.
+  const currentStreamName =
+    ranges[startIndex]?.recordings.find((r) => r.filePath === rangeFilePath)?.streamName
+    ?? ranges[startIndex]?.recordings[0]?.streamName
+    ?? ''
+
   const { error, playlistMap } = useHlsPlayer(videoRef, playlistUrl, { autoPlay: true })
 
   const hlsError = error && error.detail !== dismissedError
@@ -224,6 +232,7 @@ export default function ArchiveHlsStreamCard({
             <ArchiveBboxOverlay
               videoRef={videoRef}
               cameraId={cameraId}
+              streamName={currentStreamName}
               playlistMap={playlistMap}
               enabled={bboxEnabled}
             />

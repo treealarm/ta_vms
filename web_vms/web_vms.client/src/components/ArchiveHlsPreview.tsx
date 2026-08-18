@@ -85,7 +85,8 @@ export default function ArchiveHlsPreview({ selected }: Props) {
   const activeEntry = streams.find((s) => s.playlistUrl === activeUrl) ?? null
   const { error, playlistMap } = useHlsPlayer(videoRef, activeEntry?.playlistUrl ?? null, { autoPlay: true })
 
-  const hlsError = error
+  const [dismissedHlsError, setDismissedHlsError] = useState<string | null>(null)
+  const hlsError = error && error.detail !== dismissedHlsError
     ? t(
         error.kind === 'notFound'
           ? 'wall.noRecordingAtTime'
@@ -109,7 +110,10 @@ export default function ArchiveHlsPreview({ selected }: Props) {
   // Local state, not the monitor's slot UI: this panel is opened from the events tab and has no
   // slot, and inventing a key for it would leave entries in monitorUi.slots that nothing cleans up.
   const [bboxOpen, setBboxOpen] = useState(false)
-  const showBboxToggle = coverage === 'some'
+  // Not offered for the "all streams" entry: that playlist interleaves main and sub clips, so there
+  // is no single stream whose geometry belongs over the picture, and drawing the camera's boxes
+  // across both would put one stream's track ids on the other's frames.
+  const showBboxToggle = coverage === 'some' && activeEntry?.streamName != null
 
   if (!selected) {
     return (
@@ -165,7 +169,14 @@ export default function ArchiveHlsPreview({ selected }: Props) {
       )}
 
       {(streamsError ?? hlsError) && (
-        <Alert severity="error" onClose={() => setStreamsError(null)}>
+        <Alert
+          severity="error"
+          onClose={() => {
+            // Both sources feed this one banner, so closing it has to silence whichever is showing.
+            setStreamsError(null)
+            setDismissedHlsError(error?.detail ?? null)
+          }}
+        >
           {streamsError ?? hlsError}
         </Alert>
       )}

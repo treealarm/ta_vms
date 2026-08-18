@@ -32,6 +32,16 @@ google::protobuf::Timestamp to_proto_ts(std::chrono::system_clock::time_point va
   return timestamp;
 }
 
+/// Floor on the gap between two RPCs. Not a delay before sending: a document arriving on an idle
+/// sender goes out at once, because by then this much has always already elapsed. It only bounds
+/// how often the sender may fire, and the documents that accumulate while it waits out the
+/// remainder leave together — which is where the batching comes from on a busy node.
+///
+/// This replaced an unconditional 200 ms flush window. The window applied its full cost to every
+/// document, including a lone one, and since the picture reaches the browser by a path that does
+/// not pass through here, that was a flat addition to how far the boxes trailed their objects.
+constexpr auto kMinSendInterval = std::chrono::milliseconds(50);
+
 /// Queue ceiling. Roughly a second of the noisiest cameras a node is likely to carry; past that
 /// the sidecar is not keeping up and the oldest documents are the least worth keeping.
 constexpr size_t kMaxQueued = 200;
@@ -125,19 +135,23 @@ void onvif_metadata_client::send_loop()
     {
       std::unique_lock<std::mutex> lock(m_mutex);
 
-      // Wait for something to send, then send it — with no batching window on top.
-      //
-      // Batching still happens, it is just self-clocking: send_batch() runs with this lock
-      // released, so everything a chatty camera produces while an RPC is in flight is picked up by
-      // the next pass as one batch. Under load that coalesces exactly as a fixed window would,
-      // while a lone document goes out immediately instead of waiting out the window.
-      //
-      // The window used to be unconditional, and that made it a flat addition to every box's age:
-      // these boxes are drawn over live video, and the picture reaches the browser by a path that
-      // does not stop here. Boxes visibly trailed the objects they described.
+      // Wait for something to send.
       m_cv.wait(lock, [this] { return !m_running || !m_queue.empty(); });
       if (!m_running && m_queue.empty())
         return;
+
+      // Then hold only for as much of kMinSendInterval as has not already passed. After an idle
+      // stretch that is nothing at all and the document leaves immediately; under load it is what
+      // makes the next batch a batch. Relying on the RPC itself to provide that coalescing does not
+      // work — the sidecar is on loopback and answers faster than a chatty node produces documents,
+      // so every one of them would become its own call.
+      const auto since_last = std::chrono::steady_clock::now() - m_last_send;
+      if (since_last < kMinSendInterval)
+      {
+        m_cv.wait_for(lock, kMinSendInterval - since_last, [this] { return !m_running; });
+        if (!m_running && m_queue.empty())
+          return;
+      }
 
       const size_t take = std::min(m_queue.size(), kMaxBatch);
       batch.insert(
@@ -156,7 +170,10 @@ void onvif_metadata_client::send_loop()
     }
 
     if (!batch.empty())
+    {
+      m_last_send = std::chrono::steady_clock::now();
       send_batch(batch);
+    }
   }
 }
 

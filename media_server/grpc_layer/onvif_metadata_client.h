@@ -21,11 +21,12 @@
 /// converging on a single instance), and media_server already talks to it — see onvif_client — so
 /// this adds no new dependency to the C++ core, only another RPC on a channel it already opens.
 ///
-/// Documents are queued and sent as soon as the sender thread is free, with whatever else piled up
-/// behind them going out in the same RPC. The batching is therefore self-clocking rather than timed:
-/// a busy node coalesces because documents accumulate while a call is in flight, and a quiet one
-/// pays no latency for the privilege. An unconditional flush window used to sit here instead, and
-/// it added its full duration to every box drawn over live video.
+/// Documents are queued and sent under a minimum interval between RPCs rather than a flush window
+/// before each one. A document arriving on an idle sender goes out immediately; a busy node
+/// coalesces, because whatever accumulates while the sender waits out the remainder of the interval
+/// leaves in one call. That bounds the call rate without charging the latency to every document,
+/// which the unconditional window that used to sit here did — visibly, on boxes drawn over live
+/// video.
 ///
 /// Best-effort by construction. The queue is bounded and drops its oldest entries when the link to
 /// the sidecar stalls — the RTSP reader thread must never block on the overlay, and a metadata
@@ -73,6 +74,9 @@ private:
   std::condition_variable m_cv;
   std::deque<vms::onvif::MetadataDocument> m_queue;
   uint64_t m_dropped = 0;
+
+  /// Sender thread only. Steady clock: this measures a gap, not a moment.
+  std::chrono::steady_clock::time_point m_last_send{};
 
   std::thread m_thread;
   std::atomic_bool m_running{ false };

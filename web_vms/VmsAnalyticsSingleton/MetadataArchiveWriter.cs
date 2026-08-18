@@ -81,6 +81,16 @@ public sealed class MetadataArchiveWriter : BackgroundService
 
   private readonly ConcurrentDictionary<string, DateTime> _lastFailureLoggedAt = new();
 
+  /// <summary>
+  /// One sampling bucket: the boxes assembled for it, and when this process first saw it. The
+  /// latter is what decides when the bucket is sent — see FlushAsync.
+  /// </summary>
+  private sealed class Bucket(DateTime firstSeenLocal)
+  {
+    public DateTime FirstSeenLocal { get; } = firstSeenLocal;
+    public Dictionary<(long TrackId, string Kind), MetadataSample> Boxes { get; } = [];
+  }
+
   public MetadataArchiveWriter(
     CameraServerCache serverCache,
     ServerPairRegistry serverPairRegistry,
@@ -129,7 +139,7 @@ public sealed class MetadataArchiveWriter : BackgroundService
     // Buckets of decimated frames per (camera, stream, source), each keyed by the sampling bucket
     // index so a whole frame is assembled from boxes that arrive one at a time.
     var pending = new Dictionary<(string CameraId, string StreamName, string Source),
-      SortedDictionary<long, Dictionary<(long TrackId, string Kind), MetadataSample>>>();
+      SortedDictionary<long, Bucket>>();
 
     var bucketMs = 1000.0 / _maxSampleHz;
 
@@ -150,12 +160,12 @@ public sealed class MetadataArchiveWriter : BackgroundService
 
             var bucket = (long)Math.Floor(
               (sample.DetectedAt - DateTime.UnixEpoch).TotalMilliseconds / bucketMs);
-            if (!buckets.TryGetValue(bucket, out var boxes))
-              buckets[bucket] = boxes = [];
+            if (!buckets.TryGetValue(bucket, out var entry))
+              buckets[bucket] = entry = new Bucket(DateTime.UtcNow);
 
             // Last box wins inside a bucket: the detector may report the same track several times
             // in one sampling window, and the freshest position is the one worth keeping.
-            boxes[(sample.TrackId, sample.Kind)] = sample;
+            entry.Boxes[(sample.TrackId, sample.Kind)] = sample;
           }
         }
       }
@@ -174,19 +184,24 @@ public sealed class MetadataArchiveWriter : BackgroundService
 
   private async Task FlushAsync(
     Dictionary<(string CameraId, string StreamName, string Source),
-      SortedDictionary<long, Dictionary<(long TrackId, string Kind), MetadataSample>>> pending,
+      SortedDictionary<long, Bucket>> pending,
     CancellationToken ct)
   {
     if (pending.Count == 0)
       return;
 
+    // Ripeness is measured on this process's clock, from when the bucket was first filled here —
+    // never by comparing a producer's timestamp to local time. CV samples are stamped by video_a on
+    // another host and ONVIF ones by whichever media_server saw them, so a producer clock running
+    // even slightly ahead would leave every bucket permanently unripe: nothing would ever be
+    // archived, and `pending` would grow without bound while looking perfectly healthy.
     var cutoff = DateTime.UtcNow - IngestDelay;
     var emptied = new List<(string, string, string)>();
 
     foreach (var (key, buckets) in pending)
     {
       var ripe = buckets
-        .Where(b => b.Value.Values.Max(s => s.DetectedAt) <= cutoff)
+        .Where(b => b.Value.FirstSeenLocal <= cutoff)
         .ToList();
       if (ripe.Count > 0)
       {
@@ -196,8 +211,9 @@ public sealed class MetadataArchiveWriter : BackgroundService
           StreamName = key.StreamName,
           Source = key.Source,
         };
-        foreach (var (bucket, boxes) in ripe)
+        foreach (var (bucket, entry) in ripe)
         {
+          var boxes = entry.Boxes;
           // The frame's instant is the newest detection in the bucket, so a box never claims to be
           // older than the moment it was actually reported.
           var ts = boxes.Values.Max(s => s.DetectedAt);
