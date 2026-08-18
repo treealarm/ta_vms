@@ -46,10 +46,18 @@ export default function WallTimelineTrack({
           // colour: the lane's colours already mean "this camera" and "the selected one", and a
           // third shade would read as a third camera instead of a different provenance.
           const recovered = seg.origin === 'edge'
+          // Re-encoded footage gets a band along the bottom rather than a fill colour, for the
+          // same reason recovered footage is hatched: the fill already carries camera identity.
+          // A band also composes -- a stretch can be both recovered and re-encoded.
+          const recompressed = seg.roiTranscoded === true
+          const marks = [
+            recovered ? 'Recovered from the camera' : null,
+            recompressed ? 'Re-compressed with ROI' : null,
+          ].filter(Boolean)
           return (
             <Box
               key={`${seg.startMs}-${i}`}
-              title={recovered ? 'Recovered from the camera' : undefined}
+              title={marks.length ? marks.join(' · ') : undefined}
               sx={{
                 position: 'absolute',
                 top: 0,
@@ -62,6 +70,8 @@ export default function WallTimelineTrack({
                 backgroundImage: recovered
                   ? 'repeating-linear-gradient(45deg, rgba(255,255,255,.55) 0 3px, transparent 3px 7px)'
                   : undefined,
+                borderBottom: recompressed ? '2px solid' : undefined,
+                borderBottomColor: recompressed ? 'warning.main' : undefined,
               }}
             />
           )

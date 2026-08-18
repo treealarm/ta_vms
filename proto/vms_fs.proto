@@ -188,6 +188,10 @@ message RecordingInterval {
   // "live" or "edge". Intervals of different provenance are never merged into one: an insert
   // recovered from the camera has to stay visible as an insert.
   string origin = 3;
+  // Whether this stretch has been re-encoded with ROI. Breaks a run for the same reason origin
+  // does: footage that has been through a second lossy pass is a different kind of footage, and
+  // the operator should be able to see which parts of the timeline it covers.
+  bool roi_transcoded = 4;
 }
 
 message RecordingTimelineTrack {

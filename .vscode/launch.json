@@ -137,6 +137,20 @@
                 "VMS_BACKFILL_RETRY_SECONDS": "300",
                 "VMS_BACKFILL_LOOKBACK_HOURS": "48",
                 "VMS_BACKFILL_JOB_RETENTION_HOURS": "24",
+                // ROI re-compression. Without DAPR_ROI_APP_ID the pass switches
+                // itself off, which is the feature gate -- and is why it did
+                // nothing under F5 until these were listed here as well as in
+                // .env.
+                "DAPR_ROI_APP_ID": "roitrc",
+                "VMS_ROI_RETRY_SECONDS": "600",
+                "VMS_ROI_MAX_ATTEMPTS": "3",
+                "VMS_ROI_CRF": "28",
+                "VMS_ROI_QP_DELTA": "-8",
+                "VMS_ROI_BACKGROUND_QP_DELTA": "8",
+                "VMS_ROI_PAD": "0.05",
+                "VMS_ROI_HOLD_SEC": "0.5",
+                "VMS_ROI_MIN_COVERAGE": "0.01",
+                "VMS_ROI_MAX_COVERAGE": "0.90",
                 "VMS_OUTAGE_RETENTION_DAYS": "90",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }

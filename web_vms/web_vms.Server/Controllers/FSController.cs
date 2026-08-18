@@ -269,6 +269,7 @@ public sealed class FSController(
           StartTime = i.StartTs.ToDateTime(),
           EndTime = i.EndTs.ToDateTime(),
           Origin = string.IsNullOrWhiteSpace(i.Origin) ? "live" : i.Origin,
+          RoiTranscoded = i.RoiTranscoded,
         }).ToList(),
       }).ToList(),
     };

@@ -317,13 +317,14 @@ public sealed class ClipStorage(
 
       var bounds = await q
         .OrderBy(c => c.StartTs)
-        .Select(c => new { c.StartTs, c.EndTs, c.Origin })
+        .Select(c => new { c.StartTs, c.EndTs, c.Origin, c.RoiState })
         .ToListAsync(ct);
 
       var track = new RecordingTimelineTrack { CameraId = cameraId };
       track.Intervals.AddRange(MergeIntervals(
         bounds.Select(b => (b.StartTs, b.EndTs ?? b.StartTs.AddMinutes(1),
-          string.IsNullOrWhiteSpace(b.Origin) ? "live" : b.Origin)), minGap));
+          string.IsNullOrWhiteSpace(b.Origin) ? "live" : b.Origin,
+          b.RoiState == "done")), minGap));
       tracks.Add(track);
     }
 
@@ -331,14 +332,16 @@ public sealed class ClipStorage(
   }
 
   private static List<RecordingInterval> MergeIntervals(
-    IEnumerable<(DateTime Start, DateTime End, string Origin)> ordered, TimeSpan minGap)
+    IEnumerable<(DateTime Start, DateTime End, string Origin, bool RoiTranscoded)> ordered,
+    TimeSpan minGap)
   {
     var merged = new List<RecordingInterval>();
     DateTime? curStart = null;
     DateTime curEnd = default;
     var curOrigin = "live";
+    var curRoi = false;
 
-    foreach (var (start, end, origin) in ordered)
+    foreach (var (start, end, origin, roi) in ordered)
     {
       if (end <= start) continue;
 
@@ -347,34 +350,42 @@ public sealed class ClipStorage(
         curStart = start;
         curEnd = end;
         curOrigin = origin;
+        curRoi = roi;
         continue;
       }
 
       // Provenance breaks a run even when the clips touch: an insert from the camera's own storage
-      // is a different kind of footage and the operator has to be able to see where it sits.
-      if (start - curEnd <= minGap && string.Equals(origin, curOrigin, StringComparison.Ordinal))
+      // is a different kind of footage and the operator has to be able to see where it sits. Having
+      // been re-encoded breaks it for the same reason -- and while the pass works through a camera
+      // the timeline will show the boundary moving, which is the honest picture.
+      if (start - curEnd <= minGap
+        && string.Equals(origin, curOrigin, StringComparison.Ordinal)
+        && roi == curRoi)
       {
         if (end > curEnd) curEnd = end;
         continue;
       }
 
-      merged.Add(ToInterval(curStart.Value, curEnd, curOrigin));
+      merged.Add(ToInterval(curStart.Value, curEnd, curOrigin, curRoi));
       curStart = start;
       curEnd = end;
       curOrigin = origin;
+      curRoi = roi;
     }
 
     if (curStart is not null)
-      merged.Add(ToInterval(curStart.Value, curEnd, curOrigin));
+      merged.Add(ToInterval(curStart.Value, curEnd, curOrigin, curRoi));
 
     return merged;
   }
 
-  private static RecordingInterval ToInterval(DateTime start, DateTime end, string origin) => new()
+  private static RecordingInterval ToInterval(
+    DateTime start, DateTime end, string origin, bool roiTranscoded) => new()
   {
     StartTs = Timestamp.FromDateTime(DateTime.SpecifyKind(start, DateTimeKind.Utc)),
     EndTs = Timestamp.FromDateTime(DateTime.SpecifyKind(end, DateTimeKind.Utc)),
     Origin = origin,
+    RoiTranscoded = roiTranscoded,
   };
 
   public async Task<List<Recording>> GetRecordingsAroundAsync(GetRecordingsAroundRequest request, CancellationToken ct)
@@ -543,6 +554,10 @@ public sealed class ClipStorage(
   /// reusing GetRecordingsFromToAsync: that one filters on `retained`, and the
   /// clips worth shrinking are the ordinary ones.
   ///
+  /// Retained only: an unretained clip is one ClipCleaner is about to delete, so
+  /// re-encoding it would be work thrown away — and since the cleaner touches
+  /// nothing else, this is also most of the race with it gone.
+  ///
   /// Asked per camera, with that camera's own cutoff. A shared query over all of
   /// them would have to use the loosest cutoff and filter afterwards, and a
   /// camera with a long delay and a busy schedule would then fill every batch
@@ -558,6 +573,7 @@ public sealed class ClipStorage(
     await using var db = await dbFactory.CreateDbContextAsync(ct);
     return await db.Clips
       .Where(c => c.CameraId == cameraId
+        && c.Retained
         && c.RoiState == "pending"
         && c.EndTs != null
         && c.EndTs < closedBefore

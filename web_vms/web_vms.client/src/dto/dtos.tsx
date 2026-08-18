@@ -303,6 +303,8 @@ export type RecordingIntervalDto = {
   endTime: string
   /** `live`, or `edge` for footage recovered from the camera's own storage. */
   origin?: string
+  /** Re-encoded with ROI: kept sharp where the detector saw something, compressed harder elsewhere. */
+  roiTranscoded?: boolean
 }
 
 export type RecordingTimelineTrackDto = {

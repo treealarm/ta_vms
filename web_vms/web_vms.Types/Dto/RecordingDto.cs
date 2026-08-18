@@ -79,6 +79,8 @@ namespace web_vms.Types.Dto
     public DateTime EndTime { get; set; }
     /// <summary>"live", or "edge" for footage recovered from the camera's own storage.</summary>
     public string Origin { get; set; } = "live";
+    /// <summary>Whether this stretch has been re-encoded with ROI.</summary>
+    public bool RoiTranscoded { get; set; }
   }
 
   public class RecordingTimelineTrackDto

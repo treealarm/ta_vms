@@ -17,6 +17,11 @@ export type Segment = {
    * hole is a hole regardless of who would have filled it.
    */
   origin?: string
+  /**
+   * Whether the footage has been re-encoded with ROI. Carried alongside `origin` and for the same
+   * reason: it only matters to what gets drawn, never to the interval maths.
+   */
+  roiTranscoded?: boolean
 }
 
 /** Clips whose end is unknown are assumed to run until the next clip starts, or 60 s (one clip). */
