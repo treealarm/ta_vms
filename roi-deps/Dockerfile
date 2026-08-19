@@ -24,11 +24,18 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV VCPKG_DEFAULT_BINARY_CACHE=/vcpkg/binary-cache
 ENV CMAKE_TOOLCHAIN_FILE=/vcpkg/scripts/buildsystems/vcpkg.cmake
 
-# libdrm-dev is not optional and has no vcpkg port: the libva port's own portfile
-# prints `sudo apt install libdrm-dev` and then fails at meson configure, with an
-# error that does not name the cause.
+# Two of these are easy to lose and neither fails obviously:
+#
+# libdrm-dev has no vcpkg port at all -- the libva port's own portfile prints
+# `sudo apt install libdrm-dev` and then fails at meson configure with an error
+# that does not name the cause.
+#
+# python3 is what vcpkg builds its meson tool with, and meson is what libva
+# builds with. ta-deps never lists it because software-properties-common (there
+# for the gcc-13 PPA) drags it in; 24.04 needs no PPA, so here it has to be asked
+# for by name.
 RUN apt-get update && apt-get install -y \
-    curl zip unzip tar git \
+    curl zip unzip tar git python3 \
     build-essential cmake ninja-build pkg-config nasm \
     libdrm-dev \
     && rm -rf /var/lib/apt/lists/*
