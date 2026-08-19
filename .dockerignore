@@ -30,6 +30,11 @@ media_server/build/
 media_server/out/
 media_server/bin/
 media_server/obj/
+roi_transcode/build/
+roi_transcode/out/
+# Synthetic scenes and check.sh run output: hundreds of megabytes that the image
+# has no use for and that every docker build would otherwise ship as context.
+roi_transcode/testdata/
 
 # -------------------
 # Node / фронт

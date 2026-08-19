@@ -16,9 +16,21 @@ WORKDIR /build/roi_transcode
 RUN cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DROI_BUILD_SVC=ON
 RUN cmake --build build -j1 --target roi-transcode-svc
 
+# libva travels with the binary, and that is not optional. vcpkg builds ffmpeg
+# against its own libva (2.24), while Ubuntu 24.04 ships 2.20 -- and libva is
+# linked dynamically, so the runtime's older one wins and the first hardware
+# encode dies on `undefined symbol: vaMapBuffer2`. Lazily, too: the service
+# starts fine and only fails once a job arrives.
+#
+# Shipping ours is safe in the direction that matters. libva looks up the
+# driver's entry point by trying __vaDriverInit_<major>_<minor> downwards from
+# its own version, so a newer libva loads the distro's older iHD; the reverse is
+# what does not work.
 RUN mkdir -p /runtime-libs && \
     cp $(g++ -print-file-name=libstdc++.so.6) /runtime-libs/ && \
-    cp $(g++ -print-file-name=libgcc_s.so.1) /runtime-libs/
+    cp $(g++ -print-file-name=libgcc_s.so.1) /runtime-libs/ && \
+    cp -P /vcpkg/installed/x64-linux/lib/libva.so.2* /runtime-libs/ && \
+    cp -P /vcpkg/installed/x64-linux/lib/libva-drm.so.2* /runtime-libs/
 
 # =========================
 # Runtime
