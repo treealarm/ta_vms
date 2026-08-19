@@ -368,3 +368,6 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 *.lscache
+
+# Per-machine compose overrides (e.g. opting a GPU host into /dev/dri)
+docker-compose.override.yml

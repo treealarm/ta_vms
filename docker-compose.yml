@@ -551,14 +551,18 @@ services:
       - .env
     environment:
       APP_ID: roitrc
-    # The only service in the stack that touches the GPU. Without the device it
-    # still runs -- the encoder falls back to libx264 -- just far slower, so this
-    # is a performance dependency rather than a hard one. `render` owns
-    # /dev/dri/renderD128 on the host.
-    devices:
-      - "/dev/dri:/dev/dri"
-    group_add:
-      - "render"
+    # The only service in the stack that touches the GPU -- and it does not ask
+    # for one here. `devices:` is resolved by the daemon when the container is
+    # created, so naming a device the host lacks fails the create outright: the
+    # in-process fallback to libx264 never gets to run, because no process ever
+    # starts. Compose has no optional device, and dev does not need the speed.
+    #
+    # It cannot work here anyway when Docker Desktop is the daemon: that runs in
+    # a VM with no /dev/dri, so even --privileged finds nothing to pass through.
+    #
+    # On a native Linux host with an Intel iGPU, opt in with an untracked
+    # docker-compose.override.yml (compose merges it automatically); see
+    # ../ta_install/docker-compose.gpu.yml.example for the block.
     volumes: *data-volume
     depends_on:
       - vmscfg
