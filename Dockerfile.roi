@@ -4,14 +4,14 @@
 # service that touches the GPU, and its runtime image therefore needs a VA-API
 # driver that the others have no use for.
 
-FROM ta-deps AS builder
+FROM roi-deps AS builder
 
 WORKDIR /build
 COPY . /build
 
 WORKDIR /build/roi_transcode
 
-# Release, deliberately: ta-deps uses a release-only vcpkg overlay triplet, so a
+# Release, deliberately: roi-deps uses a release-only vcpkg overlay triplet, so a
 # Debug configure would look for debug libraries that were never built.
 RUN cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DROI_BUILD_SVC=ON
 RUN cmake --build build -j1 --target roi-transcode-svc

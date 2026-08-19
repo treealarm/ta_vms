@@ -9,7 +9,6 @@ ENV CMAKE_TOOLCHAIN_FILE=/vcpkg/scripts/buildsystems/vcpkg.cmake
 RUN apt-get update && apt-get install -y \
     software-properties-common curl zip unzip tar git \
     build-essential cmake ninja-build pkg-config nasm \
-    libdrm-dev \
     && add-apt-repository ppa:ubuntu-toolchain-r/test -y \
     && apt-get update && apt-get install -y gcc-13 g++-13 \
     && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 \
@@ -28,14 +27,10 @@ COPY triplets/ /vcpkg-overlay-triplets/
 # Shared C++ deps base for both this repo's media_server (`vms`) and video_a's analytics-worker
 # (hence openvino, which media_server itself doesn't link but video_a does).
 #
-# qsv/vaapi are for roi_transcode: ROI encoding on Intel goes through hevc_qsv ->
-# mfxExtEncoderROI, with hevc_vaapi as the fallback on the same iGPU. They pull vcpkg's libvpl
-# and libva, and libva in turn needs system libdrm headers — without libdrm-dev above it fails
-# at meson configure, which is not obvious from the error vcpkg prints.
-#
-# Building these is not enough to use them: the encoders live in libavcodec, but HEVC ROI on
-# Alder Lake needs a current iHD driver in the *runtime* image plus /dev/dri. Without that
-# `--encoder auto` silently falls back to x265 and everything still looks fine.
+# Nothing GPU-related belongs here. qsv/vaapi and the system libdrm they need used to sit in this
+# list for roi_transcode, which made two consumers with no GPU carry a hardware dependency and a
+# driver-ABI question that is none of their business. That moved to roi-deps/Dockerfile, which is
+# also where nlohmann-json went — roi_transcode is the only thing that ever linked it.
 RUN --mount=type=cache,target=/vcpkg/buildtrees \
     --mount=type=cache,target=/vcpkg/packages \
     --mount=type=cache,target=/vcpkg/downloads \
@@ -45,7 +40,6 @@ RUN --mount=type=cache,target=/vcpkg/buildtrees \
         --overlay-triplets=/vcpkg-overlay-triplets \
         protobuf \
         grpc \
-		spdlog \
-        nlohmann-json \
-        ffmpeg[gpl,x264,x265,opus,vpx,aom,openssl,qsv,vaapi]:x64-linux \
+        spdlog \
+        ffmpeg[gpl,x264,x265,opus,vpx,aom,openssl]:x64-linux \
         openvino:x64-linux

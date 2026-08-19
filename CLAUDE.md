@@ -28,8 +28,18 @@ shared Square network). Never re-grow a prod compose inside ta_vms.
 consumers: this repo's `media_server` (`vms` service) and the separate `video_a` repo's
 `analytics-worker`, which builds `FROM ta-deps` via a sibling checkout (see `video_a/scripts/build.sh`).
 It installs protobuf/grpc/spdlog/ffmpeg for media_server plus openvino for video_a — when changing
-its package list, consider both consumers. It uses an overlay vcpkg triplet
-(`ta-deps/triplets/x64-linux.cmake`) to build release-only (no debug artifacts — vcpkg's
+its package list, consider both consumers.
+
+**`roi_transcode` does not use it.** It has its own base, `roi-deps/Dockerfile`, and the split is
+load-bearing: it is the only consumer that needs qsv/vaapi (and the system `libdrm-dev` vcpkg's
+libva demands), and it is the only one that does not link openvino — which is 143 of the 234
+minutes ta-deps takes to build. Keep GPU-related packages out of `ta-deps`, and openvino out of
+`roi-deps`. `roi-deps` is also on ubuntu 24.04 rather than 22.04, matching the runtime image in
+`Dockerfile.roi`: glibc is only forward-compatible, so builder and runtime being the same release
+is what keeps that safe.
+
+Both images use an overlay vcpkg triplet
+(`<image>/triplets/x64-linux.cmake`) to build release-only (no debug artifacts — vcpkg's
 `VCPKG_BUILD_TYPE` env var is a no-op, it only works from inside a triplet file); consumers must
 still pass `-DCMAKE_BUILD_TYPE=Release` on their own `cmake` configure step to select the release
 libs.

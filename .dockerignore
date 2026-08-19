@@ -32,6 +32,9 @@ media_server/bin/
 media_server/obj/
 roi_transcode/build/
 roi_transcode/out/
+# Unpacked Intel media runtime from an approach that was dropped: untracked, and
+# the runtime image installs the driver from apt instead.
+roi_transcode/runtime/
 # Synthetic scenes and check.sh run output: hundreds of megabytes that the image
 # has no use for and that every docker build would otherwise ship as context.
 roi_transcode/testdata/

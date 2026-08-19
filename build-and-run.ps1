@@ -25,6 +25,24 @@ if (-not $?) {
     Write-Host "=== ta-deps already exists, skipping build ==="
 }
 
+# 1⃣.5 Base image for roi_transcode. Separate from ta-deps because it is the only one that
+# needs qsv/vaapi, and ta-deps is the only one that needs openvino.
+Write-Host "=== Checking roi-deps image ==="
+
+$exists = docker image inspect roi-deps 2>$null
+
+if (-not $?) {
+    Write-Host "=== Building roi-deps ==="
+    Set-Location "$RootDir\roi-deps"
+    docker build -t roi-deps .
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "=== Failed to build roi-deps. Aborting. ==="
+        exit $LASTEXITCODE
+    }
+} else {
+    Write-Host "=== roi-deps already exists, skipping build ==="
+}
+
 # 2️⃣ Сборка проекта через docker-compose
 Write-Host "=== Building ta_vms via docker-compose ==="
 Set-Location $RootDir
