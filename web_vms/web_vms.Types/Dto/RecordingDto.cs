@@ -22,6 +22,12 @@ namespace web_vms.Types.Dto
     public string ClipUid { get; set; } = "";
     /// <summary>"live", or "edge" for a range recovered from the camera's own storage.</summary>
     public string Origin { get; set; } = "live";
+
+    /// <summary>
+    /// Whether this clip has been re-encoded with ROI — a second lossy pass, so worth telling
+    /// an operator about for the same reason <see cref="Origin"/> is.
+    /// </summary>
+    public bool RoiTranscoded { get; set; }
   }
 
   public class RecordingsResponseDto

@@ -43,7 +43,8 @@ public sealed class FSController(
     EndTime    = r.EndTs?.ToDateTime(),
     SizeBytes  = r.SizeBytes,
     ClipUid    = r.ClipUid,
-    Origin     = string.IsNullOrWhiteSpace(r.Origin) ? "live" : r.Origin
+    Origin     = string.IsNullOrWhiteSpace(r.Origin) ? "live" : r.Origin,
+    RoiTranscoded = r.RoiTranscoded
   };
 
   private static RecordingDto? NearestRecording(IReadOnlyList<RecordingDto> recordings, DateTime targetUtc)

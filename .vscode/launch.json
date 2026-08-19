@@ -149,8 +149,12 @@
                 "VMS_ROI_BACKGROUND_QP_DELTA": "8",
                 "VMS_ROI_PAD": "0.05",
                 "VMS_ROI_HOLD_SEC": "0.5",
-                "VMS_ROI_MIN_COVERAGE": "0.01",
-                "VMS_ROI_MAX_COVERAGE": "0.90",
+                // Wide open while the distribution is being collected: every
+                // clip is processed and every one records its coverage. A floor
+                // of 0 admits clips with no boxes, which are compressed
+                // uniformly with nothing protected.
+                "VMS_ROI_MIN_COVERAGE": "0",
+                "VMS_ROI_MAX_COVERAGE": "1",
                 "VMS_OUTAGE_RETENTION_DAYS": "90",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
@@ -285,8 +289,10 @@
                 { "name": "APP_ID", "value": "roitrc" },
                 { "name": "GRPC_ROI_BIND", "value": "127.0.0.1" },
                 { "name": "GRPC_ROI_PORT", "value": "5142" },
-                // Under F5 the archive lives in the checkout, not in /data.
-                { "name": "ROI_ALLOWED_ROOTS", "value": "${workspaceFolder}/data:/tmp" },
+                // Under F5 the archive is not in /data as it is in compose: it sits
+                // beside the checkout, at the same paths VMS_STORAGE_BASE_PATH and
+                // VMS_EXPORT_BASE_PATH give the other services.
+                { "name": "ROI_ALLOWED_ROOTS", "value": "${workspaceFolder}/../media_storage:${workspaceFolder}/../exports:/tmp" },
                 // This service's own sidecar, per web_vms/dapr.yaml.
                 { "name": "DAPR_GRPC_PORT", "value": "51009" },
                 { "name": "PUBSUB_NAME", "value": "orderpubsub" },
@@ -301,9 +307,14 @@
             "stopAtEntry": false,
             "MIMode": "gdb",
             "externalConsole": false,
+            // All three, as for the media server: "enabled off" alone is not
+            // enough, and gdb then hangs fetching debug info over the network
+            // with the program never continued past its first trap.
             "setupCommands": [
                 { "text": "-enable-pretty-printing" },
-                { "text": "set debuginfod enabled off", "ignoreFailures": true }
+                { "text": "set debuginfod enabled off", "ignoreFailures": true },
+                { "text": "set debuginfod urls \"\"", "ignoreFailures": true },
+                { "text": "set debuginfod verbose 0", "ignoreFailures": true }
             ]
         },
         {
@@ -437,7 +448,7 @@
                 { "name": "APP_ID", "value": "roitrc" },
                 { "name": "GRPC_ROI_BIND", "value": "127.0.0.1" },
                 { "name": "GRPC_ROI_PORT", "value": "5142" },
-                { "name": "ROI_ALLOWED_ROOTS", "value": "${workspaceFolder}/data" },
+                { "name": "ROI_ALLOWED_ROOTS", "value": "${workspaceFolder}/../media_storage;${workspaceFolder}/../exports" },
                 { "name": "DAPR_GRPC_PORT", "value": "51009" },
                 { "name": "PUBSUB_NAME", "value": "orderpubsub" }
             ],

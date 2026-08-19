@@ -347,6 +347,9 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
               const showDate = index === 0 || new Date(first.startTime).toDateString() !== new Date(prev?.recordings[0]?.startTime ?? '').toDateString()
               const isNearest = rec.recordings.some((r) => r.filePath === filePath)
               const isSelected = selected === first.startTime
+              // Counted rather than all-or-nothing: the ROI pass works clip by clip, so a range
+              // spends a long time part way through, and that is exactly when watching it is useful.
+              const roiDone = rec.recordings.filter((r) => r.roiTranscoded).length
 
               return (
                 <div key={`${first.startTime}:${last?.endTime ?? ''}`} data-start={first.startTime}>
@@ -371,6 +374,12 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
                         {last?.endTime && <div>{t('recordings.endTime')}: {fmtFull(last.endTime)}</div>}
                         <div>{t('recordings.clips')}: {rec.recordings.length}</div>
                         {first.origin === 'edge' && <div>{t('recordings.recovered')}</div>}
+                        {roiDone > 0 && (
+                          <div>
+                            {t('recordings.roiTranscoded')}
+                            {roiDone < rec.recordings.length && `: ${roiDone}/${rec.recordings.length}`}
+                          </div>
+                        )}
                       </Box>
                     }
                     placement="left"
@@ -386,9 +395,28 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
                       }}
                     >
                       <ListItemText
-                        primary={first.origin === 'edge'
-                          ? `${fmtTime(first.startTime)} ⤵`
-                          : fmtTime(first.startTime)}
+                        primary={
+                          <>
+                            {fmtTime(first.startTime)}
+                            {first.origin === 'edge' && ' ⤵'}
+                            {roiDone > 0 && (
+                              // Its own colour rather than the row's: the row's colour already says
+                              // "recovered", and a range can be both. Dimmed while the pass is only
+                              // part way through this range, so progress is visible instead of the
+                              // mark appearing all at once at the end.
+                              <Box
+                                component="span"
+                                sx={{
+                                  ml: 0.5,
+                                  color: 'success.main',
+                                  opacity: roiDone === rec.recordings.length ? 1 : 0.5,
+                                }}
+                              >
+                                ◱
+                              </Box>
+                            )}
+                          </>
+                        }
                         slotProps={{
                           primary: {
                             variant: 'body2',

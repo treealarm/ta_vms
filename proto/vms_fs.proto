@@ -93,6 +93,11 @@ message Recording {
   // it was recorded by a different device, arrives later, and may overlap its neighbours — so it is
   // kept visibly separate rather than merged into the same stretch of archive.
   string origin = 9;
+  // Whether this clip has been re-encoded with ROI: kept sharp where the detector saw something and
+  // compressed harder elsewhere. Worth surfacing for the same reason origin is — it is footage that
+  // has been through a second lossy pass, and an operator judging what they are looking at should
+  // be told.
+  bool roi_transcoded = 10;
 }
 
 message IngestClipRequest {

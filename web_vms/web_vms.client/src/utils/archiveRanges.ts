@@ -232,10 +232,46 @@ export function clampIntoSegment(seg: Segment, ms: number): number {
 }
 
 /** Coverage of several cameras collapsed into one track ("all cameras on the wall"). */
+/** Whether two stretches would be drawn the same way. */
+function sameMark(a: Segment, b: Segment): boolean {
+  return (a.origin ?? 'live') === (b.origin ?? 'live')
+    && (a.roiTranscoded === true) === (b.roiTranscoded === true)
+}
+
+/**
+ * Every camera's coverage on one lane.
+ *
+ * Unlike mergeSegments this will not coalesce stretches that are drawn differently — recovered
+ * footage is hatched and re-compressed footage is banded, and merging those into a neighbour would
+ * silently relabel them. The interval maths keeps ignoring the marks, as the Segment doc says; only
+ * this path draws, so only this path has to care.
+ *
+ * Where cameras genuinely disagree over the same instant the earlier stretch keeps its mark and the
+ * later one starts after it. One lane standing for every camera cannot say two things about one
+ * moment, and picking one is more honest than merging them into whichever came first.
+ */
 export function unionSegments(lists: readonly (readonly Segment[])[]): Segment[] {
   const all: Segment[] = []
   for (const list of lists) all.push(...list)
-  return mergeSegments(all, 0)
+
+  const sorted = all
+    .filter((s) => Number.isFinite(s.startMs) && Number.isFinite(s.endMs) && s.endMs > s.startMs)
+    .sort((a, b) => a.startMs - b.startMs)
+  if (sorted.length === 0) return []
+
+  const out: Segment[] = [{ ...sorted[0] }]
+  for (let i = 1; i < sorted.length; i++) {
+    const cur = sorted[i]
+    const last = out[out.length - 1]
+
+    if (cur.startMs <= last.endMs && sameMark(cur, last)) {
+      if (cur.endMs > last.endMs) last.endMs = cur.endMs
+      continue
+    }
+    const startMs = Math.max(cur.startMs, last.endMs)
+    if (cur.endMs > startMs) out.push({ ...cur, startMs })
+  }
+  return out
 }
 
 export function lastCoveredMs(segs: readonly Segment[]): number | null {

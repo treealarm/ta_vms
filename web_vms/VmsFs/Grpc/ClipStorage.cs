@@ -669,7 +669,8 @@ public sealed class ClipStorage(
 
     await using var cmd = dataSource.CreateCommand("""
       SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id, c.origin,
-             ''
+             '',
+             c.roi_state
       FROM clips c
       JOIN retention_events re ON re.event_uuid = $1
         AND re.camera_id = c.camera_id
@@ -1008,7 +1009,8 @@ public sealed class ClipStorage(
     await using var cmd = dataSource.CreateCommand($"""
       SELECT * FROM (
         SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id, c.origin,
-               COALESCE(string_agg(DISTINCT re.event_id, ','), '') AS event_ids
+               COALESCE(string_agg(DISTINCT re.event_id, ','), '') AS event_ids,
+               c.roi_state
         FROM clips c
         LEFT JOIN retention_events re ON re.camera_id = c.camera_id
           AND c.start_ts <= re.alarm_end_ts + ($5 * interval '1 second')
@@ -1075,7 +1077,8 @@ public sealed class ClipStorage(
 
     await using var cmd = dataSource.CreateCommand($"""
       SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id, c.origin,
-             COALESCE(string_agg(DISTINCT re.event_id, ','), '')
+             COALESCE(string_agg(DISTINCT re.event_id, ','), ''),
+             c.roi_state
       FROM clips c
       LEFT JOIN retention_events re ON re.camera_id = c.camera_id
         AND c.start_ts <= re.alarm_end_ts + ($4 * interval '1 second')
@@ -1112,7 +1115,11 @@ public sealed class ClipStorage(
         SizeBytes  = (ulong)reader.GetInt64(5),
         ClipUid    = reader.IsDBNull(6) ? "" : reader.GetString(6),
         StorageId  = reader.IsDBNull(7) ? "" : reader.GetString(7),
-        Origin     = reader.IsDBNull(8) ? "" : reader.GetString(8)
+        Origin     = reader.IsDBNull(8) ? "" : reader.GetString(8),
+        // Column 10, appended rather than slotted in beside origin: this reader
+        // is shared by three queries and indexes by position, so inserting a
+        // column would silently shift every field after it.
+        RoiTranscoded = !reader.IsDBNull(10) && reader.GetString(10) == "done"
       };
       if (!reader.IsDBNull(4))
         rec.EndTs = Timestamp.FromDateTime(reader.GetDateTime(4).ToUniversalTime());
@@ -1243,6 +1250,7 @@ public sealed class ClipStorage(
     EndTs      = c.EndTs.HasValue ? Timestamp.FromDateTime(c.EndTs.Value.ToUniversalTime()) : null,
     SizeBytes  = (ulong)c.SizeBytes,
     ClipUid    = c.ClipUid.ToString(),
-    StorageId  = c.StorageId
+    StorageId  = c.StorageId,
+    RoiTranscoded = c.RoiState == "done"
   };
 }

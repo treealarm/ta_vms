@@ -248,6 +248,8 @@ export type RecordingDto = {
   clipUid: string
   /** `live`, or `edge` for a range recovered from the camera's own storage. */
   origin?: string
+  /** Re-encoded with ROI: sharp where the detector saw something, compressed harder elsewhere. */
+  roiTranscoded?: boolean
 }
 
 export type RecordingRangeDto = {
