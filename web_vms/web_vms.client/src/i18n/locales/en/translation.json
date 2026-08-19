@@ -72,7 +72,12 @@
     "roiTranscode": "Re-compress recordings with ROI",
     "roiTranscodeHint": "Re-encodes finished clips, keeping detected objects sharp and compressing the rest harder. Only clips that have detection boxes are touched.",
     "roiDelayHours": "Delay before re-compressing, hours",
-    "roiDelayHoursHint": "0 re-compresses as soon as the clip is closed and its detections are stored. Fractional values are allowed."
+    "roiDelayHoursHint": "0 re-compresses as soon as the clip is closed and its detections are stored. Fractional values are allowed.",
+    "tabMain": "Main",
+    "tabAdvanced": "Advanced",
+    "roiMinCoverage": "Min ROI coverage, %",
+    "roiMaxCoverage": "Max ROI coverage, %",
+    "roiCoverageHint": "Coverage is the share of a clip's length that has detection boxes on it. Only clips inside this band are re-compressed: below it the detector saw too little to trust, above it there is no background left to squeeze. 0 turns a bound off."
   },
   "cameraControl": {
     "showControls": "Show camera controls",

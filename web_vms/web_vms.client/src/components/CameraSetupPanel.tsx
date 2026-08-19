@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Box, FormControlLabel, MenuItem, Stack, Switch, TextField, Typography } from '@mui/material'
+import { Box, FormControlLabel, MenuItem, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera, changeCameraParent, fetchCameraState, removeCamera } from '../store/liveSlice'
@@ -11,6 +11,7 @@ import CameraSchedulesControl from './CameraSchedulesControl'
 import PasswordField from './PasswordField'
 import CameraStream from './CameraStream'
 import DetailToolbar from './settings/DetailToolbar'
+import FieldHint from './settings/FieldHint'
 import { useDirtyGuard } from './settings/useDirtyGuard'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 
@@ -45,7 +46,13 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const [disabled, setDisabled] = useState(existing?.disabled === true)
   const [edgeBackfillStream, setEdgeBackfillStream] = useState(existing?.edgeBackfillStream ?? '')
   const [roiTranscode, setRoiTranscode] = useState(existing?.roiTranscode === true)
+  // Percent in the field, fraction on the wire: the API speaks 0..1, operators do not.
+  const pctOf = (v: number | undefined, fallback: number) =>
+    String(Math.round((v ?? fallback) * 1000) / 10)
   const [roiDelayHours, setRoiDelayHours] = useState(String(existing?.roiDelayHours ?? 0))
+  const [roiMinCoverage, setRoiMinCoverage] = useState(pctOf(existing?.roiMinCoverage, 0))
+  const [roiMaxCoverage, setRoiMaxCoverage] = useState(pctOf(existing?.roiMaxCoverage, 1))
+  const [tab, setTab] = useState<'main' | 'advanced'>('main')
   const [pendingStorages, setPendingStorages] = useState<CameraStorageAssignmentDto[]>([])
   const [pendingSchedules, setPendingSchedules] = useState<string[]>([])
 
@@ -79,6 +86,8 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     edgeBackfillStream: existing?.edgeBackfillStream ?? '',
     roiTranscode: existing?.roiTranscode === true,
     roiDelayHours: String(existing?.roiDelayHours ?? 0),
+    roiMinCoverage: pctOf(existing?.roiMinCoverage, 0),
+    roiMaxCoverage: pctOf(existing?.roiMaxCoverage, 1),
   })
 
   const dirty = !isNew && (
@@ -93,6 +102,8 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     || edgeBackfillStream !== snap.edgeBackfillStream
     || roiTranscode !== snap.roiTranscode
     || roiDelayHours !== snap.roiDelayHours
+    || roiMinCoverage !== snap.roiMinCoverage
+    || roiMaxCoverage !== snap.roiMaxCoverage
   )
 
   // Which of this camera's streams the camera itself records onto its storage. Empty = the feature
@@ -119,6 +130,8 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     roiTranscode,
     // Kept as text while editing so a half-typed "0." is not thrown away.
     roiDelayHours: Number(roiDelayHours) || 0,
+    roiMinCoverage: (Number(roiMinCoverage) || 0) / 100,
+    roiMaxCoverage: (Number(roiMaxCoverage) || 0) / 100,
   })
 
   const applyInternal = async (): Promise<boolean> => {
@@ -142,7 +155,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     const action = serverChanged ? changeCameraParent : addCamera
     const result = await dispatch(action(payload))
     if (!action.rejected.match(result)) {
-      setSnap({ name, serverId, mediaMtxServerId, user, pass, ip, port, disabled, edgeBackfillStream, roiTranscode, roiDelayHours })
+      setSnap({ name, serverId, mediaMtxServerId, user, pass, ip, port, disabled, edgeBackfillStream, roiTranscode, roiDelayHours, roiMinCoverage, roiMaxCoverage })
       await dispatch(fetchCameraState(initialCameraId))
       return true
     }
@@ -168,6 +181,8 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     setEdgeBackfillStream(snap.edgeBackfillStream)
     setRoiTranscode(snap.roiTranscode)
     setRoiDelayHours(snap.roiDelayHours)
+    setRoiMinCoverage(snap.roiMinCoverage)
+    setRoiMaxCoverage(snap.roiMaxCoverage)
   }
 
   const handleRemove = async () => {
@@ -198,6 +213,17 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
         <Stack direction="row" spacing={3} alignItems="flex-start">
           {/* Left: form fields */}
           <Stack spacing={2} sx={{ flex: 1, minWidth: 0, maxWidth: 380 }}>
+            <Tabs
+              value={tab}
+              onChange={(_, v: 'main' | 'advanced') => setTab(v)}
+              sx={{ borderBottom: 1, borderColor: 'divider' }}
+            >
+              <Tab value="main" label={t('cameras.tabMain')} />
+              <Tab value="advanced" label={t('cameras.tabAdvanced')} />
+            </Tabs>
+
+            {tab === 'main' && (
+            <Stack spacing={2}>
             <TextField
               label={t('cameras.cameraName')}
               value={name}
@@ -212,19 +238,21 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
               ))}
             </TextField>
 
-            <TextField
-              select
-              label={t('cameras.mediaMtxServer')}
-              value={mediaMtxServerId}
-              onChange={(e) => setMediaMtxServerId(e.target.value)}
-              size="small"
-              helperText={t('cameras.mediaMtxHelper')}
-            >
-              <MenuItem value="">{t('cameras.autoAssign')}</MenuItem>
-              {mtxServers.map((s) => (
-                <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
-              ))}
-            </TextField>
+            <FieldHint hint={t('cameras.mediaMtxHelper')}>
+              <TextField
+                select
+                fullWidth
+                label={t('cameras.mediaMtxServer')}
+                value={mediaMtxServerId}
+                onChange={(e) => setMediaMtxServerId(e.target.value)}
+                size="small"
+              >
+                <MenuItem value="">{t('cameras.autoAssign')}</MenuItem>
+                {mtxServers.map((s) => (
+                  <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+                ))}
+              </TextField>
+            </FieldHint>
 
             <Stack direction="row" spacing={1}>
               <TextField label={t('cameras.ip')} value={ip} onChange={(e) => setIp(e.target.value)} size="small" sx={{ flex: 1 }} />
@@ -246,41 +274,6 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
               control={<Switch checked={disabled} onChange={(e) => setDisabled(e.target.checked)} color="warning" />}
               label={t('cameras.disabled')}
             />
-            <FormControlLabel
-              control={<Switch checked={roiTranscode} onChange={(e) => setRoiTranscode(e.target.checked)} />}
-              label={t('cameras.roiTranscode')}
-            />
-            {roiTranscode && (
-              <TextField
-                label={t('cameras.roiDelayHours')}
-                helperText={t('cameras.roiDelayHoursHint')}
-                type="number"
-                size="small"
-                value={roiDelayHours}
-                onChange={(e) => setRoiDelayHours(e.target.value)}
-                slotProps={{ htmlInput: { min: 0, step: 0.5 } }}
-              />
-            )}
-
-            {/* One stream, chosen here, because the camera's storage holds a single archive and
-                ONVIF does not report which stream went into it. */}
-            {cameraStreams.length > 0 && (
-              <TextField
-                select
-                size="small"
-                fullWidth
-                label={t('cameras.edgeBackfill')}
-                value={cameraStreams.some((s) => s.streamName === edgeBackfillStream) ? edgeBackfillStream : ''}
-                onChange={(e) => setEdgeBackfillStream(e.target.value)}
-                helperText={t('cameras.edgeBackfillHint')}
-              >
-                <MenuItem value="">{t('cameras.edgeBackfillOff')}</MenuItem>
-                {cameraStreams.map((s) => (
-                  <MenuItem key={s.streamName} value={s.streamName}>{s.streamName}</MenuItem>
-                ))}
-              </TextField>
-            )}
-
             {isNew
               ? <CameraStoragesControl value={pendingStorages} onChange={setPendingStorages} />
               : <CameraStoragesControl cameraId={initialCameraId} />
@@ -290,6 +283,76 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
               ? <CameraSchedulesControl value={pendingSchedules} onChange={setPendingSchedules} />
               : <CameraSchedulesControl cameraId={initialCameraId} />
             }
+            </Stack>
+            )}
+
+            {tab === 'advanced' && (
+            <Stack spacing={2}>
+              <FieldHint hint={t('cameras.roiTranscodeHint')}>
+                <FormControlLabel
+                  control={<Switch checked={roiTranscode} onChange={(e) => setRoiTranscode(e.target.checked)} />}
+                  label={t('cameras.roiTranscode')}
+                />
+              </FieldHint>
+              {roiTranscode && (
+                <FieldHint hint={t('cameras.roiDelayHoursHint')}>
+                  <TextField
+                    label={t('cameras.roiDelayHours')}
+                    type="number"
+                    size="small"
+                    fullWidth
+                    value={roiDelayHours}
+                    onChange={(e) => setRoiDelayHours(e.target.value)}
+                    slotProps={{ htmlInput: { min: 0, step: 0.5 } }}
+                  />
+                </FieldHint>
+              )}
+              {roiTranscode && (
+                <FieldHint hint={t('cameras.roiCoverageHint')}>
+                  <Stack direction="row" spacing={1}>
+                    <TextField
+                      label={t('cameras.roiMinCoverage')}
+                      type="number"
+                      size="small"
+                      fullWidth
+                      value={roiMinCoverage}
+                      onChange={(e) => setRoiMinCoverage(e.target.value)}
+                      slotProps={{ htmlInput: { min: 0, max: 100, step: 1 } }}
+                    />
+                    <TextField
+                      label={t('cameras.roiMaxCoverage')}
+                      type="number"
+                      size="small"
+                      fullWidth
+                      value={roiMaxCoverage}
+                      onChange={(e) => setRoiMaxCoverage(e.target.value)}
+                      slotProps={{ htmlInput: { min: 0, max: 100, step: 1 } }}
+                    />
+                  </Stack>
+                </FieldHint>
+              )}
+
+              {/* One stream, chosen here, because the camera's storage holds a single archive and
+                  ONVIF does not report which stream went into it. */}
+              {cameraStreams.length > 0 && (
+                <FieldHint hint={t('cameras.edgeBackfillHint')}>
+                  <TextField
+                    select
+                    size="small"
+                    fullWidth
+                    label={t('cameras.edgeBackfill')}
+                    value={cameraStreams.some((s) => s.streamName === edgeBackfillStream) ? edgeBackfillStream : ''}
+                    onChange={(e) => setEdgeBackfillStream(e.target.value)}
+                  >
+                    <MenuItem value="">{t('cameras.edgeBackfillOff')}</MenuItem>
+                    {cameraStreams.map((s) => (
+                      <MenuItem key={s.streamName} value={s.streamName}>{s.streamName}</MenuItem>
+                    ))}
+                  </TextField>
+                </FieldHint>
+              )}
+            </Stack>
+            )}
           </Stack>
 
           {/* Right: live previews column */}

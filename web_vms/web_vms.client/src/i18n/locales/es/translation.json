@@ -72,7 +72,12 @@
     "roiTranscode": "Recomprimir grabaciones con ROI",
     "roiTranscodeHint": "Recodifica los clips terminados manteniendo nítidos los objetos detectados y comprimiendo más el resto. Solo se procesan los clips que tienen detecciones.",
     "roiDelayHours": "Retraso antes de recomprimir, horas",
-    "roiDelayHoursHint": "0 recomprime en cuanto el clip se cierra y sus detecciones están guardadas. Se admiten valores fraccionarios."
+    "roiDelayHoursHint": "0 recomprime en cuanto el clip se cierra y sus detecciones están guardadas. Se admiten valores fraccionarios.",
+    "tabMain": "Principal",
+    "tabAdvanced": "Avanzado",
+    "roiMinCoverage": "Cobertura ROI mínima, %",
+    "roiMaxCoverage": "Cobertura ROI máxima, %",
+    "roiCoverageHint": "La cobertura es la parte de la duración del clip que tiene detecciones. Solo se recomprimen los clips dentro de esta banda: por debajo el detector vio muy poco como para fiarse, por encima no queda fondo que comprimir. 0 desactiva el límite."
   },
   "cameraControl": {
     "showControls": "Mostrar controles de cámara",
