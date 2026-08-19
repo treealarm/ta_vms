@@ -183,6 +183,8 @@ export type CameraSetupDto = {
   roiTranscode?: boolean
   /** Hours before a closed clip may be re-encoded; 0 means as soon as possible. */
   roiDelayHours?: number
+  roiMinCoverage?: number
+  roiMaxCoverage?: number
 }
 
 /** What a user may do with a camera. All false = no access. */

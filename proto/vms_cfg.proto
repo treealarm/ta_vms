@@ -187,6 +187,18 @@ message CameraSetup {
   // node. Fractional on purpose: useful values here are minutes as often as
   // hours.
   double roi_delay_hours = 23;
+
+  // The band of ROI coverage -- the share of a clip's duration that has boxes on
+  // it -- within which re-encoding is worth doing. Below the floor the detector
+  // saw almost nothing, and degrading the whole clip on that word is a bad
+  // trade; above the ceiling there is almost no background left to squeeze, so
+  // the clip costs a generation of quality and returns nothing.
+  //
+  // Per camera because the band follows what is being watched: a corridor is
+  // empty most of the day, a checkout counter never is, and one pair of numbers
+  // cannot be right for both.
+  double roi_min_coverage = 24;
+  double roi_max_coverage = 25;
 }
 
 message RecordingProfileRequest {

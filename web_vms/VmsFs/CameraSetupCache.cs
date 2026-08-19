@@ -14,7 +14,9 @@ public sealed record CameraSetup(
   IReadOnlyList<CameraStreamSetup> Streams,
   Credentials? Cred,
   bool RoiTranscode,
-  double RoiDelayHours);
+  double RoiDelayHours,
+  double RoiMinCoverage,
+  double RoiMaxCoverage);
 
 public sealed class CameraSetupCache(CfgService.CfgServiceClient cfgClient)
 {
@@ -49,7 +51,9 @@ public sealed class CameraSetupCache(CfgService.CfgServiceClient cfgClient)
         .ToList(),
       resp.Setup.Cred,
       resp.Setup.RoiTranscode,
-      resp.Setup.RoiDelayHours);
+      resp.Setup.RoiDelayHours,
+      resp.Setup.RoiMinCoverage,
+      resp.Setup.RoiMaxCoverage);
 
     _cache.TryAdd(cameraId, setup);
     return setup;

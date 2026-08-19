@@ -79,6 +79,15 @@ public record CameraSetupDto
   /// </summary>
   public double RoiDelayHours { get; init; }
 
+  /// <summary>
+  /// The band of ROI coverage -- the share of a clip's duration that has boxes on it --
+  /// within which re-encoding is worth doing. 0 turns a bound off, so a camera that has
+  /// never been configured is not silently excluded from the pass.
+  /// </summary>
+  public double RoiMinCoverage { get; init; }
+  /// <summary><see cref="RoiMinCoverage"/>; 0 means no ceiling.</summary>
+  public double RoiMaxCoverage { get; init; }
+
   /// <summary>Filled by web_vms.Server when merging FS retention status.</summary>
   public bool? ActiveRetentionWindow { get; init; }
   /// <summary>An active retention window with no specific stream retains every stream.</summary>

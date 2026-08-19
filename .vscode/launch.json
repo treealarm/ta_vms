@@ -149,12 +149,6 @@
                 "VMS_ROI_BACKGROUND_QP_DELTA": "8",
                 "VMS_ROI_PAD": "0.05",
                 "VMS_ROI_HOLD_SEC": "0.5",
-                // Wide open while the distribution is being collected: every
-                // clip is processed and every one records its coverage. A floor
-                // of 0 admits clips with no boxes, which are compressed
-                // uniformly with nothing protected.
-                "VMS_ROI_MIN_COVERAGE": "0",
-                "VMS_ROI_MAX_COVERAGE": "1",
                 "VMS_OUTAGE_RETENTION_DAYS": "90",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }

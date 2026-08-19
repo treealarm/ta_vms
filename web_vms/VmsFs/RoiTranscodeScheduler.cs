@@ -1,3 +1,4 @@
+using Grpc.Core;
 using Dapr.Client;
 using Roi.Transcode;
 
@@ -24,7 +25,25 @@ public sealed class RoiTranscodeScheduler(
   StorageListCache storages,
   ILogger<RoiTranscodeScheduler> logger) : IHostedService, IAsyncDisposable
 {
+  /// <summary>What one sweep did, which decides how long to wait before the next.</summary>
+  private enum SweepResult
+  {
+    /// <summary>Nothing eligible, or nothing that can be acted on. Wait the full tick.</summary>
+    Idle,
+    /// <summary>The clip was ruled out and its verdict written. Cheap, so the
+    /// sweep keeps going and the next one should follow promptly.</summary>
+    Skipped,
+    /// <summary>A clip was encoded, or tried and genuinely failed. There is likely more.</summary>
+    Worked,
+    /// <summary>The service could not be reached. Waiting is the only useful response.</summary>
+    Unreachable,
+  }
+
   private static readonly TimeSpan Tick = TimeSpan.FromSeconds(30);
+  // After real work, just enough of a pause to stay out of a tight loop. The
+  // encode itself is the throttle: it occupies the machine for as long as it
+  // takes, and sleeping a full tick on top of that halved the rate for nothing.
+  private static readonly TimeSpan Breath = TimeSpan.FromSeconds(1);
   private static readonly TimeSpan JobPoll = TimeSpan.FromSeconds(5);
   // Generous: a long clip on the CPU fallback is minutes of work, and giving up
   // early would leave the service encoding into a file nobody waits for.
@@ -66,8 +85,6 @@ public sealed class RoiTranscodeScheduler(
   // crushing the rest would be taking its word for the whole clip; above the
   // ceiling there is little background left to crush, so the pass would spend a
   // generation of quality for almost nothing.
-  private readonly double _minCoverage = EnvDouble("VMS_ROI_MIN_COVERAGE", 0.01);
-  private readonly double _maxCoverage = EnvDouble("VMS_ROI_MAX_COVERAGE", 0.90);
   private readonly int _maxAttempts = EnvInt("VMS_ROI_MAX_ATTEMPTS", 3);
   private readonly int _crf = EnvInt("VMS_ROI_CRF", 28);
   private readonly int _qpDelta = EnvSigned("VMS_ROI_QP_DELTA", -8);
@@ -76,6 +93,7 @@ public sealed class RoiTranscodeScheduler(
 
   private readonly CancellationTokenSource _cts = new();
   private Task? _loop;
+  private TimeSpan _nextDelay = Tick;
 
   // Only this node's cameras. Until it arrives every tick is skipped: both VmsFs
   // instances share one database, and without the scope one would re-encode the
@@ -113,10 +131,11 @@ public sealed class RoiTranscodeScheduler(
     {
       try
       {
-        await Task.Delay(Tick, ct);
+        await Task.Delay(_nextDelay, ct);
         if (!_scopeReady)
           continue;
-        await SweepAsync(client, ct);
+        var result = await SweepAsync(client, ct);
+        _nextDelay = result == SweepResult.Worked ? Breath : Tick;
       }
       catch (OperationCanceledException)
       {
@@ -129,45 +148,77 @@ public sealed class RoiTranscodeScheduler(
     }
   }
 
-  private async Task SweepAsync(RoiTranscode.RoiTranscodeClient client, CancellationToken ct)
+  private async Task<SweepResult> SweepAsync(
+    RoiTranscode.RoiTranscodeClient client, CancellationToken ct)
   {
     var enabled = await EnabledCamerasAsync(ct);
     if (enabled.Count == 0)
-      return;
+      return SweepResult.Idle;
 
     // One candidate per camera, each with that camera's own cutoff, then the
     // oldest of them. Asking per camera keeps a camera with a long delay from
     // crowding out one with a short delay, and taking the oldest keeps the
     // backlog in order.
     var now = DateTime.UtcNow;
-    var candidates = new List<ClipStorage.RoiCandidate>();
-    foreach (var (cameraId, delayHours) in enabled)
+    var candidates = new List<(ClipStorage.RoiCandidate Clip, RoiCameraSettings Camera)>();
+    foreach (var camera in enabled)
     {
       if (ct.IsCancellationRequested)
-        return;
+        return SweepResult.Idle;
       var candidate = await clips.GetOldestRoiCandidateAsync(
-        cameraId, now - DelayFor(delayHours), ct);
+        camera.CameraId, now - DelayFor(camera.DelayHours), ct);
       if (candidate is not null)
-        candidates.Add(candidate);
+        candidates.Add((candidate, camera));
     }
 
-    foreach (var clip in candidates.OrderBy(c => c.EndTs))
+    var skipped = false;
+    foreach (var (clip, camera) in candidates.OrderBy(c => c.Clip.EndTs))
     {
       if (ct.IsCancellationRequested)
-        return;
-      // One clip per tick. Re-encoding competes with recording for the same
-      // machine, and on the CPU fallback it competes hard.
-      if (await ProcessAsync(client, clip, ct))
-        return;
+        return SweepResult.Idle;
+      // One clip at a time: re-encoding competes with recording for the same
+      // machine, and on the CPU fallback it competes hard. The sweep ends as
+      // soon as one clip is actually attempted.
+      var result = await ProcessAsync(client, clip, camera, ct);
+      if (result == SweepResult.Skipped)
+      {
+        skipped = true;
+        continue;
+      }
+      if (result != SweepResult.Idle)
+        return result;
     }
+    // A sweep that only ruled clips out still made progress -- a camera with a
+    // long run of clips below the coverage floor would otherwise drain at one
+    // per tick.
+    return skipped ? SweepResult.Worked : SweepResult.Idle;
+  }
+
+  /// <summary>
+  /// What a camera says about how its clips should be re-compressed. The whole of
+  /// it comes from the camera's own configuration: how long footage stays fresh and
+  /// which clips are worth the trouble both follow from what the camera watches, so
+  /// neither can be a node-wide setting.
+  /// </summary>
+  private sealed record RoiCameraSettings(
+    string CameraId, double DelayHours, double MinCoverage, double MaxCoverage)
+  {
+    /// <summary>Coverage at or below which the clip is left alone. Never negative.</summary>
+    public double Floor => MinCoverage > 0 ? MinCoverage : 0;
+
+    /// <summary>
+    /// Coverage above which the clip is left alone. 0 means no ceiling -- a camera
+    /// nobody has configured must not be silently excluded from the pass.
+    /// </summary>
+    public double Ceiling => MaxCoverage > 0 ? MaxCoverage : 1;
   }
 
   /// <summary>Cameras on this node whose owner asked for ROI re-compression.</summary>
-  private async Task<List<(string CameraId, double DelayHours)>> EnabledCamerasAsync(
+  private async Task<List<RoiCameraSettings>> EnabledCamerasAsync(
     CancellationToken ct)
   {
     var ids = await clips.GetRoiCameraIdsAsync(ct);
-    var enabled = new List<(string, double)>();
+    var enabled = new List<RoiCameraSettings>();
     foreach (var cameraId in ids)
     {
       var setup = await cameras.GetAsync(cameraId, ct);
@@ -176,7 +227,8 @@ public sealed class RoiTranscodeScheduler(
       if (!string.IsNullOrEmpty(OwnServerId)
         && !string.Equals(setup.ServerId, OwnServerId, StringComparison.OrdinalIgnoreCase))
         continue;
-      enabled.Add((cameraId, setup.RoiDelayHours));
+      enabled.Add(new RoiCameraSettings(
+        cameraId, setup.RoiDelayHours, setup.RoiMinCoverage, setup.RoiMaxCoverage));
     }
     return enabled;
   }
@@ -190,8 +242,9 @@ public sealed class RoiTranscodeScheduler(
     return asked < MinDelay ? MinDelay : asked;
   }
 
-  private async Task<bool> ProcessAsync(
-    RoiTranscode.RoiTranscodeClient client, ClipStorage.RoiCandidate clip, CancellationToken ct)
+  private async Task<SweepResult> ProcessAsync(
+    RoiTranscode.RoiTranscodeClient client, ClipStorage.RoiCandidate clip,
+    RoiCameraSettings camera, CancellationToken ct)
   {
     var boxes = await BoxesForAsync(clip, ct);
     var duration = (clip.EndTs - clip.StartTs).TotalSeconds;
@@ -201,18 +254,18 @@ public sealed class RoiTranscodeScheduler(
     // Outside the working range the clip is left alone, but the measurement is
     // still written: the thresholds are guesses until there is a distribution
     // from real cameras, and this is how that gets collected.
-    if (coverage < _minCoverage || coverage > _maxCoverage)
+    if (coverage < camera.Floor || coverage > camera.Ceiling)
     {
       await clips.SetRoiStateAsync(
         clip.ClipUid, "skipped", null, false, coverage, CancellationToken.None);
-      return false;
+      return SweepResult.Skipped;
     }
 
     var root = await RootPathAsync(clip.StorageId, ct);
     if (root is null)
     {
       logger.LogWarning("ROI transcode: storage {StorageId} has no root path", clip.StorageId);
-      return false;
+      return SweepResult.Idle;
     }
 
     var input = Path.Combine(root, clip.FilePath);
@@ -222,7 +275,7 @@ public sealed class RoiTranscodeScheduler(
       // still recorded: it was measured, and it says something about the clip.
       await clips.SetRoiStateAsync(
         clip.ClipUid, "skipped", null, false, coverage, CancellationToken.None);
-      return false;
+      return SweepResult.Skipped;
     }
 
     // Not beside the clip: ClipCleaner deletes by the glob "<basename>.*" in the
@@ -234,10 +287,23 @@ public sealed class RoiTranscodeScheduler(
 
     var request = BuildRequest(input, output, boxes);
     var ok = false;
+    // Whether the service was reachable at all. Not being able to talk to it says
+    // nothing about the clip, and must not spend one of the clip's attempts --
+    // otherwise a service that is briefly down, restarted or paused abandons
+    // every clip the pass happened to reach while it was away, permanently and
+    // with nothing wrong with any of them.
+    var reachable = true;
     try
     {
       var started = await client.StartFileJobAsync(request, cancellationToken: ct);
       ok = await AwaitJobAsync(client, started.JobId, ct);
+    }
+    catch (RpcException ex) when (
+      ex.StatusCode == StatusCode.Unavailable || ex.StatusCode == StatusCode.DeadlineExceeded)
+    {
+      reachable = false;
+      logger.LogInformation("ROI transcode: service unreachable ({Status}), clip {ClipUid} left alone",
+        ex.StatusCode, clip.ClipUid);
     }
     catch (Exception ex)
     {
@@ -247,12 +313,12 @@ public sealed class RoiTranscodeScheduler(
     if (!ok)
     {
       TryDelete(output);
-      await FailAsync(clip, ct);
-      return true;
+      await FailAsync(clip, reachable, ct);
+      return reachable ? SweepResult.Worked : SweepResult.Unreachable;
     }
 
     await ReplaceAsync(clip, input, output, coverage, ct);
-    return true;
+    return SweepResult.Worked;
   }
 
   private FileJobRequest BuildRequest(string input, string output, IReadOnlyList<Box> boxes)
@@ -381,7 +447,9 @@ public sealed class RoiTranscodeScheduler(
     {
       logger.LogWarning(ex, "ROI transcode: could not replace clip {ClipUid}", clip.ClipUid);
       TryDelete(output);
-      await FailAsync(clip, ct);
+      // Counted: the encode succeeded and the file is real, so a failure here is
+      // about this clip -- a permission, a full disk, a vanished directory.
+      await FailAsync(clip, countAttempt: true, ct);
       return;
     }
 
@@ -398,8 +466,21 @@ public sealed class RoiTranscodeScheduler(
       clip.ClipUid, size, coverage);
   }
 
-  private async Task FailAsync(ClipStorage.RoiCandidate clip, CancellationToken ct)
+  /// <summary>
+  /// Records a failed attempt. `countAttempt` is false when the service could not
+  /// be reached: the clip stays pending with a plain pause rather than an
+  /// exponential one, because there is nothing about it to back off from.
+  /// </summary>
+  private async Task FailAsync(ClipStorage.RoiCandidate clip, bool countAttempt, CancellationToken ct)
   {
+    if (!countAttempt)
+    {
+      await clips.SetRoiStateAsync(
+        clip.ClipUid, "pending", DateTime.UtcNow.AddSeconds(_retrySeconds), false, null,
+        CancellationToken.None);
+      return;
+    }
+
     var attempts = clip.Attempts + 1;
     if (attempts >= _maxAttempts)
     {
