@@ -1,7 +1,7 @@
 ﻿# =========================
 # Builder
 # =========================
-FROM vms-deps AS builder
+FROM ta-deps AS builder
 
 WORKDIR /build
 COPY . /build

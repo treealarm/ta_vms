@@ -8,21 +8,21 @@ $RootDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 
 Write-Host "=== Root directory: $RootDir ==="
 
-# 1️⃣ Сборка базового образа vms-deps (если нет)
-Write-Host "=== Checking vms-deps image ==="
+# 1️⃣ Сборка базового образа ta-deps (если нет)
+Write-Host "=== Checking ta-deps image ==="
 
-$exists = docker image inspect vms-deps 2>$null
+$exists = docker image inspect ta-deps 2>$null
 
 if (-not $?) {
-    Write-Host "=== Building vms-deps ==="
-    Set-Location "$RootDir\vms-deps"
-    docker build -t vms-deps .
+    Write-Host "=== Building ta-deps ==="
+    Set-Location "$RootDir\ta-deps"
+    docker build -t ta-deps .
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "=== Failed to build vms-deps. Aborting. ==="
+        Write-Error "=== Failed to build ta-deps. Aborting. ==="
         exit $LASTEXITCODE
     }
 } else {
-    Write-Host "=== vms-deps already exists, skipping build ==="
+    Write-Host "=== ta-deps already exists, skipping build ==="
 }
 
 # 2️⃣ Сборка проекта через docker-compose

@@ -22,14 +22,14 @@ Square), its `.env`, `init_files/`, the image build/push scripts and the analyti
 fetcher. This repo's root `docker-compose.yml` is **dev only** (build-from-source, joins the
 shared Square network). Never re-grow a prod compose inside ta_vms.
 
-## vms-deps is shared with video_a
+## ta-deps is shared with video_a
 
-`vms-deps` (this repo's `vms-deps/Dockerfile`) is the C++ toolchain + vcpkg base image for **two**
+`ta-deps` (this repo's `ta-deps/Dockerfile`) is the C++ toolchain + vcpkg base image for **two**
 consumers: this repo's `media_server` (`vms` service) and the separate `video_a` repo's
-`analytics-worker`, which builds `FROM vms-deps` via a sibling checkout (see `video_a/scripts/build.sh`).
+`analytics-worker`, which builds `FROM ta-deps` via a sibling checkout (see `video_a/scripts/build.sh`).
 It installs protobuf/grpc/spdlog/ffmpeg for media_server plus openvino for video_a — when changing
 its package list, consider both consumers. It uses an overlay vcpkg triplet
-(`vms-deps/triplets/x64-linux.cmake`) to build release-only (no debug artifacts — vcpkg's
+(`ta-deps/triplets/x64-linux.cmake`) to build release-only (no debug artifacts — vcpkg's
 `VCPKG_BUILD_TYPE` env var is a no-op, it only works from inside a triplet file); consumers must
 still pass `-DCMAKE_BUILD_TYPE=Release` on their own `cmake` configure step to select the release
 libs.

@@ -7,14 +7,14 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== Root directory: $ROOT_DIR ==="
 
-# 1️⃣ Сборка базового образа vms-deps (если нет)
-echo "=== Checking vms-deps image ==="
+# 1️⃣ Сборка базового образа ta-deps (если нет)
+echo "=== Checking ta-deps image ==="
 
-if ! docker image inspect vms-deps &>/dev/null; then
-    echo "=== Building vms-deps ==="
-    docker build -t vms-deps "$ROOT_DIR/vms-deps"
+if ! docker image inspect ta-deps &>/dev/null; then
+    echo "=== Building ta-deps ==="
+    docker build -t ta-deps "$ROOT_DIR/ta-deps"
 else
-    echo "=== vms-deps already exists, skipping build ==="
+    echo "=== ta-deps already exists, skipping build ==="
 fi
 
 # 2️⃣ Сборка проекта через docker-compose

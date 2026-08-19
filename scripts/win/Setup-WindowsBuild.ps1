@@ -5,7 +5,7 @@
     ones, and then builds the project.
 
 .DESCRIPTION
-    On Linux this role is filled by vms-deps/Dockerfile. There is no Windows equivalent,
+    On Linux this role is filled by ta-deps/Dockerfile. There is no Windows equivalent,
     so a clean machine needs a fair amount of manual setup — and several steps are not
     obvious. This script encodes them.
 
@@ -53,7 +53,7 @@ $Solution = Join-Path $RepoRoot "web_vms\web_vms.sln"
 # vcpkg ports for media_server, in classic mode (the repo has no vcpkg.json).
 # pkgconf is not optional: CMakeLists.txt calls find_package(PkgConfig REQUIRED) and then
 # pkg_check_modules(FFMPEG ...), which needs a pkg-config implementation on PATH — vcpkg
-# supplies one. openvino from vms-deps/Dockerfile is NOT needed here; it belongs to the
+# supplies one. openvino from ta-deps/Dockerfile is NOT needed here; it belongs to the
 # sibling video_a repository (see CLAUDE.md).
 $VcpkgPorts = @(
     'protobuf',

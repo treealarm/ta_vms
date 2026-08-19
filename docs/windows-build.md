@@ -2,7 +2,7 @@
 
 `scripts/win/Setup-WindowsBuild.ps1` checks the tools a Windows machine needs, offers to
 install whatever is missing, and then builds the project. On Linux this role is filled by
-`vms-deps/Dockerfile`; there is no Windows equivalent, and several of the steps are not
+`ta-deps/Dockerfile`; there is no Windows equivalent, and several of the steps are not
 obvious enough to leave to memory.
 
 ```powershell
@@ -53,7 +53,7 @@ protobuf grpc spdlog pkgconf ffmpeg[gpl,x264,x265,opus,vpx,aom,openssl]
 
 `pkgconf` is required, not optional: `media_server/CMakeLists.txt` calls
 `find_package(PkgConfig REQUIRED)` and then `pkg_check_modules(FFMPEG ...)`, which needs a
-pkg-config implementation. `openvino` from `vms-deps/Dockerfile` is **not** needed here —
+pkg-config implementation. `openvino` from `ta-deps/Dockerfile` is **not** needed here —
 it belongs to the sibling `video_a` repository.
 
 Building these ports from source takes a long time; ffmpeg and grpc dominate. This is the
