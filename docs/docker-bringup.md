@@ -1,0 +1,257 @@
+# TreeAlarm VMS Docker build and bring-up
+
+Practical runbook from a full rebuild on the `roi` branch. Two modes:
+
+| Mode | When | What you need |
+|------|------|----------------|
+| **Dev** (`ta_vms`) | development, debugging, build from source | sibling checkouts + Docker BuildKit |
+| **Prod** (`ta_install`) | staging / install | prebuilt `treealarm/*` images from Hub only |
+
+---
+
+## 0. Repositories (siblings in one directory)
+
+```
+<workspace>/
+  ta_vms/            # this repo — VMS services, Dockerfiles, ta-deps, roi-deps
+  ta_install/        # product compose (prebuilt images), .env, push/build scripts
+  video_a/           # analytics-worker (FROM ta-deps)
+  Square/            # optional: creates common_app_network + integration
+  multitenant_admin/ # alternative to Square for the shared network
+```
+
+Minimum for **build**: `ta_vms` + `video_a` (if analytics is needed).  
+Minimum for **running the product**: `ta_install` only (after `push-images.sh`).
+
+```bash
+# example
+cd /mnt/wdblue/tests
+git clone <url>/ta_vms.git
+git clone <url>/ta_install.git
+git clone <url>/video_a.git
+# for Square integration / shared network in dev:
+git clone <url>/Square.git   # or multitenant_admin
+```
+
+Branches must stay aligned (e.g. `roi` in `ta_vms` with matching changes in `ta_install`).
+
+---
+
+## 1. Docker network
+
+### Dev (`ta_vms/docker-compose.yml`)
+
+Network **`common_app_network`** is `external: true`. Square or `multitenant_admin` must create it (compose key `shared_network`, name `common_app_network`).
+
+```bash
+# if Square / mt_admin was already started — the network exists
+docker network ls | grep common_app_network
+
+# otherwise (local VMS without Square):
+docker network create common_app_network
+```
+
+### Prod (`ta_install`)
+
+Uses its own isolated network by default — **no** Square dependency.
+
+---
+
+## 2. Build from source (dev / publish)
+
+Requires **Docker BuildKit**:
+
+```bash
+export DOCKER_BUILDKIT=1
+```
+
+### 2.1 C++ base images (slow, rare)
+
+Do **not** build `ta-deps` and `roi-deps` in parallel: both mount the same BuildKit cache at `/vcpkg/buildtrees` → `vcpkg-running.lock` / “another vcpkg may be running”.
+
+```bash
+cd ta_vms
+
+# media_server + video_a analytics-worker (~3–5 h from scratch: openvino)
+docker build -t ta-deps ./ta-deps
+
+# roi_transcode (~1–2 h): Ubuntu 24.04, ffmpeg[qsv,vaapi], libdrm-dev, python3
+docker build -t roi-deps ./roi-deps
+```
+
+Scripts skip a base image if the tag already exists:
+
+- [`build-and-run.sh`](../build-and-run.sh)
+- [`../ta_install/scripts/build-images.sh`](../../ta_install/scripts/build-images.sh)
+
+Force rebuild: `docker rmi ta-deps roi-deps` (and legacy `vms-deps` if present).
+
+**roi-deps layers (not vcpkg alone):**
+
+1. **apt in the builder:** `libdrm-dev`, `python3`, toolchain  
+2. **vcpkg:** protobuf, grpc, nlohmann-json, `ffmpeg[...,qsv,vaapi]`  
+3. **runtime in `Dockerfile.roi`:** `intel-media-va-driver-non-free`, `libmfx-gen1.2`, vcpkg `libva` next to the binary, `vainfo` / `onevpl-tools`
+
+### 2.2 ta_vms services
+
+One at a time (lower peak RAM), same pattern as `build-images.sh`:
+
+```bash
+cd ta_vms
+BUILDABLE=$(docker compose --profile app config | python3 -c "
+import sys, yaml
+d = yaml.safe_load(sys.stdin)
+for name, svc in d.get('services', {}).items():
+    if 'build' in svc: print(name)
+")
+for svc in $BUILDABLE; do
+  echo "--- $svc ---"
+  docker compose --profile app build "$svc"
+done
+```
+
+Expected tags: `ta_vms-vms`, `ta_vms-roitrc`, `ta_vms-web_vms`, `ta_vms-vmscfg`, … (prefix from `name: ta_vms` in compose).
+
+| Image | FROM |
+|-------|------|
+| `ta_vms-vms` | `ta-deps` → [`Dockerfile`](../Dockerfile) |
+| `ta_vms-roitrc` | `roi-deps` → [`Dockerfile.roi`](../Dockerfile.roi) |
+| others | .NET SDK/aspnet in their own Dockerfiles |
+
+### 2.3 analytics-worker
+
+```bash
+docker build -t analytics-worker ../video_a
+```
+
+### 2.4 Publish (prod pipeline)
+
+```bash
+cd ../ta_install
+./scripts/build-images.sh    # bases + ta_vms + analytics-worker
+./scripts/push-images.sh     # ta_vms-* → treealarm/*:latest
+```
+
+Requires `docker login` (or `DOCKER_USER` + `DOCKER_TOKEN`).
+
+---
+
+## 3. Run
+
+### 3.1 Dev — full ta_vms stack
+
+Before `up`, free ports if other containers are running (typical clash: old `mediamtx` on 8189/udp, foreign postgres on 5432):
+
+```bash
+docker ps --format '{{.Names}}\t{{.Ports}}' | grep -E '8189|8554|5432'
+# if needed: docker stop mediamtx <other-postgres>
+```
+
+```bash
+cd ta_vms
+mkdir -p data
+docker compose --profile app up -d
+```
+
+First start: postgres runs `initdb` — `db-init` may miss the 60 s window. Retry:
+
+```bash
+docker compose run --rm db-init
+docker compose --profile app up -d
+```
+
+Verify:
+
+```bash
+docker compose --profile app ps -a
+docker compose logs roitrc --tail 20   # listening on 0.0.0.0:5142
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5134/
+```
+
+UI: **http://localhost:5134** (`WEB_VMS_PORT` in `.env`).
+
+**GPU for roitrc** (native Linux + Intel iGPU; **not** Docker Desktop):
+
+```bash
+cp ../ta_install/docker-compose.gpu.yml.example docker-compose.override.yml
+# group_add: "$(stat -c '%g' /dev/dri/renderD128)"  — numeric GID, not the name "render"
+docker compose --profile app up -d roitrc
+docker compose exec roitrc ls -l /dev/dri
+docker compose exec roitrc vainfo
+docker compose exec roitrc vpl-inspect
+```
+
+Without the override the stack still runs on CPU (`libx264`).
+
+### 3.2 Prod — ta_install
+
+```bash
+cd ta_install
+# set secrets in .env and mirror them in init_files/dapr_components/
+docker compose --env-file .env up -d
+```
+
+See [`../ta_install/README.md`](../../ta_install/README.md).
+
+---
+
+## 4. Expected “Up” set
+
+| Group | Services |
+|-------|----------|
+| Infra | `postgres`, `rabbitmq` (healthy), `mediamtx`, `db-init` (Exited 0) |
+| App | `vms`, `roitrc`, `vmscfg`, `vmsfs`, `vmsutils`, `vmslogger`, `vmsonvif`, `vmsonvif-actors`, `vmssingleton`, `vmssquaresingleton`, `vmsanalyticssingleton`, `web_vms` |
+| Sidecars | `*-dapr` + `dapr-placement` |
+
+Short-lived Dapr “connection refused” at startup is a normal sidecar/app race; within a few seconds RPCs should succeed (e.g. `ListCameras` → 200).
+
+---
+
+## 5. Common failures
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `common_app_network not found` | network missing | start Square/mt_admin or `docker network create` |
+| `Bind … 8189 failed` | foreign MediaMTX | `docker stop mediamtx` |
+| `postgres did not become ready in 60s` | first initdb | `compose run --rm db-init` then `up -d` |
+| `vcpkg-running.lock` / Device busy | parallel base builds | build `ta-deps` and `roi-deps` **sequentially** |
+| `roitrc` Created, not Up | waits on `db-init` / rabbitmq | fix db-init, then `up -d` |
+| QSV silently falls to vaapi | missing `libmfx-gen1.2` in runtime | image from current `Dockerfile.roi` |
+| GPU devices: no such file | Docker Desktop VM | CPU fallback; GPU only on native Linux |
+
+---
+
+## 6. Checklist — from zero to a working UI
+
+1. [ ] Clone `ta_vms`, `ta_install`, and `video_a` if needed (+ Square for network/integration)
+2. [ ] `common_app_network` exists (dev) or you use `ta_install` (prod)
+3. [ ] Build `ta-deps`, then `roi-deps` (not in parallel)
+4. [ ] `docker compose --profile app build` for all services (or `ta_install/scripts/build-images.sh`)
+5. [ ] (Optional) `push-images.sh` → Hub
+6. [ ] Ports 5432 / 8554 / 8889 / 8189 are free
+7. [ ] `docker compose --profile app up -d` (or prod compose)
+8. [ ] `db-init` Exit 0, UI responds on `:5134`
+9. [ ] (Optional) GPU override for `roitrc`
+
+---
+
+## 7. Quick commands (images already built)
+
+```bash
+cd ta_vms
+export DOCKER_BUILDKIT=1
+docker network create common_app_network 2>/dev/null || true
+docker compose --profile app up -d
+docker compose run --rm db-init   # if the first up failed on postgres
+docker compose --profile app up -d
+docker compose --profile app ps -a
+```
+
+Full base rebuild (hours):
+
+```bash
+docker rmi ta-deps roi-deps 2>/dev/null || true
+docker build -t ta-deps ./ta-deps
+docker build -t roi-deps ./roi-deps
+# then rebuild services + up again
+```
