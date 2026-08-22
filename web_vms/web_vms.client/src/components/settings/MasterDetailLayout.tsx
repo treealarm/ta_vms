@@ -4,6 +4,13 @@ import { useTranslation } from 'react-i18next'
 
 type Props = {
   listTitle: string
+  /**
+   * Controls that act on the list as a whole -- refreshing it, or discovering things to put in
+   * it. They belong in its header, beside "+", because a control reads as belonging to whatever
+   * it sits next to; the same buttons under the page read as belonging to the page.
+   * Space here is narrow, so these should be icon buttons with tooltips.
+   */
+  listActions?: React.ReactNode
   /** "+" button in the left header. Receives the click event so callers can anchor a Menu. Omit to hide. */
   onAdd?: (e: React.MouseEvent<HTMLElement>) => void
   addTooltip?: string
@@ -13,7 +20,11 @@ type Props = {
   detailMinWidth?: number
   /** Scrollable left-column content: a <List> of SettingsListItem or a hand-rolled tree. */
   list: React.ReactNode
-  /** Optional non-scrolling row below the split view (e.g. page-level buttons). */
+  /**
+   * Optional non-scrolling row below the split view. For something that genuinely belongs to the
+   * page rather than to either pane -- a mode switch that changes what the whole page means. An
+   * action on the list goes in listActions instead.
+   */
   footer?: React.ReactNode
   /** Right detail area; children own the DetailToolbar + scrolling body structure. */
   children: React.ReactNode
@@ -25,7 +36,8 @@ type Props = {
  * The whole layout fills its parent and never overflows the page.
  */
 export default function MasterDetailLayout({
-  listTitle, onAdd, addTooltip, addDisabled, listWidth = 220, detailMinWidth = 300, list, footer, children,
+  listTitle, listActions, onAdd, addTooltip, addDisabled, listWidth = 220, detailMinWidth = 300,
+  list, footer, children,
 }: Props) {
   const { t } = useTranslation()
   return (
@@ -35,6 +47,7 @@ export default function MasterDetailLayout({
         <Box sx={{ width: listWidth, flexShrink: 0, borderRight: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <Stack direction="row" alignItems="center" sx={{ pl: 1.5, pr: 0.5, py: 0.5, borderBottom: 1, borderColor: 'divider', flexShrink: 0, minHeight: 40 }}>
             <Typography variant="subtitle2" noWrap sx={{ flex: 1 }}>{listTitle}</Typography>
+            {listActions}
             {onAdd && (
               <Tooltip title={addTooltip ?? t('common.add')}>
                 <span>

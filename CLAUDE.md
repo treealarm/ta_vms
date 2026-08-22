@@ -233,6 +233,22 @@ In `docker-compose.yml` use `latest` for all third-party images. Do not pin spec
 
 When removing a field from a `.proto` message, delete it outright. Do not use `reserved` — field numbers are not reused anyway and `reserved` is just noise. Same applies to field name reservations.
 
+## Frontend: a control belongs next to what it acts on
+
+A button reads as belonging to whatever it sits beside. Put it there, and nowhere else.
+
+- Acts on a **list** — refresh it, discover things to add to it, filter it: the list's own header,
+  beside "+". `MasterDetailLayout` takes them in `listActions`. The header is narrow, so these are
+  icon buttons with tooltips.
+- Acts on the **selected item** — save, cancel, delete: `DetailToolbar`, above the item's form.
+- Acts on the **page as a whole** — a mode switch that changes what everything on it means, like
+  `AclModeSwitch`: `MasterDetailLayout`'s `footer`. This is the rare one; reach for it last.
+
+A row of buttons parked at the bottom of the page is the failure mode this replaces: the reader has
+to work out what each one applies to, and "Refresh" under a split view could plausibly mean either
+pane. Distance from the target is what makes it ambiguous, so the fix is always to move the control,
+never to rename it.
+
 ## Database columns — no speculative additions
 
 Only add columns that are actively used. Do not add `created_at`, `updated_at`, audit fields, or any other column "just in case" — if it is not read or queried by existing code, it does not belong in the schema. Add it when there is a concrete requirement.

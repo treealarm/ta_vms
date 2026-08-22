@@ -1,5 +1,7 @@
 import { useImperativeHandle, useMemo, useRef, useState } from 'react'
-import { Box, Button, List, Menu, MenuItem, Stack, Typography } from '@mui/material'
+import { Box, IconButton, List, Menu, MenuItem, Tooltip, Typography } from '@mui/material'
+import RefreshIcon from '@mui/icons-material/Refresh'
+import RadarIcon from '@mui/icons-material/Radar'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { loadCameras, loadServers } from '../store/liveSlice'
@@ -149,15 +151,19 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<ApplyIfDir
       listWidth={240}
       onAdd={handleAddClick}
       list={tree}
-      footer={
-        <Stack direction="row" spacing={1}>
-          <Button variant="outlined" onClick={refresh} size="small">
-            {t('common.refresh')}
-          </Button>
-          <Button variant="outlined" onClick={() => setDiscoveryOpen(true)} size="small">
-            {t('cameraControl.discoverDevices')}
-          </Button>
-        </Stack>
+      listActions={
+        <>
+          <Tooltip title={t('common.refresh')}>
+            <IconButton size="small" onClick={refresh}>
+              <RefreshIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={t('cameraControl.discoverDevices')}>
+            <IconButton size="small" onClick={() => setDiscoveryOpen(true)}>
+              <RadarIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </>
       }
     >
       {selection.kind === 'camera' && (
