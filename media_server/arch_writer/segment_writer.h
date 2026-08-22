@@ -70,6 +70,15 @@ private:
   /// and it then crosses this writer's queue and the transcoder's reordering buffer before arriving
   /// here, which was measured at several hundred milliseconds.
   void open_new_segment(std::chrono::system_clock::time_point first_frame_wall);
+  /// True when a segment may be attempted now. open_new_segment is called on every keyframe, so
+  /// with a one-second GOP a storage that is down is retried once a second forever — a hundred
+  /// identical log lines a minute, with everything else drowning between them. Retrying is right
+  /// (the disk can come back); retrying at the video's frame rate is not.
+  bool may_attempt_segment();
+  /// Reports a failed attempt, and logs it only on the transition into failure.
+  void note_segment_failure(const std::string& reason);
+  /// Reports a segment that opened, and logs the recovery if we were failing.
+  void note_segment_recovered();
   void close_segment();
   void close();
 
@@ -90,6 +99,12 @@ private:
   // and using "now" would make the clip claim time for which no footage exists — enough to hide the
   // outage from gap detection entirely.
   std::chrono::system_clock::time_point m_last_write_ts{};
+  // Backoff for a storage that will not take segments. Retrying at keyframe rate says nothing new
+  // after the first attempt, and buries the log for whoever is trying to find out why.
+  static constexpr std::chrono::seconds k_failed_retry_interval{10};
+  std::chrono::steady_clock::time_point m_last_failed_attempt{};
+  bool m_segment_failing = false;
+
   std::filesystem::path m_segment_abs_path;
   std::filesystem::path m_segment_rel_path;
   std::string m_segment_storage_id;

@@ -135,8 +135,40 @@ bool segment_writer::ensure_input_stream(const std::shared_ptr<media_packet>& me
   return true;
 }
 
+bool segment_writer::may_attempt_segment()
+{
+  if (!m_segment_failing)
+    return true;
+  return std::chrono::steady_clock::now() - m_last_failed_attempt >= k_failed_retry_interval;
+}
+
+void segment_writer::note_segment_failure(const std::string& reason)
+{
+  m_last_failed_attempt = std::chrono::steady_clock::now();
+  if (m_segment_failing)
+    return;  // Already said so; saying it again every attempt is what buried the log.
+  m_segment_failing = true;
+  logger::instance().error(std::format(
+    "camera '{}' stream '{}': recording stopped — {}. Retrying every {}s.",
+    m_camera_id, m_stream_name, reason, k_failed_retry_interval.count()));
+}
+
+void segment_writer::note_segment_recovered()
+{
+  if (!m_segment_failing)
+    return;
+  m_segment_failing = false;
+  logger::instance().info(std::format(
+    "camera '{}' stream '{}': recording resumed", m_camera_id, m_stream_name));
+}
+
 void segment_writer::open_new_segment(std::chrono::system_clock::time_point first_frame_wall)
 {
+  // Called on every keyframe while no segment is open, so this is the throttle: without it a
+  // storage that is down is probed at the video's frame rate.
+  if (!may_attempt_segment())
+    return;
+
   m_timing.clear();
   close_segment();
 
@@ -157,8 +189,9 @@ void segment_writer::open_new_segment(std::chrono::system_clock::time_point firs
   const auto cam_storages = fs_client::instance().get_camera_storages(m_camera_id);
   if (cam_storages.empty())
   {
-    logger::instance().error(std::format(
-      "camera '{}' has no storage assigned — segment will not be written", m_camera_id));
+    // Either nothing is assigned, or everything assigned is disabled for writing — VmsFs filters
+    // those out before answering. Both mean the same thing here: there is nowhere to put a segment.
+    note_segment_failure("no storage available to write to");
     return;
   }
 
@@ -187,9 +220,8 @@ void segment_writer::open_new_segment(std::chrono::system_clock::time_point firs
 
   if (!dir_ready)
   {
-    logger::instance().error(std::format(
-      "camera '{}': all {} storage(s) failed create_directories — segment will not be written",
-      m_camera_id, cam_storages.size()));
+    note_segment_failure(std::format(
+      "none of the {} assigned storage(s) accepted a directory", cam_storages.size()));
     return;
   }
 
@@ -268,6 +300,9 @@ void segment_writer::open_new_segment(std::chrono::system_clock::time_point firs
   m_segment_start_ts = now;
   m_last_write_ts = {};
   m_segment_storage_id = cam_storage.storage_id;
+  // A segment exists again. Says so once, so the log shows the outage as a pair of lines with a
+  // duration between them rather than as a wall of identical errors that simply stops.
+  note_segment_recovered();
 
   logger::instance().debug(std::format(
     "Segment opened: camera='{}' stream='{}' file='{}'",
