@@ -6,6 +6,9 @@
 /data
 cameras.json
 **/build/
+# CMake preset binary dirs: each preset gets its own tree so they can coexist, and none of
+# them belongs in the repository.
+**/build-*/
 CMakeUserPresets.json
 
 # User-specific files

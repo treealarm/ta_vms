@@ -275,7 +275,7 @@
             "request": "launch",
             "preLaunchTask": "build:all",
             "postDebugTask": "dapr: sidecars down",
-            "program": "${workspaceFolder}/roi_transcode/build/roi-transcode-svc",
+            "program": "${workspaceFolder}/roi_transcode/build/integration/roi-transcode-svc",
             "args": [],
             "environment": [
                 { "name": "APP_ID", "value": "roitrc" },
@@ -434,7 +434,7 @@
             "request": "launch",
             "preLaunchTask": "build:all",
             "postDebugTask": "dapr: sidecars down",
-            "program": "${workspaceFolder}/roi_transcode/build/roi-transcode-svc.exe",
+            "program": "${workspaceFolder}/roi_transcode/build/integration/roi-transcode-svc.exe",
             "args": [],
             "environment": [
                 { "name": "APP_ID", "value": "roitrc" },

@@ -13,7 +13,7 @@ Practical runbook from a full rebuild on the `roi` branch. Two modes:
 
 ```
 <workspace>/
-  ta_vms/            # this repo — VMS services, Dockerfiles, ta-deps, roi-deps
+  ta_vms/            # this repo — VMS services, Dockerfiles, ta-deps; roi-deps lives in roi_transcode/docker/intel
   ta_install/        # product compose (prebuilt images), .env, push/build scripts
   video_a/           # analytics-worker (FROM ta-deps)
   Square/            # optional: creates common_app_network + integration
@@ -76,7 +76,7 @@ cd ta_vms
 docker build -t ta-deps ./ta-deps
 
 # roi_transcode (~1–2 h): Ubuntu 24.04, ffmpeg[qsv,vaapi], libdrm-dev, python3
-docker build -t roi-deps ./roi-deps
+docker build -t roi-deps -f roi_transcode/docker/intel/Dockerfile.deps roi_transcode/docker/intel
 ```
 
 Scripts skip a base image if the tag already exists:
@@ -90,7 +90,7 @@ Force rebuild: `docker rmi ta-deps roi-deps` (and legacy `vms-deps` if present).
 
 1. **apt in the builder:** `libdrm-dev`, `python3`, toolchain  
 2. **vcpkg:** protobuf, grpc, nlohmann-json, `ffmpeg[...,qsv,vaapi]`  
-3. **runtime in `Dockerfile.roi`:** `intel-media-va-driver-non-free`, `libmfx-gen1.2`, vcpkg `libva` next to the binary, `vainfo` / `onevpl-tools`
+3. **runtime in `roi_transcode/docker/intel/Dockerfile`:** `intel-media-va-driver-non-free`, `libmfx-gen1.2`, vcpkg `libva` next to the binary, `vainfo` / `onevpl-tools`
 
 ### 2.2 ta_vms services
 
@@ -115,7 +115,7 @@ Expected tags: `ta_vms-vms`, `ta_vms-roitrc`, `ta_vms-web_vms`, `ta_vms-vmscfg`,
 | Image | FROM |
 |-------|------|
 | `ta_vms-vms` | `ta-deps` → [`Dockerfile`](../Dockerfile) |
-| `ta_vms-roitrc` | `roi-deps` → [`Dockerfile.roi`](../Dockerfile.roi) |
+| `ta_vms-roitrc` | `roi-deps` → [`roi_transcode/docker/intel/Dockerfile`](../roi_transcode/docker/intel/Dockerfile) |
 | others | .NET SDK/aspnet in their own Dockerfiles |
 
 ### 2.3 analytics-worker
@@ -216,7 +216,7 @@ Short-lived Dapr “connection refused” at startup is a normal sidecar/app rac
 | `postgres did not become ready in 60s` | first initdb | `compose run --rm db-init` then `up -d` |
 | `vcpkg-running.lock` / Device busy | parallel base builds | build `ta-deps` and `roi-deps` **sequentially** |
 | `roitrc` Created, not Up | waits on `db-init` / rabbitmq | fix db-init, then `up -d` |
-| QSV silently falls to vaapi | missing `libmfx-gen1.2` in runtime | image from current `Dockerfile.roi` |
+| QSV silently falls to vaapi | missing `libmfx-gen1.2` in runtime | image from current `roi_transcode/docker/intel/Dockerfile` |
 | GPU devices: no such file | Docker Desktop VM | CPU fallback; GPU only on native Linux |
 
 ---
@@ -252,6 +252,6 @@ Full base rebuild (hours):
 ```bash
 docker rmi ta-deps roi-deps 2>/dev/null || true
 docker build -t ta-deps ./ta-deps
-docker build -t roi-deps ./roi-deps
+docker build -t roi-deps -f roi_transcode/docker/intel/Dockerfile.deps roi_transcode/docker/intel
 # then rebuild services + up again
 ```

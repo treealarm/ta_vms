@@ -546,7 +546,7 @@ services:
     profiles: [app]
     build:
       context: .
-      dockerfile: Dockerfile.roi
+      dockerfile: roi_transcode/docker/intel/Dockerfile
     env_file:
       - .env
     environment:

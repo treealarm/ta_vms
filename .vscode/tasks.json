@@ -1150,10 +1150,10 @@
         },
         {
             "label": "cmake:configure:roitrc",
-            "detail": "Cheap to repeat: with the cache already present cmake re-runs in about a second.",
+            "detail": "Cheap to repeat: with the cache already present cmake re-runs in about a second. Uses linux-dev, which reuses the vcpkg tree in VCPKG_ROOT; linux-default builds its own from the manifest and is what a fresh checkout wants.",
             "type": "process",
             "command": "cmake",
-            "args": [ "--preset", "linux-default" ],
+            "args": [ "--preset", "linux-dev" ],
             "windows": { "args": [ "--preset", "windows-default" ] },
             "options": { "cwd": "${workspaceFolder}/roi_transcode" },
             "problemMatcher": []

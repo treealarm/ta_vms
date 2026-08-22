@@ -33,8 +33,8 @@ $exists = docker image inspect roi-deps 2>$null
 
 if (-not $?) {
     Write-Host "=== Building roi-deps ==="
-    Set-Location "$RootDir\roi-deps"
-    docker build -t roi-deps .
+    Set-Location "$RootDir\roi_transcode\docker\intel"
+    docker build -t roi-deps -f Dockerfile.deps .
     if ($LASTEXITCODE -ne 0) {
         Write-Error "=== Failed to build roi-deps. Aborting. ==="
         exit $LASTEXITCODE
