@@ -125,7 +125,7 @@ public sealed class RoiTranscodeScheduler(
 
   private async Task LoopAsync(string appId, CancellationToken ct)
   {
-    var client = new RoiTranscode.RoiTranscodeClient(DaprClient.CreateInvocationInvoker(appId));
+    var client = new RoiFileTranscode.RoiFileTranscodeClient(DaprClient.CreateInvocationInvoker(appId));
 
     while (!ct.IsCancellationRequested)
     {
@@ -149,7 +149,7 @@ public sealed class RoiTranscodeScheduler(
   }
 
   private async Task<SweepResult> SweepAsync(
-    RoiTranscode.RoiTranscodeClient client, CancellationToken ct)
+    RoiFileTranscode.RoiFileTranscodeClient client, CancellationToken ct)
   {
     var enabled = await EnabledCamerasAsync(ct);
     if (enabled.Count == 0)
@@ -243,7 +243,7 @@ public sealed class RoiTranscodeScheduler(
   }
 
   private async Task<SweepResult> ProcessAsync(
-    RoiTranscode.RoiTranscodeClient client, ClipStorage.RoiCandidate clip,
+    RoiFileTranscode.RoiFileTranscodeClient client, ClipStorage.RoiCandidate clip,
     RoiCameraSettings camera, CancellationToken ct)
   {
     var boxes = await BoxesForAsync(clip, ct);
@@ -330,7 +330,7 @@ public sealed class RoiTranscodeScheduler(
       // Archive clips are fragmented mp4 played over byte ranges; a plain mp4
       // here would still decode standalone but stop working in the timeline.
       Movflags = "frag_keyframe+empty_moov+default_base_moof",
-      Settings = new Settings
+      Settings = new FileSettings
       {
         Encoder = Encoder.Auto,
         // The archive is H.264 and one playlist stitches many clips: re-encoding
@@ -402,7 +402,7 @@ public sealed class RoiTranscodeScheduler(
   }
 
   private async Task<bool> AwaitJobAsync(
-    RoiTranscode.RoiTranscodeClient client, string jobId, CancellationToken ct)
+    RoiFileTranscode.RoiFileTranscodeClient client, string jobId, CancellationToken ct)
   {
     var deadline = DateTime.UtcNow + JobTimeout;
     while (DateTime.UtcNow < deadline)
