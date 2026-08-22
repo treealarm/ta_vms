@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Box, Stack, Tab, Tabs } from '@mui/material'
+import { useRegisterPendingEdits } from './settings/PendingEdits'
 import { useTranslation } from 'react-i18next'
 import ViewControls from './ViewControls'
 
@@ -33,6 +34,9 @@ export default function AdminView() {
   // Serializes tab switches so a rapid second click cannot start a concurrent
   // applyIfDirty save for the same dirty form
   const switching = useRef(false)
+
+  // Also reachable from outside: leaving for the operator view is routing, not a tab change.
+  useRegisterPendingEdits(panelRef)
 
   const handleTabChange = async (_: unknown, v: number) => {
     if (switching.current) return

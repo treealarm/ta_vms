@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { PendingEditsProvider } from './components/settings/PendingEdits'
 import { Alert, Box, Button, CircularProgress, IconButton, Tab, Tabs, Typography } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import { useTranslation } from 'react-i18next'
@@ -133,6 +134,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <PendingEditsProvider>
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden' }}>
         {/* The gateway is up but something it needs is not, so the app would load and then show
             nothing but empty lists — say which service is broken instead. */}
@@ -214,6 +216,7 @@ export default function App() {
           </Box>
         )}
       </Box>
+      </PendingEditsProvider>
     </BrowserRouter>
   )
 }
