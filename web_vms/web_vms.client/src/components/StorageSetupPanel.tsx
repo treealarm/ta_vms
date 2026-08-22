@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Box, Button, List, Stack, TextField, Typography } from '@mui/material'
+import { Box, Button, FormControlLabel, List, Stack, Switch, TextField, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addStorage, loadStorages, removeStorage, updateStorage } from '../store/storageSlice'
@@ -38,13 +38,15 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
   const [rootPath, setRootPath] = useState(storage?.rootPath ?? '')
   const [reservedGb, setReservedGb] =
     useState(toGbString(storage?.reservedBytes ?? DEFAULT_RESERVED_GB * GIB))
+  const [disabled, setDisabled] = useState(storage?.disabled === true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [browsing, setBrowsing] = useState(false)
 
   // Snapshot for dirty detection and Cancel — only reservedGb is editable on existing storages
   const [snap, setSnap] = useState(toGbString(storage?.reservedBytes ?? DEFAULT_RESERVED_GB * GIB))
-  const dirty = !isNew && reservedGb !== snap
+  const [disabledSnap, setDisabledSnap] = useState(storage?.disabled === true)
+  const dirty = !isNew && (reservedGb !== snap || disabled !== disabledSnap)
 
   // A cleared/invalid field must block the save — Number('') is 0 and would
   // silently wipe the reservation on the auto-apply navigation path
@@ -79,6 +81,7 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
         storageId: storageId.trim(),
         rootPath: rootPath.trim(),
         reservedBytes,
+        disabled,
       }))
       setSaving(false)
       if (addStorage.rejected.match(result)) {
@@ -94,6 +97,7 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
       storageId: storage.storageId,
       rootPath: storage.rootPath,
       reservedBytes,
+      disabled,
     }))
     setSaving(false)
     if (updateStorage.rejected.match(result)) {
@@ -101,6 +105,7 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
       return false
     }
     setSnap(reservedGb)
+    setDisabledSnap(disabled)
     await dispatch(loadStorages())
     return true
   }
@@ -113,9 +118,15 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
   const handleCancel = () => {
     setError('')
     setReservedGb(snap)
+    setDisabled(disabledSnap)
   }
 
   const handleRemove = async () => {
+    // Deleting takes every camera's assignment with it — the foreign key cascades and there is
+    // no undo. Say how many before asking, because "3 cameras" and "none" are different decisions.
+    const used = storage?.cameraCount ?? 0
+    if (used > 0 && !window.confirm(t('storage.deleteWarning', { count: used })))
+      return
     setError('')
     const result = await dispatch(removeStorage(storage!.storageId))
     if (removeStorage.rejected.match(result)) {
@@ -189,6 +200,22 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
             sx={{ width: 140 }}
             inputProps={{ min: 0, step: 0.5 }}
           />
+
+          {/* The label says what it does, so it needs no caption under it: writing stops, reading
+              does not. Deleting is the destructive way to say the same thing -- it cascades through
+              camera_storage and every camera assigned here loses its assignment. */}
+          <Box>
+            <FormControlLabel
+              control={<Switch checked={disabled} onChange={(e) => setDisabled(e.target.checked)} color="warning" />}
+              label={t('storage.disabled')}
+            />
+            {!isNew && (storage?.cameraCount ?? 0) > 0 && (
+              <Typography variant="caption" color="text.secondary" display="block">
+                {t('storage.camerasUsing', { count: storage!.cameraCount ?? 0 })}
+              </Typography>
+            )}
+          </Box>
+
           {error && <Typography variant="caption" color="error">{error}</Typography>}
         </Stack>
       </Box>

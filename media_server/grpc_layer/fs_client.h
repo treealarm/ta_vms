@@ -47,6 +47,11 @@ public:
 
   // Returns all storages assigned to the camera in priority order (lowest priority number first).
   // Falls back gracefully: returns empty vector if no storages are assigned or VmsFs is unavailable.
+  /// Drops every cached storage answer. Called when VmsCfg says a storage changed — taken out of
+  /// service, repointed, removed. Without it the entry lives out its TTL, and a disk disabled for
+  /// writing keeps receiving segments for as long as that lasts.
+  void invalidate_storage_cache();
+
   std::vector<storage_info> get_camera_storages(const std::string& camera_id);
 
   // force_retained is set by camera-side (edge) import: the operator asked for that range

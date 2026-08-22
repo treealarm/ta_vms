@@ -6,9 +6,13 @@ namespace VmsFs;
 public sealed class CameraStorageSubscriber(
   DaprPublishSubscribeClient pubSubClient,
   CameraStorageCache storageCache,
+  StorageListCache storageListCache,
   ILogger<CameraStorageSubscriber> logger) : IHostedService, IDisposable
 {
   private const string CameraStorageChangedTopic = "camera-storage-changed";
+  // A storage itself changed — path, reservation, taken out of service, removed. Which cameras
+  // that affects is not in the payload, so both caches are dropped whole.
+  private const string StorageConfigChangedTopic = "storage-config-changed";
   private static readonly string PubSubName =
     Environment.GetEnvironmentVariable("PUBSUB_NAME")
       ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
@@ -25,13 +29,12 @@ public sealed class CameraStorageSubscriber(
   {
     try
     {
-      await pubSubClient.SubscribeAsync(
-        PubSubName,
-        CameraStorageChangedTopic,
-        new DaprSubscriptionOptions(
-          new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry)),
-        HandleAsync,
-        ct);
+      var options = new DaprSubscriptionOptions(
+        new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry));
+
+      await Task.WhenAll(
+        pubSubClient.SubscribeAsync(PubSubName, CameraStorageChangedTopic, options, HandleAsync, ct),
+        pubSubClient.SubscribeAsync(PubSubName, StorageConfigChangedTopic, options, HandleStorageAsync, ct));
     }
     catch (OperationCanceledException) { }
     catch (Exception ex)
@@ -50,6 +53,25 @@ public sealed class CameraStorageSubscriber(
         storageCache.Invalidate(cameraId);
         logger.LogDebug("Camera '{CameraId}' storage cache invalidated", cameraId);
       }
+      return Task.FromResult(TopicResponseAction.Success);
+    }
+    catch
+    {
+      return Task.FromResult(TopicResponseAction.Retry);
+    }
+  }
+
+  private Task<TopicResponseAction> HandleStorageAsync(TopicMessage message, CancellationToken _)
+  {
+    try
+    {
+      var storageId = JsonSerializer.Deserialize<string>(message.Data.Span);
+      // The list first: the per-camera cache is built from it, so clearing that one first would
+      // let a refresh in between rebuild it from the stale list.
+      storageListCache.Invalidate();
+      storageCache.InvalidateAll();
+      logger.LogInformation(
+        "Storage '{StorageId}' changed — storage caches dropped", storageId);
       return Task.FromResult(TopicResponseAction.Success);
     }
     catch

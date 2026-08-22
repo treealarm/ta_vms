@@ -45,6 +45,11 @@ service FsService {
   rpc ListDirectories(ListDirectoriesRequest) returns (ListDirectoriesResponse);
 
   rpc GetCameraStorage(GetCameraStorageRequest) returns (GetCameraStorageResponse);
+  // Can this camera record right now? Asked before turning recording on, so the operator learns
+  // why it will not work instead of watching a red frame that means nothing. The file service is
+  // the only one that can answer: it knows the assignments, which storages are in service, and --
+  // by writing a probe file -- whether the disk actually accepts data.
+  rpc CheckRecordingReadiness(RecordingReadinessRequest) returns (RecordingReadiness);
 
   rpc GetClipsForEvent(GetClipsForEventRequest) returns (GetRecordingsResponse);
 
@@ -366,6 +371,24 @@ message GetCameraStorageRequest {
 message GetCameraStorageResponse {
   optional StorageInfo storage = 1;
   repeated StorageInfo storages = 2;
+}
+
+message RecordingReadinessRequest {
+  string camera_id = 1;
+}
+
+message RecordingReadiness {
+  bool ready = 1;
+  // Why not, as a stable key the UI translates rather than a sentence it has to display verbatim:
+  //   "no_storage_assigned"    the camera has no storage at all
+  //   "all_storages_disabled"  every storage it has is out of service
+  //   "storage_not_writable"   the disk refused a probe file
+  // Empty when ready.
+  string reason = 2;
+  // The storage the reason is about, when it is about one of them.
+  string storage_id = 3;
+  // The path and the operating system's own words, for the operator who has to go and fix it.
+  string detail = 4;
 }
 
 message GetRecordingByUidRequest {

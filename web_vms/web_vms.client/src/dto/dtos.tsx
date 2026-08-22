@@ -410,6 +410,10 @@ export type StorageDto = {
   storageId: string
   rootPath: string
   reservedBytes: number
+  /** Out of service: kept, with its camera assignments, but taking no new recordings. */
+  disabled?: boolean
+  /** Cameras recording here. They lose their assignment if it is deleted — the FK cascades. */
+  cameraCount?: number
 }
 
 /** One writable directory on a recording node's disk. `path` is that node's own path style. */

@@ -122,7 +122,10 @@
     "browseNoServer": "No recording server is configured",
     "rootPathHint": "Absolute path on the recording node — /srv/video or D:\\video",
     "pathNotAbsolute": "Root path must be absolute, e.g. /srv/video or D:\\video",
-    "browseNotWritable": "Not writable — open it to look inside"
+    "browseNotWritable": "Not writable — open it to look inside",
+    "disabled": "Disabled for writing",
+    "camerasUsing": "{{count}} camera(s) record here — deleting the storage removes their assignment.",
+    "deleteWarning": "{{count}} camera(s) record on this storage. Deleting it removes their storage assignment, and that cannot be undone. Delete anyway?"
   },
   "storageControl": {
     "title": "Storage assignment",
@@ -469,7 +472,14 @@
     "retentionActive": "Retention active",
     "cameraDisabledTip": "Camera is disabled — arm/PTZ unavailable",
     "scheduleActive": "Recording by schedule — overrides the stream profile",
-    "onvifEvent": "{{label}}"
+    "onvifEvent": "{{label}}",
+    "notReady": {
+      "no_storage_assigned": "Recording not started: this camera has no storage assigned.",
+      "all_storages_disabled": "Recording not started: every storage assigned to this camera is out of service.",
+      "storage_not_writable": "Recording not started: storage '{{storage}}' will not accept files ({{detail}}).",
+      "config_unavailable": "Recording not started: the configuration service did not answer.",
+      "unknown": "Recording not started: this camera is not ready to record."
+    }
   },
   "recordings": {
     "earlier": "Earlier",

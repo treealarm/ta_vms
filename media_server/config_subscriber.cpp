@@ -1,5 +1,7 @@
 #include "config_subscriber.h"
 
+#include "grpc_layer/fs_client.h"
+
 #include <format>
 #include <unordered_set>
 
@@ -59,6 +61,10 @@ grpc::Status config_subscriber::ListTopicSubscriptions(
   auto* sub = response->add_subscriptions();
   sub->set_pubsub_name(m_pubsub_name);
   sub->set_topic(k_topic);
+
+  auto* storage_sub = response->add_subscriptions();
+  storage_sub->set_pubsub_name(m_pubsub_name);
+  storage_sub->set_topic(k_storage_topic);
   return grpc::Status::OK;
 }
 
@@ -67,6 +73,17 @@ grpc::Status config_subscriber::OnTopicEvent(
   const dapr::proto::runtime::v1::TopicEventRequest* request,
   dapr::proto::runtime::v1::TopicEventResponse* response)
 {
+  if (request->topic() == k_storage_topic)
+  {
+    // Nothing to filter on and nothing to reload: the storage answers are simply no longer
+    // trustworthy, and the next segment will ask again.
+    logger::instance().info(
+      "config_subscriber: storage configuration changed, dropping cached storage assignments");
+    fs_client::instance().invalidate_storage_cache();
+    response->set_status(dapr::proto::runtime::v1::TopicEventResponse::SUCCESS);
+    return grpc::Status::OK;
+  }
+
   // Payload names the server whose configuration changed — only react if it's ours. Dapr unwraps
   // the CloudEvent envelope, so the data field holds the object VmsCfg published:
   // {"server_id":"vms","camera_ids":["cam1"]}.

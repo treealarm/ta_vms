@@ -315,6 +315,16 @@ message Storage {
   string storage_id     = 1;
   string root_path      = 2;
   uint64 reserved_bytes = 3;
+  // A disabled storage is kept, with its camera assignments, but takes no new recordings —
+  // a disk pulled for maintenance rather than one removed from the system. Existing clips on
+  // it stay readable: playback, export and cleanup all still resolve paths through it.
+  //
+  // Deliberately not expressed by deleting the row: that would drop the assignments too, and
+  // putting the disk back would mean reassigning every camera by hand.
+  bool   disabled       = 4;
+  // How many cameras record here. Deleting the storage takes their assignments with it —
+  // the foreign key cascades — so the operator is told the cost before paying it.
+  uint32 camera_count   = 5;
 }
 
 message CameraStorageAssignment {

@@ -283,6 +283,11 @@ public sealed partial class FsServiceImpl(
     return response;
   }
 
+  public override Task<RecordingReadiness> CheckRecordingReadiness(
+    RecordingReadinessRequest request,
+    ServerCallContext context) =>
+    storageCache.CheckReadinessAsync(request.CameraId, context.CancellationToken);
+
   public override async Task<GetRecordingByUidResponse> GetRecordingByUid(
     GetRecordingByUidRequest request,
     ServerCallContext context)

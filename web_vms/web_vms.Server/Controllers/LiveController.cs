@@ -377,6 +377,27 @@ public class LiveController(
     return Ok(ApiResponseMapper.ToApiResponse(lastResponse));
   }
 
+  /// <summary>
+  /// Whether this camera can record, asked of the file service that would have to do the writing.
+  /// The UI calls it before switching continuous recording on, so a camera with no storage — or
+  /// one whose disk is out of service — says so at the moment the operator asks for it, instead
+  /// of accepting the click and recording nothing.
+  /// </summary>
+  [HttpGet("cameras/{cameraId}/recording-readiness")]
+  [CameraAccess(CameraAction.ViewLive)]
+  public async Task<IActionResult> RecordingReadiness(string cameraId, CancellationToken ct)
+  {
+    var camera = await _manager.Get(cameraId);
+    if (camera is null)
+      return NotFound();
+
+    var fsClient = _registry.GetFsClient(camera.ServerId ?? string.Empty);
+    var resp = await fsClient.CheckRecordingReadinessAsync(
+      new Vms.Fs.RecordingReadinessRequest { CameraId = cameraId }, cancellationToken: ct);
+
+    return Ok(new RecordingReadinessDto(resp.Ready, resp.Reason, resp.StorageId, resp.Detail));
+  }
+
   [HttpGet("cameras/{cameraId}/state")]
   [CameraAccess(CameraAction.ViewLive)]
   public async Task<IActionResult> GetCameraState(string cameraId, CancellationToken ct)
@@ -446,3 +467,6 @@ public class LiveController(
 }
 
 public record OnvifBboxCapableBody(List<string>? CameraIds);
+
+/// <summary>Why a camera cannot record, in a key the UI translates rather than a sentence.</summary>
+public record RecordingReadinessDto(bool Ready, string Reason, string StorageId, string Detail);

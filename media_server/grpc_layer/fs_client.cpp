@@ -489,6 +489,12 @@ std::vector<fs_client::storage_info> fs_client::get_camera_storages(const std::s
   }
   return storages;
 }
+void fs_client::invalidate_storage_cache()
+{
+  std::lock_guard lock(m_storage_mutex);
+  m_storage_cache.clear();
+}
+
 std::vector<fs_client::storage_info> fs_client::fetch_camera_storages(const std::string& camera_id)
 {
   if (!m_stub)

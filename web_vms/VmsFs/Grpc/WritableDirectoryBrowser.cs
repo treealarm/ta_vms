@@ -353,8 +353,13 @@ public static class WritableDirectoryBrowser
     return entry;
   }
 
-  /// <summary>Creates and removes a file — the only check that answers the question actually
-  /// being asked: can the recording process put an archive here.</summary>
+  /// <summary>
+  /// Creates and removes a file — the only check that answers the question actually being asked:
+  /// can the recording process put an archive here. Public so the recording-readiness check can
+  /// ask the same question the browser does, and get the same answer.
+  /// </summary>
+  public static bool CanWrite(string directory) => IsWritable(directory);
+
   private static bool IsWritable(string directory)
   {
     var probe = Path.Combine(directory, ProbePrefix + Guid.NewGuid().ToString("N"));

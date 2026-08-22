@@ -122,7 +122,10 @@
     "browseNoServer": "No hay ningún servidor de grabación configurado",
     "rootPathHint": "Ruta absoluta en el nodo de grabación: /srv/video o D:\\video",
     "pathNotAbsolute": "La ruta raíz debe ser absoluta, p. ej. /srv/video o D:\\video",
-    "browseNotWritable": "Sin permiso de escritura: ábralo para ver su contenido"
+    "browseNotWritable": "Sin permiso de escritura: ábralo para ver su contenido",
+    "disabled": "Escritura deshabilitada",
+    "camerasUsing": "{{count}} cámara(s) graban aquí — eliminar el almacenamiento quita su asignación.",
+    "deleteWarning": "{{count}} cámara(s) graban en este almacenamiento. Al eliminarlo se quita su asignación y no se puede deshacer. ¿Eliminar de todos modos?"
   },
   "storageControl": {
     "title": "Asignación de almacén",
@@ -469,7 +472,14 @@
     "retentionActive": "Retención activa",
     "cameraDisabledTip": "Cámara desactivada — armar/PTZ no disponible",
     "scheduleActive": "Grabando por horario — prevalece sobre el perfil del flujo",
-    "onvifEvent": "{{label}}"
+    "onvifEvent": "{{label}}",
+    "notReady": {
+      "no_storage_assigned": "Grabación no iniciada: esta cámara no tiene almacenamiento asignado.",
+      "all_storages_disabled": "Grabación no iniciada: todos los almacenamientos de esta cámara están fuera de servicio.",
+      "storage_not_writable": "Grabación no iniciada: el almacenamiento '{{storage}}' no acepta archivos ({{detail}}).",
+      "config_unavailable": "Grabación no iniciada: el servicio de configuración no respondió.",
+      "unknown": "Grabación no iniciada: esta cámara no está lista para grabar."
+    }
   },
   "recordings": {
     "earlier": "Anterior",

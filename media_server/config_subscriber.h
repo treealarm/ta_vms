@@ -42,4 +42,8 @@ private:
   std::string     m_pubsub_name;
 
   static constexpr const char* k_topic = "server-config-changed";
+  // A storage changed: repointed, taken out of service, removed. Not server-scoped -- a storage
+  // is not owned by one node -- so unlike k_topic there is nothing in the payload to filter on,
+  // and the only reaction is to stop trusting the cached answers.
+  static constexpr const char* k_storage_topic = "storage-config-changed";
 };

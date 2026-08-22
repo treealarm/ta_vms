@@ -23,7 +23,7 @@ public sealed class StorageController(
   public async Task<IActionResult> ListStorages(CancellationToken ct)
   {
     var resp = await storageClient.ListStoragesAsync(new ListStoragesRequest(), cancellationToken: ct);
-    var dtos = resp.Storages.Select(s => new StorageDto(s.StorageId, s.RootPath, s.ReservedBytes)).ToList();
+    var dtos = resp.Storages.Select(s => new StorageDto(s.StorageId, s.RootPath, s.ReservedBytes, s.Disabled, s.CameraCount)).ToList();
     return Ok(dtos);
   }
 
@@ -43,7 +43,8 @@ public sealed class StorageController(
     {
       StorageId     = dto.StorageId,
       RootPath      = dto.RootPath,
-      ReservedBytes = dto.ReservedBytes
+      ReservedBytes = dto.ReservedBytes,
+      Disabled      = dto.Disabled
     }, cancellationToken: ct);
 
     if (!resp.Success)
@@ -120,7 +121,8 @@ public sealed class StorageController(
     {
       StorageId     = dto.StorageId,
       RootPath      = dto.RootPath,
-      ReservedBytes = dto.ReservedBytes
+      ReservedBytes = dto.ReservedBytes,
+      Disabled      = dto.Disabled
     }, cancellationToken: ct);
 
     if (!resp.Success)
@@ -177,7 +179,7 @@ public sealed class StorageController(
   }
 }
 
-public record StorageDto(string StorageId, string RootPath, ulong ReservedBytes);
+public record StorageDto(string StorageId, string RootPath, ulong ReservedBytes, bool Disabled = false, uint CameraCount = 0);
 /// <param name="Writable">False for a directory that cannot hold the archive — still listed, so a
 /// writable directory inside it stays reachable, but it cannot be picked.</param>
 public record DirectoryEntryDto(

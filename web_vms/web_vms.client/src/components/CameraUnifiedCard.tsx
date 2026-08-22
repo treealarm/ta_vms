@@ -14,6 +14,8 @@ import {
   ToggleButtonGroup,
   Tooltip,
   Typography,
+  Alert,
+  Snackbar,
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
@@ -166,27 +168,57 @@ export default function CameraUnifiedCard({
     (merged.streams ?? [])[0] ??
     null
   const activeRetention = merged.activeRetentionWindow === true && recordingMode !== 'off'
-  // Red = actually retained (kept on disk), not merely armed/prealarm buffering to a temp file.
-  // Alarm retention is per-stream: a camera-wide window (no specific stream) retains all streams,
-  // otherwise only the named ones — so an alarm on one stream no longer lights its siblings.
+  // Retention means "this footage is being kept", which is not the same as "this camera is
+  // recording" — and a red frame is read as the latter by anyone who has used a camera system.
+  // Recording owns red; retention gets amber below.
+  //
+  // The recordingMode check comes first on purpose. It used to sit after the continuous branch,
+  // so a stream whose profile said continuous lit the frame even with the camera's recording
+  // switched off — the frame claimed a recording that was not happening.
   const isStreamRetained = (s: CameraStreamDto) => {
-    if (effectiveStreamMode(s) === 'continuous') return true
     if (effectiveStreamMode(s) === 'off' || recordingMode === 'off') return false
+    if (effectiveStreamMode(s) === 'continuous') return true
     return merged.allStreamsRetained === true || (merged.retainedStreams ?? []).includes(s.streamName)
   }
   const anyStreamRetained = (merged.streams ?? []).some(isStreamRetained)
   const activeStreamContinuous = activeStreamObj?.recordingProfile?.mode === 'continuous'
 
   const [pendingContinuous, setPendingContinuous] = useState(false)
-  const toggleContinuousRecording = () => {
+  const [recordingError, setRecordingError] = useState<string | null>(null)
+  const toggleContinuousRecording = async () => {
     // A schedule window outranks the profile, so toggling it would have no visible effect.
     if (!activeStreamObj || isDisabled || scheduleActive) return
+    const turningOn = !activeStreamContinuous
     const profileId = activeStreamContinuous
       ? (effectiveArmed ? RECORDING_PROFILE_PREALARM_ID : RECORDING_PROFILE_OFF_ID)
       : RECORDING_PROFILE_CONTINUOUS_ID
+
     setPendingContinuous(true)
-    void dispatch(setStreamRecordingProfile({ cameraId: merged.cameraId, streamName: activeStreamObj.streamName, profileId }))
-      .finally(() => setPendingContinuous(false))
+    try {
+      // Ask the file service first, and only when switching on: it is the one that knows whether
+      // a storage is assigned, in service, and actually writable. Without this the click succeeds,
+      // the profile changes, and nothing is ever written — which is what the operator then has to
+      // discover by noticing an absence.
+      if (turningOn) {
+        const r = await fetch(`/api/live/cameras/${encodeURIComponent(merged.cameraId)}/recording-readiness`)
+        if (r.ok) {
+          const readiness: { ready: boolean; reason: string; storageId: string; detail: string } = await r.json()
+          if (!readiness.ready) {
+            setRecordingError(t(`cameraCard.notReady.${readiness.reason}`, {
+              defaultValue: t('cameraCard.notReady.unknown'),
+              storage: readiness.storageId,
+              detail: readiness.detail,
+            }))
+            return
+          }
+        }
+      }
+      await dispatch(setStreamRecordingProfile({
+        cameraId: merged.cameraId, streamName: activeStreamObj.streamName, profileId,
+      }))
+    } finally {
+      setPendingContinuous(false)
+    }
   }
 
   const configuredRtsp = camera.path || ''
@@ -309,15 +341,19 @@ export default function CameraUnifiedCard({
       sx={{
         height: '100%', width: '100%', overflow: 'hidden',
         display: 'flex', flexDirection: 'row',
-        ...(activeRetention
+        // Red, solid: this camera is recording. Amber, dashed: it is not recording, but footage
+        // it already has is being retained. Two different facts, two different marks.
+        ...(recordingMode !== 'off'
           ? {
               outline: (t) => `2px solid ${t.palette.error.main}`,
               outlineOffset: '-2px',
-              boxShadow: (t) => `0 0 8px ${t.palette.error.main}66`,
+              ...(activeRetention
+                ? { boxShadow: (t) => `0 0 8px ${t.palette.error.main}66` }
+                : {}),
             }
-          : anyStreamRetained
+          : anyStreamRetained || activeRetention
             ? {
-                outline: (t) => `2px solid ${t.palette.error.main}`,
+                outline: (t) => `2px dashed ${t.palette.warning.main}`,
                 outlineOffset: '-2px',
               }
             : {}),
@@ -451,7 +487,7 @@ export default function CameraUnifiedCard({
                 <IconButton
                   size="small"
                   disabled={pendingContinuous || isDisabled || scheduleActive}
-                  onClick={toggleContinuousRecording}
+                  onClick={() => void toggleContinuousRecording()}
                   sx={{
                     ...BTN_SX,
                     ...(scheduleActive || activeStreamContinuous ? { color: 'error.main' } : {}),
@@ -759,6 +795,16 @@ export default function CameraUnifiedCard({
           />
         )}
       </Box>
+      <Snackbar
+        open={recordingError !== null}
+        onClose={() => setRecordingError(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ position: 'absolute' }}
+      >
+        <Alert severity="error" variant="filled" onClose={() => setRecordingError(null)}>
+          {recordingError}
+        </Alert>
+      </Snackbar>
     </Card>
   )
 }
