@@ -159,6 +159,13 @@ accumulating messages nobody reads.
   replica.
 - `VmsCfg`, `VmsUtils`, `VmsLogger` — `VmsCfg` and `VmsUtils` are replicable (their once-only work
   lives in `VmsSingleton`); `VmsLogger` is sharded by node, because it reads node-local files.
+- `roitrc` (roi-transcode-svc) — **sharded by node**, and this one is a correctness requirement
+  rather than a capacity choice. It is handed absolute paths to clips on the node's own disk, so an
+  instance elsewhere either finds nothing there or finds a *different* node's file at the same path
+  and overwrites it. Which instance a node talks to therefore comes from that node's entry in
+  `MEDIA_SERVER_PAIRS` (fifth part, optional), resolved through VmsCfg — never from a global env
+  var, which cannot express "the one next to me". A node that names none simply does not
+  re-compress.
 
 **Naming rule:** a service that cannot be replicated carries `Singleton` in its project name and Dapr
 app-id. A reader must be able to tell the scaling class from the name alone, without reading

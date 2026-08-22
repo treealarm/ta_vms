@@ -94,6 +94,8 @@ public sealed class RoiTranscodeScheduler(
   private readonly CancellationTokenSource _cts = new();
   private Task? _loop;
   private TimeSpan _nextDelay = Tick;
+  private string? _roiAppId;
+  private bool _disabledLogged;
 
   // Only this node's cameras. Until it arrives every tick is skipped: both VmsFs
   // instances share one database, and without the scope one would re-encode the
@@ -101,31 +103,28 @@ public sealed class RoiTranscodeScheduler(
   private volatile bool _scopeReady;
   public string? OwnServerId { get; private set; }
 
-  public void SetScope(string? serverId)
+  /// <summary>
+  /// This node and the ROI service that sits on it. Both arrive together, from the
+  /// pairing, because the pass may only ever talk to the instance that can see the
+  /// same disk: it hands over absolute paths to local clips, and any other instance
+  /// would either find nothing there or find a different node's file and overwrite it.
+  /// </summary>
+  public void SetScope(string? serverId, string? roiAppId)
   {
     OwnServerId = serverId;
+    _roiAppId = roiAppId;
     _scopeReady = true;
   }
 
   public Task StartAsync(CancellationToken ct)
   {
-    var appId = Environment.GetEnvironmentVariable("DAPR_ROI_APP_ID");
-    if (string.IsNullOrWhiteSpace(appId))
-    {
-      // Feature gate, not a missing setting: a deployment without a ROI service
-      // simply does not re-compress, and saying so once is better than a
-      // scheduler that wakes up forever with nowhere to send work.
-      logger.LogInformation("ROI transcode: DAPR_ROI_APP_ID is not set, pass disabled");
-      return Task.CompletedTask;
-    }
-
-    _loop = Task.Run(() => LoopAsync(appId, _cts.Token), CancellationToken.None);
+    _loop = Task.Run(() => LoopAsync(_cts.Token), CancellationToken.None);
     return Task.CompletedTask;
   }
 
-  private async Task LoopAsync(string appId, CancellationToken ct)
+  private async Task LoopAsync(CancellationToken ct)
   {
-    var client = new RoiFileTranscode.RoiFileTranscodeClient(DaprClient.CreateInvocationInvoker(appId));
+    RoiFileTranscode.RoiFileTranscodeClient? client = null;
 
     while (!ct.IsCancellationRequested)
     {
@@ -134,6 +133,25 @@ public sealed class RoiTranscodeScheduler(
         await Task.Delay(_nextDelay, ct);
         if (!_scopeReady)
           continue;
+
+        if (_roiAppId is null)
+        {
+          // A feature gate, not a missing setting: a node whose entry in
+          // MEDIA_SERVER_PAIRS names no ROI service simply does not re-compress.
+          // Said once, because the alternative is a scheduler that wakes up
+          // forever with nowhere to send work.
+          if (!_disabledLogged)
+          {
+            _disabledLogged = true;
+            logger.LogInformation(
+              "ROI transcode: no ROI service paired with this node, pass disabled");
+          }
+          _nextDelay = Tick;
+          continue;
+        }
+
+        client ??= new RoiFileTranscode.RoiFileTranscodeClient(
+          DaprClient.CreateInvocationInvoker(_roiAppId));
         var result = await SweepAsync(client, ct);
         _nextDelay = result == SweepResult.Worked ? Breath : Tick;
       }

@@ -31,6 +31,12 @@ builder.WebHost.ConfigureKestrel(options =>
 });
 
 var app = builder.Build();
+
+// Built here rather than on the first request that happens to need it. Its constructor parses
+// MEDIA_SERVER_PAIRS, and a malformed value is a misconfiguration: it should stop the process
+// while someone is still watching the startup, not surface later as one failing gRPC call.
+app.Services.GetRequiredService<CameraStorage>();
+
 await app.Services.GetRequiredService<DbMigrator>().MigrateAsync();
 // Loaded before the first request: ListCameras resolves schedule_active from this cache, and an
 // empty cache would report "not recording" for a camera whose window is currently open.

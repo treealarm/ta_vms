@@ -283,6 +283,13 @@ message MediaServerNode {
   // The VmsLogger instance that can read this node's log files. Logs are written to local disk, so
   // one instance only ever sees the machine it runs on.
   string logger_id = 5;
+  // The roi-transcode-svc instance that can reach this node's storage. It is handed absolute paths
+  // to clips on local disk, so a central instance would either find nothing there or — worse — find
+  // a different node's file at the same path and overwrite it.
+  //
+  // Empty means this node does not re-compress: the ROI service is genuinely optional, unlike the
+  // three above.
+  string roi_id    = 6;
 }
 
 message ListMediaServersRequest {}

@@ -74,13 +74,13 @@ if (!string.IsNullOrWhiteSpace(ownAppId))
   var clipCleaner = app.Services.GetRequiredService<ClipCleaner>();
   _ = Task.Run(async () =>
   {
-    var ownServerId = await ResolveOwnServerIdAsync(cfg, ownAppId);
+    var (ownServerId, roiAppId) = await ResolveOwnNodeAsync(cfg, ownAppId);
     clipCleaner.OwnServerId = ownServerId;
     // Both VmsFs instances share one ta_fs database, so every background service must scope itself
     // to its own node or they would fight over each other's cameras.
     app.Services.GetRequiredService<LivenessSweeper>().SetScope(ownServerId);
     app.Services.GetRequiredService<EdgeImportScheduler>().SetScope(ownServerId);
-    app.Services.GetRequiredService<RoiTranscodeScheduler>().SetScope(ownServerId);
+    app.Services.GetRequiredService<RoiTranscodeScheduler>().SetScope(ownServerId, roiAppId);
   });
 }
 else
@@ -88,12 +88,19 @@ else
   // No APP_ID means no pairing to resolve — a single FS instance owning everything.
   app.Services.GetRequiredService<LivenessSweeper>().SetScope(null);
   app.Services.GetRequiredService<EdgeImportScheduler>().SetScope(null);
-  app.Services.GetRequiredService<RoiTranscodeScheduler>().SetScope(null);
+  // Without a pairing there is no node, and therefore no roi service that is *this* node's. The
+  // pass stays off rather than guessing: handing a local path to whichever instance Dapr resolves
+  // is how one node overwrites another's clip.
+  app.Services.GetRequiredService<RoiTranscodeScheduler>().SetScope(null, null);
 }
 
 app.Run();
 
-static async Task<string?> ResolveOwnServerIdAsync(CfgService.CfgServiceClient cfg, string fsAppId)
+// This instance's node, and the services on it that only it may talk to. Both come from the one
+// place the pairing is declared (MEDIA_SERVER_PAIRS), so they cannot drift apart the way a second
+// environment variable naming the ROI service would.
+static async Task<(string? ServerId, string? RoiAppId)> ResolveOwnNodeAsync(
+  CfgService.CfgServiceClient cfg, string fsAppId)
 {
   while (true)
   {
@@ -103,12 +110,12 @@ static async Task<string?> ResolveOwnServerIdAsync(CfgService.CfgServiceClient c
       var match = resp.Servers.FirstOrDefault(s =>
         string.Equals(s.FsId, fsAppId, StringComparison.OrdinalIgnoreCase));
       if (match is not null)
-        return match.ServerId;
+        return (match.ServerId, string.IsNullOrWhiteSpace(match.RoiId) ? null : match.RoiId);
       Console.Error.WriteLine($"VmsFs: no server paired with fs_id='{fsAppId}' in ListMediaServers — retrying");
     }
     catch (Exception ex)
     {
-      Console.Error.WriteLine($"VmsFs: ResolveOwnServerId failed, retrying in 5s: {ex.Message}");
+      Console.Error.WriteLine($"VmsFs: ResolveOwnNode failed, retrying in 5s: {ex.Message}");
     }
     await Task.Delay(5_000);
   }

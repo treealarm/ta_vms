@@ -57,7 +57,7 @@
                 "POSTGRES_CFG_DB": "ta_cfg",
                 "VMS_MTX_HOST": "localhost",
                 "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage",
-                "MEDIA_SERVER_PAIRS": "vms:vmsfs:vmsonvif:vmslogger,vms-2:vmsfs-2:vmsonvif-2:vmslogger-2",
+                "MEDIA_SERVER_PAIRS": "vms:vmsfs:vmsonvif:vmslogger:roitrc,vms-2:vmsfs-2:vmsonvif-2:vmslogger-2",
                 "DAPR_STATE_STORE_NAME": "statestore",
                 "APP_ID": "vmscfg",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
@@ -137,11 +137,9 @@
                 "VMS_BACKFILL_RETRY_SECONDS": "300",
                 "VMS_BACKFILL_LOOKBACK_HOURS": "48",
                 "VMS_BACKFILL_JOB_RETENTION_HOURS": "24",
-                // ROI re-compression. Without DAPR_ROI_APP_ID the pass switches
-                // itself off, which is the feature gate -- and is why it did
-                // nothing under F5 until these were listed here as well as in
-                // .env.
-                "DAPR_ROI_APP_ID": "roitrc",
+                // ROI re-compression. Which service to call is no longer named
+                // here: it comes from this node's entry in MEDIA_SERVER_PAIRS,
+                // so it cannot name an instance that cannot see the same disk.
                 "VMS_ROI_RETRY_SECONDS": "600",
                 "VMS_ROI_MAX_ATTEMPTS": "3",
                 "VMS_ROI_CRF": "28",
