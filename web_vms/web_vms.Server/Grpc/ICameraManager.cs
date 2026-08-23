@@ -15,6 +15,9 @@ namespace web_vms
     Task<bool> SetSetup(CameraSetupDto dto, CancellationToken ct = default);
     Task<CameraSetupDto?> Get(string id, CancellationToken ct = default);
 
+    /// <summary>Armed flag, or null when VmsCfg could not answer — the caller leaves it unknown.</summary>
+    Task<bool?> GetArmed(string cameraId, CancellationToken ct = default);
+
     Task<List<MediaMtxServerDto>> ListMediaMtxServers(CancellationToken ct = default);
     Task<bool> UpsertMediaMtxServer(MediaMtxServerDto dto, CancellationToken ct = default);
     Task<bool> RemoveMediaMtxServer(string id, CancellationToken ct = default);

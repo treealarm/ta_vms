@@ -7,15 +7,15 @@ using RecordingMode = Vms.Cfg.RecordingMode;
 
 namespace web_vms;
 
-public sealed class StreamStateService(ICameraManager manager)
+public sealed class StreamStateService(ICameraManager manager, ServerPairRegistry registry)
 {
   private static readonly TimeSpan MediaCallTimeout = TimeSpan.FromSeconds(5);
 
   private static CallOptions MediaCallOptions(CancellationToken ct) =>
     new(deadline: DateTime.UtcNow.Add(MediaCallTimeout), cancellationToken: ct);
 
-  private static CameraControlService.CameraControlServiceClient GetMediaClient(string serverId) =>
-    new(DaprClient.CreateInvocationInvoker(serverId));
+  private CameraControlService.CameraControlServiceClient GetMediaClient(string serverId) =>
+    registry.GetMediaClient(serverId);
 
   public async Task PushStreamStateAsync(string cameraId, string streamName, CancellationToken ct)
   {

@@ -8,6 +8,12 @@ public enum WhepProxyOutcome
   InvalidPath,
   CameraNotFound,
   MediaMtxUnavailable,
+  // MediaMTX accepted the request and did not answer in time. On the offer path this is the
+  // expected state, not a fault: a stream stopped as idle only starts publishing once a viewer
+  // asks, and MediaMTX holds the offer until a publisher shows up. Worth its own outcome because
+  // the honest answer is "not yet, ask again", which is a very different thing to tell a browser
+  // than "the media server is broken".
+  MediaMtxTimedOut,
   InvalidToken,
 }
 
@@ -37,6 +43,15 @@ public sealed class WhepProxyService(
   ICameraManager _manager, IHttpClientFactory _httpClientFactory, WhepSessionToken _tokens)
 {
   public const string MediaMtxHttpClientName = "mediamtx-whep";
+
+  /// <summary>
+  /// How long the gateway will hold a browser connection waiting for MediaMTX to answer an offer.
+  /// Deliberately short. A browser allows six connections per origin, so an offer parked here is
+  /// six-per-origin minus one for everything else on the page — and two of them starved the token
+  /// refresh badly enough to end the session. Failing fast and letting the viewer retry gets the
+  /// picture up at about the same moment, without spending a connection to wait for it.
+  /// </summary>
+  public static readonly TimeSpan MediaMtxOfferTimeout = TimeSpan.FromSeconds(4);
 
   // How long a session token stays usable — it is the token's own expiry (see WhepSessionToken),
   // nothing is stored here. Generous by design: this is not a security window (an expired token
@@ -87,6 +102,11 @@ public sealed class WhepProxyService(
     catch (HttpRequestException)
     {
       return new WhepOfferResult(WhepProxyOutcome.MediaMtxUnavailable);
+    }
+    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+    {
+      // The HttpClient timeout, not the caller giving up: MediaMTX is still waiting for a publisher.
+      return new WhepOfferResult(WhepProxyOutcome.MediaMtxTimedOut);
     }
 
     using (mtxResponse)
@@ -142,6 +162,10 @@ public sealed class WhepProxyService(
     catch (HttpRequestException)
     {
       return new WhepDeleteResult(WhepProxyOutcome.MediaMtxUnavailable);
+    }
+    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+    {
+      return new WhepDeleteResult(WhepProxyOutcome.MediaMtxTimedOut);
     }
   }
 

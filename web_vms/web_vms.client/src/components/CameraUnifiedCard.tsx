@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { patchSlot, selectSlotUi } from '../store/monitorUiSlice'
 import {
@@ -322,10 +322,31 @@ export default function CameraUnifiedCard({
     || showBboxToggle || Boolean(squareFrontendOrigin)
   const hasDeviceGroup = showPtzControl || showDeviceIoControl
 
+  // A poll that has not come back yet must not have another stacked on top of it. Every card runs
+  // this, and a browser allows six connections per origin — so two cards whose polls each take
+  // longer than the interval are enough to spend the whole budget on requests for the same answer,
+  // leaving nothing for live video or anything else on the page.
+  const statePollBusy = useRef(false)
   useEffect(() => {
-    const id = setInterval(() => void dispatch(fetchCameraState(camera.cameraId)), 5000)
-    void dispatch(fetchCameraState(camera.cameraId))
-    return () => clearInterval(id)
+    let cancelled = false
+
+    const poll = async () => {
+      if (statePollBusy.current) return
+      statePollBusy.current = true
+      try {
+        await dispatch(fetchCameraState(camera.cameraId))
+      } finally {
+        statePollBusy.current = false
+      }
+    }
+
+    void poll()
+    const id = setInterval(() => { if (!cancelled) void poll() }, 5000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+      statePollBusy.current = false
+    }
   }, [camera.cameraId, dispatch])
 
   const cycleStream = () => {

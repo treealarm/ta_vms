@@ -36,20 +36,34 @@ class LiveDetectionsClient {
   private frames = new Map<string, LiveFramesBySource>()
   private frameListeners = new Map<string, Set<FramesListener>>()
   private refCount = 0
-  private reader?: ReadableStreamDefaultReader<Uint8Array>
   private stopped = true
   private reconnectTimer?: number
+  // Cancelling the reader was not enough to close a connection: between `fetch` being issued and
+  // its promise resolving there is no reader to cancel, so a stop in that window left the request
+  // running with nothing tracking it, and the next start opened a second one beside it. Toggling
+  // the overlay eight times left forty of these open — measured — which is far past the six
+  // connections a browser allows per origin, so the whole page stopped making requests.
+  //
+  // The signal closes the request whatever stage it is at, and the epoch makes a loop that was
+  // already past its own await notice it is stale and let go of what it holds.
+  private abort?: AbortController
+  private epoch = 0
 
   private start(): void {
     this.stopped = false
-    void this.consume()
+    this.epoch += 1
+    const epoch = this.epoch
+    const abort = new AbortController()
+    this.abort = abort
+    void this.consume(epoch, abort.signal)
   }
 
   private stop(): void {
     this.stopped = true
-    void this.reader?.cancel().catch(() => {})
+    this.epoch += 1 // anything still in flight belongs to a previous epoch from here on
+    this.abort?.abort()
+    this.abort = undefined
     if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer)
-    this.reader = undefined
     this.reconnectTimer = undefined
     this.frames.clear()
   }
@@ -141,35 +155,41 @@ class LiveDetectionsClient {
     return buffer
   }
 
-  private async consume(): Promise<void> {
+  private async consume(epoch: number, signal: AbortSignal): Promise<void> {
+    const stale = () => this.stopped || epoch !== this.epoch
+
     try {
-      const resp = await fetch('/api/analytics/live', { headers: { Accept: 'text/event-stream' } })
-      if (this.stopped) {
-        void resp.body?.cancel()
+      const resp = await fetch('/api/analytics/live', {
+        headers: { Accept: 'text/event-stream' },
+        signal,
+      })
+      if (stale()) {
+        void resp.body?.cancel().catch(() => {})
         return
       }
       if (!resp.ok || !resp.body) throw new Error(`live detections stream failed: ${resp.status}`)
 
-      this.reader = resp.body.getReader()
+      const reader = resp.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
       for (;;) {
-        const { value, done } = await this.reader.read()
+        const { value, done } = await reader.read()
         if (done) break
+        if (stale()) {
+          void reader.cancel().catch(() => {})
+          return
+        }
         buffer += decoder.decode(value, { stream: true })
         buffer = this.parse(buffer)
       }
     } catch {
-      // network drop / server restart — fall through to reconnect below
-    } finally {
-      this.reader = undefined
+      // network drop, server restart, or our own abort — fall through to the staleness check below
     }
 
-    if (!this.stopped) {
-      this.reconnectTimer = window.setTimeout(() => {
-        if (!this.stopped) void this.consume()
-      }, RECONNECT_MS)
-    }
+    if (stale()) return
+    this.reconnectTimer = window.setTimeout(() => {
+      if (!stale()) void this.consume(epoch, signal)
+    }, RECONNECT_MS)
   }
 }
 

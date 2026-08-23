@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Dapr.Client;
 using Grpc.Core;
 using Vms.Cfg;
+using Vms.Control;
 using Vms.Fs;
 using Vms.Logger;
 using Vms.Onvif;
@@ -76,6 +77,18 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
   // new connection to daprd for every joystick message. The clients wrapping an invoker are cheap.
   private CallInvoker Invoker(string appId) =>
     _invokers.GetOrAdd(appId, static id => DaprClient.CreateInvocationInvoker(id));
+
+  /// The media server's control service, on the shared per-app-id invoker. Built per call — which
+  /// is what every caller used to do — it makes a fresh GrpcChannel, and therefore a fresh
+  /// connection to daprd, on every request, with nothing to dispose it. On the live path that is
+  /// one leaked connection per WHEP negotiation, per state poll and per reconnect attempt.
+  public CameraControlService.CameraControlServiceClient GetMediaClient(string? serverId)
+  {
+    if (string.IsNullOrWhiteSpace(serverId))
+      throw new InvalidOperationException("serverId must not be empty for media server requests");
+
+    return new CameraControlService.CameraControlServiceClient(Invoker(serverId));
+  }
 
   // ONVIF only reaches a camera from its own node's subnet, so a PTZ or snapshot call has to go to
   // the VmsOnvif sitting next to that camera's media server. There is no instance that can serve

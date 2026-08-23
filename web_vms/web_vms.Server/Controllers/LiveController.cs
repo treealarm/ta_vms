@@ -22,20 +22,26 @@ public class LiveController(
 {
   private static readonly TimeSpan MediaCallTimeout    = TimeSpan.FromSeconds(5);
   private static readonly TimeSpan MediaCallBestEffort = TimeSpan.FromSeconds(1);
+  // Retention status is decoration on the camera card, and it is read on the per-card poll that
+  // runs every five seconds. It goes to VmsFs, which is busiest exactly when it matters — a camera
+  // that is recording — and it used to be the one call here with no deadline at all: the poll then
+  // sat open for as long as VmsFs took, holding one browser connection each, until the six a
+  // browser allows per origin were gone and the page stopped issuing requests altogether. Set
+  // below the poll interval on purpose, so a slow answer is dropped rather than left to overlap
+  // the next poll.
+  private static readonly TimeSpan RetentionCallTimeout = TimeSpan.FromSeconds(3);
 
-  private CameraControlService.CameraControlServiceClient GetMediaClient(string? serverId)
-  {
-    if (string.IsNullOrWhiteSpace(serverId))
-      throw new InvalidOperationException("serverId must not be empty for media server requests");
-
-    return new CameraControlService.CameraControlServiceClient(DaprClient.CreateInvocationInvoker(serverId));
-  }
+  private CameraControlService.CameraControlServiceClient GetMediaClient(string? serverId) =>
+    _registry.GetMediaClient(serverId);
 
   private static CallOptions MediaCallOptions(CancellationToken ct) =>
     new(deadline: DateTime.UtcNow.Add(MediaCallTimeout), cancellationToken: ct);
 
   private static CallOptions BestEffortCallOptions(CancellationToken ct) =>
     new(deadline: DateTime.UtcNow.Add(MediaCallBestEffort), cancellationToken: ct);
+
+  private static CallOptions RetentionCallOptions(CancellationToken ct) =>
+    new(deadline: DateTime.UtcNow.Add(RetentionCallTimeout), cancellationToken: ct);
 
   private static string MediaServerError(RpcException ex) => ex.StatusCode switch
   {
@@ -415,6 +421,7 @@ public class LiveController(
       // The monitor renders cameras from this per-camera state poll (not the /cameras list), so the
       // bbox-overlay gate flag has to be set here too — preserved through the `with` copies below.
       HasAnalytics = await _manager.HasEnabledAnalyticsWatch(cameraId, ct),
+      Armed = await _manager.GetArmed(cameraId, ct),
     };
 
     // Ensure WebRTC push is active for all webrtc-enabled streams (best-effort).
@@ -451,7 +458,7 @@ public class LiveController(
       var fsClient = _registry.GetFsClient(normalized.ServerId);
       var retention = await fsClient.GetCameraRetentionStatusAsync(
         new GetCameraRetentionStatusRequest { CameraId = cameraId },
-        cancellationToken: ct);
+        RetentionCallOptions(ct));
       return Ok(normalized with
       {
         ActiveRetentionWindow = retention.ActiveRetentionWindow,

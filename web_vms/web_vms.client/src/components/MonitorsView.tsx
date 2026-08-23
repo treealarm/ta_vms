@@ -51,7 +51,11 @@ export default function MonitorsView({ readOnly = false, kind = 'wall' }: Props)
   const { t } = useTranslation()
   const allMonitors = useAppSelector((state) => state.monitors.monitors)
   const status = useAppSelector((state) => state.monitors.status)
-  const allCameras = useAppSelector((state) => Object.values(state.live.cameraStatesById))
+  // Selected as the stored map and turned into a list here, not inside the selector: Object.values
+  // builds a new array on every call, so react-redux sees a changed result on every store update
+  // and re-renders this view for changes that have nothing to do with it.
+  const camerasById = useAppSelector((state) => state.live.cameraStatesById)
+  const allCameras = useMemo(() => Object.values(camerasById), [camerasById])
   const [searchParams] = useSearchParams()
 
   const investigation = kind === 'investigation'

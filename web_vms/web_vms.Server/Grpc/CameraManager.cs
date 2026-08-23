@@ -162,6 +162,23 @@ public class CameraManager : ICameraManager
     IsBuiltin         = p.IsBuiltin,
   };
 
+  public async Task<bool?> GetArmed(string cameraId, CancellationToken ct = default)
+  {
+    try
+    {
+      var resp = await _cfgClient.GetCamStateAsync(
+        new GetCamStateRequest { CameraId = cameraId }, CfgOptions(ct));
+      return resp.Armed;
+    }
+    catch (RpcException ex)
+    {
+      // Reported as unknown rather than as "not armed": this rides along with the state poll, and a
+      // hiccup here must not make the card claim the camera is disarmed.
+      _logger.LogWarning("Reading the armed flag for '{CameraId}' failed: {Status}", cameraId, ex.StatusCode);
+      return null;
+    }
+  }
+
   public async Task<List<MediaMtxServerDto>> ListMediaMtxServers(CancellationToken ct = default)
   {
     var response = await _cfgClient.ListMediaMtxServersAsync(new ListMediaMtxServersRequest(), CfgOptions(ct));

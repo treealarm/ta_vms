@@ -83,7 +83,7 @@ var mtxBasic = Convert.ToBase64String(
 
 builder.Services.AddHttpClient(WhepProxyService.MediaMtxHttpClientName, c =>
 {
-  c.Timeout = TimeSpan.FromSeconds(10);
+  c.Timeout = WhepProxyService.MediaMtxOfferTimeout;
   c.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", mtxBasic);
 });
 

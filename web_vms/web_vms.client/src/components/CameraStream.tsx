@@ -15,10 +15,25 @@ interface CameraStreamProps {
   stunUrl?: string | null;
 }
 
+// A WHEP exchange can succeed in full — session created, peer connection reporting `connected` —
+// and still deliver no media. Nothing in the RTCPeerConnection API reports that, so the only proof
+// that frames are arriving is the element's own clock. These bound how long a silent cell is left
+// alone before it is torn down and re-negotiated.
+// Bounds how long one offer may occupy a connection. A browser allows six per origin, and a WHEP
+// offer for a path MediaMTX has not brought up yet used to sit there for twelve seconds — long
+// enough, with two of them, to starve everything else on the page including the token refresh,
+// which then failed and took the whole session down. The gateway now gives up on MediaMTX after
+// four seconds and answers 503 (see WhepProxyService.MediaMtxOfferTimeout); this is the backstop
+// for the gateway itself going quiet, with room for the push it kicks off first.
+const WHEP_OFFER_TIMEOUT_MS = 8000;
+const PROGRESS_CHECK_MS = 3000;
+const PROGRESS_STALL_LIMIT = 5;
+
 const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnabled = false, stunUrl }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const retryTimeoutRef = useRef<number | null>(null);
+  const progressTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!whepUrl) {
@@ -44,6 +59,13 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
       });
     };
 
+    const stopWatchdog = () => {
+      if (progressTimerRef.current !== null) {
+        clearInterval(progressTimerRef.current);
+        progressTimerRef.current = null;
+      }
+    };
+
     const cleanupAndRetry = (pc?: RTCPeerConnection) => {
       if (stopped || reconnecting) {
         return;
@@ -53,6 +75,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
 
       console.warn('WebRTC disconnected, retrying...');
 
+      stopWatchdog();
       closeSession();
 
       if (pc) {
@@ -82,11 +105,41 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
       }, 2000);
     };
 
+    // Watches the one thing that proves media is arriving. Covers both a connection that never
+    // completes and one that reports `connected` while MediaMTX streams to nobody — the state a
+    // torn-down and re-created cell leaves behind, where the old session is still being fed and
+    // the visible element has nothing attached to it.
+    const startWatchdog = (pc: RTCPeerConnection) => {
+      stopWatchdog();
+      let lastTime = -1;
+      let stalledChecks = 0;
+
+      progressTimerRef.current = window.setInterval(() => {
+        if (stopped || reconnecting) {
+          return;
+        }
+
+        const now = videoRef.current?.currentTime ?? 0;
+        if (now > lastTime) {
+          lastTime = now;
+          stalledChecks = 0;
+          return;
+        }
+
+        stalledChecks += 1;
+        if (stalledChecks >= PROGRESS_STALL_LIMIT) {
+          console.warn('WebRTC delivered no frames, re-negotiating');
+          cleanupAndRetry(pc);
+        }
+      }, PROGRESS_CHECK_MS);
+    };
+
     const isSessionExpired = (
       currentSession: number,
       pc: RTCPeerConnection
     ) => {
       if (stopped || currentSession !== sessionId) {
+        stopWatchdog();
         pc.onconnectionstatechange = null;
         pc.ontrack = null;
         pc.close();
@@ -163,8 +216,19 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
 
         console.log('PC state:', state);
 
-        if (state === 'failed' || state === 'disconnected') {
+        // 'closed' belongs here too: every close this component performs itself nulls this handler
+        // first, so reaching it means the connection went away on its own.
+        if (state === 'failed' || state === 'disconnected' || state === 'closed') {
           cleanupAndRetry(pc);
+          return;
+        }
+
+        // Armed here rather than when signalling finished: MediaMTX brings a path up on demand, so
+        // the wait between a completed offer/answer and the first frame legitimately covers the
+        // media server starting to publish. Watching that window would tear an attempt down exactly
+        // as it was about to succeed.
+        if (state === 'connected') {
+          startWatchdog(pc);
         }
       };
 
@@ -190,13 +254,32 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
           return;
         }
 
-        const resp = await fetch(whepUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/sdp',
-          },
-          body: offer.sdp,
-        });
+        const offerAbort = new AbortController();
+        const offerDeadline = window.setTimeout(() => offerAbort.abort(), WHEP_OFFER_TIMEOUT_MS);
+        let resp: Response;
+        try {
+          resp = await fetch(whepUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/sdp',
+            },
+            body: offer.sdp,
+            signal: offerAbort.signal,
+          });
+        } finally {
+          clearTimeout(offerDeadline);
+        }
+
+        // Recorded BEFORE the staleness check below, and that order is the whole point: the check
+        // tears the attempt down and calls closeSession(), so anything learned after it can no
+        // longer be closed. Reading it later left every negotiation that was in flight when the
+        // cell was torn down — switching a tile between live and archive does exactly that — as a
+        // session MediaMTX keeps feeding forever, with nothing on the page attached to it.
+        //
+        // Keep this relative (don't resolve to an absolute URL): installAuthFetch only attaches
+        // the Bearer token to requests whose URL starts with '/api/', and fetch() already
+        // resolves a relative Location against the current origin on its own.
+        sessionUrl = resp.headers.get('Location');
 
         if (isSessionExpired(currentSession, pc)) {
           return;
@@ -205,11 +288,6 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
         if (!resp.ok) {
           throw new Error(`WHEP failed: ${resp.status}`);
         }
-
-        // Keep this relative (don't resolve to an absolute URL): installAuthFetch only attaches
-        // the Bearer token to requests whose URL starts with '/api/', and fetch() already
-        // resolves a relative Location against the current origin on its own.
-        sessionUrl = resp.headers.get('Location');
 
         const answerSDP = await resp.text();
 
@@ -227,7 +305,6 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
         }
 
         reconnecting = false;
-        console.log('WebRTC connected successfully');
       } catch (err) {
         console.error('WebRTC connection error:', err);
         cleanupAndRetry(pc);
@@ -238,6 +315,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
 
     return () => {
       stopped = true;
+      stopWatchdog();
 
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);

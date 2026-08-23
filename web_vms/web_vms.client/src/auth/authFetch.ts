@@ -1,5 +1,6 @@
 import { store } from '../store'
 import { logout, setTokens } from '../store/authSlice'
+import { diagEnd, diagEvent, diagNote, diagReplayTrail, diagStart, diagToken } from './apiDiagnostics'
 
 /**
  * hls.js loads manifests/segments via its own XHR loader, bypassing window.fetch entirely — pass
@@ -30,10 +31,16 @@ export function installAuthFetch(): void {
   installed = true
 
   const nativeFetch = window.fetch.bind(window)
+  diagReplayTrail()
+  diagToken(store.getState().auth.token, 'at startup')
 
   const refreshToken = async (): Promise<string | null> => {
     const rt = store.getState().auth.refreshToken
-    if (!rt) return null
+    if (!rt) {
+      diagEvent('token refresh skipped: no refresh token stored')
+      return null
+    }
+    const startedAt = performance.now()
     try {
       // Bypass this wrapper's own token/401 handling: /api/auth/* is anonymous and must not recurse.
       const resp = await nativeFetch('/api/auth/refresh', {
@@ -41,14 +48,76 @@ export function installAuthFetch(): void {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken: rt }),
       })
-      if (!resp.ok) return null
+      if (!resp.ok) {
+        diagEvent(`token refresh rejected: ${resp.status} after ${Math.round(performance.now() - startedAt)}ms`)
+        return null
+      }
       const data = (await resp.json()) as { access_token: string; refresh_token: string }
       store.dispatch(setTokens({ token: data.access_token, refreshToken: data.refresh_token }))
+      diagToken(data.access_token, `refreshed in ${Math.round(performance.now() - startedAt)}ms`)
       return data.access_token
+    } catch (err) {
+      diagEvent(`token refresh threw after ${Math.round(performance.now() - startedAt)}ms: ${String(err)}`)
+      return null
+    }
+  }
+
+  // Until now the token was only ever renewed after something had already failed with it. That is
+  // fine for a fetch this wrapper can retry, and useless for everything that cannot: hls.js loads
+  // archive segments through its own XHR loader (see authXhrSetup), and an SSE stream cannot
+  // re-authenticate halfway. Both simply die when the access token ages out mid-session. Renewing
+  // ahead of expiry means they never see a 401; the reactive path below stays as the backstop.
+  const REFRESH_MARGIN_MS = 60_000
+  const REFRESH_RETRY_MS = 15_000
+  let refreshTimer: number | undefined
+  let scheduledFor: string | null = null
+
+  const expiryOf = (token: string | null): number | null => {
+    if (!token) return null
+    try {
+      // JWT segments are base64url ('-'/'_', no padding); atob only understands base64.
+      const body = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+      const exp = (JSON.parse(atob(body)) as { exp?: number }).exp
+      return exp ? exp * 1000 : null
     } catch {
       return null
     }
   }
+
+  const scheduleProactiveRefresh = (): void => {
+    const token = store.getState().auth.token
+    if (token === scheduledFor) return
+    scheduledFor = token
+
+    if (refreshTimer !== undefined) {
+      clearTimeout(refreshTimer)
+      refreshTimer = undefined
+    }
+
+    const expiresAt = expiryOf(token)
+    if (expiresAt === null) return
+
+    const delay = Math.max(5000, expiresAt - Date.now() - REFRESH_MARGIN_MS)
+    refreshTimer = window.setTimeout(() => { void runProactiveRefresh() }, delay)
+  }
+
+  const runProactiveRefresh = async (): Promise<void> => {
+    // Share the same single-flight slot as the reactive path, so a request that 401s at this moment
+    // joins this refresh instead of starting a second one.
+    if (!refreshInFlight) refreshInFlight = refreshToken().finally(() => { refreshInFlight = null })
+    if (await refreshInFlight) return // the store change reschedules through the subscription below
+
+    // A refresh that failed leaves the old token ticking towards expiry with nothing else about to
+    // try again — the next 401 would, by which time the session is already lost. This is not a
+    // hypothetical: one refresh was observed failing after 15s ("Failed to fetch", the request
+    // never got a connection), and the session died at expiry because nothing retried.
+    const stillAlive = expiryOf(store.getState().auth.token)
+    if (stillAlive === null || stillAlive <= Date.now()) return
+    refreshTimer = window.setTimeout(() => { void runProactiveRefresh() }, REFRESH_RETRY_MS)
+  }
+
+  store.subscribe(scheduleProactiveRefresh)
+  scheduleProactiveRefresh()
 
   const withAuth = (init: RequestInit | undefined, input: RequestInfo | URL, token: string | null): RequestInit | undefined => {
     if (!token) return init
@@ -56,6 +125,11 @@ export function installAuthFetch(): void {
     headers.set('Authorization', `Bearer ${token}`)
     return { ...init, headers }
   }
+
+  // App bootstrap issues four requests at once and retries the set up to twenty times, so a single
+  // unrenewable session used to produce dozens of logout dispatches and as many assignments to
+  // window.location — each one racing the navigation the previous had already started.
+  let loggingOut = false
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' || input instanceof URL ? input.toString() : input.url
@@ -65,25 +139,36 @@ export function installAuthFetch(): void {
 
     if (!isApiCall) return nativeFetch(input, init)
 
-    const token = store.getState().auth.token
-    let response = await nativeFetch(input, withAuth(init, input, token))
+    const diagId = diagStart(url)
+    try {
+      const token = store.getState().auth.token
+      let response = await nativeFetch(input, withAuth(init, input, token))
 
-    // Access tokens are short-lived (Keycloak default ~5min). On expiry, transparently refresh once
-    // using the stored refresh token and retry the request, so active users aren't bounced to login.
-    if (response.status === 401) {
-      if (!refreshInFlight) refreshInFlight = refreshToken().finally(() => { refreshInFlight = null })
-      const newToken = await refreshInFlight
+      // Access tokens are short-lived (Keycloak default ~5min). On expiry, transparently refresh once
+      // using the stored refresh token and retry the request, so active users aren't bounced to login.
+      if (response.status === 401) {
+        diagNote(diagId, refreshInFlight ? 'got 401, waiting on a refresh already running' : 'got 401, starting token refresh')
+        if (!refreshInFlight) refreshInFlight = refreshToken().finally(() => { refreshInFlight = null })
+        const newToken = await refreshInFlight
 
-      if (newToken) {
-        response = await nativeFetch(input, withAuth(init, input, newToken))
+        if (newToken) {
+          diagNote(diagId, 'retrying with the refreshed token')
+          response = await nativeFetch(input, withAuth(init, input, newToken))
+        }
+
+        if ((!newToken || response.status === 401) && !loggingOut && window.location.pathname !== '/login') {
+          loggingOut = true
+          diagEvent(`giving up and logging out — ${url} (last status ${response.status})`)
+          store.dispatch(logout())
+          window.location.href = '/login'
+        }
       }
 
-      if ((!newToken || response.status === 401) && window.location.pathname !== '/login') {
-        store.dispatch(logout())
-        window.location.href = '/login'
-      }
+      diagEnd(diagId, response.status)
+      return response
+    } catch (err) {
+      diagEnd(diagId, 'threw')
+      throw err
     }
-
-    return response
   }
 }

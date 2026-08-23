@@ -21,8 +21,8 @@ public sealed class FSController(
 {
   private static readonly TimeSpan FrameJpegTimeout = TimeSpan.FromSeconds(15);
 
-  private static CameraControlService.CameraControlServiceClient GetMediaClient(string serverId) =>
-    new(DaprClient.CreateInvocationInvoker(serverId));
+  private CameraControlService.CameraControlServiceClient GetMediaClient(string serverId) =>
+    registry.GetMediaClient(serverId);
 
   private static CallOptions FrameCallOptions(CancellationToken ct) =>
     new(deadline: DateTime.UtcNow.Add(FrameJpegTimeout), cancellationToken: ct);

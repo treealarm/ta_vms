@@ -15,7 +15,8 @@ namespace web_vms;
 public class WhepController(
   WhepProxyService _proxy,
   ICameraAccessService _access,
-  ICameraManager _cameras) : ControllerBase
+  ICameraManager _cameras,
+  ServerPairRegistry _registry) : ControllerBase
 {
   // Short: the offer is on the critical path of a viewer waiting for a picture, and the push is
   // started for its side effect — the answer does not depend on it.
@@ -63,8 +64,7 @@ public class WhepController(
       if (camera is null || string.IsNullOrWhiteSpace(camera.ServerId))
         return;
 
-      var client = new CameraControlService.CameraControlServiceClient(
-        DaprClient.CreateInvocationInvoker(camera.ServerId));
+      var client = _registry.GetMediaClient(camera.ServerId);
 
       // The WHEP path names the stream; without one, every WebRTC stream of the camera is meant.
       var streams = string.IsNullOrWhiteSpace(streamName)

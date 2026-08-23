@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Box, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material'
 import ScienceIcon from '@mui/icons-material/Science'
 import CloseIcon from '@mui/icons-material/Close'
@@ -9,7 +9,9 @@ import SimulationPanel from './SimulationPanel'
 export default function SimulationFab() {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  const cameras = useAppSelector((s) => Object.values(s.live.cameraStatesById))
+  // See MonitorsView: deriving the list inside the selector returns a new array every call.
+  const camerasById = useAppSelector((s) => s.live.cameraStatesById)
+  const cameras = useMemo(() => Object.values(camerasById), [camerasById])
 
   return (
     <>

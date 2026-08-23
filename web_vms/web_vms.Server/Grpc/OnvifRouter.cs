@@ -20,6 +20,7 @@ public sealed class OnvifRouter(ICameraManager cameras, ServerPairRegistry regis
 {
   private static readonly TimeSpan Ttl = TimeSpan.FromSeconds(60);
   private static readonly TimeSpan VersionProbeInterval = TimeSpan.FromSeconds(5);
+  private static readonly TimeSpan VersionProbeTimeout = TimeSpan.FromSeconds(2);
   private const string VersionKey = "cam-node-version";
 
   private static readonly string StateStoreName =
@@ -73,7 +74,11 @@ public sealed class OnvifRouter(ICameraManager cameras, ServerPairRegistry regis
     if (DateTime.UtcNow - _versionCheckedAtUtc < VersionProbeInterval)
       return;
 
-    await _versionLock.WaitAsync(ct);
+    // Best-effort, and never a queue: every PTZ, snapshot and bbox-capability call routes through
+    // here, so waiting on someone else's state store read would serialize all of them behind it.
+    if (!await _versionLock.WaitAsync(0, ct))
+      return;
+
     try
     {
       if (DateTime.UtcNow - _versionCheckedAtUtc < VersionProbeInterval)
@@ -82,7 +87,11 @@ public sealed class OnvifRouter(ICameraManager cameras, ServerPairRegistry regis
       string version;
       try
       {
-        version = await dapr.GetStateAsync<string>(StateStoreName, VersionKey, cancellationToken: ct)
+        // Bounded on its own, because the lock above is held for the duration of this call.
+        using var probe = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        probe.CancelAfter(VersionProbeTimeout);
+
+        version = await dapr.GetStateAsync<string>(StateStoreName, VersionKey, cancellationToken: probe.Token)
           ?? string.Empty;
       }
       catch

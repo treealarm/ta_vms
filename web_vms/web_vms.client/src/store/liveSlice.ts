@@ -85,17 +85,18 @@ export const setOnvifEventsEnabled = createAsyncThunk(
   }
 )
 
+// One request, not two. This runs on an interval per open card, and the armed flag used to cost a
+// second round trip of its own — with the bbox overlays on, their two SSE streams already hold two
+// of the six connections a browser allows per origin, so two cameras' worth of paired polls filled
+// the pool exactly and everything else on the page queued behind them. The gateway now returns
+// `armed` with the rest of the state (see LiveController.GetCameraState).
 export const fetchCameraState = createAsyncThunk('live/fetchCameraState', async (cameraId: string) => {
-  const [camResp, armedResp] = await Promise.all([
-    fetch(`/api/live/cameras/${encodeURIComponent(cameraId)}/state`),
-    fetch(`/api/cameras/${encodeURIComponent(cameraId)}/state`),
-  ])
-  const cam = await parseJson<CameraSetupDto>(camResp)
-  const armedData = armedResp.ok ? (await armedResp.json() as { armed: boolean }) : null
+  const cam = await parseJson<CameraSetupDto>(
+    await fetch(`/api/live/cameras/${encodeURIComponent(cameraId)}/state`)
+  )
   return {
     ...cam,
     recordingMode: cam.recordingMode ?? (cam.recording === true ? 'continuous' : 'off'),
-    armed: armedData?.armed,
   }
 })
 

@@ -34,10 +34,12 @@ class LiveEventsClient {
   private cameras = new Map<string, Map<string, StoredEvent>>()
   private listeners = new Map<string, Set<Listener>>()
   private refCount = 0
-  private reader?: ReadableStreamDefaultReader<Uint8Array>
   private stopped = true
   private tick?: number
   private reconnectTimer?: number
+  // See liveDetectionsClient for why cancelling the reader alone leaked a connection per toggle.
+  private abort?: AbortController
+  private epoch = 0
 
   subscribe(cameraId: string, cb: Listener): () => void {
     let set = this.listeners.get(cameraId)
@@ -79,16 +81,21 @@ class LiveEventsClient {
 
   private start(): void {
     this.stopped = false
+    this.epoch += 1
+    const epoch = this.epoch
+    const abort = new AbortController()
+    this.abort = abort
     this.tick = window.setInterval(() => this.onTick(), TICK_MS)
-    void this.run()
+    void this.run(epoch, abort.signal)
   }
 
   private stop(): void {
     this.stopped = true
-    void this.reader?.cancel().catch(() => {})
+    this.epoch += 1
+    this.abort?.abort()
+    this.abort = undefined
     if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer)
     if (this.tick !== undefined) clearInterval(this.tick)
-    this.reader = undefined
     this.tick = undefined
     this.reconnectTimer = undefined
     this.cameras.clear()
@@ -146,28 +153,39 @@ class LiveEventsClient {
     return buffer
   }
 
-  private async run(): Promise<void> {
-    while (!this.stopped) {
+  private async run(epoch: number, signal: AbortSignal): Promise<void> {
+    const stale = () => this.stopped || epoch !== this.epoch
+
+    while (!stale()) {
       try {
         const res = await fetch('/api/analytics/live-events', {
           headers: { Accept: 'text/event-stream' },
+          signal,
         })
+        if (stale()) {
+          void res.body?.cancel().catch(() => {})
+          return
+        }
         if (!res.ok || !res.body) throw new Error(`live-events ${res.status}`)
 
-        this.reader = res.body.getReader()
+        const reader = res.body.getReader()
         const decoder = new TextDecoder()
         let buffer = ''
         for (;;) {
-          const { done, value } = await this.reader.read()
+          const { done, value } = await reader.read()
           if (done) break
+          if (stale()) {
+            void reader.cancel().catch(() => {})
+            return
+          }
           buffer += decoder.decode(value, { stream: true })
           buffer = this.parse(buffer)
         }
       } catch {
-        // Network hiccup or gateway restart — fall through to the delay and try again.
+        // Network hiccup, gateway restart, or our own abort — the staleness check below decides.
       }
 
-      if (this.stopped) return
+      if (stale()) return
       await new Promise<void>((resolve) => {
         this.reconnectTimer = window.setTimeout(resolve, RECONNECT_MS)
       })

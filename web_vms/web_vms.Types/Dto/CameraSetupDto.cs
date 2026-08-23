@@ -113,4 +113,10 @@ public record CameraSetupDto
   /// every read, never stored. While true the camera records continuously, overriding both the
   /// stream profile and any manual or alarm override.</summary>
   public bool ScheduleActive     { get; init; }
+
+  /// Whether the camera is armed. Runtime state rather than configuration, carried here so the
+  /// monitor's per-camera poll is one request instead of two — with the bbox overlays on, their two
+  /// SSE streams already hold two of the six connections a browser allows per origin, and a second
+  /// poll per camera was enough to exhaust the rest. Only GetCameraState fills it in.
+  public bool? Armed             { get; init; }
 }

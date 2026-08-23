@@ -571,8 +571,8 @@ public sealed class EdgeArchiveController(
 
   // ── Plumbing ─────────────────────────────────────────────────────────────────
 
-  private static CameraControlService.CameraControlServiceClient GetMediaClient(string serverId) =>
-    new(DaprClient.CreateInvocationInvoker(serverId));
+  private CameraControlService.CameraControlServiceClient GetMediaClient(string serverId) =>
+    registry.GetMediaClient(serverId);
 
   private IActionResult FromMutation(EdgeMutationResponse r) =>
     r.Success ? Ok(new { success = true }) : StatusCode(StatusCodes.Status502BadGateway, new { message = r.Error });

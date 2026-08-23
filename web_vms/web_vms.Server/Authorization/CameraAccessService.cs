@@ -45,6 +45,8 @@ public sealed class CameraAccessService(
   // is a primary-key lookup rather than the Redis GET it used to be — still one small indexed
   // read per second per replica, but worth remembering if the probe interval is ever shortened.
   private static readonly TimeSpan VersionProbeInterval = TimeSpan.FromSeconds(1);
+  // The probe holds a process-wide lock, so it needs a bound of its own — see EnsureFreshAsync.
+  private static readonly TimeSpan VersionProbeTimeout = TimeSpan.FromSeconds(2);
   private const string VersionKey = "cam-perm-version";
 
   // Read per instance, not into a static field: a missing variable in a static initializer surfaces
@@ -144,13 +146,25 @@ public sealed class CameraAccessService(
     if (DateTime.UtcNow - _versionCheckedAtUtc < VersionProbeInterval)
       return;
 
-    await _versionLock.WaitAsync(ct);
+    // Never queue behind another request's probe. This sits on every authorized request, so a lock
+    // held across a state store call turns one slow read into a stall of the whole API — and
+    // /api/health, the only endpoint without [CameraAccess], keeps answering in a millisecond and
+    // hides it. A request that finds a probe already running serves the cached grants instead:
+    // CacheTtl is the correctness backstop, this only decides how fast a revocation propagates.
+    if (!await _versionLock.WaitAsync(0, ct))
+      return;
+
     try
     {
       if (DateTime.UtcNow - _versionCheckedAtUtc < VersionProbeInterval)
         return;
 
-      var version = await dapr.GetStateAsync<string>(_stateStoreName, VersionKey, cancellationToken: ct) ?? string.Empty;
+      // Bounded independently of the caller's token: the lock is held across this call, so an
+      // unbounded read would also keep every later probe out for as long as it hung.
+      using var probe = CancellationTokenSource.CreateLinkedTokenSource(ct);
+      probe.CancelAfter(VersionProbeTimeout);
+
+      var version = await dapr.GetStateAsync<string>(_stateStoreName, VersionKey, cancellationToken: probe.Token) ?? string.Empty;
       _versionCheckedAtUtc = DateTime.UtcNow;
 
       // First read only records where the counter stands — the cache is empty anyway, and flushing
@@ -167,14 +181,15 @@ public sealed class CameraAccessService(
       _lastSeenVersion = version;
       Invalidate(string.Empty);
     }
-    catch (OperationCanceledException)
+    catch (OperationCanceledException) when (ct.IsCancellationRequested)
     {
       throw;
     }
     catch (Exception ex)
     {
       // Back off exactly as if the probe had succeeded, so a state store outage doesn't turn every
-      // single request into a failing round-trip.
+      // single request into a failing round-trip. A probe that hit VersionProbeTimeout lands here
+      // too, which is what it is for: it is a stale read, not a cancelled request.
       _versionCheckedAtUtc = DateTime.UtcNow;
       logger.LogWarning(ex, "Reading the camera permission version failed; serving cached grants");
     }
@@ -200,7 +215,11 @@ public sealed class CameraAccessService(
     if (DateTime.UtcNow - _modeFetchedAtUtc < CacheTtl)
       return _enforced;
 
-    await _modeLock.WaitAsync(ct);
+    // Same reasoning as the version probe above: whoever gets there first refreshes the mode, and
+    // everyone else keeps serving the last known one rather than lining up behind a network call.
+    if (!await _modeLock.WaitAsync(0, ct))
+      return _enforced;
+
     try
     {
       if (DateTime.UtcNow - _modeFetchedAtUtc < CacheTtl)
