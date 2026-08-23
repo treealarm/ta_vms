@@ -26,6 +26,12 @@ interface CameraStreamProps {
 // four seconds and answers 503 (see WhepProxyService.MediaMtxOfferTimeout); this is the backstop
 // for the gateway itself going quiet, with room for the push it kicks off first.
 const WHEP_OFFER_TIMEOUT_MS = 8000;
+// Deliberately a fixed, short interval rather than a growing one. The usual reason an offer fails
+// is that the stream is still being brought up on demand — the gateway says 503 for exactly that —
+// and it becomes available within seconds, so this is the moment to keep asking. Backing off here
+// was tried and measured: a cell toggled between live and archive never got a retry inside its own
+// live window again, and stayed black.
+const RETRY_MS = 2000;
 const PROGRESS_CHECK_MS = 3000;
 const PROGRESS_STALL_LIMIT = 5;
 
@@ -102,7 +108,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
 
         reconnecting = false;
         startConnection();
-      }, 2000);
+      }, RETRY_MS);
     };
 
     // Watches the one thing that proves media is arriving. Covers both a connection that never

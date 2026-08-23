@@ -52,6 +52,10 @@ export { LangToggle }
 /** Health poll interval; also the delay before a persistent outage is surfaced (see persistentlyBroken). */
 const HEALTH_POLL_MS = 15000
 
+const BOOTSTRAP_RETRY_MS = 1500
+const BOOTSTRAP_RETRY_CAP_MS = 15_000
+const BOOTSTRAP_MAX_ATTEMPTS = 12
+
 export default function App() {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
@@ -79,8 +83,14 @@ export default function App() {
         loadServers.rejected.match(serversResult) ||
         loadMonitors.rejected.match(monitorsResult) ||
         loadMediaMtxServers.rejected.match(mtxResult)
-      if (hasError && attempt < 20 && !cancelled) {
-        retryTimer = setTimeout(() => { void bootstrap(attempt + 1) }, 1500)
+      // Backing off rather than retrying at a fixed rate. The usual reason all four of these fail
+      // at once is that the gateway is still starting, which takes tens of seconds — and a browser
+      // allows six connections per origin, so four requests every 1.5s for that whole window left
+      // almost nothing for live video to negotiate on. Doubling reaches just as far in a fraction
+      // of the requests.
+      if (hasError && attempt < BOOTSTRAP_MAX_ATTEMPTS && !cancelled) {
+        const delay = Math.min(BOOTSTRAP_RETRY_MS * 2 ** attempt, BOOTSTRAP_RETRY_CAP_MS)
+        retryTimer = setTimeout(() => { void bootstrap(attempt + 1) }, delay)
       }
     }
 

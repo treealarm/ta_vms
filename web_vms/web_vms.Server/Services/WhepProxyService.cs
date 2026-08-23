@@ -8,12 +8,12 @@ public enum WhepProxyOutcome
   InvalidPath,
   CameraNotFound,
   MediaMtxUnavailable,
-  // MediaMTX accepted the request and did not answer in time. On the offer path this is the
-  // expected state, not a fault: a stream stopped as idle only starts publishing once a viewer
-  // asks, and MediaMTX holds the offer until a publisher shows up. Worth its own outcome because
-  // the honest answer is "not yet, ask again", which is a very different thing to tell a browser
-  // than "the media server is broken".
-  MediaMtxTimedOut,
+  // The stream is not carrying video yet. Two ways of arriving at the same state: MediaMTX held
+  // the offer waiting for a publisher until we gave up, or it answered 404 because the path is not
+  // published at all. Neither is a fault — a stream stopped as idle only starts when a viewer asks
+  // — and the honest answer to the browser is "not yet, ask again", which is a very different
+  // thing to say than "the media server is broken".
+  MediaMtxStreamNotReady,
   InvalidToken,
 }
 
@@ -106,7 +106,7 @@ public sealed class WhepProxyService(
     catch (OperationCanceledException) when (!ct.IsCancellationRequested)
     {
       // The HttpClient timeout, not the caller giving up: MediaMTX is still waiting for a publisher.
-      return new WhepOfferResult(WhepProxyOutcome.MediaMtxTimedOut);
+      return new WhepOfferResult(WhepProxyOutcome.MediaMtxStreamNotReady);
     }
 
     using (mtxResponse)
@@ -121,6 +121,13 @@ public sealed class WhepProxyService(
           new WhepSession(cameraId, server.Id, owner, absoluteLocation.PathAndQuery),
           DateTime.UtcNow + SessionTtl);
       }
+
+      // The camera and its MediaMTX were both resolved from configuration above, so a 404 here is
+      // never "unknown camera" — it is "this path is not published at the moment", the same state
+      // the timeout above reports. Telling the browser 404 made every on-demand start look like a
+      // failure in the console and gave the player nothing to act on.
+      if (mtxResponse.StatusCode == System.Net.HttpStatusCode.NotFound)
+        return new WhepOfferResult(WhepProxyOutcome.MediaMtxStreamNotReady);
 
       var body = await mtxResponse.Content.ReadAsByteArrayAsync(ct);
       var contentType = mtxResponse.Content.Headers.ContentType?.ToString() ?? "application/sdp";
@@ -157,7 +164,14 @@ public sealed class WhepProxyService(
     try
     {
       using var mtxResponse = await client.SendAsync(request, ct);
-      return new WhepDeleteResult(WhepProxyOutcome.Success, (int)mtxResponse.StatusCode);
+
+      // Closing a session MediaMTX has already dropped — it times abandoned ones out on its own —
+      // is not a failure: the session is gone, which is exactly what was asked for. Reporting the
+      // 404 through made every ordinary teardown an error in the browser console.
+      var status = mtxResponse.StatusCode == System.Net.HttpStatusCode.NotFound
+        ? StatusCodes.Status204NoContent
+        : (int)mtxResponse.StatusCode;
+      return new WhepDeleteResult(WhepProxyOutcome.Success, status);
     }
     catch (HttpRequestException)
     {
@@ -165,7 +179,7 @@ public sealed class WhepProxyService(
     }
     catch (OperationCanceledException) when (!ct.IsCancellationRequested)
     {
-      return new WhepDeleteResult(WhepProxyOutcome.MediaMtxTimedOut);
+      return new WhepDeleteResult(WhepProxyOutcome.MediaMtxStreamNotReady);
     }
   }
 

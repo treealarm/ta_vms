@@ -64,7 +64,11 @@ export default function MonitorsView({ readOnly = false, kind = 'wall' }: Props)
   // Seeded from ?monitorId=<id> when arriving via Square's Monitor tab deep-link or
   // from an event — falls back to the usual auto-select-first behavior below if the id doesn't
   // match any monitor.
-  const [selectedMonitorId, setSelectedMonitorId] = useState<string | null>(() => searchParams.get('monitorId'))
+  // What the operator asked for; what is actually shown is derived below. Keeping only the request
+  // in state means the list arriving, or the chosen monitor being deleted, needs no effect to
+  // correct it — the previous version wrote the fallback from an effect, which cost an extra render
+  // pass on every change and is the react-hooks/set-state-in-effect the linter flagged.
+  const [requestedMonitorId, setRequestedMonitorId] = useState<string | null>(() => searchParams.get('monitorId'))
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingMonitorId, setEditingMonitorId] = useState<string | null>(null)
   const [addAnchor, setAddAnchor] = useState<HTMLElement | null>(null)
@@ -85,16 +89,11 @@ export default function MonitorsView({ readOnly = false, kind = 'wall' }: Props)
       .catch(() => setUsers([]))
   }, [investigation])
 
-  // Auto-select first monitor when list loads or changes
-  useEffect(() => {
-    if (monitors.length > 0 && (selectedMonitorId === null || !monitors.some((m) => m.monitorId === selectedMonitorId))) {
-      setSelectedMonitorId(monitors[0].monitorId)
-    } else if (monitors.length === 0) {
-      setSelectedMonitorId(null)
-    }
-  }, [monitors, selectedMonitorId])
-
-  const selectedMonitor = monitors.find((m) => m.monitorId === selectedMonitorId) ?? null
+  // Falls back to the first monitor whenever the request names one that is not (or no longer) here:
+  // a deep link to a deleted board, or the very first render before the list has loaded.
+  const selectedMonitor =
+    monitors.find((m) => m.monitorId === requestedMonitorId) ?? monitors[0] ?? null
+  const selectedMonitorId = selectedMonitor?.monitorId ?? null
   const editingMonitor = editingMonitorId ? (monitors.find((m) => m.monitorId === editingMonitorId) ?? null) : null
 
   const handleOpenCreate = () => {
@@ -124,7 +123,7 @@ export default function MonitorsView({ readOnly = false, kind = 'wall' }: Props)
 
     if (upsertMonitor.fulfilled.match(result)) {
       const savedId = result.payload.monitorId
-      setSelectedMonitorId(savedId)
+      setRequestedMonitorId(savedId)
       if (cameraIds.join(',') !== (existing?.cameraIds ?? []).join(',')) {
         await dispatch(setMonitorCameras({ monitorId: savedId, cameraIds }))
       }
@@ -150,7 +149,7 @@ export default function MonitorsView({ readOnly = false, kind = 'wall' }: Props)
     if (!upsertMonitor.fulfilled.match(result)) return
 
     const boardId = result.payload.monitorId
-    setSelectedMonitorId(boardId)
+    setRequestedMonitorId(boardId)
     await dispatch(setMonitorCameras({ monitorId: boardId, cameraIds: [cameraId] }))
     await dispatch(setMonitorSlot({ monitorId: boardId, slotIndex: 0, cameraId }))
   }
@@ -184,7 +183,7 @@ export default function MonitorsView({ readOnly = false, kind = 'wall' }: Props)
           <Box sx={{ display: 'flex', alignItems: 'center', borderBottom: 1, borderColor: 'divider', mb: 2, flexShrink: 0 }}>
             <Tabs
               value={selectedMonitorId ?? false}
-              onChange={(_, v: string) => setSelectedMonitorId(v)}
+              onChange={(_, v: string) => setRequestedMonitorId(v)}
               variant="scrollable"
               scrollButtons="auto"
               sx={{ flex: 1, minWidth: 0 }}

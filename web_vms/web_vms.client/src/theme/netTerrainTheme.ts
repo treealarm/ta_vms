@@ -118,11 +118,14 @@ export const netTerrainTheme = createTheme({
       styleOverrides: {
         root: {
           textTransform: 'none',
-        },
-        selected: {
-          backgroundColor: alpha(primaryMain, 0.35),
-          '&:hover': {
-            backgroundColor: alpha(primaryMain, 0.45),
+          // Not a `selected` slot: MuiToggleButton has none, so that key was silently dropped and
+          // the selected button was never tinted at all. The state class carries higher specificity
+          // than a plain root rule, which is why it has to be written out this way.
+          '&.Mui-selected': {
+            backgroundColor: alpha(primaryMain, 0.35),
+            '&:hover': {
+              backgroundColor: alpha(primaryMain, 0.45),
+            },
           },
         },
       },
