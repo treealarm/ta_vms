@@ -98,6 +98,21 @@ enum Encoder {
   ENCODER_CPU   = 4;
 }
 
+// How much time the encoder may spend looking for a better answer.
+//
+// Five steps of ours, not the encoder's own word. Every backend names its presets
+// differently and the lists do not line up -- libx264 has ten, QSV has seven and no
+// "ultrafast" at all, NVENC calls them p1 to p7. This used to be a free-text string, which
+// meant the caller had to know which backend would open before they could name a preset --
+// exactly what ENCODER_AUTO makes unknowable. Note the default: unset is balanced.
+enum Preset {
+  PRESET_BALANCED = 0;
+  PRESET_FASTEST  = 1;
+  PRESET_FAST     = 2;
+  PRESET_SLOW     = 3;
+  PRESET_SLOWEST  = 4;
+}
+
 // What comes out. Note the default: leaving this unset gives HEVC.
 enum Codec {
   CODEC_H265 = 0;
@@ -207,8 +222,8 @@ message FileSettings {
   int32      crf     = 3;
   // Keyframe interval in frames. 0 means two seconds' worth.
   int32      gop     = 4;
-  // Encoder speed/quality trade-off, e.g. "medium". Empty takes the default.
-  string     preset  = 5;
+  // Encoder speed/quality trade-off. Unset is balanced.
+  Preset     preset  = 5;
   RoiQuality roi     = 6;
 }
 
@@ -282,7 +297,7 @@ message StreamSettings {
   Codec      codec   = 2;
   int32      crf     = 3;
   int32      gop     = 4;
-  string     preset  = 5;
+  Preset     preset  = 5;
   RoiQuality roi     = 6;
 }
 

@@ -44,6 +44,22 @@ Both images use an overlay vcpkg triplet
 still pass `-DCMAKE_BUILD_TYPE=Release` on their own `cmake` configure step to select the release
 libs.
 
+## smart-video-encoder (`roi_transcode`) — переносимость и вес зависимостей
+
+Две конвенции, принятые 2026-08-23 (полностью, с обоснованием —
+`roi_transcode/docs/plan-v2.md`, решения Р1 и Р2):
+
+**Код по возможности переносим на Windows.** `std::filesystem` вместо POSIX; никаких
+`unistd.h`, `dirent.h`, `pthread.h`, `realpath`. Сегодня это выполняется: в `include/`,
+`src/`, `tests/` и `integration/` нет ни одного POSIX-заголовка. Платформенное
+допускается только за интерфейсом бэкенда — VA-API Linux по природе, и ровно ради этого
+бэкенды разделены. Скрипты (`check.sh`, `rd_curve.sh`) и docker-образы остаются Linux.
+
+**Тест не тянет за собой тяжёлых зависимостей.** Не добавляем метрику или проверку,
+которой нужна отдельная система сборки, патчи к чужому коду, скачивание моделей или
+датасетов. Именно поэтому VMAF отложен: порт `libvmaf` требует meson, модель
+доставляется отдельно, а сам порт объявлен `"supports": "!windows"`.
+
 ## Adding a new service
 
 When adding a new service (C# or C++), you **must** update all of the following:
