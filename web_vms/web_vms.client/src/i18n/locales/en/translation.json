@@ -69,6 +69,8 @@
     "edgeBackfill": "Auto-recover gaps from the camera",
     "edgeBackfillOff": "Off",
     "edgeBackfillHint": "The camera records one stream onto its storage — pick the one it records",
+    "onvifMetadataDisabled": "Ignore this camera's own object boxes",
+    "onvifMetadataDisabledHint": "The camera puts object boxes in its RTSP metadata track. Turn this on to drop them: they never reach the archive, the live overlay, or the ROI pass. Worth doing when a detector runs beside the camera and reports what the objects are, which the camera often cannot. Switching analytics off on the device itself is separate — see the camera's ONVIF settings.",
     "roiTranscode": "Re-compress recordings with ROI",
     "roiTranscodeHint": "Re-encodes finished clips, keeping detected objects sharp and compressing the rest harder. Only clips that have detection boxes are touched.",
     "roiDelayHours": "Delay before re-compressing, hours",

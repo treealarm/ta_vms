@@ -58,7 +58,9 @@ Vms.Analytics.VmsAnalyticsService.VmsAnalyticsServiceClient? analyticsClient =
     : new Vms.Analytics.VmsAnalyticsService.VmsAnalyticsServiceClient(
         DaprClient.CreateInvocationInvoker(analyticsAppId));
 builder.Services.AddSingleton(sp => new VmsOnvif.Onvif.OnvifMetadataIngestor(
-  analyticsClient, sp.GetRequiredService<ILogger<VmsOnvif.Onvif.OnvifMetadataIngestor>>()));
+  analyticsClient,
+  sp.GetRequiredService<OnvifMetadataGateCache>(),
+  sp.GetRequiredService<ILogger<VmsOnvif.Onvif.OnvifMetadataIngestor>>()));
 // Same gate, same target: cameras that cannot draw boxes still have events worth showing.
 builder.Services.AddSingleton(sp => new VmsOnvif.Onvif.OnvifLiveEventForwarder(
   analyticsClient, sp.GetRequiredService<ILogger<VmsOnvif.Onvif.OnvifLiveEventForwarder>>()));
@@ -69,6 +71,7 @@ builder.Services.AddSingleton<OnvifSettingsService>();
 builder.Services.AddSingleton<AlarmEpisodeTracker>();
 builder.Services.AddSingleton<OnvifFilterCache>();
 builder.Services.AddSingleton<CameraArmedCache>();
+builder.Services.AddSingleton<OnvifMetadataGateCache>();
 builder.Services.AddSingleton<ObservedTopicsStore>();
 builder.Services.AddSingleton(sp => new OnvifEventSubscriptionService(
   sp.GetRequiredService<CfgService.CfgServiceClient>(),
@@ -86,6 +89,7 @@ builder.Services.AddHostedService(sp => new CameraConfigSubscriber(
   sp.GetRequiredService<OnvifFilterCache>(),
   sp.GetRequiredService<CameraArmedCache>(),
   sp.GetRequiredService<CameraConnCache>(),
+  sp.GetRequiredService<OnvifMetadataGateCache>(),
   sp.GetRequiredService<OnvifEventSubscriptionService>(),
   ownServerId,
   sp.GetRequiredService<ILogger<CameraConfigSubscriber>>()));

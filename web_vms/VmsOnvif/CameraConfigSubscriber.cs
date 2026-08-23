@@ -8,6 +8,7 @@ public sealed class CameraConfigSubscriber(
   OnvifFilterCache filterCache,
   CameraArmedCache armedCache,
   CameraConnCache connCache,
+  OnvifMetadataGateCache metadataGate,
   OnvifEventSubscriptionService subscriptionService,
   string ownServerId,
   ILogger<CameraConfigSubscriber> logger) : IHostedService, IDisposable
@@ -78,6 +79,7 @@ public sealed class CameraConfigSubscriber(
         connCache.InvalidateAll();
         filterCache.InvalidateAll();
         armedCache.InvalidateAll();
+        metadataGate.InvalidateAll();
       }
     }
     catch (OperationCanceledException) { }
@@ -120,6 +122,7 @@ public sealed class CameraConfigSubscriber(
       {
         connCache.Invalidate(cameraId);
         filterCache.Invalidate(cameraId);
+        metadataGate.Invalidate(cameraId);
         subscriptionService.NotifyConfigChanged(cameraId);
       }
       logger.LogDebug("ONVIF caches invalidated for {Count} camera(s)", evt.CameraIds.Count);

@@ -179,6 +179,10 @@ export type CameraSetupDto = {
   scheduleActive?: boolean
   /** Which stream to recover from the camera's own storage when the archive has a gap; empty = off. */
   edgeBackfillStream?: string
+  /** Drop the object boxes this camera puts in its own RTSP metadata track, before they are
+   *  parsed: nothing reaches the archive, the live overlay or the ROI pass. Separate from
+   *  switching analytics off on the device, which lives in the camera's ONVIF settings. */
+  onvifMetadataDisabled?: boolean
   /** Re-encode finished clips with ROI, keeping detector boxes sharp. */
   roiTranscode?: boolean
   /** Hours before a closed clip may be re-encoded; 0 means as soon as possible. */

@@ -22,6 +22,7 @@ namespace VmsOnvif.Onvif;
 /// </remarks>
 public sealed class OnvifMetadataIngestor(
   VmsAnalyticsService.VmsAnalyticsServiceClient? analyticsClient,
+  OnvifMetadataGateCache gate,
   ILogger<OnvifMetadataIngestor> logger)
 {
   // media_server already coalesces documents over ~200 ms, so a batch arrives here whole and is
@@ -94,6 +95,14 @@ public sealed class OnvifMetadataIngestor(
     foreach (var document in batch.Documents)
     {
       if (string.IsNullOrEmpty(document.CameraId) || string.IsNullOrEmpty(document.Xml))
+        continue;
+
+      // Dropped before the parse, which is the point of the setting: a camera that reports
+      // boxes without saying what they are is worse than one that reports nothing once a real
+      // detector runs beside it, and the ROI pass would prefer this source over the classified
+      // one purely because its timestamps are better. The camera keeps sending either way --
+      // switching it off on the device is a separate control, in the camera's ONVIF settings.
+      if (await gate.IsDisabledAsync(document.CameraId, ct))
         continue;
 
       IReadOnlyList<OnvifSceneObject> objects;

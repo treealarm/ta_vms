@@ -68,6 +68,14 @@ public record CameraSetupDto
   public string EdgeBackfillStream { get; init; } = string.Empty;
 
   /// <summary>
+  /// Ignore the object boxes this camera puts in its own RTSP metadata track. Not the same
+  /// as switching analytics off on the device — that is the ONVIF metadata configuration,
+  /// and it has its own control. This one is ours: the camera keeps sending, and the
+  /// documents are dropped before they are parsed.
+  /// </summary>
+  public bool OnvifMetadataDisabled { get; init; }
+
+  /// <summary>
   /// Re-encode this camera's finished clips with ROI, keeping the detector's boxes sharp
   /// and spending fewer bits elsewhere. Does nothing for clips that have no boxes.
   /// </summary>

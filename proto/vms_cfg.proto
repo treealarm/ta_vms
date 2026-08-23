@@ -199,6 +199,22 @@ message CameraSetup {
   // cannot be right for both.
   double roi_min_coverage = 24;
   double roi_max_coverage = 25;
+
+  // Ignore the object boxes this camera puts in its own RTSP metadata track.
+  //
+  // Not the same as switching analytics off on the device (that is the ONVIF metadata
+  // configuration, and there is a control for it in the camera's ONVIF settings). This is
+  // ours: the camera keeps sending, and we drop the documents before they are parsed --
+  // nothing reaches the archive, the live overlay, or the ROI pass.
+  //
+  // It exists because a camera that reports boxes without saying what they are is worse
+  // than one that reports nothing, once a real detector is running beside it. Ours sends
+  // ten thousand boxes an hour, all classed "unknown" at confidence 1.0, and the ROI pass
+  // prefers that source over the classified one purely because its timestamps are better.
+  //
+  // Per camera because it depends on the firmware in front of you: a camera that does fill
+  // in tt:Class is worth listening to, and one deployment can have both.
+  bool onvif_metadata_disabled = 26;
 }
 
 message RecordingProfileRequest {
