@@ -30,6 +30,16 @@ consumers: this repo's `media_server` (`vms` service) and the separate `video_a`
 It installs protobuf/grpc/spdlog/ffmpeg for media_server plus openvino for video_a — when changing
 its package list, consider both consumers.
 
+**Adding an ffmpeg feature to the shared vcpkg tree breaks every stale build directory.**
+`media_server`, `roi_transcode` and `video_a` all configure against `/mnt/wdblue/vcpkg` in
+classic mode, and all three link ffmpeg through `pkg_check_modules(FFMPEG ...)`. That call
+caches its answer in `CMakeCache.txt` and never asks pkg-config again. So when
+`roi_transcode` had ffmpeg rebuilt there with `qsv,vaapi`, `libavutil.a` gained
+`hwcontext_vaapi.o` while every build directory configured before that kept a link line with
+no `-lva`. The result is a wall of `undefined reference to vaGetDisplayDRM` that looks like a
+source problem and is not: the `.pc` file is already correct, the cache is not. Delete the
+build directory and reconfigure. Docker builds never hit this — they configure from scratch.
+
 **`roi_transcode` does not use it.** It has its own base, `roi_transcode/docker/intel/Dockerfile.deps`, and the split is
 load-bearing: it is the only consumer that needs qsv/vaapi (and the system `libdrm-dev` vcpkg's
 libva demands), and it is the only one that does not link openvino — which is 143 of the 234
