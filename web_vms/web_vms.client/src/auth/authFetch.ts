@@ -34,11 +34,20 @@ export function installAuthFetch(): void {
   diagReplayTrail()
   diagToken(store.getState().auth.token, 'at startup')
 
-  const refreshToken = async (): Promise<string | null> => {
+  /**
+   * A refresh that produced no token failed for one of two very different reasons, and the caller
+   * has to be able to tell them apart: the identity provider refused the refresh token, which ends
+   * the session, or nobody answered, which says nothing about it at all. Treating the second as the
+   * first threw away a perfectly good refresh token every time the gateway happened to be
+   * restarting.
+   */
+  type RefreshResult = { token: string | null; retryable: boolean }
+
+  const attemptRefresh = async (): Promise<RefreshResult> => {
     const rt = store.getState().auth.refreshToken
     if (!rt) {
       diagEvent('token refresh skipped: no refresh token stored')
-      return null
+      return { token: null, retryable: false }
     }
     const startedAt = performance.now()
     try {
@@ -49,16 +58,20 @@ export function installAuthFetch(): void {
         body: JSON.stringify({ refreshToken: rt }),
       })
       if (!resp.ok) {
-        diagEvent(`token refresh rejected: ${resp.status} after ${Math.round(performance.now() - startedAt)}ms`)
-        return null
+        // 5xx covers both the gateway still starting (its own 503) and the dev proxy reporting it
+        // unreachable (502/504). Only a 4xx is Keycloak refusing the token.
+        const retryable = resp.status >= 500
+        diagEvent(`token refresh ${retryable ? 'unavailable' : 'rejected'}: ${resp.status} after ${Math.round(performance.now() - startedAt)}ms`)
+        return { token: null, retryable }
       }
       const data = (await resp.json()) as { access_token: string; refresh_token: string }
       store.dispatch(setTokens({ token: data.access_token, refreshToken: data.refresh_token }))
       diagToken(data.access_token, `refreshed in ${Math.round(performance.now() - startedAt)}ms`)
-      return data.access_token
+      return { token: data.access_token, retryable: false }
     } catch (err) {
+      // Never reached the gateway — the token is untouched and worth another try.
       diagEvent(`token refresh threw after ${Math.round(performance.now() - startedAt)}ms: ${String(err)}`)
-      return null
+      return { token: null, retryable: true }
     }
   }
 
@@ -123,11 +136,30 @@ export function installAuthFetch(): void {
   // authSlice has already refused to treat that token as a session, so the app is showing a
   // neutral wait rather than pages it is about to be thrown out of; this decides which way it goes.
   if (store.getState().auth.restoring) {
-    void (async () => {
-      if (!refreshInFlight) refreshInFlight = refreshToken().finally(() => { refreshInFlight = null })
-      if (!(await refreshInFlight)) store.dispatch(logout())
-    })()
+    const REVIVE_RETRY_MS = 1500
+    const REVIVE_RETRY_CAP_MS = 15_000
+    const REVIVE_MAX_ATTEMPTS = 8
+
+    // Keeps trying while the reason to try again is "nobody answered". A refusal ends it at once —
+    // there is nothing to wait for — and so does running out of attempts, so a gateway that never
+    // comes back still lands the operator on the login form rather than on a spinner forever.
+    const revive = async (attempt: number): Promise<void> => {
+      const { token, retryable } = await attemptRefresh()
+      if (token) return
+      if (!retryable || attempt >= REVIVE_MAX_ATTEMPTS) {
+        store.dispatch(logout())
+        return
+      }
+      window.setTimeout(
+        () => { void revive(attempt + 1) },
+        Math.min(REVIVE_RETRY_MS * 2 ** attempt, REVIVE_RETRY_CAP_MS),
+      )
+    }
+
+    void revive(0)
   }
+
+  const refreshToken = async (): Promise<string | null> => (await attemptRefresh()).token
 
   const withAuth = (init: RequestInit | undefined, input: RequestInfo | URL, token: string | null): RequestInit | undefined => {
     if (!token) return init

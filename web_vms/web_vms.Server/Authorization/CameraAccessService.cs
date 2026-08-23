@@ -68,8 +68,13 @@ public sealed class CameraAccessService(
   private readonly ConcurrentDictionary<string, SemaphoreSlim> _refreshLocks = new(StringComparer.Ordinal);
 
   private readonly SemaphoreSlim _modeLock = new(1, 1);
-  private volatile bool _enforced;
-  private bool _modeEverLoaded;
+  // Starts enforced, and that default is load-bearing rather than a guess: every path that can
+  // read this before the mode has been read once — the non-blocking probe below, and the catch
+  // that follows it — must not answer "open". Defaulting to false handed CameraScope.Everything to
+  // any request that raced the very first GetAclEnforced on a cold start, which is a complete
+  // bypass of the camera ACL for as long as that call took.
+  private volatile bool _enforced = true;
+  private volatile bool _modeEverLoaded;
   private DateTime _modeFetchedAtUtc = DateTime.MinValue;
 
   public async Task<bool> IsAllowedAsync(
@@ -217,7 +222,12 @@ public sealed class CameraAccessService(
 
     // Same reasoning as the version probe above: whoever gets there first refreshes the mode, and
     // everyone else keeps serving the last known one rather than lining up behind a network call.
-    if (!await _modeLock.WaitAsync(0, ct))
+    // "Last known" is the operative word — before the first successful read there is no last known
+    // value, so this waits rather than answering from the default. Serving the default here would
+    // be indistinguishable from an answer, and the wrong one lets a caller through.
+    if (!_modeEverLoaded)
+      await _modeLock.WaitAsync(ct);
+    else if (!await _modeLock.WaitAsync(0, ct))
       return _enforced;
 
     try

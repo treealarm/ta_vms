@@ -125,7 +125,23 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
           return;
         }
 
-        const now = videoRef.current?.currentTime ?? 0;
+        const el = videoRef.current;
+        if (!el) {
+          return;
+        }
+
+        // The element carries `controls`, so the operator can stop it, and a stopped clock is not a
+        // stalled stream: re-negotiating for that would silently undo the pause on every cycle,
+        // because a fresh session autoplays. HAVE_NOTHING is excluded from the exemption on
+        // purpose — a connection that never delivered a frame also leaves the element paused, and
+        // that is precisely the state this exists to catch.
+        if (el.paused && el.readyState > HTMLMediaElement.HAVE_NOTHING) {
+          lastTime = el.currentTime;
+          stalledChecks = 0;
+          return;
+        }
+
+        const now = el.currentTime;
         if (now > lastTime) {
           lastTime = now;
           stalledChecks = 0;
