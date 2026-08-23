@@ -1,0 +1,34 @@
+{
+  "$comment": [
+    "IntelliSense had no configuration at all, so it fell back to its defaults: C++17,",
+    "and no idea where vcpkg's FFmpeg lives. It reported std::span as missing from a tree",
+    "that builds -- an error in the editor and nowhere else, which is the worst kind,",
+    "because the reflex is to change the code.",
+    "",
+    "The compile database is the fix rather than a hand-written include list: it carries the",
+    "exact flags the build used, per file, and stays right when the build changes. CMake",
+    "writes it because every preset now sets CMAKE_EXPORT_COMPILE_COMMANDS.",
+    "",
+    "A header is never in the database itself -- IntelliSense infers its flags from a",
+    "translation unit that includes it. For the public headers that is exact: the",
+    "public_headers_selfcontained target generates one TU per header, so smartvideo/session.h",
+    "is read with the same flags the build reads it with."
+  ],
+  "version": 4,
+  "configurations": [
+    {
+      "name": "smart-video-encoder",
+      "compileCommands": "${workspaceFolder}/roi_transcode/build/compile_commands.json",
+      "cStandard": "c17",
+      "cppStandard": "c++20",
+      "intelliSenseMode": "linux-gcc-x64"
+    },
+    {
+      "name": "media_server",
+      "compileCommands": "${workspaceFolder}/media_server/build/compile_commands.json",
+      "cStandard": "c17",
+      "cppStandard": "c++20",
+      "intelliSenseMode": "linux-gcc-x64"
+    }
+  ]
+}
