@@ -119,6 +119,16 @@ export function installAuthFetch(): void {
   store.subscribe(scheduleProactiveRefresh)
   scheduleProactiveRefresh()
 
+  // A tab opened after the access token had died starts its renewal here, not at the first 401.
+  // authSlice has already refused to treat that token as a session, so the app is showing a
+  // neutral wait rather than pages it is about to be thrown out of; this decides which way it goes.
+  if (store.getState().auth.restoring) {
+    void (async () => {
+      if (!refreshInFlight) refreshInFlight = refreshToken().finally(() => { refreshInFlight = null })
+      if (!(await refreshInFlight)) store.dispatch(logout())
+    })()
+  }
+
   const withAuth = (init: RequestInit | undefined, input: RequestInfo | URL, token: string | null): RequestInit | undefined => {
     if (!token) return init
     const headers = new Headers(init?.headers ?? (typeof input === 'object' && !(input instanceof URL) ? input.headers : undefined))

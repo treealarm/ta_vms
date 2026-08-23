@@ -62,6 +62,8 @@ export default function App() {
   const logsOpen = useAppSelector((s) => s.logs.panelOpen)
   const [debugTab, setDebugTab] = useState(0)
   const authToken = useAppSelector((s) => s.auth.token)
+  const authRestoring = useAppSelector((s) => s.auth.restoring)
+  const authExpired = useAppSelector((s) => s.auth.expired)
 
   // Re-runs whenever authToken changes, not just once on mount — otherwise a slow login (login
   // happens via client-side navigate(), App never remounts) can outlast the retry budget below
@@ -71,7 +73,9 @@ export default function App() {
     let retryTimer: ReturnType<typeof setTimeout> | null = null
 
     const bootstrap = async (attempt: number) => {
-      if (cancelled) return
+      // Nothing to load for a session that is being revived or is already over — these would only
+      // collect 401s and spend connections the revival itself needs.
+      if (cancelled || authRestoring || authExpired) return
       const [camerasResult, serversResult, monitorsResult, mtxResult] = await Promise.all([
         dispatch(loadCameras()),
         dispatch(loadServers()),
@@ -99,7 +103,7 @@ export default function App() {
       cancelled = true
       if (retryTimer != null) clearTimeout(retryTimer)
     }
-  }, [dispatch, authToken])
+  }, [dispatch, authToken, authRestoring, authExpired])
 
   // Anonymous and cheap — used as the connectivity probe below, so retry indefinitely until the
   // backend actually responds (no attempt cap, unlike the auth-dependent bootstrap above).
@@ -163,7 +167,23 @@ export default function App() {
             {/* Dev-only and anonymous end to end: the backend refuses to enable it alongside
                 Keycloak, so don't offer the page when it says the endpoints aren't there. */}
             {liveTestPlayer && <Route path="/test/live" element={<TestLivePage />} />}
-            {configStatus !== 'succeeded' ? (
+            {authRestoring ? (
+              // A stored session is being revived. Neither the app nor the login form is the right
+              // answer yet, and showing either and then swapping it is what looked so careless.
+              <Route path="*" element={
+                <Box sx={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  height: '100%', gap: 2,
+                }}>
+                  <CircularProgress />
+                  <Typography color="text.secondary">{t('app.connecting')}</Typography>
+                </Box>
+              } />
+            ) : authExpired ? (
+              // The session is over: login, without drawing a single page of the app first. The
+              // /login route above still wins on its own path, so this cannot loop.
+              <Route path="*" element={<Navigate to="/login" replace />} />
+            ) : configStatus !== 'succeeded' ? (
               // Don't render monitor/admin views until we've confirmed the backend is actually
               // reachable — otherwise a cold-started frontend briefly shows an empty monitor view
               // (no token yet looks the same as "auth disabled") instead of a neutral loading state.
