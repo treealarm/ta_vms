@@ -8,7 +8,12 @@ CREATE TABLE media_mtx_server (
   api_port    integer NOT NULL DEFAULT 9997,
   -- Configurable STUN server for browser WebRTC (WHEP) playback.
   -- Empty string means "no STUN at all" — LAN-only host candidates.
-  stun_url    text    NOT NULL DEFAULT ''
+  stun_url    text    NOT NULL DEFAULT '',
+  -- Which node this MediaMTX belongs to. media_server pushes a camera's stream to the
+  -- MediaMTX assigned to that camera, so an assignment that ignores the node sends video
+  -- across whatever link separates them. NULL means "shared": the server answers for any
+  -- node, which is what a single-box installation has.
+  server_id   text    NULL
 );
 
 CREATE TABLE camera_setup (
@@ -21,7 +26,41 @@ CREATE TABLE camera_setup (
   media_mtx_server_id uuid    NULL REFERENCES media_mtx_server(id) ON DELETE SET NULL,
   disabled            boolean NULL,
   name                text    NOT NULL DEFAULT '',
-  onvif_xaddr         text    NULL
+  onvif_xaddr         text    NULL,
+
+  -- Automatic recovery of archive gaps from the camera's own storage, and which of our
+  -- streams the recovered footage belongs to; empty means off. A property of the camera
+  -- rather than of a stream: the card holds one archive, and ONVIF does not report which
+  -- stream feeds it (GetRecordingJobs comes back empty on the devices tested, and a
+  -- recording only names its video source, not the encoder).
+  edge_backfill_stream    text             NOT NULL DEFAULT '',
+
+  -- Re-encode this camera's finished clips with ROI. A property of the camera because the
+  -- boxes come from analytics watching the camera, not one of its encodings. Off by
+  -- default: this rewrites recorded footage, and lossy-to-lossy is not something to opt
+  -- anyone into silently.
+  roi_transcode           boolean          NOT NULL DEFAULT false,
+
+  -- How long a clip stays untouched before the pass may re-encode it. Hours because that is
+  -- the scale operators think in, fractional because the useful values are as often
+  -- minutes. 0 does not mean "immediately": the pass still waits for the clip to close and
+  -- for the boxes to be written, which is a correctness floor and lives in code.
+  roi_delay_hours         double precision NOT NULL DEFAULT 0,
+
+  -- The band of ROI coverage in which re-encoding is worth doing: below the floor the
+  -- detector barely saw anything and crushing the clip takes its word for the whole thing;
+  -- above the ceiling there is little background left to crush. Per camera, because what
+  -- counts as "barely saw anything" on a corridor is an ordinary afternoon on a checkout
+  -- counter. The defaults leave the band wide open, which is the fastest way to fill
+  -- clips.roi_coverage and find out what the real distribution looks like.
+  roi_min_coverage        double precision NOT NULL DEFAULT 0,
+  roi_max_coverage        double precision NOT NULL DEFAULT 1,
+
+  -- Ignore the object boxes this camera puts in its own RTSP metadata track. Not the same
+  -- as switching analytics off on the device -- that is the ONVIF metadata configuration,
+  -- and it has its own control. This one is ours: the camera keeps sending, and the
+  -- documents are dropped before they are parsed.
+  onvif_metadata_disabled boolean          NOT NULL DEFAULT false
 );
 
 CREATE TABLE recording_profile (
@@ -90,9 +129,15 @@ CREATE INDEX idx_camera_stream_alarm_override
   WHERE alarm_override_until IS NOT NULL;
 
 CREATE TABLE storage (
-  storage_id     text   PRIMARY KEY,
-  root_path      text   NOT NULL UNIQUE,
-  reserved_bytes bigint NOT NULL DEFAULT 0
+  storage_id     text    PRIMARY KEY,
+  root_path      text    NOT NULL UNIQUE,
+  reserved_bytes bigint  NOT NULL DEFAULT 0,
+  -- Out of service without being removed. Deleting the row would take its camera
+  -- assignments with it, so a disk pulled for maintenance and put back would mean
+  -- reassigning every camera by hand. This keeps the row and the assignments and only stops
+  -- new recordings from choosing it; clips already on it stay readable, because playback,
+  -- export and cleanup all resolve their paths through the same row.
+  disabled       boolean NOT NULL DEFAULT false
 );
 
 CREATE TABLE camera_storage (
