@@ -57,23 +57,18 @@ function request(cameraId: string) {
 }
 
 /**
- * Drop what is cached and re-ask. Every write that touches an analytics source has to call this —
- * the strip summarises values that are edited on four different pages, and one that keeps showing
- * the pre-save state is actively misleading.
+ * Drop what is cached for one camera and re-ask. Called by whoever writes through this section, so
+ * a switch never keeps showing the state it just left.
+ *
+ * The same values are also editable on the four pages this section links out to, and those do not
+ * call this — they are separate routes, so coming back re-subscribes, and the TTL above is what
+ * covers a return quick enough to still hold a cached answer. If that turns out to be visible in
+ * practice, the fix is to call this from those pages' writes, not to shorten the TTL further.
  */
-export function invalidateAnalyticsSources(cameraId?: string) {
-  if (cameraId) {
-    cache.delete(cameraId)
-    if ((listeners.get(cameraId)?.size ?? 0) > 0) request(cameraId)
-    else notify(cameraId)
-    return
-  }
-  const known = [...cache.keys()]
-  cache.clear()
-  for (const id of known) {
-    if ((listeners.get(id)?.size ?? 0) > 0) request(id)
-    else notify(id)
-  }
+export function invalidateAnalyticsSources(cameraId: string) {
+  cache.delete(cameraId)
+  if ((listeners.get(cameraId)?.size ?? 0) > 0) request(cameraId)
+  else notify(cameraId)
 }
 
 /**

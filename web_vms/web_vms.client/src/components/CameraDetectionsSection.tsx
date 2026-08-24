@@ -122,6 +122,9 @@ export default function CameraDetectionsSection({ cameraId, onvifMetadataDisable
       ? `${cv.classes.map((c) => t(`analytics.class.${c}`)).join(', ')} · ${cv.sampleFps} fps`
       : t('detections.cvNoClasses')
 
+  // No answer covers more than "not probed yet": the node holding this camera's cached state may be
+  // down, or the camera may have no media server at all. All three are the same fact from here --
+  // nobody has told us -- so the wording must not promise an answer that is on its way.
   const metadataDetail = onvifMetadata.deviceEmits === null
     ? t('detections.deviceUnknown')
     : onvifMetadata.deviceEmits

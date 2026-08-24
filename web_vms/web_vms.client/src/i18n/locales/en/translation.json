@@ -495,7 +495,6 @@
     "roiNoGain": "Kept as recorded — re-compressing gained nothing"
   },
   "onvifSubs": {
-    "description": "Cameras in this list receive ONVIF events. Filters below decide which of them are worth keeping a clip for; arming lives on the camera.",
     "noCameras": "No cameras added yet.",
     "addCamera": "Add camera",
     "selectHint": "Select a camera",
@@ -835,7 +834,7 @@
     "cvNoClasses": "No detection classes selected",
     "deviceEmits": "Device is streaming boxes",
     "deviceSilent": "Device is not streaming boxes",
-    "deviceUnknown": "Asking the device…",
+    "deviceUnknown": "Device has not answered",
     "eventsNotManaged": "Camera is not managed for ONVIF events",
     "eventsFilters": "{{count}} alarm filter(s)",
     "openAnalytics": "Open analytics settings",

@@ -495,7 +495,6 @@
     "roiNoGain": "Conservado tal cual — recomprimir no aportó nada"
   },
   "onvifSubs": {
-    "description": "Las cámaras de esta lista reciben eventos ONVIF. Los filtros de abajo deciden cuáles merecen guardar un clip; el armado vive en la cámara.",
     "noCameras": "No hay cámaras agregadas.",
     "addCamera": "Agregar cámara",
     "selectHint": "Seleccione una cámara",
@@ -835,7 +834,7 @@
     "cvNoClasses": "No se ha seleccionado ninguna clase de detección",
     "deviceEmits": "El dispositivo está enviando recuadros",
     "deviceSilent": "El dispositivo no está enviando recuadros",
-    "deviceUnknown": "Consultando al dispositivo…",
+    "deviceUnknown": "El dispositivo no ha respondido",
     "eventsNotManaged": "La cámara no está gestionada para eventos ONVIF",
     "eventsFilters": "{{count}} filtro(s) de alarma",
     "openAnalytics": "Abrir los ajustes de analítica",
