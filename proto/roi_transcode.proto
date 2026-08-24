@@ -139,6 +139,24 @@ message Box {
   // timeline, so each box has to say when it applies; a streamed frame carries
   // the boxes that belong to it and needs no timestamp.
   double t      = 6;
+
+  // What the detector knows about this box beyond where it is. All three come
+  // from the archive already (vms_fs.proto MetadataBox) and used to be dropped
+  // on the way here, which left the encoder with geometry and a class name and
+  // nothing to weigh them by.
+  //
+  // The importance model of TZ v2.0 §11 multiplies five factors, and two of them
+  // are these: confidence directly, and temporal stability -- which is derived
+  // from how long a track persists, so it needs the track to be identifiable
+  // across frames.
+  //
+  // 0 means "not reported". A detector that gives no confidence is not the same
+  // as one reporting zero, and a box with no track is not part of any.
+  int64  track_id   = 7;
+  float  confidence = 8;
+  // The producer's own, narrower word for the class when it has one ("Truck"
+  // under vehicle). Free-form and optional; `kind` is what decides priority.
+  string label      = 9;
 }
 
 // A list of boxes. Exists only because a `oneof` cannot hold a repeated field
