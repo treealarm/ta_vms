@@ -16,8 +16,7 @@ import {
   Typography,
 } from '@mui/material'
 import { useTranslation } from 'react-i18next'
-import { useAppDispatch, useAppSelector } from '../store'
-import { setArmedWithPrealarmBaseline } from '../store/liveSlice'
+import { useAppSelector } from '../store'
 import { ANALYTICS_DETECTION_CLASSES } from '../dto/dtos'
 import type { AnalyticsDetectionClass, AnalyticsWatchDto, CameraSetupDto } from '../dto/dtos'
 import DetailToolbar from './settings/DetailToolbar'
@@ -85,8 +84,10 @@ function AnalyticsWatchForm({ ref, watch, allCameras, takenCameraIds, toolbarExt
     setBusy(true)
     setError(null)
     try {
-      // `armed` is flipped directly from the toolbar switch — always send the
-      // current value from the store, not the form-mount-time snapshot.
+      // `armed` belongs to the camera, not to this form, and is set from the operator's
+      // camera card. Send whatever the store currently holds rather than the snapshot this
+      // form mounted with, so saving a watch cannot silently disarm a camera someone armed
+      // while the form was open.
       const payload: AnalyticsWatchDto = { ...form, armed: watch?.armed ?? form.armed }
       const r = await fetch('/api/analytics-watches', {
         method: 'PUT',
@@ -278,11 +279,9 @@ function AnalyticsWatchForm({ ref, watch, allCameras, takenCameraIds, toolbarExt
 
 export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHandle> }) {
   const { t } = useTranslation()
-  const dispatch = useAppDispatch()
   const allCameras = useAppSelector((s) => Object.values(s.live.cameraStatesById))
 
   const [watches, setWatches] = useState<AnalyticsWatchDto[]>([])
-  const [armBusy, setArmBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const { isNew, selected, detailRef, detailKey, select, selectNew, reset } =
@@ -299,19 +298,6 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<ApplyIf
   }, [])
 
   useEffect(() => { void load() }, [load])
-
-  const setArmed = async (cameraId: string, armed: boolean) => {
-    setArmBusy(true)
-    setError(null)
-    try {
-      await dispatch(setArmedWithPrealarmBaseline({ cameraId, armed })).unwrap()
-      await load()
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setArmBusy(false)
-    }
-  }
 
   const classLabel = (c: AnalyticsDetectionClass) => t(`analytics.class.${c}`)
   const cameraName = (cameraId: string) => allCameras.find((c) => c.cameraId === cameraId)?.name || cameraId
@@ -331,12 +317,6 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<ApplyIf
             <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" component="span">
               <span>{cameraName(w.cameraId)}</span>
               <Chip label={w.enabled ? t('analytics.enabled') : t('analytics.disabled')} size="small" color={w.enabled ? 'primary' : 'default'} variant="outlined" />
-              {/* Not a warning any more: detection runs whether or not the camera is armed, and
-                  the boxes reach the archive either way. Arming decides only whether a detection
-                  opens an event and starts alarm recording, which is worth saying plainly. */}
-              {w.enabled && !w.armed && (
-                <Chip label={t('analytics.boxesOnly')} size="small" variant="outlined" />
-              )}
             </Stack>
           }
           secondary={
@@ -376,18 +356,6 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<ApplyIf
             <Stack direction="row" spacing={1} alignItems="center">
               {/* Arm failures must be visible next to the switch that caused them */}
               {error && <Typography variant="caption" color="error">{error}</Typography>}
-              <FormControlLabel
-                control={
-                  <Switch
-                    size="small"
-                    checked={selected.armed}
-                    onChange={(e) => void setArmed(selected.cameraId, e.target.checked)}
-                    disabled={armBusy}
-                    sx={{ '& .MuiSwitch-switchBase.Mui-checked': { color: '#ff9800' }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#ff9800' } }}
-                  />
-                }
-                label={<Typography variant="body2">{t('analytics.armSwitch')}</Typography>}
-              />
             </Stack>
           ) : undefined}
           onSaved={async (created) => {

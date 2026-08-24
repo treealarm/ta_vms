@@ -78,7 +78,21 @@ public sealed class DetectionStreamConsumer(
       return;
 
     var detectedAt = evt.DetectedAt.ToDateTime();
-    var persisted = debouncer.ShouldProcess(cameraId, evt.TrackId, evt.Kind, detectedAt) && watch.Armed;
+
+    // Two decisions, not one. Whether this detection is worth storing at all is the debounce's
+    // business -- one row per track and kind per interval, rather than one per sampled frame.
+    // Whether it also becomes an alarm is arming's.
+    //
+    // They used to be the same condition, so an unarmed camera recorded nothing about what it
+    // saw. That is wrong for a camera on continuous recording: the objects are worth having
+    // whether or not anyone armed it, and they are what makes the archive searchable later.
+    //
+    // Worth noting for later: a detection stored without an episode marks footage nobody has
+    // asked to keep. If retention is ever taught to drop clips that contain nothing
+    // interesting, this is the row it would ask -- and that is an argument for storing them
+    // now rather than an argument against.
+    var persisted = debouncer.ShouldProcess(cameraId, evt.TrackId, evt.Kind, detectedAt);
+    var retain = persisted && watch.Armed;
 
     // Debug ring buffer sees every above-threshold event, including debounced ones — that's the
     // point of the panel: to show what the detector actually saw, not just what got stored.
@@ -129,7 +143,12 @@ public sealed class DetectionStreamConsumer(
       evt.HasRecognizedText ? evt.RecognizedText : "-", eventId, objectId);
 
     var (storageId, cropPath) = await SaveCropAsync(cameraId, evt, detectedAt, ct);
-    var eventUuid = await RetainAsync(cameraId, evt, detectedAt, eventId, objectId, watch.TimeoutSeconds, ct);
+    // No episode for an unarmed camera, and so no alarm recording either -- arming is exactly
+    // the switch that decides that. The detection is still stored below; a null event_uuid is
+    // a state this row already had to handle, for the case where VmsFs was unreachable.
+    var eventUuid = retain
+      ? await RetainAsync(cameraId, evt, detectedAt, eventId, objectId, watch.TimeoutSeconds, ct)
+      : null;
     // If RetainEvent failed (FS unreachable) eventUuid is null: no episode was created and the clip
     // isn't retained either, so this detection has no episode to belong to. We still persist it (with
     // its event_id group) so the row isn't lost — it just can't appear in the per-episode details

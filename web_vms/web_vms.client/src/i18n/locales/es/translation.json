@@ -203,11 +203,9 @@
     "classes": "Clases de detección",
     "enabled": "Habilitado",
     "disabled": "Deshabilitado",
-    "boxesOnly": "solo recuadros — arma la cámara para registrar eventos",
     "debugCrops": "Recortes de depuración (JPEG por detección)",
     "create": "Crear",
     "deleteWatch": "Eliminar watch",
-    "armSwitch": "Armado",
     "invalidWatch": "Seleccione una cámara, un flujo y al menos una clase de detección",
     "selectHint": "Seleccione un watch o pulse + para agregar uno",
     "class": {

@@ -203,11 +203,9 @@
     "classes": "Detection classes",
     "enabled": "Enabled",
     "disabled": "Disabled",
-    "boxesOnly": "boxes only — arm to record events",
     "debugCrops": "Debug crops (JPEG per detection)",
     "create": "Create",
     "deleteWatch": "Delete watch",
-    "armSwitch": "Armed",
     "invalidWatch": "Select a camera, stream, and at least one detection class",
     "selectHint": "Select a watch or press + to add one",
     "class": {
