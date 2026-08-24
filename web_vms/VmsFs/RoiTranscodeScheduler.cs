@@ -81,10 +81,16 @@ public sealed class RoiTranscodeScheduler(
   // would put the thresholds on a lie. Tied to ANALYTICS_METADATA_MAX_SAMPLE_HZ:
   // below half the interval between samples, gaps open up between them.
   private readonly double _holdSec = EnvDouble("VMS_ROI_HOLD_SEC", 0.5);
-  // The working range. Below the floor the detector barely saw anything and
-  // crushing the rest would be taking its word for the whole clip; above the
-  // ceiling there is little background left to crush, so the pass would spend a
-  // generation of quality for almost nothing.
+  // The working range, in the share of the frame under a region (RoiCoverage). Below the
+  // floor the detector barely saw anything and crushing the rest would be taking its word
+  // for the whole clip; above the ceiling there is little background left to crush, so the
+  // pass would spend a generation of quality for almost nothing.
+  //
+  // The ceiling stays opt-in (0 = none). What used to make a crowded frame produce a bigger
+  // file is handled a layer down now -- the encoder spends its protection in importance
+  // order and stops at Quality::max_protected_fraction -- so this is a way to save the CPU
+  // of a pass that will not achieve much, not the thing standing between the archive and a
+  // file that grew.
   private readonly int _maxAttempts = EnvInt("VMS_ROI_MAX_ATTEMPTS", 3);
   private readonly int _crf = EnvInt("VMS_ROI_CRF", 28);
   private readonly int _qpDelta = EnvSigned("VMS_ROI_QP_DELTA", -8);
@@ -232,11 +238,13 @@ public sealed class RoiTranscodeScheduler(
   private sealed record RoiCameraSettings(
     string CameraId, double DelayHours, double MinCoverage, double MaxCoverage)
   {
-    /// <summary>Coverage at or below which the clip is left alone. Never negative.</summary>
+    /// <summary>
+    /// Protected share at or below which the clip is left alone. Never negative.
+    /// </summary>
     public double Floor => MinCoverage > 0 ? MinCoverage : 0;
 
     /// <summary>
-    /// Coverage above which the clip is left alone. 0 means no ceiling -- a camera
+    /// Protected share above which the clip is left alone. 0 means no ceiling -- a camera
     /// nobody has configured must not be silently excluded from the pass.
     /// </summary>
     public double Ceiling => MaxCoverage > 0 ? MaxCoverage : 1;
@@ -277,8 +285,11 @@ public sealed class RoiTranscodeScheduler(
   {
     var boxes = await BoxesForAsync(clip, ct);
     var duration = (clip.EndTs - clip.StartTs).TotalSeconds;
-    var coverage = (float)RoiCoverage.Fraction(
-      boxes.Select(b => b.T).ToList(), duration, _holdSec);
+    // Pixel-seconds, not seconds: what decides whether re-compression can save anything is
+    // how much of the frame is left as background to take the bits from. See RoiCoverage.
+    var coverage = (float)RoiCoverage.ProtectedShare(
+      boxes.Select(b => new RoiCoverage.Box(b.T, b.X, b.Y, b.Width, b.Height)).ToList(),
+      duration, _holdSec);
 
     // Outside the working range the clip is left alone, but the measurement is
     // still written: the thresholds are guesses until there is a distribution
