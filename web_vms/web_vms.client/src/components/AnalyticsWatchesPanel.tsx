@@ -331,8 +331,11 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<ApplyIf
             <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" component="span">
               <span>{cameraName(w.cameraId)}</span>
               <Chip label={w.enabled ? t('analytics.enabled') : t('analytics.disabled')} size="small" color={w.enabled ? 'primary' : 'default'} variant="outlined" />
+              {/* Not a warning any more: detection runs whether or not the camera is armed, and
+                  the boxes reach the archive either way. Arming decides only whether a detection
+                  opens an event and starts alarm recording, which is worth saying plainly. */}
               {w.enabled && !w.armed && (
-                <Chip label={t('analytics.notArmed')} size="small" color="warning" variant="outlined" />
+                <Chip label={t('analytics.boxesOnly')} size="small" variant="outlined" />
               )}
             </Stack>
           }

@@ -203,7 +203,7 @@
     "classes": "Detection classes",
     "enabled": "Enabled",
     "disabled": "Disabled",
-    "notArmed": "not armed",
+    "boxesOnly": "boxes only — arm to record events",
     "debugCrops": "Debug crops (JPEG per detection)",
     "create": "Create",
     "deleteWatch": "Delete watch",

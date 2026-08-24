@@ -203,7 +203,7 @@
     "classes": "Clases de detección",
     "enabled": "Habilitado",
     "disabled": "Deshabilitado",
-    "notArmed": "no armada",
+    "boxesOnly": "solo recuadros — arma la cámara para registrar eventos",
     "debugCrops": "Recortes de depuración (JPEG por detección)",
     "create": "Crear",
     "deleteWatch": "Eliminar watch",

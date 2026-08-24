@@ -31,9 +31,6 @@ public sealed class WatchReconciler(
   // isn't running and double-issue StartWatch (the worker's upsert would tear the pipeline down
   // mid-stream), or interleave a stop/start during a migration.
   private readonly SemaphoreSlim _reconcileLock = new(1, 1);
-  // Cameras already warned about "enabled but not armed" — warn once per transition, not on
-  // every reconcile pass (reconciles also fire on a periodic fallback timer).
-  private readonly ConcurrentDictionary<string, bool> _warnedNotArmed = new();
   private readonly CancellationTokenSource _cts = new();
 
   private readonly string _mediaMtxReadUser =
@@ -84,21 +81,21 @@ public sealed class WatchReconciler(
   {
     foreach (var (cameraId, watch) in watches)
     {
-      var shouldRun = watch.Enabled && watch.Armed;
+      // The watch's own switch decides whether the detector runs. Arming does not.
+      //
+      // It used to require both, which tied seeing to alarming: a camera recording around the
+      // clock but not armed produced no geometry at all, so its archive had no overlay to draw
+      // and the ROI pass had nothing to protect -- on exactly the footage that is kept longest.
+      // The camera's own ONVIF boxes were never gated this way either, so the two sources
+      // disagreed about when they existed.
+      //
+      // Arming still means what it should: the consumer only opens episodes, saves crops, writes
+      // detection rows and activates alarm recording for an armed camera (DetectionStreamConsumer,
+      // `persisted`). Geometry, the live overlay and the debug log were already unconditional
+      // there, which is the split this restores rather than invents.
+      var shouldRun = watch.Enabled;
       var targetWorker = workers.SelectWorker(cameraId);
       _active.TryGetValue(cameraId, out var current);
-
-      if (watch.Enabled && !watch.Armed)
-      {
-        if (_warnedNotArmed.TryAdd(cameraId, true))
-          logger.LogWarning(
-            "Analytics is enabled for camera '{CameraId}' but the camera is not armed — no detection will run until it is armed",
-            cameraId);
-      }
-      else
-      {
-        _warnedNotArmed.TryRemove(cameraId, out _);
-      }
 
       if (shouldRun && current is null)
       {
