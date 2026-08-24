@@ -494,7 +494,8 @@
     "jumpToDateTime": "Jump to date / time",
     "recovered": "Recovered from the camera",
     "archiveEdge": "No more recordings",
-    "roiTranscoded": "Re-compressed with ROI"
+    "roiTranscoded": "Re-compressed with ROI",
+    "roiNoGain": "Kept as recorded — re-compressing gained nothing"
   },
   "onvifSubs": {
     "description": "Cameras in this list receive ONVIF events. Arm to trigger retention recordings on matching alarm filters.",

@@ -324,22 +324,34 @@ public sealed class ClipStorage(
       track.Intervals.AddRange(MergeIntervals(
         bounds.Select(b => (b.StartTs, b.EndTs ?? b.StartTs.AddMinutes(1),
           string.IsNullOrWhiteSpace(b.Origin) ? "live" : b.Origin,
-          b.RoiState == "done")), minGap));
+          ToRoiState(b.RoiState))), minGap));
       tracks.Add(track);
     }
 
     return tracks;
   }
 
+  /// <summary>
+  /// The stored roi_state as the outcome an operator can see a difference from. Everything
+  /// that leaves the file as the camera sent it -- never examined, skipped for want of
+  /// boxes, given up on -- looks the same on screen and reports the same.
+  /// </summary>
+  private static RoiState ToRoiState(string? stored) => stored switch
+  {
+    "done"    => RoiState.Recompressed,
+    "no_gain" => RoiState.NoGain,
+    _         => RoiState.Original,
+  };
+
   private static List<RecordingInterval> MergeIntervals(
-    IEnumerable<(DateTime Start, DateTime End, string Origin, bool RoiTranscoded)> ordered,
+    IEnumerable<(DateTime Start, DateTime End, string Origin, RoiState RoiState)> ordered,
     TimeSpan minGap)
   {
     var merged = new List<RecordingInterval>();
     DateTime? curStart = null;
     DateTime curEnd = default;
     var curOrigin = "live";
-    var curRoi = false;
+    var curRoi = RoiState.Original;
 
     foreach (var (start, end, origin, roi) in ordered)
     {
@@ -380,12 +392,12 @@ public sealed class ClipStorage(
   }
 
   private static RecordingInterval ToInterval(
-    DateTime start, DateTime end, string origin, bool roiTranscoded) => new()
+    DateTime start, DateTime end, string origin, RoiState roiState) => new()
   {
     StartTs = Timestamp.FromDateTime(DateTime.SpecifyKind(start, DateTimeKind.Utc)),
     EndTs = Timestamp.FromDateTime(DateTime.SpecifyKind(end, DateTimeKind.Utc)),
     Origin = origin,
-    RoiTranscoded = roiTranscoded,
+    RoiState = roiState,
   };
 
   public async Task<List<Recording>> GetRecordingsAroundAsync(GetRecordingsAroundRequest request, CancellationToken ct)
@@ -1119,7 +1131,7 @@ public sealed class ClipStorage(
         // Column 10, appended rather than slotted in beside origin: this reader
         // is shared by three queries and indexes by position, so inserting a
         // column would silently shift every field after it.
-        RoiTranscoded = !reader.IsDBNull(10) && reader.GetString(10) == "done"
+        RoiState = ToRoiState(reader.IsDBNull(10) ? null : reader.GetString(10))
       };
       if (!reader.IsDBNull(4))
         rec.EndTs = Timestamp.FromDateTime(reader.GetDateTime(4).ToUniversalTime());
@@ -1251,6 +1263,6 @@ public sealed class ClipStorage(
     SizeBytes  = (ulong)c.SizeBytes,
     ClipUid    = c.ClipUid.ToString(),
     StorageId  = c.StorageId,
-    RoiTranscoded = c.RoiState == "done"
+    RoiState = ToRoiState(c.RoiState)
   };
 }

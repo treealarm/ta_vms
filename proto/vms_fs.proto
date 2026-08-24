@@ -98,11 +98,25 @@ message Recording {
   // it was recorded by a different device, arrives later, and may overlap its neighbours — so it is
   // kept visibly separate rather than merged into the same stretch of archive.
   string origin = 9;
-  // Whether this clip has been re-encoded with ROI: kept sharp where the detector saw something and
-  // compressed harder elsewhere. Worth surfacing for the same reason origin is — it is footage that
-  // has been through a second lossy pass, and an operator judging what they are looking at should
-  // be told.
-  bool roi_transcoded = 10;
+  // What the ROI pass did with this clip. Worth surfacing for the same reason origin is: a
+  // re-encoded clip has been through a second lossy pass, and an operator judging what they
+  // are looking at should be told -- as should one wondering why a clip was left alone.
+  RoiState roi_state = 11;
+}
+
+// What became of a clip the ROI pass looked at. Only the outcomes an operator can see a
+// difference from: "not examined yet", "attempts exhausted" and "no boxes to protect" all
+// look the same on screen and all mean the file is the one the camera sent.
+enum RoiState {
+  // Untouched, for whatever reason -- never examined, skipped, or given up on.
+  ROI_STATE_ORIGINAL = 0;
+  // Re-encoded, and the result replaced the original.
+  ROI_STATE_RECOMPRESSED = 1;
+  // Re-encoded and thrown away: the result was not meaningfully smaller, so the original was
+  // kept. The regions worth protecting are exactly where the bits already were, so a clip
+  // whose subject fills much of the frame for much of its length can come out larger than it
+  // went in, and paying a generation of quality for that is a loss twice over.
+  ROI_STATE_NO_GAIN = 2;
 }
 
 message IngestClipRequest {
@@ -198,10 +212,10 @@ message RecordingInterval {
   // "live" or "edge". Intervals of different provenance are never merged into one: an insert
   // recovered from the camera has to stay visible as an insert.
   string origin = 3;
-  // Whether this stretch has been re-encoded with ROI. Breaks a run for the same reason origin
-  // does: footage that has been through a second lossy pass is a different kind of footage, and
-  // the operator should be able to see which parts of the timeline it covers.
-  bool roi_transcoded = 4;
+  // What the ROI pass did with this stretch. Breaks a run for the same reason origin does:
+  // footage that has been through a second lossy pass is a different kind of footage, and the
+  // operator should be able to see which parts of the timeline it covers.
+  RoiState roi_state = 5;
 }
 
 message RecordingTimelineTrack {

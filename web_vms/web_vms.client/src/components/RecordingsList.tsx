@@ -349,7 +349,11 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
               const isSelected = selected === first.startTime
               // Counted rather than all-or-nothing: the ROI pass works clip by clip, so a range
               // spends a long time part way through, and that is exactly when watching it is useful.
-              const roiDone = rec.recordings.filter((r) => r.roiTranscoded).length
+              const roiDone = rec.recordings.filter((r) => r.roiState === 'recompressed').length
+              // Examined and left alone: the re-encode came out no smaller, so the original was
+              // kept. Worth its own mark rather than looking untouched -- an operator wondering
+              // why a busy stretch was never compressed deserves the answer on the row.
+              const roiNoGain = rec.recordings.filter((r) => r.roiState === 'no_gain').length
 
               return (
                 <div key={`${first.startTime}:${last?.endTime ?? ''}`} data-start={first.startTime}>
@@ -378,6 +382,12 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
                           <div>
                             {t('recordings.roiTranscoded')}
                             {roiDone < rec.recordings.length && `: ${roiDone}/${rec.recordings.length}`}
+                          </div>
+                        )}
+                        {roiNoGain > 0 && (
+                          <div>
+                            {t('recordings.roiNoGain')}
+                            {roiNoGain < rec.recordings.length && `: ${roiNoGain}/${rec.recordings.length}`}
                           </div>
                         )}
                       </Box>
@@ -413,6 +423,21 @@ const RecordingsList = forwardRef<RecordingsListHandle, Props>(function Recordin
                                 }}
                               >
                                 ◱
+                              </Box>
+                            )}
+                            {roiNoGain > 0 && (
+                              // The same square, empty: looked at, nothing gained. Muted rather
+                              // than coloured -- it is not an outcome anyone acted on, just the
+                              // reason this stretch still looks untouched.
+                              <Box
+                                component="span"
+                                sx={{
+                                  ml: 0.5,
+                                  color: 'text.disabled',
+                                  opacity: roiNoGain === rec.recordings.length ? 1 : 0.5,
+                                }}
+                              >
+                                ◻
                               </Box>
                             )}
                           </>

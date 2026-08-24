@@ -89,6 +89,17 @@ public sealed class RoiTranscodeScheduler(
   private readonly int _crf = EnvInt("VMS_ROI_CRF", 28);
   private readonly int _qpDelta = EnvSigned("VMS_ROI_QP_DELTA", -8);
   private readonly int _backgroundQpDelta = EnvSigned("VMS_ROI_BACKGROUND_QP_DELTA", 8);
+
+  /// <summary>
+  /// How much smaller the re-encoded file has to be before it is worth keeping, as a
+  /// fraction. 0.10 means "at least a tenth off".
+  ///
+  /// Not zero: a re-encode that saves one percent still costs a generation of quality, and
+  /// the archive is the thing being protected. Not high either -- most clips save far more
+  /// than this (a typical one here went from 15.2 MB to 4.2 MB), so the threshold only has
+  /// to catch the cases that gain nothing.
+  /// </summary>
+  private readonly double _minSaving = EnvDouble("VMS_ROI_MIN_SAVING", 0.10);
   private readonly double _pad = EnvDouble("VMS_ROI_PAD", 0.05);
 
   private readonly CancellationTokenSource _cts = new();
@@ -470,6 +481,31 @@ public sealed class RoiTranscodeScheduler(
       size = new FileInfo(output).Length;
       if (size <= 0)
         throw new IOException("re-encoded file is empty");
+
+      // Keep the original unless the new file is meaningfully smaller.
+      //
+      // Re-encoding costs a generation: quality inside the protected regions is preserved
+      // relative to the already-compressed clip, not to what the camera saw. Paying that
+      // for a few percent of disk is a bad trade, and paying it for a *larger* file is
+      // simply a loss -- which does happen. A clip where a person fills a quarter of the
+      // frame for its whole length came out 38% bigger than the original here: the regions
+      // that get protected are exactly where the bits already were, while the background
+      // being crushed was cheap to begin with.
+      //
+      // Decided on the measurement rather than on coverage. Coverage predicts whether
+      // re-encoding will pay; the file that came out says whether it did.
+      var original = new FileInfo(input).Length;
+      if (original > 0 && size > original * (1.0 - _minSaving))
+      {
+        TryDelete(output);
+        logger.LogInformation(
+          "ROI transcode: clip {ClipUid} not worth re-encoding ({Old} -> {New} bytes, "
+          + "coverage {Coverage:P0}); keeping the original",
+          clip.ClipUid, original, size, coverage);
+        await clips.SetRoiStateAsync(
+          clip.ClipUid, "no_gain", null, false, coverage, CancellationToken.None);
+        return;
+      }
 
       // The clip may have been deleted while the job ran. Checked before the
       // move rather than after, so the file is not restored under a row that no

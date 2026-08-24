@@ -255,7 +255,9 @@ export type RecordingDto = {
   /** `live`, or `edge` for a range recovered from the camera's own storage. */
   origin?: string
   /** Re-encoded with ROI: sharp where the detector saw something, compressed harder elsewhere. */
-  roiTranscoded?: boolean
+  /** What the ROI pass did: re-encoded it, looked and left it alone because the result
+   *  was no smaller, or nothing (never examined, skipped, given up on). */
+  roiState?: 'original' | 'recompressed' | 'no_gain'
 }
 
 export type RecordingRangeDto = {
@@ -312,7 +314,9 @@ export type RecordingIntervalDto = {
   /** `live`, or `edge` for footage recovered from the camera's own storage. */
   origin?: string
   /** Re-encoded with ROI: kept sharp where the detector saw something, compressed harder elsewhere. */
-  roiTranscoded?: boolean
+  /** What the ROI pass did: re-encoded it, looked and left it alone because the result
+   *  was no smaller, or nothing (never examined, skipped, given up on). */
+  roiState?: 'original' | 'recompressed' | 'no_gain'
 }
 
 export type RecordingTimelineTrackDto = {

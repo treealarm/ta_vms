@@ -494,7 +494,8 @@
     "jumpToDateTime": "Ir a fecha / hora",
     "recovered": "Recuperado de la cámara",
     "archiveEdge": "No hay más grabaciones",
-    "roiTranscoded": "Recomprimido con ROI"
+    "roiTranscoded": "Recomprimido con ROI",
+    "roiNoGain": "Conservado tal cual — recomprimir no aportó nada"
   },
   "onvifSubs": {
     "description": "Las cámaras de esta lista reciben eventos ONVIF. Activa el guardia para disparar grabaciones de retención con los filtros de alarma.",

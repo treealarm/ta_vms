@@ -49,7 +49,7 @@ export default function WallTimelineTrack({
           // Re-encoded footage gets a band along the bottom rather than a fill colour, for the
           // same reason recovered footage is hatched: the fill already carries camera identity.
           // A band also composes -- a stretch can be both recovered and re-encoded.
-          const recompressed = seg.roiTranscoded === true
+          const recompressed = seg.roiState === 'recompressed'
           const marks = [
             recovered ? 'Recovered from the camera' : null,
             recompressed ? 'Re-compressed with ROI' : null,

@@ -28,6 +28,10 @@ CREATE TABLE clips (
   --   'pending'  nothing has been tried yet
   --   'done'     re-encoded and the file replaced
   --   'skipped'  no detection boxes for this clip, so there is nothing to protect
+  --   'no_gain'  re-encoded, and the result was not meaningfully smaller, so the original
+  --              was kept. The regions worth protecting are exactly where the bits already
+  --              were, so a clip whose subject fills much of the frame for much of its
+  --              length can come out larger than it went in.
   --   'failed'   attempts exhausted; left alone rather than retried forever
   --
   -- Why once and not repeatedly: this is lossy-to-lossy. Quality inside the zone is preserved

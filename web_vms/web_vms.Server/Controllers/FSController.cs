@@ -35,6 +35,17 @@ public sealed class FSController(
       _ => DateTime.SpecifyKind(dt, DateTimeKind.Utc)
     };
 
+  /// <summary>
+  /// The wire enum as the word the browser uses. A name rather than a number so the client
+  /// is not pinned to proto field ordering, and so a log or a network trace reads.
+  /// </summary>
+  private static string RoiStateName(Vms.Fs.RoiState state) => state switch
+  {
+    Vms.Fs.RoiState.Recompressed => "recompressed",
+    Vms.Fs.RoiState.NoGain       => "no_gain",
+    _                            => "original",
+  };
+
   private static RecordingDto ToRecordingDto(Vms.Fs.Recording r) => new()
   {
     FilePath   = r.FilePath,
@@ -44,7 +55,7 @@ public sealed class FSController(
     SizeBytes  = r.SizeBytes,
     ClipUid    = r.ClipUid,
     Origin     = string.IsNullOrWhiteSpace(r.Origin) ? "live" : r.Origin,
-    RoiTranscoded = r.RoiTranscoded
+    RoiState = RoiStateName(r.RoiState)
   };
 
   private static RecordingDto? NearestRecording(IReadOnlyList<RecordingDto> recordings, DateTime targetUtc)
@@ -270,7 +281,7 @@ public sealed class FSController(
           StartTime = i.StartTs.ToDateTime(),
           EndTime = i.EndTs.ToDateTime(),
           Origin = string.IsNullOrWhiteSpace(i.Origin) ? "live" : i.Origin,
-          RoiTranscoded = i.RoiTranscoded,
+          RoiState = RoiStateName(i.RoiState),
         }).ToList(),
       }).ToList(),
     };

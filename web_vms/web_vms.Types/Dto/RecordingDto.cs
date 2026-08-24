@@ -27,7 +27,9 @@ namespace web_vms.Types.Dto
     /// Whether this clip has been re-encoded with ROI — a second lossy pass, so worth telling
     /// an operator about for the same reason <see cref="Origin"/> is.
     /// </summary>
-    public bool RoiTranscoded { get; set; }
+    /// <summary>"original" | "recompressed" | "no_gain" — what the ROI pass did with this
+    /// footage. Everything that leaves the file as the camera sent it reports "original".</summary>
+    public string RoiState { get; set; } = "original";
   }
 
   public class RecordingsResponseDto
@@ -86,7 +88,9 @@ namespace web_vms.Types.Dto
     /// <summary>"live", or "edge" for footage recovered from the camera's own storage.</summary>
     public string Origin { get; set; } = "live";
     /// <summary>Whether this stretch has been re-encoded with ROI.</summary>
-    public bool RoiTranscoded { get; set; }
+    /// <summary>"original" | "recompressed" | "no_gain" — what the ROI pass did with this
+    /// footage. Everything that leaves the file as the camera sent it reports "original".</summary>
+    public string RoiState { get; set; } = "original";
   }
 
   public class RecordingTimelineTrackDto

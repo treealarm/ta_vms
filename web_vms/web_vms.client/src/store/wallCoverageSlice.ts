@@ -56,7 +56,7 @@ const wallCoverageSlice = createSlice({
               startMs: Date.parse(i.startTime),
               endMs: Date.parse(i.endTime),
               origin: i.origin,
-              roiTranscoded: i.roiTranscoded,
+              roiState: i.roiState,
             }))
             .filter((s) => Number.isFinite(s.startMs) && Number.isFinite(s.endMs) && s.endMs > s.startMs)
         }

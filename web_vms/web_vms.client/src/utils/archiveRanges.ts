@@ -21,7 +21,7 @@ export type Segment = {
    * Whether the footage has been re-encoded with ROI. Carried alongside `origin` and for the same
    * reason: it only matters to what gets drawn, never to the interval maths.
    */
-  roiTranscoded?: boolean
+  roiState?: 'original' | 'recompressed' | 'no_gain'
 }
 
 /** Clips whose end is unknown are assumed to run until the next clip starts, or 60 s (one clip). */
@@ -235,7 +235,7 @@ export function clampIntoSegment(seg: Segment, ms: number): number {
 /** Whether two stretches would be drawn the same way. */
 function sameMark(a: Segment, b: Segment): boolean {
   return (a.origin ?? 'live') === (b.origin ?? 'live')
-    && (a.roiTranscoded === true) === (b.roiTranscoded === true)
+    && (a.roiState ?? 'original') === (b.roiState ?? 'original')
 }
 
 /**
