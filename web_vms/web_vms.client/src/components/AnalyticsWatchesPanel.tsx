@@ -25,6 +25,7 @@ import SettingsListItem from './settings/SettingsListItem'
 import { useDirtyGuard } from './settings/useDirtyGuard'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 import { useMasterDetailSelection } from './settings/useMasterDetailSelection'
+import { useCameraDeepLink } from './settings/useCameraDeepLink'
 
 const EMPTY_WATCH: AnalyticsWatchDto = {
   cameraId: '',
@@ -43,12 +44,11 @@ type FormProps = {
   watch: AnalyticsWatchDto | null  // null = new
   allCameras: CameraSetupDto[]
   takenCameraIds: string[]         // cameras that already have a watch (for the new-watch camera select)
-  toolbarExtra?: React.ReactNode   // arm/disarm switch, owned by the container
   onSaved: (isNew: boolean) => Promise<void>
   onRemoved: () => Promise<void>
 }
 
-function AnalyticsWatchForm({ ref, watch, allCameras, takenCameraIds, toolbarExtra, onSaved, onRemoved }: FormProps) {
+function AnalyticsWatchForm({ ref, watch, allCameras, takenCameraIds, onSaved, onRemoved }: FormProps) {
   const { t } = useTranslation()
   const isNew = watch === null
 
@@ -165,7 +165,6 @@ function AnalyticsWatchForm({ ref, watch, allCameras, takenCameraIds, toolbarExt
         onCancel={isNew ? undefined : handleCancel}
         onDelete={isNew ? undefined : () => void handleRemove()}
         deleteLabel={t('analytics.deleteWatch')}
-        extra={toolbarExtra}
       />
 
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 2 }}>
@@ -284,8 +283,9 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<ApplyIf
   const [watches, setWatches] = useState<AnalyticsWatchDto[]>([])
   const [error, setError] = useState<string | null>(null)
 
+  const deepLink = useCameraDeepLink()
   const { isNew, selected, detailRef, detailKey, select, selectNew, reset } =
-    useMasterDetailSelection(ref, watches, (w) => w.cameraId)
+    useMasterDetailSelection(ref, watches, (w) => w.cameraId, deepLink.cameraId)
 
   const load = useCallback(async () => {
     try {
@@ -352,12 +352,6 @@ export default function AnalyticsWatchesPanel({ ref }: { ref?: React.Ref<ApplyIf
           watch={isNew ? null : selected}
           allCameras={allCameras}
           takenCameraIds={takenCameraIds}
-          toolbarExtra={selected ? (
-            <Stack direction="row" spacing={1} alignItems="center">
-              {/* Arm failures must be visible next to the switch that caused them */}
-              {error && <Typography variant="caption" color="error">{error}</Typography>}
-            </Stack>
-          ) : undefined}
           onSaved={async (created) => {
             await load()
             if (created) reset()

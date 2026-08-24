@@ -76,5 +76,11 @@ public record LiveCameraEventDto
   public string Label { get; init; } = string.Empty;
   /// <summary>True when the condition started, false when it cleared.</summary>
   public bool Active { get; init; }
+  /// <summary>
+  /// True when the event matched one of the camera's alarm filters. Subscribing is what puts an
+  /// event on this stream; matching is only what makes it worth keeping a clip for, so the monitor
+  /// needs both facts to decide what to show.
+  /// </summary>
+  public bool Matched { get; init; }
   public DateTime ReceivedAt { get; init; }
 }

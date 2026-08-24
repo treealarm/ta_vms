@@ -1,4 +1,4 @@
-import { useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { Box, IconButton, List, Menu, MenuItem, Tooltip, Typography } from '@mui/material'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import RadarIcon from '@mui/icons-material/Radar'
@@ -10,6 +10,7 @@ import CameraSetupPanel from './CameraSetupPanel'
 import OnvifDiscoveryDialog from './OnvifDiscoveryDialog'
 import StreamSetupPanel from './StreamSetupPanel'
 import MasterDetailLayout from './settings/MasterDetailLayout'
+import { useCameraDeepLink } from './settings/useCameraDeepLink'
 import SettingsListItem from './settings/SettingsListItem'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 
@@ -26,7 +27,20 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<ApplyIfDir
   const { t } = useTranslation()
   const servers = useAppSelector((state) => state.live.servers)
   const camerasMap = useAppSelector((state) => state.live.cameraStatesById)
+  const deepLink = useCameraDeepLink()
   const [selection, setSelection] = useState<Selection>({ kind: 'none' })
+  const deepLinkApplied = useRef(false)
+
+  // Arriving from a camera's Guard tab elsewhere: select the camera once it is in the store. The
+  // list loads asynchronously, so this waits for the camera rather than firing on mount, and it
+  // applies once -- after that the operator's own clicks own the selection.
+  useEffect(() => {
+    if (deepLinkApplied.current || !deepLink.cameraId) return
+    const cam = camerasMap[deepLink.cameraId]
+    if (!cam) return
+    deepLinkApplied.current = true
+    setSelection({ kind: 'camera', cameraId: deepLink.cameraId, serverId: cam.serverId ?? '' })
+  }, [deepLink.cameraId, camerasMap])
   const [discoveryOpen, setDiscoveryOpen] = useState(false)
   const [addMenuAnchor, setAddMenuAnchor] = useState<HTMLElement | null>(null)
 

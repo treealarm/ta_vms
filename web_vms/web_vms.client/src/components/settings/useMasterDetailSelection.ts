@@ -1,4 +1,4 @@
-import { useImperativeHandle, useRef, useState } from 'react'
+import { useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type { ApplyIfDirtyHandle } from './useDirtyGuard'
 
 // Discriminated selection: a real item id can never collide with create mode
@@ -15,8 +15,24 @@ export function useMasterDetailSelection<T>(
   ref: React.Ref<ApplyIfDirtyHandle> | undefined,
   items: T[],
   getId: (item: T) => string,
+  /**
+   * Item to select once, when it first appears in `items` — for arriving from another page with a
+   * camera already in mind. Applied a single time: lists load asynchronously, so this has to wait
+   * for the item rather than fire on mount, and after that the operator's own clicks own the
+   * selection. An id that never shows up simply never applies.
+   */
+  initialId?: string | null,
 ) {
   const [selection, setSelection] = useState<Selection>(null)
+  const initialApplied = useRef(false)
+
+  useEffect(() => {
+    if (initialApplied.current || !initialId) return
+    if (!items.some((item) => getId(item) === initialId)) return
+    initialApplied.current = true
+    setSelection({ kind: 'id', id: initialId })
+  }, [initialId, items, getId])
+
   const detailRef = useRef<ApplyIfDirtyHandle>(null)
   // Serializes guarded switches so a rapid second click cannot start a
   // concurrent applyIfDirty save for the same dirty form

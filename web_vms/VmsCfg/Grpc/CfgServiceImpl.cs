@@ -1019,11 +1019,11 @@ namespace VmsCfg
       return response;
     }
 
-    public override async Task<OperationStatus> SetOnvifArmed(
-      SetOnvifArmedRequest request, ServerCallContext context)
+    public override async Task<OperationStatus> SetOnvifSubscribed(
+      SetOnvifSubscribedRequest request, ServerCallContext context)
     {
-      await storage.SetOnvifArmedAsync(request.CameraId, request.Armed, context.CancellationToken);
-      logger.LogInformation("Camera '{CameraId}' armed state set to {Armed}", request.CameraId, request.Armed);
+      await storage.SetOnvifSubscribedAsync(request.CameraId, request.Subscribed, context.CancellationToken);
+      logger.LogInformation("Camera '{CameraId}' ONVIF event subscription set to {Subscribed}", request.CameraId, request.Subscribed);
       InvalidateFsCache(request.CameraId);
       return new OperationStatus { Success = true };
     }
@@ -1091,6 +1091,15 @@ namespace VmsCfg
         NotifyAnalyticsWatchChanged(request.CameraId);
       }
       return new OperationStatus { Success = removed };
+    }
+
+    public override async Task<CameraAnalyticsSourcesResponse> GetCameraAnalyticsSources(
+      CameraAnalyticsSourcesRequest request, ServerCallContext context)
+    {
+      var sources = await storage.GetCameraAnalyticsSourcesAsync(request.CameraIds, context.CancellationToken);
+      var response = new CameraAnalyticsSourcesResponse();
+      response.Cameras.AddRange(sources);
+      return response;
     }
 
     // ── Per-camera permissions ────────────────────────────────────────────────

@@ -57,7 +57,7 @@ public sealed class AnalyticsServiceImpl(
     {
       liveEventBroadcaster.Publish(new LiveCameraEvent(
         e.CameraId, e.Topic, e.Label, e.Active,
-        e.ReceivedAt?.ToDateTime() ?? DateTime.UtcNow));
+        e.ReceivedAt?.ToDateTime() ?? DateTime.UtcNow, e.Matched));
     }
     return Task.FromResult(new PushOnvifEventsResponse());
   }
@@ -76,6 +76,7 @@ public sealed class AnalyticsServiceImpl(
         Topic      = e.Topic,
         Label      = e.Label,
         Active     = e.Active,
+        Matched    = e.Matched,
         ReceivedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.ReceivedAt, DateTimeKind.Utc)),
       });
     }

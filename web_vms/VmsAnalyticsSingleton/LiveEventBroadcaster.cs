@@ -10,7 +10,11 @@ public sealed record LiveCameraEvent(
   string Topic,
   string Label,
   bool Active,
-  DateTime ReceivedAt);
+  DateTime ReceivedAt,
+  // Whether the event matched one of the camera's alarm filters. Every event reaches this
+  // broadcaster now; the monitor uses this to tell what the operator declared worth noticing
+  // from what the camera merely announced.
+  bool Matched);
 
 // In-process fan-out of ONVIF events to the live monitor, the counterpart of
 // LiveDetectionBroadcaster and deliberately built the same way: bounded per-subscriber channels

@@ -299,14 +299,15 @@ public sealed class OnvifEventSubscriptionService(
     }
   }
 
-  /// One event, decided once. The camera's alarm filters are what the operator has declared worth
-  /// noticing on this camera, so they govern the monitor banner exactly as they govern retention —
-  /// matching them once here and handing the result to both keeps the two from drifting apart, and
-  /// spares a second cache read per event.
+  /// One event, decided once. Subscribing is what decides whether events enter the system at all;
+  /// the camera's alarm filters decide only what is worth keeping a clip for. Those used to be the
+  /// same decision, so a single filter silently made the camera go quiet about everything else —
+  /// and the thing doing the silencing carries a recording duration, which is a retention concept
+  /// with no business governing a stream.
   ///
-  /// The two differ in one respect only: retention additionally requires the camera to be armed,
-  /// because it writes to disk. Showing an operator what the camera just said does not, so a
-  /// disarmed camera still gets its banners.
+  /// So every event is forwarded, tagged with whether it matched, and retention is what the match
+  /// still gates — together with arming, because retention writes to disk. Showing an operator what
+  /// the camera just said does not, so a disarmed camera still gets its banners.
   private async Task HandleEventAsync(string cameraId, string topic, string payload)
   {
     try
@@ -328,13 +329,12 @@ public sealed class OnvifEventSubscriptionService(
       // episode key all need it, and the XML is the only per-event cost of any size here.
       var parsed = VmsOnvif.Onvif.OnvifEventPayload.Parse(payload);
 
-      // With no filters configured at all the operator has declared nothing, so everything is
-      // shown: a camera announces topics you cannot guess, and seeing them is how you learn what
-      // to write a filter for. Once even one filter exists, it is the whole answer.
-      if (filters.Count == 0 || matched != null)
-        liveEvents.Forward(cameraId, topic, parsed.Active);
+      // Unconditional: a camera announces topics you cannot guess, and seeing them is how you
+      // learn what to write a filter for. `matched` travels with the event so the monitor can
+      // still tell what the operator declared worth noticing from what the camera merely said.
+      liveEvents.Forward(cameraId, topic, parsed.Active, matched != null);
 
-      // Nothing declared means nothing to retain either — the banner above is the whole effect.
+      // Nothing declared means nothing to retain — forwarding above is the whole effect.
       if (filters.Count == 0) return;
 
       if (matched == null)

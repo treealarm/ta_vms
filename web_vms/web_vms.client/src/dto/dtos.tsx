@@ -170,8 +170,9 @@ export type CameraSetupDto = {
   onvifManaged?: boolean
   armed?: boolean
   disabled?: boolean
-  /** True when the camera has an enabled analytics watch; gates the live bbox overlay toggle. */
-  hasAnalytics?: boolean
+  /** True when the camera has an enabled CV watch; gates the live bbox overlay toggle. Not the
+   *  device's own ONVIF Analytics service — that is `hasAnalyticsService` on the capabilities. */
+  cvWatchEnabled?: boolean
   /** Recording schedules assigned to this camera (uuids). */
   scheduleIds?: string[]
   /** True while one of the assigned schedule windows is open. Recomputed server-side from the wall
@@ -715,7 +716,48 @@ export type LiveCameraEventDto = {
   label: string
   /** True when the condition started, false when it cleared. */
   active: boolean
+  /** True when the event matched one of the camera's alarm filters. Subscribing is what puts an
+   *  event on this stream; matching is only what makes it worth keeping a clip for. */
+  matched: boolean
   receivedAt: string
+}
+
+/** The server-side CV detector (video_a) watching this camera. */
+export type CvSourceDto = {
+  enabled: boolean
+  streamName: string
+  classes: string[]
+  minConfidence: number
+  sampleFps: number
+  timeoutSeconds: number
+  attachDebugCrops: boolean
+}
+
+/** The camera's own object boxes. Two halves that must not be collapsed into one. */
+export type OnvifMetadataSourceDto = {
+  /** Whether we consume the boxes the camera sends. */
+  accepted: boolean
+  /** Whether the device is configured to stream boxes at all. Null = not probed yet, which is
+   *  deliberately distinct from a confident "no". */
+  deviceEmits: boolean | null
+}
+
+export type OnvifEventsSourceDto = {
+  /** False when the camera has no subscription row at all — not the same as managed-but-off. */
+  managed: boolean
+  subscribed: boolean
+  pollTimeoutSeconds: number
+  messageLimit: number
+  filterCount: number
+}
+
+/** Every source that can raise a detection for one camera, as the Detections tab renders it. */
+export type CameraAnalyticsSourcesDto = {
+  cameraId: string
+  /** Null when the camera has no analytics watch at all — different from having one switched off. */
+  cv: CvSourceDto | null
+  onvifMetadata: OnvifMetadataSourceDto
+  onvifEvents: OnvifEventsSourceDto
 }
 
 export type OnvifAlarmFilterDto = {
@@ -799,7 +841,7 @@ export type DeviceCapabilitiesDto = {
   hasRelayOutputs: boolean
   hasDigitalInputs: boolean
   /** Camera runs its own analytics engine (ONVIF ver20 Analytics) — gates the Metadata tab. */
-  hasAnalytics: boolean
+  hasAnalyticsService: boolean
 }
 
 // ── ONVIF Profile M: metadata / analytics ───────────────────────────────────

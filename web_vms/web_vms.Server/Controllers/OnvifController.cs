@@ -339,7 +339,7 @@ public class OnvifController(
       hasAudio         = response.HasAudio,
       hasRelayOutputs  = response.HasRelayOutputs,
       hasDigitalInputs = response.HasDigitalInputs,
-      hasAnalytics     = response.HasAnalytics,
+      hasAnalyticsService = response.HasAnalyticsService,
     });
   }
 
@@ -497,8 +497,8 @@ public class OnvifController(
   [HttpPut("cameras/{cameraId}/subscription")]
   public async Task<IActionResult> SetSubscribed(string cameraId, [FromBody] SetSubscribedBody body, CancellationToken ct)
   {
-    await cfgClient.SetOnvifArmedAsync(
-      new SetOnvifArmedRequest { CameraId = cameraId, Armed = body.Subscribed }, Options(ct));
+    await cfgClient.SetOnvifSubscribedAsync(
+      new SetOnvifSubscribedRequest { CameraId = cameraId, Subscribed = body.Subscribed }, Options(ct));
     return Ok();
   }
 

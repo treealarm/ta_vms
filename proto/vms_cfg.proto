@@ -52,7 +52,7 @@ service CfgService {
   rpc SubscribeOnvifEvents(OnvifSubscriptionRequest) returns (OperationStatus);
   rpc UnsubscribeOnvifEvents(OnvifSubscriptionRequest) returns (OperationStatus);
   rpc ListOnvifSubscriptions(google.protobuf.Empty) returns (OnvifSubscriptionsResponse);
-  rpc SetOnvifArmed(SetOnvifArmedRequest) returns (OperationStatus);
+  rpc SetOnvifSubscribed(SetOnvifSubscribedRequest) returns (OperationStatus);
   rpc SetOnvifPollConfig(SetOnvifPollConfigRequest) returns (OperationStatus);
 
   rpc GetCamState(GetCamStateRequest) returns (GetCamStateResponse);
@@ -61,6 +61,7 @@ service CfgService {
   rpc ListAnalyticsWatches(ListAnalyticsWatchesRequest) returns (ListAnalyticsWatchesResponse);
   rpc UpsertAnalyticsWatch(UpsertAnalyticsWatchRequest) returns (OperationStatus);
   rpc RemoveAnalyticsWatch(RemoveAnalyticsWatchRequest) returns (OperationStatus);
+  rpc GetCameraAnalyticsSources(CameraAnalyticsSourcesRequest) returns (CameraAnalyticsSourcesResponse);
 
   rpc ListCameraPermissions(ListCameraPermissionsRequest) returns (ListCameraPermissionsResponse);
   rpc SetUserCameraPermissions(SetUserCameraPermissionsRequest) returns (OperationStatus);
@@ -513,9 +514,12 @@ message OnvifSubscriptionsResponse {
   repeated OnvifCameraEntry cameras = 1;
 }
 
-message SetOnvifArmedRequest {
-  string camera_id = 1;
-  bool   armed     = 2;
+// Whether VmsOnvif keeps a pull-point subscription open for this camera. Named for what it does:
+// it writes onvif_event_subscription.subscribed and has nothing to do with arming, which is
+// camera-wide and lives in camera_states.
+message SetOnvifSubscribedRequest {
+  string camera_id  = 1;
+  bool   subscribed = 2;
 }
 
 message SetOnvifPollConfigRequest {
@@ -565,6 +569,44 @@ message UpsertAnalyticsWatchRequest {
 
 message RemoveAnalyticsWatchRequest {
   string camera_id = 1;
+}
+
+// ── Analytics sources, aggregated per camera ─────────────────────────────────
+
+// One camera's analytics configuration across every source that can raise a detection for it.
+// Read-only aggregate over tables VmsCfg already owns. Writes stay on the per-source RPCs above:
+// each carries its own side effects (cache invalidation, the camera-state-changed topic, the
+// analytics control plane), and a fan-out write has no sane meaning when three of four parts
+// succeed -- the form would have nothing honest to show.
+message CameraAnalyticsSources {
+  string camera_id = 1;
+  // Unset = no analytics_watch row at all. Different from "exists and is switched off".
+  optional AnalyticsWatch cv = 2;
+  OnvifMetadataSourceState onvif_metadata = 3;
+  OnvifEventsSourceState   onvif_events   = 4;
+}
+
+// camera_setup.onvif_metadata_disabled, inverted -- named for what it enables, so all three
+// sources read the same way round. Whether the device actually emits boxes is device state and
+// lives in VmsOnvif; the gateway merges it.
+message OnvifMetadataSourceState {
+  bool accepted = 1;
+}
+
+message OnvifEventsSourceState {
+  bool  managed              = 1;  // a row exists in onvif_event_subscription
+  bool  subscribed           = 2;
+  int32 poll_timeout_seconds = 3;
+  int32 message_limit        = 4;
+  int32 filter_count         = 5;  // count, not the filters: the tab summarises, the panel edits
+}
+
+message CameraAnalyticsSourcesRequest {
+  repeated string camera_ids = 1;  // empty = every camera
+}
+
+message CameraAnalyticsSourcesResponse {
+  repeated CameraAnalyticsSources cameras = 1;
 }
 
 // ── Per-camera user permissions ──────────────────────────────────────────────

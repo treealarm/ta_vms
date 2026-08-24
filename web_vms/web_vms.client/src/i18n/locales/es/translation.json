@@ -69,8 +69,6 @@
     "edgeBackfill": "Recuperar huecos desde la cámara",
     "edgeBackfillOff": "Desactivado",
     "edgeBackfillHint": "La cámara graba un solo flujo en su almacenamiento — elija cuál",
-    "onvifMetadataDisabled": "Ignorar los recuadros de la propia cámara",
-    "onvifMetadataDisabledHint": "La cámara incluye recuadros de objetos en su pista de metadatos RTSP. Actívalo para descartarlos: no llegarán al archivo, ni a la superposición en vivo, ni al paso ROI. Útil cuando junto a la cámara funciona un detector que sí dice qué son los objetos, cosa que la cámara a menudo no puede. Desactivar la analítica en el propio dispositivo es otra cosa — está en los ajustes ONVIF de la cámara.",
     "roiTranscode": "Recomprimir grabaciones con ROI",
     "roiTranscodeHint": "Recodifica los clips terminados manteniendo nítidos los objetos detectados y comprimiendo más el resto. Solo se procesan los clips que tienen detecciones.",
     "roiDelayHours": "Retraso antes de recomprimir, horas",
@@ -79,7 +77,8 @@
     "tabAdvanced": "Avanzado",
     "roiMinCoverage": "Cobertura ROI mínima, %",
     "roiMaxCoverage": "Cobertura ROI máxima, %",
-    "roiCoverageHint": "La cobertura es la parte de la duración del clip que tiene detecciones. Solo se recomprimen los clips dentro de esta banda: por debajo el detector vio muy poco como para fiarse, por encima no queda fondo que comprimir. 0 desactiva el límite."
+    "roiCoverageHint": "La cobertura es la parte de la duración del clip que tiene detecciones. Solo se recomprimen los clips dentro de esta banda: por debajo el detector vio muy poco como para fiarse, por encima no queda fondo que comprimir. 0 desactiva el límite.",
+    "tabDetections": "Detecciones"
   },
   "cameraControl": {
     "showControls": "Mostrar controles de cámara",
@@ -496,7 +495,7 @@
     "roiNoGain": "Conservado tal cual — recomprimir no aportó nada"
   },
   "onvifSubs": {
-    "description": "Las cámaras de esta lista reciben eventos ONVIF. Activa el guardia para disparar grabaciones de retención con los filtros de alarma.",
+    "description": "Las cámaras de esta lista reciben eventos ONVIF. Los filtros de abajo deciden cuáles merecen guardar un clip; el armado vive en la cámara.",
     "noCameras": "No hay cámaras agregadas.",
     "addCamera": "Agregar cámara",
     "selectHint": "Seleccione una cámara",
@@ -505,7 +504,8 @@
     "removeFilter": "Eliminar filtro de alarma",
     "pollConfig": "Sondeo de eventos",
     "pollTimeoutSeconds": "Tiempo de espera (s)",
-    "messageLimit": "Mensajes por sondeo"
+    "messageLimit": "Mensajes por sondeo",
+    "subscription": "Suscripción"
   },
   "fsActivity": {
     "tabLabel": "Actividad FS",
@@ -825,5 +825,22 @@
     "recheck": "Comprobar estado",
     "autoRefilling": "Restaurando automáticamente — hasta {{at}}",
     "recoveredClips": "Clips recuperados: {{count}}"
+  },
+  "detections": {
+    "intro": "Qué fuentes de detección de esta cámara están activadas. Cada una se configura en su propia página; aquí se ve y se cambia lo que está activo ahora mismo.",
+    "sourceCv": "Detector del servidor (CV)",
+    "sourceOnvifBoxes": "Recuadros de la propia cámara",
+    "sourceOnvifEvents": "Eventos de la propia cámara",
+    "cvNotConfigured": "No hay vigilancia configurada para esta cámara",
+    "cvNoClasses": "No se ha seleccionado ninguna clase de detección",
+    "deviceEmits": "El dispositivo está enviando recuadros",
+    "deviceSilent": "El dispositivo no está enviando recuadros",
+    "deviceUnknown": "Consultando al dispositivo…",
+    "eventsNotManaged": "La cámara no está gestionada para eventos ONVIF",
+    "eventsFilters": "{{count}} filtro(s) de alarma",
+    "openAnalytics": "Abrir los ajustes de analítica",
+    "openOnvifCfg": "Abrir los ajustes de metadatos del dispositivo",
+    "openOnvifEvents": "Abrir los ajustes de eventos ONVIF",
+    "onvifBoxesDoNotRetain": "Se dibujan y se archivan, pero nunca guardan un clip por sí solos."
   }
 }

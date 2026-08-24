@@ -1131,12 +1131,12 @@ public class CameraStorage(
     await cmd.ExecuteNonQueryAsync(ct);
   }
 
-  public async Task SetOnvifArmedAsync(string cameraId, bool armed, CancellationToken ct)
+  public async Task SetOnvifSubscribedAsync(string cameraId, bool subscribed, CancellationToken ct)
   {
     await using var cmd = _dataSource.CreateCommand(
       "UPDATE onvif_event_subscription SET subscribed = $2 WHERE camera_id = $1;");
     cmd.Parameters.AddWithValue(cameraId);
-    cmd.Parameters.AddWithValue(armed);
+    cmd.Parameters.AddWithValue(subscribed);
     await cmd.ExecuteNonQueryAsync(ct);
   }
 
@@ -1191,10 +1191,21 @@ public class CameraStorage(
       query = query.Where(w => w.CameraId == cameraId);
 
     var rows = await query.OrderBy(w => w.CameraId).ToListAsync(ct);
-    var result = new List<AnalyticsWatch>();
-    foreach (var row in rows)
-      result.Add(await ToAnalyticsWatchProtoAsync(row, ct));
-    return result;
+    // Armed for every row in one query. Asking per row turned a list of N watches into N+1 round
+    // trips, which is what GetCameraAnalyticsSourcesAsync below deliberately avoids as well.
+    var armed = await ArmedByCameraAsync(db, rows.Select(r => r.CameraId), ct);
+    return rows.Select(r => ToAnalyticsWatchProto(r, armed.GetValueOrDefault(r.CameraId))).ToList();
+  }
+
+  /// Armed flags for these cameras, keyed by camera id. Cameras with no camera_states row are
+  /// absent -- callers treat that as not armed.
+  private static async Task<Dictionary<string, bool>> ArmedByCameraAsync(
+    VmsCfgDbContext db, IEnumerable<string> cameraIds, CancellationToken ct)
+  {
+    var ids = cameraIds.Distinct().ToList();
+    if (ids.Count == 0) return [];
+    return await db.CameraStates.Where(c => ids.Contains(c.CameraId))
+      .ToDictionaryAsync(c => c.CameraId, c => c.Armed, ct);
   }
 
   public async Task<AnalyticsWatch> UpsertAnalyticsWatchAsync(AnalyticsWatch watch, CancellationToken ct)
@@ -1228,7 +1239,76 @@ public class CameraStorage(
     return true;
   }
 
+  // ── Analytics sources, aggregated per camera ────────────────────────────
+
+  /// Every analytics source a camera has, in one pass. Five queries regardless of how many cameras
+  /// are asked for -- the four tables that hold the configuration plus the filter counts -- because
+  /// the caller renders all of them at once and per-camera round trips are what this replaces.
+  ///
+  /// Read-only on purpose: writes stay on the per-source RPCs, each of which carries its own side
+  /// effects (cache invalidation, the camera-state-changed topic, the analytics control plane).
+  ///
+  /// The camera set comes from camera_setup, so a camera with no rows in any of the other tables
+  /// still appears -- with every source off, which is the honest answer and a different one from
+  /// "no such camera".
+  public async Task<List<CameraAnalyticsSources>> GetCameraAnalyticsSourcesAsync(
+    IReadOnlyCollection<string> cameraIds, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+    var wanted = cameraIds.Distinct().ToList();
+    var setupQuery = db.CameraSetups.AsQueryable();
+    if (wanted.Count > 0) setupQuery = setupQuery.Where(c => wanted.Contains(c.CameraId));
+    var setups = await setupQuery.OrderBy(c => c.CameraId).ToListAsync(ct);
+    if (setups.Count == 0) return [];
+
+    var ids = setups.Select(c => c.CameraId).ToList();
+
+    var watches = await db.AnalyticsWatches.Where(w => ids.Contains(w.CameraId))
+      .ToDictionaryAsync(w => w.CameraId, ct);
+    var subs = await db.OnvifEventSubscriptions.Where(x => ids.Contains(x.CameraId))
+      .ToDictionaryAsync(x => x.CameraId, ct);
+    var filterCounts = await db.OnvifAlarmFilters.Where(f => ids.Contains(f.CameraId))
+      .GroupBy(f => f.CameraId)
+      .Select(g => new { CameraId = g.Key, Count = g.Count() })
+      .ToDictionaryAsync(x => x.CameraId, x => x.Count, ct);
+    var armed = await ArmedByCameraAsync(db, ids, ct);
+
+    var result = new List<CameraAnalyticsSources>(setups.Count);
+    foreach (var setup in setups)
+    {
+      var entry = new CameraAnalyticsSources
+      {
+        CameraId = setup.CameraId,
+        OnvifMetadata = new OnvifMetadataSourceState { Accepted = !setup.OnvifMetadataDisabled },
+      };
+
+      // Armed is read only to fill the watch's own mirror of it; nothing here is about arming,
+      // which is camera-wide and set from the monitor.
+      if (watches.TryGetValue(setup.CameraId, out var watch))
+        entry.Cv = ToAnalyticsWatchProto(watch, armed.GetValueOrDefault(setup.CameraId));
+
+      // Absent row means the camera is not managed for ONVIF events at all -- which is not the
+      // same as being managed and unsubscribed, and the tab shows the two differently.
+      subs.TryGetValue(setup.CameraId, out var sub);
+      entry.OnvifEvents = new OnvifEventsSourceState
+      {
+        Managed            = sub is not null,
+        Subscribed         = sub?.Subscribed ?? false,
+        PollTimeoutSeconds = sub?.PollTimeoutSeconds ?? 0,
+        MessageLimit       = sub?.MessageLimit ?? 0,
+        FilterCount        = filterCounts.GetValueOrDefault(setup.CameraId),
+      };
+
+      result.Add(entry);
+    }
+    return result;
+  }
+
   private async Task<AnalyticsWatch> ToAnalyticsWatchProtoAsync(DbAnalyticsWatch row, CancellationToken ct)
+    => ToAnalyticsWatchProto(row, await GetCameraArmedAsync(row.CameraId, ct));
+
+  private static AnalyticsWatch ToAnalyticsWatchProto(DbAnalyticsWatch row, bool armed)
   {
     var proto = new AnalyticsWatch
     {
@@ -1237,7 +1317,7 @@ public class CameraStorage(
       Enabled          = row.Enabled,
       MinConfidence    = row.MinConfidence,
       SampleFps        = (uint)row.SampleFps,
-      Armed            = await GetCameraArmedAsync(row.CameraId, ct),
+      Armed            = armed,
       AttachDebugCrops = row.AttachDebugCrops,
       TimeoutSeconds   = (uint)row.TimeoutSeconds,
     };

@@ -425,7 +425,7 @@ public partial class OnvifServiceImpl(
       HasRelayOutputs  = hasRelayOutputsTask.Result,
       HasDigitalInputs = caps?.HasDigitalInputs ?? false,
       HasEdgeRecording = caps?.HasEdgeRecording ?? false,
-      HasAnalytics     = caps?.HasAnalytics ?? false,
+      HasAnalyticsService = caps?.HasAnalyticsService ?? false,
     };
   }
 

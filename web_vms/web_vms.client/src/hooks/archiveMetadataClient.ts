@@ -288,7 +288,7 @@ async function fetchCoverage(key: string, cameraId: string, streamName: string, 
  * whether the overlay toggle is worth offering.
  *
  * A property of (camera, stream, time range), not of the camera: the live test
- * (`hasAnalytics || onvifBboxCapable`) describes the camera *now*, and an operator looking at last
+ * (`cvWatchEnabled || onvifBboxCapable`) describes the camera *now*, and an operator looking at last
  * Tuesday may be looking at a period before the watch existed, or after it was deleted.
  */
 export function useArchiveMetadataCoverage(

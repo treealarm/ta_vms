@@ -154,8 +154,9 @@ export const setStreamRecordingProfile = createAsyncThunk(
   }
 )
 
-// Arm/disarm plus the prealarm-baseline profile flip, shared by the camera card
-// and the analytics watches panel: arming puts non-recording streams on the
+// Arm/disarm plus the prealarm-baseline profile flip, used by the camera card --
+// the only place arming is offered, because that is where an operator can see the
+// video they are judging: arming puts non-recording streams on the
 // prealarm profile (and disarming reverts prealarm back to off). Without a
 // baseline profile the stream pipeline is torn down whenever the alarm override
 // expires (recording off<->continuous flapping), which kills the MediaMTX push

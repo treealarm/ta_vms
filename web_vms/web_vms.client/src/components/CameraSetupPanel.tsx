@@ -8,6 +8,7 @@ import { setCameraSchedules } from '../store/scheduleSlice'
 import type { CameraSetupDto, CameraStorageAssignmentDto } from '../dto/dtos'
 import CameraStoragesControl from './CameraStoragesControl'
 import CameraSchedulesControl from './CameraSchedulesControl'
+import CameraDetectionsSection from './CameraDetectionsSection'
 import PasswordField from './PasswordField'
 import CameraStream from './CameraStream'
 import DetailToolbar from './settings/DetailToolbar'
@@ -53,7 +54,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const [roiDelayHours, setRoiDelayHours] = useState(String(existing?.roiDelayHours ?? 0))
   const [roiMinCoverage, setRoiMinCoverage] = useState(pctOf(existing?.roiMinCoverage, 0))
   const [roiMaxCoverage, setRoiMaxCoverage] = useState(pctOf(existing?.roiMaxCoverage, 1))
-  const [tab, setTab] = useState<'main' | 'advanced'>('main')
+  const [tab, setTab] = useState<'main' | 'advanced' | 'detections'>('main')
   const [pendingStorages, setPendingStorages] = useState<CameraStorageAssignmentDto[]>([])
   const [pendingSchedules, setPendingSchedules] = useState<string[]>([])
 
@@ -220,10 +221,13 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
           <Stack spacing={2} sx={{ flex: 1, minWidth: 0, maxWidth: 380 }}>
             <Tabs
               value={tab}
-              onChange={(_, v: 'main' | 'advanced') => setTab(v)}
+              onChange={(_, v: 'main' | 'advanced' | 'detections') => setTab(v)}
               sx={{ borderBottom: 1, borderColor: 'divider' }}
             >
               <Tab value="main" label={t('cameras.tabMain')} />
+              {/* Sources belong to a camera that exists: there is nothing to switch on for one
+                  that has not been created yet. */}
+              {!isNew && <Tab value="detections" label={t('cameras.tabDetections')} />}
               <Tab value="advanced" label={t('cameras.tabAdvanced')} />
             </Tabs>
 
@@ -291,17 +295,16 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
             </Stack>
             )}
 
+            {tab === 'detections' && !isNew && (
+            <CameraDetectionsSection
+              cameraId={initialCameraId}
+              onvifMetadataDisabled={onvifMetadataDisabled}
+              setOnvifMetadataDisabled={setOnvifMetadataDisabled}
+            />
+            )}
+
             {tab === 'advanced' && (
             <Stack spacing={2}>
-              <FieldHint hint={t('cameras.onvifMetadataDisabledHint')}>
-                <FormControlLabel
-                  control={<Switch
-                    checked={onvifMetadataDisabled}
-                    onChange={(e) => setOnvifMetadataDisabled(e.target.checked)}
-                  />}
-                  label={t('cameras.onvifMetadataDisabled')}
-                />
-              </FieldHint>
               <FieldHint hint={t('cameras.roiTranscodeHint')}>
                 <FormControlLabel
                   control={<Switch checked={roiTranscode} onChange={(e) => setRoiTranscode(e.target.checked)} />}

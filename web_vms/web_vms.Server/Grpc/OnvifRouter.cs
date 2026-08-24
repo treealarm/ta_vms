@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Dapr.Client;
+using Grpc.Core;
 using Vms.Onvif;
 
 namespace web_vms;
@@ -22,6 +23,8 @@ public sealed class OnvifRouter(ICameraManager cameras, ServerPairRegistry regis
   private static readonly TimeSpan VersionProbeInterval = TimeSpan.FromSeconds(5);
   private static readonly TimeSpan VersionProbeTimeout = TimeSpan.FromSeconds(2);
   private const string VersionKey = "cam-node-version";
+  // Best-effort: this only lights a button, so a slow node must not hold up the whole answer.
+  private static readonly TimeSpan BboxProbeTimeout = TimeSpan.FromSeconds(3);
 
   private static readonly string StateStoreName =
     Environment.GetEnvironmentVariable("DAPR_STATE_STORE_NAME")
@@ -41,6 +44,54 @@ public sealed class OnvifRouter(ICameraManager cameras, ServerPairRegistry regis
   /// node — the client objects above are created per call, so they cannot be grouped on directly.
   public Task<string> ResolveServerIdAsync(string cameraId, CancellationToken ct) =>
     ServerIdAsync(cameraId, ct);
+
+  /// Which of these cameras are currently configured to stream their own object boxes, batched one
+  /// call per node. A camera absent from the result has not been probed yet (or its node is down) --
+  /// callers must not read that as "no", which is why the map is sparse rather than defaulted.
+  ///
+  /// Grouped by node id rather than by client object: the clients above are created per call, so
+  /// grouping on those would silently degrade back to one request per camera.
+  public async Task<Dictionary<string, bool>> GetBboxCapableAsync(
+    IEnumerable<string> cameraIds, CancellationToken ct)
+  {
+    var groups = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+    foreach (var cameraId in cameraIds.Distinct())
+    {
+      string serverId;
+      try
+      {
+        serverId = await ServerIdAsync(cameraId, ct);
+      }
+      catch (InvalidOperationException)
+      {
+        continue;  // camera with no media server assigned -- no node to ask
+      }
+
+      if (!groups.TryGetValue(serverId, out var list))
+        groups[serverId] = list = [];
+      list.Add(cameraId);
+    }
+
+    var result = new Dictionary<string, bool>(StringComparer.Ordinal);
+    foreach (var (serverId, ids) in groups)
+    {
+      try
+      {
+        var request = new MetadataStatesRequest();
+        request.CameraIds.AddRange(ids);
+        var resp = await registry.GetOnvifClient(serverId).GetMetadataStatesAsync(
+          request, new CallOptions(deadline: DateTime.UtcNow.Add(BboxProbeTimeout), cancellationToken: ct));
+        foreach (var pair in resp.BboxCapable)
+          result[pair.Key] = pair.Value;
+      }
+      catch (RpcException)
+      {
+        // A node that is down contributes nothing: the button stays dark, which is the right
+        // answer for cameras nobody can reach anyway.
+      }
+    }
+    return result;
+  }
 
   public async Task<PtzService.PtzServiceClient> PtzAsync(string cameraId, CancellationToken ct) =>
     registry.GetPtzClient(await ServerIdAsync(cameraId, ct));

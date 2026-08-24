@@ -168,7 +168,9 @@ message GetDeviceCapabilitiesResponse {
   // Camera keeps its own recordings (Profile G search + replay); gates the Edge Archive UI.
   bool   has_edge_recording = 8;
   // Camera runs its own analytics engine (ver20 Analytics service); gates the Metadata tab.
-  bool   has_analytics      = 9;
+  // Named for the service, not just "analytics": whether a camera has an enabled CV watch on our
+  // side is a different question with a different answer, and the two used to share a name.
+  bool   has_analytics_service = 9;
 }
 
 message ImagingSettingsRequest {

@@ -69,8 +69,6 @@
     "edgeBackfill": "Auto-recover gaps from the camera",
     "edgeBackfillOff": "Off",
     "edgeBackfillHint": "The camera records one stream onto its storage — pick the one it records",
-    "onvifMetadataDisabled": "Ignore this camera's own object boxes",
-    "onvifMetadataDisabledHint": "The camera puts object boxes in its RTSP metadata track. Turn this on to drop them: they never reach the archive, the live overlay, or the ROI pass. Worth doing when a detector runs beside the camera and reports what the objects are, which the camera often cannot. Switching analytics off on the device itself is separate — see the camera's ONVIF settings.",
     "roiTranscode": "Re-compress recordings with ROI",
     "roiTranscodeHint": "Re-encodes finished clips, keeping detected objects sharp and compressing the rest harder. Only clips that have detection boxes are touched.",
     "roiDelayHours": "Delay before re-compressing, hours",
@@ -79,7 +77,8 @@
     "tabAdvanced": "Advanced",
     "roiMinCoverage": "Min ROI coverage, %",
     "roiMaxCoverage": "Max ROI coverage, %",
-    "roiCoverageHint": "Coverage is the share of a clip's length that has detection boxes on it. Only clips inside this band are re-compressed: below it the detector saw too little to trust, above it there is no background left to squeeze. 0 turns a bound off."
+    "roiCoverageHint": "Coverage is the share of a clip's length that has detection boxes on it. Only clips inside this band are re-compressed: below it the detector saw too little to trust, above it there is no background left to squeeze. 0 turns a bound off.",
+    "tabDetections": "Detections"
   },
   "cameraControl": {
     "showControls": "Show camera controls",
@@ -496,7 +495,7 @@
     "roiNoGain": "Kept as recorded — re-compressing gained nothing"
   },
   "onvifSubs": {
-    "description": "Cameras in this list receive ONVIF events. Arm to trigger retention recordings on matching alarm filters.",
+    "description": "Cameras in this list receive ONVIF events. Filters below decide which of them are worth keeping a clip for; arming lives on the camera.",
     "noCameras": "No cameras added yet.",
     "addCamera": "Add camera",
     "selectHint": "Select a camera",
@@ -505,7 +504,8 @@
     "removeFilter": "Delete alarm filter",
     "pollConfig": "Event polling",
     "pollTimeoutSeconds": "Poll timeout (s)",
-    "messageLimit": "Messages per poll"
+    "messageLimit": "Messages per poll",
+    "subscription": "Subscription"
   },
   "fsActivity": {
     "tabLabel": "FS Activity",
@@ -825,5 +825,22 @@
     "recheck": "Re-check status",
     "autoRefilling": "Restoring automatically — reached {{at}}",
     "recoveredClips": "Recovered clips: {{count}}"
+  },
+  "detections": {
+    "intro": "Which of this camera's detection sources are switched on. Each is configured on its own page — this is where you can see and change what is live right now.",
+    "sourceCv": "Server detector (CV)",
+    "sourceOnvifBoxes": "Camera's own boxes",
+    "sourceOnvifEvents": "Camera's own events",
+    "cvNotConfigured": "No watch configured for this camera",
+    "cvNoClasses": "No detection classes selected",
+    "deviceEmits": "Device is streaming boxes",
+    "deviceSilent": "Device is not streaming boxes",
+    "deviceUnknown": "Asking the device…",
+    "eventsNotManaged": "Camera is not managed for ONVIF events",
+    "eventsFilters": "{{count}} alarm filter(s)",
+    "openAnalytics": "Open analytics settings",
+    "openOnvifCfg": "Open the device's metadata settings",
+    "openOnvifEvents": "Open ONVIF event settings",
+    "onvifBoxesDoNotRetain": "Drawn and archived, but never keep a clip on their own."
   }
 }

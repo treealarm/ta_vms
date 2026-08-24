@@ -158,6 +158,10 @@ message LiveEvent {
   // send both edges, and showing the clear is what lets a banner disappear on its own.
   bool active = 4;
   google.protobuf.Timestamp received_at = 5;
+  // Whether this event matched one of the camera's alarm filters -- what the operator declared
+  // worth noticing. Every event the camera sends reaches this stream now; `matched` is how the
+  // monitor tells "the operator asked about this" from "the camera also says this".
+  bool matched = 6;
 }
 
 message OnvifEventBatch {

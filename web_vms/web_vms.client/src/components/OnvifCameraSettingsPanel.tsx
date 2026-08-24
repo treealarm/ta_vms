@@ -32,6 +32,7 @@ import DeviceIoSection from './DeviceIoSection'
 import OnvifMetadataSection from './OnvifMetadataSection'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
+import { useCameraDeepLink } from './settings/useCameraDeepLink'
 import type {
   AudioEncoderConfigDto,
   AudioEncoderConfigOptionsDto,
@@ -636,9 +637,9 @@ function SystemSection({ cameraId }: { cameraId: string }) {
 
 // ── Camera detail pane ────────────────────────────────────────────────────
 
-function CameraDetail({ camera }: { camera: CameraSetupDto }) {
+function CameraDetail({ camera, initialTab }: { camera: CameraSetupDto; initialTab?: string | null }) {
   const { t } = useTranslation()
-  const [tabKey, setTabKey] = useState('video')
+  const [tabKey, setTabKey] = useState(initialTab || 'video')
   const [caps, setCaps] = useState<DeviceCapabilitiesDto | null>(null)
 
   useEffect(() => {
@@ -653,7 +654,7 @@ function CameraDetail({ camera }: { camera: CameraSetupDto }) {
     { key: 'imaging', label: t('onvifSettings.imagingTab'), show: caps?.hasImaging ?? true },
     { key: 'ptz', label: t('onvifSettings.ptzTab'), show: caps?.hasPtz ?? true },
     { key: 'deviceio', label: t('onvifSettings.deviceIoTab'), show: (caps?.hasRelayOutputs ?? true) || (caps?.hasDigitalInputs ?? true) },
-    { key: 'metadata', label: t('onvifSettings.metadataTab'), show: caps?.hasAnalytics ?? true },
+    { key: 'metadata', label: t('onvifSettings.metadataTab'), show: caps?.hasAnalyticsService ?? true },
     { key: 'system', label: t('onvifSettings.systemTab'), show: true },
   ].filter((tb) => tb.show)
 
@@ -767,7 +768,8 @@ export default function OnvifCameraSettingsPanel() {
   const { t } = useTranslation()
   const allCameras = useAppSelector((s) => Object.values(s.live.cameraStatesById))
   const onvifCameras = allCameras.filter((c) => c.onvifConn?.ip)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const deepLink = useCameraDeepLink()
+  const [selectedId, setSelectedId] = useState<string | null>(deepLink.cameraId)
 
   const groups = onvifCameras.reduce<Record<string, CameraSetupDto[]>>((acc, cam) => {
     const key = cam.serverId ?? ''
@@ -837,7 +839,7 @@ export default function OnvifCameraSettingsPanel() {
             hideApply
           />
           <Box sx={{ flex: 1, minHeight: 0, p: 2 }}>
-            <CameraDetail camera={selectedCamera} />
+            <CameraDetail camera={selectedCamera} initialTab={deepLink.tab} />
           </Box>
         </Box>
       )}

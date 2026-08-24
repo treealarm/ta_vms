@@ -250,7 +250,7 @@ public class LiveController(
     var enriched = scope.Filter(cameras, c => c.CameraId).Select(c => c with
     {
       Streams = WithWhepUrls(c.CameraId, c.Streams),
-      HasAnalytics = analyticsCams.Contains(c.CameraId),
+      CvWatchEnabled = analyticsCams.Contains(c.CameraId),
     }).ToList();
 
     return Ok(enriched);
@@ -279,54 +279,9 @@ public class LiveController(
     if (cameraIds.Count == 0)
       return Ok(new Dictionary<string, bool>());
 
-    var result = new Dictionary<string, bool>();
-    // One call per node, not per camera: only the VmsOnvif next to a camera holds its cached state,
-    // but a node answers for all of its own cameras at once.
-    foreach (var (serverId, ids) in await GroupByOnvifNodeAsync(cameraIds, ct))
-    {
-      try
-      {
-        var request = new Vms.Onvif.MetadataStatesRequest();
-        request.CameraIds.AddRange(ids);
-        var resp = await _registry.GetOnvifClient(serverId)
-          .GetMetadataStatesAsync(request, BestEffortCallOptions(ct));
-        foreach (var pair in resp.BboxCapable)
-          result[pair.Key] = pair.Value;
-      }
-      catch (RpcException)
-      {
-        // A node that is down simply contributes nothing: the button stays dark, which is the
-        // right answer for cameras nobody can reach anyway.
-      }
-    }
-
-    return Ok(result);
-  }
-
-  // Grouped by node id rather than by client object: OnvifRouter hands out a fresh client per
-  // call, so grouping on those would silently degrade back to one request per camera.
-  private async Task<Dictionary<string, List<string>>> GroupByOnvifNodeAsync(
-    IEnumerable<string> cameraIds, CancellationToken ct)
-  {
-    var groups = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-    foreach (var cameraId in cameraIds)
-    {
-      string serverId;
-      try
-      {
-        serverId = await _onvifRouter.ResolveServerIdAsync(cameraId, ct);
-      }
-      catch (InvalidOperationException)
-      {
-        // Camera with no media server assigned — no node to ask.
-        continue;
-      }
-
-      if (!groups.TryGetValue(serverId, out var list))
-        groups[serverId] = list = [];
-      list.Add(cameraId);
-    }
-    return groups;
+    // The batching itself lives on OnvifRouter: the camera's Guard tab needs the same answer, and
+    // two copies of "one call per node" would drift.
+    return Ok(await _onvifRouter.GetBboxCapableAsync(cameraIds, ct));
   }
 
   private static IReadOnlyList<CameraStreamDto> WithWhepUrls(string cameraId, IReadOnlyList<CameraStreamDto> streams) =>
@@ -420,7 +375,7 @@ public class LiveController(
       Streams = WithWhepUrls(normalized.CameraId, normalized.Streams),
       // The monitor renders cameras from this per-camera state poll (not the /cameras list), so the
       // bbox-overlay gate flag has to be set here too — preserved through the `with` copies below.
-      HasAnalytics = await _manager.HasEnabledAnalyticsWatch(cameraId, ct),
+      CvWatchEnabled = await _manager.HasEnabledAnalyticsWatch(cameraId, ct),
       Armed = await _manager.GetArmed(cameraId, ct),
     };
 

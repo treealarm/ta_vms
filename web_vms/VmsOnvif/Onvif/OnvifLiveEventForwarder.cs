@@ -55,7 +55,12 @@ public sealed class OnvifLiveEventForwarder(
   /// Queues one event for the monitor. Safe from any thread and never blocks — the caller is the
   /// pull-point receive loop, which must not wait on anything downstream of it.
   /// </summary>
-  public void Forward(string cameraId, string topic, bool active)
+  /// <param name="matched">
+  /// Whether the event matched one of the camera's alarm filters. Every event now reaches the
+  /// stream; this is what lets the monitor tell an event the operator asked about from one the
+  /// camera merely announced.
+  /// </param>
+  public void Forward(string cameraId, string topic, bool active, bool matched)
   {
     if (analyticsClient is null || string.IsNullOrEmpty(cameraId))
       return;
@@ -66,6 +71,7 @@ public sealed class OnvifLiveEventForwarder(
       Topic      = topic ?? string.Empty,
       Label      = LabelFrom(topic),
       Active     = active,
+      Matched    = matched,
       ReceivedAt = Timestamp.FromDateTime(DateTime.UtcNow),
     });
   }

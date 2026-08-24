@@ -112,9 +112,10 @@ public record CameraSetupDto
   public bool HasOnvifFilters    { get; init; }
   public bool OnvifManaged       { get; init; }
   public bool? Disabled          { get; init; }
-  /// <summary>True when the camera has an enabled analytics watch; filled by web_vms.Server when
-  /// listing cameras. Drives whether the live-video bbox overlay toggle is offered.</summary>
-  public bool HasAnalytics       { get; init; }
+  /// <summary>True when the camera has an enabled CV watch; filled by web_vms.Server when listing
+  /// cameras. Drives whether the live-video bbox overlay toggle is offered. Not to be confused with
+  /// the device's own ONVIF Analytics service — that is HasAnalyticsService on the capabilities.</summary>
+  public bool CvWatchEnabled     { get; init; }
   /// <summary>Recording schedules assigned to this camera (uuids).</summary>
   public IReadOnlyList<string> ScheduleIds { get; init; } = [];
   /// <summary>True while one of the assigned schedule windows is open. Recomputed by VmsCfg on

@@ -1,6 +1,7 @@
 import { Box, Chip, Stack } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useLiveEvents } from '../hooks/useLiveEvents'
+import { useAppSelector } from '../store'
 
 interface Props {
   cameraId: string
@@ -17,12 +18,19 @@ interface Props {
  *
  * Banners come down on the camera's own clearing edge; the client-side TTL is only the backstop for
  * firmwares that announce a start and then go quiet.
+ *
+ * Every event the camera sends now reaches the stream — subscribing is what decides that, not the
+ * alarm filters, which only say what is worth keeping a clip for. So the screen filters here rather
+ * than the server: what the operator declared worth noticing gets a banner, and a camera with
+ * nothing declared shows everything, which is how you learn what to write a filter for.
  */
 export default function EventOverlay({ cameraId, enabled }: Props) {
   const { t } = useTranslation()
   const events = useLiveEvents(cameraId, enabled)
+  const hasFilters = useAppSelector((s) => s.live.cameraStatesById[cameraId]?.hasOnvifFilters ?? false)
 
-  if (events.length === 0) return null
+  const shown = hasFilters ? events.filter((e) => e.matched) : events
+  if (shown.length === 0) return null
 
   return (
     <Stack
@@ -37,7 +45,7 @@ export default function EventOverlay({ cameraId, enabled }: Props) {
         alignItems: 'flex-start',
       }}
     >
-      {events.map((e) => (
+      {shown.map((e) => (
         <Chip
           key={e.topic}
           size="small"

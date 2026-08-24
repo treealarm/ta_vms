@@ -10,8 +10,6 @@ import {
   Stack,
   Switch,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Typography,
 } from '@mui/material'
 import { useTranslation } from 'react-i18next'
@@ -24,6 +22,7 @@ import SettingsListItem from './settings/SettingsListItem'
 import { useDirtyGuard } from './settings/useDirtyGuard'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 import { useMasterDetailSelection } from './settings/useMasterDetailSelection'
+import { useCameraDeepLink } from './settings/useCameraDeepLink'
 
 async function fetchManaged(): Promise<OnvifCameraEntryDto[]> {
   const r = await fetch('/api/onvif/subscriptions')
@@ -46,20 +45,6 @@ async function setSubscribed(cameraId: string, subscribed: boolean) {
   })
 }
 
-async function fetchArmed(cameraId: string): Promise<boolean> {
-  const r = await fetch(`/api/cameras/${encodeURIComponent(cameraId)}/state`)
-  if (!r.ok) return false
-  return ((await r.json()) as { armed: boolean }).armed
-}
-
-async function setArmed(cameraId: string, armed: boolean) {
-  await fetch(`/api/cameras/${encodeURIComponent(cameraId)}/state`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ armed }),
-  })
-}
-
 async function setPollConfig(cameraId: string, pollTimeoutSeconds: number, messageLimit: number) {
   await fetch(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/poll-config`, {
     method: 'PUT',
@@ -72,14 +57,12 @@ type DetailProps = {
   ref?: React.Ref<ApplyIfDirtyHandle>
   entry: OnvifCameraEntryDto
   cam: CameraSetupDto | undefined
-  armed: boolean
   onRemove: () => void
   onToggleSubscribed: (subscribed: boolean) => void
-  onToggleArmed: (armed: boolean) => void
   onPollConfigSaved: (pollTimeoutSeconds: number, messageLimit: number) => void
 }
 
-function SubscriptionDetail({ ref, entry, cam, armed, onRemove, onToggleSubscribed, onToggleArmed, onPollConfigSaved }: DetailProps) {
+function SubscriptionDetail({ ref, entry, cam, onRemove, onToggleSubscribed, onPollConfigSaved }: DetailProps) {
   const { t } = useTranslation()
 
   // Poll config is the only "draft" state here — everything else acts immediately
@@ -126,35 +109,17 @@ function SubscriptionDetail({ ref, entry, cam, armed, onRemove, onToggleSubscrib
                 onChange={(e) => onToggleSubscribed(e.target.checked)}
               />
             }
-            label="Subscription"
+            label={t('onvifSubs.subscription')}
           />
         }
       />
 
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 2 }}>
         <Stack spacing={2}>
-          {/* Guard toggle — immediate action */}
-          <Box>
-            <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-              {t('cameraCard.guardSection')}
-            </Typography>
-            <ToggleButtonGroup
-              exclusive
-              size="small"
-              value={armed ? 'armed' : 'disarmed'}
-              disabled={!entry.subscribed}
-              onChange={(_, v) => v && onToggleArmed(v === 'armed')}
-              sx={{
-                '& .MuiToggleButton-root': { py: 0.25, px: 1.5, fontSize: '0.75rem' },
-                '& .MuiToggleButton-root[value="armed"].Mui-selected': { color: 'success.main', borderColor: 'success.main' },
-              }}
-            >
-              <ToggleButton value="armed">{t('cameraCard.armedToggle')}</ToggleButton>
-              <ToggleButton value="disarmed">{t('cameraCard.disarmedToggle')}</ToggleButton>
-            </ToggleButtonGroup>
-          </Box>
-
-          <Divider />
+          {/* Arming is deliberately not here. It is camera-wide and shared by every source, so it
+              belongs to the camera (its Guard tab) and to the operator's card, not to the page of
+              one source. Filters below say what is worth keeping a clip for; whether anything is
+              kept at all is arming's answer, given elsewhere. */}
 
           {/* Poll configuration — saved via the toolbar Apply */}
           <Box>
@@ -200,22 +165,17 @@ export default function OnvifSubscriptionsPanel({ ref }: { ref?: React.Ref<Apply
   const allCamerasById = useAppSelector((s) => s.live.cameraStatesById)
 
   const [managed, setManaged] = useState<OnvifCameraEntryDto[]>([])
-  const [armedMap, setArmedMap] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
   const [addMenuAnchor, setAddMenuAnchor] = useState<HTMLElement | null>(null)
 
+  const deepLink = useCameraDeepLink()
   const { selected, detailRef, detailKey, select, setId, reset, guard } =
-    useMasterDetailSelection(ref, managed, (e) => e.cameraId)
+    useMasterDetailSelection(ref, managed, (e) => e.cameraId, deepLink.cameraId)
 
   const reload = useCallback(async () => {
     setLoading(true)
     try {
-      const entries = await fetchManaged()
-      setManaged(entries)
-      const pairs = await Promise.all(
-        entries.map(async (e) => [e.cameraId, await fetchArmed(e.cameraId)] as const)
-      )
-      setArmedMap(Object.fromEntries(pairs))
+      setManaged(await fetchManaged())
     } finally {
       setLoading(false)
     }
@@ -234,18 +194,12 @@ export default function OnvifSubscriptionsPanel({ ref }: { ref?: React.Ref<Apply
   const handleRemove = async (cameraId: string) => {
     await removeCamera(cameraId)
     setManaged((prev) => prev.filter((e) => e.cameraId !== cameraId))
-    setArmedMap((prev) => { const next = { ...prev }; delete next[cameraId]; return next })
     if (selected?.cameraId === cameraId) reset()
   }
 
   const handleToggleSubscribed = async (cameraId: string, subscribed: boolean) => {
     setManaged((prev) => prev.map((e) => e.cameraId === cameraId ? { ...e, subscribed } : e))
     await setSubscribed(cameraId, subscribed)
-  }
-
-  const handleToggleArmed = async (cameraId: string, armed: boolean) => {
-    setArmedMap((prev) => ({ ...prev, [cameraId]: armed }))
-    await setArmed(cameraId, armed)
   }
 
   const handlePollConfigSaved = (cameraId: string, pollTimeoutSeconds: number, messageLimit: number) => {
@@ -259,9 +213,7 @@ export default function OnvifSubscriptionsPanel({ ref }: { ref?: React.Ref<Apply
 
   const list = (
     <Box>
-      {managed.map((entry) => {
-        const armed = armedMap[entry.cameraId] ?? false
-        return (
+      {managed.map((entry) => (
           <SettingsListItem
             key={entry.cameraId}
             selected={selected?.cameraId === entry.cameraId}
@@ -276,19 +228,10 @@ export default function OnvifSubscriptionsPanel({ ref }: { ref?: React.Ref<Apply
                   color={entry.subscribed ? 'success' : 'default'}
                   sx={{ height: 16, fontSize: '0.6rem' }}
                 />
-                {entry.subscribed && (
-                  <Chip
-                    label={armed ? t('cameraCard.armedToggle') : t('cameraCard.disarmedToggle')}
-                    size="small"
-                    color={armed ? 'warning' : 'default'}
-                    sx={{ height: 16, fontSize: '0.6rem' }}
-                  />
-                )}
               </Stack>
             }
           />
-        )
-      })}
+      ))}
       {managed.length === 0 && (
         <Typography variant="body2" color="text.secondary" sx={{ p: 1.5 }}>
           {t('onvifSubs.noCameras')}
@@ -311,10 +254,8 @@ export default function OnvifSubscriptionsPanel({ ref }: { ref?: React.Ref<Apply
           key={detailKey}
           entry={selected}
           cam={allCamerasById[selected.cameraId]}
-          armed={armedMap[selected.cameraId] ?? false}
           onRemove={() => void handleRemove(selected.cameraId)}
           onToggleSubscribed={(subscribed) => void handleToggleSubscribed(selected.cameraId, subscribed)}
-          onToggleArmed={(armed) => void handleToggleArmed(selected.cameraId, armed)}
           onPollConfigSaved={(pollTimeoutSeconds, messageLimit) =>
             handlePollConfigSaved(selected.cameraId, pollTimeoutSeconds, messageLimit)}
         />

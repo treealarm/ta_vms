@@ -124,6 +124,7 @@ public class AnalyticsLiveController(
             Topic      = e.Topic,
             Label      = e.Label,
             Active     = e.Active,
+            Matched    = e.Matched,
             ReceivedAt = e.ReceivedAt.ToDateTime(),
           };
           await WriteRawAsync($"data: {JsonSerializer.Serialize(dto, JsonOpts)}\n\n", ct);

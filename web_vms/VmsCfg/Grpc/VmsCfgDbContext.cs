@@ -17,6 +17,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
   public DbSet<DbUserCameraPermission> UserCameraPermissions { get; set; }
   public DbSet<DbUserAllCamerasPermission> UserAllCamerasPermissions { get; set; }
   public DbSet<DbCameraAclSetting> CameraAclSettings { get; set; }
+  public DbSet<DbOnvifEventSubscription> OnvifEventSubscriptions { get; set; }
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
@@ -127,6 +128,17 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.HasKey(x => x.CameraId);
       e.Property(x => x.CameraId).HasColumnName("camera_id");
       e.Property(x => x.ServerId).HasColumnName("server_id");
+      e.Property(x => x.OnvifMetadataDisabled).HasColumnName("onvif_metadata_disabled");
+    });
+
+    modelBuilder.Entity<DbOnvifEventSubscription>(e =>
+    {
+      e.ToTable("onvif_event_subscription");
+      e.HasKey(x => x.CameraId);
+      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.Subscribed).HasColumnName("subscribed");
+      e.Property(x => x.PollTimeoutSeconds).HasColumnName("poll_timeout_seconds");
+      e.Property(x => x.MessageLimit).HasColumnName("message_limit");
     });
 
     modelBuilder.Entity<DbUserCameraPermission>(e =>
@@ -250,6 +262,18 @@ public sealed class DbCameraSetup
 {
   public string CameraId { get; set; } = string.Empty;
   public string ServerId { get; set; } = string.Empty;
+  /// Drop the object boxes this camera puts in its own RTSP metadata track, before they are parsed.
+  public bool OnvifMetadataDisabled { get; set; }
+}
+
+/// Whether VmsOnvif keeps a pull-point subscription open for this camera, and how it polls.
+/// A camera with no row here is not managed for ONVIF events at all.
+public sealed class DbOnvifEventSubscription
+{
+  public string CameraId { get; set; } = string.Empty;
+  public bool Subscribed { get; set; }
+  public int PollTimeoutSeconds { get; set; }
+  public int MessageLimit { get; set; }
 }
 
 /// One user's grants on one camera. Username is a Keycloak preferred_username.

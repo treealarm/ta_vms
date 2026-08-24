@@ -281,7 +281,7 @@ export default function CameraUnifiedCard({
   // device itself, so it has to be probed — see useOnvifBboxCapable). Either one is reason enough
   // to offer the toggle.
   const onvifBboxCapable = useOnvifBboxCapable(camera.cameraId, isLiveContext && !isDisabled)
-  const hasBoxSource = Boolean(camera.hasAnalytics) || onvifBboxCapable
+  const hasBoxSource = Boolean(camera.cvWatchEnabled) || onvifBboxCapable
 
   // In an archive context the live test is the wrong question. It describes the camera *now*, while
   // the operator may be looking at a period before the watch existed — or after it was deleted.
@@ -309,7 +309,7 @@ export default function CameraUnifiedCard({
   // out to have nothing behind it.
   //
   // Deliberately NOT falling back to hasBoxSource here: onvifBboxCapable is probed only in a live
-  // context, so in the archive that test collapses to camera.hasAnalytics — which is false for a
+  // context, so in the archive that test collapses to camera.cvWatchEnabled — which is false for a
   // camera whose boxes come solely from its own ONVIF Scene Description. Gating on it hid the
   // button outright for exactly the cameras this feature was built for.
   const archiveHasBoxes = archiveCoverage !== 'none'
