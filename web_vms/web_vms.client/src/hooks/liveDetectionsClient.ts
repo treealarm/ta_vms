@@ -19,8 +19,14 @@ type FramesListener = (frames: LiveFramesBySource) => void
 
 const RECONNECT_MS = 2000
 
-/** Frames older than this are dropped; a couple of seconds is all interpolation can reach. */
-const HISTORY_MS = 4000
+/**
+ * Frames older than this are dropped; a couple of seconds is all interpolation can reach.
+ *
+ * Exported because it is also the ceiling on how long a box can be kept on screen: liveBoxes.ts
+ * derives each track's lifetime from how often its producer reports it, and no lifetime can outlast
+ * the history the derivation is read from.
+ */
+export const HISTORY_MS = 4000
 
 
 const EMPTY_FRAMES: LiveFramesBySource = {}
