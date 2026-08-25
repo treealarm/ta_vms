@@ -117,6 +117,13 @@ enum Preset {
 enum Codec {
   CODEC_H265 = 0;
   CODEC_H264 = 1;
+  // Encode in whatever the input already is: H.264 stays H.264, HEVC stays HEVC, anything else
+  // becomes H.264. What a transcoding pass wants -- an archive whose clips are stitched into one
+  // HLS playlist cannot have some of them come back in a different codec.
+  //
+  // Not the zero value, which would change what an unset field means for callers already sending
+  // one. Set it explicitly.
+  CODEC_SAME_AS_SOURCE = 2;
 }
 
 // One region worth keeping sharp.

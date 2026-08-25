@@ -373,9 +373,12 @@ public sealed class RoiTranscodeScheduler(
       Settings = new FileSettings
       {
         Encoder = Encoder.Auto,
-        // The archive is H.264 and one playlist stitches many clips: re-encoding
-        // some of them to HEVC would leave a single playlist carrying two codecs.
-        Codec = Codec.H264,
+        // Whatever the clip already is. One playlist stitches many clips and a
+        // codec change inside one plays badly, so a pass that re-encoded some of
+        // them into a fixed codec would cause exactly the split it meant to avoid
+        // -- which is what pinning this to H.264 did on any camera not already
+        // sending it.
+        Codec = Codec.SameAsSource,
         Crf = _crf,
         Roi = new RoiQuality
         {
