@@ -143,9 +143,7 @@
                 "VMS_ROI_RETRY_SECONDS": "600",
                 "VMS_ROI_MAX_ATTEMPTS": "3",
                 "VMS_ROI_CRF": "28",
-                "VMS_ROI_QP_DELTA": "-8",
                 "VMS_ROI_BACKGROUND_QP_DELTA": "8",
-                "VMS_ROI_PAD": "0.05",
                 "VMS_ROI_HOLD_SEC": "0.5",
                 "VMS_OUTAGE_RETENTION_DAYS": "90",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"

@@ -93,7 +93,6 @@ public sealed class RoiTranscodeScheduler(
   // file that grew.
   private readonly int _maxAttempts = EnvInt("VMS_ROI_MAX_ATTEMPTS", 3);
   private readonly int _crf = EnvInt("VMS_ROI_CRF", 28);
-  private readonly int _qpDelta = EnvSigned("VMS_ROI_QP_DELTA", -8);
   private readonly int _backgroundQpDelta = EnvSigned("VMS_ROI_BACKGROUND_QP_DELTA", 8);
 
   /// <summary>
@@ -106,7 +105,6 @@ public sealed class RoiTranscodeScheduler(
   /// to catch the cases that gain nothing.
   /// </summary>
   private readonly double _minSaving = EnvDouble("VMS_ROI_MIN_SAVING", 0.10);
-  private readonly double _pad = EnvDouble("VMS_ROI_PAD", 0.05);
 
   private readonly CancellationTokenSource _cts = new();
   private Task? _loop;
@@ -389,20 +387,16 @@ public sealed class RoiTranscodeScheduler(
         },
       },
     };
-    // The detector's kinds are open-ended, and a kind the request does not name
-    // would fall back to the module's own defaults rather than to the ones
-    // configured here. So every kind actually present is registered -- with the
-    // same quality today, and with somewhere obvious to put per-kind settings
-    // the day they are wanted.
-    foreach (var kind in boxes.Select(b => b.Kind).Distinct())
-    {
-      request.Settings.Roi.Kinds.Add(new KindQuality
-      {
-        Kind = kind,
-        QpDelta = _qpDelta,
-        Pad = _pad,
-      });
-    }
+    // No per-kind entries on purpose. Naming a kind in the request means "this is what I want
+    // for it, do not weigh it", so registering every kind the detector reported -- which is
+    // what this did, all at one delta -- switched the importance model off: a plate and the
+    // background of the car it is on came out identical, and since importance is derived back
+    // from the delta, the nested-region ordering and the area budget saw a flat list too.
+    //
+    // Unnamed, each kind is weighed by TZ v2.0 section 11 inside the module: a licence plate
+    // outranks a face outranks a person outranks a vehicle, and what does not fit the frame's
+    // area budget goes neutral rather than taking bits from what does. That is the whole point
+    // of the feature, and this loop was quietly cancelling it.
     request.Boxes.AddRange(boxes);
     return request;
   }
