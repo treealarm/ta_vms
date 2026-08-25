@@ -319,7 +319,7 @@
     "streamNameHelper": "Unique within this camera, e.g. main, sub, hd",
     "duplicateName": "A stream with this name already exists on this camera",
     "path": "Path",
-    "pathHelper": "Full rtsp:// URL, or just the path tail — combined with the camera's IP/port to build the RTSP URL",
+    "pathHelper": "Without a camera IP: a local file or folder to play as a looping test camera. With one: the path tail, combined with the IP/port into an RTSP URL. A full rtsp:// or file:// URL is always used as given.",
     "pathHelperTokenSet": "Ignored — the camera resolves its stream URL automatically via the ONVIF profile",
     "onvifToken": "ONVIF profile token",
     "onvifTokenHelper": "Leave empty for direct RTSP without ONVIF",
