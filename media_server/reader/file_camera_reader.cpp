@@ -608,18 +608,19 @@ bool file_camera_reader::restart_current_file()
 
   avformat_flush(m_ctx.get());
   begin_new_source_file();
-  reanchor_loop_timeline();
+  // Deliberately NOT restarting the output timeline at zero. A loop is invisible to everything
+  // downstream only if time keeps going forward: begin_new_source_file() above bumps the
+  // generation, and remux_continuous_timestamps then anchors the new pass one step after the last
+  // packet of the previous one.
+  //
+  // Resetting instead is what this used to do, and it destroyed every archive segment that
+  // spanned a loop. segment_writer rebases each packet on the segment's own first timestamp, so a
+  // packet from the new pass came out negative, tripped the monotonicity guard, and was rewritten
+  // as "previous + 1 tick" -- along with every packet after it, because none of them ever climbed
+  // back above the guard. Measured on a 62 s clip: 1861 frames, all present, packed into 1.12
+  // seconds of timeline. The live view showed the same thing as a freeze followed by a jump,
+  // because time had stopped advancing there too.
   return true;
-}
-
-void file_camera_reader::reanchor_loop_timeline()
-{
-  // Same-file loop: start the next pass near PTS 0 instead of accumulating forever.
-  for (auto& [_, st] : m_continuity)
-  {
-    st.last_out_pts = AV_NOPTS_VALUE;
-    st.last_out_dts = AV_NOPTS_VALUE;
-  }
 }
 
 void file_camera_reader::reset_source_gate()

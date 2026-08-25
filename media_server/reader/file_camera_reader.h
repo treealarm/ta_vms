@@ -76,7 +76,6 @@ private:
   bool validate_source_has_keyframe();
   bool restart_current_file();
   void begin_new_source_file();
-  void reanchor_loop_timeline();
   void reset_source_gate();
   bool pass_source_keyframe_gate(AVPacket* pkt, int stream_index);
 
