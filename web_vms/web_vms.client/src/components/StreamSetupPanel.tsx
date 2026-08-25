@@ -22,6 +22,22 @@ type Props = {
 
 type ProfileInfo = { token: string; name: string; width: number; height: number; encoding: string }
 
+/**
+ * The directory part of a configured path, or undefined when there is nothing to go on.
+ *
+ * Deliberately textual: this is a path on the recording node, in that machine's style, and the
+ * browser has no business parsing it as its own. Both separators are honoured because the node may
+ * be either, and a value that is already a directory is returned unchanged -- browsing opens it
+ * rather than its parent.
+ */
+function folderOf(value: string): string | undefined {
+  const trimmed = value.trim()
+  if (!trimmed || trimmed.includes('://')) return undefined
+  const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+  if (cut <= 0) return undefined
+  return trimmed.slice(0, cut)
+}
+
 export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, onRemoved }: Props) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
@@ -282,6 +298,11 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
               onPick={setPath}
               serverId={camera?.serverId ?? undefined}
               requireWritable={false}
+              includeFiles
+              // Open where the current clip lives: changing which one a test camera plays means
+              // reaching for its neighbour, and starting at the volume roots would make that a
+              // walk back down the whole tree every time.
+              initialPath={folderOf(path)}
               titleKey="stream.browseTitle"
             />
 

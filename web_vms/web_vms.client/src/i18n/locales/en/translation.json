@@ -333,8 +333,8 @@
     "addStream": "Add stream",
     "deleteStream": "Delete stream",
     "livePreview": "Live preview",
-    "browsePath": "Browse the recording node for a folder of clips",
-    "browseTitle": "Pick a folder to play"
+    "browsePath": "Browse the recording node for a clip or folder",
+    "browseTitle": "Pick a clip or folder to play"
   },
   "streamOverride": {
     "override": "override",

@@ -434,6 +434,9 @@ export type DirectoryEntryDto = {
   /** Only a writable directory can be picked. The rest are listed so their contents stay reachable
    *  — a volume root is routinely off limits while the directory to record into sits inside it. */
   writable: boolean
+  /** A file rather than a directory; only present when the caller asked for files. Then totalBytes
+   *  is the file's own size and freeBytes is 0. */
+  isFile?: boolean
 }
 
 export type DirectoryListingDto = {

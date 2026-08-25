@@ -63,7 +63,8 @@ public sealed class StorageController(
   /// </remarks>
   [HttpGet("browse")]
   public async Task<IActionResult> BrowseDirectories(
-    [FromQuery] string? serverId, [FromQuery] string? path, CancellationToken ct)
+    [FromQuery] string? serverId, [FromQuery] string? path, [FromQuery] bool includeFiles,
+    CancellationToken ct)
   {
     if (string.IsNullOrWhiteSpace(serverId))
       return BadRequest(new { error = "serverId is required" });
@@ -83,7 +84,7 @@ public sealed class StorageController(
     try
     {
       resp = await fsClient.ListDirectoriesAsync(
-        new ListDirectoriesRequest { Path = path ?? "" },
+        new ListDirectoriesRequest { Path = path ?? "", IncludeFiles = includeFiles },
         deadline: DateTime.UtcNow.Add(BrowseTimeout), cancellationToken: ct);
     }
     catch (RpcException ex)
@@ -101,7 +102,8 @@ public sealed class StorageController(
       resp.Path,
       resp.ParentPath,
       resp.Entries
-        .Select(e => new DirectoryEntryDto(e.Path, e.Name, e.FreeBytes, e.TotalBytes, e.Writable))
+        .Select(e => new DirectoryEntryDto(
+          e.Path, e.Name, e.FreeBytes, e.TotalBytes, e.Writable, e.IsFile))
         .ToList(),
       resp.Message,
       resp.Writable));
@@ -182,8 +184,10 @@ public sealed class StorageController(
 public record StorageDto(string StorageId, string RootPath, ulong ReservedBytes, bool Disabled = false, uint CameraCount = 0);
 /// <param name="Writable">False for a directory that cannot hold the archive — still listed, so a
 /// writable directory inside it stays reachable, but it cannot be picked.</param>
+/// <param name="IsFile">A file rather than a directory. Only ever set when the caller asked for
+/// files; then TotalBytes is the file's own size and FreeBytes is 0.</param>
 public record DirectoryEntryDto(
-  string Path, string Name, ulong FreeBytes, ulong TotalBytes, bool Writable);
+  string Path, string Name, ulong FreeBytes, ulong TotalBytes, bool Writable, bool IsFile);
 /// <param name="ParentPath">Empty when the listing is (or came from) the volume roots.</param>
 /// <param name="Writable">Whether <paramref name="Path"/> itself can be picked as a storage root.</param>
 public record DirectoryListingDto(

@@ -19,6 +19,7 @@ import {
 } from '@mui/material'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import FolderIcon from '@mui/icons-material/Folder'
+import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
 import StorageIcon from '@mui/icons-material/Storage'
 import { useTranslation } from 'react-i18next'
 import { useAppSelector } from '../store'
@@ -42,6 +43,14 @@ type Props = {
    */
   requireWritable?: boolean
   titleKey?: string
+  /** List files as well as directories, and let one be picked. */
+  includeFiles?: boolean
+  /**
+   * Where to start. A caller that already holds a path opens the browse where that path lives,
+   * which is nearly always where the next one is too — starting at the volume roots would make
+   * changing a clip a walk back down the whole tree.
+   */
+  initialPath?: string
 }
 
 /**
@@ -53,6 +62,7 @@ type Props = {
  */
 export default function StoragePathBrowserDialog({
   open, onClose, onPick, serverId: fixedServerId, requireWritable = true, titleKey,
+  includeFiles = false, initialPath,
 }: Props) {
   const { t } = useTranslation()
   const servers = useAppSelector((state) => state.live.servers)
@@ -66,10 +76,10 @@ export default function StoragePathBrowserDialog({
 
   useEffect(() => {
     if (!open) return
-    setPath('')
+    setPath(initialPath ?? '')
     setListing(null)
     setError('')
-  }, [open])
+  }, [open, initialPath])
 
   // Kept apart from the reset above so a servers list that arrives late still gets a default,
   // without discarding the browsing the operator has already done.
@@ -85,7 +95,8 @@ export default function StoragePathBrowserDialog({
     try {
       const response = await fetch(
         `/api/Storage/browse?serverId=${encodeURIComponent(targetServerId)}`
-        + `&path=${encodeURIComponent(targetPath)}`)
+        + `&path=${encodeURIComponent(targetPath)}`
+        + (includeFiles ? '&includeFiles=true' : ''))
       if (!response.ok) {
         const text = await response.text()
         let message = text
@@ -99,7 +110,7 @@ export default function StoragePathBrowserDialog({
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [includeFiles])
 
   useEffect(() => {
     if (!open || !serverId) return
@@ -176,15 +187,20 @@ export default function StoragePathBrowserDialog({
                 {entries.map((entry) => (
                   <ListItemButton
                     key={entry.path}
-                    onClick={() => setPath(entry.path)}
+                    onClick={() => (entry.isFile ? handlePick(entry.path) : setPath(entry.path))}
                     sx={{ gap: 1 }}
                   >
-                    {atRoots ? <StorageIcon fontSize="small" color="action" /> : <FolderIcon fontSize="small" color="action" />}
+                    {entry.isFile
+                      ? <InsertDriveFileIcon fontSize="small" color="action" />
+                      : atRoots ? <StorageIcon fontSize="small" color="action" />
+                                : <FolderIcon fontSize="small" color="action" />}
                     <ListItemText
                       primary={entry.name}
                       // A directory that cannot be written into is still worth opening: what the
                       // operator is looking for is usually one level inside it.
-                      secondary={entry.writable || !requireWritable
+                      secondary={entry.isFile
+                        ? (entry.totalBytes > 0 ? formatBytes(entry.totalBytes) : '')
+                        : entry.writable || !requireWritable
                         ? (entry.totalBytes > 0
                             ? t('storage.browseSpace', {
                                 free: formatBytes(entry.freeBytes),

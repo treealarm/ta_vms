@@ -48,10 +48,10 @@ public static class WritableDirectoryBrowser
   private static readonly string[] SystemMountPrefixes =
     ["/proc", "/sys", "/dev", "/run", "/snap", "/var/snap", "/var/lib/docker", "/var/lib/kubelet"];
 
-  public static ListDirectoriesResponse List(string? requestedPath)
+  public static ListDirectoriesResponse List(string? requestedPath, bool includeFiles = false)
   {
     var path = requestedPath ?? string.Empty;
-    return string.IsNullOrWhiteSpace(path) ? ListRoots() : ListChildren(path);
+    return string.IsNullOrWhiteSpace(path) ? ListRoots() : ListChildren(path, includeFiles);
   }
 
   // ── Roots ───────────────────────────────────────────────────────────────────────────────────
@@ -199,7 +199,7 @@ public static class WritableDirectoryBrowser
 
   // ── Children ────────────────────────────────────────────────────────────────────────────────
 
-  private static ListDirectoriesResponse ListChildren(string path)
+  private static ListDirectoriesResponse ListChildren(string path, bool includeFiles)
   {
     var response = new ListDirectoriesResponse
     {
@@ -244,6 +244,28 @@ public static class WritableDirectoryBrowser
         // directory means the target, and the probe inside Describe decides whether it is usable.
         response.Entries.Add(Describe(child, LeafName(child)));
       }
+
+      // Files after the directories, and only when asked: the storage-root picker chooses a
+      // directory and would only be slowed down by them, while a camera's stream path may name
+      // one clip. No write probe -- nothing is written into a file here.
+      if (includeFiles)
+      {
+        foreach (var file in Directory.EnumerateFiles(path))
+        {
+          if (response.Entries.Count >= MaxEntries)
+          {
+            truncated = true;
+            break;
+          }
+          var entry = new DirectoryEntry
+          {
+            Path = file, Name = LeafName(file), IsFile = true, Writable = false,
+          };
+          try { entry.TotalBytes = (ulong)Math.Max(0, new FileInfo(file).Length); }
+          catch (Exception) { /* unknown size is shown as unknown, never drops the entry */ }
+          response.Entries.Add(entry);
+        }
+      }
     }
     catch (Exception ex)
     {
@@ -256,9 +278,9 @@ public static class WritableDirectoryBrowser
     Sort(response.Entries);
 
     if (truncated)
-      response.Message = $"Showing the first {MaxEntries} directories";
+      response.Message = $"Showing the first {MaxEntries} entries";
     else if (response.Entries.Count == 0)
-      response.Message = "No subdirectories";
+      response.Message = includeFiles ? "Empty directory" : "No subdirectories";
 
     return response;
   }
@@ -267,7 +289,12 @@ public static class WritableDirectoryBrowser
   /// creation order, which for a disk with hundreds of directories is no order at all.
   private static void Sort(IList<DirectoryEntry> entries)
   {
-    var sorted = entries.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    // Directories first, then files: browsing is the common action and picking a file the last
+    // step, so what you click through should not be scattered among what you finish on.
+    var sorted = entries
+      .OrderBy(e => e.IsFile)
+      .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+      .ToList();
     entries.Clear();
     foreach (var entry in sorted)
       entries.Add(entry);

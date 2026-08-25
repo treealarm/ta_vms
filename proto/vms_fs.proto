@@ -418,6 +418,9 @@ message GetRecordingByUidResponse {
 // to the filesystem verbatim, never normalized or translated between POSIX and Windows separators.
 message ListDirectoriesRequest {
   string path = 1;
+  // List the files in `path` alongside its directories. Off for the storage-root picker, which
+  // chooses a directory; on for a camera's stream path, which may name one clip.
+  bool include_files = 2;
 }
 
 message DirectoryEntry {
@@ -430,6 +433,10 @@ message DirectoryEntry {
   // root is routinely off limits ("/" is root-owned) while the directory to record into sits
   // inside it. Dropping them would make that directory unreachable by browsing at all.
   bool   writable    = 5;
+  // A file rather than a directory: only ever set when the request asked for files. It is never
+  // writable in the sense above -- nothing is written into a file here -- and `total_bytes` is
+  // its own size, with `free_bytes` left at 0.
+  bool   is_file     = 6;
 }
 
 message ListDirectoriesResponse {
