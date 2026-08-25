@@ -30,20 +30,34 @@ type Props = {
   onClose: () => void
   /** Called with an absolute path on the browsed node — stored verbatim, never rewritten. */
   onPick: (path: string) => void
+  /**
+   * Browse this node and hide the node selector. For a caller that already knows whose disk it
+   * means — a camera's stream path belongs to the media server that camera is pinned to, and a
+   * path browsed on any other node would name a file that machine cannot open.
+   */
+  serverId?: string
+  /**
+   * Whether a directory has to be writable to be selectable. True for a storage root, which is
+   * there to be written into; false for a source folder, which is only ever read.
+   */
+  requireWritable?: boolean
+  titleKey?: string
 }
 
 /**
- * Picks a storage root by browsing the disk of a recording node.
+ * Picks a directory by browsing the disk of a recording node.
  *
- * Only directories the node's file service just proved it can write into are listed, and browsing
- * always happens on one specific node: the paths are that machine's, in that machine's path style,
- * and mean nothing on any other.
+ * Browsing always happens on one specific node: the paths are that machine's, in that machine's
+ * path style, and mean nothing on any other. Which node is either chosen here or fixed by the
+ * caller — see `serverId`.
  */
-export default function StoragePathBrowserDialog({ open, onClose, onPick }: Props) {
+export default function StoragePathBrowserDialog({
+  open, onClose, onPick, serverId: fixedServerId, requireWritable = true, titleKey,
+}: Props) {
   const { t } = useTranslation()
   const servers = useAppSelector((state) => state.live.servers)
 
-  const [serverId, setServerId] = useState('')
+  const [serverId, setServerId] = useState(fixedServerId ?? '')
   // '' is the volume-roots listing, not a path — the node decides what its roots are.
   const [path, setPath] = useState('')
   const [listing, setListing] = useState<DirectoryListingDto | null>(null)
@@ -61,8 +75,9 @@ export default function StoragePathBrowserDialog({ open, onClose, onPick }: Prop
   // without discarding the browsing the operator has already done.
   useEffect(() => {
     if (!open) return
+    if (fixedServerId) { setServerId(fixedServerId); return }
     setServerId((prev) => prev || servers[0]?.serverId || '')
-  }, [open, servers])
+  }, [open, servers, fixedServerId])
 
   const load = useCallback(async (targetServerId: string, targetPath: string) => {
     setLoading(true)
@@ -107,10 +122,10 @@ export default function StoragePathBrowserDialog({ open, onClose, onPick }: Prop
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{t('storage.browseTitle')}</DialogTitle>
+      <DialogTitle>{t(titleKey ?? 'storage.browseTitle')}</DialogTitle>
       <DialogContent>
         <Stack spacing={1.5} sx={{ mt: 1 }}>
-          {servers.length > 1 && (
+          {!fixedServerId && servers.length > 1 && (
             <TextField
               select
               label={t('cameras.server')}
@@ -169,7 +184,7 @@ export default function StoragePathBrowserDialog({ open, onClose, onPick }: Prop
                       primary={entry.name}
                       // A directory that cannot be written into is still worth opening: what the
                       // operator is looking for is usually one level inside it.
-                      secondary={entry.writable
+                      secondary={entry.writable || !requireWritable
                         ? (entry.totalBytes > 0
                             ? t('storage.browseSpace', {
                                 free: formatBytes(entry.freeBytes),
@@ -179,13 +194,13 @@ export default function StoragePathBrowserDialog({ open, onClose, onPick }: Prop
                         : t('storage.browseNotWritable')}
                       slotProps={{
                         primary: { sx: { wordBreak: 'break-all' } },
-                        secondary: entry.writable ? undefined : { color: 'text.disabled' },
+                        secondary: entry.writable || !requireWritable ? undefined : { color: 'text.disabled' },
                       }}
-                      sx={{ opacity: entry.writable ? 1 : 0.6 }}
+                      sx={{ opacity: entry.writable || !requireWritable ? 1 : 0.6 }}
                     />
                     <Button
                       size="small"
-                      disabled={!entry.writable}
+                      disabled={requireWritable && !entry.writable}
                       onClick={(e) => { e.stopPropagation(); handlePick(entry.path) }}
                     >
                       {t('storage.browseSelect')}

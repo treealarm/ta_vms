@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Box, Button, Chip, CircularProgress, FormControlLabel, IconButton, InputAdornment, MenuItem, Stack, Switch, TextField, Tooltip, Typography } from '@mui/material'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import FolderOpenIcon from '@mui/icons-material/FolderOpen'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera, fetchCameraState } from '../store/liveSlice'
 import type { CameraStreamDto, RecordingProfileDto } from '../dto/dtos'
 import CameraStream from './CameraStream'
+import StoragePathBrowserDialog from './StoragePathBrowserDialog'
 import DetailToolbar from './settings/DetailToolbar'
 import { useDirtyGuard } from './settings/useDirtyGuard'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
@@ -35,6 +37,8 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
   const [webRtc, setWebRtc] = useState(existingStream?.webRtc ?? isNew)
   const [disabled, setDisabled] = useState(existingStream?.disabled === true)
   const [selectedProfileId, setSelectedProfileId] = useState<string>(existingStream?.recordingProfile?.id ?? '')
+
+  const [browsing, setBrowsing] = useState(false)
 
   const [recordingProfiles, setRecordingProfiles] = useState<RecordingProfileDto[]>([])
   const [profilesLoading, setProfilesLoading] = useState(false)
@@ -240,14 +244,45 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
               <Typography variant="caption" color="error">{saveError}</Typography>
             )}
 
-            <TextField
-              label={t('stream.path')}
-              value={path}
-              onChange={(e) => setPath(e.target.value)}
-              size="small"
-              fullWidth
-              disabled={Boolean(profileToken)}
-              helperText={profileToken ? t('stream.pathHelperTokenSet') : t('stream.pathHelper')}
+            <Stack direction="row" spacing={1} alignItems="flex-start">
+              <TextField
+                label={t('stream.path')}
+                value={path}
+                onChange={(e) => setPath(e.target.value)}
+                size="small"
+                fullWidth
+                disabled={Boolean(profileToken)}
+                helperText={profileToken ? t('stream.pathHelperTokenSet') : t('stream.pathHelper')}
+              />
+              {/* Only for a camera with no device behind it: with an IP the path is an RTSP tail,
+                  and browsing a disk for one would offer a path that becomes nonsense when the
+                  camera's IP is prepended to it. */}
+              {!profileToken && !camera?.onvifConn?.ip && (
+                <Tooltip title={t('stream.browsePath')}>
+                  <span>
+                    <IconButton
+                      size="small"
+                      sx={{ mt: 0.5 }}
+                      disabled={!camera?.serverId}
+                      onClick={() => setBrowsing(true)}
+                    >
+                      <FolderOpenIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              )}
+            </Stack>
+
+            {/* The camera's own node, not a choice: the file has to be one media_server can open,
+                and it runs where the camera is pinned. Writability is not required either -- this
+                folder is only ever read from. */}
+            <StoragePathBrowserDialog
+              open={browsing}
+              onClose={() => setBrowsing(false)}
+              onPick={setPath}
+              serverId={camera?.serverId ?? undefined}
+              requireWritable={false}
+              titleKey="stream.browseTitle"
             />
 
             <Stack spacing={1}>

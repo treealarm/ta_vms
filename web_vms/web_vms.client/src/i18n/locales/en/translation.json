@@ -332,7 +332,9 @@
     "disabled": "Disable stream",
     "addStream": "Add stream",
     "deleteStream": "Delete stream",
-    "livePreview": "Live preview"
+    "livePreview": "Live preview",
+    "browsePath": "Browse the recording node for a folder of clips",
+    "browseTitle": "Pick a folder to play"
   },
   "streamOverride": {
     "override": "override",

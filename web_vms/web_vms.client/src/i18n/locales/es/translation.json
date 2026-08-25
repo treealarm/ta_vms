@@ -332,7 +332,9 @@
     "disabled": "Deshabilitar flujo",
     "addStream": "Agregar flujo",
     "deleteStream": "Eliminar flujo",
-    "livePreview": "Vista en vivo"
+    "livePreview": "Vista en vivo",
+    "browsePath": "Explorar el nodo de grabación en busca de una carpeta de clips",
+    "browseTitle": "Elegir una carpeta para reproducir"
   },
   "streamOverride": {
     "override": "anulación",
