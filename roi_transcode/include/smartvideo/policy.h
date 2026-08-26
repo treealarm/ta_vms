@@ -88,31 +88,39 @@ struct TemporalROIConfig {
 
 /// §15. The bitrate budget, spent on critical objects first.
 ///
-/// Not implemented as a *bitrate* budget. The encoder runs at a constant quantizer, and that
-/// is not an accident: under CQP a QP offset on one region does not move bits elsewhere,
-/// which is what makes per-region deltas mean what they say. A bitrate target reintroduces
-/// exactly that coupling, so this becomes a layer above each backend's own rate control
-/// rather than a setting passed through to it.
+/// The encoder itself still runs at a constant quantizer (CQP/CRF): that is what keeps
+/// per-region QP deltas honest. A target bitrate is handled by an *outer* loop
+/// (`BitrateBudget`) that watches average output bits and, when the stream runs hot,
+/// raises the background QP first and only then softens low-importance ROI. Faces and
+/// plates (importance ≥ `critical_importance`) are not softened.
 ///
-/// "Critical objects first", though, is real, and lives where it can be honest about what it
-/// is spending: Quality::max_protected_fraction budgets *area*, which under CQP is what
-/// protection actually costs. On a real archive clip that is the difference between a file
-/// 73% larger than the original and one 21% smaller, with the face 2.9 dB better than a flat
-/// re-encode of the same size.
+/// Peak overshoot and the recovery window are still declared only -- asking for them is
+/// refused at open. Area budget (`Quality::max_protected_fraction`) remains the CQP-side
+/// answer to "critical objects first" and works together with this loop, not instead of it.
 struct RateControlPolicy {
+    /// Target average bitrate in bits per second. Zero leaves CQP/CRF alone.
     uint64_t target_bitrate = 0;
-    /// Allowed overshoot of the average, as a fraction: 0.1 is ten percent.
+    /// Allowed overshoot of the average, as a fraction: 0.1 is ten percent. Zero means
+    /// "use the built-in default" (also 0.1) once a target is set -- not "zero tolerance".
     float max_average_overshoot = 0.0f;
     float max_peak_overshoot = 0.0f;
     /// How long the controller has to give back an overshoot.
     uint32_t recovery_window_ms = 0;
+    /// Importance at or above this is never softened by the outer loop. Default covers
+    /// faces (0.95) and plates (1.00) from §11's table.
+    float critical_importance = 0.95f;
 
-    /// As TemporalROIConfig::any_set, and for the same reason. A caller who sets a target
-    /// bitrate and gets constant-quantizer output has been misled, not served.
     bool any_set() const
     {
         return target_bitrate != 0 || max_average_overshoot != 0.0f
             || max_peak_overshoot != 0.0f || recovery_window_ms != 0;
+    }
+
+    /// Peak overshoot and recovery are not implemented yet. A caller who sets them and
+    /// gets only the average loop has been misled -- refuse at open, same rule as §13.
+    bool unimplemented_requested() const
+    {
+        return max_peak_overshoot != 0.0f || recovery_window_ms != 0;
     }
 };
 

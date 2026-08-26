@@ -128,14 +128,14 @@ v2.0 позволял считать §15 неначатым, и наш аргу
 | Importance = произведение 5 факторов, I(x,y) ∈ [0,1] (§11) | есть; TemporalStability по age трека; MotionWeight опционален (выкл. → 1.0) | knobs на wire; live-stream пока без истории трека |
 | Polygon (§2) | есть: растеризация → qp-map; `Box.polygon` на wire | источник полигонов у детектора пока редкий |
 | Temporal ROI: `max_missing_frames`, decay, smoothing, prediction (§13) | `max_missing_frames` + decay + интерполяция; smoothing/prediction отвергаются | по необходимости для живого потока |
-| QualityPolicy: OBJECT_FIRST / BALANCED / BITRATE_FIRST (§14) | нет | `Settings`; дефолт по ТЗ — OBJECT_FIRST |
-| Object-first rate control с бюджетом битрейта (§15) | нет, только CQP/CRF | **самая крупная работа блока**, см. ниже |
+| QualityPolicy: OBJECT_FIRST / BALANCED / BITRATE_FIRST (§14) | только OBJECT_FIRST | BALANCED/BITRATE_FIRST после настоящего VBR |
+| Object-first rate control с бюджетом битрейта (§15) | outer loop (`BitrateBudget`) + area-budget | VBV; peak/recovery; VBR внутри бэкенда |
 
-**Про rate control.** Сейчас независимость QP-офсетов по блокам держится ровно на том,
-что мы кодируем в CQP. Целевой битрейт (§15) эту независимость ломает: rate control
-начнёт перераспределять биты между ROI и фоном. Это не недоработка, а физика, и ТЗ
-требует именно второго режима. Значит `FileSettings` и `StreamSettings` разойдутся
-здесь — они уже разделены в proto специально под это.
+**Про rate control.** Независимость QP-офсетов по блокам держится на CQP/CRF внутри
+бэкенда. Целевой битрейт (§15) обслуживается *внешним* циклом `BitrateBudget`: средний
+выход сравнивается с `target_bitrate`, фон давится первым, ROI ниже critical —
+потом. Это ещё не object-first VBR внутри энкодера и не VBV; `FileSettings` /
+`StreamSettings` уже несут `RateControl` на wire.
 
 ### Блок B. Бэкенды
 
@@ -452,8 +452,15 @@ CV, если понадобится, можно поднять настройк�
 
 ### Этап 4. Rate control
 
-11. `QualityPolicy` (§14) и object-first rate control с бюджетом (§15).
-12. `StreamSettings` получает целевой битрейт и VBV — то, чего требует и живой режим.
+11. ~~`QualityPolicy` (§14) и object-first rate control с бюджетом (§15).~~ **Первый срез
+    сделан:** `BitrateBudget` — внешний цикл над CQP/CRF. При `target_bitrate` смотрит
+    средний выход, сначала поднимает `background_qp_delta`, потом смягчает ROI ниже
+    `critical_importance` (лица/номера не трогает). Peak overshoot / recovery window
+    по-прежнему отвергаются на open. `QualityPolicy` кроме OBJECT_FIRST — тоже.
+    Area-budget (`max_protected_fraction`) остаётся CQP-ответом на «critical first».
+12. ~~`StreamSettings` получает целевой битрейт~~ — `RateControl` на wire (и на
+    `FileSettings` для офлайн-калибровки). VBV / полный object-first VBR внутри
+    бэкенда — следующий срез этапа.
 
 ### Этап 5. Новые бэкенды
 

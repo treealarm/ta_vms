@@ -44,6 +44,7 @@ add_library(smartvideo_adaptive STATIC
     src/adaptive/importance_map.cpp
     src/adaptive/qp_mapper.cpp
     src/adaptive/temporal_roi.cpp
+    src/adaptive/bitrate_budget.cpp
 )
 target_include_directories(smartvideo_adaptive
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -115,6 +116,11 @@ if(SVE_BUILD_TESTS)
     target_link_libraries(temporal_roi_test PRIVATE smartvideo_adaptive)
     target_compile_options(temporal_roi_test PRIVATE ${SVE_WARNINGS})
     add_test(NAME temporal_roi COMMAND temporal_roi_test)
+
+    add_executable(bitrate_budget_test tests/unit/bitrate_budget_test.cpp)
+    target_link_libraries(bitrate_budget_test PRIVATE smartvideo_adaptive)
+    target_compile_options(bitrate_budget_test PRIVATE ${SVE_WARNINGS})
+    add_test(NAME bitrate_budget COMMAND bitrate_budget_test)
 
     add_executable(geometry_test tests/unit/geometry_test.cpp)
     target_link_libraries(geometry_test PRIVATE smartvideo_adaptive)

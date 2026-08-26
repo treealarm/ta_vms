@@ -138,6 +138,25 @@ void apply_settings(const ProtoSettings& in, smartvideo::Settings& out)
     }
     out.preset = to_library_preset(in.preset());
 
+    if (in.has_rate_control()) {
+        const auto& rc = in.rate_control();
+        if (rc.target_bitrate() > 0) {
+            out.rate_control.target_bitrate = rc.target_bitrate();
+        }
+        if (rc.has_max_average_overshoot()) {
+            out.rate_control.max_average_overshoot = rc.max_average_overshoot();
+        }
+        if (rc.has_critical_importance()) {
+            out.rate_control.critical_importance = rc.critical_importance();
+        }
+        if (rc.has_max_peak_overshoot()) {
+            out.rate_control.max_peak_overshoot = rc.max_peak_overshoot();
+        }
+        if (rc.has_recovery_window_ms()) {
+            out.rate_control.recovery_window_ms = rc.recovery_window_ms();
+        }
+    }
+
     const auto& q = in.roi();
     if (q.has_background_qp_delta()) {
         out.quality.background_qp_delta = q.background_qp_delta();

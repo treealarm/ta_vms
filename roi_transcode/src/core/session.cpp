@@ -1,10 +1,12 @@
 #include "smartvideo/session.h"
 
 #include "av_raii.h"
+#include "bitrate_budget.h"
 #include "frame_input.h"
+#include "importance_map.h"
+#include "object_normalizer.h"
 #include "packet_sink.h"
 #include "roi_encoder.h"
-#include "object_normalizer.h"
 
 #include <algorithm>
 #include <span>
@@ -68,6 +70,7 @@ struct Session::Impl : PacketSink {
     std::unique_ptr<FileMuxSink> file;
     PacketHandler* handler = nullptr;
     RoiEncoder encoder;
+    BitrateBudget bitrate;
     FrameDecoder decoder;
     RoiMapBuilder builder;
     roiav::Frame wrapper;
@@ -121,6 +124,19 @@ struct Session::Impl : PacketSink {
     {
         ++report.packets;
         report.bytes += pkt->size;
+        if (bitrate.active()) {
+            double dt = 0.0;
+            if (pkt->duration > 0 && tb.den > 0) {
+                dt = static_cast<double>(pkt->duration) * tb.num / tb.den;
+            }
+            if (dt <= 0.0) {
+                const int32_t den = std::max(params.fps_den, 1);
+                dt = params.fps_num > 0
+                    ? static_cast<double>(den) / static_cast<double>(params.fps_num)
+                    : 1.0 / 25.0;
+            }
+            bitrate.observe(pkt->size, dt);
+        }
         if (handler) {
             EncodedPacket out;
             out.data = std::span<const uint8_t>(
@@ -177,10 +193,11 @@ struct Session::Impl : PacketSink {
         if (regions.mask.consistent()) {
             // The mask has no kind names: it interpolates between the
             // background and the strongest strength the settings name.
+            const Quality quality = bitrate.apply(params.settings.quality);
             MaskMapping mapping;
-            mapping.qp_delta_at_0 = params.settings.quality.background_qp_delta;
-            mapping.qp_delta_at_255 = params.settings.quality.mask_qp_delta_at_255;
-            mapping.levels = params.settings.quality.mask_levels;
+            mapping.qp_delta_at_0 = quality.background_qp_delta;
+            mapping.qp_delta_at_255 = quality.mask_qp_delta_at_255;
+            mapping.levels = quality.mask_levels;
             const QpDeltaMap grid = qp_map_from_mask(regions.mask, mapping, w, h);
             int32_t dropped = 0;
             auto rects = rects_from_qp_map(grid, region_budget(), &dropped);
@@ -189,10 +206,12 @@ struct Session::Impl : PacketSink {
         }
 
         const std::vector<Box> box_list(regions.boxes.begin(), regions.boxes.end());
-        const auto dets =
+        auto dets =
             builder.detections_from(box_list, params.settings.quality, w, h);
+        bitrate.soften_detections(dets);
+        const Quality quality = bitrate.apply(params.settings.quality);
         auto rects =
-            builder.build(w, h, dets, params.settings.quality);
+            builder.build(w, h, dets, quality);
         const int budget = region_budget();
         if (budget > 0 && static_cast<int>(rects.size()) > budget) {
             report.regions_dropped += static_cast<int>(rects.size()) - budget;
@@ -228,6 +247,7 @@ Session::Session(const SessionParams& params, PacketHandler* handler)
 
     m_impl->params = params;
     m_impl->handler = handler;
+    m_impl->bitrate = BitrateBudget(params.settings.rate_control);
     if (!params.output_path.empty()) {
         m_impl->file = std::make_unique<FileMuxSink>(
             params.output_path, params.settings.movflags);

@@ -127,9 +127,10 @@ void RoiEncoder::open_deferred(const EncoderConfig& config)
         fail("smoothing and track prediction (TZ v2.0 section 13) are declared but not "
              "implemented; max_missing_frames and confidence_decay are");
     }
-    if (config.rate_control.any_set()) {
-        fail("RateControlPolicy (TZ v2.0 section 15) is declared but not implemented; "
-             "the encoder runs at a constant quantizer");
+    if (config.rate_control.unimplemented_requested()) {
+        fail("peak overshoot and recovery window (TZ v2.0 section 15) are declared but "
+             "not implemented; target_bitrate and max_average_overshoot drive the outer "
+             "bitrate loop");
     }
 
     std::string errors;

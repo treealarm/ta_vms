@@ -211,8 +211,9 @@ struct Settings {
     /// treated as the default, so asking for one and getting the other cannot happen.
     QualityPolicy policy = QualityPolicy::OBJECT_FIRST;
 
-    /// §13 and §15. Declared so a caller has somewhere to put values it already has;
-    /// neither is acted on yet, and both structs document what that means.
+    /// §13 and §15. Temporal ROI is partly implemented (see TemporalROIConfig). Rate
+    /// control's average target drives the outer BitrateBudget loop; peak/recovery are
+    /// still refused at open when set.
     TemporalROIConfig temporal;
     RateControlPolicy rate_control;
     // Muxer "movflags", file output only. Empty leaves the container default;

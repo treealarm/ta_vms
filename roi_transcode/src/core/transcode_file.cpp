@@ -1,6 +1,7 @@
 #include "smartvideo/smartvideo.h"
 
 #include "av_raii.h"
+#include "bitrate_budget.h"
 #include "packet_sink.h"
 #include "importance_map.h"
 #include "roi_encoder.h"
@@ -84,16 +85,45 @@ Report transcode_file(const std::string& input_path,
     check(avcodec_parameters_to_context(dec.p, in_v->codecpar), "decoder params");
     check(avcodec_open2(dec.p, decoder, nullptr), "open decoder");
 
-    FileMuxSink sink(output_path, settings.movflags);
+    const AVRational fps = guess_fps(in_v, dec.p);
+
+    FileMuxSink file_sink(output_path, settings.movflags);
     if (aindex >= 0) {
-        sink.declare_audio(
+        file_sink.declare_audio(
             in.p->streams[aindex]->codecpar, in.p->streams[aindex]->time_base);
     }
+
+    BitrateBudget bitrate(settings.rate_control);
+    const double frame_sec = (fps.num > 0 && fps.den > 0)
+        ? static_cast<double>(fps.den) / static_cast<double>(fps.num)
+        : 1.0 / 25.0;
+
+    struct BudgetedMuxSink : PacketSink {
+        FileMuxSink& inner;
+        BitrateBudget& budget;
+        double fallback_sec;
+        BudgetedMuxSink(FileMuxSink& i, BitrateBudget& b, double fs)
+            : inner(i), budget(b), fallback_sec(fs)
+        {
+        }
+        void begin(AVCodecContext* enc) override { inner.begin(enc); }
+        void on_packet(AVPacket* pkt, AVRational tb) override
+        {
+            if (budget.active()) {
+                double dt = 0.0;
+                if (pkt->duration > 0 && tb.den > 0) {
+                    dt = static_cast<double>(pkt->duration) * tb.num / tb.den;
+                }
+                budget.observe(pkt->size, dt > 0.0 ? dt : fallback_sec);
+            }
+            inner.on_packet(pkt, tb);
+        }
+        void end() override { inner.end(); }
+    } sink(file_sink, bitrate, frame_sec);
 
     EncoderConfig ep;
     ep.width = dec.p->width;
     ep.height = dec.p->height;
-    const AVRational fps = guess_fps(in_v, dec.p);
     ep.fps = Rational{fps.num, fps.den};
     ep.kind = settings.encoder;
     ep.policy = settings.policy;
@@ -127,18 +157,20 @@ Report transcode_file(const std::string& input_path,
         // One region per track rather than one per sample, positioned where the object was
         // at this instant rather than where it was last seen.
         const auto live = temporal.at(t);
-        const auto dets =
+        auto dets =
             roi_builder.detections_from(live, settings.quality, ep.width, ep.height);
-        auto rects = roi_builder.build(ep.width, ep.height, dets, settings.quality);
-        const int cap = settings.quality.max_regions;
-        if (cap > 0 && static_cast<int>(rects.size()) > cap) {
-            dropped += static_cast<int>(rects.size()) - cap;
+        bitrate.soften_detections(dets);
+        const Quality quality = bitrate.apply(settings.quality);
+        auto rects = roi_builder.build(ep.width, ep.height, dets, quality);
+        const int32_t cap = settings.quality.max_regions;
+        if (cap > 0 && static_cast<int32_t>(rects.size()) > cap) {
+            dropped += static_cast<int32_t>(rects.size()) - cap;
             rects.resize(static_cast<size_t>(cap));
         }
 
         if (!logged_roi) {
             // H.264 partitions into 16x16 macroblocks, HEVC into 32x32 CTUs.
-            const int block = settings.codec == Codec::H264 ? 16 : 32;
+            const int32_t block = settings.codec == Codec::H264 ? 16 : 32;
             const auto grid = qp_map.build(ep.width, ep.height, block, rects);
             std::fprintf(stderr, "ROI: %zu rects, qpDeltaMap %dx%d blocks of %d\n",
                 rects.size(), grid.cols, grid.rows, block);
@@ -174,8 +206,8 @@ Report transcode_file(const std::string& input_path,
             }
             continue;
         }
-        if (sink.has_audio() && ipkt.p->stream_index == aindex) {
-            sink.write_audio(ipkt.p, in.p->streams[aindex]->time_base);
+        if (file_sink.has_audio() && ipkt.p->stream_index == aindex) {
+            file_sink.write_audio(ipkt.p, in.p->streams[aindex]->time_base);
         }
         av_packet_unref(ipkt.p);
     }
