@@ -125,7 +125,7 @@ v2.0 позволял считать §15 неначатым, и наш аргу
 | Требование | Сейчас | Что делать |
 |---|---|---|
 | `Object{track_id, class_id, confidence, semantic_priority, task_priority, critical}` (§10) | есть (`object.h` / `Box` на wire) | `critical` / полный `Object` на wire — по необходимости; данные уже доходят |
-| Importance = произведение 5 факторов, I(x,y) ∈ [0,1] (§11) | есть; TemporalStability и MotionWeight = 1.0 | довести два оставшихся фактора; `RoiQuality.importance` на wire |
+| Importance = произведение 5 факторов, I(x,y) ∈ [0,1] (§11) | есть; TemporalStability по age трека; MotionWeight опционален (выкл. → 1.0) | knobs на wire; live-stream пока без истории трека |
 | Polygon (§2) | есть: растеризация → qp-map; `Box.polygon` на wire | источник полигонов у детектора пока редкий |
 | Temporal ROI: `max_missing_frames`, decay, smoothing, prediction (§13) | `max_missing_frames` + decay + интерполяция; smoothing/prediction отвергаются | по необходимости для живого потока |
 | QualityPolicy: OBJECT_FIRST / BALANCED / BITRATE_FIRST (§14) | нет | `Settings`; дефолт по ТЗ — OBJECT_FIRST |
@@ -348,12 +348,18 @@ ABI libva между vcpkg и Ubuntu — ровно этот класс расх
    **Сделано.** `Object` в `include/smartvideo/object.h`; `Box` на wire несёт оба поля;
    `BoxesForAsync` больше не выбрасывает их; video_a offline path шлёт оба.
 6. ~~Слой importance (§11), сегодняшние per-kind дельты — частный случай.~~ **Сделано**
-   в `src/adaptive/importance.cpp`. Два из пяти факторов (TemporalStability, MotionWeight)
-   пока константа 1.0. Явный `kinds` по-прежнему обходит модель — это намеренно.
-   На wire: `RoiQuality.importance` (`qp_at_zero` / `qp_at_one` / таблицы приоритетов).
-   Продуктовая точка «номер −12, машина −6» = `qp_at_zero=3`, `qp_at_one=-12`; библиотечный
-   дефолт остаётся примером §12 (−10/−4). Offline-стенд (`roi-clip`) по умолчанию **не**
-   шлёт `--qp`, чтобы модель работала.
+   в `src/adaptive/importance.cpp`. Все пять факторов живые:
+   - Semantic / Task / Confidence — как раньше;
+   - **TemporalStability** — растёт с age трека (`1 - exp(-age/τ)`, пол `temporal_stability_floor`);
+     evidence кладёт `TemporalRoi::at` в `Box.track`;
+   - **MotionWeight** — optional по §11, по умолчанию 1.0; при `use_motion_weight` —
+     скорость центра в диагоналях кадра/с между соседними сэмплами.
+   Явный `kinds` по-прежнему обходит модель — это намеренно.
+   На wire: `RoiQuality.importance` (`qp_at_zero` / `qp_at_one` / таблицы приоритетов /
+   knobs stability и motion). Продуктовая точка «номер −12, машина −6» =
+   `qp_at_zero=3`, `qp_at_one=-12`; библиотечный дефолт остаётся примером §12 (−10/−4).
+   Offline-стенд (`roi-clip`) по умолчанию **не** шлёт `--qp`, чтобы модель работала.
+   Live `RoiStream` без накопленной истории трека оставляет два последних фактора = 1.0.
 7. ~~Polygon → та же qp-map.~~ **Сделано:** `rasterize_polygon` + shaped path в
    `RoiMapBuilder` (через block qp-map, как маска). На wire — `Box.polygon` (repeated Point).
    AABB остаётся fallback для оверлеев и бюджета площади.
@@ -376,8 +382,7 @@ ABI libva между vcpkg и Ubuntu — ровно этот класс расх
    шагов (из них 80 из 125 — один кадр), у ONVIF 13.6% (1321 из 1646 — один кадр).
 
 Этап закрывает продуктовую задачу «номер −12, машина −6» на уровне модели; polygon → qp-map
-уже на wire. Два оставшихся фактора importance (TemporalStability, MotionWeight) — следующие
-срезы внутри этапа.
+и пять факторов §11 уже на wire. Следующий продуктовый срез — этап 4 (bitrate budget).
 
 **Источник метаданных — измерено 2026-08-23, вывод не тот, которого ждали.**
 

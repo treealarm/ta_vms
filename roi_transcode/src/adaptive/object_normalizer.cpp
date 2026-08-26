@@ -64,7 +64,7 @@ Detection to_detection(
         // Nothing configured for this kind, which in ta_vms is every kind: the archive pass
         // sends no per-kind entries at all. §11 decides.
         const Object object = object_from_box(b, quality.importance);
-        d.importance = importance_of(object, quality.importance);
+        d.importance = importance_of(object, quality.importance, b.track);
         d.qp_delta = qp_from_importance(d.importance, quality.importance);
         d.pad_x = static_cast<int>(std::lround(quality.pad * width));
         d.pad_y = static_cast<int>(std::lround(quality.pad * height));

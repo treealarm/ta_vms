@@ -122,6 +122,11 @@ struct Box {
     /// the AABB fields stay filled as the cheap fallback for anything that only draws
     /// rectangles (overlays, area budget).
     std::vector<Point> polygon;
+
+    /// Filled by TemporalRoi::at from the track's own history. Not a wire field: a Box that
+    /// arrived on gRPC or JSON leaves this empty, and the importance factors that need a
+    /// track stay at 1.0 until something has stitched the timeline.
+    TrackEvidence track;
 };
 
 // How much better than the background one kind of region gets.

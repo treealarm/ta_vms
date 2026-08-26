@@ -8,6 +8,57 @@ namespace smartvideo {
 
 namespace {
 
+/// Centre of a normalised box.
+void centre(const Box& b, float& cx, float& cy)
+{
+    cx = b.x + 0.5f * b.width;
+    cy = b.y + 0.5f * b.height;
+}
+
+/// Speed between two samples in frame-diagonals per second. The unit square's diagonal is
+/// √2, so a box that crosses the whole frame in one second scores 1.0.
+float speed_between(const Box& a, const Box& b)
+{
+    const double dt = b.t_sec - a.t_sec;
+    if (dt <= 0.0) {
+        return 0.0f;
+    }
+    float ax, ay, bx, by;
+    centre(a, ax, ay);
+    centre(b, bx, by);
+    const float dx = bx - ax;
+    const float dy = by - ay;
+    const float dist = std::sqrt(dx * dx + dy * dy);
+    constexpr float diagonal = 1.41421356f; // √2
+    return static_cast<float>(dist / (diagonal * dt));
+}
+
+TrackEvidence evidence_for(const std::vector<Box>& samples, double t_sec)
+{
+    TrackEvidence e;
+    if (samples.empty()) {
+        return e;
+    }
+    e.present = true;
+    e.sample_count = static_cast<int32_t>(samples.size());
+    e.age_sec = static_cast<float>(std::max(0.0, t_sec - samples.front().t_sec));
+
+    if (samples.size() < 2) {
+        return e;
+    }
+    // Prefer the pair that brackets t; otherwise the nearest neighbouring pair.
+    const auto after = std::lower_bound(samples.begin(), samples.end(), t_sec,
+        [](const Box& b, double t) { return b.t_sec < t; });
+    if (after != samples.begin() && after != samples.end()) {
+        e.speed = speed_between(*(after - 1), *after);
+    } else if (after == samples.begin()) {
+        e.speed = speed_between(samples[0], samples[1]);
+    } else {
+        e.speed = speed_between(samples[samples.size() - 2], samples.back());
+    }
+    return e;
+}
+
 /// Linear blend of two samples of one track. `w` is 0 at `a` and 1 at `b`.
 Box blend(const Box& a, const Box& b, double w)
 {
@@ -112,6 +163,7 @@ std::vector<Box> TemporalRoi::at(double t_sec) const
                 Box b = s.front();
                 b.confidence *= std::pow(m_config.confidence_decay,
                     track.interval > 0 ? ahead / track.interval : 0.0);
+                b.track = evidence_for(s, t_sec);
                 out.push_back(b);
             }
             continue;
@@ -124,6 +176,7 @@ std::vector<Box> TemporalRoi::at(double t_sec) const
                 Box b = s.back();
                 b.confidence *= std::pow(m_config.confidence_decay,
                     track.interval > 0 ? behind / track.interval : 0.0);
+                b.track = evidence_for(s, t_sec);
                 out.push_back(b);
             }
             continue;
@@ -139,7 +192,9 @@ std::vector<Box> TemporalRoi::at(double t_sec) const
         if (span > reach && span > 0.0) {
             continue;
         }
-        out.push_back(span > 0.0 ? blend(b0, b1, (t_sec - b0.t_sec) / span) : b0);
+        Box live = span > 0.0 ? blend(b0, b1, (t_sec - b0.t_sec) / span) : b0;
+        live.track = evidence_for(s, t_sec);
+        out.push_back(live);
     }
 
     // No track to stitch, so the old symmetric window is all there is.

@@ -287,6 +287,69 @@ void a_budget_of_zero_changes_nothing()
         "the same person under a budget goes neutral and loses its halo");
 }
 
+// TemporalStability rises with track age; an untracked box is not punished.
+void temporal_stability_rises_with_track_age()
+{
+    const smartvideo::ImportancePolicy policy;
+    smartvideo::TrackEvidence none;
+    check_near(smartvideo::temporal_stability_of(none, policy), 1.0, 1e-6,
+        "no track leaves stability at 1");
+
+    smartvideo::TrackEvidence newborn;
+    newborn.present = true;
+    newborn.age_sec = 0.0f;
+    newborn.sample_count = 1;
+    check_near(smartvideo::temporal_stability_of(newborn, policy),
+        policy.temporal_stability_floor, 1e-5, "a brand-new track is at the floor");
+
+    smartvideo::TrackEvidence older = newborn;
+    older.age_sec = policy.temporal_stability_tau_sec;
+    const float mid = smartvideo::temporal_stability_of(older, policy);
+    check(mid > policy.temporal_stability_floor + 0.2f
+            && mid < 1.0f - 1e-3f,
+        "after one tau the track has climbed but is not yet full");
+
+    smartvideo::TrackEvidence settled = newborn;
+    settled.age_sec = 20.0f;
+    check_near(smartvideo::temporal_stability_of(settled, policy), 1.0, 1e-3,
+        "a long-lived track is essentially full");
+
+    const auto person = smartvideo::object_from_box(
+        box("person", 0.1f, 0.1f, 0.2f, 0.2f), policy);
+    const float young_i = smartvideo::importance_of(person, policy, newborn);
+    const float old_i = smartvideo::importance_of(person, policy, settled);
+    check(old_i > young_i, "the same person is worth more once the track has settled");
+    check_near(young_i, 0.80 * policy.temporal_stability_floor, 1e-4,
+        "a newborn person is semantic x floor");
+}
+
+// MotionWeight stays 1.0 until opted in; then a mover outranks a parkéd object.
+void motion_weight_is_optional_and_prefers_movers()
+{
+    smartvideo::ImportancePolicy policy;
+    smartvideo::TrackEvidence parked;
+    parked.present = true;
+    parked.age_sec = 10.0f;
+    parked.speed = 0.0f;
+    check_near(smartvideo::motion_weight_of(parked, policy), 1.0, 1e-6,
+        "motion is off by default");
+
+    policy.use_motion_weight = true;
+    check_near(smartvideo::motion_weight_of(parked, policy),
+        policy.motion_weight_floor, 1e-5, "a parked track is at the floor");
+
+    smartvideo::TrackEvidence moving = parked;
+    moving.speed = policy.motion_speed_at_full;
+    check_near(smartvideo::motion_weight_of(moving, policy), 1.0, 1e-5,
+        "a track at the reference speed is full");
+
+    const auto vehicle = smartvideo::object_from_box(
+        box("vehicle", 0.1f, 0.1f, 0.2f, 0.2f), policy);
+    check(smartvideo::importance_of(vehicle, policy, moving)
+            > smartvideo::importance_of(vehicle, policy, parked),
+        "a moving vehicle outranks a parked one when motion weighs");
+}
+
 } // namespace
 
 int main()
@@ -302,6 +365,8 @@ int main()
     a_configured_kind_keeps_its_own_number();
     the_budget_protects_the_face_and_lets_the_body_go();
     a_budget_of_zero_changes_nothing();
+    temporal_stability_rises_with_track_age();
+    motion_weight_is_optional_and_prefers_movers();
 
     if (failures > 0) {
         std::fprintf(stderr, "importance_test: %d failure(s)\n", failures);

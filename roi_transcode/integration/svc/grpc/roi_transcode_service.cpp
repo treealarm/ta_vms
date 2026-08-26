@@ -203,6 +203,21 @@ void apply_settings(const ProtoSettings& in, smartvideo::Settings& out)
         if (p.has_qp_at_one()) {
             dst.qp_at_one = p.qp_at_one();
         }
+        if (p.has_temporal_stability_floor()) {
+            dst.temporal_stability_floor = p.temporal_stability_floor();
+        }
+        if (p.has_temporal_stability_tau_sec()) {
+            dst.temporal_stability_tau_sec = p.temporal_stability_tau_sec();
+        }
+        if (p.has_use_motion_weight()) {
+            dst.use_motion_weight = p.use_motion_weight();
+        }
+        if (p.has_motion_weight_floor()) {
+            dst.motion_weight_floor = p.motion_weight_floor();
+        }
+        if (p.has_motion_speed_at_full()) {
+            dst.motion_speed_at_full = p.motion_speed_at_full();
+        }
     }
 }
 
