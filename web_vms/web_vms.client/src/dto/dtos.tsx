@@ -493,9 +493,9 @@ export type EntityStateDto = {
  * remaining column and row. '1+5' is a 3x3 with a 2x2 feature, '1+7' a 4x4 with a 3x3 feature —
  * the counts are the usual VMS naming (one big, N small).
  */
-export type MonitorLayout = '1x1' | '1x2' | '2x2' | '1+5' | '1+7' | '3x3'
+export type MonitorLayout = '1x1' | '1x2' | '2x2' | '1+5' | '1+7' | '3x3' | '4x3' | '4x4'
 
-export const MONITOR_LAYOUTS: MonitorLayout[] = ['1x1', '1x2', '2x2', '1+5', '1+7', '3x3']
+export const MONITOR_LAYOUTS: MonitorLayout[] = ['1x1', '1x2', '2x2', '1+5', '1+7', '3x3', '4x3', '4x4']
 
 export function layoutSlotCount(layout: MonitorLayout): number {
   switch (layout) {
@@ -505,6 +505,8 @@ export function layoutSlotCount(layout: MonitorLayout): number {
     case '1+5': return 6
     case '1+7': return 8
     case '3x3': return 9
+    case '4x3': return 12
+    case '4x4': return 16
   }
 }
 
@@ -516,6 +518,8 @@ export function layoutColumns(layout: MonitorLayout): number {
     case '1+5': return 3
     case '1+7': return 4
     case '3x3': return 3
+    case '4x3': return 4
+    case '4x4': return 4
   }
 }
 
@@ -527,6 +531,8 @@ export function layoutRows(layout: MonitorLayout): number {
     case '1+5': return 3
     case '1+7': return 4
     case '3x3': return 3
+    case '4x3': return 3
+    case '4x4': return 4
   }
 }
 
@@ -580,7 +586,9 @@ export function nextLayoutUp(layout: MonitorLayout): MonitorLayout | null {
     case '2x2': return '3x3'
     case '1+5': return '1+7'
     case '1+7': return '3x3'
-    case '3x3': return null
+    case '3x3': return '4x3'
+    case '4x3': return '4x4'
+    case '4x4': return null
   }
 }
 
