@@ -51,6 +51,7 @@ on the library side so the two tracks stay visible.
 
 ## Proto
 
-`proto/roi_transcode.proto` is **not** extended in this pass (shared contract —
-coordinate with baton holder). C++ public types already carry the v3 fields;
-wire mapping follows when both sides agree.
+v3-first wire (breaking, intentional): `ObjectPriority` + `desired_qp_delta` on `Box`;
+`margin_mode` / `margin_px` / `min_roi_side` on `RoiQuality`; `ClassWeighting` (tables
+only, no importance→QP line); `TemporalRoiConfig` with implemented fields only.
+Vendored into `video_a/proto/roi_transcode.proto`. ta_vms archive callers adjust later.

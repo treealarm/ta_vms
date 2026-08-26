@@ -26,21 +26,19 @@ min_confidence: 0.5
 #
 # ROI encoding does not make objects better than the source. It keeps them closer to the
 # source while the rest of the frame is allowed to get worse. Under today's CQP/CRF path
-# that means: a fairly high `crf` (the crush), §11 importance for how much each class is
-# worth (omit `qp` so the model runs), and a positive `background_qp` (crush the rest).
-# `qp_at_zero` / `qp_at_one` set the importance→QP line; the values below are the product
-# point (plate −12, vehicle −6). The library default without them is the §12 example (−10/−4).
-# Codec and GOP default to the source. Explicit `qp:` rows turn the model off for those kinds.
+# that means: a fairly high `crf` (the crush), the v3 ObjectPriority ladder for how much
+# each class is worth (omit `qp` so kind→ladder runs), and a positive `background_qp`.
+# Codec and GOP default to the source. Explicit `qp:` rows override the ladder for those kinds.
 crf: 36
 background_qp: 14
 pad: 0.02
-qp_at_zero: 3
-qp_at_one: -12
-# Optional §15 ceiling (bits/sec). When set, the outer loop raises background QP if the
-# average output runs hot; faces/plates stay protected. Omit to keep pure CQP/CRF.
+# Optional geometry (service defaults are FixedPixels / 8 / 64 if omitted):
+# margin_px: 8
+# min_roi_side: 64
+# Optional outer-loop ceiling (bits/sec). Faces/plates stay protected.
 # target_bitrate: 500000
 # bitrate_overshoot: 0.1
-# qp:                        # only if you want to bypass §11 for named kinds
+# qp:                        # only if you want to bypass the ladder for named kinds
 #   license_plate: -12
 #   vehicle: -6
 

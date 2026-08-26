@@ -66,6 +66,25 @@ void detections_use_ladder_by_default()
     check(dets[0].priority == smartvideo::ObjectPriority::Critical, "priority Critical");
 }
 
+void explicit_priority_on_the_box_wins_over_kind()
+{
+    smartvideo::Quality q;
+    q.margin_mode = smartvideo::MarginMode::FixedPixels;
+    q.margin_px = 0;
+    q.min_roi_side = 0;
+    smartvideo::Box b;
+    b.kind = "vehicle"; // would be Normal (−4)
+    b.has_priority = true;
+    b.priority = smartvideo::ObjectPriority::Critical;
+    b.x = 0.1f;
+    b.y = 0.1f;
+    b.width = 0.2f;
+    b.height = 0.2f;
+    smartvideo::RoiMapBuilder builder;
+    const auto dets = builder.detections_from({b}, q, 640, 480);
+    check_eq(dets[0].qp_delta, -8, "explicit Critical beats vehicle kind");
+}
+
 void min_roi_side_expands_a_tiny_box()
 {
     smartvideo::Quality q;
@@ -147,6 +166,7 @@ int main()
 {
     ladder_maps_kinds_to_canonical_deltas();
     detections_use_ladder_by_default();
+    explicit_priority_on_the_box_wins_over_kind();
     min_roi_side_expands_a_tiny_box();
     fixed_margin_grows_the_body();
     qp_slew_limits_a_jump();

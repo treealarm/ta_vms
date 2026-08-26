@@ -114,17 +114,25 @@ Detection to_detection(
         d.importance = importance_from_qp(k.qp_delta, quality.importance);
         d.priority = priority_from_importance(d.importance);
     } else {
-        // Nothing configured for this kind. Continuous importance picks a v3 ladder step;
-        // the ladder supplies the QP delta (unless the caller opted back into the v2 line).
+        // Nothing configured for this kind.
+        // Order: desired_qp_delta → explicit priority → kind/confidence → ladder (or v2 line).
         const Object object = object_from_box(b, quality.importance);
         d.importance = importance_of(object, quality.importance, b.track);
-        d.priority = priority_from_importance(d.importance);
+        if (b.has_priority) {
+            d.priority = b.priority;
+        } else {
+            d.priority = priority_from_importance(d.importance);
+        }
         if (b.has_desired_qp_delta) {
             d.qp_delta = b.desired_qp_delta;
         } else if (quality.use_v3_priority_ladder) {
             d.qp_delta = qp_delta_for(d.priority);
         } else {
             d.qp_delta = qp_from_importance(d.importance, quality.importance);
+        }
+        if (b.has_priority || b.has_desired_qp_delta) {
+            // Ordering against other regions still needs a comparable importance.
+            d.importance = importance_from_qp(d.qp_delta, quality.importance);
         }
         d.pad_x = halo_px(quality, width, 0.0);
         d.pad_y = halo_px(quality, height, 0.0);

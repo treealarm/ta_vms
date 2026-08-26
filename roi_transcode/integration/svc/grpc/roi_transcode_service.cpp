@@ -198,8 +198,22 @@ void apply_settings(const ProtoSettings& in, smartvideo::Settings& out)
     if (q.has_max_protected_fraction()) {
         out.quality.max_protected_fraction = q.max_protected_fraction();
     }
-    if (q.has_importance()) {
-        const auto& p = q.importance();
+    switch (q.margin_mode()) {
+        case roi::transcode::MARGIN_MODE_FRACTION_OF_FRAME:
+            out.quality.margin_mode = smartvideo::MarginMode::FractionOfFrame;
+            break;
+        default:
+            out.quality.margin_mode = smartvideo::MarginMode::FixedPixels;
+            break;
+    }
+    if (q.has_margin_px()) {
+        out.quality.margin_px = q.margin_px();
+    }
+    if (q.has_min_roi_side()) {
+        out.quality.min_roi_side = q.min_roi_side();
+    }
+    if (q.has_class_weighting()) {
+        const auto& p = q.class_weighting();
         auto& dst = out.quality.importance;
         for (const auto& [k, v] : p.semantic_priority()) {
             dst.semantic_priority[k] = v;
@@ -216,12 +230,6 @@ void apply_settings(const ProtoSettings& in, smartvideo::Settings& out)
         if (p.has_weigh_confidence_on_known_classes()) {
             dst.weigh_confidence_on_known_classes = p.weigh_confidence_on_known_classes();
         }
-        if (p.has_qp_at_zero()) {
-            dst.qp_at_zero = p.qp_at_zero();
-        }
-        if (p.has_qp_at_one()) {
-            dst.qp_at_one = p.qp_at_one();
-        }
         if (p.has_temporal_stability_floor()) {
             dst.temporal_stability_floor = p.temporal_stability_floor();
         }
@@ -237,6 +245,38 @@ void apply_settings(const ProtoSettings& in, smartvideo::Settings& out)
         if (p.has_motion_speed_at_full()) {
             dst.motion_speed_at_full = p.motion_speed_at_full();
         }
+    }
+
+    if (in.has_temporal_roi()) {
+        const auto& t = in.temporal_roi();
+        if (t.has_max_missing_frames()) {
+            out.temporal.max_missing_frames = t.max_missing_frames();
+        }
+        if (t.has_max_hold_sec()) {
+            out.temporal.max_hold_sec = t.max_hold_sec();
+        }
+        if (t.has_confidence_decay()) {
+            out.temporal.confidence_decay = t.confidence_decay();
+        }
+        if (t.has_max_qp_delta_per_frame()) {
+            out.temporal.max_qp_delta_per_frame = t.max_qp_delta_per_frame();
+        }
+    }
+}
+
+smartvideo::ObjectPriority priority_from_proto(roi::transcode::ObjectPriority p)
+{
+    switch (p) {
+        case roi::transcode::OBJECT_PRIORITY_BACKGROUND:
+            return smartvideo::ObjectPriority::Background;
+        case roi::transcode::OBJECT_PRIORITY_LOW:
+            return smartvideo::ObjectPriority::Low;
+        case roi::transcode::OBJECT_PRIORITY_HIGH:
+            return smartvideo::ObjectPriority::High;
+        case roi::transcode::OBJECT_PRIORITY_CRITICAL:
+            return smartvideo::ObjectPriority::Critical;
+        default:
+            return smartvideo::ObjectPriority::Normal;
     }
 }
 
@@ -255,6 +295,14 @@ smartvideo::Box box_from_proto(const roi::transcode::Box& b)
     out.polygon.reserve(static_cast<size_t>(b.polygon_size()));
     for (const auto& p : b.polygon()) {
         out.polygon.push_back({p.x(), p.y()});
+    }
+    if (b.has_priority()) {
+        out.has_priority = true;
+        out.priority = priority_from_proto(b.priority());
+    }
+    if (b.has_desired_qp_delta()) {
+        out.has_desired_qp_delta = true;
+        out.desired_qp_delta = b.desired_qp_delta();
     }
     return out;
 }

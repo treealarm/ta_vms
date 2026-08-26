@@ -3,6 +3,7 @@
 // The vocabulary both entry points share.
 
 #include "smartvideo/importance.h"
+#include "smartvideo/object_priority.h"
 #include "smartvideo/policy.h"
 
 #include <cstdint>
@@ -123,8 +124,13 @@ struct Box {
     /// rectangles (overlays, area budget).
     std::vector<Point> polygon;
 
+    /// Explicit v3 ladder step from the wire. When set, kind→importance is not used to
+    /// pick the step (desired_qp_delta still wins over the ladder's QP).
+    bool has_priority = false;
+    ObjectPriority priority = ObjectPriority::Normal;
+
     /// Optional override of the QP delta (v3 `desired_qp_delta`). When set, the priority
-    /// ladder is skipped for this box.
+    /// ladder's QP is skipped for this box.
     bool has_desired_qp_delta = false;
     int32_t desired_qp_delta = 0;
 

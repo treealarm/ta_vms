@@ -49,12 +49,13 @@ the detected objects drawn over it.
       --gop N          keyframe interval in frames  (same as the source)
       --preset NAME    balanced | fast | slow | ...
       --background-qp N   how much worse everything unprotected gets   (14)
-      --qp KIND=DELTA  per-kind override; omit to let §11 importance decide
-      --qp-at-zero N   importance→QP at I=0 (3 = product; library default 5)
-      --qp-at-one N    importance→QP at I=1 (-12 = product; library default -10)
-      --target-bitrate N  §15 average ceiling, bits/sec (0 = off; e.g. 500000)
+      --qp KIND=DELTA  per-kind override; omit to use the v3 ObjectPriority ladder
+      --margin-px N    expand each box by N pixels (service default 8)
+      --min-roi-side N expand boxes shorter than N (service default 64)
+      --max-qp-delta-per-frame N  limit QP jumps between frames (0 = off)
+      --target-bitrate N  outer-loop average ceiling, bits/sec (0 = off; e.g. 500000)
       --bitrate-overshoot F  allowed average overshoot fraction (default 0.1)
-      --pad F          halo around a box, fraction of the frame        (0.02)
+      --pad F          soft rim around a box, fraction of the frame        (0.02)
       --max-regions N  cap on regions handed to the encoder
       --regions FORM   boxes | mask                 (boxes)
       --mask-scale N   mask is 1/N of the frame     (8)
@@ -90,13 +91,9 @@ OUT_FROM=""
 PROFILE_INPUT=""
 
 # Defaults chosen for the product model: crush the frame (high-ish CRF + background
-# penalty), let §11 importance decide how much each class is worth, and keep a small halo.
-# Explicit --qp KIND=DELTA still wins and turns the model off for those kinds. What the
-# numbers should actually be is still open -- see docs/plan-v2.md.
+# penalty), let the v3 ObjectPriority ladder decide how much each class is worth, and
+# keep a small soft rim. Explicit --qp KIND=DELTA still wins for those kinds.
 declare -A OPT=([--codec]=same [--detect-fps]=2 [--background-qp]=14 [--pad]=0.02 [--crf]=36)
-# Product operating point on the §11 line: plate −12, vehicle −6 (library default is −10/−4).
-QP_AT_ZERO=3
-QP_AT_ONE=-12
 QP_FILE=()
 QP_CLI=()
 
@@ -121,11 +118,10 @@ parse_args() {
             --encoder)     ENCODER="$2"; shift 2 ;;
             --qp)          if [ "$from" = file ]; then QP_FILE+=("$2"); else QP_CLI+=("$2"); fi
                            shift 2 ;;
-            --qp-at-zero)  QP_AT_ZERO="$2"; shift 2 ;;
-            --qp-at-one)   QP_AT_ONE="$2"; shift 2 ;;
             --target-bitrate|--bitrate-overshoot|\
             --codec|--crf|--gop|--preset|--max-regions|--regions|--mask-scale|--background-qp|\
-            --pad|--detect-fps|--classes|--min-confidence)
+            --pad|--margin-px|--min-roi-side|--max-qp-delta-per-frame|\
+            --detect-fps|--classes|--min-confidence)
                            OPT["$1"]="$2"; shift 2 ;;
             -h|--help)     usage 0 ;;
             -*)            echo "unknown option '$1'" >&2; usage ;;
@@ -182,17 +178,15 @@ for flag in "${!OPT[@]}"; do
     WORKER_ARGS+=("$flag" "${OPT[$flag]}")
 done
 
-# No default --qp list: empty kinds lets the service's §11 importance model assign deltas
-# from the class. A --qp on the profile or the command line is an explicit override and
-# turns the model off for those kinds (by design -- see Quality::kinds).
+# No default --qp list: empty kinds lets the service map kind→ObjectPriority ladder.
+# A --qp on the profile or the command line is an explicit override and turns the
+# ladder off for those kinds (by design -- see Quality::kinds).
 QP=()
 [ ${#QP_FILE[@]} -gt 0 ] && QP=("${QP_FILE[@]}")
 [ ${#QP_CLI[@]} -gt 0 ] && QP=("${QP_CLI[@]}")
 for pair in "${QP[@]}"; do
     WORKER_ARGS+=(--qp "$pair")
 done
-[ -n "$QP_AT_ZERO" ] && WORKER_ARGS+=(--qp-at-zero "$QP_AT_ZERO")
-[ -n "$QP_AT_ONE" ] && WORKER_ARGS+=(--qp-at-one "$QP_AT_ONE")
 
 # Quick Sync is left out of the automatic choice on purpose: libmfx aborts the service process
 # after a handful of frames when it encodes from a gRPC worker thread. Asking for it explicitly
