@@ -69,20 +69,20 @@ struct TemporalROIConfig {
     float spatial_smoothing = 0.0f;
     float temporal_smoothing = 0.0f;
     /// Ceiling on how fast a region's QP may move between frames, which is what stops the
-    /// flicker §43 measures.
+    /// flicker §43 / v3 §13 measure. Implemented by QpSlewLimiter.
     int32_t max_qp_delta_per_frame = 0;
     /// Extrapolate from the track's motion instead of holding the last box.
     bool use_track_prediction = false;
 
     /// Whether the caller asked for a part of §13 that does not exist yet.
     ///
-    /// max_missing_frames and confidence_decay are implemented and are not named here. The
-    /// rest still are: declared-but-ignored is the worst state a setting can be in, because
-    /// the caller fills it, nothing happens, and the encode looks like it worked.
+    /// max_missing_frames, confidence_decay and max_qp_delta_per_frame are implemented.
+    /// Smoothing and track prediction are still refused -- declared-but-ignored is worse
+    /// than absent.
     bool unimplemented_requested() const
     {
         return spatial_smoothing != 0.0f || temporal_smoothing != 0.0f
-            || max_qp_delta_per_frame != 0 || use_track_prediction;
+            || use_track_prediction;
     }
 };
 

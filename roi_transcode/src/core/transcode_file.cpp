@@ -7,6 +7,7 @@
 #include "roi_encoder.h"
 #include "temporal_roi.h"
 #include "object_normalizer.h"
+#include "qp_slew.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -95,6 +96,7 @@ Report transcode_file(const std::string& input_path,
     }
 
     BitrateBudget bitrate(settings.rate_control);
+    QpSlewLimiter qp_slew;
     const double frame_sec = (fps.num > 0 && fps.den > 0)
         ? static_cast<double>(fps.den) / static_cast<double>(fps.num)
         : 1.0 / 25.0;
@@ -161,6 +163,7 @@ Report transcode_file(const std::string& input_path,
         auto dets =
             roi_builder.detections_from(live, settings.quality, ep.width, ep.height);
         bitrate.soften_detections(dets);
+        qp_slew.apply(dets, settings.temporal.max_qp_delta_per_frame);
         const Quality quality = bitrate.apply(settings.quality);
         auto rects = roi_builder.build(ep.width, ep.height, dets, quality);
         const int32_t cap = settings.quality.max_regions;

@@ -2,10 +2,30 @@
 
 #include "importance.h"
 
+#include "smartvideo/object_priority.h"
+
 #include <algorithm>
 #include <cmath>
 
 namespace smartvideo {
+
+ObjectPriority priority_from_importance(float importance)
+{
+    const float i = std::clamp(importance, 0.0f, 1.0f);
+    if (i >= 0.95f) {
+        return ObjectPriority::Critical;
+    }
+    if (i >= 0.80f) {
+        return ObjectPriority::High;
+    }
+    if (i >= 0.60f) {
+        return ObjectPriority::Normal;
+    }
+    if (i >= 0.20f) {
+        return ObjectPriority::Low;
+    }
+    return ObjectPriority::Background;
+}
 
 float default_semantic_priority(const std::string& kind, float unknown)
 {

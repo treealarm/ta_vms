@@ -123,6 +123,11 @@ struct Box {
     /// rectangles (overlays, area budget).
     std::vector<Point> polygon;
 
+    /// Optional override of the QP delta (v3 `desired_qp_delta`). When set, the priority
+    /// ladder is skipped for this box.
+    bool has_desired_qp_delta = false;
+    int32_t desired_qp_delta = 0;
+
     /// Filled by TemporalRoi::at from the track's own history. Not a wire field: a Box that
     /// arrived on gRPC or JSON leaves this empty, and the importance factors that need a
     /// track stay at 1.0 until something has stitched the timeline.
@@ -136,6 +141,14 @@ struct KindQuality {
     // Halo around the box as a fraction of the frame, encoded at half the box's
     // delta, which softens the QP step at the edge.
     double pad = 0.02;
+};
+
+/// How the halo / margin around a box is measured -- TZ v3 §11.3.
+enum class MarginMode {
+    /// Quality::pad as a fraction of the frame (historical default, still used by KindQuality).
+    FractionOfFrame,
+    /// Quality::margin_px fixed pixels on each side (v3 default: 8).
+    FixedPixels,
 };
 
 // Everything that decides how quality is redistributed. One of these serves
@@ -156,6 +169,19 @@ struct Quality {
     /// the importance path had nowhere to attach: pad used to travel only on per-kind rows,
     /// and those rows are exactly what turn the model off.
     double pad = 0.02;
+
+    /// v3 §11.3. FixedPixels uses margin_px; FractionOfFrame keeps the historical pad.
+    MarginMode margin_mode = MarginMode::FixedPixels;
+    int32_t margin_px = 8;
+
+    /// v3 §11.2. After margin, a box shorter than this on either side is expanded
+    /// symmetrically so the codec still sees it.
+    int32_t min_roi_side = 64;
+
+    /// When true (default), QP deltas come from the v3 ObjectPriority ladder. When false,
+    /// the v2.0 continuous importance→QP line is used -- kept for measurements against
+    /// the older specification.
+    bool use_v3_priority_ladder = true;
 
     // Mask input only: the strength a mask value of 255 asks for, and how many
     // steps the 0..255 range is quantized into. Fewer steps means fewer

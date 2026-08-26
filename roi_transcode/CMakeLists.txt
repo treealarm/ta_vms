@@ -45,6 +45,8 @@ add_library(smartvideo_adaptive STATIC
     src/adaptive/qp_mapper.cpp
     src/adaptive/temporal_roi.cpp
     src/adaptive/bitrate_budget.cpp
+    src/adaptive/qp_slew.cpp
+    src/adaptive/roi_lag.cpp
 )
 target_include_directories(smartvideo_adaptive
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -121,6 +123,11 @@ if(SVE_BUILD_TESTS)
     target_link_libraries(bitrate_budget_test PRIVATE smartvideo_adaptive)
     target_compile_options(bitrate_budget_test PRIVATE ${SVE_WARNINGS})
     add_test(NAME bitrate_budget COMMAND bitrate_budget_test)
+
+    add_executable(v3_policy_test tests/unit/v3_policy_test.cpp)
+    target_link_libraries(v3_policy_test PRIVATE smartvideo_adaptive)
+    target_compile_options(v3_policy_test PRIVATE ${SVE_WARNINGS})
+    add_test(NAME v3_policy COMMAND v3_policy_test)
 
     add_executable(geometry_test tests/unit/geometry_test.cpp)
     target_link_libraries(geometry_test PRIVATE smartvideo_adaptive)

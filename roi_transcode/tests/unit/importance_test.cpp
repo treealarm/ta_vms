@@ -164,7 +164,8 @@ void a_plate_inside_a_vehicle_keeps_the_plate_s_quality()
     }
 
     // Ordered by importance, so the encoder's own first-wins rule is §12's rule.
-    check(rects[0].qp_delta == -10, "the plate comes first, at -10");
+    // v3 ladder: plate → Critical (−8), vehicle → Normal (−4).
+    check(rects[0].qp_delta == -8, "the plate comes first, at -8");
     check(rects[1].qp_delta == -4, "the vehicle follows, at -4");
 
     // And the plate's rectangle really is inside the vehicle's, which is what makes this
@@ -252,7 +253,8 @@ void the_budget_protects_the_face_and_lets_the_body_go()
     }
 
     // Importance order puts the face first, so it is the one that gets paid for.
-    check(rects[0].qp_delta == -9, "the face keeps its own delta");
+    // v3 ladder: face → Critical (−8), person would be High (−6) but the budget zeros it.
+    check(rects[0].qp_delta == -8, "the face keeps its own delta");
     check(rects[1].qp_delta == 0,
         "the person is neutral -- not sharpened, and not degraded either");
     check(rects[2].qp_delta == -4, "the halo present is the face's");
@@ -278,8 +280,8 @@ void a_budget_of_zero_changes_nothing()
 
     quality.max_protected_fraction = 0.0f;
     const auto unbudgeted = builder.build(1000, 1000, dets, quality);
-    check(unbudgeted.size() == 3 && unbudgeted[0].qp_delta == -7,
-        "an unbudgeted person keeps its delta and its halo");
+    check(unbudgeted.size() == 3 && unbudgeted[0].qp_delta == -6,
+        "an unbudgeted person keeps its ladder delta and its halo");
 
     quality.max_protected_fraction = 0.25f;
     const auto budgeted = builder.build(1000, 1000, dets, quality);

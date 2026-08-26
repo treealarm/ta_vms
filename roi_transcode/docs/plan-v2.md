@@ -76,6 +76,23 @@ v2.0 позволял считать §15 неначатым, и наш аргу
 §12 в v3 требует «max importance wins» и «minimum QP wins» — ровно то, что у нас падает из
 сортировки по важности, без единой проверки на пересечение. Здесь ничего менять не надо.
 
+### Пометки library track (2026-08-26, Cursor) — baton у Данила, разделы не переписывались
+
+Код библиотеки (ветка работы Cursor) закрыл срезы A–E без захвата baton:
+
+1. **Importance → ObjectPriority:** публичный контракт = лестница
+   (`include/smartvideo/object_priority.h`); continuous importance остаётся способом
+   выбрать ступень. `Quality::use_v3_priority_ladder` (default true).
+2. **§13 дефолты:** наши нулевые (smoothing/prediction off; `max_qp_delta_per_frame=0`).
+   С PDF расходимся явно; open по-прежнему отказывает на smoothing/prediction.
+   `max_qp_delta_per_frame` **реализован** (QpSlewLimiter), но не включён по умолчанию.
+3. **Геометрия §11.2–11.3:** `min_roi_side=64`, `margin_mode=FixedPixels`, `margin_px=8`.
+4. **§14 ROI lag:** хелперы IoU / lag / P95–P99 в `src/adaptive/roi_lag.*`.
+5. **§15–16 matched bitrate:** процедура в `docs/matched-bitrate.md`; native VBR/VBV
+   ещё нет — outer `BitrateBudget` мост.
+
+Детали и статус: [`plan-v3-library.md`](plan-v3-library.md).
+
 ---
 
 ## Как читать этот план

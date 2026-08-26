@@ -48,6 +48,10 @@ int main()
 
     Quality quality;
     quality.hold_sec = 0.25;
+    // Keep the historical pad-as-halo semantics for this fixture; v3 FixedPixels+min
+    // side would shift the AABB and is covered by v3_policy_test.
+    quality.margin_mode = MarginMode::FractionOfFrame;
+    quality.min_roi_side = 0;
     quality.kinds["plate"] = KindQuality{-10, 0.02};
     const std::vector<Box> boxes{Box{
         .t_sec = 1.25,
@@ -88,6 +92,8 @@ int main()
     Quality poly_q;
     poly_q.background_qp_delta = 6;
     poly_q.pad = 0;
+    poly_q.margin_mode = MarginMode::FractionOfFrame;
+    poly_q.min_roi_side = 0;
     poly_q.max_protected_fraction = 0; // no area budget for this check
     poly_q.kinds["vehicle"] = KindQuality{-8, 0.0};
     Box tri;

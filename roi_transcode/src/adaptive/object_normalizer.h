@@ -2,6 +2,7 @@
 
 #include "importance.h"
 #include "smartvideo/object.h"
+#include "smartvideo/object_priority.h"
 #include "smartvideo/types.h"
 
 #include <vector>
@@ -22,10 +23,11 @@ struct Detection {
     int32_t pad_x = 0;
     int32_t pad_y = 0;
 
-    /// What §11 said this is worth, kept so regions can be ordered by it. Only meaningful
-    /// for detections the model weighed; one whose kind was configured explicitly carries
-    /// the importance its qp_delta implies, so the ordering stays consistent either way.
+    /// Continuous importance (v2 arithmetic), kept so regions can be ordered finely.
     float importance = 0.0f;
+    /// v3 ladder step derived from importance (or from a configured delta).
+    ObjectPriority priority = ObjectPriority::Normal;
+    uint64_t track_id = 0;
 
     /// Normalized outline, when the box carried one. Empty means the axis-aligned rectangle
     /// above is the whole of the geometry.

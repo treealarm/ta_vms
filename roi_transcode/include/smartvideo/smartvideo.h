@@ -37,6 +37,7 @@
 #include "smartvideo/geometry.h"
 #include "smartvideo/memory.h"
 #include "smartvideo/object.h"
+#include "smartvideo/object_priority.h"
 #include "smartvideo/packet_handler.h"
 #include "smartvideo/report.h"
 #include "smartvideo/session.h"

@@ -1,6 +1,8 @@
 #include "object_normalizer.h"
 
+#include "importance.h"
 #include "smartvideo/geometry.h"
+#include "smartvideo/object_priority.h"
 
 #include <algorithm>
 #include <cmath>
@@ -30,10 +32,59 @@ bool rect_valid(const Rect& r)
     return r.right > r.left && r.bottom > r.top;
 }
 
+/// Halo size in pixels for one axis.
+int32_t halo_px(const Quality& quality, int32_t frame_extent, double kind_pad)
+{
+    if (kind_pad > 0.0) {
+        return static_cast<int32_t>(std::lround(kind_pad * frame_extent));
+    }
+    if (quality.margin_mode == MarginMode::FixedPixels) {
+        return std::max(quality.margin_px, 0);
+    }
+    return static_cast<int32_t>(std::lround(quality.pad * frame_extent));
+}
+
+/// Expand by fixed-pixel margin when that mode is on, then to at least min_roi_side (§11.2–11.3).
+/// FractionOfFrame keeps the historical behaviour: the AABB is the body, pad is only the halo.
+/// KindQuality.pad / Quality.pad still feed Detection::pad_* for the soft rim — they never
+/// double as the body margin, so an explicit pad_norm does not inflate the box twice.
+void apply_geometry_policy(Detection& d, int32_t width, int32_t height, const Quality& quality)
+{
+    if (quality.margin_mode == MarginMode::FixedPixels) {
+        const int32_t m = std::max(quality.margin_px, 0);
+        d.x1 -= m;
+        d.x2 += m;
+        d.y1 -= m;
+        d.y2 += m;
+    }
+
+    const int32_t min_side = std::max(quality.min_roi_side, 0);
+    if (min_side > 0) {
+        int32_t w = d.x2 - d.x1;
+        int32_t h = d.y2 - d.y1;
+        if (w < min_side && w > 0) {
+            const int32_t grow = min_side - w;
+            d.x1 -= grow / 2;
+            d.x2 += grow - grow / 2;
+        }
+        if (h < min_side && h > 0) {
+            const int32_t grow = min_side - h;
+            d.y1 -= grow / 2;
+            d.y2 += grow - grow / 2;
+        }
+    }
+
+    d.x1 = clamp_i(d.x1, 0, width);
+    d.x2 = clamp_i(d.x2, 0, width);
+    d.y1 = clamp_i(d.y1, 0, height);
+    d.y2 = clamp_i(d.y2, 0, height);
+}
+
 Detection to_detection(
     const Box& b, const Quality& quality, int width, int height)
 {
     Detection d;
+    d.track_id = b.track_id;
     // Prefer the polygon's own extent when one is present: a caller that fills only the
     // outline should still get a coherent AABB for the area budget and for overlays.
     if (b.polygon.size() >= 3) {
@@ -58,19 +109,28 @@ Detection to_detection(
     if (configured != quality.kinds.end()) {
         const KindQuality& k = configured->second;
         d.qp_delta = k.qp_delta;
-        d.pad_x = static_cast<int>(std::lround(k.pad * width));
-        d.pad_y = static_cast<int>(std::lround(k.pad * height));
+        d.pad_x = halo_px(quality, width, k.pad);
+        d.pad_y = halo_px(quality, height, k.pad);
         d.importance = importance_from_qp(k.qp_delta, quality.importance);
+        d.priority = priority_from_importance(d.importance);
     } else {
-        // Nothing configured for this kind, which in ta_vms is every kind: the archive pass
-        // sends no per-kind entries at all. §11 decides.
+        // Nothing configured for this kind. Continuous importance picks a v3 ladder step;
+        // the ladder supplies the QP delta (unless the caller opted back into the v2 line).
         const Object object = object_from_box(b, quality.importance);
         d.importance = importance_of(object, quality.importance, b.track);
-        d.qp_delta = qp_from_importance(d.importance, quality.importance);
-        d.pad_x = static_cast<int>(std::lround(quality.pad * width));
-        d.pad_y = static_cast<int>(std::lround(quality.pad * height));
+        d.priority = priority_from_importance(d.importance);
+        if (b.has_desired_qp_delta) {
+            d.qp_delta = b.desired_qp_delta;
+        } else if (quality.use_v3_priority_ladder) {
+            d.qp_delta = qp_delta_for(d.priority);
+        } else {
+            d.qp_delta = qp_from_importance(d.importance, quality.importance);
+        }
+        d.pad_x = halo_px(quality, width, 0.0);
+        d.pad_y = halo_px(quality, height, 0.0);
     }
-    // Half the region's own delta, which is what softens the step at its edge.
+
+    apply_geometry_policy(d, width, height, quality);
     d.pad_qp_delta = d.qp_delta / 2;
     return d;
 }

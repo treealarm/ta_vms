@@ -6,6 +6,7 @@
 #include "importance_map.h"
 #include "object_normalizer.h"
 #include "packet_sink.h"
+#include "qp_slew.h"
 #include "roi_encoder.h"
 
 #include <algorithm>
@@ -71,6 +72,7 @@ struct Session::Impl : PacketSink {
     PacketHandler* handler = nullptr;
     RoiEncoder encoder;
     BitrateBudget bitrate;
+    QpSlewLimiter qp_slew;
     FrameDecoder decoder;
     RoiMapBuilder builder;
     roiav::Frame wrapper;
@@ -209,6 +211,7 @@ struct Session::Impl : PacketSink {
         auto dets =
             builder.detections_from(box_list, params.settings.quality, w, h);
         bitrate.soften_detections(dets);
+        qp_slew.apply(dets, params.settings.temporal.max_qp_delta_per_frame);
         const Quality quality = bitrate.apply(params.settings.quality);
         auto rects =
             builder.build(w, h, dets, quality);
