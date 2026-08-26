@@ -129,7 +129,7 @@ v2.0 позволял считать §15 неначатым, и наш аргу
 | Polygon (§2) | есть: растеризация → qp-map; `Box.polygon` на wire | источник полигонов у детектора пока редкий |
 | Temporal ROI: `max_missing_frames`, decay, smoothing, prediction (§13) | `max_missing_frames` + decay + интерполяция; smoothing/prediction отвергаются | по необходимости для живого потока |
 | QualityPolicy: OBJECT_FIRST / BALANCED / BITRATE_FIRST (§14) | только OBJECT_FIRST | BALANCED/BITRATE_FIRST после настоящего VBR |
-| Object-first rate control с бюджетом битрейта (§15) | outer loop (`BitrateBudget`) + area-budget | VBV; peak/recovery; VBR внутри бэкенда |
+| Object-first rate control с бюджетом битрейта (§15) | outer loop: avg + peak + recovery debt; area-budget | VBV; native VBR; BALANCED/BITRATE_FIRST |
 
 **Про rate control.** Независимость QP-офсетов по блокам держится на CQP/CRF внутри
 бэкенда. Целевой битрейт (§15) обслуживается *внешним* циклом `BitrateBudget`: средний
@@ -465,6 +465,10 @@ CV, если понадобится, можно поднять настройк�
     (машины+halo кроют кадр), а драйвер VA-API всё равно режет до 8 ROI. Починено:
     `max_roi_regions=8` у VA-API и `truncate_roi_rects` всегда оставляет background.
     `--target-bitrate` проведён через `roi-clip` / video_a.
+
+    **Peak + recovery (library):** `max_peak_overshoot` (окно ~1 с) и `recovery_window_ms`
+    (долг бит, блокирует step-down) реализованы в `BitrateBudget`; отказ на open снят.
+    VBV / native VBR бэкенда и `BALANCED`/`BITRATE_FIRST` — ещё нет.
 12. ~~`StreamSettings` получает целевой битрейт~~ — `RateControl` на wire (и на
     `FileSettings` для офлайн-калибровки). VBV / полный object-first VBR внутри
     бэкенда — следующий срез этапа.

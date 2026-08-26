@@ -90,21 +90,24 @@ struct TemporalROIConfig {
 ///
 /// The encoder itself still runs at a constant quantizer (CQP/CRF): that is what keeps
 /// per-region QP deltas honest. A target bitrate is handled by an *outer* loop
-/// (`BitrateBudget`) that watches average output bits and, when the stream runs hot,
-/// raises the background QP first and only then softens low-importance ROI. Faces and
-/// plates (importance ≥ `critical_importance`) are not softened.
+/// (`BitrateBudget`) that watches average and peak output bits and, when the stream runs
+/// hot, raises the background QP first and only then softens low-importance ROI. Faces and
+/// plates (importance ≥ `critical_importance`) are not softened. A recovery debt keeps the
+/// extras up until an overshoot has been paid back inside `recovery_window_ms`.
 ///
-/// Peak overshoot and the recovery window are still declared only -- asking for them is
-/// refused at open. Area budget (`Quality::max_protected_fraction`) remains the CQP-side
-/// answer to "critical objects first" and works together with this loop, not instead of it.
+/// This is still not encoder-side VBR or a VBV buffer inside the backend. Area budget
+/// (`Quality::max_protected_fraction`) remains the CQP-side answer to "critical objects
+/// first" and works together with this loop, not instead of it.
 struct RateControlPolicy {
     /// Target average bitrate in bits per second. Zero leaves CQP/CRF alone.
     uint64_t target_bitrate = 0;
     /// Allowed overshoot of the average, as a fraction: 0.1 is ten percent. Zero means
     /// "use the built-in default" (also 0.1) once a target is set -- not "zero tolerance".
     float max_average_overshoot = 0.0f;
+    /// Allowed overshoot of the ~1 s peak rate. Zero → default 0.2 (120% of target, as in
+    /// the v3 acceptance note).
     float max_peak_overshoot = 0.0f;
-    /// How long the controller has to give back an overshoot.
+    /// How long the controller has to give back an overshoot, in milliseconds. Zero → 1000.
     uint32_t recovery_window_ms = 0;
     /// Importance at or above this is never softened by the outer loop. Default covers
     /// faces (0.95) and plates (1.00) from §11's table.
@@ -116,12 +119,8 @@ struct RateControlPolicy {
             || max_peak_overshoot != 0.0f || recovery_window_ms != 0;
     }
 
-    /// Peak overshoot and recovery are not implemented yet. A caller who sets them and
-    /// gets only the average loop has been misled -- refuse at open, same rule as §13.
-    bool unimplemented_requested() const
-    {
-        return max_peak_overshoot != 0.0f || recovery_window_ms != 0;
-    }
+    /// All declared §15 fields are handled by BitrateBudget. Nothing left to refuse.
+    bool unimplemented_requested() const { return false; }
 };
 
 } // namespace smartvideo

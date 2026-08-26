@@ -26,7 +26,6 @@ void check_eq(int32_t got, int32_t want, const std::string& what)
     }
 }
 
-// Inactive until a target is set.
 void inactive_without_a_target()
 {
     const smartvideo::BitrateBudget b;
@@ -35,25 +34,20 @@ void inactive_without_a_target()
     check_eq(b.roi_soften(), 0, "no ROI soften");
 }
 
-// Overshoot raises background first; ROI softens only after background is maxed.
 void overshoot_crushes_background_before_roi()
 {
     smartvideo::RateControlPolicy policy;
-    policy.target_bitrate = 1'000'000; // 1 Mbps
+    policy.target_bitrate = 1'000'000;
     policy.max_average_overshoot = 0.1f;
     smartvideo::BitrateBudget b(policy);
     check(b.active(), "a target activates the budget");
 
-    // 2 Mbps average: well above the 1.1 Mbps ceiling. Feed 0.25 s steps so each
-    // observe can take one controller step after the 0.5 s warm-up.
     for (int32_t i = 0; i < 4; ++i) {
-        // 2e6 bits/s * 0.25 s = 500000 bits = 62500 bytes
-        b.observe(62500, 0.25);
+        b.observe(62500, 0.25); // 2 Mbps
     }
     check(b.background_extra() > 0, "overshoot raises background QP");
     check_eq(b.roi_soften(), 0, "ROI still untouched while background can climb");
 
-    // Drive background to the cap, then further overshoot should soften ROI.
     for (int32_t i = 0; i < 80; ++i) {
         b.observe(62500, 0.25);
     }
@@ -61,26 +55,56 @@ void overshoot_crushes_background_before_roi()
     check(b.roi_soften() > 0, "ROI softens only after background is maxed");
 }
 
-// Undershoot walks the extras back down, ROI first.
-void undershoot_releases_roi_before_background()
+void undershoot_releases_only_after_debt_is_paid()
 {
     smartvideo::RateControlPolicy policy;
     policy.target_bitrate = 1'000'000;
+    policy.recovery_window_ms = 1000;
     smartvideo::BitrateBudget b(policy);
     for (int32_t i = 0; i < 100; ++i) {
         b.observe(62500, 0.25); // hot
     }
     check(b.roi_soften() > 0 && b.background_extra() > 0, "precondition: both extras up");
+    check(b.debt_bits() > 0.0, "hot run leaves a recovery debt");
 
     const int32_t soft_before = b.roi_soften();
-    // 0.5 Mbps -- under the 0.9 Mbps floor.
-    for (int32_t i = 0; i < 8; ++i) {
+    const int32_t bg_before = b.background_extra();
+    // A short undershoot cannot clear a large debt -- extras must not fall yet.
+    for (int32_t i = 0; i < 4; ++i) {
+        b.observe(15625, 0.25); // 0.5 Mbps
+    }
+    check(b.roi_soften() >= soft_before && b.background_extra() >= bg_before,
+        "debt blocks release while still owing");
+
+    // Long cold stretch pays the debt, then the ladder walks back down.
+    for (int32_t i = 0; i < 200; ++i) {
         b.observe(15625, 0.25);
     }
-    check(b.roi_soften() < soft_before, "undershoot releases ROI soften first");
+    check(b.debt_bits() < 1.0, "debt is eventually cleared");
+    check(b.roi_soften() < soft_before || b.background_extra() < bg_before,
+        "extras fall once the debt is gone");
 }
 
-// apply() only moves the background; soften leaves critical detections alone.
+void peak_overshoot_climbs_inside_a_wide_average_deadband()
+{
+    smartvideo::RateControlPolicy policy;
+    policy.target_bitrate = 1'000'000;
+    policy.max_average_overshoot = 0.5f; // ±50%: a brief burst stays inside the avg band
+    policy.max_peak_overshoot = 0.2f;    // 1.2 Mbps peak ceiling
+    smartvideo::BitrateBudget b(policy);
+
+    for (int32_t i = 0; i < 12; ++i) {
+        b.observe(31250, 0.25); // 1 Mbps -- on target
+    }
+    check_eq(b.background_extra(), 0, "on-target leaves the ladder alone");
+
+    // 3 Mbps for one second: average over 2 s is ~2 Mbps (inside ±50%), peak is 3 Mbps.
+    for (int32_t i = 0; i < 10; ++i) {
+        b.observe(37500, 0.1);
+    }
+    check(b.background_extra() > 0, "peak overshoot climbs even when average is in band");
+}
+
 void apply_and_soften_respect_critical_objects()
 {
     smartvideo::RateControlPolicy policy;
@@ -100,10 +124,10 @@ void apply_and_soften_respect_critical_objects()
     check(q.background_qp_delta == 6, "apply does not mutate the original");
 
     std::vector<smartvideo::Detection> dets(2);
-    dets[0].importance = 1.00f; // plate
+    dets[0].importance = 1.00f;
     dets[0].qp_delta = -12;
     dets[0].pad_qp_delta = -6;
-    dets[1].importance = 0.60f; // vehicle
+    dets[1].importance = 0.60f;
     dets[1].qp_delta = -6;
     dets[1].pad_qp_delta = -3;
     b.soften_detections(dets);
@@ -118,7 +142,8 @@ int main()
 {
     inactive_without_a_target();
     overshoot_crushes_background_before_roi();
-    undershoot_releases_roi_before_background();
+    undershoot_releases_only_after_debt_is_paid();
+    peak_overshoot_climbs_inside_a_wide_average_deadband();
     apply_and_soften_respect_critical_objects();
 
     if (failures > 0) {

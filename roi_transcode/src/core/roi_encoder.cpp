@@ -128,9 +128,7 @@ void RoiEncoder::open_deferred(const EncoderConfig& config)
              "implemented; max_missing_frames and confidence_decay are");
     }
     if (config.rate_control.unimplemented_requested()) {
-        fail("peak overshoot and recovery window (TZ v2.0 section 15) are declared but "
-             "not implemented; target_bitrate and max_average_overshoot drive the outer "
-             "bitrate loop");
+        fail("RateControlPolicy asked for something BitrateBudget does not implement");
     }
 
     std::string errors;
