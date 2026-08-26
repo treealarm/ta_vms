@@ -16,18 +16,17 @@ average bitrate, then compares ROI quality. Our encoder still runs CQP/CRF;
 ## How to measure
 
 ```bash
-# From roi_transcode/ after building tools:
+# From roi_transcode/ after building roi-transcode:
 ./integration/scripts/matched-bitrate.sh \
   /path/to/video6.mp4 \
   /path/to/boxes.json \
-  /tmp/matched-out \
-  500000
+  /tmp/matched-out
+# optional 4th arg: target_bps; omit to auto-pick 70% of unconstrained CRF28
 ```
 
-The script encodes baseline (no ROI / flat quality) and adaptive (ROI on), both
-with the same target average when given, then prints size and estimated bitrate
-and the relative difference. Exit 0 if `|adaptive - baseline| / baseline ≤ 2%`
-when both targets were applied; otherwise non-zero with the numbers printed.
+Uses `roi-transcode` (not `roi-clip`): converts analytics `frames[]` sidecars to
+`samples[]` when needed, enables `--target-bitrate` on both baseline (empty ROI)
+and adaptive. Exit 0 if `|adaptive - baseline| / baseline ≤ 2%`.
 
 If the product CRF already sits under the target, the outer loop is a no-op —
 match is then accidental, not proof of VBR. Prefer a target **below** the
