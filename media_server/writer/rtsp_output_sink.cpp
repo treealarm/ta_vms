@@ -46,6 +46,22 @@ rtsp_output_sink::~rtsp_output_sink()
   close_unlocked();
 }
 
+bool rtsp_output_sink::try_init(const std::vector<stream_config>& streams)
+{
+  const auto now = std::chrono::steady_clock::now();
+  if (now < m_next_init_attempt)
+    return false;
+
+  if (init(streams))
+  {
+    m_next_init_attempt = {};
+    return true;
+  }
+
+  m_next_init_attempt = now + k_reinit_backoff;
+  return false;
+}
+
 bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
 {
   const auto video_config = m_video_config;
@@ -128,6 +144,12 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
   av_dict_set(&opts, "timeout", "5000000", 0);
   av_dict_set(&opts, "rw_timeout", "5000000", 0);
   av_dict_set(&opts, "max_interleave_delta", "1000000", 0);//10000000 (10 seconds) 1000000 (1 seconds)
+  // RTP payload size. libavformat defaults to 1472, which puts 1460 bytes on the wire and is over
+  // the 1440 MediaMTX accepts -- it then re-fragments every single packet ("RTP packets are too
+  // big (1460 > 1440), remuxing them into smaller ones") and the WebRTC leg carries roughly twice
+  // the packets it needs to. 1200 is the size WebRTC stacks assume anyway, so nothing downstream
+  // has to touch a packet again.
+  av_dict_set(&opts, "pkt_size", "1200", 0);
 
   if (avformat_write_header(m_ctx.get(), &opts) < 0) {
     logger::instance().error("failed to write rtsp header");
@@ -234,7 +256,7 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
 
   if (!m_is_initialized) {
     const auto streams = collect_known_streams();
-    if (streams.empty() || !init(streams)) {
+    if (streams.empty() || !try_init(streams)) {
       return;
     }
   }
@@ -242,7 +264,7 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
     auto* existing_stream = find_stream(media->media_type);
     if (!existing_stream || config_changed) {
       const auto streams = collect_known_streams();
-      if (streams.empty() || !init(streams)) {
+      if (streams.empty() || !try_init(streams)) {
         return;
       }
     }

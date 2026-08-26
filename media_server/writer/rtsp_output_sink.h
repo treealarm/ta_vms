@@ -45,6 +45,18 @@ private:
   avformat_context_ptr m_ctx = nullptr;
   std::vector<stream_state> m_streams;
   bool m_is_initialized = false;
+
+  /// Not before this. A failed publish used to be retried on the very next packet, which at 30 fps
+  /// is thirty connection attempts a second — wasteful against a peer that is simply not up yet,
+  /// and worse than wasteful when it is on another host, where each attempt blocks this sink's
+  /// thread for a connect timeout. Three seconds is short enough that nobody waits for the stream
+  /// and long enough that a peer coming up is met on its first or second try.
+  static constexpr std::chrono::seconds k_reinit_backoff{ 3 };
+  std::chrono::steady_clock::time_point m_next_init_attempt{};
+
+  /// init() behind that backoff. Returns false while the wait is still on, so the caller treats it
+  /// exactly as it treats a failed init: drop this packet and carry on.
+  bool try_init(const std::vector<stream_config>& streams);
   bool m_wait_keyframe = true;
   int m_consecutive_write_errors = 0;
   stream_config m_video_config;
