@@ -214,8 +214,9 @@ struct Session::Impl : PacketSink {
             builder.build(w, h, dets, quality);
         const int budget = region_budget();
         if (budget > 0 && static_cast<int>(rects.size()) > budget) {
-            report.regions_dropped += static_cast<int>(rects.size()) - budget;
-            rects.resize(static_cast<size_t>(budget));
+            int32_t lost = 0;
+            truncate_roi_rects(rects, budget, w, h, &lost);
+            report.regions_dropped += lost;
         }
         return rects;
     }

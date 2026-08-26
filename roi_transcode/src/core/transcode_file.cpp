@@ -8,6 +8,7 @@
 #include "temporal_roi.h"
 #include "object_normalizer.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <vector>
 
@@ -163,9 +164,18 @@ Report transcode_file(const std::string& input_path,
         const Quality quality = bitrate.apply(settings.quality);
         auto rects = roi_builder.build(ep.width, ep.height, dets, quality);
         const int32_t cap = settings.quality.max_regions;
-        if (cap > 0 && static_cast<int32_t>(rects.size()) > cap) {
-            dropped += static_cast<int32_t>(rects.size()) - cap;
-            rects.resize(static_cast<size_t>(cap));
+        // Also respect the backend's own limit (VA-API: 8). Without this the library keeps
+        // 32 and libavcodec drops the rest by a rule that ignores importance -- and the
+        // background rectangle, being last, is the first to go.
+        const int32_t backend_cap = static_cast<int32_t>(enc.capabilities().max_roi_regions);
+        int32_t budget = cap;
+        if (backend_cap > 0) {
+            budget = budget > 0 ? std::min(budget, backend_cap) : backend_cap;
+        }
+        if (budget > 0 && static_cast<int32_t>(rects.size()) > budget) {
+            int32_t lost = 0;
+            truncate_roi_rects(rects, budget, ep.width, ep.height, &lost);
+            dropped += lost;
         }
 
         if (!logged_roi) {

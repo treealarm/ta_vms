@@ -60,4 +60,11 @@ public:
         const Quality& quality, int width, int height) const;
 };
 
+/// Cap `rects` to `budget`, always keeping a trailing full-frame background rect when one
+/// is present. RoiMapBuilder puts the background last; a naive resize then drops it first,
+/// and on VA-API the driver drops whatever is past eight by a second rule that ignores
+/// importance -- so the background penalty §15 spends from never reaches the encoder.
+void truncate_roi_rects(std::vector<Rect>& rects, int32_t budget, int32_t width, int32_t height,
+    int32_t* dropped = nullptr);
+
 } // namespace smartvideo

@@ -33,6 +33,8 @@ SCALARS = {
     "min_confidence": "--min-confidence",
     "qp_at_zero": "--qp-at-zero",
     "qp_at_one": "--qp-at-one",
+    "target_bitrate": "--target-bitrate",
+    "bitrate_overshoot": "--bitrate-overshoot",
 }
 FLAGS = {"keep": "--keep"}
 KNOWN = set(SCALARS) | set(FLAGS) | {"input", "classes", "qp"}

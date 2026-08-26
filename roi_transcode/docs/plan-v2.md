@@ -458,6 +458,13 @@ CV, если понадобится, можно поднять настройк�
     `critical_importance` (лица/номера не трогает). Peak overshoot / recovery window
     по-прежнему отвергаются на open. `QualityPolicy` кроме OBJECT_FIRST — тоже.
     Area-budget (`max_protected_fraction`) остаётся CQP-ответом на «critical first».
+
+    **Стенд video6 (2026-08-26):** продуктовый CRF36 уже ~450 kbps (5% исходника) —
+    потолок 500 kbps no-op. На CRF28 цикл двигает битрейт (VAAPI ~1346→1244 kbps), но
+    до агрессивных целей не дотягивает: при полном бюджете регионов фон почти не виден
+    (машины+halo кроют кадр), а драйвер VA-API всё равно режет до 8 ROI. Починено:
+    `max_roi_regions=8` у VA-API и `truncate_roi_rects` всегда оставляет background.
+    `--target-bitrate` проведён через `roi-clip` / video_a.
 12. ~~`StreamSettings` получает целевой битрейт~~ — `RateControl` на wire (и на
     `FileSettings` для офлайн-калибровки). VBV / полный object-first VBR внутри
     бэкенда — следующий срез этапа.

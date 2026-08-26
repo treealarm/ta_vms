@@ -108,8 +108,8 @@ void apply_and_soften_respect_critical_objects()
     dets[1].pad_qp_delta = -3;
     b.soften_detections(dets);
     check_eq(dets[0].qp_delta, -12, "a critical plate is not softened");
-    check(dets[1].qp_delta > -6 && dets[1].qp_delta <= 0,
-        "a non-critical vehicle is softened toward zero");
+    check(dets[1].qp_delta > -6,
+        "a non-critical vehicle is softened (may go positive under pressure)");
 }
 
 } // namespace

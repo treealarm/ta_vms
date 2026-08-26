@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <optional>
 #include <vector>
 
 namespace smartvideo {
@@ -400,6 +401,34 @@ std::vector<Detection> RoiMapBuilder::detections_from(
         out.push_back(to_detection(b, quality, width, height));
     }
     return out;
+}
+
+void truncate_roi_rects(std::vector<Rect>& rects, int32_t budget, int32_t width, int32_t height,
+    int32_t* dropped)
+{
+    if (budget <= 0 || static_cast<int32_t>(rects.size()) <= budget) {
+        return;
+    }
+
+    std::optional<Rect> background;
+    if (!rects.empty()) {
+        const Rect& last = rects.back();
+        if (last.left == 0 && last.top == 0 && last.right == width && last.bottom == height) {
+            background = last;
+            rects.pop_back();
+        }
+    }
+
+    const int32_t object_slots = background ? std::max(budget - 1, 0) : budget;
+    if (static_cast<int32_t>(rects.size()) > object_slots) {
+        if (dropped) {
+            *dropped += static_cast<int32_t>(rects.size()) - object_slots;
+        }
+        rects.resize(static_cast<size_t>(object_slots));
+    }
+    if (background) {
+        rects.push_back(*background);
+    }
 }
 
 } // namespace smartvideo

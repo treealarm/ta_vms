@@ -52,6 +52,8 @@ the detected objects drawn over it.
       --qp KIND=DELTA  per-kind override; omit to let §11 importance decide
       --qp-at-zero N   importance→QP at I=0 (3 = product; library default 5)
       --qp-at-one N    importance→QP at I=1 (-12 = product; library default -10)
+      --target-bitrate N  §15 average ceiling, bits/sec (0 = off; e.g. 500000)
+      --bitrate-overshoot F  allowed average overshoot fraction (default 0.1)
       --pad F          halo around a box, fraction of the frame        (0.02)
       --max-regions N  cap on regions handed to the encoder
       --regions FORM   boxes | mask                 (boxes)
@@ -121,6 +123,7 @@ parse_args() {
                            shift 2 ;;
             --qp-at-zero)  QP_AT_ZERO="$2"; shift 2 ;;
             --qp-at-one)   QP_AT_ONE="$2"; shift 2 ;;
+            --target-bitrate|--bitrate-overshoot|\
             --codec|--crf|--gop|--preset|--max-regions|--regions|--mask-scale|--background-qp|\
             --pad|--detect-fps|--classes|--min-confidence)
                            OPT["$1"]="$2"; shift 2 ;;

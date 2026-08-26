@@ -104,8 +104,10 @@ void BitrateBudget::soften_detections(std::vector<Detection>& detections) const
         if (d.qp_delta >= 0) {
             continue;
         }
-        // Move toward zero; never past it into a background penalty.
-        d.qp_delta = std::min(0, d.qp_delta + m_roi_soften);
+        // Move toward / into a background-like penalty. Stopping at zero left non-critical
+        // regions "neutral" while the stream was still over budget; letting them go positive
+        // is what actually gives bits back under CQP.
+        d.qp_delta = std::min(m_background_extra, d.qp_delta + m_roi_soften);
         d.pad_qp_delta = d.qp_delta / 2;
     }
 }
