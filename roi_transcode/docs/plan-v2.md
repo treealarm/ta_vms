@@ -124,10 +124,10 @@ v2.0 позволял считать §15 неначатым, и наш аргу
 
 | Требование | Сейчас | Что делать |
 |---|---|---|
-| `Object{track_id, class_id, confidence, semantic_priority, task_priority, critical}` (§10) | только `kind` + геометрия | расширить публичный тип; **данные уже есть** в архиве ta_vms — `MetadataBox` несёт `track_id` и `confidence` |
-| Importance = произведение 5 факторов, I(x,y) ∈ [0,1] (§11) | нет | ввести слой importance между объектами и qp-map; сегодняшняя таблица становится частным случаем `semantic_priority` |
-| Polygon (§2) | нет | растеризация в ту же qp-map, что и маска |
-| Temporal ROI: `max_missing_frames`, decay, smoothing, prediction (§13) | только `hold_sec` — фиксированное окно вокруг сэмпла | по `track_id`; **важно:** для архива интерполяция не-каузальная (будущее трека известно), для живого потока — предсказание |
+| `Object{track_id, class_id, confidence, semantic_priority, task_priority, critical}` (§10) | есть (`object.h` / `Box` на wire) | `critical` / полный `Object` на wire — по необходимости; данные уже доходят |
+| Importance = произведение 5 факторов, I(x,y) ∈ [0,1] (§11) | есть; TemporalStability и MotionWeight = 1.0 | довести два оставшихся фактора; `RoiQuality.importance` на wire |
+| Polygon (§2) | нет (только AABB) | растеризация в ту же qp-map, что и маска |
+| Temporal ROI: `max_missing_frames`, decay, smoothing, prediction (§13) | `max_missing_frames` + decay + интерполяция; smoothing/prediction отвергаются | по необходимости для живого потока |
 | QualityPolicy: OBJECT_FIRST / BALANCED / BITRATE_FIRST (§14) | нет | `Settings`; дефолт по ТЗ — OBJECT_FIRST |
 | Object-first rate control с бюджетом битрейта (§15) | нет, только CQP/CRF | **самая крупная работа блока**, см. ниже |
 
@@ -344,10 +344,17 @@ ABI libva между vcpkg и Ubuntu — ровно этот класс расх
 
 ### Этап 2. Модель объекта и важности
 
-5. Расширить `Object` до §10; протащить `track_id` и `confidence` из архива ta_vms —
-   **они там уже есть и сегодня выбрасываются** в `BoxesForAsync`.
-6. Слой importance (§11), сегодняшние per-kind дельты — частный случай.
-7. Polygon → та же qp-map.
+5. ~~Расширить `Object` до §10; протащить `track_id` и `confidence` из архива ta_vms.~~
+   **Сделано.** `Object` в `include/smartvideo/object.h`; `Box` на wire несёт оба поля;
+   `BoxesForAsync` больше не выбрасывает их; video_a offline path шлёт оба.
+6. ~~Слой importance (§11), сегодняшние per-kind дельты — частный случай.~~ **Сделано**
+   в `src/adaptive/importance.cpp`. Два из пяти факторов (TemporalStability, MotionWeight)
+   пока константа 1.0. Явный `kinds` по-прежнему обходит модель — это намеренно.
+   На wire: `RoiQuality.importance` (`qp_at_zero` / `qp_at_one` / таблицы приоритетов).
+   Продуктовая точка «номер −12, машина −6» = `qp_at_zero=3`, `qp_at_one=-12`; библиотечный
+   дефолт остаётся примером §12 (−10/−4). Offline-стенд (`roi-clip`) по умолчанию **не**
+   шлёт `--qp`, чтобы модель работала.
+7. Polygon → та же qp-map — **ещё нет** (только AABB через `bounding_box_of`).
 8. ~~Temporal ROI (§13) по `track_id`, с разделением архив/поток.~~ **Сделано 2026-08-23**,
    `src/adaptive/temporal_roi.cpp`. Реализованы `max_missing_frames` и `confidence_decay`;
    сглаживание и `use_track_prediction` по-прежнему отвергаются на открытии.
@@ -366,7 +373,8 @@ ABI libva между vcpkg и Ubuntu — ровно этот класс расх
    99% до 100%, число регионов на кадр не изменилось. Пропуски детектора в архиве: у cv 2.3%
    шагов (из них 80 из 125 — один кадр), у ONVIF 13.6% (1321 из 1646 — один кадр).
 
-Этап закрывает и продуктовую задачу «номер −12, машина −6».
+Этап закрывает продуктовую задачу «номер −12, машина −6» на уровне модели; polygon и
+два оставшихся фактора importance — следующие срезы внутри этапа.
 
 **Источник метаданных — измерено 2026-08-23, вывод не тот, которого ждали.**
 

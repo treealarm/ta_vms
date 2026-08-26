@@ -31,6 +31,8 @@ SCALARS = {
     "mask_scale": "--mask-scale",
     "detect_fps": "--detect-fps",
     "min_confidence": "--min-confidence",
+    "qp_at_zero": "--qp-at-zero",
+    "qp_at_one": "--qp-at-one",
 }
 FLAGS = {"keep": "--keep"}
 KNOWN = set(SCALARS) | set(FLAGS) | {"input", "classes", "qp"}

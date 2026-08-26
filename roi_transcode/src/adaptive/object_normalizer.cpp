@@ -51,9 +51,8 @@ Detection to_detection(
         const Object object = object_from_box(b, quality.importance);
         d.importance = importance_of(object, quality.importance);
         d.qp_delta = qp_from_importance(d.importance, quality.importance);
-        const KindQuality defaults;
-        d.pad_x = static_cast<int>(std::lround(defaults.pad * width));
-        d.pad_y = static_cast<int>(std::lround(defaults.pad * height));
+        d.pad_x = static_cast<int>(std::lround(quality.pad * width));
+        d.pad_y = static_cast<int>(std::lround(quality.pad * height));
     }
     // Half the region's own delta, which is what softens the step at its edge.
     d.pad_qp_delta = d.qp_delta / 2;

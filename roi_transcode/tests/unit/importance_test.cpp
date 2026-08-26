@@ -66,6 +66,16 @@ void the_qp_line_reproduces_the_specification_s_example()
     check(smartvideo::qp_from_importance(0.05f, policy) == 4, "background lands on +4");
 }
 
+// The product operating point on the same slope: plate −12, vehicle −6.
+void the_product_qp_line_lands_on_minus_twelve_and_minus_six()
+{
+    smartvideo::ImportancePolicy policy;
+    policy.qp_at_zero = 3;
+    policy.qp_at_one = -12;
+    check(smartvideo::qp_from_importance(1.00f, policy) == -12, "plate lands on -12");
+    check(smartvideo::qp_from_importance(0.60f, policy) == -6, "vehicle lands on -6");
+}
+
 // A class we recognise is worth what its class is worth, however sure the detector was.
 void a_known_class_is_not_scaled_by_confidence()
 {
@@ -283,6 +293,7 @@ int main()
 {
     semantic_priorities_are_the_specification_s();
     the_qp_line_reproduces_the_specification_s_example();
+    the_product_qp_line_lands_on_minus_twelve_and_minus_six();
     a_known_class_is_not_scaled_by_confidence();
     the_class_hierarchy_survives_an_unhelpful_detector();
     an_unknown_class_is_scaled_by_confidence();

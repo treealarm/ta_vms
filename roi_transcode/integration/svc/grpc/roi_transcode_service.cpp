@@ -173,6 +173,37 @@ void apply_settings(const ProtoSettings& in, smartvideo::Settings& out)
                 std::min(out.quality.mask_qp_delta_at_255, cfg.qp_delta);
         }
     }
+    if (q.has_pad() && q.pad() > 0) {
+        out.quality.pad = q.pad();
+    }
+    if (q.has_max_protected_fraction()) {
+        out.quality.max_protected_fraction = q.max_protected_fraction();
+    }
+    if (q.has_importance()) {
+        const auto& p = q.importance();
+        auto& dst = out.quality.importance;
+        for (const auto& [k, v] : p.semantic_priority()) {
+            dst.semantic_priority[k] = v;
+        }
+        for (const auto& [k, v] : p.task_priority()) {
+            dst.task_priority[k] = v;
+        }
+        if (p.has_unknown_priority()) {
+            dst.unknown_priority = p.unknown_priority();
+        }
+        if (p.has_assumed_confidence()) {
+            dst.assumed_confidence = p.assumed_confidence();
+        }
+        if (p.has_weigh_confidence_on_known_classes()) {
+            dst.weigh_confidence_on_known_classes = p.weigh_confidence_on_known_classes();
+        }
+        if (p.has_qp_at_zero()) {
+            dst.qp_at_zero = p.qp_at_zero();
+        }
+        if (p.has_qp_at_one()) {
+            dst.qp_at_one = p.qp_at_one();
+        }
+    }
 }
 
 smartvideo::Box box_from_proto(const roi::transcode::Box& b)

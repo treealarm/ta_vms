@@ -19,7 +19,7 @@ float default_semantic_priority(const std::string& kind, float unknown)
     //
     // "road" and "background" are in §11's table but nothing reports them: they describe
     // what is left over, which is what background_qp_delta already handles.
-    if (kind == "license_plate") return 1.00f;
+    if (kind == "license_plate" || kind == "plate") return 1.00f;
     if (kind == "face")          return 0.95f;
     if (kind == "person")        return 0.80f;
     if (kind == "vehicle")       return 0.60f;

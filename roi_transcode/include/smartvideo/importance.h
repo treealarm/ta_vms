@@ -80,7 +80,12 @@ struct ImportancePolicy {
     /// detector is really is all there is to go on. Set this true for the letter of §11.
     bool weigh_confidence_on_known_classes = false;
 
-    /// The two ends of the importance-to-QP line. Defaults derived from §11 and §12 above.
+    /// The two ends of the importance-to-QP line.
+    ///
+    /// Defaults are the §12 worked example (vehicle 0.60 → −4, plate 1.00 → −10). The product
+    /// operating point "plate −12, vehicle −6" is the same slope with ends at 3 and −12 -- set
+    /// those on the wire rather than changing the library default, so a measurement against
+    /// the specification still lands on the numbers the specification drew.
     int32_t qp_at_zero = 5;
     int32_t qp_at_one = -10;
 };

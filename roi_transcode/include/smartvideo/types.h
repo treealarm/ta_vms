@@ -135,6 +135,12 @@ struct Quality {
     int32_t max_regions = 32;
     std::unordered_map<std::string, KindQuality> kinds;
 
+    /// Halo used when a kind has no entry in `kinds` -- the importance path's default. An
+    /// explicit KindQuality.pad still wins for that kind. Without this, asking for a pad on
+    /// the importance path had nowhere to attach: pad used to travel only on per-kind rows,
+    /// and those rows are exactly what turn the model off.
+    double pad = 0.02;
+
     // Mask input only: the strength a mask value of 255 asks for, and how many
     // steps the 0..255 range is quantized into. Fewer steps means fewer
     // distinct deltas and so fewer rectangles to spend the budget on.
