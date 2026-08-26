@@ -1,7 +1,11 @@
 #include "object_normalizer.h"
 
+#include "smartvideo/geometry.h"
+
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <vector>
 
 namespace smartvideo {
 
@@ -29,10 +33,21 @@ Detection to_detection(
     const Box& b, const Quality& quality, int width, int height)
 {
     Detection d;
-    d.x1 = static_cast<int>(std::lround(b.x * width));
-    d.y1 = static_cast<int>(std::lround(b.y * height));
-    d.x2 = static_cast<int>(std::lround((b.x + b.width) * width));
-    d.y2 = static_cast<int>(std::lround((b.y + b.height) * height));
+    // Prefer the polygon's own extent when one is present: a caller that fills only the
+    // outline should still get a coherent AABB for the area budget and for overlays.
+    if (b.polygon.size() >= 3) {
+        d.polygon = b.polygon;
+        const BoundingBox bb = bounding_box_of(Polygon{b.polygon});
+        d.x1 = static_cast<int>(std::lround(bb.x * width));
+        d.y1 = static_cast<int>(std::lround(bb.y * height));
+        d.x2 = static_cast<int>(std::lround((bb.x + bb.width) * width));
+        d.y2 = static_cast<int>(std::lround((bb.y + bb.height) * height));
+    } else {
+        d.x1 = static_cast<int>(std::lround(b.x * width));
+        d.y1 = static_cast<int>(std::lround(b.y * height));
+        d.x2 = static_cast<int>(std::lround((b.x + b.width) * width));
+        d.y2 = static_cast<int>(std::lround((b.y + b.height) * height));
+    }
 
     // An explicitly configured kind keeps its number. Somebody said what they wanted for
     // this class of thing, and a model second-guessing that would make the setting a
@@ -59,6 +74,178 @@ Detection to_detection(
     return d;
 }
 
+void paint_mask_on_qp_map(QpDeltaMap& map, const uint8_t* mask, int width, int height,
+    int8_t qp)
+{
+    if (map.cols <= 0 || map.rows <= 0 || !mask || width <= 0 || height <= 0) {
+        return;
+    }
+    for (int by = 0; by < map.rows; ++by) {
+        const int fy0 = by * map.block;
+        const int fy1 = std::min(fy0 + map.block, map.height);
+        for (int bx = 0; bx < map.cols; ++bx) {
+            const int fx0 = bx * map.block;
+            const int fx1 = std::min(fx0 + map.block, map.width);
+            bool hit = false;
+            for (int y = fy0; y < fy1 && !hit; ++y) {
+                const int my = y * height / map.height;
+                const uint8_t* row = mask + static_cast<size_t>(my) * width;
+                for (int x = fx0; x < fx1; ++x) {
+                    const int mx = x * width / map.width;
+                    if (row[mx] != 0) {
+                        hit = true;
+                        break;
+                    }
+                }
+            }
+            if (hit) {
+                map.deltas[static_cast<size_t>(by) * map.cols + bx] = qp;
+            }
+        }
+    }
+}
+
+void paint_aabb_on_qp_map(QpDeltaMap& map, const Rect& r)
+{
+    if (!rect_valid(r) || map.block <= 0) {
+        return;
+    }
+    const int8_t qp = static_cast<int8_t>(std::clamp(r.qp_delta, -51, 51));
+    const int c0 = std::clamp(r.left / map.block, 0, map.cols - 1);
+    const int c1 = std::clamp((r.right - 1) / map.block, 0, map.cols - 1);
+    const int r0 = std::clamp(r.top / map.block, 0, map.rows - 1);
+    const int r1 = std::clamp((r.bottom - 1) / map.block, 0, map.rows - 1);
+    for (int y = r0; y <= r1; ++y) {
+        for (int x = c0; x <= c1; ++x) {
+            map.deltas[static_cast<size_t>(y * map.cols + x)] = qp;
+        }
+    }
+}
+
+/// Shape-preserving path: every detection is painted onto the block qp-map (polygons by
+/// rasterisation, AABBs by their rectangle), weak first so the more important overwrite,
+/// then merged back into encoder rectangles. Same representation a mask uses.
+std::vector<Rect> build_shaped(int width, int height,
+    const std::vector<Detection>& detections, const Quality& quality)
+{
+    std::vector<Rect> empty;
+    if (width <= 0 || height <= 0) {
+        return empty;
+    }
+
+    std::vector<const Detection*> ordered;
+    ordered.reserve(detections.size());
+    for (const auto& d : detections) {
+        ordered.push_back(&d);
+    }
+    // Ascending: weak first, important last -- the map keeps the last write, matching the
+    // encoder's "first region wins" once rects_from_qp_map sorts strongest-|delta| first.
+    std::stable_sort(ordered.begin(), ordered.end(),
+        [](const Detection* a, const Detection* b) { return a->importance < b->importance; });
+
+    const double frame_area = static_cast<double>(width) * static_cast<double>(height);
+    const double budget = quality.max_protected_fraction > 0.0f
+        ? static_cast<double>(quality.max_protected_fraction) * frame_area
+        : 0.0;
+    double spent = 0.0;
+
+    const int block = 16; // H.264 macroblock; finer than CTU, still cheap to merge
+    QpDeltaMap map;
+    map.block = block;
+    map.width = width;
+    map.height = height;
+    map.cols = (width + block - 1) / block;
+    map.rows = (height + block - 1) / block;
+    const int8_t bg = static_cast<int8_t>(std::clamp(quality.background_qp_delta, -51, 51));
+    map.deltas.assign(static_cast<size_t>(map.cols) * map.rows, bg);
+
+    std::vector<uint8_t> scratch(static_cast<size_t>(width) * height);
+
+    struct Afforded {
+        const Detection* dp = nullptr;
+        int32_t body_delta = 0;
+        int32_t pad_delta = 0;
+    };
+    std::vector<Afforded> afforded;
+    afforded.reserve(ordered.size());
+
+    for (const Detection* dp : ordered) {
+        Rect obj{
+            .top = dp->y1,
+            .bottom = dp->y2,
+            .left = dp->x1,
+            .right = dp->x2,
+            .qp_delta = dp->qp_delta,
+        };
+        clamp_rect(obj, width, height);
+        if (!rect_valid(obj)) {
+            continue;
+        }
+        const double area = static_cast<double>(obj.right - obj.left)
+            * static_cast<double>(obj.bottom - obj.top);
+        Afforded a{dp, dp->qp_delta, dp->pad_qp_delta};
+        if (budget > 0.0 && spent + area > budget) {
+            a.body_delta = 0;
+            a.pad_delta = 0;
+        } else {
+            spent += area;
+        }
+        if (a.body_delta != 0 || a.pad_delta != 0) {
+            afforded.push_back(a);
+        }
+    }
+
+    // Every halo before every body, for the same reason as the AABB builder: a nested
+    // object's halo must not cut into its parent's body.
+    for (const Afforded& a : afforded) {
+        if (a.pad_delta == 0) {
+            continue;
+        }
+        const Detection* dp = a.dp;
+        if (dp->polygon.size() >= 3 && (dp->pad_x > 0 || dp->pad_y > 0)) {
+            std::memset(scratch.data(), 0, scratch.size());
+            rasterize_polygon(Polygon{dp->polygon}, scratch.data(), width, height, 255);
+            dilate_mask(scratch.data(), width, height, std::max(dp->pad_x, dp->pad_y));
+            paint_mask_on_qp_map(map, scratch.data(), width, height,
+                static_cast<int8_t>(std::clamp(a.pad_delta, -51, 51)));
+        } else if (dp->polygon.size() < 3) {
+            Rect pad{
+                .top = dp->y1 - dp->pad_y,
+                .bottom = dp->y2 + dp->pad_y,
+                .left = dp->x1 - dp->pad_x,
+                .right = dp->x2 + dp->pad_x,
+                .qp_delta = a.pad_delta,
+            };
+            clamp_rect(pad, width, height);
+            paint_aabb_on_qp_map(map, pad);
+        }
+    }
+    for (const Afforded& a : afforded) {
+        if (a.body_delta == 0) {
+            continue;
+        }
+        const Detection* dp = a.dp;
+        if (dp->polygon.size() >= 3) {
+            std::memset(scratch.data(), 0, scratch.size());
+            rasterize_polygon(Polygon{dp->polygon}, scratch.data(), width, height, 255);
+            paint_mask_on_qp_map(map, scratch.data(), width, height,
+                static_cast<int8_t>(std::clamp(a.body_delta, -51, 51)));
+        } else {
+            Rect obj{
+                .top = dp->y1,
+                .bottom = dp->y2,
+                .left = dp->x1,
+                .right = dp->x2,
+                .qp_delta = a.body_delta,
+            };
+            clamp_rect(obj, width, height);
+            paint_aabb_on_qp_map(map, obj);
+        }
+    }
+
+    return rects_from_qp_map(map, quality.max_regions > 0 ? quality.max_regions : 256, nullptr);
+}
+
 } // namespace
 
 Object object_from_box(const Box& box, const ImportancePolicy& policy)
@@ -67,7 +254,11 @@ Object object_from_box(const Box& box, const ImportancePolicy& policy)
     o.track_id = box.track_id;
     o.kind = box.kind;
     o.confidence = box.confidence > 0.0f ? box.confidence : policy.assumed_confidence;
-    o.geometry = BoundingBox{box.x, box.y, box.width, box.height};
+    if (box.polygon.size() >= 3) {
+        o.geometry = Polygon{box.polygon};
+    } else {
+        o.geometry = BoundingBox{box.x, box.y, box.width, box.height};
+    }
     o.semantic_priority = default_semantic_priority(box.kind, policy.unknown_priority);
     return o;
 }
@@ -75,6 +266,12 @@ Object object_from_box(const Box& box, const ImportancePolicy& policy)
 std::vector<Rect> RoiMapBuilder::build(int width, int height,
     const std::vector<Detection>& detections, const Quality& quality) const
 {
+    for (const auto& d : detections) {
+        if (d.polygon.size() >= 3) {
+            return build_shaped(width, height, detections, quality);
+        }
+    }
+
     std::vector<Rect> out;
     if (width <= 0 || height <= 0) {
         return out;

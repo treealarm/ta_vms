@@ -83,6 +83,30 @@ int main()
     CHECK(grid.deltas[(500 / 32) * 60 + (760 / 32)] == -5);
     CHECK(grid.deltas[0] == 6);
 
+    // A triangle over the bottom-left half: the AABB would protect the top-right corner of
+    // that box, the polygon must not. Build through detections_from so the shaped path runs.
+    Quality poly_q;
+    poly_q.background_qp_delta = 6;
+    poly_q.pad = 0;
+    poly_q.max_protected_fraction = 0; // no area budget for this check
+    poly_q.kinds["vehicle"] = KindQuality{-8, 0.0};
+    Box tri;
+    tri.kind = "vehicle";
+    tri.x = 0;
+    tri.y = 0;
+    tri.width = 1;
+    tri.height = 1;
+    tri.polygon = {{0.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}};
+    const auto poly_dets = builder.detections_from({tri}, poly_q, 64, 64);
+    CHECK(poly_dets.size() == 1);
+    CHECK(poly_dets[0].polygon.size() == 3);
+    const auto poly_rects = builder.build(64, 64, poly_dets, poly_q);
+    // Paint the rects onto a qp map and check the corners: bottom-left protected, top-right not.
+    const auto poly_grid = qp_map.build(64, 64, 16, poly_rects);
+    CHECK(poly_grid.cols == 4 && poly_grid.rows == 4);
+    CHECK(poly_grid.deltas[3 * 4 + 0] == -8); // bottom-left block
+    CHECK(poly_grid.deltas[0 * 4 + 3] == 6);  // top-right stays background
+
     std::puts("roi_map_builder_test ok");
     return 0;
 }

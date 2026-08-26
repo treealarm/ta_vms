@@ -26,11 +26,15 @@ struct Detection {
     /// for detections the model weighed; one whose kind was configured explicitly carries
     /// the importance its qp_delta implies, so the ordering stays consistent either way.
     float importance = 0.0f;
+
+    /// Normalized outline, when the box carried one. Empty means the axis-aligned rectangle
+    /// above is the whole of the geometry.
+    std::vector<Point> polygon;
 };
 
 /// The §10 view of a box, which is what the importance model reads. Confidence of zero on
 /// the way in means "not reported" and becomes the policy's assumed value here, so nothing
-/// downstream has to know the difference.
+/// downstream has to know the difference. A polygon on the box becomes Polygon geometry.
 Object object_from_box(const Box& box, const ImportancePolicy& policy);
 
 class RoiMapBuilder {
@@ -39,6 +43,9 @@ public:
     /// order, then their halos, then the background. Reads `background_qp_delta` and
     /// `max_protected_fraction` from the quality settings -- the second is why this takes
     /// the whole struct rather than the one number it used to.
+    ///
+    /// When any detection carries a polygon the path goes through the block qp-map (same as
+    /// a mask) so the outline is preserved; otherwise it stays on cheap axis-aligned rects.
     std::vector<Rect> build(int width, int height,
         const std::vector<Detection>& detections, const Quality& quality) const;
 

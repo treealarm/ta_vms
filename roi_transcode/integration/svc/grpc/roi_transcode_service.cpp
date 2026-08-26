@@ -218,6 +218,10 @@ smartvideo::Box box_from_proto(const roi::transcode::Box& b)
     out.track_id = static_cast<uint64_t>(b.track_id() > 0 ? b.track_id() : 0);
     out.confidence = b.confidence();
     out.label = b.label();
+    out.polygon.reserve(static_cast<size_t>(b.polygon_size()));
+    for (const auto& p : b.polygon()) {
+        out.polygon.push_back({p.x(), p.y()});
+    }
     return out;
 }
 

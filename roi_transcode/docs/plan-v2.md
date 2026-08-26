@@ -126,7 +126,7 @@ v2.0 позволял считать §15 неначатым, и наш аргу
 |---|---|---|
 | `Object{track_id, class_id, confidence, semantic_priority, task_priority, critical}` (§10) | есть (`object.h` / `Box` на wire) | `critical` / полный `Object` на wire — по необходимости; данные уже доходят |
 | Importance = произведение 5 факторов, I(x,y) ∈ [0,1] (§11) | есть; TemporalStability и MotionWeight = 1.0 | довести два оставшихся фактора; `RoiQuality.importance` на wire |
-| Polygon (§2) | нет (только AABB) | растеризация в ту же qp-map, что и маска |
+| Polygon (§2) | есть: растеризация → qp-map; `Box.polygon` на wire | источник полигонов у детектора пока редкий |
 | Temporal ROI: `max_missing_frames`, decay, smoothing, prediction (§13) | `max_missing_frames` + decay + интерполяция; smoothing/prediction отвергаются | по необходимости для живого потока |
 | QualityPolicy: OBJECT_FIRST / BALANCED / BITRATE_FIRST (§14) | нет | `Settings`; дефолт по ТЗ — OBJECT_FIRST |
 | Object-first rate control с бюджетом битрейта (§15) | нет, только CQP/CRF | **самая крупная работа блока**, см. ниже |
@@ -354,7 +354,9 @@ ABI libva между vcpkg и Ubuntu — ровно этот класс расх
    Продуктовая точка «номер −12, машина −6» = `qp_at_zero=3`, `qp_at_one=-12`; библиотечный
    дефолт остаётся примером §12 (−10/−4). Offline-стенд (`roi-clip`) по умолчанию **не**
    шлёт `--qp`, чтобы модель работала.
-7. Polygon → та же qp-map — **ещё нет** (только AABB через `bounding_box_of`).
+7. ~~Polygon → та же qp-map.~~ **Сделано:** `rasterize_polygon` + shaped path в
+   `RoiMapBuilder` (через block qp-map, как маска). На wire — `Box.polygon` (repeated Point).
+   AABB остаётся fallback для оверлеев и бюджета площади.
 8. ~~Temporal ROI (§13) по `track_id`, с разделением архив/поток.~~ **Сделано 2026-08-23**,
    `src/adaptive/temporal_roi.cpp`. Реализованы `max_missing_frames` и `confidence_decay`;
    сглаживание и `use_track_prediction` по-прежнему отвергаются на открытии.
@@ -373,8 +375,9 @@ ABI libva между vcpkg и Ubuntu — ровно этот класс расх
    99% до 100%, число регионов на кадр не изменилось. Пропуски детектора в архиве: у cv 2.3%
    шагов (из них 80 из 125 — один кадр), у ONVIF 13.6% (1321 из 1646 — один кадр).
 
-Этап закрывает продуктовую задачу «номер −12, машина −6» на уровне модели; polygon и
-два оставшихся фактора importance — следующие срезы внутри этапа.
+Этап закрывает продуктовую задачу «номер −12, машина −6» на уровне модели; polygon → qp-map
+уже на wire. Два оставшихся фактора importance (TemporalStability, MotionWeight) — следующие
+срезы внутри этапа.
 
 **Источник метаданных — измерено 2026-08-23, вывод не тот, которого ждали.**
 

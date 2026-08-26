@@ -84,6 +84,11 @@ enum class InputCodec {
 
 // One region worth keeping sharp. Coordinates are normalized 0..1 from the
 // top-left corner -- the same convention ta_vms archives boxes in.
+struct Point {
+    float x = 0;
+    float y = 0;
+};
+
 struct Box {
     // Seconds from the start of the input. Only meaningful for a file, where
     // boxes lie on a timeline; a submitted frame carries the boxes that are its.
@@ -111,6 +116,12 @@ struct Box {
     /// The producer's own, narrower word for the class when it has one ("Truck" under
     /// vehicle). Free-form; `kind` is what decides priority.
     std::string label;
+
+    /// Optional outline, same normalized coordinates as x/y/width/height. When there are at
+    /// least three points the encoder protects the polygon rather than the axis-aligned box;
+    /// the AABB fields stay filled as the cheap fallback for anything that only draws
+    /// rectangles (overlays, area budget).
+    std::vector<Point> polygon;
 };
 
 // How much better than the background one kind of region gets.
