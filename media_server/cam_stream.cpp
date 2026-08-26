@@ -131,6 +131,54 @@ bool cam_stream::start_web_rtc(std::string& error)
   return true;
 }
 
+bool cam_stream::start_analytics_push(
+  const std::string& rtsp_url, uint32_t sample_fps, std::string& error)
+{
+  if (rtsp_url.empty())
+  {
+    error = "analytics push url is empty";
+    return false;
+  }
+
+  std::shared_ptr<analytics_output_sink> previous;
+  std::shared_ptr<analytics_output_sink> started;
+  {
+    std::scoped_lock lock(m_sinks_mutex);
+    if (m_analytics_output_sink && m_analytics_push_url == rtsp_url)
+      return true;  // already publishing there
+
+    // A different address means the camera moved to another worker. Swap rather than refuse:
+    // the caller owns the assignment and has already decided.
+    previous = m_analytics_output_sink;
+    m_analytics_output_sink = std::make_shared<analytics_output_sink>(rtsp_url, sample_fps);
+    m_analytics_push_url = rtsp_url;
+    started = m_analytics_output_sink;
+  }
+
+  if (previous)
+    m_reader->remove_sink(previous);
+  m_reader->add_sink(started);
+  return true;
+}
+
+bool cam_stream::stop_analytics_push(std::string& error)
+{
+  std::shared_ptr<analytics_output_sink> sink;
+  {
+    std::scoped_lock lock(m_sinks_mutex);
+    if (!m_analytics_output_sink)
+    {
+      error = "analytics push is not running";
+      return false;
+    }
+    sink = m_analytics_output_sink;
+    m_analytics_output_sink.reset();
+    m_analytics_push_url.clear();
+  }
+  m_reader->remove_sink(sink);
+  return true;
+}
+
 bool cam_stream::stop_web_rtc(std::string& error)
 {
   std::shared_ptr<webrtc_output_sink> sink;

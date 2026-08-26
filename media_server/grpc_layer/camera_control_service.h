@@ -23,6 +23,13 @@ public:
                                      const vms::control::EnsureWebRtcStreamingRequest* request,
                                      vms::control::OperationStatus* response) override;
 
+  grpc::Status EnsureAnalyticsPush(grpc::ServerContext* context,
+                                   const vms::control::EnsureAnalyticsPushRequest* request,
+                                   vms::control::OperationStatus* response) override;
+  grpc::Status StopAnalyticsPush(grpc::ServerContext* context,
+                                 const vms::control::AnalyticsPushKey* request,
+                                 vms::control::OperationStatus* response) override;
+
   grpc::Status GetArchiveFrameJpeg(grpc::ServerContext* context,
     const vms::control::ArchiveFrameJpegRequest* request,
     vms::control::ArchiveFrameJpegResponse* response) override;

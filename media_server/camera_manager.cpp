@@ -406,6 +406,63 @@ bool camera_manager::ensure_web_rtc(const std::string& camera_id,
   return ok;
 }
 
+bool camera_manager::ensure_analytics_push(const std::string& camera_id,
+                                           const std::string& stream_name,
+                                           const std::string& rtsp_url,
+                                           uint32_t sample_fps,
+                                           std::string& error)
+{
+  std::scoped_lock lock(m_mutex);
+
+  auto it = m_cameras.find(camera_id);
+  if (it == m_cameras.end())
+  {
+    error = "camera not found: " + camera_id;
+    return false;
+  }
+
+  auto* stream = it->second->get_stream(stream_name);
+  if (!stream)
+  {
+    error = "stream not found: " + stream_name;
+    return false;
+  }
+
+  const bool ok = stream->start_analytics_push(rtsp_url, sample_fps, error);
+  if (ok)
+    logger::instance().info(std::format(
+      "Camera '{}' stream '{}' analytics push -> {} ({} fps wanted)",
+      camera_id, stream_name, rtsp_url, sample_fps));
+  return ok;
+}
+
+bool camera_manager::stop_analytics_push(const std::string& camera_id,
+                                         const std::string& stream_name,
+                                         std::string& error)
+{
+  std::scoped_lock lock(m_mutex);
+
+  auto it = m_cameras.find(camera_id);
+  if (it == m_cameras.end())
+  {
+    error = "camera not found: " + camera_id;
+    return false;
+  }
+
+  auto* stream = it->second->get_stream(stream_name);
+  if (!stream)
+  {
+    error = "stream not found: " + stream_name;
+    return false;
+  }
+
+  const bool ok = stream->stop_analytics_push(error);
+  if (ok)
+    logger::instance().info(std::format(
+      "Camera '{}' stream '{}' analytics push stopped", camera_id, stream_name));
+  return ok;
+}
+
 std::vector<std::shared_ptr<cam_stream>> camera_manager::webrtc_streams_snapshot() const
 {
   std::scoped_lock lock(m_mutex);

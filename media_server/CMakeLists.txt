@@ -113,6 +113,7 @@ set(SOURCES
     writer/rtsp_output_sink.h
     writer/rtsp_timeline_cache.cpp
     writer/rtsp_timeline_cache.h
+    writer/analytics_output_sink.cpp
     writer/webrtc_output_sink.cpp
     writer/webrtc_output_sink.h
     writer/sync_packet_transcoder.cpp

@@ -10,6 +10,7 @@
 #include "recording_types.h"
 #include "stream/jpeg_streamer.h"
 #include "arch_writer/segment_writer.h"
+#include "writer/analytics_output_sink.h"
 #include "writer/webrtc_output_sink.h"
 
 class cam_stream final
@@ -32,6 +33,12 @@ public:
 
   bool start_web_rtc(std::string& error);
   bool stop_web_rtc(std::string& error);
+
+  /// Publish this stream to a detector at `rtsp_url`, or stop doing so. Idempotent: asking again
+  /// with the same address is a no-op, asking with a different one moves the publish, which is
+  /// what happens when the camera is reassigned to another worker.
+  bool start_analytics_push(const std::string& rtsp_url, uint32_t sample_fps, std::string& error);
+  bool stop_analytics_push(std::string& error);
   void update_webrtc_push_url(const std::string& new_url, bool web_rtc, std::string& error);
 
   void shutdown();
@@ -74,5 +81,7 @@ private:
   recording_policy_mode m_recording_policy_mode{recording_policy_mode::off};
   std::chrono::seconds m_record_segment_duration{60};
   std::shared_ptr<webrtc_output_sink> m_webrtc_output_sink;
+  std::shared_ptr<analytics_output_sink> m_analytics_output_sink;
+  std::string m_analytics_push_url;
   mutable std::mutex m_sinks_mutex;
 };

@@ -54,6 +54,35 @@ grpc::Status camera_control_service::EnsureWebRtcStreaming(
   return grpc::Status::OK;
 }
 
+grpc::Status camera_control_service::EnsureAnalyticsPush(
+    grpc::ServerContext* /*context*/,
+    const vms::control::EnsureAnalyticsPushRequest* request,
+    vms::control::OperationStatus* response)
+{
+  std::string error;
+  const bool success = m_manager.ensure_analytics_push(
+    request->camera_id(), request->stream_name(), request->rtsp_url(), request->sample_fps(),
+    error);
+
+  response->set_success(success);
+  response->set_message(success ? "ok" : error);
+  return grpc::Status::OK;
+}
+
+grpc::Status camera_control_service::StopAnalyticsPush(
+    grpc::ServerContext* /*context*/,
+    const vms::control::AnalyticsPushKey* request,
+    vms::control::OperationStatus* response)
+{
+  std::string error;
+  const bool success = m_manager.stop_analytics_push(
+    request->camera_id(), request->stream_name(), error);
+
+  response->set_success(success);
+  response->set_message(success ? "ok" : error);
+  return grpc::Status::OK;
+}
+
 grpc::Status camera_control_service::GetArchiveFrameJpeg(
   grpc::ServerContext* /*context*/,
   const vms::control::ArchiveFrameJpegRequest* request,

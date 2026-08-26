@@ -4,7 +4,12 @@ namespace VmsAnalyticsSingleton;
 
 public interface IAnalyticsWorkerClient
 {
-  Task<bool> StartWatchAsync(
+  /// <summary>
+  /// Starts a watch. Returns the address the worker opened for a publish when
+  /// <paramref name="listenForPush"/> was asked for, an empty string when it was not, and null
+  /// when the worker refused.
+  /// </summary>
+  Task<string?> StartWatchAsync(
     string watchId,
     string rtspUrl,
     string? credUser,
@@ -13,6 +18,7 @@ public interface IAnalyticsWorkerClient
     float minConfidence,
     uint sampleFps,
     bool attachDebugCrops,
+    bool listenForPush,
     CancellationToken ct);
 
   Task StopWatchAsync(string watchId, CancellationToken ct);

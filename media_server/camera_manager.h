@@ -99,6 +99,14 @@ public:
   bool ensure_web_rtc(const std::string& camera_id, const std::string& stream_name,
                       std::string& error);
 
+  /// Start or stop publishing a stream to the detector that watches it. Idempotent in both
+  /// directions; a different address moves the publish, which is what a camera being reassigned
+  /// to another worker looks like from here.
+  bool ensure_analytics_push(const std::string& camera_id, const std::string& stream_name,
+    const std::string& rtsp_url, uint32_t sample_fps, std::string& error);
+  bool stop_analytics_push(const std::string& camera_id, const std::string& stream_name,
+    std::string& error);
+
   // Returns shared_ptrs to all webrtc-enabled streams (snapshot under lock).
   std::vector<std::shared_ptr<cam_stream>> webrtc_streams_snapshot() const;
   void stop_all();

@@ -22,7 +22,10 @@ public sealed class WatchReconciler(
 {
   private static readonly TimeSpan KeepAliveInterval = TimeSpan.FromSeconds(30);
 
-  private sealed record ActiveWatch(string WorkerAppId, AnalyticsWatch Watch);
+  /// <param name="ServerId">The media server publishing this camera to the worker.</param>
+  /// <param name="ListenUrl">Where that worker asked to be published to.</param>
+  private sealed record ActiveWatch(
+    string WorkerAppId, AnalyticsWatch Watch, string ServerId = "", string ListenUrl = "");
 
   // camera_id -> where it currently runs and with what config.
   private readonly ConcurrentDictionary<string, ActiveWatch> _active = new();
@@ -99,9 +102,10 @@ public sealed class WatchReconciler(
 
       if (shouldRun && current is null)
       {
-        if (await StartWatchOnWorkerAsync(targetWorker, watch, ct))
+        var started = await StartWatchOnWorkerAsync(targetWorker, watch, ct);
+        if (started is not null)
         {
-          _active[cameraId] = new ActiveWatch(targetWorker, watch);
+          _active[cameraId] = started;
           logger.LogInformation("Analytics watch for camera '{CameraId}' started on worker '{Worker}'", cameraId, targetWorker);
         }
       }
@@ -111,9 +115,11 @@ public sealed class WatchReconciler(
         {
           // Worker list changed and this camera's rendezvous winner moved.
           await StopWatchOnWorkerAsync(current.WorkerAppId, cameraId, ct);
-          if (await StartWatchOnWorkerAsync(targetWorker, watch, ct))
+          await StopAnalyticsPushAsync(cameraId, current.Watch.StreamName, current.ServerId, ct);
+          var migrated = await StartWatchOnWorkerAsync(targetWorker, watch, ct);
+          if (migrated is not null)
           {
-            _active[cameraId] = new ActiveWatch(targetWorker, watch);
+            _active[cameraId] = migrated;
             logger.LogInformation("Analytics watch for camera '{CameraId}' migrated '{From}' -> '{To}'", cameraId, current.WorkerAppId, targetWorker);
           }
           else
@@ -125,14 +131,18 @@ public sealed class WatchReconciler(
         {
           // Config changed while running (stream_name/classes/confidence/debug crops/...) —
           // re-issue StartWatch so the worker picks it up; StartWatch is an idempotent upsert.
-          if (await StartWatchOnWorkerAsync(targetWorker, watch, ct))
+          var restarted = await StartWatchOnWorkerAsync(targetWorker, watch, ct);
+          if (restarted is not null)
+          {
             logger.LogInformation("Analytics watch for camera '{CameraId}' restarted with updated config", cameraId);
-          _active[cameraId] = new ActiveWatch(targetWorker, watch);
+            _active[cameraId] = restarted;
+          }
         }
       }
       else if (!shouldRun && current is not null)
       {
         await StopWatchOnWorkerAsync(current.WorkerAppId, cameraId, ct);
+        await StopAnalyticsPushAsync(cameraId, current.Watch.StreamName, current.ServerId, ct);
         _active.TryRemove(cameraId, out _);
         logger.LogInformation("Analytics watch for camera '{CameraId}' stopped (disabled or camera not armed)", cameraId);
       }
@@ -144,23 +154,50 @@ public sealed class WatchReconciler(
       if (!watches.ContainsKey(cameraId))
       {
         await StopWatchOnWorkerAsync(active.WorkerAppId, cameraId, ct);
+        await StopAnalyticsPushAsync(cameraId, active.Watch.StreamName, active.ServerId, ct);
         _active.TryRemove(cameraId, out _);
         logger.LogInformation("Analytics watch for camera '{CameraId}' no longer configured, stopped", cameraId);
       }
     }
   }
 
-  private async Task<bool> StartWatchOnWorkerAsync(string workerAppId, AnalyticsWatch watch, CancellationToken ct)
+  /// <summary>
+  /// Starts a watch and points the camera's media server at it.
+  /// </summary>
+  /// <remarks>
+  /// The worker is published to rather than reading the stream back out of MediaMTX. Two readers
+  /// of one high-bitrate path is what made the operator's live view stutter: MediaMTX pushes the
+  /// same keyframe burst to both in turn, so the browser's share arrives spread over twice as
+  /// long, misses its frame-assembly window, and asks for a keyframe a file source cannot produce
+  /// on demand — the picture then holds until the next natural one. Measured with packetsLost 0
+  /// and pliCount climbing regardless.
+  ///
+  /// So the worker opens an endpoint and answers with its address (only it knows what it is
+  /// reachable at), and media_server publishes there. Which worker holds which camera is decided
+  /// here, as it always was; media_server is told where to publish and knows nothing else about
+  /// the arrangement.
+  /// </remarks>
+  private async Task<ActiveWatch?> StartWatchOnWorkerAsync(string workerAppId, AnalyticsWatch watch, CancellationToken ct)
   {
-    var rtspUrl = await ResolveRtspUrlAsync(watch.CameraId, watch.StreamName, ct);
-    if (rtspUrl is null) return false;
+    var serverId = await ResolveMediaServerAsync(watch.CameraId, ct);
+    if (serverId is null) return null;
 
-    // The relayed stream lives on MediaMTX, which no longer allows anonymous reads, so the worker
-    // gets the vms_read service account. Passed as credentials rather than spliced into the URL so
-    // the RTSP address stays safe to log on both sides.
-    return await workers.ClientFor(workerAppId).StartWatchAsync(
-      watch.CameraId, rtspUrl, _mediaMtxReadUser, _mediaMtxReadPass,
-      watch.Classes, watch.MinConfidence, watch.SampleFps, watch.AttachDebugCrops, ct);
+    // No URL to dial and no credentials: the worker is the one being connected to.
+    var listenUrl = await workers.ClientFor(workerAppId).StartWatchAsync(
+      watch.CameraId, string.Empty, null, null,
+      watch.Classes, watch.MinConfidence, watch.SampleFps, watch.AttachDebugCrops,
+      listenForPush: true, ct);
+    if (string.IsNullOrEmpty(listenUrl))
+    {
+      logger.LogWarning(
+        "Analytics: worker '{Worker}' did not open a publish endpoint for camera '{CameraId}'",
+        workerAppId, watch.CameraId);
+      return null;
+    }
+
+    var pushed = await EnsureAnalyticsPushAsync(
+      watch.CameraId, watch.StreamName, serverId, listenUrl, watch.SampleFps, ct);
+    return pushed ? new ActiveWatch(workerAppId, watch, serverId, listenUrl) : null;
   }
 
   private async Task StopWatchOnWorkerAsync(string workerAppId, string cameraId, CancellationToken ct)
@@ -175,52 +212,71 @@ public sealed class WatchReconciler(
     }
   }
 
-  // Builds the MediaMTX-relayed RTSP URL for camera_id/stream_name (never the camera's own raw
-  // RTSP address — media_server already holds that connection) and best-effort nudges media_server
-  // to make sure the MediaMTX push is actually live (it's lazy/idle-timeout-based, see project plan).
-  private async Task<string?> ResolveRtspUrlAsync(string cameraId, string streamName, CancellationToken ct)
+  /// <summary>Which media server holds this camera — the one that will publish it.</summary>
+  private async Task<string?> ResolveMediaServerAsync(string cameraId, CancellationToken ct)
   {
     try
     {
       var camResp = await cfg.GetCameraAsync(new SourceRequest { SourceId = cameraId }, cancellationToken: ct);
-      if (!camResp.Found)
-      {
-        logger.LogWarning("Analytics: camera '{CameraId}' not found, cannot resolve RTSP source", cameraId);
-        return null;
-      }
-
-      var serverResp = await cfg.GetOrAssignMediaMtxServerAsync(new SourceRequest { SourceId = cameraId }, cancellationToken: ct);
-      if (!serverResp.Found)
-      {
-        logger.LogWarning("Analytics: no MediaMTX server assigned for camera '{CameraId}'", cameraId);
-        return null;
-      }
-
-      await EnsurePushAsync(cameraId, streamName, camResp.Setup.ServerId, ct);
-
-      return $"rtsp://{serverResp.Server.Host}:{serverResp.Server.RtspPort}/{cameraId}/{streamName}";
+      if (camResp.Found) return camResp.Setup.ServerId;
+      logger.LogWarning("Analytics: camera '{CameraId}' not found, cannot start a watch", cameraId);
+      return null;
     }
     catch (RpcException ex)
     {
-      logger.LogWarning(ex, "Analytics: failed to resolve RTSP source for camera '{CameraId}'", cameraId);
+      logger.LogWarning(ex, "Analytics: failed to resolve the media server for camera '{CameraId}'", cameraId);
       return null;
     }
   }
 
-  private async Task EnsurePushAsync(string cameraId, string streamName, string serverId, CancellationToken ct)
+  /// <summary>
+  /// Tells the camera's media server to publish the stream to the worker. Idempotent, so the
+  /// keep-alive below can simply say it again: a media server that restarted has lost the sink
+  /// and the worker would otherwise wait for a publish that never comes.
+  /// </summary>
+  private async Task<bool> EnsureAnalyticsPushAsync(
+    string cameraId, string streamName, string serverId, string listenUrl, uint sampleFps,
+    CancellationToken ct)
   {
     try
     {
       var mediaClient = serverPairRegistry.GetMediaClient(serverId);
-      await mediaClient.EnsureWebRtcStreamingAsync(
-        new EnsureWebRtcStreamingRequest { CameraId = cameraId, StreamName = streamName },
+      var status = await mediaClient.EnsureAnalyticsPushAsync(
+        new EnsureAnalyticsPushRequest
+        {
+          CameraId = cameraId,
+          StreamName = streamName,
+          RtspUrl = listenUrl,
+          SampleFps = sampleFps,
+        },
+        cancellationToken: ct);
+      if (!status.Success)
+        logger.LogWarning("Analytics: media server '{ServerId}' refused the push for camera "
+          + "'{CameraId}': {Message}", serverId, cameraId, status.Message);
+      return status.Success;
+    }
+    catch (Exception ex)
+    {
+      logger.LogWarning(ex, "Analytics: EnsureAnalyticsPush failed for camera '{CameraId}'", cameraId);
+      return false;
+    }
+  }
+
+  private async Task StopAnalyticsPushAsync(
+    string cameraId, string streamName, string serverId, CancellationToken ct)
+  {
+    if (string.IsNullOrEmpty(serverId)) return;
+    try
+    {
+      var mediaClient = serverPairRegistry.GetMediaClient(serverId);
+      await mediaClient.StopAnalyticsPushAsync(
+        new AnalyticsPushKey { CameraId = cameraId, StreamName = streamName },
         cancellationToken: ct);
     }
     catch (Exception ex)
     {
-      // Best-effort: don't block StartWatch on this — the RTSP URL is still valid even if the
-      // push isn't confirmed live yet; the worker's rtsp_reader will simply retry the connection.
-      logger.LogWarning(ex, "Analytics: EnsureWebRtcStreaming failed for camera '{CameraId}'", cameraId);
+      // A media server that is down has no sink to stop anyway.
+      logger.LogWarning(ex, "Analytics: StopAnalyticsPush failed for camera '{CameraId}'", cameraId);
     }
   }
 
@@ -233,9 +289,11 @@ public sealed class WatchReconciler(
       {
         try
         {
-          var camResp = await cfg.GetCameraAsync(new SourceRequest { SourceId = cameraId }, cancellationToken: ct);
-          if (!camResp.Found) continue;
-          await EnsurePushAsync(cameraId, active.Watch.StreamName, camResp.Setup.ServerId, ct);
+          if (string.IsNullOrEmpty(active.ListenUrl) || string.IsNullOrEmpty(active.ServerId))
+            continue;
+          await EnsureAnalyticsPushAsync(
+            cameraId, active.Watch.StreamName, active.ServerId, active.ListenUrl,
+            active.Watch.SampleFps, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

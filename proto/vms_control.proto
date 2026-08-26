@@ -10,6 +10,15 @@ service CameraControlService {
 
   rpc EnsureWebRtcStreaming(EnsureWebRtcStreamingRequest) returns (OperationStatus);
 
+  // ── Analytics feed ──────────────────────────────────────────────────────────
+  // Publish a stream straight to the detector that watches it, instead of letting the detector
+  // read it back out of MediaMTX. Two readers of one high-bitrate path is what makes the
+  // operator's live view stutter: MediaMTX pushes the same keyframe burst to both in turn, the
+  // browser misses its frame-assembly window and asks for a keyframe it will not get until the
+  // next natural one.
+  rpc EnsureAnalyticsPush(EnsureAnalyticsPushRequest) returns (OperationStatus);
+  rpc StopAnalyticsPush(AnalyticsPushKey) returns (OperationStatus);
+
   rpc GetArchiveFrameJpeg(ArchiveFrameJpegRequest) returns (ArchiveFrameJpegResponse);
 
   // ── Camera-side (edge / SD card) archive import ─────────────────────────────
@@ -113,6 +122,28 @@ message CameraState {
 
 
 message EnsureWebRtcStreamingRequest {
+  string camera_id   = 1;
+  string stream_name = 2;
+}
+
+// Where to publish this camera's stream for analytics, and how much of it is wanted.
+message EnsureAnalyticsPushRequest {
+  string camera_id   = 1;
+  string stream_name = 2;
+  // The address the worker is listening on. It names itself: only the worker knows which host
+  // and port it is reachable at, and the assignment of cameras to workers lives in
+  // VmsAnalyticsSingleton, not here. media_server publishes where it is told, exactly as it
+  // already does for MediaMTX.
+  string rtsp_url    = 3;
+  // How many frames a second the consumer will actually decode. media_server measures its own
+  // keyframe spacing and sends the least that satisfies this: keyframes alone while they arrive
+  // often enough, every packet when they do not. The detector reaches the same conclusion from
+  // the same evidence (see video_a frame_sampler), but deciding it at the source saves the
+  // traffic rather than only the decoding.
+  uint32 sample_fps  = 4;
+}
+
+message AnalyticsPushKey {
   string camera_id   = 1;
   string stream_name = 2;
 }
