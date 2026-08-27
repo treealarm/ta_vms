@@ -68,9 +68,11 @@ struct MetadataConfig {
 /// plates (importance ≥ `critical_importance`) are not softened. A recovery debt keeps the
 /// extras up until an overshoot has been paid back inside `recovery_window_ms`.
 ///
-/// This is still not encoder-side VBR or a VBV buffer inside the backend. Area budget
-/// (`Quality::max_protected_fraction`) remains the CQP-side answer to "critical objects
-/// first" and works together with this loop, not instead of it.
+/// On CPU (`native_bitrate` capability) a non-zero target also opens CBR+filler in the
+/// encoder so mux bitrate matches; BitrateBudget remains an object-first fine-tuner.
+/// Hardware backends that only honour ROI under CQP keep CRF/CQP and rely on the outer
+/// loop alone. Area budget (`Quality::max_protected_fraction`) still caps how much of
+/// the frame may be protected at once.
 struct RateControlPolicy {
     /// Target average bitrate in bits per second. Zero leaves CQP/CRF alone.
     uint64_t target_bitrate = 0;

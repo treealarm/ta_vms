@@ -88,6 +88,7 @@ public:
     (void)caps.qp_map_block_width;
     (void)caps.qp_map_block_height;
     (void)caps.sei;
+    (void)caps.native_bitrate;
     (void)caps.max_roi_regions;
     if (!caps.qp_map || caps.qp_map_block_width != 16 || caps.qp_map_block_height != 16) {
         std::fprintf(stderr, "fail: Cpu H.264 must advertise qp_map 16x16\n");
@@ -95,6 +96,10 @@ public:
     }
     if (!caps.sei) {
         std::fprintf(stderr, "fail: Cpu must advertise sei\n");
+        std::exit(1);
+    }
+    if (!caps.native_bitrate) {
+        std::fprintf(stderr, "fail: Cpu must advertise native_bitrate\n");
         std::exit(1);
     }
     const smartvideo::EncoderCapabilities hevc =

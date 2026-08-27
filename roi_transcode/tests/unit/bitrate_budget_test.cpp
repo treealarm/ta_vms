@@ -51,7 +51,7 @@ void overshoot_crushes_background_before_roi()
     for (int32_t i = 0; i < 80; ++i) {
         b.observe(62500, 0.25);
     }
-    check_eq(b.background_extra(), 20, "background extra saturates");
+    check_eq(b.background_extra(), 30, "background extra saturates");
     check(b.roi_soften() > 0, "ROI softens only after background is maxed");
 }
 

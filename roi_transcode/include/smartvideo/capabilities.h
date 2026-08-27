@@ -41,6 +41,11 @@ struct EncoderCapabilities {
     /// Can carry user-data-unregistered SEI (§16).
     bool sei = false;
 
+    /// Opens CBR+filler when RateControlPolicy::target_bitrate is set, instead of CQP/CRF.
+    /// ROI QP deltas still redistribute coded quality inside that budget. Hardware backends
+    /// that only honour ROI under CQP leave this false and keep the outer BitrateBudget loop.
+    bool native_bitrate = false;
+
     /// Upper bound on regions the backend accepts. 0 means "no limit it can name".
     /// Requests above it are truncated strongest-first and the loss is reported.
     /// Ignored for truncation when qp_map is true: the map is the interface then.

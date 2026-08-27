@@ -9,8 +9,8 @@ namespace smartvideo {
 
 namespace {
 
-constexpr int32_t kMaxBackgroundExtra = 20;
-constexpr int32_t kMaxRoiSoften = 12;
+constexpr int32_t kMaxBackgroundExtra = 30;
+constexpr int32_t kMaxRoiSoften = 20;
 /// Need a short window of output before reacting, or the first I-frame alone would
 /// always look like an overshoot.
 constexpr double kMinSeconds = 0.5;
@@ -51,10 +51,27 @@ void BitrateBudget::trim(std::vector<Chunk>& chunks, double& sec, int64_t& bytes
 
 void BitrateBudget::step_up()
 {
-    if (m_background_extra < kMaxBackgroundExtra) {
-        ++m_background_extra;
-    } else if (m_roi_soften < kMaxRoiSoften) {
-        ++m_roi_soften;
+    // How far above the average ceiling we are decides the step size: a mild miss
+    // walks the ladder; a large miss (typical when ROI offsets fight CBR) jumps.
+    int32_t steps = 1;
+    if (m_avg_sec > 0.0 && m_target_bps > 0) {
+        const double avg_bps =
+            (static_cast<double>(m_avg_bytes) * 8.0) / m_avg_sec;
+        const double ratio = avg_bps / static_cast<double>(m_target_bps);
+        if (ratio > 1.5) {
+            steps = 4;
+        } else if (ratio > 1.2) {
+            steps = 2;
+        }
+    }
+    for (int32_t i = 0; i < steps; ++i) {
+        if (m_background_extra < kMaxBackgroundExtra) {
+            ++m_background_extra;
+        } else if (m_roi_soften < kMaxRoiSoften) {
+            ++m_roi_soften;
+        } else {
+            break;
+        }
     }
 }
 

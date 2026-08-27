@@ -167,7 +167,12 @@ Report transcode_file(const std::string& input_path,
         auto dets =
             roi_builder.detections_from(live, settings.quality, ep.width, ep.height);
         bitrate.soften_detections(dets);
-        qp_slew.apply(dets, settings.temporal.max_qp_delta_per_frame);
+        // Under a bitrate target the outer loop must be free to slam QP; the §13 slew
+        // would otherwise take seconds to catch a 10–20 step soften and miss the budget.
+        const int32_t slew = bitrate.active()
+            ? 0
+            : settings.temporal.max_qp_delta_per_frame;
+        qp_slew.apply(dets, slew);
         const Quality quality = bitrate.apply(settings.quality);
         const EncoderCapabilities caps = enc.capabilities();
         const int32_t block = [&]() {

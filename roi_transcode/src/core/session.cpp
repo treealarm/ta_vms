@@ -246,7 +246,11 @@ struct Session::Impl : PacketSink {
         auto dets =
             builder.detections_from(smoothed, params.settings.quality, w, h);
         bitrate.soften_detections(dets);
-        qp_slew.apply(dets, params.settings.temporal.max_qp_delta_per_frame);
+        // See transcode_file: slew would choke BitrateBudget under a target bitrate.
+        const int32_t slew = bitrate.active()
+            ? 0
+            : params.settings.temporal.max_qp_delta_per_frame;
+        qp_slew.apply(dets, slew);
         const Quality quality = bitrate.apply(params.settings.quality);
         auto rects = builder.build(w, h, dets, quality, block, budget);
         if (budget > 0 && static_cast<int>(rects.size()) > budget) {

@@ -1,17 +1,29 @@
 # Matched-bitrate acceptance (TZ v3 §15–16)
 
 v3 asks that adaptive and baseline encodes land within **2 %** of the same
-average bitrate, then compares ROI quality. Our encoder still runs CQP/CRF;
-`BitrateBudget` is an outer loop, not native VBR/VBV.
+average bitrate, then compares ROI quality.
 
-## Reference profile (as close as we can get today)
+**CPU (libx264 / libx265):** `--target-bitrate` opens **CBR + filler**
+(`EncoderCapabilities::native_bitrate`, `nal-hrd=cbr:filler=1`). Baseline and
+adaptive lock to the same HRD rate, which is what meets the 2 % gate. Mux bitrate
+typically lands near `target × (1 + peak_overshoot)` (default peak 20%) — the
+shared ceiling — rather than exactly on `target`. ROI QP deltas still redistribute
+*coded* quality inside that budget; `BitrateBudget` softens background /
+non-critical ROI under pressure (and skips §13 QP slew while a target is set so
+the ladder can move).
+
+**QSV / VA-API / NVENC:** still CQP/CRF + outer `BitrateBudget` only — those
+backends honour ROI under CQP, and native CBR there is a later slice.
+
+## Reference profile
 
 | Knob | Value | Notes |
 |------|-------|-------|
 | GOP | 60 | `Settings::gop` |
 | B-frames | 0 | backend default / disable where exposed |
-| Rate control | CQP/CRF + optional `--target-bitrate` | not encoder VBR |
-| AQ / lookahead | off where the backend allows | CPU may still differ |
+| Rate control (CPU) | CBR + filler when `--target-bitrate` set | `nal-hrd=cbr:filler=1` |
+| Rate control (HW) | CQP/CRF + outer loop | see above |
+| AQ | on for CPU (`aq-mode=1`) | required for ROI offsets |
 
 ## How to measure
 
@@ -28,13 +40,11 @@ Uses `roi-transcode` (not `roi-clip`): converts analytics `frames[]` sidecars to
 `samples[]` when needed, enables `--target-bitrate` on both baseline (empty ROI)
 and adaptive. Exit 0 if `|adaptive - baseline| / baseline ≤ 2%`.
 
-If the product CRF already sits under the target, the outer loop is a no-op —
-match is then accidental, not proof of VBR. Prefer a target **below** the
-unconstrained CRF size for a real stress.
+Prefer a target **below** the unconstrained CRF size so CBR is actually stressing
+the budget (not padding an already-smaller CRF encode).
 
-## Path to native VBR/VBV
+## Remaining
 
-1. Keep the ObjectPriority ladder + geometry as the policy under test (slices A–B).
-2. Per-backend VBR open (x264 `bitrate`+VBV, QSV/VA-API rate control enums).
-3. Object-first spend inside that mode (or keep outer loop only as fallback).
-4. Re-run this script; retire “CRF36 file got smaller” as the primary story.
+1. QSV / VA-API / NVENC native bitrate that still keeps ROI (or a documented trade-off).
+2. `QualityPolicy::BALANCED` / `BITRATE_FIRST` once HW bitrate modes exist.
+3. Retire “CRF36 file got smaller” as the primary story — use this script.

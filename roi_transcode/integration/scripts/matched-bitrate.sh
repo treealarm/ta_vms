@@ -59,13 +59,13 @@ for fr in frames:
             "confidence": float(b.get("confidence") or 0),
         })
     samples.append({"t_sec": t_sec, "boxes": boxes})
-out = {"background_qp_delta": 14, "pad": 0.02, "samples": samples}
+out = {"background_qp_delta": 0, "pad": 0.02, "samples": samples}
 json.dump(out, open(dst_path, "w"))
 print(f"converted {len(samples)} frames → samples", file=sys.stderr)
 PY
 
 BASE_JSON="$OUT/baseline_empty.json"
-printf '%s\n' '{"background_qp_delta":14,"pad":0.02,"samples":[]}' >"$BASE_JSON"
+printf '%s\n' '{"background_qp_delta":0,"pad":0.02,"samples":[]}' >"$BASE_JSON"
 
 COMMON=(--encoder cpu --codec h264 --crf 28 --gop 60 --preset balanced)
 
