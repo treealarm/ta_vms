@@ -50,6 +50,15 @@ struct TemporalROIConfig {
     bool unimplemented_requested() const { return false; }
 };
 
+/// TZ v3 §19 -- whether object metadata is written into the bitstream (SEI) and how many
+/// objects one frame may carry.
+struct MetadataConfig {
+    /// Embed user-data-unregistered SEI when the backend advertises `sei` (libx264/libx265).
+    bool bitstream_sei = true;
+    /// Soft cap; lowest-priority objects are dropped first if over.
+    uint32_t max_objects = 64;
+};
+
 /// §15. The bitrate budget, spent on critical objects first.
 ///
 /// The encoder itself still runs at a constant quantizer (CQP/CRF): that is what keeps

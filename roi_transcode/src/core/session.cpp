@@ -9,6 +9,7 @@
 #include "packet_sink.h"
 #include "qp_slew.h"
 #include "roi_encoder.h"
+#include "smartvideo/metadata.h"
 
 #include <algorithm>
 #include <span>
@@ -256,17 +257,37 @@ struct Session::Impl : PacketSink {
         return rects;
     }
 
+    std::vector<uint8_t> sei_bytes(const Regions& regions, int64_t pts)
+    {
+        if (!params.settings.metadata.bitstream_sei) {
+            return {};
+        }
+        if (!encoder.capabilities().sei) {
+            return {};
+        }
+        SeiFrame frame;
+        frame.frame_id = static_cast<uint64_t>(report.frames);
+        frame.pts = pts;
+        if (regions.qp_map.deltas.empty() && !regions.mask.consistent()) {
+            frame.objects = sei_objects_from_boxes(
+                regions.boxes, params.settings.metadata.max_objects);
+        }
+        return encode_sei_side_data(frame, params.settings.metadata.max_objects);
+    }
+
     // Pixels the caller owns, handed straight to the encoder. No decode, no wrapping:
     // this is the path a factory frame takes, and the one where zero copies is possible.
     void encode_buffer(IFrameBuffer& pixels, const Regions& regions, int64_t pts)
     {
-        encoder.encode_buffer(pixels, rects_for(regions), pts);
+        const auto sei = sei_bytes(regions, pts);
+        encoder.encode_buffer(pixels, rects_for(regions), pts, sei);
         ++report.frames;
     }
 
     void encode(AVFrame* frame, const Regions& regions, int64_t pts)
     {
-        encoder.encode(frame, rects_for(regions), pts);
+        const auto sei = sei_bytes(regions, pts);
+        encoder.encode(frame, rects_for(regions), pts, sei);
         ++report.frames;
     }
 };

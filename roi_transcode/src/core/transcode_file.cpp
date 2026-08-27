@@ -9,6 +9,7 @@
 #include "temporal_roi.h"
 #include "object_normalizer.h"
 #include "qp_slew.h"
+#include "smartvideo/metadata.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -205,7 +206,16 @@ Report transcode_file(const std::string& input_path,
 
         const int64_t out_pts = av_rescale_q(
             pts == AV_NOPTS_VALUE ? 0 : pts, in_v->time_base, enc.time_base());
-        enc.encode(dec_frame.p, rects, out_pts);
+        std::vector<uint8_t> sei;
+        if (settings.metadata.bitstream_sei && caps.sei) {
+            SeiFrame meta;
+            meta.frame_id = static_cast<uint64_t>(frames);
+            meta.pts = out_pts;
+            meta.objects =
+                sei_objects_from_boxes(live, settings.metadata.max_objects);
+            sei = encode_sei_side_data(meta, settings.metadata.max_objects);
+        }
+        enc.encode(dec_frame.p, rects, out_pts, sei);
         ++frames;
     };
 

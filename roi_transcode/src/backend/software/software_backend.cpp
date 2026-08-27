@@ -41,6 +41,7 @@ public:
             c.qp_map_block_height = 32;
         }
         c.runtime_roi_update = true;
+        c.sei = true; // libx264/libx265 udu_sei + AV_FRAME_DATA_SEI_UNREGISTERED
         c.max_roi_regions = 0;  // no limit worth naming
         return c;
     }
@@ -57,6 +58,8 @@ public:
         av_opt_set(out.enc.p->priv_data, "preset", libx26x_preset(p.preset), 0);
         av_opt_set(out.enc.p->priv_data, "crf", std::to_string(p.crf).c_str(), 0);
         av_opt_set(out.enc.p->priv_data, "aq-mode", "1", 0);
+        // Accept AV_FRAME_DATA_SEI_UNREGISTERED as user-data-unregistered SEI (§19).
+        av_opt_set_int(out.enc.p->priv_data, "udu_sei", 1, 0);
         return Status::Ok();
     }
 };

@@ -248,6 +248,7 @@ struct Settings {
     /// still refused at open when set.
     TemporalROIConfig temporal;
     RateControlPolicy rate_control;
+    MetadataConfig metadata;
     // Muxer "movflags", file output only. Empty leaves the container default;
     // a ta_vms archive clip needs fragmented mp4 to stay playable.
     std::string movflags;

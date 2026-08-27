@@ -48,6 +48,7 @@ add_library(smartvideo_adaptive STATIC
     src/adaptive/qp_slew.cpp
     src/adaptive/box_smoother.cpp
     src/adaptive/roi_lag.cpp
+    src/metadata/sei_payload.cpp
 )
 target_include_directories(smartvideo_adaptive
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -134,6 +135,11 @@ if(SVE_BUILD_TESTS)
     target_link_libraries(geometry_test PRIVATE smartvideo_adaptive)
     target_compile_options(geometry_test PRIVATE ${SVE_WARNINGS})
     add_test(NAME geometry COMMAND geometry_test)
+
+    add_executable(sei_payload_test tests/unit/sei_payload_test.cpp)
+    target_link_libraries(sei_payload_test PRIVATE smartvideo_adaptive)
+    target_compile_options(sei_payload_test PRIVATE ${SVE_WARNINGS})
+    add_test(NAME sei_payload COMMAND sei_payload_test)
 
     # Compiles against the public headers only -- no src/ on the include path. That is the
     # point of it: it stops compiling the moment an internal type leaks into the surface.

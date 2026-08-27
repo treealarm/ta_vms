@@ -198,20 +198,23 @@ void RoiEncoder::drain()
 }
 
 void RoiEncoder::encode(
-    AVFrame* frame, const std::vector<Rect>& rects, int64_t pts)
+    AVFrame* frame, const std::vector<Rect>& rects, int64_t pts,
+    std::span<const uint8_t> sei_unregistered)
 {
     // The decoder's frame goes in through the same door an embedder uses. Borrowed, not
     // owned: the decoder reuses it for the next frame.
     AvFrameBuffer buffer(frame);
-    encode_buffer(buffer, rects, pts);
+    encode_buffer(buffer, rects, pts, sei_unregistered);
 }
 
 void RoiEncoder::encode_buffer(
-    IFrameBuffer& buffer, const std::vector<Rect>& rects, int64_t pts)
+    IFrameBuffer& buffer, const std::vector<Rect>& rects, int64_t pts,
+    std::span<const uint8_t> sei_unregistered)
 {
     BackendFrameControl control;
     control.regions = rects;
     control.pts = pts;
+    control.sei_unregistered = sei_unregistered;
 
     const Status s = m_backend->SubmitFrame(*m_session.get(), buffer, control);
     if (!s) {

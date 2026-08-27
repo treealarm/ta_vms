@@ -52,3 +52,11 @@ v3-first wire (breaking, intentional): `ObjectPriority` + `desired_qp_delta` on 
 `margin_mode` / `margin_px` / `min_roi_side` on `RoiQuality`; `ClassWeighting` (tables
 only, no importance→QP line); `TemporalRoiConfig` with implemented fields only.
 Vendored into `video_a/proto/roi_transcode.proto`. ta_vms archive callers adjust later.
+
+## Slice F — SEI bitstream metadata (§19)
+
+- Payload encode/decode: `include/smartvideo/metadata.h`, `src/metadata/sei_payload.cpp`
+  (UUID + `SVE1` LE frame/objects/CRC32).
+- Soft backends (`libx264`/`libx265`): `udu_sei=1`, `capabilities.sei=true`; frame side
+  data attached from Session / `transcode_file` when `MetadataConfig::bitstream_sei`.
+- Unit: `sei_payload_test`. HW SEI and sidecar file writer still open.
