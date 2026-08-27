@@ -12,8 +12,10 @@ shared ceiling — rather than exactly on `target`. ROI QP deltas still redistri
 non-critical ROI under pressure (and skips §13 QP slew while a target is set so
 the ladder can move).
 
-**CPU H.265 (`libx265`):** for stability, target-bitrate mode currently falls
-back to plain CRF/CQP (native CBR and outer BitrateBudget are disabled there).
+**CPU H.265 (`libx265`):** ROI + SEI path is unstable on the current stack
+(`free(): invalid size` / abort in real clips), so for stability H.265 now runs
+without SEI and target-bitrate mode falls back to plain CRF/CQP (native CBR and
+outer BitrateBudget are disabled there).
 
 **HW (QSV / VA-API / NVENC):** still use CQP/CRF + outer `BitrateBudget`;
 native CBR there is a later slice.

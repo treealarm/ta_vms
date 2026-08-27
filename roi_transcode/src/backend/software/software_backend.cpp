@@ -44,7 +44,8 @@ public:
             c.qp_map_block_height = 32;
         }
         c.runtime_roi_update = true;
-        c.sei = true; // libx264/libx265 udu_sei + AV_FRAME_DATA_SEI_UNREGISTERED
+        // Guard: CPU HEVC + ROI is unstable on this stack; keep SEI on H.264 only for now.
+        c.sei = (codec == Codec::H264);
         // Native bitrate path is currently H.264-only: libx265 + ROI + target_bitrate
         // is unstable on our stack, so HEVC stays on CRF/CQP + outer BitrateBudget.
         c.native_bitrate = (codec == Codec::H264);

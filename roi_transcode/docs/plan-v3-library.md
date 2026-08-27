@@ -45,6 +45,7 @@ on the library side so the two tracks stay visible.
 - `BitrateBudget` still fine-tunes object-first; QP slew is skipped while a
   target is active so the ladder can move.
 - **CPU H.265 + HW** (QSV/VA-API/NVENC): still CQP + outer loop only.
+  On CPU H.265, SEI is disabled for stability in ROI runs.
 
 ## Slice E — ROI lag (§14)
 
