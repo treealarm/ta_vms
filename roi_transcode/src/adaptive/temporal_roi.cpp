@@ -60,9 +60,10 @@ TrackEvidence evidence_for(const std::vector<Box>& samples, double t_sec)
 }
 
 /// Linear blend of two samples of one track. `w` is 0 at `a` and 1 at `b`.
+/// Values outside [0,1] extrapolate -- that is what track prediction needs past the ends.
 Box blend(const Box& a, const Box& b, double w)
 {
-    const float f = static_cast<float>(std::clamp(w, 0.0, 1.0));
+    const float f = static_cast<float>(w);
     auto mix = [f](float lo, float hi) { return lo + (hi - lo) * f; };
 
     Box out = a;
@@ -71,7 +72,26 @@ Box blend(const Box& a, const Box& b, double w)
     out.width = mix(a.width, b.width);
     out.height = mix(a.height, b.height);
     out.confidence = mix(a.confidence, b.confidence);
+    // Confidence is not meaningful outside the segment; clamp it.
+    out.confidence = std::clamp(out.confidence, 0.0f, 1.0f);
     return out;
+}
+
+/// Extrapolate past `last` using the velocity of the last segment. TZ v3 use_track_prediction.
+Box predict_from(const std::vector<Box>& samples, double t_sec)
+{
+    Box out = samples.back();
+    if (samples.size() < 2) {
+        return out;
+    }
+    const Box& a = samples[samples.size() - 2];
+    const Box& b = samples.back();
+    const double span = b.t_sec - a.t_sec;
+    if (span <= 0.0) {
+        return out;
+    }
+    const double w = (t_sec - a.t_sec) / span; // > 1 when past b
+    return blend(a, b, w);
 }
 
 double median_interval(const std::vector<Box>& samples)
@@ -161,6 +181,16 @@ std::vector<Box> TemporalRoi::at(double t_sec) const
             const double ahead = s.front().t_sec - t_sec;
             if (ahead <= reach) {
                 Box b = s.front();
+                if (m_config.use_track_prediction && s.size() >= 2) {
+                    const Box& a0 = s[0];
+                    const Box& a1 = s[1];
+                    const double span = a1.t_sec - a0.t_sec;
+                    if (span > 0.0) {
+                        // Same linear model as forward prediction, evaluated before a0.
+                        b = blend(a0, a1, (t_sec - a0.t_sec) / span);
+                    }
+                }
+                b.confidence = s.front().confidence;
                 b.confidence *= std::pow(m_config.confidence_decay,
                     track.interval > 0 ? ahead / track.interval : 0.0);
                 b.track = evidence_for(s, t_sec);
@@ -173,7 +203,10 @@ std::vector<Box> TemporalRoi::at(double t_sec) const
             // and the one where being generous is wrong: the object may simply have left.
             const double behind = t_sec - s.back().t_sec;
             if (behind <= reach) {
-                Box b = s.back();
+                Box b = (m_config.use_track_prediction && s.size() >= 2)
+                    ? predict_from(s, t_sec)
+                    : s.back();
+                b.confidence = s.back().confidence;
                 b.confidence *= std::pow(m_config.confidence_decay,
                     track.interval > 0 ? behind / track.interval : 0.0);
                 b.track = evidence_for(s, t_sec);

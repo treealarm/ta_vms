@@ -194,8 +194,12 @@ void paint_aabb_on_qp_map(QpDeltaMap& map, const Rect& r)
 /// Shape-preserving path: every detection is painted onto the block qp-map (polygons by
 /// rasterisation, AABBs by their rectangle), weak first so the more important overwrite,
 /// then merged back into encoder rectangles. Same representation a mask uses.
+///
+/// `coding_block` is the qp_map cell size. `map_region_limit` 0 means keep every merged
+/// rectangle (qp_map backends); otherwise strongest-first truncate like rectangle APIs.
 std::vector<Rect> build_shaped(int width, int height,
-    const std::vector<Detection>& detections, const Quality& quality)
+    const std::vector<Detection>& detections, const Quality& quality,
+    int32_t coding_block, int32_t map_region_limit)
 {
     std::vector<Rect> empty;
     if (width <= 0 || height <= 0) {
@@ -218,7 +222,7 @@ std::vector<Rect> build_shaped(int width, int height,
         : 0.0;
     double spent = 0.0;
 
-    const int block = 16; // H.264 macroblock; finer than CTU, still cheap to merge
+    const int block = coding_block > 0 ? coding_block : 16;
     QpDeltaMap map;
     map.block = block;
     map.width = width;
@@ -312,7 +316,10 @@ std::vector<Rect> build_shaped(int width, int height,
         }
     }
 
-    return rects_from_qp_map(map, quality.max_regions > 0 ? quality.max_regions : 256, nullptr);
+    const int32_t limit = map_region_limit >= 0
+        ? map_region_limit
+        : (quality.max_regions > 0 ? quality.max_regions : 256);
+    return rects_from_qp_map(map, limit, nullptr);
 }
 
 } // namespace
@@ -333,11 +340,13 @@ Object object_from_box(const Box& box, const ImportancePolicy& policy)
 }
 
 std::vector<Rect> RoiMapBuilder::build(int width, int height,
-    const std::vector<Detection>& detections, const Quality& quality) const
+    const std::vector<Detection>& detections, const Quality& quality,
+    int32_t coding_block, int32_t map_region_limit) const
 {
     for (const auto& d : detections) {
         if (d.polygon.size() >= 3) {
-            return build_shaped(width, height, detections, quality);
+            return build_shaped(
+                width, height, detections, quality, coding_block, map_region_limit);
         }
     }
 

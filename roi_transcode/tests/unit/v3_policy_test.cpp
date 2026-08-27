@@ -1,11 +1,15 @@
-// ObjectPriority ladder (v3 §11.1), geometry policy (§11.2–11.3), QP slew (§13).
+// ObjectPriority ladder (v3 §11.1), geometry policy (§11.2–11.3), QP slew / smoothing (§13).
 
+#include "box_smoother.h"
 #include "importance.h"
 #include "object_normalizer.h"
 #include "qp_slew.h"
 #include "roi_lag.h"
 #include "smartvideo/object_priority.h"
+#include "smartvideo/policy.h"
+#include "smartvideo/types.h"
 
+#include <cmath>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -26,6 +30,14 @@ void check_eq(int32_t got, int32_t want, const std::string& what)
 {
     if (got != want) {
         std::fprintf(stderr, "FAIL: %s (got %d, want %d)\n", what.c_str(), got, want);
+        ++failures;
+    }
+}
+
+void check_near(double got, double want, double tol, const std::string& what)
+{
+    if (std::fabs(got - want) > tol) {
+        std::fprintf(stderr, "FAIL: %s (got %.4f, want %.4f)\n", what.c_str(), got, want);
         ++failures;
     }
 }
@@ -139,6 +151,43 @@ void qp_slew_limits_a_jump()
     check_eq(b[0].qp_delta, -4, "jump of 6 is clamped to step 2");
 }
 
+void box_smoother_blends_toward_history()
+{
+    smartvideo::BoxSmoother smooth;
+    smartvideo::Box a;
+    a.track_id = 3;
+    a.kind = "person";
+    a.x = 0.10f;
+    a.y = 0.20f;
+    a.width = 0.10f;
+    a.height = 0.40f;
+    std::vector<smartvideo::Box> first{a};
+    smooth.apply(first, 0.35f, 0.25f);
+    check_near(first[0].x, 0.10, 1e-5, "first frame seeds state");
+
+    smartvideo::Box b = a;
+    b.x = 0.50f;
+    b.width = 0.30f;
+    std::vector<smartvideo::Box> second{b};
+    smooth.apply(second, 0.35f, 0.25f);
+    // 0.35*0.50 + 0.65*0.10 = 0.240
+    check_near(second[0].x, 0.35 * 0.50 + 0.65 * 0.10, 1e-4, "temporal EMA on x");
+    // 0.25*0.30 + 0.75*0.10 = 0.150
+    check_near(second[0].width, 0.25 * 0.30 + 0.75 * 0.10, 1e-4, "spatial EMA on width");
+}
+
+void v3_temporal_defaults_match_the_spec()
+{
+    smartvideo::TemporalROIConfig t;
+    check(t.max_missing_frames == 3, "max_missing_frames");
+    check_near(t.confidence_decay, 0.85, 1e-6, "confidence_decay");
+    check_near(t.spatial_smoothing, 0.25, 1e-6, "spatial_smoothing");
+    check_near(t.temporal_smoothing, 0.35, 1e-6, "temporal_smoothing");
+    check(t.use_track_prediction, "use_track_prediction");
+    check_eq(t.max_qp_delta_per_frame, 2, "max_qp_delta_per_frame");
+    check(!t.unimplemented_requested(), "nothing left unimplemented");
+}
+
 void roi_lag_acceptance_matches_v3_thresholds()
 {
     smartvideo::Box a{.x = 0.1f, .y = 0.1f, .width = 0.2f, .height = 0.2f};
@@ -170,6 +219,8 @@ int main()
     min_roi_side_expands_a_tiny_box();
     fixed_margin_grows_the_body();
     qp_slew_limits_a_jump();
+    box_smoother_blends_toward_history();
+    v3_temporal_defaults_match_the_spec();
     roi_lag_acceptance_matches_v3_thresholds();
 
     if (failures > 0) {

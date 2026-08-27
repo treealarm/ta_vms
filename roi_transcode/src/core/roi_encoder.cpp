@@ -119,13 +119,10 @@ void RoiEncoder::open_deferred(const EncoderConfig& config)
         fail(std::format("quality policy {} is not implemented",
             quality_policy_name(config.policy)));
     }
-    // Same rule for the two settings that exist only as declarations. A caller who asks
-    // for temporal smoothing or a bitrate target and gets neither has been misled; the
-    // encode would look like it worked, and any measurement taken against it would be
-    // wrong in a way nothing reveals.
+    // Same rule for settings that exist only as declarations. A caller who asks for a
+    // bitrate target and gets neither has been misled.
     if (config.temporal.unimplemented_requested()) {
-        fail("smoothing and track prediction (TZ v2.0 section 13) are declared but not "
-             "implemented; max_missing_frames and confidence_decay are");
+        fail("TemporalROIConfig asked for something that is not implemented");
     }
     if (config.rate_control.unimplemented_requested()) {
         fail("RateControlPolicy asked for something BitrateBudget does not implement");

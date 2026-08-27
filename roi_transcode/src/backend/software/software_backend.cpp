@@ -22,15 +22,24 @@ class SoftwareBackend final : public LibavBackend {
 public:
     Encoder kind() const override { return Encoder::Cpu; }
 
-    EncoderCapabilities GetCapabilities(Codec) const override
+    EncoderCapabilities GetCapabilities(Codec codec) const override
     {
         EncoderCapabilities c;
         c.h264 = true;
         c.h265 = true;
         c.roi_rectangles = true;
-        // The offsets are per macroblock underneath, which is what makes the region count
-        // unlimited: rectangles are just how they are described on the way in.
-        c.per_block_qp = true;
+        // The offsets are a per-block quantOffsets map underneath, which is what makes the
+        // region count unlimited: rectangles are just how FFmpeg describes them on the way
+        // in. H.264 cells are macroblocks; for HEVC we paint 32x32 before merge (see
+        // EncoderCapabilities::qp_map_block_*).
+        c.qp_map = true;
+        if (codec == Codec::H264) {
+            c.qp_map_block_width = 16;
+            c.qp_map_block_height = 16;
+        } else {
+            c.qp_map_block_width = 32;
+            c.qp_map_block_height = 32;
+        }
         c.runtime_roi_update = true;
         c.max_roi_regions = 0;  // no limit worth naming
         return c;

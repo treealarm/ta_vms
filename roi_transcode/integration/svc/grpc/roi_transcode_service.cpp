@@ -261,6 +261,15 @@ void apply_settings(const ProtoSettings& in, smartvideo::Settings& out)
         if (t.has_max_qp_delta_per_frame()) {
             out.temporal.max_qp_delta_per_frame = t.max_qp_delta_per_frame();
         }
+        if (t.has_spatial_smoothing()) {
+            out.temporal.spatial_smoothing = t.spatial_smoothing();
+        }
+        if (t.has_temporal_smoothing()) {
+            out.temporal.temporal_smoothing = t.temporal_smoothing();
+        }
+        if (t.has_use_track_prediction()) {
+            out.temporal.use_track_prediction = t.use_track_prediction();
+        }
     }
 }
 
@@ -518,7 +527,29 @@ grpc::Status RoiStreamTranscodeServiceImpl::EncodeStream(grpc::ServerContext*,
 
             smartvideo::Regions regions;
             boxes.clear();
-            if (in.has_mask()) {
+            if (in.has_qp_map()) {
+                const auto& m = in.qp_map();
+                smartvideo::QpDeltaMap grid;
+                grid.block = m.block();
+                grid.cols = m.cols();
+                grid.rows = m.rows();
+                grid.width = m.width() > 0 ? m.width() : sp.width;
+                grid.height = m.height() > 0 ? m.height() : sp.height;
+                const auto& raw = m.deltas();
+                grid.deltas.resize(raw.size());
+                for (std::size_t i = 0; i < raw.size(); ++i) {
+                    grid.deltas[i] = static_cast<int8_t>(raw[i]);
+                }
+                const std::size_t expect =
+                    static_cast<std::size_t>(std::max(grid.cols, 0))
+                    * static_cast<std::size_t>(std::max(grid.rows, 0));
+                if (grid.block <= 0 || grid.cols <= 0 || grid.rows <= 0
+                    || grid.deltas.size() != expect) {
+                    return {grpc::StatusCode::INVALID_ARGUMENT,
+                        "qp_map deltas length must equal cols*rows with block>0"};
+                }
+                regions.qp_map = std::move(grid);
+            } else if (in.has_mask()) {
                 mask.data = std::span<const uint8_t>(
                     reinterpret_cast<const uint8_t*>(in.mask().data().data()),
                     in.mask().data().size());

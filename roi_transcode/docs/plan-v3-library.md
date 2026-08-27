@@ -25,16 +25,13 @@ on the library side so the two tracks stay visible.
   soft rim — see [`padding-sweep.md`](padding-sweep.md) (halo **width** matters
   more than QP boost; do not treat `pad=0.02` as v3 truth).
 
-## Slice C — Temporal QP slew (§13)
+## Slice C — Temporal anti-flicker (§13)
 
-- `TemporalROIConfig::max_qp_delta_per_frame` is implemented (`QpSlewLimiter` in
-  session + file paths). Default remains **0** (off).
-- **Decision (2026-08-26, Cursor library track):** our Temporal defaults stay
-  zero for smoothing / prediction / `max_qp_delta_per_frame`. We **diverge** from
-  the PDF’s non-zero §13 defaults on purpose: open still refuses
-  spatial/temporal smoothing and track prediction. Enabling PDF defaults would
-  reject every job until those features exist. Documented here and as a dated
-  note in `plan-v2.md`; not a silent code change of the refused fields.
+- Defaults match TZ v3: `confidence_decay=0.85`, `spatial_smoothing=0.25`,
+  `temporal_smoothing=0.35`, `use_track_prediction=true`, `max_qp_delta_per_frame=2`.
+- `QpSlewLimiter` caps QP jumps; `BoxSmoother` EMA on live/file boxes; track
+  prediction extrapolates past the last sample within patience.
+- `unimplemented_requested()` is always false for temporal — open no longer refuses.
 
 ## Slice D — Matched bitrate (§15–16)
 

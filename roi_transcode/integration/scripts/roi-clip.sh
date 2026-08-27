@@ -57,8 +57,9 @@ the detected objects drawn over it.
       --bitrate-overshoot F  allowed average overshoot fraction (default 0.1)
       --pad F          soft rim around a box, fraction of the frame        (0.02)
       --max-regions N  cap on regions handed to the encoder
-      --regions FORM   boxes | mask                 (boxes)
+      --regions FORM   boxes | mask | qp_map        (boxes)
       --mask-scale N   mask is 1/N of the frame     (8)
+      --qpmap-block N  coding block for qp_map; 0=auto
 
   detection
       --detect-fps N   inference passes per second of content, 0 = every frame (2)
@@ -123,7 +124,7 @@ parse_args() {
             --qp)          if [ "$from" = file ]; then QP_FILE+=("$2"); else QP_CLI+=("$2"); fi
                            shift 2 ;;
             --target-bitrate|--bitrate-overshoot|\
-            --codec|--crf|--gop|--preset|--max-regions|--regions|--mask-scale|--background-qp|\
+            --codec|--crf|--gop|--preset|--max-regions|--regions|--mask-scale|--qpmap-block|--background-qp|\
             --pad|--margin-px|--min-roi-side|--max-qp-delta-per-frame|\
             --detect-fps|--classes|--min-confidence)
                            OPT["$1"]="$2"; shift 2 ;;

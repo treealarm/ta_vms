@@ -48,8 +48,13 @@ public:
     ///
     /// When any detection carries a polygon the path goes through the block qp-map (same as
     /// a mask) so the outline is preserved; otherwise it stays on cheap axis-aligned rects.
+    ///
+    /// `coding_block` is the qp_map cell (16 for H.264, 32 for HEVC here).
+    /// `map_region_limit`: <0 keeps the old Quality::max_regions default for the shaped
+    /// path; 0 means unlimited (backend has qp_map); >0 truncates strongest-first.
     std::vector<Rect> build(int width, int height,
-        const std::vector<Detection>& detections, const Quality& quality) const;
+        const std::vector<Detection>& detections, const Quality& quality,
+        int32_t coding_block = 16, int32_t map_region_limit = -1) const;
 
     // Boxes lie on a timeline; picks the ones within Quality::hold_sec of
     // `t_sec` and resolves them to pixels.

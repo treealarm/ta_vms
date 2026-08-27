@@ -32,6 +32,7 @@ SCALARS = {
     "max_regions": "--max-regions",
     "regions": "--regions",
     "mask_scale": "--mask-scale",
+    "qpmap_block": "--qpmap-block",
     "detect_fps": "--detect-fps",
     "min_confidence": "--min-confidence",
     "target_bitrate": "--target-bitrate",

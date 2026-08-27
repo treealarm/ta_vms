@@ -2,6 +2,7 @@
 
 #include "av_raii.h"
 #include "bitrate_budget.h"
+#include "box_smoother.h"
 #include "packet_sink.h"
 #include "importance_map.h"
 #include "roi_encoder.h"
@@ -97,6 +98,7 @@ Report transcode_file(const std::string& input_path,
 
     BitrateBudget bitrate(settings.rate_control);
     QpSlewLimiter qp_slew;
+    BoxSmoother box_smooth;
     const double frame_sec = (fps.num > 0 && fps.den > 0)
         ? static_cast<double>(fps.den) / static_cast<double>(fps.num)
         : 1.0 / 25.0;
@@ -159,22 +161,29 @@ Report transcode_file(const std::string& input_path,
 
         // One region per track rather than one per sample, positioned where the object was
         // at this instant rather than where it was last seen.
-        const auto live = temporal.at(t);
+        auto live = temporal.at(t);
+        box_smooth.apply(live, settings.temporal);
         auto dets =
             roi_builder.detections_from(live, settings.quality, ep.width, ep.height);
         bitrate.soften_detections(dets);
         qp_slew.apply(dets, settings.temporal.max_qp_delta_per_frame);
         const Quality quality = bitrate.apply(settings.quality);
-        auto rects = roi_builder.build(ep.width, ep.height, dets, quality);
-        const int32_t cap = settings.quality.max_regions;
-        // Also respect the backend's own limit (VA-API: 8). Without this the library keeps
-        // 32 and libavcodec drops the rest by a rule that ignores importance -- and the
-        // background rectangle, being last, is the first to go.
-        const int32_t backend_cap = static_cast<int32_t>(enc.capabilities().max_roi_regions);
-        int32_t budget = cap;
-        if (backend_cap > 0) {
-            budget = budget > 0 ? std::min(budget, backend_cap) : backend_cap;
+        const EncoderCapabilities caps = enc.capabilities();
+        const int32_t block = [&]() {
+            const int32_t b = qp_map_block(caps);
+            return b > 0 ? b : 16;
+        }();
+        // qp_map backends keep the full merged map; rectangle APIs take the smaller of
+        // the caller's max_regions and the backend's own limit (VA-API: 8).
+        int32_t budget = 0;
+        if (!caps.qp_map) {
+            budget = settings.quality.max_regions;
+            const int32_t backend_cap = static_cast<int32_t>(caps.max_roi_regions);
+            if (backend_cap > 0) {
+                budget = budget > 0 ? std::min(budget, backend_cap) : backend_cap;
+            }
         }
+        auto rects = roi_builder.build(ep.width, ep.height, dets, quality, block, budget);
         if (budget > 0 && static_cast<int32_t>(rects.size()) > budget) {
             int32_t lost = 0;
             truncate_roi_rects(rects, budget, ep.width, ep.height, &lost);
@@ -182,11 +191,10 @@ Report transcode_file(const std::string& input_path,
         }
 
         if (!logged_roi) {
-            // H.264 partitions into 16x16 macroblocks, HEVC into 32x32 CTUs.
-            const int32_t block = settings.codec == Codec::H264 ? 16 : 32;
             const auto grid = qp_map.build(ep.width, ep.height, block, rects);
-            std::fprintf(stderr, "ROI: %zu rects, qpDeltaMap %dx%d blocks of %d\n",
-                rects.size(), grid.cols, grid.rows, block);
+            std::fprintf(stderr, "ROI: %zu rects, qpDeltaMap %dx%d blocks of %d%s\n",
+                rects.size(), grid.cols, grid.rows, block,
+                caps.qp_map ? " (qp_map)" : "");
             if (enc.kind() == Encoder::Nvenc) {
                 std::fprintf(stderr,
                     "warning: stock FFmpeg hevc_nvenc ignores ROI; "

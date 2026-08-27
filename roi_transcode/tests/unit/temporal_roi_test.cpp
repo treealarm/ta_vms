@@ -116,6 +116,7 @@ void confidence_decays_only_where_it_is_a_guess()
 {
     smartvideo::TemporalROIConfig config;
     config.confidence_decay = 0.5f;
+    config.use_track_prediction = false; // hold last box; test is about confidence only
 
     const std::vector<smartvideo::Box> boxes{box(0.0, 7, 0.1f), box(1.0, 7, 0.2f)};
     const smartvideo::TemporalRoi roi(boxes, config, 0.5);
@@ -125,6 +126,30 @@ void confidence_decays_only_where_it_is_a_guess()
     const auto after = roi.at(2.0);
     check(after.size() == 1 && after[0].confidence < 0.9f * 0.6f,
         "one sample past the end, halved");
+}
+
+// Past the last detection the box keeps moving when prediction is on (TZ v3).
+void prediction_continues_motion_past_the_last_sample()
+{
+    // x: 0.10 at t=0, 0.30 at t=2 → at t=3 (one second past end) x = 0.40
+    const std::vector<smartvideo::Box> boxes{box(0.0, 7, 0.10f), box(2.0, 7, 0.30f)};
+    smartvideo::TemporalROIConfig config;
+    config.max_missing_frames = 3;
+    config.use_track_prediction = true;
+    config.confidence_decay = 1.0f;
+    const smartvideo::TemporalRoi roi(boxes, config, 0.5);
+
+    const auto past = roi.at(3.0);
+    check(past.size() == 1, "still held with prediction");
+    if (past.size() == 1) {
+        check_near(past[0].x, 0.40, 1e-4, "position continues along the last velocity");
+    }
+
+    config.use_track_prediction = false;
+    const smartvideo::TemporalRoi held(boxes, config, 0.5);
+    const auto frozen = held.at(3.0);
+    check(frozen.size() == 1 && std::fabs(frozen[0].x - 0.30f) < 1e-4,
+        "without prediction the last box is frozen");
 }
 
 // A source that reports no track has nothing to stitch, and keeps the old behaviour.
@@ -167,6 +192,7 @@ int main()
     a_track_that_ended_is_let_go();
     patience_follows_the_source_s_own_rate();
     confidence_decays_only_where_it_is_a_guess();
+    prediction_continues_motion_past_the_last_sample();
     untracked_boxes_keep_the_symmetric_window();
     at_attaches_track_evidence_for_importance();
 

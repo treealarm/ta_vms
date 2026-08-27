@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -83,8 +84,25 @@ public:
         smartvideo::backend_chain(smartvideo::Encoder::Cpu)[0].get().GetCapabilities(
             smartvideo::Codec::H264);
     (void)caps.h264;
-    (void)caps.per_block_qp;
+    (void)caps.qp_map;
+    (void)caps.qp_map_block_width;
+    (void)caps.qp_map_block_height;
     (void)caps.max_roi_regions;
+    if (!caps.qp_map || caps.qp_map_block_width != 16 || caps.qp_map_block_height != 16) {
+        std::fprintf(stderr, "fail: Cpu H.264 must advertise qp_map 16x16\n");
+        std::exit(1);
+    }
+    const smartvideo::EncoderCapabilities hevc =
+        smartvideo::backend_chain(smartvideo::Encoder::Cpu)[0].get().GetCapabilities(
+            smartvideo::Codec::H265);
+    if (!hevc.qp_map || hevc.qp_map_block_width != 32) {
+        std::fprintf(stderr, "fail: Cpu H.265 must advertise qp_map 32x32\n");
+        std::exit(1);
+    }
+    if (smartvideo::qp_map_block(hevc) != 32) {
+        std::fprintf(stderr, "fail: qp_map_block helper\n");
+        std::exit(1);
+    }
 
     smartvideo::EncoderConfig config;
     config.width = 1280;

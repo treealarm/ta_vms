@@ -46,6 +46,7 @@ add_library(smartvideo_adaptive STATIC
     src/adaptive/temporal_roi.cpp
     src/adaptive/bitrate_budget.cpp
     src/adaptive/qp_slew.cpp
+    src/adaptive/box_smoother.cpp
     src/adaptive/roi_lag.cpp
 )
 target_include_directories(smartvideo_adaptive
