@@ -235,16 +235,50 @@ rectangles land where the encoder was told to spend its bits.
 `video_a` (the analytics engine, separate repository) can read a file, detect what
 is in it, and drive `EncodeStream` directly over plain gRPC -- no Dapr, no media
 router, two processes. `roi-clip.sh` starts both, builds the overlay and opens the
-result:
+result.
+
+### Quick start (plates)
+
+```bash
+./integration/scripts/roi-clip.sh \
+  /mnt/wdblue/seenaptec/media_trash/samples/dataset/mycarplate.mp4 \
+  -o /mnt/wdblue/seenaptec/media_trash/samples/dataset/output \
+  --classes vehicle,license_plate \
+  --detect-fps 0 \
+  --crf 18 --background-qp 4 \
+  --qp license_plate=-12 \
+  --encoder cpu --play none
+
+mpv .../output/mycarplate.roi.mp4 --sub-file=.../output/mycarplate.roi.ass
+```
+
+Write somewhere the player can open. Snap/Flatpak VLC often cannot read `/tmp/...`
+even when the file is valid (`ffprobe` / `mpv` are fine).
+
+### What the knobs mean
+
+| Knob | Role |
+|------|------|
+| `--crf` | Overall crush. Lower = closer to source, larger file. Default **23**; demos often use 14–18. |
+| `--background-qp` | Extra QP on unprotected areas (positive = worse background). Default **6** (mild). 14 was a lab crush. |
+| `--qp KIND=DELTA` | Override the v3 ladder for one class (negative = better). Omit to use plate/face/vehicle ladder. |
+| `--classes` | What to detect. `license_plate` uses video_a's YOLOv8 plate IR (full frame). |
+| `--detect-fps` | Detector rate; **0** = every frame (short plate clips). Default 2. |
+| `--target-bitrate` | Outer average ceiling. Does **not** yet match baseline within §16's 2%; leave off for demos. |
+| `--encoder` | `cpu` / `vaapi` / `auto`. Prefer `cpu` for quality stands. |
+| `-o` / `--out` | Output directory or exact path. |
+| `--play` | `roi` \| `source` \| `both` \| `none`. |
+
+Built-in defaults when a flag is omitted: `CRF 23`, `background_qp 6`, `pad 0.02`,
+`detect_fps 2`, `codec same`.
 
 ```bash
 ./integration/scripts/roi-clip.sh clip.mp4
-./integration/scripts/roi-clip.sh clip.mp4 --crf 34 --background-qp 14 --play both
+./integration/scripts/roi-clip.sh clip.mp4 --crf 18 --background-qp 4 --play both
 ./integration/scripts/roi-clip.sh clip.mp4 --regions mask --play none
 ```
 
-Everything lands in `/tmp/roi-clip/<name>/` unless `--out` names the result, in which
-case its directory and its stem are what the sidecar and the overlay are built from
+Everything lands in `/tmp/roi-clip/<name>/` unless `--out` / `-o` names the result
 (`-o` and `--out` are alternatives; the later one wins):
 
 ```bash
@@ -258,14 +292,15 @@ flag still wins over the file:
 ```bash
 cp integration/scripts/roi-clip.example.yaml my-profile.yaml
 ./integration/scripts/roi-clip.sh -c my-profile.yaml
-./integration/scripts/roi-clip.sh -c my-profile.yaml other.mp4 -o /tmp/out --crf 36
+./integration/scripts/roi-clip.sh -c my-profile.yaml other.mp4 -o /path/out --crf 18
 export ROI_CLIP_CONFIG=$PWD/my-profile.yaml   # then just: roi-clip.sh
 ```
 
-`roi-clip.example.yaml` is the commented list of everything a profile can set.
-An unknown key is refused by name rather than ignored. `qp` is the one setting that
-replaces rather than merges: a `--qp` on the command line stands for the whole block,
-because a kind added to the profile's list would otherwise reach the encoder twice.
+`roi-clip.example.yaml` is the commented list of everything a profile can set
+(mild product defaults, not the old CRF36/bg14 crush). An unknown key is refused
+by name rather than ignored. `qp` is the one setting that replaces rather than
+merges: a `--qp` on the command line stands for the whole block, because a kind
+added to the profile's list would otherwise reach the encoder twice.
 
 The encoder service is stopped when the
 script exits, and `--play both` opens the source and the result with the same
@@ -283,8 +318,8 @@ APP_ID=roitrc GRPC_ROI_BIND=127.0.0.1 GRPC_ROI_PORT=50061 \
 # 2. the pass: decode, detect, re-encode, write the sidecar
 ANALYTICS_MODEL_PATH=... ANALYTICS_DEVICE=CPU ANALYTICS_REID_EMBED_INTERVAL_SEC=15 \
   ./analytics-worker --roi-file /path/to/clips/clip.mp4 --roi-grpc 127.0.0.1:50061 \
-    --codec h264 --crf 30 --encoder vaapi --background-qp 8 \
-    --qp face=-10 --qp license_plate=-12 --qp person=-6 --qp vehicle=-4 --pad 0.02
+    --codec h264 --crf 23 --encoder cpu --background-qp 6 \
+    --qp license_plate=-12 --pad 0.02
 
 # 3. look at it
 ./integration/scripts/boxes-to-ass.py /path/to/clips/clip.boxes.json -o /tmp/clip.ass
@@ -309,8 +344,9 @@ the region budget does on VA-API, in [`docs/stream-mode-hw.md`](docs/stream-mode
 ## Synthetic scenes
 
 ```bash
-./integration/scripts/make-scenes.py            # all of them, into testdata/scenes/
-./integration/scripts/make-scenes.py moving
+./benchmarks/synthetic/make-scenes.py            # all of them, into testdata/scenes/
+./benchmarks/synthetic/make-scenes.py moving
+./benchmarks/synthetic/rd_curve.sh moving cpu h264
 ```
 
 Five clips, each with a `truth.json` saying where the object is on every frame,

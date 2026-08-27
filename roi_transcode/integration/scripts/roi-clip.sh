@@ -7,7 +7,7 @@
 # is four terminals and a good memory, so this does it instead.
 #
 #   ./integration/scripts/roi-clip.sh clip.mp4
-#   ./integration/scripts/roi-clip.sh clip.mp4 --crf 34 --background-qp 14 --play source
+#   ./integration/scripts/roi-clip.sh clip.mp4 --crf 18 --background-qp 4 --play source
 #   ./integration/scripts/roi-clip.sh -c my-profile.yaml
 #
 # The service is started here and stopped when this exits, so nothing is left listening.
@@ -48,7 +48,7 @@ the detected objects drawn over it.
       --crf N          quantizer                    (encoder default; omit to leave it)
       --gop N          keyframe interval in frames  (same as the source)
       --preset NAME    balanced | fast | slow | ...
-      --background-qp N   how much worse everything unprotected gets   (14)
+      --background-qp N   how much worse everything unprotected gets   (6)
       --qp KIND=DELTA  per-kind override; omit to use the v3 ObjectPriority ladder
       --margin-px N    expand each box by N pixels (service default 8)
       --min-roi-side N expand boxes shorter than N (service default 64)
@@ -68,6 +68,9 @@ the detected objects drawn over it.
   overlay
       --thickness N    box outline width in pixels  (3)
       --keep           leave the service log in the output directory
+
+Defaults (when a flag is omitted): CRF 23, background_qp 6, pad 0.02, detect_fps 2,
+codec same. Prefer writing outside /tmp if a Snap/Flatpak player must open the result.
 
 Environment: ROI_CLIP_CONFIG, ANALYTICS_MODEL_PATH (default <video_a>/models), VIDEO_A_DIR,
 ROI_SVC_BIN, ANALYTICS_WORKER_BIN, ROI_GRPC_PORT.
@@ -90,10 +93,11 @@ INPUT_FROM=""
 OUT_FROM=""
 PROFILE_INPUT=""
 
-# Defaults chosen for the product model: crush the frame (high-ish CRF + background
-# penalty), let the v3 ObjectPriority ladder decide how much each class is worth, and
-# keep a small soft rim. Explicit --qp KIND=DELTA still wins for those kinds.
-declare -A OPT=([--codec]=same [--detect-fps]=2 [--background-qp]=14 [--pad]=0.02 [--crf]=36)
+# Defaults: keep ROI near a usable watchable quality (CRF 23), only a mild background
+# penalty (bg_qp 6), and let the v3 ObjectPriority ladder spend the saved bits. Explicit
+# --qp KIND=DELTA still wins for those kinds. CRF 36 / bg 14 crushed the frame for the
+# early stand and made plates worse than the source — that is not the product default.
+declare -A OPT=([--codec]=same [--detect-fps]=2 [--background-qp]=6 [--pad]=0.02 [--crf]=23)
 QP_FILE=()
 QP_CLI=()
 
