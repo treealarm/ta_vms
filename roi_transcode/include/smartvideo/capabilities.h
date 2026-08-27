@@ -42,8 +42,9 @@ struct EncoderCapabilities {
     bool sei = false;
 
     /// Opens CBR+filler when RateControlPolicy::target_bitrate is set, instead of CQP/CRF.
-    /// ROI QP deltas still redistribute coded quality inside that budget. Hardware backends
-    /// that only honour ROI under CQP leave this false and keep the outer BitrateBudget loop.
+    /// On CPU this is currently true for H.264 and false for H.265 (guarded for stability).
+    /// Hardware backends that only honour ROI under CQP leave this false and keep the outer
+    /// BitrateBudget loop.
     bool native_bitrate = false;
 
     /// Upper bound on regions the backend accepts. 0 means "no limit it can name".

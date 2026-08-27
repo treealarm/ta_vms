@@ -486,11 +486,11 @@ CV, если понадобится, можно поднять настройк�
     **Peak + recovery (library):** `max_peak_overshoot` (окно ~1 с) и `recovery_window_ms`
     (долг бит, блокирует step-down) реализованы в `BitrateBudget`; отказ на open снят.
     **CPU native CBR+filler (2026-08-27):** при `target_bitrate > 0` software-бэкенд
-    открывает CBR с filler (`x264-params nal-hrd=cbr:filler=1`, `bit_rate`=`rc_max_rate`),
-    CRF не ставит; capability `native_bitrate`. ROI-дельты перераспределяют *кодированное*
-    качество внутри бюджета; mux bitrate сходится (matched-bitrate ≤2%). `BitrateBudget`
-    остаётся тонкой настройкой object-first. QSV/VA-API/NVENC по-прежнему CQP + outer
-    loop (ROI у них живёт на CQP). `BALANCED`/`BITRATE_FIRST` — ещё нет.
+    открывает CBR с filler (`x264-params nal-hrd=cbr:filler=1`) только для H.264;
+    CRF не ставит; capability `native_bitrate` = true только для H.264. ROI-дельты
+    перераспределяют *кодированное* качество внутри бюджета; matched-bitrate ≤2%
+    на H.264. H.265 и HW (QSV/VA-API/NVENC) по-прежнему CQP + outer loop
+    (ROI у них живёт на CQP). `BALANCED`/`BITRATE_FIRST` — ещё нет.
 12. ~~`StreamSettings` получает целевой битрейт~~ — `RateControl` на wire (и на
     `FileSettings` для офлайн-калибровки). HW CBR/ABR с сохранением ROI — следующий срез.
 

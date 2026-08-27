@@ -68,11 +68,11 @@ struct MetadataConfig {
 /// plates (importance ≥ `critical_importance`) are not softened. A recovery debt keeps the
 /// extras up until an overshoot has been paid back inside `recovery_window_ms`.
 ///
-/// On CPU (`native_bitrate` capability) a non-zero target also opens CBR+filler in the
-/// encoder so mux bitrate matches; BitrateBudget remains an object-first fine-tuner.
-/// Hardware backends that only honour ROI under CQP keep CRF/CQP and rely on the outer
-/// loop alone. Area budget (`Quality::max_protected_fraction`) still caps how much of
-/// the frame may be protected at once.
+/// On CPU (`native_bitrate` capability) a non-zero target opens CBR+filler for H.264.
+/// H.265 and hardware backends stay on CRF/CQP and rely on the outer loop alone.
+/// BitrateBudget remains an object-first fine-tuner. Area budget
+/// (`Quality::max_protected_fraction`) still caps how much of the frame may be protected
+/// at once.
 struct RateControlPolicy {
     /// Target average bitrate in bits per second. Zero leaves CQP/CRF alone.
     uint64_t target_bitrate = 0;

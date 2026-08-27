@@ -97,7 +97,7 @@ Report transcode_file(const std::string& input_path,
             in.p->streams[aindex]->codecpar, in.p->streams[aindex]->time_base);
     }
 
-    BitrateBudget bitrate(settings.rate_control);
+    BitrateBudget bitrate;
     QpSlewLimiter qp_slew;
     BoxSmoother box_smooth;
     const double frame_sec = (fps.num > 0 && fps.den > 0)
@@ -136,13 +136,16 @@ Report transcode_file(const std::string& input_path,
     ep.temporal = settings.temporal;
     ep.rate_control = settings.rate_control;
     ep.codec = resolve_codec(settings.codec, in_v->codecpar->codec_id);
+    if (ep.kind == Encoder::Cpu && ep.codec == Codec::H265) {
+        // Guard: CPU HEVC target-bitrate path is unstable on our stack.
+        ep.rate_control.target_bitrate = 0;
+    }
     ep.crf = settings.crf;
     ep.gop = settings.gop;
     ep.preset = settings.preset;
 
     RoiEncoder enc;
     enc.open(ep, sink);
-
     RoiMapBuilder roi_builder;
     // §13. Built once from the whole timeline: grouping boxes into tracks per frame would be
     // the same work repeated for every frame of the clip.

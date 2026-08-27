@@ -37,12 +37,12 @@ on the library side so the two tracks stay visible.
 
 - Acceptance helper: [`matched-bitrate.md`](matched-bitrate.md) +
   `integration/scripts/matched-bitrate.sh`.
-- **CPU:** `native_bitrate` — CBR + filler (`nal-hrd=cbr:filler=1`); baseline vs
+- **CPU H.264:** `native_bitrate` — CBR + filler (`nal-hrd=cbr:filler=1`); baseline vs
   adaptive within 2% on `video1_12s` (measured). Absolute mux rate sits near
   `target × (1 + peak_overshoot)`.
 - `BitrateBudget` still fine-tunes object-first; QP slew is skipped while a
   target is active so the ladder can move.
-- **HW** (QSV/VA-API/NVENC): still CQP + outer loop only.
+- **CPU H.265 + HW** (QSV/VA-API/NVENC): still CQP + outer loop only.
 
 ## Slice E — ROI lag (§14)
 

@@ -109,6 +109,10 @@ public:
         std::fprintf(stderr, "fail: Cpu H.265 must advertise qp_map 32x32\n");
         std::exit(1);
     }
+    if (hevc.native_bitrate) {
+        std::fprintf(stderr, "fail: Cpu H.265 must keep native_bitrate off\n");
+        std::exit(1);
+    }
     if (smartvideo::qp_map_block(hevc) != 32) {
         std::fprintf(stderr, "fail: qp_map_block helper\n");
         std::exit(1);

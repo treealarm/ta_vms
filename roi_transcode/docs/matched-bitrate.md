@@ -3,7 +3,7 @@
 v3 asks that adaptive and baseline encodes land within **2 %** of the same
 average bitrate, then compares ROI quality.
 
-**CPU (libx264 / libx265):** `--target-bitrate` opens **CBR + filler**
+**CPU H.264 (`libx264`):** `--target-bitrate` opens **CBR + filler**
 (`EncoderCapabilities::native_bitrate`, `nal-hrd=cbr:filler=1`). Baseline and
 adaptive lock to the same HRD rate, which is what meets the 2 % gate. Mux bitrate
 typically lands near `target × (1 + peak_overshoot)` (default peak 20%) — the
@@ -12,8 +12,11 @@ shared ceiling — rather than exactly on `target`. ROI QP deltas still redistri
 non-critical ROI under pressure (and skips §13 QP slew while a target is set so
 the ladder can move).
 
-**QSV / VA-API / NVENC:** still CQP/CRF + outer `BitrateBudget` only — those
-backends honour ROI under CQP, and native CBR there is a later slice.
+**CPU H.265 (`libx265`):** for stability, target-bitrate mode currently falls
+back to plain CRF/CQP (native CBR and outer BitrateBudget are disabled there).
+
+**HW (QSV / VA-API / NVENC):** still use CQP/CRF + outer `BitrateBudget`;
+native CBR there is a later slice.
 
 ## Reference profile
 
