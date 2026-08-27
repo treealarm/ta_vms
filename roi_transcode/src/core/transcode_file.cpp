@@ -5,6 +5,7 @@
 #include "box_smoother.h"
 #include "packet_sink.h"
 #include "importance_map.h"
+#include "roi_lag.h"
 #include "roi_encoder.h"
 #include "temporal_roi.h"
 #include "object_normalizer.h"
@@ -12,7 +13,9 @@
 #include "smartvideo/metadata.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
+#include <limits>
 #include <vector>
 
 namespace smartvideo {
@@ -57,6 +60,47 @@ AVRational guess_fps(AVStream* st, AVCodecContext* dec)
         return dec->framerate;
     }
     return AVRational{25, 1};
+}
+
+float center_distance_diag(const Box& a, const Box& b)
+{
+    const float ax = a.x + 0.5f * a.width;
+    const float ay = a.y + 0.5f * a.height;
+    const float bx = b.x + 0.5f * b.width;
+    const float by = b.y + 0.5f * b.height;
+    const float dx = bx - ax;
+    const float dy = by - ay;
+    constexpr float diagonal = 1.41421356f; // sqrt(2) in normalized space
+    return static_cast<float>(std::sqrt(dx * dx + dy * dy) / diagonal);
+}
+
+void fill_lag_report(const std::vector<RoiLagSample>& samples, Report& report)
+{
+    report.roi_lag_measured = !samples.empty();
+    report.roi_lag_samples = static_cast<int64_t>(samples.size());
+    if (samples.empty()) {
+        return;
+    }
+
+    std::vector<double> ious;
+    std::vector<double> frames;
+    std::vector<double> ms;
+    ious.reserve(samples.size());
+    frames.reserve(samples.size());
+    ms.reserve(samples.size());
+    float min_iou = std::numeric_limits<float>::max();
+    for (const RoiLagSample& s : samples) {
+        min_iou = std::min(min_iou, s.iou);
+        ious.push_back(static_cast<double>(s.iou));
+        frames.push_back(static_cast<double>(s.lag_frames));
+        ms.push_back(s.lag_ms);
+    }
+    report.roi_lag_min_iou = min_iou;
+    report.roi_lag_p95_frames = percentile(frames, 0.95);
+    report.roi_lag_p99_frames = percentile(frames, 0.99);
+    report.roi_lag_p95_ms = percentile(ms, 0.95);
+    report.roi_lag_p99_ms = percentile(ms, 0.99);
+    report.roi_lag_acceptance = roi_lag_acceptance(samples);
 }
 
 } // namespace
@@ -162,6 +206,7 @@ Report transcode_file(const std::string& input_path,
     bool logged_roi = false;
     int64_t frames = 0;
     int64_t dropped = 0;
+    std::vector<RoiLagSample> lag_samples;
 
     auto handle_decoded = [&]() {
         const int64_t pts = dec_frame.p->best_effort_timestamp;
@@ -172,7 +217,28 @@ Report transcode_file(const std::string& input_path,
         // One region per track rather than one per sample, positioned where the object was
         // at this instant rather than where it was last seen.
         auto live = temporal.at(t);
+        const std::vector<Box> target = live;
         box_smooth.apply(live, settings.temporal);
+        for (const Box& applied : live) {
+            if (applied.track_id == 0) {
+                continue;
+            }
+            const auto it = std::find_if(target.begin(), target.end(),
+                [&](const Box& b) {
+                    return b.track_id == applied.track_id && b.kind == applied.kind;
+                });
+            if (it == target.end()) {
+                continue;
+            }
+            int32_t lag_frames = 0;
+            const float speed = std::max(it->track.speed, 0.0f);
+            if (speed > 1e-6f && frame_sec > 0.0) {
+                const double per_frame = static_cast<double>(speed) * frame_sec;
+                const double dist = static_cast<double>(center_distance_diag(applied, *it));
+                lag_frames = static_cast<int32_t>(std::lround(dist / per_frame));
+            }
+            lag_samples.push_back(measure_roi_lag(applied, *it, lag_frames, frame_sec));
+        }
         auto dets =
             roi_builder.detections_from(live, settings.quality, ep.width, ep.height);
         bitrate.soften_detections(dets);
@@ -270,10 +336,6 @@ Report transcode_file(const std::string& input_path,
 
     enc.flush();
     sink.end();
-    std::fprintf(stderr, "encoded with %s crf=%d preset=%s converted=%ld uploaded=%ld\n",
-        enc.label(), settings.crf, preset_name(settings.preset), enc.frames_converted(),
-        enc.frames_uploaded());
-
     Report report;
     report.encoder_used = enc.kind();
     report.encoder_name = enc.label();
@@ -282,6 +344,20 @@ Report transcode_file(const std::string& input_path,
     report.frames_converted = enc.frames_converted();
     report.frames_uploaded = enc.frames_uploaded();
     report.cpu_h265_target_guard = cpu_h265_target_guard;
+    fill_lag_report(lag_samples, report);
+    std::fprintf(stderr, "encoded with %s crf=%d preset=%s converted=%ld uploaded=%ld\n",
+        enc.label(), settings.crf, preset_name(settings.preset), enc.frames_converted(),
+        enc.frames_uploaded());
+    if (report.roi_lag_measured) {
+        std::fprintf(stderr,
+            "roi lag: samples=%lld min_iou=%.3f p95_frames=%.2f p99_frames=%.2f "
+            "p95_ms=%.1f p99_ms=%.1f acceptance=%s\n",
+            static_cast<long long>(report.roi_lag_samples), report.roi_lag_min_iou,
+            report.roi_lag_p95_frames, report.roi_lag_p99_frames, report.roi_lag_p95_ms,
+            report.roi_lag_p99_ms, report.roi_lag_acceptance ? "pass" : "fail");
+    } else {
+        std::fprintf(stderr, "roi lag: not measured (no tracked boxes)\n");
+    }
     return report;
 }
 

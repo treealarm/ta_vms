@@ -157,6 +157,14 @@ public:
     (void)r.frames;
     (void)r.regions_dropped;
     (void)r.cpu_h265_target_guard;
+    (void)r.roi_lag_measured;
+    (void)r.roi_lag_samples;
+    (void)r.roi_lag_min_iou;
+    (void)r.roi_lag_p95_frames;
+    (void)r.roi_lag_p99_frames;
+    (void)r.roi_lag_p95_ms;
+    (void)r.roi_lag_p99_ms;
+    (void)r.roi_lag_acceptance;
 }
 
 [[maybe_unused]] void names_the_frame_entry_point()
@@ -185,6 +193,14 @@ public:
     const smartvideo::Report r = session.finish();
     (void)r.packets;
     (void)r.cpu_h265_target_guard;
+    (void)r.roi_lag_measured;
+    (void)r.roi_lag_samples;
+    (void)r.roi_lag_min_iou;
+    (void)r.roi_lag_p95_frames;
+    (void)r.roi_lag_p99_frames;
+    (void)r.roi_lag_p95_ms;
+    (void)r.roi_lag_p99_ms;
+    (void)r.roi_lag_acceptance;
 }
 
 } // namespace

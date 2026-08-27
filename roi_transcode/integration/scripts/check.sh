@@ -349,6 +349,31 @@ else
     printf '  skip  scenes not generated (benchmarks/synthetic/make-scenes.py)\n'
 fi
 
+step "roi lag metrics are observable on tracked ROI"
+if [[ -f "${SCENES}/moving/source.mp4" ]]; then
+    python3 - "${SCENES}/moving/roi.json" "${WORK}/moving_tracked_roi.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+for row in d.get("samples", []):
+    row["track_id"] = 1
+    row["confidence"] = row.get("confidence", 0.95)
+json.dump(d, open(sys.argv[2], "w"))
+PY
+    if "${BUILD}/roi-transcode" --in "${SCENES}/moving/source.mp4" \
+        --roi "${WORK}/moving_tracked_roi.json" --out "${WORK}/moving_tracked.mp4" \
+        --encoder cpu --codec h264 --crf 32 >"${WORK}/moving_tracked.log" 2>&1; then
+        if rg -q "roi lag: samples=[1-9][0-9]* .*acceptance=pass" "${WORK}/moving_tracked.log"; then
+            pass "roi lag metrics are reported for tracked samples"
+        else
+            fail "roi lag report is missing or failed acceptance"
+        fi
+    else
+        fail "tracked moving scene failed to encode"
+    fi
+else
+    printf '  skip  moving scene not generated (benchmarks/synthetic/make-scenes.py)\n'
+fi
+
 step "adaptive encoding puts the quality where it was asked for"
 # The acceptance criterion of §48, in miniature: at the same nominal bitrate, quality
 # inside the regions must be better with ROI than without. Both numbers are reported --
