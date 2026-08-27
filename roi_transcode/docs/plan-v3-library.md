@@ -40,6 +40,8 @@ on the library side so the two tracks stay visible.
 - **CPU H.264:** `native_bitrate` — CBR + filler (`nal-hrd=cbr:filler=1`); baseline vs
   adaptive within 2% on `video1_12s` (measured). Absolute mux rate sits near
   `target × (1 + peak_overshoot)`.
+- Script gate now checks both: adaptive/baseline parity (2%) and distance to
+  requested target (default tolerance 20%).
 - `BitrateBudget` still fine-tunes object-first; QP slew is skipped while a
   target is active so the ladder can move.
 - **CPU H.265 + HW** (QSV/VA-API/NVENC): still CQP + outer loop only.

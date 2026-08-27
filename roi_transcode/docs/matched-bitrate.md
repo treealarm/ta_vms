@@ -36,12 +36,19 @@ native CBR there is a later slice.
   /path/to/video6.mp4 \
   /path/to/boxes.json \
   /tmp/matched-out
-# optional 4th arg: target_bps; omit to auto-pick 70% of unconstrained CRF28
+# optional 4th arg: target_bps
+# optional 5th arg: target tolerance fraction (default 0.20)
 ```
 
 Uses `roi-transcode` (not `roi-clip`): converts analytics `frames[]` sidecars to
 `samples[]` when needed, enables `--target-bitrate` on both baseline (empty ROI)
-and adaptive. Exit 0 if `|adaptive - baseline| / baseline ≤ 2%`.
+and adaptive.
+
+Exit 0 only if **both** gates pass:
+
+1. **Parity gate (§16):** `|adaptive - baseline| / baseline ≤ 2%`
+2. **Target gate:** both baseline and adaptive are within `target_tol_frac`
+   (default 20%) of requested target bitrate.
 
 Prefer a target **below** the unconstrained CRF size so CBR is actually stressing
 the budget (not padding an already-smaller CRF encode).

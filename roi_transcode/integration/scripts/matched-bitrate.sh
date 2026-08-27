@@ -3,15 +3,16 @@
 #
 # Uses the offline roi-transcode CLI (samples JSON). Detection is not re-run.
 #
-# Usage: matched-bitrate.sh <input.mp4> <roi.json> <out_dir> [target_bps]
+# Usage: matched-bitrate.sh <input.mp4> <roi.json> <out_dir> [target_bps] [target_tol_frac]
 #
 # roi.json: library shape { "samples": [...] } or analytics-worker { "frames": [...] }.
 # If target_bps is omitted / 0, the script first measures unconstrained CRF28 bitrates
 # and picks target = 70% of min(baseline, adaptive) so the outer loop actually works.
+# target_tol_frac: allowed relative miss to requested target (default 0.20).
 set -euo pipefail
 
 if [[ $# -lt 3 ]]; then
-  echo "usage: $0 <input.mp4> <roi.json> <out_dir> [target_bps]" >&2
+  echo "usage: $0 <input.mp4> <roi.json> <out_dir> [target_bps] [target_tol_frac]" >&2
   exit 2
 fi
 
@@ -19,6 +20,7 @@ INPUT=$(readlink -f "$1")
 BOXES_IN=$(readlink -f "$2")
 OUT=$3
 TARGET=${4:-0}
+TARGET_TOL=${5:-0.20}
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 BIN="${ROI_TRANSCODE_BIN:-${ROOT}/build/integration/roi-transcode}"
@@ -98,9 +100,15 @@ B=$(wc -c <"$OUT/baseline.mp4" | tr -d ' ')
 A=$(wc -c <"$OUT/adaptive.mp4" | tr -d ' ')
 DUR=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$OUT/baseline.mp4")
 
-python3 - "$B" "$A" "$DUR" "$TARGET" <<'PY'
+python3 - "$B" "$A" "$DUR" "$TARGET" "$TARGET_TOL" <<'PY'
 import sys
-b, a, dur, target = float(sys.argv[1]), float(sys.argv[2]), float(sys.argv[3]), float(sys.argv[4])
+b, a, dur, target, tol = (
+    float(sys.argv[1]),
+    float(sys.argv[2]),
+    float(sys.argv[3]),
+    float(sys.argv[4]),
+    float(sys.argv[5]),
+)
 print(f"baseline_bytes={int(b)} adaptive_bytes={int(a)}")
 br_b = 8.0 * b / dur
 br_a = 8.0 * a / dur
@@ -109,9 +117,17 @@ print(f"baseline_bps≈{br_b:.0f} adaptive_bps≈{br_a:.0f}")
 print(f"requested_target_bps={int(target)}")
 diff = abs(br_a - br_b) / br_b if br_b > 0 else 0.0
 print(f"relative_diff={diff*100:.2f}% (v3 §16 limit 2.00%)")
-# Also show how close each landed to the request (informational).
+# Second gate: both streams should stay close to requested target.
+target_fail = False
+print(f"target_tolerance={tol*100:.2f}%")
 for name, br in (("baseline", br_b), ("adaptive", br_a)):
     d = abs(br - target) / target if target > 0 else 0.0
     print(f"{name}_vs_target={d*100:.2f}%")
-sys.exit(0 if diff <= 0.02 else 1)
+    if target > 0 and d > tol:
+        target_fail = True
+if diff > 0.02:
+    sys.exit(1)
+if target_fail:
+    sys.exit(1)
+sys.exit(0)
 PY
