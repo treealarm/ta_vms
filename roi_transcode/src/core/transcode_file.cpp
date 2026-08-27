@@ -136,9 +136,15 @@ Report transcode_file(const std::string& input_path,
     ep.temporal = settings.temporal;
     ep.rate_control = settings.rate_control;
     ep.codec = resolve_codec(settings.codec, in_v->codecpar->codec_id);
+    bool cpu_h265_target_guard = false;
     if (ep.kind == Encoder::Cpu && ep.codec == Codec::H265) {
         // Guard: CPU HEVC target-bitrate path is unstable on our stack.
+        cpu_h265_target_guard = ep.rate_control.target_bitrate > 0;
         ep.rate_control.target_bitrate = 0;
+        if (cpu_h265_target_guard) {
+            std::fprintf(stderr,
+                "guard: cpu h265 target-bitrate disabled; using CRF/CQP\n");
+        }
     }
     ep.crf = settings.crf;
     ep.gop = settings.gop;
@@ -275,6 +281,7 @@ Report transcode_file(const std::string& input_path,
     report.regions_dropped = dropped;
     report.frames_converted = enc.frames_converted();
     report.frames_uploaded = enc.frames_uploaded();
+    report.cpu_h265_target_guard = cpu_h265_target_guard;
     return report;
 }
 

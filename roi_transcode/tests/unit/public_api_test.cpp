@@ -42,6 +42,9 @@ std::vector<smartvideo::Box> make_boxes()
         .y = 0.40f,
         .width = 0.30f,
         .height = 0.20f,
+        .label = "",
+        .polygon = {},
+        .track = {},
     }};
 }
 
@@ -153,6 +156,7 @@ public:
     (void)r.encoder_name;
     (void)r.frames;
     (void)r.regions_dropped;
+    (void)r.cpu_h265_target_guard;
 }
 
 [[maybe_unused]] void names_the_frame_entry_point()
@@ -180,6 +184,7 @@ public:
 
     const smartvideo::Report r = session.finish();
     (void)r.packets;
+    (void)r.cpu_h265_target_guard;
 }
 
 } // namespace

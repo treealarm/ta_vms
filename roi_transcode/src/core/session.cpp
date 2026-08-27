@@ -4,7 +4,6 @@
 #include "bitrate_budget.h"
 #include "box_smoother.h"
 #include "frame_input.h"
-#include "importance_map.h"
 #include "object_normalizer.h"
 #include "packet_sink.h"
 #include "qp_slew.h"
@@ -12,8 +11,9 @@
 #include "smartvideo/metadata.h"
 
 #include <algorithm>
-#include <span>
+#include <cstdio>
 #include <map>
+#include <span>
 
 namespace smartvideo {
 
@@ -331,9 +331,15 @@ Session::Session(const SessionParams& params, PacketHandler* handler)
     // source codec to mirror, so they take the same H.264 fallback an unrecognised one does.
     ep.codec = params.settings.codec != Codec::SameAsSource ? params.settings.codec
         : (params.codec == InputCodec::H265 ? Codec::H265 : Codec::H264);
+    bool cpu_h265_target_guard = false;
     if (ep.kind == Encoder::Cpu && ep.codec == Codec::H265) {
         // Guard: CPU HEVC target-bitrate path is unstable on our stack.
+        cpu_h265_target_guard = ep.rate_control.target_bitrate > 0;
         ep.rate_control.target_bitrate = 0;
+        if (cpu_h265_target_guard) {
+            std::fprintf(stderr,
+                "guard: cpu h265 target-bitrate disabled; using CRF/CQP\n");
+        }
     }
     ep.crf = params.settings.crf;
     ep.gop = params.settings.gop;
@@ -344,6 +350,7 @@ Session::Session(const SessionParams& params, PacketHandler* handler)
     m_impl->encoder.open_deferred(ep);
     m_impl->report.encoder_used = m_impl->encoder.kind();
     m_impl->report.encoder_name = m_impl->encoder.label();
+    m_impl->report.cpu_h265_target_guard = cpu_h265_target_guard;
     m_impl->bitrate = BitrateBudget(ep.rate_control);
     m_impl->encoder.attach(*m_impl);
 }
