@@ -2,13 +2,11 @@
 
 #include "grpc/path_guard.h"
 #include "job/roi_job_manager.h"
-#include "packet_sink.h"
 #include "smartvideo/session.h"
 
 #include <chrono>
 #include <cstring>
 #include <span>
-#include <format>
 #include <algorithm>
 #include <memory>
 #include <unordered_map>
@@ -70,6 +68,20 @@ roi::transcode::JobState to_proto(RoiJobState s)
     return roi::transcode::JOB_STATE_UNSPECIFIED;
 }
 
+void fill_lag(const bool measured, const int64_t samples, const float min_iou,
+    const double p95_frames, const double p99_frames, const double p95_ms,
+    const double p99_ms, const bool acceptance, roi::transcode::RoiLagStats* out)
+{
+    out->set_measured(measured);
+    out->set_samples(samples);
+    out->set_min_iou(min_iou);
+    out->set_p95_frames(p95_frames);
+    out->set_p99_frames(p99_frames);
+    out->set_p95_ms(p95_ms);
+    out->set_p99_ms(p99_ms);
+    out->set_acceptance(acceptance);
+}
+
 void fill_job(const RoiJobStatus& st, roi::transcode::Job* out)
 {
     out->set_job_id(st.job_id);
@@ -82,6 +94,10 @@ void fill_job(const RoiJobStatus& st, roi::transcode::Job* out)
     }
     out->set_message(st.message);
     out->set_encoder_used(st.encoder_used);
+    out->set_cpu_h265_target_guard(st.cpu_h265_target_guard);
+    fill_lag(st.roi_lag_measured, st.roi_lag_samples, st.roi_lag_min_iou,
+        st.roi_lag_p95_frames, st.roi_lag_p99_frames, st.roi_lag_p95_ms,
+        st.roi_lag_p99_ms, st.roi_lag_acceptance, out->mutable_roi_lag());
 }
 
 smartvideo::Encoder from_proto(roi::transcode::Encoder e)
@@ -611,6 +627,10 @@ grpc::Status RoiStreamTranscodeServiceImpl::EncodeStream(grpc::ServerContext*,
         done->set_packets(rep.packets);
         done->set_bytes(rep.bytes);
         done->set_regions_dropped(rep.regions_dropped);
+        done->set_cpu_h265_target_guard(rep.cpu_h265_target_guard);
+        fill_lag(rep.roi_lag_measured, rep.roi_lag_samples, rep.roi_lag_min_iou,
+            rep.roi_lag_p95_frames, rep.roi_lag_p99_frames, rep.roi_lag_p95_ms,
+            rep.roi_lag_p99_ms, rep.roi_lag_acceptance, done->mutable_roi_lag());
         stream->Write(msg);
         return grpc::Status::OK;
     } catch (const std::exception& ex) {

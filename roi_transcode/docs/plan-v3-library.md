@@ -55,6 +55,8 @@ on the library side so the two tracks stay visible.
 - `transcode_file` and `Session` now expose lag observability in `Report`; both
   CLI paths log one-line runtime stats (`samples`, `min_iou`, lag P95/P99 in
   frames/ms, acceptance).
+- Service path exports the same telemetry: `RoiFileTranscode.Job` and stream
+  `Done` now carry ROI lag stats and the CPU H.265 target-bitrate guard flag.
 
 ## Proto
 

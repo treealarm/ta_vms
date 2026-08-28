@@ -17,6 +17,8 @@ ROI lag (§14). Полный `integration/scripts/check.sh` на этом сос
   - CPU H.265: native bitrate path отключен (fallback на CRF/CQP) из-за стабильности.
 - **Slice E (§14):** ROI lag хелперы + runtime observability в `Report` и логах
   для `transcode_file` и `Session` path.
+- **Service telemetry:** ROI lag и CPU H.265 guard прокинуты в gRPC/job ответы
+  (`Job`, stream `Done`) и в статус-событие `roi-transcode-job-changed`.
 - **SEI / stability:** для CPU H.265 отключен `sei` capability (практический guard от крэшей ROI+SEI).
 
 ## Последние шаги (что именно добавили недавно)
@@ -47,8 +49,8 @@ ROI lag (§14). Полный `integration/scripts/check.sh` на этом сос
    на synthetic `moving`, но и на один реальный короткий клип с track_id.
 2. **Стабилизация H.265 roadmap:** либо доказуемо вернуть SEI/native bitrate на CPU H.265,
    либо зафиксировать guard как долгосрочный контракт в документации и API.
-3. **Протащить ROI lag в job/service telemetry:** чтобы метрики были видны не только в
-   CLI-логах, но и в gRPC/API статусах задания.
+3. **Real-clip ROI lag regression:** добавить стабильный short fixture с track_id для
+   проверки lag acceptance ближе к production-потоку.
 
 ## Быстрые команды проверки
 

@@ -542,6 +542,11 @@ if [[ -x "${BUILD}/roi-transcode-svc" && -x "${BUILD}/roi_grpc_smoke" ]]; then
         assert_eq "job reports the backend it used" \
             "$(grep -oE 'encoder=.+' "${WORK}/grpc_job.log" | head -1 | cut -d= -f2- | cut -d' ' -f1)" \
             "h264_qsv"
+        if rg -q "roi_lag.measured=false roi_lag.samples=0" "${WORK}/grpc_job.log"; then
+            pass "file job exposes roi lag telemetry"
+        else
+            fail "file job roi lag telemetry missing"
+        fi
     else
         fail "file job over gRPC"; sed 's/^/      /' "${WORK}/grpc_job.log" >&2
     fi
@@ -550,6 +555,11 @@ if [[ -x "${BUILD}/roi-transcode-svc" && -x "${BUILD}/roi_grpc_smoke" ]]; then
         >"${WORK}/grpc_stream.log" 2>&1; then
         streamed=$(grep -oE '[0-9]+ packets streamed back' "${WORK}/grpc_stream.log" | grep -oE '^[0-9]+')
         assert_eq "stream returns a packet per frame" "${streamed:-0}" "$src_frames"
+        if rg -q "roi_lag.measured=true roi_lag.samples=[1-9][0-9]*" "${WORK}/grpc_stream.log"; then
+            pass "stream done exposes roi lag telemetry"
+        else
+            fail "stream done roi lag telemetry missing"
+        fi
     else
         fail "frame stream over gRPC"; sed 's/^/      /' "${WORK}/grpc_stream.log" >&2
     fi

@@ -398,6 +398,10 @@ message Job {
   // Worth checking -- a silent fall back to the CPU looks like nothing more
   // than a slow job.
   string   encoder_used  = 8;
+  // True when CPU H.265 target-bitrate mode was downgraded to CRF/CQP guard path.
+  bool     cpu_h265_target_guard = 9;
+  // §14 ROI lag telemetry, when tracked boxes were present.
+  RoiLagStats roi_lag = 10;
 }
 
 message JobId { string job_id = 1; }
@@ -506,6 +510,19 @@ message Packet {
   bytes data = 4;
 }
 
+// §14 lag observability summary. Zero values mean "not measured" unless
+// measured=true.
+message RoiLagStats {
+  bool measured = 1;
+  int64 samples = 2;
+  float min_iou = 3;
+  double p95_frames = 4;
+  double p99_frames = 5;
+  double p95_ms = 6;
+  double p99_ms = 7;
+  bool acceptance = 8;
+}
+
 // Sent once, after the last packet.
 message Done {
   int64 frames          = 1;
@@ -514,6 +531,10 @@ message Done {
   // Regions that did not fit the encoder's budget; see RoiQuality.max_regions.
   // Non-zero means some of what was asked for was not applied.
   int64 regions_dropped = 4;
+  // True when CPU H.265 target-bitrate mode was downgraded to CRF/CQP guard path.
+  bool cpu_h265_target_guard = 5;
+  // §14 ROI lag telemetry, when tracked boxes were present.
+  RoiLagStats roi_lag = 6;
 }
 
 message EncodeStreamResponse {
