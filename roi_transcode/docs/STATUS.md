@@ -46,7 +46,9 @@ ROI lag (§14). Полный `integration/scripts/check.sh` на этом сос
 ## Что брать следующим агентом (рекомендуемый порядок)
 
 1. **Докрутить критерии acceptance на реальных клипах:** в `check.sh` добавлен optional
-   real-clip шаг (`REAL_LAG_CLIP` + `REAL_LAG_ROI`) для ROI lag acceptance.
+   real-clip шаг (`REAL_LAG_CLIP` + `REAL_LAG_ROI`) для ROI lag acceptance; добавлен
+   helper `integration/scripts/prepare-real-lag-fixture.sh` для подготовки
+   переносимого локального fixture (`testdata/fixtures/real_lag`).
 2. **Стабилизация H.265 roadmap:** либо доказуемо вернуть SEI/native bitrate на CPU H.265,
    либо зафиксировать guard как долгосрочный контракт в документации и API.
 3. **Real-clip ROI lag regression:** добавить стабильный short fixture с track_id для
@@ -58,5 +60,7 @@ ROI lag (§14). Полный `integration/scripts/check.sh` на этом сос
 # из roi_transcode/
 BUILD=build/integration LIBBUILD=build ./integration/scripts/check.sh
 ./integration/scripts/matched-bitrate.sh <video> <roi.json> <out_dir> [target_bps] [target_tol_frac]
+# optional: prepare local real-lag fixture used by check.sh
+bash ./integration/scripts/prepare-real-lag-fixture.sh <source.mp4> <roi.json>
 ```
 

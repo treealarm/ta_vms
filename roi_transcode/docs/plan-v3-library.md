@@ -57,6 +57,9 @@ on the library side so the two tracks stay visible.
   frames/ms, acceptance).
 - Service path exports the same telemetry: `RoiFileTranscode.Job` and stream
   `Done` now carry ROI lag stats and the CPU H.265 target-bitrate guard flag.
+- `check.sh` has an optional real-clip lag step and supports a repository-local
+  fixture (`testdata/fixtures/real_lag/*`), prepared by
+  `integration/scripts/prepare-real-lag-fixture.sh`.
 
 ## Proto
 

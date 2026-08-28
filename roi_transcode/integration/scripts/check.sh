@@ -386,8 +386,24 @@ else
 fi
 
 step "roi lag acceptance on a real clip (optional)"
-REAL_LAG_CLIP="${REAL_LAG_CLIP:-/mnt/wdblue/seenaptec/media_trash/samples/dataset/output/stand-v3-20260827/video1_12s.mp4}"
-REAL_LAG_ROI="${REAL_LAG_ROI:-/mnt/wdblue/seenaptec/media_trash/samples/dataset/output/stand-v3-20260827/video1_12s.maxcar.roi.boxes.json}"
+FIXTURE_REAL_CLIP="${ROOT}/testdata/fixtures/real_lag/video.mp4"
+FIXTURE_REAL_ROI="${ROOT}/testdata/fixtures/real_lag/roi.json"
+DEFAULT_REAL_CLIP="/mnt/wdblue/seenaptec/media_trash/samples/dataset/output/stand-v3-20260827/video1_12s.mp4"
+DEFAULT_REAL_ROI="/mnt/wdblue/seenaptec/media_trash/samples/dataset/output/stand-v3-20260827/video1_12s.maxcar.roi.boxes.json"
+if [[ -z "${REAL_LAG_CLIP:-}" ]]; then
+    if [[ -f "${FIXTURE_REAL_CLIP}" ]]; then
+        REAL_LAG_CLIP="${FIXTURE_REAL_CLIP}"
+    else
+        REAL_LAG_CLIP="${DEFAULT_REAL_CLIP}"
+    fi
+fi
+if [[ -z "${REAL_LAG_ROI:-}" ]]; then
+    if [[ -f "${FIXTURE_REAL_ROI}" ]]; then
+        REAL_LAG_ROI="${FIXTURE_REAL_ROI}"
+    else
+        REAL_LAG_ROI="${DEFAULT_REAL_ROI}"
+    fi
+fi
 if [[ -f "${REAL_LAG_CLIP}" && -f "${REAL_LAG_ROI}" ]]; then
     python3 - "${REAL_LAG_ROI}" "${WORK}/real_lag.samples.json" <<'PY'
 import json, sys
@@ -441,7 +457,7 @@ PY
         fail "real-clip lag probe failed"
     fi
 else
-    printf '  skip  real clip fixtures missing (set REAL_LAG_CLIP and REAL_LAG_ROI)\n'
+    printf '  skip  real clip fixtures missing (set REAL_LAG_CLIP/REAL_LAG_ROI or run integration/scripts/prepare-real-lag-fixture.sh)\n'
 fi
 
 step "adaptive encoding puts the quality where it was asked for"
