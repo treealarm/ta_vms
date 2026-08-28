@@ -7,11 +7,14 @@
 #include "object_normalizer.h"
 #include "packet_sink.h"
 #include "qp_slew.h"
+#include "roi_lag.h"
 #include "roi_encoder.h"
 #include "smartvideo/metadata.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
+#include <limits>
 #include <map>
 #include <span>
 
@@ -68,6 +71,44 @@ HeldRegions hold(const Regions& in)
     return h;
 }
 
+float center_distance_diag(const Box& a, const Box& b)
+{
+    const float ax = a.x + 0.5f * a.width;
+    const float ay = a.y + 0.5f * a.height;
+    const float bx = b.x + 0.5f * b.width;
+    const float by = b.y + 0.5f * b.height;
+    const float dx = bx - ax;
+    const float dy = by - ay;
+    constexpr float diagonal = 1.41421356f; // sqrt(2) in normalized space
+    return static_cast<float>(std::sqrt(dx * dx + dy * dy) / diagonal);
+}
+
+void fill_lag_report(const std::vector<RoiLagSample>& samples, Report& report)
+{
+    report.roi_lag_measured = !samples.empty();
+    report.roi_lag_samples = static_cast<int64_t>(samples.size());
+    if (samples.empty()) {
+        return;
+    }
+
+    std::vector<double> frames;
+    std::vector<double> ms;
+    frames.reserve(samples.size());
+    ms.reserve(samples.size());
+    float min_iou = std::numeric_limits<float>::max();
+    for (const RoiLagSample& s : samples) {
+        min_iou = std::min(min_iou, s.iou);
+        frames.push_back(static_cast<double>(s.lag_frames));
+        ms.push_back(s.lag_ms);
+    }
+    report.roi_lag_min_iou = min_iou;
+    report.roi_lag_p95_frames = percentile(frames, 0.95);
+    report.roi_lag_p99_frames = percentile(frames, 0.99);
+    report.roi_lag_p95_ms = percentile(ms, 0.95);
+    report.roi_lag_p99_ms = percentile(ms, 0.99);
+    report.roi_lag_acceptance = roi_lag_acceptance(samples);
+}
+
 } // namespace
 
 // Sits between the encoder and wherever packets are going: a file it owns, or
@@ -85,6 +126,7 @@ struct Session::Impl : PacketSink {
     RoiMapBuilder builder;
     roiav::Frame wrapper;
     Report report;
+    std::vector<RoiLagSample> lag_samples;
     bool finished = false;
     // Submitted-but-not-yet-decoded regions, keyed by the pts they arrived with.
     std::map<int64_t, HeldRegions> pending;
@@ -243,6 +285,32 @@ struct Session::Impl : PacketSink {
         const std::vector<Box> box_list(regions.boxes.begin(), regions.boxes.end());
         std::vector<Box> smoothed = box_list;
         box_smooth.apply(smoothed, params.settings.temporal);
+        for (const Box& applied : smoothed) {
+            if (applied.track_id == 0) {
+                continue;
+            }
+            const auto it = std::find_if(box_list.begin(), box_list.end(),
+                [&](const Box& b) {
+                    return b.track_id == applied.track_id && b.kind == applied.kind;
+                });
+            if (it == box_list.end()) {
+                continue;
+            }
+            int32_t lag_frames = 0;
+            const float speed = std::max(it->track.speed, 0.0f);
+            if (speed > 1e-6f) {
+                const int32_t den = std::max(params.fps_den, 1);
+                const double frame_sec = params.fps_num > 0
+                    ? static_cast<double>(den) / static_cast<double>(params.fps_num)
+                    : 1.0 / 25.0;
+                const double per_frame = static_cast<double>(speed) * frame_sec;
+                const double dist = static_cast<double>(center_distance_diag(applied, *it));
+                lag_frames = static_cast<int32_t>(std::lround(dist / per_frame));
+                lag_samples.push_back(measure_roi_lag(applied, *it, lag_frames, frame_sec));
+            } else {
+                lag_samples.push_back(measure_roi_lag(applied, *it, 0, 0.0));
+            }
+        }
         auto dets =
             builder.detections_from(smoothed, params.settings.quality, w, h);
         bitrate.soften_detections(dets);
@@ -411,6 +479,7 @@ Report Session::finish()
         m_impl->end();
         m_impl->report.frames_converted = m_impl->encoder.frames_converted();
         m_impl->report.frames_uploaded = m_impl->encoder.frames_uploaded();
+        fill_lag_report(m_impl->lag_samples, m_impl->report);
     }
     return m_impl->report;
 }

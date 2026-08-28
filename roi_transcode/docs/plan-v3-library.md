@@ -52,8 +52,9 @@ on the library side so the two tracks stay visible.
 - Helpers: `src/adaptive/roi_lag.{h,cpp}` — IoU, lag_frames/ms, P95/P99
   acceptance (`IoU≥0.50`, P95≤3 frames/100 ms, P99≤6/200 ms).
 - Covered by `v3_policy_test`.
-- `transcode_file` now exposes lag observability in `Report` and logs one-line
-  runtime stats (`samples`, `min_iou`, lag P95/P99 in frames/ms, acceptance).
+- `transcode_file` and `Session` now expose lag observability in `Report`; both
+  CLI paths log one-line runtime stats (`samples`, `min_iou`, lag P95/P99 in
+  frames/ms, acceptance).
 
 ## Proto
 

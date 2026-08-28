@@ -370,6 +370,17 @@ PY
     else
         fail "tracked moving scene failed to encode"
     fi
+    if "${BUILD}/roi-frame-push" --in "${SCENES}/moving/source.mp4" \
+        --roi "${WORK}/moving_tracked_roi.json" --out "${WORK}/moving_tracked_push.mp4" \
+        --push raw --encoder cpu --codec h264 --crf 32 >"${WORK}/moving_tracked_push.log" 2>&1; then
+        if rg -q "roi lag: samples=[1-9][0-9]* .*acceptance=pass" "${WORK}/moving_tracked_push.log"; then
+            pass "roi lag metrics are reported on session path too"
+        else
+            fail "session path roi lag report is missing or failed acceptance"
+        fi
+    else
+        fail "tracked moving scene failed on session path"
+    fi
 else
     printf '  skip  moving scene not generated (benchmarks/synthetic/make-scenes.py)\n'
 fi
