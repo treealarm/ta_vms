@@ -45,8 +45,8 @@ ROI lag (§14). Полный `integration/scripts/check.sh` на этом сос
 
 ## Что брать следующим агентом (рекомендуемый порядок)
 
-1. **Докрутить критерии acceptance на реальных клипах:** вынести ROI lag smoke не только
-   на synthetic `moving`, но и на один реальный короткий клип с track_id.
+1. **Докрутить критерии acceptance на реальных клипах:** в `check.sh` добавлен optional
+   real-clip шаг (`REAL_LAG_CLIP` + `REAL_LAG_ROI`) для ROI lag acceptance.
 2. **Стабилизация H.265 roadmap:** либо доказуемо вернуть SEI/native bitrate на CPU H.265,
    либо зафиксировать guard как долгосрочный контракт в документации и API.
 3. **Real-clip ROI lag regression:** добавить стабильный short fixture с track_id для

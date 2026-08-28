@@ -385,6 +385,65 @@ else
     printf '  skip  moving scene not generated (benchmarks/synthetic/make-scenes.py)\n'
 fi
 
+step "roi lag acceptance on a real clip (optional)"
+REAL_LAG_CLIP="${REAL_LAG_CLIP:-/mnt/wdblue/seenaptec/media_trash/samples/dataset/output/stand-v3-20260827/video1_12s.mp4}"
+REAL_LAG_ROI="${REAL_LAG_ROI:-/mnt/wdblue/seenaptec/media_trash/samples/dataset/output/stand-v3-20260827/video1_12s.maxcar.roi.boxes.json}"
+if [[ -f "${REAL_LAG_CLIP}" && -f "${REAL_LAG_ROI}" ]]; then
+    python3 - "${REAL_LAG_ROI}" "${WORK}/real_lag.samples.json" <<'PY'
+import json, sys
+src = json.load(open(sys.argv[1]))
+if "samples" in src:
+    json.dump(src, open(sys.argv[2], "w"))
+    raise SystemExit(0)
+frames = src.get("frames")
+if not isinstance(frames, list):
+    raise SystemExit("need samples[] or frames[] in real lag ROI")
+fps = float(src.get("fps") or 30)
+samples = []
+for fr in frames:
+    t = fr.get("t", 0)
+    t_sec = (t / fps) if isinstance(t, int) and t > 10 else float(t)
+    boxes = []
+    for b in fr.get("boxes") or []:
+        boxes.append({
+            "kind": b.get("kind", ""),
+            "x": b.get("x", 0.0), "y": b.get("y", 0.0),
+            "width": b.get("w", b.get("width", 0.0)),
+            "height": b.get("h", b.get("height", 0.0)),
+            "track_id": int(b.get("track_id") or 0),
+            "confidence": float(b.get("confidence") or 0.0),
+        })
+    samples.append({"t_sec": t_sec, "boxes": boxes})
+json.dump({"background_qp_delta": 0, "pad": 0.02, "samples": samples},
+          open(sys.argv[2], "w"))
+PY
+    if "${BUILD}/roi-transcode" --in "${REAL_LAG_CLIP}" \
+        --roi "${WORK}/real_lag.samples.json" --out "${WORK}/real_lag.mp4" \
+        --encoder cpu --codec h264 --crf 28 --gop 60 >"${WORK}/real_lag.log" 2>&1; then
+        if python3 - "${WORK}/real_lag.log" <<'PY'
+import re, sys
+s = open(sys.argv[1], 'r', encoding='utf-8', errors='ignore').read()
+m = re.search(r"roi lag: samples=(\d+).*p95_frames=([0-9.]+).*p99_frames=([0-9.]+).*p95_ms=([0-9.]+).*p99_ms=([0-9.]+).*acceptance=(pass|fail)", s)
+if not m:
+    raise SystemExit(1)
+samples = int(m.group(1))
+p95f = float(m.group(2)); p99f = float(m.group(3))
+p95m = float(m.group(4)); p99m = float(m.group(5))
+ok = samples >= 100 and p95f <= 3.0 and p99f <= 6.0 and p95m <= 100.0 and p99m <= 200.0
+raise SystemExit(0 if ok else 2)
+PY
+        then
+            pass "real-clip lag telemetry is present and tails are within §14"
+        else
+            fail "real-clip lag telemetry missing or tails exceed §14"
+        fi
+    else
+        fail "real-clip lag probe failed"
+    fi
+else
+    printf '  skip  real clip fixtures missing (set REAL_LAG_CLIP and REAL_LAG_ROI)\n'
+fi
+
 step "adaptive encoding puts the quality where it was asked for"
 # The acceptance criterion of §48, in miniature: at the same nominal bitrate, quality
 # inside the regions must be better with ROI than without. Both numbers are reported --
