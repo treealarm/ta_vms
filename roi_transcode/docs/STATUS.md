@@ -45,14 +45,13 @@ ROI lag (§14). Полный `integration/scripts/check.sh` на этом сос
 
 ## Что брать следующим агентом (рекомендуемый порядок)
 
-1. **Докрутить критерии acceptance на реальных клипах:** в `check.sh` добавлен optional
-   real-clip шаг (`REAL_LAG_CLIP` + `REAL_LAG_ROI`) для ROI lag acceptance; добавлен
-   helper `integration/scripts/prepare-real-lag-fixture.sh` для подготовки
-   переносимого локального fixture (`testdata/fixtures/real_lag`).
-2. **Стабилизация H.265 roadmap:** либо доказуемо вернуть SEI/native bitrate на CPU H.265,
-   либо зафиксировать guard как долгосрочный контракт в документации и API.
-3. **Real-clip ROI lag regression:** добавить стабильный short fixture с track_id для
-   проверки lag acceptance ближе к production-потоку.
+1. **CPU H.265 контракт (зафиксировать и держать до отдельного снятия):**
+   `target_bitrate` на CPU H.265 всегда даунгрейдится в CRF/CQP, `sei=false`,
+   guard обязан быть наблюдаем в логах и telemetry (`Report`/gRPC/job event).
+2. **Стабилизация H.265 roadmap:** отдельным срезом доказуемо вернуть SEI/native bitrate
+   на CPU H.265 только с regression-покрытием (без тихой смены поведения).
+3. **HW-native bitrate path:** QSV/VA-API/NVENC native bitrate с сохранением ROI semantics.
+4. **Датасеты/quality stack уровня приёмки ТЗ:** VMAF/task-aware/regression framework.
 
 ## Быстрые команды проверки
 

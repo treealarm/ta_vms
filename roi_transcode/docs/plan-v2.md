@@ -490,7 +490,9 @@ CV, если понадобится, можно поднять настройк�
     CRF не ставит; capability `native_bitrate` = true только для H.264. ROI-дельты
     перераспределяют *кодированное* качество внутри бюджета; matched-bitrate ≤2%
     на H.264. H.265 и HW (QSV/VA-API/NVENC) по-прежнему CQP + outer loop
-    (ROI у них живёт на CQP). `BALANCED`/`BITRATE_FIRST` — ещё нет.
+    (ROI у них живёт на CQP). Для CPU H.265 это зафиксированный guard-контракт:
+    `target_bitrate` даунгрейдится до CRF/CQP, `sei=false`, fallback виден в telemetry.
+    `BALANCED`/`BITRATE_FIRST` — ещё нет.
 12. ~~`StreamSettings` получает целевой битрейт~~ — `RateControl` на wire (и на
     `FileSettings` для офлайн-калибровки). HW CBR/ABR с сохранением ROI — следующий срез.
 

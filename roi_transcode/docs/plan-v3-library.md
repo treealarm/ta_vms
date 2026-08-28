@@ -45,7 +45,9 @@ on the library side so the two tracks stay visible.
 - `BitrateBudget` still fine-tunes object-first; QP slew is skipped while a
   target is active so the ladder can move.
 - **CPU H.265 + HW** (QSV/VA-API/NVENC): still CQP + outer loop only.
-  On CPU H.265, SEI is disabled for stability in ROI runs.
+  CPU H.265 is explicitly guarded: SEI is disabled for stability in ROI runs,
+  and `target_bitrate` is downgraded to CRF/CQP with observable telemetry
+  (`cpu_h265_target_guard`).
 
 ## Slice E — ROI lag (§14)
 
@@ -72,6 +74,16 @@ Vendored into `video_a/proto/roi_transcode.proto`. ta_vms archive callers adjust
 
 - Payload encode/decode: `include/smartvideo/metadata.h`, `src/metadata/sei_payload.cpp`
   (UUID + `SVE1` LE frame/objects/CRC32).
-- Soft backends (`libx264`/`libx265`): `udu_sei=1`, `capabilities.sei=true`; frame side
-  data attached from Session / `transcode_file` when `MetadataConfig::bitstream_sei`.
+- Soft backend `libx264`: `udu_sei=1`, `capabilities.sei=true`; frame side data
+  attached from Session / `transcode_file` when `MetadataConfig::bitstream_sei`.
+- Soft backend `libx265`: `capabilities.sei=false` (guarded off due to unstable
+  ROI+SEI path on current stack).
 - Unit: `sei_payload_test`. HW SEI and sidecar file writer still open.
+
+## Current explicit contract (CPU H.265)
+
+- `target_bitrate` on CPU H.265 is a guarded downgrade to CRF/CQP.
+- `sei` capability on CPU H.265 is disabled.
+- Guard must be visible in logs and in service/report telemetry.
+- Re-enabling native path requires a dedicated stability slice and regression
+  coverage, not a silent behavior change.
