@@ -517,6 +517,17 @@ namespace VmsCfg
       if (string.IsNullOrWhiteSpace(request.ProfileId) || !Guid.TryParse(request.ProfileId, out _))
         return new OperationStatus { Success = false, Message = "profile_id must be a valid UUID" };
 
+      var allowed = await storage.IsRecordingProfileAllowedAsync(
+        request.CameraId, request.StreamName, request.ProfileId, context.CancellationToken);
+      if (allowed is null)
+        return new OperationStatus { Success = false, Message = "unknown stream or recording profile" };
+      if (!allowed.Value)
+        return new OperationStatus
+        {
+          Success = false,
+          Message = "stream is not available for recording; enable that first",
+        };
+
       await storage.SetStreamOverrideAsync(request.CameraId, request.StreamName, request.ProfileId, context.CancellationToken);
       logger.LogInformation("Stream override set: camera='{CameraId}' stream='{StreamName}' profile='{ProfileId}'", request.CameraId, request.StreamName, request.ProfileId);
       InvalidateFsCache(request.CameraId);
@@ -546,10 +557,46 @@ namespace VmsCfg
       if (string.IsNullOrWhiteSpace(request.ProfileId) || !Guid.TryParse(request.ProfileId, out _))
         return new OperationStatus { Success = false, Message = "profile_id must be a valid UUID" };
 
+      var allowed = await storage.IsRecordingProfileAllowedAsync(
+        request.CameraId, request.StreamName, request.ProfileId, context.CancellationToken);
+      if (allowed is null)
+        return new OperationStatus { Success = false, Message = "unknown stream or recording profile" };
+      if (!allowed.Value)
+        return new OperationStatus
+        {
+          Success = false,
+          Message = "stream is not available for recording; enable that first",
+        };
+
       await storage.SetStreamRecordingProfileAsync(request.CameraId, request.StreamName, request.ProfileId, context.CancellationToken);
       logger.LogInformation("Stream recording profile set: camera='{CameraId}' stream='{StreamName}' profile='{ProfileId}'", request.CameraId, request.StreamName, request.ProfileId);
       InvalidateFsCache(request.CameraId);
       return new OperationStatus { Success = true };
+    }
+
+    public override async Task<SetCameraContinuousRecordingResponse> SetCameraContinuousRecording(
+      SetCameraContinuousRecordingRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId))
+        return new SetCameraContinuousRecordingResponse { Success = false, Message = "camera_id is required" };
+
+      var changed = await storage.SetCameraContinuousRecordingAsync(
+        request.CameraId, request.On, context.CancellationToken);
+
+      // Nothing moved: either every stream already held the target profile, or the camera has no
+      // stream that may be recorded at all. Neither is an error, and neither is worth a cache drop.
+      if (changed.Count == 0)
+        return new SetCameraContinuousRecordingResponse { Success = true };
+
+      logger.LogInformation(
+        "Camera continuous recording {State}: camera='{CameraId}' streams=[{Streams}]",
+        request.On ? "on" : "off", request.CameraId, string.Join(", ", changed));
+      InvalidateFsCache(request.CameraId);
+
+      var response = new SetCameraContinuousRecordingResponse { Success = true };
+      response.ChangedStreams.AddRange(changed);
+      return response;
     }
 
     public override async Task<ListRecordingSchedulesResponse> ListRecordingSchedules(
@@ -898,6 +945,20 @@ namespace VmsCfg
         return new OperationStatus { Success = false, Message = "monitor not found" };
 
       logger.LogInformation("Monitor '{MonitorId}' slot {SlotIndex} set to camera '{CameraId}'", request.MonitorId, request.SlotIndex, request.CameraId);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OperationStatus> SetMonitorSlotStream(
+      SetMonitorSlotStreamRequest request,
+      ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.MonitorId) || !Guid.TryParse(request.MonitorId, out var monitorId))
+        return new OperationStatus { Success = false, Message = "monitor_id must be a valid UUID" };
+
+      // No ownership check: this writes only the caller's own row, and a wall is deliberately
+      // visible to everyone who can see the monitor.
+      await storage.SetMonitorSlotStreamAsync(
+        request.Owner, monitorId, request.SlotIndex, request.StreamName, context.CancellationToken);
       return new OperationStatus { Success = true };
     }
 

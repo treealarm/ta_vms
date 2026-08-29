@@ -44,6 +44,7 @@ public:
     return m_running;
   }
   source_liveness liveness() const override;
+  observed_video observed_video_params() const override;
   void set_source_lost_handler(source_lost_handler handler) override { m_on_source_lost = std::move(handler); }
 
   using metadata_handler = std::function<void(std::string&&, std::chrono::system_clock::time_point)>;
@@ -85,6 +86,25 @@ private:
   // as m_last_frame_us: that one keeps advancing, so by the time a heartbeat goes out it points at
   // whatever arrived last, and the recorded gap would stretch to the next report.
   std::atomic_int64_t m_recovered_frame_us{ 0 };
+
+  // Observed video parameters, same contract as the liveness members above: written only by the
+  // read loop, read by the reporting timer. video_stream() cannot be used for this from another
+  // thread — the reader thread is the only one allowed to touch it.
+  std::atomic_int m_observed_width{ 0 };
+  std::atomic_int m_observed_height{ 0 };
+  std::atomic_int m_observed_codec_id{ AV_CODEC_ID_NONE };
+  std::atomic<double> m_observed_fps{ 0.0 };
+  std::atomic_int64_t m_observed_bitrate_bps{ 0 };
+  std::atomic_int64_t m_observed_at_us{ 0 };
+
+  /// Sliding window for the bitrate, reader thread only. RTSP containers rarely declare a bitrate,
+  /// so it is measured from the video packets that actually arrive.
+  int64_t m_bitrate_window_bytes = 0;
+  int64_t m_bitrate_window_start_us = 0;
+
+  /// Reader thread only. Records what the video track currently looks like and refreshes the
+  /// bitrate estimate; publishes through the atomics above.
+  void note_observed_video(const AVPacket* pkt);
 
   /// False until the first packet of the current session has been stamped. Reader thread only.
   bool m_stamped_since_connect = false;

@@ -83,6 +83,30 @@ public class RecordingProfileController(
     return Ok(new ApiResponse(response.Success, response.Message));
   }
 
+  /// <summary>
+  /// Camera-level recording switch: one call instead of a loop over the camera's streams, so the
+  /// set of affected streams is chosen server-side and cannot drift from what the flag allows.
+  /// </summary>
+  [HttpPost("camera-continuous")]
+  public async Task<IActionResult> SetCameraContinuousRecording(
+    [FromBody] CameraContinuousRecordingDto dto, CancellationToken ct)
+  {
+    if (string.IsNullOrWhiteSpace(dto.CameraId))
+      return BadRequest("cameraId is required");
+
+    var response = await _cfgClient.SetCameraContinuousRecordingAsync(new SetCameraContinuousRecordingRequest
+    {
+      CameraId = dto.CameraId,
+      On       = dto.On,
+    }, CfgOptions(ct));
+
+    if (response.Success)
+      foreach (var streamName in response.ChangedStreams)
+        await _streamState.PushStreamStateAsync(dto.CameraId, streamName, ct);
+
+    return Ok(new ApiResponse(response.Success, response.Message));
+  }
+
   [HttpDelete("stream-override")]
   public async Task<IActionResult> ClearStreamOverride([FromQuery] string cameraId, [FromQuery] string streamName, CancellationToken ct)
   {

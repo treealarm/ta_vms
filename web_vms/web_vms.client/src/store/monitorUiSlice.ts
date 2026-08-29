@@ -8,9 +8,11 @@ type SlotUiState = {
   ptzOpen: boolean
   deviceIoOpen: boolean
   bboxOpen: boolean
+  /** Overlays what the tile is actually receiving — resolution, codec, frame rate, bitrate. */
+  statsOpen: boolean
 }
 
-const DEFAULT_SLOT: SlotUiState = { mode: 'live', selectedStream: '', panelOpen: false, ptzOpen: false, deviceIoOpen: false, bboxOpen: false }
+const DEFAULT_SLOT: SlotUiState = { mode: 'live', selectedStream: '', panelOpen: false, ptzOpen: false, deviceIoOpen: false, bboxOpen: false, statsOpen: false }
 
 const monitorUiSlice = createSlice({
   name: 'monitorUi',

@@ -15,6 +15,7 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { loadSchedules, setCameraSchedules } from '../store/scheduleSlice'
+import { recordableStreams } from '../dto/dtos'
 import { fetchCameraState } from '../store/liveSlice'
 
 type Props =
@@ -36,6 +37,12 @@ export default function CameraSchedulesControl({ cameraId, value, onChange }: Pr
 
   const controlled = cameraId === undefined
   const savedIds = camera?.scheduleIds ?? []
+
+  // A schedule only ever turns recording on, so with nothing that may be recorded there is nowhere
+  // for it to write. The control stays on screen and goes inert rather than disappearing: absence
+  // would read as "this camera does not support schedules". Controlled mode (a camera being
+  // created, whose streams are not saved yet) has nothing to judge, so it is never blocked.
+  const nowhereToRecord = !controlled && camera !== undefined && recordableStreams(camera).length === 0
 
   // Uncontrolled mode keeps only the unsaved edit; null means "no local changes", so the displayed
   // value follows the camera state without an effect syncing it back and forth.
@@ -81,6 +88,11 @@ export default function CameraSchedulesControl({ cameraId, value, onChange }: Pr
         {!controlled && camera?.scheduleActive && (
           <Chip label={t('scheduleControl.activeNow')} size="small" color="error" variant="outlined" />
         )}
+        {nowhereToRecord && (
+          <Typography variant="caption" color="text.secondary">
+            {t('cameraCard.noRecordableStreams')}
+          </Typography>
+        )}
       </Stack>
 
       {selectedIds.length === 0 ? (
@@ -107,7 +119,7 @@ export default function CameraSchedulesControl({ cameraId, value, onChange }: Pr
       )}
 
       <Stack direction="row" spacing={1} alignItems="center">
-        <FormControl size="small" sx={{ flex: 1 }} disabled={available.length === 0}>
+        <FormControl size="small" sx={{ flex: 1 }} disabled={available.length === 0 || nowhereToRecord}>
           <InputLabel>{t('scheduleControl.addSchedule')}</InputLabel>
           <Select
             label={t('scheduleControl.addSchedule')}
@@ -122,7 +134,7 @@ export default function CameraSchedulesControl({ cameraId, value, onChange }: Pr
         <Button
           variant="outlined"
           size="small"
-          disabled={!pendingId}
+          disabled={!pendingId || nowhereToRecord}
           onClick={() => { update([...selectedIds, pendingId]); setPendingId('') }}
         >
           {t('common.add')}

@@ -329,12 +329,14 @@
     "recordingProfile": "Perfil de grabación",
     "noRecording": "Sin grabación",
     "webrtcLive": "Flujo WebRTC en vivo",
+    "recordable": "Disponible para grabación",
     "disabled": "Deshabilitar flujo",
     "addStream": "Agregar flujo",
     "deleteStream": "Eliminar flujo",
     "livePreview": "Vista en vivo",
     "browsePath": "Explorar el nodo de grabación en busca de un clip o carpeta",
-    "browseTitle": "Elegir un clip o carpeta para reproducir"
+    "browseTitle": "Elegir un clip o carpeta para reproducir",
+    "notRecordableHint": "No disponible para grabación; el perfil se conserva"
   },
   "streamOverride": {
     "override": "anulación",
@@ -480,7 +482,16 @@
       "storage_not_writable": "Grabación no iniciada: el almacenamiento '{{storage}}' no acepta archivos ({{detail}}).",
       "config_unavailable": "Grabación no iniciada: el servicio de configuración no respondió.",
       "unknown": "Grabación no iniciada: esta cámara no está lista para grabar."
-    }
+    },
+    "noRecordableStreams": "No hay flujos disponibles para grabación",
+    "streamNotRecordable": "Este flujo no está disponible para grabación",
+    "streamParamsSection": "Flujo",
+    "declaredSize": "Resolución declarada por la cámara; aún no medida",
+    "autoStream": "Auto",
+    "autoStreamTip": "Elegir el flujo automáticamente, según el tamaño de esta celda",
+    "pinStreamToEdit": "Seleccione un flujo arriba para cambiar su configuración de grabación",
+    "streamStatsOpen": "Mostrar datos del flujo",
+    "streamStatsClose": "Ocultar datos del flujo"
   },
   "recordings": {
     "earlier": "Anterior",

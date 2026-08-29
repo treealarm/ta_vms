@@ -191,6 +191,11 @@ export default function OnvifDiscoveryDialog({ open, onClose, onAdded }: Props) 
             profileToken: s.profile.token,
             path: '',
             webRtc: i === 0,
+            // The profile's declared resolution, captured here because this is the one moment it is
+            // already in hand. It seeds the monitor's adaptive stream choice, which would otherwise
+            // have nothing to rank a stream by until someone has watched it.
+            declaredWidth: s.profile.width,
+            declaredHeight: s.profile.height,
           }))
         : undefined
 

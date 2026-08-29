@@ -49,6 +49,9 @@ public:
     bool source_alive = false;
     std::optional<std::chrono::system_clock::time_point> last_frame_ts;
     std::optional<std::chrono::system_clock::time_point> recovered_frame_ts;
+    // What the source is actually sending. The monitor picks which stream to show a tile from
+    // this, so it is the observed frame and not anything the configuration claims.
+    observed_video video;
   };
 
   /// Closes the open segment of every stream whose source has dropped, so the clip ends on the last

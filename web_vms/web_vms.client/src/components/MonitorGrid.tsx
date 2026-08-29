@@ -136,6 +136,7 @@ function CameraSlot({
           key={camera.cameraId}
           slotKey={`${monitor.monitorId}-${slotIndex}`}
           monitorId={monitor.monitorId}
+          slotIndex={slotIndex}
           camera={camera}
           wallMode={wall.mode}
           wallCameraIds={wallCameraIds}

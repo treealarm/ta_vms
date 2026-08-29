@@ -31,14 +31,17 @@ import SensorsIcon from '@mui/icons-material/Sensors'
 import DirectionsRunIcon from '@mui/icons-material/DirectionsRun'
 import SecurityIcon from '@mui/icons-material/Security'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
+import SpeedIcon from '@mui/icons-material/Speed'
 import {
-  RECORDING_PROFILE_CONTINUOUS_ID,
-  RECORDING_PROFILE_OFF_ID,
-  RECORDING_PROFILE_PREALARM_ID,
+  effectiveStreamMode,
+  recordableStreams,
+  streamSize,
   type CameraSetupDto,
   type CameraStreamDto,
 } from '../dto/dtos'
-import CameraStream from './CameraStream'
+import { useAdaptiveStream } from '../hooks/useAdaptiveStream'
+import { formatStreamParams } from '../utils/streamParams'
+import SeamlessCameraStream from './SeamlessCameraStream'
 import ArchiveHlsStreamCard from './ArchiveHlsStreamCard'
 import ArchiveWallPlayer from './wall/ArchiveWallPlayer'
 import StreamOverrideRow from './StreamOverrideRow'
@@ -50,7 +53,8 @@ import { useArchiveMetadataCoverage } from '../hooks/archiveMetadataClient'
 import { wallPlaylistRequestBounds } from '../utils/playlistUrl'
 import { selectWallSeekMs } from '../store/wallPlaybackSlice'
 import { useAppDispatch, useAppSelector } from '../store'
-import { fetchCameraState, setArmedWithPrealarmBaseline, setStreamRecordingProfile } from '../store/liveSlice'
+import { fetchCameraState, setArmedWithPrealarmBaseline, setCameraContinuousRecording } from '../store/liveSlice'
+import { setMonitorSlotStream } from '../store/monitorsSlice'
 
 const STRIP_W = 28
 const PANEL_W = 182
@@ -89,6 +93,9 @@ type Props = {
   slotKey?: string
   /** Set when the card sits in a monitor wall; enables wall-wide playback. */
   monitorId?: string
+  /** Which slot of that wall. Together with monitorId it is what makes the pinned stream a stored,
+   *  per-operator preference rather than something lost on reload. */
+  slotIndex?: number
   /** Wall-wide coverage query inputs, shared by every cell so it is fetched once. */
   wallCameraIds?: readonly string[]
   coverageWindowStartMs?: number
@@ -106,6 +113,7 @@ export default function CameraUnifiedCard({
   camera,
   slotKey,
   monitorId,
+  slotIndex,
   wallCameraIds,
   coverageWindowStartMs,
   coverageWindowWidthMs,
@@ -124,21 +132,40 @@ export default function CameraUnifiedCard({
 
   const mode = slotUi.mode
   const wallPlayback = wallMode === 'playback' && !!monitorId
-  const selectedStream = slotUi.selectedStream
+
+  // On a monitor the pin is stored per operator and survives a reload; a standalone card has no
+  // slot to store it against and keeps it in local UI state.
+  const pinIsPersisted = monitorId !== undefined && slotIndex !== undefined
+  const persistedPin = useAppSelector((st) =>
+    pinIsPersisted
+      ? st.monitors.monitors
+          .find((m) => m.monitorId === monitorId)?.slots
+          .find((x) => x.slotIndex === slotIndex)?.streamName ?? ''
+      : ''
+  )
+  const selectedStream = pinIsPersisted ? persistedPin : slotUi.selectedStream
   const panelOpen = slotUi.panelOpen
   const ptzOpen = slotUi.ptzOpen
   const deviceIoOpen = slotUi.deviceIoOpen
   const bboxOpen = slotUi.bboxOpen
+  const statsOpen = slotUi.statsOpen
 
   const setMode = (v: 'live' | 'archive') => dispatch(patchSlot({ key: storeKey, mode: v }))
-  const setSelectedStream = (v: string) => dispatch(patchSlot({ key: storeKey, selectedStream: v }))
+  const setSelectedStream = (v: string) => {
+    if (pinIsPersisted) void dispatch(setMonitorSlotStream({ monitorId, slotIndex, streamName: v }))
+    else dispatch(patchSlot({ key: storeKey, selectedStream: v }))
+  }
   const setPanelOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, panelOpen: v }))
   const setBboxOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, bboxOpen: v }))
+  const setStatsOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, statsOpen: v }))
   // PTZ and Device I/O overlays are mutually exclusive so they never render on top of each other.
   const setPtzOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, ptzOpen: v, ...(v ? { deviceIoOpen: false } : {}) }))
   const setDeviceIoOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, deviceIoOpen: v, ...(v ? { ptzOpen: false } : {}) }))
 
   const { t } = useTranslation()
+
+  // Observed by the adaptive stream chooser: its CSS size is what the picture has to suit.
+  const videoAreaRef = useRef<HTMLDivElement>(null)
 
   const [onvifRtsp, setOnvifRtsp] = useState('')
   const [pendingArmed, setPendingArmed] = useState<boolean | null>(null)
@@ -151,8 +178,13 @@ export default function CameraUnifiedCard({
   // An open recording schedule window forces continuous recording on every stream, ahead of the
   // profile and of any manual or alarm override.
   const scheduleActive = merged.scheduleActive === true
-  const effectiveStreamMode = (s: CameraStreamDto) =>
-    scheduleActive ? 'continuous' : (s.overrideProfile ?? s.recordingProfile)?.mode ?? 'off'
+  const streamMode = (s: CameraStreamDto) => effectiveStreamMode(s, scheduleActive)
+  // The resolution rides on the chip because it is what explains the automatic choice: without it
+  // an operator sees the tile switch streams and has nothing to read it against.
+  const chipLabel = (s: CameraStreamDto) => {
+    const size = streamSize(s)
+    return size ? `${s.streamName} ${size.width}×${size.height}` : s.streamName
+  }
   const armDisarm = (enabled: boolean) => {
     if (isDisabled) return
     setPendingArmed(enabled)
@@ -162,7 +194,19 @@ export default function CameraUnifiedCard({
 
   const recordingMode = merged.recordingMode ?? 'off'
   const webRtcStreams = (merged.streams ?? []).filter((s) => s.webRtc)
-  const activeStream = selectedStream || webRtcStreams[0]?.streamName || ''
+  // A disabled stream has no reader behind it and no WHEP url, so it can be listed but never
+  // chosen automatically.
+  const liveCandidates = webRtcStreams.filter((s) => !s.disabled)
+
+  // An explicit choice by the operator; empty means Auto. Auto is the default, and it is the only
+  // state in which the slot is allowed to change stream by itself.
+  const pinnedStream = selectedStream || null
+  const autoStream = useAdaptiveStream(
+    videoAreaRef,
+    liveCandidates,
+    mode === 'live' && !wallPlayback && pinnedStream === null,
+  )
+  const activeStream = pinnedStream ?? autoStream ?? webRtcStreams[0]?.streamName ?? ''
   const activeStreamObj =
     (merged.streams ?? []).find((s) => s.streamName === activeStream) ??
     (merged.streams ?? [])[0] ??
@@ -176,22 +220,26 @@ export default function CameraUnifiedCard({
   // so a stream whose profile said continuous lit the frame even with the camera's recording
   // switched off — the frame claimed a recording that was not happening.
   const isStreamRetained = (s: CameraStreamDto) => {
-    if (effectiveStreamMode(s) === 'off' || recordingMode === 'off') return false
-    if (effectiveStreamMode(s) === 'continuous') return true
+    if (streamMode(s) === 'off' || recordingMode === 'off') return false
+    if (streamMode(s) === 'continuous') return true
     return merged.allStreamsRetained === true || (merged.retainedStreams ?? []).includes(s.streamName)
   }
   const anyStreamRetained = (merged.streams ?? []).some(isStreamRetained)
-  const activeStreamContinuous = activeStreamObj?.recordingProfile?.mode === 'continuous'
+  // The record button acts on the CAMERA — every enabled stream available for recording — not on
+  // whichever stream the tile happens to be showing. With adaptive live quality that would often be
+  // the sub-stream, so the button would archive the wrong thing.
+  const archivableStreams = recordableStreams(merged)
+  const hasArchivableStreams = archivableStreams.length > 0
+  // Reads like "select all": on only when every recordable stream is already recording continuously.
+  const cameraContinuous =
+    hasArchivableStreams && archivableStreams.every((s) => s.recordingProfile?.mode === 'continuous')
 
   const [pendingContinuous, setPendingContinuous] = useState(false)
   const [recordingError, setRecordingError] = useState<string | null>(null)
   const toggleContinuousRecording = async () => {
     // A schedule window outranks the profile, so toggling it would have no visible effect.
-    if (!activeStreamObj || isDisabled || scheduleActive) return
-    const turningOn = !activeStreamContinuous
-    const profileId = activeStreamContinuous
-      ? (effectiveArmed ? RECORDING_PROFILE_PREALARM_ID : RECORDING_PROFILE_OFF_ID)
-      : RECORDING_PROFILE_CONTINUOUS_ID
+    if (!hasArchivableStreams || isDisabled || scheduleActive) return
+    const turningOn = !cameraContinuous
 
     setPendingContinuous(true)
     try {
@@ -213,9 +261,10 @@ export default function CameraUnifiedCard({
           }
         }
       }
-      await dispatch(setStreamRecordingProfile({
-        cameraId: merged.cameraId, streamName: activeStreamObj.streamName, profileId,
-      }))
+      // One camera-level call rather than a loop: the server picks the streams, so the UI cannot
+      // drift from what the "available for recording" flag allows, and turning recording off lands
+      // on pre-alarm or off according to the armed state without a second round trip.
+      await dispatch(setCameraContinuousRecording({ cameraId: merged.cameraId, on: turningOn }))
     } finally {
       setPendingContinuous(false)
     }
@@ -349,11 +398,29 @@ export default function CameraUnifiedCard({
     }
   }, [camera.cameraId, dispatch])
 
+  // Auto is part of the cycle, not a separate control: the compact rail has one button, and an
+  // operator who pinned a stream to look at something needs a way back to automatic without
+  // opening the panel. Order: Auto -> first -> ... -> last -> Auto.
   const cycleStream = () => {
     if (webRtcStreams.length < 2) return
-    const idx = webRtcStreams.findIndex((s) => s.streamName === activeStream)
-    setSelectedStream(webRtcStreams[(idx + 1) % webRtcStreams.length].streamName)
+    if (pinnedStream === null) {
+      setSelectedStream(webRtcStreams[0].streamName)
+      return
+    }
+    const idx = webRtcStreams.findIndex((s) => s.streamName === pinnedStream)
+    const next = webRtcStreams[idx + 1]
+    setSelectedStream(next ? next.streamName : '')
   }
+
+  // What the tile is actually showing. During a swap the chosen stream is already the new one while
+  // the picture is still the old one, so anything describing the picture reads from here.
+  const [shownWhepUrl, setShownWhepUrl] = useState<string | null>(null)
+  const shownStreamObj =
+    (merged.streams ?? []).find((s) => s.whepUrl && s.whepUrl === shownWhepUrl) ?? activeStreamObj
+
+  // Per-stream settings need an unambiguous stream. With one candidate Auto is unambiguous, so it
+  // is only a lock when there is actually something to choose between.
+  const streamSettingsLocked = pinnedStream === null && webRtcStreams.length > 1
 
   const whepUrl = activeStreamObj?.whepUrl
 
@@ -409,7 +476,12 @@ export default function CameraUnifiedCard({
           )}
 
           {webRtcStreams.length > 1 && (
-            <Tooltip title={t('cameraCard.cycleStream', { stream: activeStream })} placement="right">
+            <Tooltip
+              title={t('cameraCard.cycleStream', {
+                stream: pinnedStream ?? `${t('cameraCard.autoStream')} (${activeStream})`,
+              })}
+              placement="right"
+            >
               <IconButton size="small" onClick={cycleStream} sx={BTN_SX}>
                 <LayersIcon sx={{ fontSize: '0.95rem' }} />
               </IconButton>
@@ -427,6 +499,20 @@ export default function CameraUnifiedCard({
                 sx={{ ...BTN_SX, ...(bboxOpen ? { color: W, bgcolor: alpha(W, 0.2) } : {}) }}
               >
                 <DirectionsRunIcon sx={{ fontSize: '0.95rem' }} />
+              </IconButton>
+            </Tooltip>
+          )}
+
+          {/* Stream data overlay. Sits with the other overlay toggles because that is what it is —
+              it draws on the video, it does not change anything about the stream. */}
+          {mode === 'live' && (
+            <Tooltip title={statsOpen ? t('cameraCard.streamStatsClose') : t('cameraCard.streamStatsOpen')} placement="right">
+              <IconButton
+                size="small"
+                onClick={() => setStatsOpen(!statsOpen)}
+                sx={{ ...BTN_SX, ...(statsOpen ? { color: W, bgcolor: alpha(W, 0.2) } : {}) }}
+              >
+                <SpeedIcon sx={{ fontSize: '0.95rem' }} />
               </IconButton>
             </Tooltip>
           )}
@@ -495,31 +581,33 @@ export default function CameraUnifiedCard({
             </span>
           </Tooltip>
 
-          {activeStreamObj && (
-            <Tooltip
-              title={
-                scheduleActive
+          {/* Always rendered, even with nothing to record: hiding it reads as "this camera cannot
+              be recorded at all", so it stays put and greys out with a tooltip that says why. */}
+          <Tooltip
+            title={
+              !hasArchivableStreams
+                ? t('cameraCard.noRecordableStreams')
+                : scheduleActive
                   ? t('cameraCard.scheduleActive')
-                  : activeStreamContinuous ? t('cameraCard.continuousOn') : t('cameraCard.continuousOff')
-              }
-              placement="right"
-            >
-              <span>
-                <IconButton
-                  size="small"
-                  disabled={pendingContinuous || isDisabled || scheduleActive}
-                  onClick={() => void toggleContinuousRecording()}
-                  sx={{
-                    ...BTN_SX,
-                    ...(scheduleActive || activeStreamContinuous ? { color: 'error.main' } : {}),
-                    ...((pendingContinuous || isDisabled) ? { opacity: 0.35 } : {}),
-                  }}
-                >
-                  <FiberManualRecordIcon sx={{ fontSize: '0.95rem' }} />
-                </IconButton>
-              </span>
-            </Tooltip>
-          )}
+                  : cameraContinuous ? t('cameraCard.continuousOn') : t('cameraCard.continuousOff')
+            }
+            placement="right"
+          >
+            <span>
+              <IconButton
+                size="small"
+                disabled={pendingContinuous || isDisabled || scheduleActive || !hasArchivableStreams}
+                onClick={() => void toggleContinuousRecording()}
+                sx={{
+                  ...BTN_SX,
+                  ...(scheduleActive || cameraContinuous ? { color: 'error.main' } : {}),
+                  ...((pendingContinuous || isDisabled || !hasArchivableStreams) ? { opacity: 0.35 } : {}),
+                }}
+              >
+                <FiberManualRecordIcon sx={{ fontSize: '0.95rem' }} />
+              </IconButton>
+            </span>
+          </Tooltip>
 
           <Box sx={{ flex: 1 }} />
 
@@ -600,18 +688,45 @@ export default function CameraUnifiedCard({
               <Box>
                 <Typography component="span" sx={CAPTION_SX}>{t('cameraCard.streamSection')}</Typography>
                 <Stack direction="row" flexWrap="wrap" gap={0.5}>
+                  {/* Auto is a chip like the others so that "no stream pinned" is a visible state
+                      rather than the absence of one — otherwise automatic and a pin that happens to
+                      match look identical. */}
+                  <Tooltip title={t('cameraCard.autoStreamTip')}>
+                    <Chip
+                      label={pinnedStream === null && shownStreamObj
+                        ? `${t('cameraCard.autoStream')} · ${shownStreamObj.streamName}`
+                        : t('cameraCard.autoStream')}
+                      size="small"
+                      onClick={() => setSelectedStream('')}
+                      variant={pinnedStream === null ? 'filled' : 'outlined'}
+                      sx={{
+                        height: 20, fontSize: '0.68rem', cursor: 'pointer',
+                        color: pinnedStream === null ? B : alpha(W, 0.75),
+                        bgcolor: pinnedStream === null ? alpha(W, 0.9) : 'transparent',
+                        borderColor: alpha(W, 0.3),
+                        '& .MuiChip-label': { px: 0.75 },
+                      }}
+                    />
+                  </Tooltip>
                   {webRtcStreams.map((s) => (
-                    <Tooltip key={s.streamName} title={isStreamRetained(s) ? t('cameraCard.streamRecordingTip') : ''}>
+                    <Tooltip
+                      key={s.streamName}
+                      title={
+                        isStreamRetained(s) ? t('cameraCard.streamRecordingTip')
+                        : streamSize(s) && !streamSize(s)!.observed ? t('cameraCard.declaredSize')
+                        : ''
+                      }
+                    >
                       <Chip
-                        label={s.streamName}
+                        label={chipLabel(s)}
                         size="small"
                         icon={isStreamRetained(s) ? <FiberManualRecordIcon /> : undefined}
                         onClick={() => setSelectedStream(s.streamName)}
-                        variant={activeStream === s.streamName ? 'filled' : 'outlined'}
+                        variant={pinnedStream === s.streamName ? 'filled' : 'outlined'}
                         sx={{
                           height: 20, fontSize: '0.68rem', cursor: 'pointer',
-                          color: activeStream === s.streamName ? B : alpha(W, 0.75),
-                          bgcolor: activeStream === s.streamName ? alpha(W, 0.9) : 'transparent',
+                          color: pinnedStream === s.streamName ? B : alpha(W, 0.75),
+                          bgcolor: pinnedStream === s.streamName ? alpha(W, 0.9) : 'transparent',
                           borderColor: isStreamRetained(s) ? 'error.main' : alpha(W, 0.3),
                           '& .MuiChip-label': { px: 0.75 },
                           '& .MuiChip-icon': { fontSize: '0.55rem', color: 'error.main', ml: 0.6 },
@@ -620,6 +735,17 @@ export default function CameraUnifiedCard({
                     </Tooltip>
                   ))}
                 </Stack>
+              </Box>
+            )}
+
+            {/* What the tile is actually receiving. Read-only, and the one place an operator can
+                check whether the picture matches the stream they think they are watching. */}
+            {mode === 'live' && activeStreamObj && (
+              <Box>
+                <Typography component="span" sx={CAPTION_SX}>{t('cameraCard.streamParamsSection')}</Typography>
+                <Typography variant="caption" sx={{ display: 'block', color: alpha(W, 0.75), fontSize: '0.68rem' }}>
+                  {shownStreamObj ? formatStreamParams(shownStreamObj) : '—'}
+                </Typography>
               </Box>
             )}
 
@@ -673,9 +799,18 @@ export default function CameraUnifiedCard({
                     ? t('cameraCard.recordingSectionForStream', { stream: activeStream })
                     : t('cameraCard.recordingSection')}
                 </Typography>
-                <Stack direction="row" alignItems="center" spacing={1} sx={{ px: 0.25 }}>
-                  <StreamProfileRow cameraId={camera.cameraId} stream={activeStreamObj} />
-                </Stack>
+                {streamSettingsLocked ? (
+                  // This setting belongs to one stream, so it has to be clear which. In Auto the
+                  // shown stream changes with the tile's size, and an operator would be editing
+                  // whichever one happened to be on screen at the time.
+                  <Typography variant="caption" sx={{ display: 'block', color: alpha(W, 0.55), fontSize: '0.68rem' }}>
+                    {t('cameraCard.pinStreamToEdit')}
+                  </Typography>
+                ) : (
+                  <Stack direction="row" alignItems="center" spacing={1} sx={{ px: 0.25 }}>
+                    <StreamProfileRow cameraId={camera.cameraId} stream={activeStreamObj} />
+                  </Stack>
+                )}
               </Box>
             )}
 
@@ -751,7 +886,27 @@ export default function CameraUnifiedCard({
       )}
 
       {/* ── Right: video / archive ── fills remaining space */}
-      <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', overflow: 'hidden', position: 'relative' }}>
+      <Box ref={videoAreaRef} sx={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', overflow: 'hidden', position: 'relative' }}>
+        {/* Stream data over the picture. Top-left, clear of the camera name at the bottom and of the
+            PTZ / device-I/O grips; it never takes the pointer, so it cannot get between the
+            operator and the video controls underneath. */}
+        {statsOpen && mode === 'live' && (
+          <Box
+            sx={{
+              position: 'absolute', top: 4, left: 4, zIndex: 3,
+              bgcolor: alpha(B, 0.55), px: 0.75, py: 0.35, borderRadius: 0.5,
+              pointerEvents: 'none', maxWidth: 'calc(100% - 8px)',
+            }}
+          >
+            <Typography sx={{ fontSize: '0.65rem', color: W, lineHeight: 1.5, whiteSpace: 'nowrap' }}>
+              {shownStreamObj?.streamName ?? '—'}
+            </Typography>
+            <Typography sx={{ fontSize: '0.65rem', color: alpha(W, 0.8), lineHeight: 1.5, whiteSpace: 'nowrap' }}>
+              {shownStreamObj ? formatStreamParams(shownStreamObj) : '—'}
+            </Typography>
+          </Box>
+        )}
+
         {!panelOpen && (
           <Typography
             sx={{
@@ -784,11 +939,12 @@ export default function CameraUnifiedCard({
         ) : (
           <>
             {mode === 'live' && whepUrl && (
-              <CameraStream
+              <SeamlessCameraStream
                 whepUrl={whepUrl}
                 stunUrl={camera.effectiveWebrtcStunUrl}
                 cameraId={camera.cameraId}
                 bboxEnabled={bboxOpen && hasBoxSource}
+                onShownUrlChange={setShownWhepUrl}
               />
             )}
             {mode === 'archive' && (

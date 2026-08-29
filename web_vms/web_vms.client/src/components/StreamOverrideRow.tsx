@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CircularProgress, MenuItem, Select, Stack, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
-import type { CameraStreamDto, RecordingProfileDto } from '../dto/dtos'
+import { recordableStreams, type CameraStreamDto, type RecordingProfileDto } from '../dto/dtos'
 import { useAppDispatch } from '../store'
 import { setStreamOverride } from '../store/liveSlice'
 
@@ -39,17 +39,27 @@ export default function StreamOverrideRow({ cameraId, streams }: Props) {
   const isOverride = !!overridden
   const overrideValue = pendingValue !== null ? pendingValue : (overridden?.overrideProfile?.id ?? '')
 
+  // Setting an override starts a recording, so it reaches only the streams allowed into the
+  // archive — the server refuses the rest anyway. Clearing one is not a recording and must always
+  // be possible: an override left on a stream whose flag was cleared afterwards has to stay
+  // removable, which is the same reason this control spans the camera rather than one stream.
+  // The same set the monitor's record button acts on — enabled and available for recording. An
+  // override on a disabled stream would be as inert as one on a stream barred from the archive.
+  const settableStreams = recordableStreams({ streams })
+  const canSet = settableStreams.length > 0
+
   const handleChange = async (profileId: string) => {
+    const clearing = profileId === ''
     setPendingValue(profileId)
     setBusy(true)
     try {
       // Sequential rather than parallel: each call rewrites the camera's config in VmsCfg, and
       // firing them together would have them race over the same rows.
-      for (const s of streams) {
+      for (const s of clearing ? streams : settableStreams) {
         await dispatch(setStreamOverride({
           cameraId,
           streamName: s.streamName,
-          profileId: profileId === '' ? null : profileId,
+          profileId: clearing ? null : profileId,
         }))
       }
     } finally {
@@ -63,7 +73,11 @@ export default function StreamOverrideRow({ cameraId, streams }: Props) {
       direction="row"
       alignItems="center"
       spacing={1}
-      title={streams.length > 1 ? t('streamOverride.appliesToAllStreams') : undefined}
+      title={
+        !canSet && !isOverride
+          ? t('cameraCard.noRecordableStreams')
+          : streams.length > 1 ? t('streamOverride.appliesToAllStreams') : undefined
+      }
       sx={{ flexShrink: 0, px: 0.25 }}
     >
       {isOverride && (
@@ -77,7 +91,7 @@ export default function StreamOverrideRow({ cameraId, streams }: Props) {
         displayEmpty
         value={overrideValue}
         onChange={(e) => void handleChange(e.target.value)}
-        disabled={busy || presets.length === 0}
+        disabled={busy || presets.length === 0 || (!canSet && !isOverride)}
         sx={{ flex: 1, fontSize: '0.72rem', height: 22, minWidth: 96, '.MuiSelect-select': { py: 0, px: 0.75 } }}
         renderValue={(v) =>
           v === '' ? (

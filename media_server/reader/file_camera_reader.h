@@ -53,6 +53,7 @@ public:
   {
   };
   AVStream* video_stream() const override;
+  observed_video observed_video_params() const override;
 
   // True if `source` is not an RTSP/other-scheme URL and resolves to an
   // existing local file or directory — i.e. should be handled by this
@@ -109,6 +110,23 @@ private:
   sink_container_impl m_sinks_helper;
   std::thread m_thread;
   std::atomic_bool m_running{ false };
+
+  // Observed video parameters. Written only by the reader thread, read by the reporting timer —
+  // same contract as rtsp_reader's. The file camera is how the system is exercised without
+  // hardware, so the monitor's adaptive stream choice has to be testable through it too.
+  std::atomic_int m_observed_width{ 0 };
+  std::atomic_int m_observed_height{ 0 };
+  std::atomic_int m_observed_codec_id{ AV_CODEC_ID_NONE };
+  std::atomic<double> m_observed_fps{ 0.0 };
+  std::atomic_int64_t m_observed_bitrate_bps{ 0 };
+  std::atomic_int64_t m_observed_at_us{ 0 };
+
+  /// Sliding window for the bitrate, reader thread only.
+  int64_t m_bitrate_window_bytes = 0;
+  int64_t m_bitrate_window_start_us = 0;
+
+  /// Reader thread only; publishes through the atomics above.
+  void note_observed_video(int stream_index, int packet_size);
 
   std::string m_cam_id;
   std::string m_stream_name;

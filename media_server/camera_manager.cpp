@@ -369,6 +369,7 @@ std::vector<camera_manager::stream_state> camera_manager::list_stream_states() c
         .source_alive         = live.alive,
         .last_frame_ts        = live.last_frame_ts,
         .recovered_frame_ts   = live.recovered_frame_ts,
+        .video                = stream->observed_video_params(),
       });
     }
   }

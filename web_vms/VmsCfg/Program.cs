@@ -19,6 +19,7 @@ builder.Services.AddDbContextFactory<VmsCfgDbContext>(options =>
 builder.Services.AddSingleton<DbMigrator>();
 builder.Services.AddSingleton<ScheduleDb>();
 builder.Services.AddSingleton<ScheduleCache>();
+builder.Services.AddSingleton<StreamStatsCache>();
 builder.Services.AddSingleton<CameraStorage>();
 builder.Services.AddSingleton<StorageDb>();
 builder.Services.AddSingleton<PermissionDb>();

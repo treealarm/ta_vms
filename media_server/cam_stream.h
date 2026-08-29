@@ -60,6 +60,10 @@ public:
 
   /// Snapshot of whether the source is currently delivering media. Safe from any thread.
   source_liveness liveness() const { return m_reader ? m_reader->liveness() : source_liveness{}; }
+  observed_video observed_video_params() const
+  {
+    return m_reader ? m_reader->observed_video_params() : observed_video{};
+  }
 
   /// Closes the current segment so it ends on the last real frame instead of spanning the outage.
   /// Called when the source is seen to have dropped: a clip stretched across a gap makes the

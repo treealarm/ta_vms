@@ -1,6 +1,6 @@
 import { type AnyAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import type { CameraSetupDto, CameraStreamDto, ApiResponseDto, MediaServerNodeDto } from '../dto/dtos'
-import { RECORDING_PROFILE_OFF_ID, RECORDING_PROFILE_PREALARM_ID } from '../dto/dtos'
+import { RECORDING_PROFILE_OFF_ID, RECORDING_PROFILE_PREALARM_ID, recordableStreams } from '../dto/dtos'
 import { parseJson } from './api'
 
 type LiveState = {
@@ -154,6 +154,22 @@ export const setStreamRecordingProfile = createAsyncThunk(
   }
 )
 
+/// Switches continuous recording for a whole camera: every enabled stream that is available for
+/// recording. One request rather than a loop, so the set of streams is decided by the server and
+/// cannot disagree with what the "available for recording" flag allows.
+export const setCameraContinuousRecording = createAsyncThunk(
+  'live/setCameraContinuousRecording',
+  async ({ cameraId, on }: { cameraId: string; on: boolean }, { dispatch }) => {
+    const response = await fetch('/api/recording-profiles/camera-continuous', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cameraId, on }),
+    })
+    if (response.ok)
+      await dispatch(fetchCameraState(cameraId))
+  }
+)
+
 // Arm/disarm plus the prealarm-baseline profile flip, used by the camera card --
 // the only place arming is offered, because that is where an operator can see the
 // video they are judging: arming puts non-recording streams on the
@@ -168,8 +184,9 @@ export const setArmedWithPrealarmBaseline = createAsyncThunk(
     const camera = (getState() as { live: LiveState }).live.cameraStatesById[cameraId]
     const isStreamRecording = (s: CameraStreamDto) =>
       (((s.overrideProfile ?? s.recordingProfile)?.mode) ?? 'off') !== 'off'
-    for (const s of camera?.streams ?? []) {
-      if (s.disabled) continue
+    // Only streams allowed into the archive: arming a camera must not be a way past the
+    // "available for recording" flag.
+    for (const s of recordableStreams(camera ?? {})) {
       if (armed) {
         if (!isStreamRecording(s))
           await dispatch(setStreamRecordingProfile({ cameraId, streamName: s.streamName, profileId: RECORDING_PROFILE_PREALARM_ID }))

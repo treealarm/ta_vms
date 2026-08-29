@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CircularProgress, MenuItem, Select } from '@mui/material'
-import type { CameraStreamDto, RecordingProfileDto } from '../dto/dtos'
+import { useTranslation } from 'react-i18next'
+import { isRecordable, type CameraStreamDto, type RecordingProfileDto } from '../dto/dtos'
 import { useAppDispatch } from '../store'
 import { setStreamRecordingProfile } from '../store/liveSlice'
 
@@ -11,6 +12,7 @@ type Props = {
 
 export default function StreamProfileRow({ cameraId, stream }: Props) {
   const dispatch = useAppDispatch()
+  const { t } = useTranslation()
   const [profiles, setProfiles] = useState<RecordingProfileDto[]>([])
   const [busy, setBusy] = useState(false)
   const [pendingValue, setPendingValue] = useState<string | null>(null)
@@ -24,6 +26,10 @@ export default function StreamProfileRow({ cameraId, stream }: Props) {
 
   if (!stream) return null
 
+  // A stream that is not available for recording keeps its configured profile — the server refuses
+  // to change it and would ignore it anyway — so the control stays visible and goes inert. Hiding
+  // it would suggest this stream has no recording settings at all.
+  const recordable = isRecordable(stream)
   const currentValue = pendingValue !== null ? pendingValue : (stream.recordingProfile?.id ?? '')
 
   const handleChange = async (profileId: string) => {
@@ -45,7 +51,8 @@ export default function StreamProfileRow({ cameraId, stream }: Props) {
         displayEmpty
         value={currentValue}
         onChange={(e) => void handleChange(e.target.value)}
-        disabled={busy || profiles.length === 0}
+        disabled={busy || profiles.length === 0 || !recordable}
+        title={recordable ? undefined : t('cameraCard.streamNotRecordable')}
         sx={{ flex: 1, fontSize: '0.72rem', height: 22, minWidth: 96, '.MuiSelect-select': { py: 0, px: 0.75 } }}
         renderValue={(v) =>
           profiles.find((p) => p.id === v)?.name ?? (

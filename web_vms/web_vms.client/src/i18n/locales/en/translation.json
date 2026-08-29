@@ -329,12 +329,14 @@
     "recordingProfile": "Recording profile",
     "noRecording": "No recording",
     "webrtcLive": "WebRTC live stream",
+    "recordable": "Available for recording",
     "disabled": "Disable stream",
     "addStream": "Add stream",
     "deleteStream": "Delete stream",
     "livePreview": "Live preview",
     "browsePath": "Browse the recording node for a clip or folder",
-    "browseTitle": "Pick a clip or folder to play"
+    "browseTitle": "Pick a clip or folder to play",
+    "notRecordableHint": "Not available for recording; the profile is kept"
   },
   "streamOverride": {
     "override": "override",
@@ -480,7 +482,16 @@
       "storage_not_writable": "Recording not started: storage '{{storage}}' will not accept files ({{detail}}).",
       "config_unavailable": "Recording not started: the configuration service did not answer.",
       "unknown": "Recording not started: this camera is not ready to record."
-    }
+    },
+    "noRecordableStreams": "No streams available for recording",
+    "streamNotRecordable": "This stream is not available for recording",
+    "streamParamsSection": "Stream",
+    "declaredSize": "Resolution declared by the camera; not yet measured",
+    "autoStream": "Auto",
+    "autoStreamTip": "Pick the stream automatically, to suit the size of this tile",
+    "pinStreamToEdit": "Pick a stream above to change its recording settings",
+    "streamStatsOpen": "Show stream data",
+    "streamStatsClose": "Hide stream data"
   },
   "recordings": {
     "earlier": "Earlier",

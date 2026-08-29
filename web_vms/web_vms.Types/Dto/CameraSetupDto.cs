@@ -12,6 +12,22 @@ public record RecordingProfileDto
   public bool IsBuiltin { get; init; }
 }
 
+/// <summary>
+/// What media_server last measured on a running stream. Absent means nothing was measured recently:
+/// the snapshot expires in the state store, so "gone" and "stale" are the same case and nothing
+/// downstream has to judge an age.
+/// </summary>
+public record StreamStatsDto
+{
+  public int Width { get; init; }
+  public int Height { get; init; }
+  public string Codec { get; init; } = string.Empty;
+  public double Fps { get; init; }
+  public long BitrateBps { get; init; }
+  /// <summary>Unix milliseconds; 0 when the publisher could not say.</summary>
+  public long ObservedAtMs { get; init; }
+}
+
 public record CameraStreamDto
 {
   public required string StreamName { get; init; }
@@ -21,8 +37,35 @@ public record CameraStreamDto
   public RecordingProfileDto? RecordingProfile { get; init; }
   public RecordingProfileDto? OverrideProfile { get; init; }
   public bool? Disabled { get; init; }
+  /// <summary>
+  /// Whether this stream may be recorded at all. Orthogonal to <see cref="WebRtc"/>: watching a
+  /// stream and archiving it are separate decisions. Defaults to true, so a client that does not
+  /// know about the flag cannot take a stream out of the archive by omitting it.
+  /// </summary>
+  public bool Recordable { get; init; } = true;
+  /// <summary>
+  /// Resolution as the camera declares it for this stream's ONVIF profile; 0 when not declared.
+  /// A seed for the monitor's adaptive stream choice, never the truth — an observed measurement
+  /// wins, because the real resolution can change without the configuration being edited.
+  /// </summary>
+  public int DeclaredWidth { get; init; }
+  public int DeclaredHeight { get; init; }
+  /// <summary>Observed parameters, when a fresh measurement exists. These win over the declared
+  /// resolution above, which can go stale without anyone editing the configuration.</summary>
+  public StreamStatsDto? Stats { get; init; }
   /// <summary>Relative URL to our WHEP gateway (proxies to MediaMTX). Filled by web_vms.Server when WebRtc=true.</summary>
   public string? WhepUrl { get; init; }
+}
+
+/// <summary>
+/// Switch continuous recording on or off for a whole camera — every enabled stream that is
+/// available for recording. The monitor's record button means "record this camera", not "record
+/// the stream this tile happens to be showing".
+/// </summary>
+public record CameraContinuousRecordingDto
+{
+  public required string CameraId { get; init; }
+  public required bool On { get; init; }
 }
 
 public record StreamOverrideDto
@@ -53,7 +96,10 @@ public record CameraSetupDto
   public string Name { get; init; } = string.Empty;
   public string? ServerId { get; init; }
   public bool Recording { get; init; }
-  /// <summary>Derived from first stream's profile mode; used by media server control.</summary>
+  /// <summary>
+  /// The camera's recording state: the strongest effective mode across its enabled streams that are
+  /// available for recording. Not the first stream's — that one is simply whichever sorts first.
+  /// </summary>
   public string RecordingMode { get; init; } = "off";
   public bool WebRtc { get; init; }
   /// <summary>Kept for API backward compat; maps to first stream's Path.</summary>

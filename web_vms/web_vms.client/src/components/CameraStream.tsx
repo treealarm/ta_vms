@@ -13,6 +13,10 @@ interface CameraStreamProps {
   /** STUN URL from the camera's media router (effectiveWebrtcStunUrl): undefined = public
    *  default, empty string = no STUN (LAN only). */
   stunUrl?: string | null;
+  /** Fired once real frames start arriving — the element's clock advancing, which is the only
+   *  proof there is (see the note on the watchdog below). Used by SeamlessCameraStream to know
+   *  when a stream warming up out of sight is ready to be shown. */
+  onFirstFrames?: () => void;
 }
 
 // A WHEP exchange can succeed in full — session created, peer connection reporting `connected` —
@@ -35,8 +39,11 @@ const RETRY_MS = 2000;
 const PROGRESS_CHECK_MS = 3000;
 const PROGRESS_STALL_LIMIT = 5;
 
-const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnabled = false, stunUrl }) => {
+const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnabled = false, stunUrl, onFirstFrames }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  // Announced once per mount. A re-negotiation after a stall is not a new arrival for the caller:
+  // it is the same stream still being shown.
+  const firstFramesSeenRef = useRef(false);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const retryTimeoutRef = useRef<number | null>(null);
   const progressTimerRef = useRef<number | null>(null);
@@ -373,6 +380,13 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
         playsInline
         muted
         controls
+        onTimeUpdate={() => {
+          if (firstFramesSeenRef.current) return;
+          const el = videoRef.current;
+          if (!el || el.currentTime <= 0) return;
+          firstFramesSeenRef.current = true;
+          onFirstFrames?.();
+        }}
         style={{
           width: '100%',
           height: '100%',

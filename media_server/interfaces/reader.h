@@ -24,9 +24,32 @@ struct source_liveness
   std::optional<std::chrono::system_clock::time_point> recovered_frame_ts;
 };
 
+/// What the source is actually sending, as opposed to what the configuration says it should.
+///
+/// The monitor picks a stream per tile from these: a sub-stream is the right thing to decode on a
+/// small tile, and only the real frame size can say which stream is which — a camera's resolution
+/// can change without anyone editing the configuration.
+///
+/// Zero width means nothing has been observed yet. `bitrate_bps` is measured over a sliding window
+/// rather than taken from the container, which for RTSP usually declares nothing.
+struct observed_video
+{
+  int width = 0;
+  int height = 0;
+  AVCodecID codec_id = AV_CODEC_ID_NONE;
+  /// Nominal, from the container's avg_frame_rate — not a measured arrival rate.
+  double fps = 0.0;
+  int64_t bitrate_bps = 0;
+  std::optional<std::chrono::system_clock::time_point> observed_at;
+};
+
 class reader : public sink_container {
 public:
   virtual ~reader() = default;
+
+  /// Thread-safe snapshot for the reporting timer, like liveness() below. Readers that never see a
+  /// video track report nothing observed, which is what an empty struct means.
+  virtual observed_video observed_video_params() const { return {}; }
 
   /// Thread-safe snapshot for the reporting timer. Readers that cannot lose a source (files) may
   /// report themselves permanently alive.

@@ -1,4 +1,5 @@
 using Vms.Cfg;
+using web_vms.Types.Recording;
 // VmsFs has its own CameraSetup DTO (CameraSetupCache); this file wants the protobuf one.
 using CfgCameraSetup = Vms.Cfg.CameraSetup;
 
@@ -161,20 +162,17 @@ public sealed class LivenessSweeper(
   }
 
   /// <summary>
-  /// Whether the configuration says this stream should be recording — the same precedence
-  /// media_server applies (an open schedule window beats an override, which beats the base
-  /// profile). Used for silence, where no heartbeat is available to say so.
+  /// Whether the configuration says this stream should be recording. Used for silence, where no
+  /// heartbeat is available to say so. The precedence itself lives in <see cref="RecordingRules"/>,
+  /// so this cannot drift from what media_server actually does.
   /// </summary>
   private static bool RecordingExpected(CfgCameraSetup camera, CameraStream stream)
-  {
-    if (camera.ScheduleActive)
-      return true;
-    if (stream.OverrideProfile is { } ovr)
-      return ovr.Mode != RecordingMode.RecordingOff;
-    if (stream.RecordingProfile is { } profile)
-      return profile.Mode != RecordingMode.RecordingOff;
-    return false;
-  }
+    => RecordingRules.Effective(
+         camera.ScheduleActive,
+         !stream.HasRecordable || stream.Recordable,
+         stream.OverrideProfile is null ? null : RecordingModeProto.FromProto(stream.OverrideProfile.Mode),
+         stream.RecordingProfile is null ? null : RecordingModeProto.FromProto(stream.RecordingProfile.Mode))
+       != RecordingModeKind.Off;
 
   private async Task MaybeCleanupAsync(CancellationToken ct)
   {

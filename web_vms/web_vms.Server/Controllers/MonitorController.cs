@@ -94,6 +94,18 @@ public class MonitorController(MonitorManager manager, ICameraAccessService acce
     return Ok(result);
   }
 
+  /// <summary>
+  /// Pins the slot to one stream for this operator, or releases it back to automatic with an empty
+  /// name. Per operator, so it needs no more rights than viewing the camera already in the slot.
+  /// </summary>
+  [NoCameraAccess("changes which of a camera's streams this operator sees; the camera is already in the slot")]
+  [HttpPut("{id}/slots/{slotIndex}/stream")]
+  public async Task<IActionResult> SetSlotStream(
+    string id, int slotIndex, [FromBody] SetMonitorSlotStreamBody body, CancellationToken ct)
+  {
+    return Ok(await manager.SetSlotStream(id, slotIndex, body.StreamName, Owner, ct));
+  }
+
   [NoCameraAccess("clearing a slot removes a camera from a board, it never grants access")]
   [HttpDelete("{id}/slots/{slotIndex}")]
   public async Task<IActionResult> ClearSlot(string id, int slotIndex, CancellationToken ct)

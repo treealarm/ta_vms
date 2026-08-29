@@ -9,10 +9,13 @@ public class CameraStorage(
   NpgsqlDataSource dataSource,
   IDbContextFactory<VmsCfgDbContext> dbFactory,
   ScheduleCache scheduleCache,
+  StreamStatsCache streamStats,
   ILogger<CameraStorage> logger)
 {
   private readonly NpgsqlDataSource _dataSource = dataSource;
   private static readonly Guid BuiltinContinuousProfileId = new("00000000-0000-0000-0000-000000000001");
+  private static readonly Guid BuiltinPrealarmProfileId   = new("00000000-0000-0000-0000-000000000002");
+  private static readonly Guid BuiltinOffProfileId        = new("00000000-0000-0000-0000-000000000003");
 
   private readonly IReadOnlyList<(string ServerId, string FsId, string OnvifId, string LoggerId, string RoiId)> _serverPairs = ParseServerPairs();
 
@@ -136,14 +139,20 @@ public class CameraStorage(
         : null;
 
       await using var cmd = new NpgsqlCommand("""
-        INSERT INTO camera_stream (camera_id, stream_name, profile_token, path, web_rtc, recording_profile_id, disabled)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO camera_stream (camera_id, stream_name, profile_token, path, web_rtc, recording_profile_id, disabled, recordable, declared_width, declared_height)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         ON CONFLICT (camera_id, stream_name) DO UPDATE SET
           profile_token        = EXCLUDED.profile_token,
           path                 = EXCLUDED.path,
           web_rtc              = EXCLUDED.web_rtc,
           recording_profile_id = EXCLUDED.recording_profile_id,
-          disabled             = EXCLUDED.disabled;
+          disabled             = EXCLUDED.disabled,
+          recordable           = EXCLUDED.recordable,
+          -- Zero means "the caller does not know", not "the camera declares nothing": most callers
+          -- re-send the whole setup without ever having asked ONVIF, and must not erase what a
+          -- discovery or an encoder-settings change learned.
+          declared_width       = CASE WHEN EXCLUDED.declared_width  > 0 THEN EXCLUDED.declared_width  ELSE camera_stream.declared_width  END,
+          declared_height      = CASE WHEN EXCLUDED.declared_height > 0 THEN EXCLUDED.declared_height ELSE camera_stream.declared_height END;
         """, connection, tx);
       cmd.Parameters.AddWithValue(cameraId);
       cmd.Parameters.AddWithValue(stream.StreamName);
@@ -152,6 +161,10 @@ public class CameraStorage(
       cmd.Parameters.AddWithValue(stream.WebRtc);
       cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)profileId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Uuid });
       cmd.Parameters.Add(new NpgsqlParameter { Value = (stream.HasDisabled && stream.Disabled) ? (object)true : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Boolean });
+      // Unset means recordable: a caller that does not know about the flag must not clear it.
+      cmd.Parameters.AddWithValue(!stream.HasRecordable || stream.Recordable);
+      cmd.Parameters.AddWithValue(stream.DeclaredWidth);
+      cmd.Parameters.AddWithValue(stream.DeclaredHeight);
       await cmd.ExecuteNonQueryAsync(ct);
     }
   }
@@ -195,6 +208,7 @@ public class CameraStorage(
     await LoadStreamsAsync(connection, cameras, ct);
     await scheduleCache.EnsureFreshAsync(ct);
     ApplySchedules(cameras);
+    await streamStats.ApplyAsync(cameras, ct);
     return cameras;
   }
 
@@ -239,6 +253,7 @@ public class CameraStorage(
     await LoadStreamsAsync(connection, [setup], ct);
     await scheduleCache.EnsureFreshAsync(ct);
     ApplySchedules([setup]);
+    await streamStats.ApplyAsync([setup], ct);
     return (true, setup);
   }
 
@@ -332,6 +347,77 @@ public class CameraStorage(
     await command.ExecuteNonQueryAsync(ct);
   }
 
+  /// <summary>
+  /// Switches continuous recording on or off across every enabled, recordable stream of one
+  /// camera, in one statement. Streams that already hold the target profile are not touched and are
+  /// not reported, so a repeated click publishes nothing.
+  ///
+  /// Turning it off returns the streams to the pre-alarm profile when the camera is armed, and to
+  /// off otherwise — the same choice the per-stream path has always made, kept here so a caller
+  /// cannot get it wrong and so the armed state is read inside the same transaction as the write.
+  ///
+  /// Raw SQL because the set of rows to touch is defined by a join over three tables and the answer
+  /// must name the rows that actually changed (see the raw-SQL exception in CLAUDE.md).
+  /// </summary>
+  /// <returns>The streams whose base profile changed.</returns>
+  public async Task<IReadOnlyList<string>> SetCameraContinuousRecordingAsync(
+    string cameraId, bool on, CancellationToken ct)
+  {
+    await using var command = _dataSource.CreateCommand("""
+      WITH target AS (
+        SELECT CASE
+                 WHEN $2 THEN $3::uuid
+                 WHEN COALESCE((SELECT armed FROM camera_states WHERE camera_id = $1), false) THEN $4::uuid
+                 ELSE $5::uuid
+               END AS profile_id
+      )
+      UPDATE camera_stream cs
+      SET recording_profile_id = (SELECT profile_id FROM target)
+      WHERE cs.camera_id = $1
+        AND cs.recordable
+        AND COALESCE(cs.disabled, false) = false
+        AND cs.recording_profile_id IS DISTINCT FROM (SELECT profile_id FROM target)
+      RETURNING cs.stream_name;
+      """);
+    command.Parameters.AddWithValue(cameraId);
+    command.Parameters.AddWithValue(on);
+    command.Parameters.AddWithValue(BuiltinContinuousProfileId);
+    command.Parameters.AddWithValue(BuiltinPrealarmProfileId);
+    command.Parameters.AddWithValue(BuiltinOffProfileId);
+
+    var changed = new List<string>();
+    await using var reader = await command.ExecuteReaderAsync(ct);
+    while (await reader.ReadAsync(ct))
+      changed.Add(reader.GetString(0));
+    return changed;
+  }
+
+  /// <summary>
+  /// Whether this profile may be assigned to this stream. A stream that is not available for
+  /// recording accepts only a profile that records nothing: switching recording off is always
+  /// allowed, switching it on is not. Answering here rather than at the call sites keeps the base
+  /// profile and the override under one rule.
+  /// Null means the stream or the profile does not exist — a bad request, not a refusal.
+  /// </summary>
+  public async Task<bool?> IsRecordingProfileAllowedAsync(
+    string cameraId, string streamName, string profileId, CancellationToken ct)
+  {
+    await using var command = _dataSource.CreateCommand("""
+      SELECT cs.recordable, rp.mode
+      FROM camera_stream cs, recording_profile rp
+      WHERE cs.camera_id = $1 AND cs.stream_name = $2 AND rp.id = $3::uuid;
+      """);
+    command.Parameters.AddWithValue(cameraId);
+    command.Parameters.AddWithValue(streamName);
+    command.Parameters.AddWithValue(profileId);
+
+    await using var reader = await command.ExecuteReaderAsync(ct);
+    if (!await reader.ReadAsync(ct))
+      return null;
+
+    return reader.GetBoolean(0) || reader.GetString(1) == "off";
+  }
+
   public async Task SetStreamRecordingProfileAsync(string cameraId, string streamName, string profileId, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
@@ -374,8 +460,8 @@ public class CameraStorage(
   /// Raw SQL because EF cannot express it: the answer depends on each row's value *before* the
   /// update, which needs a data-modifying CTE (see the raw-SQL exception in CLAUDE.md).
   ///
-  /// Eligibility is unchanged from before: a stream already under an alarm override (so its
-  /// deadline is pushed out), or one with no manual override and a base profile that is off or
+  /// Eligible is a stream available for recording that is either already under an alarm override
+  /// (so its deadline is pushed out), or has no manual override and a base profile that is off or
   /// absent. A stream someone is deliberately recording is left alone.
   /// </remarks>
   public async Task<AlarmOverrideOutcome> ActivateAlarmOverrideAsync(string cameraId, string? streamName, DateTime until, CancellationToken ct)
@@ -387,6 +473,9 @@ public class CameraStorage(
         LEFT JOIN recording_profile rp ON rp.id = cs.recording_profile_id
         WHERE cs.camera_id = $1
           AND ($2::text IS NULL OR cs.stream_name = $2)
+          -- A stream that is not available for recording is never a candidate: an alarm must not
+          -- be a way around the flag.
+          AND cs.recordable
           AND (cs.alarm_override_until IS NOT NULL
                OR (cs.override_profile_id IS NULL
                    AND (cs.recording_profile_id IS NULL OR rp.mode = 'off')))
@@ -471,7 +560,7 @@ public class CameraStorage(
       SELECT cs.camera_id, cs.stream_name, cs.profile_token, cs.path, cs.web_rtc,
              rp.id,  rp.name,  rp.mode,  rp.pre_record_seconds,  rp.post_record_seconds,  rp.segment_seconds,  rp.is_override_preset,  rp.is_builtin,
              ov.id,  ov.name,  ov.mode,  ov.pre_record_seconds,  ov.post_record_seconds,  ov.segment_seconds,  ov.is_override_preset,  ov.is_builtin,
-             cs.disabled
+             cs.disabled, cs.recordable, cs.declared_width, cs.declared_height
       FROM camera_stream cs
       LEFT JOIN recording_profile rp ON rp.id = cs.recording_profile_id
       LEFT JOIN recording_profile ov ON ov.id = cs.override_profile_id
@@ -502,6 +591,10 @@ public class CameraStorage(
 
       if (!reader.IsDBNull(21) && reader.GetBoolean(21))
         stream.Disabled = true;
+
+      stream.Recordable = reader.GetBoolean(22);
+      stream.DeclaredWidth = reader.GetInt32(23);
+      stream.DeclaredHeight = reader.GetInt32(24);
 
       camera.Streams.Add(stream);
     }
@@ -804,21 +897,65 @@ public class CameraStorage(
       }
     }
 
+    // The pinned stream is this caller's own; the camera in the slot is everyone's. Joined here so
+    // a wall shared by several operators still answers each of them with their own pin.
     await using (var cmd = new NpgsqlCommand("""
-      SELECT monitor_id, slot_index, camera_id FROM monitor_slot
-      WHERE monitor_id = ANY($1);
+      SELECT ms.monitor_id, ms.slot_index, ms.camera_id, COALESCE(p.stream_name, '')
+      FROM monitor_slot ms
+      LEFT JOIN monitor_slot_pref p
+        ON p.monitor_id = ms.monitor_id AND p.slot_index = ms.slot_index AND p.owner = $2
+      WHERE ms.monitor_id = ANY($1);
       """, connection))
     {
       cmd.Parameters.Add(new NpgsqlParameter { Value = idArray, NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Uuid });
+      cmd.Parameters.AddWithValue(owner);
       await using var reader = await cmd.ExecuteReaderAsync(ct);
       while (await reader.ReadAsync(ct))
       {
         if (monitors.TryGetValue(reader.GetGuid(0), out var m))
-          m.Slots.Add(new MonitorSlot { SlotIndex = reader.GetInt32(1), CameraId = reader.GetString(2) });
+          m.Slots.Add(new MonitorSlot
+          {
+            SlotIndex  = reader.GetInt32(1),
+            CameraId   = reader.GetString(2),
+            StreamName = reader.GetString(3),
+          });
       }
     }
 
     return order.Select(id => monitors[id]).ToList();
+  }
+
+  /// <summary>
+  /// Pins a slot to one stream for this operator, or releases it back to automatic selection when
+  /// <paramref name="streamName"/> is empty. Releasing deletes the row rather than storing an empty
+  /// one: automatic is the default, and a table of rows saying "default" is a table nobody can read.
+  /// </summary>
+  public async Task SetMonitorSlotStreamAsync(
+    string owner, Guid monitorId, int slotIndex, string streamName, CancellationToken ct)
+  {
+    if (string.IsNullOrEmpty(streamName))
+    {
+      await using var deleteCmd = _dataSource.CreateCommand("""
+        DELETE FROM monitor_slot_pref
+        WHERE owner = $1 AND monitor_id = $2 AND slot_index = $3;
+        """);
+      deleteCmd.Parameters.AddWithValue(owner);
+      deleteCmd.Parameters.AddWithValue(monitorId);
+      deleteCmd.Parameters.AddWithValue(slotIndex);
+      await deleteCmd.ExecuteNonQueryAsync(ct);
+      return;
+    }
+
+    await using var command = _dataSource.CreateCommand("""
+      INSERT INTO monitor_slot_pref (owner, monitor_id, slot_index, stream_name)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (owner, monitor_id, slot_index) DO UPDATE SET stream_name = EXCLUDED.stream_name;
+      """);
+    command.Parameters.AddWithValue(owner);
+    command.Parameters.AddWithValue(monitorId);
+    command.Parameters.AddWithValue(slotIndex);
+    command.Parameters.AddWithValue(streamName);
+    await command.ExecuteNonQueryAsync(ct);
   }
 
   public async Task<int> CountInvestigationBoardsAsync(string owner, CancellationToken ct)

@@ -17,6 +17,11 @@ service CfgService {
   rpc SetStreamOverride(SetStreamOverrideRequest) returns (OperationStatus);
   rpc ClearStreamOverride(ClearStreamOverrideRequest) returns (OperationStatus);
   rpc SetStreamRecordingProfile(SetStreamRecordingProfileRequest) returns (OperationStatus);
+  // Switches continuous recording on or off across every enabled, recordable stream of one camera
+  // in a single transaction. The monitor's record button means "record this camera", not "record
+  // whichever stream the tile happens to be showing", and integrations want the same without
+  // driving a loop. The per-stream RPCs above stay: external systems still need pin-point control.
+  rpc SetCameraContinuousRecording(SetCameraContinuousRecordingRequest) returns (SetCameraContinuousRecordingResponse);
   rpc ActivateAlarmOverride(ActivateAlarmOverrideRequest) returns (ActivateAlarmOverrideResponse);
   // For the schedule ticker in VmsSingleton. All schedule evaluation stays here, where the schema
   // and the evaluator live: the ticker only detects transitions and announces them, so it needs no
@@ -44,6 +49,9 @@ service CfgService {
   rpc SetMonitorCameras(SetMonitorCamerasRequest) returns (OperationStatus);
   rpc SetMonitorSlot(SetMonitorSlotRequest) returns (OperationStatus);
   rpc ClearMonitorSlot(ClearMonitorSlotRequest) returns (OperationStatus);
+  // Pins a slot to one stream for this operator, or releases it back to automatic with an empty
+  // stream_name.
+  rpc SetMonitorSlotStream(SetMonitorSlotStreamRequest) returns (OperationStatus);
   rpc CopyMonitor(CopyMonitorRequest) returns (MonitorSetup);
   rpc ListOnvifAlarmFilters(ListOnvifAlarmFiltersRequest) returns (ListOnvifAlarmFiltersResponse);
   rpc UpsertOnvifAlarmFilter(OnvifAlarmFilter) returns (OnvifAlarmFilter);
@@ -146,6 +154,33 @@ message CameraStream {
   optional RecordingProfile recording_profile  = 5;
   optional RecordingProfile override_profile   = 6;
   optional bool disabled                   = 7;
+  // "Available for recording", orthogonal to web_rtc: watching and archiving are separate
+  // decisions. Optional rather than a plain bool on purpose — proto3 would default a plain bool to
+  // false, the opposite of the column's default, so any producer that forgot to set it would
+  // silently make every stream unrecordable. Unset therefore means true.
+  optional bool recordable                 = 8;
+  // Resolution as the camera declares it for this stream's ONVIF profile; 0 when not declared.
+  // A seed for the monitor's adaptive stream choice, never the truth: an observed measurement wins,
+  // because the real resolution can change without the configuration being edited.
+  int32 declared_width                     = 9;
+  int32 declared_height                    = 10;
+  // What media_server last measured on this stream. Absent means nothing was measured recently —
+  // the snapshot carries a TTL in the state store, so expiry and absence are the same thing and no
+  // consumer has to judge an age.
+  optional StreamStats stats               = 11;
+}
+
+// Observed parameters of a running stream. A snapshot of the last known state, not configuration
+// and not a history: it says what the camera is sending now, which is the only thing that can tell
+// a main stream from a sub-stream when the configuration says nothing about resolution.
+message StreamStats {
+  int32  width          = 1;
+  int32  height         = 2;
+  string codec          = 3;
+  double fps            = 4;
+  int64  bitrate_bps    = 5;
+  // Unix milliseconds; 0 when the publisher could not say.
+  int64  observed_at_ms = 6;
 }
 
 message CameraSetup {
@@ -237,6 +272,18 @@ message SetStreamRecordingProfileRequest {
   string camera_id   = 1;
   string stream_name = 2;
   string profile_id  = 3;
+}
+
+message SetCameraContinuousRecordingRequest {
+  string camera_id = 1;
+  bool   on        = 2;
+}
+
+message SetCameraContinuousRecordingResponse {
+  bool   success = 1;
+  string message = 2;
+  // Streams whose base profile actually changed — the caller refreshes exactly these.
+  repeated string changed_streams = 3;
 }
 
 message ListRecordingProfilesRequest {}
@@ -409,6 +456,10 @@ message GetOrAssignMediaMtxServerResponse {
 message MonitorSlot {
   int32  slot_index = 1;
   string camera_id  = 2;
+  // Which stream this slot is pinned to for the caller, empty for automatic. Unlike camera_id this
+  // is per operator: a shared wall is watched by several people, and one of them pinning a stream
+  // must not change what the others see.
+  string stream_name = 3;
 }
 
 message MonitorSetup {
@@ -443,6 +494,14 @@ message SetMonitorCamerasRequest {
   string          monitor_id = 1;
   repeated string camera_ids = 2;
   string          owner      = 3;
+}
+
+message SetMonitorSlotStreamRequest {
+  string monitor_id  = 1;
+  int32  slot_index  = 2;
+  // Empty releases the pin, putting the slot back on automatic selection.
+  string stream_name = 3;
+  string owner       = 4;
 }
 
 message SetMonitorSlotRequest {

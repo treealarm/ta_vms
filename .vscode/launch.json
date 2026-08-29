@@ -6,7 +6,7 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build:all",
-            "postDebugTask": "dapr: sidecars down",
+            "postDebugTask": "dapr:web_vms:stop",
             "program": "${workspaceFolder}/web_vms/web_vms.Server/bin/Debug/net10.0/web_vms.Server.dll",
             "cwd": "${workspaceFolder}/web_vms/web_vms.Server",
             "stopAtEntry": false,
@@ -40,7 +40,7 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build:all",
-            "postDebugTask": "dapr: sidecars down",
+            "postDebugTask": "dapr:vmscfg:stop",
             "program": "${workspaceFolder}/web_vms/VmsCfg/bin/Debug/net10.0/VmsCfg.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsCfg",
             "stopAtEntry": false,
@@ -68,7 +68,7 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build:all",
-            "postDebugTask": "dapr: sidecars down",
+            "postDebugTask": "dapr:vmsonvif:stop",
             "program": "${workspaceFolder}/web_vms/VmsOnvif/bin/Debug/net10.0/VmsOnvif.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsOnvif",
             "stopAtEntry": false,
@@ -91,7 +91,7 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build:all",
-            "postDebugTask": "dapr: sidecars down",
+            "postDebugTask": "dapr:vmsonvif-actors:stop",
             "program": "${workspaceFolder}/web_vms/VmsOnvifActors/bin/Debug/net10.0/VmsOnvifActors.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsOnvifActors",
             "stopAtEntry": false,
@@ -110,7 +110,7 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build:all",
-            "postDebugTask": "dapr: sidecars down",
+            "postDebugTask": "dapr:vmsfs:stop",
             "program": "${workspaceFolder}/web_vms/VmsFs/bin/Debug/net10.0/VmsFs.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsFs",
             "stopAtEntry": false,
@@ -154,7 +154,7 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build:all",
-            "postDebugTask": "dapr: sidecars down",
+            "postDebugTask": "dapr:vmsanalyticssingleton:stop",
             "program": "${workspaceFolder}/web_vms/VmsAnalyticsSingleton/bin/Debug/net10.0/VmsAnalyticsSingleton.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsAnalyticsSingleton",
             "stopAtEntry": false,
@@ -188,7 +188,7 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build:all",
-            "postDebugTask": "dapr: sidecars down",
+            "postDebugTask": "dapr:vmslogger:stop",
             "program": "${workspaceFolder}/web_vms/VmsLogger/bin/Debug/net10.0/VmsLogger.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsLogger",
             "stopAtEntry": false,
@@ -206,7 +206,7 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build:all",
-            "postDebugTask": "dapr: sidecars down",
+            "postDebugTask": "dapr:vmssingleton:stop",
             "program": "${workspaceFolder}/web_vms/VmsSingleton/bin/Debug/net10.0/VmsSingleton.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsSingleton",
             "stopAtEntry": false,
@@ -226,7 +226,7 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build:all",
-            "postDebugTask": "dapr: sidecars down",
+            "postDebugTask": "dapr:vmssquaresingleton:stop",
             "program": "${workspaceFolder}/web_vms/VmsSquareSingleton/bin/Debug/net10.0/VmsSquareSingleton.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsSquareSingleton",
             "stopAtEntry": false,
@@ -250,7 +250,7 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build:all",
-            "postDebugTask": "dapr: sidecars down",
+            "postDebugTask": "dapr:vmsutils:stop",
             "program": "${workspaceFolder}/web_vms/VmsUtils/bin/Debug/net10.0/VmsUtils.dll",
             "cwd": "${workspaceFolder}/web_vms/VmsUtils",
             "stopAtEntry": false,
@@ -272,7 +272,7 @@
             "type": "cppdbg",
             "request": "launch",
             "preLaunchTask": "build:all",
-            "postDebugTask": "dapr: sidecars down",
+            "postDebugTask": "dapr:roitrc:stop",
             "program": "${workspaceFolder}/roi_transcode/build/integration/roi-transcode-svc",
             "args": [],
             "environment": [
@@ -312,7 +312,7 @@
             "type": "cppdbg",
             "request": "launch",
             "preLaunchTask": "build:all",
-            "postDebugTask": "dapr: sidecars down",
+            "postDebugTask": "dapr:vms:stop",
             "program": "${workspaceFolder}/media_server/build/vms",
             "args": [],
             "environment": [
@@ -381,6 +381,10 @@
                     "value": "15"
                 },
                 {
+                    "name": "VMS_STREAM_STATS_PERIOD_SECONDS",
+                    "value": "15"
+                },
+                {
                     "name": "VMS_DEBUG_ENTITY_STATE_SECONDS",
                     "value": "10"
                 },
@@ -431,7 +435,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "preLaunchTask": "build:all",
-            "postDebugTask": "dapr: sidecars down",
+            "postDebugTask": "dapr:roitrc:stop",
             "program": "${workspaceFolder}/roi_transcode/build/integration/roi-transcode-svc.exe",
             "args": [],
             "environment": [
@@ -450,7 +454,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "preLaunchTask": "build:all",
-            "postDebugTask": "dapr: sidecars down",
+            "postDebugTask": "dapr:vms:stop",
             "program": "${workspaceFolder}/media_server/build/vms.exe",
             "args": [],
             "environment": [
@@ -512,6 +516,10 @@
                 },
                 {
                     "name": "VMS_SOURCE_LIVENESS_PERIOD_SECONDS",
+                    "value": "15"
+                },
+                {
+                    "name": "VMS_STREAM_STATS_PERIOD_SECONDS",
                     "value": "15"
                 },
                 {

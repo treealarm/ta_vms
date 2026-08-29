@@ -131,6 +131,18 @@ export type RecordingScheduleDto = {
   windows: ScheduleWindowDto[]
 }
 
+/** What media_server last measured on a running stream. Absent means nothing was measured
+ *  recently: the snapshot carries a TTL, so "gone" and "stale" are the same case. */
+export type StreamStatsDto = {
+  width: number
+  height: number
+  codec: string
+  fps: number
+  bitrateBps: number
+  /** Unix milliseconds; 0 when the publisher could not say. */
+  observedAtMs: number
+}
+
 export type CameraStreamDto = {
   streamName: string
   profileToken: string
@@ -139,15 +151,72 @@ export type CameraStreamDto = {
   recordingProfile?: RecordingProfileDto
   overrideProfile?: RecordingProfileDto
   disabled?: boolean
+  /** Whether this stream may be recorded at all. Orthogonal to `webRtc`: watching a stream and
+   *  archiving it are separate decisions. Absent means true — an older payload must not be able to
+   *  take a stream out of the archive by omission. Use `isRecordable` rather than reading it raw. */
+  recordable?: boolean
+  /** Resolution the camera declares for this stream's ONVIF profile; 0/absent when not declared.
+   *  A seed for adaptive stream choice, never the truth — observed parameters win. */
+  declaredWidth?: number
+  declaredHeight?: number
+  /** Observed parameters, when a fresh measurement exists. These win over `declaredWidth`/
+   *  `declaredHeight`, which can go stale without anyone editing the configuration. */
+  stats?: StreamStatsDto
   /** Relative URL to our WHEP gateway (proxies to MediaMTX); set by backend when webRtc=true */
   whepUrl?: string
+}
+
+/** A stream counts as recordable unless it says otherwise; see `CameraStreamDto.recordable`. */
+export const isRecordable = (s: CameraStreamDto): boolean => s.recordable !== false
+
+/** Enabled streams of this camera that are allowed into the archive — the target of every
+ *  camera-level recording action, and what the monitor's record button acts on. */
+export const recordableStreams = (camera: { streams?: CameraStreamDto[] }): CameraStreamDto[] =>
+  (camera.streams ?? []).filter((s) => !s.disabled && isRecordable(s))
+
+/** A stream's frame size and where the number came from. */
+export type StreamSize = { width: number; height: number; observed: boolean }
+
+/**
+ * The best available frame size for a stream: what media_server measured, or failing that what the
+ * camera declares for its ONVIF profile. Null when neither is known — a stream nobody has watched
+ * on a camera that was configured with a plain RTSP path.
+ *
+ * The order is the point. A declared resolution can go stale without anyone editing the
+ * configuration (a different ONVIF profile, a different file), so it is only ever a seed.
+ */
+export const streamSize = (s: CameraStreamDto): StreamSize | null => {
+  if (s.stats && s.stats.width > 0 && s.stats.height > 0)
+    return { width: s.stats.width, height: s.stats.height, observed: true }
+  if ((s.declaredWidth ?? 0) > 0 && (s.declaredHeight ?? 0) > 0)
+    return { width: s.declaredWidth as number, height: s.declaredHeight as number, observed: false }
+  return null
+}
+
+/**
+ * What this stream actually records — the client's statement of the precedence the server applies
+ * (`RecordingRules.Effective` in web_vms.Types, `recording_policy_for_stream` in media_server):
+ * a stream that may not be recorded never records, then an open schedule window forces continuous
+ * recording, then an override profile, then the base profile.
+ *
+ * Getting this wrong is visible: the card outlines itself red to say "recording", so a mode that
+ * claims more than the server does shows a recording that is not happening.
+ */
+export const effectiveStreamMode = (
+  stream: CameraStreamDto,
+  scheduleActive: boolean,
+): RecordingMode => {
+  if (!isRecordable(stream)) return 'off'
+  if (scheduleActive) return 'continuous'
+  return (stream.overrideProfile ?? stream.recordingProfile)?.mode ?? 'off'
 }
 
 export type CameraSetupDto = {
   cameraId: string
   name: string
   serverId?: string
-  /** Derived from first stream's profile mode */
+  /** The camera's recording state: the strongest effective mode across its enabled streams that
+   *  are available for recording. */
   recording?: boolean
   recordingMode: RecordingMode
   webRtc: boolean
@@ -554,6 +623,9 @@ export function layoutFeatureSpan(layout: MonitorLayout): number {
 export type MonitorSlotDto = {
   slotIndex: number
   cameraId: string
+  /** Stream this slot is pinned to for the current user; empty means the tile picks one from its
+   *  own size. Per operator, unlike `cameraId` — pinning on a shared wall is a private choice. */
+  streamName?: string
 }
 
 /**

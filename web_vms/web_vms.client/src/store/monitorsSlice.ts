@@ -84,6 +84,22 @@ export const setMonitorSlot = createAsyncThunk(
   }
 )
 
+/** Pins a slot to one stream for this user, or releases it back to automatic with an empty name. */
+export const setMonitorSlotStream = createAsyncThunk(
+  'monitors/setSlotStream',
+  async ({ monitorId, slotIndex, streamName }: { monitorId: string; slotIndex: number; streamName: string }) => {
+    const response = await fetch(
+      `/api/monitor/${encodeURIComponent(monitorId)}/slots/${slotIndex}/stream`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ streamName }),
+      }
+    )
+    return { monitorId, slotIndex, streamName, result: await parseJson<ApiResponseDto>(response) }
+  }
+)
+
 const monitorsSlice = createSlice({
   name: 'monitors',
   initialState,
@@ -122,6 +138,13 @@ const monitorsSlice = createSlice({
           // camera to a board does not blank the cells already placed on it.
           m.slots = m.slots.filter((s) => cameraIds.includes(s.cameraId))
         }
+      })
+      .addCase(setMonitorSlotStream.fulfilled, (state, action) => {
+        const { monitorId, slotIndex, streamName } = action.payload
+        const m = state.monitors.find((x) => x.monitorId === monitorId)
+        const slot = m?.slots.find((s) => s.slotIndex === slotIndex)
+        // Only an existing slot carries a pin: there is nothing to pin a stream on in an empty one.
+        if (slot) slot.streamName = streamName
       })
       .addCase(setMonitorSlot.fulfilled, (state, action) => {
         const { monitorId, slotIndex, cameraId } = action.payload

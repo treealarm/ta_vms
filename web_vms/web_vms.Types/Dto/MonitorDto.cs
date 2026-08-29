@@ -4,6 +4,12 @@ public record MonitorSlotDto
 {
   public int SlotIndex { get; init; }
   public string CameraId { get; init; } = string.Empty;
+  /// <summary>
+  /// Which stream this slot is pinned to for the caller; empty means the tile picks one from its
+  /// own size. Unlike <see cref="CameraId"/> this is per operator — a shared wall is watched by
+  /// several people, and one of them pinning a stream must not change what the others see.
+  /// </summary>
+  public string StreamName { get; init; } = string.Empty;
 }
 
 public record MonitorDto
@@ -35,4 +41,10 @@ public record SetMonitorCamerasBody
 public record SetMonitorSlotBody
 {
   public string CameraId { get; init; } = string.Empty;
+}
+
+/// <summary>Empty <see cref="StreamName"/> releases the pin, back to automatic selection.</summary>
+public record SetMonitorSlotStreamBody
+{
+  public string StreamName { get; init; } = string.Empty;
 }

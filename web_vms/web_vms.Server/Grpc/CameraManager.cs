@@ -1,6 +1,7 @@
 using Grpc.Core;
 using Vms.Cfg;
 using web_vms.Types.Dto;
+using web_vms.Types.Recording;
 
 namespace web_vms;
 
@@ -113,14 +114,40 @@ public class CameraManager : ICameraManager
         RecordingProfile = s.RecordingProfile != null ? ToProfileDto(s.RecordingProfile) : null,
         OverrideProfile  = s.OverrideProfile  != null ? ToProfileDto(s.OverrideProfile)  : null,
         Disabled         = s.HasDisabled && s.Disabled ? true : null,
+        Recordable       = !s.HasRecordable || s.Recordable,
+        DeclaredWidth    = s.DeclaredWidth,
+        DeclaredHeight   = s.DeclaredHeight,
+        Stats            = s.Stats is null ? null : new StreamStatsDto
+        {
+          Width        = s.Stats.Width,
+          Height       = s.Stats.Height,
+          Codec        = s.Stats.Codec,
+          Fps          = s.Stats.Fps,
+          BitrateBps   = s.Stats.BitrateBps,
+          ObservedAtMs = s.Stats.ObservedAtMs,
+        },
       })
       .ToList();
 
     var firstStream = streams.FirstOrDefault();
-    var effectiveProfile = firstStream?.OverrideProfile ?? firstStream?.RecordingProfile;
-    // An open recording schedule window forces continuous recording on every stream of the camera,
-    // ahead of the profile and of any manual or alarm override.
-    var mode = setup.ScheduleActive ? "continuous" : effectiveProfile?.Mode ?? "off";
+
+    // The camera's own recording state, across every enabled stream that may be recorded — not the
+    // first stream's. The first stream is whichever one sorts first, and once a stream can be
+    // marked "not available for recording" it can easily be one that never records while another
+    // does; the card would then say the camera is idle while footage is being written.
+    var streamModes = streams
+      .Where(s => s.Disabled != true && s.Recordable)
+      .Select(s => RecordingRules.Effective(
+        setup.ScheduleActive,
+        recordable: true,
+        s.OverrideProfile is null ? null : RecordingRules.Parse(s.OverrideProfile.Mode),
+        s.RecordingProfile is null ? null : RecordingRules.Parse(s.RecordingProfile.Mode)))
+      .ToList();
+
+    var mode = RecordingRules.ToWire(
+      streamModes.Contains(RecordingModeKind.Continuous) ? RecordingModeKind.Continuous
+      : streamModes.Contains(RecordingModeKind.Prealarm) ? RecordingModeKind.Prealarm
+      : RecordingModeKind.Off);
 
     return new CameraSetupDto
     {
@@ -268,6 +295,13 @@ public class CameraManager : ICameraManager
           Path         = s.Path,
           WebRtc       = s.WebRtc,
           Disabled     = s.Disabled == true,
+          // Always set: this method re-sends the whole setup on every stream edit, so leaving it
+          // unset would silently take every stream out of the archive.
+          Recordable   = s.Recordable,
+          // Zero is "not known here" and VmsCfg keeps whatever it already has; only a caller that
+          // actually asked ONVIF sends a value.
+          DeclaredWidth  = s.DeclaredWidth,
+          DeclaredHeight = s.DeclaredHeight,
         };
         if (s.RecordingProfile != null)
           stream.RecordingProfile = ToProfileProto(s.RecordingProfile);
@@ -281,6 +315,7 @@ public class CameraManager : ICameraManager
         StreamName = "main",
         Path       = dto.Path,
         WebRtc     = dto.WebRtc,
+        Recordable = true,
       });
     }
 

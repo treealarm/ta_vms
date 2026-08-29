@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera, fetchCameraState } from '../store/liveSlice'
 import type { CameraStreamDto, RecordingProfileDto } from '../dto/dtos'
+import { isRecordable } from '../dto/dtos'
 import CameraStream from './CameraStream'
 import StoragePathBrowserDialog from './StoragePathBrowserDialog'
 import DetailToolbar from './settings/DetailToolbar'
@@ -52,6 +53,7 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
   const [profileToken, setProfileToken] = useState(existingStream?.profileToken ?? '')
   const [webRtc, setWebRtc] = useState(existingStream?.webRtc ?? isNew)
   const [disabled, setDisabled] = useState(existingStream?.disabled === true)
+  const [recordable, setRecordable] = useState(existingStream ? isRecordable(existingStream) : true)
   const [selectedProfileId, setSelectedProfileId] = useState<string>(existingStream?.recordingProfile?.id ?? '')
 
   const [browsing, setBrowsing] = useState(false)
@@ -75,14 +77,23 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
     profileToken: existingStream?.profileToken ?? '',
     webRtc: existingStream?.webRtc ?? false,
     disabled: existingStream?.disabled === true,
+    recordable: existingStream ? isRecordable(existingStream) : true,
     selectedProfileId: existingStream?.recordingProfile?.id ?? '',
   })
+
+  // The declared resolution of the ONVIF profile this stream is bound to, when the profile list has
+  // been fetched. Zero means "not known here", and VmsCfg then keeps whatever it already has — so
+  // saving the panel without ever opening the profile list cannot erase it.
+  const declared = availableOnvifProfiles.find((p) => p.token === profileToken)
+  const declaredWidth = declared?.width ?? existingStream?.declaredWidth ?? 0
+  const declaredHeight = declared?.height ?? existingStream?.declaredHeight ?? 0
 
   const dirty = !isNew && (
     path !== snap.path
     || profileToken !== snap.profileToken
     || webRtc !== snap.webRtc
     || disabled !== snap.disabled
+    || recordable !== snap.recordable
     || selectedProfileId !== snap.selectedProfileId
   )
 
@@ -172,6 +183,9 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
         profileToken,
         webRtc,
         disabled: disabled || undefined,
+        recordable,
+        declaredWidth,
+        declaredHeight,
         recordingProfile: resolveProfile(),
       }
       const result = await dispatch(addCamera({ ...camera, streams: [...(camera.streams ?? []), updated] }))
@@ -186,12 +200,15 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
       profileToken,
       webRtc,
       disabled: disabled || undefined,
+      recordable,
+      declaredWidth,
+      declaredHeight,
       recordingProfile: resolveProfile(),
     }
     const others = (camera.streams ?? []).filter((s) => s.streamName !== updated.streamName)
     const result = await dispatch(addCamera({ ...camera, streams: [...others, updated] }))
     if (!addCamera.rejected.match(result)) {
-      setSnap({ path, profileToken, webRtc, disabled, selectedProfileId })
+      setSnap({ path, profileToken, webRtc, disabled, recordable, selectedProfileId })
       await dispatch(fetchCameraState(cameraId))
       return true
     }
@@ -215,6 +232,7 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
     setPath(snap.path)
     setProfileToken(snap.profileToken)
     setWebRtc(snap.webRtc)
+    setRecordable(snap.recordable)
     setDisabled(snap.disabled)
     setSelectedProfileId(snap.selectedProfileId)
   }
@@ -400,6 +418,10 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
               )}
             </Stack>
 
+            {/* Inert while the stream is not available for recording, but the chosen profile is
+                deliberately left as it is: ticking the flag back on resumes recording with what was
+                already configured, which is the whole reason the flag gates the effective mode
+                instead of clearing the profile. */}
             <TextField
               select
               label={t('stream.recordingProfile')}
@@ -407,7 +429,8 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
               onChange={(e) => setSelectedProfileId(e.target.value)}
               size="small"
               sx={{ maxWidth: 240 }}
-              disabled={profilesLoading}
+              disabled={profilesLoading || !recordable}
+              helperText={recordable ? undefined : t('stream.notRecordableHint')}
             >
               <MenuItem value="">{t('stream.noRecording')}</MenuItem>
               {recordingProfiles.map((p) => (
@@ -420,6 +443,13 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
             <FormControlLabel
               control={<Switch checked={webRtc} onChange={(e) => setWebRtc(e.target.checked)} />}
               label={t('stream.webrtcLive')}
+            />
+
+            {/* Beside "Live video" on purpose: watching a stream and archiving it are independent
+                choices, and putting the two switches together is what says so. */}
+            <FormControlLabel
+              control={<Switch checked={recordable} onChange={(e) => setRecordable(e.target.checked)} />}
+              label={t('stream.recordable')}
             />
 
             <FormControlLabel

@@ -49,6 +49,14 @@ public class MonitorManager(CfgService.CfgServiceClient cfgClient)
     return new ApiResponse(response.Success, response.Message);
   }
 
+  public async Task<ApiResponse> SetSlotStream(string monitorId, int slotIndex, string streamName, string owner, CancellationToken ct = default)
+  {
+    var response = await cfgClient.SetMonitorSlotStreamAsync(
+      new SetMonitorSlotStreamRequest { MonitorId = monitorId, SlotIndex = slotIndex, StreamName = streamName, Owner = owner },
+      CfgOptions(ct));
+    return new ApiResponse(response.Success, response.Message);
+  }
+
   public async Task<ApiResponse> ClearSlot(string monitorId, int slotIndex, string owner, CancellationToken ct = default)
   {
     var response = await cfgClient.ClearMonitorSlotAsync(
@@ -73,7 +81,12 @@ public class MonitorManager(CfgService.CfgServiceClient cfgClient)
     Kind      = string.IsNullOrEmpty(m.Kind) ? MonitorKinds.Wall : m.Kind,
     Owner     = m.Owner,
     CameraIds = m.CameraIds.ToList(),
-    Slots     = m.Slots.Select(s => new MonitorSlotDto { SlotIndex = s.SlotIndex, CameraId = s.CameraId }).ToList(),
+    Slots     = m.Slots.Select(s => new MonitorSlotDto
+    {
+      SlotIndex  = s.SlotIndex,
+      CameraId   = s.CameraId,
+      StreamName = s.StreamName,
+    }).ToList(),
   };
 
   private static MonitorSetup ToProto(MonitorDto dto, string owner)

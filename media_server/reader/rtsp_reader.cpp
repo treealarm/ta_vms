@@ -66,6 +66,55 @@ bool rtsp_reader::open(const std::string& url)
 }
 
 
+namespace {
+/// How long the bitrate is averaged over. Short enough to follow a real change in the stream,
+/// long enough that one keyframe burst does not dominate the answer.
+constexpr int64_t k_bitrate_window_us = 5'000'000;
+}
+
+observed_video rtsp_reader::observed_video_params() const
+{
+  observed_video out;
+  out.width = m_observed_width.load();
+  out.height = m_observed_height.load();
+  out.codec_id = static_cast<AVCodecID>(m_observed_codec_id.load());
+  out.fps = m_observed_fps.load();
+  out.bitrate_bps = m_observed_bitrate_bps.load();
+  const auto us = m_observed_at_us.load();
+  if (us != 0)
+    out.observed_at = std::chrono::system_clock::time_point(std::chrono::microseconds(us));
+  return out;
+}
+
+void rtsp_reader::note_observed_video(const AVPacket* pkt)
+{
+  const AVStream* video = m_ctx->streams[m_video_index];
+  m_observed_width.store(video->codecpar->width);
+  m_observed_height.store(video->codecpar->height);
+  m_observed_codec_id.store(video->codecpar->codec_id);
+  m_observed_fps.store(video->avg_frame_rate.den > 0
+    ? av_q2d(video->avg_frame_rate)
+    : 0.0);
+  m_observed_at_us.store(std::chrono::duration_cast<std::chrono::microseconds>(
+    std::chrono::system_clock::now().time_since_epoch()).count());
+
+  const int64_t now_us = av_gettime_relative();
+  if (m_bitrate_window_start_us == 0)
+  {
+    m_bitrate_window_start_us = now_us;
+    m_bitrate_window_bytes = 0;
+  }
+  m_bitrate_window_bytes += pkt->size;
+
+  const int64_t elapsed_us = now_us - m_bitrate_window_start_us;
+  if (elapsed_us >= k_bitrate_window_us)
+  {
+    m_observed_bitrate_bps.store(m_bitrate_window_bytes * 8 * 1'000'000 / elapsed_us);
+    m_bitrate_window_start_us = now_us;
+    m_bitrate_window_bytes = 0;
+  }
+}
+
 source_liveness rtsp_reader::liveness() const
 {
   source_liveness out;
@@ -333,6 +382,7 @@ void rtsp_reader::read_loop()
             gap_ms, (int)((pkt->flags & AV_PKT_FLAG_KEY) != 0), m_cam_id));
       }
       last_video_at = now;
+      note_observed_video(pkt.get());
     }
 
     auto media = std::make_shared<media_packet>();

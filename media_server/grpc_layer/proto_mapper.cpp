@@ -29,6 +29,13 @@ recording_policy_spec proto_mapper::recording_policy_for_stream(
   const vms::cfg::CameraStream& stream,
   bool schedule_active)
 {
+  // A stream that is not available for recording never records, ahead of everything else —
+  // including the schedule window below. Its profile stays configured, so restoring the flag
+  // resumes recording with the profile already chosen. `recordable` is optional in the proto and
+  // unset means true, so a producer that forgot it cannot silently empty the archive.
+  if (stream.has_recordable() && !stream.recordable())
+    return recording_policy_for_media(vms::cfg::RECORDING_OFF, 0);
+
   // An open recording schedule window wins over everything else, including a manual or alarm
   // override: while the window lasts the stream records continuously.
   if (schedule_active)

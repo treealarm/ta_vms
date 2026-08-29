@@ -11,6 +11,7 @@
 
 extern "C" {
 #include <libavutil/avutil.h>
+#include <libavutil/time.h>
 }
 
 namespace {
@@ -247,6 +248,7 @@ std::shared_ptr<media_packet> file_camera_reader::build_media_packet(avpacket_pt
     return nullptr;
 
   const int stream_index = pkt->stream_index;
+  note_observed_video(stream_index, pkt->size);
   auto media = std::make_shared<media_packet>();
   media->packet = std::move(pkt);
   media->stream_index = stream_index;
@@ -268,6 +270,55 @@ std::shared_ptr<media_packet> file_camera_reader::build_media_packet(avpacket_pt
     return nullptr;
   media->codec_parameters = std::move(codec_copy);
   return media;
+}
+
+namespace {
+/// Same window as rtsp_reader uses: long enough that a keyframe burst does not dominate.
+constexpr int64_t k_bitrate_window_us = 5'000'000;
+}
+
+observed_video file_camera_reader::observed_video_params() const
+{
+  observed_video out;
+  out.width = m_observed_width.load();
+  out.height = m_observed_height.load();
+  out.codec_id = static_cast<AVCodecID>(m_observed_codec_id.load());
+  out.fps = m_observed_fps.load();
+  out.bitrate_bps = m_observed_bitrate_bps.load();
+  const auto us = m_observed_at_us.load();
+  if (us != 0)
+    out.observed_at = std::chrono::system_clock::time_point(std::chrono::microseconds(us));
+  return out;
+}
+
+void file_camera_reader::note_observed_video(int stream_index, int packet_size)
+{
+  if (!m_ctx || stream_index != m_video_index)
+    return;
+
+  const AVStream* video = m_ctx->streams[stream_index];
+  m_observed_width.store(video->codecpar->width);
+  m_observed_height.store(video->codecpar->height);
+  m_observed_codec_id.store(video->codecpar->codec_id);
+  m_observed_fps.store(video->avg_frame_rate.den > 0 ? av_q2d(video->avg_frame_rate) : 0.0);
+  m_observed_at_us.store(std::chrono::duration_cast<std::chrono::microseconds>(
+    std::chrono::system_clock::now().time_since_epoch()).count());
+
+  const int64_t now_us = av_gettime_relative();
+  if (m_bitrate_window_start_us == 0)
+  {
+    m_bitrate_window_start_us = now_us;
+    m_bitrate_window_bytes = 0;
+  }
+  m_bitrate_window_bytes += packet_size;
+
+  const int64_t elapsed_us = now_us - m_bitrate_window_start_us;
+  if (elapsed_us >= k_bitrate_window_us)
+  {
+    m_observed_bitrate_bps.store(m_bitrate_window_bytes * 8 * 1'000'000 / elapsed_us);
+    m_bitrate_window_start_us = now_us;
+    m_bitrate_window_bytes = 0;
+  }
 }
 
 void file_camera_reader::apply_playback_pacing(

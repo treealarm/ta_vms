@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Vms.Cfg;
+using web_vms.Types.Recording;
 
 namespace VmsFs;
 
@@ -41,11 +42,11 @@ public sealed class CameraConfigCache(CfgService.CfgServiceClient cfgClient)
 
     var profile = stream?.OverrideProfile ?? stream?.RecordingProfile;
 
-    // An open recording schedule window forces continuous recording, so every clip ingested while
-    // it lasts must be retained regardless of the configured profile.
-    var mode = resp.Setup.ScheduleActive
-      ? RecordingMode.RecordingContinuous
-      : profile?.Mode ?? RecordingMode.RecordingOff;
+    var mode = RecordingModeProto.ToProto(RecordingRules.Effective(
+      resp.Setup.ScheduleActive,
+      stream is null || !stream.HasRecordable || stream.Recordable,
+      stream?.OverrideProfile is null ? null : RecordingModeProto.FromProto(stream.OverrideProfile.Mode),
+      stream?.RecordingProfile is null ? null : RecordingModeProto.FromProto(stream.RecordingProfile.Mode)));
 
     var config = new CameraConfig(
       mode,

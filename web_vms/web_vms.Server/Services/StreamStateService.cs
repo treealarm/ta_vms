@@ -3,6 +3,7 @@ using Grpc.Core;
 using Vms.Cfg;
 using Vms.Control;
 using web_vms.Types.Dto;
+using web_vms.Types.Recording;
 using RecordingMode = Vms.Cfg.RecordingMode;
 
 namespace web_vms;
@@ -26,15 +27,11 @@ public sealed class StreamStateService(ICameraManager manager, ServerPairRegistr
     if (stream is null) return;
 
     var profile = stream.OverrideProfile ?? stream.RecordingProfile;
-    // An open recording schedule window wins over the profile and over any override.
-    var recordingMode = camera.ScheduleActive
-      ? RecordingMode.RecordingContinuous
-      : profile?.Mode switch
-        {
-          "continuous" => RecordingMode.RecordingContinuous,
-          "prealarm"   => RecordingMode.RecordingPrealarm,
-          _            => RecordingMode.RecordingOff,
-        };
+    var recordingMode = RecordingModeProto.ToProto(RecordingRules.Effective(
+      camera.ScheduleActive,
+      stream.Recordable,
+      stream.OverrideProfile is null ? null : RecordingRules.Parse(stream.OverrideProfile.Mode),
+      stream.RecordingProfile is null ? null : RecordingRules.Parse(stream.RecordingProfile.Mode)));
 
     // WebRtc deliberately left unset: this is a recording-state push only, and setting it
     // would stop a MediaMTX push started on demand (live view, analytics).

@@ -6,6 +6,7 @@ using web_vms.Authentication;
 using Vms.Control;
 using Vms.Fs;
 using web_vms.Types.Dto;
+using web_vms.Types.Recording;
 using RecordingMode = Vms.Cfg.RecordingMode;
 using web_vms.Authorization;
 
@@ -69,15 +70,11 @@ public class LiveController(
     foreach (var stream in streams)
     {
       var profile = stream.OverrideProfile ?? stream.RecordingProfile;
-      // An open recording schedule window wins over the profile and over any override.
-      var recordingMode = request.ScheduleActive
-        ? RecordingMode.RecordingContinuous
-        : profile?.Mode switch
-          {
-            "continuous" => RecordingMode.RecordingContinuous,
-            "prealarm"   => RecordingMode.RecordingPrealarm,
-            _            => RecordingMode.RecordingOff,
-          };
+      var recordingMode = RecordingModeProto.ToProto(RecordingRules.Effective(
+        request.ScheduleActive,
+        stream.Recordable,
+        stream.OverrideProfile is null ? null : RecordingRules.Parse(stream.OverrideProfile.Mode),
+        stream.RecordingProfile is null ? null : RecordingRules.Parse(stream.RecordingProfile.Mode)));
 
       var state = new CameraState
       {

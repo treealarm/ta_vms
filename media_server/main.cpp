@@ -1,5 +1,8 @@
 ﻿#include <csignal>
 #include <algorithm>
+#include <map>
+#include <utility>
+#include <vector>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -175,7 +178,27 @@ int main(int argc, char** argv)
     fs_client::instance().report_source_liveness(own_server_id, instance_id, batch);
   };
 
-  std::thread liveness_thread([&, liveness_period]() {
+  // Observed stream parameters for the monitor's adaptive quality choice. Published from the
+  // liveness thread rather than a timer of its own: that loop already walks every stream once a
+  // second, and a second thread doing the same walk would buy nothing.
+  //
+  // The TTL is at least three publish periods, so a single lost write never makes a live stream
+  // look stale, and expiry is what marks a snapshot as no longer trustworthy — there is no age
+  // check anywhere downstream.
+  const int stats_period = std::max(1, env_int("VMS_STREAM_STATS_PERIOD_SECONDS", 15));
+  const int stats_ttl = std::max(45, stats_period * 3);
+  auto publish_stream_stats = [&state_client, stats_ttl](
+    const std::vector<camera_manager::stream_state>& streams) {
+    state_client.save_stream_stats(streams, stats_ttl);
+  };
+
+  std::thread liveness_thread([&, liveness_period, stats_period]() {
+    // What was last published, so a change in the encoder's output goes out at once instead of
+    // waiting for the next full refresh: a stream that switches resolution must not leave the
+    // monitor choosing by a measurement that no longer describes it.
+    std::map<std::string, std::pair<int, int>> published_size;
+    int seconds_since_full_stats = stats_period;
+
     while (!g_stop_requested) {
       // A dropped source must not leave its clip spanning the outage: the archive would claim
       // footage it does not have, and the gap would never be detected.
@@ -184,7 +207,34 @@ int main(int argc, char** argv)
 
       for (auto i = std::chrono::seconds::zero(); i < liveness_period && !g_stop_requested;
            i += std::chrono::seconds(1))
+      {
+        const auto states = manager.list_stream_states();
+
+        std::vector<camera_manager::stream_state> changed;
+        for (const auto& st : states)
+        {
+          const auto key = st.camera_id + "/" + st.stream_name;
+          const auto size = std::pair{ st.video.width, st.video.height };
+          auto it = published_size.find(key);
+          if (it == published_size.end() || it->second != size)
+          {
+            published_size[key] = size;
+            changed.push_back(st);
+          }
+        }
+
+        if (++seconds_since_full_stats >= stats_period)
+        {
+          publish_stream_stats(states);
+          seconds_since_full_stats = 0;
+        }
+        else if (!changed.empty())
+        {
+          publish_stream_stats(changed);
+        }
+
         std::this_thread::sleep_for(std::chrono::seconds(1));
+      }
     }
 
     // One last report on the way out. Without it the newest frame VmsFs knows about is up to a
