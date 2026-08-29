@@ -194,6 +194,8 @@ Report transcode_file(const std::string& input_path,
     ep.crf = settings.crf;
     ep.gop = settings.gop;
     ep.preset = settings.preset;
+    // Keep file mode aligned with Session: apply sanitised rate-control (after guards).
+    bitrate = BitrateBudget(ep.rate_control);
 
     RoiEncoder enc;
     enc.open(ep, sink);
