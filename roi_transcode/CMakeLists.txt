@@ -73,6 +73,7 @@ add_library(smartvideo STATIC
     src/core/pixel_format.cpp
     src/core/preset.cpp
     src/core/transcode_file.cpp
+    src/core/frame_roi_pipeline.cpp
     src/core/roi_encoder.cpp
     src/core/file_mux_sink.cpp
     src/core/frame_input.cpp

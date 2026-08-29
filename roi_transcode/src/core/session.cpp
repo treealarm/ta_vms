@@ -3,6 +3,8 @@
 #include "av_raii.h"
 #include "bitrate_budget.h"
 #include "box_smoother.h"
+#include "encoder_runtime_warnings.h"
+#include "frame_roi_pipeline.h"
 #include "frame_input.h"
 #include "object_normalizer.h"
 #include "packet_sink.h"
@@ -12,9 +14,7 @@
 #include "smartvideo/metadata.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstdio>
-#include <limits>
 #include <map>
 #include <span>
 
@@ -69,44 +69,6 @@ HeldRegions hold(const Regions& in)
         h.boxes.assign(in.boxes.begin(), in.boxes.end());
     }
     return h;
-}
-
-float center_distance_diag(const Box& a, const Box& b)
-{
-    const float ax = a.x + 0.5f * a.width;
-    const float ay = a.y + 0.5f * a.height;
-    const float bx = b.x + 0.5f * b.width;
-    const float by = b.y + 0.5f * b.height;
-    const float dx = bx - ax;
-    const float dy = by - ay;
-    constexpr float diagonal = 1.41421356f; // sqrt(2) in normalized space
-    return static_cast<float>(std::sqrt(dx * dx + dy * dy) / diagonal);
-}
-
-void fill_lag_report(const std::vector<RoiLagSample>& samples, Report& report)
-{
-    report.roi_lag_measured = !samples.empty();
-    report.roi_lag_samples = static_cast<int64_t>(samples.size());
-    if (samples.empty()) {
-        return;
-    }
-
-    std::vector<double> frames;
-    std::vector<double> ms;
-    frames.reserve(samples.size());
-    ms.reserve(samples.size());
-    float min_iou = std::numeric_limits<float>::max();
-    for (const RoiLagSample& s : samples) {
-        min_iou = std::min(min_iou, s.iou);
-        frames.push_back(static_cast<double>(s.lag_frames));
-        ms.push_back(s.lag_ms);
-    }
-    report.roi_lag_min_iou = min_iou;
-    report.roi_lag_p95_frames = percentile(frames, 0.95);
-    report.roi_lag_p99_frames = percentile(frames, 0.99);
-    report.roi_lag_p95_ms = percentile(ms, 0.95);
-    report.roi_lag_p99_ms = percentile(ms, 0.99);
-    report.roi_lag_acceptance = roi_lag_acceptance(samples);
 }
 
 } // namespace
@@ -232,25 +194,12 @@ struct Session::Impl : PacketSink {
     /// callers treat the map as unlimited (rects_from_qp_map / truncate skip on 0).
     int region_budget() const
     {
-        const EncoderCapabilities caps = encoder.capabilities();
-        if (caps.qp_map) {
-            return 0;
-        }
-        const int asked = params.settings.quality.max_regions;
-        const uint32_t limit = caps.max_roi_regions;
-        if (limit == 0) {
-            return asked;  // the backend names no limit; the caller's word stands
-        }
-        const int cap = static_cast<int>(limit);
-        return asked > 0 ? std::min(asked, cap) : cap;
+        return effective_region_budget(params.settings.quality, encoder.capabilities());
     }
 
     int32_t coding_block() const
     {
-        const int32_t b = qp_map_block(encoder.capabilities());
-        // Rectangle-only backends still paint through a grid before merge; 16 is
-        // fine for both codecs (finer than a CTU, still cheap to merge).
-        return b > 0 ? b : 16;
+        return effective_coding_block(encoder.capabilities());
     }
 
     std::vector<Rect> rects_for(const Regions& regions)
@@ -283,51 +232,23 @@ struct Session::Impl : PacketSink {
             return rects;
         }
 
-        const std::vector<Box> box_list(regions.boxes.begin(), regions.boxes.end());
-        std::vector<Box> smoothed = box_list;
-        box_smooth.apply(smoothed, params.settings.temporal);
-        for (const Box& applied : smoothed) {
-            if (applied.track_id == 0) {
-                continue;
-            }
-            const auto it = std::find_if(box_list.begin(), box_list.end(),
-                [&](const Box& b) {
-                    return b.track_id == applied.track_id && b.kind == applied.kind;
-                });
-            if (it == box_list.end()) {
-                continue;
-            }
-            int32_t lag_frames = 0;
-            const float speed = std::max(it->track.speed, 0.0f);
-            if (speed > 1e-6f) {
-                const int32_t den = std::max(params.fps_den, 1);
-                const double frame_sec = params.fps_num > 0
-                    ? static_cast<double>(den) / static_cast<double>(params.fps_num)
-                    : 1.0 / 25.0;
-                const double per_frame = static_cast<double>(speed) * frame_sec;
-                const double dist = static_cast<double>(center_distance_diag(applied, *it));
-                lag_frames = static_cast<int32_t>(std::lround(dist / per_frame));
-                lag_samples.push_back(measure_roi_lag(applied, *it, lag_frames, frame_sec));
-            } else {
-                lag_samples.push_back(measure_roi_lag(applied, *it, 0, 0.0));
-            }
-        }
-        auto dets =
-            builder.detections_from(smoothed, params.settings.quality, w, h);
-        bitrate.soften_detections(dets);
-        // See transcode_file: slew would choke BitrateBudget under a target bitrate.
-        const int32_t slew = bitrate.active()
-            ? 0
-            : params.settings.temporal.max_qp_delta_per_frame;
-        qp_slew.apply(dets, slew);
-        const Quality quality = bitrate.apply(params.settings.quality);
-        auto rects = builder.build(w, h, dets, quality, block, budget);
-        if (budget > 0 && static_cast<int>(rects.size()) > budget) {
-            int32_t lost = 0;
-            truncate_roi_rects(rects, budget, w, h, &lost);
-            report.regions_dropped += lost;
-        }
-        return rects;
+        FrameRoiPipelineInput pipeline_in{
+            .boxes = regions.boxes,
+            .quality = params.settings.quality,
+            .temporal = params.settings.temporal,
+            .caps = encoder.capabilities(),
+            .width = w,
+            .height = h,
+            .frame_interval_sec = params.fps_num > 0
+                ? static_cast<double>(std::max(params.fps_den, 1))
+                    / static_cast<double>(params.fps_num)
+                : 1.0 / 25.0,
+        };
+        FrameRoiPipeline pipeline(bitrate, box_smooth, qp_slew, builder);
+        FrameRoiPipelineOutput out = pipeline.process(pipeline_in);
+        report.regions_dropped += out.regions_dropped;
+        lag_samples.insert(lag_samples.end(), out.lag_samples.begin(), out.lag_samples.end());
+        return out.rects;
     }
 
     std::vector<uint8_t> sei_bytes(const Regions& regions, int64_t pts)
@@ -335,12 +256,9 @@ struct Session::Impl : PacketSink {
         if (!params.settings.metadata.bitstream_sei) {
             return {};
         }
-        if (!encoder.capabilities().sei) {
-            if (!sei_unsupported_logged) {
-                std::fprintf(stderr,
-                    "warning: bitstream SEI requested but not supported by encoder capabilities\n");
-                sei_unsupported_logged = true;
-            }
+        const EncoderCapabilities caps = encoder.capabilities();
+        warn_sei_unsupported_once(true, caps, sei_unsupported_logged);
+        if (!caps.sei) {
             return {};
         }
         SeiFrame frame;

@@ -3,6 +3,8 @@
 #include "av_raii.h"
 #include "bitrate_budget.h"
 #include "box_smoother.h"
+#include "encoder_runtime_warnings.h"
+#include "frame_roi_pipeline.h"
 #include "packet_sink.h"
 #include "importance_map.h"
 #include "roi_lag.h"
@@ -12,10 +14,7 @@
 #include "qp_slew.h"
 #include "smartvideo/metadata.h"
 
-#include <algorithm>
-#include <cmath>
 #include <cstdio>
-#include <limits>
 #include <vector>
 
 namespace smartvideo {
@@ -60,47 +59,6 @@ AVRational guess_fps(AVStream* st, AVCodecContext* dec)
         return dec->framerate;
     }
     return AVRational{25, 1};
-}
-
-float center_distance_diag(const Box& a, const Box& b)
-{
-    const float ax = a.x + 0.5f * a.width;
-    const float ay = a.y + 0.5f * a.height;
-    const float bx = b.x + 0.5f * b.width;
-    const float by = b.y + 0.5f * b.height;
-    const float dx = bx - ax;
-    const float dy = by - ay;
-    constexpr float diagonal = 1.41421356f; // sqrt(2) in normalized space
-    return static_cast<float>(std::sqrt(dx * dx + dy * dy) / diagonal);
-}
-
-void fill_lag_report(const std::vector<RoiLagSample>& samples, Report& report)
-{
-    report.roi_lag_measured = !samples.empty();
-    report.roi_lag_samples = static_cast<int64_t>(samples.size());
-    if (samples.empty()) {
-        return;
-    }
-
-    std::vector<double> ious;
-    std::vector<double> frames;
-    std::vector<double> ms;
-    ious.reserve(samples.size());
-    frames.reserve(samples.size());
-    ms.reserve(samples.size());
-    float min_iou = std::numeric_limits<float>::max();
-    for (const RoiLagSample& s : samples) {
-        min_iou = std::min(min_iou, s.iou);
-        ious.push_back(static_cast<double>(s.iou));
-        frames.push_back(static_cast<double>(s.lag_frames));
-        ms.push_back(s.lag_ms);
-    }
-    report.roi_lag_min_iou = min_iou;
-    report.roi_lag_p95_frames = percentile(frames, 0.95);
-    report.roi_lag_p99_frames = percentile(frames, 0.99);
-    report.roi_lag_p95_ms = percentile(ms, 0.95);
-    report.roi_lag_p99_ms = percentile(ms, 0.99);
-    report.roi_lag_acceptance = roi_lag_acceptance(samples);
 }
 
 } // namespace
@@ -219,62 +177,25 @@ Report transcode_file(const std::string& input_path,
 
         // One region per track rather than one per sample, positioned where the object was
         // at this instant rather than where it was last seen.
-        auto live = temporal.at(t);
-        const std::vector<Box> target = live;
-        box_smooth.apply(live, settings.temporal);
-        for (const Box& applied : live) {
-            if (applied.track_id == 0) {
-                continue;
-            }
-            const auto it = std::find_if(target.begin(), target.end(),
-                [&](const Box& b) {
-                    return b.track_id == applied.track_id && b.kind == applied.kind;
-                });
-            if (it == target.end()) {
-                continue;
-            }
-            int32_t lag_frames = 0;
-            const float speed = std::max(it->track.speed, 0.0f);
-            if (speed > 1e-6f && frame_sec > 0.0) {
-                const double per_frame = static_cast<double>(speed) * frame_sec;
-                const double dist = static_cast<double>(center_distance_diag(applied, *it));
-                lag_frames = static_cast<int32_t>(std::lround(dist / per_frame));
-            }
-            lag_samples.push_back(measure_roi_lag(applied, *it, lag_frames, frame_sec));
-        }
-        auto dets =
-            roi_builder.detections_from(live, settings.quality, ep.width, ep.height);
-        bitrate.soften_detections(dets);
-        // Under a bitrate target the outer loop must be free to slam QP; the §13 slew
-        // would otherwise take seconds to catch a 10–20 step soften and miss the budget.
-        const int32_t slew = bitrate.active()
-            ? 0
-            : settings.temporal.max_qp_delta_per_frame;
-        qp_slew.apply(dets, slew);
-        const Quality quality = bitrate.apply(settings.quality);
         const EncoderCapabilities caps = enc.capabilities();
-        const int32_t block = [&]() {
-            const int32_t b = qp_map_block(caps);
-            return b > 0 ? b : 16;
-        }();
-        // qp_map backends keep the full merged map; rectangle APIs take the smaller of
-        // the caller's max_regions and the backend's own limit (VA-API: 8).
-        int32_t budget = 0;
-        if (!caps.qp_map) {
-            budget = settings.quality.max_regions;
-            const int32_t backend_cap = static_cast<int32_t>(caps.max_roi_regions);
-            if (backend_cap > 0) {
-                budget = budget > 0 ? std::min(budget, backend_cap) : backend_cap;
-            }
-        }
-        auto rects = roi_builder.build(ep.width, ep.height, dets, quality, block, budget);
-        if (budget > 0 && static_cast<int32_t>(rects.size()) > budget) {
-            int32_t lost = 0;
-            truncate_roi_rects(rects, budget, ep.width, ep.height, &lost);
-            dropped += lost;
-        }
+        const std::vector<Box> live = temporal.at(t);
+        FrameRoiPipelineInput pipeline_in{
+            .boxes = live,
+            .quality = settings.quality,
+            .temporal = settings.temporal,
+            .caps = caps,
+            .width = ep.width,
+            .height = ep.height,
+            .frame_interval_sec = frame_sec,
+        };
+        FrameRoiPipeline pipeline(bitrate, box_smooth, qp_slew, roi_builder);
+        FrameRoiPipelineOutput roi_out = pipeline.process(pipeline_in);
+        auto& rects = roi_out.rects;
+        dropped += roi_out.regions_dropped;
+        lag_samples.insert(lag_samples.end(), roi_out.lag_samples.begin(), roi_out.lag_samples.end());
 
         if (!logged_roi) {
+            const int32_t block = roi_out.coding_block;
             const auto grid = qp_map.build(ep.width, ep.height, block, rects);
             std::fprintf(stderr, "ROI: %zu rects, qpDeltaMap %dx%d blocks of %d%s\n",
                 rects.size(), grid.cols, grid.rows, block,
@@ -290,17 +211,13 @@ Report transcode_file(const std::string& input_path,
         const int64_t out_pts = av_rescale_q(
             pts == AV_NOPTS_VALUE ? 0 : pts, in_v->time_base, enc.time_base());
         std::vector<uint8_t> sei;
-        if (settings.metadata.bitstream_sei && !caps.sei && !logged_sei_unsupported) {
-            std::fprintf(stderr,
-                "warning: bitstream SEI requested but not supported by encoder capabilities\n");
-            logged_sei_unsupported = true;
-        }
+        warn_sei_unsupported_once(settings.metadata.bitstream_sei, caps, logged_sei_unsupported);
         if (settings.metadata.bitstream_sei && caps.sei) {
             SeiFrame meta;
             meta.frame_id = static_cast<uint64_t>(frames);
             meta.pts = out_pts;
             meta.objects =
-                sei_objects_from_boxes(live, settings.metadata.max_objects);
+                sei_objects_from_boxes(roi_out.applied_boxes, settings.metadata.max_objects);
             sei = encode_sei_side_data(meta, settings.metadata.max_objects);
         }
         enc.encode(dec_frame.p, rects, out_pts, sei);

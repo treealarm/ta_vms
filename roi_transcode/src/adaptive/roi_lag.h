@@ -6,6 +6,7 @@
 // frames / milliseconds the applied region trails the target. Pure geometry: no codec.
 
 #include "smartvideo/types.h"
+#include "smartvideo/report.h"
 
 #include <cstdint>
 #include <vector>
@@ -37,5 +38,11 @@ double percentile(std::vector<double> values, double p);
 /// IoU ≥ 0.50 on every sample that claims a match; P95 lag ≤ 3 frames and ≤ 100 ms;
 /// P99 ≤ 6 frames and ≤ 200 ms.
 bool roi_lag_acceptance(const std::vector<RoiLagSample>& samples);
+
+/// Normalized center distance in frame-diagonal units.
+float center_distance_diag(const Box& a, const Box& b);
+
+/// Fills §14 lag observability fields in Report from runtime samples.
+void fill_lag_report(const std::vector<RoiLagSample>& samples, Report& report);
 
 } // namespace smartvideo
