@@ -210,7 +210,7 @@ CODEC=h265 mechanism_checks cpu_h265 no
 step "the ROI mechanism does what it claims (CPU, CRF, H.264)"
 CODEC=h264 mechanism_checks cpu_h264 no
 
-step "cpu h265 target-bitrate guard is explicit and stable"
+step "cpu h265 guards are explicit and stable"
 CODEC=h265
 encode "guard_h265" synth_roi.json cpu --target-bitrate 400000 || true
 if [[ -f "${WORK}/guard_h265.log" ]] && rg -q "guard: cpu h265 target-bitrate disabled" \
@@ -218,6 +218,26 @@ if [[ -f "${WORK}/guard_h265.log" ]] && rg -q "guard: cpu h265 target-bitrate di
     pass "[guard_h265] target-bitrate downgrade is logged"
 else
     fail "[guard_h265] missing target-bitrate guard log"
+fi
+if [[ -f "${WORK}/guard_h265.log" ]] && rg -q \
+    "warning: bitstream SEI requested but not supported by encoder capabilities" \
+    "${WORK}/guard_h265.log"; then
+    pass "[guard_h265] bitstream SEI downgrade is logged"
+else
+    fail "[guard_h265] missing SEI capability warning"
+fi
+
+step "cpu h265 stability matrix (optional)"
+if [[ "${RUN_H265_MATRIX:-0}" == "1" ]]; then
+    if "${ROOT}/integration/scripts/h265-stability-matrix.sh" \
+        "$SRC" "${ROOT}/testdata/synth_roi.json" "${WORK}/h265_matrix" \
+        "$(realpath --relative-to="$ROOT" "$BUILD")" >/dev/null 2>&1; then
+        pass "matrix confirms current CPU H.265 guards"
+    else
+        fail "CPU H.265 matrix failed (see ${WORK}/h265_matrix)"
+    fi
+else
+    printf '  skip  set RUN_H265_MATRIX=1 to run CPU H.265 guard matrix\n'
 fi
 
 step "frame mode agrees with file mode"

@@ -25,6 +25,8 @@ ROI lag (§14). Полный `integration/scripts/check.sh` на этом сос
 
 - Явный guard-лог для CPU H.265 при `target_bitrate > 0`:
   - `"guard: cpu h265 target-bitrate disabled; using CRF/CQP"`.
+- Явный guard-лог для отключённого HEVC SEI path:
+  - `"warning: bitstream SEI requested but not supported by encoder capabilities"`.
 - Флаг в `Report`: `cpu_h265_target_guard` (fallback виден через API, не только в stderr).
 - Метрики ROI lag в `Report`:
   - `roi_lag_measured`, `roi_lag_samples`, `roi_lag_min_iou`,
@@ -33,6 +35,9 @@ ROI lag (§14). Полный `integration/scripts/check.sh` на этом сос
 - Интеграционные проверки в `check.sh`:
   - guard CPU H.265 виден в логах;
   - ROI lag метрики наблюдаемы на tracked ROI и проходят acceptance.
+- Добавлен optional `CPU H.265` stability matrix:
+  `integration/scripts/h265-stability-matrix.sh` + шаг в `check.sh`
+  (`RUN_H265_MATRIX=1`) с CSV-отчётом по guard-сигналам.
 - В real-clip ROI prepare/check path добавлена нормализация track IDs:
   если входные аннотации без треков, назначается synthetic `track_id=1`, чтобы
   lag telemetry оставалась измеримой и шаг не деградировал в `not measured`.
@@ -61,6 +66,7 @@ ROI lag (§14). Полный `integration/scripts/check.sh` на этом сос
 ```bash
 # из roi_transcode/
 BUILD=build/integration LIBBUILD=build ./integration/scripts/check.sh
+RUN_H265_MATRIX=1 BUILD=build/integration LIBBUILD=build ./integration/scripts/check.sh
 ./integration/scripts/matched-bitrate.sh <video> <roi.json> <out_dir> [target_bps] [target_tol_frac]
 # optional: prepare local real-lag fixture used by check.sh
 bash ./integration/scripts/prepare-real-lag-fixture.sh <source.mp4> <roi.json>

@@ -84,6 +84,10 @@ Vendored into `video_a/proto/roi_transcode.proto`. ta_vms archive callers adjust
 
 - `target_bitrate` on CPU H.265 is a guarded downgrade to CRF/CQP.
 - `sei` capability on CPU H.265 is disabled.
-- Guard must be visible in logs and in service/report telemetry.
+- Guard must be visible in logs and in service/report telemetry
+  (including explicit SEI-capability warning when bitstream SEI is requested).
 - Re-enabling native path requires a dedicated stability slice and regression
   coverage, not a silent behavior change.
+- Optional probe for this contract: `integration/scripts/h265-stability-matrix.sh`
+  (wired into `check.sh` via `RUN_H265_MATRIX=1`) writes a CSV snapshot of
+  guard observability on CPU H.265.

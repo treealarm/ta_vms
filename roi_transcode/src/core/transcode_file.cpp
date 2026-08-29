@@ -181,6 +181,7 @@ Report transcode_file(const std::string& input_path,
     ep.rate_control = settings.rate_control;
     ep.codec = resolve_codec(settings.codec, in_v->codecpar->codec_id);
     bool cpu_h265_target_guard = false;
+    bool logged_sei_unsupported = false;
     if (ep.kind == Encoder::Cpu && ep.codec == Codec::H265) {
         // Guard: CPU HEVC target-bitrate path is unstable on our stack.
         cpu_h265_target_guard = ep.rate_control.target_bitrate > 0;
@@ -287,6 +288,11 @@ Report transcode_file(const std::string& input_path,
         const int64_t out_pts = av_rescale_q(
             pts == AV_NOPTS_VALUE ? 0 : pts, in_v->time_base, enc.time_base());
         std::vector<uint8_t> sei;
+        if (settings.metadata.bitstream_sei && !caps.sei && !logged_sei_unsupported) {
+            std::fprintf(stderr,
+                "warning: bitstream SEI requested but not supported by encoder capabilities\n");
+            logged_sei_unsupported = true;
+        }
         if (settings.metadata.bitstream_sei && caps.sei) {
             SeiFrame meta;
             meta.frame_id = static_cast<uint64_t>(frames);

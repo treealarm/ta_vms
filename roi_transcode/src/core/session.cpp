@@ -128,6 +128,7 @@ struct Session::Impl : PacketSink {
     Report report;
     std::vector<RoiLagSample> lag_samples;
     bool finished = false;
+    bool sei_unsupported_logged = false;
     // Submitted-but-not-yet-decoded regions, keyed by the pts they arrived with.
     std::map<int64_t, HeldRegions> pending;
 
@@ -335,6 +336,11 @@ struct Session::Impl : PacketSink {
             return {};
         }
         if (!encoder.capabilities().sei) {
+            if (!sei_unsupported_logged) {
+                std::fprintf(stderr,
+                    "warning: bitstream SEI requested but not supported by encoder capabilities\n");
+                sei_unsupported_logged = true;
+            }
             return {};
         }
         SeiFrame frame;
