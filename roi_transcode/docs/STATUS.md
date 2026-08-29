@@ -33,6 +33,9 @@ ROI lag (§14). Полный `integration/scripts/check.sh` на этом сос
 - Интеграционные проверки в `check.sh`:
   - guard CPU H.265 виден в логах;
   - ROI lag метрики наблюдаемы на tracked ROI и проходят acceptance.
+- В real-clip ROI prepare/check path добавлена нормализация track IDs:
+  если входные аннотации без треков, назначается synthetic `track_id=1`, чтобы
+  lag telemetry оставалась измеримой и шаг не деградировал в `not measured`.
 
 ## На какой мы стадии сейчас
 

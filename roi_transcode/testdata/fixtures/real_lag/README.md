@@ -8,6 +8,10 @@ Files:
 - `video.mp4` — short H.264 clip.
 - `roi.json` — ROI samples for the same timeline in `samples[]` format.
 
+If source annotations do not include positive `track_id`, the fixture helper
+assigns a synthetic track (`track_id=1`) and default confidence so lag metrics
+stay measurable in `check.sh`.
+
 Note: `video.mp4` matches `*.mp4` ignore rules in this repository and is kept as
 local generated fixture (not tracked in git by default).
 

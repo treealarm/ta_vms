@@ -50,28 +50,43 @@ import json, sys
 roi_in, tmp_samples, out_path, start_sec, dur_sec = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4]), float(sys.argv[5])
 
 src = json.load(open(roi_in))
+def normalize_box(b):
+    return {
+        "kind": b.get("kind", ""),
+        "x": b.get("x", 0.0),
+        "y": b.get("y", 0.0),
+        "width": b.get("w", b.get("width", 0.0)),
+        "height": b.get("h", b.get("height", 0.0)),
+        "track_id": int(b.get("track_id") or 0),
+        "confidence": float(b.get("confidence") or 0.0),
+    }
+
+samples_in = []
 if "samples" in src:
-    samples_in = src.get("samples", [])
+    for row in src.get("samples", []):
+        t_sec = float(row.get("t_sec", 0.0))
+        boxes = [normalize_box(b) for b in (row.get("boxes") or [])]
+        samples_in.append({"t_sec": t_sec, "boxes": boxes})
 else:
     frames = src.get("frames")
     if not isinstance(frames, list):
         raise SystemExit("need samples[] or frames[] in ROI JSON")
     fps = float(src.get("fps") or 30.0)
-    samples_in = []
     for fr in frames:
         t = fr.get("t", 0)
         t_sec = (t / fps) if isinstance(t, int) and t > 10 else float(t)
-        boxes = []
-        for b in fr.get("boxes") or []:
-            boxes.append({
-                "kind": b.get("kind", ""),
-                "x": b.get("x", 0.0), "y": b.get("y", 0.0),
-                "width": b.get("w", b.get("width", 0.0)),
-                "height": b.get("h", b.get("height", 0.0)),
-                "track_id": int(b.get("track_id") or 0),
-                "confidence": float(b.get("confidence") or 0.0),
-            })
+        boxes = [normalize_box(b) for b in (fr.get("boxes") or [])]
         samples_in.append({"t_sec": t_sec, "boxes": boxes})
+
+has_tracks = any((b.get("track_id", 0) > 0) for row in samples_in for b in row.get("boxes", []))
+for row in samples_in:
+    for b in row.get("boxes", []):
+        if not has_tracks and b.get("track_id", 0) <= 0:
+            # Keep real-lag fixtures measurable even when source annotations are
+            # detection-only and do not include tracking IDs.
+            b["track_id"] = 1
+        if b.get("confidence", 0.0) <= 0.0:
+            b["confidence"] = 0.95
 
 json.dump({"background_qp_delta": 0, "pad": 0.02, "samples": samples_in},
           open(tmp_samples, "w"))

@@ -408,30 +408,46 @@ if [[ -f "${REAL_LAG_CLIP}" && -f "${REAL_LAG_ROI}" ]]; then
     python3 - "${REAL_LAG_ROI}" "${WORK}/real_lag.samples.json" <<'PY'
 import json, sys
 src = json.load(open(sys.argv[1]))
-if "samples" in src:
-    json.dump(src, open(sys.argv[2], "w"))
-    raise SystemExit(0)
-frames = src.get("frames")
-if not isinstance(frames, list):
-    raise SystemExit("need samples[] or frames[] in real lag ROI")
-fps = float(src.get("fps") or 30)
+
+def normalize_box(b):
+    return {
+        "kind": b.get("kind", ""),
+        "x": b.get("x", 0.0),
+        "y": b.get("y", 0.0),
+        "width": b.get("w", b.get("width", 0.0)),
+        "height": b.get("h", b.get("height", 0.0)),
+        "track_id": int(b.get("track_id") or 0),
+        "confidence": float(b.get("confidence") or 0.0),
+    }
+
 samples = []
-for fr in frames:
-    t = fr.get("t", 0)
-    t_sec = (t / fps) if isinstance(t, int) and t > 10 else float(t)
-    boxes = []
-    for b in fr.get("boxes") or []:
-        boxes.append({
-            "kind": b.get("kind", ""),
-            "x": b.get("x", 0.0), "y": b.get("y", 0.0),
-            "width": b.get("w", b.get("width", 0.0)),
-            "height": b.get("h", b.get("height", 0.0)),
-            "track_id": int(b.get("track_id") or 0),
-            "confidence": float(b.get("confidence") or 0.0),
-        })
-    samples.append({"t_sec": t_sec, "boxes": boxes})
-json.dump({"background_qp_delta": 0, "pad": 0.02, "samples": samples},
-          open(sys.argv[2], "w"))
+if "samples" in src:
+    for row in src.get("samples", []):
+        t_sec = float(row.get("t_sec", 0.0))
+        boxes = [normalize_box(b) for b in (row.get("boxes") or [])]
+        samples.append({"t_sec": t_sec, "boxes": boxes})
+else:
+    frames = src.get("frames")
+    if not isinstance(frames, list):
+        raise SystemExit("need samples[] or frames[] in real lag ROI")
+    fps = float(src.get("fps") or 30.0)
+    for fr in frames:
+        t = fr.get("t", 0)
+        t_sec = (t / fps) if isinstance(t, int) and t > 10 else float(t)
+        boxes = [normalize_box(b) for b in (fr.get("boxes") or [])]
+        samples.append({"t_sec": t_sec, "boxes": boxes})
+
+has_tracks = any((b.get("track_id", 0) > 0) for row in samples for b in row.get("boxes", []))
+for row in samples:
+    for b in row.get("boxes", []):
+        if not has_tracks and b.get("track_id", 0) <= 0:
+            # Lag observability requires tracked boxes; when source metadata has no
+            # IDs, keep the fixture usable by assigning one synthetic track.
+            b["track_id"] = 1
+        if b.get("confidence", 0.0) <= 0.0:
+            b["confidence"] = 0.95
+
+json.dump({"background_qp_delta": 0, "pad": 0.02, "samples": samples}, open(sys.argv[2], "w"))
 PY
     if "${BUILD}/roi-transcode" --in "${REAL_LAG_CLIP}" \
         --roi "${WORK}/real_lag.samples.json" --out "${WORK}/real_lag.mp4" \
