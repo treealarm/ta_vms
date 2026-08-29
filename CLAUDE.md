@@ -6,6 +6,17 @@ Chat communication with the user is in Russian. Code — comments, identifiers, 
 
 Everything addressed to the user rather than to the codebase follows the chat, not the code: **implementation plans (including plan files) and code-review findings are written in Russian.** The code they talk about stays English, so quoted identifiers, file paths and code snippets are of course unchanged.
 
+## Engineering principles (mandatory)
+
+For all new code and refactors, treat these as hard constraints rather than style preferences:
+
+- **SOLID:** keep single responsibility boundaries clear, design against interfaces/abstractions, and avoid coupling unrelated concerns in one class/module.
+- **KISS:** prefer the simplest design that meets the requirement; avoid speculative abstractions and unnecessary indirection.
+- **YAGNI:** do not implement features, extension points, or configuration knobs before there is a concrete requirement.
+- **DRY:** avoid duplicated business logic and duplicated protocol/format conversions; extract shared helpers when two paths must stay behaviorally identical.
+
+`roi_transcode` is built with **C++20**. Prefer modern C++20 techniques and standard library facilities over legacy patterns whenever the result is clearer and safer (`std::span`, ranges, RAII, `std::optional`, `std::variant`, structured bindings, constexpr helpers, etc.). Do not introduce pre-C++20 workarounds where a direct C++20 solution is available.
+
 ## MediaMTX API access
 
 All interaction with the MediaMTX REST API goes through **VmsUtils** (`vmsutils` Dapr app-id). No other service (media_server, VmsCfg, web_vms, etc.) calls the MediaMTX API directly.
