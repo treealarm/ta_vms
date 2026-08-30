@@ -1,4 +1,9 @@
 {
+    // F5 must not start the stack when "prepare: stack" failed. The default is a prompt with a
+    // "Debug Anyway" button, and taking it launches every service with no Dapr sidecar behind
+    // it -- which fails silently: the apps run, every gRPC call between them dies on "Error
+    // connecting to subchannel", and the only visible symptom is empty lists in the UI.
+    "debug.onTaskErrors": "abort",
     "workbench.colorTheme": "Light Modern",
     "cmake.sourceDirectory": "${workspaceFolder}/media_server",
     "cmake.configurePreset": "linux-default",

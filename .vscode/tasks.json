@@ -78,6 +78,57 @@
             "problemMatcher": []
         },
         {
+            "label": "wait: infra ready",
+            "detail": "Refuses to start the stack when the broker or the database is not up. Waits up to 30s for each, because a container that was only just started is not yet accepting connections -- Postgres in particular listens well after `docker ps` calls it Up, and a shorter wait failed F5 for a stack that was merely still coming up. daprd initialises its components before it serves anything, and a pub/sub component that cannot dial RabbitMQ makes it exit gracefully -- in multi-app mode that one failure takes every other sidecar down with it. What you see then is 'wait: sidecars ready' timing out against a metrics port, which names the symptom and not the cause. Checked before the build so the answer arrives in a second rather than after a compile.",
+            "type": "process",
+            "command": "bash",
+            "args": [
+                "-c",
+                "missing=; for hp in RabbitMQ:5674 Postgres:5432; do n=${hp%%:*}; p=${hp##*:}; ok=0; for i in $(seq 60); do (exec 3<>/dev/tcp/127.0.0.1/$p) 2>/dev/null && { exec 3>&-; ok=1; break; }; sleep 0.5; done; [ $ok = 1 ] || missing=\"$missing $n($p)\"; done; [ -z \"$missing\" ] && exit 0; echo \"infra is not up:$missing -- run: docker compose up -d postgres rabbitmq mediamtx\"; exit 1"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": [],
+            "windows": {
+                "command": "powershell",
+                "args": [
+                    "-NoProfile",
+                    "-Command",
+                    "$missing = @(); foreach ($e in @(@('RabbitMQ',5674), @('Postgres',5432))) { $ok = $false; for ($i = 0; $i -lt 60; $i++) { if (Test-NetConnection -ComputerName 127.0.0.1 -Port $e[1] -InformationLevel Quiet -WarningAction SilentlyContinue) { $ok = $true; break }; Start-Sleep -Milliseconds 500 }; if (-not $ok) { $missing += \"$($e[0])($($e[1]))\" } }; if ($missing.Count -eq 0) { exit 0 }; Write-Host \"infra is not up: $($missing -join ' ') -- run: docker compose up -d postgres rabbitmq mediamtx\"; exit 1"
+                ]
+            }
+        },
+        {
+            "label": "wait: sidecars ready",
+            "detail": "Fails F5 if the sidecars did not actually come up. 'dapr: sidecars up' is a background task and VS Code releases it on the first 'Initialized name resolution' — which one sidecar prints while the rest are still starting, and which stays printed even if the run then tears everything down. Without this the stack starts with no Dapr and says nothing; the only symptom is every list in the UI being empty. Probed on the metrics port because it is served by daprd itself and answers whether or not the app is up — the app is started after this, by the debugger.",
+            "type": "shell",
+            "command": "curl",
+            "args": [
+                "--silent", "--show-error", "--fail",
+                "--retry-all-errors", "--retry-connrefused", "--retry", "60", "--retry-delay", "1",
+                "--max-time", "90", "--output", "/dev/null",
+                "http://localhost:9190/"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": [],
+            "windows": {
+                "args": [
+                    "--silent", "--show-error", "--fail",
+                    "--retry-all-errors", "--retry-connrefused", "--retry", "60", "--retry-delay", "1",
+                    "--max-time", "90", "--output", "NUL",
+                    "http://localhost:9190/"
+                ]
+            }
+        },
+        {
             "label": "browser: free debug port",
             "detail": "Kills whatever still holds port 9222. Needed because the browser debug port is pinned (see the launch configuration), and a session that ends without closing its browser leaves one squatting — after a few of those every launch fails with 'Could not connect to debug target'.",
             "type": "shell",
@@ -1231,12 +1282,17 @@
             // debug sessions, not tasks. With a single 'dapr: sidecars up' there is at most one
             // terminal left, and stopping it takes every sidecar down with it.
             // 'dapr: sidecars down' runs first for the same reason it used to run per service: a
-            // sidecar left behind by an interrupted session still holds its ports.
+            // sidecar left behind by an interrupted session still holds its ports. Those come free
+            // within a tenth of a second of `dapr stop` returning — measured — so nothing needs to
+            // wait between the two. 'wait: sidecars ready' then refuses to launch the apps at all
+            // if the sidecars are not actually there.
             "dependsOrder": "sequence",
             "dependsOn": [
+                "wait: infra ready",
                 "build:all",
                 "dapr: sidecars down",
-                "dapr: sidecars up"
+                "dapr: sidecars up",
+                "wait: sidecars ready"
             ],
             "problemMatcher": []
         }

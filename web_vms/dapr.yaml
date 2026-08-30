@@ -13,6 +13,10 @@
 version: 1
 common:
   resourcesPath: ../init_files/dapr_components
+# `fileAndConsole`, not `console`: the console copy is what the VS Code problem matcher reads to
+# decide the background task is up, and the file copy is the only thing left to read afterwards.
+# With console alone a sidecar that failed took its explanation with it when the terminal closed,
+# and `<appDirPath>/.dapr/logs/` sat there empty. Logs land beside each app.
 apps:
   - appID: web-vms
     appDirPath: ./web_vms.Server
@@ -22,7 +26,7 @@ apps:
     daprGRPCPort: 51001
     metricsPort: 9190
     daprInternalGRPCPort: 19011
-    daprdLogDestination: console
+    daprdLogDestination: fileAndConsole
 
   - appID: vmscfg
     appDirPath: ./VmsCfg
@@ -32,7 +36,7 @@ apps:
     daprGRPCPort: 51002
     metricsPort: 9191
     daprInternalGRPCPort: 19012
-    daprdLogDestination: console
+    daprdLogDestination: fileAndConsole
 
   - appID: vmsutils
     appDirPath: ./VmsUtils
@@ -42,7 +46,7 @@ apps:
     daprGRPCPort: 51007
     metricsPort: 9196
     daprInternalGRPCPort: 19017
-    daprdLogDestination: console
+    daprdLogDestination: fileAndConsole
 
   - appID: vmsonvif
     appDirPath: ./VmsOnvif
@@ -56,7 +60,7 @@ apps:
     # Windows, where `dapr init` publishes placement there, 50005 everywhere else. Pinning either
     # number here leaves the actor sidecar with "placement: disconnected" on the other OS.
     placementHostAddress: localhost
-    daprdLogDestination: console
+    daprdLogDestination: fileAndConsole
 
   - appID: vmsonvif-actors
     appDirPath: ./VmsOnvifActors
@@ -70,7 +74,7 @@ apps:
     # Windows, where `dapr init` publishes placement there, 50005 everywhere else. Pinning either
     # number here leaves the actor sidecar with "placement: disconnected" on the other OS.
     placementHostAddress: localhost
-    daprdLogDestination: console
+    daprdLogDestination: fileAndConsole
 
   - appID: vmsfs
     appDirPath: ./VmsFs
@@ -80,7 +84,7 @@ apps:
     daprGRPCPort: 51005
     metricsPort: 9194
     daprInternalGRPCPort: 19015
-    daprdLogDestination: console
+    daprdLogDestination: fileAndConsole
 
   - appID: vmsanalyticssingleton
     appDirPath: ./VmsAnalyticsSingleton
@@ -90,7 +94,7 @@ apps:
     daprGRPCPort: 51011
     metricsPort: 9200
     daprInternalGRPCPort: 19021
-    daprdLogDestination: console
+    daprdLogDestination: fileAndConsole
 
   - appID: vmslogger
     appDirPath: ./VmsLogger
@@ -100,7 +104,7 @@ apps:
     daprGRPCPort: 51006
     metricsPort: 9195
     daprInternalGRPCPort: 19016
-    daprdLogDestination: console
+    daprdLogDestination: fileAndConsole
 
   - appID: vmssingleton
     appDirPath: ./VmsSingleton
@@ -114,7 +118,7 @@ apps:
     # Windows, where `dapr init` publishes placement there, 50005 everywhere else. Pinning either
     # number here leaves the actor sidecar with "placement: disconnected" on the other OS.
     placementHostAddress: localhost
-    daprdLogDestination: console
+    daprdLogDestination: fileAndConsole
 
   - appID: vmssquaresingleton
     appDirPath: ./VmsSquareSingleton
@@ -128,7 +132,7 @@ apps:
     # Windows, where `dapr init` publishes placement there, 50005 everywhere else. Pinning either
     # number here leaves the actor sidecar with "placement: disconnected" on the other OS.
     placementHostAddress: localhost
-    daprdLogDestination: console
+    daprdLogDestination: fileAndConsole
 
   - appID: vms
     appDirPath: ../media_server
@@ -138,7 +142,7 @@ apps:
     daprGRPCPort: 51008
     metricsPort: 9197
     daprInternalGRPCPort: 19018
-    daprdLogDestination: console
+    daprdLogDestination: fileAndConsole
   - appID: roitrc
     appDirPath: ../roi_transcode
     appProtocol: grpc
@@ -147,4 +151,4 @@ apps:
     daprGRPCPort: 51009
     metricsPort: 9198
     daprInternalGRPCPort: 19019
-    daprdLogDestination: console
+    daprdLogDestination: fileAndConsole
