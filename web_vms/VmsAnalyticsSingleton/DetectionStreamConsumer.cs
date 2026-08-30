@@ -69,6 +69,10 @@ public sealed class DetectionStreamConsumer(
 
   private async Task HandleAsync(DetectionEvent evt, CancellationToken ct)
   {
+    // Taken before anything else so the delivery figure logged below is the wire and not our own
+    // bookkeeping.
+    var receivedAt = DateTime.UtcNow;
+
     // watch_id == camera_id (1:1 model, see project plan).
     var cameraId = evt.WatchId;
     if (!cache.Watches.TryGetValue(cameraId, out var watch))
@@ -137,10 +141,19 @@ public sealed class DetectionStreamConsumer(
       evt.HasRecognizedText ? evt.RecognizedText : null);
     var eventId = sessions.SelectEventId(objectId, detectedAt);
 
+    // Two intervals, because they have different cures and were being mistaken for each other.
+    // `detect` is detected_at -> emitted_at: the frame reaching the worker and the models finishing
+    // with it, which only faster inference or a smaller model stack shortens. `deliver` is
+    // emitted_at -> now: the detection queue, gRPC and this process's own scheduling, which is the
+    // only part a transport change could touch. Measured, the second turned out to be the small
+    // one, and the argument for moving the live overlay off SSE went away with it.
+    var detectMs = (evt.EmittedAt.ToDateTime() - detectedAt).TotalMilliseconds;
+    var deliverMs = (receivedAt - evt.EmittedAt.ToDateTime()).TotalMilliseconds;
+
     logger.LogInformation(
-      "Detection: camera={CameraId} track={TrackId} kind={Kind} confidence={Confidence:F2} plate={PlateText} event={EventId} object={ObjectId}",
+      "Detection: camera={CameraId} track={TrackId} kind={Kind} confidence={Confidence:F2} plate={PlateText} event={EventId} object={ObjectId} detect={DetectMs:F0}ms deliver={DeliverMs:F0}ms",
       cameraId, evt.TrackId, evt.Kind, evt.Confidence,
-      evt.HasRecognizedText ? evt.RecognizedText : "-", eventId, objectId);
+      evt.HasRecognizedText ? evt.RecognizedText : "-", eventId, objectId, detectMs, deliverMs);
 
     var (storageId, cropPath) = await SaveCropAsync(cameraId, evt, detectedAt, ct);
     // No episode for an unarmed camera, and so no alarm recording either -- arming is exactly

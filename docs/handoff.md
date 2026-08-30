@@ -44,6 +44,13 @@ arrives spread over twice as long and misses its 46 ms frame-assembly window. Fi
 media_server publish to the worker directly (`EnsureAnalyticsPush`), which also ended the
 absurdity of analytics forcing the WebRTC push on just to read the relay back.
 
+There are now two ways video reaches the detector without a media router in between, and they
+are not alternatives. A **live camera** uses the push above: its video exists only inside the
+process holding the socket, so there is no file to hand over. An **offline pass over a corpus**
+sets `WatchRequest.file_path` instead and the worker opens the file itself; packing a clip into
+a stream just to feed the detector would add a link with nothing to test in it. A watch has one
+source, so the two fields are never set together.
+
 **Docker Desktop.** Its LinuxKit VM runs the containers behind QEMU user-mode networking plus
 vpnkit, so every packet crosses a userspace network stack. It costs a steady core and a half
 (`qemu` ~140%, `com.docker.back` ~30%) regardless of load, and it is where the bursts died.
