@@ -55,6 +55,7 @@ import { selectWallSeekMs } from '../store/wallPlaybackSlice'
 import { useAppDispatch, useAppSelector } from '../store'
 import { fetchCameraState, setArmedWithPrealarmBaseline, setCameraContinuousRecording } from '../store/liveSlice'
 import { setMonitorSlotStream } from '../store/monitorsSlice'
+import { copyToClipboard } from '../utils/copyToClipboard'
 
 const STRIP_W = 28
 const PANEL_W = 182
@@ -660,7 +661,8 @@ export default function CameraUnifiedCard({
                   size="small"
                   sx={{ p: '2px', color: copied ? '#4caf50' : alpha(W, 0.5), '&:hover': { color: W } }}
                   onClick={() => {
-                    void navigator.clipboard.writeText(rtsp).then(() => {
+                    void copyToClipboard(rtsp).then((ok) => {
+                      if (!ok) return
                       setCopied(true)
                       setTimeout(() => setCopied(false), 1500)
                     })
@@ -862,7 +864,8 @@ export default function CameraUnifiedCard({
                     size="small"
                     sx={{ p: '2px', color: copied ? '#4caf50' : alpha(W, 0.45), flexShrink: 0, '&:hover': { color: W } }}
                     onClick={() => {
-                      void navigator.clipboard.writeText(rtsp).then(() => {
+                      void copyToClipboard(rtsp).then((ok) => {
+                        if (!ok) return
                         setCopied(true)
                         setTimeout(() => setCopied(false), 1500)
                       })

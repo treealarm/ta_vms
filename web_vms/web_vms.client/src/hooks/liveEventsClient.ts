@@ -169,6 +169,11 @@ class LiveEventsClient {
         if (!res.ok || !res.body) throw new Error(`live-events ${res.status}`)
 
         const reader = res.body.getReader()
+        // Aborting the fetch errors the body stream, and that rejects two promises: the pending
+        // read() below, which the catch handles, and the reader's own `closed`, which nothing
+        // awaits. A rejection nobody observes is reported by the browser as an uncaught
+        // AbortError, so every unmount that stopped the stream raised one.
+        void reader.closed.catch(() => {})
         const decoder = new TextDecoder()
         let buffer = ''
         for (;;) {

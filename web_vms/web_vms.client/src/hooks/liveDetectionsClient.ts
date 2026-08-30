@@ -176,6 +176,11 @@ class LiveDetectionsClient {
       if (!resp.ok || !resp.body) throw new Error(`live detections stream failed: ${resp.status}`)
 
       const reader = resp.body.getReader()
+      // Aborting the fetch errors the body stream, and that rejects two promises: the pending
+      // read() below, which the catch handles, and the reader's own `closed`, which nothing
+      // awaits. A rejection nobody observes is reported by the browser as an uncaught
+      // AbortError, so every overlay unmount raised one in the console.
+      void reader.closed.catch(() => {})
       const decoder = new TextDecoder()
       let buffer = ''
       for (;;) {

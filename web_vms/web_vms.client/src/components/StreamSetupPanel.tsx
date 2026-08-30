@@ -12,6 +12,7 @@ import StoragePathBrowserDialog from './StoragePathBrowserDialog'
 import DetailToolbar from './settings/DetailToolbar'
 import { useDirtyGuard } from './settings/useDirtyGuard'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
+import { copyToClipboard } from '../utils/copyToClipboard'
 
 type Props = {
   ref?: React.Ref<ApplyIfDirtyHandle>
@@ -402,7 +403,8 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
                           <IconButton
                             size="small"
                             onClick={() => {
-                              void navigator.clipboard.writeText(resolvedRtspUrl).then(() => {
+                              void copyToClipboard(resolvedRtspUrl).then((ok) => {
+                                if (!ok) return
                                 setRtspUrlCopied(true)
                                 setTimeout(() => setRtspUrlCopied(false), 1500)
                               })

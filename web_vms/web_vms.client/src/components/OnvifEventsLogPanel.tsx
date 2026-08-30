@@ -15,6 +15,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import { useTranslation } from 'react-i18next'
 import { useAppSelector } from '../store'
 import type { OnvifEventRecordDto } from '../dto/dtos'
+import { copyToClipboard } from '../utils/copyToClipboard'
 
 function formatXml(xml: string): string {
   try {
@@ -226,7 +227,8 @@ export default function OnvifEventsLogPanel() {
                   <IconButton
                     size="small"
                     onClick={() => {
-                      void navigator.clipboard.writeText(formatXml(selected.payloadXml)).then(() => {
+                      void copyToClipboard(formatXml(selected.payloadXml)).then((ok) => {
+                        if (!ok) return
                         setCopied(true)
                         setTimeout(() => setCopied(false), 1500)
                       })
