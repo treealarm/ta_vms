@@ -11,11 +11,59 @@ import type { DrawableBox } from './bboxDraw'
  */
 
 /**
- * Beyond this gap between two samples, the box is hidden rather than interpolated. A walking person
- * covers more than their own box width in a second, so a box stretched across a longer gap is not
- * on the object — and a wrong box is worse than no box.
+ * How many of the producer's own intervals a gap may span before it is a hole in the recording
+ * rather than two consecutive sightings.
+ *
+ * Derived, not fixed, and for the reason liveBoxes.ts already records for the live overlay: a
+ * constant cannot serve producers running at different rates. This used to be a flat 1000 ms,
+ * chosen because a walking person covers more than their own box width in a second. The trouble is
+ * that `analytics_watch.sample_fps` defaults to 1, so the producer's normal spacing is also a
+ * second — measured over this deployment's archive, the median gap is 1001 ms and 54% of gaps are
+ * wider than 1000. More than half of ordinary playback therefore took the "hole" branch, where a
+ * box is drawn for HOLD_MS after one sample and HOLD_MS before the next and not at all in between.
+ * Boxes blinked on and off instead of following anything, which is precisely what the threshold
+ * exists to prevent.
+ *
+ * Two, so that a single missed sample is bridged and two in a row are not -- the same tolerance,
+ * and the same reasoning, as MISSES_TOLERATED in liveBoxes.ts.
  */
-const MAX_INTERP_GAP_MS = 1000
+const HOLE_INTERVALS = 2
+
+/**
+ * Floor on that threshold. A producer sampling many times a second would otherwise get a hole
+ * threshold of a few dozen milliseconds, and every ordinary gap would read as a break in the
+ * recording. Also the answer when there are too few samples to measure anything.
+ */
+const MIN_HOLE_MS = 1000
+
+/**
+ * The producer's typical spacing, as the median gap between the samples on hand.
+ *
+ * Median rather than mean because the outliers are one-sided and large -- a real hole in the
+ * recording is many times the spacing and would drag a mean far past it, which is the very thing
+ * being detected.
+ *
+ * Memoized on the array itself: this is called once per animation frame per camera, and the frames
+ * array is replaced only when a new window of metadata loads.
+ */
+const holeThresholdCache = new WeakMap<ArchiveFrame[], number>()
+
+function holeThresholdMs(frames: ArchiveFrame[]): number {
+  const cached = holeThresholdCache.get(frames)
+  if (cached !== undefined) return cached
+
+  const gaps: number[] = []
+  for (let i = 1; i < frames.length; i++) gaps.push(frames[i].tsMs - frames[i - 1].tsMs)
+
+  let threshold = MIN_HOLE_MS
+  if (gaps.length >= 2) {
+    gaps.sort((a, b) => a - b)
+    const median = gaps[gaps.length >> 1]
+    threshold = Math.max(MIN_HOLE_MS, median * HOLE_INTERVALS)
+  }
+  holeThresholdCache.set(frames, threshold)
+  return threshold
+}
 
 /**
  * How long a track visible in only one of the two neighbouring samples is still drawn. Without it,
@@ -65,7 +113,7 @@ export function boxesAtForSource(
   if (!next) return tMs - prev.tsMs <= HOLD_MS ? asDrawable(prev, source, tMs) : []
 
   const gap = next.tsMs - prev.tsMs
-  if (gap > MAX_INTERP_GAP_MS) {
+  if (gap > holeThresholdMs(frames)) {
     // A real hole in the recording. Show whichever end is close enough to still be current.
     if (tMs - prev.tsMs <= HOLD_MS) return asDrawable(prev, source, tMs)
     if (next.tsMs - tMs <= HOLD_MS) return asDrawable(next, source, tMs)
