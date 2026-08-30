@@ -13,9 +13,10 @@ branch `tz-v2`.
    something turned out to be non-obvious. `test-camera-from-file.md` is the one to read before
    touching anything about cameras, streams or analytics: it explains the camera that plays a
    file, which is how the system is exercised without hardware.
-3. **`roi_transcode/docs/plan-v2.md`** — the encoder subproject's plan against the customer's
-   specification, with the decisions taken and why. `roi_transcode/docs/COLLABORATION.md` holds
-   the baton for that plan; it is shared with a second person and has its own rules.
+3. **`roi_transcode/docs/`** — exactly two files, and that is a rule: the customer's
+   specification (`smart-video-encoder_34.md`) is where the encoder is going, and `STATUS.md`
+   is where it stands, what was decided and why. Everything else there was consolidated into
+   the second file on 2026-08-30 and lives in git history.
 
 Chat history is not shared state. Anything that must survive a handover lives in these files.
 
@@ -95,14 +96,14 @@ everything above, and a real defect.
 **The ROI re-compression operating point.** Measured on real clips: the current defaults make
 the file 30% *larger* than a plain re-encode, and the `no_gain` guard is all that protects the
 archive. `roi_max_coverage` still defaults to no ceiling; there is now a number to justify one
-(0.70 protected share on a crowded clip against 0.03 on a sparse one). See the tail of
-`plan-v2.md`.
+(0.70 protected share on a crowded clip against 0.03 on a sparse one).
 
-**Section 13's remaining half.** `spatial_smoothing`, `temporal_smoothing`,
-`max_qp_delta_per_frame` and `use_track_prediction` are declared and refused rather than
-silently ignored. `max_qp_delta_per_frame` is the interesting one: the area budget made a
-region's delta depend on what else is in frame, so a face appearing can flip a person from −7 to
-0 between frames.
+**Section 13 is closed** (verified 2026-08-30, was open when this was written).
+`spatial_smoothing`, `temporal_smoothing`, `max_qp_delta_per_frame` and
+`use_track_prediction` are implemented and carry the specification's own defaults; nothing
+is refused any more. `max_qp_delta_per_frame` was the interesting one -- the area budget made
+a region's delta depend on what else is in frame, so a face appearing could flip a person from
+−7 to 0 between frames -- and `QpSlewLimiter` is what caps that now.
 
 **Documentation debt.** The Docker Desktop finding and the sub-stream rule both belong in
 `docs/`, and neither is written yet.

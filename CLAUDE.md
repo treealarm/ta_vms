@@ -68,7 +68,7 @@ libs.
 ## smart-video-encoder (`roi_transcode`) — переносимость и вес зависимостей
 
 Две конвенции, принятые 2026-08-23 (полностью, с обоснованием —
-`roi_transcode/docs/plan-v2.md`, решения Р1 и Р2):
+`roi_transcode/docs/STATUS.md`, решения Р1 и Р2):
 
 **Код по возможности переносим на Windows.** `std::filesystem` вместо POSIX; никаких
 `unistd.h`, `dirent.h`, `pthread.h`, `realpath`. Сегодня это выполняется: в `include/`,
