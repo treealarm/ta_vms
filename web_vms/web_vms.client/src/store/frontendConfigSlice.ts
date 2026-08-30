@@ -8,7 +8,7 @@ type FrontendConfigDto = {
 
 type HealthDto = {
   ok: boolean
-  dependencies: { name: string; ok: boolean; error?: string | null }[]
+  dependencies: { name: string; ok: boolean; starting?: boolean; error?: string | null }[]
 }
 
 type FrontendConfigState = {
@@ -76,7 +76,10 @@ const frontendConfigSlice = createSlice({
         // and one that just broke is not masked by another that has been down for a while.
         const previous = new Map(state.brokenDependencies.map((d) => [d.name, d.consecutive]))
         state.brokenDependencies = action.payload.dependencies
-          .filter((d) => !d.ok)
+          // `starting` is the gateway saying it has never reached this dependency and is still
+          // young enough not to have expected to. Launching everything at once puts every poll of
+          // the first half-minute in that state, and a banner there is noise, not news.
+          .filter((d) => !d.ok && !d.starting)
           .map((d) => ({
             name: d.name,
             error: d.error || 'unavailable',

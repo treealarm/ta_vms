@@ -13,6 +13,12 @@ public class DependencyHealthDto
   /// has no business reading. It is always written to the log regardless.
   /// </summary>
   public string? Error { get; init; }
+  /// <summary>
+  /// Not answering yet, but too early to call it broken: nothing has reached it since this gateway
+  /// started, and the startup window has not run out. The frontend keeps quiet about these — during
+  /// a launch every dependency is briefly unavailable, and saying so helps nobody.
+  /// </summary>
+  public bool Starting { get; init; }
 }
 
 public class HealthDto
@@ -43,7 +49,7 @@ public class HealthController(
     var cfg = await cfgProbe.CheckAsync(ct);
     var error = cfg.Error ?? (registry.IsInitialized ? null : registry.LastInitError);
 
-    if (!cfg.Ok)
+    if (!cfg.Ok && !cfg.Starting)
       logger.LogWarning("Health check: vmscfg unavailable: {Error}", error ?? "no detail");
 
     var showDetail = User.Identity?.IsAuthenticated == true;
@@ -51,9 +57,10 @@ public class HealthController(
     {
       new()
       {
-        Name  = "vmscfg",
-        Ok    = cfg.Ok,
-        Error = cfg.Ok ? null : (showDetail ? error ?? "unavailable" : "unavailable"),
+        Name     = "vmscfg",
+        Ok       = cfg.Ok,
+        Starting = cfg.Starting,
+        Error    = cfg.Ok ? null : (showDetail ? error ?? "unavailable" : "unavailable"),
       },
     };
 
