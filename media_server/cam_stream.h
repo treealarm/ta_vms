@@ -87,5 +87,9 @@ private:
   std::shared_ptr<webrtc_output_sink> m_webrtc_output_sink;
   std::shared_ptr<analytics_output_sink> m_analytics_output_sink;
   std::string m_analytics_push_url;
+  // Kept beside the URL because both identify the sink that is running: the rate decides whether
+  // it forwards keyframes only or every packet, and a sink created for one rate cannot serve
+  // another. See start_analytics_push.
+  uint32_t m_analytics_sample_fps = 0;
   mutable std::mutex m_sinks_mutex;
 };

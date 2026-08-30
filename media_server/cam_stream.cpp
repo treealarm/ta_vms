@@ -144,14 +144,23 @@ bool cam_stream::start_analytics_push(
   std::shared_ptr<analytics_output_sink> started;
   {
     std::scoped_lock lock(m_sinks_mutex);
-    if (m_analytics_output_sink && m_analytics_push_url == rtsp_url)
-      return true;  // already publishing there
+    if (m_analytics_output_sink
+      && m_analytics_push_url == rtsp_url
+      && m_analytics_sample_fps == sample_fps)
+      return true;  // already publishing there, at the rate asked for
 
-    // A different address means the camera moved to another worker. Swap rather than refuse:
-    // the caller owns the assignment and has already decided.
+    // A different address means the camera moved to another worker; a different rate means the
+    // sink would forward the wrong thing. Comparing only the address left a sink running with the
+    // rate it was born with, and since that rate decides keyframes-only against every packet, a
+    // watch raised from 1 to 4 fps went on receiving one frame a second: the clip keys once a
+    // second, so keyframes-only had been the right answer at 1 fps and was silently kept.
+    //
+    // Swap rather than refuse: the caller owns the assignment and has already decided. The brief
+    // reconnect is the same one a worker change costs, and a rate change is just as rare.
     previous = m_analytics_output_sink;
     m_analytics_output_sink = std::make_shared<analytics_output_sink>(rtsp_url, sample_fps);
     m_analytics_push_url = rtsp_url;
+    m_analytics_sample_fps = sample_fps;
     started = m_analytics_output_sink;
   }
 
@@ -174,6 +183,7 @@ bool cam_stream::stop_analytics_push(std::string& error)
     sink = m_analytics_output_sink;
     m_analytics_output_sink.reset();
     m_analytics_push_url.clear();
+    m_analytics_sample_fps = 0;
   }
   m_reader->remove_sink(sink);
   return true;
