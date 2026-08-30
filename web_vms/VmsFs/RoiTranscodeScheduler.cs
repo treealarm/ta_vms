@@ -140,6 +140,7 @@ public sealed class RoiTranscodeScheduler(
   private async Task LoopAsync(CancellationToken ct)
   {
     RoiFileTranscode.RoiFileTranscodeClient? client = null;
+    var temporariesSwept = false;
 
     while (!ct.IsCancellationRequested)
     {
@@ -148,6 +149,12 @@ public sealed class RoiTranscodeScheduler(
         await Task.Delay(_nextDelay, ct);
         if (!_scopeReady)
           continue;
+
+        if (!temporariesSwept)
+        {
+          temporariesSwept = true;
+          await SweepTemporariesAsync(ct);
+        }
 
         if (_roiAppId is null)
         {
@@ -581,6 +588,68 @@ public sealed class RoiTranscodeScheduler(
   {
     var list = await storages.GetAsync(ct);
     return storages.Find(list, storageId)?.RootPath;
+  }
+
+  /// <summary>
+  /// Clears what earlier passes abandoned in .roi_tmp.
+  ///
+  /// Every pass already deletes its own output when the job fails, but that cleanup belongs to
+  /// the call that is waiting for the job -- and there are two ways for nobody to be waiting. A
+  /// ROI service that dies mid-encode leaves the file behind until AwaitJobAsync gives up, and a
+  /// VmsFs restarted inside that window never gives up at all. The second is not hypothetical:
+  /// two half-written clips, months apart, were sitting there when this was written.
+  ///
+  /// Once per process is enough, because that is exactly the case the per-job cleanup cannot
+  /// cover -- a service that dies while this one keeps running is still handled by the waiter.
+  ///
+  /// A file a live job is writing has a fresh timestamp, and no job this scheduler still waits on
+  /// can be older than JobTimeout, so anything untouched for longer than that belongs to no one.
+  /// </summary>
+  private async Task SweepTemporariesAsync(CancellationToken ct)
+  {
+    IReadOnlyList<Vms.Cfg.Storage> list;
+    try
+    {
+      list = await storages.GetAsync(ct);
+    }
+    catch (Exception ex)
+    {
+      logger.LogInformation(ex, "ROI transcode: could not list storages to clear .roi_tmp");
+      return;
+    }
+
+    var cutoff = DateTime.UtcNow - JobTimeout;
+    var removed = 0;
+    long bytes = 0;
+    foreach (var root in list.Select(s => s.RootPath).Where(r => !string.IsNullOrEmpty(r)).Distinct())
+    {
+      var tempDir = Path.Combine(root!, ".roi_tmp");
+      if (!Directory.Exists(tempDir))
+        continue;
+
+      foreach (var file in Directory.EnumerateFiles(tempDir))
+      {
+        try
+        {
+          var info = new FileInfo(file);
+          if (info.LastWriteTimeUtc > cutoff)
+            continue;
+          var size = info.Length;
+          File.Delete(file);
+          removed++;
+          bytes += size;
+        }
+        catch
+        {
+          // Best effort, same as TryDelete: a leftover costs space, not correctness.
+        }
+      }
+    }
+
+    if (removed > 0)
+      logger.LogInformation(
+        "ROI transcode: cleared {Count} abandoned temporary file(s) from .roi_tmp, {Bytes} bytes",
+        removed, bytes);
   }
 
   private static void TryDelete(string path)
