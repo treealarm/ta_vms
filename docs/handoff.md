@@ -14,7 +14,7 @@ branch `tz-v2`.
    touching anything about cameras, streams or analytics: it explains the camera that plays a
    file, which is how the system is exercised without hardware.
 3. **`roi_transcode/docs/`** — exactly two files, and that is a rule: the customer's
-   specification (`smart-video-encoder_34.md`) is where the encoder is going, and `STATUS.md`
+   specification (`smart-video-encoder_41.md`) is where the encoder is going, and `STATUS.md`
    is where it stands, what was decided and why. Everything else there was consolidated into
    the second file on 2026-08-30 and lives in git history.
 
