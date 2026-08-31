@@ -1194,27 +1194,10 @@
         },
         {
             "label": "prepare:roitrc",
-            "detail": "Manual, for debugging the ROI service on its own: builds everything, then clears and restarts just this app id's sidecar.",
+            "detail": "Manual, for debugging the ROI service on its own: clears and restarts just this app id's sidecar. The service itself is built in its own repository.",
             "dependsOrder": "sequence",
-            "dependsOn": [ "build:all", "dapr:roitrc:stop", "dapr:roitrc:start" ],
+            "dependsOn": [ "dapr:roitrc:stop", "dapr:roitrc:start" ],
             "problemMatcher": []
-        },
-        {
-            "label": "cmake:configure:roitrc",
-            "detail": "Cheap to repeat: with the cache already present cmake re-runs in about a second. Uses linux-dev, which reuses the vcpkg tree in VCPKG_ROOT; linux-default builds its own from the manifest and is what a fresh checkout wants.",
-            "type": "process",
-            "command": "cmake",
-            "args": [ "--preset", "linux-dev" ],
-            "windows": { "args": [ "--preset", "windows-default" ] },
-            "options": { "cwd": "${workspaceFolder}/roi_transcode" },
-            "problemMatcher": []
-        },
-        {
-            "label": "cmake:build:roitrc",
-            "type": "process",
-            "command": "cmake",
-            "args": [ "--build", "${workspaceFolder}/roi_transcode/build", "--target", "roi-transcode-svc" ],
-            "problemMatcher": [ "$gcc", "$msCompile" ]
         },
         {
             "label": "cmake:configure:vms",
@@ -1263,9 +1246,7 @@
             "dependsOn": [
                 "dotnet:build",
                 "cmake:configure:vms",
-                "cmake:build:vms",
-                "cmake:configure:roitrc",
-                "cmake:build:roitrc"
+                "cmake:build:vms"
             ],
             "group": {
                 "kind": "build",

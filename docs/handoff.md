@@ -13,10 +13,10 @@ branch `tz-v2`.
    something turned out to be non-obvious. `test-camera-from-file.md` is the one to read before
    touching anything about cameras, streams or analytics: it explains the camera that plays a
    file, which is how the system is exercised without hardware.
-3. **`roi_transcode/docs/`** — exactly two files, and that is a rule: the customer's
-   specification (`smart-video-encoder_41.md`) is where the encoder is going, and `STATUS.md`
-   is where it stands, what was decided and why. Everything else there was consolidated into
-   the second file on 2026-08-30 and lives in git history.
+3. **The encoder is a separate repository.** `roi_transcode` left this one on 2026-08-31
+   (github `treealarm/roi_transcode`, a sibling checkout); its specification, its `STATUS.md`
+   and its own `CLAUDE.md` went with it, along with the whole history. ta_vms is a client of
+   the `treealarm/roitrc` image and shares only `proto/roi_transcode.proto` with it.
 
 Chat history is not shared state. Anything that must survive a handover lives in these files.
 

@@ -144,7 +144,7 @@ apps:
     daprInternalGRPCPort: 19018
     daprdLogDestination: fileAndConsole
   - appID: roitrc
-    appDirPath: ../roi_transcode
+    appDirPath: ../../roi_transcode
     appProtocol: grpc
     appPort: 5142
     daprHTTPPort: 3608

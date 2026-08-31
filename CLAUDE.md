@@ -15,7 +15,7 @@ For all new code and refactors, treat these as hard constraints rather than styl
 - **YAGNI:** do not implement features, extension points, or configuration knobs before there is a concrete requirement.
 - **DRY:** avoid duplicated business logic and duplicated protocol/format conversions; extract shared helpers when two paths must stay behaviorally identical.
 
-`roi_transcode` is built with **C++20**. Prefer modern C++20 techniques and standard library facilities over legacy patterns whenever the result is clearer and safer (`std::span`, ranges, RAII, `std::optional`, `std::variant`, structured bindings, constexpr helpers, etc.). Do not introduce pre-C++20 workarounds where a direct C++20 solution is available.
+`media_server` is built with **C++20**. Prefer modern C++20 techniques and standard library facilities over legacy patterns whenever the result is clearer and safer (`std::span`, ranges, RAII, `std::optional`, `std::variant`, structured bindings, constexpr helpers, etc.). Do not introduce pre-C++20 workarounds where a direct C++20 solution is available.
 
 ## MediaMTX API access
 
@@ -42,22 +42,22 @@ It installs protobuf/grpc/spdlog/ffmpeg for media_server plus openvino for video
 its package list, consider both consumers.
 
 **Adding an ffmpeg feature to the shared vcpkg tree breaks every stale build directory.**
-`media_server`, `roi_transcode` and `video_a` all configure against `/mnt/wdblue/vcpkg` in
-classic mode, and all three link ffmpeg through `pkg_check_modules(FFMPEG ...)`. That call
-caches its answer in `CMakeCache.txt` and never asks pkg-config again. So when
-`roi_transcode` had ffmpeg rebuilt there with `qsv,vaapi`, `libavutil.a` gained
+`media_server` and `video_a` configure against `/mnt/wdblue/vcpkg` in classic mode, and both
+link ffmpeg through `pkg_check_modules(FFMPEG ...)` — as does `roi_transcode`, from its own
+repository, against the same tree. That call caches its answer in `CMakeCache.txt` and never
+asks pkg-config again. So when ffmpeg was once rebuilt there with `qsv,vaapi`,
+`libavutil.a` gained
 `hwcontext_vaapi.o` while every build directory configured before that kept a link line with
 no `-lva`. The result is a wall of `undefined reference to vaGetDisplayDRM` that looks like a
 source problem and is not: the `.pc` file is already correct, the cache is not. Delete the
 build directory and reconfigure. Docker builds never hit this — they configure from scratch.
 
-**`roi_transcode` does not use it.** It has its own base, `roi_transcode/docker/intel/Dockerfile.deps`, and the split is
-load-bearing: it is the only consumer that needs qsv/vaapi (and the system `libdrm-dev` vcpkg's
-libva demands), and it is the only one that does not link openvino — which is 143 of the 234
-minutes ta-deps takes to build. Keep GPU-related packages out of `ta-deps`, and openvino out of
-`roi-deps`. It is also on ubuntu 24.04 rather than 22.04, matching the runtime image beside it
-(`roi_transcode/docker/intel/Dockerfile`): glibc is only forward-compatible, so builder and runtime being the same release
-is what keeps that safe.
+**`roi_transcode` does not use it.** It lives in its own repository now (github
+`treealarm/roi_transcode`, checked out beside this one) and has its own base, `roi-deps`,
+built there by `./docker/build.sh`. The split is load-bearing: it is the only consumer that
+needs qsv/vaapi (and the system `libdrm-dev` vcpkg's libva demands), and the only one that
+does not link openvino — which is 143 of the 234 minutes ta-deps takes to build. Keep
+GPU-related packages out of `ta-deps`.
 
 Both images use an overlay vcpkg triplet
 (`<image>/triplets/x64-linux.cmake`) to build release-only (no debug artifacts — vcpkg's
@@ -65,21 +65,22 @@ Both images use an overlay vcpkg triplet
 still pass `-DCMAKE_BUILD_TYPE=Release` on their own `cmake` configure step to select the release
 libs.
 
-## smart-video-encoder (`roi_transcode`) — переносимость и вес зависимостей
+## smart-video-encoder живёт в отдельном репозитории
 
-Две конвенции, принятые 2026-08-23 (полностью, с обоснованием —
-`roi_transcode/docs/STATUS.md`, решения Р1 и Р2):
+`roi_transcode` уехал из монорепо 2026-08-31 (на коммите `c4bc9b8`) в github
+`treealarm/roi_transcode` — вместе со всей историей, ТЗ заказчика, приёмками и своими
+конвенциями, которые теперь записаны в его собственном `CLAUDE.md`. Причина: у него своё
+ТЗ, свой цикл поставки и своя база зависимостей, не пересекающаяся с `ta-deps`.
 
-**Код по возможности переносим на Windows.** `std::filesystem` вместо POSIX; никаких
-`unistd.h`, `dirent.h`, `pthread.h`, `realpath`. Сегодня это выполняется: в `include/`,
-`src/`, `tests/` и `integration/` нет ни одного POSIX-заголовка. Платформенное
-допускается только за интерфейсом бэкенда — VA-API Linux по природе, и ровно ради этого
-бэкенды разделены. Скрипты (`check.sh`, `rd_curve.sh`) и docker-образы остаются Linux.
+ta_vms теперь **клиент**: разворачивает готовый образ `treealarm/roi-transcode-svc` и
+ходит в него по `proto/roi_transcode.proto`. Здешняя копия proto обслуживает C#-клиент в
+`VmsFs`; серверная копия лежит в том репозитории. Дрейф между ними protobuf не заметит —
+поле, добавленное с одной стороны, просто игнорируется другой, — поэтому меняются они
+только вместе.
 
-**Тест не тянет за собой тяжёлых зависимостей.** Не добавляем метрику или проверку,
-которой нужна отдельная система сборки, патчи к чужому коду, скачивание моделей или
-датасетов. Именно поэтому VMAF отложен: порт `libvmaf` требует meson, модель
-доставляется отдельно, а сам порт объявлен `"supports": "!windows"`.
+Не возвращай сюда его исходники: копия рядом с оригиналом разъедется, а опция пережатия
+(`camera_setup.roi_transcode` и пятая часть `MEDIA_SERVER_PAIRS`) работает через образ и
+никаких исходников не требует.
 
 ## Adding a new service
 
@@ -196,7 +197,7 @@ accumulating messages nobody reads.
   replica.
 - `VmsCfg`, `VmsUtils`, `VmsLogger` — `VmsCfg` and `VmsUtils` are replicable (their once-only work
   lives in `VmsSingleton`); `VmsLogger` is sharded by node, because it reads node-local files.
-- `roitrc` (roi-transcode-svc) — **sharded by node**, and this one is a correctness requirement
+- `roitrc` (roi-transcode-svc, built in its own repository) — **sharded by node**, and this one is a correctness requirement
   rather than a capacity choice. It is handed absolute paths to clips on the node's own disk, so an
   instance elsewhere either finds nothing there or finds a *different* node's file at the same path
   and overwrites it. Which instance a node talks to therefore comes from that node's entry in
