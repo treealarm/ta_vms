@@ -1,0 +1,147 @@
+# roitrc -- ta_vms' ROI re-compression service.
+#
+# The encoder itself is the customer's deliverable and lives in its own repository
+# (github treealarm/roi_transcode), pinned here as the `sve` submodule. This directory is
+# everything about re-compression that is ours and only ours: the gRPC contract VmsFs
+# speaks, the job model that mirrors media_server's EdgeImport, the Dapr notifications and
+# the path sandbox. None of it appears in the customer's specification, which is the whole
+# reason it is here rather than there.
+#
+# The dependency arrow points one way and is narrow: this links `sve` through its public
+# headers alone -- sve/sve.h, sve/session.h, sve/types.h -- and reaches into none of the
+# library's internals.
+
+cmake_minimum_required(VERSION 3.22)
+project(roitrc CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+option(ROITRC_BUILD_TESTS "Build the service's own tests" ON)
+
+# The library, and nothing else from that repository: its integration/ holds the customer's
+# acceptance harness (the CLI and check.sh), and its unit tests run in its own CI. Forced
+# rather than merely set, because these are options in the subproject's own cache.
+set(SVE_BUILD_INTEGRATION OFF CACHE BOOL "" FORCE)
+set(SVE_BUILD_TESTS       OFF CACHE BOOL "" FORCE)
+add_subdirectory(sve)
+
+set(ROITRC_WARNINGS
+    $<$<CXX_COMPILER_ID:GNU>:-Wall -Wextra>
+    $<$<CXX_COMPILER_ID:Clang>:-Wall -Wextra>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4>
+)
+
+# pkg_check_modules ran in the subdirectory above, but its results stayed in that scope.
+# The smoke tool decodes to compare frames, so it needs FFmpeg on its own account.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FFMPEG REQUIRED
+    libavformat
+    libavcodec
+    libavutil
+    libswscale
+    libswresample
+)
+find_package(Protobuf CONFIG REQUIRED)
+find_package(gRPC CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+
+# The contract, from ta_vms' own proto/ beside every other service contract. There is one
+# copy of it again: while this service lived in the encoder's repository each side had to
+# carry its own, and protobuf would never have reported them drifting apart.
+set(ROI_PROTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../proto" CACHE PATH
+    "Directory holding roi_transcode.proto and dapr/dapr_runtime.proto")
+cmake_path(SET ROI_PROTO_DIR NORMALIZE "${ROI_PROTO_DIR}")
+set(ROI_PROTO_FILE ${ROI_PROTO_DIR}/roi_transcode.proto)
+set(DAPR_PROTO_FILE ${ROI_PROTO_DIR}/dapr/dapr_runtime.proto)
+
+# ---------------------------------------------------------------------------
+# The service
+# ---------------------------------------------------------------------------
+add_executable(roi-transcode-svc
+    svc/svc_main.cpp
+    svc/job/roi_job_manager.cpp
+    svc/grpc/proto_convert.cpp
+    svc/grpc/roi_file_service.cpp
+    svc/grpc/roi_stream_service.cpp
+    svc/grpc/dapr_publisher.cpp
+    svc/grpc/path_guard.cpp
+)
+protobuf_generate(
+    TARGET roi-transcode-svc
+    IMPORT_DIRS ${ROI_PROTO_DIR}
+    PROTOS ${ROI_PROTO_FILE} ${DAPR_PROTO_FILE}
+)
+protobuf_generate(
+    TARGET roi-transcode-svc
+    LANGUAGE grpc
+    IMPORT_DIRS ${ROI_PROTO_DIR}
+    PROTOS ${ROI_PROTO_FILE} ${DAPR_PROTO_FILE}
+    PLUGIN protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>
+    GENERATE_EXTENSIONS .grpc.pb.cc .grpc.pb.h
+)
+target_include_directories(roi-transcode-svc PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/svc
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+target_link_libraries(roi-transcode-svc PRIVATE
+    sve
+    protobuf::libprotobuf
+    gRPC::grpc
+    gRPC::grpc++
+)
+target_compile_definitions(roi-transcode-svc PRIVATE _CRT_SECURE_NO_WARNINGS)
+target_compile_options(roi-transcode-svc PRIVATE ${ROITRC_WARNINGS})
+
+# ---------------------------------------------------------------------------
+# roi_grpc_smoke -- a client, so it reads roi.json the way a caller would
+#
+# Compiled from the submodule's own roi_json.cpp rather than copied: that file is the
+# adapter between roi.json and the library's vocabulary, it is the one the CLI uses, and
+# two copies of it would be two answers to "what does this JSON mean".
+# ---------------------------------------------------------------------------
+add_executable(roi_grpc_smoke
+    tools/roi_grpc_smoke.cpp
+    sve/integration/json/roi_json.cpp
+)
+protobuf_generate(
+    TARGET roi_grpc_smoke
+    IMPORT_DIRS ${ROI_PROTO_DIR}
+    PROTOS ${ROI_PROTO_FILE}
+)
+protobuf_generate(
+    TARGET roi_grpc_smoke
+    LANGUAGE grpc
+    IMPORT_DIRS ${ROI_PROTO_DIR}
+    PROTOS ${ROI_PROTO_FILE}
+    PLUGIN protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>
+    GENERATE_EXTENSIONS .grpc.pb.cc .grpc.pb.h
+)
+target_include_directories(roi_grpc_smoke PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/sve/integration/json
+)
+target_include_directories(roi_grpc_smoke SYSTEM PRIVATE ${FFMPEG_INCLUDE_DIRS})
+if(FFMPEG_LIBRARY_DIRS)
+    target_link_directories(roi_grpc_smoke PRIVATE ${FFMPEG_LIBRARY_DIRS})
+endif()
+target_link_libraries(roi_grpc_smoke PRIVATE
+    sve
+    nlohmann_json::nlohmann_json
+    ${FFMPEG_LIBRARIES}
+    protobuf::libprotobuf
+    gRPC::grpc
+    gRPC::grpc++
+)
+target_compile_options(roi_grpc_smoke PRIVATE ${ROITRC_WARNINGS})
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+if(ROITRC_BUILD_TESTS)
+    enable_testing()
+    add_executable(path_guard_test tests/path_guard_test.cpp svc/grpc/path_guard.cpp)
+    target_include_directories(path_guard_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/svc)
+    target_compile_options(path_guard_test PRIVATE ${ROITRC_WARNINGS})
+    add_test(NAME path_guard COMMAND path_guard_test)
+endif()

@@ -1194,10 +1194,26 @@
         },
         {
             "label": "prepare:roitrc",
-            "detail": "Manual, for debugging the ROI service on its own: clears and restarts just this app id's sidecar. The service itself is built in its own repository.",
+            "detail": "Manual, for debugging the ROI service on its own: builds everything, then clears and restarts just this app id's sidecar.",
             "dependsOrder": "sequence",
-            "dependsOn": [ "dapr:roitrc:stop", "dapr:roitrc:start" ],
+            "dependsOn": [ "build:all", "dapr:roitrc:stop", "dapr:roitrc:start" ],
             "problemMatcher": []
+        },
+        {
+            "label": "cmake:configure:roitrc",
+            "detail": "Cheap to repeat: with the cache already present cmake re-runs in about a second. Builds the encoder library from the roitrc/sve submodule, so `git submodule update --init` has to have run once.",
+            "type": "process",
+            "command": "cmake",
+            "args": [ "--preset", "linux-dev" ],
+            "options": { "cwd": "${workspaceFolder}/roitrc" },
+            "problemMatcher": []
+        },
+        {
+            "label": "cmake:build:roitrc",
+            "type": "process",
+            "command": "cmake",
+            "args": [ "--build", "${workspaceFolder}/roitrc/build", "--target", "roi-transcode-svc" ],
+            "problemMatcher": [ "$gcc", "$msCompile" ]
         },
         {
             "label": "cmake:configure:vms",
@@ -1246,7 +1262,9 @@
             "dependsOn": [
                 "dotnet:build",
                 "cmake:configure:vms",
-                "cmake:build:vms"
+                "cmake:build:vms",
+                "cmake:configure:roitrc",
+                "cmake:build:roitrc"
             ],
             "group": {
                 "kind": "build",

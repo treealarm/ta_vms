@@ -17,8 +17,18 @@ else
     echo "=== ta-deps already exists, skipping build ==="
 fi
 
-# roi-deps and the roitrc image are built in the roi_transcode repository, which owns
-# them; compose here only pulls treealarm/roi-transcode-svc.
+# 1.5 Base image for roitrc. Separate from ta-deps because it is the only one that needs
+# qsv/vaapi, and ta-deps is the only one that needs openvino. Its Dockerfile belongs to the
+# encoder and comes in with the submodule, so `git submodule update --init` first.
+echo "=== Checking roi-deps image ==="
+
+if ! docker image inspect roi-deps &>/dev/null; then
+    echo "=== Building roi-deps ==="
+    docker build -t roi-deps -f "$ROOT_DIR/roitrc/sve/docker/intel/Dockerfile.deps" \
+        "$ROOT_DIR/roitrc/sve/docker/intel"
+else
+    echo "=== roi-deps already exists, skipping build ==="
+fi
 
 # 2️⃣ Сборка проекта через docker-compose
 echo "=== Building ta_vms via docker-compose ==="

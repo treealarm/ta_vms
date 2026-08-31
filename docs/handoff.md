@@ -13,10 +13,13 @@ branch `tz-v2`.
    something turned out to be non-obvious. `test-camera-from-file.md` is the one to read before
    touching anything about cameras, streams or analytics: it explains the camera that plays a
    file, which is how the system is exercised without hardware.
-3. **The encoder is a separate repository.** `roi_transcode` left this one on 2026-08-31
-   (github `treealarm/roi_transcode`, a sibling checkout); its specification, its `STATUS.md`
-   and its own `CLAUDE.md` went with it, along with the whole history. ta_vms is a client of
-   the `treealarm/roitrc` image and shares only `proto/roi_transcode.proto` with it.
+3. **The encoder is a separate repository, pinned as a submodule.** It left this one on
+   2026-08-31 (github `treealarm/roi_transcode`) with its specification, its `STATUS.md`,
+   its own `CLAUDE.md` and the whole history, because it is the customer's deliverable and
+   we are not. It comes back in at `roitrc/sve`, and `roitrc/` around it is our service:
+   the gRPC contract, the jobs, Dapr, the path sandbox — none of which appears in that
+   specification. Read `CLAUDE.md`'s section on that boundary before adding anything to
+   either side of it.
 
 Chat history is not shared state. Anything that must survive a handover lives in these files.
 

@@ -25,7 +25,8 @@
     {
       "name": "ta_vms",
       "compileCommands": [
-        "${workspaceFolder}/media_server/build/compile_commands.json"
+        "${workspaceFolder}/media_server/build/compile_commands.json",
+        "${workspaceFolder}/roitrc/build/compile_commands.json"
       ],
       "cStandard": "c17",
       "cppStandard": "c++20",

@@ -544,12 +544,13 @@ services:
 
   roitrc:
     profiles: [app]
-    # Built from its own repository (github treealarm/roi_transcode), not from source
-    # here: the encoder is the customer's deliverable under its own specification and
-    # moved out on 2026-08-31. Build the image with `./docker/build.sh` in a checkout
-    # beside this one. ta_vms is a client of it and nothing more -- the contract is
-    # proto/roi_transcode.proto, of which that repository keeps the server's copy.
-    image: treealarm/roitrc:latest
+    # The service is ours; the encoder it wraps is the customer's deliverable and comes
+    # in as the roitrc/sve submodule. Context is the repository root because the build
+    # needs both roitrc/ and proto/. Its base image, roi-deps, is built from the
+    # submodule -- see build-and-run.sh.
+    build:
+      context: .
+      dockerfile: roitrc/Dockerfile
     env_file:
       - .env
     environment:
