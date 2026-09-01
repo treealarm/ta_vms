@@ -13,7 +13,11 @@ CREATE TABLE media_mtx_server (
   -- MediaMTX assigned to that camera, so an assignment that ignores the node sends video
   -- across whatever link separates them. NULL means "shared": the server answers for any
   -- node, which is what a single-box installation has.
-  server_id   text    NULL
+  server_id    text    NULL,
+  publish_user text    NOT NULL DEFAULT '',
+  publish_pass text    NOT NULL DEFAULT '',
+  read_user    text    NOT NULL DEFAULT '',
+  read_pass    text    NOT NULL DEFAULT ''
 );
 
 CREATE TABLE camera_setup (
@@ -118,6 +122,13 @@ CREATE TABLE camera_stream (
   override_profile_id   uuid        NULL REFERENCES recording_profile(id) ON DELETE SET NULL,
   alarm_override_until  timestamptz NULL,
   disabled              boolean     NULL,
+  -- Viewing and recording are independent: false keeps the stream available for live playback
+  -- while excluding it from schedules and recording overrides.
+  recordable            boolean     NOT NULL DEFAULT true,
+  -- Resolution declared by the bound ONVIF profile. Zero means unknown; observed stream
+  -- measurements remain authoritative.
+  declared_width        integer     NOT NULL DEFAULT 0,
+  declared_height       integer     NOT NULL DEFAULT 0,
   PRIMARY KEY (camera_id, stream_name)
 );
 
@@ -192,6 +203,19 @@ CREATE TABLE monitor_slot (
   camera_id   text NOT NULL REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
   PRIMARY KEY (monitor_id, slot_index)
 );
+
+-- Per-operator stream selection for each monitor slot. Empty stream_name means automatic
+-- selection. owner may be empty when authentication is disabled.
+CREATE TABLE monitor_slot_pref (
+  owner       text NOT NULL,
+  monitor_id  uuid NOT NULL REFERENCES monitor(id) ON DELETE CASCADE,
+  slot_index  int  NOT NULL,
+  stream_name text NOT NULL DEFAULT '',
+  PRIMARY KEY (owner, monitor_id, slot_index)
+);
+
+CREATE INDEX idx_monitor_slot_pref_lookup
+  ON monitor_slot_pref (owner, monitor_id);
 
 CREATE TABLE onvif_alarm_filter (
   id              uuid    PRIMARY KEY DEFAULT gen_random_uuid(),

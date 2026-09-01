@@ -11,8 +11,6 @@
             "cwd": "${workspaceFolder}/web_vms/web_vms.Server",
             "stopAtEntry": false,
             "env": {
-                "VMS_MEDIAMTX_READ_USER": "vms_read",
-                "VMS_MEDIAMTX_READ_PASS": "dev_read_pass",
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "WEB_VMS_PORT": "5134",
                 "DAPR_HTTP_PORT": "3600",
@@ -56,6 +54,10 @@
                 "POSTGRES_PASSWORD": "postgres",
                 "POSTGRES_CFG_DB": "ta_cfg",
                 "VMS_MTX_HOST": "localhost",
+                "VMS_MEDIAMTX_PUBLISH_USER": "vms_publish",
+                "VMS_MEDIAMTX_PUBLISH_PASS": "dev_publish_pass",
+                "VMS_MEDIAMTX_READ_USER": "vms_read",
+                "VMS_MEDIAMTX_READ_PASS": "dev_read_pass",
                 "VMS_STORAGE_BASE_PATH": "${workspaceFolder}/../media_storage",
                 "MEDIA_SERVER_PAIRS": "vms:vmsfs:vmsonvif:vmslogger:roitrc,vms-2:vmsfs-2:vmsonvif-2:vmslogger-2",
                 "DAPR_STATE_STORE_NAME": "statestore",
@@ -159,8 +161,6 @@
             "cwd": "${workspaceFolder}/web_vms/VmsAnalyticsSingleton",
             "stopAtEntry": false,
             "env": {
-                "VMS_MEDIAMTX_READ_USER": "vms_read",
-                "VMS_MEDIAMTX_READ_PASS": "dev_read_pass",
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "ANALYTICS_VMS_PORT": "5140",
                 "DAPR_HTTP_PORT": "3610",
@@ -255,8 +255,6 @@
             "cwd": "${workspaceFolder}/web_vms/VmsUtils",
             "stopAtEntry": false,
             "env": {
-                "VMS_MEDIAMTX_READ_USER": "vms_read",
-                "VMS_MEDIAMTX_READ_PASS": "dev_read_pass",
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "UTILS_VMS_PORT": "5139",
                 "DAPR_HTTP_PORT": "3606",
@@ -316,14 +314,6 @@
             "program": "${workspaceFolder}/media_server/build/vms",
             "args": [],
             "environment": [
-                {
-                    "name": "VMS_MEDIAMTX_PUBLISH_USER",
-                    "value": "vms_publish"
-                },
-                {
-                    "name": "VMS_MEDIAMTX_PUBLISH_PASS",
-                    "value": "dev_publish_pass"
-                },
                 {
                     "name": "DEBUGINFOD_URLS",
                     "value": ""
@@ -458,14 +448,6 @@
             "program": "${workspaceFolder}/media_server/build/vms.exe",
             "args": [],
             "environment": [
-                {
-                    "name": "VMS_MEDIAMTX_PUBLISH_USER",
-                    "value": "vms_publish"
-                },
-                {
-                    "name": "VMS_MEDIAMTX_PUBLISH_PASS",
-                    "value": "dev_publish_pass"
-                },
                 {
                     "name": "VMS_STORAGE_BASE_PATH",
                     "value": "${workspaceFolder}/../media_storage"

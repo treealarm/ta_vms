@@ -9,6 +9,7 @@ import { loadMediaMtxServers, removeMediaMtxServer, upsertMediaMtxServer } from 
 import type { MediaMtxServerDto } from '../dto/dtos'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
+import PasswordField from './PasswordField'
 import SettingsListItem from './settings/SettingsListItem'
 import { useDirtyGuard } from './settings/useDirtyGuard'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
@@ -22,6 +23,7 @@ const EMPTY: MediaMtxServerDto = {
   stunUrl: DEFAULT_STUN_URL,
   // Empty means shared: usable by cameras of any node, which is what a single-box install wants.
   serverId: '',
+  publishUser: '', publishPass: '', readUser: '', readPass: '',
 }
 
 type FormProps = {
@@ -52,6 +54,10 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
     || form.apiPort !== snap.apiPort
     || form.stunUrl !== snap.stunUrl
     || form.serverId !== snap.serverId
+    || form.publishUser !== snap.publishUser
+    || form.publishPass !== snap.publishPass
+    || form.readUser !== snap.readUser
+    || form.readPass !== snap.readPass
   )
 
   // Empty is a valid choice ("no STUN, LAN only"); anything else has to be a URL the browser's
@@ -166,6 +172,33 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
               <MenuItem key={s.serverId} value={s.serverId}>{s.serverId}</MenuItem>
             ))}
           </TextField>
+          <Alert severity="warning">{t('mediaMtx.credentialsWarning')}</Alert>
+          <TextField
+            label={t('mediaMtx.publishUser')}
+            value={form.publishUser}
+            onChange={(e) => setForm((prev) => ({ ...prev, publishUser: e.target.value }))}
+            size="small"
+            helperText={t('mediaMtx.publishUserHelper')}
+            placeholder={t('mediaMtx.userOpenPlaceholder')}
+          />
+          <PasswordField
+            pass={form.publishPass}
+            setPass={(publishPass) => setForm((prev) => ({ ...prev, publishPass }))}
+            label={t('mediaMtx.publishPass')}
+          />
+          <TextField
+            label={t('mediaMtx.readUser')}
+            value={form.readUser}
+            onChange={(e) => setForm((prev) => ({ ...prev, readUser: e.target.value }))}
+            size="small"
+            helperText={t('mediaMtx.readUserHelper')}
+            placeholder={t('mediaMtx.userOpenPlaceholder')}
+          />
+          <PasswordField
+            pass={form.readPass}
+            setPass={(readPass) => setForm((prev) => ({ ...prev, readPass }))}
+            label={t('mediaMtx.readPass')}
+          />
           <TextField
             label={t('mediaMtx.stunUrl')}
             value={form.stunUrl}

@@ -36,13 +36,6 @@ public sealed class WatchReconciler(
   private readonly SemaphoreSlim _reconcileLock = new(1, 1);
   private readonly CancellationTokenSource _cts = new();
 
-  private readonly string _mediaMtxReadUser =
-    Environment.GetEnvironmentVariable("VMS_MEDIAMTX_READ_USER")
-    ?? throw new InvalidOperationException("Required environment variable 'VMS_MEDIAMTX_READ_USER' is not set");
-  private readonly string _mediaMtxReadPass =
-    Environment.GetEnvironmentVariable("VMS_MEDIAMTX_READ_PASS")
-    ?? throw new InvalidOperationException("Required environment variable 'VMS_MEDIAMTX_READ_PASS' is not set");
-
   public Task StartAsync(CancellationToken cancellationToken)
   {
     _ = KeepAliveLoopAsync(_cts.Token);

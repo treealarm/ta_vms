@@ -9,18 +9,23 @@ import { useTranslation } from "react-i18next";
 interface PasswordProps {
   pass: string;
   setPass: (value: string) => void;
+  label?: string;
+  helperText?: string;
+  placeholder?: string;
 }
 
-const PasswordField = ({ pass, setPass }: PasswordProps) => {
+const PasswordField = ({ pass, setPass, label, helperText, placeholder }: PasswordProps) => {
   const { t } = useTranslation();
   const [showPassword, setShowPassword] = useState(false);
 
   return (
     <TextField
-      label={t('common.password')}
+      label={label ?? t('common.password')}
       type={showPassword ? "text" : "password"}
       value={pass}
       onChange={(event) => setPass(event.target.value)}
+      helperText={helperText}
+      placeholder={placeholder}
       fullWidth
       size="small"
       InputProps={{

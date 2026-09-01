@@ -242,6 +242,10 @@ public class CameraManager : ICameraManager
     ApiPort    = s.ApiPort != 0 ? s.ApiPort : 9997,
     StunUrl    = s.StunUrl,
     ServerId   = s.ServerId,
+    PublishUser = s.PublishUser,
+    PublishPass = s.PublishPass,
+    ReadUser    = s.ReadUser,
+    ReadPass    = s.ReadPass,
   };
 
   private static MediaMtxServer ToMediaMtxProto(MediaMtxServerDto dto) => new()
@@ -255,6 +259,10 @@ public class CameraManager : ICameraManager
     ApiPort    = dto.ApiPort,
     StunUrl    = dto.StunUrl ?? string.Empty,
     ServerId   = dto.ServerId ?? string.Empty,
+    PublishUser = dto.PublishUser ?? string.Empty,
+    PublishPass = dto.PublishPass ?? string.Empty,
+    ReadUser    = dto.ReadUser ?? string.Empty,
+    ReadPass    = dto.ReadPass ?? string.Empty,
   };
 
   private static MediaServerNodeDto ToDto(MediaServerNode server) => new()

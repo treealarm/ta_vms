@@ -687,7 +687,8 @@ public class CameraStorage(
   public async Task<List<MediaMtxServer>> ListMediaMtxServersAsync(CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url, server_id
+      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url, server_id,
+             publish_user, publish_pass, read_user, read_pass
       FROM media_mtx_server ORDER BY name;
       """);
 
@@ -701,8 +702,12 @@ public class CameraStorage(
   public async Task UpsertMediaMtxServerAsync(MediaMtxServer server, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      INSERT INTO media_mtx_server (id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url, server_id)
-      VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''))
+      INSERT INTO media_mtx_server (
+        id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url, server_id,
+        publish_user, publish_pass, read_user, read_pass)
+      VALUES (
+        COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8,
+        NULLIF($9, ''), $10, $11, $12, $13)
       ON CONFLICT (id) DO UPDATE SET
         name        = EXCLUDED.name,
         host        = EXCLUDED.host,
@@ -711,7 +716,11 @@ public class CameraStorage(
         webrtc_port = EXCLUDED.webrtc_port,
         api_port    = EXCLUDED.api_port,
         stun_url    = EXCLUDED.stun_url,
-        server_id   = EXCLUDED.server_id
+        server_id   = EXCLUDED.server_id,
+        publish_user = EXCLUDED.publish_user,
+        publish_pass = EXCLUDED.publish_pass,
+        read_user    = EXCLUDED.read_user,
+        read_pass    = EXCLUDED.read_pass
       RETURNING id;
       """);
     command.Parameters.AddWithValue(server.Id ?? string.Empty);
@@ -723,6 +732,10 @@ public class CameraStorage(
     command.Parameters.AddWithValue(server.ApiPort);
     command.Parameters.AddWithValue(server.StunUrl ?? string.Empty);
     command.Parameters.AddWithValue(server.ServerId ?? string.Empty);
+    command.Parameters.AddWithValue(server.PublishUser?.Trim() ?? string.Empty);
+    command.Parameters.AddWithValue(server.PublishPass ?? string.Empty);
+    command.Parameters.AddWithValue(server.ReadUser?.Trim() ?? string.Empty);
+    command.Parameters.AddWithValue(server.ReadPass ?? string.Empty);
     var id = await command.ExecuteScalarAsync(ct);
     server.Id = id?.ToString() ?? server.Id;
   }
@@ -754,7 +767,8 @@ public class CameraStorage(
     // server. LEFT JOIN so an unassigned camera still reports its node for the pick below.
     await using (var cmd = new NpgsqlCommand("""
       SELECT cs.server_id,
-             m.id, m.name, m.host, m.webrtc_host, m.rtsp_port, m.webrtc_port, m.api_port, m.stun_url, m.server_id
+             m.id, m.name, m.host, m.webrtc_host, m.rtsp_port, m.webrtc_port, m.api_port, m.stun_url,
+             m.server_id, m.publish_user, m.publish_pass, m.read_user, m.read_pass
       FROM camera_setup cs
       LEFT JOIN media_mtx_server m ON m.id = cs.media_mtx_server_id
       WHERE cs.camera_id = $1;
@@ -786,7 +800,8 @@ public class CameraStorage(
     MediaMtxServer? picked = null;
 
     await using (var pickCmd = new NpgsqlCommand("""
-      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url, server_id
+      SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url, server_id,
+             publish_user, publish_pass, read_user, read_pass
       FROM media_mtx_server
       WHERE server_id IS NULL OR server_id = $1
       ORDER BY random() LIMIT 1;
@@ -836,6 +851,10 @@ public class CameraStorage(
       ApiPort    = reader.GetInt32(offset + 6),
       StunUrl    = reader.GetString(offset + 7),
       ServerId   = reader.IsDBNull(offset + 8) ? string.Empty : reader.GetString(offset + 8),
+      PublishUser = reader.GetString(offset + 9),
+      PublishPass = reader.GetString(offset + 10),
+      ReadUser    = reader.GetString(offset + 11),
+      ReadPass    = reader.GetString(offset + 12),
     };
 
   // ── Monitor management ────────────────────────────────────────────────────

@@ -1,6 +1,8 @@
 #include "config_subscriber.h"
 
 #include "grpc_layer/fs_client.h"
+#include "interfaces/web_rtc_utils.h"
+#include "vms_cfg.pb.h"
 
 #include <format>
 #include <unordered_set>
@@ -118,7 +120,11 @@ void config_subscriber::reload_cameras()
 
   std::unordered_map<std::string, std::string> mtx_rtsp_by_id;
   for (const auto& s : mtx_servers)
-    mtx_rtsp_by_id[s.id()] = "rtsp://" + s.host() + ":" + std::to_string(s.rtsp_port());
+  {
+    const auto base = "rtsp://" + s.host() + ":" + std::to_string(s.rtsp_port());
+    mtx_rtsp_by_id[s.id()] =
+      webrtc_rtsp_detail::with_userinfo(base, s.publish_user(), s.publish_pass());
+  }
 
   // Build set of camera IDs that should be running on this server
   std::unordered_set<std::string> expected_ids;

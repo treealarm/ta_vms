@@ -34,7 +34,9 @@ public class UtilsServiceImpl(
         servers[pathRef.CameraId] = server is null
           ? null
           : new MediaMtxServerRef(
-              server.ApiPort > 0 ? $"http://{server.Host}:{server.ApiPort}" : null);
+              server.ApiPort > 0 ? $"http://{server.Host}:{server.ApiPort}" : null,
+              server.ReadUser,
+              server.ReadPass);
       }
       catch (Exception ex)
       {
@@ -43,11 +45,13 @@ public class UtilsServiceImpl(
       }
     }
 
-    var snapshots = new Dictionary<string, IReadOnlyDictionary<string, MediaMtxPathState>?>(StringComparer.Ordinal);
-    foreach (var apiUrl in servers.Values.OfType<MediaMtxServerRef>()
-               .Select(s => s.ApiUrl).OfType<string>().Distinct(StringComparer.Ordinal))
+    var snapshots =
+      new Dictionary<MediaMtxServerRef, IReadOnlyDictionary<string, MediaMtxPathState>?>();
+    foreach (var server in servers.Values.OfType<MediaMtxServerRef>()
+               .Where(s => s.ApiUrl is not null).Distinct())
     {
-      snapshots[apiUrl] = await snapshotCache.GetAsync(apiUrl, ct);
+      snapshots[server] = await snapshotCache.GetAsync(
+        server.ApiUrl!, server.ReadUser, server.ReadPass, ct);
     }
 
     foreach (var pathRef in request.Paths)
@@ -75,7 +79,7 @@ public class UtilsServiceImpl(
         continue;
       }
 
-      if (snapshots[server.ApiUrl] is not { } paths)
+      if (snapshots[server] is not { } paths)
       {
         response.Paths.Add(info);
         continue;
@@ -98,5 +102,5 @@ public class UtilsServiceImpl(
   }
 
   /// ApiUrl is null when the assigned server has no control API port.
-  private sealed record MediaMtxServerRef(string? ApiUrl);
+  private sealed record MediaMtxServerRef(string? ApiUrl, string ReadUser, string ReadPass);
 }

@@ -436,6 +436,12 @@ message MediaMtxServer {
   // either theirs or shared: the push travels from media_server to MediaMTX, so a cross-node
   // assignment would carry video over whatever link separates the two.
   string server_id   = 9;
+  // RTSP publish account used by media_server. Empty user means unauthenticated publish.
+  string publish_user = 10;
+  string publish_pass = 11;
+  // Read account used by WHEP and the MediaMTX Control API. Empty user means unauthenticated read.
+  string read_user    = 12;
+  string read_pass    = 13;
 }
 
 message MediaMtxServerRequest {

@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 
 namespace VmsUtils;
@@ -24,6 +26,7 @@ public sealed class MediaMtxPathSnapshotCache(
   private const int ItemsPerPage = 1000;
 
   private sealed record Snapshot(IReadOnlyDictionary<string, MediaMtxPathState> Paths, DateTime FetchedAt);
+  private sealed record CacheKey(string ApiUrl, string ReadUser, string ReadPass);
 
   private sealed class Entry
   {
@@ -32,13 +35,15 @@ public sealed class MediaMtxPathSnapshotCache(
   }
 
   private readonly HttpClient _http = httpClientFactory.CreateClient(UtilsServiceImpl.MediaMtxHttpClientName);
-  private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
+  private readonly ConcurrentDictionary<CacheKey, Entry> _entries = new();
 
   /// Returns null when the server's API could not be read — that is "no answer", not "no paths",
   /// and callers must not read it as "nobody is watching".
-  public async Task<IReadOnlyDictionary<string, MediaMtxPathState>?> GetAsync(string apiUrl, CancellationToken ct)
+  public async Task<IReadOnlyDictionary<string, MediaMtxPathState>?> GetAsync(
+    string apiUrl, string readUser, string readPass, CancellationToken ct)
   {
-    var entry = _entries.GetOrAdd(apiUrl, _ => new Entry());
+    var key = new CacheKey(apiUrl, readUser.Trim(), readPass);
+    var entry = _entries.GetOrAdd(key, _ => new Entry());
 
     var current = entry.Snapshot;
     if (current is not null && DateTime.UtcNow - current.FetchedAt < Ttl)
@@ -52,7 +57,7 @@ public sealed class MediaMtxPathSnapshotCache(
       if (current is not null && DateTime.UtcNow - current.FetchedAt < Ttl)
         return current.Paths;
 
-      var paths = await FetchAsync(apiUrl, ct);
+      var paths = await FetchAsync(key, ct);
       if (paths is null)
         return null;
 
@@ -66,7 +71,7 @@ public sealed class MediaMtxPathSnapshotCache(
   }
 
   private async Task<IReadOnlyDictionary<string, MediaMtxPathState>?> FetchAsync(
-    string apiUrl, CancellationToken ct)
+    CacheKey key, CancellationToken ct)
   {
     var result = new Dictionary<string, MediaMtxPathState>(StringComparer.Ordinal);
 
@@ -75,12 +80,19 @@ public sealed class MediaMtxPathSnapshotCache(
       var page = 0;
       while (true)
       {
-        var url = $"{apiUrl}/v3/paths/list?page={page}&itemsPerPage={ItemsPerPage}";
-        using var response = await _http.GetAsync(url, ct);
+        var url = $"{key.ApiUrl}/v3/paths/list?page={page}&itemsPerPage={ItemsPerPage}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        if (key.ReadUser.Length > 0)
+        {
+          var credentials = Convert.ToBase64String(
+            Encoding.UTF8.GetBytes($"{key.ReadUser}:{key.ReadPass}"));
+          request.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
+        }
+        using var response = await _http.SendAsync(request, ct);
         if (!response.IsSuccessStatusCode)
         {
           logger.LogWarning(
-            "MediaMTX paths/list on '{ApiUrl}' returned {StatusCode}", apiUrl, (int)response.StatusCode);
+            "MediaMTX paths/list on '{ApiUrl}' returned {StatusCode}", key.ApiUrl, (int)response.StatusCode);
           return null;
         }
 
@@ -116,7 +128,7 @@ public sealed class MediaMtxPathSnapshotCache(
     }
     catch (Exception ex)
     {
-      logger.LogWarning(ex, "MediaMTX paths/list on '{ApiUrl}' failed", apiUrl);
+      logger.LogWarning(ex, "MediaMTX paths/list on '{ApiUrl}' failed", key.ApiUrl);
       return null;
     }
   }

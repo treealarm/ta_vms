@@ -88,6 +88,10 @@ public record MediaMtxServerDto
   public string StunUrl    { get; init; } = string.Empty;
   /// <summary>Media server node this MediaMTX serves. Empty = shared, usable by any node.</summary>
   public string ServerId   { get; init; } = string.Empty;
+  public string PublishUser { get; init; } = string.Empty;
+  public string PublishPass { get; init; } = string.Empty;
+  public string ReadUser    { get; init; } = string.Empty;
+  public string ReadPass    { get; init; } = string.Empty;
 }
 
 public record CameraSetupDto

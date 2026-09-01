@@ -94,27 +94,48 @@ public class DbMigrator(
     }
   }
 
-  // Inserts a default Media Router from env var VMS_MTX_HOST if the table is empty.
-  // Optional — if VMS_MTX_HOST is not set, no seed is created.
+  // Inserts a default Media Router from VMS_MTX_HOST when the table is empty, then performs the
+  // one-time credential backfill used when upgrading from a schema that had no per-router auth.
+  // MediaMTX credential env vars are seed-only: runtime consumers read this row through VmsCfg.
   private static async Task SeedDefaultMediaMtxServerAsync(NpgsqlConnection connection, CancellationToken ct)
   {
     var host = Environment.GetEnvironmentVariable("VMS_MTX_HOST");
-    if (string.IsNullOrWhiteSpace(host))
+    var publishUser = (Environment.GetEnvironmentVariable("VMS_MEDIAMTX_PUBLISH_USER") ?? string.Empty).Trim();
+    var publishPass = Environment.GetEnvironmentVariable("VMS_MEDIAMTX_PUBLISH_PASS") ?? string.Empty;
+    var readUser = (Environment.GetEnvironmentVariable("VMS_MEDIAMTX_READ_USER") ?? string.Empty).Trim();
+    var readPass = Environment.GetEnvironmentVariable("VMS_MEDIAMTX_READ_PASS") ?? string.Empty;
+
+    if (!string.IsNullOrWhiteSpace(host))
+    {
+      await using var insertCmd = new NpgsqlCommand("""
+        INSERT INTO media_mtx_server (
+          name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url,
+          publish_user, publish_pass, read_user, read_pass)
+        SELECT 'Default', $1, '', 8554, 8889, 9997, 'stun:stun.l.google.com:19302',
+               $2, $3, $4, $5
+        WHERE NOT EXISTS (SELECT 1 FROM media_mtx_server);
+        """, connection);
+      insertCmd.Parameters.AddWithValue(host);
+      insertCmd.Parameters.AddWithValue(publishUser);
+      insertCmd.Parameters.AddWithValue(publishPass);
+      insertCmd.Parameters.AddWithValue(readUser);
+      insertCmd.Parameters.AddWithValue(readPass);
+      await insertCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    if (publishUser.Length == 0 && readUser.Length == 0)
       return;
 
-    await using var checkCmd = new NpgsqlCommand(
-      "SELECT COUNT(*) FROM media_mtx_server;", connection);
-    var count = (long)(await checkCmd.ExecuteScalarAsync(ct) ?? 0L);
-    if (count > 0)
-      return;
-
-    await using var insertCmd = new NpgsqlCommand("""
-      INSERT INTO media_mtx_server (name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url)
-      VALUES ('Default', $1, '', 8554, 8889, 9997, 'stun:stun.l.google.com:19302')
-      ON CONFLICT DO NOTHING;
+    await using var backfillCmd = new NpgsqlCommand("""
+      UPDATE media_mtx_server
+      SET publish_user = $1, publish_pass = $2, read_user = $3, read_pass = $4
+      WHERE name = 'Default' AND publish_user = '' AND read_user = '';
       """, connection);
-    insertCmd.Parameters.AddWithValue(host);
-    await insertCmd.ExecuteNonQueryAsync(ct);
+    backfillCmd.Parameters.AddWithValue(publishUser);
+    backfillCmd.Parameters.AddWithValue(publishPass);
+    backfillCmd.Parameters.AddWithValue(readUser);
+    backfillCmd.Parameters.AddWithValue(readPass);
+    await backfillCmd.ExecuteNonQueryAsync(ct);
   }
 
   // Inserts a default storage pointing at VMS_STORAGE_BASE_PATH if the table is empty,

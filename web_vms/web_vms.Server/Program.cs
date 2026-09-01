@@ -1,8 +1,6 @@
 using Dapr.Client;
 using KeycloakAdmin;
 using System.Net;
-using System.Net.Http.Headers;
-using System.Text;
 using Vms.Cfg;
 using Vms.Onvif;
 using Vms.Singleton;
@@ -75,16 +73,9 @@ builder.Services.AddSingleton<IHlsArchiveService, HlsArchiveService>();
 builder.Services.AddSingleton<IArchiveTsStreamer, ArchiveTsStreamer>();
 builder.Services.AddSingleton<StreamStateService>();
 
-// MediaMTX has no anonymous access: the gateway authenticates with the vms_read service account
-// on the browser's behalf. The user's JWT is checked by us and never travels to MediaMTX — these
-// are two separate credential worlds, and the browser never sees this one.
-var mtxBasic = Convert.ToBase64String(
-  Encoding.UTF8.GetBytes($"{Require("VMS_MEDIAMTX_READ_USER")}:{Require("VMS_MEDIAMTX_READ_PASS")}"));
-
 builder.Services.AddHttpClient(WhepProxyService.MediaMtxHttpClientName, c =>
 {
   c.Timeout = WhepProxyService.MediaMtxOfferTimeout;
-  c.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", mtxBasic);
 });
 
 // Sealing key for WHEP session tokens. Required rather than generated per process on purpose: a

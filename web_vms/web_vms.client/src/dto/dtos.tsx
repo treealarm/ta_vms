@@ -306,6 +306,10 @@ export type MediaMtxServerDto = {
   stunUrl: string
   /** Media server node this MediaMTX serves; empty = shared, usable by any node */
   serverId: string
+  publishUser: string
+  publishPass: string
+  readUser: string
+  readPass: string
 }
 
 /** Built client-side from servers + cameras for Settings tree */

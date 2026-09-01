@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Text;
 
 namespace web_vms;
 
@@ -91,13 +92,15 @@ public sealed class WhepProxyService(
 
     using var offerContent = new StreamContent(offerSdpBody);
     offerContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/sdp");
+    using var request = new HttpRequestMessage(HttpMethod.Post, targetUri) { Content = offerContent };
+    ApplyReadAuthorization(request, server);
 
     var client = _httpClientFactory.CreateClient(MediaMtxHttpClientName);
 
     HttpResponseMessage mtxResponse;
     try
     {
-      mtxResponse = await client.PostAsync(targetUri, offerContent, ct);
+      mtxResponse = await client.SendAsync(request, ct);
     }
     catch (HttpRequestException)
     {
@@ -160,6 +163,7 @@ public sealed class WhepProxyService(
 
     var client = _httpClientFactory.CreateClient(MediaMtxHttpClientName);
     using var request = new HttpRequestMessage(HttpMethod.Delete, sessionUri);
+    ApplyReadAuthorization(request, server);
 
     try
     {
@@ -183,4 +187,14 @@ public sealed class WhepProxyService(
     }
   }
 
+  private static void ApplyReadAuthorization(
+    HttpRequestMessage request, Types.Dto.MediaMtxServerDto server)
+  {
+    if (string.IsNullOrWhiteSpace(server.ReadUser))
+      return;
+
+    var credentials = Convert.ToBase64String(
+      Encoding.UTF8.GetBytes($"{server.ReadUser.Trim()}:{server.ReadPass}"));
+    request.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
+  }
 }
