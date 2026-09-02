@@ -31,6 +31,9 @@ export function buildWallPlaylistUrl({
     cameraId,
     from: new Date(seekMs - leadMs).toISOString(),
     to: new Date(seekMs + trailMs).toISOString(),
+    // `from` is lead-in so PDT mapping can look backward. START must be the playhead, or hls.js
+    // (and its bandwidth probe) load a minute of the wrong clip before the client can seek.
+    start: new Date(seekMs).toISOString(),
   })
   if (streamName) q.set('streamName', streamName)
 

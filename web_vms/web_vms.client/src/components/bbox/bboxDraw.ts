@@ -26,6 +26,8 @@ export type DrawableBox = {
   opacity: number
   /** Wall-clock instant printed under the label. */
   timeMs: number
+  /** Forensic preview: this is the appearance the operator searched for / selected. */
+  highlighted?: boolean
 }
 
 /** Where the video's image actually sits inside its element, once objectFit:contain is undone. */
@@ -53,6 +55,9 @@ export const KIND_LABEL: Record<string, string> = {
   license_plate: 'plate',
   animal: 'animal',
 }
+
+const HIGHLIGHT_STROKE = '#FFD54F'
+const HIGHLIGHT_INNER = '#FFFFFF'
 
 // Compact form of the re-id object_id for the overlay: ephemeral ids look like "obj-<guid>" (show a
 // short stable slice so a reappearance of the same object reads the same), enrolled ids like
@@ -87,23 +92,34 @@ export function drawBoxes(ctx: CanvasRenderingContext2D, layout: LetterboxLayout
   ctx.font = `${FONT_PX}px monospace`
   ctx.textBaseline = 'top'
 
-  for (const d of boxes) {
+  const hasHighlight = boxes.some((b) => b.highlighted)
+  const ordered = hasHighlight
+    ? [...boxes.filter((b) => !b.highlighted), ...boxes.filter((b) => b.highlighted)]
+    : boxes
+
+  for (const d of ordered) {
     const x = layout.offX + d.bboxX * layout.dispW
     const y = layout.offY + d.bboxY * layout.dispH
     const w = d.bboxWidth * layout.dispW
     const h = d.bboxHeight * layout.dispH
-    const color = trackColor(d.trackId)
+    const highlighted = Boolean(d.highlighted)
+    const color = highlighted ? HIGHLIGHT_STROKE : trackColor(d.trackId)
 
-    ctx.globalAlpha = d.opacity
+    ctx.globalAlpha = d.opacity * (hasHighlight && !highlighted ? 0.32 : 1)
     ctx.strokeStyle = color
-    ctx.lineWidth = 2
+    ctx.lineWidth = highlighted ? 4 : 2
     // Boxes the camera reported itself are dashed, so an operator can tell at a glance which
     // ones come from the CV detector and which from the camera's own analytics. Both keep the
     // per-track color, since a dashed and a solid box on the same object should still read as
-    // related rather than as two unrelated colors.
-    ctx.setLineDash(d.source === 'onvif' ? [6, 4] : [])
+    // related rather than as two unrelated colors. The forensic target stays solid gold.
+    ctx.setLineDash(!highlighted && d.source === 'onvif' ? [6, 4] : [])
     ctx.strokeRect(x, y, w, h)
     ctx.setLineDash([])
+    if (highlighted) {
+      ctx.lineWidth = 1.5
+      ctx.strokeStyle = HIGHLIGHT_INNER
+      ctx.strokeRect(x + 3, y + 2, Math.max(0, w - 6), Math.max(0, h - 4))
+    }
 
     const main = [
       // 'unknown' means the producer did not say what the object is — most often a camera that
@@ -128,11 +144,11 @@ export function drawBoxes(ctx: CanvasRenderingContext2D, layout: LetterboxLayout
     // Prefer the label above the box; if it would clip off the top, place it just inside.
     const labelY = y - boxH >= 0 ? y - boxH : y
 
-    ctx.fillStyle = 'rgba(0,0,0,0.6)'
+    ctx.fillStyle = highlighted ? 'rgba(255, 213, 79, 0.92)' : 'rgba(0,0,0,0.6)'
     ctx.fillRect(x, labelY, boxW, boxH)
-    ctx.fillStyle = color
+    ctx.fillStyle = highlighted ? '#111' : color
     ctx.fillText(main, x + PAD, labelY + PAD)
-    ctx.fillStyle = '#ddd'
+    ctx.fillStyle = highlighted ? '#333' : '#ddd'
     ctx.fillText(time, x + PAD, labelY + PAD + LINE)
   }
   ctx.globalAlpha = 1

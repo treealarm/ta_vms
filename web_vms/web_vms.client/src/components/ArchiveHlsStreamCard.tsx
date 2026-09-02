@@ -8,6 +8,7 @@ import RecordingsList, { type RecordingsListHandle } from './RecordingsList'
 import { useHlsPlayer } from '../hooks/useHlsPlayer'
 import { playlistWallBounds, wallMsAtMediaTime } from '../utils/playlistTime'
 import ArchiveBboxOverlay from './bbox/ArchiveBboxOverlay'
+import type { DrawableBox } from './bbox/bboxDraw'
 
 const W = '#fff'
 
@@ -50,12 +51,14 @@ type Props = {
    * overlay toggle but only this component knows which stretch of archive is on screen.
    */
   onWallBoundsChange?: (bounds: { startMs: number; endMs: number } | null) => void
+  onFindSimilar?: (box: DrawableBox) => void
 }
 
 export default function ArchiveHlsStreamCard({
   cameraId,
   bboxEnabled = false,
   onWallBoundsChange,
+  onFindSimilar,
 }: Props) {
   const { t } = useTranslation()
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -235,6 +238,7 @@ export default function ArchiveHlsStreamCard({
               streamName={currentStreamName}
               playlistMap={playlistMap}
               enabled={bboxEnabled}
+              onFindSimilar={onFindSimilar}
             />
           </Box>
         )}

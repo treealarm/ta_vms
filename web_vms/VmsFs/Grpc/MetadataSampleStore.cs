@@ -12,6 +12,13 @@ namespace VmsFs;
 /// clip that covers it (see the 0007 migration).
 /// </summary>
 /// <remarks>
+/// <para>
+/// Geometry is camera-scoped, not stream-scoped. Analytics often runs on a cheaper sub-stream while
+/// the archive records the main one — the same FOV, different encode. Samples therefore attach to
+/// every covering clip of the camera, and each chunk is keyed by that clip's stream so the archive
+/// player looking at the recording stream finds them. Requiring an exact match with the producer's
+/// stream name left the archive empty whenever those two streams differed.
+/// </para>
 /// Note the deliberate disagreement with the read path about what an open clip (end_ts IS NULL)
 /// spans. <c>ClipStorage</c> and the client both assume one minute, because a reader cannot tell a
 /// live writer from a dead one and must not advertise archive that may not exist. Ingest is in the
@@ -69,7 +76,7 @@ public sealed class MetadataSampleStore(
     [property: JsonPropertyName("t")] int T,
     [property: JsonPropertyName("b")] List<ChunkBox> B);
 
-  private sealed record CoveringClip(Guid ClipUid, DateTime StartTs, DateTime? EndTs);
+  private sealed record CoveringClip(Guid ClipUid, string StreamName, DateTime StartTs, DateTime? EndTs);
 
   public async Task PushAsync(PushMetadataSamplesRequest req, CancellationToken ct)
   {
@@ -78,7 +85,9 @@ public sealed class MetadataSampleStore(
     if (req.Source is not ("cv" or "onvif"))
       throw new ArgumentException($"unknown metadata source '{req.Source}'");
 
-    var streamName = req.StreamName ?? string.Empty;
+    // Hint only: the stream the detector watched. Attachment keys off covering clips of the camera,
+    // and each written chunk takes that clip's stream name (see class remarks).
+    var preferredStream = req.StreamName ?? string.Empty;
     var frames = req.Frames
       .Where(f => f.Ts is not null)
       .Select(f => (Ts: f.Ts.ToDateTime().ToUniversalTime(), Frame: f))
@@ -99,36 +108,49 @@ public sealed class MetadataSampleStore(
     var queryFrom = from - BoundaryGrace;
     var queryTo = to + BoundaryGrace;
 
-    // 'infinity' for an open clip, expressed in LINQ as "no end yet" — see the class remarks.
+    // Every covering clip of this camera, including other streams: analytics often runs on
+    // sub while archive is on main. Duplicate rows at the same wall time are coalesced on
+    // read (see GetAsync) so an unfiltered overlay does not see a zero-gap blink.
     var clips = (await db.Clips
         .Where(c => c.CameraId == req.CameraId
-                 && c.StreamName == streamName
                  && c.StartTs <= queryTo
                  && (c.EndTs == null || c.EndTs >= queryFrom))
         .OrderBy(c => c.StartTs)
-        .Select(c => new { c.ClipUid, c.StartTs, c.EndTs })
+        .Select(c => new { c.ClipUid, c.StreamName, c.StartTs, c.EndTs })
         .ToListAsync(ct))
-      .Select(c => new CoveringClip(c.ClipUid, c.StartTs, c.EndTs))
+      .Select(c => new CoveringClip(c.ClipUid, c.StreamName, c.StartTs, c.EndTs))
       .ToList();
 
-    // Only the newest open clip is a live writer; an older one with no end_ts was abandoned and is
-    // waiting for FinalizeDanglingClipsAsync, so it must not keep swallowing current samples.
-    var newestOpen = clips.Where(c => c.EndTs is null).MaxBy(c => c.StartTs);
+    // Newest-open is per stream: each stream has its own live writer. A single camera-wide pick
+    // would treat every other stream's open clip as abandoned and refuse current samples on it.
+    var byStream = clips
+      .GroupBy(c => c.StreamName)
+      .ToDictionary(
+        g => g.Key,
+        g =>
+        {
+          var list = g.OrderBy(c => c.StartTs).ToList();
+          return (List: list, NewestOpen: list.Where(c => c.EndTs is null).MaxBy(c => c.StartTs));
+        });
 
-    var byClip = new Dictionary<Guid, List<(DateTime Ts, MetadataFrame Frame)>>();
+    var byClip = new Dictionary<Guid, (CoveringClip Clip, List<(DateTime Ts, MetadataFrame Frame)> Frames)>();
     var dropped = 0;
 
     foreach (var f in frames)
     {
-      var clip = Resolve(clips, newestOpen, f.Ts);
-      if (clip is null)
+      var attached = false;
+      foreach (var (list, newestOpen) in byStream.Values)
       {
-        dropped++;
-        continue;
+        var clip = Resolve(list, newestOpen, f.Ts);
+        if (clip is null)
+          continue;
+        attached = true;
+        if (!byClip.TryGetValue(clip.ClipUid, out var entry))
+          byClip[clip.ClipUid] = entry = (clip, []);
+        entry.Frames.Add(f);
       }
-      if (!byClip.TryGetValue(clip.ClipUid, out var list))
-        byClip[clip.ClipUid] = list = [];
-      list.Add(f);
+      if (!attached)
+        dropped++;
     }
 
     if (dropped > 0)
@@ -136,7 +158,7 @@ public sealed class MetadataSampleStore(
       // One entry per batch, never per frame: this is the only way to answer "why are there no
       // boxes in the archive for this camera", and it must not become the loudest thing in the log.
       activityLog.Record(new FsActivityEntry(
-        Guid.Empty, "", req.CameraId, streamName, false, dropped, DateTime.UtcNow,
+        Guid.Empty, "", req.CameraId, preferredStream, false, dropped, DateTime.UtcNow,
         "metadata-dropped", null));
 
       // Also to the log, and not only to the in-memory activity ring: that ring dies with the
@@ -144,26 +166,28 @@ public sealed class MetadataSampleStore(
       // archive empty?") had no evidence left to answer it. Rate-limited per (camera, stream) so a
       // camera narrating outside every recording window cannot flood the log, and it names the
       // clips that were considered, since "no covering clip" is nearly always about the boundary.
-      var logKey = $"{req.CameraId}|{streamName}";
+      var logKey = $"{req.CameraId}|{preferredStream}";
       var now = DateTime.UtcNow;
       if (!_dropLoggedAt.TryGetValue(logKey, out var last) || now - last >= DropLogInterval)
       {
         _dropLoggedAt[logKey] = now;
         var considered = clips.Count == 0
           ? "none"
-          : string.Join(", ", clips.Take(4).Select(c => $"[{c.StartTs:HH:mm:ss.fff}..{(c.EndTs?.ToString("HH:mm:ss.fff") ?? "open")}]"));
+          : string.Join(", ", clips.Take(4).Select(c =>
+            $"{c.StreamName}[{c.StartTs:HH:mm:ss.fff}..{(c.EndTs?.ToString("HH:mm:ss.fff") ?? "open")}]"));
         logger.LogWarning(
-          "Metadata: dropped {Dropped}/{Total} frame(s) for camera '{CameraId}' stream '{StreamName}' "
+          "Metadata: dropped {Dropped}/{Total} frame(s) for camera '{CameraId}' (detector stream '{StreamName}') "
           + "covering {From:HH:mm:ss.fff}..{To:HH:mm:ss.fff} — no clip covers them (clips considered: {Considered})",
-          dropped, frames.Count, req.CameraId, streamName, from, to, considered);
+          dropped, frames.Count, req.CameraId, preferredStream, from, to, considered);
       }
     }
 
     if (byClip.Count == 0)
       return;
 
-    foreach (var (clipUid, list) in byClip)
+    foreach (var (_, entry) in byClip)
     {
+      var list = entry.Frames;
       var chunkFrom = list[0].Ts;
       var payload = list
         .Select(f => new ChunkFrame(
@@ -176,9 +200,11 @@ public sealed class MetadataSampleStore(
 
       db.MetadataChunks.Add(new DbClipMetadataChunk
       {
-        ClipUid = clipUid,
+        ClipUid = entry.Clip.ClipUid,
         CameraId = req.CameraId,
-        StreamName = streamName,
+        // The stream being archived — not the detector's. Archive playback and ROI both look up by
+        // the clip's stream; keeping the producer's name here is what made cross-stream boxes vanish.
+        StreamName = entry.Clip.StreamName,
         Source = req.Source,
         FromTs = chunkFrom,
         ToTs = list[^1].Ts,
@@ -258,6 +284,7 @@ public sealed class MetadataSampleStore(
       .ToListAsync(ct);
 
     var bySource = new Dictionary<string, List<MetadataFrame>>();
+    var seen = new HashSet<(string Source, long Ticks)>();
     foreach (var row in rows)
     {
       List<ChunkFrame>? parsed;
@@ -280,6 +307,11 @@ public sealed class MetadataSampleStore(
       {
         var ts = row.FromTs.AddMilliseconds(frame.T);
         if (ts < from || ts > to)
+          continue;
+        // Cross-stream ingest writes the same geometry onto every covering clip (analytics on
+        // sub, archive on main). An unfiltered read would otherwise return two frames at the
+        // same instant; interpolate.ts then sees a median gap of 0 and boxes blink.
+        if (!seen.Add((row.Source, ts.Ticks)))
           continue;
         var outFrame = new MetadataFrame { Ts = Timestamp.FromDateTime(DateTime.SpecifyKind(ts, DateTimeKind.Utc)) };
         foreach (var b in frame.B)

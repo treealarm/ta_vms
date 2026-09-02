@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useRef, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { Menu, MenuItem } from '@mui/material'
+import { useTranslation } from 'react-i18next'
 import { drawBoxes, letterboxLayout, type DrawableBox } from './bboxDraw'
 
 interface Props {
   videoRef: RefObject<HTMLVideoElement | null>
   boxes: DrawableBox[]
+  onFindSimilar?: (box: DrawableBox) => void
 }
 
 /**
@@ -13,9 +16,11 @@ interface Props {
  * or text layout, so the overlay stays cheap on the main thread and never makes the video stutter.
  * For the same reason the boxes are held in a ref — a resize-driven redraw must not need a render.
  */
-export default function BboxCanvas({ videoRef, boxes }: Props) {
+export default function BboxCanvas({ videoRef, boxes, onFindSimilar }: Props) {
+  const { t } = useTranslation()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const boxesRef = useRef(boxes)
+  const [menu, setMenu] = useState<{ x: number; y: number; box: DrawableBox } | null>(null)
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -65,17 +70,76 @@ export default function BboxCanvas({ videoRef, boxes }: Props) {
     }
   }, [videoRef, draw])
 
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !onFindSimilar) return
+
+    const hitTest = (clientX: number, clientY: number): DrawableBox | null => {
+      const rect = video.getBoundingClientRect()
+      const x = clientX - rect.left
+      const y = clientY - rect.top
+      const layout = letterboxLayout(video)
+      if (!layout) return null
+      // Walk from topmost (last drawn) to bottom.
+      for (let i = boxesRef.current.length - 1; i >= 0; i -= 1) {
+        const box = boxesRef.current[i]
+        const bx = layout.offX + box.bboxX * layout.dispW
+        const by = layout.offY + box.bboxY * layout.dispH
+        const bw = box.bboxWidth * layout.dispW
+        const bh = box.bboxHeight * layout.dispH
+        if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) return box
+      }
+      return null
+    }
+
+    const onVideoClick = (event: MouseEvent) => {
+      const box = hitTest(event.clientX, event.clientY)
+      if (!box) return
+      // Stop the monitor-slot focus handler / tile drag from seeing this click.
+      event.preventDefault()
+      event.stopPropagation()
+      setMenu({ x: event.clientX, y: event.clientY, box })
+    }
+
+    video.addEventListener('click', onVideoClick)
+    return () => video.removeEventListener('click', onVideoClick)
+  }, [videoRef, onFindSimilar])
+
   return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        position: 'absolute',
-        inset: 0,
-        width: '100%',
-        height: '100%',
-        pointerEvents: 'none',
-        zIndex: 3,
-      }}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          pointerEvents: 'none',
+          zIndex: 3,
+        }}
+      />
+      <Menu
+        open={menu !== null}
+        onClose={() => setMenu(null)}
+        anchorReference="anchorPosition"
+        anchorPosition={menu ? { top: menu.y, left: menu.x } : undefined}
+      >
+        <MenuItem
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            const box = menu?.box
+            setMenu(null)
+            if (!box || !onFindSimilar) return
+            // Defer past MUI Menu/Modal teardown — otherwise React Router 7 can keep the
+            // previous splat match (/operator/monitors) and the address bar never settles on
+            // Object findings.
+            queueMicrotask(() => onFindSimilar(box))
+          }}
+        >
+          {t('forensic.findSimilar')}
+        </MenuItem>
+      </Menu>
+    </>
   )
 }

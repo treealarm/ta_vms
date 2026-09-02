@@ -84,6 +84,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.SampleFps).HasColumnName("sample_fps");
       e.Property(x => x.AttachDebugCrops).HasColumnName("attach_debug_crops");
       e.Property(x => x.TimeoutSeconds).HasColumnName("timeout_seconds");
+      e.Property(x => x.StoreEmbeddings).HasColumnName("store_embeddings");
     });
 
     modelBuilder.Entity<DbRecordingSchedule>(e =>
@@ -225,6 +226,8 @@ public sealed class DbAnalyticsWatch
   public bool AttachDebugCrops { get; set; }
   /// Seconds of recording kept after the last detection before the event closes.
   public int TimeoutSeconds { get; set; } = 10;
+  /// Persist this camera's detection embeddings for forensic search.
+  public bool StoreEmbeddings { get; set; }
 }
 
 public sealed class DbRecordingSchedule

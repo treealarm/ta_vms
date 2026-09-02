@@ -249,7 +249,8 @@ CREATE TABLE analytics_watch (
   min_confidence     real    NOT NULL DEFAULT 0.5,
   sample_fps         integer NOT NULL DEFAULT 1,
   attach_debug_crops boolean NOT NULL DEFAULT false,
-  timeout_seconds    integer NOT NULL DEFAULT 10
+  timeout_seconds    integer NOT NULL DEFAULT 10,
+  store_embeddings   boolean NOT NULL DEFAULT false
 );
 
 -- Per-user camera access. username is a Keycloak preferred_username — the same identity string

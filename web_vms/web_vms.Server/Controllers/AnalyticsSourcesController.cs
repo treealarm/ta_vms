@@ -66,6 +66,7 @@ public class AnalyticsSourcesController(
       SampleFps        = src.Cv.SampleFps,
       TimeoutSeconds   = src.Cv.TimeoutSeconds,
       AttachDebugCrops = src.Cv.AttachDebugCrops,
+      StoreEmbeddings  = src.Cv.StoreEmbeddings,
     },
     OnvifMetadata = new OnvifMetadataSourceDto
     {

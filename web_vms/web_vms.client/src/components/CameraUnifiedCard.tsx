@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { patchSlot, selectSlotUi } from '../store/monitorUiSlice'
 import {
   alpha,
@@ -34,6 +35,7 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import SpeedIcon from '@mui/icons-material/Speed'
 import {
   effectiveStreamMode,
+  type MonitorKind,
   recordableStreams,
   streamSize,
   type CameraSetupDto,
@@ -56,6 +58,7 @@ import { useAppDispatch, useAppSelector } from '../store'
 import { fetchCameraState, setArmedWithPrealarmBaseline, setCameraContinuousRecording } from '../store/liveSlice'
 import { setMonitorSlotStream } from '../store/monitorsSlice'
 import { copyToClipboard } from '../utils/copyToClipboard'
+import type { DrawableBox } from './bbox/bboxDraw'
 
 const STRIP_W = 28
 const PANEL_W = 182
@@ -91,6 +94,7 @@ const CAPTION_SX = {
 
 type Props = {
   camera: CameraSetupDto
+  monitorKind?: MonitorKind
   slotKey?: string
   /** Set when the card sits in a monitor wall; enables wall-wide playback. */
   monitorId?: string
@@ -112,6 +116,7 @@ type Props = {
 
 export default function CameraUnifiedCard({
   camera,
+  monitorKind = 'wall',
   slotKey,
   monitorId,
   slotIndex,
@@ -123,6 +128,7 @@ export default function CameraUnifiedCard({
   onToggleGridSolo,
 }: Props) {
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
   const cameraState = useAppSelector((s) => s.live.cameraStatesById[camera.cameraId])
   // Hidden whenever Square integration isn't configured — keeps standalone mode unchanged.
   const squareFrontendOrigin = useAppSelector((s) => s.frontendConfig.squareFrontendOrigin)
@@ -171,6 +177,7 @@ export default function CameraUnifiedCard({
   const [onvifRtsp, setOnvifRtsp] = useState('')
   const [pendingArmed, setPendingArmed] = useState<boolean | null>(null)
   const [copied, setCopied] = useState(false)
+  const [similarError, setSimilarError] = useState<string | null>(null)
 
   const merged: CameraSetupDto = { ...camera, ...(cameraState ?? {}) }
 
@@ -418,6 +425,29 @@ export default function CameraUnifiedCard({
   const [shownWhepUrl, setShownWhepUrl] = useState<string | null>(null)
   const shownStreamObj =
     (merged.streams ?? []).find((s) => s.whepUrl && s.whepUrl === shownWhepUrl) ?? activeStreamObj
+  const searchableKinds = useMemo(
+    () => new Set(['person', 'face', 'vehicle', 'license_plate']),
+    []
+  )
+
+  const openFindSimilar = (box: DrawableBox) => {
+    if (!searchableKinds.has(box.kind)) {
+      setSimilarError(t('forensic.kindUnavailable'))
+      return
+    }
+    const probeTs = Number.isFinite(box.timeMs) ? new Date(box.timeMs).toISOString() : new Date().toISOString()
+    const params = new URLSearchParams({
+      cameraId: camera.cameraId,
+      trackId: String(box.trackId),
+      ts: probeTs,
+      kind: box.kind,
+      from: monitorKind === 'investigation' ? 'investigations' : 'monitors',
+    })
+    if (monitorId) params.set('monitorId', monitorId)
+    // Absolute pathname+search so RR7 splat relative resolution cannot rewrite this into a
+    // nested monitors/... path.
+    navigate({ pathname: '/operator/object-findings', search: `?${params.toString()}` })
+  }
 
   // Per-stream settings need an unambiguous stream. With one candidate Auto is unambiguous, so it
   // is only a lock when there is actually something to choose between.
@@ -937,6 +967,7 @@ export default function CameraUnifiedCard({
               coverageWindowStartMs={coverageWindowStartMs ?? 0}
               coverageWindowWidthMs={coverageWindowWidthMs ?? 0}
               bboxEnabled={bboxOpen && archiveHasBoxes}
+              onFindSimilar={openFindSimilar}
             />
           </Box>
         ) : (
@@ -948,6 +979,7 @@ export default function CameraUnifiedCard({
                 cameraId={camera.cameraId}
                 bboxEnabled={bboxOpen && hasBoxSource}
                 onShownUrlChange={setShownWhepUrl}
+                onFindSimilar={openFindSimilar}
               />
             )}
             {mode === 'archive' && (
@@ -956,6 +988,7 @@ export default function CameraUnifiedCard({
                   cameraId={camera.cameraId}
                   bboxEnabled={bboxOpen && archiveHasBoxes}
                   onWallBoundsChange={setCardArchiveBounds}
+                  onFindSimilar={openFindSimilar}
                 />
               </Box>
             )}
@@ -983,6 +1016,16 @@ export default function CameraUnifiedCard({
       >
         <Alert severity="error" variant="filled" onClose={() => setRecordingError(null)}>
           {recordingError}
+        </Alert>
+      </Snackbar>
+      <Snackbar
+        open={similarError !== null}
+        onClose={() => setSimilarError(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ position: 'absolute' }}
+      >
+        <Alert severity="warning" variant="filled" onClose={() => setSimilarError(null)}>
+          {similarError}
         </Alert>
       </Snackbar>
     </Card>

@@ -24,4 +24,11 @@ public interface IAnalyticsWorkerClient
   Task StopWatchAsync(string watchId, CancellationToken ct);
 
   IAsyncEnumerable<DetectionEvent> StreamDetectionsAsync(CancellationToken ct);
+
+  Task<EmbedImageResponse> EmbedImageAsync(
+    byte[] jpeg,
+    DetectionKind kind,
+    BoundingBox? bbox,
+    bool detectFirst,
+    CancellationToken ct);
 }

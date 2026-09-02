@@ -37,6 +37,7 @@ const EMPTY_WATCH: AnalyticsWatchDto = {
   armed: false,
   attachDebugCrops: false,
   timeoutSeconds: 10,
+  storeEmbeddings: false,
 }
 
 type FormProps = {
@@ -71,6 +72,7 @@ function AnalyticsWatchForm({ ref, watch, allCameras, takenCameraIds, onSaved, o
     || form.sampleFps !== snap.sampleFps
     || form.attachDebugCrops !== snap.attachDebugCrops
     || form.timeoutSeconds !== snap.timeoutSeconds
+    || form.storeEmbeddings !== snap.storeEmbeddings
   )
 
   const valid = Boolean(form.cameraId && form.streamName && form.classes.length > 0)
@@ -266,6 +268,20 @@ function AnalyticsWatchForm({ ref, watch, allCameras, takenCameraIds, onSaved, o
             }
             label={<Typography variant="body2">{t('analytics.debugCrops')}</Typography>}
           />
+
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={form.storeEmbeddings}
+                onChange={(e) => setField('storeEmbeddings', e.target.checked)}
+              />
+            }
+            label={<Typography variant="body2">{t('analytics.storeEmbeddings')}</Typography>}
+          />
+          <Typography variant="caption" color="text.secondary">
+            {t('analytics.storeEmbeddingsHint')}
+          </Typography>
 
           {error && (
             <Typography variant="caption" color="error">{error}</Typography>

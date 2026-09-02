@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Box, Chip, Dialog, Divider, List, ListItem, Stack, Typography } from '@mui/material'
+import { Box, Button, Chip, Dialog, Divider, List, ListItem, Stack, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 
 import type { AnalyticsDetectionDto, EpisodeDto, RecordingDto } from '../dto/dtos'
 import { getErrorMessage } from '../store/api'
@@ -31,11 +32,12 @@ const cropSx = { height: 64, width: 96, objectFit: 'contain', borderRadius: 0.5,
 // One detection row. Its crop is fetched only once the row scrolls into view (a long event can have
 // 100+ detections; eagerly fetching every crop is ~0.15s each and floods the connection). onRequest
 // is idempotent and deduped by the parent.
-function DetectionRow({ d, cropUrl, onRequest, onZoom }: {
+function DetectionRow({ d, cropUrl, onRequest, onZoom, onFindSimilar }: {
   d: AnalyticsDetectionDto
   cropUrl: string | undefined
   onRequest: (id: number) => void
   onZoom: (id: number) => void
+  onFindSimilar: (detection: AnalyticsDetectionDto) => void
 }) {
   const { t } = useTranslation()
   const ref = useRef<HTMLDivElement>(null)
@@ -69,9 +71,12 @@ function DetectionRow({ d, cropUrl, onRequest, onZoom }: {
           </Typography>
           {d.plateText && <Chip label={d.plateText} size="small" color="primary" variant="outlined" />}
         </Stack>
-        <Typography variant="caption" color="text.secondary">
-          {new Date(d.detectedAt).toLocaleTimeString()}
-        </Typography>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Typography variant="caption" color="text.secondary">
+            {new Date(d.detectedAt).toLocaleTimeString()}
+          </Typography>
+          <Button size="small" onClick={() => onFindSimilar(d)}>{t('forensic.findSimilar')}</Button>
+        </Stack>
       </Stack>
     </Stack>
   )
@@ -79,6 +84,7 @@ function DetectionRow({ d, cropUrl, onRequest, onZoom }: {
 
 function DetectionsBlock({ eventUuid }: { eventUuid: string }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [detections, setDetections] = useState<AnalyticsDetectionDto[]>([])
   // <img src="/api/..."> can't carry the Bearer token that the global fetch wrapper adds, so crops
   // are fetched (lazily, per DetectionRow) into blob URLs shared by the thumbnail and zoom dialog.
@@ -129,7 +135,17 @@ function DetectionsBlock({ eventUuid }: { eventUuid: string }) {
         </Typography>
         <Stack spacing={1}>
           {detections.map((d) => (
-            <DetectionRow key={d.id} d={d} cropUrl={cropUrls[d.id]} onRequest={requestCrop} onZoom={setZoom} />
+            <DetectionRow
+              key={d.id}
+              d={d}
+              cropUrl={cropUrls[d.id]}
+              onRequest={requestCrop}
+              onZoom={setZoom}
+              onFindSimilar={(det) => navigate({
+                pathname: '/operator/object-findings',
+                search: `?detectionId=${det.id}&probeTs=${encodeURIComponent(det.detectedAt)}&from=events`,
+              })}
+            />
           ))}
         </Stack>
       </Box>

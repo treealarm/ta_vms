@@ -11,6 +11,8 @@ service VmsAnalyticsService {
   rpc ListDetections(ListDetectionsRequest) returns (ListDetectionsResponse);
   // Crop JPEG of a detection, read from the storage volume it was saved to.
   rpc GetDetectionCrop(GetDetectionCropRequest) returns (GetDetectionCropResponse);
+  // Multi-camera forensic search by appearance similarity. Exactly one probe must be set.
+  rpc SearchSimilarDetections(SearchSimilarDetectionsRequest) returns (SearchSimilarDetectionsResponse);
   // Debug: recent detection events from the in-memory ring buffer (mirrors VmsFs GetFsActivity) —
   // includes bbox and, when the watch has attach_debug_crops enabled, a JPEG of the object.
   rpc GetAnalyticsActivity(GetAnalyticsActivityRequest) returns (GetAnalyticsActivityResponse);
@@ -88,6 +90,46 @@ message GetDetectionCropResponse {
   // Owning camera, so the gateway can apply per-camera permissions without a second lookup.
   // Empty when the detection id is unknown.
   string camera_id = 2;
+}
+
+message DetectionIdProbe {
+  int64 detection_id = 1;
+}
+
+message ArchiveTrackProbe {
+  string camera_id = 1;
+  int64 track_id = 2;
+  google.protobuf.Timestamp ts = 3;
+  optional DetectionKind kind = 4;
+}
+
+message ImageProbe {
+  bytes jpeg = 1;
+  DetectionKind kind = 2;
+  optional BoundingBox bbox = 3;
+  bool detect_first = 4;
+}
+
+message SearchSimilarDetectionsRequest {
+  oneof probe {
+    DetectionIdProbe detection_probe = 1;
+    ArchiveTrackProbe archive_probe = 2;
+    ImageProbe image_probe = 3;
+  }
+  google.protobuf.Timestamp from_ts = 10;
+  google.protobuf.Timestamp to_ts = 11;
+  optional float min_score = 12;
+  uint32 limit = 13;
+  repeated string camera_ids = 14;
+}
+
+message SimilarDetectionHit {
+  Detection detection = 1;
+  float score = 2;
+}
+
+message SearchSimilarDetectionsResponse {
+  repeated SimilarDetectionHit hits = 1;
 }
 
 message BoundingBox {

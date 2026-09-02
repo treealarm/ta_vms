@@ -4,6 +4,7 @@ import type { PlaylistMap } from '../../utils/playlistTime'
 import { wallMsAtMediaTime } from '../../utils/playlistTime'
 import BboxCanvas from './BboxCanvas'
 import { boxesAt } from './interpolate'
+import type { DrawableBox } from './bboxDraw'
 
 interface Props {
   videoRef: RefObject<HTMLVideoElement | null>
@@ -11,6 +12,10 @@ interface Props {
   streamName?: string
   playlistMap: PlaylistMap | null
   enabled: boolean
+  onFindSimilar?: (box: DrawableBox) => void
+  /** Appearance the operator is inspecting — gold box, others dimmed. */
+  highlightTrackId?: number | null
+  highlightKind?: string | null
 }
 
 /**
@@ -21,7 +26,16 @@ interface Props {
  * cell currently *drives* the wall; a following cell is showing a slightly different moment and
  * would get somebody else's boxes.
  */
-export default function ArchiveBboxOverlay({ videoRef, cameraId, streamName, playlistMap, enabled }: Props) {
+export default function ArchiveBboxOverlay({
+  videoRef,
+  cameraId,
+  streamName,
+  playlistMap,
+  enabled,
+  onFindSimilar,
+  highlightTrackId,
+  highlightKind,
+}: Props) {
   const [wallMs, setWallMs] = useState<number | null>(null)
 
   useEffect(() => {
@@ -75,5 +89,11 @@ export default function ArchiveBboxOverlay({ videoRef, cameraId, streamName, pla
   if (!enabled) return null
 
   const boxes = activeWallMs === null ? [] : boxesAt(frames, activeWallMs)
-  return <BboxCanvas videoRef={videoRef} boxes={boxes} />
+  const marked = highlightTrackId == null || !highlightKind
+    ? boxes
+    : boxes.map((b) => ({
+      ...b,
+      highlighted: b.trackId === highlightTrackId && b.kind === highlightKind,
+    }))
+  return <BboxCanvas videoRef={videoRef} boxes={marked} onFindSimilar={onFindSimilar} />
 }

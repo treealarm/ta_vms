@@ -618,6 +618,8 @@ message AnalyticsWatch {
   // Seconds of recording kept after the last detection before the retention event closes itself.
   // Mirrors OnvifAlarmFilter.timeout_seconds — the same knob for the analytics source.
   uint32 timeout_seconds  = 9;
+  // Persist this camera's detection embeddings for forensic similarity search.
+  bool   store_embeddings = 10;
 }
 
 message ListAnalyticsWatchesRequest {

@@ -12,6 +12,7 @@ import { useWallFollow } from '../../hooks/useWallFollow'
 import { useWallCoverage } from '../../hooks/useWallCoverage'
 import { buildWallPlaylistUrl, wallPlaylistRequestBounds } from '../../utils/playlistUrl'
 import { mediaTimeAtOrAfterWallMs, wallMsAtMediaTime } from '../../utils/playlistTime'
+import type { DrawableBox } from '../bbox/bboxDraw'
 
 // Resolution of the shared coverage query; must match what WallTimeline asks for so both hit the
 // same cache entry.
@@ -29,6 +30,7 @@ type Props = {
   coverageWindowWidthMs: number
   /** Whether the operator asked for analytics boxes over this cell. */
   bboxEnabled?: boolean
+  onFindSimilar?: (box: DrawableBox) => void
 }
 
 /**
@@ -47,6 +49,7 @@ export default function ArchiveWallPlayer({
   coverageWindowStartMs,
   coverageWindowWidthMs,
   bboxEnabled = false,
+  onFindSimilar,
 }: Props) {
   const { t } = useTranslation()
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -104,10 +107,9 @@ export default function ArchiveWallPlayer({
 
   // Land exactly on the requested instant.
   //
-  // The playlist is fetched with a minute of lead-in for context, and the server's #EXT-X-START
-  // points at the start of that window — so left alone the player opens up to a minute early,
-  // typically at the beginning of whatever clip covers the lead-in. PDT is the only exact mapping
-  // we have, so the position is applied here whenever the playlist is (re)built.
+  // The playlist still includes a minute of lead-in so PDT can map times behind the playhead.
+  // #EXT-X-START is the seek itself (see playlistUrl `start=`), so this is a trim inside the
+  // already-loaded fragment when PRECISE=YES is honoured — not a second network round-trip.
   //
   // Keyed on the ANCHOR, not on the committed seek: a rebuild keeps the same wall.seekMs but loads
   // a playlist around a later instant, and a guard that only tracked the seek would decline to
@@ -194,6 +196,7 @@ export default function ArchiveWallPlayer({
         streamName={streamName}
         playlistMap={playlistMap}
         enabled={bboxEnabled}
+        onFindSimilar={onFindSimilar}
       />
 
       {/* Which cell you are hearing is otherwise invisible — the clock owner can move between cells

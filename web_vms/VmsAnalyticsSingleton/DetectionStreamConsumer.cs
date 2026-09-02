@@ -27,6 +27,7 @@ public sealed class DetectionStreamConsumer(
   IObjectIdentityResolver objectResolver,
   ObjectSessionService sessions,
   VmsLog.EntityStatePublisher entityStatePublisher,
+  RecentLiveEmbeddingCache recentEmbeddings,
   ILogger<DetectionStreamConsumer> logger) : BackgroundService
 {
   protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -82,6 +83,11 @@ public sealed class DetectionStreamConsumer(
       return;
 
     var detectedAt = evt.DetectedAt.ToDateTime();
+    var kind = DetectionKinds.ToDbString(evt.Kind);
+
+    // Unlike persistence below, this is deliberately before debounce: every box shown live must be
+    // immediately usable as a vector probe, including a frame for which no DB row is minted.
+    recentEmbeddings.Offer(cameraId, evt.TrackId, kind, detectedAt, evt.Embedding);
 
     // Two decisions, not one. Whether this detection is worth storing at all is the debounce's
     // business -- one row per track and kind per interval, rather than one per sampled frame.
@@ -101,7 +107,7 @@ public sealed class DetectionStreamConsumer(
     // Debug ring buffer sees every above-threshold event, including debounced ones — that's the
     // point of the panel: to show what the detector actually saw, not just what got stored.
     var activityEntry = new AnalyticsActivityEntry(
-      detectedAt, cameraId, evt.TrackId, DetectionKinds.ToDbString(evt.Kind), evt.Confidence,
+      detectedAt, cameraId, evt.TrackId, kind, evt.Confidence,
       evt.Bbox?.X ?? 0, evt.Bbox?.Y ?? 0, evt.Bbox?.Width ?? 0, evt.Bbox?.Height ?? 0,
       evt.HasRecognizedText ? evt.RecognizedText : null,
       evt.CropJpeg.ToByteArray(),
@@ -114,7 +120,7 @@ public sealed class DetectionStreamConsumer(
     // read-only peek: it appears on the box once re-id has resolved this track (via a persisted
     // detection), letting the operator see whether a reappearance is the same physical object.
     liveBroadcaster.Publish(new LiveDetection(
-      cameraId, evt.TrackId, DetectionKinds.ToDbString(evt.Kind), evt.Confidence,
+      cameraId, evt.TrackId, kind, evt.Confidence,
       evt.Bbox?.X ?? 0, evt.Bbox?.Y ?? 0, evt.Bbox?.Width ?? 0, evt.Bbox?.Height ?? 0,
       detectedAt, evt.HasRecognizedText ? evt.RecognizedText : null, persisted,
       objectResolver.Peek(cameraId, evt.TrackId), Source: "cv"));
@@ -125,7 +131,7 @@ public sealed class DetectionStreamConsumer(
     // seconds, which is not an overlay.
     metadataWriter.Offer(new MetadataSample(
       cameraId, watch.StreamName ?? string.Empty, "cv", detectedAt,
-      evt.TrackId, DetectionKinds.ToDbString(evt.Kind), evt.Confidence,
+      evt.TrackId, kind, evt.Confidence,
       evt.Bbox?.X ?? 0, evt.Bbox?.Y ?? 0, evt.Bbox?.Width ?? 0, evt.Bbox?.Height ?? 0,
       Label: null,
       PlateText: evt.HasRecognizedText ? evt.RecognizedText : null));
@@ -166,7 +172,9 @@ public sealed class DetectionStreamConsumer(
     // isn't retained either, so this detection has no episode to belong to. We still persist it (with
     // its event_id group) so the row isn't lost — it just can't appear in the per-episode details
     // panel, which is correct: there is no episode. The next successful detection opens one.
-    await PersistAsync(cameraId, evt, detectedAt, eventId, eventUuid, objectId, storageId, cropPath, ct);
+    await PersistAsync(
+      cameraId, evt, detectedAt, eventId, eventUuid, objectId, storageId, cropPath,
+      watch.StoreEmbeddings, ct);
 
     entityStatePublisher.Publish("detection", $"{cameraId}/{evt.TrackId}", new
     {
@@ -220,10 +228,11 @@ public sealed class DetectionStreamConsumer(
 
   private async Task PersistAsync(
     string cameraId, DetectionEvent evt, DateTime detectedAt,
-    string eventId, Guid? eventUuid, string objectId, string? storageId, string? cropPath, CancellationToken ct)
+    string eventId, Guid? eventUuid, string objectId, string? storageId, string? cropPath,
+    bool storeEmbeddings, CancellationToken ct)
   {
     await using var db = await dbFactory.CreateDbContextAsync(ct);
-    db.Detections.Add(new DbDetection
+    var row = new DbDetection
     {
       CameraId = cameraId,
       TrackId = evt.TrackId,
@@ -236,6 +245,19 @@ public sealed class DetectionStreamConsumer(
       StorageId = storageId,
       CropPath = cropPath,
       PlateText = evt.HasRecognizedText ? evt.RecognizedText : null,
+    };
+    db.Detections.Add(row);
+    await db.SaveChangesAsync(ct);
+
+    if (!storeEmbeddings || !EmbeddingCodec.TryEncodeNormalized(evt.Embedding, out var bytes, out var dim))
+      return;
+
+    db.DetectionEmbeddings.Add(new DbDetectionEmbedding
+    {
+      DetectionId = row.Id,
+      Kind = row.Kind,
+      Dim = dim,
+      Embedding = bytes,
     });
     await db.SaveChangesAsync(ct);
   }

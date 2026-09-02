@@ -57,6 +57,7 @@ if (workerAppIds.Length > 0)
 builder.Services.AddSingleton(_ => new DetectionDebouncer(TimeSpan.FromSeconds(debounceSeconds)));
 builder.Services.AddSingleton<AnalyticsActivityLog>();
 builder.Services.AddSingleton<LiveDetectionBroadcaster>();
+builder.Services.AddSingleton<RecentLiveEmbeddingCache>();
 // ONVIF events for the monitor. Registered unconditionally, like the broadcaster above: it needs no
 // analytics worker, only a camera with an event subscription.
 builder.Services.AddSingleton<LiveEventBroadcaster>();

@@ -1,6 +1,7 @@
 import { Box } from '@mui/material'
 import React, { useEffect, useRef, useState } from 'react'
 import CameraStream from './CameraStream'
+import type { DrawableBox } from './bbox/bboxDraw'
 
 /**
  * How long a stream may warm up out of sight before it is shown regardless. If it never delivers,
@@ -50,6 +51,7 @@ interface Props {
    * and not the target, or it describes a stream the viewer cannot see yet.
    */
   onShownUrlChange?: (url: string) => void
+  onFindSimilar?: (box: DrawableBox) => void
 }
 
 /**
@@ -63,7 +65,14 @@ interface Props {
  * instance already owns exactly one WHEP session and closes it on unmount, which is the part that
  * took real effort to get right and is not worth re-deriving here.
  */
-const SeamlessCameraStream: React.FC<Props> = ({ whepUrl, cameraId, bboxEnabled = false, stunUrl, onShownUrlChange }) => {
+const SeamlessCameraStream: React.FC<Props> = ({
+  whepUrl,
+  cameraId,
+  bboxEnabled = false,
+  stunUrl,
+  onShownUrlChange,
+  onFindSimilar,
+}) => {
   const [visibleUrl, setVisibleUrl] = useState(whepUrl)
   const [warmingUrl, setWarmingUrl] = useState<string | null>(null)
   const holdsSlotRef = useRef(false)
@@ -147,6 +156,7 @@ const SeamlessCameraStream: React.FC<Props> = ({ whepUrl, cameraId, bboxEnabled 
               cameraId={shown ? cameraId : undefined}
               bboxEnabled={shown && bboxEnabled}
               onFirstFrames={shown ? undefined : () => promote(url)}
+              onFindSimilar={shown ? onFindSimilar : undefined}
             />
           </Box>
         )

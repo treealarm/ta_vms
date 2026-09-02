@@ -14,7 +14,7 @@ public sealed class HlsPlaylistBuilder
     _sb.Append($"#EXT-X-TARGETDURATION:{targetDuration}").Append(Lf);
     _sb.Append("#EXT-X-MEDIA-SEQUENCE:0").Append(Lf);
     if (startOffset.HasValue)
-      _sb.Append($"#EXT-X-START:TIME-OFFSET={startOffset.Value:F3}").Append(Lf);
+      _sb.Append($"#EXT-X-START:TIME-OFFSET={startOffset.Value:F3},PRECISE=YES").Append(Lf);
   }
 
   public void AppendDiscontinuity() => _sb.Append("#EXT-X-DISCONTINUITY").Append(Lf);

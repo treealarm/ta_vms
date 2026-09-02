@@ -35,6 +35,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VmsSingleton", "VmsSingleto
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VmsSquareSingleton", "VmsSquareSingleton\VmsSquareSingleton.csproj", "{17D949D8-FAF4-477E-8DD7-F35B5AD26209}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VmsAnalyticsSingleton.Tests", "VmsAnalyticsSingleton.Tests\VmsAnalyticsSingleton.Tests.csproj", "{9F4BF745-45B7-402C-A053-AD5B69294A4A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -235,6 +237,18 @@ Global
 		{17D949D8-FAF4-477E-8DD7-F35B5AD26209}.Release|x64.Build.0 = Release|Any CPU
 		{17D949D8-FAF4-477E-8DD7-F35B5AD26209}.Release|x86.ActiveCfg = Release|Any CPU
 		{17D949D8-FAF4-477E-8DD7-F35B5AD26209}.Release|x86.Build.0 = Release|Any CPU
+		{9F4BF745-45B7-402C-A053-AD5B69294A4A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9F4BF745-45B7-402C-A053-AD5B69294A4A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9F4BF745-45B7-402C-A053-AD5B69294A4A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{9F4BF745-45B7-402C-A053-AD5B69294A4A}.Debug|x64.Build.0 = Debug|Any CPU
+		{9F4BF745-45B7-402C-A053-AD5B69294A4A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{9F4BF745-45B7-402C-A053-AD5B69294A4A}.Debug|x86.Build.0 = Debug|Any CPU
+		{9F4BF745-45B7-402C-A053-AD5B69294A4A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9F4BF745-45B7-402C-A053-AD5B69294A4A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9F4BF745-45B7-402C-A053-AD5B69294A4A}.Release|x64.ActiveCfg = Release|Any CPU
+		{9F4BF745-45B7-402C-A053-AD5B69294A4A}.Release|x64.Build.0 = Release|Any CPU
+		{9F4BF745-45B7-402C-A053-AD5B69294A4A}.Release|x86.ActiveCfg = Release|Any CPU
+		{9F4BF745-45B7-402C-A053-AD5B69294A4A}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

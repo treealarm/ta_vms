@@ -7,6 +7,7 @@ import type { DrawableBox } from './bbox/bboxDraw'
 interface Props {
   videoRef: RefObject<HTMLVideoElement | null>
   cameraId: string
+  onFindSimilar?: (box: DrawableBox) => void
 }
 
 /** How often boxes are re-evaluated so an ageing one fades and then disappears on time. */
@@ -19,7 +20,7 @@ const FADE_TICK_MS = 120
  * the boxes do not move between samples (see liveBoxes.ts), so a per-frame loop would repaint an
  * unchanged canvas for every cell of the wall.
  */
-export default function BboxOverlay({ videoRef, cameraId }: Props) {
+export default function BboxOverlay({ videoRef, cameraId, onFindSimilar }: Props) {
   const [boxes, setBoxes] = useState<DrawableBox[]>([])
 
   useEffect(() => {
@@ -38,5 +39,5 @@ export default function BboxOverlay({ videoRef, cameraId }: Props) {
     }
   }, [cameraId])
 
-  return <BboxCanvas videoRef={videoRef} boxes={boxes} />
+  return <BboxCanvas videoRef={videoRef} boxes={boxes} onFindSimilar={onFindSimilar} />
 }

@@ -215,8 +215,17 @@ export default function App() {
               } />
             ) : (
               <>
-                <Route path="/operator/*" element={<RequireRole><OperatorView /></RequireRole>} />
-                <Route path="/admin/*" element={<RequireRole role="admin"><AdminView /></RequireRole>} />
+                {/* RR7 splat layout: parent path + child splat so descendant <Routes> rematch
+                    (Find similar → /operator/object-findings). `index` is required too: without
+                    it `/admin` and `/operator` have no child and render a blank page. */}
+                <Route path="/operator">
+                  <Route index element={<RequireRole><OperatorView /></RequireRole>} />
+                  <Route path="*" element={<RequireRole><OperatorView /></RequireRole>} />
+                </Route>
+                <Route path="/admin">
+                  <Route index element={<RequireRole role="admin"><AdminView /></RequireRole>} />
+                  <Route path="*" element={<RequireRole role="admin"><AdminView /></RequireRole>} />
+                </Route>
                 <Route path="*" element={<Navigate to="/operator/monitors" replace />} />
               </>
             )}

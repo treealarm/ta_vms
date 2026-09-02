@@ -5,6 +5,7 @@ namespace VmsAnalyticsSingleton;
 public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> options) : DbContext(options)
 {
   public DbSet<DbDetection> Detections { get; set; }
+  public DbSet<DbDetectionEmbedding> DetectionEmbeddings { get; set; }
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
@@ -29,6 +30,17 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
       e.HasIndex(x => x.EventUuid);
       e.HasIndex(x => x.ObjectId);
     });
+
+    modelBuilder.Entity<DbDetectionEmbedding>(e =>
+    {
+      e.ToTable("detection_embeddings");
+      e.HasKey(x => x.DetectionId);
+      e.Property(x => x.DetectionId).HasColumnName("detection_id");
+      e.Property(x => x.Kind).HasColumnName("kind");
+      e.Property(x => x.Dim).HasColumnName("dim");
+      e.Property(x => x.Embedding).HasColumnName("embedding");
+      e.HasIndex(x => x.Kind);
+    });
   }
 }
 
@@ -52,4 +64,12 @@ public sealed class DbDetection
   /// <summary>Path relative to the storage root, like clips' file_path.</summary>
   public string? CropPath { get; set; }
   public string? PlateText { get; set; }
+}
+
+public sealed class DbDetectionEmbedding
+{
+  public long DetectionId { get; set; }
+  public string Kind { get; set; } = string.Empty;
+  public int Dim { get; set; }
+  public byte[] Embedding { get; set; } = [];
 }

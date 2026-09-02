@@ -30,7 +30,9 @@ public sealed record MetadataSample(
 /// This service is the single writer for both detection sources, because it is the one place they
 /// already converge (CV through <see cref="DetectionStreamConsumer"/>, ONVIF through
 /// <c>AnalyticsServiceImpl.PushOnvifDetections</c>). Splitting the write would mean two decimation
-/// policies and two answers to "which clip does this instant belong to".
+/// policies and two answers to "which clip does this instant belong to". The stream name on each
+/// sample is the detector's; VmsFs attaches the geometry to covering clips of any stream on that
+/// camera, so a cheap analytics sub-stream still paints boxes over the main-stream archive.
 /// </para>
 /// <para>
 /// Best-effort by construction, exactly like the live overlay it shares a source with: the offer

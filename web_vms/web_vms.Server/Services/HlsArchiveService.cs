@@ -33,7 +33,7 @@ public sealed class HlsArchiveService(
   // Wall-clock playlist: "give me this camera's archive between these two instants". This is what
   // drives the synchronized wall — every cell asks for the same window and follows PDT.
   public async Task<HlsPlaylistResult> BuildPreviewPlaylistAsync(
-    string cameraId, string? streamName, TimelineSlice range, CancellationToken ct)
+    string cameraId, string? streamName, TimelineSlice range, CancellationToken ct, DateTime? startAt = null)
   {
     var fsClient = await ResolveAsync(cameraId, ct);
     if (fsClient is null)
@@ -86,7 +86,11 @@ public sealed class HlsArchiveService(
     if (segments.Count == 0)
       return new HlsPlaylistResult.NotFound("no recordings in range");
 
-    var startOffset = ClampStartOffset(segments, ComputeStartOffset(segments, range.Start));
+    // `range.Start` is the lead-in so the playlist can map PDT behind the playhead. START itself
+    // must be the operator's instant: otherwise hls.js loads from the window head (a minute of
+    // the wrong clip, plus a bandwidth probe on fragment 0) before the client can seek.
+    var startWall = startAt is { } at && at > range.Start && at < range.End ? at : range.Start;
+    var startOffset = ClampStartOffset(segments, ComputeStartOffset(segments, startWall));
 
     return BuildPlaylist(segments, cacheResult.Cache, startOffset);
   }

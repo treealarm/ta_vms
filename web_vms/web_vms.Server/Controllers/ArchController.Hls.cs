@@ -22,12 +22,14 @@ public partial class ArchController(
     [FromQuery] string from,
     [FromQuery] string to,
     [FromQuery] string? streamName = null,
+    [FromQuery] string? start = null,
     CancellationToken ct = default)
   {
     cameraId = cameraId?.Trim() ?? "";
     from = from?.Trim() ?? "";
     to = to?.Trim() ?? "";
     streamName = streamName?.Trim();
+    start = start?.Trim();
     if (cameraId.Length == 0 || from.Length == 0 || to.Length == 0)
       return BadRequest(new { error = "cameraId, from, and to are required" });
 
@@ -40,7 +42,16 @@ public partial class ArchController(
     if (fromDt >= toDt)
       return BadRequest(new { error = "from must be before to" });
 
-    var result = await hlsService.BuildPreviewPlaylistAsync(cameraId, streamName, new TimelineSlice(fromDt, toDt), ct);
+    DateTime? startAt = null;
+    if (!string.IsNullOrEmpty(start))
+    {
+      if (!DateTime.TryParse(start, null, DateTimeStyles.RoundtripKind, out var startDt))
+        return BadRequest(new { error = "start must be a parseable date/time" });
+      startAt = ToUtc(startDt);
+    }
+
+    var result = await hlsService.BuildPreviewPlaylistAsync(
+      cameraId, streamName, new TimelineSlice(fromDt, toDt), ct, startAt);
     return PlaylistResult(result);
   }
 

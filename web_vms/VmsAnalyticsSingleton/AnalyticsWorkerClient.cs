@@ -54,6 +54,24 @@ public sealed class AnalyticsWorkerClient(AnalyticsService.AnalyticsServiceClien
       yield return evt;
   }
 
+  public Task<EmbedImageResponse> EmbedImageAsync(
+    byte[] jpeg,
+    DetectionKind kind,
+    BoundingBox? bbox,
+    bool detectFirst,
+    CancellationToken ct)
+  {
+    var request = new EmbedImageRequest
+    {
+      Jpeg = Google.Protobuf.ByteString.CopyFrom(jpeg),
+      Kind = kind,
+      DetectFirst = detectFirst,
+    };
+    if (bbox is not null)
+      request.Bbox = bbox;
+    return client.EmbedImageAsync(request, cancellationToken: ct).ResponseAsync;
+  }
+
   private static DetectionKind MapClass(string c) => c.Trim().ToLowerInvariant() switch
   {
     "person" => DetectionKind.Person,

@@ -705,6 +705,8 @@ export type AnalyticsWatchDto = {
   attachDebugCrops: boolean
   /** Seconds of recording kept after the last detection before the event closes itself. */
   timeoutSeconds: number
+  /** Persist this camera's detection embeddings for forensic similarity search. */
+  storeEmbeddings: boolean
 }
 
 export type AnalyticsDetectionDto = {
@@ -719,6 +721,47 @@ export type AnalyticsDetectionDto = {
   detectedAt: string
   plateText?: string
   hasCrop: boolean
+}
+
+export type DetectionIdProbeDto = {
+  detectionId: number
+}
+
+export type ArchiveTrackProbeDto = {
+  cameraId: string
+  trackId: number
+  ts: string
+  kind?: AnalyticsDetectionKind
+}
+
+export type SearchSimilarDetectionsRequestDto = {
+  detection?: DetectionIdProbeDto
+  archive?: ArchiveTrackProbeDto
+  image?: ImageProbeDto
+  fromTs: string
+  toTs: string
+  minScore?: number
+  limit?: number
+  cameraIds?: string[]
+}
+
+export type BoundingBoxDto = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export type ImageProbeDto = {
+  jpegBase64: string
+  kind: AnalyticsDetectionKind
+  bbox?: BoundingBoxDto
+  detectFirst?: boolean
+}
+
+export type SimilarDetectionHitDto = {
+  detection: AnalyticsDetectionDto
+  score: number
 }
 
 export type AnalyticsActivityEntryDto = {
@@ -818,6 +861,7 @@ export type CvSourceDto = {
   sampleFps: number
   timeoutSeconds: number
   attachDebugCrops: boolean
+  storeEmbeddings: boolean
 }
 
 /** The camera's own object boxes. Two halves that must not be collapsed into one. */

@@ -24,6 +24,7 @@ public record CvSourceDto
   public uint SampleFps { get; init; }
   public uint TimeoutSeconds { get; init; }
   public bool AttachDebugCrops { get; init; }
+  public bool StoreEmbeddings { get; init; }
 }
 
 /// <summary>

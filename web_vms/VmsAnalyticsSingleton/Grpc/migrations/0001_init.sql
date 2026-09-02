@@ -16,11 +16,19 @@ CREATE TABLE detections (
   object_id    text        NULL
 );
 
+CREATE TABLE detection_embeddings (
+  detection_id bigint      PRIMARY KEY REFERENCES detections(id) ON DELETE CASCADE,
+  kind         text        NOT NULL,
+  dim          integer     NOT NULL,
+  embedding    bytea       NOT NULL
+);
+
 CREATE INDEX idx_detections_camera_ts ON detections (camera_id, detected_at DESC);
 CREATE INDEX idx_detections_plate_text ON detections (plate_text) WHERE plate_text IS NOT NULL;
 CREATE INDEX idx_detections_event ON detections (event_id);
 CREATE INDEX idx_detections_event_uuid ON detections (event_uuid);
 CREATE INDEX idx_detections_object_id ON detections (object_id);
+CREATE INDEX idx_detection_embeddings_kind ON detection_embeddings (kind);
 
 -- Where object ids ("obj-1", "obj-2", ...) come from.
 --

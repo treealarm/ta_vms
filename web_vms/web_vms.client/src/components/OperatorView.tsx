@@ -8,8 +8,9 @@ import RetentionEventsTab from './RetentionEventsTab'
 import ArchiveGapsTab from './ArchiveGapsTab'
 import SimulationFab from './SimulationFab'
 import LogToggleButton from './LogToggleButton'
+import ForensicSearchTab from './ForensicSearchTab'
 
-const TABS = ['monitors', 'investigations', 'events', 'gaps'] as const
+const TABS = ['monitors', 'investigations', 'events', 'object-findings', 'gaps'] as const
 
 export default function OperatorView() {
   const { t } = useTranslation()
@@ -43,6 +44,15 @@ export default function OperatorView() {
                 </Box>
               )}
             />
+            <Route
+              path="object-findings"
+              element={(
+                <Box sx={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
+                  <ForensicSearchTab />
+                </Box>
+              )}
+            />
+            <Route path="forensic" element={<Navigate to="/operator/object-findings" replace />} />
             <Route path="*" element={<Navigate to="/operator/monitors" replace />} />
           </Routes>
         </Box>
@@ -61,12 +71,13 @@ export default function OperatorView() {
           <Tabs
             orientation="vertical"
             value={tab === -1 ? 0 : tab}
-            onChange={(_, v: number) => navigate(`/operator/${TABS[v]}`)}
+            onChange={(_, v: number) => navigate({ pathname: `/operator/${TABS[v]}` })}
             sx={{ '& .MuiTab-root': { minWidth: 90 } }}
           >
             <Tab label={t('nav.monitors')} />
             <Tab label={t('nav.investigations')} />
             <Tab label={t('nav.events')} />
+            <Tab label={t('nav.objectFindings')} />
             <Tab label={t('nav.gaps')} />
           </Tabs>
         </Box>

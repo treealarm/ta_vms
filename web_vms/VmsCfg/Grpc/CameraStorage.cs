@@ -1377,6 +1377,7 @@ public class CameraStorage(
     entity.MinConfidence = watch.MinConfidence;
     entity.SampleFps = (int)watch.SampleFps;
     entity.AttachDebugCrops = watch.AttachDebugCrops;
+    entity.StoreEmbeddings = watch.StoreEmbeddings;
     // 0 means "not supplied" (proto3 scalars have no presence) — keep whatever is stored rather
     // than silently collapsing an existing timeout to zero.
     if (watch.TimeoutSeconds > 0) entity.TimeoutSeconds = (int)watch.TimeoutSeconds;
@@ -1476,6 +1477,7 @@ public class CameraStorage(
       Armed            = armed,
       AttachDebugCrops = row.AttachDebugCrops,
       TimeoutSeconds   = (uint)row.TimeoutSeconds,
+      StoreEmbeddings  = row.StoreEmbeddings,
     };
     proto.Classes.AddRange(row.Classes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     return proto;

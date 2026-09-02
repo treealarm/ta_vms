@@ -75,7 +75,15 @@ export function useHlsPlayer(
 
     if (Hls.isSupported()) {
       patch({ nativeHls: false })
-      hls = new Hls({ enableWorker: true, lowLatencyMode: false, xhrSetup: authXhrSetup })
+      hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        xhrSetup: authXhrSetup,
+        // Archive is a single-bitrate VOD. The default bandwidth probe fetches playlist fragment 0
+        // — for a wall playlist that is a minute of lead-in, so the operator waits on the wrong
+        // clip before EXT-X-START / the PDT seek can run.
+        testBandwidth: false,
+      })
 
       hls.on(Hls.Events.MEDIA_ATTACHED, () => hls?.loadSource(url))
 

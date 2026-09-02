@@ -15,6 +15,8 @@ public record AnalyticsWatchDto
   public bool AttachDebugCrops { get; init; }
   /// <summary>Seconds of recording kept after the last detection before the event closes.</summary>
   public uint TimeoutSeconds { get; init; } = 10;
+  /// <summary>Persist this camera's detection embeddings for forensic similarity search.</summary>
+  public bool StoreEmbeddings { get; init; }
 }
 
 public record AnalyticsDetectionDto
@@ -30,6 +32,54 @@ public record AnalyticsDetectionDto
   public DateTime DetectedAt { get; init; }
   public string? PlateText { get; init; }
   public bool HasCrop { get; init; }
+}
+
+public record SearchSimilarDetectionsRequestDto
+{
+  public DetectionIdProbeDto? Detection { get; init; }
+  public ArchiveTrackProbeDto? Archive { get; init; }
+  public ImageProbeDto? Image { get; init; }
+  public required DateTime FromTs { get; init; }
+  public required DateTime ToTs { get; init; }
+  public float? MinScore { get; init; }
+  public int Limit { get; init; } = 100;
+  public List<string> CameraIds { get; init; } = [];
+}
+
+public record DetectionIdProbeDto
+{
+  public long DetectionId { get; init; }
+}
+
+public record ArchiveTrackProbeDto
+{
+  public required string CameraId { get; init; }
+  public long TrackId { get; init; }
+  public required DateTime Ts { get; init; }
+  public string? Kind { get; init; }
+}
+
+public record ImageProbeDto
+{
+  /// <summary>Base64-encoded JPEG bytes.</summary>
+  public string JpegBase64 { get; init; } = string.Empty;
+  public string Kind { get; init; } = string.Empty;
+  public BoundingBoxDto? Bbox { get; init; }
+  public bool DetectFirst { get; init; }
+}
+
+public record BoundingBoxDto
+{
+  public float X { get; init; }
+  public float Y { get; init; }
+  public float Width { get; init; }
+  public float Height { get; init; }
+}
+
+public record SimilarDetectionHitDto
+{
+  public required AnalyticsDetectionDto Detection { get; init; }
+  public float Score { get; init; }
 }
 
 public record AnalyticsActivityEntryDto

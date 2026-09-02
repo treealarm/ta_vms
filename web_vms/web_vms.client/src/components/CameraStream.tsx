@@ -3,6 +3,7 @@ import React, { useEffect, useRef } from 'react';
 import BboxOverlay from './BboxOverlay'
 import EventOverlay from './EventOverlay';
 import { iceServersFromStunUrl } from '../utils/iceServers';
+import type { DrawableBox } from './bbox/bboxDraw'
 
 interface CameraStreamProps {
   whepUrl: string;
@@ -17,6 +18,7 @@ interface CameraStreamProps {
    *  proof there is (see the note on the watchdog below). Used by SeamlessCameraStream to know
    *  when a stream warming up out of sight is ready to be shown. */
   onFirstFrames?: () => void;
+  onFindSimilar?: (box: DrawableBox) => void;
 }
 
 // A WHEP exchange can succeed in full — session created, peer connection reporting `connected` —
@@ -39,7 +41,14 @@ const RETRY_MS = 2000;
 const PROGRESS_CHECK_MS = 3000;
 const PROGRESS_STALL_LIMIT = 5;
 
-const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnabled = false, stunUrl, onFirstFrames }) => {
+const CameraStream: React.FC<CameraStreamProps> = ({
+  whepUrl,
+  cameraId,
+  bboxEnabled = false,
+  stunUrl,
+  onFirstFrames,
+  onFindSimilar,
+}) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   // Announced once per mount. A re-negotiation after a stall is not a new arrival for the caller:
   // it is the same stream still being shown.
@@ -396,7 +405,13 @@ const CameraStream: React.FC<CameraStreamProps> = ({ whepUrl, cameraId, bboxEnab
       {/* Analytics bbox overlay — a separate SSE channel + <canvas> layer, fully decoupled from the
           WebRTC pipeline above (and it owns the detection hook, so detection updates never re-render
           this component or the <video>), so enabling it never adds latency to the live video. */}
-      {bboxEnabled && cameraId && <BboxOverlay videoRef={videoRef} cameraId={cameraId} />}
+      {bboxEnabled && cameraId && (
+        <BboxOverlay
+          videoRef={videoRef}
+          cameraId={cameraId}
+          onFindSimilar={onFindSimilar}
+        />
+      )}
       {/* Same switch, the other half of the picture: cameras whose analytics produces no geometry
           (cell motion, tamper) announce a condition instead, and it shows as text where a box
           would be. */}
