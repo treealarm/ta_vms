@@ -95,6 +95,27 @@ export default function CameraCalibrationSection({ cameraId, hasTelemetry }: Pro
     }
   }
 
+  // One test pulse, on demand. Repeatable: a single 350 ms move is easy to miss, pressing again
+  // moves further, and the opposite button puts the camera back — so the operator can rehearse
+  // until they are sure which way the picture went, instead of being asked about a move that has
+  // already happened.
+  const nudge = async (axis: 'pan' | 'tilt', positive: boolean) => {
+    if (!wizardSessionId) return
+    setBusy(true)
+    setError(null)
+    try {
+      await apiFetch(`/api/ptz-calibration/wizard/${wizardSessionId}/nudge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cameraId, axis, positive }),
+      })
+    } catch (e) {
+      setError(errorMessage(e, t('ptzCalibration.failed')))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const answerWizard = async (direction: string) => {
     if (!wizardSessionId) return
     setBusy(true)
@@ -205,6 +226,19 @@ export default function CameraCalibrationSection({ cameraId, hasTelemetry }: Pro
 
       {mode === 'wizard' && wizardStep !== 'idle' && (
         <Stack spacing={1}>
+          <Typography variant="body2">
+            {wizardStep === 'pan'
+              ? t('ptzCalibration.nudgePan')
+              : t('ptzCalibration.nudgeTilt')}
+          </Typography>
+          <ButtonGroup size="small" disabled={busy}>
+            <Button onClick={() => void nudge(wizardStep === 'pan' ? 'pan' : 'tilt', false)}>
+              {wizardStep === 'pan' ? 'pan −' : 'tilt −'}
+            </Button>
+            <Button onClick={() => void nudge(wizardStep === 'pan' ? 'pan' : 'tilt', true)}>
+              {wizardStep === 'pan' ? 'pan +' : 'tilt +'}
+            </Button>
+          </ButtonGroup>
           <Typography variant="body2">
             {wizardStep === 'pan'
               ? t('ptzCalibration.askPan')

@@ -945,8 +945,8 @@
     "modeWizard": "Asistente",
     "runAuto": "Calibrar automáticamente",
     "startWizard": "Iniciar asistente",
-    "askPan": "La cámara acaba de moverse en pan+. ¿Hacia dónde fue la imagen?",
-    "askTilt": "La cámara acaba de moverse en tilt+. ¿Hacia dónde fue la imagen?",
+    "askPan": "¿Hacia dónde se movió la imagen con pan+?",
+    "askTilt": "¿Hacia dónde se movió la imagen con tilt+?",
     "clear": "Borrar calibración",
     "failed": "La calibración falló",
     "staticSceneHint": "Personas o vehículos en movimiento hacen poco fiable la calibración automática.",
@@ -957,7 +957,9 @@
       "down": "Abajo",
       "clockwise": "Horario",
       "counterclockwise": "Antihorario"
-    }
+    },
+    "nudgePan": "Mueva el eje de paneo y observe la imagen. Pulse pan+ tantas veces como necesite; pan− devuelve la cámara.",
+    "nudgeTilt": "Ahora el eje de inclinación. Pulse tilt+ tantas veces como necesite; tilt− devuelve la cámara."
   },
   "tracking": {
     "trackObject": "Seguir este objeto",

@@ -78,11 +78,20 @@ public sealed class PtzCalibrationService(
       if (panMotion.Confidence < 0.35f || tiltMotion.Confidence < 0.35f)
         return Fail("Background motion confidence is too low — use a mostly static scene or try the wizard");
 
+      // Judged on the measured shift, not on a normalized direction. dx/dy arrive as fractions of
+      // the frame, so "did this test actually move the picture" is a question that can only be
+      // asked before normalizing — afterwards every vector has length one, and an axis that did
+      // not move is indistinguishable from one that swept across the frame.
+      if (PtzCalibrationMath.IsTooSmall(panMotion.Dx, panMotion.Dy))
+        return Fail(TooSmall("pan", panMotion.Dx, panMotion.Dy));
+      if (PtzCalibrationMath.IsTooSmall(tiltMotion.Dx, tiltMotion.Dy))
+        return Fail(TooSmall("tilt", tiltMotion.Dx, tiltMotion.Dy));
+
+      if (PtzCalibrationMath.IsDegenerate(panMotion.Dx, panMotion.Dy, tiltMotion.Dx, tiltMotion.Dy))
+        return Fail("Pan and tilt axes look too similar — calibration is unreliable");
+
       var panVector = PtzCalibrationMath.NormalizeVector(panMotion.Dx, panMotion.Dy);
       var tiltVector = PtzCalibrationMath.NormalizeVector(tiltMotion.Dx, tiltMotion.Dy);
-
-      if (PtzCalibrationMath.IsDegenerate(panVector.Dx, panVector.Dy, tiltVector.Dx, tiltVector.Dy))
-        return Fail("Pan and tilt axes look too similar — calibration is unreliable");
 
       var saved = await SaveAsync(cameraId, panVector.Dx, panVector.Dy, tiltVector.Dx, tiltVector.Dy,
         MathF.Min(panMotion.Confidence, tiltMotion.Confidence), PtzCalibrationMethod.PtzCalibrationAuto, ct);
@@ -111,15 +120,18 @@ public sealed class PtzCalibrationService(
     if (prep.Error is not null)
       throw new InvalidOperationException(prep.Error);
 
+    // Deliberately does not move the camera. The wizard used to pulse here and then ask which way
+    // the picture went — by the time the operator had read the question the move was long over,
+    // and there was no way to repeat it. The operator drives the axis with NudgeAsync instead, as
+    // often as they need, and answers when they have seen it.
     var sessionId = wizardStore.Begin(cameraId, prep.ProfileToken);
-    await PulseMoveAsync(cameraId, prep.ProfileToken, TestSpeed, 0f, ct);
     return (sessionId, new PtzCalibrationWizardStepDto { Axis = "pan", AwaitingAnswer = true });
   }
 
   public async Task<PtzCalibrationWizardStepDto> AnswerPanAsync(
     string sessionId, string cameraId, string direction, CancellationToken ct)
   {
-    if (!wizardStore.TryGet(sessionId, out var sessionCameraId, out var profileToken, out _, out _))
+    if (!wizardStore.TryGet(sessionId, out var sessionCameraId, out _, out _, out _))
       throw new InvalidOperationException("Calibration session expired or unknown");
     if (!string.Equals(sessionCameraId, cameraId, StringComparison.Ordinal))
       throw new InvalidOperationException("Camera id does not match the calibration session");
@@ -127,15 +139,14 @@ public sealed class PtzCalibrationService(
     var (dx, dy) = PtzCalibrationMath.DirectionToVector(direction);
     wizardStore.SetPanAnswer(sessionId, dx, dy);
 
-    await PulseMoveAsync(cameraId, profileToken, -TestSpeed, 0f, ct);
-    await PulseMoveAsync(cameraId, profileToken, 0f, TestSpeed, ct);
+    // No move here either: the operator decides when the tilt axis gets its pulse.
     return new PtzCalibrationWizardStepDto { Axis = "tilt", AwaitingAnswer = true };
   }
 
   public async Task<PtzCalibrationRunResultDto> AnswerTiltAsync(
     string sessionId, string cameraId, string direction, CancellationToken ct)
   {
-    if (!wizardStore.TryGet(sessionId, out var sessionCameraId, out var profileToken, out var panDx, out var panDy))
+    if (!wizardStore.TryGet(sessionId, out var sessionCameraId, out _, out var panDx, out var panDy))
       throw new InvalidOperationException("Calibration session expired or unknown");
     if (!string.Equals(sessionCameraId, cameraId, StringComparison.Ordinal))
       throw new InvalidOperationException("Camera id does not match the calibration session");
@@ -153,8 +164,39 @@ public sealed class PtzCalibrationService(
       cameraId, panDx.Value, panDy.Value, tiltDx, tiltDy, 0.8f,
       PtzCalibrationMethod.PtzCalibrationWizard, ct);
     wizardStore.Remove(sessionId);
-    await PulseMoveAsync(cameraId, profileToken, 0f, -TestSpeed, ct);
     return new PtzCalibrationRunResultDto { Success = true, Calibration = saved };
+  }
+
+  /// <summary>
+  /// One test pulse on one axis, asked for by the operator.
+  /// </summary>
+  /// <remarks>
+  /// Repeatable on purpose: a single 350 ms pulse is easy to miss, and on a slow head it barely
+  /// shifts the picture at all. Pressing the same button twice moves twice as far, and the
+  /// opposite button brings the camera back, so the operator can rehearse the move until they are
+  /// sure which way the picture went before answering.
+  /// </remarks>
+  /// <param name="axis">"pan" or "tilt".</param>
+  /// <param name="positive">
+  /// Which end of the axis to drive. The question the operator answers is always about the
+  /// positive direction — the negative one exists to undo.
+  /// </param>
+  public async Task NudgeAsync(
+    string sessionId, string cameraId, string axis, bool positive, CancellationToken ct)
+  {
+    if (!wizardStore.TryGet(sessionId, out var sessionCameraId, out var profileToken, out _, out _))
+      throw new InvalidOperationException("Calibration session expired or unknown");
+    if (!string.Equals(sessionCameraId, cameraId, StringComparison.Ordinal))
+      throw new InvalidOperationException("Camera id does not match the calibration session");
+
+    var speed = positive ? TestSpeed : -TestSpeed;
+    var (pan, tilt) = axis.Trim().ToLowerInvariant() switch
+    {
+      "pan" => (speed, 0f),
+      "tilt" => (0f, speed),
+      _ => throw new ArgumentException($"Unknown axis '{axis}'"),
+    };
+    await PulseMoveAsync(cameraId, profileToken, pan, tilt, ct);
   }
 
   private async Task<(string? ProfileToken, string? Error)> PrepareAsync(string cameraId, CancellationToken ct)
@@ -288,4 +330,14 @@ public sealed class PtzCalibrationService(
 
   private static PtzCalibrationRunResultDto Fail(string error) =>
     new() { Success = false, Error = error };
+
+  /// Names the axis that did not move and by how much, so the operator can tell a camera that
+  /// cannot tilt from a test pulse that was simply too short for this head.
+  private static string TooSmall(string axis, float dx, float dy)
+  {
+    var shift = MathF.Sqrt((dx * dx) + (dy * dy));
+    return $"The {axis} test moved the picture by only {shift * 100f:F1}% of the frame — too little "
+         + "to tell which way that axis goes. Check that the camera really moves on this axis, then "
+         + "try again or use the wizard.";
+  }
 }

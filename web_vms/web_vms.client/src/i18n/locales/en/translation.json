@@ -945,8 +945,8 @@
     "modeWizard": "Wizard",
     "runAuto": "Calibrate automatically",
     "startWizard": "Start wizard",
-    "askPan": "The camera just moved on pan+. Which way did the picture go?",
-    "askTilt": "The camera just moved on tilt+. Which way did the picture go?",
+    "askPan": "Which way did the picture go on pan+?",
+    "askTilt": "Which way did the picture go on tilt+?",
     "clear": "Clear calibration",
     "failed": "Calibration failed",
     "staticSceneHint": "Moving people or vehicles in the frame make automatic calibration unreliable.",
@@ -957,7 +957,9 @@
       "down": "Down",
       "clockwise": "Clockwise",
       "counterclockwise": "Counter-clockwise"
-    }
+    },
+    "nudgePan": "Move the pan axis and watch the picture. Press pan+ as many times as you need; pan− puts the camera back.",
+    "nudgeTilt": "Now the tilt axis. Press tilt+ as many times as you need; tilt− puts the camera back."
   },
   "tracking": {
     "trackObject": "Track this object",

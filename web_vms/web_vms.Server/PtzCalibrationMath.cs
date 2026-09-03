@@ -40,6 +40,18 @@ public static class PtzCalibrationMath
     };
   }
 
+  /// <summary>
+  /// The measured shift is too small to carry a direction.
+  /// </summary>
+  /// <remarks>
+  /// Must be asked of the raw motion estimate, in fractions of the frame, and never of a
+  /// normalized vector — normalizing turns a one-pixel wobble into a full-length arrow pointing
+  /// wherever the noise happened to point, which is exactly how a camera that did not tilt used to
+  /// be reported as one whose axes "look too similar".
+  /// </remarks>
+  public static bool IsTooSmall(float dx, float dy) =>
+    MathF.Sqrt((dx * dx) + (dy * dy)) < MinVectorLength;
+
   public static bool IsDegenerate(float panDx, float panDy, float tiltDx, float tiltDy)
   {
     var panLen = MathF.Sqrt((panDx * panDx) + (panDy * panDy));

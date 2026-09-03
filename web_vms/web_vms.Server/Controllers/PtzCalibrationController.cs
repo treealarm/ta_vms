@@ -47,6 +47,26 @@ public class PtzCalibrationController(PtzCalibrationService service) : Controlle
     }
   }
 
+  [HttpPost("wizard/{sessionId}/nudge")]
+  [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
+  public async Task<IActionResult> Nudge(
+    string sessionId, [FromBody] PtzCalibrationNudgeDto dto, CancellationToken ct)
+  {
+    try
+    {
+      await service.NudgeAsync(sessionId, dto.CameraId, dto.Axis, dto.Positive, ct);
+      return Ok();
+    }
+    catch (ArgumentException ex)
+    {
+      return BadRequest(ex.Message);
+    }
+    catch (InvalidOperationException ex)
+    {
+      return BadRequest(ex.Message);
+    }
+  }
+
   [HttpPost("wizard/{sessionId}/pan")]
   [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
   public async Task<IActionResult> AnswerPan(
