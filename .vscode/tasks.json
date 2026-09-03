@@ -105,14 +105,11 @@
         },
         {
             "label": "wait: sidecars ready",
-            "detail": "Fails F5 if the sidecars did not actually come up. 'dapr: sidecars up' is a background task and VS Code releases it on the first 'Initialized name resolution' — which one sidecar prints while the rest are still starting, and which stays printed even if the run then tears everything down. Without this the stack starts with no Dapr and says nothing; the only symptom is every list in the UI being empty. Probed on the metrics port because it is served by daprd itself and answers whether or not the app is up — the app is started after this, by the debugger.",
+            "detail": "Fails F5 if the sidecars did not actually come up. 'dapr: sidecars up' is a background task and VS Code releases it on the first 'Initialized name resolution' \u2014 which one sidecar prints while the rest are still starting, and which stays printed even if the run then tears everything down. Waits for EVERY sidecar in web_vms/dapr.yaml, not just one: this used to curl web-vms on 9190, the first app in the run file and so almost always the first one up, which opened the gate while the other twelve were still starting and let the debugger launch applications whose sidecars did not exist yet. Probed on the metrics port because daprd serves it itself and answers whether or not the app is up \u2014 the app is started after this, by the debugger. Ports come from dapr.yaml, so adding a service needs no change here.",
             "type": "shell",
-            "command": "curl",
+            "command": "python3",
             "args": [
-                "--silent", "--show-error", "--fail",
-                "--retry-all-errors", "--retry-connrefused", "--retry", "60", "--retry-delay", "1",
-                "--max-time", "90", "--output", "/dev/null",
-                "http://localhost:9190/"
+                "${workspaceFolder}/scripts/dev_stack.py", "wait-sidecars", "120"
             ],
             "presentation": {
                 "reveal": "silent",
@@ -120,11 +117,9 @@
             },
             "problemMatcher": [],
             "windows": {
+                "command": "python",
                 "args": [
-                    "--silent", "--show-error", "--fail",
-                    "--retry-all-errors", "--retry-connrefused", "--retry", "60", "--retry-delay", "1",
-                    "--max-time", "90", "--output", "NUL",
-                    "http://localhost:9190/"
+                    "${workspaceFolder}/scripts/dev_stack.py", "wait-sidecars", "120"
                 ]
             }
         },

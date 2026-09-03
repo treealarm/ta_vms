@@ -25,6 +25,7 @@ Usage:
     dev_stack.py down [service ...]
     dev_stack.py restart [--build] service [service ...]
     dev_stack.py status
+    dev_stack.py wait-sidecars [seconds]
 """
 
 from __future__ import annotations
@@ -314,11 +315,59 @@ def status(services: dict[str, dict]) -> None:
               f"{service['app_port']} {port}")
 
 
+def wait_sidecars(timeout: float = 120.0) -> None:
+    """Blocks until every sidecar in dapr.yaml answers on its metrics port.
+
+    This is what F5's "wait: sidecars ready" runs, and waiting for *every* sidecar is the whole
+    point of it. It used to curl one port -- web-vms on 9190 -- which is the first app in the run
+    file and therefore almost always the first one up. The gate opened while the other twelve were
+    still starting, the debugger launched the applications anyway, and whichever of them beat its
+    own sidecar failed to reach Dapr. The symptom was a stack that "sometimes does not come up",
+    and, for the service whose sidecar lost the race, a connection refused on its app port.
+
+    The metrics port is the right thing to probe: daprd serves it itself, so it answers whether or
+    not the application behind it has started -- and the applications are started after this, by
+    the debugger.
+
+    Ports come from dapr.yaml, so a service added there is waited for without touching this file.
+    """
+    apps, _ = _run_file()
+    targets = [(a["appID"], int(a["metricsPort"])) for a in apps if a.get("metricsPort")]
+    if not targets:
+        sys.exit(f"no sidecars with a metricsPort found in {RUN_FILE}")
+
+    deadline = time.monotonic() + timeout
+    reported = 0.0
+    while True:
+        missing = [name for name, port in targets if not _listening(port)]
+        if not missing:
+            print(f"sidecars ready: {len(targets)}/{len(targets)}")
+            return
+        if time.monotonic() >= deadline:
+            sys.exit(f"sidecars not ready after {timeout:.0f}s: {', '.join(missing)}\n"
+                     f"run 'dapr stop -f .' in web_vms/ and try again, or check that terminal's log")
+        # One line every few seconds instead of one per probe: the old curl retried sixty times
+        # with --show-error and printed a failure line for each, which read like sixty errors
+        # rather than one wait in progress.
+        now = time.monotonic()
+        if now - reported >= 5.0:
+            reported = now
+            print(f"waiting for {len(missing)}/{len(targets)}: {', '.join(missing)}", flush=True)
+        time.sleep(0.5)
+
+
 def main() -> None:
     argv = sys.argv[1:]
     if not argv:
         sys.exit(__doc__)
     action, argv = argv[0], argv[1:]
+
+    # Answered from dapr.yaml alone: this must work for sidecars that have no launch
+    # configuration (VmsSingleton, VmsSquareSingleton), which the join below would drop.
+    if action == "wait-sidecars":
+        wait_sidecars(float(argv[0]) if argv else 120.0)
+        return
+
     do_build = "--build" in argv
     names = [a for a in argv if not a.startswith("-")]
 
