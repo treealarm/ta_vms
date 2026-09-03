@@ -7,3 +7,6 @@
 [submodule "roitrc/sve"]
 	path = roitrc/sve
 	url = git@github.com:treealarm/roi_transcode.git
+[submodule "web_vms/OnvifLib"]
+	path = web_vms/OnvifLib
+	url = git@github.com:treealarm/OnvifLib.git
