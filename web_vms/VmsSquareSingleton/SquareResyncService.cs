@@ -10,6 +10,7 @@ namespace VmsSquareSingleton;
 public sealed class SquareResyncService(
   IServiceProvider services,
   SquareProducerId producerId,
+  SquareLinkState linkState,
   ILogger<SquareResyncService> logger) : IHostedService, IDisposable
 {
   // "Not less often than every 30s" — retrying well inside that bound for faster convergence.
@@ -34,11 +35,15 @@ public sealed class SquareResyncService(
       try
       {
         await SquareCameraPush.PushAllCamerasAsync(square, cfgClient, producerId.Value, logger, ct);
+        // The whole tree is in Square now, which is what makes a link to one of its cameras
+        // meaningful — see SquareStatusService.
+        linkState.MarkSynced();
         logger.LogInformation("Square resync completed");
         return;
       }
       catch (Exception ex)
       {
+        linkState.RecordFailure(ex);
         logger.LogWarning(ex, "Square resync failed, retrying in {Seconds}s", RetryInterval.TotalSeconds);
       }
 

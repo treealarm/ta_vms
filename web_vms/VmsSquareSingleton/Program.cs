@@ -5,6 +5,7 @@ using SquareIntegrationClient;
 using Vms.Cfg;
 using VmsLog;
 using VmsSquareSingleton;
+using VmsSquareSingleton.Grpc;
 
 // The link between ta_vms and Square, and nothing else. It exists as its own service because the
 // integration is a translation layer coupled to another system's protocol and release cycle, and
@@ -27,6 +28,12 @@ builder.Services.AddSingleton(_ =>
 // CLAUDE.md). When set, it must name Square's receiving Dapr app-id — its integrationhost service,
 // not the user-facing leafletalarms app.
 var squareSinkAppId = Environment.GetEnvironmentVariable("SQUARE_INTEGRATION_SINK_APP_ID");
+
+// Reported over SquareStatusService so the rest of the system can tell "integrated with Square"
+// from "knows where Square's UI is". Registered unconditionally: a deployment without Square must
+// still be able to ask and be told no.
+builder.Services.AddSingleton<SquareLinkState>();
+builder.Services.AddSingleton(new SquareIntegrationEnabled(!string.IsNullOrEmpty(squareSinkAppId)));
 if (!string.IsNullOrEmpty(squareSinkAppId))
 {
   // Our own identity in Square's tree, configured rather than derived — see SquareProducerId.
@@ -45,6 +52,7 @@ builder.WebHost.ConfigureKestrel(options =>
 });
 
 var app = builder.Build();
+app.MapGrpcService<SquareStatusServiceImpl>();
 app.Run();
 
 static string Require(string name) =>

@@ -19,6 +19,7 @@ public sealed class CameraChangeSubscriber(
   DaprPublishSubscribeClient pubSubClient,
   CfgService.CfgServiceClient cfgClient,
   ISquareIntegration square,
+  SquareLinkState linkState,
   SquareProducerId producerId,
   ILogger<CameraChangeSubscriber> logger) : IHostedService, IDisposable
 {
@@ -72,6 +73,7 @@ public sealed class CameraChangeSubscriber(
 
           await SquareCameraPush.PushCameraAsync(square, resp.Setup, producerId.Value);
           _lastPushed[cameraId] = fingerprint;
+          linkState.RecordSuccess();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
@@ -79,6 +81,7 @@ public sealed class CameraChangeSubscriber(
           // Dropped from the cache so the next event for this camera retries rather than being
           // skipped as unchanged.
           _lastPushed.Remove(cameraId);
+          linkState.RecordFailure(ex);
           logger.LogWarning(ex, "Square push failed for camera '{CameraId}'", cameraId);
         }
       }

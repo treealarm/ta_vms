@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <Protobuf Include="..\..\proto\vms_cfg.proto" GrpcServices="Client" />
+    <Protobuf Include="..\..\proto\vms_square.proto" GrpcServices="Server" />
   </ItemGroup>
 
 </Project>

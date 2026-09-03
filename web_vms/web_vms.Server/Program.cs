@@ -73,6 +73,16 @@ builder.Services.AddSingleton(_ =>
   new Vms.PtzTracking.PtzTrackingService.PtzTrackingServiceClient(
     DaprClient.CreateInvocationInvoker(ptzTrackingAppId)));
 
+// Optional on purpose, like SQUARE_FRONTEND_ORIGIN below it: a deployment with no Square does not
+// run VmsSquareSingleton, and asking it anything would be a call to nowhere. Unset simply means
+// "not integrated", which is what SquareLinkProbe reports.
+var squareSingletonAppId = Environment.GetEnvironmentVariable("DAPR_SQUARE_SINGLETON_APP_ID");
+builder.Services.AddSingleton(new SquareStatusClient(string.IsNullOrEmpty(squareSingletonAppId)
+  ? null
+  : new Vms.Square.SquareStatusService.SquareStatusServiceClient(
+      DaprClient.CreateInvocationInvoker(squareSingletonAppId))));
+builder.Services.AddSingleton<SquareLinkProbe>();
+
 builder.Services.AddSingleton<ICameraManager, CameraManager>();
 builder.Services.AddSingleton<IPermissionManager, PermissionManager>();
 builder.Services.AddSingleton<MonitorManager>();

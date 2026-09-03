@@ -6,6 +6,13 @@ namespace web_vms.Controllers;
 public class FrontendConfigDto
 {
   public string? SquareFrontendOrigin { get; set; }
+  /// <summary>
+  /// This deployment really is integrated with Square: the integration is switched on and its
+  /// startup resync has reached Square at least once. Knowing where Square's UI lives
+  /// (<see cref="SquareFrontendOrigin"/>) is a separate question — that value also gates CORS, and
+  /// is set in dev whether or not a Square is running.
+  /// </summary>
+  public bool SquareIntegrated { get; set; }
   /// <summary>Whether the dev-only anonymous WHEP test page is served at all.</summary>
   public bool LiveTestPlayer { get; set; }
 }
@@ -18,7 +25,7 @@ public class FrontendConfigDto
 [ApiController]
 [Route("api/config")]
 [AllowAnonymous]
-public class FrontendConfigController : ControllerBase
+public class FrontendConfigController(SquareLinkProbe _square) : ControllerBase
 {
   /// <summary>
   /// Single source of truth for the VMS_LIVE_TEST_PLAYER gate: read once, consumed by
@@ -29,11 +36,12 @@ public class FrontendConfigController : ControllerBase
     Environment.GetEnvironmentVariable("VMS_LIVE_TEST_PLAYER"), "true", StringComparison.OrdinalIgnoreCase);
 
   [HttpGet("frontend")]
-  public ActionResult<FrontendConfigDto> GetConfig()
+  public async Task<ActionResult<FrontendConfigDto>> GetConfig(CancellationToken ct)
   {
     return Ok(new FrontendConfigDto
     {
       SquareFrontendOrigin = Environment.GetEnvironmentVariable("SQUARE_FRONTEND_ORIGIN"),
+      SquareIntegrated = await _square.IsIntegratedAsync(ct),
       LiveTestPlayer = LiveTestPlayerEnabled,
     });
   }

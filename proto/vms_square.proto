@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package vms.square;
+
+option csharp_namespace = "Vms.Square";
+
+// Whether this deployment is actually integrated with Square.
+//
+// VmsSquareSingleton is the only service that talks to Square (see CLAUDE.md), so it is the only
+// one that can answer this. Everything else -- the "Open in Square" link on a camera tile, above
+// all -- has to ask rather than guess from configuration: SQUARE_FRONTEND_ORIGIN says where
+// Square's UI lives and doubles as the CORS gate, which is a different question from whether a
+// link to it would lead anywhere.
+service SquareStatusService {
+  rpc GetStatus(GetSquareStatusRequest) returns (SquareStatus);
+}
+
+message GetSquareStatusRequest {}
+
+message SquareStatus {
+  // SQUARE_INTEGRATION_SINK_APP_ID is set, so the integration is switched on at all.
+  bool configured = 1;
+  // The startup resync has completed at least once, so this deployment's cameras really are in
+  // Square's tree and a link to one of them means something.
+  //
+  // Deliberately not "Square answered a moment ago". The resync loop stops after its first
+  // success and ordinary updates only flow when something changes, so a liveness window would
+  // expire on a quiet system and take the link with it. Once the tree is there, it is there.
+  bool synced = 2;
+  // Last time a call to Square succeeded, and the last failure with its reason. Diagnostics: they
+  // do not gate anything, they explain what the two flags above are doing.
+  optional google.protobuf.Timestamp last_ok_at = 3;
+  optional google.protobuf.Timestamp last_error_at = 4;
+  string last_error = 5;
+}
