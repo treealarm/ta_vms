@@ -33,6 +33,8 @@ service VmsAnalyticsService {
   // The events above, fanned out to the monitor. Same shape as StreamCameraDetections: an empty
   // camera_id means "all cameras", and the frontend multiplexes one stream for the whole grid.
   rpc StreamCameraEvents(StreamCameraEventsRequest) returns (stream LiveEvent);
+  // Stateless background-motion estimate between two JPEG snapshots (proxied to video_a).
+  rpc EstimateGlobalMotion(EstimateGlobalMotionRequest) returns (EstimateGlobalMotionResponse);
 }
 
 // The coarse taxonomy every box is drawn as, shared by both producers. The CV detector emits the
@@ -226,4 +228,18 @@ message StreamCameraDetectionsRequest {
 
 message GetAnalyticsActivityResponse {
   repeated AnalyticsActivityEntry events = 1;
+}
+
+message EstimateGlobalMotionRequest {
+  bytes before_jpeg = 1;
+  bytes after_jpeg = 2;
+}
+
+message EstimateGlobalMotionResponse {
+  bool success = 1;
+  string error = 2;
+  float dx = 3;
+  float dy = 4;
+  float rotation = 5;
+  float confidence = 6;
 }

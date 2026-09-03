@@ -9,6 +9,7 @@ import type { CameraSetupDto, CameraStorageAssignmentDto } from '../dto/dtos'
 import CameraStoragesControl from './CameraStoragesControl'
 import CameraSchedulesControl from './CameraSchedulesControl'
 import CameraDetectionsSection from './CameraDetectionsSection'
+import CameraCalibrationSection from './CameraCalibrationSection'
 import PasswordField from './PasswordField'
 import CameraStream from './CameraStream'
 import DetailToolbar from './settings/DetailToolbar'
@@ -55,7 +56,12 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const [roiDelayHours, setRoiDelayHours] = useState(String(existing?.roiDelayHours ?? 0))
   const [roiMinCoverage, setRoiMinCoverage] = useState(pctOf(existing?.roiMinCoverage, 0))
   const [roiMaxCoverage, setRoiMaxCoverage] = useState(pctOf(existing?.roiMaxCoverage, 1))
-  const [tab, setTab] = useState<'main' | 'advanced' | 'detections'>('main')
+  const [tab, setTab] = useState<'main' | 'advanced' | 'detections' | 'calibration'>('main')
+
+  useEffect(() => {
+    if (!hasTelemetry && tab === 'calibration')
+      setTab('main')
+  }, [hasTelemetry, tab])
   const [pendingStorages, setPendingStorages] = useState<CameraStorageAssignmentDto[]>([])
   const [pendingSchedules, setPendingSchedules] = useState<string[]>([])
 
@@ -226,13 +232,12 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
           <Stack spacing={2} sx={{ flex: 1, minWidth: 0, maxWidth: 380 }}>
             <Tabs
               value={tab}
-              onChange={(_, v: 'main' | 'advanced' | 'detections') => setTab(v)}
+              onChange={(_, v: 'main' | 'advanced' | 'detections' | 'calibration') => setTab(v)}
               sx={{ borderBottom: 1, borderColor: 'divider' }}
             >
               <Tab value="main" label={t('cameras.tabMain')} />
-              {/* Sources belong to a camera that exists: there is nothing to switch on for one
-                  that has not been created yet. */}
               {!isNew && <Tab value="detections" label={t('cameras.tabDetections')} />}
+              {!isNew && hasTelemetry && <Tab value="calibration" label={t('cameras.tabCalibration')} />}
               <Tab value="advanced" label={t('cameras.tabAdvanced')} />
             </Tabs>
 
@@ -312,6 +317,13 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
               cameraId={initialCameraId}
               onvifMetadataDisabled={onvifMetadataDisabled}
               setOnvifMetadataDisabled={setOnvifMetadataDisabled}
+            />
+            )}
+
+            {tab === 'calibration' && !isNew && hasTelemetry && (
+            <CameraCalibrationSection
+              cameraId={initialCameraId}
+              hasTelemetry={hasTelemetry}
             />
             )}
 

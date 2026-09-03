@@ -82,7 +82,8 @@
     "roiMinCoverage": "Min ROI coverage, %",
     "roiMaxCoverage": "Max ROI coverage, %",
     "roiCoverageHint": "Coverage is the share of a clip's length that has detection boxes on it. Only clips inside this band are re-compressed: below it the detector saw too little to trust, above it there is no background left to squeeze. 0 turns a bound off.",
-    "tabDetections": "Detections"
+    "tabDetections": "Detections",
+    "tabCalibration": "Calibration"
   },
   "cameraControl": {
     "showControls": "Show camera controls",
@@ -933,6 +934,30 @@
     "openOnvifCfg": "Open the device's metadata settings",
     "openOnvifEvents": "Open ONVIF event settings",
     "onvifBoxesDoNotRetain": "Drawn and archived, but never keep a clip on their own."
+  },
+  "ptzCalibration": {
+    "intro": "Teach the tracker how pan and tilt move the picture on this camera. Use a mostly static background.",
+    "requiresTelemetry": "Enable PTZ telemetry on the Main tab before calibrating.",
+    "current": "Current calibration",
+    "method": "Method",
+    "confidence": "Confidence",
+    "modeAuto": "Auto",
+    "modeWizard": "Wizard",
+    "runAuto": "Calibrate automatically",
+    "startWizard": "Start wizard",
+    "askPan": "The camera just moved on pan+. Which way did the picture go?",
+    "askTilt": "The camera just moved on tilt+. Which way did the picture go?",
+    "clear": "Clear calibration",
+    "failed": "Calibration failed",
+    "staticSceneHint": "Moving people or vehicles in the frame make automatic calibration unreliable.",
+    "direction": {
+      "left": "Left",
+      "right": "Right",
+      "up": "Up",
+      "down": "Down",
+      "clockwise": "Clockwise",
+      "counterclockwise": "Counter-clockwise"
+    }
   },
   "tracking": {
     "trackObject": "Track this object",

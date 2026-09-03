@@ -1487,4 +1487,65 @@ public class CameraStorage(
     proto.Classes.AddRange(row.Classes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     return proto;
   }
+
+  // ── PTZ calibration (1:1 per camera) ──────────────────────────────────────
+
+  public async Task<PtzCalibration?> GetPtzCalibrationAsync(string cameraId, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var row = await db.PtzCalibrations.FindAsync([cameraId], ct);
+    return row is null ? null : ToPtzCalibrationProto(row);
+  }
+
+  public async Task<PtzCalibration> UpsertPtzCalibrationAsync(PtzCalibration calibration, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var entity = await db.PtzCalibrations.FindAsync([calibration.CameraId], ct)
+                 ?? db.PtzCalibrations.Add(new DbPtzCalibration { CameraId = calibration.CameraId }).Entity;
+
+    entity.PanDx = calibration.PanDx;
+    entity.PanDy = calibration.PanDy;
+    entity.TiltDx = calibration.TiltDx;
+    entity.TiltDy = calibration.TiltDy;
+    entity.Confidence = calibration.Confidence;
+    entity.CalibratedAt = calibration.CalibratedAt?.ToDateTime() ?? DateTime.UtcNow;
+    entity.Method = calibration.Method switch
+    {
+      PtzCalibrationMethod.PtzCalibrationWizard => "wizard",
+      PtzCalibrationMethod.PtzCalibrationAuto => "auto",
+      _ => "auto",
+    };
+
+    await db.SaveChangesAsync(ct);
+    return ToPtzCalibrationProto(entity);
+  }
+
+  public async Task<bool> RemovePtzCalibrationAsync(string cameraId, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var row = await db.PtzCalibrations.FindAsync([cameraId], ct);
+    if (row is null) return false;
+    db.PtzCalibrations.Remove(row);
+    await db.SaveChangesAsync(ct);
+    return true;
+  }
+
+  private static PtzCalibration ToPtzCalibrationProto(DbPtzCalibration row)
+  {
+    var method = row.Method.Equals("wizard", StringComparison.OrdinalIgnoreCase)
+      ? PtzCalibrationMethod.PtzCalibrationWizard
+      : PtzCalibrationMethod.PtzCalibrationAuto;
+    return new PtzCalibration
+    {
+      CameraId   = row.CameraId,
+      PanDx      = row.PanDx,
+      PanDy      = row.PanDy,
+      TiltDx     = row.TiltDx,
+      TiltDy     = row.TiltDy,
+      Confidence = row.Confidence,
+      CalibratedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(
+        DateTime.SpecifyKind(row.CalibratedAt, DateTimeKind.Utc)),
+      Method = method,
+    };
+  }
 }

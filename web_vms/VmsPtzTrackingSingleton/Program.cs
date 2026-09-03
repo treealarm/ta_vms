@@ -32,6 +32,7 @@ builder.Services.AddSingleton(_ =>
   new VmsAnalyticsService.VmsAnalyticsServiceClient(DaprClient.CreateInvocationInvoker(analyticsAppId)));
 
 builder.Services.AddSingleton<CameraPtzRouter>();
+builder.Services.AddSingleton<PtzCalibrationCache>();
 builder.Services.AddSingleton<IPtzCommandSender, PtzCommandSender>();
 builder.Services.AddSingleton<DetectionStreamClient>();
 builder.Services.AddSingleton<TrackingSessionManager>();

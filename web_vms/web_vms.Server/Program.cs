@@ -50,6 +50,9 @@ builder.Services.AddHostedService<ServerPairInitializer>();
 // camera follows from which media server owns it. OnvifRouter does that lookup per call.
 builder.Services.AddSingleton<OnvifRouter>();
 
+builder.Services.AddSingleton<PtzCalibrationWizardStore>();
+builder.Services.AddSingleton<PtzCalibrationService>();
+
 // The debug entity-state registry lives in the singleton, not in VmsUtils: it aggregates pub/sub
 // reports from the whole system in memory, which only one instance can do.
 var singletonAppId = Require("DAPR_SINGLETON_APP_ID");

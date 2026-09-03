@@ -12,6 +12,7 @@ namespace VmsPtzTrackingSingleton;
 /// </remarks>
 public sealed class TrackingSessionManager(
   CameraPtzRouter router,
+  PtzCalibrationCache calibrationCache,
   IPtzCommandSender sender,
   DetectionStreamClient stream,
   ILoggerFactory loggerFactory,
@@ -59,7 +60,7 @@ public sealed class TrackingSessionManager(
         // was ever fitted, and driving one of those would look like the camera ignoring us.
         return $"Camera '{cameraId}' is not marked as having telemetry";
 
-      StartLocked(cameraId, target);
+      StartLocked(cameraId, target, await calibrationCache.GetAsync(cameraId, ct));
       return null;
     }
     finally
@@ -87,14 +88,20 @@ public sealed class TrackingSessionManager(
         continue;
 
       var route = await router.ResolveAsync(cameraId, ct);
-      if (route is not null && route.HasTelemetry)
+      if (route is null || !route.HasTelemetry)
+      {
+        logger.LogInformation(
+          "Camera '{Camera}' can no longer be driven, stopping its tracking session", cameraId);
+        await _gate.WaitAsync(ct);
+        try { await StopLockedAsync(cameraId); }
+        finally { _gate.Release(); }
         continue;
+      }
 
-      logger.LogInformation(
-        "Camera '{Camera}' can no longer be driven, stopping its tracking session", cameraId);
-      await _gate.WaitAsync(ct);
-      try { await StopLockedAsync(cameraId); }
-      finally { _gate.Release(); }
+      // Calibration is not captured for the life of the session: a wizard/auto run publishes
+      // server-config-changed, and the live loop must pick the new matrix up without a restart.
+      if (_sessions.TryGetValue(cameraId, out var running))
+        running.Session.ApplyCalibration(await calibrationCache.GetAsync(cameraId, ct));
     }
   }
 
@@ -104,12 +111,20 @@ public sealed class TrackingSessionManager(
       running.Session.Offer(sample);
   }
 
-  private void StartLocked(string cameraId, TargetKey? target)
+  private void StartLocked(string cameraId, TargetKey? target, PtzCalibrationModel? calibration)
   {
     var cts = new CancellationTokenSource();
-    var session = new TrackingSession(cameraId, sender, loggerFactory.CreateLogger<TrackingSession>(), target);
+    var session = new TrackingSession(
+      cameraId, sender, loggerFactory.CreateLogger<TrackingSession>(), target, calibration);
     var loop = session.RunAsync(cts.Token);
     _sessions[cameraId] = new Running(session, cts, loop);
+    // An exception ends the loop without cancelling the CTS, so the dictionary would otherwise
+    // keep a dead session (UI still Active, motor idle). Sweep it the same way a Stop does.
+    _ = loop.ContinueWith(
+      _ => OnLoopEnded(cameraId, loop),
+      CancellationToken.None,
+      TaskContinuationOptions.None,
+      TaskScheduler.Default);
     logger.LogInformation("Tracking started on camera '{Camera}'", cameraId);
 
     if (_pump is not null)
@@ -117,6 +132,27 @@ public sealed class TrackingSessionManager(
 
     _pumpCts = new CancellationTokenSource();
     _pump = stream.ConsumeAsync(Dispatch, _pumpCts.Token);
+  }
+
+  private async Task OnLoopEnded(string cameraId, Task loop)
+  {
+    await _gate.WaitAsync();
+    try
+    {
+      if (!_sessions.TryGetValue(cameraId, out var running) || running.Loop != loop)
+        return;
+      if (!running.Cts.IsCancellationRequested)
+        logger.LogWarning("Tracking loop for camera '{Camera}' ended unexpectedly", cameraId);
+      await StopLockedAsync(cameraId);
+    }
+    catch (Exception ex)
+    {
+      logger.LogError(ex, "Could not retire the tracking session for camera '{Camera}'", cameraId);
+    }
+    finally
+    {
+      _gate.Release();
+    }
   }
 
   private async Task StopLockedAsync(string cameraId)

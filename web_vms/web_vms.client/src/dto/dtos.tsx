@@ -713,6 +713,17 @@ export type AnalyticsWatchDto = {
   storeEmbeddings: boolean
 }
 
+export type PtzCalibrationDto = {
+  cameraId: string
+  panDx: number
+  panDy: number
+  tiltDx: number
+  tiltDy: number
+  confidence: number
+  calibratedAt?: string
+  method: string
+}
+
 export type AnalyticsDetectionDto = {
   id: number
   eventId: string

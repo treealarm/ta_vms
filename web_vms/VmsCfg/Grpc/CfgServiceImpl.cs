@@ -1163,6 +1163,46 @@ namespace VmsCfg
       return response;
     }
 
+    public override async Task<GetPtzCalibrationResponse> GetPtzCalibration(
+      GetPtzCalibrationRequest request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId))
+        return new GetPtzCalibrationResponse();
+
+      var calibration = await storage.GetPtzCalibrationAsync(request.CameraId, context.CancellationToken);
+      if (calibration is null)
+        return new GetPtzCalibrationResponse();
+
+      return new GetPtzCalibrationResponse { Found = true, Calibration = calibration };
+    }
+
+    public override async Task<OperationStatus> UpsertPtzCalibration(
+      UpsertPtzCalibrationRequest request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.Calibration?.CameraId))
+        return new OperationStatus { Success = false, Message = "camera_id must not be empty" };
+
+      var result = await storage.UpsertPtzCalibrationAsync(request.Calibration, context.CancellationToken);
+      logger.LogInformation("PTZ calibration for camera '{CameraId}' upserted", result.CameraId);
+      InvalidateFsCache(result.CameraId);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OperationStatus> RemovePtzCalibration(
+      RemovePtzCalibrationRequest request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId))
+        return new OperationStatus { Success = false, Message = "camera_id must not be empty" };
+
+      var removed = await storage.RemovePtzCalibrationAsync(request.CameraId, context.CancellationToken);
+      if (removed)
+      {
+        logger.LogInformation("PTZ calibration for camera '{CameraId}' removed", request.CameraId);
+        InvalidateFsCache(request.CameraId);
+      }
+      return new OperationStatus { Success = removed };
+    }
+
     // ── Per-camera permissions ────────────────────────────────────────────────
 
     public override async Task<ListCameraPermissionsResponse> ListCameraPermissions(

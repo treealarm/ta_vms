@@ -31,4 +31,9 @@ public interface IAnalyticsWorkerClient
     BoundingBox? bbox,
     bool detectFirst,
     CancellationToken ct);
+
+  Task<EstimateGlobalMotionResponse> EstimateGlobalMotionAsync(
+    byte[] beforeJpeg,
+    byte[] afterJpeg,
+    CancellationToken ct);
 }

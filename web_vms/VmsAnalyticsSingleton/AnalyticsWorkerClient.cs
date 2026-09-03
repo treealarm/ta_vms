@@ -72,6 +72,19 @@ public sealed class AnalyticsWorkerClient(AnalyticsService.AnalyticsServiceClien
     return client.EmbedImageAsync(request, cancellationToken: ct).ResponseAsync;
   }
 
+  public Task<EstimateGlobalMotionResponse> EstimateGlobalMotionAsync(
+    byte[] beforeJpeg,
+    byte[] afterJpeg,
+    CancellationToken ct)
+  {
+    var request = new EstimateGlobalMotionRequest
+    {
+      BeforeJpeg = Google.Protobuf.ByteString.CopyFrom(beforeJpeg),
+      AfterJpeg = Google.Protobuf.ByteString.CopyFrom(afterJpeg),
+    };
+    return client.EstimateGlobalMotionAsync(request, cancellationToken: ct).ResponseAsync;
+  }
+
   private static DetectionKind MapClass(string c) => c.Trim().ToLowerInvariant() switch
   {
     "person" => DetectionKind.Person,

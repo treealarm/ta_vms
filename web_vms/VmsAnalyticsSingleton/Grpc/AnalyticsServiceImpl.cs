@@ -108,6 +108,35 @@ public sealed class AnalyticsServiceImpl(
     return Task.FromResult(response);
   }
 
+  public override async Task<EstimateGlobalMotionResponse> EstimateGlobalMotion(
+    EstimateGlobalMotionRequest request, ServerCallContext context)
+  {
+    if (workers is null || workers.Workers.Count == 0)
+      return new EstimateGlobalMotionResponse { Success = false, Error = "no analytics workers configured" };
+
+    if (request.BeforeJpeg.IsEmpty || request.AfterJpeg.IsEmpty)
+      return new EstimateGlobalMotionResponse { Success = false, Error = "both jpeg frames are required" };
+
+    // Stateless — any worker will do.
+    var client = workers.Workers.Values.First();
+    var workerResponse = await client.EstimateGlobalMotionAsync(
+      request.BeforeJpeg.ToByteArray(),
+      request.AfterJpeg.ToByteArray(),
+      context.CancellationToken);
+
+    if (!workerResponse.Success)
+      return new EstimateGlobalMotionResponse { Success = false, Error = workerResponse.Message };
+
+    return new EstimateGlobalMotionResponse
+    {
+      Success    = true,
+      Dx         = workerResponse.Dx,
+      Dy         = workerResponse.Dy,
+      Rotation   = workerResponse.Rotation,
+      Confidence = workerResponse.Confidence,
+    };
+  }
+
   public override async Task StreamCameraDetections(
     StreamCameraDetectionsRequest request,
     IServerStreamWriter<ProtoActivityEntry> responseStream,

@@ -15,6 +15,7 @@ namespace VmsPtzTrackingSingleton;
 public sealed class CameraConfigSubscriber(
   DaprPublishSubscribeClient pubSubClient,
   CameraPtzRouter router,
+  PtzCalibrationCache calibrationCache,
   TrackingSessionManager manager,
   ILogger<CameraConfigSubscriber> logger) : IHostedService, IDisposable
 {
@@ -65,6 +66,7 @@ public sealed class CameraConfigSubscriber(
 
       var cameraIds = evt.CameraIds ?? [];
       router.Invalidate(cameraIds);
+      calibrationCache.Invalidate(cameraIds);
       await manager.ReviewAsync(cameraIds, ct);
       return TopicResponseAction.Success;
     }

@@ -37,8 +37,18 @@ public sealed class TrackingSession
   /// Backstop for a Stop that failed: the camera's own PT3S timeout is the outer one.
   private static readonly TimeSpan SafetyStop = TimeSpan.FromMilliseconds(2500);
   private static readonly TimeSpan Tick = TimeSpan.FromMilliseconds(250);
+  // Detector outputs while the scene is still slewing under PTZ are poor reacquire signals: the
+  // model sees motion blur and parallax rather than the same stable object. Wait a short moment
+  // after each commanded pulse before trusting new boxes again.
+  private static readonly TimeSpan IgnoreDetectionsAfterMove = TimeSpan.FromMilliseconds(800);
 
   // ── Target handling ───────────────────────────────────────────────────────
+  // Detections whose bounding box covers more than this fraction of the frame area are almost
+  // certainly either a false positive (camera too close, texture mistaken for silhouette) or an
+  // object so close that the camera does not need to move at all.  Either way they must not drive
+  // the motor — an oversized box is not a useful tracking signal.
+  private const float MaxBoxArea = 0.25f;
+
   /// <summary>
   /// How long the target must be missing before another box may be taken for it.
   /// </summary>
@@ -55,6 +65,7 @@ public sealed class TrackingSession
   private readonly string _cameraId;
   private readonly IPtzCommandSender _sender;
   private readonly ILogger _logger;
+  private PtzCalibrationModel? _calibration;
 
   // Sightings from the shared detection stream. Bounded and drop-oldest for the same reason
   // LiveDetectionBroadcaster is: a stale sighting is worthless to a control loop, and the pump
@@ -77,16 +88,26 @@ public sealed class TrackingSession
   private float _lastX = 0.5f;
   private float _lastY = 0.5f;
   private string? _lastObjectId;
+  // An explicit target that has been missing longer than Lost is still the target — the operator
+  // named it — but the "lost" line must be written once, not on every Tick.
+  private bool _explicitLostLogged;
 
   private bool _moving;
   private DateTime _stopAt;
   private DateTime _lastCommandAt = DateTime.MinValue;
+  private DateTime _ignoreDetectionsUntil = DateTime.MinValue;
 
-  public TrackingSession(string cameraId, IPtzCommandSender sender, ILogger logger, TargetKey? target)
+  public TrackingSession(
+    string cameraId,
+    IPtzCommandSender sender,
+    ILogger logger,
+    TargetKey? target,
+    PtzCalibrationModel? calibration)
   {
     _cameraId = cameraId;
     _sender = sender;
     _logger = logger;
+    _calibration = calibration;
     _target = target;
     _explicitTarget = target is not null;
     // A freshly named target has not been seen by this session yet, but it must not look lost
@@ -104,8 +125,15 @@ public sealed class TrackingSession
       _explicitTarget = target is not null;
       _targetSeenAt = target is null ? null : DateTime.UtcNow;
       _lastObjectId = null;
+      _explicitLostLogged = false;
       if (target is null) { _lastX = 0.5f; _lastY = 0.5f; }
     }
+  }
+
+  public void ApplyCalibration(PtzCalibrationModel? calibration)
+  {
+    lock (_gate)
+      _calibration = calibration;
   }
 
   public TrackingSnapshot Snapshot()
@@ -182,6 +210,7 @@ public sealed class TrackingSession
       _lastY = match.CenterY;
       if (match.ObjectId is not null)
         _lastObjectId = match.ObjectId;
+      _explicitLostLogged = false;
     }
 
     await DriveAsync(match.CenterX, match.CenterY, ct);
@@ -193,6 +222,7 @@ public sealed class TrackingSession
     DateTime? seenAt;
     float lastX, lastY;
     string? lastObjectId;
+    bool explicitTarget;
     lock (_gate)
     {
       target = _target;
@@ -200,16 +230,30 @@ public sealed class TrackingSession
       lastX = _lastX;
       lastY = _lastY;
       lastObjectId = _lastObjectId;
+      explicitTarget = _explicitTarget;
     }
 
-    // No target: whatever turned up first is it. This is the "operator armed the mode and picked
-    // nobody" case, and the first object through the frame is what they meant.
-    if (target is null)
-      return batch[0];
+    // Strip oversized boxes before any matching — they are either very-close-range objects the
+    // camera cannot usefully track, or YOLO false positives on background texture/fabric.
+    var usable = batch.Where(s => s.BoxArea <= MaxBoxArea).ToList();
+    if (usable.Count == 0)
+      return null;
 
-    foreach (var sample in batch)
-      if (sample.Key == target)
-        return sample;
+    // An exact key match is the current target still being reported — trust it even while the
+    // camera is settling. Everything else waits: a neighbour or a first-come box during a slew
+    // is how tracking latches onto background texture.
+    if (target is not null)
+    {
+      foreach (var sample in usable)
+        if (sample.Key == target)
+          return sample;
+    }
+
+    if (DateTime.UtcNow < _ignoreDetectionsUntil)
+      return null;
+
+    if (target is null)
+      return usable[0];
 
     // Present a moment ago — wait for it rather than grabbing a neighbour.
     if (seenAt is not null && DateTime.UtcNow - seenAt.Value < ReacquireAfter)
@@ -218,13 +262,19 @@ public sealed class TrackingSession
     // Re-identification first: it is the one signal that means "the same physical object" across a
     // change of track id, which is what a moving camera causes.
     if (lastObjectId is not null)
-      foreach (var sample in batch)
+      foreach (var sample in usable)
         if (sample.ObjectId == lastObjectId)
           return sample;
 
+    // A target the operator chose explicitly must not jump to a neighbour merely because the whole
+    // scene moved under the detector while the camera was panning. Without a stable object id,
+    // "nearest to where it used to be" is how tracking latches onto a bystander or background box.
+    if (explicitTarget)
+      return null;
+
     DetectionSample? nearest = null;
     var nearestDistance = ReacquireRadius;
-    foreach (var sample in batch)
+    foreach (var sample in usable)
     {
       if (sample.Kind != target.Kind)
         continue;
@@ -242,20 +292,42 @@ public sealed class TrackingSession
 
   /// Speed proportional to how far off centre the object is, with a floor that actually moves the
   /// motor and a ceiling that keeps the picture sharp enough to keep detecting.
-  private static float Velocity(float error)
+  /// The dead zone is applied in image space by the caller — applying it here after the
+  /// calibration transform would shrink it when |det| is small and hunt on a centred target.
+  private static float Velocity(float command)
   {
-    var magnitude = MathF.Abs(error);
-    if (magnitude <= DeadZone)
+    if (command == 0f)
       return 0f;
-    var speed = Math.Clamp(MinSpeed + (Gain * (magnitude - DeadZone)), MinSpeed, MaxSpeed);
-    return MathF.Sign(error) * speed;
+    var speed = Math.Clamp(MinSpeed + (Gain * MathF.Abs(command)), MinSpeed, MaxSpeed);
+    return MathF.Sign(command) * speed;
   }
 
   private async Task DriveAsync(float centerX, float centerY, CancellationToken ct)
   {
-    var pan = Velocity(centerX - 0.5f);
-    // The overlay's y grows downward and ONVIF's tilt is positive upward.
-    var tilt = -Velocity(centerY - 0.5f);
+    var errorX = centerX - 0.5f;
+    var errorY = centerY - 0.5f;
+    if (MathF.Abs(errorX) <= DeadZone && MathF.Abs(errorY) <= DeadZone)
+    {
+      await SafeStopAsync(ct);
+      return;
+    }
+
+    float panInput;
+    float tiltInput;
+    PtzCalibrationModel? calibration;
+    lock (_gate)
+      calibration = _calibration;
+    if (calibration is not null)
+      (panInput, tiltInput) = PtzTrackingMath.ImageErrorToCommand(errorX, errorY, calibration);
+    else
+    {
+      panInput = errorX;
+      // The overlay's y grows downward and ONVIF's tilt is positive upward.
+      tiltInput = -errorY;
+    }
+
+    var pan = Velocity(panInput);
+    var tilt = Velocity(tiltInput);
 
     if (pan == 0f && tilt == 0f)
     {
@@ -271,6 +343,7 @@ public sealed class TrackingSession
     _lastCommandAt = now;
     _moving = true;
     _stopAt = now + Pulse;
+    _ignoreDetectionsUntil = _stopAt + IgnoreDetectionsAfterMove;
   }
 
   private async Task TickAsync(CancellationToken ct)
@@ -282,29 +355,47 @@ public sealed class TrackingSession
 
     TargetKey? target;
     DateTime? seenAt;
+    bool explicitTarget;
     lock (_gate)
     {
       target = _target;
       seenAt = _targetSeenAt;
+      explicitTarget = _explicitTarget;
     }
 
     if (target is null || seenAt is null || now - seenAt.Value <= Lost)
       return;
 
-    // Gone for good. The session stays armed and drops back to taking whatever appears next —
-    // an explicitly chosen target that has left the scene would otherwise leave the mode switched
-    // on and doing nothing at all.
     await SafeStopAsync(ct);
+    var announce = false;
     lock (_gate)
     {
-      _target = null;
-      _explicitTarget = false;
-      _targetSeenAt = null;
-      _lastObjectId = null;
-      _lastX = 0.5f;
-      _lastY = 0.5f;
+      if (!explicitTarget)
+      {
+        // Auto-acquired target: drop back to "take the next object" mode.
+        _target = null;
+        _explicitTarget = false;
+        _targetSeenAt = null;
+        _lastObjectId = null;
+        _lastX = 0.5f;
+        _lastY = 0.5f;
+        announce = true;
+      }
+      else if (!_explicitLostLogged)
+      {
+        _explicitLostLogged = true;
+        announce = true;
+      }
     }
-    _logger.LogInformation("Camera '{Camera}': target lost, waiting for the next object", _cameraId);
+
+    if (!announce)
+      return;
+
+    if (explicitTarget)
+      _logger.LogInformation(
+        "Camera '{Camera}': explicit target lost, waiting for the same object to reappear", _cameraId);
+    else
+      _logger.LogInformation("Camera '{Camera}': target lost, waiting for the next object", _cameraId);
   }
 
   private async Task SafeStopAsync(CancellationToken ct)

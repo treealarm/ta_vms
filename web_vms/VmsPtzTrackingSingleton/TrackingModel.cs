@@ -14,6 +14,8 @@ public sealed record TargetKey(string Source, long TrackId, DetectionKind Kind);
 /// <summary>One sighting, reduced to what the control law needs.</summary>
 /// <param name="CenterX">Box centre, 0..1 from the left edge.</param>
 /// <param name="CenterY">Box centre, 0..1 from the top edge.</param>
+/// <param name="BoxArea">Normalised bbox area (width × height, 0..1). Large boxes are likely
+/// false positives or objects so close the camera cannot usefully pan to them.</param>
 /// <param name="ObjectId">
 /// Re-identification label, when re-id has resolved this track. The strongest reacquire signal
 /// there is: it survives the track id changing, which is exactly what happens while the camera
@@ -25,6 +27,7 @@ public sealed record DetectionSample(
   DetectionKind Kind,
   float CenterX,
   float CenterY,
+  float BoxArea,
   string? ObjectId,
   DateTime DetectedAt)
 {

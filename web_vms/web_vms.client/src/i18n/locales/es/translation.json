@@ -82,7 +82,8 @@
     "roiMinCoverage": "Cobertura ROI mínima, %",
     "roiMaxCoverage": "Cobertura ROI máxima, %",
     "roiCoverageHint": "La cobertura es la parte de la duración del clip que tiene detecciones. Solo se recomprimen los clips dentro de esta banda: por debajo el detector vio muy poco como para fiarse, por encima no queda fondo que comprimir. 0 desactiva el límite.",
-    "tabDetections": "Detecciones"
+    "tabDetections": "Detecciones",
+    "tabCalibration": "Calibración"
   },
   "cameraControl": {
     "showControls": "Mostrar controles de cámara",
@@ -933,6 +934,30 @@
     "openOnvifCfg": "Abrir los ajustes de metadatos del dispositivo",
     "openOnvifEvents": "Abrir los ajustes de eventos ONVIF",
     "onvifBoxesDoNotRetain": "Se dibujan y se archivan, pero nunca guardan un clip por sí solos."
+  },
+  "ptzCalibration": {
+    "intro": "Enseñe al seguimiento cómo pan y tilt mueven la imagen en esta cámara. Use un fondo mayormente estático.",
+    "requiresTelemetry": "Active la telemetría PTZ en la pestaña Principal antes de calibrar.",
+    "current": "Calibración actual",
+    "method": "Método",
+    "confidence": "Confianza",
+    "modeAuto": "Auto",
+    "modeWizard": "Asistente",
+    "runAuto": "Calibrar automáticamente",
+    "startWizard": "Iniciar asistente",
+    "askPan": "La cámara acaba de moverse en pan+. ¿Hacia dónde fue la imagen?",
+    "askTilt": "La cámara acaba de moverse en tilt+. ¿Hacia dónde fue la imagen?",
+    "clear": "Borrar calibración",
+    "failed": "La calibración falló",
+    "staticSceneHint": "Personas o vehículos en movimiento hacen poco fiable la calibración automática.",
+    "direction": {
+      "left": "Izquierda",
+      "right": "Derecha",
+      "up": "Arriba",
+      "down": "Abajo",
+      "clockwise": "Horario",
+      "counterclockwise": "Antihorario"
+    }
   },
   "tracking": {
     "trackObject": "Seguir este objeto",

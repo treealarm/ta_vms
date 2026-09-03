@@ -10,6 +10,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
   public DbSet<DbCameraState> CameraStates { get; set; }
   public DbSet<DbStorage> Storages { get; set; }
   public DbSet<DbAnalyticsWatch> AnalyticsWatches { get; set; }
+  public DbSet<DbPtzCalibration> PtzCalibrations { get; set; }
   public DbSet<DbRecordingSchedule> RecordingSchedules { get; set; }
   public DbSet<DbRecordingScheduleWindow> RecordingScheduleWindows { get; set; }
   public DbSet<DbCameraSchedule> CameraSchedules { get; set; }
@@ -85,6 +86,20 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.AttachDebugCrops).HasColumnName("attach_debug_crops");
       e.Property(x => x.TimeoutSeconds).HasColumnName("timeout_seconds");
       e.Property(x => x.StoreEmbeddings).HasColumnName("store_embeddings");
+    });
+
+    modelBuilder.Entity<DbPtzCalibration>(e =>
+    {
+      e.ToTable("ptz_calibration");
+      e.HasKey(x => x.CameraId);
+      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.PanDx).HasColumnName("pan_dx");
+      e.Property(x => x.PanDy).HasColumnName("pan_dy");
+      e.Property(x => x.TiltDx).HasColumnName("tilt_dx");
+      e.Property(x => x.TiltDy).HasColumnName("tilt_dy");
+      e.Property(x => x.Confidence).HasColumnName("confidence");
+      e.Property(x => x.CalibratedAt).HasColumnName("calibrated_at");
+      e.Property(x => x.Method).HasColumnName("method");
     });
 
     modelBuilder.Entity<DbRecordingSchedule>(e =>
@@ -228,6 +243,18 @@ public sealed class DbAnalyticsWatch
   public int TimeoutSeconds { get; set; } = 10;
   /// Persist this camera's detection embeddings for forensic search.
   public bool StoreEmbeddings { get; set; }
+}
+
+public sealed class DbPtzCalibration
+{
+  public string CameraId { get; set; } = string.Empty;
+  public float PanDx { get; set; }
+  public float PanDy { get; set; }
+  public float TiltDx { get; set; }
+  public float TiltDy { get; set; }
+  public float Confidence { get; set; }
+  public DateTime CalibratedAt { get; set; } = DateTime.UtcNow;
+  public string Method { get; set; } = "auto";
 }
 
 public sealed class DbRecordingSchedule

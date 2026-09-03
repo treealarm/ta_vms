@@ -71,6 +71,10 @@ service CfgService {
   rpc RemoveAnalyticsWatch(RemoveAnalyticsWatchRequest) returns (OperationStatus);
   rpc GetCameraAnalyticsSources(CameraAnalyticsSourcesRequest) returns (CameraAnalyticsSourcesResponse);
 
+  rpc GetPtzCalibration(GetPtzCalibrationRequest) returns (GetPtzCalibrationResponse);
+  rpc UpsertPtzCalibration(UpsertPtzCalibrationRequest) returns (OperationStatus);
+  rpc RemovePtzCalibration(RemovePtzCalibrationRequest) returns (OperationStatus);
+
   rpc ListCameraPermissions(ListCameraPermissionsRequest) returns (ListCameraPermissionsResponse);
   rpc SetUserCameraPermissions(SetUserCameraPermissionsRequest) returns (OperationStatus);
   rpc GetCameraAclMode(google.protobuf.Empty) returns (GetCameraAclModeResponse);
@@ -647,6 +651,46 @@ message UpsertAnalyticsWatchRequest {
 }
 
 message RemoveAnalyticsWatchRequest {
+  string camera_id = 1;
+}
+
+// ── PTZ calibration (per camera, 1:1) ────────────────────────────────────────
+// Maps normalized pan/tilt commands to image-space motion. Used by object tracking
+// on cameras mounted in arbitrary orientations.
+
+enum PtzCalibrationMethod {
+  PTZ_CALIBRATION_METHOD_UNSPECIFIED = 0;
+  PTZ_CALIBRATION_AUTO   = 1;
+  PTZ_CALIBRATION_WIZARD = 2;
+}
+
+message PtzCalibration {
+  string camera_id = 1;
+  // Image-space motion caused by a unit pan+ command (normalized frame coords).
+  float pan_dx  = 2;
+  float pan_dy  = 3;
+  // Image-space motion caused by a unit tilt+ command.
+  float tilt_dx = 4;
+  float tilt_dy = 5;
+  float confidence = 6;
+  google.protobuf.Timestamp calibrated_at = 7;
+  PtzCalibrationMethod method = 8;
+}
+
+message GetPtzCalibrationRequest {
+  string camera_id = 1;
+}
+
+message GetPtzCalibrationResponse {
+  bool found = 1;
+  PtzCalibration calibration = 2;
+}
+
+message UpsertPtzCalibrationRequest {
+  PtzCalibration calibration = 1;
+}
+
+message RemovePtzCalibrationRequest {
   string camera_id = 1;
 }
 

@@ -68,6 +68,7 @@ public sealed class DetectionStreamClient(
       entry.Kind,
       entry.Bbox.X + (entry.Bbox.Width / 2f),
       entry.Bbox.Y + (entry.Bbox.Height / 2f),
+      entry.Bbox.Width * entry.Bbox.Height,
       entry.HasObjectId ? entry.ObjectId : null,
       entry.DetectedAt?.ToDateTime() ?? DateTime.UtcNow);
   }
