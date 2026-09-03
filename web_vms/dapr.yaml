@@ -134,6 +134,16 @@ apps:
     placementHostAddress: localhost
     daprdLogDestination: fileAndConsole
 
+  - appID: vmsptztrackingsingleton
+    appDirPath: ./VmsPtzTrackingSingleton
+    appProtocol: grpc
+    appPort: 5148
+    daprHTTPPort: 3616
+    daprGRPCPort: 51017
+    metricsPort: 9206
+    daprInternalGRPCPort: 19027
+    daprdLogDestination: fileAndConsole
+
   - appID: vms
     appDirPath: ../media_server
     appProtocol: grpc

@@ -65,6 +65,11 @@ builder.Services.AddSingleton(_ =>
   new Vms.Analytics.VmsAnalyticsService.VmsAnalyticsServiceClient(
     DaprClient.CreateInvocationInvoker(analyticsAppId)));
 
+var ptzTrackingAppId = Require("DAPR_PTZ_TRACKING_APP_ID");
+builder.Services.AddSingleton(_ =>
+  new Vms.PtzTracking.PtzTrackingService.PtzTrackingServiceClient(
+    DaprClient.CreateInvocationInvoker(ptzTrackingAppId)));
+
 builder.Services.AddSingleton<ICameraManager, CameraManager>();
 builder.Services.AddSingleton<IPermissionManager, PermissionManager>();
 builder.Services.AddSingleton<MonitorManager>();

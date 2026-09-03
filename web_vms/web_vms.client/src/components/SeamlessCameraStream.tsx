@@ -52,6 +52,8 @@ interface Props {
    */
   onShownUrlChange?: (url: string) => void
   onFindSimilar?: (box: DrawableBox) => void
+  onTrackObject?: (box: DrawableBox) => void
+  trackingHighlight?: { source: string; trackId: number; kind: string } | null
 }
 
 /**
@@ -72,6 +74,8 @@ const SeamlessCameraStream: React.FC<Props> = ({
   stunUrl,
   onShownUrlChange,
   onFindSimilar,
+  onTrackObject,
+  trackingHighlight,
 }) => {
   const [visibleUrl, setVisibleUrl] = useState(whepUrl)
   const [warmingUrl, setWarmingUrl] = useState<string | null>(null)
@@ -157,6 +161,8 @@ const SeamlessCameraStream: React.FC<Props> = ({
               bboxEnabled={shown && bboxEnabled}
               onFirstFrames={shown ? undefined : () => promote(url)}
               onFindSimilar={shown ? onFindSimilar : undefined}
+              onTrackObject={shown ? onTrackObject : undefined}
+              trackingHighlight={shown ? trackingHighlight : undefined}
             />
           </Box>
         )

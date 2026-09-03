@@ -1,0 +1,85 @@
+using System.Text.Json;
+using Dapr.Messaging.PublishSubscribe;
+
+namespace VmsPtzTrackingSingleton;
+
+/// <summary>
+/// Keeps the route cache and the running sessions honest when VmsCfg changes a camera.
+/// </summary>
+/// <remarks>
+/// Pub/sub invalidation is the right mechanism here precisely because this service is a singleton:
+/// a Dapr topic delivers each event to one instance of an app id, and there is only ever one. (The
+/// same cache in web_vms.Server has to use a version key in the state store instead, because that
+/// service runs in several replicas — see CLAUDE.md.)
+/// </remarks>
+public sealed class CameraConfigSubscriber(
+  DaprPublishSubscribeClient pubSubClient,
+  CameraPtzRouter router,
+  TrackingSessionManager manager,
+  ILogger<CameraConfigSubscriber> logger) : IHostedService, IDisposable
+{
+  private const string ServerConfigChangedTopic = "server-config-changed";
+
+  private static readonly string PubSubName =
+    Environment.GetEnvironmentVariable("PUBSUB_NAME")
+      ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
+
+  private readonly CancellationTokenSource _cts = new();
+
+  // Wire shape of server-config-changed; VmsCfg owns it. camera_ids is addressing, not state: it
+  // narrows what to re-check, and the current configuration is then fetched rather than read out
+  // of the payload, so a late or out-of-order event cannot install a stale answer.
+  private sealed record ServerConfigChanged(string? ServerId, IReadOnlyList<string>? CameraIds);
+
+  private static readonly JsonSerializerOptions JsonOptions =
+    new() { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
+
+  public Task StartAsync(CancellationToken cancellationToken)
+  {
+    _ = RunAsync(_cts.Token);
+    return Task.CompletedTask;
+  }
+
+  private async Task RunAsync(CancellationToken ct)
+  {
+    try
+    {
+      var options = new DaprSubscriptionOptions(
+        new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry));
+      await pubSubClient.SubscribeAsync(PubSubName, ServerConfigChangedTopic, options, HandleAsync, ct);
+    }
+    catch (OperationCanceledException) { }
+    catch (Exception ex)
+    {
+      logger.LogError(ex, "CameraConfigSubscriber error");
+    }
+  }
+
+  private async Task<TopicResponseAction> HandleAsync(TopicMessage message, CancellationToken ct)
+  {
+    try
+    {
+      var evt = JsonSerializer.Deserialize<ServerConfigChanged>(message.Data.Span, JsonOptions);
+      if (evt is null)
+        return TopicResponseAction.Drop;
+
+      var cameraIds = evt.CameraIds ?? [];
+      router.Invalidate(cameraIds);
+      await manager.ReviewAsync(cameraIds, ct);
+      return TopicResponseAction.Success;
+    }
+    catch (Exception ex)
+    {
+      logger.LogWarning(ex, "Could not handle a server-config-changed event");
+      return TopicResponseAction.Retry;
+    }
+  }
+
+  public Task StopAsync(CancellationToken cancellationToken)
+  {
+    _cts.Cancel();
+    return Task.CompletedTask;
+  }
+
+  public void Dispose() => _cts.Dispose();
+}

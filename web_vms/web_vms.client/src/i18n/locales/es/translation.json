@@ -66,6 +66,8 @@
     "addCamera": "Agregar cámara",
     "deleteCamera": "Eliminar cámara",
     "disabled": "Deshabilitar cámara",
+    "hasTelemetry": "Tiene telemetría (PTZ)",
+    "hasTelemetryHelper": "Active esto solo para cámaras que realmente se mueven. El firmware anuncia el servicio ONVIF PTZ haya o no un motor detrás, por lo que el joystick y el seguimiento de objetos dependen de este interruptor y no de lo que declare la cámara. La página de ajustes ONVIF sigue mostrando lo que informa: compruébelo allí primero.",
     "livePreview": "Vista en vivo ({{stream}})",
     "onvifEventsEnabled": "Suscribirse a eventos ONVIF",
     "edgeBackfill": "Recuperar huecos desde la cámara",
@@ -931,5 +933,10 @@
     "openOnvifCfg": "Abrir los ajustes de metadatos del dispositivo",
     "openOnvifEvents": "Abrir los ajustes de eventos ONVIF",
     "onvifBoxesDoNotRetain": "Se dibujan y se archivan, pero nunca guardan un clip por sí solos."
+  },
+  "tracking": {
+    "trackObject": "Seguir este objeto",
+    "startTooltip": "Seguir un objeto automáticamente",
+    "stopTooltip": "Dejar de seguir"
   }
 }

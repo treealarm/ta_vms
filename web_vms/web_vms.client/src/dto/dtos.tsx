@@ -253,6 +253,10 @@ export type CameraSetupDto = {
    *  parsed: nothing reaches the archive, the live overlay or the ROI pass. Separate from
    *  switching analytics off on the device, which lives in the camera's ONVIF settings. */
   onvifMetadataDisabled?: boolean
+  /** This camera really can move, so it may be driven — manually or by object tracking. An
+   *  administrator's word, not the device's: firmware advertises the ONVIF PTZ service whether or
+   *  not there is a motor behind it. */
+  hasTelemetry?: boolean
   /** Re-encode finished clips with ROI, keeping detector boxes sharp. */
   roiTranscode?: boolean
   /** Hours before a closed clip may be re-encoded; 0 means as soon as possible. */
@@ -1276,4 +1280,24 @@ export type EdgeExportLinkDto = {
   /** Relative URL carrying a sealed grant; usable directly as a media element source. */
   url: string
   expiresAt: string
+}
+
+/** One box on the live overlay, as the tracking service names it. */
+export interface TrackingTargetDto {
+  source: AnalyticsDetectionSource
+  trackId: number
+  kind: string
+}
+
+/** What the automatic "keep this object centred" loop is doing on one camera. */
+export interface PtzTrackingStateDto {
+  cameraId: string
+  active: boolean
+  /** Absent while the mode is armed but nothing has been acquired yet. */
+  target?: TrackingTargetDto | null
+  /** The operator named this target, rather than it being picked up automatically. */
+  explicitTarget: boolean
+  targetSeenAt?: string | null
+  /** Last PTZ failure; empty while the camera is obeying. */
+  lastError: string
 }

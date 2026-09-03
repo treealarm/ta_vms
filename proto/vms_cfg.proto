@@ -251,6 +251,18 @@ message CameraSetup {
   // Per camera because it depends on the firmware in front of you: a camera that does fill
   // in tt:Class is worth listening to, and one deployment can have both.
   bool onvif_metadata_disabled = 26;
+
+  // This camera really can move, and may be driven -- manually or by object tracking.
+  //
+  // Deliberately an administrator's word rather than the device's. A camera advertises the ONVIF
+  // PTZ service whenever its firmware was built with one, motor or no motor, and
+  // GetCapabilitiesSummaryAsync can only repeat what it is told. Acting on that answer puts a
+  // joystick on a fixed camera and lets object tracking issue moves nothing will ever carry out.
+  //
+  // So the live probe stays for diagnostics -- the ONVIF settings page still shows what the camera
+  // claims, which is how you check one before ticking this -- and every control that actually
+  // drives the camera is gated on this flag instead.
+  bool has_telemetry = 27;
 }
 
 message RecordingProfileRequest {

@@ -38,6 +38,7 @@
     <Protobuf Include="..\..\proto\vms_utils.proto" GrpcServices="Client" />
     <Protobuf Include="..\..\proto\vms_singleton.proto" GrpcServices="Client" />
     <Protobuf Include="..\..\proto\vms_analytics.proto" GrpcServices="Client" />
+    <Protobuf Include="..\..\proto\vms_ptz_tracking.proto" GrpcServices="Client" />
   </ItemGroup>
 
   <ItemGroup>

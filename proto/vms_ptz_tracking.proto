@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+// DetectionKind: the same taxonomy the boxes are drawn as. Carried as the enum rather than as a
+// string so this service never grows a second copy of that mapping -- the one place strings exist
+// is the browser boundary, and AnalyticsKindMapper in web_vms.Server already owns it.
+import "vms_analytics.proto";
+
+package vms.ptztracking;
+
+// Without this the generated namespace would be Vms.Ptztracking: protoc capitalises each dotted
+// segment as a whole and cannot know where the words in "ptztracking" divide.
+option csharp_namespace = "Vms.PtzTracking";
+
+// Keeping a moving object centred in a PTZ camera's frame.
+//
+// The loop that does it lives in VmsPtzTrackingSingleton, which reads the same live detection
+// stream the monitor's overlay draws (StreamCameraDetections in vms_analytics.proto) and drives the
+// camera through the node's PtzService (onvif.proto). This service is only how an operator turns
+// that loop on, points it at an object, and asks what it is doing.
+service PtzTrackingService {
+  rpc SetTracking(SetTrackingRequest) returns (SetTrackingResponse);
+  // What every camera is tracking right now. The monitor polls this to light its button and to
+  // pick out the followed box; there is no per-camera variant because a wall would then issue one
+  // request per tile.
+  rpc ListTrackingStates(ListTrackingStatesRequest) returns (ListTrackingStatesResponse);
+}
+
+// One box on the live overlay.
+//
+// All three parts are needed to name it. The CV detector and a camera's own Scene Description
+// number their tracks independently, so `source` has to be part of the key or a camera running
+// both would have them collide; and a person and the face found on that person share a track_id,
+// differing only by kind.
+message TrackingTarget {
+  string source   = 1;  // "cv" | "onvif"
+  int64  track_id = 2;
+  vms.analytics.DetectionKind kind = 3;
+}
+
+message SetTrackingRequest {
+  string camera_id = 1;
+  bool   enabled   = 2;
+  // Unset asks for the first object that turns up; set names the one the operator picked.
+  optional TrackingTarget target = 3;
+}
+
+message SetTrackingResponse {
+  bool   success = 1;
+  string error   = 2;
+}
+
+message TrackingState {
+  string camera_id = 1;
+  bool   active    = 2;
+  // Absent while the session is armed but has not acquired anything yet.
+  optional TrackingTarget target = 3;
+  // The operator named this target. A target picked up automatically -- and one the operator named
+  // that was then lost for good -- is not explicit, and may be replaced by whatever appears next.
+  bool explicit_target = 4;
+  // When the current target was last seen. Lets the monitor show a target going stale before the
+  // session gives up on it.
+  google.protobuf.Timestamp target_seen_at = 5;
+  // Last PTZ failure, so an operator can tell "nothing to follow" from "the camera will not move".
+  // Cleared by the next command that succeeds.
+  string last_error = 6;
+}
+
+message ListTrackingStatesRequest {}
+
+message ListTrackingStatesResponse {
+  repeated TrackingState states = 1;
+}

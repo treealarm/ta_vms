@@ -49,6 +49,8 @@ import ArchiveWallPlayer from './wall/ArchiveWallPlayer'
 import StreamOverrideRow from './StreamOverrideRow'
 import StreamProfileRow from './StreamProfileRow'
 import PtzOverlay from './PtzOverlay'
+import GpsFixedIcon from '@mui/icons-material/GpsFixed'
+import { setPtzTracking, usePtzTracking } from '../hooks/usePtzTracking'
 import DeviceIoOverlay from './DeviceIoOverlay'
 import { useOnvifBboxCapable } from '../hooks/useOnvifBboxCapable'
 import { useArchiveMetadataCoverage } from '../hooks/archiveMetadataClient'
@@ -178,6 +180,7 @@ export default function CameraUnifiedCard({
   const [pendingArmed, setPendingArmed] = useState<boolean | null>(null)
   const [copied, setCopied] = useState(false)
   const [similarError, setSimilarError] = useState<string | null>(null)
+  const [trackingError, setTrackingError] = useState<string | null>(null)
 
   const merged: CameraSetupDto = { ...camera, ...(cameraState ?? {}) }
 
@@ -295,31 +298,64 @@ export default function CameraUnifiedCard({
 
   const rtsp = configuredRtsp || (camera.onvifConn ? onvifRtsp : '')
 
-  // A camera can advertise the ONVIF PTZ service without any real move hardware behind it —
-  // gate the joystick on the actual capability check, not just "has an ONVIF connection".
-  const [hasPtz, setHasPtz] = useState<boolean | null>(null)
+  // Device I/O is still gated on what the camera reports: relays and inputs either answer or they
+  // do not, and there is nothing an operator could know that the device does not. PTZ is the
+  // exception — see hasTelemetry below.
   const [hasRelayOutputs, setHasRelayOutputs] = useState<boolean | null>(null)
   const [hasDigitalInputs, setHasDigitalInputs] = useState<boolean | null>(null)
   useEffect(() => {
-    if (!camera.onvifConn) { setHasPtz(null); setHasRelayOutputs(null); setHasDigitalInputs(null); return }
+    if (!camera.onvifConn) { setHasRelayOutputs(null); setHasDigitalInputs(null); return }
     fetch(`/api/onvif/cameras/${encodeURIComponent(camera.cameraId)}/capabilities`)
       .then((r) => (r.ok
-        ? (r.json() as Promise<{ hasPtz: boolean; hasRelayOutputs: boolean; hasDigitalInputs: boolean }>)
+        ? (r.json() as Promise<{ hasRelayOutputs: boolean; hasDigitalInputs: boolean }>)
         : Promise.reject()))
-      .then((d) => { setHasPtz(d.hasPtz); setHasRelayOutputs(d.hasRelayOutputs); setHasDigitalInputs(d.hasDigitalInputs) })
-      .catch(() => { setHasPtz(null); setHasRelayOutputs(null); setHasDigitalInputs(null) }) // unknown -> fail open, same as the ONVIF settings panel
+      .then((d) => { setHasRelayOutputs(d.hasRelayOutputs); setHasDigitalInputs(d.hasDigitalInputs) })
+      .catch(() => { setHasRelayOutputs(null); setHasDigitalInputs(null) }) // unknown -> fail open, same as the ONVIF settings panel
     // camera.onvifConn is a fresh object reference on every cameraState poll (see the
     // fetchCameraState interval below) even when unchanged — depend on its presence, not its
     // identity, so this doesn't refetch every 5s.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camera.cameraId, Boolean(camera.onvifConn)])
-  useEffect(() => { if (hasPtz === false && ptzOpen) setPtzOpen(false) }, [hasPtz, ptzOpen])
+
+  // Whether this camera can be driven at all. Deliberately the configured flag and not the ONVIF
+  // capability: firmware advertises the PTZ service whether or not a motor was ever fitted, so the
+  // probe puts a joystick on fixed cameras. The camera's ONVIF settings page still shows what it
+  // claims — that is where you check one before ticking the flag.
+  const hasTelemetry = camera.hasTelemetry === true
+  useEffect(() => { if (!hasTelemetry && ptzOpen) setPtzOpen(false) }, [hasTelemetry, ptzOpen])
   useEffect(() => {
     if (hasRelayOutputs === false && hasDigitalInputs === false && deviceIoOpen) setDeviceIoOpen(false)
   }, [hasRelayOutputs, hasDigitalInputs, deviceIoOpen])
   // Live-only controls: in wall playback the cell shows recorded video, so PTZ and device I/O have
   // nothing to act on.
-  const showPtzControl = Boolean(camera.onvifConn) && mode === 'live' && !wallPlayback && !isDisabled && (hasPtz ?? true)
+  const showPtzControl = hasTelemetry && mode === 'live' && !wallPlayback && !isDisabled
+  // Automatic tracking rides on the same flag as the joystick: both drive the motor, and neither
+  // has anything to act on while the cell is showing recorded video.
+  const showTrackingControl = showPtzControl
+  const tracking = usePtzTracking(showTrackingControl ? camera.cameraId : undefined)
+  const trackingActive = tracking?.active === true
+
+  const toggleTracking = async () => {
+    try {
+      await setPtzTracking(camera.cameraId, !trackingActive)
+    } catch (e) {
+      setTrackingError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  // Picking an object from the overlay both arms the mode and names the target, so one click does
+  // what the operator meant rather than needing the button pressed first.
+  const trackObject = async (box: DrawableBox) => {
+    try {
+      await setPtzTracking(camera.cameraId, true, {
+        source: box.source,
+        trackId: box.trackId,
+        kind: box.kind,
+      })
+    } catch (e) {
+      setTrackingError(e instanceof Error ? e.message : String(e))
+    }
+  }
   const showDeviceIoControl = Boolean(camera.onvifConn) && mode === 'live' && !wallPlayback && !isDisabled
     && ((hasRelayOutputs ?? true) || (hasDigitalInputs ?? true))
 
@@ -571,6 +607,21 @@ export default function CameraUnifiedCard({
                 sx={{ ...BTN_SX, ...(ptzOpen ? { color: W, bgcolor: alpha(W, 0.2) } : {}) }}
               >
                 <ControlCameraIcon sx={{ fontSize: '0.95rem' }} />
+              </IconButton>
+            </Tooltip>
+          )}
+
+          {showTrackingControl && (
+            <Tooltip
+              title={trackingActive ? t('tracking.stopTooltip') : t('tracking.startTooltip')}
+              placement="right"
+            >
+              <IconButton
+                size="small"
+                onClick={() => void toggleTracking()}
+                sx={{ ...BTN_SX, ...(trackingActive ? { color: W, bgcolor: alpha(W, 0.2) } : {}) }}
+              >
+                <GpsFixedIcon sx={{ fontSize: '0.95rem' }} />
               </IconButton>
             </Tooltip>
           )}
@@ -980,6 +1031,8 @@ export default function CameraUnifiedCard({
                 bboxEnabled={bboxOpen && hasBoxSource}
                 onShownUrlChange={setShownWhepUrl}
                 onFindSimilar={openFindSimilar}
+                onTrackObject={showTrackingControl ? (box) => void trackObject(box) : undefined}
+                trackingHighlight={tracking?.target ?? null}
               />
             )}
             {mode === 'archive' && (
@@ -1016,6 +1069,16 @@ export default function CameraUnifiedCard({
       >
         <Alert severity="error" variant="filled" onClose={() => setRecordingError(null)}>
           {recordingError}
+        </Alert>
+      </Snackbar>
+      <Snackbar
+        open={trackingError !== null}
+        onClose={() => setTrackingError(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ position: 'absolute' }}
+      >
+        <Alert severity="warning" variant="filled" onClose={() => setTrackingError(null)}>
+          {trackingError}
         </Alert>
       </Snackbar>
       <Snackbar

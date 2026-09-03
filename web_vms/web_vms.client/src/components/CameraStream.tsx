@@ -19,6 +19,10 @@ interface CameraStreamProps {
    *  when a stream warming up out of sight is ready to be shown. */
   onFirstFrames?: () => void;
   onFindSimilar?: (box: DrawableBox) => void;
+  /** Point automatic tracking at a clicked object; absent where the camera cannot be driven. */
+  onTrackObject?: (box: DrawableBox) => void;
+  /** The object automatic tracking is currently following. */
+  trackingHighlight?: { source: string; trackId: number; kind: string } | null;
 }
 
 // A WHEP exchange can succeed in full — session created, peer connection reporting `connected` —
@@ -48,6 +52,8 @@ const CameraStream: React.FC<CameraStreamProps> = ({
   stunUrl,
   onFirstFrames,
   onFindSimilar,
+  onTrackObject,
+  trackingHighlight,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   // Announced once per mount. A re-negotiation after a stall is not a new arrival for the caller:
@@ -410,6 +416,8 @@ const CameraStream: React.FC<CameraStreamProps> = ({
           videoRef={videoRef}
           cameraId={cameraId}
           onFindSimilar={onFindSimilar}
+          onTrackObject={onTrackObject}
+          highlight={trackingHighlight}
         />
       )}
       {/* Same switch, the other half of the picture: cameras whose analytics produces no geometry

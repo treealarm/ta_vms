@@ -66,6 +66,8 @@
     "addCamera": "Add camera",
     "deleteCamera": "Delete camera",
     "disabled": "Disable camera",
+    "hasTelemetry": "Has telemetry (PTZ)",
+    "hasTelemetryHelper": "Tick this only for cameras that really move. Firmware advertises the ONVIF PTZ service whether or not there is a motor behind it, so the joystick and object tracking are gated on this switch, not on what the camera claims. The camera's ONVIF settings page still shows what it reports — check there first.",
     "livePreview": "Live preview ({{stream}})",
     "onvifEventsEnabled": "Subscribe to ONVIF events",
     "edgeBackfill": "Auto-recover gaps from the camera",
@@ -931,5 +933,10 @@
     "openOnvifCfg": "Open the device's metadata settings",
     "openOnvifEvents": "Open ONVIF event settings",
     "onvifBoxesDoNotRetain": "Drawn and archived, but never keep a clip on their own."
+  },
+  "tracking": {
+    "trackObject": "Track this object",
+    "startTooltip": "Follow an object automatically",
+    "stopTooltip": "Stop following"
   }
 }

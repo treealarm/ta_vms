@@ -1030,6 +1030,87 @@
             "problemMatcher": []
         },
         {
+            "label": "dapr:vmsptztrackingsingleton:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id",
+                "vmsptztrackingsingleton",
+                "--app-port",
+                "5148",
+                "--app-protocol",
+                "grpc",
+                "--dapr-http-port",
+                "3616",
+                "--dapr-grpc-port",
+                "51017",
+                "--metrics-port",
+                "9206",
+                "--dapr-internal-grpc-port",
+                "19027",
+                "--resources-path",
+                "../init_files/dapr_components",
+                "--placement-host-address",
+                "localhost"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/web_vms",
+                // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
+                // never be set for docker or Kubernetes.
+                "env": {
+                    "DAPR_HOST_IP": "127.0.0.1"
+                }
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dapr"
+            },
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(?:\\s*)$",
+                    "file": 1,
+                    "location": 1,
+                    "message": 1
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Starting Dapr with id",
+                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                }
+            }
+        },
+        {
+            "label": "dapr:vmsptztrackingsingleton:stop",
+            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
+            "type": "shell",
+            "command": "dapr",
+            "args": [
+                "stop",
+                "--app-id",
+                "vmsptztrackingsingleton"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare:vmsptztrackingsingleton",
+            "detail": "Manual, for debugging one service on its own: builds everything, then clears and restarts just this app id's sidecar. F5 does not use these — the compound brings every sidecar up in one terminal via 'prepare: stack', so that Stop does not leave a terminal per service behind.",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "build:all",
+                "dapr:vmsptztrackingsingleton:stop",
+                "dapr:vmsptztrackingsingleton:start"
+            ],
+            "problemMatcher": []
+        },
+        {
             "label": "dapr:vms:start",
             "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
             "type": "shell",

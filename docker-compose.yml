@@ -261,6 +261,44 @@ services:
     depends_on:
       - vmssquaresingleton
 
+  vmsptztrackingsingleton:
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: web_vms/VmsPtzTrackingSingleton/Dockerfile
+    env_file:
+      - .env
+    environment:
+      APP_ID: vmsptztrackingsingleton
+    # Exactly one instance: a camera must have exactly one control loop, or two of them send the
+    # motor opposing commands. See CLAUDE.md.
+    volumes: *data-volume
+    depends_on:
+      - vmscfg
+
+  vmsptztrackingsingleton-dapr:
+    profiles: [app]
+    image: "daprio/daprd:latest"
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "vmsptztrackingsingleton"
+      - "-app-port"
+      - "${PTZ_TRACKING_VMS_PORT}"
+      - "-app-protocol"
+      - "grpc"
+      - "-dapr-http-port"
+      - "3500"
+      - "-dapr-grpc-port"
+      - "50001"
+      - "-components-path"
+      - "/components"
+    volumes:
+      - "./init_files/dapr_components/docker:/components"
+    network_mode: "service:vmsptztrackingsingleton"
+    depends_on:
+      - vmsptztrackingsingleton
+
   vmslogger:
     profiles: [app]
     build:

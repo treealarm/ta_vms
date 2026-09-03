@@ -8,6 +8,9 @@ interface Props {
   videoRef: RefObject<HTMLVideoElement | null>
   cameraId: string
   onFindSimilar?: (box: DrawableBox) => void
+  onTrackObject?: (box: DrawableBox) => void
+  /** The object automatic tracking is following, drawn gold with the rest dimmed. */
+  highlight?: { source: string; trackId: number; kind: string } | null
 }
 
 /** How often boxes are re-evaluated so an ageing one fades and then disappears on time. */
@@ -20,7 +23,7 @@ const FADE_TICK_MS = 120
  * the boxes do not move between samples (see liveBoxes.ts), so a per-frame loop would repaint an
  * unchanged canvas for every cell of the wall.
  */
-export default function BboxOverlay({ videoRef, cameraId, onFindSimilar }: Props) {
+export default function BboxOverlay({ videoRef, cameraId, onFindSimilar, onTrackObject, highlight }: Props) {
   const [boxes, setBoxes] = useState<DrawableBox[]>([])
 
   useEffect(() => {
@@ -39,5 +42,23 @@ export default function BboxOverlay({ videoRef, cameraId, onFindSimilar }: Props
     }
   }, [cameraId])
 
-  return <BboxCanvas videoRef={videoRef} boxes={boxes} onFindSimilar={onFindSimilar} />
+  // Marked here rather than in boxesNow: which box is being followed is a property of the tracking
+  // session, not of the detection feed, and the archive overlay marks its own the same way.
+  const marked = !highlight
+    ? boxes
+    : boxes.map((b) => ({
+        ...b,
+        highlighted: b.trackId === highlight.trackId
+          && b.kind === highlight.kind
+          && b.source === highlight.source,
+      }))
+
+  return (
+    <BboxCanvas
+      videoRef={videoRef}
+      boxes={marked}
+      onFindSimilar={onFindSimilar}
+      onTrackObject={onTrackObject}
+    />
+  )
 }

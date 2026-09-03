@@ -126,6 +126,13 @@ public record CameraSetupDto
   public bool OnvifMetadataDisabled { get; init; }
 
   /// <summary>
+  /// This camera really can move, and may be driven — manually or by object tracking. An
+  /// administrator's word rather than the device's: a camera advertises the ONVIF PTZ service
+  /// whenever its firmware was built with one, motor or no motor.
+  /// </summary>
+  public bool HasTelemetry { get; init; }
+
+  /// <summary>
   /// Re-encode this camera's finished clips with ROI, keeping the detector's boxes sharp
   /// and spending fewer bits elsewhere. Does nothing for clips that have no boxes.
   /// </summary>

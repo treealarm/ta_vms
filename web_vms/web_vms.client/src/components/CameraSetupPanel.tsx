@@ -48,6 +48,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const [edgeBackfillStream, setEdgeBackfillStream] = useState(existing?.edgeBackfillStream ?? '')
   const [roiTranscode, setRoiTranscode] = useState(existing?.roiTranscode === true)
   const [onvifMetadataDisabled, setOnvifMetadataDisabled] = useState(existing?.onvifMetadataDisabled === true)
+  const [hasTelemetry, setHasTelemetry] = useState(existing?.hasTelemetry === true)
   // Percent in the field, fraction on the wire: the API speaks 0..1, operators do not.
   const pctOf = (v: number | undefined, fallback: number) =>
     String(Math.round((v ?? fallback) * 1000) / 10)
@@ -88,6 +89,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     edgeBackfillStream: existing?.edgeBackfillStream ?? '',
     roiTranscode: existing?.roiTranscode === true,
     onvifMetadataDisabled: existing?.onvifMetadataDisabled === true,
+    hasTelemetry: existing?.hasTelemetry === true,
     roiDelayHours: String(existing?.roiDelayHours ?? 0),
     roiMinCoverage: pctOf(existing?.roiMinCoverage, 0),
     roiMaxCoverage: pctOf(existing?.roiMaxCoverage, 1),
@@ -105,6 +107,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     || edgeBackfillStream !== snap.edgeBackfillStream
     || roiTranscode !== snap.roiTranscode
     || onvifMetadataDisabled !== snap.onvifMetadataDisabled
+    || hasTelemetry !== snap.hasTelemetry
     || roiDelayHours !== snap.roiDelayHours
     || roiMinCoverage !== snap.roiMinCoverage
     || roiMaxCoverage !== snap.roiMaxCoverage
@@ -133,6 +136,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     edgeBackfillStream,
     roiTranscode,
     onvifMetadataDisabled,
+    hasTelemetry,
     // Kept as text while editing so a half-typed "0." is not thrown away.
     roiDelayHours: Number(roiDelayHours) || 0,
     roiMinCoverage: (Number(roiMinCoverage) || 0) / 100,
@@ -160,7 +164,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     const action = serverChanged ? changeCameraParent : addCamera
     const result = await dispatch(action(payload))
     if (!action.rejected.match(result)) {
-      setSnap({ name, serverId, mediaMtxServerId, user, pass, ip, port, disabled, edgeBackfillStream, roiTranscode, onvifMetadataDisabled, roiDelayHours, roiMinCoverage, roiMaxCoverage })
+      setSnap({ name, serverId, mediaMtxServerId, user, pass, ip, port, disabled, edgeBackfillStream, roiTranscode, onvifMetadataDisabled, hasTelemetry, roiDelayHours, roiMinCoverage, roiMaxCoverage })
       await dispatch(fetchCameraState(initialCameraId))
       return true
     }
@@ -186,6 +190,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     setEdgeBackfillStream(snap.edgeBackfillStream)
     setRoiTranscode(snap.roiTranscode)
     setOnvifMetadataDisabled(snap.onvifMetadataDisabled)
+    setHasTelemetry(snap.hasTelemetry)
     setRoiDelayHours(snap.roiDelayHours)
     setRoiMinCoverage(snap.roiMinCoverage)
     setRoiMaxCoverage(snap.roiMaxCoverage)
@@ -283,6 +288,13 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
               control={<Switch checked={disabled} onChange={(e) => setDisabled(e.target.checked)} color="warning" />}
               label={t('cameras.disabled')}
             />
+
+            <FieldHint hint={t('cameras.hasTelemetryHelper')}>
+              <FormControlLabel
+                control={<Switch checked={hasTelemetry} onChange={(e) => setHasTelemetry(e.target.checked)} />}
+                label={t('cameras.hasTelemetry')}
+              />
+            </FieldHint>
             {isNew
               ? <CameraStoragesControl value={pendingStorages} onChange={setPendingStorages} />
               : <CameraStoragesControl cameraId={initialCameraId} />

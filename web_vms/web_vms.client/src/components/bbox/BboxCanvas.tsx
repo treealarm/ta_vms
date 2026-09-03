@@ -7,6 +7,8 @@ interface Props {
   videoRef: RefObject<HTMLVideoElement | null>
   boxes: DrawableBox[]
   onFindSimilar?: (box: DrawableBox) => void
+  /** Point this camera's automatic tracking at the clicked object. Absent where it cannot. */
+  onTrackObject?: (box: DrawableBox) => void
 }
 
 /**
@@ -16,7 +18,7 @@ interface Props {
  * or text layout, so the overlay stays cheap on the main thread and never makes the video stutter.
  * For the same reason the boxes are held in a ref — a resize-driven redraw must not need a render.
  */
-export default function BboxCanvas({ videoRef, boxes, onFindSimilar }: Props) {
+export default function BboxCanvas({ videoRef, boxes, onFindSimilar, onTrackObject }: Props) {
   const { t } = useTranslation()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const boxesRef = useRef(boxes)
@@ -72,7 +74,7 @@ export default function BboxCanvas({ videoRef, boxes, onFindSimilar }: Props) {
 
   useEffect(() => {
     const video = videoRef.current
-    if (!video || !onFindSimilar) return
+    if (!video || (!onFindSimilar && !onTrackObject)) return
 
     const hitTest = (clientX: number, clientY: number): DrawableBox | null => {
       const rect = video.getBoundingClientRect()
@@ -103,7 +105,7 @@ export default function BboxCanvas({ videoRef, boxes, onFindSimilar }: Props) {
 
     video.addEventListener('click', onVideoClick)
     return () => video.removeEventListener('click', onVideoClick)
-  }, [videoRef, onFindSimilar])
+  }, [videoRef, onFindSimilar, onTrackObject])
 
   return (
     <>
@@ -124,21 +126,37 @@ export default function BboxCanvas({ videoRef, boxes, onFindSimilar }: Props) {
         anchorReference="anchorPosition"
         anchorPosition={menu ? { top: menu.y, left: menu.x } : undefined}
       >
-        <MenuItem
-          onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            const box = menu?.box
-            setMenu(null)
-            if (!box || !onFindSimilar) return
-            // Defer past MUI Menu/Modal teardown — otherwise React Router 7 can keep the
-            // previous splat match (/operator/monitors) and the address bar never settles on
-            // Object findings.
-            queueMicrotask(() => onFindSimilar(box))
-          }}
-        >
-          {t('forensic.findSimilar')}
-        </MenuItem>
+        {onTrackObject && (
+          <MenuItem
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              const box = menu?.box
+              setMenu(null)
+              if (!box) return
+              onTrackObject(box)
+            }}
+          >
+            {t('tracking.trackObject')}
+          </MenuItem>
+        )}
+        {onFindSimilar && (
+          <MenuItem
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              const box = menu?.box
+              setMenu(null)
+              if (!box) return
+              // Defer past MUI Menu/Modal teardown — otherwise React Router 7 can keep the
+              // previous splat match (/operator/monitors) and the address bar never settles on
+              // Object findings.
+              queueMicrotask(() => onFindSimilar(box))
+            }}
+          >
+            {t('forensic.findSimilar')}
+          </MenuItem>
+        )}
       </Menu>
     </>
   )
