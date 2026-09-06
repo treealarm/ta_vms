@@ -54,6 +54,10 @@ class LiveDetectionsClient {
   // already past its own await notice it is stale and let go of what it holds.
   private abort?: AbortController
   private epoch = 0
+  // Cameras with new detections since the last repaint, and the frame callback that will drain
+  // them. See notifyFrames.
+  private pendingNotify = new Set<string>()
+  private notifyHandle?: number
 
   private start(): void {
     this.stopped = false
@@ -71,6 +75,9 @@ class LiveDetectionsClient {
     this.abort = undefined
     if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer)
     this.reconnectTimer = undefined
+    if (this.notifyHandle !== undefined) cancelAnimationFrame(this.notifyHandle)
+    this.notifyHandle = undefined
+    this.pendingNotify.clear()
     this.frames.clear()
   }
 
@@ -80,6 +87,19 @@ class LiveDetectionsClient {
   }
 
   private ingest(dto: AnalyticsActivityEntryDto): void {
+    // Only for cameras something is actually drawing.
+    //
+    // The stream carries every camera the operator may see — that is what makes one connection for
+    // the whole page possible — but it means switching boxes on for a single tile used to start
+    // parsing, timestamping and buffering the detections of the entire deployment on the main
+    // thread, and holding a frame history for cameras nobody is looking at. On a wall with a chatty
+    // producer that is enough main-thread work to make the live video stutter, and the buffers grow
+    // for as long as the overlay stays on.
+    //
+    // The cost of the guard is that a tile switched on while the stream is already running starts
+    // empty instead of inheriting the backlog, so its boxes appear with the next report rather than
+    // at once. At one report a second that is not worth the rest of this.
+    if (!this.frameListeners.has(dto.cameraId)) return
     this.ingestFrame(dto)
     this.notifyFrames(dto.cameraId)
   }
@@ -121,14 +141,45 @@ class LiveDetectionsClient {
       const s = this.frameListeners.get(cameraId)
       if (s) {
         s.delete(cb)
-        if (s.size === 0) this.frameListeners.delete(cameraId)
+        if (s.size === 0) {
+          this.frameListeners.delete(cameraId)
+          // Nothing draws this camera any more, so its history is dead weight until the connection
+          // closes — which on a wall with one overlay left on is never.
+          this.frames.delete(cameraId)
+        }
       }
       this.refCount -= 1
       if (this.refCount === 0) this.stop()
     }
   }
 
+  /**
+   * Tells a camera's overlays that it has new geometry — at most once per repaint.
+   *
+   * The producers emit one message per detection, not one per video frame, so a moment with a dozen
+   * objects in view arrives as a dozen events milliseconds apart. Answering each one separately
+   * meant a dozen React renders and a dozen full canvas repaints for a picture that changed once,
+   * and the wall pays that for every cell at once. Coalescing to an animation frame collapses the
+   * burst into the single repaint it always was, and costs nothing in latency: the browser was not
+   * going to paint any sooner than that anyway.
+   *
+   * A hidden tab gets no animation frames and so no repaints, which is the right answer too — the
+   * overlay's own fade tick reads the buffer directly and catches up when the tab comes back.
+   */
   private notifyFrames(cameraId: string): void {
+    const set = this.frameListeners.get(cameraId)
+    if (!set || set.size === 0) return
+    this.pendingNotify.add(cameraId)
+    if (this.notifyHandle !== undefined) return
+    this.notifyHandle = requestAnimationFrame(() => {
+      this.notifyHandle = undefined
+      const cameras = [...this.pendingNotify]
+      this.pendingNotify.clear()
+      for (const id of cameras) this.flushFrames(id)
+    })
+  }
+
+  private flushFrames(cameraId: string): void {
     const set = this.frameListeners.get(cameraId)
     if (!set || set.size === 0) return
     // A new identity so useSyncExternalStore sees the change; the arrays themselves are mutated in
