@@ -16,7 +16,6 @@ public sealed class CameraConfigSubscriber(
   DaprPublishSubscribeClient pubSubClient,
   CameraPtzRouter router,
   PtzCalibrationCache calibrationCache,
-  TrackingPolicyCache policyCache,
   TrackingReconciler reconciler,
   ILogger<CameraConfigSubscriber> logger) : IHostedService, IDisposable
 {
@@ -70,10 +69,9 @@ public sealed class CameraConfigSubscriber(
       var cameraIds = evt.CameraIds ?? [];
       router.Invalidate(cameraIds);
       calibrationCache.Invalidate(cameraIds);
-      policyCache.Invalidate(cameraIds);
       // Drop the stale answers first, then ask for a reconcile: the reconciler re-reads through
       // these same caches, and doing it the other way round would have it re-install what was just
-      // thrown away.
+      // thrown away. The policy itself is not cached — the reconciler always reads it fresh.
       //
       // Triggering rather than awaiting is deliberate. The handler runs under a ten-second
       // delivery policy, and a reconcile talks to VmsCfg and to every camera's ONVIF host; making

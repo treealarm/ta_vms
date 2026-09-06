@@ -25,6 +25,10 @@ public class FrontendConfigDto
 [ApiController]
 [Route("api/config")]
 [AllowAnonymous]
+// Answers before the dependencies do, deliberately: this is what the SPA asks first to find out
+// whether the backend is there at all, and it needs nothing from the server-to-node map. Refusing
+// it during startup makes the page report an unreachable backend instead of loading.
+[AllowNotReady]
 public class FrontendConfigController(SquareLinkProbe _square) : ControllerBase
 {
   /// <summary>

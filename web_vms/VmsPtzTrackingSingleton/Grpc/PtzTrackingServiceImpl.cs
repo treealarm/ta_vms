@@ -35,9 +35,7 @@ public sealed class PtzTrackingServiceImpl(TrackingSessionManager manager)
       var message = new TrackingState
       {
         CameraId = state.CameraId,
-        // Every session held here is running; an armed session that has not acquired anything yet
-        // is still active, it just has no target.
-        Active = true,
+        Active = state.Active,
         ExplicitTarget = state.ExplicitTarget,
         LastError = state.LastError,
       };

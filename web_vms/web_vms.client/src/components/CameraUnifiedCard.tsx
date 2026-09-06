@@ -339,7 +339,12 @@ export default function CameraUnifiedCard({
   // of the component that would actually know. The side effect is honest — if the tracking service
   // is down the button is correctly dark, because nothing is being followed.
   const tracking = usePtzTracking(showPtzControl ? camera.cameraId : undefined)
+  // Listed at all means the camera is configured to guide itself; `active` says whether it actually
+  // is. The two differ when nothing can drive the camera — its telemetry flag is clear, or no
+  // VmsOnvif reaches it — and the difference matters here: the button reflects the setting, so a
+  // camera missing from the list would read as off and could never be switched off.
   const selfGuiding = tracking !== null
+  const running = tracking?.active === true
   // The operator has taken this camera off its own priorities and pinned it to one object.
   const overridden = tracking?.explicitTarget === true
 
@@ -637,6 +642,8 @@ export default function CameraUnifiedCard({
             <Tooltip
               title={
                 overridden ? t('tracking.releaseTooltip')
+                  : selfGuiding && !running
+                    ? (tracking?.lastError || t('tracking.notRunning'))
                   : selfGuiding ? t('tracking.stopTooltip')
                   : t('tracking.startTooltip')
               }
@@ -648,7 +655,12 @@ export default function CameraUnifiedCard({
               <IconButton
                 size="small"
                 onClick={() => void (overridden ? releaseTarget() : toggleSelfGuidance())}
-                sx={{ ...BTN_SX, ...(selfGuiding ? { color: W, bgcolor: alpha(W, 0.2) } : {}) }}
+                sx={{
+                  ...BTN_SX,
+                  ...(selfGuiding ? { color: W, bgcolor: alpha(W, 0.2) } : {}),
+                  // Switched on but unable to run: shown as a fault rather than as working.
+                  ...(selfGuiding && !running ? { color: 'warning.main' } : {}),
+                }}
               >
                 <GpsFixedIcon sx={{ fontSize: '0.95rem' }} />
               </IconButton>

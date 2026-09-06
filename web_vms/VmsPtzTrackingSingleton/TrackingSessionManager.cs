@@ -31,6 +31,12 @@ public sealed class TrackingSessionManager(
 
   private readonly ConcurrentDictionary<string, Running> _sessions = new(StringComparer.Ordinal);
 
+  // Cameras told to guide themselves that cannot: no VmsOnvif reaches them, or their telemetry flag
+  // is clear. Reported alongside the running ones so the monitor can show the setting as on — and
+  // so the operator can switch it off again — instead of the camera silently looking idle.
+  private volatile IReadOnlyDictionary<string, string> _blocked =
+    new Dictionary<string, string>(StringComparer.Ordinal);
+
   // Serialises start/stop so the shared stream is opened and closed exactly once, and so a
   // reconcile cannot race an operator's request for the same camera.
   private readonly SemaphoreSlim _gate = new(1, 1);
@@ -60,8 +66,16 @@ public sealed class TrackingSessionManager(
     return Task.FromResult<string?>(null);
   }
 
-  public IReadOnlyList<TrackingSnapshot> States() =>
-    _sessions.Values.Select(r => r.Session.Snapshot()).ToList();
+  public IReadOnlyList<TrackingSnapshot> States()
+  {
+    var states = _sessions.Values.Select(r => r.Session.Snapshot()).ToList();
+    foreach (var (cameraId, reason) in _blocked)
+    {
+      if (!_sessions.ContainsKey(cameraId))
+        states.Add(new TrackingSnapshot(cameraId, false, null, false, null, reason));
+    }
+    return states;
+  }
 
   /// <summary>
   /// Brings the running sessions in line with what the configuration asks for.
@@ -81,6 +95,7 @@ public sealed class TrackingSessionManager(
     IReadOnlyDictionary<string, TrackingPolicy> policies, CancellationToken ct)
   {
     var wanted = new Dictionary<string, TrackingPolicy>(StringComparer.Ordinal);
+    var blocked = new Dictionary<string, string>(StringComparer.Ordinal);
     foreach (var (cameraId, policy) in policies)
     {
       if (!policy.Enabled)
@@ -89,23 +104,29 @@ public sealed class TrackingSessionManager(
       var route = await router.ResolveAsync(cameraId, ct);
       if (route is null)
       {
-        logger.LogWarning(
-          "Camera '{Camera}' is configured to guide itself, but no VmsOnvif instance can reach it",
-          cameraId);
+        blocked[cameraId] = "No VmsOnvif instance can reach this camera";
         continue;
       }
       if (!route.HasTelemetry)
       {
         // The flag, not the ONVIF capability: firmware claims a PTZ service whether or not a motor
         // was ever fitted, and driving one of those would look like the camera ignoring us.
-        logger.LogWarning(
-          "Camera '{Camera}' is configured to guide itself, but is not marked as having telemetry",
-          cameraId);
+        blocked[cameraId] = "The camera is not marked as having telemetry";
         continue;
       }
 
       wanted[cameraId] = policy;
     }
+
+    // Logged only when the set changes: a reconcile runs on a timer and on every camera change in
+    // the deployment, and a camera that has been unreachable for an hour must not say so hourly.
+    foreach (var (cameraId, reason) in blocked)
+    {
+      if (!_blocked.ContainsKey(cameraId))
+        logger.LogWarning(
+          "Camera '{Camera}' is configured to guide itself but cannot: {Reason}", cameraId, reason);
+    }
+    _blocked = blocked;
 
     await _gate.WaitAsync(ct);
     try

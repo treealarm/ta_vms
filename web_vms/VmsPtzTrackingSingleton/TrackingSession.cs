@@ -253,10 +253,18 @@ public sealed class TrackingSession
 
   public void ApplyCalibration(PtzCalibrationModel? calibration)
   {
+    // Reconciles run on a timer and on every camera change in the deployment, so the great majority
+    // of these calls hand over exactly what is already held. Announcing those would bury the ones
+    // that mean something.
+    string? announce = null;
     lock (_gate)
+    {
+      if (Describe(_calibration) != Describe(calibration))
+        announce = Describe(calibration);
       _calibration = calibration;
-    _logger.LogInformation(
-      "Camera '{Camera}': calibration is now {Calibration}", _cameraId, Describe(calibration));
+    }
+    if (announce is not null)
+      _logger.LogInformation("Camera '{Camera}': calibration is now {Calibration}", _cameraId, announce);
   }
 
   /// <summary>
@@ -271,8 +279,11 @@ public sealed class TrackingSession
   public void ApplyPolicy(TrackingPolicy policy)
   {
     var dropped = false;
+    var changed = false;
     lock (_gate)
     {
+      changed = Describe(_policy) != Describe(policy)
+        || !_policy.Sources.SetEquals(policy.Sources);
       _policy = policy;
       if (_target is not null && !policy.Accepts(_target.Source))
       {
@@ -285,7 +296,8 @@ public sealed class TrackingSession
     }
     if (dropped)
       ForgetObservation();
-    _logger.LogInformation("Camera '{Camera}': now following {Policy}", _cameraId, Describe(policy));
+    if (changed)
+      _logger.LogInformation("Camera '{Camera}': now following {Policy}", _cameraId, Describe(policy));
   }
 
   /// <summary>Drops everything known about the current target.</summary>
@@ -342,7 +354,8 @@ public sealed class TrackingSession
   public TrackingSnapshot Snapshot()
   {
     lock (_gate)
-      return new TrackingSnapshot(_cameraId, _target, _explicitTarget, _targetSeenAt, _lastError);
+      return new TrackingSnapshot(
+        _cameraId, true, _target, _explicitTarget, _targetSeenAt, _lastError);
   }
 
   public async Task RunAsync(CancellationToken ct)
@@ -489,10 +502,20 @@ public sealed class TrackingSession
   {
     var above = inset + (wantsHeadRoom ? HeadRoom : 0f);
     var headFirst = target.Kind == DetectionKind.Person;
+    // Whether the subject fits is decided once, at the goal's insets, and the same answer is used
+    // for the threshold that wakes the camera. Letting each work it out from its own insets meant
+    // they could disagree — a box between the two widths was "too big to seat" for the goal, and so
+    // asked for nothing, while still counting as over the edge for the threshold. The camera then
+    // had a reason to act and nothing to do, and flipped between settled and not on every sighting.
     return (
-      Overflow(target.Left, target.Width, inset, inset, twoSided: true),
-      Overflow(target.Top, target.Height, above, inset, twoSided: !headFirst));
+      Overflow(target.Left, target.Width, inset, inset,
+        twoSided: Fits(target.Width, SafeInset, SafeInset)),
+      Overflow(target.Top, target.Height, above, inset,
+        twoSided: !headFirst && Fits(target.Height, SafeInset + (wantsHeadRoom ? HeadRoom : 0f), SafeInset)));
   }
+
+  /// <summary>Whether a span of this size can sit between the two insets at all.</summary>
+  private static bool Fits(float size, float before, float after) => size <= 1f - before - after;
 
   /// <summary>
   /// How far the target's centre must move to be back inside the middle of the frame.
@@ -539,7 +562,7 @@ public sealed class TrackingSession
   private static float Overflow(float start, float size, float before, float after, bool twoSided)
   {
     var shortfall = before - start;
-    if (!twoSided || size > 1f - before - after)
+    if (!twoSided)
       return MathF.Max(shortfall, 0f);
     if (shortfall > 0f)
       return shortfall;
@@ -769,6 +792,15 @@ public sealed class TrackingSession
 
   private async Task DriveAsync(DetectionSample target, bool faceVisible, CancellationToken ct)
   {
+    // A sighting taken while the camera is still moving describes neither where the target was nor
+    // where it will be. Match() lets the current target through this window on purpose — losing
+    // track of it would be worse — but the control law must not act on it: judging the last pulse
+    // by it reads "barely moved" from a move that has not finished, which walks the step scale up
+    // to its ceiling and doubles every pulse thereafter. At the sample rate this feature asks for
+    // (5 fps) that is most of the sightings, not an edge case.
+    if (DateTime.UtcNow < _ignoreDetectionsUntil)
+      return;
+
     var wantsHeadRoom = target.Kind == DetectionKind.Person && !faceVisible;
 
     // Two rules, each with a threshold for noticing and a goal for once it has noticed.

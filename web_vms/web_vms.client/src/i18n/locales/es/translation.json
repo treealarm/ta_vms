@@ -980,6 +980,7 @@
     "anySource": "Nada elegido: sirven los recuadros de cualquiera de los dos.",
     "releaseTooltip": "Soltar este objeto y volver a las prioridades de la cámara",
     "startTooltip": "Empezar a seguir objetos en esta cámara",
-    "stopTooltip": "Dejar de seguir"
+    "stopTooltip": "Dejar de seguir",
+    "notRunning": "El seguimiento está activado, pero esta cámara no se puede mover"
   }
 }

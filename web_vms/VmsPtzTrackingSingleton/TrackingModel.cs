@@ -45,9 +45,16 @@ public sealed record DetectionSample(
   public float BoxArea => Width * Height;
 }
 
-/// <summary>What a session is doing, for the operator's monitor.</summary>
+/// <summary>What a camera's self-guidance is doing, for the operator's monitor.</summary>
+/// <param name="Active">
+/// False for a camera configured to guide itself that has no control loop — no VmsOnvif can reach
+/// it, or its telemetry flag is clear. The monitor needs these listed rather than omitted: its
+/// button reflects the camera's setting, and a camera missing from this list altogether would read
+/// as switched off and could not be switched off.
+/// </param>
 public sealed record TrackingSnapshot(
   string CameraId,
+  bool Active,
   TargetKey? Target,
   bool ExplicitTarget,
   DateTime? TargetSeenAt,

@@ -15,17 +15,10 @@ public sealed record TrackingTargetDto(string Source, long TrackId, string Kind)
 /// </param>
 public sealed record SetPtzTargetDto(TrackingTargetDto? Target);
 
-/// <summary>Whether a camera follows objects on its own, and which ones.</summary>
-/// <param name="Kinds">
-/// In priority order: the first of these present in the picture is the one followed. Empty means
-/// any object will do. Same strings as <see cref="TrackingTargetDto.Kind"/>.
-/// </param>
-/// <param name="Sources">
-/// Which producers of boxes to follow: "cv" and/or "onvif". Empty means either will do.
-/// </param>
 /// <summary>Just the on/off switch, for the monitor's button.</summary>
 public sealed record PtzTrackingEnabledDto(bool Enabled);
 
+/// <summary>Whether a camera follows objects on its own, and which ones.</summary>
 public sealed record PtzTrackingPolicyDto
 {
   public bool Enabled { get; init; }
