@@ -83,7 +83,8 @@
     "roiMaxCoverage": "Max ROI coverage, %",
     "roiCoverageHint": "Coverage is the share of a clip's length that has detection boxes on it. Only clips inside this band are re-compressed: below it the detector saw too little to trust, above it there is no background left to squeeze. 0 turns a bound off.",
     "tabDetections": "Detections",
-    "tabCalibration": "Calibration"
+    "tabTracking": "Tracking",
+    "calibration": "Calibration"
   },
   "cameraControl": {
     "showControls": "Show camera controls",
@@ -218,7 +219,12 @@
       "person": "Person",
       "face": "Face",
       "vehicle": "Vehicle",
-      "license_plate": "License plate"
+      "license_plate": "License plate",
+      "animal": "Animal"
+    },
+    "source": {
+      "cv": "Analytics",
+      "onvif": "Camera metadata"
     }
   },
   "analyticsActivity": {
@@ -963,7 +969,18 @@
   },
   "tracking": {
     "trackObject": "Track this object",
-    "startTooltip": "Follow an object automatically",
-    "stopTooltip": "Stop following"
+    "selfGuidance": "Follow objects automatically",
+    "selfGuidanceHint": "The camera picks a target and moves by itself, around the clock, whether or not anyone is watching. Detections drive it, so raise this camera’s analytics sample rate above 1 fps or the movement will be jerky.",
+    "priorities": "What to follow",
+    "prioritiesHint": "In order: the first of these in the picture is the one followed.",
+    "anyObject": "Nothing chosen — any object will do.",
+    "addKind": "Add a kind…",
+    "sources": "Where boxes come from",
+    "sourcesHint": "Only boxes from the checked producers are followed.",
+    "anySource": "Nothing chosen — boxes from either producer will do.",
+    "releaseTooltip": "Release this object and go back to the camera’s own priorities",
+    "startTooltip": "Start following objects on this camera",
+    "stopTooltip": "Stop following",
+    "notRunning": "Following is switched on, but this camera cannot be driven"
   }
 }

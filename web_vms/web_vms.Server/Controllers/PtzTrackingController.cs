@@ -7,13 +7,17 @@ using web_vms.Types.Dto;
 namespace web_vms;
 
 /// <summary>
-/// Arming the automatic "keep this object centred" loop, and asking what it is doing.
+/// Taking over a self-guiding camera, and asking what every camera is following.
 /// </summary>
 /// <remarks>
 /// The loop itself lives in VmsPtzTrackingSingleton, which reads detections and drives the camera
 /// on its own; nothing here is on that path. Driving a camera is driving a camera whether a person
 /// or an algorithm decides where, so these carry the same <see cref="CameraAction.Ptz"/> right the
 /// joystick does.
+/// <para>
+/// Whether a camera guides itself at all is not set here — that is configuration, and it lives on
+/// PtzTrackingPolicyController.
+/// </para>
 /// </remarks>
 [ApiController]
 [Route("api/ptz-tracking")]
@@ -28,10 +32,10 @@ public class PtzTrackingController(
 
   [HttpPut("{cameraId}")]
   [CameraAccess(CameraAction.Ptz)]
-  public async Task<IActionResult> SetTracking(
-    string cameraId, [FromBody] SetPtzTrackingDto dto, CancellationToken ct)
+  public async Task<IActionResult> SetTarget(
+    string cameraId, [FromBody] SetPtzTargetDto dto, CancellationToken ct)
   {
-    var request = new SetTrackingRequest { CameraId = cameraId, Enabled = dto.Enabled };
+    var request = new SetTargetRequest { CameraId = cameraId };
     if (dto.Target is not null)
       request.Target = new TrackingTarget
       {
@@ -40,7 +44,7 @@ public class PtzTrackingController(
         Kind = AnalyticsKindMapper.FromStringId(dto.Target.Kind),
       };
 
-    var response = await _tracking.SetTrackingAsync(request, Options(ct));
+    var response = await _tracking.SetTargetAsync(request, Options(ct));
     return response.Success ? Ok() : BadRequest(response.Error);
   }
 

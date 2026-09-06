@@ -75,6 +75,10 @@ service CfgService {
   rpc UpsertPtzCalibration(UpsertPtzCalibrationRequest) returns (OperationStatus);
   rpc RemovePtzCalibration(RemovePtzCalibrationRequest) returns (OperationStatus);
 
+  rpc GetPtzTrackingPolicy(GetPtzTrackingPolicyRequest) returns (GetPtzTrackingPolicyResponse);
+  rpc UpsertPtzTrackingPolicy(UpsertPtzTrackingPolicyRequest) returns (OperationStatus);
+  rpc ListPtzTrackingPolicies(google.protobuf.Empty) returns (ListPtzTrackingPoliciesResponse);
+
   rpc ListCameraPermissions(ListCameraPermissionsRequest) returns (ListCameraPermissionsResponse);
   rpc SetUserCameraPermissions(SetUserCameraPermissionsRequest) returns (OperationStatus);
   rpc GetCameraAclMode(google.protobuf.Empty) returns (GetCameraAclModeResponse);
@@ -692,6 +696,54 @@ message UpsertPtzCalibrationRequest {
 
 message RemovePtzCalibrationRequest {
   string camera_id = 1;
+}
+
+// ── Self-guidance: a camera that follows objects without an operator ─────────
+
+// Whether this camera tracks objects on its own, and which ones it should prefer.
+//
+// The mode belongs to the camera rather than to a monitor session: a camera with it on keeps
+// tracking whether or not anyone is watching, and comes back tracking after a restart. An operator
+// looking at the monitor may still take over and name a particular object, but that override is
+// held in memory by the tracking service and lapses when the object is finally lost.
+//
+// Master/slave is not this. Today a self-guiding camera finds the objects and moves its own motor
+// -- master and slave in one. Pointing one camera at another camera's objects needs a calibration
+// between the pair that does not exist yet, and would add a field here saying where the objects
+// come from.
+message PtzTrackingPolicy {
+  string camera_id = 1;
+  bool   enabled   = 2;
+  // Object kinds in priority order: the first kind on this list that is present in the picture is
+  // the one followed. Empty means any object will do. The words are the ones on the wire --
+  // "person", "face", "vehicle", "license_plate", "animal" -- rather than the DetectionKind enum,
+  // which lives in vms_analytics.proto and is not worth importing for five strings.
+  // AnalyticsWatch.classes above is spelled the same way for the same reason.
+  repeated string kinds = 3;
+  // Which producers of boxes to follow: "cv" (the detector) and/or "onvif" (the camera's own
+  // metadata track). Empty means either will do.
+  repeated string sources = 4;
+}
+
+message GetPtzTrackingPolicyRequest {
+  string camera_id = 1;
+}
+
+message GetPtzTrackingPolicyResponse {
+  // False when the camera has no policy row, which reads as switched off.
+  bool found = 1;
+  PtzTrackingPolicy policy = 2;
+}
+
+message UpsertPtzTrackingPolicyRequest {
+  PtzTrackingPolicy policy = 1;
+}
+
+// Only the cameras that have a row. The tracking service asks for this on startup and after every
+// configuration change to work out which sessions should exist, and going camera by camera would
+// be one round trip per camera in the deployment to learn that almost none of them track.
+message ListPtzTrackingPoliciesResponse {
+  repeated PtzTrackingPolicy policies = 1;
 }
 
 // ── Analytics sources, aggregated per camera ─────────────────────────────────

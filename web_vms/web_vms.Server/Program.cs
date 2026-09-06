@@ -17,6 +17,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers(o =>
 {
   o.Filters.Add<RpcExceptionFilter>();
+  // Before CameraAccessFilter: deciding who may see a camera means resolving the camera, which is
+  // the very thing that is not ready yet.
+  o.Filters.Add<ServerPairsReadyFilter>();
   o.Filters.Add<CameraAccessFilter>();
 });
 builder.Services.AddSingleton<ICameraAccessService, CameraAccessService>();

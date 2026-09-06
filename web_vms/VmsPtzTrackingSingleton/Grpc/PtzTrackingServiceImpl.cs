@@ -4,24 +4,26 @@ using Vms.PtzTracking;
 
 namespace VmsPtzTrackingSingleton.Grpc;
 
-/// The operator-facing surface: arm a camera, point it at an object, ask what it is doing.
+/// The operator-facing surface: point a camera at an object, ask what every camera is doing.
 /// All of the work belongs to <see cref="TrackingSessionManager"/>.
+///
+/// Which cameras track at all is not decided here -- that is configuration, reconciled by
+/// <see cref="TrackingReconciler"/>.
 public sealed class PtzTrackingServiceImpl(TrackingSessionManager manager)
   : PtzTrackingService.PtzTrackingServiceBase
 {
-  public override async Task<SetTrackingResponse> SetTracking(
-    SetTrackingRequest request, ServerCallContext context)
+  public override async Task<SetTargetResponse> SetTarget(
+    SetTargetRequest request, ServerCallContext context)
   {
     var target = request.Target is null
       ? null
       : new TargetKey(request.Target.Source, request.Target.TrackId, request.Target.Kind);
 
-    var error = await manager.SetTrackingAsync(
-      request.CameraId, request.Enabled, target, context.CancellationToken);
+    var error = await manager.SetTargetAsync(request.CameraId, target, context.CancellationToken);
 
     return error is null
-      ? new SetTrackingResponse { Success = true }
-      : new SetTrackingResponse { Success = false, Error = error };
+      ? new SetTargetResponse { Success = true }
+      : new SetTargetResponse { Success = false, Error = error };
   }
 
   public override Task<ListTrackingStatesResponse> ListTrackingStates(
@@ -33,9 +35,7 @@ public sealed class PtzTrackingServiceImpl(TrackingSessionManager manager)
       var message = new TrackingState
       {
         CameraId = state.CameraId,
-        // Every session held here is running; an armed session that has not acquired anything yet
-        // is still active, it just has no target.
-        Active = true,
+        Active = state.Active,
         ExplicitTarget = state.ExplicitTarget,
         LastError = state.LastError,
       };

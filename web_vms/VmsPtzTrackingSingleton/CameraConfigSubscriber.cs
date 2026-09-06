@@ -16,7 +16,7 @@ public sealed class CameraConfigSubscriber(
   DaprPublishSubscribeClient pubSubClient,
   CameraPtzRouter router,
   PtzCalibrationCache calibrationCache,
-  TrackingSessionManager manager,
+  TrackingReconciler reconciler,
   ILogger<CameraConfigSubscriber> logger) : IHostedService, IDisposable
 {
   private const string ServerConfigChangedTopic = "server-config-changed";
@@ -56,24 +56,33 @@ public sealed class CameraConfigSubscriber(
     }
   }
 
-  private async Task<TopicResponseAction> HandleAsync(TopicMessage message, CancellationToken ct)
+  // Not async: every step here is a cache drop or a signal, and the reconcile it asks for
+  // deliberately happens on the reconciler's own task rather than on the bus's.
+  private Task<TopicResponseAction> HandleAsync(TopicMessage message, CancellationToken ct)
   {
     try
     {
       var evt = JsonSerializer.Deserialize<ServerConfigChanged>(message.Data.Span, JsonOptions);
       if (evt is null)
-        return TopicResponseAction.Drop;
+        return Task.FromResult(TopicResponseAction.Drop);
 
       var cameraIds = evt.CameraIds ?? [];
       router.Invalidate(cameraIds);
       calibrationCache.Invalidate(cameraIds);
-      await manager.ReviewAsync(cameraIds, ct);
-      return TopicResponseAction.Success;
+      // Drop the stale answers first, then ask for a reconcile: the reconciler re-reads through
+      // these same caches, and doing it the other way round would have it re-install what was just
+      // thrown away. The policy itself is not cached — the reconciler always reads it fresh.
+      //
+      // Triggering rather than awaiting is deliberate. The handler runs under a ten-second
+      // delivery policy, and a reconcile talks to VmsCfg and to every camera's ONVIF host; making
+      // the bus wait for that turns a slow camera into redelivered events.
+      reconciler.Trigger();
+      return Task.FromResult(TopicResponseAction.Success);
     }
     catch (Exception ex)
     {
       logger.LogWarning(ex, "Could not handle a server-config-changed event");
-      return TopicResponseAction.Retry;
+      return Task.FromResult(TopicResponseAction.Retry);
     }
   }
 

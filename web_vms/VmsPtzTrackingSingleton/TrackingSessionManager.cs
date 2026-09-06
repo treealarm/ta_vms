@@ -6,9 +6,18 @@ namespace VmsPtzTrackingSingleton;
 /// Every running tracking session, and the one detection stream they share.
 /// </summary>
 /// <remarks>
+/// <para>
 /// One session per camera, which is the whole reason this service is a singleton: two of them would
 /// send a motor opposing commands. The shared stream is reference-counted against the sessions, so
-/// a deployment where nobody is tracking anything costs no stream at all.
+/// a deployment where nothing tracks costs no stream at all.
+/// </para>
+/// <para>
+/// Which sessions exist is decided by configuration, never by an operator: a session runs for every
+/// camera whose self-guidance is switched on and whose telemetry flag says it can actually be
+/// driven. <see cref="ReconcileAsync"/> is the only way in, so a restart brings the same set back
+/// without anyone pressing anything. What an operator can do is point a running session at a
+/// particular object — see <see cref="SetTargetAsync"/>.
+/// </para>
 /// </remarks>
 public sealed class TrackingSessionManager(
   CameraPtzRouter router,
@@ -22,86 +31,132 @@ public sealed class TrackingSessionManager(
 
   private readonly ConcurrentDictionary<string, Running> _sessions = new(StringComparer.Ordinal);
 
-  // Serialises start/stop so the shared stream is opened and closed exactly once, and so two
-  // requests for the same camera cannot both create a session.
+  // Cameras told to guide themselves that cannot: no VmsOnvif reaches them, or their telemetry flag
+  // is clear. Reported alongside the running ones so the monitor can show the setting as on — and
+  // so the operator can switch it off again — instead of the camera silently looking idle.
+  private volatile IReadOnlyDictionary<string, string> _blocked =
+    new Dictionary<string, string>(StringComparer.Ordinal);
+
+  // Serialises start/stop so the shared stream is opened and closed exactly once, and so a
+  // reconcile cannot race an operator's request for the same camera.
   private readonly SemaphoreSlim _gate = new(1, 1);
   private CancellationTokenSource? _pumpCts;
   private Task? _pump;
 
+  /// <summary>
+  /// Points a camera at one object, or hands it back to its own priorities when
+  /// <paramref name="target"/> is null.
+  /// </summary>
+  /// <remarks>
+  /// This does not start or stop anything. A camera that is not configured to guide itself has no
+  /// session to take over, and saying so is more useful than quietly starting one that nothing
+  /// would ever switch off again.
+  /// </remarks>
   /// <returns>Null on success, otherwise why the request was refused.</returns>
-  public async Task<string?> SetTrackingAsync(
-    string cameraId, bool enabled, TargetKey? target, CancellationToken ct)
+  public Task<string?> SetTargetAsync(string cameraId, TargetKey? target, CancellationToken ct)
   {
     if (string.IsNullOrWhiteSpace(cameraId))
-      return "cameraId must not be empty";
+      return Task.FromResult<string?>("cameraId must not be empty");
+
+    if (!_sessions.TryGetValue(cameraId, out var running))
+      return Task.FromResult<string?>(
+        $"Camera '{cameraId}' is not following anything: switch self-guidance on in its settings first");
+
+    running.Session.SetTarget(target);
+    return Task.FromResult<string?>(null);
+  }
+
+  public IReadOnlyList<TrackingSnapshot> States()
+  {
+    var states = _sessions.Values.Select(r => r.Session.Snapshot()).ToList();
+    foreach (var (cameraId, reason) in _blocked)
+    {
+      if (!_sessions.ContainsKey(cameraId))
+        states.Add(new TrackingSnapshot(cameraId, false, null, false, null, reason));
+    }
+    return states;
+  }
+
+  /// <summary>
+  /// Brings the running sessions in line with what the configuration asks for.
+  /// </summary>
+  /// <param name="policies">
+  /// Every camera that has a policy row. Cameras absent from it are not configured to track, and a
+  /// session for one is stopped.
+  /// </param>
+  /// <remarks>
+  /// Deliberately a full reconcile rather than a diff applied to an event: the event says which
+  /// cameras to re-examine, not what changed about them (CLAUDE.md), and an event that arrives late
+  /// or out of order must not be able to leave a camera running that should have stopped. Comparing
+  /// the whole wanted set against the whole running set cannot drift, whatever order the events
+  /// came in.
+  /// </remarks>
+  public async Task ReconcileAsync(
+    IReadOnlyDictionary<string, TrackingPolicy> policies, CancellationToken ct)
+  {
+    var wanted = new Dictionary<string, TrackingPolicy>(StringComparer.Ordinal);
+    var blocked = new Dictionary<string, string>(StringComparer.Ordinal);
+    foreach (var (cameraId, policy) in policies)
+    {
+      if (!policy.Enabled)
+        continue;
+
+      var route = await router.ResolveAsync(cameraId, ct);
+      if (route is null)
+      {
+        blocked[cameraId] = "No VmsOnvif instance can reach this camera";
+        continue;
+      }
+      if (!route.HasTelemetry)
+      {
+        // The flag, not the ONVIF capability: firmware claims a PTZ service whether or not a motor
+        // was ever fitted, and driving one of those would look like the camera ignoring us.
+        blocked[cameraId] = "The camera is not marked as having telemetry";
+        continue;
+      }
+
+      wanted[cameraId] = policy;
+    }
+
+    // Logged only when the set changes: a reconcile runs on a timer and on every camera change in
+    // the deployment, and a camera that has been unreachable for an hour must not say so hourly.
+    foreach (var (cameraId, reason) in blocked)
+    {
+      if (!_blocked.ContainsKey(cameraId))
+        logger.LogWarning(
+          "Camera '{Camera}' is configured to guide itself but cannot: {Reason}", cameraId, reason);
+    }
+    _blocked = blocked;
 
     await _gate.WaitAsync(ct);
     try
     {
-      if (!enabled)
+      foreach (var cameraId in _sessions.Keys.ToList())
       {
+        if (wanted.ContainsKey(cameraId))
+          continue;
+        logger.LogInformation(
+          "Camera '{Camera}' no longer guides itself, stopping its session", cameraId);
         await StopLockedAsync(cameraId);
-        return null;
       }
 
-      if (_sessions.TryGetValue(cameraId, out var running))
+      foreach (var (cameraId, policy) in wanted)
       {
-        // Already tracking: this is the operator picking a different object, which must not
-        // interrupt the loop or restart the stream.
-        running.Session.SetTarget(target);
-        return null;
+        // Calibration is not captured for the life of a session: a wizard or auto run publishes
+        // server-config-changed, and the live loop must pick the new matrix up without a restart.
+        var calibration = await calibrationCache.GetAsync(cameraId, ct);
+        if (_sessions.TryGetValue(cameraId, out var running))
+        {
+          running.Session.ApplyCalibration(calibration);
+          running.Session.ApplyPolicy(policy);
+          continue;
+        }
+        StartLocked(cameraId, calibration, policy);
       }
-
-      var route = await router.ResolveAsync(cameraId, ct);
-      if (route is null)
-        return $"No VmsOnvif instance can reach camera '{cameraId}'";
-      if (!route.HasTelemetry)
-        // The flag, not the ONVIF capability: firmware claims a PTZ service whether or not a motor
-        // was ever fitted, and driving one of those would look like the camera ignoring us.
-        return $"Camera '{cameraId}' is not marked as having telemetry";
-
-      StartLocked(cameraId, target, await calibrationCache.GetAsync(cameraId, ct));
-      return null;
     }
     finally
     {
       _gate.Release();
-    }
-  }
-
-  public IReadOnlyList<TrackingSnapshot> States() =>
-    _sessions.Values.Select(r => r.Session.Snapshot()).ToList();
-
-  /// <summary>Drops sessions for cameras that may no longer be driven.</summary>
-  /// <remarks>
-  /// Called when VmsCfg says a camera changed. The event is only a signal to re-pull (CLAUDE.md),
-  /// so the current configuration is fetched rather than read out of the payload.
-  /// </remarks>
-  public async Task ReviewAsync(IReadOnlyCollection<string> cameraIds, CancellationToken ct)
-  {
-    // An empty list means something node-wide moved, so every session is worth re-checking.
-    var candidates = cameraIds.Count == 0 ? _sessions.Keys.ToList() : cameraIds.ToList();
-
-    foreach (var cameraId in candidates)
-    {
-      if (!_sessions.ContainsKey(cameraId))
-        continue;
-
-      var route = await router.ResolveAsync(cameraId, ct);
-      if (route is null || !route.HasTelemetry)
-      {
-        logger.LogInformation(
-          "Camera '{Camera}' can no longer be driven, stopping its tracking session", cameraId);
-        await _gate.WaitAsync(ct);
-        try { await StopLockedAsync(cameraId); }
-        finally { _gate.Release(); }
-        continue;
-      }
-
-      // Calibration is not captured for the life of the session: a wizard/auto run publishes
-      // server-config-changed, and the live loop must pick the new matrix up without a restart.
-      if (_sessions.TryGetValue(cameraId, out var running))
-        running.Session.ApplyCalibration(await calibrationCache.GetAsync(cameraId, ct));
     }
   }
 
@@ -111,11 +166,18 @@ public sealed class TrackingSessionManager(
       running.Session.Offer(sample);
   }
 
-  private void StartLocked(string cameraId, TargetKey? target, PtzCalibrationModel? calibration)
+  private void StartLocked(string cameraId, PtzCalibrationModel? calibration, TrackingPolicy policy)
   {
     var cts = new CancellationTokenSource();
     var session = new TrackingSession(
-      cameraId, sender, loggerFactory.CreateLogger<TrackingSession>(), target, calibration);
+      cameraId,
+      sender,
+      loggerFactory.CreateLogger<TrackingSession>(),
+      // No target: a camera coming up chooses for itself. An operator's override is a live thing
+      // and is deliberately not restored across a restart.
+      target: null,
+      calibration,
+      policy);
     var loop = session.RunAsync(cts.Token);
     _sessions[cameraId] = new Running(session, cts, loop);
     // An exception ends the loop without cancelling the CTS, so the dictionary would otherwise

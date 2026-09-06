@@ -11,6 +11,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
   public DbSet<DbStorage> Storages { get; set; }
   public DbSet<DbAnalyticsWatch> AnalyticsWatches { get; set; }
   public DbSet<DbPtzCalibration> PtzCalibrations { get; set; }
+  public DbSet<DbPtzTrackingPolicy> PtzTrackingPolicies { get; set; }
   public DbSet<DbRecordingSchedule> RecordingSchedules { get; set; }
   public DbSet<DbRecordingScheduleWindow> RecordingScheduleWindows { get; set; }
   public DbSet<DbCameraSchedule> CameraSchedules { get; set; }
@@ -100,6 +101,16 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.Confidence).HasColumnName("confidence");
       e.Property(x => x.CalibratedAt).HasColumnName("calibrated_at");
       e.Property(x => x.Method).HasColumnName("method");
+    });
+
+    modelBuilder.Entity<DbPtzTrackingPolicy>(e =>
+    {
+      e.ToTable("ptz_tracking_policy");
+      e.HasKey(x => x.CameraId);
+      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.Enabled).HasColumnName("enabled");
+      e.Property(x => x.Kinds).HasColumnName("kinds");
+      e.Property(x => x.Sources).HasColumnName("sources");
     });
 
     modelBuilder.Entity<DbRecordingSchedule>(e =>
@@ -255,6 +266,21 @@ public sealed class DbPtzCalibration
   public float Confidence { get; set; }
   public DateTime CalibratedAt { get; set; } = DateTime.UtcNow;
   public string Method { get; set; } = "auto";
+}
+
+/// <summary>Whether a camera follows objects on its own, and which ones.</summary>
+/// <remarks>
+/// Both lists are stored as comma-separated text rather than as Postgres arrays, following
+/// <see cref="DbAnalyticsWatch.Classes"/>: they are short, they are read whole or not at all, and
+/// nothing queries inside them.
+/// </remarks>
+public sealed class DbPtzTrackingPolicy
+{
+  public string CameraId { get; set; } = string.Empty;
+  public bool Enabled { get; set; }
+  /// Priority order; empty means any object will do.
+  public string Kinds { get; set; } = string.Empty;
+  public string Sources { get; set; } = "cv,onvif";
 }
 
 public sealed class DbRecordingSchedule

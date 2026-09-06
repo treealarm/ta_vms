@@ -50,7 +50,7 @@ import StreamOverrideRow from './StreamOverrideRow'
 import StreamProfileRow from './StreamProfileRow'
 import PtzOverlay from './PtzOverlay'
 import GpsFixedIcon from '@mui/icons-material/GpsFixed'
-import { setPtzTracking, usePtzTracking } from '../hooks/usePtzTracking'
+import { setPtzSelfGuidance, setPtzTarget, usePtzTracking } from '../hooks/usePtzTracking'
 import DeviceIoOverlay from './DeviceIoOverlay'
 import { useOnvifBboxCapable } from '../hooks/useOnvifBboxCapable'
 import { useArchiveMetadataCoverage } from '../hooks/archiveMetadataClient'
@@ -334,25 +334,47 @@ export default function CameraUnifiedCard({
   // Live-only controls: in wall playback the cell shows recorded video, so PTZ and device I/O have
   // nothing to act on.
   const showPtzControl = hasTelemetry && mode === 'live' && !wallPlayback && !isDisabled
-  // Automatic tracking rides on the same flag as the joystick: both drive the motor, and neither
-  // has anything to act on while the cell is showing recorded video.
-  const showTrackingControl = showPtzControl
-  const tracking = usePtzTracking(showTrackingControl ? camera.cameraId : undefined)
-  const trackingActive = tracking?.active === true
+  // Whether the camera is following is read from the tracking service rather than from a camera
+  // field: a self-guiding camera always has a session, so its presence is the same question asked
+  // of the component that would actually know. The side effect is honest — if the tracking service
+  // is down the button is correctly dark, because nothing is being followed.
+  const tracking = usePtzTracking(showPtzControl ? camera.cameraId : undefined)
+  // Listed at all means the camera is configured to guide itself; `active` says whether it actually
+  // is. The two differ when nothing can drive the camera — its telemetry flag is clear, or no
+  // VmsOnvif reaches it — and the difference matters here: the button reflects the setting, so a
+  // camera missing from the list would read as off and could never be switched off.
+  const selfGuiding = tracking !== null
+  const running = tracking?.active === true
+  // The operator has taken this camera off its own priorities and pinned it to one object.
+  const overridden = tracking?.explicitTarget === true
 
-  const toggleTracking = async () => {
+  // The button switches the camera's own setting, not a mode belonging to this tab — so walking
+  // away from the monitor changes nothing, and the camera is still following when anyone comes
+  // back. What to follow, and in what order, is set in the camera's Tracking tab; pressed here it
+  // just means "start", and the camera uses whatever it was told there.
+  const toggleSelfGuidance = async () => {
     try {
-      await setPtzTracking(camera.cameraId, !trackingActive)
+      await setPtzSelfGuidance(camera.cameraId, !selfGuiding)
     } catch (e) {
       setTrackingError(e instanceof Error ? e.message : String(e))
     }
   }
 
-  // Picking an object from the overlay both arms the mode and names the target, so one click does
-  // what the operator meant rather than needing the button pressed first.
+  // Releasing is a separate gesture from stopping: it hands the camera back to its own priorities
+  // rather than switching it off.
+  const releaseTarget = async () => {
+    try {
+      await setPtzTarget(camera.cameraId, null)
+    } catch (e) {
+      setTrackingError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  // Clicking a box takes the camera over and points it at that object. The override lapses on its
+  // own when the object is finally lost, so nobody has to remember to undo it.
   const trackObject = async (box: DrawableBox) => {
     try {
-      await setPtzTracking(camera.cameraId, true, {
+      await setPtzTarget(camera.cameraId, {
         source: box.source,
         trackId: box.trackId,
         kind: box.kind,
@@ -616,15 +638,29 @@ export default function CameraUnifiedCard({
             </Tooltip>
           )}
 
-          {showTrackingControl && (
+          {showPtzControl && (
             <Tooltip
-              title={trackingActive ? t('tracking.stopTooltip') : t('tracking.startTooltip')}
+              title={
+                overridden ? t('tracking.releaseTooltip')
+                  : selfGuiding && !running
+                    ? (tracking?.lastError || t('tracking.notRunning'))
+                  : selfGuiding ? t('tracking.stopTooltip')
+                  : t('tracking.startTooltip')
+              }
               placement="right"
             >
+              {/* Lit whenever the camera is following. While an operator holds it on one object the
+                  button releases that object instead of stopping altogether — the nearer of the two
+                  undos, and the one a misclick on a box calls for. */}
               <IconButton
                 size="small"
-                onClick={() => void toggleTracking()}
-                sx={{ ...BTN_SX, ...(trackingActive ? { color: W, bgcolor: alpha(W, 0.2) } : {}) }}
+                onClick={() => void (overridden ? releaseTarget() : toggleSelfGuidance())}
+                sx={{
+                  ...BTN_SX,
+                  ...(selfGuiding ? { color: W, bgcolor: alpha(W, 0.2) } : {}),
+                  // Switched on but unable to run: shown as a fault rather than as working.
+                  ...(selfGuiding && !running ? { color: 'warning.main' } : {}),
+                }}
               >
                 <GpsFixedIcon sx={{ fontSize: '0.95rem' }} />
               </IconButton>
@@ -1036,7 +1072,7 @@ export default function CameraUnifiedCard({
                 bboxEnabled={bboxOpen && hasBoxSource}
                 onShownUrlChange={setShownWhepUrl}
                 onFindSimilar={openFindSimilar}
-                onTrackObject={showTrackingControl ? (box) => void trackObject(box) : undefined}
+                onTrackObject={selfGuiding ? (box) => void trackObject(box) : undefined}
                 trackingHighlight={tracking?.target ?? null}
               />
             )}
