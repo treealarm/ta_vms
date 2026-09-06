@@ -36,6 +36,8 @@ public class HealthDto
 [ApiController]
 [Route("api/health")]
 [AllowAnonymous]
+// The one endpoint whose whole job is to answer while the dependencies are not ready.
+[AllowNotReady]
 public class HealthController(
   CfgHealthProbe cfgProbe,
   ServerPairRegistry registry,

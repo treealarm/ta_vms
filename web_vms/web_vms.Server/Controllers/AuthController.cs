@@ -21,6 +21,9 @@ public class RefreshTokenDto
 [ApiController]
 [Route("api/auth")]
 [AllowAnonymous]
+// Signing in involves no camera, and refusing it during startup would leave an operator staring at
+// a login page that cannot explain itself.
+[AllowNotReady]
 // IKeycloakAdminClient is only registered when KEYCLOAK_URL is set (see Program.cs) — kcAdmin is
 // optional here so standalone deployments get a clean response instead of a DI-resolution crash.
 public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBase
