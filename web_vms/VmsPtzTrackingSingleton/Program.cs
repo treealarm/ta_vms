@@ -33,9 +33,14 @@ builder.Services.AddSingleton(_ =>
 
 builder.Services.AddSingleton<CameraPtzRouter>();
 builder.Services.AddSingleton<PtzCalibrationCache>();
+builder.Services.AddSingleton<TrackingPolicyCache>();
 builder.Services.AddSingleton<IPtzCommandSender, PtzCommandSender>();
 builder.Services.AddSingleton<DetectionStreamClient>();
 builder.Services.AddSingleton<TrackingSessionManager>();
+// Registered as itself as well as a hosted service: the config subscriber holds a reference to
+// nudge it, and AddHostedService<T> alone would hand that reference a second, separate instance.
+builder.Services.AddSingleton<TrackingReconciler>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<TrackingReconciler>());
 builder.Services.AddHostedService<CameraConfigSubscriber>();
 builder.Services.AddHostedService<TrackingStatePublisher>();
 

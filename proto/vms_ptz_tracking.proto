@@ -19,7 +19,13 @@ option csharp_namespace = "Vms.PtzTracking";
 // camera through the node's PtzService (onvif.proto). This service is only how an operator turns
 // that loop on, points it at an object, and asks what it is doing.
 service PtzTrackingService {
-  rpc SetTracking(SetTrackingRequest) returns (SetTrackingResponse);
+  // Point a self-guiding camera at one object, or hand it back to its own priorities.
+  //
+  // Not a switch. Whether a camera guides itself at all is configuration -- PtzTrackingPolicy in
+  // vms_cfg.proto -- because it must survive the operator closing the monitor and the service being
+  // restarted, and because a mode nothing switches off is worse than one nobody can switch on. A
+  // camera with no session refuses this call rather than quietly starting one.
+  rpc SetTarget(SetTargetRequest) returns (SetTargetResponse);
   // What every camera is tracking right now. The monitor polls this to light its button and to
   // pick out the followed box; there is no per-camera variant because a wall would then issue one
   // request per tile.
@@ -38,14 +44,15 @@ message TrackingTarget {
   vms.analytics.DetectionKind kind = 3;
 }
 
-message SetTrackingRequest {
+message SetTargetRequest {
   string camera_id = 1;
-  bool   enabled   = 2;
-  // Unset asks for the first object that turns up; set names the one the operator picked.
-  optional TrackingTarget target = 3;
+  // Unset hands the camera back to its configured priorities; set names the object the operator
+  // picked. Either way the override is temporary: it lapses when the object is finally lost, so a
+  // camera nobody is watching goes back to doing its own job.
+  optional TrackingTarget target = 2;
 }
 
-message SetTrackingResponse {
+message SetTargetResponse {
   bool   success = 1;
   string error   = 2;
 }

@@ -83,7 +83,8 @@
     "roiMaxCoverage": "Cobertura ROI máxima, %",
     "roiCoverageHint": "La cobertura es la parte de la duración del clip que tiene detecciones. Solo se recomprimen los clips dentro de esta banda: por debajo el detector vio muy poco como para fiarse, por encima no queda fondo que comprimir. 0 desactiva el límite.",
     "tabDetections": "Detecciones",
-    "tabCalibration": "Calibración"
+    "tabTracking": "Seguimiento",
+    "calibration": "Calibración"
   },
   "cameraControl": {
     "showControls": "Mostrar controles de cámara",
@@ -218,7 +219,12 @@
       "person": "Persona",
       "face": "Rostro",
       "vehicle": "Vehículo",
-      "license_plate": "Matrícula"
+      "license_plate": "Matrícula",
+      "animal": "Animal"
+    },
+    "source": {
+      "cv": "Analítica",
+      "onvif": "Metadatos de la cámara"
     }
   },
   "analyticsActivity": {
@@ -963,7 +969,17 @@
   },
   "tracking": {
     "trackObject": "Seguir este objeto",
-    "startTooltip": "Seguir un objeto automáticamente",
+    "selfGuidance": "Seguir objetos automáticamente",
+    "selfGuidanceHint": "La cámara elige un objetivo y se mueve sola, a todas horas, haya alguien mirando o no. La guían las detecciones, así que suba la frecuencia de muestreo de analítica de esta cámara por encima de 1 fps o el movimiento será a tirones.",
+    "priorities": "Qué seguir",
+    "prioritiesHint": "Por orden: se sigue el primero de estos que aparezca en la imagen.",
+    "anyObject": "Nada elegido: sirve cualquier objeto.",
+    "addKind": "Añadir un tipo…",
+    "sources": "De dónde vienen los recuadros",
+    "sourcesHint": "Solo se siguen los recuadros de los productores marcados.",
+    "anySource": "Nada elegido: sirven los recuadros de cualquiera de los dos.",
+    "releaseTooltip": "Soltar este objeto y volver a las prioridades de la cámara",
+    "startTooltip": "Empezar a seguir objetos en esta cámara",
     "stopTooltip": "Dejar de seguir"
   }
 }

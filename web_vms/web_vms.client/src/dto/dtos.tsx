@@ -1312,3 +1312,17 @@ export interface PtzTrackingStateDto {
   /** Last PTZ failure; empty while the camera is obeying. */
   lastError: string
 }
+
+/**
+ * Whether a camera follows objects on its own, and which ones it prefers.
+ *
+ * Configuration rather than a control: a camera with this on moves by itself around the clock,
+ * whether or not anyone has the monitor open, and comes back doing so after a restart.
+ */
+export interface PtzTrackingPolicyDto {
+  enabled: boolean
+  /** In priority order; the first of these in the picture is followed. Empty means any object. */
+  kinds: string[]
+  /** Which producers of boxes to follow: "cv" and/or "onvif". Empty means either. */
+  sources: AnalyticsDetectionSource[]
+}

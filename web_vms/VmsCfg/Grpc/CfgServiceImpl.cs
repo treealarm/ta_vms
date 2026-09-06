@@ -1203,6 +1203,47 @@ namespace VmsCfg
       return new OperationStatus { Success = removed };
     }
 
+    // ── Self-guidance policy ──────────────────────────────────────────────────
+
+    public override async Task<GetPtzTrackingPolicyResponse> GetPtzTrackingPolicy(
+      GetPtzTrackingPolicyRequest request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.CameraId))
+        return new GetPtzTrackingPolicyResponse();
+
+      var policy = await storage.GetPtzTrackingPolicyAsync(request.CameraId, context.CancellationToken);
+      if (policy is null)
+        return new GetPtzTrackingPolicyResponse();
+
+      return new GetPtzTrackingPolicyResponse { Found = true, Policy = policy };
+    }
+
+    public override async Task<OperationStatus> UpsertPtzTrackingPolicy(
+      UpsertPtzTrackingPolicyRequest request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.Policy?.CameraId))
+        return new OperationStatus { Success = false, Message = "camera_id must not be empty" };
+
+      var result = await storage.UpsertPtzTrackingPolicyAsync(request.Policy, context.CancellationToken);
+      logger.LogInformation(
+        "Self-guidance for camera '{CameraId}' is now {State}",
+        result.CameraId, result.Enabled ? "on" : "off");
+      // The same signal every other camera write sends. VmsPtzTrackingSingleton is subscribed to it
+      // and reconciles its sessions against the new configuration -- which is what makes switching
+      // the mode on start a camera tracking without anything else being pressed.
+      InvalidateFsCache(result.CameraId);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<ListPtzTrackingPoliciesResponse> ListPtzTrackingPolicies(
+      Google.Protobuf.WellKnownTypes.Empty request, ServerCallContext context)
+    {
+      var response = new ListPtzTrackingPoliciesResponse();
+      response.Policies.AddRange(
+        await storage.ListPtzTrackingPoliciesAsync(context.CancellationToken));
+      return response;
+    }
+
     // ── Per-camera permissions ────────────────────────────────────────────────
 
     public override async Task<ListCameraPermissionsResponse> ListCameraPermissions(

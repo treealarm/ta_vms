@@ -8,9 +8,30 @@ namespace web_vms.Types.Dto;
 /// </remarks>
 public sealed record TrackingTargetDto(string Source, long TrackId, string Kind);
 
-/// <summary>Turn tracking on or off for a camera, optionally naming what to follow.</summary>
-/// <param name="Target">Null asks for the first object that turns up.</param>
-public sealed record SetPtzTrackingDto(bool Enabled, TrackingTargetDto? Target);
+/// <summary>Point a self-guiding camera at one object.</summary>
+/// <param name="Target">
+/// Null hands the camera back to its configured priorities. Either way the override is temporary:
+/// it lapses when the object is finally lost.
+/// </param>
+public sealed record SetPtzTargetDto(TrackingTargetDto? Target);
+
+/// <summary>Whether a camera follows objects on its own, and which ones.</summary>
+/// <param name="Kinds">
+/// In priority order: the first of these present in the picture is the one followed. Empty means
+/// any object will do. Same strings as <see cref="TrackingTargetDto.Kind"/>.
+/// </param>
+/// <param name="Sources">
+/// Which producers of boxes to follow: "cv" and/or "onvif". Empty means either will do.
+/// </param>
+/// <summary>Just the on/off switch, for the monitor's button.</summary>
+public sealed record PtzTrackingEnabledDto(bool Enabled);
+
+public sealed record PtzTrackingPolicyDto
+{
+  public bool Enabled { get; init; }
+  public IReadOnlyList<string> Kinds { get; init; } = [];
+  public IReadOnlyList<string> Sources { get; init; } = [];
+}
 
 public sealed record PtzTrackingStateDto
 {

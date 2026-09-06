@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Box, FormControlLabel, MenuItem, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material'
+import { Accordion, AccordionDetails, AccordionSummary, Box, FormControlLabel, MenuItem, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera, changeCameraParent, fetchCameraState, removeCamera } from '../store/liveSlice'
@@ -10,6 +11,7 @@ import CameraStoragesControl from './CameraStoragesControl'
 import CameraSchedulesControl from './CameraSchedulesControl'
 import CameraDetectionsSection from './CameraDetectionsSection'
 import CameraCalibrationSection from './CameraCalibrationSection'
+import CameraTrackingSection from './CameraTrackingSection'
 import PasswordField from './PasswordField'
 import CameraStream from './CameraStream'
 import DetailToolbar from './settings/DetailToolbar'
@@ -237,7 +239,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
             >
               <Tab value="main" label={t('cameras.tabMain')} />
               {!isNew && <Tab value="detections" label={t('cameras.tabDetections')} />}
-              {!isNew && hasTelemetry && <Tab value="calibration" label={t('cameras.tabCalibration')} />}
+              {!isNew && hasTelemetry && <Tab value="calibration" label={t('cameras.tabTracking')} />}
               <Tab value="advanced" label={t('cameras.tabAdvanced')} />
             </Tabs>
 
@@ -320,11 +322,33 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
             />
             )}
 
+            {/* One tab, because calibration is part of setting tracking up rather than a subject
+                of its own: the policy says what to follow, the calibration is what makes following
+                it land in the right direction. Two sections' worth of controls do not fit the panel
+                at once, so they fold — and calibration starts folded, being the thing that is set
+                once and then left alone. */}
             {tab === 'calibration' && !isNew && hasTelemetry && (
-            <CameraCalibrationSection
-              cameraId={initialCameraId}
-              hasTelemetry={hasTelemetry}
-            />
+            <Stack spacing={1}>
+              <Accordion defaultExpanded disableGutters elevation={0}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography variant="subtitle2">{t('cameras.tabTracking')}</Typography>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <CameraTrackingSection cameraId={initialCameraId} />
+                </AccordionDetails>
+              </Accordion>
+              <Accordion disableGutters elevation={0}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography variant="subtitle2">{t('cameras.calibration')}</Typography>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <CameraCalibrationSection
+                    cameraId={initialCameraId}
+                    hasTelemetry={hasTelemetry}
+                  />
+                </AccordionDetails>
+              </Accordion>
+            </Stack>
             )}
 
             {tab === 'advanced' && (

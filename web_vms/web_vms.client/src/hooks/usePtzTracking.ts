@@ -85,21 +85,42 @@ export function usePtzTracking(cameraId: string | undefined): PtzTrackingStateDt
 }
 
 /**
- * Turns tracking on or off, and names the object to follow.
+ * Takes over a self-guiding camera and names the object to follow, or hands it back.
  *
- * Polls immediately afterwards instead of writing an optimistic entry: the service may refuse —
- * a camera not marked as having telemetry, or one no VmsOnvif can reach — and a button that lit up
- * and then went dark again would be worse than one that lights a moment late.
+ * This does not arm anything: whether a camera guides itself is configured in its settings, and a
+ * camera with no session refuses. The override it sets is temporary — it lapses by itself when the
+ * object is finally lost, so an unattended wall goes back to the camera's own priorities.
+ *
+ * Polls immediately afterwards instead of writing an optimistic entry: the service may refuse, and
+ * a highlight that appeared and then vanished would be worse than one that appears a moment late.
  */
-export async function setPtzTracking(
+/**
+ * Switches a camera's self-guidance on or off from the monitor.
+ *
+ * The same setting the camera's own settings page writes, not a monitor-local mode — so it survives
+ * the operator closing the tab and the service restarting, which is the whole point of it living on
+ * the camera. The button is only a shortcut to it.
+ *
+ * The session it asks for is created by the tracking service reconciling against the new
+ * configuration, so the state this hook polls catches up a moment later rather than at once.
+ */
+export async function setPtzSelfGuidance(cameraId: string, enabled: boolean): Promise<void> {
+  await apiFetch(`/api/ptz-tracking-policy/${encodeURIComponent(cameraId)}/enabled`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  })
+  await poll()
+}
+
+export async function setPtzTarget(
   cameraId: string,
-  enabled: boolean,
   target?: TrackingTargetDto | null
 ): Promise<void> {
   await apiFetch(`/api/ptz-tracking/${encodeURIComponent(cameraId)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ enabled, target: target ?? null }),
+    body: JSON.stringify({ target: target ?? null }),
   })
   await poll()
 }

@@ -1548,4 +1548,51 @@ public class CameraStorage(
       Method = method,
     };
   }
+
+  // ── Self-guidance policy (1:1 per camera, absent = off) ───────────────────
+
+  public async Task<PtzTrackingPolicy?> GetPtzTrackingPolicyAsync(string cameraId, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var row = await db.PtzTrackingPolicies.FindAsync([cameraId], ct);
+    return row is null ? null : ToPtzTrackingPolicyProto(row);
+  }
+
+  public async Task<IReadOnlyList<PtzTrackingPolicy>> ListPtzTrackingPoliciesAsync(CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var rows = await db.PtzTrackingPolicies.AsNoTracking().ToListAsync(ct);
+    return rows.Select(ToPtzTrackingPolicyProto).ToList();
+  }
+
+  public async Task<PtzTrackingPolicy> UpsertPtzTrackingPolicyAsync(
+    PtzTrackingPolicy policy, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var entity = await db.PtzTrackingPolicies.FindAsync([policy.CameraId], ct)
+                 ?? db.PtzTrackingPolicies.Add(new DbPtzTrackingPolicy { CameraId = policy.CameraId }).Entity;
+
+    entity.Enabled = policy.Enabled;
+    entity.Kinds = Join(policy.Kinds);
+    entity.Sources = Join(policy.Sources);
+
+    await db.SaveChangesAsync(ct);
+    return ToPtzTrackingPolicyProto(entity);
+  }
+
+  // Stored as one text column each, like analytics_watch.classes: short lists, read whole, never
+  // queried inside. Blanks are dropped rather than stored so an empty list has exactly one
+  // representation, which is what makes "empty means any" unambiguous on the way back out.
+  private static string Join(IEnumerable<string> values) =>
+    string.Join(',', values.Select(v => v.Trim()).Where(v => v.Length > 0));
+
+  private static PtzTrackingPolicy ToPtzTrackingPolicyProto(DbPtzTrackingPolicy row)
+  {
+    var proto = new PtzTrackingPolicy { CameraId = row.CameraId, Enabled = row.Enabled };
+    proto.Kinds.AddRange(
+      row.Kinds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    proto.Sources.AddRange(
+      row.Sources.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    return proto;
+  }
 }
