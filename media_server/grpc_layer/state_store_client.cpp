@@ -68,13 +68,15 @@ void state_store_client::save_stream_stats(
     // An object, unlike the bare scalar save_heartbeat writes, needs no quoting games on the .NET
     // side — GetStateAsync<T> deserializes it directly.
     item->set_value(std::format(
-      R"({{"width":{},"height":{},"codec":"{}","fps":{:.3f},"bitrateBps":{},"observedAtMs":{}}})",
+      R"({{"width":{},"height":{},"codec":"{}","fps":{:.3f},"bitrateBps":{},"observedAtMs":{},)"
+      R"("transcodeEncoder":"{}"}})",
       s.video.width,
       s.video.height,
       codec_name_of(s.video.codec_id),
       s.video.fps,
       s.video.bitrate_bps,
-      observed_at_ms));
+      observed_at_ms,
+      s.video_encoder));
 
     (*item->mutable_metadata())["ttlInSeconds"] = std::to_string(ttl_seconds);
   }

@@ -51,6 +51,7 @@ public sealed class StreamStatsCache(DaprClient dapr, ILogger<StreamStatsCache> 
     [JsonPropertyName("fps")] public double Fps { get; init; }
     [JsonPropertyName("bitrateBps")] public long BitrateBps { get; init; }
     [JsonPropertyName("observedAtMs")] public long ObservedAtMs { get; init; }
+    [JsonPropertyName("transcodeEncoder")] public string TranscodeEncoder { get; init; } = string.Empty;
   }
 
   // Freshness is tracked per key rather than for the cache as a whole, because the two callers ask
@@ -101,6 +102,7 @@ public sealed class StreamStatsCache(DaprClient dapr, ILogger<StreamStatsCache> 
           Fps = snap.Fps,
           BitrateBps = snap.BitrateBps,
           ObservedAtMs = snap.ObservedAtMs,
+          TranscodeEncoder = snap.TranscodeEncoder,
         };
       }
     }

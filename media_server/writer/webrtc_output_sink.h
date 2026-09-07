@@ -14,9 +14,12 @@
 
 class webrtc_output_sink : public media_sink {
 public:
-  explicit webrtc_output_sink(std::string rtsp_url);
+  webrtc_output_sink(std::string rtsp_url, bool transcode_hevc);
   ~webrtc_output_sink() override;
   void on_packet(const std::shared_ptr<media_packet>& media) override;
+  /// Which encoder the video path is using, for the monitor's stream line. Empty when the camera
+  /// already publishes H.264 and the packets are passed through without being re-compressed.
+  std::string video_encoder_name() const { return m_video_compat_sink.video_encoder_name(); }
 private:
   void close();
   void send_to_sinks(const std::shared_ptr<media_packet>& media);

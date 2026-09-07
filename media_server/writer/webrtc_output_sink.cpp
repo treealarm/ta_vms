@@ -20,8 +20,9 @@ bool webrtc_publish_audio_from_env()
 }
 }  // namespace
 
-webrtc_output_sink::webrtc_output_sink(std::string rtsp_url)
-  : m_publish_audio(webrtc_publish_audio_from_env())
+webrtc_output_sink::webrtc_output_sink(std::string rtsp_url, bool transcode_hevc)
+  : m_video_compat_sink(transcode_hevc)
+  , m_publish_audio(webrtc_publish_audio_from_env())
 {
   m_rtsp_output_sink = std::make_shared<rtsp_output_sink>(std::move(rtsp_url));
   m_video_compat_sink.add_sink(m_rtsp_output_sink);

@@ -322,7 +322,9 @@
     "setDefaultsHelper": "Fills the ports and the public STUN URL; name and hosts are left as they are",
     "deleteServer": "Delete router",
     "noServers": "No routers configured",
-    "selectHint": "Select a router or press + to add one"
+    "selectHint": "Select a router or press + to add one",
+    "transcodeHevc": "Transcode HEVC to H.264",
+    "transcodeHevcHelper": "Off: H.265 cameras are passed through untouched, and MediaMTX carries them over WebRTC to browsers that can decode it — nothing is re-encoded at all. Turn on where viewers cannot play that: Firefox has no HEVC in WebRTC, Chrome depends on the platform, and a stream carrying B-frames is refused whatever the browser supports."
   },
   "permissions": {
     "title": "Camera permissions",

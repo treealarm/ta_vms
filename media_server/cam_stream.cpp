@@ -16,15 +16,15 @@ cam_stream::cam_stream(
   const std::string& profile_token,
   const std::string& user,
   const std::string& pass,
-  const std::string& webrtc_rtsp_push_url,
-  bool               web_rtc_enabled)
+  const webrtc_publish_config& webrtc,
+  bool                         web_rtc_enabled)
   : m_rtsp_url(rtsp_url)
   , m_camera_id(camera_id)
   , m_stream_name(stream_name)
   , m_profile_token(profile_token)
   , m_user(user)
   , m_pass(pass)
-  , m_webrtc_rtsp_push_url(webrtc_rtsp_push_url)
+  , m_webrtc(webrtc)
   , m_web_rtc_enabled(web_rtc_enabled)
 {
   if (profile_token.empty() && file_camera_reader::is_file_source(rtsp_url))
@@ -113,6 +113,16 @@ void cam_stream::stop_recording()
   apply_recording_policy(recording_policy_spec{ .mode = recording_policy_mode::off });
 }
 
+std::string cam_stream::video_encoder_name() const
+{
+  std::shared_ptr<webrtc_output_sink> sink;
+  {
+    std::scoped_lock lock(m_sinks_mutex);
+    sink = m_webrtc_output_sink;
+  }
+  return sink ? sink->video_encoder_name() : std::string{};
+}
+
 bool cam_stream::start_web_rtc(std::string& error)
 {
   std::shared_ptr<webrtc_output_sink> sink;
@@ -124,7 +134,8 @@ bool cam_stream::start_web_rtc(std::string& error)
       return false;
     }
     m_webrtc_output_sink = std::make_shared<webrtc_output_sink>(
-      resolve_webrtc_rtsp_push_url(m_camera_id, m_stream_name, m_webrtc_rtsp_push_url));
+      resolve_webrtc_rtsp_push_url(m_camera_id, m_stream_name, m_webrtc.rtsp_push_url),
+      m_webrtc.transcode_hevc);
     sink = m_webrtc_output_sink;
   }
   m_reader->add_sink(sink);
@@ -207,18 +218,25 @@ bool cam_stream::stop_web_rtc(std::string& error)
   return true;
 }
 
-void cam_stream::update_webrtc_push_url(const std::string& new_url, bool web_rtc, std::string& error)
+void cam_stream::update_webrtc_publish(const webrtc_publish_config& cfg, bool web_rtc, std::string& error)
 {
-  // Empty URL means MediaMTX not configured — never clobber an already-set push URL.
-  // VmsCfg returns "" for cameras without a MediaMTX server assignment.
-  if (new_url.empty())
+  // Empty URL means MediaMTX not configured — never clobber an already-set push URL. VmsCfg
+  // returns "" for cameras without a MediaMTX server assignment, and a deployment that points at
+  // its router through VMS_WEBRTC_RTSP_BASE_URL has it empty always. Only the URL is protected:
+  // returning here outright also discarded transcode_hevc, so on such a deployment the router's
+  // switch changed the database and nothing else.
+  webrtc_publish_config next = cfg;
+  if (next.rtsp_push_url.empty())
+    next.rtsp_push_url = m_webrtc.rtsp_push_url;
+
+  if (next.rtsp_push_url == m_webrtc.rtsp_push_url && next.transcode_hevc == m_webrtc.transcode_hevc)
     return;
 
   const bool was_streaming = is_web_rtc_streaming();
   if (was_streaming)
     stop_web_rtc(error);
 
-  m_webrtc_rtsp_push_url = new_url;
+  m_webrtc = next;
   m_web_rtc_enabled = web_rtc;
 
   if (web_rtc)

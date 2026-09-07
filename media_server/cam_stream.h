@@ -12,6 +12,7 @@
 #include "arch_writer/segment_writer.h"
 #include "writer/analytics_output_sink.h"
 #include "writer/webrtc_output_sink.h"
+#include "interfaces/web_rtc_utils.h"
 
 class cam_stream final
 {
@@ -23,8 +24,8 @@ public:
     const std::string& profile_token,
     const std::string& user,
     const std::string& pass,
-    const std::string& webrtc_rtsp_push_url = "",
-    bool               web_rtc_enabled      = false);
+    const webrtc_publish_config& webrtc = {},
+    bool                         web_rtc_enabled = false);
 
   ~cam_stream();
 
@@ -39,7 +40,7 @@ public:
   /// what happens when the camera is reassigned to another worker.
   bool start_analytics_push(const std::string& rtsp_url, uint32_t sample_fps, std::string& error);
   bool stop_analytics_push(std::string& error);
-  void update_webrtc_push_url(const std::string& new_url, bool web_rtc, std::string& error);
+  void update_webrtc_publish(const webrtc_publish_config& cfg, bool web_rtc, std::string& error);
 
   void shutdown();
 
@@ -51,9 +52,13 @@ public:
   std::string get_pass() const { return m_pass; }
   bool is_recording() const { return m_recording_policy_mode != recording_policy_mode::off; }
   bool is_web_rtc_streaming() const { return m_webrtc_output_sink != nullptr; }
+  /// Which encoder the WebRTC path re-compresses this stream with, empty when it is not running or
+  /// the camera already publishes H.264 and the packets are copied through.
+  std::string video_encoder_name() const;
   bool is_web_rtc_enabled() const { return m_web_rtc_enabled; }
   void set_web_rtc_enabled(bool enabled) { m_web_rtc_enabled = enabled; }
-  const std::string& get_webrtc_push_url() const { return m_webrtc_rtsp_push_url; }
+  const std::string& get_webrtc_push_url() const { return m_webrtc.rtsp_push_url; }
+  const webrtc_publish_config& get_webrtc_config() const { return m_webrtc; }
   std::string mediamtx_path() const { return m_camera_id + "/" + m_stream_name; }
   recording_policy_mode get_recording_policy_mode() const { return m_recording_policy_mode; }
   std::string current_segment_path() const { return m_writer ? m_writer->current_segment_path().string() : std::string(); }
@@ -77,7 +82,7 @@ private:
   std::string m_profile_token;
   std::string m_user;
   std::string m_pass;
-  std::string m_webrtc_rtsp_push_url;
+  webrtc_publish_config m_webrtc;
   bool        m_web_rtc_enabled{false};
 
   std::unique_ptr<reader> m_reader;

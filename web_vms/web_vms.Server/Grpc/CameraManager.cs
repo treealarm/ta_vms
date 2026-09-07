@@ -125,6 +125,7 @@ public class CameraManager : ICameraManager
           Fps          = s.Stats.Fps,
           BitrateBps   = s.Stats.BitrateBps,
           ObservedAtMs = s.Stats.ObservedAtMs,
+          TranscodeEncoder = s.Stats.TranscodeEncoder,
         },
       })
       .ToList();
@@ -247,6 +248,7 @@ public class CameraManager : ICameraManager
     PublishPass = s.PublishPass,
     ReadUser    = s.ReadUser,
     ReadPass    = s.ReadPass,
+    TranscodeHevc = s.TranscodeHevc,
   };
 
   private static MediaMtxServer ToMediaMtxProto(MediaMtxServerDto dto) => new()
@@ -264,6 +266,7 @@ public class CameraManager : ICameraManager
     PublishPass = dto.PublishPass ?? string.Empty,
     ReadUser    = dto.ReadUser ?? string.Empty,
     ReadPass    = dto.ReadPass ?? string.Empty,
+    TranscodeHevc = dto.TranscodeHevc,
   };
 
   private static MediaServerNodeDto ToDto(MediaServerNode server) => new()

@@ -9,6 +9,7 @@ ENV CMAKE_TOOLCHAIN_FILE=/vcpkg/scripts/buildsystems/vcpkg.cmake
 RUN apt-get update && apt-get install -y \
     software-properties-common curl zip unzip tar git \
     build-essential cmake ninja-build pkg-config nasm \
+    libdrm-dev \
     && add-apt-repository ppa:ubuntu-toolchain-r/test -y \
     && apt-get update && apt-get install -y gcc-13 g++-13 \
     && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 \
@@ -27,10 +28,21 @@ COPY triplets/ /vcpkg-overlay-triplets/
 # Shared C++ deps base for both this repo's media_server (`vms`) and video_a's analytics-worker
 # (hence openvino, which media_server itself doesn't link but video_a does).
 #
-# Nothing GPU-related belongs here. qsv/vaapi and the system libdrm they need used to sit in this
-# list for roi_transcode, which made two consumers with no GPU carry a hardware dependency and a
-# driver-ABI question that is none of their business. That moved to roi-deps/Dockerfile, which is
-# also where nlohmann-json went — roi_transcode is the only thing that ever linked it.
+# `vaapi` is here because media_server transcodes live HEVC->H.264 for WebRTC on the CPU, one
+# libx264 encode per viewed stream, and that is the largest continuous cost in the service. It
+# needs libdrm-dev above: libva has no vcpkg port for it, and its portfile fails at meson
+# configure with an error that does not name the cause.
+#
+# This list carried qsv/vaapi once before, for roi_transcode, and they were removed because two
+# consumers with no GPU were paying for a hardware dependency. That reasoning still holds for
+# everything past VA-API: `qsv` pulls the oneVPL dispatcher, which is useless without
+# libmfx-gen1.2 in a runtime image, and nlohmann-json is linked by roi_transcode alone. Those
+# stay in roi-deps/Dockerfile. video_a pays for `vaapi` in image size and nothing else.
+#
+# Building it is not the same as using it. The encoders are in libavcodec, but h264_vaapi also
+# needs a current iHD driver in the *runtime* image and /dev/dri passed into the container —
+# see the runtime stage of the root Dockerfile. Without either, the encoder chain falls back to
+# libx264 and everything still looks fine.
 RUN --mount=type=cache,target=/vcpkg/buildtrees \
     --mount=type=cache,target=/vcpkg/packages \
     --mount=type=cache,target=/vcpkg/downloads \
@@ -41,5 +53,5 @@ RUN --mount=type=cache,target=/vcpkg/buildtrees \
         protobuf \
         grpc \
         spdlog \
-        ffmpeg[gpl,x264,x265,opus,vpx,aom,openssl]:x64-linux \
+        ffmpeg[gpl,x264,x265,opus,vpx,aom,openssl,vaapi]:x64-linux \
         openvino:x64-linux

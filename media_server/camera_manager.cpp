@@ -49,7 +49,7 @@ bool camera_manager::configure_camera(
     for (const auto& s : streams)
     {
       std::string stream_error;
-      if (!device->add_stream(s.stream_name, s.profile_token, s.rtsp_url, user, pass, s.policy, s.web_rtc, stream_error, s.webrtc_rtsp_push_url))
+      if (!device->add_stream(s.stream_name, s.profile_token, s.rtsp_url, user, pass, s.policy, s.web_rtc, stream_error, s.webrtc))
       {
         logger::instance().error(std::format(
           "Failed to add stream '{}' for camera '{}': {}", s.stream_name, camera_id, stream_error));
@@ -94,7 +94,7 @@ bool camera_manager::configure_camera(
     {
       // New stream on an existing device.
       std::string stream_error;
-      if (!device->add_stream(s.stream_name, s.profile_token, s.rtsp_url, user, pass, s.policy, s.web_rtc, stream_error, s.webrtc_rtsp_push_url))
+      if (!device->add_stream(s.stream_name, s.profile_token, s.rtsp_url, user, pass, s.policy, s.web_rtc, stream_error, s.webrtc))
       {
         logger::instance().error(std::format(
           "Failed to add stream '{}' for camera '{}': {}", s.stream_name, camera_id, stream_error));
@@ -122,7 +122,7 @@ bool camera_manager::configure_camera(
       std::string dummy;
       device->remove_stream(s.stream_name, dummy);
       std::string stream_error;
-      if (!device->add_stream(s.stream_name, s.profile_token, s.rtsp_url, user, pass, s.policy, s.web_rtc, stream_error, s.webrtc_rtsp_push_url))
+      if (!device->add_stream(s.stream_name, s.profile_token, s.rtsp_url, user, pass, s.policy, s.web_rtc, stream_error, s.webrtc))
       {
         logger::instance().error(std::format(
           "Failed to restart stream '{}' for camera '{}': {}", s.stream_name, camera_id, stream_error));
@@ -136,18 +136,29 @@ bool camera_manager::configure_camera(
       continue;
     }
 
-    // Only the WebRTC push URL changed — update in-place without RTSP reconnect.
+    // Only the WebRTC publish settings changed — update in-place without RTSP reconnect.
     // Use the stream's current streaming state, not s.web_rtc: VmsCfg does not store
     // WebRTC-enabled state (that is owned by LiveController), so s.web_rtc is always
     // false from reload_cameras and would incorrectly kill live video.
-    if (!s.webrtc_rtsp_push_url.empty() &&
-        stream->get_webrtc_push_url() != s.webrtc_rtsp_push_url)
+    //
+    // transcode_hevc is compared too: it decides which processor compat_sink builds, so a change
+    // to it has to restart the publish or the router's new setting would not reach the stream
+    // until something else happened to restart it.
+    // The empty-URL guard covers the URL only. A deployment whose push target comes from
+    // VMS_WEBRTC_RTSP_BASE_URL always sends an empty one, and gating the whole comparison on it
+    // meant the router's transcode switch never reached the stream there; cam_stream keeps the
+    // URL it has.
+    const auto& current = stream->get_webrtc_config();
+    const bool url_changed = !s.webrtc.rtsp_push_url.empty()
+      && current.rtsp_push_url != s.webrtc.rtsp_push_url;
+    if (url_changed || current.transcode_hevc != s.webrtc.transcode_hevc)
     {
       std::string dummy;
-      stream->update_webrtc_push_url(
-        s.webrtc_rtsp_push_url, stream->is_web_rtc_streaming(), dummy);
+      stream->update_webrtc_publish(
+        s.webrtc, stream->is_web_rtc_streaming(), dummy);
       logger::instance().info(std::format(
-        "Stream '{}' for camera '{}' WebRTC push URL updated", s.stream_name, camera_id));
+        "Stream '{}' for camera '{}' WebRTC publish settings updated (transcode_hevc={})",
+        s.stream_name, camera_id, s.webrtc.transcode_hevc));
     }
 
     // Recording policy — hot-update, no reconnect needed.
@@ -370,6 +381,7 @@ std::vector<camera_manager::stream_state> camera_manager::list_stream_states() c
         .last_frame_ts        = live.last_frame_ts,
         .recovered_frame_ts   = live.recovered_frame_ts,
         .video                = stream->observed_video_params(),
+        .video_encoder        = stream->video_encoder_name(),
       });
     }
   }

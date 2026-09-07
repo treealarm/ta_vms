@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Box, Button, IconButton, InputAdornment, List, MenuItem, Stack, TextField, Tooltip, Typography } from '@mui/material'
+import { Alert, Box, Button, FormControlLabel, FormHelperText, IconButton, InputAdornment, List, MenuItem, Stack, Switch, TextField, Tooltip, Typography } from '@mui/material'
 import ClearIcon from '@mui/icons-material/Clear'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import { useTranslation } from 'react-i18next'
@@ -24,6 +24,8 @@ const EMPTY: MediaMtxServerDto = {
   // Empty means shared: usable by cameras of any node, which is what a single-box install wants.
   serverId: '',
   publishUser: '', publishPass: '', readUser: '', readPass: '',
+  // Passthrough by default: nothing is re-encoded unless the viewers or the stream need it.
+  transcodeHevc: false,
 }
 
 type FormProps = {
@@ -45,20 +47,12 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
   // Snapshot of the saved state — used for dirty detection and Cancel
   const [snap, setSnap] = useState<MediaMtxServerDto>(server ?? { ...EMPTY })
 
-  const dirty = !isNew && (
-    form.name !== snap.name
-    || form.host !== snap.host
-    || form.webrtcHost !== snap.webrtcHost
-    || form.rtspPort !== snap.rtspPort
-    || form.webrtcPort !== snap.webrtcPort
-    || form.apiPort !== snap.apiPort
-    || form.stunUrl !== snap.stunUrl
-    || form.serverId !== snap.serverId
-    || form.publishUser !== snap.publishUser
-    || form.publishPass !== snap.publishPass
-    || form.readUser !== snap.readUser
-    || form.readPass !== snap.readPass
-  )
+  // Compared over the DTO's own keys rather than field by field: the enumerated version silently
+  // ignored every field added after it was written, and an ignored field means Apply stays
+  // disabled and applyInternal returns early -- the edit is accepted by the form and never sent.
+  // Sound as long as MediaMtxServerDto stays flat and scalar, which it is.
+  const dirty = !isNew && (Object.keys(snap) as (keyof MediaMtxServerDto)[])
+    .some((key) => form[key] !== snap[key])
 
   // Empty is a valid choice ("no STUN, LAN only"); anything else has to be a URL the browser's
   // RTCPeerConnection can actually parse, otherwise live playback dies on every camera behind
@@ -222,6 +216,16 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
               ) : undefined,
             }}
           />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.transcodeHevc}
+                onChange={(e) => setForm((prev) => ({ ...prev, transcodeHevc: e.target.checked }))}
+              />
+            }
+            label={t('mediaMtx.transcodeHevc')}
+          />
+          <FormHelperText>{t('mediaMtx.transcodeHevcHelper')}</FormHelperText>
           <Stack direction="row" spacing={1}>
             <TextField
               label={t('mediaMtx.rtspPort')}
