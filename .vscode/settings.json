@@ -3,7 +3,12 @@
     // "Debug Anyway" button, and taking it launches every service with no Dapr sidecar behind
     // it -- which fails silently: the apps run, every gRPC call between them dies on "Error
     // connecting to subchannel", and the only visible symptom is empty lists in the UI.
-    "debug.onTaskErrors": "abort",
+    //
+    // "showErrors" rather than "abort": both refuse to launch and neither offers "Debug Anyway",
+    // but "abort" cancels without saying anything at all. Pressing F5 and having nothing whatever
+    // happen is indistinguishable from a broken keybinding, and the gate tasks' own message --
+    // which names the missing service and the command that starts it -- was being thrown away.
+    "debug.onTaskErrors": "showErrors",
     "workbench.colorTheme": "Light Modern",
     "cmake.sourceDirectory": "${workspaceFolder}/media_server",
     "cmake.configurePreset": "linux-default",
