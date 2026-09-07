@@ -87,6 +87,9 @@ private:
   // with not one line in the log to say why. Counting is what turns that into a diagnosis.
   int64_t m_submitted = 0;
   bool m_starvation_reported = false;
+  // Whether the decode/encode pair has been said once. Not known at open: the decoder's
+  // format is negotiated on the first packet.
+  bool m_path_reported = false;
   // Consecutive submit() failures, counted so the warning can be throttled: a session that opened
   // but cannot encode fails on every single frame.
   int64_t m_submit_failures = 0;

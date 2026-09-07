@@ -328,6 +328,12 @@ bool sve_transcode_processor::init(
   // produce: sve's software backend sets libx264's preset but no tune, and measured 34 frames in
   // flight against 4 through h264_vaapi. Handing the stream back lets compat_sink build
   // video_transcode_processor, which asks for tune=zerolatency and does not have that delay.
+  //
+  // The encoder alone decides this, and the decoder deliberately does not enter into it. sve now
+  // decodes on the encoder's device when it has one, but a decoder that falls back to software --
+  // a profile the silicon does not implement -- still leaves a hardware encode worth having: that
+  // was the whole 43% before the decode was accelerated at all. Handing the stream back over the
+  // decoder would trade a real saving for none.
   if (!is_hardware(m_session->encoder_used())) {
     logger::instance().info(std::format(
       "sve_transcode_processor: backend chain settled on '{}', which is software -- leaving this "
@@ -353,6 +359,7 @@ bool sve_transcode_processor::init(
   m_pending_pts.clear();
   m_last_emitted_pts = AV_NOPTS_VALUE;
   m_submit_failures = 0;
+  m_path_reported = false;
   m_submitted = 0;
   m_starvation_reported = false;
   return true;
@@ -486,6 +493,18 @@ void sve_transcode_processor::process(const std::shared_ptr<media_packet>& media
     ++m_submit_failures;
   }
 
+  // Said once, on the first frame out, because that is the first moment it is knowable:
+  // libavcodec negotiates the decoder's pixel format on the first packet. The pair is what
+  // matters -- a hardware encoder behind a software decoder is the case that looks like success
+  // and costs several times the CPU.
+  if (!m_path_reported && m_sink->emitted() > 0) {
+    m_path_reported = true;
+    const std::string decoder = m_session->decoder_hardware();
+    logger::instance().info(std::format(
+      "sve_transcode_processor: decoding on {}, encoding on '{}'",
+      decoder.empty() ? "the CPU" : decoder, m_session->backend_name()));
+  }
+
   // Two seconds of input at any sane frame rate. Silence past that is not startup latency.
   ++m_submitted;
   if (!m_starvation_reported && m_submitted >= 100 && m_sink->emitted() == 0) {
@@ -531,5 +550,18 @@ std::string sve_transcode_processor::encoder_name() const
 {
   // The backend that actually opened, not the one asked for: under a chain they differ, and the
   // whole point of showing this is to see which one won.
-  return m_session ? sve::backend_name(m_session->encoder_used()) : std::string{};
+  if (!m_session) {
+    return {};
+  }
+  const std::string encoder = sve::backend_name(m_session->encoder_used());
+  // Both halves of the path, because they fail apart and the failure is invisible: a hardware
+  // encoder fed by a software decoder works perfectly and costs several times the CPU of one
+  // whose frames never leave the device. Withheld until a frame has actually come out --
+  // libavcodec settles the decoder's format on the first packet, so before that "cpu" would be
+  // a guess reported as a fact.
+  if (!m_sink || m_sink->emitted() == 0) {
+    return encoder;
+  }
+  const std::string decoder = m_session->decoder_hardware();
+  return std::format("{} ({} decode)", encoder, decoder.empty() ? "cpu" : decoder);
 }
