@@ -17,7 +17,11 @@ CREATE TABLE media_mtx_server (
   publish_user text    NOT NULL DEFAULT '',
   publish_pass text    NOT NULL DEFAULT '',
   read_user    text    NOT NULL DEFAULT '',
-  read_pass    text    NOT NULL DEFAULT ''
+  read_pass    text    NOT NULL DEFAULT '',
+  -- Whether cameras publishing here get their HEVC re-encoded to H.264 for WebRTC. Default
+  -- false: H.265 passthrough is what a capable browser should get, and re-encoding is the
+  -- exception turned on where the viewers or the stream cannot do without it.
+  transcode_hevc boolean NOT NULL DEFAULT false
 );
 
 CREATE TABLE camera_setup (
@@ -64,7 +68,13 @@ CREATE TABLE camera_setup (
   -- as switching analytics off on the device -- that is the ONVIF metadata configuration,
   -- and it has its own control. This one is ours: the camera keeps sending, and the
   -- documents are dropped before they are parsed.
-  onvif_metadata_disabled boolean          NOT NULL DEFAULT false
+  onvif_metadata_disabled boolean          NOT NULL DEFAULT false,
+
+  -- Whether the camera really has a motor behind the ONVIF PTZ service it advertises. Defaults
+  -- to false: a deployment must name its PTZ cameras explicitly, because the device's own answer
+  -- is what this column exists to stop trusting. See CameraSetup.has_telemetry in
+  -- proto/vms_cfg.proto.
+  has_telemetry           boolean          NOT NULL DEFAULT false
 );
 
 CREATE TABLE recording_profile (
@@ -237,6 +247,44 @@ CREATE TABLE onvif_event_subscription (
 CREATE TABLE camera_states (
   camera_id text    PRIMARY KEY REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
   armed     boolean NOT NULL DEFAULT false
+);
+
+-- How this camera's pan and tilt move the picture, measured rather than assumed: one step of pan
+-- shifts the frame by (pan_dx, pan_dy), one of tilt by (tilt_dx, tilt_dy). Sign and magnitude
+-- differ per mount, so tracking cannot guess them.
+CREATE TABLE ptz_calibration (
+  camera_id    text PRIMARY KEY REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
+  pan_dx       real NOT NULL,
+  pan_dy       real NOT NULL,
+  tilt_dx      real NOT NULL,
+  tilt_dy      real NOT NULL,
+  confidence   real NOT NULL DEFAULT 0,
+  calibrated_at timestamptz NOT NULL DEFAULT now(),
+  method       text NOT NULL DEFAULT 'auto'
+);
+
+-- Which cameras follow objects on their own, and what they follow.
+--
+-- Self-guidance is a property of the camera, not of whoever happens to be watching it: a camera
+-- with a row here tracks whether or not an operator has the monitor open, and it goes on doing so
+-- across a restart of the tracking service. An operator can still take over from the monitor and
+-- name a particular object, but that override lives only in memory and expires with the object.
+--
+-- No row at all means switched off. That is not distinguished from a row with enabled = false, and
+-- deliberately: there is nothing a deployment would do differently between the two.
+--
+-- See PtzTrackingPolicy in proto/vms_cfg.proto.
+CREATE TABLE ptz_tracking_policy (
+  camera_id text    PRIMARY KEY REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
+  enabled   boolean NOT NULL DEFAULT false,
+  -- Object kinds in priority order, comma separated ("person,vehicle"). Empty means any object
+  -- will do. Same words as the wire ("person", "face", "vehicle", ...), the way
+  -- analytics_watch.classes already stores them.
+  kinds     text    NOT NULL DEFAULT '',
+  -- Which producers of boxes to believe: "cv" (the detector) and/or "onvif" (the camera's own
+  -- metadata). Both by default, because a camera that has one of them configured should not have
+  -- to name it here as well.
+  sources   text    NOT NULL DEFAULT 'cv,onvif'
 );
 
 -- Per-camera video analytics watch. timeout_seconds is the retention timeout for events this watch
