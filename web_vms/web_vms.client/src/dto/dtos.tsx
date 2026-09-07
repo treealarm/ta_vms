@@ -141,6 +141,9 @@ export type StreamStatsDto = {
   bitrateBps: number
   /** Unix milliseconds; 0 when the publisher could not say. */
   observedAtMs: number
+  /** Which encoder the WebRTC path re-compresses this stream with ("vaapi", "x264"). Empty means
+   *  nothing is re-encoded: nobody is watching, or the camera already sends H.264. */
+  transcodeEncoder?: string
 }
 
 export type CameraStreamDto = {
@@ -314,6 +317,9 @@ export type MediaMtxServerDto = {
   publishPass: string
   readUser: string
   readPass: string
+  /** Re-encode HEVC cameras to H.264 before publishing here. False passes H.265 through, which
+   *  MediaMTX carries over WebRTC to browsers that can decode it. */
+  transcodeHevc: boolean
 }
 
 /** Built client-side from servers + cameras for Settings tree */

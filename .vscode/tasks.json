@@ -3,6 +3,8 @@
     "tasks": [
         {
             "label": "dapr: sidecars up",
+            // See "prepare: stack": never stop to ask which instance to terminate.
+            "runOptions": { "instancePolicy": "terminateOldest" },
             "detail": "Every sidecar at once, from web_vms/dapr.yaml. The file declares no `command`, so the services themselves are started by the debugger. About 90 MB per sidecar.",
             "type": "shell",
             "command": "dapr",
@@ -54,12 +56,21 @@
                 "background": {
                     "activeOnStart": true,
                     "beginsPattern": "Starting Dapr with id",
-                    "endsPattern": "(You're up and running|Initialized name resolution)"
+                    // Any line at all ends it, and that is deliberate. This matcher decides one
+                    // thing only: when the chain may move on to the next task. Readiness is not
+                    // its job -- 'wait: sidecars ready' probes all thirteen metrics ports and is
+                    // the real gate. Matching a readiness line here instead made the release
+                    // depend on which of thirteen interleaved sidecars happened to log last: end
+                    // on a "Starting Dapr with id" and the task stays "in progress" forever, which
+                    // leaves it active, and an active instance is what the next F5 trips over.
+                    "endsPattern": "^.+$"
                 }
             }
         },
         {
             "label": "dapr: sidecars down",
+            // See "prepare: stack": never stop to ask which instance to terminate.
+            "runOptions": { "instancePolicy": "terminateOldest" },
             "detail": "Stops everything started by 'dapr: sidecars up'.",
             "type": "shell",
             "command": "dapr",
@@ -79,18 +90,20 @@
         },
         {
             "label": "wait: infra ready",
-            "detail": "Refuses to start the stack when the broker or the database is not up. Waits up to 30s for each, because a container that was only just started is not yet accepting connections -- Postgres in particular listens well after `docker ps` calls it Up, and a shorter wait failed F5 for a stack that was merely still coming up. daprd initialises its components before it serves anything, and a pub/sub component that cannot dial RabbitMQ makes it exit gracefully -- in multi-app mode that one failure takes every other sidecar down with it. What you see then is 'wait: sidecars ready' timing out against a metrics port, which names the symptom and not the cause. Checked before the build so the answer arrives in a second rather than after a compile.",
+            // See "prepare: stack": never stop to ask which instance to terminate.
+            "runOptions": { "instancePolicy": "terminateOldest" },
+            "detail": "Refuses to start the stack when the broker or the database is not up. Waits up to 30s for each, because a container that was only just started is not yet accepting connections -- Postgres in particular listens well after `docker ps` calls it Up, and a shorter wait failed F5 for a stack that was merely still coming up. daprd initialises its components before it serves anything, and a pub/sub component that cannot dial RabbitMQ makes it exit gracefully -- in multi-app mode that one failure takes every other sidecar down with it. What you see then is 'wait: sidecars ready' timing out against a metrics port, which names the symptom and not the cause. Checked before the build so the answer arrives in a second rather than after a compile. An open port is not enough: any project's Postgres will accept a connection on 5432, and one that is not ours passes a reachability test and then fails every service with a different error. So the databases named by POSTGRES_*_DB in .env are looked for as well, and the message says whether the server is the wrong one entirely -- naming the compose project that holds the port -- or ours with db-init not yet run. The Windows branch below still only tests reachability: the identity check needs psql on PATH and has not been tried there.",
             "type": "process",
             "command": "bash",
             "args": [
                 "-c",
-                "missing=; for hp in RabbitMQ:5674 Postgres:5432; do n=${hp%%:*}; p=${hp##*:}; ok=0; for i in $(seq 60); do (exec 3<>/dev/tcp/127.0.0.1/$p) 2>/dev/null && { exec 3>&-; ok=1; break; }; sleep 0.5; done; [ $ok = 1 ] || missing=\"$missing $n($p)\"; done; [ -z \"$missing\" ] && exit 0; echo \"infra is not up:$missing -- run: docker compose up -d postgres rabbitmq mediamtx\"; exit 1"
+                "missing=; for hp in RabbitMQ:5674 Postgres:5432; do n=${hp%%:*}; p=${hp##*:}; ok=0; for i in $(seq 60); do (exec 3<>/dev/tcp/127.0.0.1/$p) 2>/dev/null && { exec 3>&-; ok=1; break; }; sleep 0.5; done; [ $ok = 1 ] || missing=\"$missing $n($p)\"; done; if [ -n \"$missing\" ]; then echo \"infra is not up:$missing -- run: docker compose up -d postgres rabbitmq mediamtx\"; exit 1; fi; if ! command -v psql >/dev/null 2>&1; then echo \"note: psql not found, so which Postgres answers on 5432 was not checked\"; exit 0; fi; want=$(sed -n 's/^POSTGRES_[A-Z]*_DB[[:space:]]*=[[:space:]]*\\([A-Za-z0-9_]*\\).*/\\1/p' .env | sort -u); have=$(PGPASSWORD=\"${POSTGRES_PASSWORD:-postgres}\" psql -h 127.0.0.1 -p 5432 -U \"${POSTGRES_USER:-postgres}\" -d postgres -tAc 'select datname from pg_database where not datistemplate' 2>/dev/null | sort -u); if [ -z \"$have\" ]; then echo \"Postgres on 5432 would not answer as user '${POSTGRES_USER:-postgres}' -- it is probably not this project's\"; exit 1; fi; absent=$(comm -23 <(echo \"$want\") <(echo \"$have\")); [ -z \"$absent\" ] && exit 0; owner=$(docker ps --format '{{.Label \"com.docker.compose.project\"}}/{{.Names}}'$'\\t''{{.Ports}}' 2>/dev/null | grep -E '(^|[^0-9])5432->' | head -1 | cut -f1); if [ \"$(echo \"$absent\" | wc -l)\" = \"$(echo \"$want\" | wc -l)\" ]; then echo \"the wrong Postgres is on 5432: it has none of this stack's databases ($(echo $want | tr ' ' ','))\"; echo \"  it serves instead: $(echo $have | tr ' ' ',')\"; [ -n \"$owner\" ] && echo \"  the container holding the port is '$owner' -- stop that stack first\"; echo \"  then: docker compose up -d postgres rabbitmq mediamtx\"; else echo \"Postgres on 5432 is missing databases this stack needs: $(echo $absent | tr ' ' ',')\"; echo \"  the db-init service creates every POSTGRES_*_DB named in .env -- run: docker compose up db-init\"; fi; exit 1"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
             "presentation": {
-                "reveal": "silent",
+                "reveal": "always",
                 "panel": "dedicated"
             },
             "problemMatcher": [],
@@ -105,6 +118,8 @@
         },
         {
             "label": "wait: sidecars ready",
+            // See "prepare: stack": never stop to ask which instance to terminate.
+            "runOptions": { "instancePolicy": "terminateOldest" },
             "detail": "Fails F5 if the sidecars did not actually come up. 'dapr: sidecars up' is a background task and VS Code releases it on the first 'Initialized name resolution' \u2014 which one sidecar prints while the rest are still starting, and which stays printed even if the run then tears everything down. Waits for EVERY sidecar in web_vms/dapr.yaml, not just one: this used to curl web-vms on 9190, the first app in the run file and so almost always the first one up, which opened the gate while the other twelve were still starting and let the debugger launch applications whose sidecars did not exist yet. Probed on the metrics port because daprd serves it itself and answers whether or not the app is up \u2014 the app is started after this, by the debugger. Ports come from dapr.yaml, so adding a service needs no change here.",
             "type": "shell",
             "command": "python3",
@@ -112,7 +127,7 @@
                 "${workspaceFolder}/scripts/dev_stack.py", "wait-sidecars", "120"
             ],
             "presentation": {
-                "reveal": "silent",
+                "reveal": "always",
                 "panel": "dedicated"
             },
             "problemMatcher": [],
@@ -124,7 +139,31 @@
             }
         },
         {
+            "label": "stop: stray apps",
+            // See "prepare: stack": never stop to ask which instance to terminate.
+            "runOptions": { "instancePolicy": "terminateOldest" },
+            "detail": "Frees every port the stack is about to use, and refuses to start if it cannot. 'dapr: sidecars down' ends the sidecars and nothing ends the applications: VS Code does not stop a running debug session when a new one starts, and a session that was interrupted rather than stopped leaves its processes behind entirely. Either way the next F5 launches a service onto a port that is already taken, which shows up much later as a service that 'did not come up' rather than as a port conflict. It also ends a leftover `dapr run -f .`, which is looked up by identity because it holds no port: Stop ends the debug sessions, each one's postDebugTask runs `dapr stop --app-id X`, the sidecars die one at a time and their supervisor is left alive with nothing to supervise. VS Code goes on counting 'dapr: sidecars up' as a running background task, so the next F5 never starts a new one -- the stack does not come up, every port is free, and nothing points at the cause. Ports come from web_vms/dapr.yaml and vite.config.ts, so a service added there is swept without touching this file. A port is only cleared when its holder is recognisably ours -- a process whose command line or working directory is inside this checkout; anything else is named and fails the run, because killing a stranger's process for sitting on 5173 is worse than not starting. Runs before 'dapr: sidecars down' on purpose: ending those processes ends the old debug sessions, and each of those fires its own postDebugTask ('dapr:<id>:stop'). Landing that during the teardown is harmless; landing it after the new sidecars are up would kill one of them.",
+            "type": "process",
+            "command": "python3",
+            "args": [
+                "${workspaceFolder}/scripts/dev_stack.py", "stop-strays"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": [],
+            "windows": {
+                "command": "python",
+                "args": [
+                    "${workspaceFolder}/scripts/dev_stack.py", "stop-strays"
+                ]
+            }
+        },
+        {
             "label": "browser: free debug port",
+            // See "prepare: stack": never stop to ask which instance to terminate.
+            "runOptions": { "instancePolicy": "terminateOldest" },
             "detail": "Kills whatever still holds port 9222. Needed because the browser debug port is pinned (see the launch configuration), and a session that ends without closing its browser leaves one squatting — after a few of those every launch fails with 'Could not connect to debug target'.",
             "type": "shell",
             "command": "powershell",
@@ -155,6 +194,8 @@
         },
         {
             "label": "browser: prepare",
+            // See "prepare: stack": never stop to ask which instance to terminate.
+            "runOptions": { "instancePolicy": "terminateOldest" },
             "detail": "Frees the debug port, then waits until the stack actually serves.",
             "dependsOrder": "sequence",
             "dependsOn": [
@@ -165,6 +206,8 @@
         },
         {
             "label": "wait: stack ready",
+            // See "prepare: stack": never stop to ask which instance to terminate.
+            "runOptions": { "instancePolicy": "terminateOldest" },
             "detail": "Waits until VmsCfg is actually serving, so the browser does not call the API while the stack is still starting. A Dapr sidecar's /v1.0/healthz answers 204 only once its app is up, and 500 while it is still waiting for it — which is exactly the readiness signal, and needs no script.",
             "type": "shell",
             "command": "curl",
@@ -1186,6 +1229,8 @@
         },
         {
             "label": "dotnet:build",
+            // See "prepare: stack": never stop to ask which instance to terminate.
+            "runOptions": { "instancePolicy": "terminateOldest" },
             "command": "dotnet",
             "type": "process",
             "args": [
@@ -1277,6 +1322,8 @@
         },
         {
             "label": "cmake:configure:roitrc",
+            // See "prepare: stack": never stop to ask which instance to terminate.
+            "runOptions": { "instancePolicy": "terminateOldest" },
             "detail": "Cheap to repeat: with the cache already present cmake re-runs in about a second. Builds the encoder library from the roitrc/sve submodule, so `git submodule update --init` has to have run once.",
             "type": "process",
             "command": "cmake",
@@ -1286,6 +1333,8 @@
         },
         {
             "label": "cmake:build:roitrc",
+            // See "prepare: stack": never stop to ask which instance to terminate.
+            "runOptions": { "instancePolicy": "terminateOldest" },
             "type": "process",
             "command": "cmake",
             "args": [ "--build", "${workspaceFolder}/roitrc/build", "--target", "roi-transcode-svc" ],
@@ -1293,6 +1342,8 @@
         },
         {
             "label": "cmake:configure:vms",
+            // See "prepare: stack": never stop to ask which instance to terminate.
+            "runOptions": { "instancePolicy": "terminateOldest" },
             "detail": "Cheap to repeat: with the cache already present cmake re-runs in about a second.",
             "type": "process",
             "command": "cmake",
@@ -1317,6 +1368,8 @@
         },
         {
             "label": "cmake:build:vms",
+            // See "prepare: stack": never stop to ask which instance to terminate.
+            "runOptions": { "instancePolicy": "terminateOldest" },
             "type": "process",
             "command": "cmake",
             "args": [
@@ -1334,6 +1387,8 @@
         },
         {
             "label": "build:all",
+            // See "prepare: stack": never stop to ask which instance to terminate.
+            "runOptions": { "instancePolicy": "terminateOldest" },
             "dependsOrder": "sequence",
             "dependsOn": [
                 "dotnet:build",
@@ -1350,7 +1405,12 @@
         },
         {
             "label": "prepare: stack",
-            "detail": "What F5 runs before the compound: build everything, clear any sidecars left over from an interrupted session, then bring all of them up in a single terminal.",
+            // Without this the default is "prompt": VS Code stops and asks which instance
+            // to terminate when this task is still active from the last run, and inside a
+            // preLaunchTask chain that question stalls F5 behind a dialog nobody is looking
+            // for. Which is why closing every terminal first "fixed" it.
+            "runOptions": { "instancePolicy": "terminateOldest" },
+            "detail": "What F5 runs before the compound: build everything, take down whatever the last run left behind -- applications as well as sidecars -- then bring all of them up in a single terminal. Built first so the outage lasts a build's worth of seconds less; nothing in the build needs the old processes gone, the link succeeds over a running binary.",
             // One task rather than one per service, and this is the whole point of it. VS Code
             // never stops a task when a debug session ends, so eleven `dapr run` terminals used to
             // survive Stop and had to be closed by hand one at a time — `stopAll` only governs
@@ -1365,6 +1425,7 @@
             "dependsOn": [
                 "wait: infra ready",
                 "build:all",
+                "stop: stray apps",
                 "dapr: sidecars down",
                 "dapr: sidecars up",
                 "wait: sidecars ready"

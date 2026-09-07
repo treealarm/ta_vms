@@ -328,7 +328,9 @@
     "setDefaultsHelper": "Rellena los puertos y la URL STUN pública; el nombre y los hosts no se tocan",
     "deleteServer": "Eliminar router",
     "noServers": "Sin routers configurados",
-    "selectHint": "Seleccione un router o pulse + para agregar uno"
+    "selectHint": "Seleccione un router o pulse + para agregar uno",
+    "transcodeHevc": "Transcodificar HEVC a H.264",
+    "transcodeHevcHelper": "Desactivado: las cámaras H.265 pasan sin tocarse y MediaMTX las entrega por WebRTC a los navegadores capaces de decodificarlas, sin recodificar nada. Actívalo cuando los usuarios no puedan reproducirlas: Firefox no admite HEVC en WebRTC, Chrome depende de la plataforma y un flujo con fotogramas B se rechaza sea cual sea el navegador."
   },
   "permissions": {
     "title": "Permisos de cámara",

@@ -189,6 +189,11 @@ message StreamStats {
   int64  bitrate_bps    = 5;
   // Unix milliseconds; 0 when the publisher could not say.
   int64  observed_at_ms = 6;
+  // Which encoder the WebRTC path re-compresses this stream with, in the vocabulary
+  // VMS_VIDEO_ENCODER accepts ("vaapi", "x264"), so the word shown is the word an operator would
+  // type to force it. Empty means nothing is being re-encoded: either nobody is watching, or the
+  // camera already publishes H.264 and the packets are copied through untouched.
+  string transcode_encoder = 7;
 }
 
 message CameraSetup {
@@ -462,6 +467,17 @@ message MediaMtxServer {
   // Read account used by WHEP and the MediaMTX Control API. Empty user means unauthenticated read.
   string read_user    = 12;
   string read_pass    = 13;
+  // Re-encode HEVC cameras to H.264 before publishing them here. Off by default: MediaMTX carries
+  // H.265 over WebRTC, so a browser that decodes it gets the camera's own stream with no encoder in
+  // the way -- cheaper than any hardware acceleration, because nothing is encoded at all.
+  //
+  // Turn it on where the viewers cannot play passthrough, and there are two separate reasons:
+  // the browser (Firefox has no HEVC in WebRTC; Chrome's depends on platform and decoder), and the
+  // stream (WebRTC refuses H.265 carrying B-frames outright, whatever the browser supports).
+  //
+  // It lives on the router rather than on the camera because it describes how streams are prepared
+  // for the people watching through it -- the same reason stun_url is here and not on a camera.
+  bool transcode_hevc = 14;
 }
 
 message MediaMtxServerRequest {

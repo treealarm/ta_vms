@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "cam_device.h"
+#include "interfaces/web_rtc_utils.h"
 
 class camera_manager
 {
@@ -20,7 +21,7 @@ public:
     std::string rtsp_url;
     recording_policy_spec policy;
     bool web_rtc = false;
-    std::string webrtc_rtsp_push_url; // override for the MediaMTX RTSP push target
+    webrtc_publish_config webrtc;
   };
 
   struct camera_info
@@ -52,6 +53,10 @@ public:
     // What the source is actually sending. The monitor picks which stream to show a tile from
     // this, so it is the observed frame and not anything the configuration claims.
     observed_video video;
+    // Which encoder the WebRTC path re-compresses this stream with ("vaapi", "x264"). Empty when
+    // nothing is watching, or when the camera already publishes H.264 and nothing is re-encoded --
+    // the two are told apart by is_web_rtc_streaming beside it.
+    std::string video_encoder;
   };
 
   /// Closes the open segment of every stream whose source has dropped, so the clip ends on the last

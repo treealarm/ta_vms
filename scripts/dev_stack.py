@@ -26,6 +26,7 @@ Usage:
     dev_stack.py restart [--build] service [service ...]
     dev_stack.py status
     dev_stack.py wait-sidecars [seconds]
+    dev_stack.py stop-strays
 """
 
 from __future__ import annotations
@@ -43,6 +44,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PID_DIR = Path("/tmp/web_vms-dapr")
 RUN_FILE = ROOT / "web_vms" / "dapr.yaml"
+VITE_CONFIG = ROOT / "web_vms" / "web_vms.client" / "vite.config.ts"
 
 # Start order, by app id: config first (everyone resolves cameras and storages through it), then
 # the leaf services, then the media server, then the gateway that fans out to all of them.
@@ -357,6 +359,217 @@ def wait_sidecars(timeout: float = 120.0) -> None:
         time.sleep(0.5)
 
 
+def _vite_port() -> int | None:
+    """The dev server's port, read from vite.config.ts so the two cannot drift apart."""
+    match = re.search(r"^\s*port:\s*(\d+)", VITE_CONFIG.read_text(), re.M)
+    return int(match.group(1)) if match else None
+
+
+def _listen_inodes() -> dict[int, int]:
+    """TCP port -> socket inode, for every listening socket on the machine."""
+    ports: dict[int, int] = {}
+    for family in ("tcp", "tcp6"):
+        try:
+            rows = Path(f"/proc/net/{family}").read_text().splitlines()[1:]
+        except OSError:
+            continue
+        for row in rows:
+            fields = row.split()
+            # st 0A is TCP_LISTEN; local_address is host:port, both hexadecimal.
+            if len(fields) > 9 and fields[3] == "0A":
+                ports[int(fields[1].split(":")[1], 16)] = int(fields[9])
+    return ports
+
+
+def _pids_by_inode() -> dict[int, set[int]]:
+    """Socket inode -> the pids holding it. A set, because a forked child shares its parent's
+    descriptors and the port stays open while either of them lives."""
+    holders: dict[int, set[int]] = {}
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            for fd in (entry / "fd").iterdir():
+                link = os.readlink(fd)
+                if link.startswith("socket:["):
+                    holders.setdefault(int(link[8:-1]), set()).add(int(entry.name))
+        except OSError:
+            continue  # exited between iterdir and readlink, or belongs to another user
+    return holders
+
+
+def _cmdline(pid: int) -> str:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes().decode(errors="replace")
+    except OSError:
+        return ""
+    return " ".join(part for part in raw.split("\0") if part)
+
+
+def _is_ours(pid: int) -> bool:
+    """Whether this process belongs to the checkout.
+
+    Everything F5 starts names the workspace on its command line: `dotnet <root>/web_vms/.../X.dll`,
+    the two C++ binaries by absolute path, vite through <root>/.../node_modules, and daprd through
+    its -resources-path. The working directory is the fallback for anything that does not.
+    """
+    root = str(ROOT)
+    if root in _cmdline(pid):
+        return True
+    try:
+        return os.readlink(f"/proc/{pid}/cwd").startswith(root)
+    except OSError:
+        return False
+
+
+def _await_gone(busy: dict[int, int], wanted: dict[int, str], pids: list[int],
+                timeout: float = 15.0) -> None:
+    """Blocks until every port in `busy` is free and every process in `pids` is gone, escalating to
+    SIGKILL once before giving up.
+
+    Waiting is the whole point: a dying daprd holds its listeners until it is really gone, and the
+    step after this opens exactly those ports.
+    """
+    def remaining() -> list[str]:
+        listening = _listen_inodes()
+        return ([f"{port} ({wanted[port]})" for port in busy if port in listening]
+                + [f"pid {pid}" for pid in pids if not _pid_dead(pid)])
+
+    deadline = time.monotonic() + timeout
+    left = remaining()
+    while left and time.monotonic() < deadline:
+        time.sleep(0.2)
+        left = remaining()
+    if not left:
+        return
+
+    for pid in pids:
+        if not _pid_dead(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+    time.sleep(1.0)
+    if (left := remaining()):
+        sys.exit("stop-strays: still there after SIGKILL: " + ", ".join(left))
+    print("  (needed SIGKILL)")
+
+
+def _stray_dapr_cli() -> list[int]:
+    """Leftover multi-app `dapr run` processes belonging to this checkout.
+
+    Looked up by identity rather than by port, because it holds none -- which is exactly why it
+    survives everything else. VS Code's Stop ends the debug sessions, each one's postDebugTask runs
+    `dapr stop --app-id X`, the sidecars die one by one, and their supervisor is left alive with
+    nothing to supervise. VS Code still counts 'dapr: sidecars up' as a running background task, so
+    the next F5 never starts a new one and the stack simply does not come up -- with every port
+    free and nothing to point at. Observed.
+    """
+    found: list[int] = []
+    root = str(ROOT)
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        try:
+            if Path(os.readlink(f"/proc/{pid}/exe")).name != "dapr":
+                continue
+            if "run" not in _cmdline(pid).split():
+                continue
+            if not os.readlink(f"/proc/{pid}/cwd").startswith(root):
+                continue
+        except OSError:
+            continue
+        found.append(pid)
+    return found
+
+
+def stop_strays() -> None:
+    """Frees every port the stack is about to need, and refuses to start if it cannot.
+
+    `dapr stop -f .` ends the sidecars, and nothing ends the applications: VS Code does not stop a
+    debug session when a new one starts, and a session that was interrupted rather than stopped
+    leaves its processes running. Either way the next F5 launches a service whose port is already
+    taken -- which surfaces much later as a service that "did not come up", not as a port message.
+
+    A port is only cleared when its holder is recognisably ours. Anything else is reported and
+    fails the run: silently killing a stranger's process because it sits on 5432 or 5173 would be
+    a far worse outcome than not starting.
+    """
+    if not Path("/proc/net/tcp").exists():
+        print("stop-strays: needs /proc, so nothing was swept -- close the old run's terminals by hand")
+        return
+
+    apps, _ = _run_file()
+    wanted: dict[int, str] = {}
+    for app in apps:
+        app_id = app["appID"]
+        for field, role in (("appPort", "app"), ("daprHTTPPort", "sidecar http"),
+                            ("daprGRPCPort", "sidecar grpc"), ("metricsPort", "sidecar metrics"),
+                            ("daprInternalGRPCPort", "sidecar internal")):
+            if field in app:
+                wanted[int(app[field])] = f"{app_id} {role}"
+    vite = _vite_port()
+    if vite:
+        wanted[vite] = "frontend (vite)"
+
+    def survey() -> tuple[dict[int, int], dict[int, list[str]], list[tuple[int, set[int]]]]:
+        """(busy ports, pids to signal with what they hold, ports whose holder is not ours)."""
+        inodes = _listen_inodes()
+        busy = {port: inodes[port] for port in wanted if port in inodes}
+        holders = _pids_by_inode()
+        victims: dict[int, list[str]] = {}
+        unknown: list[tuple[int, set[int]]] = []
+        for port, inode in sorted(busy.items()):
+            pids = holders.get(inode, set())
+            mine = {pid for pid in pids if _is_ours(pid)}
+            if not mine:
+                unknown.append((port, pids))
+            for pid in mine:
+                victims.setdefault(pid, []).append(f"{port} ({wanted[port]})")
+        return busy, victims, unknown
+
+    # The whole picture is read before anything is signalled, and this ordering is the point: the
+    # refusal below has to leave a running stack exactly as it found it. The first version of this
+    # ended the leftover `dapr run` up front -- so a foreign port made it take every sidecar down
+    # on its way to announcing that it had changed nothing.
+    clis = _stray_dapr_cli()
+    busy, victims, unknown = survey()
+    if unknown:
+        # A holder that cannot be named is usually one that is on its way out: /proc/net/tcp is
+        # read before the descriptor scan, so a socket closed in between looks exactly like a
+        # stranger's. Ask once more before refusing to start over it.
+        time.sleep(0.5)
+        busy, victims, unknown = survey()
+    if unknown:
+        print("stop-strays: refusing to start, these ports are held by processes that are not ours:")
+        for port, pids in unknown:
+            who = ", ".join(f"pid {pid}: {_cmdline(pid)[:80]}" for pid in pids)
+            print(f"  {port} ({wanted[port]}) -- {who or 'not visible to this user'}")
+        sys.exit(1)
+
+    # The supervisor first: ending it is the graceful way to take its sidecars down with it, and
+    # whatever it fails to take down is in `victims` anyway.
+    for pid in clis:
+        print(f"  ending leftover `dapr run` (pid {pid}) -- holds no port, but keeps the task alive")
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    for pid, ports in sorted(victims.items()):
+        print(f"  killing pid {pid} on {', '.join(ports)}: {_cmdline(pid)[:70]}")
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+
+    _await_gone(busy, wanted, [*victims, *clis])
+    if busy or clis:
+        print(f"stop-strays: freed {len(busy)} port(s)")
+    else:
+        print(f"stop-strays: all {len(wanted)} ports free")
+
+
 def main() -> None:
     argv = sys.argv[1:]
     if not argv:
@@ -367,6 +580,9 @@ def main() -> None:
     # configuration (VmsSingleton, VmsSquareSingleton), which the join below would drop.
     if action == "wait-sidecars":
         wait_sidecars(float(argv[0]) if argv else 120.0)
+        return
+    if action == "stop-strays":
+        stop_strays()
         return
 
     do_build = "--build" in argv

@@ -22,7 +22,7 @@ public:
     const recording_policy_spec& policy,
     bool web_rtc,
     std::string& error,
-    const std::string& webrtc_rtsp_push_url = "");
+    const webrtc_publish_config& webrtc = {});
 
   bool remove_stream(const std::string& stream_name, std::string& error);
 

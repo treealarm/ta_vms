@@ -27,12 +27,7 @@ public:
 
   bool open(const std::string& source);
 
-  AVStream* video_stream();
   std::vector<std::shared_ptr<media_packet>> snapshot_packets() const;
-  bool forward();
-  bool prev();
-  std::chrono::milliseconds current_position() const;
-  std::chrono::milliseconds get_duration() const;
 private:
 
   struct buffered_frame

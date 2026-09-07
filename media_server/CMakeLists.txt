@@ -17,6 +17,17 @@ pkg_check_modules(FFMPEG REQUIRED
     libswresample
 )
 
+# The hardware encoder chain, from the sve submodule under roitrc/. Live HEVC->H.264 for WebRTC
+# goes through it (see writer/processors/sve_transcode_processor.cpp) rather than through a
+# second copy of the same probe-and-fall-back logic written here.
+#
+# Only the library: its integration/ holds a CLI and an acceptance harness, and its unit tests
+# run in its own repository. Forced rather than merely set, because these are options in the
+# subproject's own cache.
+set(SVE_BUILD_INTEGRATION OFF CACHE BOOL "" FORCE)
+set(SVE_BUILD_TESTS       OFF CACHE BOOL "" FORCE)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../roitrc/sve sve)
+
 set(VMS_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_control.proto)
 set(CFG_CLIENT_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_cfg.proto)
 set(UTILS_CLIENT_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_utils.proto)
@@ -68,8 +79,6 @@ set(SOURCES
     reader/rtsp_reader.h
     reader/onvif_metadata_assembler.cpp
     reader/onvif_metadata_assembler.h
-    reader/file_reader.cpp
-    reader/file_reader.h
     reader/file_camera_reader.cpp
     reader/file_camera_reader.h
     reader/snapshot_reader.cpp
@@ -105,6 +114,8 @@ set(SOURCES
     writer/processors/video_copy_processor.h
     writer/processors/audio_copy_processor.cpp
     writer/processors/audio_copy_processor.h
+    writer/processors/sve_transcode_processor.cpp
+    writer/processors/sve_transcode_processor.h
     writer/processors/video_transcode_processor.cpp
     writer/processors/video_transcode_processor.h
     writer/processors/audio_transcode_processor.cpp
@@ -175,6 +186,7 @@ target_link_directories(vms PRIVATE ${FFMPEG_LIBRARY_DIRS})
 
 target_link_libraries(vms
     PRIVATE
+    sve
     ${FFMPEG_LIBRARIES}
     protobuf::libprotobuf
     gRPC::grpc

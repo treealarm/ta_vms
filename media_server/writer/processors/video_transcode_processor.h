@@ -16,6 +16,7 @@ public:
   void flush() override;
   const avcodec_parameters_ptr& output_codec_parameters() const override;
   AVRational output_time_base() const override;
+  std::string encoder_name() const override { return "x264"; }
 
 private:
   void encode_frame(AVFrame* frame);

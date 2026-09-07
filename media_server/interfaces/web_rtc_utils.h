@@ -51,6 +51,18 @@ namespace webrtc_rtsp_detail
   }
 }
 
+// How this stream is published to MediaMTX for WebRTC viewing. The two settings come from the
+// same place -- the router row in VmsCfg -- and are passed together so that neither can be given
+// without the other, and so that two adjacent bools never end up in one signature.
+struct webrtc_publish_config
+{
+  // Override for the MediaMTX RTSP push target; empty falls back to the environment.
+  std::string rtsp_push_url;
+  // Re-encode HEVC to H.264 before publishing. False means the camera's own H.265 is passed
+  // through, which MediaMTX carries over WebRTC to any browser that can decode it.
+  bool transcode_hevc = false;
+};
+
 // Build the RTSP push URL for a given camera/stream.
 // If push_base_url is non-empty it takes precedence over the env var fallback.
 //

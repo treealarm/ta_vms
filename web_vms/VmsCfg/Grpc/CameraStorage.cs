@@ -693,7 +693,7 @@ public class CameraStorage(
   {
     await using var command = _dataSource.CreateCommand("""
       SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url, server_id,
-             publish_user, publish_pass, read_user, read_pass
+             publish_user, publish_pass, read_user, read_pass, transcode_hevc
       FROM media_mtx_server ORDER BY name;
       """);
 
@@ -709,10 +709,10 @@ public class CameraStorage(
     await using var command = _dataSource.CreateCommand("""
       INSERT INTO media_mtx_server (
         id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url, server_id,
-        publish_user, publish_pass, read_user, read_pass)
+        publish_user, publish_pass, read_user, read_pass, transcode_hevc)
       VALUES (
         COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8,
-        NULLIF($9, ''), $10, $11, $12, $13)
+        NULLIF($9, ''), $10, $11, $12, $13, $14)
       ON CONFLICT (id) DO UPDATE SET
         name        = EXCLUDED.name,
         host        = EXCLUDED.host,
@@ -725,7 +725,8 @@ public class CameraStorage(
         publish_user = EXCLUDED.publish_user,
         publish_pass = EXCLUDED.publish_pass,
         read_user    = EXCLUDED.read_user,
-        read_pass    = EXCLUDED.read_pass
+        read_pass    = EXCLUDED.read_pass,
+        transcode_hevc = EXCLUDED.transcode_hevc
       RETURNING id;
       """);
     command.Parameters.AddWithValue(server.Id ?? string.Empty);
@@ -741,6 +742,7 @@ public class CameraStorage(
     command.Parameters.AddWithValue(server.PublishPass ?? string.Empty);
     command.Parameters.AddWithValue(server.ReadUser?.Trim() ?? string.Empty);
     command.Parameters.AddWithValue(server.ReadPass ?? string.Empty);
+    command.Parameters.AddWithValue(server.TranscodeHevc);
     var id = await command.ExecuteScalarAsync(ct);
     server.Id = id?.ToString() ?? server.Id;
   }
@@ -773,7 +775,7 @@ public class CameraStorage(
     await using (var cmd = new NpgsqlCommand("""
       SELECT cs.server_id,
              m.id, m.name, m.host, m.webrtc_host, m.rtsp_port, m.webrtc_port, m.api_port, m.stun_url,
-             m.server_id, m.publish_user, m.publish_pass, m.read_user, m.read_pass
+             m.server_id, m.publish_user, m.publish_pass, m.read_user, m.read_pass, m.transcode_hevc
       FROM camera_setup cs
       LEFT JOIN media_mtx_server m ON m.id = cs.media_mtx_server_id
       WHERE cs.camera_id = $1;
@@ -806,7 +808,7 @@ public class CameraStorage(
 
     await using (var pickCmd = new NpgsqlCommand("""
       SELECT id, name, host, webrtc_host, rtsp_port, webrtc_port, api_port, stun_url, server_id,
-             publish_user, publish_pass, read_user, read_pass
+             publish_user, publish_pass, read_user, read_pass, transcode_hevc
       FROM media_mtx_server
       WHERE server_id IS NULL OR server_id = $1
       ORDER BY random() LIMIT 1;
@@ -860,6 +862,7 @@ public class CameraStorage(
       PublishPass = reader.GetString(offset + 10),
       ReadUser    = reader.GetString(offset + 11),
       ReadPass    = reader.GetString(offset + 12),
+      TranscodeHevc = reader.GetBoolean(offset + 13),
     };
 
   // ── Monitor management ────────────────────────────────────────────────────

@@ -27,6 +27,8 @@
 
 #include "logger/logger.h"
 
+#include "writer/processors/sve_transcode_processor.h"
+
 #include "vms_cfg.pb.h"
 #include "vms_control.pb.h"
 
@@ -76,8 +78,13 @@ int main(int argc, char** argv)
   // Started here rather than on the first metadata packet, so a broken environment shows up at
   // startup instead of hours later on the first camera that speaks metadata. It needs nothing
   // onvif_client does not already require.
+  //
+  // VMS_VIDEO_ENCODER is checked in the same breath and for the same reason: it is only read
+  // when a camera publishes something other than H.264, so a misspelled backend would otherwise
+  // surface as one stream that will not play, on whichever host happens to have such a camera.
   try
   {
+    sve_transcode_processor::validate_configuration();
     onvif_metadata_client::instance().start();
   }
   catch (const std::exception& ex)

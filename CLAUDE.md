@@ -54,10 +54,24 @@ build directory and reconfigure. Docker builds never hit this — they configure
 
 **`roi_transcode` does not use it.** It lives in its own repository now (github
 `treealarm/roi_transcode`, checked out beside this one) and has its own base, `roi-deps`,
-built there by `./docker/build.sh`. The split is load-bearing: it is the only consumer that
-needs qsv/vaapi (and the system `libdrm-dev` vcpkg's libva demands), and the only one that
-does not link openvino — which is 143 of the 234 minutes ta-deps takes to build. Keep
-GPU-related packages out of `ta-deps`.
+built there by `./docker/build.sh`. The split is load-bearing for `qsv` — the oneVPL
+dispatcher is dead weight without `libmfx-gen1.2` in a runtime image — and for openvino,
+which is 143 of the 234 minutes ta-deps takes to build and which roi_transcode does not link.
+
+**`vaapi` is the exception, and it is in `ta-deps` deliberately.** media_server transcodes live
+HEVC to H.264 for every WebRTC viewer, one encode per stream, continuously; that is the largest
+sustained CPU cost in the service, and `h264_vaapi` measured 43% less CPU per stream on an
+i7-12700 iGPU. It brings the system `libdrm-dev` vcpkg's libva demands into `ta-deps` with it.
+`video_a`'s analytics-worker pays for this in image size and nothing else.
+
+Building it is not using it. Three things have to line up in the *runtime* image, and each one
+failing looks the same from outside — a service that merely burns CPU: an iHD driver new enough
+to encode (hence ubuntu:24.04 in the root `Dockerfile`'s runtime stage, not 22.04), vcpkg's own
+`libva.so.2` shipped beside the binary (the distribution's older one wins otherwise and the first
+hardware encode dies on `undefined symbol: vaMapBuffer2`, lazily, hours after startup), and
+`LIBVA_DRIVERS_PATH` pointing at the distribution's `dri` directory (vcpkg's libva searches its
+own build prefix, which does not exist in the image). `/dev/dri` passthrough is opt-in per host —
+see `../ta_install/docker-compose.gpu.yml.example`.
 
 Both images use an overlay vcpkg triplet
 (`<image>/triplets/x64-linux.cmake`) to build release-only (no debug artifacts — vcpkg's
@@ -69,11 +83,26 @@ libs.
 
 Она проходит по тому, чьё это: **библиотека — заказчика, сервис — наш.**
 
-`roitrc/sve` — submodule на github `treealarm/roi_transcode`, поставка заказчику по его ТЗ
-(`smart-video-encoder`). Уехал из монорепо 2026-08-31 на коммите `c4bc9b8`, со всей
-историей, приёмками и собственным `CLAUDE.md`. **Ничего своего туда не клади.** Микросервиса
-в его ТЗ нет: там библиотека (§52), её CLI-примеры и её приёмка (§48), и она сознательно не
-знает ни про gRPC, ни про Dapr, ни про protobuf.
+`roitrc/sve` — submodule на github `treealarm/roi_transcode`, библиотека
+`smart-video-encoder`. Уехал из монорепо 2026-08-31 на коммите `c4bc9b8`, со всей историей,
+приёмками и собственным `CLAUDE.md`. Писался по ТЗ заказчика, но **заказчику ушла копия в
+GitLab**, а этот репозиторий развивается для себя — так что править библиотеку можно, это уже
+не поставка. Микросервиса в её ТЗ нет и заводить его там по-прежнему незачем: это библиотека
+(§52), её CLI-примеры и её приёмка (§48), и она сознательно не знает ни про gRPC, ни про Dapr,
+ни про protobuf.
+
+**Потребителей у неё теперь два, и второй меняет цену ошибки.** Кроме `roitrc` её линкует
+`media_server` — живой транскод HEVC→H.264 для WebRTC идёт через `sve::Session`, потому что в
+libavcodec нет авто-подбора железа и `avcodec_find_encoder` всегда отдаёт libx264
+(см. `media_server/writer/processors/sve_transcode_processor.cpp`).
+**Бэкенд по умолчанию — `Backend::Vaapi`, а не `Backend::Auto`**, и разница здесь смысловая:
+sve линкуется только ради железа. Если аппаратный бэкенд не открылся — или цепочка `auto`,
+заданная явно через `VMS_VIDEO_ENCODER`, свелась к программному, — поток отдаётся обратно
+`compat_sink`, и его берёт `video_transcode_processor`. У того есть `tune=zerolatency`, а у
+программного бэкенда sve его нет: 34 кадра в конвейере против 4 через `h264_vaapi`, то есть
+полторы секунды задержки на живом видео.
+Раньше сломанный bump submodule'а тормозил очередь клипов; теперь он гасит живое видео.
+Обновляй версию отдельным коммитом и проверяй оба пути.
 
 `roitrc/` — всё, что про пережатие принадлежит нам: gRPC-контракт, который зовёт `VmsFs`,
 модель заданий (повторяет EdgeImport из `media_server`), Dapr-уведомления и песочница путей

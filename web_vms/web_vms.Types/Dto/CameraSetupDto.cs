@@ -26,6 +26,11 @@ public record StreamStatsDto
   public long BitrateBps { get; init; }
   /// <summary>Unix milliseconds; 0 when the publisher could not say.</summary>
   public long ObservedAtMs { get; init; }
+  /// <summary>
+  /// Which encoder the WebRTC path re-compresses this stream with ("vaapi", "x264"). Empty means
+  /// nothing is being re-encoded: nobody is watching, or the camera already sends H.264.
+  /// </summary>
+  public string TranscodeEncoder { get; init; } = string.Empty;
 }
 
 public record CameraStreamDto
@@ -92,6 +97,11 @@ public record MediaMtxServerDto
   public string PublishPass { get; init; } = string.Empty;
   public string ReadUser    { get; init; } = string.Empty;
   public string ReadPass    { get; init; } = string.Empty;
+  /// <summary>
+  /// Re-encode HEVC cameras to H.264 before publishing them here. False passes H.265 through,
+  /// which MediaMTX carries over WebRTC to any browser that can decode it.
+  /// </summary>
+  public bool TranscodeHevc { get; init; }
 }
 
 public record CameraSetupDto

@@ -118,12 +118,14 @@ void config_subscriber::reload_cameras()
   std::vector<vms::cfg::MediaMtxServer> mtx_servers;
   m_cfg.list_media_mtx_servers(mtx_servers);
 
-  std::unordered_map<std::string, std::string> mtx_rtsp_by_id;
+  std::unordered_map<std::string, webrtc_publish_config> mtx_publish_by_id;
   for (const auto& s : mtx_servers)
   {
     const auto base = "rtsp://" + s.host() + ":" + std::to_string(s.rtsp_port());
-    mtx_rtsp_by_id[s.id()] =
-      webrtc_rtsp_detail::with_userinfo(base, s.publish_user(), s.publish_pass());
+    mtx_publish_by_id[s.id()] = webrtc_publish_config{
+      .rtsp_push_url = webrtc_rtsp_detail::with_userinfo(base, s.publish_user(), s.publish_pass()),
+      .transcode_hevc = s.transcode_hevc(),
+    };
   }
 
   // Build set of camera IDs that should be running on this server
@@ -140,12 +142,12 @@ void config_subscriber::reload_cameras()
     const std::string user = c.has_cred() ? c.cred().user() : "";
     const std::string pass = c.has_cred() ? c.cred().pass() : "";
 
-    std::string push_url;
+    webrtc_publish_config publish;
     if (c.has_media_mtx_server_id() && !c.media_mtx_server_id().empty())
     {
-      auto it = mtx_rtsp_by_id.find(c.media_mtx_server_id());
-      if (it != mtx_rtsp_by_id.end())
-        push_url = it->second;
+      auto it = mtx_publish_by_id.find(c.media_mtx_server_id());
+      if (it != mtx_publish_by_id.end())
+        publish = it->second;
     }
 
     std::vector<camera_manager::stream_config> streams;
@@ -160,7 +162,7 @@ void config_subscriber::reload_cameras()
         .rtsp_url             = proto_mapper::resolve_stream_path(s, c),
         .policy               = proto_mapper::recording_policy_for_stream(s, c.schedule_active()),
         .web_rtc              = s.web_rtc(),
-        .webrtc_rtsp_push_url = push_url,
+        .webrtc              = publish,
       });
     }
 

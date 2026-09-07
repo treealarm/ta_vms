@@ -341,6 +341,20 @@
                     "name": "DEBUGINFOD_URLS",
                     "value": ""
                 },
+                // Where the VA-API driver is. The binary finds vcpkg's libva through its RPATH,
+                // but libva itself then searches vcpkg's build prefix -- a directory that only
+                // exists on the machine that built the package. Without this, va_openDriver()
+                // returns -1, the encoder chain drops to the CPU path, and the only sign is a
+                // "Failed to initialise VAAPI connection" line on stderr that never reaches the
+                // JSON log. The distribution's own driver is what the container uses too.
+                {
+                    "name": "LIBVA_DRIVER_NAME",
+                    "value": "iHD"
+                },
+                {
+                    "name": "LIBVA_DRIVERS_PATH",
+                    "value": "/usr/lib/x86_64-linux-gnu/dri"
+                },
                 {
                     "name": "VMS_STORAGE_BASE_PATH",
                     "value": "${workspaceFolder}/../media_storage"
