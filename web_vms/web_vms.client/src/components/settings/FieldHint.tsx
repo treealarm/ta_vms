@@ -17,7 +17,13 @@ type Props = {
 export default function FieldHint({ hint, children }: Props) {
   return (
     <Stack direction="row" spacing={0.5} alignItems="center">
-      <Box sx={{ flex: 1, minWidth: 0 }}>{children}</Box>
+      {/* A flex container, not a plain block, so the wrapped control is laid out the same way
+          it would be as a direct child of the surrounding form Stack. MUI's form controls --
+          FormControlLabel, TextField -- are inline-flex, so inside a block they sit on a line
+          box and pick up its strut and vertical-align: middle, which adds a few pixels of
+          height and drops them below their unwrapped neighbours. Blockifying them removes the
+          line box, and a hinted switch lines up with an unhinted one again. */}
+      <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>{children}</Box>
       <Tooltip title={hint} placement="left">
         <InfoOutlinedIcon fontSize="small" color="disabled" sx={{ cursor: 'help', flexShrink: 0 }} />
       </Tooltip>
