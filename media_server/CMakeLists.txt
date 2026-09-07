@@ -21,11 +21,21 @@ pkg_check_modules(FFMPEG REQUIRED
 # goes through it (see writer/processors/sve_transcode_processor.cpp) rather than through a
 # second copy of the same probe-and-fall-back logic written here.
 #
-# Only the library: its integration/ holds a CLI and an acceptance harness, and its unit tests
-# run in its own repository. Forced rather than merely set, because these are options in the
-# subproject's own cache.
+# Only the library: its integration/ holds a CLI and an acceptance harness, its unit tests run in
+# its own repository, and sve-capabilities is a diagnostic we do not ship. Forced rather than
+# merely set, because these are options in the subproject's own cache.
 set(SVE_BUILD_INTEGRATION OFF CACHE BOOL "" FORCE)
 set(SVE_BUILD_TESTS       OFF CACHE BOOL "" FORCE)
+set(SVE_BUILD_TOOLS       OFF CACHE BOOL "" FORCE)
+set(SVE_INSTALL           OFF CACHE BOOL "" FORCE)
+
+# The libavcodec-backed backends, which is where h264_vaapi lives. Off in the library by default:
+# its normative dependency graph is the direct libx264/libx265 components, and the FFmpeg-backed
+# encoders are the reference those are measured against. That default is right for the library and
+# wrong for us -- hardware is the entire reason this service links sve at all, and without this the
+# backend chain has no hardware entry to find and every stream quietly takes the CPU path.
+set(SVE_BUILD_BACKEND_FFMPEG ON CACHE BOOL "" FORCE)
+
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../roitrc/sve sve)
 
 set(VMS_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_control.proto)
@@ -186,7 +196,12 @@ target_link_directories(vms PRIVATE ${FFMPEG_LIBRARY_DIRS})
 
 target_link_libraries(vms
     PRIVATE
-    sve
+    # "Everything this build has", which is the name the library keeps for add_subdirectory
+    # consumers so they need not learn its component list. Linking the core alone is not enough:
+    # Session sits in a separate target (the specification calls a demuxer and decoder around the
+    # encoder an example, kept apart so libavformat does not spread into the core), and the
+    # backend registry that RegisterDeploymentBackends fills is a separate object library again.
+    sve_all
     ${FFMPEG_LIBRARIES}
     protobuf::libprotobuf
     gRPC::grpc
