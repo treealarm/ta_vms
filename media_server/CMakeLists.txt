@@ -68,8 +68,6 @@ set(SOURCES
     reader/rtsp_reader.h
     reader/onvif_metadata_assembler.cpp
     reader/onvif_metadata_assembler.h
-    reader/file_reader.cpp
-    reader/file_reader.h
     reader/file_camera_reader.cpp
     reader/file_camera_reader.h
     reader/snapshot_reader.cpp
