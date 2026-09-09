@@ -284,7 +284,49 @@ CREATE TABLE ptz_tracking_policy (
   -- Which producers of boxes to believe: "cv" (the detector) and/or "onvif" (the camera's own
   -- metadata). Both by default, because a camera that has one of them configured should not have
   -- to name it here as well.
-  sources   text    NOT NULL DEFAULT 'cv,onvif'
+  sources   text    NOT NULL DEFAULT 'cv,onvif',
+  -- Whose objects this camera follows. NULL means its own -- it finds them and moves its own
+  -- motor, which is what a self-guiding camera does. Set names a stationary master with analytics,
+  -- and this camera becomes a slave aimed through ptz_slave_binding below.
+  --
+  -- CASCADE, not SET NULL, and the difference is behavioural rather than tidiness. Deleting the
+  -- master already takes the survey with it, so SET NULL would leave a camera with self-guidance
+  -- switched on and no master -- which does not stop it, it *changes what it does*: it would start
+  -- hunting objects in its own picture, and a PTZ camera parked on a fixed zone would begin roaming
+  -- because someone deleted a different camera. Dropping the row reads as switched off, so the
+  -- slave stops and waits to be set up again, which it needs anyway now that its survey is gone.
+  master_camera_id text REFERENCES camera_setup(camera_id) ON DELETE CASCADE
+);
+
+-- Master/slave aiming: a stationary camera with analytics finds objects, a PTZ camera is pointed
+-- at them. See PtzSlaveBinding in proto/vms_cfg.proto.
+--
+-- The survey tying one slave to one master. Keyed by the slave: it has one motor, so it can only
+-- take hints from one place. A master may drive several slaves.
+CREATE TABLE ptz_slave_binding (
+  slave_camera_id  text PRIMARY KEY REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
+  master_camera_id text NOT NULL REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
+  -- 'absolute' (interpolate a position) | 'presets' (drive to the nearest marked point's preset).
+  method           text NOT NULL DEFAULT 'absolute',
+  calibrated_at    timestamptz NOT NULL DEFAULT now()
+);
+
+-- One marked correspondence. pan/tilt and preset_token are both optional and both are usually
+-- present: the operator drives the slave to the spot once, and that single position yields the
+-- coordinates (GetStatus) and a preset (SetPreset) alike. Keeping whatever was obtainable is what
+-- lets method change later without marking the zones out again.
+CREATE TABLE ptz_slave_binding_point (
+  slave_camera_id text NOT NULL REFERENCES ptz_slave_binding(slave_camera_id) ON DELETE CASCADE,
+  ordinal         int  NOT NULL,
+  -- 0..1 in the master's frame, from the top-left: the bottom edge of the object's box, where it
+  -- meets the ground.
+  master_x        real NOT NULL,
+  master_y        real NOT NULL,
+  pan             real,
+  tilt            real,
+  preset_token    text,
+  preset_name     text,
+  PRIMARY KEY (slave_camera_id, ordinal)
 );
 
 -- Per-camera video analytics watch. timeout_seconds is the retention timeout for events this watch

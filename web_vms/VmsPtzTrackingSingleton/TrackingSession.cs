@@ -145,11 +145,6 @@ public sealed class TrackingSession
   private static readonly TimeSpan IgnoreDetectionsAfterMove = TimeSpan.FromMilliseconds(800);
 
   // ── Target handling ───────────────────────────────────────────────────────
-  // Detections whose bounding box covers more than this fraction of the frame area are almost
-  // certainly either a false positive (camera too close, texture mistaken for silhouette) or an
-  // object so close that the camera does not need to move at all.  Either way they must not drive
-  // the motor — an oversized box is not a useful tracking signal.
-  private const float MaxBoxArea = 0.25f;
 
   /// <summary>
   /// How long the target must be missing before another box may be taken for it.
@@ -594,9 +589,7 @@ public sealed class TrackingSession
     // camera cannot usefully track, or YOLO false positives on background texture/fabric.
     // A box from a producer this camera is not configured to follow is not a candidate for
     // anything — not for a fresh target, and not for reacquiring one either.
-    var usable = batch
-      .Where(s => s.BoxArea <= MaxBoxArea && policy.Accepts(s.Source))
-      .ToList();
+    var usable = TargetChooser.Usable(batch, policy);
     if (usable.Count == 0)
       return null;
 
@@ -614,7 +607,7 @@ public sealed class TrackingSession
       return null;
 
     if (target is null)
-      return Choose(usable, policy);
+      return TargetChooser.Choose(usable, policy);
 
     // Present a moment ago — wait for it rather than grabbing a neighbour.
     if (seenAt is not null && DateTime.UtcNow - seenAt.Value < ReacquireAfter)
@@ -649,62 +642,6 @@ public sealed class TrackingSession
       }
     }
     return nearest;
-  }
-
-  /// <summary>
-  /// Which object to follow when the camera has none.
-  /// </summary>
-  /// <remarks>
-  /// <para>
-  /// The kinds are a strict order of preference, not a filter with a tie-break: the first kind on
-  /// the list that is present in the picture wins outright, so a camera told "vehicle then person"
-  /// ignores a person for as long as any vehicle is in view. An empty list means the camera was
-  /// told nothing and takes whatever it can see.
-  /// </para>
-  /// <para>
-  /// Among equals it takes the one nearest the centre of frame. That is the one already closest to
-  /// being framed, so the camera starts by moving the least; and because it is a property of the
-  /// picture rather than of the detector, the same object keeps winning from one sample to the next
-  /// instead of the choice flickering between two of them. Picking the largest box was the
-  /// alternative and behaves worse: apparent size changes as things approach, so the camera hands
-  /// itself back and forth between objects at different distances.
-  /// </para>
-  /// </remarks>
-  private static DetectionSample? Choose(List<DetectionSample> candidates, TrackingPolicy policy)
-  {
-    if (candidates.Count == 0)
-      return null;
-
-    if (policy.Kinds.Count == 0)
-      return Nearest(candidates);
-
-    foreach (var kind in policy.Kinds)
-    {
-      var ofKind = candidates.Where(s => s.Kind == kind).ToList();
-      if (ofKind.Count > 0)
-        return Nearest(ofKind);
-    }
-
-    // Nothing preferred is in view. The camera stays where it is rather than following something
-    // it was told not to care about.
-    return null;
-  }
-
-  private static DetectionSample? Nearest(List<DetectionSample> candidates)
-  {
-    DetectionSample? best = null;
-    var bestDistance = float.MaxValue;
-    foreach (var sample in candidates)
-    {
-      var dx = sample.CenterX - 0.5f;
-      var dy = sample.CenterY - 0.5f;
-      var distance = (dx * dx) + (dy * dy);
-      if (distance >= bestDistance)
-        continue;
-      bestDistance = distance;
-      best = sample;
-    }
-    return best;
   }
 
   /// Speed proportional to how far off centre the object is, with a floor that actually moves the

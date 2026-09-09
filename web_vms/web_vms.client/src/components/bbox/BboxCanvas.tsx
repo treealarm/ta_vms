@@ -9,6 +9,8 @@ interface Props {
   onFindSimilar?: (box: DrawableBox) => void
   /** Point this camera's automatic tracking at the clicked object. Absent where it cannot. */
   onTrackObject?: (box: DrawableBox) => void
+  /** The click points other cameras rather than this one, so the item says so. */
+  trackAimsOthers?: boolean
 }
 
 /**
@@ -18,7 +20,9 @@ interface Props {
  * or text layout, so the overlay stays cheap on the main thread and never makes the video stutter.
  * For the same reason the boxes are held in a ref — a resize-driven redraw must not need a render.
  */
-export default function BboxCanvas({ videoRef, boxes, onFindSimilar, onTrackObject }: Props) {
+export default function BboxCanvas({
+  videoRef, boxes, onFindSimilar, onTrackObject, trackAimsOthers,
+}: Props) {
   const { t } = useTranslation()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const boxesRef = useRef(boxes)
@@ -137,7 +141,7 @@ export default function BboxCanvas({ videoRef, boxes, onFindSimilar, onTrackObje
               onTrackObject(box)
             }}
           >
-            {t('tracking.trackObject')}
+            {trackAimsOthers ? t('tracking.aimSlaves') : t('tracking.trackObject')}
           </MenuItem>
         )}
         {onFindSimilar && (

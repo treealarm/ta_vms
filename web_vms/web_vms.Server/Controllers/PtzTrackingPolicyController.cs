@@ -39,6 +39,9 @@ public class PtzTrackingPolicyController(CfgService.CfgServiceClient _cfg) : Con
       Enabled = response.Policy.Enabled,
       Kinds = response.Policy.Kinds.ToList(),
       Sources = response.Policy.Sources.ToList(),
+      MasterCameraId = response.Policy.HasMasterCameraId && response.Policy.MasterCameraId.Length > 0
+        ? response.Policy.MasterCameraId
+        : null,
     });
   }
 
@@ -81,6 +84,9 @@ public class PtzTrackingPolicyController(CfgService.CfgServiceClient _cfg) : Con
     var policy = new PtzTrackingPolicy { CameraId = cameraId, Enabled = dto.Enabled };
     policy.Kinds.AddRange(dto.Kinds);
     policy.Sources.AddRange(dto.Sources);
+    // master_camera_id is deliberately not written here. Which master a camera follows is decided
+    // where the survey is marked out (PtzSlaveBindingController), so that it is named in one place
+    // only; VmsCfg leaves the stored value alone when this field is unset.
 
     var status = await _cfg.UpsertPtzTrackingPolicyAsync(
       new UpsertPtzTrackingPolicyRequest { Policy = policy }, cancellationToken: ct);

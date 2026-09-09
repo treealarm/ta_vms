@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { patchSlot, selectSlotUi } from '../store/monitorUiSlice'
@@ -18,6 +18,7 @@ import {
   Alert,
   Snackbar,
 } from '@mui/material'
+import CenterFocusStrongIcon from '@mui/icons-material/CenterFocusStrong'
 import CloseIcon from '@mui/icons-material/Close'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord'
@@ -50,7 +51,9 @@ import StreamOverrideRow from './StreamOverrideRow'
 import StreamProfileRow from './StreamProfileRow'
 import PtzOverlay from './PtzOverlay'
 import GpsFixedIcon from '@mui/icons-material/GpsFixed'
-import { setPtzSelfGuidance, setPtzTarget, usePtzTracking } from '../hooks/usePtzTracking'
+import {
+  setPtzSelfGuidance, setPtzTarget, useIsPtzMaster, useMasterHasExplicitTarget, usePtzTracking,
+} from '../hooks/usePtzTracking'
 import DeviceIoOverlay from './DeviceIoOverlay'
 import { useOnvifBboxCapable } from '../hooks/useOnvifBboxCapable'
 import { useArchiveMetadataCoverage } from '../hooks/archiveMetadataClient'
@@ -344,6 +347,18 @@ export default function CameraUnifiedCard({
   // VmsOnvif reaches it — and the difference matters here: the button reflects the setting, so a
   // camera missing from the list would read as off and could never be switched off.
   const selfGuiding = tracking !== null
+  // Clicking a box is worth offering on a camera that feeds slaves as well as on one that moves
+  // itself. A stationary master is the ordinary case and has no session of its own, so asking only
+  // `selfGuiding` hid the gesture exactly where the objects are: the master is the camera with the
+  // picture and the boxes, the slave is the camera with the motor.
+  const isMaster = useIsPtzMaster(camera.cameraId)
+  const canPickTarget = selfGuiding || isMaster
+  const slavesPinned = useMasterHasExplicitTarget(camera.cameraId)
+  // A master usually has no motor of its own, so the whole PTZ group is hidden on it — which left
+  // the one thing it *can* do, hand its slaves back to choosing for themselves, with nowhere to be
+  // pressed. This is that button, and it is also the only visible sign on the wall that this
+  // camera drives another one.
+  const showMasterControl = isMaster && mode === 'live' && !wallPlayback && !isDisabled
   const running = tracking?.active === true
   // The operator has taken this camera off its own priorities and pinned it to one object.
   const overridden = tracking?.explicitTarget === true
@@ -634,6 +649,25 @@ export default function CameraUnifiedCard({
                 sx={{ ...BTN_SX, ...(ptzOpen ? { color: W, bgcolor: alpha(W, 0.2) } : {}) }}
               >
                 <ControlCameraIcon sx={{ fontSize: '0.95rem' }} />
+              </IconButton>
+            </Tooltip>
+          )}
+
+          {showMasterControl && !showPtzControl && (
+            <Tooltip
+              title={slavesPinned ? t('tracking.masterReleaseTooltip') : t('tracking.masterTooltip')}
+              placement="right"
+            >
+              <IconButton
+                size="small"
+                disabled={!slavesPinned}
+                onClick={() => void releaseTarget()}
+                sx={{
+                  ...BTN_SX,
+                  ...(slavesPinned ? { color: W, bgcolor: alpha(W, 0.2) } : {}),
+                }}
+              >
+                <CenterFocusStrongIcon sx={{ fontSize: '0.95rem' }} />
               </IconButton>
             </Tooltip>
           )}
@@ -1072,7 +1106,8 @@ export default function CameraUnifiedCard({
                 bboxEnabled={bboxOpen && hasBoxSource}
                 onShownUrlChange={setShownWhepUrl}
                 onFindSimilar={openFindSimilar}
-                onTrackObject={selfGuiding ? (box) => void trackObject(box) : undefined}
+                onTrackObject={canPickTarget ? (box) => void trackObject(box) : undefined}
+                trackAimsOthers={isMaster && !selfGuiding}
                 trackingHighlight={tracking?.target ?? null}
               />
             )}

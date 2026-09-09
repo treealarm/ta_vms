@@ -19,7 +19,8 @@ import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import { useTranslation } from 'react-i18next'
 import { apiFetch } from '../api/apiFetch'
-import type { AnalyticsDetectionSource, PtzTrackingPolicyDto } from '../dto/dtos'
+import { useAppSelector } from '../store'
+import type { AnalyticsDetectionSource, PtzCalibrationDto, PtzTrackingPolicyDto } from '../dto/dtos'
 
 type Props = {
   cameraId: string
@@ -34,7 +35,9 @@ const EMPTY: PtzTrackingPolicyDto = { enabled: false, kinds: [], sources: [] }
 
 export default function CameraTrackingSection({ cameraId }: Props) {
   const { t } = useTranslation()
+  const camerasById = useAppSelector((state) => state.live.cameraStatesById)
   const [policy, setPolicy] = useState<PtzTrackingPolicyDto>(EMPTY)
+  const [calibration, setCalibration] = useState<PtzCalibrationDto | null>(null)
   const [saved, setSaved] = useState<PtzTrackingPolicyDto>(EMPTY)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -49,6 +52,18 @@ export default function CameraTrackingSection({ cameraId }: Props) {
       const loaded = data ?? EMPTY
       setPolicy(loaded)
       setSaved(loaded)
+
+      // Whether the camera has been calibrated changes what switching this on will do, so it is
+      // read here rather than left for the operator to go and check on another tab.
+      try {
+        setCalibration(await apiFetch<PtzCalibrationDto>(
+          `/api/ptz-calibration/${encodeURIComponent(cameraId)}`))
+      } catch {
+        // No calibration row is the ordinary case, and the endpoint says so by failing. Not knowing
+        // is reported the same way as not having one: the hint below is written to be true either
+        // way.
+        setCalibration(null)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -120,8 +135,45 @@ export default function CameraTrackingSection({ cameraId }: Props) {
         label={t('tracking.selfGuidance')}
       />
       <Typography variant="caption" color="text.secondary">
-        {t('tracking.selfGuidanceHint')}
+        {/* The same switch means something different for a slave: it starts aiming at another
+            camera's objects, not looking for its own. Saying which master, here, is what keeps the
+            operator from wondering why the camera never reacts to its own picture. */}
+        {policy.masterCameraId
+          ? t('tracking.selfGuidanceSlaveHint', {
+              master: camerasById[policy.masterCameraId]?.name || policy.masterCameraId,
+            })
+          : t('tracking.selfGuidanceHint')}
       </Typography>
+
+      {/* A slave is aimed by reading the bottom of a box as the object's contact with the ground.
+          A face box has no such edge — its bottom is a chin — so preferring faces on a slave sends
+          it nowhere useful, and alternating between a face and its body swings it between zones.
+          Said here because the priority list is shared with self-guidance, where preferring a face
+          is exactly right. */}
+      {policy.masterCameraId
+        && policy.kinds.some((k) => k === 'face' || k === 'license_plate') && (
+        <Alert severity="warning" sx={{ py: 0.5 }}>
+          <Typography variant="caption">{t('tracking.slaveNeedsWholeObjects')}</Typography>
+        </Alert>
+      )}
+
+      {/* Calibration is not a prerequisite and saying so plainly matters: an uncalibrated camera
+          tracks perfectly well as long as it is hung the usual way, because the loop falls back to
+          assuming that. What it cannot survive is an inverted or swapped axis — then it drives away
+          from the object rather than towards it, which is the one symptom worth naming here, since
+          it looks like a broken feature rather than a missing setting. A slave is aimed through its
+          survey and never uses this at all. */}
+      {!policy.masterCameraId && (
+        <Alert severity={calibration ? 'success' : 'info'} sx={{ py: 0.5 }}>
+          <Typography variant="caption">
+            {calibration
+              ? t('tracking.calibrated', {
+                  method: t(`ptzCalibration.method_${calibration.method}`, calibration.method),
+                })
+              : t('tracking.uncalibrated')}
+          </Typography>
+        </Alert>
+      )}
 
       {/* Heading and the control that adds to the list share a row: the panel is short and this
           section would otherwise not fit beside the camera's other settings. */}

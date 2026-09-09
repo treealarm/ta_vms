@@ -79,6 +79,38 @@ public class PtzController(OnvifRouter router) : ControllerBase
     });
   }
 
+  /// <summary>Where the camera says it is pointing.</summary>
+  /// <remarks>
+  /// Under <see cref="CameraAction.Ptz"/> rather than viewing rights, unlike capabilities beside
+  /// it: this is read while driving the camera by hand to record a position, and it is only useful
+  /// to someone who may drive it.
+  /// <para>
+  /// A camera answering here is not proof its numbers mean anything — firmware that reports
+  /// constants while the motor turns is real and was found on this project's own test camera. Any
+  /// feature that depends on the position must confirm it by moving the camera and watching these
+  /// change.
+  /// </para>
+  /// </remarks>
+  [HttpGet("status")]
+  [CameraAccess(CameraAction.Ptz)]
+  public async Task<IActionResult> GetStatus(
+    [FromQuery] string cameraId, [FromQuery] string? profileToken, CancellationToken ct)
+  {
+    var response = await (await router.PtzAsync(cameraId, ct)).GetStatusAsync(
+      new PtzStatusRequest { SourceId = cameraId, ProfileToken = profileToken ?? string.Empty },
+      Options(ct));
+
+    return Ok(new
+    {
+      available = response.Available,
+      pan       = response.Pan,
+      tilt      = response.Tilt,
+      zoom      = response.Zoom,
+      moving    = response.Moving,
+      error     = response.Error,
+    });
+  }
+
   [HttpPost("stop")]
   [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
   public async Task<IActionResult> Stop([FromBody] PtzStopDto dto, CancellationToken ct)

@@ -24,6 +24,8 @@ public sealed record PtzTrackingPolicyDto
   public bool Enabled { get; init; }
   public IReadOnlyList<string> Kinds { get; init; } = [];
   public IReadOnlyList<string> Sources { get; init; } = [];
+  /// <summary>Whose objects to follow. Null is the camera's own.</summary>
+  public string? MasterCameraId { get; init; }
 }
 
 public sealed record PtzTrackingStateDto
@@ -36,4 +38,6 @@ public sealed record PtzTrackingStateDto
   public DateTime? TargetSeenAt { get; init; }
   /// <summary>Last PTZ failure; empty while the camera is obeying.</summary>
   public string LastError { get; init; } = string.Empty;
+  /// <summary>Whose picture this camera follows; null when it is its own.</summary>
+  public string? MasterCameraId { get; init; }
 }

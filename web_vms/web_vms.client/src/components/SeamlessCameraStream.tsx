@@ -1,4 +1,4 @@
-import { Box } from '@mui/material'
+﻿import { Box } from '@mui/material'
 import React, { useEffect, useRef, useState } from 'react'
 import CameraStream from './CameraStream'
 import type { DrawableBox } from './bbox/bboxDraw'
@@ -53,6 +53,7 @@ interface Props {
   onShownUrlChange?: (url: string) => void
   onFindSimilar?: (box: DrawableBox) => void
   onTrackObject?: (box: DrawableBox) => void
+  trackAimsOthers?: boolean
   trackingHighlight?: { source: string; trackId: number; kind: string } | null
 }
 
@@ -75,6 +76,7 @@ const SeamlessCameraStream: React.FC<Props> = ({
   onShownUrlChange,
   onFindSimilar,
   onTrackObject,
+  trackAimsOthers,
   trackingHighlight,
 }) => {
   const [visibleUrl, setVisibleUrl] = useState(whepUrl)
@@ -162,6 +164,7 @@ const SeamlessCameraStream: React.FC<Props> = ({
               onFirstFrames={shown ? undefined : () => promote(url)}
               onFindSimilar={shown ? onFindSimilar : undefined}
               onTrackObject={shown ? onTrackObject : undefined}
+              trackAimsOthers={trackAimsOthers}
               trackingHighlight={shown ? trackingHighlight : undefined}
             />
           </Box>

@@ -13,10 +13,15 @@ namespace VmsPtzTrackingSingleton;
 /// <param name="Sources">
 /// Which producers of boxes to believe. Empty means either will do.
 /// </param>
+/// <param name="MasterCameraId">
+/// Whose detections to follow. Null is the camera's own, and the only case that closes a loop:
+/// anything else names a master this camera is aimed at through a survey.
+/// </param>
 public sealed record TrackingPolicy(
   bool Enabled,
   IReadOnlyList<DetectionKind> Kinds,
-  IReadOnlySet<string> Sources)
+  IReadOnlySet<string> Sources,
+  string? MasterCameraId)
 {
   public bool Accepts(string source) => Sources.Count == 0 || Sources.Contains(source);
 }
@@ -67,7 +72,8 @@ public sealed class TrackingPolicyCache(
     new(
       proto.Enabled,
       proto.Kinds.Select(ParseKind).Where(k => k != DetectionKind.Unspecified).ToList(),
-      proto.Sources.ToHashSet(StringComparer.Ordinal));
+      proto.Sources.ToHashSet(StringComparer.Ordinal),
+      proto.HasMasterCameraId && proto.MasterCameraId.Length > 0 ? proto.MasterCameraId : null);
 
   // The same words the browser and `analytics_watch.classes` use. Copies of this table exist in
   // every service that has to cross the same boundary (AnalyticsKindMapper, DetectionKinds,

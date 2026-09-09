@@ -12,6 +12,8 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
   public DbSet<DbAnalyticsWatch> AnalyticsWatches { get; set; }
   public DbSet<DbPtzCalibration> PtzCalibrations { get; set; }
   public DbSet<DbPtzTrackingPolicy> PtzTrackingPolicies { get; set; }
+  public DbSet<DbPtzSlaveBinding> PtzSlaveBindings { get; set; }
+  public DbSet<DbPtzSlaveBindingPoint> PtzSlaveBindingPoints { get; set; }
   public DbSet<DbRecordingSchedule> RecordingSchedules { get; set; }
   public DbSet<DbRecordingScheduleWindow> RecordingScheduleWindows { get; set; }
   public DbSet<DbCameraSchedule> CameraSchedules { get; set; }
@@ -111,6 +113,34 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.Enabled).HasColumnName("enabled");
       e.Property(x => x.Kinds).HasColumnName("kinds");
       e.Property(x => x.Sources).HasColumnName("sources");
+      e.Property(x => x.MasterCameraId).HasColumnName("master_camera_id");
+    });
+
+    modelBuilder.Entity<DbPtzSlaveBinding>(e =>
+    {
+      e.ToTable("ptz_slave_binding");
+      e.HasKey(x => x.SlaveCameraId);
+      e.Property(x => x.SlaveCameraId).HasColumnName("slave_camera_id");
+      e.Property(x => x.MasterCameraId).HasColumnName("master_camera_id");
+      e.Property(x => x.Method).HasColumnName("method");
+      e.Property(x => x.CalibratedAt).HasColumnName("calibrated_at");
+      e.HasMany(x => x.Points)
+       .WithOne()
+       .HasForeignKey(x => x.SlaveCameraId);
+    });
+
+    modelBuilder.Entity<DbPtzSlaveBindingPoint>(e =>
+    {
+      e.ToTable("ptz_slave_binding_point");
+      e.HasKey(x => new { x.SlaveCameraId, x.Ordinal });
+      e.Property(x => x.SlaveCameraId).HasColumnName("slave_camera_id");
+      e.Property(x => x.Ordinal).HasColumnName("ordinal");
+      e.Property(x => x.MasterX).HasColumnName("master_x");
+      e.Property(x => x.MasterY).HasColumnName("master_y");
+      e.Property(x => x.Pan).HasColumnName("pan");
+      e.Property(x => x.Tilt).HasColumnName("tilt");
+      e.Property(x => x.PresetToken).HasColumnName("preset_token");
+      e.Property(x => x.PresetName).HasColumnName("preset_name");
     });
 
     modelBuilder.Entity<DbRecordingSchedule>(e =>
@@ -281,6 +311,34 @@ public sealed class DbPtzTrackingPolicy
   /// Priority order; empty means any object will do.
   public string Kinds { get; set; } = string.Empty;
   public string Sources { get; set; } = "cv,onvif";
+  /// Whose detections to follow. Null means this camera's own.
+  public string? MasterCameraId { get; set; }
+}
+
+/// <summary>The hand-marked survey that lets a slave be aimed at a master's objects.</summary>
+public sealed class DbPtzSlaveBinding
+{
+  public string SlaveCameraId { get; set; } = string.Empty;
+  public string MasterCameraId { get; set; } = string.Empty;
+  /// "absolute" | "presets".
+  public string Method { get; set; } = "absolute";
+  public DateTime CalibratedAt { get; set; } = DateTime.UtcNow;
+  public List<DbPtzSlaveBindingPoint> Points { get; set; } = [];
+}
+
+/// <summary>One marked correspondence between a spot in the master's frame and the slave's aim.</summary>
+public sealed class DbPtzSlaveBindingPoint
+{
+  public string SlaveCameraId { get; set; } = string.Empty;
+  /// Position in the survey. Carries no meaning beyond keeping the operator's list order stable.
+  public int Ordinal { get; set; }
+  public float MasterX { get; set; }
+  public float MasterY { get; set; }
+  /// Null when the camera would not tell us where it was pointing.
+  public float? Pan { get; set; }
+  public float? Tilt { get; set; }
+  public string? PresetToken { get; set; }
+  public string? PresetName { get; set; }
 }
 
 public sealed class DbRecordingSchedule

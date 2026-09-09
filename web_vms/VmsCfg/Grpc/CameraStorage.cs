@@ -1578,6 +1578,12 @@ public class CameraStorage(
     entity.Enabled = policy.Enabled;
     entity.Kinds = Join(policy.Kinds);
     entity.Sources = Join(policy.Sources);
+    // Left alone when the field is unset, rather than cleared. The master belongs to the binding
+    // -- UpsertPtzSlaveBindingAsync writes it and RemovePtzSlaveBindingAsync clears it -- so a
+    // caller editing what a camera follows must not be able to sever it from its master by simply
+    // not mentioning one. Sending an empty string is how it is cleared deliberately.
+    if (policy.HasMasterCameraId)
+      entity.MasterCameraId = policy.MasterCameraId.Length > 0 ? policy.MasterCameraId : null;
 
     await db.SaveChangesAsync(ct);
     return ToPtzTrackingPolicyProto(entity);
@@ -1596,6 +1602,132 @@ public class CameraStorage(
       row.Kinds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     proto.Sources.AddRange(
       row.Sources.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    if (!string.IsNullOrEmpty(row.MasterCameraId))
+      proto.MasterCameraId = row.MasterCameraId;
+    return proto;
+  }
+
+  // ── Master/slave binding (1:1 per slave, with its survey points) ───────────
+
+  public async Task<PtzSlaveBinding?> GetPtzSlaveBindingAsync(string slaveCameraId, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var row = await db.PtzSlaveBindings
+      .Include(b => b.Points)
+      .AsNoTracking()
+      .FirstOrDefaultAsync(b => b.SlaveCameraId == slaveCameraId, ct);
+    return row is null ? null : ToPtzSlaveBindingProto(row);
+  }
+
+  public async Task<IReadOnlyList<PtzSlaveBinding>> ListPtzSlaveBindingsAsync(CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var rows = await db.PtzSlaveBindings.Include(b => b.Points).AsNoTracking().ToListAsync(ct);
+    return rows.Select(ToPtzSlaveBindingProto).ToList();
+  }
+
+  /// <summary>Replaces a slave's binding, survey included.</summary>
+  /// <remarks>
+  /// <para>
+  /// The points are deleted and re-inserted rather than matched up one by one. Adding a point
+  /// changes what every other point interpolates to, so the survey is only meaningful whole; and
+  /// an ordinal is a position in a list the operator reorders, not an identity worth preserving.
+  /// </para>
+  /// <para>
+  /// This also writes the master onto the camera's tracking policy, in the same transaction. The
+  /// two are not independent: the policy's master_camera_id is what makes the tracking service run
+  /// an aiming session instead of a self-guiding one, and a binding that named a master the policy
+  /// did not would leave the camera guiding itself off its own picture -- with a survey sitting
+  /// there looking as though it were in use. The operator names the master once, here, and the
+  /// policy follows; a policy row is created switched off if there is none, because marking out a
+  /// survey is not the same as deciding to start moving.
+  /// </para>
+  /// </remarks>
+  public async Task<PtzSlaveBinding> UpsertPtzSlaveBindingAsync(
+    PtzSlaveBinding binding, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var entity = await db.PtzSlaveBindings
+      .Include(b => b.Points)
+      .FirstOrDefaultAsync(b => b.SlaveCameraId == binding.SlaveCameraId, ct);
+    if (entity is null)
+    {
+      entity = new DbPtzSlaveBinding { SlaveCameraId = binding.SlaveCameraId };
+      db.PtzSlaveBindings.Add(entity);
+    }
+
+    entity.MasterCameraId = binding.MasterCameraId;
+    entity.Method = binding.Method == PtzSlaveBindingMethod.PtzSlaveBindingPresets ? "presets" : "absolute";
+    entity.CalibratedAt = binding.CalibratedAt?.ToDateTime() ?? DateTime.UtcNow;
+
+    db.PtzSlaveBindingPoints.RemoveRange(entity.Points);
+    entity.Points = binding.Points.Select((p, i) => new DbPtzSlaveBindingPoint
+    {
+      SlaveCameraId = binding.SlaveCameraId,
+      Ordinal       = i,
+      MasterX       = p.MasterX,
+      MasterY       = p.MasterY,
+      Pan           = p.HasPan ? p.Pan : null,
+      Tilt          = p.HasTilt ? p.Tilt : null,
+      PresetToken   = string.IsNullOrEmpty(p.PresetToken) ? null : p.PresetToken,
+      PresetName    = string.IsNullOrEmpty(p.PresetName) ? null : p.PresetName,
+    }).ToList();
+
+    var policy = await db.PtzTrackingPolicies.FindAsync([binding.SlaveCameraId], ct)
+                 ?? db.PtzTrackingPolicies.Add(
+                      new DbPtzTrackingPolicy { CameraId = binding.SlaveCameraId }).Entity;
+    policy.MasterCameraId = binding.MasterCameraId;
+
+    await db.SaveChangesAsync(ct);
+    return ToPtzSlaveBindingProto(entity);
+  }
+
+  /// <summary>Removes a slave's binding, and with it the policy's claim to a master.</summary>
+  /// <remarks>
+  /// Leaving master_camera_id behind would leave the tracking service trying to run an aiming
+  /// session with nothing to aim by. Self-guidance itself is left alone: whether the camera should
+  /// move at all is a separate decision from whose objects it moves for.
+  /// </remarks>
+  public async Task<bool> RemovePtzSlaveBindingAsync(string slaveCameraId, CancellationToken ct)
+  {
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    var row = await db.PtzSlaveBindings.FindAsync([slaveCameraId], ct);
+    if (row is null) return false;
+    db.PtzSlaveBindings.Remove(row);
+
+    var policy = await db.PtzTrackingPolicies.FindAsync([slaveCameraId], ct);
+    if (policy is not null)
+      policy.MasterCameraId = null;
+
+    await db.SaveChangesAsync(ct);
+    return true;
+  }
+
+  private static PtzSlaveBinding ToPtzSlaveBindingProto(DbPtzSlaveBinding row)
+  {
+    var proto = new PtzSlaveBinding
+    {
+      SlaveCameraId  = row.SlaveCameraId,
+      MasterCameraId = row.MasterCameraId,
+      Method = row.Method.Equals("presets", StringComparison.OrdinalIgnoreCase)
+        ? PtzSlaveBindingMethod.PtzSlaveBindingPresets
+        : PtzSlaveBindingMethod.PtzSlaveBindingAbsolute,
+      CalibratedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(
+        DateTime.SpecifyKind(row.CalibratedAt, DateTimeKind.Utc)),
+    };
+    foreach (var p in row.Points.OrderBy(p => p.Ordinal))
+    {
+      var point = new PtzSlaveBindingPoint
+      {
+        MasterX     = p.MasterX,
+        MasterY     = p.MasterY,
+        PresetToken = p.PresetToken ?? string.Empty,
+        PresetName  = p.PresetName ?? string.Empty,
+      };
+      if (p.Pan.HasValue) point.Pan = p.Pan.Value;
+      if (p.Tilt.HasValue) point.Tilt = p.Tilt.Value;
+      proto.Points.Add(point);
+    }
     return proto;
   }
 }

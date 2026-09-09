@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Accordion, AccordionDetails, AccordionSummary, Box, FormControlLabel, MenuItem, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+﻿import { useEffect, useState } from 'react'
+import { Box, FormControlLabel, MenuItem, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera, changeCameraParent, fetchCameraState, removeCamera } from '../store/liveSlice'
@@ -12,6 +11,7 @@ import CameraSchedulesControl from './CameraSchedulesControl'
 import CameraDetectionsSection from './CameraDetectionsSection'
 import CameraCalibrationSection from './CameraCalibrationSection'
 import CameraTrackingSection from './CameraTrackingSection'
+import CameraSlaveBindingSection from './CameraSlaveBindingSection'
 import PasswordField from './PasswordField'
 import CameraStream from './CameraStream'
 import DetailToolbar from './settings/DetailToolbar'
@@ -58,10 +58,17 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const [roiDelayHours, setRoiDelayHours] = useState(String(existing?.roiDelayHours ?? 0))
   const [roiMinCoverage, setRoiMinCoverage] = useState(pctOf(existing?.roiMinCoverage, 0))
   const [roiMaxCoverage, setRoiMaxCoverage] = useState(pctOf(existing?.roiMaxCoverage, 1))
-  const [tab, setTab] = useState<'main' | 'advanced' | 'detections' | 'calibration'>('main')
+  type Tab = 'main' | 'advanced' | 'detections' | 'tracking' | 'calibration' | 'binding'
+  const [tab, setTab] = useState<Tab>('main')
+  // The settings column always fills whatever the camera list and the preview leave; what varies
+  // is how each tab uses that space. The survey takes all of it — it lays two live pictures side
+  // by side. The main and advanced forms flow into as many columns as fit. Tracking and calibration
+  // are a priority list and a button wizard, where a row stretched across the whole panel puts its
+  // controls a mouse-journey away from its label, so they stop at a comfortable reading width.
+  const readingWidth = 640
 
   useEffect(() => {
-    if (!hasTelemetry && tab === 'calibration')
+    if (!hasTelemetry && (tab === 'tracking' || tab === 'calibration' || tab === 'binding'))
       setTab('main')
   }, [hasTelemetry, tab])
   const [pendingStorages, setPendingStorages] = useState<CameraStorageAssignmentDto[]>([])
@@ -230,21 +237,41 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
 
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 2 }}>
         <Stack direction="row" spacing={3} alignItems="flex-start">
-          {/* Left: form fields */}
-          <Stack spacing={2} sx={{ flex: 1, minWidth: 0, maxWidth: 380 }}>
+          {/* Left: the settings themselves, filling whatever the list and the preview leave */}
+          <Stack spacing={2} sx={{ flex: 1, minWidth: 0 }}>
             <Tabs
               value={tab}
-              onChange={(_, v: 'main' | 'advanced' | 'detections' | 'calibration') => setTab(v)}
+              onChange={(_, v: Tab) => setTab(v)}
+              variant="scrollable"
+              scrollButtons="auto"
               sx={{ borderBottom: 1, borderColor: 'divider' }}
             >
               <Tab value="main" label={t('cameras.tabMain')} />
               {!isNew && <Tab value="detections" label={t('cameras.tabDetections')} />}
-              {!isNew && hasTelemetry && <Tab value="calibration" label={t('cameras.tabTracking')} />}
+              {/* Three tabs rather than three folds. They were accordions stacked in one tab, which
+                  made a single sheet taller than the panel: opening the survey pushed it off the
+                  bottom, and its two live pictures had nowhere to be. They are also three separate
+                  jobs — what to follow, which way the motor turns, and where a master's ground maps
+                  to — done at different times and rarely together. */}
+              {!isNew && hasTelemetry && <Tab value="tracking" label={t('cameras.tabTracking')} />}
+              {!isNew && hasTelemetry && <Tab value="calibration" label={t('cameras.calibration')} />}
+              {!isNew && hasTelemetry && <Tab value="binding" label={t('cameras.tabMaster')} />}
               <Tab value="advanced" label={t('cameras.tabAdvanced')} />
             </Tabs>
 
             {tab === 'main' && (
-            <Stack spacing={2}>
+            <Box
+              sx={{
+                display: 'grid',
+                // Fields flow into as many columns as the panel is wide enough for, and fall back
+                // to one when it is narrow. A single stacked column left most of the panel empty
+                // and pushed the rest of the form below the fold — the same complaint the tracking
+                // tab had, for the same reason.
+                gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+                gap: 2,
+                alignItems: 'start',
+              }}
+            >
             <TextField
               label={t('cameras.cameraName')}
               value={name}
@@ -311,7 +338,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
               ? <CameraSchedulesControl value={pendingSchedules} onChange={setPendingSchedules} />
               : <CameraSchedulesControl cameraId={initialCameraId} />
             }
-            </Stack>
+            </Box>
             )}
 
             {tab === 'detections' && !isNew && (
@@ -322,37 +349,44 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
             />
             )}
 
-            {/* One tab, because calibration is part of setting tracking up rather than a subject
-                of its own: the policy says what to follow, the calibration is what makes following
-                it land in the right direction. Two sections' worth of controls do not fit the panel
-                at once, so they fold — and calibration starts folded, being the thing that is set
-                once and then left alone. */}
+            {tab === 'tracking' && !isNew && hasTelemetry && (
+              <Box sx={{ maxWidth: readingWidth }}>
+                <CameraTrackingSection cameraId={initialCameraId} />
+              </Box>
+            )}
+
             {tab === 'calibration' && !isNew && hasTelemetry && (
-            <Stack spacing={1}>
-              <Accordion defaultExpanded disableGutters elevation={0}>
-                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                  <Typography variant="subtitle2">{t('cameras.tabTracking')}</Typography>
-                </AccordionSummary>
-                <AccordionDetails>
-                  <CameraTrackingSection cameraId={initialCameraId} />
-                </AccordionDetails>
-              </Accordion>
-              <Accordion disableGutters elevation={0}>
-                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                  <Typography variant="subtitle2">{t('cameras.calibration')}</Typography>
-                </AccordionSummary>
-                <AccordionDetails>
-                  <CameraCalibrationSection
-                    cameraId={initialCameraId}
-                    hasTelemetry={hasTelemetry}
-                  />
-                </AccordionDetails>
-              </Accordion>
-            </Stack>
+              <Box sx={{ maxWidth: readingWidth }}>
+                <CameraCalibrationSection
+                  cameraId={initialCameraId}
+                  hasTelemetry={hasTelemetry}
+                />
+              </Box>
+            )}
+
+            {/* Uncapped: this one lays two live pictures out side by side and wants the room. */}
+            {tab === 'binding' && !isNew && hasTelemetry && (
+              <CameraSlaveBindingSection
+                cameraId={initialCameraId}
+                profileToken={existing?.streams?.[0]?.profileToken ?? ''}
+                slaveWhepUrl={webRtcStreams.find((st) => st.whepUrl)?.whepUrl}
+                slaveStunUrl={existing?.effectiveWebrtcStunUrl}
+              />
             )}
 
             {tab === 'advanced' && (
-            <Stack spacing={2}>
+            <Box
+              sx={{
+                display: 'grid',
+                // Fields flow into as many columns as the panel is wide enough for, and fall back
+                // to one when it is narrow. A single stacked column left most of the panel empty
+                // and pushed the rest of the form below the fold — the same complaint the tracking
+                // tab had, for the same reason.
+                gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+                gap: 2,
+                alignItems: 'start',
+              }}
+            >
               <FieldHint hint={t('cameras.roiTranscodeHint')}>
                 <FormControlLabel
                   control={<Switch checked={roiTranscode} onChange={(e) => setRoiTranscode(e.target.checked)} />}
@@ -416,12 +450,14 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
                   </TextField>
                 </FieldHint>
               )}
-            </Stack>
+            </Box>
             )}
           </Stack>
 
-          {/* Right: live previews column */}
-          {!isNew && webRtcStreams.length > 0 && (
+          {/* Right: live previews column. Hidden on the survey tab, which shows this camera's
+              picture itself, beside its master's — a third copy of the same stream would only take
+              room away from the two that are being worked with. */}
+          {!isNew && tab !== 'binding' && webRtcStreams.length > 0 && (
             <Stack spacing={1.5} sx={{ width: 280, flexShrink: 0 }}>
               {webRtcStreams.filter((s) => s.whepUrl).map((s) => (
                 <Box key={s.streamName}>

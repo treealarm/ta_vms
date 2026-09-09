@@ -39,6 +39,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VmsAnalyticsSingleton.Tests
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VmsPtzTrackingSingleton", "VmsPtzTrackingSingleton\VmsPtzTrackingSingleton.csproj", "{7EA680BE-86C5-417F-B978-C893AEA68B4B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VmsPtzTrackingSingleton.Tests", "VmsPtzTrackingSingleton.Tests\VmsPtzTrackingSingleton.Tests.csproj", "{A4C88D80-46B9-4260-AEDF-4B07422085D7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -263,6 +265,18 @@ Global
 		{7EA680BE-86C5-417F-B978-C893AEA68B4B}.Release|x64.Build.0 = Release|Any CPU
 		{7EA680BE-86C5-417F-B978-C893AEA68B4B}.Release|x86.ActiveCfg = Release|Any CPU
 		{7EA680BE-86C5-417F-B978-C893AEA68B4B}.Release|x86.Build.0 = Release|Any CPU
+		{A4C88D80-46B9-4260-AEDF-4B07422085D7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A4C88D80-46B9-4260-AEDF-4B07422085D7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A4C88D80-46B9-4260-AEDF-4B07422085D7}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A4C88D80-46B9-4260-AEDF-4B07422085D7}.Debug|x64.Build.0 = Debug|Any CPU
+		{A4C88D80-46B9-4260-AEDF-4B07422085D7}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A4C88D80-46B9-4260-AEDF-4B07422085D7}.Debug|x86.Build.0 = Debug|Any CPU
+		{A4C88D80-46B9-4260-AEDF-4B07422085D7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A4C88D80-46B9-4260-AEDF-4B07422085D7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A4C88D80-46B9-4260-AEDF-4B07422085D7}.Release|x64.ActiveCfg = Release|Any CPU
+		{A4C88D80-46B9-4260-AEDF-4B07422085D7}.Release|x64.Build.0 = Release|Any CPU
+		{A4C88D80-46B9-4260-AEDF-4B07422085D7}.Release|x86.ActiveCfg = Release|Any CPU
+		{A4C88D80-46B9-4260-AEDF-4B07422085D7}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
