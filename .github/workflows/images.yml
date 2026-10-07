@@ -1,0 +1,167 @@
+# Builds the treealarm/* service images: on every pull request as a check, and on master also
+# pushes them to Docker Hub as :latest and :sha-<commit>.
+#
+# Only the services an edit can affect are built (see the `changes` job), because minutes on a
+# private repository are metered. workflow_dispatch builds all of them.
+#
+# The C++ services build FROM ta-deps / roi-deps, and those are NOT built here: ta-deps takes
+# ~4 hours (mostly openvino), which a hosted runner's 6-hour job limit and ~14 GB of disk do not
+# reliably fit. They are published from a workstation by ../ta_install/scripts/push-deps-images.sh
+# under a content tag (scripts/deps-image-tags.sh), and swapped in for the local name the
+# Dockerfiles use through a buildx named context -- so the Dockerfiles stay as they are and keep
+# building locally.
+#
+# Secrets: SVE_DEPLOY_KEY (private half of a read-only deploy key on treealarm/roi_transcode, the
+# private roitrc/sve submodule), DOCKER_USER, DOCKER_TOKEN.
+
+name: images
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  pull-requests: read # dorny/paths-filter lists a PR's files through the API
+
+env:
+  NAMESPACE: treealarm
+  PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/master' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # Groups follow what each Dockerfile actually reads. media_server links the encoder through
+      # add_subdirectory(../roitrc/sve), so a submodule bump rebuilds `vms` as well as `roitrc`.
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            vms:
+              - Dockerfile
+              - media_server/**
+              - proto/**
+              - ta-deps/**
+              - roitrc/sve
+              - scripts/deps-image-tags.sh
+              - .github/workflows/images.yml
+            roitrc:
+              - roitrc/**
+              - proto/**
+              - scripts/deps-image-tags.sh
+              - .github/workflows/images.yml
+            dotnet:
+              - web_vms/**
+              - proto/**
+              - .github/workflows/images.yml
+
+      # Same services as the `build:` entries of docker-compose.yml and the pairs in
+      # ../ta_install/scripts/push-images.sh; the image name is the compose service name.
+      - id: matrix
+        env:
+          CHANGED: ${{ github.event_name == 'workflow_dispatch' && '["vms","roitrc","dotnet"]' || steps.filter.outputs.changes }}
+        run: |
+          matrix=$(jq -c --argjson changed "$CHANGED" '[.[] | select(.group as $g | $changed | index($g))]' <<'EOF'
+          [
+            {"name": "vms",                     "group": "vms",    "base": "ta-deps",  "dockerfile": "Dockerfile"},
+            {"name": "roitrc",                  "group": "roitrc", "base": "roi-deps", "dockerfile": "roitrc/Dockerfile"},
+            {"name": "vmscfg",                  "group": "dotnet", "base": "",         "dockerfile": "web_vms/VmsCfg/Dockerfile"},
+            {"name": "vmsutils",                "group": "dotnet", "base": "",         "dockerfile": "web_vms/VmsUtils/Dockerfile"},
+            {"name": "vmsfs",                   "group": "dotnet", "base": "",         "dockerfile": "web_vms/VmsFs/Dockerfile"},
+            {"name": "vmslogger",               "group": "dotnet", "base": "",         "dockerfile": "web_vms/VmsLogger/Dockerfile"},
+            {"name": "vmsonvif",                "group": "dotnet", "base": "",         "dockerfile": "web_vms/VmsOnvif/Dockerfile"},
+            {"name": "vmsonvif-actors",         "group": "dotnet", "base": "",         "dockerfile": "web_vms/VmsOnvifActors/Dockerfile"},
+            {"name": "vmssingleton",            "group": "dotnet", "base": "",         "dockerfile": "web_vms/VmsSingleton/Dockerfile"},
+            {"name": "vmssquaresingleton",      "group": "dotnet", "base": "",         "dockerfile": "web_vms/VmsSquareSingleton/Dockerfile"},
+            {"name": "vmsanalyticssingleton",   "group": "dotnet", "base": "",         "dockerfile": "web_vms/VmsAnalyticsSingleton/Dockerfile"},
+            {"name": "vmsptztrackingsingleton", "group": "dotnet", "base": "",         "dockerfile": "web_vms/VmsPtzTrackingSingleton/Dockerfile"},
+            {"name": "web_vms",                 "group": "dotnet", "base": "",         "dockerfile": "web_vms/web_vms.Server/Dockerfile"}
+          ]
+          EOF
+          )
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "Building: $(jq -r 'map(.name) | join(", ")' <<<"$matrix")"
+
+  build:
+    needs: changes
+    if: needs.changes.outputs.matrix != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # Not checkout's `submodules:` -- it fetches them over HTTPS with GITHUB_TOKEN, which cannot
+      # read another private repository. A deploy key is scoped to roi_transcode alone, read-only,
+      # and GitHub lets any key read the public submodules, so the .gitmodules SSH URLs work as is.
+      - name: Submodules
+        env:
+          SVE_DEPLOY_KEY: ${{ secrets.SVE_DEPLOY_KEY }}
+        run: |
+          eval "$(ssh-agent -s)"
+          ssh-add - <<<"$SVE_DEPLOY_KEY"
+          mkdir -p ~/.ssh
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          git submodule update --init --recursive
+
+      # Logged in on pull requests too: the C++ bases are several GB, and anonymous Docker Hub
+      # pulls are rate-limited per runner IP.
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Resolve base image
+        id: base
+        if: matrix.base != ''
+        run: |
+          key=$(tr 'a-z-' 'A-Z_' <<<"${{ matrix.base }}")_TAG
+          tag=$(scripts/deps-image-tags.sh | sed -n "s/^$key=//p")
+          image="$NAMESPACE/${{ matrix.base }}:$tag"
+          if ! docker buildx imagetools inspect "$image" >/dev/null 2>&1; then
+            echo "::error::$image is not published. Its source changed and CI cannot build it (~4 h); run ../ta_install/scripts/push-deps-images.sh, then re-run this job."
+            exit 1
+          fi
+          echo "context=${{ matrix.base }}=docker-image://$image" >> "$GITHUB_OUTPUT"
+
+      # The base image plus the build tree do not fit in the ~14 GB a runner leaves free.
+      - name: Free disk space
+        if: matrix.base != ''
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          docker image prune -af
+          df -h /
+
+      - uses: docker/setup-buildx-action@v3
+
+      - id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      # Layer cache only for the .NET images, where it saves the NuGet/npm restore. The C++ ones
+      # COPY the whole tree before compiling, so any edit invalidates everything above the base,
+      # and the base itself is far too big for the 10 GB Actions cache.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-contexts: ${{ steps.base.outputs.context }}
+          push: ${{ env.PUBLISH == 'true' }}
+          tags: |
+            ${{ env.NAMESPACE }}/${{ matrix.name }}:latest
+            ${{ env.NAMESPACE }}/${{ matrix.name }}:sha-${{ steps.sha.outputs.short }}
+          cache-from: ${{ matrix.base == '' && format('type=gha,scope={0}', matrix.name) || '' }}
+          cache-to: ${{ matrix.base == '' && format('type=gha,mode=max,scope={0}', matrix.name) || '' }}
