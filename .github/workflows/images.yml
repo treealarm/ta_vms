@@ -51,6 +51,7 @@ jobs:
             vms:
               - Dockerfile
               - media_server/**
+              - cmake/**
               - proto/**
               - ta-deps/**
               - roitrc/sve
@@ -58,6 +59,7 @@ jobs:
               - .github/workflows/images.yml
             roitrc:
               - roitrc/**
+              - cmake/**
               - proto/**
               - scripts/deps-image-tags.sh
               - .github/workflows/images.yml
