@@ -7,28 +7,28 @@
 
 #include "writer/processors/stream_processor.h"
 
-namespace sve {
+namespace ta_roienc {
 class Session;
 }
 
-// Live video transcode through the sve encoder library (roitrc/sve).
+// Live video transcode through the ta_roienc encoder library (roitrc/ta_roienc).
 //
 // It replaces video_transcode_processor on the WebRTC compatibility path, where every stream a
 // camera publishes in something other than H.264 is decoded and re-encoded in real time -- one
 // encode per viewed stream, continuously, which is the largest sustained CPU cost in the service.
 //
-// The reason to go through sve rather than call avcodec_find_encoder_by_name here is that
+// The reason to go through ta_roienc rather than call avcodec_find_encoder_by_name here is that
 // libavcodec has no hardware auto-selection: it always hands back libx264 for AV_CODEC_ID_H264,
 // and picking h264_vaapi means naming it, opening an AVHWDeviceContext, running a probe encode
-// and falling back when any of that fails. sve already does exactly that, with a probe and an
+// and falling back when any of that fails. ta_roienc already does exactly that, with a probe and an
 // ordered fallback chain, and it is a library this repository owns.
 //
-// The software path is sve's own Backend::X264, not this class falling back to the old
-// processor. A second fallback mechanism would be a second place for the fallback to be wrong.
-class sve_transcode_processor : public stream_processor {
+// Hardware only: when the backend chain can reach nothing but software, this class declines and
+// compat_sink keeps video_transcode_processor, which runs libx264 with tune=zerolatency.
+class hw_transcode_processor : public stream_processor {
 public:
-  sve_transcode_processor();
-  ~sve_transcode_processor() override;
+  hw_transcode_processor();
+  ~hw_transcode_processor() override;
 
   // Parses VMS_VIDEO_ENCODER and throws std::invalid_argument if it names no known backend.
   // Called from main() so a misspelled backend is a startup failure rather than something
@@ -43,7 +43,7 @@ public:
   std::string encoder_name() const override;
 
 private:
-  // sve::PacketHandler, defined in the .cpp so no sve header reaches this one.
+  // ta_roienc::PacketHandler, defined in the .cpp so no ta_roienc header reaches this one.
   class packet_sink;
 
   void note_input_timestamp(const AVPacket* packet, AVRational time_base);
@@ -52,12 +52,12 @@ private:
 
   emit_fn m_emit;
   std::unique_ptr<packet_sink> m_sink;
-  std::unique_ptr<sve::Session> m_session;
+  std::unique_ptr<ta_roienc::Session> m_session;
 
   // PTS sanitizer state, carried over from video_transcode_processor.
   //
   // The sanitized timeline is generated per arriving access unit but applied to the *emitted*
-  // packet, through m_pending_pts, and the indirection is load-bearing. sve decodes internally,
+  // packet, through m_pending_pts, and the indirection is load-bearing. ta_roienc decodes internally,
   // and a decoder reorders: with B-frames in the source -- which is precisely the HEVC this path
   // exists to re-encode -- frames come out in display order carrying the timestamp of the packet
   // they arrived in, which is decode order. Stamping the input and trusting it to come back
@@ -77,12 +77,12 @@ private:
   int64_t m_wallclock_base_us = -1;
   int64_t m_wallclock_base_pts = 0;
   // Sanitized timestamps waiting for the packets they belong to. Single-threaded by
-  // construction: sve calls the handler synchronously from inside submit() and finish().
+  // construction: ta_roienc calls the handler synchronously from inside submit() and finish().
   std::deque<int64_t> m_pending_pts;
   int64_t m_last_emitted_pts = AV_NOPTS_VALUE;
 
   // Submitted access units, and whether the "nothing came back" warning has been said once.
-  // sve fits an Annex-B parser to H.264/H.265 input, so a camera that ever published
+  // ta_roienc fits an Annex-B parser to H.264/H.265 input, so a camera that ever published
   // length-prefixed (AVCC/HVCC) access units would decode to nothing at all -- a black tile
   // with not one line in the log to say why. Counting is what turns that into a diagnosis.
   int64_t m_submitted = 0;

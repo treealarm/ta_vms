@@ -400,7 +400,7 @@ public sealed class RoiTranscodeScheduler(
     // background of the car it is on came out identical, and since importance is derived back
     // from the delta, the nested-region ordering and the area budget saw a flat list too.
     //
-    // Unnamed, each kind is weighed by TZ v2.0 section 11 inside the module: a licence plate
+    // Unnamed, each kind is weighed by the encoder's importance model: a licence plate
     // outranks a face outranks a person outranks a vehicle, and what does not fit the frame's
     // area budget goes neutral rather than taking bits from what does. That is the whole point
     // of the feature, and this loop was quietly cancelling it.
@@ -454,9 +454,9 @@ public sealed class RoiTranscodeScheduler(
           Width = b.Width,
           Height = b.Height,
           // The archive has carried these all along and this method used to drop them,
-          // which left the encoder with a class name and no way to weigh it. TZ v2.0 §11
-          // multiplies confidence into the importance of a region, and derives temporal
-          // stability from how long a track persists -- neither is computable from geometry.
+          // which left the encoder with a class name and no way to weigh it. The importance
+          // model weighs unknown classes by confidence, and derives temporal stability from
+          // how long a track persists -- neither is computable from geometry.
           TrackId = b.TrackId,
           Confidence = b.Confidence,
           Label = b.Label,

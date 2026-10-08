@@ -1324,7 +1324,7 @@
             "label": "cmake:configure:roitrc",
             // See "prepare: stack": never stop to ask which instance to terminate.
             "runOptions": { "instancePolicy": "terminateOldest" },
-            "detail": "Cheap to repeat: with the cache already present cmake re-runs in about a second. Builds the encoder library from the roitrc/sve submodule, so `git submodule update --init` has to have run once.",
+            "detail": "Cheap to repeat: with the cache already present cmake re-runs in about a second. Builds the encoder library from the roitrc/ta_roienc submodule, so `git submodule update --init` has to have run once.",
             "type": "process",
             "command": "cmake",
             "args": [ "--preset", "linux-dev" ],

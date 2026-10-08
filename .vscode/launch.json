@@ -307,12 +307,10 @@
                 // This service's own sidecar, per web_vms/dapr.yaml.
                 { "name": "DAPR_GRPC_PORT", "value": "51009" },
                 { "name": "PUBSUB_NAME", "value": "orderpubsub" },
-                // Intel's driver, unpacked by roitrc/sve/integration/scripts/fetch-intel-qsv.sh.
-                // Without it the encoder falls back to the CPU and still works.
+                // The system's Intel driver, as for media_server below. Without it the
+                // encoder falls back to the CPU and still works.
                 { "name": "LIBVA_DRIVER_NAME", "value": "iHD" },
-                { "name": "LIBVA_DRIVERS_PATH", "value": "${workspaceFolder}/roitrc/sve/runtime/intel-qsv/usr/lib/x86_64-linux-gnu/dri" },
-                { "name": "LD_LIBRARY_PATH", "value": "${workspaceFolder}/roitrc/sve/runtime/intel-qsv/usr/lib/x86_64-linux-gnu" },
-                { "name": "ONEVPL_SEARCH_PATH", "value": "${workspaceFolder}/roitrc/sve/runtime/intel-qsv/usr/lib/x86_64-linux-gnu" }
+                { "name": "LIBVA_DRIVERS_PATH", "value": "/usr/lib/x86_64-linux-gnu/dri" }
             ],
             "cwd": "${workspaceFolder}/roitrc",
             "stopAtEntry": false,

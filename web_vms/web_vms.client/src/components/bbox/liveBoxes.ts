@@ -37,7 +37,7 @@ import type { DrawableBox } from './bboxDraw'
  * on time keep it at full opacity and it never blinks; a producer that has genuinely stopped is
  * gone in two of its own intervals, whatever those are.
  *
- * The same shape as the archive's temporal-ROI hold (TZ v2.0 §13, `roi_transcode`
+ * The same shape as the archive's temporal-ROI hold (`roitrc/ta_roienc`
  * `src/adaptive/temporal_roi.cpp`), for the same reason: one setting cannot serve producers running
  * at different rates, so the duration is derived from the track's own samples instead.
  */
