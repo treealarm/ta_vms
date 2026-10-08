@@ -7,7 +7,10 @@
       "generator": "Ninja",
       "binaryDir": "build",
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "/mnt/wdblue/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_TOOLCHAIN_FILE": {
+          "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+          "type": "FILEPATH"
+        },
         "CMAKE_BUILD_TYPE": "Debug"
       }
     },
