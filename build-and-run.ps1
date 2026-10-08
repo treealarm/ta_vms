@@ -25,15 +25,16 @@ if (-not $?) {
     Write-Host "=== ta-deps already exists, skipping build ==="
 }
 
-# 1⃣.5 Base image for roi_transcode. Separate from ta-deps because it is the only one that
-# needs qsv/vaapi, and ta-deps is the only one that needs openvino.
+# 1⃣.5 Base image for roitrc. Separate from ta-deps because it is the only one that needs
+# qsv/vaapi, and ta-deps is the only one that needs openvino. Its Dockerfile belongs to the
+# encoder and comes in with the submodule, so `git submodule update --init` first.
 Write-Host "=== Checking roi-deps image ==="
 
 $exists = docker image inspect roi-deps 2>$null
 
 if (-not $?) {
     Write-Host "=== Building roi-deps ==="
-    Set-Location "$RootDir\roi_transcode\docker\intel"
+    Set-Location "$RootDir\roitrc\ta_roienc\docker\intel"
     docker build -t roi-deps -f Dockerfile.deps .
     if ($LASTEXITCODE -ne 0) {
         Write-Error "=== Failed to build roi-deps. Aborting. ==="
