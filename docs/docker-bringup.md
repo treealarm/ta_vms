@@ -81,12 +81,20 @@ docker build -t ta-deps ./ta-deps
 docker build -t roi-deps -f roitrc/ta_roienc/docker/intel/Dockerfile.deps roitrc/ta_roienc/docker/intel
 ```
 
-Scripts skip a base image if the tag already exists:
+[`../ta_install/scripts/build-images.sh`](../../ta_install/scripts/build-images.sh) gets both
+through `build-deps-images.sh`, which keys them by content: the tag is the git tree hash of the
+directory each one is built from ([`scripts/deps-image-tags.sh`](../scripts/deps-image-tags.sh)),
+so an edit to `ta-deps/` or the encoder's `docker/intel/` gets a new base, and an existing
+`treealarm/ta-deps:<hash>` is reused — or pulled, if someone already published it. Force a rebuild
+of the current one with `docker rmi treealarm/ta-deps:<hash>` (the bare `ta-deps` is only an alias).
 
-- [`build-and-run.sh`](../build-and-run.sh)
-- [`../ta_install/scripts/build-images.sh`](../../ta_install/scripts/build-images.sh)
+[`build-and-run.sh`](../build-and-run.sh) still skips a base whenever the bare tag exists,
+whatever it was built from; `docker rmi ta-deps roi-deps` forces it there.
 
-Force rebuild: `docker rmi ta-deps roi-deps` (and legacy `vms-deps` if present).
+CI cannot build either base (ta-deps alone outlasts a hosted runner's job limit), so after changing
+one, publish it before pushing the change:
+`../ta_install/scripts/push-deps-images.sh`. Otherwise the C++ jobs of
+[`images.yml`](../.github/workflows/images.yml) fail and say so.
 
 **roi-deps layers (not vcpkg alone):**
 

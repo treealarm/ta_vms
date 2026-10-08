@@ -43,15 +43,23 @@ COPY triplets/ /vcpkg-overlay-triplets/
 # needs a current iHD driver in the *runtime* image and /dev/dri passed into the container —
 # see the runtime stage of the root Dockerfile. Without either, the encoder chain falls back to
 # libx264 and everything still looks fine.
+#
+# openvino lists its features instead of taking the port's defaults, which build every model
+# frontend -- paddle, pytorch, tensorflow and tensorflow-lite included. analytics-worker reads
+# .onnx and .xml (IR) models only, so those four were most of openvino's build time and memory
+# for nothing: tensorflow alone is the frontend a single-threaded rebuild spends hours in. The
+# `core` entry is what switches the defaults off. gpu and npu stay, for ANALYTICS_DEVICE.
+#
+# VCPKG_MAX_CONCURRENCY=2: more than that and some port runs the Docker VM out of memory.
 RUN --mount=type=cache,target=/vcpkg/buildtrees \
     --mount=type=cache,target=/vcpkg/packages \
     --mount=type=cache,target=/vcpkg/downloads \
     --mount=type=cache,target=/vcpkg/binary-cache \
-    VCPKG_MAX_CONCURRENCY=1 \
+    VCPKG_MAX_CONCURRENCY=2 \
     /vcpkg/vcpkg install \
         --overlay-triplets=/vcpkg-overlay-triplets \
         protobuf \
         grpc \
         spdlog \
         ffmpeg[gpl,x264,x265,opus,vpx,aom,openssl,vaapi]:x64-linux \
-        openvino:x64-linux
+        openvino[core,cpu,gpu,npu,auto,hetero,auto-batch,ir,onnx]:x64-linux
