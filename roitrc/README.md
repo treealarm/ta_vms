@@ -10,7 +10,8 @@ roitrc/
   svc/        the service: gRPC entry points, jobs, Dapr, the path sandbox
   tools/      roi_grpc_smoke -- a client, for driving the service without VmsFs
   tests/      path_guard_test
-  scripts/    check.sh, and roi-clip.sh for an end-to-end pass with video_a
+  testdata/   synth_roi.json, the fixture check.sh drives the smoke client with
+  scripts/    check.sh
 ```
 
 The dependency arrow points one way and is narrow: this links `sve` through its public

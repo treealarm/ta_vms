@@ -106,13 +106,13 @@ target_compile_options(roi-transcode-svc PRIVATE ${ROITRC_WARNINGS})
 # ---------------------------------------------------------------------------
 # roi_grpc_smoke -- a client, so it reads roi.json the way a caller would
 #
-# Compiled from the submodule's own roi_json.cpp rather than copied: that file is the
-# adapter between roi.json and the library's vocabulary, it is the one the CLI uses, and
-# two copies of it would be two answers to "what does this JSON mean".
+# roi_json.cpp is the adapter between roi.json and the library's vocabulary. It lives here
+# rather than in the library because embedding the encoder should not drag a JSON library
+# along, and only this client ever reads a file.
 # ---------------------------------------------------------------------------
 add_executable(roi_grpc_smoke
     tools/roi_grpc_smoke.cpp
-    sve/integration/json/roi_json.cpp
+    tools/roi_json.cpp
 )
 protobuf_generate(
     TARGET roi_grpc_smoke
@@ -129,7 +129,7 @@ protobuf_generate(
 )
 target_include_directories(roi_grpc_smoke PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/sve/integration/json
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools
 )
 target_include_directories(roi_grpc_smoke SYSTEM PRIVATE ${FFMPEG_INCLUDE_DIRS})
 if(FFMPEG_LIBRARY_DIRS)

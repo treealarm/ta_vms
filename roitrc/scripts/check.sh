@@ -15,9 +15,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD="${BUILD:-${ROOT}/build}"
 SVC="${BUILD}/roi-transcode-svc"
 SMOKE="${BUILD}/roi_grpc_smoke"
-# Boxes are normalized 0..1, so the fixture from the library's repository fits whatever
-# clip we generate below.
-ROI="${ROOT}/sve/testdata/synth_roi.json"
+# Boxes are normalized 0..1, so the fixture fits whatever clip we generate below.
+ROI="${ROOT}/testdata/synth_roi.json"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -31,7 +30,7 @@ info() { printf '  info  %s\n' "$1"; }
 for f in "$SVC" "$SMOKE"; do
     [[ -x "$f" ]] || { echo "not built: $f (cmake --build $BUILD)" >&2; exit 1; }
 done
-[[ -f "$ROI" ]] || { echo "missing $ROI -- git submodule update --init" >&2; exit 1; }
+[[ -f "$ROI" ]] || { echo "missing $ROI" >&2; exit 1; }
 
 # A clip of our own rather than the library's synthetic fixture: that one is generated, not
 # committed, and this suite tests plumbing, for which any decodable video will do.
