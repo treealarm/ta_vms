@@ -27,7 +27,7 @@
 
 #include "logger/logger.h"
 
-#include "writer/processors/sve_transcode_processor.h"
+#include "writer/processors/hw_transcode_processor.h"
 
 #include "vms_cfg.pb.h"
 #include "vms_control.pb.h"
@@ -84,7 +84,7 @@ int main(int argc, char** argv)
   // surface as one stream that will not play, on whichever host happens to have such a camera.
   try
   {
-    sve_transcode_processor::validate_configuration();
+    hw_transcode_processor::validate_configuration();
     onvif_metadata_client::instance().start();
   }
   catch (const std::exception& ex)

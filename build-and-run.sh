@@ -24,8 +24,8 @@ echo "=== Checking roi-deps image ==="
 
 if ! docker image inspect roi-deps &>/dev/null; then
     echo "=== Building roi-deps ==="
-    docker build -t roi-deps -f "$ROOT_DIR/roitrc/sve/docker/intel/Dockerfile.deps" \
-        "$ROOT_DIR/roitrc/sve/docker/intel"
+    docker build -t roi-deps -f "$ROOT_DIR/roitrc/ta_roienc/docker/intel/Dockerfile.deps" \
+        "$ROOT_DIR/roitrc/ta_roienc/docker/intel"
 else
     echo "=== roi-deps already exists, skipping build ==="
 fi
