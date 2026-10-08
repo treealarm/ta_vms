@@ -34,7 +34,7 @@ set(SVE_INSTALL           OFF CACHE BOOL "" FORCE)
 # hardware entry to find and every job quietly takes the CPU path.
 set(SVE_BUILD_BACKEND_FFMPEG ON CACHE BOOL "" FORCE)
 
-add_subdirectory(sve)
+add_subdirectory(ta_roienc)
 
 set(ROITRC_WARNINGS
     $<$<CXX_COMPILER_ID:GNU>:-Wall -Wextra>

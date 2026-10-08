@@ -79,11 +79,11 @@ Both images use an overlay vcpkg triplet
 still pass `-DCMAKE_BUILD_TYPE=Release` on their own `cmake` configure step to select the release
 libs.
 
-## Граница между `roitrc/` и `roitrc/sve/`
+## Граница между `roitrc/` и `roitrc/ta_roienc/`
 
 Она проходит по тому, чьё это: **библиотека — заказчика, сервис — наш.**
 
-`roitrc/sve` — submodule на github `treealarm/roi_transcode`, библиотека
+`roitrc/ta_roienc` — submodule на github `treealarm/roi_transcode`, библиотека
 `smart-video-encoder`. Уехал из монорепо 2026-08-31 на коммите `c4bc9b8`, со всей историей,
 приёмками и собственным `CLAUDE.md`. Писался по ТЗ заказчика, но **заказчику ушла копия в
 GitLab**, а этот репозиторий развивается для себя — так что править библиотеку можно, это уже

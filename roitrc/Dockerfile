@@ -8,7 +8,7 @@
 #   docker build -t treealarm/roitrc:latest -f roitrc/Dockerfile .
 #
 # roi-deps comes from the encoder submodule, which owns it:
-#   docker build -t roi-deps -f roitrc/sve/docker/intel/Dockerfile.deps roitrc/sve/docker/intel
+#   docker build -t roi-deps -f roitrc/ta_roienc/docker/intel/Dockerfile.deps roitrc/ta_roienc/docker/intel
 
 FROM roi-deps AS builder
 

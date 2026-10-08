@@ -16,7 +16,7 @@ branch `tz-v2`.
 3. **The encoder is a separate repository, pinned as a submodule.** It left this one on
    2026-08-31 (github `treealarm/roi_transcode`) with its specification, its `STATUS.md`,
    its own `CLAUDE.md` and the whole history, because it is the customer's deliverable and
-   we are not. It comes back in at `roitrc/sve`, and `roitrc/` around it is our service:
+   we are not. It comes back in at `roitrc/ta_roienc`, and `roitrc/` around it is our service:
    the gRPC contract, the jobs, Dapr, the path sandbox — none of which appears in that
    specification. Read `CLAUDE.md`'s section on that boundary before adding anything to
    either side of it.

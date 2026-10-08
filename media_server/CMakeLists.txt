@@ -36,7 +36,7 @@ set(SVE_INSTALL           OFF CACHE BOOL "" FORCE)
 # backend chain has no hardware entry to find and every stream quietly takes the CPU path.
 set(SVE_BUILD_BACKEND_FFMPEG ON CACHE BOOL "" FORCE)
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../roitrc/sve sve)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../roitrc/ta_roienc ta_roienc)
 
 set(VMS_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_control.proto)
 set(CFG_CLIENT_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_cfg.proto)

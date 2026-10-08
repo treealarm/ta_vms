@@ -6,7 +6,7 @@ this directory is ours.
 
 ```
 roitrc/
-  sve/        submodule -> github treealarm/roi_transcode (the library)
+  ta_roienc/  submodule -> github treealarm/roi_transcode (the library)
   svc/        the service: gRPC entry points, jobs, Dapr, the path sandbox
   tools/      roi_grpc_smoke -- a client, for driving the service without VmsFs
   tests/      path_guard_test
@@ -86,8 +86,8 @@ names none simply does not re-compress.
 ## Updating the encoder
 
 ```bash
-git -C sve fetch && git -C sve checkout <commit>
-git add sve && git commit
+git -C ta_roienc fetch && git -C ta_roienc checkout <commit>
+git add ta_roienc && git commit
 ```
 
 Its own repository is where the library is developed and where its acceptance runs; bumping

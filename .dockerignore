@@ -34,15 +34,15 @@ roitrc/build/
 roitrc/out/
 # The encoder submodule's own build and fixtures. Its source is needed -- roitrc's
 # Dockerfile builds the library from it -- but these are not.
-roitrc/sve/build/
-roitrc/sve/build-int/
-roitrc/sve/build-software/
+roitrc/ta_roienc/build/
+roitrc/ta_roienc/build-int/
+roitrc/ta_roienc/build-software/
 # Unpacked Intel media runtime from an approach that was dropped: untracked, and
 # the runtime image installs the driver from apt instead.
-roitrc/sve/runtime/
+roitrc/ta_roienc/runtime/
 # Synthetic scenes and check.sh run output: hundreds of megabytes that the image
 # has no use for and that every docker build would otherwise ship as context.
-roitrc/sve/testdata/
+roitrc/ta_roienc/testdata/
 
 # -------------------
 # Node / фронт
