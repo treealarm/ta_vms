@@ -2,7 +2,7 @@
 # Prints the content tags of the two C++ base images, one KEY=value per line:
 #
 #   TA_DEPS_TAG=<hash>    tag of treealarm/ta-deps   (built from ta-deps/)
-#   ROI_DEPS_TAG=<hash>   tag of treealarm/roi-deps  (built from roitrc/sve/docker/intel/)
+#   ROI_DEPS_TAG=<hash>   tag of treealarm/roi-deps  (built from roitrc/ta_roienc/docker/intel/)
 #
 # The tag is the git tree hash of the directory the image is built from, so it changes exactly
 # when the Dockerfile or the triplet changes and never otherwise. That is what lets CI pull a
@@ -17,10 +17,10 @@
 set -euo pipefail
 
 TA_VMS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SVE_DIR="$TA_VMS_DIR/roitrc/sve"
+ENCODER_DIR="$TA_VMS_DIR/roitrc/ta_roienc"
 
-[ -f "$SVE_DIR/CMakeLists.txt" ] || {
-    echo "roitrc/sve is empty -- run: git -C $TA_VMS_DIR submodule update --init --recursive" >&2
+[ -f "$ENCODER_DIR/CMakeLists.txt" ] || {
+    echo "roitrc/ta_roienc is empty -- run: git -C $TA_VMS_DIR submodule update --init --recursive" >&2
     exit 1
 }
 
@@ -34,4 +34,4 @@ tree_tag() {
 }
 
 echo "TA_DEPS_TAG=$(tree_tag "$TA_VMS_DIR" ta-deps)"
-echo "ROI_DEPS_TAG=$(tree_tag "$SVE_DIR" docker/intel)"
+echo "ROI_DEPS_TAG=$(tree_tag "$ENCODER_DIR" docker/intel)"

@@ -12,7 +12,7 @@
 # building locally.
 #
 # Secrets: SVE_DEPLOY_KEY (private half of a read-only deploy key on treealarm/roi_transcode, the
-# private roitrc/sve submodule), DOCKER_USER, DOCKER_TOKEN.
+# private roitrc/ta_roienc submodule), DOCKER_USER, DOCKER_TOKEN.
 
 name: images
 
@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v5
 
       # Groups follow what each Dockerfile actually reads. media_server links the encoder through
-      # add_subdirectory(../roitrc/sve), so a submodule bump rebuilds `vms` as well as `roitrc`.
+      # add_subdirectory(../roitrc/ta_roienc), so a submodule bump rebuilds `vms` as well as `roitrc`.
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -54,7 +54,7 @@ jobs:
               - cmake/**
               - proto/**
               - ta-deps/**
-              - roitrc/sve
+              - roitrc/ta_roienc
               - scripts/deps-image-tags.sh
               - .github/workflows/images.yml
             roitrc:
