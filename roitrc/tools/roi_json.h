@@ -4,14 +4,14 @@
 // embedding the encoder should not drag a JSON library along, and only the CLI
 // and the service ever read a file.
 
-#include "sve/types.h"
+#include "ta_roienc/types.h"
 
 #include <string>
 #include <vector>
 
 struct RoiJson {
-    sve::Quality quality;
-    std::vector<sve::Box> boxes;
+    ta_roienc::Quality quality;
+    std::vector<ta_roienc::Box> boxes;
 };
 
 RoiJson load_roi_json(const std::string& path);

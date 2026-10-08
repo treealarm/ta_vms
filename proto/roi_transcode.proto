@@ -93,7 +93,6 @@ enum Encoder {
   ENCODER_AUTO  = 0;
   ENCODER_QSV   = 1;
   ENCODER_VAAPI = 2;
-  ENCODER_NVENC = 3;
   // libx264 or libx265, whichever the codec asks for.
   ENCODER_CPU   = 4;
 }

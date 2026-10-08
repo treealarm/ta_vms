@@ -22,17 +22,15 @@ option(ROITRC_BUILD_TESTS "Build the service's own tests" ON)
 # The library, and nothing else from that repository: its integration/ holds the customer's
 # acceptance harness (the CLI and check.sh), and its unit tests run in its own CI. Forced
 # rather than merely set, because these are options in the subproject's own cache.
-set(SVE_BUILD_INTEGRATION OFF CACHE BOOL "" FORCE)
-set(SVE_BUILD_TESTS       OFF CACHE BOOL "" FORCE)
-set(SVE_BUILD_TOOLS       OFF CACHE BOOL "" FORCE)
-set(SVE_INSTALL           OFF CACHE BOOL "" FORCE)
+set(TA_ROIENC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(TA_ROIENC_INSTALL     OFF CACHE BOOL "" FORCE)
 
 # The libavcodec-backed backends, which is where QSV and VA-API live. Off in the library by
 # default: its normative dependency graph is the direct libx264/libx265 components, and the
 # FFmpeg-backed encoders are the reference those are measured against. This service exists to
 # re-compress clips on hardware, so it turns them on -- without this the backend chain has no
 # hardware entry to find and every job quietly takes the CPU path.
-set(SVE_BUILD_BACKEND_FFMPEG ON CACHE BOOL "" FORCE)
+set(TA_ROIENC_BUILD_BACKEND_FFMPEG ON CACHE BOOL "" FORCE)
 
 add_subdirectory(ta_roienc)
 
@@ -95,7 +93,7 @@ target_include_directories(roi-transcode-svc PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 target_link_libraries(roi-transcode-svc PRIVATE
-    sve_all
+    ta_roienc_all
     protobuf::libprotobuf
     gRPC::grpc
     gRPC::grpc++
@@ -136,7 +134,7 @@ if(FFMPEG_LIBRARY_DIRS)
     target_link_directories(roi_grpc_smoke PRIVATE ${FFMPEG_LIBRARY_DIRS})
 endif()
 target_link_libraries(roi_grpc_smoke PRIVATE
-    sve_all
+    ta_roienc_all
     nlohmann_json::nlohmann_json
     ${FFMPEG_LIBRARIES}
     protobuf::libprotobuf

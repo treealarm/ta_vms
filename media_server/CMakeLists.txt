@@ -24,17 +24,15 @@ pkg_check_modules(FFMPEG REQUIRED
 # Only the library: its integration/ holds a CLI and an acceptance harness, its unit tests run in
 # its own repository, and sve-capabilities is a diagnostic we do not ship. Forced rather than
 # merely set, because these are options in the subproject's own cache.
-set(SVE_BUILD_INTEGRATION OFF CACHE BOOL "" FORCE)
-set(SVE_BUILD_TESTS       OFF CACHE BOOL "" FORCE)
-set(SVE_BUILD_TOOLS       OFF CACHE BOOL "" FORCE)
-set(SVE_INSTALL           OFF CACHE BOOL "" FORCE)
+set(TA_ROIENC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(TA_ROIENC_INSTALL     OFF CACHE BOOL "" FORCE)
 
 # The libavcodec-backed backends, which is where h264_vaapi lives. Off in the library by default:
 # its normative dependency graph is the direct libx264/libx265 components, and the FFmpeg-backed
 # encoders are the reference those are measured against. That default is right for the library and
 # wrong for us -- hardware is the entire reason this service links sve at all, and without this the
 # backend chain has no hardware entry to find and every stream quietly takes the CPU path.
-set(SVE_BUILD_BACKEND_FFMPEG ON CACHE BOOL "" FORCE)
+set(TA_ROIENC_BUILD_BACKEND_FFMPEG ON CACHE BOOL "" FORCE)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../roitrc/ta_roienc ta_roienc)
 
@@ -201,7 +199,7 @@ target_link_libraries(vms
     # Session sits in a separate target (the specification calls a demuxer and decoder around the
     # encoder an example, kept apart so libavformat does not spread into the core), and the
     # backend registry that RegisterDeploymentBackends fills is a separate object library again.
-    sve_all
+    ta_roienc_all
     ${FFMPEG_LIBRARIES}
     protobuf::libprotobuf
     gRPC::grpc

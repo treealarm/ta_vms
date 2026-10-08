@@ -32,9 +32,9 @@ double sample_time(const json& row)
     return row.value("t", 0.0);
 }
 
-sve::Box parse_box(const json& row, double t_sec)
+ta_roienc::Box parse_box(const json& row, double t_sec)
 {
-    sve::Box b;
+    ta_roienc::Box b;
     b.t_sec = t_sec;
     b.kind = row.value("kind", std::string{});
     b.x = box_dim(row, "x", "bbox_x");
@@ -91,7 +91,7 @@ RoiJson load_roi_json(const std::string& path)
 
     if (root.contains("kinds") && root["kinds"].is_object()) {
         for (auto it = root["kinds"].begin(); it != root["kinds"].end(); ++it) {
-            sve::KindQuality cfg;
+            ta_roienc::KindQuality cfg;
             cfg.qp_delta = it.value().value("qp_delta", -6);
             cfg.pad = it.value().value("pad_norm", doc.quality.pad);
             doc.quality.kinds.emplace(it.key(), cfg);
