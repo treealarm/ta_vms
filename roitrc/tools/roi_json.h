@@ -1,8 +1,8 @@
 #pragma once
 
-// roi.json -> the vocabulary sve takes. Deliberately outside the library:
-// embedding the encoder should not drag a JSON library along, and only the CLI
-// and the service ever read a file.
+// roi.json -> the vocabulary ta_roienc takes. Deliberately outside the library:
+// embedding the encoder should not drag a JSON library along, and only this
+// client ever reads a file.
 
 #include "ta_roienc/types.h"
 

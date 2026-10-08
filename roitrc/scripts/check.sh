@@ -69,7 +69,7 @@ if "$SMOKE" "127.0.0.1:${port}" "$SRC" "${WORK}/job.mp4" "$ROI" >"${WORK}/job.lo
     pass "file job completed"
     # Which backend opened is the library's business and is asserted in its own repository.
     # Here it only has to be reported: a job that says nothing about how it encoded is a
-    # job nobody can diagnose, and §50 forbids a fallback that leaves no trace.
+    # job nobody can diagnose, and a fallback must not leave no trace.
     backend=$(grep -oE 'encoder=[^ ]+' "${WORK}/job.log" | head -1 | cut -d= -f2-)
     if [[ -n "$backend" ]]; then pass "job reports the backend it used"; info "backend: ${backend}"
     else fail "job reports no backend"; fi

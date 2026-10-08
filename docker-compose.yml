@@ -582,8 +582,8 @@ services:
 
   roitrc:
     profiles: [app]
-    # The service is ours; the encoder it wraps is the customer's deliverable and comes
-    # in as the roitrc/ta_roienc submodule. Context is the repository root because the build
+    # The encoder library it wraps comes in as the roitrc/ta_roienc submodule. Context is
+    # the repository root because the build
     # needs both roitrc/ and proto/. Its base image, roi-deps, is built from the
     # submodule -- see build-and-run.sh.
     build:

@@ -7,7 +7,7 @@
 #include "logger/logger.h"
 #include "writer/processors/audio_copy_processor.h"
 #include "writer/processors/audio_transcode_processor.h"
-#include "writer/processors/sve_transcode_processor.h"
+#include "writer/processors/hw_transcode_processor.h"
 #include "writer/processors/video_copy_processor.h"
 #include "writer/processors/video_transcode_processor.h"
 
@@ -26,9 +26,9 @@ bool compat_sink::init(const avcodec_parameters_ptr& codec_parameters, AVRationa
 
   std::lock_guard<std::mutex> lock(m_mutex);
 
-  // Candidates in preference order. Video transcode offers two: the hardware encoder through sve,
-  // and the CPU one behind it. The second is not a duplicate of sve's own software backend -- it
-  // asks libx264 for `tune=zerolatency` where sve does not, which on a 1080p25 stream is 4 frames
+  // Candidates in preference order. Video transcode offers two: the hardware encoder through ta_roienc,
+  // and the CPU one behind it. The second is not a duplicate of ta_roienc's own software backend -- it
+  // asks libx264 for `tune=zerolatency` where ta_roienc does not, which on a 1080p25 stream is 4 frames
   // in flight instead of 34.
   for (auto& candidate : create_processors(codec_parameters))
   {
@@ -86,10 +86,10 @@ std::vector<std::unique_ptr<stream_processor>> compat_sink::create_processors(
       return candidates;
     }
 
-    // Hardware first. sve_transcode_processor declines -- returns false from init -- when no
+    // Hardware first. hw_transcode_processor declines -- returns false from init -- when no
     // hardware backend is asked for or none opens, and the CPU processor behind it is the one
     // this path has always used.
-    candidates.push_back(std::make_unique<sve_transcode_processor>());
+    candidates.push_back(std::make_unique<hw_transcode_processor>());
     candidates.push_back(std::make_unique<video_transcode_processor>());
     return candidates;
   }

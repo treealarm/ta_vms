@@ -17,21 +17,19 @@ pkg_check_modules(FFMPEG REQUIRED
     libswresample
 )
 
-# The hardware encoder chain, from the sve submodule under roitrc/. Live HEVC->H.264 for WebRTC
-# goes through it (see writer/processors/sve_transcode_processor.cpp) rather than through a
+# The hardware encoder chain, from the ta_roienc submodule under roitrc/. Live HEVC->H.264 for
+# WebRTC goes through it (see writer/processors/hw_transcode_processor.cpp) rather than through a
 # second copy of the same probe-and-fall-back logic written here.
 #
-# Only the library: its integration/ holds a CLI and an acceptance harness, its unit tests run in
-# its own repository, and sve-capabilities is a diagnostic we do not ship. Forced rather than
-# merely set, because these are options in the subproject's own cache.
+# Only the library: its unit tests run in its own repository. Forced rather than merely set,
+# because these are options in the subproject's own cache.
 set(TA_ROIENC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(TA_ROIENC_INSTALL     OFF CACHE BOOL "" FORCE)
 
-# The libavcodec-backed backends, which is where h264_vaapi lives. Off in the library by default:
-# its normative dependency graph is the direct libx264/libx265 components, and the FFmpeg-backed
-# encoders are the reference those are measured against. That default is right for the library and
-# wrong for us -- hardware is the entire reason this service links sve at all, and without this the
-# backend chain has no hardware entry to find and every stream quietly takes the CPU path.
+# The libavcodec-backed backends, which is where h264_vaapi lives. Off in the library by default,
+# and wrong for us -- hardware is the entire reason this service links ta_roienc at all, and
+# without this the backend chain has no hardware entry to find and every stream quietly takes the
+# CPU path.
 set(TA_ROIENC_BUILD_BACKEND_FFMPEG ON CACHE BOOL "" FORCE)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../roitrc/ta_roienc ta_roienc)
@@ -122,8 +120,8 @@ set(SOURCES
     writer/processors/video_copy_processor.h
     writer/processors/audio_copy_processor.cpp
     writer/processors/audio_copy_processor.h
-    writer/processors/sve_transcode_processor.cpp
-    writer/processors/sve_transcode_processor.h
+    writer/processors/hw_transcode_processor.cpp
+    writer/processors/hw_transcode_processor.h
     writer/processors/video_transcode_processor.cpp
     writer/processors/video_transcode_processor.h
     writer/processors/audio_transcode_processor.cpp

@@ -1,4 +1,4 @@
-#include "writer/processors/sve_transcode_processor.h"
+#include "writer/processors/hw_transcode_processor.h"
 
 #include <algorithm>
 #include <ranges>
@@ -27,15 +27,16 @@ extern "C" {
 
 namespace {
 
-// VMS_VIDEO_ENCODER names the backend chain, in whatever spelling ta_roienc::backend_choice_from_name
-// accepts ("auto", "vaapi", "x264", "cpu", ...). Unknown text throws rather than defaulting: a
-// misspelled backend quietly becoming a different one is the whole failure this guards against.
+// VMS_VIDEO_ENCODER names the backend chain, in whatever spelling
+// ta_roienc::backend_choice_from_name accepts ("auto", "vaapi", "x264", "cpu", ...). Unknown text
+// throws rather than defaulting: a misspelled backend quietly becoming a different one is the
+// whole failure this guards against.
 //
-// Unset is not the same as "auto". sve ships no default order on purpose -- §8.4's position is
-// that the only honest default is the one whoever deploys the system chooses for their own
-// hardware -- so this is ours, and it names one backend: VA-API, which is the only hardware
-// encoder ta-deps builds ffmpeg with. Writing `auto` explicitly still gets the library's full
-// order, QSV and NVENC included, and they will decline in turn on a build without them.
+// Unset is not the same as "auto". The library ships no default order on purpose -- the only
+// honest default is the one whoever deploys the system chooses for their own hardware -- so this
+// is ours, and it names one backend: VA-API, which is the only hardware encoder ta-deps builds
+// ffmpeg with. Writing `auto` explicitly still gets the library's full order, QSV included, and
+// those backends will decline in turn on a build without them.
 ta_roienc::BackendChoice encoder_choice_from_env()
 {
   const char* raw = std::getenv("VMS_VIDEO_ENCODER");
@@ -61,8 +62,8 @@ bool is_hardware(ta_roienc::Backend backend)
 
 // Whether this choice can reach hardware at all.
 //
-// It decides whether sve is used for the stream or whether compat_sink keeps the CPU processor
-// it had, and the reason is measured rather than stylistic: sve's software backend sets libx264's
+// It decides whether ta_roienc is used for the stream or whether compat_sink keeps the CPU processor
+// it had, and the reason is measured rather than stylistic: ta_roienc's software backend sets libx264's
 // `preset` but no `tune`, so it runs with x264's default lookahead -- 34 frames in flight on a
 // 1080p25 clip, about 1.4 seconds, against 4 frames through h264_vaapi. video_transcode_processor
 // asks for `tune=zerolatency` and does not have that delay, and for live video a second and a
@@ -89,7 +90,7 @@ std::optional<ta_roienc::InputCodec> input_codec_of(AVCodecID id)
 //
 // video_transcode_processor computed a *peak* here and fed it to rc_max_rate/rc_buffer_size, to
 // stop keyframes bursting ten to twenty times the average and stalling the WebRTC client's
-// jitter buffer -- the periodic freeze on HEVC->H.264 streams. sve's knob is the average, and it
+// jitter buffer -- the periodic freeze on HEVC->H.264 streams. ta_roienc's knob is the average, and it
 // derives its own ~1s peak allowance from it, so the same reasoning arrives at half the old
 // number: the old ceiling was explicitly twice what the source averaged.
 int64_t target_bitrate_for(const AVCodecParameters& params, double fps)
@@ -133,9 +134,9 @@ avcodec_parameters_ptr make_output_parameters(const ta_roienc::StreamInfo& info)
 }  // namespace
 
 // Encoded packets on their way back out to compat_sink's sinks.
-class sve_transcode_processor::packet_sink final : public ta_roienc::PacketHandler {
+class hw_transcode_processor::packet_sink final : public ta_roienc::PacketHandler {
 public:
-  packet_sink(sve_transcode_processor& owner, emit_fn emit)
+  packet_sink(hw_transcode_processor& owner, emit_fn emit)
     : m_owner(owner), m_emit(std::move(emit))
   {
   }
@@ -144,11 +145,11 @@ public:
   {
     m_out_codec_parameters = make_output_parameters(info);
     if (!m_out_codec_parameters) {
-      logger::instance().error("sve_transcode_processor: failed to build output codec parameters");
+      logger::instance().error("hw_transcode_processor: failed to build output codec parameters");
     }
 
     logger::instance().info(std::format(
-      "sve_transcode_processor: encoding {}x{} with backend '{}'",
+      "hw_transcode_processor: encoding {}x{} with backend '{}'",
       info.width, info.height, info.backend_name));
   }
 
@@ -160,7 +161,7 @@ public:
 
     avpacket_ptr pkt(av_packet_alloc(), avpacket_deleter{});
     if (!pkt || av_new_packet(pkt.get(), static_cast<int>(packet.payload.size())) < 0) {
-      logger::instance().warning("sve_transcode_processor: failed to allocate output packet");
+      logger::instance().warning("hw_transcode_processor: failed to allocate output packet");
       return;
     }
 
@@ -194,7 +195,7 @@ public:
   int64_t emitted() const { return m_emitted; }
 
 private:
-  sve_transcode_processor& m_owner;
+  hw_transcode_processor& m_owner;
   emit_fn m_emit;
   avcodec_parameters_ptr m_out_codec_parameters;
   int64_t m_emitted = 0;
@@ -206,14 +207,14 @@ constexpr std::size_t kMaxPendingTimestamps = 250;
 // Roughly ten seconds of failures at 25 fps.
 constexpr int64_t kSubmitFailureLogInterval = 250;
 
-sve_transcode_processor::sve_transcode_processor() = default;
+hw_transcode_processor::hw_transcode_processor() = default;
 
-sve_transcode_processor::~sve_transcode_processor()
+hw_transcode_processor::~hw_transcode_processor()
 {
   flush();
 }
 
-void sve_transcode_processor::validate_configuration()
+void hw_transcode_processor::validate_configuration()
 {
   try {
     const ta_roienc::BackendChoice choice = encoder_choice_from_env();
@@ -225,37 +226,37 @@ void sve_transcode_processor::validate_configuration()
       order += ta_roienc::backend_name(backend);
     }
     logger::instance().info(std::format(
-      "sve_transcode_processor: video encoder backend order is {}",
+      "hw_transcode_processor: video encoder backend order is {}",
       order.empty() ? ta_roienc::backend_name(choice.kind) : order));
   }
   catch (const std::exception& ex) {
-    // Re-thrown only to name the variable. sve's own refusal already lists the spellings it
+    // Re-thrown only to name the variable. ta_roienc's own refusal already lists the spellings it
     // accepts, which is why no copy of that list is kept here to go stale.
     throw std::invalid_argument(std::format("VMS_VIDEO_ENCODER: {}", ex.what()));
   }
 }
 
-bool sve_transcode_processor::init(
+bool hw_transcode_processor::init(
   const avcodec_parameters_ptr& codec_parameters,
   AVRational time_base,
   AVRational frame_rate,
   emit_fn emit)
 {
   if (!codec_parameters) {
-    logger::instance().warning("sve_transcode_processor: empty codec parameters");
+    logger::instance().warning("hw_transcode_processor: empty codec parameters");
     return false;
   }
 
   const auto input_codec = input_codec_of(codec_parameters->codec_id);
   if (!input_codec) {
     logger::instance().error(std::format(
-      "sve_transcode_processor: unsupported input codec id {}",
+      "hw_transcode_processor: unsupported input codec id {}",
       static_cast<int>(codec_parameters->codec_id)));
     return false;
   }
 
   if (codec_parameters->width <= 0 || codec_parameters->height <= 0) {
-    logger::instance().error("sve_transcode_processor: input has no frame size");
+    logger::instance().error("hw_transcode_processor: input has no frame size");
     return false;
   }
 
@@ -285,21 +286,21 @@ bool sve_transcode_processor::init(
     // Not a failure: compat_sink falls back to the CPU processor, which is the better software
     // encoder of the two. Logged at debug so it does not repeat as noise on every stream.
     logger::instance().debug(
-      "sve_transcode_processor: no hardware backend requested, leaving this stream to the CPU path");
+      "hw_transcode_processor: no hardware backend requested, leaving this stream to the CPU path");
     return false;
   }
 
   params.settings.encoder = choice.kind;
   params.settings.backend_selection = choice.selection;
   params.settings.codec = ta_roienc::Codec::H264;
-  // libx264's own default, which is what the CPU path used by never setting one. sve's default
+  // libx264's own default, which is what the CPU path used by never setting one. ta_roienc's default
   // of 28 is tuned for archive re-compression, where a visibly softer picture buys disk space.
   params.settings.crf = 23;
   // gop 0 is two seconds, which is what a WebRTC viewer wants: a late joiner waits that long for
   // a picture, and a lost keyframe costs that long to recover.
   params.settings.gop = 0;
   params.settings.preset = ta_roienc::Preset::Fastest;
-  // sve exists to spend fewer bits away from the regions a detector found, and its default
+  // ta_roienc exists to spend fewer bits away from the regions a detector found, and its default
   // penalises the background by 6 QP. We submit no regions at all, so that default would apply
   // to the whole picture and hand the viewer a visibly softer stream than the CPU path did.
   // Zero is "leave the background alone", which for a plain transcode is the entire job.
@@ -315,27 +316,27 @@ bool sve_transcode_processor::init(
   catch (const std::exception& ex) {
     // Nothing above this catches: compat_sink is driven straight from the RTSP read loop, and an
     // exception let out here takes the whole service down over one misconfigured camera.
-    logger::instance().error(std::format("sve_transcode_processor: failed to open session: {}", ex.what()));
+    logger::instance().error(std::format("hw_transcode_processor: failed to open session: {}", ex.what()));
     m_session.reset();
     m_sink.reset();
     return false;
   }
 
-  // What was asked for is not what opened. `VMS_VIDEO_ENCODER=auto` asks sve for its whole chain,
+  // What was asked for is not what opened. `VMS_VIDEO_ENCODER=auto` asks ta_roienc for its whole chain,
   // and on a host without /dev/dri that chain ends at X264 -- inside a session that has already
   // opened, so nothing above would notice. That is the one outcome this processor must not
-  // produce: sve's software backend sets libx264's preset but no tune, and measured 34 frames in
+  // produce: ta_roienc's software backend sets libx264's preset but no tune, and measured 34 frames in
   // flight against 4 through h264_vaapi. Handing the stream back lets compat_sink build
   // video_transcode_processor, which asks for tune=zerolatency and does not have that delay.
   //
-  // The encoder alone decides this, and the decoder deliberately does not enter into it. sve now
+  // The encoder alone decides this, and the decoder deliberately does not enter into it. ta_roienc now
   // decodes on the encoder's device when it has one, but a decoder that falls back to software --
   // a profile the silicon does not implement -- still leaves a hardware encode worth having: that
   // was the whole 43% before the decode was accelerated at all. Handing the stream back over the
   // decoder would trade a real saving for none.
   if (!is_hardware(m_session->encoder_used())) {
     logger::instance().info(std::format(
-      "sve_transcode_processor: backend chain settled on '{}', which is software -- leaving this "
+      "hw_transcode_processor: backend chain settled on '{}', which is software -- leaving this "
       "stream to the CPU path, which encodes with tune=zerolatency",
       m_session->backend_name()));
     m_session.reset();
@@ -344,7 +345,7 @@ bool sve_transcode_processor::init(
   }
 
   logger::instance().info(std::format(
-    "sve_transcode_processor: {} -> h264, backend '{}', target {} bit/s",
+    "hw_transcode_processor: {} -> h264, backend '{}', target {} bit/s",
     avcodec_get_name(codec_parameters->codec_id),
     m_session->backend_name(),
     params.settings.rate_control.target_bitrate));
@@ -364,7 +365,7 @@ bool sve_transcode_processor::init(
   return true;
 }
 
-int64_t sve_transcode_processor::take_output_pts()
+int64_t hw_transcode_processor::take_output_pts()
 {
   // Empty means the encoder handed back more packets than access units went in -- flush() can,
   // and a decoder that emitted two frames for one submission would. Extrapolating one frame
@@ -380,7 +381,7 @@ int64_t sve_transcode_processor::take_output_pts()
   return m_last_emitted_pts;
 }
 
-void sve_transcode_processor::note_input_timestamp(const AVPacket* packet, AVRational time_base)
+void hw_transcode_processor::note_input_timestamp(const AVPacket* packet, AVRational time_base)
 {
   const int64_t in_ts = packet->pts != AV_NOPTS_VALUE ? packet->pts : packet->dts;
   if (in_ts == AV_NOPTS_VALUE) {
@@ -398,7 +399,7 @@ void sve_transcode_processor::note_input_timestamp(const AVPacket* packet, AVRat
   m_last_in_ts = in_ts;
 }
 
-int64_t sve_transcode_processor::next_output_pts(const std::shared_ptr<media_packet>& media)
+int64_t hw_transcode_processor::next_output_pts(const std::shared_ptr<media_packet>& media)
 {
   // Live path: the receive clock is authoritative when available. Overloaded cameras stamp
   // frames at the nominal frame interval (e.g. 50ms at "20fps") while actually delivering
@@ -445,7 +446,7 @@ int64_t sve_transcode_processor::next_output_pts(const std::shared_ptr<media_pac
   return out_pts;
 }
 
-void sve_transcode_processor::process(const std::shared_ptr<media_packet>& media)
+void hw_transcode_processor::process(const std::shared_ptr<media_packet>& media)
 {
   if (!media || !media->packet || !m_session) {
     return;
@@ -486,7 +487,7 @@ void sve_transcode_processor::process(const std::shared_ptr<media_packet>& media
     // the rest of the log rather than explaining anything the first line did not.
     if (m_submit_failures == 0 || m_submit_failures % kSubmitFailureLogInterval == 0) {
       logger::instance().warning(std::format(
-        "sve_transcode_processor: submit failed (failure {} for this stream): {}",
+        "hw_transcode_processor: submit failed (failure {} for this stream): {}",
         m_submit_failures + 1, ex.what()));
     }
     ++m_submit_failures;
@@ -500,7 +501,7 @@ void sve_transcode_processor::process(const std::shared_ptr<media_packet>& media
     m_path_reported = true;
     const std::string decoder = m_session->decoder_hardware();
     logger::instance().info(std::format(
-      "sve_transcode_processor: decoding on {}, encoding on '{}'",
+      "hw_transcode_processor: decoding on {}, encoding on '{}'",
       decoder.empty() ? "the CPU" : decoder, m_session->backend_name()));
   }
 
@@ -509,13 +510,13 @@ void sve_transcode_processor::process(const std::shared_ptr<media_packet>& media
   if (!m_starvation_reported && m_submitted >= 100 && m_sink->emitted() == 0) {
     m_starvation_reported = true;
     logger::instance().error(std::format(
-      "sve_transcode_processor: {} access unit(s) submitted and nothing encoded — the source is "
+      "hw_transcode_processor: {} access unit(s) submitted and nothing encoded — the source is "
       "most likely length-prefixed (AVCC/HVCC) rather than Annex-B, which the decoder's parser "
       "cannot read", m_submitted));
   }
 }
 
-void sve_transcode_processor::flush()
+void hw_transcode_processor::flush()
 {
   if (!m_session) {
     return;
@@ -524,28 +525,28 @@ void sve_transcode_processor::flush()
   try {
     const ta_roienc::Report report = m_session->finish();
     logger::instance().info(std::format(
-      "sve_transcode_processor: closed after {} frame(s), {} packet(s) on backend '{}'",
+      "hw_transcode_processor: closed after {} frame(s), {} packet(s) on backend '{}'",
       report.frames, report.packets, report.backend_name));
   }
   catch (const std::exception& ex) {
-    logger::instance().warning(std::format("sve_transcode_processor: finish failed: {}", ex.what()));
+    logger::instance().warning(std::format("hw_transcode_processor: finish failed: {}", ex.what()));
   }
 
   m_session.reset();
 }
 
-const avcodec_parameters_ptr& sve_transcode_processor::output_codec_parameters() const
+const avcodec_parameters_ptr& hw_transcode_processor::output_codec_parameters() const
 {
   static const avcodec_parameters_ptr none;
   return m_sink ? m_sink->output_codec_parameters() : none;
 }
 
-AVRational sve_transcode_processor::output_time_base() const
+AVRational hw_transcode_processor::output_time_base() const
 {
   return m_out_time_base;
 }
 
-std::string sve_transcode_processor::encoder_name() const
+std::string hw_transcode_processor::encoder_name() const
 {
   // The backend that actually opened, not the one asked for: under a chain they differ, and the
   // whole point of showing this is to see which one won.

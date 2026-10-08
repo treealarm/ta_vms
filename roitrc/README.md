@@ -1,8 +1,8 @@
 # roitrc — ROI re-compression service
 
-ta_vms' service around **smart-video-encoder**. The encoder is the customer's deliverable
-and lives in its own repository, pinned here as the `sve` submodule; everything else in
-this directory is ours.
+ta_vms' service around the **ta_roienc** encoder library, which lives in its own repository
+and is pinned here as the `ta_roienc` submodule; everything else in this directory is the
+service.
 
 ```
 roitrc/
@@ -14,10 +14,10 @@ roitrc/
   scripts/    check.sh
 ```
 
-The dependency arrow points one way and is narrow: this links `sve` through its public
-headers alone — `sve/sve.h`, `sve/session.h`, `sve/types.h`. Nothing here reaches into the
-library's `src/`, and nothing of ours belongs on the other side of that line: the
-customer's specification describes a library, not a microservice.
+The dependency arrow points one way and is narrow: this links `ta_roienc` through its public
+headers alone — `ta_roienc/ta_roienc.h`, `ta_roienc/session.h`, `ta_roienc/types.h`. Nothing
+here reaches into the library's `src/`, and nothing of the service belongs on the other side
+of that line.
 
 ## Build
 
@@ -31,8 +31,7 @@ cmake --build build -j
 
 `check.sh` covers what this service has to get right: startup refusing a broken
 configuration, both gRPC entry points, the path sandbox, and the unit tests. The library's
-own acceptance — ROI quality, backends, frame/file parity — runs in its repository, against
-the library directly.
+own unit tests run in its repository.
 
 ## Run
 
@@ -90,5 +89,5 @@ git -C ta_roienc fetch && git -C ta_roienc checkout <commit>
 git add ta_roienc && git commit
 ```
 
-Its own repository is where the library is developed and where its acceptance runs; bumping
-the pin is a separate commit so the history says which encoder went into a release.
+Its own repository is where the library is developed and tested; bumping the pin is a
+separate commit so the history says which encoder went into a release.

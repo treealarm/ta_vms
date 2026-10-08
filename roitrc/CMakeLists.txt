@@ -1,15 +1,13 @@
 # roitrc -- ta_vms' ROI re-compression service.
 #
-# The encoder itself is the customer's deliverable and lives in its own repository
-# (github treealarm/roi_transcode), pinned here as the `sve` submodule. This directory is
-# everything about re-compression that is ours and only ours: the gRPC contract VmsFs
-# speaks, the job model that mirrors media_server's EdgeImport, the Dapr notifications and
-# the path sandbox. None of it appears in the customer's specification, which is the whole
-# reason it is here rather than there.
+# The encoder library lives in its own repository (github treealarm/roi_transcode), pinned here
+# as the `ta_roienc` submodule. This directory is everything about re-compression that is the
+# service's: the gRPC contract VmsFs speaks, the job model that mirrors media_server's
+# EdgeImport, the Dapr notifications and the path sandbox.
 #
-# The dependency arrow points one way and is narrow: this links `sve` through its public
-# headers alone -- sve/sve.h, sve/session.h, sve/types.h -- and reaches into none of the
-# library's internals.
+# The dependency arrow points one way and is narrow: this links `ta_roienc` through its public
+# headers alone -- ta_roienc/ta_roienc.h, ta_roienc/session.h, ta_roienc/types.h -- and reaches
+# into none of the library's internals.
 
 cmake_minimum_required(VERSION 3.22)
 project(roitrc CXX)
@@ -19,17 +17,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(ROITRC_BUILD_TESTS "Build the service's own tests" ON)
 
-# The library, and nothing else from that repository: its integration/ holds the customer's
-# acceptance harness (the CLI and check.sh), and its unit tests run in its own CI. Forced
-# rather than merely set, because these are options in the subproject's own cache.
+# The library, and nothing else from that repository: its unit tests run in its own repository.
+# Forced rather than merely set, because these are options in the subproject's own cache.
 set(TA_ROIENC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(TA_ROIENC_INSTALL     OFF CACHE BOOL "" FORCE)
 
 # The libavcodec-backed backends, which is where QSV and VA-API live. Off in the library by
-# default: its normative dependency graph is the direct libx264/libx265 components, and the
-# FFmpeg-backed encoders are the reference those are measured against. This service exists to
-# re-compress clips on hardware, so it turns them on -- without this the backend chain has no
-# hardware entry to find and every job quietly takes the CPU path.
+# default; this service exists to re-compress clips on hardware, so it turns them on -- without
+# this the backend chain has no hardware entry to find and every job quietly takes the CPU path.
 set(TA_ROIENC_BUILD_BACKEND_FFMPEG ON CACHE BOOL "" FORCE)
 
 add_subdirectory(ta_roienc)
