@@ -62,40 +62,40 @@ set(DAPR_PROTO_FILE ${ROI_PROTO_DIR}/dapr/dapr_runtime.proto)
 # ---------------------------------------------------------------------------
 # The service
 # ---------------------------------------------------------------------------
-add_executable(roi-transcode-svc
-    svc/svc_main.cpp
-    svc/job/roi_job_manager.cpp
-    svc/grpc/proto_convert.cpp
-    svc/grpc/roi_file_service.cpp
-    svc/grpc/roi_stream_service.cpp
-    svc/grpc/dapr_publisher.cpp
-    svc/grpc/path_guard.cpp
+add_executable(roitrc
+    service/main.cpp
+    service/job/roi_job_manager.cpp
+    service/grpc/proto_convert.cpp
+    service/grpc/roi_file_service.cpp
+    service/grpc/roi_stream_service.cpp
+    service/grpc/dapr_publisher.cpp
+    service/grpc/path_guard.cpp
 )
 protobuf_generate(
-    TARGET roi-transcode-svc
+    TARGET roitrc
     IMPORT_DIRS ${ROI_PROTO_DIR}
     PROTOS ${ROI_PROTO_FILE} ${DAPR_PROTO_FILE}
 )
 protobuf_generate(
-    TARGET roi-transcode-svc
+    TARGET roitrc
     LANGUAGE grpc
     IMPORT_DIRS ${ROI_PROTO_DIR}
     PROTOS ${ROI_PROTO_FILE} ${DAPR_PROTO_FILE}
     PLUGIN protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>
     GENERATE_EXTENSIONS .grpc.pb.cc .grpc.pb.h
 )
-target_include_directories(roi-transcode-svc PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/svc
+target_include_directories(roitrc PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/service
     ${CMAKE_CURRENT_BINARY_DIR}
 )
-target_link_libraries(roi-transcode-svc PRIVATE
+target_link_libraries(roitrc PRIVATE
     ta_roienc_all
     protobuf::libprotobuf
     gRPC::grpc
     gRPC::grpc++
 )
-target_compile_definitions(roi-transcode-svc PRIVATE _CRT_SECURE_NO_WARNINGS)
-target_compile_options(roi-transcode-svc PRIVATE ${ROITRC_WARNINGS})
+target_compile_definitions(roitrc PRIVATE _CRT_SECURE_NO_WARNINGS)
+target_compile_options(roitrc PRIVATE ${ROITRC_WARNINGS})
 
 # ---------------------------------------------------------------------------
 # roi_grpc_smoke -- a client, so it reads roi.json the way a caller would
@@ -144,8 +144,8 @@ target_compile_options(roi_grpc_smoke PRIVATE ${ROITRC_WARNINGS})
 # ---------------------------------------------------------------------------
 if(ROITRC_BUILD_TESTS)
     enable_testing()
-    add_executable(path_guard_test tests/path_guard_test.cpp svc/grpc/path_guard.cpp)
-    target_include_directories(path_guard_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/svc)
+    add_executable(path_guard_test tests/path_guard_test.cpp service/grpc/path_guard.cpp)
+    target_include_directories(path_guard_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/service)
     target_compile_options(path_guard_test PRIVATE ${ROITRC_WARNINGS})
     add_test(NAME path_guard COMMAND path_guard_test)
 endif()

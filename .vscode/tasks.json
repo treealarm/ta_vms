@@ -1337,7 +1337,7 @@
             "runOptions": { "instancePolicy": "terminateOldest" },
             "type": "process",
             "command": "cmake",
-            "args": [ "--build", "${workspaceFolder}/roitrc/build", "--target", "roi-transcode-svc" ],
+            "args": [ "--build", "${workspaceFolder}/roitrc/build", "--target", "roitrc" ],
             "problemMatcher": [ "$gcc", "$msCompile" ]
         },
         {

@@ -30,7 +30,7 @@ RUN cmake -B build -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DVCPKG_MANIFEST_MODE=OFF \
     -DROITRC_BUILD_TESTS=OFF
-RUN cmake --build build -j1 --target roi-transcode-svc
+RUN cmake --build build -j1 --target roitrc
 
 # libva travels with the binary, and that is not optional. vcpkg builds ffmpeg against its
 # own libva (2.24), while Ubuntu 24.04 ships 2.20 -- and libva is linked dynamically, so
@@ -76,10 +76,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY --from=builder /src/roitrc/build/roi-transcode-svc /app/
+COPY --from=builder /src/roitrc/build/roitrc /app/
 COPY --from=builder /runtime-libs /app/
 
 ENV LD_LIBRARY_PATH=/app
 ENV LIBVA_DRIVER_NAME=iHD
 
-CMD ["./roi-transcode-svc"]
+CMD ["./roitrc"]

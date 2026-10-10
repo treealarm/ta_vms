@@ -21,7 +21,7 @@ public class CameraStorage(
 
   /// One entry per node: the media server, the VmsFs that owns its archive volume, the VmsOnvif that
   /// shares its camera subnet, the VmsLogger that can read its log files, and optionally the
-  /// roi-transcode-svc that can reach the same disk. All of them are pinned to
+  /// roitrc that can reach the same disk. All of them are pinned to
   /// the same machine, so the entry is the node — there is no arrangement in which they can be
   /// picked independently.
   private static IReadOnlyList<(string ServerId, string FsId, string OnvifId, string LoggerId, string RoiId)> ParseServerPairs()
