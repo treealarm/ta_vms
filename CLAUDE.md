@@ -29,9 +29,11 @@ All interaction with the MediaMTX REST API goes through **VmsUtils** (`vmsutils`
 
 Production/standalone deployment is a **separate repository** (`../ta_install`, github
 `treealarm/ta_install`): the product compose (prebuilt `treealarm/*` images, own broker, no
-Square), its `.env`, `init_files/`, the image build/push scripts and the analytics model
-fetcher. This repo's root `docker-compose.yml` is **dev only** (build-from-source, joins the
-shared Square network). Never re-grow a prod compose inside ta_vms.
+Square), its `.env`, `init_files/` and the image build/push scripts. (The analytics models are
+not fetched at deploy time: `video_a` bakes them into its image, and its CI takes them from
+`treealarm/analytics-models`, published by `video_a/scripts/push-models-image.sh`.) This repo's
+root `docker-compose.yml` is **dev only** (build-from-source, joins the shared Square network).
+Never re-grow a prod compose inside ta_vms.
 
 ## ta-deps is shared with video_a
 
@@ -40,6 +42,11 @@ consumers: this repo's `media_server` (`vms` service) and the separate `video_a`
 `analytics-worker`, which builds `FROM ta-deps` via a sibling checkout (see `video_a/scripts/build.sh`).
 It installs protobuf/grpc/spdlog/ffmpeg for media_server plus openvino for video_a — when changing
 its package list, consider both consumers.
+
+`video_a`'s CI does not follow this repo: it builds against the `treealarm/ta-deps` tag written in
+`video_a/ta-deps.tag`. After publishing a new `ta-deps` (`../ta_install/scripts/push-deps-images.sh`),
+bump that file in `video_a`, in a commit of its own — until then video_a keeps building on the old
+base, which is safe but means a package added here for video_a is not there yet.
 
 **Adding an ffmpeg feature to the shared vcpkg tree breaks every stale build directory.**
 `media_server` and `video_a` configure against `/mnt/wdblue/vcpkg` in classic mode, and both
