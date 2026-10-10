@@ -4,8 +4,8 @@
 [submodule "web_vms/SquareIntegrationClient"]
 	path = web_vms/SquareIntegrationClient
 	url = git@github.com:treealarm/SquareIntegrationClient.git
-[submodule "roitrc/sve"]
-	path = roitrc/sve
+[submodule "roitrc/ta_roienc"]
+	path = roitrc/ta_roienc
 	url = git@github.com:treealarm/roi_transcode.git
 [submodule "web_vms/OnvifLib"]
 	path = web_vms/OnvifLib

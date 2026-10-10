@@ -2,19 +2,20 @@
 #
 # Separate from the media_server Dockerfile for one reason: this is the only service that
 # touches the GPU, and its runtime image therefore needs a VA-API driver the others have
-# no use for. Build context is the ta_vms root, because this needs two things from it --
-# roitrc/ and proto/.
+# no use for. Build context is the ta_vms root, because this needs three things from it --
+# roitrc/, proto/ and cmake/.
 #
 #   docker build -t treealarm/roitrc:latest -f roitrc/Dockerfile .
 #
 # roi-deps comes from the encoder submodule, which owns it:
-#   docker build -t roi-deps -f roitrc/sve/docker/intel/Dockerfile.deps roitrc/sve/docker/intel
+#   docker build -t roi-deps -f roitrc/ta_roienc/docker/intel/Dockerfile.deps roitrc/ta_roienc/docker/intel
 
 FROM roi-deps AS builder
 
 WORKDIR /src
 COPY roitrc/ /src/roitrc/
 COPY proto/ /src/proto/
+COPY cmake/ /src/cmake/
 
 WORKDIR /src/roitrc
 

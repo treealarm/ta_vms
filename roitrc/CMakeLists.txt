@@ -1,17 +1,16 @@
 # roitrc -- ta_vms' ROI re-compression service.
 #
-# The encoder itself is the customer's deliverable and lives in its own repository
-# (github treealarm/roi_transcode), pinned here as the `sve` submodule. This directory is
-# everything about re-compression that is ours and only ours: the gRPC contract VmsFs
-# speaks, the job model that mirrors media_server's EdgeImport, the Dapr notifications and
-# the path sandbox. None of it appears in the customer's specification, which is the whole
-# reason it is here rather than there.
+# The encoder library lives in its own repository (github treealarm/roi_transcode), pinned here
+# as the `ta_roienc` submodule. This directory is everything about re-compression that is the
+# service's: the gRPC contract VmsFs speaks, the job model that mirrors media_server's
+# EdgeImport, the Dapr notifications and the path sandbox.
 #
-# The dependency arrow points one way and is narrow: this links `sve` through its public
-# headers alone -- sve/sve.h, sve/session.h, sve/types.h -- and reaches into none of the
-# library's internals.
+# The dependency arrow points one way and is narrow: this links `ta_roienc` through its public
+# headers alone -- ta_roienc/ta_roienc.h, ta_roienc/session.h, ta_roienc/types.h -- and reaches
+# into none of the library's internals.
 
 cmake_minimum_required(VERSION 3.22)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/check_vcpkg_toolchain.cmake)
 project(roitrc CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -19,22 +18,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(ROITRC_BUILD_TESTS "Build the service's own tests" ON)
 
-# The library, and nothing else from that repository: its integration/ holds the customer's
-# acceptance harness (the CLI and check.sh), and its unit tests run in its own CI. Forced
-# rather than merely set, because these are options in the subproject's own cache.
-set(SVE_BUILD_INTEGRATION OFF CACHE BOOL "" FORCE)
-set(SVE_BUILD_TESTS       OFF CACHE BOOL "" FORCE)
-set(SVE_BUILD_TOOLS       OFF CACHE BOOL "" FORCE)
-set(SVE_INSTALL           OFF CACHE BOOL "" FORCE)
+# The library, and nothing else from that repository: its unit tests run in its own repository.
+# Forced rather than merely set, because these are options in the subproject's own cache.
+set(TA_ROIENC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(TA_ROIENC_INSTALL     OFF CACHE BOOL "" FORCE)
 
 # The libavcodec-backed backends, which is where QSV and VA-API live. Off in the library by
-# default: its normative dependency graph is the direct libx264/libx265 components, and the
-# FFmpeg-backed encoders are the reference those are measured against. This service exists to
-# re-compress clips on hardware, so it turns them on -- without this the backend chain has no
-# hardware entry to find and every job quietly takes the CPU path.
-set(SVE_BUILD_BACKEND_FFMPEG ON CACHE BOOL "" FORCE)
+# default; this service exists to re-compress clips on hardware, so it turns them on -- without
+# this the backend chain has no hardware entry to find and every job quietly takes the CPU path.
+set(TA_ROIENC_BUILD_BACKEND_FFMPEG ON CACHE BOOL "" FORCE)
 
-add_subdirectory(sve)
+add_subdirectory(ta_roienc)
 
 set(ROITRC_WARNINGS
     $<$<CXX_COMPILER_ID:GNU>:-Wall -Wextra>
@@ -95,7 +89,7 @@ target_include_directories(roi-transcode-svc PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 target_link_libraries(roi-transcode-svc PRIVATE
-    sve_all
+    ta_roienc_all
     protobuf::libprotobuf
     gRPC::grpc
     gRPC::grpc++
@@ -106,13 +100,13 @@ target_compile_options(roi-transcode-svc PRIVATE ${ROITRC_WARNINGS})
 # ---------------------------------------------------------------------------
 # roi_grpc_smoke -- a client, so it reads roi.json the way a caller would
 #
-# Compiled from the submodule's own roi_json.cpp rather than copied: that file is the
-# adapter between roi.json and the library's vocabulary, it is the one the CLI uses, and
-# two copies of it would be two answers to "what does this JSON mean".
+# roi_json.cpp is the adapter between roi.json and the library's vocabulary. It lives here
+# rather than in the library because embedding the encoder should not drag a JSON library
+# along, and only this client ever reads a file.
 # ---------------------------------------------------------------------------
 add_executable(roi_grpc_smoke
     tools/roi_grpc_smoke.cpp
-    sve/integration/json/roi_json.cpp
+    tools/roi_json.cpp
 )
 protobuf_generate(
     TARGET roi_grpc_smoke
@@ -129,14 +123,14 @@ protobuf_generate(
 )
 target_include_directories(roi_grpc_smoke PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/sve/integration/json
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools
 )
 target_include_directories(roi_grpc_smoke SYSTEM PRIVATE ${FFMPEG_INCLUDE_DIRS})
 if(FFMPEG_LIBRARY_DIRS)
     target_link_directories(roi_grpc_smoke PRIVATE ${FFMPEG_LIBRARY_DIRS})
 endif()
 target_link_libraries(roi_grpc_smoke PRIVATE
-    sve_all
+    ta_roienc_all
     nlohmann_json::nlohmann_json
     ${FFMPEG_LIBRARIES}
     protobuf::libprotobuf

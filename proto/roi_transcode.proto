@@ -93,7 +93,6 @@ enum Encoder {
   ENCODER_AUTO  = 0;
   ENCODER_QSV   = 1;
   ENCODER_VAAPI = 2;
-  ENCODER_NVENC = 3;
   // libx264 or libx265, whichever the codec asks for.
   ENCODER_CPU   = 4;
 }
@@ -102,9 +101,9 @@ enum Encoder {
 //
 // Five steps of ours, not the encoder's own word. Every backend names its presets
 // differently and the lists do not line up -- libx264 has ten, QSV has seven and no
-// "ultrafast" at all, NVENC calls them p1 to p7. This used to be a free-text string, which
-// meant the caller had to know which backend would open before they could name a preset --
-// exactly what ENCODER_AUTO makes unknowable. Note the default: unset is balanced.
+// "ultrafast" at all. A free-text string would mean the caller had to know which backend
+// would open before they could name a preset -- exactly what ENCODER_AUTO makes unknowable.
+// Note the default: unset is balanced.
 enum Preset {
   PRESET_BALANCED = 0;
   PRESET_FASTEST  = 1;
@@ -131,7 +130,7 @@ enum Codec {
 // Coordinates are normalized 0..1 from the top-left corner, so they survive a
 // change of resolution.
 //
-// Priority on the wire is TZ v3 ObjectPriority. Resolution order on the service:
+// Priority on the wire is the library's ObjectPriority. Resolution order on the service:
 // KindQuality for this kind (if any) → desired_qp_delta → priority → kind/confidence
 // mapped onto the ladder. Leaving priority unset asks for the last of those.
 message Box {
@@ -172,7 +171,7 @@ message Box {
   optional int32 desired_qp_delta = 12;
 }
 
-// TZ v3 §11.1. Numbers match the library enum; BACKGROUND is a real step (QP 0 on
+// The priority ladder. Numbers match the library enum; BACKGROUND is a real step (QP 0 on
 // the object -- the frame-wide background penalty lives on RoiQuality).
 enum ObjectPriority {
   OBJECT_PRIORITY_BACKGROUND = 0;
@@ -237,8 +236,8 @@ message KindQuality {
   optional double pad      = 3;
 }
 
-// How the margin around a box is measured -- TZ v3 §11.3.
-// Zero value is the v3 default (fixed pixels), so an unset field matches the library.
+// How the margin around a box is measured.
+// Zero value is the library default (fixed pixels), so an unset field matches the library.
 enum MarginMode {
   MARGIN_MODE_FIXED_PIXELS      = 0;
   MARGIN_MODE_FRACTION_OF_FRAME = 1;
@@ -285,7 +284,7 @@ message RoiQuality {
   // 0 disables the budget. Unset keeps the library default (a quarter of the frame).
   optional float  max_protected_fraction = 9;
 
-  // §11.3 / §11.2. Unset margin_mode is FIXED_PIXELS; unset margin_px / min_roi_side
+  // Unset margin_mode is FIXED_PIXELS; unset margin_px / min_roi_side
   // keep the library defaults (8 px, 64 px).
   MarginMode      margin_mode   = 10;
   optional int32  margin_px     = 11;
@@ -310,8 +309,8 @@ message ClassWeighting {
   optional float motion_speed_at_full        = 10;
 }
 
-// §13 -- Temporal ROI (TZ v3). Smoothing and track prediction are implemented in the
-// library; unset fields keep the v3 defaults from TemporalROIConfig.
+// Temporal ROI. Smoothing and track prediction are implemented in the library; unset fields
+// keep the defaults from TemporalROIConfig.
 message TemporalRoiConfig {
   optional uint32 max_missing_frames      = 1;
   optional double max_hold_sec            = 2;
@@ -400,7 +399,7 @@ message Job {
   string   encoder_used  = 8;
   // True when CPU H.265 target-bitrate mode was downgraded to CRF/CQP guard path.
   bool     cpu_h265_target_guard = 9;
-  // §14 ROI lag telemetry, when tracked boxes were present.
+  // ROI lag telemetry, when tracked boxes were present.
   RoiLagStats roi_lag = 10;
 }
 
@@ -510,7 +509,7 @@ message Packet {
   bytes data = 4;
 }
 
-// §14 lag observability summary. Zero values mean "not measured" unless
+// ROI lag summary. Zero values mean "not measured" unless
 // measured=true.
 message RoiLagStats {
   bool measured = 1;
@@ -533,7 +532,7 @@ message Done {
   int64 regions_dropped = 4;
   // True when CPU H.265 target-bitrate mode was downgraded to CRF/CQP guard path.
   bool cpu_h265_target_guard = 5;
-  // §14 ROI lag telemetry, when tracked boxes were present.
+  // ROI lag telemetry, when tracked boxes were present.
   RoiLagStats roi_lag = 6;
 }
 

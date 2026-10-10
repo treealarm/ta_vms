@@ -32,17 +32,11 @@ media_server/bin/
 media_server/obj/
 roitrc/build/
 roitrc/out/
-# The encoder submodule's own build and fixtures. Its source is needed -- roitrc's
-# Dockerfile builds the library from it -- but these are not.
-roitrc/sve/build/
-roitrc/sve/build-int/
-roitrc/sve/build-software/
-# Unpacked Intel media runtime from an approach that was dropped: untracked, and
-# the runtime image installs the driver from apt instead.
-roitrc/sve/runtime/
-# Synthetic scenes and check.sh run output: hundreds of megabytes that the image
-# has no use for and that every docker build would otherwise ship as context.
-roitrc/sve/testdata/
+# The encoder submodule's own build trees. Its source is needed -- roitrc's Dockerfile builds
+# the library from it -- but these are not. .dockerignore patterns match from the context
+# root, so the build/ lines above do not reach into the submodule.
+roitrc/ta_roienc/build/
+roitrc/ta_roienc/build-*/
 
 # -------------------
 # Node / фронт

@@ -14,7 +14,7 @@ Practical runbook from a full rebuild on the `roi` branch. Two modes:
 ```
 <workspace>/
   ta_vms/            # this repo — VMS services, Dockerfiles, ta-deps; roi-deps comes
-                     #   from the roitrc/sve submodule (github treealarm/roi_transcode)
+                     #   from the roitrc/ta_roienc submodule (github treealarm/roi_transcode)
   ta_install/        # product compose (prebuilt images), .env, push/build scripts
   video_a/           # analytics-worker (FROM ta-deps)
   Square/            # optional: creates common_app_network + integration
@@ -78,15 +78,23 @@ docker build -t ta-deps ./ta-deps
 
 # roitrc (~1–2 h): Ubuntu 24.04, ffmpeg[qsv,vaapi], libdrm-dev, python3.
 # The Dockerfile belongs to the encoder and arrives with the submodule.
-docker build -t roi-deps -f roitrc/sve/docker/intel/Dockerfile.deps roitrc/sve/docker/intel
+docker build -t roi-deps -f roitrc/ta_roienc/docker/intel/Dockerfile.deps roitrc/ta_roienc/docker/intel
 ```
 
-Scripts skip a base image if the tag already exists:
+[`../ta_install/scripts/build-images.sh`](../../ta_install/scripts/build-images.sh) gets both
+through `build-deps-images.sh`, which keys them by content: the tag is the git tree hash of the
+directory each one is built from ([`scripts/deps-image-tags.sh`](../scripts/deps-image-tags.sh)),
+so an edit to `ta-deps/` or the encoder's `docker/intel/` gets a new base, and an existing
+`treealarm/ta-deps:<hash>` is reused — or pulled, if someone already published it. Force a rebuild
+of the current one with `docker rmi treealarm/ta-deps:<hash>` (the bare `ta-deps` is only an alias).
 
-- [`build-and-run.sh`](../build-and-run.sh)
-- [`../ta_install/scripts/build-images.sh`](../../ta_install/scripts/build-images.sh)
+[`build-and-run.sh`](../build-and-run.sh) still skips a base whenever the bare tag exists,
+whatever it was built from; `docker rmi ta-deps roi-deps` forces it there.
 
-Force rebuild: `docker rmi ta-deps roi-deps` (and legacy `vms-deps` if present).
+CI cannot build either base (ta-deps alone outlasts a hosted runner's job limit), so after changing
+one, publish it before pushing the change:
+`../ta_install/scripts/push-deps-images.sh`. Otherwise the C++ jobs of
+[`images.yml`](../.github/workflows/images.yml) fail and say so.
 
 **roi-deps layers (not vcpkg alone):**
 
@@ -254,6 +262,6 @@ Full base rebuild (hours):
 ```bash
 docker rmi ta-deps roi-deps 2>/dev/null || true
 docker build -t ta-deps ./ta-deps
-docker build -t roi-deps -f roitrc/sve/docker/intel/Dockerfile.deps roitrc/sve/docker/intel
+docker build -t roi-deps -f roitrc/ta_roienc/docker/intel/Dockerfile.deps roitrc/ta_roienc/docker/intel
 # then rebuild services + up again
 ```
