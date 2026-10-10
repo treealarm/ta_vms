@@ -155,7 +155,7 @@ int run()
         root_list += (root_list.empty() ? "" : ",") + root;
     }
     std::fprintf(stderr,
-        "roi-transcode-svc app_id=%s listening on %s dapr_publish=%s roots=%s\n",
+        "roitrc app_id=%s listening on %s dapr_publish=%s roots=%s\n",
         app_id.c_str(), listen.c_str(),
         publisher->enabled() ? "on" : "off", root_list.c_str());
 
@@ -172,7 +172,7 @@ int main(int /*argc*/, char** /*argv*/)
     try {
         return run();
     } catch (const std::exception& e) {
-        std::fprintf(stderr, "roi-transcode-svc: %s\n", e.what());
+        std::fprintf(stderr, "roitrc: %s\n", e.what());
         return 1;
     }
 }

@@ -1,4 +1,4 @@
-// Exercises both entry points against a running roi-transcode-svc: the file job
+// Exercises both entry points against a running roitrc: the file job
 // and the frame stream. The stream half demuxes a clip here and pushes access
 // units over the wire, which is the closest thing to what an embedding project
 // would do.

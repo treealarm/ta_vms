@@ -13,7 +13,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD="${BUILD:-${ROOT}/build}"
-SVC="${BUILD}/roi-transcode-svc"
+SERVICE="${BUILD}/roitrc"
 SMOKE="${BUILD}/roi_grpc_smoke"
 # Boxes are normalized 0..1, so the fixture fits whatever clip we generate below.
 ROI="${ROOT}/testdata/synth_roi.json"
@@ -27,7 +27,7 @@ pass() { printf '  ok    %s\n' "$1"; }
 fail() { printf '  FAIL  %s\n' "$1"; fails=$((fails + 1)); }
 info() { printf '  info  %s\n' "$1"; }
 
-for f in "$SVC" "$SMOKE"; do
+for f in "$SERVICE" "$SMOKE"; do
     [[ -x "$f" ]] || { echo "not built: $f (cmake --build $BUILD)" >&2; exit 1; }
 done
 [[ -f "$ROI" ]] || { echo "missing $ROI" >&2; exit 1; }
@@ -46,11 +46,11 @@ step "startup refuses a broken configuration"
 for spec in APP_ID ROI_ALLOWED_ROOTS relative-root; do
     case "$spec" in
       APP_ID)            out=$(env -u APP_ID -u GRPC_ROI_BIND -u GRPC_ROI_PORT \
-                               -u ROI_ALLOWED_ROOTS "$SVC" 2>&1); rc=$? ;;
+                               -u ROI_ALLOWED_ROOTS "$SERVICE" 2>&1); rc=$? ;;
       ROI_ALLOWED_ROOTS) out=$(env -u ROI_ALLOWED_ROOTS APP_ID=t GRPC_ROI_BIND=127.0.0.1 \
-                               GRPC_ROI_PORT=50099 "$SVC" 2>&1); rc=$? ;;
+                               GRPC_ROI_PORT=50099 "$SERVICE" 2>&1); rc=$? ;;
       relative-root)     out=$(env APP_ID=t GRPC_ROI_BIND=127.0.0.1 GRPC_ROI_PORT=50099 \
-                               ROI_ALLOWED_ROOTS=not/absolute "$SVC" 2>&1); rc=$? ;;
+                               ROI_ALLOWED_ROOTS=not/absolute "$SERVICE" 2>&1); rc=$? ;;
     esac
     if [[ $rc -ne 0 && -n "$out" ]]; then pass "refuses ${spec}"; else fail "refuses ${spec}"; fi
 done
@@ -58,10 +58,10 @@ done
 step "gRPC: both entry points, and the sandbox"
 port=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')
 APP_ID=check GRPC_ROI_BIND=127.0.0.1 GRPC_ROI_PORT="$port" \
-    ROI_ALLOWED_ROOTS="$WORK" "$SVC" >"${WORK}/svc.log" 2>&1 &
-svc=$!
+    ROI_ALLOWED_ROOTS="$WORK" "$SERVICE" >"${WORK}/service.log" 2>&1 &
+service_pid=$!
 for _ in $(seq 40); do
-    grep -q 'listening on' "${WORK}/svc.log" 2>/dev/null && break
+    grep -q 'listening on' "${WORK}/service.log" 2>/dev/null && break
     sleep 0.25
 done
 
@@ -107,8 +107,8 @@ else
     pass "a path outside the sandbox is refused"
 fi
 
-kill "$svc" 2>/dev/null
-wait "$svc" 2>/dev/null || true
+kill "$service_pid" 2>/dev/null
+wait "$service_pid" 2>/dev/null || true
 
 step "unit tests"
 if ctest --test-dir "$BUILD" --output-on-failure >"${WORK}/ctest.log" 2>&1; then

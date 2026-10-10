@@ -294,7 +294,7 @@
             "request": "launch",
             "preLaunchTask": "build:all",
             "postDebugTask": "dapr:roitrc:stop",
-            "program": "${workspaceFolder}/roitrc/build/roi-transcode-svc",
+            "program": "${workspaceFolder}/roitrc/build/roitrc",
             "args": [],
             "environment": [
                 { "name": "APP_ID", "value": "roitrc" },
@@ -461,7 +461,7 @@
             "request": "launch",
             "preLaunchTask": "build:all",
             "postDebugTask": "dapr:roitrc:stop",
-            "program": "${workspaceFolder}/roitrc/build/roi-transcode-svc.exe",
+            "program": "${workspaceFolder}/roitrc/build/roitrc.exe",
             "args": [],
             "environment": [
                 { "name": "APP_ID", "value": "roitrc" },

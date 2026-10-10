@@ -7,7 +7,7 @@ service.
 ```
 roitrc/
   ta_roienc/  submodule -> github treealarm/roi_transcode (the library)
-  svc/        the service: gRPC entry points, jobs, Dapr, the path sandbox
+  service/    the service: gRPC entry points, jobs, Dapr, the path sandbox
   tools/      roi_grpc_smoke -- a client, for driving the service without VmsFs
   tests/      path_guard_test
   testdata/   synth_roi.json, the fixture check.sh drives the smoke client with
@@ -37,7 +37,7 @@ own unit tests run in its repository.
 
 ```bash
 APP_ID=roitrc GRPC_ROI_BIND=127.0.0.1 GRPC_ROI_PORT=50061 \
-  ROI_ALLOWED_ROOTS="$PWD:/tmp" ./build/roi-transcode-svc
+  ROI_ALLOWED_ROOTS="$PWD:/tmp" ./build/roitrc
 ```
 
 | Env | Required | Meaning |

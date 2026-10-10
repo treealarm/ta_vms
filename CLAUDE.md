@@ -234,7 +234,7 @@ accumulating messages nobody reads.
   replica.
 - `VmsCfg`, `VmsUtils`, `VmsLogger` — `VmsCfg` and `VmsUtils` are replicable (their once-only work
   lives in `VmsSingleton`); `VmsLogger` is sharded by node, because it reads node-local files.
-- `roitrc` (roi-transcode-svc, built in its own repository) — **sharded by node**, and this one is a correctness requirement
+- `roitrc` (the ROI re-compression service; the `ta_roienc` library it links lives in its own repository) — **sharded by node**, and this one is a correctness requirement
   rather than a capacity choice. It is handed absolute paths to clips on the node's own disk, so an
   instance elsewhere either finds nothing there or finds a *different* node's file at the same path
   and overwrites it. Which instance a node talks to therefore comes from that node's entry in
