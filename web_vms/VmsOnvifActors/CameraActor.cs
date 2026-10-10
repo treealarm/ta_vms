@@ -87,6 +87,25 @@ public class CameraActor(ActorHost host, CameraActorDomain domain) : Actor(host)
     return new PtzCapabilitiesDto(caps.AbsoluteMove, caps.RelativeMove, caps.ContinuousMove);
   }
 
+  /// <summary>Where the camera says it is pointing.</summary>
+  /// <remarks>
+  /// Shares <see cref="PtzStopActorRequest"/> rather than growing a record of its own: both are a
+  /// connection and a profile token, and a second identical shape would be two things to keep in
+  /// step for no gain.
+  /// </remarks>
+  public async Task<PtzStatusDto?> GetPtzStatusAsync(PtzStopActorRequest request)
+  {
+    var camera = EnsureCamera(request.Conn);
+    var ptz = await camera.GetPtzService();
+    if (ptz == null)
+      return null;
+
+    var status = await ptz.GetStatusAsync(request.ProfileToken);
+    return status == null
+      ? null
+      : new PtzStatusDto(status.Pan, status.Tilt, status.Zoom, status.Moving);
+  }
+
   public async Task<SnapshotActorResult> GetSnapshotAsync(CameraConnInfo conn)
   {
     var camera = EnsureCamera(conn);

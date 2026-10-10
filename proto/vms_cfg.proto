@@ -79,6 +79,11 @@ service CfgService {
   rpc UpsertPtzTrackingPolicy(UpsertPtzTrackingPolicyRequest) returns (OperationStatus);
   rpc ListPtzTrackingPolicies(google.protobuf.Empty) returns (ListPtzTrackingPoliciesResponse);
 
+  rpc GetPtzSlaveBinding(GetPtzSlaveBindingRequest) returns (GetPtzSlaveBindingResponse);
+  rpc UpsertPtzSlaveBinding(UpsertPtzSlaveBindingRequest) returns (OperationStatus);
+  rpc RemovePtzSlaveBinding(RemovePtzSlaveBindingRequest) returns (OperationStatus);
+  rpc ListPtzSlaveBindings(google.protobuf.Empty) returns (ListPtzSlaveBindingsResponse);
+
   rpc ListCameraPermissions(ListCameraPermissionsRequest) returns (ListCameraPermissionsResponse);
   rpc SetUserCameraPermissions(SetUserCameraPermissionsRequest) returns (OperationStatus);
   rpc GetCameraAclMode(google.protobuf.Empty) returns (GetCameraAclModeResponse);
@@ -723,10 +728,10 @@ message RemovePtzCalibrationRequest {
 // looking at the monitor may still take over and name a particular object, but that override is
 // held in memory by the tracking service and lapses when the object is finally lost.
 //
-// Master/slave is not this. Today a self-guiding camera finds the objects and moves its own motor
-// -- master and slave in one. Pointing one camera at another camera's objects needs a calibration
-// between the pair that does not exist yet, and would add a field here saying where the objects
-// come from.
+// Master/slave is master_camera_id below: the same policy, reading its objects from somewhere
+// else. What to follow (kinds, sources) means the same thing either way, which is why it is one
+// message and not two -- only where the boxes come from differs, and with it which control law
+// runs (closed loop on one's own picture, open loop through a binding on another's).
 message PtzTrackingPolicy {
   string camera_id = 1;
   bool   enabled   = 2;
@@ -739,6 +744,11 @@ message PtzTrackingPolicy {
   // Which producers of boxes to follow: "cv" (the detector) and/or "onvif" (the camera's own
   // metadata track). Empty means either will do.
   repeated string sources = 4;
+  // Whose objects to follow. Unset means this camera's own -- it finds the objects and moves its
+  // own motor. Set names a stationary master with analytics, and this camera becomes a slave that
+  // is aimed through PtzSlaveBinding below; it needs no analytics of its own, and usually cannot
+  // see what it is being pointed at until it gets there.
+  optional string master_camera_id = 5;
 }
 
 message GetPtzTrackingPolicyRequest {
@@ -760,6 +770,85 @@ message UpsertPtzTrackingPolicyRequest {
 // be one round trip per camera in the deployment to learn that almost none of them track.
 message ListPtzTrackingPoliciesResponse {
   repeated PtzTrackingPolicy policies = 1;
+}
+
+// ── Master/slave: aiming one camera at another camera's objects ──────────────
+
+// How a point in the master's picture becomes a place for the slave to look.
+//
+// There are no geo-coordinates in this system, so the only thing tying the pair together is a
+// handful of correspondences an operator marked by hand: "this spot in the master's frame is this
+// position of the slave". Everything between the marked spots is interpolated.
+//
+// A point in an image is a ray, not a direction: how far along it the object is decides where the
+// slave should look, and no calibration can recover that. The assumption that closes the gap is
+// that objects stand on the ground -- so the aiming point is the bottom edge of the object's box,
+// where it meets the ground, and the operator marks points on the ground too.
+message PtzSlaveBinding {
+  // One motor, one source of hints: a slave belongs to exactly one master.
+  string slave_camera_id  = 1;
+  string master_camera_id = 2;
+  PtzSlaveBindingMethod method = 3;
+  google.protobuf.Timestamp calibrated_at = 4;
+  repeated PtzSlaveBindingPoint points = 5;
+}
+
+enum PtzSlaveBindingMethod {
+  // Interpolate between the marked positions and command the slave there. Needs a camera that
+  // actually executes AbsoluteMove -- which GetCapabilities cannot be trusted about, so the
+  // wizard verifies it by moving the camera and watching the picture change.
+  PTZ_SLAVE_BINDING_ABSOLUTE = 0;
+  // Drive to the preset of the nearest marked point. Coarser, and the only thing that works on a
+  // camera whose absolute positioning is a stub.
+  PTZ_SLAVE_BINDING_PRESETS  = 1;
+}
+
+// One correspondence: a place in the master's frame, and where the slave was pointing when the
+// operator marked it.
+//
+// A point may carry a position, a preset, or both, and both is the normal case rather than
+// redundancy: the operator drives the slave to the spot once, and from that one position the
+// coordinates can be read for free (GetStatus) and a preset recorded with one button (SetPreset
+// stores wherever the camera currently points). Storing whatever was obtainable is what lets the
+// method be changed afterwards without marking the zones out again -- and it is why a camera whose
+// GetStatus answers zeroes does not spoil the survey: its points simply have no coordinates.
+message PtzSlaveBindingPoint {
+  // Where in the master's frame, 0..1 from the top-left -- the bottom edge of the object's box.
+  float master_x = 1;
+  float master_y = 2;
+  // Where the slave looked, in whatever space the camera answers in. Deliberately not interpreted:
+  // both reading and commanding happen in the camera's own space, and the interpolation is fitted
+  // to the measurements, so degrees and normalised -1..1 work out the same.
+  optional float pan  = 3;
+  optional float tilt = 4;
+  // The preset standing at the same position, if the operator picked or made one.
+  string preset_token = 5;
+  // Carried so the list can name the preset without asking the camera on every render.
+  string preset_name  = 6;
+}
+
+message GetPtzSlaveBindingRequest {
+  string slave_camera_id = 1;
+}
+
+message GetPtzSlaveBindingResponse {
+  bool found = 1;
+  PtzSlaveBinding binding = 2;
+}
+
+// Replaces the binding whole, points included. A survey is edited as one thing -- adding a point
+// changes what every other point interpolates to -- so there is no per-point RPC to get half-
+// applied.
+message UpsertPtzSlaveBindingRequest {
+  PtzSlaveBinding binding = 1;
+}
+
+message RemovePtzSlaveBindingRequest {
+  string slave_camera_id = 1;
+}
+
+message ListPtzSlaveBindingsResponse {
+  repeated PtzSlaveBinding bindings = 1;
 }
 
 // ── Analytics sources, aggregated per camera ─────────────────────────────────

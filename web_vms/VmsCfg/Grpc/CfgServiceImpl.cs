@@ -1244,6 +1244,72 @@ namespace VmsCfg
       return response;
     }
 
+    // ── Master/slave binding ──────────────────────────────────────────────────
+
+    public override async Task<GetPtzSlaveBindingResponse> GetPtzSlaveBinding(
+      GetPtzSlaveBindingRequest request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.SlaveCameraId))
+        return new GetPtzSlaveBindingResponse();
+
+      var binding = await storage.GetPtzSlaveBindingAsync(
+        request.SlaveCameraId, context.CancellationToken);
+      if (binding is null)
+        return new GetPtzSlaveBindingResponse();
+
+      return new GetPtzSlaveBindingResponse { Found = true, Binding = binding };
+    }
+
+    public override async Task<OperationStatus> UpsertPtzSlaveBinding(
+      UpsertPtzSlaveBindingRequest request, ServerCallContext context)
+    {
+      var binding = request.Binding;
+      if (string.IsNullOrWhiteSpace(binding?.SlaveCameraId))
+        return new OperationStatus { Success = false, Message = "slave_camera_id must not be empty" };
+      if (string.IsNullOrWhiteSpace(binding.MasterCameraId))
+        return new OperationStatus { Success = false, Message = "master_camera_id must not be empty" };
+      if (binding.MasterCameraId == binding.SlaveCameraId)
+        return new OperationStatus
+        {
+          Success = false,
+          // Not merely useless: it would have the open-loop aiming law fight the closed-loop one
+          // over the same motor, each moving the picture the other is measuring.
+          Message = "A camera cannot be its own master -- switch self-guidance on instead",
+        };
+
+      var result = await storage.UpsertPtzSlaveBindingAsync(binding, context.CancellationToken);
+      logger.LogInformation(
+        "Slave binding for camera '{Slave}' -> master '{Master}' upserted: {Points} point(s), method {Method}",
+        result.SlaveCameraId, result.MasterCameraId, result.Points.Count, result.Method);
+      InvalidateFsCache(result.SlaveCameraId);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OperationStatus> RemovePtzSlaveBinding(
+      RemovePtzSlaveBindingRequest request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.SlaveCameraId))
+        return new OperationStatus { Success = false, Message = "slave_camera_id must not be empty" };
+
+      var removed = await storage.RemovePtzSlaveBindingAsync(
+        request.SlaveCameraId, context.CancellationToken);
+      if (removed)
+      {
+        logger.LogInformation("Slave binding for camera '{Slave}' removed", request.SlaveCameraId);
+        InvalidateFsCache(request.SlaveCameraId);
+      }
+      return new OperationStatus { Success = removed };
+    }
+
+    public override async Task<ListPtzSlaveBindingsResponse> ListPtzSlaveBindings(
+      Google.Protobuf.WellKnownTypes.Empty request, ServerCallContext context)
+    {
+      var response = new ListPtzSlaveBindingsResponse();
+      response.Bindings.AddRange(
+        await storage.ListPtzSlaveBindingsAsync(context.CancellationToken));
+      return response;
+    }
+
     // ── Per-camera permissions ────────────────────────────────────────────────
 
     public override async Task<ListCameraPermissionsResponse> ListCameraPermissions(

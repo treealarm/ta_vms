@@ -1,15 +1,23 @@
 using System.Collections.Concurrent;
+using Vms.Cfg;
 
 namespace VmsPtzTrackingSingleton;
 
 /// <summary>
-/// Every running tracking session, and the one detection stream they share.
+/// Every running session, of both kinds, and the one detection stream they share.
 /// </summary>
 /// <remarks>
 /// <para>
 /// One session per camera, which is the whole reason this service is a singleton: two of them would
 /// send a motor opposing commands. The shared stream is reference-counted against the sessions, so
 /// a deployment where nothing tracks costs no stream at all.
+/// </para>
+/// <para>
+/// A camera runs one of two laws, never both. With no master named it guides itself, closing a loop
+/// on its own picture (<see cref="TrackingSession"/>); with a master named it is aimed at that
+/// camera's objects through a hand-marked survey (<see cref="SlaveAimingSession"/>). The choice is
+/// the policy's <c>master_camera_id</c> and nothing else, so it changes by reconfiguration and the
+/// old session is torn down before the new one starts.
 /// </para>
 /// <para>
 /// Which sessions exist is decided by configuration, never by an operator: a session runs for every
@@ -22,6 +30,7 @@ namespace VmsPtzTrackingSingleton;
 public sealed class TrackingSessionManager(
   CameraPtzRouter router,
   PtzCalibrationCache calibrationCache,
+  SlaveBindingCache bindingCache,
   IPtzCommandSender sender,
   DetectionStreamClient stream,
   ILoggerFactory loggerFactory,
@@ -29,12 +38,23 @@ public sealed class TrackingSessionManager(
 {
   private sealed record Running(TrackingSession Session, CancellationTokenSource Cts, Task Loop);
 
-  private readonly ConcurrentDictionary<string, Running> _sessions = new(StringComparer.Ordinal);
+  private sealed record RunningSlave(
+    SlaveAimingSession Session, string MasterCameraId, CancellationTokenSource Cts, Task Loop);
 
-  // Cameras told to guide themselves that cannot: no VmsOnvif reaches them, or their telemetry flag
-  // is clear. Reported alongside the running ones so the monitor can show the setting as on — and
-  // so the operator can switch it off again — instead of the camera silently looking idle.
+  private readonly ConcurrentDictionary<string, Running> _sessions = new(StringComparer.Ordinal);
+  private readonly ConcurrentDictionary<string, RunningSlave> _slaves = new(StringComparer.Ordinal);
+
+  // Cameras told to guide themselves that cannot: no VmsOnvif reaches them, their telemetry flag is
+  // clear, or -- for a slave -- the survey that would aim them is missing or unusable. Reported
+  // alongside the running ones so the monitor can show the setting as on — and so the operator can
+  // switch it off again — instead of the camera silently looking idle.
   private volatile IReadOnlyDictionary<string, string> _blocked =
+    new Dictionary<string, string>(StringComparer.Ordinal);
+
+  // The master a blocked camera was configured to follow. Kept beside the reason so the monitor can
+  // still tell that the pairing exists — a slave whose survey is short of a preset is listed as not
+  // running, and its master's card should go on offering the object-picking gesture regardless.
+  private volatile IReadOnlyDictionary<string, string> _blockedMasters =
     new Dictionary<string, string>(StringComparer.Ordinal);
 
   // Serialises start/stop so the shared stream is opened and closed exactly once, and so a
@@ -44,13 +64,22 @@ public sealed class TrackingSessionManager(
   private Task? _pump;
 
   /// <summary>
-  /// Points a camera at one object, or hands it back to its own priorities when
-  /// <paramref name="target"/> is null.
+  /// Points everything that follows this camera's picture at one object, or hands them back to
+  /// their own priorities when <paramref name="target"/> is null.
   /// </summary>
   /// <remarks>
-  /// This does not start or stop anything. A camera that is not configured to guide itself has no
-  /// session to take over, and saying so is more useful than quietly starting one that nothing
-  /// would ever switch off again.
+  /// <para>
+  /// The camera named is the one whose picture the operator is looking at, which is where the boxes
+  /// they can click are. That is not necessarily the camera that moves: naming an object on a
+  /// stationary master points every slave bound to it, and the master itself if it also guides
+  /// itself. Both happen, and a master that both tracks and feeds slaves is a legitimate
+  /// arrangement rather than a case to choose between.
+  /// </para>
+  /// <para>
+  /// This does not start or stop anything. A camera nothing follows has no session to take over,
+  /// and saying so is more useful than quietly starting one that nothing would ever switch off
+  /// again.
+  /// </para>
   /// </remarks>
   /// <returns>Null on success, otherwise why the request was refused.</returns>
   public Task<string?> SetTargetAsync(string cameraId, TargetKey? target, CancellationToken ct)
@@ -58,21 +87,117 @@ public sealed class TrackingSessionManager(
     if (string.IsNullOrWhiteSpace(cameraId))
       return Task.FromResult<string?>("cameraId must not be empty");
 
-    if (!_sessions.TryGetValue(cameraId, out var running))
-      return Task.FromResult<string?>(
-        $"Camera '{cameraId}' is not following anything: switch self-guidance on in its settings first");
+    var told = 0;
+    if (_sessions.TryGetValue(cameraId, out var running))
+    {
+      running.Session.SetTarget(target);
+      told++;
+    }
 
-    running.Session.SetTarget(target);
+    foreach (var slave in _slaves.Values)
+    {
+      if (slave.MasterCameraId != cameraId)
+        continue;
+      slave.Session.SetTarget(target);
+      told++;
+    }
+
+    if (told > 0)
+      return Task.FromResult<string?>(null);
+
+    // A slave named directly is the one case worth its own words: the operator is looking at a
+    // camera that moves but has no boxes of its own to click, and the answer is not "switch
+    // something on" but "click it on the other picture".
+    if (_slaves.TryGetValue(cameraId, out var itself))
+      return Task.FromResult<string?>(
+        $"Camera '{cameraId}' follows objects seen by '{itself.MasterCameraId}': pick the object there");
+
+    return Task.FromResult<string?>(
+      $"Camera '{cameraId}' is not following anything: switch self-guidance on in its settings first");
+  }
+
+  /// <summary>Sends a slave to where a spot in its master's frame maps to.</summary>
+  /// <remarks>
+  /// How a survey is checked without waiting for someone to walk through it. It runs here, beside
+  /// the aiming sessions, because this service is the one owner of a camera's motor: a test aim
+  /// issued from web_vms.Server would be a second thing driving it, and a slave with a live session
+  /// would fight the operator for the camera.
+  /// <para>
+  /// The binding is re-read rather than taken from the cache. The wizard's next action after saving
+  /// a point is to test it, and the invalidation event is still on the bus at that moment.
+  /// </para>
+  /// </remarks>
+  public async Task<AimResult> AimAtMasterPointAsync(
+    string slaveCameraId, float masterX, float masterY, CancellationToken ct)
+  {
+    if (string.IsNullOrWhiteSpace(slaveCameraId))
+      return AimResult.Failed("slaveCameraId must not be empty");
+
+    var binding = await bindingCache.ReloadAsync(slaveCameraId, ct);
+    if (binding is null)
+      return AimResult.Failed($"Camera '{slaveCameraId}' has no binding to a master");
+
+    var unusable = binding.Unusable();
+    if (unusable is not null)
+      return AimResult.Failed(unusable);
+
+    if (binding.Method == PtzSlaveBindingMethod.PtzSlaveBindingPresets)
+    {
+      var nearest = PtzSlaveBindingMath.Nearest(binding.Points, masterX, masterY);
+      if (nearest?.PresetToken is null)
+        return AimResult.Failed("No marked point with a preset is near that spot");
+
+      var presetError = await sender.GotoPresetAsync(slaveCameraId, nearest.PresetToken, ct);
+      return presetError is null
+        ? new AimResult(true, null, null, null, nearest.PresetToken, nearest.PresetName, false)
+        : AimResult.Failed(presetError);
+    }
+
+    var aim = PtzSlaveBindingMath.Project(binding.Fit!, masterX, masterY);
+    var error = await sender.AimAsync(slaveCameraId, aim.Pan, aim.Tilt, ct);
+    return error is null
+      ? new AimResult(true, null, aim.Pan, aim.Tilt, null, null, aim.Extrapolated)
+      : AimResult.Failed(error);
+  }
+
+  /// <summary>Stops a camera aiming itself for a while, so a person can drive it by hand.</summary>
+  /// <remarks>
+  /// Renewed by whoever is holding it rather than switched off, so a browser that went away cannot
+  /// leave a camera parked. Zero seconds releases immediately, which is what the wizard sends when
+  /// it closes.
+  /// </remarks>
+  /// <returns>Null on success, otherwise why the request was refused.</returns>
+  public Task<string?> HoldAsync(string cameraId, TimeSpan duration)
+  {
+    if (string.IsNullOrWhiteSpace(cameraId))
+      return Task.FromResult<string?>("cameraId must not be empty");
+
+    var until = duration <= TimeSpan.Zero ? DateTime.MinValue : DateTime.UtcNow.Add(duration);
+    if (!_slaves.TryGetValue(cameraId, out var slave))
+      // Not an error worth failing the wizard over: a camera with no running session is already
+      // doing nothing, which is what the caller wanted.
+      return Task.FromResult<string?>(null);
+
+    slave.Session.HoldUntil(until);
     return Task.FromResult<string?>(null);
   }
+
+  /// <summary>What the marked points add up to, for the survey wizard.</summary>
+  /// <returns>Null when the camera has no binding at all.</returns>
+  public async Task<SlaveBindingModel?> GetBindingFitAsync(string slaveCameraId, CancellationToken ct) =>
+    string.IsNullOrWhiteSpace(slaveCameraId)
+      ? null
+      : await bindingCache.ReloadAsync(slaveCameraId, ct);
 
   public IReadOnlyList<TrackingSnapshot> States()
   {
     var states = _sessions.Values.Select(r => r.Session.Snapshot()).ToList();
+    states.AddRange(_slaves.Values.Select(r => r.Session.Snapshot()));
     foreach (var (cameraId, reason) in _blocked)
     {
-      if (!_sessions.ContainsKey(cameraId))
-        states.Add(new TrackingSnapshot(cameraId, false, null, false, null, reason));
+      if (!_sessions.ContainsKey(cameraId) && !_slaves.ContainsKey(cameraId))
+        states.Add(new TrackingSnapshot(
+          cameraId, false, null, false, null, reason, _blockedMasters.GetValueOrDefault(cameraId)));
     }
     return states;
   }
@@ -95,7 +220,10 @@ public sealed class TrackingSessionManager(
     IReadOnlyDictionary<string, TrackingPolicy> policies, CancellationToken ct)
   {
     var wanted = new Dictionary<string, TrackingPolicy>(StringComparer.Ordinal);
+    var wantedSlaves = new Dictionary<string, (TrackingPolicy Policy, SlaveBindingModel Binding)>(
+      StringComparer.Ordinal);
     var blocked = new Dictionary<string, string>(StringComparer.Ordinal);
+    var blockedMasters = new Dictionary<string, string>(StringComparer.Ordinal);
     foreach (var (cameraId, policy) in policies)
     {
       if (!policy.Enabled)
@@ -115,7 +243,36 @@ public sealed class TrackingSessionManager(
         continue;
       }
 
-      wanted[cameraId] = policy;
+      if (policy.MasterCameraId is null)
+      {
+        wanted[cameraId] = policy;
+        continue;
+      }
+      blockedMasters[cameraId] = policy.MasterCameraId;
+
+      var binding = await bindingCache.GetAsync(cameraId, ct);
+      if (binding is null)
+      {
+        blocked[cameraId] = $"No binding to master '{policy.MasterCameraId}' has been marked out yet";
+        continue;
+      }
+      if (binding.MasterCameraId != policy.MasterCameraId)
+      {
+        // Two places name the master and they disagree. Aiming through a survey marked against a
+        // different camera's frame would point the slave somewhere plausible and wrong, which is
+        // worse than not moving.
+        blocked[cameraId] =
+          $"The binding was marked against master '{binding.MasterCameraId}', not '{policy.MasterCameraId}'";
+        continue;
+      }
+      var unusable = binding.Unusable();
+      if (unusable is not null)
+      {
+        blocked[cameraId] = unusable;
+        continue;
+      }
+
+      wantedSlaves[cameraId] = (policy, binding);
     }
 
     // Logged only when the set changes: a reconcile runs on a timer and on every camera change in
@@ -127,6 +284,7 @@ public sealed class TrackingSessionManager(
           "Camera '{Camera}' is configured to guide itself but cannot: {Reason}", cameraId, reason);
     }
     _blocked = blocked;
+    _blockedMasters = blockedMasters;
 
     await _gate.WaitAsync(ct);
     try
@@ -137,6 +295,15 @@ public sealed class TrackingSessionManager(
           continue;
         logger.LogInformation(
           "Camera '{Camera}' no longer guides itself, stopping its session", cameraId);
+        await StopLockedAsync(cameraId);
+      }
+
+      foreach (var cameraId in _slaves.Keys.ToList())
+      {
+        if (wantedSlaves.ContainsKey(cameraId))
+          continue;
+        logger.LogInformation(
+          "Camera '{Camera}' no longer follows a master, stopping its session", cameraId);
         await StopLockedAsync(cameraId);
       }
 
@@ -153,6 +320,17 @@ public sealed class TrackingSessionManager(
         }
         StartLocked(cameraId, calibration, policy);
       }
+
+      foreach (var (cameraId, want) in wantedSlaves)
+      {
+        if (_slaves.TryGetValue(cameraId, out var runningSlave))
+        {
+          runningSlave.Session.ApplyBinding(want.Binding);
+          runningSlave.Session.ApplyPolicy(want.Policy);
+          continue;
+        }
+        StartSlaveLocked(cameraId, want.Binding, want.Policy);
+      }
     }
     finally
     {
@@ -160,10 +338,23 @@ public sealed class TrackingSessionManager(
     }
   }
 
+  /// <summary>Hands one sighting to everything that has a use for it.</summary>
+  /// <remarks>
+  /// A camera's detections drive its own session, and every slave that names it as master. Both, in
+  /// the case of a camera that guides itself and also feeds a slave — a stationary master with
+  /// analytics is the usual arrangement, but nothing about it has to be stationary.
+  /// </remarks>
   private void Dispatch(string cameraId, DetectionSample sample)
   {
     if (_sessions.TryGetValue(cameraId, out var running))
       running.Session.Offer(sample);
+
+    // Walked rather than kept as a master-to-slaves index: the number of slaves in a deployment is
+    // the number of PTZ cameras someone has surveyed by hand, and an index would be one more thing
+    // for a reconcile to keep in step with the sessions themselves.
+    foreach (var slave in _slaves.Values)
+      if (slave.MasterCameraId == cameraId)
+        slave.Session.Offer(sample);
   }
 
   private void StartLocked(string cameraId, PtzCalibrationModel? calibration, TrackingPolicy policy)
@@ -180,15 +371,40 @@ public sealed class TrackingSessionManager(
       policy);
     var loop = session.RunAsync(cts.Token);
     _sessions[cameraId] = new Running(session, cts, loop);
-    // An exception ends the loop without cancelling the CTS, so the dictionary would otherwise
-    // keep a dead session (UI still Active, motor idle). Sweep it the same way a Stop does.
+    WatchLoop(cameraId, loop);
+    logger.LogInformation("Tracking started on camera '{Camera}'", cameraId);
+    EnsurePump();
+  }
+
+  private void StartSlaveLocked(string cameraId, SlaveBindingModel binding, TrackingPolicy policy)
+  {
+    var cts = new CancellationTokenSource();
+    var session = new SlaveAimingSession(
+      cameraId,
+      sender,
+      loggerFactory.CreateLogger<SlaveAimingSession>(),
+      binding,
+      policy);
+    var loop = session.RunAsync(cts.Token);
+    _slaves[cameraId] = new RunningSlave(session, binding.MasterCameraId, cts, loop);
+    WatchLoop(cameraId, loop);
+    logger.LogInformation(
+      "Camera '{Camera}' is now aimed at objects from master '{Master}'",
+      cameraId, binding.MasterCameraId);
+    EnsurePump();
+  }
+
+  // An exception ends a loop without cancelling its CTS, so the dictionary would otherwise keep a
+  // dead session (UI still Active, motor idle). Sweep it the same way a Stop does.
+  private void WatchLoop(string cameraId, Task loop) =>
     _ = loop.ContinueWith(
       _ => OnLoopEnded(cameraId, loop),
       CancellationToken.None,
       TaskContinuationOptions.None,
       TaskScheduler.Default);
-    logger.LogInformation("Tracking started on camera '{Camera}'", cameraId);
 
+  private void EnsurePump()
+  {
     if (_pump is not null)
       return;
 
@@ -201,9 +417,14 @@ public sealed class TrackingSessionManager(
     await _gate.WaitAsync();
     try
     {
-      if (!_sessions.TryGetValue(cameraId, out var running) || running.Loop != loop)
+      var cts = _sessions.TryGetValue(cameraId, out var running) && running.Loop == loop
+        ? running.Cts
+        : _slaves.TryGetValue(cameraId, out var slave) && slave.Loop == loop
+          ? slave.Cts
+          : null;
+      if (cts is null)
         return;
-      if (!running.Cts.IsCancellationRequested)
+      if (!cts.IsCancellationRequested)
         logger.LogWarning("Tracking loop for camera '{Camera}' ended unexpectedly", cameraId);
       await StopLockedAsync(cameraId);
     }
@@ -219,17 +440,23 @@ public sealed class TrackingSessionManager(
 
   private async Task StopLockedAsync(string cameraId)
   {
-    if (!_sessions.TryRemove(cameraId, out var running))
+    CancellationTokenSource cts;
+    Task loop;
+    if (_sessions.TryRemove(cameraId, out var running))
+      (cts, loop) = (running.Cts, running.Loop);
+    else if (_slaves.TryRemove(cameraId, out var slave))
+      (cts, loop) = (slave.Cts, slave.Loop);
+    else
       return;
 
-    await running.Cts.CancelAsync();
+    await cts.CancelAsync();
     // The loop stops the camera on its way out; waiting for it is what makes "tracking off" mean
     // the camera has actually been told to stop.
-    try { await running.Loop; } catch (OperationCanceledException) { }
-    running.Cts.Dispose();
+    try { await loop; } catch (OperationCanceledException) { }
+    cts.Dispose();
     logger.LogInformation("Tracking stopped on camera '{Camera}'", cameraId);
 
-    if (!_sessions.IsEmpty || _pumpCts is null)
+    if (!_sessions.IsEmpty || !_slaves.IsEmpty || _pumpCts is null)
       return;
 
     await _pumpCts.CancelAsync();
@@ -243,6 +470,21 @@ public sealed class TrackingSessionManager(
   {
     foreach (var cameraId in _sessions.Keys.ToList())
       await StopLockedAsync(cameraId);
+    foreach (var cameraId in _slaves.Keys.ToList())
+      await StopLockedAsync(cameraId);
     _gate.Dispose();
   }
+}
+
+/// <summary>Where a test aim sent the camera, or why it did not.</summary>
+public sealed record AimResult(
+  bool Success,
+  string? Error,
+  float? Pan,
+  float? Tilt,
+  string? PresetToken,
+  string? PresetName,
+  bool Extrapolated)
+{
+  public static AimResult Failed(string error) => new(false, error, null, null, null, null, false);
 }

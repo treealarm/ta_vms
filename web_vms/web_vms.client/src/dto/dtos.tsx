@@ -1317,6 +1317,8 @@ export interface PtzTrackingStateDto {
   targetSeenAt?: string | null
   /** Last PTZ failure; empty while the camera is obeying. */
   lastError: string
+  /** Whose picture this camera follows; absent when it is its own. */
+  masterCameraId?: string | null
 }
 
 /**
@@ -1331,4 +1333,64 @@ export interface PtzTrackingPolicyDto {
   kinds: string[]
   /** Which producers of boxes to follow: "cv" and/or "onvif". Empty means either. */
   sources: AnalyticsDetectionSource[]
+  /** Whose objects to follow. Null/absent is the camera's own picture. */
+  masterCameraId?: string | null
+}
+
+/** Which way a slave is driven to the place a master's object maps to. */
+export type PtzSlaveBindingMethod = 'absolute' | 'presets'
+
+/**
+ * One marked correspondence: a spot in the master's frame, and where the slave was pointing.
+ *
+ * Both a position and a preset is the normal case, not redundancy — one trip to the spot yields
+ * both — and it is what lets the method be changed later without marking the zones out again.
+ */
+export interface PtzSlaveBindingPointDto {
+  /** 0..1 from the left of the master's frame. */
+  masterX: number
+  /** 0..1 from the top. The spot on the ground, not the middle of an object. */
+  masterY: number
+  /** Where the slave looked, if the camera would say. Its own units, uninterpreted. */
+  pan?: number | null
+  tilt?: number | null
+  presetToken?: string | null
+  presetName?: string | null
+  /**
+   * How far the rest of the survey lands from this point when it is left out of the fit — so a
+   * point that stands out is one marked wrong. Null where the survey is too small to check it, or
+   * the point has no position. Read-only: computed on the way out, ignored on the way in.
+   */
+  residual?: number | null
+}
+
+/** How a slave is aimed at the objects its master sees. */
+export interface PtzSlaveBindingDto {
+  masterCameraId: string
+  method: PtzSlaveBindingMethod
+  calibratedAt?: string | null
+  points: PtzSlaveBindingPointDto[]
+  /** Why this binding cannot aim the camera as it stands; null when it can. */
+  unusable?: string | null
+}
+
+/** Where a test aim sent the camera. */
+export interface PtzSlaveAimResultDto {
+  pan?: number | null
+  tilt?: number | null
+  presetToken?: string | null
+  presetName?: string | null
+  /** Outside the marked area, so the mapping is continuing the measurements rather than interpolating. */
+  extrapolated: boolean
+}
+
+/** Where a camera says it is pointing. Its own units. */
+export interface PtzStatusDto {
+  /** False when the camera would not answer. Answering is not proof the numbers move with it. */
+  available: boolean
+  pan: number
+  tilt: number
+  zoom: number
+  moving: boolean
+  error: string
 }

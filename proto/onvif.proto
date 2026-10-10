@@ -97,6 +97,9 @@ service OnvifService {
 
 service PtzService {
   rpc GetCapabilities(PtzCapabilitiesRequest) returns (PtzCapabilitiesResponse);
+  // Where the camera says it is pointing. The counterpart of AbsoluteMove, and the only way to
+  // record a position the operator has driven to by hand.
+  rpc GetStatus(PtzStatusRequest) returns (PtzStatusResponse);
   rpc ContinuousMove(PtzContinuousMoveRequest) returns (PtzResponse);
   rpc AbsoluteMove(PtzAbsoluteMoveRequest) returns (PtzResponse);
   rpc RelativeMove(PtzRelativeMoveRequest) returns (PtzResponse);
@@ -252,6 +255,25 @@ message PtzCapabilitiesResponse {
   bool absolute_move   = 1;
   bool relative_move   = 2;
   bool continuous_move = 3;
+}
+
+message PtzStatusRequest {
+  string source_id     = 1;
+  string profile_token = 2;
+}
+
+message PtzStatusResponse {
+  // False when the camera would not answer at all. It answering is not proof the numbers mean
+  // anything: firmware exists that reports constants and IDLE while the motor is plainly turning,
+  // so a caller that depends on the position must verify it by moving the camera and watching it
+  // change -- never by this call succeeding, and never by GetCapabilities.
+  bool   available = 1;
+  float  pan       = 2;
+  float  tilt      = 3;
+  float  zoom      = 4;
+  // The camera says it is still travelling. Absent move state reads as not moving.
+  bool   moving    = 5;
+  string error     = 6;
 }
 
 message PtzResponse {

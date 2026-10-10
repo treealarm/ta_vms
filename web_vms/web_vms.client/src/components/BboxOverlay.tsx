@@ -1,4 +1,4 @@
-import { useEffect, useState, type RefObject } from 'react'
+﻿import { useEffect, useState, type RefObject } from 'react'
 import { liveDetectionsClient } from '../hooks/liveDetectionsClient'
 import BboxCanvas from './bbox/BboxCanvas'
 import { boxesNow } from './bbox/liveBoxes'
@@ -9,6 +9,7 @@ interface Props {
   cameraId: string
   onFindSimilar?: (box: DrawableBox) => void
   onTrackObject?: (box: DrawableBox) => void
+  trackAimsOthers?: boolean
   /** The object automatic tracking is following, drawn gold with the rest dimmed. */
   highlight?: { source: string; trackId: number; kind: string } | null
 }
@@ -23,7 +24,9 @@ const FADE_TICK_MS = 120
  * the boxes do not move between samples (see liveBoxes.ts), so a per-frame loop would repaint an
  * unchanged canvas for every cell of the wall.
  */
-export default function BboxOverlay({ videoRef, cameraId, onFindSimilar, onTrackObject, highlight }: Props) {
+export default function BboxOverlay({
+  videoRef, cameraId, onFindSimilar, onTrackObject, trackAimsOthers, highlight,
+}: Props) {
   const [boxes, setBoxes] = useState<DrawableBox[]>([])
 
   useEffect(() => {
@@ -59,6 +62,7 @@ export default function BboxOverlay({ videoRef, cameraId, onFindSimilar, onTrack
       boxes={marked}
       onFindSimilar={onFindSimilar}
       onTrackObject={onTrackObject}
+      trackAimsOthers={trackAimsOthers}
     />
   )
 }

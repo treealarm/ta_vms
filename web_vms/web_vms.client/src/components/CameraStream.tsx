@@ -21,8 +21,13 @@ interface CameraStreamProps {
   onFindSimilar?: (box: DrawableBox) => void;
   /** Point automatic tracking at a clicked object; absent where the camera cannot be driven. */
   onTrackObject?: (box: DrawableBox) => void;
+  /** The click aims other cameras rather than this one, so the menu item says so. */
+  trackAimsOthers?: boolean;
   /** The object automatic tracking is currently following. */
   trackingHighlight?: { source: string; trackId: number; kind: string } | null;
+  /** An extra layer over the picture, given the <video> so it can do the letterbox arithmetic.
+   *  How the master/slave survey draws and picks its marked spots. */
+  overlay?: (videoRef: React.RefObject<HTMLVideoElement | null>) => React.ReactNode;
 }
 
 // A WHEP exchange can succeed in full — session created, peer connection reporting `connected` —
@@ -53,7 +58,9 @@ const CameraStream: React.FC<CameraStreamProps> = ({
   onFirstFrames,
   onFindSimilar,
   onTrackObject,
+  trackAimsOthers,
   trackingHighlight,
+  overlay,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   // Announced once per mount. A re-negotiation after a stall is not a new arrival for the caller:
@@ -417,6 +424,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({
           cameraId={cameraId}
           onFindSimilar={onFindSimilar}
           onTrackObject={onTrackObject}
+          trackAimsOthers={trackAimsOthers}
           highlight={trackingHighlight}
         />
       )}
@@ -424,6 +432,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({
           (cell motion, tamper) announce a condition instead, and it shows as text where a box
           would be. */}
       {bboxEnabled && cameraId && <EventOverlay cameraId={cameraId} enabled />}
+      {overlay?.(videoRef)}
     </Box>
   );
 };

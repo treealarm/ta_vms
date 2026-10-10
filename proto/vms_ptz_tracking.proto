@@ -30,6 +30,19 @@ service PtzTrackingService {
   // pick out the followed box; there is no per-camera variant because a wall would then issue one
   // request per tile.
   rpc ListTrackingStates(ListTrackingStatesRequest) returns (ListTrackingStatesResponse);
+  // Send a slave to the place a spot in its master's frame maps to, without waiting for an object
+  // to walk through it. This is how a survey is checked -- and it goes through this service rather
+  // than straight to the camera because this is where the aiming sessions live: a test aim issued
+  // elsewhere would be a second thing driving one motor.
+  rpc AimAtMasterPoint(AimAtMasterPointRequest) returns (AimAtMasterPointResponse);
+  // What the marked points add up to: whether they carry a mapping at all, and how far each one
+  // lands from where the others say it should be. Read by the survey wizard after every edit, so
+  // it answers from the binding as stored rather than from a session that may not be running.
+  rpc GetSlaveBindingFit(GetSlaveBindingFitRequest) returns (GetSlaveBindingFitResponse);
+  // Stop a slave aiming itself for a while, so its binding can be marked out by hand. Renewed by
+  // the caller while the wizard is open and released when it closes; it also expires on its own, so
+  // a browser that went away cannot leave a camera parked.
+  rpc HoldForSurvey(HoldForSurveyRequest) returns (HoldForSurveyResponse);
 }
 
 // One box on the live overlay.
@@ -71,10 +84,80 @@ message TrackingState {
   // Last PTZ failure, so an operator can tell "nothing to follow" from "the camera will not move".
   // Cleared by the next command that succeeds.
   string last_error = 6;
+  // Whose picture this camera follows, when it is not its own. The monitor reads it backwards: a
+  // camera named here by somebody is a master, and clicking a box on it points that somebody.
+  optional string master_camera_id = 7;
 }
 
 message ListTrackingStatesRequest {}
 
 message ListTrackingStatesResponse {
   repeated TrackingState states = 1;
+}
+
+// ── Master/slave aiming ─────────────────────────────────────────────────────
+
+message AimAtMasterPointRequest {
+  string slave_camera_id = 1;
+  // A spot in the master's frame, 0..1 from the top-left. The ground is what the survey mapped, so
+  // this is a place on the ground -- the same thing the bottom edge of an object's box means.
+  float  master_x = 2;
+  float  master_y = 3;
+}
+
+message AimAtMasterPointResponse {
+  bool   success = 1;
+  string error   = 2;
+  // Where the slave was sent. Which of these is filled depends on the binding's method: a position
+  // for absolute, a preset for presets.
+  optional float pan  = 3;
+  optional float tilt = 4;
+  string preset_token = 5;
+  string preset_name  = 6;
+  // The spot lies outside the marked area, where the mapping continues the measurements rather
+  // than interpolating between them. Not a refusal -- a step past the last marked point is aimed
+  // at perfectly well -- but worth showing the operator.
+  bool   extrapolated = 7;
+}
+
+message GetSlaveBindingFitRequest {
+  string slave_camera_id = 1;
+}
+
+message GetSlaveBindingFitResponse {
+  bool   found = 1;
+  // False when the survey cannot carry an interpolation: fewer than three points with a readable
+  // position, or all of them on one line. The presets method does not need one, so this is only
+  // fatal to the absolute method.
+  bool   fitted = 2;
+  string error  = 3;
+  // Why the binding cannot aim the camera by the method it was given, if it cannot. Separate from
+  // `error`, which is only about the interpolation: a survey with no presets fits perfectly well
+  // and still cannot drive a camera on the presets method.
+  string unusable = 4;
+  repeated PtzSlaveBindingResidual residuals = 5;
+}
+
+// How far the rest of the survey lands from one marked point when that point is left out of the
+// fit. A hand slip cannot be reproduced by the points around it, so it shows up here at the size
+// of the slip -- which the fit's own residual does not do, a spline passing through its points by
+// construction.
+message PtzSlaveBindingResidual {
+  // Index into the binding's points, in the order they are stored.
+  int32 ordinal = 1;
+  // Unset where the survey is too small for the point to be checked at all: three points fix an
+  // affine map exactly, and dropping one leaves two, which say nothing.
+  optional float residual = 2;
+}
+
+message HoldForSurveyRequest {
+  string slave_camera_id = 1;
+  // Zero releases the hold. Anything else is renewed, not added to: the caller says how much longer
+  // it wants, not how much more.
+  uint32 seconds = 2;
+}
+
+message HoldForSurveyResponse {
+  bool   success = 1;
+  string error   = 2;
 }

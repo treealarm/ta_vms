@@ -16,6 +16,7 @@ public sealed class CameraConfigSubscriber(
   DaprPublishSubscribeClient pubSubClient,
   CameraPtzRouter router,
   PtzCalibrationCache calibrationCache,
+  SlaveBindingCache bindingCache,
   TrackingReconciler reconciler,
   ILogger<CameraConfigSubscriber> logger) : IHostedService, IDisposable
 {
@@ -69,6 +70,7 @@ public sealed class CameraConfigSubscriber(
       var cameraIds = evt.CameraIds ?? [];
       router.Invalidate(cameraIds);
       calibrationCache.Invalidate(cameraIds);
+      bindingCache.Invalidate(cameraIds);
       // Drop the stale answers first, then ask for a reconcile: the reconciler re-reads through
       // these same caches, and doing it the other way round would have it re-install what was just
       // thrown away. The policy itself is not cached — the reconciler always reads it fresh.

@@ -52,10 +52,16 @@ public sealed record DetectionSample(
 /// button reflects the camera's setting, and a camera missing from this list altogether would read
 /// as switched off and could not be switched off.
 /// </param>
+/// <param name="MasterCameraId">
+/// Whose picture this camera is following, when it is not its own. What makes this worth carrying
+/// to the monitor is the other direction: it is how a card works out that it is somebody's master,
+/// and so that clicking a box on it will point a camera somewhere else.
+/// </param>
 public sealed record TrackingSnapshot(
   string CameraId,
   bool Active,
   TargetKey? Target,
   bool ExplicitTarget,
   DateTime? TargetSeenAt,
-  string LastError);
+  string LastError,
+  string? MasterCameraId = null);

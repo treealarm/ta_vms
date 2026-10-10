@@ -11,6 +11,7 @@ public interface ICameraActor : IActor
   Task PtzRelativeMoveAsync(PtzMoveActorRequest request);
   Task PtzStopAsync(PtzStopActorRequest request);
   Task<PtzCapabilitiesDto> GetPtzCapabilitiesAsync(CameraConnInfo conn);
+  Task<PtzStatusDto?> GetPtzStatusAsync(PtzStopActorRequest request);
   Task<SnapshotActorResult> GetSnapshotAsync(CameraConnInfo conn);
 }
 
@@ -28,3 +29,11 @@ public record PtzMoveActorRequest(CameraConnInfo Conn, string ProfileToken, floa
 public record PtzAbsoluteMoveActorRequest(CameraConnInfo Conn, string ProfileToken, float Pan, float Tilt, float Zoom, float Speed);
 public record PtzStopActorRequest(CameraConnInfo Conn, string ProfileToken);
 public record PtzCapabilitiesDto(bool AbsoluteMove, bool RelativeMove, bool ContinuousMove);
+
+/// <summary>Where a camera says it is pointing, in its own units.</summary>
+/// <remarks>
+/// Null from the actor means the camera would not answer. A camera answering is not proof the
+/// numbers move with it — some firmware reports constants forever — so anything depending on the
+/// position has to check by moving the camera and watching these change.
+/// </remarks>
+public record PtzStatusDto(float Pan, float Tilt, float Zoom, bool Moving);

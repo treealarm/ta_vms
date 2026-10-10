@@ -54,7 +54,8 @@ function sameValues(next: Map<string, PtzTrackingStateDto>): boolean {
       || prev.lastError !== value.lastError
       || prev.target?.trackId !== value.target?.trackId
       || prev.target?.source !== value.target?.source
-      || prev.target?.kind !== value.target?.kind) return false
+      || prev.target?.kind !== value.target?.kind
+      || prev.masterCameraId !== value.masterCameraId) return false
   }
   return true
 }
@@ -81,6 +82,40 @@ export function usePtzTracking(cameraId: string | undefined): PtzTrackingStateDt
   const getSnapshot = useCallback(
     () => (cameraId ? states.get(cameraId) ?? null : null),
     [cameraId])
+  return useSyncExternalStore(subscribe, getSnapshot)
+}
+
+/**
+ * Whether anything is aimed by this camera's picture — that is, whether it is somebody's master.
+ *
+ * Read backwards out of the same poll: a slave's state names the camera it follows, so a camera
+ * named by any of them is a master. That is what tells a monitor tile whether clicking a box on it
+ * means anything, and it cannot be answered from the camera's own state — a stationary master has
+ * no session of its own and looks, from its own row, like a camera that does nothing.
+ */
+export function useIsPtzMaster(cameraId: string | undefined): boolean {
+  const getSnapshot = useCallback(() => {
+    if (!cameraId) return false
+    for (const state of states.values())
+      if (state.masterCameraId === cameraId) return true
+    return false
+  }, [cameraId])
+  return useSyncExternalStore(subscribe, getSnapshot)
+}
+
+/**
+ * Whether any camera aimed by this one is currently pinned to an object the operator picked.
+ *
+ * A separate boolean rather than a richer object because useSyncExternalStore compares snapshots by
+ * identity: anything built fresh on each read would re-render forever.
+ */
+export function useMasterHasExplicitTarget(cameraId: string | undefined): boolean {
+  const getSnapshot = useCallback(() => {
+    if (!cameraId) return false
+    for (const state of states.values())
+      if (state.masterCameraId === cameraId && state.explicitTarget) return true
+    return false
+  }, [cameraId])
   return useSyncExternalStore(subscribe, getSnapshot)
 }
 

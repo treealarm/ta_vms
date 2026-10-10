@@ -67,6 +67,7 @@ public class PtzTrackingController(
       ExplicitTarget = s.ExplicitTarget,
       TargetSeenAt = s.TargetSeenAt?.ToDateTime(),
       LastError = s.LastError,
+      MasterCameraId = s.HasMasterCameraId && s.MasterCameraId.Length > 0 ? s.MasterCameraId : null,
     }));
   }
 }

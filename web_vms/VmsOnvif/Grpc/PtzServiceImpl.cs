@@ -36,6 +36,37 @@ public class PtzServiceImpl(
     }
   }
 
+  public override async Task<PtzStatusResponse> GetStatus(PtzStatusRequest request, ServerCallContext context)
+  {
+    var conn = await GetConn(request.SourceId, context.CancellationToken);
+    if (conn == null)
+      return new PtzStatusResponse { Error = "Camera not found or has no ONVIF connection" };
+
+    try
+    {
+      var actor = CameraActorProxy(request.SourceId);
+      var status = await actor.InvokeMethodAsync<PtzStopActorRequest, PtzStatusDto?>(
+        "GetPtzStatusAsync",
+        new PtzStopActorRequest(conn, request.ProfileToken),
+        context.CancellationToken);
+
+      return status is null
+        ? new PtzStatusResponse { Error = "The camera does not report its position" }
+        : new PtzStatusResponse
+        {
+          Available = true,
+          Pan       = status.Pan,
+          Tilt      = status.Tilt,
+          Zoom      = status.Zoom,
+          Moving    = status.Moving,
+        };
+    }
+    catch (Exception ex)
+    {
+      return new PtzStatusResponse { Error = ex.Message };
+    }
+  }
+
   public override async Task<PtzResponse> ContinuousMove(PtzContinuousMoveRequest request, ServerCallContext context)
   {
     var conn = await GetConn(request.SourceId, context.CancellationToken);
