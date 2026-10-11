@@ -5,6 +5,7 @@ import {
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import GpsFixedIcon from '@mui/icons-material/GpsFixed'
+import PersonPinCircleIcon from '@mui/icons-material/PersonPinCircle'
 import { Polyline } from 'react-leaflet'
 import { useTranslation } from 'react-i18next'
 import type { CameraSetupDto, GeoPointDto, PtzGeoAimResultDto } from '../../dto/dtos'
@@ -15,6 +16,7 @@ import SpaceCanvas, { type MapFocus } from '../../map/SpaceCanvas'
 import PlanOverlay from '../../map/PlanOverlay'
 import { CameraMarker } from '../../map/markers'
 import { Footprints } from '../../map/footprints'
+import DetectionsLayer from '../../map/DetectionsLayer'
 import { cameraMapStatus, STATUS_COLOR, type CameraMapStatus } from '../../map/cameraStatus'
 import CameraStream from '../CameraStream'
 import PtzControlPad from '../PtzControlPad'
@@ -32,6 +34,11 @@ const PLACEMENT_POLL_MS = 30000
 const LAST_SPACE_KEY = 'maps.operator.space'
 const readLastSpace = () => { try { return localStorage.getItem(LAST_SPACE_KEY) } catch { return null } }
 const writeLastSpace = (id: string) => { try { localStorage.setItem(LAST_SPACE_KEY, id) } catch { /* private mode */ } }
+
+// Whether detections are drawn on the map; on unless the operator turned them off.
+const DETECTIONS_KEY = 'maps.operator.detections'
+const readDetections = () => { try { return localStorage.getItem(DETECTIONS_KEY) !== 'off' } catch { return true } }
+const writeDetections = (on: boolean) => { try { localStorage.setItem(DETECTIONS_KEY, on ? 'on' : 'off') } catch { /* private mode */ } }
 
 /**
  * Operator → Map: the cameras of a space where they stand, coloured by what they are doing, and the
@@ -54,6 +61,7 @@ export default function MapsOperatorPanel() {
   const [aimResult, setAimResult] = useState<PtzGeoAimResultDto | null>(null)
   const [aimError, setAimError] = useState<string | null>(null)
   const [focus, setFocus] = useState<MapFocus | null>(null)
+  const [detections, setDetections] = useState(readDetections)
 
   useEffect(() => {
     void dispatch(loadSpaces())
@@ -160,9 +168,15 @@ export default function MapsOperatorPanel() {
             picking={aiming}
             focus={focus}
             onMapClick={(at) => (aiming ? void aimAt(at) : select(null))}
-            overlay={<SpaceNav spaces={spaces} space={space} onOpen={open} />}
+            overlay={(
+              <>
+                <SpaceNav spaces={spaces} space={space} onOpen={open} />
+                <DetectionsToggle on={detections} onChange={(on) => { setDetections(on); writeDetections(on) }} />
+              </>
+            )}
           >
             {space.plan && <PlanOverlay space={space} />}
+            {detections && space.id && <DetectionsLayer spaceId={space.id} />}
             <Footprints nested={nested} onPick={(s) => s.id && open(s.id)} />
             {here.map((p) => {
               const camera = camerasById[p.cameraId]
@@ -201,6 +215,25 @@ export default function MapsOperatorPanel() {
       </Box>
       <StatusLegend />
     </Box>
+  )
+}
+
+/** Shows or hides detections on the map, in the map's corner above the scale. */
+function DetectionsToggle({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+  const { t } = useTranslation()
+  return (
+    <Tooltip title={t('maps.detectionsHint')} placement="right">
+      <ToggleButton
+        value="detections"
+        size="small"
+        selected={on}
+        onChange={() => onChange(!on)}
+        sx={{ position: 'absolute', left: 10, bottom: 36, zIndex: 1000, py: 0.25, px: 1, bgcolor: 'rgba(40,40,40,0.85)', '&.Mui-selected': { bgcolor: 'rgba(40,40,40,0.95)' } }}
+      >
+        <PersonPinCircleIcon fontSize="small" sx={{ mr: 0.5 }} />
+        {t('maps.detections')}
+      </ToggleButton>
+    </Tooltip>
   )
 }
 

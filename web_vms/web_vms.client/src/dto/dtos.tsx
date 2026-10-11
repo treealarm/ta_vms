@@ -1481,6 +1481,34 @@ export type PtzGeoCalibrationDto = {
   error?: string | null
 }
 
+/** Where a landmark stands on the ground in a fixed camera's picture, 0..1 across and down the frame. */
+export type GroundObservationDto = {
+  landmarkId: string
+  x: number
+  y: number
+  /** How far the fit of all the marks puts this landmark, in metres; absent with only four marks. */
+  residualM?: number | null
+}
+
+/**
+ * Row-major 3×3 from the normalised frame to WGS84: (x, y, 1) maps to (lat·w, lon·w, w); a point
+ * with w ≤ 0 is beyond the horizon.
+ */
+export type GroundMatrix = number[]
+
+export type GroundCalibrationDto = {
+  observations: GroundObservationDto[]
+  /** Null when the tracking service could not be asked. */
+  fitted?: boolean | null
+  error?: string | null
+  matrix?: GroundMatrix | null
+}
+
+export type GroundProjectionDto = {
+  cameraId: string
+  matrix: GroundMatrix
+}
+
 export type PtzGeoAimResultDto = {
   pan: number
   tilt: number

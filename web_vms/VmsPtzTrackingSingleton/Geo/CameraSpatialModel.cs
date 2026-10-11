@@ -6,6 +6,11 @@ namespace VmsPtzTrackingSingleton.Geo;
 /// <param name="Space">The space of the camera's reference placement.</param>
 /// <param name="HeightAboveGroundM">The space's floor elevation plus the camera's own height.</param>
 /// <param name="GeoFit">Null when the observations cannot carry a fit; <see cref="GeoFitError"/> says why.</param>
+/// <param name="GroundFit">
+/// The picture mapped onto the ground, for a camera marked against landmarks in its picture; null
+/// when the marks cannot carry one, and <see cref="GroundFitError"/> says why -- or when there are
+/// none at all, and it is null too.
+/// </param>
 public sealed record CameraSpatialModel(
   string CameraId,
   Space Space,
@@ -14,7 +19,10 @@ public sealed record CameraSpatialModel(
   double HeightAboveGroundM,
   IReadOnlyList<GeoObservationSample> Observations,
   PtzGeoFit? GeoFit,
-  string? GeoFitError)
+  string? GeoFitError,
+  IReadOnlyList<GroundSample> GroundSamples,
+  GroundHomography? GroundFit,
+  string? GroundFitError)
 {
   /// <summary>Builds the model from what VmsCfg returned for a camera with a reference placement.</summary>
   public static CameraSpatialModel Build(CameraSpatialModelResponse response)
@@ -34,8 +42,18 @@ public sealed record CameraSpatialModel(
       .ToList();
 
     PtzGeoMath.TryFit(observations, out var fit, out var error);
+
+    var ground = response.GroundObservations
+      .Select(o => new GroundSample(o.LandmarkId, o.X, o.Y, frame.ToEnu(o.Lat, o.Lon), o.FloorElevationM))
+      .ToList();
+    GroundHomography? groundFit = null;
+    string? groundError = null;
+    if (ground.Count > 0)
+      GroundHomography.TryFit(ground, out groundFit, out groundError);
+
     return new CameraSpatialModel(
-      response.Placement.CameraId, response.Space, frame, position, height, observations, fit, error);
+      response.Placement.CameraId, response.Space, frame, position, height, observations, fit, error,
+      ground, groundFit, groundError);
   }
 
   /// <summary>Whether a point picked in <paramref name="other"/> is somewhere this camera can be aimed.</summary>

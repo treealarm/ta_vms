@@ -7,6 +7,8 @@ export type MasterPoint = {
   masterY: number
   /** Presets only: a point without one cannot aim, and its zone is drawn as a hole. */
   presetToken?: string | null
+  /** Drawn on the marker in place of its position in the list, for points numbered by something else. */
+  label?: string
 }
 
 interface Props {
@@ -31,6 +33,8 @@ interface Props {
   /** Fired once when a drag ends, so the move can be written without a request per mouse move. */
   onCommitPoint?: (index: number) => void
   onSelectPoint?: (index: number) => void
+  /** Where in the picture the pointer is, 0..1, while it moves over it without dragging; null when it leaves. */
+  onHover?: (at: { x: number; y: number } | null) => void
 }
 
 const RADIUS = 8
@@ -56,7 +60,7 @@ const ZONE_SCALE = 4
  */
 export default function MasterPointOverlay({
   videoRef, points, activeIndex, selectedIndex, showZones,
-  onPick, onMovePoint, onCommitPoint, onSelectPoint,
+  onPick, onMovePoint, onCommitPoint, onSelectPoint, onHover,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const pointsRef = useRef(points)
@@ -65,7 +69,7 @@ export default function MasterPointOverlay({
   const zonesRef = useRef(showZones)
   // Handlers are attached to the <video> once and must not be re-bound on every render, so what
   // they need is read through refs rather than closed over.
-  const callbacks = useRef({ onPick, onMovePoint, onCommitPoint, onSelectPoint })
+  const callbacks = useRef({ onPick, onMovePoint, onCommitPoint, onSelectPoint, onHover })
   const drag = useRef<{ index: number; moved: boolean } | null>(null)
 
   const draw = useCallback(() => {
@@ -117,7 +121,7 @@ export default function MasterPointOverlay({
       ctx.stroke()
 
       ctx.fillStyle = '#fff'
-      ctx.fillText(String(index + 1), x, y + 0.5)
+      ctx.fillText(point.label ?? String(index + 1), x, y + 0.5)
     })
   }, [videoRef])
 
@@ -126,11 +130,11 @@ export default function MasterPointOverlay({
     activeRef.current = activeIndex
     selectedRef.current = selectedIndex
     zonesRef.current = showZones
-    callbacks.current = { onPick, onMovePoint, onCommitPoint, onSelectPoint }
+    callbacks.current = { onPick, onMovePoint, onCommitPoint, onSelectPoint, onHover }
     draw()
   }, [
     points, activeIndex, selectedIndex, showZones,
-    onPick, onMovePoint, onCommitPoint, onSelectPoint, draw,
+    onPick, onMovePoint, onCommitPoint, onSelectPoint, onHover, draw,
   ])
 
   useEffect(() => {
@@ -187,7 +191,10 @@ export default function MasterPointOverlay({
     }
 
     const onMove = (event: PointerEvent) => {
-      if (!drag.current) return
+      if (!drag.current) {
+        callbacks.current.onHover?.(frameAt(event))
+        return
+      }
       const at = frameAt(event)
       if (!at) return
       drag.current.moved = true
@@ -237,7 +244,10 @@ export default function MasterPointOverlay({
     video.addEventListener('pointerup', onUp)
     video.addEventListener('pointercancel', onUp)
     video.addEventListener('click', onClick)
+    const onLeave = () => callbacks.current.onHover?.(null)
+    video.addEventListener('pointerleave', onLeave)
     return () => {
+      video.removeEventListener('pointerleave', onLeave)
       video.removeEventListener('pointerdown', onDown)
       video.removeEventListener('pointermove', onMove)
       video.removeEventListener('pointerup', onUp)

@@ -277,8 +277,38 @@ namespace VmsCfg
       return Ok();
     }
 
+    // ── Ground observations ─────────────────────────────────────────────────
+
+    public override Task<GroundObservations> GetGroundObservations(SourceRequest request, ServerCallContext context) =>
+      spatialDb.GetGroundObservationsAsync(request.SourceId, context.CancellationToken);
+
+    public override async Task<OperationStatus> SetGroundObservations(GroundObservations request, ServerCallContext context)
+    {
+      try
+      {
+        await spatialDb.SetGroundObservationsAsync(request, context.CancellationToken);
+      }
+      catch (SpatialConfigException ex) { return Failed(ex.Message); }
+
+      InvalidateFsCache(request.CameraId);
+      return Ok();
+    }
+
+    // ── Spatial models ──────────────────────────────────────────────────────
+
     public override Task<CameraSpatialModelResponse> GetCameraSpatialModel(SourceRequest request, ServerCallContext context) =>
       spatialDb.GetCameraSpatialModelAsync(request.SourceId, context.CancellationToken);
+
+    public override async Task<ListCameraSpatialModelsResponse> ListCameraSpatialModels(SpaceRequest request, ServerCallContext context)
+    {
+      if (!Guid.TryParse(request.SpaceId, out var spaceId))
+        throw new RpcException(new Status(StatusCode.InvalidArgument, "space_id is not a valid id"));
+      try
+      {
+        return await spatialDb.ListCameraSpatialModelsAsync(spaceId, context.CancellationToken);
+      }
+      catch (SpatialConfigException ex) { throw Invalid(ex); }
+    }
   }
 
   /// Image types a plan may be, checked by content as well as by the declared type: the bytes are

@@ -4,9 +4,10 @@ ta_vms places cameras and reference points in space on its own, without Square. 
 lays out maps and plans under **Admin → Maps**; an operator watches cameras where they stand under
 **Operator → Map**, dives into nested plans, and can point a calibrated PTZ at a place by clicking it.
 
-The same positions are what lets the VMS aim cameras: a PTZ calibrated against landmarks turns to
-any point that shares its coordinates, and (next stage) a slave follows a master's objects through
-those coordinates instead of a hand-marked pixel survey.
+The same positions are what lets the VMS aim cameras and place what they see: a PTZ calibrated
+against landmarks turns to any point that shares its coordinates, a fixed camera marked against
+landmarks shows its live detections on the map, and (next stage) a slave follows a master's objects
+through those coordinates instead of a hand-marked pixel survey.
 
 ## Model
 
@@ -20,6 +21,7 @@ one reachable from its outline on the parent.
 | Placement | `camera_placement` | Where a camera is drawn in one space: lat/lon, height, heading, view angle, range. One per camera and space; at most one per camera is its **reference**. |
 | Landmark | `landmark` | A named point with a known position and height in a space, used only to calibrate cameras. |
 | Observation | `ptz_geo_observation` | Where a PTZ pointed (its own pan/tilt units) when centred on a landmark. |
+| Ground mark | `ground_observation` | Where a landmark stands on the ground in a fixed camera's picture, normalised 0..1 like detection boxes. |
 
 Conventions that hold everywhere:
 
@@ -49,28 +51,31 @@ Conventions that hold everywhere:
   in its creation form; "Open the space on this view" in the editor reframes any space.
 - **Nothing is stored in plan pixels.** Re-aligning a plan moves the picture, not the objects.
 - **Heading is a compass bearing**: 0 = north, clockwise — the same as Square's `__image_rotate`.
-- **Fits are never stored.** VmsCfg keeps raw observations; `VmsPtzTrackingSingleton` fits them on
-  demand, exactly as it does the slave binding.
+- **Fits are never stored.** VmsCfg keeps raw observations and marks; `VmsPtzTrackingSingleton`
+  fits them on demand, exactly as it does the slave binding.
 - Geometry is measured in an equirectangular frame centred on the camera (`Geo/EnuFrame.cs`):
   millimetres of error across a few hundred metres, about a metre at 2 km.
 
 ## Where things live
 
-- **VmsCfg** owns the tables (`Grpc/migrations/0002_spatial.sql`, `Grpc/SpatialDb.cs`,
-  `Grpc/CfgServiceImpl.Spatial.cs`) and the gRPC contract (`proto/vms_cfg.proto`, section
-  "Maps & plans"). Plan images are `bytea` in its database and travel as chunked gRPC streams,
+- **VmsCfg** owns the tables (`Grpc/migrations/0002_spatial.sql`, `0003_ground_observation.sql`,
+  `Grpc/SpatialDb.cs`, `Grpc/CfgServiceImpl.Spatial.cs`) and the gRPC contract
+  (`proto/vms_cfg.proto`, section "Maps & plans"). Plan images are `bytea` in its database and travel as chunked gRPC streams,
   because Dapr service invocation caps one message at 4 MiB. Limit: 20 MiB per image.
 - **VmsPtzTrackingSingleton** owns the geometry (`Geo/`): the local frame, bearings, the
-  pan/tilt-against-azimuth/elevation fit with leave-one-out residuals, and `AimAtWorldPoint`. It is
-  the one owner of a camera's motor, so map aiming goes through it like every other aim.
+  pan/tilt-against-azimuth/elevation fit with leave-one-out residuals, `AimAtWorldPoint`, and the
+  picture-to-ground homography of a fixed camera (`GroundHomography`). It is the one owner of a
+  camera's motor, so map aiming goes through it like every other aim; the homography lives beside
+  the PTZ fit because the master/slave stage needs both in one place.
 - **web_vms.Server** serves `api/spatial/*` (spaces, plan images, placements, landmarks),
-  `api/ptz-geo/*` (observations, fit, aim) and `api/map/tiles/*`.
+  `api/ptz-geo/*` (observations, fit, aim), `api/ground-geo/*` (marks, fit, and the mappings a map
+  needs) and `api/map/tiles/*`.
 - **web_vms.client**: Leaflet + react-leaflet 5. `src/map/` holds the map primitives (rotated plan
   layer, authenticated tiles, metric grid, markers, footprints); `src/components/maps/` the two tabs.
 
 ## Events
 
-- A placement or a camera's observations change → `server-config-changed` with that camera, as
+- A placement or a camera's observations or marks change → `server-config-changed` with that camera, as
   for any camera setting. Removing a space announces every camera that had a placement in it or in
   anything nested in it.
 - A space, its plan or a landmark changes → **`space-config-changed`**, payload `{"space_id": "..."}`.
@@ -106,10 +111,51 @@ Plans never show tiles to operators. While an administrator lines up a plan in r
 
 What the fit assumes: a level mount, so pan follows the bearing and tilt the elevation, each by a
 straight line in the camera's own units. A camera hung out of level shows up as a pattern of misses
-and should be levelled. The camera's pan seam (where its range wraps) must not fall between the
+and should be levelled; one mounted on its side or at an angle cannot be calibrated by this fit at
+all (see "PTZ fit by mount orientation" under the next stages). The camera's pan seam (where its range wraps) must not fall between the
 landmarks; landmarks spread over the area the camera will actually be aimed at keep it out.
 Cameras whose `GetStatus` is a stub are refused with a message — they can still be aimed by presets
 through the slave binding.
+
+## Calibrating a fixed camera against the ground
+
+A fixed camera sees the floor through a projective transform, so four points known both in its
+picture and on the ground fix the mapping between them, whatever the mount, tilt or lens — no
+camera model, and no need for the camera's own position to be exact.
+
+1. Place the camera where it really stands (its reference placement). The calibration is offered
+   there, and for a camera without PTZ the same button opens this one.
+2. Drop landmarks on the ground the camera sees — the same landmarks a PTZ uses.
+3. Pick a landmark, click where it **stands** in the live picture — its foot, not its top; its
+   height plays no part here — and go on to the next. Marks can be dragged to correct them.
+4. Four landmarks spread over the ground, no three on one line, make a mapping. From the fifth,
+   the table shows how far the mapping puts each landmark from where it stands, in metres, and the
+   map draws that miss as a red line. Once mapped, the pointer over the picture and the live
+   detections show on the map beside it.
+
+The miss is taken against the fit of all the marks, as georeferencing tools do, not leave-one-out as
+the PTZ fit is: a homography has eight degrees of freedom, so with a handful of marks leaving out a
+corner one makes the rest extrapolate, and a single misplaced landmark showed as a 50 m miss on a
+correct corner. All the marks must be on one floor (spaces of equal elevation) — the mapping is of
+one plane. Lens distortion is not modelled: a wide lens misses more towards the edges of the frame,
+which the misses show; landmarks spread over the part of the picture that matters keep it small
+there.
+
+## Detections on the map
+
+The operator's map shows the live detections of every fixed camera mapped onto the ground whose
+reference placement shares geometry with the space on screen (VmsCfg decides which, by the same
+rule as everything else). "Detections" in the map's corner turns them off and on.
+
+- The browser gets each camera's mapping as a 3×3 matrix straight to WGS84 (`GET
+  api/ground-geo?spaceId=`) and only multiplies by it; the fit is the server's. Detections come
+  from the same live stream the video overlay uses (`api/analytics/live`), with the same fade.
+- The point projected is the bottom middle of the box — feet, wheels. Faces and plates are not
+  drawn: they sit on a person or vehicle that already is.
+- A point beyond the horizon, or farther than the camera's range on its placement, is dropped: near
+  the horizon one pixel spans kilometres, and such a point says more about the fit than about the
+  object.
+- A dot has its track's colour, the same as its box on the video, so the two can be matched.
 
 ## Ownership with Square
 
@@ -120,11 +166,27 @@ once, when Square first learns of it, and afterwards only its name and propertie
 
 ## Next stages
 
-- **Master/slave through coordinates.** A fixed camera calibrated against ground landmarks
-  (image→floor homography, ≥ 4 points); a new binding method `geo` aims a slave at the world point
-  under the master's detection, when the two cameras' reference spaces share geometry. Needs a
-  spatial-model cache in the aiming service, invalidated by `space-config-changed`.
-- **Detections on the map**, projected through the same homography in the browser.
+- **PTZ fit by mount orientation.** The two straight lines hold only for a level mount, angular
+  units and an exact camera position. A camera on a wall bracket leans; one on a fence may hang on
+  its side, so that pan sweeps up and down and tilt across; units may not be linear in angle; a
+  placement a metre off skews near targets. Instead, staged by the number of observations:
+  - 2–3: the two lines, as now — enough to aim at all.
+  - 4+: a physical model fitted in one go by nonlinear least squares (Levenberg–Marquardt, with a
+    loss that tolerates an outlier): the mount's **full** 3-D orientation — any rotation, not a
+    small tilt, so sideways and upside-down mounts are the same case — plus a scale and an offset
+    per axis in the camera's own units. Kabsch–Umeyama on the observed directions gives the
+    starting rotation. (Kabsch alone was tried elsewhere and worked badly: it needs the units to be
+    angles already, and an unknown scale turns into a wrong rotation.)
+  - 6–8+: a smooth correction of the remaining misses across the covered sector, for units that
+    are not linear in angle — trusted only where there are observations.
+  - Optionally the camera's position too, when there are many well-spread landmarks.
+  A richer model is chosen only when its held-out misses are actually smaller, so extra parameters
+  do not fit noise. Decide which stages are needed from 8–10 observations on a real camera that
+  takes absolute positions — none is on the bench yet.
+- **Master/slave through coordinates.** A new binding method `geo` aims a slave at the world point
+  under the master's detection — the master's ground homography gives the point, the slave's PTZ
+  fit the pan/tilt — when the two cameras' reference spaces share geometry. Needs a spatial-model
+  cache in the aiming service, invalidated by `space-config-changed`.
 - **Aerial targets**: a master's full pose (PnP from landmarks with heights) gives a ray; a
   co-located slave follows its direction, two masters triangulate a 3D point.
 - **Export to Square**: each space a diagram (`background_img`, its footprint the `geometry` on the

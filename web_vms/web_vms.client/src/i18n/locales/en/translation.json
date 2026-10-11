@@ -17,7 +17,8 @@
     "name": "Name",
     "password": "Password",
     "user": "User",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "undoLast": "Undo the last change (Ctrl+Z)"
   },
   "nav": {
     "monitors": "Monitors",
@@ -1072,7 +1073,7 @@
     "planModeHint": "Drag ✥ to move the plan, ⟳ to turn it, ⤡ to resize it — or type its width",
     "cameras": "Cameras",
     "landmarks": "Landmarks",
-    "landmarksPurpose": "Fixed points PTZ cameras are calibrated against: aim the camera at each and record its position, and it can then be pointed at any spot on the map. Operators do not see them.",
+    "landmarksPurpose": "Fixed points cameras are calibrated against. A PTZ is aimed at each and records its position, and can then be pointed at any spot on the map; a fixed camera has each one's foot marked in its picture, and its detections then show on the map. Operators do not see them.",
     "noLandmarks": "None yet: add them with the pin tool above the map",
     "landmarkHeightShort": "{{height}} m up",
     "camerasToPlace": "Cameras to place",
@@ -1142,7 +1143,9 @@
     "alignOnMap": "Map underneath",
     "alignOnMapHint": "Show the real map under the plan while lining it up. Operators never see it.",
     "aimNoReference": "This camera has no real position on any map yet",
-    "aimOtherWorld": "This camera stands in \"{{name}}\", which shares no coordinates with this plan"
+    "aimOtherWorld": "This camera stands in \"{{name}}\", which shares no coordinates with this plan",
+    "detections": "Detections",
+    "detectionsHint": "Live detections of fixed cameras calibrated against the ground, where they stand"
   },
   "ptzGeo": {
     "open": "Calibrate by landmarks…",
@@ -1150,7 +1153,7 @@
     "title": "Calibrate {{name}} by landmarks",
     "howTo": "Turn the camera until a landmark sits in the crosshair, then press Record on its row. Two landmarks in different directions are enough; a third lets each one be checked.",
     "noVideo": "No live stream for this camera",
-    "noLandmarks": "This site has no landmarks yet. Add some on the map first.",
+    "noLandmarks": "This space has no landmarks yet. Add some on the map first.",
     "fitted": "Calibrated: the camera can be aimed from the map.",
     "needTwo": "Record at least two landmarks in different directions.",
     "pan": "Pan",
@@ -1163,5 +1166,17 @@
     "noStatus": "The camera did not report its position",
     "aimed": "pan {{pan}}, tilt {{tilt}} · bearing {{az}}°, elevation {{el}}°, {{dist}} m",
     "extrapolated": "(outside the landmarks, less precise)"
+  },
+  "ground": {
+    "panelHint": "Mark landmarks in this camera's picture to show its detections on the map.",
+    "title": "Map the picture of {{name}} onto the ground",
+    "howTo": "Pick a landmark in the list or on the map, then click where it stands on the ground in the picture — its foot, not its top. Drag a mark to correct it. Four landmarks spread over the ground make a mapping; a fifth lets each be checked.",
+    "pickLandmarkFirst": "Pick the landmark first, then click where it is in the picture",
+    "fitted": "Mapped: the pointer over the picture and the live detections show on the map. The red lines are how far each landmark lands from its mark.",
+    "needFour": "Mark at least four landmarks spread over the ground, no three of them on one line.",
+    "residual": "Miss",
+    "residualHint": "How far the mapping puts this landmark from where it stands, on the ground. Re-mark the largest first; shown from the fifth landmark.",
+    "forget": "Forget this mark",
+    "keptHint": "Every mark is saved as it is made: close this, add landmarks on the map, and the marks will be here when you come back."
   }
 }

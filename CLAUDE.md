@@ -297,8 +297,11 @@ Spaces (maps and nested plans), plan images, camera placements and landmarks liv
   uses — and any number of pictures (Square's `owner_id`). Another placement is never promoted to
   reference behind the administrator's back.
 - Heading is a compass bearing, 0 = north, clockwise (Square's `__image_rotate`).
-- Calibration fits are never stored — raw observations in VmsCfg, the fit in
-  `VmsPtzTrackingSingleton/Geo`, as with the slave binding.
+- Calibration fits are never stored — raw observations and ground marks in VmsCfg, the PTZ fit and
+  the fixed camera's ground homography in `VmsPtzTrackingSingleton/Geo`, as with the slave binding.
+  The browser only multiplies by the matrix it is handed; it never fits.
+- Detections on the map come from the existing live stream (`api/analytics/live`), projected in the
+  browser — no second detection stream for maps.
 - Space changes are announced on `space-config-changed {"space_id"}`; a camera's placements or
   observations on `server-config-changed`.
 - Map tiles reach browsers only through web_vms's caching proxy (`api/map/tiles`), cached in the

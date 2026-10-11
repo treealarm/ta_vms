@@ -115,8 +115,14 @@ service CfgService {
   // Replaces the camera's observations whole, like a slave binding's points: one observation
   // changes what every other one is checked against.
   rpc SetPtzGeoObservations(PtzGeoObservations) returns (OperationStatus);
+  rpc GetGroundObservations(SourceRequest) returns (GroundObservations);
+  // Replaces the camera's ground marks whole, as SetPtzGeoObservations does.
+  rpc SetGroundObservations(GroundObservations) returns (OperationStatus);
   // Everything needed to aim one camera through world coordinates, in one round trip.
   rpc GetCameraSpatialModel(SourceRequest) returns (CameraSpatialModelResponse);
+  // The models of every camera with ground marks whose reference placement shares geometry with
+  // the given space: the cameras whose detections can be shown there.
+  rpc ListCameraSpatialModels(SpaceRequest) returns (ListCameraSpatialModelsResponse);
 }
 
 service StorageService {
@@ -1172,6 +1178,32 @@ message GeoObservation {
   float  tilt          = 7;
 }
 
+// Where a landmark stands on the ground in a fixed camera's picture, normalised to 0..1 across the
+// frame (0, 0 top left) -- the convention of detection boxes. Its foot is marked, not its height.
+message GroundObservation {
+  string landmark_id = 1;
+  float  x           = 2;
+  float  y           = 3;
+}
+
+message GroundObservations {
+  string camera_id = 1;
+  repeated GroundObservation observations = 2;
+}
+
+// A ground mark together with where its landmark stands.
+message GeoGroundObservation {
+  string landmark_id   = 1;
+  string landmark_name = 2;
+  double lat           = 3;
+  double lon           = 4;
+  // The elevation of the landmark's space: an image-to-ground fit maps one floor, so marks on
+  // different floors cannot be fitted together.
+  double floor_elevation_m = 5;
+  float  x             = 6;
+  float  y             = 7;
+}
+
 message CameraSpatialModelResponse {
   // False when the camera has no reference placement. Without one nothing can be aimed through it.
   bool            found     = 1;
@@ -1181,4 +1213,10 @@ message CameraSpatialModelResponse {
   // Only observations of landmarks in a space that shares geometry with the camera's: one taken
   // before the camera moved to an unrelated plan describes a place it can no longer see.
   repeated GeoObservation observations = 4;
+  // Ground marks, filtered by the same rule.
+  repeated GeoGroundObservation ground_observations = 5;
+}
+
+message ListCameraSpatialModelsResponse {
+  repeated CameraSpatialModelResponse models = 1;
 }

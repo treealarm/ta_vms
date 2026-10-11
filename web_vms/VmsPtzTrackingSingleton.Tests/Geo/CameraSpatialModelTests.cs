@@ -49,4 +49,37 @@ public class CameraSpatialModelTests
     Assert.False(madeUp.SharesGeometryWith(MadeUpSpace("lobby")));
     Assert.False(madeUp.SharesGeometryWith(RealSpace("yard")));
   }
+
+  [Fact]
+  public void FitsThePictureToTheGroundOnlyWhenMarked()
+  {
+    var space = RealSpace("yard");
+    var response = new CameraSpatialModelResponse
+    {
+      Found = true,
+      Space = space,
+      Placement = new CameraPlacement { CameraId = "cam", SpaceId = space.Id, IsReference = true, Lat = 41.3, Lon = 69.24, HeightM = 6 },
+    };
+    Assert.Null(CameraSpatialModel.Build(response).GroundFit);
+    Assert.Null(CameraSpatialModel.Build(response).GroundFitError);
+
+    // A square of ground seen as a trapezoid, as from above and behind.
+    const double m = 1 / (EnuFrame.EarthRadiusM * Math.PI / 180);
+    (double X, double Y, double North, double East)[] marks =
+      [(0.3, 0.9, 5, -2), (0.7, 0.9, 5, 2), (0.6, 0.4, 15, 2), (0.4, 0.4, 15, -2)];
+    foreach (var (x, y, north, east) in marks)
+    {
+      response.GroundObservations.Add(new GeoGroundObservation
+      {
+        LandmarkId = $"{x}/{y}", Lat = 41.3 + north * m, Lon = 69.24 + east * m / Math.Cos(41.3 * Math.PI / 180), X = (float)x, Y = (float)y,
+      });
+    }
+    var model = CameraSpatialModel.Build(response);
+
+    Assert.NotNull(model.GroundFit);
+    var middle = model.GroundFit.Project(0.5, 0.9);
+    Assert.NotNull(middle);
+    Assert.Equal(0, middle.Value.East, 3);
+    Assert.Equal(5, middle.Value.North, 3);
+  }
 }

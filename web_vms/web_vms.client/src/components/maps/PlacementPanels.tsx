@@ -51,10 +51,12 @@ export function CameraPlacementPanel({
         <NumberField label={t('maps.hfov')} value={placement.hfovDeg} min={1} max={360} onCommit={set('hfovDeg')} />
         <NumberField label={t('maps.range')} value={placement.rangeM} min={1} onCommit={set('rangeM')} />
       </Stack>
-      {camera?.hasTelemetry && placement.isReference && (
+      {camera && placement.isReference && (
         <>
           <Divider />
-          <Typography variant="caption" color="text.secondary">{t('ptzGeo.panelHint')}</Typography>
+          <Typography variant="caption" color="text.secondary">
+            {camera.hasTelemetry ? t('ptzGeo.panelHint') : t('ground.panelHint')}
+          </Typography>
           <Button variant="outlined" size="small" onClick={onCalibrate}>{t('ptzGeo.open')}</Button>
         </>
       )}

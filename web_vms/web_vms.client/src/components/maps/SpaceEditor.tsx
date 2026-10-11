@@ -29,6 +29,7 @@ import NumberField from './NumberField'
 import SpaceNav from './SpaceNav'
 import MapObjectList, { type MapObjectSection } from './MapObjectList'
 import PtzGeoCalibrationDialog from './PtzGeoCalibrationDialog'
+import GroundCalibrationDialog from './GroundCalibrationDialog'
 import { childrenOf } from './spatialUtils'
 
 /** What the next click on the map does. */
@@ -473,14 +474,22 @@ export default function SpaceEditor({ space, onOpenSpace }: Props) {
         {panel}
       </Box>
 
-      {calibrating && (
+      {/* A PTZ learns where to point; a fixed camera, where its picture lies on the ground. */}
+      {calibrating && (camerasById[calibrating]?.hasTelemetry ? (
         <PtzGeoCalibrationDialog
           cameraId={calibrating}
           space={space}
           landmarks={landmarks}
           onClose={() => setCalibrating(null)}
         />
-      )}
+      ) : (
+        <GroundCalibrationDialog
+          cameraId={calibrating}
+          space={space}
+          landmarks={landmarks}
+          onClose={() => setCalibrating(null)}
+        />
+      ))}
     </Box>
   )
 }

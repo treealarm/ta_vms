@@ -17,7 +17,8 @@
     "name": "Nombre",
     "password": "Contraseña",
     "user": "Usuario",
-    "loading": "Cargando..."
+    "loading": "Cargando...",
+    "undoLast": "Deshacer el último cambio (Ctrl+Z)"
   },
   "nav": {
     "monitors": "Monitores",
@@ -1072,7 +1073,7 @@
     "planModeHint": "Arrastre ✥ para mover el plano, ⟳ para girarlo, ⤡ para cambiar su tamaño, o escriba su ancho",
     "cameras": "Cámaras",
     "landmarks": "Referencias",
-    "landmarksPurpose": "Puntos fijos con los que se calibran las cámaras PTZ: apunte la cámara a cada uno y registre su posición; después se podrá dirigir a cualquier punto del mapa. Los operadores no los ven.",
+    "landmarksPurpose": "Puntos fijos con los que se calibran las cámaras. Una PTZ se apunta a cada uno y registra su posición, y después se puede dirigir a cualquier punto del mapa; en una cámara fija se marca en su imagen dónde se apoya cada uno, y sus detecciones aparecen en el mapa. Los operadores no los ven.",
     "noLandmarks": "Ninguna aún: añádalas con la herramienta de chincheta sobre el mapa",
     "landmarkHeightShort": "a {{height}} m",
     "camerasToPlace": "Cámaras por colocar",
@@ -1142,7 +1143,9 @@
     "alignOnMap": "Mapa debajo",
     "alignOnMapHint": "Muestra el mapa real bajo el plano mientras se alinea. Los operadores nunca lo ven.",
     "aimNoReference": "Esta cámara aún no tiene posición real en ningún mapa",
-    "aimOtherWorld": "Esta cámara está en \"{{name}}\", que no comparte coordenadas con este plano"
+    "aimOtherWorld": "Esta cámara está en \"{{name}}\", que no comparte coordenadas con este plano",
+    "detections": "Detecciones",
+    "detectionsHint": "Detecciones en vivo de las cámaras fijas calibradas sobre el suelo, donde están"
   },
   "ptzGeo": {
     "open": "Calibrar con puntos de referencia…",
@@ -1150,7 +1153,7 @@
     "title": "Calibrar {{name}} con puntos de referencia",
     "howTo": "Gire la cámara hasta que un punto de referencia quede en la mira y pulse Registrar en su fila. Bastan dos puntos en direcciones distintas; un tercero permite comprobar cada uno.",
     "noVideo": "Esta cámara no tiene vídeo en vivo",
-    "noLandmarks": "Este sitio aún no tiene puntos de referencia. Añádalos primero en el mapa.",
+    "noLandmarks": "Este espacio aún no tiene puntos de referencia. Añádalos primero en el mapa.",
     "fitted": "Calibrada: la cámara puede apuntarse desde el mapa.",
     "needTwo": "Registre al menos dos puntos en direcciones distintas.",
     "pan": "Pan",
@@ -1163,5 +1166,17 @@
     "noStatus": "La cámara no informó su posición",
     "aimed": "pan {{pan}}, tilt {{tilt}} · rumbo {{az}}°, elevación {{el}}°, {{dist}} m",
     "extrapolated": "(fuera de los puntos de referencia, menos preciso)"
+  },
+  "ground": {
+    "panelHint": "Marque puntos de referencia en la imagen de esta cámara para ver sus detecciones en el mapa.",
+    "title": "Proyectar la imagen de {{name}} sobre el suelo",
+    "howTo": "Elija un punto de referencia en la lista o en el mapa y haga clic donde se apoya en el suelo en la imagen: su base, no su parte alta. Arrastre una marca para corregirla. Cuatro puntos repartidos por el suelo bastan; un quinto permite comprobar cada uno.",
+    "pickLandmarkFirst": "Elija primero el punto de referencia y después haga clic donde está en la imagen",
+    "fitted": "Proyectada: el puntero sobre la imagen y las detecciones en vivo aparecen en el mapa. Las líneas rojas muestran cuánto se desvía cada punto de su marca.",
+    "needFour": "Marque al menos cuatro puntos de referencia repartidos por el suelo, sin tres en una misma línea.",
+    "residual": "Desvío",
+    "residualHint": "A qué distancia sobre el suelo sitúa la proyección este punto respecto de donde está. Vuelva a marcar primero el mayor; se muestra a partir del quinto punto.",
+    "forget": "Olvidar esta marca",
+    "keptHint": "Cada marca se guarda al hacerla: cierre esto, añada puntos de referencia en el mapa y las marcas seguirán aquí al volver."
   }
 }

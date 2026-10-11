@@ -214,12 +214,17 @@ public sealed class TrackingSessionManager(
     return new WorldAimResult(true, null, aim, bearing);
   }
 
-  /// <summary>What a camera's landmark observations add up to, for the calibration wizard.</summary>
+  /// <summary>What a camera's landmark observations and marks add up to, for the calibration wizards.</summary>
   /// <returns>Null when the camera has no reference placement.</returns>
-  public Task<CameraSpatialModel?> GetGeoFitAsync(string cameraId, CancellationToken ct) =>
+  public Task<CameraSpatialModel?> GetSpatialModelAsync(string cameraId, CancellationToken ct) =>
     string.IsNullOrWhiteSpace(cameraId)
       ? Task.FromResult<CameraSpatialModel?>(null)
       : spatial.LoadAsync(cameraId, ct);
+
+  /// <summary>The cameras whose detections can be shown in a space, with their pictures fitted to the ground.</summary>
+  /// <remarks>Only those whose marks carry a fit: a camera that cannot be projected has nothing to show.</remarks>
+  public async Task<IReadOnlyList<CameraSpatialModel>> ListGroundProjectionsAsync(string spaceId, CancellationToken ct) =>
+    (await spatial.LoadForSpaceAsync(spaceId, ct)).Where(m => m.GroundFit is not null).ToList();
 
   /// <summary>Stops a camera aiming itself for a while, so a person can drive it by hand.</summary>
   /// <remarks>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Box,
@@ -21,6 +21,7 @@ import SaveIcon from '@mui/icons-material/Save'
 import MyLocationIcon from '@mui/icons-material/MyLocation'
 import AddIcon from '@mui/icons-material/Add'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
+import UndoIcon from '@mui/icons-material/Undo'
 import { useTranslation } from 'react-i18next'
 import { useAppSelector } from '../store'
 import { apiFetch } from '../api/apiFetch'
@@ -28,6 +29,7 @@ import CameraStream from './CameraStream'
 import MasterPointOverlay from './bbox/MasterPointOverlay'
 import PtzControlPad from './PtzControlPad'
 import AimCrosshair from './AimCrosshair'
+import { useUndoShortcut } from '../hooks/useUndoShortcut'
 import type {
   PtzPresetDto,
   PtzSlaveAimResultDto,
@@ -45,6 +47,12 @@ type Props = {
   slaveWhepUrl?: string
   slaveStunUrl?: string | null
 }
+
+/** The survey as stored, to go back to; null when there was no binding at all. */
+type Saved = { master: string; method: PtzSlaveBindingMethod; points: PtzSlaveBindingPointDto[] } | null
+
+/** How many steps back "Undo" reaches; a survey is dozens of edits, not hundreds. */
+const UNDO_DEPTH = 50
 
 /** A point being marked: the spot is chosen, the slave is being driven to it. */
 type Pending = { masterX: number; masterY: number }
@@ -90,6 +98,11 @@ export default function CameraSlaveBindingSection({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  // What the server holds, as last read, and the states before each edit since the tab opened.
+  // Every edit is saved at once (see persist), so "Undo" is the way back, not a Cancel that never
+  // had anything unsaved to drop.
+  const saved = useRef<Saved>(null)
+  const [history, setHistory] = useState<Saved[]>([])
 
   /**
    * Reads the survey back from the server.
@@ -104,6 +117,9 @@ export default function CameraSlaveBindingSection({
       const data = await apiFetch<PtzSlaveBindingDto | null>(
         `/api/ptz-slave-binding/${encodeURIComponent(cameraId)}`)
       setBinding(data)
+      saved.current = data
+        ? { master: data.masterCameraId, method: data.method, points: data.points.map(stripResidual) }
+        : null
       setMaster(data?.masterCameraId ?? '')
       setMethod(data?.method ?? 'absolute')
       setPoints(data?.points ?? [])
@@ -116,8 +132,14 @@ export default function CameraSlaveBindingSection({
 
   useEffect(() => {
     setSelected(null)
+    setHistory([])
     void fetchBinding(true)
   }, [fetchBinding])
+
+  /** Remembers the state an edit is about to replace, so it can be undone. */
+  const remember = useCallback((before: Saved) => {
+    setHistory((h) => [...h, before].slice(-UNDO_DEPTH))
+  }, [])
 
   // The slave's own presets, for pinning a marked point to one.
   const loadPresets = useCallback(async () => {
@@ -199,6 +221,7 @@ export default function CameraSlaveBindingSection({
    */
   const persist = useCallback(async (
     next: { master?: string; method?: PtzSlaveBindingMethod; points?: PtzSlaveBindingPointDto[] },
+    undoable = true,
   ) => {
     const wantedMaster = next.master ?? master
     const wantedMethod = next.method ?? method
@@ -206,6 +229,7 @@ export default function CameraSlaveBindingSection({
 
     if (!wantedMaster) return
     setError(null)
+    const before = saved.current
     try {
       await apiFetch(`/api/ptz-slave-binding/${encodeURIComponent(cameraId)}`, {
         method: 'PUT',
@@ -216,6 +240,7 @@ export default function CameraSlaveBindingSection({
           points: wantedPoints.map(stripResidual),
         }),
       })
+      if (undoable) remember(before)
       // Re-read rather than trusting the local copy: the residuals are computed server-side, and
       // they are the whole point of the list showing numbers at all. Without the spinner — the
       // selection and the pictures stay put.
@@ -223,13 +248,15 @@ export default function CameraSlaveBindingSection({
     } catch (e) {
       setError(errorText(e, t('slaveBinding.saveFailed')))
     }
-  }, [cameraId, master, method, points, fetchBinding, t])
+  }, [cameraId, master, method, points, fetchBinding, remember, t])
 
   const removeBinding = async () => {
     setBusy(true)
     setError(null)
+    const before = saved.current
     try {
       await apiFetch(`/api/ptz-slave-binding/${encodeURIComponent(cameraId)}`, { method: 'DELETE' })
+      remember(before)
       setSelected(null)
       await fetchBinding(false)
     } catch (e) {
@@ -421,13 +448,45 @@ export default function CameraSlaveBindingSection({
       const unpinned = points.map((p) =>
         p.presetToken === token ? { ...p, presetToken: null, presetName: null } : p)
       setPoints(unpinned)
-      await persist({ points: unpinned })
+      await persist({ points: unpinned }, false)
+      // The preset is gone from the camera and no undo brings it back; an earlier state would pin
+      // spots to it again and look complete while sending the slave nowhere.
+      setHistory([])
     } catch (e) {
       setError(errorText(e, t('slaveBinding.deletePresetFailed')))
     } finally {
       setBusy(false)
     }
   }
+
+  /** Puts the survey back as it was before the last edit, and saves that. */
+  const undo = useCallback(async () => {
+    if (history.length === 0 || busy) return
+    const target = history[history.length - 1]
+    setBusy(true)
+    setError(null)
+    setPending(null)
+    setSelected(null)
+    try {
+      if (target) {
+        await apiFetch(`/api/ptz-slave-binding/${encodeURIComponent(cameraId)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ masterCameraId: target.master, method: target.method, points: target.points }),
+        })
+      } else {
+        await apiFetch(`/api/ptz-slave-binding/${encodeURIComponent(cameraId)}`, { method: 'DELETE' })
+      }
+      setHistory((h) => h.slice(0, -1))
+      await fetchBinding(false)
+    } catch (e) {
+      setError(errorText(e, t('slaveBinding.saveFailed')))
+    } finally {
+      setBusy(false)
+    }
+  }, [history, busy, cameraId, fetchBinding, t])
+
+  useUndoShortcut(() => void undo())
 
   const movePoint = useCallback((index: number, x: number, y: number) => {
     setPoints((current) => current.map((p, i) => (i === index ? { ...p, masterX: x, masterY: y } : p)))
@@ -561,6 +620,13 @@ export default function CameraSlaveBindingSection({
             <Stack direction="row" spacing={0.5} alignItems="center">
               <Typography variant="subtitle2">{t('slaveBinding.points')}</Typography>
               <Hint text={t('slaveBinding.residualHint')} />
+              <Tooltip title={t('common.undoLast')}>
+                <span style={{ marginLeft: 'auto' }}>
+                  <IconButton size="small" disabled={busy || history.length === 0} onClick={() => void undo()}>
+                    <UndoIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
             </Stack>
 
             {points.length === 0 ? (

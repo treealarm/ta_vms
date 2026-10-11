@@ -117,7 +117,7 @@ public sealed class PtzTrackingServiceImpl(TrackingSessionManager manager)
   public override async Task<GetPtzGeoFitResponse> GetPtzGeoFit(
     GetPtzGeoFitRequest request, ServerCallContext context)
   {
-    var model = await manager.GetGeoFitAsync(request.CameraId, context.CancellationToken);
+    var model = await manager.GetSpatialModelAsync(request.CameraId, context.CancellationToken);
     if (model is null)
       return new GetPtzGeoFitResponse { Found = false };
 
@@ -136,6 +136,44 @@ public sealed class PtzTrackingServiceImpl(TrackingSessionManager manager)
         residual.Tilt = value.Tilt;
       }
       response.Residuals.Add(residual);
+    }
+    return response;
+  }
+
+  public override async Task<GetGroundFitResponse> GetGroundFit(
+    GetGroundFitRequest request, ServerCallContext context)
+  {
+    var model = await manager.GetSpatialModelAsync(request.CameraId, context.CancellationToken);
+    if (model is null)
+      return new GetGroundFitResponse { Found = false };
+
+    var response = new GetGroundFitResponse
+    {
+      Found  = true,
+      Fitted = model.GroundFit is not null,
+      Error  = model.GroundFitError ?? string.Empty,
+    };
+    foreach (var sample in model.GroundSamples)
+    {
+      var residual = new GroundResidual { LandmarkId = sample.LandmarkId };
+      if (model.GroundFit?.Residuals.GetValueOrDefault(sample.LandmarkId) is { } metres)
+        residual.DistanceM = metres;
+      response.Residuals.Add(residual);
+    }
+    if (model.GroundFit is { } fit)
+      response.Matrix.AddRange(fit.ToWgs84(model.Frame));
+    return response;
+  }
+
+  public override async Task<ListGroundProjectionsResponse> ListGroundProjections(
+    ListGroundProjectionsRequest request, ServerCallContext context)
+  {
+    var response = new ListGroundProjectionsResponse();
+    foreach (var model in await manager.ListGroundProjectionsAsync(request.SpaceId, context.CancellationToken))
+    {
+      var projection = new GroundProjection { CameraId = model.CameraId };
+      projection.Matrix.AddRange(model.GroundFit!.ToWgs84(model.Frame));
+      response.Projections.Add(projection);
     }
     return response;
   }

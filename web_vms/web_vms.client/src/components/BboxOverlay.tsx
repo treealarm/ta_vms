@@ -1,7 +1,6 @@
-﻿import { useEffect, useState, type RefObject } from 'react'
-import { liveDetectionsClient } from '../hooks/liveDetectionsClient'
+﻿import type { RefObject } from 'react'
+import { useLiveBoxes } from '../hooks/useLiveBoxes'
 import BboxCanvas from './bbox/BboxCanvas'
-import { boxesNow } from './bbox/liveBoxes'
 import type { DrawableBox } from './bbox/bboxDraw'
 
 interface Props {
@@ -14,36 +13,11 @@ interface Props {
   highlight?: { source: string; trackId: number; kind: string } | null
 }
 
-/** How often boxes are re-evaluated so an ageing one fades and then disappears on time. */
-const FADE_TICK_MS = 120
-
-/**
- * Draws analytics bounding boxes over the live <video>.
- *
- * Redrawn when a sample arrives, plus a slow tick for the fade-out — not on every animation frame:
- * the boxes do not move between samples (see liveBoxes.ts), so a per-frame loop would repaint an
- * unchanged canvas for every cell of the wall.
- */
+/** Draws analytics bounding boxes over the live <video>. */
 export default function BboxOverlay({
   videoRef, cameraId, onFindSimilar, onTrackObject, trackAimsOthers, highlight,
 }: Props) {
-  const [boxes, setBoxes] = useState<DrawableBox[]>([])
-
-  useEffect(() => {
-    const refresh = () => {
-      const next = boxesNow(liveDetectionsClient.framesFor(cameraId), performance.now())
-      setBoxes((prev) => (prev.length === 0 && next.length === 0 ? prev : next))
-    }
-
-    const unsubscribe = liveDetectionsClient.subscribeFrames(cameraId, refresh)
-    const timer = window.setInterval(refresh, FADE_TICK_MS)
-    refresh()
-
-    return () => {
-      unsubscribe()
-      clearInterval(timer)
-    }
-  }, [cameraId])
+  const boxes = useLiveBoxes(cameraId)
 
   // Marked here rather than in boxesNow: which box is being followed is a property of the tracking
   // session, not of the detection feed, and the archive overlay marks its own the same way.

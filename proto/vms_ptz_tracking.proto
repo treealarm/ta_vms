@@ -49,6 +49,11 @@ service PtzTrackingService {
   // What a camera's landmark observations add up to, for the calibration wizard: whether they
   // carry a mapping, and how far each one lands from where the others say it should be.
   rpc GetPtzGeoFit(GetPtzGeoFitRequest) returns (GetPtzGeoFitResponse);
+  // The same for a fixed camera marked against landmarks in its picture: whether the marks map the
+  // picture onto the ground, how far each one lands, and the mapping itself.
+  rpc GetGroundFit(GetGroundFitRequest) returns (GetGroundFitResponse);
+  // The picture-to-map mappings of every camera whose detections can be shown in a space.
+  rpc ListGroundProjections(ListGroundProjectionsRequest) returns (ListGroundProjectionsResponse);
 }
 
 // One box on the live overlay.
@@ -225,3 +230,45 @@ message PtzGeoResidual {
   optional float tilt = 3;
 }
 
+// ── A fixed camera's picture on the ground ──────────────────────────────────
+//
+// A fixed camera marked against landmarks (GroundObservation in vms_cfg.proto) sees the floor
+// through a homography. It is handed out as a row-major 3×3 matrix from the normalised frame
+// (x, y in 0..1, as detection boxes are given) straight to WGS84: (x, y, 1) maps to
+// (lat·w, lon·w, w), and a point with w ≤ 0 is beyond the horizon.
+
+message GetGroundFitRequest {
+  string camera_id = 1;
+}
+
+message GetGroundFitResponse {
+  // False when the camera has no reference placement.
+  bool   found  = 1;
+  bool   fitted = 2;
+  // Why there is no fit, when there are marks but no fit.
+  string error  = 3;
+  repeated GroundResidual residuals = 4;
+  // Nine values when fitted, none otherwise.
+  repeated double matrix = 5;
+}
+
+// How far the fit of all the marks puts this landmark from where it stands. Not leave-one-out as
+// the PTZ fit: see GroundHomography.Residuals.
+message GroundResidual {
+  string landmark_id = 1;
+  // Metres on the ground; unset with exactly four marks, which the fit passes through exactly.
+  optional double distance_m = 2;
+}
+
+message ListGroundProjectionsRequest {
+  string space_id = 1;
+}
+
+message ListGroundProjectionsResponse {
+  repeated GroundProjection projections = 1;
+}
+
+message GroundProjection {
+  string camera_id = 1;
+  repeated double matrix = 2;
+}

@@ -27,6 +27,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
   public DbSet<DbCameraPlacement> CameraPlacements { get; set; }
   public DbSet<DbLandmark> Landmarks { get; set; }
   public DbSet<DbPtzGeoObservation> PtzGeoObservations { get; set; }
+  public DbSet<DbGroundObservation> GroundObservations { get; set; }
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
@@ -308,6 +309,16 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.Pan).HasColumnName("pan");
       e.Property(x => x.Tilt).HasColumnName("tilt");
     });
+
+    modelBuilder.Entity<DbGroundObservation>(e =>
+    {
+      e.ToTable("ground_observation");
+      e.HasKey(x => new { x.CameraId, x.LandmarkId });
+      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.LandmarkId).HasColumnName("landmark_id");
+      e.Property(x => x.X).HasColumnName("x");
+      e.Property(x => x.Y).HasColumnName("y");
+    });
   }
 }
 
@@ -581,4 +592,12 @@ public sealed class DbPtzGeoObservation
   public Guid LandmarkId { get; set; }
   public float Pan { get; set; }
   public float Tilt { get; set; }
+}
+
+public sealed class DbGroundObservation
+{
+  public string CameraId { get; set; } = string.Empty;
+  public Guid LandmarkId { get; set; }
+  public float X { get; set; }
+  public float Y { get; set; }
 }
