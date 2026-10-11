@@ -69,8 +69,13 @@ public static class SquareCameraPush
   public static CameraPlacement? PositionFor(CameraPlacement? reference, Space? space) =>
     reference is { IsReference: true } && space is { RealCoordinates: true } ? reference : null;
 
+  /// <param name="referenceSpaceId">
+  /// The space the camera really stands in, whatever its coordinates: the camera hangs under that
+  /// space in Square's tree (SquareSpaceExport puts the spaces there). Null leaves it under the root.
+  /// </param>
   public static async Task PushCameraAsync(
-    ISquareIntegration square, CameraSetup setup, CameraPlacement? placement, bool knownToSquare, string producerId)
+    ISquareIntegration square, CameraSetup setup, CameraPlacement? placement, bool knownToSquare, string producerId,
+    string? referenceSpaceId)
   {
     // Playback details (webrtc host/port, stream names) are NOT pushed here anymore — Square's
     // Monitor tab fetches them directly from ta_vms's own GET /api/live/cameras (CORS+JWT already
@@ -80,7 +85,7 @@ public static class SquareCameraPush
     var profileProp = TextProp("profile_name", primaryStream?.RecordingProfile?.Name ?? "");
 
     var objectId = ToObjectId(setup.CameraId);
-    var parentObjectId = ToObjectId(producerId);
+    var parentObjectId = ToObjectId(referenceSpaceId ?? producerId);
 
     if (placement is null && knownToSquare)
     {
@@ -175,8 +180,11 @@ public static class SquareCameraPush
       new ListCamerasRequest(), cancellationToken: ct);
     var spaces = (await cfgClient.ListSpacesAsync(new Google.Protobuf.WellKnownTypes.Empty(), cancellationToken: ct))
       .Spaces.ToDictionary(s => s.Id, StringComparer.Ordinal);
-    var placements = (await cfgClient.ListCameraPlacementsAsync(new Google.Protobuf.WellKnownTypes.Empty(), cancellationToken: ct))
+    var references = (await cfgClient.ListCameraPlacementsAsync(new Google.Protobuf.WellKnownTypes.Empty(), cancellationToken: ct))
       .Placements
+      .Where(p => p.IsReference)
+      .ToDictionary(p => p.CameraId, StringComparer.Ordinal);
+    var placements = references.Values
       .Select(p => PositionFor(p, spaces.GetValueOrDefault(p.SpaceId)))
       .OfType<CameraPlacement>()
       .ToDictionary(p => p.CameraId, StringComparer.Ordinal);
@@ -192,7 +200,8 @@ public static class SquareCameraPush
       {
         await PushCameraAsync(
           square, setup, placements.GetValueOrDefault(setup.CameraId),
-          known.Contains(ToObjectId(setup.CameraId)), producerId);
+          known.Contains(ToObjectId(setup.CameraId)), producerId,
+          references.GetValueOrDefault(setup.CameraId)?.SpaceId);
       }
       catch (Exception ex)
       {

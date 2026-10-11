@@ -21,6 +21,7 @@ public sealed class CameraChangeSubscriber(
   ISquareIntegration square,
   SquareLinkState linkState,
   SquareProducerId producerId,
+  SpaceExportWorker spaceExport,
   ILogger<CameraChangeSubscriber> logger) : IHostedService, IDisposable
 {
   private const string ServerConfigChangedTopic = "server-config-changed";
@@ -70,14 +71,15 @@ public sealed class CameraChangeSubscriber(
           var placed = await cfgClient.GetReferencePlacementAsync(
             new SourceRequest { SourceId = cameraId }, cancellationToken: ct);
           var placement = placed.Found ? SquareCameraPush.PositionFor(placed.Placement, placed.Space) : null;
+          var referenceSpaceId = placed.Found ? placed.Placement.SpaceId : null;
 
-          var fingerprint = Fingerprint(resp.Setup, placement);
+          var fingerprint = Fingerprint(resp.Setup, placement, referenceSpaceId);
           if (_lastPushed.TryGetValue(cameraId, out var last) && last == fingerprint)
             continue;
 
           var known = placement is null
             && (await SquareCameraPush.KnownToSquareAsync(square, [cameraId])).Count > 0;
-          await SquareCameraPush.PushCameraAsync(square, resp.Setup, placement, known, producerId.Value);
+          await SquareCameraPush.PushCameraAsync(square, resp.Setup, placement, known, producerId.Value, referenceSpaceId);
           _lastPushed[cameraId] = fingerprint;
           linkState.RecordSuccess();
         }
@@ -97,11 +99,11 @@ public sealed class CameraChangeSubscriber(
 
   /// Everything SquareCameraPush actually puts into the figure. Anything not in here cannot make
   /// the pushed object differ, so a change to it must not cost a round trip.
-  private static string Fingerprint(CameraSetup setup, CameraPlacement? placement)
+  private static string Fingerprint(CameraSetup setup, CameraPlacement? placement, string? referenceSpaceId)
   {
     var primary = setup.Streams.FirstOrDefault(s => s.WebRtc);
     var where = placement is null ? "-" : $"{placement.Lat:R},{placement.Lon:R},{placement.HeadingDeg:R}";
-    return $"{setup.Name}\u001f{primary?.RecordingProfile?.Name ?? string.Empty}\u001f{where}";
+    return $"{setup.Name}\u001f{primary?.RecordingProfile?.Name ?? string.Empty}\u001f{where}\u001f{referenceSpaceId}";
   }
 
   private async Task RunAsync(string topic, TopicMessageHandler handler, CancellationToken ct)
@@ -137,6 +139,9 @@ public sealed class CameraChangeSubscriber(
 
     foreach (var cameraId in evt.CameraIds ?? [])
       _pending.Writer.TryWrite(cameraId);
+    // A camera's placements change on this topic too, and they are drawn on the spaces' diagrams.
+    if (evt.CameraIds is { Count: > 0 })
+      spaceExport.Request();
 
     return Task.FromResult(TopicResponseAction.Success);
   }

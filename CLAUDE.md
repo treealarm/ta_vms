@@ -304,6 +304,9 @@ Spaces (maps and nested plans), plan images, camera placements and landmarks liv
   browser — no second detection stream for maps.
 - Space changes are announced on `space-config-changed {"space_id"}`; a camera's placements or
   observations on `server-config-changed`.
+- Spaces reach Square only through `VmsSquareSingleton` (`SquareSpaceExport`): each plan a Square
+  diagram, each picture placement a replica with `owner_id` = the camera. Nothing about Square goes
+  into VmsCfg.
 - Map tiles reach browsers only through web_vms's caching proxy (`api/map/tiles`), cached in the
   state store — never on local disk and never fetched by the browser from the provider directly.
 
