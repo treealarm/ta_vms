@@ -15,6 +15,13 @@ public class FrontendConfigDto
   public bool SquareIntegrated { get; set; }
   /// <summary>Whether the dev-only anonymous WHEP test page is served at all.</summary>
   public bool LiveTestPlayer { get; set; }
+  /// <summary>
+  /// Whether maps get tiles underneath (through /api/map/tiles). The provider's own URL
+  /// stays on the server: the browser only ever talks to the caching proxy.
+  /// </summary>
+  public bool MapTilesEnabled { get; set; }
+  /// <summary>Credit line the tile provider requires to be shown on the map.</summary>
+  public string? MapTileAttribution { get; set; }
 }
 
 // Relays SQUARE_FRONTEND_ORIGIN (a backend runtime env var, see Program.cs's CORS gate) to the SPA.
@@ -47,6 +54,10 @@ public class FrontendConfigController(SquareLinkProbe _square) : ControllerBase
       SquareFrontendOrigin = Environment.GetEnvironmentVariable("SQUARE_FRONTEND_ORIGIN"),
       SquareIntegrated = await _square.IsIntegratedAsync(ct),
       LiveTestPlayer = LiveTestPlayerEnabled,
+      MapTilesEnabled = MapTilesController.TileUrlTemplate is not null,
+      // Optional, shown under the map as given. Empty with tiles on is a misconfiguration for most
+      // providers (OpenStreetMap requires the credit), but not one this service can judge.
+      MapTileAttribution = Environment.GetEnvironmentVariable("VMS_MAP_TILE_ATTRIBUTION"),
     });
   }
 }

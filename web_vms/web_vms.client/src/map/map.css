@@ -1,0 +1,10 @@
+/* A camera or a footprint with an alarm running: a ring that breathes, so it is found at a glance
+   on a busy map without anything moving the layout. */
+@keyframes vms-alarm-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.vms-alarm-pulse {
+  animation: vms-alarm-pulse 1.2s ease-in-out infinite;
+}

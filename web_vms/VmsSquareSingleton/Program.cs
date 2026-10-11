@@ -41,6 +41,9 @@ if (!string.IsNullOrEmpty(squareSinkAppId))
   builder.Services.AddSingleton(new SquareProducerId(producerId));
   builder.Services.AddSingleton<ISquareIntegration>(
     _ => new SquareIntegrationGrpcClient(squareSinkAppId, producerId));
+  builder.Services.AddSingleton<SquareSpaceExport>();
+  builder.Services.AddSingleton<SpaceExportWorker>();
+  builder.Services.AddHostedService(sp => sp.GetRequiredService<SpaceExportWorker>());
   builder.Services.AddHostedService<CameraChangeSubscriber>();
   builder.Services.AddHostedService<SquareAlarmSubscriber>();
   builder.Services.AddHostedService<SquareResyncService>();

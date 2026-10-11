@@ -51,19 +51,56 @@ public static class SquareCameraPush
   }
 
   // Takes the already-loaded CameraSetup (with .Streams populated) rather than re-fetching by id —
-  // every caller already has it in hand (CfgServiceImpl's config-change handler just loaded it to
-  // get here; PushAllCamerasAsync's resync loop gets it in bulk from ListCamerasAsync), so an
-  // internal re-fetch here was a redundant DB round-trip per camera.
-  public static async Task PushCameraAsync(ISquareIntegration square, CameraSetup setup, string producerId)
+  // every caller already has it in hand (CameraChangeSubscriber has just loaded it to get here;
+  // PushAllCamerasAsync's resync loop gets it in bulk from ListCamerasAsync), so an internal
+  // re-fetch here was a redundant DB round-trip per camera.
+  //
+  // Who owns the camera's position decides what is sent (docs/maps-and-plans.md). A camera whose
+  // reference placement is in a ta_vms space with real coordinates owns it: its point and heading go
+  // up with every push (see PositionFor). Any other camera leaves it to Square — it is given a
+  // default point once, when Square first learns of it, because Square creates nothing without
+  // geometry; after that only its name and properties are sent, so wherever someone dragged it in
+  // Square it stays.
+  /// <summary>The placement whose position Square should show, if ta_vms owns one.</summary>
+  /// <remarks>
+  /// Only the reference placement, and only in real coordinates: a picture of the camera on some
+  /// other plan, or its true place on a plan in made-up coordinates, is no point on Square's map.
+  /// </remarks>
+  public static CameraPlacement? PositionFor(CameraPlacement? reference, Space? space) =>
+    reference is { IsReference: true } && space is { RealCoordinates: true } ? reference : null;
+
+  /// <param name="referenceSpaceId">
+  /// The space the camera really stands in, whatever its coordinates: the camera hangs under that
+  /// space in Square's tree (SquareSpaceExport puts the spaces there). Null leaves it under the root.
+  /// </param>
+  public static async Task PushCameraAsync(
+    ISquareIntegration square, CameraSetup setup, CameraPlacement? placement, bool knownToSquare, string producerId,
+    string? referenceSpaceId)
   {
     // Playback details (webrtc host/port, stream names) are NOT pushed here anymore — Square's
     // Monitor tab fetches them directly from ta_vms's own GET /api/live/cameras (CORS+JWT already
     // enabled for that), so any future field is available there for free with no push code on
     // either side. Only what the map's own property panel needs stays here.
     var primaryStream = setup.Streams.FirstOrDefault(s => s.WebRtc);
+    var profileProp = TextProp("profile_name", primaryStream?.RecordingProfile?.Name ?? "");
 
     var objectId = ToObjectId(setup.CameraId);
-    var parentObjectId = ToObjectId(producerId);
+    var parentObjectId = ToObjectId(referenceSpaceId ?? producerId);
+
+    if (placement is null && knownToSquare)
+    {
+      await Task.WhenAll(
+        square.UpsertObjects(new ProtoObjectList
+        {
+          Objects = { new ProtoObject { Id = objectId, ParentId = parentObjectId, Name = setup.Name } },
+        }),
+        square.PushProperties(new ProtoObjPropsList
+        {
+          Objects = { new ProtoObjProps { Id = objectId, Properties = { profileProp } } },
+          ReplaceProps = false,
+        }));
+      return;
+    }
 
     var fig = new ProtoFig
     {
@@ -73,10 +110,19 @@ public static class SquareCameraPush
       Geometry = new Common.ProtoGeometry
       {
         Type = "Point",
-        Coord = { new Common.ProtoCoord { Lat = DefaultLat, Lon = DefaultLon } },
+        Coord =
+        {
+          placement is null
+            ? new Common.ProtoCoord { Lat = DefaultLat, Lon = DefaultLon }
+            : new Common.ProtoCoord { Lat = placement.Lat, Lon = placement.Lon },
+        },
       },
-      ExtraProps = { TextProp("profile_name", primaryStream?.RecordingProfile?.Name ?? "") },
+      ExtraProps = { profileProp },
     };
+    // Square draws an icon turned by __image_rotate, a compass bearing like our heading.
+    if (placement is not null)
+      fig.ExtraProps.Add(TextProp("__image_rotate",
+        placement.HeadingDeg.ToString(System.Globalization.CultureInfo.InvariantCulture)));
 
     // RegisterIntegro and PushFigures are independent calls (neither depends on the other's
     // result) — running them concurrently halves the round-trip latency per camera.
@@ -86,6 +132,18 @@ public static class SquareCameraPush
         Objects = { new IntegroProto { ObjectId = objectId, IType = "camera" } }
       }),
       square.PushFigures(new ProtoFigures { Figs = { fig }, AddTracks = false }));
+  }
+
+  /// Which of these cameras Square already holds an object for. Asked only about cameras that are
+  /// not placed — a placed one sends its geometry either way.
+  public static async Task<HashSet<string>> KnownToSquareAsync(
+    ISquareIntegration square, IEnumerable<string> cameraIds)
+  {
+    var ids = cameraIds.Select(ToObjectId).ToList();
+    if (ids.Count == 0)
+      return [];
+    var objects = await square.GetObjects(ids) ?? [];
+    return objects.Select(o => o.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
   }
 
   public static async Task PushAllCamerasAsync(
@@ -120,6 +178,18 @@ public static class SquareCameraPush
     // the config now comes over gRPC rather than from a database this process no longer owns.
     var cameras = await cfgClient.ListCamerasAsync(
       new ListCamerasRequest(), cancellationToken: ct);
+    var spaces = (await cfgClient.ListSpacesAsync(new Google.Protobuf.WellKnownTypes.Empty(), cancellationToken: ct))
+      .Spaces.ToDictionary(s => s.Id, StringComparer.Ordinal);
+    var references = (await cfgClient.ListCameraPlacementsAsync(new Google.Protobuf.WellKnownTypes.Empty(), cancellationToken: ct))
+      .Placements
+      .Where(p => p.IsReference)
+      .ToDictionary(p => p.CameraId, StringComparer.Ordinal);
+    var placements = references.Values
+      .Select(p => PositionFor(p, spaces.GetValueOrDefault(p.SpaceId)))
+      .OfType<CameraPlacement>()
+      .ToDictionary(p => p.CameraId, StringComparer.Ordinal);
+    var known = await KnownToSquareAsync(
+      square, cameras.Cameras.Where(c => !placements.ContainsKey(c.CameraId)).Select(c => c.CameraId));
 
     foreach (var setup in cameras.Cameras)
     {
@@ -128,7 +198,10 @@ public static class SquareCameraPush
       // resync attempt (this is what silently dropped pushes for camera ids later in the list).
       try
       {
-        await PushCameraAsync(square, setup, producerId);
+        await PushCameraAsync(
+          square, setup, placements.GetValueOrDefault(setup.CameraId),
+          known.Contains(ToObjectId(setup.CameraId)), producerId,
+          references.GetValueOrDefault(setup.CameraId)?.SpaceId);
       }
       catch (Exception ex)
       {

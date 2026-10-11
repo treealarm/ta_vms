@@ -477,6 +477,20 @@ export type EpisodeDto = {
   trigger?: string
 }
 
+/** An alarm episode as the operator's map sees it. */
+export type AlarmDto = EpisodeDto & {
+  /** Still running: its projected end is after the server's clock. */
+  active: boolean
+  /** The caller may watch the camera's archive, and so the recording of this alarm. */
+  archive: boolean
+}
+
+/** Alarms running now and those that ended within the window, newest first, with the server's clock. */
+export type AlarmsDto = {
+  serverTime: string
+  alarms: AlarmDto[]
+}
+
 // A group = all episodes sharing one eventId (a time-clustered session of one object, possibly
 // across cameras). Rendered as a tree row with a "+N" badge; episodes ordered oldest-first.
 export type EventGroupDto = {
@@ -1393,4 +1407,127 @@ export interface PtzStatusDto {
   zoom: number
   moving: boolean
   error: string
+}
+
+// ── Maps & plans ────────────────────────────────────────────────────────────
+// A space is one world things are placed in: a real map, or a plan nested in another space. Every
+// position is WGS84 plus a height in metres above the floor of its space; a space's elevationM is
+// that floor's height above the ground. A plan in made-up coordinates uses WGS84 made up around (0, 0).
+
+export type GeoPointDto = { lat: number; lon: number }
+
+/** Three corners of a plan image in its space — an affine placement. */
+export type PlanCornersDto = { topLeft: GeoPointDto; topRight: GeoPointDto; bottomLeft: GeoPointDto }
+
+export type SpacePlanDto = {
+  corners: PlanCornersDto
+  widthPx: number
+  heightPx: number
+  mime: string
+  /** Changes whenever the image does; part of the image URL so a cached copy is never stale. */
+  etag: string
+}
+
+/** 'map' is a root over map tiles, in real coordinates; 'plan' is drawn on its own picture. */
+export type SpaceKind = 'map' | 'plan'
+
+/** A rectangle, by its south-west and north-east corners. */
+export type GeoBoundsDto = { southWest: GeoPointDto; northEast: GeoPointDto }
+
+export type SpaceDto = {
+  id?: string | null
+  /** Null for a root. */
+  parentId?: string | null
+  name: string
+  kind: SpaceKind
+  /** Spaces share geometry when they are the same one or both are real. */
+  realCoordinates: boolean
+  /** Order among siblings: the floors of a building, bottom to top. */
+  ordinal: number
+  elevationM: number
+  /** What the space shows when it is opened. */
+  view: GeoBoundsDto
+  /** Where it lies on its parent, in the parent's coordinates; empty when none is drawn. */
+  footprint: GeoPointDto[]
+  /** Read-only here: a plan is uploaded and aligned through its own endpoints. */
+  plan?: SpacePlanDto | null
+}
+
+export type CameraPlacementDto = {
+  cameraId: string
+  spaceId: string
+  /** Where the camera really stands; aiming and calibration go by it. Its other placements are pictures. */
+  isReference: boolean
+  lat: number
+  lon: number
+  heightM: number
+  /** Compass bearing of the optical axis: 0 = north, clockwise. */
+  headingDeg: number
+  /** Only draw the view cone, like rangeM. */
+  hfovDeg: number
+  rangeM: number
+}
+
+/** A named point with a known position, used to calibrate cameras. */
+export type LandmarkDto = {
+  id?: string | null
+  spaceId: string
+  name: string
+  lat: number
+  lon: number
+  heightM: number
+}
+
+export type PtzGeoObservationDto = {
+  landmarkId: string
+  /** The camera's own units, as /api/ptz/status reported them. */
+  pan: number
+  tilt: number
+  /** Leave-one-out miss; null/absent when the rest cannot be fitted without this one. */
+  panResidual?: number | null
+  tiltResidual?: number | null
+}
+
+export type PtzGeoCalibrationDto = {
+  observations: PtzGeoObservationDto[]
+  /** Null when the tracking service could not be asked. */
+  fitted?: boolean | null
+  error?: string | null
+}
+
+/** Where a landmark stands on the ground in a fixed camera's picture, 0..1 across and down the frame. */
+export type GroundObservationDto = {
+  landmarkId: string
+  x: number
+  y: number
+  /** How far the fit of all the marks puts this landmark, in metres; absent with only four marks. */
+  residualM?: number | null
+}
+
+/**
+ * Row-major 3×3 from the normalised frame to WGS84: (x, y, 1) maps to (lat·w, lon·w, w); a point
+ * with w ≤ 0 is beyond the horizon.
+ */
+export type GroundMatrix = number[]
+
+export type GroundCalibrationDto = {
+  observations: GroundObservationDto[]
+  /** Null when the tracking service could not be asked. */
+  fitted?: boolean | null
+  error?: string | null
+  matrix?: GroundMatrix | null
+}
+
+export type GroundProjectionDto = {
+  cameraId: string
+  matrix: GroundMatrix
+}
+
+export type PtzGeoAimResultDto = {
+  pan: number
+  tilt: number
+  azimuthDeg: number
+  elevationDeg: number
+  distanceM: number
+  extrapolated: boolean
 }

@@ -18,9 +18,10 @@ import OnvifCameraSettingsPanel from './OnvifCameraSettingsPanel'
 import CameraPermissionsPanel from './CameraPermissionsPanel'
 import EdgeArchivePanel from './EdgeArchivePanel'
 import AnalyticsWatchesPanel from './AnalyticsWatchesPanel'
+import MapsAdminPanel from './maps/MapsAdminPanel'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 
-const TABS = ['cameras', 'mediamtx', 'monitors', 'storages', 'recording', 'schedules', 'onvif', 'onvif-settings', 'analytics', 'permissions', 'edge-archive'] as const
+const TABS = ['cameras', 'maps', 'mediamtx', 'monitors', 'storages', 'recording', 'schedules', 'onvif', 'onvif-settings', 'analytics', 'permissions', 'edge-archive'] as const
 
 export default function AdminView() {
   const { t } = useTranslation()
@@ -58,6 +59,7 @@ export default function AdminView() {
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', px: { xs: 2, md: 4 }, pb: { xs: 2, md: 4 }, pt: 1, display: 'flex', flexDirection: 'column' }}>
           <Routes>
             <Route path="cameras" element={<CameraControlPanel ref={panelRef} />} />
+            <Route path="maps" element={<MapsAdminPanel ref={panelRef} />} />
             <Route path="mediamtx" element={<MediaMtxServersPanel ref={panelRef} />} />
             <Route path="monitors" element={<MonitorListPanel ref={panelRef} />} />
             <Route path="storages" element={<StorageSetupPanel ref={panelRef} />} />
@@ -90,6 +92,7 @@ export default function AdminView() {
             sx={{ '& .MuiTab-root': { minWidth: 90 } }}
           >
             <Tab label={t('nav.camSetup')} />
+            <Tab label={t('nav.maps')} />
             <Tab label={t('nav.mediaMtx')} />
             <Tab label={t('nav.monitors')} />
             <Tab label={t('nav.storages')} />

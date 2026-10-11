@@ -99,6 +99,14 @@ builder.Services.AddHttpClient(WhepProxyService.MediaMtxHttpClientName, c =>
   c.Timeout = WhepProxyService.MediaMtxOfferTimeout;
 });
 
+// Tile providers identify their users by User-Agent and block anonymous heavy traffic; see
+// MapTilesController for the rest of what the OpenStreetMap policy asks for.
+builder.Services.AddHttpClient(MapTilesController.HttpClientName, c =>
+{
+  c.Timeout = TimeSpan.FromSeconds(10);
+  c.DefaultRequestHeaders.UserAgent.ParseAdd(MapTilesController.UserAgent);
+});
+
 // Sealing key for WHEP session tokens. Required rather than generated per process on purpose: a
 // per-process key would work perfectly on one instance and quietly break session teardown the day
 // a second replica is added, which is the failure this token format exists to remove.

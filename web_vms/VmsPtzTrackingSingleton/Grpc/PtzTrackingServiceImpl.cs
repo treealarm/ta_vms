@@ -93,6 +93,91 @@ public sealed class PtzTrackingServiceImpl(TrackingSessionManager manager)
     return response;
   }
 
+  public override async Task<AimAtWorldPointResponse> AimAtWorldPoint(
+    AimAtWorldPointRequest request, ServerCallContext context)
+  {
+    var result = await manager.AimAtWorldPointAsync(
+      request.CameraId, request.SpaceId, request.Lat, request.Lon, request.HeightM, context.CancellationToken);
+
+    if (!result.Success)
+      return new AimAtWorldPointResponse { Success = false, Error = result.Error ?? string.Empty };
+
+    return new AimAtWorldPointResponse
+    {
+      Success      = true,
+      Pan          = result.Aim!.Pan,
+      Tilt         = result.Aim.Tilt,
+      Extrapolated = result.Aim.Extrapolated,
+      AzimuthDeg   = result.Bearing!.Value.AzimuthDeg,
+      ElevationDeg = result.Bearing.Value.ElevationDeg,
+      DistanceM    = result.Bearing.Value.DistanceM,
+    };
+  }
+
+  public override async Task<GetPtzGeoFitResponse> GetPtzGeoFit(
+    GetPtzGeoFitRequest request, ServerCallContext context)
+  {
+    var model = await manager.GetSpatialModelAsync(request.CameraId, context.CancellationToken);
+    if (model is null)
+      return new GetPtzGeoFitResponse { Found = false };
+
+    var response = new GetPtzGeoFitResponse
+    {
+      Found  = true,
+      Fitted = model.GeoFit is not null,
+      Error  = model.GeoFitError ?? string.Empty,
+    };
+    foreach (var observation in model.Observations)
+    {
+      var residual = new PtzGeoResidual { LandmarkId = observation.LandmarkId };
+      if (model.GeoFit?.Residuals.GetValueOrDefault(observation.LandmarkId) is { } value)
+      {
+        residual.Pan = value.Pan;
+        residual.Tilt = value.Tilt;
+      }
+      response.Residuals.Add(residual);
+    }
+    return response;
+  }
+
+  public override async Task<GetGroundFitResponse> GetGroundFit(
+    GetGroundFitRequest request, ServerCallContext context)
+  {
+    var model = await manager.GetSpatialModelAsync(request.CameraId, context.CancellationToken);
+    if (model is null)
+      return new GetGroundFitResponse { Found = false };
+
+    var response = new GetGroundFitResponse
+    {
+      Found  = true,
+      Fitted = model.GroundFit is not null,
+      Error  = model.GroundFitError ?? string.Empty,
+    };
+    foreach (var sample in model.GroundSamples)
+    {
+      var residual = new GroundResidual { LandmarkId = sample.LandmarkId };
+      if (model.GroundFit?.Residuals.GetValueOrDefault(sample.LandmarkId) is { } metres)
+        residual.DistanceM = metres;
+      response.Residuals.Add(residual);
+    }
+    if (model.GroundFit is { } fit)
+      response.Matrix.AddRange(fit.ToWgs84(model.Frame));
+    return response;
+  }
+
+  public override async Task<ListGroundProjectionsResponse> ListGroundProjections(
+    ListGroundProjectionsRequest request, ServerCallContext context)
+  {
+    var response = new ListGroundProjectionsResponse();
+    foreach (var model in await manager.ListGroundProjectionsAsync(request.SpaceId, context.CancellationToken))
+    {
+      var projection = new GroundProjection { CameraId = model.CameraId };
+      projection.Matrix.AddRange(model.GroundFit!.ToWgs84(model.Frame));
+      response.Projections.Add(projection);
+    }
+    return response;
+  }
+
   public override Task<ListTrackingStatesResponse> ListTrackingStates(
     ListTrackingStatesRequest request, ServerCallContext context)
   {

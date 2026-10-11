@@ -43,6 +43,17 @@ service PtzTrackingService {
   // the caller while the wizard is open and released when it closes; it also expires on its own, so
   // a browser that went away cannot leave a camera parked.
   rpc HoldForSurvey(HoldForSurveyRequest) returns (HoldForSurveyResponse);
+  // Point a placed, geo-calibrated PTZ camera at a place on the map. Here rather than straight to
+  // the camera for the same reason as AimAtMasterPoint: this service owns the motor.
+  rpc AimAtWorldPoint(AimAtWorldPointRequest) returns (AimAtWorldPointResponse);
+  // What a camera's landmark observations add up to, for the calibration wizard: whether they
+  // carry a mapping, and how far each one lands from where the others say it should be.
+  rpc GetPtzGeoFit(GetPtzGeoFitRequest) returns (GetPtzGeoFitResponse);
+  // The same for a fixed camera marked against landmarks in its picture: whether the marks map the
+  // picture onto the ground, how far each one lands, and the mapping itself.
+  rpc GetGroundFit(GetGroundFitRequest) returns (GetGroundFitResponse);
+  // The picture-to-map mappings of every camera whose detections can be shown in a space.
+  rpc ListGroundProjections(ListGroundProjectionsRequest) returns (ListGroundProjectionsResponse);
 }
 
 // One box on the live overlay.
@@ -160,4 +171,104 @@ message HoldForSurveyRequest {
 message HoldForSurveyResponse {
   bool   success = 1;
   string error   = 2;
+}
+
+// ── Aiming through world coordinates ────────────────────────────────────────
+//
+// A camera placed on a site (CameraPlacement in vms_cfg.proto) and observed centred on a few
+// landmarks (PtzGeoObservation) can be aimed at any point of that site: the observations fit
+// pan = a + b * azimuth and tilt = c + d * elevation, with azimuth and elevation measured from the
+// camera's position and height to the landmark's.
+
+message AimAtWorldPointRequest {
+  string camera_id = 1;
+  // The space the point was picked in. It has to share geometry with the space the camera really
+  // stands in (the same space, or both in real coordinates); otherwise the point is refused.
+  string space_id  = 2;
+  double lat       = 3;
+  double lon       = 4;
+  // Above the floor of that space; its elevation is added here.
+  double height_m  = 5;
+}
+
+message AimAtWorldPointResponse {
+  bool   success       = 1;
+  string error         = 2;
+  float  pan           = 3;
+  float  tilt          = 4;
+  // From the camera to the point: compass bearing (0 = north, clockwise), angle above the
+  // horizontal (negative is down), straight-line distance.
+  double azimuth_deg   = 5;
+  double elevation_deg = 6;
+  double distance_m    = 7;
+  // The direction lies outside the span the landmarks cover, so the fit is continued rather than
+  // interpolated. Aimed anyway; worth showing.
+  bool   extrapolated  = 8;
+}
+
+message GetPtzGeoFitRequest {
+  string camera_id = 1;
+}
+
+message GetPtzGeoFitResponse {
+  // False when the camera is not placed on a map: there is nothing to measure directions from.
+  bool   found    = 1;
+  bool   fitted   = 2;
+  // Why there is no fit, when there is none.
+  string error    = 3;
+  repeated PtzGeoResidual residuals = 4;
+}
+
+// How far the other observations put this landmark from where the camera was actually pointed,
+// when it is left out of the fit -- the same leave-one-out check the slave binding reports, for
+// the same reason. In the camera's own units.
+message PtzGeoResidual {
+  string landmark_id = 1;
+  // Unset when the rest cannot be fitted without this one (two observations, or the rest share a
+  // direction).
+  optional float pan  = 2;
+  optional float tilt = 3;
+}
+
+// ── A fixed camera's picture on the ground ──────────────────────────────────
+//
+// A fixed camera marked against landmarks (GroundObservation in vms_cfg.proto) sees the floor
+// through a homography. It is handed out as a row-major 3×3 matrix from the normalised frame
+// (x, y in 0..1, as detection boxes are given) straight to WGS84: (x, y, 1) maps to
+// (lat·w, lon·w, w), and a point with w ≤ 0 is beyond the horizon.
+
+message GetGroundFitRequest {
+  string camera_id = 1;
+}
+
+message GetGroundFitResponse {
+  // False when the camera has no reference placement.
+  bool   found  = 1;
+  bool   fitted = 2;
+  // Why there is no fit, when there are marks but no fit.
+  string error  = 3;
+  repeated GroundResidual residuals = 4;
+  // Nine values when fitted, none otherwise.
+  repeated double matrix = 5;
+}
+
+// How far the fit of all the marks puts this landmark from where it stands. Not leave-one-out as
+// the PTZ fit: see GroundHomography.Residuals.
+message GroundResidual {
+  string landmark_id = 1;
+  // Metres on the ground; unset with exactly four marks, which the fit passes through exactly.
+  optional double distance_m = 2;
+}
+
+message ListGroundProjectionsRequest {
+  string space_id = 1;
+}
+
+message ListGroundProjectionsResponse {
+  repeated GroundProjection projections = 1;
+}
+
+message GroundProjection {
+  string camera_id = 1;
+  repeated double matrix = 2;
 }

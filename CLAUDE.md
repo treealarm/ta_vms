@@ -281,6 +281,35 @@ endpoint and the "Entity State" debug tab in the frontend).
 - C++ services: use `entity_state_publisher` (in `media_server/grpc_layer`) which wraps
   `dapr_publisher::publish_json`.
 
+## Maps & plans: positions belong to ta_vms
+
+Spaces (maps and nested plans), plan images, camera placements and landmarks live in VmsCfg; see
+[`docs/maps-and-plans.md`](docs/maps-and-plans.md). Invariants a change must keep:
+
+- Spaces nest like Square's diagrams, but each has its own coordinates: a nested plan is never laid
+  over its parent's map, its footprint there is only the way in.
+- A position is WGS84 plus metres **above the floor of its space**, never above sea level, and is
+  never stored in plan pixels. A plan in made-up coordinates uses made-up WGS84 around (0, 0) rather
+  than a second coordinate system.
+- Two spaces share geometry only when they are the same space or both have real coordinates; every
+  cross-space feature (calibration, aiming, master/slave) checks that rule.
+- A camera has at most one **reference** placement — where it really stands, the only one aiming
+  uses — and any number of pictures (Square's `owner_id`). Another placement is never promoted to
+  reference behind the administrator's back.
+- Heading is a compass bearing, 0 = north, clockwise (Square's `__image_rotate`).
+- Calibration fits are never stored — raw observations and ground marks in VmsCfg, the PTZ fit and
+  the fixed camera's ground homography in `VmsPtzTrackingSingleton/Geo`, as with the slave binding.
+  The browser only multiplies by the matrix it is handed; it never fits.
+- Detections on the map come from the existing live stream (`api/analytics/live`), projected in the
+  browser — no second detection stream for maps.
+- Space changes are announced on `space-config-changed {"space_id"}`; a camera's placements or
+  observations on `server-config-changed`.
+- Spaces reach Square only through `VmsSquareSingleton` (`SquareSpaceExport`): each plan a Square
+  diagram, each picture placement a replica with `owner_id` = the camera. Nothing about Square goes
+  into VmsCfg.
+- Map tiles reach browsers only through web_vms's caching proxy (`api/map/tiles`), cached in the
+  state store — never on local disk and never fetched by the browser from the provider directly.
+
 ## Database access
 
 Use **Entity Framework Core** for all database queries. Do not write raw SQL via `NpgsqlDataSource` / `NpgsqlCommand` in new code. Use `IDbContextFactory<T>` (or the injected `DbContext`) and LINQ for queries.

@@ -7,12 +7,13 @@ using Vms.Cfg;
 
 namespace VmsCfg
 {
-  public class CfgServiceImpl(
+  public partial class CfgServiceImpl(
     CameraStorage storage,
     StorageDb storageDb,
     ScheduleDb scheduleDb,
     ScheduleCache scheduleCache,
     PermissionDb permissionDb,
+    SpatialDb spatialDb,
     DaprClient daprClient,
     ILogger<CfgServiceImpl> logger) : CfgService.CfgServiceBase
   {

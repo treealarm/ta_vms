@@ -22,6 +22,12 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
   public DbSet<DbUserAllCamerasPermission> UserAllCamerasPermissions { get; set; }
   public DbSet<DbCameraAclSetting> CameraAclSettings { get; set; }
   public DbSet<DbOnvifEventSubscription> OnvifEventSubscriptions { get; set; }
+  public DbSet<DbSpace> Spaces { get; set; }
+  public DbSet<DbSpacePlan> SpacePlans { get; set; }
+  public DbSet<DbCameraPlacement> CameraPlacements { get; set; }
+  public DbSet<DbLandmark> Landmarks { get; set; }
+  public DbSet<DbPtzGeoObservation> PtzGeoObservations { get; set; }
+  public DbSet<DbGroundObservation> GroundObservations { get; set; }
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
@@ -230,6 +236,89 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.Id).HasColumnName("id");
       e.Property(x => x.Mode).HasColumnName("mode");
     });
+
+    modelBuilder.Entity<DbSpace>(e =>
+    {
+      e.ToTable("space");
+      e.HasKey(x => x.Id);
+      e.Property(x => x.Id).HasColumnName("id");
+      e.Property(x => x.ParentId).HasColumnName("parent_id");
+      e.Property(x => x.Name).HasColumnName("name");
+      e.Property(x => x.Kind).HasColumnName("kind");
+      e.Property(x => x.RealCoordinates).HasColumnName("real_coordinates");
+      e.Property(x => x.Ordinal).HasColumnName("ordinal");
+      e.Property(x => x.ElevationM).HasColumnName("elevation_m");
+      e.Property(x => x.ViewSouth).HasColumnName("view_south");
+      e.Property(x => x.ViewWest).HasColumnName("view_west");
+      e.Property(x => x.ViewNorth).HasColumnName("view_north");
+      e.Property(x => x.ViewEast).HasColumnName("view_east");
+      e.Property(x => x.Footprint).HasColumnName("footprint").HasColumnType("jsonb");
+    });
+
+    modelBuilder.Entity<DbSpacePlan>(e =>
+    {
+      e.ToTable("space_plan");
+      e.HasKey(x => x.SpaceId);
+      e.Property(x => x.SpaceId).HasColumnName("space_id");
+      e.Property(x => x.Mime).HasColumnName("mime");
+      e.Property(x => x.WidthPx).HasColumnName("width_px");
+      e.Property(x => x.HeightPx).HasColumnName("height_px");
+      e.Property(x => x.TlLat).HasColumnName("tl_lat");
+      e.Property(x => x.TlLon).HasColumnName("tl_lon");
+      e.Property(x => x.TrLat).HasColumnName("tr_lat");
+      e.Property(x => x.TrLon).HasColumnName("tr_lon");
+      e.Property(x => x.BlLat).HasColumnName("bl_lat");
+      e.Property(x => x.BlLon).HasColumnName("bl_lon");
+      e.Property(x => x.Etag).HasColumnName("etag");
+      e.Property(x => x.Image).HasColumnName("image");
+    });
+
+    modelBuilder.Entity<DbCameraPlacement>(e =>
+    {
+      e.ToTable("camera_placement");
+      e.HasKey(x => new { x.CameraId, x.SpaceId });
+      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.SpaceId).HasColumnName("space_id");
+      e.Property(x => x.IsReference).HasColumnName("is_reference");
+      e.Property(x => x.Lat).HasColumnName("lat");
+      e.Property(x => x.Lon).HasColumnName("lon");
+      e.Property(x => x.HeightM).HasColumnName("height_m");
+      e.Property(x => x.HeadingDeg).HasColumnName("heading_deg");
+      e.Property(x => x.HfovDeg).HasColumnName("hfov_deg");
+      e.Property(x => x.RangeM).HasColumnName("range_m");
+    });
+
+    modelBuilder.Entity<DbLandmark>(e =>
+    {
+      e.ToTable("landmark");
+      e.HasKey(x => x.Id);
+      e.Property(x => x.Id).HasColumnName("id");
+      e.Property(x => x.SpaceId).HasColumnName("space_id");
+      e.Property(x => x.Name).HasColumnName("name");
+      e.Property(x => x.Lat).HasColumnName("lat");
+      e.Property(x => x.Lon).HasColumnName("lon");
+      e.Property(x => x.HeightM).HasColumnName("height_m");
+    });
+
+    modelBuilder.Entity<DbPtzGeoObservation>(e =>
+    {
+      e.ToTable("ptz_geo_observation");
+      e.HasKey(x => new { x.CameraId, x.LandmarkId });
+      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.LandmarkId).HasColumnName("landmark_id");
+      e.Property(x => x.Pan).HasColumnName("pan");
+      e.Property(x => x.Tilt).HasColumnName("tilt");
+    });
+
+    modelBuilder.Entity<DbGroundObservation>(e =>
+    {
+      e.ToTable("ground_observation");
+      e.HasKey(x => new { x.CameraId, x.LandmarkId });
+      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.LandmarkId).HasColumnName("landmark_id");
+      e.Property(x => x.X).HasColumnName("x");
+      e.Property(x => x.Y).HasColumnName("y");
+    });
   }
 }
 
@@ -424,4 +513,91 @@ public static class CameraAclModes
 {
   public const string Open = "open";
   public const string Enforced = "enforced";
+}
+
+/// A space cameras are placed in. See migrations/0002_spatial.sql.
+/// One world things are placed in: a real map, or a plan nested in another space. See 0002_spatial.sql.
+public sealed class DbSpace
+{
+  public Guid Id { get; set; }
+  public Guid? ParentId { get; set; }
+  public string Name { get; set; } = string.Empty;
+  public string Kind { get; set; } = SpaceKinds.Plan;
+  public bool RealCoordinates { get; set; }
+  public int Ordinal { get; set; }
+  /// Height of this space's floor above the ground.
+  public double ElevationM { get; set; }
+  /// What the space shows when it is opened.
+  public double ViewSouth { get; set; }
+  public double ViewWest { get; set; }
+  public double ViewNorth { get; set; }
+  public double ViewEast { get; set; }
+  /// Polygon on the parent as JSON [[lat, lon], ...]; null for a root or a space with none drawn.
+  public string? Footprint { get; set; }
+}
+
+public static class SpaceKinds
+{
+  public const string Map = "map";
+  public const string Plan = "plan";
+}
+
+/// A plan space's picture and the three corners that place it in that space.
+public sealed class DbSpacePlan
+{
+  public Guid SpaceId { get; set; }
+  public string Mime { get; set; } = string.Empty;
+  public int WidthPx { get; set; }
+  public int HeightPx { get; set; }
+  public double TlLat { get; set; }
+  public double TlLon { get; set; }
+  public double TrLat { get; set; }
+  public double TrLon { get; set; }
+  public double BlLat { get; set; }
+  public double BlLon { get; set; }
+  public string Etag { get; set; } = string.Empty;
+  public byte[] Image { get; set; } = [];
+}
+
+/// A camera drawn in one space. The one with IsReference is where it really stands.
+public sealed class DbCameraPlacement
+{
+  public string CameraId { get; set; } = string.Empty;
+  public Guid SpaceId { get; set; }
+  public bool IsReference { get; set; }
+  public double Lat { get; set; }
+  public double Lon { get; set; }
+  public double HeightM { get; set; }
+  /// Compass bearing: 0 = north, clockwise.
+  public double HeadingDeg { get; set; }
+  public double HfovDeg { get; set; }
+  public double RangeM { get; set; }
+}
+
+public sealed class DbLandmark
+{
+  public Guid Id { get; set; }
+  public Guid SpaceId { get; set; }
+  public string Name { get; set; } = string.Empty;
+  public double Lat { get; set; }
+  public double Lon { get; set; }
+  /// Above the floor of its space.
+  public double HeightM { get; set; }
+}
+
+/// Where a PTZ camera pointed when centred on a landmark, in the camera's own units.
+public sealed class DbPtzGeoObservation
+{
+  public string CameraId { get; set; } = string.Empty;
+  public Guid LandmarkId { get; set; }
+  public float Pan { get; set; }
+  public float Tilt { get; set; }
+}
+
+public sealed class DbGroundObservation
+{
+  public string CameraId { get; set; } = string.Empty;
+  public Guid LandmarkId { get; set; }
+  public float X { get; set; }
+  public float Y { get; set; }
 }

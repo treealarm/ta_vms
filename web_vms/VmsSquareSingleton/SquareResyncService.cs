@@ -34,6 +34,8 @@ public sealed class SquareResyncService(
 
       try
       {
+        // Spaces first: a placed camera hangs under the space it stands in.
+        await scope.ServiceProvider.GetRequiredService<SquareSpaceExport>().ExportAsync(ct);
         await SquareCameraPush.PushAllCamerasAsync(square, cfgClient, producerId.Value, logger, ct);
         // The whole tree is in Square now, which is what makes a link to one of its cameras
         // meaningful — see SquareStatusService.

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Vms.Cfg;
+using VmsPtzTrackingSingleton.Geo;
 
 namespace VmsPtzTrackingSingleton;
 
@@ -31,6 +32,7 @@ public sealed class TrackingSessionManager(
   CameraPtzRouter router,
   PtzCalibrationCache calibrationCache,
   SlaveBindingCache bindingCache,
+  CameraSpatialSource spatial,
   IPtzCommandSender sender,
   DetectionStreamClient stream,
   ILoggerFactory loggerFactory,
@@ -159,6 +161,70 @@ public sealed class TrackingSessionManager(
       ? new AimResult(true, null, aim.Pan, aim.Tilt, null, null, aim.Extrapolated)
       : AimResult.Failed(error);
   }
+
+  /// <summary>
+  /// How long a slave leaves the camera where an operator aimed it on the map before following its
+  /// master again. Without it the next detection would swing the camera straight back.
+  /// </summary>
+  private static readonly TimeSpan WorldAimHold = TimeSpan.FromSeconds(30);
+
+  /// <summary>Points a landmark-calibrated camera at a place picked in some space.</summary>
+  /// <param name="spaceId">Where the point was picked; must share coordinates with the camera's own space.</param>
+  /// <param name="heightAboveFloorM">Above that space's floor; its elevation is added here.</param>
+  /// <remarks>
+  /// Read fresh rather than cached, for the same reason as <see cref="AimAtMasterPointAsync"/>: the
+  /// calibration wizard checks a landmark the moment after recording it.
+  /// </remarks>
+  public async Task<WorldAimResult> AimAtWorldPointAsync(
+    string cameraId, string spaceId, double lat, double lon, double heightAboveFloorM, CancellationToken ct)
+  {
+    if (string.IsNullOrWhiteSpace(cameraId))
+      return WorldAimResult.Failed("cameraId must not be empty");
+
+    var model = await spatial.LoadAsync(cameraId, ct);
+    if (model is null)
+      return WorldAimResult.Failed($"Camera '{cameraId}' has no reference placement: mark where it really stands first");
+
+    // Before the calibration: a point in an unrelated world is out of reach however well the camera
+    // is calibrated, and saying "calibrate it" would send the operator the wrong way.
+    var space = await spatial.LoadSpaceAsync(spaceId, ct);
+    if (space is null)
+      return WorldAimResult.Failed($"Space '{spaceId}' does not exist");
+    if (!model.SharesGeometryWith(space))
+      return WorldAimResult.Failed(
+        $"The camera stands in '{model.Space.Name}', which shares no coordinates with '{space.Name}'");
+    if (model.GeoFit is null)
+      return WorldAimResult.Failed(model.GeoFitError ?? "The camera is not calibrated against landmarks");
+    var heightAboveGroundM = space.ElevationM + heightAboveFloorM;
+
+    var bearing = model.BearingTo(lat, lon, heightAboveGroundM);
+    var aim = PtzGeoMath.Project(model.GeoFit, bearing);
+
+    if (_slaves.TryGetValue(cameraId, out var slave))
+      slave.Session.HoldUntil(DateTime.UtcNow.Add(WorldAimHold));
+
+    var error = await sender.AimAsync(cameraId, aim.Pan, aim.Tilt, ct);
+    if (error is not null)
+      return WorldAimResult.Failed(error);
+
+    logger.LogInformation(
+      "Aimed '{Camera}' at ({Lat}, {Lon}, {Height} m): azimuth {Az:F1}°, elevation {El:F1}°, {Dist:F0} m -> pan {Pan:F3}, tilt {Tilt:F3}{Extra}",
+      cameraId, lat, lon, heightAboveGroundM, bearing.AzimuthDeg, bearing.ElevationDeg, bearing.DistanceM,
+      aim.Pan, aim.Tilt, aim.Extrapolated ? " (extrapolated)" : "");
+    return new WorldAimResult(true, null, aim, bearing);
+  }
+
+  /// <summary>What a camera's landmark observations and marks add up to, for the calibration wizards.</summary>
+  /// <returns>Null when the camera has no reference placement.</returns>
+  public Task<CameraSpatialModel?> GetSpatialModelAsync(string cameraId, CancellationToken ct) =>
+    string.IsNullOrWhiteSpace(cameraId)
+      ? Task.FromResult<CameraSpatialModel?>(null)
+      : spatial.LoadAsync(cameraId, ct);
+
+  /// <summary>The cameras whose detections can be shown in a space, with their pictures fitted to the ground.</summary>
+  /// <remarks>Only those whose marks carry a fit: a camera that cannot be projected has nothing to show.</remarks>
+  public async Task<IReadOnlyList<CameraSpatialModel>> ListGroundProjectionsAsync(string spaceId, CancellationToken ct) =>
+    (await spatial.LoadForSpaceAsync(spaceId, ct)).Where(m => m.GroundFit is not null).ToList();
 
   /// <summary>Stops a camera aiming itself for a while, so a person can drive it by hand.</summary>
   /// <remarks>
@@ -487,4 +553,10 @@ public sealed record AimResult(
   bool Extrapolated)
 {
   public static AimResult Failed(string error) => new(false, error, null, null, null, null, false);
+}
+
+/// <summary>Where an aim at a place on the map sent the camera, or why it did not.</summary>
+public sealed record WorldAimResult(bool Success, string? Error, GeoAim? Aim, Bearing? Bearing)
+{
+  public static WorldAimResult Failed(string error) => new(false, error, null, null);
 }
