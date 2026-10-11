@@ -31,7 +31,9 @@
                 "KEYCLOAK_CLIENT_ID": "pubclient",
                 "SQUARE_FRONTEND_ORIGIN": "http://localhost:8002",
                 "VMS_EDGE_EXPORT_CHUNK_SECONDS": "60",
-                "VMS_LIVE_TEST_PLAYER": ""
+                "VMS_LIVE_TEST_PLAYER": "",
+                "VMS_MAP_TILE_URL": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                "VMS_MAP_TILE_ATTRIBUTION": "© OpenStreetMap contributors"
             }
         },
         {

@@ -16,6 +16,7 @@ import wallEventsReducer from './wallEventsSlice'
 import frontendConfigReducer from './frontendConfigSlice'
 import cameraPermissionsReducer from './cameraPermissionsSlice'
 import edgeArchiveReducer from './edgeArchiveSlice'
+import spatialReducer from './spatialSlice'
 
 export const store = configureStore({
   reducer: {
@@ -35,6 +36,7 @@ export const store = configureStore({
     frontendConfig: frontendConfigReducer,
     cameraPermissions: cameraPermissionsReducer,
     edgeArchive: edgeArchiveReducer,
+    spatial: spatialReducer,
   }
 })
 

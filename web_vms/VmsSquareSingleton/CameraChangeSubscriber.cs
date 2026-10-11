@@ -67,11 +67,17 @@ public sealed class CameraChangeSubscriber(
 
           // The event is a signal, never data: the current camera is read here, so a message that
           // arrives late or out of order still results in the present state being pushed.
-          var fingerprint = Fingerprint(resp.Setup);
+          var placed = await cfgClient.GetReferencePlacementAsync(
+            new SourceRequest { SourceId = cameraId }, cancellationToken: ct);
+          var placement = placed.Found ? SquareCameraPush.PositionFor(placed.Placement, placed.Space) : null;
+
+          var fingerprint = Fingerprint(resp.Setup, placement);
           if (_lastPushed.TryGetValue(cameraId, out var last) && last == fingerprint)
             continue;
 
-          await SquareCameraPush.PushCameraAsync(square, resp.Setup, producerId.Value);
+          var known = placement is null
+            && (await SquareCameraPush.KnownToSquareAsync(square, [cameraId])).Count > 0;
+          await SquareCameraPush.PushCameraAsync(square, resp.Setup, placement, known, producerId.Value);
           _lastPushed[cameraId] = fingerprint;
           linkState.RecordSuccess();
         }
@@ -91,10 +97,11 @@ public sealed class CameraChangeSubscriber(
 
   /// Everything SquareCameraPush actually puts into the figure. Anything not in here cannot make
   /// the pushed object differ, so a change to it must not cost a round trip.
-  private static string Fingerprint(CameraSetup setup)
+  private static string Fingerprint(CameraSetup setup, CameraPlacement? placement)
   {
     var primary = setup.Streams.FirstOrDefault(s => s.WebRtc);
-    return $"{setup.Name}\u001f{primary?.RecordingProfile?.Name ?? string.Empty}";
+    var where = placement is null ? "-" : $"{placement.Lat:R},{placement.Lon:R},{placement.HeadingDeg:R}";
+    return $"{setup.Name}\u001f{primary?.RecordingProfile?.Name ?? string.Empty}\u001f{where}";
   }
 
   private async Task RunAsync(string topic, TopicMessageHandler handler, CancellationToken ct)

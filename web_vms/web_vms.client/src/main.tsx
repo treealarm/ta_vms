@@ -8,6 +8,8 @@ import App from './App.tsx'
 import { store } from './store'
 import { installAuthFetch } from './auth/authFetch'
 import { netTerrainTheme } from './theme/netTerrainTheme'
+// Leaflet's own layout rules (panes, markers, controls); the maps tabs need them on every page load.
+import 'leaflet/dist/leaflet.css'
 
 installAuthFetch()
 

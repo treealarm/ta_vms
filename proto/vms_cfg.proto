@@ -88,6 +88,35 @@ service CfgService {
   rpc SetUserCameraPermissions(SetUserCameraPermissionsRequest) returns (OperationStatus);
   rpc GetCameraAclMode(google.protobuf.Empty) returns (GetCameraAclModeResponse);
   rpc SetCameraAclMode(SetCameraAclModeRequest) returns (OperationStatus);
+
+  // ── Maps & plans ── see the message section of the same name below.
+  rpc ListSpaces(google.protobuf.Empty) returns (ListSpacesResponse);
+  rpc GetSpace(SpaceRequest) returns (GetSpaceResponse);
+  // Creates the space when id is empty; returns what was stored.
+  rpc UpsertSpace(Space) returns (Space);
+  // Takes the nested spaces with it, and everything placed in any of them.
+  rpc RemoveSpace(SpaceRequest) returns (OperationStatus);
+  // Streamed both ways because a plan image does not fit in one message: Dapr service invocation
+  // caps a gRPC message at 4 MiB, and the caller's channel cannot be configured past that.
+  rpc UploadSpacePlan(stream SpacePlanUploadChunk) returns (Space);
+  rpc GetSpacePlanImage(GetSpacePlanImageRequest) returns (stream SpacePlanImageChunk);
+  // Re-aligns a plan without sending the image again.
+  rpc SetSpacePlanCorners(SetSpacePlanCornersRequest) returns (Space);
+  rpc RemoveSpacePlan(SpaceRequest) returns (OperationStatus);
+  rpc ListCameraPlacements(google.protobuf.Empty) returns (ListCameraPlacementsResponse);
+  // Where the camera really stands, with the space that is in. For Square and for aiming.
+  rpc GetReferencePlacement(SourceRequest) returns (GetReferencePlacementResponse);
+  rpc UpsertCameraPlacement(CameraPlacement) returns (OperationStatus);
+  rpc RemoveCameraPlacement(CameraPlacementRequest) returns (OperationStatus);
+  rpc ListLandmarks(SpaceRequest) returns (ListLandmarksResponse);
+  rpc UpsertLandmark(Landmark) returns (Landmark);
+  rpc RemoveLandmark(LandmarkRequest) returns (OperationStatus);
+  rpc GetPtzGeoObservations(SourceRequest) returns (PtzGeoObservations);
+  // Replaces the camera's observations whole, like a slave binding's points: one observation
+  // changes what every other one is checked against.
+  rpc SetPtzGeoObservations(PtzGeoObservations) returns (OperationStatus);
+  // Everything needed to aim one camera through world coordinates, in one round trip.
+  rpc GetCameraSpatialModel(SourceRequest) returns (CameraSpatialModelResponse);
 }
 
 service StorageService {
@@ -939,4 +968,217 @@ message GetCameraAclModeResponse {
 
 message SetCameraAclModeRequest {
   CameraAclMode mode = 1;
+}
+
+// ── Maps & plans ─────────────────────────────────────────────────────────────
+//
+// Where cameras and reference points are. A space is one world things are placed in: a real map,
+// or a plan nested in another space -- its footprint drawn on the parent, its inside a world of its
+// own, never laid over the parent's map. Every position is WGS84 plus a height in metres above the
+// floor of its space; a space's own floor is elevation_m above the ground, so "above ground" is
+// always space.elevation_m + height_m. A plan in made-up coordinates stores WGS84 made up around
+// (0, 0).
+//
+// Two spaces share geometry when they are the same space or both have real coordinates: only then
+// can a camera be aimed at a point, or calibrated on a landmark, in the other.
+//
+// Changes to spaces, plans and landmarks are announced on the `space-config-changed` topic, payload
+// {"space_id": "..."}; changes to one camera's placements or observations on the usual
+// `server-config-changed`.
+
+enum SpaceKind {
+  // A real map: map tiles underneath, real coordinates. Only ever a root.
+  SPACE_KIND_MAP  = 0;
+  // A plan drawn on its own picture (a metric grid until it has one). A root, or nested.
+  SPACE_KIND_PLAN = 1;
+}
+
+message GeoPoint {
+  double lat = 1;
+  double lon = 2;
+}
+
+// A rectangle, by its south-west and north-east corners.
+message GeoBounds {
+  GeoPoint south_west = 1;
+  GeoPoint north_east = 2;
+}
+
+// Three corners of a plan image in its space. Three are enough for an affine placement --
+// position, scale, rotation, skew -- and a fourth would only over-determine it.
+message PlanCorners {
+  GeoPoint top_left    = 1;
+  GeoPoint top_right   = 2;
+  GeoPoint bottom_left = 3;
+}
+
+// Everything about a plan image except its bytes.
+message SpacePlan {
+  PlanCorners corners   = 1;
+  uint32      width_px  = 2;
+  uint32      height_px = 3;
+  string      mime      = 4;
+  // Changes whenever the image does; also its HTTP ETag.
+  string      etag      = 5;
+}
+
+message Space {
+  string    id               = 1;
+  // Empty for a root.
+  string    parent_id        = 2;
+  string    name             = 3;
+  SpaceKind kind             = 4;
+  // Always true for a map.
+  bool      real_coordinates = 5;
+  // Order among siblings: the floors of a building, bottom to top.
+  int32     ordinal          = 6;
+  double    elevation_m      = 7;
+  // What the space shows when it is opened.
+  GeoBounds view             = 8;
+  // Where it lies on its parent, in the parent's coordinates; empty when none is drawn.
+  repeated GeoPoint footprint = 9;
+  // Absent when there is no plan image. Ignored by UpsertSpace: the plan has its own RPCs.
+  SpacePlan plan             = 10;
+}
+
+message SpaceRequest {
+  string space_id = 1;
+}
+
+message GetSpaceResponse {
+  bool  found = 1;
+  Space space = 2;
+}
+
+message ListSpacesResponse {
+  repeated Space spaces = 1;
+}
+
+message SpacePlanUploadHeader {
+  string      space_id  = 1;
+  PlanCorners corners   = 2;
+  uint32      width_px  = 3;
+  uint32      height_px = 4;
+  string      mime      = 5;
+}
+
+// The first message carries the header, every later one a piece of the image.
+message SpacePlanUploadChunk {
+  oneof part {
+    SpacePlanUploadHeader header = 1;
+    bytes                 data   = 2;
+  }
+}
+
+message GetSpacePlanImageRequest {
+  string space_id      = 1;
+  // The caller's cached ETag. When it still matches, the stream is the header alone, saying so.
+  string if_none_match = 2;
+}
+
+message SpacePlanImageHeader {
+  string mime         = 1;
+  string etag         = 2;
+  bool   not_modified = 3;
+}
+
+// The first message carries the header, every later one a piece of the image. A space with no plan
+// answers NOT_FOUND.
+message SpacePlanImageChunk {
+  oneof part {
+    SpacePlanImageHeader header = 1;
+    bytes                data   = 2;
+  }
+}
+
+message SetSpacePlanCornersRequest {
+  string      space_id = 1;
+  PlanCorners corners  = 2;
+}
+
+// A camera drawn in one space. A camera may be drawn in several; the reference placement is where
+// it really stands -- aiming, calibration and master/slave go by it -- and the rest are only
+// pictures of it (Square's owner_id relation). A camera's first placement becomes its reference.
+message CameraPlacement {
+  string camera_id    = 1;
+  string space_id     = 2;
+  bool   is_reference = 3;
+  double lat          = 4;
+  double lon          = 5;
+  double height_m     = 6;
+  // Compass bearing of the optical axis: 0 = north, clockwise. Square's __image_rotate means the
+  // same, so a placement exports without conversion.
+  double heading_deg  = 7;
+  // Only draw the view cone; nothing is aimed through them.
+  double hfov_deg     = 8;
+  double range_m      = 9;
+}
+
+message CameraPlacementRequest {
+  string camera_id = 1;
+  string space_id  = 2;
+}
+
+message ListCameraPlacementsResponse {
+  repeated CameraPlacement placements = 1;
+}
+
+message GetReferencePlacementResponse {
+  bool            found     = 1;
+  CameraPlacement placement = 2;
+  Space           space     = 3;
+}
+
+// A named point with a known position, used to calibrate cameras. Operators never see these.
+message Landmark {
+  string id       = 1;
+  string space_id = 2;
+  string name     = 3;
+  double lat      = 4;
+  double lon      = 5;
+  double height_m = 6;
+}
+
+message LandmarkRequest {
+  string landmark_id = 1;
+}
+
+message ListLandmarksResponse {
+  repeated Landmark landmarks = 1;
+}
+
+// Where a PTZ camera pointed when it was centred on a landmark, in the camera's own pan/tilt space,
+// uninterpreted -- as PtzSlaveBindingPoint does it, and for the same reason.
+message PtzGeoObservation {
+  string landmark_id = 1;
+  float  pan         = 2;
+  float  tilt        = 3;
+}
+
+message PtzGeoObservations {
+  string camera_id = 1;
+  repeated PtzGeoObservation observations = 2;
+}
+
+// An observation together with where its landmark is.
+message GeoObservation {
+  string landmark_id   = 1;
+  string landmark_name = 2;
+  double lat           = 3;
+  double lon           = 4;
+  // Above the ground: the landmark's space elevation plus its own height.
+  double height_above_ground_m = 5;
+  float  pan           = 6;
+  float  tilt          = 7;
+}
+
+message CameraSpatialModelResponse {
+  // False when the camera has no reference placement. Without one nothing can be aimed through it.
+  bool            found     = 1;
+  CameraPlacement placement = 2;
+  // The space the camera really stands in.
+  Space           space     = 3;
+  // Only observations of landmarks in a space that shares geometry with the camera's: one taken
+  // before the camera moved to an unrelated plan describes a place it can no longer see.
+  repeated GeoObservation observations = 4;
 }

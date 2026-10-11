@@ -34,6 +34,7 @@ builder.Services.AddSingleton(_ =>
 builder.Services.AddSingleton<CameraPtzRouter>();
 builder.Services.AddSingleton<PtzCalibrationCache>();
 builder.Services.AddSingleton<SlaveBindingCache>();
+builder.Services.AddSingleton<VmsPtzTrackingSingleton.Geo.CameraSpatialSource>();
 builder.Services.AddSingleton<TrackingPolicyCache>();
 builder.Services.AddSingleton<IPtzCommandSender, PtzCommandSender>();
 builder.Services.AddSingleton<DetectionStreamClient>();

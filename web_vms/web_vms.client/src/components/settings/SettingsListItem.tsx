@@ -5,8 +5,8 @@ type Props = {
   onClick: () => void
   primary: React.ReactNode
   secondary?: React.ReactNode
-  /** Tree indentation level (cameras page: server 0 / camera 1 / stream 2). */
-  depth?: 0 | 1 | 2
+  /** Tree indentation level (cameras page: server 0 / camera 1 / stream 2; maps: nesting of spaces). */
+  depth?: number
   /** Renders the row at reduced opacity (disabled cameras/streams). */
   dimmed?: boolean
   /**

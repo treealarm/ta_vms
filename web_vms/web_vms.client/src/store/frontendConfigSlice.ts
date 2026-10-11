@@ -5,6 +5,8 @@ type FrontendConfigDto = {
   squareFrontendOrigin?: string | null
   squareIntegrated?: boolean
   liveTestPlayer?: boolean
+  mapTilesEnabled?: boolean
+  mapTileAttribution?: string | null
 }
 
 type HealthDto = {
@@ -22,6 +24,10 @@ type FrontendConfigState = {
   squareIntegrated: boolean
   /** Whether the backend serves the dev-only anonymous WHEP test endpoints at all. */
   liveTestPlayer: boolean
+  /** Geo sites get map tiles underneath, through the backend's caching proxy. */
+  mapTilesEnabled: boolean
+  /** Credit line the tile provider requires under the map. */
+  mapTileAttribution: string | null
   /** This endpoint is anonymous, so 'failed' means the backend itself is unreachable, not 401. */
   status: 'idle' | 'pending' | 'succeeded' | 'failed'
   /** Last transport-level error while probing, shown once retries stop being a startup race. */
@@ -41,6 +47,8 @@ const initialState: FrontendConfigState = {
   squareFrontendOrigin: null,
   squareIntegrated: false,
   liveTestPlayer: false,
+  mapTilesEnabled: false,
+  mapTileAttribution: null,
   status: 'idle',
   lastError: null,
   failedAttempts: 0,
@@ -74,6 +82,8 @@ const frontendConfigSlice = createSlice({
         state.squareFrontendOrigin = action.payload.squareFrontendOrigin || null
         state.squareIntegrated = action.payload.squareIntegrated === true
         state.liveTestPlayer = action.payload.liveTestPlayer === true
+        state.mapTilesEnabled = action.payload.mapTilesEnabled === true
+        state.mapTileAttribution = action.payload.mapTileAttribution || null
       })
       .addCase(loadFrontendConfig.rejected, (state, action) => {
         state.status = 'failed'

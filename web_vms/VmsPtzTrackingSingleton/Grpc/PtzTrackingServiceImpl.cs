@@ -93,6 +93,53 @@ public sealed class PtzTrackingServiceImpl(TrackingSessionManager manager)
     return response;
   }
 
+  public override async Task<AimAtWorldPointResponse> AimAtWorldPoint(
+    AimAtWorldPointRequest request, ServerCallContext context)
+  {
+    var result = await manager.AimAtWorldPointAsync(
+      request.CameraId, request.SpaceId, request.Lat, request.Lon, request.HeightM, context.CancellationToken);
+
+    if (!result.Success)
+      return new AimAtWorldPointResponse { Success = false, Error = result.Error ?? string.Empty };
+
+    return new AimAtWorldPointResponse
+    {
+      Success      = true,
+      Pan          = result.Aim!.Pan,
+      Tilt         = result.Aim.Tilt,
+      Extrapolated = result.Aim.Extrapolated,
+      AzimuthDeg   = result.Bearing!.Value.AzimuthDeg,
+      ElevationDeg = result.Bearing.Value.ElevationDeg,
+      DistanceM    = result.Bearing.Value.DistanceM,
+    };
+  }
+
+  public override async Task<GetPtzGeoFitResponse> GetPtzGeoFit(
+    GetPtzGeoFitRequest request, ServerCallContext context)
+  {
+    var model = await manager.GetGeoFitAsync(request.CameraId, context.CancellationToken);
+    if (model is null)
+      return new GetPtzGeoFitResponse { Found = false };
+
+    var response = new GetPtzGeoFitResponse
+    {
+      Found  = true,
+      Fitted = model.GeoFit is not null,
+      Error  = model.GeoFitError ?? string.Empty,
+    };
+    foreach (var observation in model.Observations)
+    {
+      var residual = new PtzGeoResidual { LandmarkId = observation.LandmarkId };
+      if (model.GeoFit?.Residuals.GetValueOrDefault(observation.LandmarkId) is { } value)
+      {
+        residual.Pan = value.Pan;
+        residual.Tilt = value.Tilt;
+      }
+      response.Residuals.Add(residual);
+    }
+    return response;
+  }
+
   public override Task<ListTrackingStatesResponse> ListTrackingStates(
     ListTrackingStatesRequest request, ServerCallContext context)
   {
