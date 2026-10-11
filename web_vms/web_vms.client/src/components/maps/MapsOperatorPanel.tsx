@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import type { TFunction } from 'i18next'
 import {
-  Alert, Box, Button, Chip, IconButton, Stack, ToggleButton, Tooltip, Typography,
+  Alert, Box, Button, Chip, IconButton, Stack, Tab, Tabs, ToggleButton, Tooltip, Typography,
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import GpsFixedIcon from '@mui/icons-material/GpsFixed'
 import PersonPinCircleIcon from '@mui/icons-material/PersonPinCircle'
 import { Polyline } from 'react-leaflet'
 import { useTranslation } from 'react-i18next'
-import type { CameraSetupDto, GeoPointDto, PtzGeoAimResultDto } from '../../dto/dtos'
+import type { AlarmDto, CameraSetupDto, GeoPointDto, PtzGeoAimResultDto } from '../../dto/dtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadCameras } from '../../store/liveSlice'
 import { errorText, loadPlacements, loadSpaces, spatialRequest } from '../../store/spatialSlice'
@@ -17,12 +18,15 @@ import PlanOverlay from '../../map/PlanOverlay'
 import { CameraMarker } from '../../map/markers'
 import { Footprints } from '../../map/footprints'
 import DetectionsLayer from '../../map/DetectionsLayer'
-import { cameraMapStatus, STATUS_COLOR, type CameraMapStatus } from '../../map/cameraStatus'
+import { ALARM_COLOR, cameraMapStatus, STATUS_COLOR, type CameraMapStatus } from '../../map/cameraStatus'
+import { RECENT_ALARM_MINUTES, useAlarms } from '../../hooks/useAlarms'
 import CameraStream from '../CameraStream'
+import ArchiveHlsPreview from '../ArchiveHlsPreview'
+import { eventSource } from '../EventDetailsPanel'
 import PtzControlPad from '../PtzControlPad'
 import SpaceNav from './SpaceNav'
 import MapObjectList from './MapObjectList'
-import { childrenOf, rootsOf, sharesGeometry } from './spatialUtils'
+import { alarmedSpaces, childrenOf, rootsOf, sharesGeometry } from './spatialUtils'
 
 /** The camera list carries recording state and stream freshness; this is how stale the map may get. */
 const CAMERA_POLL_MS = 5000
@@ -62,6 +66,13 @@ export default function MapsOperatorPanel() {
   const [aimError, setAimError] = useState<string | null>(null)
   const [focus, setFocus] = useState<MapFocus | null>(null)
   const [detections, setDetections] = useState(readDetections)
+  const { alarms, byCamera, latest } = useAlarms()
+  // The alarm picked from the list, so its own recording is shown rather than the camera's newest.
+  const [pickedAlarm, setPickedAlarm] = useState<string | null>(null)
+  // Only running alarms light the outlines: one that ended is history, not somewhere to go now.
+  const alarmed = useMemo(() => alarmedSpaces(
+    spaces, placements, new Set([...byCamera].filter(([, state]) => state === 'active').map(([id]) => id)),
+  ), [spaces, placements, byCamera])
 
   useEffect(() => {
     void dispatch(loadSpaces())
@@ -91,6 +102,7 @@ export default function MapsOperatorPanel() {
 
   const select = (cameraId: string | null) => {
     setSelectedId(cameraId)
+    setPickedAlarm(null)
     setAiming(false)
     setAimTarget(null)
     setAimResult(null)
@@ -121,6 +133,19 @@ export default function MapsOperatorPanel() {
     }
   }
 
+  /**
+   * Shows an alarm's camera: here if it is drawn in this space, otherwise where it really stands,
+   * otherwise only its panel.
+   */
+  const goToAlarm = (alarm: AlarmDto) => {
+    const p = placements.find((x) => x.cameraId === alarm.cameraId && x.spaceId === space?.id)
+      ?? placements.find((x) => x.cameraId === alarm.cameraId && x.isReference)
+    if (p && p.spaceId !== space?.id) open(p.spaceId)
+    select(alarm.cameraId)
+    setPickedAlarm(alarm.eventUuid)
+    if (p) setFocus((f) => ({ lat: p.lat, lon: p.lon, seq: (f?.seq ?? 0) + 1 }))
+  }
+
   /** Selects a camera in this space and brings it into view. */
   const goTo = (cameraId: string) => {
     const p = here.find((x) => x.cameraId === cameraId)
@@ -140,6 +165,23 @@ export default function MapsOperatorPanel() {
         <Box sx={{ width: 240, flexShrink: 0, borderRight: 1, borderColor: 'divider', overflowY: 'auto' }}>
           <MapObjectList
             sections={[
+              {
+                title: t('maps.alarms'),
+                hint: t('maps.alarmsHint', { minutes: RECENT_ALARM_MINUTES }),
+                empty: t('maps.noAlarms'),
+                items: alarms.filter((a) => camerasById[a.cameraId]).map((a) => {
+                  const where = placements.find((p) => p.cameraId === a.cameraId && p.isReference)
+                  const whereName = spaces.find((s) => s.id === where?.spaceId)?.name
+                  return {
+                    key: a.eventUuid,
+                    primary: camerasById[a.cameraId].name || a.cameraId,
+                    secondary: [alarmCause(a, t), alarmTime(a, t), whereName].filter(Boolean).join(' · '),
+                    dot: a.active ? ALARM_COLOR : `${ALARM_COLOR}66`,
+                    selected: a.eventUuid === pickedAlarm,
+                    onClick: () => goToAlarm(a),
+                  }
+                }),
+              },
               {
                 title: t('maps.cameras'),
                 empty: t('maps.noCamerasHereOperator'),
@@ -170,14 +212,14 @@ export default function MapsOperatorPanel() {
             onMapClick={(at) => (aiming ? void aimAt(at) : select(null))}
             overlay={(
               <>
-                <SpaceNav spaces={spaces} space={space} onOpen={open} />
+                <SpaceNav spaces={spaces} space={space} onOpen={open} alarmed={alarmed} />
                 <DetectionsToggle on={detections} onChange={(on) => { setDetections(on); writeDetections(on) }} />
               </>
             )}
           >
             {space.plan && <PlanOverlay space={space} />}
             {detections && space.id && <DetectionsLayer spaceId={space.id} />}
-            <Footprints nested={nested} onPick={(s) => s.id && open(s.id)} />
+            <Footprints nested={nested} alarmed={alarmed} onPick={(s) => s.id && open(s.id)} />
             {here.map((p) => {
               const camera = camerasById[p.cameraId]
               return (
@@ -188,6 +230,7 @@ export default function MapsOperatorPanel() {
                   color={STATUS_COLOR[cameraMapStatus(camera)]}
                   selected={p.cameraId === selectedId}
                   dimmed={!!selectedId && p.cameraId !== selectedId}
+                  alarm={byCamera.get(p.cameraId) ?? null}
                   onSelect={() => select(p.cameraId)}
                 />
               )
@@ -203,7 +246,9 @@ export default function MapsOperatorPanel() {
         </Box>
         {selected && (
           <CameraSidePanel
+            key={selected.cameraId}
             camera={selected}
+            alarm={alarms.find((a) => a.eventUuid === pickedAlarm) ?? latest.get(selected.cameraId) ?? null}
             aiming={aiming}
             onAimingChange={setAiming}
             aimUnavailable={aimUnavailable}
@@ -237,8 +282,26 @@ function DetectionsToggle({ on, onChange }: { on: boolean; onChange: (on: boolea
   )
 }
 
+/** What set an alarm off, in a word: the last part of the ONVIF topic, or where it came from. */
+function alarmCause(a: AlarmDto, t: TFunction): string {
+  if (a.trigger) return a.trigger.split('/').pop() || a.trigger
+  const source = eventSource(a)
+  return source === 'analytics' ? t('events.sourceAnalytics') : source === 'onvif' ? t('events.sourceOnvif') : ''
+}
+
+const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+/** "since 12:03" while it runs, "12:03–12:05" once it ended. */
+function alarmTime(a: AlarmDto, t: TFunction): string {
+  return a.active || !a.alarmEndTs
+    ? t('maps.alarmSince', { time: clock(a.alarmStartTs) })
+    : `${clock(a.alarmStartTs)}–${clock(a.alarmEndTs)}`
+}
+
 type SideProps = {
   camera: CameraSetupDto
+  /** The camera's newest alarm within the window — running, or ended lately — or null. */
+  alarm: AlarmDto | null
   aiming: boolean
   onAimingChange: (on: boolean) => void
   /** Why this camera cannot be aimed at a point here, or null when it can. */
@@ -248,8 +311,11 @@ type SideProps = {
   onClose: () => void
 }
 
-function CameraSidePanel({ camera, aiming, onAimingChange, aimUnavailable, aimResult, aimError, onClose }: SideProps) {
+function CameraSidePanel({ camera, alarm, aiming, onAimingChange, aimUnavailable, aimResult, aimError, onClose }: SideProps) {
   const { t } = useTranslation()
+  // The recording of the alarm, beside the live picture; offered only where the archive may be seen.
+  const [view, setView] = useState<'live' | 'alarm'>('live')
+  const showing = view === 'alarm' && alarm?.archive ? 'alarm' : 'live'
   const navigate = useNavigate()
   const monitors = useAppSelector((s) => s.monitors.monitors)
   const status = cameraMapStatus(camera)
@@ -263,11 +329,26 @@ function CameraSidePanel({ camera, aiming, onAimingChange, aimUnavailable, aimRe
         <Chip size="small" label={t(`maps.status.${status}`)} sx={{ bgcolor: STATUS_COLOR[status], color: '#000' }} />
         <IconButton size="small" onClick={onClose}><CloseIcon fontSize="small" /></IconButton>
       </Stack>
-      <Box sx={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', bgcolor: '#000', borderRadius: 1, overflow: 'hidden' }}>
-        {stream?.whepUrl && !camera.disabled
-          ? <CameraStream key={camera.cameraId} whepUrl={stream.whepUrl} stunUrl={camera.effectiveWebrtcStunUrl} cameraId={camera.cameraId} />
-          : <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>{t('maps.noLive')}</Typography>}
-      </Box>
+      {alarm && (
+        <Alert severity={alarm.active ? 'error' : 'warning'} sx={{ py: 0 }}>
+          {alarm.active ? t('maps.alarmNow') : t('maps.alarmEnded')} · {[alarmCause(alarm, t), alarmTime(alarm, t)].filter(Boolean).join(' · ')}
+        </Alert>
+      )}
+      {alarm?.archive && (
+        <Tabs value={showing} onChange={(_, v: 'live' | 'alarm') => setView(v)} variant="fullWidth" sx={{ minHeight: 32, '& .MuiTab-root': { minHeight: 32, py: 0.5 } }}>
+          <Tab value="live" label={t('maps.viewLive')} />
+          <Tab value="alarm" label={t('maps.viewAlarm')} />
+        </Tabs>
+      )}
+      {showing === 'alarm' && alarm ? (
+        <ArchiveHlsPreview selected={alarm} />
+      ) : (
+        <Box sx={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', bgcolor: '#000', borderRadius: 1, overflow: 'hidden' }}>
+          {stream?.whepUrl && !camera.disabled
+            ? <CameraStream key={camera.cameraId} whepUrl={stream.whepUrl} stunUrl={camera.effectiveWebrtcStunUrl} cameraId={camera.cameraId} bboxEnabled />
+            : <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>{t('maps.noLive')}</Typography>}
+        </Box>
+      )}
       {monitor && (
         <Button size="small" variant="outlined" onClick={() => navigate(`/operator/monitors?monitorId=${encodeURIComponent(monitor.monitorId)}`)}>
           {t('maps.openInMonitor', { name: monitor.name })}
@@ -308,6 +389,10 @@ function StatusLegend() {
           <Typography variant="caption" color="text.secondary">{t(`maps.status.${s}`)}</Typography>
         </Stack>
       ))}
+      <Stack direction="row" spacing={0.5} alignItems="center">
+        <Box sx={{ width: 10, height: 10, borderRadius: '50%', border: `2px solid ${ALARM_COLOR}` }} />
+        <Typography variant="caption" color="text.secondary">{t('maps.alarm')}</Typography>
+      </Stack>
     </Stack>
   )
 }

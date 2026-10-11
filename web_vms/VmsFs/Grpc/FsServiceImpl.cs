@@ -256,6 +256,7 @@ public sealed partial class FsServiceImpl(
         request.BeforeAlarmStartTs,
         request.HasCameraId ? request.CameraId : null,
         request.FromAlarmStartTs,
+        request.EndingAfter,
         context.CancellationToken);
 
       var response = new ListRetentionEventsResponse { HasMore = hasMore };

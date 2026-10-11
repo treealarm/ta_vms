@@ -157,6 +157,28 @@ rule as everything else). "Detections" in the map's corner turns them off and on
   object.
 - A dot has its track's colour, the same as its box on the video, so the two can be matched.
 
+## Alarms on the map
+
+An alarm here is what the rest of ta_vms already calls one: a retention episode in VmsFs, opened
+and renewed by `RetainEvent` (VmsOnvif for a matched ONVIF event, VmsAnalyticsSingleton for an
+analytics detection). Its `alarm_end_ts` is always set — the projected end every renewal pushes
+forward — so an alarm is **running** while that is in the future, and there is no such thing as one
+left open by a crash.
+
+- The operator's map polls `GET api/fs/alarms` every 3 s while it is open: alarms running now and
+  those that ended in the last 15 minutes, asked of every VmsFs by end (`ending_after`) rather than
+  by start, so one that started an hour ago and is still being renewed is found. web_vms keeps no
+  subscriptions, so the map asks; the request is one small fan-out.
+- Scoped by `ViewLive`: that a camera is alarming is part of its live state, like the boxes over its
+  picture. Each alarm carries `archive` — whether the caller may also watch its recording.
+- A running alarm puts a breathing red ring on the camera, wherever it is drawn (where it stands and
+  its pictures alike); one that ended lately, a faint ring. It also lights every space it is drawn
+  in **and every space those are nested in**: the outline of a building on the site map burns when
+  a camera on any of its floors alarms, and the floor switcher and the breadcrumbs show a dot.
+- The list beside the map starts with the alarms; picking one opens the space the camera is drawn
+  in (this one if it is here, otherwise where it really stands) and selects it. The camera's panel
+  then says since when and why, and offers the recording of the alarm beside the live picture.
+
 ## Ownership with Square
 
 A camera whose reference placement is in a space with real coordinates owns its position in Square:

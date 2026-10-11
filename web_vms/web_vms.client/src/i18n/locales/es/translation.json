@@ -1145,7 +1145,16 @@
     "aimNoReference": "Esta cámara aún no tiene posición real en ningún mapa",
     "aimOtherWorld": "Esta cámara está en \"{{name}}\", que no comparte coordenadas con este plano",
     "detections": "Detecciones",
-    "detectionsHint": "Detecciones en vivo de las cámaras fijas calibradas sobre el suelo, donde están"
+    "detectionsHint": "Detecciones en vivo de las cámaras fijas calibradas sobre el suelo, donde están",
+    "alarms": "Alarmas",
+    "alarmsHint": "En curso y las terminadas en los últimos {{minutes}} minutos",
+    "noAlarms": "Sin alarmas",
+    "alarm": "Alarma",
+    "alarmSince": "desde las {{time}}",
+    "alarmNow": "Alarma",
+    "alarmEnded": "Alarma terminada",
+    "viewLive": "En vivo",
+    "viewAlarm": "Grabación de la alarma"
   },
   "ptzGeo": {
     "open": "Calibrar con puntos de referencia…",

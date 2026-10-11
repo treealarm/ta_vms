@@ -7,6 +7,7 @@ import type { GeoPointDto, SpaceDto } from '../dto/dtos'
 import { useAppSelector } from '../store'
 import { AuthTileLayer, MetricGridLayer } from './layers'
 import { boundsCentre } from './geo'
+import './map.css'
 
 type Props = {
   space: SpaceDto

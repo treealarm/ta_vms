@@ -477,6 +477,20 @@ export type EpisodeDto = {
   trigger?: string
 }
 
+/** An alarm episode as the operator's map sees it. */
+export type AlarmDto = EpisodeDto & {
+  /** Still running: its projected end is after the server's clock. */
+  active: boolean
+  /** The caller may watch the camera's archive, and so the recording of this alarm. */
+  archive: boolean
+}
+
+/** Alarms running now and those that ended within the window, newest first, with the server's clock. */
+export type AlarmsDto = {
+  serverTime: string
+  alarms: AlarmDto[]
+}
+
 // A group = all episodes sharing one eventId (a time-clustered session of one object, possibly
 // across cameras). Rendered as a tree row with a "+N" badge; episodes ordered oldest-first.
 export type EventGroupDto = {

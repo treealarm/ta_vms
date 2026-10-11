@@ -169,6 +169,25 @@ namespace web_vms.Types.Dto
     public DateTime? NextBeforeAlarmStart { get; set; }
   }
 
+  /// <summary>An alarm episode as the operator's map sees it.</summary>
+  public class AlarmDto : EpisodeDto
+  {
+    /// <summary>Still running: its projected end is after the server's clock.</summary>
+    public bool Active { get; set; }
+    /// <summary>The caller may watch the camera's archive, and so the recording of this alarm.</summary>
+    public bool Archive { get; set; }
+  }
+
+  /// <summary>
+  /// Alarms running now and those that ended within the window asked for, newest first. The
+  /// server's clock comes along so "how long ago" is measured against the same clock as Active.
+  /// </summary>
+  public class AlarmsDto
+  {
+    public DateTime ServerTime { get; set; }
+    public List<AlarmDto> Alarms { get; set; } = [];
+  }
+
   public class EventClipsResponseDto
   {
     public List<RecordingDto> Clips { get; set; } = [];

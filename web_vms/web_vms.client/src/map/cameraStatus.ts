@@ -25,3 +25,6 @@ export const STATUS_COLOR: Record<CameraMapStatus, string> = {
   live: '#66bb6a',
   recording: '#ef5350',
 }
+
+/** Brighter than recording's red, which an alarm is the cause of: a camera that keeps its recording. */
+export const ALARM_COLOR = '#ff1744'

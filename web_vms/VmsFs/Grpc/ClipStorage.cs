@@ -937,12 +937,13 @@ public sealed class ClipStorage(
     Timestamp? beforeAlarmStart,
     string? cameraId,
     Timestamp? fromAlarmStart,
+    Timestamp? endingAfter,
     CancellationToken ct)
   {
     var lim = limit == 0 || limit > 200 ? 50 : (int)limit;
 
-    // Built up rather than written out: the four filter combinations the timeline and the events
-    // tab need would otherwise be four near-identical literals. Values stay parameterized.
+    // Built up rather than written out: the filter combinations the timeline and the events
+    // tab need would otherwise be near-identical literals. Values stay parameterized.
     var where = new List<string>();
     var values = new List<object>();
 
@@ -960,6 +961,11 @@ public sealed class ClipStorage(
     {
       values.Add(fromAlarmStart.ToDateTime());
       where.Add($"alarm_start_ts >= ${values.Count}");
+    }
+    if (endingAfter is not null)
+    {
+      values.Add(endingAfter.ToDateTime());
+      where.Add($"alarm_end_ts >= ${values.Count}");
     }
 
     values.Add(lim);

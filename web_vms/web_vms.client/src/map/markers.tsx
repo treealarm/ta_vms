@@ -3,17 +3,26 @@ import { Marker, Polygon, Polyline, Tooltip } from 'react-leaflet'
 import L from 'leaflet'
 import type { CameraPlacementDto, LandmarkDto } from '../dto/dtos'
 import { bearing, destination, distance, fovPolygon } from './geo'
+import { ALARM_COLOR } from './cameraStatus'
 
-const cameraIcon = (color: string, headingDeg: number, selected: boolean) => L.divIcon({
+const cameraIcon = (color: string, headingDeg: number, selected: boolean, alarm: CameraAlarm) => L.divIcon({
   className: 'vms-map-camera',
-  html: `<div style="width:26px;height:26px;transform:rotate(${headingDeg}deg)">`
+  html: `<div style="position:relative;width:26px;height:26px">`
+    // A ring round the camera, outside the rotated body so it stays round: breathing while the
+    // alarm runs, faint for a while after it ended.
+    + (alarm ? `<div class="${alarm === 'active' ? 'vms-alarm-pulse' : ''}" style="position:absolute;left:-6px;top:-5px;width:34px;height:34px;`
+      + `border-radius:50%;border:3px solid ${ALARM_COLOR};opacity:${alarm === 'active' ? 1 : 0.45};box-sizing:border-box"></div>` : '')
+    + `<div style="width:26px;height:26px;transform:rotate(${headingDeg}deg)">`
     + `<svg width="26" height="26" viewBox="0 0 26 26">`
     + `<path d="M13 1 L18 9 L8 9 Z" fill="${color}" stroke="#000" stroke-width="0.8"/>`
     + `<circle cx="13" cy="14" r="8" fill="${color}" stroke="${selected ? '#fff' : '#000'}" stroke-width="${selected ? 3 : 1}"/>`
-    + `</svg></div>`,
+    + `</svg></div></div>`,
   iconSize: [26, 26],
   iconAnchor: [13, 14],
 })
+
+/** Whether a camera is alarming now, did lately, or neither. */
+export type CameraAlarm = 'active' | 'recent' | null
 
 const headingHandleIcon = L.divIcon({
   className: 'vms-map-handle',
@@ -38,18 +47,19 @@ type CameraProps = {
   /** Lets the marker be dragged, and, when selected, its cone be turned and stretched. */
   editable?: boolean
   dimmed?: boolean
+  alarm?: CameraAlarm
   onSelect?: () => void
   /** commit is false while dragging and true when the handle is let go. */
   onChange?: (placement: CameraPlacementDto, commit: boolean) => void
 }
 
 /** A camera and its view cone. heading 0 points the cone north, clockwise from there. */
-export function CameraMarker({ placement, label, color, selected, editable, dimmed, onSelect, onChange }: CameraProps) {
+export function CameraMarker({ placement, label, color, selected, editable, dimmed, alarm = null, onSelect, onChange }: CameraProps) {
   const p = placement
   const tip = destination({ lat: p.lat, lon: p.lon }, p.headingDeg, p.rangeM)
   const startRef = useRef(p)
   // One icon object per look: a marker handed a new one rebuilds its element, which ends a drag.
-  const icon = useMemo(() => cameraIcon(color, p.headingDeg, !!selected), [color, p.headingDeg, selected])
+  const icon = useMemo(() => cameraIcon(color, p.headingDeg, !!selected, alarm), [color, p.headingDeg, selected, alarm])
 
   const moveCamera = (e: L.LeafletEvent, commit: boolean) => {
     const at = (e.target as L.Marker).getLatLng()

@@ -1,4 +1,4 @@
-import type { SpaceDto } from '../../dto/dtos'
+import type { CameraPlacementDto, SpaceDto } from '../../dto/dtos'
 
 const byOrder = (a: SpaceDto, b: SpaceDto) => a.ordinal - b.ordinal || a.name.localeCompare(b.name)
 
@@ -44,6 +44,20 @@ export function treeOf(spaces: SpaceDto[]): { space: SpaceDto; depth: number }[]
  */
 export const sharesGeometry = (a: SpaceDto | undefined, b: SpaceDto | undefined): boolean =>
   !!a && !!b && (a.id === b.id || (a.realCoordinates && b.realCoordinates))
+
+/**
+ * The spaces to mark for a set of alarming cameras: every space one of them is drawn in — where
+ * it stands and its pictures alike — and every space those are nested in, so the outline of a
+ * building on the site map burns when a camera on any of its floors does.
+ */
+export function alarmedSpaces(spaces: SpaceDto[], placements: CameraPlacementDto[], cameraIds: ReadonlySet<string>): Set<string> {
+  const out = new Set<string>()
+  for (const p of placements) {
+    if (!cameraIds.has(p.cameraId) || out.has(p.spaceId)) continue
+    for (const s of pathTo(spaces, p.spaceId)) if (s.id) out.add(s.id)
+  }
+  return out
+}
 
 /** "41.3111, 69.2797" → { lat, lon }; null when it does not read as a coordinate pair. */
 export function parseLatLon(text: string): { lat: number; lon: number } | null {

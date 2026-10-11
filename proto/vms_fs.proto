@@ -278,6 +278,11 @@ message ListRetentionEventsRequest {
   optional string camera_id = 4;
   // Lower bound, so a caller can ask for a window rather than only "everything before X".
   optional google.protobuf.Timestamp from_alarm_start_ts = 5;
+  // Only episodes whose alarm_end_ts is at or after this: the ones still running and those that
+  // ended since. alarm_end_ts is the projected end every renewal pushes forward, so an alarm that
+  // started an hour ago and is still going is found here, where a window on the start would miss
+  // it. What the operator's map asks "what is alarming now, and lately" with.
+  optional google.protobuf.Timestamp ending_after = 6;
 }
 
 message ListRetentionEventsResponse {
