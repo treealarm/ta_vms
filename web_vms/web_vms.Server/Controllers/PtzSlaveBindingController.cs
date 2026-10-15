@@ -74,9 +74,7 @@ public class PtzSlaveBindingController(
     {
       SlaveCameraId  = cameraId,
       MasterCameraId = dto.MasterCameraId,
-      Method = dto.Method.Equals("presets", StringComparison.OrdinalIgnoreCase)
-        ? PtzSlaveBindingMethod.PtzSlaveBindingPresets
-        : PtzSlaveBindingMethod.PtzSlaveBindingAbsolute,
+      Method = VmsCfg.PtzSlaveBindingMethodNames.FromName(dto.Method),
       CalibratedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(DateTime.UtcNow),
     };
 
@@ -165,7 +163,7 @@ public class PtzSlaveBindingController(
     return new PtzSlaveBindingDto
     {
       MasterCameraId = binding.MasterCameraId,
-      Method = binding.Method == PtzSlaveBindingMethod.PtzSlaveBindingPresets ? "presets" : "absolute",
+      Method = VmsCfg.PtzSlaveBindingMethodNames.ToName(binding.Method),
       CalibratedAt = binding.CalibratedAt?.ToDateTime(),
       Unusable = string.IsNullOrEmpty(fit?.Unusable) ? null : fit.Unusable,
       Points = binding.Points.Select((p, i) => new PtzSlaveBindingPointDto

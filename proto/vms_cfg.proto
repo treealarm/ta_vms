@@ -825,6 +825,8 @@ message PtzSlaveBinding {
   string master_camera_id = 2;
   PtzSlaveBindingMethod method = 3;
   google.protobuf.Timestamp calibrated_at = 4;
+  // The survey. Unused by PTZ_SLAVE_BINDING_GEO, but kept when it is there, so switching method
+  // and back does not throw a marked-out survey away.
   repeated PtzSlaveBindingPoint points = 5;
 }
 
@@ -836,6 +838,11 @@ enum PtzSlaveBindingMethod {
   // Drive to the preset of the nearest marked point. Coarser, and the only thing that works on a
   // camera whose absolute positioning is a stub.
   PTZ_SLAVE_BINDING_PRESETS  = 1;
+  // Through the map, with no survey at all: the master's ground calibration turns the foot of an
+  // object into a place on the ground, and the slave's landmark calibration turns that place into
+  // a pan and tilt. Needs both calibrations, and both cameras' reference placements in spaces that
+  // share coordinates (see docs/maps-and-plans.md).
+  PTZ_SLAVE_BINDING_GEO      = 2;
 }
 
 // One correspondence: a place in the master's frame, and where the slave was pointing when the

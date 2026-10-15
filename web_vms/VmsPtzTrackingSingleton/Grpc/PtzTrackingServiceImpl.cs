@@ -70,7 +70,7 @@ public sealed class PtzTrackingServiceImpl(TrackingSessionManager manager)
       Found    = true,
       Fitted   = binding.Fit is not null,
       Error    = binding.FitError ?? string.Empty,
-      Unusable = binding.Unusable() ?? string.Empty,
+      Unusable = await manager.BindingUnusableAsync(binding, context.CancellationToken) ?? string.Empty,
     };
 
     // Indexed against the binding's own points rather than the fit's: the fit drops points with no

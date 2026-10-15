@@ -33,6 +33,7 @@ public sealed class TrackingSessionManager(
   PtzCalibrationCache calibrationCache,
   SlaveBindingCache bindingCache,
   CameraSpatialSource spatial,
+  SpatialModelCache spatialCache,
   IPtzCommandSender sender,
   DetectionStreamClient stream,
   ILoggerFactory loggerFactory,
@@ -139,11 +140,13 @@ public sealed class TrackingSessionManager(
     if (binding is null)
       return AimResult.Failed($"Camera '{slaveCameraId}' has no binding to a master");
 
-    var unusable = binding.Unusable();
-    if (unusable is not null)
+    // Past the cache: the wizard tests a point the moment after saving it, or a calibration the
+    // moment after recording it, and the invalidation is still on the bus.
+    var slaveAim = await ResolveAimAsync(binding, fresh: true, ct);
+    if (slaveAim.Unusable() is { } unusable)
       return AimResult.Failed(unusable);
 
-    if (binding.Method == PtzSlaveBindingMethod.PtzSlaveBindingPresets)
+    if (slaveAim.ByPreset)
     {
       var nearest = PtzSlaveBindingMath.Nearest(binding.Points, masterX, masterY);
       if (nearest?.PresetToken is null)
@@ -155,10 +158,13 @@ public sealed class TrackingSessionManager(
         : AimResult.Failed(presetError);
     }
 
-    var aim = PtzSlaveBindingMath.Project(binding.Fit!, masterX, masterY);
-    var error = await sender.AimAsync(slaveCameraId, aim.Pan, aim.Tilt, ct);
+    var (position, positionError) = slaveAim.Position(masterX, masterY);
+    if (position is null)
+      return AimResult.Failed(positionError!);
+
+    var error = await sender.AimAsync(slaveCameraId, position.Pan, position.Tilt, ct);
     return error is null
-      ? new AimResult(true, null, aim.Pan, aim.Tilt, null, null, aim.Extrapolated)
+      ? new AimResult(true, null, position.Pan, position.Tilt, null, null, position.Extrapolated)
       : AimResult.Failed(error);
   }
 
@@ -261,6 +267,36 @@ public sealed class TrackingSessionManager(
     return Task.FromResult<string?>(null);
   }
 
+  /// <summary>Why a binding cannot aim its camera, or null when it can.</summary>
+  /// <remarks>
+  /// Through the cache: this answers every read of the binding page, and a calibration changed on
+  /// the maps page has already invalidated what it touched by the time anyone looks.
+  /// </remarks>
+  public async Task<string?> BindingUnusableAsync(SlaveBindingModel binding, CancellationToken ct) =>
+    (await ResolveAimAsync(binding, fresh: false, ct)).Unusable();
+
+  /// <summary>Everything the binding aims by: for the map method, both cameras' calibrations.</summary>
+  /// <param name="fresh">Read past the cache's TTL, for a caller acting on something just changed.</param>
+  private async Task<SlaveAim> ResolveAimAsync(SlaveBindingModel binding, bool fresh, CancellationToken ct)
+  {
+    if (binding.Method != PtzSlaveBindingMethod.PtzSlaveBindingGeo)
+      return SlaveAim.BySurvey(binding);
+
+    var masterRead = spatialCache.LookupAsync(binding.MasterCameraId, fresh, ct);
+    var slaveRead = spatialCache.LookupAsync(binding.SlaveCameraId, fresh, ct);
+    var (master, slave) = (await masterRead, await slaveRead);
+
+    // A read that failed with nothing held to fall back on says nothing about the camera; reporting
+    // it as "no reference placement" would send the administrator to fix what is not broken.
+    if ((master.Failed && master.Value is null) || (slave.Failed && slave.Value is null))
+      return new SlaveAim(binding, null, "The calibrations could not be read from VmsCfg; retrying");
+
+    var reason = GeoAiming.Unusable(binding.MasterCameraId, master.Value, slave.Value);
+    return reason is null
+      ? new SlaveAim(binding, new GeoAimPair(master.Value!, slave.Value!), null)
+      : new SlaveAim(binding, null, reason);
+  }
+
   /// <summary>What the marked points add up to, for the survey wizard.</summary>
   /// <returns>Null when the camera has no binding at all.</returns>
   public async Task<SlaveBindingModel?> GetBindingFitAsync(string slaveCameraId, CancellationToken ct) =>
@@ -299,8 +335,7 @@ public sealed class TrackingSessionManager(
     IReadOnlyDictionary<string, TrackingPolicy> policies, CancellationToken ct)
   {
     var wanted = new Dictionary<string, TrackingPolicy>(StringComparer.Ordinal);
-    var wantedSlaves = new Dictionary<string, (TrackingPolicy Policy, SlaveBindingModel Binding)>(
-      StringComparer.Ordinal);
+    var wantedSlaves = new Dictionary<string, (TrackingPolicy Policy, SlaveAim Aim)>(StringComparer.Ordinal);
     var blocked = new Dictionary<string, string>(StringComparer.Ordinal);
     var blockedMasters = new Dictionary<string, string>(StringComparer.Ordinal);
     foreach (var (cameraId, policy) in policies)
@@ -344,14 +379,16 @@ public sealed class TrackingSessionManager(
           $"The binding was marked against master '{binding.MasterCameraId}', not '{policy.MasterCameraId}'";
         continue;
       }
-      var unusable = binding.Unusable();
-      if (unusable is not null)
+      // Re-read on every pass, which the cache makes cheap: a camera recalibrated since the last
+      // one reaches the running session here, and one whose calibration was taken away stops.
+      var aim = await ResolveAimAsync(binding, fresh: false, ct);
+      if (aim.Unusable() is { } unusable)
       {
         blocked[cameraId] = unusable;
         continue;
       }
 
-      wantedSlaves[cameraId] = (policy, binding);
+      wantedSlaves[cameraId] = (policy, aim);
     }
 
     // Logged only when the set changes: a reconcile runs on a timer and on every camera change in
@@ -404,11 +441,21 @@ public sealed class TrackingSessionManager(
       {
         if (_slaves.TryGetValue(cameraId, out var runningSlave))
         {
-          runningSlave.Session.ApplyBinding(want.Binding);
-          runningSlave.Session.ApplyPolicy(want.Policy);
-          continue;
+          if (runningSlave.MasterCameraId == want.Aim.MasterCameraId)
+          {
+            runningSlave.Session.ApplyAim(want.Aim);
+            runningSlave.Session.ApplyPolicy(want.Policy);
+            continue;
+          }
+          // A new master is a new session, not a patched one: Dispatch routes detections by the
+          // master the session was started with, and would otherwise keep feeding it the old
+          // master's objects to aim through the new master's calibration.
+          logger.LogInformation(
+            "Camera '{Camera}' now follows '{Master}' instead of '{Old}', restarting its session",
+            cameraId, want.Aim.MasterCameraId, runningSlave.MasterCameraId);
+          await StopLockedAsync(cameraId);
         }
-        StartSlaveLocked(cameraId, want.Binding, want.Policy);
+        StartSlaveLocked(cameraId, want.Aim, want.Policy);
       }
     }
     finally
@@ -455,21 +502,21 @@ public sealed class TrackingSessionManager(
     EnsurePump();
   }
 
-  private void StartSlaveLocked(string cameraId, SlaveBindingModel binding, TrackingPolicy policy)
+  private void StartSlaveLocked(string cameraId, SlaveAim aim, TrackingPolicy policy)
   {
     var cts = new CancellationTokenSource();
     var session = new SlaveAimingSession(
       cameraId,
       sender,
       loggerFactory.CreateLogger<SlaveAimingSession>(),
-      binding,
+      aim,
       policy);
     var loop = session.RunAsync(cts.Token);
-    _slaves[cameraId] = new RunningSlave(session, binding.MasterCameraId, cts, loop);
+    _slaves[cameraId] = new RunningSlave(session, aim.MasterCameraId, cts, loop);
     WatchLoop(cameraId, loop);
     logger.LogInformation(
       "Camera '{Camera}' is now aimed at objects from master '{Master}'",
-      cameraId, binding.MasterCameraId);
+      cameraId, aim.MasterCameraId);
     EnsurePump();
   }
 

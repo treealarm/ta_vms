@@ -81,8 +81,8 @@ Conventions that hold everywhere:
 - A space, its plan or a landmark changes → **`space-config-changed`**, payload `{"space_id": "..."}`.
   Its own topic because it concerns no node: `server-config-changed` with an empty camera list would
   make every media server, VmsFs and VmsOnvif reconcile for nothing. Addressing only, like every
-  event here. Today nobody subscribes; the aiming service will once it caches spatial models for
-  per-detection aiming (stage 3), and the Square producer once it exports plans.
+  event here. The aiming service subscribes (it drops every cached spatial model, since a moved
+  landmark may underlie any camera's calibration), and so does the Square producer.
 
 ## Map tiles
 
@@ -156,6 +156,41 @@ rule as everything else). "Detections" in the map's corner turns them off and on
   the horizon one pixel spans kilometres, and such a point says more about the fit than about the
   object.
 - A dot has its track's colour, the same as its box on the video, so the two can be matched.
+
+## Master/slave through the map
+
+A slave bound to its master by the method `geo` is aimed with no survey of the pair. The master's
+ground calibration turns the foot of an object into a place, and the slave's landmark calibration
+turns that place into a pan and tilt (`Geo/GeoAiming`). Each camera is calibrated alone, so a pair
+works the moment both are, and recalibrating one camera fixes it for every pairing it is in.
+
+- **The target is the foot.** It is the bottom middle of the box, put on the master's floor
+  (`GroundHomography.FloorElevationM`). The slave therefore looks at feet. Zoom is not touched.
+- **Blocked with a reason.** The pair does not run, and the reason shows in the binding's
+  `unusable` and the tracking state, when any of these holds:
+  - either camera has no reference placement;
+  - the two reference spaces share no geometry;
+  - the master has no ground fit;
+  - the slave has no landmark fit.
+- **Cached models.** The aiming service holds both cameras' spatial models in `SpatialModelCache`.
+  `server-config-changed` marks the cameras it names stale, and `space-config-changed` marks all
+  of them stale. There is a one-minute TTL as a backstop. Like every cache in the service
+  (`TtlCache`), a stale entry is kept until a read replaces it. A failed read keeps the camera
+  aiming by what it had, and is reported as "could not be read", never as "not calibrated".
+- **One object per slave.** `SlaveAim` is the binding plus, on this method, both models. It
+  answers "can this aim" and "where does this spot send the camera" for every method. The reconcile
+  replaces it whole, so a detection is never aimed by a new binding through old calibrations.
+  Changing the master restarts the slave's session, since detections are routed by master.
+- **Same law as a survey.** The dead zone, the command interval and target choice are those of
+  every slave (`SlaveAimingSession`). A recalibration does not reopen the dead zone. It compares
+  positions of the head, which mean the same whatever calibration computed them.
+- **Checking it.** The binding's tab shows both pictures and no survey. A click on the master's
+  ground sends the slave there through both calibrations. The tab re-reads the binding's status
+  when it comes back into view, since what is missing is usually fixed on Maps & plans.
+
+It was proved on a virtual bench, [`tests/onvifsim`](../tests/onvifsim/README.md). In the OnvifSim
+world that bench builds, the head arrives within about a quarter of a degree of the person it was
+sent to, and the person stays in the middle third of the slave's picture throughout.
 
 ## Alarms on the map
 
@@ -236,10 +271,9 @@ itself only compiles.
   A richer model is chosen only when its held-out misses are actually smaller, so extra parameters
   do not fit noise. Decide which stages are needed from 8–10 observations on a real camera that
   takes absolute positions — none is on the bench yet.
-- **Master/slave through coordinates.** A new binding method `geo` aims a slave at the world point
-  under the master's detection — the master's ground homography gives the point, the slave's PTZ
-  fit the pan/tilt — when the two cameras' reference spaces share geometry. Needs a spatial-model
-  cache in the aiming service, invalidated by `space-config-changed`.
+- **A dead zone in degrees.** The slave's dead zone is 0.02 in the camera's own units. On a head
+  whose generic range is a full turn, that is 3.6° of pan. That threshold, not the calibration, is
+  what dominates how far behind a walking person a slave lags.
 - **Aerial targets**: a master's full pose (PnP from landmarks with heights) gives a ray; a
   co-located slave follows its direction, two masters triangulate a 3D point.
 - **Export to Square, the rest**: delete (needs Square's protocol), landmarks and ground marks.

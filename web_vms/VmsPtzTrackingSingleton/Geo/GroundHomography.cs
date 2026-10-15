@@ -47,11 +47,18 @@ public sealed class GroundHomography
   // denominator of the other sign is beyond the horizon.
   private readonly double[] _h;
 
-  private GroundHomography(double[] h, IReadOnlyDictionary<string, double?> residuals)
+  private GroundHomography(double[] h, double floorElevationM, IReadOnlyDictionary<string, double?> residuals)
   {
     _h = h;
+    FloorElevationM = floorElevationM;
     Residuals = residuals;
   }
+
+  /// <summary>
+  /// The elevation of the floor the picture is mapped onto -- that of every mark, which the fit
+  /// refuses to mix -- so a point projected onto it has a height as well as a place.
+  /// </summary>
+  public double FloorElevationM { get; }
 
   /// <summary>
   /// How far the fit puts each landmark from where it stands, in metres, per landmark id; null for
@@ -82,7 +89,7 @@ public sealed class GroundHomography
         : null;
     }
 
-    fit = new GroundHomography(h, residuals);
+    fit = new GroundHomography(h, samples[0].FloorElevationM, residuals);
     return true;
   }
 

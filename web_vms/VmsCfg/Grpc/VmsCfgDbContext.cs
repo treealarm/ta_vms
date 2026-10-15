@@ -409,7 +409,7 @@ public sealed class DbPtzSlaveBinding
 {
   public string SlaveCameraId { get; set; } = string.Empty;
   public string MasterCameraId { get; set; } = string.Empty;
-  /// "absolute" | "presets".
+  /// "absolute" | "presets" | "geo".
   public string Method { get; set; } = "absolute";
   public DateTime CalibratedAt { get; set; } = DateTime.UtcNow;
   public List<DbPtzSlaveBindingPoint> Points { get; set; } = [];
