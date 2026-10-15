@@ -22,6 +22,7 @@ public sealed class CameraChangeSubscriber(
   SquareLinkState linkState,
   SquareProducerId producerId,
   SpaceExportWorker spaceExport,
+  SquareSpaceExport spaces,
   ILogger<CameraChangeSubscriber> logger) : IHostedService, IDisposable
 {
   private const string ServerConfigChangedTopic = "server-config-changed";
@@ -76,6 +77,9 @@ public sealed class CameraChangeSubscriber(
           var fingerprint = Fingerprint(resp.Setup, placement, referenceSpaceId);
           if (_lastPushed.TryGetValue(cameraId, out var last) && last == fingerprint)
             continue;
+
+          if (referenceSpaceId is not null)
+            await spaces.EnsureExportedAsync(referenceSpaceId, ct);
 
           var known = placement is null
             && (await SquareCameraPush.KnownToSquareAsync(square, [cameraId])).Count > 0;

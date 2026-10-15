@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using Dapr.Client;
 using Microsoft.AspNetCore.Mvc;
 using web_vms.Authorization;
@@ -33,6 +35,12 @@ public class MapTilesController(
   public static readonly string? TileUrlTemplate =
     Environment.GetEnvironmentVariable("VMS_MAP_TILE_URL") is { Length: > 0 } url ? url : null;
 
+  /// Names the provider in every cache key. The store outlives a change of VMS_MAP_TILE_URL by up to
+  /// the TTL, and without it the old provider's tiles would keep answering under the new one.
+  private static readonly string ProviderKey = TileUrlTemplate is null
+    ? string.Empty
+    : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(TileUrlTemplate)))[..12];
+
   /// Most providers stop at 19; asking for more only produces misses against them.
   private const int MaxZoom = 19;
 
@@ -64,7 +72,7 @@ public class MapTilesController(
     if (z < 0 || z > MaxZoom || x < 0 || y < 0 || x >= extent || y >= extent)
       return BadRequest(new { error = "No such tile" });
 
-    var key = $"tile:{z}:{x}:{y}";
+    var key = $"tile:{ProviderKey}:{z}:{x}:{y}";
     var tile = await ReadCacheAsync(key, ct);
     if (tile is null)
     {
@@ -134,7 +142,14 @@ public class MapTilesController(
         return null;
       }
 
+      // A provider that is throttling, or a captive portal in between, can answer 200 with a page of
+      // HTML. Cached, that page would be served as this tile for a month.
       var contentType = response.Content.Headers.ContentType?.MediaType ?? "image/png";
+      if (!contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+      {
+        _logger.LogWarning("Map tile provider answered {ContentType} instead of an image for {Url}", contentType, url);
+        return null;
+      }
       return new CachedTile(contentType, await response.Content.ReadAsByteArrayAsync(CancellationToken.None));
     }
     catch (HttpRequestException ex)

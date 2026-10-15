@@ -1078,8 +1078,9 @@ message SpacePlanUploadChunk {
 
 message GetSpacePlanImageRequest {
   string space_id      = 1;
-  // The caller's cached ETag. When it still matches, the stream is the header alone, saying so.
-  string if_none_match = 2;
+  // The ETags the caller holds, unquoted and without W/ (HTTP If-None-Match may list several, or
+  // "*"). When one still matches, the stream is the header alone, saying so.
+  repeated string if_none_match = 2;
 }
 
 message SpacePlanImageHeader {

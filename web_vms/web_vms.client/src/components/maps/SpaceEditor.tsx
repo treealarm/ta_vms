@@ -166,10 +166,17 @@ export default function SpaceEditor({ space, onOpenSpace }: Props) {
       setError(t('maps.planTooLarge', { mb: MAX_PLAN_BYTES / (1024 * 1024) }))
       return
     }
-    const bitmap = await createImageBitmap(file)
-    const widthPx = bitmap.width
-    const heightPx = bitmap.height
-    bitmap.close()
+    let widthPx: number
+    let heightPx: number
+    try {
+      const bitmap = await createImageBitmap(file)
+      widthPx = bitmap.width
+      heightPx = bitmap.height
+      bitmap.close()
+    } catch {
+      setError(t('maps.planUnreadable'))
+      return
+    }
 
     // A replacement drawing of the same plan keeps where the old one was laid; anything else
     // starts flat in the middle of the view, a little narrower than it, ready to be dragged.

@@ -200,12 +200,25 @@ public sealed class TrackingSessionManager(
     var bearing = model.BearingTo(lat, lon, heightAboveGroundM);
     var aim = PtzGeoMath.Project(model.GeoFit, bearing);
 
-    if (_slaves.TryGetValue(cameraId, out var slave))
-      slave.Session.HoldUntil(DateTime.UtcNow.Add(WorldAimHold));
-
-    var error = await sender.AimAsync(cameraId, aim.Pan, aim.Tilt, ct);
-    if (error is not null)
-      return WorldAimResult.Failed(error);
+    // Held before the command rather than after it: a detection of the master arriving while the
+    // camera travels would otherwise send it straight elsewhere. A command that fails takes the hold
+    // back, because the camera has not gone anywhere worth staying at.
+    var held = _slaves.TryGetValue(cameraId, out var slave) ? slave.Session : null;
+    var holdUntil = DateTime.UtcNow.Add(WorldAimHold);
+    var previousHold = held?.HoldUntil(holdUntil);
+    var aimed = false;
+    try
+    {
+      var error = await sender.AimAsync(cameraId, aim.Pan, aim.Tilt, ct);
+      if (error is not null)
+        return WorldAimResult.Failed(error);
+      aimed = true;
+    }
+    finally
+    {
+      if (!aimed && held is not null)
+        held.RestoreHold(holdUntil, previousHold!.Value);
+    }
 
     logger.LogInformation(
       "Aimed '{Camera}' at ({Lat}, {Lon}, {Height} m): azimuth {Az:F1}°, elevation {El:F1}°, {Dist:F0} m -> pan {Pan:F3}, tilt {Tilt:F3}{Extra}",

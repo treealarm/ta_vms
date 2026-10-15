@@ -1068,6 +1068,7 @@
     "confirmRemovePlan": "Remove this plan's picture?",
     "planWidth": "Plan width, m",
     "planTooLarge": "A plan image may not exceed {{mb}} MB",
+    "planUnreadable": "This file is not an image the browser can read",
     "placeHint": "Click the map to place {{name}}",
     "landmarkModeHint": "Click the map to add a landmark",
     "planModeHint": "Drag ✥ to move the plan, ⟳ to turn it, ⤡ to resize it — or type its width",

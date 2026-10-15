@@ -129,10 +129,25 @@ public sealed class SlaveAimingSession
   /// camera goes where the object is now, rather than replaying where it was when the hold began.
   /// </para>
   /// </remarks>
-  public void HoldUntil(DateTime until)
+  /// <returns>The hold this one replaced, for <see cref="RestoreHold"/>.</returns>
+  public DateTime HoldUntil(DateTime until)
   {
     lock (_gate)
+    {
+      var previous = _heldUntil;
       _heldUntil = until;
+      return previous;
+    }
+  }
+
+  /// <summary>Takes back a hold placed by <see cref="HoldUntil"/>, unless someone has held the camera since.</summary>
+  public void RestoreHold(DateTime placed, DateTime previous)
+  {
+    lock (_gate)
+    {
+      if (_heldUntil == placed)
+        _heldUntil = previous;
+    }
   }
 
   /// <summary>
