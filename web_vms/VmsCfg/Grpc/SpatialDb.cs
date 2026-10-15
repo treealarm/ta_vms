@@ -192,7 +192,7 @@ public class SpatialDb(IDbContextFactory<VmsCfgDbContext> dbFactory)
 
   /// The image with its type and ETag, or null when the space has no plan.
   public async Task<(string Mime, string Etag, byte[] Image)?> GetPlanImageAsync(
-    Guid spaceId, string? ifNoneMatch, CancellationToken ct)
+    Guid spaceId, IReadOnlyCollection<string> ifNoneMatch, CancellationToken ct)
   {
     await using var db = await dbFactory.CreateDbContextAsync(ct);
     var head = await db.SpacePlans.AsNoTracking()
@@ -202,7 +202,7 @@ public class SpatialDb(IDbContextFactory<VmsCfgDbContext> dbFactory)
     if (head is null)
       return null;
     // The bytes are not read at all when the caller's copy is current.
-    if (!string.IsNullOrEmpty(ifNoneMatch) && ifNoneMatch == head.Etag)
+    if (ifNoneMatch.Contains(head.Etag) || ifNoneMatch.Contains("*"))
       return (head.Mime, head.Etag, []);
 
     var image = await db.SpacePlans.AsNoTracking()
@@ -488,7 +488,7 @@ public class SpatialDb(IDbContextFactory<VmsCfgDbContext> dbFactory)
       .FirstOrDefaultAsync(ct);
     return placed is null
       ? new CameraSpatialModelResponse { Found = false }
-      : await BuildSpatialModelAsync(db, placed.p, placed.s, ct);
+      : (await BuildSpatialModelsAsync(db, [(placed.p, placed.s)], ct))[0];
   }
 
   /// The models of the cameras whose detections can be shown in a space: those with ground marks,
@@ -507,56 +507,62 @@ public class SpatialDb(IDbContextFactory<VmsCfgDbContext> dbFactory)
       .ToListAsync(ct);
 
     var response = new ListCameraSpatialModelsResponse();
-    foreach (var x in placed)
-      response.Models.Add(await BuildSpatialModelAsync(db, x.p, x.s, ct));
+    response.Models.AddRange(await BuildSpatialModelsAsync(db, placed.Select(x => (x.p, x.s)).ToList(), ct));
     return response;
   }
 
-  private static async Task<CameraSpatialModelResponse> BuildSpatialModelAsync(
-    VmsCfgDbContext db, DbCameraPlacement placement, DbSpace space, CancellationToken ct)
+  /// Two queries however many cameras there are: their observations are read together and sorted
+  /// out here, each kept only where its landmark shares geometry with that camera's own space.
+  private static async Task<List<CameraSpatialModelResponse>> BuildSpatialModelsAsync(
+    VmsCfgDbContext db, IReadOnlyList<(DbCameraPlacement Placement, DbSpace Space)> placed, CancellationToken ct)
   {
-    var cameraId = placement.CameraId;
-    var real = space.RealCoordinates;
-    var observations = await db.PtzGeoObservations.AsNoTracking()
-      .Where(o => o.CameraId == cameraId)
+    var cameraIds = placed.Select(x => x.Placement.CameraId).ToList();
+    var observations = (await db.PtzGeoObservations.AsNoTracking()
+      .Where(o => cameraIds.Contains(o.CameraId))
       .Join(db.Landmarks, o => o.LandmarkId, m => m.Id, (o, m) => new { o, m })
       .Join(db.Spaces, x => x.m.SpaceId, s => s.Id, (x, s) => new { x.o, x.m, s })
-      .Where(x => x.s.Id == space.Id || (real && x.s.RealCoordinates))
-      .ToListAsync(ct);
-    var ground = await db.GroundObservations.AsNoTracking()
-      .Where(o => o.CameraId == cameraId)
+      .ToListAsync(ct))
+      .ToLookup(x => x.o.CameraId, StringComparer.Ordinal);
+    var ground = (await db.GroundObservations.AsNoTracking()
+      .Where(o => cameraIds.Contains(o.CameraId))
       .Join(db.Landmarks, o => o.LandmarkId, m => m.Id, (o, m) => new { o, m })
       .Join(db.Spaces, x => x.m.SpaceId, s => s.Id, (x, s) => new { x.o, x.m, s })
-      .Where(x => x.s.Id == space.Id || (real && x.s.RealCoordinates))
-      .ToListAsync(ct);
+      .ToListAsync(ct))
+      .ToLookup(x => x.o.CameraId, StringComparer.Ordinal);
 
-    var response = new CameraSpatialModelResponse
+    return placed.Select(x =>
     {
-      Found = true,
-      Placement = ToProto(placement),
-      Space = ToProto(space, null),
-    };
-    response.Observations.AddRange(observations.Select(x => new GeoObservation
-    {
-      LandmarkId = x.m.Id.ToString(),
-      LandmarkName = x.m.Name,
-      Lat = x.m.Lat,
-      Lon = x.m.Lon,
-      HeightAboveGroundM = x.s.ElevationM + x.m.HeightM,
-      Pan = x.o.Pan,
-      Tilt = x.o.Tilt,
-    }));
-    response.GroundObservations.AddRange(ground.Select(x => new GeoGroundObservation
-    {
-      LandmarkId = x.m.Id.ToString(),
-      LandmarkName = x.m.Name,
-      Lat = x.m.Lat,
-      Lon = x.m.Lon,
-      FloorElevationM = x.s.ElevationM,
-      X = x.o.X,
-      Y = x.o.Y,
-    }));
-    return response;
+      var (placement, space) = x;
+      bool SharesGeometry(DbSpace other) => other.Id == space.Id || (space.RealCoordinates && other.RealCoordinates);
+
+      var response = new CameraSpatialModelResponse
+      {
+        Found = true,
+        Placement = ToProto(placement),
+        Space = ToProto(space, null),
+      };
+      response.Observations.AddRange(observations[placement.CameraId].Where(y => SharesGeometry(y.s)).Select(y => new GeoObservation
+      {
+        LandmarkId = y.m.Id.ToString(),
+        LandmarkName = y.m.Name,
+        Lat = y.m.Lat,
+        Lon = y.m.Lon,
+        HeightAboveGroundM = y.s.ElevationM + y.m.HeightM,
+        Pan = y.o.Pan,
+        Tilt = y.o.Tilt,
+      }));
+      response.GroundObservations.AddRange(ground[placement.CameraId].Where(y => SharesGeometry(y.s)).Select(y => new GeoGroundObservation
+      {
+        LandmarkId = y.m.Id.ToString(),
+        LandmarkName = y.m.Name,
+        Lat = y.m.Lat,
+        Lon = y.m.Lon,
+        FloorElevationM = y.s.ElevationM,
+        X = y.o.X,
+        Y = y.o.Y,
+      }));
+      return response;
+    }).ToList();
   }
 
   // ── Mapping and validation ────────────────────────────────────────────────

@@ -1,10 +1,12 @@
 using System.Text.Json;
 using Dapr.Messaging.PublishSubscribe;
+using VmsPtzTrackingSingleton.Geo;
 
 namespace VmsPtzTrackingSingleton;
 
 /// <summary>
-/// Keeps the route cache and the running sessions honest when VmsCfg changes a camera.
+/// Keeps the caches and the running sessions honest when VmsCfg changes a camera, a space or a
+/// landmark.
 /// </summary>
 /// <remarks>
 /// Pub/sub invalidation is the right mechanism here precisely because this service is a singleton:
@@ -17,10 +19,14 @@ public sealed class CameraConfigSubscriber(
   CameraPtzRouter router,
   PtzCalibrationCache calibrationCache,
   SlaveBindingCache bindingCache,
+  SpatialModelCache spatialCache,
   TrackingReconciler reconciler,
   ILogger<CameraConfigSubscriber> logger) : IHostedService, IDisposable
 {
   private const string ServerConfigChangedTopic = "server-config-changed";
+  // A space or a landmark changed. Names no camera: any number of them may be calibrated against
+  // that landmark, or stand in that space.
+  private const string SpaceConfigChangedTopic = "space-config-changed";
 
   private static readonly string PubSubName =
     Environment.GetEnvironmentVariable("PUBSUB_NAME")
@@ -48,7 +54,9 @@ public sealed class CameraConfigSubscriber(
     {
       var options = new DaprSubscriptionOptions(
         new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry));
-      await pubSubClient.SubscribeAsync(PubSubName, ServerConfigChangedTopic, options, HandleAsync, ct);
+      await Task.WhenAll(
+        pubSubClient.SubscribeAsync(PubSubName, ServerConfigChangedTopic, options, HandleAsync, ct),
+        pubSubClient.SubscribeAsync(PubSubName, SpaceConfigChangedTopic, options, HandleSpaceAsync, ct));
     }
     catch (OperationCanceledException) { }
     catch (Exception ex)
@@ -71,6 +79,7 @@ public sealed class CameraConfigSubscriber(
       router.Invalidate(cameraIds);
       calibrationCache.Invalidate(cameraIds);
       bindingCache.Invalidate(cameraIds);
+      spatialCache.Invalidate(cameraIds);
       // Drop the stale answers first, then ask for a reconcile: the reconciler re-reads through
       // these same caches, and doing it the other way round would have it re-install what was just
       // thrown away. The policy itself is not cached — the reconciler always reads it fresh.
@@ -86,6 +95,16 @@ public sealed class CameraConfigSubscriber(
       logger.LogWarning(ex, "Could not handle a server-config-changed event");
       return Task.FromResult(TopicResponseAction.Retry);
     }
+  }
+
+  // The payload ({"space_id"}) is not read: which cameras a moved landmark affects is not in it, and
+  // working that out would be a VmsCfg round trip for every model held. Dropping them all costs one
+  // fetch per slave pair on the next reconcile, which is what it is about to do anyway.
+  private Task<TopicResponseAction> HandleSpaceAsync(TopicMessage message, CancellationToken ct)
+  {
+    spatialCache.Invalidate([]);
+    reconciler.Trigger();
+    return Task.FromResult(TopicResponseAction.Success);
   }
 
   public Task StopAsync(CancellationToken cancellationToken)

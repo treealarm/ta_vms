@@ -1,7 +1,9 @@
 using Grpc.Core;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Cfg;
 using Vms.PtzTracking;
+using web_vms.Authentication;
 using web_vms.Authorization;
 using web_vms.Types.Dto;
 
@@ -9,9 +11,11 @@ namespace web_vms;
 
 /// <summary>A PTZ camera's calibration against landmarks, and aiming it at a place on the map.</summary>
 /// <remarks>
-/// Guarded by <see cref="CameraAction.Ptz"/>, the joystick's right: everything here ends in this
-/// camera's motor turning. Aiming goes through VmsPtzTrackingSingleton, which owns the motor and
-/// the fit; the observations themselves are configuration and live in VmsCfg.
+/// Reading and aiming are guarded by <see cref="CameraAction.Ptz"/>, the joystick's right: they end
+/// in this camera's motor turning, or show what would turn it. Writing the observations is not: they
+/// are configuration in VmsCfg that every later aim of the camera rests on, so replacing them is an
+/// administrator's business, like the landmarks and ground marks they are made of. Aiming goes
+/// through VmsPtzTrackingSingleton, which owns the motor and the fit.
 /// </remarks>
 [ApiController]
 [Route("api/ptz-geo")]
@@ -65,7 +69,7 @@ public class PtzGeoController(
 
   /// Replaces the camera's observations whole.
   [HttpPut("{cameraId}")]
-  [CameraAccess(CameraAction.Ptz)]
+  [Authorize(Policy = AuthPolicies.AdminOnly)]
   public async Task<IActionResult> Put(string cameraId, [FromBody] PtzGeoCalibrationDto dto, CancellationToken ct)
   {
     var request = new PtzGeoObservations { CameraId = cameraId };

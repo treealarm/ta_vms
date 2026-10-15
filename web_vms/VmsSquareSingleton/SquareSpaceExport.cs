@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Security.Cryptography;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
@@ -41,6 +42,9 @@ public sealed class SquareSpaceExport(
   // Pictures already handed to Square, by space and etag: an unchanged picture is not sent again.
   private readonly Dictionary<string, string> _uploaded = new(StringComparer.Ordinal);
   private string? _lastFingerprint;
+  // The spaces Square has as objects since the last export that reached it. Read without the gate
+  // by camera pushes, so it is replaced whole rather than changed in place.
+  private volatile FrozenSet<string> _exported = FrozenSet<string>.Empty;
   // The resync and a change can both ask at once; one export at a time keeps the memory above true.
   private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -55,6 +59,18 @@ public sealed class SquareSpaceExport(
     {
       _gate.Release();
     }
+  }
+
+  /// <summary>Exports now unless Square already has <paramref name="spaceId"/>.</summary>
+  /// <remarks>
+  /// A camera is pushed under the space it stands in, and Square must meet the parent first. The
+  /// event that placed the camera also asks <see cref="SpaceExportWorker"/> for an export, but that
+  /// one waits for the burst to settle, while the camera's push does not wait at all.
+  /// </remarks>
+  public async Task EnsureExportedAsync(string spaceId, CancellationToken ct)
+  {
+    if (!_exported.Contains(spaceId))
+      await ExportAsync(ct);
   }
 
   private async Task ExportLockedAsync(CancellationToken ct)
@@ -91,6 +107,7 @@ public sealed class SquareSpaceExport(
     await square.UpsertObjects(batch.Objects);
     await square.RegisterIntegro(batch.Integros);
     _lastFingerprint = fingerprint;
+    _exported = spaces.Select(s => s.Id).ToFrozenSet(StringComparer.Ordinal);
     logger.LogInformation(
       "Square: exported {Spaces} spaces, {Diagrams} diagram entries, {Figures} figures",
       spaces.Count, batch.Diagrams.Diagrams.Count, batch.Figures.Figs.Count);

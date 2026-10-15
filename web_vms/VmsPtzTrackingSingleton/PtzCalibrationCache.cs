@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Vms.Cfg;
 
 namespace VmsPtzTrackingSingleton;
@@ -15,47 +14,19 @@ public sealed record PtzCalibrationModel(
 /// </summary>
 public sealed class PtzCalibrationCache(CfgService.CfgServiceClient cfg, ILogger<PtzCalibrationCache> logger)
 {
-  private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(1);
-
-  private sealed record Entry(PtzCalibrationModel? Model, DateTime FetchedAt);
-
-  private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
-
-  public void Invalidate(IReadOnlyCollection<string> cameraIds)
-  {
-    if (cameraIds.Count == 0)
-    {
-      _entries.Clear();
-      return;
-    }
-
-    foreach (var cameraId in cameraIds)
-      _entries.TryRemove(cameraId, out _);
-  }
-
-  public async Task<PtzCalibrationModel?> GetAsync(string cameraId, CancellationToken ct)
-  {
-    if (_entries.TryGetValue(cameraId, out var cached) && DateTime.UtcNow - cached.FetchedAt < Ttl)
-      return cached.Model;
-
-    try
+  private readonly TtlCache<PtzCalibrationModel> _cache = new(
+    async (cameraId, ct) =>
     {
       var response = await cfg.GetPtzCalibrationAsync(
         new GetPtzCalibrationRequest { CameraId = cameraId }, cancellationToken: ct);
-      PtzCalibrationModel? model = null;
-      if (response.Found)
-      {
-        var c = response.Calibration;
-        model = new PtzCalibrationModel(c.PanDx, c.PanDy, c.TiltDx, c.TiltDy);
-      }
+      if (!response.Found)
+        return null;
+      var c = response.Calibration;
+      return new PtzCalibrationModel(c.PanDx, c.PanDy, c.TiltDx, c.TiltDy);
+    },
+    TimeSpan.FromMinutes(1), logger, "PTZ calibration");
 
-      _entries[cameraId] = new Entry(model, DateTime.UtcNow);
-      return model;
-    }
-    catch (Exception ex)
-    {
-      logger.LogWarning(ex, "Could not load PTZ calibration for camera '{Camera}'", cameraId);
-      return cached?.Model;
-    }
-  }
+  public void Invalidate(IReadOnlyCollection<string> cameraIds) => _cache.Invalidate(cameraIds);
+
+  public Task<PtzCalibrationModel?> GetAsync(string cameraId, CancellationToken ct) => _cache.GetAsync(cameraId, ct);
 }

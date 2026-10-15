@@ -1657,7 +1657,7 @@ public class CameraStorage(
     }
 
     entity.MasterCameraId = binding.MasterCameraId;
-    entity.Method = binding.Method == PtzSlaveBindingMethod.PtzSlaveBindingPresets ? "presets" : "absolute";
+    entity.Method = PtzSlaveBindingMethodNames.ToName(binding.Method);
     entity.CalibratedAt = binding.CalibratedAt?.ToDateTime() ?? DateTime.UtcNow;
 
     db.PtzSlaveBindingPoints.RemoveRange(entity.Points);
@@ -1709,9 +1709,7 @@ public class CameraStorage(
     {
       SlaveCameraId  = row.SlaveCameraId,
       MasterCameraId = row.MasterCameraId,
-      Method = row.Method.Equals("presets", StringComparison.OrdinalIgnoreCase)
-        ? PtzSlaveBindingMethod.PtzSlaveBindingPresets
-        : PtzSlaveBindingMethod.PtzSlaveBindingAbsolute,
+      Method = PtzSlaveBindingMethodNames.FromName(row.Method),
       CalibratedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(
         DateTime.SpecifyKind(row.CalibratedAt, DateTimeKind.Utc)),
     };

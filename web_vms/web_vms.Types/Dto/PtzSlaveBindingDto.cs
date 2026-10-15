@@ -22,7 +22,8 @@ public sealed record PtzSlaveBindingPointDto
 }
 
 /// <summary>How a slave is aimed at the objects its master sees.</summary>
-/// <param name="Method">"absolute" (interpolate a position) or "presets" (drive to the nearest point's preset).</param>
+/// <param name="Method">"absolute" (interpolate a position), "presets" (drive to the nearest point's preset) or
+/// "geo" (through the map: the master's ground calibration and the slave's landmark calibration; no points).</param>
 /// <param name="Unusable">
 /// Why this binding cannot aim the camera as it stands, or null when it can. Shown rather than
 /// hidden: an operator who has just marked six points needs to know that four of them lack a preset,

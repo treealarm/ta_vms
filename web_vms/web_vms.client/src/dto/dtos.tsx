@@ -1352,7 +1352,7 @@ export interface PtzTrackingPolicyDto {
 }
 
 /** Which way a slave is driven to the place a master's object maps to. */
-export type PtzSlaveBindingMethod = 'absolute' | 'presets'
+export type PtzSlaveBindingMethod = 'absolute' | 'presets' | 'geo'
 
 /**
  * One marked correspondence: a spot in the master's frame, and where the slave was pointing.

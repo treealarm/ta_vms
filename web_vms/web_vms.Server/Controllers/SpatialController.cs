@@ -24,6 +24,7 @@ public class SpatialController(CfgService.CfgServiceClient _cfg) : ControllerBas
     new(deadline: DateTime.UtcNow.Add(Timeout), cancellationToken: ct);
 
   [HttpGet("spaces")]
+  [Authorize(Policy = AuthPolicies.Authenticated)]
   [NoCameraAccess("Spaces are the map itself, not a camera; placements are filtered on their own endpoint")]
   public async Task<ActionResult<IReadOnlyList<SpaceDto>>> ListSpaces(CancellationToken ct)
   {

@@ -136,6 +136,23 @@ export default function CameraSlaveBindingSection({
     void fetchBinding(true)
   }, [fetchBinding])
 
+  const byMap = method === 'geo'
+
+  // On the map method what is missing is usually fixed elsewhere — calibrating a camera on Maps &
+  // plans, often in another tab — so the binding's status is read again when this page is looked at.
+  useEffect(() => {
+    if (!byMap) return
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void fetchBinding(false)
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [byMap, fetchBinding])
+
   /** Remembers the state an edit is about to replace, so it can be undone. */
   const remember = useCallback((before: Saved) => {
     setHistory((h) => [...h, before].slice(-UNDO_DEPTH))
@@ -173,6 +190,10 @@ export default function CameraSlaveBindingSection({
   // Whether the survey can drive the camera the way it is set. Answered here as well as by the
   // server so the operator sees it while editing, before saving.
   const unusable = useMemo(() => {
+    // The map method needs no points; what it needs is both cameras calibrated, which only the
+    // server can tell. Its answer is for the binding as saved, so it is not shown while a switch to
+    // this method is still on its way — the survey's complaints would be shown under it otherwise.
+    if (method === 'geo') return binding?.method === 'geo' ? binding.unusable ?? null : null
     if (points.length === 0) return t('slaveBinding.noPoints')
     if (method === 'presets') {
       const without = points.filter((p) => !p.presetToken).length
@@ -180,7 +201,7 @@ export default function CameraSlaveBindingSection({
     }
     const withPosition = points.filter((p) => p.pan != null && p.tilt != null).length
     return withPosition >= 3 ? null : t('slaveBinding.needPositions', { count: withPosition })
-  }, [points, method, t])
+  }, [points, method, binding, t])
 
   /**
    * Keeps the slave's own aiming session off the camera while this page is open.
@@ -533,9 +554,11 @@ export default function CameraSlaveBindingSection({
 
         <Stack direction="row" spacing={0.5} alignItems="center">
           <Typography variant="body2">{t('slaveBinding.method')}</Typography>
-          <Hint text={method === 'absolute'
-            ? t('slaveBinding.methodAbsoluteHint')
-            : t('slaveBinding.methodPresetsHint')} />
+          <Hint text={{
+            absolute: t('slaveBinding.methodAbsoluteHint'),
+            presets: t('slaveBinding.methodPresetsHint'),
+            geo: t('slaveBinding.methodGeoHint'),
+          }[method]} />
         </Stack>
         <ToggleButtonGroup
           size="small"
@@ -549,6 +572,7 @@ export default function CameraSlaveBindingSection({
         >
           <ToggleButton value="absolute">{t('slaveBinding.methodAbsolute')}</ToggleButton>
           <ToggleButton value="presets">{t('slaveBinding.methodPresets')}</ToggleButton>
+          <ToggleButton value="geo">{t('slaveBinding.methodGeo')}</ToggleButton>
         </ToggleButtonGroup>
       </Stack>
 
@@ -564,195 +588,198 @@ export default function CameraSlaveBindingSection({
         <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2} alignItems="stretch">
           {/* The list first, beside the pictures rather than under them. Below the fold it was
               invisible at exactly the moment it matters — while marking, when the operator needs to
-              see what is already covered. */}
-          <Stack spacing={1} sx={{ width: { lg: LIST_WIDTH }, flexShrink: 0 }}>
-            {/* At the top of the column, not the bottom of the page. Down there it was below the
-                fold: the operator clicked the picture, the form appeared out of sight, and the next
-                click did nothing because a spot was already pending — which reads as the page
-                having frozen rather than as a step waiting to be finished. */}
-            {pending && (
-              <Stack
-                spacing={1}
-                sx={{ p: 1, border: 1, borderColor: 'warning.main', borderRadius: 1 }}
-              >
-                <Typography variant="caption" color="text.secondary">
-                  {t('slaveBinding.recordAt', {
-                    x: pending.masterX.toFixed(3),
-                    y: pending.masterY.toFixed(3),
-                  })}
-                </Typography>
-                <Select
-                  size="small"
-                  displayEmpty
-                  value={chosenPreset}
-                  onChange={(e) => setChosenPreset(e.target.value)}
+              see what is already covered. The map method has no survey, so no list: the pictures
+              stay, to check it by clicking the master's ground. */}
+          {!byMap && (
+            <Stack spacing={1} sx={{ width: { lg: LIST_WIDTH }, flexShrink: 0 }}>
+              {/* At the top of the column, not the bottom of the page. Down there it was below the
+                  fold: the operator clicked the picture, the form appeared out of sight, and the next
+                  click did nothing because a spot was already pending — which reads as the page
+                  having frozen rather than as a step waiting to be finished. */}
+              {pending && (
+                <Stack
+                  spacing={1}
+                  sx={{ p: 1, border: 1, borderColor: 'warning.main', borderRadius: 1 }}
                 >
-                  <MenuItem value="">{t('slaveBinding.noPreset')}</MenuItem>
-                  {presets.map((p) => (
-                    <MenuItem key={p.token} value={p.token}>{p.name || p.token}</MenuItem>
-                  ))}
-                </Select>
-                {!chosenPreset && (
-                  <TextField
+                  <Typography variant="caption" color="text.secondary">
+                    {t('slaveBinding.recordAt', {
+                      x: pending.masterX.toFixed(3),
+                      y: pending.masterY.toFixed(3),
+                    })}
+                  </Typography>
+                  <Select
                     size="small"
-                    placeholder={t('slaveBinding.newPresetName')}
-                    value={newPresetName}
-                    onChange={(e) => setNewPresetName(e.target.value)}
-                    InputProps={{ startAdornment: <AddIcon fontSize="small" sx={{ mr: 0.5 }} /> }}
-                  />
-                )}
-                <Stack direction="row" spacing={1}>
-                  <Button
-                    variant="contained"
-                    size="small"
-                    disabled={busy}
-                    onClick={() => void rememberPosition()}
+                    displayEmpty
+                    value={chosenPreset}
+                    onChange={(e) => setChosenPreset(e.target.value)}
                   >
-                    {t('slaveBinding.remember')}
-                  </Button>
-                  <Button size="small" disabled={busy} onClick={() => setPending(null)}>
-                    {t('common.cancel')}
-                  </Button>
+                    <MenuItem value="">{t('slaveBinding.noPreset')}</MenuItem>
+                    {presets.map((p) => (
+                      <MenuItem key={p.token} value={p.token}>{p.name || p.token}</MenuItem>
+                    ))}
+                  </Select>
+                  {!chosenPreset && (
+                    <TextField
+                      size="small"
+                      placeholder={t('slaveBinding.newPresetName')}
+                      value={newPresetName}
+                      onChange={(e) => setNewPresetName(e.target.value)}
+                      InputProps={{ startAdornment: <AddIcon fontSize="small" sx={{ mr: 0.5 }} /> }}
+                    />
+                  )}
+                  <Stack direction="row" spacing={1}>
+                    <Button
+                      variant="contained"
+                      size="small"
+                      disabled={busy}
+                      onClick={() => void rememberPosition()}
+                    >
+                      {t('slaveBinding.remember')}
+                    </Button>
+                    <Button size="small" disabled={busy} onClick={() => setPending(null)}>
+                      {t('common.cancel')}
+                    </Button>
+                  </Stack>
                 </Stack>
+              )}
+
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                <Typography variant="subtitle2">{t('slaveBinding.points')}</Typography>
+                <Hint text={t('slaveBinding.residualHint')} />
+                <Tooltip title={t('common.undoLast')}>
+                  <span style={{ marginLeft: 'auto' }}>
+                    <IconButton size="small" disabled={busy || history.length === 0} onClick={() => void undo()}>
+                      <UndoIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
               </Stack>
-            )}
 
-            <Stack direction="row" spacing={0.5} alignItems="center">
-              <Typography variant="subtitle2">{t('slaveBinding.points')}</Typography>
-              <Hint text={t('slaveBinding.residualHint')} />
-              <Tooltip title={t('common.undoLast')}>
-                <span style={{ marginLeft: 'auto' }}>
-                  <IconButton size="small" disabled={busy || history.length === 0} onClick={() => void undo()}>
-                    <UndoIcon fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-            </Stack>
-
-            {points.length === 0 ? (
-              <Typography variant="caption" color="text.secondary">
-                {t('slaveBinding.pickHint')}
-              </Typography>
-            ) : (
-              <Stack spacing={0.5} sx={{ maxHeight: 320, overflowY: 'auto', pr: 0.5 }}>
-                {points.map((point, index) => (
-                  <Box
-                    key={index}
-                    onClick={() => setSelected(index)}
-                    sx={{
-                      p: 0.75,
-                      borderRadius: 1,
-                      cursor: 'pointer',
-                      border: 1,
-                      borderColor: selected === index ? 'primary.main' : 'divider',
-                      bgcolor: selected === index ? 'action.selected' : 'transparent',
-                    }}
-                  >
-                    <Stack direction="row" spacing={0.5} alignItems="center">
-                      <Chip size="small" label={index + 1} />
-                      <Typography variant="caption" sx={{ flex: 1, minWidth: 0 }} noWrap>
-                        {describePoint(point) ?? t('slaveBinding.emptyPoint')}
-                      </Typography>
-                      {point.residual != null && (
-                        <Tooltip title={t('slaveBinding.residualTooltip')}>
-                          <Chip
-                            size="small"
-                            variant="outlined"
-                            color={point.residual > 0.1 ? 'warning' : 'default'}
-                            label={point.residual.toFixed(2)}
-                          />
+              {points.length === 0 ? (
+                <Typography variant="caption" color="text.secondary">
+                  {t('slaveBinding.pickHint')}
+                </Typography>
+              ) : (
+                <Stack spacing={0.5} sx={{ maxHeight: 320, overflowY: 'auto', pr: 0.5 }}>
+                  {points.map((point, index) => (
+                    <Box
+                      key={index}
+                      onClick={() => setSelected(index)}
+                      sx={{
+                        p: 0.75,
+                        borderRadius: 1,
+                        cursor: 'pointer',
+                        border: 1,
+                        borderColor: selected === index ? 'primary.main' : 'divider',
+                        bgcolor: selected === index ? 'action.selected' : 'transparent',
+                      }}
+                    >
+                      <Stack direction="row" spacing={0.5} alignItems="center">
+                        <Chip size="small" label={index + 1} />
+                        <Typography variant="caption" sx={{ flex: 1, minWidth: 0 }} noWrap>
+                          {describePoint(point) ?? t('slaveBinding.emptyPoint')}
+                        </Typography>
+                        {point.residual != null && (
+                          <Tooltip title={t('slaveBinding.residualTooltip')}>
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              color={point.residual > 0.1 ? 'warning' : 'default'}
+                              label={point.residual.toFixed(2)}
+                            />
+                          </Tooltip>
+                        )}
+                      </Stack>
+                      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 0.25 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+                          {point.masterX.toFixed(2)}, {point.masterY.toFixed(2)}
+                        </Typography>
+                        <Tooltip title={t('slaveBinding.goHere')}>
+                          <span>
+                            <IconButton
+                              size="small"
+                              disabled={busy}
+                              onClick={(e) => { e.stopPropagation(); void aimAt(point.masterX, point.masterY) }}
+                            >
+                              <MyLocationIcon fontSize="inherit" />
+                            </IconButton>
+                          </span>
                         </Tooltip>
-                      )}
-                    </Stack>
-                    <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 0.25 }}>
-                      <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
-                        {point.masterX.toFixed(2)}, {point.masterY.toFixed(2)}
-                      </Typography>
-                      <Tooltip title={t('slaveBinding.goHere')}>
+                        <Tooltip title={t('slaveBinding.deletePoint')}>
+                          <IconButton
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const remaining = points.filter((_, i) => i !== index)
+                              setPoints(remaining)
+                              setSelected(null)
+                              void persist({ points: remaining })
+                            }}
+                          >
+                            <DeleteOutlineIcon fontSize="inherit" />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
+                    </Box>
+                  ))}
+                </Stack>
+              )}
+
+              <Divider />
+
+              {/* The camera's presets, listed so they can be tried and tidied without leaving the
+                  survey. Where a preset points is not knowable from its name, so the only honest way
+                  to find out is to send the camera there and look. */}
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                <Typography variant="subtitle2">{t('slaveBinding.cameraPresets')}</Typography>
+                <Hint text={t('slaveBinding.cameraPresetsHint')} />
+              </Stack>
+              {presets.length === 0 ? (
+                <Typography variant="caption" color="text.secondary">
+                  {t('slaveBinding.noCameraPresets')}
+                </Typography>
+              ) : (
+                <Stack spacing={0.25} sx={{ maxHeight: 160, overflowY: 'auto', pr: 0.5 }}>
+                  {presets.map((preset) => (
+                    <Stack key={preset.token} direction="row" spacing={0.5} alignItems="center">
+                      <Tooltip title={t('slaveBinding.gotoPreset')}>
+                        <Button
+                          size="small"
+                          disabled={busy}
+                          onClick={() => void gotoPreset(preset.token)}
+                          sx={{ flex: 1, justifyContent: 'flex-start', textTransform: 'none', minWidth: 0 }}
+                        >
+                          <Typography variant="caption" noWrap>{preset.name || preset.token}</Typography>
+                        </Button>
+                      </Tooltip>
+                      <Tooltip title={t('slaveBinding.updatePreset')}>
                         <span>
                           <IconButton
                             size="small"
                             disabled={busy}
-                            onClick={(e) => { e.stopPropagation(); void aimAt(point.masterX, point.masterY) }}
+                            onClick={() => void updatePreset(preset.token, preset.name || preset.token)}
                           >
-                            <MyLocationIcon fontSize="inherit" />
+                            <SaveIcon fontSize="inherit" />
                           </IconButton>
                         </span>
                       </Tooltip>
-                      <Tooltip title={t('slaveBinding.deletePoint')}>
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            const remaining = points.filter((_, i) => i !== index)
-                            setPoints(remaining)
-                            setSelected(null)
-                            void persist({ points: remaining })
-                          }}
-                        >
-                          <DeleteOutlineIcon fontSize="inherit" />
-                        </IconButton>
+                      <Tooltip title={t('slaveBinding.deletePreset')}>
+                        <span>
+                          <IconButton
+                            size="small"
+                            disabled={busy}
+                            onClick={() => void deletePreset(preset.token)}
+                          >
+                            <DeleteOutlineIcon fontSize="inherit" />
+                          </IconButton>
+                        </span>
                       </Tooltip>
                     </Stack>
-                  </Box>
-                ))}
-              </Stack>
-            )}
-
-            <Divider />
-
-            {/* The camera's presets, listed so they can be tried and tidied without leaving the
-                survey. Where a preset points is not knowable from its name, so the only honest way
-                to find out is to send the camera there and look. */}
-            <Stack direction="row" spacing={0.5} alignItems="center">
-              <Typography variant="subtitle2">{t('slaveBinding.cameraPresets')}</Typography>
-              <Hint text={t('slaveBinding.cameraPresetsHint')} />
+                  ))}
+                </Stack>
+              )}
             </Stack>
-            {presets.length === 0 ? (
-              <Typography variant="caption" color="text.secondary">
-                {t('slaveBinding.noCameraPresets')}
-              </Typography>
-            ) : (
-              <Stack spacing={0.25} sx={{ maxHeight: 160, overflowY: 'auto', pr: 0.5 }}>
-                {presets.map((preset) => (
-                  <Stack key={preset.token} direction="row" spacing={0.5} alignItems="center">
-                    <Tooltip title={t('slaveBinding.gotoPreset')}>
-                      <Button
-                        size="small"
-                        disabled={busy}
-                        onClick={() => void gotoPreset(preset.token)}
-                        sx={{ flex: 1, justifyContent: 'flex-start', textTransform: 'none', minWidth: 0 }}
-                      >
-                        <Typography variant="caption" noWrap>{preset.name || preset.token}</Typography>
-                      </Button>
-                    </Tooltip>
-                    <Tooltip title={t('slaveBinding.updatePreset')}>
-                      <span>
-                        <IconButton
-                          size="small"
-                          disabled={busy}
-                          onClick={() => void updatePreset(preset.token, preset.name || preset.token)}
-                        >
-                          <SaveIcon fontSize="inherit" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                    <Tooltip title={t('slaveBinding.deletePreset')}>
-                      <span>
-                        <IconButton
-                          size="small"
-                          disabled={busy}
-                          onClick={() => void deletePreset(preset.token)}
-                        >
-                          <DeleteOutlineIcon fontSize="inherit" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  </Stack>
-                ))}
-              </Stack>
-            )}
-          </Stack>
+          )}
 
           {/* Both pictures at the same size and on the same line, because marking a spot is a
               comparison between them: the operator looks at a place on the master's ground and has
@@ -762,14 +789,17 @@ export default function CameraSlaveBindingSection({
               <Typography variant="caption" color="text.secondary" noWrap>
                 {t('slaveBinding.masterPicture', { name: masterCamera?.name || master })}
               </Typography>
-              <Hint text={t('slaveBinding.pickHint')} />
+              <Hint text={t(byMap ? 'slaveBinding.geoPickHint' : 'slaveBinding.pickHint')} />
               {method === 'presets' && points.length > 0 && <Hint text={t('slaveBinding.zonesHint')} />}
             </Stack>
             <Box sx={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', bgcolor: 'black' }}>
               <CameraStream
                 whepUrl={masterStream.whepUrl}
                 stunUrl={masterCamera?.effectiveWebrtcStunUrl}
-                overlay={(videoRef) => (
+                overlay={(videoRef) => byMap ? (
+                  // Nothing to mark: a click sends the slave to that spot through both calibrations.
+                  <MasterPointOverlay videoRef={videoRef} points={[]} onPick={(x, y) => void aimAt(x, y)} />
+                ) : (
                   <MasterPointOverlay
                     videoRef={videoRef}
                     points={overlayPoints}

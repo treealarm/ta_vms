@@ -82,7 +82,8 @@ export function CameraMarker({ placement, label, color, selected, editable, dimm
       <Polygon
         positions={fovPolygon(p)}
         pathOptions={{ color, weight: 1, fillColor: color, fillOpacity: dimmed ? 0.05 : selected ? 0.25 : 0.12, opacity: dimmed ? 0.3 : 0.8 }}
-        eventHandlers={onSelect ? { click: onSelect } : undefined}
+        // Stopped here, or the map's own click arrives next and takes the selection away again.
+        eventHandlers={onSelect ? { click: (e) => { L.DomEvent.stopPropagation(e); onSelect() } } : undefined}
       />
       <Marker
         position={[p.lat, p.lon]}

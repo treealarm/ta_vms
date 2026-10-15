@@ -31,6 +31,12 @@ namespace VmsPtzTrackingSingleton;
 /// The cost of aiming low is that the slave looks at feet rather than a chest, a few degrees, which
 /// the operator cancels at survey time by marking each point a person's height above the spot.
 /// </para>
+/// <para>
+/// A binding on the map method has no survey: the same foot goes through the master's ground
+/// calibration and the slave's landmark calibration instead. Which of the two applies is the
+/// business of <see cref="SlaveAim"/>, which the session is handed whole and the reconcile replaces
+/// whole.
+/// </para>
 /// </remarks>
 public sealed class SlaveAimingSession
 {
@@ -78,7 +84,7 @@ public sealed class SlaveAimingSession
 
   private readonly Lock _gate = new();
   private TrackingPolicy _policy;
-  private SlaveBindingModel? _binding;
+  private SlaveAim? _aim;
   private TargetKey? _target;
   private bool _explicitTarget;
   private DateTime? _targetSeenAt;
@@ -95,20 +101,20 @@ public sealed class SlaveAimingSession
     string slaveCameraId,
     IPtzCommandSender sender,
     ILogger logger,
-    SlaveBindingModel? binding,
+    SlaveAim? aim,
     TrackingPolicy policy)
   {
     _slaveCameraId = slaveCameraId;
     _sender = sender;
     _logger = logger;
-    _binding = binding;
+    _aim = aim;
     _policy = policy;
     _logger.LogInformation(
       "Camera '{Camera}': aiming at objects from master '{Master}' by {Method}, {Points} marked point(s)",
       _slaveCameraId,
-      binding?.MasterCameraId ?? "(none)",
-      binding?.Method.ToString() ?? "(none)",
-      binding?.Points.Count ?? 0);
+      aim?.MasterCameraId ?? "(none)",
+      aim?.Binding.Method.ToString() ?? "(none)",
+      aim?.Binding.Points.Count ?? 0);
   }
 
   public void Offer(DetectionSample sample) => _samples.Writer.TryWrite(sample);
@@ -129,10 +135,25 @@ public sealed class SlaveAimingSession
   /// camera goes where the object is now, rather than replaying where it was when the hold began.
   /// </para>
   /// </remarks>
-  public void HoldUntil(DateTime until)
+  /// <returns>The hold this one replaced, for <see cref="RestoreHold"/>.</returns>
+  public DateTime HoldUntil(DateTime until)
   {
     lock (_gate)
+    {
+      var previous = _heldUntil;
       _heldUntil = until;
+      return previous;
+    }
+  }
+
+  /// <summary>Takes back a hold placed by <see cref="HoldUntil"/>, unless someone has held the camera since.</summary>
+  public void RestoreHold(DateTime placed, DateTime previous)
+  {
+    lock (_gate)
+    {
+      if (_heldUntil == placed)
+        _heldUntil = previous;
+    }
   }
 
   /// <summary>
@@ -157,20 +178,27 @@ public sealed class SlaveAimingSession
     }
   }
 
-  public void ApplyBinding(SlaveBindingModel? binding)
+  /// <summary>Takes the binding, and the calibrations that go with it, as they now are -- in one step.</summary>
+  /// <remarks>
+  /// A recalibrated pair on the map method does not reopen the dead zone. It compares where the head
+  /// was sent with where it is to go next, both positions of the head, and those mean the same
+  /// whatever calibration computed them -- so a model merely read again (the cache does, once a
+  /// minute) cannot cost a needless slew.
+  /// </remarks>
+  public void ApplyAim(SlaveAim? aim)
   {
     lock (_gate)
     {
       // A resurveyed binding means every position computed from the old one was wrong, so the dead
       // zone must not suppress the first command under the new one.
-      if (Describe(_binding) != Describe(binding))
+      if (Describe(_aim?.Binding) != Describe(aim?.Binding))
       {
         _logger.LogInformation(
-          "Camera '{Camera}': binding is now {Binding}", _slaveCameraId, Describe(binding));
+          "Camera '{Camera}': binding is now {Binding}", _slaveCameraId, Describe(aim?.Binding));
         _aimedAt = null;
         _aimedPreset = null;
       }
-      _binding = binding;
+      _aim = aim;
     }
   }
 
@@ -200,7 +228,7 @@ public sealed class SlaveAimingSession
         // Reported as the camera's condition rather than as an error, because it is neither a fault
         // nor silence: somebody has the camera, and that is what the monitor should say.
         DateTime.UtcNow < _heldUntil ? "Held while its binding is being marked out" : _lastError,
-        _binding?.MasterCameraId);
+        _aim?.MasterCameraId);
   }
 
   public async Task RunAsync(CancellationToken ct)
@@ -322,18 +350,20 @@ public sealed class SlaveAimingSession
 
   private async Task AimAsync(DetectionSample target, CancellationToken ct)
   {
-    SlaveBindingModel? binding;
+    // Taken once: the binding and its calibrations are one thing, and this detection is aimed by
+    // one version of them even if the reconcile replaces them meanwhile.
+    SlaveAim? aim;
     lock (_gate)
-      binding = _binding;
-
-    if (binding is null)
-      return;
-
-    lock (_gate)
+    {
+      aim = _aim;
       if (DateTime.UtcNow < _heldUntil)
         return;
+    }
 
-    var reason = binding.Unusable();
+    if (aim is null)
+      return;
+
+    var reason = aim.Unusable();
     if (reason is not null)
     {
       Fail(reason);
@@ -349,11 +379,11 @@ public sealed class SlaveAimingSession
     var x = target.CenterX;
     var y = target.Top + target.Height;
 
-    var error = binding.Method == PtzSlaveBindingMethod.PtzSlaveBindingPresets
+    var error = aim.ByPreset
       // The presets method gets the whole footprint, not just its middle: which zone an object is
       // in is a question about the object, and it has width.
-      ? await AimByPresetAsync(binding, target.Left, target.Left + target.Width, y, ct)
-      : await AimByPositionAsync(binding, x, y, ct);
+      ? await AimByPresetAsync(aim.Binding, target.Left, target.Left + target.Width, y, ct)
+      : await AimByPositionAsync(aim, x, y, ct);
 
     if (error is null)
       Succeed();
@@ -361,27 +391,31 @@ public sealed class SlaveAimingSession
       Fail(error);
   }
 
-  private async Task<string?> AimByPositionAsync(
-    SlaveBindingModel binding, float x, float y, CancellationToken ct)
+  private async Task<string?> AimByPositionAsync(SlaveAim aim, float x, float y, CancellationToken ct)
   {
-    var aim = PtzSlaveBindingMath.Project(binding.Fit!, x, y);
+    var (position, error) = aim.Position(x, y);
+    return position is null ? error : await SendPositionAsync(position, ct);
+  }
 
+  /// <summary>Sends the camera to a position, unless it is already about there.</summary>
+  private async Task<string?> SendPositionAsync(PositionAim position, CancellationToken ct)
+  {
+    var (pan, tilt) = (position.Pan, position.Tilt);
     if (_aimedAt is { } last &&
-        MathF.Abs(aim.Pan - last.Pan) < MoveThreshold &&
-        MathF.Abs(aim.Tilt - last.Tilt) < MoveThreshold)
+        MathF.Abs(pan - last.Pan) < MoveThreshold &&
+        MathF.Abs(tilt - last.Tilt) < MoveThreshold)
       return null;
 
     _lastCommandAt = DateTime.UtcNow;
-    var error = await _sender.AimAsync(binding.SlaveCameraId, aim.Pan, aim.Tilt, ct);
+    var error = await _sender.AimAsync(_slaveCameraId, pan, tilt, ct);
     if (error is not null)
       return error;
 
-    _aimedAt = (aim.Pan, aim.Tilt);
+    _aimedAt = (pan, tilt);
     _aimedPreset = null;
-    _logger.LogDebug(
-      "Camera '{Camera}': aimed at ({Pan:F3},{Tilt:F3}) for master point ({X:F3},{Y:F3}){Extrapolated}",
-      _slaveCameraId, aim.Pan, aim.Tilt, x, y,
-      aim.Extrapolated ? " — outside the marked area" : string.Empty);
+    if (_logger.IsEnabled(LogLevel.Debug))
+      _logger.LogDebug(
+        "Camera '{Camera}': aimed at ({Pan:F3},{Tilt:F3}) for {What}", _slaveCameraId, pan, tilt, position.Describe);
     return null;
   }
 

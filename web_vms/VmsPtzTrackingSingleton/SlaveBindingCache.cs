@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Vms.Cfg;
 
 namespace VmsPtzTrackingSingleton;
@@ -18,9 +17,13 @@ public sealed record SlaveBindingModel(
   BindingFit? Fit,
   string? FitError)
 {
-  /// <summary>Whether this binding can actually aim the camera by the method it was given.</summary>
+  /// <summary>Whether the survey can aim the camera by the method it was given.</summary>
+  /// <remarks>
+  /// Only for the methods that aim by the survey; whether a slave can aim at all, whatever its
+  /// method, is <see cref="SlaveAim.Unusable"/>.
+  /// </remarks>
   /// <returns>Null when it can, otherwise what is missing.</returns>
-  public string? Unusable()
+  public string? SurveyUnusable()
   {
     if (Points.Count == 0)
       return "The binding has no marked points";
@@ -46,53 +49,25 @@ public sealed record SlaveBindingModel(
 /// Fitting is a linear solve of order N+3 plus one more per point for the leave-one-out check, and
 /// the detections arrive several times a second -- so the fit belongs here, next to the fetch, and
 /// not on the aiming path. Invalidated through the same <c>server-config-changed</c> signal as
-/// routes and calibration (CLAUDE.md); the TTL stays as the backstop for a VmsCfg that cannot be
-/// read.
+/// routes and calibration (CLAUDE.md); see <see cref="TtlCache{T}"/> for the rest.
 /// </remarks>
 public sealed class SlaveBindingCache(
   CfgService.CfgServiceClient cfg,
   ILogger<SlaveBindingCache> logger)
 {
-  private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(1);
-
-  private sealed record Entry(SlaveBindingModel? Model, DateTime FetchedAt);
-
-  private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
-
-  public void Invalidate(IReadOnlyCollection<string> cameraIds)
-  {
-    if (cameraIds.Count == 0)
-    {
-      _entries.Clear();
-      return;
-    }
-
-    foreach (var cameraId in cameraIds)
-      _entries.TryRemove(cameraId, out _);
-  }
-
-  public async Task<SlaveBindingModel?> GetAsync(string slaveCameraId, CancellationToken ct)
-  {
-    if (_entries.TryGetValue(slaveCameraId, out var cached) && DateTime.UtcNow - cached.FetchedAt < Ttl)
-      return cached.Model;
-
-    try
+  private readonly TtlCache<SlaveBindingModel> _cache = new(
+    async (slaveCameraId, ct) =>
     {
       var response = await cfg.GetPtzSlaveBindingAsync(
         new GetPtzSlaveBindingRequest { SlaveCameraId = slaveCameraId }, cancellationToken: ct);
+      return response.Found ? Build(response.Binding) : null;
+    },
+    TimeSpan.FromMinutes(1), logger, "slave binding");
 
-      var model = response.Found ? Build(response.Binding) : null;
-      _entries[slaveCameraId] = new Entry(model, DateTime.UtcNow);
-      return model;
-    }
-    catch (Exception ex)
-    {
-      logger.LogWarning(ex, "Could not load the slave binding for camera '{Camera}'", slaveCameraId);
-      // A failed fetch is not an answer: the previous binding keeps aiming the camera through a
-      // VmsCfg hiccup rather than the slave going blind.
-      return cached?.Model;
-    }
-  }
+  public void Invalidate(IReadOnlyCollection<string> cameraIds) => _cache.Invalidate(cameraIds);
+
+  public Task<SlaveBindingModel?> GetAsync(string slaveCameraId, CancellationToken ct) =>
+    _cache.GetAsync(slaveCameraId, ct);
 
   /// <summary>Re-reads one binding, ignoring what is held.</summary>
   /// <remarks>
@@ -101,11 +76,8 @@ public sealed class SlaveBindingCache(
   /// the survey as it was a moment ago would send the camera somewhere the operator did not just
   /// ask for.
   /// </remarks>
-  public Task<SlaveBindingModel?> ReloadAsync(string slaveCameraId, CancellationToken ct)
-  {
-    _entries.TryRemove(slaveCameraId, out _);
-    return GetAsync(slaveCameraId, ct);
-  }
+  public Task<SlaveBindingModel?> ReloadAsync(string slaveCameraId, CancellationToken ct) =>
+    _cache.ReloadAsync(slaveCameraId, ct);
 
   /// <summary>Fits a binding without consulting the cache — for the wizard, which has just written it.</summary>
   public static SlaveBindingModel Build(PtzSlaveBinding binding)

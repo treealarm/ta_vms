@@ -43,12 +43,15 @@ public class SpacePlanController(CfgService.CfgServiceClient _cfg) : ControllerB
   }
 
   [HttpGet]
+  [Authorize(Policy = AuthPolicies.Authenticated)]
   [NoCameraAccess("A plan image is part of the map, not a camera")]
   public async Task Get(string spaceId, CancellationToken ct)
   {
-    var ifNoneMatch = Request.Headers.IfNoneMatch.ToString().Trim('"', ' ');
-    using var call = _cfg.GetSpacePlanImage(
-      new GetSpacePlanImageRequest { SpaceId = spaceId, IfNoneMatch = ifNoneMatch }, Options(ct));
+    // Parsed rather than trimmed: a proxy that compresses the response weakens the tag to W/"…",
+    // and a cache holding several versions lists them all. Any of them still current is a 304.
+    var request = new GetSpacePlanImageRequest { SpaceId = spaceId };
+    request.IfNoneMatch.AddRange(Request.GetTypedHeaders().IfNoneMatch.Select(t => t.Tag.Value!.Trim('"')));
+    using var call = _cfg.GetSpacePlanImage(request, Options(ct));
 
     if (!await call.ResponseStream.MoveNext(ct) || call.ResponseStream.Current.PartCase != SpacePlanImageChunk.PartOneofCase.Header)
       throw new RpcException(new Status(Grpc.Core.StatusCode.Internal, "VmsCfg sent a plan image without its header"));
