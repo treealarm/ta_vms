@@ -1,0 +1,29 @@
+# OnvifSim for the PTZ bench, started and stopped by onvifsim_lab.py up/down.
+#
+# Built from the checkout next to this repository rather than pulled as ghcr.io/treealarm/onvifsim:
+# the bench needs the ground-truth API (camera and walker poses), and a released image may not have
+# it yet. The ports keep clear of the dev stack's own (8080 Keycloak, 8554 MediaMTX); the harness
+# passes its --sim-port and friends here.
+#
+# Ports mapped one by one, the same number inside and out, rather than host networking: under Docker
+# Desktop a container's host network is the VM's, not this machine's. The same numbers matter, since
+# OnvifSim builds its stream URIs from the address it was asked on: the dev stack asks at
+# 127.0.0.1:8101 and is sent to rtsp://127.0.0.1:8560/....
+name: onvifsim-lab
+
+services:
+  onvifsim:
+    build: ${ONVIFSIM_DIR:-../../../OnvifSim}
+    image: onvifsim-lab
+    ports:
+      - "${ONVIFSIM_PORT:-8090}:${ONVIFSIM_PORT:-8090}"                   # editor and API
+      - "${ONVIFSIM_RTSP_PORT:-8560}:${ONVIFSIM_RTSP_PORT:-8560}"         # RTSP
+      - "${ONVIFSIM_RTP_PORT:-6980}-${ONVIFSIM_RTP_PORT_END:-6981}:${ONVIFSIM_RTP_PORT:-6980}-${ONVIFSIM_RTP_PORT_END:-6981}/udp"
+      - "${ONVIFSIM_ONVIF_BASE_PORT:-8101}-${ONVIFSIM_ONVIF_LAST_PORT:-8102}:${ONVIFSIM_ONVIF_BASE_PORT:-8101}-${ONVIFSIM_ONVIF_LAST_PORT:-8102}" # ONVIF, master and PTZ
+    environment:
+      ONVIFSIM_PORT: ${ONVIFSIM_PORT:-8090}
+      ONVIFSIM_RTSP_PORT: ${ONVIFSIM_RTSP_PORT:-8560}
+      ONVIFSIM_RTP_PORT: ${ONVIFSIM_RTP_PORT:-6980}
+      ONVIFSIM_ONVIF_BASE_PORT: ${ONVIFSIM_ONVIF_BASE_PORT:-8101}
+      # Off: the cameras are added to ta_vms by address, and multicast does not cross the mapping.
+      ONVIFSIM_DISCOVERY_PORT: "0"

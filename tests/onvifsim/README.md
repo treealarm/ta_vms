@@ -37,8 +37,10 @@ You need these:
 
 - The ta_vms dev stack, running: `docker compose up -d postgres rabbitmq mediamtx db-init`, then
   `scripts/dev-up.sh` or F5.
-- `../OnvifSim` checked out next to this repository, with .NET 10 and ffmpeg. media_server pulls the
-  H.264 profile, which OnvifSim offers only when it finds ffmpeg.
+- `../OnvifSim` checked out next to this repository, and Docker. `up` builds the simulator's image
+  from that checkout (`docker-compose.yml` here) rather than pulling the released one: the bench
+  needs the ground-truth API, which a release may not have yet. The image carries ffmpeg, which
+  media_server's H.264 profile needs.
 
 ```
 tests/onvifsim/onvifsim_lab.py all              # every step below in order, then down
@@ -54,9 +56,11 @@ After `bind` the configuration stays in ta_vms: restart the stack, and the slave
 person again without any of the steps before it.
 ```
 
-OnvifSim runs on ports clear of the dev stack: 8090 for the editor and API, 8560 for RTSP, 6980
-for RTP, and 8101/8102 for ONVIF. Open http://localhost:8090 to watch the world while a step runs.
-Its log and data are in `/tmp/onvifsim-lab/`. The ta_vms camera ids are `sim-master` and `sim-ptz`.
+OnvifSim runs in the container `onvifsim-lab-onvifsim-1`, its ports mapped one to one and clear of
+the dev stack: 8090 for the editor and API, 8560 for RTSP, 6980 for RTP, and 8101/8102 for ONVIF. Open
+http://localhost:8090 to watch the world while a step runs; its log is
+`docker compose -f tests/onvifsim/docker-compose.yml logs`. The steps keep what they created in
+`/tmp/onvifsim-lab/state.json`. The ta_vms camera ids are `sim-master` and `sim-ptz`.
 
 ## What each step proves
 

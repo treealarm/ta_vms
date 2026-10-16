@@ -3,7 +3,8 @@
 
 Steps, each one checking what it did and exiting 1 with the reason when something is off:
 
-    up          start OnvifSim from ../OnvifSim on ports clear of the dev stack, load the world
+    up          build and start OnvifSim from ../OnvifSim in Docker, on ports clear of the dev
+                stack, and load the world
     provision   add both cameras to ta_vms over ONVIF, a map, the landmarks and where the cameras stand
     calibrate   PTZ by landmarks (head driven in the sim, position read back over ONVIF through
                 VmsOnvif) and the master's ground marks (a person standing on each landmark, the foot
@@ -12,7 +13,7 @@ Steps, each one checking what it did and exiting 1 with the reason when somethin
                 measure where the PTZ really looks, against the sim's ground truth
     bind        bind the PTZ to the master through the map (method "geo") and switch tracking on
     run         let ta_vms follow the person on its own, from the master's detections, and measure
-    down        stop OnvifSim (--purge also removes the cameras and the map from ta_vms)
+    down        stop OnvifSim's container (--purge also removes the cameras and the map from ta_vms)
     all         up, provision, calibrate, aim-check, bind, run, down
 
 The ta_vms dev stack must already be running (scripts/dev-up.sh or F5). See README.md.
@@ -22,7 +23,6 @@ import argparse
 import json
 import math
 import os
-import signal
 import statistics
 import subprocess
 import sys
@@ -37,6 +37,7 @@ from simapi import Sim  # noqa: E402
 from vmsapi import Vms  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
+COMPOSE_FILE = Path(__file__).resolve().parent / "docker-compose.yml"
 STATE_DIR = Path("/tmp/onvifsim-lab")
 STATE_FILE = STATE_DIR / "state.json"
 SPACE_NAME = "OnvifSim lab"
@@ -95,9 +96,8 @@ class Lab:
     # ── up / down ───────────────────────────────────────────────────────────────
 
     def up(self):
-        pid = self.state.get("sim_pid")
-        if pid and _alive(pid) and self.sim.ready():
-            log(f"OnvifSim already running (pid {pid})")
+        if self.sim.ready():
+            log("OnvifSim already running")
         else:
             self._start_sim()
         self.sim.put_world(W.build_world(self.onvif_base))
@@ -108,48 +108,36 @@ class Lab:
         require(ports == expected, f"OnvifSim ONVIF ports are {ports}, expected {expected}")
         log(f"OnvifSim world loaded: ONVIF {expected}, RTSP {status.get('rtspPort')}")
 
+    def _compose(self, *command, check=True):
+        a = self.args
+        env = dict(os.environ,
+                   ONVIFSIM_DIR=str(Path(a.sim_dir).resolve()), ONVIFSIM_PORT=str(a.sim_port),
+                   ONVIFSIM_RTSP_PORT=str(a.rtsp_port), ONVIFSIM_RTP_PORT=str(a.rtp_port),
+                   ONVIFSIM_RTP_PORT_END=str(a.rtp_port + 1),
+                   ONVIFSIM_ONVIF_BASE_PORT=str(a.onvif_base_port),
+                   ONVIFSIM_ONVIF_LAST_PORT=str(a.onvif_base_port + 1))
+        result = subprocess.run(["docker", "compose", "-f", str(COMPOSE_FILE), *command], env=env)
+        require(not check or result.returncode == 0, f"docker compose {' '.join(command)} failed")
+
     def _start_sim(self):
         sim_dir = Path(self.args.sim_dir).resolve()
-        project = sim_dir / "src" / "OnvifSim.Server"
-        require(project.exists(), f"OnvifSim is not at {sim_dir} (--sim-dir)")
-        data = STATE_DIR / "data"
-        data.mkdir(parents=True, exist_ok=True)
-        log_path = STATE_DIR / "onvifsim.log"
-        a = self.args
-        cmd = [
-            "dotnet", "run", "-c", "Release", "--project", str(project), "--",
-            "--data", str(data), "--port", str(a.sim_port), "--rtsp-port", str(a.rtsp_port),
-            "--rtp-port", str(a.rtp_port), "--onvif-base-port", str(a.onvif_base_port),
-            "--discovery-port", "0", "--no-browser",
-        ]
-        log(f"starting OnvifSim (log: {log_path})")
-        with open(log_path, "ab") as out:
-            proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, start_new_session=True, cwd=sim_dir)
-        self.state["sim_pid"] = proc.pid
-        save_state(self.state)
-        deadline = time.monotonic() + 300  # the first run builds the simulator
+        require((sim_dir / "Dockerfile").exists(), f"OnvifSim is not at {sim_dir} (--sim-dir)")
+        # --build every time: the layers are cached, so it costs nothing unless ../OnvifSim changed,
+        # and the bench never runs an image older than the checkout next to it.
+        log("building and starting OnvifSim in Docker (the first build takes a few minutes)")
+        self._compose("up", "-d", "--build")
+        deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
-            if proc.poll() is not None:
-                raise Failed(f"OnvifSim exited with {proc.returncode}; see {log_path}")
             if self.sim.ready():
-                log(f"OnvifSim is up (pid {proc.pid})")
+                log("OnvifSim is up")
                 return
             time.sleep(1)
-        raise Failed(f"OnvifSim did not answer within 5 minutes; see {log_path}")
+        raise Failed(f"OnvifSim did not answer within a minute; see docker compose -f {COMPOSE_FILE} logs")
 
     def down(self):
-        pid = self.state.pop("sim_pid", None)
-        if pid and _alive(pid):
-            os.killpg(pid, signal.SIGTERM)
-            for _ in range(50):
-                if not _alive(pid):
-                    break
-                time.sleep(0.1)
-            else:
-                os.killpg(pid, signal.SIGKILL)
-            log(f"OnvifSim stopped (pid {pid})")
-        else:
-            log("OnvifSim was not running")
+        # -v: the world lives in the container's anonymous /data volume; up loads it afresh anyway.
+        self._compose("down", "-v")
+        log("OnvifSim stopped")
         if self.args.purge:
             self.vms.login()
             for camera in (W.MASTER, W.SLAVE):
@@ -166,9 +154,8 @@ class Lab:
         save_state(self.state)
 
     def status(self):
-        pid = self.state.get("sim_pid")
-        log(f"OnvifSim: {'running, pid ' + str(pid) if pid and _alive(pid) else 'not running'}")
-        log(json.dumps({k: v for k, v in self.state.items() if k != 'sim_pid'}, indent=2))
+        self._compose("ps", check=False)
+        log(json.dumps(self.state, indent=2))
 
     # ── provision ───────────────────────────────────────────────────────────────
 
@@ -458,14 +445,6 @@ class Lab:
         require(sum(centred) / len(centred) > 0.9,
                 "the person is out of the slave's central third too often")
         log("run passed")
-
-
-def _alive(pid):
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
 
 
 def _percentile(values, p):
