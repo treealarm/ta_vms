@@ -7,6 +7,7 @@ import {
   CircularProgress,
   Divider,
   IconButton,
+  Link,
   MenuItem,
   Select,
   Stack,
@@ -23,6 +24,7 @@ import AddIcon from '@mui/icons-material/Add'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import UndoIcon from '@mui/icons-material/Undo'
 import { useTranslation } from 'react-i18next'
+import { Link as RouterLink } from 'react-router-dom'
 import { useAppSelector } from '../store'
 import { apiFetch } from '../api/apiFetch'
 import CameraStream from './CameraStream'
@@ -575,6 +577,25 @@ export default function CameraSlaveBindingSection({
           <ToggleButton value="geo">{t('slaveBinding.methodGeo')}</ToggleButton>
         </ToggleButtonGroup>
       </Stack>
+
+      {/* The map method has nothing to mark here: what it needs is made on Maps & plans, so that is
+          where the links go — to each camera's own placement, where its calibration is offered. */}
+      {byMap && (
+        <Typography variant="body2" color="text.secondary">
+          {t('slaveBinding.calibratedOnMaps')}{' '}
+          <Link component={RouterLink} to={`/admin/maps?cameraId=${encodeURIComponent(cameraId)}`}>
+            {t('slaveBinding.thisCameraOnMaps')}
+          </Link>
+          {master && (
+            <>
+              {' · '}
+              <Link component={RouterLink} to={`/admin/maps?cameraId=${encodeURIComponent(master)}`}>
+                {t('slaveBinding.masterOnMaps')}
+              </Link>
+            </>
+          )}
+        </Typography>
+      )}
 
       {/* Explained rather than hidden: an operator who has just marked six points needs to know
           which ones are short of a preset, not to find the switch greyed out. */}

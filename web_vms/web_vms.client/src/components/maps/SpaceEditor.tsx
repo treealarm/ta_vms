@@ -44,6 +44,8 @@ const DEFAULT_PLACEMENT = { heightM: 3, headingDeg: 0, hfovDeg: 60, rangeM: 30 }
 
 type Props = {
   space: SpaceDto
+  /** A camera to select, once, when its placement here appears — for arriving with it in mind. */
+  initialCameraId?: string | null
   /** Moves the whole page to another space — the tree beside it follows. */
   onOpenSpace: (spaceId: string) => void
 }
@@ -54,7 +56,7 @@ type Props = {
  * is done — a drag when released, a field when left — because a map is edited by hand, one object
  * at a time, and an Apply button far from the object would be one more thing to forget.
  */
-export default function SpaceEditor({ space, onOpenSpace }: Props) {
+export default function SpaceEditor({ space, initialCameraId, onOpenSpace }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const camerasById = useAppSelector((s) => s.live.cameraStatesById)
@@ -224,6 +226,19 @@ export default function SpaceEditor({ space, onOpenSpace }: Props) {
     setSelection({ kind, id })
     setFocus((f) => ({ lat: at.lat, lon: at.lon, seq: (f?.seq ?? 0) + 1 }))
   }
+
+  // Applied a single time: placements load after the editor mounts, so this waits for the
+  // camera's rather than firing on mount, and from then on the administrator's clicks own the
+  // selection.
+  const initialApplied = useRef(false)
+  useEffect(() => {
+    if (initialApplied.current || !initialCameraId) return
+    const placement = here.find((p) => p.cameraId === initialCameraId)
+    if (!placement) return
+    initialApplied.current = true
+    select('camera', initialCameraId, placement)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `select` and `here` are rebuilt every render
+  }, [initialCameraId, placements])
 
   const listSections: MapObjectSection[] = [
     {

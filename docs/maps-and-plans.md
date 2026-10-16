@@ -115,7 +115,7 @@ and should be levelled; one mounted on its side or at an angle cannot be calibra
 all (see "PTZ fit by mount orientation" under the next stages). The camera's pan seam (where its range wraps) must not fall between the
 landmarks; landmarks spread over the area the camera will actually be aimed at keep it out.
 Cameras whose `GetStatus` is a stub are refused with a message — they can still be aimed by presets
-through the slave binding.
+through the slave binding. What the fit computes is under [Algorithms](#algorithms).
 
 ## Calibrating a fixed camera against the ground
 
@@ -139,7 +139,7 @@ corner one makes the rest extrapolate, and a single misplaced landmark showed as
 correct corner. All the marks must be on one floor (spaces of equal elevation) — the mapping is of
 one plane. Lens distortion is not modelled: a wide lens misses more towards the edges of the frame,
 which the misses show; landmarks spread over the part of the picture that matters keep it small
-there.
+there. How the mapping is solved is under [Algorithms](#algorithms).
 
 ## Detections on the map
 
@@ -191,6 +191,75 @@ works the moment both are, and recalibrating one camera fixes it for every pairi
 It was proved on a virtual bench, [`tests/onvifsim`](../tests/onvifsim/README.md). In the OnvifSim
 world that bench builds, the head arrives within about a quarter of a degree of the person it was
 sent to, and the person stays in the middle third of the slave's picture throughout.
+
+## Algorithms
+
+What the calibrations and the aiming compute, for a reader who wants to know what is exact and
+what is a model. Everything is in `web_vms/VmsPtzTrackingSingleton/Geo` unless said otherwise.
+
+**The frame** (`EnuFrame`). Every camera has its own equirectangular east-north frame centred on
+itself, on a sphere of radius R = 6 378 137 m: a metre of north is 1/(R·π/180) degrees of latitude,
+and a metre of east that divided by cos(lat₀). The error is millimetres across a few hundred
+metres and about a metre at 2 km, well inside what a PTZ can be aimed to. A plan in made-up
+coordinates lives near (0, 0), where cos ≈ 1, so its made-up degrees behave as metres through the
+same formula: there is no second coordinate system anywhere.
+
+**A bearing** (`PtzGeoMath.BearingTo`). The earth is flat within a frame: azimuth is
+atan2(ΔE, ΔN) folded into [0, 360), elevation is atan2(ΔH, horizontal distance), where each
+height is the floor of the camera's space plus the object's height above that floor.
+
+**A PTZ against landmarks** (`PtzGeoMath`). Two independent straight lines, each fitted by
+ordinary least squares:
+
+    pan  = a₁ + b₁ · wrap180(azimuth − azimuth₀)
+    tilt = a₂ + b₂ · elevation
+
+`azimuth₀` is the circular mean of the observed azimuths (atan2(Σ sin, Σ cos)), so a sector that
+straddles north stays one straight run. The slopes absorb whatever units the camera reports in
+and the sign of its mount. The fit needs two landmarks at least 5° apart in azimuth and 1° in
+elevation, and readings that actually move between them — a camera whose `GetStatus` is a stub is
+refused on that. *Extrapolated* means the target's azimuth or elevation falls outside the range
+the landmarks cover, with 1° of slack. The "Check" column is leave-one-out: the fit without that
+landmark, evaluated at its bearing, as a miss in pan and one in tilt, in the camera's own units;
+with only two landmarks there is nothing to leave out. What the lines do not know: the camera's
+own pan seam, which is never unwrapped and must not fall between the landmarks, and a mount that
+is not level, which shows as a pattern of misses rather than a few bad ones (see "PTZ fit by
+mount orientation" under the next stages).
+
+**A fixed camera against the ground** (`GroundHomography`). A plane seen by a pinhole camera is a
+projective transform of the picture, so the ground mapping is a homography — eight unknowns
+with h₃₃ = 1, two linear rows per mark (the direct linear transform). Both point sets are
+normalised first — centroid at the origin, mean distance √2 — and the normal equations of the
+stacked rows are solved by Gaussian elimination with partial pivoting; a vanishing pivot is three
+marks on one line. With more than four marks this is an algebraic least-squares fit. The marks
+must be on one floor (within 5 cm), and spread out both in the picture and on the ground. The
+sign of H is chosen so that the denominator w = h₇x + h₈y + h₉ is positive at every mark; a
+point where w ≤ 0 is beyond the horizon, and projecting it answers nothing. The miss shown for each
+mark is against the fit of all of them, in metres, for the reason given under the calibration
+above. The browser receives the same H pre-multiplied by the frame's linear ENU→WGS84 map, a
+3×3 matrix that turns (x, y, 1) into (lat·w, lon·w, w).
+
+**A survey binding** (`PtzSlaveBindingMath`, the method `absolute`). Not a homography: the pair is
+not two views of one plane, since the slave's pan and tilt are angles, not a picture. The marked
+points are interpolated by a thin-plate spline — kernel U(r) = r²·ln r plus an affine part, pan and
+tilt as two right-hand sides of one (n+3)×(n+3) system, regularised by λ = 10⁻³ so that a
+single misplaced mark bends the sheet rather than tearing it. Three points make the sheet (an
+affine map, then); *extrapolated* is outside the convex hull of the marks; the leave-one-out
+miss is one Euclidean number over pan and tilt. The method `presets` fits nothing: it goes to the
+preset of the nearest mark.
+
+**The chain for `geo`** (`GeoAiming.Project`): the bottom middle of the master's box → the
+master's homography → a point in the master's frame → WGS84 → the slave's frame → a bearing to
+that point on the master's floor → the slave's two lines → a pan and tilt in the slave's units.
+The dead zone and the command interval are the session's, the same as for a survey.
+
+**Exact where, approximate where.** For an ideal pinhole camera over a flat floor and a level
+PTZ with a linear scale, these models are exact: on the OnvifSim bench the PTZ fit's residual is
+zero, the ground fit's 6 cm, and the head arrives within a thousandth of a degree of a point it
+was sent to. A real camera departs from them through lens distortion (the ground mapping misses
+more towards the edges of a wide frame), a mount out of level and a pan scale that is not quite
+linear. The models do not correct any of that; they show it, in the residual columns, which is
+why those columns are there.
 
 ## Alarms on the map
 

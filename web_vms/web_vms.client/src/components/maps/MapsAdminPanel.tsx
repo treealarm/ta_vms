@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Box, IconButton, List, Menu, MenuItem, Tooltip, Typography } from '@mui/material'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadPlacements, loadSpaces } from '../../store/spatialSlice'
 import MasterDetailLayout from '../settings/MasterDetailLayout'
@@ -15,12 +16,23 @@ import { treeOf } from './spatialUtils'
 /**
  * Admin → Maps: every space as a tree on the left, the selected one's settings and its map on the
  * right. Nested plans are reached from the tree, or from their footprints on the map.
+ *
+ * `?cameraId=` opens on the space that camera really stands in, with the camera selected: the
+ * way in from the places that send an administrator here to calibrate it. A camera that stands
+ * nowhere yet opens the page as it is.
  */
 export default function MapsAdminPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHandle> }) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const spaces = useAppSelector((s) => s.spatial.spaces)
+  const placements = useAppSelector((s) => s.spatial.placements)
   const loaded = useAppSelector((s) => s.spatial.loaded)
+  const [params] = useSearchParams()
+  const wantedCameraId = params.get('cameraId')
+  const wantedSpaceId = useMemo(
+    () => placements.find((p) => p.cameraId === wantedCameraId && p.isReference)?.spaceId ?? null,
+    [placements, wantedCameraId],
+  )
   const [addMenu, setAddMenu] = useState<HTMLElement | null>(null)
   const [creating, setCreating] = useState<NewSpace | null>(null)
 
@@ -31,7 +43,7 @@ export default function MapsAdminPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHa
 
   const tree = useMemo(() => treeOf(spaces), [spaces])
   const { isNew, selected, detailRef, detailKey, select, selectNew, reset, setId } =
-    useMasterDetailSelection(ref, tree, (e) => e.space.id ?? '')
+    useMasterDetailSelection(ref, tree, (e) => e.space.id ?? '', wantedSpaceId)
 
   const startCreating = (what: NewSpace) => {
     setAddMenu(null)
@@ -98,7 +110,12 @@ export default function MapsAdminPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHa
       ) : selected ? (
         <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <SpaceForm ref={detailRef} key={detailKey} space={selected.space} onSaved={() => undefined} onRemoved={reset} />
-          <SpaceEditor key={`editor:${selected.space.id}`} space={selected.space} onOpenSpace={select} />
+          <SpaceEditor
+            key={`editor:${selected.space.id}`}
+            space={selected.space}
+            initialCameraId={selected.space.id === wantedSpaceId ? wantedCameraId : null}
+            onOpenSpace={select}
+          />
         </Box>
       ) : (
         <Box sx={{ p: 2 }}>
