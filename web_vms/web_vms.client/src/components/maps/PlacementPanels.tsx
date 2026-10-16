@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { Box, Button, Divider, FormControlLabel, Stack, Switch, TextField, Typography } from '@mui/material'
+import { Box, Button, Collapse, Divider, FormControlLabel, Stack, Switch, TextField, Typography } from '@mui/material'
+import ExpandLessIcon from '@mui/icons-material/ExpandLess'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useTranslation } from 'react-i18next'
 import type { CameraPlacementDto, CameraSetupDto, LandmarkDto, SpaceDto } from '../../dto/dtos'
 import NumberField from './NumberField'
@@ -22,6 +24,8 @@ export function CameraPlacementPanel({
   camera, placement, referenceSpace, onChange, onRemove, onCalibrate, onGoToReference, onClose,
 }: CameraProps) {
   const { t } = useTranslation()
+  // The sector is drawing only -- aiming never reads it -- so it stays folded until asked for.
+  const [sectorOpen, setSectorOpen] = useState(false)
   const set = <K extends keyof CameraPlacementDto>(key: K) => (value: CameraPlacementDto[K]) =>
     onChange({ ...placement, [key]: value })
 
@@ -47,10 +51,26 @@ export function CameraPlacementPanel({
       </Box>
       <NumberField label={t('maps.cameraHeight')} value={placement.heightM} onCommit={set('heightM')} helperText={t('maps.cameraHeightHint')} />
       <NumberField label={t('maps.heading')} value={placement.headingDeg} onCommit={set('headingDeg')} helperText={t('maps.headingHint')} />
-      <Stack direction="row" spacing={1}>
-        <NumberField label={t('maps.hfov')} value={placement.hfovDeg} min={1} max={360} onCommit={set('hfovDeg')} />
-        <NumberField label={t('maps.range')} value={placement.rangeM} min={1} onCommit={set('rangeM')} />
-      </Stack>
+      <Box>
+        <Button
+          size="small"
+          color="inherit"
+          onClick={() => setSectorOpen((v) => !v)}
+          startIcon={sectorOpen ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+          sx={{ px: 0, color: 'text.secondary', textTransform: 'none' }}
+        >
+          {t('maps.sector')}
+        </Button>
+        <Collapse in={sectorOpen}>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+            {t('maps.sectorHint')}
+          </Typography>
+          <Stack direction="row" spacing={1}>
+            <NumberField label={t('maps.hfov')} value={placement.hfovDeg} min={1} max={360} onCommit={set('hfovDeg')} />
+            <NumberField label={t('maps.range')} value={placement.rangeM} min={1} onCommit={set('rangeM')} />
+          </Stack>
+        </Collapse>
+      </Box>
       {camera && placement.isReference && (
         <>
           <Divider />

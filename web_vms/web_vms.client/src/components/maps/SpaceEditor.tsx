@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert, Box, Button, Chip, Divider, FormControlLabel, Stack, Switch, ToggleButton,
+  Alert, Box, Button, Divider, FormControlLabel, Stack, Switch, Tab, Tabs, ToggleButton,
   ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
 import PanToolIcon from '@mui/icons-material/PanToolAlt'
@@ -18,7 +18,7 @@ import {
   errorText, loadLandmarks, loadPlacements, removeLandmark, removePlacement, removeSpacePlan, setPlanCorners,
   upsertLandmark, upsertPlacement, upsertSpace, uploadSpacePlan,
 } from '../../store/spatialSlice'
-import SpaceCanvas, { type MapFocus } from '../../map/SpaceCanvas'
+import SpaceCanvas from '../../map/SpaceCanvas'
 import PlanOverlay from '../../map/PlanOverlay'
 import { CameraMarker, LandmarkMarker } from '../../map/markers'
 import { FootprintEditor, Footprints } from '../../map/footprints'
@@ -27,23 +27,23 @@ import { cornersAround, distance, rescaleCorners } from '../../map/geo'
 import { CameraPlacementPanel, FootprintPanel, LandmarkPanel } from './PlacementPanels'
 import NumberField from './NumberField'
 import SpaceNav from './SpaceNav'
-import MapObjectList, { type MapObjectSection } from './MapObjectList'
 import PtzGeoCalibrationDialog from './PtzGeoCalibrationDialog'
 import GroundCalibrationDialog from './GroundCalibrationDialog'
+import { useEditorState, type Mode, type SideTab } from './editorState'
 import { childrenOf } from './spatialUtils'
-
-/** What the next click on the map does. */
-type Mode = 'select' | 'landmark' | 'plan'
-
-type Selection = { kind: 'camera' | 'landmark' | 'footprint'; id: string } | null
 
 /** Mirrors VmsCfg's limit, so an oversized plan is refused before it is uploaded. */
 const MAX_PLAN_BYTES = 20 * 1024 * 1024
 
 const DEFAULT_PLACEMENT = { heightM: 3, headingDeg: 0, hfovDeg: 60, rangeM: 30 }
 
+/** Width of the property column: a placement's fields side by side, with room for the toolbar's buttons. */
+const SIDE_WIDTH = 300
+
 type Props = {
   space: SpaceDto
+  /** The space's own form (name, coordinates…), shown on the Space tab beside the map. */
+  settings: React.ReactNode
   /** A camera to select, once, when its placement here appears — for arriving with it in mind. */
   initialCameraId?: string | null
   /** Moves the whole page to another space — the tree beside it follows. */
@@ -55,8 +55,13 @@ type Props = {
  * plan and line it up, shape the footprints of the spaces nested in it. Everything here saves as it
  * is done — a drag when released, a field when left — because a map is edited by hand, one object
  * at a time, and an Apply button far from the object would be one more thing to forget.
+ *
+ * The map's own tools sit above it; the lists of what can be put on it are the page's left column
+ * (`MapsSidebar`); properties are the column on the right, the space's own on one tab and the
+ * selected object's on the other. The selection, the tool and the camera waiting to be placed are
+ * shared with the lists through `useEditorState`.
  */
-export default function SpaceEditor({ space, initialCameraId, onOpenSpace }: Props) {
+export default function SpaceEditor({ space, settings, initialCameraId, onOpenSpace }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const camerasById = useAppSelector((s) => s.live.cameraStatesById)
@@ -65,16 +70,16 @@ export default function SpaceEditor({ space, initialCameraId, onOpenSpace }: Pro
   const loadedLandmarks = useAppSelector((s) => s.spatial.landmarksBySpace[space.id ?? ''])
   const landmarks = useMemo(() => loadedLandmarks ?? [], [loadedLandmarks])
 
-  const [mode, setMode] = useState<Mode>('select')
-  const [pendingCameraId, setPendingCameraId] = useState<string | null>(null)
-  const [selection, setSelection] = useState<Selection>(null)
+  const {
+    mode, setMode, selection, setSelection, pendingCameraId, setPendingCameraId, focus, clearFocus, select,
+    sideTab, setSideTab,
+  } = useEditorState()
   const [draft, setDraft] = useState<CameraPlacementDto | null>(null)
   const [draftCorners, setDraftCorners] = useState<PlanCornersDto | null>(null)
   const [draftFootprint, setDraftFootprint] = useState<GeoPointDto[] | null>(null)
   const [alignOnMap, setAlignOnMap] = useState(false)
   const [calibrating, setCalibrating] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [focus, setFocus] = useState<MapFocus | null>(null)
   const mapRef = useRef<L.Map | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -218,15 +223,6 @@ export default function SpaceEditor({ space, initialCameraId, onOpenSpace }: Pro
     : mode === 'plan' ? t('maps.planModeHint')
     : null
 
-  const cameras = Object.values(camerasById).sort((a, b) => (a.name || a.cameraId).localeCompare(b.name || b.cameraId))
-
-  const select = (kind: 'camera' | 'landmark' | 'footprint', id: string, at: GeoPointDto) => {
-    setMode('select')
-    setPendingCameraId(null)
-    setSelection({ kind, id })
-    setFocus((f) => ({ lat: at.lat, lon: at.lon, seq: (f?.seq ?? 0) + 1 }))
-  }
-
   // Applied a single time: placements load after the editor mounts, so this waits for the
   // camera's rather than firing on mount, and from then on the administrator's clicks own the
   // selection.
@@ -237,73 +233,10 @@ export default function SpaceEditor({ space, initialCameraId, onOpenSpace }: Pro
     if (!placement) return
     initialApplied.current = true
     select('camera', initialCameraId, placement)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `select` and `here` are rebuilt every render
-  }, [initialCameraId, placements])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `here` is rebuilt every render
+  }, [initialCameraId, placements, select])
 
-  const listSections: MapObjectSection[] = [
-    {
-      title: t('maps.camerasHere'),
-      empty: t('maps.noCamerasHere'),
-      items: cameras.filter((c) => placementHere(c.cameraId)).map((c) => {
-        const p = placementHere(c.cameraId)!
-        return {
-          key: c.cameraId,
-          primary: c.name || c.cameraId,
-          secondary: p.isReference ? t('maps.referenceShort') : t('maps.pictureShort'),
-          dot: STATUS_COLOR[cameraMapStatus(c)],
-          onClick: () => select('camera', c.cameraId, p),
-        }
-      }),
-    },
-    {
-      title: t('maps.inside'),
-      hint: t('maps.insideHint'),
-      empty: t('maps.nothingInside'),
-      items: nested.map((s) => ({
-        key: s.id ?? s.name,
-        primary: s.name,
-        secondary: s.footprint.length >= 3 ? undefined : t('maps.noFootprint'),
-        onClick: () => s.id && onOpenSpace(s.id),
-      })),
-    },
-    {
-      title: t('maps.landmarks'),
-      hint: t('maps.landmarksPurpose'),
-      empty: t('maps.noLandmarks'),
-      items: landmarks.map((m) => ({
-        key: m.id ?? m.name,
-        primary: m.name,
-        secondary: t('maps.landmarkHeightShort', { height: m.heightM }),
-        onClick: () => m.id && select('landmark', m.id, m),
-      })),
-    },
-    {
-      title: t('maps.camerasToPlace'),
-      hint: t('maps.camerasHint'),
-      items: cameras.filter((c) => !placementHere(c.cameraId)).map((c) => {
-        const reference = referenceOf(c.cameraId)
-        return {
-          key: c.cameraId,
-          primary: c.name || c.cameraId,
-          secondary: (
-            <Chip
-              size="small"
-              variant="outlined"
-              label={reference ? t('maps.standsIn', { name: spaceById(reference.spaceId)?.name ?? '?' }) : t('maps.notPlaced')}
-              sx={{ mt: 0.25 }}
-            />
-          ),
-          selected: pendingCameraId === c.cameraId,
-          onClick: () => {
-            setMode('select')
-            setPendingCameraId(c.cameraId)
-          },
-        }
-      }),
-    },
-  ]
-
-  const panel = selectedPlacement ? (() => {
+  const selectionPanel = selectedPlacement ? (() => {
     const reference = referenceOf(selectedPlacement.cameraId)
     const referenceSpace = reference && reference.spaceId !== spaceId ? spaceById(reference.spaceId) ?? null : null
     return (
@@ -348,11 +281,69 @@ export default function SpaceEditor({ space, initialCameraId, onOpenSpace }: Pro
       onClose={() => setSelection(null)}
     />
   ) : (
-    <MapObjectList sections={listSections} />
+    <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>{t('maps.nothingSelected')}</Typography>
+  )
+
+  // The plan's picture is a property of the space, so its controls live with the space's other
+  // settings; only lining it up is a map tool, since that is done on the map.
+  const planPicture = space.kind === 'plan' && (
+    <Box sx={{ px: 2, py: 1.5 }}>
+      <Divider sx={{ mb: 1.5 }} />
+      <Typography variant="subtitle2" gutterBottom>{t('maps.planPicture')}</Typography>
+      <Stack spacing={1} alignItems="flex-start">
+        <Button size="small" startIcon={<ImageIcon />} onClick={() => fileRef.current?.click()}>
+          {plan ? t('maps.replacePlan') : t('maps.uploadPlan')}
+        </Button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            e.target.value = ''
+            if (file) void handlePlanFile(file)
+          }}
+        />
+        {plan && planCorners && (
+          <NumberField
+            label={t('maps.planWidth')}
+            value={Math.round(planWidthM * 10) / 10}
+            min={0.1}
+            onCommit={(metres) => void commitCorners(
+              rescaleCorners(planCorners, plan.widthPx, plan.heightPx, { x: 0, y: 0 }, { x: plan.widthPx, y: 0 }, metres))}
+            sx={{ width: 160 }}
+          />
+        )}
+        {plan && (
+          <Button
+            size="small"
+            color="inherit"
+            startIcon={<DeleteOutlineIcon />}
+            onClick={() => {
+              if (window.confirm(t('maps.confirmRemovePlan'))) {
+                void run(() => dispatch(removeSpacePlan(spaceId)).unwrap())
+                setMode('select')
+              }
+            }}
+          >
+            {t('maps.removePlan')}
+          </Button>
+        )}
+        {space.realCoordinates && (
+          <Tooltip title={t('maps.alignOnMapHint')}>
+            <FormControlLabel
+              control={<Switch size="small" checked={alignOnMap} onChange={(e) => setAlignOnMap(e.target.checked)} />}
+              label={<Typography variant="body2">{t('maps.alignOnMap')}</Typography>}
+            />
+          </Tooltip>
+        )}
+      </Stack>
+    </Box>
   )
 
   return (
-    <Box sx={{ flex: 1, minHeight: 0, display: 'flex', borderTop: 1, borderColor: 'divider' }}>
+    <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         {/* The map's own tools sit on the map's edge: they act on what is drawn below them. */}
         <Stack direction="row" spacing={1} alignItems="center" sx={{ px: 1, py: 0.5, flexShrink: 0, minHeight: 44 }}>
@@ -371,60 +362,6 @@ export default function SpaceEditor({ space, initialCameraId, onOpenSpace }: Pro
               <CenterFocusStrongIcon fontSize="small" />
             </Button>
           </Tooltip>
-          {space.kind === 'plan' && (
-            <>
-              <Divider orientation="vertical" flexItem />
-              <Button size="small" startIcon={<ImageIcon />} onClick={() => fileRef.current?.click()}>
-                {plan ? t('maps.replacePlan') : t('maps.uploadPlan')}
-              </Button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                hidden
-                onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  e.target.value = ''
-                  if (file) void handlePlanFile(file)
-                }}
-              />
-            </>
-          )}
-          {plan && mode === 'plan' && planCorners && (
-            <NumberField
-              label={t('maps.planWidth')}
-              value={Math.round(planWidthM * 10) / 10}
-              min={0.1}
-              onCommit={(metres) => void commitCorners(
-                rescaleCorners(planCorners, plan.widthPx, plan.heightPx, { x: 0, y: 0 }, { x: plan.widthPx, y: 0 }, metres))}
-              sx={{ width: 140 }}
-            />
-          )}
-          {plan && (
-            <Tooltip title={t('maps.removePlan')}>
-              <Button
-                size="small"
-                color="inherit"
-                onClick={() => {
-                  if (window.confirm(t('maps.confirmRemovePlan'))) {
-                    void run(() => dispatch(removeSpacePlan(spaceId)).unwrap())
-                    setMode('select')
-                  }
-                }}
-              >
-                <DeleteOutlineIcon fontSize="small" />
-              </Button>
-            </Tooltip>
-          )}
-          {space.kind === 'plan' && space.realCoordinates && (
-            <Tooltip title={t('maps.alignOnMapHint')}>
-              <FormControlLabel
-                sx={{ ml: 0.5 }}
-                control={<Switch size="small" checked={alignOnMap} onChange={(e) => setAlignOnMap(e.target.checked)} />}
-                label={<Typography variant="caption">{t('maps.alignOnMap')}</Typography>}
-              />
-            </Tooltip>
-          )}
           {hint && (
             <Typography variant="caption" color="info.main" sx={{ ml: 1 }} noWrap>
               {hint}
@@ -441,7 +378,7 @@ export default function SpaceEditor({ space, initialCameraId, onOpenSpace }: Pro
           onMapClick={handleMapClick}
           picking={!!pendingCameraId || mode === 'landmark'}
           focus={focus}
-          overlay={<SpaceNav spaces={spaces} space={space} onOpen={(id) => { setFocus(null); onOpenSpace(id) }} />}
+          overlay={<SpaceNav spaces={spaces} space={space} onOpen={(id) => { clearFocus(); onOpenSpace(id) }} />}
         >
           <MapBridge mapRef={mapRef} />
           {plan && (
@@ -492,8 +429,24 @@ export default function SpaceEditor({ space, initialCameraId, onOpenSpace }: Pro
         </SpaceCanvas>
       </Box>
 
-      <Box sx={{ width: 280, flexShrink: 0, borderLeft: 1, borderColor: 'divider', overflowY: 'auto' }}>
-        {panel}
+      <Box sx={{ width: SIDE_WIDTH, flexShrink: 0, borderLeft: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <Tabs
+          value={sideTab}
+          onChange={(_, v: SideTab) => setSideTab(v)}
+          variant="fullWidth"
+          sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, minHeight: 40, '& .MuiTab-root': { minHeight: 40 } }}
+        >
+          <Tab value="space" label={t('maps.tabSpace')} />
+          <Tab value="selection" label={t('maps.tabSelection')} />
+        </Tabs>
+        <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+          {/* Both stay mounted: the space's form keeps its unsaved edits while an object is looked at. */}
+          <Box sx={{ display: sideTab === 'space' ? 'block' : 'none' }}>
+            {settings}
+            {planPicture}
+          </Box>
+          {sideTab === 'selection' && selectionPanel}
+        </Box>
       </Box>
 
       {/* A PTZ learns where to point; a fixed camera, where its picture lies on the ground. */}

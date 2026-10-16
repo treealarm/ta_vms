@@ -72,6 +72,13 @@ Conventions that hold everywhere:
   needs) and `api/map/tiles/*`.
 - **web_vms.client**: Leaflet + react-leaflet 5. `src/map/` holds the map primitives (rotated plan
   layer, authenticated tiles, metric grid, markers, footprints); `src/components/maps/` the two tabs.
+  The administrator's page is three columns: on the left what there is, as tabs that are always in
+  view — the spaces as a tree, every camera of the system by server (saying whether it is placed
+  here, stands elsewhere or nowhere yet), the open space's landmarks; the map in the middle, with
+  only the map's own tools above it; on the right the properties, the space's own on one tab and
+  the selected object's on the other. What is selected, which tool is active and which camera is
+  waiting to be placed is shared between the lists and the map (`EditorStateProvider`), so a list
+  never gives way to a property panel.
 
 ## Events
 

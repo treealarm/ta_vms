@@ -170,8 +170,10 @@ export function SpaceForm({ ref, space, creating, onSaved, onRemoved }: Props) {
         onDelete={isNew ? undefined : () => void remove()}
         deleteLabel={t('maps.removeSpace')}
       />
-      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ px: 2, pt: 1.5, pb: 1 }}>
-        <TextField label={t('common.name')} value={name} onChange={(e) => setName(e.target.value)} size="small" required sx={{ width: 220 }} />
+      {/* One column, narrow enough for the property pane beside the map; the creation pane is
+          wider, and a form that is the same shape in both places is easier to recognise. */}
+      <Stack spacing={1.5} sx={{ px: 2, pt: 1.5, pb: 1, maxWidth: 360 }}>
+        <TextField label={t('common.name')} value={name} onChange={(e) => setName(e.target.value)} size="small" required fullWidth />
         {kind === 'plan' && (
           <TextField
             select
@@ -180,17 +182,17 @@ export function SpaceForm({ ref, space, creating, onSaved, onRemoved }: Props) {
             onChange={(e) => setReal(e.target.value === 'real')}
             size="small"
             helperText={real ? t('maps.coordinatesRealHint') : t('maps.coordinatesMadeUpHint')}
-            sx={{ width: 260 }}
+            fullWidth
           >
             <MenuItem value="made-up">{t('maps.coordinatesMadeUp')}</MenuItem>
             <MenuItem value="real">{t('maps.coordinatesReal')}</MenuItem>
           </TextField>
         )}
         {kind === 'plan' && (
-          <TextField label={t('maps.ordinal')} value={ordinal} onChange={(e) => setOrdinal(e.target.value)} size="small" helperText={t('maps.ordinalHint')} sx={{ width: 140 }} />
+          <TextField label={t('maps.ordinal')} value={ordinal} onChange={(e) => setOrdinal(e.target.value)} size="small" helperText={t('maps.ordinalHint')} fullWidth />
         )}
         {kind === 'plan' && real && (
-          <TextField label={t('maps.elevation')} value={elevation} onChange={(e) => setElevation(e.target.value)} size="small" helperText={t('maps.elevationHint')} sx={{ width: 200 }} />
+          <TextField label={t('maps.elevation')} value={elevation} onChange={(e) => setElevation(e.target.value)} size="small" helperText={t('maps.elevationHint')} fullWidth />
         )}
         {picking && (
           <TextField
@@ -201,7 +203,7 @@ export function SpaceForm({ ref, space, creating, onSaved, onRemoved }: Props) {
             placeholder="41.311100, 69.279700"
             error={goTo.trim() !== '' && parseLatLon(goTo) === null}
             helperText={t('maps.frameHint')}
-            sx={{ width: 320 }}
+            fullWidth
           />
         )}
       </Stack>

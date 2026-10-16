@@ -583,13 +583,13 @@ export default function CameraSlaveBindingSection({
       {byMap && (
         <Typography variant="body2" color="text.secondary">
           {t('slaveBinding.calibratedOnMaps')}{' '}
-          <Link component={RouterLink} to={`/admin/maps?cameraId=${encodeURIComponent(cameraId)}`}>
+          <Link component={RouterLink} to={`/admin/maps?camera=${encodeURIComponent(cameraId)}`}>
             {t('slaveBinding.thisCameraOnMaps')}
           </Link>
           {master && (
             <>
               {' · '}
-              <Link component={RouterLink} to={`/admin/maps?cameraId=${encodeURIComponent(master)}`}>
+              <Link component={RouterLink} to={`/admin/maps?camera=${encodeURIComponent(master)}`}>
                 {t('slaveBinding.masterOnMaps')}
               </Link>
             </>

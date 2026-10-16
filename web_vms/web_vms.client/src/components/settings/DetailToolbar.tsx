@@ -27,7 +27,7 @@ export default function DetailToolbar({
 }: Props) {
   const { t } = useTranslation()
   return (
-    <Stack direction="row" spacing={1} alignItems="center" sx={{ px: 2, py: 1, borderBottom: 1, borderColor: 'divider', flexShrink: 0, minHeight: 52 }}>
+    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ px: 2, py: 1, borderBottom: 1, borderColor: 'divider', flexShrink: 0, minHeight: 52 }}>
       <Box sx={{ minWidth: 0, mr: 1 }}>
         <Typography variant="subtitle1" fontWeight={600} noWrap>{title}</Typography>
         {subtitle && (
