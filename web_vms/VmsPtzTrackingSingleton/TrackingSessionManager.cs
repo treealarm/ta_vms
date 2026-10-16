@@ -46,6 +46,12 @@ public sealed class TrackingSessionManager(
 
   private readonly ConcurrentDictionary<string, Running> _sessions = new(StringComparer.Ordinal);
   private readonly ConcurrentDictionary<string, RunningSlave> _slaves = new(StringComparer.Ordinal);
+  // Per camera rather than per session, and never removed: a hold placed before a session starts --
+  // a wizard opened on a camera whose binding is being saved -- must still bind the session that
+  // the reconcile starts next. One small object per camera ever held.
+  private readonly ConcurrentDictionary<string, HoldGate> _holds = new(StringComparer.Ordinal);
+
+  private HoldGate HoldOf(string cameraId) => _holds.GetOrAdd(cameraId, _ => new HoldGate());
 
   // Cameras told to guide themselves that cannot: no VmsOnvif reaches them, their telemetry flag is
   // clear, or -- for a slave -- the survey that would aim them is missing or unusable. Reported
@@ -162,9 +168,9 @@ public sealed class TrackingSessionManager(
     if (position is null)
       return AimResult.Failed(positionError!);
 
-    var error = await sender.AimAsync(slaveCameraId, position.Pan, position.Tilt, ct);
+    var error = await sender.AimAsync(slaveCameraId, position.Pan, position.Tilt, position.Zoom, ct);
     return error is null
-      ? new AimResult(true, null, position.Pan, position.Tilt, null, null, position.Extrapolated)
+      ? new AimResult(true, null, position.Pan, position.Tilt, null, null, position.Extrapolated, position.Zoom)
       : AimResult.Failed(error);
   }
 
@@ -205,32 +211,35 @@ public sealed class TrackingSessionManager(
 
     var bearing = model.BearingTo(lat, lon, heightAboveGroundM);
     var aim = PtzGeoMath.Project(model.GeoFit, bearing);
+    // As a slave would be sent there: the calibration wizard's check is also how its zoom samples
+    // are seen at work.
+    var zoom = model.ZoomFor(bearing, aim.Extrapolated);
 
     // Held before the command rather than after it: a detection of the master arriving while the
     // camera travels would otherwise send it straight elsewhere. A command that fails takes the hold
     // back, because the camera has not gone anywhere worth staying at.
-    var held = _slaves.TryGetValue(cameraId, out var slave) ? slave.Session : null;
+    var hold = HoldOf(cameraId);
     var holdUntil = DateTime.UtcNow.Add(WorldAimHold);
-    var previousHold = held?.HoldUntil(holdUntil);
+    var previousHold = hold.Extend(holdUntil);
     var aimed = false;
     try
     {
-      var error = await sender.AimAsync(cameraId, aim.Pan, aim.Tilt, ct);
+      var error = await sender.AimAsync(cameraId, aim.Pan, aim.Tilt, zoom, ct);
       if (error is not null)
         return WorldAimResult.Failed(error);
       aimed = true;
     }
     finally
     {
-      if (!aimed && held is not null)
-        held.RestoreHold(holdUntil, previousHold!.Value);
+      if (!aimed)
+        hold.Restore(holdUntil, previousHold);
     }
 
     logger.LogInformation(
-      "Aimed '{Camera}' at ({Lat}, {Lon}, {Height} m): azimuth {Az:F1}°, elevation {El:F1}°, {Dist:F0} m -> pan {Pan:F3}, tilt {Tilt:F3}{Extra}",
+      "Aimed '{Camera}' at ({Lat}, {Lon}, {Height} m): azimuth {Az:F1}°, elevation {El:F1}°, {Dist:F0} m -> pan {Pan:F3}, tilt {Tilt:F3}, zoom {Zoom:F3}{Extra}",
       cameraId, lat, lon, heightAboveGroundM, bearing.AzimuthDeg, bearing.ElevationDeg, bearing.DistanceM,
-      aim.Pan, aim.Tilt, aim.Extrapolated ? " (extrapolated)" : "");
-    return new WorldAimResult(true, null, aim, bearing);
+      aim.Pan, aim.Tilt, zoom, aim.Extrapolated ? " (extrapolated)" : "");
+    return new WorldAimResult(true, null, aim, bearing, zoom);
   }
 
   /// <summary>What a camera's landmark observations and marks add up to, for the calibration wizards.</summary>
@@ -257,13 +266,13 @@ public sealed class TrackingSessionManager(
     if (string.IsNullOrWhiteSpace(cameraId))
       return Task.FromResult<string?>("cameraId must not be empty");
 
-    var until = duration <= TimeSpan.Zero ? DateTime.MinValue : DateTime.UtcNow.Add(duration);
-    if (!_slaves.TryGetValue(cameraId, out var slave))
-      // Not an error worth failing the wizard over: a camera with no running session is already
-      // doing nothing, which is what the caller wanted.
-      return Task.FromResult<string?>(null);
-
-    slave.Session.HoldUntil(until);
+    // Held whether or not a session runs now: one the reconcile starts while the wizard is open
+    // must find the camera taken.
+    var hold = HoldOf(cameraId);
+    if (duration <= TimeSpan.Zero)
+      hold.Release();
+    else
+      hold.Extend(DateTime.UtcNow.Add(duration));
     return Task.FromResult<string?>(null);
   }
 
@@ -494,7 +503,8 @@ public sealed class TrackingSessionManager(
       // and is deliberately not restored across a restart.
       target: null,
       calibration,
-      policy);
+      policy,
+      HoldOf(cameraId));
     var loop = session.RunAsync(cts.Token);
     _sessions[cameraId] = new Running(session, cts, loop);
     WatchLoop(cameraId, loop);
@@ -510,7 +520,8 @@ public sealed class TrackingSessionManager(
       sender,
       loggerFactory.CreateLogger<SlaveAimingSession>(),
       aim,
-      policy);
+      policy,
+      HoldOf(cameraId));
     var loop = session.RunAsync(cts.Token);
     _slaves[cameraId] = new RunningSlave(session, aim.MasterCameraId, cts, loop);
     WatchLoop(cameraId, loop);
@@ -610,13 +621,14 @@ public sealed record AimResult(
   float? Tilt,
   string? PresetToken,
   string? PresetName,
-  bool Extrapolated)
+  bool Extrapolated,
+  float? Zoom = null)
 {
   public static AimResult Failed(string error) => new(false, error, null, null, null, null, false);
 }
 
 /// <summary>Where an aim at a place on the map sent the camera, or why it did not.</summary>
-public sealed record WorldAimResult(bool Success, string? Error, GeoAim? Aim, Bearing? Bearing)
+public sealed record WorldAimResult(bool Success, string? Error, GeoAim? Aim, Bearing? Bearing, float Zoom = 0f)
 {
   public static WorldAimResult Failed(string error) => new(false, error, null, null);
 }

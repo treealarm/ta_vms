@@ -12,11 +12,11 @@ public class SlaveAimingSessionTests
 {
   private sealed class RecordingSender : IPtzCommandSender
   {
-    public ConcurrentQueue<(string Camera, float Pan, float Tilt)> Aims { get; } = new();
+    public ConcurrentQueue<(string Camera, float Pan, float Tilt, float Zoom)> Aims { get; } = new();
 
-    public Task<string?> AimAsync(string cameraId, float pan, float tilt, CancellationToken ct)
+    public Task<string?> AimAsync(string cameraId, float pan, float tilt, float zoom, CancellationToken ct)
     {
-      Aims.Enqueue((cameraId, pan, tilt));
+      Aims.Enqueue((cameraId, pan, tilt, zoom));
       return Task.FromResult<string?>(null);
     }
 
@@ -66,6 +66,8 @@ public class SlaveAimingSessionTests
     // the 1e-3 generic (0.18°) of pan this asks for.
     Assert.Equal(pan, aim.Item1.Pan, 3);
     Assert.Equal(tilt, aim.Item1.Tilt, 3);
+    // No zoom samples: the wide end, as before zoom was aimed at all.
+    Assert.Equal(0f, aim.Item1.Zoom);
     Assert.Equal(string.Empty, session.Snapshot().LastError);
 
     await cts.CancelAsync();
@@ -108,5 +110,115 @@ public class SlaveAimingSessionTests
 
     await cts.CancelAsync();
     await loop;
+  }
+
+  // Zoom samples at the near and far landmarks of the slave: L4 is about 18 m away, L1 42 m.
+  private static readonly Dictionary<string, float> Zooms = new() { ["L4"] = 0.2f, ["L1"] = 0.6f };
+
+  [Fact]
+  public async Task ZoomsByHowFarThePersonIsFromTheSlave()
+  {
+    var sender = new RecordingSender();
+    var slave = TwoCameraWorld.SlaveModel(zooms: Zooms);
+    var pair = new GeoAimPair(TwoCameraWorld.MasterModel(), slave);
+    var session = new SlaveAimingSession("slave", sender, NullLogger.Instance, new SlaveAim(GeoBinding, pair, null), Policy);
+    using var cts = new CancellationTokenSource();
+    var loop = session.RunAsync(cts.Token);
+
+    var (x, y) = TwoCameraWorld.InMaster(-5, 10);
+    session.Offer(PersonAt(x, y));
+    var aim = await Until(() => sender.Aims.TryPeek(out var a) ? Tuple.Create(a) : null);
+
+    var expected = slave.Zoom!.Zoom(TwoCameraWorld.SlaveDistance(-5, 10));
+    Assert.InRange(expected, 0.2f, 0.6f);
+    // The foot is a few millimetres off in float, which moves ln(distance) by nothing worth seeing.
+    Assert.Equal(expected, aim.Item1.Zoom, 3);
+
+    await cts.CancelAsync();
+    await loop;
+  }
+
+  [Fact]
+  public async Task FollowsAStepOnTheGroundButNotAShuffle()
+  {
+    var sender = new RecordingSender();
+    var pair = new GeoAimPair(TwoCameraWorld.MasterModel(), TwoCameraWorld.SlaveModel(zooms: Zooms));
+    var session = new SlaveAimingSession("slave", sender, NullLogger.Instance, new SlaveAim(GeoBinding, pair, null), Policy);
+    using var cts = new CancellationTokenSource();
+    var loop = session.RunAsync(cts.Token);
+
+    var (x, y) = TwoCameraWorld.InMaster(-5, 10);
+    session.Offer(PersonAt(x, y));
+    await Until(() => sender.Aims.TryPeek(out var a) ? Tuple.Create(a) : null);
+
+    // Past the least interval between commands, so only the dead zone can hold the camera back.
+    await Task.Delay(TimeSpan.FromSeconds(2.2));
+    (x, y) = TwoCameraWorld.InMaster(-5.2, 10.1);
+    session.Offer(PersonAt(x, y));
+    await Task.Delay(TimeSpan.FromMilliseconds(400));
+    Assert.Single(sender.Aims);
+
+    (x, y) = TwoCameraWorld.InMaster(-6, 10);
+    session.Offer(PersonAt(x, y));
+    await Until(() => sender.Aims.Count == 2 ? sender : null);
+
+    await cts.CancelAsync();
+    await loop;
+  }
+
+  [Fact]
+  public void AimsOutsideTheLandmarksAtTheWidestSampledZoom()
+  {
+    var slave = TwoCameraWorld.SlaveModel(zooms: Zooms);
+    var aim = new SlaveAim(GeoBinding, new GeoAimPair(TwoCameraWorld.MasterModel(), slave), null);
+
+    // North-west of the slave, well round from the landmarks it was calibrated on.
+    var (x, y) = TwoCameraWorld.InMaster(12, 30);
+    var (position, error) = aim.Position((float)x, (float)y);
+
+    Assert.Null(error);
+    Assert.True(position!.Extrapolated);
+    Assert.Equal(slave.Zoom!.Widest, position.Zoom);
+  }
+
+  [Fact]
+  public async Task AHoldPlacedBeforeTheSessionStartedKeepsItsHandsOffTheCamera()
+  {
+    var sender = new RecordingSender();
+    var pair = new GeoAimPair(TwoCameraWorld.MasterModel(), TwoCameraWorld.SlaveModel());
+    var hold = new HoldGate();
+    hold.Extend(DateTime.UtcNow.AddMinutes(1));
+    var session = new SlaveAimingSession("slave", sender, NullLogger.Instance, new SlaveAim(GeoBinding, pair, null), Policy, hold);
+    using var cts = new CancellationTokenSource();
+    var loop = session.RunAsync(cts.Token);
+
+    var (x, y) = TwoCameraWorld.InMaster(-5, 10);
+    session.Offer(PersonAt(x, y));
+    await Task.Delay(TimeSpan.FromMilliseconds(400));
+    Assert.Empty(sender.Aims);
+    Assert.Equal(HoldGate.Reason, session.Snapshot().LastError);
+
+    hold.Release();
+    session.Offer(PersonAt(x, y));
+    await Until(() => sender.Aims.TryPeek(out var a) ? Tuple.Create(a) : null);
+
+    await cts.CancelAsync();
+    await loop;
+  }
+
+  [Fact]
+  public void AShortHoldDoesNotCutALongerOneShort()
+  {
+    var hold = new HoldGate();
+    var wizard = DateTime.UtcNow.AddSeconds(40);
+    hold.Extend(wizard);
+
+    var placed = DateTime.UtcNow.AddSeconds(30);
+    var previous = hold.Extend(placed);
+    Assert.Equal(wizard, hold.Until);
+
+    // A failed aim takes back only its own hold, never the wizard's.
+    hold.Restore(placed, previous);
+    Assert.Equal(wizard, hold.Until);
   }
 }

@@ -308,6 +308,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.LandmarkId).HasColumnName("landmark_id");
       e.Property(x => x.Pan).HasColumnName("pan");
       e.Property(x => x.Tilt).HasColumnName("tilt");
+      e.Property(x => x.Zoom).HasColumnName("zoom");
     });
 
     modelBuilder.Entity<DbGroundObservation>(e =>
@@ -592,6 +593,8 @@ public sealed class DbPtzGeoObservation
   public Guid LandmarkId { get; set; }
   public float Pan { get; set; }
   public float Tilt { get; set; }
+  /// The zoom a slave uses for an object at this landmark's distance; null when none was recorded.
+  public float? Zoom { get; set; }
 }
 
 public sealed class DbGroundObservation

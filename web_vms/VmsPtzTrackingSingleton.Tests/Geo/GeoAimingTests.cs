@@ -85,7 +85,9 @@ internal static class TwoCameraWorld
     return CameraSpatialModel.Build(response);
   }
 
-  public static CameraSpatialModel SlaveModel(Space? space = null, bool calibrated = true)
+  /// <param name="zooms">Zoom samples recorded at landmarks, by landmark id.</param>
+  public static CameraSpatialModel SlaveModel(
+    Space? space = null, bool calibrated = true, IReadOnlyDictionary<string, float>? zooms = null)
   {
     space ??= Map();
     var (lat, lon) = Wgs84(Slave.East, Slave.North);
@@ -101,14 +103,21 @@ internal static class TwoCameraWorld
       {
         var (pan, tilt) = SlaveReading(east, north);
         var (mlat, mlon) = Wgs84(east, north);
-        response.Observations.Add(new GeoObservation
+        var observation = new GeoObservation
         {
           LandmarkId = id, LandmarkName = id, Lat = mlat, Lon = mlon, Pan = (float)pan, Tilt = (float)tilt,
-        });
+        };
+        if (zooms is not null && zooms.TryGetValue(id, out var zoom))
+          observation.Zoom = zoom;
+        response.Observations.Add(observation);
       }
     }
     return CameraSpatialModel.Build(response);
   }
+
+  /// <summary>Straight-line distance from the slave to a ground point.</summary>
+  public static double SlaveDistance(double east, double north) =>
+    Math.Sqrt(Math.Pow(east - Slave.East, 2) + Math.Pow(north - Slave.North, 2) + Math.Pow(Slave.Height, 2));
 
   private static double Dot((double, double, double) a, (double, double, double) b) =>
     a.Item1 * b.Item1 + a.Item2 * b.Item2 + a.Item3 * b.Item3;

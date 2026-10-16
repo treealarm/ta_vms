@@ -329,7 +329,7 @@ class Lab:
         ids = self.of(pair)["landmarks"]
         observations = []
         log(f"PTZ calibration of {slave}: centre each landmark, read the position back over ONVIF")
-        log("  lm   pan°     tilt°    | ONVIF pan  tilt    | expected pan tilt")
+        log("  lm   pan°     tilt°    | ONVIF pan  tilt    | expected pan tilt   | dist m  zoom")
         for lm in W.LANDMARKS:
             pan, tilt = W.ptz_degrees(pair.slave, (lm.x, 0.0, lm.z))
             self.sim.goto(pair.slave.id, pan, tilt, 0.0)
@@ -338,16 +338,44 @@ class Lab:
             require(st.get("available"), f"GET /api/ptz/status for {slave}: {st}")
             require(not st.get("moving"), f"{slave} still reports MOVING after the sim head stopped")
             gx, gy = W.to_generic(pan, tilt, pair.limits)
-            log(f"  {lm.name}  {pan:7.2f}  {tilt:7.2f}  | {st['pan']:8.4f} {st['tilt']:7.4f} | {gx:8.4f} {gy:7.4f}")
             require(abs(st["pan"] - gx) < 1e-3 and abs(st["tilt"] - gy) < 1e-3,
                     f"ONVIF reports ({st['pan']:.4f}, {st['tilt']:.4f}) at {lm.name}, expected ({gx:.4f}, {gy:.4f})")
-            observations.append({"landmarkId": ids[lm.name], "pan": st["pan"], "tilt": st["tilt"]})
+            observation = {"landmarkId": ids[lm.name], "pan": st["pan"], "tilt": st["tilt"]}
+            # The framing zoom, as the wizard records it: zoom in on the landmark until a person
+            # there would fill the picture as wanted, and read the zoom back from the camera.
+            _, _, distance = W.bearing(pair.slave.position, (lm.x, 0.0, lm.z))
+            zoom_note = "  -"
+            if not self.args.no_zoom:
+                zoom = W.framing_zoom(distance, pair.limits)
+                self.sim.goto(pair.slave.id, pan, tilt, zoom)
+                self.sim.wait_idle(pair.slave.id)
+                zst = self.vms.ptz_status(slave, PROFILE)
+                require(abs(zst["zoom"] - zoom) < 1e-3, f"ONVIF reports zoom {zst['zoom']:.4f} at {lm.name}, expected {zoom:.4f}")
+                observation["zoom"] = zst["zoom"]
+                zoom_note = f"{zst['zoom']:.4f}"
+            log(f"  {lm.name}  {pan:7.2f}  {tilt:7.2f}  | {st['pan']:8.4f} {st['tilt']:7.4f} | {gx:8.4f} {gy:7.4f} "
+                f"| {distance:6.1f}  {zoom_note}")
+            observations.append(observation)
 
         result = self.vms.put_ptz_geo(slave, observations)
         require(result and result.get("fitted"), f"the PTZ geo fit of {slave} failed: {result and result.get('error')}")
         worst = max(max(abs(o.get("panResidual") or 0), abs(o.get("tiltResidual") or 0)) for o in result["observations"])
         log(f"  fitted; worst leave-one-out residual {worst:.5f} (generic units)")
         require(worst < 0.01, f"leave-one-out residual {worst:.4f} is too large for an exactly linear head")
+        # The distances ta_vms measures the samples by, against the world's own.
+        for o in result["observations"]:
+            lm = next(m for m in W.LANDMARKS if ids[m.name] == o["landmarkId"])
+            _, _, distance = W.bearing(pair.slave.position, (lm.x, 0.0, lm.z))
+            require(o.get("distanceM") is not None and abs(o["distanceM"] - distance) < 0.1,
+                    f"ta_vms puts {lm.name} {o.get('distanceM')} m from {slave}, the world {distance:.2f} m")
+            require(self.args.no_zoom or o.get("zoom") is not None, f"the zoom sample at {lm.name} was not kept")
+        self.sim.goto(pair.slave.id, 0.0, -10.0, 0.0)
+
+    def _zoom_samples(self, pair):
+        """The slave's zoom samples as ta_vms holds them: (distance m, zoom); empty when it has none."""
+        calibration = self.vms.get_ptz_geo(self.cam_id(pair.slave))
+        return [(o["distanceM"], o["zoom"]) for o in calibration["observations"]
+                if o.get("zoom") is not None and o.get("distanceM") is not None]
 
     def _calibrate_ground(self, pair):
         master = self.cam_id(pair.master)
@@ -387,9 +415,11 @@ class Lab:
     def _aim_check(self, pair, space_id):
         slave = self.cam_id(pair.slave)
         self.sim.put_walker(W.WALKER_ID, W.walker_json(W.WALKER_ROUTE))
-        log(f"aim {slave} at the walking person through POST /api/ptz-geo/{{id}}/aim, {self.args.seconds:.0f} s")
-        log("   t    person x  z     | ta_vms az°  el°    | true az°  el°    | aim err°  lag err°  in centre")
-        aim_errors, lag_errors, centred = [], [], []
+        samples = self._zoom_samples(pair)
+        log(f"aim {slave} at the walking person through POST /api/ptz-geo/{{id}}/aim, {self.args.seconds:.0f} s, "
+            f"{len(samples)} zoom sample(s)")
+        log("   t    person x  z     | ta_vms az°  el°    | true az°  el°    | aim err°  lag err° | zoom  expected | in frame")
+        aim_errors, lag_errors, framed, zoom_errors = [], [], [], []
         start = time.monotonic()
         while time.monotonic() - start < self.args.seconds:
             target = self.sim.walker_pose(W.WALKER_ID)
@@ -400,31 +430,37 @@ class Lab:
             cam = (pose["position"]["x"], pose["position"]["y"], pose["position"]["z"])
             axis = W.direction(pose["heading"], pose["pitch"])
             to_target = tuple(f - c for f, c in zip(feet, cam))
-            true_az, true_el, _ = W.bearing(cam, feet)
+            true_az, true_el, true_dist = W.bearing(cam, feet)
             aim_err = W.angle_between(axis, to_target)
+            # ta_vms's interpolation redone here from the same samples, the widest outside the landmarks.
+            expected_zoom = (0.0 if not samples
+                             else min(z for _, z in samples) if aim["extrapolated"]
+                             else W.zoom_by_distance(samples, true_dist))
 
             now = self.sim.walker_pose(W.WALKER_ID)
             now_feet = (now["x"], now["y"], now["z"])
             lag_err = W.angle_between(axis, tuple(f - c for f, c in zip(now_feet, cam)))
-            in_centre = W.in_middle_third(pose, (now["x"], now["y"] + W.WALKER_HEIGHT / 2, now["z"]))
+            in_frame, _ = W.person_in_frame(pose, now_feet)
 
             aim_errors.append(aim_err)
             lag_errors.append(lag_err)
-            centred.append(in_centre)
+            framed.append(in_frame)
+            zoom_errors.append(abs(pose["zoom"] - expected_zoom))
             log(f"{time.monotonic() - start:5.1f}  {target['x']:7.2f} {target['z']:7.2f} | "
                 f"{aim['azimuthDeg']:8.2f} {aim['elevationDeg']:7.2f} | {true_az:8.2f} {true_el:7.2f} | "
-                f"{aim_err:7.3f}  {lag_err:7.3f}   {'yes' if in_centre else 'NO'}")
+                f"{aim_err:7.3f}  {lag_err:7.3f} | {pose['zoom']:.3f} {expected_zoom:.3f}  | {'yes' if in_frame else 'NO'}")
             time.sleep(max(0.0, self.args.interval - 1.0))
 
         require(aim_errors, "no aim was made")
         report = _stats("aim error (where it was sent)", aim_errors) + "\n" + _stats("lag error (person has moved on)", lag_errors)
         log(report)
-        if centred:
-            log(f"person within the central third of {slave}'s picture: {sum(centred)}/{len(centred)}")
+        log(f"person wholly in {slave}'s picture: {sum(framed)}/{len(framed)}; worst zoom miss {max(zoom_errors):.4f}")
         mean = statistics.mean(aim_errors)
         p95 = _percentile(aim_errors, 95)
         require(mean < 1.0 and p95 < 1.5, f"{slave}: aim error mean {mean:.2f}°, p95 {p95:.2f}°: expected under 1° / 1.5°")
-        require(not centred or sum(centred) / len(centred) > 0.9, f"the person is not in the centre of {slave}'s picture")
+        # Float on the wire and the distance of the feet against the floor's: well under a hundredth.
+        require(max(zoom_errors) < 0.03, f"{slave} was zoomed {max(zoom_errors):.3f} away from its samples")
+        require(sum(framed) / len(framed) > 0.9, f"the person is out of {slave}'s picture too often")
         log(f"aim-check of {slave} passed")
 
     # ── bind / run ──────────────────────────────────────────────────────────────
@@ -492,10 +528,14 @@ class Lab:
     def _run(self, pair):
         slave = self.cam_id(pair.slave)
         seconds = self.args.seconds
+        # aim-check leaves the slave held for 30 s after its last aim, as the map's aim does for an
+        # operator; with only bind in between, run would otherwise start by watching it stand still.
+        self.vms.hold(slave, 0)
         log(f"ta_vms follows the person with {slave} on its own for {seconds:.0f} s")
 
-        log("   t     person x  z     | moving | error°   | event")
-        tracking, arrivals, centred = [], [], []
+        zoomed = bool(self._zoom_samples(pair))
+        log("   t     person x  z     | moving | error°   | zoom  fill | event")
+        tracking, arrivals, framed, fills = [], [], [], []
         # A move is seen by the head's position changing, not only by its MOVING flag: a short slew
         # finishes between two samples.
         rest, started_at, prev_feet = None, None, None
@@ -507,9 +547,12 @@ class Lab:
             axis = W.direction(pose["heading"], pose["pitch"])
             feet = (person["x"], person["y"], person["z"])
             err = W.angle_between(axis, tuple(f - c for f, c in zip(feet, cam)))
-            # The person's middle in the slave's picture, from the true pose: the slave has no
-            # analytics of its own in this world, by design.
-            centred.append(W.in_middle_third(pose, (feet[0], feet[1] + W.WALKER_HEIGHT / 2, feet[2])))
+            # The person in the slave's picture, from the true pose: the slave has no analytics of
+            # its own in this world, by design.
+            in_frame, fill = W.person_in_frame(pose, feet)
+            framed.append(in_frame)
+            if in_frame:
+                fills.append(fill)
             moving = bool(pose.get("moving"))
             head = (pose["pan"], pose["tilt"])
             event = ""
@@ -528,7 +571,7 @@ class Lab:
                 rest, started_at = head, None
                 tracking.append(err)
             log(f"{time.monotonic() - start:6.2f}  {person['x']:7.2f} {person['z']:7.2f} | "
-                f"{'yes' if moving else ' - ':>6} | {err:7.3f}  | {event}")
+                f"{'yes' if moving else ' - ':>6} | {err:7.3f}  | {pose['zoom']:.3f} {fill:4.2f} | {event}")
             prev_feet = feet
             time.sleep(0.25)
 
@@ -536,14 +579,19 @@ class Lab:
         require(arrivals, f"{slave} never moved; tracking state: {state}")
         log(_stats("arrival error (vs where the person was when the head set off)", arrivals))
         log(_stats("tracking error (head at rest vs the person now)", tracking))
-        log(f"person in the middle third of {slave}'s picture: {sum(centred)}/{len(centred)} samples")
+        median_fill = statistics.median(fills) if fills else 0.0
+        log(f"person wholly in {slave}'s picture: {sum(framed)}/{len(framed)} samples; "
+            f"median share of its height {median_fill:.2f}")
         log(f"commands: {len(arrivals)}; tracking state: {json.dumps(state)}")
 
         mean, p95 = statistics.mean(arrivals), _percentile(arrivals, 95)
         require(mean < 1.5 and p95 < 2.5, f"{slave}: arrival error mean {mean:.2f}°, p95 {p95:.2f}°")
         require(_percentile(tracking, 95) < 6, f"{slave}: tracking error p95 {_percentile(tracking, 95):.2f}°")
-        require(sum(centred) / len(centred) > 0.9,
-                f"the person is out of {slave}'s central third too often")
+        require(sum(framed) / len(framed) > 0.9, f"the person is out of {slave}'s picture too often")
+        # Framed for FRAME_WIDTH_M the person fills about 40% of the picture's height; at the wide
+        # end, under 10%. A quarter is clearly zoomed and leaves room for the frames in transit.
+        require(not zoomed or median_fill > 0.25,
+                f"{slave} is not zoomed in on the person: median share of the picture {median_fill:.2f}")
         log(f"run of {slave} passed")
 
 
@@ -582,6 +630,8 @@ def main():
     p.add_argument("--reset", action="store_true",
                    help="provision: re-add cameras that already exist and photograph the plan again")
     p.add_argument("--purge", action="store_true", help="down: also remove the cameras and the spaces from ta_vms")
+    p.add_argument("--no-zoom", action="store_true",
+                   help="calibrate: record no zoom samples, so the slaves stay wide as they did before zoom")
     args = p.parse_args()
 
     W.check()

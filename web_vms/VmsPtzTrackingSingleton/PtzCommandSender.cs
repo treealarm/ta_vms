@@ -22,7 +22,7 @@ public sealed class PtzCommandSender(CameraPtzRouter router, ILogger<PtzCommandS
         Zoom         = 0,
       }, Options(ct)), ct);
 
-  public Task<string?> AimAsync(string cameraId, float pan, float tilt, CancellationToken ct) =>
+  public Task<string?> AimAsync(string cameraId, float pan, float tilt, float zoom, CancellationToken ct) =>
     SendAsync(cameraId, (client, route) => client.AbsoluteMoveAsync(
       new PtzAbsoluteMoveRequest
       {
@@ -30,10 +30,9 @@ public sealed class PtzCommandSender(CameraPtzRouter router, ILogger<PtzCommandS
         ProfileToken = route.ProfileToken,
         Pan          = pan,
         Tilt         = tilt,
-        // Left where the camera has it. Zoom is deliberately not part of aiming: a wide angle is
-        // what forgives the binding's error, and it is the reason a slave that lands slightly off
-        // still has the object in frame.
-        Zoom         = 0,
+        // Absolute like pan and tilt: OnvifLib puts it on the wire whatever it is, so 0 is not
+        // "unchanged" but the wide end -- which is what a slave with no zoom samples gets.
+        Zoom         = zoom,
         Speed        = 0.5f,
       }, Options(ct)), ct);
 

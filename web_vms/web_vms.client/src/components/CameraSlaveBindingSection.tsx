@@ -366,7 +366,9 @@ export default function CameraSlaveBindingSection({
           body: JSON.stringify({ masterX: x, masterY: y }),
         })
       const where = result.presetName ?? result.presetToken
-        ?? `${result.pan?.toFixed(3)}, ${result.tilt?.toFixed(3)}`
+        ?? (result.zoom != null
+          ? t('slaveBinding.positionZoom', { pan: result.pan?.toFixed(3), tilt: result.tilt?.toFixed(3), zoom: result.zoom.toFixed(3) })
+          : `${result.pan?.toFixed(3)}, ${result.tilt?.toFixed(3)}`)
       setNote(result.extrapolated
         ? t('slaveBinding.aimedOutside', { where })
         : t('slaveBinding.aimed', { where }))

@@ -6,6 +6,7 @@ namespace VmsPtzTrackingSingleton.Geo;
 /// <param name="Space">The space of the camera's reference placement.</param>
 /// <param name="HeightAboveGroundM">The space's floor elevation plus the camera's own height.</param>
 /// <param name="GeoFit">Null when the observations cannot carry a fit; <see cref="GeoFitError"/> says why.</param>
+/// <param name="Zoom">How far to zoom by distance, from the observations that carry a zoom; null when none does.</param>
 /// <param name="GroundFit">
 /// The picture mapped onto the ground, for a camera marked against landmarks in its picture; null
 /// when the marks cannot carry one, and <see cref="GroundFitError"/> says why -- or when there are
@@ -20,6 +21,7 @@ public sealed record CameraSpatialModel(
   IReadOnlyList<GeoObservationSample> Observations,
   PtzGeoFit? GeoFit,
   string? GeoFitError,
+  ZoomByDistance? Zoom,
   IReadOnlyList<GroundSample> GroundSamples,
   GroundHomography? GroundFit,
   string? GroundFitError)
@@ -38,10 +40,14 @@ public sealed record CameraSpatialModel(
         o.LandmarkId,
         PtzGeoMath.BearingTo(position, height, frame.ToEnu(o.Lat, o.Lon), o.HeightAboveGroundM),
         o.Pan,
-        o.Tilt))
+        o.Tilt,
+        o.HasZoom ? o.Zoom : null))
       .ToList();
 
     PtzGeoMath.TryFit(observations, out var fit, out var error);
+    var zoom = ZoomByDistance.TryBuild(observations
+      .Where(o => o.Zoom is not null)
+      .Select(o => new ZoomSample(o.Bearing.DistanceM, o.Zoom!.Value)));
 
     var ground = response.GroundObservations
       .Select(o => new GroundSample(o.LandmarkId, o.X, o.Y, frame.ToEnu(o.Lat, o.Lon), o.FloorElevationM))
@@ -52,7 +58,7 @@ public sealed record CameraSpatialModel(
       GroundHomography.TryFit(ground, out groundFit, out groundError);
 
     return new CameraSpatialModel(
-      response.Placement.CameraId, response.Space, frame, position, height, observations, fit, error,
+      response.Placement.CameraId, response.Space, frame, position, height, observations, fit, error, zoom,
       ground, groundFit, groundError);
   }
 
@@ -64,6 +70,18 @@ public sealed record CameraSpatialModel(
   /// </remarks>
   public bool SharesGeometryWith(Space other) =>
     other.Id == Space.Id || (other.RealCoordinates && Space.RealCoordinates);
+
+  /// <summary>The zoom to see an object in this direction with, by its distance.</summary>
+  /// <param name="extrapolated">
+  /// The direction is outside what the landmarks cover, so the aim is a guess continued past them:
+  /// the widest sampled zoom, which forgives the most.
+  /// </param>
+  /// <returns>
+  /// 0 -- the wide end, in ONVIF's generic zoom space -- for a camera with no zoom samples: an
+  /// object it was not told how to frame is better shown small than cut off.
+  /// </returns>
+  public float ZoomFor(Bearing bearing, bool extrapolated) =>
+    Zoom is null ? 0f : extrapolated ? Zoom.Widest : Zoom.Zoom(bearing.DistanceM);
 
   /// <summary>Direction and distance from this camera to a point given in WGS84 and height above the ground.</summary>
   public Bearing BearingTo(double lat, double lon, double heightAboveGroundM) =>

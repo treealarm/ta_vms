@@ -126,6 +126,13 @@ WALKER_ROUTE = [(-8.0, 0.0), (8.0, 0.0), (8.0, -16.0), (-8.0, -16.0)]
 WALKER_SPEED = 1.0
 WALKER_HEIGHT = 1.75
 
+# How wide the slave's picture is at the person, as the calibration frames it at each landmark:
+# the person, plus how far they walk between two commands (ta_vms sends one every 2 s at most, so
+# 2 m at WALKER_SPEED) either side, plus room for the aim's own error. With a 16:9 picture that is
+# 4.5 m tall, so a person fills about 40% of its height -- against under 10% at the wide end 30 m
+# away.
+FRAME_WIDTH_M = 8.0
+
 
 @dataclass(frozen=True)
 class Scenery:
@@ -260,13 +267,58 @@ def project(camera, point, hfov=None, width=VIDEO_W, height=VIDEO_H):
     return (x_ndc + 1.0) / 2.0, (1.0 - y_ndc) / 2.0
 
 
-def in_middle_third(pose, point):
-    """Whether a point is in the middle third of a camera's picture, both ways, for a pose as
-    OnvifSim's /api/cameras/{id}/pose reports it (heading and pitch include the PTZ head)."""
+def zoom_to_hfov(zoom, limits=SLAVE_LIMITS):
+    """OnvifSim's lens (CameraPose.ZoomToHFov): zoom 0..1 steps the focal length by equal ratios
+    from the wide end to the tele end."""
+    fw = 1 / math.tan(math.radians(limits.fov_wide / 2))
+    ft = 1 / math.tan(math.radians(limits.fov_tele / 2))
+    f = fw * (ft / fw) ** min(1.0, max(0.0, zoom))
+    return 2 * math.degrees(math.atan(1 / f))
+
+
+def hfov_to_zoom(hfov, limits=SLAVE_LIMITS):
+    """The zoom that gives a horizontal field of view, clamped to the lens."""
+    fw = 1 / math.tan(math.radians(limits.fov_wide / 2))
+    ft = 1 / math.tan(math.radians(limits.fov_tele / 2))
+    f = 1 / math.tan(math.radians(hfov / 2))
+    return min(1.0, max(0.0, math.log(f / fw) / math.log(ft / fw)))
+
+
+def framing_zoom(distance, limits=SLAVE_LIMITS):
+    """The zoom an operator would record at a landmark this far away: FRAME_WIDTH_M across."""
+    return hfov_to_zoom(2 * math.degrees(math.atan(FRAME_WIDTH_M / 2 / distance)), limits)
+
+
+def zoom_by_distance(samples, distance):
+    """ta_vms's ZoomByDistance: piecewise linear in ln(distance) between (distance, zoom) samples,
+    held at the ends."""
+    samples = sorted(samples)
+    if distance <= samples[0][0]:
+        return samples[0][1]
+    if distance >= samples[-1][0]:
+        return samples[-1][1]
+    for (d0, z0), (d1, z1) in zip(samples, samples[1:]):
+        if d0 < distance <= d1:
+            return z0 if d1 <= d0 else z0 + (z1 - z0) * math.log(distance / d0) / math.log(d1 / d0)
+    return samples[-1][1]
+
+
+def _pose_camera(pose):
     p = pose["position"]
-    camera = Camera("pose", "", "fixed", p["x"], p["y"], p["z"], pose["heading"], pose["pitch"], pose["hfov"])
-    uv = project(camera, point)
-    return uv is not None and 1 / 3 < uv[0] < 2 / 3 and 1 / 3 < uv[1] < 2 / 3
+    return Camera("pose", "", "fixed", p["x"], p["y"], p["z"], pose["heading"], pose["pitch"], pose["hfov"])
+
+
+def person_in_frame(pose, feet, height=WALKER_HEIGHT):
+    """Where a standing person is in a camera's picture, for a pose as OnvifSim reports it:
+    (whether both their feet and their head are inside it, the share of its height they fill)."""
+    camera = _pose_camera(pose)
+    low = project(camera, feet)
+    high = project(camera, (feet[0], feet[1] + height, feet[2]))
+    if low is None or high is None:
+        return False, 0.0
+    inside = all(0.0 <= v <= 1.0 for v in (*low, *high))
+    return inside, abs(low[1] - high[1])
+
 
 
 # ── The world OnvifSim is given ─────────────────────────────────────────────────

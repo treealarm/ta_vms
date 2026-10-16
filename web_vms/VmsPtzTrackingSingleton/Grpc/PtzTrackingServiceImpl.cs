@@ -44,6 +44,7 @@ public sealed class PtzTrackingServiceImpl(TrackingSessionManager manager)
     };
     if (result.Pan is not null) response.Pan = result.Pan.Value;
     if (result.Tilt is not null) response.Tilt = result.Tilt.Value;
+    if (result.Zoom is not null) response.Zoom = result.Zoom.Value;
     return response;
   }
 
@@ -111,6 +112,7 @@ public sealed class PtzTrackingServiceImpl(TrackingSessionManager manager)
       AzimuthDeg   = result.Bearing!.Value.AzimuthDeg,
       ElevationDeg = result.Bearing.Value.ElevationDeg,
       DistanceM    = result.Bearing.Value.DistanceM,
+      Zoom         = result.Zoom,
     };
   }
 
@@ -129,7 +131,7 @@ public sealed class PtzTrackingServiceImpl(TrackingSessionManager manager)
     };
     foreach (var observation in model.Observations)
     {
-      var residual = new PtzGeoResidual { LandmarkId = observation.LandmarkId };
+      var residual = new PtzGeoResidual { LandmarkId = observation.LandmarkId, DistanceM = observation.Bearing.DistanceM };
       if (model.GeoFit?.Residuals.GetValueOrDefault(observation.LandmarkId) is { } value)
       {
         residual.Pan = value.Pan;

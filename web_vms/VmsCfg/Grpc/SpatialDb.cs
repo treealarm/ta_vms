@@ -360,11 +360,17 @@ public class SpatialDb(IDbContextFactory<VmsCfgDbContext> dbFactory)
       .ToListAsync(ct);
 
     var response = new PtzGeoObservations { CameraId = cameraId };
-    response.Observations.AddRange(rows.Select(o => new PtzGeoObservation
+    response.Observations.AddRange(rows.Select(o =>
     {
-      LandmarkId = o.LandmarkId.ToString(),
-      Pan = o.Pan,
-      Tilt = o.Tilt,
+      var observation = new PtzGeoObservation
+      {
+        LandmarkId = o.LandmarkId.ToString(),
+        Pan = o.Pan,
+        Tilt = o.Tilt,
+      };
+      if (o.Zoom is { } zoom)
+        observation.Zoom = zoom;
+      return observation;
     }));
     return response;
   }
@@ -377,6 +383,8 @@ public class SpatialDb(IDbContextFactory<VmsCfgDbContext> dbFactory)
     var landmarkIds = ParseObservedLandmarks(observations.Observations.Select(o => o.LandmarkId));
     if (observations.Observations.Any(o => !float.IsFinite(o.Pan) || !float.IsFinite(o.Tilt)))
       throw new SpatialConfigException("Pan and tilt must be numbers");
+    if (observations.Observations.Any(o => o.HasZoom && !float.IsFinite(o.Zoom)))
+      throw new SpatialConfigException("Zoom must be a number");
 
     await using var db = await dbFactory.CreateDbContextAsync(ct);
     await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -391,6 +399,7 @@ public class SpatialDb(IDbContextFactory<VmsCfgDbContext> dbFactory)
         LandmarkId = Guid.Parse(o.LandmarkId),
         Pan = o.Pan,
         Tilt = o.Tilt,
+        Zoom = o.HasZoom ? o.Zoom : null,
       });
     }
 
@@ -541,15 +550,21 @@ public class SpatialDb(IDbContextFactory<VmsCfgDbContext> dbFactory)
         Placement = ToProto(placement),
         Space = ToProto(space, null),
       };
-      response.Observations.AddRange(observations[placement.CameraId].Where(y => SharesGeometry(y.s)).Select(y => new GeoObservation
+      response.Observations.AddRange(observations[placement.CameraId].Where(y => SharesGeometry(y.s)).Select(y =>
       {
-        LandmarkId = y.m.Id.ToString(),
-        LandmarkName = y.m.Name,
-        Lat = y.m.Lat,
-        Lon = y.m.Lon,
-        HeightAboveGroundM = y.s.ElevationM + y.m.HeightM,
-        Pan = y.o.Pan,
-        Tilt = y.o.Tilt,
+        var observation = new GeoObservation
+        {
+          LandmarkId = y.m.Id.ToString(),
+          LandmarkName = y.m.Name,
+          Lat = y.m.Lat,
+          Lon = y.m.Lon,
+          HeightAboveGroundM = y.s.ElevationM + y.m.HeightM,
+          Pan = y.o.Pan,
+          Tilt = y.o.Tilt,
+        };
+        if (y.o.Zoom is { } zoom)
+          observation.Zoom = zoom;
+        return observation;
       }));
       response.GroundObservations.AddRange(ground[placement.CameraId].Where(y => SharesGeometry(y.s)).Select(y => new GeoGroundObservation
       {

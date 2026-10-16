@@ -137,6 +137,7 @@ public class PtzSlaveBindingController(
       PresetToken  = string.IsNullOrEmpty(response.PresetToken) ? null : response.PresetToken,
       PresetName   = string.IsNullOrEmpty(response.PresetName) ? null : response.PresetName,
       Extrapolated = response.Extrapolated,
+      Zoom         = response.HasZoom ? response.Zoom : null,
     });
   }
 

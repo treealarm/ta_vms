@@ -1015,7 +1015,7 @@
     "masterOnMaps": "the master",
     "masterHasNoStream": "The chosen master has no WebRTC stream, so there is no picture to mark spots on.",
     "pickHint": "Click the master's picture where the ground is — where an object's feet would be. Mark spots around the perimeter of the working area rather than all in one corner. Drag a marker to move it.",
-    "geoPickHint": "Click the master's picture where the ground is to send this camera there through both calibrations.",
+    "geoPickHint": "Click the master's picture where the ground is to send this camera there through both calibrations. It zooms by the zoom samples in its landmark calibration; with none it stays wide.",
     "driveHint": "Drive this camera until the marked spot sits on the crosshair. Aim about a person's height above the spot on the ground rather than at the ground itself: the mapping then carries that framing correction, its own at every distance, while still taking the ground as its input.",
     "noPreset": "No preset",
     "newPresetName": "New preset name",
@@ -1053,7 +1053,8 @@
     "updatePreset": "Re-record this preset where the camera is pointing now, keeping its name. Drive the camera first, then press this.",
     "presetUpdated": "“{{name}}” now points where the camera is.",
     "presetCopied": "The camera stored a new preset ({{token}}) instead of replacing “{{name}}”. Marked spots were re-pinned to the new one, so the survey still works; the old entry is still on the camera and can be deleted from this list.",
-    "updatePresetFailed": "Could not re-record the preset."
+    "updatePresetFailed": "Could not re-record the preset.",
+    "positionZoom": "pan {{pan}}, tilt {{tilt}}, zoom {{zoom}}"
   },
   "maps": {
     "title": "Maps & plans",
@@ -1173,7 +1174,7 @@
     "open": "Calibrate by landmarks…",
     "panelHint": "Calibrate this PTZ against landmarks to aim it from the map.",
     "title": "Calibrate {{name}} by landmarks",
-    "howTo": "Turn the camera until a landmark sits in the crosshair, then press Record on its row. Two landmarks in different directions are enough; a third lets each one be checked.",
+    "howTo": "Pick a landmark and the camera turns to it — by the calibration once there is one, before that to where the landmark was recorded. Centre it exactly in the crosshair and press Record. Two landmarks in different directions are enough; a third lets each one be checked. While this is open nothing else aims the camera.",
     "noVideo": "No live stream for this camera",
     "noLandmarks": "This space has no landmarks yet. Add some on the map first.",
     "fitted": "Calibrated: the camera can be aimed from the map.",
@@ -1183,11 +1184,18 @@
     "residual": "Check",
     "residualHint": "How far the other landmarks put this one (pan / tilt, camera units). Redo the largest first.",
     "record": "Record where the camera points now",
-    "check": "Send the camera to this landmark",
     "forget": "Forget this observation",
     "noStatus": "The camera did not report its position",
-    "aimed": "pan {{pan}}, tilt {{tilt}} · bearing {{az}}°, elevation {{el}}°, {{dist}} m",
-    "extrapolated": "(outside the landmarks, less precise)"
+    "aimed": "pan {{pan}}, tilt {{tilt}}, zoom {{zoom}} · bearing {{az}}°, elevation {{el}}°, {{dist}} m",
+    "extrapolated": "(outside the landmarks, less precise)",
+    "distance": "Distance",
+    "zoom": "Zoom",
+    "zoomHint": "How far a slave zooms for an object at this distance. Between samples the zoom follows the distance; beyond them it stays at the nearest one.",
+    "zoomHowTo": "For a slave: once a landmark is recorded, zoom until a person standing there would fill the picture the way you want — whole, with room for a couple of seconds' walk either side — and press Remember zoom. A near and a far landmark are enough; without any the slave stays wide.",
+    "recordZoom": "Remember the zoom now as the one for this distance",
+    "forgetZoom": "Forget this zoom",
+    "zoomRange": "Slave zoom: {{count}} sample(s), {{min}}–{{max}}.",
+    "noZoom": "No zoom samples: as a slave this camera stays wide."
   },
   "ground": {
     "panelHint": "Mark landmarks in this camera's picture to show its detections on the map.",

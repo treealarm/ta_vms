@@ -6,7 +6,8 @@ namespace VmsPtzTrackingSingleton.Geo;
 public readonly record struct Bearing(double AzimuthDeg, double ElevationDeg, double DistanceM);
 
 /// <summary>One landmark the camera was centred on: where it is from the camera, and where the camera pointed.</summary>
-public sealed record GeoObservationSample(string LandmarkId, Bearing Bearing, float Pan, float Tilt);
+/// <param name="Zoom">The zoom a slave uses for an object at this landmark's distance; null when none was recorded.</param>
+public sealed record GeoObservationSample(string LandmarkId, Bearing Bearing, float Pan, float Tilt, float? Zoom = null);
 
 /// <summary>How far the rest of the observations put this one, in the camera's own units.</summary>
 public sealed record GeoResidual(float Pan, float Tilt);

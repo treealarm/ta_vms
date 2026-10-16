@@ -66,7 +66,7 @@ You need these:
 tests/onvifsim/onvifsim_lab.py all              # every step below in order, then down
 tests/onvifsim/onvifsim_lab.py up               # each step on its own
 tests/onvifsim/onvifsim_lab.py provision [--reset]
-tests/onvifsim/onvifsim_lab.py calibrate
+tests/onvifsim/onvifsim_lab.py calibrate [--no-zoom]  # --no-zoom: no zoom samples, slaves stay wide
 tests/onvifsim/onvifsim_lab.py aim-check [--seconds 60]
 tests/onvifsim/onvifsim_lab.py bind
 tests/onvifsim/onvifsim_lab.py run [--seconds 60]
@@ -97,6 +97,13 @@ http://localhost:8090 to watch the world while a step runs; its log is
   with a joystick. It then reads the position back through `GET /api/ptz/status`, which is ONVIF
   `GetStatus` via VmsOnvif. That reading must equal the generic position the sim's degrees imply,
   to 1e-3. Units or sign going wrong anywhere on that path stops it here.
+- **calibrate, zoom samples.** At each landmark it then zooms the head until the picture is
+  `FRAME_WIDTH_M` (8 m) wide at the landmark's distance: a person, plus the 2 m they walk between
+  two commands either side, plus room for the aim's error. It reads that zoom back through
+  `GET /api/ptz/status` and records it with the observation, as an operator's *Remember zoom* does.
+  The distance ta_vms reports for each landmark must match the world's to 0.1 m. The sim's lens
+  steps its focal length by equal ratios, so ta_vms's interpolation in ln(distance) between these
+  samples gives the same 8 m frame at any distance between them.
 - **calibrate, ground part.** It stands a person on each landmark and takes the bottom-middle of
   the box ta_vms received as the mark. The leave-one-out PTZ residuals and the ground residuals
   must both be near zero, because this world has no lens distortion and no tilted mount.
@@ -106,8 +113,10 @@ http://localhost:8090 to watch the world while a step runs; its log is
   - *Aim error* is measured against where the person was when the command was sent. It is the
     precision of the calibration and the geometry, and it should be well under a degree.
   - *Lag error* is measured against where the person is by the time the head arrives.
-  - The step also checks, from the sim's true pose of the slave, that the person is in the
-    middle third of its picture. The slave has no analytics of its own in this world: only the
+  - The head's zoom must be what the samples give for the person's distance, to 0.03, and the
+    widest sample when the aim is outside the landmarks.
+  - The step also checks, from the sim's true pose of the slave, that the whole person, feet to
+    head, is in its picture. The slave has no analytics of its own in this world: only the
     master's boxes drive it, and boxes on the slave's video would only suggest otherwise.
 
 - **bind** binds the PTZ to the master by the method `geo` (through the map, no survey) and
@@ -121,9 +130,11 @@ http://localhost:8090 to watch the world while a step runs; its log is
     set off. That is the precision of the whole chain: the master's box, its ground calibration,
     the map, the slave's calibration and ONVIF AbsoluteMove.
   - *Tracking error* is measured while the head is at rest against where the person is now. Most
-    of it is the slave's dead zone (3.6° of pan on this camera) and its two seconds between
-    commands.
-  - The person must stay in the middle third of the slave's picture.
+    of it is the slave's two seconds between commands; its dead zone is half a metre on the
+    ground.
+  - The whole person must stay in the slave's picture, and with zoom samples fill a quarter of
+    its height or more (median). Framed 8 m wide, a person fills about 40%; at the wide end, under
+    10%.
 
 ## Limits
 

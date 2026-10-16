@@ -55,8 +55,10 @@ public class PtzGeoController(
           LandmarkId = o.LandmarkId,
           Pan = o.Pan,
           Tilt = o.Tilt,
+          Zoom = o.HasZoom ? o.Zoom : null,
           PanResidual = r is { HasPan: true } ? r.Pan : null,
           TiltResidual = r is { HasTilt: true } ? r.Tilt : null,
+          DistanceM = r?.DistanceM,
         };
       }).ToList(),
       Fitted = fit is null ? null : fit.Fitted,
@@ -73,11 +75,17 @@ public class PtzGeoController(
   public async Task<IActionResult> Put(string cameraId, [FromBody] PtzGeoCalibrationDto dto, CancellationToken ct)
   {
     var request = new PtzGeoObservations { CameraId = cameraId };
-    request.Observations.AddRange(dto.Observations.Select(o => new PtzGeoObservation
+    request.Observations.AddRange(dto.Observations.Select(o =>
     {
-      LandmarkId = o.LandmarkId,
-      Pan = o.Pan,
-      Tilt = o.Tilt,
+      var observation = new PtzGeoObservation
+      {
+        LandmarkId = o.LandmarkId,
+        Pan = o.Pan,
+        Tilt = o.Tilt,
+      };
+      if (o.Zoom is { } zoom)
+        observation.Zoom = zoom;
+      return observation;
     }));
     return SpatialController.Result(await _cfg.SetPtzGeoObservationsAsync(request, Options(ct)));
   }
@@ -106,6 +114,7 @@ public class PtzGeoController(
       ElevationDeg = response.ElevationDeg,
       DistanceM = response.DistanceM,
       Extrapolated = response.Extrapolated,
+      Zoom = response.Zoom,
     };
   }
 }

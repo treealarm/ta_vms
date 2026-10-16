@@ -201,15 +201,21 @@ public sealed class TrackingSession
   private DateTime _lastCommandAt = DateTime.MinValue;
   private DateTime _ignoreDetectionsUntil = DateTime.MinValue;
 
+  /// <summary>While held, a person is driving the camera, and no pulse goes out; see <see cref="HoldGate"/>.</summary>
+  private readonly HoldGate _hold;
+
+  /// <param name="hold">The camera's hold, shared with whatever else drives it; a fresh one when omitted.</param>
   public TrackingSession(
     string cameraId,
     IPtzCommandSender sender,
     ILogger logger,
     TargetKey? target,
     PtzCalibrationModel? calibration,
-    TrackingPolicy policy)
+    TrackingPolicy policy,
+    HoldGate? hold = null)
   {
     _cameraId = cameraId;
+    _hold = hold ?? new HoldGate();
     _sender = sender;
     _logger = logger;
     _calibration = calibration;
@@ -350,7 +356,7 @@ public sealed class TrackingSession
   {
     lock (_gate)
       return new TrackingSnapshot(
-        _cameraId, true, _target, _explicitTarget, _targetSeenAt, _lastError);
+        _cameraId, true, _target, _explicitTarget, _targetSeenAt, _hold.IsHeld ? HoldGate.Reason : _lastError);
   }
 
   public async Task RunAsync(CancellationToken ct)
@@ -817,6 +823,10 @@ public sealed class TrackingSession
 
     var now = DateTime.UtcNow;
     if (now - _lastCommandAt < MinCommandInterval)
+      return;
+    // Decided this late so that the target is still followed while held: when the hold lapses the
+    // camera turns to where the object is now. A pulse already running is let finish; it is short.
+    if (_hold.IsHeld)
       return;
 
     // One line per command, which is at most five a second and in practice about one — the

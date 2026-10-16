@@ -28,7 +28,11 @@ public interface IPtzCommandSender
   /// camera's units whether those are normalised or degrees.
   /// </para>
   /// </remarks>
-  Task<string?> AimAsync(string cameraId, float pan, float tilt, CancellationToken ct);
+  /// <param name="zoom">
+  /// Absolute, always sent: an absolute move carries a zoom whether or not one is wanted, so leaving
+  /// it out would still move the lens. 0 is the wide end.
+  /// </param>
+  Task<string?> AimAsync(string cameraId, float pan, float tilt, float zoom, CancellationToken ct);
 
   /// <summary>Drives the camera to one of its stored presets.</summary>
   /// <remarks>

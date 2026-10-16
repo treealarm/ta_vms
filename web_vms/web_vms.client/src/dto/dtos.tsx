@@ -1396,6 +1396,8 @@ export interface PtzSlaveAimResultDto {
   presetName?: string | null
   /** Outside the marked area, so the mapping is continuing the measurements rather than interpolating. */
   extrapolated: boolean
+  /** The zoom it was sent with, on a method that commands a position. */
+  zoom?: number | null
 }
 
 /** Where a camera says it is pointing. Its own units. */
@@ -1483,9 +1485,13 @@ export type PtzGeoObservationDto = {
   /** The camera's own units, as /api/ptz/status reported them. */
   pan: number
   tilt: number
+  /** The zoom a slave uses for an object at this landmark's distance, camera units; absent when none was recorded. */
+  zoom?: number | null
   /** Leave-one-out miss; null/absent when the rest cannot be fitted without this one. */
   panResidual?: number | null
   tiltResidual?: number | null
+  /** From the camera to the landmark. Read-only, like the residuals. */
+  distanceM?: number | null
 }
 
 export type PtzGeoCalibrationDto = {
@@ -1530,4 +1536,6 @@ export type PtzGeoAimResultDto = {
   elevationDeg: number
   distanceM: number
   extrapolated: boolean
+  /** From the camera's zoom samples by that distance; 0, the wide end, without any. */
+  zoom: number
 }

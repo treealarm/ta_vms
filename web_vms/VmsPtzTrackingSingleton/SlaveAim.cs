@@ -4,7 +4,12 @@ using VmsPtzTrackingSingleton.Geo;
 namespace VmsPtzTrackingSingleton;
 
 /// <summary>A position to send the slave to, and what it was computed for (for the log).</summary>
-public sealed record PositionAim(float Pan, float Tilt, bool Extrapolated, string Describe);
+/// <param name="Zoom">In the camera's own zoom units; 0, the wide end, unless the map method has zoom samples.</param>
+/// <param name="Ground">
+/// On the map method, where the object stands, in the master's local frame: what the dead zone
+/// measures, because there it means the same at any zoom. Null on a survey.
+/// </param>
+public sealed record PositionAim(float Pan, float Tilt, float Zoom, Enu? Ground, bool Extrapolated, string Describe);
 
 /// <summary>
 /// Everything a slave is aimed by: its binding and, on the map method, both cameras' calibrations.
@@ -58,14 +63,16 @@ public sealed record SlaveAim(SlaveBindingModel Binding, GeoAimPair? Geo, string
       if (projection is null)
         return (null, "The spot is beyond the master's horizon, where its ground calibration says nothing");
       var aim = projection.Aim;
-      return (new PositionAim(aim.Pan, aim.Tilt, aim.Extrapolated,
+      var zoom = geo.Slave.ZoomFor(projection.Bearing, aim.Extrapolated);
+      return (new PositionAim(aim.Pan, aim.Tilt, zoom, projection.Ground, aim.Extrapolated,
         $"master point ({x:F3},{y:F3}) — {projection.Lat:F6},{projection.Lon:F6}, "
         + $"{projection.Bearing.DistanceM:F0} m at {projection.Bearing.AzimuthDeg:F1}°"
-        + (aim.Extrapolated ? ", outside the landmarks' sector" : string.Empty)), null);
+        + (aim.Extrapolated ? ", outside the landmarks' sector" : string.Empty)
+        + $", zoom {zoom:F3}"), null);
     }
 
     var surveyed = PtzSlaveBindingMath.Project(Binding.Fit!, x, y);
-    return (new PositionAim(surveyed.Pan, surveyed.Tilt, surveyed.Extrapolated,
+    return (new PositionAim(surveyed.Pan, surveyed.Tilt, 0f, null, surveyed.Extrapolated,
       $"master point ({x:F3},{y:F3}){(surveyed.Extrapolated ? " — outside the marked area" : string.Empty)}"), null);
   }
 }

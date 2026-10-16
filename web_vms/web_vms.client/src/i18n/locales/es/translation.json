@@ -1015,7 +1015,7 @@
     "masterOnMaps": "la maestra",
     "masterHasNoStream": "La maestra elegida no tiene flujo WebRTC, así que no hay imagen sobre la que marcar puntos.",
     "pickHint": "Haz clic en la imagen de la maestra donde está el suelo, donde estarían los pies de un objeto. Marca puntos por el perímetro de la zona de trabajo, no todos en una esquina. Arrastra un marcador para moverlo.",
-    "geoPickHint": "Haz clic en la imagen de la maestra donde está el suelo para enviar esta cámara allí a través de ambas calibraciones.",
+    "geoPickHint": "Haz clic en la imagen de la maestra donde está el suelo para enviar esta cámara allí a través de ambas calibraciones. Hace zoom según las muestras de zoom de su calibración por puntos de referencia; sin ninguna se queda en gran angular.",
     "driveHint": "Mueve esta cámara hasta que el punto marcado quede en la cruz. Apunta a la altura de una persona por encima del punto en el suelo, no al suelo mismo: así el mapeo lleva esa corrección de encuadre, propia de cada distancia, sin dejar de tomar el suelo como entrada.",
     "noPreset": "Sin preset",
     "newPresetName": "Nombre del nuevo preset",
@@ -1053,7 +1053,8 @@
     "updatePreset": "Vuelve a grabar este preset donde apunta la cámara ahora, conservando su nombre. Mueve primero la cámara y luego pulsa esto.",
     "presetUpdated": "«{{name}}» ahora apunta donde está la cámara.",
     "presetCopied": "La cámara guardó un preset nuevo ({{token}}) en vez de reemplazar «{{name}}». Los puntos marcados se revincularon al nuevo, así que el muestreo sigue funcionando; la entrada antigua sigue en la cámara y puede borrarse desde esta lista.",
-    "updatePresetFailed": "No se pudo volver a grabar el preset."
+    "updatePresetFailed": "No se pudo volver a grabar el preset.",
+    "positionZoom": "pan {{pan}}, tilt {{tilt}}, zoom {{zoom}}"
   },
   "maps": {
     "title": "Mapas y planos",
@@ -1173,7 +1174,7 @@
     "open": "Calibrar con puntos de referencia…",
     "panelHint": "Calibre este PTZ con puntos de referencia para apuntarlo desde el mapa.",
     "title": "Calibrar {{name}} con puntos de referencia",
-    "howTo": "Gire la cámara hasta que un punto de referencia quede en la mira y pulse Registrar en su fila. Bastan dos puntos en direcciones distintas; un tercero permite comprobar cada uno.",
+    "howTo": "Elija un punto de referencia y la cámara gira hacia él — por la calibración cuando la hay, antes a donde se registró. Céntrelo exactamente en la mira y pulse Registrar. Bastan dos puntos en direcciones distintas; un tercero permite comprobar cada uno. Mientras esto está abierto, nada más apunta la cámara.",
     "noVideo": "Esta cámara no tiene vídeo en vivo",
     "noLandmarks": "Este espacio aún no tiene puntos de referencia. Añádalos primero en el mapa.",
     "fitted": "Calibrada: la cámara puede apuntarse desde el mapa.",
@@ -1183,11 +1184,18 @@
     "residual": "Control",
     "residualHint": "A qué distancia sitúan los demás puntos a este (pan / tilt, unidades de la cámara). Rehaga primero el mayor.",
     "record": "Registrar hacia dónde apunta la cámara",
-    "check": "Enviar la cámara a este punto",
     "forget": "Olvidar esta observación",
     "noStatus": "La cámara no informó su posición",
-    "aimed": "pan {{pan}}, tilt {{tilt}} · rumbo {{az}}°, elevación {{el}}°, {{dist}} m",
-    "extrapolated": "(fuera de los puntos de referencia, menos preciso)"
+    "aimed": "pan {{pan}}, tilt {{tilt}}, zoom {{zoom}} · rumbo {{az}}°, elevación {{el}}°, {{dist}} m",
+    "extrapolated": "(fuera de los puntos de referencia, menos preciso)",
+    "distance": "Distancia",
+    "zoom": "Zoom",
+    "zoomHint": "Cuánto acerca una esclava un objeto a esta distancia. Entre muestras el zoom sigue la distancia; fuera de ellas se queda en la más cercana.",
+    "zoomHowTo": "Para una esclava: con el punto ya registrado, ajuste el zoom hasta que una persona allí se vea como quiere — entera, con margen para un par de segundos de marcha a cada lado — y pulse Recordar zoom. Bastan un punto cercano y uno lejano; sin ninguno la esclava se queda en gran angular.",
+    "recordZoom": "Recordar el zoom actual como el de esta distancia",
+    "forgetZoom": "Olvidar este zoom",
+    "zoomRange": "Zoom de esclava: {{count}} muestra(s), {{min}}–{{max}}.",
+    "noZoom": "Sin muestras de zoom: como esclava esta cámara se queda en gran angular."
   },
   "ground": {
     "panelHint": "Marque puntos de referencia en la imagen de esta cámara para ver sus detecciones en el mapa.",

@@ -1167,6 +1167,10 @@ message PtzGeoObservation {
   string landmark_id = 1;
   float  pan         = 2;
   float  tilt        = 3;
+  // The zoom a slave uses for an object at this landmark's distance, when the operator recorded
+  // one -- in the camera's own zoom units, like pan and tilt. Recorded apart from them: pan and tilt
+  // are best taken zoomed right in on the landmark, the framing zoom is how a person there should look.
+  optional float zoom = 4;
 }
 
 message PtzGeoObservations {
@@ -1184,6 +1188,7 @@ message GeoObservation {
   double height_above_ground_m = 5;
   float  pan           = 6;
   float  tilt          = 7;
+  optional float zoom  = 8;  // see PtzGeoObservation.zoom
 }
 
 // Where a landmark stands on the ground in a fixed camera's picture, normalised to 0..1 across the

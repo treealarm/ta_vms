@@ -113,8 +113,17 @@ Plans never show tiles to operators. While an administrator lines up a plan in r
 3. In the camera's panel, *Calibrate by landmarks* (offered on the reference placement only): turn the camera until a landmark sits in the
    crosshair and record it. Two landmarks in clearly different directions make a calibration; a
    third lets each be checked (the "Check" column is the leave-one-out miss — redo the largest).
-4. *Check* sends the camera to a landmark from the calibration alone. This is also the test that
-   the camera obeys absolute positions at all.
+   While the dialog is open the camera is held for it alone: neither a slave session nor the
+   camera's own self-guidance moves it, including a session that starts meanwhile.
+4. Picking a landmark, in the table or on the map, turns the camera to it. Once there is a
+   calibration that is the calibration alone, with the zoom of the zoom samples, and it is also
+   the test that the camera obeys absolute positions at all. Before that, it is back to where the
+   landmark was recorded, if it was.
+5. For a camera that will be a slave, optionally: on a recorded landmark, zoom until a person
+   standing there would fill the picture the way the slave should show them, and *Remember zoom*.
+   This is a zoom sample for that landmark's distance, see [Master/slave through the
+   map](#masterslave-through-the-map). It is kept apart from pan and tilt, which are best recorded
+   zoomed right in, and re-recording pan and tilt keeps it.
 
 What the fit assumes: a level mount, so pan follows the bearing and tilt the elevation, each by a
 straight line in the camera's own units. A camera hung out of level shows up as a pattern of misses
@@ -172,7 +181,22 @@ turns that place into a pan and tilt (`Geo/GeoAiming`). Each camera is calibrate
 works the moment both are, and recalibrating one camera fixes it for every pairing it is in.
 
 - **The target is the foot.** It is the bottom middle of the box, put on the master's floor
-  (`GroundHomography.FloorElevationM`). The slave therefore looks at feet. Zoom is not touched.
+  (`GroundHomography.FloorElevationM`). The slave therefore looks at feet.
+- **Zoom by distance, from samples.** The slave zooms by the zoom samples in its landmark
+  calibration (`Geo/ZoomByDistance`). Each sample is the zoom the operator chose at one landmark,
+  stored with the observation as `zoom`; its distance is not stored but follows from where the
+  camera and the landmark stand. Between samples the zoom is interpolated in ln(distance). An
+  object keeps its size when the focal length grows with its distance, and on a lens whose zoom
+  steps are equal ratios that makes zoom a straight line in ln(distance). Nothing is assumed about
+  the lens beyond that: ONVIF reports zoom in the camera's own units, whose mapping to a field of
+  view differs between models, so a sample says directly what to send.
+  - Beyond the nearest and the farthest sample the zoom stays at theirs, so the samples are also
+    the range the slave may use.
+  - An aim outside the landmarks' sector (*extrapolated*) uses the widest sample, and so does a slave
+    whose target is lost: it keeps pointing where the target was last seen but zooms out, so the
+    next object nearby is in the picture.
+  - With no samples the slave is sent to zoom 0, the wide end. An absolute move always carries a
+    zoom, so "leave it as it is" is not something the slave can ask for.
 - **Blocked with a reason.** The pair does not run, and the reason shows in the binding's
   `unusable` and the tracking state, when any of these holds:
   - either camera has no reference placement;
@@ -188,16 +212,22 @@ works the moment both are, and recalibrating one camera fixes it for every pairi
   answers "can this aim" and "where does this spot send the camera" for every method. The reconcile
   replaces it whole, so a detection is never aimed by a new binding through old calibrations.
   Changing the master restarts the slave's session, since detections are routed by master.
-- **Same law as a survey.** The dead zone, the command interval and target choice are those of
-  every slave (`SlaveAimingSession`). A recalibration does not reopen the dead zone. It compares
-  positions of the head, which mean the same whatever calibration computed them.
+- **Same law as a survey, except the dead zone.** The command interval and target choice are those
+  of every slave (`SlaveAimingSession`). The dead zone is 0.5 m on the ground rather than 0.02 of
+  the head's units. A zoomed slave's whole frame can be narrower than 0.02 of pan, which is 3.6° on
+  a head with a full turn. A frame sampled to fit a person is a stretch of ground at any distance,
+  so the threshold is one too. A change of zoom alone of 0.02 also counts. A recalibration does not
+  reopen the dead zone: it compares where the object stood, which does not depend on the model
+  used.
 - **Checking it.** The binding's tab shows both pictures and no survey. A click on the master's
   ground sends the slave there through both calibrations. The tab re-reads the binding's status
   when it comes back into view, since what is missing is usually fixed on Maps & plans.
 
 It was proved on a virtual bench, [`tests/onvifsim`](../tests/onvifsim/README.md). In the OnvifSim
 world that bench builds, the head arrives within about a quarter of a degree of the person it was
-sent to, and the person stays in the middle third of the slave's picture throughout. The bench
+sent to. With zoom samples framing 8 m at each landmark, the whole person stays in the slave's
+picture in over 99% of samples and fills a median 38% of its height, against under 10% at the
+wide end. The bench
 runs a second pair over the same yard on a plan in made-up coordinates, whose picture is the yard
 photographed from above, and checks there that a master on the map is refused for a slave on the
 plan.
@@ -260,8 +290,9 @@ preset of the nearest mark.
 
 **The chain for `geo`** (`GeoAiming.Project`): the bottom middle of the master's box → the
 master's homography → a point in the master's frame → WGS84 → the slave's frame → a bearing to
-that point on the master's floor → the slave's two lines → a pan and tilt in the slave's units.
-The dead zone and the command interval are the session's, the same as for a survey.
+that point on the master's floor → the slave's two lines → a pan and tilt in the slave's units,
+and the distance of that point → the zoom samples → a zoom. The command interval is the session's,
+the same as for a survey; the dead zone is measured on the ground.
 
 **Exact where, approximate where.** For an ideal pinhole camera over a flat floor and a level
 PTZ with a linear scale, these models are exact: on the OnvifSim bench the PTZ fit's residual is
@@ -350,11 +381,11 @@ itself only compiles.
   A richer model is chosen only when its held-out misses are actually smaller, so extra parameters
   do not fit noise. Decide which stages are needed from 8–10 observations on a real camera that
   takes absolute positions — none is on the bench yet.
-- **A dead zone in degrees.** The slave's dead zone is 0.02 in the camera's own units. On a head
-  whose generic range is a full turn, that is 3.6° of pan. That threshold, not the calibration, is
-  what dominates how far behind a walking person a slave lags.
+- **A dead zone in degrees for a survey.** A survey slave's dead zone is 0.02 in the camera's own
+  units. On a head whose generic range is a full turn, that is 3.6° of pan. That threshold, not the
+  calibration, is what dominates how far behind a walking person it lags. (On the map method it is
+  already measured on the ground.)
 - **Aerial targets**: a master's full pose (PnP from landmarks with heights) gives a ray; a
   co-located slave follows its direction, two masters triangulate a 3D point.
 - **Export to Square, the rest**: delete (needs Square's protocol), landmarks and ground marks.
-- A footprint's colour from the state of the cameras inside it; walls that cut view cones; zoom by
-  distance.
+- A footprint's colour from the state of the cameras inside it; walls that cut view cones.

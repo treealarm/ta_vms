@@ -1,5 +1,6 @@
 using Vms.Cfg;
 using System.Threading.Channels;
+using VmsPtzTrackingSingleton.Geo;
 
 namespace VmsPtzTrackingSingleton;
 
@@ -53,6 +54,35 @@ public sealed class SlaveAimingSession
   /// </remarks>
   private const float MoveThreshold = 0.02f;
 
+  /// <summary>
+  /// How far the object must move on the ground before the camera is sent anywhere, on the map
+  /// method.
+  /// </summary>
+  /// <remarks>
+  /// <para>
+  /// In metres rather than in the camera's units, because the map method zooms. A zoomed slave's
+  /// whole frame can be narrower than <see cref="MoveThreshold"/>, which on a head with a full turn
+  /// of travel is 3.6° of pan -- the object would leave the picture before the dead zone let the
+  /// camera follow it. The frame the operator sampled is a stretch of ground around the object
+  /// whatever the distance, so a stretch of ground is what the threshold has to be too.
+  /// </para>
+  /// <para>
+  /// Half a metre is well above the jitter it exists for -- a box edge moving a pixel or two on the
+  /// master is 0.1-0.3 m on the ground at 30 m -- and well below any frame worth sampling, which
+  /// has to fit a person and a couple of seconds of their walk.
+  /// </para>
+  /// </remarks>
+  private const double GroundMoveThresholdM = 0.5;
+
+  /// <summary>
+  /// How far the zoom must change for that alone to be worth a command, in the camera's units.
+  /// </summary>
+  /// <remarks>
+  /// The zoom follows the object's distance, so the ground threshold covers it while the object
+  /// moves; this is for the samples themselves changing under a standing object.
+  /// </remarks>
+  private const float ZoomThreshold = 0.02f;
+
   /// <summary>The least time between two commands, however far the object has gone.</summary>
   /// <remarks>
   /// A camera that is still travelling to the last place it was sent cannot usefully be sent
@@ -92,23 +122,34 @@ public sealed class SlaveAimingSession
 
   // Where the camera was last sent, so the dead zone has something to measure against. Null until
   // the first command: the camera's actual position is unknown and, on these cameras, unknowable.
-  private (float Pan, float Tilt)? _aimedAt;
+  private PositionAim? _aimedAt;
   private string? _aimedPreset;
   private DateTime _lastCommandAt = DateTime.MinValue;
-  private DateTime _heldUntil = DateTime.MinValue;
 
+  /// <summary>
+  /// While held, a person is driving the camera -- marking out a survey, calibrating it against
+  /// landmarks -- and a live session pulling it elsewhere mid-way would make them record a position
+  /// they did not choose. So the hold is a correctness requirement of those wizards, not a
+  /// convenience. The target keeps being tracked while held: only the commands stop, so when the
+  /// hold lapses the camera goes where the object is now, rather than where it was.
+  /// </summary>
+  private readonly HoldGate _hold;
+
+  /// <param name="hold">The camera's hold, shared with whatever else drives it; a fresh one when omitted.</param>
   public SlaveAimingSession(
     string slaveCameraId,
     IPtzCommandSender sender,
     ILogger logger,
     SlaveAim? aim,
-    TrackingPolicy policy)
+    TrackingPolicy policy,
+    HoldGate? hold = null)
   {
     _slaveCameraId = slaveCameraId;
     _sender = sender;
     _logger = logger;
     _aim = aim;
     _policy = policy;
+    _hold = hold ?? new HoldGate();
     _logger.LogInformation(
       "Camera '{Camera}': aiming at objects from master '{Master}' by {Method}, {Points} marked point(s)",
       _slaveCameraId,
@@ -118,43 +159,6 @@ public sealed class SlaveAimingSession
   }
 
   public void Offer(DetectionSample sample) => _samples.Writer.TryWrite(sample);
-
-  /// <summary>Stops aiming for a while, so a person can drive the camera by hand.</summary>
-  /// <remarks>
-  /// Marking out a survey means driving the slave to a spot and recording where it ended up. A live
-  /// session pulling the camera somewhere else mid-way makes that impossible, and records a
-  /// position the operator did not choose — so the hold is a correctness requirement of the survey
-  /// wizard, not a convenience.
-  /// <para>
-  /// It expires rather than being switched off, and the wizard renews it while it is open. A held
-  /// camera is a camera not doing its job, and a browser tab that crashed or a laptop that was
-  /// closed must not be able to leave one held forever.
-  /// </para>
-  /// <para>
-  /// The target keeps being tracked while held: only the commands stop. So when the hold lapses the
-  /// camera goes where the object is now, rather than replaying where it was when the hold began.
-  /// </para>
-  /// </remarks>
-  /// <returns>The hold this one replaced, for <see cref="RestoreHold"/>.</returns>
-  public DateTime HoldUntil(DateTime until)
-  {
-    lock (_gate)
-    {
-      var previous = _heldUntil;
-      _heldUntil = until;
-      return previous;
-    }
-  }
-
-  /// <summary>Takes back a hold placed by <see cref="HoldUntil"/>, unless someone has held the camera since.</summary>
-  public void RestoreHold(DateTime placed, DateTime previous)
-  {
-    lock (_gate)
-    {
-      if (_heldUntil == placed)
-        _heldUntil = previous;
-    }
-  }
 
   /// <summary>
   /// Follows one named object, or goes back to choosing by policy when <paramref name="target"/>
@@ -180,10 +184,10 @@ public sealed class SlaveAimingSession
 
   /// <summary>Takes the binding, and the calibrations that go with it, as they now are -- in one step.</summary>
   /// <remarks>
-  /// A recalibrated pair on the map method does not reopen the dead zone. It compares where the head
-  /// was sent with where it is to go next, both positions of the head, and those mean the same
-  /// whatever calibration computed them -- so a model merely read again (the cache does, once a
-  /// minute) cannot cost a needless slew.
+  /// A recalibrated pair on the map method does not reopen the dead zone. It compares where the
+  /// object stood when the head was last sent with where it stands now, and the zoom then with the
+  /// zoom now, and a model merely read again (the cache does, once a minute) changes neither -- so it
+  /// cannot cost a needless slew.
   /// </remarks>
   public void ApplyAim(SlaveAim? aim)
   {
@@ -227,7 +231,7 @@ public sealed class SlaveAimingSession
         _targetSeenAt,
         // Reported as the camera's condition rather than as an error, because it is neither a fault
         // nor silence: somebody has the camera, and that is what the monitor should say.
-        DateTime.UtcNow < _heldUntil ? "Held while its binding is being marked out" : _lastError,
+        _hold.IsHeld ? HoldGate.Reason : _lastError,
         _aim?.MasterCameraId);
   }
 
@@ -241,7 +245,7 @@ public sealed class SlaveAimingSession
         if (batch.Count > 0)
           await OnBatchAsync(batch, ct);
         else
-          Expire();
+          await ExpireAsync(ct);
       }
     }
     catch (OperationCanceledException) { }
@@ -286,7 +290,7 @@ public sealed class SlaveAimingSession
     var usable = TargetChooser.Usable(batch, policy);
     if (usable.Count == 0)
     {
-      Expire();
+      await ExpireAsync(ct);
       return;
     }
 
@@ -300,14 +304,14 @@ public sealed class SlaveAimingSession
     // gone long enough to count as lost, and only then does the slave start choosing again.
     if (match is null && explicitTarget)
     {
-      Expire();
+      await ExpireAsync(ct);
       return;
     }
 
     match ??= TargetChooser.Choose(usable, policy);
     if (match is null)
     {
-      Expire();
+      await ExpireAsync(ct);
       return;
     }
 
@@ -332,8 +336,9 @@ public sealed class SlaveAimingSession
   }
 
   /// <summary>Drops a target the master has stopped reporting for long enough.</summary>
-  private void Expire()
+  private async Task ExpireAsync(CancellationToken ct)
   {
+    SlaveAim? aim;
     lock (_gate)
     {
       if (_target is null || _targetSeenAt is null)
@@ -343,9 +348,24 @@ public sealed class SlaveAimingSession
       _target = null;
       _explicitTarget = false;
       _targetSeenAt = null;
+      aim = _hold.IsHeld ? null : _aim;
     }
-    // The camera stays where it is. Somewhere the object was recently is a better place to be
-    // looking than wherever a home position happens to point.
+
+    // The camera stays pointing where it is: somewhere the object was recently is a better place to
+    // be looking than wherever a home position happens to point. But it zooms out to the widest
+    // sample, so that what turns up next nearby is in the picture to be followed, rather than
+    // glimpsed through a frame cut for the one that left.
+    if (_aimedAt is not { } last || aim?.Geo?.Slave.Zoom is not { } zoom || last.Zoom - zoom.Widest < ZoomThreshold)
+      return;
+    _lastCommandAt = DateTime.UtcNow;
+    var error = await _sender.AimAsync(_slaveCameraId, last.Pan, last.Tilt, zoom.Widest, ct);
+    if (error is not null)
+    {
+      Fail(error);
+      return;
+    }
+    _aimedAt = last with { Zoom = zoom.Widest };
+    _logger.LogDebug("Camera '{Camera}': target lost, zoomed out to {Zoom:F3}", _slaveCameraId, zoom.Widest);
   }
 
   private async Task AimAsync(DetectionSample target, CancellationToken ct)
@@ -356,7 +376,7 @@ public sealed class SlaveAimingSession
     lock (_gate)
     {
       aim = _aim;
-      if (DateTime.UtcNow < _heldUntil)
+      if (_hold.IsHeld)
         return;
     }
 
@@ -400,23 +420,32 @@ public sealed class SlaveAimingSession
   /// <summary>Sends the camera to a position, unless it is already about there.</summary>
   private async Task<string?> SendPositionAsync(PositionAim position, CancellationToken ct)
   {
-    var (pan, tilt) = (position.Pan, position.Tilt);
-    if (_aimedAt is { } last &&
-        MathF.Abs(pan - last.Pan) < MoveThreshold &&
-        MathF.Abs(tilt - last.Tilt) < MoveThreshold)
+    if (_aimedAt is { } last && AboutThere(last, position))
       return null;
 
     _lastCommandAt = DateTime.UtcNow;
-    var error = await _sender.AimAsync(_slaveCameraId, pan, tilt, ct);
+    var error = await _sender.AimAsync(_slaveCameraId, position.Pan, position.Tilt, position.Zoom, ct);
     if (error is not null)
       return error;
 
-    _aimedAt = (pan, tilt);
+    _aimedAt = position;
     _aimedPreset = null;
     if (_logger.IsEnabled(LogLevel.Debug))
       _logger.LogDebug(
-        "Camera '{Camera}': aimed at ({Pan:F3},{Tilt:F3}) for {What}", _slaveCameraId, pan, tilt, position.Describe);
+        "Camera '{Camera}': aimed at ({Pan:F3},{Tilt:F3}) for {What}",
+        _slaveCameraId, position.Pan, position.Tilt, position.Describe);
     return null;
+  }
+
+  /// <summary>Whether the camera, sent to <paramref name="last"/>, already shows <paramref name="next"/>.</summary>
+  private static bool AboutThere(PositionAim last, PositionAim next)
+  {
+    if (last.Ground is { } was && next.Ground is { } now)
+    {
+      var moved = Math.Sqrt(Math.Pow(now.East - was.East, 2) + Math.Pow(now.North - was.North, 2));
+      return moved < GroundMoveThresholdM && MathF.Abs(next.Zoom - last.Zoom) < ZoomThreshold;
+    }
+    return MathF.Abs(next.Pan - last.Pan) < MoveThreshold && MathF.Abs(next.Tilt - last.Tilt) < MoveThreshold;
   }
 
   private async Task<string?> AimByPresetAsync(

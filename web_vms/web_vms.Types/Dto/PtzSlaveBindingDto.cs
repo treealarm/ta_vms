@@ -53,4 +53,6 @@ public sealed record PtzSlaveAimResultDto
   public string? PresetName { get; init; }
   /// <summary>The spot lies outside the marked area, so the mapping is continuing rather than interpolating.</summary>
   public bool Extrapolated { get; init; }
+  /// <summary>The zoom it was sent with, on a method that commands a position.</summary>
+  public float? Zoom { get; init; }
 }

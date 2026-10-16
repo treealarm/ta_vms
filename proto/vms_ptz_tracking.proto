@@ -129,6 +129,8 @@ message AimAtMasterPointResponse {
   // than interpolating between them. Not a refusal -- a step past the last marked point is aimed
   // at perfectly well -- but worth showing the operator.
   bool   extrapolated = 7;
+  // The zoom it was sent with, on a method that commands a position.
+  optional float zoom = 8;
 }
 
 message GetSlaveBindingFitRequest {
@@ -204,6 +206,8 @@ message AimAtWorldPointResponse {
   // The direction lies outside the span the landmarks cover, so the fit is continued rather than
   // interpolated. Aimed anyway; worth showing.
   bool   extrapolated  = 8;
+  // The zoom it was sent with: from the camera's zoom samples, or 0 (the wide end) without any.
+  float  zoom          = 9;
 }
 
 message GetPtzGeoFitRequest {
@@ -228,6 +232,8 @@ message PtzGeoResidual {
   // direction).
   optional float pan  = 2;
   optional float tilt = 3;
+  // From the camera to the landmark, straight-line: what a zoom recorded at it is a sample of.
+  double distance_m = 4;
 }
 
 // ── A fixed camera's picture on the ground ──────────────────────────────────

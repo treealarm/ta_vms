@@ -21,7 +21,9 @@ public sealed record GeoAimProjection(Enu Ground, double Lat, double Lon, Bearin
 /// <para>
 /// The spot is the foot of an object, as for a survey: the master's homography knows only its
 /// floor, and that floor is where the slave is sent. The slave therefore looks at feet, a few
-/// degrees low of a person's middle, which its field of view absorbs at any zoom it is used at.
+/// degrees low of a person's middle. Zoomed, that is what the zoom samples allow for: the operator
+/// records them with a landmark in the crosshair, so a frame chosen to show a person standing there
+/// is chosen with their feet in its middle -- as the slave will hold them.
 /// </para>
 /// </remarks>
 public static class GeoAiming

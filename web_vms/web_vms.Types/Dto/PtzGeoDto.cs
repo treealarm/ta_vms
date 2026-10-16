@@ -6,13 +6,20 @@ namespace web_vms.Types.Dto;
 /// How far the other observations put this landmark when it is left out of the fit. Null where the
 /// rest cannot be fitted without it. Read-only: computed on the way out, ignored on the way in.
 /// </param>
+/// <param name="Zoom">
+/// The zoom a slave uses for an object at this landmark's distance, in the camera's own units; null
+/// when none was recorded.
+/// </param>
+/// <param name="DistanceM">From the camera to the landmark. Read-only, like the residuals.</param>
 public sealed record PtzGeoObservationDto
 {
   public string LandmarkId { get; init; } = string.Empty;
   public float Pan { get; init; }
   public float Tilt { get; init; }
+  public float? Zoom { get; init; }
   public float? PanResidual { get; init; }
   public float? TiltResidual { get; init; }
+  public double? DistanceM { get; init; }
 }
 
 /// <summary>A camera's landmark calibration and what it adds up to.</summary>
@@ -43,4 +50,6 @@ public sealed record PtzGeoAimResultDto
   public double ElevationDeg { get; init; }
   public double DistanceM { get; init; }
   public bool Extrapolated { get; init; }
+  /// <summary>From the camera's zoom samples by that distance; 0, the wide end, without any.</summary>
+  public float Zoom { get; init; }
 }
