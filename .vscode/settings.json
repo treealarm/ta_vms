@@ -9,7 +9,7 @@
     // happen is indistinguishable from a broken keybinding, and the gate tasks' own message --
     // which names the missing service and the command that starts it -- was being thrown away.
     "debug.onTaskErrors": "showErrors",
-    "workbench.colorTheme": "Light Modern",
+    "workbench.colorTheme": "Light 2026",
     "cmake.sourceDirectory": "${workspaceFolder}/media_server",
     "cmake.configurePreset": "linux-default",
     "cmake.buildDirectory": "${workspaceFolder}/media_server/build"
