@@ -1,5 +1,8 @@
-"""The small test world: one fixed master, one PTZ slave, five landmarks and one walking person,
-with some scenery around them to find one's way by.
+"""The small test world: two master/slave pairs, five landmarks and one walking person, with some
+scenery around them to find one's way by, and a camera high above that photographs it all as a plan.
+
+The first pair stands on a map with real coordinates; the second on a plan in made-up ones, the
+picture from the camera above. Both watch the same yard, the same landmarks and the same person.
 
 Everything the harness knows about the world comes from here, so the world OnvifSim renders and
 the geometry the checks compare against cannot drift apart.
@@ -74,9 +77,39 @@ class Landmark:
 
 MASTER = Camera("master", "Master (fixed)", "fixed", 0.0, 6.0, 20.0, heading=0.0, pitch=-18.0, hfov=70.0)
 SLAVE = Camera("ptz", "Slave (PTZ)", "ptz", 28.0, 9.0, -14.0, heading=240.0, pitch=0.0, analytics=False)
+# The plan's pair, from the other side of the yard.
+MASTER2 = Camera("master2", "Master 2 (fixed)", "fixed", -26.0, 6.0, -34.0, heading=134.0, pitch=-18.0, hfov=70.0)
+SLAVE2 = Camera("ptz2", "Slave 2 (PTZ)", "ptz", -24.0, 8.0, 18.0, heading=45.0, pitch=0.0, analytics=False)
 SLAVE_LIMITS = PtzLimits()
 
 VIDEO_W, VIDEO_H = 640, 360
+
+# The plan's picture: a camera straight above the yard, looking down, heading north, so the top of
+# its frame is north and its right is east. High and narrow, so that what stands up from the ground
+# leans out little; its far corner stays nearer than the 150 m where OnvifSim's fog begins.
+PLAN_W, PLAN_H = 1280, 960
+PLAN_CENTRE = (0.0, -6.0)  # x, z
+PLAN_ALTITUDE = 120.0
+PLAN_HALF_WIDTH = 48.0  # metres on the ground; the half-height follows from the frame's aspect
+TOPDOWN = Camera(
+    "topdown", "Plan camera", "fixed", PLAN_CENTRE[0], PLAN_ALTITUDE, PLAN_CENTRE[1], heading=0.0, pitch=-90.0,
+    hfov=2 * math.degrees(math.atan(PLAN_HALF_WIDTH / PLAN_ALTITUDE)), analytics=False)
+
+
+@dataclass(frozen=True)
+class Pair:
+    """A master and the PTZ slave it drives, standing in one ta_vms space."""
+    name: str  # "map" | "plan", which is also how the harness's --pair names it
+    master: Camera
+    slave: Camera
+    limits: PtzLimits = SLAVE_LIMITS
+
+
+MAP_PAIR = Pair("map", MASTER, SLAVE)
+PLAN_PAIR = Pair("plan", MASTER2, SLAVE2)
+PAIRS = [MAP_PAIR, PLAN_PAIR]
+# The cameras ta_vms gets, in the order of their ONVIF ports.
+STREAMING_CAMERAS = [c for pair in PAIRS for c in (pair.master, pair.slave)]
 
 # Not green: the grass is.
 LANDMARKS = [
@@ -156,6 +189,21 @@ def to_wgs84(x, z, lat0=DEFAULT_LAT0, lon0=DEFAULT_LON0):
     return lat0 + north / per_deg_lat, lon0 + east / per_deg_lon
 
 
+def plan_corners(lat0=0.0, lon0=0.0):
+    """Where the plan picture's top-left, top-right and bottom-left corners lie on the ground, in
+    the made-up WGS84 of a plan anchored at (lat0, lon0): the frame's edges are exactly at
+    +-tan(hfov/2), and the ground is flat at zero."""
+    half_w = PLAN_HALF_WIDTH
+    half_h = half_w * PLAN_H / PLAN_W
+    cx, cz = PLAN_CENTRE
+    north, south, west, east = cz - half_h, cz + half_h, cx - half_w, cx + half_w
+    return {
+        "tl": to_wgs84(west, north, lat0, lon0),
+        "tr": to_wgs84(east, north, lat0, lon0),
+        "bl": to_wgs84(west, south, lat0, lon0),
+    }
+
+
 def bearing(frm, to):
     """(azimuth deg cw from north in [0,360), elevation deg, distance m) from one sim point to another."""
     de, dn, du = to[0] - frm[0], -(to[2] - frm[2]), to[1] - frm[1]
@@ -230,8 +278,8 @@ def _flat_terrain():
     return {"size": TERRAIN_SIZE, "resolution": TERRAIN_RESOLUTION, "heights": heights}
 
 
-def _camera_json(camera, onvif_port):
-    video = {"width": VIDEO_W, "height": VIDEO_H, "fps": 10, "quality": 70}
+def _camera_json(camera, onvif_port, width=VIDEO_W, height=VIDEO_H):
+    video = {"width": width, "height": height, "fps": 10, "quality": 70}
     body = {
         "id": camera.id,
         "name": camera.name,
@@ -242,7 +290,7 @@ def _camera_json(camera, onvif_port):
         "roll": 0,
         "hFov": camera.hfov,
         "video": video,
-        "h264": {"width": VIDEO_W, "height": VIDEO_H, "fps": 10, "bitrateKbps": 1024, "govLength": 10},
+        "h264": {"width": width, "height": height, "fps": 10, "bitrateKbps": 1024, "govLength": 10},
         "metadata": {"analytics": camera.analytics, "ptzStatus": False},
         "onvifPort": onvif_port,
         "users": USERS,
@@ -294,7 +342,12 @@ def build_world(onvif_base_port, with_walker=True):
         "objects": landmarks + scenery,
         "roads": roads,
         "walkers": walkers,
-        "cameras": [_camera_json(MASTER, onvif_base_port), _camera_json(SLAVE, onvif_base_port + 1)],
+        "cameras": [
+            *[_camera_json(camera, onvif_base_port + i) for i, camera in enumerate(STREAMING_CAMERAS)],
+            # Never added to ta_vms: the harness only takes a snapshot from it. OnvifSim gives every
+            # camera an ONVIF port all the same, the next one, which nothing maps out of the container.
+            _camera_json(TOPDOWN, onvif_base_port + len(STREAMING_CAMERAS), PLAN_W, PLAN_H),
+        ],
     }
 
 
@@ -321,41 +374,65 @@ def check():
     # anywhere on their loop. Checked on the ground plan, ignoring height, so it errs on the safe side.
     targets = [(lm.name, lm.x, lm.z) for lm in LANDMARKS] + [("route", x, z) for x, z in _route_samples()]
     for s in SCENERY:
-        for camera in (MASTER, SLAVE):
+        for camera in STREAMING_CAMERAS:
             for name, x, z in targets:
                 gap = _distance_to_segment(s.x, s.z, camera.x, camera.z, x, z)
                 assert gap > s.radius, f"{s.id} stands {gap:.1f} m from {camera.id}'s line to {name} ({x:.0f},{z:.0f})"
         for name, x, z in targets:
             assert math.hypot(s.x - x, s.z - z) > s.radius + 1, f"{s.id} stands on {name}"
 
+    for pair in PAIRS:
+        _check_pair(pair)
+
+    # Everything a pair stands on or looks at is on the plan picture, clear of its edges.
+    half_h = PLAN_HALF_WIDTH * PLAN_H / PLAN_W
+    for name, x, z in ([(lm.name, lm.x, lm.z) for lm in LANDMARKS] + [("route", x, z) for x, z in WALKER_ROUTE]
+                       + [(c.id, c.x, c.z) for c in STREAMING_CAMERAS]):
+        assert abs(x - PLAN_CENTRE[0]) < PLAN_HALF_WIDTH - 2 and abs(z - PLAN_CENTRE[1]) < half_h - 2, \
+            f"{name} at ({x},{z}) is off the plan picture"
+    assert math.hypot(PLAN_ALTITUDE, PLAN_HALF_WIDTH, half_h) < 150, "the plan picture's corners reach into the fog"
+
+
+def _check_pair(pair):
+    master, slave = pair.master, pair.slave
     # The master sees every landmark and every corner of the route, clear of the frame edges.
     for name, x, z in [(lm.name, lm.x, lm.z) for lm in LANDMARKS] + [("route", x, z) for x, z in WALKER_ROUTE]:
-        uv = project(MASTER, (x, 0.0, z))
-        assert uv and 0.05 < uv[0] < 0.95 and 0.05 < uv[1] < 0.95, f"{name} at ({x},{z}) is not well inside the master's picture: {uv}"
-        top = project(MASTER, (x, WALKER_HEIGHT, z))
+        uv = project(master, (x, 0.0, z))
+        assert uv and 0.05 < uv[0] < 0.95 and 0.05 < uv[1] < 0.95, \
+            f"{name} at ({x},{z}) is not well inside {master.id}'s picture: {uv}"
+        top = project(master, (x, WALKER_HEIGHT, z))
         # OnvifSim's minimum box is 0.05 in -1..1 units, i.e. 0.025 of the frame height.
-        assert uv[1] - top[1] > 0.04, f"a person at {name} would be too small for the master's analytics"
+        assert uv[1] - top[1] > 0.04, f"a person at {name} would be too small for {master.id}'s analytics"
 
     # The slave's landmarks spread far enough for the geo fit, and keep away from its pan seam.
-    readings = [ptz_degrees(SLAVE, (lm.x, 0.0, lm.z)) for lm in LANDMARKS]
+    readings = [ptz_degrees(slave, (lm.x, 0.0, lm.z)) for lm in LANDMARKS]
     pans = [p for p, _ in readings]
     tilts = [t for _, t in readings]
-    assert max(pans) - min(pans) >= 45, f"landmark pans span only {max(pans) - min(pans):.1f} deg"
-    assert max(tilts) - min(tilts) >= 1, f"landmark tilts span only {max(tilts) - min(tilts):.1f} deg"
-    assert all(abs(p) < 150 for p in pans), "a landmark lies near the slave's pan seam"
+    assert max(pans) - min(pans) >= 45, f"{slave.id}: landmark pans span only {max(pans) - min(pans):.1f} deg"
+    assert max(tilts) - min(tilts) >= 1, f"{slave.id}: landmark tilts span only {max(tilts) - min(tilts):.1f} deg"
+    assert all(abs(p) < 150 for p in pans), f"a landmark lies near {slave.id}'s pan seam"
     for x, z in WALKER_ROUTE:
-        assert abs(ptz_degrees(SLAVE, (x, 0.0, z))[0]) < 150, "the route crosses the slave's pan seam"
+        assert abs(ptz_degrees(slave, (x, 0.0, z))[0]) < 150, f"the route crosses {slave.id}'s pan seam"
 
 
 def summary(lat0=DEFAULT_LAT0, lon0=DEFAULT_LON0):
-    lines = ["landmark          x      z      lat          lon          slave pan  tilt   generic x  y      master u  v"]
-    for lm in LANDMARKS:
-        lat, lon = to_wgs84(lm.x, lm.z, lat0, lon0)
-        pan, tilt = ptz_degrees(SLAVE, (lm.x, 0.0, lm.z))
-        gx, gy = to_generic(pan, tilt)
-        u, v = project(MASTER, (lm.x, 0.0, lm.z))
-        lines.append(
-            f"{lm.label:<15} {lm.x:6.1f} {lm.z:6.1f}  {lat:.7f}  {lon:.7f}  {pan:8.2f} {tilt:6.2f}  {gx:8.4f} {gy:7.4f}  {u:7.3f} {v:6.3f}")
+    lines = []
+    for pair in PAIRS:
+        # The map pair lives in the real anchor's WGS84, the plan pair in made-up WGS84 around (0, 0).
+        a_lat, a_lon = (lat0, lon0) if pair is MAP_PAIR else (0.0, 0.0)
+        lines += [f"{pair.name}: {pair.master.id} and {pair.slave.id}, anchored at ({a_lat}, {a_lon})",
+                  "landmark          x      z      lat          lon          slave pan  tilt   generic x  y      master u  v"]
+        for lm in LANDMARKS:
+            lat, lon = to_wgs84(lm.x, lm.z, a_lat, a_lon)
+            pan, tilt = ptz_degrees(pair.slave, (lm.x, 0.0, lm.z))
+            gx, gy = to_generic(pan, tilt, pair.limits)
+            u, v = project(pair.master, (lm.x, 0.0, lm.z))
+            lines.append(
+                f"{lm.label:<15} {lm.x:6.1f} {lm.z:6.1f}  {lat:11.7f}  {lon:11.7f}  {pan:8.2f} {tilt:6.2f}  {gx:8.4f} {gy:7.4f}  {u:7.3f} {v:6.3f}")
+        lines.append("")
+    corners = plan_corners()
+    lines.append(f"plan picture {PLAN_W}x{PLAN_H}, camera {TOPDOWN.hfov:.3f} deg wide at {PLAN_ALTITUDE:.0f} m; corners "
+                 + ", ".join(f"{k} ({lat:.7f}, {lon:.7f})" for k, (lat, lon) in corners.items()))
     return "\n".join(lines)
 
 

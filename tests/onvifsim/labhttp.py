@@ -10,6 +10,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 
 class HttpError(RuntimeError):
@@ -22,17 +23,43 @@ class HttpError(RuntimeError):
 def request(method, url, body=None, headers=None, timeout=15.0):
     """The response body parsed as JSON (None when empty); raises HttpError on a non-2xx status."""
     data = None if body is None else json.dumps(body).encode()
+    return _json(_send(method, url, data, "application/json" if data is not None else None, headers, timeout))
+
+
+def request_multipart(url, fields, file_field, filename, content, mime, headers=None, timeout=60.0):
+    """POSTs a form with text fields and one file, as a browser's file upload does; the response
+    parsed as JSON. Built by hand: the standard library has no multipart encoder."""
+    boundary = f"lab-{uuid.uuid4().hex}"
+    parts = []
+    for name, value in fields.items():
+        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode())
+    parts.append((f'--{boundary}\r\nContent-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\n'
+                  f"Content-Type: {mime}\r\n\r\n").encode() + content + b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode())
+    return _json(_send("POST", url, b"".join(parts), f"multipart/form-data; boundary={boundary}", headers, timeout))
+
+
+def fetch_bytes(url, headers=None, timeout=30.0):
+    """The raw response body, for what is not JSON (a picture)."""
+    return _send("GET", url, None, None, headers, timeout, accept="*/*")
+
+
+def _send(method, url, data, content_type, headers, timeout, accept="application/json"):
     req = urllib.request.Request(url, data=data, method=method)
-    req.add_header("Accept", "application/json")
-    if data is not None:
-        req.add_header("Content-Type", "application/json")
+    req.add_header("Accept", accept)
+    if content_type:
+        req.add_header("Content-Type", content_type)
     for key, value in (headers or {}).items():
         req.add_header(key, value)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode()
+            return resp.read()
     except urllib.error.HTTPError as e:
         raise HttpError(method, url, e.code, e.read().decode(errors="replace")) from None
+
+
+def _json(raw):
+    raw = raw.decode()
     if not raw.strip():
         return None
     try:

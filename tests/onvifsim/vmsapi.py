@@ -1,6 +1,6 @@
 """ta_vms through its gateway (web_vms.Server), the same REST API the browser uses."""
 
-from labhttp import HttpError, request, sse
+from labhttp import HttpError, request, request_multipart, sse
 
 
 class Vms:
@@ -52,6 +52,17 @@ class Vms:
 
     def delete_space(self, space_id):
         self.call("DELETE", f"/api/spatial/spaces/{space_id}")
+
+    def upload_plan(self, space_id, image, mime, width, height, corners):
+        """Sets a plan space's picture and where its corners lie (top-left, top-right, bottom-left)."""
+        (tl_lat, tl_lon), (tr_lat, tr_lon), (bl_lat, bl_lon) = corners["tl"], corners["tr"], corners["bl"]
+        fields = {
+            "WidthPx": width, "HeightPx": height,
+            "TlLat": repr(tl_lat), "TlLon": repr(tl_lon), "TrLat": repr(tr_lat), "TrLon": repr(tr_lon),
+            "BlLat": repr(bl_lat), "BlLon": repr(bl_lon),
+        }
+        return request_multipart(self._url(f"/api/spatial/spaces/{space_id}/plan"), fields, "File", "plan.jpg",
+                                 image, mime, self._headers())
 
     def landmarks(self, space_id):
         return self.call("GET", f"/api/spatial/spaces/{space_id}/landmarks") or []

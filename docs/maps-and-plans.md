@@ -197,7 +197,10 @@ works the moment both are, and recalibrating one camera fixes it for every pairi
 
 It was proved on a virtual bench, [`tests/onvifsim`](../tests/onvifsim/README.md). In the OnvifSim
 world that bench builds, the head arrives within about a quarter of a degree of the person it was
-sent to, and the person stays in the middle third of the slave's picture throughout.
+sent to, and the person stays in the middle third of the slave's picture throughout. The bench
+runs a second pair over the same yard on a plan in made-up coordinates, whose picture is the yard
+photographed from above, and checks there that a master on the map is refused for a slave on the
+plan.
 
 ## Algorithms
 

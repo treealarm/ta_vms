@@ -6,8 +6,10 @@ aiming code was checked only with synthetic numbers.
 real ONVIF devices: RTSP H.264, PTZ with AbsoluteMove and GetStatus, and an ONVIF metadata track that
 boxes the people in view. It also says where everything really is.
 
-The harness builds one small world, wires it into a running ta_vms, calibrates both cameras through
-the ordinary ONVIF path, and measures where the PTZ actually looks.
+The harness builds one small world, wires it into a running ta_vms, calibrates the cameras through
+the ordinary ONVIF path, and measures where each PTZ actually looks. It does so twice, for two
+master/slave pairs watching the same yard: one on a map in real coordinates, the other on a plan in
+made-up ones.
 
 ## The world
 
@@ -18,6 +20,9 @@ apart. Run `python3 tests/onvifsim/world.py` to print the expected numbers.
 |---|---|
 | `master`, a fixed camera | (0, 6, 20), facing north, pitched 18° down, 70° wide |
 | `ptz`, a PTZ camera | (28, 9, −14), mounted facing 240°, 60° wide at zoom 0, no analytics of its own |
+| `master2`, the plan's fixed camera | (−26, 6, −34), facing 134°, pitched 18° down, 70° wide |
+| `ptz2`, the plan's PTZ camera | (−24, 8, 18), mounted facing 45°, otherwise like `ptz` |
+| `topdown`, the plan's photographer | 120 m above (0, −6), looking straight down, 1280×960; never added to ta_vms |
 | Landmarks, half-metre boxes | L1 red (−9, 4), L2 yellow (9, 4), L3 blue (−13, −12), L4 white (13, −12), L5 purple (0, −24) |
 | `w1`, one person | walks the square (−8, 0) → (8, 0) → (8, −16) → (−8, −16) at 1 m/s, along a sand path |
 | Scenery | a row of pines to the north, three houses, oaks, rocks and a lane behind the master |
@@ -28,8 +33,23 @@ checks that none of it stands on a camera's line of sight to a landmark or to an
 person's loop. Only the master boxes people: the slave is aimed by the master's boxes alone, and
 boxes on its own video would only suggest otherwise. The sim's origin sits at 41.3° N, 69.24° E,
 which is off the equator so that a missing cos(latitude) shows up as an error.
-ta_vms gets one map named "OnvifSim lab" with the five landmarks and both cameras' reference
-placements.
+ta_vms gets a map named "OnvifSim lab" with the five landmarks and the reference placements of
+`master` and `ptz`, and a plan named "OnvifSim lab plan" with the same five landmarks and the
+reference placements of `master2` and `ptz2`.
+
+## The plan
+
+A plan without real coordinates keeps its positions as made-up WGS84 around (0, 0), and shares
+geometry with nothing but itself (see `docs/maps-and-plans.md`). The second pair is there to prove
+both halves of that: master and slave on the same such plan aim at each other, and a master on the
+map is refused for a slave on the plan.
+
+The plan's picture is a snapshot from `topdown`, taken with nobody in the yard. Its top is north and
+its right is east. The ground is flat, so the frame's corners land exactly at 120·tan(hfov/2) from
+the centre, 96 m by 72 m, and the harness gives ta_vms those three corners when it uploads the
+picture. The ground, the path and the feet of the landmarks therefore sit exactly where the plan
+says. Houses and trees lean slightly outwards, as anything standing up does in a photograph from
+above; that is why the camera is high and narrow.
 
 ## Running it
 
@@ -50,23 +70,28 @@ tests/onvifsim/onvifsim_lab.py calibrate
 tests/onvifsim/onvifsim_lab.py aim-check [--seconds 60]
 tests/onvifsim/onvifsim_lab.py bind
 tests/onvifsim/onvifsim_lab.py run [--seconds 60]
-tests/onvifsim/onvifsim_lab.py down [--purge]   # --purge also removes the cameras and the map
+tests/onvifsim/onvifsim_lab.py down [--purge]   # --purge also removes the cameras and both spaces
+
+Every step works on both pairs, one after the other; --pair map or --pair plan picks one.
 
 After `bind` the configuration stays in ta_vms: restart the stack, and the slave follows the
 person again without any of the steps before it.
 ```
 
 OnvifSim runs in the container `onvifsim-lab-onvifsim-1`, its ports mapped one to one and clear of
-the dev stack: 8090 for the editor and API, 8560 for RTSP, 6980 for RTP, and 8101/8102 for ONVIF. Open
+the dev stack: 8090 for the editor and API, 8560 for RTSP, 6980 for RTP, and 8101–8104 for ONVIF
+(`master`, `ptz`, `master2`, `ptz2`; `topdown` gets 8105, which is not mapped out). Open
 http://localhost:8090 to watch the world while a step runs; its log is
 `docker compose -f tests/onvifsim/docker-compose.yml logs`. The steps keep what they created in
-`/tmp/onvifsim-lab/state.json`. The ta_vms camera ids are `sim-master` and `sim-ptz`.
+`/tmp/onvifsim-lab/state.json`, by pair. The ta_vms camera ids are `sim-master`, `sim-ptz`,
+`sim-master2` and `sim-ptz2`.
 
 ## What each step proves
 
-- **provision** adds both cameras with an ONVIF connection and the `Profile_2` token. The stream
-  URI therefore comes from `GetStreamUri` through VmsOnvif. The step passes only when a person box
-  from the master has come back through media_server, VmsOnvif and the analytics service to
+- **provision** adds the cameras with an ONVIF connection and the `Profile_2` token. The stream
+  URI therefore comes from `GetStreamUri` through VmsOnvif. It creates the plan and uploads its
+  picture the first time, or again with `--reset`. The step passes only when a person box from
+  each master has come back through media_server, VmsOnvif and the analytics service to
   `/api/analytics/live`.
 - **calibrate, PTZ part.** For each landmark it turns the sim's head onto it, as a person would
   with a joystick. It then reads the position back through `GET /api/ptz/status`, which is ONVIF
@@ -88,6 +113,8 @@ http://localhost:8090 to watch the world while a step runs; its log is
 - **bind** binds the PTZ to the master by the method `geo` (through the map, no survey) and
   switches tracking on for people from the master's ONVIF boxes. It passes when the binding
   reports nothing missing and the tracking service runs a session for the slave without an error.
+  For the plan's pair it first binds `ptz2` to the map's `master`, and aims `ptz2` at a point of
+  the map. Both must be refused because the two spaces share no coordinates.
 - **run** lets ta_vms follow the person on its own and samples the slave's true pose four times a
   second.
   - *Arrival error* is the angle between where the head stopped and where the person was when it

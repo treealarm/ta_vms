@@ -1,19 +1,25 @@
 #!/usr/bin/env python3
 """A virtual bench for PTZ aiming: OnvifSim's small world, driven through ta_vms.
 
+Two master/slave pairs watch the same yard: one stands on a map in real coordinates, the other on
+a plan in made-up ones, whose picture is the yard photographed from above. --pair picks one; by
+default every step does both, one after the other.
+
 Steps, each one checking what it did and exiting 1 with the reason when something is off:
 
     up          build and start OnvifSim from ../OnvifSim in Docker, on ports clear of the dev
                 stack, and load the world
-    provision   add both cameras to ta_vms over ONVIF, a map, the landmarks and where the cameras stand
+    provision   add the cameras to ta_vms over ONVIF; the map, and the plan with its picture; the
+                landmarks in each, and where each pair's cameras stand
     calibrate   PTZ by landmarks (head driven in the sim, position read back over ONVIF through
                 VmsOnvif) and the master's ground marks (a person standing on each landmark, the foot
                 of the box ta_vms received from the camera's metadata track)
     aim-check   follow the walking person with the existing "aim at a point of the map" call and
                 measure where the PTZ really looks, against the sim's ground truth
-    bind        bind the PTZ to the master through the map (method "geo") and switch tracking on
+    bind        bind the PTZ to its master through the map (method "geo") and switch tracking on;
+                for the plan's pair, first check that a master on the map is refused
     run         let ta_vms follow the person on its own, from the master's detections, and measure
-    down        stop OnvifSim's container (--purge also removes the cameras and the map from ta_vms)
+    down        stop OnvifSim's container (--purge also removes the cameras and the spaces from ta_vms)
     all         up, provision, calibrate, aim-check, bind, run, down
 
 The ta_vms dev stack must already be running (scripts/dev-up.sh or F5). See README.md.
@@ -40,7 +46,7 @@ REPO = Path(__file__).resolve().parents[2]
 COMPOSE_FILE = Path(__file__).resolve().parent / "docker-compose.yml"
 STATE_DIR = Path("/tmp/onvifsim-lab")
 STATE_FILE = STATE_DIR / "state.json"
-SPACE_NAME = "OnvifSim lab"
+SPACE_NAMES = {W.MAP_PAIR.name: "OnvifSim lab", W.PLAN_PAIR.name: "OnvifSim lab plan"}
 PROFILE = "Profile_2"  # OnvifSim's H.264 profile, the one media_server pulls
 MARK_WALKER = "lab-mark"
 
@@ -71,7 +77,13 @@ def read_env():
 
 
 def load_state():
-    return json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else {}
+    """What the steps created, by pair: {"map": {"space_id", "landmarks"}, "plan": {...}}."""
+    state = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else {}
+    # Before there were two pairs the map's entries lay at the top; a bench provisioned then keeps
+    # its map and its calibration.
+    if "space_id" in state:
+        state = {W.MAP_PAIR.name: {"space_id": state["space_id"], "landmarks": state.get("landmarks", {})}}
+    return state
 
 
 def save_state(state):
@@ -85,6 +97,7 @@ class Lab:
         self.sim = Sim(f"http://127.0.0.1:{args.sim_port}")
         self.vms = Vms(args.vms, args.user, args.password)
         self.state = load_state()
+        self.pairs = [p for p in W.PAIRS if args.pair in ("both", p.name)]
 
     def cam_id(self, camera):
         return f"{self.args.prefix}{camera.id}"
@@ -92,6 +105,23 @@ class Lab:
     @property
     def onvif_base(self):
         return self.args.onvif_base_port
+
+    def anchor(self, pair):
+        """The WGS84 a pair's space measures in: the real anchor for the map, (0, 0) for the plan,
+        which stands in made-up coordinates."""
+        return (self.args.lat0, self.args.lon0) if pair is W.MAP_PAIR else (0.0, 0.0)
+
+    def wgs84(self, pair, x, z):
+        return W.to_wgs84(x, z, *self.anchor(pair))
+
+    def of(self, pair):
+        """What the steps created for a pair."""
+        return self.state.setdefault(pair.name, {})
+
+    def provisioned(self, pair):
+        state = self.of(pair)
+        require(state.get("space_id") and state.get("landmarks"), f"run provision for the {pair.name} pair first")
+        return state
 
     # ── up / down ───────────────────────────────────────────────────────────────
 
@@ -104,7 +134,8 @@ class Lab:
         status = self.sim.status()
         require(status.get("h264"), "OnvifSim offers no H.264 (ffmpeg not found): media_server needs Profile_2")
         ports = status.get("onvifPorts", {})
-        expected = {W.MASTER.id: self.onvif_base, W.SLAVE.id: self.onvif_base + 1}
+        cameras = [*W.STREAMING_CAMERAS, W.TOPDOWN]
+        expected = {c.id: self.onvif_base + i for i, c in enumerate(cameras)}
         require(ports == expected, f"OnvifSim ONVIF ports are {ports}, expected {expected}")
         log(f"OnvifSim world loaded: ONVIF {expected}, RTSP {status.get('rtspPort')}")
 
@@ -115,7 +146,8 @@ class Lab:
                    ONVIFSIM_RTSP_PORT=str(a.rtsp_port), ONVIFSIM_RTP_PORT=str(a.rtp_port),
                    ONVIFSIM_RTP_PORT_END=str(a.rtp_port + 1),
                    ONVIFSIM_ONVIF_BASE_PORT=str(a.onvif_base_port),
-                   ONVIFSIM_ONVIF_LAST_PORT=str(a.onvif_base_port + 1))
+                   # The cameras ta_vms talks to; the plan camera's port stays inside the container.
+                   ONVIFSIM_ONVIF_LAST_PORT=str(a.onvif_base_port + len(W.STREAMING_CAMERAS) - 1))
         result = subprocess.run(["docker", "compose", "-f", str(COMPOSE_FILE), *command], env=env)
         require(not check or result.returncode == 0, f"docker compose {' '.join(command)} failed")
 
@@ -140,17 +172,17 @@ class Lab:
         log("OnvifSim stopped")
         if self.args.purge:
             self.vms.login()
-            for camera in (W.MASTER, W.SLAVE):
-                try:
-                    self.vms.delete_camera(self.cam_id(camera))
-                    log(f"removed camera {self.cam_id(camera)}")
-                except HttpError as e:
-                    log(f"camera {self.cam_id(camera)}: {e}")
-            space_id = self.state.pop("space_id", None)
-            if space_id:
-                self.vms.delete_space(space_id)
-                log(f"removed space {space_id}")
-            self.state.pop("landmarks", None)
+            for pair in self.pairs:
+                for camera in (pair.master, pair.slave):
+                    try:
+                        self.vms.delete_camera(self.cam_id(camera))
+                        log(f"removed camera {self.cam_id(camera)}")
+                    except HttpError as e:
+                        log(f"camera {self.cam_id(camera)}: {e}")
+                space_id = self.state.pop(pair.name, {}).get("space_id")
+                if space_id:
+                    self.vms.delete_space(space_id)
+                    log(f"removed space {space_id}")
         save_state(self.state)
 
     def status(self):
@@ -162,76 +194,101 @@ class Lab:
     def provision(self):
         self.vms.login()
         existing = {c["cameraId"] for c in self.vms.cameras()}
-        for i, camera in enumerate((W.MASTER, W.SLAVE)):
-            cam_id = self.cam_id(camera)
-            if cam_id in existing and self.args.reset:
-                self.vms.delete_camera(cam_id)
-                existing.discard(cam_id)
-            if cam_id in existing:
-                log(f"camera {cam_id} already in ta_vms")
-                continue
-            port = self.onvif_base + i
-            self.vms.add_camera({
-                "cameraId": cam_id,
-                "name": f"OnvifSim {camera.name}",
-                "serverId": self.args.server_id,
-                "onvifConn": {"ip": "127.0.0.1", "port": port, "xaddr": f"http://127.0.0.1:{port}/onvif/device_service"},
-                "cred": {"user": "admin", "pass": "admin"},
-                "hasTelemetry": camera.kind == "ptz",
-                "streams": [{"streamName": "main", "profileToken": PROFILE, "path": "", "webRtc": True}],
-            })
-            log(f"added camera {cam_id} (ONVIF 127.0.0.1:{port}, {PROFILE})")
+        for pair in self.pairs:
+            for camera in (pair.master, pair.slave):
+                self._ensure_camera(camera, existing)
 
-        space_id = self._ensure_space()
-        landmarks = self._ensure_landmarks(space_id)
-        for camera in (W.MASTER, W.SLAVE):
-            lat, lon = W.to_wgs84(camera.x, camera.z, self.args.lat0, self.args.lon0)
-            self.vms.upsert_placement(self.cam_id(camera), space_id, {
-                "cameraId": self.cam_id(camera), "spaceId": space_id, "isReference": True,
-                "lat": lat, "lon": lon, "heightM": camera.y, "headingDeg": camera.heading,
-                "hfovDeg": camera.hfov if camera.kind == "fixed" else W.SLAVE_LIMITS.fov_wide,
-                "rangeM": 60,
-            })
-        log(f"space '{SPACE_NAME}' ({space_id}): {len(landmarks)} landmarks, both cameras placed")
-        self.state.update(space_id=space_id, landmarks=landmarks)
-        save_state(self.state)
+        for pair in self.pairs:
+            space_id = self._ensure_space(pair)
+            landmarks = self._ensure_landmarks(pair, space_id)
+            for camera in (pair.master, pair.slave):
+                lat, lon = self.wgs84(pair, camera.x, camera.z)
+                self.vms.upsert_placement(self.cam_id(camera), space_id, {
+                    "cameraId": self.cam_id(camera), "spaceId": space_id, "isReference": True,
+                    "lat": lat, "lon": lon, "heightM": camera.y, "headingDeg": camera.heading,
+                    "hfovDeg": camera.hfov if camera.kind == "fixed" else pair.limits.fov_wide,
+                    "rangeM": 60,
+                })
+            log(f"space '{SPACE_NAMES[pair.name]}' ({space_id}): {len(landmarks)} landmarks, "
+                f"{self.cam_id(pair.master)} and {self.cam_id(pair.slave)} placed")
+            self.of(pair).update(space_id=space_id, landmarks=landmarks)
+            save_state(self.state)
 
-        log("waiting for the master's person boxes to reach ta_vms (RTSP metadata -> VmsOnvif -> analytics)")
-        boxes = self._master_boxes(seconds=60, wanted=1)
-        require(boxes, "no ONVIF person box from the master reached /api/analytics/live within 60 s: "
-                       "check media_server's log for 'ONVIF metadata track found' and VmsOnvif's for 'scene objects'")
-        log("the master's detections arrive in ta_vms")
+        for pair in self.pairs:
+            master = self.cam_id(pair.master)
+            log(f"waiting for {master}'s person boxes to reach ta_vms (RTSP metadata -> VmsOnvif -> analytics)")
+            boxes = self._master_boxes(pair, seconds=60, wanted=1)
+            require(boxes, f"no ONVIF person box from {master} reached /api/analytics/live within 60 s: "
+                           "check media_server's log for 'ONVIF metadata track found' and VmsOnvif's for 'scene objects'")
+            log(f"{master}'s detections arrive in ta_vms")
 
-    def _ensure_space(self):
-        lat0, lon0 = self.args.lat0, self.args.lon0
-        for space in self.vms.spaces():
-            if space.get("name") == SPACE_NAME and not space.get("parentId"):
-                return space["id"]
-        sw = W.to_wgs84(-100, 100, lat0, lon0)
-        ne = W.to_wgs84(100, -100, lat0, lon0)
-        space = self.vms.upsert_space({
-            "name": SPACE_NAME, "kind": "map", "realCoordinates": True, "ordinal": 0, "elevationM": 0,
-            "view": {"southWest": {"lat": sw[0], "lon": sw[1]}, "northEast": {"lat": ne[0], "lon": ne[1]}},
-            "footprint": [],
+    def _ensure_camera(self, camera, existing):
+        cam_id = self.cam_id(camera)
+        if cam_id in existing and self.args.reset:
+            self.vms.delete_camera(cam_id)
+            existing.discard(cam_id)
+        if cam_id in existing:
+            log(f"camera {cam_id} already in ta_vms")
+            return
+        port = self.onvif_base + W.STREAMING_CAMERAS.index(camera)
+        self.vms.add_camera({
+            "cameraId": cam_id,
+            "name": f"OnvifSim {camera.name}",
+            "serverId": self.args.server_id,
+            "onvifConn": {"ip": "127.0.0.1", "port": port, "xaddr": f"http://127.0.0.1:{port}/onvif/device_service"},
+            "cred": {"user": "admin", "pass": "admin"},
+            "hasTelemetry": camera.kind == "ptz",
+            "streams": [{"streamName": "main", "profileToken": PROFILE, "path": "", "webRtc": True}],
         })
+        log(f"added camera {cam_id} (ONVIF 127.0.0.1:{port}, {PROFILE})")
+
+    def _ensure_space(self, pair):
+        name = SPACE_NAMES[pair.name]
+        space = next((s for s in self.vms.spaces() if s.get("name") == name and not s.get("parentId")), None)
+        if space is None:
+            if pair is W.MAP_PAIR:
+                sw, ne = self.wgs84(pair, -100, 100), self.wgs84(pair, 100, -100)
+            else:
+                corners = W.plan_corners(*self.anchor(pair))
+                sw, ne = (corners["bl"][0], corners["tl"][1]), (corners["tl"][0], corners["tr"][1])
+            space = self.vms.upsert_space({
+                "name": name, "kind": "map" if pair is W.MAP_PAIR else "plan",
+                "realCoordinates": pair is W.MAP_PAIR, "ordinal": 0, "elevationM": 0,
+                "view": {"southWest": {"lat": sw[0], "lon": sw[1]}, "northEast": {"lat": ne[0], "lon": ne[1]}},
+                "footprint": [],
+            })
+        if pair is W.PLAN_PAIR and (space.get("plan") is None or self.args.reset):
+            self._photograph_plan(pair, space["id"])
         return space["id"]
 
-    def _ensure_landmarks(self, space_id):
+    def _photograph_plan(self, pair, space_id):
+        """The plan's picture: the yard from the camera straight above it, with nobody in it."""
+        self.sim.delete_walker(W.WALKER_ID)
+        self.sim.delete_walker(MARK_WALKER)
+        try:
+            image = self.sim.snapshot(W.TOPDOWN.id)
+        finally:
+            self.sim.put_walker(W.WALKER_ID, W.walker_json(W.WALKER_ROUTE))
+        self.vms.upload_plan(space_id, image, "image/jpeg", W.PLAN_W, W.PLAN_H, W.plan_corners(*self.anchor(pair)))
+        log(f"plan picture uploaded: {W.PLAN_W}x{W.PLAN_H}, {len(image) // 1024} KiB, "
+            f"{2 * W.PLAN_HALF_WIDTH:.0f} m wide from {W.PLAN_ALTITUDE:.0f} m up")
+
+    def _ensure_landmarks(self, pair, space_id):
         # Matched on the first word ("L1"), so a landmark renamed here keeps its id -- and with it
         # every observation and mark already recorded against it.
         by_name = {lm["name"].split()[0]: lm["id"] for lm in self.vms.landmarks(space_id) if lm["name"]}
         ids = {}
         for lm in W.LANDMARKS:
-            lat, lon = W.to_wgs84(lm.x, lm.z, self.args.lat0, self.args.lon0)
+            lat, lon = self.wgs84(pair, lm.x, lm.z)
             body = {"spaceId": space_id, "name": lm.label, "lat": lat, "lon": lon, "heightM": 0}
             if lm.name in by_name:
                 body["id"] = by_name[lm.name]
             ids[lm.name] = self.vms.upsert_landmark(body)["id"]
         return ids
 
-    def _master_boxes(self, seconds, wanted):
-        """Person boxes of the master, as ta_vms streams them, until `wanted` have arrived."""
-        master = self.cam_id(W.MASTER)
+    def _master_boxes(self, pair, seconds, wanted):
+        """Person boxes of a pair's master, as ta_vms streams them, until `wanted` have arrived."""
+        master = self.cam_id(pair.master)
         found = []
         for d in self.vms.live_detections(seconds):
             if d.get("cameraId") == master and d.get("source") == "onvif" and d.get("kind") == "person":
@@ -244,65 +301,69 @@ class Lab:
 
     def calibrate(self):
         self.vms.login()
-        require(self.state.get("landmarks"), "run provision first")
-        slave = self.cam_id(W.SLAVE)
+        for pair in self.pairs:
+            self.provisioned(pair)
+        slaves = [self.cam_id(pair.slave) for pair in self.pairs]
         # A slave already following its master would turn towards the person standing on each
         # landmark while it is being calibrated. Held, as the calibration wizard holds it.
-        self.vms.hold(slave, 300)
+        for slave in slaves:
+            self.vms.hold(slave, 300)
         self.sim.delete_walker(W.WALKER_ID)
         try:
-            self._calibrate_ptz()
-            self._calibrate_ground()
+            for pair in self.pairs:
+                self._calibrate_ptz(pair)
+                self._calibrate_ground(pair)
         finally:
             self.sim.delete_walker(MARK_WALKER)
             self.sim.put_walker(W.WALKER_ID, W.walker_json(W.WALKER_ROUTE))
-            try:
-                self.vms.hold(slave, 0)
-            except HttpError as e:
-                # Best effort: the hold lapses by itself, and failing here would hide why the
-                # calibration stopped.
-                log(f"could not release the hold on {slave}: {e}")
+            for slave in slaves:
+                try:
+                    self.vms.hold(slave, 0)
+                except HttpError as e:
+                    # Best effort: the hold lapses by itself, and failing here would hide why the
+                    # calibration stopped.
+                    log(f"could not release the hold on {slave}: {e}")
 
-    def _calibrate_ptz(self):
-        slave = self.cam_id(W.SLAVE)
-        ids = self.state["landmarks"]
+    def _calibrate_ptz(self, pair):
+        slave = self.cam_id(pair.slave)
+        ids = self.of(pair)["landmarks"]
         observations = []
         log(f"PTZ calibration of {slave}: centre each landmark, read the position back over ONVIF")
         log("  lm   pan°     tilt°    | ONVIF pan  tilt    | expected pan tilt")
         for lm in W.LANDMARKS:
-            pan, tilt = W.ptz_degrees(W.SLAVE, (lm.x, 0.0, lm.z))
-            self.sim.goto(W.SLAVE.id, pan, tilt, 0.0)
-            self.sim.wait_idle(W.SLAVE.id)
+            pan, tilt = W.ptz_degrees(pair.slave, (lm.x, 0.0, lm.z))
+            self.sim.goto(pair.slave.id, pan, tilt, 0.0)
+            self.sim.wait_idle(pair.slave.id)
             st = self.vms.ptz_status(slave, PROFILE)
             require(st.get("available"), f"GET /api/ptz/status for {slave}: {st}")
             require(not st.get("moving"), f"{slave} still reports MOVING after the sim head stopped")
-            gx, gy = W.to_generic(pan, tilt)
+            gx, gy = W.to_generic(pan, tilt, pair.limits)
             log(f"  {lm.name}  {pan:7.2f}  {tilt:7.2f}  | {st['pan']:8.4f} {st['tilt']:7.4f} | {gx:8.4f} {gy:7.4f}")
             require(abs(st["pan"] - gx) < 1e-3 and abs(st["tilt"] - gy) < 1e-3,
                     f"ONVIF reports ({st['pan']:.4f}, {st['tilt']:.4f}) at {lm.name}, expected ({gx:.4f}, {gy:.4f})")
             observations.append({"landmarkId": ids[lm.name], "pan": st["pan"], "tilt": st["tilt"]})
 
         result = self.vms.put_ptz_geo(slave, observations)
-        require(result and result.get("fitted"), f"the PTZ geo fit failed: {result and result.get('error')}")
+        require(result and result.get("fitted"), f"the PTZ geo fit of {slave} failed: {result and result.get('error')}")
         worst = max(max(abs(o.get("panResidual") or 0), abs(o.get("tiltResidual") or 0)) for o in result["observations"])
         log(f"  fitted; worst leave-one-out residual {worst:.5f} (generic units)")
         require(worst < 0.01, f"leave-one-out residual {worst:.4f} is too large for an exactly linear head")
 
-    def _calibrate_ground(self):
-        master = self.cam_id(W.MASTER)
-        ids = self.state["landmarks"]
+    def _calibrate_ground(self, pair):
+        master = self.cam_id(pair.master)
+        ids = self.of(pair)["landmarks"]
         observations = []
         log(f"ground marks of {master}: a person stands on each landmark, the foot of the box ta_vms received")
         log("  lm   x       y       | expected x  y       | samples")
         for lm in W.LANDMARKS:
             self.sim.put_walker(MARK_WALKER, W.walker_json([(lm.x, lm.z)]))
             time.sleep(1.5)  # let boxes from the previous spot drain through the pipeline
-            boxes = self._master_boxes(seconds=6, wanted=8)[-5:]
-            require(len(boxes) >= 3, f"too few boxes for the person on {lm.name}: {len(boxes)}")
+            boxes = self._master_boxes(pair, seconds=6, wanted=8)[-5:]
+            require(len(boxes) >= 3, f"too few boxes from {master} for the person on {lm.name}: {len(boxes)}")
             xs = [b["bboxX"] + b["bboxWidth"] / 2 for b in boxes]
             ys = [b["bboxY"] + b["bboxHeight"] for b in boxes]
             x, y = statistics.median(xs), statistics.median(ys)
-            ex, ey = W.project(W.MASTER, (lm.x, 0.0, lm.z))
+            ex, ey = W.project(pair.master, (lm.x, 0.0, lm.z))
             log(f"  {lm.name}  {x:.4f}  {y:.4f}  | {ex:.4f}  {ey:.4f}  | {len(boxes)}")
             # Not data, a diagnosis: a mark this far off means the boxes are not where the picture is.
             require(abs(x - ex) < 0.03 and abs(y - ey) < 0.03,
@@ -310,7 +371,7 @@ class Lab:
             observations.append({"landmarkId": ids[lm.name], "x": x, "y": y})
 
         result = self.vms.put_ground_geo(master, observations)
-        require(result and result.get("fitted"), f"the ground fit failed: {result and result.get('error')}")
+        require(result and result.get("fitted"), f"the ground fit of {master} failed: {result and result.get('error')}")
         residuals = [o.get("residualM") for o in result["observations"] if o.get("residualM") is not None]
         worst = max(residuals) if residuals else 0.0
         log(f"  fitted; worst residual {worst:.3f} m")
@@ -320,9 +381,11 @@ class Lab:
 
     def aim_check(self):
         self.vms.login()
-        space_id = self.state.get("space_id")
-        require(space_id, "run provision first")
-        slave = self.cam_id(W.SLAVE)
+        for pair in self.pairs:
+            self._aim_check(pair, self.provisioned(pair)["space_id"])
+
+    def _aim_check(self, pair, space_id):
+        slave = self.cam_id(pair.slave)
         self.sim.put_walker(W.WALKER_ID, W.walker_json(W.WALKER_ROUTE))
         log(f"aim {slave} at the walking person through POST /api/ptz-geo/{{id}}/aim, {self.args.seconds:.0f} s")
         log("   t    person x  z     | ta_vms az°  el°    | true az°  el°    | aim err°  lag err°  in centre")
@@ -331,9 +394,9 @@ class Lab:
         while time.monotonic() - start < self.args.seconds:
             target = self.sim.walker_pose(W.WALKER_ID)
             feet = (target["x"], target["y"], target["z"])
-            lat, lon = W.to_wgs84(target["x"], target["z"], self.args.lat0, self.args.lon0)
+            lat, lon = self.wgs84(pair, target["x"], target["z"])
             aim = self.vms.aim_world(slave, space_id, lat, lon, 0.0)
-            pose = self.sim.wait_idle(W.SLAVE.id)
+            pose = self.sim.wait_idle(pair.slave.id)
             cam = (pose["position"]["x"], pose["position"]["y"], pose["position"]["z"])
             axis = W.direction(pose["heading"], pose["pitch"])
             to_target = tuple(f - c for f, c in zip(feet, cam))
@@ -357,22 +420,54 @@ class Lab:
         report = _stats("aim error (where it was sent)", aim_errors) + "\n" + _stats("lag error (person has moved on)", lag_errors)
         log(report)
         if centred:
-            log(f"person within the central third of the slave's picture: {sum(centred)}/{len(centred)}")
+            log(f"person within the central third of {slave}'s picture: {sum(centred)}/{len(centred)}")
         mean = statistics.mean(aim_errors)
         p95 = _percentile(aim_errors, 95)
-        require(mean < 1.0 and p95 < 1.5, f"aim error mean {mean:.2f}°, p95 {p95:.2f}°: expected under 1° / 1.5°")
-        require(not centred or sum(centred) / len(centred) > 0.9, "the person is not in the centre of the slave's picture")
-        log("aim-check passed")
+        require(mean < 1.0 and p95 < 1.5, f"{slave}: aim error mean {mean:.2f}°, p95 {p95:.2f}°: expected under 1° / 1.5°")
+        require(not centred or sum(centred) / len(centred) > 0.9, f"the person is not in the centre of {slave}'s picture")
+        log(f"aim-check of {slave} passed")
 
     # ── bind / run ──────────────────────────────────────────────────────────────
 
     def bind(self):
         self.vms.login()
-        master, slave = self.cam_id(W.MASTER), self.cam_id(W.SLAVE)
+        for pair in self.pairs:
+            if pair is W.PLAN_PAIR:
+                self._check_plan_is_apart(pair)
+            self._bind(pair)
+
+    def _check_plan_is_apart(self, pair):
+        """What the plan's pair is here for: a plan in made-up coordinates shares no geometry with
+        the map, so a master on the map must not drive a slave on the plan, nor may the slave be
+        aimed at a point of the map."""
+        map_space = self.of(W.MAP_PAIR).get("space_id")
+        if not map_space:
+            log("the map pair is not provisioned: skipping the check that the plan is kept apart from it")
+            return
+        slave, foreign = self.cam_id(pair.slave), self.cam_id(W.MAP_PAIR.master)
+        reason = "shares no coordinates"
+
+        self.vms.put_binding(slave, {"masterCameraId": foreign, "method": "geo", "points": []})
+        binding = self.vms.get_binding(slave)
+        unusable = (binding or {}).get("unusable") or ""
+        require(reason in unusable, f"{slave} bound to {foreign} on the map is not refused: {binding}")
+        log(f"{slave} bound to {foreign}: refused as it should be ({unusable})")
+
+        lat, lon = self.wgs84(W.MAP_PAIR, 0.0, 0.0)
+        try:
+            aim = self.vms.aim_world(slave, map_space, lat, lon, 0.0)
+        except HttpError as e:
+            require(e.status == 400 and reason in e.body, f"aiming {slave} at the map failed otherwise: {e}")
+            log(f"{slave} aimed at a point of the map: refused as it should be")
+            return
+        raise Failed(f"{slave} on the plan was aimed at a point of the map: {aim}")
+
+    def _bind(self, pair):
+        master, slave = self.cam_id(pair.master), self.cam_id(pair.slave)
         self.vms.put_binding(slave, {"masterCameraId": master, "method": "geo", "points": []})
         binding = self.vms.get_binding(slave)
-        require(binding and binding.get("method") == "geo", f"the binding did not come back as geo: {binding}")
-        require(not binding.get("unusable"), f"the geo binding cannot aim: {binding.get('unusable')}")
+        require(binding and binding.get("method") == "geo", f"the binding of {slave} did not come back as geo: {binding}")
+        require(not binding.get("unusable"), f"the geo binding of {slave} cannot aim: {binding.get('unusable')}")
         self.vms.put_policy(slave, {"enabled": True, "kinds": ["person"], "sources": ["onvif"]})
         log(f"{slave} follows {master} through the map; waiting for its session")
 
@@ -380,7 +475,8 @@ class Lab:
         state = None
         while time.monotonic() < deadline:
             state = next((s for s in self.vms.tracking_states() if s["cameraId"] == slave), None)
-            if state and state.get("active") and not state.get("lastError"):
+            if (state and state.get("active") and not state.get("lastError")
+                    and state.get("masterCameraId") == master):
                 log(f"session running: following master {state.get('masterCameraId')}")
                 return
             time.sleep(1)
@@ -389,8 +485,12 @@ class Lab:
 
     def run(self):
         self.vms.login()
-        slave = self.cam_id(W.SLAVE)
         self.sim.put_walker(W.WALKER_ID, W.walker_json(W.WALKER_ROUTE))
+        for pair in self.pairs:
+            self._run(pair)
+
+    def _run(self, pair):
+        slave = self.cam_id(pair.slave)
         seconds = self.args.seconds
         log(f"ta_vms follows the person with {slave} on its own for {seconds:.0f} s")
 
@@ -401,7 +501,7 @@ class Lab:
         rest, started_at, prev_feet = None, None, None
         start = time.monotonic()
         while time.monotonic() - start < seconds:
-            pose = self.sim.camera_pose(W.SLAVE.id)
+            pose = self.sim.camera_pose(pair.slave.id)
             person = self.sim.walker_pose(W.WALKER_ID)
             cam = (pose["position"]["x"], pose["position"]["y"], pose["position"]["z"])
             axis = W.direction(pose["heading"], pose["pitch"])
@@ -433,18 +533,18 @@ class Lab:
             time.sleep(0.25)
 
         state = next((s for s in self.vms.tracking_states() if s["cameraId"] == slave), {})
-        require(arrivals, f"the slave never moved; tracking state: {state}")
+        require(arrivals, f"{slave} never moved; tracking state: {state}")
         log(_stats("arrival error (vs where the person was when the head set off)", arrivals))
         log(_stats("tracking error (head at rest vs the person now)", tracking))
-        log(f"person in the middle third of the slave's picture: {sum(centred)}/{len(centred)} samples")
+        log(f"person in the middle third of {slave}'s picture: {sum(centred)}/{len(centred)} samples")
         log(f"commands: {len(arrivals)}; tracking state: {json.dumps(state)}")
 
         mean, p95 = statistics.mean(arrivals), _percentile(arrivals, 95)
-        require(mean < 1.5 and p95 < 2.5, f"arrival error mean {mean:.2f}°, p95 {p95:.2f}°")
-        require(_percentile(tracking, 95) < 6, f"tracking error p95 {_percentile(tracking, 95):.2f}°")
+        require(mean < 1.5 and p95 < 2.5, f"{slave}: arrival error mean {mean:.2f}°, p95 {p95:.2f}°")
+        require(_percentile(tracking, 95) < 6, f"{slave}: tracking error p95 {_percentile(tracking, 95):.2f}°")
         require(sum(centred) / len(centred) > 0.9,
-                "the person is out of the slave's central third too often")
-        log("run passed")
+                f"the person is out of {slave}'s central third too often")
+        log(f"run of {slave} passed")
 
 
 def _percentile(values, p):
@@ -472,13 +572,16 @@ def main():
     p.add_argument("--server-id", default="vms")
     p.add_argument("--user", default="admin")
     p.add_argument("--password", default="admin")
-    p.add_argument("--prefix", default="sim-", help="ta_vms camera ids are <prefix>master, <prefix>ptz")
+    p.add_argument("--prefix", default="sim-", help="ta_vms camera ids are <prefix>master, <prefix>ptz, ...")
+    p.add_argument("--pair", choices=["both", *[pair.name for pair in W.PAIRS]], default="both",
+                   help="which master/slave pair the steps work on: the map's, the plan's, or both")
     p.add_argument("--lat0", type=float, default=W.DEFAULT_LAT0)
     p.add_argument("--lon0", type=float, default=W.DEFAULT_LON0)
     p.add_argument("--seconds", type=float, default=60, help="aim-check and run duration")
     p.add_argument("--interval", type=float, default=3, help="aim-check: seconds between aims")
-    p.add_argument("--reset", action="store_true", help="provision: re-add cameras that already exist")
-    p.add_argument("--purge", action="store_true", help="down: also remove the cameras and the map from ta_vms")
+    p.add_argument("--reset", action="store_true",
+                   help="provision: re-add cameras that already exist and photograph the plan again")
+    p.add_argument("--purge", action="store_true", help="down: also remove the cameras and the spaces from ta_vms")
     args = p.parse_args()
 
     W.check()

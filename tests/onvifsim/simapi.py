@@ -2,7 +2,7 @@
 
 import time
 
-from labhttp import request, sse
+from labhttp import fetch_bytes, request, sse
 
 
 class Sim:
@@ -42,6 +42,10 @@ class Sim:
     def goto(self, camera_id, pan, tilt, zoom=0.0):
         """Drives the head in degrees, as a person would with the editor's sliders."""
         request("POST", self._url(f"/api/cameras/{camera_id}/ptz/goto"), {"pan": pan, "tilt": tilt, "zoom": zoom})
+
+    def snapshot(self, camera_id):
+        """A JPEG of what the camera sees now, rendered on request."""
+        return fetch_bytes(self._url(f"/api/cameras/{camera_id}/snapshot.jpg"))
 
     def camera_pose(self, camera_id):
         return request("GET", self._url(f"/api/cameras/{camera_id}/pose"))
