@@ -52,6 +52,11 @@ public sealed class ZoomByDistance
   }
 
   /// <summary>The zoom for an object this far from the camera.</summary>
+  /// <remarks>
+  /// Two samples at one distance never bracket a point, so need no care: the search stops at the
+  /// first sample at or beyond the distance, and the one before it is strictly nearer -- the first
+  /// sample is, by the check above the loop, and every later one was passed for being nearer.
+  /// </remarks>
   public float Zoom(double distanceM)
   {
     if (!(distanceM > _samples[0].DistanceM))
@@ -63,11 +68,7 @@ public sealed class ZoomByDistance
     while (_samples[i].DistanceM < distanceM)
       i++;
     var (near, far) = (_samples[i - 1], _samples[i]);
-    // Two landmarks at the same distance: no line through them, either zoom is as good.
-    var span = Math.Log(far.DistanceM / near.DistanceM);
-    if (span <= 0)
-      return near.Zoom;
-    var t = Math.Log(distanceM / near.DistanceM) / span;
+    var t = Math.Log(distanceM / near.DistanceM) / Math.Log(far.DistanceM / near.DistanceM);
     return (float)(near.Zoom + (t * (far.Zoom - near.Zoom)));
   }
 }

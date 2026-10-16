@@ -216,24 +216,11 @@ public sealed class TrackingSessionManager(
     var zoom = model.ZoomFor(bearing, aim.Extrapolated);
 
     // Held before the command rather than after it: a detection of the master arriving while the
-    // camera travels would otherwise send it straight elsewhere. A command that fails takes the hold
-    // back, because the camera has not gone anywhere worth staying at.
-    var hold = HoldOf(cameraId);
-    var holdUntil = DateTime.UtcNow.Add(WorldAimHold);
-    var previousHold = hold.Extend(holdUntil);
-    var aimed = false;
-    try
-    {
-      var error = await sender.AimAsync(cameraId, aim.Pan, aim.Tilt, zoom, ct);
-      if (error is not null)
-        return WorldAimResult.Failed(error);
-      aimed = true;
-    }
-    finally
-    {
-      if (!aimed)
-        hold.Restore(holdUntil, previousHold);
-    }
+    // camera travels would otherwise send it straight elsewhere.
+    HoldOf(cameraId).Extend(DateTime.UtcNow.Add(WorldAimHold));
+    var error = await sender.AimAsync(cameraId, aim.Pan, aim.Tilt, zoom, ct);
+    if (error is not null)
+      return WorldAimResult.Failed(error);
 
     logger.LogInformation(
       "Aimed '{Camera}' at ({Lat}, {Lon}, {Height} m): azimuth {Az:F1}°, elevation {El:F1}°, {Dist:F0} m -> pan {Pan:F3}, tilt {Tilt:F3}, zoom {Zoom:F3}{Extra}",

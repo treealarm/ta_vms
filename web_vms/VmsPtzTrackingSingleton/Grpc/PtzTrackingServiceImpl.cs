@@ -48,15 +48,15 @@ public sealed class PtzTrackingServiceImpl(TrackingSessionManager manager)
     return response;
   }
 
-  public override async Task<HoldForSurveyResponse> HoldForSurvey(
-    HoldForSurveyRequest request, ServerCallContext context)
+  public override async Task<HoldCameraResponse> HoldCamera(
+    HoldCameraRequest request, ServerCallContext context)
   {
     var error = await manager.HoldAsync(
-      request.SlaveCameraId, TimeSpan.FromSeconds(request.Seconds));
+      request.CameraId, TimeSpan.FromSeconds(request.Seconds));
 
     return error is null
-      ? new HoldForSurveyResponse { Success = true }
-      : new HoldForSurveyResponse { Success = false, Error = error };
+      ? new HoldCameraResponse { Success = true }
+      : new HoldCameraResponse { Success = false, Error = error };
   }
 
   public override async Task<GetSlaveBindingFitResponse> GetSlaveBindingFit(

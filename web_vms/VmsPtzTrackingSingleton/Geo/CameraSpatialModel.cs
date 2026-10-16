@@ -71,6 +71,24 @@ public sealed record CameraSpatialModel(
   public bool SharesGeometryWith(Space other) =>
     other.Id == Space.Id || (other.RealCoordinates && Space.RealCoordinates);
 
+  /// <summary>Whether this is the same camera, placed and calibrated the same way, as <paramref name="other"/>.</summary>
+  /// <remarks>
+  /// Compared on what the fits are made from, not on the fits: those are rebuilt on every read and
+  /// hold their residuals in dictionaries, which compare by reference. Ordered by landmark, since
+  /// VmsCfg does not promise an order.
+  /// </remarks>
+  public bool SameCalibrationAs(CameraSpatialModel other) =>
+    CameraId == other.CameraId
+    && Space.Id == other.Space.Id
+    && Position == other.Position
+    && HeightAboveGroundM == other.HeightAboveGroundM
+    && Frame.OriginLat == other.Frame.OriginLat
+    && Frame.OriginLon == other.Frame.OriginLon
+    && Observations.OrderBy(o => o.LandmarkId, StringComparer.Ordinal)
+      .SequenceEqual(other.Observations.OrderBy(o => o.LandmarkId, StringComparer.Ordinal))
+    && GroundSamples.OrderBy(s => s.LandmarkId, StringComparer.Ordinal)
+      .SequenceEqual(other.GroundSamples.OrderBy(s => s.LandmarkId, StringComparer.Ordinal));
+
   /// <summary>The zoom to see an object in this direction with, by its distance.</summary>
   /// <param name="extrapolated">
   /// The direction is outside what the landmarks cover, so the aim is a guess continued past them:

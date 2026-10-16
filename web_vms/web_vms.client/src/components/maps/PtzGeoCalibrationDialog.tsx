@@ -58,6 +58,8 @@ export default function PtzGeoCalibrationDialog({ cameraId, space, landmarks, on
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [aim, setAim] = useState<PtzGeoAimResultDto | null>(null)
+  /** The landmark the camera was last sent back to by its recorded position, before there is a fit. */
+  const [recalled, setRecalled] = useState<string | null>(null)
 
   const profileToken = camera?.streams?.[0]?.profileToken ?? ''
   const stream = (camera?.streams ?? []).find((s) => s.webRtc && s.whepUrl && !s.disabled)
@@ -75,7 +77,7 @@ export default function PtzGeoCalibrationDialog({ cameraId, space, landmarks, on
   // A slave would turn back to its master's objects between two recordings.
   useEffect(() => {
     const hold = (seconds: number) =>
-      fetch(`/api/ptz-slave-binding/${encodeURIComponent(cameraId)}/hold`, {
+      fetch(`/api/ptz-tracking/${encodeURIComponent(cameraId)}/hold`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ seconds }),
@@ -128,6 +130,7 @@ export default function PtzGeoCalibrationDialog({ cameraId, space, landmarks, on
   const record = (landmark: LandmarkDto) => act(async () => {
     const status = await readStatus()
     setAim(null)
+    setRecalled(null)
     await replace(landmark.id!, { landmarkId: landmark.id!, pan: status.pan, tilt: status.tilt, zoom: observationOf(landmark.id!)?.zoom })
   })
 
@@ -148,6 +151,7 @@ export default function PtzGeoCalibrationDialog({ cameraId, space, landmarks, on
    */
   const goTo = (landmark: LandmarkDto) => act(async () => {
     setAim(null)
+    setRecalled(null)
     if (fitted) {
       setAim(await spatialRequest<PtzGeoAimResultDto>(`/api/ptz-geo/${encodeURIComponent(cameraId)}/aim`, {
         method: 'POST',
@@ -164,9 +168,14 @@ export default function PtzGeoCalibrationDialog({ cameraId, space, landmarks, on
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cameraId, profileToken, pan: observed.pan, tilt: observed.tilt, zoom: status.zoom, speed: 0.5 }),
     })
+    setRecalled(landmark.name)
   })
 
+  // Only a different landmark moves the camera. Clicking the one already picked -- as one does on
+  // the way to Record, after centring it by hand -- must not send it back to where the calibration
+  // thinks the landmark is, which is the very miss being corrected.
   const pick = (landmark: LandmarkDto) => {
+    if (landmark.id === selectedId) return
     setSelectedId(landmark.id ?? null)
     void goTo(landmark)
   }
@@ -233,6 +242,9 @@ export default function PtzGeoCalibrationDialog({ cameraId, space, landmarks, on
               })}
               {aim.extrapolated && ` ${t('ptzGeo.extrapolated')}`}
             </Alert>
+          )}
+          {recalled && (
+            <Alert severity="info" onClose={() => setRecalled(null)}>{t('ptzGeo.recalled', { name: recalled })}</Alert>
           )}
 
           <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>

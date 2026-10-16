@@ -48,6 +48,23 @@ public class PtzTrackingController(
     return response.Success ? Ok() : BadRequest(response.Error);
   }
 
+  /// <summary>Keeps every automatic aiming law off a camera while a person drives it.</summary>
+  /// <remarks>
+  /// For the wizards that drive a camera by hand -- a slave's survey, a calibration against
+  /// landmarks -- whatever would otherwise move it: its slave session or its own self-guidance,
+  /// including one started meanwhile. Held for a short time and renewed by the page rather than
+  /// switched on and off, so a browser that was closed mid-way cannot leave the camera parked.
+  /// Sending zero releases it.
+  /// </remarks>
+  [HttpPost("{cameraId}/hold")]
+  [CameraAccess(CameraAction.Ptz)]
+  public async Task<IActionResult> Hold(string cameraId, [FromBody] PtzHoldDto dto, CancellationToken ct)
+  {
+    var response = await _tracking.HoldCameraAsync(
+      new HoldCameraRequest { CameraId = cameraId, Seconds = dto.Seconds }, Options(ct));
+    return response.Success ? Ok() : BadRequest(response.Error);
+  }
+
   // Reading which cameras are tracking drives the monitor's layout, so it follows viewing rights —
   // the same split PtzController makes between moving a camera and seeing what it can do.
   [HttpGet]

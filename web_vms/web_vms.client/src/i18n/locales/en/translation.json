@@ -1195,7 +1195,8 @@
     "recordZoom": "Remember the zoom now as the one for this distance",
     "forgetZoom": "Forget this zoom",
     "zoomRange": "Slave zoom: {{count}} sample(s), {{min}}–{{max}}.",
-    "noZoom": "No zoom samples: as a slave this camera stays wide."
+    "noZoom": "No zoom samples: as a slave this camera stays wide.",
+    "recalled": "Sent back to where {{name}} was recorded."
   },
   "ground": {
     "panelHint": "Mark landmarks in this camera's picture to show its detections on the map.",

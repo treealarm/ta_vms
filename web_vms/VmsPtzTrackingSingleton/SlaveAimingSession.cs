@@ -67,9 +67,15 @@ public sealed class SlaveAimingSession
   /// whatever the distance, so a stretch of ground is what the threshold has to be too.
   /// </para>
   /// <para>
-  /// Half a metre is well above the jitter it exists for -- a box edge moving a pixel or two on the
-  /// master is 0.1-0.3 m on the ground at 30 m -- and well below any frame worth sampling, which
-  /// has to fit a person and a couple of seconds of their walk.
+  /// Half a metre is the floor, and well below any frame worth sampling, which has to fit a person
+  /// and a couple of seconds of their walk. It is raised to what the master's box jitter amounts to
+  /// on the ground at the object (<see cref="PositionAim.GroundToleranceM"/>): a pixel is a few
+  /// centimetres near the master but grows with the square of the distance, past a metre at 70 m
+  /// from a master 5 m up, and a fixed threshold there would re-aim at a person standing still.
+  /// </para>
+  /// <para>
+  /// Only for a slave that zooms. One that does not keeps <see cref="MoveThreshold"/>: its frame is
+  /// the wide end, which that threshold suits, and which the ground gains it nothing over.
   /// </para>
   /// </remarks>
   private const double GroundMoveThresholdM = 0.5;
@@ -124,6 +130,10 @@ public sealed class SlaveAimingSession
   // the first command: the camera's actual position is unknown and, on these cameras, unknowable.
   private PositionAim? _aimedAt;
   private string? _aimedPreset;
+  // Moved on whenever ApplyAim reopens the dead zone. A command in flight while that happens was
+  // computed by the old binding or calibrations, and must not record where it went once it lands --
+  // that would put the reset back.
+  private int _aimGeneration;
   private DateTime _lastCommandAt = DateTime.MinValue;
 
   /// <summary>
@@ -184,26 +194,46 @@ public sealed class SlaveAimingSession
 
   /// <summary>Takes the binding, and the calibrations that go with it, as they now are -- in one step.</summary>
   /// <remarks>
-  /// A recalibrated pair on the map method does not reopen the dead zone. It compares where the
-  /// object stood when the head was last sent with where it stands now, and the zoom then with the
-  /// zoom now, and a model merely read again (the cache does, once a minute) changes neither -- so it
-  /// cannot cost a needless slew.
+  /// A resurveyed binding or a recalibrated camera means every position computed before was wrong,
+  /// so the dead zone must not suppress the first command after it: on the map method it compares
+  /// where the object stands, which a new calibration does not move, and a person standing still
+  /// would otherwise be left looked at through the old one. Compared by content, so a model merely
+  /// read again (the cache does, once a minute) reopens nothing and cannot cost a needless slew.
   /// </remarks>
   public void ApplyAim(SlaveAim? aim)
   {
     lock (_gate)
     {
-      // A resurveyed binding means every position computed from the old one was wrong, so the dead
-      // zone must not suppress the first command under the new one.
-      if (Describe(_aim?.Binding) != Describe(aim?.Binding))
+      var rebound = Describe(_aim?.Binding) != Describe(aim?.Binding);
+      if (rebound || !SlaveAim.SameCalibrations(_aim?.Geo, aim?.Geo))
       {
         _logger.LogInformation(
-          "Camera '{Camera}': binding is now {Binding}", _slaveCameraId, Describe(aim?.Binding));
+          rebound ? "Camera '{Camera}': binding is now {Binding}" : "Camera '{Camera}': calibrations changed, {Binding}",
+          _slaveCameraId, Describe(aim?.Binding));
         _aimedAt = null;
         _aimedPreset = null;
+        _aimGeneration++;
       }
       _aim = aim;
     }
+  }
+
+  /// <summary>Records where a command sent the camera, unless the dead zone was reopened meanwhile.</summary>
+  private void Landed(int generation, PositionAim? at, string? preset)
+  {
+    lock (_gate)
+    {
+      if (generation != _aimGeneration)
+        return;
+      _aimedAt = at;
+      _aimedPreset = preset;
+    }
+  }
+
+  private int Generation()
+  {
+    lock (_gate)
+      return _aimGeneration;
   }
 
   public void ApplyPolicy(TrackingPolicy policy)
@@ -357,6 +387,7 @@ public sealed class SlaveAimingSession
     // glimpsed through a frame cut for the one that left.
     if (_aimedAt is not { } last || aim?.Geo?.Slave.Zoom is not { } zoom || last.Zoom - zoom.Widest < ZoomThreshold)
       return;
+    var generation = Generation();
     _lastCommandAt = DateTime.UtcNow;
     var error = await _sender.AimAsync(_slaveCameraId, last.Pan, last.Tilt, zoom.Widest, ct);
     if (error is not null)
@@ -364,7 +395,7 @@ public sealed class SlaveAimingSession
       Fail(error);
       return;
     }
-    _aimedAt = last with { Zoom = zoom.Widest };
+    Landed(generation, last with { Zoom = zoom.Widest }, null);
     _logger.LogDebug("Camera '{Camera}': target lost, zoomed out to {Zoom:F3}", _slaveCameraId, zoom.Widest);
   }
 
@@ -423,13 +454,13 @@ public sealed class SlaveAimingSession
     if (_aimedAt is { } last && AboutThere(last, position))
       return null;
 
+    var generation = Generation();
     _lastCommandAt = DateTime.UtcNow;
     var error = await _sender.AimAsync(_slaveCameraId, position.Pan, position.Tilt, position.Zoom, ct);
     if (error is not null)
       return error;
 
-    _aimedAt = position;
-    _aimedPreset = null;
+    Landed(generation, position, null);
     if (_logger.IsEnabled(LogLevel.Debug))
       _logger.LogDebug(
         "Camera '{Camera}': aimed at ({Pan:F3},{Tilt:F3}) for {What}",
@@ -443,7 +474,8 @@ public sealed class SlaveAimingSession
     if (last.Ground is { } was && next.Ground is { } now)
     {
       var moved = Math.Sqrt(Math.Pow(now.East - was.East, 2) + Math.Pow(now.North - was.North, 2));
-      return moved < GroundMoveThresholdM && MathF.Abs(next.Zoom - last.Zoom) < ZoomThreshold;
+      return moved < Math.Max(GroundMoveThresholdM, next.GroundToleranceM)
+        && MathF.Abs(next.Zoom - last.Zoom) < ZoomThreshold;
     }
     return MathF.Abs(next.Pan - last.Pan) < MoveThreshold && MathF.Abs(next.Tilt - last.Tilt) < MoveThreshold;
   }
@@ -464,13 +496,13 @@ public sealed class SlaveAimingSession
     if (_aimedPreset == nearest.PresetToken)
       return null;
 
+    var generation = Generation();
     _lastCommandAt = DateTime.UtcNow;
     var error = await _sender.GotoPresetAsync(binding.SlaveCameraId, nearest.PresetToken, ct);
     if (error is not null)
       return error;
 
-    _aimedPreset = nearest.PresetToken;
-    _aimedAt = null;
+    Landed(generation, null, nearest.PresetToken);
     _logger.LogDebug(
       "Camera '{Camera}': sent to preset '{Preset}' for a footprint spanning ({Left:F3}..{Right:F3}, {Y:F3})",
       _slaveCameraId, nearest.PresetName ?? nearest.PresetToken, left, right, y);

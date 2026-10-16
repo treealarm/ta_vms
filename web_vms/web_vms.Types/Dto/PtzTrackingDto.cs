@@ -15,6 +15,9 @@ public sealed record TrackingTargetDto(string Source, long TrackId, string Kind)
 /// </param>
 public sealed record SetPtzTargetDto(TrackingTargetDto? Target);
 
+/// <summary>How much longer to keep automatic aiming off a camera. Zero releases it.</summary>
+public sealed record PtzHoldDto(uint Seconds);
+
 /// <summary>Just the on/off switch, for the monitor's button.</summary>
 public sealed record PtzTrackingEnabledDto(bool Enabled);
 

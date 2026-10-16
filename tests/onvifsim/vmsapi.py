@@ -109,9 +109,9 @@ class Vms:
     def delete_binding(self, slave_id):
         self.call("DELETE", f"/api/ptz-slave-binding/{slave_id}")
 
-    def hold(self, slave_id, seconds):
-        """Keeps a slave's own session off the motor for a while (0 releases), as the wizards do."""
-        self.call("POST", f"/api/ptz-slave-binding/{slave_id}/hold", {"seconds": int(seconds)})
+    def hold(self, camera_id, seconds):
+        """Keeps automatic aiming off a camera for a while (0 releases), as the wizards do."""
+        self.call("POST", f"/api/ptz-tracking/{camera_id}/hold", {"seconds": int(seconds)})
 
     def put_policy(self, camera_id, policy):
         return self.call("PUT", f"/api/ptz-tracking-policy/{camera_id}", policy)

@@ -34,15 +34,17 @@ public sealed class HoldGate
   }
 
   /// <summary>Holds the camera until at least <paramref name="until"/>; a longer hold already placed stays.</summary>
-  /// <returns>The hold this one replaced, for <see cref="Restore"/>.</returns>
-  public DateTime Extend(DateTime until)
+  /// <remarks>
+  /// Never taken back early except by <see cref="Release"/>. An aim that failed leaves its hold to
+  /// run out rather than undoing it: undoing it exactly would mean remembering every renewal that
+  /// arrived meanwhile, and a camera the aim could not reach gains nothing from being released.
+  /// </remarks>
+  public void Extend(DateTime until)
   {
     lock (_gate)
     {
-      var previous = _until;
       if (until > _until)
         _until = until;
-      return previous;
     }
   }
 
@@ -51,15 +53,5 @@ public sealed class HoldGate
   {
     lock (_gate)
       _until = DateTime.MinValue;
-  }
-
-  /// <summary>Takes back a hold placed by <see cref="Extend"/>, unless someone has held the camera since.</summary>
-  public void Restore(DateTime placed, DateTime previous)
-  {
-    lock (_gate)
-    {
-      if (_until == placed)
-        _until = previous;
-    }
   }
 }

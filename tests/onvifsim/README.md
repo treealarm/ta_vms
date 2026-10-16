@@ -130,8 +130,8 @@ http://localhost:8090 to watch the world while a step runs; its log is
     set off. That is the precision of the whole chain: the master's box, its ground calibration,
     the map, the slave's calibration and ONVIF AbsoluteMove.
   - *Tracking error* is measured while the head is at rest against where the person is now. Most
-    of it is the slave's two seconds between commands; its dead zone is half a metre on the
-    ground.
+    of it is the slave's two seconds between commands; with zoom samples its dead zone is half a
+    metre on the ground here, without them 0.02 of the head's units (3.6° of pan).
   - The whole person must stay in the slave's picture, and with zoom samples fill a quarter of
     its height or more (median). Framed 8 m wide, a person fills about 40%; at the wide end, under
     10%.

@@ -113,12 +113,14 @@ Plans never show tiles to operators. While an administrator lines up a plan in r
 3. In the camera's panel, *Calibrate by landmarks* (offered on the reference placement only): turn the camera until a landmark sits in the
    crosshair and record it. Two landmarks in clearly different directions make a calibration; a
    third lets each be checked (the "Check" column is the leave-one-out miss — redo the largest).
-   While the dialog is open the camera is held for it alone: neither a slave session nor the
-   camera's own self-guidance moves it, including a session that starts meanwhile.
-4. Picking a landmark, in the table or on the map, turns the camera to it. Once there is a
+   While the dialog is open the camera is held for it alone (`api/ptz-tracking/{id}/hold`): neither
+   a slave session nor the camera's own self-guidance moves it, including a session that starts
+   meanwhile.
+4. Picking another landmark, in the table or on the map, turns the camera to it. Once there is a
    calibration that is the calibration alone, with the zoom of the zoom samples, and it is also
    the test that the camera obeys absolute positions at all. Before that, it is back to where the
-   landmark was recorded, if it was.
+   landmark was recorded, if it was. Clicking the landmark already picked does not move the
+   camera, so a position centred by hand is not lost on the way to *Record*.
 5. For a camera that will be a slave, optionally: on a recorded landmark, zoom until a person
    standing there would fill the picture the way the slave should show them, and *Remember zoom*.
    This is a zoom sample for that landmark's distance, see [Master/slave through the
@@ -212,13 +214,15 @@ works the moment both are, and recalibrating one camera fixes it for every pairi
   answers "can this aim" and "where does this spot send the camera" for every method. The reconcile
   replaces it whole, so a detection is never aimed by a new binding through old calibrations.
   Changing the master restarts the slave's session, since detections are routed by master.
-- **Same law as a survey, except the dead zone.** The command interval and target choice are those
-  of every slave (`SlaveAimingSession`). The dead zone is 0.5 m on the ground rather than 0.02 of
-  the head's units. A zoomed slave's whole frame can be narrower than 0.02 of pan, which is 3.6° on
-  a head with a full turn. A frame sampled to fit a person is a stretch of ground at any distance,
-  so the threshold is one too. A change of zoom alone of 0.02 also counts. A recalibration does not
-  reopen the dead zone: it compares where the object stood, which does not depend on the model
-  used.
+- **Same law as a survey, except the dead zone of a slave that zooms.** The command interval and
+  target choice are those of every slave (`SlaveAimingSession`). A slave with zoom samples measures
+  its dead zone on the ground rather than in 0.02 of the head's units: a zoomed frame can be
+  narrower than 0.02 of pan, which is 3.6° on a head with a full turn, while a frame sampled to fit
+  a person is a stretch of ground at any distance. The threshold is 0.5 m, raised to what the
+  master's box jitter (0.4% of its frame height) amounts to on the ground at the object, which grows
+  with the square of the distance from the master. A change of zoom alone of 0.02 also counts. A
+  slave without samples keeps 0.02 of the head's units. A changed binding, placement, observation,
+  mark or zoom sample reopens the dead zone; the same calibrations merely read again do not.
 - **Checking it.** The binding's tab shows both pictures and no survey. A click on the master's
   ground sends the slave there through both calibrations. The tab re-reads the binding's status
   when it comes back into view, since what is missing is usually fixed on Maps & plans.

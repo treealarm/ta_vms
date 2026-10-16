@@ -141,22 +141,6 @@ public class PtzSlaveBindingController(
     });
   }
 
-  /// <summary>Keeps a slave from aiming itself while its binding is being marked out.</summary>
-  /// <remarks>
-  /// Held for a short time and renewed by the page rather than switched on and off, so a browser
-  /// that was closed mid-survey cannot leave the camera parked. Sending zero releases it.
-  /// </remarks>
-  [HttpPost("{cameraId}/hold")]
-  [CameraAccess(CameraAction.Ptz)]
-  public async Task<IActionResult> Hold(
-    string cameraId, [FromBody] PtzSlaveHoldDto dto, CancellationToken ct)
-  {
-    var response = await _tracking.HoldForSurveyAsync(
-      new HoldForSurveyRequest { SlaveCameraId = cameraId, Seconds = dto.Seconds }, Options(ct));
-
-    return response.Success ? Ok() : BadRequest(response.Error);
-  }
-
   private static PtzSlaveBindingDto ToDto(PtzSlaveBinding binding, GetSlaveBindingFitResponse? fit)
   {
     var residuals = fit?.Residuals.ToDictionary(r => r.Ordinal, r => r.HasResidual ? r.Residual : (float?)null);

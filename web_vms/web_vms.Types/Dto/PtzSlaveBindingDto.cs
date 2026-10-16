@@ -38,8 +38,6 @@ public sealed record PtzSlaveBindingDto
   public string? Unusable { get; init; }
 }
 
-/// <summary>How much longer to keep a slave from aiming itself. Zero releases it.</summary>
-public sealed record PtzSlaveHoldDto(uint Seconds);
 
 /// <summary>A spot in the master's frame to send the slave to, for checking a survey.</summary>
 public sealed record PtzSlaveAimDto(float MasterX, float MasterY);

@@ -215,7 +215,7 @@ export default function CameraSlaveBindingSection({
    */
   useEffect(() => {
     const hold = (seconds: number) =>
-      apiFetch(`/api/ptz-slave-binding/${encodeURIComponent(cameraId)}/hold`, {
+      apiFetch(`/api/ptz-tracking/${encodeURIComponent(cameraId)}/hold`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ seconds }),

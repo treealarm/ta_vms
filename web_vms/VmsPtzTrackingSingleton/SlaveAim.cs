@@ -6,10 +6,16 @@ namespace VmsPtzTrackingSingleton;
 /// <summary>A position to send the slave to, and what it was computed for (for the log).</summary>
 /// <param name="Zoom">In the camera's own zoom units; 0, the wide end, unless the map method has zoom samples.</param>
 /// <param name="Ground">
-/// On the map method, where the object stands, in the master's local frame: what the dead zone
-/// measures, because there it means the same at any zoom. Null on a survey.
+/// For a slave that zooms, where the object stands, in the master's local frame: what the dead
+/// zone measures, because there it means the same at any zoom. Null on a survey, and for a slave
+/// with no zoom samples, whose dead zone stays in the head's own units.
 /// </param>
-public sealed record PositionAim(float Pan, float Tilt, float Zoom, Enu? Ground, bool Extrapolated, string Describe);
+/// <param name="GroundToleranceM">
+/// How far the master's box jitter alone moves <paramref name="Ground"/> at this spot: the least a
+/// move must exceed to be told from noise.
+/// </param>
+public sealed record PositionAim(
+  float Pan, float Tilt, float Zoom, Enu? Ground, double GroundToleranceM, bool Extrapolated, string Describe);
 
 /// <summary>
 /// Everything a slave is aimed by: its binding and, on the map method, both cameras' calibrations.
@@ -33,6 +39,13 @@ public sealed record SlaveAim(SlaveBindingModel Binding, GeoAimPair? Geo, string
 {
   public string SlaveCameraId => Binding.SlaveCameraId;
   public string MasterCameraId => Binding.MasterCameraId;
+
+  /// <summary>How far the bottom edge of a box wanders on the master between frames of an object standing still.</summary>
+  /// <remarks>
+  /// As a share of the frame's height: a couple of pixels at the analytics' usual resolutions. On
+  /// the ground it is negligible near the master and grows with the square of the distance.
+  /// </remarks>
+  private const double MasterBoxJitter = 0.004;
 
   /// <summary>Whether the camera can be aimed by the preset of the nearest marked point.</summary>
   public bool ByPreset => Binding.Method == PtzSlaveBindingMethod.PtzSlaveBindingPresets;
@@ -64,7 +77,10 @@ public sealed record SlaveAim(SlaveBindingModel Binding, GeoAimPair? Geo, string
         return (null, "The spot is beyond the master's horizon, where its ground calibration says nothing");
       var aim = projection.Aim;
       var zoom = geo.Slave.ZoomFor(projection.Bearing, aim.Extrapolated);
-      return (new PositionAim(aim.Pan, aim.Tilt, zoom, projection.Ground, aim.Extrapolated,
+      var (ground, tolerance) = geo.Slave.Zoom is null
+        ? ((Enu?)null, 0.0)
+        : (projection.Ground, JitterOnTheGround(geo, projection.Ground, x, y));
+      return (new PositionAim(aim.Pan, aim.Tilt, zoom, ground, tolerance, aim.Extrapolated,
         $"master point ({x:F3},{y:F3}) — {projection.Lat:F6},{projection.Lon:F6}, "
         + $"{projection.Bearing.DistanceM:F0} m at {projection.Bearing.AzimuthDeg:F1}°"
         + (aim.Extrapolated ? ", outside the landmarks' sector" : string.Empty)
@@ -72,7 +88,26 @@ public sealed record SlaveAim(SlaveBindingModel Binding, GeoAimPair? Geo, string
     }
 
     var surveyed = PtzSlaveBindingMath.Project(Binding.Fit!, x, y);
-    return (new PositionAim(surveyed.Pan, surveyed.Tilt, 0f, null, surveyed.Extrapolated,
+    return (new PositionAim(surveyed.Pan, surveyed.Tilt, 0f, null, 0, surveyed.Extrapolated,
       $"master point ({x:F3},{y:F3}){(surveyed.Extrapolated ? " — outside the marked area" : string.Empty)}"), null);
   }
+
+  /// <summary>How far on the ground the master's box jitter moves an object standing at this spot.</summary>
+  /// <remarks>Towards the master, where the spot always projects: away from it could cross the horizon.</remarks>
+  private static double JitterOnTheGround(GeoAimPair geo, Enu spot, double x, double y)
+  {
+    if (geo.Master.GroundFit?.Project(x, y + MasterBoxJitter) is not { } nearer)
+      return 0;
+    return Math.Sqrt(Math.Pow(nearer.East - spot.East, 2) + Math.Pow(nearer.North - spot.North, 2));
+  }
+
+  /// <summary>Whether two sets of calibrations would aim the same way, judged by what they were fitted from.</summary>
+  /// <remarks>
+  /// By content: the cache reads the models anew every minute, and only a real change to a
+  /// placement, an observation, a mark or a zoom sample should count.
+  /// </remarks>
+  public static bool SameCalibrations(GeoAimPair? a, GeoAimPair? b) =>
+    a is null || b is null
+      ? a is null && b is null
+      : a.Master.SameCalibrationAs(b.Master) && a.Slave.SameCalibrationAs(b.Slave);
 }

@@ -39,10 +39,12 @@ service PtzTrackingService {
   // lands from where the others say it should be. Read by the survey wizard after every edit, so
   // it answers from the binding as stored rather than from a session that may not be running.
   rpc GetSlaveBindingFit(GetSlaveBindingFitRequest) returns (GetSlaveBindingFitResponse);
-  // Stop a slave aiming itself for a while, so its binding can be marked out by hand. Renewed by
-  // the caller while the wizard is open and released when it closes; it also expires on its own, so
-  // a browser that went away cannot leave a camera parked.
-  rpc HoldForSurvey(HoldForSurveyRequest) returns (HoldForSurveyResponse);
+  // Keep every automatic aiming law -- a slave's, the camera's own self-guidance -- off a camera
+  // for a while, so a person can drive it: marking out a slave's survey, calibrating it against
+  // landmarks. Binds a session started meanwhile too. Renewed by the caller while its wizard is
+  // open and released when it closes; it also expires on its own, so a browser that went away
+  // cannot leave a camera parked.
+  rpc HoldCamera(HoldCameraRequest) returns (HoldCameraResponse);
   // Point a placed, geo-calibrated PTZ camera at a place on the map. Here rather than straight to
   // the camera for the same reason as AimAtMasterPoint: this service owns the motor.
   rpc AimAtWorldPoint(AimAtWorldPointRequest) returns (AimAtWorldPointResponse);
@@ -163,14 +165,14 @@ message PtzSlaveBindingResidual {
   optional float residual = 2;
 }
 
-message HoldForSurveyRequest {
-  string slave_camera_id = 1;
+message HoldCameraRequest {
+  string camera_id = 1;
   // Zero releases the hold. Anything else is renewed, not added to: the caller says how much longer
   // it wants, not how much more.
   uint32 seconds = 2;
 }
 
-message HoldForSurveyResponse {
+message HoldCameraResponse {
   bool   success = 1;
   string error   = 2;
 }

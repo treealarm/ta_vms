@@ -1195,7 +1195,8 @@
     "recordZoom": "Recordar el zoom actual como el de esta distancia",
     "forgetZoom": "Olvidar este zoom",
     "zoomRange": "Zoom de esclava: {{count}} muestra(s), {{min}}–{{max}}.",
-    "noZoom": "Sin muestras de zoom: como esclava esta cámara se queda en gran angular."
+    "noZoom": "Sin muestras de zoom: como esclava esta cámara se queda en gran angular.",
+    "recalled": "Enviada de vuelta a donde se registró {{name}}."
   },
   "ground": {
     "panelHint": "Marque puntos de referencia en la imagen de esta cámara para ver sus detecciones en el mapa.",
