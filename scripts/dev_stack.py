@@ -564,6 +564,11 @@ def stop_strays() -> None:
             pass
 
     _await_gone(busy, wanted, [*victims, *clis])
+    if clis:
+        # Gone from /proc is not yet gone for VS Code: it still counts 'dapr: sidecars up' as
+        # running until it has handled the exit, and a new instance started before that has been
+        # seen to be terminated along with the old one's terminal. A moment costs nothing here.
+        time.sleep(2.0)
     if busy or clis:
         print(f"stop-strays: freed {len(busy)} port(s)")
     else:

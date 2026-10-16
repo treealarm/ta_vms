@@ -43,7 +43,14 @@
             "isBackground": true,
             "presentation": {
                 "reveal": "always",
-                "panel": "dedicated",
+                // A fresh terminal every run, never the last run's. With "dedicated" the new
+                // `dapr run` was started in the terminal of the one 'stop: stray apps' had just
+                // ended, and when VS Code got round to that one's exit it closed the terminal --
+                // taking the new run with it a second or so after it started: its log ends in
+                // "termination signal received" right after "You're up and running", the other
+                // twelve sidecars never start, and 'wait: sidecars ready' times out. Seen at 15:45
+                // and 17:54 on 2026-10-16, both times after a Stop had left the old run alive.
+                "panel": "new",
                 "group": "dapr"
             },
             "problemMatcher": {
