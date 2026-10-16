@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Box, Chip, IconButton, List, Stack, Tab, Tabs, Tooltip, Typography } from '@mui/material'
 import PlaceIcon from '@mui/icons-material/Place'
 import { useTranslation } from 'react-i18next'
@@ -9,7 +9,7 @@ import SettingsListItem from '../settings/SettingsListItem'
 import MapObjectList, { type MapObjectSection } from './MapObjectList'
 import { useEditorState } from './editorState'
 
-type SidebarTab = 'spaces' | 'cameras' | 'landmarks'
+type SpaceTab = 'cameras' | 'landmarks'
 
 type Props = {
   tree: { space: SpaceDto; depth: number }[]
@@ -21,36 +21,93 @@ type Props = {
 }
 
 /**
- * The page's left column: what there is, always in view. Spaces as a tree; every camera of the
- * system, by server, with where it stands relative to the open space; the open space's landmarks.
+ * The page's left column: what there is, always in view. Spaces as a tree on top, and under it what
+ * belongs to the space picked there -- every camera of the system, by server, with where it stands
+ * relative to that space, and the space's landmarks. The layout carries the dependency: the lower
+ * half appears only once a space is picked, and the pick stays highlighted in the tree above it.
  * Picking from a list acts on the map -- it selects, or arms the next click to place -- and the
  * object's properties open in the column on the other side of the map, so a list never gives way
  * to a property panel.
  */
 export default function MapsSidebar({ tree, loaded, space, onSelectSpace }: Props) {
   const { t } = useTranslation()
-  const [wanted, setWanted] = useState<SidebarTab>('spaces')
-  // Cameras and landmarks are relative to the open space; without one there is only the tree.
-  const tab: SidebarTab = space ? wanted : 'spaces'
+  const [tab, setTab] = useState<SpaceTab>('cameras')
+  const cameraCount = useAppSelector((s) => Object.keys(s.live.cameraStatesById).length)
+  const placedHere = useAppSelector((s) => new Set(
+    s.spatial.placements.filter((p) => p.spaceId === space?.id).map((p) => p.cameraId)).size)
+  const landmarkCount = useAppSelector((s) => s.spatial.landmarksBySpace[space?.id ?? '']?.length ?? 0)
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
-      <Tabs
-        value={tab}
-        onChange={(_, v: SidebarTab) => setWanted(v)}
-        variant="fullWidth"
-        sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, minHeight: 40, '& .MuiTab-root': { minHeight: 40, minWidth: 0, px: 1 } }}
-      >
-        <Tab value="spaces" label={t('maps.tabSpaces')} />
-        <Tab value="cameras" label={t('maps.tabCameras')} disabled={!space} />
-        <Tab value="landmarks" label={t('maps.tabLandmarks')} disabled={!space} />
-      </Tabs>
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-        {tab === 'spaces' && <SpacesTree tree={tree} loaded={loaded} selectedId={space?.id ?? undefined} onSelect={onSelectSpace} />}
-        {tab === 'cameras' && space && <CamerasList space={space} />}
-        {tab === 'landmarks' && space && <LandmarksList space={space} />}
+      <SectionTitle label={t('maps.tabSpaces')} count={String(tree.length)} />
+      {/* As tall as the tree needs, up to a share of the column -- the space's own lists need the rest. */}
+      <Box sx={{ flex: space ? '0 1 auto' : 1, maxHeight: space ? '40%' : undefined, minHeight: 0, overflowY: 'auto' }}>
+        <SpacesTree tree={tree} loaded={loaded} selectedId={space?.id ?? undefined} onSelect={onSelectSpace} />
       </Box>
+      {space ? (
+        <>
+          <Stack direction="row" alignItems="center" sx={{ flexShrink: 0, borderTop: 1, borderBottom: 1, borderColor: 'divider' }}>
+            <Tabs
+              value={tab}
+              onChange={(_, v: SpaceTab) => setTab(v)}
+              variant="fullWidth"
+              sx={{ flex: 1, minHeight: 36, '& .MuiTab-root': { minHeight: 36, minWidth: 0, px: 1, textTransform: 'none' } }}
+            >
+              <Tab value="cameras" label={<TabLabel label={t('maps.tabCameras')} count={`${placedHere}/${cameraCount}`} />} />
+              <Tab value="landmarks" label={<TabLabel label={t('maps.tabLandmarks')} count={String(landmarkCount)} />} />
+            </Tabs>
+            {tab === 'landmarks' && <AddLandmarkButton />}
+          </Stack>
+          <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+            {tab === 'cameras' ? <CamerasList space={space} /> : <LandmarksList space={space} />}
+          </Box>
+        </>
+      ) : (
+        <Typography variant="caption" color="text.secondary" sx={{ p: 1.5, borderTop: 1, borderColor: 'divider' }}>
+          {t('maps.pickSpace')}
+        </Typography>
+      )}
     </Box>
+  )
+}
+
+function SectionTitle({ label, count }: { label: string; count?: string }) {
+  return (
+    <Stack
+      direction="row"
+      alignItems="center"
+      sx={{ flexShrink: 0, px: 1.5, py: 0.75, borderTop: 1, borderBottom: 1, borderColor: 'divider', bgcolor: 'action.hover' }}
+    >
+      <Typography variant="subtitle2" noWrap sx={{ flex: 1 }}>{label}</Typography>
+      {count !== undefined && <Typography variant="caption" color="text.secondary">{count}</Typography>}
+    </Stack>
+  )
+}
+
+function TabLabel({ label, count }: { label: string; count: string }): ReactNode {
+  return (
+    <Stack direction="row" spacing={0.75} alignItems="baseline">
+      <span>{label}</span>
+      <Typography component="span" variant="caption" color="text.secondary">{count}</Typography>
+    </Stack>
+  )
+}
+
+/** Adding to the list is done on the map, so this only arms the tool. */
+function AddLandmarkButton() {
+  const { t } = useTranslation()
+  const { mode, setMode, setPendingCameraId } = useEditorState()
+  return (
+    <Tooltip title={t('maps.addLandmark')}>
+      <IconButton
+        size="small"
+        sx={{ mx: 0.5 }}
+        color={mode === 'landmark' ? 'primary' : 'default'}
+        onClick={() => { setPendingCameraId(null); setMode(mode === 'landmark' ? 'select' : 'landmark') }}
+      >
+        <PlaceIcon fontSize="small" />
+      </IconButton>
+    </Tooltip>
   )
 }
 
@@ -99,12 +156,21 @@ function CamerasList({ space }: { space: SpaceDto }) {
       ...servers.map((s) => ({ title: s.serverId, cameras: cameras.filter((c) => c.serverId === s.serverId) })),
       { title: t('maps.noServer'), cameras: cameras.filter((c) => !c.serverId || !known.has(c.serverId)) },
     ]
+    const where = (cameraId: string) => {
+      const here = placements.find((p) => p.cameraId === cameraId && p.spaceId === space.id)
+      const reference = placements.find((p) => p.cameraId === cameraId && p.isReference)
+      const elsewhere = reference && reference.spaceId !== space.id ? spaces.find((s) => s.id === reference.spaceId) : undefined
+      return { here, elsewhere }
+    }
+    // What is on this space first, then what is still to be placed, and last what stands elsewhere.
+    const rank = (cameraId: string) => {
+      const { here, elsewhere } = where(cameraId)
+      return here ? 0 : elsewhere ? 2 : 1
+    }
     return groups.filter((g) => g.cameras.length > 0).map((g) => ({
       title: g.title,
-      items: g.cameras.map((c) => {
-        const here = placements.find((p) => p.cameraId === c.cameraId && p.spaceId === space.id)
-        const reference = placements.find((p) => p.cameraId === c.cameraId && p.isReference)
-        const elsewhere = reference && reference.spaceId !== space.id ? spaces.find((s) => s.id === reference.spaceId) : undefined
+      items: [...g.cameras].sort((a, b) => rank(a.cameraId) - rank(b.cameraId)).map((c) => {
+        const { here, elsewhere } = where(c.cameraId)
         return {
           key: c.cameraId,
           primary: c.name || c.cameraId,
@@ -147,7 +213,7 @@ function LandmarksList({ space }: { space: SpaceDto }) {
   const { t } = useTranslation()
   const loaded = useAppSelector((s) => s.spatial.landmarksBySpace[space.id ?? ''])
   const landmarks = useMemo(() => loaded ?? [], [loaded])
-  const { selection, mode, setMode, setPendingCameraId, select } = useEditorState()
+  const { selection, select } = useEditorState()
 
   const sections: MapObjectSection[] = [{
     title: t('maps.landmarks'),
@@ -162,21 +228,5 @@ function LandmarksList({ space }: { space: SpaceDto }) {
     })),
   }]
 
-  return (
-    <Box>
-      {/* Adding to the list is done on the map, so the button here only arms the tool. */}
-      <Stack direction="row" alignItems="center" justifyContent="flex-end" sx={{ px: 0.5, pt: 0.5 }}>
-        <Tooltip title={t('maps.addLandmark')}>
-          <IconButton
-            size="small"
-            color={mode === 'landmark' ? 'primary' : 'default'}
-            onClick={() => { setPendingCameraId(null); setMode(mode === 'landmark' ? 'select' : 'landmark') }}
-          >
-            <PlaceIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </Stack>
-      <MapObjectList sections={sections} />
-    </Box>
-  )
+  return <MapObjectList sections={sections} />
 }

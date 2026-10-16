@@ -71,7 +71,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const landmarks = useMemo(() => loadedLandmarks ?? [], [loadedLandmarks])
 
   const {
-    mode, setMode, selection, setSelection, pendingCameraId, setPendingCameraId, focus, clearFocus, select,
+    mode, setMode, selection, setSelection, pendingCameraId, setPendingCameraId, focus, select,
     sideTab, setSideTab,
   } = useEditorState()
   const [draft, setDraft] = useState<CameraPlacementDto | null>(null)
@@ -378,7 +378,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
           onMapClick={handleMapClick}
           picking={!!pendingCameraId || mode === 'landmark'}
           focus={focus}
-          overlay={<SpaceNav spaces={spaces} space={space} onOpen={(id) => { clearFocus(); onOpenSpace(id) }} />}
+          overlay={<SpaceNav spaces={spaces} space={space} />}
         >
           <MapBridge mapRef={mapRef} />
           {plan && (

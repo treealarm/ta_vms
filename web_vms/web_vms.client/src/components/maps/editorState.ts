@@ -22,7 +22,6 @@ export type EditorState = {
   focus: MapFocus | null
   /** Pans the map to the point; the same point again pans again. */
   focusOn: (at: GeoPointDto) => void
-  clearFocus: () => void
   /** Picks an object from a list: selects it, drops any tool, and brings it into view. */
   select: (kind: NonNullable<Selection>['kind'], id: string, at: GeoPointDto) => void
   sideTab: SideTab

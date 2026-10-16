@@ -1060,6 +1060,7 @@
     "tabSpaces": "Spaces",
     "tabCameras": "Cameras",
     "tabLandmarks": "Landmarks",
+    "pickSpace": "Pick a space to see its cameras and landmarks",
     "tabSpace": "Space",
     "tabSelection": "Selection",
     "nothingSelected": "Nothing selected. Click an object on the map, or pick one from the lists on the left.",

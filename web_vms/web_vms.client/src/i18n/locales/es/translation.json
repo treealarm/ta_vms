@@ -1060,6 +1060,7 @@
     "tabSpaces": "Espacios",
     "tabCameras": "Cámaras",
     "tabLandmarks": "Referencias",
+    "pickSpace": "Elija un espacio para ver sus cámaras y referencias",
     "tabSpace": "Espacio",
     "tabSelection": "Selección",
     "nothingSelected": "Nada seleccionado. Haz clic en un objeto del mapa o elige uno en las listas de la izquierda.",

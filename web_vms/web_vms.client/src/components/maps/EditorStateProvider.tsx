@@ -31,7 +31,6 @@ export function EditorStateProvider({ spaceId, children }: { spaceId: string | n
       setSelection,
       setPendingCameraId: (pendingCameraId) => patch({ pendingCameraId }),
       focusOn,
-      clearFocus: () => patch({ focus: null }),
       select: (kind, id, at) => {
         setSnapshot((s) => ({
           ...s, mode: 'select', pendingCameraId: null, selection: { kind, id }, sideTab: 'selection',
