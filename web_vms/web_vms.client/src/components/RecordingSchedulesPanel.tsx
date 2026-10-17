@@ -134,8 +134,8 @@ function RecordingScheduleForm({ ref, schedule, onSaved, onRemoved }: FormProps)
               size="small"
               sx={{ width: 260 }}
             />
-            {/* Picked from a list rather than typed: a typo like "Moscow" instead of
-                "Europe/Moscow" would shift every window by hours. The server rejects unknown ids
+            {/* Picked from a list rather than typed: a typo like "New_York" instead of
+                "America/New_York" would shift every window by hours. The server rejects unknown ids
                 too, this just keeps it from happening. */}
             <Autocomplete
               options={TIMEZONES}

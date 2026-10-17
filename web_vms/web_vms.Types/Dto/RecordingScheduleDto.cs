@@ -19,7 +19,7 @@ public record RecordingScheduleDto
 {
   public string? Id { get; init; }
   public string Name { get; init; } = string.Empty;
-  /// <summary>IANA timezone id, e.g. "Europe/Moscow".</summary>
+  /// <summary>IANA timezone id, e.g. "America/New_York".</summary>
   public string Timezone { get; init; } = "UTC";
   /// <summary>Seconds before a window start at which recording is switched on, absorbing the
   /// keyframe wait and the notification round-trip.</summary>

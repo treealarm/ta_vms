@@ -656,7 +656,7 @@ namespace VmsCfg
         return "timezone must not be empty";
 
       if (!RecordingScheduleEvaluator.IsKnownTimeZone(schedule.Timezone))
-        return $"unknown timezone '{schedule.Timezone}': expected an IANA id such as 'Europe/Moscow'";
+        return $"unknown timezone '{schedule.Timezone}': expected an IANA id such as 'America/New_York'";
 
       if (schedule.LeadInSeconds > SecondsPerDay)
         return "lead_in_seconds must not exceed one day";

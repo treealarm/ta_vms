@@ -173,7 +173,7 @@
     "deleteSchedule": "Delete schedule",
     "selectHint": "Select a recording schedule",
     "timezone": "Timezone",
-    "timezoneHint": "IANA id, e.g. Europe/Moscow",
+    "timezoneHint": "IANA id, e.g. America/New_York",
     "leadInSec": "Lead-in, sec",
     "leadInHint": "Switch recording on this many seconds early",
     "effectHint": "While a window is open the camera records continuously, overriding its stream profiles and any manual or alarm override.",

@@ -124,7 +124,7 @@ export type ScheduleWindowDto = {
 export type RecordingScheduleDto = {
   id?: string
   name: string
-  /** IANA timezone id, e.g. 'Europe/Moscow' */
+  /** IANA timezone id, e.g. 'America/New_York' */
   timezone: string
   /** Seconds before a window start at which recording is switched on */
   leadInSeconds: number

@@ -187,7 +187,7 @@ message ScheduleWindow {
 message RecordingSchedule {
   string id       = 1;
   string name     = 2;
-  string timezone = 3;         // IANA id, e.g. "Europe/Moscow"
+  string timezone = 3;         // IANA id, e.g. "America/New_York"
   // How many seconds before a window starts recording is switched on, so that the keyframe wait
   // and the notification round-trip are absorbed and recording is already running at start_second.
   uint32 lead_in_seconds = 4;
