@@ -123,7 +123,11 @@ function AutoResize() {
 function FocusOn({ focus }: { focus?: MapFocus | null }) {
   const map = useMap()
   useEffect(() => {
-    if (focus) map.setView([focus.lat, focus.lon], Math.max(map.getZoom(), FOCUS_MIN_ZOOM))
+    if (!focus) return
+    // Picking from a list usually opens a side panel in the same render, narrowing the map before
+    // AutoResize has told Leaflet. Centring on the stale width would leave the object off-centre.
+    map.invalidateSize({ pan: false })
+    map.setView([focus.lat, focus.lon], Math.max(map.getZoom(), FOCUS_MIN_ZOOM))
   }, [map, focus])
   return null
 }
