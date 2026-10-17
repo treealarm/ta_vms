@@ -559,14 +559,14 @@
             "type": "chrome",
             "request": "launch",
             "url": "http://localhost:5173",
-            "webRoot": "${workspaceFolder}/web_vms/web_vms.client/src"
+            "webRoot": "${workspaceFolder}/web_vms/web_vms.client"
         },
         {
             "name": "Frontend Debug (Edge) [Windows]",
             "type": "msedge",
             "request": "launch",
             "url": "http://localhost:5173",
-            "webRoot": "${workspaceFolder}/web_vms/web_vms.client/src",
+            "webRoot": "${workspaceFolder}/web_vms/web_vms.client",
             "userDataDir": "${env:LOCALAPPDATA}/ta_vms-edge-debug",
             "preLaunchTask": "wait: stack ready"
         }
