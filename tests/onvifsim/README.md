@@ -31,8 +31,8 @@ The ground is flat. The landmarks carry their colour in their names in ta_vms, s
 map is easy to find in the picture. The scenery is there to find one's way by, and `world.py`
 checks that none of it stands on a camera's line of sight to a landmark or to any point of the
 person's loop. Only the master boxes people: the slave is aimed by the master's boxes alone, and
-boxes on its own video would only suggest otherwise. The sim's origin sits at 41.3° N, 69.24° E,
-which is off the equator so that a missing cos(latitude) shows up as an error.
+boxes on its own video would only suggest otherwise. The sim's origin sits at 39.2° N, 77.35° W, on
+farmland in Maryland, which is off the equator so that a missing cos(latitude) shows up as an error.
 ta_vms gets a map named "OnvifSim lab" with the five landmarks and the reference placements of
 `master` and `ptz`, and a plan named "OnvifSim lab plan" with the same five landmarks and the
 reference placements of `master2` and `ptz2`.

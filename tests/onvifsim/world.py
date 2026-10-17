@@ -22,10 +22,11 @@ import struct
 import sys
 from dataclasses import dataclass
 
-# WGS84 anchor of the sim's origin. Not on the equator, so a cos(latitude) left out anywhere shows
-# up as an east-west error instead of cancelling out.
-DEFAULT_LAT0 = 41.3
-DEFAULT_LON0 = 69.24
+# WGS84 anchor of the sim's origin: open farmland in Maryland, which also makes a presentable map.
+# Not on the equator, so a cos(latitude) left out anywhere shows up as an east-west error instead
+# of cancelling out.
+DEFAULT_LAT0 = 39.2
+DEFAULT_LON0 = -77.35
 
 # The radius ta_vms's EnuFrame uses; the same formula, so the two agree to rounding.
 EARTH_RADIUS_M = 6378137.0
