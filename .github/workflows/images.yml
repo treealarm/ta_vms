@@ -109,7 +109,7 @@ jobs:
 
       # Not checkout's `submodules:` -- it fetches them over HTTPS with GITHUB_TOKEN, which cannot
       # read another private repository. A deploy key is scoped to roi_transcode alone, read-only,
-      # and GitHub lets any key read the public submodules, so the .gitmodules SSH URLs work as is.
+      # and its .gitmodules URL is SSH; the public submodules are HTTPS and need no credentials.
       - name: Submodules
         env:
           SVE_DEPLOY_KEY: ${{ secrets.SVE_DEPLOY_KEY }}
