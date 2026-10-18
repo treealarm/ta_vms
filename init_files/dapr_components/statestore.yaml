@@ -33,7 +33,7 @@ spec:
   - name: actorStateStore
     value: "true"
   # Dapr's default is keyPrefix=appid, which silently namespaces every key by the writer's app id:
-  # VmsCfg would write "vmscfg||cam-perm-version" while web_vms read "web-vms||cam-perm-version",
+  # VmsCfg would write "vmscfg||cam-perm-version" while web_srv read "web-vms||cam-perm-version",
   # and video_srv's heartbeat ("vms||ms-status-<id>") never reached VmsCfg either. Several keys
   # here are deliberately shared between services, so the store is keyed by the component name
   # instead — one namespace per state store, not per app. Verified on PostgreSQL: rows land under

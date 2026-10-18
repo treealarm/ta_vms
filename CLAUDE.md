@@ -19,7 +19,7 @@ For all new code and refactors, treat these as hard constraints rather than styl
 
 ## MediaMTX API access
 
-All interaction with the MediaMTX REST API goes through **VmsUtils** (`vmsutils` Dapr app-id). No other service (video_srv, VmsCfg, web_vms, etc.) calls the MediaMTX API directly.
+All interaction with the MediaMTX REST API goes through **VmsUtils** (`vmsutils` Dapr app-id). No other service (video_srv, VmsCfg, web_srv, etc.) calls the MediaMTX API directly.
 
 - video_srv sends `camera_id + stream_name` to VmsUtils via gRPC
 - VmsUtils resolves the assigned MediaMTX server (with its `api_url`) from VmsCfg, then queries the MediaMTX REST API
@@ -138,6 +138,16 @@ it needs both `roitrc/` and `proto/`.
 Updating the library's version is an ordinary submodule bump, in a commit of its own, so that the
 history shows which encoder went into a release.
 
+## Source names and runtime names differ on purpose
+
+The source tree was renamed — `media_server/` → `video_srv/`, `web_vms/` → `dotnet/` (every C#
+service), `web_vms.Server/.client/.Types` → `web_srv.*` with their namespaces — but nothing a
+running deployment knows a service by was. The C++ service is still the `vms` target, binary, Dapr
+app id and image; the web server is still the compose service `web_vms`, the image
+`treealarm/web_vms` and the app id `web-vms`, and the state store keys keep those prefixes.
+Renaming any of these is a migration for every installation (`../ta_install`, Square's `.env`,
+keys already in the state store), not a tidy-up — do not do it in passing.
+
 ## Adding a new service
 
 When adding a new service (C# or C++), you **must** update all of the following:
@@ -146,7 +156,7 @@ When adding a new service (C# or C++), you **must** update all of the following:
 3. `docker-compose.yml` — add service + dapr sidecar entries (with `profiles: [app]`)
 4. `.vscode/launch.json` — add a debug launch configuration for local development
 5. `.vscode/tasks.json` — add `prepare:<name>`, `dapr:<name>:start`, `dapr:<name>:stop` tasks (copy pattern from vmslogger)
-6. `web_vms/web_vms.sln` — add the project (for C# services)
+6. `dotnet/ta_vms.sln` — add the project (for C# services)
 
 Omitting any of these causes a startup crash or missing debug config in dev.
 
@@ -155,7 +165,7 @@ Omitting any of these causes a startup crash or missing debug config in dev.
 When adding a new required environment variable to any service:
 1. Add it to `.env` (docker-compose local dev values).
 2. Add it to `../ta_install/.env` (production/installation values).
-3. Add it to **every** `launch.json` that launches that service — both the service-specific one (`web_vms/.vscode/launch.json`, `video_srv/.vscode/launch.json`) and the root `.vscode/launch.json`. Missing it in any one of these causes a startup crash in dev.
+3. Add it to **every** `launch.json` that launches that service — both the service-specific one (`dotnet/.vscode/launch.json`, `video_srv/.vscode/launch.json`) and the root `.vscode/launch.json`. Missing it in any one of these causes a startup crash in dev.
 
 **No silent fallbacks.** If an environment variable is required, the service must throw (or return non-zero) immediately on startup when it is missing — never silently default to a hardcoded value. A missing required variable is a misconfiguration and must be visible immediately, not discovered at runtime through unexpected behavior.
 
@@ -211,7 +221,7 @@ stale data until their TTL runs out. That is a work queue, and cache invalidatio
 (This was equally true of the Redis Streams consumer group the bus used before, and is not a
 property of the broker: it is what one app id means.)
 
-For a service that can be scaled horizontally (today: `web_vms.Server`), use a **version key in the
+For a service that can be scaled horizontally (today: `web_srv.Server`), use a **version key in the
 shared state store** instead:
 1. VmsCfg writes a new value to a well-known key after the write succeeds (`cam-perm-version`, see
    `CfgServiceImpl.BumpCameraPermissionsVersionAsync`) — the value is meaningless, only "different
@@ -226,7 +236,7 @@ accumulating messages nobody reads.
 
 ### Scaling model per service
 
-- `web_vms.Server` — stateless, scales by **replicas**. Keep it that way: no per-instance session
+- `web_srv.Server` — stateless, scales by **replicas**. Keep it that way: no per-instance session
   tables (WHEP session state travels in an AES-GCM sealed token, see `WhepSessionToken`), no
   subscriptions, no local files.
 - `video_srv` (`vms`) and `VmsFs` — scale by **sharding**: one pair per node, pinned to that
@@ -284,7 +294,7 @@ mechanism — no delivery guarantees, no history, nothing is written to a databa
 **VmsSingleton** owns the in-memory registry: it subscribes to `debug-entity-state`, keys entries by
 `(service, entity_type, entity_id)`, and tracks `last_seen`. `stale` is computed on read
 (`now - last_seen > 30s`); a periodic sweep removes entries not seen for `> 5min`. The registry is
-exposed via the `ListEntityStates` gRPC (consumed by `web_vms.Server`'s `/api/entitystate`
+exposed via the `ListEntityStates` gRPC (consumed by `web_srv.Server`'s `/api/entitystate`
 endpoint and the "Entity State" debug tab in the frontend).
 
 **Publishing:**
@@ -319,7 +329,7 @@ Spaces (maps and nested plans), plan images, camera placements and landmarks liv
 - Spaces reach Square only through `VmsSquareSingleton` (`SquareSpaceExport`): each plan a Square
   diagram, each picture placement a replica with `owner_id` = the camera. Nothing about Square goes
   into VmsCfg.
-- Map tiles reach browsers only through web_vms's caching proxy (`api/map/tiles`), cached in the
+- Map tiles reach browsers only through web_srv's caching proxy (`api/map/tiles`), cached in the
   state store — never on local disk and never fetched by the browser from the provider directly.
 
 ## Database access

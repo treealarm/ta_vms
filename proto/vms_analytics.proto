@@ -6,7 +6,7 @@ package vms.analytics;
 
 // VmsAnalytics' own outward-facing API (internal to ta_vms) — not to be confused with
 // the vendored analytics.proto contract copied from the video_a repository, which VmsAnalytics
-// consumes as a client (see web_vms/VmsAnalytics/proto/analytics.proto).
+// consumes as a client (see dotnet/VmsAnalytics/proto/analytics.proto).
 service VmsAnalyticsService {
   rpc ListDetections(ListDetectionsRequest) returns (ListDetectionsResponse);
   // Crop JPEG of a detection, read from the storage volume it was saved to.

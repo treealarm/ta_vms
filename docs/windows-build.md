@@ -42,7 +42,7 @@ lives inside it. Everything after that it can handle itself.
 | VS Build Tools + C++ workload | MSVC x64, the Windows SDK, and the bundled CMake and Ninja |
 | CMake ≥ 3.22, Ninja | only if the VS workload did not provide them |
 | .NET SDK 10 | every service targets `net10.0` |
-| Node.js 20.19+ | the React client, and `dotnet build` itself — the solution includes `web_vms.client.esproj` |
+| Node.js 20.19+ | the React client, and `dotnet build` itself — the solution includes `web_srv.client.esproj` |
 | vcpkg | cloned and bootstrapped if absent |
 
 vcpkg ports, classic mode (the repository has no `vcpkg.json`):
@@ -111,7 +111,7 @@ reboot.
 
 - `video_srv\build\vms.exe` — the C++ media server, built with MSVC. No source changes
   are needed for Windows; the same sources compile as on Linux.
-- `web_vms\**\bin\Debug\net10.0\` — the .NET services.
+- `dotnet\**\bin\Debug\net10.0\` — the .NET services.
 
 `cmake --preset windows-default` is used, and that preset reads `$env{VCPKG_ROOT}` — so
 nothing in the repository has to be edited for a particular machine.

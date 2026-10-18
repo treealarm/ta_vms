@@ -13,7 +13,7 @@ than none. It reports what the sidecars say they subscribe to, what the broker a
 where the two disagree.
 
 Usage:
-    scripts/check-subscriptions.py            # uses web_vms/dapr.yaml and .env
+    scripts/check-subscriptions.py            # uses dotnet/dapr.yaml and .env
     scripts/check-subscriptions.py --json     # machine-readable
 
 Exits 1 if anything is off (a subscription with no queue, a queue with no consumer, an orphan
@@ -29,7 +29,7 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-RUN_FILE = REPO / "web_vms" / "dapr.yaml"
+RUN_FILE = REPO / "dotnet" / "dapr.yaml"
 ENV_FILE = REPO / ".env"
 
 

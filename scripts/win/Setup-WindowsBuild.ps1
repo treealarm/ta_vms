@@ -48,7 +48,7 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $VideoSrvDir = Join-Path $RepoRoot "video_srv"
-$Solution = Join-Path $RepoRoot "web_vms\web_vms.sln"
+$Solution = Join-Path $RepoRoot "dotnet\ta_vms.sln"
 
 # vcpkg ports for video_srv, in classic mode (the repo has no vcpkg.json).
 # pkgconf is not optional: CMakeLists.txt calls find_package(PkgConfig REQUIRED) and then
@@ -530,7 +530,7 @@ if ($hasNet10) {
 }
 
 # ---- Node.js -----------------------------------------------------------------------
-# Needed even for `dotnet build`: the solution includes web_vms.client.esproj, whose
+# Needed even for `dotnet build`: the solution includes web_srv.client.esproj, whose
 # MSBuild SDK drives npm.
 Write-Head "Node.js"
 $node = Get-Command node -ErrorAction SilentlyContinue
@@ -639,7 +639,7 @@ if ($SkipBuild) {
 # the build would fail with MSB3021 "file is locked by .NET Host" rather than pick up the
 # change. Say so plainly instead of letting the build die halfway.
 $running = @(Get-CimInstance Win32_Process -Filter "Name='dotnet.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -match '[\\/](Vms[\w\.]*|web_vms\.Server)\.dll' })
+        Where-Object { $_.CommandLine -match '[\\/](Vms[\w\.]*|dotnet\.Server)\.dll' })
 $running += @(Get-CimInstance Win32_Process -Filter "Name='vms.exe'" -ErrorAction SilentlyContinue)
 if ($running.Count -gt 0) {
     Write-Section "Build"
@@ -687,6 +687,6 @@ Write-Section "Done"
 Write-Host "  total time: $("{0:n1}" -f $script:TotalWatch.Elapsed.TotalMinutes) min" -ForegroundColor Green
 Write-Host "  artifacts:" -ForegroundColor Green
 Write-Host "    $exe" -ForegroundColor Green
-Write-Host "    $(Join-Path $RepoRoot "web_vms\**\bin\$Configuration\net10.0\")" -ForegroundColor Green
+Write-Host "    $(Join-Path $RepoRoot "dotnet\**\bin\$Configuration\net10.0\")" -ForegroundColor Green
 Write-Note "To run the stack you also need Docker and the Dapr CLI ('dapr init'), which this script does not touch."
 Write-Note "From VS Code: the 'Full stack (F5) [Windows]' compound."

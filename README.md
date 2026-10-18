@@ -72,15 +72,15 @@ for state and RabbitMQ as the message bus.
 | Part | What it does |
 |---|---|
 | `video_srv/` (C++20) | Pulls RTSP from the cameras, writes the archive, transcodes HEVC to H.264 for browsers |
-| `web_vms/web_vms.Server` | The gateway the browser talks to: REST, WebRTC (WHEP) and archive HLS |
-| `web_vms/web_vms.client` | The web interface (React, TypeScript, Vite) |
-| `web_vms/VmsCfg` | Every piece of configuration: cameras, storages, profiles, maps |
-| `web_vms/VmsFs` | The archive on disk: clips, retention, filling gaps from camera SD cards |
-| `web_vms/VmsOnvif`, `VmsOnvifActors` | ONVIF: discovery, events, PTZ, device settings |
-| `web_vms/VmsPtzTrackingSingleton` | PTZ tracking and aiming one camera from another through the map |
-| `web_vms/VmsAnalyticsSingleton` | Hands cameras to the analytics workers and keeps their detections |
+| `dotnet/web_srv.Server` | The gateway the browser talks to: REST, WebRTC (WHEP) and archive HLS |
+| `dotnet/web_srv.client` | The web interface (React, TypeScript, Vite) |
+| `dotnet/VmsCfg` | Every piece of configuration: cameras, storages, profiles, maps |
+| `dotnet/VmsFs` | The archive on disk: clips, retention, filling gaps from camera SD cards |
+| `dotnet/VmsOnvif`, `VmsOnvifActors` | ONVIF: discovery, events, PTZ, device settings |
+| `dotnet/VmsPtzTrackingSingleton` | PTZ tracking and aiming one camera from another through the map |
+| `dotnet/VmsAnalyticsSingleton` | Hands cameras to the analytics workers and keeps their detections |
 | `roitrc/` (C++) | Re-compresses finished clips, keeping detected objects sharp |
-| `web_vms/VmsUtils`, `VmsLogger`, `VmsSingleton`, `VmsSquareSingleton` | MediaMTX control, logs, system-wide jobs, the TreeAlarm integration |
+| `dotnet/VmsUtils`, `VmsLogger`, `VmsSingleton`, `VmsSquareSingleton` | MediaMTX control, logs, system-wide jobs, the TreeAlarm integration |
 
 Live video reaches the browser through [MediaMTX](https://github.com/bluenviron/mediamtx). Detection
 runs in a separate worker, [video_a](https://github.com/treealarm/video_a).

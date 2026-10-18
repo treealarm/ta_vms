@@ -5,7 +5,7 @@
             "label": "dapr: sidecars up",
             // See "prepare: stack": never stop to ask which instance to terminate.
             "runOptions": { "instancePolicy": "terminateOldest" },
-            "detail": "Every sidecar at once, from web_vms/dapr.yaml. The file declares no `command`, so the services themselves are started by the debugger. About 90 MB per sidecar.",
+            "detail": "Every sidecar at once, from dotnet/dapr.yaml. The file declares no `command`, so the services themselves are started by the debugger. About 90 MB per sidecar.",
             "type": "shell",
             "command": "dapr",
             "args": [
@@ -14,7 +14,7 @@
                 "."
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms",
+                "cwd": "${workspaceFolder}/dotnet",
                 // Pin the address each sidecar advertises for itself. Unset, Dapr walks the
                 // network interfaces and takes the first non-loopback address it finds; this box
                 // offers eleven, among them an AmneziaVPN tunnel, ZeroTier, two VMware host-only
@@ -87,7 +87,7 @@
                 "."
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms"
+                "cwd": "${workspaceFolder}/dotnet"
             },
             "presentation": {
                 "reveal": "silent",
@@ -127,7 +127,7 @@
             "label": "wait: sidecars ready",
             // See "prepare: stack": never stop to ask which instance to terminate.
             "runOptions": { "instancePolicy": "terminateOldest" },
-            "detail": "Fails F5 if the sidecars did not actually come up. 'dapr: sidecars up' is a background task and VS Code releases it on the first 'Initialized name resolution' \u2014 which one sidecar prints while the rest are still starting, and which stays printed even if the run then tears everything down. Waits for EVERY sidecar in web_vms/dapr.yaml, not just one: this used to curl web-vms on 9190, the first app in the run file and so almost always the first one up, which opened the gate while the other twelve were still starting and let the debugger launch applications whose sidecars did not exist yet. Probed on the metrics port because daprd serves it itself and answers whether or not the app is up \u2014 the app is started after this, by the debugger. Ports come from dapr.yaml, so adding a service needs no change here.",
+            "detail": "Fails F5 if the sidecars did not actually come up. 'dapr: sidecars up' is a background task and VS Code releases it on the first 'Initialized name resolution' \u2014 which one sidecar prints while the rest are still starting, and which stays printed even if the run then tears everything down. Waits for EVERY sidecar in dotnet/dapr.yaml, not just one: this used to curl web-vms on 9190, the first app in the run file and so almost always the first one up, which opened the gate while the other twelve were still starting and let the debugger launch applications whose sidecars did not exist yet. Probed on the metrics port because daprd serves it itself and answers whether or not the app is up \u2014 the app is started after this, by the debugger. Ports come from dapr.yaml, so adding a service needs no change here.",
             "type": "shell",
             "command": "python3",
             "args": [
@@ -149,7 +149,7 @@
             "label": "stop: stray apps",
             // See "prepare: stack": never stop to ask which instance to terminate.
             "runOptions": { "instancePolicy": "terminateOldest" },
-            "detail": "Frees every port the stack is about to use, and refuses to start if it cannot. 'dapr: sidecars down' ends the sidecars and nothing ends the applications: VS Code does not stop a running debug session when a new one starts, and a session that was interrupted rather than stopped leaves its processes behind entirely. Either way the next F5 launches a service onto a port that is already taken, which shows up much later as a service that 'did not come up' rather than as a port conflict. It also ends a leftover `dapr run -f .`, which is looked up by identity because it holds no port: Stop ends the debug sessions, each one's postDebugTask runs `dapr stop --app-id X`, the sidecars die one at a time and their supervisor is left alive with nothing to supervise. VS Code goes on counting 'dapr: sidecars up' as a running background task, so the next F5 never starts a new one -- the stack does not come up, every port is free, and nothing points at the cause. Ports come from web_vms/dapr.yaml and vite.config.ts, so a service added there is swept without touching this file. A port is only cleared when its holder is recognisably ours -- a process whose command line or working directory is inside this checkout; anything else is named and fails the run, because killing a stranger's process for sitting on 5173 is worse than not starting. Runs before 'dapr: sidecars down' on purpose: ending those processes ends the old debug sessions, and each of those fires its own postDebugTask ('dapr:<id>:stop'). Landing that during the teardown is harmless; landing it after the new sidecars are up would kill one of them.",
+            "detail": "Frees every port the stack is about to use, and refuses to start if it cannot. 'dapr: sidecars down' ends the sidecars and nothing ends the applications: VS Code does not stop a running debug session when a new one starts, and a session that was interrupted rather than stopped leaves its processes behind entirely. Either way the next F5 launches a service onto a port that is already taken, which shows up much later as a service that 'did not come up' rather than as a port conflict. It also ends a leftover `dapr run -f .`, which is looked up by identity because it holds no port: Stop ends the debug sessions, each one's postDebugTask runs `dapr stop --app-id X`, the sidecars die one at a time and their supervisor is left alive with nothing to supervise. VS Code goes on counting 'dapr: sidecars up' as a running background task, so the next F5 never starts a new one -- the stack does not come up, every port is free, and nothing points at the cause. Ports come from dotnet/dapr.yaml and vite.config.ts, so a service added there is swept without touching this file. A port is only cleared when its holder is recognisably ours -- a process whose command line or working directory is inside this checkout; anything else is named and fails the run, because killing a stranger's process for sitting on 5173 is worse than not starting. Runs before 'dapr: sidecars down' on purpose: ending those processes ends the old debug sessions, and each of those fires its own postDebugTask ('dapr:<id>:stop'). Landing that during the teardown is harmless; landing it after the new sidecars are up would kill one of them.",
             "type": "process",
             "command": "python3",
             "args": [
@@ -277,8 +277,8 @@
             }
         },
         {
-            "label": "dapr:web_vms:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "label": "dapr:web_srv:start",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from dotnet/dapr.yaml — keep them in step.",
             "type": "shell",
             "command": "dapr",
             "args": [
@@ -301,7 +301,7 @@
                 "../init_files/dapr_components"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms",
+                "cwd": "${workspaceFolder}/dotnet",
                 // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
                 // never be set for docker or Kubernetes.
                 "env": {
@@ -329,7 +329,7 @@
             }
         },
         {
-            "label": "dapr:web_vms:stop",
+            "label": "dapr:web_srv:stop",
             "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
             "type": "shell",
             "command": "dapr",
@@ -345,19 +345,19 @@
             "problemMatcher": []
         },
         {
-            "label": "prepare:web_vms",
+            "label": "prepare:web_srv",
             "detail": "Manual, for debugging one service on its own: builds everything, then clears and restarts just this app id's sidecar. F5 does not use these — the compound brings every sidecar up in one terminal via 'prepare: stack', so that Stop does not leave a terminal per service behind.",
             "dependsOrder": "sequence",
             "dependsOn": [
                 "build:all",
-                "dapr:web_vms:stop",
-                "dapr:web_vms:start"
+                "dapr:web_srv:stop",
+                "dapr:web_srv:start"
             ],
             "problemMatcher": []
         },
         {
             "label": "dapr:vmscfg:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from dotnet/dapr.yaml — keep them in step.",
             "type": "shell",
             "command": "dapr",
             "args": [
@@ -380,7 +380,7 @@
                 "../init_files/dapr_components"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms",
+                "cwd": "${workspaceFolder}/dotnet",
                 // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
                 // never be set for docker or Kubernetes.
                 "env": {
@@ -436,7 +436,7 @@
         },
         {
             "label": "dapr:vmsutils:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from dotnet/dapr.yaml — keep them in step.",
             "type": "shell",
             "command": "dapr",
             "args": [
@@ -459,7 +459,7 @@
                 "../init_files/dapr_components"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms",
+                "cwd": "${workspaceFolder}/dotnet",
                 // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
                 // never be set for docker or Kubernetes.
                 "env": {
@@ -515,7 +515,7 @@
         },
         {
             "label": "dapr:vmsonvif:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from dotnet/dapr.yaml — keep them in step.",
             "type": "shell",
             "command": "dapr",
             "args": [
@@ -540,7 +540,7 @@
                 "localhost"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms",
+                "cwd": "${workspaceFolder}/dotnet",
                 // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
                 // never be set for docker or Kubernetes.
                 "env": {
@@ -596,7 +596,7 @@
         },
         {
             "label": "dapr:vmsonvif-actors:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from dotnet/dapr.yaml — keep them in step.",
             "type": "shell",
             "command": "dapr",
             "args": [
@@ -621,7 +621,7 @@
                 "localhost"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms",
+                "cwd": "${workspaceFolder}/dotnet",
                 // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
                 // never be set for docker or Kubernetes.
                 "env": {
@@ -677,7 +677,7 @@
         },
         {
             "label": "dapr:vmsfs:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from dotnet/dapr.yaml — keep them in step.",
             "type": "shell",
             "command": "dapr",
             "args": [
@@ -700,7 +700,7 @@
                 "../init_files/dapr_components"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms",
+                "cwd": "${workspaceFolder}/dotnet",
                 // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
                 // never be set for docker or Kubernetes.
                 "env": {
@@ -756,7 +756,7 @@
         },
         {
             "label": "dapr:vmsanalyticssingleton:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from dotnet/dapr.yaml — keep them in step.",
             "type": "shell",
             "command": "dapr",
             "args": [
@@ -779,7 +779,7 @@
                 "../init_files/dapr_components"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms",
+                "cwd": "${workspaceFolder}/dotnet",
                 // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
                 // never be set for docker or Kubernetes.
                 "env": {
@@ -835,7 +835,7 @@
         },
         {
             "label": "dapr:vmslogger:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from dotnet/dapr.yaml — keep them in step.",
             "type": "shell",
             "command": "dapr",
             "args": [
@@ -858,7 +858,7 @@
                 "../init_files/dapr_components"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms",
+                "cwd": "${workspaceFolder}/dotnet",
                 // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
                 // never be set for docker or Kubernetes.
                 "env": {
@@ -914,7 +914,7 @@
         },
         {
             "label": "dapr:vmssingleton:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from dotnet/dapr.yaml — keep them in step.",
             "type": "shell",
             "command": "dapr",
             "args": [
@@ -939,7 +939,7 @@
                 "localhost"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms",
+                "cwd": "${workspaceFolder}/dotnet",
                 // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
                 // never be set for docker or Kubernetes.
                 "env": {
@@ -995,7 +995,7 @@
         },
         {
             "label": "dapr:vmssquaresingleton:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from dotnet/dapr.yaml — keep them in step.",
             "type": "shell",
             "command": "dapr",
             "args": [
@@ -1020,7 +1020,7 @@
                 "localhost"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms",
+                "cwd": "${workspaceFolder}/dotnet",
                 // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
                 // never be set for docker or Kubernetes.
                 "env": {
@@ -1076,7 +1076,7 @@
         },
         {
             "label": "dapr:vmsptztrackingsingleton:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from dotnet/dapr.yaml — keep them in step.",
             "type": "shell",
             "command": "dapr",
             "args": [
@@ -1101,7 +1101,7 @@
                 "localhost"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms",
+                "cwd": "${workspaceFolder}/dotnet",
                 // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
                 // never be set for docker or Kubernetes.
                 "env": {
@@ -1157,7 +1157,7 @@
         },
         {
             "label": "dapr:vms:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from dotnet/dapr.yaml — keep them in step.",
             "type": "shell",
             "command": "dapr",
             "args": [
@@ -1180,7 +1180,7 @@
                 "../init_files/dapr_components"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms",
+                "cwd": "${workspaceFolder}/dotnet",
                 // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
                 // never be set for docker or Kubernetes.
                 "env": {
@@ -1242,12 +1242,12 @@
             "type": "process",
             "args": [
                 "build",
-                "${workspaceFolder}/web_vms/web_vms.sln",
+                "${workspaceFolder}/dotnet/ta_vms.sln",
                 "/property:GenerateFullPaths=true",
                 "/consoleloggerparameters:NoSummary;ForceNoAlign"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms"
+                "cwd": "${workspaceFolder}/dotnet"
             },
             "problemMatcher": "$msCompile"
         },
@@ -1257,12 +1257,12 @@
             "type": "process",
             "args": [
                 "publish",
-                "${workspaceFolder}/web_vms/web_vms.sln",
+                "${workspaceFolder}/dotnet/ta_vms.sln",
                 "/property:GenerateFullPaths=true",
                 "/consoleloggerparameters:NoSummary;ForceNoAlign"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms"
+                "cwd": "${workspaceFolder}/dotnet"
             },
             "problemMatcher": "$msCompile"
         },
@@ -1274,16 +1274,16 @@
                 "watch",
                 "run",
                 "--project",
-                "${workspaceFolder}/web_vms/web_vms.sln"
+                "${workspaceFolder}/dotnet/ta_vms.sln"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms"
+                "cwd": "${workspaceFolder}/dotnet"
             },
             "problemMatcher": "$msCompile"
         },
         {
             "label": "dapr:roitrc:start",
-            "detail": "Just this one sidecar, for debugging the ROI service alone. Ports come from web_vms/dapr.yaml — keep them in step.",
+            "detail": "Just this one sidecar, for debugging the ROI service alone. Ports come from dotnet/dapr.yaml — keep them in step.",
             "type": "shell",
             "command": "dapr",
             "args": [
@@ -1297,7 +1297,7 @@
                 "--resources-path", "../init_files/dapr_components"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/web_vms",
+                "cwd": "${workspaceFolder}/dotnet",
                 "env": { "DAPR_HOST_IP": "127.0.0.1" }
             },
             "isBackground": true,

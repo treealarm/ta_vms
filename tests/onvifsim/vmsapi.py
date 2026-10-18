@@ -1,4 +1,4 @@
-"""ta_vms through its gateway (web_vms.Server), the same REST API the browser uses."""
+"""ta_vms through its gateway (web_srv.Server), the same REST API the browser uses."""
 
 from labhttp import HttpError, request, request_multipart, sse
 

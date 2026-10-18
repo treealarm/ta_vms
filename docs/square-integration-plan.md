@@ -95,7 +95,7 @@ A thin client over the Square API, **gRPC + Dapr service invocation**, behind th
 - **A no-op implementation** of `ISquareIntegration` for running on its own (no sink set) —
   guarantees that without the integration the producer works standalone.
 - **Where it lives: a repository of its own, `github.com/treealarm/SquareIntegrationClient`,
-  included as a git submodule** — `ta_vms/web_vms/SquareIntegrationClient` and
+  included as a git submodule** — `ta_vms/dotnet/SquareIntegrationClient` and
   `Square/SquareIntegrationClient` (after the example of `KeycloakAdmin`, which is already a
   submodule in both repositories). It holds the `.proto` contract
   (`integro`/`tracks`/`actions`/`common`/`diagrams`) and the generated gRPC stubs — one source of
@@ -106,7 +106,7 @@ A thin client over the Square API, **gRPC + Dapr service invocation**, behind th
   refers to the submodule only for the proto types.
 
 ### 3) VmsCfg — the first producer
-`web_vms/VmsCfg` (`Program.cs`, `Grpc/CfgServiceImpl.cs`) plugs in the typelib and, **if the
+`dotnet/VmsCfg` (`Program.cs`, `Grpc/CfgServiceImpl.cs`) plugs in the typelib and, **if the
 integration is turned on by an env flag** (e.g. `SQUARE_INTEGRATION_SINK_APP_ID`):
 - at startup: `RegisterRoot("vmscfg")` + a full push of the camera tree and properties from its
   DbContext;
@@ -115,7 +115,7 @@ integration is turned on by an env flag** (e.g. `SQUARE_INTEGRATION_SINK_APP_ID`
 - declares the commands: camera — `start/stop_recording`, `arm/disarm`, (later) PTZ; root —
   `resync`;
 - implements the command handlers through the existing internal cfg logic / calls to other ta_vms
-  services (`CameraControlService.SetCameraState` in `proto/vms_control.proto`, `web_vms`'s
+  services (`CameraControlService.SetCameraState` in `proto/vms_control.proto`, `web_srv`'s
   `CameraStateController`, PTZ in `proto/onvif.proto`).
 - **Running on its own:** flag not set → the typelib is a no-op and VmsCfg behaves exactly as now.
   This is in line with the CLAUDE.md rule "no silent fallback": the integration is an explicit,
@@ -190,36 +190,36 @@ left is the network.
    command handlers, the env gate.
 
 Files (implemented for the protocol layer — see item 2 above): `github.com/treealarm/
-SquareIntegrationClient` (a new repository, a submodule in `ta_vms/web_vms/SquareIntegrationClient`
+SquareIntegrationClient` (a new repository, a submodule in `ta_vms/dotnet/SquareIntegrationClient`
 and `Square/SquareIntegrationClient`); `Square/IntegrationUtilsLib/{SquareIntegration,Utils,
 IntegrationSync,IntegrationSyncFull}.cs` (host side, trimmed), `Square/GrpcDaprLib.csproj`
 (`integro`/`tracks`/`actions` taken out of the compilation), `Square/{AASubService,GrpcTracksClient,
 ValhallaLib,IntegrationServerLib,LeafletAlarms}` (references to the submodule);
-`ta_vms/web_vms/VmsCfg/Program.cs` + `Grpc/{CfgServiceImpl,SquareCameraPush,SquareAlarmSubscriber,
+`ta_vms/dotnet/VmsCfg/Program.cs` + `Grpc/{CfgServiceImpl,SquareCameraPush,SquareAlarmSubscriber,
 SquareResyncService}.cs`. Not done yet: commands (hosting `ActionsServiceImpl` in VmsCfg), the env
 in `.env`/`dockerhub/.env`, the launch.json files (see ta_vms's CLAUDE.md on where new env
 variables and services must be added).
 
 ## Phase 2 — Video in Square's UI
-ta_vms already serves WebRTC live and the HLS archive through `web_vms` — nothing needs to be
+ta_vms already serves WebRTC live and the HLS archive through `web_srv` — nothing needs to be
 written in ta_vms.
-- A player in `Square/tree_alarm.client/src/`: builds the URL to `web_vms` from the
+- A player in `Square/tree_alarm.client/src/`: builds the URL to `web_srv` from the
   `live_url`/`vms_camera_id` property. The base URL comes from the frontend's configuration.
-- Access from the browser: `web_vms` behind a reverse proxy on the same origin as Square (or CORS).
+- Access from the browser: `web_srv` behind a reverse proxy on the same origin as Square (or CORS).
 - Clicking a camera → live; from an alarm or the timeline → the HLS archive at the right `ts`.
 
 ## Phase 3 — Single sign-on (Keycloak) at the edge
-JWT validation goes **in front of** `web_vms` (a reverse proxy/gateway: nginx + oauth2-proxy or
-Square's gateway), checking Square's Keycloak tokens. Inside the network `web_vms` has no
+JWT validation goes **in front of** `web_srv` (a reverse proxy/gateway: nginx + oauth2-proxy or
+Square's gateway), checking Square's Keycloak tokens. Inside the network `web_srv` has no
 authorization, and it cannot be reached directly from outside. Reference:
 `Square/LeafletAlarms/Authentication/ConfigureAuthentificationServiceExtensions.cs`.
 
 > **Implemented (partly, ahead of time):** login and the `admin`/`user` roles are done — but JWT
-> validation sits **inside** `web_vms.Server` (as in `LeafletAlarms` itself, rather than in a
+> validation sits **inside** `web_srv.Server` (as in `LeafletAlarms` itself, rather than in a
 > separate gateway), directly through `JwtBearerOptions.Authority`/OIDC discovery, with no separate
 > reverse proxy. It uses **the same realm `myrealm`** as Square (a shared login; no separate users
 > were created for ta_vms). It is turned on optionally by `KEYCLOAK_URL` (empty → standalone,
-> without authorization, as before) — see `web_vms/web_vms.Server/Authentication/`,
+> without authorization, as before) — see `dotnet/web_srv.Server/Authentication/`,
 > `Controllers/AuthController.cs`. Network connectivity is through the shared `common_app_network`
 > (Phase 0, now part of the base `docker-compose.yml`, with no separate overlay).
 > Left for the future: the typelib integration (Phase 1/2) and, if needed, moving validation to a
@@ -247,8 +247,8 @@ authorization, and it cannot be reached directly from outside. Reference:
   `start_recording` command from Square → recording turns on (the status came back by uid);
   `resync` → a full re-push; delete the root in Square → the children disappear and the
   integration is broken off; per-object disable works.
-- **Phase 2:** live (WebRTC) and archive (HLS) play in Square's UI through `web_vms`.
-- **Phase 3:** a direct request to `web_vms` from outside without a token is refused; with a valid
+- **Phase 2:** live (WebRTC) and archive (HLS) play in Square's UI through `web_srv`.
+- **Phase 3:** a direct request to `web_srv` from outside without a token is refused; with a valid
   Keycloak token it passes.
 
 ## Open questions for the implementation stage

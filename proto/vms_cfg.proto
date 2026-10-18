@@ -553,7 +553,7 @@ message MonitorSetup {
   // "wall" (shared, admin-managed) or "investigation" (private to owner).
   string           kind       = 6;
   // Keycloak preferred_username of the owner, empty when authentication is disabled. Always taken
-  // from the caller's token by web_vms — never trusted from a client-supplied body.
+  // from the caller's token by web_srv — never trusted from a client-supplied body.
   string           owner      = 7;
 }
 

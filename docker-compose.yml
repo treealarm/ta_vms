@@ -139,7 +139,7 @@ services:
     profiles: [app]
     build:
       context: .
-      dockerfile: web_vms/VmsUtils/Dockerfile
+      dockerfile: dotnet/VmsUtils/Dockerfile
     env_file:
       - .env
     environment:
@@ -185,7 +185,7 @@ services:
     profiles: [app]
     build:
       context: .
-      dockerfile: web_vms/VmsSingleton/Dockerfile
+      dockerfile: dotnet/VmsSingleton/Dockerfile
     env_file:
       - .env
     environment:
@@ -227,7 +227,7 @@ services:
     profiles: [app]
     build:
       context: .
-      dockerfile: web_vms/VmsSquareSingleton/Dockerfile
+      dockerfile: dotnet/VmsSquareSingleton/Dockerfile
     env_file:
       - .env
     environment:
@@ -265,7 +265,7 @@ services:
     profiles: [app]
     build:
       context: .
-      dockerfile: web_vms/VmsPtzTrackingSingleton/Dockerfile
+      dockerfile: dotnet/VmsPtzTrackingSingleton/Dockerfile
     env_file:
       - .env
     environment:
@@ -303,7 +303,7 @@ services:
     profiles: [app]
     build:
       context: .
-      dockerfile: web_vms/VmsLogger/Dockerfile
+      dockerfile: dotnet/VmsLogger/Dockerfile
     env_file:
       - .env
     environment:
@@ -343,7 +343,7 @@ services:
     profiles: [app]
     build:
       context: .
-      dockerfile: web_vms/VmsCfg/Dockerfile
+      dockerfile: dotnet/VmsCfg/Dockerfile
     env_file:
       - .env
     environment:
@@ -388,7 +388,7 @@ services:
     profiles: [app]
     build:
       context: .
-      dockerfile: web_vms/VmsOnvif/Dockerfile
+      dockerfile: dotnet/VmsOnvif/Dockerfile
     env_file:
       - .env
     environment:
@@ -412,7 +412,7 @@ services:
     profiles: [app]
     build:
       context: .
-      dockerfile: web_vms/VmsOnvifActors/Dockerfile
+      dockerfile: dotnet/VmsOnvifActors/Dockerfile
     env_file:
       - .env
     environment:
@@ -430,7 +430,7 @@ services:
     profiles: [app]
     build:
       context: .
-      dockerfile: web_vms/VmsFs/Dockerfile
+      dockerfile: dotnet/VmsFs/Dockerfile
     env_file:
       - .env
     environment:
@@ -472,7 +472,7 @@ services:
     profiles: [app]
     build:
       context: .
-      dockerfile: web_vms/VmsAnalyticsSingleton/Dockerfile
+      dockerfile: dotnet/VmsAnalyticsSingleton/Dockerfile
     env_file:
       - .env
     environment:
@@ -660,7 +660,7 @@ services:
     profiles: [app]
     build:
       context: .
-      dockerfile: web_vms/web_vms.Server/Dockerfile
+      dockerfile: dotnet/web_srv.Server/Dockerfile
     ports:
       - "${WEB_VMS_PORT}:${WEB_VMS_PORT}"
     depends_on:
@@ -692,4 +692,3 @@ services:
     network_mode: "service:web_vms"
     depends_on:
       - web_vms
-

@@ -1,12 +1,12 @@
 [submodule "web_vms/KeycloakAdmin"]
-	path = web_vms/KeycloakAdmin
+	path = dotnet/KeycloakAdmin
 	url = https://github.com/treealarm/KeycloakAdmin.git
 [submodule "web_vms/SquareIntegrationClient"]
-	path = web_vms/SquareIntegrationClient
+	path = dotnet/SquareIntegrationClient
 	url = https://github.com/treealarm/SquareIntegrationClient.git
 [submodule "roitrc/ta_roienc"]
 	path = roitrc/ta_roienc
 	url = git@github.com:treealarm/roi_transcode.git
 [submodule "web_vms/OnvifLib"]
-	path = web_vms/OnvifLib
+	path = dotnet/OnvifLib
 	url = https://github.com/treealarm/OnvifLib.git

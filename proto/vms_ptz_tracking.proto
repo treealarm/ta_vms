@@ -3,7 +3,7 @@ syntax = "proto3";
 import "google/protobuf/timestamp.proto";
 // DetectionKind: the same taxonomy the boxes are drawn as. Carried as the enum rather than as a
 // string so this service never grows a second copy of that mapping -- the one place strings exist
-// is the browser boundary, and AnalyticsKindMapper in web_vms.Server already owns it.
+// is the browser boundary, and AnalyticsKindMapper in web_srv.Server already owns it.
 import "vms_analytics.proto";
 
 package vms.ptztracking;

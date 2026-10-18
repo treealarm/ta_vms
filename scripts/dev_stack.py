@@ -2,7 +2,7 @@
 """Bring the dev stack up, down or back up again without VS Code.
 
 Everything is read from the files F5 itself uses, so this cannot drift away from the IDE:
-`web_vms/dapr.yaml` gives each sidecar its app id and ports, `.vscode/launch.json` gives the
+`dotnet/dapr.yaml` gives each sidecar its app id and ports, `.vscode/launch.json` gives the
 application its program, cwd and environment. The two are joined on the project directory —
 dapr.yaml's `appDirPath` and the launch configuration's `cwd` resolve to the same path.
 
@@ -43,8 +43,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PID_DIR = Path("/tmp/web_vms-dapr")
-RUN_FILE = ROOT / "web_vms" / "dapr.yaml"
-VITE_CONFIG = ROOT / "web_vms" / "web_vms.client" / "vite.config.ts"
+RUN_FILE = ROOT / "dotnet" / "dapr.yaml"
+VITE_CONFIG = ROOT / "dotnet" / "web_srv.client" / "vite.config.ts"
 
 # Start order, by app id: config first (everyone resolves cameras and storages through it), then
 # the leaf services, then the media server, then the gateway that fans out to all of them.
@@ -67,7 +67,7 @@ ORDER = [
 # The second node (its own video_srv, VmsFs, VmsOnvif and actor host, pinned to server id
 # "vms-2") used to be startable with --two-nodes. Its launch configurations were removed from
 # .vscode/launch.json, so there is nothing left to start; bringing it back means adding those
-# configurations and matching entries in web_vms/dapr.yaml, after which they appear here on their
+# configurations and matching entries in dotnet/dapr.yaml, after which they appear here on their
 # own. Sharding work needs it — a single node cannot show a camera handed from one to another.
 
 
@@ -82,7 +82,7 @@ def _expand(value: str) -> str:
 
 
 def _run_file() -> tuple[list[dict], Path]:
-    """The apps declared in web_vms/dapr.yaml, plus the resources path they share.
+    """The apps declared in dotnet/dapr.yaml, plus the resources path they share.
 
     Parsed by hand rather than with PyYAML: the script has no dependencies today and the shape it
     needs is a flat list of `key: value` under `- appID:`.
@@ -141,7 +141,7 @@ def _daprd_args(app: dict, resources: Path) -> list[str]:
 def _services() -> dict[str, dict]:
     """Builds the service table by joining dapr.yaml (sidecar) with launch.json (application).
 
-    The join key is the project directory: dapr.yaml's appDirPath is relative to web_vms/, and a
+    The join key is the project directory: dapr.yaml's appDirPath is relative to dotnet/, and a
     launch configuration's cwd points at the same place. Nothing else ties the two files together
     — app ids do not appear in launch.json for the .NET services.
     """
@@ -299,8 +299,8 @@ def stop(service: dict) -> None:
 
 def build(services: list[dict]) -> None:
     if any(s["dotnet"] for s in services):
-        print("building web_vms.sln ...")
-        subprocess.run(["dotnet", "build", str(ROOT / "web_vms" / "web_vms.sln"), "-v", "q",
+        print("building ta_vms.sln ...")
+        subprocess.run(["dotnet", "build", str(ROOT / "dotnet" / "ta_vms.sln"), "-v", "q",
                         "--nologo"], check=True)
     if any(not s["dotnet"] for s in services):
         print("building video_srv ...")
@@ -348,7 +348,7 @@ def wait_sidecars(timeout: float = 120.0) -> None:
             return
         if time.monotonic() >= deadline:
             sys.exit(f"sidecars not ready after {timeout:.0f}s: {', '.join(missing)}\n"
-                     f"run 'dapr stop -f .' in web_vms/ and try again, or check that terminal's log")
+                     f"run 'dapr stop -f .' in dotnet/ and try again, or check that terminal's log")
         # One line every few seconds instead of one per probe: the old curl retried sixty times
         # with --show-error and printed a failure line for each, which read like sixty errors
         # rather than one wait in progress.
@@ -409,7 +409,7 @@ def _cmdline(pid: int) -> str:
 def _is_ours(pid: int) -> bool:
     """Whether this process belongs to the checkout.
 
-    Everything F5 starts names the workspace on its command line: `dotnet <root>/web_vms/.../X.dll`,
+    Everything F5 starts names the workspace on its command line: `dotnet <root>/dotnet/.../X.dll`,
     the two C++ binaries by absolute path, vite through <root>/.../node_modules, and daprd through
     its -resources-path. The working directory is the fallback for anything that does not.
     """

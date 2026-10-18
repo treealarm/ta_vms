@@ -67,10 +67,10 @@ Conventions that hold everywhere:
   picture-to-ground homography of a fixed camera (`GroundHomography`). It is the one owner of a
   camera's motor, so map aiming goes through it like every other aim; the homography lives beside
   the PTZ fit because the master/slave stage needs both in one place.
-- **web_vms.Server** serves `api/spatial/*` (spaces, plan images, placements, landmarks),
+- **web_srv.Server** serves `api/spatial/*` (spaces, plan images, placements, landmarks),
   `api/ptz-geo/*` (observations, fit, aim), `api/ground-geo/*` (marks, fit, and the mappings a map
   needs) and `api/map/tiles/*`.
-- **web_vms.client**: Leaflet + react-leaflet 5. `src/map/` holds the map primitives (rotated plan
+- **web_srv.client**: Leaflet + react-leaflet 5. `src/map/` holds the map primitives (rotated plan
   layer, authenticated tiles, metric grid, markers, footprints); `src/components/maps/` the two tabs.
   The administrator's page is three columns: on the left what there is, as tabs that are always in
   view — the spaces as a tree, every camera of the system by server (saying whether it is placed
@@ -94,8 +94,8 @@ Conventions that hold everywhere:
 ## Map tiles
 
 `VMS_MAP_TILE_URL` (optional, a `{z}/{x}/{y}` template) names the provider; `VMS_MAP_TILE_ATTRIBUTION`
-the credit line it requires. Browsers never call the provider: web_vms proxies every tile and keeps
-it in the Dapr state store for 30 days, shared by all replicas (web_vms keeps no local files), sends
+the credit line it requires. Browsers never call the provider: web_srv proxies every tile and keeps
+it in the Dapr state store for 30 days, shared by all replicas (web_srv keeps no local files), sends
 an identifying User-Agent and runs at most two downloads at a time per process. That is what the
 OpenStreetMap tile policy asks for; it still allows only light use, so a larger deployment points
 the variable at its own tile server or a commercial provider. Empty means maps are drawn without
@@ -255,7 +255,7 @@ plan.
 ## Algorithms
 
 What the calibrations and the aiming compute, for a reader who wants to know what is exact and
-what is a model. Everything is in `web_vms/VmsPtzTrackingSingleton/Geo` unless said otherwise.
+what is a model. Everything is in `dotnet/VmsPtzTrackingSingleton/Geo` unless said otherwise.
 
 **The frame** (`EnuFrame`). Every camera has its own equirectangular east-north frame centred on
 itself, on a sphere of radius R = 6 378 137 m: a metre of north is 1/(R·π/180) degrees of latitude,
@@ -342,7 +342,7 @@ left open by a crash.
 
 - The operator's map polls `GET api/fs/alarms` every 3 s while it is open: alarms running now and
   those that ended in the last 15 minutes, asked of every VmsFs by end (`ending_after`) rather than
-  by start, so one that started an hour ago and is still being renewed is found. web_vms keeps no
+  by start, so one that started an hour ago and is still being renewed is found. web_srv keeps no
   subscriptions, so the map asks; the request is one small fan-out.
 - Scoped by `ViewLive`: that a camera is alarming is part of its live state, like the boxes over its
   picture. Each alarm carries `archive` — whether the caller may also watch its recording.

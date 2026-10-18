@@ -41,8 +41,8 @@ roitrc/ta_roienc/build-*/
 # -------------------
 # Node / frontend
 # -------------------
-web_vms.client/node_modules/
-web_vms.client/dist/
+web_srv.client/node_modules/
+web_srv.client/dist/
 
 # -------------------
 # Data / runtime files

@@ -61,7 +61,7 @@ authMethod: internal
 # Enabled users.
 # There is deliberately no 'any' user: anonymous access would let anyone who learns a camera UUID
 # (it is not a secret — it appears in the REST API and is pushed to Square) read that camera
-# straight from here, bypassing web_vms and its per-camera permissions, and publish over it.
+# straight from here, bypassing web_srv and its per-camera permissions, and publish over it.
 # Passwords are injected from the environment (MTX_AUTHINTERNALUSERS_<i>_PASS, see
 # docker-compose.yml) so they never live in this file.
 authInternalUsers:
@@ -74,7 +74,7 @@ authInternalUsers:
   - action: publish
     path:
 
-  # Reader/service account for everything of ours that consumes MediaMTX: the web_vms WHEP gateway
+  # Reader/service account for everything of ours that consumes MediaMTX: the web_srv WHEP gateway
   # (browsers never talk to MediaMTX directly, they go through /api/live/whep), VmsAnalytics' RTSP
   # pull, and VmsUtils' Control API calls. ips is empty on purpose — all of these run in other
   # containers, which is why the previous 127.0.0.1 restriction on `api` silently broke VmsUtils'

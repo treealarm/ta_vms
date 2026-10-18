@@ -6,9 +6,9 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build:all",
-            "postDebugTask": "dapr:web_vms:stop",
-            "program": "${workspaceFolder}/web_vms/web_vms.Server/bin/Debug/net10.0/web_vms.Server.dll",
-            "cwd": "${workspaceFolder}/web_vms/web_vms.Server",
+            "postDebugTask": "dapr:web_srv:stop",
+            "program": "${workspaceFolder}/dotnet/web_srv.Server/bin/Debug/net10.0/web_srv.Server.dll",
+            "cwd": "${workspaceFolder}/dotnet/web_srv.Server",
             "stopAtEntry": false,
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
@@ -42,8 +42,8 @@
             "request": "launch",
             "preLaunchTask": "build:all",
             "postDebugTask": "dapr:vmscfg:stop",
-            "program": "${workspaceFolder}/web_vms/VmsCfg/bin/Debug/net10.0/VmsCfg.dll",
-            "cwd": "${workspaceFolder}/web_vms/VmsCfg",
+            "program": "${workspaceFolder}/dotnet/VmsCfg/bin/Debug/net10.0/VmsCfg.dll",
+            "cwd": "${workspaceFolder}/dotnet/VmsCfg",
             "stopAtEntry": false,
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
@@ -74,8 +74,8 @@
             "request": "launch",
             "preLaunchTask": "build:all",
             "postDebugTask": "dapr:vmsonvif:stop",
-            "program": "${workspaceFolder}/web_vms/VmsOnvif/bin/Debug/net10.0/VmsOnvif.dll",
-            "cwd": "${workspaceFolder}/web_vms/VmsOnvif",
+            "program": "${workspaceFolder}/dotnet/VmsOnvif/bin/Debug/net10.0/VmsOnvif.dll",
+            "cwd": "${workspaceFolder}/dotnet/VmsOnvif",
             "stopAtEntry": false,
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
@@ -98,8 +98,8 @@
             "request": "launch",
             "preLaunchTask": "build:all",
             "postDebugTask": "dapr:vmsonvif-actors:stop",
-            "program": "${workspaceFolder}/web_vms/VmsOnvifActors/bin/Debug/net10.0/VmsOnvifActors.dll",
-            "cwd": "${workspaceFolder}/web_vms/VmsOnvifActors",
+            "program": "${workspaceFolder}/dotnet/VmsOnvifActors/bin/Debug/net10.0/VmsOnvifActors.dll",
+            "cwd": "${workspaceFolder}/dotnet/VmsOnvifActors",
             "stopAtEntry": false,
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
@@ -117,8 +117,8 @@
             "request": "launch",
             "preLaunchTask": "build:all",
             "postDebugTask": "dapr:vmsfs:stop",
-            "program": "${workspaceFolder}/web_vms/VmsFs/bin/Debug/net10.0/VmsFs.dll",
-            "cwd": "${workspaceFolder}/web_vms/VmsFs",
+            "program": "${workspaceFolder}/dotnet/VmsFs/bin/Debug/net10.0/VmsFs.dll",
+            "cwd": "${workspaceFolder}/dotnet/VmsFs",
             "stopAtEntry": false,
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
@@ -161,8 +161,8 @@
             "request": "launch",
             "preLaunchTask": "build:all",
             "postDebugTask": "dapr:vmsanalyticssingleton:stop",
-            "program": "${workspaceFolder}/web_vms/VmsAnalyticsSingleton/bin/Debug/net10.0/VmsAnalyticsSingleton.dll",
-            "cwd": "${workspaceFolder}/web_vms/VmsAnalyticsSingleton",
+            "program": "${workspaceFolder}/dotnet/VmsAnalyticsSingleton/bin/Debug/net10.0/VmsAnalyticsSingleton.dll",
+            "cwd": "${workspaceFolder}/dotnet/VmsAnalyticsSingleton",
             "stopAtEntry": false,
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
@@ -193,8 +193,8 @@
             "request": "launch",
             "preLaunchTask": "build:all",
             "postDebugTask": "dapr:vmslogger:stop",
-            "program": "${workspaceFolder}/web_vms/VmsLogger/bin/Debug/net10.0/VmsLogger.dll",
-            "cwd": "${workspaceFolder}/web_vms/VmsLogger",
+            "program": "${workspaceFolder}/dotnet/VmsLogger/bin/Debug/net10.0/VmsLogger.dll",
+            "cwd": "${workspaceFolder}/dotnet/VmsLogger",
             "stopAtEntry": false,
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
@@ -211,8 +211,8 @@
             "request": "launch",
             "preLaunchTask": "build:all",
             "postDebugTask": "dapr:vmssingleton:stop",
-            "program": "${workspaceFolder}/web_vms/VmsSingleton/bin/Debug/net10.0/VmsSingleton.dll",
-            "cwd": "${workspaceFolder}/web_vms/VmsSingleton",
+            "program": "${workspaceFolder}/dotnet/VmsSingleton/bin/Debug/net10.0/VmsSingleton.dll",
+            "cwd": "${workspaceFolder}/dotnet/VmsSingleton",
             "stopAtEntry": false,
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
@@ -231,8 +231,8 @@
             "request": "launch",
             "preLaunchTask": "build:all",
             "postDebugTask": "dapr:vmssquaresingleton:stop",
-            "program": "${workspaceFolder}/web_vms/VmsSquareSingleton/bin/Debug/net10.0/VmsSquareSingleton.dll",
-            "cwd": "${workspaceFolder}/web_vms/VmsSquareSingleton",
+            "program": "${workspaceFolder}/dotnet/VmsSquareSingleton/bin/Debug/net10.0/VmsSquareSingleton.dll",
+            "cwd": "${workspaceFolder}/dotnet/VmsSquareSingleton",
             "stopAtEntry": false,
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
@@ -255,8 +255,8 @@
             "request": "launch",
             "preLaunchTask": "build:all",
             "postDebugTask": "dapr:vmsptztrackingsingleton:stop",
-            "program": "${workspaceFolder}/web_vms/VmsPtzTrackingSingleton/bin/Debug/net10.0/VmsPtzTrackingSingleton.dll",
-            "cwd": "${workspaceFolder}/web_vms/VmsPtzTrackingSingleton",
+            "program": "${workspaceFolder}/dotnet/VmsPtzTrackingSingleton/bin/Debug/net10.0/VmsPtzTrackingSingleton.dll",
+            "cwd": "${workspaceFolder}/dotnet/VmsPtzTrackingSingleton",
             "stopAtEntry": false,
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
@@ -276,8 +276,8 @@
             "request": "launch",
             "preLaunchTask": "build:all",
             "postDebugTask": "dapr:vmsutils:stop",
-            "program": "${workspaceFolder}/web_vms/VmsUtils/bin/Debug/net10.0/VmsUtils.dll",
-            "cwd": "${workspaceFolder}/web_vms/VmsUtils",
+            "program": "${workspaceFolder}/dotnet/VmsUtils/bin/Debug/net10.0/VmsUtils.dll",
+            "cwd": "${workspaceFolder}/dotnet/VmsUtils",
             "stopAtEntry": false,
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
@@ -306,7 +306,7 @@
                 // beside the checkout, at the same paths VMS_STORAGE_BASE_PATH and
                 // VMS_EXPORT_BASE_PATH give the other services.
                 { "name": "ROI_ALLOWED_ROOTS", "value": "${workspaceFolder}/../media_storage:${workspaceFolder}/../exports:/tmp" },
-                // This service's own sidecar, per web_vms/dapr.yaml.
+                // This service's own sidecar, per dotnet/dapr.yaml.
                 { "name": "DAPR_GRPC_PORT", "value": "51009" },
                 { "name": "PUBSUB_NAME", "value": "orderpubsub" },
                 // The system's Intel driver, as for video_srv below. Without it the
@@ -446,7 +446,7 @@
             "name": "Frontend (Vite)",
             "type": "node",
             "request": "launch",
-            "cwd": "${workspaceFolder}/web_vms/web_vms.client",
+            "cwd": "${workspaceFolder}/dotnet/web_srv.client",
             "runtimeExecutable": "npm",
             "runtimeArgs": [
                 "run",
@@ -559,14 +559,14 @@
             "type": "chrome",
             "request": "launch",
             "url": "http://localhost:5173",
-            "webRoot": "${workspaceFolder}/web_vms/web_vms.client"
+            "webRoot": "${workspaceFolder}/dotnet/web_srv.client"
         },
         {
             "name": "Frontend Debug (Edge) [Windows]",
             "type": "msedge",
             "request": "launch",
             "url": "http://localhost:5173",
-            "webRoot": "${workspaceFolder}/web_vms/web_vms.client",
+            "webRoot": "${workspaceFolder}/dotnet/web_srv.client",
             "userDataDir": "${env:LOCALAPPDATA}/ta_vms-edge-debug",
             "preLaunchTask": "wait: stack ready"
         }
