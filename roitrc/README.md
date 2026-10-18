@@ -15,7 +15,7 @@ roitrc/
 ```
 
 The dependency arrow points one way and is narrow: this links `ta_roienc` through its public
-headers alone — `ta_roienc/ta_roienc.h`, `ta_roienc/session.h`, `ta_roienc/types.h`. Nothing
+headers alone — `ta_roienc/ta_roienc.h`, `ta_roienc/transcoder.h` and what they include. Nothing
 here reaches into the library's `src/`, and nothing of the service belongs on the other side
 of that line.
 

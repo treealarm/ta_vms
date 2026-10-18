@@ -12,7 +12,7 @@
 
 #include "job/roi_job_manager.h"
 #include "roi_transcode.grpc.pb.h"
-#include "ta_roienc/session.h"
+#include "ta_roienc/transcoder.h"
 
 #include <algorithm>
 #include <chrono>
@@ -25,13 +25,13 @@ extern "C" {
 
 namespace roisvc {
 
-ta_roienc::PixelFormat to_library_format(AVPixelFormat f);
-ta_roienc::Preset to_library_preset(roi::transcode::Preset p);
-ta_roienc::BackendChoice from_proto(roi::transcode::Encoder e);
-roi::transcode::Encoder to_proto(ta_roienc::Backend k);
+ta_roienc::PixelLayout to_library_format(AVPixelFormat f);
+ta_roienc::Effort to_library_preset(roi::transcode::Preset p);
+ta_roienc::EngineChoice from_proto(roi::transcode::Encoder e);
+roi::transcode::Encoder to_proto(ta_roienc::Engine k);
 roi::transcode::JobState to_proto(RoiJobState s);
-ta_roienc::ObjectPriority priority_from_proto(roi::transcode::ObjectPriority p);
-ta_roienc::InputCodec codec_from_proto(roi::transcode::InputCodec c);
+ta_roienc::Salience priority_from_proto(roi::transcode::ObjectPriority p);
+ta_roienc::SourceCodec codec_from_proto(roi::transcode::InputCodec c);
 
 int64_t to_unix_ms(std::chrono::system_clock::time_point tp);
 
@@ -42,22 +42,22 @@ void fill_job(const RoiJobStatus& st, roi::transcode::Job* out);
 
 ta_roienc::Box box_from_proto(const roi::transcode::Box& b);
 RoiJobRequest build_request(const roi::transcode::FileJobRequest& req);
-ta_roienc::SessionParams params_from_open(const roi::transcode::StreamOpen& open);
+ta_roienc::TranscoderOptions params_from_open(const roi::transcode::StreamOpen& open);
 
 // A template because the file job and the stream open carry the same settings under two
 // different proto messages. Defined here rather than instantiated twice, which is what the
 // two call sites would otherwise do to each other.
 template <typename ProtoSettings>
-void apply_settings(const ProtoSettings& in, ta_roienc::Settings& out)
+void apply_settings(const ProtoSettings& in, ta_roienc::Recipe& out)
 {
-    const ta_roienc::BackendChoice choice = from_proto(in.encoder());
+    const ta_roienc::EngineChoice choice = from_proto(in.encoder());
     out.encoder = choice.kind;
-    out.backend_selection = choice.selection;
+    out.engine_order = choice.selection;
     switch (in.codec()) {
-        case roi::transcode::CODEC_H264: out.codec = ta_roienc::Codec::H264; break;
+        case roi::transcode::CODEC_H264: out.codec = ta_roienc::Coding::H264; break;
         case roi::transcode::CODEC_SAME_AS_SOURCE:
-            out.codec = ta_roienc::Codec::SameAsSource; break;
-        default: out.codec = ta_roienc::Codec::H265; break;
+            out.codec = ta_roienc::Coding::SameAsSource; break;
+        default: out.codec = ta_roienc::Coding::H265; break;
     }
     if (in.crf() > 0) {
         out.crf = in.crf();
@@ -97,7 +97,7 @@ void apply_settings(const ProtoSettings& in, ta_roienc::Settings& out)
         out.quality.max_regions = q.max_regions();
     }
     for (const auto& k : q.kinds()) {
-        ta_roienc::KindQuality cfg;
+        ta_roienc::ClassQuality cfg;
         if (k.has_qp_delta()) {
             cfg.qp_delta = k.qp_delta();
         }
@@ -129,10 +129,10 @@ void apply_settings(const ProtoSettings& in, ta_roienc::Settings& out)
     }
     switch (q.margin_mode()) {
         case roi::transcode::MARGIN_MODE_FRACTION_OF_FRAME:
-            out.quality.margin_mode = ta_roienc::MarginMode::FractionOfFrame;
+            out.quality.box_margin = ta_roienc::BoxMargin::FractionOfPicture;
             break;
         default:
-            out.quality.margin_mode = ta_roienc::MarginMode::FixedPixels;
+            out.quality.box_margin = ta_roienc::BoxMargin::FixedPixels;
             break;
     }
     if (q.has_margin_px()) {
@@ -145,13 +145,13 @@ void apply_settings(const ProtoSettings& in, ta_roienc::Settings& out)
         const auto& p = q.class_weighting();
         auto& dst = out.quality.importance;
         for (const auto& [k, v] : p.semantic_priority()) {
-            dst.semantic_priority[k] = v;
+            dst.semantic_salience[k] = v;
         }
         for (const auto& [k, v] : p.task_priority()) {
-            dst.task_priority[k] = v;
+            dst.task_salience[k] = v;
         }
         if (p.has_unknown_priority()) {
-            dst.unknown_priority = p.unknown_priority();
+            dst.unknown_salience = p.unknown_priority();
         }
         if (p.has_assumed_confidence()) {
             dst.assumed_confidence = p.assumed_confidence();

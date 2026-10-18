@@ -93,24 +93,28 @@ libs.
 deliberately knows nothing of gRPC, Dapr or protobuf. It may be edited — it is our library — but
 everything that makes sense only for ta_vms lives here, not there.
 
-**It has two consumers, and the second raises the cost of a mistake.** Besides `roitrc`, it is
+**It has three consumers, and the second raises the cost of a mistake.** Besides `roitrc`, it is
 linked by `media_server` — live HEVC→H.264 transcoding for WebRTC goes through
-`ta_roienc::Session`, because libavcodec has no automatic choice of hardware and
+`ta_roienc::Transcoder`, because libavcodec has no automatic choice of hardware and
 `avcodec_find_encoder` always returns libx264 (see
 `media_server/writer/processors/hw_transcode_processor.cpp`).
-**The default backend is `Backend::Vaapi`, not `Backend::Auto`**, and the difference is one of
-meaning: the library is linked only for the hardware. If the hardware backend did not open — or an
+**The default engine is `Engine::Vaapi`, not `Engine::Auto`**, and the difference is one of
+meaning: the library is linked only for the hardware. If the hardware engine did not open — or an
 `auto` chain set explicitly through `VMS_VIDEO_ENCODER` came down to a software one — the stream is
 handed back to `compat_sink`, and `video_transcode_processor` takes it. That one has
-`tune=zerolatency`, and the library's software backend does not: 34 frames in the pipeline against
+`tune=zerolatency`, and the library's software engine does not: 34 frames in the pipeline against
 4 through `h264_vaapi`, which is a second and a half of delay on live video.
+The third is the separate `video_a` repository, which has its own `ta_roienc` submodule and links
+only the decoder (`ta_roienc_decode`) for the analytics worker; a rename in the library's public
+API has to be carried there too, and its submodule bumped in a commit of its own.
+
 A broken submodule bump takes live video down, not only the clip queue. Bump the version in a
 commit of its own and check both paths.
 
 `roitrc/` is everything about re-compression that is ours: the gRPC contract `VmsFs` calls, the job
 model (it mirrors EdgeImport in `media_server`), the Dapr notifications and the `ROI_ALLOWED_ROOTS`
 path sandbox. The dependency arrow is one and narrow: only the public API is linked —
-`ta_roienc/ta_roienc.h`, `ta_roienc/session.h`, `ta_roienc/types.h` — and nothing reaches into the
+`ta_roienc/ta_roienc.h`, `ta_roienc/transcoder.h` and the headers they include — and nothing reaches into the
 library's internals. If new code needs the encoder's `src/`, that is a sign it is on the wrong side
 of the boundary.
 

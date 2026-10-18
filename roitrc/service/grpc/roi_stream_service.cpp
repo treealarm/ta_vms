@@ -2,7 +2,7 @@
 
 #include "grpc/path_guard.h"
 #include "grpc/proto_convert.h"
-#include "ta_roienc/session.h"
+#include "ta_roienc/transcoder.h"
 
 #include <cstring>
 #include <memory>
@@ -19,26 +19,26 @@ namespace {
 
 // Ships packets back over the stream. The alternative is output_path, in which
 // case the session muxes and only the summary comes back.
-class StreamSink : public ta_roienc::PacketHandler {
+class StreamSink : public ta_roienc::AccessUnitSink {
 public:
     using Writer = grpc::ServerReaderWriter<roi::transcode::EncodeStreamResponse,
         roi::transcode::EncodeStreamRequest>;
 
     explicit StreamSink(Writer* w) : m_writer(w) {}
 
-    void on_open(const ta_roienc::StreamInfo& info) override
+    void on_start(const ta_roienc::SourceInfo& info) override
     {
         roi::transcode::EncodeStreamResponse msg;
         auto* opened = msg.mutable_opened();
-        opened->set_encoder_used(to_proto(info.encoder_used));
-        opened->set_encoder_name(info.backend_name);
+        opened->set_encoder_used(to_proto(info.engine_used));
+        opened->set_encoder_name(info.engine_name);
         if (!info.extradata.empty()) {
             opened->set_extradata(info.extradata.data(), info.extradata.size());
         }
         m_writer->Write(msg);
     }
 
-    void on_packet(const ta_roienc::EncodedPacket& pkt) override
+    void on_access_unit(const ta_roienc::AccessUnit& pkt) override
     {
         roi::transcode::EncodeStreamResponse msg;
         auto* out = msg.mutable_packet();
@@ -74,10 +74,10 @@ grpc::Status RoiStreamTranscodeServiceImpl::EncodeStream(grpc::ServerContext*,
             return {grpc::StatusCode::INVALID_ARGUMENT,
                 "open needs a frame size"};
         }
-        ta_roienc::SessionParams sp = params_from_open(open);
+        ta_roienc::TranscoderOptions sp = params_from_open(open);
 
         // Either the session muxes into a sandboxed path, or packets come back
-        // over the stream. Opened is sent by the handler, on_open.
+        // over the stream. Opened is sent by the handler, on_start.
         std::unique_ptr<StreamSink> streaming;
         if (!open.output_path().empty()) {
             sp.output_path = require_allowed_path(open.output_path(), "output_path");
@@ -85,7 +85,7 @@ grpc::Status RoiStreamTranscodeServiceImpl::EncodeStream(grpc::ServerContext*,
             streaming = std::make_unique<StreamSink>(stream);
         }
 
-        ta_roienc::Session session(sp, streaming.get());
+        ta_roienc::Transcoder session(sp, streaming.get());
 
         // Raw planes arrive tightly packed, so the plane pointers are derived
         // rather than sent: one layout, described once in `open`.
@@ -93,12 +93,12 @@ grpc::Status RoiStreamTranscodeServiceImpl::EncodeStream(grpc::ServerContext*,
         // The wire still carries an AVPixelFormat number -- that is ta_vms' own contract
         // with this service. The library has its own enum, so the translation happens here,
         // at the edge, rather than leaking FFmpeg's numbering into the library's surface.
-        const ta_roienc::PixelFormat frame_format =
-            sp.codec == ta_roienc::InputCodec::Raw
+        const ta_roienc::PixelLayout frame_format =
+            sp.codec == ta_roienc::SourceCodec::Raw
             ? to_library_format(pix)
-            : ta_roienc::PixelFormat::Unknown;
-        if (sp.codec == ta_roienc::InputCodec::Raw
-            && frame_format == ta_roienc::PixelFormat::Unknown) {
+            : ta_roienc::PixelLayout::Unknown;
+        if (sp.codec == ta_roienc::SourceCodec::Raw
+            && frame_format == ta_roienc::PixelLayout::Unknown) {
             return {grpc::StatusCode::INVALID_ARGUMENT,
                 "pix_fmt names a format this encoder does not take"};
         }
@@ -116,7 +116,7 @@ grpc::Status RoiStreamTranscodeServiceImpl::EncodeStream(grpc::ServerContext*,
             boxes.clear();
             if (in.has_qp_map()) {
                 const auto& m = in.qp_map();
-                ta_roienc::QpDeltaMap grid;
+                ta_roienc::QpOffsets grid;
                 grid.block = m.block();
                 grid.cols = m.cols();
                 grid.rows = m.rows();
@@ -135,7 +135,7 @@ grpc::Status RoiStreamTranscodeServiceImpl::EncodeStream(grpc::ServerContext*,
                     return {grpc::StatusCode::INVALID_ARGUMENT,
                         "qp_map deltas length must equal cols*rows with block>0"};
                 }
-                regions.qp_map = std::move(grid);
+                regions.qp_offsets = std::move(grid);
             } else if (in.has_mask()) {
                 mask.data = std::span<const uint8_t>(
                     reinterpret_cast<const uint8_t*>(in.mask().data().data()),
@@ -153,7 +153,7 @@ grpc::Status RoiStreamTranscodeServiceImpl::EncodeStream(grpc::ServerContext*,
 
             const auto* bytes =
                 reinterpret_cast<const uint8_t*>(in.data().data());
-            if (sp.codec == ta_roienc::InputCodec::Raw) {
+            if (sp.codec == ta_roienc::SourceCodec::Raw) {
                 uint8_t* planes[4] = {nullptr, nullptr, nullptr, nullptr};
                 int strides[4] = {0, 0, 0, 0};
                 const int needed = av_image_fill_arrays(planes, strides,
@@ -165,8 +165,8 @@ grpc::Status RoiStreamTranscodeServiceImpl::EncodeStream(grpc::ServerContext*,
                 }
                 // Each plane's length is the distance to the next one, and for the last
                 // the remainder of what the frame occupies. Derived here rather than
-                // guessed inside the library, which is the point of PlaneBuffer asking.
-                ta_roienc::PlaneBuffer::Plane described[4];
+                // guessed inside the library, which is the point of LayerStore asking.
+                ta_roienc::LayerStore::Layer described[4];
                 for (int i = 0; i < 4; ++i) {
                     if (!planes[i]) {
                         continue;
@@ -181,8 +181,8 @@ grpc::Status RoiStreamTranscodeServiceImpl::EncodeStream(grpc::ServerContext*,
                             - static_cast<std::size_t>(planes[i] - bytes);
                     described[i] = {std::span<uint8_t>(planes[i], len), strides[i]};
                 }
-                ta_roienc::PlaneBuffer pixels(sp.width, sp.height, frame_format,
-                    std::span<const ta_roienc::PlaneBuffer::Plane>(described, 4));
+                ta_roienc::LayerStore pixels(sp.width, sp.height, frame_format,
+                    std::span<const ta_roienc::LayerStore::Layer>(described, 4));
                 session.submit(pixels, regions, in.pts());
             } else {
                 session.submit(
@@ -191,7 +191,7 @@ grpc::Status RoiStreamTranscodeServiceImpl::EncodeStream(grpc::ServerContext*,
             }
         }
 
-        const ta_roienc::Report rep = session.finish();
+        const ta_roienc::Outcome rep = session.finish();
         roi::transcode::EncodeStreamResponse msg;
         auto* done = msg.mutable_done();
         done->set_frames(rep.frames);

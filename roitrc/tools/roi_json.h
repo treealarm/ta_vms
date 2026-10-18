@@ -4,13 +4,13 @@
 // embedding the encoder should not drag a JSON library along, and only this
 // client ever reads a file.
 
-#include "ta_roienc/types.h"
+#include "ta_roienc/basics.h"
 
 #include <string>
 #include <vector>
 
 struct RoiJson {
-    ta_roienc::Quality quality;
+    ta_roienc::QualityPlan quality;
     std::vector<ta_roienc::Box> boxes;
 };
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ta_roienc/types.h"
+#include "ta_roienc/basics.h"
 
 #include <atomic>
 #include <chrono>
@@ -44,7 +44,7 @@ struct RoiJobRequest {
     std::string input_path;
     std::string output_path;
     std::vector<ta_roienc::Box> boxes;
-    ta_roienc::Settings settings;
+    ta_roienc::Recipe settings;
 };
 
 class RoiJobManager {

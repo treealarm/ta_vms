@@ -6,7 +6,7 @@
 # EdgeImport, the Dapr notifications and the path sandbox.
 #
 # The dependency arrow points one way and is narrow: this links `ta_roienc` through its public
-# headers alone -- ta_roienc/ta_roienc.h, ta_roienc/session.h, ta_roienc/types.h -- and reaches
+# headers alone -- ta_roienc/ta_roienc.h, ta_roienc/transcoder.h and what they include -- and reaches
 # into none of the library's internals.
 
 cmake_minimum_required(VERSION 3.22)
@@ -23,10 +23,10 @@ option(ROITRC_BUILD_TESTS "Build the service's own tests" ON)
 set(TA_ROIENC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(TA_ROIENC_INSTALL     OFF CACHE BOOL "" FORCE)
 
-# The libavcodec-backed backends, which is where QSV and VA-API live. Off in the library by
+# The libavcodec-backed engines, which is where QSV and VA-API live. Off in the library by
 # default; this service exists to re-compress clips on hardware, so it turns them on -- without
-# this the backend chain has no hardware entry to find and every job quietly takes the CPU path.
-set(TA_ROIENC_BUILD_BACKEND_FFMPEG ON CACHE BOOL "" FORCE)
+# this the engine chain has no hardware entry to find and every job quietly takes the CPU path.
+set(TA_ROIENC_BUILD_ENGINE_FFMPEG ON CACHE BOOL "" FORCE)
 
 add_subdirectory(ta_roienc)
 

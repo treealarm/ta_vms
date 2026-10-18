@@ -17,7 +17,7 @@
 //
 // A header is never in a database itself -- IntelliSense infers its flags from a
 // translation unit that includes it. For the public headers that is exact: the
-// public_headers_selfcontained target generates one TU per header, so ta_roienc/session.h
+// public_headers_selfcontained target generates one TU per header, so ta_roienc/transcoder.h
 // is read with the same flags the build reads it with.
 //
 // The notes are comments rather than a "$comment" property: the extension parses this file

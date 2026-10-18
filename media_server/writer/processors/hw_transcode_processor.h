@@ -8,7 +8,7 @@
 #include "writer/processors/stream_processor.h"
 
 namespace ta_roienc {
-class Session;
+class Transcoder;
 }
 
 // Live video transcode through the ta_roienc encoder library (roitrc/ta_roienc).
@@ -43,7 +43,7 @@ public:
   std::string encoder_name() const override;
 
 private:
-  // ta_roienc::PacketHandler, defined in the .cpp so no ta_roienc header reaches this one.
+  // ta_roienc::AccessUnitSink, defined in the .cpp so no ta_roienc header reaches this one.
   class packet_sink;
 
   void note_input_timestamp(const AVPacket* packet, AVRational time_base);
@@ -52,7 +52,7 @@ private:
 
   emit_fn m_emit;
   std::unique_ptr<packet_sink> m_sink;
-  std::unique_ptr<ta_roienc::Session> m_session;
+  std::unique_ptr<ta_roienc::Transcoder> m_session;
 
   // PTS sanitizer state, carried over from video_transcode_processor.
   //

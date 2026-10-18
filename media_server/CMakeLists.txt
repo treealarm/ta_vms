@@ -27,11 +27,11 @@ pkg_check_modules(FFMPEG REQUIRED
 set(TA_ROIENC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(TA_ROIENC_INSTALL     OFF CACHE BOOL "" FORCE)
 
-# The libavcodec-backed backends, which is where h264_vaapi lives. Off in the library by default,
+# The libavcodec-backed engines, which is where h264_vaapi lives. Off in the library by default,
 # and wrong for us -- hardware is the entire reason this service links ta_roienc at all, and
-# without this the backend chain has no hardware entry to find and every stream quietly takes the
+# without this the engine chain has no hardware entry to find and every stream quietly takes the
 # CPU path.
-set(TA_ROIENC_BUILD_BACKEND_FFMPEG ON CACHE BOOL "" FORCE)
+set(TA_ROIENC_BUILD_ENGINE_FFMPEG ON CACHE BOOL "" FORCE)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../roitrc/ta_roienc ta_roienc)
 
@@ -195,9 +195,9 @@ target_link_libraries(vms
     PRIVATE
     # "Everything this build has", which is the name the library keeps for add_subdirectory
     # consumers so they need not learn its component list. Linking the core alone is not enough:
-    # Session sits in a separate target (the specification calls a demuxer and decoder around the
+    # Transcoder sits in a separate target (the specification calls a demuxer and decoder around the
     # encoder an example, kept apart so libavformat does not spread into the core), and the
-    # backend registry that RegisterDeploymentBackends fills is a separate object library again.
+    # engine registry that RegisterDeploymentEngines fills is a separate object library again.
     ta_roienc_all
     ${FFMPEG_LIBRARIES}
     protobuf::libprotobuf

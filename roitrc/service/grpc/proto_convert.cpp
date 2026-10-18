@@ -14,30 +14,30 @@ extern "C" {
 namespace roisvc {
 
 
-// AVPixelFormat to the library's own PixelFormat. The mapping lives on this side because
+// AVPixelFormat to the library's own PixelLayout. The mapping lives on this side because
 // the wire format is ta_vms' contract with this service, not the library's -- the library
 // deliberately does not know FFmpeg's numbering, and this is the edge where that stops
 // mattering.
-ta_roienc::PixelFormat to_library_format(AVPixelFormat f)
+ta_roienc::PixelLayout to_library_format(AVPixelFormat f)
 {
     switch (f) {
-    case AV_PIX_FMT_YUV420P: return ta_roienc::PixelFormat::YUV420P;
-    case AV_PIX_FMT_NV12:    return ta_roienc::PixelFormat::NV12;
-    case AV_PIX_FMT_YUV422P: return ta_roienc::PixelFormat::YUV422P;
-    case AV_PIX_FMT_YUV444P: return ta_roienc::PixelFormat::YUV444P;
-    case AV_PIX_FMT_GRAY8:   return ta_roienc::PixelFormat::GRAY8;
-    default:                 return ta_roienc::PixelFormat::Unknown;
+    case AV_PIX_FMT_YUV420P: return ta_roienc::PixelLayout::YUV420P;
+    case AV_PIX_FMT_NV12:    return ta_roienc::PixelLayout::NV12;
+    case AV_PIX_FMT_YUV422P: return ta_roienc::PixelLayout::YUV422P;
+    case AV_PIX_FMT_YUV444P: return ta_roienc::PixelLayout::YUV444P;
+    case AV_PIX_FMT_GRAY8:   return ta_roienc::PixelLayout::GRAY8;
+    default:                 return ta_roienc::PixelLayout::Unknown;
     }
 }
 
-ta_roienc::Preset to_library_preset(roi::transcode::Preset p)
+ta_roienc::Effort to_library_preset(roi::transcode::Preset p)
 {
     switch (p) {
-    case roi::transcode::PRESET_FASTEST: return ta_roienc::Preset::Fastest;
-    case roi::transcode::PRESET_FAST:    return ta_roienc::Preset::Fast;
-    case roi::transcode::PRESET_SLOW:    return ta_roienc::Preset::Slow;
-    case roi::transcode::PRESET_SLOWEST: return ta_roienc::Preset::Slowest;
-    default:                             return ta_roienc::Preset::Balanced;
+    case roi::transcode::PRESET_FASTEST: return ta_roienc::Effort::Fastest;
+    case roi::transcode::PRESET_FAST:    return ta_roienc::Effort::Fast;
+    case roi::transcode::PRESET_SLOW:    return ta_roienc::Effort::Slow;
+    case roi::transcode::PRESET_SLOWEST: return ta_roienc::Effort::Slowest;
+    default:                             return ta_roienc::Effort::Balanced;
     }
 }
 
@@ -95,33 +95,33 @@ void fill_job(const RoiJobStatus& st, roi::transcode::Job* out)
         st.roi_lag_p99_ms, st.roi_lag_acceptance, out->mutable_roi_lag());
 }
 
-ta_roienc::BackendChoice from_proto(roi::transcode::Encoder e)
+ta_roienc::EngineChoice from_proto(roi::transcode::Encoder e)
 {
     switch (e) {
     case roi::transcode::ENCODER_QSV:
-        return ta_roienc::backend_choice_from_name("qsv");
+        return ta_roienc::engine_choice_from_name("qsv");
     case roi::transcode::ENCODER_VAAPI:
-        return ta_roienc::backend_choice_from_name("vaapi");
+        return ta_roienc::engine_choice_from_name("vaapi");
     case roi::transcode::ENCODER_CPU:
         // Still one value on the wire, and it stays one: 4.1 split the software backend in
         // two inside the library, which is not a reason to break every client that already
         // sends this. It resolves to Auto over x264 and x265, so whichever of the two
         // cannot produce the requested codec is skipped with its reason logged.
-        return ta_roienc::backend_choice_from_name("cpu");
+        return ta_roienc::engine_choice_from_name("cpu");
     default:
-        return ta_roienc::backend_choice_from_name("auto");
+        return ta_roienc::engine_choice_from_name("auto");
     }
 }
 
-roi::transcode::Encoder to_proto(ta_roienc::Backend k)
+roi::transcode::Encoder to_proto(ta_roienc::Engine k)
 {
     switch (k) {
-    case ta_roienc::Backend::IntelOneVpl:
+    case ta_roienc::Engine::IntelOneVpl:
         return roi::transcode::ENCODER_QSV;
-    case ta_roienc::Backend::Vaapi:
+    case ta_roienc::Engine::Vaapi:
         return roi::transcode::ENCODER_VAAPI;
-    case ta_roienc::Backend::X264:
-    case ta_roienc::Backend::X265:
+    case ta_roienc::Engine::X264:
+    case ta_roienc::Engine::X265:
         return roi::transcode::ENCODER_CPU;
     default:
         return roi::transcode::ENCODER_AUTO;
@@ -132,19 +132,19 @@ roi::transcode::Encoder to_proto(ta_roienc::Backend k)
 // One Settings serves both entry points, so unpacking it is written once.
 // FileSettings and StreamSettings are distinct types with identical fields, so
 // one template serves both and they cannot drift apart by accident.
-ta_roienc::ObjectPriority priority_from_proto(roi::transcode::ObjectPriority p)
+ta_roienc::Salience priority_from_proto(roi::transcode::ObjectPriority p)
 {
     switch (p) {
         case roi::transcode::OBJECT_PRIORITY_BACKGROUND:
-            return ta_roienc::ObjectPriority::Background;
+            return ta_roienc::Salience::Background;
         case roi::transcode::OBJECT_PRIORITY_LOW:
-            return ta_roienc::ObjectPriority::Low;
+            return ta_roienc::Salience::Low;
         case roi::transcode::OBJECT_PRIORITY_HIGH:
-            return ta_roienc::ObjectPriority::High;
+            return ta_roienc::Salience::High;
         case roi::transcode::OBJECT_PRIORITY_CRITICAL:
-            return ta_roienc::ObjectPriority::Critical;
+            return ta_roienc::Salience::Critical;
         default:
-            return ta_roienc::ObjectPriority::Normal;
+            return ta_roienc::Salience::Normal;
     }
 }
 
@@ -165,7 +165,7 @@ ta_roienc::Box box_from_proto(const roi::transcode::Box& b)
         out.polygon.push_back({p.x(), p.y()});
     }
     if (b.has_priority()) {
-        out.has_priority = true;
+        out.has_salience = true;
         out.priority = priority_from_proto(b.priority());
     }
     if (b.has_desired_qp_delta()) {
@@ -190,23 +190,23 @@ RoiJobRequest build_request(const roi::transcode::FileJobRequest& req)
 }
 
 
-ta_roienc::InputCodec codec_from_proto(roi::transcode::InputCodec c)
+ta_roienc::SourceCodec codec_from_proto(roi::transcode::InputCodec c)
 {
     switch (c) {
     case roi::transcode::INPUT_CODEC_H264:
-        return ta_roienc::InputCodec::H264;
+        return ta_roienc::SourceCodec::H264;
     case roi::transcode::INPUT_CODEC_H265:
-        return ta_roienc::InputCodec::H265;
+        return ta_roienc::SourceCodec::H265;
     case roi::transcode::INPUT_CODEC_JPEG:
-        return ta_roienc::InputCodec::Jpeg;
+        return ta_roienc::SourceCodec::Jpeg;
     default:
-        return ta_roienc::InputCodec::Raw;
+        return ta_roienc::SourceCodec::Raw;
     }
 }
 
-ta_roienc::SessionParams params_from_open(const roi::transcode::StreamOpen& open)
+ta_roienc::TranscoderOptions params_from_open(const roi::transcode::StreamOpen& open)
 {
-    ta_roienc::SessionParams sp;
+    ta_roienc::TranscoderOptions sp;
     sp.width = open.width();
     sp.height = open.height();
     if (open.time_base_num() > 0 && open.time_base_den() > 0) {

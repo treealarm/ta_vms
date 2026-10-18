@@ -16,11 +16,11 @@ extern "C" {
 #include <libavutil/mem.h>
 }
 
-#include "ta_roienc/backend_selection.h"
-#include "ta_roienc/packet_handler.h"
-#include "ta_roienc/report.h"
-#include "ta_roienc/session.h"
-#include "ta_roienc/types.h"
+#include "ta_roienc/engine_order.h"
+#include "ta_roienc/access_unit_sink.h"
+#include "ta_roienc/outcome.h"
+#include "ta_roienc/transcoder.h"
+#include "ta_roienc/basics.h"
 
 #include "interfaces/media_packet.h"
 #include "logger/logger.h"
@@ -28,7 +28,7 @@ extern "C" {
 namespace {
 
 // VMS_VIDEO_ENCODER names the backend chain, in whatever spelling
-// ta_roienc::backend_choice_from_name accepts ("auto", "vaapi", "x264", "cpu", ...). Unknown text
+// ta_roienc::engine_choice_from_name accepts ("auto", "vaapi", "x264", "cpu", ...). Unknown text
 // throws rather than defaulting: a misspelled backend quietly becoming a different one is the
 // whole failure this guards against.
 //
@@ -37,23 +37,23 @@ namespace {
 // is ours, and it names one backend: VA-API, which is the only hardware encoder ta-deps builds
 // ffmpeg with. Writing `auto` explicitly still gets the library's full order, QSV included, and
 // those backends will decline in turn on a build without them.
-ta_roienc::BackendChoice encoder_choice_from_env()
+ta_roienc::EngineChoice encoder_choice_from_env()
 {
   const char* raw = std::getenv("VMS_VIDEO_ENCODER");
   if (raw && *raw != '\0') {
-    return ta_roienc::backend_choice_from_name(raw);
+    return ta_roienc::engine_choice_from_name(raw);
   }
 
-  ta_roienc::BackendChoice choice;
-  choice.kind = ta_roienc::Backend::Vaapi;
+  ta_roienc::EngineChoice choice;
+  choice.kind = ta_roienc::Engine::Vaapi;
   return choice;
 }
 
-bool is_hardware(ta_roienc::Backend backend)
+bool is_hardware(ta_roienc::Engine backend)
 {
   switch (backend) {
-    case ta_roienc::Backend::Vaapi:
-    case ta_roienc::Backend::IntelOneVpl:
+    case ta_roienc::Engine::Vaapi:
+    case ta_roienc::Engine::IntelOneVpl:
       return true;
     default:
       return false;
@@ -68,20 +68,20 @@ bool is_hardware(ta_roienc::Backend backend)
 // 1080p25 clip, about 1.4 seconds, against 4 frames through h264_vaapi. video_transcode_processor
 // asks for `tune=zerolatency` and does not have that delay, and for live video a second and a
 // half is not a trade worth making for anything.
-bool can_reach_hardware(const ta_roienc::BackendChoice& choice)
+bool can_reach_hardware(const ta_roienc::EngineChoice& choice)
 {
-  if (choice.kind != ta_roienc::Backend::Auto) {
+  if (choice.kind != ta_roienc::Engine::Auto) {
     return is_hardware(choice.kind);
   }
   return std::ranges::any_of(choice.selection.preferred, is_hardware);
 }
 
-std::optional<ta_roienc::InputCodec> input_codec_of(AVCodecID id)
+std::optional<ta_roienc::SourceCodec> input_codec_of(AVCodecID id)
 {
   switch (id) {
-    case AV_CODEC_ID_H264: return ta_roienc::InputCodec::H264;
-    case AV_CODEC_ID_HEVC: return ta_roienc::InputCodec::H265;
-    case AV_CODEC_ID_MJPEG: return ta_roienc::InputCodec::Jpeg;
+    case AV_CODEC_ID_H264: return ta_roienc::SourceCodec::H264;
+    case AV_CODEC_ID_HEVC: return ta_roienc::SourceCodec::H265;
+    case AV_CODEC_ID_MJPEG: return ta_roienc::SourceCodec::Jpeg;
     default: return std::nullopt;
   }
 }
@@ -103,7 +103,7 @@ int64_t target_bitrate_for(const AVCodecParameters& params, double fps)
   return std::clamp<int64_t>(target, 500'000, 10'000'000);
 }
 
-avcodec_parameters_ptr make_output_parameters(const ta_roienc::StreamInfo& info)
+avcodec_parameters_ptr make_output_parameters(const ta_roienc::SourceInfo& info)
 {
   avcodec_parameters_ptr params(avcodec_parameters_alloc(),
     [](AVCodecParameters* p) { avcodec_parameters_free(&p); });
@@ -134,14 +134,14 @@ avcodec_parameters_ptr make_output_parameters(const ta_roienc::StreamInfo& info)
 }  // namespace
 
 // Encoded packets on their way back out to compat_sink's sinks.
-class hw_transcode_processor::packet_sink final : public ta_roienc::PacketHandler {
+class hw_transcode_processor::packet_sink final : public ta_roienc::AccessUnitSink {
 public:
   packet_sink(hw_transcode_processor& owner, emit_fn emit)
     : m_owner(owner), m_emit(std::move(emit))
   {
   }
 
-  void on_open(const ta_roienc::StreamInfo& info) override
+  void on_start(const ta_roienc::SourceInfo& info) override
   {
     m_out_codec_parameters = make_output_parameters(info);
     if (!m_out_codec_parameters) {
@@ -150,10 +150,10 @@ public:
 
     logger::instance().info(std::format(
       "hw_transcode_processor: encoding {}x{} with backend '{}'",
-      info.width, info.height, info.backend_name));
+      info.width, info.height, info.engine_name));
   }
 
-  void on_packet(const ta_roienc::EncodedPacket& packet) override
+  void on_access_unit(const ta_roienc::AccessUnit& packet) override
   {
     if (!m_emit || packet.payload.empty()) {
       return;
@@ -217,17 +217,17 @@ hw_transcode_processor::~hw_transcode_processor()
 void hw_transcode_processor::validate_configuration()
 {
   try {
-    const ta_roienc::BackendChoice choice = encoder_choice_from_env();
+    const ta_roienc::EngineChoice choice = encoder_choice_from_env();
     std::string order;
-    for (const ta_roienc::Backend backend : choice.selection.preferred) {
+    for (const ta_roienc::Engine backend : choice.selection.preferred) {
       if (!order.empty()) {
         order += " -> ";
       }
-      order += ta_roienc::backend_name(backend);
+      order += ta_roienc::engine_name(backend);
     }
     logger::instance().info(std::format(
       "hw_transcode_processor: video encoder backend order is {}",
-      order.empty() ? ta_roienc::backend_name(choice.kind) : order));
+      order.empty() ? ta_roienc::engine_name(choice.kind) : order));
   }
   catch (const std::exception& ex) {
     // Re-thrown only to name the variable. ta_roienc's own refusal already lists the spellings it
@@ -267,7 +267,7 @@ bool hw_transcode_processor::init(
   m_in_time_base = (time_base.num > 0 && time_base.den > 0) ? time_base : AVRational{ 1, 25 };
   const AVRational fps = (frame_rate.num > 0 && frame_rate.den > 0) ? frame_rate : AVRational{ 25, 1 };
 
-  ta_roienc::SessionParams params;
+  ta_roienc::TranscoderOptions params;
   params.width = codec_parameters->width;
   params.height = codec_parameters->height;
   params.time_base_num = m_in_time_base.num;
@@ -281,7 +281,7 @@ bool hw_transcode_processor::init(
       codec_parameters->extradata + codec_parameters->extradata_size);
   }
 
-  const ta_roienc::BackendChoice choice = encoder_choice_from_env();
+  const ta_roienc::EngineChoice choice = encoder_choice_from_env();
   if (!can_reach_hardware(choice)) {
     // Not a failure: compat_sink falls back to the CPU processor, which is the better software
     // encoder of the two. Logged at debug so it does not repeat as noise on every stream.
@@ -291,15 +291,15 @@ bool hw_transcode_processor::init(
   }
 
   params.settings.encoder = choice.kind;
-  params.settings.backend_selection = choice.selection;
-  params.settings.codec = ta_roienc::Codec::H264;
+  params.settings.engine_order = choice.selection;
+  params.settings.codec = ta_roienc::Coding::H264;
   // libx264's own default, which is what the CPU path used by never setting one. ta_roienc's default
   // of 28 is tuned for archive re-compression, where a visibly softer picture buys disk space.
   params.settings.crf = 23;
   // gop 0 is two seconds, which is what a WebRTC viewer wants: a late joiner waits that long for
   // a picture, and a lost keyframe costs that long to recover.
   params.settings.gop = 0;
-  params.settings.preset = ta_roienc::Preset::Fastest;
+  params.settings.preset = ta_roienc::Effort::Fastest;
   // ta_roienc exists to spend fewer bits away from the regions a detector found, and its default
   // penalises the background by 6 QP. We submit no regions at all, so that default would apply
   // to the whole picture and hand the viewer a visibly softer stream than the CPU path did.
@@ -311,7 +311,7 @@ bool hw_transcode_processor::init(
   m_sink = std::make_unique<packet_sink>(*this, m_emit);
 
   try {
-    m_session = std::make_unique<ta_roienc::Session>(params, m_sink.get());
+    m_session = std::make_unique<ta_roienc::Transcoder>(params, m_sink.get());
   }
   catch (const std::exception& ex) {
     // Nothing above this catches: compat_sink is driven straight from the RTSP read loop, and an
@@ -334,11 +334,11 @@ bool hw_transcode_processor::init(
   // a profile the silicon does not implement -- still leaves a hardware encode worth having: that
   // was the whole 43% before the decode was accelerated at all. Handing the stream back over the
   // decoder would trade a real saving for none.
-  if (!is_hardware(m_session->encoder_used())) {
+  if (!is_hardware(m_session->engine_used())) {
     logger::instance().info(std::format(
       "hw_transcode_processor: backend chain settled on '{}', which is software -- leaving this "
       "stream to the CPU path, which encodes with tune=zerolatency",
-      m_session->backend_name()));
+      m_session->engine_name()));
     m_session.reset();
     m_sink.reset();
     return false;
@@ -347,7 +347,7 @@ bool hw_transcode_processor::init(
   logger::instance().info(std::format(
     "hw_transcode_processor: {} -> h264, backend '{}', target {} bit/s",
     avcodec_get_name(codec_parameters->codec_id),
-    m_session->backend_name(),
+    m_session->engine_name(),
     params.settings.rate_control.target_bitrate));
 
   m_out_time_base = m_in_time_base;
@@ -502,7 +502,7 @@ void hw_transcode_processor::process(const std::shared_ptr<media_packet>& media)
     const std::string decoder = m_session->decoder_hardware();
     logger::instance().info(std::format(
       "hw_transcode_processor: decoding on {}, encoding on '{}'",
-      decoder.empty() ? "the CPU" : decoder, m_session->backend_name()));
+      decoder.empty() ? "the CPU" : decoder, m_session->engine_name()));
   }
 
   // Two seconds of input at any sane frame rate. Silence past that is not startup latency.
@@ -523,10 +523,10 @@ void hw_transcode_processor::flush()
   }
 
   try {
-    const ta_roienc::Report report = m_session->finish();
+    const ta_roienc::Outcome report = m_session->finish();
     logger::instance().info(std::format(
       "hw_transcode_processor: closed after {} frame(s), {} packet(s) on backend '{}'",
-      report.frames, report.packets, report.backend_name));
+      report.frames, report.packets, report.engine_name));
   }
   catch (const std::exception& ex) {
     logger::instance().warning(std::format("hw_transcode_processor: finish failed: {}", ex.what()));
@@ -553,7 +553,7 @@ std::string hw_transcode_processor::encoder_name() const
   if (!m_session) {
     return {};
   }
-  const std::string encoder = ta_roienc::backend_name(m_session->encoder_used());
+  const std::string encoder = ta_roienc::engine_name(m_session->engine_used());
   // Both halves of the path, because they fail apart and the failure is invisible: a hardware
   // encoder fed by a software decoder works perfectly and costs several times the CPU of one
   // whose frames never leave the device. Withheld until a frame has actually come out --

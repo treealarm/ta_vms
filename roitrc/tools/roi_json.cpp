@@ -88,7 +88,7 @@ RoiJson load_roi_json(const std::string& path)
 
     if (root.contains("kinds") && root["kinds"].is_object()) {
         for (auto it = root["kinds"].begin(); it != root["kinds"].end(); ++it) {
-            ta_roienc::KindQuality cfg;
+            ta_roienc::ClassQuality cfg;
             cfg.qp_delta = it.value().value("qp_delta", -6);
             cfg.pad = it.value().value("pad_norm", doc.quality.pad);
             doc.quality.kinds.emplace(it.key(), cfg);
