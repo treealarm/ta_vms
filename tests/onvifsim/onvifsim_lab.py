@@ -286,12 +286,15 @@ class Lab:
         return space["id"]
 
     def _photograph_plan(self, pair, space_id):
-        """The plan's picture: the yard from the camera straight above it, with nobody in it."""
+        """The plan's picture: the yard from the camera straight above it, with nobody in it and none
+        of the cameras drawn."""
         self.sim.delete_walker(W.WALKER_ID)
         self.sim.delete_walker(MARK_WALKER)
+        self.sim.put_environment(W.PLAN_ENVIRONMENT)
         try:
             image = self.sim.snapshot(W.TOPDOWN.id)
         finally:
+            self.sim.put_environment(W.ENVIRONMENT)
             self.sim.put_walker(W.WALKER_ID, W.walker_json(W.WALKER_ROUTE))
         self.vms.upload_plan(space_id, image, "image/jpeg", W.PLAN_W, W.PLAN_H, W.plan_corners(*self.anchor(pair)))
         log(f"plan picture uploaded: {W.PLAN_W}x{W.PLAN_H}, {len(image) // 1024} KiB, "

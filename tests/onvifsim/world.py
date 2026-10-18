@@ -52,6 +52,9 @@ class Camera:
     roll: float = 0.0
     rotate: int = 0
     video: tuple = (640, 360)
+    # Its body and the wire frame of where it looks in the other cameras' pictures (OnvifSim's
+    # color): one colour each, so they can be told apart.
+    color: str | None = None
 
     @property
     def position(self):
@@ -85,11 +88,15 @@ class Landmark:
         return f"{self.name} {self.color_name}"
 
 
-MASTER = Camera("master", "Master (fixed)", "fixed", 0.0, 6.0, 20.0, heading=0.0, pitch=-18.0, hfov=70.0)
-SLAVE = Camera("ptz", "Slave (PTZ)", "ptz", 28.0, 9.0, -14.0, heading=240.0, pitch=0.0, analytics=False)
+MASTER = Camera("master", "Master (fixed)", "fixed", 0.0, 6.0, 20.0, heading=0.0, pitch=-18.0, hfov=70.0,
+                color="#3aa0ff")
+SLAVE = Camera("ptz", "Slave (PTZ)", "ptz", 28.0, 9.0, -14.0, heading=240.0, pitch=0.0, analytics=False,
+               color="#ff9f1c")
 # The plan's pair, from the other side of the yard.
-MASTER2 = Camera("master2", "Master 2 (fixed)", "fixed", -26.0, 6.0, -34.0, heading=134.0, pitch=-18.0, hfov=70.0)
-SLAVE2 = Camera("ptz2", "Slave 2 (PTZ)", "ptz", -24.0, 8.0, 18.0, heading=45.0, pitch=0.0, analytics=False)
+MASTER2 = Camera("master2", "Master 2 (fixed)", "fixed", -26.0, 6.0, -34.0, heading=134.0, pitch=-18.0, hfov=70.0,
+                 color="#b15cff")
+SLAVE2 = Camera("ptz2", "Slave 2 (PTZ)", "ptz", -24.0, 8.0, 18.0, heading=45.0, pitch=0.0, analytics=False,
+                color="#ff3b6b")
 SLAVE_LIMITS = PtzLimits()
 
 VIDEO_W, VIDEO_H = 640, 360
@@ -103,7 +110,9 @@ PLAN_ALTITUDE = 120.0
 PLAN_HALF_WIDTH = 48.0  # metres on the ground; the half-height follows from the frame's aspect
 TOPDOWN = Camera(
     "topdown", "Plan camera", "fixed", PLAN_CENTRE[0], PLAN_ALTITUDE, PLAN_CENTRE[1], heading=0.0, pitch=-90.0,
-    hfov=2 * math.degrees(math.atan(PLAN_HALF_WIDTH / PLAN_ALTITUDE)), analytics=False, video=(PLAN_W, PLAN_H))
+    hfov=2 * math.degrees(math.atan(PLAN_HALF_WIDTH / PLAN_ALTITUDE)), analytics=False, video=(PLAN_W, PLAN_H),
+    # Pale: it covers the whole yard, and is the harness's camera rather than one under test.
+    color="#d0d0d0")
 
 
 @dataclass(frozen=True)
@@ -445,6 +454,7 @@ def camera_json(camera, onvif_port, limits=SLAVE_LIMITS):
         "pitch": camera.pitch,
         "roll": camera.roll,
         "hFov": camera.hfov,
+        "color": camera.color,
         "video": video,
         "h264": {"width": width, "height": height, "fps": 10, "bitrateKbps": 1024, "govLength": 10},
         "metadata": {"analytics": camera.analytics, "ptzStatus": False},
@@ -469,6 +479,13 @@ def walker_json(route, speed=WALKER_SPEED):
         "return": "loop",
         "height": WALKER_HEIGHT,
     }
+
+
+# Each camera's wire frame in the others' pictures, to see where a head really looks; the rest is
+# OnvifSim's defaults.
+ENVIRONMENT = {"showFrustums": True}
+# The plan's picture is a photograph of the site, with no cameras or wire frames in it.
+PLAN_ENVIRONMENT = {**ENVIRONMENT, "showCameras": False, "showFrustums": False}
 
 
 def build_world(onvif_base_port, pairs=None, with_walker=True):
@@ -498,6 +515,7 @@ def build_world(onvif_base_port, pairs=None, with_walker=True):
     walkers = [{"id": WALKER_ID, **walker_json(WALKER_ROUTE)}] if with_walker else []
     return {
         "version": 1,
+        "environment": ENVIRONMENT,
         "terrain": _flat_terrain(),
         "objects": landmarks + scenery,
         "roads": roads,

@@ -33,6 +33,10 @@ class Sim:
         """Adds a camera or replaces it, keeping where its PTZ head points (OnvifSim keeps that)."""
         request("PUT", self._url(f"/api/cameras/{camera['id']}"), camera)
 
+    def put_environment(self, environment):
+        """Replaces the world's environment; what it leaves out takes OnvifSim's defaults."""
+        request("PUT", self._url("/api/environment"), environment)
+
     def put_walker(self, walker_id, walker):
         request("PUT", self._url(f"/api/walkers/{walker_id}"), walker)
 
