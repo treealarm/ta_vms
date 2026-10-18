@@ -22,18 +22,38 @@ pkg_check_modules(FFMPEG REQUIRED
 # WebRTC goes through it (see writer/processors/hw_transcode_processor.cpp) rather than through a
 # second copy of the same probe-and-fall-back logic written here.
 #
-# Only the library: its unit tests run in its own repository. Forced rather than merely set,
-# because these are options in the subproject's own cache.
-set(TA_ROIENC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(TA_ROIENC_INSTALL     OFF CACHE BOOL "" FORCE)
+# The submodule is private, so a clone of this repository without access to it still has to
+# build. Without it the service is complete but CPU-only on that path: every HEVC stream a browser
+# watches is re-encoded by video_transcode_processor (libx264). That is a warning, not an error --
+# except where VMS_REQUIRE_TA_ROIENC says otherwise, which the image build does, because an image
+# that lost its hardware encoder looks from outside exactly like a service that burns CPU.
+option(VMS_REQUIRE_TA_ROIENC "Fail the configure when the roitrc/ta_roienc submodule is absent" OFF)
+set(VMS_TA_ROIENC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../roitrc/ta_roienc)
+if(EXISTS ${VMS_TA_ROIENC_DIR}/CMakeLists.txt)
+    set(VMS_WITH_TA_ROIENC ON)
+elseif(VMS_REQUIRE_TA_ROIENC)
+    message(FATAL_ERROR "roitrc/ta_roienc is empty and VMS_REQUIRE_TA_ROIENC is on: "
+        "run `git submodule update --init roitrc/ta_roienc`")
+else()
+    set(VMS_WITH_TA_ROIENC OFF)
+    message(WARNING "roitrc/ta_roienc is absent: building without hardware live transcode. "
+        "HEVC streams are re-encoded for WebRTC on the CPU (libx264).")
+endif()
 
-# The libavcodec-backed engines, which is where h264_vaapi lives. Off in the library by default,
-# and wrong for us -- hardware is the entire reason this service links ta_roienc at all, and
-# without this the engine chain has no hardware entry to find and every stream quietly takes the
-# CPU path.
-set(TA_ROIENC_BUILD_ENGINE_FFMPEG ON CACHE BOOL "" FORCE)
+if(VMS_WITH_TA_ROIENC)
+    # Only the library: its unit tests run in its own repository. Forced rather than merely set,
+    # because these are options in the subproject's own cache.
+    set(TA_ROIENC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(TA_ROIENC_INSTALL     OFF CACHE BOOL "" FORCE)
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../roitrc/ta_roienc ta_roienc)
+    # The libavcodec-backed engines, which is where h264_vaapi lives. Off in the library by
+    # default, and wrong for us -- hardware is the entire reason this service links ta_roienc at
+    # all, and without this the engine chain has no hardware entry to find and every stream
+    # quietly takes the CPU path.
+    set(TA_ROIENC_BUILD_ENGINE_FFMPEG ON CACHE BOOL "" FORCE)
+
+    add_subdirectory(${VMS_TA_ROIENC_DIR} ta_roienc)
+endif()
 
 set(VMS_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_control.proto)
 set(CFG_CLIENT_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../proto/vms_cfg.proto)
@@ -121,8 +141,6 @@ set(SOURCES
     writer/processors/video_copy_processor.h
     writer/processors/audio_copy_processor.cpp
     writer/processors/audio_copy_processor.h
-    writer/processors/hw_transcode_processor.cpp
-    writer/processors/hw_transcode_processor.h
     writer/processors/video_transcode_processor.cpp
     writer/processors/video_transcode_processor.h
     writer/processors/audio_transcode_processor.cpp
@@ -148,6 +166,20 @@ set(SOURCES
 )
 
 add_executable(vms ${SOURCES})
+
+if(VMS_WITH_TA_ROIENC)
+    target_sources(vms PRIVATE
+        writer/processors/hw_transcode_processor.cpp
+        writer/processors/hw_transcode_processor.h
+    )
+    target_compile_definitions(vms PRIVATE VMS_WITH_TA_ROIENC)
+    # "Everything this build has", which is the name the library keeps for add_subdirectory
+    # consumers so they need not learn its component list. Linking the core alone is not enough:
+    # Transcoder sits in a separate target (a demuxer and decoder around the encoder, kept apart so
+    # libavformat does not spread into the core), and the engine registry that
+    # RegisterDeploymentEngines fills is a separate object library again.
+    target_link_libraries(vms PRIVATE ta_roienc_all)
+endif()
 
 protobuf_generate(
     TARGET vms
@@ -193,12 +225,6 @@ target_link_directories(vms PRIVATE ${FFMPEG_LIBRARY_DIRS})
 
 target_link_libraries(vms
     PRIVATE
-    # "Everything this build has", which is the name the library keeps for add_subdirectory
-    # consumers so they need not learn its component list. Linking the core alone is not enough:
-    # Transcoder sits in a separate target (the specification calls a demuxer and decoder around the
-    # encoder an example, kept apart so libavformat does not spread into the core), and the
-    # engine registry that RegisterDeploymentEngines fills is a separate object library again.
-    ta_roienc_all
     ${FFMPEG_LIBRARIES}
     protobuf::libprotobuf
     gRPC::grpc

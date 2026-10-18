@@ -108,6 +108,14 @@ The third is the separate `video_a` repository, which has its own `ta_roienc` su
 only the decoder (`ta_roienc_decode`) for the analytics worker; a rename in the library's public
 API has to be carried there too, and its submodule bumped in a commit of its own.
 
+**The library is private and ta_vms is public, so a build without it must keep working.**
+`media_server/CMakeLists.txt` adds it only when `roitrc/ta_roienc` is checked out; otherwise it
+warns, leaves `hw_transcode_processor` out (`VMS_WITH_TA_ROIENC` is undefined) and every HEVC
+stream takes `video_transcode_processor`. Such a binary refuses to start with `VMS_VIDEO_ENCODER`
+set, since it cannot honour it. `roitrc/CMakeLists.txt` warns and builds an empty `roitrc` target.
+The image build passes `-DVMS_REQUIRE_TA_ROIENC=ON`, so an image can never lose the hardware path
+silently — keep it that way. New code that touches `ta_roienc` from `media_server` goes behind the
+same switch.
 A broken submodule bump takes live video down, not only the clip queue. Bump the version in a
 commit of its own and check both paths.
 

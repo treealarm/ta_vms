@@ -8,7 +8,9 @@ COPY . /build
 
 WORKDIR /build/media_server
 
-RUN cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+# The hardware live transcode is optional for a source build, never for an image: an image
+# that lost it would only show as a service burning CPU. See media_server/CMakeLists.txt.
+RUN cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVMS_REQUIRE_TA_ROIENC=ON
 RUN cmake --build build -j1
 
 # keep libstdc++

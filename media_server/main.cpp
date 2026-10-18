@@ -6,6 +6,8 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <format>
+#include <stdexcept>
 #include <memory>
 #include <string>
 #include <thread>
@@ -27,7 +29,9 @@
 
 #include "logger/logger.h"
 
+#ifdef VMS_WITH_TA_ROIENC
 #include "writer/processors/hw_transcode_processor.h"
+#endif
 
 #include "vms_cfg.pb.h"
 #include "vms_control.pb.h"
@@ -84,7 +88,20 @@ int main(int argc, char** argv)
   // surface as one stream that will not play, on whichever host happens to have such a camera.
   try
   {
+#ifdef VMS_WITH_TA_ROIENC
     hw_transcode_processor::validate_configuration();
+#else
+    // Built without the roitrc/ta_roienc submodule: video_transcode_processor is the only video
+    // encoder there is. Naming one anyway asks for something this binary cannot do, and quietly
+    // getting libx264 instead is the failure the variable exists to make visible.
+    if (const char* encoder = std::getenv("VMS_VIDEO_ENCODER"); encoder && *encoder != '\0')
+    {
+      throw std::invalid_argument(std::format(
+        "VMS_VIDEO_ENCODER={}: this build has no ta_roienc, so the CPU encoder is the only one; "
+        "unset the variable or build with the roitrc/ta_roienc submodule", encoder));
+    }
+    logger::instance().warning("built without ta_roienc: HEVC streams are re-encoded for WebRTC on the CPU");
+#endif
     onvif_metadata_client::instance().start();
   }
   catch (const std::exception& ex)

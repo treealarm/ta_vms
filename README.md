@@ -93,10 +93,10 @@ for the C++ services; [docs/windows-build.md](docs/windows-build.md) covers Wind
 bringing the stack up, and the debug configurations in `.vscode/` start every service under the
 debugger at once.
 
-The encoding library that `media_server` and `roitrc` link (the `roitrc/ta_roienc` submodule) is
-not public yet, so those two build only where it can be checked out; everything else — the .NET
-services and the web interface — builds from this repository alone. Use the prebuilt images from
-`ta_install` for the other two.
+The hardware encoding library (the `roitrc/ta_roienc` submodule) is not public. Without it
+everything still builds, with a CMake warning: `media_server` re-encodes HEVC for WebRTC viewers on
+the CPU instead of the GPU, and the `roitrc` clip re-compression service is skipped. The prebuilt
+images from `ta_install` have both.
 
 ## Testing without cameras
 

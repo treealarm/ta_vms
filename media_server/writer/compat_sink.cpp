@@ -7,7 +7,9 @@
 #include "logger/logger.h"
 #include "writer/processors/audio_copy_processor.h"
 #include "writer/processors/audio_transcode_processor.h"
+#ifdef VMS_WITH_TA_ROIENC
 #include "writer/processors/hw_transcode_processor.h"
+#endif
 #include "writer/processors/video_copy_processor.h"
 #include "writer/processors/video_transcode_processor.h"
 
@@ -89,7 +91,9 @@ std::vector<std::unique_ptr<stream_processor>> compat_sink::create_processors(
     // Hardware first. hw_transcode_processor declines -- returns false from init -- when no
     // hardware backend is asked for or none opens, and the CPU processor behind it is the one
     // this path has always used.
+#ifdef VMS_WITH_TA_ROIENC
     candidates.push_back(std::make_unique<hw_transcode_processor>());
+#endif
     candidates.push_back(std::make_unique<video_transcode_processor>());
     return candidates;
   }
