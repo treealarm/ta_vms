@@ -1,29 +1,10 @@
 namespace web_srv;
 
-/// <summary>Maps image-space error to normalized pan/tilt commands using a per-camera calibration.</summary>
+/// <summary>Turns a calibration's test-move observations into the image vectors it stores.</summary>
 public static class PtzCalibrationMath
 {
   private const float MinVectorLength = 0.02f;
   private const float MaxParallelCosine = 0.94f;
-
-  public static (float Pan, float Tilt) ImageErrorToCommand(
-    float errorX,
-    float errorY,
-    float panDx,
-    float panDy,
-    float tiltDx,
-    float tiltDy)
-  {
-    // [panDx  tiltDx] [pan]   [-errorX]
-    // [panDy  tiltDy] [tilt] = [-errorY]
-    var det = (panDx * tiltDy) - (panDy * tiltDx);
-    if (MathF.Abs(det) < 0.05f)
-      return (errorX, -errorY);
-
-    var pan = ((-errorX * tiltDy) + (errorY * tiltDx)) / det;
-    var tilt = ((-panDx * errorY) + (panDy * errorX)) / det;
-    return (pan, tilt);
-  }
 
   public static (float Dx, float Dy) DirectionToVector(string direction)
   {
