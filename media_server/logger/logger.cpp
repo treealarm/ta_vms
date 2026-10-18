@@ -131,8 +131,8 @@ std::string logger::build_json_message(
   ts.set_seconds(std::time(nullptr));
   ts.set_nanos(0);
 
-  // если нужен миллисекундный timestamp — можно через chrono,
-  // но для примера оставим так
+  // a millisecond timestamp could come from chrono,
+  // but this will do for now
 
   *entry.mutable_timestamp() = ts;
 
@@ -149,14 +149,14 @@ std::string logger::build_json_message(
 
   google::protobuf::util::JsonPrintOptions options;
 
-  // компактный JSON в одну строку
+  // compact JSON on one line
   options.add_whitespace = false;
 
-  // сохранять оригинальные proto field names:
+  // keep the original proto field names:
   // timestamp, level, file...
   options.preserve_proto_field_names = true;
 
-  // если нужны поля даже с default values
+  // to include fields even when they hold default values
   options.always_print_fields_with_no_presence = false;
 
   std::string json;
@@ -169,7 +169,7 @@ std::string logger::build_json_message(
 
   if (!status.ok())
   {
-    // fallback чтобы логгер не упал
+    // fallback, so the logger does not fall over
     return std::format(
       R"({{"level":"ERROR","message":"failed to serialize log entry"}})");
   }

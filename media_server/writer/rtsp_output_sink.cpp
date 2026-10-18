@@ -281,12 +281,12 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
   {
     if (!(pkt->flags & AV_PKT_FLAG_KEY))
     {
-      return; // ждём keyframe
+      return; // waiting for a keyframe
     }
     m_wait_keyframe = false;
   }
 
-  // --- 1. Рескейл в out_stream->time_base (как раньше) ---
+  // --- 1. Rescale into out_stream->time_base (as before) ---
   av_packet_rescale_ts(pkt, media->time_base, stream->out_stream->time_base);
 
   int64_t step = pkt->duration > 0 ? pkt->duration : 1;
@@ -327,7 +327,7 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
     stream->pending_timestamp_offset = false;
   }
 
-  // --- 2. Восстановление отсутствующих PTS/DTS ---
+  // --- 2. Restore missing PTS/DTS ---
   if (pkt->pts <= 0 && pkt->dts <= 0) {
     int64_t next = (stream->last_dts != AV_NOPTS_VALUE) ? stream->last_dts + step : 0;
     pkt->pts = pkt->dts = next;
@@ -339,7 +339,7 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
     pkt->dts = pkt->pts;
   }
 
-  // --- 3. Подгонка PTS/DTS под master (видео) ---
+  // --- 3. Fit PTS/DTS to the master (video) ---
   if (stream->media_type != AVMEDIA_TYPE_VIDEO && m_last_master_pts != AV_NOPTS_VALUE)
   {
     const int64_t threshold = 180; // ~2 ms at 1/90000
@@ -352,7 +352,7 @@ void rtsp_output_sink::on_packet(const std::shared_ptr<media_packet>& in_media)
     }
   }
 
-  // --- 4. Монотонность внутри потока ---
+  // --- 4. Monotonic within the stream ---
   if (stream->last_dts != AV_NOPTS_VALUE && pkt->dts <= stream->last_dts) {
     pkt->dts = stream->last_dts + step;
   }

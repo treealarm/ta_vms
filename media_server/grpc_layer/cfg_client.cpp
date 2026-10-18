@@ -44,7 +44,7 @@ bool cfg_client::list_cameras(std::vector<vms::cfg::CameraSetup>& result)
 
   grpc::ClientContext context;
 
-  // опционально: таймаут
+  // optional: a timeout
   context.set_deadline(
     std::chrono::system_clock::now() + std::chrono::seconds(2)
   );

@@ -1,5 +1,5 @@
 # -------------------
-# Временные / системные файлы
+# Temporary / system files
 # -------------------
 *.log
 *.tmp
@@ -17,14 +17,14 @@
 *.user
 
 # -------------------
-# .NET / C# сборки
+# .NET / C# builds
 # -------------------
 **/bin/
 **/obj/
 **/out/
 
 # -------------------
-# C++ сборки
+# C++ builds
 # -------------------
 media_server/build/
 media_server/out/
@@ -39,12 +39,12 @@ roitrc/ta_roienc/build/
 roitrc/ta_roienc/build-*/
 
 # -------------------
-# Node / фронт
+# Node / frontend
 # -------------------
 web_vms.client/node_modules/
 web_vms.client/dist/
 
 # -------------------
-# Данные / runtime файлы
+# Data / runtime files
 # -------------------
 data/

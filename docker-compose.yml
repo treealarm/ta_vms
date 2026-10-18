@@ -131,7 +131,7 @@ services:
       - "8554:8554"       # RTSP
       - "9997:9997"       # Control API — VmsUtils polls reader counts through it, and in dev it
                           # runs on the host, so it needs the port too (see UtilsServiceImpl)
-      - "8189:8189/udp"  # ICE/UDP медиапоток — идёт прямо на браузер, минуя gateway
+      - "8189:8189/udp"  # ICE/UDP media -- goes straight to the browser, bypassing the gateway
     volumes:
       - ./init_files/config/mediamtx.yml:/mediamtx.yml
 

@@ -15,7 +15,7 @@ void sink_container_impl::add_sink(std::shared_ptr<media_sink> sink)
     {
       if (s == sink)
       {
-        return; // уже есть
+        return; // already there
       }
       ++it;
     }

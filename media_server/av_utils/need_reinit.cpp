@@ -10,7 +10,7 @@ namespace av_utils
     if (!old_cp || !new_cp)
       return true;
 
-    // 1. Ѕазовые вещи
+    // 1. The basics
     if (old_cp->codec_type != new_cp->codec_type ||
       old_cp->codec_id != new_cp->codec_id)
       return true;
@@ -27,12 +27,12 @@ namespace av_utils
         old_cp->format != new_cp->format)
         return true;
 
-      // иногда важно
+      // sometimes matters
       if (old_cp->sample_aspect_ratio.num != new_cp->sample_aspect_ratio.num ||
         old_cp->sample_aspect_ratio.den != new_cp->sample_aspect_ratio.den)
         return true;
 
-      // цвет/пространство (не всегда критично, но безопасно учитывать)
+      // colour/space (not always critical, but safe to take into account)
       if (old_cp->color_space != new_cp->color_space ||
         old_cp->color_range != new_cp->color_range)
         return true;
@@ -50,7 +50,7 @@ namespace av_utils
         return true;
     }
 
-    // 5. extradata ( –»“»„Ќќ дл¤ H264/H265 и др.)
+    // 5. extradata (CRITICAL for H264/H265 and others)
     if (old_cp->extradata_size != new_cp->extradata_size)
       return true;
 
@@ -63,7 +63,7 @@ namespace av_utils
     }
     else if (old_cp->extradata || new_cp->extradata)
     {
-      // один есть, второго нет
+      // one has it, the other does not
       return true;
     }
 

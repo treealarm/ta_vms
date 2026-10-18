@@ -7,7 +7,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== Root directory: $ROOT_DIR ==="
 
-# 1️⃣ Сборка базового образа ta-deps (если нет)
+# 1. Build the ta-deps base image (if missing)
 echo "=== Checking ta-deps image ==="
 
 if ! docker image inspect ta-deps &>/dev/null; then
@@ -30,10 +30,10 @@ else
     echo "=== roi-deps already exists, skipping build ==="
 fi
 
-# 2️⃣ Сборка проекта через docker-compose
+# 2. Build the project with docker-compose
 echo "=== Building ta_vms via docker-compose ==="
 docker compose -f "$ROOT_DIR/docker-compose.yml" --profile app build
 
-# 3️⃣ Запуск контейнеров
+# 3. Start the containers
 echo "=== Starting ta_vms containers ==="
 docker compose -f "$ROOT_DIR/docker-compose.yml" --profile app up

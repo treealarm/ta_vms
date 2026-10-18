@@ -76,7 +76,7 @@ bool snapshot_reader::connect_current_file(const std::string& source)
     return false;
   }
 
-  // --- поиск стримов (оставляем как есть) ---
+  // --- find the streams (left as it was) ---
   for (unsigned i = 0; i < m_ctx->nb_streams; ++i)
   {
     const auto media_type = m_ctx->streams[i]->codecpar->codec_type;
@@ -100,7 +100,7 @@ bool snapshot_reader::connect_current_file(const std::string& source)
     return false;
   }
 
-  // --- НОВОЕ: init decoder ---
+  // --- init the decoder ---
   if (!init_decoder())
   {
     logger::instance().error("Failed to init decoder");
@@ -108,11 +108,11 @@ bool snapshot_reader::connect_current_file(const std::string& source)
     return false;
   }
 
-  // --- НОВОЕ: позиция ---
+  // --- position ---
   AVStream* stream = m_ctx->streams[m_video_index];
 
-  // для seek
-  int64_t safety_ms = 1000; // 0.5–2 сек обычно достаточно
+  // for the seek
+  int64_t safety_ms = 1000; // 0.5-2 s is usually enough
 
   int64_t target_ts = av_rescale_q(
     m_position.count(),
@@ -144,7 +144,7 @@ bool snapshot_reader::connect_current_file(const std::string& source)
 
   m_current_index = m_frame_buffer.size() - 1;
 
-  // --- НОВОЕ: encoder init после первого кадра ---
+  // --- init the encoder after the first frame ---
   if (!init_encoder())
   {
     logger::instance().error("Failed to init encoder");
@@ -152,7 +152,7 @@ bool snapshot_reader::connect_current_file(const std::string& source)
     return false;
   }
 
-  // --- НОВОЕ: сформировать первый snapshot ---
+  // --- make the first snapshot ---
   if (!encode_current_frame())
   {
     logger::instance().error("Failed to encode first frame");

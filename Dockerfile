@@ -11,7 +11,7 @@ WORKDIR /build/media_server
 RUN cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 RUN cmake --build build -j1
 
-# сохранить libstdc++
+# keep libstdc++
 #
 # libva travels with the binary, and that is not optional. vcpkg builds ffmpeg against its own
 # libva (2.24) while the runtime's distribution ships an older one, and libva is linked
@@ -48,13 +48,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Копируем ВСЮ папку сборки
+# Copy the WHOLE build directory
 COPY --from=builder /build/media_server/build /app
 
-# копируем runtime libc++ и libva
+# copy the runtime libc++ and libva
 COPY --from=builder /runtime-libs /app
 
-# Чтобы .so находились рядом
+# So the .so files are found next to it
 ENV LD_LIBRARY_PATH=/app
 ENV LIBVA_DRIVER_NAME=iHD
 # Where the driver actually is. The libva shipped above is vcpkg's, and its compiled-in search

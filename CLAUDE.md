@@ -86,45 +86,45 @@ Both images use an overlay vcpkg triplet
 still pass `-DCMAKE_BUILD_TYPE=Release` on their own `cmake` configure step to select the release
 libs.
 
-## Граница между `roitrc/` и `roitrc/ta_roienc/`
+## The boundary between `roitrc/` and `roitrc/ta_roienc/`
 
-`roitrc/ta_roienc` — submodule на github `treealarm/roi_transcode`, библиотека `ta_roienc`
-(адаптивное ROI-кодирование). В репозитории только код библиотеки и её C++ юнит-тесты; она
-сознательно не знает ни про gRPC, ни про Dapr, ни про protobuf. Править её можно — это наша
-библиотека, но всё, что имеет смысл только для ta_vms, живёт здесь, а не там.
+`roitrc/ta_roienc` is a submodule on github `treealarm/roi_transcode`, the `ta_roienc` library
+(adaptive ROI encoding). That repository holds only the library's code and its C++ unit tests; it
+deliberately knows nothing of gRPC, Dapr or protobuf. It may be edited — it is our library — but
+everything that makes sense only for ta_vms lives here, not there.
 
-**Потребителей у неё два, и второй меняет цену ошибки.** Кроме `roitrc` её линкует
-`media_server` — живой транскод HEVC→H.264 для WebRTC идёт через `ta_roienc::Session`, потому
-что в libavcodec нет авто-подбора железа и `avcodec_find_encoder` всегда отдаёт libx264
-(см. `media_server/writer/processors/hw_transcode_processor.cpp`).
-**Бэкенд по умолчанию — `Backend::Vaapi`, а не `Backend::Auto`**, и разница здесь смысловая:
-библиотека линкуется только ради железа. Если аппаратный бэкенд не открылся — или цепочка
-`auto`, заданная явно через `VMS_VIDEO_ENCODER`, свелась к программному, — поток отдаётся
-обратно `compat_sink`, и его берёт `video_transcode_processor`. У того есть `tune=zerolatency`,
-а у программного бэкенда библиотеки его нет: 34 кадра в конвейере против 4 через
-`h264_vaapi`, то есть полторы секунды задержки на живом видео.
-Сломанный bump submodule'а гасит живое видео, а не только очередь клипов. Обновляй версию
-отдельным коммитом и проверяй оба пути.
+**It has two consumers, and the second raises the cost of a mistake.** Besides `roitrc`, it is
+linked by `media_server` — live HEVC→H.264 transcoding for WebRTC goes through
+`ta_roienc::Session`, because libavcodec has no automatic choice of hardware and
+`avcodec_find_encoder` always returns libx264 (see
+`media_server/writer/processors/hw_transcode_processor.cpp`).
+**The default backend is `Backend::Vaapi`, not `Backend::Auto`**, and the difference is one of
+meaning: the library is linked only for the hardware. If the hardware backend did not open — or an
+`auto` chain set explicitly through `VMS_VIDEO_ENCODER` came down to a software one — the stream is
+handed back to `compat_sink`, and `video_transcode_processor` takes it. That one has
+`tune=zerolatency`, and the library's software backend does not: 34 frames in the pipeline against
+4 through `h264_vaapi`, which is a second and a half of delay on live video.
+A broken submodule bump takes live video down, not only the clip queue. Bump the version in a
+commit of its own and check both paths.
 
-`roitrc/` — всё, что про пережатие принадлежит нам: gRPC-контракт, который зовёт `VmsFs`,
-модель заданий (повторяет EdgeImport из `media_server`), Dapr-уведомления и песочница путей
-`ROI_ALLOWED_ROOTS`. Стрелка зависимости одна и узкая: линкуется только публичный API —
-`ta_roienc/ta_roienc.h`, `ta_roienc/session.h`, `ta_roienc/types.h`, — и во внутренности
-библиотеки не лезет ничего. Если новому коду понадобился `src/` энкодера, это признак, что он
-не на той стороне границы.
+`roitrc/` is everything about re-compression that is ours: the gRPC contract `VmsFs` calls, the job
+model (it mirrors EdgeImport in `media_server`), the Dapr notifications and the `ROI_ALLOWED_ROOTS`
+path sandbox. The dependency arrow is one and narrow: only the public API is linked —
+`ta_roienc/ta_roienc.h`, `ta_roienc/session.h`, `ta_roienc/types.h` — and nothing reaches into the
+library's internals. If new code needs the encoder's `src/`, that is a sign it is on the wrong side
+of the boundary.
 
-Контракт `proto/roi_transcode.proto` живёт здесь, рядом с остальными, в единственном
-экземпляре.
+The contract `proto/roi_transcode.proto` lives here, beside the others, in a single copy.
 
-Собирается это `roitrc/CMakeLists.txt` через `add_subdirectory(ta_roienc)` с выключенными
-`TA_ROIENC_BUILD_TESTS` и `TA_ROIENC_INSTALL`: юнит-тесты библиотеки гоняются в её
-репозитории. Свои проверки сервиса — `roitrc/scripts/check.sh` (старт при битой конфигурации,
-оба входа gRPC, песочница). Базовый образ `roi-deps` строится из `docker/intel/` submodule'а;
-`roitrc/Dockerfile` берёт контекстом корень репозитория, потому что ему нужны и `roitrc/`, и
-`proto/`.
+It is built by `roitrc/CMakeLists.txt` through `add_subdirectory(ta_roienc)` with
+`TA_ROIENC_BUILD_TESTS` and `TA_ROIENC_INSTALL` off: the library's unit tests run in its own
+repository. The service's own checks are `roitrc/scripts/check.sh` (startup with a broken
+configuration, both gRPC entry points, the sandbox). The `roi-deps` base image is built from the
+submodule's `docker/intel/`; `roitrc/Dockerfile` takes the repository root as its context, because
+it needs both `roitrc/` and `proto/`.
 
-Обновление версии библиотеки — обычный submodule bump, отдельным коммитом, чтобы было видно
-в истории, какой энкодер поехал в релиз.
+Updating the library's version is an ordinary submodule bump, in a commit of its own, so that the
+history shows which encoder went into a release.
 
 ## Adding a new service
 
@@ -366,50 +366,55 @@ Only add columns that are actively used. Do not add `created_at`, `updated_at`, 
 
 ## Square integration
 
-ta_vms встраивается в основную систему **Square** (`../Square`, мониторинг объектов на карте) как
-видеоподсистема. Логин и базовый Phase 1/2 (камеры на карте, свойства, алармы, вкладка "Monitor" в
-Square) реализованы; план — [`docs/square-integration-plan.md`](docs/square-integration-plan.md).
-Любое дальнейшее проектирование и развитие видеоподсистемы **не должно противоречить** этому плану.
-Соблюдай инварианты:
+ta_vms is built into the main **Square** system (`../Square`, monitoring objects on a map) as its
+video subsystem. Login and the basic Phase 1/2 (cameras on the map, properties, alarms, the
+"Monitor" tab in Square) are implemented; the plan is
+[`docs/square-integration-plan.md`](docs/square-integration-plan.md). Any further design and
+development of the video subsystem **must not contradict** that plan. Keep these invariants:
 
-- **Общая с Square docker-сеть обязательна, но данных ta_vms в чужих контейнерах больше нет.**
-  ta_vms **всегда** живёт в сети `common_app_network` (тот же `name:`, что у Square/
-  `multitenant_admin`, но `external: true` — сеть создаёт Square/`multitenant_admin`, они должны
-  подняться первыми; свой ключ сети у ta_vms `default`, у них `shared_network`, а compose
-  отказывается подхватывать чужую сеть с несовпадающим ключом в метке
-  `com.docker.compose.network`). Нужна она **только** для Dapr service invocation в Square и
-  резолва app-id через mDNS.
-  Всё состояние и вся шина — свои: **state store** это собственный PostgreSQL (база
-  `POSTGRES_STATE_DB`, компонент `init_files/dapr_components/statestore.yaml`), **pub/sub** — свой
-  `rabbitmq` (`init_files/dapr_components/orderpubsub.yaml`). Чужому `redis` не место ни там, ни
-  там: он объявлен без volume, а при штамповке баз под тенанта общий Redis с `keyPrefix: "name"`
-  давал бы всем тенантам один и тот же ключ `cam-perm-version`. Отдельно про Redis: два разных
-  контейнера с одинаковым alias `redis` в одной сети заставляют Docker отвечать на DNS-запросы
-  случайным round-robin между ними (проверено эмпирически) — поэтому свой Redis рядом с чужим
-  держать было нельзя, и это одна из причин, по которым брокером стал RabbitMQ (вторая — под
-  Windows Redis нативно не ставится, а в планах автономный инсталлятор).
-  Функции, не связанные с интеграцией (login, push в Square), гейтятся по env
-  (`KEYCLOAK_URL`, `SQUARE_INTEGRATION_SINK_APP_ID`) — сетевая связность безусловна, не за гейтом.
-- **`VmsSquareSingleton` — единственная точка подключения интеграции** (producer-сторона). Тяжёлое
-  ядро (C++ `media_server` и пр.) интеграцией не затрагивается. Не размазывай интеграционную логику
-  по другим сервисам: `VmsCfg` про Square не знает вообще и лишь публикует свои обычные события
-  (`server-config-changed`, `camera-state-changed`), на которые интегратор подписан.
-- **Идентичность продьюсера в дереве Square — `SQUARE_INTEGRATION_PRODUCER_ID`, а не `APP_ID`
-  процесса.** Из этого значения детерминированно выводится id корневого объекта, поэтому обе стороны
-  задают его конфигурацией и ничем не обмениваются в рантайме. Значение постоянно: смена
-  осиротит всё поддерево, уже зарегистрированное под старым корнем.
-- **Конфиг — только снизу вверх.** Конфигурация камер принадлежит ta_vms и пушится в Square; наружу
-  она read-only. Изменение состояния извне — **только командами** (actions: запись/арм/PTZ/`resync`),
-  никогда не правкой конфига из Square. В Square для интеграционных объектов (с `i_name`) панель
-  свойств — read-only, и для них не регистрируется иерархия типов (`UpdateIntegroTypes`), чтобы
-  нельзя было создать их руками из дерева Square.
-- **root-объект интеграции = `SQUARE_INTEGRATION_PRODUCER_ID`** (историческое значение — `vmscfg`,
-  когда продьюсером была `VmsCfg`); команды — через Dapr service invocation, асинхронно
-  (handle/uid сразу, статус позже). Обработчики команд ещё не подключены.
-- **Не конфликтуй с базисом интеграции:** общая docker-сеть `common_app_network` и Dapr service
-  invocation поверх неё (сообщениями по шине стороны не обмениваются: `VmsSquareSingleton` подписан
-  только на собственные топики ta_vms, а в Square ходит вызовами — поэтому шина ta_vms своя,
-  RabbitMQ, и имя компонента `orderpubsub` совпадает со Square лишь исторически), раздельные
-  PostgreSQL и раздельные брокеры, модель
-  самоописывающихся свойств/команд. Перед добавлением новых топиков, портов, env или сервисов
-  сверяйся с планом, чтобы не создавать будущих коллизий.
+- **The docker network shared with Square is mandatory, but there is no ta_vms data in other
+  projects' containers any more.** ta_vms **always** lives in the `common_app_network` network (the
+  same `name:` as Square's/`multitenant_admin`'s, but `external: true` — the network is created by
+  Square/`multitenant_admin`, which have to come up first; ta_vms's own key for the network is
+  `default`, theirs is `shared_network`, and compose refuses to adopt another project's network
+  whose key in the `com.docker.compose.network` label does not match). It is needed **only** for
+  Dapr service invocation into Square and app-id resolution through mDNS.
+  All the state and the whole bus are ta_vms's own: the **state store** is its own PostgreSQL
+  (database `POSTGRES_STATE_DB`, component `init_files/dapr_components/statestore.yaml`), the
+  **pub/sub** its own `rabbitmq` (`init_files/dapr_components/orderpubsub.yaml`). Another
+  project's `redis` belongs in neither: it is declared without a volume, and when databases are
+  stamped out per tenant, a shared Redis with `keyPrefix: "name"` would give every tenant the same
+  `cam-perm-version` key. Separately about Redis: two different containers with the same alias
+  `redis` in one network make Docker answer DNS queries with a random round-robin between them
+  (verified empirically) — so keeping our own Redis beside another one was impossible, and that is
+  one of the reasons the broker became RabbitMQ (the second: Redis does not install natively on
+  Windows, and a standalone installer is planned).
+  Features not related to the integration (login, push to Square) are gated by env
+  (`KEYCLOAK_URL`, `SQUARE_INTEGRATION_SINK_APP_ID`) — network connectivity is unconditional, not
+  behind a gate.
+- **`VmsSquareSingleton` is the only point where the integration plugs in** (the producer side).
+  The heavy core (the C++ `media_server` and the rest) is not touched by the integration. Do not
+  spread integration logic over other services: `VmsCfg` knows nothing about Square at all and only
+  publishes its ordinary events (`server-config-changed`, `camera-state-changed`), which the
+  integrator subscribes to.
+- **The producer's identity in Square's tree is `SQUARE_INTEGRATION_PRODUCER_ID`, not the
+  process's `APP_ID`.** The root object's id is derived from this value deterministically, so both
+  sides set it by configuration and exchange nothing at runtime. The value is permanent: changing
+  it orphans the whole subtree already registered under the old root.
+- **Configuration flows bottom-up only.** Camera configuration belongs to ta_vms and is pushed to
+  Square; outside it is read-only. State is changed from outside **only by commands** (actions:
+  recording/arming/PTZ/`resync`), never by editing configuration from Square. In Square the
+  property panel of integration objects (those with `i_name`) is read-only, and no type hierarchy
+  is registered for them (`UpdateIntegroTypes`), so they cannot be created by hand from Square's
+  tree.
+- **The integration's root object = `SQUARE_INTEGRATION_PRODUCER_ID`** (the historical value is
+  `vmscfg`, from when `VmsCfg` was the producer); commands go through Dapr service invocation,
+  asynchronously (a handle/uid at once, the status later). The command handlers are not wired up
+  yet.
+- **Do not conflict with the integration's basis:** the shared `common_app_network` docker network
+  and Dapr service invocation over it (the sides exchange no messages over a bus:
+  `VmsSquareSingleton` subscribes only to ta_vms's own topics and reaches Square by calls — which
+  is why ta_vms's bus is its own, RabbitMQ, and the component name `orderpubsub` matches Square's
+  only historically), separate PostgreSQL and separate brokers, the model of self-describing
+  properties/commands. Before adding new topics, ports, env variables or services, check them
+  against the plan so as not to create collisions later.
