@@ -29,6 +29,10 @@ class Sim:
                 return data
         raise RuntimeError("OnvifSim sent no status event")
 
+    def put_camera(self, camera):
+        """Adds a camera or replaces it, keeping where its PTZ head points (OnvifSim keeps that)."""
+        request("PUT", self._url(f"/api/cameras/{camera['id']}"), camera)
+
     def put_walker(self, walker_id, walker):
         request("PUT", self._url(f"/api/walkers/{walker_id}"), walker)
 
@@ -42,6 +46,13 @@ class Sim:
     def goto(self, camera_id, pan, tilt, zoom=0.0):
         """Drives the head in degrees, as a person would with the editor's sliders."""
         request("POST", self._url(f"/api/cameras/{camera_id}/ptz/goto"), {"pan": pan, "tilt": tilt, "zoom": zoom})
+
+    def aim(self, camera_id, point):
+        """Turns the head until a sim point is in the middle of its picture, however the camera hangs,
+        as a person with a joystick puts a landmark in the crosshair; returns (pan, tilt) in degrees."""
+        x, y, z = point
+        answer = request("POST", self._url(f"/api/cameras/{camera_id}/ptz/aim"), {"x": x, "y": y, "z": z})
+        return answer["pan"], answer["tilt"]
 
     def snapshot(self, camera_id):
         """A JPEG of what the camera sees now, rendered on request."""

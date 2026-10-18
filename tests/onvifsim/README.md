@@ -71,6 +71,7 @@ tests/onvifsim/onvifsim_lab.py aim-check [--seconds 60]
 tests/onvifsim/onvifsim_lab.py bind
 tests/onvifsim/onvifsim_lab.py run [--seconds 60]
 tests/onvifsim/onvifsim_lab.py down [--purge]   # --purge also removes the cameras and both spaces
+tests/onvifsim/onvifsim_lab.py matrix [--mounts a,b] [--seconds 30]   # the map pair hung every way, see Mounts
 
 Every step works on both pairs, one after the other; --pair map or --pair plan picks one.
 
@@ -106,7 +107,8 @@ http://localhost:8090 to watch the world while a step runs; its log is
   samples gives the same 8 m frame at any distance between them.
 - **calibrate, ground part.** It stands a person on each landmark and takes the bottom-middle of
   the box ta_vms received as the mark. The leave-one-out PTZ residuals and the ground residuals
-  must both be near zero, because this world has no lens distortion and no tilted mount.
+  must both be near zero, because this world has no lens distortion and, unless a mount says
+  otherwise, no tilted mount.
 - **aim-check** follows the walking person with `POST /api/ptz-geo/sim-ptz/aim`, the same call the
   operator's map makes. Each time the head stops, it compares the PTZ's true optical axis, from
   the sim's `/api/cameras/ptz/pose`, with the direction to the person's feet.
@@ -136,9 +138,87 @@ http://localhost:8090 to watch the world while a step runs; its log is
     its height or more (median). Framed 8 m wide, a person fills about 40%; at the wide end, under
     10%.
 
+## Mounts
+
+Real cameras do not all hang upright on a pole, and they do not all count their axes the same way:
+ONVIF's generic space says nothing about which way pan grows, a camera hung upside down may or may
+not have its picture and its axes turned back by the installer, and a bracket may lean. OnvifSim
+hangs a camera any way up (its mount is a rigid body that the head turns with), turns its picture
+(`video.rotate`) and reverses an ONVIF axis (`ptz.panReverse`, `ptz.tiltReverse`); `world.MOUNTS`
+names the ways worth checking, applied to the map pair:
+
+| Mount | What it is | Expected |
+|---|---|---|
+| `level` | upright, as above | pass |
+| `pan-reverse`, `tilt-reverse` | ONVIF counts that axis the other way | pass |
+| `install-mode` | upside down; picture and both axes turned back, as an installer sets it | pass |
+| `auto-flip` | upside down; picture turned back, axes left mirrored | pass |
+| `upside-down-raw` | upside down, nothing turned back | pass |
+| `lean-forward`, `lean-sideways` | the pan axis leaning 10° towards the yard, 8° sideways | measure |
+| `fence` | on its side: pan sweeps up and down, tilt across | measure |
+| `seam` | turned so that pan ±180 falls among the landmarks | measure |
+| `master-portrait` | the master on its side for a corridor, picture upright and tall (360×640) | measure, clicked marks |
+| `master-flip` | the master's picture left upside down | measure, clicked marks |
+
+A mount hung upside down gets the tilt range turned over with it (−20..90), and `fence` ±90. The
+two master mounts take their ground marks where the landmarks' feet really are in the picture, as
+an operator clicks them, instead of from the boxes of a person standing there: in the tall frame a
+person beyond about 28 m is smaller than OnvifSim's smallest box (2.5% of the frame's height), and
+in the upside-down one the box's foot is the head. A "pass" mount must meet every threshold of
+every step. A "measure" one is a mount the current fits
+are known not to model: its thresholds become notes, so its steps run to the end and say what the
+fits make of it.
+
+- `--mount <name>` hangs the map pair that way for the ordinary steps; `up --mount <name>` loads it.
+- `matrix` runs them all (or `--mounts a,b`) on the map pair, against the running sim: for each it
+  rehangs the cameras with `PUT /api/cameras/{id}`, drops the old observations, and runs the PTZ
+  calibration, aim-check, bind and run; the ground marks again only when the master changed. The
+  landmarks are centred by OnvifSim's own `POST /api/cameras/{id}/ptz/aim`, which knows how its
+  head hangs, and the readings still go through ONVIF and VmsOnvif. All the projections use the
+  picture's own axes from `/pose`. It prints one table, writes it to `/tmp/onvifsim-lab/matrix.txt`
+  (and `matrix.json`), leaves the pair level and calibrated again, and fails only when a "pass"
+  mount did not pass.
+
+### What the mounts do to the aim (2026-10-18)
+
+`matrix --seconds 30` on the map pair; `master-portrait` alone with `--seconds 70`, so the person
+also walks the near half of the loop, the only half its tall frame detects. PTZ LOO is the worst
+leave-one-out residual in generic units; foot is how far the box's foot lay from the feet in the
+master's picture; arrival is where the head stopped against where the person was when it set off.
+
+| Mount | PTZ LOO | Foot | Aim mean / p95 | Arrival mean / p95 | In frame | Verdict |
+|---|---|---|---|---|---|---|
+| `level` | 0.0000 | 0.007 | 0.00° / 0.00° | 0.24° / 0.43° | 100% | pass |
+| `pan-reverse` | 0.0000 | | 0.00° / 0.00° | 0.21° / 0.39° | 100% | pass |
+| `tilt-reverse` | 0.0000 | | 0.00° / 0.00° | 0.21° / 0.42° | 99% | pass |
+| `install-mode` | 0.0000 | | 0.00° / 0.00° | 0.18° / 0.39° | 100% | pass |
+| `auto-flip` | 0.0000 | | 0.00° / 0.00° | 0.24° / 0.41° | 99% | pass |
+| `upside-down-raw` | 0.0000 | | 0.00° / 0.00° | 0.16° / 0.36° | 100% | pass |
+| `lean-forward` (10°) | 0.0526 | | 0.61° / 0.86° | 0.73° / 0.95° | 100% | within the thresholds |
+| `lean-sideways` (8°) | 0.0943 | | 1.72° / 2.72° | 1.60° / 2.76° | 100% | misses them |
+| `fence` | 0.4212 | | 12.9° / 15.9° | 13.3° / 16.0° | 12% | unusable |
+| `seam` | 1.2570 | | 96° / 135° | 105° / 136° | 0% | unusable |
+| `master-portrait` | 0.0000 | 0.007 | 0.00° / 0.00° | 0.18° / 0.34° | 54% | aims right; the far half is undetected |
+| `master-flip` | 0.0000 | 0.123 | 0.00° / 0.00° | 27.3° / 35.9° | 0% | unusable |
+
+- Every way of counting the axes and every upside-down mount aims exactly: the two lines take
+  the sign and the units.
+- A leaning pan axis costs roughly a fifth of a degree per degree of lean sideways and a sixteenth
+  forward, here; it shows in the leave-one-out column long before it misses. `fence` is beyond the
+  two lines altogether, which is what "PTZ fit by mount orientation" in `docs/maps-and-plans.md` is
+  for.
+- `seam` is the one that can catch an ordinary camera: its pan zero is wherever the installer
+  screwed it, so the seam falls inside the sector it watches with the odds of that sector's share
+  of a full turn, a quarter for a camera watching 90°.
+- A master's picture can be turned or tall, the ground mapping does not care. Left upside down, the
+  foot of every box is the person's head: marks clicked on the landmarks then put the slave 27° off.
+  (Marked with people's boxes instead, the flip cancels out, because the marks and the aim use the
+  same edge; an operator clicks the landmarks.)
+
 ## Limits
 
-OnvifSim's PTZ is exactly linear: pan is the bearing minus the mount heading, and tilt is the
-elevation minus the mount pitch. This world therefore cannot exercise a camera hung out of level,
-which the future mount-orientation fit in `docs/maps-and-plans.md` is for. A tilted-mount mode in
-OnvifSim would be the way to test that later.
+OnvifSim's PTZ is exactly linear in angle, its lens has no distortion and its ground is flat: a
+real camera's misses from those (a pan scale that is not quite linear, a wide lens) are not on the
+bench. Electronic flip (the head flipping over at the nadir, ONVIF `EFlip`) is not simulated: this
+world never aims past straight down. The joystick and the self-guided tracking, which drive the
+head by `ContinuousMove` and calibrate it in the picture, are not exercised by any step.

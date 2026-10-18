@@ -21,6 +21,13 @@ Steps, each one checking what it did and exiting 1 with the reason when somethin
     run         let ta_vms follow the person on its own, from the master's detections, and measure
     down        stop OnvifSim's container (--purge also removes the cameras and the spaces from ta_vms)
     all         up, provision, calibrate, aim-check, bind, run, down
+    matrix      the map pair hung every way in world.MOUNTS (or --mounts a,b): for each, rehang the
+                cameras in the sim, calibrate, aim-check, bind and run, then print one table; the
+                bench is left level and calibrated again
+
+--mount <name> hangs the map pair one of those ways for the ordinary steps (up loads it). A mount
+expected to "measure" turns the quality thresholds into notes, so its steps run to the end and
+report what the fits make of it.
 
 The ta_vms dev stack must already be running (scripts/dev-up.sh or F5). See README.md.
 """
@@ -97,7 +104,24 @@ class Lab:
         self.sim = Sim(f"http://127.0.0.1:{args.sim_port}")
         self.vms = Vms(args.vms, args.user, args.password)
         self.state = load_state()
-        self.pairs = [p for p in W.PAIRS if args.pair in ("both", p.name)]
+        self.hang(W.MOUNTS_BY_NAME[args.mount])
+        self.pairs = [p for p in self.all_pairs if args.pair in ("both", p.name)]
+        # What the steps measured, for the matrix's table; notes are thresholds a "measure" mount missed.
+        self.metrics = {}
+
+    def hang(self, mount):
+        """Takes the map pair as hung by mount; the plan pair always stands level."""
+        self.mount = mount
+        self.all_pairs = [mount.apply(p) if p.name == W.MAP_PAIR.name else p for p in W.PAIRS]
+
+    def expect(self, condition, message):
+        """A quality threshold: fatal for a mount expected to pass, a note for one run to measure."""
+        if condition:
+            return
+        if self.mount.expect != "measure":
+            raise Failed(message)
+        self.metrics.setdefault("notes", []).append(message)
+        log(f"  note ({self.mount.name}): {message}")
 
     def cam_id(self, camera):
         return f"{self.args.prefix}{camera.id}"
@@ -109,7 +133,7 @@ class Lab:
     def anchor(self, pair):
         """The WGS84 a pair's space measures in: the real anchor for the map, (0, 0) for the plan,
         which stands in made-up coordinates."""
-        return (self.args.lat0, self.args.lon0) if pair is W.MAP_PAIR else (0.0, 0.0)
+        return (self.args.lat0, self.args.lon0) if pair.name == W.MAP_PAIR.name else (0.0, 0.0)
 
     def wgs84(self, pair, x, z):
         return W.to_wgs84(x, z, *self.anchor(pair))
@@ -130,14 +154,14 @@ class Lab:
             log("OnvifSim already running")
         else:
             self._start_sim()
-        self.sim.put_world(W.build_world(self.onvif_base))
+        self.sim.put_world(W.build_world(self.onvif_base, self.all_pairs))
         status = self.sim.status()
         require(status.get("h264"), "OnvifSim offers no H.264 (ffmpeg not found): media_server needs Profile_2")
         ports = status.get("onvifPorts", {})
         cameras = [*W.STREAMING_CAMERAS, W.TOPDOWN]
         expected = {c.id: self.onvif_base + i for i, c in enumerate(cameras)}
         require(ports == expected, f"OnvifSim ONVIF ports are {ports}, expected {expected}")
-        log(f"OnvifSim world loaded: ONVIF {expected}, RTSP {status.get('rtspPort')}")
+        log(f"OnvifSim world loaded: ONVIF {expected}, RTSP {status.get('rtspPort')}, map pair hung '{self.mount.name}'")
 
     def _compose(self, *command, check=True):
         a = self.args
@@ -230,7 +254,7 @@ class Lab:
         if cam_id in existing:
             log(f"camera {cam_id} already in ta_vms")
             return
-        port = self.onvif_base + W.STREAMING_CAMERAS.index(camera)
+        port = self.onvif_base + W.camera_index(camera)
         self.vms.add_camera({
             "cameraId": cam_id,
             "name": f"OnvifSim {camera.name}",
@@ -246,18 +270,18 @@ class Lab:
         name = SPACE_NAMES[pair.name]
         space = next((s for s in self.vms.spaces() if s.get("name") == name and not s.get("parentId")), None)
         if space is None:
-            if pair is W.MAP_PAIR:
+            if pair.name == W.MAP_PAIR.name:
                 sw, ne = self.wgs84(pair, -100, 100), self.wgs84(pair, 100, -100)
             else:
                 corners = W.plan_corners(*self.anchor(pair))
                 sw, ne = (corners["bl"][0], corners["tl"][1]), (corners["tl"][0], corners["tr"][1])
             space = self.vms.upsert_space({
-                "name": name, "kind": "map" if pair is W.MAP_PAIR else "plan",
-                "realCoordinates": pair is W.MAP_PAIR, "ordinal": 0, "elevationM": 0,
+                "name": name, "kind": "map" if pair.name == W.MAP_PAIR.name else "plan",
+                "realCoordinates": pair.name == W.MAP_PAIR.name, "ordinal": 0, "elevationM": 0,
                 "view": {"southWest": {"lat": sw[0], "lon": sw[1]}, "northEast": {"lat": ne[0], "lon": ne[1]}},
                 "footprint": [],
             })
-        if pair is W.PLAN_PAIR and (space.get("plan") is None or self.args.reset):
+        if pair.name == W.PLAN_PAIR.name and (space.get("plan") is None or self.args.reset):
             self._photograph_plan(pair, space["id"])
         return space["id"]
 
@@ -299,7 +323,7 @@ class Lab:
 
     # ── calibrate ───────────────────────────────────────────────────────────────
 
-    def calibrate(self):
+    def calibrate(self, ptz=True, ground=True):
         self.vms.login()
         for pair in self.pairs:
             self.provisioned(pair)
@@ -311,8 +335,10 @@ class Lab:
         self.sim.delete_walker(W.WALKER_ID)
         try:
             for pair in self.pairs:
-                self._calibrate_ptz(pair)
-                self._calibrate_ground(pair)
+                if ptz:
+                    self._calibrate_ptz(pair)
+                if ground:
+                    self._calibrate_ground(pair)
         finally:
             self.sim.delete_walker(MARK_WALKER)
             self.sim.put_walker(W.WALKER_ID, W.walker_json(W.WALKER_ROUTE))
@@ -331,8 +357,11 @@ class Lab:
         log(f"PTZ calibration of {slave}: centre each landmark, read the position back over ONVIF")
         log("  lm   pan°     tilt°    | ONVIF pan  tilt    | expected pan tilt   | dist m  zoom")
         for lm in W.LANDMARKS:
-            pan, tilt = W.ptz_degrees(pair.slave, (lm.x, 0.0, lm.z))
-            self.sim.goto(pair.slave.id, pan, tilt, 0.0)
+            # The sim turns its own head onto the landmark, whichever way it hangs.
+            try:
+                pan, tilt = self.sim.aim(pair.slave.id, (lm.x, 0.0, lm.z))
+            except HttpError as e:
+                raise Failed(f"{lm.name} is beyond {pair.slave.id}'s head as hung '{self.mount.name}': {e}") from e
             self.sim.wait_idle(pair.slave.id)
             st = self.vms.ptz_status(slave, PROFILE)
             require(st.get("available"), f"GET /api/ptz/status for {slave}: {st}")
@@ -360,8 +389,9 @@ class Lab:
         result = self.vms.put_ptz_geo(slave, observations)
         require(result and result.get("fitted"), f"the PTZ geo fit of {slave} failed: {result and result.get('error')}")
         worst = max(max(abs(o.get("panResidual") or 0), abs(o.get("tiltResidual") or 0)) for o in result["observations"])
+        self.metrics["ptz_residual"] = worst
         log(f"  fitted; worst leave-one-out residual {worst:.5f} (generic units)")
-        require(worst < 0.01, f"leave-one-out residual {worst:.4f} is too large for an exactly linear head")
+        self.expect(worst < 0.01, f"leave-one-out residual {worst:.4f} is too large for an exactly linear head")
         # The distances ta_vms measures the samples by, against the world's own.
         for o in result["observations"]:
             lm = next(m for m in W.LANDMARKS if ids[m.name] == o["landmarkId"])
@@ -381,29 +411,41 @@ class Lab:
         master = self.cam_id(pair.master)
         ids = self.of(pair)["landmarks"]
         observations = []
-        log(f"ground marks of {master}: a person stands on each landmark, the foot of the box ta_vms received")
+        clicked = self.mount.marks == "clicked"
+        log(f"ground marks of {master}: a person stands on each landmark; the mark is "
+            + ("where the landmark's foot is in the picture, as an operator clicks it" if clicked else "the foot of the box ta_vms received"))
         log("  lm   x       y       | expected x  y       | samples")
+        # Where the feet are in the picture, from the master's true pose: however it hangs and turns it.
+        master_pose = self.sim.camera_pose(pair.master.id)
+        worst_foot = 0.0
         for lm in W.LANDMARKS:
             self.sim.put_walker(MARK_WALKER, W.walker_json([(lm.x, lm.z)]))
             time.sleep(1.5)  # let boxes from the previous spot drain through the pipeline
             boxes = self._master_boxes(pair, seconds=6, wanted=8)[-5:]
-            require(len(boxes) >= 3, f"too few boxes from {master} for the person on {lm.name}: {len(boxes)}")
-            xs = [b["bboxX"] + b["bboxWidth"] / 2 for b in boxes]
-            ys = [b["bboxY"] + b["bboxHeight"] for b in boxes]
-            x, y = statistics.median(xs), statistics.median(ys)
-            ex, ey = W.project(pair.master, (lm.x, 0.0, lm.z))
-            log(f"  {lm.name}  {x:.4f}  {y:.4f}  | {ex:.4f}  {ey:.4f}  | {len(boxes)}")
-            # Not data, a diagnosis: a mark this far off means the boxes are not where the picture is.
-            require(abs(x - ex) < 0.03 and abs(y - ey) < 0.03,
-                    f"the box foot on {lm.name} is at ({x:.3f}, {y:.3f}), the picture puts it at ({ex:.3f}, {ey:.3f})")
-            observations.append({"landmarkId": ids[lm.name], "x": x, "y": y})
+            ex, ey = W.project_pose(master_pose, (lm.x, 0.0, lm.z), *pair.master.video)
+            if len(boxes) < 3:
+                self.expect(clicked, f"too few boxes from {master} for the person on {lm.name}: {len(boxes)}")
+                log(f"  {lm.name}  -       -       | {ex:.4f}  {ey:.4f}  | {len(boxes)}")
+            else:
+                xs = [b["bboxX"] + b["bboxWidth"] / 2 for b in boxes]
+                ys = [b["bboxY"] + b["bboxHeight"] for b in boxes]
+                x, y = statistics.median(xs), statistics.median(ys)
+                log(f"  {lm.name}  {x:.4f}  {y:.4f}  | {ex:.4f}  {ey:.4f}  | {len(boxes)}")
+                worst_foot = max(worst_foot, abs(x - ex), abs(y - ey))
+                self.metrics["foot_miss"] = worst_foot
+                # Not data, a diagnosis: a mark this far off means the box's bottom is not where the feet are.
+                self.expect(abs(x - ex) < 0.03 and abs(y - ey) < 0.03,
+                            f"the box foot on {lm.name} is at ({x:.3f}, {y:.3f}), the picture puts the feet at ({ex:.3f}, {ey:.3f})")
+            mark = (ex, ey) if clicked else (x, y)
+            observations.append({"landmarkId": ids[lm.name], "x": mark[0], "y": mark[1]})
 
         result = self.vms.put_ground_geo(master, observations)
         require(result and result.get("fitted"), f"the ground fit of {master} failed: {result and result.get('error')}")
         residuals = [o.get("residualM") for o in result["observations"] if o.get("residualM") is not None]
         worst = max(residuals) if residuals else 0.0
+        self.metrics["ground_residual"] = worst
         log(f"  fitted; worst residual {worst:.3f} m")
-        require(worst < 0.3, f"ground residual {worst:.2f} m is too large on a flat world without distortion")
+        self.expect(worst < 0.3, f"ground residual {worst:.2f} m is too large on a flat world without distortion")
 
     # ── aim-check ───────────────────────────────────────────────────────────────
 
@@ -428,7 +470,7 @@ class Lab:
             aim = self.vms.aim_world(slave, space_id, lat, lon, 0.0)
             pose = self.sim.wait_idle(pair.slave.id)
             cam = (pose["position"]["x"], pose["position"]["y"], pose["position"]["z"])
-            axis = W.direction(pose["heading"], pose["pitch"])
+            axis = W.axis_of(pose)
             to_target = tuple(f - c for f, c in zip(feet, cam))
             true_az, true_el, true_dist = W.bearing(cam, feet)
             aim_err = W.angle_between(axis, to_target)
@@ -440,7 +482,7 @@ class Lab:
             now = self.sim.walker_pose(W.WALKER_ID)
             now_feet = (now["x"], now["y"], now["z"])
             lag_err = W.angle_between(axis, tuple(f - c for f, c in zip(now_feet, cam)))
-            in_frame, _ = W.person_in_frame(pose, now_feet)
+            in_frame, _ = W.person_in_frame(pose, now_feet, pair.slave.video)
 
             aim_errors.append(aim_err)
             lag_errors.append(lag_err)
@@ -457,18 +499,19 @@ class Lab:
         log(f"person wholly in {slave}'s picture: {sum(framed)}/{len(framed)}; worst zoom miss {max(zoom_errors):.4f}")
         mean = statistics.mean(aim_errors)
         p95 = _percentile(aim_errors, 95)
-        require(mean < 1.0 and p95 < 1.5, f"{slave}: aim error mean {mean:.2f}°, p95 {p95:.2f}°: expected under 1° / 1.5°")
+        self.metrics.update(aim_mean=mean, aim_p95=p95, aim_framed=sum(framed) / len(framed))
+        self.expect(mean < 1.0 and p95 < 1.5, f"{slave}: aim error mean {mean:.2f}°, p95 {p95:.2f}°: expected under 1° / 1.5°")
         # Float on the wire and the distance of the feet against the floor's: well under a hundredth.
-        require(max(zoom_errors) < 0.03, f"{slave} was zoomed {max(zoom_errors):.3f} away from its samples")
-        require(sum(framed) / len(framed) > 0.9, f"the person is out of {slave}'s picture too often")
-        log(f"aim-check of {slave} passed")
+        self.expect(max(zoom_errors) < 0.03, f"{slave} was zoomed {max(zoom_errors):.3f} away from its samples")
+        self.expect(sum(framed) / len(framed) > 0.9, f"the person is out of {slave}'s picture too often")
+        log(f"aim-check of {slave} done")
 
     # ── bind / run ──────────────────────────────────────────────────────────────
 
     def bind(self):
         self.vms.login()
         for pair in self.pairs:
-            if pair is W.PLAN_PAIR:
+            if pair.name == W.PLAN_PAIR.name:
                 self._check_plan_is_apart(pair)
             self._bind(pair)
 
@@ -544,12 +587,12 @@ class Lab:
             pose = self.sim.camera_pose(pair.slave.id)
             person = self.sim.walker_pose(W.WALKER_ID)
             cam = (pose["position"]["x"], pose["position"]["y"], pose["position"]["z"])
-            axis = W.direction(pose["heading"], pose["pitch"])
+            axis = W.axis_of(pose)
             feet = (person["x"], person["y"], person["z"])
             err = W.angle_between(axis, tuple(f - c for f, c in zip(feet, cam)))
             # The person in the slave's picture, from the true pose: the slave has no analytics of
             # its own in this world, by design.
-            in_frame, fill = W.person_in_frame(pose, feet)
+            in_frame, fill = W.person_in_frame(pose, feet, pair.slave.video)
             framed.append(in_frame)
             if in_frame:
                 fills.append(fill)
@@ -585,14 +628,137 @@ class Lab:
         log(f"commands: {len(arrivals)}; tracking state: {json.dumps(state)}")
 
         mean, p95 = statistics.mean(arrivals), _percentile(arrivals, 95)
-        require(mean < 1.5 and p95 < 2.5, f"{slave}: arrival error mean {mean:.2f}°, p95 {p95:.2f}°")
-        require(_percentile(tracking, 95) < 6, f"{slave}: tracking error p95 {_percentile(tracking, 95):.2f}°")
-        require(sum(framed) / len(framed) > 0.9, f"the person is out of {slave}'s picture too often")
+        self.metrics.update(arrival_mean=mean, arrival_p95=p95, tracking_p95=_percentile(tracking, 95),
+                            run_framed=sum(framed) / len(framed), fill=median_fill)
+        self.expect(mean < 1.5 and p95 < 2.5, f"{slave}: arrival error mean {mean:.2f}°, p95 {p95:.2f}°")
+        self.expect(_percentile(tracking, 95) < 6, f"{slave}: tracking error p95 {_percentile(tracking, 95):.2f}°")
+        self.expect(sum(framed) / len(framed) > 0.9, f"the person is out of {slave}'s picture too often")
         # Framed for FRAME_WIDTH_M the person fills about 40% of the picture's height; at the wide
         # end, under 10%. A quarter is clearly zoomed and leaves room for the frames in transit.
-        require(not zoomed or median_fill > 0.25,
-                f"{slave} is not zoomed in on the person: median share of the picture {median_fill:.2f}")
-        log(f"run of {slave} passed")
+        self.expect(not zoomed or median_fill > 0.25,
+                    f"{slave} is not zoomed in on the person: median share of the picture {median_fill:.2f}")
+        log(f"run of {slave} done")
+
+
+    # ── matrix ──────────────────────────────────────────────────────────────────
+
+    def matrix(self):
+        names = self.args.mounts.split(",") if self.args.mounts else [m.name for m in W.MOUNTS]
+        unknown = [n for n in names if n not in W.MOUNTS_BY_NAME]
+        require(not unknown, f"no such mount: {', '.join(unknown)} (world.MOUNTS has {', '.join(W.MOUNTS_BY_NAME)})")
+        level = W.MOUNTS_BY_NAME["level"]
+        self.hang(level)
+        self.pairs = self.all_pairs
+        self.up()
+        self.provision()
+        rows = []
+        # The master the ground marks in ta_vms were taken for; None when they are not to be trusted.
+        ground_for = None
+        try:
+            for name in names:
+                row, ground_for = self._matrix_row(W.MOUNTS_BY_NAME[name], ground_for)
+                rows.append(row)
+        finally:
+            # Level and calibrated again, so the ordinary steps find the bench as they left it.
+            log("\nhanging the map pair level again and calibrating it")
+            pair = self._rehang(level)
+            if pair.master != ground_for:
+                self._calibrate_ground_afresh(pair)
+            self._calibrate_ptz_afresh(pair)
+        table = _matrix_table(rows)
+        log("\n" + table)
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        (STATE_DIR / "matrix.json").write_text(json.dumps(rows, indent=2, default=str))
+        (STATE_DIR / "matrix.txt").write_text(table + "\n")
+        log(f"\nwritten to {STATE_DIR / 'matrix.txt'} and matrix.json")
+        unexpected = [r["mount"] for r in rows if r["expect"] == "pass" and (r["failures"] or r.get("notes"))]
+        require(not unexpected, f"mounts expected to pass did not: {', '.join(unexpected)}")
+
+    def _rehang(self, mount):
+        """Hangs the map pair as mount says, in the running sim, and works on that pair alone."""
+        self.hang(mount)
+        pair = next(p for p in self.all_pairs if p.name == W.MAP_PAIR.name)
+        self.pairs = [pair]
+        for camera in (pair.master, pair.slave):
+            self.sim.put_camera(W.camera_json(camera, self.onvif_base + W.camera_index(camera), pair.limits))
+        return pair
+
+    def _calibrate_ground_afresh(self, pair):
+        """The master's marks dropped and taken again, once its boxes come through: a rehung master
+        changes its stream."""
+        self.vms.put_ground_geo(self.cam_id(pair.master), [])
+        require(self._master_boxes(pair, seconds=60, wanted=3), f"no boxes from {self.cam_id(pair.master)} after rehanging it")
+        self.calibrate(ptz=False)
+
+    def _calibrate_ptz_afresh(self, pair):
+        """The slave's observations dropped first, so a calibration that stops halfway cannot leave
+        the previous mount's fit behind to be aimed with."""
+        self.vms.put_ptz_geo(self.cam_id(pair.slave), [])
+        self.calibrate(ground=False)
+
+    def _matrix_row(self, mount, ground_for):
+        """Runs every step for one mount; returns its row and the master the ground marks now fit."""
+        log(f"\n══ {mount.name}: {mount.note} (expected to {mount.expect}) ══")
+        pair = self._rehang(mount)
+        self.metrics = {}
+        row = {"mount": mount.name, "expect": mount.expect, "note": mount.note, "failures": []}
+
+        def step(label, action):
+            try:
+                action()
+                return True
+            except (Failed, HttpError) as e:
+                row["failures"].append(f"{label}: {e}")
+                log(f"  {label} failed: {e}")
+                return False
+
+        if pair.master == ground_for:
+            log(f"  {self.cam_id(pair.master)} hangs as before: its ground marks stand")
+            ground = True
+        else:
+            ground = step("ground marks", lambda: self._calibrate_ground_afresh(pair))
+        ptz = step("PTZ calibration", lambda: self._calibrate_ptz_afresh(pair))
+        # A fit that missed its thresholds is still a fit: aim with it and see.
+        fitted = ptz or bool(self.vms.get_ptz_geo(self.cam_id(pair.slave)).get("fitted"))
+        if fitted:
+            step("aim-check", lambda: self._aim_check(pair, self.provisioned(pair)["space_id"]))
+        if fitted and ground and step("bind", lambda: self._bind(pair)):
+            step("run", lambda: self._run(pair))
+        row.update(self.metrics)
+        return row, (pair.master if ground else None)
+
+
+def _matrix_table(rows):
+    """One line per mount. Foot and ground are blank where the master's marks were not taken again."""
+    columns = [
+        ("mount", 15, lambda r: r["mount"]),
+        ("expect", 7, lambda r: r["expect"]),
+        ("PTZ LOO", 7, lambda r: _num(r.get("ptz_residual"), ".4f")),
+        ("foot", 5, lambda r: _num(r.get("foot_miss"), ".3f")),
+        ("ground m", 8, lambda r: _num(r.get("ground_residual"), ".2f")),
+        ("aim mean/p95°", 13, lambda r: f"{_num(r.get('aim_mean'), '.2f')}/{_num(r.get('aim_p95'), '.2f')}"),
+        ("arrival mean/p95°", 17, lambda r: f"{_num(r.get('arrival_mean'), '.2f')}/{_num(r.get('arrival_p95'), '.2f')}"),
+        ("track p95°", 10, lambda r: _num(r.get("tracking_p95"), ".2f")),
+        ("framed", 6, lambda r: _num(r.get("run_framed", r.get("aim_framed")), ".0%")),
+    ]
+
+    def outcome(r):
+        if r["failures"]:
+            return f"FAILED {r['failures'][0]}"
+        if r.get("notes"):
+            return f"{len(r['notes'])} note(s), first: {r['notes'][0]}"
+        return "ok"
+
+    lines = ["  ".join(f"{title:<{width}}" for title, width, _ in columns) + "  outcome",
+             "  ".join("-" * width for _, width, _ in columns) + "  -------"]
+    for r in rows:
+        lines.append("  ".join(f"{value(r):>{width}}" if i > 1 else f"{value(r):<{width}}"
+                               for i, (_, width, value) in enumerate(columns)) + f"  {outcome(r)}")
+    return "\n".join(lines)
+
+
+def _num(value, fmt):
+    return "-" if value is None else format(value, fmt)
 
 
 def _percentile(values, p):
@@ -610,7 +776,7 @@ def _stats(label, values):
 def main():
     env = read_env()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("step", choices=["up", "provision", "calibrate", "aim-check", "bind", "run", "down", "status", "all"])
+    p.add_argument("step", choices=["up", "provision", "calibrate", "aim-check", "bind", "run", "down", "status", "all", "matrix"])
     p.add_argument("--vms", default=f"http://localhost:{env.get('WEB_VMS_PORT', '5134')}")
     p.add_argument("--sim-dir", default=str(REPO.parent / "OnvifSim"))
     p.add_argument("--sim-port", type=int, default=8090)
@@ -630,6 +796,9 @@ def main():
     p.add_argument("--reset", action="store_true",
                    help="provision: re-add cameras that already exist and photograph the plan again")
     p.add_argument("--purge", action="store_true", help="down: also remove the cameras and the spaces from ta_vms")
+    p.add_argument("--mount", choices=list(W.MOUNTS_BY_NAME), default="level",
+                   help="how the map pair hangs for the ordinary steps (world.MOUNTS)")
+    p.add_argument("--mounts", help="matrix: a comma-separated subset of world.MOUNTS, in that order")
     p.add_argument("--no-zoom", action="store_true",
                    help="calibrate: record no zoom samples, so the slaves stay wide as they did before zoom")
     args = p.parse_args()
@@ -639,7 +808,7 @@ def main():
     steps = {
         "up": [lab.up], "provision": [lab.provision], "calibrate": [lab.calibrate],
         "aim-check": [lab.aim_check], "bind": [lab.bind], "run": [lab.run],
-        "down": [lab.down], "status": [lab.status],
+        "down": [lab.down], "status": [lab.status], "matrix": [lab.matrix],
         "all": [lab.up, lab.provision, lab.calibrate, lab.aim_check, lab.bind, lab.run],
     }[args.step]
     try:

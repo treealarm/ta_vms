@@ -135,6 +135,21 @@ landmarks; landmarks spread over the area the camera will actually be aimed at k
 Cameras whose `GetStatus` is a stub are refused with a message — they can still be aimed by presets
 through the slave binding. What the fit computes is under [Algorithms](#algorithms).
 
+**Mounts and the way cameras count their axes.** ONVIF's generic position space says nothing about
+direction: one camera's pan grows clockwise, another's anticlockwise; tilt may count up or down; the
+units may be -1..1 or degrees. A camera hung upside down is usually set by its installer to turn its
+picture back (the video source's `Rotate`) and to count both axes the other way (PTZ
+`PTControlDirection` `Reverse`), but not always, and not always both. None of that needs a setting
+here: each of the two lines takes its axis' sign and scale from the landmarks, so a reversed axis,
+a camera upside down with or without its picture turned and with or without `Reverse`, and degrees
+instead of -1..1 all calibrate the same way. ta_vms reads neither `Rotate` nor `Reverse`, and does
+not need to. What the lines cannot take is a pan axis that is not vertical — a bracket that leans,
+a camera on its side ("on a fence", where pan sweeps up and down and tilt across) — and the pan
+seam among the landmarks. A fixed camera's ground mapping takes its picture as it comes, turned or
+tall; but its marks and the master's aim point are the bottom of a person's box, which in a picture
+left upside down is their head. The bench in `tests/onvifsim` hangs a pair each of these ways
+(`onvifsim_lab.py matrix`); its README has what each does to the aim.
+
 ## Calibrating a fixed camera against the ground
 
 A fixed camera sees the floor through a projective transform, so four points known both in its
@@ -385,6 +400,13 @@ itself only compiles.
   A richer model is chosen only when its held-out misses are actually smaller, so extra parameters
   do not fit noise. Decide which stages are needed from 8–10 observations on a real camera that
   takes absolute positions — none is on the bench yet.
+- **The pan seam among the landmarks.** A head that pans round and round reports a jump of its
+  whole range where its counting wraps, and the two lines take that jump for part of the slope:
+  on the bench the aim is then off by tens of degrees. The seam lies wherever the installer
+  happened to turn the camera, so it falls inside a sector of 90° one time in four. Unwrapping the
+  readings on a circle, as the azimuths already are, removes it, once the fit knows how long a full
+  turn is in the camera's units (2 in the generic space, 360 in degrees: the camera's declared pan
+  range, `GetConfigurationOptions`, which nothing reads yet).
 - **A dead zone in degrees for a survey.** A survey slave's dead zone is 0.02 in the camera's own
   units. On a head whose generic range is a full turn, that is 3.6° of pan. That threshold, not the
   calibration, is what dominates how far behind a walking person it lags. (On the map method it is

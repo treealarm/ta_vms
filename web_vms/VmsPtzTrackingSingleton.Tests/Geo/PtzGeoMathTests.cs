@@ -57,6 +57,48 @@ public class PtzGeoMathTests
     Assert.False(aim.Extrapolated);
   }
 
+  // How cameras count their axes differs, and ONVIF's generic space says nothing about direction: pan
+  // may grow clockwise or anticlockwise, tilt up or down, the units may be -1..1 or degrees, and a
+  // camera hung upside down (or set to "reverse") has both axes turned round. Each is a camera the
+  // fit must recover without being told which it is.
+  public static TheoryData<string> Conventions => ["clockwise", "anticlockwise", "tilt down", "upside down", "degrees", "degrees upside down"];
+
+  private static (float Pan, float Tilt) Reading(string convention, Bearing b)
+  {
+    double pan = PtzGeoMath.Wrap180(b.AzimuthDeg - 30), tilt = b.ElevationDeg;
+    return convention switch
+    {
+      "clockwise" => ((float)(pan / 180), (float)(tilt / 45 + 0.02)),
+      "anticlockwise" => ((float)(-pan / 180), (float)(tilt / 45 + 0.02)),
+      "tilt down" => ((float)(pan / 180), (float)(-tilt / 55 - 0.3)),
+      "upside down" => ((float)(-pan / 180), (float)(-tilt / 55 - 0.3)),
+      "degrees" => ((float)pan, (float)tilt),
+      "degrees upside down" => ((float)-pan, (float)(-tilt + 5)),
+      _ => throw new ArgumentOutOfRangeException(nameof(convention)),
+    };
+  }
+
+  [Theory]
+  [MemberData(nameof(Conventions))]
+  public void RecoversTheCamera_HoweverItCountsItsAxes(string convention)
+  {
+    GeoObservationSample Seen(string id, double east, double north, double height = 0)
+    {
+      var b = To(east, north, height);
+      var (pan, tilt) = Reading(convention, b);
+      return new GeoObservationSample(id, b, pan, tilt);
+    }
+    var fit = Fit([Seen("a", 40, 60), Seen("b", 80, 20), Seen("c", 15, 25, 3), Seen("d", 60, 70, 1)]);
+
+    Assert.All(fit.Residuals.Values, r => Assert.True(Math.Abs(r!.Pan) < 1e-3 && Math.Abs(r.Tilt) < 1e-3, $"residual {r}"));
+    var target = To(45, 35, 1.7);
+    var (truePan, trueTilt) = Reading(convention, target);
+    var aim = PtzGeoMath.Project(fit, target);
+    // To a thousandth of each axis' own unit.
+    Assert.Equal(truePan, aim.Pan, 3);
+    Assert.Equal(trueTilt, aim.Tilt, 3);
+  }
+
   [Fact]
   public void TwoLandmarksAreEnoughButCannotBeChecked()
   {

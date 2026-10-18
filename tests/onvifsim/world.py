@@ -17,10 +17,11 @@ Run it directly to print the world JSON and the expected numbers:
 """
 
 import base64
+import dataclasses
 import math
 import struct
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # WGS84 anchor of the sim's origin: open farmland in Maryland, which also makes a presentable map.
 # Not on the equator, so a cos(latitude) left out anywhere shows up as an east-west error instead
@@ -41,11 +42,16 @@ class Camera:
     y: float  # height above the (flat, zero) terrain
     z: float
     heading: float  # degrees clockwise from north
-    pitch: float  # degrees, up positive
+    pitch: float  # degrees, up positive; for a PTZ camera, how far its pan axis leans
     hfov: float = 70.0  # fixed cameras; a PTZ camera's comes from its zoom
     # Whether the camera boxes people in its metadata track. Only the master's boxes are used;
     # the slave's would be drawn over its video and mean nothing to the aiming.
     analytics: bool = True
+    # The mount turned about its own axis (180: upside down, 90: on its side), and the picture turned
+    # back digitally, clockwise (OnvifSim's video.rotate); see MOUNTS.
+    roll: float = 0.0
+    rotate: int = 0
+    video: tuple = (640, 360)
 
     @property
     def position(self):
@@ -60,6 +66,9 @@ class PtzLimits:
     tilt_max: float = 20.0
     fov_wide: float = 60.0
     fov_tele: float = 3.0
+    # ONVIF counts the axis the other way round (OnvifSim's ptz.panReverse / tiltReverse).
+    pan_reverse: bool = False
+    tilt_reverse: bool = False
 
 
 @dataclass(frozen=True)
@@ -94,7 +103,7 @@ PLAN_ALTITUDE = 120.0
 PLAN_HALF_WIDTH = 48.0  # metres on the ground; the half-height follows from the frame's aspect
 TOPDOWN = Camera(
     "topdown", "Plan camera", "fixed", PLAN_CENTRE[0], PLAN_ALTITUDE, PLAN_CENTRE[1], heading=0.0, pitch=-90.0,
-    hfov=2 * math.degrees(math.atan(PLAN_HALF_WIDTH / PLAN_ALTITUDE)), analytics=False)
+    hfov=2 * math.degrees(math.atan(PLAN_HALF_WIDTH / PLAN_ALTITUDE)), analytics=False, video=(PLAN_W, PLAN_H))
 
 
 @dataclass(frozen=True)
@@ -111,6 +120,11 @@ PLAN_PAIR = Pair("plan", MASTER2, SLAVE2)
 PAIRS = [MAP_PAIR, PLAN_PAIR]
 # The cameras ta_vms gets, in the order of their ONVIF ports.
 STREAMING_CAMERAS = [c for pair in PAIRS for c in (pair.master, pair.slave)]
+
+
+def camera_index(camera):
+    """Where a camera (or a mount variant of it, which keeps its id) stands in STREAMING_CAMERAS."""
+    return next(i for i, c in enumerate(STREAMING_CAMERAS) if c.id == camera.id)
 
 # Not green: the grass is.
 LANDMARKS = [
@@ -234,38 +248,63 @@ def angle_between(a, b):
 
 
 def ptz_degrees(camera, target):
-    """Pan and tilt (degrees, relative to the mount) that centre target: OnvifSim's head is exact."""
+    """Pan and tilt (degrees, relative to the mount) that centre target, for a level mount only:
+    check() and summary() use it on the base world. Any other mount is aimed by OnvifSim itself
+    (Sim.aim), which knows how its mounts turn."""
     az, el, _ = bearing(camera.position, target)
     return wrap180(az - camera.heading), el - camera.pitch
 
 
 def to_generic(pan, tilt, limits=SLAVE_LIMITS):
-    """OnvifSim's ONVIF generic position for a head in degrees (CameraPtz.ToGeneric)."""
+    """OnvifSim's ONVIF generic position for a head in degrees (CameraPtz.ToGeneric), a reversed
+    axis counted the other way round."""
     span = 360.0 if limits.pan_max - limits.pan_min >= 360.0 else limits.pan_max - limits.pan_min
     x = (pan - limits.pan_min) / span * 2.0 - 1.0
     y = (tilt - limits.tilt_min) / (limits.tilt_max - limits.tilt_min) * 2.0 - 1.0
-    return x, y
+    return (-x if limits.pan_reverse else x), (-y if limits.tilt_reverse else y)
 
 
-def project(camera, point, hfov=None, width=VIDEO_W, height=VIDEO_H):
-    """Where a sim point lands in a camera's picture, 0..1 from the top-left; None behind it."""
+def _cross(a, b):
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def _dot(a, b):
+    return sum(x * y for x, y in zip(a, b))
+
+
+def level_pose(camera):
+    """A pose as OnvifSim's /pose reports one, for a camera standing as configured with no roll and
+    no rotation: what check() and summary() need before any simulator runs."""
     fwd = direction(camera.heading, camera.pitch)
     h = math.radians(camera.heading)
     right = (math.cos(h), 0.0, math.sin(h))
-    up = (
-        right[1] * fwd[2] - right[2] * fwd[1],
-        right[2] * fwd[0] - right[0] * fwd[2],
-        right[0] * fwd[1] - right[1] * fwd[0],
-    )
-    d = tuple(p - c for p, c in zip(point, camera.position))
-    depth = sum(a * b for a, b in zip(d, fwd))
+    vec = lambda v: {"x": v[0], "y": v[1], "z": v[2]}  # noqa: E731
+    return {"position": vec(camera.position), "forward": vec(fwd), "right": vec(right), "up": vec(_cross(right, fwd)),
+            "hfov": camera.hfov}
+
+
+def project_pose(pose, point, width=VIDEO_W, height=VIDEO_H):
+    """Where a sim point lands in the picture of a camera at a pose (OnvifSim's /pose: the picture's
+    own axes, so any mount and rotation), 0..1 from the top-left; None behind it."""
+    axis = lambda name: (pose[name]["x"], pose[name]["y"], pose[name]["z"])  # noqa: E731
+    fwd, right, up, eye = axis("forward"), axis("right"), axis("up"), axis("position")
+    d = tuple(p - c for p, c in zip(point, eye))
+    depth = _dot(d, fwd)
     if depth <= 0:
         return None
-    tan_h = math.tan(math.radians((hfov or camera.hfov) / 2.0))
+    tan_h = math.tan(math.radians(pose["hfov"] / 2.0))
     tan_v = tan_h / (width / height)
-    x_ndc = sum(a * b for a, b in zip(d, right)) / depth / tan_h
-    y_ndc = sum(a * b for a, b in zip(d, up)) / depth / tan_v
-    return (x_ndc + 1.0) / 2.0, (1.0 - y_ndc) / 2.0
+    return (_dot(d, right) / depth / tan_h + 1.0) / 2.0, (1.0 - _dot(d, up) / depth / tan_v) / 2.0
+
+
+def project(camera, point, width=VIDEO_W, height=VIDEO_H):
+    """project_pose for a camera standing level as configured."""
+    return project_pose(level_pose(camera), point, width, height)
+
+
+def axis_of(pose):
+    """Where a camera at a pose (OnvifSim's /pose) looks, as a unit vector in sim coordinates."""
+    return pose["forward"]["x"], pose["forward"]["y"], pose["forward"]["z"]
 
 
 def zoom_to_hfov(zoom, limits=SLAVE_LIMITS):
@@ -304,22 +343,84 @@ def zoom_by_distance(samples, distance):
     return samples[-1][1]
 
 
-def _pose_camera(pose):
-    p = pose["position"]
-    return Camera("pose", "", "fixed", p["x"], p["y"], p["z"], pose["heading"], pose["pitch"], pose["hfov"])
-
-
-def person_in_frame(pose, feet, height=WALKER_HEIGHT):
+def person_in_frame(pose, feet, size=(VIDEO_W, VIDEO_H), height=WALKER_HEIGHT):
     """Where a standing person is in a camera's picture, for a pose as OnvifSim reports it:
-    (whether both their feet and their head are inside it, the share of its height they fill)."""
-    camera = _pose_camera(pose)
-    low = project(camera, feet)
-    high = project(camera, (feet[0], feet[1] + height, feet[2]))
+    (whether both their feet and their head are inside it, how much of the picture they span from
+    feet to head -- its height for an upright picture, its width for one turned on its side)."""
+    low = project_pose(pose, feet, *size)
+    high = project_pose(pose, (feet[0], feet[1] + height, feet[2]), *size)
     if low is None or high is None:
         return False, 0.0
     inside = all(0.0 <= v <= 1.0 for v in (*low, *high))
-    return inside, abs(low[1] - high[1])
+    return inside, max(abs(low[0] - high[0]), abs(low[1] - high[1]))
 
+
+
+# ── Mounts: the ways a camera can hang ─────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class Mount:
+    """One way the map pair's cameras can be hung, for the matrix: overrides of the slave, of its
+    PTZ limits and of the master. `expect` is "pass" when every check of every step must hold, or
+    "measure" when the variant is run for its numbers: what the current fits make of a mount they
+    are known not to model."""
+    name: str
+    expect: str
+    note: str
+    # How the master's ground marks are taken: "boxes", the foot of the box of a person standing on
+    # each landmark (which also checks the box pipeline); or "clicked", where the landmark's foot
+    # really is in the picture, as an operator clicks it in the calibration dialog.
+    marks: str = "boxes"
+    slave: dict = field(default_factory=dict)
+    limits: dict = field(default_factory=dict)
+    master: dict = field(default_factory=dict)
+
+    def apply(self, pair):
+        return dataclasses.replace(
+            pair,
+            master=dataclasses.replace(pair.master, **self.master),
+            slave=dataclasses.replace(pair.slave, **self.slave),
+            limits=dataclasses.replace(pair.limits, **self.limits),
+        )
+
+
+def _seam_heading():
+    """A slave heading that puts its pan seam (pan = +-180) in the middle of the landmarks: the
+    camera's own zero points away from them."""
+    azimuths = [math.radians(bearing(SLAVE.position, (lm.x, 0.0, lm.z))[0]) for lm in LANDMARKS]
+    mean = math.degrees(math.atan2(sum(map(math.sin, azimuths)), sum(map(math.cos, azimuths))))
+    return (mean + 180.0) % 360.0
+
+
+# Hung upside down, the head looks down with positive tilt: its range turns over with it.
+_UPSIDE_DOWN_TILT = {"tilt_min": -20.0, "tilt_max": 90.0}
+
+MOUNTS = [
+    Mount("level", "pass", "upright on a pole, as the bench has always been"),
+    Mount("pan-reverse", "pass", "ONVIF pan counted the other way (anticlockwise)", limits={"pan_reverse": True}),
+    Mount("tilt-reverse", "pass", "ONVIF tilt counted the other way (down is positive)", limits={"tilt_reverse": True}),
+    Mount("install-mode", "pass", "upside down, the installer turned the picture and both ONVIF axes back",
+          slave={"roll": 180.0, "rotate": 180}, limits={**_UPSIDE_DOWN_TILT, "pan_reverse": True, "tilt_reverse": True}),
+    Mount("auto-flip", "pass", "upside down, the picture turned back but ONVIF pan and tilt left mirrored",
+          slave={"roll": 180.0, "rotate": 180}, limits=_UPSIDE_DOWN_TILT),
+    Mount("upside-down-raw", "pass", "upside down and nothing turned back: the picture is on its head",
+          slave={"roll": 180.0}, limits=_UPSIDE_DOWN_TILT),
+    Mount("lean-forward", "measure", "the pan axis leaning 10 degrees towards the yard (a sagging bracket)",
+          slave={"pitch": -10.0}),
+    Mount("lean-sideways", "measure", "the pan axis leaning 8 degrees sideways", slave={"roll": 8.0}),
+    Mount("fence", "measure", "on its side: pan sweeps up and down, tilt across",
+          slave={"roll": 90.0, "rotate": 90}, limits={"tilt_min": -90.0, "tilt_max": 90.0}),
+    Mount("seam", "measure", "turned so that the pan seam falls among the landmarks", slave={"heading": _seam_heading()}),
+    # Clicked marks: in a frame this tall a person beyond about 28 m is smaller than OnvifSim's smallest
+    # box (2.5% of the frame's height), so the far landmarks could not be marked by a person's box.
+    Mount("master-portrait", "measure", "master on its side for a corridor, picture turned upright and tall",
+          marks="clicked", master={"roll": 90.0, "rotate": 90, "video": (360, 640)}),
+    # Clicked marks, as an operator takes them: the box's foot, which the aim follows, is then the head.
+    Mount("master-flip", "measure", "master upside down with its picture left on its head",
+          marks="clicked", master={"rotate": 180}),
+]
+MOUNTS_BY_NAME = {m.name: m for m in MOUNTS}
 
 
 # ── The world OnvifSim is given ─────────────────────────────────────────────────
@@ -331,8 +432,10 @@ def _flat_terrain():
     return {"size": TERRAIN_SIZE, "resolution": TERRAIN_RESOLUTION, "heights": heights}
 
 
-def _camera_json(camera, onvif_port, width=VIDEO_W, height=VIDEO_H):
-    video = {"width": width, "height": height, "fps": 10, "quality": 70}
+def camera_json(camera, onvif_port, limits=SLAVE_LIMITS):
+    """A camera as OnvifSim's world.json and PUT /api/cameras/{id} take it."""
+    width, height = camera.video
+    video = {"width": width, "height": height, "fps": 10, "quality": 70, "rotate": camera.rotate}
     body = {
         "id": camera.id,
         "name": camera.name,
@@ -340,7 +443,7 @@ def _camera_json(camera, onvif_port, width=VIDEO_W, height=VIDEO_H):
         "position": {"x": camera.x, "y": camera.y, "z": camera.z},
         "heading": camera.heading,
         "pitch": camera.pitch,
-        "roll": 0,
+        "roll": camera.roll,
         "hFov": camera.hfov,
         "video": video,
         "h264": {"width": width, "height": height, "fps": 10, "bitrateKbps": 1024, "govLength": 10},
@@ -349,10 +452,11 @@ def _camera_json(camera, onvif_port, width=VIDEO_W, height=VIDEO_H):
         "users": USERS,
     }
     if camera.kind == "ptz":
-        lim = SLAVE_LIMITS
+        lim = limits
         body["ptz"] = {
             "panMin": lim.pan_min, "panMax": lim.pan_max, "tiltMin": lim.tilt_min, "tiltMax": lim.tilt_max,
             "fovWide": lim.fov_wide, "fovTele": lim.fov_tele,
+            "panReverse": lim.pan_reverse, "tiltReverse": lim.tilt_reverse,
             "pan": 0, "tilt": -10, "zoom": 0, "home": {"pan": 0, "tilt": -10, "zoom": 0}, "presets": [],
         }
     return body
@@ -367,7 +471,10 @@ def walker_json(route, speed=WALKER_SPEED):
     }
 
 
-def build_world(onvif_base_port, with_walker=True):
+def build_world(onvif_base_port, pairs=None, with_walker=True):
+    """The whole world; pairs, when given, replace PAIRS (a mount variant of one of them), in
+    PAIRS' order so the ONVIF ports stay where they are."""
+    pairs = pairs or PAIRS
     landmarks = [
         {
             "id": f"lm-{lm.name}", "type": "box",
@@ -396,10 +503,11 @@ def build_world(onvif_base_port, with_walker=True):
         "roads": roads,
         "walkers": walkers,
         "cameras": [
-            *[_camera_json(camera, onvif_base_port + i) for i, camera in enumerate(STREAMING_CAMERAS)],
+            *[camera_json(camera, onvif_base_port + camera_index(camera), pair.limits)
+              for pair in pairs for camera in (pair.master, pair.slave)],
             # Never added to ta_vms: the harness only takes a snapshot from it. OnvifSim gives every
             # camera an ONVIF port all the same, the next one, which nothing maps out of the container.
-            _camera_json(TOPDOWN, onvif_base_port + len(STREAMING_CAMERAS), PLAN_W, PLAN_H),
+            camera_json(TOPDOWN, onvif_base_port + len(STREAMING_CAMERAS)),
         ],
     }
 
