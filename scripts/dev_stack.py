@@ -64,7 +64,7 @@ ORDER = [
     "web-vms",
 ]
 
-# The second node (its own media_server, VmsFs, VmsOnvif and actor host, pinned to server id
+# The second node (its own video_srv, VmsFs, VmsOnvif and actor host, pinned to server id
 # "vms-2") used to be startable with --two-nodes. Its launch configurations were removed from
 # .vscode/launch.json, so there is nothing left to start; bringing it back means adding those
 # configurations and matching entries in web_vms/dapr.yaml, after which they appear here on their
@@ -150,7 +150,7 @@ def _services() -> dict[str, dict]:
 
     by_dir: dict[Path, dict] = {}
     for cfg in launch["configurations"]:
-        # Two configurations share media_server/: the Windows one only differs in how it is
+        # Two configurations share video_srv/: the Windows one only differs in how it is
         # debugged, and this script runs the binary itself.
         if not cfg.get("cwd") or cfg["name"].endswith("[Windows]"):
             continue
@@ -303,8 +303,8 @@ def build(services: list[dict]) -> None:
         subprocess.run(["dotnet", "build", str(ROOT / "web_vms" / "web_vms.sln"), "-v", "q",
                         "--nologo"], check=True)
     if any(not s["dotnet"] for s in services):
-        print("building media_server ...")
-        subprocess.run(["cmake", "--build", str(ROOT / "media_server" / "build"), "--target",
+        print("building video_srv ...")
+        subprocess.run(["cmake", "--build", str(ROOT / "video_srv" / "build"), "--target",
                         "vms"], check=True)
 
 

@@ -3,7 +3,7 @@ namespace web_vms.Types.Recording;
 /// <summary>
 /// A recording mode, spelled once.
 ///
-/// Each service already carries this concept in its own shape: VmsFs and media_server use the
+/// Each service already carries this concept in its own shape: VmsFs and video_srv use the
 /// generated <c>Vms.Cfg.RecordingMode</c> enum, the REST DTOs use the strings "continuous" /
 /// "prealarm" / "off". The two generated enums are distinct CLR types in distinct assemblies —
 /// VmsFs and VmsCfg each compile vms_cfg.proto for themselves — so neither of them can be the

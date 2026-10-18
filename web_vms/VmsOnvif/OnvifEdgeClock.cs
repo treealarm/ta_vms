@@ -13,7 +13,7 @@ namespace VmsOnvif;
 /// timestamp handed to the device is in camera time, and nothing outside this service ever sees the
 /// camera's scale.
 ///
-/// The import path in media_server needs no correction of its own: its RTSP seek is expressed as
+/// The import path in video_srv needs no correction of its own: its RTSP seek is expressed as
 /// <c>start_ts − recording_start_ts</c>, a difference, so a constant offset cancels out as long as
 /// both ends were converted the same way — and the clip then gets stamped in our time by
 /// construction.

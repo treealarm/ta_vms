@@ -34,7 +34,7 @@ bool cfg_client::list_cameras(std::vector<vms::cfg::CameraSetup>& result)
 {
   if (m_server_id.empty())
   {
-    logger::instance().error("APP_ID env var must be set before requesting media_server cameras");
+    logger::instance().error("APP_ID env var must be set before requesting video_srv cameras");
     return false;
   }
 

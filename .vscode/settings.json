@@ -10,7 +10,7 @@
     // which names the missing service and the command that starts it -- was being thrown away.
     "debug.onTaskErrors": "showErrors",
     "workbench.colorTheme": "Light 2026",
-    "cmake.sourceDirectory": "${workspaceFolder}/media_server",
+    "cmake.sourceDirectory": "${workspaceFolder}/video_srv",
     "cmake.configurePreset": "linux-default",
-    "cmake.buildDirectory": "${workspaceFolder}/media_server/build"
+    "cmake.buildDirectory": "${workspaceFolder}/video_srv/build"
 }

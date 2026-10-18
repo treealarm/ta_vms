@@ -309,7 +309,7 @@
                 // This service's own sidecar, per web_vms/dapr.yaml.
                 { "name": "DAPR_GRPC_PORT", "value": "51009" },
                 { "name": "PUBSUB_NAME", "value": "orderpubsub" },
-                // The system's Intel driver, as for media_server below. Without it the
+                // The system's Intel driver, as for video_srv below. Without it the
                 // encoder falls back to the CPU and still works.
                 { "name": "LIBVA_DRIVER_NAME", "value": "iHD" },
                 { "name": "LIBVA_DRIVERS_PATH", "value": "/usr/lib/x86_64-linux-gnu/dri" }
@@ -334,7 +334,7 @@
             "request": "launch",
             "preLaunchTask": "build:all",
             "postDebugTask": "dapr:vms:stop",
-            "program": "${workspaceFolder}/media_server/build/vms",
+            "program": "${workspaceFolder}/video_srv/build/vms",
             "args": [],
             "environment": [
                 {
@@ -420,7 +420,7 @@
                     "value": "localhost"
                 }
             ],
-            "cwd": "${workspaceFolder}/media_server",
+            "cwd": "${workspaceFolder}/video_srv",
             "stopAtEntry": false,
             "MIMode": "gdb",
             "externalConsole": false,
@@ -482,7 +482,7 @@
             "request": "launch",
             "preLaunchTask": "build:all",
             "postDebugTask": "dapr:vms:stop",
-            "program": "${workspaceFolder}/media_server/build/vms.exe",
+            "program": "${workspaceFolder}/video_srv/build/vms.exe",
             "args": [],
             "environment": [
                 {
@@ -550,7 +550,7 @@
                     "value": "localhost"
                 }
             ],
-            "cwd": "${workspaceFolder}/media_server",
+            "cwd": "${workspaceFolder}/video_srv",
             "stopAtEntry": false,
             "console": "integratedTerminal"
         },
@@ -580,7 +580,7 @@
             // C++ build finishes in about a second while ten .NET launches queue behind one
             // dotnet:build, and the vms sidecar ends up starting some 30 seconds ahead of vmscfg
             // — a gap that has been observed to leave it unable to resolve app id vmscfg at all,
-            // so media_server never gets its camera list and no stream is ever published.
+            // so video_srv never gets its camera list and no stream is ever published.
             // Teardown: VS Code does not stop tasks when a debug session ends, so a per-service
             // sidecar task means one surviving terminal per service to close by hand after Stop
             // (stopAll governs debug sessions only). One task leaves one terminal.

@@ -9,7 +9,7 @@ namespace VmsFs;
 /// </summary>
 /// <remarks>
 /// There is no database table: the directory itself is the state. That keeps exports discoverable
-/// across a media_server restart (which drops the in-memory job registry) and makes the camera id
+/// across a video_srv restart (which drops the in-memory job registry) and makes the camera id
 /// available for authorization straight from the path, with no lookup.
 /// </remarks>
 public sealed class ExportFileStore

@@ -140,7 +140,7 @@ public class LiveController(
       return Ok(new ApiResponse(false, $"Config service error: {MediaServerError(ex)}"));
     }
 
-    // Camera config is delivered to media_server via pub/sub (config_subscriber).
+    // Camera config is delivered to video_srv via pub/sub (config_subscriber).
     // No need for a direct SetCameraState call here — config_subscriber handles it.
 
     return Ok(new ApiResponse(true, "ok"));
@@ -314,7 +314,7 @@ public class LiveController(
     // Config is the source of truth — save first.
     await _manager.SetSetup(normalized, ct);
 
-    // Push recording state + WebRTC flag directly to media_server (best-effort fast path).
+    // Push recording state + WebRTC flag directly to video_srv (best-effort fast path).
     // Config (rtsp_url, push URL, credentials) is not sent here — config_subscriber handles
     // that via pub/sub. Only state (recording policy + web_rtc) is set here for immediacy.
     Vms.Control.OperationStatus lastResponse = new() { Success = true, Message = "ok" };
@@ -378,7 +378,7 @@ public class LiveController(
 
     // Ensure WebRTC push is active for all webrtc-enabled streams (best-effort).
     // Disabled cameras/streams must not be (re)started here — config_subscriber already
-    // tore down their media_server pipeline, and polling this endpoint should not undo that.
+    // tore down their video_srv pipeline, and polling this endpoint should not undo that.
     var webRtcStreams = normalized.Disabled == true
       ? []
       : normalized.Streams

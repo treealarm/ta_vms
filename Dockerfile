@@ -6,10 +6,10 @@ FROM ta-deps AS builder
 WORKDIR /build
 COPY . /build
 
-WORKDIR /build/media_server
+WORKDIR /build/video_srv
 
 # The hardware live transcode is optional for a source build, never for an image: an image
-# that lost it would only show as a service burning CPU. See media_server/CMakeLists.txt.
+# that lost it would only show as a service burning CPU. See video_srv/CMakeLists.txt.
 RUN cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVMS_REQUIRE_TA_ROIENC=ON
 RUN cmake --build build -j1
 
@@ -51,7 +51,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy the WHOLE build directory
-COPY --from=builder /build/media_server/build /app
+COPY --from=builder /build/video_srv/build /app
 
 # copy the runtime libc++ and libva
 COPY --from=builder /runtime-libs /app

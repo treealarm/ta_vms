@@ -8,7 +8,7 @@ namespace VmsUtils;
 /// Resolved from VmsCfg once and then held. The assignment only changes when a camera or a MediaMTX
 /// server row is edited, and both publish a config change that MediaMtxConfigSubscriber turns into
 /// an invalidation here. Without the cache every reader-count poll — one per published stream, every
-/// few seconds, from every media_server — would put a GetOrAssign call on VmsCfg, which is exactly
+/// few seconds, from every video_srv — would put a GetOrAssign call on VmsCfg, which is exactly
 /// the per-request config read in a hot path that CLAUDE.md forbids.
 public sealed class MediaMtxServerCache(CfgService.CfgServiceClient cfgClient)
 {

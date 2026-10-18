@@ -144,7 +144,7 @@ public sealed class CameraStorageCache(
 
       // A disabled storage is out of service, not broken. Dropping it here -- before anything
       // tries to write to it -- is what keeps "on maintenance" distinguishable from "the disk
-      // failed": otherwise media_server walks it like any other candidate and logs the same
+      // failed": otherwise video_srv walks it like any other candidate and logs the same
       // "not accessible" it logs for a genuine fault.
       //
       // Only the write path goes through here. Clips already on a disabled storage stay

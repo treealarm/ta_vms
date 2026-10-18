@@ -18,7 +18,7 @@
 ///
 /// VmsOnvif and not the analytics service on purpose: the ONVIF schema knowledge belongs where the
 /// rest of it already is, VmsOnvif is node-local (so parsing spreads across nodes instead of
-/// converging on a single instance), and media_server already talks to it — see onvif_client — so
+/// converging on a single instance), and video_srv already talks to it — see onvif_client — so
 /// this adds no new dependency to the C++ core, only another RPC on a channel it already opens.
 ///
 /// Documents are queued and sent under a minimum interval between RPCs rather than a flush window

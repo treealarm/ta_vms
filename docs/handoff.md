@@ -43,7 +43,7 @@ Two things were actually responsible:
 **A detector and an operator reading the same high-bitrate path.** MediaMTX pushes one keyframe
 burst — about 1.5 MB, a thousand packets — to both readers in turn, so the browser's share
 arrives spread over twice as long and misses its 46 ms frame-assembly window. Fixed by having
-media_server publish to the worker directly (`EnsureAnalyticsPush`), which also ended the
+video_srv publish to the worker directly (`EnsureAnalyticsPush`), which also ended the
 absurdity of analytics forcing the WebRTC push on just to read the relay back.
 
 There are now two ways video reaches the detector without a media router in between, and they
@@ -76,7 +76,7 @@ Nine and sixteen cameras, all watched at once, on this machine:
 | 9 | 2.56 Mbps | 23 Mbps | 5% | 26% | clean |
 | 16 | 2.56 Mbps | 41 Mbps | 20% | 42% | clean |
 
-The count is not the limit; the stream size is. media_server is linear and cheap throughout —
+The count is not the limit; the stream size is. video_srv is linear and cheap throughout —
 sixteen streams for a fifth of one core, 114 MB resident. Reading files costs almost nothing:
 the expensive stage is the detector, and only because a clip whose keyframes are 5.27 s apart
 forces it to decode every frame. At a camera's usual one-second GOP it decodes keyframes alone,
@@ -115,7 +115,7 @@ a region's delta depend on what else is in frame, so a face appearing could flip
   and no watch ever starts. The symptom is a healthy-looking worker that never receives
   `StartWatch`.
 - `ANALYTICS_ADVERTISE_HOST` in `video_a/.env` is `analytics-worker`, a compose service name. Run
-  the worker on the host and media_server cannot resolve it; use `127.0.0.1`. With the variable
+  the worker on the host and video_srv cannot resolve it; use `127.0.0.1`. With the variable
   unset the code falls back to the machine's own hostname, which is right in both places.
 - The worker listens on **8555**, not 8554: a media router already answers on 8554 and the bind
   would simply fail where both run on one host.
@@ -132,5 +132,5 @@ a region's delta depend on what else is in frame, so a face appearing could flip
 `video_a` (the analytics engine) is a separate checkout and a separate repository. Today's work
 there is on branch **`adaptive-sampling`**, pushed but not merged: the frame sampler that decides
 between keyframe-only and full decode by measuring the stream, and the listen mode that lets
-media_server publish to it. Its `frame_sampler.h` explains the reasoning; the two repositories
+video_srv publish to it. Its `frame_sampler.h` explains the reasoning; the two repositories
 have to move together for the direct feed to work.

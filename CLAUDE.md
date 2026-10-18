@@ -15,13 +15,13 @@ For all new code and refactors, treat these as hard constraints rather than styl
 - **YAGNI:** do not implement features, extension points, or configuration knobs before there is a concrete requirement.
 - **DRY:** avoid duplicated business logic and duplicated protocol/format conversions; extract shared helpers when two paths must stay behaviorally identical.
 
-`media_server` is built with **C++20**. Prefer modern C++20 techniques and standard library facilities over legacy patterns whenever the result is clearer and safer (`std::span`, ranges, RAII, `std::optional`, `std::variant`, structured bindings, constexpr helpers, etc.). Do not introduce pre-C++20 workarounds where a direct C++20 solution is available.
+`video_srv` is built with **C++20**. Prefer modern C++20 techniques and standard library facilities over legacy patterns whenever the result is clearer and safer (`std::span`, ranges, RAII, `std::optional`, `std::variant`, structured bindings, constexpr helpers, etc.). Do not introduce pre-C++20 workarounds where a direct C++20 solution is available.
 
 ## MediaMTX API access
 
-All interaction with the MediaMTX REST API goes through **VmsUtils** (`vmsutils` Dapr app-id). No other service (media_server, VmsCfg, web_vms, etc.) calls the MediaMTX API directly.
+All interaction with the MediaMTX REST API goes through **VmsUtils** (`vmsutils` Dapr app-id). No other service (video_srv, VmsCfg, web_vms, etc.) calls the MediaMTX API directly.
 
-- media_server sends `camera_id + stream_name` to VmsUtils via gRPC
+- video_srv sends `camera_id + stream_name` to VmsUtils via gRPC
 - VmsUtils resolves the assigned MediaMTX server (with its `api_url`) from VmsCfg, then queries the MediaMTX REST API
 - Other services consume the results from VmsUtils — they do not hold or forward MediaMTX API URLs
 
@@ -38,9 +38,9 @@ Never re-grow a prod compose inside ta_vms.
 ## ta-deps is shared with video_a
 
 `ta-deps` (this repo's `ta-deps/Dockerfile`) is the C++ toolchain + vcpkg base image for **two**
-consumers: this repo's `media_server` (`vms` service) and the separate `video_a` repo's
+consumers: this repo's `video_srv` (`vms` service) and the separate `video_a` repo's
 `analytics-worker`, which builds `FROM ta-deps` via a sibling checkout (see `video_a/scripts/build.sh`).
-It installs protobuf/grpc/spdlog/ffmpeg for media_server plus openvino for video_a — when changing
+It installs protobuf/grpc/spdlog/ffmpeg for video_srv plus openvino for video_a — when changing
 its package list, consider both consumers.
 
 `video_a`'s CI does not follow this repo: it builds against the `treealarm/ta-deps` tag written in
@@ -49,7 +49,7 @@ bump that file in `video_a`, in a commit of its own — until then video_a keeps
 base, which is safe but means a package added here for video_a is not there yet.
 
 **Adding an ffmpeg feature to the shared vcpkg tree breaks every stale build directory.**
-`media_server` and `video_a` configure against `/mnt/wdblue/vcpkg` in classic mode, and both
+`video_srv` and `video_a` configure against `/mnt/wdblue/vcpkg` in classic mode, and both
 link ffmpeg through `pkg_check_modules(FFMPEG ...)` — as does `roi_transcode`, from its own
 repository, against the same tree. That call caches its answer in `CMakeCache.txt` and never
 asks pkg-config again. So when ffmpeg was once rebuilt there with `qsv,vaapi`,
@@ -65,7 +65,7 @@ built there by `./docker/build.sh`. The split is load-bearing for `qsv` — the 
 dispatcher is dead weight without `libmfx-gen1.2` in a runtime image — and for openvino,
 which is 143 of the 234 minutes ta-deps takes to build and which roi_transcode does not link.
 
-**`vaapi` is the exception, and it is in `ta-deps` deliberately.** media_server transcodes live
+**`vaapi` is the exception, and it is in `ta-deps` deliberately.** video_srv transcodes live
 HEVC to H.264 for every WebRTC viewer, one encode per stream, continuously; that is the largest
 sustained CPU cost in the service, and `h264_vaapi` measured 43% less CPU per stream on an
 i7-12700 iGPU. It brings the system `libdrm-dev` vcpkg's libva demands into `ta-deps` with it.
@@ -94,10 +94,10 @@ deliberately knows nothing of gRPC, Dapr or protobuf. It may be edited — it is
 everything that makes sense only for ta_vms lives here, not there.
 
 **It has three consumers, and the second raises the cost of a mistake.** Besides `roitrc`, it is
-linked by `media_server` — live HEVC→H.264 transcoding for WebRTC goes through
+linked by `video_srv` — live HEVC→H.264 transcoding for WebRTC goes through
 `ta_roienc::Transcoder`, because libavcodec has no automatic choice of hardware and
 `avcodec_find_encoder` always returns libx264 (see
-`media_server/writer/processors/hw_transcode_processor.cpp`).
+`video_srv/writer/processors/hw_transcode_processor.cpp`).
 **The default engine is `Engine::Vaapi`, not `Engine::Auto`**, and the difference is one of
 meaning: the library is linked only for the hardware. If the hardware engine did not open — or an
 `auto` chain set explicitly through `VMS_VIDEO_ENCODER` came down to a software one — the stream is
@@ -109,18 +109,18 @@ only the decoder (`ta_roienc_decode`) for the analytics worker; a rename in the 
 API has to be carried there too, and its submodule bumped in a commit of its own.
 
 **The library is private and ta_vms is public, so a build without it must keep working.**
-`media_server/CMakeLists.txt` adds it only when `roitrc/ta_roienc` is checked out; otherwise it
+`video_srv/CMakeLists.txt` adds it only when `roitrc/ta_roienc` is checked out; otherwise it
 warns, leaves `hw_transcode_processor` out (`VMS_WITH_TA_ROIENC` is undefined) and every HEVC
 stream takes `video_transcode_processor`. Such a binary refuses to start with `VMS_VIDEO_ENCODER`
 set, since it cannot honour it. `roitrc/CMakeLists.txt` warns and builds an empty `roitrc` target.
 The image build passes `-DVMS_REQUIRE_TA_ROIENC=ON`, so an image can never lose the hardware path
-silently — keep it that way. New code that touches `ta_roienc` from `media_server` goes behind the
+silently — keep it that way. New code that touches `ta_roienc` from `video_srv` goes behind the
 same switch.
 A broken submodule bump takes live video down, not only the clip queue. Bump the version in a
 commit of its own and check both paths.
 
 `roitrc/` is everything about re-compression that is ours: the gRPC contract `VmsFs` calls, the job
-model (it mirrors EdgeImport in `media_server`), the Dapr notifications and the `ROI_ALLOWED_ROOTS`
+model (it mirrors EdgeImport in `video_srv`), the Dapr notifications and the `ROI_ALLOWED_ROOTS`
 path sandbox. The dependency arrow is one and narrow: only the public API is linked —
 `ta_roienc/ta_roienc.h`, `ta_roienc/transcoder.h` and the headers they include — and nothing reaches into the
 library's internals. If new code needs the encoder's `src/`, that is a sign it is on the wrong side
@@ -155,7 +155,7 @@ Omitting any of these causes a startup crash or missing debug config in dev.
 When adding a new required environment variable to any service:
 1. Add it to `.env` (docker-compose local dev values).
 2. Add it to `../ta_install/.env` (production/installation values).
-3. Add it to **every** `launch.json` that launches that service — both the service-specific one (`web_vms/.vscode/launch.json`, `media_server/.vscode/launch.json`) and the root `.vscode/launch.json`. Missing it in any one of these causes a startup crash in dev.
+3. Add it to **every** `launch.json` that launches that service — both the service-specific one (`web_vms/.vscode/launch.json`, `video_srv/.vscode/launch.json`) and the root `.vscode/launch.json`. Missing it in any one of these causes a startup crash in dev.
 
 **No silent fallbacks.** If an environment variable is required, the service must throw (or return non-zero) immediately on startup when it is missing — never silently default to a hardcoded value. A missing required variable is a misconfiguration and must be visible immediately, not discovered at runtime through unexpected behavior.
 
@@ -184,7 +184,7 @@ Camera configuration changes travel on a single topic, `server-config-changed`, 
 `{"server_id": "...", "camera_ids": [...]}`. One event per affected server, not per camera.
 
 The event is delivered to every subscriber — each service has its own Dapr app id and therefore its
-own subscription — so `server_id` is what lets a node-scoped subscriber (`media_server`, `VmsOnvif`)
+own subscription — so `server_id` is what lets a node-scoped subscriber (`video_srv`, `VmsOnvif`)
 drop what is not its business *before* doing any work. Deciding that by fetching the camera from
 VmsCfg would cost one round trip on every instance in the deployment, all but one of which throws
 the answer away.
@@ -229,7 +229,7 @@ accumulating messages nobody reads.
 - `web_vms.Server` — stateless, scales by **replicas**. Keep it that way: no per-instance session
   tables (WHEP session state travels in an AES-GCM sealed token, see `WhepSessionToken`), no
   subscriptions, no local files.
-- `media_server` (`vms`) and `VmsFs` — scale by **sharding**: one pair per node, pinned to that
+- `video_srv` (`vms`) and `VmsFs` — scale by **sharding**: one pair per node, pinned to that
   node's storage. More capacity means another server↔FS pair, never a second replica of the same
   app id.
 - `VmsOnvif` and `VmsOnvifActors` — also **sharded by node**, for a different reason: ONVIF reaches a
@@ -290,7 +290,7 @@ endpoint and the "Entity State" debug tab in the frontend).
 **Publishing:**
 - C# services: call `builder.AddVmsDebugState()` (from `VmsLog`), then inject
   `EntityStatePublisher` and call `Publish(entityType, entityId, state)`.
-- C++ services: use `entity_state_publisher` (in `media_server/grpc_layer`) which wraps
+- C++ services: use `entity_state_publisher` (in `video_srv/grpc_layer`) which wraps
   `dapr_publisher::publish_json`.
 
 ## Maps & plans: positions belong to ta_vms
@@ -405,7 +405,7 @@ development of the video subsystem **must not contradict** that plan. Keep these
   (`KEYCLOAK_URL`, `SQUARE_INTEGRATION_SINK_APP_ID`) — network connectivity is unconditional, not
   behind a gate.
 - **`VmsSquareSingleton` is the only point where the integration plugs in** (the producer side).
-  The heavy core (the C++ `media_server` and the rest) is not touched by the integration. Do not
+  The heavy core (the C++ `video_srv` and the rest) is not touched by the integration. Do not
   spread integration logic over other services: `VmsCfg` knows nothing about Square at all and only
   publishes its ordinary events (`server-config-changed`, `camera-state-changed`), which the
   integrator subscribes to.

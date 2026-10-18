@@ -2,7 +2,7 @@
 #
 # The encoder library lives in its own repository (github treealarm/roi_transcode), pinned here
 # as the `ta_roienc` submodule. This directory is everything about re-compression that is the
-# service's: the gRPC contract VmsFs speaks, the job model that mirrors media_server's
+# service's: the gRPC contract VmsFs speaks, the job model that mirrors video_srv's
 # EdgeImport, the Dapr notifications and the path sandbox.
 #
 # The dependency arrow points one way and is narrow: this links `ta_roienc` through its public

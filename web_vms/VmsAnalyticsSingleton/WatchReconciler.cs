@@ -10,7 +10,7 @@ namespace VmsAnalyticsSingleton;
 // running on each video_a worker, issues StartWatch/StopWatch, and resolves the MediaMTX RTSP
 // URL for the camera on the fly — never stored, always derived (see project plan). Watches are
 // sharded across workers by rendezvous hash (AnalyticsWorkerRegistry.SelectWorker). Runs a
-// keep-alive loop for active watches because media_server's MediaMTX push is lazy/idle-timeout-
+// keep-alive loop for active watches because video_srv's MediaMTX push is lazy/idle-timeout-
 // based and analytics itself doesn't otherwise look like a "viewer" to it.
 // Reconciliation is externally driven by AnalyticsWatchSubscriber (startup + pub/sub signals);
 // registered as a hosted service only so the keep-alive loop starts/stops with the app.
@@ -166,8 +166,8 @@ public sealed class WatchReconciler(
   /// and pliCount climbing regardless.
   ///
   /// So the worker opens an endpoint and answers with its address (only it knows what it is
-  /// reachable at), and media_server publishes there. Which worker holds which camera is decided
-  /// here, as it always was; media_server is told where to publish and knows nothing else about
+  /// reachable at), and video_srv publishes there. Which worker holds which camera is decided
+  /// here, as it always was; video_srv is told where to publish and knows nothing else about
   /// the arrangement.
   /// </remarks>
   private async Task<ActiveWatch?> StartWatchOnWorkerAsync(string workerAppId, AnalyticsWatch watch, CancellationToken ct)

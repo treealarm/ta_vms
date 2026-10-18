@@ -52,7 +52,7 @@ public sealed class AlarmRecordingService(
     }
   }
 
-  // Pushes the override straight to the owning media_server rather than going through a config
+  // Pushes the override straight to the owning video_srv rather than going through a config
   // change event: an alarm has to start recording now, and the server is on this same node.
   // streamName: null = all streams on the camera; non-null = only that stream.
   private async Task PushCameraStateAsync(string cameraId, string? streamName, CancellationToken ct)

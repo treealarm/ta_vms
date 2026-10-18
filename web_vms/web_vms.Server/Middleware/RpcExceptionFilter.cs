@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace web_vms;
 
-// Maps gRPC errors from downstream services (VmsCfg, VmsOnvif, VmsFs, media_server, ...)
+// Maps gRPC errors from downstream services (VmsCfg, VmsOnvif, VmsFs, video_srv, ...)
 // to a single HTTP status/body convention, so controllers don't repeat this per action.
 public sealed class RpcExceptionFilter : IExceptionFilter
 {

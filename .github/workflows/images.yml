@@ -42,7 +42,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Groups follow what each Dockerfile actually reads. media_server links the encoder through
+      # Groups follow what each Dockerfile actually reads. video_srv links the encoder through
       # add_subdirectory(../roitrc/ta_roienc), so a submodule bump rebuilds `vms` as well as `roitrc`.
       - uses: dorny/paths-filter@v4
         id: filter
@@ -50,7 +50,7 @@ jobs:
           filters: |
             vms:
               - Dockerfile
-              - media_server/**
+              - video_srv/**
               - cmake/**
               - proto/**
               - ta-deps/**

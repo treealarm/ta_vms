@@ -178,10 +178,10 @@ public partial class OnvifServiceImpl
     => Apply(() => settingsService.DeleteRuleAsync(
       request.SourceId, request.ConfigurationToken, request.ModuleName, context.CancellationToken));
 
-  // ── Scene Description from media_server ───────────────────────────────────
+  // ── Scene Description from video_srv ───────────────────────────────────
 
   // Raw metadata documents off the camera's RTSP metadata track. Parsed here and forwarded to the
-  // analytics service as normalized boxes. The reply carries nothing: media_server treats this as
+  // analytics service as normalized boxes. The reply carries nothing: video_srv treats this as
   // fire-and-forget and never retries, so there is nothing useful to tell it.
   public override async Task<PushMetadataDocumentsResponse> PushMetadataDocuments(
     MetadataDocumentBatch request, ServerCallContext context)

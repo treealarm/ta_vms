@@ -4,7 +4,7 @@ import type { CameraSetupDto } from '../dto/dtos'
  * What a camera's marker says about it. Read from the camera list the rest of the app already
  * polls, so the map costs no request per camera.
  *
- * 'quiet' is deliberately not called offline: stream measurements exist only while media_server is
+ * 'quiet' is deliberately not called offline: stream measurements exist only while video_srv is
  * running a pipeline for the stream, and a camera nobody records or watches has none — it is not
  * known to be down, only not known to be up.
  */

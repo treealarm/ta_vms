@@ -54,7 +54,7 @@ COMPOSE_FILE = Path(__file__).resolve().parent / "docker-compose.yml"
 STATE_DIR = Path("/tmp/onvifsim-lab")
 STATE_FILE = STATE_DIR / "state.json"
 SPACE_NAMES = {W.MAP_PAIR.name: "OnvifSim lab", W.PLAN_PAIR.name: "OnvifSim lab plan"}
-PROFILE = "Profile_2"  # OnvifSim's H.264 profile, the one media_server pulls
+PROFILE = "Profile_2"  # OnvifSim's H.264 profile, the one video_srv pulls
 MARK_WALKER = "lab-mark"
 
 
@@ -156,7 +156,7 @@ class Lab:
             self._start_sim()
         self.sim.put_world(W.build_world(self.onvif_base, self.all_pairs))
         status = self.sim.status()
-        require(status.get("h264"), "OnvifSim offers no H.264 (ffmpeg not found): media_server needs Profile_2")
+        require(status.get("h264"), "OnvifSim offers no H.264 (ffmpeg not found): video_srv needs Profile_2")
         ports = status.get("onvifPorts", {})
         cameras = [*W.STREAMING_CAMERAS, W.TOPDOWN]
         expected = {c.id: self.onvif_base + i for i, c in enumerate(cameras)}
@@ -243,7 +243,7 @@ class Lab:
             log(f"waiting for {master}'s person boxes to reach ta_vms (RTSP metadata -> VmsOnvif -> analytics)")
             boxes = self._master_boxes(pair, seconds=60, wanted=1)
             require(boxes, f"no ONVIF person box from {master} reached /api/analytics/live within 60 s: "
-                           "check media_server's log for 'ONVIF metadata track found' and VmsOnvif's for 'scene objects'")
+                           "check video_srv's log for 'ONVIF metadata track found' and VmsOnvif's for 'scene objects'")
             log(f"{master}'s detections arrive in ta_vms")
 
     def _ensure_camera(self, camera, existing):

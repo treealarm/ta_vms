@@ -88,7 +88,7 @@ CREATE INDEX idx_retention_events_camera_time
 CREATE INDEX idx_retention_events_group
   ON retention_events (event_id, camera_id, alarm_start_ts DESC);
 
--- Intervals in which a camera's video source was silent, derived from media_server heartbeats.
+-- Intervals in which a camera's video source was silent, derived from video_srv heartbeats.
 --
 -- One table on purpose: a heartbeat gap carrying "recording was supposed to be running" IS an
 -- archive gap, so there is no second table of gaps, no clip-based scanner and no retro-computed

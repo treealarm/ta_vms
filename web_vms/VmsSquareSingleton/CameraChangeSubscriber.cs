@@ -10,7 +10,7 @@ namespace VmsSquareSingleton;
 ///
 /// These pushes used to sit inline in VmsCfg's write handlers, which made the config service know
 /// about Square. It does not need to: it already announces both changes — server-config-changed and
-/// camera-state-changed — for VmsFs and media_server, and this service is simply another subscriber.
+/// camera-state-changed — for VmsFs and video_srv, and this service is simply another subscriber.
 /// VmsCfg is left as what it should be, a gRPC interface to its database.
 ///
 /// The event is treated as a signal, never as data: the current camera is fetched from VmsCfg before

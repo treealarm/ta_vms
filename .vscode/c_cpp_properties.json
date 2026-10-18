@@ -11,7 +11,7 @@
 //
 // Both databases are listed in one configuration rather than one each. The extension keeps
 // a single active configuration per folder, so a configuration per subproject meant that
-// opening a media_server header while the encoder library was selected reported every
+// opening a video_srv header while the encoder library was selected reported every
 // include as missing -- again an error only the editor could see. Given several databases
 // it looks the file up in each, which is what makes the choice unnecessary.
 //
@@ -28,7 +28,7 @@
     {
       "name": "ta_vms",
       "compileCommands": [
-        "${workspaceFolder}/media_server/build/compile_commands.json",
+        "${workspaceFolder}/video_srv/build/compile_commands.json",
         "${workspaceFolder}/roitrc/build/compile_commands.json"
       ],
       "cStandard": "c17",

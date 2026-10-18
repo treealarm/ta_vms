@@ -9,7 +9,7 @@
 /// The RTSP client below needs a raw byte stream, which libav does not offer as a public API: the
 /// `tcp://` protocol is only reachable through AVIOContext, and an AVIOContext opened read-write
 /// shares one buffer between both directions — mixing avio_read and avio_write on it is not a
-/// documented contract. Every other platform dependency in media_server is already hidden behind
+/// documented contract. Every other platform dependency in video_srv is already hidden behind
 /// libav, and this is the one place that has to reach the network itself, so it is kept to this
 /// file rather than sprinkled through the protocol code.
 class tcp_socket

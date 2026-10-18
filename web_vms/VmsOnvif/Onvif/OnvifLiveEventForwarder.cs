@@ -17,7 +17,7 @@ namespace VmsOnvif.Onvif;
 /// events read from a per-node service would leave the (replicated) gateway merging one stream per
 /// node. Nothing is stored here or there; this is a relay.
 ///
-/// Events are queued and flushed as a batch, exactly like media_server's metadata client: one RPC
+/// Events are queued and flushed as a batch, exactly like video_srv's metadata client: one RPC
 /// per event would put a round trip on the critical path of a subscription that also drives alarms,
 /// and a camera announcing the same condition several times inside one window has nothing new to
 /// say. Repeats of a (camera, topic) inside a flush collapse to the last one, so a clearing edge

@@ -9,7 +9,7 @@ CREATE TABLE media_mtx_server (
   -- Configurable STUN server for browser WebRTC (WHEP) playback.
   -- Empty string means "no STUN at all" — LAN-only host candidates.
   stun_url    text    NOT NULL DEFAULT '',
-  -- Which node this MediaMTX belongs to. media_server pushes a camera's stream to the
+  -- Which node this MediaMTX belongs to. video_srv pushes a camera's stream to the
   -- MediaMTX assigned to that camera, so an assignment that ignores the node sends video
   -- across whatever link separates them. NULL means "shared": the server answers for any
   -- node, which is what a single-box installation has.

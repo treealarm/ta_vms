@@ -57,7 +57,7 @@ Topic: `roi-transcode-job-changed`. Without the Dapr variables, publishing is a 
 ## Two entry points, one `Settings`
 
 - **File job** — `StartFileJob` / `GetJob` / `CancelJob` / `ListJobs`, the same pattern as
-  `media_server`'s EdgeImport: start returns immediately, poll for the result, cancel is
+  `video_srv`'s EdgeImport: start returns immediately, poll for the result, cancel is
   best effort.
 - **Frame stream** — `EncodeStream`, bidirectional, for a caller with no file. First
   message is `open`, then frames carrying a mask or boxes. With `output_path` the packets

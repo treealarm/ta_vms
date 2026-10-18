@@ -73,7 +73,7 @@ Do **not** build `ta-deps` and `roi-deps` in parallel: both mount the same Build
 ```bash
 cd ta_vms
 
-# media_server + video_a analytics-worker (~3–5 h from scratch: openvino)
+# video_srv + video_a analytics-worker (~3–5 h from scratch: openvino)
 docker build -t ta-deps ./ta-deps
 
 # roitrc (~1–2 h): Ubuntu 24.04, ffmpeg[qsv,vaapi], libdrm-dev, python3.

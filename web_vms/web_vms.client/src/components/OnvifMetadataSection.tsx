@@ -549,7 +549,7 @@ export default function OnvifMetadataSection(
   const refresh = useCallback(() => setReload((n) => n + 1), [])
 
   // Which profiles the VMS actually pulls. This is the whole game: a metadata configuration only
-  // reaches us if it is attached to the profile media_server opens, and that is rarely the camera's
+  // reaches us if it is attached to the profile video_srv opens, and that is rarely the camera's
   // first profile — VMS streams are commonly configured against the sub stream. Defaulting to
   // profiles[0] would quietly send an operator to configure the wrong one.
   const streamedTokens = useMemo(

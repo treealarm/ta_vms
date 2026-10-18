@@ -22,7 +22,7 @@
                 // address. A VPN interface that drops and returns is the kind of thing that makes
                 // an advertised address go stale, and mDNS gives each lookup only one second
                 // (browseOneTimeout in components-contrib/nameresolution/mdns) with no negative
-                // caching, so a sidecar can then keep failing to resolve an app id: media_server
+                // caching, so a sidecar can then keep failing to resolve an app id: video_srv
                 // was seen retrying ListCameras 117 times over 13.6 minutes, every attempt
                 // "timeout waiting for address for app id vmscfg", until its sidecar was
                 // restarted. Everything F5 starts lives on this machine, so loopback is both
@@ -1369,7 +1369,7 @@
                 ]
             },
             "options": {
-                "cwd": "${workspaceFolder}/media_server"
+                "cwd": "${workspaceFolder}/video_srv"
             },
             "problemMatcher": []
         },
@@ -1381,7 +1381,7 @@
             "command": "cmake",
             "args": [
                 "--build",
-                "${workspaceFolder}/media_server/build",
+                "${workspaceFolder}/video_srv/build",
                 "--target",
                 "vms"
             ],

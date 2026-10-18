@@ -60,7 +60,7 @@ You need these:
 - `../OnvifSim` checked out next to this repository, and Docker. `up` builds the simulator's image
   from that checkout (`docker-compose.yml` here) rather than pulling the released one: the bench
   needs the ground-truth API, which a release may not have yet. The image carries ffmpeg, which
-  media_server's H.264 profile needs.
+  video_srv's H.264 profile needs.
 
 ```
 tests/onvifsim/onvifsim_lab.py all              # every step below in order, then down
@@ -92,7 +92,7 @@ http://localhost:8090 to watch the world while a step runs; its log is
 - **provision** adds the cameras with an ONVIF connection and the `Profile_2` token. The stream
   URI therefore comes from `GetStreamUri` through VmsOnvif. It creates the plan and uploads its
   picture the first time, or again with `--reset`. The step passes only when a person box from
-  each master has come back through media_server, VmsOnvif and the analytics service to
+  each master has come back through video_srv, VmsOnvif and the analytics service to
   `/api/analytics/live`.
 - **calibrate, PTZ part.** For each landmark it turns the sim's head onto it, as a person would
   with a joystick. It then reads the position back through `GET /api/ptz/status`, which is ONVIF

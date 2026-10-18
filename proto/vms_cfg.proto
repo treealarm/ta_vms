@@ -212,7 +212,7 @@ message CameraStream {
   // because the real resolution can change without the configuration being edited.
   int32 declared_width                     = 9;
   int32 declared_height                    = 10;
-  // What media_server last measured on this stream. Absent means nothing was measured recently —
+  // What video_srv last measured on this stream. Absent means nothing was measured recently —
   // the snapshot carries a TTL in the state store, so expiry and absence are the same thing and no
   // consumer has to judge an age.
   optional StreamStats stats               = 11;
@@ -498,10 +498,10 @@ message MediaMtxServer {
   string stun_url    = 8;
   // The media server node this MediaMTX serves. Empty means shared — it answers for any node,
   // which is what a single-box installation wants. Cameras are only assigned a server that is
-  // either theirs or shared: the push travels from media_server to MediaMTX, so a cross-node
+  // either theirs or shared: the push travels from video_srv to MediaMTX, so a cross-node
   // assignment would carry video over whatever link separates the two.
   string server_id   = 9;
-  // RTSP publish account used by media_server. Empty user means unauthenticated publish.
+  // RTSP publish account used by video_srv. Empty user means unauthenticated publish.
   string publish_user = 10;
   string publish_pass = 11;
   // Read account used by WHEP and the MediaMTX Control API. Empty user means unauthenticated read.

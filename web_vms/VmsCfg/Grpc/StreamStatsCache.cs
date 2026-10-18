@@ -7,9 +7,9 @@ using Vms.Cfg;
 namespace VmsCfg;
 
 /// <summary>
-/// Last-known observed parameters of each stream, as media_server measured them.
+/// Last-known observed parameters of each stream, as video_srv measured them.
 ///
-/// Written by every media_server into the shared state store under `stream-stats-{camera}/{stream}`
+/// Written by every video_srv into the shared state store under `stream-stats-{camera}/{stream}`
 /// with a TTL, read here so the camera catalogue can hand them to the monitor. Two consequences of
 /// that shape are load-bearing:
 ///

@@ -16,7 +16,7 @@ public class StorageServiceImpl(StorageDb db, DaprClient daprClient, ILogger<Sto
 
   /// <summary>
   /// Announces that a storage changed. Without this, disabling one takes effect only when every
-  /// cache downstream happens to expire — VmsFs's and media_server's TTLs run in series, so a
+  /// cache downstream happens to expire — VmsFs's and video_srv's TTLs run in series, so a
   /// storage taken out of service kept accepting recordings for up to two minutes.
   /// </summary>
   private void PublishStorageConfigChanged(string storageId) =>

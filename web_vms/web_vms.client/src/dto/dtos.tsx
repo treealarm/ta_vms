@@ -131,7 +131,7 @@ export type RecordingScheduleDto = {
   windows: ScheduleWindowDto[]
 }
 
-/** What media_server last measured on a running stream. Absent means nothing was measured
+/** What video_srv last measured on a running stream. Absent means nothing was measured
  *  recently: the snapshot carries a TTL, so "gone" and "stale" are the same case. */
 export type StreamStatsDto = {
   width: number
@@ -181,7 +181,7 @@ export const recordableStreams = (camera: { streams?: CameraStreamDto[] }): Came
 export type StreamSize = { width: number; height: number; observed: boolean }
 
 /**
- * The best available frame size for a stream: what media_server measured, or failing that what the
+ * The best available frame size for a stream: what video_srv measured, or failing that what the
  * camera declares for its ONVIF profile. Null when neither is known — a stream nobody has watched
  * on a camera that was configured with a plain RTSP path.
  *
@@ -198,7 +198,7 @@ export const streamSize = (s: CameraStreamDto): StreamSize | null => {
 
 /**
  * What this stream actually records — the client's statement of the precedence the server applies
- * (`RecordingRules.Effective` in web_vms.Types, `recording_policy_for_stream` in media_server):
+ * (`RecordingRules.Effective` in web_vms.Types, `recording_policy_for_stream` in video_srv):
  * a stream that may not be recorded never records, then an open schedule window forces continuous
  * recording, then an override profile, then the base profile.
  *

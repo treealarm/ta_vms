@@ -229,7 +229,7 @@ namespace VmsCfg
     /// Used by the schedule paths, where nothing in the camera's own config row changed.
     ///
     /// Unlike the fire-and-forget helpers above this awaits the publishes and reports failure, so
-    /// the schedule ticker can retry a window boundary instead of losing it: media_server only
+    /// the schedule ticker can retry a window boundary instead of losing it: video_srv only
     /// learns about the new policy from these events.
     internal async Task<bool> NotifyCamerasChangedAsync(IReadOnlyList<string> cameraIds, CancellationToken ct)
     {

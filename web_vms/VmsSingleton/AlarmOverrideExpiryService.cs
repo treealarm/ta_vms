@@ -3,7 +3,7 @@ using Vms.Cfg;
 
 namespace VmsSingleton;
 
-/// Clears alarm recording overrides whose window has elapsed and tells the owning media_server to
+/// Clears alarm recording overrides whose window has elapsed and tells the owning video_srv to
 /// re-read its config.
 ///
 /// An override is stored as state on camera_stream (override_profile_id + alarm_override_until),
@@ -30,7 +30,7 @@ public sealed class AlarmOverrideExpiryService(
 
   // Cameras already cleared in the database whose notification has not gone out yet. The clear is
   // committed before the publish, and a cleared row no longer looks expired, so re-reading the
-  // table cannot recover a failed publish — holding the ids here is what keeps media_server from
+  // table cannot recover a failed publish — holding the ids here is what keeps video_srv from
   // being left in continuous recording after a transient pub/sub failure.
   private readonly HashSet<string> _pendingNotify = new(StringComparer.Ordinal);
   private DateTime _lastNotifyUtc = DateTime.MinValue;

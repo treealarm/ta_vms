@@ -308,7 +308,7 @@ export default function StreamSetupPanel({ ref, cameraId, streamName, onSaved, o
               )}
             </Stack>
 
-            {/* The camera's own node, not a choice: the file has to be one media_server can open,
+            {/* The camera's own node, not a choice: the file has to be one video_srv can open,
                 and it runs where the camera is pinned. Writability is not required either -- this
                 folder is only ever read from. */}
             <StoragePathBrowserDialog

@@ -12,7 +12,7 @@
 
 namespace {
 
-// Reads the value of a top-level string field out of the event payload. media_server has no JSON
+// Reads the value of a top-level string field out of the event payload. video_srv has no JSON
 // parser and needs exactly one field out of a message this repository also writes, so pulling in a
 // library (and rebuilding the ta-deps base image shared with video_a) for it is not worth it.
 // Anything unexpected yields an empty string, which the caller treats as "not for us".

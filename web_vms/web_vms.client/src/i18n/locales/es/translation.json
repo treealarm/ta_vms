@@ -319,7 +319,7 @@
     "nodeServerIdHelper": "El nodo de servidor multimedia al que sirve este router. Los routers compartidos los usan cámaras de cualquier nodo; a una cámara nunca se le asigna un router de otro nodo, porque su vídeo cruzaría el enlace entre ellos.",
     "credentialsWarning": "Estas credenciales deben coincidir con authInternalUsers de esta instancia MediaMTX. Cambiar solo este formulario interrumpirá la publicación o la reproducción en vivo.",
     "publishUser": "Usuario de publicación",
-    "publishUserHelper": "Cuenta de publicación RTSP usada por media_server. Vacío significa publicación sin autenticación.",
+    "publishUserHelper": "Cuenta de publicación RTSP usada por video_srv. Vacío significa publicación sin autenticación.",
     "publishPass": "Contraseña de publicación",
     "readUser": "Usuario de lectura",
     "readUserHelper": "Cuenta usada para WHEP y la API de control. Vacío significa lectura sin autenticación.",

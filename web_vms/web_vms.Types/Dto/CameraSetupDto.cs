@@ -13,7 +13,7 @@ public record RecordingProfileDto
 }
 
 /// <summary>
-/// What media_server last measured on a running stream. Absent means nothing was measured recently:
+/// What video_srv last measured on a running stream. Absent means nothing was measured recently:
 /// the snapshot expires in the state store, so "gone" and "stale" are the same case and nothing
 /// downstream has to judge an age.
 /// </summary>

@@ -104,7 +104,7 @@ public static class OnvifSceneParser
     else if (frameWidth > 0 && frameHeight > 0)
     {
       // Raw pixels with no transformation to interpret them. The video track's own resolution is
-      // the only thing that can, which is why media_server ships it alongside the document.
+      // the only thing that can, which is why video_srv ships it alongside the document.
       return FromPixels(obj, left, right, top, bottom, frameWidth, frameHeight);
     }
     else

@@ -33,7 +33,7 @@ and F5 cannot disagree and can be mixed freely.
 
 **Change the recording mode.** Set `camera_stream.recording_profile_id` in `ta_cfg` (builtin
 profiles: `…0001` continuous, `…0002` prealarm, `…0003` off), then send the signal VmsCfg would have
-sent, and media_server refetches the configuration itself:
+sent, and video_srv refetches the configuration itself:
 
 ```bash
 curl -X POST localhost:3600/v1.0/publish/orderpubsub/server-config-changed \
@@ -60,7 +60,7 @@ is left unmeasured — is the one that has been wrong twice.
 | Import queue, leases, attempts | `ta_fs.edge_import_jobs` |
 | Coverage; `origin='edge'` is recovered footage | `ta_fs.clips` |
 | Decisions and corrections | VmsFs log — `Source outage opened`, `Measured N clip(s)`, `Gap start … corrected to`, `Edge backfill:` |
-| When delivery actually stopped | media_server log — `DIAG rtsp_reader: video source gap=` |
+| When delivery actually stopped | video_srv log — `DIAG rtsp_reader: video source gap=` |
 | Ground truth for a clip's real length | `ffprobe -v error -show_entries format=duration -of csv=p=0 <file>` |
 
 ---

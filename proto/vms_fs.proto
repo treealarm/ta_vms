@@ -17,7 +17,7 @@ service FsService {
   rpc ListRetentionEvents(ListRetentionEventsRequest) returns (ListRetentionEventsResponse);
 
   // ── Source liveness ─────────────────────────────────────────────────────────
-  // media_server reports current state; VmsFs derives outage intervals from the transitions and
+  // video_srv reports current state; VmsFs derives outage intervals from the transitions and
   // from silence. Deliberately not intervals: "no signal" then covers both a dead camera and a dead
   // media server, and nothing can be left half-open by a crash.
   rpc ReportSourceLiveness(ReportSourceLivenessRequest) returns (OperationStatus);
@@ -31,7 +31,7 @@ service FsService {
   // mp4 files produced by an edge import with export_to_file. They are deliberately NOT clips:
   // adding them to the clips table would double the camera's timeline coverage and hand them to
   // ClipCleaner. There is no database row at all — the listing is a directory walk, which also
-  // means an export survives a media_server restart that drops the in-memory job registry.
+  // means an export survives a video_srv restart that drops the in-memory job registry.
   rpc ListExportFiles(ListExportFilesRequest) returns (ListExportFilesResponse);
   rpc StatExportFile(ExportFileRequest) returns (StatExportFileResponse);
   rpc ReadExportFile(ReadExportFileRequest) returns (stream ReadArchiveTsChunk);

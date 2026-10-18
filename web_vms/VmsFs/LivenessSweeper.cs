@@ -164,7 +164,7 @@ public sealed class LivenessSweeper(
   /// <summary>
   /// Whether the configuration says this stream should be recording. Used for silence, where no
   /// heartbeat is available to say so. The precedence itself lives in <see cref="RecordingRules"/>,
-  /// so this cannot drift from what media_server actually does.
+  /// so this cannot drift from what video_srv actually does.
   /// </summary>
   private static bool RecordingExpected(CfgCameraSetup camera, CameraStream stream)
     => RecordingRules.Effective(

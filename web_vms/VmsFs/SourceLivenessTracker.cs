@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 namespace VmsFs;
 
 /// <summary>
-/// Turns per-stream heartbeats from media_server into outage intervals.
+/// Turns per-stream heartbeats from video_srv into outage intervals.
 /// </summary>
 /// <remarks>
 /// Current state of live streams is held in memory on purpose; only intervals reach the database.
@@ -172,7 +172,7 @@ public sealed class SourceLivenessTracker(
       }
 
       _state[key] = new StreamState(now, lastFrameUtc, recordingExpected, true, null, instanceId);
-      // Closed on the FIRST frame after the pause, which media_server reports separately.
+      // Closed on the FIRST frame after the pause, which video_srv reports separately.
       // last_frame_ts would not do: it advances with every packet, so by the time this report was
       // assembled it points at the newest one, and the gap would be recorded up to a full heartbeat
       // period longer than it was — then a backfill would re-pull footage the archive already has.
@@ -190,7 +190,7 @@ public sealed class SourceLivenessTracker(
     if (now - pendingSince < Grace || _openOutages.ContainsKey(key))
       return;
 
-    // The flag as media_server reports it now, not as it was when the source died: it comes from
+    // The flag as video_srv reports it now, not as it was when the source died: it comes from
     // the stream's recording policy, which the media server still knows while the camera is down.
     // So a camera that goes offline unrecorded and is armed later does start producing a row.
     if (!recordingExpected)

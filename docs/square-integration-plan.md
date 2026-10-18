@@ -38,7 +38,7 @@ Decisions agreed:
   neutral one).
 - **Coupling:** Square is reworked freely; in ta_vms **only `VmsCfg`** is touched (plugging in the
   typelib), and running on its own is kept by **a gate on an env variable** (no Square sink → it
-  behaves as before). The heavy core (the C++ media_server and the rest) is not touched.
+  behaves as before). The heavy core (the C++ video_srv and the rest) is not touched.
 - **Object model:** the root object = the process's **Dapr APP_ID** (`vmscfg`); its children are the
   cameras. The tree is `vms server (APP_ID) → camera`. Properties are self-describing and
   read-only. Commands are typed actions.
@@ -255,8 +255,8 @@ authorization, and it cannot be reached directly from outside. Reference:
 1. **Cross-stack Dapr service invocation:** confirm that, on a shared network, Dapr's default mDNS
    resolver finds the app ids of both stacks (otherwise configure a shared name-resolution
    component). The two sides' buses stay independent and know nothing of each other.
-2. What does `media_server` (C++) publish through `dapr_publisher.publish_json` — alarm and clip
-   topics? (`grep -rn publish_json media_server`) — does the typelib need them for the
+2. What does `video_srv` (C++) publish through `dapr_publisher.publish_json` — alarm and clip
+   topics? (`grep -rn publish_json video_srv`) — does the typelib need them for the
    `last_alarm_ts` property?
 3. ~~typelib: clean interfaces (SOLID, testability, no-op for standalone); the set of
    `ISquareIntegration` methods; where it lives (submodule vs NuGet)~~ — done (the

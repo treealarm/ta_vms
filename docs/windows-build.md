@@ -51,7 +51,7 @@ vcpkg ports, classic mode (the repository has no `vcpkg.json`):
 protobuf grpc spdlog pkgconf ffmpeg[gpl,x264,x265,opus,vpx,aom,openssl]
 ```
 
-`pkgconf` is required, not optional: `media_server/CMakeLists.txt` calls
+`pkgconf` is required, not optional: `video_srv/CMakeLists.txt` calls
 `find_package(PkgConfig REQUIRED)` and then `pkg_check_modules(FFMPEG ...)`, which needs a
 pkg-config implementation. `openvino` from `ta-deps/Dockerfile` is **not** needed here —
 it belongs to the sibling `video_a` repository.
@@ -109,13 +109,13 @@ reboot.
 
 ## Output
 
-- `media_server\build\vms.exe` — the C++ media server, built with MSVC. No source changes
+- `video_srv\build\vms.exe` — the C++ media server, built with MSVC. No source changes
   are needed for Windows; the same sources compile as on Linux.
 - `web_vms\**\bin\Debug\net10.0\` — the .NET services.
 
 `cmake --preset windows-default` is used, and that preset reads `$env{VCPKG_ROOT}` — so
 nothing in the repository has to be edited for a particular machine.
-`media_server/CMakeUserPresets.json` is a personal file (it is in `.gitignore`) and is only
+`video_srv/CMakeUserPresets.json` is a personal file (it is in `.gitignore`) and is only
 there for IDE convenience.
 
 ## Running

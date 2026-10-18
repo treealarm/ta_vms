@@ -5,7 +5,7 @@ namespace VmsAnalyticsSingleton;
 
 // On startup and whenever analytics-watch-changed or camera-state-changed fires, refreshes
 // AnalyticsWatchCache wholesale and re-runs WatchReconciler — mirrors the full-reconciliation
-// style of media_server/config_subscriber.h rather than patching a single entity.
+// style of video_srv/config_subscriber.h rather than patching a single entity.
 public sealed class AnalyticsWatchSubscriber(
   DaprPublishSubscribeClient pubSubClient,
   AnalyticsWatchCache cache,

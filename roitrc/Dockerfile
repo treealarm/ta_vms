@@ -1,6 +1,6 @@
 # roitrc: ROI-aware re-encoding of finished archive clips.
 #
-# Separate from the media_server Dockerfile for one reason: this is the only service that
+# Separate from the video_srv Dockerfile for one reason: this is the only service that
 # touches the GPU, and its runtime image therefore needs a VA-API driver the others have
 # no use for. Build context is the ta_vms root, because this needs three things from it --
 # roitrc/, proto/ and cmake/.

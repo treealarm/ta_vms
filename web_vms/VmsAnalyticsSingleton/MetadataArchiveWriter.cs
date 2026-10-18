@@ -46,7 +46,7 @@ public sealed record MetadataSample(
 /// sit a few hundred milliseconds behind the frame it describes. It cannot be corrected from this
 /// repository (analytics.proto is a vendored copy of another repo's contract, and a computed offset
 /// would be an invented number). The real fix belongs in video_a: stamp capture time and carry it
-/// through the relay. ONVIF samples do not have this problem — media_server stamps them from the
+/// through the relay. ONVIF samples do not have this problem — video_srv stamps them from the
 /// same wall clock that bounds clips — which is why ONVIF wins when the renderer has both.
 /// </para>
 /// </remarks>
@@ -194,7 +194,7 @@ public sealed class MetadataArchiveWriter : BackgroundService
 
     // Ripeness is measured on this process's clock, from when the bucket was first filled here —
     // never by comparing a producer's timestamp to local time. CV samples are stamped by video_a on
-    // another host and ONVIF ones by whichever media_server saw them, so a producer clock running
+    // another host and ONVIF ones by whichever video_srv saw them, so a producer clock running
     // even slightly ahead would leave every bucket permanently unripe: nothing would ever be
     // archived, and `pending` would grow without bound while looking perfectly healthy.
     var cutoff = DateTime.UtcNow - IngestDelay;

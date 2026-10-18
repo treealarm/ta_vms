@@ -11,7 +11,7 @@
           "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
           "type": "FILEPATH"
         },
-        "$comment-no-manifest": "roitrc has no vcpkg.json and reuses the tree already installed in VCPKG_ROOT. Every dependency it needs -- grpc, protobuf, nlohmann-json, ffmpeg -- is one ta_vms already installs for media_server, and the encoder submodule declares its own manifest for anyone building the library alone.",
+        "$comment-no-manifest": "roitrc has no vcpkg.json and reuses the tree already installed in VCPKG_ROOT. Every dependency it needs -- grpc, protobuf, nlohmann-json, ffmpeg -- is one ta_vms already installs for video_srv, and the encoder submodule declares its own manifest for anyone building the library alone.",
         "VCPKG_MANIFEST_MODE": "OFF",
         "CMAKE_BUILD_TYPE": "Debug",
         "$comment-compile-commands": "The compile database, for the editor: without it IntelliSense guesses the language standard and the include paths, and guesses them wrong.",

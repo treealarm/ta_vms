@@ -71,7 +71,7 @@ for state and RabbitMQ as the message bus.
 
 | Part | What it does |
 |---|---|
-| `media_server/` (C++20) | Pulls RTSP from the cameras, writes the archive, transcodes HEVC to H.264 for browsers |
+| `video_srv/` (C++20) | Pulls RTSP from the cameras, writes the archive, transcodes HEVC to H.264 for browsers |
 | `web_vms/web_vms.Server` | The gateway the browser talks to: REST, WebRTC (WHEP) and archive HLS |
 | `web_vms/web_vms.client` | The web interface (React, TypeScript, Vite) |
 | `web_vms/VmsCfg` | Every piece of configuration: cameras, storages, profiles, maps |
@@ -94,7 +94,7 @@ bringing the stack up, and the debug configurations in `.vscode/` start every se
 debugger at once.
 
 The hardware encoding library (the `roitrc/ta_roienc` submodule) is not public. Without it
-everything still builds, with a CMake warning: `media_server` re-encodes HEVC for WebRTC viewers on
+everything still builds, with a CMake warning: `video_srv` re-encodes HEVC for WebRTC viewers on
 the CPU instead of the GPU, and the `roitrc` clip re-compression service is skipped. The prebuilt
 images from `ta_install` have both.
 

@@ -145,7 +145,7 @@ apps:
     daprdLogDestination: fileAndConsole
 
   - appID: vms
-    appDirPath: ../media_server
+    appDirPath: ../video_srv
     appProtocol: grpc
     appPort: 50051
     daprHTTPPort: 3607

@@ -64,7 +64,7 @@ void state_store_client::save_stream_stats(
           s.video.observed_at->time_since_epoch()).count()
       : 0;
 
-    // Hand-built JSON: media_server has no JSON library (see the note in config_subscriber.cpp).
+    // Hand-built JSON: video_srv has no JSON library (see the note in config_subscriber.cpp).
     // An object, unlike the bare scalar save_heartbeat writes, needs no quoting games on the .NET
     // side — GetStateAsync<T> deserializes it directly.
     item->set_value(std::format(

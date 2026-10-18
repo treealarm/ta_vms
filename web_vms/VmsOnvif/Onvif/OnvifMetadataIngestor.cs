@@ -5,7 +5,7 @@ using Vms.Onvif;
 namespace VmsOnvif.Onvif;
 
 /// <summary>
-/// Turns the raw Scene Description documents media_server reassembles off a camera's RTSP metadata
+/// Turns the raw Scene Description documents video_srv reassembles off a camera's RTSP metadata
 /// track into normalized boxes, and hands them to VmsAnalyticsSingleton for the live overlay.
 /// </summary>
 /// <remarks>
@@ -25,7 +25,7 @@ public sealed class OnvifMetadataIngestor(
   OnvifMetadataGateCache gate,
   ILogger<OnvifMetadataIngestor> logger)
 {
-  // media_server already coalesces documents over ~200 ms, so a batch arrives here whole and is
+  // video_srv already coalesces documents over ~200 ms, so a batch arrives here whole and is
   // forwarded whole — no second queue on this side.
   private static readonly TimeSpan ForwardTimeout = TimeSpan.FromSeconds(2);
 

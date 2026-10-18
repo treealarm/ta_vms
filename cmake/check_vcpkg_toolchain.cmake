@@ -1,4 +1,4 @@
-# Included before project() by media_server and roitrc.
+# Included before project() by video_srv and roitrc.
 #
 # Their presets take the toolchain from $env{VCPKG_ROOT}. With the variable unset that expands to
 # "/scripts/buildsystems/vcpkg.cmake", and CMake's own complaint about it -- "Could not find

@@ -5,7 +5,7 @@ using Vms.Fs;
 namespace VmsFs;
 
 /// <summary>
-/// Receives source heartbeats from media_server. The only place where a report becomes an interval.
+/// Receives source heartbeats from video_srv. The only place where a report becomes an interval.
 /// </summary>
 public sealed partial class FsServiceImpl
 {

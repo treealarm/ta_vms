@@ -47,10 +47,10 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-$MediaServerDir = Join-Path $RepoRoot "media_server"
+$VideoSrvDir = Join-Path $RepoRoot "video_srv"
 $Solution = Join-Path $RepoRoot "web_vms\web_vms.sln"
 
-# vcpkg ports for media_server, in classic mode (the repo has no vcpkg.json).
+# vcpkg ports for video_srv, in classic mode (the repo has no vcpkg.json).
 # pkgconf is not optional: CMakeLists.txt calls find_package(PkgConfig REQUIRED) and then
 # pkg_check_modules(FFMPEG ...), which needs a pkg-config implementation on PATH — vcpkg
 # supplies one. openvino from ta-deps/Dockerfile is NOT needed here; it belongs to the
@@ -648,8 +648,8 @@ if ($running.Count -gt 0) {
     exit 1
 }
 
-Write-Head "Building media_server ($Configuration)"
-$buildDir = Join-Path $MediaServerDir "build"
+Write-Head "Building video_srv ($Configuration)"
+$buildDir = Join-Path $VideoSrvDir "build"
 
 # Built as a string first: PowerShell does not expand a $variable inside a native-command
 # token that starts with "-D", so writing -DCMAKE_BUILD_TYPE=$Configuration inline puts the
@@ -657,7 +657,7 @@ $buildDir = Join-Path $MediaServerDir "build"
 # rules file.
 $buildTypeArg = "-DCMAKE_BUILD_TYPE=$Configuration"
 
-Push-Location $MediaServerDir
+Push-Location $VideoSrvDir
 try {
     # windows-default reads $env{VCPKG_ROOT}, so the checked-in preset works on any machine
     # and no file in the repository has to be edited.
@@ -669,7 +669,7 @@ try {
 
 Write-Step "compiling and linking target 'vms'"
 $code = Invoke-Native { & cmake --build $buildDir --target vms }
-if ($code -ne 0) { throw "media_server build failed ($code)" }
+if ($code -ne 0) { throw "video_srv build failed ($code)" }
 
 $exe = Join-Path $buildDir "vms.exe"
 if (-not (Test-Path $exe)) { throw "vms.exe was not produced" }

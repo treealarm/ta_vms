@@ -26,10 +26,10 @@
 # -------------------
 # C++ builds
 # -------------------
-media_server/build/
-media_server/out/
-media_server/bin/
-media_server/obj/
+video_srv/build/
+video_srv/out/
+video_srv/bin/
+video_srv/obj/
 roitrc/build/
 roitrc/out/
 # The encoder submodule's own build trees. Its source is needed -- roitrc's Dockerfile builds

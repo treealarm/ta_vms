@@ -88,7 +88,7 @@ service OnvifService {
   // round of device round-trips.
   rpc GetMetadataStates(MetadataStatesRequest) returns (MetadataStatesResponse);
 
-  // Raw Scene Description documents media_server reassembled off the camera's RTSP metadata track.
+  // Raw Scene Description documents video_srv reassembled off the camera's RTSP metadata track.
   // Parsed here, where the rest of the ONVIF schema knowledge already lives, then forwarded to
   // VmsAnalyticsSingleton as normalized boxes (PushOnvifDetections in vms_analytics.proto).
   // Batched by the caller so a chatty camera costs a few RPCs per second, not one per document.

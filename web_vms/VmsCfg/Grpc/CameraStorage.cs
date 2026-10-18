@@ -262,7 +262,7 @@ public class CameraStorage(
   }
 
   /// The single place where a schedule becomes a fact: schedule_active is resolved from the wall
-  /// clock every time a setup is read, and never stored. Consumers (media_server, VmsFs,
+  /// clock every time a setup is read, and never stored. Consumers (video_srv, VmsFs,
   /// web_vms.Server) treat it as "record continuously, overriding profile and overrides".
   private void ApplySchedules(IReadOnlyList<CameraSetup> cameras)
   {
@@ -759,7 +759,7 @@ public class CameraStorage(
   /// The MediaMTX a camera publishes to, assigning one on first use.
   ///
   /// A camera is only ever given a server that belongs to its own node or is shared (server_id
-  /// NULL): media_server pushes the stream to whatever is assigned here, so picking across nodes
+  /// NULL): video_srv pushes the stream to whatever is assigned here, so picking across nodes
   /// would carry video over the link between them. An assignment already made is left alone — a
   /// camera that later moves nodes is re-pointed by an administrator, not silently on a read — but
   /// the mismatch is logged so it does not stay invisible.

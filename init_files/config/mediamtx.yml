@@ -65,7 +65,7 @@ authMethod: internal
 # Passwords are injected from the environment (MTX_AUTHINTERNALUSERS_<i>_PASS, see
 # docker-compose.yml) so they never live in this file.
 authInternalUsers:
-  # Publisher: media_server pushes camera streams here over RTSP. Publish only — a leaked
+  # Publisher: video_srv pushes camera streams here over RTSP. Publish only — a leaked
   # publisher credential must not be able to read other cameras back out.
 - user: vms_publish
   pass:

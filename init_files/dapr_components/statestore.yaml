@@ -11,8 +11,8 @@ spec:
   # every tenant the *same* "cam-perm-version" key, whereas a per-tenant database separates them
   # for free.
   #
-  # v1, not v2: v1 stores the value in a JSONB column. media_server writes its heartbeat as the
-  # quoted string "online" from C++ (see media_server/grpc_layer/state_store_client.cpp), which
+  # v1, not v2: v1 stores the value in a JSONB column. video_srv writes its heartbeat as the
+  # quoted string "online" from C++ (see video_srv/grpc_layer/state_store_client.cpp), which
   # is valid JSON and so survives; v2 stores values differently and has not been tested against
   # that non-SDK writer.
   #
@@ -34,7 +34,7 @@ spec:
     value: "true"
   # Dapr's default is keyPrefix=appid, which silently namespaces every key by the writer's app id:
   # VmsCfg would write "vmscfg||cam-perm-version" while web_vms read "web-vms||cam-perm-version",
-  # and media_server's heartbeat ("vms||ms-status-<id>") never reached VmsCfg either. Several keys
+  # and video_srv's heartbeat ("vms||ms-status-<id>") never reached VmsCfg either. Several keys
   # here are deliberately shared between services, so the store is keyed by the component name
   # instead — one namespace per state store, not per app. Verified on PostgreSQL: rows land under
   # "statestore||<key>" and one app id reads what another wrote.

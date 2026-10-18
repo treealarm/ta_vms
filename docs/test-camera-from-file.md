@@ -5,7 +5,7 @@ that reproduces a bug, the same scene twice with different settings — needs no
 new service. A camera whose stream points at a file on disk is read, recorded, published and
 analysed by exactly the code that serves a real one.
 
-This is not a stub. `media_server/reader/file_camera_reader.cpp` feeds the same `media_sink`
+This is not a stub. `video_srv/reader/file_camera_reader.cpp` feeds the same `media_sink`
 pipeline `rtsp_reader` does, so recording, WebRTC publication and snapshots all behave as they do
 for a device. What changes is only where the packets come from.
 
@@ -21,12 +21,12 @@ path table below for what happens if you fill it in anyway.
 
 **Point the stream's path at the file**, and leave the profile token empty. With no IP on the
 camera the path is taken as a local one, so it needs no prefix and no ceremony.
-`media_server/cam_stream.cpp` picks the file reader when the token is empty and the path resolves to
+`video_srv/cam_stream.cpp` picks the file reader when the token is empty and the path resolves to
 something that exists on disk; a profile token means "ask the device over ONVIF", which there is no
 device to ask.
 
 **Switch WebRTC on for the stream.** This is the one that is easy to miss: it is what makes
-media_server publish into MediaMTX, and MediaMTX is where analytics reads from. Without it the
+video_srv publish into MediaMTX, and MediaMTX is where analytics reads from. Without it the
 camera records but no detector ever sees it.
 
 Then give the stream a recording profile that is not `off`, or there will be no clips — and no
@@ -36,7 +36,7 @@ metadata either, since detections are attached to the clip that covers them.
 
 `docker-compose.yml` mounts `${PWD}/data` into every service as `/data` (the `x-data-volume`
 anchor), so `data/testclips/scene.mp4` in the checkout is `/data/testclips/scene.mp4` to the
-containers, and no compose change is needed. In dev, where media_server runs on the host under
+containers, and no compose change is needed. In dev, where video_srv runs on the host under
 `.vscode/launch.json`, any absolute path works.
 
 A **directory** works too, and is read as a playlist sorted by filename, looping at the end. The
@@ -45,7 +45,7 @@ without a restart.
 
 ### The forms a path can take
 
-`proto_mapper::resolve_stream_path` (`media_server/grpc_layer/proto_mapper.cpp`) decides, and the
+`proto_mapper::resolve_stream_path` (`video_srv/grpc_layer/proto_mapper.cpp`) decides, and the
 camera's IP is what the rule turns on:
 
 | `path` | camera has an IP | what happens |
@@ -80,7 +80,7 @@ the test material shaped like the production material it stands in for.
 ## Why analytics needs no change
 
 The question comes up because `video_a` reads RTSP and the source here is a file. It does not
-matter: media_server publishes the file camera into MediaMTX at `{cameraId}/{streamName}`, and
+matter: video_srv publishes the file camera into MediaMTX at `{cameraId}/{streamName}`, and
 `WatchReconciler.cs` hands the analytics worker exactly that URL. The worker cannot tell, and there
 is no second code path to maintain.
 

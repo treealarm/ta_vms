@@ -22,7 +22,7 @@ service CameraControlService {
   rpc GetArchiveFrameJpeg(ArchiveFrameJpegRequest) returns (ArchiveFrameJpegResponse);
 
   // ── Camera-side (edge / SD card) archive import ─────────────────────────────
-  // Job state lives in media_server memory, not in a database: an import is an operator-initiated
+  // Job state lives in video_srv memory, not in a database: an import is an operator-initiated
   // foreground action whose product (clips or an export file) is itself the durable result.
   rpc StartEdgeImport(EdgeImportRequest) returns (EdgeImportJob);
   rpc GetEdgeImportJob(EdgeImportJobKey) returns (EdgeImportJob);
@@ -132,10 +132,10 @@ message EnsureAnalyticsPushRequest {
   string stream_name = 2;
   // The address the worker is listening on. It names itself: only the worker knows which host
   // and port it is reachable at, and the assignment of cameras to workers lives in
-  // VmsAnalyticsSingleton, not here. media_server publishes where it is told, exactly as it
+  // VmsAnalyticsSingleton, not here. video_srv publishes where it is told, exactly as it
   // already does for MediaMTX.
   string rtsp_url    = 3;
-  // How many frames a second the consumer will actually decode. media_server measures its own
+  // How many frames a second the consumer will actually decode. video_srv measures its own
   // keyframe spacing and sends the least that satisfies this: keyframes alone while they arrive
   // often enough, every packet when they do not. The detector reaches the same conclusion from
   // the same evidence (see video_a frame_sampler), but deciding it at the source saves the

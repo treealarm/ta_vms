@@ -9,7 +9,7 @@ namespace VmsSingleton;
 ///
 /// Holds no authoritative state: schedule_active is always recomputed from the wall clock by whoever
 /// reads a CameraSetup. This loop only exists so that nobody has to poll — at a boundary VmsCfg
-/// publishes the existing server-config-changed event, media_server
+/// publishes the existing server-config-changed event, video_srv
 /// reloads and applies the new policy, and VmsFs drops its caches.
 ///
 /// It lives here rather than in VmsCfg because VmsCfg is replicated: every replica would keep its own
@@ -91,7 +91,7 @@ public sealed class RecordingScheduleService(
     if (transitions.Count == 0)
       return;
 
-    // The new state is recorded only once the notification is out. media_server learns about a
+    // The new state is recorded only once the notification is out. video_srv learns about a
     // boundary from that event alone, so treating a failed publish as done would lose the whole
     // window; leaving _lastActive untouched makes the next tick retry.
     var request = new NotifyCamerasChangedRequest();
