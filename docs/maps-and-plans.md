@@ -130,8 +130,9 @@ Plans never show tiles to operators. While an administrator lines up a plan in r
 What the fit assumes: a level mount, so pan follows the bearing and tilt the elevation, each by a
 straight line in the camera's own units. A camera hung out of level shows up as a pattern of misses
 and should be levelled; one mounted on its side or at an angle cannot be calibrated by this fit at
-all (see "PTZ fit by mount orientation" under the next stages). The camera's pan seam (where its range wraps) must not fall between the
-landmarks; landmarks spread over the area the camera will actually be aimed at keep it out.
+all (see "PTZ fit by mount orientation" under the next stages). The camera's pan seam, where its
+counting wraps round, may fall anywhere, among the landmarks too: the fit finds it, given three
+landmarks or more (see [Algorithms](#algorithms)).
 Cameras whose `GetStatus` is a stub are refused with a message — they can still be aimed by presets
 through the slave binding. What the fit computes is under [Algorithms](#algorithms).
 
@@ -140,15 +141,15 @@ direction: one camera's pan grows clockwise, another's anticlockwise; tilt may c
 units may be -1..1 or degrees. A camera hung upside down is usually set by its installer to turn its
 picture back (the video source's `Rotate`) and to count both axes the other way (PTZ
 `PTControlDirection` `Reverse`), but not always, and not always both. None of that needs a setting
-here: each of the two lines takes its axis' sign and scale from the landmarks, so a reversed axis,
-a camera upside down with or without its picture turned and with or without `Reverse`, and degrees
+here: each of the two lines takes its axis' sign and scale from the landmarks, so a reversed axis, a
+camera upside down with or without its picture turned and with or without `Reverse`, and degrees
 instead of -1..1 all calibrate the same way. ta_vms reads neither `Rotate` nor `Reverse`, and does
-not need to. What the lines cannot take is a pan axis that is not vertical — a bracket that leans,
-a camera on its side ("on a fence", where pan sweeps up and down and tilt across) — and the pan
-seam among the landmarks. A fixed camera's ground mapping takes its picture as it comes, turned or
-tall; but its marks and the master's aim point are the bottom of a person's box, which in a picture
-left upside down is their head. The bench in `tests/onvifsim` hangs a pair each of these ways
-(`onvifsim_lab.py matrix`); its README has what each does to the aim.
+not need to. What the lines cannot take is a pan axis that is not vertical — a bracket that leans, a
+camera on its side ("on a fence", where pan sweeps up and down and tilt across). A fixed camera's
+ground mapping takes its picture as it comes, turned or tall; but its marks and the master's aim
+point are the bottom of a person's box, which in a picture left upside down is their head. The bench
+in `tests/onvifsim` hangs a pair each of these ways (`onvifsim_lab.py matrix`); its README has what
+each does to the aim.
 
 ## Calibrating a fixed camera against the ground
 
@@ -270,20 +271,30 @@ height is the floor of the camera's space plus the object's height above that fl
 **A PTZ against landmarks** (`PtzGeoMath`). Two independent straight lines, each fitted by
 ordinary least squares:
 
-    pan  = a₁ + b₁ · wrap180(azimuth − azimuth₀)
+    pan  = a₁ + b₁ · ((azimuth − seam) mod 360)
     tilt = a₂ + b₂ · elevation
 
-`azimuth₀` is the circular mean of the observed azimuths (atan2(Σ sin, Σ cos)), so a sector that
-straddles north stays one straight run. The slopes absorb whatever units the camera reports in
-and the sign of its mount. The fit needs two landmarks at least 5° apart in azimuth and 1° in
-elevation, and readings that actually move between them — a camera whose `GetStatus` is a stub is
-refused on that. *Extrapolated* means the target's azimuth or elevation falls outside the range
-the landmarks cover, with 1° of slack. The "Check" column is leave-one-out: the fit without that
+`seam` is where the camera's pan wraps round. A head that pans endlessly reports a jump of its whole
+range there, wherever the installer happened to point it, so it is found rather than assumed: it
+lies in one of the gaps between neighbouring landmarks (round the circle), and only in that gap do
+the readings make one straight line — in any other the jump is a step no line fits. Each gap is
+tried, its middle taken as the seam, and the least-squares line that misses least wins; that needs
+no knowledge of how long a turn is in the camera's units. Two landmarks fit either way round, and
+then the seam is put in the wider gap, behind them. A target between the middle of the seam's gap
+and the true seam then comes out past the end of the camera's range, which a camera that checks its
+range refuses (OnvifSim does). In ONVIF's generic space −1..1 is the whole range by definition, so
+when the slope makes a turn 2 there — a head that pans round — such an aim is folded back by a turn;
+a camera counting in other units is left as it is. The slopes absorb whatever units the camera
+reports in and the sign of its mount. The fit needs two landmarks at least 5° apart in azimuth and
+1° in elevation, and readings that actually move between them — a camera whose `GetStatus` is a stub
+is refused on that. *Extrapolated* means the target's azimuth or elevation falls outside the range
+the landmarks cover, with 1° of slack; in azimuth that is the circle less its widest gap, so a
+sector that straddles north is one sector. The "Check" column is leave-one-out: the fit without that
 landmark, evaluated at its bearing, as a miss in pan and one in tilt, in the camera's own units;
-with only two landmarks there is nothing to leave out. What the lines do not know: the camera's
-own pan seam, which is never unwrapped and must not fall between the landmarks, and a mount that
-is not level, which shows as a pattern of misses rather than a few bad ones (see "PTZ fit by
-mount orientation" under the next stages).
+with only two landmarks there is nothing to leave out. The seam stays where all the landmarks put it
+when one is left out. What the lines do not know: a mount that is not level, which shows as a
+pattern of misses rather than a few bad ones (see "PTZ fit by mount orientation" under the next
+stages).
 
 **A fixed camera against the ground** (`GroundHomography`). A plane seen by a pinhole camera is a
 projective transform of the picture, so the ground mapping is a homography — eight unknowns
@@ -400,13 +411,6 @@ itself only compiles.
   A richer model is chosen only when its held-out misses are actually smaller, so extra parameters
   do not fit noise. Decide which stages are needed from 8–10 observations on a real camera that
   takes absolute positions — none is on the bench yet.
-- **The pan seam among the landmarks.** A head that pans round and round reports a jump of its
-  whole range where its counting wraps, and the two lines take that jump for part of the slope:
-  on the bench the aim is then off by tens of degrees. The seam lies wherever the installer
-  happened to turn the camera, so it falls inside a sector of 90° one time in four. Unwrapping the
-  readings on a circle, as the azimuths already are, removes it, once the fit knows how long a full
-  turn is in the camera's units (2 in the generic space, 360 in degrees: the camera's declared pan
-  range, `GetConfigurationOptions`, which nothing reads yet).
 - **A dead zone in degrees for a survey.** A survey slave's dead zone is 0.02 in the camera's own
   units. On a head whose generic range is a full turn, that is 3.6° of pan. That threshold, not the
   calibration, is what dominates how far behind a walking person it lags. (On the map method it is

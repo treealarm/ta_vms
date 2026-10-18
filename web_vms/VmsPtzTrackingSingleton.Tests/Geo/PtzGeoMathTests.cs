@@ -99,6 +99,83 @@ public class PtzGeoMathTests
     Assert.Equal(trueTilt, aim.Tilt, 3);
   }
 
+  // An endless head counts each turn from a seam of its own, wherever the installer pointed it: -1
+  // and 1 meet there and the readings jump a full turn. The landmarks above lie from 31° to 76°; the
+  // seam goes between each pair of neighbours in turn, and behind them, either way round.
+  [Theory]
+  [InlineData(32, 1)]
+  [InlineData(37, 1)]
+  [InlineData(60, 1)]
+  [InlineData(60, -1)]
+  [InlineData(210, 1)]
+  [InlineData(210, -1)]
+  public void RecoversTheCamera_WhereverItsPanSeamFalls(double seamDeg, int sign)
+  {
+    float Pan(Bearing b) => (float)(sign * PtzGeoMath.Wrap180(b.AzimuthDeg - seamDeg - 180) / 180);
+    GeoObservationSample Seen(string id, double east, double north, double height = 0)
+    {
+      var b = To(east, north, height);
+      return new GeoObservationSample(id, b, Pan(b), TrueTilt(b));
+    }
+    var fit = Fit([Seen("a", 40, 60), Seen("b", 80, 20), Seen("c", 15, 25, 3), Seen("d", 60, 70, 1)]);
+
+    Assert.All(fit.Residuals.Values, r => Assert.True(Math.Abs(r!.Pan) < 1e-3, $"residual {r}"));
+    for (var azimuth = 31.0; azimuth <= 76; azimuth += 1)
+    {
+      var rad = azimuth * Math.PI / 180;
+      var target = To(50 * Math.Sin(rad), 50 * Math.Cos(rad), 1.7);
+      var aim = PtzGeoMath.Project(fit, target);
+      // The same direction, inside -1..1 even between the true seam and where the fit put it.
+      Assert.Equal(0, OneTurn(aim.Pan - Pan(target)), 3);
+      Assert.InRange(aim.Pan, -1, 1);
+      Assert.False(aim.Extrapolated, $"{azimuth}° is among the landmarks");
+    }
+  }
+
+  [Fact]
+  public void LandmarksAllRoundTheCamera()
+  {
+    // A head watching every side, with its seam at 150°: no sector, and no one gap behind it.
+    static float Pan(Bearing b) => (float)(PtzGeoMath.Wrap180(b.AzimuthDeg - 330) / 180);
+    GeoObservationSample At(string id, double azimuthDeg, double distance)
+    {
+      var rad = azimuthDeg * Math.PI / 180;
+      var b = To(distance * Math.Sin(rad), distance * Math.Cos(rad));
+      return new GeoObservationSample(id, b, Pan(b), TrueTilt(b));
+    }
+
+    var fit = Fit([At("a", 10, 50), At("b", 100, 80), At("c", 190, 30), At("d", 280, 60)]);
+
+    foreach (var azimuth in new[] { 40.0, 140, 160, 230, 320 })
+    {
+      var rad = azimuth * Math.PI / 180;
+      var target = To(40 * Math.Sin(rad), 40 * Math.Cos(rad));
+      var aim = PtzGeoMath.Project(fit, target);
+      Assert.Equal(0, OneTurn(aim.Pan - Pan(target)), 3);
+      Assert.InRange(aim.Pan, -1, 1);
+    }
+  }
+
+  [Fact]
+  public void LeavesAHeadInDegreesUnfolded()
+  {
+    // Degrees, -180..180, seam among the landmarks: a turn is 360, not 2, and the range is not known.
+    static float Pan(Bearing b) => (float)PtzGeoMath.Wrap180(b.AzimuthDeg - 230);
+    GeoObservationSample Seen(string id, double east, double north, double height = 0)
+    {
+      var b = To(east, north, height);
+      return new GeoObservationSample(id, b, Pan(b), TrueTilt(b));
+    }
+    var fit = Fit([Seen("a", 40, 60), Seen("b", 80, 20), Seen("c", 15, 25, 3), Seen("d", 60, 70, 1)]);
+
+    Assert.False(fit.FoldsPan);
+    var target = To(25, 40); // 32°, away from the seam at 50°
+    Assert.Equal(Pan(target), PtzGeoMath.Project(fit, target).Pan, 3);
+  }
+
+  // A pan difference in the generic space folded into ±1: two readings a full turn apart are one direction.
+  private static double OneTurn(double pan) => pan - 2 * Math.Round(pan / 2);
+
   [Fact]
   public void TwoLandmarksAreEnoughButCannotBeChecked()
   {

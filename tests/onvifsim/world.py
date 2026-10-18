@@ -411,7 +411,7 @@ MOUNTS = [
     Mount("lean-sideways", "measure", "the pan axis leaning 8 degrees sideways", slave={"roll": 8.0}),
     Mount("fence", "measure", "on its side: pan sweeps up and down, tilt across",
           slave={"roll": 90.0, "rotate": 90}, limits={"tilt_min": -90.0, "tilt_max": 90.0}),
-    Mount("seam", "measure", "turned so that the pan seam falls among the landmarks", slave={"heading": _seam_heading()}),
+    Mount("seam", "pass", "turned so that the pan seam falls among the landmarks", slave={"heading": _seam_heading()}),
     # Clicked marks: in a frame this tall a person beyond about 28 m is smaller than OnvifSim's smallest
     # box (2.5% of the frame's height), so the far landmarks could not be marked by a person's box.
     Mount("master-portrait", "measure", "master on its side for a corridor, picture turned upright and tall",
@@ -565,7 +565,8 @@ def _check_pair(pair):
         # OnvifSim's minimum box is 0.05 in -1..1 units, i.e. 0.025 of the frame height.
         assert uv[1] - top[1] > 0.04, f"a person at {name} would be too small for {master.id}'s analytics"
 
-    # The slave's landmarks spread far enough for the geo fit, and keep away from its pan seam.
+    # The slave's landmarks spread far enough for the geo fit, and keep away from its pan seam: the
+    # level bench is the one without it, and the `seam` mount puts it among them on purpose.
     readings = [ptz_degrees(slave, (lm.x, 0.0, lm.z)) for lm in LANDMARKS]
     pans = [p for p, _ in readings]
     tilts = [t for _, t in readings]

@@ -156,7 +156,7 @@ names the ways worth checking, applied to the map pair:
 | `upside-down-raw` | upside down, nothing turned back | pass |
 | `lean-forward`, `lean-sideways` | the pan axis leaning 10° towards the yard, 8° sideways | measure |
 | `fence` | on its side: pan sweeps up and down, tilt across | measure |
-| `seam` | turned so that pan ±180 falls among the landmarks | measure |
+| `seam` | turned so that pan ±180 falls among the landmarks | pass |
 | `master-portrait` | the master on its side for a corridor, picture upright and tall (360×640) | measure, clicked marks |
 | `master-flip` | the master's picture left upside down | measure, clicked marks |
 
@@ -197,7 +197,7 @@ master's picture; arrival is where the head stopped against where the person was
 | `lean-forward` (10°) | 0.0526 | | 0.61° / 0.86° | 0.73° / 0.95° | 100% | within the thresholds |
 | `lean-sideways` (8°) | 0.0943 | | 1.72° / 2.72° | 1.60° / 2.76° | 100% | misses them |
 | `fence` | 0.4212 | | 12.9° / 15.9° | 13.3° / 16.0° | 12% | unusable |
-| `seam` | 1.2570 | | 96° / 135° | 105° / 136° | 0% | unusable |
+| `seam` | 0.0000 | | 0.00° / 0.00° | 0.21° / 0.39° | 100% | pass (was 96° / 135° off before the fit found the seam) |
 | `master-portrait` | 0.0000 | 0.007 | 0.00° / 0.00° | 0.18° / 0.34° | 54% | aims right; the far half is undetected |
 | `master-flip` | 0.0000 | 0.123 | 0.00° / 0.00° | 27.3° / 35.9° | 0% | unusable |
 
@@ -209,7 +209,11 @@ master's picture; arrival is where the head stopped against where the person was
   for.
 - `seam` is the one that can catch an ordinary camera: its pan zero is wherever the installer
   screwed it, so the seam falls inside the sector it watches with the odds of that sector's share
-  of a full turn, a quarter for a camera watching 90°.
+  of a full turn, a quarter for a camera watching 90°. The fit now finds it among the landmarks
+  and folds an aim past ±1 back by a turn; the walk crosses it (pan -0.98, then 1.00) and the
+  head follows. Before that it was 96° / 135° off and never framed the person. Without the fold,
+  OnvifSim refuses the aims that land between the true seam and where the fit puts it, as a
+  camera that checks its range does.
 - A master's picture can be turned or tall, the ground mapping does not care. Left upside down, the
   foot of every box is the person's head: marks clicked on the landmarks then put the slave 27° off.
   (Marked with people's boxes instead, the flip cancels out, because the marks and the aim use the

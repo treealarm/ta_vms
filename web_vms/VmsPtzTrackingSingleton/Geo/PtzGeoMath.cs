@@ -13,12 +13,25 @@ public sealed record GeoObservationSample(string LandmarkId, Bearing Bearing, fl
 public sealed record GeoResidual(float Pan, float Tilt);
 
 /// <summary>
-/// pan = PanIntercept + PanSlope * a, tilt = TiltIntercept + TiltSlope * e, where a is the azimuth
-/// relative to <see cref="RefAzimuthDeg"/> (unwrapped into ±180) and e the elevation.
+/// pan = PanIntercept + PanSlope * s, tilt = TiltIntercept + TiltSlope * e, where s is the azimuth
+/// clockwise from <see cref="SeamAzimuthDeg"/>, in [0, 360), and e the elevation.
 /// </summary>
+/// <param name="RefAzimuthDeg">
+/// The middle of the sector the landmarks cover; the azimuth bounds are relative to it, unwrapped
+/// into ±180.
+/// </param>
+/// <param name="SeamAzimuthDeg">
+/// Where the camera's pan is taken to wrap round: the middle of the gap between neighbouring
+/// landmarks that its readings jump across.
+/// </param>
+/// <param name="FoldsPan">
+/// The camera counts a whole turn as ONVIF's generic -1..1, so an aim past either end is the same
+/// direction a turn back.
+/// </param>
 /// <param name="Residuals">Leave-one-out, per landmark id; null where the rest cannot be fitted.</param>
 public sealed record PtzGeoFit(
   double RefAzimuthDeg,
+  double SeamAzimuthDeg,
   double PanIntercept,
   double PanSlope,
   double TiltIntercept,
@@ -27,6 +40,7 @@ public sealed record PtzGeoFit(
   double MaxRelAzimuthDeg,
   double MinElevationDeg,
   double MaxElevationDeg,
+  bool FoldsPan,
   IReadOnlyDictionary<string, GeoResidual?> Residuals);
 
 /// <summary>Where to point, and whether the direction is outside what the landmarks cover.</summary>
@@ -50,10 +64,23 @@ public sealed record GeoAim(float Pan, float Tilt, bool Extrapolated);
 /// sector, which is the cue to level the mount -- not something to model away with two points.
 /// </para>
 /// <para>
-/// Azimuths are unwrapped around the observations' circular mean, so a set of landmarks either
-/// side of north is one continuous sector rather than two ends of 0..360. The camera's own pan seam
-/// (where -1 meets 1) is not known and must not run through the observed sector; landmarks spread
-/// across the area the camera will actually be aimed at keep it out.
+/// A head that pans round and round counts from a seam of its own, where its readings jump from one
+/// end of their range to the other. It is wherever the installer happened to point the camera --
+/// inside a sector of 90° one time in four -- so it is found rather than assumed: it lies in one
+/// of the gaps between neighbouring landmarks, and in the right gap the pan is one straight line,
+/// while in any other the jump of a full turn is a step no line fits. Each gap is tried and the
+/// best line decides. Two landmarks fit either way round; with nothing to tell the two apart, the
+/// seam is put behind them, in the wider gap. Nothing about the length of a turn in the camera's
+/// units is needed, which is what keeps this free of the camera's declared ranges.
+/// </para>
+/// <para>
+/// Within its gap the seam is put halfway, so a target between there and the true seam comes out past
+/// the end of the camera's range, which a camera that checks its range refuses. In ONVIF's generic
+/// space -1..1 is the whole range by definition: when the slope says a turn there is 2, the head
+/// pans round and such an aim is folded back by a turn. A camera counting in other units is left as
+/// it is. The sector the landmarks cover, outside which an aim is
+/// extrapolated, is the circle less its widest gap, so landmarks either side of north are one
+/// sector rather than two ends of 0..360.
 /// </para>
 /// </remarks>
 public static class PtzGeoMath
@@ -70,6 +97,13 @@ public static class PtzGeoMath
 
   /// A reading that does not move this much across the spread above is not a reading.
   private const double MinReadingSpread = 1e-4;
+
+  /// A whole turn in ONVIF's generic space, -1..1.
+  private const double GenericTurn = 2;
+
+  /// How far a fitted turn may be from <see cref="GenericTurn"/> and still be one: slack for the slope's
+  /// own error, which a head with a dead zone of a few degrees also falls within, harmlessly.
+  private const double TurnTolerance = 0.02;
 
   /// Slack on the extrapolation check, so a point on the edge of the covered sector is not flagged.
   private const double EdgeToleranceDeg = 1;
@@ -91,14 +125,16 @@ public static class PtzGeoMath
   public static bool TryFit(IReadOnlyList<GeoObservationSample> observations, out PtzGeoFit? fit, out string? error)
   {
     fit = null;
-    if (!TryFitLines(observations, out var lines, out error))
+    if (!TryFitLines(observations, null, out var lines, out error))
       return false;
 
     var residuals = new Dictionary<string, GeoResidual?>(StringComparer.Ordinal);
     foreach (var held in observations)
     {
+      // The seam is the camera's, found from every landmark: it stays where it is when one is left
+      // out, as the two that may be left could fit either way round.
       var rest = observations.Where(o => !ReferenceEquals(o, held)).ToList();
-      if (rest.Count < MinObservations || !TryFitLines(rest, out var other, out _))
+      if (rest.Count < MinObservations || !TryFitLines(rest, lines.SeamAzimuthDeg, out var other, out _))
       {
         residuals[held.LandmarkId] = null;
         continue;
@@ -109,15 +145,18 @@ public static class PtzGeoMath
     }
 
     fit = new PtzGeoFit(
-      lines.RefAzimuthDeg, lines.PanIntercept, lines.PanSlope, lines.TiltIntercept, lines.TiltSlope,
-      lines.MinRelAz, lines.MaxRelAz, lines.MinEl, lines.MaxEl, residuals);
+      lines.RefAzimuthDeg, lines.SeamAzimuthDeg, lines.PanIntercept, lines.PanSlope, lines.TiltIntercept, lines.TiltSlope,
+      lines.MinRelAz, lines.MaxRelAz, lines.MinEl, lines.MaxEl,
+      FoldsPan(lines.PanSlope, observations), residuals);
     return true;
   }
 
   public static GeoAim Project(PtzGeoFit fit, Bearing bearing)
   {
     var relAz = Wrap180(bearing.AzimuthDeg - fit.RefAzimuthDeg);
-    var pan = fit.PanIntercept + fit.PanSlope * relAz;
+    var pan = fit.PanIntercept + fit.PanSlope * FromSeam(bearing.AzimuthDeg, fit.SeamAzimuthDeg);
+    if (fit.FoldsPan)
+      pan -= GenericTurn * Math.Floor((pan + 1) / GenericTurn);
     var tilt = fit.TiltIntercept + fit.TiltSlope * bearing.ElevationDeg;
     var extrapolated =
       relAz < fit.MinRelAzimuthDeg - EdgeToleranceDeg || relAz > fit.MaxRelAzimuthDeg + EdgeToleranceDeg ||
@@ -135,15 +174,32 @@ public static class PtzGeoMath
     return d;
   }
 
-  private sealed record Lines(
-    double RefAzimuthDeg, double PanIntercept, double PanSlope, double TiltIntercept, double TiltSlope,
-    double MinRelAz, double MaxRelAz, double MinEl, double MaxEl)
+  /// <summary>Whether the camera reads -1..1 and the slope makes a full turn of that.</summary>
+  private static bool FoldsPan(double panSlope, IReadOnlyList<GeoObservationSample> obs) =>
+    Math.Abs(360 * Math.Abs(panSlope) - GenericTurn) <= TurnTolerance * GenericTurn
+    && obs.All(o => o.Pan is >= -1 and <= 1);
+
+  /// <summary>An azimuth measured clockwise from the seam, in [0, 360).</summary>
+  private static double FromSeam(double azimuthDeg, double seamDeg)
   {
-    public (double Pan, double Tilt) Evaluate(Bearing b) =>
-      (PanIntercept + PanSlope * Wrap180(b.AzimuthDeg - RefAzimuthDeg), TiltIntercept + TiltSlope * b.ElevationDeg);
+    var d = (azimuthDeg - seamDeg) % 360;
+    return d < 0 ? d + 360 : d;
   }
 
-  private static bool TryFitLines(IReadOnlyList<GeoObservationSample> obs, out Lines lines, out string? error)
+  private sealed record Lines(
+    double RefAzimuthDeg, double SeamAzimuthDeg, double PanIntercept, double PanSlope, double TiltIntercept,
+    double TiltSlope, double MinRelAz, double MaxRelAz, double MinEl, double MaxEl)
+  {
+    public (double Pan, double Tilt) Evaluate(Bearing b) =>
+      (PanIntercept + PanSlope * FromSeam(b.AzimuthDeg, SeamAzimuthDeg), TiltIntercept + TiltSlope * b.ElevationDeg);
+  }
+
+  /// <summary>An empty stretch of the circle between two neighbouring landmarks.</summary>
+  private readonly record struct Gap(double MiddleDeg, double WidthDeg);
+
+  /// <param name="seamDeg">Where the camera's pan wraps; null finds it from these observations.</param>
+  private static bool TryFitLines(
+    IReadOnlyList<GeoObservationSample> obs, double? seamDeg, out Lines lines, out string? error)
   {
     lines = null!;
     if (obs.Count < MinObservations)
@@ -152,7 +208,8 @@ public static class PtzGeoMath
       return false;
     }
 
-    var refAz = CircularMeanDeg(obs.Select(o => o.Bearing.AzimuthDeg));
+    var gaps = Gaps(obs.Select(o => o.Bearing.AzimuthDeg));
+    var refAz = Wrap180(gaps.MaxBy(g => g.WidthDeg).MiddleDeg + 180);
     var az = obs.Select(o => Wrap180(o.Bearing.AzimuthDeg - refAz)).ToArray();
     var el = obs.Select(o => o.Bearing.ElevationDeg).ToArray();
     var pan = obs.Select(o => (double)o.Pan).ToArray();
@@ -179,11 +236,48 @@ public static class PtzGeoMath
       return false;
     }
 
-    var (panA, panB) = LeastSquares(az, pan);
+    var seam = seamDeg ?? FindSeam(obs, gaps);
+    var (panA, panB) = LeastSquares(obs.Select(o => FromSeam(o.Bearing.AzimuthDeg, seam)).ToArray(), pan);
     var (tiltA, tiltB) = LeastSquares(el, tilt);
-    lines = new Lines(refAz, panA, panB, tiltA, tiltB, az.Min(), az.Max(), el.Min(), el.Max());
+    lines = new Lines(refAz, seam, panA, panB, tiltA, tiltB, az.Min(), az.Max(), el.Min(), el.Max());
     error = null;
     return true;
+  }
+
+  /// <summary>The gaps between neighbouring azimuths round the circle, the one across north included.</summary>
+  private static List<Gap> Gaps(IEnumerable<double> azimuthsDeg)
+  {
+    var sorted = azimuthsDeg.Select(a => FromSeam(a, 0)).Order().ToList();
+    var gaps = new List<Gap>(sorted.Count);
+    for (var i = 0; i < sorted.Count; i++)
+    {
+      var from = sorted[i];
+      var width = i + 1 < sorted.Count ? sorted[i + 1] - from : sorted[0] + 360 - from;
+      gaps.Add(new Gap(FromSeam(from + width / 2, 0), width));
+    }
+    return gaps;
+  }
+
+  /// <summary>The middle of the gap in which the pan readings make the straightest line.</summary>
+  /// <remarks>Tried widest first, so a tie goes to the gap behind the landmarks.</remarks>
+  private static double FindSeam(IReadOnlyList<GeoObservationSample> obs, IReadOnlyList<Gap> gaps)
+  {
+    var widestFirst = gaps.OrderByDescending(g => g.WidthDeg).ToList();
+    if (obs.Count == MinObservations)
+      return widestFirst[0].MiddleDeg;
+
+    var pan = obs.Select(o => (double)o.Pan).ToArray();
+    var best = widestFirst[0].MiddleDeg;
+    var bestMiss = double.MaxValue;
+    foreach (var gap in widestFirst)
+    {
+      var x = obs.Select(o => FromSeam(o.Bearing.AzimuthDeg, gap.MiddleDeg)).ToArray();
+      var (a, b) = LeastSquares(x, pan);
+      var miss = x.Select((xi, i) => Math.Pow(a + b * xi - pan[i], 2)).Sum();
+      if (miss < bestMiss)
+        (best, bestMiss) = (gap.MiddleDeg, miss);
+    }
+    return best;
   }
 
   /// <summary>y = a + b·x by ordinary least squares; x must not be constant.</summary>
@@ -199,16 +293,5 @@ public static class PtzGeoMath
     }
     var b = sxy / sxx;
     return (my - b * mx, b);
-  }
-
-  private static double CircularMeanDeg(IEnumerable<double> degrees)
-  {
-    double s = 0, c = 0;
-    foreach (var d in degrees)
-    {
-      s += Math.Sin(d / RadToDeg);
-      c += Math.Cos(d / RadToDeg);
-    }
-    return Math.Atan2(s, c) * RadToDeg;
   }
 }
