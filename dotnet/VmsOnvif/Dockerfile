@@ -4,7 +4,6 @@ WORKDIR /src
 
 COPY ["dotnet/VmsOnvif/VmsOnvif.csproj", "dotnet/VmsOnvif/"]
 COPY ["dotnet/web_srv.Types/web_srv.Types.csproj", "dotnet/web_srv.Types/"]
-COPY ["dotnet/OnvifLib/OnvifLib.csproj", "dotnet/OnvifLib/"]
 COPY ["dotnet/VmsLog/VmsLog.csproj", "dotnet/VmsLog/"]
 COPY ["proto", "proto"]
 

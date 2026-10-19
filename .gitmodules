@@ -7,6 +7,3 @@
 [submodule "roitrc/ta_roienc"]
 	path = roitrc/ta_roienc
 	url = https://github.com/treealarm/roi_transcode.git
-[submodule "web_vms/OnvifLib"]
-	path = dotnet/OnvifLib
-	url = https://github.com/treealarm/OnvifLib.git

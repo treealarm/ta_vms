@@ -8,10 +8,10 @@
 
   <ItemGroup>
     <PackageReference Include="Dapr.Actors.AspNetCore" Version="1.18.5" />
+    <PackageReference Include="OnvifLib" Version="1.2.1" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\OnvifLib\OnvifLib.csproj" />
     <ProjectReference Include="..\web_srv.Types\web_srv.Types.csproj" />
     <ProjectReference Include="..\VmsLog\VmsLog.csproj" />
   </ItemGroup>

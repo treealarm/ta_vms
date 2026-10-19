@@ -17,11 +17,11 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="OnvifLib" Version="1.2.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\web_srv.Types\web_srv.Types.csproj" />
-    <ProjectReference Include="..\OnvifLib\OnvifLib.csproj" />
     <ProjectReference Include="..\VmsLog\VmsLog.csproj" />
   </ItemGroup>
 

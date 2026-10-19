@@ -18,11 +18,11 @@
     </PackageReference>
     <PackageReference Include="Npgsql" Version="10.0.3" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="OnvifLib" Version="1.2.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\web_srv.Types\web_srv.Types.csproj" />
-    <ProjectReference Include="..\OnvifLib\OnvifLib.csproj" />
     <ProjectReference Include="..\VmsLog\VmsLog.csproj" />
   </ItemGroup>
 

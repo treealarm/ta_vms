@@ -113,7 +113,8 @@ where the head really points against the simulator's ground truth.
 | [ta_install](https://github.com/treealarm/ta_install) | The product: prebuilt images and the compose file |
 | [video_a](https://github.com/treealarm/video_a) | The detection worker (OpenVINO) |
 | [OnvifSim](https://github.com/treealarm/OnvifSim) | ONVIF camera simulator, used to test PTZ without hardware |
-| [OnvifLib](https://github.com/treealarm/OnvifLib) | The ONVIF client library the services use |
+| [OnvifLib](https://github.com/treealarm/OnvifLib) | The ONVIF client library the services use, taken as the `OnvifLib` NuGet package |
+| [roi_transcode](https://github.com/treealarm/roi_transcode) | The hardware video encoding library, the `roitrc/ta_roienc` submodule |
 | [Square](https://github.com/treealarm/Square) | TreeAlarm, the map-based monitoring system this VMS plugs into |
 
 ## Works with TreeAlarm

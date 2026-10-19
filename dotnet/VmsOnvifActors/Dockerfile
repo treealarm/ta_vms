@@ -3,7 +3,6 @@ ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 
 COPY ["dotnet/VmsOnvifActors/VmsOnvifActors.csproj", "dotnet/VmsOnvifActors/"]
-COPY ["dotnet/OnvifLib/OnvifLib.csproj", "dotnet/OnvifLib/"]
 COPY ["dotnet/web_srv.Types/web_srv.Types.csproj", "dotnet/web_srv.Types/"]
 COPY ["dotnet/VmsLog/VmsLog.csproj", "dotnet/VmsLog/"]
 
