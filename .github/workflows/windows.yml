@@ -1,0 +1,168 @@
+# Builds video_srv (vms.exe) and the .NET solution on Windows and runs the .NET tests -- the
+# build a developer gets from scripts/win/Setup-WindowsBuild.ps1, which this workflow calls
+# instead of repeating it. That keeps the script honest (its -Yes path has no other user) and
+# leaves vms.exe with its DLLs as an artifact, for the Docker-free installer to start from.
+#
+# Manual only: a cold run builds every vcpkg port from source, about two hours.
+#
+# The ports are what takes the time, so they are kept between runs in vcpkg's binary cache --
+# the `files` backend, one zip per port named by the port's ABI hash -- carried as a single tar
+# in the assets of the `windows-deps` prerelease. Release assets are free and never expire;
+# actions/cache evicts whatever nobody read for 7 days, and GitHub Packages charges past
+# 500 MB. A port whose inputs did not change is restored in seconds, one whose inputs did is
+# rebuilt, and the tar is then replaced with exactly the set this run used. To rebuild every
+# port from scratch, delete the asset.
+#
+# The ports are built release-only (scripts/win/triplets/x64-windows.cmake), so the build here
+# is Release.
+
+name: windows
+
+on:
+  workflow_dispatch:
+
+# One group for the whole repository rather than per branch: every run reads and replaces the
+# same release asset.
+concurrency:
+  group: windows
+
+permissions:
+  contents: read
+
+env:
+  # Pinned because a port's ABI hash covers its recipe: following vcpkg's HEAD would rebuild
+  # something on nearly every run. The same commit as the encoder's builtin-baseline
+  # (roitrc/ta_roienc/vcpkg.json). Moving it makes the next run cold.
+  VCPKG_COMMIT: c5a15727ee70fddf0296f0d8aafc3f58916fefac
+  # The runner image's own vcpkg clone, moved to VCPKG_COMMIT.
+  VCPKG_ROOT: C:\vcpkg
+  VCPKG_BINARY_CACHE: C:\vcpkg-binary-cache
+  VCPKG_OVERLAY_TRIPLETS: ${{ github.workspace }}\scripts\win\triplets
+  DEPS_RELEASE: windows-deps
+  DEPS_ASSET: vcpkg-binary-cache-x64-windows-release.tar
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 300
+    permissions:
+      contents: write # create the windows-deps prerelease and replace its asset
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      # The runner image has it today; named here so that an image without it does not send
+      # the script off to winget.
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Pin vcpkg
+        run: |
+          # The image's clone belongs to another account, and git refuses such a repository
+          # unless told it is safe. `git init` is a no-op on an existing clone and makes a
+          # missing one, so both cases end at the same commit.
+          $git = @('-c', 'safe.directory=*', '-C', $env:VCPKG_ROOT)
+          git init --quiet $env:VCPKG_ROOT
+          git @git fetch --quiet --depth 1 https://github.com/microsoft/vcpkg.git $env:VCPKG_COMMIT
+          if ($LASTEXITCODE -ne 0) { throw "cannot fetch vcpkg $env:VCPKG_COMMIT" }
+          git @git -c advice.detachedHead=false checkout --quiet --force --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { throw "cannot check out vcpkg $env:VCPKG_COMMIT" }
+          # The tool is pinned by the checkout (scripts/vcpkg-tool-metadata.txt), not by the image.
+          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg bootstrap failed" }
+
+      - name: Restore vcpkg binary cache
+        run: |
+          "VCPKG_BINARY_SOURCES=clear;files,$env:VCPKG_BINARY_CACHE,readwrite" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force $env:VCPKG_BINARY_CACHE | Out-Null
+
+          gh release download $env:DEPS_RELEASE --repo $env:GITHUB_REPOSITORY `
+            --pattern $env:DEPS_ASSET --dir $env:RUNNER_TEMP
+          if ($LASTEXITCODE -eq 0) {
+            $tar = Join-Path $env:RUNNER_TEMP $env:DEPS_ASSET
+            tar -xf $tar -C $env:VCPKG_BINARY_CACHE
+            if ($LASTEXITCODE -ne 0) { throw "cannot unpack $env:DEPS_ASSET" }
+            Remove-Item $tar
+          } else {
+            "::warning::No $env:DEPS_ASSET in release $env:DEPS_RELEASE: every vcpkg port is built from source (about two hours)."
+          }
+
+          # What was there before, so the save step can tell whether this run changed anything.
+          $zips = @(Get-ChildItem $env:VCPKG_BINARY_CACHE -Recurse -Filter *.zip | ForEach-Object Name | Sort-Object)
+          "restored $($zips.Count) cached port(s)"
+          $zips | Set-Content (Join-Path $env:RUNNER_TEMP 'cache-before.txt')
+          exit 0
+
+      - name: vcpkg ports
+        id: ports
+        run: .\scripts\win\Setup-WindowsBuild.ps1 -Yes -SkipBuild -VcpkgRoot $env:VCPKG_ROOT
+
+      # Right after the ports rather than at the end: two hours of port builds must not be lost
+      # to a compile error further down. It also runs when the ports step failed -- every port
+      # that finished before the failure is worth keeping.
+      - name: Save vcpkg binary cache
+        if: ${{ !cancelled() }}
+        env:
+          PORTS_OK: ${{ steps.ports.outcome == 'success' }}
+        run: |
+          # After a complete install, drop the zips this run did not use: their ports' inputs
+          # changed and nothing will ask for those hashes again. That keeps one copy of each
+          # port in the asset instead of a new layer on every vcpkg or port change. The ABI of
+          # every installed package is in vcpkg's status database -- `status`, plus the
+          # `updates/` files not yet folded into it.
+          if ($env:PORTS_OK -eq 'true') {
+            $db = Join-Path $env:VCPKG_ROOT 'installed\vcpkg'
+            $files = @(Join-Path $db 'status') + @(Get-ChildItem (Join-Path $db 'updates') -File -ErrorAction SilentlyContinue | ForEach-Object FullName)
+            $used = @(Get-Content -LiteralPath @($files | Where-Object { Test-Path $_ }) |
+              Select-String '^Abi: (\S+)$' | ForEach-Object { "$($_.Matches[0].Groups[1].Value).zip" })
+            if ($used.Count -eq 0) {
+              "::warning::No ABI hash found in vcpkg's status database; nothing pruned from the cache."
+            } else {
+              Get-ChildItem $env:VCPKG_BINARY_CACHE -Recurse -Filter *.zip |
+                Where-Object { $used -notcontains $_.Name } |
+                ForEach-Object { "pruned $($_.Name)"; Remove-Item $_.FullName }
+            }
+          }
+
+          $before = @(Get-Content (Join-Path $env:RUNNER_TEMP 'cache-before.txt') -ErrorAction SilentlyContinue)
+          $after = @(Get-ChildItem $env:VCPKG_BINARY_CACHE -Recurse -Filter *.zip | ForEach-Object Name | Sort-Object)
+          if ($after.Count -eq 0) { "nothing to save"; exit 0 }
+          if (($before -join "`n") -eq ($after -join "`n")) { "cache unchanged ($($after.Count) ports)"; exit 0 }
+
+          # Uncompressed: the zips inside already are.
+          $tar = Join-Path $env:RUNNER_TEMP $env:DEPS_ASSET
+          tar -cf $tar -C $env:VCPKG_BINARY_CACHE .
+          if ($LASTEXITCODE -ne 0) { throw "cannot pack the cache" }
+          "saving $($after.Count) ports, $([math]::Round((Get-Item $tar).Length / 1MB)) MB"
+
+          gh release view $env:DEPS_RELEASE --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:DEPS_RELEASE --repo $env:GITHUB_REPOSITORY --prerelease `
+              --title 'Windows vcpkg binary cache' `
+              --notes 'Not a release. Holds the vcpkg binary cache of .github/workflows/windows.yml, which replaces the asset itself. Delete the asset to rebuild every port from source on the next run.'
+            if ($LASTEXITCODE -ne 0) { throw "cannot create release $env:DEPS_RELEASE" }
+          }
+          gh release upload $env:DEPS_RELEASE $tar --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw "cannot upload $env:DEPS_ASSET" }
+
+      - name: Build
+        run: .\scripts\win\Setup-WindowsBuild.ps1 -Yes -Configuration Release -VcpkgRoot $env:VCPKG_ROOT
+
+      - name: Test
+        run: dotnet test dotnet\ta_vms.sln -c Release --no-build --nologo
+
+      # vcpkg's applocal step copies every DLL vms.exe needs beside it.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vms-windows-x64
+          path: |
+            video_srv/build/vms.exe
+            video_srv/build/*.dll
+          if-no-files-found: error
+          retention-days: 14

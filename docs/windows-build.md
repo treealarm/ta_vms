@@ -97,11 +97,36 @@ Each of these was hit in practice, and the script works around it.
 
 ## What has not been exercised
 
-The checks and the build are verified on a machine that already had everything. The
-**install** paths — VS Build Tools, Node, the .NET SDK, and cloning plus bootstrapping
-vcpkg — have never actually run, so treat the first run on a genuinely clean machine as a
-test of this script rather than a guarantee. Installing VS Build Tools may also want a
-reboot.
+The checks and the build are verified on a machine that already had everything, and the
+unattended `-Yes` path by [CI](#ci). The **install** paths — VS Build Tools, Node, the .NET
+SDK, and cloning plus bootstrapping vcpkg — have never actually run: the CI runner has them
+all. Treat the first run on a genuinely clean machine as a test of this script rather than a
+guarantee. Installing VS Build Tools may also want a reboot.
+
+## CI
+
+`.github/workflows/windows.yml` runs this script on a GitHub-hosted `windows-latest` runner:
+once with `-Yes -SkipBuild` for the vcpkg ports, then with `-Yes -Configuration Release` for
+the build, followed by `dotnet test`. It is started by hand, from the repository's Actions
+page or with:
+
+```
+gh workflow run windows.yml --ref <branch>
+```
+
+The result is the artifact `vms-windows-x64`: `vms.exe` with the vcpkg DLLs it needs beside it.
+
+- **The ports are built release-only**, through the overlay triplet
+  `scripts/win/triplets/x64-windows.cmake`. That halves their build time and their cache, and
+  is why CI builds Release: a Debug `vms.exe` cannot link against release-only libraries
+  (LNK2038). Developer machines keep vcpkg's own triplet, which has both.
+- **The built ports are kept as an asset of the `windows-deps` prerelease**, as vcpkg's binary
+  cache in one tar. A cold run builds every port from source and takes about two hours; with the
+  asset in place a run takes minutes for the ports. Each run replaces the asset with exactly the
+  ports it used. Delete the asset to force a full rebuild.
+- **vcpkg is pinned** by `VCPKG_COMMIT` in the workflow, the same commit as the encoder's
+  `builtin-baseline`. Moving it changes the ABI hash of most ports, so the next run is cold
+  again.
 
 ## Output
 
