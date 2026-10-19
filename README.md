@@ -93,10 +93,11 @@ for the C++ services; [docs/windows-build.md](docs/windows-build.md) covers Wind
 bringing the stack up, and the debug configurations in `.vscode/` start every service under the
 debugger at once.
 
-The hardware encoding library (the `roitrc/ta_roienc` submodule) is not public. Without it
-everything still builds, with a CMake warning: `video_srv` re-encodes HEVC for WebRTC viewers on
-the CPU instead of the GPU, and the `roitrc` clip re-compression service is skipped. The prebuilt
-images from `ta_install` have both.
+The hardware encoding library is a submodule, `roitrc/ta_roienc`
+([roi_transcode](https://github.com/treealarm/roi_transcode)), so clone with `--recursive` or run
+`git submodule update --init --recursive`. Without it everything still builds, with a CMake
+warning: `video_srv` re-encodes HEVC for WebRTC viewers on the CPU instead of the GPU, and the
+`roitrc` clip re-compression service is skipped.
 
 ## Testing without cameras
 

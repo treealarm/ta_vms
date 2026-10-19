@@ -108,7 +108,8 @@ The third is the separate `video_a` repository, which has its own `ta_roienc` su
 only the decoder (`ta_roienc_decode`) for the analytics worker; a rename in the library's public
 API has to be carried there too, and its submodule bumped in a commit of its own.
 
-**The library is private and ta_vms is public, so a build without it must keep working.**
+**A build without the submodule must keep working** — a clone made without `--recursive` has an
+empty `roitrc/ta_roienc`, and that is a reason to warn, not to fail.
 `video_srv/CMakeLists.txt` adds it only when `roitrc/ta_roienc` is checked out; otherwise it
 warns, leaves `hw_transcode_processor` out (`VMS_WITH_TA_ROIENC` is undefined) and every HEVC
 stream takes `video_transcode_processor`. Such a binary refuses to start with `VMS_VIDEO_ENCODER`

@@ -22,8 +22,8 @@ pkg_check_modules(FFMPEG REQUIRED
 # WebRTC goes through it (see writer/processors/hw_transcode_processor.cpp) rather than through a
 # second copy of the same probe-and-fall-back logic written here.
 #
-# The submodule is private, so a clone of this repository without access to it still has to
-# build. Without it the service is complete but CPU-only on that path: every HEVC stream a browser
+# A clone made without --recursive has no submodule, and it still has to build. Without the
+# library the service is complete but CPU-only on that path: every HEVC stream a browser
 # watches is re-encoded by video_transcode_processor (libx264). That is a warning, not an error --
 # except where VMS_REQUIRE_TA_ROIENC says otherwise, which the image build does, because an image
 # that lost its hardware encoder looks from outside exactly like a service that burns CPU.

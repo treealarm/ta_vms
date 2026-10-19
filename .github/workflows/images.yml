@@ -11,10 +11,8 @@
 # Dockerfiles use through a buildx named context -- so the Dockerfiles stay as they are and keep
 # building locally.
 #
-# Secrets: TA_ROIENC_DEPLOY_KEY (private half of a read-only deploy key on
-# treealarm/roi_transcode, the private roitrc/ta_roienc submodule; the same key as video_a's),
-# DOCKERHUB_USERNAME, DOCKERHUB_TOKEN (the same names in every treealarm repository that pushes
-# to Docker Hub).
+# Secrets: DOCKERHUB_USERNAME, DOCKERHUB_TOKEN (the same names in every treealarm repository that
+# pushes to Docker Hub).
 
 name: images
 
@@ -107,20 +105,11 @@ jobs:
         include: ${{ fromJSON(needs.changes.outputs.matrix) }}
     name: ${{ matrix.name }}
     steps:
+      # Every submodule is public, roitrc/ta_roienc included, so checkout fetches them all over
+      # HTTPS with no credentials of their own.
       - uses: actions/checkout@v5
-
-      # Not checkout's `submodules:` -- it fetches them over HTTPS with GITHUB_TOKEN, which cannot
-      # read another private repository. A deploy key is scoped to roi_transcode alone, read-only,
-      # and its .gitmodules URL is SSH; the public submodules are HTTPS and need no credentials.
-      - name: Submodules
-        env:
-          TA_ROIENC_DEPLOY_KEY: ${{ secrets.TA_ROIENC_DEPLOY_KEY }}
-        run: |
-          eval "$(ssh-agent -s)"
-          ssh-add - <<<"$TA_ROIENC_DEPLOY_KEY"
-          mkdir -p ~/.ssh
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-          git submodule update --init --recursive
+        with:
+          submodules: recursive
 
       # Logged in on pull requests too: the C++ bases are several GB, and anonymous Docker Hub
       # pulls are rate-limited per runner IP.

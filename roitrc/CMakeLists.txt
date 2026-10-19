@@ -18,8 +18,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(ROITRC_BUILD_TESTS "Build the service's own tests" ON)
 
-# The submodule is private, and this service is nothing without it. A clone without access still
-# builds the rest of ta_vms, so here an absent library is a warning and an empty `roitrc` target,
+# This service is nothing without the submodule. A clone made without --recursive still builds
+# the rest of ta_vms, so here an absent library is a warning and an empty `roitrc` target,
 # which keeps `cmake --build --target roitrc` -- and the editor's build:all -- going. A node with
 # no roitrc simply does not re-compress (see MEDIA_SERVER_PAIRS). The image cannot be built
 # without it either way: its roi-deps base comes from the submodule's docker/intel.
