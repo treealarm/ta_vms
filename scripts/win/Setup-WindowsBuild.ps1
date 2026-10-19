@@ -333,37 +333,6 @@ function Get-MissingPorts {
     return $missing
 }
 
-function Use-HttpsSubmoduleUrls {
-    <#
-        Points the submodules at https:// instead of git@github.com.
-
-        .gitmodules declares SSH remotes, which need a key with access to the
-        organisation. Both submodules are public, so anonymous HTTPS fetches them just as
-        well — and a fresh machine has no SSH key at all.
-
-        The override is written to .git/config, not to .gitmodules: the repository keeps
-        its SSH remotes for whoever has keys, and nothing shows up as a local change.
-    #>
-    param([Parameter(Mandatory)][string]$Repo)
-
-    $rewritten = 0
-    $entries = & git -C $Repo config --file .gitmodules --get-regexp '^submodule\..*\.url$' 2>$null
-    foreach ($entry in $entries) {
-        if ($entry -notmatch '^(\S+)\s+(.+)$') { continue }
-        $key = $Matches[1]
-        $url = $Matches[2].Trim()
-        # git@host:owner/repo.git -> https://host/owner/repo.git
-        if ($url -match '^git@([^:]+):(.+)$') {
-            $https = "https://$($Matches[1])/$($Matches[2])"
-            & git -C $Repo config $key $https 2>&1 | Out-Null
-            Write-Note "$key -> $https"
-            $rewritten++
-        }
-    }
-    if ($rewritten -gt 0) { & git -C $Repo submodule sync 2>&1 | Out-Null }
-    return $rewritten
-}
-
 # ================================================================================= checks
 
 Write-Host "ta_vms — Windows build prerequisites" -ForegroundColor White
@@ -382,9 +351,8 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
 }
 
 # ---- submodules --------------------------------------------------------------------
-# KeycloakAdmin and SquareIntegrationClient are submodules; without them the solution does
-# not restore. .gitmodules uses SSH remotes, but both repositories are public, so a machine
-# with no SSH key can still fetch them over HTTPS — see the fallback below.
+# SquareIntegrationClient and roitrc/ta_roienc are submodules; without the first the solution
+# does not restore. Both are public and .gitmodules names them over HTTPS, so no key is needed.
 Write-Head "Git submodules"
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     Write-Miss "skipped — git is not available"
@@ -400,19 +368,12 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
             foreach ($u in $uninit) { Write-Note $u.Trim() }
             if (Confirm-Action "Initialise submodules?") {
                 Write-Step "fetching submodules"
-                # GIT_TERMINAL_PROMPT=0 so a missing SSH key fails immediately instead of
+                # GIT_TERMINAL_PROMPT=0 so an unreachable remote fails immediately instead of
                 # blocking on a credential prompt in a non-interactive run.
                 $previousPrompt = $env:GIT_TERMINAL_PROMPT
                 $env:GIT_TERMINAL_PROMPT = '0'
                 try {
                     $code = Invoke-Native { & git submodule update --init --recursive }
-                    if ($code -ne 0) {
-                        Write-Miss "SSH fetch failed — retrying over HTTPS (both submodules are public)"
-                        if ((Use-HttpsSubmoduleUrls -Repo $RepoRoot) -gt 0) {
-                            Write-Step "fetching submodules over HTTPS"
-                            $code = Invoke-Native { & git submodule update --init --recursive }
-                        }
-                    }
                 } finally {
                     $env:GIT_TERMINAL_PROMPT = $previousPrompt
                 }

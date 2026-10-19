@@ -23,7 +23,6 @@ COPY ["dotnet/web_srv.client/web_srv.client.esproj", "dotnet/web_srv.client/"]
 COPY ["dotnet/VmsCfg/VmsCfg.csproj", "dotnet/VmsCfg/"]
 COPY ["dotnet/web_srv.Types/web_srv.Types.csproj", "dotnet/web_srv.Types/"]
 COPY ["dotnet/VmsLog/VmsLog.csproj", "dotnet/VmsLog/"]
-COPY ["dotnet/KeycloakAdmin/KeycloakAdmin.csproj", "dotnet/KeycloakAdmin/"]
 COPY ["proto", "proto"]
 
 # =========================

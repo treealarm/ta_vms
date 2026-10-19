@@ -59,15 +59,11 @@ it belongs to the sibling `video_a` repository.
 Building these ports from source takes a long time; ffmpeg and grpc dominate. This is the
 step worth doing once and keeping.
 
-## Submodules without an SSH key
+## Submodules
 
-`.gitmodules` declares its remotes as `git@github.com:treealarm/…`, which normally means a
-key with access to the organisation. Both submodules — `KeycloakAdmin` and
-`SquareIntegrationClient` — are **public**, so the script falls back to anonymous HTTPS
-when the SSH fetch fails, and a machine with no key at all still gets them.
-
-The rewrite is written to `.git/config`, never to `.gitmodules`: the repository keeps its
-SSH remotes for whoever has keys, and `git status` stays clean.
+`SquareIntegrationClient` and `roitrc/ta_roienc` are submodules, both public, and `.gitmodules`
+names them over HTTPS, so a machine with no SSH key fetches them anonymously. OnvifLib and
+KeycloakAdmin are NuGet packages and need no checkout at all.
 
 ## Things that are easy to get wrong
 

@@ -96,8 +96,8 @@ A thin client over the Square API, **gRPC + Dapr service invocation**, behind th
   guarantees that without the integration the producer works standalone.
 - **Where it lives: a repository of its own, `github.com/treealarm/SquareIntegrationClient`,
   included as a git submodule** — `ta_vms/dotnet/SquareIntegrationClient` and
-  `Square/SquareIntegrationClient` (after the example of `KeycloakAdmin`, which is already a
-  submodule in both repositories). It holds the `.proto` contract
+  `Square/SquareIntegrationClient` (after the example of `KeycloakAdmin`, then a submodule in both
+  repositories; ta_vms has since taken it as a NuGet package). It holds the `.proto` contract
   (`integro`/`tracks`/`actions`/`common`/`diagrams`) and the generated gRPC stubs — one source of
   truth instead of copies kept in step by hand. It is used by **every** producer of the protocol:
   the external one (`ta_vms/VmsCfg`) and Square's internal producers (`AASubService`,
