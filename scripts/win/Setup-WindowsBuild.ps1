@@ -306,7 +306,9 @@ function Resolve-VcpkgRoot {
 
     $usable = @()
     foreach ($c in $candidates) {
-        if ($c -and (Test-Path (Join-Path $c "vcpkg.exe"))) { $usable += (Resolve-Path $c).Path }
+        # IO.Path rather than Join-Path: Join-Path resolves the drive and throws on a candidate
+        # whose drive this machine does not have (M:\vcpkg on a CI runner).
+        if ($c -and (Test-Path -LiteralPath ([IO.Path]::Combine($c, "vcpkg.exe")))) { $usable += (Resolve-Path $c).Path }
     }
     if ($usable.Count -eq 0) { return $null }
 
