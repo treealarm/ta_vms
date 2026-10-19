@@ -1,9 +1,11 @@
 # Builds video_srv (vms.exe) and the .NET solution on Windows and runs the .NET tests -- the
 # build a developer gets from scripts/win/Setup-WindowsBuild.ps1, which this workflow calls
-# instead of repeating it. That keeps the script honest (its -Yes path has no other user) and
-# leaves vms.exe with its DLLs as an artifact, for the Docker-free installer to start from.
+# instead of repeating it. That keeps the script honest (its -Yes path has no other user). Then
+# vms.exe is started once to prove it loads, and the artifact `ta_vms-windows-x64` gets vms.exe
+# with its DLLs and every .NET service published, for the Docker-free installer to start from.
 #
-# Manual only: a cold run builds every vcpkg port from source, about two hours.
+# Runs on every master push that touches what it builds -- minutes are free on a public
+# repository -- and by hand. A cold run builds every vcpkg port from source, about two hours.
 #
 # The ports are what takes the time, so they are kept between runs in vcpkg's binary cache --
 # the `files` backend, one zip per port named by the port's ABI hash -- carried as a single tar
@@ -19,6 +21,16 @@
 name: windows
 
 on:
+  push:
+    branches: [master]
+    paths:
+      - video_srv/**
+      - dotnet/**
+      - proto/**
+      - cmake/**
+      - roitrc/ta_roienc
+      - scripts/win/**
+      - .github/workflows/windows.yml
   workflow_dispatch:
 
 # One group for the whole repository rather than per branch: every run reads and replaces the
@@ -161,12 +173,62 @@ jobs:
       - name: Test
         run: dotnet test dotnet\ta_vms.sln -c Release --no-build --nologo
 
-      # vcpkg's applocal step copies every DLL vms.exe needs beside it.
+      # Staged as it ships, and started from there below, so a DLL missing from the artifact fails
+      # this run. vcpkg's applocal step puts every DLL vms.exe needs beside it in the build tree.
+      - name: Stage vms
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'ta_vms\vms'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Copy-Item video_srv\build\vms.exe, video_srv\build\*.dll $out
+
+      # Given only what it needs to get past logging, vms.exe stops at the first Dapr variable.
+      # Reaching it means every DLL loaded -- a missing one ends the process before main, with
+      # 0xC0000135 and no output -- spdlog wrote its file, and ta_roienc read the encoder setting.
+      - name: Smoke-run vms.exe
+        env:
+          VMS_LOG_PATH: ${{ runner.temp }}\vms-logs
+          APP_ID: vms
+          GRPC_VMS_PORT: '50999'
+        run: |
+          $output = & (Join-Path $env:RUNNER_TEMP 'ta_vms\vms\vms.exe') 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          $output
+          if ($output -notmatch "Required environment variable 'DAPR_ONVIF_APP_ID'") {
+            throw ("vms.exe stopped before its configuration checks, exit code 0x{0:X8}" -f $code)
+          }
+          if (-not (Test-Path (Join-Path $env:VMS_LOG_PATH 'vms\vms.log'))) { throw "vms.exe wrote no log file" }
+          exit 0
+
+      # Built the way the web_vms image builds it: the esproj does not run npm itself
+      # (ShouldRunBuildScript=false), and publishing web_srv.Server copies its dist/ into wwwroot.
+      - name: Build web client
+        working-directory: dotnet/web_srv.client
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
+
+      # One folder per service, as there is one image per service: a project with a Dockerfile
+      # beside it is a service. Framework-dependent like the images, so the target machine needs
+      # the .NET 10 runtime.
+      - name: Publish .NET services
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'ta_vms\dotnet'
+          foreach ($dockerfile in Get-ChildItem dotnet\*\Dockerfile) {
+            $service = $dockerfile.Directory
+            $project = @(Get-ChildItem $service.FullName -Filter *.csproj)
+            if ($project.Count -ne 1) { throw "$($service.Name): expected one .csproj beside its Dockerfile, found $($project.Count)" }
+            dotnet publish $project[0].FullName -c Release --nologo -o (Join-Path $out $service.Name)
+            if ($LASTEXITCODE -ne 0) { throw "dotnet publish $($service.Name) failed" }
+          }
+          if (-not (Test-Path (Join-Path $out 'web_srv.Server\wwwroot\index.html'))) {
+            throw "web_srv.Server was published without the web client"
+          }
+
       - uses: actions/upload-artifact@v7
         with:
-          name: vms-windows-x64
-          path: |
-            video_srv/build/vms.exe
-            video_srv/build/*.dll
+          name: ta_vms-windows-x64
+          path: ${{ runner.temp }}/ta_vms
           if-no-files-found: error
           retention-days: 14

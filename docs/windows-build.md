@@ -107,14 +107,23 @@ guarantee. Installing VS Build Tools may also want a reboot.
 
 `.github/workflows/windows.yml` runs this script on a GitHub-hosted `windows-latest` runner:
 once with `-Yes -SkipBuild` for the vcpkg ports, then with `-Yes -Configuration Release` for
-the build, followed by `dotnet test`. It is started by hand, from the repository's Actions
-page or with:
+the build, followed by `dotnet test`. It runs on every push to `master` that touches the code
+it builds, and by hand from the repository's Actions page or with:
 
 ```
 gh workflow run windows.yml --ref <branch>
 ```
 
-The result is the artifact `vms-windows-x64`: `vms.exe` with the vcpkg DLLs it needs beside it.
+`vms.exe` is then started once, with only the variables logging needs, and must stop at the
+first Dapr variable it requires. That proves every DLL it needs ships beside it: a missing one
+ends the process before `main`, silently, with exit code `0xC0000135`.
+
+The result is the artifact `ta_vms-windows-x64`:
+
+- `vms\` holds `vms.exe` with the vcpkg DLLs it needs.
+- `dotnet\<service>\` holds each .NET service, published as its image publishes it. A service is
+  a project with a `Dockerfile` beside it. They are framework-dependent, so the machine needs
+  the .NET 10 runtime. `web_srv.Server` carries the built web client in `wwwroot`.
 
 - **The ports are built release-only**, through the overlay triplet
   `scripts/win/triplets/x64-windows.cmake`. That halves their build time and their cache, and
