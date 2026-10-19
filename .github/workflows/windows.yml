@@ -99,8 +99,12 @@ jobs:
           $zips | Set-Content (Join-Path $env:RUNNER_TEMP 'cache-before.txt')
           exit 0
 
+      # A step timeout fails the step; the job's own timeout cancels the job, and a cancelled
+      # job skips the save below. So the ports stop short of the job's limit, and whatever they
+      # built by then is saved -- a build too long for one run finishes over several.
       - name: vcpkg ports
         id: ports
+        timeout-minutes: 270
         run: .\scripts\win\Setup-WindowsBuild.ps1 -Yes -SkipBuild -VcpkgRoot $env:VCPKG_ROOT
 
       # Right after the ports rather than at the end: two hours of port builds must not be lost
