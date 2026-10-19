@@ -10,7 +10,11 @@ find_package(Protobuf CONFIG REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 
-pkg_check_modules(FFMPEG REQUIRED
+# A prefix of our own: ta_roienc, added below, runs pkg_check_modules(FFMPEG ...) with a
+# shorter module list, and the results are cache variables, so a shared prefix would hand vms
+# the library's list without libswresample. Static Linux builds hide that (libavcodec.pc
+# requires libswresample there); the shared Windows build fails to link swr_*.
+pkg_check_modules(VMS_FFMPEG REQUIRED
     libavformat
     libavcodec
     libavutil
@@ -218,14 +222,14 @@ target_include_directories(vms
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_BINARY_DIR}
-        ${FFMPEG_INCLUDE_DIRS}
+        ${VMS_FFMPEG_INCLUDE_DIRS}
 )
 
-target_link_directories(vms PRIVATE ${FFMPEG_LIBRARY_DIRS})
+target_link_directories(vms PRIVATE ${VMS_FFMPEG_LIBRARY_DIRS})
 
 target_link_libraries(vms
     PRIVATE
-    ${FFMPEG_LIBRARIES}
+    ${VMS_FFMPEG_LIBRARIES}
     protobuf::libprotobuf
     gRPC::grpc
     gRPC::grpc++
