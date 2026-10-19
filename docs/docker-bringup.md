@@ -142,7 +142,7 @@ cd ../ta_install
 ./scripts/push-images.sh     # ta_vms-* → treealarm/*:latest
 ```
 
-Requires `docker login` (or `DOCKER_USER` + `DOCKER_TOKEN`).
+Requires `docker login` (or `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN`).
 
 ---
 
