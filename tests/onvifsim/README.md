@@ -87,6 +87,12 @@ http://localhost:8090 to watch the world while a step runs; its log is
 `/tmp/onvifsim-lab/state.json`, by pair. The ta_vms camera ids are `sim-master`, `sim-ptz`,
 `sim-master2` and `sim-ptz2`.
 
+The ta_vms need not be the dev stack on this machine. `--vms http://<host>:5134 --sim-host <this
+machine's LAN address>` drives an installation elsewhere, a Windows one for instance: the cameras
+are added with that address, and the steps keep their ids in `state-<host>-<port>.json` beside the
+dev stack's. `down` stops the sim for everyone, so leave it out, and `all`, which ends with it,
+when the sim is shared.
+
 ## What each step proves
 
 - **provision** adds the cameras with an ONVIF connection and the `Profile_2` token. The stream

@@ -40,6 +40,7 @@ import statistics
 import subprocess
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -52,7 +53,6 @@ from vmsapi import Vms  # noqa: E402
 REPO = Path(__file__).resolve().parents[2]
 COMPOSE_FILE = Path(__file__).resolve().parent / "docker-compose.yml"
 STATE_DIR = Path("/tmp/onvifsim-lab")
-STATE_FILE = STATE_DIR / "state.json"
 SPACE_NAMES = {W.MAP_PAIR.name: "OnvifSim lab", W.PLAN_PAIR.name: "OnvifSim lab plan"}
 PROFILE = "Profile_2"  # OnvifSim's H.264 profile, the one video_srv pulls
 MARK_WALKER = "lab-mark"
@@ -83,9 +83,17 @@ def read_env():
     return values
 
 
-def load_state():
+def state_file(vms_url):
+    """One per ta_vms: the ids in it belong to that installation. The dev stack's keeps the old name."""
+    url = urllib.parse.urlsplit(vms_url)
+    if url.hostname in ("localhost", "127.0.0.1"):
+        return STATE_DIR / "state.json"
+    return STATE_DIR / f"state-{url.hostname}-{url.port or 80}.json"
+
+
+def load_state(path):
     """What the steps created, by pair: {"map": {"space_id", "landmarks"}, "plan": {...}}."""
-    state = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else {}
+    state = json.loads(path.read_text()) if path.exists() else {}
     # Before there were two pairs the map's entries lay at the top; a bench provisioned then keeps
     # its map and its calibration.
     if "space_id" in state:
@@ -93,9 +101,9 @@ def load_state():
     return state
 
 
-def save_state(state):
+def save_state(path, state):
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps(state, indent=2))
+    path.write_text(json.dumps(state, indent=2))
 
 
 class Lab:
@@ -103,7 +111,8 @@ class Lab:
         self.args = args
         self.sim = Sim(f"http://127.0.0.1:{args.sim_port}")
         self.vms = Vms(args.vms, args.user, args.password)
-        self.state = load_state()
+        self.state_file = state_file(args.vms)
+        self.state = load_state(self.state_file)
         self.hang(W.MOUNTS_BY_NAME[args.mount])
         self.pairs = [p for p in self.all_pairs if args.pair in ("both", p.name)]
         # What the steps measured, for the matrix's table; notes are thresholds a "measure" mount missed.
@@ -207,7 +216,7 @@ class Lab:
                 if space_id:
                     self.vms.delete_space(space_id)
                     log(f"removed space {space_id}")
-        save_state(self.state)
+        save_state(self.state_file, self.state)
 
     def status(self):
         self._compose("ps", check=False)
@@ -236,7 +245,7 @@ class Lab:
             log(f"space '{SPACE_NAMES[pair.name]}' ({space_id}): {len(landmarks)} landmarks, "
                 f"{self.cam_id(pair.master)} and {self.cam_id(pair.slave)} placed")
             self.of(pair).update(space_id=space_id, landmarks=landmarks)
-            save_state(self.state)
+            save_state(self.state_file, self.state)
 
         for pair in self.pairs:
             master = self.cam_id(pair.master)
@@ -259,12 +268,13 @@ class Lab:
             "cameraId": cam_id,
             "name": f"OnvifSim {camera.name}",
             "serverId": self.args.server_id,
-            "onvifConn": {"ip": "127.0.0.1", "port": port, "xaddr": f"http://127.0.0.1:{port}/onvif/device_service"},
+            "onvifConn": {"ip": self.args.sim_host, "port": port,
+                          "xaddr": f"http://{self.args.sim_host}:{port}/onvif/device_service"},
             "cred": {"user": "admin", "pass": "admin"},
             "hasTelemetry": camera.kind == "ptz",
             "streams": [{"streamName": "main", "profileToken": PROFILE, "path": "", "webRtc": True}],
         })
-        log(f"added camera {cam_id} (ONVIF 127.0.0.1:{port}, {PROFILE})")
+        log(f"added camera {cam_id} (ONVIF {self.args.sim_host}:{port}, {PROFILE})")
 
     def _ensure_space(self, pair):
         name = SPACE_NAMES[pair.name]
@@ -782,6 +792,9 @@ def main():
     p.add_argument("step", choices=["up", "provision", "calibrate", "aim-check", "bind", "run", "down", "status", "all", "matrix"])
     p.add_argument("--vms", default=f"http://localhost:{env.get('WEB_VMS_PORT', '5134')}")
     p.add_argument("--sim-dir", default=str(REPO.parent / "OnvifSim"))
+    p.add_argument("--sim-host", default="127.0.0.1",
+                   help="the address ta_vms reaches the sim's cameras at: this machine's LAN address "
+                        "when --vms is a ta_vms elsewhere")
     p.add_argument("--sim-port", type=int, default=8090)
     p.add_argument("--rtsp-port", type=int, default=8560)
     p.add_argument("--rtp-port", type=int, default=6980)
