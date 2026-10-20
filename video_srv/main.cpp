@@ -13,6 +13,17 @@
 #include <thread>
 #include <unordered_map>
 
+#ifdef _WIN32
+// NOMINMAX before the first windows.h: min/max as macros would break std::max below.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 #include <grpcpp/grpcpp.h>
 
 #include "camera_manager.h"
@@ -40,10 +51,29 @@ namespace
 {
   std::atomic<bool> g_stop_requested{false};
 
+  // Set once main has finished its cleanup, for the Windows console handler below to wait on.
+  std::atomic<bool> g_stopped{false};
+
   void on_signal(int /*signal*/) 
   {
     g_stop_requested = true;
   }
+
+#ifdef _WIN32
+  // Windows never sends SIGTERM, and the CRT maps only Ctrl+C to SIGINT. Ctrl+Break, closing the
+  // console, logoff and shutdown would otherwise end the process on the spot with the segment
+  // being written left unclosed. For the last three Windows terminates the process as soon as
+  // the handler returns, so it waits for main to finish -- bounded by the system's own timeout.
+  BOOL WINAPI on_console_event(DWORD event)
+  {
+    g_stop_requested = true;
+    if (event != CTRL_C_EVENT && event != CTRL_BREAK_EVENT)
+    {
+      g_stopped.wait(false);
+    }
+    return TRUE;
+  }
+#endif
 
   // Numeric env reader for optional tuning knobs. Required variables use require_env instead — a
   // missing one there is a misconfiguration and must fail loudly rather than pick a default.
@@ -78,6 +108,9 @@ int main(int argc, char** argv)
 
   std::signal(SIGINT, on_signal);
   std::signal(SIGTERM, on_signal);
+#ifdef _WIN32
+  SetConsoleCtrlHandler(on_console_event, TRUE);
+#endif
 
   // Started here rather than on the first metadata packet, so a broken environment shows up at
   // startup instead of hours later on the first camera that speaks metadata. It needs nothing
@@ -312,5 +345,7 @@ int main(int argc, char** argv)
   heartbeat_thread.join();
   if (liveness_thread.joinable()) liveness_thread.join();
   if (entity_state_thread.joinable()) entity_state_thread.join();
+  g_stopped = true;
+  g_stopped.notify_all();
   return 0;
 }
