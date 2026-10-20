@@ -9,6 +9,10 @@
 
 namespace {
 constexpr auto kWatchdogInterval = std::chrono::seconds(5);
+// Between failed reads while the watchdog runs: a failing read can return at once, and FFmpeg logs
+// every one, so without a pause the loop spins and fills the log at hundreds of thousands of lines
+// a second.
+constexpr auto kReadRetryDelay = std::chrono::milliseconds(100);
 
 constexpr std::string_view kRtspPrefix = "rtsp://";
 
@@ -300,6 +304,12 @@ void rtsp_reader::read_loop()
 
     if (read_result < 0) 
     {
+      // End of file: the server closed the session, nothing more will arrive on it, and every
+      // further read fails at once. So rather than reading, wait out the rest of the interval —
+      // a closed session and a silent one then reconnect on the same timeline, and a server that
+      // accepts a session only to drop it is not reconnected to in a loop either.
+      if (read_result == AVERROR_EOF)
+        std::this_thread::sleep_until(last_frame_at + kWatchdogInterval);
       const auto now = std::chrono::steady_clock::now();
       if (now - last_frame_at >= kWatchdogInterval)
       {
@@ -314,6 +324,10 @@ void rtsp_reader::read_loop()
         // opened for the old session — or dropped outright.
         if (was_alive && m_on_source_lost)
           m_on_source_lost();
+      }
+      else
+      {
+        std::this_thread::sleep_for(kReadRetryDelay);
       }
       continue;
     }
