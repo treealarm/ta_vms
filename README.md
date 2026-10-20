@@ -64,6 +64,10 @@ The web interface comes up on port `5134`. [ta_install](https://github.com/treea
 says which defaults to replace before a real deployment, and how to give the encoders an Intel
 iGPU.
 
+On Windows there is an installer that needs no Docker, without the analytics worker:
+[ta_vms-setup-x64.exe](https://github.com/treealarm/ta_install/releases/latest/download/ta_vms-setup-x64.exe).
+Every way to install is on the [releases page](https://github.com/treealarm/ta_install/releases).
+
 ## How it is built
 
 Each service does one job and talks to the others over [Dapr](https://dapr.io/), with PostgreSQL
