@@ -132,6 +132,10 @@ message SimilarDetectionHit {
 
 message SearchSimilarDetectionsResponse {
   repeated SimilarDetectionHit hits = 1;
+  // Detections in the window, of the probe's kind, whose embedding came from another model than
+  // the probe's: they were not compared, because vectors of different models say nothing about
+  // each other. Non-zero after the worker's re-id model changed, for the archive recorded before.
+  uint32 other_model_candidates = 2;
 }
 
 message BoundingBox {

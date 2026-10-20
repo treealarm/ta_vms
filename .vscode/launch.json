@@ -178,7 +178,7 @@
                 "POSTGRES_PASSWORD": "postgres",
                 "POSTGRES_ANALYTICS_DB": "ta_analytics",
                 "ANALYTICS_DEBOUNCE_SECONDS": "10",
-                "ANALYTICS_REID_MATCH_MIN_SCORE": "0.6",
+                "ANALYTICS_REID_MATCH_MIN_SCORE": "0.45",
                 "ANALYTICS_REID_GALLERY_WINDOW_SECONDS": "900",
                 "ANALYTICS_EVENT_GROUP_GAP_SECONDS": "300",
                 "ANALYTICS_METADATA_MAX_SAMPLE_HZ": "5",

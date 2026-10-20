@@ -87,7 +87,7 @@ public sealed class DetectionStreamConsumer(
 
     // Unlike persistence below, this is deliberately before debounce: every box shown live must be
     // immediately usable as a vector probe, including a frame for which no DB row is minted.
-    recentEmbeddings.Offer(cameraId, evt.TrackId, kind, detectedAt, evt.Embedding);
+    recentEmbeddings.Offer(cameraId, evt.TrackId, kind, detectedAt, evt.Embedding, evt.EmbeddingModel);
 
     // Two decisions, not one. Whether this detection is worth storing at all is the debounce's
     // business -- one row per track and kind per interval, rather than one per sampled frame.
@@ -143,7 +143,7 @@ public sealed class DetectionStreamConsumer(
     // concrete episode (event_uuid) — extending the open one or opening a new one — so RetainEvent
     // must run before Persist, which stores the returned event_uuid on the detection row.
     var objectId = objectResolver.Resolve(
-      evt.Kind, evt.Embedding, evt.EmbeddingIsFresh, cameraId, evt.TrackId,
+      evt.Kind, evt.Embedding, evt.EmbeddingModel, evt.EmbeddingIsFresh, cameraId, evt.TrackId,
       evt.HasRecognizedText ? evt.RecognizedText : null);
     var eventId = sessions.SelectEventId(objectId, detectedAt);
 
@@ -260,6 +260,7 @@ public sealed class DetectionStreamConsumer(
       Kind = row.Kind,
       Dim = dim,
       Embedding = bytes,
+      Model = EmbeddingCodec.ModelOrNull(evt.EmbeddingModel),
     });
     await db.SaveChangesAsync(ct);
   }

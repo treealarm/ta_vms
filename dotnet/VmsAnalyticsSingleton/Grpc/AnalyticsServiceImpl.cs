@@ -276,7 +276,7 @@ public sealed class AnalyticsServiceImpl(
     var limit = request.Limit > 0 ? Math.Min((int)request.Limit, 500) : 100;
     var visibleCameraIds = request.CameraIds.Distinct().ToList();
 
-    var query = from d in db.Detections
+    var window = from d in db.Detections
       join e in db.DetectionEmbeddings on d.Id equals e.DetectionId
       where d.Kind == probe.Kind
             && d.DetectedAt >= fromTs
@@ -287,10 +287,17 @@ public sealed class AnalyticsServiceImpl(
         Detection = d,
         Dim = e.Dim,
         Embedding = e.Embedding,
+        Model = e.Model,
       };
 
     if (visibleCameraIds.Count > 0)
-      query = query.Where(x => visibleCameraIds.Contains(x.Detection.CameraId));
+      window = window.Where(x => visibleCameraIds.Contains(x.Detection.CameraId));
+
+    // Only vectors of the probe's own model are comparable with it; the rest are counted, so that an
+    // archive recorded under an earlier model reads as such and not as "nobody similar".
+    var probeModel = probe.Model;
+    var query = window.Where(x => x.Model == probeModel);
+    var otherModel = await window.CountAsync(x => x.Model != probeModel, context.CancellationToken);
 
     // Keep the probe detection in the hit list (score ≈ 1). Excluding it left operators on a
     // weaker neighbour that often sits in a recording gap while the clicked instant still has
@@ -320,7 +327,7 @@ public sealed class AnalyticsServiceImpl(
     // Dense same-camera galleries bury other angles: for this person probe the first other-camera
     // hit sat at rank ~370 while limit is 200. Round-robin by camera after the score filter so
     // every camera that clears min_score gets into the page; the UI then groups by track.
-    var response = new SearchSimilarDetectionsResponse();
+    var response = new SearchSimilarDetectionsResponse { OtherModelCandidates = (uint)otherModel };
     foreach (var hit in DiversifyHitsByCamera(hits, limit))
     {
       response.Hits.Add(new SimilarDetectionHit
@@ -402,10 +409,10 @@ public sealed class AnalyticsServiceImpl(
       .SingleOrDefaultAsync(ct)
       ?? throw new RpcException(new Status(StatusCode.NotFound, "detection not found"));
 
-    var embeddings = await GatherTrackProbeVectorsAsync(
+    var (embeddings, model) = await GatherTrackProbeVectorsAsync(
       db, source.CameraId, source.TrackId, source.Kind, source.DetectedAt, ct);
     if (embeddings.Count > 0)
-      return new ResolvedProbe(source.Kind, embeddings, source.DetectedAt, detectionId);
+      return new ResolvedProbe(source.Kind, embeddings, model, source.DetectedAt, detectionId);
 
     // Live / recently persisted detections may have a crop but no stored vector yet (embedder
     // missing at write time, or store_embeddings was off). Re-embed the crop on demand.
@@ -430,9 +437,9 @@ public sealed class AnalyticsServiceImpl(
     if (kind is null)
       kind = (await FindNearestTrackEmbeddingAsync(db, probe.CameraId, probe.TrackId, kind: null, ts, ct))?.Kind;
 
-    var embeddings = await GatherTrackProbeVectorsAsync(db, probe.CameraId, probe.TrackId, kind, ts, ct);
+    var (embeddings, model) = await GatherTrackProbeVectorsAsync(db, probe.CameraId, probe.TrackId, kind, ts, ct);
     if (embeddings.Count > 0 && kind is not null)
-      return new ResolvedProbe(kind, embeddings, ts, null);
+      return new ResolvedProbe(kind, embeddings, model, ts, null);
 
     var fromCrop = await TryEmbedNearestTrackCropAsync(db, probe.CameraId, probe.TrackId, kind, ts, ct);
     if (fromCrop is not null)
@@ -441,7 +448,7 @@ public sealed class AnalyticsServiceImpl(
     throw new RpcException(new Status(StatusCode.FailedPrecondition, "probe has no embedding"));
   }
 
-  private async Task<List<float[]>> GatherTrackProbeVectorsAsync(
+  private async Task<(List<float[]> Vectors, string? Model)> GatherTrackProbeVectorsAsync(
     AnalyticsDbContext db,
     string cameraId,
     long trackId,
@@ -450,21 +457,21 @@ public sealed class AnalyticsServiceImpl(
     CancellationToken ct)
   {
     var window = await LoadTrackWindowEmbeddingsAsync(db, cameraId, trackId, kind, anchor, ct);
-    if (window.Count > 0)
+    if (window.Vectors.Count > 0)
       return window;
 
     var fallback = await FindNearestTrackEmbeddingAsync(db, cameraId, trackId, kind, anchor, ct);
     if (fallback is not null)
-      return [fallback.Vector];
+      return ([fallback.Vector], fallback.Model);
 
     if (kind is not null
-        && recentEmbeddings?.TryGet(cameraId, trackId, kind, anchor, out var liveVector, out _) == true)
-      return [liveVector];
+        && recentEmbeddings?.TryGet(cameraId, trackId, kind, anchor, out var liveVector, out var liveModel, out _) == true)
+      return ([liveVector], liveModel);
 
-    return [];
+    return ([], null);
   }
 
-  private static async Task<List<float[]>> LoadTrackWindowEmbeddingsAsync(
+  private static async Task<(List<float[]> Vectors, string? Model)> LoadTrackWindowEmbeddingsAsync(
     AnalyticsDbContext db,
     string cameraId,
     long trackId,
@@ -484,17 +491,23 @@ public sealed class AnalyticsServiceImpl(
             && d.DetectedAt <= windowTo
             && (kind == null || d.Kind == kind)
             && (kind == null || e.Kind == kind)
-      select new { d.DetectedAt, e.Dim, e.Embedding }
+      select new { d.DetectedAt, e.Dim, e.Embedding, e.Model }
     ).ToListAsync(ct);
+    if (rows.Count == 0)
+      return ([], null);
 
-    var decoded = rows
-      .OrderBy(r => Math.Abs((r.DetectedAt - anchor).Ticks))
+    // One probe, one space: the model of the sample nearest the click, and that model's samples
+    // only -- a track recorded across a model change has vectors of both.
+    var nearestFirst = rows.OrderBy(r => Math.Abs((r.DetectedAt - anchor).Ticks)).ToList();
+    var model = nearestFirst[0].Model;
+    var decoded = nearestFirst
+      .Where(r => r.Model == model)
       .Take(kind == "face" ? MaxFaceProbeExemplars * 2 : MaxProbeExemplars)
       .Select(r => EmbeddingCodec.DecodeNormalized(r.Embedding, r.Dim))
       .Where(v => v.Length > 0)
       .ToList();
 
-    return kind == "face" ? SelectFaceProbeVectors(decoded) : decoded;
+    return (kind == "face" ? SelectFaceProbeVectors(decoded) : decoded, model);
   }
 
   private static TimeSpan ProbeWindowForKind(string? kind)
@@ -605,7 +618,8 @@ public sealed class AnalyticsServiceImpl(
       var embedding = EmbeddingCodec.DecodeNormalized(bytes, dim);
       if (embedding.Length == 0)
         return null;
-      return new ResolvedProbe(kind, [embedding], detectedAt, detectionId);
+      return new ResolvedProbe(kind, [embedding], EmbeddingCodec.ModelOrNull(workerResponse.EmbeddingModel),
+        detectedAt, detectionId);
     }
     catch (Exception)
     {
@@ -649,7 +663,8 @@ public sealed class AnalyticsServiceImpl(
     var embedding = EmbeddingCodec.DecodeNormalized(bytes, dim);
     if (embedding.Length == 0)
       throw new RpcException(new Status(StatusCode.FailedPrecondition, "kind space unavailable"));
-    return new ResolvedProbe(DetectionKinds.ToDbString(probe.Kind), [embedding], DateTime.UtcNow, null);
+    return new ResolvedProbe(DetectionKinds.ToDbString(probe.Kind), [embedding],
+      EmbeddingCodec.ModelOrNull(workerResponse.EmbeddingModel), DateTime.UtcNow, null);
   }
 
   private static async Task<TrackProbeCandidate?> FindNearestTrackEmbeddingAsync(
@@ -671,6 +686,7 @@ public sealed class AnalyticsServiceImpl(
         Detection = d,
         Dim = e.Dim,
         Embedding = e.Embedding,
+        Model = e.Model,
       };
 
     var before = await baseQuery
@@ -694,7 +710,8 @@ public sealed class AnalyticsServiceImpl(
       chosen.Detection.Id,
       chosen.Detection.Kind,
       chosen.Detection.DetectedAt,
-      vector);
+      vector,
+      chosen.Model);
   }
 
   private static CandidateProjection? ChooseNearest(DateTime anchor, CandidateProjection? before, CandidateProjection? after)
@@ -747,8 +764,10 @@ public sealed class AnalyticsServiceImpl(
     public required DbDetection Detection { get; init; }
     public required int Dim { get; init; }
     public required byte[] Embedding { get; init; }
+    public required string? Model { get; init; }
   }
-  private sealed record ResolvedProbe(string Kind, IReadOnlyList<float[]> Embeddings, DateTime DetectedAt, long? SourceDetectionId);
-  private sealed record TrackProbeCandidate(long DetectionId, string Kind, DateTime DetectedAt, float[] Vector);
+  // Model: the embedding model all of Embeddings come from; candidates are compared only within it.
+  private sealed record ResolvedProbe(string Kind, IReadOnlyList<float[]> Embeddings, string? Model, DateTime DetectedAt, long? SourceDetectionId);
+  private sealed record TrackProbeCandidate(long DetectionId, string Kind, DateTime DetectedAt, float[] Vector, string? Model);
 
 }

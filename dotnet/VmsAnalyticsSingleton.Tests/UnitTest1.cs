@@ -126,7 +126,7 @@ public class SearchSimilarDetectionsTests
     await db.SaveChangesAsync();
 
     var recent = new RecentLiveEmbeddingCache();
-    recent.Offer("cam-live", 7, "person", now, [1f, 0f]);
+    recent.Offer("cam-live", 7, "person", now, [1f, 0f], model: null);
     var service = new AnalyticsServiceImpl(
       factory,
       new AnalyticsActivityLog(),
@@ -153,6 +153,53 @@ public class SearchSimilarDetectionsTests
     }, CreateContext());
 
     Assert.Contains(response.Hits, h => h.Detection.Id == hitId);
+  }
+
+  [Fact]
+  public async Task DetectionProbe_ComparesOnlyEmbeddingsOfItsOwnModel()
+  {
+    var factory = CreateFactory();
+    await using var db = await factory.CreateDbContextAsync();
+    await db.Database.EnsureCreatedAsync();
+
+    var now = DateTime.UtcNow;
+    var probeId = await InsertDetectionAsync(db, "cam-a", 10, "person", now.AddMinutes(-5), [1f, 0f], "reid-new");
+    var hitId = await InsertDetectionAsync(db, "cam-b", 20, "person", now.AddMinutes(-4), [0.95f, 0.05f], "reid-new");
+    // The same vector from another model, and from a row written before models were recorded: as
+    // close as it gets numerically, and still not comparable.
+    var otherId = await InsertDetectionAsync(db, "cam-c", 30, "person", now.AddMinutes(-3), [1f, 0f], "reid-old");
+    var legacyId = await InsertDetectionAsync(db, "cam-d", 40, "person", now.AddMinutes(-2), [1f, 0f], model: null);
+    await db.SaveChangesAsync();
+
+    var response = await CreateService(factory).SearchSimilarDetections(new SearchSimilarDetectionsRequest
+    {
+      DetectionProbe = new DetectionIdProbe { DetectionId = probeId },
+      FromTs = Timestamp.FromDateTime(now.AddHours(-1)),
+      ToTs = Timestamp.FromDateTime(now),
+      MinScore = 0.7f,
+      Limit = 10,
+    }, CreateContext());
+
+    Assert.Contains(response.Hits, h => h.Detection.Id == hitId);
+    Assert.DoesNotContain(response.Hits, h => h.Detection.Id == otherId || h.Detection.Id == legacyId);
+    Assert.Equal(2u, response.OtherModelCandidates);
+  }
+
+  [Fact]
+  public void Gallery_LinksSightingsOnlyWithinOneModel()
+  {
+    Environment.SetEnvironmentVariable("ANALYTICS_REID_MATCH_MIN_SCORE", "0.5");
+    Environment.SetEnvironmentVariable("ANALYTICS_REID_GALLERY_WINDOW_SECONDS", "600");
+    var gallery = new EphemeralReidGallery(CreateFactory(),
+      Microsoft.Extensions.Logging.Abstractions.NullLogger<EphemeralReidGallery>.Instance);
+
+    float[] look = [1f, 0f];
+    var first = gallery.Resolve(Analytics.DetectionKind.Person, look, "reid-a", true, "cam-a", 1, null);
+    var otherModel = gallery.Resolve(Analytics.DetectionKind.Person, look, "reid-b", true, "cam-b", 2, null);
+    var sameModel = gallery.Resolve(Analytics.DetectionKind.Person, look, "reid-a", true, "cam-c", 3, null);
+
+    Assert.NotEqual(first, otherModel);
+    Assert.Equal(first, sameModel);
   }
 
   [Fact]
@@ -361,7 +408,8 @@ public class SearchSimilarDetectionsTests
     long trackId,
     string kind,
     DateTime detectedAtUtc,
-    float[]? embedding)
+    float[]? embedding,
+    string? model = null)
   {
     var row = new DbDetection
     {
@@ -385,6 +433,7 @@ public class SearchSimilarDetectionsTests
         Kind = kind,
         Dim = embedding.Length,
         Embedding = EncodeNormalized(embedding),
+        Model = model,
       });
     }
 
