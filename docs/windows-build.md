@@ -128,6 +128,8 @@ The result is the asset `ta_vms-windows-x64.zip` of the `windows-build` prerelea
 - `redist\vc_redist.x64.exe` is the VC++ redistributable from the Visual Studio whose compiler
   built `vms.exe` (as CMake recorded it). The runtime it installs is not among the DLLs beside
   `vms.exe`, and the smoke run cannot catch it missing — the runner has it system-wide.
+- `licenses\` holds this repository's licence and, under `vcpkg\`, the copyright file of every
+  vcpkg port — the licences of the DLLs beside `vms.exe`, FFmpeg's GPL build among them.
 
 The `windows-build` release is what the Docker-free Windows installer in `../ta_install/windows`
 is built from, as its compose stack runs the Docker Hub images. Every push to `master` replaces

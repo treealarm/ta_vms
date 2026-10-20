@@ -182,6 +182,18 @@ jobs:
           New-Item -ItemType Directory -Force $out | Out-Null
           Copy-Item video_srv\build\vms.exe, video_srv\build\*.dll $out
 
+          # The licences that travel with those DLLs: one file per vcpkg port, as vcpkg keeps them
+          # -- FFmpeg's among them, built with GPL encoders (x264, x265) -- and our own, which also
+          # covers ta_roienc, linked in under the same MIT licence.
+          $licenses = Join-Path $env:RUNNER_TEMP 'ta_vms\licenses'
+          New-Item -ItemType Directory -Force (Join-Path $licenses 'vcpkg') | Out-Null
+          Get-ChildItem (Join-Path $env:VCPKG_ROOT 'installed\x64-windows\share') -Directory | ForEach-Object {
+            $copyright = Join-Path $_.FullName 'copyright'
+            if (Test-Path $copyright) { Copy-Item $copyright (Join-Path $licenses "vcpkg\$($_.Name).txt") }
+          }
+          if (-not (Test-Path (Join-Path $licenses 'vcpkg\ffmpeg.txt'))) { throw 'no copyright file for ffmpeg in the vcpkg tree' }
+          Copy-Item LICENSE (Join-Path $licenses 'ta_vms.txt')
+
           # From the Visual Studio whose compiler built vms.exe, as CMake recorded it -- not from a
           # second lookup, which could settle on another install (Setup-WindowsBuild.ps1 accepts
           # prereleases) with an older runtime than the compiler links against.
