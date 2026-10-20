@@ -1,8 +1,10 @@
 # Builds video_srv (vms.exe) and the .NET solution on Windows and runs the .NET tests -- the
 # build a developer gets from scripts/win/Setup-WindowsBuild.ps1, which this workflow calls
 # instead of repeating it. That keeps the script honest (its -Yes path has no other user). Then
-# vms.exe is started once to prove it loads, and the artifact `ta_vms-windows-x64` gets vms.exe
-# with its DLLs and every .NET service published, for the Docker-free installer to start from.
+# vms.exe is started once to prove it loads. The result -- vms.exe with its DLLs, every .NET
+# service published, the VC++ redistributable -- goes, from master, to the asset
+# ta_vms-windows-x64.zip of the `windows-build` prerelease, which ../ta_install's Windows installer
+# is built from; from any other branch, to the artifact `ta_vms-windows-x64`.
 #
 # Runs on every master push that touches what it builds -- minutes are free on a public
 # repository -- and by hand. A cold run builds every vcpkg port from source, about two hours.
@@ -59,7 +61,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 300
     permissions:
-      contents: write # create the windows-deps prerelease and replace its asset
+      contents: write # the windows-deps and windows-build prereleases: create, replace the asset, move the tag
     defaults:
       run:
         shell: pwsh
@@ -157,15 +159,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "cannot pack the cache" }
           "saving $($after.Count) ports, $([math]::Round((Get-Item $tar).Length / 1MB)) MB"
 
-          gh release view $env:DEPS_RELEASE --repo $env:GITHUB_REPOSITORY *> $null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create $env:DEPS_RELEASE --repo $env:GITHUB_REPOSITORY --prerelease `
-              --title 'Windows vcpkg binary cache' `
-              --notes 'Not a release. Holds the vcpkg binary cache of .github/workflows/windows.yml, which replaces the asset itself. Delete the asset to rebuild every port from source on the next run.'
-            if ($LASTEXITCODE -ne 0) { throw "cannot create release $env:DEPS_RELEASE" }
-          }
-          gh release upload $env:DEPS_RELEASE $tar --repo $env:GITHUB_REPOSITORY --clobber
-          if ($LASTEXITCODE -ne 0) { throw "cannot upload $env:DEPS_ASSET" }
+          .\scripts\win\Publish-ReleaseAsset.ps1 -Release $env:DEPS_RELEASE -Path $tar `
+            -Title 'Windows vcpkg binary cache' `
+            -Notes 'Not a release. Holds the vcpkg binary cache of .github/workflows/windows.yml, which replaces the asset itself. Delete the asset to rebuild every port from source on the next run.'
 
       - name: Build
         run: .\scripts\win\Setup-WindowsBuild.ps1 -Yes -Configuration Release -VcpkgRoot $env:VCPKG_ROOT
@@ -173,7 +169,7 @@ jobs:
       - name: Test
         run: dotnet test dotnet\ta_vms.sln -c Release --no-build --nologo
 
-      # Staged as it ships, and started from there below, so a DLL missing from the artifact fails
+      # Staged as it ships, and started from there below, so a DLL missing from what ships fails
       # this run. vcpkg's applocal step puts every DLL vms.exe needs beside it in the build tree.
       #
       # The VC++ runtime is not among those DLLs: it is installed system-wide on the target, from
@@ -186,13 +182,20 @@ jobs:
           New-Item -ItemType Directory -Force $out | Out-Null
           Copy-Item video_srv\build\vms.exe, video_srv\build\*.dll $out
 
-          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          $redist = Get-ChildItem (Join-Path $vs 'VC\Redist\MSVC') -Directory |
+          # From the Visual Studio whose compiler built vms.exe, as CMake recorded it -- not from a
+          # second lookup, which could settle on another install (Setup-WindowsBuild.ps1 accepts
+          # prereleases) with an older runtime than the compiler links against.
+          $compilerFile = Get-ChildItem video_srv\build\CMakeFiles -Recurse -Filter CMakeCXXCompiler.cmake | Select-Object -First 1
+          if (-not $compilerFile) { throw 'no CMakeCXXCompiler.cmake under video_srv\build\CMakeFiles' }
+          $compiler = (Select-String -LiteralPath $compilerFile.FullName -Pattern '^set\(CMAKE_CXX_COMPILER "(.+)"\)$').Matches[0].Groups[1].Value
+          # <VS>\VC\Tools\MSVC\<version>\bin\Hostx64\x64\cl.exe
+          if ($compiler -notmatch '^(.+)[\\/]Tools[\\/]MSVC[\\/]') { throw "cannot tell the Visual Studio of compiler '$compiler'" }
+          $vc = $Matches[1]
+          $redist = Get-ChildItem (Join-Path $vc 'Redist\MSVC') -Directory -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -match '^\d+(\.\d+)+$' } | Sort-Object { [version]$_.Name } |
             ForEach-Object { Join-Path $_.FullName 'vc_redist.x64.exe' } | Where-Object { Test-Path $_ } |
             Select-Object -Last 1
-          if (-not $redist) { throw "no vc_redist.x64.exe under $vs\VC\Redist\MSVC" }
+          if (-not $redist) { throw "no vc_redist.x64.exe under $vc\Redist\MSVC (compiler: $compiler)" }
           $redistOut = Join-Path $env:RUNNER_TEMP 'ta_vms\redist'
           New-Item -ItemType Directory -Force $redistOut | Out-Null
           Copy-Item $redist $redistOut
@@ -243,7 +246,10 @@ jobs:
             throw "web_srv.Server was published without the web client"
           }
 
+      # Not from master, whose build goes to the windows-build release below instead: the same tree
+      # zipped and uploaded twice on every push, for an artifact nothing reads.
       - uses: actions/upload-artifact@v7
+        if: ${{ github.ref != 'refs/heads/master' }}
         with:
           name: ta_vms-windows-x64
           path: ${{ runner.temp }}/ta_vms
@@ -251,26 +257,15 @@ jobs:
           retention-days: 14
 
       # What ta_install's Windows installer is built from, as the Docker Hub images are what its
-      # compose stack runs: one rolling build of master, replaced by every push. A release asset
-      # rather than the artifact above, which expires and can only be fetched by run id. Only from
-      # master, so a run dispatched on a branch cannot replace what the installer ships.
+      # compose stack runs: one rolling build of master, replaced by every push and never by an
+      # older commit (a re-run of an old run). A release asset rather than an artifact, which
+      # expires and can only be fetched by run id. Only from master, so a run dispatched on a
+      # branch cannot replace what the installer ships.
       - name: Publish the build for ta_install
         if: ${{ github.ref == 'refs/heads/master' }}
-        env:
-          BUILD_RELEASE: windows-build
-          BUILD_ASSET: ta_vms-windows-x64.zip
         run: |
-          $zip = Join-Path $env:RUNNER_TEMP $env:BUILD_ASSET
+          $zip = Join-Path $env:RUNNER_TEMP 'ta_vms-windows-x64.zip'
           Compress-Archive -Path (Join-Path $env:RUNNER_TEMP 'ta_vms\*') -DestinationPath $zip -Force
-          $notes = "Not a release. The Windows build of master at $env:GITHUB_SHA, replaced by every push; ta_install's Windows installer is built from it."
-          gh release view $env:BUILD_RELEASE --repo $env:GITHUB_REPOSITORY *> $null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create $env:BUILD_RELEASE --repo $env:GITHUB_REPOSITORY --prerelease `
-              --title 'Windows build of master' --notes $notes
-            if ($LASTEXITCODE -ne 0) { throw "cannot create release $env:BUILD_RELEASE" }
-          } else {
-            gh release edit $env:BUILD_RELEASE --repo $env:GITHUB_REPOSITORY --notes $notes
-            if ($LASTEXITCODE -ne 0) { throw "cannot update release $env:BUILD_RELEASE" }
-          }
-          gh release upload $env:BUILD_RELEASE $zip --repo $env:GITHUB_REPOSITORY --clobber
-          if ($LASTEXITCODE -ne 0) { throw "cannot upload $env:BUILD_ASSET" }
+          .\scripts\win\Publish-ReleaseAsset.ps1 -Release windows-build -Path $zip -Rolling `
+            -Title 'Windows build of master' `
+            -Notes "Not a release. The Windows build of master at $env:GITHUB_SHA, replaced by every push; ta_install's Windows installer is built from it."

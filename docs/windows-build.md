@@ -118,19 +118,22 @@ gh workflow run windows.yml --ref <branch>
 first Dapr variable it requires. That proves every DLL it needs ships beside it: a missing one
 ends the process before `main`, silently, with exit code `0xC0000135`.
 
-The result is the artifact `ta_vms-windows-x64`:
+The result is the asset `ta_vms-windows-x64.zip` of the `windows-build` prerelease for a run on
+`master`, and the artifact `ta_vms-windows-x64` for a run on any other branch:
 
 - `vms\` holds `vms.exe` with the vcpkg DLLs it needs.
 - `dotnet\<service>\` holds each .NET service, published as its image publishes it. A service is
   a project with a `Dockerfile` beside it. They are framework-dependent, so the machine needs
   the .NET 10 runtime. `web_srv.Server` carries the built web client in `wwwroot`.
-- `redist\vc_redist.x64.exe` is the VC++ redistributable of the toolset that built `vms.exe`.
-  The runtime it installs is not among the DLLs beside `vms.exe`, and the smoke run cannot miss
-  it — the runner has it system-wide.
+- `redist\vc_redist.x64.exe` is the VC++ redistributable from the Visual Studio whose compiler
+  built `vms.exe` (as CMake recorded it). The runtime it installs is not among the DLLs beside
+  `vms.exe`, and the smoke run cannot catch it missing — the runner has it system-wide.
 
-Every push to `master` also replaces the asset `ta_vms-windows-x64.zip` of the `windows-build`
-prerelease with the same content. That is what the Docker-free Windows installer in
-`../ta_install/windows` is built from, as its compose stack runs the Docker Hub images.
+The `windows-build` release is what the Docker-free Windows installer in `../ta_install/windows`
+is built from, as its compose stack runs the Docker Hub images. Every push to `master` replaces
+its asset, moves its tag to the commit built and names that commit in its notes; a run for an
+older commit (a re-run of an old run) leaves it alone. `scripts/win/Publish-ReleaseAsset.ps1`
+does this for it and for `windows-deps` alike.
 
 - **The ports are built release-only**, through the overlay triplet
   `scripts/win/triplets/x64-windows.cmake`. That halves their build time and their cache, and
