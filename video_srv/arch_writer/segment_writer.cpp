@@ -3,6 +3,7 @@
 #include <cstring>
 #include <format>
 #include "file_system/recording_storage.h"
+#include "file_system/utf8_path.h"
 #include <optional>
 #include <system_error>
 
@@ -202,7 +203,7 @@ void segment_writer::open_new_segment(std::chrono::system_clock::time_point firs
   bool dir_ready = false;
   for (const auto& s : cam_storages)
   {
-    std::filesystem::path candidate = std::filesystem::path(s.root_path) / m_segment_rel_path;
+    std::filesystem::path candidate = path_from_utf8(s.root_path) / m_segment_rel_path;
     std::error_code ec;
     std::filesystem::create_directories(candidate.parent_path(), ec);
     if (ec)
@@ -234,7 +235,7 @@ void segment_writer::open_new_segment(std::chrono::system_clock::time_point firs
   AVFormatContext* ctx = nullptr;
 
   if (avformat_alloc_output_context2(
-    &ctx, nullptr, nullptr, path.string().c_str()) < 0)
+    &ctx, nullptr, nullptr, utf8_string(path).c_str()) < 0)
   {
     logger::instance().error("avformat_alloc_output_context2 failed");
     return;
@@ -269,7 +270,7 @@ void segment_writer::open_new_segment(std::chrono::system_clock::time_point firs
 
   if (!(m_ctx->oformat->flags & AVFMT_NOFILE))
   {
-    if (avio_open(&m_ctx->pb, path.string().c_str(), AVIO_FLAG_WRITE) < 0)
+    if (avio_open(&m_ctx->pb, utf8_string(path).c_str(), AVIO_FLAG_WRITE) < 0)
     {
       logger::instance().error("avio_open failed");
       m_ctx.reset();
@@ -306,13 +307,13 @@ void segment_writer::open_new_segment(std::chrono::system_clock::time_point firs
 
   logger::instance().debug(std::format(
     "Segment opened: camera='{}' stream='{}' file='{}'",
-    m_camera_id, m_stream_name, path.string()));
+    m_camera_id, m_stream_name, utf8_string(path)));
 
   fs_client::instance().enqueue_ingest_clip(
     m_camera_id,
     m_stream_name,
     m_segment_storage_id,
-    m_segment_rel_path.string(),
+    utf8_generic_string(m_segment_rel_path),
     m_segment_start_ts,
     std::nullopt,
     0);
@@ -345,18 +346,18 @@ void segment_writer::close_segment()
     {
       logger::instance().warning(std::format(
         "failed to read segment size for '{}': {}",
-        m_segment_abs_path.string(),
+        utf8_string(m_segment_abs_path),
         ec.message()));
 
       logger::instance().debug(std::format(
         "Segment closed: camera='{}' stream='{}' file='{}'",
-        m_camera_id, m_stream_name, m_segment_abs_path.string()));
+        m_camera_id, m_stream_name, utf8_string(m_segment_abs_path)));
 
       fs_client::instance().enqueue_ingest_clip(
         m_camera_id,
         m_stream_name,
         m_segment_storage_id,
-        m_segment_rel_path.string(),
+        utf8_generic_string(m_segment_rel_path),
         m_segment_start_ts,
         segment_end_ts,
         0);
@@ -365,13 +366,13 @@ void segment_writer::close_segment()
     {
       logger::instance().debug(std::format(
         "Segment closed: camera='{}' stream='{}' file='{}' size={} bytes",
-        m_camera_id, m_stream_name, m_segment_abs_path.string(), size));
+        m_camera_id, m_stream_name, utf8_string(m_segment_abs_path), size));
 
       fs_client::instance().enqueue_ingest_clip(
         m_camera_id,
         m_stream_name,
         m_segment_storage_id,
-        m_segment_rel_path.string(),
+        utf8_generic_string(m_segment_rel_path),
         m_segment_start_ts,
         segment_end_ts,
         size);

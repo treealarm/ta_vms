@@ -1,4 +1,5 @@
 #include "file_system/recording_storage.h"
+#include "file_system/utf8_path.h"
 
 #include <cstdlib>
 #include <stdexcept>
@@ -13,8 +14,8 @@ std::filesystem::path recording_storage::make_segment_path(
   auto ts_sec = floor<seconds>(ts);
 
   auto base = stream_name.empty()
-    ? std::filesystem::path(camera_id)
-    : std::filesystem::path(camera_id) / stream_name;
+    ? path_from_utf8(camera_id)
+    : path_from_utf8(camera_id) / path_from_utf8(stream_name);
 
   return base
     / std::format("{:%Y/%m/%d/%H}", ts_sec)

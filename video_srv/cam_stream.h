@@ -10,6 +10,7 @@
 #include "recording_types.h"
 #include "stream/jpeg_streamer.h"
 #include "arch_writer/segment_writer.h"
+#include "file_system/utf8_path.h"
 #include "writer/analytics_output_sink.h"
 #include "writer/webrtc_output_sink.h"
 #include "interfaces/web_rtc_utils.h"
@@ -61,7 +62,7 @@ public:
   const webrtc_publish_config& get_webrtc_config() const { return m_webrtc; }
   std::string mediamtx_path() const { return m_camera_id + "/" + m_stream_name; }
   recording_policy_mode get_recording_policy_mode() const { return m_recording_policy_mode; }
-  std::string current_segment_path() const { return m_writer ? m_writer->current_segment_path().string() : std::string(); }
+  std::string current_segment_path() const { return m_writer ? utf8_string(m_writer->current_segment_path()) : std::string(); }
 
   /// Snapshot of whether the source is currently delivering media. Safe from any thread.
   source_liveness liveness() const { return m_reader ? m_reader->liveness() : source_liveness{}; }

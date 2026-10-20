@@ -58,7 +58,8 @@ public sealed class ExportFileStore
         }
         result.Add(new ExportFileInfo
         {
-          RelPath = Path.Combine(dirCamera, info.Name),
+          // '/' on every platform: the gateway takes the camera id as the part before the first '/'.
+          RelPath = $"{dirCamera}/{info.Name}",
           CameraId = dirCamera,
           SizeBytes = (ulong)info.Length,
           CreatedTs = Timestamp.FromDateTime(info.LastWriteTimeUtc),

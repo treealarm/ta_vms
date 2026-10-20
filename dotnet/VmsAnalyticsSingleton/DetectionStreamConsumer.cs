@@ -207,7 +207,9 @@ public sealed class DetectionStreamConsumer(
 
     // Invariant culture is load-bearing: in custom DateTime formats '/' is the culture's date
     // separator placeholder, so without it the directory layout would silently vary per host locale.
-    var relative = Path.Combine(
+    // Joined with '/' rather than Path.Combine: it is stored in crop_path, and a relative path kept
+    // as data reads the same whichever platform wrote it (Windows accepts '/' when it is opened).
+    var relative = string.Join('/',
       "crops", cameraId,
       detectedAt.ToString("yyyy/MM/dd/HH", CultureInfo.InvariantCulture),
       $"{evt.TrackId}_{detectedAt.ToString("yyyyMMddTHHmmssfff", CultureInfo.InvariantCulture)}.jpg");

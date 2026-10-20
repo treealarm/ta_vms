@@ -13,6 +13,7 @@ extern "C" {
 
 #include "edge_import/onvif_replay_source.h"
 #include "file_system/recording_storage.h"
+#include "file_system/utf8_path.h"
 #include "grpc_layer/fs_client.h"
 #include "logger/logger.h"
 
@@ -42,8 +43,8 @@ std::filesystem::path with_edge_marker(const std::filesystem::path& path, const 
 {
   auto marked = path;
   const auto suffix = job_id.size() > 8 ? job_id.substr(0, 8) : job_id;
-  marked.replace_filename(
-    path.stem().string() + "_edge" + (suffix.empty() ? "" : "_" + suffix) + path.extension().string());
+  marked.replace_filename(path_from_utf8(
+    utf8_string(path.stem()) + "_edge" + (suffix.empty() ? "" : "_" + suffix) + utf8_string(path.extension())));
   return marked;
 }
 
@@ -222,7 +223,7 @@ bool edge_import_worker::resolve_target(std::string& error)
                         m_settings.camera_id, m_settings.stream_name);
     return false;
   }
-  m_target_root = writable->root_path;
+  m_target_root = path_from_utf8(writable->root_path);
   m_storage_id = writable->storage_id;
   return true;
 }
@@ -376,7 +377,7 @@ bool edge_import_worker::open_segment(
     // Numbered parts under the job id: they list and sort in playback order, and the directory walk
     // in VmsFs picks them up without the job having to enumerate them.
     m_export_part++;
-    m_segment_rel_path = std::filesystem::path(m_settings.camera_id) /
+    m_segment_rel_path = path_from_utf8(m_settings.camera_id) /
                          std::format("{}_{:03}{}", m_settings.job_id, m_export_part,
                                      std::string(recording_storage::k_ext));
   }
@@ -394,13 +395,13 @@ bool edge_import_worker::open_segment(
   if (mkdir_ec)
   {
     error = std::format("create directory '{}': {}",
-                        m_segment_abs_path.parent_path().string(), mkdir_ec.message());
+                        utf8_string(m_segment_abs_path.parent_path()), mkdir_ec.message());
     return false;
   }
 
   AVFormatContext* ctx = nullptr;
   const int alloc_rc =
-    avformat_alloc_output_context2(&ctx, nullptr, nullptr, m_segment_abs_path.string().c_str());
+    avformat_alloc_output_context2(&ctx, nullptr, nullptr, utf8_string(m_segment_abs_path).c_str());
   if (alloc_rc < 0)
   {
     error = std::format("allocate muxer: {}", av_error_text(alloc_rc));
@@ -465,11 +466,11 @@ bool edge_import_worker::open_segment(
   if (!(m_output->oformat->flags & AVFMT_NOFILE))
   {
     const int io_rc =
-      avio_open(&m_output->pb, m_segment_abs_path.string().c_str(), AVIO_FLAG_WRITE);
+      avio_open(&m_output->pb, utf8_string(m_segment_abs_path).c_str(), AVIO_FLAG_WRITE);
     if (io_rc < 0)
     {
       error = std::format("open output file '{}': {}",
-                          m_segment_abs_path.string(), av_error_text(io_rc));
+                          utf8_string(m_segment_abs_path), av_error_text(io_rc));
       m_output.reset();
       return false;
     }
@@ -671,7 +672,7 @@ bool edge_import_worker::write_packet(AVPacket* packet)
   {
     logger::instance().error(std::format(
       "edge import: write failed camera='{}' path='{}': {}",
-      m_settings.camera_id, m_segment_abs_path.string(), av_error_text(write_rc)));
+      m_settings.camera_id, utf8_string(m_segment_abs_path), av_error_text(write_rc)));
     return false;
   }
   return true;
@@ -705,7 +706,7 @@ void edge_import_worker::close_segment()
     // The first part is what the UI plays; the rest are found by listing the export directory.
     if (m_progress.export_path.empty())
     {
-      m_progress.export_path = m_segment_rel_path.string();
+      m_progress.export_path = utf8_generic_string(m_segment_rel_path);
     }
     m_progress.bytes_written += bytes;
     m_progress.clips_written += 1;
@@ -718,7 +719,7 @@ void edge_import_worker::close_segment()
       m_settings.camera_id,
       m_settings.stream_name,
       m_storage_id,
-      m_segment_rel_path.string(),
+      utf8_generic_string(m_segment_rel_path),
       m_segment_start_ts,
       m_segment_last_ts,
       bytes,
