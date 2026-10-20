@@ -175,11 +175,28 @@ jobs:
 
       # Staged as it ships, and started from there below, so a DLL missing from the artifact fails
       # this run. vcpkg's applocal step puts every DLL vms.exe needs beside it in the build tree.
+      #
+      # The VC++ runtime is not among those DLLs: it is installed system-wide on the target, from
+      # the redistributable of the toolset that built vms.exe -- an older runtime than the compiler
+      # can fail at a missing entry point, and the runner already has the newest one, so the smoke
+      # run below cannot notice.
       - name: Stage vms
         run: |
           $out = Join-Path $env:RUNNER_TEMP 'ta_vms\vms'
           New-Item -ItemType Directory -Force $out | Out-Null
           Copy-Item video_srv\build\vms.exe, video_srv\build\*.dll $out
+
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $redist = Get-ChildItem (Join-Path $vs 'VC\Redist\MSVC') -Directory |
+            Where-Object { $_.Name -match '^\d+(\.\d+)+$' } | Sort-Object { [version]$_.Name } |
+            ForEach-Object { Join-Path $_.FullName 'vc_redist.x64.exe' } | Where-Object { Test-Path $_ } |
+            Select-Object -Last 1
+          if (-not $redist) { throw "no vc_redist.x64.exe under $vs\VC\Redist\MSVC" }
+          $redistOut = Join-Path $env:RUNNER_TEMP 'ta_vms\redist'
+          New-Item -ItemType Directory -Force $redistOut | Out-Null
+          Copy-Item $redist $redistOut
+          "VC++ redistributable: $redist"
 
       # Given only what it needs to get past logging, vms.exe stops at the first Dapr variable.
       # Reaching it means every DLL loaded -- a missing one ends the process before main, with
@@ -232,3 +249,28 @@ jobs:
           path: ${{ runner.temp }}/ta_vms
           if-no-files-found: error
           retention-days: 14
+
+      # What ta_install's Windows installer is built from, as the Docker Hub images are what its
+      # compose stack runs: one rolling build of master, replaced by every push. A release asset
+      # rather than the artifact above, which expires and can only be fetched by run id. Only from
+      # master, so a run dispatched on a branch cannot replace what the installer ships.
+      - name: Publish the build for ta_install
+        if: ${{ github.ref == 'refs/heads/master' }}
+        env:
+          BUILD_RELEASE: windows-build
+          BUILD_ASSET: ta_vms-windows-x64.zip
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP $env:BUILD_ASSET
+          Compress-Archive -Path (Join-Path $env:RUNNER_TEMP 'ta_vms\*') -DestinationPath $zip -Force
+          $notes = "Not a release. The Windows build of master at $env:GITHUB_SHA, replaced by every push; ta_install's Windows installer is built from it."
+          gh release view $env:BUILD_RELEASE --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:BUILD_RELEASE --repo $env:GITHUB_REPOSITORY --prerelease `
+              --title 'Windows build of master' --notes $notes
+            if ($LASTEXITCODE -ne 0) { throw "cannot create release $env:BUILD_RELEASE" }
+          } else {
+            gh release edit $env:BUILD_RELEASE --repo $env:GITHUB_REPOSITORY --notes $notes
+            if ($LASTEXITCODE -ne 0) { throw "cannot update release $env:BUILD_RELEASE" }
+          }
+          gh release upload $env:BUILD_RELEASE $zip --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw "cannot upload $env:BUILD_ASSET" }

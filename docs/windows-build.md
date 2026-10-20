@@ -124,6 +124,13 @@ The result is the artifact `ta_vms-windows-x64`:
 - `dotnet\<service>\` holds each .NET service, published as its image publishes it. A service is
   a project with a `Dockerfile` beside it. They are framework-dependent, so the machine needs
   the .NET 10 runtime. `web_srv.Server` carries the built web client in `wwwroot`.
+- `redist\vc_redist.x64.exe` is the VC++ redistributable of the toolset that built `vms.exe`.
+  The runtime it installs is not among the DLLs beside `vms.exe`, and the smoke run cannot miss
+  it — the runner has it system-wide.
+
+Every push to `master` also replaces the asset `ta_vms-windows-x64.zip` of the `windows-build`
+prerelease with the same content. That is what the Docker-free Windows installer in
+`../ta_install/windows` is built from, as its compose stack runs the Docker Hub images.
 
 - **The ports are built release-only**, through the overlay triplet
   `scripts/win/triplets/x64-windows.cmake`. That halves their build time and their cache, and
