@@ -137,4 +137,5 @@ helps keep it going. Bug reports and feature requests are welcome in
 ## License
 
 [MIT](LICENSE). The images bundle third-party software under its own licences, among them FFmpeg,
-which in these builds includes GPL-licensed encoders.
+which in these builds includes GPL-licensed encoders. The analytics worker,
+[video_a](https://github.com/treealarm/video_a), is AGPL-3.0, because the YOLO models it runs are.
