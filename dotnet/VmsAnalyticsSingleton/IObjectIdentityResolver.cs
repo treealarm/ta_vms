@@ -12,10 +12,11 @@ namespace VmsAnalyticsSingleton;
 public interface IObjectIdentityResolver
 {
   // embedding is the L2-normalized appearance vector from video_a (carried on every frame of a
-  // track; empty when no embedder model). embeddingIsFresh is true only on the frame it was actually
+  // track; empty when no embedder model), and embeddingModel the model that produced it -- vectors of
+  // different models are never compared. embeddingIsFresh is true only on the frame it was actually
   // recomputed, so the resolver records a gallery sighting per real observation, not per frame.
   // recognizedText is the plate/OCR text when present.
-  string Resolve(DetectionKind kind, IReadOnlyList<float> embedding, bool embeddingIsFresh,
+  string Resolve(DetectionKind kind, IReadOnlyList<float> embedding, string? embeddingModel, bool embeddingIsFresh,
     string cameraId, long trackId, string? recognizedText);
 
   // Read-only: the object_id already resolved for this (camera, track), or null if none yet. Used by

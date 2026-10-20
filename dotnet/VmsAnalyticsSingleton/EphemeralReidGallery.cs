@@ -5,7 +5,8 @@ namespace VmsAnalyticsSingleton;
 
 // In-memory re-identification: matches an incoming body embedding against recent sightings by
 // cosine similarity (dot product — the worker L2-normalizes) and reuses that object's id, else
-// mints a new one. Embedding-less frames of a live track resolve via the (camera,track)->object
+// mints a new one. Only vectors of the same embedding model are compared: a worker restarted with
+// another model starts a fresh space, and the sightings of the old one age out of the window. Embedding-less frames of a live track resolve via the (camera,track)->object
 // cache. Everything lives in memory and is time-windowed; after a restart the gallery is empty and
 // objects get fresh ids — acceptable, because historical grouping is already frozen into the
 // event_id/event_uuid stored on rows. This is the v1 IObjectIdentityResolver; a persistent
@@ -28,8 +29,11 @@ public sealed class EphemeralReidGallery : IObjectIdentityResolver
   // _lock; when they meet, another block is taken from the sequence.
   private long _nextObjectNum;
   private long _blockEnd;
+  // The model of the last body embedding seen, to say so once when it changes. Guarded by _lock.
+  private string? _lastModel;
+  private bool _anyModelSeen;
 
-  private sealed record Entry(string ObjectId, float[] Embedding, DateTime SeenAt);
+  private sealed record Entry(string ObjectId, float[] Embedding, string? Model, DateTime SeenAt);
   private sealed record TrackLink(string ObjectId, DateTime SeenAt);
 
   public EphemeralReidGallery(
@@ -44,10 +48,11 @@ public sealed class EphemeralReidGallery : IObjectIdentityResolver
     TryTakeBlock();
   }
 
-  public string Resolve(DetectionKind kind, IReadOnlyList<float> embedding, bool embeddingIsFresh,
-    string cameraId, long trackId, string? recognizedText)
+  public string Resolve(DetectionKind kind, IReadOnlyList<float> embedding, string? embeddingModel,
+    bool embeddingIsFresh, string cameraId, long trackId, string? recognizedText)
   {
     var now = DateTime.UtcNow;
+    var model = EmbeddingCodec.ModelOrNull(embeddingModel);
     var trackKey = (cameraId, trackId);
 
     lock (_lock)
@@ -60,23 +65,25 @@ public sealed class EphemeralReidGallery : IObjectIdentityResolver
       // collapse the time window (see the embedding_is_fresh contract in analytics.proto).
       if (kind == DetectionKind.Person && embedding.Count > 0)
       {
+        NoteModel(model);
+
         // Already-identified track: identity is fixed; only re-register a sighting on a fresh frame
         // so the object stays matchable while the track is alive (a long track outlives the window).
         if (_trackToObject.TryGetValue(trackKey, out var known))
         {
           if (embeddingIsFresh)
-            _gallery.AddLast(new Entry(known.ObjectId, embedding as float[] ?? embedding.ToArray(), now));
+            _gallery.AddLast(new Entry(known.ObjectId, embedding as float[] ?? embedding.ToArray(), model, now));
           _trackToObject[trackKey] = known with { SeenAt = now };
           return known.ObjectId;
         }
 
         // First embedding seen for this track: match it against the gallery to (re-)identify.
         var vec = embedding as float[] ?? embedding.ToArray();
-        var matched = BestMatch(vec, now);
+        var matched = BestMatch(vec, model, now);
         var objectId = matched ?? NewObjectId();
         // Record a sighting on a real observation, or for a brand-new object so it becomes matchable.
         if (embeddingIsFresh || matched is null)
-          _gallery.AddLast(new Entry(objectId, vec, now));
+          _gallery.AddLast(new Entry(objectId, vec, model, now));
         _trackToObject[trackKey] = new TrackLink(objectId, now);
         return objectId;
       }
@@ -102,14 +109,34 @@ public sealed class EphemeralReidGallery : IObjectIdentityResolver
   }
 
   // Caller holds _lock.
-  private string? BestMatch(float[] vec, DateTime now)
+  private void NoteModel(string? model)
+  {
+    if (_anyModelSeen && model == _lastModel)
+      return;
+    if (_anyModelSeen)
+    {
+      var stale = _gallery.Count(e => e.Model != model);
+      _logger.LogWarning(
+        "Re-id: body embeddings now come from model '{Model}' (were '{Previous}'); {Stale} gallery sightings of the previous model are not compared with them and age out of the window",
+        model ?? "unnamed", _lastModel ?? "unnamed", stale);
+    }
+    else
+    {
+      _logger.LogInformation("Re-id: body embeddings come from model '{Model}'", model ?? "unnamed");
+    }
+    _lastModel = model;
+    _anyModelSeen = true;
+  }
+
+  // Caller holds _lock.
+  private string? BestMatch(float[] vec, string? model, DateTime now)
   {
     var cutoff = now - _window;
     string? best = null;
     double bestScore = _minScore;
     foreach (var e in _gallery)
     {
-      if (e.SeenAt < cutoff || e.Embedding.Length != vec.Length)
+      if (e.SeenAt < cutoff || e.Model != model || e.Embedding.Length != vec.Length)
         continue;
       double dot = 0;
       for (var i = 0; i < vec.Length; i++)

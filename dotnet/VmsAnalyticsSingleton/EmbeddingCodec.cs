@@ -4,6 +4,12 @@ namespace VmsAnalyticsSingleton;
 
 internal static class EmbeddingCodec
 {
+  /// <summary>
+  /// The worker's embedding_model as stored: null when it names none (a worker that predates the
+  /// field), which is the same space as the rows written before the column existed.
+  /// </summary>
+  public static string? ModelOrNull(string? model) => string.IsNullOrEmpty(model) ? null : model;
+
   public static bool TryEncodeNormalized(IReadOnlyList<float> source, out byte[] bytes, out int dim)
   {
     bytes = [];

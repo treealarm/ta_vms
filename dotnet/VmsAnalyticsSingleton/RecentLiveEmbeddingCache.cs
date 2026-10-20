@@ -19,9 +19,10 @@ public sealed class RecentLiveEmbeddingCache
   private readonly ConcurrentDictionary<(string CameraId, long TrackId, string Kind), Entry> _entries = new();
   private int _offers;
 
-  private sealed record Entry(DateTime DetectedAt, float[] Vector);
+  private sealed record Entry(DateTime DetectedAt, float[] Vector, string? Model);
 
-  public void Offer(string cameraId, long trackId, string kind, DateTime detectedAt, IReadOnlyList<float> embedding)
+  public void Offer(string cameraId, long trackId, string kind, DateTime detectedAt, IReadOnlyList<float> embedding,
+    string? model)
   {
     if (!EmbeddingCodec.TryEncodeNormalized(embedding, out var bytes, out var dim))
       return;
@@ -29,7 +30,7 @@ public sealed class RecentLiveEmbeddingCache
     if (vector.Length == 0)
       return;
 
-    _entries[(cameraId, trackId, kind)] = new Entry(detectedAt, vector);
+    _entries[(cameraId, trackId, kind)] = new Entry(detectedAt, vector, EmbeddingCodec.ModelOrNull(model));
 
     // Opportunistic cleanup keeps this independent of another timer/background service.
     if (Interlocked.Increment(ref _offers) % 256 != 0)
@@ -46,9 +47,11 @@ public sealed class RecentLiveEmbeddingCache
     string kind,
     DateTime anchor,
     out float[] vector,
+    out string? model,
     out DateTime detectedAt)
   {
     vector = [];
+    model = null;
     detectedAt = default;
     if (!_entries.TryGetValue((cameraId, trackId, kind), out var entry))
       return false;
@@ -56,6 +59,7 @@ public sealed class RecentLiveEmbeddingCache
       return false;
 
     vector = entry.Vector;
+    model = entry.Model;
     detectedAt = entry.DetectedAt;
     return true;
   }

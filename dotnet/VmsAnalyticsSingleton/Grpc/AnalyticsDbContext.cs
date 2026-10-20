@@ -39,7 +39,9 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
       e.Property(x => x.Kind).HasColumnName("kind");
       e.Property(x => x.Dim).HasColumnName("dim");
       e.Property(x => x.Embedding).HasColumnName("embedding");
+      e.Property(x => x.Model).HasColumnName("model");
       e.HasIndex(x => x.Kind);
+      e.HasIndex(x => new { x.Kind, x.Model });
     });
   }
 }
@@ -72,4 +74,7 @@ public sealed class DbDetectionEmbedding
   public string Kind { get; set; } = string.Empty;
   public int Dim { get; set; }
   public byte[] Embedding { get; set; } = [];
+  /// <summary>The model that produced the vector (analytics.proto embedding_model); null for rows
+  /// written before the worker named it. Vectors are comparable only within one model.</summary>
+  public string? Model { get; set; }
 }

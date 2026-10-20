@@ -201,6 +201,10 @@ public class AnalyticsDetectionsController(
     try
     {
       var response = await _analyticsClient.SearchSimilarDetectionsAsync(request, cancellationToken: ct);
+      // Detections that were not compared because their vectors came from another embedding model
+      // (an archive recorded before the worker's re-id model changed). A header, so the body stays
+      // the plain hit list it has always been.
+      Response.Headers["X-Other-Model-Candidates"] = response.OtherModelCandidates.ToString(System.Globalization.CultureInfo.InvariantCulture);
       return Ok(response.Hits.Select(h => new SimilarDetectionHitDto
       {
         Detection = new AnalyticsDetectionDto
