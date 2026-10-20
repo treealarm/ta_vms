@@ -159,10 +159,12 @@ public sealed class LogServiceImpl : LogService.LogServiceBase
   private const int ReverseReadBufferSize = 64 * 1024;
 
   // Reads lines from EOF to BOF, with FileShare.ReadWrite so reading does not fail while the
-  // owning service (C++ spdlog / Serilog) keeps the active log file open for writing.
+  // owning service (C++ spdlog / Serilog) keeps the active log file open for writing, and with
+  // FileShare.Delete so that on Windows a read in progress does not block the writer's rotation
+  // (a rename) or LogRetentionService's delete. Linux enforces neither.
   private static IEnumerable<string> ReadLinesReversedShared(string path)
   {
-    using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+    using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 
     var position = stream.Length;
     var leftover = Array.Empty<byte>();

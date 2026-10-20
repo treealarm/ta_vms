@@ -61,7 +61,7 @@ public sealed partial class FsServiceImpl
 
     const int bufSize = 256 * 1024;
     var buf = new byte[bufSize];
-    await using var fs = new FileStream(abs, FileMode.Open, FileAccess.Read, FileShare.Read, bufSize, useAsync: true);
+    await using var fs = SharedFileRead.Open(abs, bufSize);
     fs.Seek((long)offset, SeekOrigin.Begin);
 
     while (remaining > 0)

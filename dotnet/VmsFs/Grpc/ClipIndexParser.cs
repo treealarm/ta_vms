@@ -209,7 +209,7 @@ public static class ClipIndexParser
   {
     try
     {
-      await using var fs = new FileStream(absPath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, useAsync: true);
+      await using var fs = SharedFileRead.Open(absPath, 65536);
       if ((ulong)fs.Length < offset) return null;
       var toRead = (int)Math.Min(length, (ulong)fs.Length - offset);
       var buf = new byte[toRead];
