@@ -158,6 +158,10 @@ When adding a new service (C# or C++), you **must** update all of the following:
 4. `.vscode/launch.json` — add a debug launch configuration for local development
 5. `.vscode/tasks.json` — add `prepare:<name>`, `dapr:<name>:start`, `dapr:<name>:stop` tasks (copy pattern from vmslogger)
 6. `dotnet/ta_vms.sln` — add the project (for C# services)
+7. `../ta_install/windows/config/services.json` — the Windows supervisor's manifest (app id, exe,
+   ports, sidecar ports, placement), unless the service deliberately does not ship on Windows; then
+   say so in `../ta_install/windows/README.md`. `scripts/Build-Stage.ps1` fails when the manifest
+   names an exe the ta_vms Windows build does not contain.
 
 Omitting any of these causes a startup crash or missing debug config in dev.
 
@@ -167,6 +171,10 @@ When adding a new required environment variable to any service:
 1. Add it to `.env` (docker-compose local dev values).
 2. Add it to `../ta_install/.env` (production/installation values).
 3. Add it to **every** `launch.json` that launches that service — both the service-specific one (`dotnet/.vscode/launch.json`, `video_srv/.vscode/launch.json`) and the root `.vscode/launch.json`. Missing it in any one of these causes a startup crash in dev.
+4. If its value differs on Windows (a host name, a path, a port the dynamic range could reserve),
+   add the Windows value to `../ta_install/windows/config/windows.env`. The installer ships
+   `.env` as the base and applies only these differences on top, so a variable whose Docker value
+   also works there needs nothing more.
 
 **No silent fallbacks.** If an environment variable is required, the service must throw (or return non-zero) immediately on startup when it is missing — never silently default to a hardcoded value. A missing required variable is a misconfiguration and must be visible immediately, not discovered at runtime through unexpected behavior.
 
@@ -272,6 +280,22 @@ accumulating messages nobody reads.
   var, which cannot express "the one next to me". A node that names none simply does not
   re-compress.
 
+### Distributed layout: a core and nodes
+
+A deployment is one **core** and any number of **nodes**, and one machine may be both.
+- The core holds the shared infrastructure and everything system-wide: PostgreSQL, RabbitMQ, Dapr
+  placement, `VmsCfg`, `VmsUtils`, the singletons and `web_srv`.
+- A node holds what is pinned to its own disk and subnet: its `vms`↔`vmsfs` pair, `vmsonvif`,
+  `vmsonvif-actors` and `vmslogger`, each with app ids and an `OWN_SERVER_ID` of its own and an
+  entry in `MEDIA_SERVER_PAIRS`. A node may run Linux (compose) or Windows (the installer).
+- A standalone install — the Windows installer today, `../ta_install` compose — is a core and a
+  node on one machine, with fixed app ids.
+
+Nothing may tie a service to "everything is on this machine": addresses and ports come only from
+env, and the only place that fixes app ids and `OWN_SERVER_ID` for one machine is
+`../ta_install/windows/config/services.json`. Between machines, sidecars cannot use the sqlite
+resolver (see Square integration below); they will need mDNS scoped per installation or Consul.
+
 **Naming rule:** a service that cannot be replicated carries `Singleton` in its project name and Dapr
 app-id. A reader must be able to tell the scaling class from the name alone, without reading
 `Program.cs` to discover a background job hiding inside.
@@ -341,9 +365,11 @@ Exceptions where raw SQL is acceptable: complex bulk operations or SQL construct
 
 ### Creating a database: name it in `.env`, nothing else
 
-Databases are created by exactly one thing — `scripts/prepare-databases.sh`, run as the `db-init`
-compose service — and it creates **every** database named by a `POSTGRES_*_DB` variable in the
-environment. So a new service's database is added by putting `POSTGRES_<NAME>_DB` into `.env` (and
+Databases are created by exactly one thing per platform, and both read the same names: in Docker
+`scripts/prepare-databases.sh`, run as the `db-init` compose service; on Windows the supervisor
+`TaVmsHost` (`../ta_install/windows`), at every start. Each creates **every** database named by a
+`POSTGRES_*_DB` variable in the environment. (On Windows there is nothing to cross-check against
+the Dapr components either: `TaVmsHost` writes them from the same environment.) So a new service's database is added by putting `POSTGRES_<NAME>_DB` into `.env` (and
 `../ta_install/.env`), and by nothing else.
 
 Do **not** go back to `docker-entrypoint-initdb.d`: that hook only fires when the data directory is
@@ -362,6 +388,9 @@ database now fails fast with a message naming it, instead of retrying "Postgres 
 ## Docker image versions
 
 In `docker-compose.yml` use `latest` for all third-party images. Do not pin specific version tags (e.g. `1.14.4`) — use `latest` instead.
+
+This is a rule for compose only. The Windows installer carries the binaries themselves, so every
+third-party component it ships is pinned, by URL and hash, in `../ta_install/windows/versions.json`.
 
 ## Protobuf — no `reserved` fields
 
@@ -395,8 +424,9 @@ video subsystem. Login and the basic Phase 1/2 (cameras on the map, properties, 
 [`docs/square-integration-plan.md`](docs/square-integration-plan.md). Any further design and
 development of the video subsystem **must not contradict** that plan. Keep these invariants:
 
-- **The docker network shared with Square is mandatory, but there is no ta_vms data in other
-  projects' containers any more.** ta_vms **always** lives in the `common_app_network` network (the
+- **The docker network shared with Square is mandatory wherever the integration can run, but
+  there is no ta_vms data in other projects' containers any more.** In the dev compose and in any
+  deployment with the integration, ta_vms lives in the `common_app_network` network (the
   same `name:` as Square's/`multitenant_admin`'s, but `external: true` — the network is created by
   Square/`multitenant_admin`, which have to come up first; ta_vms's own key for the network is
   `default`, theirs is `shared_network`, and compose refuses to adopt another project's network
@@ -415,11 +445,20 @@ development of the video subsystem **must not contradict** that plan. Keep these
   Features not related to the integration (login, push to Square) are gated by env
   (`KEYCLOAK_URL`, `SQUARE_INTEGRATION_SINK_APP_ID`) — network connectivity is unconditional, not
   behind a gate.
+  Standalone installs have no Square to reach and do without the network: `../ta_install` compose
+  runs in a network of its own, the Windows installer has no Docker at all. App ids resolve over
+  mDNS in Docker; the single-machine Windows install uses Dapr's `sqlite` resolver with
+  `DAPR_HOST_IP=127.0.0.1` instead, because mDNS announced the sidecars on the machine's LAN address
+  — calls broke when that address changed or went away, and two installs on one LAN mixed their
+  identical app ids.
 - **`VmsSquareSingleton` is the only point where the integration plugs in** (the producer side).
   The heavy core (the C++ `video_srv` and the rest) is not touched by the integration. Do not
   spread integration logic over other services: `VmsCfg` knows nothing about Square at all and only
   publishes its ordinary events (`server-config-changed`, `camera-state-changed`), which the
-  integrator subscribes to.
+  integrator subscribes to. Standalone installs that cannot reach Square do not ship it at all
+  (the Windows installer): an empty `DAPR_SQUARE_SINGLETON_APP_ID` is how `web_srv` learns the
+  integration is not deployed, and a switch that could be turned on with nothing to connect to
+  would promise a feature that is not there.
 - **The producer's identity in Square's tree is `SQUARE_INTEGRATION_PRODUCER_ID`, not the
   process's `APP_ID`.** The root object's id is derived from this value deterministically, so both
   sides set it by configuration and exchange nothing at runtime. The value is permanent: changing
