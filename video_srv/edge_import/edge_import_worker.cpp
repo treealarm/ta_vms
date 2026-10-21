@@ -204,7 +204,7 @@ bool edge_import_worker::resolve_target(std::string& error)
     // exception would std::terminate the whole media server over one misconfigured job.
     try
     {
-      m_target_root = std::filesystem::path(require_env("VMS_EXPORT_BASE_PATH"));
+      m_target_root = path_from_utf8(require_env("VMS_EXPORT_BASE_PATH"));
     }
     catch (const std::exception& ex)
     {
