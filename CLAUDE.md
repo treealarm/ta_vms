@@ -364,6 +364,28 @@ Spaces (maps and nested plans), plan images, camera placements and landmarks liv
 - Map tiles reach browsers only through web_srv's caching proxy (`api/map/tiles`), cached in the
   state store — never on local disk and never fetched by the browser from the provider directly.
 
+## Login: Keycloak everywhere, the standalone installs bring their own
+
+web_srv logs users in with Keycloak's password grant, server-side; the browser never talks to
+Keycloak, so `KEYCLOAK_URL` only has to be reachable from web_srv. `KEYCLOAK_URL` empty still means
+"no authentication at all", but no product deployment runs that way any more: both standalone
+installs in `../ta_install` ship a Keycloak of their own and import its realm from
+`../ta_install/init_files/keycloak/realm.json` on the first start; with Square, Square's Keycloak is
+used. Dev runs against multitenant_admin's.
+
+- Realm roles are the whole model: `admin` sees and administers everything; anyone else sees the
+  cameras granted to their `preferred_username` (VmsCfg). Client roles are ignored.
+- `password-change-required` lets an account do nothing but `POST /api/auth/change-password`
+  (`PasswordChangeGateMiddleware`). It is how the initial `admin`/`admin` is made to pick a
+  password. Do not replace it with Keycloak's "temporary password" or required actions: Keycloak
+  refuses the password grant for those ("Account is not fully set up"), so the user could never
+  log in to change anything.
+- The realm has no password policy (Keycloak would refuse to import `admin`/`admin` under one) and
+  no required profile fields (a user without an email could not log in); web_srv checks a new
+  password's length itself.
+- `[AllowAnonymous]` belongs on actions, never on a controller: on the class it overrides every
+  `[Authorize]` inside, which is how `/api/auth/users` was once open to anyone.
+
 ## Database access
 
 Use **Entity Framework Core** for all database queries. Do not write raw SQL via `NpgsqlDataSource` / `NpgsqlCommand` in new code. Use `IDbContextFactory<T>` (or the injected `DbContext`) and LINQ for queries.
@@ -449,9 +471,9 @@ development of the video subsystem **must not contradict** that plan. Keep these
   (verified empirically) — so keeping our own Redis beside another one was impossible, and that is
   one of the reasons the broker became RabbitMQ (the second: Redis does not install natively on
   Windows, and a standalone installer is planned).
-  Features not related to the integration (login, push to Square) are gated by env
-  (`KEYCLOAK_URL`, `SQUARE_INTEGRATION_SINK_APP_ID`) — network connectivity is unconditional, not
-  behind a gate.
+  The push to Square is gated by env (`SQUARE_INTEGRATION_SINK_APP_ID`); login is not part of the
+  integration any more (see "Login" above), only which Keycloak it uses. Network connectivity is
+  unconditional, not behind a gate.
   Standalone installs have no Square to reach and do without the network: `../ta_install` compose
   runs in a network of its own, the Windows installer has no Docker at all. App ids resolve over
   mDNS in Docker; the single-machine Windows install uses Dapr's `sqlite` resolver with
