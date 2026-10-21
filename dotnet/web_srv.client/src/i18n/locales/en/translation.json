@@ -378,7 +378,8 @@
     "enforceOnWarning": "Users without grants will immediately lose access to all cameras, including any Square users signing in against this realm.",
     "enforceConfirm": "Enable camera permissions?",
     "administrator": "Administrator — all cameras",
-    "adminBypass": "This user has the admin role: they reach every camera and every action regardless of what is set here. Remove the admin role in Keycloak to make these permissions apply."
+    "adminBypass": "This user has the admin role: they reach every camera and every action regardless of what is set here. Remove the admin role in Keycloak to make these permissions apply.",
+    "manageUsers": "Add users, reset passwords, make administrators"
   },
   "logs": {
     "title": "Log Journal",

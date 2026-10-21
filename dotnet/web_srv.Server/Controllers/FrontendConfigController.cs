@@ -22,6 +22,12 @@ public class FrontendConfigDto
   public bool MapTilesEnabled { get; set; }
   /// <summary>Credit line the tile provider requires to be shown on the map.</summary>
   public string? MapTileAttribution { get; set; }
+  /// <summary>
+  /// Port of the user administration (multitenant_admin in its standalone mode) on this same host,
+  /// which the standalone installs run beside the web UI. Null where users live elsewhere: with
+  /// Square, and in dev.
+  /// </summary>
+  public int? UserAdminPort { get; set; }
 }
 
 // Relays SQUARE_FRONTEND_ORIGIN (a backend runtime env var, see Program.cs's CORS gate) to the SPA.
@@ -46,6 +52,13 @@ public class FrontendConfigController(SquareLinkProbe _square) : ControllerBase
   public static readonly bool LiveTestPlayerEnabled = string.Equals(
     Environment.GetEnvironmentVariable("VMS_LIVE_TEST_PLAYER"), "true", StringComparison.OrdinalIgnoreCase);
 
+  // Optional: only the standalone installs set it (see FrontendConfigDto.UserAdminPort). Set but not
+  // a port is a misconfiguration, refused rather than hidden.
+  private static readonly int? UserAdminPort =
+    Environment.GetEnvironmentVariable("MT_ADMIN_PORT") is { Length: > 0 } port
+      ? int.TryParse(port, out var value) ? value : throw new InvalidOperationException($"MT_ADMIN_PORT='{port}' is not a port number")
+      : null;
+
   [HttpGet("frontend")]
   public async Task<ActionResult<FrontendConfigDto>> GetConfig(CancellationToken ct)
   {
@@ -58,6 +71,7 @@ public class FrontendConfigController(SquareLinkProbe _square) : ControllerBase
       // Optional, shown under the map as given. Empty with tiles on is a misconfiguration for most
       // providers (OpenStreetMap requires the credit), but not one this service can judge.
       MapTileAttribution = Environment.GetEnvironmentVariable("VMS_MAP_TILE_ATTRIBUTION"),
+      UserAdminPort = UserAdminPort,
     });
   }
 }

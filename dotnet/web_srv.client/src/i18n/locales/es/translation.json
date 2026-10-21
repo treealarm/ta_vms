@@ -378,7 +378,8 @@
     "enforceOnWarning": "Los usuarios sin permisos perderán de inmediato el acceso a todas las cámaras, incluidos los usuarios de Square que inicien sesión en este realm.",
     "enforceConfirm": "¿Activar los permisos de cámara?",
     "administrator": "Administrador — todas las cámaras",
-    "adminBypass": "Este usuario tiene el rol admin: accede a todas las cámaras y acciones sin importar lo que se marque aquí. Quite el rol admin en Keycloak para que estos permisos se apliquen."
+    "adminBypass": "Este usuario tiene el rol admin: accede a todas las cámaras y acciones sin importar lo que se marque aquí. Quite el rol admin en Keycloak para que estos permisos se apliquen.",
+    "manageUsers": "Añadir usuarios, restablecer contraseñas, nombrar administradores"
   },
   "logs": {
     "title": "Diario de registros",

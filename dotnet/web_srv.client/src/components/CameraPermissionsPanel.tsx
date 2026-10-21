@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogContentText,
-  DialogTitle, FormControlLabel, List, Stack, Switch, Table, TableBody, TableCell, TableHead,
+  DialogTitle, FormControlLabel, IconButton, List, Stack, Switch, Table, TableBody, TableCell, TableHead,
   TableRow, TextField, Tooltip, Typography,
 } from '@mui/material'
 import { useTranslation } from 'react-i18next'
+import ManageAccountsIcon from '@mui/icons-material/ManageAccounts'
 import { useAppDispatch, useAppSelector } from '../store'
 import { loadCameras } from '../store/liveSlice'
 import {
@@ -298,6 +299,7 @@ export default function CameraPermissionsPanel({ ref }: { ref?: React.Ref<ApplyI
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const { users, byUser } = useAppSelector((s) => s.cameraPermissions)
+  const userAdminPort = useAppSelector((s) => s.frontendConfig.userAdminPort)
   const { selected, detailRef, detailKey, select } =
     useMasterDetailSelection(ref, users, (u) => u.username)
 
@@ -339,6 +341,15 @@ export default function CameraPermissionsPanel({ ref }: { ref?: React.Ref<ApplyI
   return (
     <MasterDetailLayout
       listTitle={t('permissions.users')}
+      listActions={userAdminPort != null && (
+        // Users are added and removed there, not here: this page only grants cameras to them.
+        <Tooltip title={t('permissions.manageUsers')}>
+          <IconButton size="small" component="a" target="_blank" rel="noopener"
+            href={`${window.location.protocol}//${window.location.hostname}:${userAdminPort}/`}>
+            <ManageAccountsIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      )}
       list={list}
       listWidth={240}
       footer={<AclModeSwitch />}

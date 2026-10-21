@@ -7,6 +7,7 @@ type FrontendConfigDto = {
   liveTestPlayer?: boolean
   mapTilesEnabled?: boolean
   mapTileAttribution?: string | null
+  userAdminPort?: number | null
 }
 
 type HealthDto = {
@@ -28,6 +29,8 @@ type FrontendConfigState = {
   mapTilesEnabled: boolean
   /** Credit line the tile provider requires under the map. */
   mapTileAttribution: string | null
+  /** Where users are administered, on this same host; null where that is not this deployment's job. */
+  userAdminPort: number | null
   /** This endpoint is anonymous, so 'failed' means the backend itself is unreachable, not 401. */
   status: 'idle' | 'pending' | 'succeeded' | 'failed'
   /** Last transport-level error while probing, shown once retries stop being a startup race. */
@@ -49,6 +52,7 @@ const initialState: FrontendConfigState = {
   liveTestPlayer: false,
   mapTilesEnabled: false,
   mapTileAttribution: null,
+  userAdminPort: null,
   status: 'idle',
   lastError: null,
   failedAttempts: 0,
@@ -84,6 +88,7 @@ const frontendConfigSlice = createSlice({
         state.liveTestPlayer = action.payload.liveTestPlayer === true
         state.mapTilesEnabled = action.payload.mapTilesEnabled === true
         state.mapTileAttribution = action.payload.mapTileAttribution || null
+        state.userAdminPort = action.payload.userAdminPort ?? null
       })
       .addCase(loadFrontendConfig.rejected, (state, action) => {
         state.status = 'failed'
