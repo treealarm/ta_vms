@@ -104,6 +104,13 @@ meaning: the library is linked only for the hardware. If the hardware engine did
 handed back to `compat_sink`, and `video_transcode_processor` takes it. That one has
 `tune=zerolatency`, and the library's software engine does not: 34 frames in the pipeline against
 4 through `h264_vaapi`, which is a second and a half of delay on live video.
+**On Windows there is no hardware engine yet**, and the library stays linked anyway: the
+Windows FFmpeg has no `h264_vaapi`, so `Engine::Vaapi` fails to open at once — one error line per
+stream start, nothing slower — and every HEVC stream takes `video_transcode_processor`. That costs
+135% of a core per 1080p25 stream on the i5-750 test machine (`../ta_install/windows/FINDINGS.md`).
+A Windows engine (QSV through D3D11) belongs in roi_transcode and is the next priority for the
+Windows build; until then do not build Windows `vms.exe` without the library to save that line —
+the engine will arrive through it.
 The third is the separate `video_a` repository, which has its own `ta_roienc` submodule and links
 only the decoder (`ta_roienc_decode`) for the analytics worker; a rename in the library's public
 API has to be carried there too, and its submodule bumped in a commit of its own.
