@@ -209,6 +209,11 @@ app.UseMiddleware<HeadRequestMiddleware>();
 
 app.MapControllers();
 
+// The gateway subscribes to nothing, but its sidecar still asks on every start. Without an answer
+// of its own the request falls through to the SPA fallback below, which hands daprd index.html (or
+// a 401 when Keycloak is on), and daprd logs "error getting topics from app" each time.
+app.MapGet("/dapr/subscribe", () => Results.Json(Array.Empty<object>())).AllowAnonymous();
+
 app.MapFallbackToFile("/index.html");
 
 app.Run();
