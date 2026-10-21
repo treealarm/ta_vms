@@ -1269,6 +1269,7 @@ public sealed class ClipStorage(
     SizeBytes  = (ulong)c.SizeBytes,
     ClipUid    = c.ClipUid.ToString(),
     StorageId  = c.StorageId,
+    Origin     = c.Origin,
     RoiState = ToRoiState(c.RoiState)
   };
 }
