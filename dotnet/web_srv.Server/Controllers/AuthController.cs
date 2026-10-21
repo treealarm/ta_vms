@@ -2,6 +2,7 @@ using KeycloakAdmin;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using web_srv.Authentication;
+using web_srv.Authorization;
 using web_srv.Types.Dto;
 using RoleConstants = web_srv.Authentication.RoleConstants;
 
@@ -18,9 +19,14 @@ public class RefreshTokenDto
   public string RefreshToken { get; set; } = "";
 }
 
+public class ChangePasswordDto
+{
+  public string CurrentPassword { get; set; } = "";
+  public string NewPassword { get; set; } = "";
+}
+
 [ApiController]
 [Route("api/auth")]
-[AllowAnonymous]
 // Signing in involves no camera, and refusing it during startup would leave an operator staring at
 // a login page that cannot explain itself.
 [AllowNotReady]
@@ -32,7 +38,14 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
     Environment.GetEnvironmentVariable(name)
       ?? throw new InvalidOperationException($"Required environment variable '{name}' is not set");
 
+  // The realm has no password policy of its own: Keycloak would refuse to import the initial
+  // admin/admin under one. A password set here is held to this instead.
+  private const int MinPasswordLength = 8;
+
+  // Anonymous per action, not on the class: [AllowAnonymous] on a controller overrides every
+  // [Authorize] in it, which had left /users open to anyone.
   [HttpPost("login")]
+  [AllowAnonymous]
   public async Task<IActionResult> Login(LoginDto dto)
   {
     if (kcAdmin == null)
@@ -55,6 +68,7 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
   }
 
   [HttpPost("refresh")]
+  [AllowAnonymous]
   public async Task<IActionResult> Refresh(RefreshTokenDto dto)
   {
     if (kcAdmin == null)
@@ -82,6 +96,51 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
   }
 
   /// <summary>
+  /// The caller sets a new password, proving the current one, and gets fresh tokens back: the ones
+  /// it holds still carry password-change-required until they expire.
+  /// </summary>
+  [HttpPost("change-password")]
+  [Authorize(Policy = AuthPolicies.Authenticated)]
+  [NoCameraAccess("changes the caller's own password")]
+  public async Task<IActionResult> ChangePassword(ChangePasswordDto dto)
+  {
+    if (kcAdmin == null)
+    {
+      return StatusCode(StatusCodes.Status503ServiceUnavailable, "Authentication is not enabled on this server");
+    }
+
+    var username = User.Identity?.Name;
+    if (string.IsNullOrEmpty(username))
+      return Unauthorized();
+    if (dto.NewPassword.Length < MinPasswordLength)
+      return BadRequest(new { code = "too_short", error = $"The new password must be at least {MinPasswordLength} characters long" });
+    if (dto.NewPassword == dto.CurrentPassword)
+      return BadRequest(new { code = "same_as_current", error = "The new password must differ from the current one" });
+    if (string.Equals(dto.NewPassword, username, StringComparison.OrdinalIgnoreCase))
+      return BadRequest(new { code = "same_as_username", error = "The new password must differ from the username" });
+
+    var realm = RequireEnv("KEYCLOAK_REALM_NAME");
+    var clientId = RequireEnv("KEYCLOAK_CLIENT_ID");
+
+    // A valid token is not proof enough: it may be on a screen somebody else walked up to.
+    try
+    {
+      await kcAdmin.GetTokenAsync(realm, clientId, username, dto.CurrentPassword);
+    }
+    catch (Exception)
+    {
+      return BadRequest(new { code = "wrong_current_password", error = "The current password is wrong" });
+    }
+
+    if (!await kcAdmin.SetPasswordAsync(realm, username, dto.NewPassword))
+      return StatusCode(StatusCodes.Status500InternalServerError, new { error = "Keycloak did not accept the new password" });
+    // False when the account never had the role: an ordinary password change.
+    await kcAdmin.RemoveRealmRoleFromUserAsync(realm, username, RoleConstants.PasswordChangeRequired);
+
+    return Ok(await kcAdmin.GetTokenAsync(realm, clientId, username, dto.NewPassword));
+  }
+
+  /// <summary>
   /// Usernames in the realm, for picking who to send a copy of an investigation board to.
   /// Empty when Keycloak isn't configured — there are no users to name, and the UI hides sharing.
   /// </summary>
@@ -96,6 +155,7 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
   /// </param>
   [HttpGet("users")]
   [Authorize(Policy = AuthPolicies.Authenticated)]
+  [NoCameraAccess("lists user names, no camera")]
   public async Task<IActionResult> Users(
     [FromQuery] bool includeSelf = false, [FromQuery] bool withRoles = false)
   {
@@ -148,6 +208,7 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
   /// </summary>
   [HttpGet("me")]
   [Authorize(Policy = AuthPolicies.Authenticated)]
+  [NoCameraAccess("reports the caller's own grants")]
   public async Task<ActionResult<MyPermissionsDto>> Me(
     [FromServices] IPermissionManager permissions, CancellationToken ct)
   {

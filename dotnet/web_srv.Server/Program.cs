@@ -203,6 +203,7 @@ if (!string.IsNullOrEmpty(squareFrontendOrigin))
 if (!string.IsNullOrEmpty(keycloakUrl))
 {
   app.UseAuthentication();
+  app.UseMiddleware<PasswordChangeGateMiddleware>();
 }
 app.UseAuthorization();
 app.UseMiddleware<HeadRequestMiddleware>();

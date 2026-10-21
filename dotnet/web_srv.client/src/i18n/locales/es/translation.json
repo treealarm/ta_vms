@@ -42,7 +42,8 @@
     "edgeArchive": "Archivo en cámara",
     "gaps": "Huecos",
     "maps": "Mapas",
-    "map": "Mapa"
+    "map": "Mapa",
+    "changePassword": "Cambiar contraseña"
   },
   "auth": {
     "title": "Iniciar sesión",
@@ -50,7 +51,24 @@
     "password": "Contraseña",
     "signIn": "Iniciar sesión",
     "signingIn": "Iniciando sesión…",
-    "invalidCredentials": "Usuario o contraseña incorrectos"
+    "invalidCredentials": "Usuario o contraseña incorrectos",
+    "changePassword": {
+      "title": "Cambiar contraseña",
+      "forced": "Esta cuenta aún tiene su contraseña inicial. Establezca una nueva para continuar.",
+      "current": "Contraseña actual",
+      "new": "Contraseña nueva",
+      "repeat": "Repita la contraseña nueva",
+      "rule": "Al menos {{min}} caracteres, distinta del nombre de usuario",
+      "submit": "Cambiar contraseña",
+      "tooShort": "La contraseña nueva debe tener al menos {{min}} caracteres",
+      "mismatch": "Las dos contraseñas nuevas no coinciden",
+      "errors": {
+        "too_short": "La contraseña nueva es demasiado corta",
+        "same_as_current": "La contraseña nueva debe ser distinta de la actual",
+        "same_as_username": "La contraseña nueva debe ser distinta del nombre de usuario",
+        "wrong_current_password": "La contraseña actual es incorrecta"
+      }
+    }
   },
   "tests": {
     "title": "Pruebas"

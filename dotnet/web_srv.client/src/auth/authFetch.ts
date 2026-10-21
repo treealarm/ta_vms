@@ -175,9 +175,12 @@ export function installAuthFetch(): void {
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' || input instanceof URL ? input.toString() : input.url
-    // /api/auth/* is anonymous-accessible and handles its own error states (e.g. bad login
-    // credentials return 401 too) — never auto-redirect or attach a stale token for those.
-    const isApiCall = url.startsWith('/api/') && !url.startsWith('/api/auth/')
+    // Login and refresh are anonymous and handle their own error states (bad credentials return 401
+    // too) — never auto-redirect or attach a stale token for those. The rest of /api/auth/* needs
+    // the token like any other call: /users and /me were sent without one, and answered only
+    // because the server let the whole controller through anonymously.
+    const isApiCall = url.startsWith('/api/')
+      && !url.startsWith('/api/auth/login') && !url.startsWith('/api/auth/refresh')
 
     if (!isApiCall) return nativeFetch(input, init)
 

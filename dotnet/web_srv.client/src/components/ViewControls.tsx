@@ -40,6 +40,16 @@ export default function ViewControls({ target }: { target: 'admin' | 'operator' 
         <Button
           size="small"
           variant="text"
+          onClick={() => navigate('/change-password')}
+          sx={{ minWidth: 0, px: 1, py: 0.5, fontSize: '0.7rem', color: 'text.secondary' }}
+        >
+          {t('nav.changePassword')}
+        </Button>
+      )}
+      {token && (
+        <Button
+          size="small"
+          variant="text"
           onClick={() => void (async () => {
             if (!(await applyPending())) return
             dispatch(logout())

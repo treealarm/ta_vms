@@ -14,6 +14,8 @@ import { toggleLogPanel } from './store/logSlice'
 import { useAppDispatch, useAppSelector } from './store'
 import RequireRole from './auth/RequireRole'
 import LoginPage from './components/LoginPage'
+import ChangePasswordPage from './components/ChangePasswordPage'
+import { decodeRoles, PASSWORD_CHANGE_REQUIRED } from './store/authSlice'
 import TestLivePage from './components/TestLivePage'
 import OperatorView from './components/OperatorView'
 import AdminView from './components/AdminView'
@@ -164,6 +166,7 @@ export default function App() {
             {/* Always reachable regardless of the backend connectivity probe below — neither
                 depends on it, and /login must stay reachable even if the backend never responds. */}
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/change-password" element={<ChangePasswordPage />} />
             {/* Dev-only and anonymous end to end: the backend refuses to enable it alongside
                 Keycloak, so don't offer the page when it says the endpoints aren't there. */}
             {liveTestPlayer && <Route path="/test/live" element={<TestLivePage />} />}
@@ -183,6 +186,9 @@ export default function App() {
               // The session is over: login, without drawing a single page of the app first. The
               // /login route above still wins on its own path, so this cannot loop.
               <Route path="*" element={<Navigate to="/login" replace />} />
+            ) : decodeRoles(authToken).includes(PASSWORD_CHANGE_REQUIRED) ? (
+              // The server answers nothing else for this account (PasswordChangeGateMiddleware).
+              <Route path="*" element={<Navigate to="/change-password" replace />} />
             ) : configStatus !== 'succeeded' ? (
               // Don't render monitor/admin views until we've confirmed the backend is actually
               // reachable — otherwise a cold-started frontend briefly shows an empty monitor view

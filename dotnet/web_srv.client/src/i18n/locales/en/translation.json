@@ -42,7 +42,8 @@
     "edgeArchive": "Edge archive",
     "gaps": "Archive gaps",
     "maps": "Maps",
-    "map": "Map"
+    "map": "Map",
+    "changePassword": "Change password"
   },
   "auth": {
     "title": "Sign in",
@@ -50,7 +51,24 @@
     "password": "Password",
     "signIn": "Sign in",
     "signingIn": "Signing in…",
-    "invalidCredentials": "Invalid username or password"
+    "invalidCredentials": "Invalid username or password",
+    "changePassword": {
+      "title": "Change password",
+      "forced": "This account still has its initial password. Set a new one to continue.",
+      "current": "Current password",
+      "new": "New password",
+      "repeat": "Repeat the new password",
+      "rule": "At least {{min}} characters, different from the username",
+      "submit": "Change password",
+      "tooShort": "The new password must be at least {{min}} characters long",
+      "mismatch": "The two new passwords differ",
+      "errors": {
+        "too_short": "The new password is too short",
+        "same_as_current": "The new password must differ from the current one",
+        "same_as_username": "The new password must differ from the username",
+        "wrong_current_password": "The current password is wrong"
+      }
+    }
   },
   "tests": {
     "title": "Tests"

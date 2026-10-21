@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { Alert, Box, Button, Paper, TextField, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
-import { decodeRoles, login } from '../store/authSlice'
+import { decodeRoles, login, PASSWORD_CHANGE_REQUIRED } from '../store/authSlice'
 import PasswordField from './PasswordField'
 
 export default function LoginPage() {
@@ -24,6 +24,10 @@ export default function LoginPage() {
     if (login.fulfilled.match(result)) {
       const from = (location.state as { from?: string } | null)?.from
       const roles = decodeRoles(result.payload.token)
+      if (roles.includes(PASSWORD_CHANGE_REQUIRED)) {
+        navigate('/change-password', { replace: true })
+        return
+      }
       navigate(from ?? (roles.includes('admin') ? '/admin' : '/operator/monitors'), { replace: true })
     } else {
       setError(true)
