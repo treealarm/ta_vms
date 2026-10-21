@@ -151,8 +151,13 @@ bool rtsp_output_sink::init(const std::vector<stream_config>& streams)
   // has to touch a packet again.
   av_dict_set(&opts, "pkt_size", "1200", 0);
 
-  if (avformat_write_header(m_ctx.get(), &opts) < 0) {
-    logger::instance().error("failed to write rtsp header");
+  if (const int rc = avformat_write_header(m_ctx.get(), &opts); rc < 0) {
+    char text[AV_ERROR_MAX_STRING_SIZE] = {};
+    av_strerror(rc, text, sizeof(text));
+    // The URL carries the publish credentials; only what follows them goes to the log.
+    const auto at = m_rtsp_url.find('@');
+    const auto target = at == std::string::npos ? m_rtsp_url : m_rtsp_url.substr(at + 1);
+    logger::instance().error(std::format("failed to write rtsp header to {}: {}", target, text));
     av_dict_free(&opts);
     close_unlocked();
     return false;
