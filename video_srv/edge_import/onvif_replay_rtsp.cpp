@@ -1586,42 +1586,68 @@ int onvif_replay_rtsp::read_interleaved_rtp(std::vector<uint8_t>& rtp, int& chan
   }
 }
 
-int onvif_replay_rtsp::emit_length_prefixed_nal(
+void onvif_replay_rtsp::add_vcl_nal(
   const uint8_t* nal,
   int nal_size,
   uint32_t rtp_ts,
   bool key,
-  AVPacket* packet)
+  bool last_of_picture)
 {
-  if (nal_size <= 0)
+  if (nal_size <= 0 || m_width <= 0 || m_height <= 0 || m_extradata.empty())
   {
-    return AVERROR(EAGAIN);
+    return;
   }
-  if (m_width <= 0 || m_height <= 0 || m_extradata.empty())
+  // A camera that sets no marker bit ends a picture only by starting the next one.
+  if (!m_picture.empty() && rtp_ts != m_picture_rtp_ts)
   {
-    return AVERROR(EAGAIN);
+    finish_picture();
   }
+  const auto size = static_cast<uint32_t>(nal_size);
+  const uint8_t length[4] = {
+    static_cast<uint8_t>(size >> 24), static_cast<uint8_t>(size >> 16),
+    static_cast<uint8_t>(size >> 8), static_cast<uint8_t>(size)};
+  m_picture.insert(m_picture.end(), std::begin(length), std::end(length));
+  m_picture.insert(m_picture.end(), nal, nal + nal_size);
+  m_picture_rtp_ts = rtp_ts;
+  m_picture_key = m_picture_key || key;
+  if (last_of_picture)
+  {
+    finish_picture();
+  }
+}
+
+void onvif_replay_rtsp::finish_picture()
+{
+  if (m_picture.empty())
+  {
+    return;
+  }
+  m_pictures.push_back({std::move(m_picture), m_picture_rtp_ts, m_picture_key});
+  m_picture.clear();
+  m_picture_key = false;
+}
+
+int onvif_replay_rtsp::take_picture(AVPacket* packet)
+{
+  picture next = std::move(m_pictures.front());
+  m_pictures.pop_front();
   if (!m_have_base_ts)
   {
-    m_base_rtp_ts = rtp_ts;
+    m_base_rtp_ts = next.rtp_ts;
     m_have_base_ts = true;
   }
   const int64_t pts =
-    static_cast<int64_t>(rtp_ts - static_cast<uint32_t>(m_base_rtp_ts));
-  if (av_new_packet(packet, nal_size + 4) < 0)
+    static_cast<int64_t>(next.rtp_ts - static_cast<uint32_t>(m_base_rtp_ts));
+  if (av_new_packet(packet, static_cast<int>(next.data.size())) < 0)
   {
     return AVERROR(ENOMEM);
   }
-  packet->data[0] = static_cast<uint8_t>((nal_size >> 24) & 0xFF);
-  packet->data[1] = static_cast<uint8_t>((nal_size >> 16) & 0xFF);
-  packet->data[2] = static_cast<uint8_t>((nal_size >> 8) & 0xFF);
-  packet->data[3] = static_cast<uint8_t>(nal_size & 0xFF);
-  std::memcpy(packet->data + 4, nal, static_cast<size_t>(nal_size));
+  std::memcpy(packet->data, next.data.data(), next.data.size());
   packet->stream_index = 0;
   packet->pts = pts;
   packet->dts = pts;
   packet->duration = 3600;
-  packet->flags = key ? AV_PKT_FLAG_KEY : 0;
+  packet->flags = next.key ? AV_PKT_FLAG_KEY : 0;
   return 0;
 }
 
@@ -1629,8 +1655,7 @@ int onvif_replay_rtsp::handle_h264_payload(
   const uint8_t* payload,
   int payload_size,
   uint32_t rtp_ts,
-  bool /*marker*/,
-  AVPacket* packet)
+  bool marker)
 {
   auto on_param_nal = [&](const uint8_t* nal, int nal_size) -> int {
     const uint8_t nal_type = nal[0] & 0x1F;
@@ -1672,8 +1697,8 @@ int onvif_replay_rtsp::handle_h264_payload(
     {
       return AVERROR(EAGAIN);
     }
-    return emit_length_prefixed_nal(
-      payload, payload_size, rtp_ts, nal_type == 5, packet);
+    add_vcl_nal(payload, payload_size, rtp_ts, nal_type == 5, marker);
+    return AVERROR(EAGAIN);
   }
   if (nal_type == 28)
   {
@@ -1715,8 +1740,8 @@ int onvif_replay_rtsp::handle_h264_payload(
     {
       return AVERROR(EAGAIN);
     }
-    return emit_length_prefixed_nal(
-      nal.data(), static_cast<int>(nal.size()), rtp_ts, orig_type == 5, packet);
+    add_vcl_nal(nal.data(), static_cast<int>(nal.size()), rtp_ts, orig_type == 5, marker);
+    return AVERROR(EAGAIN);
   }
   if (nal_type == 24)
   {
@@ -1736,12 +1761,7 @@ int onvif_replay_rtsp::handle_h264_payload(
       }
       else if (is_vcl_nal(t))
       {
-        const int rc = emit_length_prefixed_nal(
-          payload + pos, nal_size, rtp_ts, t == 5, packet);
-        if (rc == 0)
-        {
-          return 0;
-        }
+        add_vcl_nal(payload + pos, nal_size, rtp_ts, t == 5, marker && pos + nal_size >= payload_size);
       }
       pos += nal_size;
     }
@@ -1754,8 +1774,7 @@ int onvif_replay_rtsp::handle_hevc_payload(
   const uint8_t* payload,
   int payload_size,
   uint32_t rtp_ts,
-  bool /*marker*/,
-  AVPacket* packet)
+  bool marker)
 {
   if (payload_size < 2)
   {
@@ -1820,8 +1839,8 @@ int onvif_replay_rtsp::handle_hevc_payload(
     {
       return AVERROR(EAGAIN);
     }
-    return emit_length_prefixed_nal(
-      payload, payload_size, rtp_ts, is_hevc_key(payload_type), packet);
+    add_vcl_nal(payload, payload_size, rtp_ts, is_hevc_key(payload_type), marker);
+    return AVERROR(EAGAIN);
   }
   if (payload_type == 49)
   {
@@ -1868,12 +1887,8 @@ int onvif_replay_rtsp::handle_hevc_payload(
     {
       return AVERROR(EAGAIN);
     }
-    return emit_length_prefixed_nal(
-      nal.data(),
-      static_cast<int>(nal.size()),
-      rtp_ts,
-      is_hevc_key(fu_type),
-      packet);
+    add_vcl_nal(nal.data(), static_cast<int>(nal.size()), rtp_ts, is_hevc_key(fu_type), marker);
+    return AVERROR(EAGAIN);
   }
   if (payload_type == 48)
   {
@@ -1894,12 +1909,7 @@ int onvif_replay_rtsp::handle_hevc_payload(
       }
       else if (is_hevc_vcl(t))
       {
-        const int rc = emit_length_prefixed_nal(
-          payload + pos, nal_size, rtp_ts, is_hevc_key(t), packet);
-        if (rc == 0)
-        {
-          return 0;
-        }
+        add_vcl_nal(payload + pos, nal_size, rtp_ts, is_hevc_key(t), marker && pos + nal_size >= payload_size);
       }
       pos += nal_size;
     }
@@ -2079,9 +2089,9 @@ int onvif_replay_rtsp::handle_video_rtp(
   switch (m_codec)
   {
   case video_codec::h264:
-    return handle_h264_payload(payload, payload_size, rtp_ts, marker, packet);
+    return handle_h264_payload(payload, payload_size, rtp_ts, marker);
   case video_codec::hevc:
-    return handle_hevc_payload(payload, payload_size, rtp_ts, marker, packet);
+    return handle_hevc_payload(payload, payload_size, rtp_ts, marker);
   case video_codec::jpeg:
     return handle_jpeg_payload(payload, payload_size, rtp_ts, marker, packet);
   default:
@@ -2271,12 +2281,23 @@ int onvif_replay_rtsp::read_frame(AVPacket* packet)
     : -1;
   for (;;)
   {
+    if (!m_pictures.empty())
+    {
+      return take_picture(packet);
+    }
+    if (m_end_rc < 0)
+    {
+      return m_end_rc;
+    }
     std::vector<uint8_t> rtp;
     int channel = -1;
     const int rc = read_interleaved_rtp(rtp, channel);
     if (rc < 0)
     {
-      return rc;
+      // The picture still being put together is complete: nothing more of it will come.
+      finish_picture();
+      m_end_rc = rc;
+      continue;
     }
     int hr = AVERROR(EAGAIN);
     if (channel == video_ch)

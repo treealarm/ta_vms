@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -128,30 +129,29 @@ private:
     uint32_t rtp_ts,
     int au_index,
     AVPacket* packet);
+  // H.264 and H.265 add what they unpack to the picture being put together (add_vcl_nal); a
+  // finished picture waits in m_pictures for read_frame.
   [[nodiscard]] int handle_h264_payload(
     const uint8_t* payload,
     int payload_size,
     uint32_t rtp_ts,
-    bool marker,
-    AVPacket* packet);
+    bool marker);
   [[nodiscard]] int handle_hevc_payload(
     const uint8_t* payload,
     int payload_size,
     uint32_t rtp_ts,
-    bool marker,
-    AVPacket* packet);
+    bool marker);
   [[nodiscard]] int handle_jpeg_payload(
     const uint8_t* payload,
     int payload_size,
     uint32_t rtp_ts,
     bool marker,
     AVPacket* packet);
-  [[nodiscard]] int emit_length_prefixed_nal(
-    const uint8_t* nal,
-    int nal_size,
-    uint32_t rtp_ts,
-    bool key,
-    AVPacket* packet);
+  /// Adds a VCL NAL unit to the picture of its RTP timestamp. A picture ends with its marker bit,
+  /// or, from a camera that sets none, where the next one begins.
+  void add_vcl_nal(const uint8_t* nal, int nal_size, uint32_t rtp_ts, bool key, bool last_of_picture);
+  void finish_picture();
+  [[nodiscard]] int take_picture(AVPacket* packet);
   void apply_extradata_to_stream();
   void reset_fu();
   void reset_jpeg();
@@ -199,6 +199,21 @@ private:
   int64_t m_fu_rtp_ts = 0;
   bool m_have_base_ts = false;
   int64_t m_base_rtp_ts = 0;
+
+  /// One picture is one packet, however many slices -- NAL units -- the camera cut it into: packets
+  /// of a slice each would reach the archive as that many frames of a picture each.
+  struct picture
+  {
+    std::vector<uint8_t> data;  ///< its VCL NAL units, each behind a 4-byte length
+    uint32_t rtp_ts = 0;
+    bool key = false;
+  };
+  std::vector<uint8_t> m_picture;
+  uint32_t m_picture_rtp_ts = 0;
+  bool m_picture_key = false;
+  std::deque<picture> m_pictures;
+  /// The end of the stream, held back until the pictures before it are handed out.
+  int m_end_rc = 0;
 
   // JPEG (RFC 2435) reassembly across RTP fragments.
   std::vector<uint8_t> m_jpeg_buf;
