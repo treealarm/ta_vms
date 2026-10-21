@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <unordered_set>
 #include <memory>
@@ -61,6 +62,11 @@ private:
   bool connect();
   void disconnect();
   void read_loop();
+  /// Waits until `until`, or less once stop() has been called: the read loop's pauses would
+  /// otherwise hold this camera's shutdown, and with it the process's, for a watchdog interval.
+  void pause_until(std::chrono::steady_clock::time_point until);
+  /// FFmpeg's interrupt callback: aborts a blocking open or read once the reader is stopping.
+  static int interrupted(void* self);
 
   std::string m_rtsp_url;
   avformat_context_ptr m_ctx = nullptr;
@@ -75,6 +81,9 @@ private:
 
   std::thread m_thread;
   std::atomic_bool m_running{ false };
+  /// Wakes pause_until when stop() clears m_running.
+  std::mutex m_wake_mutex;
+  std::condition_variable m_wake;
 
   // Read by the reporting timer from another thread, written only by the read loop — hence atomic.
   // Kept here rather than derived from m_ctx because those members are plain and reader-thread-only.

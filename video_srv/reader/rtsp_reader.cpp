@@ -164,7 +164,14 @@ bool rtsp_reader::connect()
     av_dict_set(&opts, "user", m_user.c_str(), 0);
     av_dict_set(&opts, "password", m_password.c_str(), 0);
   }
-  AVFormatContext* ctx = nullptr;
+  AVFormatContext* ctx = avformat_alloc_context();
+  if (!ctx)
+  {
+    av_dict_free(&opts);
+    return false;
+  }
+  // Without it stop() waits out the 5 s socket timeout of whatever FFmpeg is blocked in.
+  ctx->interrupt_callback = { &rtsp_reader::interrupted, this };
 
   std::string final_url = url_has_creds
     ? m_rtsp_url
@@ -172,7 +179,8 @@ bool rtsp_reader::connect()
 
   if (avformat_open_input(&ctx, final_url.c_str(), nullptr, &opts) < 0)
   {
-    logger::instance().error(std::format("Failed to open RTSP [cam={}]: {}", m_cam_id, m_rtsp_url));
+    if (m_running)
+      logger::instance().error(std::format("Failed to open RTSP [cam={}]: {}", m_cam_id, m_rtsp_url));
     av_dict_free(&opts);
     avformat_close_input(&ctx);
     return false;
@@ -269,9 +277,25 @@ void rtsp_reader::start()
 
 void rtsp_reader::stop()
 {
-  m_running = false;
+  {
+    // Under the mutex, so a pause_until that has just checked m_running cannot miss the wake.
+    std::scoped_lock lock(m_wake_mutex);
+    m_running = false;
+  }
+  m_wake.notify_all();
   if (m_thread.joinable())
     m_thread.join();
+}
+
+void rtsp_reader::pause_until(std::chrono::steady_clock::time_point until)
+{
+  std::unique_lock lock(m_wake_mutex);
+  m_wake.wait_until(lock, until, [this] { return !m_running; });
+}
+
+int rtsp_reader::interrupted(void* self)
+{
+  return static_cast<const rtsp_reader*>(self)->m_running ? 0 : 1;
 }
 
 void rtsp_reader::read_loop()
@@ -286,7 +310,7 @@ void rtsp_reader::read_loop()
     {
       if (!connect())
       {
-        std::this_thread::sleep_for(kWatchdogInterval);
+        pause_until(std::chrono::steady_clock::now() + kWatchdogInterval);
         continue;
       }
       last_frame_at = std::chrono::steady_clock::now();
@@ -309,7 +333,7 @@ void rtsp_reader::read_loop()
       // a closed session and a silent one then reconnect on the same timeline, and a server that
       // accepts a session only to drop it is not reconnected to in a loop either.
       if (read_result == AVERROR_EOF)
-        std::this_thread::sleep_until(last_frame_at + kWatchdogInterval);
+        pause_until(last_frame_at + kWatchdogInterval);
       const auto now = std::chrono::steady_clock::now();
       if (now - last_frame_at >= kWatchdogInterval)
       {
@@ -327,7 +351,7 @@ void rtsp_reader::read_loop()
       }
       else
       {
-        std::this_thread::sleep_for(kReadRetryDelay);
+        pause_until(std::chrono::steady_clock::now() + kReadRetryDelay);
       }
       continue;
     }

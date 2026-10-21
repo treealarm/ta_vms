@@ -1,6 +1,7 @@
 #include "camera_manager.h"
 
 #include <format>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -491,7 +492,12 @@ void camera_manager::stop_all()
 {
   std::scoped_lock lock(m_mutex);
 
+  // All at once: a camera that is unreachable can take seconds to let go (a GetStreamUri call in
+  // flight has a 10 s deadline), and one after another those add up past the time a supervisor
+  // or `docker stop` waits before killing the process with its segments still open.
+  std::vector<std::jthread> stopping;
+  stopping.reserve(m_cameras.size());
   for (auto& [_, device] : m_cameras)
-    device->shutdown();
+    stopping.emplace_back([&device] { device->shutdown(); });
 }
 
