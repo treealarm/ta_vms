@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 using Dapr.Client;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
@@ -849,9 +849,15 @@ namespace VmsCfg
       if (string.IsNullOrWhiteSpace(request.SourceId))
         return new GetOrAssignMediaMtxServerResponse { Found = false };
 
-      var server = await storage.GetOrAssignMediaMtxServerAsync(request.SourceId, context.CancellationToken);
+      var (server, assigned) = await storage.GetOrAssignMediaMtxServerAsync(request.SourceId, context.CancellationToken);
       if (server is null)
         return new GetOrAssignMediaMtxServerResponse { Found = false };
+
+      // A first assignment is a configuration write like any other. Unannounced, video_srv kept the
+      // camera's push target from before it had a server -- the environment's default, without the
+      // server's publish credentials -- and live video failed with 401 until it restarted.
+      if (assigned)
+        InvalidateFsCache(request.SourceId);
 
       return new GetOrAssignMediaMtxServerResponse { Found = true, Server = server };
     }

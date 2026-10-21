@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using NpgsqlTypes;
 using Vms.Cfg;
@@ -763,8 +763,10 @@ public class CameraStorage(
   /// would carry video over the link between them. An assignment already made is left alone — a
   /// camera that later moves nodes is re-pointed by an administrator, not silently on a read — but
   /// the mismatch is logged so it does not stay invisible.
+  /// <c>Assigned</c> is true when this call wrote the assignment, which the caller must announce:
+  /// video_srv builds the camera's push target from it and learns of it only through an event.
   /// </summary>
-  public async Task<MediaMtxServer?> GetOrAssignMediaMtxServerAsync(string cameraId, CancellationToken ct)
+  public async Task<(MediaMtxServer? Server, bool Assigned)> GetOrAssignMediaMtxServerAsync(string cameraId, CancellationToken ct)
   {
     await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
@@ -784,7 +786,7 @@ public class CameraStorage(
       cmd.Parameters.AddWithValue(cameraId);
       await using var reader = await cmd.ExecuteReaderAsync(ct);
       if (!await reader.ReadAsync(ct))
-        return null;
+        return (null, false);
 
       cameraServerId = reader.IsDBNull(0) ? null : reader.GetString(0);
       if (!reader.IsDBNull(1))
@@ -798,7 +800,7 @@ public class CameraStorage(
             + "'{MtxNode}' — its stream crosses the link between them; reassign it",
             cameraId, cameraServerId, assigned.Name, assigned.ServerId);
         }
-        return assigned;
+        return (assigned, false);
       }
     }
 
@@ -828,7 +830,7 @@ public class CameraStorage(
         "No MediaMTX server available for camera '{CameraId}' on node '{CameraNode}' — configure one "
         + "for that node, or leave a server's node empty to share it",
         cameraId, cameraServerId);
-      return null;
+      return (null, false);
     }
 
     await using (var assignCmd = new NpgsqlCommand("""
@@ -841,7 +843,7 @@ public class CameraStorage(
     }
 
     await tx.CommitAsync(ct);
-    return picked;
+    return (picked, true);
   }
 
   /// offset lets the same mapper read the server columns when they sit behind other columns in a
