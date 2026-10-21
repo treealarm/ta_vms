@@ -19,6 +19,12 @@ extern "C" {
 
 namespace {
 
+/// How far before the window a camera's footage is still kept. Footage can only be decoded from a key
+/// frame, so a camera asked for a window starting between two starts from the one before, a GOP back
+/// at most; that much is kept, or the window's first GOP could not be played. Anything further back is
+/// a camera that did not seek at all, and the live archive already holds it.
+constexpr auto k_max_preroll = std::chrono::seconds(30);
+
 std::string av_error_text(int errnum)
 {
   char buf[AV_ERROR_MAX_STRING_SIZE];
@@ -254,6 +260,11 @@ bool edge_import_worker::read_loop(std::string& error)
       m_window_covered = true;
       av_packet_unref(packet.get());
       return true;
+    }
+    if (offset < -k_max_preroll)
+    {
+      av_packet_unref(packet.get());
+      continue;
     }
 
     const auto wall_ts = m_settings.start_ts + offset;

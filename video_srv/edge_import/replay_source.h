@@ -43,7 +43,9 @@ public:
   /// Input streams, needed to build the output muxer. Valid only after a successful open().
   [[nodiscard]] virtual AVFormatContext* format_context() const = 0;
 
-  /// Media offset of a packet relative to the first packet accepted from the device.
+  /// Where a packet falls in the requested window, from its start. Negative for footage from before
+  /// it: a device can only start from a key frame, and starts from the one before the window when the
+  /// window's start falls between two.
   [[nodiscard]] virtual std::chrono::milliseconds packet_offset(const AVPacket* packet) = 0;
 };
 

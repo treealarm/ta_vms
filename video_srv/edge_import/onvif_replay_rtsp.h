@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -66,6 +67,12 @@ public:
   [[nodiscard]] AVFormatContext* format_context() const { return m_fmt.get(); }
   [[nodiscard]] video_codec codec() const { return m_codec; }
   [[nodiscard]] bool has_audio() const { return m_audio_stream_index >= 0; }
+
+  /// When the camera recorded a packet read_frame returned, by the camera's own clock, as the ONVIF
+  /// replay header in its RTP packets said; nothing from a camera that sends none. It travels on the
+  /// packet as AV_PKT_DATA_PRFT side data, so it stays with the packet wherever the packet goes.
+  [[nodiscard]] static std::optional<std::chrono::system_clock::time_point> recorded_at(
+    const AVPacket* packet);
 
   void close();
 
@@ -152,6 +159,9 @@ private:
   void add_vcl_nal(const uint8_t* nal, int nal_size, uint32_t rtp_ts, bool key, bool last_of_picture);
   void finish_picture();
   [[nodiscard]] int take_picture(AVPacket* packet);
+  static void stamp_recorded_at(
+    AVPacket* packet,
+    std::optional<std::chrono::system_clock::time_point> at);
   void apply_extradata_to_stream();
   void reset_fu();
   void reset_jpeg();
@@ -207,10 +217,14 @@ private:
     std::vector<uint8_t> data;  ///< its VCL NAL units, each behind a 4-byte length
     uint32_t rtp_ts = 0;
     bool key = false;
+    std::optional<std::chrono::system_clock::time_point> recorded_at;
   };
   std::vector<uint8_t> m_picture;
   uint32_t m_picture_rtp_ts = 0;
   bool m_picture_key = false;
+  std::optional<std::chrono::system_clock::time_point> m_picture_recorded_at;
+  /// The replay header's time of the RTP packet being unpacked.
+  std::optional<std::chrono::system_clock::time_point> m_packet_recorded_at;
   std::deque<picture> m_pictures;
   /// The end of the stream, held back until the pictures before it are handed out.
   int m_end_rc = 0;

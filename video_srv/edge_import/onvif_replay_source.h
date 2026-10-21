@@ -27,5 +27,7 @@ private:
   replay_source_settings m_settings;
   onvif_replay_rtsp m_client;
   bool m_device_busy = false;
+  /// The window's start in the camera's clock, which the replay header's times are in.
+  std::chrono::system_clock::time_point m_seek_start{};
   int64_t m_first_packet_offset_ms = -1;
 };

@@ -5,6 +5,7 @@
 #include <cstring>
 #include <ctime>
 #include <format>
+#include <optional>
 #include <sstream>
 #include <string_view>
 
@@ -26,6 +27,75 @@ constexpr auto k_io_timeout = std::chrono::milliseconds(15000);
 constexpr int k_rtp_header_min = 12;
 /// One AAC access unit is 1024 samples in every profile ONVIF cameras use (LC / HE at the core).
 constexpr int k_aac_frame_samples = 1024;
+/// The ONVIF replay header extension (Streaming Specification, 6.3): profile 0xABAC, three words long,
+/// the first two the NTP time the frame was recorded at, by the camera's clock.
+constexpr int k_onvif_replay_profile = 0xABAC;
+constexpr int k_onvif_replay_words = 3;
+constexpr int64_t k_ntp_unix_epoch_seconds = 2208988800;  // 1900-01-01 to 1970-01-01
+
+struct rtp_header
+{
+  uint32_t timestamp = 0;
+  int payload_type = 0;
+  bool marker = false;
+  int payload_offset = 0;
+  /// From the ONVIF replay header, when the packet carries one.
+  std::optional<std::chrono::system_clock::time_point> recorded_at;
+};
+
+/// The fixed header, CSRCs and header extension of an RTP packet; nothing when the packet is cut short
+/// or carries no payload.
+std::optional<rtp_header> parse_rtp_header(const uint8_t* data, int size)
+{
+  if (size < k_rtp_header_min)
+  {
+    return std::nullopt;
+  }
+  rtp_header header;
+  header.marker = (data[1] & 0x80) != 0;
+  header.payload_type = data[1] & 0x7F;
+  header.timestamp = (static_cast<uint32_t>(data[4]) << 24) | (static_cast<uint32_t>(data[5]) << 16) |
+                     (static_cast<uint32_t>(data[6]) << 8) | static_cast<uint32_t>(data[7]);
+  int offset = k_rtp_header_min + (data[0] & 0x0F) * 4;
+  if (data[0] & 0x10)
+  {
+    if (offset + 4 > size)
+    {
+      return std::nullopt;
+    }
+    const int profile = (data[offset] << 8) | data[offset + 1];
+    const int words = (data[offset + 2] << 8) | data[offset + 3];
+    const uint8_t* extension = data + offset + 4;
+    offset += 4 + words * 4;
+    if (offset > size)
+    {
+      return std::nullopt;
+    }
+    if (profile == k_onvif_replay_profile && words >= k_onvif_replay_words)
+    {
+      uint64_t ntp = 0;
+      for (int i = 0; i < 8; ++i)
+      {
+        ntp = (ntp << 8) | extension[i];
+      }
+      if (ntp != 0)
+      {
+        const auto seconds =
+          std::chrono::seconds(static_cast<int64_t>(ntp >> 32) - k_ntp_unix_epoch_seconds);
+        const auto fraction =
+          std::chrono::microseconds(static_cast<int64_t>(((ntp & 0xFFFFFFFF) * 1000000) >> 32));
+        header.recorded_at = std::chrono::system_clock::time_point(
+          std::chrono::duration_cast<std::chrono::system_clock::duration>(seconds + fraction));
+      }
+    }
+  }
+  if (offset >= size)
+  {
+    return std::nullopt;
+  }
+  header.payload_offset = offset;
+  return header;
+}
 
 std::string trim_copy(std::string_view s)
 {
@@ -1606,6 +1676,10 @@ void onvif_replay_rtsp::add_vcl_nal(
   const uint8_t length[4] = {
     static_cast<uint8_t>(size >> 24), static_cast<uint8_t>(size >> 16),
     static_cast<uint8_t>(size >> 8), static_cast<uint8_t>(size)};
+  if (m_picture.empty() || !m_picture_recorded_at)
+  {
+    m_picture_recorded_at = m_packet_recorded_at;
+  }
   m_picture.insert(m_picture.end(), std::begin(length), std::end(length));
   m_picture.insert(m_picture.end(), nal, nal + nal_size);
   m_picture_rtp_ts = rtp_ts;
@@ -1622,9 +1696,10 @@ void onvif_replay_rtsp::finish_picture()
   {
     return;
   }
-  m_pictures.push_back({std::move(m_picture), m_picture_rtp_ts, m_picture_key});
+  m_pictures.push_back({std::move(m_picture), m_picture_rtp_ts, m_picture_key, m_picture_recorded_at});
   m_picture.clear();
   m_picture_key = false;
+  m_picture_recorded_at.reset();
 }
 
 int onvif_replay_rtsp::take_picture(AVPacket* packet)
@@ -1648,6 +1723,7 @@ int onvif_replay_rtsp::take_picture(AVPacket* packet)
   packet->dts = pts;
   packet->duration = 3600;
   packet->flags = next.key ? AV_PKT_FLAG_KEY : 0;
+  stamp_recorded_at(packet, next.recorded_at);
   return 0;
 }
 
@@ -2035,6 +2111,8 @@ int onvif_replay_rtsp::handle_jpeg_payload(
   packet->dts = pts;
   packet->duration = 3600;
   packet->flags = AV_PKT_FLAG_KEY;
+  // Every packet of a frame carries the frame's time; this one ends it.
+  stamp_recorded_at(packet, m_packet_recorded_at);
   reset_jpeg();
   return 0;
 }
@@ -2044,47 +2122,21 @@ int onvif_replay_rtsp::handle_video_rtp(
   int size,
   AVPacket* packet)
 {
-  if (size < k_rtp_header_min)
+  const auto header = parse_rtp_header(data, size);
+  if (!header)
   {
     return AVERROR(EAGAIN);
   }
-  const int cc = data[0] & 0x0F;
-  const bool marker = (data[1] & 0x80) != 0;
-  const int pt = data[1] & 0x7F;
-  const uint32_t rtp_ts = (static_cast<uint32_t>(data[4]) << 24) |
-                          (static_cast<uint32_t>(data[5]) << 16) |
-                          (static_cast<uint32_t>(data[6]) << 8) |
-                          static_cast<uint32_t>(data[7]);
-  int offset = k_rtp_header_min + cc * 4;
-  if (offset >= size)
-  {
-    return AVERROR(EAGAIN);
-  }
-  if (data[0] & 0x10)
-  {
-    if (offset + 4 > size)
-    {
-      return AVERROR(EAGAIN);
-    }
-    const int ext_len = ((data[offset + 2] << 8) | data[offset + 3]) * 4;
-    offset += 4 + ext_len;
-    if (offset >= size)
-    {
-      return AVERROR(EAGAIN);
-    }
-  }
-
   const track& tr = m_tracks[static_cast<size_t>(m_video_track)];
-  if (pt != tr.payload_type)
+  if (header->payload_type != tr.payload_type)
   {
     return AVERROR(EAGAIN);
   }
-  const uint8_t* payload = data + offset;
-  const int payload_size = size - offset;
-  if (payload_size <= 0)
-  {
-    return AVERROR(EAGAIN);
-  }
+  const bool marker = header->marker;
+  const uint32_t rtp_ts = header->timestamp;
+  const uint8_t* payload = data + header->payload_offset;
+  const int payload_size = size - header->payload_offset;
+  m_packet_recorded_at = header->recorded_at;
 
   switch (m_codec)
   {
@@ -2143,47 +2195,29 @@ int onvif_replay_rtsp::emit_audio_packet(
   // Every audio frame is independently decodable; without the flag a muxer treats the track as if
   // it had no sync samples at all.
   packet->flags = AV_PKT_FLAG_KEY;
+  // The RTP packet's time is its first unit's.
+  auto recorded_at = m_packet_recorded_at;
+  if (recorded_at && au_index > 0)
+  {
+    *recorded_at += std::chrono::duration_cast<std::chrono::system_clock::duration>(
+      std::chrono::microseconds(static_cast<int64_t>(au_index) * k_aac_frame_samples * 1000000 /
+                                std::max(1, atr.clock_rate)));
+  }
+  stamp_recorded_at(packet, recorded_at);
   return 0;
 }
 
 int onvif_replay_rtsp::handle_audio_rtp(const uint8_t* data, int size, AVPacket* packet)
 {
-  if (size < k_rtp_header_min || m_audio_track < 0)
+  const auto header = m_audio_track >= 0 ? parse_rtp_header(data, size) : std::nullopt;
+  if (!header)
   {
     return AVERROR(EAGAIN);
   }
-
-  const int csrc_count = data[0] & 0x0F;
-  const bool has_extension = (data[0] & 0x10) != 0;
-  int header_size = k_rtp_header_min + csrc_count * 4;
-  if (size < header_size)
-  {
-    return AVERROR(EAGAIN);
-  }
-  if (has_extension)
-  {
-    if (size < header_size + 4)
-    {
-      return AVERROR(EAGAIN);
-    }
-    const int ext_words = (data[header_size + 2] << 8) | data[header_size + 3];
-    header_size += 4 + ext_words * 4;
-    if (size < header_size)
-    {
-      return AVERROR(EAGAIN);
-    }
-  }
-
-  const uint32_t rtp_ts = (static_cast<uint32_t>(data[4]) << 24) |
-                          (static_cast<uint32_t>(data[5]) << 16) |
-                          (static_cast<uint32_t>(data[6]) << 8) |
-                          static_cast<uint32_t>(data[7]);
-  const uint8_t* payload = data + header_size;
-  const int payload_size = size - header_size;
-  if (payload_size <= 0)
-  {
-    return AVERROR(EAGAIN);
-  }
+  const uint32_t rtp_ts = header->timestamp;
+  const uint8_t* payload = data + header->payload_offset;
+  const int payload_size = size - header->payload_offset;
+  m_packet_recorded_at = header->recorded_at;
 
   const track& atr = m_tracks[static_cast<size_t>(m_audio_track)];
   if (atr.acodec != audio_codec::aac)
@@ -2318,4 +2352,36 @@ int onvif_replay_rtsp::read_frame(AVPacket* packet)
     }
     return hr;
   }
+}
+
+void onvif_replay_rtsp::stamp_recorded_at(
+  AVPacket* packet,
+  std::optional<std::chrono::system_clock::time_point> at)
+{
+  if (!at)
+  {
+    return;
+  }
+  auto* prft = reinterpret_cast<AVProducerReferenceTime*>(
+    av_packet_new_side_data(packet, AV_PKT_DATA_PRFT, sizeof(AVProducerReferenceTime)));
+  if (prft)
+  {
+    prft->wallclock =
+      std::chrono::duration_cast<std::chrono::microseconds>(at->time_since_epoch()).count();
+    prft->flags = 0;
+  }
+}
+
+std::optional<std::chrono::system_clock::time_point> onvif_replay_rtsp::recorded_at(
+  const AVPacket* packet)
+{
+  size_t size = 0;
+  const auto* prft = reinterpret_cast<const AVProducerReferenceTime*>(
+    av_packet_get_side_data(packet, AV_PKT_DATA_PRFT, &size));
+  if (!prft || size < sizeof(AVProducerReferenceTime))
+  {
+    return std::nullopt;
+  }
+  return std::chrono::system_clock::time_point(std::chrono::duration_cast<std::chrono::system_clock::duration>(
+    std::chrono::microseconds(prft->wallclock)));
 }

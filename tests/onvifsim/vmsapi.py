@@ -54,6 +54,11 @@ class Vms:
         query = urllib.parse.urlencode({"cameraId": camera_id, "from": since_iso})
         return self.call("GET", f"/api/gaps?{query}") or []
 
+    def recordings(self, camera_id, from_iso, to_iso, limit=200):
+        """The camera's archive clips that overlap a stretch, live and recovered ('origin')."""
+        body = {"cameraId": camera_id, "fromUtc": from_iso, "toUtc": to_iso, "limit": limit}
+        return (self.call("POST", "/api/fs/recordings", body) or {}).get("recordings") or []
+
     # ── Spaces, landmarks, placements ───────────────────────────────────────────
 
     def spaces(self):

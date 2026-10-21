@@ -63,6 +63,12 @@ CONTINUOUS = "00000000-0000-0000-0000-000000000001"  # ta_vms's built-in continu
 # How long ta_vms takes from a closed gap to edge clips: VMS_BACKFILL_SETTLE_SECONDS (60) before it
 # looks, a 30 s sweep to plan the job, the next to claim it, then the replay itself.
 EDGE_FILL_TIMEOUT = 8 * 60
+# The edge step's GOP: long, so that a replay asked to start between key frames comes from well before
+# it, and footage stamped from where the replay began rather than from the camera's own time shows.
+EDGE_GOV_LENGTH = 80  # frames, 8 s at the lab's 10 fps
+# How far the first recovered clip may sit from a key frame of the camera's recording: ta_vms knows the
+# camera's clock only from GetSystemDateAndTime, which is in whole seconds.
+EDGE_STAMP_TOLERANCE = 1.2
 MARK_WALKER = "lab-mark"
 
 
@@ -667,11 +673,22 @@ class Lab:
 
     def edge(self):
         self.vms.login()
-        camera = W.MAP_PAIR.master
+        pair = W.MAP_PAIR
+        camera = pair.master
         cam_id = self.cam_id(camera)
         self._record_with_backfill(cam_id)
         require(self.sim.recording(camera.id)["recording"], f"OnvifSim's {camera.id} does not record on its own card")
         log(f"{cam_id}: recording continuously in ta_vms, backfill from the camera's own recording on")
+        body = W.camera_json(camera, self.onvif_base + W.camera_index(camera), pair.limits)
+        body["h264"]["govLength"] = EDGE_GOV_LENGTH
+        self.sim.put_camera(body)
+        try:
+            self._edge(camera, cam_id, body["h264"]["govLength"] / body["h264"]["fps"])
+        finally:
+            self.sim.put_camera(W.camera_json(camera, self.onvif_base + W.camera_index(camera), pair.limits))
+
+    def _edge(self, camera, cam_id, gop):
+        log(f"{camera.id}: a key frame every {gop:.0f} s")
         # A live segment before the cut, so the hole has an archive on both sides.
         time.sleep(20)
 
@@ -700,11 +717,38 @@ class Lab:
                     require(gap["filledMs"] / 1000 >= 0.9 * length,
                             f"the gap is marked filled with {gap['filledMs'] / 1000:.1f} s of {length:.1f} s")
                     log(f"edge import filled the {length:.1f} s gap from the camera's recording")
-                    self.metrics["edge"] = {"gap_s": length, "filled_s": gap["filledMs"] / 1000}
+                    self.metrics["edge"] = {"gap_s": length, "filled_s": gap["filledMs"] / 1000,
+                                            "stamp_s": self._edge_stamp(camera, cam_id, gap, gop)}
                     return
                 require(gap["state"] not in ("exhausted", "partial"), f"the gap ended {gap['state']}: {gap.get('message', '')}")
             time.sleep(10)
         raise Failed(f"the gap was not filled within {EDGE_FILL_TIMEOUT // 60} min of the camera coming back")
+
+    def _edge_stamp(self, camera, cam_id, gap, gop):
+        """How far the first recovered clip starts from a key frame of the camera's recording.
+
+        A replay asked to start between key frames starts at the one before, and that is the frame the
+        first recovered clip begins with. Stamped with the time the camera recorded it at, the clip
+        starts on the recording's key frame grid, a GOP from where the recording began; stamped with the
+        time asked for, anywhere in between.
+        """
+        start, end = _seconds(gap["startedTs"]), _seconds(gap["endedTs"])
+        iso = lambda t: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+        clips = [c for c in self.vms.recordings(cam_id, iso(start - 2 * gop - 60), iso(end + 60)) if c.get("origin") == "edge"]
+        require(clips, "ta_vms lists no recovered clip for the gap")
+        first = min(_seconds(c["startTime"]) for c in clips)
+        span = next((s for s in self.sim.recording(camera.id)["spans"]
+                     if _seconds(s["from"]) <= first + EDGE_STAMP_TOLERANCE <= _seconds(s["to"])), None)
+        require(span is not None, f"the first recovered clip starts at {iso(first)}, where {camera.id} recorded nothing")
+        phase = (first - _seconds(span["from"])) % gop
+        off = phase if phase < gop / 2 else phase - gop
+        log(f"first recovered clip starts {start - first:.2f} s before the gap, {off:+.2f} s from a key frame "
+            f"of the camera's recording")
+        require(first <= start, f"the recovered footage starts {first - start:.2f} s after the gap does")
+        require(abs(off) <= EDGE_STAMP_TOLERANCE,
+                f"the first recovered clip starts {off:+.2f} s from the nearest key frame: "
+                "it is not stamped with the time the camera recorded it at")
+        return off
 
     def _record_with_backfill(self, cam_id):
         """Continuous recording on the camera's streams, and backfill from its own recording."""

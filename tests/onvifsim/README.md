@@ -103,8 +103,13 @@ when the sim is shared.
   back. ta_vms has to notice the hole in its archive, find the footage on the camera with
   `FindRecordings`, replay it with `Range: clock=` and file it as `origin='edge'` clips. The step
   passes when `/api/gaps` reports the gap `filled` with at least 90% of its length, which takes
-  2–3 minutes after the camera comes back (`VMS_BACKFILL_SETTLE_SECONDS` and two 30 s sweeps).
-  Its first run found that video_srv filed every slice of a picture as a frame of its own.
+  2–3 minutes after the camera comes back (`VMS_BACKFILL_SETTLE_SECONDS` and two 30 s sweeps),
+  and when the first recovered clip starts on a key frame of the camera's recording. For that the
+  step gives the camera an 8 s GOP: a replay starts at the key frame before the time asked for, and
+  footage stamped from where it was asked for rather than from the replay header's time is off by
+  up to a GOP. The tolerance is 1.2 s, since ta_vms knows the camera's clock only to the second.
+  Its first run found that video_srv filed every slice of a picture as a frame of its own; the
+  timing check, that it stamped a whole import late by up to a GOP.
 
 - **provision** adds the cameras with an ONVIF connection and the `Profile_2` token. The stream
   URI therefore comes from `GetStreamUri` through VmsOnvif. It creates the plan and uploads its
