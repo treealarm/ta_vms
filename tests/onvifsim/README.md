@@ -70,6 +70,7 @@ tests/onvifsim/onvifsim_lab.py calibrate [--no-zoom]  # --no-zoom: no zoom sampl
 tests/onvifsim/onvifsim_lab.py aim-check [--seconds 60]
 tests/onvifsim/onvifsim_lab.py bind
 tests/onvifsim/onvifsim_lab.py run [--seconds 60]
+tests/onvifsim/onvifsim_lab.py edge --pair map [--outage 60]   # edge import, see below; not part of all
 tests/onvifsim/onvifsim_lab.py down [--purge]   # --purge also removes the cameras and both spaces
 tests/onvifsim/onvifsim_lab.py matrix [--mounts a,b] [--seconds 30]   # the map pair hung every way, see Mounts
 
@@ -94,6 +95,16 @@ dev stack's. `down` stops the sim for everyone, so leave it out, and `all`, whic
 when the sim is shared.
 
 ## What each step proves
+
+- **edge** proves edge import end to end, without a camera with an SD card. OnvifSim's cameras
+  record on their own (Profile G: Recording, Search, Replay; the past is drawn again, not stored).
+  The step switches `sim-master` to continuous recording with backfill from its stream, cuts the
+  camera off the network in the sim for `--outage` seconds while it goes on recording, and brings it
+  back. ta_vms has to notice the hole in its archive, find the footage on the camera with
+  `FindRecordings`, replay it with `Range: clock=` and file it as `origin='edge'` clips. The step
+  passes when `/api/gaps` reports the gap `filled` with at least 90% of its length, which takes
+  2–3 minutes after the camera comes back (`VMS_BACKFILL_SETTLE_SECONDS` and two 30 s sweeps).
+  Its first run found that video_srv filed every slice of a picture as a frame of its own.
 
 - **provision** adds the cameras with an ONVIF connection and the `Profile_2` token. The stream
   URI therefore comes from `GetStreamUri` through VmsOnvif. It creates the plan and uploads its

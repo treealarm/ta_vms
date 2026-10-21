@@ -1,5 +1,7 @@
 """ta_vms through its gateway (web_srv.Server), the same REST API the browser uses."""
 
+import urllib.parse
+
 from labhttp import HttpError, request, request_multipart, sse
 
 
@@ -41,6 +43,16 @@ class Vms:
 
     def delete_camera(self, camera_id):
         self.call("DELETE", f"/api/live/cameras/{camera_id}")
+
+    def recording_profiles(self):
+        return self.call("GET", "/api/recording-profiles") or []
+
+    # ── Archive gaps ────────────────────────────────────────────────────────────
+
+    def gaps(self, camera_id, since_iso):
+        """Outages of the camera's source since a moment, newest first, with how far they are filled."""
+        query = urllib.parse.urlencode({"cameraId": camera_id, "from": since_iso})
+        return self.call("GET", f"/api/gaps?{query}") or []
 
     # ── Spaces, landmarks, placements ───────────────────────────────────────────
 

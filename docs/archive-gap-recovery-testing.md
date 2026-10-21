@@ -5,7 +5,9 @@ boundaries, the outage table in VmsFs, and the import queue that pulls the missi
 camera's SD card. Every one of them is about *timing*, and none of it can be verified by reading:
 the defects found so far were all boundaries that were off by seconds, in code that looked correct.
 
-This is the procedure for exercising it against a real camera.
+This is the procedure for exercising it against a real camera. Without one, OnvifSim's cameras
+record on their own and offer it over Profile G: `tests/onvifsim/onvifsim_lab.py edge` runs scenario 2
+against them end to end (see `tests/onvifsim/README.md`).
 
 ---
 

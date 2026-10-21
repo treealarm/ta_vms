@@ -19,6 +19,9 @@ Steps, each one checking what it did and exiting 1 with the reason when somethin
     bind        bind the PTZ to its master through the map (method "geo") and switch tracking on;
                 for the plan's pair, first check that a master on the map is refused
     run         let ta_vms follow the person on its own, from the master's detections, and measure
+    edge        edge import, end to end: the map pair's master drops off the network for --outage
+                seconds and goes on recording on its own card; ta_vms has to find the hole in its
+                archive, find the footage on the camera over Profile G, replay it and file it
     down        stop OnvifSim's container (--purge also removes the cameras and the spaces from ta_vms)
     all         up, provision, calibrate, aim-check, bind, run, down
     matrix      the map pair hung every way in world.MOUNTS (or --mounts a,b): for each, rehang the
@@ -33,6 +36,7 @@ The ta_vms dev stack must already be running (scripts/dev-up.sh or F5). See READ
 """
 
 import argparse
+import datetime
 import json
 import math
 import os
@@ -55,6 +59,10 @@ COMPOSE_FILE = Path(__file__).resolve().parent / "docker-compose.yml"
 STATE_DIR = Path("/tmp/onvifsim-lab")
 SPACE_NAMES = {W.MAP_PAIR.name: "OnvifSim lab", W.PLAN_PAIR.name: "OnvifSim lab plan"}
 PROFILE = "Profile_2"  # OnvifSim's H.264 profile, the one video_srv pulls
+CONTINUOUS = "00000000-0000-0000-0000-000000000001"  # ta_vms's built-in continuous recording profile
+# How long ta_vms takes from a closed gap to edge clips: VMS_BACKFILL_SETTLE_SECONDS (60) before it
+# looks, a 30 s sweep to plan the job, the next to claim it, then the replay itself.
+EDGE_FILL_TIMEOUT = 8 * 60
 MARK_WALKER = "lab-mark"
 
 
@@ -655,6 +663,64 @@ class Lab:
 
     # ── matrix ──────────────────────────────────────────────────────────────────
 
+    # ── edge ────────────────────────────────────────────────────────────────────
+
+    def edge(self):
+        self.vms.login()
+        camera = W.MAP_PAIR.master
+        cam_id = self.cam_id(camera)
+        self._record_with_backfill(cam_id)
+        require(self.sim.recording(camera.id)["recording"], f"OnvifSim's {camera.id} does not record on its own card")
+        log(f"{cam_id}: recording continuously in ta_vms, backfill from the camera's own recording on")
+        # A live segment before the cut, so the hole has an archive on both sides.
+        time.sleep(20)
+
+        cut = time.time()
+        self.sim.set_network(camera.id, False)
+        log(f"{camera.id} off the network for {self.args.outage:.0f} s (it goes on recording)")
+        try:
+            time.sleep(self.args.outage)
+        finally:
+            self.sim.set_network(camera.id, True)
+        log(f"{camera.id} back on the network")
+
+        since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(cut - 60))
+        deadline = time.monotonic() + EDGE_FILL_TIMEOUT
+        last = None
+        while time.monotonic() < deadline:
+            gap = next((g for g in self.vms.gaps(cam_id, since) if _seconds(g["startedTs"]) >= cut - 30), None)
+            if gap is not None:
+                seen = (gap["state"], gap["filledMs"], gap["attempts"], gap.get("message", ""))
+                if seen != last:
+                    log(f"  gap {gap['startedTs']} .. {gap.get('endedTs') or 'open'}: {gap['state']}, "
+                        f"filled {gap['filledMs'] / 1000:.1f} s, attempts {gap['attempts']} {gap.get('message', '')}".rstrip())
+                    last = seen
+                if gap["state"] == "filled" and gap.get("endedTs"):
+                    length = _seconds(gap["endedTs"]) - _seconds(gap["startedTs"])
+                    require(gap["filledMs"] / 1000 >= 0.9 * length,
+                            f"the gap is marked filled with {gap['filledMs'] / 1000:.1f} s of {length:.1f} s")
+                    log(f"edge import filled the {length:.1f} s gap from the camera's recording")
+                    self.metrics["edge"] = {"gap_s": length, "filled_s": gap["filledMs"] / 1000}
+                    return
+                require(gap["state"] not in ("exhausted", "partial"), f"the gap ended {gap['state']}: {gap.get('message', '')}")
+            time.sleep(10)
+        raise Failed(f"the gap was not filled within {EDGE_FILL_TIMEOUT // 60} min of the camera coming back")
+
+    def _record_with_backfill(self, cam_id):
+        """Continuous recording on the camera's streams, and backfill from its own recording."""
+        setup = next((c for c in self.vms.cameras() if c["cameraId"] == cam_id), None)
+        require(setup is not None, f"{cam_id} is not in ta_vms: run provision first")
+        profile = next((p for p in self.vms.recording_profiles() if p["id"] == CONTINUOUS), None)
+        require(profile is not None, "ta_vms has no built-in continuous recording profile")
+        stream = setup["streams"][0]["streamName"]
+        if setup.get("edgeBackfillStream") == stream and all(
+                (s.get("recordingProfile") or {}).get("id") == CONTINUOUS for s in setup["streams"]):
+            return
+        setup["edgeBackfillStream"] = stream
+        for s in setup["streams"]:
+            s["recordingProfile"] = profile
+        self.vms.add_camera(setup)
+
     def matrix(self):
         names = self.args.mounts.split(",") if self.args.mounts else [m.name for m in W.MOUNTS]
         unknown = [n for n in names if n not in W.MOUNTS_BY_NAME]
@@ -770,6 +836,12 @@ def _matrix_table(rows):
     return "\n".join(lines)
 
 
+def _seconds(iso):
+    """Unix seconds of an ISO 8601 time as ta_vms writes it; one without an offset is UTC."""
+    moment = datetime.datetime.fromisoformat(iso)
+    return (moment if moment.tzinfo else moment.replace(tzinfo=datetime.timezone.utc)).timestamp()
+
+
 def _num(value, fmt):
     return "-" if value is None else format(value, fmt)
 
@@ -789,7 +861,7 @@ def _stats(label, values):
 def main():
     env = read_env()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("step", choices=["up", "provision", "calibrate", "aim-check", "bind", "run", "down", "status", "all", "matrix"])
+    p.add_argument("step", choices=["up", "provision", "calibrate", "aim-check", "bind", "run", "edge", "down", "status", "all", "matrix"])
     p.add_argument("--vms", default=f"http://localhost:{env.get('WEB_VMS_PORT', '5134')}")
     p.add_argument("--sim-dir", default=str(REPO.parent / "OnvifSim"))
     p.add_argument("--sim-host", default="127.0.0.1",
@@ -809,6 +881,7 @@ def main():
     p.add_argument("--lon0", type=float, default=W.DEFAULT_LON0)
     p.add_argument("--seconds", type=float, default=60, help="aim-check and run duration")
     p.add_argument("--interval", type=float, default=3, help="aim-check: seconds between aims")
+    p.add_argument("--outage", type=float, default=60, help="edge: how long the camera is off the network")
     p.add_argument("--reset", action="store_true",
                    help="provision: re-add cameras that already exist and photograph the plan again")
     p.add_argument("--purge", action="store_true", help="down: also remove the cameras and the spaces from ta_vms")
@@ -823,7 +896,7 @@ def main():
     lab = Lab(args)
     steps = {
         "up": [lab.up], "provision": [lab.provision], "calibrate": [lab.calibrate],
-        "aim-check": [lab.aim_check], "bind": [lab.bind], "run": [lab.run],
+        "aim-check": [lab.aim_check], "bind": [lab.bind], "run": [lab.run], "edge": [lab.edge],
         "down": [lab.down], "status": [lab.status], "matrix": [lab.matrix],
         "all": [lab.up, lab.provision, lab.calibrate, lab.aim_check, lab.bind, lab.run],
     }[args.step]

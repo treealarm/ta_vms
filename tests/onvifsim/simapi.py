@@ -33,6 +33,14 @@ class Sim:
         """Adds a camera or replaces it, keeping where its PTZ head points (OnvifSim keeps that)."""
         request("PUT", self._url(f"/api/cameras/{camera['id']}"), camera)
 
+    def set_network(self, camera_id, online):
+        """Cuts a camera off the network or brings it back; it goes on recording on its own card."""
+        request("PUT", self._url(f"/api/cameras/{camera_id}/network"), {"online": online})
+
+    def recording(self, camera_id):
+        """The camera's own recording: whether it records, whether it is online, its spans."""
+        return request("GET", self._url(f"/api/cameras/{camera_id}/recording"))
+
     def put_environment(self, environment):
         """Replaces the world's environment; what it leaves out takes OnvifSim's defaults."""
         request("PUT", self._url("/api/environment"), environment)
