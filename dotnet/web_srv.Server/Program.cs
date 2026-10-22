@@ -214,6 +214,10 @@ app.MapControllers();
 // a 401 when Keycloak is on), and daprd logs "error getting topics from app" each time.
 app.MapGet("/dapr/subscribe", () => Results.Json(Array.Empty<object>())).AllowAnonymous();
 
-app.MapFallbackToFile("/index.html");
+// Anonymous: the SPA shell is where the login form lives, and the fallback policy Keycloak turns
+// on would otherwise answer it with a 401. That covers "/" too -- routing runs before
+// UseDefaultFiles, so "/" reaches this endpoint and never the static file -- and a reload on any
+// client route. Only the API needs a token.
+app.MapFallbackToFile("/index.html").AllowAnonymous();
 
 app.Run();
