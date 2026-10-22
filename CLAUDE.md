@@ -98,19 +98,25 @@ linked by `video_srv` — live HEVC→H.264 transcoding for WebRTC goes through
 `ta_roienc::Transcoder`, because libavcodec has no automatic choice of hardware and
 `avcodec_find_encoder` always returns libx264 (see
 `video_srv/writer/processors/hw_transcode_processor.cpp`).
-**The default engine is `Engine::Vaapi`, not `Engine::Auto`**, and the difference is one of
-meaning: the library is linked only for the hardware. If the hardware engine did not open — or an
-`auto` chain set explicitly through `VMS_VIDEO_ENCODER` came down to a software one — the stream is
-handed back to `compat_sink`, and `video_transcode_processor` takes it. That one has
+**The default engine is hardware only — `Engine::Auto` restricted to VA-API, then NVENC — not
+the library's whole `Engine::Auto`**, and the difference is one of meaning: the library is linked
+only for the hardware. Whichever of the two the build or the machine lacks declines at once ("not
+in this FFmpeg build", "no CUDA device"), so one order serves both platforms. If neither opened — or
+an `auto` chain set explicitly through `VMS_VIDEO_ENCODER` came down to a software one — the stream
+is handed back to `compat_sink`, and `video_transcode_processor` takes it. That one has
 `tune=zerolatency`, and the library's software engine does not: 34 frames in the pipeline against
 4 through `h264_vaapi`, which is a second and a half of delay on live video.
-**On Windows there is no hardware engine yet**, and the library stays linked anyway: the
-Windows FFmpeg has no `h264_vaapi`, so `Engine::Vaapi` fails to open at once — one error line per
-stream start, nothing slower — and every HEVC stream takes `video_transcode_processor`. That costs
-135% of a core per 1080p25 stream on the i5-750 test machine (`../ta_install/windows/FINDINGS.md`).
-A Windows engine (QSV through D3D11) belongs in roi_transcode and is the next priority for the
-Windows build; until then do not build Windows `vms.exe` without the library to save that line —
-the engine will arrive through it.
+**On Windows the hardware engine is NVENC**, and only NVENC: the Windows FFmpeg has nvcodec and
+no `h264_vaapi`. On the i5-750 test machine with a GTX 1050 Ti a 1080p25 HEVC stream costs vms 7%
+of a core through NVDEC→NVENC against 121–135% through `video_transcode_processor`
+(`../ta_install/windows/FINDINGS.md`). A GeForce opens at most 8 encode sessions; the ninth
+stream fails to open ("incompatible client key") and takes the CPU path. NVENC is reached through
+libavcodec, which reads no regions, so it holds the bitrate target with its own VBR rather than the
+library's outer loop — that loop moves a background QP offset carried as a region, and on NVENC
+it moved nothing (10 Mbit/s against a 3.9 Mbit/s target). A Windows machine without an NVIDIA card
+still has no hardware engine; QSV through D3D11 belongs in roi_transcode and is the next one for
+the Windows build. Do not build Windows `vms.exe` without the library — the engines arrive through
+it.
 The third is the separate `video_a` repository, which has its own `ta_roienc` submodule and links
 only the decoder (`ta_roienc_decode`) for the analytics worker; a rename in the library's public
 API has to be carried there too, and its submodule bumped in a commit of its own.
