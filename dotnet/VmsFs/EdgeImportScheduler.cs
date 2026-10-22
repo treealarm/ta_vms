@@ -33,7 +33,7 @@ public sealed class EdgeImportScheduler(
   CfgService.CfgServiceClient cfg,
   OnvifService.OnvifServiceClient onvif,
   ClipStorage clips,
-  ILogger<EdgeImportScheduler> logger) : IHostedService, IAsyncDisposable
+  ILogger<EdgeImportScheduler> logger) : IHostedService, IDisposable
 {
   private static TimeSpan EnvSeconds(string name, int fallback) =>
     TimeSpan.FromSeconds(
@@ -626,9 +626,8 @@ public sealed class EdgeImportScheduler(
     }
   }
 
-  public async ValueTask DisposeAsync()
-  {
-    await StopAsync(CancellationToken.None);
-    _cts.Dispose();
-  }
+  // Disposed twice -- as the singleton and as the hosted service its factory returned -- and
+  // after the host's StopAsync has already ended the loop. Cancelling here again threw on the
+  // second call and crashed every shutdown; Dispose alone is idempotent.
+  public void Dispose() => _cts.Dispose();
 }

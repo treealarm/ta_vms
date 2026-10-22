@@ -23,7 +23,7 @@ public sealed class RoiTranscodeScheduler(
   MetadataSampleStore metadata,
   CameraSetupCache cameras,
   StorageListCache storages,
-  ILogger<RoiTranscodeScheduler> logger) : IHostedService, IAsyncDisposable
+  ILogger<RoiTranscodeScheduler> logger) : IHostedService, IDisposable
 {
   /// <summary>What one sweep did, which decides how long to wait before the next.</summary>
   private enum SweepResult
@@ -674,9 +674,8 @@ public sealed class RoiTranscodeScheduler(
     }
   }
 
-  public async ValueTask DisposeAsync()
-  {
-    await StopAsync(CancellationToken.None);
-    _cts.Dispose();
-  }
+  // Disposed twice -- as the singleton and as the hosted service its factory returned -- and
+  // after the host's StopAsync has already ended the loop. Cancelling here again threw on the
+  // second call and crashed every shutdown; Dispose alone is idempotent.
+  public void Dispose() => _cts.Dispose();
 }

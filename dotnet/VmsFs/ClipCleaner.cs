@@ -6,7 +6,7 @@ public sealed class ClipCleaner(
   CameraSetupCache setupCache,
   StorageListCache storageListCache,
   FsActivityLog activityLog,
-  ILogger<ClipCleaner> logger) : IHostedService, IAsyncDisposable
+  ILogger<ClipCleaner> logger) : IHostedService, IDisposable
 {
   // Conservative lower bound: SQL pre-filters clips older than this many seconds.
   // Per-camera pre_record_seconds is then applied in code as the authoritative check.
@@ -156,11 +156,8 @@ public sealed class ClipCleaner(
       try { await _task; } catch (OperationCanceledException) { }
   }
 
-  public async ValueTask DisposeAsync()
-  {
-    _cts.Cancel();
-    if (_task is not null)
-      try { await _task; } catch (OperationCanceledException) { }
-    _cts.Dispose();
-  }
+  // Disposed twice -- as the singleton and as the hosted service its factory returned -- and
+  // after the host's StopAsync has already ended the loop. Cancelling here again threw on the
+  // second call and crashed every shutdown; Dispose alone is idempotent.
+  public void Dispose() => _cts.Dispose();
 }

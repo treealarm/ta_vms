@@ -20,7 +20,7 @@ public sealed class LivenessSweeper(
   SourceLivenessTracker tracker,
   SourceOutageStore outages,
   CfgService.CfgServiceClient cfg,
-  ILogger<LivenessSweeper> logger) : IHostedService, IAsyncDisposable
+  ILogger<LivenessSweeper> logger) : IHostedService, IDisposable
 {
   private static readonly TimeSpan Interval = TimeSpan.FromSeconds(15);
   private static readonly TimeSpan CleanupInterval = TimeSpan.FromHours(1);
@@ -202,9 +202,8 @@ public sealed class LivenessSweeper(
     }
   }
 
-  public async ValueTask DisposeAsync()
-  {
-    await StopAsync(CancellationToken.None);
-    _cts.Dispose();
-  }
+  // Disposed twice -- as the singleton and as the hosted service its factory returned -- and
+  // after the host's StopAsync has already ended the loop. Cancelling here again threw on the
+  // second call and crashed every shutdown; Dispose alone is idempotent.
+  public void Dispose() => _cts.Dispose();
 }
