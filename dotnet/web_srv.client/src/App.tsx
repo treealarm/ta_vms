@@ -15,7 +15,6 @@ import { useAppDispatch, useAppSelector } from './store'
 import RequireRole from './auth/RequireRole'
 import LoginPage from './components/LoginPage'
 import ChangePasswordPage from './components/ChangePasswordPage'
-import { decodeRoles, PASSWORD_CHANGE_REQUIRED } from './store/authSlice'
 import TestLivePage from './components/TestLivePage'
 import OperatorView from './components/OperatorView'
 import AdminView from './components/AdminView'
@@ -186,9 +185,6 @@ export default function App() {
               // The session is over: login, without drawing a single page of the app first. The
               // /login route above still wins on its own path, so this cannot loop.
               <Route path="*" element={<Navigate to="/login" replace />} />
-            ) : decodeRoles(authToken).includes(PASSWORD_CHANGE_REQUIRED) ? (
-              // The server answers nothing else for this account (PasswordChangeGateMiddleware).
-              <Route path="*" element={<Navigate to="/change-password" replace />} />
             ) : configStatus !== 'succeeded' ? (
               // Don't render monitor/admin views until we've confirmed the backend is actually
               // reachable — otherwise a cold-started frontend briefly shows an empty monitor view

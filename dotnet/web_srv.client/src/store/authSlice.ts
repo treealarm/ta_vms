@@ -49,9 +49,6 @@ const initialState: AuthState = {
   expired: tokenIsDead && storedRefreshToken === null,
 }
 
-/** Held by an account that may do nothing but set a new password (see ChangePasswordPage). */
-export const PASSWORD_CHANGE_REQUIRED = 'password-change-required'
-
 /** Decodes the JWT's Keycloak realm roles (realm_access.roles) client-side, without verifying the signature. */
 export function decodeRoles(token: string | null): string[] {
   if (!token) return []

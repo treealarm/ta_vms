@@ -54,7 +54,6 @@
     "invalidCredentials": "Invalid username or password",
     "changePassword": {
       "title": "Change password",
-      "forced": "This account still has its initial password. Set a new one to continue.",
       "current": "Current password",
       "new": "New password",
       "repeat": "Repeat the new password",

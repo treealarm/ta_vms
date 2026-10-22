@@ -96,8 +96,7 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
   }
 
   /// <summary>
-  /// The caller sets a new password, proving the current one, and gets fresh tokens back: the ones
-  /// it holds still carry password-change-required until they expire.
+  /// The caller sets a new password, proving the current one, and gets tokens issued against it.
   /// </summary>
   [HttpPost("change-password")]
   [Authorize(Policy = AuthPolicies.Authenticated)]
@@ -134,8 +133,6 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
 
     if (!await kcAdmin.SetPasswordAsync(realm, username, dto.NewPassword))
       return StatusCode(StatusCodes.Status500InternalServerError, new { error = "Keycloak did not accept the new password" });
-    // False when the account never had the role: an ordinary password change.
-    await kcAdmin.RemoveRealmRoleFromUserAsync(realm, username, RoleConstants.PasswordChangeRequired);
 
     return Ok(await kcAdmin.GetTokenAsync(realm, clientId, username, dto.NewPassword));
   }

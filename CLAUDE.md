@@ -375,11 +375,11 @@ used. Dev runs against multitenant_admin's.
 
 - Realm roles are the whole model: `admin` sees and administers everything; anyone else sees the
   cameras granted to their `preferred_username` (VmsCfg). Client roles are ignored.
-- `password-change-required` lets an account do nothing but `POST /api/auth/change-password`
-  (`PasswordChangeGateMiddleware`). It is how the initial `admin`/`admin` is made to pick a
-  password. Do not replace it with Keycloak's "temporary password" or required actions: Keycloak
-  refuses the password grant for those ("Account is not fully set up"), so the user could never
-  log in to change anything.
+- Nobody is made to change a password, the initial `admin`/`admin` included (user, 2026-10-22:
+  whoever wants to changes it): the view controls lead to `POST /api/auth/change-password`. If a
+  forced change is ever wanted back, it cannot be Keycloak's "temporary password" or required
+  actions: Keycloak refuses the password grant for those ("Account is not fully set up"), so the
+  user could never log in to change anything.
 - The realm has no password policy (Keycloak would refuse to import `admin`/`admin` under one) and
   no required profile fields (a user without an email could not log in); web_srv checks a new
   password's length itself.

@@ -54,7 +54,6 @@
     "invalidCredentials": "Usuario o contraseña incorrectos",
     "changePassword": {
       "title": "Cambiar contraseña",
-      "forced": "Esta cuenta aún tiene su contraseña inicial. Establezca una nueva para continuar.",
       "current": "Contraseña actual",
       "new": "Contraseña nueva",
       "repeat": "Repita la contraseña nueva",
