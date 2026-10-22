@@ -34,9 +34,10 @@ namespace {
 //
 // Unset is not the same as "auto". The library ships no default order on purpose -- the only
 // honest default is the one whoever deploys the system chooses for their own hardware -- so this
-// is ours, and it names one backend: VA-API, which is the only hardware encoder ta-deps builds
-// ffmpeg with. Writing `auto` explicitly still gets the library's full order, QSV included, and
-// those backends will decline in turn on a build without them.
+// is ours, and it names hardware only: VA-API, the hardware encoder ta-deps builds ffmpeg with,
+// then NVENC, the one the Windows build has. Whichever the build or the machine lacks declines at
+// once ("not in this FFmpeg build", "no CUDA device"), so one order serves both platforms. Writing
+// `auto` explicitly still gets the library's full order, QSV and the software encoders included.
 ta_roienc::EngineChoice encoder_choice_from_env()
 {
   const char* raw = std::getenv("VMS_VIDEO_ENCODER");
@@ -45,7 +46,8 @@ ta_roienc::EngineChoice encoder_choice_from_env()
   }
 
   ta_roienc::EngineChoice choice;
-  choice.kind = ta_roienc::Engine::Vaapi;
+  choice.kind = ta_roienc::Engine::Auto;
+  choice.selection.preferred = {ta_roienc::Engine::Vaapi, ta_roienc::Engine::Nvenc};
   return choice;
 }
 
@@ -54,6 +56,7 @@ bool is_hardware(ta_roienc::Engine backend)
   switch (backend) {
     case ta_roienc::Engine::Vaapi:
     case ta_roienc::Engine::IntelOneVpl:
+    case ta_roienc::Engine::Nvenc:
       return true;
     default:
       return false;
