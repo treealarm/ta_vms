@@ -308,6 +308,9 @@ bool hw_transcode_processor::init(
   // to the whole picture and hand the viewer a visibly softer stream than the CPU path did.
   // Zero is "leave the background alone", which for a plain transcode is the entire job.
   params.settings.quality.background_qp_delta = 0;
+  // No objects are submitted, so there is nothing to carry in SEI -- and no hardware backend
+  // carries it anyway: asking answered every stream start with a warning and a counted fallback.
+  params.settings.metadata.bitstream_sei = false;
   params.settings.rate_control.target_bitrate =
     static_cast<uint64_t>(target_bitrate_for(*codec_parameters, av_q2d(fps)));
 
