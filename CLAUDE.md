@@ -35,6 +35,12 @@ not fetched at deploy time: `video_a` bakes them into its image, and its CI take
 root `docker-compose.yml` is **dev only** (build-from-source, joins the shared Square network).
 Never re-grow a prod compose inside ta_vms.
 
+## Findings for later: docs/future_plans
+
+A problem found while doing something else, which needs doing but not next, goes into
+`docs/future_plans/` — one file per topic, listed in its README — rather than only into a chat or a
+commit message. When work on it starts, the file is deleted or cut down to what is left.
+
 ## ta-deps is shared with video_a
 
 `ta-deps` (this repo's `ta-deps/Dockerfile`) is the C++ toolchain + vcpkg base image for **two**
@@ -306,10 +312,19 @@ A deployment is one **core** and any number of **nodes**, and one machine may be
 
 Nothing may tie a service to "everything is on this machine": addresses and ports come only from
 env, and the only place that fixes app ids and `OWN_SERVER_ID` for one machine is
-`../ta_install/windows/config/services.json`. Between machines, sidecars cannot use the sqlite
-resolver (see Square integration below); they will need Consul. Dapr's other resolvers do not fit:
-`mdns` has no settings at all, so two installations on one LAN share every app id, and `nameformat`
-returns a host name without a port, while on Windows every sidecar has a port of its own.
+`../ta_install/windows/config/services.json` (and, for a deployment over several Linux machines,
+`../ta_install/docker-compose.distributed.yml`, where a node's app ids carry its name). Between
+machines, sidecars cannot use the sqlite resolver (see Square integration below); they use
+HashiCorp Consul, and talk over mutual TLS with certificates from Dapr Sentry on the core, which
+signs one only against a token for that app id (`../ta_install/scripts/distributed.sh`). Dapr's
+other resolvers do not fit: `mdns` has no settings at all, so two installations on one LAN share
+every app id, and `nameformat` returns a host name without a port, while on Windows every sidecar
+has a port of its own. Consul and Sentry exist only in a deployment over several machines; one
+machine runs neither.
+
+A node's services find their partners through `MEDIA_SERVER_PAIRS`, but `vms` and `VmsFs` still
+take their ONVIF service from `DAPR_ONVIF_APP_ID`, so a node must set it to its own
+(`docs/future_plans/node-onvif-app-id.md`).
 
 **An app listens on the loopback only** (`ListenLocalhost`, `127.0.0.1` in `vms`): its own sidecar
 is its one client, and it always runs beside it — the same host on Windows, the app's network
