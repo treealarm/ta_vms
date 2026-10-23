@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Dapr.Messaging.PublishSubscribe;
+using VmsLog;
 
 namespace VmsAnalyticsSingleton;
 
@@ -30,9 +31,9 @@ public sealed class AnalyticsWatchSubscriber(
     return Task.CompletedTask;
   }
 
-  // Safety net for the case where the very first refresh at startup fails (e.g. VmsCfg's own
-  // Dapr sidecar isn't up yet) and no analytics-watch-changed/camera-state-changed event happens
-  // to arrive afterward — without this, the cache would stay empty forever.
+  // Safety net for events that never arrive: a first refresh at startup that failed (VmsCfg or its
+  // sidecar not up yet) with no event after it, or a stream the sidecar closed cleanly, which
+  // Dapr.Messaging 1.18.7 does not report (a failed one is opened again by StreamingSubscriptions).
   private static readonly TimeSpan FallbackResyncInterval = TimeSpan.FromMinutes(2);
 
   private async Task RunAsync(CancellationToken ct)
@@ -48,10 +49,13 @@ public sealed class AnalyticsWatchSubscriber(
       var options = new DaprSubscriptionOptions(
         new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry));
       await Task.WhenAll(
-        pubSubClient.SubscribeAsync(PubSubName, AnalyticsWatchChangedTopic, options, HandleAsync, ct),
-        pubSubClient.SubscribeAsync(PubSubName, CameraStateChangedTopic, options, HandleAsync, ct),
-        pubSubClient.SubscribeAsync(PubSubName, StorageConfigChangedTopic, options, HandleStorageChangedAsync, ct),
-        pubSubClient.SubscribeAsync(PubSubName, ServerConfigChangedTopic, options, HandleServerChangedAsync, ct),
+        StreamingSubscriptions.KeepAsync(pubSubClient, PubSubName, options,
+          [
+            new(AnalyticsWatchChangedTopic, HandleAsync),
+            new(CameraStateChangedTopic, HandleAsync),
+            new(StorageConfigChangedTopic, HandleStorageChangedAsync),
+            new(ServerConfigChangedTopic, HandleServerChangedAsync),
+          ], logger, ct),
         FallbackResyncLoopAsync(ct));
     }
     catch (OperationCanceledException) { }
@@ -70,9 +74,11 @@ public sealed class AnalyticsWatchSubscriber(
     }
   }
 
-  private Task<TopicResponseAction> HandleAsync(TopicMessage message, CancellationToken ct)
+  // The refresh runs past the handler, so on the service's own token: the one passed in is the
+  // message's, and the receiver disposes of it as soon as this returns.
+  private Task<TopicResponseAction> HandleAsync(TopicMessage message, CancellationToken messageToken)
   {
-    _ = RefreshAndReconcileAsync(ct);
+    _ = RefreshAndReconcileAsync(_cts.Token);
     return Task.FromResult(TopicResponseAction.Success);
   }
 

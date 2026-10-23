@@ -57,8 +57,8 @@ spec:
     value: "10000"
   - name: ttlInSeconds
     value: "3600"
-  # No connection-pool knob here, unlike the Redis component this replaces — but the problem it
-  # was working around is still real: an app that resubscribes its streaming subscriptions in a
-  # loop stacks consumers (it was observed live against Redis), and on RabbitMQ that shows up as
-  # a growing channel count instead. The fix is subscribe-once on the app side, see
-  # VmsOnvif.CameraConfigSubscriber.
+  # No connection-pool knob here, unlike the Redis component this replaces. What it was working
+  # around: an app that opened its streaming subscriptions again in a loop without closing the old
+  # ones stacked consumers (seen live against Redis; on RabbitMQ it would be a growing channel
+  # count). An app opens one again only after the old one has failed, and disposes of it first
+  # (VmsLog.StreamingSubscriptions).

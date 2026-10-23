@@ -11,4 +11,4 @@ here is deleted or cut down to what is still left.
 |---|---|
 | [distributed-analytics.md](distributed-analytics.md) | Re-identification and archive search in the database (pgvector), then analytics per node |
 | [distributed-hardening.md](distributed-hardening.md) | What a multi-machine deployment still leaves open on the network |
-| [streaming-subscription-warning.md](streaming-subscription-warning.md) | "Streaming subscriptions ended" is logged on every start, while they are running |
+| [streaming-subscription-recovery.md](streaming-subscription-recovery.md) | Most streaming subscribers never subscribe again after the sidecar drops the stream |
