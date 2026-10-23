@@ -67,16 +67,23 @@ void onvif_metadata_client::start()
   if (m_running)
     return;
 
-  m_app_id = require_env("DAPR_ONVIF_APP_ID");
   m_channel = grpc::CreateChannel(
     "127.0.0.1:" + require_env("DAPR_GRPC_PORT"), grpc::InsecureChannelCredentials());
   m_stub = vms::onvif::OnvifService::NewStub(m_channel);
 
   m_running = true;
   m_thread = std::thread([this] { send_loop(); });
+}
 
+void onvif_metadata_client::set_target_app_id(const std::string& app_id)
+{
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_app_id = app_id;
+  }
+  m_cv.notify_one();
   logger::instance().info(std::format(
-    "ONVIF metadata forwarding enabled, target app '{}'", m_app_id));
+    "ONVIF metadata forwarding enabled, target app '{}'", app_id));
 }
 
 void onvif_metadata_client::stop()
@@ -131,13 +138,14 @@ void onvif_metadata_client::send_loop()
   while (m_running)
   {
     std::deque<vms::onvif::MetadataDocument> batch;
+    std::string app_id;
     uint64_t dropped_snapshot = 0;
     {
       std::unique_lock<std::mutex> lock(m_mutex);
 
-      // Wait for something to send.
-      m_cv.wait(lock, [this] { return !m_running || !m_queue.empty(); });
-      if (!m_running && m_queue.empty())
+      // Wait for something to send, and for somewhere to send it.
+      m_cv.wait(lock, [this] { return !m_running || (!m_queue.empty() && !m_app_id.empty()); });
+      if (!m_running && (m_queue.empty() || m_app_id.empty()))
         return;
 
       // Then hold only for as much of kMinSendInterval as has not already passed. After an idle
@@ -160,6 +168,7 @@ void onvif_metadata_client::send_loop()
         std::make_move_iterator(m_queue.begin() + static_cast<std::ptrdiff_t>(take)));
       m_queue.erase(m_queue.begin(), m_queue.begin() + static_cast<std::ptrdiff_t>(take));
       dropped_snapshot = m_dropped;
+      app_id = m_app_id;
     }
 
     if (dropped_snapshot != reported_drops)
@@ -172,12 +181,13 @@ void onvif_metadata_client::send_loop()
     if (!batch.empty())
     {
       m_last_send = std::chrono::steady_clock::now();
-      send_batch(batch);
+      send_batch(app_id, batch);
     }
   }
 }
 
-void onvif_metadata_client::send_batch(std::deque<vms::onvif::MetadataDocument>& batch)
+void onvif_metadata_client::send_batch(
+  const std::string& app_id, std::deque<vms::onvif::MetadataDocument>& batch)
 {
   vms::onvif::MetadataDocumentBatch request;
   for (auto& document : batch)
@@ -187,7 +197,7 @@ void onvif_metadata_client::send_batch(std::deque<vms::onvif::MetadataDocument>&
 
   grpc::ClientContext context;
   context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(5));
-  context.AddMetadata("dapr-app-id", m_app_id);
+  context.AddMetadata("dapr-app-id", app_id);
 
   const grpc::Status status = m_stub->PushMetadataDocuments(&context, request, &response);
   if (!status.ok())
@@ -196,6 +206,6 @@ void onvif_metadata_client::send_batch(std::deque<vms::onvif::MetadataDocument>&
     // hundreds of milliseconds old only delays the ones behind it.
     logger::instance().warning(std::format(
       "PushMetadataDocuments RPC via Dapr failed for app '{}' ({} documents): {}",
-      m_app_id, request.documents_size(), status.error_message()));
+      app_id, request.documents_size(), status.error_message()));
   }
 }

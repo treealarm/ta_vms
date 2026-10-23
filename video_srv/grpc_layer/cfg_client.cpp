@@ -72,7 +72,7 @@ bool cfg_client::list_cameras(std::vector<vms::cfg::CameraSetup>& result)
   return true;
 }
 
-bool cfg_client::get_paired_fs_id(std::string& fs_id)
+bool cfg_client::get_own_node(std::string& fs_id, std::string& onvif_id)
 {
   vms::cfg::ListMediaServersRequest request;
   vms::cfg::ListMediaServersResponse response;
@@ -95,13 +95,15 @@ bool cfg_client::get_paired_fs_id(std::string& fs_id)
   {
     if (server.server_id() == m_server_id)
     {
-      if (server.fs_id().empty())
+      if (server.fs_id().empty() || server.onvif_id().empty())
       {
         logger::instance().error(std::format(
-          "Server '{}' has no fs_id configured in MEDIA_SERVER_PAIRS", m_server_id));
+          "Server '{}' has no {} configured in MEDIA_SERVER_PAIRS", m_server_id,
+          server.fs_id().empty() ? "fs_id" : "onvif_id"));
         return false;
       }
       fs_id = server.fs_id();
+      onvif_id = server.onvif_id();
       return true;
     }
   }

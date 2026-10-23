@@ -14,12 +14,10 @@ namespace VmsFs;
 /// node. It never competes with the operator — a gap being worked on manually is <c>filling</c> or
 /// <c>held</c>, and neither is picked up here.
 ///
-/// Asking VmsOnvif from here is the one dependency that does not follow the usual direction: VmsFs
-/// is sharded per node while VmsOnvif is a single instance for the whole system. It is accepted for
-/// now — the calls are rare and VmsOnvif is already the shared gateway to every camera — and is to
-/// be revisited when sharding is looked at properly. The alternative is to move this scheduler to
-/// VmsUtils, which orchestrates across services already and can reach each node's VmsFs through the
-/// server↔fs pairing; every RPC it would need exists.
+/// The camera is asked through this node's own VmsOnvif, named by the same pairing in VmsCfg that
+/// scopes everything else here (<see cref="SetScope"/>): VmsOnvif is sharded by node too, and only
+/// the instance next to the cameras can reach them. Without a pairing there is no such instance,
+/// and edge import stays off.
 ///
 /// Two properties of the device shape the pacing. Its archive is a ring buffer roughly an hour long,
 /// so the backlog is worked oldest-first: that is the part about to disappear. And a stretch that
@@ -31,7 +29,6 @@ public sealed class EdgeImportScheduler(
   SourceOutageStore outages,
   EdgeImportJobStore jobs,
   CfgService.CfgServiceClient cfg,
-  OnvifService.OnvifServiceClient onvif,
   ClipStorage clips,
   ILogger<EdgeImportScheduler> logger) : IHostedService, IDisposable
 {
@@ -122,13 +119,22 @@ public sealed class EdgeImportScheduler(
 
   /// <summary>Only this node's cameras; the two VmsFs instances share one database.</summary>
   public string? OwnServerId { get; private set; }
+  private OnvifService.OnvifServiceClient? _onvif;
+  private bool _disabledLogged;
   private volatile bool _scopeReady;
 
-  public void SetScope(string? serverId)
+  /// <summary>This node and the ONVIF service on it, both from the pairing in VmsCfg.</summary>
+  public void SetScope(string? serverId, string? onvifAppId)
   {
     OwnServerId = serverId;
+    _onvif = onvifAppId is null
+      ? null
+      : new OnvifService.OnvifServiceClient(DaprClient.CreateInvocationInvoker(onvifAppId));
     _scopeReady = true;
   }
+
+  private OnvifService.OnvifServiceClient Onvif =>
+    _onvif ?? throw new InvalidOperationException("edge import: no ONVIF service paired with this node");
 
   public Task StartAsync(CancellationToken cancellationToken)
   {
@@ -145,6 +151,15 @@ public sealed class EdgeImportScheduler(
         await Task.Delay(Tick, ct);
         if (!_scopeReady)
           continue;
+        if (_onvif is null)
+        {
+          if (!_disabledLogged)
+          {
+            _disabledLogged = true;
+            logger.LogInformation("Edge backfill: no node pairing, so no ONVIF service to ask; disabled");
+          }
+          continue;
+        }
         try
         {
           await SweepAsync(ct);
@@ -423,7 +438,7 @@ public sealed class EdgeImportScheduler(
       return false;
 
     // Resolved immediately before use: devices commonly hand out single-use replay URIs.
-    var replay = await onvif.GetEdgeReplayUriAsync(new EdgeReplayUriRequest
+    var replay = await Onvif.GetEdgeReplayUriAsync(new EdgeReplayUriRequest
     {
       SourceId = job.CameraId,
       RecordingToken = piece.RecordingToken,
@@ -554,7 +569,7 @@ public sealed class EdgeImportScheduler(
   {
     try
     {
-      var response = await onvif.ListEdgeRecordingIntervalsAsync(new EdgeIntervalsRequest
+      var response = await Onvif.ListEdgeRecordingIntervalsAsync(new EdgeIntervalsRequest
       {
         SourceId = cameraId,
         StartTime = missing[0].Start.ToString("O"),

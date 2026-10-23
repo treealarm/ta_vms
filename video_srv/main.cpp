@@ -32,6 +32,7 @@
 #include "grpc_layer/cfg_client.h"
 #include "grpc_layer/entity_state_publisher.h"
 #include "grpc_layer/fs_client.h"
+#include "grpc_layer/onvif_client.h"
 #include "grpc_layer/onvif_metadata_client.h"
 #include "grpc_layer/proto_mapper.h"
 #include "grpc_layer/state_store_client.h"
@@ -114,8 +115,8 @@ int main(int argc, char** argv)
 #endif
 
   // Started here rather than on the first metadata packet, so a broken environment shows up at
-  // startup instead of hours later on the first camera that speaks metadata. It needs nothing
-  // onvif_client does not already require.
+  // startup instead of hours later on the first camera that speaks metadata. Where it sends is
+  // only known once VmsCfg has named this node's ONVIF service, below.
   //
   // VMS_VIDEO_ENCODER is checked in the same breath and for the same reason: it is only read
   // when a camera publishes something other than H.264, so a misspelled backend would otherwise
@@ -201,11 +202,18 @@ int main(int argc, char** argv)
       std::this_thread::sleep_for(std::chrono::milliseconds(5000));
   }
 
+  // This node's partners come from its entry in MEDIA_SERVER_PAIRS, the one place a node's services
+  // are paired: on a node that is not the core, a deployment-wide app id would name the core's
+  // ONVIF service, which cannot reach this node's cameras.
   {
     std::string fs_id;
-    while (!c_client.get_paired_fs_id(fs_id) && !g_stop_requested)
+    std::string onvif_id;
+    while (!c_client.get_own_node(fs_id, onvif_id) && !g_stop_requested)
       std::this_thread::sleep_for(std::chrono::milliseconds(5000));
     fs_client::set_fs_app_id(fs_id);
+    onvif_client::set_app_id(onvif_id);
+    onvif_metadata_client::instance().set_target_app_id(onvif_id);
+    logger::instance().info(std::format("paired: fs '{}', onvif '{}'", fs_id, onvif_id));
   }
 
   // Source liveness. Started only here, after set_fs_app_id above — fs_client's constructor throws

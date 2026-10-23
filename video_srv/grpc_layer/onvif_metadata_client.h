@@ -37,11 +37,14 @@ class onvif_metadata_client {
 public:
   static onvif_metadata_client& instance();
 
-  /// Reads the required environment and starts the sender thread. Called once from main(); the
-  /// environment it needs (DAPR_ONVIF_APP_ID, DAPR_GRPC_PORT) is the same onvif_client already
-  /// requires, so this introduces no new startup prerequisite. Throws std::runtime_error when the
-  /// environment is incomplete.
+  /// Reads the required environment (DAPR_GRPC_PORT) and starts the sender thread. Called once
+  /// from main(), before VmsCfg is reachable, so that a broken environment shows at startup.
+  /// Throws std::runtime_error when the environment is incomplete.
   void start();
+
+  /// This node's VmsOnvif, from the pairing in VmsCfg (cfg_client::get_own_node). Until it is set
+  /// nothing is sent: documents queue and the oldest are dropped, as when the sidecar stalls.
+  void set_target_app_id(const std::string& app_id);
 
   void stop();
 
@@ -64,8 +67,9 @@ private:
   ~onvif_metadata_client();
 
   void send_loop();
-  void send_batch(std::deque<vms::onvif::MetadataDocument>& batch);
+  void send_batch(const std::string& app_id, std::deque<vms::onvif::MetadataDocument>& batch);
 
+  /// Guarded by m_mutex: set from main() while the sender thread runs.
   std::string m_app_id;
   std::shared_ptr<grpc::Channel> m_channel;
   std::unique_ptr<vms::onvif::OnvifService::Stub> m_stub;

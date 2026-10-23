@@ -322,9 +322,9 @@ every app id, and `nameformat` returns a host name without a port, while on Wind
 has a port of its own. Consul and Sentry exist only in a deployment over several machines; one
 machine runs neither.
 
-A node's services find their partners through `MEDIA_SERVER_PAIRS`, but `vms` and `VmsFs` still
-take their ONVIF service from `DAPR_ONVIF_APP_ID`, so a node must set it to its own
-(`docs/future_plans/node-onvif-app-id.md`).
+A node's services find their partners through its entry in `MEDIA_SERVER_PAIRS`, which they read
+from VmsCfg (`ListMediaServers`) — never from a deployment-wide app id variable, which on a node
+would name the core's service.
 
 **An app listens on the loopback only** (`ListenLocalhost`, `127.0.0.1` in `vms`): its own sidecar
 is its one client, and it always runs beside it — the same host on Windows, the app's network

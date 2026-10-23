@@ -225,7 +225,7 @@ jobs:
           $output = & (Join-Path $env:RUNNER_TEMP 'ta_vms\vms\vms.exe') 2>&1 | Out-String
           $code = $LASTEXITCODE
           $output
-          if ($output -notmatch "Required environment variable 'DAPR_ONVIF_APP_ID'") {
+          if ($output -notmatch "Required environment variable 'DAPR_GRPC_PORT'") {
             throw ("vms.exe stopped before its configuration checks, exit code 0x{0:X8}" -f $code)
           }
           if (-not (Test-Path (Join-Path $env:VMS_LOG_PATH 'vms\vms.log'))) { throw "vms.exe wrote no log file" }
