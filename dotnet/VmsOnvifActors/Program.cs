@@ -26,7 +26,7 @@ static int RequirePort(string name) =>
 
 builder.WebHost.ConfigureKestrel(options =>
 {
-  options.ListenAnyIP(httpPort);
+  options.ListenLocalhost(httpPort);
 });
 
 var app = builder.Build();

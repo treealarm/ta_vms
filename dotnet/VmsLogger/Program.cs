@@ -14,7 +14,7 @@ if (!int.TryParse(Environment.GetEnvironmentVariable("LOGGER_VMS_PORT"), out var
 
 builder.WebHost.ConfigureKestrel(options =>
 {
-  options.ListenAnyIP(grpcPort, listenOptions =>
+  options.ListenLocalhost(grpcPort, listenOptions =>
   {
     listenOptions.Protocols = HttpProtocols.Http2;
   });

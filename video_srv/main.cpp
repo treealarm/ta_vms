@@ -100,7 +100,8 @@ int main(int argc, char** argv)
       logger::instance().error("Required environment variable 'GRPC_VMS_PORT' is not set");
       return 1;
     }
-    server_address = "0.0.0.0:" + std::string(grpc_vms_port);
+    // The loopback only: the sidecar is the one client, and it always runs beside us.
+    server_address = "127.0.0.1:" + std::string(grpc_vms_port);
   }
 
   const char* app_id = std::getenv("APP_ID");

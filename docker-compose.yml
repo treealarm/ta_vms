@@ -173,6 +173,8 @@ services:
       - "3500"
       - "-dapr-grpc-port"
       - "50001"
+      - "-dapr-listen-addresses"
+      - "127.0.0.1"
       - "-components-path"
       - "/components"
     volumes:
@@ -215,6 +217,8 @@ services:
       - "3500"
       - "-dapr-grpc-port"
       - "50001"
+      - "-dapr-listen-addresses"
+      - "127.0.0.1"
       - "-components-path"
       - "/components"
     volumes:
@@ -253,6 +257,8 @@ services:
       - "3500"
       - "-dapr-grpc-port"
       - "50001"
+      - "-dapr-listen-addresses"
+      - "127.0.0.1"
       - "-components-path"
       - "/components"
     volumes:
@@ -291,6 +297,8 @@ services:
       - "3500"
       - "-dapr-grpc-port"
       - "50001"
+      - "-dapr-listen-addresses"
+      - "127.0.0.1"
       - "-components-path"
       - "/components"
     volumes:
@@ -331,6 +339,8 @@ services:
       - "3500"
       - "-dapr-grpc-port"
       - "50001"
+      - "-dapr-listen-addresses"
+      - "127.0.0.1"
       - "-components-path"
       - "/components"
     volumes:
@@ -376,6 +386,8 @@ services:
       - "3500"
       - "-dapr-grpc-port"
       - "50001"
+      - "-dapr-listen-addresses"
+      - "127.0.0.1"
       - "-components-path"
       - "/components"
     volumes:
@@ -460,6 +472,8 @@ services:
       - "3500"
       - "-dapr-grpc-port"
       - "50001"
+      - "-dapr-listen-addresses"
+      - "127.0.0.1"
       - "-components-path"
       - "/components"
     volumes:
@@ -504,6 +518,8 @@ services:
       - "3500"
       - "-dapr-grpc-port"
       - "50001"
+      - "-dapr-listen-addresses"
+      - "127.0.0.1"
       - "-components-path"
       - "/components"
     volumes:
@@ -527,6 +543,8 @@ services:
       - "3500"
       - "-dapr-grpc-port"
       - "50001"
+      - "-dapr-listen-addresses"
+      - "127.0.0.1"
       - "-placement-host-address"
       - "dapr-placement:50005"
       - "-components-path"
@@ -552,6 +570,8 @@ services:
       - "3500"
       - "-dapr-grpc-port"
       - "50001"
+      - "-dapr-listen-addresses"
+      - "127.0.0.1"
       - "-components-path"
       - "/components"
       - "-placement-host-address"
@@ -567,8 +587,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "${GRPC_VMS_PORT}:${GRPC_VMS_PORT}"
     env_file:
       - .env
     environment:
@@ -624,6 +642,8 @@ services:
       - "3500"
       - "-dapr-grpc-port"
       - "50001"
+      - "-dapr-listen-addresses"
+      - "127.0.0.1"
       - "-components-path"
       - "/components"
     volumes:
@@ -648,6 +668,8 @@ services:
       - "3500"
       - "-dapr-grpc-port"
       - "50001"
+      - "-dapr-listen-addresses"
+      - "127.0.0.1"
       - "-components-path"
       - "/components"
     volumes:
@@ -685,6 +707,8 @@ services:
       - "3500"
       - "-dapr-grpc-port"
       - "50001"
+      - "-dapr-listen-addresses"
+      - "127.0.0.1"
       - "-components-path"
       - "/components"
     volumes:

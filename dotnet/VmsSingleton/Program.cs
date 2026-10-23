@@ -34,7 +34,7 @@ builder.Services.AddHostedService<AlarmOverrideExpiryService>();
 
 builder.WebHost.ConfigureKestrel(options =>
 {
-  options.ListenAnyIP(grpcPort, lo => lo.Protocols = HttpProtocols.Http2);
+  options.ListenLocalhost(grpcPort, lo => lo.Protocols = HttpProtocols.Http2);
 });
 
 var app = builder.Build();

@@ -307,7 +307,18 @@ A deployment is one **core** and any number of **nodes**, and one machine may be
 Nothing may tie a service to "everything is on this machine": addresses and ports come only from
 env, and the only place that fixes app ids and `OWN_SERVER_ID` for one machine is
 `../ta_install/windows/config/services.json`. Between machines, sidecars cannot use the sqlite
-resolver (see Square integration below); they will need mDNS scoped per installation or Consul.
+resolver (see Square integration below); they will need Consul. Dapr's other resolvers do not fit:
+`mdns` has no settings at all, so two installations on one LAN share every app id, and `nameformat`
+returns a host name without a port, while on Windows every sidecar has a port of its own.
+
+**An app listens on the loopback only** (`ListenLocalhost`, `127.0.0.1` in `vms`): its own sidecar
+is its one client, and it always runs beside it — the same host on Windows, the app's network
+namespace in compose (`network_mode: service:<app>`). The one exception is `web_srv`, the browser's
+way in. The sidecar's own API is its app's alone in the same way (`-dapr-listen-addresses
+127.0.0.1` in both compose files and from TaVmsHost; daprd listens on every address otherwise, and
+that API invokes any service and reads and writes the state store without asking who calls). What
+crosses machines is the sidecar's internal gRPC port, never an app port or the API, so do not open
+either to the network to make a call between machines work.
 
 **Naming rule:** a service that cannot be replicated carries `Singleton` in its project name and Dapr
 app-id. A reader must be able to tell the scaling class from the name alone, without reading

@@ -107,7 +107,7 @@ static int RequirePort(string name) =>
 
 builder.WebHost.ConfigureKestrel(options =>
 {
-  options.ListenAnyIP(grpcPort, listenOptions =>
+  options.ListenLocalhost(grpcPort, listenOptions =>
   {
     listenOptions.Protocols = HttpProtocols.Http2;
   });
