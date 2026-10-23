@@ -10,6 +10,12 @@ API, metrics and app stay on the loopback (`../ta_install/docker-compose.distrib
   `[::]:<port>`), and placement on the Windows test box listens on `[::]:6051` although
   `windows/config/services.json` gives it `--healthz-listen-address 127.0.0.1`. Read-only, but they
   should not be on the LAN: find out why, or close them in the core's firewall.
+- **A core's MediaMTX API (9997) and its WebRTC HTTP (8889) listen on the core's address**, not
+  the loopback: the MediaMTX row in VmsCfg has one `host` for everyone, and VmsUtils (API) and
+  web_srv (WHEP) on the core use it as the nodes do for RTSP. Both answer only with MediaMTX's
+  credentials (401 without), and no firewall rule opens them, but they need not be on the LAN at
+  all: an address of the core's own services for the API and WHEP, beside the one the nodes
+  publish to (the row already has an unused `webrtcHost`).
 - **PostgreSQL and RabbitMQ are reached from the nodes in clear text**, behind their passwords
   (`distributed.sh` refuses the defaults). TLS for both: `hostssl` and `ssl=on` with a certificate
   of the core; AMQPS for RabbitMQ. A role for the nodes with access to the state store and `ta_fs`
