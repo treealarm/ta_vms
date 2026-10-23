@@ -178,9 +178,11 @@ When adding a new service (C# or C++), you **must** update all of the following:
 5. `.vscode/tasks.json` — add `prepare:<name>`, `dapr:<name>:start`, `dapr:<name>:stop` tasks (copy pattern from vmslogger)
 6. `dotnet/ta_vms.sln` — add the project (for C# services)
 7. `../ta_install/windows/config/services.json` — the Windows supervisor's manifest (app id, exe,
-   ports, sidecar ports, placement), unless the service deliberately does not ship on Windows; then
-   say so in `../ta_install/windows/README.md`. `scripts/Build-Stage.ps1` fails when the manifest
-   names an exe the ta_vms Windows build does not contain.
+   ports, sidecar ports, placement, and `roles`: a system-wide service runs on `standalone` and
+   `core`, a node's has no `roles` and `${TAVMS_NODE_SUFFIX}` in its app id), unless the service
+   deliberately does not ship on Windows; then say so in `../ta_install/windows/README.md`.
+   `scripts/Build-Stage.ps1` fails when the manifest names an exe the ta_vms Windows build does not
+   contain. A node's service goes into `../ta_install/docker-compose.distributed.yml` as well.
 
 Omitting any of these causes a startup crash or missing debug config in dev.
 
@@ -307,16 +309,24 @@ A deployment is one **core** and any number of **nodes**, and one machine may be
 - A node holds what is pinned to its own disk and subnet: its `vms`↔`vmsfs` pair, `vmsonvif`,
   `vmsonvif-actors` and `vmslogger`, each with app ids and an `OWN_SERVER_ID` of its own and an
   entry in `MEDIA_SERVER_PAIRS`. A node may run Linux (compose) or Windows (the installer).
-- A standalone install — the Windows installer today, `../ta_install` compose — is a core and a
-  node on one machine, with fixed app ids.
+- A standalone install — the Windows installer by default, `../ta_install` compose — is a core and
+  a node on one machine, with fixed app ids.
+- Over several machines, each is a core or a node, on Linux or Windows in any mix: on Linux
+  `../ta_install/docker-compose.distributed.yml` through `scripts/distributed.sh core|package|join`,
+  on Windows the installer with `Role=core|node` (`TAVMS_ROLE`), which runs
+  `TaVmsHost core|package|join`. Both lay out the same files and read the same node package, so a
+  core of either kind takes nodes of either.
 
 Nothing may tie a service to "everything is on this machine": addresses and ports come only from
 env, and the only place that fixes app ids and `OWN_SERVER_ID` for one machine is
-`../ta_install/windows/config/services.json` (and, for a deployment over several Linux machines,
-`../ta_install/docker-compose.distributed.yml`, where a node's app ids carry its name). Between
+`../ta_install/windows/config/services.json`, per role (and, on Linux,
+`../ta_install/docker-compose.distributed.yml`); a node's app ids carry its name. Between
 machines, sidecars cannot use the sqlite resolver (see Square integration below); they use
 HashiCorp Consul, and talk over mutual TLS with certificates from Dapr Sentry on the core, which
-signs one only against a token for that app id (`../ta_install/scripts/distributed.sh`). Dapr's
+signs one only against a token for that app id (`../ta_install/scripts/distributed.sh`,
+`../ta_install/windows/TaVmsHost/Distributed.cs`). A node takes from its core only the credentials
+and ports of its PostgreSQL, RabbitMQ and MediaMTX (`core.env` in the package), never the core's
+whole environment: a Windows core's holds Windows paths. Dapr's
 other resolvers do not fit: `mdns` has no settings at all, so two installations on one LAN share
 every app id, and `nameformat` returns a host name without a port, while on Windows every sidecar
 has a port of its own. Consul and Sentry exist only in a deployment over several machines; one

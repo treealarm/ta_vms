@@ -26,3 +26,11 @@ API, metrics and app stay on the loopback (`../ta_install/docker-compose.distrib
   would let one node be revoked alone.
 - **The firewall per role** on Windows (Install-TaVms.ps1) and its description for Linux, where
   Docker's published ports bypass ufw — with `network_mode: host` they do not, which helps.
+- **Consul's gossip key is on its command line** (`-encrypt=...`, in compose and in
+  `windows/config/services.json`), so any local user who can list processes reads it. A
+  configuration file of Consul's own, readable by the service only, would keep it off.
+- **Consul's server listens for WAN gossip (8302) on the core's address**, which nothing uses and
+  no firewall rule opens; `-serf-wan-port=-1` would close it.
+- **The machines of a deployment must share a subnet**: the Windows firewall rules are open to
+  `LocalSubnet`, and the core's PostgreSQL lets in `samenet`. A node behind a router needs the
+  deployment's address ranges named instead, in the installer and in `pg_hba`.
