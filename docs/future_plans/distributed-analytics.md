@@ -50,3 +50,22 @@ control plane costs cross-camera re-identification; option A keeps both.
   through the node's VmsFs, not the core's file system.
 - `docker-compose.distributed.yml` (ta_install) runs no analytics worker yet; the node profile gets
   one per node once assignment knows about nodes.
+
+## When one control plane is not enough
+
+Detections do not go through RabbitMQ: each worker streams them to the control plane over gRPC
+(`StreamDetections`, through the two sidecars). RabbitMQ carries only configuration-change signals.
+Still, every detection of every node ends in one process, and nothing has measured where that stops
+scaling. What is in a message (video_a `analytics.proto`, `DetectionEvent`):
+- the embedding (256 floats, about 1 KB for the person re-id model) on **every** frame of a live
+  track, although it is recomputed only at track start and every `ANALYTICS_REID_EMBED_INTERVAL_SEC`;
+- a crop JPEG on every frame for faces and licence plates.
+
+Cheap reductions first, on the worker's side: the embedding only when `embedding_is_fresh`, crops
+only for frames that can become events. Then, if one process is still the limit, Dapr's tool for
+stateful work spread over replicas is actors: per-camera state (debounce, sessions, persisting)
+in an actor per camera, which placement spreads over the replicas and moves when one goes. Replicas
+of one app id share only stateless work (service invocation balancing, competing pub/sub
+consumers), which is why the control plane is a singleton today. What an actor per camera does not
+cover is the cross-camera re-identification gallery: it would move into shared storage (e.g.
+pgvector in PostgreSQL) for the replicas to query.
