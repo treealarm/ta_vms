@@ -7,9 +7,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Dapr.AspNetCore" Version="1.18.5" />
-    <PackageReference Include="Dapr.Client" Version="1.18.5" />
-    <PackageReference Include="Dapr.Messaging" Version="1.18.5" />
+    <PackageReference Include="Dapr.AspNetCore" Version="1.18.7" />
+    <PackageReference Include="Dapr.Client" Version="1.18.7" />
+    <PackageReference Include="Dapr.Messaging" Version="1.18.7" />
     <PackageReference Include="Google.Protobuf" Version="3.35.1" />
     <PackageReference Include="Grpc.AspNetCore" Version="2.83.0" />
     <PackageReference Include="Grpc.Tools" Version="2.83.0">
