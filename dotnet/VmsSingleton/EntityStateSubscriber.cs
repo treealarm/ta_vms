@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Dapr.Messaging.PublishSubscribe;
+using VmsLog;
 
 namespace VmsSingleton;
 
@@ -27,27 +28,11 @@ public sealed class EntityStateSubscriber(
 
   public Task StartAsync(CancellationToken cancellationToken)
   {
-    _ = RunAsync(_cts.Token);
+    var options = new DaprSubscriptionOptions(
+      new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Drop));
+    _ = StreamingSubscriptions.KeepAsync(pubSubClient, PubSubName, options,
+      [new(Topic, HandleAsync)], logger, _cts.Token);
     return Task.CompletedTask;
-  }
-
-  private async Task RunAsync(CancellationToken ct)
-  {
-    try
-    {
-      await pubSubClient.SubscribeAsync(
-        PubSubName,
-        Topic,
-        new DaprSubscriptionOptions(
-          new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Drop)),
-        HandleAsync,
-        ct);
-    }
-    catch (OperationCanceledException) { }
-    catch (Exception ex)
-    {
-      logger.LogError(ex, "EntityStateSubscriber error");
-    }
   }
 
   private Task<TopicResponseAction> HandleAsync(TopicMessage message, CancellationToken _)

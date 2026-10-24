@@ -1,5 +1,6 @@
 using Dapr.Messaging.PublishSubscribe;
 using System.Text.Json;
+using VmsLog;
 
 namespace VmsFs;
 
@@ -18,27 +19,11 @@ public sealed class CameraConfigSubscriber(
 
   public Task StartAsync(CancellationToken cancellationToken)
   {
-    _ = RunAsync(_cts.Token);
+    var options = new DaprSubscriptionOptions(
+      new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry));
+    _ = StreamingSubscriptions.KeepAsync(pubSubClient, PubSubName, options,
+      [new(ServerConfigChangedTopic, HandleAsync)], logger, _cts.Token);
     return Task.CompletedTask;
-  }
-
-  private async Task RunAsync(CancellationToken ct)
-  {
-    try
-    {
-      await pubSubClient.SubscribeAsync(
-        PubSubName,
-        ServerConfigChangedTopic,
-        new DaprSubscriptionOptions(
-          new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry)),
-        HandleAsync,
-        ct);
-    }
-    catch (OperationCanceledException) { }
-    catch (Exception ex)
-    {
-      logger.LogError(ex, "CameraConfigSubscriber error");
-    }
   }
 
   // Wire shape of server-config-changed; VmsCfg owns it. Empty CameraIds means everything on the

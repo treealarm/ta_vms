@@ -3,6 +3,7 @@ using Dapr.Messaging.PublishSubscribe;
 using Google.Protobuf.WellKnownTypes;
 using LeafletAlarmsGrpc;
 using SquareIntegrationClient;
+using VmsLog;
 
 namespace VmsSquareSingleton;
 
@@ -25,27 +26,11 @@ public sealed class SquareAlarmSubscriber(
 
   public Task StartAsync(CancellationToken cancellationToken)
   {
-    _ = RunAsync(_cts.Token);
+    var options = new DaprSubscriptionOptions(
+      new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry));
+    _ = StreamingSubscriptions.KeepAsync(pubSubClient, PubSubName, options,
+      [new(RetentionEventCreatedTopic, HandleAsync)], logger, _cts.Token);
     return Task.CompletedTask;
-  }
-
-  private async Task RunAsync(CancellationToken ct)
-  {
-    try
-    {
-      await pubSubClient.SubscribeAsync(
-        PubSubName,
-        RetentionEventCreatedTopic,
-        new DaprSubscriptionOptions(
-          new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry)),
-        HandleAsync,
-        ct);
-    }
-    catch (OperationCanceledException) { }
-    catch (Exception ex)
-    {
-      logger.LogError(ex, "SquareAlarmSubscriber error");
-    }
   }
 
   private async Task<TopicResponseAction> HandleAsync(TopicMessage message, CancellationToken cancellationToken)

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Dapr.Messaging.PublishSubscribe;
+using VmsLog;
 using VmsPtzTrackingSingleton.Geo;
 
 namespace VmsPtzTrackingSingleton;
@@ -44,25 +45,12 @@ public sealed class CameraConfigSubscriber(
 
   public Task StartAsync(CancellationToken cancellationToken)
   {
-    _ = RunAsync(_cts.Token);
+    var options = new DaprSubscriptionOptions(
+      new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry));
+    _ = StreamingSubscriptions.KeepAsync(pubSubClient, PubSubName, options,
+      [new(ServerConfigChangedTopic, HandleAsync), new(SpaceConfigChangedTopic, HandleSpaceAsync)],
+      logger, _cts.Token);
     return Task.CompletedTask;
-  }
-
-  private async Task RunAsync(CancellationToken ct)
-  {
-    try
-    {
-      var options = new DaprSubscriptionOptions(
-        new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry));
-      await Task.WhenAll(
-        pubSubClient.SubscribeAsync(PubSubName, ServerConfigChangedTopic, options, HandleAsync, ct),
-        pubSubClient.SubscribeAsync(PubSubName, SpaceConfigChangedTopic, options, HandleSpaceAsync, ct));
-    }
-    catch (OperationCanceledException) { }
-    catch (Exception ex)
-    {
-      logger.LogError(ex, "CameraConfigSubscriber error");
-    }
   }
 
   // Not async: every step here is a cache drop or a signal, and the reconcile it asks for

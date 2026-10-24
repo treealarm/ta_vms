@@ -3,6 +3,7 @@ using System.Threading.Channels;
 using Dapr.Messaging.PublishSubscribe;
 using SquareIntegrationClient;
 using Vms.Cfg;
+using VmsLog;
 
 namespace VmsSquareSingleton;
 
@@ -48,8 +49,11 @@ public sealed class CameraChangeSubscriber(
 
   public Task StartAsync(CancellationToken cancellationToken)
   {
-    _ = RunAsync(ServerConfigChangedTopic, HandleConfigChangedAsync, _cts.Token);
-    _ = RunAsync(CameraStateChangedTopic, HandleStateChangedAsync, _cts.Token);
+    var options = new DaprSubscriptionOptions(
+      new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Drop));
+    _ = StreamingSubscriptions.KeepAsync(pubSubClient, PubSubName, options,
+      [new(ServerConfigChangedTopic, HandleConfigChangedAsync), new(CameraStateChangedTopic, HandleStateChangedAsync)],
+      logger, _cts.Token);
     _ = PushLoopAsync(_cts.Token);
     return Task.CompletedTask;
   }
@@ -108,25 +112,6 @@ public sealed class CameraChangeSubscriber(
     var primary = setup.Streams.FirstOrDefault(s => s.WebRtc);
     var where = placement is null ? "-" : $"{placement.Lat:R},{placement.Lon:R},{placement.HeadingDeg:R}";
     return $"{setup.Name}\u001f{primary?.RecordingProfile?.Name ?? string.Empty}\u001f{where}\u001f{referenceSpaceId}";
-  }
-
-  private async Task RunAsync(string topic, TopicMessageHandler handler, CancellationToken ct)
-  {
-    try
-    {
-      await pubSubClient.SubscribeAsync(
-        PubSubName,
-        topic,
-        new DaprSubscriptionOptions(
-          new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Drop)),
-        handler,
-        ct);
-    }
-    catch (OperationCanceledException) { }
-    catch (Exception ex)
-    {
-      logger.LogError(ex, "CameraChangeSubscriber error on topic '{Topic}'", topic);
-    }
   }
 
   // Wire shape of server-config-changed; VmsCfg owns it. The server is ignored here — Square holds

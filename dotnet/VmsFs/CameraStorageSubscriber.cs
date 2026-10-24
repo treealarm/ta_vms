@@ -1,5 +1,6 @@
 using Dapr.Messaging.PublishSubscribe;
 using System.Text.Json;
+using VmsLog;
 
 namespace VmsFs;
 
@@ -21,26 +22,12 @@ public sealed class CameraStorageSubscriber(
 
   public Task StartAsync(CancellationToken cancellationToken)
   {
-    _ = RunAsync(_cts.Token);
+    var options = new DaprSubscriptionOptions(
+      new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry));
+    _ = StreamingSubscriptions.KeepAsync(pubSubClient, PubSubName, options,
+      [new(CameraStorageChangedTopic, HandleAsync), new(StorageConfigChangedTopic, HandleStorageAsync)],
+      logger, _cts.Token);
     return Task.CompletedTask;
-  }
-
-  private async Task RunAsync(CancellationToken ct)
-  {
-    try
-    {
-      var options = new DaprSubscriptionOptions(
-        new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry));
-
-      await Task.WhenAll(
-        pubSubClient.SubscribeAsync(PubSubName, CameraStorageChangedTopic, options, HandleAsync, ct),
-        pubSubClient.SubscribeAsync(PubSubName, StorageConfigChangedTopic, options, HandleStorageAsync, ct));
-    }
-    catch (OperationCanceledException) { }
-    catch (Exception ex)
-    {
-      logger.LogError(ex, "CameraStorageSubscriber error");
-    }
   }
 
   private Task<TopicResponseAction> HandleAsync(TopicMessage message, CancellationToken _)

@@ -1,35 +1,21 @@
-# Most streaming subscribers never subscribe again
+# A streaming subscription the sidecar closes cleanly goes unnoticed
 
-Found 2026-10-23, while fixing the "streaming subscriptions ended" warning of VmsOnvif.
+Found 2026-10-23; what is left of it after every subscriber moved onto
+`VmsLog.StreamingSubscriptions` (2026-10-24).
 
-`VmsLog.StreamingSubscriptions` keeps a Dapr streaming subscription open: when the receiver's
-`Completion` faults (the sidecar restarted, the connection broke) it disposes of it and subscribes
-again with a backoff. `VmsOnvif.CameraConfigSubscriber` and
-`VmsAnalyticsSingleton.AnalyticsWatchSubscriber` use it, and both also resync on a timer.
+Every streaming subscriber now keeps its subscription through the helper, which opens it again when
+the receiver's `Completion` ends — faulted (the sidecar restarted, the connection broke) or not (the
+app started before its sidecar: in Dapr.Messaging 1.18.7 that completes without an error). Checked
+on the dev stack for VmsFs, VmsUtils and VmsSingleton: app started 20 s before its sidecar, then the
+sidecar killed and started again; the queues came back both times and the events reached VmsFs.
 
-The other subscribers still call `SubscribeAsync` once and throw the receiver away, with no timer
-behind them, so a sidecar restart leaves them deaf until the app restarts:
+Still open, by reading the 1.18.7 receiver: a response stream that ends without an error ends the
+fetch loop only, the two loops behind it keep waiting on their channels, and `Completion` would
+never complete. Not seen in practice yet, but nothing rules it out, and then the subscriber is deaf
+until the app restarts. Only `VmsOnvif.CameraConfigSubscriber` and
+`VmsAnalyticsSingleton.AnalyticsWatchSubscriber` have a periodic resync behind them; the others
+rely on their caches' TTLs or on nothing.
 
-- `VmsFs`: `CameraConfigSubscriber`, `CameraStorageSubscriber`
-- `VmsUtils`: `MediaMtxConfigSubscriber`
-- `VmsSquareSingleton`: `SquareAlarmSubscriber`, `CameraChangeSubscriber`, `SpaceExportWorker`
-- `VmsSingleton`: `ScheduleChangeSignal`, `EntityStateSubscriber`
-- `VmsPtzTrackingSingleton`: `CameraConfigSubscriber`
-
-Each is a few lines to move onto the helper. TaVmsHost restarts a sidecar that exits, and compose
-does too, so this happens in practice and not only in theory.
-
-It happens at the first start too. On a Linux core (`../ta_install/docker-compose.distributed.yml`,
-2026-10-23) the core's `vmsfs` had no queue on RabbitMQ at all, from its first start on, while
-`vmsfs-win`, a Windows node's VmsFs of the same build in the same deployment, had its three. The
-core's VmsFs started two seconds before its sidecar had loaded its components (compose starts the
-app first; TaVmsHost starts the sidecar first), and logged nothing about the subscriptions it lost.
-So on Linux these subscribers can be deaf from the start, until the app restarts.
-
-Left open by Dapr.Messaging 1.18.7 itself, by reading its receiver: a response stream that ends
-without an error ends the fetch loop only, the two loops behind it keep waiting on their channels,
-and `Completion` would never complete. Not seen in practice yet — killing a sidecar faulted the
-stream, and subscribing while it was down completed `Completion` normally — but nothing rules it
-out. 1.18.10 restructures the package (Dapr.Messaging.Runtime, source generators) and was
-not taken; whether it reports a clean end is worth checking before the next bump. Until then a
-subscriber that must not go stale needs its periodic resync.
+1.18.10 restructures the package (Dapr.Messaging.Runtime, source generators) and was not taken;
+whether it reports a clean end is worth checking before the next bump —
+`StreamingSubscriptionsTests.The_real_client_without_a_sidecar_is_retried` is the place to start.

@@ -12,4 +12,4 @@ here is deleted or cut down to what is still left.
 | [distributed-analytics.md](distributed-analytics.md) | Re-identification and archive search in the database (pgvector), then analytics per node |
 | [distributed-hardening.md](distributed-hardening.md) | What a multi-machine deployment still leaves open on the network |
 | [storage-assignment-delay.md](storage-assignment-delay.md) | A camera's new storage reached a Windows node's recorder only after the cache's minute |
-| [streaming-subscription-recovery.md](streaming-subscription-recovery.md) | Most streaming subscribers never subscribe again after the sidecar drops the stream |
+| [streaming-subscription-recovery.md](streaming-subscription-recovery.md) | A streaming subscription the sidecar closes cleanly goes unnoticed in Dapr.Messaging 1.18.7 |

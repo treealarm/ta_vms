@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Dapr.Messaging.PublishSubscribe;
+using VmsLog;
 
 namespace VmsSquareSingleton;
 
@@ -34,32 +35,18 @@ public sealed class SpaceExportWorker(
 
   public Task StartAsync(CancellationToken cancellationToken)
   {
-    _ = SubscribeAsync(_cts.Token);
+    var options = new DaprSubscriptionOptions(
+      new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Drop));
+    // The payload only names the space; the export reads everything afresh anyway.
+    TopicMessageHandler handler = (_, _) =>
+    {
+      Request();
+      return Task.FromResult(TopicResponseAction.Success);
+    };
+    _ = StreamingSubscriptions.KeepAsync(pubSubClient, PubSubName, options,
+      [new(SpaceConfigChangedTopic, handler)], logger, _cts.Token);
     _ = LoopAsync(_cts.Token);
     return Task.CompletedTask;
-  }
-
-  private async Task SubscribeAsync(CancellationToken ct)
-  {
-    try
-    {
-      await pubSubClient.SubscribeAsync(
-        PubSubName,
-        SpaceConfigChangedTopic,
-        new DaprSubscriptionOptions(new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Drop)),
-        // The payload only names the space; the export reads everything afresh anyway.
-        (_, _) =>
-        {
-          Request();
-          return Task.FromResult(TopicResponseAction.Success);
-        },
-        ct);
-    }
-    catch (OperationCanceledException) { }
-    catch (Exception ex)
-    {
-      logger.LogError(ex, "SpaceExportWorker subscription error");
-    }
   }
 
   private async Task LoopAsync(CancellationToken ct)

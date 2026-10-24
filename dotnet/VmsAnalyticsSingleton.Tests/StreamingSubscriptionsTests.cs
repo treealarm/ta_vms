@@ -108,6 +108,67 @@ public sealed class StreamingSubscriptionsTests
     Assert.Equal([0.01, 0.02, 0.01], log.Delays.Take(3).ToArray());
   }
 
+  // What subscribing before the sidecar is up looks like in 1.18.7: SubscribeAsync succeeds and the
+  // receiver's Completion faults at once. Until the helper existed, that was a subscriber deaf from
+  // its first start.
+  [Fact]
+  public async Task Subscribing_before_the_sidecar_is_up_keeps_trying_until_a_stream_holds()
+  {
+    var client = new FakeClient { FailingOpens = 3 };
+    var log = new ListLogger();
+    using var cts = new CancellationTokenSource();
+    var run = StreamingSubscriptions.KeepAsync(client, "pubsub", Options, [new("a", Handler)], log, cts.Token, Fast);
+
+    for (var i = 0; i < 3; i++)
+      Assert.True((await client.NextAsync("a")).Completion.IsFaulted);
+    var holding = await client.NextAsync("a");
+    await Task.Delay(100);
+
+    Assert.False(holding.Completion.IsCompleted);
+    Assert.Equal(4, client.OpenedCount("a"));
+    Assert.Equal(3, log.Delays.Count);
+    cts.Cancel();
+    await run.WaitAsync(TimeSpan.FromSeconds(5));
+  }
+
+  [Fact]
+  public async Task A_stream_that_ends_without_an_error_is_opened_again()
+  {
+    var client = new FakeClient();
+    using var cts = new CancellationTokenSource();
+    var run = StreamingSubscriptions.KeepAsync(client, "pubsub", Options, [new("a", Handler)],
+      new ListLogger(), cts.Token, Fast);
+
+    var first = await client.NextAsync("a");
+    first.End();
+    await client.NextAsync("a");
+
+    Assert.Equal(1, first.Disposed);
+    cts.Cancel();
+    await run.WaitAsync(TimeSpan.FromSeconds(5));
+  }
+
+  // The real 1.18.7 client against a port nobody listens on, i.e. a sidecar not started yet:
+  // SubscribeAsync succeeds and Completion completes without an error, the cause lost. Whatever a
+  // later Dapr makes of that, the helper must still come back for another try.
+  [Fact]
+  public async Task The_real_client_without_a_sidecar_is_retried()
+  {
+    var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+    listener.Start();
+    var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+    listener.Stop();
+
+    var client = new DaprPublishSubscribeClientBuilder().UseGrpcEndpoint($"http://127.0.0.1:{port}").Build();
+    var log = new ListLogger();
+    using var cts = new CancellationTokenSource();
+    var run = StreamingSubscriptions.KeepAsync(client, "pubsub", Options, [new("a", Handler)], log, cts.Token, Fast);
+
+    await WaitUntilAsync(() => log.Delays.Count >= 2);
+    cts.Cancel();
+    await run.WaitAsync(TimeSpan.FromSeconds(5));
+  }
+
   private static async Task WaitUntilAsync(Func<bool> condition)
   {
     var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
@@ -125,6 +186,7 @@ public sealed class StreamingSubscriptionsTests
     public int Disposed => _disposed;
     public Task Completion => _done.Task;
     public void Fail() => _done.TrySetException(new InvalidOperationException("stream dropped"));
+    public void End() => _done.TrySetResult();
     public ValueTask DisposeAsync()
     {
       Interlocked.Increment(ref _disposed);
@@ -137,6 +199,8 @@ public sealed class StreamingSubscriptionsTests
     private readonly ConcurrentDictionary<string, ConcurrentQueue<FakeReceiver>> _pending = new();
     private readonly ConcurrentDictionary<string, int> _opened = new();
     public Exception? SubscribeError { get; init; }
+    // How many receivers, per topic, fail as soon as they are handed out.
+    public int FailingOpens { get; init; }
 
     public int OpenedCount(string topic) => _opened.GetValueOrDefault(topic);
 
@@ -145,7 +209,8 @@ public sealed class StreamingSubscriptionsTests
     {
       if (SubscribeError is not null) throw SubscribeError;
       var receiver = new FakeReceiver();
-      _opened.AddOrUpdate(topicName, 1, (_, n) => n + 1);
+      if (_opened.AddOrUpdate(topicName, 1, (_, n) => n + 1) <= FailingOpens)
+        receiver.Fail();
       _pending.GetOrAdd(topicName, _ => new()).Enqueue(receiver);
       return Task.FromResult<IAsyncDisposable>(receiver);
     }

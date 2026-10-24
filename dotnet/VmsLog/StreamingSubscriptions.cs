@@ -8,10 +8,15 @@ namespace VmsLog;
 /// opening it again when the sidecar drops it.
 /// </summary>
 /// <remarks>
-/// <see cref="DaprPublishSubscribeClient.SubscribeAsync"/> returns as soon as the stream is opened:
-/// the receiver it hands back runs on, and is the subscription. In Dapr.Messaging 1.18.7 it is an
-/// <see cref="IDaprSubscription"/>, whose <c>Completion</c> faults when the stream fails — a
-/// restarted sidecar, a broken connection. That is the signal to dispose of it and subscribe again.
+/// <see cref="DaprPublishSubscribeClient.SubscribeAsync"/> returns as soon as the call is created,
+/// before anything has reached the sidecar: the receiver it hands back runs on, and is the
+/// subscription. In Dapr.Messaging 1.18.7 it is an <see cref="IDaprSubscription"/>, whose
+/// <c>Completion</c> faults when the stream fails — a restarted sidecar, a broken connection. A
+/// sidecar that is not up yet is subtler: subscribing still succeeds, and <c>Completion</c> then
+/// completes without an error, the cause swallowed (the test against the real client pins this
+/// down). Either is the signal to dispose of the receiver and subscribe again. A subscriber that
+/// drops the receiver instead is deaf from its first start, without a word in its log, whenever it
+/// starts before its sidecar (compose starts the app first).
 /// A stream the sidecar closes cleanly is not reported by that version (<c>Completion</c> stays
 /// pending), so a subscriber that must not go stale still needs a periodic resync of its own.
 ///
@@ -58,12 +63,13 @@ public static class StreamingSubscriptions
       try
       {
         receiver = await client.SubscribeAsync(pubSubName, topic.Name, options, topic.Handler, ct);
-        logger.LogInformation("Streaming subscription to {Topic} opened", topic.Name);
+        // Not "opened": nothing has reached the sidecar yet (see the remarks above).
+        logger.LogDebug("Streaming subscription to {Topic} requested", topic.Name);
         if (receiver is IDaprSubscription subscription)
           await subscription.Completion.WaitAsync(ct);
         else
           await Task.Delay(Timeout.Infinite, ct);
-        reason = "ended";
+        reason = "ended without an error (the sidecar not up yet, or it closed the stream)";
       }
       catch (OperationCanceledException) when (ct.IsCancellationRequested)
       {
