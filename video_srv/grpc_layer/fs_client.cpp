@@ -478,7 +478,7 @@ std::vector<fs_client::storage_info> fs_client::get_camera_storages(const std::s
     return cached;
   }
 
-  auto storages = fetch_camera_storages(camera_id);
+  auto storages = fetch_camera_storages(camera_id).value_or(std::vector<storage_info>{});
   // An empty result is not cached: a momentary RPC failure looks exactly like "nothing assigned",
   // and caching it would keep recording and imports broken for a further minute after the cause is
   // gone. A real "no storages" answer costs one cheap round trip per call instead.
@@ -495,10 +495,11 @@ void fs_client::invalidate_storage_cache()
   m_storage_cache.clear();
 }
 
-std::vector<fs_client::storage_info> fs_client::fetch_camera_storages(const std::string& camera_id)
+std::optional<std::vector<fs_client::storage_info>> fs_client::fetch_camera_storages(
+  const std::string& camera_id)
 {
   if (!m_stub)
-    return {};
+    return std::nullopt;
 
   vms::fs::GetCameraStorageRequest request;
   request.set_camera_id(camera_id);
@@ -516,7 +517,7 @@ std::vector<fs_client::storage_info> fs_client::fetch_camera_storages(const std:
     logger::instance().warning(std::format(
       "GetCameraStorage RPC via Dapr failed for app '{}' camera='{}': {}",
       m_app_id, camera_id, status.error_message()));
-    return {};
+    return std::nullopt;
   }
 
   std::vector<storage_info> result;
@@ -543,7 +544,10 @@ void fs_client::trigger_storage_refresh(const std::string& camera_id)
   std::thread([this, camera_id]() {
     auto storages = fetch_camera_storages(camera_id);
     std::lock_guard lock(m_storage_mutex);
-    m_storage_cache[camera_id] = { storages, std::chrono::steady_clock::now() };
+    // A failed call keeps the list last read, still marked stale, so the next lookup tries again;
+    // storing an empty one would stop recording for a minute over one lost round trip.
+    if (storages)
+      m_storage_cache[camera_id] = { std::move(*storages), std::chrono::steady_clock::now() };
     m_storage_refreshing.erase(camera_id);
   }).detach();
 }

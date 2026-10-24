@@ -115,7 +115,8 @@ private:
     const vms::fs::IngestClipRequest& request,
     const std::string& reason) const;
 
-  std::vector<storage_info> fetch_camera_storages(const std::string& camera_id);
+  // nullopt: the call itself failed, which is not the same answer as "nothing is assigned".
+  std::optional<std::vector<storage_info>> fetch_camera_storages(const std::string& camera_id);
   void trigger_storage_refresh(const std::string& camera_id);
 
   struct storage_cache_entry
