@@ -2,13 +2,20 @@ using Vms.Cfg;
 
 namespace VmsFs;
 
-public sealed class StorageListCache(StorageService.StorageServiceClient storageClient)
+public sealed class StorageListCache(
+  StorageService.StorageServiceClient storageClient,
+  ILogger<StorageListCache> logger)
 {
   private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(1);
 
   private volatile IReadOnlyList<Storage>? _cached;
   private DateTime _fetchedAt = DateTime.MinValue;
   private int _refreshing;
+
+  // As in CameraStorageCache: a fetch that was in flight when Invalidate ran stores nothing, or it
+  // would put the list from before the change back for a whole TTL.
+  private readonly Lock _gate = new();
+  private long _version;
 
   public async Task<IReadOnlyList<Storage>> GetAsync(CancellationToken ct)
   {
@@ -31,8 +38,12 @@ public sealed class StorageListCache(StorageService.StorageServiceClient storage
 
   public void Invalidate()
   {
-    _cached = null;
-    _fetchedAt = DateTime.MinValue;
+    lock (_gate)
+    {
+      _version++;
+      _cached = null;
+      _fetchedAt = DateTime.MinValue;
+    }
   }
 
   private async Task RefreshInBackgroundAsync()
@@ -45,7 +56,7 @@ public sealed class StorageListCache(StorageService.StorageServiceClient storage
     }
     catch (Exception ex)
     {
-      Console.Error.WriteLine($"StorageListCache background refresh failed: {ex.Message}");
+      logger.LogWarning("Storage list refresh failed, keeping the cached list: {Error}", ex.Message);
     }
     finally
     {
@@ -55,10 +66,17 @@ public sealed class StorageListCache(StorageService.StorageServiceClient storage
 
   private async Task<IReadOnlyList<Storage>> FetchAndStoreAsync(CancellationToken ct)
   {
+    var version = Volatile.Read(ref _version);
     var resp = await storageClient.ListStoragesAsync(new ListStoragesRequest(), cancellationToken: ct);
     var list = (IReadOnlyList<Storage>)resp.Storages.ToList();
-    _cached = list;
-    _fetchedAt = DateTime.UtcNow;
+    lock (_gate)
+    {
+      if (_version == version)
+      {
+        _cached = list;
+        _fetchedAt = DateTime.UtcNow;
+      }
+    }
     return list;
   }
 }

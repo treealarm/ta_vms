@@ -6,7 +6,8 @@ namespace VmsFs;
 
 public sealed class CameraStorageCache(
   StorageService.StorageServiceClient storageClient,
-  StorageListCache storageListCache)
+  StorageListCache storageListCache,
+  ILogger<CameraStorageCache> logger)
 {
   private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(1);
 
@@ -14,6 +15,14 @@ public sealed class CameraStorageCache(
 
   private readonly ConcurrentDictionary<string, CacheEntry> _cache = new();
   private readonly ConcurrentDictionary<string, byte> _refreshing = new();
+
+  // Bumped by every invalidation, under _gate together with the drop. A fetch stores its answer
+  // only if the version is still the one it started under: one that was in flight when an event
+  // arrived may hold the assignments from before the change, and storing it after the event would
+  // undo the invalidation for a whole TTL. One counter for all cameras — an unrelated camera's
+  // answer being thrown away costs one more round trip, and invalidations are rare.
+  private readonly Lock _gate = new();
+  private long _version;
 
   /// <summary>
   /// Whether this camera could record right now, and if not, why. Deliberately not cached and
@@ -70,6 +79,8 @@ public sealed class CameraStorageCache(
   }
 
   // Returns all storages in priority order. First entry is the primary storage.
+  // Throws when VmsCfg cannot be asked and nothing is cached: "could not read the configuration" is
+  // a different problem from "nothing is assigned", and is not cached as one.
   public async Task<IReadOnlyList<StorageInfo>> GetAllAsync(string cameraId, CancellationToken ct)
   {
     if (_cache.TryGetValue(cameraId, out var entry))
@@ -79,8 +90,9 @@ public sealed class CameraStorageCache(
       return entry.Values;
     }
 
+    var version = Volatile.Read(ref _version);
     var storages = await FetchAsync(cameraId, ct);
-    _cache[cameraId] = new CacheEntry(storages, DateTime.UtcNow);
+    Store(cameraId, storages, version);
     return storages;
   }
 
@@ -91,7 +103,14 @@ public sealed class CameraStorageCache(
     return all.Count > 0 ? all[0] : null;
   }
 
-  public void Invalidate(string cameraId) => _cache.TryRemove(cameraId, out _);
+  public void Invalidate(string cameraId)
+  {
+    lock (_gate)
+    {
+      _version++;
+      _cache.TryRemove(cameraId, out _);
+    }
+  }
 
   /// <summary>
   /// For a change to a storage itself rather than to one camera's assignments — going out of
@@ -99,20 +118,40 @@ public sealed class CameraStorageCache(
   /// out would cost a round trip per camera to answer a question a clear of the map answers for
   /// free.
   /// </summary>
-  public void InvalidateAll() => _cache.Clear();
+  public void InvalidateAll()
+  {
+    lock (_gate)
+    {
+      _version++;
+      _cache.Clear();
+    }
+  }
 
+  private void Store(string cameraId, IReadOnlyList<StorageInfo> storages, long version)
+  {
+    lock (_gate)
+    {
+      if (_version == version)
+        _cache[cameraId] = new CacheEntry(storages, DateTime.UtcNow);
+    }
+  }
+
+  // A failed refresh leaves the entry as it was: the assignments last read are a better answer than
+  // none, and the next call past the TTL tries again.
   private async Task RefreshInBackgroundAsync(string cameraId)
   {
     if (!_refreshing.TryAdd(cameraId, 0))
       return;
     try
     {
+      var version = Volatile.Read(ref _version);
       var storages = await FetchAsync(cameraId, CancellationToken.None);
-      _cache[cameraId] = new CacheEntry(storages, DateTime.UtcNow);
+      Store(cameraId, storages, version);
     }
     catch (Exception ex)
     {
-      Console.Error.WriteLine($"CameraStorageCache background refresh failed for '{cameraId}': {ex.Message}");
+      logger.LogWarning("Storage refresh for camera '{CameraId}' failed, keeping the cached list: {Error}",
+        cameraId, ex.Message);
     }
     finally
     {
@@ -122,16 +161,8 @@ public sealed class CameraStorageCache(
 
   private async Task<IReadOnlyList<StorageInfo>> FetchAsync(string cameraId, CancellationToken ct)
   {
-    GetCameraStoragesResponse assignmentsResp;
-    try
-    {
-      assignmentsResp = await storageClient.GetCameraStoragesAsync(
-        new CameraStoragesRequest { CameraId = cameraId }, cancellationToken: ct);
-    }
-    catch
-    {
-      return [];
-    }
+    var assignmentsResp = await storageClient.GetCameraStoragesAsync(
+      new CameraStoragesRequest { CameraId = cameraId }, cancellationToken: ct);
 
     var storageList = await storageListCache.GetAsync(ct);
     var result = new List<StorageInfo>();

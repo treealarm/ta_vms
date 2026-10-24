@@ -276,7 +276,18 @@ public sealed partial class FsServiceImpl(
     GetCameraStorageRequest request,
     ServerCallContext context)
   {
-    var all = await storageCache.GetAllAsync(request.CameraId, context.CancellationToken);
+    IReadOnlyList<StorageInfo> all;
+    try
+    {
+      all = await storageCache.GetAllAsync(request.CameraId, context.CancellationToken);
+    }
+    catch (RpcException ex) when (!context.CancellationToken.IsCancellationRequested)
+    {
+      // Not an empty answer: video_srv tells a failed call apart from "nothing is assigned", and
+      // the operator needs to know which of the two it is.
+      throw new RpcException(new Status(StatusCode.Unavailable,
+        $"camera storages could not be read from VmsCfg: {ex.Status.Detail}"));
+    }
     var response = new GetCameraStorageResponse();
     if (all.Count > 0)
       response.Storage = all[0];
