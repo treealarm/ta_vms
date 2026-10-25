@@ -28,6 +28,16 @@ const EMPTY: MediaMtxServerDto = {
   transcodeHevc: false,
 }
 
+// A new router starts with the accounts of the shared one, or of any: the installers give every
+// MediaMTX of a deployment the same ones, and their generated passwords are shown nowhere else.
+// Cleared, they still mean what the helper texts say.
+function newServer(existing: MediaMtxServerDto[]): MediaMtxServerDto {
+  const from = existing.find((s) => !s.serverId) ?? existing[0]
+  return from
+    ? { ...EMPTY, publishUser: from.publishUser, publishPass: from.publishPass, readUser: from.readUser, readPass: from.readPass }
+    : { ...EMPTY }
+}
+
 type FormProps = {
   ref?: React.Ref<ApplyIfDirtyHandle>
   server: MediaMtxServerDto | null  // null = new
@@ -38,14 +48,15 @@ type FormProps = {
 function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
-  const { isBusy, status } = useAppSelector((s) => s.mediaMtx)
+  const { isBusy, status, servers } = useAppSelector((s) => s.mediaMtx)
   // The nodes a router can be pinned to — same list the camera form offers.
   const mediaServers = useAppSelector((s) => s.live.servers)
   const isNew = server === null
 
-  const [form, setForm] = useState<MediaMtxServerDto>(server ?? { ...EMPTY })
+  const [initial] = useState<MediaMtxServerDto>(() => server ?? newServer(servers))
+  const [form, setForm] = useState<MediaMtxServerDto>(initial)
   // Snapshot of the saved state — used for dirty detection and Cancel
-  const [snap, setSnap] = useState<MediaMtxServerDto>(server ?? { ...EMPTY })
+  const [snap, setSnap] = useState<MediaMtxServerDto>(initial)
 
   // Compared over the DTO's own keys rather than field by field: the enumerated version silently
   // ignored every field added after it was written, and an ignored field means Apply stays

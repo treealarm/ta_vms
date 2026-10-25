@@ -804,7 +804,8 @@ public class CameraStorage(
       }
     }
 
-    // Pick among the servers that can serve this node: its own, or a shared one.
+    // Pick among the servers that can serve this node: its own first, so that its video stays on
+    // the node, else a shared one.
     await using var tx = await connection.BeginTransactionAsync(ct);
     MediaMtxServer? picked = null;
 
@@ -813,7 +814,7 @@ public class CameraStorage(
              publish_user, publish_pass, read_user, read_pass, transcode_hevc
       FROM media_mtx_server
       WHERE server_id IS NULL OR server_id = $1
-      ORDER BY random() LIMIT 1;
+      ORDER BY server_id IS NULL, random() LIMIT 1;
       """, connection, tx))
     {
       pickCmd.Parameters.AddWithValue((object?)cameraServerId ?? DBNull.Value);

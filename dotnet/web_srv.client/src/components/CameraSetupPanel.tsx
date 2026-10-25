@@ -40,9 +40,8 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const [cameraId] = useState(() => isNew ? crypto.randomUUID() : initialCameraId)
   const [name, setName] = useState(existing?.name ?? '')
   const [serverId, setServerId] = useState(initialServerId)
-  const [mediaMtxServerId, setMediaMtxServerId] = useState(
-    isNew ? (mtxServers[0]?.id ?? '') : (existing?.mediaMtxServerId ?? '')
-  )
+  // A new camera is left to VmsCfg, which picks its node's own MediaMTX when there is one.
+  const [mediaMtxServerId, setMediaMtxServerId] = useState(isNew ? '' : (existing?.mediaMtxServerId ?? ''))
   const [user, setUser] = useState(existing?.cred?.user ?? '')
   const [pass, setPass] = useState(existing?.cred?.pass ?? '')
   const [ip, setIp] = useState(existing?.onvifConn?.ip ?? '')
@@ -78,12 +77,6 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     const value = Number(raw)
     if (!Number.isNaN(value)) setter(Math.max(0, value))
   }
-
-  // Pre-select first MediaMTX server once the list loads (in case store wasn't ready on mount)
-  useEffect(() => {
-    if (isNew && !mediaMtxServerId && mtxServers.length > 0)
-      setMediaMtxServerId(mtxServers[0].id)
-  }, [mtxServers]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pre-populate pending storage with the first available storage
   useEffect(() => {
@@ -296,9 +289,14 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
                 size="small"
               >
                 <MenuItem value="">{t('cameras.autoAssign')}</MenuItem>
-                {mtxServers.map((s) => (
-                  <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
-                ))}
+                {/* Its node's own and the shared ones: another node's would carry the video across
+                    the link between them. The one already assigned stays listed, so that an
+                    assignment made before is still shown. */}
+                {mtxServers
+                  .filter((s) => !s.serverId || s.serverId === serverId || s.id === mediaMtxServerId)
+                  .map((s) => (
+                    <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+                  ))}
               </TextField>
             </FieldHint>
 
