@@ -305,10 +305,19 @@ accumulating messages nobody reads.
 
 A deployment is one **core** and any number of **nodes**, and one machine may be both.
 - The core holds the shared infrastructure and everything system-wide: PostgreSQL, RabbitMQ, Dapr
-  placement, `VmsCfg`, `VmsUtils`, the singletons and `web_srv`.
+  placement, Keycloak, `VmsCfg`, `VmsUtils` and the singletons.
 - A node holds what is pinned to its own disk and subnet: its `vms`↔`vmsfs` pair, `vmsonvif`,
   `vmsonvif-actors` and `vmslogger`, each with app ids and an `OWN_SERVER_ID` of its own and an
   entry in `MEDIA_SERVER_PAIRS`. A node may run Linux (compose) or Windows (the installer).
+- **Every machine runs a `web_srv`** (`web-vms-<node>` on a node): an operator opens any of them and
+  sees the whole deployment as one system, logged in at the core's Keycloak, which therefore
+  listens on the core's address. User administration (mt_admin) stays on the core.
+- **MediaMTX runs on the core, and on a node unless it was joined without one** (`--no-mediamtx`,
+  the installer's `NodeMediaMtx=0`). Which one a camera publishes to is configuration: a MediaMTX
+  row in VmsCfg pinned to a node (`server_id`) or shared, and VmsCfg gives a camera its own node's
+  first, so that its live video stays on that machine. Every MediaMTX of a deployment uses the
+  core's accounts. Its API and WHEP listen on the machine's address, where VmsUtils and every web
+  reach them.
 - A standalone install — the Windows installer by default, `../ta_install` compose — is a core and
   a node on one machine, with fixed app ids.
 - Over several machines, each is a core or a node, on Linux or Windows in any mix: on Linux
@@ -325,8 +334,8 @@ machines, sidecars cannot use the sqlite resolver (see Square integration below)
 HashiCorp Consul, and talk over mutual TLS with certificates from Dapr Sentry on the core, which
 signs one only against a token for that app id (`../ta_install/scripts/distributed.sh`,
 `../ta_install/windows/TaVmsHost/Distributed.cs`). A node takes from its core only the credentials
-and ports of its PostgreSQL, RabbitMQ and MediaMTX (`core.env` in the package), never the core's
-whole environment: a Windows core's holds Windows paths. Dapr's
+and ports of its PostgreSQL, RabbitMQ, MediaMTX and Keycloak and the WHEP session key (`core.env`
+in the package), never the core's whole environment: a Windows core's holds Windows paths. Dapr's
 other resolvers do not fit: `mdns` has no settings at all, so two installations on one LAN share
 every app id, and `nameformat` returns a host name without a port, while on Windows every sidecar
 has a port of its own. Consul and Sentry exist only in a deployment over several machines; one

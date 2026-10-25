@@ -10,20 +10,20 @@ API, metrics and app stay on the loopback (`../ta_install/docker-compose.distrib
   `[::]:<port>`), and placement on the Windows test box listens on `[::]:6051` although
   `windows/config/services.json` gives it `--healthz-listen-address 127.0.0.1`. Read-only, but they
   should not be on the LAN: find out why, or close them in the core's firewall.
-- **A core's MediaMTX API (9997) and its WebRTC HTTP (8889) listen on the core's address**, not
-  the loopback: the MediaMTX row in VmsCfg has one `host` for everyone, and VmsUtils (API) and
-  web_srv (WHEP) on the core use it as the nodes do for RTSP. Both answer only with MediaMTX's
-  credentials (401 without), and no firewall rule opens them, but they need not be on the LAN at
-  all: an address of the core's own services for the API and WHEP, beside the one the nodes
-  publish to (the row already has an unused `webrtcHost`).
+- **Keycloak is reached over plain HTTP from every machine's web** (it listens on the core's
+  address since each machine runs a web): users' passwords at login, and the administrator's
+  password for user management, cross the LAN in clear text. HTTPS on Keycloak, with a certificate
+  of the core, and `KEYCLOAK_URL` on `https://`.
+- **Every MediaMTX's API (9997) and WHEP (8889) listen on its machine's address**, by design now:
+  VmsUtils on the core asks each one who is watching, and every machine's web relays WHEP to the
+  camera's MediaMTX. Both answer only with `vms_read`'s password, which every machine holds (below).
 - **PostgreSQL and RabbitMQ are reached from the nodes in clear text**, behind their passwords
   (`distributed.sh` refuses the defaults). TLS for both: `hostssl` and `ssl=on` with a certificate
   of the core; AMQPS for RabbitMQ. A role for the nodes with access to the state store and `ta_fs`
   only, if the migrations of `ta_fs` do not need more. That role is what bounds a node today: with
   the core's PostgreSQL password it reads every secret VmsCfg keeps, MediaMTX's among them. Dropping
-  `VMS_MEDIAMTX_*` from the package (only VmsCfg reads them) would close nothing, since a node's
-  `vms` gets the MediaMTX row, read password included, from VmsCfg anyway; and moving MediaMTX's
-  API and WHEP (above) to the loopback only matters once the node can no longer read that row.
+  `VMS_MEDIAMTX_*` from the package would close nothing: a node's `vms` gets the MediaMTX row, read
+  password included, from VmsCfg, and its own MediaMTX runs on those accounts.
 - **Consul has no ACLs yet**, only gossip encryption: anything that reaches an agent's HTTP API
   (the loopback of a machine of the deployment) can register or deregister services. ACLs with
   default deny, a token per agent and one for service registration.
