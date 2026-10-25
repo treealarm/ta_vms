@@ -20,6 +20,7 @@ public sealed class OnvifEventSubscriptionService(
   VmsOnvif.Onvif.OnvifLiveEventForwarder liveEvents,
   AlarmEpisodeTracker episodes,
   string ownServerId,
+  IOnvifLogger onvifLogger,
   ILogger<OnvifEventSubscriptionService> logger) : BackgroundService
 {
   private const int RingBufferSize = 250;
@@ -223,7 +224,7 @@ public sealed class OnvifEventSubscriptionService(
       OnvifLib.EventService1? eventSvc = null;
       try
       {
-        var camera = Camera.Create(ip, port, user, pass, logger: new OnvifLoggerAdapter(logger));
+        var camera = Camera.Create(ip, port, user, pass, logger: onvifLogger);
         eventSvc = await camera.GetEventService();
         if (eventSvc == null)
         {

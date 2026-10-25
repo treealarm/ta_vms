@@ -17,6 +17,7 @@ public partial class OnvifServiceImpl(
   MetadataStateCache metadataStateCache,
   VmsOnvif.Onvif.OnvifMetadataIngestor metadataIngestor,
   string cameraActorType,
+  IOnvifLogger onvifLogger,
   ILogger<OnvifServiceImpl> logger) : OnvifService.OnvifServiceBase
 {
   public override async Task<GetProfilesResponse> GetProfiles(CameraRequest request, ServerCallContext context)
@@ -49,7 +50,7 @@ public partial class OnvifServiceImpl(
     GetProfilesByConnectionRequest request, ServerCallContext context)
   {
     var response = new GetProfilesResponse();
-    var camera = Camera.Create(request.Ip, request.Port, request.User, request.Pass, logger: new OnvifLoggerAdapter(logger), xaddr: request.Xaddr);
+    var camera = Camera.Create(request.Ip, request.Port, request.User, request.Pass, logger: onvifLogger, xaddr: request.Xaddr);
     await camera.InitTask;
 
     var mediaService = await camera.GetMediaService();
@@ -556,7 +557,7 @@ public partial class OnvifServiceImpl(
       : TimeSpan.FromSeconds(4);
 
     var probeResult = await WsDiscovery.ProbeAsync(
-      timeout, context.CancellationToken, new OnvifLoggerAdapter(logger));
+      timeout, context.CancellationToken, onvifLogger);
 
     var response = new DiscoverDevicesResponse { ScanOk = probeResult.ScanOk };
     foreach (var d in probeResult.Devices)

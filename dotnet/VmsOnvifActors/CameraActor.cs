@@ -8,7 +8,7 @@ namespace VmsOnvifActors;
 /// rather than time out trying to reach it.
 public sealed record CameraActorDomain(string OwnServerId);
 
-public class CameraActor(ActorHost host, CameraActorDomain domain) : Actor(host), ICameraActor
+public class CameraActor(ActorHost host, CameraActorDomain domain, IOnvifLogger onvifLogger) : Actor(host), ICameraActor
 {
   private Camera? _camera;
   private string _cameraKey = string.Empty;
@@ -157,7 +157,7 @@ public class CameraActor(ActorHost host, CameraActorDomain domain) : Actor(host)
     var key = $"{conn.Ip}:{conn.Port}:{conn.User}:{conn.Pass}:{conn.Xaddr}";
     if (_camera is null || _cameraKey != key)
     {
-      _camera = Camera.Create(conn.Ip, conn.Port, conn.User, conn.Pass, logger: new OnvifLoggerAdapter(Logger), xaddr: conn.Xaddr);
+      _camera = Camera.Create(conn.Ip, conn.Port, conn.User, conn.Pass, logger: onvifLogger, xaddr: conn.Xaddr);
       _cameraKey = key;
     }
     return _camera;

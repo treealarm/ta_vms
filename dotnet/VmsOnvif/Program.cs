@@ -1,6 +1,7 @@
 using Dapr.Client;
 using Dapr.Messaging.PublishSubscribe.Extensions;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using OnvifLib;
 using Vms.Cfg;
 using VmsLog;
 using VmsOnvif;
@@ -22,6 +23,10 @@ var ownServerId = Require("OWN_SERVER_ID");
 var cameraActorType = CameraActorType.For(ownServerId);
 
 builder.Services.AddSingleton<CameraConnCache>();
+// OnvifLib logs under a category of its own, which VmsLog keeps at Information: its Debug is the
+// whole SOAP envelope of every request.
+builder.Services.AddSingleton<IOnvifLogger>(sp => new OnvifLoggerAdapter(
+  sp.GetRequiredService<ILoggerFactory>().CreateLogger(VmsLogExtensions.OnvifLibCategory)));
 builder.Services.AddSingleton(sp => new OnvifServiceImpl(
   sp.GetRequiredService<CameraConnCache>(),
   sp.GetRequiredService<OnvifEventSubscriptionService>(),
@@ -30,6 +35,7 @@ builder.Services.AddSingleton(sp => new OnvifServiceImpl(
   sp.GetRequiredService<MetadataStateCache>(),
   sp.GetRequiredService<VmsOnvif.Onvif.OnvifMetadataIngestor>(),
   cameraActorType,
+  sp.GetRequiredService<IOnvifLogger>(),
   sp.GetRequiredService<ILogger<OnvifServiceImpl>>()));
 builder.Services.AddSingleton(sp => new PtzServiceImpl(
   sp.GetRequiredService<CameraConnCache>(),
@@ -82,6 +88,7 @@ builder.Services.AddSingleton(sp => new OnvifEventSubscriptionService(
   sp.GetRequiredService<VmsOnvif.Onvif.OnvifLiveEventForwarder>(),
   sp.GetRequiredService<AlarmEpisodeTracker>(),
   ownServerId,
+  sp.GetRequiredService<IOnvifLogger>(),
   sp.GetRequiredService<ILogger<OnvifEventSubscriptionService>>()));
 builder.Services.AddHostedService(sp => sp.GetRequiredService<OnvifEventSubscriptionService>());
 builder.Services.AddHostedService(sp => new CameraConfigSubscriber(
