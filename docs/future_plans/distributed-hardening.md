@@ -19,7 +19,11 @@ API, metrics and app stay on the loopback (`../ta_install/docker-compose.distrib
 - **PostgreSQL and RabbitMQ are reached from the nodes in clear text**, behind their passwords
   (`distributed.sh` refuses the defaults). TLS for both: `hostssl` and `ssl=on` with a certificate
   of the core; AMQPS for RabbitMQ. A role for the nodes with access to the state store and `ta_fs`
-  only, if the migrations of `ta_fs` do not need more.
+  only, if the migrations of `ta_fs` do not need more. That role is what bounds a node today: with
+  the core's PostgreSQL password it reads every secret VmsCfg keeps, MediaMTX's among them. Dropping
+  `VMS_MEDIAMTX_*` from the package (only VmsCfg reads them) would close nothing, since a node's
+  `vms` gets the MediaMTX row, read password included, from VmsCfg anyway; and moving MediaMTX's
+  API and WHEP (above) to the loopback only matters once the node can no longer read that row.
 - **Consul has no ACLs yet**, only gossip encryption: anything that reaches an agent's HTTP API
   (the loopback of a machine of the deployment) can register or deregister services. ACLs with
   default deny, a token per agent and one for service registration.
