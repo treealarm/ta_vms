@@ -8,7 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="Dapr.Actors.AspNetCore" Version="1.18.7" />
-    <PackageReference Include="OnvifLib" Version="1.2.1" />
+    <PackageReference Include="OnvifLib" Version="1.2.2" />
   </ItemGroup>
 
   <ItemGroup>
