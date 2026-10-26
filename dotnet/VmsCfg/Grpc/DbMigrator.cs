@@ -85,6 +85,7 @@ public class DbMigrator(
     }
 
     await SeedDefaultMediaMtxServerAsync(connection, ct);
+    await NodeRegistry.SeedConfiguredAsync(connection, ct);
     await SeedDefaultStorageAsync(ct);
     }
     finally

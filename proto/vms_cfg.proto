@@ -8,6 +8,18 @@ package vms.cfg;
 service CfgService {
   rpc ListCameras(ListCamerasRequest) returns (ListCamerasResponse);
   rpc ListMediaServers(ListMediaServersRequest) returns (ListMediaServersResponse);
+  // The deployment's nodes, kept here rather than in MEDIA_SERVER_PAIRS, so that a node joins and
+  // leaves without the core restarting. A machine that is to become a node asks the core's web for
+  // its package (EnrollNode): the credentials and Sentry tokens that let it in. While enrollment is
+  // open anyone on the network may ask; once the administrator closes it, the web asks for an
+  // administrator's password first.
+  rpc GetDeployment(google.protobuf.Empty) returns (Deployment);
+  rpc SetEnrollmentOpen(SetEnrollmentOpenRequest) returns (OperationStatus);
+  rpc ListNodes(google.protobuf.Empty) returns (ListNodesResponse);
+  // INVALID_ARGUMENT for a bad name or address, ALREADY_EXISTS for a name taken by a node at another
+  // address, FAILED_PRECONDITION when this is not the core of a deployment over several machines.
+  rpc EnrollNode(EnrollNodeRequest) returns (EnrollNodeResponse);
+  rpc RemoveNode(RemoveNodeRequest) returns (OperationStatus);
   rpc SetupCamera(CameraSetup) returns (OperationStatus);
   rpc RemoveCamera(SourceRequest) returns (OperationStatus);
   rpc GetCamera(SourceRequest) returns (GetCameraResponse);
@@ -425,6 +437,51 @@ message ListMediaServersRequest {}
 
 message ListMediaServersResponse {
   repeated MediaServerNode servers = 1;
+}
+
+message Deployment {
+  // False on a single machine: there is nothing to enroll into.
+  bool distributed = 1;
+  string core_address = 2;
+  bool enrollment_open = 3;
+}
+
+message SetEnrollmentOpenRequest {
+  bool open = 1;
+}
+
+message DeploymentNode {
+  string server_id = 1;
+  string name = 2;
+  // Empty for a node listed in MEDIA_SERVER_PAIRS: nothing records where it is.
+  string address = 3;
+  // Whether it runs a MediaMTX of its own, which enrolling it registered.
+  bool media_mtx = 4;
+  google.protobuf.Timestamp enrolled_at = 5;
+  // Listed in this machine's MEDIA_SERVER_PAIRS, so it comes back on the next start: the core's own
+  // services, and nodes joined before the registry existed. It cannot be removed here.
+  bool configured = 6;
+}
+
+message ListNodesResponse {
+  repeated DeploymentNode nodes = 1;
+}
+
+message EnrollNodeRequest {
+  string name = 1;
+  // The node's own address, where the other machines reach its sidecars and MediaMTX.
+  string address = 2;
+  bool media_mtx = 3;
+}
+
+message EnrollNodeResponse {
+  DeploymentNode node = 1;
+  // node-<name>.tar.gz, the package TaVmsHost and distributed.sh join with.
+  bytes package = 2;
+}
+
+message RemoveNodeRequest {
+  string server_id = 1;
 }
 
 message ListCamerasRequest {

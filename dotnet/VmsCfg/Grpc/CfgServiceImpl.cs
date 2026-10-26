@@ -9,6 +9,7 @@ namespace VmsCfg
 {
   public partial class CfgServiceImpl(
     CameraStorage storage,
+    NodeRegistry nodes,
     StorageDb storageDb,
     ScheduleDb scheduleDb,
     ScheduleCache scheduleCache,
@@ -262,10 +263,10 @@ namespace VmsCfg
 
     // A MediaMTX server's connection info (rtsp_url etc.) can be referenced by cameras on
     // any recording server, so notify all of them to re-resolve the WebRTC push URL.
-    private void NotifyAllMediaServers()
+    private async Task NotifyAllMediaServersAsync(CancellationToken ct)
     {
-      foreach (var (serverId, _, _, _, _) in storage.GetServerPairs())
-        NotifyMediaServer(serverId);
+      foreach (var node in await nodes.ListAsync(ct))
+        NotifyMediaServer(node.ServerId);
     }
 
 
@@ -283,7 +284,7 @@ namespace VmsCfg
       if (string.IsNullOrWhiteSpace(request.ServerId))
         return new OperationStatus { Success = false, Message = "server_id must not be empty" };
 
-      if (!storage.IsValidServerId(request.ServerId))
+      if (!await nodes.IsKnownServerAsync(request.ServerId, context.CancellationToken))
         return new OperationStatus { Success = false, Message = $"server_id '{request.ServerId}' is not a known media server" };
 
       // Get old server before updating so we can notify it if server_id changed
@@ -419,8 +420,9 @@ namespace VmsCfg
       ServerCallContext context)
     {
       var response = new ListMediaServersResponse();
-      foreach (var (serverId, fsId, onvifId, loggerId, roiId) in storage.GetServerPairs())
+      foreach (var node in await nodes.ListAsync(context.CancellationToken))
       {
+        var serverId = node.ServerId;
         // A missing key is the normal "no heartbeat within its TTL" answer. Anything else — the
         // state store being down, or a heartbeat written in a shape this cannot read — is reported
         // as offline too, but it is a fault and must not pass silently: swallowing it is exactly
@@ -437,12 +439,53 @@ namespace VmsCfg
         }
         response.Servers.Add(new MediaServerNode
         {
-          ServerId = serverId, FsId = fsId, OnvifId = onvifId, LoggerId = loggerId, RoiId = roiId,
+          ServerId = serverId, FsId = node.FsId, OnvifId = node.OnvifId, LoggerId = node.LoggerId, RoiId = node.RoiId,
           Status = status,
         });
       }
       return response;
     }
+
+    public override Task<Deployment> GetDeployment(Empty request, ServerCallContext context) =>
+      nodes.GetDeploymentAsync(context.CancellationToken);
+
+    public override async Task<OperationStatus> SetEnrollmentOpen(SetEnrollmentOpenRequest request, ServerCallContext context)
+    {
+      await nodes.SetEnrollmentOpenAsync(request.Open, context.CancellationToken);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<ListNodesResponse> ListNodes(Empty request, ServerCallContext context)
+    {
+      var response = new ListNodesResponse();
+      response.Nodes.AddRange((await nodes.ListAsync(context.CancellationToken)).Select(ToProto));
+      return response;
+    }
+
+    public override async Task<EnrollNodeResponse> EnrollNode(EnrollNodeRequest request, ServerCallContext context)
+    {
+      var (node, package) = await nodes.EnrollAsync(
+        request.Name.Trim(), request.Address.Trim(), request.MediaMtx, context.CancellationToken);
+      // Every node's services learn the new one through ListMediaServers: web_srv polls it, and the
+      // node's own services read it when they start, which is after this.
+      await BumpCameraNodeVersionAsync(context.CancellationToken);
+      return new EnrollNodeResponse { Node = ToProto(node), Package = Google.Protobuf.ByteString.CopyFrom(package) };
+    }
+
+    public override async Task<OperationStatus> RemoveNode(RemoveNodeRequest request, ServerCallContext context)
+    {
+      await nodes.RemoveAsync(request.ServerId, context.CancellationToken);
+      await BumpCameraNodeVersionAsync(context.CancellationToken);
+      // Its MediaMTX went with it, and a camera elsewhere may have been assigned that one.
+      await NotifyAllMediaServersAsync(context.CancellationToken);
+      return new OperationStatus { Success = true };
+    }
+
+    private static DeploymentNode ToProto(DbMediaServerNode n) => new()
+    {
+      ServerId = n.ServerId, Name = n.Name, Address = n.Address, MediaMtx = n.MediaMtx, Configured = n.Configured,
+      EnrolledAt = Timestamp.FromDateTime(DateTime.SpecifyKind(n.EnrolledAt, DateTimeKind.Utc)),
+    };
 
     public override async Task<ListCamerasResponse> ListCameras(ListCamerasRequest request, ServerCallContext context)
     {
@@ -822,7 +865,7 @@ namespace VmsCfg
 
       await storage.UpsertMediaMtxServerAsync(request, context.CancellationToken);
       logger.LogInformation("MediaMTX server '{Name}' upserted (id={Id})", request.Name, request.Id);
-      NotifyAllMediaServers();
+      await NotifyAllMediaServersAsync(context.CancellationToken);
       return new OperationStatus { Success = true };
     }
 
@@ -837,7 +880,7 @@ namespace VmsCfg
       if (removed)
       {
         logger.LogInformation("MediaMTX server '{Id}' removed", request.Id);
-        NotifyAllMediaServers();
+        await NotifyAllMediaServersAsync(context.CancellationToken);
       }
       return new OperationStatus { Success = removed };
     }

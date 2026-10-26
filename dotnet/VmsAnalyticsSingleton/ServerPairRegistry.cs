@@ -7,7 +7,8 @@ namespace VmsAnalyticsSingleton;
 
 public class ServerPairRegistry(CfgService.CfgServiceClient cfg)
 {
-  private IReadOnlyDictionary<string, string>? _serverToFs;
+  // volatile: replaced by every refresh (Program.cs) while requests read it without a lock.
+  private volatile IReadOnlyDictionary<string, string>? _serverToFs;
 
   public async Task InitAsync(CancellationToken ct = default)
   {

@@ -81,22 +81,25 @@ builder.WebHost.ConfigureKestrel(options =>
 var app = builder.Build();
 await app.Services.GetRequiredService<DbMigrator>().MigrateAsync();
 
-// ServerPairRegistry needs the media-server<->fs pairing table before the first RetainEvent call.
+// ServerPairRegistry needs the media-server<->fs pairing table before the first RetainEvent call,
+// and then again whenever a node joins or leaves: VmsCfg keeps the nodes, and a node enrolled after
+// this started would otherwise have no FS here until a restart. Read again every 30 s, as web_srv does.
 var registry = app.Services.GetRequiredService<ServerPairRegistry>();
 _ = Task.Run(async () =>
 {
+  var loaded = false;
   while (true)
   {
     try
     {
       await registry.InitAsync();
-      break;
+      loaded = true;
     }
     catch (Exception ex)
     {
-      Console.Error.WriteLine($"VmsAnalyticsSingleton: ServerPairRegistry init failed, retrying in 5s: {ex.Message}");
-      await Task.Delay(5_000);
+      Console.Error.WriteLine($"VmsAnalyticsSingleton: reading the nodes from VmsCfg failed, retrying: {ex.Message}");
     }
+    await Task.Delay(loaded ? 30_000 : 5_000);
   }
 });
 

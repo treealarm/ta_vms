@@ -303,7 +303,7 @@ accumulating messages nobody reads.
   rather than a capacity choice. It is handed absolute paths to clips on the node's own disk, so an
   instance elsewhere either finds nothing there or finds a *different* node's file at the same path
   and overwrites it. Which instance a node talks to therefore comes from that node's entry in
-  `MEDIA_SERVER_PAIRS` (fifth part, optional), resolved through VmsCfg — never from a global env
+  VmsCfg's node registry (`roi_id`; the fifth part of a `MEDIA_SERVER_PAIRS` entry), resolved through VmsCfg — never from a global env
   var, which cannot express "the one next to me". A node that names none simply does not
   re-compress.
 
@@ -314,7 +314,7 @@ A deployment is one **core** and any number of **nodes**, and one machine may be
   placement, Keycloak, `VmsCfg`, `VmsUtils` and the singletons.
 - A node holds what is pinned to its own disk and subnet: its `vms`↔`vmsfs` pair, `vmsonvif`,
   `vmsonvif-actors` and `vmslogger`, each with app ids and an `OWN_SERVER_ID` of its own and an
-  entry in `MEDIA_SERVER_PAIRS`. A node may run Linux (compose) or Windows (the installer).
+  entry in VmsCfg's node registry. A node may run Linux (compose) or Windows (the installer).
 - **Every machine runs a `web_srv`** (`web-vms-<node>` on a node): an operator opens any of them and
   sees the whole deployment as one system, logged in at the core's Keycloak, which therefore
   listens on the core's address. User administration (mt_admin) stays on the core.
@@ -327,9 +327,9 @@ A deployment is one **core** and any number of **nodes**, and one machine may be
 - A standalone install — the Windows installer by default, `../ta_install` compose — is a core and
   a node on one machine, with fixed app ids.
 - Over several machines, each is a core or a node, on Linux or Windows in any mix: on Linux
-  `../ta_install/docker-compose.distributed.yml` through `scripts/distributed.sh core|package|join`,
+  `../ta_install/docker-compose.distributed.yml` through `scripts/distributed.sh core|join`,
   on Windows the installer with `Role=core|node` (`TAVMS_ROLE`), which runs
-  `TaVmsHost core|package|join`. Both lay out the same files and read the same node package, so a
+  `TaVmsHost core|join`. Both lay out the same files and read the same node package, so a
   core of either kind takes nodes of either.
 
 Nothing may tie a service to "everything is on this machine": addresses and ports come only from
@@ -347,9 +347,33 @@ every app id, and `nameformat` returns a host name without a port, while on Wind
 has a port of its own. Consul and Sentry exist only in a deployment over several machines; one
 machine runs neither.
 
-A node's services find their partners through its entry in `MEDIA_SERVER_PAIRS`, which they read
+A node's services find their partners through its entry in VmsCfg's node registry, which they read
 from VmsCfg (`ListMediaServers`) — never from a deployment-wide app id variable, which on a node
 would name the core's service.
+
+**The node registry is VmsCfg's table, and joining is a request to the core's web.** A machine that
+is to become a node asks `POST /api/deployment/join` for its package (`node-<name>.tar.gz`): VmsCfg
+registers it and signs its Sentry tokens with the core's key (`TAVMS_DISTRIBUTED_DIR`). The core
+learns the node there and then; nothing restarts. Joining has two stages. While the deployment is
+being set up, enrollment is open and any machine that reaches the core's web gets in; once the
+administrator closes it (Administration → Deployment), a new node needs an administrator's user name
+and password, checked at Keycloak. The administrator removes a node there as well; removal does not
+yet revoke its tokens (`docs/future_plans/distributed-hardening.md`). `MEDIA_SERVER_PAIRS` names
+only what this machine's own configuration fixes — the core's own node, and nodes joined with a
+package before the registry existed — and VmsCfg writes those rows at every start, marked
+configured: they cannot be removed in the web, since they would be back on the next start.
+
+**The registry belongs to a tenant, not to a cluster.** In Kubernetes several companies may share a
+cluster (`../multitenant_admin`: a tenant is a Keycloak realm, its databases and a namespace), each
+with VmsCfg and webs of its own, so each has its own nodes, its own enrollment switch and its own
+signing key — a Secret of its namespace there, a directory on a machine. multitenant_admin manages
+who the users are; whether one of them may add servers is the realm's `admin` role, which is what
+closed enrollment checks. Do not move the registry into multitenant_admin: it has no database and no
+Dapr of its own, and a second copy of the nodes would have to be kept in step with this one. For
+the same reason the package names each of the core's services by its own address (`POSTGRES_HOST`,
+`RABBITMQ_HOST`, `VMS_MTX_HOST`, `KEYCLOAK_URL` in `core.env`) instead of leaving them to
+`CORE_ADDRESS`: behind a cluster they are different addresses, and on a machine they are all the
+core's.
 
 **An app listens on the loopback only** (`ListenLocalhost`, `127.0.0.1` in `vms`): its own sidecar
 is its one client, and it always runs beside it — the same host on Windows, the app's network

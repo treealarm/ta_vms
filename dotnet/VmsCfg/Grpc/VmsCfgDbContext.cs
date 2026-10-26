@@ -28,6 +28,8 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
   public DbSet<DbLandmark> Landmarks { get; set; }
   public DbSet<DbPtzGeoObservation> PtzGeoObservations { get; set; }
   public DbSet<DbGroundObservation> GroundObservations { get; set; }
+  public DbSet<DbMediaServerNode> MediaServerNodes { get; set; }
+  public DbSet<DbDeployment> Deployments { get; set; }
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
@@ -320,6 +322,30 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.X).HasColumnName("x");
       e.Property(x => x.Y).HasColumnName("y");
     });
+
+    modelBuilder.Entity<DbMediaServerNode>(e =>
+    {
+      e.ToTable("media_server_node");
+      e.HasKey(x => x.ServerId);
+      e.Property(x => x.ServerId).HasColumnName("server_id");
+      e.Property(x => x.FsId).HasColumnName("fs_id");
+      e.Property(x => x.OnvifId).HasColumnName("onvif_id");
+      e.Property(x => x.LoggerId).HasColumnName("logger_id");
+      e.Property(x => x.RoiId).HasColumnName("roi_id");
+      e.Property(x => x.Name).HasColumnName("name");
+      e.Property(x => x.Address).HasColumnName("address");
+      e.Property(x => x.MediaMtx).HasColumnName("media_mtx");
+      e.Property(x => x.Configured).HasColumnName("configured");
+      e.Property(x => x.EnrolledAt).HasColumnName("enrolled_at");
+    });
+
+    modelBuilder.Entity<DbDeployment>(e =>
+    {
+      e.ToTable("deployment");
+      e.HasKey(x => x.Id);
+      e.Property(x => x.Id).HasColumnName("id");
+      e.Property(x => x.EnrollmentOpen).HasColumnName("enrollment_open");
+    });
   }
 }
 
@@ -603,4 +629,24 @@ public sealed class DbGroundObservation
   public Guid LandmarkId { get; set; }
   public float X { get; set; }
   public float Y { get; set; }
+}
+
+public sealed class DbMediaServerNode
+{
+  public string ServerId { get; set; } = string.Empty;
+  public string FsId { get; set; } = string.Empty;
+  public string OnvifId { get; set; } = string.Empty;
+  public string LoggerId { get; set; } = string.Empty;
+  public string RoiId { get; set; } = string.Empty;
+  public string Name { get; set; } = string.Empty;
+  public string Address { get; set; } = string.Empty;
+  public bool MediaMtx { get; set; }
+  public bool Configured { get; set; }
+  public DateTime EnrolledAt { get; set; }
+}
+
+public sealed class DbDeployment
+{
+  public int Id { get; set; }
+  public bool EnrollmentOpen { get; set; }
 }

@@ -17,48 +17,6 @@ public class CameraStorage(
   private static readonly Guid BuiltinPrealarmProfileId   = new("00000000-0000-0000-0000-000000000002");
   private static readonly Guid BuiltinOffProfileId        = new("00000000-0000-0000-0000-000000000003");
 
-  private readonly IReadOnlyList<(string ServerId, string FsId, string OnvifId, string LoggerId, string RoiId)> _serverPairs = ParseServerPairs();
-
-  /// One entry per node: the media server, the VmsFs that owns its archive volume, the VmsOnvif that
-  /// shares its camera subnet, the VmsLogger that can read its log files, and optionally the
-  /// roitrc that can reach the same disk. All of them are pinned to
-  /// the same machine, so the entry is the node — there is no arrangement in which they can be
-  /// picked independently.
-  private static IReadOnlyList<(string ServerId, string FsId, string OnvifId, string LoggerId, string RoiId)> ParseServerPairs()
-  {
-    var raw = Environment.GetEnvironmentVariable("MEDIA_SERVER_PAIRS")
-      ?? throw new InvalidOperationException("Required environment variable 'MEDIA_SERVER_PAIRS' is not set");
-
-    var pairs = new List<(string, string, string, string, string)>();
-    foreach (var entry in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-    {
-      // Rejected rather than defaulted: an entry missing a part leaves web_srv.Server with no
-      // instance to send PTZ to, or no instance that can read that node's logs, and there is nothing
-      // sensible to guess — a central instance can reach neither.
-      // The fifth part is the ROI transcoder and is optional — a node that does not re-compress
-      // simply leaves it off. The first four are not: an entry missing one of those leaves
-      // web_srv.Server with no instance to send PTZ to, or none that can read that node's logs,
-      // and there is nothing sensible to guess.
-      var parts = entry.Split(':', StringSplitOptions.TrimEntries);
-      if (parts.Length is not (4 or 5) || parts.Take(4).Any(string.IsNullOrEmpty))
-        throw new InvalidOperationException(
-          $"Invalid MEDIA_SERVER_PAIRS entry '{entry}': expected "
-          + "'server_id:fs_id:onvif_id:logger_id' with an optional ':roi_id'");
-      pairs.Add((parts[0], parts[1], parts[2], parts[3], parts.Length == 5 ? parts[4] : string.Empty));
-    }
-
-    if (pairs.Count == 0)
-      throw new InvalidOperationException(
-        "MEDIA_SERVER_PAIRS must contain at least one 'server_id:fs_id:onvif_id:logger_id' entry");
-
-    return pairs;
-  }
-
-  public IReadOnlyList<(string ServerId, string FsId, string OnvifId, string LoggerId, string RoiId)> GetServerPairs() => _serverPairs;
-
-  public bool IsValidServerId(string serverId) =>
-    _serverPairs.Any(p => p.ServerId == serverId);
-
   public async Task SetupCameraAsync(CameraSetup camera, CancellationToken ct)
   {
     await using var connection = await _dataSource.OpenConnectionAsync(ct);

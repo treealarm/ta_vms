@@ -31,9 +31,22 @@ API, metrics and app stay on the loopback (`../ta_install/docker-compose.distrib
   behind the cookie. Forcing them onto the loopback broke `rabbitmqctl`, which looks the node up as
   `rabbit@<machine name>` at the machine's LAN address. Would need the node renamed to
   `rabbit@localhost`, which moves RabbitMQ's data directory: a migration.
-- **Tokens never expire.** A node's tokens are its credentials; revoking one means a new signing
-  key in Sentry's JWKS and new tokens for every machine. A per-node key (several keys in the JWKS)
-  would let one node be revoked alone.
+- **Tokens never expire, and removing a node does not revoke them.** A node's tokens are its
+  credentials; revoking one means a new signing key in Sentry's JWKS and new tokens for every
+  machine. A per-node key (several keys in the JWKS, VmsCfg signing with the node's own) would let
+  Administration → Deployment revoke the node it removes. The signing key is now read by VmsCfg,
+  which makes the packages: on Windows the service account can read `core\jwt.key`, as it already
+  reads Sentry's issuer key and every password in its environment.
+- **A node's package travels from the core's web over plain HTTP** (`POST /api/deployment/join`),
+  with every password of the core in it. HTTPS on web_srv, with a certificate the node's installer
+  can check (its fingerprint shown in the web and asked for in the installer), would close both the
+  eavesdropper and a machine posing as the core.
+- **Joining has no rate limit.** With enrollment closed the password is checked at Keycloak, which
+  has its own brute-force detection (off in the realm we ship); with it open there is nothing to
+  guess. A limit per remote address on `/api/deployment/join` is cheap once there is a reason.
+- **A node on premises joining a core in the cloud** (a tenant's core in Kubernetes): every port of
+  the list above would have to cross the internet. Needs a design of its own — a tunnel per node,
+  or the node's sidecars reaching the core through one gateway — before it is offered.
 - **The firewall per role** on Windows (Install-TaVms.ps1) and its description for Linux, where
   Docker's published ports bypass ufw — with `network_mode: host` they do not, which helps.
 - **The machines of a deployment must share a subnet**: the Windows firewall rules are open to
