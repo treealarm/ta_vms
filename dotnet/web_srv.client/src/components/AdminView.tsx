@@ -11,6 +11,7 @@ import StorageSetupPanel from './StorageSetupPanel'
 import RecordingProfilesPanel from './RecordingProfilesPanel'
 import RecordingSchedulesPanel from './RecordingSchedulesPanel'
 import MediaMtxServersPanel from './MediaMtxServersPanel'
+import DeploymentPanel from './DeploymentPanel'
 import SimulationFab from './SimulationFab'
 import LogToggleButton from './LogToggleButton'
 import OnvifSubscriptionsPanel from './OnvifSubscriptionsPanel'
@@ -21,7 +22,7 @@ import AnalyticsWatchesPanel from './AnalyticsWatchesPanel'
 import MapsAdminPanel from './maps/MapsAdminPanel'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 
-const TABS = ['cameras', 'maps', 'mediamtx', 'monitors', 'storages', 'recording', 'schedules', 'onvif', 'onvif-settings', 'analytics', 'permissions', 'edge-archive'] as const
+const TABS = ['cameras', 'maps', 'mediamtx', 'monitors', 'storages', 'recording', 'schedules', 'onvif', 'onvif-settings', 'analytics', 'permissions', 'edge-archive', 'deployment'] as const
 
 export default function AdminView() {
   const { t } = useTranslation()
@@ -70,6 +71,7 @@ export default function AdminView() {
             <Route path="analytics" element={<AnalyticsWatchesPanel ref={panelRef} />} />
             <Route path="permissions" element={<CameraPermissionsPanel ref={panelRef} />} />
             <Route path="edge-archive" element={<EdgeArchivePanel />} />
+            <Route path="deployment" element={<DeploymentPanel ref={panelRef} />} />
             <Route path="*" element={<Navigate to="/admin/cameras" replace />} />
           </Routes>
         </Box>
@@ -103,6 +105,7 @@ export default function AdminView() {
             <Tab label={t('nav.analytics')} />
             <Tab label={t('nav.permissions')} />
             <Tab label={t('nav.edgeArchive')} />
+            <Tab label={t('nav.deployment')} />
           </Tabs>
         </Box>
 

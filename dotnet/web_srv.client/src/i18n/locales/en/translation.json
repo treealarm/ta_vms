@@ -43,7 +43,8 @@
     "gaps": "Archive gaps",
     "maps": "Maps",
     "map": "Map",
-    "changePassword": "Change password"
+    "changePassword": "Change password",
+    "deployment": "Deployment"
   },
   "auth": {
     "title": "Sign in",
@@ -1227,5 +1228,32 @@
     "residualHint": "How far the mapping puts this landmark from where it stands, on the ground. Re-mark the largest first; shown from the fifth landmark.",
     "forget": "Forget this mark",
     "keptHint": "Every mark is saved as it is made: close this, add landmarks on the map, and the marks will be here when you come back."
+  },
+  "deployment": {
+    "title": "Servers",
+    "addNode": "Package for a new node",
+    "selectHint": "Select a server. A new machine joins by itself: install it with the role Node and pick this core; or use \"+\" to make its package here.",
+    "notDistributed": "This installation runs on one machine. Servers appear here once it is installed as the core of a deployment over several machines (Role=core).",
+    "serverId": "Media server",
+    "address": "Address",
+    "mediaMtx": "Own MediaMTX",
+    "enrolledAt": "Joined",
+    "yes": "yes",
+    "no": "no",
+    "removeNode": "Remove server",
+    "removeHelper": "A server with cameras cannot be removed: move them to another server or delete them first. Removing it does not revoke its credentials yet.",
+    "configuredHelper": "This server is listed in the core's configuration (MEDIA_SERVER_PAIRS): the core itself, or a node that joined with a package before this page existed. It cannot be removed here.",
+    "newNode": "Package for a new node",
+    "newNodeHelper": "For a machine that cannot reach this core's web by itself, or is installed with nobody at it: give the package file to its installer (NodePackage=) or to distributed.sh join.",
+    "nameHelper": "Lower-case letters, digits and '-'. Its services are named after it: vms-<name>, vmsfs-<name>, …",
+    "addressHelper": "The node's own address, where the other machines reach it.",
+    "nodeMediaMtx": "A MediaMTX on the node, so that its cameras' live video stays on it",
+    "downloadPackage": "Download package",
+    "packageWarning": "The package holds the core's passwords and lets any machine join as this node. Move it the way you would move a password, and delete it once the node is installed.",
+    "enrollmentOpen": "New servers join without a password",
+    "enrollmentOpenHelper": "Any machine on the network can join as a server. Turn this off once every server of the deployment is in.",
+    "enrollmentClosedHelper": "A new server joins only with an administrator's user name and password, entered in its installer.",
+    "enrollmentConfirm": "Let any machine join?",
+    "enrollmentOpenWarning": "While this is on, any machine that can reach this core can join as a server and receives the core's database and broker passwords. Keep it on only while the deployment is being set up."
   }
 }

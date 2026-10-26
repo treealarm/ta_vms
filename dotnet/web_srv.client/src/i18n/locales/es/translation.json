@@ -43,7 +43,8 @@
     "gaps": "Huecos",
     "maps": "Mapas",
     "map": "Mapa",
-    "changePassword": "Cambiar contraseña"
+    "changePassword": "Cambiar contraseña",
+    "deployment": "Despliegue"
   },
   "auth": {
     "title": "Iniciar sesión",
@@ -1227,5 +1228,32 @@
     "residualHint": "A qué distancia sobre el suelo sitúa la proyección este punto respecto de donde está. Vuelva a marcar primero el mayor; se muestra a partir del quinto punto.",
     "forget": "Olvidar esta marca",
     "keptHint": "Cada marca se guarda al hacerla: cierre esto, añada puntos de referencia en el mapa y las marcas seguirán aquí al volver."
+  },
+  "deployment": {
+    "title": "Servidores",
+    "addNode": "Paquete para un nodo nuevo",
+    "selectHint": "Seleccione un servidor. Una máquina nueva se une por sí misma: instálela con el rol Nodo y elija este núcleo; o use \"+\" para crear su paquete aquí.",
+    "notDistributed": "Esta instalación funciona en una sola máquina. Los servidores aparecen aquí cuando se instala como núcleo de un despliegue en varias máquinas (Role=core).",
+    "serverId": "Servidor de medios",
+    "address": "Dirección",
+    "mediaMtx": "MediaMTX propio",
+    "enrolledAt": "Unido",
+    "yes": "sí",
+    "no": "no",
+    "removeNode": "Eliminar servidor",
+    "removeHelper": "Un servidor con cámaras no se puede eliminar: muévalas a otro servidor o elimínelas primero. Eliminarlo aún no revoca sus credenciales.",
+    "configuredHelper": "Este servidor figura en la configuración del núcleo (MEDIA_SERVER_PAIRS): el propio núcleo, o un nodo unido con un paquete antes de que existiera esta página. No se puede eliminar aquí.",
+    "newNode": "Paquete para un nodo nuevo",
+    "newNodeHelper": "Para una máquina que no puede llegar a la web de este núcleo por sí misma, o que se instala sin nadie delante: entregue el archivo del paquete a su instalador (NodePackage=) o a distributed.sh join.",
+    "nameHelper": "Minúsculas, dígitos y '-'. Sus servicios llevan su nombre: vms-<nombre>, vmsfs-<nombre>, …",
+    "addressHelper": "La dirección propia del nodo, donde las demás máquinas lo alcanzan.",
+    "nodeMediaMtx": "Un MediaMTX en el nodo, para que el vídeo en vivo de sus cámaras se quede en él",
+    "downloadPackage": "Descargar paquete",
+    "packageWarning": "El paquete contiene las contraseñas del núcleo y permite a cualquier máquina unirse como este nodo. Trátelo como una contraseña y bórrelo una vez instalado el nodo.",
+    "enrollmentOpen": "Los servidores nuevos se unen sin contraseña",
+    "enrollmentOpenHelper": "Cualquier máquina de la red puede unirse como servidor. Desactívelo cuando todos los servidores del despliegue estén dentro.",
+    "enrollmentClosedHelper": "Un servidor nuevo solo se une con el usuario y la contraseña de un administrador, introducidos en su instalador.",
+    "enrollmentConfirm": "¿Permitir que cualquier máquina se una?",
+    "enrollmentOpenWarning": "Mientras esté activado, cualquier máquina que llegue a este núcleo puede unirse como servidor y recibe las contraseñas de su base de datos y su broker. Manténgalo activado solo mientras se configura el despliegue."
   }
 }

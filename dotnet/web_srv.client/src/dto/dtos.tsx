@@ -296,6 +296,27 @@ export type MyPermissionsDto = {
   cameras: Record<string, CameraPermissionFlagsDto>
 }
 
+// GET /api/deployment: anonymous, what a machine looking for its core is told.
+export type DeploymentDto = {
+  product: string
+  distributed: boolean
+  coreAddress: string
+  enrollmentOpen: boolean
+  machine: string
+}
+
+export type DeploymentNodeDto = {
+  serverId: string
+  name: string
+  address: string
+  mediaMtx: boolean
+  // Listed in the core's MEDIA_SERVER_PAIRS: the core itself, or a node joined with a package
+  // before the registry existed. It comes back on every start, so it cannot be removed.
+  configured: boolean
+  enrolledAt: string
+  status: string
+}
+
 export type MediaServerNodeDto = {
   serverId: string
   status: string

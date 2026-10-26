@@ -8,6 +8,7 @@ import entityStateReducer from './entityStateSlice'
 import storageReducer from './storageSlice'
 import scheduleReducer from './scheduleSlice'
 import mediaMtxReducer from './mediaMtxSlice'
+import deploymentReducer from './deploymentSlice'
 import monitorsReducer from './monitorsSlice'
 import monitorUiReducer from './monitorUiSlice'
 import wallPlaybackReducer from './wallPlaybackSlice'
@@ -28,6 +29,7 @@ export const store = configureStore({
     storage: storageReducer,
     schedule: scheduleReducer,
     mediaMtx: mediaMtxReducer,
+    deployment: deploymentReducer,
     monitors: monitorsReducer,
     monitorUi: monitorUiReducer,
     wallPlayback: wallPlaybackReducer,
