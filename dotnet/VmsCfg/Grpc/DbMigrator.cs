@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
@@ -121,6 +122,19 @@ public class DbMigrator(
       insertCmd.Parameters.AddWithValue(readUser);
       insertCmd.Parameters.AddWithValue(readPass);
       await insertCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    // A standalone installation that became a deployment's core seeded its row with the loopback,
+    // which no other machine can reach; VMS_MTX_HOST names the core's address now. Only an IP
+    // address counts: a host name (compose's "mediamtx") says nothing about other machines.
+    if (IPAddress.TryParse(host, out var address) && !IPAddress.IsLoopback(address))
+    {
+      await using var rehostCmd = new NpgsqlCommand("""
+        UPDATE media_mtx_server SET host = $1
+        WHERE host IN ('127.0.0.1', 'localhost', '::1');
+        """, connection);
+      rehostCmd.Parameters.AddWithValue(host!);
+      await rehostCmd.ExecuteNonQueryAsync(ct);
     }
 
     if (publishUser.Length == 0 && readUser.Length == 0)
