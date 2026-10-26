@@ -35,8 +35,10 @@ namespace {
 // Unset is not the same as "auto". The library ships no default order on purpose -- the only
 // honest default is the one whoever deploys the system chooses for their own hardware -- so this
 // is ours, and it names hardware only: VA-API, the hardware encoder ta-deps builds ffmpeg with,
-// then NVENC, the one the Windows build has. Whichever the build or the machine lacks declines at
-// once ("not in this FFmpeg build", "no CUDA device"), so one order serves both platforms. Writing
+// then NVENC, the one the Windows build has, on a Direct3D 11 device there, so the decode in front
+// of it is the D3D11VA one any Windows GPU has. Whichever the build or the machine lacks declines
+// at once ("not in this FFmpeg build", "no NVIDIA d3d11va device"), so one order serves both
+// platforms. Writing
 // `auto` explicitly still gets the library's full order, QSV and the software encoders included.
 ta_roienc::EngineChoice encoder_choice_from_env()
 {

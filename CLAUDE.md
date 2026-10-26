@@ -119,10 +119,16 @@ of a core through NVDEC→NVENC against 121–135% through `video_transcode_proc
 stream fails to open ("incompatible client key") and takes the CPU path. NVENC is reached through
 libavcodec, which reads no regions, so it holds the bitrate target with its own VBR rather than the
 library's outer loop — that loop moves a background QP offset carried as a region, and on NVENC
-it moved nothing (10 Mbit/s against a 3.9 Mbit/s target). A Windows machine without an NVIDIA card
-still has no hardware engine; QSV through D3D11 belongs in roi_transcode and is the next one for
-the Windows build. Do not build Windows `vms.exe` without the library — the engines arrive through
-it.
+it moved nothing (10 Mbit/s against a 3.9 Mbit/s target). There NVENC runs on a Direct3D 11
+device rather than CUDA — the library asks whether the FFmpeg has D3D11VA, which only the Windows
+one does — on the NVIDIA adapter by vendor id, and the decoder it hands that device to is
+D3D11VA, the decode every Windows GPU has. A Windows machine without an NVIDIA card still has no
+hardware engine: the D3D11VA decoder would serve it (`d3d11va`, in the decoder's `auto` too), but
+vms decodes on the encoder's device or not at all, and without a hardware encoder the stream goes
+to `video_transcode_processor`, decode included. QSV through D3D11 is that encoder; it belongs in
+roi_transcode and is the next one for the Windows build
+(`docs/future_plans/windows-hardware-encoders.md`). Do not build Windows `vms.exe` without the
+library — the engines arrive through it.
 The third is the separate `video_a` repository, which has its own `ta_roienc` submodule and links
 only the decoder (`ta_roienc_decode`) for the analytics worker; a rename in the library's public
 API has to be carried there too, and its submodule bumped in a commit of its own.
