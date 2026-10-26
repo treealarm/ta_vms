@@ -14,11 +14,26 @@ the QSV backend on a D3D11 device on the Intel adapter with the decoder handed t
 - **Checking it on Windows.** The same code is checked on Linux, where QSV runs on VA-API: on the
   i7-12700's UHD 770 a Transcoder session decodes on the GPU, uploads nothing and puts every
   picture in its place (roi_transcode `transcode_device_test`). On Windows only the device type
-  differs — D3D11 on the adapter with vendor id `0x8086` — and that has run nowhere yet. The
-  i7-12700 under Windows is the machine for it (the user, 2026-10-26): `transcode_device_test`
-  there, then vms with an HEVC camera and no `VMS_VIDEO_ENCODER`, whose log names the engine
-  (`backend: qsv ... opened`) and whose CPU per stream should be in NVENC's range, not the
-  software path's. 192.168.1.100 is an
+  differs — D3D11 on the adapter with vendor id `0x8086`.
+
+  **Checked so far** (2026-10-26, i7-12700 / UHD 770, Windows 11 26200, Intel graphics driver
+  30.0.101.1371 of February 2022 — not updated, on purpose), on the `windows-build` asset of
+  `d596529`:
+  - `vms.exe` started as CI starts it: every DLL loads, it logs the order
+    `vaapi -> nvenc -> qsv` and stops at `DAPR_GRPC_PORT`.
+  - `h264_qsv` through the shipped FFmpeg (9.0.1) and `libvpl.dll`, with
+    `scripts/win/qsv-probe.py`: D3D11VA and QSV devices open on `8086:4680`, the driver's oneVPL
+    runtime reports implementation 2.6, and the encoder reports *"Initialized an internal MFX
+    session using hardware accelerated implementation"*. 300 frames of 1080p NV12 from system
+    memory, H.264 High at 4 Mbit/s: 300 packets in 1.5 s, about 200 fps. So a 2022 driver is
+    new enough; nothing has to be updated for QSV on Alder Lake.
+
+  **Still open:** none of that goes through ta_roienc or decodes HEVC. What is left is vms itself
+  with an HEVC camera and no `VMS_VIDEO_ENCODER`, whose log names the engine
+  (`hw_transcode_processor: hevc -> h264, backend 'qsv'`) and whose CPU per stream should be in
+  NVENC's range, not the software path's — it needs the full stack (Docker, Dapr) up on that
+  machine. `transcode_device_test` on Windows would cover the D3D11VA decode in between.
+  192.168.1.100 is an
   i5-750 without Quick Sync; 192.168.1.82 has an Ivy Bridge HD 2500, whose Quick Sync encodes
   H.264 only and only through the legacy Media SDK runtime, if its driver ships one.
 - **HEVC on QSV** opened and encoded nothing on that machine on Linux (`qsv: opened but encodes
