@@ -60,12 +60,17 @@ $Solution = Join-Path $RepoRoot "dotnet\ta_vms.sln"
 # driver's own DLLs are loaded at run time, so a machine without an NVIDIA card loses nothing.
 # The headers are Video Codec SDK 13, which needs a driver of 570 or later; an older one fails to
 # open the encoder, and the stream falls back to software as on a machine with no card.
+#
+# qsv is Intel's (h264_qsv, on a Direct3D 11 device): it brings libvpl, the oneVPL dispatcher,
+# whose DLL ships beside vms.exe. The runtime it dispatches to comes with Intel's graphics
+# driver, so a machine without an Intel GPU -- or with one older than the driver's oneVPL or
+# Media SDK runtime -- declines to open it and loses nothing.
 $VcpkgPorts = @(
     'protobuf',
     'grpc',
     'spdlog',
     'pkgconf',
-    'ffmpeg[gpl,x264,x265,opus,vpx,aom,openssl,nvcodec]'
+    'ffmpeg[gpl,x264,x265,opus,vpx,aom,openssl,nvcodec,qsv]'
 )
 
 # Missing prerequisites collected as we go, reported together at the end.

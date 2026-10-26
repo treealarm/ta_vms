@@ -35,11 +35,12 @@ namespace {
 // Unset is not the same as "auto". The library ships no default order on purpose -- the only
 // honest default is the one whoever deploys the system chooses for their own hardware -- so this
 // is ours, and it names hardware only: VA-API, the hardware encoder ta-deps builds ffmpeg with,
-// then NVENC, the one the Windows build has, on a Direct3D 11 device there, so the decode in front
-// of it is the D3D11VA one any Windows GPU has. Whichever the build or the machine lacks declines
-// at once ("not in this FFmpeg build", "no NVIDIA d3d11va device"), so one order serves both
-// platforms. Writing
-// `auto` explicitly still gets the library's full order, QSV and the software encoders included.
+// then the two the Windows build has, NVENC and QSV, each on a Direct3D 11 device there, so the
+// decode in front of either is the D3D11VA one any Windows GPU has. NVENC first: a machine with
+// both an NVIDIA card and an Intel iGPU has the card for the work. Whichever the build or the
+// machine lacks declines at once ("not in this FFmpeg build", "no NVIDIA d3d11va device", "no
+// Intel d3d11va device"), so one order serves both platforms. Writing `auto` explicitly still
+// gets the library's full order, the software encoders included.
 ta_roienc::EngineChoice encoder_choice_from_env()
 {
   const char* raw = std::getenv("VMS_VIDEO_ENCODER");
@@ -49,7 +50,8 @@ ta_roienc::EngineChoice encoder_choice_from_env()
 
   ta_roienc::EngineChoice choice;
   choice.kind = ta_roienc::Engine::Auto;
-  choice.selection.preferred = {ta_roienc::Engine::Vaapi, ta_roienc::Engine::Nvenc};
+  choice.selection.preferred = {
+    ta_roienc::Engine::Vaapi, ta_roienc::Engine::Nvenc, ta_roienc::Engine::IntelOneVpl};
   return choice;
 }
 

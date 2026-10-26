@@ -104,15 +104,15 @@ linked by `video_srv` — live HEVC→H.264 transcoding for WebRTC goes through
 `ta_roienc::Transcoder`, because libavcodec has no automatic choice of hardware and
 `avcodec_find_encoder` always returns libx264 (see
 `video_srv/writer/processors/hw_transcode_processor.cpp`).
-**The default engine is hardware only — `Engine::Auto` restricted to VA-API, then NVENC — not
+**The default engine is hardware only — `Engine::Auto` restricted to VA-API, NVENC, then QSV — not
 the library's whole `Engine::Auto`**, and the difference is one of meaning: the library is linked
-only for the hardware. Whichever of the two the build or the machine lacks declines at once ("not
+only for the hardware. Whichever of them the build or the machine lacks declines at once ("not
 in this FFmpeg build", "no CUDA device"), so one order serves both platforms. If neither opened — or
 an `auto` chain set explicitly through `VMS_VIDEO_ENCODER` came down to a software one — the stream
 is handed back to `compat_sink`, and `video_transcode_processor` takes it. That one has
 `tune=zerolatency`, and the library's software engine does not: 34 frames in the pipeline against
 4 through `h264_vaapi`, which is a second and a half of delay on live video.
-**On Windows the hardware engine is NVENC**, and only NVENC: the Windows FFmpeg has nvcodec and
+**On Windows the hardware engines are NVENC and QSV**: the Windows FFmpeg has nvcodec and qsv and
 no `h264_vaapi`. On the i5-750 test machine with a GTX 1050 Ti a 1080p25 HEVC stream costs vms 7%
 of a core through NVDEC→NVENC against 121–135% through `video_transcode_processor`
 (`../ta_install/windows/FINDINGS.md`). A GeForce opens at most 8 encode sessions; the ninth
@@ -122,13 +122,15 @@ library's outer loop — that loop moves a background QP offset carried as a reg
 it moved nothing (10 Mbit/s against a 3.9 Mbit/s target). There NVENC runs on a Direct3D 11
 device rather than CUDA — the library asks whether the FFmpeg has D3D11VA, which only the Windows
 one does — on the NVIDIA adapter by vendor id, and the decoder it hands that device to is
-D3D11VA, the decode every Windows GPU has. A Windows machine without an NVIDIA card still has no
-hardware engine: the D3D11VA decoder would serve it (`d3d11va`, in the decoder's `auto` too), but
-vms decodes on the encoder's device or not at all, and without a hardware encoder the stream goes
-to `video_transcode_processor`, decode included. QSV through D3D11 is that encoder; it belongs in
-roi_transcode and is the next one for the Windows build
-(`docs/future_plans/windows-hardware-encoders.md`). Do not build Windows `vms.exe` without the
-library — the engines arrive through it.
+D3D11VA, the decode every Windows GPU has. QSV runs the same way on the Intel adapter: a QSV
+device derived from a D3D11 one, the decoder handed the D3D11 device, and each decoded texture
+mapped into QSV's pool rather than copied (on Linux the same code runs on VA-API instead of D3D11).
+That pool has to be a dynamic one — a fixed pool refuses surfaces it did not allocate — and the
+mapping goes through a pool derived from the decoder's, the only kind QSV can unmap. NVENC comes
+first, so a machine with both uses the card. vms decodes on the encoder's device or not at all, so
+a Windows machine with neither — AMD — has no hardware engine, and the stream goes to
+`video_transcode_processor`, decode included (`docs/future_plans/windows-hardware-encoders.md`).
+Do not build Windows `vms.exe` without the library — the engines arrive through it.
 The third is the separate `video_a` repository, which has its own `ta_roienc` submodule and links
 only the decoder (`ta_roienc_decode`) for the analytics worker; a rename in the library's public
 API has to be carried there too, and its submodule bumped in a commit of its own.
