@@ -33,10 +33,17 @@ the QSV backend on a D3D11 device on the Intel adapter with the decoder handed t
   mfxExtEncoderROI)'`, 9.5 % of a core per viewed stream against 74 % on
   `video_transcode_processor`. Details in `../ta_install/windows/FINDINGS.md`.
 
+  **An Ivy Bridge, checked** (2026-10-27, 192.168.1.82, HD 2500, the v0.1.8 candidate, 1080p25
+  HEVC): QSV declines at once, `no QSV runtime on the Intel d3d11va device`, and the stream goes to
+  `video_transcode_processor` at 88 % of a core, as on v0.1.7 (89 %). Its Quick Sync encodes H.264
+  only through the legacy Media SDK runtime, and the dispatcher found no runtime there that it
+  would load; nothing breaks and nothing is gained. Why exactly (the driver's runtime, or the
+  dispatcher's view of it) was not looked into: not worth it for a 2012 iGPU unless a customer
+  has one.
+
   **Still open:** more than one stream at once, and how many sessions the iGPU takes before one
   fails to open. `transcode_device_test` has not been run on Windows. 192.168.1.100 is an
-  i5-750 without Quick Sync; 192.168.1.82 has an Ivy Bridge HD 2500, whose Quick Sync encodes
-  H.264 only and only through the legacy Media SDK runtime, if its driver ships one.
+  i5-750 without Quick Sync.
 - **HEVC on QSV** opened and encoded nothing on that machine on Linux (`qsv: opened but encodes
   nothing`, before this change too). vms encodes H.264 only, so it is not on vms's path.
 
