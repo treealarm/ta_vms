@@ -28,12 +28,13 @@ the QSV backend on a D3D11 device on the Intel adapter with the decoder handed t
     memory, H.264 High at 4 Mbit/s: 300 packets in 1.5 s, about 200 fps. So a 2022 driver is
     new enough; nothing has to be updated for QSV on Alder Lake.
 
-  **Still open:** none of that goes through ta_roienc or decodes HEVC. What is left is vms itself
-  with an HEVC camera and no `VMS_VIDEO_ENCODER`, whose log names the engine
-  (`hw_transcode_processor: hevc -> h264, backend 'qsv'`) and whose CPU per stream should be in
-  NVENC's range, not the software path's — it needs the full stack (Docker, Dapr) up on that
-  machine. `transcode_device_test` on Windows would cover the D3D11VA decode in between.
-  192.168.1.100 is an
+  **vms itself, checked** (2026-10-27, same machine, the installer of ta_install 229935a, no
+  `VMS_VIDEO_ENCODER`, 1080p25 HEVC Main): `decoding on d3d11va, encoding on 'h264_qsv (Intel VPL
+  mfxExtEncoderROI)'`, 9.5 % of a core per viewed stream against 74 % on
+  `video_transcode_processor`. Details in `../ta_install/windows/FINDINGS.md`.
+
+  **Still open:** more than one stream at once, and how many sessions the iGPU takes before one
+  fails to open. `transcode_device_test` has not been run on Windows. 192.168.1.100 is an
   i5-750 without Quick Sync; 192.168.1.82 has an Ivy Bridge HD 2500, whose Quick Sync encodes
   H.264 only and only through the legacy Media SDK runtime, if its driver ships one.
 - **HEVC on QSV** opened and encoded nothing on that machine on Linux (`qsv: opened but encodes
