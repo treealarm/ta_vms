@@ -38,22 +38,23 @@ public sealed class NodePackageTests
   // The core's TLS authority as openssl makes it on a Linux core: starting the moment it was made.
   private static readonly NodePackage.TlsAuthority Authority = MakeAuthority(Now);
 
-  private static NodePackage.TlsAuthority MakeAuthority(DateTimeOffset notBefore)
+  private static NodePackage.TlsAuthority MakeAuthority(DateTimeOffset notBefore, bool keyId = true)
   {
     using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
     var request = new CertificateRequest($"CN=TreeAlarm VMS CA {CoreAddress}", key, HashAlgorithmName.SHA256);
     request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, 0, true));
     request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
-    request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
+    if (keyId)
+      request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
     using var ca = request.CreateSelfSigned(notBefore, notBefore.AddDays(3650));
     return new NodePackage.TlsAuthority(ca.ExportCertificatePem() + "\n", key.ExportPkcs8PrivateKeyPem() + "\n");
   }
 
   private static (Dictionary<string, (string Text, UnixFileMode Mode)> Files, ECDsa Key) Build(
-    string name = "nhu", Dictionary<string, string>? env = null)
+    string name = "nhu", Dictionary<string, string>? env = null, NodePackage.TlsAuthority? authority = null)
   {
     var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-    var bytes = NodePackage.Build(name, NodeAddress, key.ExportECPrivateKeyPem(), Authority, SharedEnv,
+    var bytes = NodePackage.Build(name, NodeAddress, key.ExportECPrivateKeyPem(), authority ?? Authority, SharedEnv,
       env ?? CoreEnvironment(), Now);
     var files = new Dictionary<string, (string, UnixFileMode)>();
     using var tar = new TarReader(new GZipStream(new MemoryStream(bytes), CompressionMode.Decompress));
@@ -112,6 +113,23 @@ public sealed class NodePackageTests
     Assert.InRange((leaf.NotAfter - leaf.NotBefore).TotalDays, 824, 826);
   }
 
+  // OpenSSL 1.1 gives a CA a key identifier only when its configuration says so.
+  [Fact]
+  public void An_authority_without_a_key_identifier_still_issues_the_nodes_certificate()
+  {
+    var authority = MakeAuthority(Now, keyId: false);
+    var (files, _) = Build(authority: authority);
+
+    using var leaf = X509Certificate2.CreateFromPem(files["tls/server.crt"].Text, files["tls/server.key"].Text);
+    using var root = X509Certificate2.CreateFromPem(authority.CertPem);
+    using var chain = new X509Chain();
+    chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+    chain.ChainPolicy.CustomTrustStore.Add(root);
+    chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+    chain.ChainPolicy.VerificationTime = Now.UtcDateTime.AddMinutes(1);
+    Assert.True(chain.Build(leaf));
+  }
+
   [Fact]
   public void The_cores_services_are_named_at_an_address_another_machine_reaches()
   {
@@ -122,6 +140,23 @@ public sealed class NodePackageTests
     Assert.Contains($"RABBITMQ_HOST={CoreAddress}\n", coreEnv);
     Assert.Contains($"VMS_MTX_HOST={CoreAddress}\n", coreEnv);
     Assert.Contains($"KEYCLOAK_URL=http://{CoreAddress}:5160\n", coreEnv);
+  }
+
+  // A name with a domain in it resolves elsewhere too; one of a single label is a compose service's,
+  // which resolves only inside the core's network.
+  [Theory]
+  [InlineData("https://auth.example.com", "https://auth.example.com")]
+  [InlineData("http://keycloak:8080", $"http://{CoreAddress}:5160")]
+  [InlineData("http://localhost:5160", $"http://{CoreAddress}:5160")]
+  public void A_keycloak_named_by_a_domain_keeps_its_url(string url, string expected)
+  {
+    var env = CoreEnvironment();
+    env["KEYCLOAK_URL"] = url;
+    env["POSTGRES_HOST"] = "postgres";
+
+    var coreEnv = Build(env: env).Files["core.env"].Text;
+    Assert.Contains($"KEYCLOAK_URL={expected}\n", coreEnv);
+    Assert.Contains($"POSTGRES_HOST={CoreAddress}\n", coreEnv);
   }
 
   [Fact]

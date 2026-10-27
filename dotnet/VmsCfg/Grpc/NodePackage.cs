@@ -143,7 +143,10 @@ public static partial class NodePackage
     var san = new SubjectAlternativeNameBuilder();
     san.AddIpAddress(IPAddress.Parse(address));
     request.CertificateExtensions.Add(san.Build());
-    request.CertificateExtensions.Add(X509AuthorityKeyIdentifierExtension.CreateFromCertificate(authority, true, false));
+    // The authority's key identifier where it has one. OpenSSL 3 always gives a CA one, 1.1 only
+    // when its configuration says so; without it the authority is named by issuer and serial instead.
+    var keyId = authority.Extensions["2.5.29.14"] is not null;
+    request.CertificateExtensions.Add(X509AuthorityKeyIdentifierExtension.CreateFromCertificate(authority, keyId, !keyId));
     var serial = RandomNumberGenerator.GetBytes(16);
     serial[0] &= 0x7F;
     // Within the authority's own validity, which .NET insists on: one openssl made (a Linux core)
@@ -168,7 +171,7 @@ public static partial class NodePackage
     values["RABBITMQ_HOST"] = Reachable(env.GetValueOrDefault("RABBITMQ_HOST"), coreAddress);
     values["VMS_MTX_HOST"] = Reachable(env.GetValueOrDefault("VMS_MTX_HOST"), coreAddress);
     values["KEYCLOAK_URL"] = Uri.TryCreate(env.GetValueOrDefault("KEYCLOAK_URL"), UriKind.Absolute, out var keycloak)
-      && Reachable(keycloak.Host, "") != ""
+      && IsReachable(keycloak.Host)
         ? keycloak.ToString().TrimEnd('/')
         : $"http://{coreAddress}:{env["KEYCLOAK_PORT"]}";
 
@@ -176,11 +179,16 @@ public static partial class NodePackage
       .Select(kv => $"{kv.Key}={Quote(kv.Key, kv.Value)}\n"));
   }
 
-  // The core's own value when another machine can use it — an address other than the loopback — and
-  // the core's address otherwise: on Windows its services listen on 127.0.0.1 as well, and a compose
-  // service name resolves only inside the core's network.
-  private static string Reachable(string? value, string coreAddress) =>
-    IPAddress.TryParse(value, out var ip) && !IPAddress.IsLoopback(ip) && !ip.Equals(IPAddress.Any) ? value! : coreAddress;
+  // The core's own value when another machine can use it, and the core's address otherwise.
+  private static string Reachable(string? value, string coreAddress) => IsReachable(value) ? value! : coreAddress;
+
+  // An address other than the loopback, or a name with a domain in it (a cluster's, or a core's own
+  // DNS name). Not the loopback: on Windows the core's services listen on 127.0.0.1 as well. Not a
+  // name of one label: that is a compose service name, which resolves only inside the core's network.
+  private static bool IsReachable(string? value) =>
+    IPAddress.TryParse(value, out var ip)
+      ? !IPAddress.IsLoopback(ip) && !ip.Equals(IPAddress.Any)
+      : value is not null && value.Contains('.') && !value.StartsWith("localhost.", StringComparison.OrdinalIgnoreCase);
 
   // As TaVmsHost's EnvFile.Quote: a value as it has to appear after '=' to be read back unchanged
   // there, and by compose and sed on Linux. The error names the key, never the value.
