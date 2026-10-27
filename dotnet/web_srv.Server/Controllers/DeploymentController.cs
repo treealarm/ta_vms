@@ -48,11 +48,14 @@ public class DeploymentController(
     // Without Keycloak nothing here asks anyone for a password, and neither does this.
     if (!deployment.EnrollmentOpen && kcAdmin is not null)
     {
-      if (string.IsNullOrEmpty(body.Username) || !await IsAdministratorAsync(body.Username, body.Password ?? ""))
+      var refusal = string.IsNullOrEmpty(body.Username)
+        ? "Enrollment of new nodes is closed: an administrator's user name and password are needed"
+        : await CheckAdministratorAsync(body.Username, body.Password ?? "");
+      if (refusal is not null)
       {
-        logger.LogWarning("Node '{Name}' at {Address} refused: enrollment is closed and no administrator's password came (asked from {Remote})",
-          body.Name, body.Address, HttpContext.Connection.RemoteIpAddress);
-        return Unauthorized(new { error = "Enrollment of new nodes is closed: an administrator's user name and password are needed" });
+        logger.LogWarning("Node '{Name}' at {Address} refused: {Reason} (asked from {Remote})",
+          body.Name, body.Address, refusal, HttpContext.Connection.RemoteIpAddress);
+        return Unauthorized(new { error = refusal });
       }
       how = $"by administrator '{body.Username}'";
     }
@@ -138,8 +141,9 @@ public class DeploymentController(
     ex.StatusCode is Grpc.Core.StatusCode.AlreadyExists or Grpc.Core.StatusCode.FailedPrecondition;
 
   // The password is checked by Keycloak itself, which also counts failures; the role is the realm's,
-  // the same one that makes someone an administrator here.
-  private async Task<bool> IsAdministratorAsync(string username, string password)
+  // the same one that makes someone an administrator here. Null for an administrator, otherwise why
+  // not: a mistyped password and a user without the role need different things from whoever typed it.
+  private async Task<string?> CheckAdministratorAsync(string username, string password)
   {
     var realm = Require("KEYCLOAK_REALM_NAME");
     try
@@ -148,10 +152,12 @@ public class DeploymentController(
     }
     catch (Exception)
     {
-      return false;
+      return "Enrollment of new nodes is closed, and that user name or password is wrong";
     }
     var roles = await kcAdmin.GetUserRolesAsync(realm, username);
-    return roles.Any(r => string.Equals(r.Name, RoleConstants.Admin, StringComparison.OrdinalIgnoreCase));
+    return roles.Any(r => string.Equals(r.Name, RoleConstants.Admin, StringComparison.OrdinalIgnoreCase))
+      ? null
+      : $"Enrollment of new nodes is closed, and '{username}' is not an administrator";
   }
 
   private static string Require(string name) =>
