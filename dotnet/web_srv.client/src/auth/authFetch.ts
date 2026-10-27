@@ -21,10 +21,18 @@ let installed = false
  * Installed once as a global fetch wrapper instead of touching every existing fetch() call site —
  * when KEYCLOAK_URL is unset on the backend, no request ever 401s, so this is a no-op.
  */
+/**
+ * A refresh that produced no token failed for one of two very different reasons, and the caller
+ * has to be able to tell them apart: the identity provider refused the refresh token, which ends
+ * the session, or nobody answered, which says nothing about it at all. Treating the second as the
+ * first threw away a perfectly good refresh token every time the gateway happened to be
+ * restarting.
+ */
+type RefreshResult = { token: string | null; retryable: boolean }
+
 // A single in-flight refresh shared by all concurrent 401s, so a burst of expired-token requests
-// triggers exactly one /api/auth/refresh instead of a stampede. Resolves to the new access token,
-// or null when refresh isn't possible (no refresh token / Keycloak rejected it).
-let refreshInFlight: Promise<string | null> | null = null
+// triggers exactly one /api/auth/refresh instead of a stampede.
+let refreshInFlight: Promise<RefreshResult> | null = null
 
 export function installAuthFetch(): void {
   if (installed) return
@@ -33,15 +41,6 @@ export function installAuthFetch(): void {
   const nativeFetch = window.fetch.bind(window)
   diagReplayTrail()
   diagToken(store.getState().auth.token, 'at startup')
-
-  /**
-   * A refresh that produced no token failed for one of two very different reasons, and the caller
-   * has to be able to tell them apart: the identity provider refused the refresh token, which ends
-   * the session, or nobody answered, which says nothing about it at all. Treating the second as the
-   * first threw away a perfectly good refresh token every time the gateway happened to be
-   * restarting.
-   */
-  type RefreshResult = { token: string | null; retryable: boolean }
 
   const attemptRefresh = async (): Promise<RefreshResult> => {
     const rt = store.getState().auth.refreshToken
@@ -117,8 +116,8 @@ export function installAuthFetch(): void {
   const runProactiveRefresh = async (): Promise<void> => {
     // Share the same single-flight slot as the reactive path, so a request that 401s at this moment
     // joins this refresh instead of starting a second one.
-    if (!refreshInFlight) refreshInFlight = refreshToken().finally(() => { refreshInFlight = null })
-    if (await refreshInFlight) return // the store change reschedules through the subscription below
+    if (!refreshInFlight) refreshInFlight = attemptRefresh().finally(() => { refreshInFlight = null })
+    if ((await refreshInFlight).token) return // the store change reschedules through the subscription below
 
     // A refresh that failed leaves the old token ticking towards expiry with nothing else about to
     // try again — the next 401 would, by which time the session is already lost. This is not a
@@ -159,8 +158,6 @@ export function installAuthFetch(): void {
     void revive(0)
   }
 
-  const refreshToken = async (): Promise<string | null> => (await attemptRefresh()).token
-
   const withAuth = (init: RequestInit | undefined, input: RequestInfo | URL, token: string | null): RequestInit | undefined => {
     if (!token) return init
     const headers = new Headers(init?.headers ?? (typeof input === 'object' && !(input instanceof URL) ? input.headers : undefined))
@@ -193,15 +190,20 @@ export function installAuthFetch(): void {
       // using the stored refresh token and retry the request, so active users aren't bounced to login.
       if (response.status === 401) {
         diagNote(diagId, refreshInFlight ? 'got 401, waiting on a refresh already running' : 'got 401, starting token refresh')
-        if (!refreshInFlight) refreshInFlight = refreshToken().finally(() => { refreshInFlight = null })
-        const newToken = await refreshInFlight
+        if (!refreshInFlight) refreshInFlight = attemptRefresh().finally(() => { refreshInFlight = null })
+        const { token: newToken, retryable } = await refreshInFlight
 
         if (newToken) {
           diagNote(diagId, 'retrying with the refreshed token')
           response = await nativeFetch(input, withAuth(init, input, newToken))
         }
 
-        if ((!newToken || response.status === 401) && !loggingOut && window.location.pathname !== '/login') {
+        // A refresh nobody answered leaves the session as it was: the caller gets its 401, and the
+        // next request -- or the proactive timer -- tries again. After a restart of the whole
+        // installation web_srv answers seconds before Keycloak does, and logging out here sent every
+        // open tab to the login page.
+        const refused = newToken ? response.status === 401 : !retryable
+        if (refused && !loggingOut && window.location.pathname !== '/login') {
           loggingOut = true
           diagEvent(`giving up and logging out — ${url} (last status ${response.status})`)
           store.dispatch(logout())

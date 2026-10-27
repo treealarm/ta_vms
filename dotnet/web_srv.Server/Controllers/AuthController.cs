@@ -1,3 +1,4 @@
+using System.Net;
 using KeycloakAdmin;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -89,9 +90,18 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
 
       return Ok(token);
     }
-    catch (Exception)
+    // Keycloak answers a refresh token it will not honour -- expired, revoked, from before the
+    // session was ended -- with 400 invalid_grant. That ends the session; nothing else does.
+    catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Unauthorized)
     {
       return Unauthorized();
+    }
+    // No answer at all, or a 5xx: Keycloak still starting after a restart of the whole installation
+    // is the usual one. It says nothing about the token, and a 401 here made the browser throw a good
+    // refresh token away and send the operator to the login page every time the service restarted.
+    catch (Exception)
+    {
+      return StatusCode(StatusCodes.Status503ServiceUnavailable, "Identity provider unavailable");
     }
   }
 
