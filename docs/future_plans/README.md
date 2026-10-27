@@ -12,5 +12,4 @@ here is deleted or cut down to what is still left.
 | [distributed-analytics.md](distributed-analytics.md) | Re-identification and archive search in the database (pgvector), then analytics per node |
 | [distributed-hardening.md](distributed-hardening.md) | What a multi-machine deployment still leaves open on the network |
 | [log-volume-leftovers.md](log-volume-leftovers.md) | What still fills the logs after the 2026-10-25 fix: a dead camera re-resolved per call, reconnect errors, web_srv outside VmsLog |
-| [ta-roienc-compressed-input.md](ta-roienc-compressed-input.md) | Transcoder loses the last Annex-B access unit and reads 64 bytes past an unpadded input buffer |
 | [windows-hardware-encoders.md](windows-hardware-encoders.md) | A hardware encoder on Windows without an NVIDIA card: QSV through D3D11 checked, several streams left, AMF, Media Foundation |
