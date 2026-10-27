@@ -178,9 +178,17 @@ static int RequirePort(string name) =>
     ? p
     : throw new InvalidOperationException($"Required environment variable '{name}' must be a valid integer");
 
+// Optional: HTTPS on the LAN for a machine of a deployment over several (TlsEndpoint). Without it,
+// plain HTTP on every address, as a standalone installation has always listened.
+var tls = TlsEndpoint.FromEnvironment();
+if (tls is not null)
+  builder.Services.AddSingleton(tls);
 builder.WebHost.ConfigureKestrel(options =>
 {
-  options.Listen(IPAddress.Any, http_port);
+  if (tls is not null)
+    tls.Listen(options, http_port);
+  else
+    options.Listen(IPAddress.Any, http_port);
 });
 
 var app = builder.Build();

@@ -303,6 +303,8 @@ export type DeploymentDto = {
   coreAddress: string
   enrollmentOpen: boolean
   machine: string
+  // SHA-256 of the core's certificate authority, when this web speaks HTTPS on the LAN.
+  caFingerprint: string | null
 }
 
 export type DeploymentNodeDto = {

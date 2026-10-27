@@ -18,11 +18,13 @@ namespace web_srv.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/deployment")]
-// IKeycloakAdminClient is registered only when KEYCLOAK_URL is set (Program.cs).
+// IKeycloakAdminClient is registered only when KEYCLOAK_URL is set, TlsEndpoint only when this web
+// speaks HTTPS on the LAN (Program.cs).
 public class DeploymentController(
   CfgService.CfgServiceClient cfg,
   ILogger<DeploymentController> logger,
-  IKeycloakAdminClient? kcAdmin = null) : ControllerBase
+  IKeycloakAdminClient? kcAdmin = null,
+  TlsEndpoint? tls = null) : ControllerBase
 {
   private static CallOptions Options(CancellationToken ct) =>
     new(deadline: DateTime.UtcNow.AddSeconds(10), cancellationToken: ct);
@@ -35,8 +37,22 @@ public class DeploymentController(
   public async Task<IActionResult> Get(CancellationToken ct)
   {
     var d = await cfg.GetDeploymentAsync(new Empty(), Options(ct));
-    return Ok(new DeploymentDto("TreeAlarm VMS", d.Distributed, d.CoreAddress, d.EnrollmentOpen, Environment.MachineName));
+    // The fingerprint is shown, never trusted from here: a machine joining is told it by whoever set
+    // up the core, and checks what it reaches against that.
+    return Ok(new DeploymentDto("TreeAlarm VMS", d.Distributed, d.CoreAddress, d.EnrollmentOpen, Environment.MachineName,
+      tls?.AuthorityFingerprint));
   }
+
+  /// The deployment's certificate authority, for an operator to trust it in a browser elsewhere. It
+  /// is public: the same certificate every connection to this web presents.
+  [HttpGet("ca.crt")]
+  [AllowAnonymous]
+  [AllowNotReady]
+  public IActionResult AuthorityCertificate() =>
+    tls is null
+      ? NotFound(new { error = "This web does not speak HTTPS: it is not part of a deployment over several machines" })
+      : File(System.Text.Encoding.ASCII.GetBytes(tls.Authority.ExportCertificatePem() + "\n"),
+          "application/x-x509-ca-cert", "treealarm-vms-ca.crt");
 
   [HttpPost("join")]
   [AllowAnonymous]
@@ -165,7 +181,8 @@ public class DeploymentController(
       ?? throw new InvalidOperationException($"Required environment variable '{name}' is not set");
 }
 
-public record DeploymentDto(string Product, bool Distributed, string CoreAddress, bool EnrollmentOpen, string Machine);
+public record DeploymentDto(
+  string Product, bool Distributed, string CoreAddress, bool EnrollmentOpen, string Machine, string? CaFingerprint);
 public record JoinNodeDto(string? Name, string? Address, bool MediaMtx, string? Username, string? Password);
 public record EnrollmentDto(bool Open);
 public record DeploymentNodeDto(

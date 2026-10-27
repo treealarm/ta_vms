@@ -160,6 +160,20 @@ function EnrollmentSwitch() {
   )
 }
 
+// What a machine joining checks the core against, and the authority itself for a browser elsewhere to
+// trust: the deployment's, not a node's, so it sits with the enrollment switch.
+function CertificateAuthority({ fingerprint }: { fingerprint: string }) {
+  const { t } = useTranslation()
+  return (
+    <Box sx={{ px: 1, pt: 1 }}>
+      <Typography variant="caption" color="text.secondary" display="block">{t('deployment.caFingerprint')}</Typography>
+      <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{fingerprint}</Typography>
+      <Typography variant="caption" color="text.secondary" display="block">{t('deployment.caFingerprintHelper')}</Typography>
+      <Button size="small" href="/api/deployment/ca.crt" download>{t('deployment.downloadCa')}</Button>
+    </Box>
+  )
+}
+
 export default function DeploymentPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHandle> }) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
@@ -194,7 +208,12 @@ export default function DeploymentPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyH
       onAdd={deployment?.distributed ? selectNew : undefined}
       addTooltip={t('deployment.addNode')}
       list={list}
-      footer={deployment?.distributed ? <EnrollmentSwitch /> : undefined}
+      footer={deployment?.distributed ? (
+        <>
+          <EnrollmentSwitch />
+          {deployment.caFingerprint && <CertificateAuthority fingerprint={deployment.caFingerprint} />}
+        </>
+      ) : undefined}
     >
       <Box key={detailKey} sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {isNew ? (

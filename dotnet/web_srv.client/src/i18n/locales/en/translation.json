@@ -1254,6 +1254,9 @@
     "enrollmentOpenHelper": "Any machine on the network can join as a server. Turn this off once every server of the deployment is in.",
     "enrollmentClosedHelper": "A new server joins only with an administrator's user name and password, entered in its installer.",
     "enrollmentConfirm": "Let any machine join?",
-    "enrollmentOpenWarning": "While this is on, any machine that can reach this core can join as a server and receives the core's database and broker passwords. Keep it on only while the deployment is being set up."
+    "enrollmentOpenWarning": "While this is on, any machine that can reach this core can join as a server and receives the core's database and broker passwords. Keep it on only while the deployment is being set up.",
+    "caFingerprint": "Certificate authority of this deployment",
+    "caFingerprintHelper": "Every machine of the deployment shows a certificate it issued. A machine joining is told this fingerprint and checks the core against it; compare it with the one the core printed when it was set up.",
+    "downloadCa": "Download the certificate authority"
   }
 }

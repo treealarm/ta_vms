@@ -1254,6 +1254,9 @@
     "enrollmentOpenHelper": "Cualquier máquina de la red puede unirse como servidor. Desactívelo cuando todos los servidores del despliegue estén dentro.",
     "enrollmentClosedHelper": "Un servidor nuevo solo se une con el usuario y la contraseña de un administrador, introducidos en su instalador.",
     "enrollmentConfirm": "¿Permitir que cualquier máquina se una?",
-    "enrollmentOpenWarning": "Mientras esté activado, cualquier máquina que llegue a este núcleo puede unirse como servidor y recibe las contraseñas de su base de datos y su broker. Manténgalo activado solo mientras se configura el despliegue."
+    "enrollmentOpenWarning": "Mientras esté activado, cualquier máquina que llegue a este núcleo puede unirse como servidor y recibe las contraseñas de su base de datos y su broker. Manténgalo activado solo mientras se configura el despliegue.",
+    "caFingerprint": "Autoridad de certificación de este despliegue",
+    "caFingerprintHelper": "Cada máquina del despliegue presenta un certificado emitido por ella. A una máquina que se une se le da esta huella y comprueba el núcleo con ella; compárela con la que el núcleo mostró al configurarse.",
+    "downloadCa": "Descargar la autoridad de certificación"
   }
 }
