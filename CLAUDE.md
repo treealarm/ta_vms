@@ -359,10 +359,14 @@ registers it and signs its Sentry tokens with the core's key (`TAVMS_DISTRIBUTED
 learns the node there and then; nothing restarts. Joining has two stages. While the deployment is
 being set up, enrollment is open and any machine that reaches the core's web gets in; once the
 administrator closes it (Administration → Deployment), a new node needs an administrator's user name
-and password, checked at Keycloak. The administrator removes a node there as well; removal does not
-yet revoke its tokens (`docs/future_plans/distributed-hardening.md`). `MEDIA_SERVER_PAIRS` names
-only what this machine's own configuration fixes — the core's own node, and nodes joined with a
-package before the registry existed — and VmsCfg writes those rows at every start, marked
+and password, checked at Keycloak. A new package for a node already there (installed over, or at a
+new address it then moves to) needs them even while enrollment is open: an added node shows in the
+list, but a second package would let anyone become one unseen. Without Keycloak the join endpoint
+takes nobody for an administrator. Enrollment starts open only on a new database; one VmsCfg ran on
+before the switch existed starts closed. The administrator removes a node there as well; removal
+does not yet revoke its tokens (`docs/future_plans/distributed-hardening.md`). `MEDIA_SERVER_PAIRS`
+names only what this machine's own configuration fixes — the core's own node, and nodes joined with
+a package before the registry existed — and VmsCfg writes those rows at every start, marked
 configured: they cannot be removed in the web, since they would be back on the next start.
 
 **The registry belongs to a tenant, not to a cluster.** In Kubernetes several companies may share a

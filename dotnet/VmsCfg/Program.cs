@@ -40,6 +40,7 @@ var app = builder.Build();
 NodeRegistry.ConfiguredPairs();
 
 await app.Services.GetRequiredService<DbMigrator>().MigrateAsync();
+await app.Services.GetRequiredService<NodeRegistry>().WarnIfEnrollmentOpenAsync(CancellationToken.None);
 // Loaded before the first request: ListCameras resolves schedule_active from this cache, and an
 // empty cache would report "not recording" for a camera whose window is currently open.
 await app.Services.GetRequiredService<ScheduleCache>().ReloadAsync(CancellationToken.None);

@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 using Dapr.Client;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
@@ -465,10 +465,12 @@ namespace VmsCfg
     public override async Task<EnrollNodeResponse> EnrollNode(EnrollNodeRequest request, ServerCallContext context)
     {
       var (node, package) = await nodes.EnrollAsync(
-        request.Name.Trim(), request.Address.Trim(), request.MediaMtx, context.CancellationToken);
+        request.Name.Trim(), request.Address.Trim(), request.MediaMtx, request.Administrator, context.CancellationToken);
       // Every node's services learn the new one through ListMediaServers: web_srv polls it, and the
       // node's own services read it when they start, which is after this.
       await BumpCameraNodeVersionAsync(context.CancellationToken);
+      // A node enrolled again from a new address took its MediaMTX with it.
+      await NotifyAllMediaServersAsync(context.CancellationToken);
       return new EnrollNodeResponse { Node = ToProto(node), Package = Google.Protobuf.ByteString.CopyFrom(package) };
     }
 

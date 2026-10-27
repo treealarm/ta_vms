@@ -16,8 +16,9 @@ service CfgService {
   rpc GetDeployment(google.protobuf.Empty) returns (Deployment);
   rpc SetEnrollmentOpen(SetEnrollmentOpenRequest) returns (OperationStatus);
   rpc ListNodes(google.protobuf.Empty) returns (ListNodesResponse);
-  // INVALID_ARGUMENT for a bad name or address, ALREADY_EXISTS for a name taken by a node at another
-  // address, FAILED_PRECONDITION when this is not the core of a deployment over several machines.
+  // INVALID_ARGUMENT for a bad name or address, ALREADY_EXISTS for a node of this core's own
+  // configuration, PERMISSION_DENIED for a node already there when no administrator asks,
+  // FAILED_PRECONDITION when this is not the core of a deployment over several machines.
   rpc EnrollNode(EnrollNodeRequest) returns (EnrollNodeResponse);
   rpc RemoveNode(RemoveNodeRequest) returns (OperationStatus);
   rpc SetupCamera(CameraSetup) returns (OperationStatus);
@@ -472,6 +473,9 @@ message EnrollNodeRequest {
   // The node's own address, where the other machines reach its sidecars and MediaMTX.
   string address = 2;
   bool media_mtx = 3;
+  // An administrator asks: logged in to the web, or the web has checked their password. Only an
+  // administrator gets a new package for a node already there, moved to the address given.
+  bool administrator = 4;
 }
 
 message EnrollNodeResponse {

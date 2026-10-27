@@ -74,6 +74,18 @@ public sealed class NodeRegistry(
     var pairs = ConfiguredPairs();
     foreach (var (serverId, fsId, onvifId, loggerId, roiId) in pairs)
     {
+      // A configured row is named by its server id, and a node enrolled over the network may have
+      // that name already; the upsert below would fail on it with nothing but a constraint's name.
+      await using (var taken = new NpgsqlCommand(
+        "SELECT server_id FROM media_server_node WHERE name = $1 AND server_id <> $1;", connection))
+      {
+        taken.Parameters.AddWithValue(serverId);
+        if (await taken.ExecuteScalarAsync(ct) is string other)
+          throw new InvalidOperationException(
+            $"MEDIA_SERVER_PAIRS names a server '{serverId}', and a node enrolled over the network ({other}) has "
+            + "that name: take the entry out, start, and remove that node in Administration → Deployment first");
+      }
+
       await using var upsert = new NpgsqlCommand("""
         INSERT INTO media_server_node (server_id, fs_id, onvif_id, logger_id, roi_id, name, configured)
         VALUES ($1, $2, $3, $4, $5, $1, true)
@@ -121,6 +133,17 @@ public sealed class NodeRegistry(
     };
   }
 
+  /// <summary>
+  /// Said at every start of a core while enrollment is open: meant for while the deployment is being
+  /// set up, it hands the core's passwords to any machine that reaches its web, and is easy to forget.
+  /// </summary>
+  public async Task WarnIfEnrollmentOpenAsync(CancellationToken ct)
+  {
+    if (DistributedDir is not null && (await GetDeploymentAsync(ct)).EnrollmentOpen)
+      logger.LogWarning("Node enrollment is open: any machine that reaches this core's web can join, and gets "
+        + "its passwords. Close it in Administration → Deployment once every machine is in");
+  }
+
   public async Task SetEnrollmentOpenAsync(bool open, CancellationToken ct)
   {
     await using var db = await dbFactory.CreateDbContextAsync(ct);
@@ -141,11 +164,17 @@ public sealed class NodeRegistry(
   }
 
   /// <summary>
-  /// Registers a node and makes its package. Asked again for the same name from the same address —
-  /// a machine installed over — it hands out a new package for the node already there.
+  /// Registers a node and makes its package. Asked again for a node already there — a machine
+  /// installed over, or one that has a new address — it hands out a new package for it, moved to the
+  /// address given, but only to an administrator.
   /// </summary>
+  /// <param name="administrator">
+  /// Whether an administrator asks: logged in to the web, or the web checked their password. Open
+  /// enrollment lets anyone add a node, which shows in the list of nodes; a package for one already
+  /// there would let anyone become it, unseen.
+  /// </param>
   public async Task<(DbMediaServerNode Node, byte[] Package)> EnrollAsync(
-    string name, string address, bool mediaMtx, CancellationToken ct)
+    string name, string address, bool mediaMtx, bool administrator, CancellationToken ct)
   {
     if (DistributedDir is null)
       throw new RpcException(new Status(StatusCode.FailedPrecondition,
@@ -158,10 +187,13 @@ public sealed class NodeRegistry(
     var (serverId, fsId, onvifId, loggerId) = NodePackage.Pair(name);
     await using var db = await dbFactory.CreateDbContextAsync(ct);
     var existing = await db.MediaServerNodes.SingleOrDefaultAsync(n => n.ServerId == serverId || n.Name == name, ct);
-    if (existing is not null && (existing.Configured || existing.Address != address))
-      throw new RpcException(new Status(StatusCode.AlreadyExists, existing.Configured
-        ? $"node '{name}' is listed in this core's configuration; it joined with a package before"
-        : $"there is a node '{name}' at {existing.Address} already; remove it first, or choose another name"));
+    if (existing is { Configured: true })
+      throw new RpcException(new Status(StatusCode.AlreadyExists,
+        $"node '{name}' is listed in this core's configuration; it joined with a package before"));
+    if (existing is not null && !administrator)
+      throw new RpcException(new Status(StatusCode.PermissionDenied,
+        $"there is a node '{name}' at {existing.Address} already: a new package for it takes an administrator's "
+        + "user name and password, or choose another name"));
 
     // Made before anything is written: a core that cannot sign must not leave a node behind that
     // has no package.
@@ -178,24 +210,35 @@ public sealed class NodeRegistry(
       ServerId = serverId, FsId = fsId, OnvifId = onvifId, LoggerId = loggerId, Name = name,
       Address = address, EnrolledAt = DateTime.UtcNow,
     }).Entity;
+    var from = node.Address;
+    node.Address = address;
     node.MediaMtx = mediaMtx;
     await db.SaveChangesAsync(ct);
 
     if (mediaMtx)
-      await EnsureMediaMtxAsync(node, ct);
+      await EnsureMediaMtxAsync(node, from, ct);
     logger.LogInformation("Node '{Name}' ({ServerId}) at {Address} {How}", name, serverId, address,
-      existing is null ? "enrolled" : "enrolled again: a new package for it");
+      existing is null ? "enrolled"
+        : from == address ? "enrolled again: a new package for it"
+        : $"enrolled again, moved from {from}: a new package for it");
     return (node, package);
   }
 
   /// <summary>
   /// The node's own MediaMTX, so that its cameras' live video stays on it: the accounts of the
-  /// shared one, every MediaMTX of a deployment using the core's, at the node's address.
+  /// shared one, every MediaMTX of a deployment using the core's, at the node's address. One the node
+  /// has already moves with it from <paramref name="from"/>, its address before.
   /// </summary>
-  private async Task EnsureMediaMtxAsync(DbMediaServerNode node, CancellationToken ct)
+  private async Task EnsureMediaMtxAsync(DbMediaServerNode node, string from, CancellationToken ct)
   {
     var servers = await storage.ListMediaMtxServersAsync(ct);
-    if (servers.Any(s => s.ServerId == node.ServerId))
+    var own = servers.Where(s => s.ServerId == node.ServerId).ToList();
+    foreach (var moved in own.Where(s => s.Host == from && from != node.Address))
+    {
+      moved.Host = node.Address;
+      await storage.UpsertMediaMtxServerAsync(moved, ct);
+    }
+    if (own.Count > 0)
       return;
     var shared = servers.FirstOrDefault(s => string.IsNullOrEmpty(s.ServerId));
     if (shared is null)
