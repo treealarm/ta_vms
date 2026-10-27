@@ -307,6 +307,12 @@ function Resolve-VcpkgRoot {
     #>
     param([string]$Preferred = "")
 
+    # A root named on the command line is the caller's choice, even before it has any ports:
+    # the ports are what this script is about to install into it.
+    if ($Preferred -and (Test-Path -LiteralPath ([IO.Path]::Combine($Preferred, "vcpkg.exe")))) {
+        return (Resolve-Path $Preferred).Path
+    }
+
     $candidates = @()
     if ($Preferred) { $candidates += $Preferred }
     if ($env:VCPKG_ROOT) { $candidates += $env:VCPKG_ROOT }
@@ -334,13 +340,19 @@ function Get-MissingPorts {
     $listing = & (Join-Path $Root "vcpkg.exe") list 2>$null
     $missing = @()
     foreach ($port in $VcpkgPorts) {
-        # Compare on the base name: `vcpkg list` prints features as separate rows
-        # (ffmpeg[x264]:x64-windows) alongside the package itself.
+        # `vcpkg list` prints the package (ffmpeg:x64-windows) and then each installed feature
+        # as a row of its own (ffmpeg[x264]:x64-windows). Every feature asked for has to have
+        # its row: a tree installed before a feature was added here has the package and not the
+        # feature, and a build against it quietly lacks what the feature brings -- the hardware
+        # encoders, for nvcodec and qsv.
         $base = ($port -split '\[')[0]
-        $found = $listing | Where-Object {
-            $_ -match "^$([regex]::Escape($base))(\[[^\]]*\])?:$([regex]::Escape($Triplet))\s"
+        $features = if ($port -match '\[([^\]]+)\]') { $Matches[1] -split ',' } else { @() }
+        foreach ($name in @($base) + @($features | ForEach-Object { "$base[$_]" })) {
+            if (-not ($listing | Where-Object { $_ -match "^$([regex]::Escape($name)):$([regex]::Escape($Triplet))\s" })) {
+                $missing += $port
+                break
+            }
         }
-        if (-not $found) { $missing += $port }
     }
     return $missing
 }
@@ -566,7 +578,9 @@ if ($resolvedVcpkg) {
     if ($missingPorts.Count -gt 0) {
         Write-Note "Building these from source takes a long time — ffmpeg and grpc dominate."
         if (Confirm-Action "Install $($missingPorts.Count) missing port(s)?") {
-            $spec = $missingPorts | ForEach-Object { "$_`:$Triplet" }
+            # @() because one missing port makes the pipeline return a bare string, and
+            # splatting a string passes vcpkg its characters one argument each.
+            $spec = @($missingPorts | ForEach-Object { "$_`:$Triplet" })
             Write-Step "vcpkg install $($spec -join ' ')"
             Write-Note "this is the slow part — expect tens of minutes on a cold cache"
             $code = Invoke-Native { & (Join-Path $resolvedVcpkg "vcpkg.exe") install @spec }
@@ -611,9 +625,14 @@ if ($SkipBuild) {
 # A running service keeps its assemblies locked, and Windows refuses to overwrite them:
 # the build would fail with MSB3021 "file is locked by .NET Host" rather than pick up the
 # change. Say so plainly instead of letting the build die halfway.
+#
+# Only what runs out of this repository counts: an installed TreeAlarm VMS on the same machine
+# runs its own copies from Program Files, which lock nothing the build writes.
+$inRepo = [regex]::Escape($RepoRoot)
 $running = @(Get-CimInstance Win32_Process -Filter "Name='dotnet.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -match '[\\/](Vms[\w\.]*|dotnet\.Server)\.dll' })
-$running += @(Get-CimInstance Win32_Process -Filter "Name='vms.exe'" -ErrorAction SilentlyContinue)
+        Where-Object { $_.CommandLine -match '[\\/](Vms[\w\.]*|web_srv\.Server)\.dll' -and $_.CommandLine -match $inRepo })
+$running += @(Get-CimInstance Win32_Process -Filter "Name='vms.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.ExecutablePath -match "^$inRepo" })
 if ($running.Count -gt 0) {
     Write-Section "Build"
     Write-Bad "$($running.Count) ta_vms process(es) are running; their binaries are locked."
