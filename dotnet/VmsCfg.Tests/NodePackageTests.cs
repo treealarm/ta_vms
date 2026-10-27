@@ -1,6 +1,7 @@
 using System.Formats.Tar;
 using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 
@@ -32,11 +33,28 @@ public sealed class NodePackageTests
     ["VMS_STORAGE_BASE_PATH"] = @"C:\ProgramData\TreeAlarm\VMS\media_storage", ["WEB_VMS_PORT"] = "5134",
   };
 
+  private const string NodeAddress = "192.168.1.82";
+
+  // The core's TLS authority as openssl makes it on a Linux core: starting the moment it was made.
+  private static readonly NodePackage.TlsAuthority Authority = MakeAuthority(Now);
+
+  private static NodePackage.TlsAuthority MakeAuthority(DateTimeOffset notBefore)
+  {
+    using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+    var request = new CertificateRequest($"CN=TreeAlarm VMS CA {CoreAddress}", key, HashAlgorithmName.SHA256);
+    request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, 0, true));
+    request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
+    request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
+    using var ca = request.CreateSelfSigned(notBefore, notBefore.AddDays(3650));
+    return new NodePackage.TlsAuthority(ca.ExportCertificatePem() + "\n", key.ExportPkcs8PrivateKeyPem() + "\n");
+  }
+
   private static (Dictionary<string, (string Text, UnixFileMode Mode)> Files, ECDsa Key) Build(
     string name = "nhu", Dictionary<string, string>? env = null)
   {
     var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-    var bytes = NodePackage.Build(name, key.ExportECPrivateKeyPem(), SharedEnv, env ?? CoreEnvironment(), Now);
+    var bytes = NodePackage.Build(name, NodeAddress, key.ExportECPrivateKeyPem(), Authority, SharedEnv,
+      env ?? CoreEnvironment(), Now);
     var files = new Dictionary<string, (string, UnixFileMode)>();
     using var tar = new TarReader(new GZipStream(new MemoryStream(bytes), CompressionMode.Decompress));
     while (tar.GetNextEntry() is { } entry)
@@ -55,7 +73,7 @@ public sealed class NodePackageTests
     Assert.Equal(
       new[]
       {
-        "core.env", "name", "shared.env",
+        "core.env", "name", "shared.env", "tls/ca.crt", "tls/server.crt", "tls/server.key",
         "tokens/vms-nhu.token", "tokens/vmsfs-nhu.token", "tokens/vmslogger-nhu.token",
         "tokens/vmsonvif-actors-nhu.token", "tokens/vmsonvif-nhu.token", "tokens/web-vms-nhu.token",
       },
@@ -64,6 +82,34 @@ public sealed class NodePackageTests
     Assert.Equal("nhu\n", files["name"].Text);
     Assert.All(files.Values, f => Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, f.Mode));
     Assert.All(files.Values, f => Assert.DoesNotContain('\r', f.Text));
+  }
+
+  // What the node's web presents on the LAN: a certificate for the node's own address, issued by the
+  // core's authority, which follows it in the file and comes on its own beside it.
+  [Fact]
+  public void The_node_gets_a_certificate_for_its_address_from_the_cores_authority()
+  {
+    var (files, _) = Build();
+
+    Assert.Equal(Authority.CertPem, files["tls/ca.crt"].Text);
+    Assert.StartsWith("-----BEGIN PRIVATE KEY-----", files["tls/server.key"].Text);
+    using var leaf = X509Certificate2.CreateFromPem(files["tls/server.crt"].Text, files["tls/server.key"].Text);
+    Assert.Equal([System.Net.IPAddress.Parse(NodeAddress)],
+      leaf.Extensions.OfType<X509SubjectAlternativeNameExtension>().Single().EnumerateIPAddresses());
+    Assert.Contains(leaf.Extensions.OfType<X509EnhancedKeyUsageExtension>().Single().EnhancedKeyUsages.Cast<Oid>(),
+      o => o.Value == "1.3.6.1.5.5.7.3.1");
+    Assert.EndsWith(Authority.CertPem, files["tls/server.crt"].Text);
+
+    using var root = X509Certificate2.CreateFromPem(Authority.CertPem);
+    using var chain = new X509Chain();
+    chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+    chain.ChainPolicy.CustomTrustStore.Add(root);
+    chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+    chain.ChainPolicy.VerificationTime = Now.UtcDateTime.AddMinutes(1);
+    Assert.True(chain.Build(leaf));
+    // Not before the authority, which here was made the moment the node joined.
+    Assert.True(leaf.NotBefore >= root.NotBefore);
+    Assert.InRange((leaf.NotAfter - leaf.NotBefore).TotalDays, 824, 826);
   }
 
   [Fact]

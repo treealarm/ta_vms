@@ -2,6 +2,7 @@ using System.Formats.Tar;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -18,6 +19,9 @@ namespace VmsCfg;
 ///   core.env             what the node takes from this core: credentials, ports and service addresses
 ///   name                 the node's name
 ///   tokens/&lt;app&gt;.token   a Dapr Sentry token for each of the node's app ids, and for nothing else
+///   tls/ca.crt           the core's TLS certificate authority
+///   tls/server.crt       the node's certificate for its address, issued by it and followed by it
+///   tls/server.key       that certificate's key
 /// </code>
 /// It is the node's credential: anything it is handed to can join and read the core's passwords.
 /// Text is written with '\n' and no byte-order mark, since on Linux sed and compose read it.
@@ -70,21 +74,31 @@ public static partial class NodePackage
   private const string SentryId = "spiffe://localhost/ns/default/dapr-sentry";
   private const string KeyId = "tavms";
 
+  /// The core's TLS certificate authority (ta_install: tls/ca.crt and core/tls-ca.key), PEM.
+  public sealed record TlsAuthority(string CertPem, string KeyPem);
+
+  /// <param name="address">The node's own address, which its certificate is for.</param>
   /// <param name="sharedEnv">The core's shared.env, copied as it is.</param>
   /// <param name="env">This process's environment: the core's own values.</param>
-  public static byte[] Build(string name, string signingKeyPem, string sharedEnv,
+  public static byte[] Build(string name, string address, string signingKeyPem, TlsAuthority tls, string sharedEnv,
     IReadOnlyDictionary<string, string> env, DateTimeOffset now)
   {
     if (NameProblem(name) is { } problem)
       throw new ArgumentException(problem, nameof(name));
+    if (AddressProblem(address) is { } addressProblem)
+      throw new ArgumentException(addressProblem, nameof(address));
     var coreAddress = ReadValue(sharedEnv, "CORE_ADDRESS")
       ?? throw new InvalidOperationException("shared.env names no CORE_ADDRESS");
 
+    var (serverCert, serverKey) = ServerCertificate(tls, address, now);
     var files = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
       ["shared.env"] = sharedEnv,
       ["core.env"] = CoreEnv(env, coreAddress),
       ["name"] = name + "\n",
+      ["tls/ca.crt"] = tls.CertPem,
+      ["tls/server.crt"] = serverCert,
+      ["tls/server.key"] = serverKey,
     };
     using (var key = ECDsa.Create())
     {
@@ -109,6 +123,35 @@ public static partial class NodePackage
       }
     }
     return buffer.ToArray();
+  }
+
+  // What the core's own certificate is (ta_install: scripts/distributed.sh issue_server_cert and
+  // TaVmsHost's Pki.IssueServerCertificate), for the node's address: EC P-256 with its key in PKCS#8,
+  // the address in the SAN only — the CN does not look like a host name, which OpenSSL would read
+  // against the authority's DNS constraint and refuse — 825 days, what Apple's platforms accept, and
+  // the authority after it in the file.
+  private static readonly TimeSpan ServerLifetime = TimeSpan.FromDays(825);
+
+  private static (string CertPem, string KeyPem) ServerCertificate(TlsAuthority tls, string address, DateTimeOffset now)
+  {
+    using var authority = X509Certificate2.CreateFromPem(tls.CertPem, tls.KeyPem);
+    using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+    var request = new CertificateRequest($"CN=TreeAlarm VMS {address}", key, HashAlgorithmName.SHA256);
+    request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
+    request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, true));
+    request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([new Oid("1.3.6.1.5.5.7.3.1")], false));
+    var san = new SubjectAlternativeNameBuilder();
+    san.AddIpAddress(IPAddress.Parse(address));
+    request.CertificateExtensions.Add(san.Build());
+    request.CertificateExtensions.Add(X509AuthorityKeyIdentifierExtension.CreateFromCertificate(authority, true, false));
+    var serial = RandomNumberGenerator.GetBytes(16);
+    serial[0] &= 0x7F;
+    // Within the authority's own validity, which .NET insists on: one openssl made (a Linux core)
+    // starts the moment it was made, not five minutes before; one in its last 825 days ends sooner.
+    var notBefore = now.AddMinutes(-5) > authority.NotBefore.ToUniversalTime() ? now.AddMinutes(-5) : authority.NotBefore.ToUniversalTime();
+    var notAfter = now + ServerLifetime < authority.NotAfter.ToUniversalTime() ? now + ServerLifetime : authority.NotAfter.ToUniversalTime();
+    using var certificate = request.Create(authority, notBefore, notAfter, serial);
+    return (certificate.ExportCertificatePem() + "\n" + tls.CertPem, key.ExportPkcs8PrivateKeyPem() + "\n");
   }
 
   /// The core's credentials and ports, and where a node reaches each of its services. The addresses

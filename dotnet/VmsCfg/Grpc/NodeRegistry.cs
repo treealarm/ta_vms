@@ -128,6 +128,18 @@ public sealed class NodeRegistry(
     logger.LogInformation("Node enrollment {State}", open ? "opened: machines join without a password" : "closed: joining takes an administrator's password");
   }
 
+  // The core's TLS certificate authority, which issues the node's certificate. A core made before
+  // it had one gets it at its next `distributed.sh up`, or install of the core on Windows.
+  private async Task<NodePackage.TlsAuthority> ReadTlsAuthorityAsync(CancellationToken ct)
+  {
+    var cert = Path.Combine(DistributedDir!, "tls", "ca.crt");
+    var key = Path.Combine(DistributedDir!, "core", "tls-ca.key");
+    if (!File.Exists(cert) || !File.Exists(key))
+      throw new RpcException(new Status(StatusCode.FailedPrecondition,
+        "this core has no TLS certificate authority yet: run 'distributed.sh up' on it, or install it again (Role=core)"));
+    return new NodePackage.TlsAuthority(await File.ReadAllTextAsync(cert, ct), await File.ReadAllTextAsync(key, ct));
+  }
+
   /// <summary>
   /// Registers a node and makes its package. Asked again for the same name from the same address —
   /// a machine installed over — it hands out a new package for the node already there.
@@ -153,8 +165,9 @@ public sealed class NodeRegistry(
 
     // Made before anything is written: a core that cannot sign must not leave a node behind that
     // has no package.
-    var package = NodePackage.Build(name,
+    var package = NodePackage.Build(name, address,
       await File.ReadAllTextAsync(Path.Combine(DistributedDir, "core", "jwt.key"), ct),
+      await ReadTlsAuthorityAsync(ct),
       await File.ReadAllTextAsync(Path.Combine(DistributedDir, "shared.env"), ct),
       Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
         .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? string.Empty, StringComparer.Ordinal),
