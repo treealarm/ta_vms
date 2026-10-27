@@ -1,7 +1,16 @@
 using System.Collections.Concurrent;
+using System.Net;
 using Dapr.Messaging.PublishSubscribe;
+using Google.Protobuf;
+using Grpc.AspNetCore.Server.Model;
+using Grpc.Core;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using VmsLog;
+using P = Dapr.Client.Autogen.Grpc.v1;
 
 namespace VmsAnalyticsSingleton.Tests;
 
@@ -13,7 +22,7 @@ public sealed class StreamingSubscriptionsTests
     new(new MessageHandlingPolicy(TimeSpan.FromSeconds(1), TopicResponseAction.Retry));
 
   private static readonly StreamingSubscriptions.RetryPolicy Fast =
-    new(TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(40), TimeSpan.FromHours(1));
+    new(TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(40), TimeSpan.FromHours(1), TimeSpan.FromHours(1));
 
   private static Task<TopicResponseAction> Handler(TopicMessage _, CancellationToken __) =>
     Task.FromResult(TopicResponseAction.Success);
@@ -169,6 +178,43 @@ public sealed class StreamingSubscriptionsTests
     await run.WaitAsync(TimeSpan.FromSeconds(5));
   }
 
+  [Fact]
+  public async Task A_stream_that_outlives_its_lifetime_is_renewed_at_once()
+  {
+    var client = new FakeClient();
+    var log = new ListLogger();
+    using var cts = new CancellationTokenSource();
+    var run = StreamingSubscriptions.KeepAsync(client, "pubsub", Options, [new("a", Handler)], log, cts.Token,
+      Fast with { MaxLifetime = TimeSpan.FromMilliseconds(100) });
+
+    var first = await client.NextAsync("a");
+    await client.NextAsync("a");
+
+    Assert.Equal(1, first.Disposed);
+    Assert.False(first.Completion.IsCompleted);
+    // Renewed, not retried: no wait and no warning.
+    Assert.Empty(log.Delays);
+    cts.Cancel();
+    await run.WaitAsync(TimeSpan.FromSeconds(5));
+  }
+
+  // The real client against a sidecar that ends every stream with status OK. Completion never
+  // completes then (still so in Dapr.Messaging 1.19), so only the lifetime brings the subscription
+  // back; should a later Dapr report the clean end, this still passes, through the retry instead.
+  [Fact]
+  public async Task The_real_client_is_subscribed_again_when_the_sidecar_ends_the_stream_cleanly()
+  {
+    await using var sidecar = await CleanEndingSidecar.StartAsync();
+    var client = new DaprPublishSubscribeClientBuilder().UseGrpcEndpoint(sidecar.Url).Build();
+    using var cts = new CancellationTokenSource();
+    var run = StreamingSubscriptions.KeepAsync(client, "pubsub", Options, [new("a", Handler)], new ListLogger(),
+      cts.Token, Fast with { MaxLifetime = TimeSpan.FromMilliseconds(300) });
+
+    await WaitUntilAsync(() => sidecar.Subscriptions >= 2);
+    cts.Cancel();
+    await run.WaitAsync(TimeSpan.FromSeconds(5));
+  }
+
   private static async Task WaitUntilAsync(Func<bool> condition)
   {
     var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
@@ -222,6 +268,69 @@ public sealed class StreamingSubscriptionsTests
       FakeReceiver? receiver = null;
       await WaitUntilAsync(() => queue.TryDequeue(out receiver));
       return receiver!;
+    }
+  }
+
+  // Answers SubscribeTopicEventsAlpha1 as a sidecar does, then returns: the call ends with status
+  // OK, which is a clean end of the response stream.
+  private sealed class CleanEndingSidecar : IAsyncDisposable
+  {
+    private readonly WebApplication _app;
+    private CleanEndingSidecar(WebApplication app) => _app = app;
+
+    public string Url => _app.Urls.First();
+    public int Subscriptions => _app.Services.GetRequiredService<Counter>().Value;
+
+    public static async Task<CleanEndingSidecar> StartAsync()
+    {
+      var builder = WebApplication.CreateBuilder();
+      builder.Logging.ClearProviders();
+      builder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, 0, o => o.Protocols = HttpProtocols.Http2));
+      builder.Services.AddGrpc();
+      builder.Services.AddSingleton<Counter>();
+      builder.Services.AddSingleton<IServiceMethodProvider<Service>, Service.Provider>();
+      var app = builder.Build();
+      app.MapGrpcService<Service>();
+      await app.StartAsync();
+      return new CleanEndingSidecar(app);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+      await _app.StopAsync();
+      await _app.DisposeAsync();
+    }
+
+    private sealed class Counter
+    {
+      private int _value;
+      public int Value => Volatile.Read(ref _value);
+      public void Increment() => Interlocked.Increment(ref _value);
+    }
+
+    private sealed class Service(Counter subscriptions)
+    {
+      private static Marshaller<T> Of<T>(MessageParser<T> parser) where T : IMessage<T> =>
+        Marshallers.Create(m => m.ToByteArray(), parser.ParseFrom);
+
+      private static readonly Method<P.SubscribeTopicEventsRequestAlpha1, P.SubscribeTopicEventsResponseAlpha1> Subscribe =
+        new(MethodType.DuplexStreaming, "dapr.proto.runtime.v1.Dapr", "SubscribeTopicEventsAlpha1",
+          Of(P.SubscribeTopicEventsRequestAlpha1.Parser), Of(P.SubscribeTopicEventsResponseAlpha1.Parser));
+
+      private async Task SubscribeAsync(IAsyncStreamReader<P.SubscribeTopicEventsRequestAlpha1> requests,
+        IServerStreamWriter<P.SubscribeTopicEventsResponseAlpha1> responses, ServerCallContext call)
+      {
+        if (!await requests.MoveNext(call.CancellationToken)) return;
+        subscriptions.Increment();
+        await responses.WriteAsync(new P.SubscribeTopicEventsResponseAlpha1 { InitialResponse = new() });
+      }
+
+      public sealed class Provider : IServiceMethodProvider<Service>
+      {
+        public void OnServiceMethodDiscovery(ServiceMethodProviderContext<Service> context) =>
+          context.AddDuplexStreamingMethod(Subscribe, [],
+            (service, requests, responses, call) => service.SubscribeAsync(requests, responses, call));
+      }
     }
   }
 
