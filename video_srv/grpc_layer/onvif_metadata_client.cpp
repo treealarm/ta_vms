@@ -88,9 +88,12 @@ void onvif_metadata_client::set_target_app_id(const std::string& app_id)
 
 void onvif_metadata_client::stop()
 {
-  if (!m_running.exchange(false))
-    return;
-
+  {
+    // Under the mutex, so a send_loop that has just checked its predicate cannot miss the wake.
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_running.exchange(false))
+      return;
+  }
   m_cv.notify_all();
   if (m_thread.joinable())
     m_thread.join();
