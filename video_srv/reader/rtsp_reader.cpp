@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <format>
 #include <string_view>
@@ -43,6 +44,22 @@ std::string build_rtsp_url_with_auth(const std::string& url,
 
   return std::string(kRtspPrefix) + user + ":" + pass + "@"
     + url.substr(kRtspPrefix.size());
+}
+
+// The URL as the log shows it: a stream URL may carry its own password (rtsp://user:pass@host),
+// and whoever reads the log must not learn it there. The userinfo ends at the last '@' before the
+// path, as FFmpeg's av_url_split reads it, so a password holding '@' is hidden whole.
+std::string rtsp_url_for_log(const std::string& url)
+{
+  if (!rtsp_url_has_credentials(url)) return url;
+
+  const auto start = kRtspPrefix.size();
+  const auto authority_end = std::min(url.find_first_of("/?", start), url.size());
+  const auto at = url.rfind('@', authority_end - 1);
+  const auto colon = url.find(':', start);
+  if (colon == std::string::npos || colon > at) return url;   // a user name alone
+
+  return url.substr(0, colon + 1) + "***" + url.substr(at);
 }
 }
 
@@ -180,7 +197,7 @@ bool rtsp_reader::connect()
   if (avformat_open_input(&ctx, final_url.c_str(), nullptr, &opts) < 0)
   {
     if (m_running)
-      logger::instance().error(std::format("Failed to open RTSP [cam={}]: {}", m_cam_id, m_rtsp_url));
+      logger::instance().error(std::format("Failed to open RTSP [cam={}]: {}", m_cam_id, rtsp_url_for_log(m_rtsp_url)));
     av_dict_free(&opts);
     avformat_close_input(&ctx);
     return false;
@@ -192,7 +209,7 @@ bool rtsp_reader::connect()
 
   if (avformat_find_stream_info(m_ctx.get(), nullptr) < 0)
   {
-    logger::instance().error(std::format("Failed to get stream info [cam={}]: {}", m_cam_id, m_rtsp_url));
+    logger::instance().error(std::format("Failed to get stream info [cam={}]: {}", m_cam_id, rtsp_url_for_log(m_rtsp_url)));
     disconnect();
     return false;
   }
@@ -225,7 +242,7 @@ bool rtsp_reader::connect()
 
   if (m_video_index < 0)
   {
-    logger::instance().error(std::format("No video stream [cam={}]: {}", m_cam_id, m_rtsp_url));
+    logger::instance().error(std::format("No video stream [cam={}]: {}", m_cam_id, rtsp_url_for_log(m_rtsp_url)));
     disconnect();
     return false;
   }
@@ -236,7 +253,7 @@ bool rtsp_reader::connect()
       "ONVIF metadata track found [cam={}] stream_index={}", m_cam_id, m_metadata_index));
   }
 
-  logger::instance().info(std::format("RTSP connected [cam={}]: {}", m_cam_id, m_rtsp_url));
+  logger::instance().info(std::format("RTSP connected [cam={}]: {}", m_cam_id, rtsp_url_for_log(m_rtsp_url)));
   return true;
 }
 
@@ -341,7 +358,7 @@ void rtsp_reader::read_loop()
         // of them is a lost source. This only decides *that* it happened — *when* comes from
         // m_last_frame_us, which still holds the last real packet.
         const bool was_alive = m_source_alive.exchange(false);
-        logger::instance().warning(std::format("RTSP watchdog: reconnecting [cam={}]: {}", m_cam_id, m_rtsp_url));
+        logger::instance().warning(std::format("RTSP watchdog: reconnecting [cam={}]: {}", m_cam_id, rtsp_url_for_log(m_rtsp_url)));
         disconnect();
         // Announced at the transition rather than left to the liveness poll: the open clip has to
         // stop here, and until it does, packets from after the reconnect are written into a segment
