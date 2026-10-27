@@ -1,4 +1,5 @@
 using System.Net;
+using Flurl.Http;
 using KeycloakAdmin;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -136,9 +137,16 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
     {
       await kcAdmin.GetTokenAsync(realm, clientId, username, dto.CurrentPassword);
     }
-    catch (Exception)
+    // Keycloak's answer to a wrong password, as in Refresh; anything else says nothing about it. The
+    // password grant goes through Keycloak.Net, which throws Flurl's exception rather than HttpClient's.
+    catch (FlurlHttpException ex) when (ex.StatusCode is StatusCodes.Status400BadRequest or StatusCodes.Status401Unauthorized)
     {
       return BadRequest(new { code = "wrong_current_password", error = "The current password is wrong" });
+    }
+    catch (Exception)
+    {
+      return StatusCode(StatusCodes.Status503ServiceUnavailable,
+        new { code = "identity_provider_unavailable", error = "Identity provider unavailable" });
     }
 
     if (!await kcAdmin.SetPasswordAsync(realm, username, dto.NewPassword))

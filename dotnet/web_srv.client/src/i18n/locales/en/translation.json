@@ -66,7 +66,8 @@
         "too_short": "The new password is too short",
         "same_as_current": "The new password must differ from the current one",
         "same_as_username": "The new password must differ from the username",
-        "wrong_current_password": "The current password is wrong"
+        "wrong_current_password": "The current password is wrong",
+        "identity_provider_unavailable": "The login service does not answer: try again in a minute"
       }
     }
   },

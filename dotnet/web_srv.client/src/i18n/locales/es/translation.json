@@ -66,7 +66,8 @@
         "too_short": "La contraseña nueva es demasiado corta",
         "same_as_current": "La contraseña nueva debe ser distinta de la actual",
         "same_as_username": "La contraseña nueva debe ser distinta del nombre de usuario",
-        "wrong_current_password": "La contraseña actual es incorrecta"
+        "wrong_current_password": "La contraseña actual es incorrecta",
+        "identity_provider_unavailable": "El servicio de inicio de sesión no responde: inténtelo de nuevo en un minuto"
       }
     }
   },
