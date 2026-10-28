@@ -376,7 +376,7 @@
     "enforce": "Aplicar permisos de cámara",
     "enforceOffHelper": "Desactivado: todo usuario autenticado ve todas las cámaras",
     "enforceOnHelper": "Activado: cada usuario solo ve las cámaras concedidas",
-    "enforceOnWarning": "Los usuarios sin permisos perderán de inmediato el acceso a todas las cámaras, incluidos los usuarios de Square que inicien sesión en este realm.",
+    "enforceOnWarning": "Los usuarios sin permisos perderán de inmediato el acceso a todas las cámaras.",
     "enforceConfirm": "¿Activar los permisos de cámara?",
     "administrator": "Administrador — todas las cámaras",
     "adminBypass": "Este usuario tiene el rol admin: accede a todas las cámaras y acciones sin importar lo que se marque aquí. Quite el rol admin en Keycloak para que estos permisos se apliquen.",
@@ -554,7 +554,6 @@
   "cameraCard": {
     "switchToArchive": "Cambiar a archivo",
     "switchToLive": "Cambiar a directo",
-    "openInSquare": "Abrir en Square",
     "cycleStream": "Flujo: {{stream}} — clic para cambiar",
     "ptzOpen": "Control PTZ",
     "ptzClose": "Cerrar PTZ",

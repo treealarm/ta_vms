@@ -375,8 +375,9 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
 }
 
 # ---- submodules --------------------------------------------------------------------
-# SquareIntegrationClient and roitrc/ta_roienc are submodules; without the first the solution
-# does not restore. Both are public and .gitmodules names them over HTTPS, so no key is needed.
+# roitrc/ta_roienc is a submodule; the Windows hardware encoders arrive through it, so vms.exe
+# must not be built without it (CLAUDE.md). It is public and .gitmodules names it over HTTPS, so
+# no key is needed.
 Write-Head "Git submodules"
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     Write-Miss "skipped — git is not available"

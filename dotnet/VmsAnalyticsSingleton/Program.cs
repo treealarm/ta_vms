@@ -32,8 +32,8 @@ builder.Services.AddSingleton<CameraServerCache>();
 builder.Services.AddSingleton<MetadataArchiveWriter>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MetadataArchiveWriter>());
 
-// video_a workers are optional, mirroring ISquareIntegration/NoOpSquareIntegration in VmsCfg: if
-// none are configured, analytics ingestion is simply inactive — no exception, no crash. Multiple
+// video_a workers are optional: if none are configured, analytics ingestion is simply inactive —
+// no exception, no crash. Multiple
 // workers (comma-separated app-ids) are sharded by rendezvous hash in AnalyticsWorkerRegistry.
 var workerAppIds = (Environment.GetEnvironmentVariable("DAPR_ANALYTICS_WORKER_APP_IDS") ?? "")
   .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

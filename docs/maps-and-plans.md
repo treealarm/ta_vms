@@ -1,6 +1,6 @@
 # Maps & plans
 
-ta_vms places cameras and reference points in space on its own, without Square. An administrator
+ta_vms places cameras and reference points in space on its own. An administrator
 lays out maps and plans under **Admin → Maps**; an operator watches cameras where they stand under
 **Operator → Map**, dives into nested plans, and can point a calibrated PTZ at a place by clicking it.
 
@@ -39,10 +39,9 @@ Conventions that hold everywhere:
   apply the same rule.
 - **A camera has one reference placement and any number of pictures.** The reference is where it
   really stands; aiming and calibration go by it. Pictures — the camera drawn again on a detailed
-  plan of its corner — are only drawn. This is Square's `owner_id` relation: export makes the
-  reference the camera object and each picture an object owned by it. A camera's first placement
-  becomes its reference; clearing the flag leaves the camera with none, never quietly promoting
-  another.
+  plan of its corner — are only drawn (Square's `owner_id` relation, which the map service will
+  carry over, see `docs/plans/square-merge/`). A camera's first placement becomes its reference;
+  clearing the flag leaves the camera with none, never quietly promoting another.
 - **Positions are WGS84 plus a height in metres above the floor of their space** — never above sea
   level. Height above the ground is `space.elevation_m + height_m`; elevation matters only where
   coordinates are real, so a camera upstairs and one in the yard agree on heights.
@@ -89,7 +88,7 @@ Conventions that hold everywhere:
   Its own topic because it concerns no node: `server-config-changed` with an empty camera list would
   make every media server, VmsFs and VmsOnvif reconcile for nothing. Addressing only, like every
   event here. The aiming service subscribes (it drops every cached spatial model, since a moved
-  landmark may underlie any camera's calibration), and so does the Square producer.
+  landmark may underlie any camera's calibration).
 
 ## Map tiles
 
@@ -354,44 +353,6 @@ left open by a crash.
   in (this one if it is here, otherwise where it really stands) and selects it. The camera's panel
   then says since when and why, and offers the recording of the alarm beside the live picture.
 
-## Ownership with Square
-
-A camera whose reference placement is in a space with real coordinates owns its position in Square:
-its point and heading go up with every push. Any other camera — not placed, placed only as pictures,
-or standing on a plan in made-up coordinates — leaves its position to Square: it gets a default point
-once, when Square first learns of it, and afterwards only its name and properties are sent.
-
-## Export to Square
-
-When the Square integration is on, `VmsSquareSingleton` puts the spaces into Square as its own
-diagrams (`SquareSpaceExport`, run by `SpaceExportWorker` on `space-config-changed`, on a camera's
-`server-config-changed` — its placements — and at the startup resync). VmsCfg knows nothing of it.
-
-| ta_vms | Square |
-|---|---|
-| Space | a tree object (`ToObjectId(space id)`), under its parent space or the producer's root; integro type `space` |
-| Map | a tree node only — its paper is Square's own map |
-| Plan | a diagram. A root plan's paper is its picture's pixels (or its default view, 1000 px wide, with no picture). A plan in a plan sits on the box round its footprint in the parent's pixels. A plan in a map is a diagram of its own, and its footprint goes onto Square's map as a polygon — the way in |
-| Plan picture | uploaded once per version (`UploadFile` into `static_files/<producer>/plans/<space>-<etag>.<ext>`), named in `background_img` |
-| Reference placement | the camera object itself: it hangs under the space it stands in; on a plan it is an icon there (diagram type `vms-camera`, Square's camera picture); in real coordinates it also keeps its point and heading on the map |
-| Picture placement | a replica: its own object (`ToObjectId("<camera>/<space>")`) with `owner_id` = the camera, under that space — an icon on a plan, a point on a map |
-
-How a point gets into a diagram: Square places a diagram's children in pixels of the diagram's own
-rectangle and stretches its picture over that rectangle. So a point goes from WGS84 into the plan's
-pixels (the inverse of the affine map its three corners define — a plan turned on the map comes out
-upright, as Square shows it) and is then stretched by the same factors as the picture.
-
-Assumptions about Square, read from its code and **not yet tried against a running Square**:
-- IntegrationHost's `UploadFile` writes under the same root LeafletAlarms serves `static_files`
-  from (both mount `ROOT_DATA` in Square's compose).
-- A figure push rewrites an object's place in the tree without its `owner_id`, so the export sends
-  figures before the tree.
-- Square has no delete in its integration protocol: a space or picture removed here stays in Square,
-  as a removed camera does, until the protocol can say so.
-
-What is checked: the geometry and the batch built from it (`VmsSquareSingleton.Tests`); the push
-itself only compiles.
-
 ## Next stages
 
 - **PTZ fit by mount orientation.** The two straight lines hold only for a level mount, angular
@@ -445,5 +406,4 @@ itself only compiles.
   already measured on the ground.)
 - **Aerial targets**: a master's full pose (PnP from landmarks with heights) gives a ray; a
   co-located slave follows its direction, two masters triangulate a 3D point.
-- **Export to Square, the rest**: delete (needs Square's protocol), landmarks and ground marks.
 - A footprint's colour from the state of the cameras inside it; walls that cut view cones.

@@ -5,14 +5,6 @@ namespace web_srv.Controllers;
 
 public class FrontendConfigDto
 {
-  public string? SquareFrontendOrigin { get; set; }
-  /// <summary>
-  /// This deployment really is integrated with Square: the integration is switched on and its
-  /// startup resync has reached Square at least once. Knowing where Square's UI lives
-  /// (<see cref="SquareFrontendOrigin"/>) is a separate question — that value also gates CORS, and
-  /// is set in dev whether or not a Square is running.
-  /// </summary>
-  public bool SquareIntegrated { get; set; }
   /// <summary>Whether the dev-only anonymous WHEP test page is served at all.</summary>
   public bool LiveTestPlayer { get; set; }
   /// <summary>
@@ -24,16 +16,15 @@ public class FrontendConfigDto
   public string? MapTileAttribution { get; set; }
   /// <summary>
   /// Port of the user administration (multitenant_admin in its standalone mode) on this same host,
-  /// which the standalone installs run beside the web UI. Null where users live elsewhere: with
-  /// Square, and in dev.
+  /// which the standalone installs run beside the web UI. Null where users live elsewhere, as in
+  /// dev.
   /// </summary>
   public int? UserAdminPort { get; set; }
 }
 
-// Relays SQUARE_FRONTEND_ORIGIN (a backend runtime env var, see Program.cs's CORS gate) to the SPA.
-// The React client is built into the Docker image statically, so Vite's import.meta.env can't see
-// a value that only exists once the container starts — this is the same env var, just exposed
-// through REST instead of a build-time constant. Anonymous like AuthController.cs, since the SPA
+// Relays backend runtime settings to the SPA. The React client is built into the Docker image
+// statically, so Vite's import.meta.env can't see a value that only exists once the container
+// starts — these are env vars of this server, exposed through REST instead of build-time constants. Anonymous like AuthController.cs, since the SPA
 // needs this before/without a Keycloak token.
 [ApiController]
 [Route("api/config")]
@@ -42,7 +33,7 @@ public class FrontendConfigDto
 // whether the backend is there at all, and it needs nothing from the server-to-node map. Refusing
 // it during startup makes the page report an unreachable backend instead of loading.
 [AllowNotReady]
-public class FrontendConfigController(SquareLinkProbe _square) : ControllerBase
+public class FrontendConfigController : ControllerBase
 {
   /// <summary>
   /// Single source of truth for the VMS_LIVE_TEST_PLAYER gate: read once, consumed by
@@ -60,12 +51,10 @@ public class FrontendConfigController(SquareLinkProbe _square) : ControllerBase
       : null;
 
   [HttpGet("frontend")]
-  public async Task<ActionResult<FrontendConfigDto>> GetConfig(CancellationToken ct)
+  public ActionResult<FrontendConfigDto> GetConfig()
   {
     return Ok(new FrontendConfigDto
     {
-      SquareFrontendOrigin = Environment.GetEnvironmentVariable("SQUARE_FRONTEND_ORIGIN"),
-      SquareIntegrated = await _square.IsIntegratedAsync(ct),
       LiveTestPlayer = LiveTestPlayerEnabled,
       MapTilesEnabled = MapTilesController.TileUrlTemplate is not null,
       // Optional, shown under the map as given. Empty with tiles on is a misconfiguration for most

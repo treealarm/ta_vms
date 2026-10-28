@@ -376,7 +376,7 @@
     "enforce": "Enforce camera permissions",
     "enforceOffHelper": "Off: every signed-in user reaches every camera",
     "enforceOnHelper": "On: users only reach the cameras granted to them",
-    "enforceOnWarning": "Users without grants will immediately lose access to all cameras, including any Square users signing in against this realm.",
+    "enforceOnWarning": "Users without grants will immediately lose access to all cameras.",
     "enforceConfirm": "Enable camera permissions?",
     "administrator": "Administrator — all cameras",
     "adminBypass": "This user has the admin role: they reach every camera and every action regardless of what is set here. Remove the admin role in Keycloak to make these permissions apply.",
@@ -554,7 +554,6 @@
   "cameraCard": {
     "switchToArchive": "Switch to Archive",
     "switchToLive": "Switch to Live",
-    "openInSquare": "Open in Square",
     "cycleStream": "Stream: {{stream}} — click to cycle",
     "ptzOpen": "PTZ control",
     "ptzClose": "Close PTZ",

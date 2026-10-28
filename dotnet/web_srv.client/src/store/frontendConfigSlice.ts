@@ -2,8 +2,6 @@ import { createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import { parseJson } from './api'
 
 type FrontendConfigDto = {
-  squareFrontendOrigin?: string | null
-  squareIntegrated?: boolean
   liveTestPlayer?: boolean
   mapTilesEnabled?: boolean
   mapTileAttribution?: string | null
@@ -16,13 +14,6 @@ type HealthDto = {
 }
 
 type FrontendConfigState = {
-  squareFrontendOrigin: string | null
-  /**
-   * This deployment really is integrated with Square: the integration is switched on and has
-   * reached Square at least once. Separate from knowing where Square's UI lives — that value also
-   * gates CORS and is set in dev whether or not a Square is running.
-   */
-  squareIntegrated: boolean
   /** Whether the backend serves the dev-only anonymous WHEP test endpoints at all. */
   liveTestPlayer: boolean
   /** Geo sites get map tiles underneath, through the backend's caching proxy. */
@@ -47,8 +38,6 @@ type FrontendConfigState = {
 }
 
 const initialState: FrontendConfigState = {
-  squareFrontendOrigin: null,
-  squareIntegrated: false,
   liveTestPlayer: false,
   mapTilesEnabled: false,
   mapTileAttribution: null,
@@ -83,8 +72,6 @@ const frontendConfigSlice = createSlice({
         state.status = 'succeeded'
         state.lastError = null
         state.failedAttempts = 0
-        state.squareFrontendOrigin = action.payload.squareFrontendOrigin || null
-        state.squareIntegrated = action.payload.squareIntegrated === true
         state.liveTestPlayer = action.payload.liveTestPlayer === true
         state.mapTilesEnabled = action.payload.mapTilesEnabled === true
         state.mapTileAttribution = action.payload.mapTileAttribution || null

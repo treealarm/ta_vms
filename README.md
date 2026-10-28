@@ -84,7 +84,7 @@ for state and RabbitMQ as the message bus.
 | `dotnet/VmsPtzTrackingSingleton` | PTZ tracking and aiming one camera from another through the map |
 | `dotnet/VmsAnalyticsSingleton` | Hands cameras to the analytics workers and keeps their detections |
 | `roitrc/` (C++) | Re-compresses finished clips, keeping detected objects sharp |
-| `dotnet/VmsUtils`, `VmsLogger`, `VmsSingleton`, `VmsSquareSingleton` | MediaMTX control, logs, system-wide jobs, the TreeAlarm integration |
+| `dotnet/VmsUtils`, `VmsLogger`, `VmsSingleton` | MediaMTX control, logs, system-wide jobs |
 
 Live video reaches the browser through [MediaMTX](https://github.com/bluenviron/mediamtx). Detection
 runs in a separate worker, [video_a](https://github.com/treealarm/video_a).
@@ -119,14 +119,6 @@ where the head really points against the simulator's ground truth.
 | [OnvifSim](https://github.com/treealarm/OnvifSim) | ONVIF camera simulator, used to test PTZ without hardware |
 | [OnvifLib](https://github.com/treealarm/OnvifLib) | The ONVIF client library the services use, taken as the `OnvifLib` NuGet package |
 | [roi_transcode](https://github.com/treealarm/roi_transcode) | The hardware video encoding library, the `roitrc/ta_roienc` submodule |
-| [Square](https://github.com/treealarm/Square) | TreeAlarm, the map-based monitoring system this VMS plugs into |
-
-## Works with TreeAlarm
-
-[TreeAlarm](https://github.com/treealarm/Square) is a map-based monitoring system. Connected to it,
-the cameras become objects on its map: watch them live, scrub the archive, drive PTZ and receive
-alarms in its event stream, behind one sign-in. The integration is off by default and turned on in
-`ta_install`'s `.env` (`KEYCLOAK_URL` and the `SQUARE_*` settings).
 
 ## Support the project
 

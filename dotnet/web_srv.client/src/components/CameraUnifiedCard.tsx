@@ -32,7 +32,6 @@ import ControlCameraIcon from '@mui/icons-material/ControlCamera'
 import SensorsIcon from '@mui/icons-material/Sensors'
 import DirectionsRunIcon from '@mui/icons-material/DirectionsRun'
 import SecurityIcon from '@mui/icons-material/Security'
-import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import SpeedIcon from '@mui/icons-material/Speed'
 import {
   effectiveStreamMode,
@@ -135,13 +134,6 @@ export default function CameraUnifiedCard({
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const cameraState = useAppSelector((s) => s.live.cameraStatesById[camera.cameraId])
-  // Hidden whenever Square integration isn't configured — keeps standalone mode unchanged.
-  const squareFrontendOrigin = useAppSelector((s) => s.frontendConfig.squareFrontendOrigin)
-  // Both halves are needed: the origin says where to send the operator, and squareIntegrated
-  // says a link there would resolve. The origin alone is set in dev regardless of whether any
-  // Square is running, which is how this button used to appear on standalone deployments.
-  const squareIntegrated = useAppSelector((s) => s.frontendConfig.squareIntegrated)
-  const showSquareLink = Boolean(squareFrontendOrigin) && squareIntegrated
 
   // UI state — persisted in Redux when slotKey provided, local otherwise
   const storeKey = slotKey ?? `standalone-${camera.cameraId}`
@@ -454,7 +446,7 @@ export default function CameraUnifiedCard({
   const showStateConfigRows = wallPlayback || mode === 'live'
 
   const hasCellGroup = onToggleGridSolo != null || showModeToggle || webRtcStreams.length > 1
-    || showBboxToggle || showSquareLink
+    || showBboxToggle
   const hasDeviceGroup = showPtzControl || showDeviceIoControl
 
   // A poll that has not come back yet must not have another stacked on top of it. Every card runs
@@ -622,18 +614,6 @@ export default function CameraUnifiedCard({
                 sx={{ ...BTN_SX, ...(statsOpen ? { color: W, bgcolor: alpha(W, 0.2) } : {}) }}
               >
                 <SpeedIcon sx={{ fontSize: '0.95rem' }} />
-              </IconButton>
-            </Tooltip>
-          )}
-
-          {showSquareLink && (
-            <Tooltip title={t('cameraCard.openInSquare')} placement="right">
-              <IconButton
-                size="small"
-                onClick={() => window.open(`${squareFrontendOrigin}/?selectedId=${encodeURIComponent(camera.cameraId)}`, '_blank')}
-                sx={BTN_SX}
-              >
-                <OpenInNewIcon sx={{ fontSize: '0.95rem' }} />
               </IconButton>
             </Tooltip>
           )}
