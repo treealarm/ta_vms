@@ -38,9 +38,10 @@ interface CameraStreamProps {
 // offer for a path MediaMTX has not brought up yet used to sit there for twelve seconds — long
 // enough, with two of them, to starve everything else on the page including the token refresh,
 // which then failed and took the whole session down. The gateway now gives up on MediaMTX after
-// four seconds and answers 503 (see WhepProxyService.MediaMtxOfferTimeout); this is the backstop
-// for the gateway itself going quiet, with room for the push it kicks off first.
-const WHEP_OFFER_TIMEOUT_MS = 8000;
+// six seconds and answers 503 (see WhepProxyService.MediaMtxOfferTimeout); this is the backstop
+// for the gateway itself going quiet, with room for the push it kicks off first (up to two
+// seconds, WhepController.EnsureTimeout) — shorter, and it would cut off the gateway's own answer.
+const WHEP_OFFER_TIMEOUT_MS = 10000;
 // Deliberately a fixed, short interval rather than a growing one. The usual reason an offer fails
 // is that the stream is still being brought up on demand — the gateway says 503 for exactly that —
 // and it becomes available within seconds, so this is the moment to keep asking. Backing off here

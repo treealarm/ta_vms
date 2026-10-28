@@ -51,8 +51,11 @@ public sealed class WhepProxyService(
   /// six-per-origin minus one for everything else on the page — and two of them starved the token
   /// refresh badly enough to end the session. Failing fast and letting the viewer retry gets the
   /// picture up at about the same moment, without spending a connection to wait for it.
+  /// But not shorter than a healthy answer: MediaMTX answers an offer for a stream it already has
+  /// in 3–4 s on some machines (an i7-12700 with six network interfaces, 2026-10-28), and at 4 s
+  /// one offer in five came back 503 and cost the viewer a retry on a stream that was there.
   /// </summary>
-  public static readonly TimeSpan MediaMtxOfferTimeout = TimeSpan.FromSeconds(4);
+  public static readonly TimeSpan MediaMtxOfferTimeout = TimeSpan.FromSeconds(6);
 
   // How long a session token stays usable — it is the token's own expiry (see WhepSessionToken),
   // nothing is stored here. Generous by design: this is not a security window (an expired token
