@@ -27,10 +27,6 @@ API, metrics and app stay on the loopback (`../ta_install/docker-compose.distrib
 - **Consul has no ACLs yet**, only gossip encryption: anything that reaches an agent's HTTP API
   (the loopback of a machine of the deployment) can register or deregister services. ACLs with
   default deny, a token per agent and one for service registration.
-- **RabbitMQ's Erlang distribution and epmd listen on every address** on Windows (25672, 4369),
-  behind the cookie. Forcing them onto the loopback broke `rabbitmqctl`, which looks the node up as
-  `rabbit@<machine name>` at the machine's LAN address. Would need the node renamed to
-  `rabbit@localhost`, which moves RabbitMQ's data directory: a migration.
 - **Tokens never expire, and removing a node does not revoke them.** A node's tokens are its
   credentials; revoking one means a new signing key in Sentry's JWKS and new tokens for every
   machine. A per-node key (several keys in the JWKS, VmsCfg signing with the node's own) would let
