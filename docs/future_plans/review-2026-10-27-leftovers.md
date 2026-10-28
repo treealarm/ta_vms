@@ -26,9 +26,11 @@ Neither was tried against a camera; both need one with an archive (or OnvifSim's
 - `camera_manager::stop_all` (`video_srv/camera_manager.cpp`) shuts every `cam_device` down at once,
   each in a `jthread`. The devices are independent, but stop vms once with ten cameras or so and
   look for a race in what they share (`fs_client`, `onvif_metadata_client`, the logger).
-- web_srv's HTTPS on Windows (`TlsEndpoint`, the re-import through PKCS#12 for SChannel) has run on
-  Linux only; ta_install does not set `WEB_VMS_TLS_CERT`/`WEB_VMS_TLS_KEY` yet (step 4 of the core's
-  TLS).
+- ta_install does not set `WEB_VMS_TLS_CERT`/`WEB_VMS_TLS_KEY` yet (step 4 of the core's TLS).
+  `TlsEndpoint` itself has run on Windows now (2026-10-28, a second web_srv of the installation
+  beside the first, on the machine's address with a throwaway CA): plain HTTP on the loopback,
+  TLS 1.3 only on the LAN address, the leaf alone in the handshake, `ca.crt`, login and the API
+  over HTTPS — the PKCS#12 re-import for SChannel works.
 
 ## Small
 

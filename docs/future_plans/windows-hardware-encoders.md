@@ -41,8 +41,13 @@ the QSV backend on a D3D11 device on the Intel adapter with the decoder handed t
   dispatcher's view of it) was not looked into: not worth it for a 2012 iGPU unless a customer
   has one.
 
-  **Still open:** more than one stream at once, and how many sessions the iGPU takes before one
-  fails to open. `transcode_device_test` has not been run on Windows. 192.168.1.100 is an
+  **Several streams, checked** (2026-10-28, same machine, ta_vms 7da89af): eight cameras on one
+  1080p25 HEVC source, each push kept up by an RTSP reader. All eight opened `h264_qsv` on
+  D3D11VA, none declined or fell back; vms at 25 % of a core with four, 38 % with eight, the GPU's
+  video engine at 28 % and 49 % — about 5 % of a core and 6 % of the engine per stream, so the
+  iGPU, not a session limit, would end it, somewhere near sixteen. More than eight was not tried.
+
+  **Still open:** `transcode_device_test` has not been run on Windows. 192.168.1.100 is an
   i5-750 without Quick Sync.
 - **HEVC on QSV** opened and encoded nothing on that machine on Linux (`qsv: opened but encodes
   nothing`, before this change too). vms encodes H.264 only, so it is not on vms's path.
