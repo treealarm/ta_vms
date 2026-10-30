@@ -1,4 +1,4 @@
-﻿
+
 namespace VmsMap.Domain
 {
   public record GeoObjectDTO: BaseObjectDTO

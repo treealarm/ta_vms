@@ -1,4 +1,4 @@
-﻿namespace VmsMap.Domain
+namespace VmsMap.Domain
 {
   public record AlarmBaseState: BaseObjectDTO
   {

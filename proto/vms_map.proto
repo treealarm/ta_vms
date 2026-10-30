@@ -22,6 +22,9 @@ service MapService {
   // under another parent; the response carries the ids of the nodes that had none.
   rpc UpdateObjects(ObjectList) returns (ObjectList);
   rpc UpdateProperties(ObjectPropertiesList) returns (OperationStatus);
+  // How a node is drawn: colour, icon, rotation, caption. Separate from the properties because
+  // these are the map's own fields, not arbitrary data the editor happens to keep.
+  rpc UpdateVisual(VisualList) returns (OperationStatus);
   // Geometry of the nodes drawn on a canvas: a point, a polyline or a polygon, in the coordinates
   // of the nearest canvas ancestor.
   rpc UpdateFigures(Figures) returns (Figures);
@@ -101,6 +104,22 @@ message ObjectPropertiesList {
   // False merges the sent properties into the existing set, true replaces it. Square's producer
   // protocol had the same switch and its callers rely on merge.
   bool replace_props = 2;
+}
+
+message Visual {
+  string object_id = 1;
+  string color = 2;
+  // A small icon; plan pictures and diagram backgrounds are `FileUploadChunk`s instead.
+  bytes image = 3;
+  int32 image_width = 4;
+  int32 image_height = 5;
+  // Degrees clockwise from north for a camera (its heading), or from upright for an icon.
+  optional double rotation_deg = 6;
+  string text = 7;
+}
+
+message VisualList {
+  repeated Visual visuals = 1;
 }
 
 // ── Geometry ───────────────────────────────────────────────────────────────────

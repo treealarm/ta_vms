@@ -1,4 +1,4 @@
-﻿
+
 namespace VmsMap.Domain
 {
   public static class VisualTypes

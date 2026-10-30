@@ -1,4 +1,4 @@
-﻿
+
 using System.Collections.Generic;
 
 namespace VmsMap.Domain

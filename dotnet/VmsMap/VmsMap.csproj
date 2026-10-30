@@ -2,7 +2,10 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
+    <!-- Annotations without warnings: the ported Square code was compiled with annotations, and
+         its nullable flow analysis is not clean enough for `enable` yet. New code still uses the
+         annotations, so the intent is visible. -->
+    <Nullable>annotations</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 

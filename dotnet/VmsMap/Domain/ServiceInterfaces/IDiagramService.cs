@@ -1,10 +1,10 @@
-﻿
+
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace VmsMap.Domain
 {
-  internal interface IDiagramServiceInternal
+  public interface IDiagramServiceInternal
   {
     public Task UpdateListAsync(List<DiagramDTO> obj2UpdateIn);
     public Task RemoveAsync(List<string> ids);

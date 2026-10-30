@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace VmsMap.Domain
@@ -9,7 +9,7 @@ namespace VmsMap.Domain
     public Task<Dictionary<string, ValueDTO>> GetListByOwnersAsync(List<string> owners);
   }
 
-  internal interface IValuesServiceInternal
+  public interface IValuesServiceInternal
   {
     public Task UpdateListAsync(List<ValueDTO> obj2UpdateIn);
     public Task RemoveAsync(List<string> ids);

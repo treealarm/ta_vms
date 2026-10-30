@@ -16,7 +16,7 @@ namespace VmsMap.Domain
     public Task<List<RightDTO>> Update(List<RightDTO> newObjs);
   }
 
-  internal interface IRightServiceInternal : IRightService, IRightUpdateService
+  public interface IRightServiceInternal : IRightService, IRightUpdateService
   {
   }
 }
