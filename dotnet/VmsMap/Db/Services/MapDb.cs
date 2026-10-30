@@ -42,7 +42,7 @@ namespace VmsMap.Db
         var dto = new MarkerDTO();
         entity.CopyAllTo(dto);
 
-        // для совместимости возвращаем ключ словаря как ObjectId-строку
+        // the dictionary key stays the ObjectId string, as callers expect
         var key = Utils.ConvertGuidToObjectId(entity.id);
         result[key] = dto;
       }
@@ -60,7 +60,7 @@ namespace VmsMap.Db
         return null;
 
       var dto = new MarkerDTO();
-      entity.CopyAllTo(dto); // твой extension для копирования
+      entity.CopyAllTo(dto); // PropertyCopy's extension
       return dto;
     }
     public async Task<BaseMarkerDTO> GetParent(string id)
@@ -91,7 +91,7 @@ namespace VmsMap.Db
         string end_id,
         int count)
     {
-      // Сначала конвертируем parent_ids в Guid, игнорируя пустые строки
+      // parent_ids to Guid first, skipping empty strings
       var parentGuids = parent_ids
           .Where(id => !string.IsNullOrEmpty(id))
           .Select(id => Utils.ConvertObjectIdToGuid(id))
@@ -99,7 +99,7 @@ namespace VmsMap.Db
           .Select(g => g.Value)
           .ToList();
 
-      // Флаг, есть ли среди parent_ids пустые или null
+      // whether any parent_id was empty or null
       bool includeNull = parent_ids.Any(string.IsNullOrEmpty);
 
 
@@ -112,7 +112,7 @@ namespace VmsMap.Db
           .OrderBy(m => m.id);
 
 
-      // Применяем фильтр по start_id / end_id
+      // filter by start_id / end_id
       if (!string.IsNullOrEmpty(start_id))
       {
         var startGuid = Utils.ConvertObjectIdToGuid(start_id);
@@ -133,7 +133,7 @@ namespace VmsMap.Db
 
       var list = await query.Take(count).ToListAsync();
 
-      // Если сортировали по end_id, то вернём по возрастанию
+      // paged backwards, so return in ascending order
       if (!string.IsNullOrEmpty(end_id))
         list.Sort((x, y) => x.id.CompareTo(y.id));
 
@@ -165,7 +165,7 @@ namespace VmsMap.Db
           .ToListAsync();
 
       return list.ToDictionary(
-          m => Utils.ConvertGuidToObjectId(m.id), // ключ — старый ObjectId строкой
+          m => Utils.ConvertGuidToObjectId(m.id), // key: the ObjectId string
           m =>
           {
             var dto = new BaseMarkerDTO();
@@ -304,7 +304,7 @@ namespace VmsMap.Db
     }
     public async Task<Dictionary<string, BaseMarkerDTO>> GetTopChildren(List<string> parentIds)
     {
-      // Конвертируем parentIds в Guid, игнорируя пустые или некорректные
+      // parentIds to Guid, skipping empty or malformed ones
       var parentGuids = parentIds
           .Select(Utils.ConvertObjectIdToGuid)
           .Where(g => g.HasValue)
@@ -314,7 +314,7 @@ namespace VmsMap.Db
       if (!parentGuids.Any())
         return new Dictionary<string, BaseMarkerDTO>();
 
-      // Берём "первого" ребёнка для каждого parent_id
+      // one child per parent_id, the lowest id
       var topChildren = await _db.Markers
           .Where(m => m.parent_id.HasValue && parentGuids.Contains(m.parent_id.Value))
           .GroupBy(m => m.parent_id.Value)
@@ -359,7 +359,7 @@ namespace VmsMap.Db
         var dbObj = new DBMarker();
         item.CopyAllTo(dbObj);
 
-        // parent_id и owner_id как Guid? (nullable)
+        // parent_id and owner_id are nullable Guids
         dbObj.parent_id = string.IsNullOrEmpty(item.parent_id)
             ? null
             : Utils.ConvertObjectIdToGuid(item.parent_id);
@@ -379,7 +379,7 @@ namespace VmsMap.Db
         dbUpdated.Add(item, dbObj);
       }
 
-      // Сохраняем все объекты через EF Core
+      // save through EF Core
       foreach (var kvp in dbUpdated)
       {
         if (existingEntities.TryGetValue(kvp.Value.id, out var entity))
@@ -398,7 +398,7 @@ namespace VmsMap.Db
 
       await _db.SaveChangesAsync();
 
-      // Обновляем DTO
+      // write the assigned id back into the DTO
       foreach (var pair in dbUpdated)
       {
         pair.Key.id = Utils.ConvertGuidToObjectId(pair.Value.id);
@@ -492,19 +492,19 @@ namespace VmsMap.Db
       if (!updatedObjs.Any())
         return;
 
-      // Собираем все объектные Guid
+      // the objects' Guids
       var objIds = updatedObjs
           .Select(x => Utils.ConvertObjectIdToGuid(x.id))
           .Where(g => g.HasValue)
           .Select(g => g.Value)
           .ToList();
 
-      // Грузим все свойства этих объектов
+      // load their properties
       var existingProps = await _db.Properties
           .Where(p => objIds.Contains(p.object_id))
           .ToListAsync();
 
-      // Группируем по объектам
+      // group by object
       var existingByObj = existingProps
           .GroupBy(p => p.object_id)
           .ToDictionary(g => g.Key, g => g.ToList());
@@ -524,11 +524,11 @@ namespace VmsMap.Db
            .ToDictionary(g => g.Key, g => g.First());
 
 
-        // Текущие свойства объекта
+        // the object's current properties
         existingByObj.TryGetValue(objId, out var existingForObj);
         existingForObj ??= new List<DBMarkerProp>();
 
-        // 1. Обновляем/добавляем
+        // 1. update or add
         foreach (var kvp in incoming)
         {
           var propName = kvp.Key;
@@ -537,14 +537,14 @@ namespace VmsMap.Db
           var existingProp = existingForObj.FirstOrDefault(p => p.prop_name == propName);
           if (existingProp != null)
           {
-            // Обновление
+            // update
             existingProp.str_val = dtoProp.str_val;
             existingProp.visual_type = dtoProp.visual_type;
             toUpdate.Add(existingProp);
           }
           else
           {
-            // Добавление
+            // add
             toAdd.Add(new DBMarkerProp
             {
               object_id = objId,
@@ -555,14 +555,14 @@ namespace VmsMap.Db
           }
         }
 
-        // 2. Удаляем те, которых нет во входных данных
+        // 2. remove the ones the input no longer has
         var toDelete = existingForObj
             .Where(p => !incoming.ContainsKey(p.prop_name))
             .ToList();
         toRemove.AddRange(toDelete);
       }
 
-      // Применяем изменения
+      // apply
       if (toRemove.Any())
         _db.Properties.RemoveRange(toRemove);
 
@@ -612,14 +612,14 @@ namespace VmsMap.Db
           var existing = existingForObj.FirstOrDefault(p => p.prop_name == prop.prop_name);
           if (existing != null)
           {
-            // обновляем только значения
+            // update the values only
             existing.str_val = prop.str_val;
             existing.visual_type = prop.visual_type;
             _db.Properties.Update(existing);
           }
           else
           {
-            // добавляем новое свойство
+            // add a new property
             toAdd.Add(new DBMarkerProp
             {
               object_id = objId,
@@ -643,12 +643,12 @@ namespace VmsMap.Db
       if (guidId == Guid.Empty)
         return null;
 
-      // достаём все свойства для объекта
+      // all properties of the object
       var props = await _db.Properties
           .Where(p => p.object_id == guidId)
           .ToListAsync();
 
-      // собираем DTO
+      // build the DTO
       var dto = new ObjPropsDTO
       {
         id = id,
@@ -673,12 +673,12 @@ namespace VmsMap.Db
       if (!guidIds.Any())
         return new Dictionary<string, ObjPropsDTO>();
 
-      // достаём все свойства для списка объектов
+      // all properties of a list of objects
       var props = await _db.Properties
           .Where(p => guidIds.Contains(p.object_id))
           .ToListAsync();
 
-      // группируем по объектам
+      // group by object
       var grouped = props.GroupBy(p => p.object_id);
 
       var result = grouped.ToDictionary(
@@ -705,7 +705,7 @@ namespace VmsMap.Db
     {
       var query = _db.Properties.AsQueryable();
 
-      // Пагинация по Guid (owner_id)
+      // paging by Guid (owner_id)
       if (!string.IsNullOrEmpty(start_id))
       {
         var startGuid = Utils.ConvertObjectIdToGuid(start_id) ?? Guid.Empty;
@@ -716,7 +716,7 @@ namespace VmsMap.Db
           query = query.Where(p => p.object_id.CompareTo(startGuid) < 0);
       }
 
-      // Фильтр по свойствам
+      // property filter
       if (propFilter?.props?.Any() == true)
       {
         foreach (var prop in propFilter.props)
@@ -731,22 +731,20 @@ namespace VmsMap.Db
         }
       }
 
-      // Сортировка по owner_id
+      // order by owner_id
       query = forward > 0
           ? query.OrderBy(p => p.object_id)
           : query.OrderByDescending(p => p.object_id);
 
       query = query.Take(count * 10);
-      string sql = query.ToQueryString();
-      Console.WriteLine(sql);
-      // Достаём свойства
+      // load the properties
       var props = await query.ToListAsync();
-      // ×10 — чтобы набрать с запасом, т.к. несколько строк = один объект
+      // ×10, because several rows make one object
 
-      // Группируем по объектам
+      // group by object
       var grouped = props
           .GroupBy(p => p.object_id)
-          .Take(count) // берём только нужное количество объектов
+          .Take(count) // keep only the requested number of objects
           .ToList();
 
       var result = grouped.Select(g => new ObjPropsDTO
@@ -760,7 +758,7 @@ namespace VmsMap.Db
         }).ToList()
       }).ToList();
 
-      // Если сортировка была Desc, нужно вернуть в Asc
+      // paged backwards, so return ascending
       if (forward <= 0)
         result.Reverse();
 
@@ -769,7 +767,7 @@ namespace VmsMap.Db
 
     public async Task<Dictionary<string, BaseMarkerDTO>> GetOwnersAsync(List<string> ids)
     {
-      // Конвертируем ObjectId строки в Guid
+      // the ObjectId strings to Guids
       var guids = ids
           .Select(Utils.ConvertObjectIdToGuid)
           .Where(g => g.HasValue)
@@ -779,23 +777,23 @@ namespace VmsMap.Db
       if (!guids.Any())
         return new Dictionary<string, BaseMarkerDTO>();
 
-      // Получаем все объекты с этими id
+      // all objects with these ids
       var listObjects = await _db.Markers
           .Where(m => guids.Contains(m.id))
           .ToListAsync();
 
-      // Представления — объекты с owner_id != null
+      // replicas: objects with owner_id != null
       var views = listObjects
           .Where(m => m.owner_id.HasValue)
           .ToList();
 
       if (!views.Any())
       {
-        // Все объекты без owner_id
+        // no replicas among them
         return ConvertMarkerListDB2DTO(listObjects);
       }
 
-      // Владельцы — объекты с owner_id == null
+      // owners: objects with owner_id == null
       var owners = listObjects
           .Where(m => !m.owner_id.HasValue)
           .ToList();
@@ -804,7 +802,7 @@ namespace VmsMap.Db
           .Select(v => v.owner_id.Value)
           .ToList();
 
-      // Получаем владельцев из базы, которых еще нет в listObjects
+      // owners not among listObjects
       var ownersDb = await _db.Markers
           .Where(m => !m.owner_id.HasValue && ownerGuids.Contains(m.id))
           .ToListAsync();
@@ -816,7 +814,7 @@ namespace VmsMap.Db
 
     public async Task<Dictionary<string, BaseMarkerDTO>> GetOwnersAndViewsAsync(List<string> ids)
     {
-      // Конвертируем строки в Guid
+      // the strings to Guids
       var guids = ids
           .Select(Utils.ConvertObjectIdToGuid)
           .Where(g => g.HasValue)
@@ -826,12 +824,12 @@ namespace VmsMap.Db
       if (!guids.Any())
         return new Dictionary<string, BaseMarkerDTO>();
 
-      // Получаем все маркеры с указанными ID
+      // all markers with these ids
       var listObjects = await _db.Markers
           .Where(m => guids.Contains(m.id))
           .ToListAsync();
 
-      // Представления — объекты с owner_id != null
+      // replicas: objects with owner_id != null
       var views = listObjects
           .Where(m => m.owner_id.HasValue)
           .ToList();
@@ -841,17 +839,17 @@ namespace VmsMap.Db
         return ConvertMarkerListDB2DTO(listObjects);
       }
 
-      // Владельцы среди уже полученных объектов (owner_id == null)
+      // owners already among them (owner_id == null)
       var owners = listObjects
           .Where(m => !m.owner_id.HasValue)
           .ToList();
 
-      // Список owner_id для поиска недостающих владельцев
+      // the replicas' owner ids, for the ones still missing
       var ownerGuids = views
           .Select(v => v.owner_id.Value)
           .ToList();
 
-      // Получаем владельцев из базы, которых ещё нет в owners
+      // owners not among those already loaded
       var ownersDb = ownerGuids.Any()
           ? await _db.Markers
               .Where(m => !m.owner_id.HasValue && ownerGuids.Contains(m.id))

@@ -43,7 +43,7 @@ namespace VmsMap.Db
               .Select(c => new Coordinate(c[1], c[0]))
               .ToList();
 
-          // замыкаем полигон
+          // close the polygon
           coordsPoly.Add(coordsPoly[0]);
 
           geom = factory.CreatePolygon(coordsPoly.ToArray());
@@ -115,10 +115,10 @@ namespace VmsMap.Db
           id = Utils.NewGuid(),
           object_id = Utils.ConvertObjectIdToGuid(track.id),
           timestamp = track.timestamp ?? DateTime.UtcNow,
-          figure = ConvertGeoDTO2DB(track.figure.location), // возвращает Geometry
+          figure = ConvertGeoDTO2DB(track.figure.location), // a Geometry
           radius = track.figure?.radius,
           zoom_level = track.figure?.zoom_level,
-          extra_props = ConvertExtraPropsToJsonString(track.extra_props) // возвращает JsonDocument
+          extra_props = ConvertExtraPropsToJsonString(track.extra_props) // a JSON string
         };
 
         list.Add(dbTrack);
@@ -130,7 +130,7 @@ namespace VmsMap.Db
         await _dbContext.SaveChangesAsync();
       }
 
-      // Конвертация обратно в DTO
+      // back to DTOs
       var result = new List<TrackPointDTO>();
       foreach (var t in list)
       {
@@ -185,7 +185,7 @@ namespace VmsMap.Db
           {
             retPolygon.coord.Add(new Geo2DCoordDTO { Lat = c.Y, Lon = c.X });
           }
-          // удаляем замкнутую последнюю точку
+          // drop the repeated closing point
           if (retPolygon.coord.Count > 3)
             retPolygon.coord.RemoveAt(retPolygon.coord.Count - 1);
 
@@ -232,10 +232,10 @@ namespace VmsMap.Db
       if (string.IsNullOrEmpty(figure_id))
         return null;
 
-      // Поиск по фигуре и времени
+      // by figure and time
       var dbTrack = await _dbContext.Tracks
           .Where(t => t.figure != null && t.figure is Geometry && t.timestamp < beforeTime)
-          // Для поиска по id фигуры, если храним в DBGeoObject.id:
+          // by figure id, when it is stored in DBGeoObject.id
           .Where(t => t.object_id == Utils.ConvertObjectIdToGuid(figure_id))
           .OrderByDescending(t => t.timestamp)
           .FirstOrDefaultAsync();
@@ -278,13 +278,13 @@ namespace VmsMap.Db
     {
       IQueryable<DBTrackPoint> query = _dbContext.Tracks;
 
-      // фильтр по времени
+      // time filter
       if (time_start.HasValue && time_end.HasValue)
       {
         query = query.Where(t => t.timestamp >= time_start.Value && t.timestamp <= time_end.Value);
       }
 
-      // фильтр по object_id (ранее meta.figure.id)
+      // object_id filter (formerly meta.figure.id)
       if (figIds != null && figIds.Count > 0)
       {
         var guidIds = figIds
@@ -299,13 +299,13 @@ namespace VmsMap.Db
         }
       }
 
-      // ограничение количества
+      // row limit
       var dbTracks = await query
-          .OrderBy(t => t.timestamp) // можно менять сортировку
+          .OrderBy(t => t.timestamp)
           .Take(10000)
           .ToListAsync();
 
-      // конвертация в DTO
+      // to DTOs
       return dbTracks.Select(ConvertDB2TrackPointDTO).ToList();
     }
 
@@ -315,7 +315,7 @@ namespace VmsMap.Db
       int limit = box.count > 0 ? box.count.Value : 10000;
       IQueryable<DBTrackPoint> query = _dbContext.Tracks;
 
-      // Гео-фильтр
+      // geo filter
       Geometry geometry = null;
       var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
 
@@ -326,12 +326,12 @@ namespace VmsMap.Db
         .Where(g => g != null)
         .ToList();
 
-        // объединяем все зоны через OR
+        // every zone, OR-ed together
         query = query.Where(t => polygons.Any(p => t.figure != null && t.figure.Intersects(p)));
       }
       else
       {
-        // создаём прямоугольник по wn/es
+        // the bounding box from wn/es
         var rect = geometryFactory.CreatePolygon(new[]
         {
             new Coordinate(box.wn[0], box.wn[1]),
@@ -348,20 +348,20 @@ namespace VmsMap.Db
         query = query.Where(t => !t.figure.Intersects(geometry));
       }
 
-      // фильтр по zoom
+      // zoom filter
       if (box.zoom != null)
       {
         var levels = await _levelService.GetLevelsByZoom(box.zoom);
         query = query.Where(t => levels.Contains(t.zoom_level) || string.IsNullOrEmpty(t.zoom_level));
       }
 
-      // фильтр по времени
+      // time filter
       if (box.time_start.HasValue && box.time_end.HasValue)
       {
         query = query.Where(t => t.timestamp >= box.time_start.Value && t.timestamp <= box.time_end.Value);
       }
 
-      // фильтр по объектам/figure ids
+      // object/figure ids filter
       if (box.ids != null && box.ids.Count > 0)
       {
         var guidIds = box.ids
@@ -373,7 +373,7 @@ namespace VmsMap.Db
         query = query.Where(t => t.object_id.HasValue && guidIds.Contains(t.object_id.Value));
       }
 
-      // фильтр по extra_props jsonb
+      // extra_props jsonb filter
       if (box.property_filter != null && box.property_filter.props.Count > 0)
       {
         foreach (var prop in box.property_filter.props)
@@ -384,13 +384,13 @@ namespace VmsMap.Db
         }
       }
 
-      // сортировка
+      // ordering
       if (box.sort < 0)
         query = query.OrderByDescending(t => t.timestamp);
       else
         query = query.OrderBy(t => t.timestamp);
 
-      // лимит
+      // limit
       var dbTracks = await query.Take(limit).ToListAsync();
 
       return dbTracks.Select(ConvertDB2TrackPointDTO).ToList();
@@ -401,12 +401,12 @@ namespace VmsMap.Db
     {
       int limit = filter_in.count > 0 ? filter_in.count : 10000;
 
-      // базовый запрос по времени
+      // time range first
       var query = _dbContext.Tracks
           .Where(t => t.timestamp >= filter_in.time_start &&
                       t.timestamp <= filter_in.time_end);
 
-      // Пагинация по start_id
+      // keyset paging by start_id
       if (!string.IsNullOrEmpty(filter_in.start_id))
       {
         if (Guid.TryParse(filter_in.start_id, out var startGuid))
@@ -418,7 +418,7 @@ namespace VmsMap.Db
         }
       }
 
-      // Фильтр по extra_props (jsonb)
+      // extra_props jsonb filter
       if (filter_in.property_filter != null && filter_in.property_filter.props.Count > 0)
       {
         foreach (var prop in filter_in.property_filter.props)
@@ -429,7 +429,7 @@ namespace VmsMap.Db
       }
 
       var dbObjects = await query
-          .OrderBy(t => t.timestamp) // или .OrderByDescending если нужно
+          .OrderBy(t => t.timestamp)
           .Take(limit)
           .ToListAsync();
 

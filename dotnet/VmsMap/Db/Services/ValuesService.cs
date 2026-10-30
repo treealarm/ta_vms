@@ -123,7 +123,7 @@ internal class ValuesService : IValuesService, IValuesServiceInternal
 
     var distinctOwnerGuids = ownerGuids.Distinct().ToList();
 
-    // Один запрос вместо одного FirstOrDefaultAsync на каждый элемент батча (был N+1).
+    // One query for the whole batch, instead of one FirstOrDefaultAsync per element (N+1).
     var existingByKey = await _dbContext.Values
       .Where(v => distinctOwnerGuids.Contains(v.owner_id))
       .ToDictionaryAsync(v => (v.owner_id, v.name));

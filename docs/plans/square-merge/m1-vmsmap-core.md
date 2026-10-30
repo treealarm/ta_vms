@@ -296,7 +296,8 @@ PostGIS в трёх compose и в `windows/versions.json`.
 | `447fc72` | каркас `VmsMap` и перенос `Domain` |
 | `ea57e94` | `Db/`, миграция `0001`, gRPC-запись, агрегация тревог |
 | `2d58d77` | тесты `VmsMap.Tests` и три дефекта, найденных живым запуском |
-| (этот) | PostGIS в compose и на Windows, чек-лист, `CLAUDE.md` |
+| `70fd22c` | PostGIS в compose и на Windows, чек-лист, `CLAUDE.md` |
+| (этот) | английские комментарии в портированных сервисах, убран `Console.WriteLine(sql)` |
 
 **Решения по ходу, которых не было в плане:**
 - `vms_map.proto` получил `UpdateVisual`: без него `visual` нечем было бы записать, а магические
@@ -343,9 +344,12 @@ PostGIS в трёх compose и в `windows/versions.json`.
   создал `ta_map`.
 
 **Не проверено:**
+- Контейнерная сборка `vmsmap`: `docker compose --profile app up --build` не завершился за
+  20 минут — на этой машине нет локального образа `mcr.microsoft.com/dotnet/sdk:10.0`, и его
+  загрузка не дошла до конца. Сервис проверен запуском вне контейнера, compose — `config`.
 - Полный dev-стек (F5) и профиль `app` с собранными образами, включая сайдкар `vmsmap`.
 - Windows: `Build-Stage.ps1` с новым компонентом `postgis` (скрипт не запускался), установка
   PostgreSQL 18 + PostGIS, старт `VmsMap.exe` под `TaVmsHost`.
-- `../ta_install/scripts/push-images.sh` для `vmsmap` — образ не собирался и не публиковался.
+- `../ta_install/scripts/push-images.sh` для `vmsmap` — образ не публиковался.
 - Чтение (M2/M3) в новом коде не проверялось: rpc чтения в M1 нет, а портированные методы
   чтения проверены только там, где их трогает запись.

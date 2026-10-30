@@ -28,7 +28,7 @@ namespace VmsMap.Db
       IQueryable<DBGeoObject> query = _dbContext.GeoObjects;
       var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
 
-      // Гео-фильтр
+      // geo filter
       if (box.zone != null && box.zone.Count > 0)
       {
         var polygons = box.zone
@@ -56,7 +56,7 @@ namespace VmsMap.Db
             : query.Where(t => t.figure.Intersects(rect));
       }
 
-      // Фильтр по zoom_level
+      // zoom_level filter
       if (box.zoom != null)
       {
         var levels = await _levelService.GetLevelsByZoom(box.zoom);
@@ -65,7 +65,7 @@ namespace VmsMap.Db
         query = query.Where(p => levels.Contains(p.zoom_level));
       }
 
-      // Фильтр по id (строки -> Guid)
+      // id filter (strings to Guid)
       if (box.ids != null && box.ids.Count > 0)
       {
         var guidIds = box.ids
@@ -77,7 +77,7 @@ namespace VmsMap.Db
         query = query.Where(p => guidIds.Contains(p.id));
       }
 
-      // Выполнение запроса
+      // run the query
       var list = await query.Take(limit).ToListAsync();
       return ModelGate.ConvertListDB2DTO(list);
     }
@@ -88,7 +88,7 @@ namespace VmsMap.Db
       if (ids == null || ids.Count == 0)
         return new Dictionary<string, GeoObjectDTO>();
 
-      // Конвертируем строки в Guid
+      // the strings to Guids
       var guidIds = ids
           .Select(Utils.ConvertObjectIdToGuid)
           .Where(g => g.HasValue)
@@ -108,7 +108,7 @@ namespace VmsMap.Db
       }
       catch (Exception)
       {
-        // Логируем или игнорируем
+        // log and skip
       }
 
       return ModelGate.ConvertListDB2DTO(obj);
@@ -133,7 +133,7 @@ namespace VmsMap.Db
       }
       catch (Exception)
       {
-        // Можно логировать ошибку
+        // log the error
       }
 
       return ModelGate.ConvertDB2DTO(obj);
@@ -176,7 +176,7 @@ namespace VmsMap.Db
 
       var dbUpdated = new Dictionary<FigureGeoDTO, DBGeoObject>();
 
-      // Конвертация DTO → DB
+      // DTO to DB
       var dbObjects = figures.Select(f =>
       {
         var dbObj = new DBGeoObject
@@ -190,10 +190,10 @@ namespace VmsMap.Db
         return dbObj;
       }).ToList();
 
-      // Список существующих id (не пустых)
+      // the ids that are not empty
       var ids = dbObjects.Where(o => o.id != Guid.Empty).Select(o => o.id).ToList();
 
-      // Загружаем существующие объекты из базы
+      // the rows that already exist
       var existing = await _dbContext.GeoObjects
           .Where(g => ids.Contains(g.id))
           .ToListAsync();
@@ -203,7 +203,7 @@ namespace VmsMap.Db
       {
         if (obj.id == Guid.Empty || !existingDict.ContainsKey(obj.id))
         {
-          // Новая запись → генерируем Guid, если пустой
+          // new row: assign a Guid if there is none
           if (obj.id == Guid.Empty)
             obj.id = Utils.NewGuid();
 
@@ -211,7 +211,7 @@ namespace VmsMap.Db
         }
         else
         {
-          // Существующая запись → обновляем поля
+          // existing row: update its fields
           var existingObj = existingDict[obj.id];
           existingObj.figure = obj.figure;
           existingObj.radius = obj.radius;
@@ -219,10 +219,10 @@ namespace VmsMap.Db
         }
       }
 
-      // Сохраняем изменения
+      // save
       await _dbContext.SaveChangesAsync();
 
-      // Проставляем id обратно в DTO и формируем результат
+      // write the ids back into the DTOs and build the result
       foreach (var pair in dbUpdated)
       {
         pair.Key.id = pair.Value.id.ToString();
