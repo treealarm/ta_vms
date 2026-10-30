@@ -31,10 +31,39 @@ internal class ValuesService : IValuesService, IValuesServiceInternal
 
   public async Task UpdateListAsync(List<ValueDTO> valuesToUpdate)
   {
+    if (valuesToUpdate.Count == 0)
+    {
+      return;
+    }
+
+    var ids = valuesToUpdate
+      .Select(v => Utils.ConvertObjectIdToGuid(v.id))
+      .Where(g => g != null)
+      .Select(g => g!.Value)
+      .ToList();
+
+    var existing = await _dbContext.Values
+      .Where(v => ids.Contains(v.id))
+      .ToDictionaryAsync(v => v.id);
+
     foreach (var dto in valuesToUpdate)
     {
       var entity = ConvertDTO2DB(dto);
-      _dbContext.Values.Update(entity);
+
+      if (existing.TryGetValue(entity.id, out var row))
+      {
+        row.owner_id = entity.owner_id;
+        row.name = entity.name;
+        row.value = entity.value;
+      }
+      else
+      {
+        // Square called Update() on every DTO, so a value without an id was marked Modified and
+        // the insert failed as a concurrency error on a row that never existed.
+        _dbContext.Values.Add(entity);
+      }
+
+      dto.id = Utils.ConvertGuidToObjectId(entity.id);
     }
 
     await _dbContext.SaveChangesAsync();
@@ -68,7 +97,7 @@ internal class ValuesService : IValuesService, IValuesServiceInternal
       id = Utils.ConvertObjectIdToGuid(dto.id) ?? Guid.NewGuid(),
       name = dto.name,
       owner_id = Utils.ConvertObjectIdToGuid(dto.owner_id) ?? Guid.NewGuid(),
-      value = JsonSerializer.SerializeToDocument(dto.value)
+      value = dto.value == null ? null : JsonSerializer.Serialize(dto.value)
     };
   }
 
@@ -79,7 +108,7 @@ internal class ValuesService : IValuesService, IValuesServiceInternal
       id = Utils.ConvertGuidToObjectId(dbo.id),
       name = dbo.name,
       owner_id = Utils.ConvertGuidToObjectId(dbo.owner_id),
-      value = dbo.value?.Deserialize<object>(),
+      value = dbo.value == null ? null : JsonSerializer.Deserialize<object>(dbo.value),
       Version = dbo.Version
     };
   }
@@ -107,7 +136,7 @@ internal class ValuesService : IValuesService, IValuesServiceInternal
 
       if (existingByKey.TryGetValue(key, out var existing))
       {
-        existing.value = JsonSerializer.SerializeToDocument(dto.value);
+        existing.value = dto.value == null ? null : JsonSerializer.Serialize(dto.value);
         _dbContext.Values.Update(existing);
 
         result[existing.id.ToString()] = new ValueDTO
@@ -126,7 +155,7 @@ internal class ValuesService : IValuesService, IValuesServiceInternal
           id = newId,
           name = dto.name,
           owner_id = ownerGuid,
-          value = JsonSerializer.SerializeToDocument(dto.value)
+          value = dto.value == null ? null : JsonSerializer.Serialize(dto.value)
         };
 
         _dbContext.Values.Add(newValue);

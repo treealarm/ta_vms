@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using System.Collections.Generic;
 using System.Text.Json;
 
@@ -127,7 +128,13 @@ namespace VmsMap.Db
               .HasColumnType("jsonb")
               .HasConversion(
                   v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
-                  v => JsonSerializer.Deserialize<Dictionary<string, string>>(v, (JsonSerializerOptions?)null));
+                  v => JsonSerializer.Deserialize<Dictionary<string, string>>(v, (JsonSerializerOptions?)null),
+                  // A dictionary is a reference type: without a comparer EF cannot tell an edited
+                  // region's styles from the loaded ones.
+                  new ValueComparer<Dictionary<string, string>?>(
+                      (a, b) => a == null ? b == null : b != null && a.Count == b.Count && !a.Except(b).Any(),
+                      d => d == null ? 0 : d.Aggregate(0, (h, kv) => HashCode.Combine(h, kv.Key, kv.Value)),
+                      d => d == null ? null : new Dictionary<string, string>(d)));
       });
     }
 

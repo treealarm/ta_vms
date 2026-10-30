@@ -1,5 +1,5 @@
 using System;
-using System.Text.Json;
+
 
 namespace VmsMap.Db
 {
@@ -9,6 +9,6 @@ namespace VmsMap.Db
 
     public string name { get; set; } = null!;
 
-    public JsonDocument? value { get; set; }
+    public string? value { get; set; }
   }
 }

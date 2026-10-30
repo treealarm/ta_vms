@@ -72,25 +72,11 @@ namespace VmsMap.Grpc
 
       await using var tx = await _db.Database.BeginTransactionAsync(context.CancellationToken);
 
-      // A moved node changes what its old and new parents count, so both are refreshed below.
-      var affected = new HashSet<string>();
-      foreach (var dto in dtos.Where(d => !string.IsNullOrEmpty(d.id)))
-      {
-        var existing = await _mapService.GetAsync(dto.id);
-        if (!string.IsNullOrEmpty(existing?.parent_id))
-        {
-          affected.Add(existing!.parent_id!);
-        }
-      }
-
-      await _mapService.UpdateHierarchyAsync(dtos);
-
-      affected.UnionWith(dtos.Select(d => d.parent_id).Where(p => !string.IsNullOrEmpty(p))!);
-      await _statesUpdateService.RefreshAlarmsAsync(affected);
+      var updated = await _mapUpdateService.UpdateObjects(dtos);
 
       await tx.CommitAsync(context.CancellationToken);
 
-      return new MapProto.ObjectList { Objects = { dtos.Select(ToProto) } };
+      return new MapProto.ObjectList { Objects = { updated.Select(ToProto) } };
     }
 
     public override async Task<MapProto.OperationStatus> UpdateProperties(
@@ -151,17 +137,6 @@ namespace VmsMap.Grpc
 
       await _mapUpdateService.UpdateFigures(figures);
 
-      var affected = figures.figs
-        .Select(f => f.parent_id)
-        .Where(p => !string.IsNullOrEmpty(p))
-        .Distinct()
-        .ToList();
-
-      if (affected.Count > 0)
-      {
-        await _statesUpdateService.RefreshAlarmsAsync(affected!);
-      }
-
       await tx.CommitAsync(context.CancellationToken);
 
       return new MapProto.Figures
@@ -176,19 +151,7 @@ namespace VmsMap.Grpc
     {
       await using var tx = await _db.Database.BeginTransactionAsync(context.CancellationToken);
 
-      // The parents survive their children and must stop counting them.
-      var parents = new HashSet<string>();
-      foreach (var id in request.Ids)
-      {
-        var existing = await _mapService.GetAsync(id);
-        if (!string.IsNullOrEmpty(existing?.parent_id))
-        {
-          parents.Add(existing!.parent_id!);
-        }
-      }
-
       var removed = await _mapUpdateService.Delete(request.Ids.ToList());
-      await _statesUpdateService.RefreshAlarmsAsync(parents);
 
       await tx.CommitAsync(context.CancellationToken);
 
