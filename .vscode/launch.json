@@ -68,6 +68,29 @@
             }
         },
         {
+            "name": "VmsMap (.NET)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build:all",
+            "postDebugTask": "dapr:vmsmap:stop",
+            "program": "${workspaceFolder}/dotnet/VmsMap/bin/Debug/net10.0/VmsMap.dll",
+            "cwd": "${workspaceFolder}/dotnet/VmsMap",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "MAP_VMS_PORT": "5151",
+                "DAPR_HTTP_PORT": "3617",
+                "DAPR_GRPC_PORT": "51018",
+                "POSTGRES_HOST": "localhost",
+                "POSTGRES_PORT": "5432",
+                "POSTGRES_USER": "postgres",
+                "POSTGRES_PASSWORD": "postgres",
+                "POSTGRES_MAP_DB": "ta_map",
+                "APP_ID": "vmsmap",
+                "VMS_LOG_PATH": "${workspaceFolder}/../logs"
+            }
+        },
+        {
             "name": "VmsOnvif (.NET)",
             "type": "coreclr",
             "request": "launch",
@@ -553,6 +576,7 @@
             "preLaunchTask": "prepare: stack",
             "configurations": [
                 "VmsCfg (.NET)",
+                "VmsMap (.NET)",
                 "VmsUtils (.NET)",
                 "VmsOnvif (.NET)",
                 "VmsOnvifActors (.NET)",
@@ -575,6 +599,7 @@
             "preLaunchTask": "prepare: stack",
             "configurations": [
                 "VmsCfg (.NET)",
+                "VmsMap (.NET)",
                 "VmsUtils (.NET)",
                 "VmsOnvif (.NET)",
                 "VmsOnvifActors (.NET)",

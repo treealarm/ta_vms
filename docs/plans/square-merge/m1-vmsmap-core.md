@@ -47,7 +47,7 @@ M1 — первый майлстоун переноса: появляется `d
 
 ## Шаги
 
-1. **`dotnet/VmsDb` — общий мигратор (предпосылка, отдельный коммит).**
+1. ✅ **`dotnet/VmsDb` — общий мигратор (предпосылка, отдельный коммит).**
    Новый classlib (net10.0, `Npgsql` 10.0.3), без ASP.NET и EF. API `VmsDbMigrator.MigrateAsync`:
    подключение с ретраями и `InvalidCatalogName` → сообщение с именем сервиса и БД;
    `schema_migrations(name, applied_at)`; прогон `<contentRoot>/Grpc/migrations/*.sql` (fallback —
@@ -62,7 +62,7 @@ M1 — первый майлстоун переноса: появляется `d
    Проверка: сборка, `dotnet test` (VmsCfg 26, VmsFs 5, VmsAnalyticsSingleton 24), dev-стек
    мигрирует три БД как раньше.
 
-2. **Каркас `dotnet/VmsMap`.**
+2. ✅ **Каркас `dotnet/VmsMap`.**
    `VmsMap.csproj`: пакеты как у VmsCfg (Dapr 1.18.7, Google.Protobuf 3.35.1,
    Grpc.AspNetCore/Tools 2.83.0, Npgsql + EF provider 10.0.3) плюс
    `Npgsql.EntityFrameworkCore.PostgreSQL.NetTopologySuite` 10.0.3; `ProjectReference` на `VmsDb`
@@ -81,7 +81,7 @@ M1 — первый майлстоун переноса: появляется `d
    `Dockerfile` по образцу `dotnet/VmsCfg/Dockerfile` (контекст — корень репозитория,
    `COPY proto`); проект — в `dotnet/ta_vms.sln`.
 
-3. **Перенос `Domain`.**
+3. ✅ **Перенос `Domain`.**
    Из `Domain/` Square (92 файла, ≈1,9 тыс. строк): дерево (`BaseObjectDTO`, `BaseMarkerDTO`,
    `MarkerDTO`, `ObjPropsDTO`, `ObjExtraPropertyDTO`, `KeyValueDTO`, `GetByParentDTO`,
    `GetBySearchDTO`), состояния и тревоги (`ObjectStateDTO`, `ObjectStateDescriptionDTO`,
@@ -101,7 +101,7 @@ M1 — первый майлстоун переноса: появляется `d
    `camera_id` + версии — так адаптер M3 выводит id узла камеры); `GeometryProtoConvert` →
    `VmsMap/Grpc/`, с исправлением: `LineString` не превращается в `GeometryPolygonDTO`.
 
-4. **Перенос `Db/`.**
+4. ✅ **Перенос `Db/`.**
    `PgDbContext` (530 строк, 23 `DbSet`) + `Models/` → `VmsMap/Db/`; Npgsql + NetTopologySuite;
    `IRequestContextProvider` и `DbSet` интеграций/actions/groups удаляются; классы остаются
    `internal` — после слияния в одну сборку `InternalsVisibleTo` не нужен. `[Timestamp] uint
@@ -123,7 +123,7 @@ M1 — первый майлстоун переноса: появляется `d
    `KMeans` **не переносится в M1**: единственный потребитель — `GetByBox` при >999 фигурах
    (M3); переносится вместе с ним (YAGNI).
 
-5. **`proto/vms_map.proto` — только запись.**
+5. ✅ **`proto/vms_map.proto` — только запись.**
    `package vms.map`, стиль `vms_cfg.proto` (`google.protobuf.Empty/Timestamp`,
    `OperationStatus`, `XxxRequest/Response`, плоские импорты). Формы сообщений — из `tracks.proto`
    Square (`ProtoObject`, `ProtoObjProps`, `ProtoFig`, `ProtoObjectState`, `EventProto`,
@@ -140,7 +140,7 @@ M1 — первый майлстоун переноса: появляется `d
    Уровни в M1 только читаются (сид в миграции); rpc их записи — с редактором в M4 (YAGNI).
    Чтение объектов, состояний, событий и `Watch` — M2/M3; в M1 этих rpc нет.
 
-6. **Рефакторинг при переносе (§3.1) — обязательный минимум M1.**
+6. ✅ **Рефакторинг при переносе (§3.1) — обязательный минимум M1.**
    - `UpdateHierarchyAsync`: для существующего объекта вызывается `_db.Markers.Update(existing)`
      без копирования новых значений — переименование и перенос теряются; копировать поля поверх
      существующей сущности. Тест.
@@ -167,7 +167,7 @@ M1 — первый майлстоун переноса: появляется `d
    - Идентификаторы объектов — строки UUID (36 символов); 24-символьные id из `KMeans`/REST
      Square не переносятся.
 
-7. **Агрегация тревог.**
+7. ✅ **Агрегация тревог.**
    В `StatesUpdateService.UpdateStates`, одной транзакцией: отфильтровать реплики
    (`GetOwnersAsync` — состояние реплики не пишется); `pg_advisory_xact_lock(hashtext(
    'ta_map_alarm'))` — сериализует пересчёт между репликами; записать
@@ -182,14 +182,14 @@ M1 — первый майлстоун переноса: появляется `d
    `Watch` в M3. Логика пересчёта — чистая функция (вход: `objects(id, parent_id)`,
    `alarm_states`, набор тревожных состояний; выход: изменённые строки), тестируется без БД.
 
-8. **`Grpc/MapServiceImpl`.**
+8. ✅ **`Grpc/MapServiceImpl`.**
    Тонкий слой: proto ↔ DTO, вызов сервисов `Db/`. Шаги, которые Square делал несколькими
    `SaveChanges` без общей транзакции (`UpdateProperties`: иерархия → свойства; `Delete`: geo →
    marker → diagram; `UpdateFigures`: иерархия → свойства → geo → трек), — одной транзакцией.
    Ошибки — `RpcException` (`INVALID_ARGUMENT`, `NOT_FOUND`). `PutFile`/`GetFile` — чанки по
    1 MiB (в пределах дефолтных 4 MiB); лимит файла 20 MiB проверяет сервис.
 
-9. **Миграция `Grpc/migrations/0001_square_schema.sql`.**
+9. ✅ **Миграция `Grpc/migrations/0001_square_schema.sql`.**
    Единственный источник — `multitenant_admin/mt_admin/init_files/initdb/sql_scripts/*.sql`
    (15 файлов, 23 таблицы; в Square SQL нет). Пишется **один** файл в стиле ta_vms:
    - `CREATE EXTENSION IF NOT EXISTS postgis;` и `pg_trgm` (для `gin_trgm_ops`);
@@ -220,7 +220,7 @@ M1 — первый майлстоун переноса: появляется `d
      и 190 уровней (`j = 1..19`, `i = j..19`, имена `"j"`/`"j-i"`) — `INSERT ... SELECT
      generate_series(...)` с `gen_random_uuid()`.
 
-10. **PostGIS в развёртывании.**
+10. ✅ **PostGIS в развёртывании.**
     `docker-compose.yml` (dev): `postgres` и `db-init` → `postgis/postgis:latest` (данные в
     `./data/postgres` переживают смену образа, extension создаёт миграция);
     `../ta_install/docker-compose.yml` и `docker-compose.distributed.yml` — то же.
@@ -230,7 +230,7 @@ M1 — первый майлстоун переноса: появляется `d
     `THIRD-PARTY-NOTICES`. `TaVmsHost` не меняется: `POSTGRES_MAP_DB` попадает в набор создаваемых
     БД по общему правилу, `CREATE EXTENSION` делает миграция.
 
-11. **Тесты `dotnet/VmsMap.Tests`.**
+11. ✅ **Тесты `dotnet/VmsMap.Tests`.**
     xunit 2.9.3 + `Microsoft.NET.Test.Sdk` 17.14.1 + coverlet 6.0.4 +
     `xunit.runner.visualstudio` 3.1.4 (как у VmsCfg.Tests), `ProjectReference` на `VmsMap`; без
     Testcontainers, EF InMemory — как в `VmsAnalyticsSingleton.Tests`.
@@ -242,7 +242,7 @@ M1 — первый майлстоун переноса: появляется `d
     сообщением): рекурсивный CTE и транзакция целиком, включая каскадное удаление. Запускается на
     dev-стеке и входит в проверку M1 (в CI `windows.yml` Postgres нет).
 
-12. **Чек-лист нового сервиса.**
+12. ✅ **Чек-лист нового сервиса.**
     ta_vms: `.env` (`POSTGRES_MAP_DB=ta_map`, `MAP_VMS_PORT=5151`, `DAPR_MAP_APP_ID="vmsmap"`);
     `docker-compose.yml` (`vmsmap` в профиле `app` + `vmsmap-dapr`, loopback, `network_mode:
     service:vmsmap`); `dotnet/dapr.yaml` (appPort 5151, daprHTTP 3617, daprGRPC 51018, metrics
@@ -260,7 +260,7 @@ M1 — первый майлстоун переноса: появляется `d
     `multitenant_admin`: правок нет — `ta_map` создаётся из `POSTGRES_*_DB` (`db-init`/
     `TaVmsHost`), Square-скрипты остаются до M5; проверку записать в «Ход работы».
 
-13. **Документация.**
+13. ✅ **Документация.**
     Этот файл — с чекбоксами ✅ по мере исполнения; «Ход работы» — в конце. `CLAUDE.md` — только
     правки шага 12; описание модели и владельца карты — M2/M5.
 
@@ -285,9 +285,38 @@ PostGIS в трёх compose и в `windows/versions.json`.
 
 ## Ход работы
 
-Ветка `square-merge/m1-vmsmap-core` в ta_vms (и та же в ta_install, если он затрагивается), от
-`master` `ca134f7`. Заполняется по мере исполнения: коммиты, что решено по ходу, что не
-проверено.
+Ветка `square-merge/m1-vmsmap-core` в ta_vms и та же в ta_install, от `master` `ca134f7`.
+Сделано 2026-10-30, по коммиту на кусок:
+
+| Коммит | Что |
+|---|---|
+| `bb7e982` | этот план |
+| `e4a3cbb` | `dotnet/VmsDb`, три сервиса переведены на него (шаг 1) |
+| `cb0e4b7` | `proto/vms_map.proto` — запись |
+| `447fc72` | каркас `VmsMap` и перенос `Domain` |
+| `ea57e94` | `Db/`, миграция `0001`, gRPC-запись, агрегация тревог |
+| `2d58d77` | тесты `VmsMap.Tests` и три дефекта, найденных живым запуском |
+| (этот) | PostGIS в compose и на Windows, чек-лист, `CLAUDE.md` |
+
+**Решения по ходу, которых не было в плане:**
+- `vms_map.proto` получил `UpdateVisual`: без него `visual` нечем было бы записать, а магические
+  свойства Square не переносятся.
+- Пересчёт тревог при переносе и удалении узла делает `MapUpdateService` (он и так оркестратор
+  записи), а не gRPC-слой: иначе прямой вызов сервисов оставлял бы счётчики предков устаревшими.
+- Чистые обёртки `DataChangeLayer` (`EventsUpdateService`, `RightUpdateService`,
+  `DiagramUpdateService`, `DiagramTypeUpdateService`, `ValuesUpdateService`) не перенесены как
+  классы: gRPC зовёт сами сервисы `Db/`, интерфейсы-обёртки удалены.
+- `VmsMap` собран с `<Nullable>annotations</Nullable>`: у портированного кода Square анализ
+  потока значений не чист, а включать `enable` ценой сотни предупреждений в M1 незачем.
+- `db_values.value` — JSON-текст, а не `JsonDocument`: так модель грузится и под InMemory, а
+  колонка всё равно `jsonb` (Npgsql отображает `string` в jsonb по типу хранилища).
+  `ValuesService.UpdateListAsync` стал настоящим upsert: Square помечал новый value как
+  Modified, и вставка падала concurrency-ошибкой на несуществующей строке.
+- Фильтр событий: `groups` из DTO убран, поддерево — по `objects`; пагинация — keyset по
+  `(timestamp, id)` с курсором-`start_id`; сортировка только по `timestamp`, прочие ключи —
+  ошибка, а не тихое игнорирование (M3 доведёт контракт).
+- Чек-лист `CLAUDE.md` про `dotnet/.vscode/launch.json` и `video_srv/.vscode/launch.json` править
+  не пришлось: в текущей редакции этих путей нет, есть только корневой `.vscode/launch.json`.
 
 Отклонения от прежней редакции этого файла (сознательные):
 - `KMeans` не переносится в M1 — единственный потребитель `GetByBox` (M3).
@@ -295,3 +324,28 @@ PostGIS в трёх compose и в `windows/versions.json`.
 - `files` и `visual` создаются сразу в `0001`; права — сразу в целевой форме
   `(object_id, subject, action)`.
 - PostGIS на Windows раскладывается `Build-Stage.ps1`, а не `TaVmsHost`.
+
+**Проверено 2026-10-30:**
+- `dotnet build dotnet/ta_vms.sln` — 0 ошибок, 0 предупреждений; `dotnet test` — все проекты:
+  VmsMap 19, VmsCfg 26, VmsFs 5, VmsAnalyticsSingleton 24, VmsPtzTrackingSingleton 96.
+  Пять тестов `VmsMap.Tests` идут только с `VMS_MAP_TEST_DSN`; прогон с ним на
+  `postgis/postgis:latest` (PostgreSQL 17.5, PostGIS 3.5) — зелёный.
+- Миграция на чистой БД: `schema_migrations` = 1, `postgis_version()` непустой, 18 таблиц,
+  `levels` = 190, пять состояний на месте. Повторный старт миграцию не применяет.
+- `grpcurl` по `proto/vms_map.proto` в запущенный сервис: `UpdateObjects`, `UpdateStates`,
+  `UpdateRights`, `UpdateEvents`, `UpdateValues`, `UpdateTracks`, `UpdateDiagramTypes`,
+  `UpdateDiagrams`, `PutFile` (два чанка), `DeleteObjects`. Тревога листа дала
+  `children_alarms` у этажа и здания, `NORM` снял, повтор идемпотентен; удаление камеры
+  убрало её события, права и значения и обнулило счётчик этажа; поворот региона (15°) и
+  диаграммы (90°) сохранён.
+- `docker compose config` (с `--profile app` и без) и оба compose в ta_install — валидны.
+  Dev-БД на `postgis/postgis:latest` поднялась на прежнем каталоге данных (PG 17.5), `db-init`
+  создал `ta_map`.
+
+**Не проверено:**
+- Полный dev-стек (F5) и профиль `app` с собранными образами, включая сайдкар `vmsmap`.
+- Windows: `Build-Stage.ps1` с новым компонентом `postgis` (скрипт не запускался), установка
+  PostgreSQL 18 + PostGIS, старт `VmsMap.exe` под `TaVmsHost`.
+- `../ta_install/scripts/push-images.sh` для `vmsmap` — образ не собирался и не публиковался.
+- Чтение (M2/M3) в новом коде не проверялось: rpc чтения в M1 нет, а портированные методы
+  чтения проверены только там, где их трогает запись.

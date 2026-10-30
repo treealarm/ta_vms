@@ -79,6 +79,7 @@ jobs:
             {"name": "vms",                     "group": "vms",    "base": "ta-deps",  "dockerfile": "Dockerfile"},
             {"name": "roitrc",                  "group": "roitrc", "base": "roi-deps", "dockerfile": "roitrc/Dockerfile"},
             {"name": "vmscfg",                  "group": "dotnet", "base": "",         "dockerfile": "dotnet/VmsCfg/Dockerfile"},
+            {"name": "vmsmap",                  "group": "dotnet", "base": "",         "dockerfile": "dotnet/VmsMap/Dockerfile"},
             {"name": "vmsutils",                "group": "dotnet", "base": "",         "dockerfile": "dotnet/VmsUtils/Dockerfile"},
             {"name": "vmsfs",                   "group": "dotnet", "base": "",         "dockerfile": "dotnet/VmsFs/Dockerfile"},
             {"name": "vmslogger",               "group": "dotnet", "base": "",         "dockerfile": "dotnet/VmsLogger/Dockerfile"},

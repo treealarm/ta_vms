@@ -38,6 +38,16 @@ apps:
     daprInternalGRPCPort: 19012
     daprdLogDestination: fileAndConsole
 
+  - appID: vmsmap
+    appDirPath: ./VmsMap
+    appProtocol: grpc
+    appPort: 5151
+    daprHTTPPort: 3617
+    daprGRPCPort: 51018
+    metricsPort: 9207
+    daprInternalGRPCPort: 19028
+    daprdLogDestination: fileAndConsole
+
   - appID: vmsutils
     appDirPath: ./VmsUtils
     appProtocol: grpc
