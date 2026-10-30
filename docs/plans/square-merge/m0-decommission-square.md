@@ -3,9 +3,11 @@
 > Часть плана [Square → ta_vms](README.md); ссылки «§N» ведут в его разделы.
 > Файлы — ориентиры, не полный перечень.
 
-1. ✅ План разложен по файлам `docs/plans/square-merge/` (2026-10-28). Темы из §7 — файлами в
-   `docs/future_plans/` (со строками в его README), когда по ходу работы станет ясно, что именно
-   отложено.
+1. ✅ План разложен по файлам `docs/plans/square-merge/` (2026-10-28). Темы из §7 в
+   `docs/future_plans/` ещё **не** заведены: каждая появится файлом (со строкой в README папки)
+   при старте того майлстоуна, который упирается в неё, — `map-external-sources` и
+   `camera-connection-state` в M3, `plan-regions` в M4, `dev-keycloak` при первом dev-стеке с
+   логином, `map-routing-and-zones` и `map-tracks-sources` по мере надобности.
 2. ✅ Удалить `dotnet/VmsSquareSingleton`, `dotnet/VmsSquareSingleton.Tests`, сабмодуль
    `dotnet/SquareIntegrationClient` (`.gitmodules`), `proto/vms_square.proto`, запись в
    `dotnet/ta_vms.sln`, `dotnet/dapr.yaml`, `docker-compose.yml`, `.vscode/launch.json`,
@@ -37,7 +39,9 @@
 ## Ход работы
 
 Ветка `square-merge/m0-decommission` в ta_vms и в ta_install, от `master` 37c6bc6 и `main`
-соответственно. Шаги 1–6 сделаны 2026-10-28, не закоммичены. Шаг 7 — после M4.
+соответственно. Шаги 1–6 сделаны 2026-10-28 и закоммичены, по коммиту в каждом репозитории:
+ta_vms `ebc363d` («Remove the Square integration»), ta_install `3aa2407` (то же сообщение).
+Шаг 7 — после M4.
 
 Что сделано сверх списка и что решено по ходу:
 - CORS-политика web_srv удалена целиком: она существовала только для вкладки «Monitor» Square.
