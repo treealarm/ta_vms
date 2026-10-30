@@ -14,7 +14,6 @@ namespace VmsCfg
     ScheduleDb scheduleDb,
     ScheduleCache scheduleCache,
     PermissionDb permissionDb,
-    SpatialDb spatialDb,
     DaprClient daprClient,
     ILogger<CfgServiceImpl> logger) : CfgService.CfgServiceBase
   {
