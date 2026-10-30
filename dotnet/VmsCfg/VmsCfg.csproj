@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\web_srv.Types\web_srv.Types.csproj" />
+    <ProjectReference Include="..\VmsDb\VmsDb.csproj" />
     <ProjectReference Include="..\VmsLog\VmsLog.csproj" />
   </ItemGroup>
 

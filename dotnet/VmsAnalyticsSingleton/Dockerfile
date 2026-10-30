@@ -3,6 +3,7 @@ ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 
 COPY ["dotnet/VmsAnalyticsSingleton/VmsAnalyticsSingleton.csproj", "dotnet/VmsAnalyticsSingleton/"]
+COPY ["dotnet/VmsDb/VmsDb.csproj", "dotnet/VmsDb/"]
 COPY ["dotnet/VmsLog/VmsLog.csproj", "dotnet/VmsLog/"]
 COPY ["proto", "proto"]
 

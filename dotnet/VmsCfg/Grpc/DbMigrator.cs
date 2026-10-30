@@ -1,9 +1,12 @@
 using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using VmsDb;
 
 namespace VmsCfg;
 
+// The VmsCfg half of the migration step: the advisory lock key it has always used and the seeds
+// that must exist before the first request. The migration machinery itself is VmsDb's.
 public class DbMigrator(
   NpgsqlDataSource dataSource,
   IWebHostEnvironment environment,
@@ -13,87 +16,19 @@ public class DbMigrator(
   private readonly IWebHostEnvironment _environment = environment;
   private readonly IDbContextFactory<VmsCfgDbContext> _dbContextFactory = dbContextFactory;
 
-  public async Task MigrateAsync(CancellationToken ct = default)
+  public Task MigrateAsync(CancellationToken ct = default) =>
+    new VmsDbMigrator(
+      _dataSource,
+      "VmsCfg",
+      _environment.ContentRootPath,
+      "hashtext('ta_vms_schema_migrations')",
+      SeedAsync).MigrateAsync(ct);
+
+  private async Task SeedAsync(NpgsqlConnection connection, CancellationToken ct)
   {
-    NpgsqlConnection connection;
-    while (true)
-    {
-      try
-      {
-        connection = await _dataSource.OpenConnectionAsync(ct);
-        break;
-      }
-      catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.InvalidCatalogName)
-      {
-        // The server answered, it just has no such database — retrying cannot fix that. Without
-        // this the failure is indistinguishable from an unreachable server and shows up as
-        // "Postgres not ready" forever, which sends everyone looking in the wrong place.
-        throw new InvalidOperationException(MissingDatabaseMessage(_dataSource, "VmsCfg"), ex);
-      }
-      catch (NpgsqlException ex)
-      {
-        Console.Error.WriteLine($"VmsCfg: Postgres not ready, retrying in 5s: {ex.Message}");
-        await Task.Delay(5_000, ct);
-      }
-    }
-    await using var _ = connection;
-
-    // One replica migrates, the rest wait and then find nothing left to do. Reading
-    // schema_migrations and applying a file are not atomic together, so two instances starting on
-    // the same database would both see the file as missing; the second would then fail on the
-    // primary key of schema_migrations, or — worse, for the seeds below — insert a second "default"
-    // row. A session-level advisory lock is the cheapest way to serialise a step that only runs at
-    // startup; it is released explicitly at the end, and by the connection closing if we throw.
-    await using (var lockCmd = new NpgsqlCommand(
-      "SELECT pg_advisory_lock(hashtext('ta_vms_schema_migrations'));", connection))
-    {
-      await lockCmd.ExecuteNonQueryAsync(ct);
-    }
-
-    try
-    {
-    await EnsureMigrationsTableAsync(connection, ct);
-
-    var applied = await LoadAppliedMigrationsAsync(connection, ct);
-    foreach (var migrationPath in Directory.EnumerateFiles(GetMigrationsPath(), "*.sql").Order())
-    {
-      var migrationName = Path.GetFileName(migrationPath);
-      if (applied.Contains(migrationName))
-      {
-        continue;
-      }
-
-      await using var tx = await connection.BeginTransactionAsync(ct);
-      await using (var migrationCommand = new NpgsqlCommand(
-        await File.ReadAllTextAsync(migrationPath, ct),
-        connection,
-        tx))
-      {
-        await migrationCommand.ExecuteNonQueryAsync(ct);
-      }
-
-      await using (var markCommand = new NpgsqlCommand(
-        "INSERT INTO schema_migrations (name) VALUES ($1);",
-        connection,
-        tx))
-      {
-        markCommand.Parameters.AddWithValue(migrationName);
-        await markCommand.ExecuteNonQueryAsync(ct);
-      }
-
-      await tx.CommitAsync(ct);
-    }
-
     await SeedDefaultMediaMtxServerAsync(connection, ct);
     await NodeRegistry.SeedConfiguredAsync(connection, ct);
     await SeedDefaultStorageAsync(ct);
-    }
-    finally
-    {
-      await using var unlockCmd = new NpgsqlCommand(
-        "SELECT pg_advisory_unlock(hashtext('ta_vms_schema_migrations'));", connection);
-      await unlockCmd.ExecuteNonQueryAsync(CancellationToken.None);
-    }
   }
 
   // Inserts a default Media Router from VMS_MTX_HOST when the table is empty, then performs the
@@ -176,57 +111,5 @@ public class DbMigrator(
       ReservedBytes = defaultReservedBytes,
     });
     await db.SaveChangesAsync(ct);
-  }
-
-  // Kept local to each service's DbMigrator, the same way BuildPostgresConnectionString is —
-  // these three migrators are deliberately independent copies, not a shared base class.
-  private static string MissingDatabaseMessage(NpgsqlDataSource dataSource, string service)
-  {
-    var database = new NpgsqlConnectionStringBuilder(dataSource.ConnectionString).Database;
-    return $"{service}: database '{database}' does not exist on the configured Postgres server. " +
-      "Create it with the preparation step — `docker compose run --rm db-init`, or " +
-      "scripts/prepare-databases.sh against the target server.";
-  }
-
-  private string GetMigrationsPath()
-  {
-    var contentRootPath = Path.Combine(_environment.ContentRootPath, "Grpc", "migrations");
-    if (Directory.Exists(contentRootPath))
-    {
-      return contentRootPath;
-    }
-
-    return Path.Combine(AppContext.BaseDirectory, "Grpc", "migrations");
-  }
-
-  private static async Task EnsureMigrationsTableAsync(
-    NpgsqlConnection connection,
-    CancellationToken ct)
-  {
-    await using var command = new NpgsqlCommand("""
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        name text PRIMARY KEY,
-        applied_at timestamptz NOT NULL DEFAULT now()
-      );
-      """, connection);
-    await command.ExecuteNonQueryAsync(ct);
-  }
-
-  private static async Task<HashSet<string>> LoadAppliedMigrationsAsync(
-    NpgsqlConnection connection,
-    CancellationToken ct)
-  {
-    await using var command = new NpgsqlCommand(
-      "SELECT name FROM schema_migrations;",
-      connection);
-
-    var result = new HashSet<string>(StringComparer.Ordinal);
-    await using var reader = await command.ExecuteReaderAsync(ct);
-    while (await reader.ReadAsync(ct))
-    {
-      result.Add(reader.GetString(0));
-    }
-
-    return result;
   }
 }

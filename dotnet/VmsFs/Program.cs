@@ -7,6 +7,7 @@ using Npgsql;
 using Vms.Cfg;
 using VmsFs;
 using VmsLog;
+using VmsDb;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddVmsLogging();
@@ -35,7 +36,11 @@ builder.Services.AddSingleton<CameraSetupCache>();
 builder.Services.AddSingleton<StorageListCache>();
 builder.Services.AddSingleton<CameraStorageCache>();
 builder.Services.AddHostedService<CameraStorageSubscriber>();
-builder.Services.AddSingleton<DbMigrator>();
+builder.Services.AddSingleton(sp => new VmsDbMigrator(
+  sp.GetRequiredService<NpgsqlDataSource>(),
+  "VmsFs",
+  builder.Environment.ContentRootPath,
+  "7743512879"));
 builder.Services.AddSingleton<FsActivityLog>();
 builder.Services.AddSingleton<ClipStorage>();
 builder.Services.AddSingleton<MetadataSampleStore>();
@@ -60,7 +65,7 @@ builder.WebHost.ConfigureKestrel(options =>
 });
 
 var app = builder.Build();
-await app.Services.GetRequiredService<DbMigrator>().MigrateAsync();
+await app.Services.GetRequiredService<VmsDbMigrator>().MigrateAsync();
 
 app.MapGrpcService<FsServiceImpl>();
 

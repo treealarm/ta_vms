@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Vms.Cfg;
 using VmsAnalyticsSingleton;
+using VmsDb;
 using VmsLog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -70,7 +71,11 @@ var postgresConnStr = BuildPostgresConnectionString();
 builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(postgresConnStr));
 builder.Services.AddDbContextFactory<AnalyticsDbContext>(options =>
   options.UseNpgsql(postgresConnStr));
-builder.Services.AddSingleton<DbMigrator>();
+builder.Services.AddSingleton(sp => new VmsDbMigrator(
+  sp.GetRequiredService<NpgsqlDataSource>(),
+  "VmsAnalyticsSingleton",
+  builder.Environment.ContentRootPath,
+  "7743512880"));
 builder.Services.AddSingleton<AnalyticsServiceImpl>();
 
 builder.WebHost.ConfigureKestrel(options =>
@@ -79,7 +84,7 @@ builder.WebHost.ConfigureKestrel(options =>
 });
 
 var app = builder.Build();
-await app.Services.GetRequiredService<DbMigrator>().MigrateAsync();
+await app.Services.GetRequiredService<VmsDbMigrator>().MigrateAsync();
 
 // ServerPairRegistry needs the media-server<->fs pairing table before the first RetainEvent call,
 // and then again whenever a node joins or leaves: VmsCfg keeps the nodes, and a node enrolled after
