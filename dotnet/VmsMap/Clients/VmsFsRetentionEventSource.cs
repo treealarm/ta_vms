@@ -5,7 +5,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Dapr.Client;
 using Google.Protobuf.WellKnownTypes;
-using Vms.Cfg;
 using Vms.Fs;
 
 namespace VmsMap.Clients
@@ -15,22 +14,13 @@ namespace VmsMap.Clients
   // a camera moved between nodes is followed by this lookup.
   internal sealed class VmsFsRetentionEventSource : IRetentionEventSource
   {
-    private static readonly TimeSpan ServerCacheTtl = TimeSpan.FromSeconds(30);
-
-    private readonly CfgService.CfgServiceClient _cfg;
     private readonly ICameraCatalog _catalog;
-    private readonly DaprClient _dapr;
+    private readonly IMediaServerRegistry _servers;
 
-    private readonly SemaphoreSlim _gate = new(1, 1);
-    private Dictionary<string, string> _fsByServer = new(StringComparer.Ordinal);
-    private DateTime _fetchedAtUtc = DateTime.MinValue;
-
-    public VmsFsRetentionEventSource(
-      CfgService.CfgServiceClient cfg, ICameraCatalog catalog, DaprClient dapr)
+    public VmsFsRetentionEventSource(ICameraCatalog catalog, IMediaServerRegistry servers)
     {
-      _cfg = cfg ?? throw new ArgumentNullException(nameof(cfg));
       _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
-      _dapr = dapr ?? throw new ArgumentNullException(nameof(dapr));
+      _servers = servers ?? throw new ArgumentNullException(nameof(servers));
     }
 
     public async Task<RetentionEpisode?> FindAsync(
@@ -38,7 +28,7 @@ namespace VmsMap.Clients
     {
       var camera = await _catalog.GetAsync(cameraId, ct)
         ?? throw new InvalidOperationException($"Camera '{cameraId}' is not in VmsCfg");
-      var fsId = await FsForServerAsync(camera.ServerId, ct);
+      var fsId = await _servers.FsForServerAsync(camera.ServerId, ct);
 
       var client = new FsService.FsServiceClient(
         DaprClient.CreateInvocationInvoker(fsId));
@@ -69,33 +59,6 @@ namespace VmsMap.Clients
         row.HasStreamName ? row.StreamName : null,
         row.HasTrigger ? row.Trigger : null,
         row.EventUuid);
-    }
-
-    private async Task<string> FsForServerAsync(string serverId, CancellationToken ct)
-    {
-      await _gate.WaitAsync(ct);
-      try
-      {
-        if (DateTime.UtcNow - _fetchedAtUtc >= ServerCacheTtl)
-        {
-          var servers = await _cfg.ListMediaServersAsync(
-            new ListMediaServersRequest(), cancellationToken: ct);
-          _fsByServer = servers.Servers
-            .Where(s => !string.IsNullOrWhiteSpace(s.ServerId))
-            .ToDictionary(s => s.ServerId, s => s.FsId, StringComparer.Ordinal);
-          _fetchedAtUtc = DateTime.UtcNow;
-        }
-
-        if (!_fsByServer.TryGetValue(serverId, out var fsId) || string.IsNullOrWhiteSpace(fsId))
-          throw new InvalidOperationException(
-            $"Server '{serverId}' has no VmsFs in the registry");
-
-        return fsId;
-      }
-      finally
-      {
-        _gate.Release();
-      }
     }
   }
 }

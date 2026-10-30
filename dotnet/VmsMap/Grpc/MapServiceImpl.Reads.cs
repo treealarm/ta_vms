@@ -598,41 +598,9 @@ namespace VmsMap.Grpc
 
     // The reverse index from a node to the camera it is: the canonical row in camera_node, or the
     // placement row of a picture. Reads name a camera at all only because of these.
-    internal async Task<Dictionary<string, string>> CameraIdsAsync(
-      IEnumerable<string> ids, CancellationToken ct)
-    {
-      var requested = ids
-        .Where(id => !string.IsNullOrWhiteSpace(id))
-        .Distinct(StringComparer.Ordinal)
-        .ToList();
-      var guids = requested
-        .Select(Utils.ConvertObjectIdToGuid)
-        .Where(g => g.HasValue)
-        .Select(g => g!.Value)
-        .ToList();
-
-      var result = new Dictionary<string, string>(StringComparer.Ordinal);
-      if (guids.Count == 0)
-        return result;
-
-      foreach (var row in await _db.CameraNodes.AsNoTracking()
-        .Where(n => guids.Contains(n.object_id))
-        .Select(n => new { n.object_id, n.camera_id })
-        .ToListAsync(ct))
-      {
-        result[Utils.ConvertGuidToObjectId(row.object_id)] = row.camera_id;
-      }
-
-      foreach (var row in await _db.CameraPlacements.AsNoTracking()
-        .Where(p => guids.Contains(p.object_id))
-        .Select(p => new { p.object_id, p.camera_id })
-        .ToListAsync(ct))
-      {
-        result.TryAdd(Utils.ConvertGuidToObjectId(row.object_id), row.camera_id);
-      }
-
-      return result;
-    }
+    internal Task<Dictionary<string, string>> CameraIdsAsync(
+      IEnumerable<string> ids, CancellationToken ct) =>
+      CameraIdLookup.ResolveAsync(_db, ids, ct);
 
     private async Task<MapProto.Figures> FiguresAsync(
       IReadOnlyCollection<string> ids, CancellationToken ct)

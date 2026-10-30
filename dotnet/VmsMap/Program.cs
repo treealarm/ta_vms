@@ -12,6 +12,7 @@ using VmsMap.Db;
 using VmsMap.Domain;
 using VmsMap.Grpc;
 using VmsMap.PubSub;
+using VmsMap.Watch;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddVmsLogging();
@@ -31,7 +32,9 @@ builder.Services.AddSingleton(_ =>
   new CfgService.CfgServiceClient(DaprClient.CreateInvocationInvoker(cfgAppId)));
 builder.Services.AddSingleton<ICameraCatalog, VmsCfgCameraCatalog>();
 builder.Services.AddSingleton<ICameraStateSource, VmsCfgCameraStateSource>();
+builder.Services.AddSingleton<IMediaServerRegistry, VmsCfgMediaServerRegistry>();
 builder.Services.AddSingleton<IRetentionEventSource, VmsFsRetentionEventSource>();
+builder.Services.AddSingleton<ICameraConnectionSource, VmsFsCameraConnectionSource>();
 builder.Services.AddSingleton<IMapConfigNotifier>(sp => new DaprMapConfigNotifier(
   sp.GetRequiredService<DaprClient>(),
   sp.GetRequiredService<ILogger<DaprMapConfigNotifier>>(),
@@ -101,10 +104,15 @@ builder.Services.AddScoped<IStatesUpdateService, StatesUpdateService>();
 builder.Services.AddScoped<CameraNodeService>();
 builder.Services.AddScoped<CameraStateWriter>();
 builder.Services.AddScoped<AlarmService>();
+builder.Services.AddScoped<ConnectionStateService>();
+builder.Services.AddScoped<WatchSnapshotService>();
+builder.Services.AddSingleton<MapWatchPoller>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<MapWatchPoller>());
 builder.Services.AddHostedService<CameraChangeSubscriber>();
 builder.Services.AddHostedService<StartupResyncService>();
 builder.Services.AddHostedService<RetentionEventSubscriber>();
 builder.Services.AddHostedService<AlarmSweepService>();
+builder.Services.AddHostedService<ConnectionStatePoller>();
 
 builder.Services.AddScoped<MapServiceImpl>();
 

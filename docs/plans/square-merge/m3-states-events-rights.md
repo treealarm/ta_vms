@@ -59,9 +59,14 @@ M3 закрывает эту дыру:
   плодит дубли. `NORM` ставит периодическая сверка раз в 3 с: объекты в `ALARM`, чей конец в
   прошлом, перепроверяются в БД (эпизод мог продлиться), и только потом снимаются. Список идущих
   тревог — в БД, не в памяти реплики; сверка идемпотентна.
-- **Связь** `CONNECTED`/`DISCONNECTED`: топика «камера в сети» нет. Адаптер раз в 5 с зовёт
-  `VmsUtils.GetMediaMtxPathsInfo` одним запросом на все камеры (не на камеру и не на сервер) и
-  выставляет состояние по `has_source`. Пишет только при смене.
+- **Связь** `CONNECTED`/`DISCONNECTED`: топика «камера в сети» нет. Источник — аварии источника
+  в VmsFs (`ListSourceOutages`): `video_srv` сообщает состояние потока, VmsFs превращает переходы
+  в интервалы, а интервал без `ended_ts` — это потерянный прямо сейчас источник. Адаптер раз в 5 с
+  опрашивает VmsFs каждого узла (один вызов на узел, не на камеру) и выставляет состояние. Пишет
+  только при смене. **Не** путь MediaMTX: `mediamtx_monitor` в `video_srv` гасит WebRTC-путь через
+  30 с без зрителей, поэтому отсутствие пути означает «никто не смотрит», а не «камеры нет» —
+  проверка на живом стенде дала `DISCONNECTED` всем четырём камерам сразу, а `DISCONNECTED` в
+  сиде — тревожное состояние.
 - **Запись состояний камеры** — одна операция «прочитать текущий набор, добавить/убрать, записать
   целиком» под `pg_advisory_xact_lock(hashtext('ta_map_camera_state'))`: иначе тревога и связь,
   придя одновременно, затрут друг друга. Чужие состояния (например, `INFO` от внешнего
@@ -204,16 +209,19 @@ M3 закрывает эту дыру:
    `ALARM` и ставит `NORM`; `CONNECTED`/`INFO` сохраняются. Postgres-тест — агрегация
    `children_alarms` у пространства и здания после тревоги камеры.
 
-6. **`VmsMap` — адаптер: связь.**
-   `Clients/IVmsUtilsClient.cs` + `VmsUtilsClient` (`GetMediaMtxPathsInfo` через
-   `DaprClient.CreateInvocationInvoker(DAPR_UTILS_APP_ID)`); `Adapter/ConnectionStatePoller.cs`
-   раз в 5 с собирает пути всех известных камер (кэш из resync/подписок), зовёт VmsUtils одним
-   вызовом, пишет `CONNECTED`/`DISCONNECTED` при смене, сохраняя остальные состояния. Ошибка
-   VmsUtils логируется, состояние не меняется.
-   Проверка: InMemory-тест — `has_source=false` → `DISCONNECTED`, восстановление → `CONNECTED`,
-   тревога не теряется; недоступность VmsUtils не плодит записей.
+6. ✅ **`VmsMap` — адаптер: связь.**
+   `Clients/IMediaServerRegistry` + `VmsCfgMediaServerRegistry` (server_id → fs_id из
+   `ListMediaServers`, кэш 30 с; им же пользуется источник эпизодов),
+   `Clients/ICameraConnectionSource` + `VmsFsCameraConnectionSource`:
+   `ListSourceOutages` по каждому узлу, открытый интервал (`ended_ts` нет) → `DISCONNECTED`.
+   `Adapter/ConnectionStatePoller` раз в 5 с получает все камеры, спрашивает VmsFs по узлам,
+   пишет `CONNECTED`/`DISCONNECTED` при смене и заодно чинит родителя неразмещённой камеры.
+   Ошибка VmsFs логируется, камеры этого узла в ответ не попадают, состояние не меняется.
+   Проверка: InMemory-тест — `false` → `DISCONNECTED`, `true` → `CONNECTED`, отсутствие камеры
+   в ответе состояние не трогает, тревога не теряется; на стенде — обрыв сети OnvifSim даёт
+   `DISCONNECTED`, восстановление — `CONNECTED`.
 
-7. **`VmsMap` — `Watch`.**
+7. ✅ **`VmsMap` — `Watch`.**
    `Watch/MapWatchPoller.cs` (singleton): реестр подписок, объединённые боксы/id, чтение раз в
    секунду, дифф по `Version`, отправка в каналы подписок. `Watch/WatchSubscription.cs` —
    `WatchRequest` (`set_box`/`set_ids`/`update_values`, `Caller`), права на каждое сообщение.

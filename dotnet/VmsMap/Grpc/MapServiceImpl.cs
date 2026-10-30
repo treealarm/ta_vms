@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using VmsMap.Db;
 using VmsMap.Domain;
 using VmsMap.PubSub;
+using VmsMap.Watch;
 using MapProto = Vms.Map;
 
 namespace VmsMap.Grpc
@@ -40,6 +41,7 @@ namespace VmsMap.Grpc
     private readonly VisualService _visualService;
     private readonly FileService _fileService;
     private readonly SpatialDb _spatialDb;
+    private readonly MapWatchPoller _watchPoller;
 
     public MapServiceImpl(
       VmsMapDbContext db,
@@ -60,7 +62,8 @@ namespace VmsMap.Grpc
       IRightsVersionNotifier rightsVersionNotifier,
       VisualService visualService,
       FileService fileService,
-      SpatialDb spatialDb)
+      SpatialDb spatialDb,
+      MapWatchPoller watchPoller)
     {
       _db = db;
       _mapService = mapService;
@@ -81,6 +84,7 @@ namespace VmsMap.Grpc
       _visualService = visualService;
       _fileService = fileService;
       _spatialDb = spatialDb;
+      _watchPoller = watchPoller;
     }
 
     // ── Objects ───────────────────────────────────────────────────────────────────────────────

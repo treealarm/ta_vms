@@ -72,14 +72,31 @@ namespace VmsMap.Adapter
           : await EnsureServerAsync(camera.ServerId, ct);
       }
 
-      await _mapService.UpdateHierarchyAsync([
-        new BaseMarkerDTO
-        {
-          id = canonicalId,
-          parent_id = parentId,
-          name = camera.Name,
-        }
-      ]);
+      // The periodic reconcile runs this for every camera; a write that changes nothing would bump
+      // the row's xmin and make the watch stream report a change that did not happen.
+      var canonicalGuid = Utils.ConvertObjectIdToGuid(canonicalId);
+      var parentGuid = Utils.ConvertObjectIdToGuid(parentId);
+      var marker = canonicalGuid is null
+        ? null
+        : await _db.Markers.AsNoTracking()
+            .FirstOrDefaultAsync(m => m.id == canonicalGuid.Value, ct);
+
+      if (marker is null || marker.name != camera.Name || marker.parent_id != parentGuid)
+      {
+        await _mapService.UpdateHierarchyAsync([
+          new BaseMarkerDTO
+          {
+            id = canonicalId,
+            parent_id = parentId,
+            name = camera.Name,
+          }
+        ]);
+      }
+      else
+      {
+        // Save a camera_node row that was missing without touching the node itself.
+        await _db.SaveChangesAsync(ct);
+      }
 
       if (tx is not null)
         await tx.CommitAsync(ct);
