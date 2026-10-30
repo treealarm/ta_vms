@@ -6,6 +6,12 @@ Chat communication with the user is in Russian. Code — comments, identifiers, 
 
 Everything addressed to the user rather than to the codebase follows the chat, not the code: **implementation plans (including plan files) and code-review findings are written in Russian.** The code they talk about stays English, so quoted identifiers, file paths and code snippets are of course unchanged.
 
+## Session handoff: propose the next prompt
+
+A long session carries every earlier turn with it, so a different task starts in a fresh one: it reads the repository, the plan files and `MEMORY.md` instead of the chat, and a commit is what it starts from. When a task is finished and the next one is different, say so and give the user a ready-to-paste prompt for that new session — naming the task, the branch to cut from `master`, and the plan file or starting point.
+
+The exception is when the user has said they are leaving and the work is to go on without them: then keep working in the same session, ask nothing, take the reasonable default where a choice comes up, and record that choice in the commit message or the plan.
+
 ## Engineering principles (mandatory)
 
 For all new code and refactors, treat these as hard constraints rather than style preferences:
