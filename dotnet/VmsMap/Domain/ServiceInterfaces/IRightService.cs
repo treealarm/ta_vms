@@ -6,6 +6,10 @@ namespace VmsMap.Domain
   public interface IRightService
   {
     public Task<Dictionary<string, List<RightDTO>>> GetListByIdsAsync(List<string> ids);
+
+    // Every stored row, for the administrator's matrix and the compatibility API. The map itself
+    // reads one user's effective set through IRightsService, not this.
+    public Task<List<RightDTO>> GetAllAsync();
   }
 
   public interface IRightUpdateService

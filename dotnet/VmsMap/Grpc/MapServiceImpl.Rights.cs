@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
+using Microsoft.EntityFrameworkCore;
 using VmsMap.Domain;
 using MapProto = Vms.Map;
 
@@ -22,21 +23,58 @@ namespace VmsMap.Grpc
     public override async Task<MapProto.RightList> GetRights(
       MapProto.ObjectIds request, ServerCallContext context)
     {
-      var rows = await _rightService.GetListByIdsAsync(request.Ids.ToList());
+      // No ids is the administrator's whole matrix; the legacy permissions page needs it to
+      // rebuild its per-user view.
+      var rows = request.Ids.Count == 0
+        ? await _rightService.GetAllAsync()
+        : (await _rightService.GetListByIdsAsync(request.Ids.ToList()))
+            .Values.SelectMany(list => list).ToList();
 
       return new MapProto.RightList
       {
         Rights =
         {
-          rows.Values
-            .SelectMany(list => list)
-            .Select(r => new MapProto.Right
-            {
-              ObjectId = r.object_id ?? string.Empty,
-              Subject = r.subject ?? string.Empty,
-              Action = r.action ?? string.Empty,
-            })
+          rows.Select(r => new MapProto.Right
+          {
+            ObjectId = r.object_id ?? string.Empty,
+            Subject = r.subject ?? string.Empty,
+            Action = r.action ?? string.Empty,
+          })
         }
+      };
+    }
+
+    public override async Task<MapProto.GetCameraNodeResponse> GetCameraNode(
+      MapProto.CameraRequest request, ServerCallContext context)
+    {
+      var ct = context.CancellationToken;
+      if (string.IsNullOrWhiteSpace(request.CameraId))
+        return new MapProto.GetCameraNodeResponse { Found = false };
+
+      // camera_node is the canonical row; a database written before 0004 may only have the
+      // reference placement, so fall back to it.
+      var id = await _db.CameraNodes.AsNoTracking()
+        .Where(n => n.camera_id == request.CameraId)
+        .Select(n => (Guid?)n.object_id)
+        .FirstOrDefaultAsync(ct);
+
+      id ??= await _db.CameraPlacements.AsNoTracking()
+        .Where(p => p.camera_id == request.CameraId && p.is_reference)
+        .Select(p => (Guid?)p.object_id)
+        .FirstOrDefaultAsync(ct);
+
+      if (id is null)
+        return new MapProto.GetCameraNodeResponse { Found = false };
+
+      var marker = await _mapService.GetAsync(Utils.ConvertGuidToObjectId(id.Value));
+      if (marker is null)
+        return new MapProto.GetCameraNodeResponse { Found = false };
+
+      var top = await _mapService.GetTopChildren([marker.id!]);
+      return new MapProto.GetCameraNodeResponse
+      {
+        Found = true,
+        Marker = ToMarker(marker, top.ContainsKey(marker.id!), request.CameraId),
       };
     }
 

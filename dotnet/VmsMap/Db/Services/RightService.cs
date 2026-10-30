@@ -40,6 +40,18 @@ namespace VmsMap.Db
           }).ToList());
     }
 
+    public async Task<List<RightDTO>> GetAllAsync()
+    {
+      var rights = await _db.Rights.AsNoTracking().ToListAsync();
+
+      return rights.Select(r => new RightDTO
+      {
+        object_id = Utils.ConvertGuidToObjectId(r.object_id),
+        subject = r.subject,
+        action = r.action
+      }).ToList();
+    }
+
     // Deletes exactly the named rows: an object keeps the rights the caller did not name.
     public async Task<long> Delete(List<RightDTO> keys)
     {

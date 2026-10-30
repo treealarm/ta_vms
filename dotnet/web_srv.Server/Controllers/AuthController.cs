@@ -111,7 +111,7 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
   /// </summary>
   [HttpPost("change-password")]
   [Authorize(Policy = AuthPolicies.Authenticated)]
-  [NoCameraAccess("changes the caller's own password")]
+  [NoRights("changes the caller's own password")]
   public async Task<IActionResult> ChangePassword(ChangePasswordDto dto)
   {
     if (kcAdmin == null)
@@ -170,7 +170,7 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
   /// </param>
   [HttpGet("users")]
   [Authorize(Policy = AuthPolicies.Authenticated)]
-  [NoCameraAccess("lists user names, no camera")]
+  [NoRights("lists user names, no camera")]
   public async Task<IActionResult> Users(
     [FromQuery] bool includeSelf = false, [FromQuery] bool withRoles = false)
   {
@@ -223,7 +223,7 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
   /// </summary>
   [HttpGet("me")]
   [Authorize(Policy = AuthPolicies.Authenticated)]
-  [NoCameraAccess("reports the caller's own grants")]
+  [NoRights("reports the caller's own grants")]
   public async Task<ActionResult<MyPermissionsDto>> Me(
     [FromServices] IPermissionManager permissions, CancellationToken ct)
   {

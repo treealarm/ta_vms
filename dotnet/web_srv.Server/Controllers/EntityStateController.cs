@@ -10,7 +10,7 @@ namespace web_srv
   [ApiController]
   public class EntityStateController(SingletonService.SingletonServiceClient grpcClient) : ControllerBase
   {
-    [NoCameraAccess("debug registry of in-memory service state, not camera video")]
+    [NoRights("debug registry of in-memory service state, not camera video")]
     [HttpGet]
     public async Task<IActionResult> GetEntityStates(CancellationToken ct)
     {

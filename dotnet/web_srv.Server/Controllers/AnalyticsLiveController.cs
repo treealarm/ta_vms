@@ -17,13 +17,13 @@ namespace web_srv;
 [Route("api/analytics")]
 public class AnalyticsLiveController(
   VmsAnalyticsService.VmsAnalyticsServiceClient _analyticsClient,
-  ICameraAccessService _access) : ControllerBase
+  IRightsService _access) : ControllerBase
 {
   private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
   // Keep-alive comment cadence: without traffic, an idle intermediary could close the connection.
   private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(15);
 
-  [CameraAccess(CameraAction.ViewLive, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.ViewLive, Source = RightSource.Action)]
   [HttpGet("live")]
   public async Task Live(CancellationToken ct)
   {
@@ -60,7 +60,7 @@ public class AnalyticsLiveController(
 
         // Re-read the scope per event rather than once per connection: it is a cache lookup, and it
         // means a revocation takes effect on an already-open stream without tearing it down.
-        var scope = await _access.ScopeAsync(User, CameraAction.ViewLive, ct);
+        var scope = await _access.ScopeAsync(User, RightActions.ViewLive, ct);
         if (scope.Contains(stream.Current.CameraId))
         {
           var dto = AnalyticsActivityMapper.ToDto(stream.Current, includeCrop: false);
@@ -84,7 +84,7 @@ public class AnalyticsLiveController(
   // of boxes (cell motion, tamper, line/field crossings). A second endpoint rather than a
   // discriminated union on /live: the two have different payloads and different lifetimes on
   // screen, and a monitor showing only boxes should not pay for event traffic it discards.
-  [CameraAccess(CameraAction.ViewLive, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.ViewLive, Source = RightSource.Action)]
   [HttpGet("live-events")]
   public async Task LiveEvents(CancellationToken ct)
   {
@@ -114,7 +114,7 @@ public class AnalyticsLiveController(
         if (!await moveNext)
           break;
 
-        var scope = await _access.ScopeAsync(User, CameraAction.ViewLive, ct);
+        var scope = await _access.ScopeAsync(User, RightActions.ViewLive, ct);
         if (scope.Contains(stream.Current.CameraId))
         {
           var e = stream.Current;

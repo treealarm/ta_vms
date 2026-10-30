@@ -13,7 +13,7 @@ public class CameraStateController(CfgService.CfgServiceClient cfgClient) : Cont
     new(deadline: DateTime.UtcNow.AddSeconds(5), cancellationToken: ct);
 
   [HttpGet("{cameraId}/state")]
-  [CameraAccess(CameraAction.ViewLive)]
+  [RequiresRight(RightActions.ViewLive)]
   public async Task<IActionResult> GetState(string cameraId, CancellationToken ct)
   {
     var resp = await cfgClient.GetCamStateAsync(
@@ -23,7 +23,7 @@ public class CameraStateController(CfgService.CfgServiceClient cfgClient) : Cont
 
   // Arming is a control action, not a viewing one.
   [HttpPut("{cameraId}/state")]
-  [CameraAccess(CameraAction.Control)]
+  [RequiresRight(RightActions.Control)]
   public async Task<IActionResult> SetState(string cameraId, [FromBody] CamStateDto body, CancellationToken ct)
   {
     await cfgClient.SetCamStateAsync(

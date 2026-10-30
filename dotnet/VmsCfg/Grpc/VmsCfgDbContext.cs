@@ -18,9 +18,6 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
   public DbSet<DbRecordingScheduleWindow> RecordingScheduleWindows { get; set; }
   public DbSet<DbCameraSchedule> CameraSchedules { get; set; }
   public DbSet<DbCameraSetup> CameraSetups { get; set; }
-  public DbSet<DbUserCameraPermission> UserCameraPermissions { get; set; }
-  public DbSet<DbUserAllCamerasPermission> UserAllCamerasPermissions { get; set; }
-  public DbSet<DbCameraAclSetting> CameraAclSettings { get; set; }
   public DbSet<DbOnvifEventSubscription> OnvifEventSubscriptions { get; set; }
   public DbSet<DbMediaServerNode> MediaServerNodes { get; set; }
   public DbSet<DbDeployment> Deployments { get; set; }
@@ -198,39 +195,6 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.Subscribed).HasColumnName("subscribed");
       e.Property(x => x.PollTimeoutSeconds).HasColumnName("poll_timeout_seconds");
       e.Property(x => x.MessageLimit).HasColumnName("message_limit");
-    });
-
-    modelBuilder.Entity<DbUserCameraPermission>(e =>
-    {
-      e.ToTable("user_camera_permission");
-      e.HasKey(x => new { x.Username, x.CameraId });
-      e.Property(x => x.Username).HasColumnName("username");
-      e.Property(x => x.CameraId).HasColumnName("camera_id");
-      e.Property(x => x.ViewLive).HasColumnName("view_live");
-      e.Property(x => x.ViewArchive).HasColumnName("view_archive");
-      e.Property(x => x.Ptz).HasColumnName("ptz");
-      e.Property(x => x.Control).HasColumnName("control");
-      e.Property(x => x.Export).HasColumnName("export");
-    });
-
-    modelBuilder.Entity<DbUserAllCamerasPermission>(e =>
-    {
-      e.ToTable("user_all_cameras_permission");
-      e.HasKey(x => x.Username);
-      e.Property(x => x.Username).HasColumnName("username");
-      e.Property(x => x.ViewLive).HasColumnName("view_live");
-      e.Property(x => x.ViewArchive).HasColumnName("view_archive");
-      e.Property(x => x.Ptz).HasColumnName("ptz");
-      e.Property(x => x.Control).HasColumnName("control");
-      e.Property(x => x.Export).HasColumnName("export");
-    });
-
-    modelBuilder.Entity<DbCameraAclSetting>(e =>
-    {
-      e.ToTable("camera_acl_setting");
-      e.HasKey(x => x.Id);
-      e.Property(x => x.Id).HasColumnName("id");
-      e.Property(x => x.Mode).HasColumnName("mode");
     });
 
     modelBuilder.Entity<DbMediaServerNode>(e =>
@@ -414,42 +378,6 @@ public sealed class DbOnvifEventSubscription
   public bool Subscribed { get; set; }
   public int PollTimeoutSeconds { get; set; }
   public int MessageLimit { get; set; }
-}
-
-/// One user's grants on one camera. Username is a Keycloak preferred_username.
-public sealed class DbUserCameraPermission
-{
-  public string Username { get; set; } = string.Empty;
-  public string CameraId { get; set; } = string.Empty;
-  public bool ViewLive { get; set; }
-  public bool ViewArchive { get; set; }
-  public bool Ptz { get; set; }
-  public bool Control { get; set; }
-  public bool Export { get; set; }
-}
-
-/// Blanket grants covering every camera, present and future. OR-ed with the per-camera row.
-public sealed class DbUserAllCamerasPermission
-{
-  public string Username { get; set; } = string.Empty;
-  public bool ViewLive { get; set; }
-  public bool ViewArchive { get; set; }
-  public bool Ptz { get; set; }
-  public bool Control { get; set; }
-  public bool Export { get; set; }
-}
-
-/// Single-row table: "open" (everyone sees everything) or "enforced" (grants decide).
-public sealed class DbCameraAclSetting
-{
-  public bool Id { get; set; } = true;
-  public string Mode { get; set; } = CameraAclModes.Open;
-}
-
-public static class CameraAclModes
-{
-  public const string Open = "open";
-  public const string Enforced = "enforced";
 }
 
 public sealed class DbMediaServerNode

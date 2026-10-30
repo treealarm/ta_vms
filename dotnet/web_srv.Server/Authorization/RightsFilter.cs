@@ -9,12 +9,12 @@ namespace web_srv.Authorization;
 /// <summary>
 /// Applies per-camera permissions to every MVC action, and refuses anything that has not declared
 /// what it needs. Fail-closed by construction: a controller added later without a
-/// <see cref="CameraAccessAttribute"/> or <see cref="NoCameraAccessAttribute"/> answers 403 instead
+/// <see cref="RequiresRightAttribute"/> or <see cref="NoRightsAttribute"/> answers 403 instead
 /// of silently exposing video.
 /// </summary>
-public sealed class CameraAccessFilter(
-  ICameraAccessService access,
-  ILogger<CameraAccessFilter> logger) : IAsyncActionFilter
+public sealed class RightsFilter(
+  IRightsService access,
+  ILogger<RightsFilter> logger) : IAsyncActionFilter
 {
   public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
   {
@@ -39,24 +39,24 @@ public sealed class CameraAccessFilter(
       return;
     }
 
-    if (Find<NoCameraAccessAttribute>(descriptor) is not null)
+    if (Find<NoRightsAttribute>(descriptor) is not null)
     {
       await next();
       return;
     }
 
-    var required = Find<CameraAccessAttribute>(descriptor);
+    var required = Find<RequiresRightAttribute>(descriptor);
     if (required is null)
     {
       logger.LogError(
-        "{Controller}.{Action} declares no camera access requirement — refusing. Add [CameraAccess] "
-        + "or [NoCameraAccess(reason)].",
+        "{Controller}.{Action} declares no camera access requirement — refusing. Add [Rights] "
+        + "or [NoRights(reason)].",
         descriptor.ControllerName, descriptor.ActionName);
       context.Result = new StatusCodeResult(StatusCodes.Status403Forbidden);
       return;
     }
 
-    if (required.Source == CameraIdSource.Action)
+    if (required.Source == RightSource.Action)
     {
       // The action owns the check — it either filters a list or has to resolve the camera from a
       // clip/event/detection id first.
@@ -83,9 +83,9 @@ public sealed class CameraAccessFilter(
     await next();
   }
 
-  private static string? ResolveCameraId(ActionExecutingContext context, CameraAccessAttribute required)
+  private static string? ResolveCameraId(ActionExecutingContext context, RequiresRightAttribute required)
   {
-    if (required.Source == CameraIdSource.Body)
+    if (required.Source == RightSource.Body)
     {
       var argument = required.Name is null
         ? context.ActionArguments.Values.FirstOrDefault(v => v is not null && HasCameraIdProperty(v))

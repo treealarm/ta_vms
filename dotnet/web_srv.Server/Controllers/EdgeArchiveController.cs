@@ -17,7 +17,7 @@ namespace web_srv.Server.Controllers;
 /// <remarks>
 /// Reads answer with a <c>message</c> instead of an error status when a camera simply cannot do
 /// Profile G, so the UI can say "unsupported" rather than "something broke". Deletions and storage
-/// formatting act on the device and cannot be undone — they require <see cref="CameraAction.Control"/>
+/// formatting act on the device and cannot be undone — they require <see cref="RightActions.Control"/>
 /// and are logged.
 /// </remarks>
 [ApiController]
@@ -27,7 +27,7 @@ public sealed class EdgeArchiveController(
   OnvifRouter router,
   ICameraManager manager,
   ServerPairRegistry registry,
-  ICameraAccessService access,
+  IRightsService access,
   EdgeExportToken exportToken,
   ILogger<EdgeArchiveController> logger) : ControllerBase
 {
@@ -52,7 +52,7 @@ public sealed class EdgeArchiveController(
   // ── What the camera holds ────────────────────────────────────────────────────
 
   [HttpGet("cameras/{cameraId}/capabilities")]
-  [CameraAccess(CameraAction.ViewArchive)]
+  [RequiresRight(RightActions.ViewArchive)]
   public async Task<IActionResult> GetCapabilities(string cameraId, CancellationToken ct)
   {
     var r = await (await router.OnvifAsync(cameraId, ct)).GetEdgeCapabilitiesAsync(new CameraRequest { SourceId = cameraId }, Options(ct));
@@ -73,7 +73,7 @@ public sealed class EdgeArchiveController(
   }
 
   [HttpGet("cameras/{cameraId}/summary")]
-  [CameraAccess(CameraAction.ViewArchive)]
+  [RequiresRight(RightActions.ViewArchive)]
   public async Task<IActionResult> GetSummary(string cameraId, CancellationToken ct)
   {
     var r = await (await router.OnvifAsync(cameraId, ct)).GetEdgeRecordingSummaryAsync(new CameraRequest { SourceId = cameraId }, Options(ct));
@@ -89,7 +89,7 @@ public sealed class EdgeArchiveController(
   }
 
   [HttpGet("cameras/{cameraId}/recordings")]
-  [CameraAccess(CameraAction.ViewArchive)]
+  [RequiresRight(RightActions.ViewArchive)]
   public async Task<IActionResult> ListRecordings(string cameraId, CancellationToken ct)
   {
     var r = await (await router.OnvifAsync(cameraId, ct)).ListEdgeRecordingsAsync(new CameraRequest { SourceId = cameraId }, SearchOptions(ct));
@@ -119,7 +119,7 @@ public sealed class EdgeArchiveController(
   }
 
   [HttpGet("cameras/{cameraId}/intervals")]
-  [CameraAccess(CameraAction.ViewArchive)]
+  [RequiresRight(RightActions.ViewArchive)]
   public async Task<IActionResult> ListIntervals(
     string cameraId,
     [FromQuery] string? from,
@@ -155,7 +155,7 @@ public sealed class EdgeArchiveController(
   // ── On-camera recording control ──────────────────────────────────────────────
 
   [HttpGet("cameras/{cameraId}/recording-jobs")]
-  [CameraAccess(CameraAction.Control)]
+  [RequiresRight(RightActions.Control)]
   public async Task<IActionResult> ListRecordingJobs(string cameraId, CancellationToken ct)
   {
     var r = await (await router.OnvifAsync(cameraId, ct)).ListEdgeRecordingJobsAsync(new CameraRequest { SourceId = cameraId }, Options(ct));
@@ -184,7 +184,7 @@ public sealed class EdgeArchiveController(
   }
 
   [HttpPut("cameras/{cameraId}/recording-jobs/{jobToken}/mode")]
-  [CameraAccess(CameraAction.Control)]
+  [RequiresRight(RightActions.Control)]
   public async Task<IActionResult> SetRecordingJobMode(
     string cameraId, string jobToken, [FromBody] EdgeJobModeRequestDto body, CancellationToken ct)
   {
@@ -200,7 +200,7 @@ public sealed class EdgeArchiveController(
   }
 
   [HttpPut("cameras/{cameraId}/recordings/{recordingToken}/configuration")]
-  [CameraAccess(CameraAction.Control)]
+  [RequiresRight(RightActions.Control)]
   public async Task<IActionResult> SetRecordingConfiguration(
     string cameraId, string recordingToken, [FromBody] EdgeRecordingConfigRequestDto body, CancellationToken ct)
   {
@@ -216,7 +216,7 @@ public sealed class EdgeArchiveController(
   }
 
   [HttpDelete("cameras/{cameraId}/recordings/{recordingToken}")]
-  [CameraAccess(CameraAction.Control)]
+  [RequiresRight(RightActions.Control)]
   public async Task<IActionResult> DeleteRecording(string cameraId, string recordingToken, CancellationToken ct)
   {
     logger.LogWarning("Deleting recording {Token} on camera {CameraId}", recordingToken, cameraId);
@@ -228,7 +228,7 @@ public sealed class EdgeArchiveController(
   }
 
   [HttpDelete("cameras/{cameraId}/recordings/{recordingToken}/tracks/{trackToken}")]
-  [CameraAccess(CameraAction.Control)]
+  [RequiresRight(RightActions.Control)]
   public async Task<IActionResult> DeleteTrack(string cameraId, string recordingToken, string trackToken, CancellationToken ct)
   {
     logger.LogWarning("Deleting track {Track} of recording {Token} on camera {CameraId}", trackToken, recordingToken, cameraId);
@@ -240,7 +240,7 @@ public sealed class EdgeArchiveController(
   }
 
   [HttpDelete("cameras/{cameraId}/recording-jobs/{jobToken}")]
-  [CameraAccess(CameraAction.Control)]
+  [RequiresRight(RightActions.Control)]
   public async Task<IActionResult> DeleteRecordingJob(string cameraId, string jobToken, CancellationToken ct)
   {
     logger.LogWarning("Deleting recording job {JobToken} on camera {CameraId}", jobToken, cameraId);
@@ -254,7 +254,7 @@ public sealed class EdgeArchiveController(
   // ── Camera-side storage ──────────────────────────────────────────────────────
 
   [HttpGet("cameras/{cameraId}/storage")]
-  [CameraAccess(CameraAction.Control)]
+  [RequiresRight(RightActions.Control)]
   public async Task<IActionResult> ListStorage(string cameraId, CancellationToken ct)
   {
     var r = await (await router.OnvifAsync(cameraId, ct)).ListEdgeStorageAsync(new CameraRequest { SourceId = cameraId }, Options(ct));
@@ -276,7 +276,7 @@ public sealed class EdgeArchiveController(
   }
 
   [HttpPost("cameras/{cameraId}/storage/format")]
-  [CameraAccess(CameraAction.Control)]
+  [RequiresRight(RightActions.Control)]
   public async Task<IActionResult> FormatStorage(
     string cameraId, [FromBody] EdgeFormatStorageRequestDto? body, CancellationToken ct)
   {
@@ -294,7 +294,7 @@ public sealed class EdgeArchiveController(
   // The required permission depends on the destination (archive vs downloadable file), so the
   // action resolves it itself instead of declaring one up front.
   [HttpPost("cameras/{cameraId}/imports")]
-  [CameraAccess(CameraAction.Control, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.Control, Source = RightSource.Action)]
   public async Task<IActionResult> StartImport(
     string cameraId, [FromBody] EdgeImportRequestDto body, CancellationToken ct)
   {
@@ -302,7 +302,7 @@ public sealed class EdgeArchiveController(
       return BadRequest(new { message = "request body is required" });
 
     // Writing into the archive is a Control action; producing a downloadable file is an Export one.
-    var action = body.ExportToFile ? CameraAction.Export : CameraAction.Control;
+    var action = body.ExportToFile ? RightActions.Export : RightActions.Control;
     if (!await access.IsAllowedAsync(User, cameraId, action, ct))
       return Forbid();
 
@@ -381,7 +381,7 @@ public sealed class EdgeArchiveController(
   }
 
   [HttpGet("cameras/{cameraId}/imports")]
-  [CameraAccess(CameraAction.ViewArchive)]
+  [RequiresRight(RightActions.ViewArchive)]
   public async Task<IActionResult> ListImports(string cameraId, CancellationToken ct)
   {
     var camera = await manager.Get(cameraId, ct);
@@ -394,7 +394,7 @@ public sealed class EdgeArchiveController(
   }
 
   [HttpDelete("cameras/{cameraId}/imports/{jobId}")]
-  [CameraAccess(CameraAction.Control)]
+  [RequiresRight(RightActions.Control)]
   public async Task<IActionResult> CancelImport(string cameraId, string jobId, CancellationToken ct)
   {
     var camera = await manager.Get(cameraId, ct);
@@ -425,7 +425,7 @@ public sealed class EdgeArchiveController(
   // ── Exports ──────────────────────────────────────────────────────────────────
 
   [HttpGet("cameras/{cameraId}/exports")]
-  [CameraAccess(CameraAction.Export)]
+  [RequiresRight(RightActions.Export)]
   public async Task<IActionResult> ListExports(string cameraId, CancellationToken ct)
   {
     var results = await registry.FanOutFsAsync(
@@ -450,11 +450,11 @@ public sealed class EdgeArchiveController(
   /// header, so playing an export directly needs the grant in the URL itself.
   /// </summary>
   [HttpPost("export-link")]
-  [CameraAccess(CameraAction.Export, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.Export, Source = RightSource.Action)]
   public async Task<IActionResult> CreateExportLink([FromQuery] string relPath, CancellationToken ct)
   {
     var cameraId = CameraIdOfExport(relPath);
-    if (cameraId is null || !await access.IsAllowedAsync(User, cameraId, CameraAction.Export, ct))
+    if (cameraId is null || !await access.IsAllowedAsync(User, cameraId, RightActions.Export, ct))
       return NotFound();
 
     var expires = DateTime.UtcNow.Add(EdgeExportToken.Lifetime);
@@ -473,7 +473,7 @@ public sealed class EdgeArchiveController(
   /// </summary>
   [HttpGet("exports/{**relPath}")]
   [AllowAnonymous]
-  [CameraAccess(CameraAction.Export, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.Export, Source = RightSource.Action)]
   public async Task<IActionResult> DownloadExport(
     string relPath, [FromQuery] string? token, [FromQuery] bool download, CancellationToken ct)
   {
@@ -485,7 +485,7 @@ public sealed class EdgeArchiveController(
     // else's export exists at that path.
     var allowed = !string.IsNullOrEmpty(token)
       ? exportToken.IsValidFor(token, relPath)
-      : await access.IsAllowedAsync(User, cameraId, CameraAction.Export, ct);
+      : await access.IsAllowedAsync(User, cameraId, RightActions.Export, ct);
     if (!allowed)
       return NotFound();
 

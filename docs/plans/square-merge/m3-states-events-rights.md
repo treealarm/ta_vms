@@ -231,7 +231,7 @@ M3 закрывает эту дыру:
    Проверка: InMemory-тесты поллера — добавление/обновление/удаление узла, `set_visual_states`
    по `Version`, `on_values_changed` только при запросе, права отсекают чужой узел; сборка.
 
-8. **web_srv — `api/map/*` и SSE.**
+8. ✅ **web_srv — `api/map/*` и SSE.**
    `Controllers/MapObjectsController`, `MapStatesController`, `MapEventsController`,
    `MapTracksController`, `MapValuesController`, `MapDiagramsController`, `MapRightsController`,
    `MapLevelsController`, `MapFilesController`, `MapLiveController`. Все — `[Authorize(
@@ -243,7 +243,7 @@ M3 закрывает эту дыру:
    Проверка: `dotnet build`; SSE отдаёт `set_visual_states` после тревоги; `api/map/files`
    отдаёт загруженный файл; фильтрация по правам видна в ответах.
 
-9. **web_srv — `RightsFilter`/`RightsService` вместо `CameraAccess*`.**
+9. ✅ **web_srv — `RightsFilter`/`RightsService` вместо `CameraAccess*`.**
    `Authorization/CameraAccessFilter.cs` → `RightsFilter.cs`, `CameraAccessService.cs` →
    `RightsService.cs`, `CameraAccessAttribute` → `RequiresRightAttribute`,
    `NoCameraAccessAttribute` → `NoRightsAttribute`, `CameraAction` → `RightActions` (строковые
@@ -259,7 +259,7 @@ M3 закрывает эту дыру:
    live/архив/PTZ/экспорт под пользователем без прав дают те же 403, с правом на здание —
    работают; `api/permissions` читает и пишет права.
 
-10. **VmsCfg — демонтаж прав.**
+10. ✅ **VmsCfg — демонтаж прав.**
     Удалить `Grpc/PermissionDb.cs`, DbSet'ы/сущности прав из `VmsCfgDbContext`, четыре rpc
     (`ListCameraPermissions`, `SetUserCameraPermissions`, `GetCameraAclMode`, `SetCameraAclMode`)
     и сообщения из `proto/vms_cfg.proto` (без `reserved`), `BumpCameraPermissionsVersionAsync`,

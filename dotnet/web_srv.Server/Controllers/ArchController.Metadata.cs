@@ -24,7 +24,7 @@ public partial class ArchController
   /// </summary>
   private static readonly TimeSpan MaxMetadataWindow = TimeSpan.FromMinutes(5);
 
-  [CameraAccess(CameraAction.ViewArchive)]
+  [RequiresRight(RightActions.ViewArchive)]
   [HttpGet("metadata")]
   public async Task<IActionResult> GetArchiveMetadata(
     [FromQuery] string cameraId,
@@ -76,7 +76,7 @@ public partial class ArchController
         .ToList()));
   }
 
-  [CameraAccess(CameraAction.ViewArchive)]
+  [RequiresRight(RightActions.ViewArchive)]
   [HttpGet("metadata/coverage")]
   public async Task<IActionResult> GetArchiveMetadataCoverage(
     [FromQuery] string cameraId,

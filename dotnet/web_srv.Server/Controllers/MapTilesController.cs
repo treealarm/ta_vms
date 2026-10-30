@@ -62,7 +62,7 @@ public class MapTilesController(
   private sealed record CachedTile(string ContentType, byte[] Data);
 
   [HttpGet("{z:int}/{x:int}/{y:int}")]
-  [NoCameraAccess("Map tiles are public cartography, not a camera")]
+  [NoRights("Map tiles are public cartography, not a camera")]
   public async Task<IActionResult> Get(int z, int x, int y, CancellationToken ct)
   {
     if (TileUrlTemplate is null)

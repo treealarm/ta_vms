@@ -13,43 +13,14 @@ namespace VmsMap.Grpc
   public partial class MapServiceImpl
   {
     public override async Task Watch(
-      IAsyncStreamReader<MapProto.WatchRequest> requestStream,
+      MapProto.WatchRequest request,
       IServerStreamWriter<MapProto.WatchMessage> responseStream,
       ServerCallContext context)
     {
       var subscription = _watchPoller.Subscribe();
-      using var linked = CancellationTokenSource.CreateLinkedTokenSource(
-        context.CancellationToken);
+      var ct = context.CancellationToken;
 
       try
-      {
-        var reading = ReadWatchRequestsAsync(requestStream, subscription, linked.Token);
-        var writing = WriteWatchMessagesAsync(responseStream, subscription, linked.Token);
-
-        await Task.WhenAny(reading, writing);
-        linked.Cancel();
-
-        try
-        {
-          await Task.WhenAll(reading, writing);
-        }
-        catch (OperationCanceledException)
-        {
-          // One side ended; the other was cancelled on purpose.
-        }
-      }
-      finally
-      {
-        _watchPoller.Unsubscribe(subscription);
-      }
-    }
-
-    private static async Task ReadWatchRequestsAsync(
-      IAsyncStreamReader<MapProto.WatchRequest> stream,
-      WatchSubscription subscription,
-      CancellationToken ct)
-    {
-      await foreach (var request in stream.ReadAllAsync(ct))
       {
         var caller = ToCaller(request.Caller);
 
@@ -68,20 +39,17 @@ namespace VmsMap.Grpc
             break;
 
           default:
-            // A message that only refreshes the caller applies to the current subscription.
             subscription.SetCaller(caller);
             break;
         }
-      }
-    }
 
-    private static async Task WriteWatchMessagesAsync(
-      IServerStreamWriter<MapProto.WatchMessage> stream,
-      WatchSubscription subscription,
-      CancellationToken ct)
-    {
-      await foreach (var message in subscription.Messages.Reader.ReadAllAsync(ct))
-        await stream.WriteAsync(message, ct);
+        await foreach (var message in subscription.Messages.Reader.ReadAllAsync(ct))
+          await responseStream.WriteAsync(message, ct);
+      }
+      finally
+      {
+        _watchPoller.Unsubscribe(subscription);
+      }
     }
   }
 }

@@ -15,7 +15,7 @@ public class PtzController(OnvifRouter router) : ControllerBase
     new(deadline: DateTime.UtcNow.Add(Timeout), cancellationToken: ct);
 
   [HttpPost("continuous-move")]
-  [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
+  [RequiresRight(RightActions.Ptz, Source = RightSource.Body)]
   public async Task<IActionResult> ContinuousMove([FromBody] PtzMoveDto dto, CancellationToken ct)
   {
     var response = await (await router.PtzAsync(dto.CameraId, ct)).ContinuousMoveAsync(new PtzContinuousMoveRequest
@@ -31,7 +31,7 @@ public class PtzController(OnvifRouter router) : ControllerBase
   }
 
   [HttpPost("absolute-move")]
-  [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
+  [RequiresRight(RightActions.Ptz, Source = RightSource.Body)]
   public async Task<IActionResult> AbsoluteMove([FromBody] PtzAbsoluteMoveDto dto, CancellationToken ct)
   {
     var response = await (await router.PtzAsync(dto.CameraId, ct)).AbsoluteMoveAsync(new PtzAbsoluteMoveRequest
@@ -48,7 +48,7 @@ public class PtzController(OnvifRouter router) : ControllerBase
   }
 
   [HttpPost("relative-move")]
-  [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
+  [RequiresRight(RightActions.Ptz, Source = RightSource.Body)]
   public async Task<IActionResult> RelativeMove([FromBody] PtzMoveDto dto, CancellationToken ct)
   {
     var response = await (await router.PtzAsync(dto.CameraId, ct)).RelativeMoveAsync(new PtzRelativeMoveRequest
@@ -65,7 +65,7 @@ public class PtzController(OnvifRouter router) : ControllerBase
 
   // Reading what the camera supports drives the live view layout, so it follows viewing rights.
   [HttpGet("capabilities")]
-  [CameraAccess(CameraAction.ViewLive)]
+  [RequiresRight(RightActions.ViewLive)]
   public async Task<IActionResult> GetCapabilities([FromQuery] string cameraId, CancellationToken ct)
   {
     var response = await (await router.PtzAsync(cameraId, ct)).GetCapabilitiesAsync(
@@ -81,7 +81,7 @@ public class PtzController(OnvifRouter router) : ControllerBase
 
   /// <summary>Where the camera says it is pointing.</summary>
   /// <remarks>
-  /// Under <see cref="CameraAction.Ptz"/> rather than viewing rights, unlike capabilities beside
+  /// Under <see cref="RightActions.Ptz"/> rather than viewing rights, unlike capabilities beside
   /// it: this is read while driving the camera by hand to record a position, and it is only useful
   /// to someone who may drive it.
   /// <para>
@@ -92,7 +92,7 @@ public class PtzController(OnvifRouter router) : ControllerBase
   /// </para>
   /// </remarks>
   [HttpGet("status")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> GetStatus(
     [FromQuery] string cameraId, [FromQuery] string? profileToken, CancellationToken ct)
   {
@@ -112,7 +112,7 @@ public class PtzController(OnvifRouter router) : ControllerBase
   }
 
   [HttpPost("stop")]
-  [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
+  [RequiresRight(RightActions.Ptz, Source = RightSource.Body)]
   public async Task<IActionResult> Stop([FromBody] PtzStopDto dto, CancellationToken ct)
   {
     var response = await (await router.PtzAsync(dto.CameraId, ct)).StopAsync(new PtzStopRequest
@@ -126,7 +126,7 @@ public class PtzController(OnvifRouter router) : ControllerBase
   // ── PTZ presets ────────────────────────────────────────────────────────────
 
   [HttpGet("cameras/{cameraId}/presets")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> GetPresets(string cameraId, [FromQuery] string profileToken, CancellationToken ct)
   {
     var response = await (await router.PtzAsync(cameraId, ct)).GetPresetsAsync(
@@ -136,7 +136,7 @@ public class PtzController(OnvifRouter router) : ControllerBase
   }
 
   [HttpPost("cameras/{cameraId}/presets")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> SetPreset(string cameraId, [FromBody] SetPresetBody body, CancellationToken ct)
   {
     var response = await (await router.PtzAsync(cameraId, ct)).SetPresetAsync(
@@ -153,7 +153,7 @@ public class PtzController(OnvifRouter router) : ControllerBase
   }
 
   [HttpPost("cameras/{cameraId}/presets/{presetToken}/goto")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> GotoPreset(
     string cameraId, string presetToken, [FromBody] GotoPresetBody body, CancellationToken ct)
   {
@@ -168,7 +168,7 @@ public class PtzController(OnvifRouter router) : ControllerBase
   }
 
   [HttpDelete("cameras/{cameraId}/presets/{presetToken}")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> RemovePreset(
     string cameraId, string presetToken, [FromQuery] string profileToken, CancellationToken ct)
   {

@@ -44,7 +44,7 @@ public class SpacePlanController(MapService.MapServiceClient _map) : ControllerB
 
   [HttpGet]
   [Authorize(Policy = AuthPolicies.Authenticated)]
-  [NoCameraAccess("A plan image is part of the map, not a camera")]
+  [NoRights("A plan image is part of the map, not a camera")]
   public async Task Get(string spaceId, CancellationToken ct)
   {
     // Parsed rather than trimmed: a proxy that compresses the response weakens the tag to W/"…",

@@ -13,7 +13,6 @@ namespace VmsCfg
     StorageDb storageDb,
     ScheduleDb scheduleDb,
     ScheduleCache scheduleCache,
-    PermissionDb permissionDb,
     DaprClient daprClient,
     ILogger<CfgServiceImpl> logger) : CfgService.CfgServiceBase
   {
@@ -34,10 +33,6 @@ namespace VmsCfg
     // group and use version keys instead. Without it a new window opening in seconds would wait for
     // the ticker's next poll.
     private const string RecordingScheduleChangedTopic = "recording-schedule-changed";
-
-    // Shared state store key whose value changes on every permission or ACL-mode write; web_srv
-    // watches it to know when to drop its cached grants. See BumpCameraPermissionsVersionAsync.
-    private const string CameraPermissionsVersionKey   = "cam-perm-version";
 
     // Bumped when a camera's media server changes. web_srv.Server caches camera → node to route
     // ONVIF calls, and it runs in several replicas, so a pub/sub event would reach exactly one of
@@ -115,30 +110,6 @@ namespace VmsCfg
           logger.LogWarning(ex, "Analytics watch change notification failed for '{WatchId}'", watchId);
         }
       });
-    }
-
-    /// <summary>
-    /// Marks every cached permission decision in every web_srv replica as stale by writing a new
-    /// value to a shared key. Deliberately not a pub/sub event: all replicas of a service share one
-    /// Dapr app id, hence one consumer group, so an event would reach exactly one of them and the
-    /// rest would keep enforcing revoked grants until their TTL expired. A key everybody reads has
-    /// no such asymmetry. The value carries no meaning — only "differs from the last one seen".
-    ///
-    /// Awaited rather than fire-and-forget: permission writes are rare admin actions, and a lost
-    /// bump silently degrades revocation to the consumer's TTL backstop.
-    /// </summary>
-    private async Task BumpCameraPermissionsVersionAsync(CancellationToken ct)
-    {
-      try
-      {
-        await daprClient.SaveStateAsync(
-          StateStoreName, CameraPermissionsVersionKey, Guid.NewGuid().ToString("N"), cancellationToken: ct);
-      }
-      catch (Exception ex)
-      {
-        // The permissions themselves are already committed; only their propagation speed suffers.
-        logger.LogWarning(ex, "Bumping the camera permission version failed — replicas will pick the change up by TTL");
-      }
     }
 
     /// Tells web_srv replicas that a camera may have moved between nodes, so their ONVIF routing
@@ -1361,46 +1332,5 @@ namespace VmsCfg
       return response;
     }
 
-    // ── Per-camera permissions ────────────────────────────────────────────────
-
-    public override async Task<ListCameraPermissionsResponse> ListCameraPermissions(
-      ListCameraPermissionsRequest request, ServerCallContext context)
-    {
-      var username = request.HasUsername ? request.Username : null;
-      var response = new ListCameraPermissionsResponse();
-      response.Users.AddRange(await permissionDb.ListAsync(username, context.CancellationToken));
-      return response;
-    }
-
-    public override async Task<OperationStatus> SetUserCameraPermissions(
-      SetUserCameraPermissionsRequest request, ServerCallContext context)
-    {
-      if (string.IsNullOrWhiteSpace(request.Permissions?.Username))
-        return new OperationStatus { Success = false, Message = "username must not be empty" };
-
-      await permissionDb.ReplaceUserAsync(request.Permissions, context.CancellationToken);
-      logger.LogInformation(
-        "Camera permissions for '{Username}' replaced: {CameraCount} cameras, blanket grant {Blanket}",
-        request.Permissions.Username,
-        request.Permissions.Cameras.Count,
-        request.Permissions.AllCameras is null ? "none" : "set");
-      await BumpCameraPermissionsVersionAsync(context.CancellationToken);
-      return new OperationStatus { Success = true };
-    }
-
-    public override async Task<GetCameraAclModeResponse> GetCameraAclMode(
-      Google.Protobuf.WellKnownTypes.Empty request, ServerCallContext context)
-    {
-      return new GetCameraAclModeResponse { Mode = await permissionDb.GetModeAsync(context.CancellationToken) };
-    }
-
-    public override async Task<OperationStatus> SetCameraAclMode(
-      SetCameraAclModeRequest request, ServerCallContext context)
-    {
-      await permissionDb.SetModeAsync(request.Mode, context.CancellationToken);
-      logger.LogInformation("Camera ACL mode set to {Mode}", request.Mode);
-      await BumpCameraPermissionsVersionAsync(context.CancellationToken);
-      return new OperationStatus { Success = true };
-    }
   }
 }

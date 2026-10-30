@@ -16,10 +16,10 @@ namespace web_srv;
 /// binding is a property of the camera being driven. A master may feed several slaves.
 /// </para>
 /// <para>
-/// Guarded by <see cref="CameraAction.Ptz"/> on the slave, the same right the joystick carries —
+/// Guarded by <see cref="RightActions.Ptz"/> on the slave, the same right the joystick carries —
 /// all of this ends in that camera's motor turning. Marking out a survey also means watching the
 /// master, and the wizard shows its picture through the ordinary live endpoints, which carry their
-/// own <see cref="CameraAction.ViewLive"/> check; a caller who cannot see the master simply has no
+/// own <see cref="RightActions.ViewLive"/> check; a caller who cannot see the master simply has no
 /// frame to mark on.
 /// </para>
 /// </remarks>
@@ -37,7 +37,7 @@ public class PtzSlaveBindingController(
     new(deadline: DateTime.UtcNow.Add(Timeout), cancellationToken: ct);
 
   [HttpGet("{cameraId}")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> Get(string cameraId, CancellationToken ct)
   {
     var response = await _cfg.GetPtzSlaveBindingAsync(
@@ -66,7 +66,7 @@ public class PtzSlaveBindingController(
   }
 
   [HttpPut("{cameraId}")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> Put(
     string cameraId, [FromBody] PtzSlaveBindingDto dto, CancellationToken ct)
   {
@@ -99,7 +99,7 @@ public class PtzSlaveBindingController(
   }
 
   [HttpDelete("{cameraId}")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> Delete(string cameraId, CancellationToken ct)
   {
     var status = await _cfg.RemovePtzSlaveBindingAsync(
@@ -115,7 +115,7 @@ public class PtzSlaveBindingController(
   /// owner of a camera's motor — aiming from here would fight a running session for it.
   /// </remarks>
   [HttpPost("{cameraId}/aim")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> Aim(
     string cameraId, [FromBody] PtzSlaveAimDto dto, CancellationToken ct)
   {

@@ -24,7 +24,7 @@ namespace web_srv.Server.Controllers;
 public sealed class ArchiveGapsController(
   ICameraManager manager,
   ServerPairRegistry registry,
-  ICameraAccessService access,
+  IRightsService access,
   OnvifRouter router,
   ILogger<ArchiveGapsController> logger) : ControllerBase
 {
@@ -98,7 +98,7 @@ public sealed class ArchiveGapsController(
   }
 
   /// <summary>Outages overlapping the window, newest first.</summary>
-  [CameraAccess(CameraAction.ViewArchive, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.ViewArchive, Source = RightSource.Action)]
   [HttpGet]
   public async Task<IActionResult> List(
     [FromQuery] string? cameraId,
@@ -107,7 +107,7 @@ public sealed class ArchiveGapsController(
     [FromQuery] int? limit,
     CancellationToken ct)
   {
-    var scope = await access.ScopeAsync(User, CameraAction.ViewArchive, ct);
+    var scope = await access.ScopeAsync(User, RightActions.ViewArchive, ct);
     if (!string.IsNullOrWhiteSpace(cameraId) && !scope.Contains(cameraId))
       return StatusCode(StatusCodes.Status403Forbidden);
 
@@ -150,14 +150,14 @@ public sealed class ArchiveGapsController(
   /// until the end of time. The judgement is deliberately made from the archive and the device
   /// rather than from "did the job report success": a job can succeed and still recover nothing.
   /// </remarks>
-  [CameraAccess(CameraAction.Control, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.Control, Source = RightSource.Action)]
   [HttpPost("{outageUid}/refresh")]
   public async Task<IActionResult> Refresh(string outageUid, CancellationToken ct)
   {
     var (row, client) = await FindAsync(outageUid, ct);
     if (row is null || client is null)
       return NotFound(new { message = "gap not found" });
-    if (!await access.IsAllowedAsync(User, row.CameraId, CameraAction.Control, ct))
+    if (!await access.IsAllowedAsync(User, row.CameraId, RightActions.Control, ct))
       return Forbid();
 
     var startedTs = row.StartedTs.ToDateTime();
@@ -237,19 +237,19 @@ public sealed class ArchiveGapsController(
   /// Also what keeps a manual run and an automatic one from fighting over the same camera: whoever
   /// takes the gap first is visible, and the device would refuse the second job anyway.
   /// </remarks>
-  [CameraAccess(CameraAction.Control, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.Control, Source = RightSource.Action)]
   [HttpPost("{outageUid}/filling")]
   public Task<IActionResult> MarkFilling(string outageUid, CancellationToken ct) =>
     SetStateAsync(outageUid, "filling", string.Empty, ct, keepAttempts: true);
 
   /// <summary>Takes a gap out of automation's reach until the operator hands it back.</summary>
-  [CameraAccess(CameraAction.Control, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.Control, Source = RightSource.Action)]
   [HttpPost("{outageUid}/hold")]
   public Task<IActionResult> Hold(string outageUid, CancellationToken ct) =>
     SetStateAsync(outageUid, "held", "held by the operator", ct);
 
   /// <summary>Returns a gap the operator had taken out of automation — held or ignored alike.</summary>
-  [CameraAccess(CameraAction.Control, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.Control, Source = RightSource.Action)]
   [HttpPost("{outageUid}/resume")]
   public Task<IActionResult> Resume(string outageUid, CancellationToken ct) =>
     SetStateAsync(outageUid, "open", string.Empty, ct);
@@ -263,7 +263,7 @@ public sealed class ArchiveGapsController(
   /// card no longer holds the material and is a discovered fact — this is a decision, so
   /// <see cref="Resume"/> takes it back.
   /// </remarks>
-  [CameraAccess(CameraAction.Control, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.Control, Source = RightSource.Action)]
   [HttpPost("{outageUid}/ignore")]
   public Task<IActionResult> Ignore(string outageUid, CancellationToken ct) =>
     SetStateAsync(outageUid, "ignored", "ignored by the operator", ct);
@@ -281,7 +281,7 @@ public sealed class ArchiveGapsController(
   /// The scheduler decides what is actually missing when it picks the gap up, subtracting what the
   /// archive already holds, so pressing this twice costs nothing.
   /// </remarks>
-  [CameraAccess(CameraAction.Control, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.Control, Source = RightSource.Action)]
   [HttpPost("{outageUid}/refill")]
   public Task<IActionResult> Refill(string outageUid, CancellationToken ct) =>
     SetStateAsync(outageUid, "open", string.Empty, ct, retryNow: true);
@@ -293,7 +293,7 @@ public sealed class ArchiveGapsController(
     var (row, client) = await FindAsync(outageUid, ct);
     if (row is null || client is null)
       return NotFound(new { message = "gap not found" });
-    if (!await access.IsAllowedAsync(User, row.CameraId, CameraAction.Control, ct))
+    if (!await access.IsAllowedAsync(User, row.CameraId, RightActions.Control, ct))
       return Forbid();
 
     await client.UpdateSourceOutageAsync(new UpdateSourceOutageRequest
