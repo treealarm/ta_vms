@@ -1357,6 +1357,36 @@
                 "wait: sidecars ready"
             ],
             "problemMatcher": []
+        },
+        {
+            "label": "claude: use DeepSeek",
+            "detail": "Installs the DeepSeek env profile (api.deepseek.com/anthropic) into .claude/settings.local.json, which Claude Code exports into every session it starts. Takes effect in a new chat; VS Code itself does not need reloading. Runs .claude/mode, which is kept out of git along with the tokens it moves -- a fresh clone does not have it and this task will say so.",
+            "type": "shell",
+            "command": ".claude/mode",
+            "args": ["deepseek"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": [],
+            "presentation": { "reveal": "always", "panel": "shared" }
+        },
+        {
+            "label": "claude: use the logged-in account",
+            "detail": "Removes the provider env block from .claude/settings.local.json, so Claude Code falls back to the account you are logged in with. The permissions in the same file are a different block and stay put. Takes effect in a new chat.",
+            "type": "shell",
+            "command": ".claude/mode",
+            "args": ["account"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": [],
+            "presentation": { "reveal": "always", "panel": "shared" }
+        },
+        {
+            "label": "claude: which provider is active",
+            "detail": "Reports the env profile .claude/settings.local.json currently holds, and lists the profiles this checkout has. Changes nothing.",
+            "type": "shell",
+            "command": "bash",
+            "args": ["-c", ".claude/mode; echo '--- profiles:'; .claude/mode --list"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": [],
+            "presentation": { "reveal": "always", "panel": "shared" }
         }
     ]
 }

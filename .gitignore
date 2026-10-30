@@ -374,3 +374,8 @@ FodyWeavers.xsd
 
 # Per-machine compose overrides (e.g. opting a GPU host into /dev/dri)
 docker-compose.override.yml
+
+# Continue (AI assistant): a project-level .continue/ may hold API keys
+# (config.yaml/config.json) as well as local indexes and sessions. Keep it out of
+# the repository; the main config lives in ~/.continue/config.yaml, outside it.
+.continue/
