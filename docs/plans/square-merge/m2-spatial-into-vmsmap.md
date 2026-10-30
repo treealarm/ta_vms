@@ -86,7 +86,7 @@ ETag и форма ошибок остаются прежними.
 
 ## Шаги
 
-1. **`proto/vms_map.proto` — спатиальный раздел.**
+1. ✅ **`proto/vms_map.proto` — спатиальный раздел.**
    В `service MapService` добавить 21 rpc (порядок и комментарии — как в `vms_cfg.proto`
    105–138): `ListSpaces`, `GetSpace`, `UpsertSpace`, `RemoveSpace`, `UploadSpacePlan`,
    `GetSpacePlanImage`, `SetSpacePlanCorners`, `RemoveSpacePlan`, `ListCameraPlacements`,
@@ -107,7 +107,7 @@ ETag и форма ошибок остаются прежними.
    Проверка: `dotnet build dotnet/ta_vms.sln` — 0/0 (в VmsMap появились типы `Vms.Map.Space` и
    т.д.).
 
-2. **`VmsMap` — миграция `Grpc/migrations/0002_spaces.sql`.**
+2. ✅ **`VmsMap` — миграция `Grpc/migrations/0002_spaces.sql`.**
    `spaces(object_id uuid PK → objects ON DELETE CASCADE, kind text, real_coordinates bool,
    ordinal int default 0, elevation_m double default 0, view_south/west/north/east double)`.
    `space_plan(space_id uuid PK → spaces(object_id) ON DELETE CASCADE, mime, width_px,
@@ -125,7 +125,7 @@ ETag и форма ошибок остаются прежними.
    Проверка: чистая БД — `VmsMap` применяет `0001` и `0002`, `\dt ta_map` +6 таблиц,
    `\d geo_objects` с `canvas_id`, повторный старт не применяет; старый dev-каталог переживает.
 
-3. **`VmsMap` — EF-модель и геометрия.**
+3. ✅ **`VmsMap` — EF-модель и геометрия.**
    `Db/Models/Spatial/{DBSpaces, DBSpacePlan, DBCameraPlacement, DBLandmark,
    DBPtzGeoObservation, DBGroundObservation}.cs` (snake_case, как в M1);
    `PgDbContext` — DbSet'ы и маппинги по образцу `VmsCfgDbContext` (без навигаций, явные LINQ
@@ -135,7 +135,7 @@ ETag и форма ошибок остаются прежними.
    геометрия. `Domain/CameraObjectId` (обёртка над `ObjectIdGenerator` с версией `"camera"`).
    Проверка: `MapDbTests` по-прежнему зелёные; InMemory-тест на смену холста при переносе.
 
-4. **`VmsMap` — `Db/Services/SpatialDb.cs` (перенос `SpatialDb.cs`).**
+4. ✅ **`VmsMap` — `Db/Services/SpatialDb.cs` (перенос `SpatialDb.cs`).**
    Переносятся все 25 методов, каждый — одна транзакция записи + уведомление после коммита:
    - `ListSpaces/GetSpace`: `spaces` join `objects` (имя, родитель) left join `space_plan`
      (метаданные без `image`), футпринт — из `geo_objects`; порядок `ordinal, name`.
@@ -165,7 +165,7 @@ ETag и форма ошибок остаются прежними.
    Проверка: `dotnet build`; перенос сверяется с `SpatialDb.cs` построчно (все 25 методов на
    месте, `GetReferencePlacement` сохраняется несмотря на отсутствие вызовов).
 
-5. **`VmsMap` — клиент VmsCfg и публикация.**
+5. ✅ **`VmsMap` — клиент VmsCfg и публикация.**
    `Clients/ICameraCatalog.cs` + `Clients/VmsCfgCameraCatalog.cs` (`GetCamera` через
    `DaprClient.CreateInvocationInvoker(DAPR_CFG_APP_ID)`, возвращает id/имя, ошибка →
    `RpcException(Unavailable)`); `PubSub/IMapConfigNotifier.cs` +
@@ -175,7 +175,7 @@ ETag и форма ошибок остаются прежними.
    Include="..\..\proto\vms_cfg.proto" GrpcServices="Client"` в `VmsMap.csproj`.
    Проверка: старт без переменной падает с внятным сообщением (no silent fallback).
 
-6. **`VmsMap` — `Grpc/MapServiceImpl.Spatial.cs`.**
+6. ✅ **`VmsMap` — `Grpc/MapServiceImpl.Spatial.cs`.**
    `MapServiceImpl` становится `partial`; новый файл — тонкий слой proto ↔ DTO: 21 override,
    `SpatialConfigException` → `InvalidArgument`/`OperationStatus{success=false,message}`,
    потоковая загрузка плана (первое сообщение — header, проверка mime по сигнатуре, лимит
@@ -183,7 +183,7 @@ ETag и форма ошибок остаются прежними.
    `PlanImageFormats` переезжает сюда же.
    Проверка: `dotnet build`; gRPC-поверхность совпадает с `vms_cfg.proto` 1:1 по формам.
 
-7. **`VmsMap.Tests`.**
+7. ✅ **`VmsMap.Tests`.**
    InMemory (каталог и нотифаер — фейки): пространство-объект и вложенный план с футпринтом;
    инварианты (map только корень, вид не меняется, дубль имени среди соседей, перенос в потомка);
    размещение — детерминированный id узла, первый placement опорный, картинка-реплика, перенос
@@ -195,7 +195,7 @@ ETag и форма ошибок остаются прежними.
    опорного, PostGIS-точка/полигон, `canvas_id` SQL-путём.
    Проверка: `dotnet test dotnet/VmsMap.Tests` (без DSN и с DSN).
 
-8. **`VmsPtzTrackingSingleton`.**
+8. ✅ **`VmsPtzTrackingSingleton`.**
    `Geo/CameraSpatialSource.cs` → `MapService.MapServiceClient`, `CameraRequest`, `Vms.Map.*`;
    `Geo/CameraSpatialModel.cs` — `Vms.Map.Space`; `CameraConfigSubscriber.cs` — подписка на
    `map-config-changed` (payload `camera_ids`, пусто = всё; разбор с безопасным откатом в «всё»),
@@ -206,7 +206,7 @@ ETag и форма ошибок остаются прежними.
    переводятся на `Vms.Map`.
    Проверка: `dotnet test dotnet/VmsPtzTrackingSingleton.Tests` — 96 зелёных.
 
-9. **`web_srv.Server`.**
+9. ✅ **`web_srv.Server`.**
    `web_srv.Server.csproj` — `vms_map.proto` `GrpcServices="Client"`; `Program.cs` —
    `DAPR_MAP_APP_ID` и `MapService.MapServiceClient`; `Controllers/SpatialController.cs`,
    `SpacePlanController.cs`, `GroundGeoController.cs`, `PtzGeoController.cs`, `SpatialMapper.cs`
@@ -214,7 +214,7 @@ ETag и форма ошибок остаются прежними.
    `{error}` не меняются; клиент трекинга и проверки прав — как были.
    Проверка: `dotnet build`; браузерные запросы Admin → Maps и оператора идут по тем же URL.
 
-10. **`VmsCfg` — демонтаж модуля.**
+10. ✅ **`VmsCfg` — демонтаж модуля.**
     Удалить `Grpc/SpatialDb.cs`, `Grpc/CfgServiceImpl.Spatial.cs`, DbSet'ы/маппинги/сущности из
     `VmsCfgDbContext`, `AddSingleton<SpatialDb>()` из `Program.cs`, `spatialDb` из конструктора
     `CfgServiceImpl`, спатиальный раздел из `proto/vms_cfg.proto` (без `reserved` — правило
@@ -224,14 +224,14 @@ ETag и форма ошибок остаются прежними.
     Проверка: `dotnet build`/`dotnet test` (VmsCfg.Tests — 26); на dev-БД после старта
     `\dt` без спатиальных таблиц; на чистой БД их не появляется.
 
-11. **Конфигурация.**
+11. ✅ **Конфигурация.**
     `.vscode/launch.json`: `DAPR_MAP_APP_ID="vmsmap"` в «Backend (.NET)» и
     «VmsPtzTrackingSingleton (.NET)»; `DAPR_CFG_APP_ID="vmscfg"` и `PUBSUB_NAME="orderpubsub"`
     в «VmsMap (.NET)». `.env` и `../ta_install/.env` уже содержат `DAPR_MAP_APP_ID`,
     `DAPR_CFG_APP_ID`, `PUBSUB_NAME` (M1) — правок не требуют; `services.json`/`windows.env` —
     без отличий (переменные приходят из общего env). Проверить это, а не переписывать.
 
-12. **Документация.**
+12. ✅ **Документация.**
     `CLAUDE.md` — раздел «Maps & plans»: владелец `VmsMap`, убрать «are moving into a map service»,
     событие `map-config-changed` вместо `space-config-changed`, строка про реплики-картинки и
     детерминированный узел камеры; в «Inter-service communication» — оговорка, что дерево,
@@ -277,3 +277,66 @@ GroundObservation\)"` — пусто; `dotnet/VmsCfg/Grpc` без `SpatialDb`/`S
 Ветка `square-merge/m2-spatial-into-vmsmap` в ta_vms, от `master` `233f215` (мерж M1). В ta_install
 ветка не нужна: M1 уже положил туда `vmsmap`, PostGIS и `DAPR_MAP_APP_ID`, а M2 других изменений
 там не делает.
+
+Сделано 2026-10-30, по коммиту на кусок:
+
+| Коммит | Что |
+|---|---|
+| `18d1d26` | этот план |
+| `fcf8297` | спатиальный раздел в `vms_map.proto` (21 rpc, `CameraRequest`, `Coordinate`) |
+| `ea998e8` | миграция `0002_spaces.sql`, EF-модель, `CanvasResolver`, `CameraObjectId` |
+| `5d37d13` | `SpatialDb`, каталог камер, `map-config-changed`, gRPC-слой, тесты |
+| `993f0b9` | PtzTracking читает `VmsMap` и подписан на `map-config-changed` |
+| `1ac20e1` | web_srv переключён на `MapService` |
+| `3eba3ca` | демонтаж модуля в VmsCfg и миграция `0007_drop_spatial.sql` |
+| `0674ada` | data source `VmsMap` строится после миграции (PostGIS на чистой БД) |
+| `3f3182b` | `launch.json`, `CLAUDE.md`, `docs/maps-and-plans.md` |
+
+**Решения по ходу, которых не было в плане:**
+- `SpatialDb` — `public`: его внедряет публичный `MapServiceImpl`; вместе с ним публичны
+  `ICameraCatalog` и `IMapConfigNotifier`.
+- `CanvasResolver` — статический помощник над `VmsMapDbContext`, а не внедряемая зависимость:
+  иначе пришлось бы менять конструктор `MapDb` и ручную сборку сервисов в тестах.
+- Транзакции в `SpatialDb` открываются только на реляционном провайдере (`IsRelational()`):
+  InMemory в тестах транзакций не имеет, production всегда PostgreSQL. Уведомление публикуется
+  после коммита, внутри `SpatialDb` — чтобы будущий внутренний вызывающий не забыл его.
+- `RemoveSpace` отцепляет опорные узлы камер до удаления поддерева; удаление и пересчёт тревог
+  идут через `MapUpdateService.Delete`, поэтому этот путь проверяется только на Postgres, как и
+  рекурсивный CTE.
+- Опорная строка размещения всегда принадлежит узлу камеры; при переносе узел переезжает вместе
+  со строкой, а прежнее место получает реплику-картинку с копией значений. Операции над
+  картинками (создание, удаление) — прямые EF-удаления узла, строки и точки.
+- `GetReferencePlacement` сохранён, хотя вызовов в репозитории нет: он часть контракта.
+- Postgres-тесты `VmsMap.Tests` собраны в xUnit-коллекцию `postgis`: два класса делят одну
+  scratch-БД и делают `TRUNCATE`, параллельно они мешали друг другу.
+
+**Проверено 2026-10-30:**
+- `dotnet build dotnet/ta_vms.sln` — 0 ошибок, 0 предупреждений; `dotnet test` — VmsMap 41
+  (из них 9 Postgres-тестов с `VMS_MAP_TEST_DSN`), VmsCfg 26, VmsFs 5, VmsAnalyticsSingleton 24,
+  VmsPtzTrackingSingleton 96.
+- Чистая `ta_map`: миграции `0001` + `0002`, шесть новых таблиц, `geo_objects.canvas_id`;
+  футпринт вложенного плана — `ST_Polygon`, его `canvas_id` — родительская карта; повторный
+  старт миграцию не применяет.
+- Dev-база `ta_cfg`: `0007_drop_spatial.sql` применена, спатиальных таблиц не осталось.
+- Полный dev-стек (все 13 сервисов через `scripts/dev_stack.py`, env из тех же `launch.json`/
+  `dapr.yaml`, что у F5) поднялся и слушает; ни один сервис не упал на обязательных переменных.
+- REST-сценарий Admin → Maps через web_srv: карта-корень, вложенный план с футпринтом, загрузка
+  плана (ETag, повторный GET — 304), опорное размещение, ориентир, наблюдения PTZ (модель
+  посчитана, расстояние 139 м), удаление пространства — камера отцеплена (узел без родителя),
+  размещений нет.
+- `map-config-changed`: пока PtzTracking был остановлен, запись в карту оставила в очереди
+  `vmsptztrackingsingleton-map-config-changed` ровно одно сообщение; после старта очередь
+  опустела. В логах VmsMap и Ptz — ни одного warning о публикации.
+- `video_srv` пересобран против урезанного `vms_cfg.proto` — сборка чистая.
+
+**Не проверено:**
+- Стенд `tests/onvifsim` (`onvifsim_lab.py all`) в этом сеансе не доведён до конца: он
+  остановлен на скачивании образа OnvifSim, стек после этого погашен. Это первый шаг следующего
+  сеанса — прогнать стенд на поднятом стеке, вписать результат сюда же и только тогда считать
+  майлстоун закрытым. Docker-слои образа, скачанные до остановки, остаются в кэше.
+- Windows: `Build-Stage.ps1`, `services.json` и установка (в M2 их не меняли; env приходит из
+  общего `.env`).
+- Контейнерная сборка `vmsmap` и публикация образа.
+- Литеральный F5 в VS Code (стек поднимался `dev_stack.py` с теми же env и портами) и ручная
+  работа браузера — проверены REST-вызовы, которыми браузер и пользуется.
+
