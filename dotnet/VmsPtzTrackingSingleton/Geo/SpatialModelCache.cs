@@ -12,11 +12,11 @@ namespace VmsPtzTrackingSingleton.Geo;
 /// and none of them runs often enough for that to cost anything.
 /// </para>
 /// <para>
-/// A model is made of two kinds of configuration, and each has its own event. A camera's placement,
-/// observations and marks travel on <c>server-config-changed</c> with the camera's id, which marks
-/// that camera stale. A landmark or a space travels on <c>space-config-changed</c>, which names no
-/// camera -- any number of them may have been calibrated against that landmark -- so it marks them
-/// all. See <see cref="TtlCache{T}"/> for what a failed read does.
+/// A model is made of a camera's placement, its observations and its marks, and they all change
+/// through VmsMap. One event announces them: <c>map-config-changed</c>,
+/// {"object_ids": [...], "camera_ids": [...]}. The camera ids mark those cameras stale; an empty
+/// list means a space or a landmark moved, which may underlie any camera's calibration, so every
+/// model is dropped. See <see cref="TtlCache{T}"/> for what a failed read does.
 /// </para>
 /// </remarks>
 public sealed class SpatialModelCache(CameraSpatialSource source, ILogger<SpatialModelCache> logger)

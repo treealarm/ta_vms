@@ -285,7 +285,7 @@ public sealed class TrackingSessionManager(
     // A read that failed with nothing held to fall back on says nothing about the camera; reporting
     // it as "no reference placement" would send the administrator to fix what is not broken.
     if ((master.Failed && master.Value is null) || (slave.Failed && slave.Value is null))
-      return new SlaveAim(binding, null, "The calibrations could not be read from VmsCfg; retrying");
+      return new SlaveAim(binding, null, "The calibrations could not be read from VmsMap; retrying");
 
     var reason = GeoAiming.Unusable(binding.MasterCameraId, master.Value, slave.Value);
     return reason is null

@@ -27,6 +27,11 @@ var cfgAppId = Require("DAPR_CFG_APP_ID");
 builder.Services.AddSingleton(_ =>
   new CfgService.CfgServiceClient(DaprClient.CreateInvocationInvoker(cfgAppId)));
 
+// Spaces, placements, landmarks and their calibrations: the map owns them now.
+var mapAppId = Require("DAPR_MAP_APP_ID");
+builder.Services.AddSingleton(_ =>
+  new Vms.Map.MapService.MapServiceClient(DaprClient.CreateInvocationInvoker(mapAppId)));
+
 var analyticsAppId = Require("DAPR_ANALYTICS_APP_ID");
 builder.Services.AddSingleton(_ =>
   new VmsAnalyticsService.VmsAnalyticsServiceClient(DaprClient.CreateInvocationInvoker(analyticsAppId)));

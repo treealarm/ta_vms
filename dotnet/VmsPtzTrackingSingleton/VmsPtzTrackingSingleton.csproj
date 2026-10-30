@@ -28,6 +28,8 @@
     <Protobuf Include="..\..\proto\vms_analytics.proto" GrpcServices="Client" />
     <Protobuf Include="..\..\proto\onvif.proto" GrpcServices="Client" />
     <Protobuf Include="..\..\proto\vms_cfg.proto" GrpcServices="Client" />
+    <!-- Spaces, placements, landmarks and calibrations. -->
+    <Protobuf Include="..\..\proto\vms_map.proto" GrpcServices="Client" />
   </ItemGroup>
 
 </Project>

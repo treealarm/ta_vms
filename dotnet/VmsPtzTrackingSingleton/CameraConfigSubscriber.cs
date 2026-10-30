@@ -6,8 +6,8 @@ using VmsPtzTrackingSingleton.Geo;
 namespace VmsPtzTrackingSingleton;
 
 /// <summary>
-/// Keeps the caches and the running sessions honest when VmsCfg changes a camera, a space or a
-/// landmark.
+/// Keeps the caches and the running sessions honest when VmsCfg changes a camera, or VmsMap a
+/// space, a landmark, a placement or a calibration.
 /// </summary>
 /// <remarks>
 /// Pub/sub invalidation is the right mechanism here precisely because this service is a singleton:
@@ -25,9 +25,10 @@ public sealed class CameraConfigSubscriber(
   ILogger<CameraConfigSubscriber> logger) : IHostedService, IDisposable
 {
   private const string ServerConfigChangedTopic = "server-config-changed";
-  // A space or a landmark changed. Names no camera: any number of them may be calibrated against
-  // that landmark, or stand in that space.
-  private const string SpaceConfigChangedTopic = "space-config-changed";
+  // The map's configuration changed: a space, a plan, a landmark, a placement or a calibration.
+  // camera_ids names the cameras whose model did; an empty list means a space or a landmark moved,
+  // so any camera's cached model may be wrong.
+  private const string MapConfigChangedTopic = "map-config-changed";
 
   private static readonly string PubSubName =
     Environment.GetEnvironmentVariable("PUBSUB_NAME")
@@ -40,6 +41,10 @@ public sealed class CameraConfigSubscriber(
   // of the payload, so a late or out-of-order event cannot install a stale answer.
   private sealed record ServerConfigChanged(string? ServerId, IReadOnlyList<string>? CameraIds);
 
+  // Wire shape of map-config-changed; VmsMap owns it. Same addressing rule.
+  private sealed record MapConfigChanged(
+    IReadOnlyList<string>? ObjectIds, IReadOnlyList<string>? CameraIds);
+
   private static readonly JsonSerializerOptions JsonOptions =
     new() { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
@@ -48,7 +53,7 @@ public sealed class CameraConfigSubscriber(
     var options = new DaprSubscriptionOptions(
       new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Retry));
     _ = StreamingSubscriptions.KeepAsync(pubSubClient, PubSubName, options,
-      [new(ServerConfigChangedTopic, HandleAsync), new(SpaceConfigChangedTopic, HandleSpaceAsync)],
+      [new(ServerConfigChangedTopic, HandleAsync), new(MapConfigChangedTopic, HandleMapConfigAsync)],
       logger, _cts.Token);
     return Task.CompletedTask;
   }
@@ -85,12 +90,24 @@ public sealed class CameraConfigSubscriber(
     }
   }
 
-  // The payload ({"space_id"}) is not read: which cameras a moved landmark affects is not in it, and
-  // working that out would be a VmsCfg round trip for every model held. Dropping them all costs one
-  // fetch per slave pair on the next reconcile, which is what it is about to do anyway.
-  private Task<TopicResponseAction> HandleSpaceAsync(TopicMessage message, CancellationToken ct)
+  // The event is addressing: the cameras it names have their models dropped, and an empty list
+  // means a space or a landmark moved -- which may underlie any camera's calibration -- so every
+  // model is dropped. A malformed event is treated the same way: a dropped model costs one fetch,
+  // a stale one costs a wrong aim.
+  private Task<TopicResponseAction> HandleMapConfigAsync(TopicMessage message, CancellationToken ct)
   {
-    spatialCache.Invalidate([]);
+    IReadOnlyList<string> cameraIds = [];
+    try
+    {
+      var evt = JsonSerializer.Deserialize<MapConfigChanged>(message.Data.Span, JsonOptions);
+      cameraIds = evt?.CameraIds ?? [];
+    }
+    catch (Exception ex)
+    {
+      logger.LogWarning(ex, "Could not read a map-config-changed event; dropping every spatial model");
+    }
+
+    spatialCache.Invalidate(cameraIds);
     reconciler.Trigger();
     return Task.FromResult(TopicResponseAction.Success);
   }

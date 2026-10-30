@@ -1,4 +1,4 @@
-using Vms.Cfg;
+using Vms.Map;
 
 namespace VmsPtzTrackingSingleton.Geo;
 
@@ -26,7 +26,7 @@ public sealed record CameraSpatialModel(
   GroundHomography? GroundFit,
   string? GroundFitError)
 {
-  /// <summary>Builds the model from what VmsCfg returned for a camera with a reference placement.</summary>
+  /// <summary>Builds the model from what VmsMap returned for a camera with a reference placement.</summary>
   public static CameraSpatialModel Build(CameraSpatialModelResponse response)
   {
     // Centred on the camera itself: every distance that matters is measured from it, and a frame
@@ -64,7 +64,7 @@ public sealed record CameraSpatialModel(
 
   /// <summary>Whether a point picked in <paramref name="other"/> is somewhere this camera can be aimed.</summary>
   /// <remarks>
-  /// The same rule VmsCfg applies to landmarks: one space, or two spaces that both have real
+  /// The same rule VmsMap applies to landmarks: one space, or two spaces that both have real
   /// coordinates. A plan in made-up coordinates is a world of its own, whose numbers mean nothing
   /// anywhere else.
   /// </remarks>

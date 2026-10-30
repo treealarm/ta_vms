@@ -1,4 +1,4 @@
-using Vms.Cfg;
+using Vms.Map;
 using VmsPtzTrackingSingleton.Geo;
 
 namespace VmsPtzTrackingSingleton.Tests.Geo;
