@@ -9,7 +9,7 @@
     // happen is indistinguishable from a broken keybinding, and the gate tasks' own message --
     // which names the missing service and the command that starts it -- was being thrown away.
     "debug.onTaskErrors": "showErrors",
-    "workbench.colorTheme": "Light 2026",
+    "workbench.colorTheme": "Light+",
     // The workspace root holds no solution, so without this C# Dev Kit builds one of its own from
     // every .csproj it finds and caches it: projects that were moved or deleted (OnvifLib's
     // samples, KeycloakAdmin) then keep failing restore and leave obj/ folders behind where they
