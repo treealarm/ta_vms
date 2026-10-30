@@ -1,19 +1,35 @@
+using Dapr.Client;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using Vms.Cfg;
 using VmsDb;
 using VmsLog;
+using VmsMap.Clients;
 using VmsMap.Db;
 using VmsMap.Domain;
 using VmsMap.Grpc;
+using VmsMap.PubSub;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddVmsLogging();
 
 var grpcPort = RequirePort("MAP_VMS_PORT");
+var cfgAppId = Require("DAPR_CFG_APP_ID");
+var pubSubName = Require("PUBSUB_NAME");
 
 builder.Services.AddGrpc();
 builder.Services.AddDaprClient();
+
+// The camera core. A placement is checked against a real camera and the camera's node is named
+// after it: cameras live in VmsCfg's database, so this is the check that replaced the foreign key.
+builder.Services.AddSingleton(_ =>
+  new CfgService.CfgServiceClient(DaprClient.CreateInvocationInvoker(cfgAppId)));
+builder.Services.AddSingleton<ICameraCatalog, VmsCfgCameraCatalog>();
+builder.Services.AddSingleton<IMapConfigNotifier>(sp => new DaprMapConfigNotifier(
+  sp.GetRequiredService<DaprClient>(),
+  sp.GetRequiredService<ILogger<DaprMapConfigNotifier>>(),
+  pubSubName));
 
 var postgresConnStr = BuildPostgresConnectionString();
 builder.Services.AddSingleton(_ =>
@@ -56,6 +72,9 @@ builder.Services.AddScoped<RightService>();
 builder.Services.AddScoped<IRightServiceInternal>(sp => sp.GetRequiredService<RightService>());
 builder.Services.AddScoped<VisualService>();
 builder.Services.AddScoped<FileService>();
+
+// Spaces, plans, placements, landmarks and observations on the one tree.
+builder.Services.AddScoped<SpatialDb>();
 
 builder.Services.AddScoped<ITracksUpdateService, TracksUpdateService>();
 builder.Services.AddScoped<IMapUpdateService, MapUpdateService>();

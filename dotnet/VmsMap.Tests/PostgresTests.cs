@@ -13,9 +13,9 @@ namespace VmsMap.Tests;
 // transaction around an update and the cascade on delete. Enabled by pointing VMS_MAP_TEST_DSN
 // at a scratch database (`docker compose up -d postgres`, then
 // `createdb ta_map_test`); skipped otherwise, because the Windows CI runner has no PostgreSQL.
+[Collection("postgis")]
 public class PostgresTests
-{
-  private static readonly string? Dsn =
+{  private static readonly string? Dsn =
     Environment.GetEnvironmentVariable("VMS_MAP_TEST_DSN");
 
   private sealed record Services(

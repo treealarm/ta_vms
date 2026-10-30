@@ -30,6 +30,8 @@
 
   <ItemGroup>
     <Protobuf Include="..\..\proto\vms_map.proto" GrpcServices="Both" />
+    <!-- The camera core: a placement is checked against GetCamera, see ICameraCatalog. -->
+    <Protobuf Include="..\..\proto\vms_cfg.proto" GrpcServices="Client" />
   </ItemGroup>
 
   <ItemGroup>

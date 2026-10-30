@@ -14,8 +14,9 @@ using MapProto = Vms.Map;
 namespace VmsMap.Grpc
 {
   // The write half of MapService: convert, call the repositories, wrap the steps that must not
-  // half-happen in one transaction. Reads arrive with M2/M3.
-  public class MapServiceImpl : MapProto.MapService.MapServiceBase
+  // half-happen in one transaction. The spatial half (spaces, plans, placements, landmarks and
+  // calibrations) is in MapServiceImpl.Spatial.cs.
+  public partial class MapServiceImpl : MapProto.MapService.MapServiceBase
   {
     private const int FileChunkBytes = 1024 * 1024;
 
@@ -32,6 +33,7 @@ namespace VmsMap.Grpc
     private readonly IRightServiceInternal _rightService;
     private readonly VisualService _visualService;
     private readonly FileService _fileService;
+    private readonly SpatialDb _spatialDb;
 
     public MapServiceImpl(
       VmsMapDbContext db,
@@ -46,7 +48,8 @@ namespace VmsMap.Grpc
       IDiagramTypeService diagramTypeService,
       IRightServiceInternal rightService,
       VisualService visualService,
-      FileService fileService)
+      FileService fileService,
+      SpatialDb spatialDb)
     {
       _db = db;
       _mapService = mapService;
@@ -61,6 +64,7 @@ namespace VmsMap.Grpc
       _rightService = rightService;
       _visualService = visualService;
       _fileService = fileService;
+      _spatialDb = spatialDb;
     }
 
     // ── Objects ───────────────────────────────────────────────────────────────────────────────
