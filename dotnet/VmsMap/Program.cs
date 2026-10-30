@@ -32,6 +32,17 @@ builder.Services.AddSingleton<IMapConfigNotifier>(sp => new DaprMapConfigNotifie
   pubSubName));
 
 var postgresConnStr = BuildPostgresConnectionString();
+
+// Migrations run on a data source of their own, disposed before the service's one is built.
+// Npgsql loads the database's types when a data source first connects, and PostGIS does not exist
+// until the migration creates it: a data source that connected first would keep a type catalog
+// without the geometry types, and the first figure or footprint write would fail until a restart.
+await using (var migrationSource = new NpgsqlDataSourceBuilder(postgresConnStr).Build())
+{
+  await new VmsDbMigrator(migrationSource, "VmsMap", builder.Environment.ContentRootPath, "7743512881")
+    .MigrateAsync();
+}
+
 builder.Services.AddSingleton(_ =>
 {
   // One data source for the process, not one per request as Square built it.
@@ -46,12 +57,6 @@ builder.Services.AddDbContext<VmsMapDbContext>((sp, options) =>
   options.UseNpgsql(
     sp.GetRequiredService<NpgsqlDataSource>(),
     npgsqlOptions => npgsqlOptions.UseNetTopologySuite()));
-
-builder.Services.AddSingleton(sp => new VmsDbMigrator(
-  sp.GetRequiredService<NpgsqlDataSource>(),
-  "VmsMap",
-  builder.Environment.ContentRootPath,
-  "7743512881"));
 
 // Repositories. They share the scoped context, so a transaction opened by the gRPC layer covers
 // every SaveChanges its steps make.
@@ -88,8 +93,6 @@ builder.WebHost.ConfigureKestrel(options =>
 });
 
 var app = builder.Build();
-
-await app.Services.GetRequiredService<VmsDbMigrator>().MigrateAsync();
 
 app.MapGrpcService<MapServiceImpl>();
 

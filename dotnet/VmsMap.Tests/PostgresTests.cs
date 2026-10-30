@@ -39,13 +39,18 @@ public class PostgresTests
       return null;
     }
 
+    // The migration creates PostGIS, and Npgsql loads a database's types when a data source first
+    // connects: migrate on a data source of its own, then build the one the context uses.
+    await using (var migrationSource = new NpgsqlDataSourceBuilder(Dsn).Build())
+    {
+      await new VmsDbMigrator(migrationSource, "VmsMapTest", AppContext.BaseDirectory, "7743512881")
+        .MigrateAsync();
+    }
+
     var dataSourceBuilder = new NpgsqlDataSourceBuilder(Dsn);
     dataSourceBuilder.EnableDynamicJson();
     dataSourceBuilder.UseNetTopologySuite();
     var dataSource = dataSourceBuilder.Build();
-
-    await new VmsDbMigrator(dataSource, "VmsMapTest", AppContext.BaseDirectory, "7743512881")
-      .MigrateAsync();
 
     var options = new DbContextOptionsBuilder<VmsMapDbContext>()
       .UseNpgsql(dataSource, o => o.UseNetTopologySuite())
