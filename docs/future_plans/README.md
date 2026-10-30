@@ -9,6 +9,7 @@ here is deleted or cut down to what is still left.
 
 | File | Topic |
 |---|---|
+| [client-lint-debt.md](client-lint-debt.md) | `npm run lint` in web_srv.client is red with 27 pre-React-Compiler findings, so the client has no working gate |
 | [distributed-analytics.md](distributed-analytics.md) | Re-identification and archive search in the database (pgvector), then analytics per node |
 | [distributed-hardening.md](distributed-hardening.md) | What a multi-machine deployment still leaves open on the network |
 | [log-volume-leftovers.md](log-volume-leftovers.md) | What still fills the logs after the 2026-10-25 fix: a dead camera re-resolved per call, reconnect errors, web_srv outside VmsLog |
