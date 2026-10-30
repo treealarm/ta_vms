@@ -269,7 +269,7 @@ M3 закрывает эту дыру:
     Проверка: `dotnet build`; `dotnet test` (VmsCfg.Tests); на dev-БД после старта этих таблиц
     нет; на чистой БД они не появляются.
 
-11. **Конфигурация и документация.**
+11. ✅ **Конфигурация и документация.**
     `.vscode/launch.json` — `DAPR_UTILS_APP_ID` и `DAPR_STATE_STORE_NAME` в «VmsMap (.NET)»;
     `.env`/`../ta_install/.env` уже содержат обе — проверить, не переписывать. `CLAUDE.md` —
     раздел «Login»: права теперь на узлах дерева в `VmsMap`, VmsCfg их не хранит; раздел
@@ -281,7 +281,7 @@ M3 закрывает эту дыру:
     Проверка: `grep -rn cam-perm-version` — только история планов; `grep -rn
     BumpCameraPermissionsVersion` пусто; `grep -rn "Vms\.Cfg\..*Permission"` пусто.
 
-12. **Сквозная проверка.**
+12. ✅ **Сквозная проверка.**
     `dotnet build dotnet/ta_vms.sln` — 0 ошибок, 0 предупреждений; `dotnet test` — все проекты
     (VmsMap, VmsCfg, VmsFs, VmsAnalyticsSingleton, VmsPtzTrackingSingleton) плюс
     `VMS_MAP_TEST_DSN` на `postgis/postgis:latest`. Dev-стек: все сервисы поднимаются, `VmsMap`
@@ -330,9 +330,70 @@ SSE работают; существующие проверки web_srv не и�
 Ветка `square-merge/m3-states-events-rights` в ta_vms. M2 перед ветвлением быстро перенесён в
 `master` (`master` = `2bd5e15`). В `../ta_install` изменений нет.
 
+Сделано 2026-10-30, по коммиту на кусок:
+
 | Коммит | Что |
 |---|---|
 | `be5b410` | этот план |
+| `8ff9cad` | чтения, права и `Watch` в `vms_map.proto` |
+| `2203874` | права с наследованием, режим `rights_mode`, `rights-version` |
+| `c55bf66` | gRPC-чтение, `camera_node`, `KMeans`, фильтрация по правам |
+| `561dd41` | адаптер узлов камер, серверные узлы, удаление, resync |
+| `16de5e7` | тревоги из `retention-event-created`, `ALARM`/`NORM`, журнал |
+| `9470bde` | `retention-event-created` в snake_case (иначе VmsMap молча дропал) |
+| `b25cae1` | `Watch`, связь из открытых аварий VmsFs |
+| `7dd721d` | `api/map/*`, SSE, `Rights*`, совместимость `api/permissions`, демонтаж прав VmsCfg |
+| текущий | `CLAUDE.md`, `docs/maps-and-plans.md`, `camera-connection-state.md`, план |
+
+**Решения по ходу, которых не было в плане:**
+- `camera_node` — миграция `0004_camera_nodes.sql`: id узла камеры не разворачивается обратно,
+  а `camera_placement` есть только у размещённой камеры.
+- `Watch` — server-streaming, а не bidirectional: Dapr service invocation проксирует
+  server-streaming, но не двунаправленный вызов; смена области наблюдения — новое SSE-соединение.
+- Связь — из `ListSourceOutages` VmsFs, а не из `GetMediaMtxPathsInfo`: `video_srv` гасит
+  WebRTC-путь через 30 с без зрителей, и на стенде все четыре камеры получили `DISCONNECTED`
+  (тревожное состояние из сида). Открытый интервал аварии — настоящий признак потери источника.
+- `api/permissions` совместимость: `AllCameras` — права на корневых узлах, `Cameras` — права на
+  узлах камер; флаг даёт `view` вместе с действием, иначе камера не появилась бы в дереве.
+- Права в `open` для старых камерных списков web_srv остаются «всё разрешено» (как старый ACL);
+  тонкую фильтрацию по строкам делают сами чтения VmsMap.
+- `PermissionManager` оставлен как совместимый фасад над `MapService`; в M4 его заменит вкладка
+  прав на узле.
+- `VmsMap.Tests` получили InMemory-ветки для рекурсивных запросов и алarм-пересчёта, иначе
+  in-memory провайдер не мог выполнить ни `GetByChildId`, ни `RemoveAsync`, ни пересчёт тревог.
+
+**Проверено 2026-10-30:**
+- `dotnet build dotnet/ta_vms.sln` — 0 ошибок, 0 предупреждений; `dotnet test` — VmsMap 70,
+  VmsCfg 26, VmsFs 5, VmsAnalyticsSingleton 24, VmsPtzTrackingSingleton 96.
+- Dev-стек из 13 сервисов поднят; VmsMap применил `0003_rights` и `0004_camera_nodes`; адаптер
+  создал 4 узла камер под пространствами и `camera_node` для каждого.
+- Тревога через `FsService.RetainEvent` (`sim-master`, 60 с): состояние `ALARM` на узле,
+  `children_alarms=1` у пространства, событие с id `event_uuid`, `param0=main`, `param1=motion`,
+  `alarm_end_ts`; после конца эпизода сверка поставила `NORM` и сняла тревогу с пространства.
+- `api/map/live` SSE: `: connected` и `set_visual_states` с `objectId`/`cameraId`; `Watch`
+  напрямую через Dapr тоже отдаёт сообщение.
+- `api/map/objects/parent` и `states/visual` через HTTP с токеном admin; `api/spatial/placements`
+  и `api/live/cameras` по-прежнему 200.
+- `api/permissions/cameras/testuser`: запись per-camera и `allCameras` создаёт строки прав на
+  узле камеры и на корнях; чтение возвращает те же флаги; `mode` — `enforced`.
+- `GetEffectiveRights` для `viewer` (без роли admin): ровно `sim-master` с `view, view_live`.
+- Связь: открытая строка `source_outages` для `sim-master` → `DISCONNECTED`, закрытие →
+  `CONNECTED`, `NORM` сохраняется. Настоящий обрыв сети OnvifSim открытой аварии не создал —
+  `SourceLivenessTracker` требует `recording_expected`, это вынесено в
+  `docs/future_plans/camera-connection-state.md`.
+- Стенд `tests/onvifsim`: `up`/`provision`/`calibrate`/`aim-check`/`bind`/`run` проходят;
+  `run` — сессия `active`, человек в кадре 111/111, arrival p95 0.458°, tracking p95 2.43°.
+- Dev-Keycloak: `default-roles-myrealm` включает `admin` и `power_user`, поэтому любой новый
+  пользователь получает admin. Это состояние realm, не код; чтобы проверить фильтрацию HTTP
+  не-админом, роли надо снять в Keycloak.
+
+**Не проверено:**
+- Windows-сборка/инсталлятор и контейнерная сборка `vmsmap`/`web_vms` (в M3 их не меняли).
+- Postgres-тесты `VmsMap.Tests` с `VMS_MAP_TEST_DSN`: без DSN они пропущены; отдельная
+  scratch-БД не поднималась, чтобы не трогать dev-данные.
+- Реальный обрыв сети OnvifSim до `DISCONNECTED` — упёрся в `recording_expected` VmsFs (см.
+  future plan); адаптер проверен на открытой строке аварии.
+- Браузерный сценарий M4: `api/map/*` проверены HTTP-запросами, фронтенд ещё не переключён.
 
 **Решения по ходу:**
 - `GetByBox` принимает `Box` с `wn`/`es` как `Coordinate`, а не массивами Square: DTO-слой и так
