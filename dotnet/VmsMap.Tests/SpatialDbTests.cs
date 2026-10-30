@@ -22,7 +22,10 @@ public class SpatialDbTests
     public HashSet<string> Known { get; } = new(StringComparer.Ordinal) { "cam1", "cam2" };
 
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
-      Task.FromResult(Known.Contains(cameraId) ? new CameraInfo(cameraId, "Camera " + cameraId) : null);
+      Task.FromResult(Known.Contains(cameraId) ? new CameraInfo(cameraId, "Camera " + cameraId, "srv") : null);
+
+    public Task<List<CameraInfo>> ListAsync(string? serverId, CancellationToken ct) =>
+      Task.FromResult(Known.Select(id => new CameraInfo(id, "Camera " + id, "srv")).ToList());
   }
 
   private sealed class RecordingNotifier : IMapConfigNotifier

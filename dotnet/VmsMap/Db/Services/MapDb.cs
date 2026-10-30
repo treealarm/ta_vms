@@ -468,7 +468,18 @@ namespace VmsMap.Db
 
       // The named nodes and everything under them. Their states, alarms, events, tracks, rights,
       // geometry, values and diagrams follow through ON DELETE CASCADE in the schema; Square left
-      // all of those behind.
+      // all of those behind. The in-memory provider has no ExecuteDelete and no cascades, so the
+      // tests take the explicit path; production always takes the single statement.
+      if (!_db.Database.IsRelational())
+      {
+        var rows = await _db.Markers
+          .Where(m => guids.Contains(m.id))
+          .ToListAsync();
+        _db.Markers.RemoveRange(rows);
+        await _db.SaveChangesAsync();
+        return rows.Count;
+      }
+
       return await _db.Markers
         .Where(m => guids.Contains(m.id))
         .ExecuteDeleteAsync();
@@ -486,6 +497,42 @@ namespace VmsMap.Db
 
       if (guids.Length == 0)
       {
+        return result;
+      }
+
+      // The in-memory provider the tests use has no raw SQL; walk the same subtree one level at a
+      // time there. Production always takes the recursive CTE below.
+      if (!_db.Database.IsRelational())
+      {
+        var frontier = guids.ToHashSet();
+        var visited = new HashSet<Guid>();
+
+        while (frontier.Count > 0)
+        {
+          var level = frontier.ToList();
+          frontier.Clear();
+
+          var ids = await _db.Markers.AsNoTracking()
+            .Where(m => level.Contains(m.id))
+            .Select(m => m.id)
+            .ToListAsync();
+          foreach (var id in ids)
+          {
+            if (visited.Add(id))
+              result.Add(Utils.ConvertGuidToObjectId(id));
+          }
+
+          var children = await _db.Markers.AsNoTracking()
+            .Where(m => m.parent_id.HasValue && level.Contains(m.parent_id.Value))
+            .Select(m => m.id)
+            .ToListAsync();
+          foreach (var child in children)
+          {
+            if (!visited.Contains(child))
+              frontier.Add(child);
+          }
+        }
+
         return result;
       }
 

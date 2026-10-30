@@ -1,10 +1,12 @@
 using Dapr.Client;
+using Dapr.Messaging.PublishSubscribe.Extensions;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Vms.Cfg;
 using VmsDb;
 using VmsLog;
+using VmsMap.Adapter;
 using VmsMap.Clients;
 using VmsMap.Db;
 using VmsMap.Domain;
@@ -21,12 +23,14 @@ var stateStoreName = Require("DAPR_STATE_STORE_NAME");
 
 builder.Services.AddGrpc();
 builder.Services.AddDaprClient();
+builder.Services.AddDaprPubSubClient();
 
 // The camera core. A placement is checked against a real camera and the camera's node is named
 // after it: cameras live in VmsCfg's database, so this is the check that replaced the foreign key.
 builder.Services.AddSingleton(_ =>
   new CfgService.CfgServiceClient(DaprClient.CreateInvocationInvoker(cfgAppId)));
 builder.Services.AddSingleton<ICameraCatalog, VmsCfgCameraCatalog>();
+builder.Services.AddSingleton<ICameraStateSource, VmsCfgCameraStateSource>();
 builder.Services.AddSingleton<IMapConfigNotifier>(sp => new DaprMapConfigNotifier(
   sp.GetRequiredService<DaprClient>(),
   sp.GetRequiredService<ILogger<DaprMapConfigNotifier>>(),
@@ -90,6 +94,11 @@ builder.Services.AddScoped<SpatialDb>();
 builder.Services.AddScoped<ITracksUpdateService, TracksUpdateService>();
 builder.Services.AddScoped<IMapUpdateService, MapUpdateService>();
 builder.Services.AddScoped<IStatesUpdateService, StatesUpdateService>();
+
+// The adapter: camera nodes from the config events, and one full reconcile at startup.
+builder.Services.AddScoped<CameraNodeService>();
+builder.Services.AddHostedService<CameraChangeSubscriber>();
+builder.Services.AddHostedService<StartupResyncService>();
 
 builder.Services.AddScoped<MapServiceImpl>();
 

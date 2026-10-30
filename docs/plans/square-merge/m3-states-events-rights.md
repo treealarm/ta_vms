@@ -174,7 +174,7 @@ M3 закрывает эту дыру:
    Проверка: `dotnet build`; InMemory-тесты на фильтрацию (камера без `view` не видна, право на
    здании открывает камеру), `GetByBox` с кластерами, пагинацию событий по keyset, `CreateReplica`.
 
-4. **`VmsMap` — адаптер: узлы камер и удаление.**
+4. ✅ **`VmsMap` — адаптер: узлы камер и удаление.**
    `Adapter/CameraNodeService.cs`: создаёт/обновляет узел камеры (`name`, `parent_id`), узел
    сервера, удаляет камеру целиком (узел, реплики, `camera_placement`, наблюдения) одной
    транзакцией; `EnsureCameraAsync(CameraSetup)`, `RemoveCameraAsync(camera_id)`,

@@ -24,7 +24,10 @@ public class SpatialPostgresTests
   private sealed class FakeCatalog : ICameraCatalog
   {
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
-      Task.FromResult<CameraInfo?>(new CameraInfo(cameraId, "Camera " + cameraId));
+      Task.FromResult<CameraInfo?>(new CameraInfo(cameraId, "Camera " + cameraId, "srv"));
+
+    public Task<List<CameraInfo>> ListAsync(string? serverId, CancellationToken ct) =>
+      Task.FromResult(new List<CameraInfo>());
   }
 
   private sealed class RecordingNotifier : IMapConfigNotifier
