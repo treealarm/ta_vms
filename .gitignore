@@ -379,3 +379,12 @@ docker-compose.override.yml
 # (config.yaml/config.json) as well as local indexes and sessions. Keep it out of
 # the repository; the main config lives in ~/.continue/config.yaml, outside it.
 .continue/
+
+# Claude Code provider profiles. .claude/env-profiles/*.json each hold one env
+# block with an API token in plain text, and .claude/mode installs the chosen one
+# into .claude/settings.local.json (which the machine's global gitignore already
+# excludes). The tasks "claude: use ..." in .vscode/tasks.json call that script
+# and carry profile names only, never values -- a fresh clone has the tasks and
+# not the tokens, and the task says so.
+.claude/env-profiles/
+.claude/mode
