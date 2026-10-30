@@ -17,6 +17,7 @@
                 "DAPR_GRPC_PORT": "51001",
                 "DAPR_LOGGER_APP_ID": "vmslogger",
                 "DAPR_CFG_APP_ID": "vmscfg",
+                "DAPR_MAP_APP_ID": "vmsmap",
                 "DAPR_UTILS_APP_ID": "vmsutils",
                 "DAPR_SINGLETON_APP_ID": "vmssingleton",
                 "DAPR_ANALYTICS_APP_ID": "vmsanalyticssingleton",
@@ -86,6 +87,8 @@
                 "POSTGRES_USER": "postgres",
                 "POSTGRES_PASSWORD": "postgres",
                 "POSTGRES_MAP_DB": "ta_map",
+                "DAPR_CFG_APP_ID": "vmscfg",
+                "PUBSUB_NAME": "orderpubsub",
                 "APP_ID": "vmsmap",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
@@ -261,6 +264,7 @@
                 "DAPR_HTTP_PORT": "3616",
                 "DAPR_GRPC_PORT": "51017",
                 "DAPR_CFG_APP_ID": "vmscfg",
+                "DAPR_MAP_APP_ID": "vmsmap",
                 "DAPR_ANALYTICS_APP_ID": "vmsanalyticssingleton",
                 "PUBSUB_NAME": "orderpubsub",
                 "APP_ID": "vmsptztrackingsingleton",

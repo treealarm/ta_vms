@@ -221,7 +221,7 @@ When adding a new required environment variable to any service:
 
 When a service needs to react to a configuration change that originated in another service, use the **pub/sub pattern** — do not poll or call the source service directly on every request.
 
-**Rule:** VmsCfg is the single source of truth for all configuration (cameras, storages, recording profiles, MediaMTX servers, etc.). Any other service that caches or acts on this configuration must subscribe to change events published by VmsCfg, then fetch the updated data itself.
+**Rule:** VmsCfg is the single source of truth for all configuration (cameras, storages, recording profiles, MediaMTX servers, etc.). Any other service that caches or acts on this configuration must subscribe to change events published by VmsCfg, then fetch the updated data itself. The map's tree — spaces, plans, placements, landmarks and calibrations — is VmsMap's own and not VmsCfg configuration: its changes travel on `map-config-changed` (see "Maps & plans").
 
 **Pattern:**
 1. VmsCfg publishes an event to a topic (e.g. `server-config-changed`, `storage-config-changed`) after a write operation succeeds.
@@ -434,29 +434,39 @@ endpoint and the "Entity State" debug tab in the frontend).
 
 ## Maps & plans: positions belong to ta_vms
 
-Spaces (maps and nested plans), plan images, camera placements and landmarks live in VmsCfg; see
-[`docs/maps-and-plans.md`](docs/maps-and-plans.md). They are moving into a map service of their own
-with Square's object tree (`docs/plans/square-merge/`, milestone M2 rewrites this section); until
-then these are the invariants a change must keep:
+Spaces (maps and nested plans), plan images, camera placements, landmarks and their calibrations
+live in **VmsMap**, on Square's object tree; see [`docs/maps-and-plans.md`](docs/maps-and-plans.md)
+and the migration `dotnet/VmsMap/Grpc/migrations/0002_spaces.sql`. VmsCfg keeps the cameras
+themselves; a placement write checks the camera exists through `GetCamera` (there is no foreign key
+across the two databases). These are the invariants a change must keep:
 
+- **One tree.** A space is a node of `objects` with a `spaces` row (kind map/plan, its view, floor
+  elevation and order); its name and parent are the object's. A landmark is a node too. A camera is
+  one node whose id is derived from its camera id (`CameraObjectId`), never a node per placement.
 - Spaces nest like Square's diagrams, but each has its own coordinates: a nested plan is never laid
-  over its parent's map, its footprint there is only the way in.
+  over its parent's map, its footprint there (its `geo_objects` figure) is only the way in.
 - A position is WGS84 plus metres **above the floor of its space**, never above sea level, and is
   never stored in plan pixels. A plan in made-up coordinates uses made-up WGS84 around (0, 0) rather
-  than a second coordinate system.
+  than a second coordinate system. `geo_objects.canvas_id` records the nearest canvas ancestor —
+  a space or a mnemoscheme — whose coordinates a figure is drawn in.
 - Two spaces share geometry only when they are the same space or both have real coordinates; every
   cross-space feature (calibration, aiming, master/slave) checks that rule.
-- A camera has at most one **reference** placement — where it really stands, the only one aiming
-  uses — and any number of pictures (Square's `owner_id`). Another placement is never promoted to
-  reference behind the administrator's back.
-- Heading is a compass bearing, 0 = north, clockwise (Square's `__image_rotate`).
-- Calibration fits are never stored — raw observations and ground marks in VmsCfg, the PTZ fit and
+- A camera has at most one **reference** placement — the `camera_placement` row with
+  `is_reference`, where it really stands, the only one aiming uses — and any number of pictures.
+  A picture is a replica of the camera node (`objects.owner_id`) with its own point and placement
+  row. Another placement is never promoted to reference behind the administrator's back.
+- Heading is a compass bearing, 0 = north, clockwise (Square's `__image_rotate`), and lives only in
+  `camera_placement.heading_deg`.
+- Calibration fits are never stored — raw observations and ground marks in VmsMap, the PTZ fit and
   the fixed camera's ground homography in `VmsPtzTrackingSingleton/Geo`, as with the slave binding.
   The browser only multiplies by the matrix it is handed; it never fits.
 - Detections on the map come from the existing live stream (`api/analytics/live`), projected in the
   browser — no second detection stream for maps.
-- Space changes are announced on `space-config-changed {"space_id"}`; a camera's placements or
-  observations on `server-config-changed`.
+- Map changes are announced on **`map-config-changed`**, payload
+  `{"object_ids": [...], "camera_ids": [...]}`: the nodes that changed, and the cameras whose
+  spatial model did. An empty `camera_ids` means "everything" — a space or a landmark moved.
+  `VmsPtzTrackingSingleton` drops its cached models by it. Placement and observation writes no
+  longer travel on `server-config-changed`.
 - Map tiles reach browsers only through web_srv's caching proxy (`api/map/tiles`), cached in the
   state store — never on local disk and never fetched by the browser from the provider directly.
 

@@ -12,14 +12,15 @@ through those coordinates instead of a hand-marked pixel survey.
 ## Model
 
 The shape is Square's diagrams: a tree of worlds, each drawn on its own background, each nested
-one reachable from its outline on the parent.
+one reachable from its outline on the parent. Everything below lives in VmsMap's database, on its
+one object tree: a space and a landmark are nodes of `objects` with side rows of their own.
 
 | Entity | Table | Meaning |
 |---|---|---|
-| Space | `space` | One world things are placed in. `map`: a root over map tiles, real coordinates. `plan`: a root or a nested space drawn on its own picture, in real or made-up coordinates. Has a default view, an order among siblings, a floor elevation and — when nested — a footprint polygon on its parent. |
+| Space | `spaces` | One world things are placed in; a node of `objects` with a row of its own. `map`: a root over map tiles, real coordinates. `plan`: a root or a nested space drawn on its own picture, in real or made-up coordinates. Has a default view, an order among siblings, a floor elevation and — when nested — a footprint polygon on its parent. |
 | Plan | `space_plan` | A plan space's picture and three of its corners in that space (top-left, top-right, bottom-left). |
 | Placement | `camera_placement` | Where a camera is drawn in one space: lat/lon, height, heading, view angle, range. One per camera and space; at most one per camera is its **reference**. |
-| Landmark | `landmark` | A named point with a known position and height in a space, used only to calibrate cameras. |
+| Landmark | `landmark` | A named point with a known position and height in a space, used only to calibrate cameras. A node of `objects` too. |
 | Observation | `ptz_geo_observation` | Where a PTZ pointed (its own pan/tilt units) when centred on a landmark. |
 | Ground mark | `ground_observation` | Where a landmark stands on the ground in a fixed camera's picture, normalised 0..1 like detection boxes. |
 
@@ -37,11 +38,12 @@ Conventions that hold everywhere:
   be aimed at, and (stage 3) which masters can drive which slaves. VmsCfg (`SpatialDb`), the
   tracking service (`CameraSpatialModel.SharesGeometryWith`) and the client (`sharesGeometry`)
   apply the same rule.
-- **A camera has one reference placement and any number of pictures.** The reference is where it
-  really stands; aiming and calibration go by it. Pictures — the camera drawn again on a detailed
-  plan of its corner — are only drawn (Square's `owner_id` relation, which the map service will
-  carry over, see `docs/plans/square-merge/`). A camera's first placement becomes its reference;
-  clearing the flag leaves the camera with none, never quietly promoting another.
+- **A camera has one reference placement and any number of pictures.** A camera is one node of the
+  tree, its id derived from its camera id; the reference is where it really stands, and aiming and
+  calibration go by it. Pictures — the camera drawn again on a detailed plan of its corner — are
+  replicas of that node (Square's `owner_id` relation): they have their own point and placement row,
+  but no states of their own. A camera's first placement becomes its reference; clearing the flag
+  leaves the camera with none, never quietly promoting another.
 - **Positions are WGS84 plus a height in metres above the floor of their space** — never above sea
   level. Height above the ground is `space.elevation_m + height_m`; elevation matters only where
   coordinates are real, so a camera upstairs and one in the yard agree on heights.
@@ -57,10 +59,12 @@ Conventions that hold everywhere:
 
 ## Where things live
 
-- **VmsCfg** owns the tables (`Grpc/migrations/0002_spatial.sql`, `0003_ground_observation.sql`,
-  `Grpc/SpatialDb.cs`, `Grpc/CfgServiceImpl.Spatial.cs`) and the gRPC contract
-  (`proto/vms_cfg.proto`, section "Maps & plans"). Plan images are `bytea` in its database and travel as chunked gRPC streams,
-  because Dapr service invocation caps one message at 4 MiB. Limit: 20 MiB per image.
+- **VmsMap** owns the tables (`dotnet/VmsMap/Grpc/migrations/0002_spaces.sql`,
+  `Db/Services/SpatialDb.cs`) and the gRPC contract (`proto/vms_map.proto`, section
+  "Maps & plans"). Plan images are `bytea` in its database and travel as chunked gRPC streams,
+  because Dapr service invocation caps one message at 4 MiB. Limit: 20 MiB per image. A placement
+  write checks the camera exists in VmsCfg through `GetCamera`: cameras stay VmsCfg's, and no
+  foreign key spans the two databases.
 - **VmsPtzTrackingSingleton** owns the geometry (`Geo/`): the local frame, bearings, the
   pan/tilt-against-azimuth/elevation fit with leave-one-out residuals, `AimAtWorldPoint`, and the
   picture-to-ground homography of a fixed camera (`GroundHomography`). It is the one owner of a
@@ -81,14 +85,14 @@ Conventions that hold everywhere:
 
 ## Events
 
-- A placement or a camera's observations or marks change → `server-config-changed` with that camera, as
-  for any camera setting. Removing a space announces every camera that had a placement in it or in
-  anything nested in it.
-- A space, its plan or a landmark changes → **`space-config-changed`**, payload `{"space_id": "..."}`.
-  Its own topic because it concerns no node: `server-config-changed` with an empty camera list would
-  make every media server, VmsFs and VmsOnvif reconcile for nothing. Addressing only, like every
-  event here. The aiming service subscribes (it drops every cached spatial model, since a moved
-  landmark may underlie any camera's calibration).
+- Every change on the map — a placement, a camera's observations or marks, a space, its plan or a
+  landmark — is announced on **`map-config-changed`**, payload
+  `{"object_ids": [...], "camera_ids": [...]}`: the nodes that changed, and the cameras whose
+  spatial model did. An empty `camera_ids` means a space or a landmark moved, which may underlie
+  any camera's calibration, so every cached model is dropped; removing a space names the cameras
+  that stood in it or in anything nested in it. Addressing only, like every event here. It has its
+  own topic because placement edits concern no node: `server-config-changed` with an empty camera
+  list would make every media server, VmsFs and VmsOnvif reconcile for nothing.
 
 ## Map tiles
 
@@ -221,8 +225,8 @@ works the moment both are, and recalibrating one camera fixes it for every pairi
   - the master has no ground fit;
   - the slave has no landmark fit.
 - **Cached models.** The aiming service holds both cameras' spatial models in `SpatialModelCache`.
-  `server-config-changed` marks the cameras it names stale, and `space-config-changed` marks all
-  of them stale. There is a one-minute TTL as a backstop. Like every cache in the service
+  `map-config-changed` marks the cameras it names stale, and an empty list marks all of them stale.
+  There is a one-minute TTL as a backstop. Like every cache in the service
   (`TtlCache`), a stale entry is kept until a read replaces it. A failed read keeps the camera
   aiming by what it had, and is reported as "could not be read", never as "not calibrated".
 - **One object per slave.** `SlaveAim` is the binding plus, on this method, both models. It
