@@ -190,7 +190,7 @@ M3 закрывает эту дыру:
    перенос размещения не откатывается адаптером, удаление чистит реплики/наблюдения, повторный
    resync ничего не дублирует.
 
-5. **`VmsMap` — адаптер: тревоги.**
+5. ✅ **`VmsMap` — адаптер: тревоги.**
    `Adapter/RetentionEventSubscriber.cs` (`retention-event-created`, политика `Retry`): payload
    `{camera_id, stream_name, alarm_start_ts}`, `FsService.ListRetentionEvents` по
    `DAPR_FS_APP_ID`/`fs_id` из `ListMediaServers`; запись `ALARM` + события одной транзакцией.

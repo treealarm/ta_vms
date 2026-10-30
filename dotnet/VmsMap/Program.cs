@@ -31,6 +31,7 @@ builder.Services.AddSingleton(_ =>
   new CfgService.CfgServiceClient(DaprClient.CreateInvocationInvoker(cfgAppId)));
 builder.Services.AddSingleton<ICameraCatalog, VmsCfgCameraCatalog>();
 builder.Services.AddSingleton<ICameraStateSource, VmsCfgCameraStateSource>();
+builder.Services.AddSingleton<IRetentionEventSource, VmsFsRetentionEventSource>();
 builder.Services.AddSingleton<IMapConfigNotifier>(sp => new DaprMapConfigNotifier(
   sp.GetRequiredService<DaprClient>(),
   sp.GetRequiredService<ILogger<DaprMapConfigNotifier>>(),
@@ -95,10 +96,15 @@ builder.Services.AddScoped<ITracksUpdateService, TracksUpdateService>();
 builder.Services.AddScoped<IMapUpdateService, MapUpdateService>();
 builder.Services.AddScoped<IStatesUpdateService, StatesUpdateService>();
 
-// The adapter: camera nodes from the config events, and one full reconcile at startup.
+// The adapter: camera nodes from the config events, one full reconcile at startup, retention
+// events into ALARM and the journal, and the sweep that takes a finished alarm away.
 builder.Services.AddScoped<CameraNodeService>();
+builder.Services.AddScoped<CameraStateWriter>();
+builder.Services.AddScoped<AlarmService>();
 builder.Services.AddHostedService<CameraChangeSubscriber>();
 builder.Services.AddHostedService<StartupResyncService>();
+builder.Services.AddHostedService<RetentionEventSubscriber>();
+builder.Services.AddHostedService<AlarmSweepService>();
 
 builder.Services.AddScoped<MapServiceImpl>();
 

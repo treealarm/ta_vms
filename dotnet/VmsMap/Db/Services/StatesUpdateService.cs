@@ -53,7 +53,11 @@ namespace VmsMap.Db
         .Select(g => g!.Value)
         .ToList();
 
-      await using var tx = _db.Database.IsRelational()
+      // An adapter may already have opened a transaction to write a state and an event together;
+      // in that case this method joins it and the caller commits. Otherwise it owns one.
+      var ownsTransaction = _db.Database.IsRelational()
+        && _db.Database.CurrentTransaction is null;
+      await using var tx = ownsTransaction
         ? await _db.Database.BeginTransactionAsync()
         : null;
       await LockAggregationAsync();
