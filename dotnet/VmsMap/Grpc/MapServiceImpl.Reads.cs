@@ -841,8 +841,10 @@ namespace VmsMap.Grpc
       var result = new BoxDTO();
       if (box?.Wn is not null && box.Es is not null)
       {
-        result.wn = [box.Wn.Lat, box.Wn.Lon];
-        result.es = [box.Es.Lat, box.Es.Lon];
+        // BoxDTO is in the geometry's (X, Y) order, which is (lon, lat): NTS stores a point as
+        // Coordinate(lon, lat), and GeoService builds the rectangle straight from these two.
+        result.wn = [box.Wn.Lon, box.Wn.Lat];
+        result.es = [box.Es.Lon, box.Es.Lat];
       }
 
       result.zoom = box is { HasZoom: true } ? box.Zoom : null;
