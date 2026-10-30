@@ -26,6 +26,7 @@ namespace VmsMap.Db
     public DbSet<DBSpace> Spaces { get; set; } = null!;
     public DbSet<DBSpacePlan> SpacePlans { get; set; } = null!;
     public DbSet<DBCameraPlacement> CameraPlacements { get; set; } = null!;
+    public DbSet<DBCameraNode> CameraNodes { get; set; } = null!;
     public DbSet<DBLandmark> Landmarks { get; set; } = null!;
     public DbSet<DBPtzGeoObservation> PtzGeoObservations { get; set; } = null!;
     public DbSet<DBGroundObservation> GroundObservations { get; set; } = null!;
@@ -62,6 +63,7 @@ namespace VmsMap.Db
       ConfigureSpaces(modelBuilder);
       ConfigureSpacePlans(modelBuilder);
       ConfigureCameraPlacements(modelBuilder);
+      ConfigureCameraNodes(modelBuilder);
       ConfigureLandmarks(modelBuilder);
       ConfigureGeoObservations(modelBuilder);
     }
@@ -139,6 +141,19 @@ namespace VmsMap.Db
         entity.Property(e => e.heading_deg).HasColumnName("heading_deg");
         entity.Property(e => e.hfov_deg).HasColumnName("hfov_deg");
         entity.Property(e => e.range_m).HasColumnName("range_m");
+      });
+    }
+
+    private void ConfigureCameraNodes(ModelBuilder modelBuilder)
+    {
+      modelBuilder.Entity<DBCameraNode>(entity =>
+      {
+        entity.ToTable("camera_node");
+
+        entity.HasKey(e => e.object_id);
+        entity.Property(e => e.object_id).HasColumnName("object_id").ValueGeneratedNever();
+        entity.Property(e => e.camera_id).HasColumnName("camera_id").IsRequired();
+        entity.HasIndex(e => e.camera_id).IsUnique();
       });
     }
 

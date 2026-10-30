@@ -39,6 +39,11 @@ M3 закрывает эту дыру:
   висит под **узлом сервера**: обычным узлом без боковой строки, id — `ObjectIdGenerator` с
   версией `"server"`, имя — `server_id` (в `ListMediaServers` имени сервера нет). Узел сервера
   создаёт адаптер; корневых узлов может быть несколько, синтетического корня не заводим.
+- **`camera_node` — обратный индекс «узел → camera_id».** Id узла камеры — MD5 от camera id,
+  развернуть его нельзя, а `camera_placement` есть только у размещённой камеры. Чтения, дерево и
+  `Watch` обязаны называть камеру и у неразмещённого узла, поэтому миграция `0004_camera_nodes.sql`
+  заводит таблицу `camera_node(object_id PK, camera_id UNIQUE)`, заполняет её из опорных
+  размещений и дальше поддерживает в `SpatialDb.UpsertPlacement` и адаптере.
 - **Адаптер идемпотентен и живёт в каждой реплике.** Стартовая сверка повторяет
   `ListCameras`/`ListMediaServers`, пока не удастся; периодическая сверка (раз в 5 с, вместе с
   проверкой связи) восстанавливает родителя камеры: опорное размещение → его пространство, иначе
@@ -156,7 +161,7 @@ M3 закрывает эту дыру:
    `enforced`, `admin`, `unrestricted`, таблица действий, реплика получает действия владельца;
    Postgres-тест наследования — вместе с шагом 3.
 
-3. **`VmsMap` — gRPC-чтение.**
+3. ✅ **`VmsMap` — gRPC-чтение.**
    `Grpc/MapServiceImpl.Reads.cs` (partial): тонкий слой proto ↔ DTO поверх существующих
    `MapDb`, `StateService`, `EventsService`, `TrackService`, `ValuesService`, `DiagramService`,
    `DiagramTypeService`, `LevelService`, `FileService`, `GeoService`. Все методы с `Caller`

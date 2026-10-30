@@ -24,6 +24,9 @@ namespace VmsMap.Grpc
     private readonly VmsMapDbContext _db;
     private readonly IMapService _mapService;
     private readonly IMapUpdateService _mapUpdateService;
+    private readonly IGeoService _geoService;
+    private readonly ILevelService _levelService;
+    private readonly ITrackService _trackService;
     private readonly IStatesUpdateService _statesUpdateService;
     private readonly IStateService _stateService;
     private readonly IEventsService _eventsService;
@@ -42,6 +45,9 @@ namespace VmsMap.Grpc
       VmsMapDbContext db,
       IMapService mapService,
       IMapUpdateService mapUpdateService,
+      IGeoService geoService,
+      ILevelService levelService,
+      ITrackService trackService,
       IStatesUpdateService statesUpdateService,
       IStateService stateService,
       IEventsService eventsService,
@@ -59,6 +65,9 @@ namespace VmsMap.Grpc
       _db = db;
       _mapService = mapService;
       _mapUpdateService = mapUpdateService;
+      _geoService = geoService;
+      _levelService = levelService;
+      _trackService = trackService;
       _statesUpdateService = statesUpdateService;
       _stateService = stateService;
       _eventsService = eventsService;

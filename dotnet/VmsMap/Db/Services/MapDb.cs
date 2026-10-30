@@ -181,7 +181,11 @@ namespace VmsMap.Db
         return new List<BaseMarkerDTO>();
       }
 
-      var rows = await QueryNodeChainAsync(rootGuid.Value);
+      // The production path is one recursive CTE; the in-memory provider the tests use has no raw
+      // SQL, so walk the same chain one query per level there.
+      var rows = _db.Database.IsRelational()
+        ? await QueryNodeChainAsync(rootGuid.Value)
+        : await QueryNodeChainInMemoryAsync(rootGuid.Value);
 
       var byId = rows.ToDictionary(r => r.Id);
       var result = new List<BaseMarkerDTO>();
@@ -233,6 +237,29 @@ namespace VmsMap.Db
           .ToListAsync();
 
       return markers.Select(ConvertMarkerDB2DTO).ToList();
+    }
+
+    private async Task<List<(Guid Id, Guid? ParentId, Guid? OwnerId, string Name)>>
+      QueryNodeChainInMemoryAsync(Guid id)
+    {
+      var result = new List<(Guid, Guid?, Guid?, string)>();
+      var visited = new HashSet<Guid>();
+      Guid? current = id;
+
+      while (current.HasValue && visited.Add(current.Value))
+      {
+        var row = await _db.Markers.AsNoTracking()
+          .Where(m => m.id == current.Value)
+          .Select(m => new { m.id, m.parent_id, m.owner_id, m.name })
+          .FirstOrDefaultAsync();
+        if (row is null)
+          break;
+
+        result.Add((row.id, row.parent_id, row.owner_id, row.name));
+        current = row.parent_id;
+      }
+
+      return result;
     }
 
     private async Task<List<(Guid Id, Guid? ParentId, Guid? OwnerId, string Name)>>

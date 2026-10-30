@@ -9,7 +9,7 @@ namespace VmsMap.Domain
     public Task<Dictionary<string, ValueDTO>> GetListByOwnersAsync(List<string> owners);
   }
 
-  public interface IValuesServiceInternal
+  public interface IValuesServiceInternal : IValuesService
   {
     public Task UpdateListAsync(List<ValueDTO> obj2UpdateIn);
     public Task RemoveAsync(List<string> ids);
