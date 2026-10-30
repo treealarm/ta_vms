@@ -6,9 +6,10 @@ import "google/protobuf/timestamp.proto";
 package vms.map;
 
 // The map: VmsMap owns the object tree, geometry, spaces and plans, states, events, values, tracks,
-// diagrams, rights and files, and this is how every other service and the web reach it. Reads
-// arrive with the milestones that need them: spaces and calibrations came with M2, states, events
-// and the Watch stream with M3.
+// diagrams, rights and files, and this is how every other service and the web reach it. Spaces and
+// calibrations arrived with M2; the reads, the effective-rights model and the Watch stream with
+// M3. Every read that can return more than one node takes the caller's identity, because the same
+// rights rule must decide what leaves the service and what web_srv is allowed to show.
 //
 // One tree: `objects` holds every node. What a node is, is said by its side rows — a diagram
 // (`Diagram`), a drawn figure (`Figure`), a space (`Space`), a camera placement
@@ -75,6 +76,54 @@ service MapService {
   // the given space: the cameras whose detections can be shown there.
   rpc ListCameraSpatialModels(SpaceRequest) returns (ListCameraSpatialModelsResponse);
 
+  // ── Reads ── the tree, states, events, values, tracks, diagrams, rights and levels. Every read
+  // that can return more than one node carries the caller's identity: VmsMap applies the same
+  // rights rule it computes for web_srv, so a node the caller may not see never leaves the service.
+  rpc GetByParent(GetByParentRequest) returns (GetByParentResponse);
+  rpc GetByIds(GetByIdsRequest) returns (Figures);
+  rpc GetMarkersByIds(GetByIdsRequest) returns (MarkerList);
+  // Figures inside a box, on a zoom layer, or by property. Above a thousand figures the answer is
+  // clustered by zoom layer, exactly as Square's map did.
+  rpc GetByBox(GetByBoxRequest) returns (Figures);
+  rpc GetByName(GetByNameRequest) returns (MarkerList);
+  rpc GetByParams(GetByParamsRequest) returns (Figures);
+  // One node with its properties and the zoom range of its layer.
+  rpc GetObjProps(GetObjPropsRequest) returns (ObjProps);
+  // A node with owner_id set: it shows the owner's states and values but has a place of its own.
+  rpc CreateReplica(CreateReplicaRequest) returns (Marker);
+
+  rpc GetStates(GetStatesRequest) returns (ObjectStateList);
+  // States, alarm counters and descriptions in one answer, the way the map paints a set of nodes.
+  rpc GetVisualStates(GetStatesRequest) returns (VisualStates);
+  rpc GetAlarmedStates(GetStatesRequest) returns (AlarmStateList);
+  rpc GetStateDescriptions(GetStateDescriptionsRequest) returns (StateDescriptionList);
+
+  rpc GetEventsByFilter(GetEventsByFilterRequest) returns (EventList);
+
+  rpc GetTracksByFilter(GetTracksByFilterRequest) returns (TrackPointList);
+  rpc GetTracksByBox(GetTracksByBoxRequest) returns (TrackPointList);
+
+  rpc GetValuesByOwners(GetValuesByOwnersRequest) returns (ValueList);
+
+  rpc GetDiagramContent(GetDiagramContentRequest) returns (DiagramContent);
+  rpc GetDiagramsByIds(GetByIdsRequest) returns (DiagramList);
+  rpc GetDiagramTypes(GetDiagramTypesRequest) returns (DiagramTypeList);
+
+  rpc GetLevels(google.protobuf.Empty) returns (LevelList);
+  rpc GetLevel(GetLevelRequest) returns (GetLevelResponse);
+
+  // Rights as stored, the expanded effective set for one caller, and the dictionary the editor
+  // reads to know which actions a node kind accepts.
+  rpc GetRights(ObjectIds) returns (RightList);
+  rpc GetEffectiveRights(EffectiveRightsRequest) returns (EffectiveRightsResponse);
+  rpc GetRightActions(google.protobuf.Empty) returns (RightActionTable);
+  rpc GetRightsMode(google.protobuf.Empty) returns (RightsModeResponse);
+  rpc SetRightsMode(SetRightsModeRequest) returns (OperationStatus);
+
+  // Changes to what one caller watches: a box, a set of ids, or their values. One stream per
+  // client; the service coalesces every stream in the process into one poll per second.
+  rpc Watch(stream WatchRequest) returns (stream WatchMessage);
+
   rpc UpdateStates(ObjectStateList) returns (OperationStatus);
   // The dictionary of state names: description, colour and whether the state is an alarm.
   rpc UpdateStateDescriptions(StateDescriptionList) returns (OperationStatus);
@@ -128,6 +177,112 @@ message ObjectList {
 
 message ObjectIds {
   repeated string ids = 1;
+}
+
+// Who is asking. The web is the only caller that fills it in: username and Keycloak roles decide
+// what a read may return, and `unrestricted` is set when the deployment runs without
+// authentication at all (KEYCLOAK_URL empty), where there is no identity to scope anything to.
+message Caller {
+  string username = 1;
+  repeated string roles = 2;
+  bool unrestricted = 3;
+}
+
+// One node of the tree as the map and the tree view read it. `camera_id` is set only on a camera
+// node or a picture of one; it is how the browser opens live video for the node it drew.
+message Marker {
+  string id = 1;
+  string parent_id = 2;
+  string owner_id = 3;
+  string name = 4;
+  bool has_children = 5;
+  string camera_id = 6;
+  // The database's xmin, which changes whenever the row does. The watch stream diffs by it.
+  uint32 version = 7;
+}
+
+message MarkerList {
+  repeated Marker markers = 1;
+}
+
+message GetByParentRequest {
+  // Empty asks for the roots.
+  string parent_id = 1;
+  string start_id = 2;
+  string end_id = 3;
+  int32 count = 4;
+  Caller caller = 5;
+}
+
+message GetByParentResponse {
+  string parent_id = 1;
+  // The chain from the root down to the parent, so the browser can draw breadcrumbs.
+  repeated Marker parents = 2;
+  repeated Marker children = 3;
+  string start_id = 4;
+  string end_id = 5;
+}
+
+message GetByIdsRequest {
+  repeated string ids = 1;
+  Caller caller = 2;
+}
+
+message GetByNameRequest {
+  string name = 1;
+  Caller caller = 2;
+}
+
+message PropertyFilter {
+  string prop_name = 1;
+  string str_val = 2;
+}
+
+message GetByParamsRequest {
+  repeated PropertyFilter props = 1;
+  string start_id = 2;
+  int32 forward = 3;
+  int32 count = 4;
+  Caller caller = 5;
+}
+
+// A rectangle in WGS84, optionally narrowed to a zoom layer, a set of ids or a zone. Mirrors
+// Square's BoxDTO: `wn` is the north-west corner and `es` the south-east one.
+message Box {
+  Coordinate wn = 1;
+  Coordinate es = 2;
+  optional double zoom = 3;
+  repeated string ids = 4;
+  optional int32 count = 5;
+  repeated Geometry zone = 6;
+  bool not_in_zone = 7;
+}
+
+message GetByBoxRequest {
+  Box box = 1;
+  repeated PropertyFilter property_filter = 2;
+  Caller caller = 3;
+}
+
+message GetObjPropsRequest {
+  string id = 1;
+  Caller caller = 2;
+}
+
+message ObjProps {
+  Marker marker = 1;
+  repeated ExtraProperty extra_props = 2;
+  // The zoom range of the node's layer, when its figure has one.
+  optional int32 zoom_min = 3;
+  optional int32 zoom_max = 4;
+}
+
+message CreateReplicaRequest {
+  string owner_id = 1;
+  string parent_id = 2;
+  // Empty copies the owner's name.
+  string name = 3;
+  Caller caller = 4;
 }
 
 message ExtraProperty {
@@ -189,6 +344,12 @@ message Figure {
   // The scale layer this node becomes visible at; empty means always.
   optional string zoom_level = 6;
   repeated ExtraProperty extra_props = 7;
+  // Read-only, filled by GetByIds and GetByBox; ignored by UpdateFigures. A picture of a camera
+  // is a replica with owner_id set, and camera_id names the camera whose live video it opens.
+  optional string owner_id = 8;
+  bool has_children = 9;
+  string camera_id = 10;
+  uint32 version = 11;
 }
 
 message Figures {
@@ -466,6 +627,8 @@ message ObjectState {
   // The full current set for the object, not a delta: the write replaces what is stored.
   repeated string states = 2;
   google.protobuf.Timestamp timestamp = 3;
+  // The row's xmin; ignored on writes and used by the watch stream to tell a change from a poll.
+  uint32 version = 4;
 }
 
 message ObjectStateList {
@@ -486,6 +649,37 @@ message StateDescriptionList {
   repeated StateDescription descriptions = 1;
 }
 
+message GetStatesRequest {
+  repeated string ids = 1;
+  Caller caller = 2;
+}
+
+// The alarm counters of the nodes themselves. `children_alarms` is how many direct children are
+// alarmed, which is what raises the colour all the way up the tree.
+message AlarmState {
+  string id = 1;
+  bool alarm = 2;
+  int32 children_alarms = 3;
+  uint32 version = 4;
+}
+
+message AlarmStateList {
+  repeated AlarmState states = 1;
+}
+
+// What the map paints a set of nodes from: their states, their alarm counters and the dictionary
+// that turns state names into colours and descriptions.
+message VisualStates {
+  repeated AlarmState alarmed_objects = 1;
+  repeated ObjectState states = 2;
+  repeated StateDescription states_descr = 3;
+}
+
+message GetStateDescriptionsRequest {
+  // Empty returns the whole dictionary.
+  repeated string states = 1;
+}
+
 // ── Events ────────────────────────────────────────────────────────────────────
 
 message Event {
@@ -504,6 +698,25 @@ message EventList {
   repeated Event events = 1;
 }
 
+message GetEventsByFilterRequest {
+  google.protobuf.Timestamp time_start = 1;
+  google.protobuf.Timestamp time_end = 2;
+  // The named nodes and everything below them. Empty means the whole journal.
+  repeated string objects = 3;
+  // Only events carrying an image property (`visual_type = "image_fs"`).
+  bool images_only = 4;
+  string param0 = 5;
+  string param1 = 6;
+  // Keyset cursor: the id of the last event the caller has. The next page starts strictly after
+  // it in the chosen direction, so an insert between pages cannot hide a row.
+  string start_id = 7;
+  int32 count = 8;
+  // Only "timestamp" is sortable; it is the key the pagination uses.
+  string sort_key = 9;
+  string sort_order = 10;
+  Caller caller = 11;
+}
+
 // ── Values and tracks ─────────────────────────────────────────────────────────
 
 message ValueType {
@@ -520,10 +733,18 @@ message Value {
   string owner_id = 2;
   string name = 3;
   ValueType value = 4;
+  // The row's xmin; ignored on writes and used by the watch stream.
+  uint32 version = 5;
 }
 
 message ValueList {
   repeated Value values = 1;
+}
+
+message GetValuesByOwnersRequest {
+  // A replica answers with its owner's values, with owner_id rewritten to the replica.
+  repeated string ids = 1;
+  Caller caller = 2;
 }
 
 message TrackPoint {
@@ -535,6 +756,25 @@ message TrackPoint {
 
 message TrackPointList {
   repeated TrackPoint tracks = 1;
+}
+
+message GetTracksByFilterRequest {
+  google.protobuf.Timestamp time_start = 1;
+  google.protobuf.Timestamp time_end = 2;
+  repeated PropertyFilter property_filter = 3;
+  string start_id = 4;
+  int32 forward = 5;
+  int32 count = 6;
+  Caller caller = 7;
+}
+
+message GetTracksByBoxRequest {
+  Box box = 1;
+  google.protobuf.Timestamp time_start = 2;
+  google.protobuf.Timestamp time_end = 3;
+  // Negative means newest first.
+  int32 sort = 4;
+  Caller caller = 5;
 }
 
 // ── Diagrams ──────────────────────────────────────────────────────────────────
@@ -583,6 +823,55 @@ message DiagramTypeList {
   repeated DiagramType diagram_types = 1;
 }
 
+message GetDiagramContentRequest {
+  string diagram_id = 1;
+  // How many levels of children to include: 0 is the diagram alone, 3 is the deepest a
+  // mnemoscheme nests.
+  int32 depth = 2;
+  Caller caller = 3;
+}
+
+message DiagramContent {
+  string diagram_id = 1;
+  int32 depth = 2;
+  repeated Marker children = 3;
+  repeated Diagram content = 4;
+  repeated DiagramType dgr_types = 5;
+  repeated Marker parents = 6;
+}
+
+message GetDiagramTypesRequest {
+  repeated string ids = 1;
+  repeated string names = 2;
+  // Substring filter on the name, for the editor's picker.
+  string filter = 3;
+  string start_id = 4;
+  bool forward = 5;
+  int32 count = 6;
+}
+
+// ── Levels ────────────────────────────────────────────────────────────────────
+
+message Level {
+  string id = 1;
+  string zoom_level = 2;
+  int32 zoom_min = 3;
+  int32 zoom_max = 4;
+}
+
+message LevelList {
+  repeated Level levels = 1;
+}
+
+message GetLevelRequest {
+  string zoom_level = 1;
+}
+
+message GetLevelResponse {
+  bool found = 1;
+  Level level = 2;
+}
+
 // ── Rights ────────────────────────────────────────────────────────────────────
 
 message Right {
@@ -605,6 +894,91 @@ message RightKey {
 
 message RightKeyList {
   repeated RightKey keys = 1;
+}
+
+enum RightsMode {
+  // A node with no rights rows on itself or its ancestors is open to everyone.
+  RIGHTS_MODE_OPEN = 0;
+  // Only the rows decide; a node with none is invisible.
+  RIGHTS_MODE_ENFORCED = 1;
+}
+
+message RightsModeResponse {
+  RightsMode mode = 1;
+}
+
+message SetRightsModeRequest {
+  RightsMode mode = 1;
+}
+
+// The actions that apply to one node, after inheritance. `camera_id` is set for a camera node so
+// the web can map its per-camera checks onto the tree without recomputing the node id.
+message NodeRights {
+  string object_id = 1;
+  string camera_id = 2;
+  repeated string actions = 3;
+}
+
+message EffectiveRightsRequest {
+  Caller caller = 1;
+}
+
+message EffectiveRightsResponse {
+  RightsMode mode = 1;
+  // The admin role has every action without a row; the web does not have to expand the tree.
+  bool admin = 2;
+  // Only nodes that inherit at least one action. In open mode, a node absent from this list is
+  // open; in enforced mode it is invisible.
+  repeated NodeRights nodes = 3;
+}
+
+message RightActionEntry {
+  // The node kind, as the tree says it: space, landmark, camera, diagram, figure, object.
+  string node_kind = 1;
+  repeated string actions = 2;
+}
+
+message RightActionTable {
+  repeated RightActionEntry entries = 1;
+}
+
+// ── Watch ────────────────────────────────────────────────────────────────────
+
+message WatchBox {
+  Box box = 1;
+}
+
+message WatchIds {
+  repeated string ids = 1;
+}
+
+message WatchValues {
+  bool enabled = 1;
+}
+
+message WatchRequest {
+  oneof command {
+    // The box to follow; replaces any previous one.
+    WatchBox set_box = 1;
+    // The exact set of nodes to follow; replaces any previous box or set.
+    WatchIds set_ids = 2;
+    // Whether the values of the followed nodes are streamed too.
+    WatchValues update_values = 3;
+  }
+  Caller caller = 4;
+}
+
+message WatchItem {
+  string object_id = 1;
+  // Set for a camera node or a picture of one.
+  string camera_id = 2;
+}
+
+// Square's map protocol, kept by name so the client's handling does not change:
+// set_ids2update, set_ids2delete, set_visual_states, on_values_changed.
+message WatchMessage {
+  string action = 1;
+  repeated WatchItem items = 2;
 }
 
 // ── Files ─────────────────────────────────────────────────────────────────────

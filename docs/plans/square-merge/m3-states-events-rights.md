@@ -110,7 +110,7 @@ M3 закрывает эту дыру:
 
 ## Шаги
 
-1. **`proto/vms_map.proto` — чтения, права и `Watch`.**
+1. ✅ **`proto/vms_map.proto` — чтения, права и `Watch`.**
    Добавить в `service MapService`:
    - объекты: `GetByParent(GetByParentRequest)`, `GetByIds(GetByIdsRequest)`,
      `GetMarkersByIds(GetByIdsRequest)`, `GetByBox(GetByBoxRequest)`,
@@ -314,4 +314,18 @@ SSE работают; существующие проверки web_srv не и�
 
 Ветка `square-merge/m3-states-events-rights` в ta_vms. M2 перед ветвлением быстро перенесён в
 `master` (`master` = `2bd5e15`). В `../ta_install` изменений нет.
+
+| Коммит | Что |
+|---|---|
+| `be5b410` | этот план |
+
+**Решения по ходу:**
+- `GetByBox` принимает `Box` с `wn`/`es` как `Coordinate`, а не массивами Square: DTO-слой и так
+  переводит углы, а `Geometry` для зон остаётся прежним.
+- `GetDiagramTypes` — один rpc на id, имена и подстрочный фильтр: у Square это были три метода,
+  но вызывающему всегда нужен ровно один из трёх ключей.
+- `GetLevel` отделён от `GetLevels`: редактору нужен один уровень по имени, а карте — все 190.
+
+**Проверено:**
+- `dotnet build dotnet/ta_vms.sln` — 0 ошибок, 0 предупреждений (30 с).
 
