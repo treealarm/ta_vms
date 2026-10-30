@@ -136,23 +136,25 @@ M3 закрывает эту дыру:
    Square, без `Proto`-префиксов.
    Проверка: `dotnet build dotnet/ta_vms.sln` — 0 ошибок, 0 предупреждений.
 
-2. **`VmsMap` — права: модель, наследование, режим, версия.**
+2. ✅ **`VmsMap` — права: модель, наследование, режим, версия.**
    `Domain/Rights/RightActions.cs` (вид узла → набор действий; вид — наличие боковой строки:
    `spaces`, `landmarks`, `camera_placement`, `diagrams`, `geo_objects`, иначе `object`).
    `Domain/Rights/NodeRightsDTO.cs`. `Db/Services/RightsService.cs` (рядом с `RightService`):
    - `GetRights(ids)` — строки как есть;
-   - `GetEffectiveRights(username, roles, unrestricted)` — рекурсивный CTE вниз от узлов со
-     строками субъекта, объединение действий, `open`/`enforced`, `admin`;
-   - `GetNodeActions(ids, caller, action)` — для фильтрации чтений: CTE вверх от каждого id,
-     строки на узлах и предках, один запрос на пачку;
+   - `GetEffectiveRights(username, roles, unrestricted)` — обход вниз от узлов со строками
+     субъекта, объединение действий, `open`/`enforced`, `admin`; обход по уровням, без CTE —
+     глубина дерева мала, а тот же код работает на InMemory;
+   - `GetNodeActions(ids, caller, action)` — для фильтрации чтений: обход вверх от каждого id,
+     строки на узлах, предках и владельце реплики, один запрос на уровень;
    - `GetMode/SetMode`, `GetActionTable`;
    - `IMapRightsNotifier` (`DaprRightsVersionNotifier`) — `DAPR_STATE_STORE_NAME`, ключ
      `rights-version`; ошибка публикации логируется и не валит запись.
-   `RightsService` заменяет `IRightServiceInternal` в DI; `UpdateRights`/`DeleteRights` в
-   `MapServiceImpl` зовут его и бампают версию.
+   `RightsService` дополняет, а не заменяет `IRightServiceInternal` (тот остаётся слоем строк);
+   `UpdateRights`/`DeleteRights` в `MapServiceImpl` бампают версию. Режим хранится в новой таблице
+   `rights_mode` (миграция `0003_rights.sql`, старт — `enforced`).
    Проверка: InMemory-тесты — наследование здание→этаж→камера, роль и пользователь, `open` vs
-   `enforced`, `admin`, `unrestricted`, таблица действий, `AllCameras`-совместимость; Postgres-тест
-   рекурсивного CTE и прав на реплике (реплика получает действия владельца).
+   `enforced`, `admin`, `unrestricted`, таблица действий, реплика получает действия владельца;
+   Postgres-тест наследования — вместе с шагом 3.
 
 3. **`VmsMap` — gRPC-чтение.**
    `Grpc/MapServiceImpl.Reads.cs` (partial): тонкий слой proto ↔ DTO поверх существующих

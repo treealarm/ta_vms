@@ -19,6 +19,7 @@ namespace VmsMap.Db
     public DbSet<DBMarker> Markers { get; set; } = null!;
     public DbSet<DBLevel> Levels { get; set; } = null!;
     public DbSet<DBRight> Rights { get; set; } = null!;
+    public DbSet<DBRightsMode> RightsModes { get; set; } = null!;
     public DbSet<DBVisual> Visuals { get; set; } = null!;
     public DbSet<DBFile> Files { get; set; } = null!;
 
@@ -325,6 +326,15 @@ namespace VmsMap.Db
         entity.Property(e => e.object_id).IsRequired();
         entity.Property(e => e.subject).IsRequired();
         entity.Property(e => e.action).IsRequired();
+      });
+
+      modelBuilder.Entity<DBRightsMode>(entity =>
+      {
+        entity.ToTable("rights_mode");
+
+        entity.HasKey(e => e.id);
+        entity.Property(e => e.id).ValueGeneratedNever();
+        entity.Property(e => e.mode).HasColumnName("mode").IsRequired();
       });
     }
 

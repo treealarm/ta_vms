@@ -17,6 +17,7 @@ builder.AddVmsLogging();
 var grpcPort = RequirePort("MAP_VMS_PORT");
 var cfgAppId = Require("DAPR_CFG_APP_ID");
 var pubSubName = Require("PUBSUB_NAME");
+var stateStoreName = Require("DAPR_STATE_STORE_NAME");
 
 builder.Services.AddGrpc();
 builder.Services.AddDaprClient();
@@ -30,6 +31,10 @@ builder.Services.AddSingleton<IMapConfigNotifier>(sp => new DaprMapConfigNotifie
   sp.GetRequiredService<DaprClient>(),
   sp.GetRequiredService<ILogger<DaprMapConfigNotifier>>(),
   pubSubName));
+builder.Services.AddSingleton<IRightsVersionNotifier>(sp => new DaprRightsVersionNotifier(
+  sp.GetRequiredService<DaprClient>(),
+  sp.GetRequiredService<ILogger<DaprRightsVersionNotifier>>(),
+  stateStoreName));
 
 var postgresConnStr = BuildPostgresConnectionString();
 
@@ -75,6 +80,7 @@ builder.Services.AddScoped<IValuesServiceInternal>(sp => sp.GetRequiredService<V
 builder.Services.AddScoped<ILevelService, LevelService>();
 builder.Services.AddScoped<RightService>();
 builder.Services.AddScoped<IRightServiceInternal>(sp => sp.GetRequiredService<RightService>());
+builder.Services.AddScoped<IRightsService, RightsService>();
 builder.Services.AddScoped<VisualService>();
 builder.Services.AddScoped<FileService>();
 
