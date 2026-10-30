@@ -22,6 +22,13 @@ namespace VmsMap.Db
     public DbSet<DBVisual> Visuals { get; set; } = null!;
     public DbSet<DBFile> Files { get; set; } = null!;
 
+    public DbSet<DBSpace> Spaces { get; set; } = null!;
+    public DbSet<DBSpacePlan> SpacePlans { get; set; } = null!;
+    public DbSet<DBCameraPlacement> CameraPlacements { get; set; } = null!;
+    public DbSet<DBLandmark> Landmarks { get; set; } = null!;
+    public DbSet<DBPtzGeoObservation> PtzGeoObservations { get; set; } = null!;
+    public DbSet<DBGroundObservation> GroundObservations { get; set; } = null!;
+
     public DbSet<DBEvent> Events { get; set; } = null!;
 
     public DbSet<DBValue> Values { get; set; } = null!;
@@ -51,6 +58,11 @@ namespace VmsMap.Db
       ConfigureGeoObjects(modelBuilder);
       ConfigureVisuals(modelBuilder);
       ConfigureFiles(modelBuilder);
+      ConfigureSpaces(modelBuilder);
+      ConfigureSpacePlans(modelBuilder);
+      ConfigureCameraPlacements(modelBuilder);
+      ConfigureLandmarks(modelBuilder);
+      ConfigureGeoObservations(modelBuilder);
     }
 
     private void ConfigureGeoObjects(ModelBuilder modelBuilder)
@@ -67,6 +79,103 @@ namespace VmsMap.Db
 
         entity.Property(e => e.radius).HasColumnName("radius");
         entity.Property(e => e.zoom_level).HasColumnName("zoom_level");
+        entity.Property(e => e.canvas_id).HasColumnName("canvas_id");
+      });
+    }
+
+    private void ConfigureSpaces(ModelBuilder modelBuilder)
+    {
+      modelBuilder.Entity<DBSpace>(entity =>
+      {
+        entity.ToTable("spaces");
+        entity.HasKey(e => e.object_id);
+
+        entity.Property(e => e.object_id).HasColumnName("object_id");
+        entity.Property(e => e.kind).HasColumnName("kind").IsRequired();
+        entity.Property(e => e.real_coordinates).HasColumnName("real_coordinates");
+        entity.Property(e => e.ordinal).HasColumnName("ordinal");
+        entity.Property(e => e.elevation_m).HasColumnName("elevation_m");
+        entity.Property(e => e.view_south).HasColumnName("view_south");
+        entity.Property(e => e.view_west).HasColumnName("view_west");
+        entity.Property(e => e.view_north).HasColumnName("view_north");
+        entity.Property(e => e.view_east).HasColumnName("view_east");
+      });
+    }
+
+    private void ConfigureSpacePlans(ModelBuilder modelBuilder)
+    {
+      modelBuilder.Entity<DBSpacePlan>(entity =>
+      {
+        entity.ToTable("space_plan");
+        entity.HasKey(e => e.space_id);
+
+        entity.Property(e => e.space_id).HasColumnName("space_id");
+        entity.Property(e => e.mime).HasColumnName("mime").IsRequired();
+        entity.Property(e => e.width_px).HasColumnName("width_px");
+        entity.Property(e => e.height_px).HasColumnName("height_px");
+        entity.Property(e => e.tl_lat).HasColumnName("tl_lat");
+        entity.Property(e => e.tl_lon).HasColumnName("tl_lon");
+        entity.Property(e => e.tr_lat).HasColumnName("tr_lat");
+        entity.Property(e => e.tr_lon).HasColumnName("tr_lon");
+        entity.Property(e => e.bl_lat).HasColumnName("bl_lat");
+        entity.Property(e => e.bl_lon).HasColumnName("bl_lon");
+        entity.Property(e => e.etag).HasColumnName("etag").IsRequired();
+        entity.Property(e => e.image).HasColumnName("image").IsRequired();
+      });
+    }
+
+    private void ConfigureCameraPlacements(ModelBuilder modelBuilder)
+    {
+      modelBuilder.Entity<DBCameraPlacement>(entity =>
+      {
+        entity.ToTable("camera_placement");
+        entity.HasKey(e => e.object_id);
+
+        entity.Property(e => e.object_id).HasColumnName("object_id");
+        entity.Property(e => e.camera_id).HasColumnName("camera_id").IsRequired();
+        entity.Property(e => e.is_reference).HasColumnName("is_reference");
+        entity.Property(e => e.height_m).HasColumnName("height_m");
+        entity.Property(e => e.heading_deg).HasColumnName("heading_deg");
+        entity.Property(e => e.hfov_deg).HasColumnName("hfov_deg");
+        entity.Property(e => e.range_m).HasColumnName("range_m");
+      });
+    }
+
+    private void ConfigureLandmarks(ModelBuilder modelBuilder)
+    {
+      modelBuilder.Entity<DBLandmark>(entity =>
+      {
+        entity.ToTable("landmark");
+        entity.HasKey(e => e.object_id);
+
+        entity.Property(e => e.object_id).HasColumnName("object_id");
+        entity.Property(e => e.height_m).HasColumnName("height_m");
+      });
+    }
+
+    private void ConfigureGeoObservations(ModelBuilder modelBuilder)
+    {
+      modelBuilder.Entity<DBPtzGeoObservation>(entity =>
+      {
+        entity.ToTable("ptz_geo_observation");
+        entity.HasKey(e => new { e.camera_id, e.landmark_id });
+
+        entity.Property(e => e.camera_id).HasColumnName("camera_id").IsRequired();
+        entity.Property(e => e.landmark_id).HasColumnName("landmark_id");
+        entity.Property(e => e.pan).HasColumnName("pan");
+        entity.Property(e => e.tilt).HasColumnName("tilt");
+        entity.Property(e => e.zoom).HasColumnName("zoom");
+      });
+
+      modelBuilder.Entity<DBGroundObservation>(entity =>
+      {
+        entity.ToTable("ground_observation");
+        entity.HasKey(e => new { e.camera_id, e.landmark_id });
+
+        entity.Property(e => e.camera_id).HasColumnName("camera_id").IsRequired();
+        entity.Property(e => e.landmark_id).HasColumnName("landmark_id");
+        entity.Property(e => e.x).HasColumnName("x");
+        entity.Property(e => e.y).HasColumnName("y");
       });
     }
 

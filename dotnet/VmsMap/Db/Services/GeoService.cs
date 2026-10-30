@@ -199,23 +199,28 @@ namespace VmsMap.Db
           .ToListAsync();
       var existingDict = existing.ToDictionary(e => e.id);
 
+      foreach (var obj in dbObjects.Where(o => o.id == Guid.Empty))
+        obj.id = Utils.NewGuid();
+
+      // The canvas each figure is drawn on: the nearest ancestor that is a space or a diagram.
+      var canvasIds = await CanvasResolver.ResolveForAsync(
+        _dbContext, dbObjects.Select(o => o.id).ToList());
+
       foreach (var obj in dbObjects)
       {
-        if (obj.id == Guid.Empty || !existingDict.ContainsKey(obj.id))
-        {
-          // new row: assign a Guid if there is none
-          if (obj.id == Guid.Empty)
-            obj.id = Utils.NewGuid();
+        obj.canvas_id = canvasIds[obj.id];
 
+        if (!existingDict.TryGetValue(obj.id, out var existingObj))
+        {
           _dbContext.GeoObjects.Add(obj);
         }
         else
         {
           // existing row: update its fields
-          var existingObj = existingDict[obj.id];
           existingObj.figure = obj.figure;
           existingObj.radius = obj.radius;
           existingObj.zoom_level = obj.zoom_level;
+          existingObj.canvas_id = obj.canvas_id;
         }
       }
 

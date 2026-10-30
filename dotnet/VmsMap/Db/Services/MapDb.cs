@@ -379,6 +379,9 @@ namespace VmsMap.Db
         dbUpdated.Add(item, dbObj);
       }
 
+      // Nodes whose parent changes also change the canvas their figure is drawn on.
+      var moved = new List<Guid>();
+
       // save through EF Core
       foreach (var kvp in dbUpdated)
       {
@@ -386,6 +389,8 @@ namespace VmsMap.Db
         {
           // Copy the incoming values onto the tracked row. Square called Update() on the
           // unchanged entity, so a rename or a move to another parent was silently dropped.
+          if (entity.parent_id != kvp.Value.parent_id)
+            moved.Add(entity.id);
           entity.parent_id = kvp.Value.parent_id;
           entity.owner_id = kvp.Value.owner_id;
           entity.name = kvp.Value.name;
@@ -397,6 +402,21 @@ namespace VmsMap.Db
       }
 
       await _db.SaveChangesAsync();
+
+      if (moved.Count > 0)
+      {
+        var figures = await _db.GeoObjects
+            .Where(g => moved.Contains(g.id))
+            .ToListAsync();
+        if (figures.Count > 0)
+        {
+          var canvasIds = await CanvasResolver.ResolveForAsync(
+              _db, figures.Select(f => f.id).ToList());
+          foreach (var figure in figures)
+            figure.canvas_id = canvasIds[figure.id];
+          await _db.SaveChangesAsync();
+        }
+      }
 
       // write the assigned id back into the DTO
       foreach (var pair in dbUpdated)
