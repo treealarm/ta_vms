@@ -1,0 +1,333 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package vms.map;
+
+// The map's write path: VmsMap owns the object tree, geometry, states, events, values, tracks,
+// diagrams, rights and files, and this is how every other service and the web reach it. Reads
+// arrive with the milestones that need them (M2: spaces and geometry, M3: states, events and the
+// Watch stream), so they are deliberately absent here.
+//
+// One tree: `objects` holds every node. What a node is, is said by its side rows — a diagram
+// (`Diagram`), a drawn figure (`Figure`), a camera placement (M2) — never by a type column.
+// Ids are UUID strings; an empty one on input means "assign one", and the response carries it
+// back.
+//
+// The message forms follow Square's producer protocol (tracks.proto there): the same fields and
+// the same meaning, without its `Proto` prefix.
+
+service MapService {
+  // Objects and their place in the tree. UpdateObjects creates or renames a node and moves it
+  // under another parent; the response carries the ids of the nodes that had none.
+  rpc UpdateObjects(ObjectList) returns (ObjectList);
+  rpc UpdateProperties(ObjectPropertiesList) returns (OperationStatus);
+  // How a node is drawn: colour, icon, rotation, caption. Separate from the properties because
+  // these are the map's own fields, not arbitrary data the editor happens to keep.
+  rpc UpdateVisual(VisualList) returns (OperationStatus);
+  // Geometry of the nodes drawn on a canvas: a point, a polyline or a polygon, in the coordinates
+  // of the nearest canvas ancestor.
+  rpc UpdateFigures(Figures) returns (Figures);
+  // Removes the nodes and everything under them, with their states, alarms, events, tracks,
+  // rights, geometry and diagrams, in one transaction.
+  rpc DeleteObjects(ObjectIds) returns (OperationStatus);
+
+  rpc UpdateStates(ObjectStateList) returns (OperationStatus);
+  // The dictionary of state names: description, colour and whether the state is an alarm.
+  rpc UpdateStateDescriptions(StateDescriptionList) returns (OperationStatus);
+
+  rpc UpdateEvents(EventList) returns (OperationStatus);
+
+  rpc UpdateValues(ValueList) returns (OperationStatus);
+  rpc DeleteValues(ObjectIds) returns (OperationStatus);
+
+  rpc UpdateTracks(TrackPointList) returns (OperationStatus);
+
+  // Mnemoschemes and their types. A type's regions are fractions of its rectangle; a diagram
+  // carries its own rectangle on the parent canvas. Both return the ids assigned to new rows.
+  rpc UpdateDiagrams(DiagramList) returns (DiagramList);
+  rpc DeleteDiagrams(ObjectIds) returns (OperationStatus);
+  rpc UpdateDiagramTypes(DiagramTypeList) returns (DiagramTypeList);
+  rpc DeleteDiagramTypes(ObjectIds) returns (OperationStatus);
+
+  // Rights are rows on tree nodes, inherited downwards from the moment M3 reads them: a subject
+  // is a Keycloak role name or a user name, an action comes from the open set the node kind
+  // allows (view, edit, and for a camera view_live, view_archive, ptz, control, export).
+  rpc UpdateRights(RightList) returns (OperationStatus);
+  rpc DeleteRights(RightKeyList) returns (OperationStatus);
+
+  // Files live in the database, not on a volume: VmsMap is replicable and a local file would tie
+  // a row to one instance. Uploads are streamed in chunks; the first one carries the MIME type.
+  rpc PutFile(stream FileUploadChunk) returns (FileInfo);
+  rpc GetFile(FileRequest) returns (stream FileChunk);
+  rpc GetFileInfo(FileRequest) returns (FileInfo);
+}
+
+message OperationStatus {
+  bool success = 1;
+  string message = 2;
+}
+
+// ── Objects and properties ─────────────────────────────────────────────────────
+
+message Object {
+  string id = 1;
+  optional string parent_id = 2;
+  // Set on a replica: the node whose states, values and events this one shows. A replica has its
+  // own geometry and place, but no states of its own.
+  optional string owner_id = 3;
+  string name = 4;
+}
+
+message ObjectList {
+  repeated Object objects = 1;
+}
+
+message ObjectIds {
+  repeated string ids = 1;
+}
+
+message ExtraProperty {
+  string prop_name = 1;
+  string str_val = 2;
+  // How the editor renders the value (VisualTypes in the domain): text, colour, number, map, ...
+  string visual_type = 3;
+}
+
+message ObjectProperties {
+  string id = 1;
+  repeated ExtraProperty properties = 2;
+}
+
+message ObjectPropertiesList {
+  repeated ObjectProperties objects = 1;
+  // False merges the sent properties into the existing set, true replaces it. Square's producer
+  // protocol had the same switch and its callers rely on merge.
+  bool replace_props = 2;
+}
+
+message Visual {
+  string object_id = 1;
+  string color = 2;
+  // A small icon; plan pictures and diagram backgrounds are `FileUploadChunk`s instead.
+  bytes image = 3;
+  int32 image_width = 4;
+  int32 image_height = 5;
+  // Degrees clockwise from north for a camera (its heading), or from upright for an icon.
+  optional double rotation_deg = 6;
+  string text = 7;
+}
+
+message VisualList {
+  repeated Visual visuals = 1;
+}
+
+// ── Geometry ───────────────────────────────────────────────────────────────────
+
+message Coordinate {
+  double lat = 1;
+  double lon = 2;
+}
+
+message Geometry {
+  repeated Coordinate coord = 1;
+  // "Point", "Polygon" or "LineString". A polygon's ring is closed here: the first coordinate is
+  // repeated at the end.
+  string type = 2;
+}
+
+message Figure {
+  string id = 1;
+  optional string parent_id = 2;
+  string name = 3;
+  Geometry geometry = 4;
+  // A point may be drawn as a circle of this radius, in metres.
+  optional double radius = 5;
+  // The scale layer this node becomes visible at; empty means always.
+  optional string zoom_level = 6;
+  repeated ExtraProperty extra_props = 7;
+}
+
+message Figures {
+  repeated Figure figs = 1;
+  // Also record a track point for every figure, as Square's producer protocol did.
+  bool add_tracks = 2;
+}
+
+message GeoObject {
+  optional string id = 1;
+  Geometry location = 2;
+  optional double radius = 3;
+  optional string zoom_level = 4;
+}
+
+// ── States and alarms ─────────────────────────────────────────────────────────
+
+message ObjectState {
+  string id = 1;
+  // The full current set for the object, not a delta: the write replaces what is stored.
+  repeated string states = 2;
+  google.protobuf.Timestamp timestamp = 3;
+}
+
+message ObjectStateList {
+  repeated ObjectState states = 1;
+}
+
+message StateDescription {
+  string id = 1;
+  string state = 2;
+  string state_descr = 3;
+  string state_color = 4;
+  // A state with this flag raised puts the object — and, through children_alarms, all its
+  // ancestors — into alarm.
+  bool alarm = 5;
+}
+
+message StateDescriptionList {
+  repeated StateDescription descriptions = 1;
+}
+
+// ── Events ────────────────────────────────────────────────────────────────────
+
+message Event {
+  google.protobuf.Timestamp timestamp = 1;
+  // Empty means "assign one"; the stored id is not returned by this call.
+  string id = 2;
+  string object_id = 3;
+  string event_name = 4;
+  int32 event_priority = 5;
+  string param0 = 6;
+  string param1 = 7;
+  repeated ExtraProperty extra_props = 8;
+}
+
+message EventList {
+  repeated Event events = 1;
+}
+
+// ── Values and tracks ─────────────────────────────────────────────────────────
+
+message ValueType {
+  oneof value {
+    double double_value = 1;
+    int32 int_value = 2;
+    string string_value = 3;
+  }
+}
+
+message Value {
+  string id = 1;
+  // The object this value belongs to; a replica never owns values.
+  string owner_id = 2;
+  string name = 3;
+  ValueType value = 4;
+}
+
+message ValueList {
+  repeated Value values = 1;
+}
+
+message TrackPoint {
+  string id = 1;
+  GeoObject figure = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  repeated ExtraProperty extra_props = 4;
+}
+
+message TrackPointList {
+  repeated TrackPoint tracks = 1;
+}
+
+// ── Diagrams ──────────────────────────────────────────────────────────────────
+
+message DiagramCoordinate {
+  double top = 1;
+  double left = 2;
+  double width = 3;
+  double height = 4;
+  // Degrees clockwise; absent means upright. The browser rotates the image by it.
+  optional double rotation = 5;
+}
+
+message Diagram {
+  string id = 1;
+  DiagramCoordinate geometry = 2;
+  // The region of the parent's diagram type this node sits in. A node with a region has no
+  // geometry of its own.
+  string region_id = 3;
+  // The id of a DiagramType, not its name: a rename must not orphan the diagrams of a type.
+  string dgr_type = 4;
+  // A row of `files`, not a path on a volume (see PutFile).
+  string file_id = 5;
+}
+
+message DiagramList {
+  repeated Diagram diagrams = 1;
+}
+
+message DiagramTypeRegion {
+  string region_key = 1;
+  DiagramCoordinate geometry = 2;
+  // Free-form styling of the region, as the editor left it.
+  map<string, string> styles = 3;
+}
+
+message DiagramType {
+  string id = 1;
+  string name = 2;
+  // Background image: a row of `files`.
+  string file_id = 3;
+  repeated DiagramTypeRegion regions = 4;
+}
+
+message DiagramTypeList {
+  repeated DiagramType diagram_types = 1;
+}
+
+// ── Rights ────────────────────────────────────────────────────────────────────
+
+message Right {
+  string object_id = 1;
+  // A Keycloak role name or a user name.
+  string subject = 2;
+  // view, edit, and for a camera view_live, view_archive, ptz, control, export.
+  string action = 3;
+}
+
+message RightList {
+  repeated Right rights = 1;
+}
+
+message RightKey {
+  string object_id = 1;
+  string subject = 2;
+  string action = 3;
+}
+
+message RightKeyList {
+  repeated RightKey keys = 1;
+}
+
+// ── Files ─────────────────────────────────────────────────────────────────────
+
+message FileUploadChunk {
+  // Set on the first chunk; the rest may leave it empty.
+  string mime = 1;
+  bytes data = 2;
+}
+
+message FileChunk {
+  bytes data = 1;
+}
+
+message FileRequest {
+  string id = 1;
+}
+
+message FileInfo {
+  string id = 1;
+  string mime = 2;
+  uint64 size = 3;
+  string etag = 4;
+}

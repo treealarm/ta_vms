@@ -3,6 +3,7 @@ ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 
 COPY ["dotnet/VmsFs/VmsFs.csproj", "dotnet/VmsFs/"]
+COPY ["dotnet/VmsDb/VmsDb.csproj", "dotnet/VmsDb/"]
 COPY ["dotnet/VmsLog/VmsLog.csproj", "dotnet/VmsLog/"]
 COPY ["dotnet/web_srv.Types/web_srv.Types.csproj", "dotnet/web_srv.Types/"]
 COPY ["proto", "proto"]

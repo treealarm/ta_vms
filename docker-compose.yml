@@ -23,7 +23,7 @@ services:
     command: ["./placement", "-port", "50005"]
 
   postgres:
-    image: postgres:latest
+    image: postgis/postgis:latest
     environment:
       POSTGRES_USER: "${POSTGRES_USER:-postgres}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
@@ -45,7 +45,7 @@ services:
   # Also invocable on its own: docker compose run --rm db-init
   # (add --check to report without creating anything).
   db-init:
-    image: postgres:latest
+    image: postgis/postgis:latest
     env_file:
       - .env
     environment:
@@ -343,6 +343,49 @@ services:
     network_mode: "service:vmscfg"
     depends_on:
       - vmscfg
+
+  vmsmap:
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: dotnet/VmsMap/Dockerfile
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      APP_ID: vmsmap
+    depends_on:
+      postgres:
+        condition: service_started
+      db-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  vmsmap-dapr:
+    profiles: [app]
+    image: "daprio/daprd:latest"
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "vmsmap"
+      - "-app-port"
+      - "${MAP_VMS_PORT}"
+      - "-app-protocol"
+      - "grpc"
+      - "-dapr-http-port"
+      - "3500"
+      - "-dapr-grpc-port"
+      - "50001"
+      - "-dapr-listen-addresses"
+      - "127.0.0.1"
+      - "-components-path"
+      - "/components"
+    volumes:
+      - "./init_files/dapr_components/docker:/components"
+    network_mode: "service:vmsmap"
+    depends_on:
+      - vmsmap
 
   vmsonvif:
     profiles: [app]
