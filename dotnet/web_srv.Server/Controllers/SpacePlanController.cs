@@ -2,7 +2,7 @@ using Google.Protobuf;
 using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Vms.Cfg;
+using Vms.Map;
 using web_srv.Authentication;
 using web_srv.Authorization;
 using web_srv.Types.Dto;
@@ -11,15 +11,15 @@ namespace web_srv;
 
 /// <summary>A plan space's picture: uploading it, aligning it in its space, and serving it.</summary>
 /// <remarks>
-/// The image lives in VmsCfg's database, not on this service's disk: web_srv runs as several
+/// The image lives in VmsMap's database, not on this service's disk: web_srv runs as several
 /// replicas and keeps no files. It travels in pieces both ways, because Dapr service invocation
 /// caps one gRPC message at 4 MiB and a plan is often larger.
 /// </remarks>
 [ApiController]
 [Route("api/spatial/spaces/{spaceId}/plan")]
-public class SpacePlanController(CfgService.CfgServiceClient _cfg) : ControllerBase
+public class SpacePlanController(MapService.MapServiceClient _map) : ControllerBase
 {
-  /// Mirrors VmsCfg's limit, so an oversized upload is refused here before it is streamed anywhere.
+  /// Mirrors VmsMap's limit, so an oversized upload is refused here before it is streamed anywhere.
   private const int MaxImageBytes = 20 * 1024 * 1024;
   private const int ChunkBytes = 256 * 1024;
 
@@ -51,7 +51,7 @@ public class SpacePlanController(CfgService.CfgServiceClient _cfg) : ControllerB
     // and a cache holding several versions lists them all. Any of them still current is a 304.
     var request = new GetSpacePlanImageRequest { SpaceId = spaceId };
     request.IfNoneMatch.AddRange(Request.GetTypedHeaders().IfNoneMatch.Select(t => t.Tag.Value!.Trim('"')));
-    using var call = _cfg.GetSpacePlanImage(request, Options(ct));
+    using var call = _map.GetSpacePlanImage(request, Options(ct));
 
     if (!await call.ResponseStream.MoveNext(ct) || call.ResponseStream.Current.PartCase != SpacePlanImageChunk.PartOneofCase.Header)
       throw new RpcException(new Status(Grpc.Core.StatusCode.Internal, "VmsCfg sent a plan image without its header"));
@@ -90,7 +90,7 @@ public class SpacePlanController(CfgService.CfgServiceClient _cfg) : ControllerB
     if (form.WidthPx <= 0 || form.HeightPx <= 0)
       return BadRequest(new { error = "The image size must be given" });
 
-    using var call = _cfg.UploadSpacePlan(Options(ct));
+    using var call = _map.UploadSpacePlan(Options(ct));
     await call.RequestStream.WriteAsync(new SpacePlanUploadChunk
     {
       Header = new SpacePlanUploadHeader
@@ -101,9 +101,9 @@ public class SpacePlanController(CfgService.CfgServiceClient _cfg) : ControllerB
         Mime = form.File.ContentType,
         Corners = new PlanCorners
         {
-          TopLeft = new GeoPoint { Lat = form.TlLat, Lon = form.TlLon },
-          TopRight = new GeoPoint { Lat = form.TrLat, Lon = form.TrLon },
-          BottomLeft = new GeoPoint { Lat = form.BlLat, Lon = form.BlLon },
+          TopLeft = new Coordinate { Lat = form.TlLat, Lon = form.TlLon },
+          TopRight = new Coordinate { Lat = form.TrLat, Lon = form.TrLon },
+          BottomLeft = new Coordinate { Lat = form.BlLat, Lon = form.BlLon },
         },
       },
     }, ct);
@@ -127,11 +127,11 @@ public class SpacePlanController(CfgService.CfgServiceClient _cfg) : ControllerB
   [HttpPut("corners")]
   [Authorize(Policy = AuthPolicies.AdminOnly)]
   public async Task<ActionResult<SpaceDto>> SetCorners(string spaceId, [FromBody] PlanCornersDto dto, CancellationToken ct) =>
-    SpatialMapper.ToDto(await _cfg.SetSpacePlanCornersAsync(
+    SpatialMapper.ToDto(await _map.SetSpacePlanCornersAsync(
       new SetSpacePlanCornersRequest { SpaceId = spaceId, Corners = SpatialMapper.ToProto(dto) }, Options(ct)));
 
   [HttpDelete]
   [Authorize(Policy = AuthPolicies.AdminOnly)]
   public async Task<IActionResult> Remove(string spaceId, CancellationToken ct) =>
-    SpatialController.Result(await _cfg.RemoveSpacePlanAsync(new SpaceRequest { SpaceId = spaceId }, Options(ct)));
+    SpatialController.Result(await _map.RemoveSpacePlanAsync(new SpaceRequest { SpaceId = spaceId }, Options(ct)));
 }

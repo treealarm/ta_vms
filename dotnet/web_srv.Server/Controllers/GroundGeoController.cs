@@ -1,7 +1,7 @@
 using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Vms.Cfg;
+using Vms.Map;
 using Vms.PtzTracking;
 using web_srv.Authentication;
 using web_srv.Authorization;
@@ -11,7 +11,7 @@ namespace web_srv;
 
 /// <summary>A fixed camera's picture mapped onto the ground, and the mappings a map needs to show detections.</summary>
 /// <remarks>
-/// The marks are configuration and live in VmsCfg; the fit is made by VmsPtzTrackingSingleton, as
+/// The marks are configuration and live in VmsMap; the fit is made by VmsPtzTrackingSingleton, as
 /// the PTZ one is, and handed out as a matrix so the browser can project detections without it.
 /// Marking a camera belongs to administrators, like placing it. The mappings for a map are read by
 /// operators and filtered as placements are: a camera the operator may not watch shows nothing.
@@ -19,7 +19,7 @@ namespace web_srv;
 [ApiController]
 [Route("api/ground-geo")]
 public class GroundGeoController(
-  CfgService.CfgServiceClient _cfg,
+  MapService.MapServiceClient _map,
   PtzTrackingService.PtzTrackingServiceClient _tracking,
   ICameraAccessService _access) : ControllerBase
 {
@@ -44,7 +44,7 @@ public class GroundGeoController(
   [Authorize(Policy = AuthPolicies.AdminOnly)]
   public async Task<ActionResult<GroundCalibrationDto>> Get(string cameraId, CancellationToken ct)
   {
-    var stored = await _cfg.GetGroundObservationsAsync(new SourceRequest { SourceId = cameraId }, Options(ct));
+    var stored = await _map.GetGroundObservationsAsync(new CameraRequest { CameraId = cameraId }, Options(ct));
 
     // As with the PTZ fit: the tracking service being down does not make the marks unworthy of
     // showing and editing.
@@ -86,6 +86,6 @@ public class GroundGeoController(
       X = o.X,
       Y = o.Y,
     }));
-    return SpatialController.Result(await _cfg.SetGroundObservationsAsync(request, Options(ct)));
+    return SpatialController.Result(await _map.SetGroundObservationsAsync(request, Options(ct)));
   }
 }

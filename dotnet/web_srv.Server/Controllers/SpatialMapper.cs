@@ -1,4 +1,4 @@
-using Vms.Cfg;
+using Vms.Map;
 using web_srv.Types.Dto;
 
 namespace web_srv;
@@ -6,9 +6,9 @@ namespace web_srv;
 /// Proto ↔ DTO for maps & plans, shared by the controllers that serve them.
 public static class SpatialMapper
 {
-  public static GeoPointDto ToDto(GeoPoint p) => new() { Lat = p.Lat, Lon = p.Lon };
+  public static GeoPointDto ToDto(Coordinate p) => new() { Lat = p.Lat, Lon = p.Lon };
 
-  public static GeoPoint ToProto(GeoPointDto p) => new() { Lat = p.Lat, Lon = p.Lon };
+  public static Coordinate ToProto(GeoPointDto p) => new() { Lat = p.Lat, Lon = p.Lon };
 
   public static PlanCornersDto ToDto(PlanCorners c) => new()
   {

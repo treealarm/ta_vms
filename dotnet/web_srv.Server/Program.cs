@@ -43,6 +43,12 @@ builder.Services.AddSingleton(_ =>
   new StorageService.StorageServiceClient(
     DaprClient.CreateInvocationInvoker(cfgAppId)));
 
+// Spaces, plans, placements, landmarks and calibrations: the map service owns them.
+var mapAppId = Require("DAPR_MAP_APP_ID");
+builder.Services.AddSingleton(_ =>
+  new Vms.Map.MapService.MapServiceClient(
+    DaprClient.CreateInvocationInvoker(mapAppId)));
+
 builder.Services.AddSingleton<ServerPairRegistry>();
 builder.Services.AddSingleton<CfgHealthProbe>();
 // Loaded in the background so the gateway serves (and can explain itself via /api/health) even

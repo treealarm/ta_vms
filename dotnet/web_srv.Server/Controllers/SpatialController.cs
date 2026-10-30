@@ -1,7 +1,7 @@
 using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Vms.Cfg;
+using Vms.Map;
 using web_srv.Authentication;
 using web_srv.Authorization;
 using web_srv.Types.Dto;
@@ -16,7 +16,7 @@ namespace web_srv;
 /// </remarks>
 [ApiController]
 [Route("api/spatial")]
-public class SpatialController(CfgService.CfgServiceClient _cfg) : ControllerBase
+public class SpatialController(MapService.MapServiceClient _map) : ControllerBase
 {
   private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
@@ -28,37 +28,37 @@ public class SpatialController(CfgService.CfgServiceClient _cfg) : ControllerBas
   [NoCameraAccess("Spaces are the map itself, not a camera; placements are filtered on their own endpoint")]
   public async Task<ActionResult<IReadOnlyList<SpaceDto>>> ListSpaces(CancellationToken ct)
   {
-    var response = await _cfg.ListSpacesAsync(new Google.Protobuf.WellKnownTypes.Empty(), Options(ct));
+    var response = await _map.ListSpacesAsync(new Google.Protobuf.WellKnownTypes.Empty(), Options(ct));
     return response.Spaces.Select(SpatialMapper.ToDto).ToList();
   }
 
   [HttpPut("spaces")]
   [Authorize(Policy = AuthPolicies.AdminOnly)]
   public async Task<ActionResult<SpaceDto>> UpsertSpace([FromBody] SpaceDto dto, CancellationToken ct) =>
-    SpatialMapper.ToDto(await _cfg.UpsertSpaceAsync(SpatialMapper.ToProto(dto), Options(ct)));
+    SpatialMapper.ToDto(await _map.UpsertSpaceAsync(SpatialMapper.ToProto(dto), Options(ct)));
 
   [HttpDelete("spaces/{spaceId}")]
   [Authorize(Policy = AuthPolicies.AdminOnly)]
   public async Task<IActionResult> RemoveSpace(string spaceId, CancellationToken ct) =>
-    Result(await _cfg.RemoveSpaceAsync(new SpaceRequest { SpaceId = spaceId }, Options(ct)));
+    Result(await _map.RemoveSpaceAsync(new SpaceRequest { SpaceId = spaceId }, Options(ct)));
 
   [HttpGet("spaces/{spaceId}/landmarks")]
   [Authorize(Policy = AuthPolicies.AdminOnly)]
   public async Task<ActionResult<IReadOnlyList<LandmarkDto>>> ListLandmarks(string spaceId, CancellationToken ct)
   {
-    var response = await _cfg.ListLandmarksAsync(new SpaceRequest { SpaceId = spaceId }, Options(ct));
+    var response = await _map.ListLandmarksAsync(new SpaceRequest { SpaceId = spaceId }, Options(ct));
     return response.Landmarks.Select(SpatialMapper.ToDto).ToList();
   }
 
   [HttpPut("landmarks")]
   [Authorize(Policy = AuthPolicies.AdminOnly)]
   public async Task<ActionResult<LandmarkDto>> UpsertLandmark([FromBody] LandmarkDto dto, CancellationToken ct) =>
-    SpatialMapper.ToDto(await _cfg.UpsertLandmarkAsync(SpatialMapper.ToProto(dto), Options(ct)));
+    SpatialMapper.ToDto(await _map.UpsertLandmarkAsync(SpatialMapper.ToProto(dto), Options(ct)));
 
   [HttpDelete("landmarks/{landmarkId}")]
   [Authorize(Policy = AuthPolicies.AdminOnly)]
   public async Task<IActionResult> RemoveLandmark(string landmarkId, CancellationToken ct) =>
-    Result(await _cfg.RemoveLandmarkAsync(new LandmarkRequest { LandmarkId = landmarkId }, Options(ct)));
+    Result(await _map.RemoveLandmarkAsync(new LandmarkRequest { LandmarkId = landmarkId }, Options(ct)));
 
   /// Same body as RpcExceptionFilter produces, so the client reads one error shape.
   internal static IActionResult Result(OperationStatus status) =>
@@ -74,7 +74,7 @@ public class SpatialController(CfgService.CfgServiceClient _cfg) : ControllerBas
 [ApiController]
 [Route("api/spatial/placements")]
 public class CameraPlacementController(
-  CfgService.CfgServiceClient _cfg,
+  MapService.MapServiceClient _map,
   ICameraAccessService _access) : ControllerBase
 {
   private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
@@ -86,7 +86,7 @@ public class CameraPlacementController(
   [CameraAccess(CameraAction.ViewLive, Source = CameraIdSource.Action)]
   public async Task<ActionResult<IReadOnlyList<CameraPlacementDto>>> List(CancellationToken ct)
   {
-    var response = await _cfg.ListCameraPlacementsAsync(new Google.Protobuf.WellKnownTypes.Empty(), Options(ct));
+    var response = await _map.ListCameraPlacementsAsync(new Google.Protobuf.WellKnownTypes.Empty(), Options(ct));
     var scope = await _access.ScopeAsync(User, CameraAction.ViewLive, ct);
     return scope.Filter(response.Placements, p => p.CameraId).Select(SpatialMapper.ToDto).ToList();
   }
@@ -94,11 +94,11 @@ public class CameraPlacementController(
   [HttpPut("{cameraId}/{spaceId}")]
   [Authorize(Policy = AuthPolicies.AdminOnly)]
   public async Task<IActionResult> Upsert(string cameraId, string spaceId, [FromBody] CameraPlacementDto dto, CancellationToken ct) =>
-    SpatialController.Result(await _cfg.UpsertCameraPlacementAsync(SpatialMapper.ToProto(cameraId, spaceId, dto), Options(ct)));
+    SpatialController.Result(await _map.UpsertCameraPlacementAsync(SpatialMapper.ToProto(cameraId, spaceId, dto), Options(ct)));
 
   [HttpDelete("{cameraId}/{spaceId}")]
   [Authorize(Policy = AuthPolicies.AdminOnly)]
   public async Task<IActionResult> Remove(string cameraId, string spaceId, CancellationToken ct) =>
-    SpatialController.Result(await _cfg.RemoveCameraPlacementAsync(
+    SpatialController.Result(await _map.RemoveCameraPlacementAsync(
       new CameraPlacementRequest { CameraId = cameraId, SpaceId = spaceId }, Options(ct)));
 }

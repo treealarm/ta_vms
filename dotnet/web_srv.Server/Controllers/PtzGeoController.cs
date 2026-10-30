@@ -1,7 +1,7 @@
 using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Vms.Cfg;
+using Vms.Map;
 using Vms.PtzTracking;
 using web_srv.Authentication;
 using web_srv.Authorization;
@@ -13,14 +13,14 @@ namespace web_srv;
 /// <remarks>
 /// Reading and aiming are guarded by <see cref="CameraAction.Ptz"/>, the joystick's right: they end
 /// in this camera's motor turning, or show what would turn it. Writing the observations is not: they
-/// are configuration in VmsCfg that every later aim of the camera rests on, so replacing them is an
+/// are configuration in VmsMap that every later aim of the camera rests on, so replacing them is an
 /// administrator's business, like the landmarks and ground marks they are made of. Aiming goes
 /// through VmsPtzTrackingSingleton, which owns the motor and the fit.
 /// </remarks>
 [ApiController]
 [Route("api/ptz-geo")]
 public class PtzGeoController(
-  CfgService.CfgServiceClient _cfg,
+  MapService.MapServiceClient _map,
   PtzTrackingService.PtzTrackingServiceClient _tracking) : ControllerBase
 {
   // Long enough to cover the camera travelling: the aim waits for the move to be accepted.
@@ -33,7 +33,7 @@ public class PtzGeoController(
   [CameraAccess(CameraAction.Ptz)]
   public async Task<ActionResult<PtzGeoCalibrationDto>> Get(string cameraId, CancellationToken ct)
   {
-    var stored = await _cfg.GetPtzGeoObservationsAsync(new SourceRequest { SourceId = cameraId }, Options(ct));
+    var stored = await _map.GetPtzGeoObservationsAsync(new CameraRequest { CameraId = cameraId }, Options(ct));
 
     // The fit comes from the tracking service. Its being down is not the request failing: the
     // observations are still worth showing and editing without the numbers beside them.
@@ -87,7 +87,7 @@ public class PtzGeoController(
         observation.Zoom = zoom;
       return observation;
     }));
-    return SpatialController.Result(await _cfg.SetPtzGeoObservationsAsync(request, Options(ct)));
+    return SpatialController.Result(await _map.SetPtzGeoObservationsAsync(request, Options(ct)));
   }
 
   [HttpPost("{cameraId}/aim")]
