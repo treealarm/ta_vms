@@ -6,24 +6,16 @@ name: ta_vms
 x-data-volume: &data-volume
   - "${PWD}/data:/data"
 
-# Same network Square/multitenant_admin use. Renaming compose's own implicit "default" network
-# this way puts every ta_vms service on it with no per-service changes needed — but it also means
-# our network *key* is "default" while Square/multitenant_admin declare theirs under the key
-# "shared_network". Compose stamps the key into the com.docker.compose.network label and refuses
-# to adopt a network whose label disagrees, so the only way to share one network across projects
-# with different keys is to mark it external here. Consequence: multitenant_admin (or Square) must
-# be up first — the network is theirs to create. ta_vms no longer borrows anything else from that
-# stack: its state store is its own postgres and its bus is its own rabbitmq, both below.
-networks:
-  default:
-    name: common_app_network
-    external: true
+# Compose's own default network: ta_vms joins no other project's. Its state store is its own
+# postgres and its bus its own rabbitmq, both below. A dockerized web_vms that should log in
+# points KEYCLOAK_URL at a Keycloak it can reach from here (e.g. the host's, through
+# host.docker.internal); services debugged on the host (F5) use localhost as before.
 
 services:
   # Part of the "app" profile, not of the infra services started by a bare `docker compose up`:
   # actor placement for locally debugged (F5) services is already provided by the host's
   # `dapr init` placement on 50005, and a second one cannot bind that port. Reached over the
-  # shared network by service name instead of a published host port for the same reason — this
+  # compose network by service name instead of a published host port for the same reason — this
   # way the fully dockerized stack and a host `dapr init` can coexist.
   dapr-placement:
     profiles: [app]
@@ -81,7 +73,7 @@ services:
 
   # The Dapr pub/sub broker. Ours, and no longer multitenant_admin's redis: the state store had
   # already moved to our own postgres above, and this was the last thing ta_vms borrowed from
-  # Square's stack. Redis also has no native Windows build, which blocks the eventual Docker-free
+  # that stack. Redis also has no native Windows build, which blocks the eventual Docker-free
   # installer; RabbitMQ covers docker, Kubernetes and a plain machine alike.
   # Nothing about the bus semantics changes — see init_files/dapr_components/orderpubsub.yaml.
   rabbitmq:
@@ -107,10 +99,6 @@ services:
       timeout: 10s
       retries: 12
       start_period: 20s
-
-  # The shared network above is still required, but only for Dapr service invocation into Square
-  # (SQUARE_INTEGRATION_SINK_APP_ID). ta_vms no longer keeps any data of its own in a container it
-  # does not own: the state store is the postgres above, the bus is the rabbitmq above.
 
   mediamtx:
     image: bluenviron/mediamtx:latest
@@ -226,46 +214,6 @@ services:
     network_mode: "service:vmssingleton"
     depends_on:
       - vmssingleton
-
-  vmssquaresingleton:
-    profiles: [app]
-    build:
-      context: .
-      dockerfile: dotnet/VmsSquareSingleton/Dockerfile
-    env_file:
-      - .env
-    environment:
-      APP_ID: vmssquaresingleton
-    # Exactly one instance: its startup resync pushes every camera into Square, and a second copy
-    # would push the whole tree again. See CLAUDE.md.
-    volumes: *data-volume
-    depends_on:
-      - vmscfg
-
-  vmssquaresingleton-dapr:
-    profiles: [app]
-    image: "daprio/daprd:latest"
-    command:
-      - "./daprd"
-      - "-app-id"
-      - "vmssquaresingleton"
-      - "-app-port"
-      - "${SQUARE_SINGLETON_VMS_PORT}"
-      - "-app-protocol"
-      - "grpc"
-      - "-dapr-http-port"
-      - "3500"
-      - "-dapr-grpc-port"
-      - "50001"
-      - "-dapr-listen-addresses"
-      - "127.0.0.1"
-      - "-components-path"
-      - "/components"
-    volumes:
-      - "./init_files/dapr_components/docker:/components"
-    network_mode: "service:vmssquaresingleton"
-    depends_on:
-      - vmssquaresingleton
 
   vmsptztrackingsingleton:
     profiles: [app]

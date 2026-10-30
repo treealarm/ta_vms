@@ -61,8 +61,7 @@ export default function MonitorsView({ readOnly = false, kind = 'wall' }: Props)
   const investigation = kind === 'investigation'
   const monitors = useMemo(() => allMonitors.filter((m) => m.kind === kind), [allMonitors, kind])
 
-  // Seeded from ?monitorId=<id> when arriving via Square's Monitor tab deep-link or
-  // from an event — falls back to the usual auto-select-first behavior below if the id doesn't
+  // Seeded from ?monitorId=<id> when arriving from an event — falls back to the usual auto-select-first behavior below if the id doesn't
   // match any monitor.
   // What the operator asked for; what is actually shown is derived below. Keeping only the request
   // in state means the list arriving, or the chosen monitor being deleted, needs no effect to

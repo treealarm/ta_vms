@@ -54,7 +54,6 @@ ORDER = [
     "vmslogger",
     "vmsutils",
     "vmssingleton",
-    "vmssquaresingleton",
     "vmsonvif",
     "vmsonvif-actors",
     "vmsfs",
@@ -582,7 +581,7 @@ def main() -> None:
     action, argv = argv[0], argv[1:]
 
     # Answered from dapr.yaml alone: this must work for sidecars that have no launch
-    # configuration (VmsSingleton, VmsSquareSingleton), which the join below would drop.
+    # configuration (VmsSingleton), which the join below would drop.
     if action == "wait-sidecars":
         wait_sidecars(float(argv[0]) if argv else 120.0)
         return

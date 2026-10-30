@@ -994,87 +994,6 @@
             "problemMatcher": []
         },
         {
-            "label": "dapr:vmssquaresingleton:start",
-            "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from dotnet/dapr.yaml — keep them in step.",
-            "type": "shell",
-            "command": "dapr",
-            "args": [
-                "run",
-                "--app-id",
-                "vmssquaresingleton",
-                "--app-port",
-                "5147",
-                "--app-protocol",
-                "grpc",
-                "--dapr-http-port",
-                "3615",
-                "--dapr-grpc-port",
-                "51016",
-                "--metrics-port",
-                "9205",
-                "--dapr-internal-grpc-port",
-                "19026",
-                "--resources-path",
-                "../init_files/dapr_components",
-                "--placement-host-address",
-                "localhost"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}/dotnet",
-                // F5 only — see "dapr: sidecars up" for the reasoning, and for why this must
-                // never be set for docker or Kubernetes.
-                "env": {
-                    "DAPR_HOST_IP": "127.0.0.1"
-                }
-            },
-            "isBackground": true,
-            "presentation": {
-                "reveal": "always",
-                "panel": "dedicated",
-                "group": "dapr"
-            },
-            "problemMatcher": {
-                "pattern": {
-                    "regexp": "^(?:\\s*)$",
-                    "file": 1,
-                    "location": 1,
-                    "message": 1
-                },
-                "background": {
-                    "activeOnStart": true,
-                    "beginsPattern": "Starting Dapr with id",
-                    "endsPattern": "(You're up and running|Initialized name resolution)"
-                }
-            }
-        },
-        {
-            "label": "dapr:vmssquaresingleton:stop",
-            "detail": "Stops this sidecar. Also run before starting, so a sidecar left behind by an interrupted session does not hold the ports.",
-            "type": "shell",
-            "command": "dapr",
-            "args": [
-                "stop",
-                "--app-id",
-                "vmssquaresingleton"
-            ],
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "prepare:vmssquaresingleton",
-            "detail": "Manual, for debugging one service on its own: builds everything, then clears and restarts just this app id's sidecar. F5 does not use these — the compound brings every sidecar up in one terminal via 'prepare: stack', so that Stop does not leave a terminal per service behind.",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "build:all",
-                "dapr:vmssquaresingleton:stop",
-                "dapr:vmssquaresingleton:start"
-            ],
-            "problemMatcher": []
-        },
-        {
             "label": "dapr:vmsptztrackingsingleton:start",
             "detail": "Just this one sidecar (~85 MB), for debugging a single service. Ports come from dotnet/dapr.yaml — keep them in step.",
             "type": "shell",
@@ -1438,6 +1357,36 @@
                 "wait: sidecars ready"
             ],
             "problemMatcher": []
+        },
+        {
+            "label": "claude: use DeepSeek",
+            "detail": "Installs the DeepSeek env profile (api.deepseek.com/anthropic) into .claude/settings.local.json, which Claude Code exports into every session it starts. Takes effect in a new chat; VS Code itself does not need reloading. Runs .claude/mode, which is kept out of git along with the tokens it moves -- a fresh clone does not have it and this task will say so.",
+            "type": "shell",
+            "command": ".claude/mode",
+            "args": ["deepseek"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": [],
+            "presentation": { "reveal": "always", "panel": "shared" }
+        },
+        {
+            "label": "claude: use the logged-in account",
+            "detail": "Removes the provider env block from .claude/settings.local.json, so Claude Code falls back to the account you are logged in with. The permissions in the same file are a different block and stay put. Takes effect in a new chat.",
+            "type": "shell",
+            "command": ".claude/mode",
+            "args": ["account"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": [],
+            "presentation": { "reveal": "always", "panel": "shared" }
+        },
+        {
+            "label": "claude: which provider is active",
+            "detail": "Reports the env profile .claude/settings.local.json currently holds, and lists the profiles this checkout has. Changes nothing.",
+            "type": "shell",
+            "command": "bash",
+            "args": ["-c", ".claude/mode; echo '--- profiles:'; .claude/mode --list"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": [],
+            "presentation": { "reveal": "always", "panel": "shared" }
         }
     ]
 }

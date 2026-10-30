@@ -28,9 +28,9 @@ public sealed partial class FsServiceImpl(
     Environment.GetEnvironmentVariable("PUBSUB_NAME")
       ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
 
-  // Best-effort notification for the (optional) Square integration — VmsCfg is the only service
-  // that talks to Square (see CLAUDE.md), so this just signals "a new alarm happened" and lets
-  // VmsCfg's SquareAlarmSubscriber pull it from there. Harmless if nothing is subscribed.
+  // Best-effort signal that a new alarm happened. It carries addressing only: a subscriber reads
+  // the episode back through ListRetentionEvents. Nothing subscribes today — the map service will
+  // (docs/plans/square-merge) — and publishing into a topic nobody reads is harmless.
   private void NotifyRetentionEventCreated(string cameraId, string? streamName, DateTime alarmStartTs)
   {
     _ = Task.Run(async () =>

@@ -28,11 +28,11 @@ All interaction with the MediaMTX REST API goes through **VmsUtils** (`vmsutils`
 ## Deployment lives in ../ta_install
 
 Production/standalone deployment is a **separate repository** (`../ta_install`, github
-`treealarm/ta_install`): the product compose (prebuilt `treealarm/*` images, own broker, no
-Square), its `.env`, `init_files/` and the image build/push scripts. (The analytics models are
+`treealarm/ta_install`): the product compose (prebuilt `treealarm/*` images, own broker), its
+`.env`, `init_files/` and the image build/push scripts. (The analytics models are
 not fetched at deploy time: `video_a` bakes them into its image, and its CI takes them from
 `treealarm/analytics-models`, published by `video_a/scripts/push-models-image.sh`.) This repo's
-root `docker-compose.yml` is **dev only** (build-from-source, joins the shared Square network).
+root `docker-compose.yml` is **dev only** (build-from-source).
 Never re-grow a prod compose inside ta_vms.
 
 ## Findings for later: docs/future_plans
@@ -173,8 +173,8 @@ service), `web_vms.Server/.client/.Types` → `web_srv.*` with their namespaces 
 running deployment knows a service by was. The C++ service is still the `vms` target, binary, Dapr
 app id and image; the web server is still the compose service `web_vms`, the image
 `treealarm/web_vms` and the app id `web-vms`, and the state store keys keep those prefixes.
-Renaming any of these is a migration for every installation (`../ta_install`, Square's `.env`,
-keys already in the state store), not a tidy-up — do not do it in passing.
+Renaming any of these is a migration for every installation (`../ta_install`, keys already in the
+state store), not a tidy-up — do not do it in passing.
 
 ## Adding a new service
 
@@ -243,8 +243,8 @@ out of order must not be able to install a stale value. An empty list means "som
 changed" (a MediaMTX row, a pairing) and asks for a full reconcile.
 
 Do not add a per-server or per-camera suffix to the topic name. A subscriber that needs cameras
-outside its own node — `VmsSquareSingleton` does — would then have to know every server id in the
-deployment just to subscribe.
+outside its own node — a system-wide service such as `VmsSingleton` does — would then have to
+know every server id in the deployment just to subscribe.
 
 **Do not:**
 - Add a direct gRPC call from service A to VmsCfg inside a hot path (e.g. per-request, per-packet) to read config that rarely changes — cache it and invalidate via pub/sub instead.
@@ -338,7 +338,7 @@ Nothing may tie a service to "everything is on this machine": addresses and port
 env, and the only place that fixes app ids and `OWN_SERVER_ID` for one machine is
 `../ta_install/windows/config/services.json`, per role (and, on Linux,
 `../ta_install/docker-compose.distributed.yml`); a node's app ids carry its name. Between
-machines, sidecars cannot use the sqlite resolver (see Square integration below); they use
+machines, sidecars cannot use the sqlite resolver (see "Infrastructure of its own" below); they use
 HashiCorp Consul, and talk over mutual TLS with certificates from Dapr Sentry on the core, which
 signs one only against a token for that app id (`../ta_install/scripts/distributed.sh`,
 `../ta_install/windows/TaVmsHost/Distributed.cs`). A node takes from its core only the credentials
@@ -425,7 +425,9 @@ endpoint and the "Entity State" debug tab in the frontend).
 ## Maps & plans: positions belong to ta_vms
 
 Spaces (maps and nested plans), plan images, camera placements and landmarks live in VmsCfg; see
-[`docs/maps-and-plans.md`](docs/maps-and-plans.md). Invariants a change must keep:
+[`docs/maps-and-plans.md`](docs/maps-and-plans.md). They are moving into a map service of their own
+with Square's object tree (`docs/plans/square-merge/`, milestone M2 rewrites this section); until
+then these are the invariants a change must keep:
 
 - Spaces nest like Square's diagrams, but each has its own coordinates: a nested plan is never laid
   over its parent's map, its footprint there is only the way in.
@@ -445,9 +447,6 @@ Spaces (maps and nested plans), plan images, camera placements and landmarks liv
   browser — no second detection stream for maps.
 - Space changes are announced on `space-config-changed {"space_id"}`; a camera's placements or
   observations on `server-config-changed`.
-- Spaces reach Square only through `VmsSquareSingleton` (`SquareSpaceExport`): each plan a Square
-  diagram, each picture placement a replica with `owner_id` = the camera. Nothing about Square goes
-  into VmsCfg.
 - Map tiles reach browsers only through web_srv's caching proxy (`api/map/tiles`), cached in the
   state store — never on local disk and never fetched by the browser from the provider directly.
 
@@ -457,8 +456,8 @@ web_srv logs users in with Keycloak's password grant, server-side; the browser n
 Keycloak, so `KEYCLOAK_URL` only has to be reachable from web_srv. `KEYCLOAK_URL` empty still means
 "no authentication at all", but no product deployment runs that way any more: both standalone
 installs in `../ta_install` ship a Keycloak of their own and import its realm from
-`../ta_install/init_files/keycloak/realm.json` on the first start; with Square, Square's Keycloak is
-used. Dev runs against multitenant_admin's.
+`../ta_install/init_files/keycloak/realm.json` on the first start. Dev runs against
+multitenant_admin's, on `localhost:8080` from the services debugged on the host (F5).
 
 - Realm roles are the whole model: `admin` sees and administers everything; anyone else sees the
   cameras granted to their `preferred_username` (VmsCfg). Client roles are ignored.
@@ -532,67 +531,42 @@ never to rename it.
 
 Only add columns that are actively used. Do not add `created_at`, `updated_at`, audit fields, or any other column "just in case" — if it is not read or queried by existing code, it does not belong in the schema. Add it when there is a concrete requirement.
 
-## Square integration
+## Infrastructure of its own
 
-ta_vms is built into the main **Square** system (`../Square`, monitoring objects on a map) as its
-video subsystem. Login and the basic Phase 1/2 (cameras on the map, properties, alarms, the
-"Monitor" tab in Square) are implemented; the plan is
-[`docs/square-integration-plan.md`](docs/square-integration-plan.md). Any further design and
-development of the video subsystem **must not contradict** that plan. Keep these invariants:
+ta_vms joins no other project's docker network and keeps no data in another project's container.
+The dev compose and `../ta_install` compose each run in compose's own default network; the Windows
+installer has no Docker at all.
 
-- **The docker network shared with Square is mandatory wherever the integration can run, but
-  there is no ta_vms data in other projects' containers any more.** In the dev compose and in any
-  deployment with the integration, ta_vms lives in the `common_app_network` network (the
-  same `name:` as Square's/`multitenant_admin`'s, but `external: true` — the network is created by
-  Square/`multitenant_admin`, which have to come up first; ta_vms's own key for the network is
-  `default`, theirs is `shared_network`, and compose refuses to adopt another project's network
-  whose key in the `com.docker.compose.network` label does not match). It is needed **only** for
-  Dapr service invocation into Square and app-id resolution through mDNS.
-  All the state and the whole bus are ta_vms's own: the **state store** is its own PostgreSQL
-  (database `POSTGRES_STATE_DB`, component `init_files/dapr_components/statestore.yaml`), the
-  **pub/sub** its own `rabbitmq` (`init_files/dapr_components/orderpubsub.yaml`). Another
-  project's `redis` belongs in neither: it is declared without a volume, and when databases are
-  stamped out per tenant, a shared Redis with `keyPrefix: "name"` would give every tenant the same
-  `cam-perm-version` key. Separately about Redis: two different containers with the same alias
+- **The state store is its own PostgreSQL** (database `POSTGRES_STATE_DB`, component
+  `init_files/dapr_components/statestore.yaml`), **the pub/sub its own `rabbitmq`**
+  (`init_files/dapr_components/orderpubsub.yaml`; the component name `orderpubsub` is historical).
+  Another project's `redis` belongs in neither: it is declared without a volume, and when databases
+  are stamped out per tenant, a shared Redis with `keyPrefix: "name"` would give every tenant the
+  same `cam-perm-version` key. Separately about Redis: two different containers with the same alias
   `redis` in one network make Docker answer DNS queries with a random round-robin between them
   (verified empirically) — so keeping our own Redis beside another one was impossible, and that is
   one of the reasons the broker became RabbitMQ (the second: Redis does not install natively on
-  Windows, and a standalone installer is planned).
-  The push to Square is gated by env (`SQUARE_INTEGRATION_SINK_APP_ID`); login is not part of the
-  integration any more (see "Login" above), only which Keycloak it uses. Network connectivity is
-  unconditional, not behind a gate.
-  Standalone installs have no Square to reach and do without the network: `../ta_install` compose
-  runs in a network of its own, the Windows installer has no Docker at all. App ids resolve over
-  mDNS in Docker; the single-machine Windows install uses Dapr's `sqlite` resolver with
-  `DAPR_HOST_IP=127.0.0.1` instead, because mDNS announced the sidecars on the machine's LAN address
-  — calls broke when that address changed or went away, and two installs on one LAN mixed their
-  identical app ids.
-- **`VmsSquareSingleton` is the only point where the integration plugs in** (the producer side).
-  The heavy core (the C++ `video_srv` and the rest) is not touched by the integration. Do not
-  spread integration logic over other services: `VmsCfg` knows nothing about Square at all and only
-  publishes its ordinary events (`server-config-changed`, `camera-state-changed`), which the
-  integrator subscribes to. Standalone installs that cannot reach Square do not ship it at all
-  (the Windows installer): an empty `DAPR_SQUARE_SINGLETON_APP_ID` is how `web_srv` learns the
-  integration is not deployed, and a switch that could be turned on with nothing to connect to
-  would promise a feature that is not there.
-- **The producer's identity in Square's tree is `SQUARE_INTEGRATION_PRODUCER_ID`, not the
-  process's `APP_ID`.** The root object's id is derived from this value deterministically, so both
-  sides set it by configuration and exchange nothing at runtime. The value is permanent: changing
-  it orphans the whole subtree already registered under the old root.
-- **Configuration flows bottom-up only.** Camera configuration belongs to ta_vms and is pushed to
-  Square; outside it is read-only. State is changed from outside **only by commands** (actions:
-  recording/arming/PTZ/`resync`), never by editing configuration from Square. In Square the
-  property panel of integration objects (those with `i_name`) is read-only, and no type hierarchy
-  is registered for them (`UpdateIntegroTypes`), so they cannot be created by hand from Square's
-  tree.
-- **The integration's root object = `SQUARE_INTEGRATION_PRODUCER_ID`** (the historical value is
-  `vmscfg`, from when `VmsCfg` was the producer); commands go through Dapr service invocation,
-  asynchronously (a handle/uid at once, the status later). The command handlers are not wired up
-  yet.
-- **Do not conflict with the integration's basis:** the shared `common_app_network` docker network
-  and Dapr service invocation over it (the sides exchange no messages over a bus:
-  `VmsSquareSingleton` subscribes only to ta_vms's own topics and reaches Square by calls — which
-  is why ta_vms's bus is its own, RabbitMQ, and the component name `orderpubsub` matches Square's
-  only historically), separate PostgreSQL and separate brokers, the model of self-describing
-  properties/commands. Before adding new topics, ports, env variables or services, check them
-  against the plan so as not to create collisions later.
+  Windows, and the standalone installer needs it there).
+- **App ids resolve over mDNS in Docker**; the single-machine Windows install uses Dapr's `sqlite`
+  resolver with `DAPR_HOST_IP=127.0.0.1` instead, because mDNS announced the sidecars on the
+  machine's LAN address — calls broke when that address changed or went away, and two installs on
+  one LAN mixed their identical app ids.
+
+## Square merges into ta_vms
+
+Square (`../Square`), the map-based monitoring platform ta_vms used to plug into as a video
+subsystem, is being folded into ta_vms as its map and events layer: Square's server core becomes
+a map service of ta_vms, its object tree, states with alarms bubbling to the parent, event journal
+and mnemonic diagrams with it. The integration was removed first (`VmsSquareSingleton`, the
+`SquareIntegrationClient` submodule, the shared `common_app_network`). The plan, by milestones, is
+[`docs/plans/square-merge/`](docs/plans/square-merge/README.md); new work on maps, object states,
+events or permissions must not contradict it. Two of its rules already hold:
+
+- **The map is a layer; the heavy core does not know about it.** The map service learns from the
+  ordinary events (`server-config-changed`, `camera-state-changed`, `retention-event-created`) and
+  reads the state back from its owner; nothing in `video_srv`, VmsFs, VmsOnvif or VmsCfg is written
+  for the map's sake.
+- **No backward compatibility with Square** (user, 2026-10-28: neither product is in use yet).
+  Square's code is taken where it is good and refactored where it is not; its general-purpose
+  integration of foreign systems (integration types, self-describing actions, the producer
+  protocol) is not carried over.

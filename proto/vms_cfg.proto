@@ -117,7 +117,7 @@ service CfgService {
   rpc SetSpacePlanCorners(SetSpacePlanCornersRequest) returns (Space);
   rpc RemoveSpacePlan(SpaceRequest) returns (OperationStatus);
   rpc ListCameraPlacements(google.protobuf.Empty) returns (ListCameraPlacementsResponse);
-  // Where the camera really stands, with the space that is in. For Square and for aiming.
+  // Where the camera really stands, with the space that is in. Aiming goes by it.
   rpc GetReferencePlacement(SourceRequest) returns (GetReferencePlacementResponse);
   rpc UpsertCameraPlacement(CameraPlacement) returns (OperationStatus);
   rpc RemoveCameraPlacement(CameraPlacementRequest) returns (OperationStatus);

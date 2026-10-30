@@ -61,8 +61,8 @@ step worth doing once and keeping.
 
 ## Submodules
 
-`SquareIntegrationClient` and `roitrc/ta_roienc` are submodules, both public, and `.gitmodules`
-names them over HTTPS, so a machine with no SSH key fetches them anonymously. OnvifLib and
+`roitrc/ta_roienc` is a submodule, public, and `.gitmodules` names it over HTTPS, so a machine
+with no SSH key fetches it anonymously. OnvifLib and
 KeycloakAdmin are NuGet packages and need no checkout at all.
 
 ## Things that are easy to get wrong

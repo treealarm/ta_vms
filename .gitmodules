@@ -1,6 +1,3 @@
-[submodule "web_vms/SquareIntegrationClient"]
-	path = dotnet/SquareIntegrationClient
-	url = https://github.com/treealarm/SquareIntegrationClient.git
 [submodule "roitrc/ta_roienc"]
 	path = roitrc/ta_roienc
 	url = https://github.com/treealarm/roi_transcode.git

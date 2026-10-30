@@ -76,16 +76,6 @@ builder.Services.AddSingleton(_ =>
   new Vms.PtzTracking.PtzTrackingService.PtzTrackingServiceClient(
     DaprClient.CreateInvocationInvoker(ptzTrackingAppId)));
 
-// Optional on purpose, like SQUARE_FRONTEND_ORIGIN below it: a deployment with no Square does not
-// run VmsSquareSingleton, and asking it anything would be a call to nowhere. Unset simply means
-// "not integrated", which is what SquareLinkProbe reports.
-var squareSingletonAppId = Environment.GetEnvironmentVariable("DAPR_SQUARE_SINGLETON_APP_ID");
-builder.Services.AddSingleton(new SquareStatusClient(string.IsNullOrEmpty(squareSingletonAppId)
-  ? null
-  : new Vms.Square.SquareStatusService.SquareStatusServiceClient(
-      DaprClient.CreateInvocationInvoker(squareSingletonAppId))));
-builder.Services.AddSingleton<SquareLinkProbe>();
-
 builder.Services.AddSingleton<ICameraManager, CameraManager>();
 builder.Services.AddSingleton<IPermissionManager, PermissionManager>();
 builder.Services.AddSingleton<MonitorManager>();
@@ -116,8 +106,8 @@ builder.Services.AddSingleton(new EdgeExportToken(Require("VMS_WHEP_SESSION_KEY"
 builder.Services.AddSingleton<WhepProxyService>();
 
 // KEYCLOAK_URL is intentionally optional: when unset, login/authorization is disabled entirely
-// and web_srv keeps running standalone (no dependency on Square's Keycloak). When set, the
-// remaining KEYCLOAK_* vars become required so misconfiguration fails fast at startup.
+// and web_srv runs with no authentication at all. When set, the remaining KEYCLOAK_* vars become
+// required so misconfiguration fails fast at startup.
 var keycloakUrl = Environment.GetEnvironmentVariable("KEYCLOAK_URL");
 
 // VMS_LIVE_TEST_PLAYER opens an anonymous WHEP mirror (WhepTestController) that can play any
@@ -148,24 +138,6 @@ builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationH
 builder.Services.AddAuthorizationBuilder()
   .AddPolicy(AuthPolicies.AdminOnly, policy => policy.Requirements.Add(new AdminRoleRequirement()))
   .AddPolicy(AuthPolicies.Authenticated, policy => policy.Requirements.Add(new AuthenticatedRequirement()));
-
-// SQUARE_FRONTEND_ORIGIN is intentionally optional: when unset, no CORS policy is configured and
-// cross-origin requests are rejected by the browser as before — web_srv stays standalone. When
-// set, it enables Square's Monitor tab to call this API directly from its own origin (both apps
-// trust the same Keycloak realm, so a Square-issued bearer token validates here too).
-const string SquareCorsPolicy = "SquareFrontend";
-var squareFrontendOrigin = Environment.GetEnvironmentVariable("SQUARE_FRONTEND_ORIGIN");
-if (!string.IsNullOrEmpty(squareFrontendOrigin))
-{
-  builder.Services.AddCors(options =>
-    options.AddPolicy(SquareCorsPolicy, policy =>
-      policy.WithOrigins(squareFrontendOrigin).AllowAnyHeader().AllowAnyMethod()
-        // 'Location' isn't in the CORS-safelisted response headers, but the WHEP offer response
-        // carries the session-cleanup URL in it (see WhepResultMapper) — without this, cross-origin
-        // callers can't read it via resp.headers.get('Location') and WHEP sessions never get
-        // explicitly closed.
-        .WithExposedHeaders("Location")));
-}
 
 var http_port = RequirePort("WEB_VMS_PORT");
 
@@ -201,11 +173,6 @@ if (app.Environment.IsDevelopment())
 {
   app.UseSwagger();
   app.UseSwaggerUI();
-}
-
-if (!string.IsNullOrEmpty(squareFrontendOrigin))
-{
-  app.UseCors(SquareCorsPolicy);
 }
 
 if (!string.IsNullOrEmpty(keycloakUrl))

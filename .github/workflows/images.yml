@@ -85,7 +85,6 @@ jobs:
             {"name": "vmsonvif",                "group": "dotnet", "base": "",         "dockerfile": "dotnet/VmsOnvif/Dockerfile"},
             {"name": "vmsonvif-actors",         "group": "dotnet", "base": "",         "dockerfile": "dotnet/VmsOnvifActors/Dockerfile"},
             {"name": "vmssingleton",            "group": "dotnet", "base": "",         "dockerfile": "dotnet/VmsSingleton/Dockerfile"},
-            {"name": "vmssquaresingleton",      "group": "dotnet", "base": "",         "dockerfile": "dotnet/VmsSquareSingleton/Dockerfile"},
             {"name": "vmsanalyticssingleton",   "group": "dotnet", "base": "",         "dockerfile": "dotnet/VmsAnalyticsSingleton/Dockerfile"},
             {"name": "vmsptztrackingsingleton", "group": "dotnet", "base": "",         "dockerfile": "dotnet/VmsPtzTrackingSingleton/Dockerfile"},
             {"name": "web_vms",                 "group": "dotnet", "base": "",         "dockerfile": "dotnet/web_srv.Server/Dockerfile"}

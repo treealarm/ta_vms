@@ -9,7 +9,7 @@
 #
 # Ports and app-ids match .vscode/tasks.json. Node-2 sidecars are not listed here.
 # The infra from docker compose (rabbitmq for the bus, postgres for the state store) must
-# already be up; so must Square's stack, for service invocation into it.
+# already be up.
 version: 1
 common:
   resourcesPath: ../init_files/dapr_components
@@ -114,20 +114,6 @@ apps:
     daprGRPCPort: 51014
     metricsPort: 9203
     daprInternalGRPCPort: 19024
-    # Hostname without a port on purpose: the CLI appends the platform's own default — 6050 on
-    # Windows, where `dapr init` publishes placement there, 50005 everywhere else. Pinning either
-    # number here leaves the actor sidecar with "placement: disconnected" on the other OS.
-    placementHostAddress: localhost
-    daprdLogDestination: fileAndConsole
-
-  - appID: vmssquaresingleton
-    appDirPath: ./VmsSquareSingleton
-    appProtocol: grpc
-    appPort: 5147
-    daprHTTPPort: 3615
-    daprGRPCPort: 51016
-    metricsPort: 9205
-    daprInternalGRPCPort: 19026
     # Hostname without a port on purpose: the CLI appends the platform's own default — 6050 on
     # Windows, where `dapr init` publishes placement there, 50005 everywhere else. Pinning either
     # number here leaves the actor sidecar with "placement: disconnected" on the other OS.
