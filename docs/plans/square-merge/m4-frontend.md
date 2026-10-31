@@ -93,7 +93,7 @@ M3 отдал `api/map/*`, SSE `api/map/live` и единые права, но �
    Проверка: `dotnet build dotnet/ta_vms.sln` — 0 ошибок, 0 предупреждений;
    `dotnet test dotnet/VmsMap.Tests` — зелёный (вид узла и visual покрыты InMemory-тестами).
 
-2. **Клиент — DTO, HTTP и Redux-слой карты.**
+2. ✅ **Клиент — DTO, HTTP и Redux-слой карты.**
    `src/dto/mapDtos.ts` — формы proto JSON (`MapMarker`, `MapFigure`, `MapVisual`,
    `MapObjectState`, `MapAlarmState`, `MapVisualStates`, `MapStateDescription`, `MapEvent`,
    `MapDiagram`, `MapDiagramType`, `MapDiagramContent`, `MapObjProps`, `MapLevel`, `MapRight`,
@@ -207,6 +207,9 @@ M3 отдал `api/map/*`, SSE `api/map/live` и единые права, но �
     камеру репликой, войти и выйти (Dive/Resurface), повернуть элемент.
 
 12. **Уборка и сквозная проверка.**
+    Линт уже красный на `master` (22 ошибки, 5 предупреждений — правила `react-hooks` 7:
+    `set-state-in-effect`, `refs`, `only-export-components`); привести его в зелёный, не меняя
+    поведения, — это часть критерия майлстоуна.
     Удалить `hooks/useAlarms.ts`, `AlarmDto`/`AlarmsDto`, `api/fs/alarms` в `FSController`,
     `CameraPermissionsPanel`, `cameraPermissionsSlice`, `api/permissions*`,
     `web_srv.Server/Grpc/PermissionManager.cs` и вкладку `permissions` в `AdminView` — после
@@ -254,6 +257,8 @@ M3 отдал `api/map/*`, SSE `api/map/live` и единые права, но �
 |---|---|
 | `6525d9b` | этот план |
 | `5ba7c54` | `node_kind` и `visual` в чтениях карты |
+| `02f473b` | пустой запрос тревог — «вся карта» |
+| `3a618f3` | слой данных карты в клиенте |
 
 **Решения по ходу:**
 - Вид узла — `NodeKindLookup` рядом с `CameraIdLookup`: пакетно по боковым таблицам, приоритет
@@ -266,8 +271,24 @@ M3 отдал `api/map/*`, SSE `api/map/live` и единые права, но �
   вместе с фигурой, панели — вместе со свойствами, мнемосхеме — вместе с содержимым.
 - `GetObjProps` берёт вид узла и visual тем же чтением; `GetCameraNode` отвечает `camera` без
   запроса — это его контракт.
+- **`GetAlarmedStates` с пустым списком id отдаёт все тревожные узлы** (с правами): список тревог
+  оператора не может назвать id, которых браузер ещё не знает, а тревога, начавшаяся до открытия
+  страницы, — как раз та, что важна.
+- **Тела запросов к `api/map/*` — ровно те, что у контроллеров:** где контроллер принимает
+  `List<string>`, в тело идёт голый массив, где сообщение — его поля в camelCase.
+- **`useMapLive` — клиент на область, а не на компонент:** одинаковые области делят одно
+  соединение, уход последнего подписчика его закрывает; обработчик лежит в `ref`, чтобы
+  перерисовка не переоткрывала поток.
+- **Ошибки API разбирает общий `requestJson`**, вынесенный из `spatialSlice`; `spatialRequest`
+  остался его псевдонимом, чтобы не трогать существующие вызовы.
+- **Список тревог** — активные из `loadAlarmedObjects`; недавние закончившиеся — из журнала:
+  при переходе `ALARM → NORM` `loadVisualStates` дочитывает последнее `alarm`-событие узла, а
+  `loadRecentAlarms` добирает события за 15 минут на старте.
 
 **Проверено:**
 - `dotnet build dotnet/ta_vms.sln` — 0 ошибок, 0 предупреждений.
-- `dotnet test dotnet/VmsMap.Tests` — 72 (было 70; новые — вид всех шести видов и вид/visual
-  реплики, visual и kind фигуры из `GetByIds`).
+- `dotnet test dotnet/VmsMap.Tests` — 73 (было 70; новые — вид всех шести видов и вид/visual
+  реплики, visual и kind фигуры из `GetByIds`, пустой запрос тревог с фильтрацией прав).
+- `npm run build` — собирается.
+- `npm run lint` на `master` уже красный (22 ошибки, 5 предупреждений); новые файлы своих ошибок
+  не добавляют. Починка — шаг 12.
