@@ -12,7 +12,7 @@ namespace web_srv;
 /// <remarks>
 /// The loop itself lives in VmsPtzTrackingSingleton, which reads detections and drives the camera
 /// on its own; nothing here is on that path. Driving a camera is driving a camera whether a person
-/// or an algorithm decides where, so these carry the same <see cref="CameraAction.Ptz"/> right the
+/// or an algorithm decides where, so these carry the same <see cref="RightActions.Ptz"/> right the
 /// joystick does.
 /// <para>
 /// Whether a camera guides itself at all is not set here — that is configuration, and it lives on
@@ -23,7 +23,7 @@ namespace web_srv;
 [Route("api/ptz-tracking")]
 public class PtzTrackingController(
   PtzTrackingService.PtzTrackingServiceClient _tracking,
-  ICameraAccessService _access) : ControllerBase
+  IRightsService _access) : ControllerBase
 {
   private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
 
@@ -31,7 +31,7 @@ public class PtzTrackingController(
     new(deadline: DateTime.UtcNow.Add(Timeout), cancellationToken: ct);
 
   [HttpPut("{cameraId}")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> SetTarget(
     string cameraId, [FromBody] SetPtzTargetDto dto, CancellationToken ct)
   {
@@ -57,7 +57,7 @@ public class PtzTrackingController(
   /// Sending zero releases it.
   /// </remarks>
   [HttpPost("{cameraId}/hold")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> Hold(string cameraId, [FromBody] PtzHoldDto dto, CancellationToken ct)
   {
     var response = await _tracking.HoldCameraAsync(
@@ -68,11 +68,11 @@ public class PtzTrackingController(
   // Reading which cameras are tracking drives the monitor's layout, so it follows viewing rights —
   // the same split PtzController makes between moving a camera and seeing what it can do.
   [HttpGet]
-  [CameraAccess(CameraAction.ViewLive, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.ViewLive, Source = RightSource.Action)]
   public async Task<IActionResult> ListStates(CancellationToken ct)
   {
     var response = await _tracking.ListTrackingStatesAsync(new ListTrackingStatesRequest(), Options(ct));
-    var scope = await _access.ScopeAsync(User, CameraAction.ViewLive, ct);
+    var scope = await _access.ScopeAsync(User, RightActions.ViewLive, ct);
 
     return Ok(scope.Filter(response.States, s => s.CameraId).Select(s => new PtzTrackingStateDto
     {

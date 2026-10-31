@@ -9,7 +9,7 @@ namespace web_srv;
 public class PtzCalibrationController(PtzCalibrationService service) : ControllerBase
 {
   [HttpGet("{cameraId}")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> Get(string cameraId, CancellationToken ct)
   {
     var calibration = await service.GetAsync(cameraId, ct);
@@ -17,7 +17,7 @@ public class PtzCalibrationController(PtzCalibrationService service) : Controlle
   }
 
   [HttpDelete("{cameraId}")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> Remove(string cameraId, CancellationToken ct)
   {
     var removed = await service.RemoveAsync(cameraId, ct);
@@ -25,7 +25,7 @@ public class PtzCalibrationController(PtzCalibrationService service) : Controlle
   }
 
   [HttpPost("{cameraId}/auto")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> RunAuto(string cameraId, CancellationToken ct)
   {
     var result = await service.RunAutoAsync(cameraId, ct);
@@ -33,7 +33,7 @@ public class PtzCalibrationController(PtzCalibrationService service) : Controlle
   }
 
   [HttpPost("{cameraId}/wizard/begin")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> BeginWizard(string cameraId, CancellationToken ct)
   {
     try
@@ -48,7 +48,7 @@ public class PtzCalibrationController(PtzCalibrationService service) : Controlle
   }
 
   [HttpPost("wizard/{sessionId}/nudge")]
-  [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
+  [RequiresRight(RightActions.Ptz, Source = RightSource.Body)]
   public async Task<IActionResult> Nudge(
     string sessionId, [FromBody] PtzCalibrationNudgeDto dto, CancellationToken ct)
   {
@@ -68,7 +68,7 @@ public class PtzCalibrationController(PtzCalibrationService service) : Controlle
   }
 
   [HttpPost("wizard/{sessionId}/pan")]
-  [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
+  [RequiresRight(RightActions.Ptz, Source = RightSource.Body)]
   public async Task<IActionResult> AnswerPan(
     string sessionId, [FromBody] PtzCalibrationWizardAnswerDto dto, CancellationToken ct)
   {
@@ -88,7 +88,7 @@ public class PtzCalibrationController(PtzCalibrationService service) : Controlle
   }
 
   [HttpPost("wizard/{sessionId}/tilt")]
-  [CameraAccess(CameraAction.Ptz, Source = CameraIdSource.Body)]
+  [RequiresRight(RightActions.Ptz, Source = RightSource.Body)]
   public async Task<IActionResult> AnswerTilt(
     string sessionId, [FromBody] PtzCalibrationWizardAnswerDto dto, CancellationToken ct)
   {

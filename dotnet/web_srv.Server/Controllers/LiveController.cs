@@ -17,7 +17,7 @@ namespace web_srv;
 public class LiveController(
   ICameraManager _manager,
   ServerPairRegistry _registry,
-  ICameraAccessService _access,
+  IRightsService _access,
   OnvifRouter _onvifRouter
   ) : ControllerBase
 {
@@ -233,7 +233,7 @@ public class LiveController(
   }
 
   [HttpGet("cameras")]
-  [CameraAccess(CameraAction.ViewLive, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.ViewLive, Source = RightSource.Action)]
   public async Task<IActionResult> ListCameras(CancellationToken ct)
   {
     var cameras = await _manager.List(ct);
@@ -242,7 +242,7 @@ public class LiveController(
     // Filtered here rather than in the client: this list is what every operator surface builds on
     // (monitor grids, camera pickers), so cameras the caller may not view must never leave the
     // server in the first place.
-    var scope = await _access.ScopeAsync(User, CameraAction.ViewLive, ct);
+    var scope = await _access.ScopeAsync(User, RightActions.ViewLive, ct);
 
     var enriched = scope.Filter(cameras, c => c.CameraId).Select(c => c with
     {
@@ -264,14 +264,14 @@ public class LiveController(
   /// rather than on OnvifController because that one is admin-only and operators are not admins.
   /// </remarks>
   // The action scopes the answer itself (it filters the requested ids through ScopeAsync below),
-  // which is what CameraIdSource.Action declares. Without an attribute the global CameraAccessFilter
+  // which is what RightSource.Action declares. Without an attribute the global RightsFilter
   // fails closed and answers 403 to everything — see its own comment.
-  [CameraAccess(CameraAction.ViewLive, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.ViewLive, Source = RightSource.Action)]
   [HttpPost("onvif-bbox-capable")]
   public async Task<IActionResult> OnvifBboxCapable(
     [FromBody] OnvifBboxCapableBody body, CancellationToken ct)
   {
-    var scope = await _access.ScopeAsync(User, CameraAction.ViewLive, ct);
+    var scope = await _access.ScopeAsync(User, RightActions.ViewLive, ct);
     var cameraIds = scope.Filter(body.CameraIds ?? [], id => id).Distinct().ToList();
     if (cameraIds.Count == 0)
       return Ok(new Dictionary<string, bool>());
@@ -342,7 +342,7 @@ public class LiveController(
   /// of accepting the click and recording nothing.
   /// </summary>
   [HttpGet("cameras/{cameraId}/recording-readiness")]
-  [CameraAccess(CameraAction.ViewLive)]
+  [RequiresRight(RightActions.ViewLive)]
   public async Task<IActionResult> RecordingReadiness(string cameraId, CancellationToken ct)
   {
     var camera = await _manager.Get(cameraId);
@@ -357,7 +357,7 @@ public class LiveController(
   }
 
   [HttpGet("cameras/{cameraId}/state")]
-  [CameraAccess(CameraAction.ViewLive)]
+  [RequiresRight(RightActions.ViewLive)]
   public async Task<IActionResult> GetCameraState(string cameraId, CancellationToken ct)
   {
     var camera = await _manager.Get(cameraId);

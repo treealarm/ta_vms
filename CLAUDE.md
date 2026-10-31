@@ -267,11 +267,11 @@ property of the broker: it is what one app id means.)
 
 For a service that can be scaled horizontally (today: `web_srv.Server`), use a **version key in the
 shared state store** instead:
-1. VmsCfg writes a new value to a well-known key after the write succeeds (`cam-perm-version`, see
-   `CfgServiceImpl.BumpCameraPermissionsVersionAsync`) — the value is meaningless, only "different
-   from last time" matters.
+1. The owner writes a new value to a well-known key after the write succeeds (`rights-version` is
+   VmsMap's, see `DaprRightsVersionNotifier`; `cam-node-version` is VmsCfg's) — the value is
+   meaningless, only "different from last time" matters.
 2. The consumer re-reads that key at most once per short interval and drops its cache when it moved
-   (`CameraAccessService.EnsureFreshAsync`), keeping its own TTL as the backstop for a state store
+   (`RightsService.EnsureFreshAsync`), keeping its own TTL as the backstop for a state store
    outage.
 
 Do not "fix" this with a per-instance `consumerID`: it works, but leaves an orphaned queue behind on
@@ -307,10 +307,12 @@ accumulating messages nobody reads.
   replica.
 - `VmsCfg`, `VmsUtils`, `VmsLogger` — `VmsCfg` and `VmsUtils` are replicable (their once-only work
   lives in `VmsSingleton`); `VmsLogger` is sharded by node, because it reads node-local files.
-- `VmsMap` — the map's tree, states, events, rights and files, and the only owner of `ta_map`.
-  **Replicable**: all its state is in the database, files included, and an alarm update recomputes
-  the affected path's counters in its own transaction, so two replicas cannot each hold half the
-  truth the way an in-memory aggregator would. It runs on the core, like `VmsCfg`.
+- `VmsMap` — the map's tree, states, events, rights and files, and the only owner of `ta_map`; also
+  the adapter that turns camera configuration, retention episodes and source outages into nodes,
+  states and journal events, and the `Watch` stream the web turns into SSE. **Replicable**: all its
+  state is in the database, files included, and an alarm update recomputes the affected path's
+  counters in its own transaction, so two replicas cannot each hold half the truth the way an
+  in-memory aggregator would. It runs on the core, like `VmsCfg`.
 - `roitrc` (the ROI re-compression service; the `ta_roienc` library it links lives in its own repository) — **sharded by node**, and this one is a correctness requirement
   rather than a capacity choice. It is handed absolute paths to clips on the node's own disk, so an
   instance elsewhere either finds nothing there or finds a *different* node's file at the same path
@@ -470,6 +472,34 @@ across the two databases). These are the invariants a change must keep:
 - Map tiles reach browsers only through web_srv's caching proxy (`api/map/tiles`), cached in the
   state store — never on local disk and never fetched by the browser from the provider directly.
 
+### States, events and rights
+
+The tree is also where the system's states, journal and permissions live; nothing in video_srv,
+VmsFs, VmsOnvif or VmsCfg is written for the map's sake.
+
+- **Every camera is a node from creation.** The adapter (`VmsMap/Adapter/`) creates the canonical
+  node from `server-config-changed`, under the space of its reference placement when it has one and
+  under its server node otherwise; `camera_node` maps the node back to the camera id, because the
+  node id is a one-way MD5. A camera VmsCfg no longer lists is removed with its pictures, placements
+  and observations.
+- **States come from their owners, not from the map.** `retention-event-created` becomes `ALARM`
+  plus one `alarm` event (the event id is the episode's `event_uuid`, so a redelivery is a no-op);
+  a sweep re-checks VmsFs before it puts `NORM` back. `CONNECTED`/`DISCONNECTED` come from VmsFs's
+  open source outages — not from a MediaMTX path, which `video_srv` tears down when nobody watches.
+  `camera-state-changed` sets the camera's `armed` property. The alarm counters bubble up
+  `alarm_states` in the same transaction as the state write.
+- **Rights are rows on tree nodes**: `rights(object_id, subject, action)`, with `subject` a Keycloak
+  role or user name and `action` from the open set `RightActions`. They inherit downwards; `admin`
+  bypasses them and the single open/enforced switch decides what a node with no rows means. VmsMap
+  computes the effective set (`GetEffectiveRights`) and also applies it to every multi-node read, so
+  a node the caller may not see never leaves the service. web_srv's `RightsService` caches that set
+  per user and drops it on `rights-version`; `[RequiresRight(...)]` replaces the old camera ACL
+  attributes. VmsCfg keeps no permission tables.
+- **`Watch`** is one server stream per client (`box`, `ids`, `values` in the request; a change of
+  view is a new stream, because Dapr proxies server-streaming but not a bidirectional call). One
+  poller per VmsMap process reads every watched set once a second and diffs by xmin; web_srv serves
+  it as `api/map/live` SSE. The browser fetches the changed nodes over `api/map/*`.
+
 ## Login: Keycloak everywhere, the standalone installs bring their own
 
 web_srv logs users in with Keycloak's password grant, server-side; the browser never talks to
@@ -480,7 +510,13 @@ installs in `../ta_install` ship a Keycloak of their own and import its realm fr
 multitenant_admin's, on `localhost:8080` from the services debugged on the host (F5).
 
 - Realm roles are the whole model: `admin` sees and administers everything; anyone else sees the
-  cameras granted to their `preferred_username` (VmsCfg). Client roles are ignored.
+  tree nodes granted to their `preferred_username` or one of their realm roles. Client roles are
+  ignored.
+- Rights live on the tree in VmsMap (`rights(object_id, subject, action)`, inherited downwards);
+  VmsCfg no longer has permission tables of its own. web_srv's `RightsService` asks
+  `GetEffectiveRights` for the signed-in user, caches the answer and drops it when VmsMap bumps
+  `rights-version`; `[RequiresRight(...)]` is the attribute every action carries. The open/enforced
+  switch is one value for the whole deployment, also on the tree.
 - Nobody is made to change a password, the initial `admin`/`admin` included (user, 2026-10-22:
   whoever wants to changes it): the view controls lead to `POST /api/auth/change-password`. If a
   forced change is ever wanted back, it cannot be Keycloak's "temporary password" or required

@@ -25,7 +25,7 @@ public class SpatialController(MapService.MapServiceClient _map) : ControllerBas
 
   [HttpGet("spaces")]
   [Authorize(Policy = AuthPolicies.Authenticated)]
-  [NoCameraAccess("Spaces are the map itself, not a camera; placements are filtered on their own endpoint")]
+  [NoRights("Spaces are the map itself, not a camera; placements are filtered on their own endpoint")]
   public async Task<ActionResult<IReadOnlyList<SpaceDto>>> ListSpaces(CancellationToken ct)
   {
     var response = await _map.ListSpacesAsync(new Google.Protobuf.WellKnownTypes.Empty(), Options(ct));
@@ -75,7 +75,7 @@ public class SpatialController(MapService.MapServiceClient _map) : ControllerBas
 [Route("api/spatial/placements")]
 public class CameraPlacementController(
   MapService.MapServiceClient _map,
-  ICameraAccessService _access) : ControllerBase
+  IRightsService _access) : ControllerBase
 {
   private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
@@ -83,11 +83,11 @@ public class CameraPlacementController(
     new(deadline: DateTime.UtcNow.Add(Timeout), cancellationToken: ct);
 
   [HttpGet]
-  [CameraAccess(CameraAction.ViewLive, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.ViewLive, Source = RightSource.Action)]
   public async Task<ActionResult<IReadOnlyList<CameraPlacementDto>>> List(CancellationToken ct)
   {
     var response = await _map.ListCameraPlacementsAsync(new Google.Protobuf.WellKnownTypes.Empty(), Options(ct));
-    var scope = await _access.ScopeAsync(User, CameraAction.ViewLive, ct);
+    var scope = await _access.ScopeAsync(User, RightActions.ViewLive, ct);
     return scope.Filter(response.Placements, p => p.CameraId).Select(SpatialMapper.ToDto).ToList();
   }
 

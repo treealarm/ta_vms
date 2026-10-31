@@ -23,7 +23,6 @@ builder.Services.AddSingleton<StreamStatsCache>();
 builder.Services.AddSingleton<CameraStorage>();
 builder.Services.AddSingleton<NodeRegistry>();
 builder.Services.AddSingleton<StorageDb>();
-builder.Services.AddSingleton<PermissionDb>();
 builder.Services.AddSingleton<CfgServiceImpl>();
 builder.Services.AddSingleton<StorageServiceImpl>();
 

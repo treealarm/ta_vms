@@ -9,6 +9,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using VmsMap.Db;
 using VmsMap.Domain;
+using VmsMap.PubSub;
+using VmsMap.Watch;
 using MapProto = Vms.Map;
 
 namespace VmsMap.Grpc
@@ -23,6 +25,9 @@ namespace VmsMap.Grpc
     private readonly VmsMapDbContext _db;
     private readonly IMapService _mapService;
     private readonly IMapUpdateService _mapUpdateService;
+    private readonly IGeoService _geoService;
+    private readonly ILevelService _levelService;
+    private readonly ITrackService _trackService;
     private readonly IStatesUpdateService _statesUpdateService;
     private readonly IStateService _stateService;
     private readonly IEventsService _eventsService;
@@ -31,14 +36,20 @@ namespace VmsMap.Grpc
     private readonly IDiagramServiceInternal _diagramService;
     private readonly IDiagramTypeService _diagramTypeService;
     private readonly IRightServiceInternal _rightService;
+    private readonly IRightsService _rightsService;
+    private readonly IRightsVersionNotifier _rightsVersionNotifier;
     private readonly VisualService _visualService;
     private readonly FileService _fileService;
     private readonly SpatialDb _spatialDb;
+    private readonly MapWatchPoller _watchPoller;
 
     public MapServiceImpl(
       VmsMapDbContext db,
       IMapService mapService,
       IMapUpdateService mapUpdateService,
+      IGeoService geoService,
+      ILevelService levelService,
+      ITrackService trackService,
       IStatesUpdateService statesUpdateService,
       IStateService stateService,
       IEventsService eventsService,
@@ -47,13 +58,19 @@ namespace VmsMap.Grpc
       IDiagramServiceInternal diagramService,
       IDiagramTypeService diagramTypeService,
       IRightServiceInternal rightService,
+      IRightsService rightsService,
+      IRightsVersionNotifier rightsVersionNotifier,
       VisualService visualService,
       FileService fileService,
-      SpatialDb spatialDb)
+      SpatialDb spatialDb,
+      MapWatchPoller watchPoller)
     {
       _db = db;
       _mapService = mapService;
       _mapUpdateService = mapUpdateService;
+      _geoService = geoService;
+      _levelService = levelService;
+      _trackService = trackService;
       _statesUpdateService = statesUpdateService;
       _stateService = stateService;
       _eventsService = eventsService;
@@ -62,9 +79,12 @@ namespace VmsMap.Grpc
       _diagramService = diagramService;
       _diagramTypeService = diagramTypeService;
       _rightService = rightService;
+      _rightsService = rightsService;
+      _rightsVersionNotifier = rightsVersionNotifier;
       _visualService = visualService;
       _fileService = fileService;
       _spatialDb = spatialDb;
+      _watchPoller = watchPoller;
     }
 
     // ── Objects ───────────────────────────────────────────────────────────────────────────────
@@ -296,6 +316,7 @@ namespace VmsMap.Grpc
       }).ToList();
 
       await _rightService.Update(dtos);
+      await _rightsVersionNotifier.BumpAsync(context.CancellationToken);
       return Ok();
     }
 
@@ -310,6 +331,7 @@ namespace VmsMap.Grpc
       }).ToList();
 
       await _rightService.Delete(keys);
+      await _rightsVersionNotifier.BumpAsync(context.CancellationToken);
       return Ok();
     }
 

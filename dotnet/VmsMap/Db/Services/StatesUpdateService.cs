@@ -53,19 +53,31 @@ namespace VmsMap.Db
         .Select(g => g!.Value)
         .ToList();
 
-      await using var tx = await _db.Database.BeginTransactionAsync();
+      // An adapter may already have opened a transaction to write a state and an event together;
+      // in that case this method joins it and the caller commits. Otherwise it owns one.
+      var ownsTransaction = _db.Database.IsRelational()
+        && _db.Database.CurrentTransaction is null;
+      await using var tx = ownsTransaction
+        ? await _db.Database.BeginTransactionAsync()
+        : null;
       await LockAggregationAsync();
 
       await _stateService.UpdateStatesAsync(objStates);
       await RecomputeAsync(changed);
 
-      await tx.CommitAsync();
+      if (tx is not null)
+        await tx.CommitAsync();
       return true;
     }
 
     public async Task<long> UpdateStateDescrs(List<ObjectStateDescriptionDTO> newObjs)
     {
       var updated = await _stateService.UpdateStateDescrsAsync(newObjs);
+
+      // The recomputation is SQL over the alarm tables; the in-memory provider the tests use has
+      // no SQL, and the pure aggregation is covered by AlarmAggregationTests.
+      if (!_db.Database.IsRelational())
+        return updated;
 
       // A changed alarm flag changes which objects are alarmed, not only how they are displayed.
       var withStates = await QueryIdsAsync(
@@ -81,6 +93,9 @@ namespace VmsMap.Db
 
     public async Task RefreshAlarmsAsync(IReadOnlyCollection<string> objectIds)
     {
+      if (!_db.Database.IsRelational())
+        return;
+
       var ids = objectIds
         .Select(Utils.ConvertObjectIdToGuid)
         .Where(g => g.HasValue)
@@ -108,6 +123,9 @@ namespace VmsMap.Db
 
     private async Task LockAggregationAsync()
     {
+      if (!_db.Database.IsRelational())
+        return;
+
       await _db.Database.ExecuteSqlRawAsync(
         "SELECT pg_advisory_xact_lock(hashtext('ta_map_alarm'));");
     }
@@ -116,7 +134,7 @@ namespace VmsMap.Db
     // and a full recomputation of it cannot drift the way an incrementing counter can.
     private async Task RecomputeAsync(IReadOnlyCollection<Guid> changed)
     {
-      if (changed.Count == 0)
+      if (changed.Count == 0 || !_db.Database.IsRelational())
       {
         return;
       }

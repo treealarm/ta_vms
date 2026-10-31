@@ -21,7 +21,7 @@ namespace web_srv;
 public class GroundGeoController(
   MapService.MapServiceClient _map,
   PtzTrackingService.PtzTrackingServiceClient _tracking,
-  ICameraAccessService _access) : ControllerBase
+  IRightsService _access) : ControllerBase
 {
   private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
@@ -29,12 +29,12 @@ public class GroundGeoController(
     new(deadline: DateTime.UtcNow.Add(Timeout), cancellationToken: ct);
 
   [HttpGet]
-  [CameraAccess(CameraAction.ViewLive, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.ViewLive, Source = RightSource.Action)]
   public async Task<ActionResult<IReadOnlyList<GroundProjectionDto>>> List([FromQuery] string spaceId, CancellationToken ct)
   {
     var response = await _tracking.ListGroundProjectionsAsync(
       new ListGroundProjectionsRequest { SpaceId = spaceId }, Options(ct));
-    var scope = await _access.ScopeAsync(User, CameraAction.ViewLive, ct);
+    var scope = await _access.ScopeAsync(User, RightActions.ViewLive, ct);
     return scope.Filter(response.Projections, p => p.CameraId)
       .Select(p => new GroundProjectionDto { CameraId = p.CameraId, Matrix = p.Matrix.ToList() })
       .ToList();

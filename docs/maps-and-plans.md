@@ -52,7 +52,7 @@ Conventions that hold everywhere:
   in its creation form; "Open the space on this view" in the editor reframes any space.
 - **Nothing is stored in plan pixels.** Re-aligning a plan moves the picture, not the objects.
 - **Heading is a compass bearing**: 0 = north, clockwise — the same as Square's `__image_rotate`.
-- **Fits are never stored.** VmsCfg keeps raw observations and marks; `VmsPtzTrackingSingleton`
+- **Fits are never stored.** VmsMap keeps raw observations and marks; `VmsPtzTrackingSingleton`
   fits them on demand, exactly as it does the slave binding.
 - Geometry is measured in an equirectangular frame centred on the camera (`Geo/EnuFrame.cs`):
   millimetres of error across a few hundred metres, about a metre at 2 km.
@@ -72,7 +72,8 @@ Conventions that hold everywhere:
   the PTZ fit because the master/slave stage needs both in one place.
 - **web_srv.Server** serves `api/spatial/*` (spaces, plan images, placements, landmarks),
   `api/ptz-geo/*` (observations, fit, aim), `api/ground-geo/*` (marks, fit, and the mappings a map
-  needs) and `api/map/tiles/*`.
+  needs), `api/map/*` (the tree, states, events, tracks, values, diagrams, rights, levels, files and
+  the SSE stream) and `api/map/tiles/*`.
 - **web_srv.client**: Leaflet + react-leaflet 5. `src/map/` holds the map primitives (rotated plan
   layer, authenticated tiles, metric grid, markers, footprints); `src/components/maps/` the two tabs.
   The administrator's page is three columns: on the left what there is, as tabs that are always in
@@ -93,6 +94,24 @@ Conventions that hold everywhere:
   that stood in it or in anything nested in it. Addressing only, like every event here. It has its
   own topic because placement edits concern no node: `server-config-changed` with an empty camera
   list would make every media server, VmsFs and VmsOnvif reconcile for nothing.
+
+## States, events and rights
+
+- **Every camera is a node from creation.** The adapter in `VmsMap/Adapter/` creates it from
+  `server-config-changed`, under the reference space when it is placed and under its server node
+  otherwise; `camera_node` maps the node back to the camera id. A camera removed from VmsCfg takes
+  its node, pictures, placements and observations with it.
+- **A retention episode becomes `ALARM` plus one journal event**, and `NORM` comes back when a
+  sweep confirms the episode is over; `CONNECTED`/`DISCONNECTED` follow the open source outages in
+  VmsFs. The alarm counters bubble up `alarm_states` in the same transaction. The event's id is the
+  episode's `event_uuid`, so a redelivered message writes nothing twice.
+- **Rights are rows on tree nodes** (`rights(object_id, subject, action)`), inherited downwards;
+  `admin` bypasses them, and one open/enforced switch decides what a node with no rows means.
+  VmsMap computes one user's effective set and applies it to every multi-node read; web_srv's
+  `RightsService` caches it per user and drops it on `rights-version`.
+- **`api/map/live`** is SSE over `MapService.Watch`; the client sends a box or a set of ids, gets
+  the changed ids back and fetches them over `api/map/*`. The subscription is in the request, so a
+  change of view opens a new stream — Dapr proxies server-streaming but not a bidirectional call.
 
 ## Map tiles
 
@@ -343,6 +362,9 @@ analytics detection). Its `alarm_end_ts` is always set — the projected end eve
 forward — so an alarm is **running** while that is in the future, and there is no such thing as one
 left open by a crash.
 
+- M3 makes the map's copy of an alarm a state on the camera node (see "States, events and
+  rights"), but the operator's screen keeps polling `GET api/fs/alarms` until M4 moves it onto
+  `api/map/live`.
 - The operator's map polls `GET api/fs/alarms` every 3 s while it is open: alarms running now and
   those that ended in the last 15 minutes, asked of every VmsFs by end (`ending_after`) rather than
   by start, so one that started an hour ago and is still being renewed is found. web_srv keeps no

@@ -12,10 +12,10 @@ public partial class ArchController(
   IArchiveTsStreamer tsStreamer,
   ArchiveOwnershipCache ownership,
   ServerPairRegistry registry,
-  ICameraAccessService access) : ControllerBase
+  IRightsService access) : ControllerBase
 {
 
-  [CameraAccess(CameraAction.ViewArchive)]
+  [RequiresRight(RightActions.ViewArchive)]
   [HttpGet("hls/preview.m3u8")]
   public async Task<IActionResult> PreviewHlsPlaylist(
     [FromQuery] string cameraId,
@@ -55,7 +55,7 @@ public partial class ArchController(
     return PlaylistResult(result);
   }
 
-  [CameraAccess(CameraAction.ViewArchive)]
+  [RequiresRight(RightActions.ViewArchive)]
   [HttpGet("hls/from-files.m3u8")]
   public async Task<IActionResult> FromFilesHlsPlaylist(
     [FromQuery] string cameraId,
@@ -85,7 +85,7 @@ public partial class ArchController(
   }
 
   // Addressed by episode, so the camera has to be resolved from the clips first.
-  [CameraAccess(CameraAction.ViewArchive, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.ViewArchive, Source = RightSource.Action)]
   [HttpGet("hls/event.m3u8")]
   public async Task<IActionResult> EventHlsPlaylist(
     [FromQuery] string eventUuid,
@@ -114,7 +114,7 @@ public partial class ArchController(
 
   // Addressed by clip, and hit once per segment — the owning camera comes from the cache the
   // playlist build primed, with an RPC only on a cold miss.
-  [CameraAccess(CameraAction.ViewArchive, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.ViewArchive, Source = RightSource.Action)]
   [HttpGet("hls/ts")]
   [HttpHead("hls/ts")]
   public async Task<IActionResult> ServeArchiveTs(
@@ -134,7 +134,7 @@ public partial class ArchController(
     // export permission. Playlist segments always carry a byte window.
     var isWholeFileDownload = offset == 0 && length == 0
       && string.IsNullOrEmpty(Request.Headers["Range"].ToString());
-    var action = isWholeFileDownload ? CameraAction.Export : CameraAction.ViewArchive;
+    var action = isWholeFileDownload ? RightActions.Export : RightActions.ViewArchive;
 
     var clipCamera = await ResolveClipCameraAsync(clipUid, ct);
     // Unknown clip and forbidden clip answer alike: a 403 would confirm the clip exists.
@@ -220,7 +220,7 @@ public partial class ArchController(
       ownership.PrimeEvent(eventUuid, cameraId);
     }
 
-    return await access.IsAllowedAsync(User, cameraId, CameraAction.ViewArchive, ct);
+    return await access.IsAllowedAsync(User, cameraId, RightActions.ViewArchive, ct);
   }
 
   private IActionResult PlaylistResult(HlsPlaylistResult result)

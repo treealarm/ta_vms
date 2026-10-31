@@ -25,7 +25,7 @@ namespace web_srv
       Environment.GetEnvironmentVariable("DAPR_LOGGER_APP_ID")
         ?? throw new InvalidOperationException("Required environment variable 'DAPR_LOGGER_APP_ID' is not set");
 
-    [NoCameraAccess("service log sources, not camera video")]
+    [NoRights("service log sources, not camera video")]
     [HttpGet("sources")]
     public async Task<IActionResult> GetSources(CancellationToken ct)
     {
@@ -44,7 +44,7 @@ namespace web_srv
       return Ok(sources);
     }
 
-    [NoCameraAccess("service logs, not camera video")]
+    [NoRights("service logs, not camera video")]
     [HttpPost("logs")]
     public async Task<IActionResult> GetLogs([FromBody] LogQueryDto query, CancellationToken ct)
     {

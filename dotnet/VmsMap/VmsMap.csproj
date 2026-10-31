@@ -12,6 +12,7 @@
   <ItemGroup>
     <PackageReference Include="Dapr.AspNetCore" Version="1.18.7" />
     <PackageReference Include="Dapr.Client" Version="1.18.7" />
+    <PackageReference Include="Dapr.Messaging" Version="1.18.7" />
     <PackageReference Include="Google.Protobuf" Version="3.35.1" />
     <PackageReference Include="Grpc.AspNetCore" Version="2.83.0" />
     <PackageReference Include="Grpc.Tools" Version="2.83.0">
@@ -32,6 +33,9 @@
     <Protobuf Include="..\..\proto\vms_map.proto" GrpcServices="Both" />
     <!-- The camera core: a placement is checked against GetCamera, see ICameraCatalog. -->
     <Protobuf Include="..\..\proto\vms_cfg.proto" GrpcServices="Client" />
+    <!-- The node's retention journal and source liveness, read by the alarm and connectivity
+         adapters. -->
+    <Protobuf Include="..\..\proto\vms_fs.proto" GrpcServices="Client" />
   </ItemGroup>
 
   <ItemGroup>

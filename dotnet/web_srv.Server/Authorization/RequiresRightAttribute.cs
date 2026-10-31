@@ -1,7 +1,9 @@
+using System;
+
 namespace web_srv.Authorization;
 
 /// <summary>Where the filter reads the camera id from.</summary>
-public enum CameraIdSource
+public enum RightSource
 {
   /// <summary>Route value or query parameter named <c>cameraId</c>.</summary>
   Route,
@@ -16,25 +18,25 @@ public enum CameraIdSource
 }
 
 /// <summary>
-/// Declares which permission an action needs. Every action must carry this or
-/// <see cref="NoCameraAccessAttribute"/>; anything unannotated is refused by
-/// <see cref="CameraAccessFilter"/> rather than quietly exposed.
+/// Declares which right an action needs. Every action must carry this or
+/// <see cref="NoRightsAttribute"/>; anything unannotated is refused by
+/// <see cref="RightsFilter"/> rather than quietly exposed.
 /// </summary>
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class)]
-public sealed class CameraAccessAttribute(CameraAction action) : Attribute
+public sealed class RequiresRightAttribute(string action) : Attribute
 {
-  public CameraAction Action { get; } = action;
-  public CameraIdSource Source { get; init; } = CameraIdSource.Route;
+  public string Action { get; } = action;
+  public RightSource Source { get; init; } = RightSource.Route;
   /// <summary>Route/query key or body argument name, when it isn't the default.</summary>
   public string? Name { get; init; }
 }
 
 /// <summary>
-/// Marks an action that legitimately isn't about any one camera (logs, entity state, server list).
+/// Marks an action that legitimately isn't about any one object (logs, entity state, server list).
 /// The reason is required so the exemption is a decision on the record, not an oversight.
 /// </summary>
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class)]
-public sealed class NoCameraAccessAttribute(string reason) : Attribute
+public sealed class NoRightsAttribute(string reason) : Attribute
 {
   public string Reason { get; } = reason;
 }

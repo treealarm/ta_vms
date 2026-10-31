@@ -13,16 +13,16 @@ namespace web_srv;
 [Route("api/analytics/detections")]
 public class AnalyticsDetectionsController(
   VmsAnalyticsService.VmsAnalyticsServiceClient _analyticsClient,
-  ICameraAccessService _access) : ControllerBase
+  IRightsService _access) : ControllerBase
 {
-  [CameraAccess(CameraAction.ViewArchive, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.ViewArchive, Source = RightSource.Action)]
   [HttpGet]
   public async Task<IActionResult> List(
     [FromQuery] string? eventId, [FromQuery] string? eventUuid, [FromQuery] string? cameraId,
     [FromQuery] string? from, [FromQuery] string? to,
     [FromQuery] int? limit, CancellationToken ct)
   {
-    var scope = await _access.ScopeAsync(User, CameraAction.ViewArchive, ct);
+    var scope = await _access.ScopeAsync(User, RightActions.ViewArchive, ct);
     if (!string.IsNullOrWhiteSpace(cameraId) && !scope.Contains(cameraId))
       return StatusCode(StatusCodes.Status403Forbidden);
 
@@ -60,7 +60,7 @@ public class AnalyticsDetectionsController(
     }));
   }
 
-  [CameraAccess(CameraAction.ViewArchive, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.ViewArchive, Source = RightSource.Action)]
   [HttpGet("{id:long}/crop")]
   public async Task<IActionResult> GetCrop(long id, CancellationToken ct)
   {
@@ -70,7 +70,7 @@ public class AnalyticsDetectionsController(
     // Unknown detection and forbidden detection answer alike, so a 404 cannot be used to probe
     // which ids exist on cameras the caller may not see.
     if (string.IsNullOrEmpty(response.CameraId)
-      || !await _access.IsAllowedAsync(User, response.CameraId, CameraAction.ViewArchive, ct))
+      || !await _access.IsAllowedAsync(User, response.CameraId, RightActions.ViewArchive, ct))
       return NotFound();
 
     if (response.Jpeg.IsEmpty)
@@ -80,7 +80,7 @@ public class AnalyticsDetectionsController(
   }
 
   // ACL is applied inside (probe camera + result camera filter via ScopeAsync), same as List.
-  [CameraAccess(CameraAction.ViewArchive, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.ViewArchive, Source = RightSource.Action)]
   [HttpPost("search-similar")]
   public async Task<IActionResult> SearchSimilar([FromBody] SearchSimilarDetectionsRequestDto dto, CancellationToken ct)
   {
@@ -95,7 +95,7 @@ public class AnalyticsDetectionsController(
     if (dto.FromTs > dto.ToTs)
       return BadRequest(new { code = "INVALID_RANGE", message = "fromTs must be <= toTs" });
 
-    var scope = await _access.ScopeAsync(User, CameraAction.ViewArchive, ct);
+    var scope = await _access.ScopeAsync(User, RightActions.ViewArchive, ct);
     var request = new SearchSimilarDetectionsRequest
     {
       FromTs = Timestamp.FromDateTime(dto.FromTs.ToUniversalTime()),

@@ -88,6 +88,7 @@
                 "POSTGRES_PASSWORD": "postgres",
                 "POSTGRES_MAP_DB": "ta_map",
                 "DAPR_CFG_APP_ID": "vmscfg",
+                "DAPR_STATE_STORE_NAME": "statestore",
                 "PUBSUB_NAME": "orderpubsub",
                 "APP_ID": "vmsmap",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"

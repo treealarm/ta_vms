@@ -12,19 +12,19 @@ using Vms.Logger;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// CameraAccessFilter is global on purpose: it is what guarantees no endpoint reaches video without
+// RightsFilter is global on purpose: it is what guarantees no endpoint reaches video without
 // having declared which permission it needs (see the fail-closed branch in the filter).
 builder.Services.AddControllers(o =>
 {
   o.Filters.Add<RpcExceptionFilter>();
-  // Before CameraAccessFilter: deciding who may see a camera means resolving the camera, which is
+  // Before RightsFilter: deciding who may see a camera means resolving the camera, which is
   // the very thing that is not ready yet.
   o.Filters.Add<ServerPairsReadyFilter>();
-  o.Filters.Add<CameraAccessFilter>();
+  o.Filters.Add<RightsFilter>();
 });
-builder.Services.AddSingleton<ICameraAccessService, CameraAccessService>();
+builder.Services.AddSingleton<IRightsService, RightsService>();
 // State store access only: the gateway publishes nothing and subscribes to nothing. Permission
-// freshness is a shared version key it polls (see CameraAccessService) precisely because a
+// freshness is a shared version key it polls (see RightsService) precisely because a
 // subscription would reach one replica out of N.
 builder.Services.AddDaprClient();
 builder.Services.AddEndpointsApiExplorer();

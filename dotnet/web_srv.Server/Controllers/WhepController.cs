@@ -14,7 +14,7 @@ namespace web_srv;
 [Route("api/live/whep")]
 public class WhepController(
   WhepProxyService _proxy,
-  ICameraAccessService _access,
+  IRightsService _access,
   ICameraManager _cameras,
   ServerPairRegistry _registry) : ControllerBase
 {
@@ -29,7 +29,7 @@ public class WhepController(
 
   // The camera id is the first segment of the MediaMTX path, so the check lives here rather than
   // in the generic filter.
-  [CameraAccess(CameraAction.ViewLive, Source = CameraIdSource.Action)]
+  [RequiresRight(RightActions.ViewLive, Source = RightSource.Action)]
   [HttpPost("offer/{*path}")]
   public async Task<IActionResult> CreateOffer(string path, CancellationToken ct)
   {
@@ -38,7 +38,7 @@ public class WhepController(
     if (string.IsNullOrWhiteSpace(cameraId))
       return BadRequest("camera id is required");
 
-    if (!await _access.IsAllowedAsync(User, cameraId, CameraAction.ViewLive, ct))
+    if (!await _access.IsAllowedAsync(User, cameraId, RightActions.ViewLive, ct))
       return StatusCode(StatusCodes.Status403Forbidden);
 
     // A viewer has just arrived, which is the one moment we know for certain that the push is
@@ -86,7 +86,7 @@ public class WhepController(
   }
 
   // Ending a session the caller owns; ownership is checked inside the proxy against the token.
-  [NoCameraAccess("closes the caller's own WHEP session, identified by an opaque token")]
+  [NoRights("closes the caller's own WHEP session, identified by an opaque token")]
   [HttpDelete("session/{token}")]
   public async Task<IActionResult> DeleteSession(string token, CancellationToken ct)
   {

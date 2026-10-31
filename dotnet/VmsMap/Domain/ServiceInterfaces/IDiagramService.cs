@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace VmsMap.Domain
 {
-  public interface IDiagramServiceInternal
+  public interface IDiagramServiceInternal : IDiagramService
   {
     public Task UpdateListAsync(List<DiagramDTO> obj2UpdateIn);
     public Task RemoveAsync(List<string> ids);

@@ -14,7 +14,7 @@ namespace web_srv;
 /// settings and survives a restart, while pointing a camera at one particular object — a temporary
 /// thing an operator does — lives on PtzTrackingController.
 /// <para>
-/// Guarded by <see cref="CameraAction.Ptz"/>, the same right the joystick and the tracking override
+/// Guarded by <see cref="RightActions.Ptz"/>, the same right the joystick and the tracking override
 /// carry: all three end in the camera's motor turning.
 /// </para>
 /// </remarks>
@@ -23,7 +23,7 @@ namespace web_srv;
 public class PtzTrackingPolicyController(CfgService.CfgServiceClient _cfg) : ControllerBase
 {
   [HttpGet("{cameraId}")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> Get(string cameraId, CancellationToken ct)
   {
     var response = await _cfg.GetPtzTrackingPolicyAsync(
@@ -56,7 +56,7 @@ public class PtzTrackingPolicyController(CfgService.CfgServiceClient _cfg) : Con
   /// two operators racing over one camera's on/off switch is not a problem worth a contract for.
   /// </remarks>
   [HttpPut("{cameraId}/enabled")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> SetEnabled(
     string cameraId, [FromBody] PtzTrackingEnabledDto dto, CancellationToken ct)
   {
@@ -77,7 +77,7 @@ public class PtzTrackingPolicyController(CfgService.CfgServiceClient _cfg) : Con
   }
 
   [HttpPut("{cameraId}")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<IActionResult> Put(
     string cameraId, [FromBody] PtzTrackingPolicyDto dto, CancellationToken ct)
   {

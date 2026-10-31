@@ -15,7 +15,7 @@ public class DeviceIoController(OnvifRouter router) : ControllerBase
     new(deadline: DateTime.UtcNow.Add(Timeout), cancellationToken: ct);
 
   [HttpGet("cameras/{cameraId}/relay-outputs")]
-  [CameraAccess(CameraAction.ViewLive)]
+  [RequiresRight(RightActions.ViewLive)]
   public async Task<IActionResult> GetRelayOutputs(string cameraId, CancellationToken ct)
   {
     var response = await (await router.DeviceIoAsync(cameraId, ct)).GetRelayOutputsAsync(
@@ -34,7 +34,7 @@ public class DeviceIoController(OnvifRouter router) : ControllerBase
   }
 
   [HttpGet("cameras/{cameraId}/relay-outputs/options")]
-  [CameraAccess(CameraAction.ViewLive)]
+  [RequiresRight(RightActions.ViewLive)]
   public async Task<IActionResult> GetRelayOutputOptions(string cameraId, CancellationToken ct)
   {
     var response = await (await router.DeviceIoAsync(cameraId, ct)).GetRelayOutputOptionsAsync(
@@ -56,7 +56,7 @@ public class DeviceIoController(OnvifRouter router) : ControllerBase
 
   // Driving a relay acts on the site itself — control, not viewing.
   [HttpPost("cameras/{cameraId}/relay-outputs/{token}/state")]
-  [CameraAccess(CameraAction.Control)]
+  [RequiresRight(RightActions.Control)]
   public async Task<IActionResult> SetRelayState(
     string cameraId, string token, [FromBody] SetRelayStateBody body, CancellationToken ct)
   {
@@ -68,7 +68,7 @@ public class DeviceIoController(OnvifRouter router) : ControllerBase
   }
 
   [HttpPost("cameras/{cameraId}/relay-outputs/{token}/settings")]
-  [CameraAccess(CameraAction.Control)]
+  [RequiresRight(RightActions.Control)]
   public async Task<IActionResult> SetRelaySettings(
     string cameraId, string token, [FromBody] SetRelaySettingsBody body, CancellationToken ct)
   {
@@ -86,7 +86,7 @@ public class DeviceIoController(OnvifRouter router) : ControllerBase
   }
 
   [HttpGet("cameras/{cameraId}/digital-inputs")]
-  [CameraAccess(CameraAction.ViewLive)]
+  [RequiresRight(RightActions.ViewLive)]
   public async Task<IActionResult> GetDigitalInputs(string cameraId, CancellationToken ct)
   {
     var response = await (await router.DeviceIoAsync(cameraId, ct)).GetDigitalInputsAsync(
@@ -103,7 +103,7 @@ public class DeviceIoController(OnvifRouter router) : ControllerBase
   }
 
   [HttpGet("cameras/{cameraId}/digital-inputs/options")]
-  [CameraAccess(CameraAction.ViewLive)]
+  [RequiresRight(RightActions.ViewLive)]
   public async Task<IActionResult> GetDigitalInputOptions(string cameraId, CancellationToken ct)
   {
     var response = await (await router.DeviceIoAsync(cameraId, ct)).GetDigitalInputOptionsAsync(
@@ -120,7 +120,7 @@ public class DeviceIoController(OnvifRouter router) : ControllerBase
   }
 
   [HttpPost("cameras/{cameraId}/digital-inputs/{token}/idle-state")]
-  [CameraAccess(CameraAction.Control)]
+  [RequiresRight(RightActions.Control)]
   public async Task<IActionResult> SetDigitalInputIdleState(
     string cameraId, string token, [FromBody] SetIdleStateBody body, CancellationToken ct)
   {

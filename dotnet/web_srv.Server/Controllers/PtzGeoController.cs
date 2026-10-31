@@ -11,7 +11,7 @@ namespace web_srv;
 
 /// <summary>A PTZ camera's calibration against landmarks, and aiming it at a place on the map.</summary>
 /// <remarks>
-/// Reading and aiming are guarded by <see cref="CameraAction.Ptz"/>, the joystick's right: they end
+/// Reading and aiming are guarded by <see cref="RightActions.Ptz"/>, the joystick's right: they end
 /// in this camera's motor turning, or show what would turn it. Writing the observations is not: they
 /// are configuration in VmsMap that every later aim of the camera rests on, so replacing them is an
 /// administrator's business, like the landmarks and ground marks they are made of. Aiming goes
@@ -30,7 +30,7 @@ public class PtzGeoController(
     new(deadline: DateTime.UtcNow.Add(Timeout), cancellationToken: ct);
 
   [HttpGet("{cameraId}")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<ActionResult<PtzGeoCalibrationDto>> Get(string cameraId, CancellationToken ct)
   {
     var stored = await _map.GetPtzGeoObservationsAsync(new CameraRequest { CameraId = cameraId }, Options(ct));
@@ -91,7 +91,7 @@ public class PtzGeoController(
   }
 
   [HttpPost("{cameraId}/aim")]
-  [CameraAccess(CameraAction.Ptz)]
+  [RequiresRight(RightActions.Ptz)]
   public async Task<ActionResult<PtzGeoAimResultDto>> Aim(string cameraId, [FromBody] PtzGeoAimDto dto, CancellationToken ct)
   {
     var response = await _tracking.AimAtWorldPointAsync(new AimAtWorldPointRequest

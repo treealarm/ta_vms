@@ -181,7 +181,11 @@ namespace VmsMap.Db
         return new List<BaseMarkerDTO>();
       }
 
-      var rows = await QueryNodeChainAsync(rootGuid.Value);
+      // The production path is one recursive CTE; the in-memory provider the tests use has no raw
+      // SQL, so walk the same chain one query per level there.
+      var rows = _db.Database.IsRelational()
+        ? await QueryNodeChainAsync(rootGuid.Value)
+        : await QueryNodeChainInMemoryAsync(rootGuid.Value);
 
       var byId = rows.ToDictionary(r => r.Id);
       var result = new List<BaseMarkerDTO>();
@@ -233,6 +237,29 @@ namespace VmsMap.Db
           .ToListAsync();
 
       return markers.Select(ConvertMarkerDB2DTO).ToList();
+    }
+
+    private async Task<List<(Guid Id, Guid? ParentId, Guid? OwnerId, string Name)>>
+      QueryNodeChainInMemoryAsync(Guid id)
+    {
+      var result = new List<(Guid, Guid?, Guid?, string)>();
+      var visited = new HashSet<Guid>();
+      Guid? current = id;
+
+      while (current.HasValue && visited.Add(current.Value))
+      {
+        var row = await _db.Markers.AsNoTracking()
+          .Where(m => m.id == current.Value)
+          .Select(m => new { m.id, m.parent_id, m.owner_id, m.name })
+          .FirstOrDefaultAsync();
+        if (row is null)
+          break;
+
+        result.Add((row.id, row.parent_id, row.owner_id, row.name));
+        current = row.parent_id;
+      }
+
+      return result;
     }
 
     private async Task<List<(Guid Id, Guid? ParentId, Guid? OwnerId, string Name)>>
@@ -441,7 +468,18 @@ namespace VmsMap.Db
 
       // The named nodes and everything under them. Their states, alarms, events, tracks, rights,
       // geometry, values and diagrams follow through ON DELETE CASCADE in the schema; Square left
-      // all of those behind.
+      // all of those behind. The in-memory provider has no ExecuteDelete and no cascades, so the
+      // tests take the explicit path; production always takes the single statement.
+      if (!_db.Database.IsRelational())
+      {
+        var rows = await _db.Markers
+          .Where(m => guids.Contains(m.id))
+          .ToListAsync();
+        _db.Markers.RemoveRange(rows);
+        await _db.SaveChangesAsync();
+        return rows.Count;
+      }
+
       return await _db.Markers
         .Where(m => guids.Contains(m.id))
         .ExecuteDeleteAsync();
@@ -459,6 +497,42 @@ namespace VmsMap.Db
 
       if (guids.Length == 0)
       {
+        return result;
+      }
+
+      // The in-memory provider the tests use has no raw SQL; walk the same subtree one level at a
+      // time there. Production always takes the recursive CTE below.
+      if (!_db.Database.IsRelational())
+      {
+        var frontier = guids.ToHashSet();
+        var visited = new HashSet<Guid>();
+
+        while (frontier.Count > 0)
+        {
+          var level = frontier.ToList();
+          frontier.Clear();
+
+          var ids = await _db.Markers.AsNoTracking()
+            .Where(m => level.Contains(m.id))
+            .Select(m => m.id)
+            .ToListAsync();
+          foreach (var id in ids)
+          {
+            if (visited.Add(id))
+              result.Add(Utils.ConvertGuidToObjectId(id));
+          }
+
+          var children = await _db.Markers.AsNoTracking()
+            .Where(m => m.parent_id.HasValue && level.Contains(m.parent_id.Value))
+            .Select(m => m.id)
+            .ToListAsync();
+          foreach (var child in children)
+          {
+            if (!visited.Contains(child))
+              frontier.Add(child);
+          }
+        }
+
         return result;
       }
 

@@ -29,8 +29,9 @@ public sealed partial class FsServiceImpl(
       ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
 
   // Best-effort signal that a new alarm happened. It carries addressing only: a subscriber reads
-  // the episode back through ListRetentionEvents. Nothing subscribes today — the map service will
-  // (docs/plans/square-merge) — and publishing into a topic nobody reads is harmless.
+  // the episode back through ListRetentionEvents. The wire names are snake_case because every
+  // subscriber matches them literally — a camelCase payload deserializes into an all-null record
+  // and is dropped in silence, which is exactly what happened on the first live run.
   private void NotifyRetentionEventCreated(string cameraId, string? streamName, DateTime alarmStartTs)
   {
     _ = Task.Run(async () =>
@@ -38,7 +39,7 @@ public sealed partial class FsServiceImpl(
       try
       {
         await daprClient.PublishEventAsync(PubSubName, RetentionEventCreatedTopic,
-          new { CameraId = cameraId, StreamName = streamName, AlarmStartTs = alarmStartTs });
+          new { camera_id = cameraId, stream_name = streamName, alarm_start_ts = alarmStartTs });
       }
       catch (Exception ex)
       {
