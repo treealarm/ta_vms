@@ -2,11 +2,13 @@ import { useMemo, useState, type ReactNode } from 'react'
 import {
   Box, Chip, IconButton, List, ListItemButton, ListItemText, Stack, Tab, Tabs, Tooltip, Typography,
 } from '@mui/material'
+import AddIcon from '@mui/icons-material/Add'
 import PlaceIcon from '@mui/icons-material/Place'
 import { useTranslation } from 'react-i18next'
 import type { SpaceDto } from '../../dto/dtos'
 import type { MapMarker } from '../../dto/mapDtos'
-import { useAppSelector } from '../../store'
+import { useAppDispatch, useAppSelector } from '../../store'
+import { createDiagramNode } from '../../store/mapEditsSlice'
 import { useMapChildren } from '../../hooks/useMapChildren'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
 import KindIcon from '../../map/KindIcon'
@@ -71,7 +73,7 @@ export default function MapsSidebar({ tree, loaded, space, onSelectSpace }: Prop
             {tab === 'cameras' ? (
               <CamerasList space={space} />
             ) : tab === 'nodes' ? (
-              <NodesList markers={markers} />
+              <NodesList markers={markers} space={space} />
             ) : (
               <LandmarksList space={space} />
             )}
@@ -228,15 +230,55 @@ function CamerasList({ space }: { space: SpaceDto }) {
  * What is drawn on this canvas already. A node dragged from here onto the map becomes a replica
  * of itself where it is dropped — the way a camera's picture is made on another plan.
  */
-function NodesList({ markers }: { markers: MapMarker[] }) {
+function NodesList({ markers, space }: { markers: MapMarker[]; space: SpaceDto }) {
   const { t } = useTranslation()
-  const { selection, setSelection } = useEditorState()
+  const dispatch = useAppDispatch()
+  const { selection, setSelection, openDiagram } = useEditorState()
+  const [busy, setBusy] = useState(false)
+
+  /** The first mnemoscheme of a space has to come from somewhere; its children are made inside it. */
+  const addDiagram = async () => {
+    setBusy(true)
+    try {
+      const created = await dispatch(createDiagramNode({
+        parentId: space.id ?? '',
+        name: `${t('diagramEditor.diagram')} ${markers.length + 1}`,
+        geometry: { top: 0, left: 0, width: 800, height: 600, rotation: 0 },
+        // A diagram standing on a map needs a place on it, like any other node drawn there.
+        at: {
+          lat: (space.view.southWest.lat + space.view.northEast.lat) / 2,
+          lon: (space.view.southWest.lon + space.view.northEast.lon) / 2,
+        },
+      })).unwrap()
+      setSelection({ kind: 'node', id: created.id })
+      openDiagram(created.id)
+    } catch {
+      // The store carries the message.
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <>
-      <Typography variant="caption" color="text.secondary" sx={{ px: 1.5, pt: 1, display: 'block' }}>
-        {t('maps.editor.nodesHint')}
-      </Typography>
+      <Stack direction="row" alignItems="center" sx={{ px: 1.5, pt: 1 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+          {t('maps.editor.nodesHint')}
+        </Typography>
+        <Tooltip title={t('diagramEditor.addDiagram')}>
+          <span>
+            <IconButton
+              size="small"
+              title={t('diagramEditor.addDiagram')}
+              aria-label={t('diagramEditor.addDiagram')}
+              disabled={busy || !space.id}
+              onClick={() => void addDiagram()}
+            >
+              <AddIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Stack>
       <List dense disablePadding>
         {sortMarkers(markers).map((marker) => (
           <ListItemButton
@@ -247,7 +289,11 @@ function NodesList({ markers }: { markers: MapMarker[] }) {
               event.dataTransfer.effectAllowed = 'copy'
             }}
             selected={selection?.kind === 'node' && selection.id === marker.id}
-            onClick={() => setSelection({ kind: 'node', id: marker.id })}
+            onClick={() => {
+              setSelection({ kind: 'node', id: marker.id })
+              // A diagram is its own canvas: picking it opens it in place of the map.
+              openDiagram(marker.nodeKind === 'diagram' ? marker.id : null)
+            }}
             sx={{ cursor: 'grab' }}
           >
             <Box sx={{ width: 24, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>

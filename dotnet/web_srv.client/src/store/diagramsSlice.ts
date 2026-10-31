@@ -1,6 +1,6 @@
 import { createAsyncThunk, createSlice, type PayloadAction } from '@reduxjs/toolkit'
 import { mapApi } from '../api/mapApi'
-import type { MapDiagramContent, MapValue } from '../dto/mapDtos'
+import type { MapDiagramContent, MapDiagramType, MapValue } from '../dto/mapDtos'
 
 export type DiagramsState = {
   /** The last diagram read; the viewer draws it only when it is the one it asked for. */
@@ -9,6 +9,8 @@ export type DiagramsState = {
   depth: number
   /** Values by the node that owns them; a replica appears under its own id. */
   values: Record<string, MapValue[]>
+  /** The diagram types, for the editor's pickers; the types dialog writes them. */
+  types: MapDiagramType[]
   loading: boolean
   error: string | null
 }
@@ -17,6 +19,7 @@ const initialState: DiagramsState = {
   content: null,
   depth: 1,
   values: {},
+  types: [],
   loading: false,
   error: null,
 }
@@ -29,6 +32,10 @@ export const loadDiagramContent = createAsyncThunk(
     content: await mapApi.getDiagramContent(id, depth),
   }),
 )
+
+/** The type dictionary: what draws a diagram and the regions its children may take. */
+export const loadDiagramTypes = createAsyncThunk('diagrams/loadTypes', async () =>
+  (await mapApi.getDiagramTypes({})).diagramTypes ?? [])
 
 /** The live values of every node of the open diagram, grouped by their owner. */
 export const loadDiagramValues = createAsyncThunk(
@@ -76,6 +83,9 @@ const diagramsSlice = createSlice({
       })
       .addCase(loadDiagramValues.fulfilled, (state, action) => {
         state.values = action.payload
+      })
+      .addCase(loadDiagramTypes.fulfilled, (state, action) => {
+        state.types = action.payload
       })
   },
 })

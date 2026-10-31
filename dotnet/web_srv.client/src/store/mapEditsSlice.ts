@@ -1,7 +1,7 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import { mapApi } from '../api/mapApi'
 import type {
-  MapExtraProperty, MapFigure, MapObject, MapVisual,
+  MapDiagramCoordinate, MapExtraProperty, MapFigure, MapObject, MapVisual,
 } from '../dto/mapDtos'
 import { dropNodes, loadChildren, loadNodes, loadObjProps } from './objectsSlice'
 
@@ -99,6 +99,83 @@ export const createReplicaAt = createAsyncThunk(
     await api.dispatch(loadChildren({ parentId })).unwrap()
     await api.dispatch(loadNodes([marker.id]))
     return marker
+  },
+)
+
+/** Where a node stands inside a mnemoscheme: its rectangle in the parent's pixels, or the region
+ *  of the parent's type it fills — never both. */
+export type DiagramPlacement = {
+  id: string
+  parentId: string
+  ownerId?: string
+  name?: string
+  dgrType?: string
+  regionId?: string
+  geometry?: MapDiagramCoordinate
+  fileId?: string
+}
+
+export const saveDiagramPlacement = createAsyncThunk(
+  'mapEdits/saveDiagramPlacement',
+  async (placement: DiagramPlacement) => {
+    await mapApi.updateObjects([{
+      id: placement.id,
+      parentId: placement.parentId,
+      ownerId: placement.ownerId,
+      name: placement.name,
+    }])
+
+    await mapApi.updateDiagrams([{
+      id: placement.id,
+      dgrType: placement.dgrType,
+      regionId: placement.regionId,
+      // A node placed in a region has no geometry of its own, and the map says so by absence.
+      geometry: placement.regionId ? undefined : placement.geometry,
+      fileId: placement.fileId,
+    }])
+
+    return placement
+  },
+)
+
+/** A replica of a node inside a mnemoscheme: the node is made here, its diagrams row by the
+ *  caller, which is the one that knows where on the paper it was dropped. */
+export const createReplicaOnDiagram = createAsyncThunk(
+  'mapEdits/createReplicaOnDiagram',
+  async ({ ownerId, parentId }: { ownerId: string; parentId: string }) =>
+    mapApi.createReplica({ ownerId, parentId }),
+)
+
+export type NewDiagram = {
+  parentId: string
+  name: string
+  /** The diagram's own rectangle: its canvas when it is opened. */
+  geometry: MapDiagramCoordinate
+  /** Where it stands on a space, when its parent is one: a diagram on a map needs a shape. */
+  at?: { lat: number; lon: number }
+}
+
+/** A diagram node under a space or another diagram. Its id is made here — the map does not hand
+ *  one back for an empty one, and the diagrams row is written against it at once. */
+export const createDiagramNode = createAsyncThunk(
+  'mapEdits/createDiagramNode',
+  async ({ parentId, name, geometry, at }: NewDiagram, api) => {
+    const id = crypto.randomUUID()
+
+    await mapApi.updateObjects([{ id, parentId, name }])
+    await mapApi.updateDiagrams([{ id, geometry }])
+
+    if (at) {
+      await mapApi.updateFigures([{
+        id,
+        parentId,
+        name,
+        geometry: { type: 'Point', coord: [{ lat: at.lat, lon: at.lon }] },
+      }])
+    }
+
+    await api.dispatch(loadNodes([id]))
+    return { id, name }
   },
 )
 

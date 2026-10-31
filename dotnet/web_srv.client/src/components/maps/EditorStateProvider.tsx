@@ -38,6 +38,7 @@ export function EditorStateProvider({ spaceId, children }: { spaceId: string | n
         }))
       },
       setSideTab: (sideTab) => patch({ sideTab }),
+      openDiagram: (openDiagramId) => patch({ openDiagramId }),
     }
   }, [snapshot])
 

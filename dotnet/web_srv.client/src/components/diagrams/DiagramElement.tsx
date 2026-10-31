@@ -22,6 +22,12 @@ type Props = {
   depth: number
   selectedId: string | null
   onPick: (marker: MapMarker) => void
+  /** The editor's canvas: an element is dragged by its body to another place or region. */
+  onMove?: (marker: MapMarker, rect: Rect, event: React.PointerEvent) => void
+  /** False for the open diagram itself: it is the paper, not an element on it. */
+  movable?: boolean
+  /** The element being dragged, at the rectangle it is currently over. */
+  dragged?: { id: string; rect: Rect } | null
 }
 
 /**
@@ -31,7 +37,10 @@ type Props = {
  */
 export default function DiagramElement({
   marker, rect, content, values, states, alarms, descriptions, depth, selectedId, onPick,
+  onMove, movable = true, dragged,
 }: Props) {
+  // While it is dragged, the element follows the pointer instead of the rectangle it was read at.
+  const shown = dragged?.id === marker.id ? dragged.rect : rect
   const diagram = content.content?.find((candidate) => candidate.id === marker.id)
   const type = content.dgrTypes?.find((candidate) => candidate.id === diagram?.dgrType)
   const visual = content.visuals?.find((candidate) => candidate.objectId === marker.id)
@@ -59,14 +68,15 @@ export default function DiagramElement({
   return (
     <Box
       onClick={(event) => { event.stopPropagation(); onPick(marker) }}
+      onPointerDown={onMove && movable ? (event) => onMove(marker, shown, event) : undefined}
       title={[marker.name, ...(state?.states ?? [])].filter(Boolean).join(' · ')}
       sx={{
         position: 'absolute',
-        left: rect.left,
-        top: rect.top,
-        width: rect.width,
-        height: rect.height,
-        cursor: 'pointer',
+        left: shown.left,
+        top: shown.top,
+        width: shown.width,
+        height: shown.height,
+        cursor: onMove && movable ? 'move' : 'pointer',
         zIndex: selected ? 2 : 1,
         // Selection must not be read as an alarm: the alarm frame below is red, this one blue.
         outline: selected ? '2px solid' : 'none',
@@ -83,7 +93,7 @@ export default function DiagramElement({
             width: '100%',
             height: '100%',
             objectFit: 'fill',
-            transform: `rotate(${rect.rotation}deg)`,
+            transform: `rotate(${shown.rotation}deg)`,
             pointerEvents: 'none',
           }}
         />
@@ -106,7 +116,7 @@ export default function DiagramElement({
 
       {(type?.regions ?? []).map((region) => {
         const value = ownValues.find((candidate) => candidate.name === region.regionKey)
-        const area = regionRect(region, rect)
+        const area = regionRect(region, shown)
         if (!value || !area) return null
 
         return (
@@ -134,7 +144,7 @@ export default function DiagramElement({
 
       {children.map((child) => {
         const childDiagram = content.content?.find((candidate) => candidate.id === child.id)
-        const childRect = elementRect(childDiagram, type, rect)
+        const childRect = elementRect(childDiagram, type, shown)
         if (!childRect) return null
 
         return (
@@ -150,6 +160,8 @@ export default function DiagramElement({
             depth={depth - 1}
             selectedId={selectedId}
             onPick={onPick}
+            onMove={onMove}
+            dragged={dragged}
           />
         )
       })}

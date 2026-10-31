@@ -25,6 +25,7 @@ import {
 import { loadObjProps } from '../../store/objectsSlice'
 import { loadLevels } from '../../store/levelsSlice'
 import { createReplicaAt, deleteNode, saveFigure } from '../../store/mapEditsSlice'
+import { loadDiagramContent } from '../../store/diagramsSlice'
 import { useMapChildren } from '../../hooks/useMapChildren'
 import SpaceCanvas from '../../map/SpaceCanvas'
 import PlanOverlay from '../../map/PlanOverlay'
@@ -37,6 +38,8 @@ import { cornersAround, distance, rescaleCorners } from '../../map/geo'
 import { CameraPlacementPanel, FootprintPanel, LandmarkPanel } from './PlacementPanels'
 import ObjectPropsEditor from './ObjectPropsEditor'
 import ObjectRights from '../objects/ObjectRights'
+import DiagramViewer from '../diagrams/DiagramViewer'
+import DiagramElementEditor from '../diagrams/DiagramElementEditor'
 import NumberField from './NumberField'
 import SpaceNav from './SpaceNav'
 import PtzGeoCalibrationDialog from './PtzGeoCalibrationDialog'
@@ -84,7 +87,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
 
   const {
     mode, setMode, selection, setSelection, pendingCameraId, setPendingCameraId, focus, select,
-    sideTab, setSideTab,
+    sideTab, setSideTab, openDiagramId, openDiagram,
   } = useEditorState()
   const [draft, setDraft] = useState<CameraPlacementDto | null>(null)
   const [draftCorners, setDraftCorners] = useState<PlanCornersDto | null>(null)
@@ -108,6 +111,24 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const selectedNode = selectedNodeId ? markersById[selectedNodeId] : undefined
   const selectedFigure = selectedNodeId ? figuresById[selectedNodeId] : undefined
   const selectedProps = selectedNodeId ? propsById[selectedNodeId] : undefined
+  const diagramContent = useAppSelector((s) => s.diagrams.content)
+  const diagramDepth = useAppSelector((s) => s.diagrams.depth)
+
+  // A diagram is its own canvas: the node selected from the canvas or the list opens it.
+  const selectNode = (id: string) => {
+    setSelection({ kind: 'node', id })
+    openDiagram(markersById[id]?.nodeKind === 'diagram' ? id : null)
+  }
+
+  // When a diagram is open, a selected child that has a row in it is an element of it.
+  const shownDiagram = openDiagramId && diagramContent?.diagramId === openDiagramId ? diagramContent : null
+  const selectedElement = selectedNodeId && shownDiagram
+    ? shownDiagram.content?.find((candidate) => candidate.id === selectedNodeId)
+    : undefined
+  const openDiagramRow = openDiagramId
+    ? shownDiagram?.content?.find((candidate) => candidate.id === openDiagramId)
+    : undefined
+  const parentDiagramType = shownDiagram?.dgrTypes?.find((candidate) => candidate.id === openDiagramRow?.dgrType)
 
   useEffect(() => {
     void dispatch(loadPlacements())
@@ -393,6 +414,17 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
       }}
       onClose={() => setSelection(null)}
     />
+  ) : selectedElement && selectedNode && openDiagramId ? (
+    <DiagramElementEditor
+      // The element as stored: a drag or a save reopens the form on the new row, not on the old
+      // one it was mounted with.
+      key={`${selectedElement.id}:${JSON.stringify(selectedElement)}`}
+      marker={selectedNode}
+      element={selectedElement}
+      parentType={parentDiagramType}
+      onSaved={() => void dispatch(loadDiagramContent({ id: openDiagramId, depth: diagramDepth }))}
+      onClose={() => setSelection(null)}
+    />
   ) : selectedNode ? (
     selectedProps ? (
       <ObjectPropsEditor
@@ -477,7 +509,9 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   return (
     <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        {/* The map's own tools sit on the map's edge: they act on what is drawn below them. */}
+        {/* The map's own tools sit on the map's edge: they act on what is drawn below them. A
+            diagram in the map's place has its own header, so they step aside. */}
+        {!openDiagramId && (
         <Stack direction="row" spacing={1} alignItems="center" sx={{ px: 1, py: 0.5, flexShrink: 0, minHeight: 44 }}>
           <ToggleButtonGroup
             size="small"
@@ -515,87 +549,103 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
             </>
           )}
         </Stack>
+        )}
         {error && <Alert severity="error" onClose={() => setError(null)} sx={{ mx: 1, mb: 0.5 }}>{error}</Alert>}
 
-        <SpaceCanvas
-          key={spaceId}
-          space={space}
-          alignOnMap={alignOnMap}
-          onMapClick={handleMapClick}
-          picking={!!pendingCameraId || mode === 'landmark' || DRAW_MODES.includes(mode)}
-          focus={focus}
-          overlay={<SpaceNav spaces={spaces} space={space} />}
-          onNodeDrop={(at, nodeId) => void run(async () => {
-            const marker = await dispatch(createReplicaAt({
-              ownerId: nodeId, parentId: spaceId, lat: at.lat, lon: at.lon,
-            })).unwrap()
-            setSelection({ kind: 'node', id: marker.id })
-          })}
-        >
-          <MapBridge mapRef={mapRef} />
-          {plan && (
-            <PlanOverlay
-              space={space}
-              corners={planCorners}
-              editable={mode === 'plan'}
-              onCornersChange={(c, commit) => (commit ? void commitCorners(c) : setDraftCorners(c))}
-            />
-          )}
-          <FiguresLayer
-            figures={mapData.figures.map((figure) => (draftFigure?.id === figure.id ? draftFigure : figure))}
-            states={{}}
-            alarms={{}}
-            descriptions={{}}
-            levels={levels}
+        {openDiagramId ? (
+          <DiagramViewer
+            diagramId={openDiagramId}
             selectedId={selectedNodeId}
-            onSelect={(id) => setSelection({ kind: 'node', id })}
-            // A camera placed here is drawn by its marker, not by the shape the node carries.
-            skipIds={new Set(mapData.markers
-              .filter((marker) => marker.cameraId && here.some((p) => p.cameraId === marker.cameraId))
-              .map((marker) => marker.id))}
-            editable={mode === 'select'}
-            onGeometryChange={handleGeometryChange}
+            editing
+            onPick={(marker) => setSelection({ kind: 'node', id: marker.id })}
+            onOpen={(marker) => {
+              if (marker.nodeKind === 'space') { openDiagram(null); onOpenSpace(marker.id) }
+              else selectNode(marker.id)
+            }}
+            onCreated={(marker) => { setSelection({ kind: 'node', id: marker.id }); openDiagram(marker.id) }}
+            onDeleted={() => { openDiagram(null); setSelection(null) }}
           />
-          {draftPoints && <DrawingPreview points={draftPoints} closed={mode === 'polygon'} />}
-          {(mode === 'line' || mode === 'polygon') && <FinishOnDoubleClick onFinish={() => finishRef.current()} />}
-          <Footprints
-            nested={nested.map((s) => (s.id === selectedNested?.id && draftFootprint ? { ...s, footprint: draftFootprint } : s))}
-            selectedId={selectedNested?.id}
-            onPick={(s) => s.id && setSelection({ kind: 'footprint', id: s.id })}
-          />
-          {selectedNested && mode === 'select' && (
-            <FootprintEditor
-              footprint={draftFootprint ?? selectedNested.footprint}
-              onChange={(f, commit) => (commit ? void saveFootprint(selectedNested, f) : setDraftFootprint(f))}
-            />
-          )}
-          {here.map((stored) => {
-            const p = draft?.cameraId === stored.cameraId ? draft : stored
-            const camera = camerasById[p.cameraId]
-            return (
-              <CameraMarker
-                key={p.cameraId}
-                placement={p}
-                label={camera?.name || p.cameraId}
-                color={STATUS_COLOR[cameraMapStatus(camera)]}
-                selected={selection?.kind === 'camera' && selection.id === p.cameraId}
-                editable={mode === 'select'}
-                onSelect={() => setSelection({ kind: 'camera', id: p.cameraId })}
-                onChange={(next, commit) => (commit ? void savePlacement(next) : setDraft(next))}
+        ) : (
+          <SpaceCanvas
+            key={spaceId}
+            space={space}
+            alignOnMap={alignOnMap}
+            onMapClick={handleMapClick}
+            picking={!!pendingCameraId || mode === 'landmark' || DRAW_MODES.includes(mode)}
+            focus={focus}
+            overlay={<SpaceNav spaces={spaces} space={space} />}
+            onNodeDrop={(at, nodeId) => void run(async () => {
+              const marker = await dispatch(createReplicaAt({
+                ownerId: nodeId, parentId: spaceId, lat: at.lat, lon: at.lon,
+              })).unwrap()
+              setSelection({ kind: 'node', id: marker.id })
+            })}
+          >
+            <MapBridge mapRef={mapRef} />
+            {plan && (
+              <PlanOverlay
+                space={space}
+                corners={planCorners}
+                editable={mode === 'plan'}
+                onCornersChange={(c, commit) => (commit ? void commitCorners(c) : setDraftCorners(c))}
               />
-            )
-          })}
-          {landmarks.map((m) => (
-            <LandmarkMarker
-              key={m.id}
-              landmark={m}
-              selected={selection?.kind === 'landmark' && selection.id === m.id}
-              editable={mode !== 'plan'}
-              onSelect={() => m.id && setSelection({ kind: 'landmark', id: m.id })}
-              onMove={(lat, lon) => void run(() => dispatch(upsertLandmark({ ...m, lat, lon })).unwrap())}
+            )}
+            <FiguresLayer
+              figures={mapData.figures.map((figure) => (draftFigure?.id === figure.id ? draftFigure : figure))}
+              states={{}}
+              alarms={{}}
+              descriptions={{}}
+              levels={levels}
+              selectedId={selectedNodeId}
+              onSelect={selectNode}
+              // A camera placed here is drawn by its marker, not by the shape the node carries.
+              skipIds={new Set(mapData.markers
+                .filter((marker) => marker.cameraId && here.some((p) => p.cameraId === marker.cameraId))
+                .map((marker) => marker.id))}
+              editable={mode === 'select'}
+              onGeometryChange={handleGeometryChange}
             />
-          ))}
-        </SpaceCanvas>
+            {draftPoints && <DrawingPreview points={draftPoints} closed={mode === 'polygon'} />}
+            {(mode === 'line' || mode === 'polygon') && <FinishOnDoubleClick onFinish={() => finishRef.current()} />}
+            <Footprints
+              nested={nested.map((s) => (s.id === selectedNested?.id && draftFootprint ? { ...s, footprint: draftFootprint } : s))}
+              selectedId={selectedNested?.id}
+              onPick={(s) => s.id && setSelection({ kind: 'footprint', id: s.id })}
+            />
+            {selectedNested && mode === 'select' && (
+              <FootprintEditor
+                footprint={draftFootprint ?? selectedNested.footprint}
+                onChange={(f, commit) => (commit ? void saveFootprint(selectedNested, f) : setDraftFootprint(f))}
+              />
+            )}
+            {here.map((stored) => {
+              const p = draft?.cameraId === stored.cameraId ? draft : stored
+              const camera = camerasById[p.cameraId]
+              return (
+                <CameraMarker
+                  key={p.cameraId}
+                  placement={p}
+                  label={camera?.name || p.cameraId}
+                  color={STATUS_COLOR[cameraMapStatus(camera)]}
+                  selected={selection?.kind === 'camera' && selection.id === p.cameraId}
+                  editable={mode === 'select'}
+                  onSelect={() => setSelection({ kind: 'camera', id: p.cameraId })}
+                  onChange={(next, commit) => (commit ? void savePlacement(next) : setDraft(next))}
+                />
+              )
+            })}
+            {landmarks.map((m) => (
+              <LandmarkMarker
+                key={m.id}
+                landmark={m}
+                selected={selection?.kind === 'landmark' && selection.id === m.id}
+                editable={mode !== 'plan'}
+                onSelect={() => m.id && setSelection({ kind: 'landmark', id: m.id })}
+                onMove={(lat, lon) => void run(() => dispatch(upsertLandmark({ ...m, lat, lon })).unwrap())}
+              />
+            ))}
+          </SpaceCanvas>
+        )}
       </Box>
 
       <Box sx={{ width: SIDE_WIDTH, flexShrink: 0, borderLeft: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
