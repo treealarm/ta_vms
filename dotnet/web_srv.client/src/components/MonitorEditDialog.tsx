@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   Box,
   Button,
@@ -31,18 +31,24 @@ export default function MonitorEditDialog({ open, monitor, allCameras, onSave, o
   const [layout, setLayout] = useState<MonitorLayout>('2x2')
   const [slotCameras, setSlotCameras] = useState<string[]>([])
 
-  useEffect(() => {
-    if (!open) return
-    const initialLayout = (monitor?.layout as MonitorLayout) ?? '2x2'
-    setName(monitor?.name ?? '')
-    setLayout(initialLayout)
-    const count = layoutSlotCount(initialLayout)
-    const initial: string[] = Array(count).fill('')
-    for (const slot of monitor?.slots ?? []) {
-      if (slot.slotIndex < count) initial[slot.slotIndex] = slot.cameraId
+  // Opening the dialog fills the form from the monitor it edits — while rendering, so the first
+  // paint is the monitor's own name and layout rather than the previous one's.
+  const formKey = open ? (monitor?.monitorId ?? 'new') : null
+  const [formFilledFor, setFormFilledFor] = useState<string | null>(null)
+  if (formKey !== formFilledFor) {
+    setFormFilledFor(formKey)
+    if (open) {
+      const initialLayout = (monitor?.layout as MonitorLayout) ?? '2x2'
+      setName(monitor?.name ?? '')
+      setLayout(initialLayout)
+      const count = layoutSlotCount(initialLayout)
+      const initial: string[] = Array(count).fill('')
+      for (const slot of monitor?.slots ?? []) {
+        if (slot.slotIndex < count) initial[slot.slotIndex] = slot.cameraId
+      }
+      setSlotCameras(initial)
     }
-    setSlotCameras(initial)
-  }, [open, monitor])
+  }
 
   const handleLayoutChange = (newLayout: MonitorLayout) => {
     setLayout(newLayout)

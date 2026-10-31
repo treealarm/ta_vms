@@ -11,11 +11,11 @@ type Props = {
   selected: EpisodeDto | null
 }
 
-export type EventSource = 'analytics' | 'onvif' | 'other'
+type EventSource = 'analytics' | 'onvif' | 'other'
 
 // Source is derived from real fields, not the (now opaque) event id: analytics episodes carry an
 // object_id from re-identification; ONVIF still uses an "onvif-" prefixed event_id.
-export function eventSource(ep: { eventId: string; objectId?: string }): EventSource {
+function eventSource(ep: { eventId: string; objectId?: string }): EventSource {
   if (ep.objectId) return 'analytics'
   if (ep.eventId.startsWith('onvif-')) return 'onvif'
   return 'other'
@@ -101,15 +101,12 @@ function DetectionsBlock({ eventUuid }: { eventUuid: string }) {
     return () => controller.abort()
   }, [eventUuid])
 
-  // Reset crop state and revoke blob URLs when switching events.
-  useEffect(() => {
-    setCropUrls({})
-    requested.current = new Set()
-    return () => {
-      objectUrls.current.forEach((u) => URL.revokeObjectURL(u))
-      objectUrls.current = []
-    }
-  }, [eventUuid])
+  // The block is keyed by its event, so a switch remounts it with empty crops and requests; the
+  // blob URLs it made are revoked when it goes.
+  useEffect(() => () => {
+    objectUrls.current.forEach((u) => URL.revokeObjectURL(u))
+    objectUrls.current = []
+  }, [])
 
   const requestCrop = useCallback((id: number) => {
     if (requested.current.has(id)) return
@@ -203,39 +200,44 @@ export default function EventDetailsPanel({ selected }: Props) {
   const { t } = useTranslation()
   const cameraName = useCameraName(selected?.cameraId)
   const [clips, setClips] = useState<RecordingDto[]>([])
+  // Until this selection's own answer is in, the previous event's clips must not show.
+  const [clipsFor, setClipsFor] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Debounce loading the details (clips + detections + crops): each selection resets the timer, so
   // rapidly clicking through the event list doesn't fire a burst of detail requests for events the
   // user is only passing over — only the one they settle on loads.
-  const [detailsReady, setDetailsReady] = useState(false)
+  // The debounce is derived from what the timer was armed for: a new selection is not ready until
+  // its own timer fires, and no effect has to write the flag back to false.
+  const selectionKey = selected?.eventUuid ?? null
+  const [readyFor, setReadyFor] = useState<string | null>(null)
+  const detailsReady = selectionKey !== null && readyFor === selectionKey
 
   useEffect(() => {
-    setDetailsReady(false)
     if (!selected) return
-    const id = window.setTimeout(() => setDetailsReady(true), 200)
+    const id = window.setTimeout(() => setReadyFor(selected.eventUuid), 200)
     return () => window.clearTimeout(id)
   }, [selected])
 
   useEffect(() => {
-    if (!selected || !detailsReady) {
-      setClips([])
-      setError(null)
-      return
-    }
+    if (!selected || !detailsReady) return
 
-    setLoading(true)
-    setError(null)
     const controller = new AbortController()
+    void (async () => {
+      setLoading(true)
+      setError(null)
 
-    fetchEventClips(selected.eventUuid, controller.signal)
-      .then(setClips)
-      .catch((e: unknown) => {
+      try {
+        setClips(await fetchEventClips(selected.eventUuid, controller.signal))
+        setClipsFor(selected.eventUuid)
+      } catch (e: unknown) {
         if (e instanceof DOMException && e.name === 'AbortError') return
         setError(e instanceof Error ? e.message : String(e))
         setClips([])
-      })
-      .finally(() => setLoading(false))
+      } finally {
+        setLoading(false)
+      }
+    })()
 
     return () => controller.abort()
   }, [selected, detailsReady])
@@ -247,6 +249,8 @@ export default function EventDetailsPanel({ selected }: Props) {
       </Typography>
     )
   }
+
+  const shownClips = clipsFor === selected.eventUuid && detailsReady ? clips : []
 
   const start = new Date(selected.alarmStartTs)
   const end = selected.alarmEndTs ? new Date(selected.alarmEndTs) : null
@@ -276,13 +280,13 @@ export default function EventDetailsPanel({ selected }: Props) {
         </Stack>
       </Box>
 
-      {detailsReady && eventSource(selected) === 'analytics' && <DetectionsBlock eventUuid={selected.eventUuid} />}
+      {detailsReady && eventSource(selected) === 'analytics' && <DetectionsBlock key={selected.eventUuid} eventUuid={selected.eventUuid} />}
 
       <Divider />
 
       <Box>
         <Typography variant="subtitle2" gutterBottom>
-          {t('events.clipsList')}{clips.length > 0 ? ` (${clips.length})` : ''}
+          {t('events.clipsList')}{shownClips.length > 0 ? ` (${shownClips.length})` : ''}
         </Typography>
         {loading && (
           <Typography variant="body2" color="text.secondary">{t('archive.loadingStreams')}</Typography>
@@ -290,12 +294,12 @@ export default function EventDetailsPanel({ selected }: Props) {
         {error && (
           <Typography variant="body2" color="error">{error}</Typography>
         )}
-        {!loading && !error && clips.length === 0 && (
+        {!loading && !error && shownClips.length === 0 && (
           <Typography variant="body2" color="text.secondary">{t('archive.noClips')}</Typography>
         )}
-        {clips.length > 0 && (
+        {shownClips.length > 0 && (
           <List dense disablePadding>
-            {clips.map((c) => (
+            {shownClips.map((c) => (
               <ListItem key={c.clipUid} disableGutters sx={{ display: 'block', py: 0.5 }}>
                 <Typography variant="body2" noWrap title={c.filePath}>{basename(c.filePath)}</Typography>
                 <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">

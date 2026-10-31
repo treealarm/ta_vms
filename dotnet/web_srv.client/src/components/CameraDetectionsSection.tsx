@@ -7,7 +7,7 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import { useTranslation } from 'react-i18next'
 import { apiFetch } from '../api/apiFetch'
 import { invalidateAnalyticsSources, useCameraAnalyticsSources } from '../hooks/useCameraAnalyticsSources'
-import { usePendingEdits } from './settings/PendingEdits'
+import { usePendingEdits } from './settings/pendingEditsContext'
 
 type Props = {
   cameraId: string

@@ -5,6 +5,7 @@ import type { LatLngBoundsExpression } from 'leaflet'
 import { useTranslation } from 'react-i18next'
 import type { GeoPointDto, SpaceDto } from '../dto/dtos'
 import { useAppSelector } from '../store'
+import { NODE_DRAG_TYPE } from './dragTypes'
 import { AuthTileLayer, MetricGridLayer } from './layers'
 import { boundsCentre } from './geo'
 import './map.css'
@@ -28,6 +29,8 @@ type Props = {
   overlay?: React.ReactNode
   /** Brought into view whenever it changes — an object picked from a list beside the map. */
   focus?: MapFocus | null
+  /** A node dragged out of the editor's list and dropped here; the id comes from the drag. */
+  onNodeDrop?: (at: GeoPointDto, nodeId: string) => void
   children?: React.ReactNode
 }
 
@@ -43,7 +46,9 @@ const LEAFLET_PREFIX = '<a href="https://leafletjs.com" target="_blank" rel="nor
  * What every maps page draws on: a map space gets tiles (when a provider is configured), a plan a
  * metric grid under its picture. Keyed by space by its callers, so switching spaces recentres.
  */
-export default function SpaceCanvas({ space, alignOnMap, initialBounds, onMapClick, picking, overlay, focus, children }: Props) {
+export default function SpaceCanvas({
+  space, alignOnMap, initialBounds, onMapClick, picking, overlay, focus, onNodeDrop, children,
+}: Props) {
   const { t } = useTranslation()
   const tilesEnabled = useAppSelector((s) => s.frontendConfig.mapTilesEnabled)
   const wantsTiles = space.kind === 'map' || (!!alignOnMap && space.realCoordinates)
@@ -67,6 +72,7 @@ export default function SpaceCanvas({ space, alignOnMap, initialBounds, onMapCli
         <FitOnce bounds={initialBounds} />
         <AutoResize />
         {onMapClick && <ClickCapture onClick={onMapClick} />}
+        {onNodeDrop && <NodeDropReceiver onDrop={onNodeDrop} />}
         <FocusOn focus={focus} />
         {children}
       </MapContainer>
@@ -134,5 +140,46 @@ function FocusOn({ focus }: { focus?: MapFocus | null }) {
 
 function ClickCapture({ onClick }: { onClick: (p: GeoPointDto) => void }) {
   useMapEvents({ click: (e) => onClick({ lat: e.latlng.lat, lon: e.latlng.lng }) })
+  return null
+}
+
+/**
+ * A node dragged from the editor's lists: Leaflet's own container is the drop target, so the
+ * browser's drop event is turned into the point under the cursor.
+ */
+function NodeDropReceiver({ onDrop }: { onDrop: (at: GeoPointDto, nodeId: string) => void }) {
+  const map = useMap()
+  const handler = useRef(onDrop)
+
+  useEffect(() => {
+    handler.current = onDrop
+  }, [onDrop])
+
+  useEffect(() => {
+    const container = map.getContainer()
+
+    const over = (event: DragEvent) => {
+      if (!event.dataTransfer?.types.includes(NODE_DRAG_TYPE)) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
+    }
+
+    const drop = (event: DragEvent) => {
+      const nodeId = event.dataTransfer?.getData(NODE_DRAG_TYPE)
+      if (!nodeId) return
+
+      event.preventDefault()
+      const at = map.mouseEventToLatLng(event)
+      handler.current({ lat: at.lat, lon: at.lng }, nodeId)
+    }
+
+    container.addEventListener('dragover', over)
+    container.addEventListener('drop', drop)
+    return () => {
+      container.removeEventListener('dragover', over)
+      container.removeEventListener('drop', drop)
+    }
+  }, [map])
+
   return null
 }

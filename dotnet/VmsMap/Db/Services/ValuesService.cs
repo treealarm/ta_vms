@@ -108,9 +108,33 @@ internal class ValuesService : IValuesService, IValuesServiceInternal
       id = Utils.ConvertGuidToObjectId(dbo.id),
       name = dbo.name,
       owner_id = Utils.ConvertGuidToObjectId(dbo.owner_id),
-      value = dbo.value == null ? null : JsonSerializer.Deserialize<object>(dbo.value),
+      value = ReadValue(dbo.value),
       Version = dbo.Version
     };
+  }
+
+  /// A stored value is one JSON scalar. Deserializing it into `object` would hand back a
+  /// JsonElement, which the proto conversion does not recognise — the value would be written
+  /// correctly and read back empty.
+  private static object? ReadValue(string? json)
+  {
+    if (json == null)
+      return null;
+
+    try
+    {
+      var element = JsonSerializer.Deserialize<JsonElement>(json);
+      return element.ValueKind switch
+      {
+        JsonValueKind.Number => element.TryGetInt32(out var number) ? number : element.GetDouble(),
+        JsonValueKind.String => element.GetString(),
+        _ => null
+      };
+    }
+    catch (JsonException)
+    {
+      return null;
+    }
   }
 
   public async Task<Dictionary<string, ValueDTO>> UpdateValuesFilteredByNameAsync(List<ValueDTO> values)

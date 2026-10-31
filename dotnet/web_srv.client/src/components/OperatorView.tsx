@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import ViewControls from './ViewControls'
 import MonitorsView from './MonitorsView'
-import RetentionEventsTab from './RetentionEventsTab'
+import EventsJournal from './events/EventsJournal'
 import ArchiveGapsTab from './ArchiveGapsTab'
 import SimulationFab from './SimulationFab'
 import LogToggleButton from './LogToggleButton'
@@ -41,7 +41,7 @@ export default function OperatorView() {
               path="events"
               element={(
                 <Box sx={{ height: '100%', overflow: 'auto' }}>
-                  <RetentionEventsTab />
+                  <EventsJournal />
                 </Box>
               )}
             />

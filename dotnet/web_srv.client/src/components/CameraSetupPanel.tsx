@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react'
+﻿import { useState } from 'react'
 import { Box, FormControlLabel, MenuItem, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
@@ -66,10 +66,11 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   // controls a mouse-journey away from its label, so they stop at a comfortable reading width.
   const readingWidth = 640
 
-  useEffect(() => {
-    if (!hasTelemetry && (tab === 'tracking' || tab === 'calibration' || tab === 'binding'))
-      setTab('main')
-  }, [hasTelemetry, tab])
+  // A camera without telemetry has no tracking, calibration or binding tab: it shows the main one
+  // instead, rather than an empty panel. Derived, so no effect writes the selection back.
+  const shownTab: Tab = !hasTelemetry && (tab === 'tracking' || tab === 'calibration' || tab === 'binding')
+    ? 'main'
+    : tab
   const [pendingStorages, setPendingStorages] = useState<CameraStorageAssignmentDto[]>([])
   const [pendingSchedules, setPendingSchedules] = useState<string[]>([])
 
@@ -78,11 +79,15 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     if (!Number.isNaN(value)) setter(Math.max(0, value))
   }
 
-  // Pre-populate pending storage with the first available storage
-  useEffect(() => {
-    if (isNew && pendingStorages.length === 0 && allStorages.length > 0)
-      setPendingStorages([{ cameraId: '', storageId: allStorages[0].storageId, priority: 0 }])
-  }, [allStorages]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Pre-populate pending storage with the first available storage, once it has loaded — while
+  // rendering, so the first paint of a new camera already shows it.
+  const firstStorageId = allStorages[0]?.storageId ?? ''
+  const [prefilledStorage, setPrefilledStorage] = useState('')
+  if (isNew && firstStorageId && firstStorageId !== prefilledStorage) {
+    setPrefilledStorage(firstStorageId)
+    if (pendingStorages.length === 0)
+      setPendingStorages([{ cameraId: '', storageId: firstStorageId, priority: 0 }])
+  }
 
   // Snapshot of the saved state — used for dirty detection and Cancel
   const [snap, setSnap] = useState({
@@ -233,7 +238,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
           {/* Left: the settings themselves, filling whatever the list and the preview leave */}
           <Stack spacing={2} sx={{ flex: 1, minWidth: 0 }}>
             <Tabs
-              value={tab}
+              value={shownTab}
               onChange={(_, v: Tab) => setTab(v)}
               variant="scrollable"
               scrollButtons="auto"
@@ -252,7 +257,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
               <Tab value="advanced" label={t('cameras.tabAdvanced')} />
             </Tabs>
 
-            {tab === 'main' && (
+            {shownTab === 'main' && (
             <Box
               sx={{
                 display: 'grid',
@@ -339,7 +344,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
             </Box>
             )}
 
-            {tab === 'detections' && !isNew && (
+            {shownTab === 'detections' && !isNew && (
             <CameraDetectionsSection
               cameraId={initialCameraId}
               onvifMetadataDisabled={onvifMetadataDisabled}
@@ -347,13 +352,13 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
             />
             )}
 
-            {tab === 'tracking' && !isNew && hasTelemetry && (
+            {shownTab === 'tracking' && !isNew && hasTelemetry && (
               <Box sx={{ maxWidth: readingWidth }}>
                 <CameraTrackingSection cameraId={initialCameraId} />
               </Box>
             )}
 
-            {tab === 'calibration' && !isNew && hasTelemetry && (
+            {shownTab === 'calibration' && !isNew && hasTelemetry && (
               <Box sx={{ maxWidth: readingWidth }}>
                 <CameraCalibrationSection
                   cameraId={initialCameraId}
@@ -363,7 +368,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
             )}
 
             {/* Uncapped: this one lays two live pictures out side by side and wants the room. */}
-            {tab === 'binding' && !isNew && hasTelemetry && (
+            {shownTab === 'binding' && !isNew && hasTelemetry && (
               <CameraSlaveBindingSection
                 cameraId={initialCameraId}
                 profileToken={existing?.streams?.[0]?.profileToken ?? ''}
@@ -372,7 +377,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
               />
             )}
 
-            {tab === 'advanced' && (
+            {shownTab === 'advanced' && (
             <Box
               sx={{
                 display: 'grid',
@@ -455,7 +460,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
           {/* Right: live previews column. Hidden on the survey tab, which shows this camera's
               picture itself, beside its master's — a third copy of the same stream would only take
               room away from the two that are being worked with. */}
-          {!isNew && tab !== 'binding' && webRtcStreams.length > 0 && (
+          {!isNew && shownTab !== 'binding' && webRtcStreams.length > 0 && (
             <Stack spacing={1.5} sx={{ width: 280, flexShrink: 0 }}>
               {webRtcStreams.filter((s) => s.whepUrl).map((s) => (
                 <Box key={s.streamName}>

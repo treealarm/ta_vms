@@ -224,10 +224,14 @@ export default function MonitorGrid({ monitor, openCameraPool = false }: Props) 
     wallClockBus.setFocused(focusedSlot === null ? null : `${monitor.monitorId}-${focusedSlot}`)
   }, [monitor.monitorId, focusedSlot])
 
-  // Reset solo when switching monitors or changing layout (stale index would point at non-existent slot)
-  useEffect(() => {
+  // Reset solo when switching monitors or changing layout (stale index would point at a slot that
+  // is not there) — while rendering, so no frame shows a solo cell of another wall.
+  const soloKey = `${monitor.monitorId}:${slotCount}`
+  const [soloFor, setSoloFor] = useState(soloKey)
+  if (soloFor !== soloKey) {
+    setSoloFor(soloKey)
     setSoloSlot(null)
-  }, [monitor.monitorId, slotCount])
+  }
   const cols = layoutColumns(monitor.layout)
   const rows = layoutRows(monitor.layout)
   const featureSpan = layoutFeatureSpan(monitor.layout)

@@ -15,9 +15,17 @@ import wallPlaybackReducer from './wallPlaybackSlice'
 import wallCoverageReducer from './wallCoverageSlice'
 import wallEventsReducer from './wallEventsSlice'
 import frontendConfigReducer from './frontendConfigSlice'
-import cameraPermissionsReducer from './cameraPermissionsSlice'
 import edgeArchiveReducer from './edgeArchiveSlice'
 import spatialReducer from './spatialSlice'
+import objectsReducer from './objectsSlice'
+import statesReducer from './statesSlice'
+import eventsReducer from './eventsSlice'
+import levelsReducer from './levelsSlice'
+import searchReducer from './searchSlice'
+import tracksReducer from './tracksSlice'
+import diagramsReducer from './diagramsSlice'
+import mapEditsReducer from './mapEditsSlice'
+import rightsReducer from './rightsSlice'
 
 export const store = configureStore({
   reducer: {
@@ -36,9 +44,17 @@ export const store = configureStore({
     wallCoverage: wallCoverageReducer,
     wallEvents: wallEventsReducer,
     frontendConfig: frontendConfigReducer,
-    cameraPermissions: cameraPermissionsReducer,
     edgeArchive: edgeArchiveReducer,
     spatial: spatialReducer,
+    objects: objectsReducer,
+    states: statesReducer,
+    events: eventsReducer,
+    levels: levelsReducer,
+    search: searchReducer,
+    tracks: tracksReducer,
+    diagrams: diagramsReducer,
+    mapEdits: mapEditsReducer,
+    rights: rightsReducer,
   }
 })
 

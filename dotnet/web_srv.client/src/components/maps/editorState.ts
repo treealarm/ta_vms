@@ -3,12 +3,21 @@ import type { GeoPointDto } from '../../dto/dtos'
 import type { MapFocus } from '../../map/SpaceCanvas'
 
 /** What the next click on the map does. */
-export type Mode = 'select' | 'landmark' | 'plan'
+export type Mode = 'select' | 'landmark' | 'plan' | 'point' | 'line' | 'polygon'
 
-export type Selection = { kind: 'camera' | 'landmark' | 'footprint'; id: string } | null
+/**
+ * What is selected beside the map: a camera's placement, a landmark or a nested space's footprint
+ * from the spatial half, or any map node — a drawn shape, a diagram — from the map's own tree.
+ */
+export type Selection =
+  | { kind: 'camera' | 'landmark' | 'footprint' | 'node'; id: string }
+  | null
 
-/** Which of the two property tabs beside the map is open. */
-export type SideTab = 'space' | 'selection'
+/** The modes that draw a shape click by click instead of acting on what is already there. */
+export const DRAW_MODES: Mode[] = ['point', 'line', 'polygon']
+
+/** Which property tab beside the map is open: the space's own, the selected node's, its rights. */
+export type SideTab = 'space' | 'selection' | 'rights'
 
 export type EditorState = {
   mode: Mode
@@ -26,6 +35,13 @@ export type EditorState = {
   select: (kind: NonNullable<Selection>['kind'], id: string, at: GeoPointDto) => void
   sideTab: SideTab
   setSideTab: (tab: SideTab) => void
+  /**
+   * The mnemoscheme opened in place of the map, if one is. Kept apart from the selection: an
+   * element inside it is selected while the diagram stays open, and only its breadcrumbs or a
+   * space in the tree lead out.
+   */
+  openDiagramId: string | null
+  openDiagram: (id: string | null) => void
 }
 
 export type Snapshot = {
@@ -34,9 +50,12 @@ export type Snapshot = {
   pendingCameraId: string | null
   focus: MapFocus | null
   sideTab: SideTab
+  openDiagramId: string | null
 }
 
-export const FRESH: Snapshot = { mode: 'select', selection: null, pendingCameraId: null, focus: null, sideTab: 'space' }
+export const FRESH: Snapshot = {
+  mode: 'select', selection: null, pendingCameraId: null, focus: null, sideTab: 'space', openDiagramId: null,
+}
 
 export const EditorStateContext = createContext<EditorState | null>(null)
 

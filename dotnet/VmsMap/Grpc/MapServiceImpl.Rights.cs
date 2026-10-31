@@ -74,7 +74,8 @@ namespace VmsMap.Grpc
       return new MapProto.GetCameraNodeResponse
       {
         Found = true,
-        Marker = ToMarker(marker, top.ContainsKey(marker.id!), request.CameraId),
+        Marker = ToMarker(
+          marker, top.ContainsKey(marker.id!), request.CameraId, NodeKind.Camera),
       };
     }
 

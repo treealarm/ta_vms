@@ -79,11 +79,14 @@ namespace VmsMap.Db
       if (!_db.Database.IsRelational())
         return updated;
 
+      // The transaction comes first: it is what opens the context's connection, and the recompute
+      // reads and writes through raw commands on that same connection.
+      await using var tx = await _db.Database.BeginTransactionAsync();
+
       // A changed alarm flag changes which objects are alarmed, not only how they are displayed.
       var withStates = await QueryIdsAsync(
         "SELECT DISTINCT object_id FROM object_state_values;", null);
 
-      await using var tx = await _db.Database.BeginTransactionAsync();
       await LockAggregationAsync();
       await RecomputeAsync(withStates);
       await tx.CommitAsync();

@@ -46,6 +46,62 @@ namespace VmsMap.Db
         .ToListAsync();
     }
 
+    public async Task<List<LevelDTO>> UpdateAsync(List<LevelDTO> levels)
+    {
+      var ids = levels
+        .Select(level => Utils.ConvertObjectIdToGuid(level.id))
+        .Where(id => id.HasValue)
+        .Select(id => id!.Value)
+        .ToList();
+
+      var known = await _db.Levels
+        .Where(level => ids.Contains(level.id))
+        .ToDictionaryAsync(level => level.id);
+
+      foreach (var dto in levels)
+      {
+        var id = Utils.ConvertObjectIdToGuid(dto.id);
+
+        // A row the caller does not know (or a duplicate id in one batch) becomes a new level.
+        if (id is null || !known.TryGetValue(id.Value, out var row))
+        {
+          row = new DBLevel { id = id ?? Utils.NewGuid() };
+          _db.Levels.Add(row);
+          known[row.id] = row;
+        }
+
+        row.zoom_level = dto.zoom_level ?? string.Empty;
+        row.zoom_min = dto.zoom_min;
+        row.zoom_max = dto.zoom_max;
+
+        dto.id = Utils.ConvertGuidToObjectId(row.id);
+      }
+
+      await _db.SaveChangesAsync();
+      return levels;
+    }
+
+    public async Task RemoveAsync(List<string> ids)
+    {
+      var guids = ids
+        .Select(Utils.ConvertObjectIdToGuid)
+        .Where(id => id.HasValue)
+        .Select(id => id!.Value)
+        .ToList();
+
+      if (guids.Count == 0)
+        return;
+
+      // Loaded and removed rather than ExecuteDelete: the in-memory provider the tests use has
+      // no bulk delete, and the dictionary is small.
+      var rows = await _db.Levels.Where(level => guids.Contains(level.id)).ToListAsync();
+      if (rows.Count == 0)
+        return;
+
+      _db.Levels.RemoveRange(rows);
+      await _db.SaveChangesAsync();
+    }
+
     private static LevelDTO ToDto(DBLevel level) => new()
     {
       id = Utils.ConvertGuidToObjectId(level.id),

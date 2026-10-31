@@ -5,6 +5,12 @@ import type {
   PlanCornersDto,
   SpaceDto,
 } from '../dto/dtos'
+import { enc, errorText, jsonRequest as json, requestJson } from '../api/requestJson'
+
+/** The maps endpoints answer errors the same way every other gRPC proxy does; the helper is
+ *  shared with the map API so there is one error-unwrapping rule. */
+export const spatialRequest = requestJson
+export { errorText }
 
 type SpatialState = {
   spaces: SpaceDto[]
@@ -23,46 +29,6 @@ const initialState: SpatialState = {
   loaded: false,
   error: null,
 }
-
-/**
- * fetch for the maps endpoints. They answer errors as {"error": "..."}, the same shape the
- * gateway gives gRPC failures, so the message the administrator sees is the sentence VmsCfg wrote
- * rather than a JSON blob.
- */
-export async function spatialRequest<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init)
-  const text = await response.text()
-  if (!response.ok) {
-    let message = text || response.statusText
-    try {
-      const body = JSON.parse(text) as { error?: string }
-      if (body?.error) message = body.error
-    } catch {
-      // Not JSON: the text itself is the message.
-    }
-    throw new Error(message)
-  }
-  return (text ? JSON.parse(text) : undefined) as T
-}
-
-/**
- * The message of whatever a maps call threw. `unwrap()` rejects with a plain {message} object, not
- * an Error, so `String(e)` alone would show the administrator "[object Object]".
- */
-export function errorText(e: unknown): string {
-  if (e instanceof Error) return e.message
-  if (typeof e === 'object' && e !== null && typeof (e as { message?: unknown }).message === 'string')
-    return (e as { message: string }).message
-  return String(e)
-}
-
-const json = (method: string, body: unknown): RequestInit => ({
-  method,
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(body),
-})
-
-const enc = encodeURIComponent
 
 export const loadSpaces = createAsyncThunk('spatial/loadSpaces', () =>
   spatialRequest<SpaceDto[]>('/api/spatial/spaces'))

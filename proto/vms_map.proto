@@ -97,6 +97,8 @@ service MapService {
   rpc GetStates(GetStatesRequest) returns (ObjectStateList);
   // States, alarm counters and descriptions in one answer, the way the map paints a set of nodes.
   rpc GetVisualStates(GetStatesRequest) returns (VisualStates);
+  // The alarm counters of the named nodes. An empty list asks for every alarmed node the caller
+  // may see: the operator's alarm list is not a set of ids the browser already knows.
   rpc GetAlarmedStates(GetStatesRequest) returns (AlarmStateList);
   rpc GetStateDescriptions(GetStateDescriptionsRequest) returns (StateDescriptionList);
 
@@ -113,6 +115,10 @@ service MapService {
 
   rpc GetLevels(google.protobuf.Empty) returns (LevelList);
   rpc GetLevel(GetLevelRequest) returns (GetLevelResponse);
+  // The zoom-level dictionary is part of the map's editing surface: a new layer gets a name and a
+  // zoom range, and a level that is no longer wanted is removed with its id.
+  rpc UpdateLevels(LevelList) returns (LevelList);
+  rpc DeleteLevels(ObjectIds) returns (OperationStatus);
 
   // Rights as stored, the expanded effective set for one caller, and the dictionary the editor
   // reads to know which actions a node kind accepts.
@@ -204,6 +210,10 @@ message Marker {
   string camera_id = 6;
   // The database's xmin, which changes whenever the row does. The watch stream diffs by it.
   uint32 version = 7;
+  // What kind of node this is (RightActions.NodeKind): a space, a diagram, a landmark, a camera,
+  // a figure or a plain object. It is the node's side row, not a stored type; a replica answers
+  // with its owner's kind.
+  string node_kind = 8;
 }
 
 message MarkerList {
@@ -285,6 +295,8 @@ message ObjProps {
   // The zoom range of the node's layer, when its figure has one.
   optional int32 zoom_min = 3;
   optional int32 zoom_max = 4;
+  // How the node is drawn. Empty when it has no visual row.
+  Visual visual = 5;
 }
 
 message CreateReplicaRequest {
@@ -360,6 +372,10 @@ message Figure {
   bool has_children = 9;
   string camera_id = 10;
   uint32 version = 11;
+  // What kind of node this is; see Marker.node_kind.
+  string node_kind = 12;
+  // How the node is drawn: colour, icon, rotation and caption.
+  Visual visual = 13;
 }
 
 message Figures {
@@ -848,6 +864,8 @@ message DiagramContent {
   repeated Diagram content = 4;
   repeated DiagramType dgr_types = 5;
   repeated Marker parents = 6;
+  // The drawings of the diagram and of the children it carries, by object id.
+  repeated Visual visuals = 7;
 }
 
 message GetDiagramTypesRequest {
@@ -962,20 +980,17 @@ message WatchIds {
   repeated string ids = 1;
 }
 
-message WatchValues {
-  bool enabled = 1;
-}
-
 message WatchRequest {
   oneof command {
     // The box to follow; replaces any previous one.
     WatchBox set_box = 1;
     // The exact set of nodes to follow; replaces any previous box or set.
     WatchIds set_ids = 2;
-    // Whether the values of the followed nodes are streamed too.
-    WatchValues update_values = 3;
   }
   Caller caller = 4;
+  // Stream the values of the followed nodes as well. A call carries exactly one command — a
+  // change of scope is a new stream — so this is a property of the scope, not a command.
+  bool values = 5;
 }
 
 message WatchItem {

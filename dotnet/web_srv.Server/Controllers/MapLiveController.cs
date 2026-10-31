@@ -65,8 +65,7 @@ public class MapLiveController(MapProto.MapService.MapServiceClient map) : Contr
       command.SetIds = new MapProto.WatchIds { Ids = { idList } };
     }
 
-    if (values)
-      command.UpdateValues = new MapProto.WatchValues { Enabled = true };
+    command.Values = values;
 
     try
     {

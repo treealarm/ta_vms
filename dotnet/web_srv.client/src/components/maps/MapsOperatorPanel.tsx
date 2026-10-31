@@ -1,32 +1,39 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import type { TFunction } from 'i18next'
-import {
-  Alert, Box, Button, Chip, IconButton, Stack, Tab, Tabs, ToggleButton, Tooltip, Typography,
-} from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
-import GpsFixedIcon from '@mui/icons-material/GpsFixed'
+import { Box, Tab, Tabs, ToggleButton, Tooltip, Typography } from '@mui/material'
+import AccountTreeIcon from '@mui/icons-material/AccountTree'
+import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
 import PersonPinCircleIcon from '@mui/icons-material/PersonPinCircle'
+import SearchIcon from '@mui/icons-material/Search'
+import TableRowsIcon from '@mui/icons-material/TableRows'
 import { Polyline } from 'react-leaflet'
 import { useTranslation } from 'react-i18next'
-import type { AlarmDto, CameraSetupDto, GeoPointDto, PtzGeoAimResultDto } from '../../dto/dtos'
+import type { GeoPointDto, PtzGeoAimResultDto } from '../../dto/dtos'
+import type { MapEvent, MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadCameras } from '../../store/liveSlice'
 import { errorText, loadPlacements, loadSpaces, spatialRequest } from '../../store/spatialSlice'
+import { loadNodes, resolveCameraNode, revealNode } from '../../store/objectsSlice'
+import { clearTracks } from '../../store/tracksSlice'
+import { RECENT_ALARM_MINUTES, alarmEndMs } from '../../store/eventsSlice'
+import { useMapSpace } from '../../hooks/useMapSpace'
+import { useAlarmFeed } from '../../hooks/useAlarmFeed'
 import SpaceCanvas, { type MapFocus } from '../../map/SpaceCanvas'
 import PlanOverlay from '../../map/PlanOverlay'
+import FiguresLayer from '../../map/FiguresLayer'
+import TracksLayer from '../../map/TracksLayer'
+import { pointsCentre } from '../../map/geo'
 import { CameraMarker } from '../../map/markers'
 import { Footprints } from '../../map/footprints'
 import DetectionsLayer from '../../map/DetectionsLayer'
-import { ALARM_COLOR, cameraMapStatus, STATUS_COLOR, type CameraMapStatus } from '../../map/cameraStatus'
-import { RECENT_ALARM_MINUTES, useAlarms } from '../../hooks/useAlarms'
-import CameraStream from '../CameraStream'
-import ArchiveHlsPreview from '../ArchiveHlsPreview'
-import { eventSource } from '../EventDetailsPanel'
-import PtzControlPad from '../PtzControlPad'
+import { ALARM_COLOR, ALARM_STATE, DEFAULT_NODE_COLOR, nodeStyle } from '../../map/nodeStyle'
+import ObjectTree from '../objects/ObjectTree'
+import ObjectPanel from '../objects/ObjectPanel'
+import ObjectSearch from '../objects/ObjectSearch'
+import DiagramViewer from '../diagrams/DiagramViewer'
+import StatesTable from '../events/StatesTable'
 import SpaceNav from './SpaceNav'
 import MapObjectList from './MapObjectList'
-import { alarmedSpaces, childrenOf, rootsOf, sharesGeometry } from './spatialUtils'
+import { childrenOf, rootsOf, sharesGeometry } from './spatialUtils'
 
 /** The camera list carries recording state and stream freshness; this is how stale the map may get. */
 const CAMERA_POLL_MS = 5000
@@ -44,11 +51,19 @@ const DETECTIONS_KEY = 'maps.operator.detections'
 const readDetections = () => { try { return localStorage.getItem(DETECTIONS_KEY) !== 'off' } catch { return true } }
 const writeDetections = (on: boolean) => { try { localStorage.setItem(DETECTIONS_KEY, on ? 'on' : 'off') } catch { /* private mode */ } }
 
+type AlarmEntry = {
+  key: string
+  nodeId: string
+  cameraId?: string
+  name: string
+  secondary: string
+  active: boolean
+}
+
 /**
- * Operator → Map: the cameras of a space where they stand, coloured by what they are doing, and the
- * spaces nested in it as outlines to dive into. Click a camera to see its picture, drive it, or —
- * for a calibrated PTZ — point it at a place. Only cameras the operator may watch are listed by the
- * server, so only those are drawn.
+ * Operator → Map: the one tree of nodes on the left, the space where the chosen node stands in the
+ * middle — its arbitrary figures painted by their states — and the node itself on the right.
+ * Alarms come from states and the journal, not from a polled camera list.
  */
 export default function MapsOperatorPanel() {
   const { t } = useTranslation()
@@ -57,22 +72,47 @@ export default function MapsOperatorPanel() {
   const placements = useAppSelector((s) => s.spatial.placements)
   const loaded = useAppSelector((s) => s.spatial.loaded)
   const camerasById = useAppSelector((s) => s.live.cameraStatesById)
+  const markers = useAppSelector((s) => s.objects.markers)
+  const statesById = useAppSelector((s) => s.states.states)
+  const alarmsById = useAppSelector((s) => s.states.alarms)
+  const descriptions = useAppSelector((s) => s.states.descriptions)
+  const alarmStates = useAppSelector((s) => s.states.all)
+  const recentAlarms = useAppSelector((s) => s.events.recentAlarms)
+  const levels = useAppSelector((s) => s.levels.levels)
+  const tracks = useAppSelector((s) => s.tracks.tracks)
+  const tracksSpaceId = useAppSelector((s) => s.tracks.spaceId)
 
   const [spaceId, setSpaceId] = useState<string | null>(readLastSpace)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  // A mnemoscheme takes the middle of the page in place of the space canvas.
+  const [diagramId, setDiagramId] = useState<string | null>(null)
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
+  // The open rows of the tree; a search result unfolds the path down to itself.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [leftTab, setLeftTab] = useState(0)
   const [aiming, setAiming] = useState(false)
   const [aimTarget, setAimTarget] = useState<GeoPointDto | null>(null)
   const [aimResult, setAimResult] = useState<PtzGeoAimResultDto | null>(null)
   const [aimError, setAimError] = useState<string | null>(null)
   const [focus, setFocus] = useState<MapFocus | null>(null)
   const [detections, setDetections] = useState(readDetections)
-  const { alarms, byCamera, latest } = useAlarms()
-  // The alarm picked from the list, so its own recording is shown rather than the camera's newest.
-  const [pickedAlarm, setPickedAlarm] = useState<string | null>(null)
-  // Only running alarms light the outlines: one that ended is history, not somewhere to go now.
-  const alarmed = useMemo(() => alarmedSpaces(
-    spaces, placements, new Set([...byCamera].filter(([, state]) => state === 'active').map(([id]) => id)),
-  ), [spaces, placements, byCamera])
+
+  const space = spaces.find((s) => s.id === spaceId) ?? rootsOf(spaces)[0] ?? null
+  const spaceData = useMapSpace(space)
+  useAlarmFeed()
+
+  const here = placements
+    .filter((p) => p.spaceId === space?.id && camerasById[p.cameraId])
+    .sort((a, b) => (camerasById[a.cameraId].name || a.cameraId).localeCompare(camerasById[b.cameraId].name || b.cameraId))
+  const nested = space?.id ? childrenOf(spaces, space.id) : []
+
+  const selectedMarker = selectedNodeId ? markers[selectedNodeId] : undefined
+  const selectedCameraId = selectedMarker?.cameraId ?? null
+  const selectedPlacement = here.find((p) => p.cameraId === selectedCameraId)
+  const figureById = useMemo(
+    () => new Map(spaceData.figures.map((figure) => [figure.id, figure])),
+    [spaceData.figures],
+  )
 
   useEffect(() => {
     void dispatch(loadSpaces())
@@ -85,45 +125,218 @@ export default function MapsOperatorPanel() {
     }
   }, [dispatch])
 
-  const space = spaces.find((s) => s.id === spaceId) ?? rootsOf(spaces)[0] ?? null
-  const here = placements
-    .filter((p) => p.spaceId === space?.id && camerasById[p.cameraId])
-    .sort((a, b) => (camerasById[a.cameraId].name || a.cameraId).localeCompare(camerasById[b.cameraId].name || b.cameraId))
-  const nested = space?.id ? childrenOf(spaces, space.id) : []
-  const selected = selectedId ? camerasById[selectedId] : undefined
-  const selectedPlacement = here.find((p) => p.cameraId === selectedId)
+  // The camera node behind the placement: the canonical node for the reference, its picture for
+  // the other placements. Its state, not the camera's recording status, paints the marker.
+  const nodeForPlacement = (p: { cameraId: string; isReference: boolean }) =>
+    spaceData.markers.find((m) => m.cameraId === p.cameraId && (p.isReference ? !m.ownerId : !!m.ownerId))
+      ?? spaceData.markers.find((m) => m.cameraId === p.cameraId)
+  const placementColor = (p: { cameraId: string; isReference: boolean }) => {
+    const node = nodeForPlacement(p)
+    if (!node) return DEFAULT_NODE_COLOR
+    return nodeStyle(figureById.get(node.id), statesById[node.id], alarmsById[node.id], descriptions).color
+  }
+
+  const cameraFigureIds = useMemo(
+    () => new Set(spaceData.markers
+      .filter((m) => m.cameraId && here.some((p) => p.cameraId === m.cameraId))
+      .map((m) => m.id)),
+    [spaceData.markers, here],
+  )
+
+  // The counters live on the space nodes; every watched space with an alarm below it is marked.
+  const alarmed = useMemo(() => {
+    const ids = new Set<string>()
+    for (const candidate of spaces) {
+      const id = candidate.id
+      if (!id) continue
+      const alarm = alarmsById[id]
+      if (alarm?.alarm || (alarm?.childrenAlarms ?? 0) > 0) ids.add(id)
+    }
+    return ids
+  }, [spaces, alarmsById])
+
+  // The alarm list: running alarms from the states, alarms that just ended from the journal, so
+  // the pale ring survives NORM.
+  const alarmEntries = useMemo(() => {
+    // Recent events are already pruned by the poll that fetched them; the render itself must stay
+    // pure, so no clock is read here.
+    const latestEvent = new Map<string, MapEvent>()
+    for (const event of recentAlarms) {
+      if (!event.objectId) continue
+      const known = latestEvent.get(event.objectId)
+      const end = alarmEndMs(event) ?? Number.POSITIVE_INFINITY
+      const knownEnd = known ? alarmEndMs(known) ?? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY
+      if (end > knownEnd) latestEvent.set(event.objectId, event)
+    }
+
+    const nameOf = (nodeId: string) => {
+      const marker = markers[nodeId]
+      const cameraName = marker?.cameraId ? camerasById[marker.cameraId]?.name : undefined
+      return marker?.name || cameraName || nodeId
+    }
+    const causeOf = (event?: MapEvent) =>
+      [event?.param1 || event?.param0, event?.timestamp ? clock(event.timestamp) : ''].filter(Boolean).join(' · ')
+
+    const running: AlarmEntry[] = alarmStates
+      .filter((alarm) => alarm.alarm && alarm.id)
+      .map((alarm) => {
+        const nodeId = alarm.id as string
+        return {
+          key: `state:${nodeId}`,
+          nodeId,
+          cameraId: markers[nodeId]?.cameraId,
+          name: nameOf(nodeId),
+          secondary: causeOf(latestEvent.get(nodeId)),
+          active: true,
+        }
+      })
+
+    const ended: AlarmEntry[] = [...latestEvent.entries()]
+      .filter(([nodeId]) => !alarmStates.some((alarm) => alarm.id === nodeId && alarm.alarm))
+      .flatMap(([nodeId, event]) => {
+        if (alarmEndMs(event) === undefined) return []
+        return [{
+          key: `event:${event.id}`,
+          nodeId,
+          cameraId: markers[nodeId]?.cameraId,
+          name: nameOf(nodeId),
+          secondary: causeOf(event),
+          active: false,
+        }]
+      })
+
+    return [...running, ...ended]
+  }, [alarmStates, recentAlarms, markers, camerasById])
+
+  const byCamera = useMemo(() => {
+    const result = new Map<string, 'active' | 'recent'>()
+    for (const entry of alarmEntries) {
+      if (entry.cameraId && (!result.has(entry.cameraId) || entry.active)) {
+        result.set(entry.cameraId, entry.active ? 'active' : 'recent')
+      }
+    }
+    return result
+  }, [alarmEntries])
 
   // Aiming goes by where the camera really stands, which may be another space altogether.
-  const reference = placements.find((p) => p.cameraId === selectedId && p.isReference)
+  const reference = placements.find((p) => p.cameraId === selectedCameraId && p.isReference)
   const referenceSpace = spaces.find((s) => s.id === reference?.spaceId)
-  const aimUnavailable = !reference
-    ? t('maps.aimNoReference')
-    : !sharesGeometry(referenceSpace, space ?? undefined) ? t('maps.aimOtherWorld', { name: referenceSpace?.name ?? '?' }) : null
+  const aimUnavailable = !selectedCameraId
+    ? null
+    : !reference
+      ? t('maps.aimNoReference')
+      : !sharesGeometry(referenceSpace, space ?? undefined) ? t('maps.aimOtherWorld', { name: referenceSpace?.name ?? '?' }) : null
 
-  const select = (cameraId: string | null) => {
-    setSelectedId(cameraId)
-    setPickedAlarm(null)
+  const resetAim = () => {
     setAiming(false)
     setAimTarget(null)
     setAimResult(null)
     setAimError(null)
   }
 
-  const open = (id: string) => {
+  const openSpace = (id: string) => {
+    // Tracks were read for one space's rectangle; another space asks a different question.
+    if (id !== space?.id) void dispatch(clearTracks())
+
+    setDiagramId(null)
     setSpaceId(id)
     writeLastSpace(id)
     setFocus(null)
-    select(null)
+  }
+
+  const open = (id: string) => {
+    openSpace(id)
+    setSelectedNodeId(null)
+    resetAim()
+  }
+
+  /** Opens the canvas a node belongs to and selects it; a camera is also brought into view. */
+  const selectNode = (marker: MapMarker) => {
+    resetAim()
+
+    if (marker.nodeKind === 'space') openSpace(marker.id)
+    if (marker.nodeKind === 'diagram') setDiagramId(marker.id)
+
+    const cameraId = marker.cameraId
+    if (cameraId) {
+      const placement = placements.find((p) => p.cameraId === cameraId && p.isReference)
+        ?? placements.find((p) => p.cameraId === cameraId && p.spaceId === space?.id)
+      if (placement && placement.spaceId !== space?.id) openSpace(placement.spaceId)
+      if (placement) setFocus((f) => ({ lat: placement.lat, lon: placement.lon, seq: (f?.seq ?? 0) + 1 }))
+    }
+
+    setSelectedNodeId(marker.id)
+  }
+
+  /**
+   * A camera picked on the canvas or in the alarm list: the node behind the placement may not be
+   * among the loaded children yet, and its id is derived from the camera id, so ask the map to
+   * resolve it.
+   */
+  const selectCamera = async (cameraId: string) => {
+    const known = Object.values(markers).find((m) => m.cameraId === cameraId && !m.ownerId)
+      ?? Object.values(markers).find((m) => m.cameraId === cameraId)
+    if (known) {
+      selectNode(known)
+      return
+    }
+
+    const placement = placements.find((p) => p.cameraId === cameraId && p.isReference)
+    const marker = await dispatch(resolveCameraNode({ cameraId, spaceId: placement?.spaceId })).unwrap()
+    if (marker) selectNode(marker)
+  }
+
+  /**
+   * A node picked in the search tab: unfold the tree down to it, open the space it stands in and
+   * select it. A camera then goes by its reference placement, like one picked anywhere else.
+   */
+  const revealFromSearch = async (marker: MapMarker) => {
+    resetAim()
+
+    // The chain from the root down to its parent, with every page along it read.
+    const ancestors = await dispatch(revealNode(marker)).unwrap().catch(() => [] as MapMarker[])
+
+    // The canvas it stands on: itself for a space or a diagram, else the nearest one above it.
+    const canvas = marker.nodeKind === 'space' || marker.nodeKind === 'diagram'
+      ? marker
+      : [...ancestors].reverse()
+        .find((ancestor) => ancestor.nodeKind === 'space' || ancestor.nodeKind === 'diagram')
+
+    if (canvas?.nodeKind === 'diagram') setDiagramId(canvas.id)
+    else if (canvas?.nodeKind === 'space') openSpace(canvas.id)
+    else if (marker.cameraId) {
+      // Nothing in the tree places it on a canvas; its reference placement does.
+      const placement = placements.find((p) => p.cameraId === marker.cameraId && p.isReference)
+      if (placement) openSpace(placement.spaceId)
+    }
+
+    if (ancestors.length > 0) {
+      setExpanded((previous) => {
+        const next = new Set(previous)
+        for (const ancestor of ancestors) next.add(ancestor.id)
+        return next
+      })
+    }
+
+    setSelectedNodeId(marker.id)
+
+    // A node that is not a camera is drawn from its own shape, which this canvas may not know yet.
+    if (!marker.cameraId) {
+      const loaded = await dispatch(loadNodes([marker.id])).unwrap().catch(() => null)
+      const figure = loaded?.figures.find((candidate) => candidate.id === marker.id)
+      const centre = pointsCentre(figure?.geometry?.coord ?? [])
+      if (centre) setFocus((previous) => ({ ...centre, seq: (previous?.seq ?? 0) + 1 }))
+    }
   }
 
   const aimAt = async (at: GeoPointDto) => {
-    if (!selectedId || !space?.id) return
+    if (!selectedCameraId || !space?.id) return
     setAimTarget(at)
     setAimError(null)
     setAimResult(null)
     try {
       // A point picked on a plan is on its floor.
-      setAimResult(await spatialRequest<PtzGeoAimResultDto>(`/api/ptz-geo/${encodeURIComponent(selectedId)}/aim`, {
+      setAimResult(await spatialRequest<PtzGeoAimResultDto>(`/api/ptz-geo/${encodeURIComponent(selectedCameraId)}/aim`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ spaceId: space.id, lat: at.lat, lon: at.lon, heightM: 0 }),
@@ -133,132 +346,189 @@ export default function MapsOperatorPanel() {
     }
   }
 
-  /**
-   * Shows an alarm's camera: here if it is drawn in this space, otherwise where it really stands,
-   * otherwise only its panel.
-   */
-  const goToAlarm = (alarm: AlarmDto) => {
-    const p = placements.find((x) => x.cameraId === alarm.cameraId && x.spaceId === space?.id)
-      ?? placements.find((x) => x.cameraId === alarm.cameraId && x.isReference)
-    if (p && p.spaceId !== space?.id) open(p.spaceId)
-    select(alarm.cameraId)
-    setPickedAlarm(alarm.eventUuid)
-    if (p) setFocus((f) => ({ lat: p.lat, lon: p.lon, seq: (f?.seq ?? 0) + 1 }))
-  }
-
-  /** Selects a camera in this space and brings it into view. */
-  const goTo = (cameraId: string) => {
-    const p = here.find((x) => x.cameraId === cameraId)
-    if (!p) return
-    select(cameraId)
-    setFocus((f) => ({ lat: p.lat, lon: p.lon, seq: (f?.seq ?? 0) + 1 }))
-  }
-
   if (loaded && !space) {
     return <Typography color="text.secondary" sx={{ p: 2 }}>{t('maps.noSpacesOperator')}</Typography>
   }
   if (!space) return null
 
+  const alarmSection = {
+    title: t('maps.alarms'),
+    hint: t('maps.alarmsHint', { minutes: RECENT_ALARM_MINUTES }),
+    empty: t('maps.noAlarms'),
+    items: alarmEntries.map((entry) => ({
+      key: entry.key,
+      primary: entry.name,
+      secondary: entry.secondary,
+      dot: entry.active ? ALARM_COLOR : `${ALARM_COLOR}66`,
+      selected: entry.nodeId === selectedNodeId,
+      onClick: () => {
+        const marker = markers[entry.nodeId]
+        if (marker) selectNode(marker)
+        else if (entry.cameraId) void selectCamera(entry.cameraId)
+      },
+    })),
+  }
+
   return (
     <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex', border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
-        <Box sx={{ width: 240, flexShrink: 0, borderRight: 1, borderColor: 'divider', overflowY: 'auto' }}>
-          <MapObjectList
-            sections={[
-              {
-                title: t('maps.alarms'),
-                hint: t('maps.alarmsHint', { minutes: RECENT_ALARM_MINUTES }),
-                empty: t('maps.noAlarms'),
-                items: alarms.filter((a) => camerasById[a.cameraId]).map((a) => {
-                  const where = placements.find((p) => p.cameraId === a.cameraId && p.isReference)
-                  const whereName = spaces.find((s) => s.id === where?.spaceId)?.name
-                  return {
-                    key: a.eventUuid,
-                    primary: camerasById[a.cameraId].name || a.cameraId,
-                    secondary: [alarmCause(a, t), alarmTime(a, t), whereName].filter(Boolean).join(' · '),
-                    dot: a.active ? ALARM_COLOR : `${ALARM_COLOR}66`,
-                    selected: a.eventUuid === pickedAlarm,
-                    onClick: () => goToAlarm(a),
-                  }
-                }),
-              },
-              {
-                title: t('maps.cameras'),
-                empty: t('maps.noCamerasHereOperator'),
-                items: here.map((p) => {
-                  const camera = camerasById[p.cameraId]
-                  return {
-                    key: p.cameraId,
-                    primary: camera.name || p.cameraId,
-                    dot: STATUS_COLOR[cameraMapStatus(camera)],
-                    selected: p.cameraId === selectedId,
-                    onClick: () => goTo(p.cameraId),
-                  }
-                }),
-              },
-              ...(nested.length ? [{
-                title: t('maps.inside'),
-                items: nested.map((s) => ({ key: s.id ?? s.name, primary: s.name, onClick: () => s.id && open(s.id) })),
-              }] : []),
-            ]}
-          />
-        </Box>
-        <Box sx={{ flex: 1, minWidth: 0, display: 'flex' }}>
-          <SpaceCanvas
-            key={space.id}
-            space={space}
-            picking={aiming}
-            focus={focus}
-            onMapClick={(at) => (aiming ? void aimAt(at) : select(null))}
-            overlay={(
-              <>
-                <SpaceNav spaces={spaces} space={space} onOpen={open} alarmed={alarmed} />
-                <DetectionsToggle on={detections} onChange={(on) => { setDetections(on); writeDetections(on) }} />
-              </>
-            )}
+        <Box sx={{ width: 270, flexShrink: 0, borderRight: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <Tabs
+            value={leftTab}
+            onChange={(_, value: number) => setLeftTab(value)}
+            variant="fullWidth"
+            sx={{
+              minHeight: 48,
+              flexShrink: 0,
+              '& .MuiTab-root': { minHeight: 48, py: 0.5, px: 0.25, minWidth: 0, fontSize: 11 },
+            }}
           >
-            {space.plan && <PlanOverlay space={space} />}
-            {detections && space.id && <DetectionsLayer spaceId={space.id} />}
-            <Footprints nested={nested} alarmed={alarmed} onPick={(s) => s.id && open(s.id)} />
-            {here.map((p) => {
-              const camera = camerasById[p.cameraId]
-              return (
-                <CameraMarker
-                  key={p.cameraId}
-                  placement={p}
-                  label={camera?.name || p.cameraId}
-                  color={STATUS_COLOR[cameraMapStatus(camera)]}
-                  selected={p.cameraId === selectedId}
-                  dimmed={!!selectedId && p.cameraId !== selectedId}
-                  alarm={byCamera.get(p.cameraId) ?? null}
-                  onSelect={() => select(p.cameraId)}
-                />
-              )
-            })}
-            {selectedPlacement && aimTarget && (
-              <Polyline
-                positions={[[selectedPlacement.lat, selectedPlacement.lon], [aimTarget.lat, aimTarget.lon]]}
-                pathOptions={{ color: aimError ? '#ef5350' : '#ffca28', weight: 2, dashArray: '6 6' }}
-                interactive={false}
+            <Tab icon={<AccountTreeIcon fontSize="small" />} label={t('maps.tree.tab')} />
+            <Tab icon={<NotificationsActiveIcon fontSize="small" />} label={t('maps.alarms')} />
+            <Tab icon={<TableRowsIcon fontSize="small" />} label={t('maps.states.tab')} />
+            <Tab icon={<SearchIcon fontSize="small" />} label={t('maps.search.tab')} />
+          </Tabs>
+          <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+            {leftTab === 0 ? (
+              <ObjectTree
+                selectedId={selectedNodeId}
+                onSelect={selectNode}
+                checkedIds={checkedIds}
+                onCheckedChange={setCheckedIds}
+                expanded={expanded}
+                onExpandedChange={setExpanded}
               />
+            ) : leftTab === 1 ? (
+              <MapObjectList sections={[alarmSection]} />
+            ) : leftTab === 2 ? (
+              <StatesTable ids={checkedIds} selectedId={selectedNodeId} onSelect={selectNode} />
+            ) : (
+              <ObjectSearch space={space} onSelect={(marker) => void revealFromSearch(marker)} />
             )}
-          </SpaceCanvas>
+          </Box>
         </Box>
-        {selected && (
-          <CameraSidePanel
-            key={selected.cameraId}
-            camera={selected}
-            alarm={alarms.find((a) => a.eventUuid === pickedAlarm) ?? latest.get(selected.cameraId) ?? null}
+
+        <Box sx={{ flex: 1, minWidth: 0, display: 'flex' }}>
+          {diagramId ? (
+            <DiagramViewer
+              diagramId={diagramId}
+              selectedId={selectedNodeId}
+              onPick={(marker) => setSelectedNodeId(marker.id)}
+              onOpen={(marker) => selectNode(marker)}
+            />
+          ) : (
+            <SpaceCanvas
+              key={space.id}
+              space={space}
+              picking={aiming}
+              focus={focus}
+              onMapClick={(at) => (aiming ? void aimAt(at) : setSelectedNodeId(null))}
+              overlay={(
+                <>
+                  <SpaceNav spaces={spaces} space={space} onOpen={open} alarmed={alarmed} />
+                  <DetectionsToggle on={detections} onChange={(on) => { setDetections(on); writeDetections(on) }} />
+                </>
+              )}
+            >
+              {space.plan && <PlanOverlay space={space} />}
+              {detections && space.id && <DetectionsLayer spaceId={space.id} />}
+              <FiguresLayer
+                figures={spaceData.figures}
+                states={statesById}
+                alarms={alarmsById}
+                descriptions={descriptions}
+                levels={levels}
+                selectedId={selectedNodeId}
+                onSelect={(id) => { const marker = markers[id]; if (marker) selectNode(marker) }}
+                skipIds={cameraFigureIds}
+              />
+              {tracksSpaceId === space.id && tracks.length > 0 && (
+                <TracksLayer tracks={tracks} markers={markers} />
+              )}
+              <Footprints nested={nested} alarmed={alarmed} onPick={(s) => s.id && open(s.id)} />
+              {here.map((p) => {
+                const camera = camerasById[p.cameraId]
+                return (
+                  <CameraMarker
+                    key={p.cameraId}
+                    placement={p}
+                    label={camera?.name || p.cameraId}
+                    color={placementColor(p)}
+                    selected={p.cameraId === selectedCameraId}
+                    dimmed={!!selectedCameraId && p.cameraId !== selectedCameraId}
+                    alarm={byCamera.get(p.cameraId) ?? null}
+                    onSelect={() => void selectCamera(p.cameraId)}
+                  />
+                )
+              })}
+              {selectedPlacement && aimTarget && (
+                <Polyline
+                  positions={[[selectedPlacement.lat, selectedPlacement.lon], [aimTarget.lat, aimTarget.lon]]}
+                  pathOptions={{ color: aimError ? '#ef5350' : '#ffca28', weight: 2, dashArray: '6 6' }}
+                  interactive={false}
+                />
+              )}
+            </SpaceCanvas>
+          )}
+        </Box>
+
+        {selectedNodeId && (
+          <ObjectPanel
+            key={selectedNodeId}
+            nodeId={selectedNodeId}
+            onClose={() => setSelectedNodeId(null)}
+            onSelect={(id) => { const marker = markers[id]; if (marker) selectNode(marker) }}
             aiming={aiming}
             onAimingChange={setAiming}
             aimUnavailable={aimUnavailable}
             aimResult={aimResult}
             aimError={aimError}
-            onClose={() => select(null)}
           />
         )}
       </Box>
-      <StatusLegend />
+      {!diagramId && (
+        <StateLegend
+          ids={spaceData.markers.map((marker) => marker.id)}
+          states={statesById}
+          descriptions={descriptions}
+        />
+      )}
+    </Box>
+  )
+}
+
+/** What the colours on this canvas mean: the states its nodes carry, and the alarm colour. */
+function StateLegend({
+  ids, states, descriptions,
+}: {
+  ids: string[]
+  states: Record<string, { states?: string[] }>
+  descriptions: Record<string, { stateDescr?: string; stateColor?: string }>
+}) {
+  const { t } = useTranslation()
+  const used = new Set<string>()
+  for (const id of ids) {
+    for (const state of states[id]?.states ?? []) used.add(state)
+  }
+
+  const entries = [...used]
+    // The alarm dot below already stands for the ALARM state.
+    .filter((name) => name !== ALARM_STATE)
+    .map((name) => ({ name, description: descriptions[name] }))
+    .filter((entry) => entry.description)
+
+  return (
+    <Box sx={{ display: 'flex', gap: 2, flexShrink: 0, flexWrap: 'wrap' }}>
+      {entries.map(({ name, description }) => (
+        <Box key={name} sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+          <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: description?.stateColor || 'text.disabled' }} />
+          <Typography variant="caption" color="text.secondary">{description?.stateDescr || name}</Typography>
+        </Box>
+      ))}
+      <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+        <Box sx={{ width: 10, height: 10, borderRadius: '50%', border: `2px solid ${ALARM_COLOR}` }} />
+        <Typography variant="caption" color="text.secondary">{t('maps.alarm')}</Typography>
+      </Box>
     </Box>
   )
 }
@@ -282,117 +552,4 @@ function DetectionsToggle({ on, onChange }: { on: boolean; onChange: (on: boolea
   )
 }
 
-/** What set an alarm off, in a word: the last part of the ONVIF topic, or where it came from. */
-function alarmCause(a: AlarmDto, t: TFunction): string {
-  if (a.trigger) return a.trigger.split('/').pop() || a.trigger
-  const source = eventSource(a)
-  return source === 'analytics' ? t('events.sourceAnalytics') : source === 'onvif' ? t('events.sourceOnvif') : ''
-}
-
 const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-
-/** "since 12:03" while it runs, "12:03–12:05" once it ended. */
-function alarmTime(a: AlarmDto, t: TFunction): string {
-  return a.active || !a.alarmEndTs
-    ? t('maps.alarmSince', { time: clock(a.alarmStartTs) })
-    : `${clock(a.alarmStartTs)}–${clock(a.alarmEndTs)}`
-}
-
-type SideProps = {
-  camera: CameraSetupDto
-  /** The camera's newest alarm within the window — running, or ended lately — or null. */
-  alarm: AlarmDto | null
-  aiming: boolean
-  onAimingChange: (on: boolean) => void
-  /** Why this camera cannot be aimed at a point here, or null when it can. */
-  aimUnavailable: string | null
-  aimResult: PtzGeoAimResultDto | null
-  aimError: string | null
-  onClose: () => void
-}
-
-function CameraSidePanel({ camera, alarm, aiming, onAimingChange, aimUnavailable, aimResult, aimError, onClose }: SideProps) {
-  const { t } = useTranslation()
-  // The recording of the alarm, beside the live picture; offered only where the archive may be seen.
-  const [view, setView] = useState<'live' | 'alarm'>('live')
-  const showing = view === 'alarm' && alarm?.archive ? 'alarm' : 'live'
-  const navigate = useNavigate()
-  const monitors = useAppSelector((s) => s.monitors.monitors)
-  const status = cameraMapStatus(camera)
-  const stream = (camera.streams ?? []).find((s) => s.webRtc && s.whepUrl && !s.disabled)
-  const monitor = monitors.find((m) => m.cameraIds.includes(camera.cameraId) || m.slots.some((s) => s.cameraId === camera.cameraId))
-
-  return (
-    <Stack spacing={1} sx={{ width: 360, flexShrink: 0, borderLeft: 1, borderColor: 'divider', p: 1.5, overflowY: 'auto' }}>
-      <Stack direction="row" alignItems="center" spacing={1}>
-        <Typography variant="subtitle1" fontWeight={600} noWrap sx={{ flex: 1 }}>{camera.name || camera.cameraId}</Typography>
-        <Chip size="small" label={t(`maps.status.${status}`)} sx={{ bgcolor: STATUS_COLOR[status], color: '#000' }} />
-        <IconButton size="small" onClick={onClose}><CloseIcon fontSize="small" /></IconButton>
-      </Stack>
-      {alarm && (
-        <Alert severity={alarm.active ? 'error' : 'warning'} sx={{ py: 0 }}>
-          {alarm.active ? t('maps.alarmNow') : t('maps.alarmEnded')} · {[alarmCause(alarm, t), alarmTime(alarm, t)].filter(Boolean).join(' · ')}
-        </Alert>
-      )}
-      {alarm?.archive && (
-        <Tabs value={showing} onChange={(_, v: 'live' | 'alarm') => setView(v)} variant="fullWidth" sx={{ minHeight: 32, '& .MuiTab-root': { minHeight: 32, py: 0.5 } }}>
-          <Tab value="live" label={t('maps.viewLive')} />
-          <Tab value="alarm" label={t('maps.viewAlarm')} />
-        </Tabs>
-      )}
-      {showing === 'alarm' && alarm ? (
-        <ArchiveHlsPreview selected={alarm} />
-      ) : (
-        <Box sx={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', bgcolor: '#000', borderRadius: 1, overflow: 'hidden' }}>
-          {stream?.whepUrl && !camera.disabled
-            ? <CameraStream key={camera.cameraId} whepUrl={stream.whepUrl} stunUrl={camera.effectiveWebrtcStunUrl} cameraId={camera.cameraId} bboxEnabled />
-            : <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>{t('maps.noLive')}</Typography>}
-        </Box>
-      )}
-      {monitor && (
-        <Button size="small" variant="outlined" onClick={() => navigate(`/operator/monitors?monitorId=${encodeURIComponent(monitor.monitorId)}`)}>
-          {t('maps.openInMonitor', { name: monitor.name })}
-        </Button>
-      )}
-      {camera.hasTelemetry && (
-        <>
-          <PtzControlPad cameraId={camera.cameraId} profileToken={camera.streams?.[0]?.profileToken ?? ''} />
-          <Tooltip title={aimUnavailable ?? t('maps.aimHint')}>
-            <span>
-              <ToggleButton size="small" value="aim" fullWidth disabled={!!aimUnavailable} selected={aiming} onChange={() => onAimingChange(!aiming)}>
-                <GpsFixedIcon fontSize="small" sx={{ mr: 1 }} />{t('maps.aimHere')}
-              </ToggleButton>
-            </span>
-          </Tooltip>
-          {aimUnavailable && <Typography variant="caption" color="text.secondary">{aimUnavailable}</Typography>}
-          {aimError && <Alert severity="error">{aimError}</Alert>}
-          {aimResult && (
-            <Alert severity={aimResult.extrapolated ? 'warning' : 'success'}>
-              {t('maps.aimed', { dist: aimResult.distanceM.toFixed(0), az: aimResult.azimuthDeg.toFixed(0) })}
-              {aimResult.extrapolated && ` ${t('ptzGeo.extrapolated')}`}
-            </Alert>
-          )}
-        </>
-      )}
-    </Stack>
-  )
-}
-
-function StatusLegend() {
-  const { t } = useTranslation()
-  const order: CameraMapStatus[] = ['recording', 'live', 'quiet', 'disabled']
-  return (
-    <Stack direction="row" spacing={2} sx={{ flexShrink: 0 }}>
-      {order.map((s) => (
-        <Stack key={s} direction="row" spacing={0.5} alignItems="center">
-          <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: STATUS_COLOR[s] }} />
-          <Typography variant="caption" color="text.secondary">{t(`maps.status.${s}`)}</Typography>
-        </Stack>
-      ))}
-      <Stack direction="row" spacing={0.5} alignItems="center">
-        <Box sx={{ width: 10, height: 10, borderRadius: '50%', border: `2px solid ${ALARM_COLOR}` }} />
-        <Typography variant="caption" color="text.secondary">{t('maps.alarm')}</Typography>
-      </Stack>
-    </Stack>
-  )
-}

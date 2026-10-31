@@ -369,6 +369,13 @@ namespace VmsMap.Db
       if (!updatedList.Any())
         return;
 
+      // A node under itself is a one-row cycle: the alarm aggregation would walk it forever, so
+      // the write is refused where it is made rather than turned into a 500 further down.
+      var selfParented = updatedList
+        .FirstOrDefault(item => !string.IsNullOrEmpty(item.id) && item.id == item.parent_id);
+      if (selfParented is not null)
+        throw new ArgumentException($"Node '{selfParented.id}' cannot be its own parent");
+
       var ids = updatedList
         .Select(u => Utils.ConvertObjectIdToGuid(u.id))
         .Where(g => g.HasValue)

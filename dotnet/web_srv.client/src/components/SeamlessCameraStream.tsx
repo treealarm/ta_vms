@@ -120,9 +120,13 @@ const SeamlessCameraStream: React.FC<Props> = ({
     releaseSlot()
   }
 
+  // The timer reaches the latest promote through a ref: re-registering it on every render would
+  // restart the warm-up clock and it would never fire.
+  const promoteRef = useRef(promote)
+  useEffect(() => { promoteRef.current = promote })
   useEffect(() => {
     if (!pendingUrl) return
-    const timer = window.setTimeout(() => promote(pendingUrl), WARMUP_TIMEOUT_MS)
+    const timer = window.setTimeout(() => promoteRef.current(pendingUrl), WARMUP_TIMEOUT_MS)
     return () => clearTimeout(timer)
   }, [pendingUrl])
 

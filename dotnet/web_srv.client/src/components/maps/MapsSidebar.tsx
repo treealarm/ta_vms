@@ -1,15 +1,24 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { Box, Chip, IconButton, List, Stack, Tab, Tabs, Tooltip, Typography } from '@mui/material'
+import {
+  Box, Chip, IconButton, List, ListItemButton, ListItemText, Stack, Tab, Tabs, Tooltip, Typography,
+} from '@mui/material'
+import AddIcon from '@mui/icons-material/Add'
 import PlaceIcon from '@mui/icons-material/Place'
 import { useTranslation } from 'react-i18next'
 import type { SpaceDto } from '../../dto/dtos'
-import { useAppSelector } from '../../store'
+import type { MapMarker } from '../../dto/mapDtos'
+import { useAppDispatch, useAppSelector } from '../../store'
+import { createDiagramNode } from '../../store/mapEditsSlice'
+import { useMapChildren } from '../../hooks/useMapChildren'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
+import KindIcon from '../../map/KindIcon'
+import { sortMarkers } from '../../map/nodeKind'
+import { NODE_DRAG_TYPE } from '../../map/dragTypes'
 import SettingsListItem from '../settings/SettingsListItem'
 import MapObjectList, { type MapObjectSection } from './MapObjectList'
 import { useEditorState } from './editorState'
 
-type SpaceTab = 'cameras' | 'landmarks'
+type SpaceTab = 'cameras' | 'nodes' | 'landmarks'
 
 type Props = {
   tree: { space: SpaceDto; depth: number }[]
@@ -36,6 +45,7 @@ export default function MapsSidebar({ tree, loaded, space, onSelectSpace }: Prop
   const placedHere = useAppSelector((s) => new Set(
     s.spatial.placements.filter((p) => p.spaceId === space?.id).map((p) => p.cameraId)).size)
   const landmarkCount = useAppSelector((s) => s.spatial.landmarksBySpace[space?.id ?? '']?.length ?? 0)
+  const { markers } = useMapChildren(space?.id ?? null)
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
@@ -54,12 +64,19 @@ export default function MapsSidebar({ tree, loaded, space, onSelectSpace }: Prop
               sx={{ flex: 1, minHeight: 36, '& .MuiTab-root': { minHeight: 36, minWidth: 0, px: 1, textTransform: 'none' } }}
             >
               <Tab value="cameras" label={<TabLabel label={t('maps.tabCameras')} count={`${placedHere}/${cameraCount}`} />} />
+              <Tab value="nodes" label={<TabLabel label={t('maps.editor.tabNodes')} count={String(markers.length)} />} />
               <Tab value="landmarks" label={<TabLabel label={t('maps.tabLandmarks')} count={String(landmarkCount)} />} />
             </Tabs>
             {tab === 'landmarks' && <AddLandmarkButton />}
           </Stack>
           <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-            {tab === 'cameras' ? <CamerasList space={space} /> : <LandmarksList space={space} />}
+            {tab === 'cameras' ? (
+              <CamerasList space={space} />
+            ) : tab === 'nodes' ? (
+              <NodesList markers={markers} space={space} />
+            ) : (
+              <LandmarksList space={space} />
+            )}
           </Box>
         </>
       ) : (
@@ -205,6 +222,95 @@ function CamerasList({ space }: { space: SpaceDto }) {
         {t('maps.camerasHint')}
       </Typography>
       <MapObjectList sections={sections} />
+    </>
+  )
+}
+
+/**
+ * What is drawn on this canvas already. A node dragged from here onto the map becomes a replica
+ * of itself where it is dropped — the way a camera's picture is made on another plan.
+ */
+function NodesList({ markers, space }: { markers: MapMarker[]; space: SpaceDto }) {
+  const { t } = useTranslation()
+  const dispatch = useAppDispatch()
+  const { selection, setSelection, openDiagram } = useEditorState()
+  const [busy, setBusy] = useState(false)
+
+  /** The first mnemoscheme of a space has to come from somewhere; its children are made inside it. */
+  const addDiagram = async () => {
+    setBusy(true)
+    try {
+      const created = await dispatch(createDiagramNode({
+        parentId: space.id ?? '',
+        name: `${t('diagramEditor.diagram')} ${markers.length + 1}`,
+        geometry: { top: 0, left: 0, width: 800, height: 600, rotation: 0 },
+        // A diagram standing on a map needs a place on it, like any other node drawn there.
+        at: {
+          lat: (space.view.southWest.lat + space.view.northEast.lat) / 2,
+          lon: (space.view.southWest.lon + space.view.northEast.lon) / 2,
+        },
+      })).unwrap()
+      setSelection({ kind: 'node', id: created.id })
+      openDiagram(created.id)
+    } catch {
+      // The store carries the message.
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <Stack direction="row" alignItems="center" sx={{ px: 1.5, pt: 1 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+          {t('maps.editor.nodesHint')}
+        </Typography>
+        <Tooltip title={t('diagramEditor.addDiagram')}>
+          <span>
+            <IconButton
+              size="small"
+              title={t('diagramEditor.addDiagram')}
+              aria-label={t('diagramEditor.addDiagram')}
+              disabled={busy || !space.id}
+              onClick={() => void addDiagram()}
+            >
+              <AddIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Stack>
+      <List dense disablePadding>
+        {sortMarkers(markers).map((marker) => (
+          <ListItemButton
+            key={marker.id}
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.setData(NODE_DRAG_TYPE, marker.id)
+              event.dataTransfer.effectAllowed = 'copy'
+            }}
+            selected={selection?.kind === 'node' && selection.id === marker.id}
+            onClick={() => {
+              setSelection({ kind: 'node', id: marker.id })
+              // A diagram is its own canvas: picking it opens it in place of the map.
+              openDiagram(marker.nodeKind === 'diagram' ? marker.id : null)
+            }}
+            sx={{ cursor: 'grab' }}
+          >
+            <Box sx={{ width: 24, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+              <KindIcon kind={marker.nodeKind} />
+            </Box>
+            <ListItemText
+              primary={marker.name || marker.id}
+              primaryTypographyProps={{ noWrap: true, variant: 'body2' }}
+              secondary={t(`maps.node.kind.${marker.nodeKind ?? 'object'}`)}
+              secondaryTypographyProps={{ variant: 'caption' }}
+            />
+          </ListItemButton>
+        ))}
+        {markers.length === 0 && (
+          <Typography variant="body2" color="text.secondary" sx={{ p: 1.5 }}>{t('maps.editor.noNodes')}</Typography>
+        )}
+      </List>
     </>
   )
 }

@@ -42,13 +42,15 @@ namespace VmsMap.Watch
       IReadOnlyCollection<string> ids, CallerContext caller, CancellationToken ct) =>
       _rights.VisibleAsync(ids, caller, ct);
 
+    // A replica shows its owner's states and alarms, under its own id — the same answer the REST
+    // reads give, so a watcher sees a replica change when its owner does.
     public Task<Dictionary<string, ObjectStateDTO>> StatesAsync(
       IReadOnlyCollection<string> ids, CancellationToken ct) =>
-      _states.GetStatesAsync(ids.ToList());
+      OwnerView.StatesAsync(_map, _states, ids);
 
     public Task<Dictionary<string, AlarmState>> AlarmsAsync(
       IReadOnlyCollection<string> ids, CancellationToken ct) =>
-      _states.GetAlarmStatesAsync(ids.ToList());
+      OwnerView.AlarmsAsync(_map, _states, ids);
 
     public Task<Dictionary<string, string>> CameraIdsAsync(
       IReadOnlyCollection<string> ids, CancellationToken ct) =>

@@ -136,9 +136,13 @@ namespace VmsMap.Db
 
     public async Task<List<ObjectStateDescriptionDTO>> GetStateDescrAsync(List<string> states)
     {
-      var result = await _dbContext.ObjectStateDescriptions
-          .Where(x => states.Contains(x.state))
-          .ToListAsync();
+      // An empty list asks for the whole dictionary — the map editor has to list it before it can
+      // change a state's colour. Naming states narrows the answer to those.
+      var query = _dbContext.ObjectStateDescriptions.AsQueryable();
+      if (states.Count > 0)
+        query = query.Where(x => states.Contains(x.state));
+
+      var result = await query.ToListAsync();
 
       return result.Select(x => new ObjectStateDescriptionDTO
       {

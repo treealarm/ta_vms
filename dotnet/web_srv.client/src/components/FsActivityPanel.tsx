@@ -52,7 +52,8 @@ function ClipPlayer({ clipUid, cameraId }: { clipUid: string; cameraId: string }
     const video = videoRef.current
     if (!video) return
 
-    setHlsError(null)
+    // The player is keyed by its clip, so a new clip starts from a fresh error state — nothing to
+    // reset here.
     let hls: Hls | null = null
 
     const tryPlay = () => void video.play().catch(() => {})
@@ -77,7 +78,7 @@ function ClipPlayer({ clipUid, cameraId }: { clipUid: string; cameraId: string }
       video.addEventListener('canplay', tryPlay, { once: true })
       video.src = playlistUrl
     } else {
-      setHlsError('HLS not supported in this browser')
+      queueMicrotask(() => setHlsError('HLS not supported in this browser'))
       return
     }
 
@@ -128,7 +129,8 @@ export default function FsActivityPanel() {
     }
   }, [])
 
-  useEffect(() => { void fetchEvents() }, [fetchEvents])
+  // The first read is a task rather than part of the commit: the effect body itself writes nothing.
+  useEffect(() => { queueMicrotask(() => void fetchEvents()) }, [fetchEvents])
 
   useEffect(() => {
     if (autoRefresh) {

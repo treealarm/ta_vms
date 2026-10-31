@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Box, IconButton, Menu, MenuItem, Tooltip, Typography } from '@mui/material'
+import { Box, Button, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material'
 import RefreshIcon from '@mui/icons-material/Refresh'
+import MenuBookIcon from '@mui/icons-material/MenuBook'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadServers } from '../../store/liveSlice'
@@ -12,6 +13,8 @@ import type { ApplyIfDirtyHandle } from '../settings/useDirtyGuard'
 import { SpaceForm, type NewSpace } from './SpaceForm'
 import SpaceEditor from './SpaceEditor'
 import MapsSidebar from './MapsSidebar'
+import MapDictionariesDialog from './MapDictionariesDialog'
+import RightsModeSwitch from '../objects/RightsModeSwitch'
 import { EditorStateProvider } from './EditorStateProvider'
 import { treeOf } from './spatialUtils'
 
@@ -37,6 +40,7 @@ export default function MapsAdminPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHa
   )
   const [addMenu, setAddMenu] = useState<HTMLElement | null>(null)
   const [creating, setCreating] = useState<NewSpace | null>(null)
+  const [dictionariesOpen, setDictionariesOpen] = useState(false)
 
   const refresh = () => {
     void dispatch(loadSpaces())
@@ -72,6 +76,19 @@ export default function MapsAdminPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHa
         onAdd={(e) => setAddMenu(e.currentTarget)}
         addTooltip={t('maps.add')}
         list={<MapsSidebar tree={tree} loaded={loaded} space={isNew ? null : current} onSelectSpace={select} />}
+        // The switch and the dictionaries act on the whole deployment, not on one pane.
+        footer={(
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ flexWrap: 'wrap' }}>
+            <RightsModeSwitch />
+            <Button
+              size="small"
+              startIcon={<MenuBookIcon fontSize="small" />}
+              onClick={() => setDictionariesOpen(true)}
+            >
+              {t('maps.dictionaries.title')}
+            </Button>
+          </Stack>
+        )}
       >
         <Menu anchorEl={addMenu} open={!!addMenu} onClose={() => setAddMenu(null)}>
           <MenuItem onClick={() => startCreating({ kind: 'map', parent: null })}>{t('maps.newMap')}</MenuItem>
@@ -105,6 +122,7 @@ export default function MapsAdminPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHa
             <Typography color="text.secondary">{t('maps.selectHint')}</Typography>
           </Box>
         )}
+        <MapDictionariesDialog open={dictionariesOpen} onClose={() => setDictionariesOpen(false)} />
       </MasterDetailLayout>
     </EditorStateProvider>
   )

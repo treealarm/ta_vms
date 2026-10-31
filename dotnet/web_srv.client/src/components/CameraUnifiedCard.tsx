@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { patchSlot, selectSlotUi } from '../store/monitorUiSlice'
@@ -168,8 +168,13 @@ export default function CameraUnifiedCard({
   const setBboxOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, bboxOpen: v }))
   const setStatsOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, statsOpen: v }))
   // PTZ and Device I/O overlays are mutually exclusive so they never render on top of each other.
-  const setPtzOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, ptzOpen: v, ...(v ? { deviceIoOpen: false } : {}) }))
-  const setDeviceIoOpen = (v: boolean) => dispatch(patchSlot({ key: storeKey, deviceIoOpen: v, ...(v ? { ptzOpen: false } : {}) }))
+  // Stable identities: an effect that closes them watches these in its dependencies.
+  const setPtzOpen = useCallback(
+    (v: boolean) => dispatch(patchSlot({ key: storeKey, ptzOpen: v, ...(v ? { deviceIoOpen: false } : {}) })),
+    [dispatch, storeKey])
+  const setDeviceIoOpen = useCallback(
+    (v: boolean) => dispatch(patchSlot({ key: storeKey, deviceIoOpen: v, ...(v ? { ptzOpen: false } : {}) })),
+    [dispatch, storeKey])
 
   const { t } = useTranslation()
 
@@ -322,10 +327,10 @@ export default function CameraUnifiedCard({
   // probe puts a joystick on fixed cameras. The camera's ONVIF settings page still shows what it
   // claims — that is where you check one before ticking the flag.
   const hasTelemetry = camera.hasTelemetry === true
-  useEffect(() => { if (!hasTelemetry && ptzOpen) setPtzOpen(false) }, [hasTelemetry, ptzOpen])
+  useEffect(() => { if (!hasTelemetry && ptzOpen) setPtzOpen(false) }, [hasTelemetry, ptzOpen, setPtzOpen])
   useEffect(() => {
     if (hasRelayOutputs === false && hasDigitalInputs === false && deviceIoOpen) setDeviceIoOpen(false)
-  }, [hasRelayOutputs, hasDigitalInputs, deviceIoOpen])
+  }, [hasRelayOutputs, hasDigitalInputs, deviceIoOpen, setDeviceIoOpen])
   // Live-only controls: in wall playback the cell shows recorded video, so PTZ and device I/O have
   // nothing to act on.
   const showPtzControl = hasTelemetry && mode === 'live' && !wallPlayback && !isDisabled

@@ -94,8 +94,11 @@ namespace VmsMap.Db
       return ret;
     }
 
-    public static GeoObjectDTO ConvertDB2DTO(DBGeoObject dbObj)
+    public static GeoObjectDTO? ConvertDB2DTO(DBGeoObject? dbObj)
     {
+      // A node with no shape of its own — a diagram, a root space — has no row to convert.
+      if (dbObj is null) return null;
+
       return new GeoObjectDTO
       {
         id = Utils.ConvertGuidToObjectId(dbObj.id),
