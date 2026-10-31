@@ -1,23 +1,249 @@
-# M4 — фронтенд: симбиоз карт (объём; детали — при старте)
+# M4 — фронтенд: симбиоз карт (детальный план)
 
 > Часть плана [Square → ta_vms](README.md); ссылки «§N» ведут в его разделы.
-> Файлы — ориентиры, не полный перечень.
+> Файлы — ориентиры, не полный перечень. Шаги отмечаются ✅ по мере исполнения; «Ход работы» —
+> в конце.
 
-Новое в `web_srv.client`:
-- `src/components/objects/`: дерево узлов (`ObjectTree`, точки тревог, чекбоксы), панель объекта
-  (`ObjectPanel`: свойства по `visual_type`, состояния, события), редактор свойств.
-- `src/map/`: слой произвольных фигур (`FiguresLayer`: точка/круг, полилиния, полигон, иконка и
-  поворот из `visual`, слои масштаба), редактирование вершин (админка), перетаскивание
-  узла/реплики на холст, цвет по состоянию.
-- `src/components/diagrams/`: просмотр мнемосхем с вложением (глубина 0–3), редактор мнемосхем и
-  типов (регионы в долях, фон, положение/размер/поворот) — в Admin → Maps.
-- `src/components/events/EventsJournal.tsx` из `RetentionEventsTab.tsx`; `StatesTable`.
-- `src/components/maps/MapsOperatorPanel.tsx` — раскладка §4.8; `MapsAdminPanel.tsx` — новые
-  инструменты по правилу «кнопка рядом с тем, на что действует» (`listActions`, `DetailToolbar`).
-- Redux: `objectsSlice`, `statesSlice`, `eventsSlice`, `diagramsSlice`, `rightsSlice`;
-  `hooks/useMapLive.ts` (SSE) вместо `useAlarms`.
-- Справочник состояний и уровни масштаба — Admin.
+M3 отдал `api/map/*`, SSE `api/map/live` и единые права, но браузер по-прежнему живёт на
+`spatialSlice`, `/api/fs/alarms` и `useAlarms`: дерева узлов, произвольных фигур, мнемосхем и
+журнала событий на карте нет, старые экраны прав и тревог — на прежних контрактах. M4 переводит
+операторский экран на единое дерево и раскладку §4.8, добавляет в Admin → Maps редактирование
+фигур, свойств, мнемосхем и прав, затем убирает старые пути (`useAlarms`, `api/fs/alarms`,
+`api/permissions`, страница прав по камерам).
 
-Проверка: `npm run build && npm run lint`; сценарии руками по §4.8: тревога подсвечивает камеру,
-этаж, здание и строку дерева; журнал фильтрует и автообновляется; оператор открывает PTZ/охрану
-из панели камеры на карте; мнемосхема вида сбоку с репликой камеры краснеет вместе с ней.
+**Что уже есть и переиспользуется:**
+
+- `api/map/*` (M3) — чтения и SSE; `api/spatial/*` (M2) — пространства, размещения, планы,
+  ориентиры. Холст (`SpaceCanvas`, `PlanOverlay`, `CameraMarker`, `Footprints`, `layers.ts`)
+  остаётся основой: он уже умеет тайлы, планы, конусы обзора и метрическую сетку.
+- Square (`../Square/tree_alarm.client/src`) — источник логики дерева, фигур, мнемосхем, журнала и
+  таблицы состояний. Код не копируется как есть: строгий `tsc -b`, React 19, react-leaflet 5, MUI 7,
+  i18n и DTO под proto JSON.
+
+**Границы.** Новых сервисов и обязательных переменных нет; `../ta_install` и Windows-инсталлятор
+не меняются. Английская документация (`docs/maps-and-plans.md`, `CLAUDE.md`) — M5; M4 правит этот
+файл и i18n. Square и `SquareIntegrationClient` — архив после M4 (M5).
+
+## Решения
+
+- **Ветка** `square-merge/m4-frontend` от `master` после мержа M3 (`09bcc97`, merge `77d2e77`).
+  В `../ta_install` изменений нет.
+- **Клиент читает карту через `api/map/*` напрямую.** Ответы — proto JSON: поля в lowerCamelCase,
+  значения по умолчанию опущены, `bytes` — base64, `Timestamp` — RFC3339, перечисления — именами
+  (`RIGHTS_MODE_ENFORCED`). `dto/mapDtos.ts` повторяет эти формы, а не заводит третий DTO-слой.
+- **Вид узла и визуал приходят с сервера.** Дереву нужно знать, что узел — пространство,
+  мнемосхема, камера или фигура (значок, поведение, набор действий), а холсту — цвет, иконку,
+  поворот и подпись. M3 этих полей не отдаёт: шаг 1 добавляет `Marker.node_kind`,
+  `Figure.node_kind`, `Figure.visual`, `ObjProps.visual`, `DiagramContent.visuals`.
+  `node_kind` — тот же `NodeKind`, что у прав (`space|landmark|camera|diagram|figure|object`).
+- **Цвет по §4.8:** тревога (`alarm` или `children_alarms > 0`) → красный; иначе цвет первого
+  состояния из справочника; иначе `visual.color`; иначе нейтральный серый. В Square `__color`
+  перекрывал состояние; здесь visual — типизированное поле, и правило §4.8 главнее.
+- **Один уровень за раз.** Холст пространства грузит прямых детей (`GetByParent`) и их фигуры
+  (`GetByIds`), а не всё, что попало в бокс; `GetByBox` — для поиска и больших карт. Вложенные
+  пространства остаются футпринтами (`Footprints`), мнемосхемы — прямоугольниками на холсте,
+  внутрь которых входят.
+- **Пространства и камеры на холсте пока рисуются из `api/spatial/*`.** Там конусы обзора,
+  опорные размещения и калибровки, которых нет в `Figure`; карта даёт узлы, состояния, фигуры и
+  журнал. Данные не дублируются: пространство одно, читается по своему контракту.
+- **Дерево и холст — одни и те же узлы карты.** Камера в дереве — узел `CameraObjectId` с
+  `camera_id`; на холсте её точка/конус берутся из размещения, а состояние — из узла.
+  Неразмещённая камера видна в дереве под узлом сервера и на холсте не рисуется.
+- **`useMapLive` — SSE через `fetch`, не `EventSource`:** глобальная обёртка `authFetch` добавляет
+  Bearer, а `EventSource` заголовков не шлёт. Клиент повторяет `liveEventsClient`: singleton на
+  область, ref-count, переподключение. Область (бокс или id) — параметры соединения, её смена —
+  новое соединение (M3: Dapr проксирует server-streaming, но не двунаправленный вызов).
+- **У оператора два наблюдения:** бокс текущего пространства (появление, перемещение и удаление
+  узлов) и набор id (состояния и тревоги дерева и холста). Сообщения — адресация:
+  `set_ids2update`/`set_ids2delete` → перечитать маркеры, фигуры и состояния;
+  `set_visual_states` → перечитать состояния; `on_values_changed` → значения.
+- **Список тревог — из состояний и журнала.** Активные — по состояниям `ALARM` загруженных
+  камер; недавно закончившиеся — по событиям `alarm` за 15 минут (в их свойствах
+  `alarm_end_ts`). Отдельного rpc «все тревоги» не заводим: недавние нужны и для бледного кольца
+  после `NORM`, которого в состояниях уже нет. `GetAlarmedStates` с пустым списком id ничего не
+  возвращает, и это не меняем.
+- **Правка — только в Admin → Maps** (§4.8, допущение 5). Оператор ничего не пишет.
+- **Запись карты — новые admin-эндпоинты** `api/map/admin/*` (`AdminOnly`): объекты, свойства,
+  visual, фигуры, реплики, мнемосхемы и типы, справочник состояний, уровни, файлы. Чтения M3 не
+  меняются. `CreateReplica` переезжает из читающего контроллера в админский.
+- **Уровни масштаба получают запись** — `UpdateLevels`/`DeleteLevels`: в M3 их не было, а
+  справочник уровней — часть админки карт.
+- **Мнемосхемы:** просмотр — на месте холста, когда выбран узел-мнемосхема; Dive/Resurface —
+  хлебные крошки. Редактор — там же в Admin → Maps, типы — диалогом.
+- **Справочник состояний, уровни и режим прав** — футер страницы Admin → Maps: они действуют на
+  страницу целиком, а не на выбранный узел. Права узла — вкладка его панели.
+- **`useAlarms` и `api/fs/alarms` удаляются** после того, как оператор перестанет их звать; вместе
+  с ними — старая страница прав, `cameraPermissionsSlice`, `api/permissions*` и
+  `PermissionManager`, когда новые экраны проверены.
+- **i18n:** новые ключи — в `en` и `es` одновременно, под `maps.*`, `events.*`, `rights.*`.
+- **Без новых npm-зависимостей:** цвет редактируется обычным `<input type="color">`, иконки —
+  загрузкой файла, мнемосхемы — позиционированными div/SVG.
+
+## Шаги
+
+1. **`api/map/*` — вид узла и визуал.**
+   `proto/vms_map.proto`: `Marker.node_kind = 8`, `Figure.node_kind = 12`,
+   `Figure.visual = 13`, `ObjProps.visual = 5`, `DiagramContent.visuals = 7` (без `reserved`).
+   `VmsMap/Db/Services/NodeKindLookup.cs` — пакетное определение вида по боковым таблицам
+   (`spaces`, `diagrams`, `landmarks`, `camera_node`, `geo_objects`), приоритет
+   `space > diagram > landmark > camera > figure > object`, один запрос на таблицу, без N+1.
+   Заполнить в `MapServiceImpl.Reads.cs`: `GetByParent`, `GetByName`, `GetMarkersByIds`,
+   `GetByIds`/`GetByBox`/`GetByParams`, `GetObjProps`, `CreateReplica`, `GetDiagramContent`
+   (детям — их visual). Visual грузится пакетно через `VisualService.GetListByIdsAsync`.
+   Проверка: `dotnet build dotnet/ta_vms.sln` — 0 ошибок, 0 предупреждений;
+   `dotnet test dotnet/VmsMap.Tests` — зелёный (вид узла и visual покрыты InMemory-тестами).
+
+2. **Клиент — DTO, HTTP и Redux-слой карты.**
+   `src/dto/mapDtos.ts` — формы proto JSON (`MapMarker`, `MapFigure`, `MapVisual`,
+   `MapObjectState`, `MapAlarmState`, `MapVisualStates`, `MapStateDescription`, `MapEvent`,
+   `MapDiagram`, `MapDiagramType`, `MapDiagramContent`, `MapObjProps`, `MapLevel`, `MapRight`,
+   `MapWatchMessage`). `src/api/requestJson.ts` — общий разбор ошибок, вынесенный из
+   `spatialRequest` (DRY); `src/api/mapApi.ts` — все чтения M3 (`objects/parent|by-ids|markers|
+   by-box|by-name|by-params|{id}/props`, `states/*`, `events/filter`, `tracks/*`, `values/
+   by-owners`, `diagrams/*`, `levels/*`, `rights/*`, `files/{id}`), плюс построитель URL SSE.
+   `src/store/objectsSlice.ts` — `byId`, `figures`, `childrenByParent`, `roots`, `props`,
+   `loadRoots`, `loadChildren` (страница 1000, `startId` для следующей), `loadByIds`,
+   `loadObjProps`, слияние ответов наблюдения. `src/store/statesSlice.ts` — состояния, тревоги,
+   справочник (`loadVisualStates`, `loadStateDescriptions`). `src/store/eventsSlice.ts` — журнал
+   (keyset-пагинация, фильтры) и недавние тревоги (`loadRecentAlarms`). `src/map/nodeStyle.ts` —
+   правило цвета §4.8 одной функцией. `src/hooks/mapLiveClient.ts` + `useMapLive.ts` — SSE по
+   образцу `liveEventsClient` (fetch + Bearer, разбор кадров, переподключение, область).
+   Регистрация срезов в `store/index.ts`.
+   Проверка: `npm run build && npm run lint` — зелёные.
+
+3. **Оператор — дерево узлов и панель объекта.**
+   `src/components/objects/ObjectTree.tsx` — корни и ленивые дети, значок по `nodeKind`, точка
+   тревоги (`alarm`/`childrenAlarms`), чекбокс для таблицы состояний, выбор; свёрнутые узлы
+   грузятся по раскрытию. `ObjectPanel.tsx` — камера открывает `CameraUnifiedCard` (live, архив,
+   PTZ, охрана, запись) с сохранённым поверх «навести сюда»; прочий узел — свойства по
+   `visualType`, чипы состояний, последние события, ссылка на владельца реплики.
+   `MapsOperatorPanel`: левая колонка — дерево, правая — панель; холст пока прежний (пространства и
+   размещения). Выбор пространства в дереве открывает его холст, камеры — selects её, фигуры —
+   фокусирует.
+   Проверка: `npm run build && npm run lint`; вручную — дерево раскрывается, тревожная камера и её
+   предки получают точку, камера открывается панелью.
+
+4. **Оператор — фигуры на холсте и состояния вместо `useAlarms`.**
+   `src/map/FiguresLayer.tsx`: точка/круг (`Circle`/`CircleMarker`), полилиния, полигон, иконка из
+   `visual.image` с размером и поворотом, подпись; фильтр по слою масштаба (`levels` + текущий
+   zoom Leaflet); выбор. `src/hooks/useCanvasNodes.ts` — дети и фигуры открытого пространства,
+   состояния, наблюдения бокса и id; при `set_ids2update`/`delete` перечитывает и чинит списки
+   детей, при `set_visual_states` — состояния. Камеры остаются `CameraMarker`, но цвет — по
+   состоянию узла; футпринты этажей краснеют по `children_alarms`. Список тревог и кольца — из
+   `statesSlice` и `recentAlarms`; `useAlarms` в операторе больше не используется.
+   Проверка: `npm run build && npm run lint`; вручную — `RetainEvent` красит камеру, этаж и
+   здание; после `NORM` — бледное кольцо; фигуры с `visual.color` и подписью видны, слой
+   масштаба скрывает и показывает их.
+
+5. **Оператор — тревоги, журнал событий, таблица состояний.**
+   Левая колонка получает вкладки `Дерево | Тревоги | Состояния`.
+   `src/components/events/EventsJournal.tsx` — обобщение `RetentionEventsTab`: период, поддерево
+   выбранного узла, `param0/param1`, только с картинками, галерея, автообновление, keyset-страницы,
+   переход к архиву камеры; замена вкладки `events` в `OperatorView` (старый файл удаляется).
+   `src/components/events/StatesTable.tsx` — отмеченные в дереве узлы с живыми чипами и подсветкой
+   тревоги; имена — из `objectsSlice`. `Тревоги` — активные из состояний и недавние из событий,
+   переход к камере и пространству.
+   Проверка: `npm run build && npm run lint`; вручную — фильтры, галерея, автообновление, событие
+   ведёт в архив; таблица состояний обновляется по SSE.
+
+6. **Оператор — поиск и треки.**
+   `src/components/objects/ObjectSearch.tsx` — по имени (`GetByName`) и «свойство = значение»
+   (`GetByParams`), результаты, переход к узлу (раскрыть предков до пространства); период и
+   треки — `GetTracksByBox` по боксу текущего пространства, отрисовка `TracksLayer` по
+   `figure.id`. Левая колонка получает вкладку `Поиск`.
+   Проверка: `npm run build && npm run lint`; вручную — поиск по имени и свойству, трек за период
+   рисуется и очищается.
+
+7. **Оператор — мнемосхемы.**
+   `src/components/diagrams/DiagramViewer.tsx`, `DiagramElement.tsx`, `diagramGeometry.ts` —
+   фон из `api/map/files/{id}`, дети по `region_id` (доли региона родительского типа) или своей
+   геометрии, поворот, вложение 0–3, значения в регионах (`GetValuesByOwners`), цвет реплик
+   камер по состояниям владельца, Dive/Resurface через хлебные крошки. Выбор узла-мнемосхемы
+   заменяет центральный холст; выбор пространства возвращает `SpaceCanvas`.
+   Проверка: `npm run build && npm run lint`; вручную — «вид сбоку» с репликой камеры краснеет
+   вместе с камерой, регион показывает значение из `UpdateValues`.
+
+8. **web_srv/VmsMap — запись карты для админки.**
+   `proto/vms_map.proto`: `UpdateLevels(LevelList)`, `DeleteLevels(ObjectIds)`; реализация в
+   `ILevelService`/`LevelService` и `MapServiceImpl`. Новый
+   `web_srv.Server/Controllers/MapAdminController.cs` (`AdminOnly`, `api/map/admin`): `PUT/DELETE
+   objects`, `PUT properties`, `PUT visual`, `PUT figures`, `POST replicas`, `PUT
+   state-descriptions`, `PUT/DELETE levels`, `PUT/DELETE diagrams`, `PUT/DELETE diagram-types`,
+   `POST files` (multipart, лимит 20 MiB → `PutFile`). `CreateReplica` убирается из
+   `MapObjectsController`. Тела — те же proto-сообщения, ошибки — текстом, как у gRPC.
+   Проверка: `dotnet build dotnet/ta_vms.sln` 0/0; `dotnet test dotnet/VmsMap.Tests`; через
+   `curl` с админским токеном — создание фигуры, запись visual, загрузка файла.
+
+9. **Админ — фигуры, свойства, реплики, слой масштаба.**
+   `components/maps/editorState.ts`: режимы рисования (`point`, `line`, `polygon`), выбор узла
+   (`node`/`figure`) и `Snapshot`. `map/FiguresLayer.tsx` — редактируемый вариант: рисование
+   кликами (Esc — отмена, двойной клик/Enter — завершение), перетаскивание вершин (общий
+   `VertexEditor` с `FootprintEditor`), перемещение точки, удаление. Правый столбец получает
+   `ObjectPropsEditor` (имя, свойства по `visualType`, цвет/иконка/поворот/подпись, слой
+   масштаба, Save в `DetailToolbar`). Перетаскивание узла из «Узлов» в `MapsSidebar` на холст
+   создаёт реплику (`CreateReplica`). Id новой фигуры — `crypto.randomUUID()` на клиенте: сервер
+   не возвращает назначенный id при пустом.
+   Проверка: `npm run build && npm run lint`; вручную — создать точку/линию/полигон, подвинуть
+   вершину, сменить цвет и слой, удалить, создать реплику.
+
+10. **Админ — права, справочник состояний, уровни.**
+    `store/rightsSlice.ts` — строки узла, `GetRightActions`, режим; запись через
+    `UpdateRights`/`DeleteRights`/`SetRightsMode`. `components/objects/ObjectRights.tsx` — строки
+    «субъект → действия» (субъекты из `/api/auth/users?withRoles=true`, действия по виду узла),
+    вкладка `Права` выбранного узла в Admin → Maps. `AclModeSwitch` переезжает в футер страницы
+    (режим один на систему). Диалог «Справочники» из футера: состояния
+    (`GetStateDescriptions`/`UpdateStateDescriptions`) и уровни (`GetLevels`/`UpdateLevels`).
+    Проверка: `npm run build && npm run lint`; вручную — выдать право роли на здание, камера
+    наследует; новый пользователь без строк не видит узел в `enforced`; цвет состояния меняется.
+
+11. **Админ — редактор мнемосхем и типов.**
+    Выбор узла-мнемосхемы в Admin → Maps открывает `DiagramViewer` в режиме правки: фон
+    (`fileId`, загрузка через `api/map/admin/files`), тип, геометрия (положение/размер/поворот в
+    родителе), дети — перетаскиванием, в регион или свободно, поворот; создание/удаление
+    мнемосхемы. Диалог типов: имя, фон, регионы в долях (добавить/удалить/переместить),
+    создание/удаление типа. Запись — `UpdateDiagrams`/`DeleteDiagrams` и
+    `UpdateDiagramTypes`/`DeleteDiagramTypes`.
+    Проверка: `npm run build && npm run lint`; вручную — создать тип с регионом, мнемосхему, вложить
+    камеру репликой, войти и выйти (Dive/Resurface), повернуть элемент.
+
+12. **Уборка и сквозная проверка.**
+    Удалить `hooks/useAlarms.ts`, `AlarmDto`/`AlarmsDto`, `api/fs/alarms` в `FSController`,
+    `CameraPermissionsPanel`, `cameraPermissionsSlice`, `api/permissions*`,
+    `web_srv.Server/Grpc/PermissionManager.cs` и вкладку `permissions` в `AdminView` — после
+    проверки, что фронт их больше не зовёт (`grep -rn "api/permissions\|useAlarms\|api/fs/alarms"`).
+    `npm run build && npm run lint`; `dotnet build dotnet/ta_vms.sln` 0/0; `dotnet test`.
+    Затем — сценарии ниже и «Ход работы».
+
+**Проверка M4:**
+
+- `npm run build && npm run lint` в `dotnet/web_srv.client`; `dotnet build dotnet/ta_vms.sln`
+  0 ошибок, 0 предупреждений; `dotnet test` зелёный.
+- Dev-стек поднимается (13 сервисов), `VmsMap` мигрирует `ta_map`; в `ta_map` у камер есть узлы.
+- **Тревога.** `RetainEvent` на `sim-master`: красная камера, её этаж и здание, строка дерева;
+  SSE присылает `set_visual_states` без поллинга `api/fs/alarms`; после конца эпизода — бледное
+  кольцо и `NORM`.
+- **Дерево и панель.** Пространства раскрываются, камера открывает live/архив/PTZ/охрану/запись,
+  прочий узел — свойства, чипы состояний и последние события.
+- **Журнал.** Период, поддерево, `param0/param1`, только с картинками; keyset-страницы, галерея,
+  автообновление; событие ведёт к архиву камеры.
+- **Таблица состояний.** Отмеченные узлы с живыми чипами, тревожные подсвечены.
+- **Поиск.** По имени и «свойство = значение»; трек за период рисуется на холсте.
+- **Мнемосхема.** «Вид сбоку» с репликой камеры и регионом со значением (`UpdateValues` через
+  `grpcurl`); реплика краснеет вместе с камерой; Dive/Resurface.
+- **Админка.** Фигуры (точка, линия, полигон) создаются, двигаются по вершинам, меняют цвет,
+  слой и подпись, удаляются; реплика перетаскиванием; права на узле и режим `open`/`enforced`;
+  справочник состояний и уровни; мнемосхемы и типы.
+- **Права.** Пользователь без доступа не видит узел ни в дереве, ни в событиях; право на здание
+  наследуется камерами; live/архив/PTZ/экспорт ведут себя как до объединения.
+- **Уборка.** `useAlarms`, `api/fs/alarms`, `api/permissions` и старая страница прав удалены;
+  `grep` по ним пуст.
+
+**Критерии готовности:** раскладка §4.8 работает по сквозной проверке §9; дерево, фигуры,
+мнемосхемы, журнал, таблица состояний и поиск живут на `api/map/*` и SSE; правка карты, прав,
+справочников и мнемосхем — в Admin → Maps; `useAlarms` и `api/fs/alarms` удалены; сборка и линт
+фронта, сборка и тесты бэкенда зелёные.
+
+## Ход работы
+
+Ветка `square-merge/m4-frontend` в ta_vms. M3 перед ветвлением слит в `master` merge-коммитом
+`77d2e77`. В `../ta_install` изменений нет.
