@@ -404,7 +404,22 @@
     "selectHint": "Selecciona una línea para ver detalles"
   },
   "events": {
-    "title": "Eventos de retención",
+    "title": "Eventos",
+    "list": "Lista",
+    "gallery": "Galería",
+    "periodFrom": "Desde",
+    "periodTo": "Hasta",
+    "param0": "Parámetro 0",
+    "param1": "Parámetro 1",
+    "searchText": "Buscar",
+    "imagesOnly": "Con imágenes",
+    "apply": "Aplicar",
+    "subtree": "Subárbol: {{name}}",
+    "noSelection": "Seleccione un evento",
+    "properties": "Propiedades",
+    "eventName": "Evento",
+    "priority": "Prioridad",
+    "time": "Hora",
     "eventId": "event_id",
     "camId": "cam_id",
     "alarmStart": "alarm_start_ts",
@@ -1083,6 +1098,12 @@
       "more": "Cargar más",
       "childAlarms": "{{count}} alarmas debajo"
     },
+    "states": {
+      "tab": "Estados",
+      "name": "Nombre",
+      "states": "Estados",
+      "none": "Marque nodos en el árbol para ver sus estados."
+    },
     "node": {
       "kind": {
         "space": "Espacio",
@@ -1101,6 +1122,7 @@
       "lastEvents": "Eventos recientes",
       "noEvents": "Sin eventos",
       "owner": "Ver propietario",
+      "journal": "Eventos",
       "cameraMissing": "Esta cámara no está configurada en esta instalación",
       "color": "Color",
       "caption": "Leyenda"

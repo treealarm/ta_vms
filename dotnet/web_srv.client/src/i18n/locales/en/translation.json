@@ -404,7 +404,22 @@
     "selectHint": "Select a line to see details"
   },
   "events": {
-    "title": "Retention events",
+    "title": "Events",
+    "list": "List",
+    "gallery": "Gallery",
+    "periodFrom": "From",
+    "periodTo": "To",
+    "param0": "Param 0",
+    "param1": "Param 1",
+    "searchText": "Search",
+    "imagesOnly": "With pictures",
+    "apply": "Apply",
+    "subtree": "Subtree: {{name}}",
+    "noSelection": "Select an event",
+    "properties": "Properties",
+    "eventName": "Event",
+    "priority": "Priority",
+    "time": "Time",
     "eventId": "event_id",
     "camId": "cam_id",
     "alarmStart": "alarm_start_ts",
@@ -1083,6 +1098,12 @@
       "more": "Load more",
       "childAlarms": "{{count}} alarms below"
     },
+    "states": {
+      "tab": "States",
+      "name": "Name",
+      "states": "States",
+      "none": "Tick nodes in the tree to watch their states."
+    },
     "node": {
       "kind": {
         "space": "Space",
@@ -1101,6 +1122,7 @@
       "lastEvents": "Recent events",
       "noEvents": "No events",
       "owner": "Show owner",
+      "journal": "Events",
       "cameraMissing": "This camera is not configured in this deployment",
       "color": "Colour",
       "caption": "Caption"

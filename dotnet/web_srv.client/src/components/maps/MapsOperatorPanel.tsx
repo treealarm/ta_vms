@@ -3,6 +3,7 @@ import { Box, Tab, Tabs, ToggleButton, Tooltip, Typography } from '@mui/material
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
 import PersonPinCircleIcon from '@mui/icons-material/PersonPinCircle'
+import TableRowsIcon from '@mui/icons-material/TableRows'
 import { Polyline } from 'react-leaflet'
 import { useTranslation } from 'react-i18next'
 import type { GeoPointDto, PtzGeoAimResultDto } from '../../dto/dtos'
@@ -23,6 +24,7 @@ import DetectionsLayer from '../../map/DetectionsLayer'
 import { ALARM_COLOR, DEFAULT_NODE_COLOR, nodeStyle } from '../../map/nodeStyle'
 import ObjectTree from '../objects/ObjectTree'
 import ObjectPanel from '../objects/ObjectPanel'
+import StatesTable from '../events/StatesTable'
 import SpaceNav from './SpaceNav'
 import MapObjectList from './MapObjectList'
 import { childrenOf, rootsOf, sharesGeometry } from './spatialUtils'
@@ -319,6 +321,7 @@ export default function MapsOperatorPanel() {
           >
             <Tab icon={<AccountTreeIcon fontSize="small" />} iconPosition="start" label={t('maps.tree.tab')} />
             <Tab icon={<NotificationsActiveIcon fontSize="small" />} iconPosition="start" label={t('maps.alarms')} />
+            <Tab icon={<TableRowsIcon fontSize="small" />} iconPosition="start" label={t('maps.states.tab')} />
           </Tabs>
           <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
             {leftTab === 0 ? (
@@ -328,8 +331,10 @@ export default function MapsOperatorPanel() {
                 checkedIds={checkedIds}
                 onCheckedChange={setCheckedIds}
               />
-            ) : (
+            ) : leftTab === 1 ? (
               <MapObjectList sections={[alarmSection]} />
+            ) : (
+              <StatesTable ids={checkedIds} selectedId={selectedNodeId} onSelect={selectNode} />
             )}
           </Box>
         </Box>

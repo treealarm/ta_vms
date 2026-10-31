@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Alert, Box, Button, Chip, Divider, IconButton, Stack, ToggleButton, Tooltip, Typography,
 } from '@mui/material'
@@ -35,6 +36,7 @@ export default function ObjectPanel({
 }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
   const marker = useAppSelector((s) => s.objects.markers[nodeId])
   const props = useAppSelector((s) => s.objects.props[nodeId])
   const state = useAppSelector((s) => s.states.states[nodeId])
@@ -76,6 +78,12 @@ export default function ObjectPanel({
             {t(`maps.node.kind.${kind}`)}
           </Typography>
         </Box>
+        <Button
+          size="small"
+          onClick={() => navigate(`/operator/events?node=${encodeURIComponent(nodeId)}`)}
+        >
+          {t('maps.node.journal')}
+        </Button>
         {marker?.ownerId ? (
           <Button size="small" onClick={() => onSelect(marker.ownerId!)}>{t('maps.node.owner')}</Button>
         ) : null}
