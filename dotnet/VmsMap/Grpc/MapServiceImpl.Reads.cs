@@ -718,70 +718,20 @@ namespace VmsMap.Grpc
       return result;
     }
 
-    private async Task<Dictionary<string, ObjectStateDTO>> StatesForAsync(
-      IReadOnlyCollection<string> ids, CancellationToken ct)
-    {
-      var ownersAndViews = await _mapService.GetOwnersAndViewsAsync(ids.ToList());
-      var owners = ownersAndViews
-        .Where(kv => string.IsNullOrEmpty(kv.Value.owner_id))
-        .Select(kv => kv.Key)
-        .ToList();
-
-      var states = await _stateService.GetStatesAsync(owners);
-      var result = new Dictionary<string, ObjectStateDTO>(StringComparer.Ordinal);
-
-      foreach (var id in ids)
-      {
-        if (states.TryGetValue(id, out var own))
-        {
-          result[id] = own;
-          continue;
-        }
-
-        if (ownersAndViews.TryGetValue(id, out var view) &&
-            !string.IsNullOrEmpty(view.owner_id) &&
-            states.TryGetValue(view.owner_id, out var ownerState))
-        {
-          result[id] = ownerState with { id = id };
-        }
-      }
-
-      return result;
-    }
+    // A replica answers with its owner's state and alarms; the rule itself is OwnerView's, which
+    // the watch stream uses too.
+    private Task<Dictionary<string, ObjectStateDTO>> StatesForAsync(
+      IReadOnlyCollection<string> ids, CancellationToken ct) =>
+      OwnerView.StatesAsync(_mapService, _stateService, ids);
 
     private async Task<List<MapProto.AlarmState>> AlarmsForAsync(
       IReadOnlyCollection<string> ids, CancellationToken ct)
     {
-      var ownersAndViews = await _mapService.GetOwnersAndViewsAsync(ids.ToList());
-      var owners = ownersAndViews
-        .Where(kv => string.IsNullOrEmpty(kv.Value.owner_id))
-        .Select(kv => kv.Key)
+      var alarms = await OwnerView.AlarmsAsync(_mapService, _stateService, ids);
+      return ids
+        .Where(alarms.ContainsKey)
+        .Select(id => ToProto(alarms[id]))
         .ToList();
-
-      var alarms = await _stateService.GetAlarmStatesAsync(owners);
-      var result = new List<MapProto.AlarmState>();
-
-      foreach (var id in ids)
-      {
-        if (alarms.TryGetValue(id, out var own))
-        {
-          result.Add(ToProto(own));
-          continue;
-        }
-
-        if (ownersAndViews.TryGetValue(id, out var view) &&
-            !string.IsNullOrEmpty(view.owner_id) &&
-            alarms.TryGetValue(view.owner_id, out var ownerState))
-        {
-          result.Add(new MapProto.AlarmState
-          {
-            Id = id,
-            Alarm = ownerState.alarm ?? false,
-          });
-        }
-      }
-
-      return result;
     }
 
     private async Task<MapProto.TrackPointList> ToProtoTracksAsync(

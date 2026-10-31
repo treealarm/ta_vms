@@ -105,22 +105,24 @@ namespace VmsMap.Db
 
     private static DBDiagram ConvertDTO2DB(DiagramDTO dto)
     {
-      var geometry = dto.geometry ?? new DiagramCoordDTO();
-
       return new DBDiagram
       {
         id = Utils.ConvertObjectIdToGuid(dto.id) ?? Guid.Empty,
         dgr_type = Utils.ConvertObjectIdToGuid(dto.dgr_type),
         region_id = dto.region_id,
         file_id = Utils.ConvertObjectIdToGuid(dto.file_id),
-        geometry = new DBDiagramCoord
-        {
-          height = geometry.height,
-          width = geometry.width,
-          left = geometry.left,
-          top = geometry.top,
-          rotation = geometry.rotation
-        }
+        // A node placed in a region has no geometry of its own; storing zeros would make it look
+        // like it stands in the corner of its parent instead.
+        geometry = dto.geometry is null
+          ? null
+          : new DBDiagramCoord
+          {
+            height = dto.geometry.height,
+            width = dto.geometry.width,
+            left = dto.geometry.left,
+            top = dto.geometry.top,
+            rotation = dto.geometry.rotation
+          }
       };
     }
 
@@ -142,14 +144,16 @@ namespace VmsMap.Db
             ? Utils.ConvertGuidToObjectId(dbObj.file_id.Value)
             : null,
           region_id = dbObj.region_id,
-          geometry = new DiagramCoordDTO
-          {
-            top = dbObj.geometry.top,
-            left = dbObj.geometry.left,
-            width = dbObj.geometry.width,
-            height = dbObj.geometry.height,
-            rotation = dbObj.geometry.rotation
-          }
+          geometry = dbObj.geometry is null
+            ? null
+            : new DiagramCoordDTO
+            {
+              top = dbObj.geometry.top,
+              left = dbObj.geometry.left,
+              width = dbObj.geometry.width,
+              height = dbObj.geometry.height,
+              rotation = dbObj.geometry.rotation
+            }
         });
       }
 

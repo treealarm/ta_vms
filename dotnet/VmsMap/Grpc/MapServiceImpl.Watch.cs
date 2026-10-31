@@ -34,14 +34,14 @@ namespace VmsMap.Grpc
             subscription.SetIds(request.SetIds.Ids.ToList(), caller);
             break;
 
-          case MapProto.WatchRequest.CommandOneofCase.UpdateValues:
-            subscription.SetValues(request.UpdateValues.Enabled, caller);
-            break;
-
           default:
             subscription.SetCaller(caller);
             break;
         }
+
+        // The scope commands reset the value flag; the request's own flag then turns it on.
+        if (request.Values)
+          subscription.SetValues(true, caller);
 
         await foreach (var message in subscription.Messages.Reader.ReadAllAsync(ct))
           await responseStream.WriteAsync(message, ct);

@@ -976,20 +976,17 @@ message WatchIds {
   repeated string ids = 1;
 }
 
-message WatchValues {
-  bool enabled = 1;
-}
-
 message WatchRequest {
   oneof command {
     // The box to follow; replaces any previous one.
     WatchBox set_box = 1;
     // The exact set of nodes to follow; replaces any previous box or set.
     WatchIds set_ids = 2;
-    // Whether the values of the followed nodes are streamed too.
-    WatchValues update_values = 3;
   }
   Caller caller = 4;
+  // Stream the values of the followed nodes as well. A call carries exactly one command — a
+  // change of scope is a new stream — so this is a property of the scope, not a command.
+  bool values = 5;
 }
 
 message WatchItem {

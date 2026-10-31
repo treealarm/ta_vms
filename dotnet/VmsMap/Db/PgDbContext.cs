@@ -202,7 +202,8 @@ namespace VmsMap.Db
         entity.ToTable("diagrams");
         entity.HasKey(e => e.id);
 
-        entity.Property(e => e.dgr_type).HasColumnName("dgr_type").IsRequired();
+        // A diagram row may have no type: a plain object placed on a mnemoscheme has none.
+        entity.Property(e => e.dgr_type).HasColumnName("dgr_type");
 
         entity.Property(e => e.geometry)
               .HasColumnName("geometry")
