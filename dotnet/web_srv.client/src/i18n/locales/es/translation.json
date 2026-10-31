@@ -1077,6 +1077,34 @@
   },
   "maps": {
     "title": "Mapas y planos",
+    "tree": {
+      "tab": "Objetos",
+      "empty": "Aún no hay objetos",
+      "more": "Cargar más",
+      "childAlarms": "{{count}} alarmas debajo"
+    },
+    "node": {
+      "kind": {
+        "space": "Espacio",
+        "diagram": "Mimosesquema",
+        "landmark": "Referencia",
+        "camera": "Cámara",
+        "figure": "Figura",
+        "object": "Objeto"
+      },
+      "alarm": "Alarma",
+      "childAlarms": "{{count}} alarmas hijas",
+      "states": "Estados",
+      "noStates": "Sin estados",
+      "properties": "Propiedades",
+      "noProperties": "Sin propiedades",
+      "lastEvents": "Eventos recientes",
+      "noEvents": "Sin eventos",
+      "owner": "Ver propietario",
+      "cameraMissing": "Esta cámara no está configurada en esta instalación",
+      "color": "Color",
+      "caption": "Leyenda"
+    },
     "tabSpaces": "Espacios",
     "tabCameras": "Cámaras",
     "tabLandmarks": "Referencias",

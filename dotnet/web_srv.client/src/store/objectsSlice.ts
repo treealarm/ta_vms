@@ -70,6 +70,29 @@ export const loadObjProps = createAsyncThunk(
   async (id: string) => mapApi.getObjProps(id),
 )
 
+/**
+ * The node behind a camera id. A placement names the camera, not the node, and the node id is a
+ * one-way hash of the camera id; when the camera's space has not been read yet, its children are
+ * loaded first so the answer can be found in the tree.
+ */
+export const resolveCameraNode = createAsyncThunk(
+  'objects/resolveCameraNode',
+  async ({ cameraId, spaceId }: { cameraId: string; spaceId?: string }, api) => {
+    const find = () => {
+      const known = Object.values((api.getState() as { objects: ObjectsState }).objects.markers)
+      return known.find((marker) => marker.cameraId === cameraId && !marker.ownerId)
+        ?? known.find((marker) => marker.cameraId === cameraId)
+        ?? null
+    }
+
+    const known = find()
+    if (known) return known
+
+    if (spaceId) await api.dispatch(loadChildren({ parentId: spaceId })).unwrap()
+    return find()
+  },
+)
+
 function mergeMarker(state: ObjectsState, marker: MapMarker): void {
   const existing = state.markers[marker.id]
   const oldParent = existing?.parentId ?? ''
@@ -152,6 +175,9 @@ const objectsSlice = createSlice({
       .addCase(loadNodes.fulfilled, (state, action) => {
         for (const marker of action.payload.markers) mergeMarker(state, marker)
         for (const figure of action.payload.figures) mergeFigure(state, figure)
+      })
+      .addCase(resolveCameraNode.fulfilled, (state, action) => {
+        if (action.payload) mergeMarker(state, action.payload)
       })
       .addCase(loadObjProps.fulfilled, (state, action) => {
         const props = action.payload

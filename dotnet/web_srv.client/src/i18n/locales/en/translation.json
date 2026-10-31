@@ -1077,6 +1077,34 @@
   },
   "maps": {
     "title": "Maps & plans",
+    "tree": {
+      "tab": "Objects",
+      "empty": "No objects yet",
+      "more": "Load more",
+      "childAlarms": "{{count}} alarms below"
+    },
+    "node": {
+      "kind": {
+        "space": "Space",
+        "diagram": "Diagram",
+        "landmark": "Landmark",
+        "camera": "Camera",
+        "figure": "Figure",
+        "object": "Object"
+      },
+      "alarm": "Alarm",
+      "childAlarms": "{{count}} child alarms",
+      "states": "States",
+      "noStates": "No states",
+      "properties": "Properties",
+      "noProperties": "No properties",
+      "lastEvents": "Recent events",
+      "noEvents": "No events",
+      "owner": "Show owner",
+      "cameraMissing": "This camera is not configured in this deployment",
+      "color": "Colour",
+      "caption": "Caption"
+    },
     "tabSpaces": "Spaces",
     "tabCameras": "Cameras",
     "tabLandmarks": "Landmarks",

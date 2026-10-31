@@ -33,6 +33,8 @@ export type EventsState = {
   error: string | null
   /** Alarm events kept for the map rings and the alarm list: running and recently ended. */
   recentAlarms: MapEvent[]
+  /** The last events of one node, for the object panel; the journal keeps its own paged rows. */
+  byObject: Record<string, MapEvent[]>
 }
 
 const initialState: EventsState = {
@@ -42,6 +44,7 @@ const initialState: EventsState = {
   loading: false,
   error: null,
   recentAlarms: [],
+  byObject: {},
 }
 
 const wireFilter = (filter: EventsFilter, startId?: string) => ({
@@ -82,6 +85,21 @@ export const loadRecentAlarms = createAsyncThunk(
     })
 
     return (response.events ?? []).filter((event) => event.eventName === 'alarm')
+  },
+)
+
+/** The last events of one node, shown in the object panel. */
+export const loadObjectEvents = createAsyncThunk(
+  'events/loadObjectEvents',
+  async (objectId: string) => {
+    const response = await mapApi.getEvents({
+      objects: [objectId],
+      count: 15,
+      sortKey: 'timestamp',
+      sortOrder: 'desc',
+    })
+
+    return { objectId, events: response.events ?? [] }
   },
 )
 
@@ -167,6 +185,9 @@ const eventsSlice = createSlice({
       })
       .addCase(loadLatestAlarmEvent.fulfilled, (state, action) => {
         if (action.payload) state.recentAlarms = mergeAlarm(state.recentAlarms, action.payload)
+      })
+      .addCase(loadObjectEvents.fulfilled, (state, action) => {
+        state.byObject[action.payload.objectId] = action.payload.events
       })
   },
 })
