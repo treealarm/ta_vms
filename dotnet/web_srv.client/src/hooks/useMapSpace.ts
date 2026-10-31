@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { SpaceDto } from '../dto/dtos'
-import type { MapBox, MapFigure, MapMarker, MapWatchMessage } from '../dto/mapDtos'
+import type { MapFigure, MapMarker, MapWatchMessage } from '../dto/mapDtos'
 import { mapLiveUrl } from '../api/mapApi'
+import { spaceBox } from '../map/geo'
 import { useAppDispatch, useAppSelector } from '../store'
 import { childrenOf, dropNodes, loadChildren, loadNodes } from '../store/objectsSlice'
 import { loadLevels } from '../store/levelsSlice'
@@ -60,10 +61,7 @@ export function useMapSpace(space: SpaceDto | null): MapSpaceData {
     void dispatch(loadVisualStates(missing))
   }, [childIds, dispatch])
 
-  const box = useMemo<MapBox | undefined>(() => (space ? {
-    wn: { lat: space.view.northEast.lat, lon: space.view.southWest.lon },
-    es: { lat: space.view.southWest.lat, lon: space.view.northEast.lon },
-  } : undefined), [space])
+  const box = useMemo(() => (space ? spaceBox(space) : undefined), [space])
   const boxUrl = useMemo(() => (box ? mapLiveUrl({ box }) : null), [box])
 
   // The id set is a sorted string so a marker whose name or state changed does not reopen the

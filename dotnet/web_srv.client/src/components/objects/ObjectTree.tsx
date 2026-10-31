@@ -1,20 +1,16 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef } from 'react'
 import {
   Box, Checkbox, CircularProgress, IconButton, List, ListItemButton, Stack, Tooltip, Typography,
 } from '@mui/material'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import MapIcon from '@mui/icons-material/Map'
-import SchemaIcon from '@mui/icons-material/Schema'
-import PlaceIcon from '@mui/icons-material/Place'
-import VideocamIcon from '@mui/icons-material/Videocam'
-import CategoryIcon from '@mui/icons-material/Category'
-import CircleOutlinedIcon from '@mui/icons-material/CircleOutlined'
 import { useTranslation } from 'react-i18next'
-import type { MapAlarmState, MapMarker, MapNodeKind } from '../../dto/mapDtos'
+import type { MapAlarmState, MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadChildren, loadRoots, type ChildrenPage } from '../../store/objectsSlice'
 import { loadVisualStates } from '../../store/statesSlice'
+import KindIcon from '../../map/KindIcon'
+import { sortMarkers } from '../../map/nodeKind'
 import { ALARM_COLOR } from '../../map/nodeStyle'
 
 type Props = {
@@ -22,6 +18,9 @@ type Props = {
   onSelect: (marker: MapMarker) => void
   checkedIds: Set<string>
   onCheckedChange: (ids: Set<string>) => void
+  /** The open rows. The page owns them, so a search result can unfold the path down to itself. */
+  expanded: Set<string>
+  onExpandedChange: (ids: Set<string>) => void
 }
 
 type TreeContextValue = {
@@ -39,43 +38,14 @@ type TreeContextValue = {
 
 const TreeContext = createContext<TreeContextValue | null>(null)
 
-// The server returns a page in id order, which is a hash order to the reader. Within a page the
-// tree is sorted the way a person looks for things: spaces first, then what sits in them.
-const KIND_ORDER: Record<string, number> = {
-  space: 0,
-  diagram: 1,
-  camera: 2,
-  landmark: 3,
-  figure: 4,
-  object: 5,
-}
-
-function sortMarkers(markers: MapMarker[]): MapMarker[] {
-  return [...markers].sort((a, b) => {
-    const byKind = (KIND_ORDER[a.nodeKind ?? 'object'] ?? 5) - (KIND_ORDER[b.nodeKind ?? 'object'] ?? 5)
-    return byKind !== 0 ? byKind : (a.name || a.id).localeCompare(b.name || b.id)
-  })
-}
-
-/** The icon that says what a node is; the side row behind `nodeKind` is the only type there is. */
-function KindIcon({ kind }: { kind?: MapNodeKind }) {
-  const sx = { fontSize: 16, color: 'text.secondary' }
-  switch (kind) {
-    case 'space': return <MapIcon sx={sx} />
-    case 'diagram': return <SchemaIcon sx={sx} />
-    case 'landmark': return <PlaceIcon sx={sx} />
-    case 'camera': return <VideocamIcon sx={sx} />
-    case 'figure': return <CategoryIcon sx={sx} />
-    default: return <CircleOutlinedIcon sx={sx} />
-  }
-}
-
 /**
  * One tree of nodes: spaces, cameras, diagrams, figures and plain objects, loaded a level at a
  * time. Alarm points climb: a node with an alarmed descendant is marked even when it is collapsed,
  * because the counter lives on the node itself (`children_alarms`).
  */
-export default function ObjectTree({ selectedId, onSelect, checkedIds, onCheckedChange }: Props) {
+export default function ObjectTree({
+  selectedId, onSelect, checkedIds, onCheckedChange, expanded, onExpandedChange,
+}: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const roots = useAppSelector((s) => s.objects.roots)
@@ -84,7 +54,6 @@ export default function ObjectTree({ selectedId, onSelect, checkedIds, onChecked
   const alarms = useAppSelector((s) => s.states.alarms)
   const states = useAppSelector((s) => s.states.states)
   const busy = useAppSelector((s) => s.objects.busy)
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (roots === null) void dispatch(loadRoots())
@@ -107,12 +76,10 @@ export default function ObjectTree({ selectedId, onSelect, checkedIds, onChecked
 
   const toggle = (id: string) => {
     const opening = !expanded.has(id)
-    setExpanded((previous) => {
-      const next = new Set(previous)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+    const next = new Set(expanded)
+    if (opening) next.add(id)
+    else next.delete(id)
+    onExpandedChange(next)
 
     if (opening && !childrenByParent[id]?.loaded) void dispatch(loadChildren({ parentId: id }))
   }
@@ -170,6 +137,9 @@ function TreeRow({ marker, depth }: { marker: MapMarker; depth: number }) {
 
   const page = ctx.childrenByParent[marker.id]
   const open = ctx.expanded.has(marker.id)
+  // A row whose page is already in the tree can be folded even when the read that put it there
+  // did not say it has children — the parents chain behind a search result does not.
+  const hasChildren = marker.hasChildren || !!page?.loaded
   const alarm = ctx.alarms[marker.id]
   const alarming = !!(alarm?.alarm || (alarm?.childrenAlarms ?? 0) > 0)
   const selected = ctx.selectedId === marker.id
@@ -185,7 +155,7 @@ function TreeRow({ marker, depth }: { marker: MapMarker; depth: number }) {
         sx={{ pl: 0.5 + depth * 1.5, pr: 0.5, py: 0.1, minHeight: 30 }}
       >
         <Box sx={{ width: 24, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
-          {marker.hasChildren ? (
+          {hasChildren ? (
             <IconButton
               size="small"
               sx={{ p: 0.1 }}

@@ -159,9 +159,18 @@ export type MapEventsFilter = {
   sortOrder?: string
 }
 
-export type MapTrackPoint = {
+/** What a shape is on its own, as a track point carries it: no name, no node fields. */
+export type MapGeoObject = {
   id?: string
-  figure?: MapFigure
+  location?: MapGeometry
+  radius?: number
+  zoomLevel?: string
+}
+
+export type MapTrackPoint = {
+  /** The node the point belongs to, not a row id: every point of one node carries it. */
+  id?: string
+  figure?: MapGeoObject
   timestamp?: string
   extraProps?: MapExtraProperty[]
 }

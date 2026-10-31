@@ -93,6 +93,28 @@ export const resolveCameraNode = createAsyncThunk(
   },
 )
 
+/**
+ * Brings a node found by search into view in the tree: reads the chain from the root down to its
+ * parent and loads every page along it, since expanding an ancestor shows nothing until its own
+ * page is in the tree. Returns the chain, root first, for the caller to expand.
+ */
+export const revealNode = createAsyncThunk(
+  'objects/revealNode',
+  async (node: MapMarker, api) => {
+    const parentId = node.parentId ?? ''
+    const page = await api.dispatch(loadChildren({ parentId })).unwrap()
+    const chain = page.parents ?? []
+
+    // The page of every ancestor, so that each one has the row the chain continues through.
+    const known = (api.getState() as { objects: ObjectsState }).objects.childrenByParent
+    const missing = [...new Set([parentId, ...chain.map((ancestor) => ancestor.parentId ?? '')])]
+      .filter((id) => id !== parentId && !known[id]?.loaded)
+    await Promise.all(missing.map((id) => api.dispatch(loadChildren({ parentId: id }))))
+
+    return chain
+  },
+)
+
 function mergeMarker(state: ObjectsState, marker: MapMarker): void {
   const existing = state.markers[marker.id]
   const oldParent = existing?.parentId ?? ''

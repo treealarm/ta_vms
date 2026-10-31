@@ -1,4 +1,5 @@
 import type { CameraPlacementDto, GeoBoundsDto, GeoPointDto, PlanCornersDto, SpaceDto } from '../dto/dtos'
+import type { MapBox, MapCoordinate } from '../dto/mapDtos'
 
 // The browser's half of the spatial maths: just enough to draw view cones, place a plan image and
 // show distances. Aiming is done on the server (VmsPtzTrackingSingleton/Geo), which owns the fit.
@@ -129,6 +130,27 @@ export const boundsCentre = (b: GeoBoundsDto): GeoPointDto => ({
   lat: (b.southWest.lat + b.northEast.lat) / 2,
   lon: (b.southWest.lon + b.northEast.lon) / 2,
 })
+
+/** The rectangle a space covers, in the corner order the map's box reads take. */
+export function spaceBox(space: SpaceDto): MapBox {
+  return {
+    wn: { lat: space.view.northEast.lat, lon: space.view.southWest.lon },
+    es: { lat: space.view.southWest.lat, lon: space.view.northEast.lon },
+  }
+}
+
+/** The middle of a shape's points, near enough to bring it into view; null when it has none. */
+export function pointsCentre(points: MapCoordinate[]): GeoPointDto | null {
+  const valid = points.filter(
+    (point): point is GeoPointDto => Number.isFinite(point.lat) && Number.isFinite(point.lon),
+  )
+  if (valid.length === 0) return null
+
+  return {
+    lat: valid.reduce((sum, point) => sum + point.lat, 0) / valid.length,
+    lon: valid.reduce((sum, point) => sum + point.lon, 0) / valid.length,
+  }
+}
 
 /** A rectangle a fifth of the parent's view across, in the middle of it — where a new footprint starts. */
 export function defaultFootprint(parent: SpaceDto): GeoPointDto[] {

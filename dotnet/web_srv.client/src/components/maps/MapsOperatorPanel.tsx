@@ -3,6 +3,7 @@ import { Box, Tab, Tabs, ToggleButton, Tooltip, Typography } from '@mui/material
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
 import PersonPinCircleIcon from '@mui/icons-material/PersonPinCircle'
+import SearchIcon from '@mui/icons-material/Search'
 import TableRowsIcon from '@mui/icons-material/TableRows'
 import { Polyline } from 'react-leaflet'
 import { useTranslation } from 'react-i18next'
@@ -11,19 +12,23 @@ import type { MapEvent, MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadCameras } from '../../store/liveSlice'
 import { errorText, loadPlacements, loadSpaces, spatialRequest } from '../../store/spatialSlice'
-import { resolveCameraNode } from '../../store/objectsSlice'
+import { loadNodes, resolveCameraNode, revealNode } from '../../store/objectsSlice'
+import { clearTracks } from '../../store/tracksSlice'
 import { RECENT_ALARM_MINUTES, alarmEndMs } from '../../store/eventsSlice'
 import { useMapSpace } from '../../hooks/useMapSpace'
 import { useAlarmFeed } from '../../hooks/useAlarmFeed'
 import SpaceCanvas, { type MapFocus } from '../../map/SpaceCanvas'
 import PlanOverlay from '../../map/PlanOverlay'
 import FiguresLayer from '../../map/FiguresLayer'
+import TracksLayer from '../../map/TracksLayer'
+import { pointsCentre } from '../../map/geo'
 import { CameraMarker } from '../../map/markers'
 import { Footprints } from '../../map/footprints'
 import DetectionsLayer from '../../map/DetectionsLayer'
 import { ALARM_COLOR, ALARM_STATE, DEFAULT_NODE_COLOR, nodeStyle } from '../../map/nodeStyle'
 import ObjectTree from '../objects/ObjectTree'
 import ObjectPanel from '../objects/ObjectPanel'
+import ObjectSearch from '../objects/ObjectSearch'
 import StatesTable from '../events/StatesTable'
 import SpaceNav from './SpaceNav'
 import MapObjectList from './MapObjectList'
@@ -73,10 +78,14 @@ export default function MapsOperatorPanel() {
   const alarmStates = useAppSelector((s) => s.states.all)
   const recentAlarms = useAppSelector((s) => s.events.recentAlarms)
   const levels = useAppSelector((s) => s.levels.levels)
+  const tracks = useAppSelector((s) => s.tracks.tracks)
+  const tracksSpaceId = useAppSelector((s) => s.tracks.spaceId)
 
   const [spaceId, setSpaceId] = useState<string | null>(readLastSpace)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
+  // The open rows of the tree; a search result unfolds the path down to itself.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [leftTab, setLeftTab] = useState(0)
   const [aiming, setAiming] = useState(false)
   const [aimTarget, setAimTarget] = useState<GeoPointDto | null>(null)
@@ -223,6 +232,9 @@ export default function MapsOperatorPanel() {
   }
 
   const openSpace = (id: string) => {
+    // Tracks were read for one space's rectangle; another space asks a different question.
+    if (id !== space?.id) void dispatch(clearTracks())
+
     setSpaceId(id)
     writeLastSpace(id)
     setFocus(null)
@@ -267,6 +279,39 @@ export default function MapsOperatorPanel() {
     const placement = placements.find((p) => p.cameraId === cameraId && p.isReference)
     const marker = await dispatch(resolveCameraNode({ cameraId, spaceId: placement?.spaceId })).unwrap()
     if (marker) selectNode(marker)
+  }
+
+  /**
+   * A node picked in the search tab: unfold the tree down to it, open the space it stands in and
+   * select it. A camera then goes by its reference placement, like one picked anywhere else.
+   */
+  const revealFromSearch = async (marker: MapMarker) => {
+    // The chain from the root down to its parent, with every page along it read.
+    const ancestors = await dispatch(revealNode(marker)).unwrap().catch(() => [] as MapMarker[])
+
+    // The canvas it is drawn on: the nearest space above it, or the node itself for a space.
+    const enclosing = marker.nodeKind === 'space'
+      ? marker.id
+      : [...ancestors].reverse().find((ancestor) => ancestor.nodeKind === 'space')?.id
+    if (enclosing) openSpace(enclosing)
+
+    if (ancestors.length > 0) {
+      setExpanded((previous) => {
+        const next = new Set(previous)
+        for (const ancestor of ancestors) next.add(ancestor.id)
+        return next
+      })
+    }
+
+    selectNode(marker)
+
+    // A node that is not a camera is drawn from its own shape, which this canvas may not know yet.
+    if (!marker.cameraId) {
+      const loaded = await dispatch(loadNodes([marker.id])).unwrap().catch(() => null)
+      const figure = loaded?.figures.find((candidate) => candidate.id === marker.id)
+      const centre = pointsCentre(figure?.geometry?.coord ?? [])
+      if (centre) setFocus((previous) => ({ ...centre, seq: (previous?.seq ?? 0) + 1 }))
+    }
   }
 
   const aimAt = async (at: GeoPointDto) => {
@@ -317,11 +362,16 @@ export default function MapsOperatorPanel() {
             value={leftTab}
             onChange={(_, value: number) => setLeftTab(value)}
             variant="fullWidth"
-            sx={{ minHeight: 36, flexShrink: 0, '& .MuiTab-root': { minHeight: 36, py: 0.5, minWidth: 0 } }}
+            sx={{
+              minHeight: 48,
+              flexShrink: 0,
+              '& .MuiTab-root': { minHeight: 48, py: 0.5, px: 0.25, minWidth: 0, fontSize: 11 },
+            }}
           >
-            <Tab icon={<AccountTreeIcon fontSize="small" />} iconPosition="start" label={t('maps.tree.tab')} />
-            <Tab icon={<NotificationsActiveIcon fontSize="small" />} iconPosition="start" label={t('maps.alarms')} />
-            <Tab icon={<TableRowsIcon fontSize="small" />} iconPosition="start" label={t('maps.states.tab')} />
+            <Tab icon={<AccountTreeIcon fontSize="small" />} label={t('maps.tree.tab')} />
+            <Tab icon={<NotificationsActiveIcon fontSize="small" />} label={t('maps.alarms')} />
+            <Tab icon={<TableRowsIcon fontSize="small" />} label={t('maps.states.tab')} />
+            <Tab icon={<SearchIcon fontSize="small" />} label={t('maps.search.tab')} />
           </Tabs>
           <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
             {leftTab === 0 ? (
@@ -330,11 +380,15 @@ export default function MapsOperatorPanel() {
                 onSelect={selectNode}
                 checkedIds={checkedIds}
                 onCheckedChange={setCheckedIds}
+                expanded={expanded}
+                onExpandedChange={setExpanded}
               />
             ) : leftTab === 1 ? (
               <MapObjectList sections={[alarmSection]} />
-            ) : (
+            ) : leftTab === 2 ? (
               <StatesTable ids={checkedIds} selectedId={selectedNodeId} onSelect={selectNode} />
+            ) : (
+              <ObjectSearch space={space} onSelect={(marker) => void revealFromSearch(marker)} />
             )}
           </Box>
         </Box>
@@ -365,6 +419,9 @@ export default function MapsOperatorPanel() {
               onSelect={(id) => { const marker = markers[id]; if (marker) selectNode(marker) }}
               skipIds={cameraFigureIds}
             />
+            {tracksSpaceId === space.id && tracks.length > 0 && (
+              <TracksLayer tracks={tracks} markers={markers} />
+            )}
             <Footprints nested={nested} alarmed={alarmed} onPick={(s) => s.id && open(s.id)} />
             {here.map((p) => {
               const camera = camerasById[p.cameraId]

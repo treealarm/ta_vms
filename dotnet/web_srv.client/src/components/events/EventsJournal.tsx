@@ -6,6 +6,7 @@ import {
 import RefreshIcon from '@mui/icons-material/Refresh'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { toIsoUtc } from '../../dto/dtos'
 import type { EpisodeDto } from '../../dto/dtos'
 import type { MapEvent } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
@@ -24,12 +25,6 @@ const imagesOf = (event: MapEvent): string[] =>
   (event.extraProps ?? [])
     .filter((prop) => prop.visualType === 'image_fs' && prop.strVal)
     .map((prop) => prop.strVal as string)
-
-const toIso = (value: string): string | undefined => {
-  if (!value) return undefined
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
-}
 
 const clock = (iso?: string): string => {
   if (!iso) return ''
@@ -95,8 +90,8 @@ export default function EventsJournal() {
 
   const apply = () => {
     const filter: EventsFilter = {
-      timeStart: toIso(start),
-      timeEnd: toIso(end),
+      timeStart: toIsoUtc(start) ?? undefined,
+      timeEnd: toIsoUtc(end) ?? undefined,
       objects: subtree ? [subtree] : [],
       imagesOnly,
       param0,

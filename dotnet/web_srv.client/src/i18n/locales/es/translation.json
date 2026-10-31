@@ -1104,6 +1104,26 @@
       "states": "Estados",
       "none": "Marque nodos en el árbol para ver sus estados."
     },
+    "search": {
+      "tab": "Búsqueda",
+      "name": "Nombre",
+      "findByName": "Buscar por nombre",
+      "byProps": "Propiedad = valor",
+      "propName": "Propiedad",
+      "propValue": "Valor",
+      "addProp": "Añadir propiedad",
+      "find": "Buscar",
+      "results": "Encontrados: {{count}}",
+      "clear": "Limpiar",
+      "noResults": "Nada encontrado",
+      "tracks": "Trayectos",
+      "periodFrom": "Desde",
+      "periodTo": "Hasta",
+      "showTracks": "Mostrar trayectos",
+      "hideTracks": "Ocultar",
+      "trackCount": "Puntos de trayecto: {{count}}",
+      "noTracks": "Sin puntos de trayecto en este periodo"
+    },
     "node": {
       "kind": {
         "space": "Espacio",

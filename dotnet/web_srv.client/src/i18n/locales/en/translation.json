@@ -1104,6 +1104,26 @@
       "states": "States",
       "none": "Tick nodes in the tree to watch their states."
     },
+    "search": {
+      "tab": "Search",
+      "name": "Name",
+      "findByName": "Find by name",
+      "byProps": "Property = value",
+      "propName": "Property",
+      "propValue": "Value",
+      "addProp": "Add property",
+      "find": "Find",
+      "results": "Found: {{count}}",
+      "clear": "Clear",
+      "noResults": "Nothing found",
+      "tracks": "Tracks",
+      "periodFrom": "From",
+      "periodTo": "To",
+      "showTracks": "Show tracks",
+      "hideTracks": "Hide",
+      "trackCount": "Track points: {{count}}",
+      "noTracks": "No track points in this period"
+    },
     "node": {
       "kind": {
         "space": "Space",
