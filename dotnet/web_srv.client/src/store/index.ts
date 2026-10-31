@@ -15,7 +15,6 @@ import wallPlaybackReducer from './wallPlaybackSlice'
 import wallCoverageReducer from './wallCoverageSlice'
 import wallEventsReducer from './wallEventsSlice'
 import frontendConfigReducer from './frontendConfigSlice'
-import cameraPermissionsReducer from './cameraPermissionsSlice'
 import edgeArchiveReducer from './edgeArchiveSlice'
 import spatialReducer from './spatialSlice'
 import objectsReducer from './objectsSlice'
@@ -45,7 +44,6 @@ export const store = configureStore({
     wallCoverage: wallCoverageReducer,
     wallEvents: wallEventsReducer,
     frontendConfig: frontendConfigReducer,
-    cameraPermissions: cameraPermissionsReducer,
     edgeArchive: edgeArchiveReducer,
     spatial: spatialReducer,
     objects: objectsReducer,

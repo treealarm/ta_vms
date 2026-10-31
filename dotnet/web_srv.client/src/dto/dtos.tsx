@@ -269,32 +269,10 @@ export type CameraSetupDto = {
 }
 
 /** What a user may do with a camera. All false = no access. */
-export type CameraPermissionFlagsDto = {
-  viewLive: boolean
-  viewArchive: boolean
-  ptz: boolean
-  /** Arming, recording overrides, manual retention, relay outputs. */
-  control: boolean
-  /** Downloading a clip as a file. */
-  export: boolean
-}
 
 /** Effective permission on a camera is the OR of allCameras and the matching cameras entry. */
-export type UserCameraPermissionsDto = {
-  username: string
-  /** null/undefined = no blanket grant; a blanket grant also covers cameras added later. */
-  allCameras?: CameraPermissionFlagsDto | null
-  cameras: Record<string, CameraPermissionFlagsDto>
-}
 
 /** Answer to "what may I do", used to hide affordances. The server still checks every request. */
-export type MyPermissionsDto = {
-  username: string
-  isAdmin: boolean
-  aclEnforced: boolean
-  allCameras?: CameraPermissionFlagsDto | null
-  cameras: Record<string, CameraPermissionFlagsDto>
-}
 
 // GET /api/deployment: anonymous, what a machine looking for its core is told.
 export type DeploymentDto = {
@@ -501,18 +479,8 @@ export type EpisodeDto = {
 }
 
 /** An alarm episode as the operator's map sees it. */
-export type AlarmDto = EpisodeDto & {
-  /** Still running: its projected end is after the server's clock. */
-  active: boolean
-  /** The caller may watch the camera's archive, and so the recording of this alarm. */
-  archive: boolean
-}
 
 /** Alarms running now and those that ended within the window, newest first, with the server's clock. */
-export type AlarmsDto = {
-  serverTime: string
-  alarms: AlarmDto[]
-}
 
 // A group = all episodes sharing one eventId (a time-clustered session of one object, possibly
 // across cameras). Rendered as a tree row with a "+N" badge; episodes ordered oldest-first.

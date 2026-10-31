@@ -223,34 +223,4 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
       return Ok(Array.Empty<RealmUserDto>());
     }
   }
-
-  /// <summary>
-  /// What the caller may do, so the SPA can hide controls it would only get a 403 from. Purely
-  /// advisory: every endpoint checks permissions on its own regardless of what this returned.
-  /// </summary>
-  [HttpGet("me")]
-  [Authorize(Policy = AuthPolicies.Authenticated)]
-  [NoRights("reports the caller's own grants")]
-  public async Task<ActionResult<MyPermissionsDto>> Me(
-    [FromServices] IPermissionManager permissions, CancellationToken ct)
-  {
-    var username = User.Identity?.Name ?? string.Empty;
-    // With authentication off there is no identity to scope anything to, and every policy already
-    // succeeds — report it as unrestricted rather than as an anonymous user with no grants.
-    var isAdmin = !AuthGate.KeycloakEnabled || User.IsInRole(web_srv.Authentication.RoleConstants.Admin);
-    var enforced = AuthGate.KeycloakEnabled && await permissions.GetAclEnforced(ct);
-
-    if (!enforced || isAdmin)
-      return Ok(new MyPermissionsDto { Username = username, IsAdmin = isAdmin, AclEnforced = enforced });
-
-    var mine = await permissions.GetForUser(username, ct);
-    return Ok(new MyPermissionsDto
-    {
-      Username    = username,
-      IsAdmin     = false,
-      AclEnforced = true,
-      AllCameras  = mine.AllCameras,
-      Cameras     = mine.Cameras,
-    });
-  }
 }

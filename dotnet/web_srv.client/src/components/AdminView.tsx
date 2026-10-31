@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Box, Stack, Tab, Tabs } from '@mui/material'
-import { useRegisterPendingEdits } from './settings/PendingEdits'
+import { useRegisterPendingEdits } from './settings/pendingEditsContext'
 import { useTranslation } from 'react-i18next'
 import ViewControls from './ViewControls'
 
@@ -16,13 +16,12 @@ import SimulationFab from './SimulationFab'
 import LogToggleButton from './LogToggleButton'
 import OnvifSubscriptionsPanel from './OnvifSubscriptionsPanel'
 import OnvifCameraSettingsPanel from './OnvifCameraSettingsPanel'
-import CameraPermissionsPanel from './CameraPermissionsPanel'
 import EdgeArchivePanel from './EdgeArchivePanel'
 import AnalyticsWatchesPanel from './AnalyticsWatchesPanel'
 import MapsAdminPanel from './maps/MapsAdminPanel'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 
-const TABS = ['cameras', 'maps', 'mediamtx', 'monitors', 'storages', 'recording', 'schedules', 'onvif', 'onvif-settings', 'analytics', 'permissions', 'edge-archive', 'deployment'] as const
+const TABS = ['cameras', 'maps', 'mediamtx', 'monitors', 'storages', 'recording', 'schedules', 'onvif', 'onvif-settings', 'analytics', 'edge-archive', 'deployment'] as const
 
 export default function AdminView() {
   const { t } = useTranslation()
@@ -69,7 +68,6 @@ export default function AdminView() {
             <Route path="onvif" element={<OnvifSubscriptionsPanel ref={panelRef} />} />
             <Route path="onvif-settings" element={<OnvifCameraSettingsPanel />} />
             <Route path="analytics" element={<AnalyticsWatchesPanel ref={panelRef} />} />
-            <Route path="permissions" element={<CameraPermissionsPanel ref={panelRef} />} />
             <Route path="edge-archive" element={<EdgeArchivePanel />} />
             <Route path="deployment" element={<DeploymentPanel ref={panelRef} />} />
             <Route path="*" element={<Navigate to="/admin/cameras" replace />} />
@@ -103,7 +101,6 @@ export default function AdminView() {
             <Tab label={t('nav.onvif')} />
             <Tab label={t('nav.onvifSettings')} />
             <Tab label={t('nav.analytics')} />
-            <Tab label={t('nav.permissions')} />
             <Tab label={t('nav.edgeArchive')} />
             <Tab label={t('nav.deployment')} />
           </Tabs>

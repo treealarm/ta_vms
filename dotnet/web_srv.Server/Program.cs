@@ -83,7 +83,6 @@ builder.Services.AddSingleton(_ =>
     DaprClient.CreateInvocationInvoker(ptzTrackingAppId)));
 
 builder.Services.AddSingleton<ICameraManager, CameraManager>();
-builder.Services.AddSingleton<IPermissionManager, PermissionManager>();
 builder.Services.AddSingleton<MonitorManager>();
 builder.Services.AddSingleton<ArchiveOwnershipCache>();
 builder.Services.AddSingleton<IHlsArchiveService, HlsArchiveService>();

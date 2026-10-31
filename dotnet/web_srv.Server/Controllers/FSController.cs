@@ -338,42 +338,6 @@ public sealed class FSController(
     return dto;
   }
 
-  /// <summary>
-  /// Alarms running now and those that ended in the last <paramref name="sinceMinutes"/> minutes,
-  /// for the operator's map.
-  /// </summary>
-  /// <remarks>
-  /// Scoped by ViewLive rather than ViewArchive: that a camera is alarming is part of its live
-  /// state, like the boxes over its picture. Each alarm says whether the caller may also watch its
-  /// recording. Asked by end, not start (ending_after), so an alarm that started long ago and is
-  /// still being renewed is found.
-  /// </remarks>
-  [RequiresRight(RightActions.ViewLive, Source = RightSource.Action)]
-  [HttpGet("alarms")]
-  public async Task<ActionResult<AlarmsDto>> ListAlarms([FromQuery] int? sinceMinutes, CancellationToken ct)
-  {
-    var liveScope = await access.ScopeAsync(User, RightActions.ViewLive, ct);
-    var archiveScope = await access.ScopeAsync(User, RightActions.ViewArchive, ct);
-    var now = DateTime.UtcNow;
-    var since = now.AddMinutes(-Math.Clamp(sinceMinutes ?? 15, 1, 60));
-
-    var request = new ListRetentionEventsRequest { Limit = 200, EndingAfter = Timestamp.FromDateTime(since) };
-    var responses = await registry.FanOutFsAsync((c, o) => c.ListRetentionEventsAsync(request, o).ResponseAsync, ct);
-
-    var alarms = responses
-      .SelectMany(r => r.Value.Events)
-      .Where(e => liveScope.Contains(e.CameraId))
-      .Select(e =>
-      {
-        var alarm = FillEpisode(new AlarmDto(), e);
-        alarm.Active = alarm.AlarmEndTs is { } end && end > now;
-        alarm.Archive = archiveScope.Contains(e.CameraId);
-        return alarm;
-      })
-      .OrderByDescending(a => a.AlarmStartTs)
-      .ToList();
-    return new AlarmsDto { ServerTime = now, Alarms = alarms };
-  }
 
   // Events for one camera come from the single FS instance that owns it; without a camera the
   // query has to fan out. Returned in the shape FanOutFsAsync produces so the caller is unaware.
