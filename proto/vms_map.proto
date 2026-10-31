@@ -97,6 +97,8 @@ service MapService {
   rpc GetStates(GetStatesRequest) returns (ObjectStateList);
   // States, alarm counters and descriptions in one answer, the way the map paints a set of nodes.
   rpc GetVisualStates(GetStatesRequest) returns (VisualStates);
+  // The alarm counters of the named nodes. An empty list asks for every alarmed node the caller
+  // may see: the operator's alarm list is not a set of ids the browser already knows.
   rpc GetAlarmedStates(GetStatesRequest) returns (AlarmStateList);
   rpc GetStateDescriptions(GetStateDescriptionsRequest) returns (StateDescriptionList);
 

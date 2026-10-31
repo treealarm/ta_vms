@@ -352,6 +352,36 @@ namespace VmsMap.Grpc
       MapProto.GetStatesRequest request, ServerCallContext context)
     {
       var ct = context.CancellationToken;
+
+      // No ids means the whole map: the operator's alarm list is not a set of ids the browser
+      // already knows, and an alarm that started before the page opened is the one that matters.
+      if (request.Ids.Count == 0)
+      {
+        var alarmed = await _db.AlarmStates.AsNoTracking()
+          .Where(s => s.alarm || s.children_alarms > 0)
+          .ToListAsync(ct);
+        var all = alarmed
+          .Select(s => Utils.ConvertGuidToObjectId(s.id))
+          .ToList();
+        var visibleAll = await _rightsService.VisibleAsync(all, ToCaller(request.Caller), ct);
+
+        return new MapProto.AlarmStateList
+        {
+          States =
+          {
+            alarmed
+              .Where(s => visibleAll.Contains(Utils.ConvertGuidToObjectId(s.id)))
+              .Select(s => new MapProto.AlarmState
+              {
+                Id = Utils.ConvertGuidToObjectId(s.id),
+                Alarm = s.alarm,
+                ChildrenAlarms = s.children_alarms,
+                Version = s.Version,
+              })
+          }
+        };
+      }
+
       var ids = await VisibleAsync(request.Ids, request.Caller, ct);
       return new MapProto.AlarmStateList { States = { await AlarmsForAsync(ids, ct) } };
     }

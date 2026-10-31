@@ -166,6 +166,36 @@ public class MapServiceReadsTests
   }
 
   [Fact]
+  public async Task GetAlarmedStatesWithoutIdsReturnsEveryAlarmTheCallerSees()
+  {
+    var s = Create();
+    var camera = await Node(s.Map, "Camera");
+    var hidden = await Node(s.Map, "Hidden");
+    await Grant(s.Db, camera, "alice", RightActions.View);
+    s.Db.AlarmStates.Add(new DBAlarmState
+    {
+      id = Guid.Parse(camera.id!),
+      alarm = true,
+      children_alarms = 0,
+    });
+    s.Db.AlarmStates.Add(new DBAlarmState
+    {
+      id = Guid.Parse(hidden.id!),
+      alarm = true,
+      children_alarms = 0,
+    });
+    await s.Db.SaveChangesAsync();
+
+    var seen = await s.Grpc.GetAlarmedStates(new MapProto.GetStatesRequest
+    {
+      Caller = Caller("alice"),
+    }, new TestContext());
+
+    Assert.Contains(seen.States, state => state.Id == camera.id && state.Alarm);
+    Assert.DoesNotContain(seen.States, state => state.Id == hidden.id);
+  }
+
+  [Fact]
   public async Task GetVisualStatesRewritesTheOwnerStateForAReplica()
   {
     var s = Create();
