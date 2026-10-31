@@ -10,6 +10,12 @@ public record RealmUserDto
   /// for (see the withRoles parameter) or Keycloak did not answer for this user.
   /// </summary>
   public bool? IsAdmin { get; init; }
+  /// <summary>
+  /// The realm roles the user holds, when withRoles asked for them. The rights editor offers a
+  /// right to a role as well as to a user name, and the roles it can offer are the ones somebody
+  /// holds.
+  /// </summary>
+  public IReadOnlyList<string> Roles { get; init; } = [];
 }
 
 /// <summary>What a user may do with a camera. All false = no access at all.</summary>

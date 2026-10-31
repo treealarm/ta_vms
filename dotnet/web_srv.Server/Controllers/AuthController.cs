@@ -197,17 +197,24 @@ public class AuthController(IKeycloakAdminClient? kcAdmin = null) : ControllerBa
       foreach (var name in names)
       {
         bool? isAdmin;
+        IReadOnlyList<string> roles = [];
         try
         {
-          var roles = await kcAdmin.GetUserRolesAsync(realm, name);
-          isAdmin = roles.Any(r => string.Equals(r.Name, RoleConstants.Admin, StringComparison.OrdinalIgnoreCase));
+          var held = await kcAdmin.GetUserRolesAsync(realm, name);
+          roles = held
+            .Select(r => r.Name)
+            .Where(role => !string.IsNullOrWhiteSpace(role))
+            .Select(role => role!)
+            .OrderBy(role => role, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+          isAdmin = roles.Any(role => string.Equals(role, RoleConstants.Admin, StringComparison.OrdinalIgnoreCase));
         }
         catch (Exception)
         {
           // One unreadable user must not blank the whole list; unknown is reported as unknown.
           isAdmin = null;
         }
-        result.Add(new RealmUserDto { Username = name, IsAdmin = isAdmin });
+        result.Add(new RealmUserDto { Username = name, IsAdmin = isAdmin, Roles = roles });
       }
       return Ok(result);
     }
