@@ -115,6 +115,10 @@ service MapService {
 
   rpc GetLevels(google.protobuf.Empty) returns (LevelList);
   rpc GetLevel(GetLevelRequest) returns (GetLevelResponse);
+  // The zoom-level dictionary is part of the map's editing surface: a new layer gets a name and a
+  // zoom range, and a level that is no longer wanted is removed with its id.
+  rpc UpdateLevels(LevelList) returns (LevelList);
+  rpc DeleteLevels(ObjectIds) returns (OperationStatus);
 
   // Rights as stored, the expanded effective set for one caller, and the dictionary the editor
   // reads to know which actions a node kind accepts.

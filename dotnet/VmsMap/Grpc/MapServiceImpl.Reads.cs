@@ -651,6 +651,30 @@ namespace VmsMap.Grpc
         : new MapProto.GetLevelResponse { Found = true, Level = ToProto(level) };
     }
 
+    public override async Task<MapProto.LevelList> UpdateLevels(
+      MapProto.LevelList request, ServerCallContext context)
+    {
+      var dtos = request.Levels
+        .Select(level => new LevelDTO
+        {
+          id = level.Id,
+          zoom_level = level.ZoomLevel,
+          zoom_min = level.ZoomMin,
+          zoom_max = level.ZoomMax,
+        })
+        .ToList();
+
+      var updated = await _levelService.UpdateAsync(dtos);
+      return new MapProto.LevelList { Levels = { updated.Select(ToProto) } };
+    }
+
+    public override async Task<MapProto.OperationStatus> DeleteLevels(
+      MapProto.ObjectIds request, ServerCallContext context)
+    {
+      await _levelService.RemoveAsync(request.Ids.ToList());
+      return Ok();
+    }
+
     // ── Shared helpers ───────────────────────────────────────────────────────────────────────
 
     private async Task<HashSet<string>> VisibleAsync(

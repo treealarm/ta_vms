@@ -106,16 +106,6 @@ public class MapObjectsController(MapProto.MapService.MapServiceClient map) : Co
 
     return MapApi.Json(response);
   }
-
-  [HttpPost("replica")]
-  public async Task<IActionResult> CreateReplica(
-    [FromBody] JsonElement body, CancellationToken ct)
-  {
-    var request = MapApi.Parse<MapProto.CreateReplicaRequest>(body);
-    request.Caller = User.ToMapCaller();
-
-    return MapApi.Json(await map.CreateReplicaAsync(request, MapApi.Options(ct)));
-  }
 }
 
 [ApiController]
