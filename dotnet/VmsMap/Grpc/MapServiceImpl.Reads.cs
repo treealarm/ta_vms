@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
@@ -48,6 +49,7 @@ namespace VmsMap.Grpc
 
       var top = await _mapService.GetTopChildren(children.Keys.ToList());
       var cameras = await CameraIdsAsync(children.Keys, ct);
+      var kinds = await NodeKindLookup.ResolveAsync(_db, candidates, ct);
 
       var guids = children.Keys
         .Select(Utils.ConvertObjectIdToGuid)
@@ -58,11 +60,16 @@ namespace VmsMap.Grpc
       return new MapProto.GetByParentResponse
       {
         ParentId = parentId,
-        Parents = { parents.Select(p => ToMarker(p, false, null)) },
+        Parents =
+        {
+          parents.Select(p => ToMarker(
+            p, false, null, kinds.GetValueOrDefault(p.id ?? string.Empty, NodeKind.Object)))
+        },
         Children =
         {
           children.Select(kv => ToMarker(
-            kv.Value, top.ContainsKey(kv.Key), cameras.GetValueOrDefault(kv.Key)))
+            kv.Value, top.ContainsKey(kv.Key), cameras.GetValueOrDefault(kv.Key),
+            kinds.GetValueOrDefault(kv.Key, NodeKind.Object)))
         },
         StartId = guids.Count > 0 ? Utils.ConvertGuidToObjectId(guids.Min()) : string.Empty,
         EndId = guids.Count > 0 ? Utils.ConvertGuidToObjectId(guids.Max()) : string.Empty,
@@ -85,13 +92,16 @@ namespace VmsMap.Grpc
       var markers = await _mapService.GetAsync(ids.ToList());
       var top = await _mapService.GetTopChildren(ids.ToList());
       var cameras = await CameraIdsAsync(ids, ct);
+      var kinds = await NodeKindLookup.ResolveAsync(_db, ids, ct);
 
       return new MapProto.MarkerList
       {
         Markers =
         {
           markers.Values.Select(m => ToMarker(
-            m, top.ContainsKey(m.id ?? string.Empty), cameras.GetValueOrDefault(m.id ?? string.Empty)))
+            m, top.ContainsKey(m.id ?? string.Empty),
+            cameras.GetValueOrDefault(m.id ?? string.Empty),
+            kinds.GetValueOrDefault(m.id ?? string.Empty, NodeKind.Object)))
         }
       };
     }
@@ -159,13 +169,15 @@ namespace VmsMap.Grpc
 
       var top = await _mapService.GetTopChildren(markers.Keys.ToList());
       var cameras = await CameraIdsAsync(markers.Keys, ct);
+      var kinds = await NodeKindLookup.ResolveAsync(_db, markers.Keys, ct);
 
       return new MapProto.MarkerList
       {
         Markers =
         {
           markers.Select(kv => ToMarker(
-            kv.Value, top.ContainsKey(kv.Key), cameras.GetValueOrDefault(kv.Key)))
+            kv.Value, top.ContainsKey(kv.Key), cameras.GetValueOrDefault(kv.Key),
+            kinds.GetValueOrDefault(kv.Key, NodeKind.Object)))
         }
       };
     }
@@ -207,14 +219,23 @@ namespace VmsMap.Grpc
       if (marker is null)
         return new MapProto.ObjProps();
 
+      var kinds = await NodeKindLookup.ResolveAsync(_db, [request.Id], ct);
       var result = new MapProto.ObjProps
       {
-        Marker = ToMarker(marker, false, (await CameraIdsAsync([request.Id], ct)).GetValueOrDefault(request.Id)),
+        Marker = ToMarker(
+          marker, false,
+          (await CameraIdsAsync([request.Id], ct)).GetValueOrDefault(request.Id),
+          kinds.GetValueOrDefault(request.Id, NodeKind.Object)),
       };
 
       var props = await _mapService.GetPropAsync(request.Id);
       if (props?.extra_props is { Count: > 0 })
         result.ExtraProps.AddRange(props.extra_props.Select(ToProto));
+
+      var visual = (await _visualService.GetListByIdsAsync([request.Id]))
+        .GetValueOrDefault(request.Id);
+      if (visual is not null)
+        result.Visual = ToProto(visual);
 
       var geo = await _geoService.GetGeoObjectAsync(request.Id);
       if (!string.IsNullOrEmpty(geo?.zoom_level))
@@ -279,7 +300,11 @@ namespace VmsMap.Grpc
       if (tx is not null)
         await tx.CommitAsync(ct);
 
-      return ToMarker(dto, false, (await CameraIdsAsync([dto.id!], ct)).GetValueOrDefault(dto.id!));
+      var kinds = await NodeKindLookup.ResolveAsync(_db, [dto.id!], ct);
+      return ToMarker(
+        dto, false,
+        (await CameraIdsAsync([dto.id!], ct)).GetValueOrDefault(dto.id!),
+        kinds.GetValueOrDefault(dto.id!, NodeKind.Object));
     }
 
     // ── States ────────────────────────────────────────────────────────────────────────────────
@@ -520,12 +545,25 @@ namespace VmsMap.Grpc
       var parents = await _mapService.GetByChildIdAsync(id);
       parents.Reverse();
 
+      // The parents are the chain the browser draws as breadcrumbs; some of them are not among
+      // the collected markers, so they are added to the kind and visual lookups explicitly.
+      var allIds = markers.Keys
+        .Concat(parents.Select(p => p.id).Where(p => !string.IsNullOrEmpty(p))!)
+        .Distinct(StringComparer.Ordinal)
+        .ToList();
+      var kinds = await NodeKindLookup.ResolveAsync(_db, allIds, ct);
+      var visuals = await _visualService.GetListByIdsAsync(allIds);
+
       content.Children.AddRange(markers.Values
         .Where(m => m.id != id)
-        .Select(m => ToMarker(m, false, null)));
+        .Select(m => ToMarker(
+          m, false, null,
+          kinds.GetValueOrDefault(m.id ?? string.Empty, NodeKind.Object))));
       content.Content.AddRange(diagrams.Values.Select(ToProto));
       content.DgrTypes.AddRange(types.Values.Select(ToProto));
-      content.Parents.AddRange(parents.Select(p => ToMarker(p, false, null)));
+      content.Parents.AddRange(parents.Select(p => ToMarker(
+        p, false, null, kinds.GetValueOrDefault(p.id ?? string.Empty, NodeKind.Object))));
+      content.Visuals.AddRange(visuals.Values.Select(ToProto));
 
       return content;
     }
@@ -621,14 +659,17 @@ namespace VmsMap.Grpc
       var markers = await _mapService.GetAsync(requested);
       var top = await _mapService.GetTopChildren(requested);
       var cameras = await CameraIdsAsync(requested, ct);
+      var kinds = await NodeKindLookup.ResolveAsync(_db, requested, ct);
+      var visuals = await _visualService.GetListByIdsAsync(requested);
 
       var result = new MapProto.Figures { AddTracks = figures.add_tracks };
       foreach (var figure in figures.figs)
       {
-        markers.TryGetValue(figure.id ?? string.Empty, out var marker);
+        var id = figure.id ?? string.Empty;
+        markers.TryGetValue(id, out var marker);
         result.Figs.Add(new MapProto.Figure
         {
-          Id = figure.id ?? string.Empty,
+          Id = id,
           ParentId = figure.parent_id ?? string.Empty,
           Name = figure.name ?? string.Empty,
           Geometry = GeometryProtoConvert.ToProto(figure.geometry),
@@ -636,9 +677,11 @@ namespace VmsMap.Grpc
           ZoomLevel = figure.zoom_level ?? string.Empty,
           ExtraProps = { (figure.extra_props ?? []).Select(ToProto) },
           OwnerId = figure.owner_id ?? marker?.owner_id ?? string.Empty,
-          HasChildren = top.ContainsKey(figure.id ?? string.Empty),
-          CameraId = cameras.GetValueOrDefault(figure.id ?? string.Empty) ?? string.Empty,
+          HasChildren = top.ContainsKey(id),
+          CameraId = cameras.GetValueOrDefault(id) ?? string.Empty,
           Version = marker?.Version ?? figure.Version,
+          NodeKind = NodeKindLookup.Name(kinds.GetValueOrDefault(id, NodeKind.Object)),
+          Visual = visuals.TryGetValue(id, out var visual) ? ToProto(visual) : null,
         });
       }
 
@@ -733,7 +776,7 @@ namespace VmsMap.Grpc
     }
 
     private static MapProto.Marker ToMarker(
-      BaseMarkerDTO marker, bool hasChildren, string? cameraId) => new()
+      BaseMarkerDTO marker, bool hasChildren, string? cameraId, NodeKind kind) => new()
     {
       Id = marker.id ?? string.Empty,
       ParentId = marker.parent_id ?? string.Empty,
@@ -742,6 +785,7 @@ namespace VmsMap.Grpc
       HasChildren = hasChildren,
       CameraId = cameraId ?? string.Empty,
       Version = marker.Version,
+      NodeKind = NodeKindLookup.Name(kind),
     };
 
     private static MapProto.ExtraProperty ToProto(ObjExtraPropertyDTO prop) => new()
@@ -750,6 +794,25 @@ namespace VmsMap.Grpc
       StrVal = prop.str_val ?? string.Empty,
       VisualType = prop.visual_type ?? string.Empty,
     };
+
+    private static MapProto.Visual ToProto(VisualDTO visual)
+    {
+      var proto = new MapProto.Visual
+      {
+        ObjectId = visual.object_id ?? string.Empty,
+        Color = visual.color ?? string.Empty,
+        Image = visual.image is null ? ByteString.Empty : ByteString.CopyFrom(visual.image),
+        ImageWidth = visual.image_width ?? 0,
+        ImageHeight = visual.image_height ?? 0,
+        Text = visual.text ?? string.Empty,
+      };
+
+      // An absent rotation means "upright"; writing it marks the optional field as present.
+      if (visual.rotation_deg is { } rotation)
+        proto.RotationDeg = rotation;
+
+      return proto;
+    }
 
     private static MapProto.ObjectState ToProto(ObjectStateDTO state) => new()
     {

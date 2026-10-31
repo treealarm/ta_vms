@@ -204,6 +204,10 @@ message Marker {
   string camera_id = 6;
   // The database's xmin, which changes whenever the row does. The watch stream diffs by it.
   uint32 version = 7;
+  // What kind of node this is (RightActions.NodeKind): a space, a diagram, a landmark, a camera,
+  // a figure or a plain object. It is the node's side row, not a stored type; a replica answers
+  // with its owner's kind.
+  string node_kind = 8;
 }
 
 message MarkerList {
@@ -285,6 +289,8 @@ message ObjProps {
   // The zoom range of the node's layer, when its figure has one.
   optional int32 zoom_min = 3;
   optional int32 zoom_max = 4;
+  // How the node is drawn. Empty when it has no visual row.
+  Visual visual = 5;
 }
 
 message CreateReplicaRequest {
@@ -360,6 +366,10 @@ message Figure {
   bool has_children = 9;
   string camera_id = 10;
   uint32 version = 11;
+  // What kind of node this is; see Marker.node_kind.
+  string node_kind = 12;
+  // How the node is drawn: colour, icon, rotation and caption.
+  Visual visual = 13;
 }
 
 message Figures {
@@ -848,6 +858,8 @@ message DiagramContent {
   repeated Diagram content = 4;
   repeated DiagramType dgr_types = 5;
   repeated Marker parents = 6;
+  // The drawings of the diagram and of the children it carries, by object id.
+  repeated Visual visuals = 7;
 }
 
 message GetDiagramTypesRequest {

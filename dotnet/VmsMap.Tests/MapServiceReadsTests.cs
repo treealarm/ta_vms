@@ -253,4 +253,98 @@ public class MapServiceReadsTests
         Caller = Caller("bob"),
       }, new TestContext()));
   }
+
+  [Fact]
+  public async Task GetByParentNamesTheKindOfEveryChild()
+  {
+    var s = Create();
+    var root = await Node(s.Map, "Root");
+    var space = await Node(s.Map, "Floor", root.id);
+    var diagram = await Node(s.Map, "Rack", root.id);
+    var landmark = await Node(s.Map, "Door", root.id);
+    var camera = await Node(s.Map, "Camera", root.id);
+    var figure = await Node(s.Map, "Box", root.id);
+    var plain = await Node(s.Map, "Note", root.id);
+    var replica = await Node(s.Map, "Camera picture", root.id, ownerId: camera.id);
+
+    s.Db.Spaces.Add(new DBSpace
+    {
+      object_id = Guid.Parse(space.id!),
+      kind = SpaceKinds.Plan,
+    });
+    s.Db.Diagrams.Add(new DBDiagram
+    {
+      id = Guid.Parse(diagram.id!),
+      dgr_type = Guid.NewGuid(),
+      geometry = new DBDiagramCoord { width = 100, height = 100 },
+    });
+    s.Db.Landmarks.Add(new DBLandmark { object_id = Guid.Parse(landmark.id!), height_m = 1 });
+    s.Db.CameraNodes.Add(new DBCameraNode
+    {
+      object_id = Guid.Parse(camera.id!),
+      camera_id = "cam1",
+    });
+    s.Db.GeoObjects.Add(new DBGeoObject
+    {
+      id = Guid.Parse(figure.id!),
+      figure = new NetTopologySuite.Geometries.Point(0, 0),
+    });
+    await s.Db.SaveChangesAsync();
+
+    var response = await s.Grpc.GetByParent(new MapProto.GetByParentRequest
+    {
+      ParentId = root.id,
+      Caller = Caller("alice", "admin"),
+    }, new TestContext());
+
+    string KindOf(BaseMarkerDTO node) =>
+      response.Children.Single(c => c.Id == node.id).NodeKind;
+
+    Assert.Equal("space", KindOf(space));
+    Assert.Equal("diagram", KindOf(diagram));
+    Assert.Equal("landmark", KindOf(landmark));
+    Assert.Equal("camera", KindOf(camera));
+    Assert.Equal("figure", KindOf(figure));
+    Assert.Equal("object", KindOf(plain));
+    // A replica answers with its owner's kind: the picture of a camera is still that camera.
+    Assert.Equal("camera", KindOf(replica));
+  }
+
+  [Fact]
+  public async Task GetByIdsReturnsTheVisualAndKindOfAFigure()
+  {
+    var s = Create();
+    var root = await Node(s.Map, "Root");
+    var figure = await Node(s.Map, "Box", root.id);
+    var guid = Guid.Parse(figure.id!);
+
+    s.Db.GeoObjects.Add(new DBGeoObject
+    {
+      id = guid,
+      figure = new NetTopologySuite.Geometries.Point(0, 0),
+      radius = 5,
+      zoom_level = "city",
+    });
+    s.Db.Visuals.Add(new DBVisual
+    {
+      object_id = guid,
+      color = "#123456",
+      text = "Door",
+      rotation_deg = 45,
+    });
+    await s.Db.SaveChangesAsync();
+
+    var figures = await s.Grpc.GetByIds(new MapProto.GetByIdsRequest
+    {
+      Ids = { figure.id! },
+      Caller = Caller("alice", "admin"),
+    }, new TestContext());
+
+    var fig = Assert.Single(figures.Figs);
+    Assert.Equal("figure", fig.NodeKind);
+    Assert.Equal("#123456", fig.Visual.Color);
+    Assert.Equal("Door", fig.Visual.Text);
+    Assert.True(fig.Visual.HasRotationDeg);
+    Assert.Equal(45, fig.Visual.RotationDeg);
+  }
 }
