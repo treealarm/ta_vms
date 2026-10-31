@@ -1196,6 +1196,9 @@
       "zoomMin": "Desde zoom",
       "zoomMax": "Hasta zoom",
       "addLevel": "Añadir capa",
+      "page": "Página {{page}} de {{pages}}",
+      "previousPage": "Página anterior",
+      "nextPage": "Página siguiente",
       "statesHint": "Cómo se llama y se pinta un estado, y si cuenta como alarma.",
       "levelsHint": "Un nodo aparece entre los dos límites de zoom; una capa que nadie usa no oculta nada."
     },

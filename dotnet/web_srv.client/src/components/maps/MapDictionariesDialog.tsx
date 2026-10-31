@@ -4,6 +4,8 @@ import {
   Stack, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Typography,
 } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
+import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import { useTranslation } from 'react-i18next'
 import { mapApi } from '../../api/mapApi'
@@ -11,6 +13,10 @@ import { errorText } from '../../api/requestJson'
 import type { MapLevel, MapStateDescription } from '../../dto/mapDtos'
 
 type TabName = 'states' | 'levels'
+
+/** The seeded dictionary holds every zoom range from 1 to 19 — 190 rows, each three text fields.
+ *  Rendering them all takes seconds, so the table is paged; the whole list is still saved at once. */
+const LEVELS_PAGE_SIZE = 25
 
 /**
  * The map's two dictionaries, edited from the page footer: what a state is called and looks like,
@@ -23,6 +29,7 @@ export default function MapDictionariesDialog({ open, onClose }: { open: boolean
   const [descriptions, setDescriptions] = useState<MapStateDescription[]>([])
   const [levels, setLevels] = useState<MapLevel[]>([])
   const [removedLevels, setRemovedLevels] = useState<string[]>([])
+  const [page, setPage] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -31,6 +38,7 @@ export default function MapDictionariesDialog({ open, onClose }: { open: boolean
 
     setError(null)
     setRemovedLevels([])
+    setPage(0)
     void mapApi.getStateDescriptions([])
       .then((response) => setDescriptions(response.descriptions ?? []))
       .catch((e) => setError(errorText(e)))
@@ -44,6 +52,18 @@ export default function MapDictionariesDialog({ open, onClose }: { open: boolean
 
   const changeLevel = (index: number, patch: Partial<MapLevel>) =>
     setLevels((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)))
+
+  const pageCount = Math.max(1, Math.ceil(levels.length / LEVELS_PAGE_SIZE))
+  // A deletion can empty the last page; the page number itself stays, the view follows.
+  const currentPage = Math.min(page, pageCount - 1)
+  const pageStart = currentPage * LEVELS_PAGE_SIZE
+  const visibleLevels = levels.slice(pageStart, pageStart + LEVELS_PAGE_SIZE)
+
+  const addLevel = () => {
+    // Show the page the new last row lands on.
+    setPage(Math.floor(levels.length / LEVELS_PAGE_SIZE))
+    setLevels((rows) => [...rows, { zoomLevel: '', zoomMin: 0, zoomMax: 0 }])
+  }
 
   const save = async () => {
     setBusy(true)
@@ -140,57 +160,77 @@ export default function MapDictionariesDialog({ open, onClose }: { open: boolean
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {levels.map((row, index) => (
-                    <TableRow key={row.id ?? `new:${index}`}>
-                      <TableCell>
-                        <TextField
-                          size="small"
-                          fullWidth
-                          value={row.zoomLevel ?? ''}
-                          onChange={(event) => changeLevel(index, { zoomLevel: event.target.value })}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <TextField
-                          size="small"
-                          type="number"
-                          value={row.zoomMin ?? 0}
-                          onChange={(event) => changeLevel(index, { zoomMin: Number(event.target.value) })}
-                          sx={{ width: 90 }}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <TextField
-                          size="small"
-                          type="number"
-                          value={row.zoomMax ?? 0}
-                          onChange={(event) => changeLevel(index, { zoomMax: Number(event.target.value) })}
-                          sx={{ width: 90 }}
-                        />
-                      </TableCell>
-                      <TableCell padding="none">
-                        <IconButton
-                          size="small"
-                          onClick={() => {
-                            if (row.id) setRemovedLevels((ids) => [...ids, row.id!])
-                            setLevels((rows) => rows.filter((_, i) => i !== index))
-                          }}
-                        >
-                          <DeleteOutlineIcon fontSize="small" />
-                        </IconButton>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {visibleLevels.map((row, offset) => {
+                    const index = pageStart + offset
+                    return (
+                      <TableRow key={row.id ?? `new:${index}`}>
+                        <TableCell>
+                          <TextField
+                            size="small"
+                            fullWidth
+                            value={row.zoomLevel ?? ''}
+                            onChange={(event) => changeLevel(index, { zoomLevel: event.target.value })}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <TextField
+                            size="small"
+                            type="number"
+                            value={row.zoomMin ?? 0}
+                            onChange={(event) => changeLevel(index, { zoomMin: Number(event.target.value) })}
+                            sx={{ width: 90 }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <TextField
+                            size="small"
+                            type="number"
+                            value={row.zoomMax ?? 0}
+                            onChange={(event) => changeLevel(index, { zoomMax: Number(event.target.value) })}
+                            sx={{ width: 90 }}
+                          />
+                        </TableCell>
+                        <TableCell padding="none">
+                          <IconButton
+                            size="small"
+                            onClick={() => {
+                              if (row.id) setRemovedLevels((ids) => [...ids, row.id!])
+                              setLevels((rows) => rows.filter((_, i) => i !== index))
+                            }}
+                          >
+                            <DeleteOutlineIcon fontSize="small" />
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
-              <Button
-                size="small"
-                startIcon={<AddIcon />}
-                sx={{ mt: 1 }}
-                onClick={() => setLevels((rows) => [...rows, { zoomLevel: '', zoomMin: 0, zoomMax: 0 }])}
-              >
-                {t('maps.dictionaries.addLevel')}
-              </Button>
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 1 }}>
+                <IconButton
+                  size="small"
+                  aria-label={t('maps.dictionaries.previousPage')}
+                  disabled={currentPage === 0}
+                  onClick={() => setPage(currentPage - 1)}
+                >
+                  <ChevronLeftIcon fontSize="small" />
+                </IconButton>
+                <Typography variant="caption" color="text.secondary">
+                  {t('maps.dictionaries.page', { page: currentPage + 1, pages: pageCount })}
+                </Typography>
+                <IconButton
+                  size="small"
+                  aria-label={t('maps.dictionaries.nextPage')}
+                  disabled={currentPage >= pageCount - 1}
+                  onClick={() => setPage(currentPage + 1)}
+                >
+                  <ChevronRightIcon fontSize="small" />
+                </IconButton>
+                <Box sx={{ flex: 1 }} />
+                <Button size="small" startIcon={<AddIcon />} onClick={addLevel}>
+                  {t('maps.dictionaries.addLevel')}
+                </Button>
+              </Stack>
             </>
           )}
         </Box>
