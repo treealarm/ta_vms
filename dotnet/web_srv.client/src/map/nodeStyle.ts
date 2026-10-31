@@ -2,6 +2,8 @@ import type { MapAlarmState, MapFigure, MapObjectState, MapStateDescription } fr
 
 export const ALARM_COLOR = '#ff1744'
 export const DEFAULT_NODE_COLOR = '#90a4ae'
+/** The state name the alarm adapter writes; the panel shows one alarm chip, not two. */
+export const ALARM_STATE = 'ALARM'
 
 export type NodeStyle = {
   color: string

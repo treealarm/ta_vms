@@ -4,7 +4,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import type { MapMarker } from '../../dto/mapDtos'
 import { useAppSelector } from '../../store'
-import { ALARM_COLOR } from '../../map/nodeStyle'
+import { ALARM_COLOR, ALARM_STATE } from '../../map/nodeStyle'
 
 type Props = {
   /** The nodes checked in the tree, in the order they were checked. */
@@ -43,7 +43,8 @@ export default function StatesTable({ ids, selectedId, onSelect }: Props) {
         {rows.map((marker) => {
           const alarm = alarms[marker.id]
           const alarming = !!(alarm?.alarm || (alarm?.childrenAlarms ?? 0) > 0)
-          const names = states[marker.id]?.states ?? []
+          const names = (states[marker.id]?.states ?? [])
+            .filter((name) => !(alarm?.alarm && name === ALARM_STATE))
 
           return (
             <TableRow

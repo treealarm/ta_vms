@@ -21,7 +21,7 @@ import FiguresLayer from '../../map/FiguresLayer'
 import { CameraMarker } from '../../map/markers'
 import { Footprints } from '../../map/footprints'
 import DetectionsLayer from '../../map/DetectionsLayer'
-import { ALARM_COLOR, DEFAULT_NODE_COLOR, nodeStyle } from '../../map/nodeStyle'
+import { ALARM_COLOR, ALARM_STATE, DEFAULT_NODE_COLOR, nodeStyle } from '../../map/nodeStyle'
 import ObjectTree from '../objects/ObjectTree'
 import ObjectPanel from '../objects/ObjectPanel'
 import StatesTable from '../events/StatesTable'
@@ -429,6 +429,8 @@ function StateLegend({
   }
 
   const entries = [...used]
+    // The alarm dot below already stands for the ALARM state.
+    .filter((name) => name !== ALARM_STATE)
     .map((name) => ({ name, description: descriptions[name] }))
     .filter((entry) => entry.description)
 

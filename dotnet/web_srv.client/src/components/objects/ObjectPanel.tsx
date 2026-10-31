@@ -12,7 +12,7 @@ import { useAppDispatch, useAppSelector } from '../../store'
 import { loadNodes, loadObjProps } from '../../store/objectsSlice'
 import { loadObjectEvents } from '../../store/eventsSlice'
 import CameraUnifiedCard from '../CameraUnifiedCard'
-import { ALARM_COLOR } from '../../map/nodeStyle'
+import { ALARM_COLOR, ALARM_STATE } from '../../map/nodeStyle'
 
 type Props = {
   nodeId: string
@@ -59,8 +59,9 @@ export default function ObjectPanel({
   }, [marker, nodeId, dispatch])
 
   const kind = marker?.nodeKind ?? 'object'
-  const states = state?.states ?? []
   const childrenAlarms = alarm?.childrenAlarms ?? 0
+  // The alarm chip already says "Alarm"; the ALARM state chip would repeat it.
+  const states = (state?.states ?? []).filter((name) => !(alarm?.alarm && name === ALARM_STATE))
 
   return (
     <Stack sx={{ width: 420, flexShrink: 0, borderLeft: 1, borderColor: 'divider', minHeight: 0 }}>

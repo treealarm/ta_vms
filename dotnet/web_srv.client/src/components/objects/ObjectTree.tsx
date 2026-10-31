@@ -39,6 +39,24 @@ type TreeContextValue = {
 
 const TreeContext = createContext<TreeContextValue | null>(null)
 
+// The server returns a page in id order, which is a hash order to the reader. Within a page the
+// tree is sorted the way a person looks for things: spaces first, then what sits in them.
+const KIND_ORDER: Record<string, number> = {
+  space: 0,
+  diagram: 1,
+  camera: 2,
+  landmark: 3,
+  figure: 4,
+  object: 5,
+}
+
+function sortMarkers(markers: MapMarker[]): MapMarker[] {
+  return [...markers].sort((a, b) => {
+    const byKind = (KIND_ORDER[a.nodeKind ?? 'object'] ?? 5) - (KIND_ORDER[b.nodeKind ?? 'object'] ?? 5)
+    return byKind !== 0 ? byKind : (a.name || a.id).localeCompare(b.name || b.id)
+  })
+}
+
 /** The icon that says what a node is; the side row behind `nodeKind` is the only type there is. */
 function KindIcon({ kind }: { kind?: MapNodeKind }) {
   const sx = { fontSize: 16, color: 'text.secondary' }
@@ -138,7 +156,8 @@ export default function ObjectTree({ selectedId, onSelect, checkedIds, onChecked
   return (
     <TreeContext.Provider value={context}>
       <List dense disablePadding>
-        {roots.map((id) => markers[id] && <TreeRow key={id} marker={markers[id]} depth={0} />)}
+        {sortMarkers(roots.map((id) => markers[id]).filter((marker): marker is MapMarker => !!marker))
+          .map((marker) => <TreeRow key={marker.id} marker={marker} depth={0} />)}
       </List>
     </TreeContext.Provider>
   )
@@ -155,7 +174,7 @@ function TreeRow({ marker, depth }: { marker: MapMarker; depth: number }) {
   const alarming = !!(alarm?.alarm || (alarm?.childrenAlarms ?? 0) > 0)
   const selected = ctx.selectedId === marker.id
   const children = open && page?.loaded
-    ? page.ids.map((id) => ctx.markers[id]).filter((child): child is MapMarker => !!child)
+    ? sortMarkers(page.ids.map((id) => ctx.markers[id]).filter((child): child is MapMarker => !!child))
     : []
 
   return (
