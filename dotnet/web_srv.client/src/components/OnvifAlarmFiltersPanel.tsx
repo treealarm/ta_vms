@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Autocomplete,
   Box,
@@ -223,7 +223,7 @@ export default function OnvifAlarmFiltersPanel({ cameraId }: Props) {
     [observedTopics, t],
   )
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -239,9 +239,11 @@ export default function OnvifAlarmFiltersPanel({ cameraId }: Props) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [cameraId])
 
-  useEffect(() => { void load() }, [cameraId])
+  // Called from a task: the effect body itself writes no state, and the loader is the one that
+  // flips the panel's loading flag.
+  useEffect(() => { queueMicrotask(() => void load()) }, [load])
 
   const handleAdd = async () => {
     if (!newText.trim()) return

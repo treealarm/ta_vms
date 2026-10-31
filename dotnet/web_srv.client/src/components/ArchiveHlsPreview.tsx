@@ -50,34 +50,38 @@ export default function ArchiveHlsPreview({ selected }: Props) {
   const [streamsError, setStreamsError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!selected) {
-      setStreams([])
-      setActiveUrl(null)
-      return
-    }
-
-    setLoadingStreams(true)
-    setStreamsError(null)
-
     const controller = new AbortController()
 
-    fetchEventPlaylists(selected.eventUuid, controller.signal)
-      .then((entries) => {
-        setStreams(entries)
-        const preferred = selected.streamName ?? null
-        const pick =
-          (preferred && entries.find((e) => e.streamName === preferred)) ||
-          entries.find((e) => e.streamName !== null) ||
-          entries[0]
-        setActiveUrl(pick?.playlistUrl ?? null)
-      })
-      .catch((e: unknown) => {
-        if (e instanceof DOMException && e.name === 'AbortError') return
-        setStreamsError(e instanceof Error ? e.message : String(e))
+    // The resets run inside the task, not in the effect body: the rule that keeps effects free of
+    // synchronous state writes, and the first paint of a new event waits for its own answer anyway.
+    void (async () => {
+      if (!selected) {
         setStreams([])
         setActiveUrl(null)
-      })
-      .finally(() => setLoadingStreams(false))
+        return
+      }
+
+      setLoadingStreams(true)
+      setStreamsError(null)
+
+      await fetchEventPlaylists(selected.eventUuid, controller.signal)
+        .then((entries) => {
+          setStreams(entries)
+          const preferred = selected.streamName ?? null
+          const pick =
+            (preferred && entries.find((e) => e.streamName === preferred)) ||
+            entries.find((e) => e.streamName !== null) ||
+            entries[0]
+          setActiveUrl(pick?.playlistUrl ?? null)
+        })
+        .catch((e: unknown) => {
+          if (e instanceof DOMException && e.name === 'AbortError') return
+          setStreamsError(e instanceof Error ? e.message : String(e))
+          setStreams([])
+          setActiveUrl(null)
+        })
+        .finally(() => setLoadingStreams(false))
+    })()
 
     return () => controller.abort()
   }, [selected])

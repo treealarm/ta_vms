@@ -73,7 +73,9 @@ export default function ArchiveHlsStreamCard({
   // such a range must seek the player to that exact clip, not just to the range's first clip.
   const [seekTarget, setSeekTarget] = useState<{ iso: string; filePath: string } | null>(null)
   const rangesRef = useRef<RecordingRangeDto[]>([])
-  rangesRef.current = ranges
+  // Handlers read the ranges through the ref; assigning it after the render keeps the ref out of
+  // rendering, and every handler runs later than the commit anyway.
+  useEffect(() => { rangesRef.current = ranges }, [ranges])
 
   const onRangesChange = useCallback((r: RecordingRangeDto[]) => {
     setRanges(r)

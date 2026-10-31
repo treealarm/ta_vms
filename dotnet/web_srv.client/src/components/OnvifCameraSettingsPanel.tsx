@@ -147,11 +147,16 @@ function VideoSection({ cameraId }: { cameraId: string }) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    setLoading(true); setError(null)
-    apiFetch<VideoEncoderConfigDto[]>(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/video-encoder-configs`)
-      .then(setConfigs)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false))
+    void (async () => {
+      setLoading(true); setError(null)
+      try {
+        setConfigs(await apiFetch<VideoEncoderConfigDto[]>(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/video-encoder-configs`))
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : String(e))
+      } finally {
+        setLoading(false)
+      }
+    })()
   }, [cameraId])
 
   if (loading) return <CircularProgress size={24} />
@@ -250,11 +255,16 @@ function AudioSection({ cameraId }: { cameraId: string }) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    setLoading(true); setError(null)
-    apiFetch<AudioEncoderConfigDto[]>(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/audio-encoder-configs`)
-      .then(setConfigs)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false))
+    void (async () => {
+      setLoading(true); setError(null)
+      try {
+        setConfigs(await apiFetch<AudioEncoderConfigDto[]>(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/audio-encoder-configs`))
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : String(e))
+      } finally {
+        setLoading(false)
+      }
+    })()
   }, [cameraId])
 
   if (loading) return <CircularProgress size={24} />
@@ -489,11 +499,16 @@ function DeviceInfoBlock({ cameraId }: { cameraId: string }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    setLoading(true)
-    apiFetch<DeviceInfoDto>(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/device-info`)
-      .then(setInfo)
-      .catch(() => setInfo(null))
-      .finally(() => setLoading(false))
+    void (async () => {
+      setLoading(true)
+      try {
+        setInfo(await apiFetch<DeviceInfoDto>(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/device-info`))
+      } catch {
+        setInfo(null)
+      } finally {
+        setLoading(false)
+      }
+    })()
   }, [cameraId])
 
   if (loading) return <Skeleton width={280} height={90} />

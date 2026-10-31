@@ -73,8 +73,11 @@ function PtzButton({
 
   // If this button unmounts while held (e.g. the tab/camera switches away mid-press, so no
   // mouseup/mouseleave/touchend ever fires), stop the move instead of leaving the interval
-  // running forever in the background.
-  useEffect(() => stop, [])
+  // running forever in the background. The latest stop is reached through a ref, so the cleanup
+  // registered once still sees the current camera and token.
+  const stopRef = useRef(stop)
+  useEffect(() => { stopRef.current = stop })
+  useEffect(() => () => stopRef.current(), [])
 
   return (
     <Tooltip title={title} placement="top">

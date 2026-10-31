@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
   Box,
@@ -88,11 +88,9 @@ export default function ServerCameraSetupPanel({
     return grouped
   }, [cameras, serverOptions])
 
-  useEffect(() => {
-    if (!serverOptions.includes(serverId)) {
-      setServerId(serverOptions[0] ?? '')
-    }
-  }, [serverId, serverOptions])
+  // A server that left the list cannot stay selected: the first one takes its place. Derived
+  // rather than written back in an effect, so the choice and the list never disagree by a render.
+  const chosenServerId = serverOptions.includes(serverId) ? serverId : (serverOptions[0] ?? '')
 
   const fillFromCamera = (camera: CameraSetupDto) => {
     setSelectedCameraId(camera.cameraId)
@@ -134,7 +132,7 @@ export default function ServerCameraSetupPanel({
   const buildPayload = (): CameraSetupDto => ({
     cameraId,
     name,
-    serverId,
+    serverId: chosenServerId,
     recordingMode: selectedCamera?.recordingMode ?? 'off',
     recording: selectedCamera?.recording ?? false,
     webRtc: selectedCamera?.webRtc ?? true,
@@ -154,14 +152,14 @@ export default function ServerCameraSetupPanel({
   })
 
   const isExistingCamera = selectedCamera?.cameraId === cameraId
-  const isParentChanged = Boolean(isExistingCamera && selectedCamera?.serverId && selectedCamera.serverId !== serverId)
-  const canSetup = Boolean(serverId) && !isParentChanged && (!isLimitReached || isExistingCamera)
+  const isParentChanged = Boolean(isExistingCamera && selectedCamera?.serverId && selectedCamera.serverId !== chosenServerId)
+  const canSetup = Boolean(chosenServerId) && !isParentChanged && (!isLimitReached || isExistingCamera)
 
   const onSetup = async (event: FormEvent) => {
     event.preventDefault()
     if (!canSetup) {
       dispatch(setLiveStatus(
-        serverId
+        chosenServerId
           ? `Error: Maximum ${maxCameras} cameras supported in grid view`
           : 'Error: Select a registered media server first'
       ))
@@ -207,7 +205,7 @@ export default function ServerCameraSetupPanel({
 
                   return (
                     <Box key={id}>
-                      <ListItemButton selected={selectedCameraId == null && serverId === id} onClick={() => selectServer(id)}>
+                      <ListItemButton selected={selectedCameraId == null && chosenServerId === id} onClick={() => selectServer(id)}>
                         <ListItemText primary={id} />
                       </ListItemButton>
                       {serverCameras.map((camera) => (
@@ -235,10 +233,10 @@ export default function ServerCameraSetupPanel({
                   <Select
                     labelId="camera-server-label"
                     label={t('serverSetup.server')}
-                    value={serverId}
+                    value={chosenServerId}
                     onChange={(event) => onServerSelectChange(event.target.value)}
                   >
-                    {!serverId && (
+                    {!chosenServerId && (
                       <MenuItem value="" disabled>{t('serverSetup.selectServer')}</MenuItem>
                     )}
                     {serverOptions.map((id) => (
@@ -299,7 +297,7 @@ export default function ServerCameraSetupPanel({
                   {t('serverSetup.parentChanged')}
                 </Typography>
               )}
-              {!serverId && (
+              {!chosenServerId && (
                 <Typography color="warning.main" variant="body2">
                   {t('serverSetup.noServer')}
                 </Typography>
@@ -309,7 +307,7 @@ export default function ServerCameraSetupPanel({
                 <Button disabled={!canSetup} type="submit" variant="outlined" fullWidth>
                   {t('serverSetup.setup')}
                 </Button>
-                <Button disabled={!serverId || !isParentChanged} onClick={() => void onChangeParent()} variant="contained" fullWidth>
+                <Button disabled={!chosenServerId || !isParentChanged} onClick={() => void onChangeParent()} variant="contained" fullWidth>
                   {t('serverSetup.changeParent')}
                 </Button>
                 <Button variant="outlined" onClick={() => void onRefresh()} fullWidth>

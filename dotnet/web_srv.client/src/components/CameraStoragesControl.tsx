@@ -26,11 +26,16 @@ type Props =
   | { cameraId: string; value?: undefined; onChange?: undefined }
   | { cameraId?: undefined; value: CameraStorageAssignmentDto[]; onChange: (v: CameraStorageAssignmentDto[]) => void }
 
+const NO_ASSIGNMENTS: CameraStorageAssignmentDto[] = []
+
 export default function CameraStoragesControl({ cameraId, value, onChange }: Props) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const allStorages = useAppSelector((state) => state.storage.storages)
-  const savedAssignments = useAppSelector((state) => state.storage.cameraAssignments[cameraId ?? ''] ?? [])
+  const storedAssignments = useAppSelector((state) => state.storage.cameraAssignments[cameraId ?? ''])
+  // One shared empty array: a fresh `[]` on every selector call would look like a change to the
+  // render-time sync below, and it would write state on every render.
+  const savedAssignments = storedAssignments ?? NO_ASSIGNMENTS
 
   const controlled = cameraId === undefined
 
@@ -46,23 +51,28 @@ export default function CameraStoragesControl({ cameraId, value, onChange }: Pro
     if (!controlled) void dispatch(loadCameraStorages(cameraId))
   }, [dispatch, cameraId, controlled])
 
-  useEffect(() => {
-    if (!controlled) {
-      setAssignments(savedAssignments)
-      setDirty(false)
-    }
-  }, [savedAssignments, controlled])
-
-  useEffect(() => {
-    if (controlled) setAssignments(value)
-  }, [value, controlled])
-
-  // Auto-apply on unmount if dirty (uncontrolled mode only)
-  const applyRef = useRef(async () => {})
-  applyRef.current = async () => {
-    if (controlled || !dirty) return
-    await dispatch(setCameraStorages({ cameraId: cameraId!, assignments }))
+  // The stored assignments (uncontrolled) and the parent's value (controlled) are followed while
+  // rendering: a save or a change upstream shows at once, without an effect writing state back.
+  const [followedSaved, setFollowedSaved] = useState(savedAssignments)
+  const [followedValue, setFollowedValue] = useState(value)
+  if (!controlled && savedAssignments !== followedSaved) {
+    setFollowedSaved(savedAssignments)
+    setAssignments(savedAssignments)
+    setDirty(false)
   }
+  if (controlled && value !== followedValue) {
+    setFollowedValue(value)
+    setAssignments(value)
+  }
+
+  // Auto-apply on unmount if dirty (uncontrolled mode only).
+  const applyRef = useRef(async () => {})
+  useEffect(() => {
+    applyRef.current = async () => {
+      if (controlled || !dirty) return
+      await dispatch(setCameraStorages({ cameraId: cameraId!, assignments }))
+    }
+  }, [controlled, dirty, cameraId, assignments, dispatch])
   useEffect(() => () => { void applyRef.current() }, [])
 
   // Warn browser on close when dirty (uncontrolled mode only)

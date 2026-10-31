@@ -69,11 +69,17 @@ export default function DetectionArchivePreview({
   const [gapSnapMs, setGapSnapMs] = useState<number | null>(null)
   const [snapFailed, setSnapFailed] = useState(false)
 
-  useEffect(() => {
+  // A new detection (or another camera) restarts the preview from its own instant. Adjusted while
+  // rendering, the way React asks for state that follows a prop, so the first paint is already
+  // the new detection's rather than the previous one's.
+  const previewKey = `${cameraId}:${seekMs}:${streamName}`
+  const [lastPreviewKey, setLastPreviewKey] = useState(previewKey)
+  if (lastPreviewKey !== previewKey) {
+    setLastPreviewKey(previewKey)
     setPlaySeekMs(seekMs)
     setGapSnapMs(null)
     setSnapFailed(false)
-  }, [cameraId, seekMs, streamName])
+  }
 
   const url = useMemo(
     () => (cameraId && playSeekMs !== null
@@ -90,14 +96,16 @@ export default function DetectionArchivePreview({
   // Exact-time playlist 404 → look up nearby clips and re-anchor playback.
   useEffect(() => {
     if (error?.kind !== 'notFound' || !cameraId || seekMs === null || snapFailed) return
-    // Already jumped once; a second 404 means there is nothing usable nearby.
-    if (playSeekMs !== seekMs) {
-      setSnapFailed(true)
-      return
-    }
 
     let cancelled = false
     void (async () => {
+      // Already jumped once; a second 404 means there is nothing usable nearby. Checked inside
+      // the task rather than in the effect body, which must not set state synchronously.
+      if (playSeekMs !== seekMs) {
+        setSnapFailed(true)
+        return
+      }
+
       try {
         const response = await fetch('/api/fs/recordings', {
           method: 'POST',

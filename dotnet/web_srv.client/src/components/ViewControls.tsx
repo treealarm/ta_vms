@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { LangToggle } from '../App'
 import { useAppDispatch, useAppSelector } from '../store'
 import { decodeRoles, logout } from '../store/authSlice'
-import { usePendingEdits } from './settings/PendingEdits'
+import { usePendingEdits } from './settings/pendingEditsContext'
 
 export default function ViewControls({ target }: { target: 'admin' | 'operator' }) {
   const { t } = useTranslation()
