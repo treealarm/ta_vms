@@ -108,6 +108,13 @@ function mergeMarker(state: ObjectsState, marker: MapMarker): void {
     if (newPage && !newPage.ids.includes(marker.id)) newPage.ids.push(marker.id)
   }
 
+  // A node the watch stream has just reported joins its parent's page if that page is open;
+  // otherwise the tree would only show it after a reload.
+  if (!existing) {
+    const page = state.childrenByParent[newParent]
+    if (page?.loaded && !page.ids.includes(marker.id)) page.ids.push(marker.id)
+  }
+
   state.markers[marker.id] = marker
 }
 
@@ -213,11 +220,15 @@ export const { dropNodes, clearObjectsError } = objectsSlice.actions
 export default objectsSlice.reducer
 
 /** The markers currently known for a parent, in the order the server returned them. */
-export function childrenOf(state: ObjectsState, parentId: string): MapMarker[] {
-  const page = state.childrenByParent[parentId]
+export function childrenOf(
+  markers: Record<string, MapMarker>,
+  childrenByParent: Record<string, ChildrenPage>,
+  parentId: string,
+): MapMarker[] {
+  const page = childrenByParent[parentId]
   if (!page) return []
 
   return page.ids
-    .map((id) => state.markers[id])
+    .map((id) => markers[id])
     .filter((marker): marker is MapMarker => marker !== undefined)
 }

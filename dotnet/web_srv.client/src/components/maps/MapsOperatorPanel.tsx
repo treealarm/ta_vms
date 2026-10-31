@@ -1,30 +1,31 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { TFunction } from 'i18next'
 import { Box, Tab, Tabs, ToggleButton, Tooltip, Typography } from '@mui/material'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
 import PersonPinCircleIcon from '@mui/icons-material/PersonPinCircle'
 import { Polyline } from 'react-leaflet'
 import { useTranslation } from 'react-i18next'
-import type { AlarmDto, GeoPointDto, PtzGeoAimResultDto } from '../../dto/dtos'
-import type { MapMarker } from '../../dto/mapDtos'
+import type { GeoPointDto, PtzGeoAimResultDto } from '../../dto/dtos'
+import type { MapEvent, MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadCameras } from '../../store/liveSlice'
 import { errorText, loadPlacements, loadSpaces, spatialRequest } from '../../store/spatialSlice'
-import { loadChildren, resolveCameraNode } from '../../store/objectsSlice'
-import { eventSource } from '../EventDetailsPanel'
+import { resolveCameraNode } from '../../store/objectsSlice'
+import { RECENT_ALARM_MINUTES, alarmEndMs } from '../../store/eventsSlice'
+import { useMapSpace } from '../../hooks/useMapSpace'
+import { useAlarmFeed } from '../../hooks/useAlarmFeed'
 import SpaceCanvas, { type MapFocus } from '../../map/SpaceCanvas'
 import PlanOverlay from '../../map/PlanOverlay'
+import FiguresLayer from '../../map/FiguresLayer'
 import { CameraMarker } from '../../map/markers'
 import { Footprints } from '../../map/footprints'
 import DetectionsLayer from '../../map/DetectionsLayer'
-import { ALARM_COLOR, STATUS_COLOR, cameraMapStatus, type CameraMapStatus } from '../../map/cameraStatus'
-import { RECENT_ALARM_MINUTES, useAlarms } from '../../hooks/useAlarms'
+import { ALARM_COLOR, DEFAULT_NODE_COLOR, nodeStyle } from '../../map/nodeStyle'
 import ObjectTree from '../objects/ObjectTree'
 import ObjectPanel from '../objects/ObjectPanel'
 import SpaceNav from './SpaceNav'
 import MapObjectList from './MapObjectList'
-import { alarmedSpaces, childrenOf as spacesChildrenOf, rootsOf, sharesGeometry } from './spatialUtils'
+import { childrenOf, rootsOf, sharesGeometry } from './spatialUtils'
 
 /** The camera list carries recording state and stream freshness; this is how stale the map may get. */
 const CAMERA_POLL_MS = 5000
@@ -42,11 +43,19 @@ const DETECTIONS_KEY = 'maps.operator.detections'
 const readDetections = () => { try { return localStorage.getItem(DETECTIONS_KEY) !== 'off' } catch { return true } }
 const writeDetections = (on: boolean) => { try { localStorage.setItem(DETECTIONS_KEY, on ? 'on' : 'off') } catch { /* private mode */ } }
 
+type AlarmEntry = {
+  key: string
+  nodeId: string
+  cameraId?: string
+  name: string
+  secondary: string
+  active: boolean
+}
+
 /**
  * Operator → Map: the one tree of nodes on the left, the space where the chosen node stands in the
- * middle, and the node itself on the right — a camera with its card, anything else read only.
- * The canvas still draws spaces and placements from the spatial module; the tree, the states and
- * the panel come from the map.
+ * middle — its arbitrary figures painted by their states — and the node itself on the right.
+ * Alarms come from states and the journal, not from a polled camera list.
  */
 export default function MapsOperatorPanel() {
   const { t } = useTranslation()
@@ -56,7 +65,12 @@ export default function MapsOperatorPanel() {
   const loaded = useAppSelector((s) => s.spatial.loaded)
   const camerasById = useAppSelector((s) => s.live.cameraStatesById)
   const markers = useAppSelector((s) => s.objects.markers)
-  const childrenByParent = useAppSelector((s) => s.objects.childrenByParent)
+  const statesById = useAppSelector((s) => s.states.states)
+  const alarmsById = useAppSelector((s) => s.states.alarms)
+  const descriptions = useAppSelector((s) => s.states.descriptions)
+  const alarmStates = useAppSelector((s) => s.states.all)
+  const recentAlarms = useAppSelector((s) => s.events.recentAlarms)
+  const levels = useAppSelector((s) => s.levels.levels)
 
   const [spaceId, setSpaceId] = useState<string | null>(readLastSpace)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
@@ -68,21 +82,23 @@ export default function MapsOperatorPanel() {
   const [aimError, setAimError] = useState<string | null>(null)
   const [focus, setFocus] = useState<MapFocus | null>(null)
   const [detections, setDetections] = useState(readDetections)
-  const { alarms, byCamera } = useAlarms()
 
   const space = spaces.find((s) => s.id === spaceId) ?? rootsOf(spaces)[0] ?? null
+  const spaceData = useMapSpace(space)
+  useAlarmFeed()
+
   const here = placements
     .filter((p) => p.spaceId === space?.id && camerasById[p.cameraId])
     .sort((a, b) => (camerasById[a.cameraId].name || a.cameraId).localeCompare(camerasById[b.cameraId].name || b.cameraId))
-  const nested = space?.id ? spacesChildrenOf(spaces, space.id) : []
+  const nested = space?.id ? childrenOf(spaces, space.id) : []
 
   const selectedMarker = selectedNodeId ? markers[selectedNodeId] : undefined
   const selectedCameraId = selectedMarker?.cameraId ?? null
   const selectedPlacement = here.find((p) => p.cameraId === selectedCameraId)
-  // Only running alarms light the outlines: one that ended is history, not somewhere to go now.
-  const alarmed = useMemo(() => alarmedSpaces(
-    spaces, placements, new Set([...byCamera].filter(([, state]) => state === 'active').map(([id]) => id)),
-  ), [spaces, placements, byCamera])
+  const figureById = useMemo(
+    () => new Map(spaceData.figures.map((figure) => [figure.id, figure])),
+    [spaceData.figures],
+  )
 
   useEffect(() => {
     void dispatch(loadSpaces())
@@ -95,13 +111,98 @@ export default function MapsOperatorPanel() {
     }
   }, [dispatch])
 
-  // The children of the open space are what a camera marker is named by; load them even when the
-  // operator has not expanded that level of the tree.
-  useEffect(() => {
-    if (space?.id && !childrenByParent[space.id]?.loaded) {
-      void dispatch(loadChildren({ parentId: space.id }))
+  // The camera node behind the placement: the canonical node for the reference, its picture for
+  // the other placements. Its state, not the camera's recording status, paints the marker.
+  const nodeForPlacement = (p: { cameraId: string; isReference: boolean }) =>
+    spaceData.markers.find((m) => m.cameraId === p.cameraId && (p.isReference ? !m.ownerId : !!m.ownerId))
+      ?? spaceData.markers.find((m) => m.cameraId === p.cameraId)
+  const placementColor = (p: { cameraId: string; isReference: boolean }) => {
+    const node = nodeForPlacement(p)
+    if (!node) return DEFAULT_NODE_COLOR
+    return nodeStyle(figureById.get(node.id), statesById[node.id], alarmsById[node.id], descriptions).color
+  }
+
+  const cameraFigureIds = useMemo(
+    () => new Set(spaceData.markers
+      .filter((m) => m.cameraId && here.some((p) => p.cameraId === m.cameraId))
+      .map((m) => m.id)),
+    [spaceData.markers, here],
+  )
+
+  // The counters live on the space nodes; every watched space with an alarm below it is marked.
+  const alarmed = useMemo(() => {
+    const ids = new Set<string>()
+    for (const candidate of spaces) {
+      const id = candidate.id
+      if (!id) continue
+      const alarm = alarmsById[id]
+      if (alarm?.alarm || (alarm?.childrenAlarms ?? 0) > 0) ids.add(id)
     }
-  }, [space?.id, childrenByParent, dispatch])
+    return ids
+  }, [spaces, alarmsById])
+
+  // The alarm list: running alarms from the states, alarms that just ended from the journal, so
+  // the pale ring survives NORM.
+  const alarmEntries = useMemo(() => {
+    // Recent events are already pruned by the poll that fetched them; the render itself must stay
+    // pure, so no clock is read here.
+    const latestEvent = new Map<string, MapEvent>()
+    for (const event of recentAlarms) {
+      if (!event.objectId) continue
+      const known = latestEvent.get(event.objectId)
+      const end = alarmEndMs(event) ?? Number.POSITIVE_INFINITY
+      const knownEnd = known ? alarmEndMs(known) ?? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY
+      if (end > knownEnd) latestEvent.set(event.objectId, event)
+    }
+
+    const nameOf = (nodeId: string) => {
+      const marker = markers[nodeId]
+      const cameraName = marker?.cameraId ? camerasById[marker.cameraId]?.name : undefined
+      return marker?.name || cameraName || nodeId
+    }
+    const causeOf = (event?: MapEvent) =>
+      [event?.param1 || event?.param0, event?.timestamp ? clock(event.timestamp) : ''].filter(Boolean).join(' · ')
+
+    const running: AlarmEntry[] = alarmStates
+      .filter((alarm) => alarm.alarm && alarm.id)
+      .map((alarm) => {
+        const nodeId = alarm.id as string
+        return {
+          key: `state:${nodeId}`,
+          nodeId,
+          cameraId: markers[nodeId]?.cameraId,
+          name: nameOf(nodeId),
+          secondary: causeOf(latestEvent.get(nodeId)),
+          active: true,
+        }
+      })
+
+    const ended: AlarmEntry[] = [...latestEvent.entries()]
+      .filter(([nodeId]) => !alarmStates.some((alarm) => alarm.id === nodeId && alarm.alarm))
+      .flatMap(([nodeId, event]) => {
+        if (alarmEndMs(event) === undefined) return []
+        return [{
+          key: `event:${event.id}`,
+          nodeId,
+          cameraId: markers[nodeId]?.cameraId,
+          name: nameOf(nodeId),
+          secondary: causeOf(event),
+          active: false,
+        }]
+      })
+
+    return [...running, ...ended]
+  }, [alarmStates, recentAlarms, markers, camerasById])
+
+  const byCamera = useMemo(() => {
+    const result = new Map<string, 'active' | 'recent'>()
+    for (const entry of alarmEntries) {
+      if (entry.cameraId && (!result.has(entry.cameraId) || entry.active)) {
+        result.set(entry.cameraId, entry.active ? 'active' : 'recent')
+      }
+    }
+    return result
+  }, [alarmEntries])
 
   // Aiming goes by where the camera really stands, which may be another space altogether.
   const reference = placements.find((p) => p.cameraId === selectedCameraId && p.isReference)
@@ -149,8 +250,9 @@ export default function MapsOperatorPanel() {
   }
 
   /**
-   * A camera picked on the canvas: the node behind the placement may not be among the loaded
-   * children yet, and its id is derived from the camera id, so ask the map to resolve it.
+   * A camera picked on the canvas or in the alarm list: the node behind the placement may not be
+   * among the loaded children yet, and its id is derived from the camera id, so ask the map to
+   * resolve it.
    */
   const selectCamera = async (cameraId: string) => {
     const known = Object.values(markers).find((m) => m.cameraId === cameraId && !m.ownerId)
@@ -182,11 +284,6 @@ export default function MapsOperatorPanel() {
     }
   }
 
-  /** Shows an alarm's camera: here if it is drawn in this space, otherwise where it really stands. */
-  const goToAlarm = (alarm: AlarmDto) => {
-    void selectCamera(alarm.cameraId)
-  }
-
   if (loaded && !space) {
     return <Typography color="text.secondary" sx={{ p: 2 }}>{t('maps.noSpacesOperator')}</Typography>
   }
@@ -196,18 +293,18 @@ export default function MapsOperatorPanel() {
     title: t('maps.alarms'),
     hint: t('maps.alarmsHint', { minutes: RECENT_ALARM_MINUTES }),
     empty: t('maps.noAlarms'),
-    items: alarms.filter((a) => camerasById[a.cameraId]).map((a) => {
-      const where = placements.find((p) => p.cameraId === a.cameraId && p.isReference)
-      const whereName = spaces.find((s) => s.id === where?.spaceId)?.name
-      return {
-        key: a.eventUuid,
-        primary: camerasById[a.cameraId].name || a.cameraId,
-        secondary: [alarmCause(a, t), alarmTime(a, t), whereName].filter(Boolean).join(' · '),
-        dot: a.active ? ALARM_COLOR : `${ALARM_COLOR}66`,
-        selected: a.cameraId === selectedCameraId,
-        onClick: () => goToAlarm(a),
-      }
-    }),
+    items: alarmEntries.map((entry) => ({
+      key: entry.key,
+      primary: entry.name,
+      secondary: entry.secondary,
+      dot: entry.active ? ALARM_COLOR : `${ALARM_COLOR}66`,
+      selected: entry.nodeId === selectedNodeId,
+      onClick: () => {
+        const marker = markers[entry.nodeId]
+        if (marker) selectNode(marker)
+        else if (entry.cameraId) void selectCamera(entry.cameraId)
+      },
+    })),
   }
 
   return (
@@ -253,6 +350,16 @@ export default function MapsOperatorPanel() {
           >
             {space.plan && <PlanOverlay space={space} />}
             {detections && space.id && <DetectionsLayer spaceId={space.id} />}
+            <FiguresLayer
+              figures={spaceData.figures}
+              states={statesById}
+              alarms={alarmsById}
+              descriptions={descriptions}
+              levels={levels}
+              selectedId={selectedNodeId}
+              onSelect={(id) => { const marker = markers[id]; if (marker) selectNode(marker) }}
+              skipIds={cameraFigureIds}
+            />
             <Footprints nested={nested} alarmed={alarmed} onPick={(s) => s.id && open(s.id)} />
             {here.map((p) => {
               const camera = camerasById[p.cameraId]
@@ -261,7 +368,7 @@ export default function MapsOperatorPanel() {
                   key={p.cameraId}
                   placement={p}
                   label={camera?.name || p.cameraId}
-                  color={STATUS_COLOR[cameraMapStatus(camera)]}
+                  color={placementColor(p)}
                   selected={p.cameraId === selectedCameraId}
                   dimmed={!!selectedCameraId && p.cameraId !== selectedCameraId}
                   alarm={byCamera.get(p.cameraId) ?? null}
@@ -293,7 +400,45 @@ export default function MapsOperatorPanel() {
           />
         )}
       </Box>
-      <StatusLegend />
+      <StateLegend
+        ids={spaceData.markers.map((marker) => marker.id)}
+        states={statesById}
+        descriptions={descriptions}
+      />
+    </Box>
+  )
+}
+
+/** What the colours on this canvas mean: the states its nodes carry, and the alarm colour. */
+function StateLegend({
+  ids, states, descriptions,
+}: {
+  ids: string[]
+  states: Record<string, { states?: string[] }>
+  descriptions: Record<string, { stateDescr?: string; stateColor?: string }>
+}) {
+  const { t } = useTranslation()
+  const used = new Set<string>()
+  for (const id of ids) {
+    for (const state of states[id]?.states ?? []) used.add(state)
+  }
+
+  const entries = [...used]
+    .map((name) => ({ name, description: descriptions[name] }))
+    .filter((entry) => entry.description)
+
+  return (
+    <Box sx={{ display: 'flex', gap: 2, flexShrink: 0, flexWrap: 'wrap' }}>
+      {entries.map(({ name, description }) => (
+        <Box key={name} sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+          <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: description?.stateColor || 'text.disabled' }} />
+          <Typography variant="caption" color="text.secondary">{description?.stateDescr || name}</Typography>
+        </Box>
+      ))}
+      <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+        <Box sx={{ width: 10, height: 10, borderRadius: '50%', border: `2px solid ${ALARM_COLOR}` }} />
+        <Typography variant="caption" color="text.secondary">{t('maps.alarm')}</Typography>
+      </Box>
     </Box>
   )
 }
@@ -317,37 +462,4 @@ function DetectionsToggle({ on, onChange }: { on: boolean; onChange: (on: boolea
   )
 }
 
-/** What set an alarm off, in a word: the last part of the ONVIF topic, or where it came from. */
-function alarmCause(a: AlarmDto, t: TFunction): string {
-  if (a.trigger) return a.trigger.split('/').pop() || a.trigger
-  const source = eventSource(a)
-  return source === 'analytics' ? t('events.sourceAnalytics') : source === 'onvif' ? t('events.sourceOnvif') : ''
-}
-
 const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-
-/** "since 12:03" while it runs, "12:03–12:05" once it ended. */
-function alarmTime(a: AlarmDto, t: TFunction): string {
-  return a.active || !a.alarmEndTs
-    ? t('maps.alarmSince', { time: clock(a.alarmStartTs) })
-    : `${clock(a.alarmStartTs)}–${clock(a.alarmEndTs)}`
-}
-
-function StatusLegend() {
-  const { t } = useTranslation()
-  const order: CameraMapStatus[] = ['recording', 'live', 'quiet', 'disabled']
-  return (
-    <Box sx={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-      {order.map((s) => (
-        <Box key={s} sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-          <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: STATUS_COLOR[s] }} />
-          <Typography variant="caption" color="text.secondary">{t(`maps.status.${s}`)}</Typography>
-        </Box>
-      ))}
-      <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-        <Box sx={{ width: 10, height: 10, borderRadius: '50%', border: `2px solid ${ALARM_COLOR}` }} />
-        <Typography variant="caption" color="text.secondary">{t('maps.alarm')}</Typography>
-      </Box>
-    </Box>
-  )
-}

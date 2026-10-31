@@ -21,6 +21,7 @@ import spatialReducer from './spatialSlice'
 import objectsReducer from './objectsSlice'
 import statesReducer from './statesSlice'
 import eventsReducer from './eventsSlice'
+import levelsReducer from './levelsSlice'
 
 export const store = configureStore({
   reducer: {
@@ -45,6 +46,7 @@ export const store = configureStore({
     objects: objectsReducer,
     states: statesReducer,
     events: eventsReducer,
+    levels: levelsReducer,
   }
 })
 

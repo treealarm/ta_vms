@@ -72,7 +72,16 @@ const statesSlice = createSlice({
         }
 
         for (const alarm of action.payload.alarmedObjects ?? []) {
-          if (alarm.id) state.alarms[alarm.id] = alarm
+          if (!alarm.id) continue
+          state.alarms[alarm.id] = alarm
+
+          // The alarm list is fed from `all`; a state update is newer than the poll, so it keeps
+          // the list live instead of waiting up to the poll interval.
+          const index = state.all.findIndex((known) => known.id === alarm.id)
+          const alarming = alarm.alarm || (alarm.childrenAlarms ?? 0) > 0
+          if (alarming && index >= 0) state.all[index] = alarm
+          else if (alarming) state.all.push(alarm)
+          else if (index >= 0) state.all.splice(index, 1)
         }
 
         for (const description of action.payload.statesDescr ?? []) {
