@@ -1124,6 +1124,13 @@
       "trackCount": "Puntos de trayecto: {{count}}",
       "noTracks": "Sin puntos de trayecto en este periodo"
     },
+    "diagram": {
+      "depth": "Profundidad de anidamiento",
+      "zoomIn": "Acercar",
+      "zoomOut": "Alejar",
+      "reset": "Restablecer zoom",
+      "empty": "Este mimosesquema no tiene nada que dibujar."
+    },
     "node": {
       "kind": {
         "space": "Espacio",

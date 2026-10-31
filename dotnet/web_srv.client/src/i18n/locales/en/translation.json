@@ -1124,6 +1124,13 @@
       "trackCount": "Track points: {{count}}",
       "noTracks": "No track points in this period"
     },
+    "diagram": {
+      "depth": "Nesting depth",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "reset": "Reset zoom",
+      "empty": "This diagram has nothing to draw."
+    },
     "node": {
       "kind": {
         "space": "Space",

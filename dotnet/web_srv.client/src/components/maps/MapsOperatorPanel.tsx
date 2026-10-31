@@ -29,6 +29,7 @@ import { ALARM_COLOR, ALARM_STATE, DEFAULT_NODE_COLOR, nodeStyle } from '../../m
 import ObjectTree from '../objects/ObjectTree'
 import ObjectPanel from '../objects/ObjectPanel'
 import ObjectSearch from '../objects/ObjectSearch'
+import DiagramViewer from '../diagrams/DiagramViewer'
 import StatesTable from '../events/StatesTable'
 import SpaceNav from './SpaceNav'
 import MapObjectList from './MapObjectList'
@@ -82,6 +83,8 @@ export default function MapsOperatorPanel() {
   const tracksSpaceId = useAppSelector((s) => s.tracks.spaceId)
 
   const [spaceId, setSpaceId] = useState<string | null>(readLastSpace)
+  // A mnemoscheme takes the middle of the page in place of the space canvas.
+  const [diagramId, setDiagramId] = useState<string | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
   // The open rows of the tree; a search result unfolds the path down to itself.
@@ -235,6 +238,7 @@ export default function MapsOperatorPanel() {
     // Tracks were read for one space's rectangle; another space asks a different question.
     if (id !== space?.id) void dispatch(clearTracks())
 
+    setDiagramId(null)
     setSpaceId(id)
     writeLastSpace(id)
     setFocus(null)
@@ -246,11 +250,12 @@ export default function MapsOperatorPanel() {
     resetAim()
   }
 
-  /** Opens the space a node belongs to and selects it; a camera is also brought into view. */
+  /** Opens the canvas a node belongs to and selects it; a camera is also brought into view. */
   const selectNode = (marker: MapMarker) => {
     resetAim()
 
     if (marker.nodeKind === 'space') openSpace(marker.id)
+    if (marker.nodeKind === 'diagram') setDiagramId(marker.id)
 
     const cameraId = marker.cameraId
     if (cameraId) {
@@ -286,14 +291,24 @@ export default function MapsOperatorPanel() {
    * select it. A camera then goes by its reference placement, like one picked anywhere else.
    */
   const revealFromSearch = async (marker: MapMarker) => {
+    resetAim()
+
     // The chain from the root down to its parent, with every page along it read.
     const ancestors = await dispatch(revealNode(marker)).unwrap().catch(() => [] as MapMarker[])
 
-    // The canvas it is drawn on: the nearest space above it, or the node itself for a space.
-    const enclosing = marker.nodeKind === 'space'
-      ? marker.id
-      : [...ancestors].reverse().find((ancestor) => ancestor.nodeKind === 'space')?.id
-    if (enclosing) openSpace(enclosing)
+    // The canvas it stands on: itself for a space or a diagram, else the nearest one above it.
+    const canvas = marker.nodeKind === 'space' || marker.nodeKind === 'diagram'
+      ? marker
+      : [...ancestors].reverse()
+        .find((ancestor) => ancestor.nodeKind === 'space' || ancestor.nodeKind === 'diagram')
+
+    if (canvas?.nodeKind === 'diagram') setDiagramId(canvas.id)
+    else if (canvas?.nodeKind === 'space') openSpace(canvas.id)
+    else if (marker.cameraId) {
+      // Nothing in the tree places it on a canvas; its reference placement does.
+      const placement = placements.find((p) => p.cameraId === marker.cameraId && p.isReference)
+      if (placement) openSpace(placement.spaceId)
+    }
 
     if (ancestors.length > 0) {
       setExpanded((previous) => {
@@ -303,7 +318,7 @@ export default function MapsOperatorPanel() {
       })
     }
 
-    selectNode(marker)
+    setSelectedNodeId(marker.id)
 
     // A node that is not a camera is drawn from its own shape, which this canvas may not know yet.
     if (!marker.cameraId) {
@@ -394,58 +409,67 @@ export default function MapsOperatorPanel() {
         </Box>
 
         <Box sx={{ flex: 1, minWidth: 0, display: 'flex' }}>
-          <SpaceCanvas
-            key={space.id}
-            space={space}
-            picking={aiming}
-            focus={focus}
-            onMapClick={(at) => (aiming ? void aimAt(at) : setSelectedNodeId(null))}
-            overlay={(
-              <>
-                <SpaceNav spaces={spaces} space={space} onOpen={open} alarmed={alarmed} />
-                <DetectionsToggle on={detections} onChange={(on) => { setDetections(on); writeDetections(on) }} />
-              </>
-            )}
-          >
-            {space.plan && <PlanOverlay space={space} />}
-            {detections && space.id && <DetectionsLayer spaceId={space.id} />}
-            <FiguresLayer
-              figures={spaceData.figures}
-              states={statesById}
-              alarms={alarmsById}
-              descriptions={descriptions}
-              levels={levels}
+          {diagramId ? (
+            <DiagramViewer
+              diagramId={diagramId}
               selectedId={selectedNodeId}
-              onSelect={(id) => { const marker = markers[id]; if (marker) selectNode(marker) }}
-              skipIds={cameraFigureIds}
+              onPick={(marker) => setSelectedNodeId(marker.id)}
+              onOpen={(marker) => selectNode(marker)}
             />
-            {tracksSpaceId === space.id && tracks.length > 0 && (
-              <TracksLayer tracks={tracks} markers={markers} />
-            )}
-            <Footprints nested={nested} alarmed={alarmed} onPick={(s) => s.id && open(s.id)} />
-            {here.map((p) => {
-              const camera = camerasById[p.cameraId]
-              return (
-                <CameraMarker
-                  key={p.cameraId}
-                  placement={p}
-                  label={camera?.name || p.cameraId}
-                  color={placementColor(p)}
-                  selected={p.cameraId === selectedCameraId}
-                  dimmed={!!selectedCameraId && p.cameraId !== selectedCameraId}
-                  alarm={byCamera.get(p.cameraId) ?? null}
-                  onSelect={() => void selectCamera(p.cameraId)}
-                />
-              )
-            })}
-            {selectedPlacement && aimTarget && (
-              <Polyline
-                positions={[[selectedPlacement.lat, selectedPlacement.lon], [aimTarget.lat, aimTarget.lon]]}
-                pathOptions={{ color: aimError ? '#ef5350' : '#ffca28', weight: 2, dashArray: '6 6' }}
-                interactive={false}
+          ) : (
+            <SpaceCanvas
+              key={space.id}
+              space={space}
+              picking={aiming}
+              focus={focus}
+              onMapClick={(at) => (aiming ? void aimAt(at) : setSelectedNodeId(null))}
+              overlay={(
+                <>
+                  <SpaceNav spaces={spaces} space={space} onOpen={open} alarmed={alarmed} />
+                  <DetectionsToggle on={detections} onChange={(on) => { setDetections(on); writeDetections(on) }} />
+                </>
+              )}
+            >
+              {space.plan && <PlanOverlay space={space} />}
+              {detections && space.id && <DetectionsLayer spaceId={space.id} />}
+              <FiguresLayer
+                figures={spaceData.figures}
+                states={statesById}
+                alarms={alarmsById}
+                descriptions={descriptions}
+                levels={levels}
+                selectedId={selectedNodeId}
+                onSelect={(id) => { const marker = markers[id]; if (marker) selectNode(marker) }}
+                skipIds={cameraFigureIds}
               />
-            )}
-          </SpaceCanvas>
+              {tracksSpaceId === space.id && tracks.length > 0 && (
+                <TracksLayer tracks={tracks} markers={markers} />
+              )}
+              <Footprints nested={nested} alarmed={alarmed} onPick={(s) => s.id && open(s.id)} />
+              {here.map((p) => {
+                const camera = camerasById[p.cameraId]
+                return (
+                  <CameraMarker
+                    key={p.cameraId}
+                    placement={p}
+                    label={camera?.name || p.cameraId}
+                    color={placementColor(p)}
+                    selected={p.cameraId === selectedCameraId}
+                    dimmed={!!selectedCameraId && p.cameraId !== selectedCameraId}
+                    alarm={byCamera.get(p.cameraId) ?? null}
+                    onSelect={() => void selectCamera(p.cameraId)}
+                  />
+                )
+              })}
+              {selectedPlacement && aimTarget && (
+                <Polyline
+                  positions={[[selectedPlacement.lat, selectedPlacement.lon], [aimTarget.lat, aimTarget.lon]]}
+                  pathOptions={{ color: aimError ? '#ef5350' : '#ffca28', weight: 2, dashArray: '6 6' }}
+                  interactive={false}
+                />
+              )}
+            </SpaceCanvas>
+          )}
         </Box>
 
         {selectedNodeId && (
@@ -462,11 +486,13 @@ export default function MapsOperatorPanel() {
           />
         )}
       </Box>
-      <StateLegend
-        ids={spaceData.markers.map((marker) => marker.id)}
-        states={statesById}
-        descriptions={descriptions}
-      />
+      {!diagramId && (
+        <StateLegend
+          ids={spaceData.markers.map((marker) => marker.id)}
+          states={statesById}
+          descriptions={descriptions}
+        />
+      )}
     </Box>
   )
 }
