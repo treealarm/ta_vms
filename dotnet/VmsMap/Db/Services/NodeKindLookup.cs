@@ -76,14 +76,18 @@ namespace VmsMap.Db
       foreach (var id in requested)
       {
         var guid = Utils.ConvertObjectIdToGuid(id);
-        if (guid is not null && kinds.TryGetValue(guid.Value, out var own))
-        {
-          result[id] = own;
-        }
-        else if (ownerOf.TryGetValue(id, out var ownerGuid)
-                 && kinds.TryGetValue(ownerGuid, out var inherited))
+
+        // A replica answers with its owner's kind before its own side rows: a picture of a camera
+        // placed on a mnemoscheme has a diagrams row saying where it stands, and that row must
+        // not turn the camera into a diagram. Every other node is what its own row says.
+        if (ownerOf.TryGetValue(id, out var ownerGuid)
+            && kinds.TryGetValue(ownerGuid, out var inherited))
         {
           result[id] = inherited;
+        }
+        else if (guid is not null && kinds.TryGetValue(guid.Value, out var own))
+        {
+          result[id] = own;
         }
       }
 
