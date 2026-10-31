@@ -163,7 +163,7 @@ M3 отдал `api/map/*`, SSE `api/map/live` и единые права, но �
    Проверка: `npm run build && npm run lint`; вручную — «вид сбоку» с репликой камеры краснеет
    вместе с камерой, регион показывает значение из `UpdateValues`.
 
-8. **web_srv/VmsMap — запись карты для админки.**
+8. ✅ **web_srv/VmsMap — запись карты для админки.**
    `proto/vms_map.proto`: `UpdateLevels(LevelList)`, `DeleteLevels(ObjectIds)`; реализация в
    `ILevelService`/`LevelService` и `MapServiceImpl`. Новый
    `web_srv.Server/Controllers/MapAdminController.cs` (`AdminOnly`, `api/map/admin`): `PUT/DELETE
@@ -266,6 +266,7 @@ M3 отдал `api/map/*`, SSE `api/map/live` и единые права, но �
 | `5199cb0` | поиск по имени и свойствам, треки на холсте |
 | `5afdd95` | то, что вскрыл просмотр мнемосхем: геометрия, значения, реплики в потоке |
 | `c42a731` | просмотр мнемосхем у оператора |
+| `1663edc` | admin-эндпоинты записи карты, уровни, загрузка файлов |
 
 **Решения по ходу:**
 - Вид узла — `NodeKindLookup` рядом с `CameraIdLookup`: пакетно по боковым таблицам, приоритет
@@ -371,6 +372,16 @@ M3 отдал `api/map/*`, SSE `api/map/live` и единые права, но �
   `values` в `WatchRequest` заменял команду области в oneof, поэтому запрос значений не подписывался
   ни на что. Состояния и тревоги реплики теперь считает `OwnerView` — одно правило для чтений и
   потока, — а `values` стал полем запроса рядом с командой.
+- **Запись — один `MapAdminController`** под `api/map/admin` и `AdminOnly`: тела — те же
+  proto-сообщения, что у rpc; удаление принимает `{"ids": [...]}` (`ObjectIds`), как и всякое
+  сообщение. Ошибки ловит существующий `RpcExceptionFilter` — клиент видит `{ "error": ... }`.
+- **`CreateReplica` переехал** из читающего `MapObjectsController` в админский: он пишет узел.
+- **`UpdateLevels(LevelList)` возвращает `LevelList`** с назначенными id, как `UpdateDiagrams`;
+  `DeleteLevels(ObjectIds)` — `OperationStatus`. Сервис грузит строки и сохраняет их, а не
+  `ExecuteDelete`: InMemory-провайдер тестов не умеет bulk-delete, а таблица мала.
+- **Файл — multipart `file`** на `POST api/map/admin/files`: лимит 20 MiB проверяется и в web_srv,
+  и в VmsMap, чанки по 256 KiB, дедлайн 60 с — у остальных вызовов 10 с. Отвечает `FileInfo`
+  (`id`, `mime`, `size`, `etag`), картинку потом отдаёт `api/map/files/{id}`.
 
 **Проверено:**
 - `dotnet build dotnet/ta_vms.sln` — 0 ошибок, 0 предупреждений.
@@ -426,3 +437,15 @@ M3 отдал `api/map/*`, SSE `api/map/live` и единые права, но �
   перезагрузки.
 - `dotnet build dotnet/ta_vms.sln` 0/0, `dotnet test dotnet/VmsMap.Tests` — 73; `npm run build`
   собирается, линт без новых замечаний.
+
+**Проверено (шаг 8, 2026-10-31, curl с админским токеном):**
+- Без токена `PUT api/map/admin/objects` → 401; с токеном — узел создан, `PUT figures` вернул
+  точку с радиусом, `PUT visual` — `{"success":true}`, а `GetObjProps` узла отдаёт `visual`
+  `#ff8800 / hello`.
+- `POST api/map/admin/files` (SVG 114 байт) вернул `id/mime/size/etag`; `GET api/map/files/{id}`
+  отдал те же байты.
+- Уровень `admin-check` создан (`UpdateLevels` вернул id), изменён (min 5→6), прочитан
+  `api/map/levels/admin-check` и удалён — после удаления `{"found":false}`.
+- `DELETE api/map/admin/objects` удалил узел с фигурой и visual; его props после этого пусты.
+- `dotnet build dotnet/ta_vms.sln` 0/0; `dotnet test dotnet/VmsMap.Tests` — 75 (два новых:
+  создание/правка уровня и удаление только своей строки).
