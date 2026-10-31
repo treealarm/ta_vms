@@ -16,8 +16,8 @@ export type Selection =
 /** The modes that draw a shape click by click instead of acting on what is already there. */
 export const DRAW_MODES: Mode[] = ['point', 'line', 'polygon']
 
-/** Which of the two property tabs beside the map is open. */
-export type SideTab = 'space' | 'selection'
+/** Which property tab beside the map is open: the space's own, the selected node's, its rights. */
+export type SideTab = 'space' | 'selection' | 'rights'
 
 export type EditorState = {
   mode: Mode

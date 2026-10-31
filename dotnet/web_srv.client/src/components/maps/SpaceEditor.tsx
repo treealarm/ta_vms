@@ -36,6 +36,7 @@ import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
 import { cornersAround, distance, rescaleCorners } from '../../map/geo'
 import { CameraPlacementPanel, FootprintPanel, LandmarkPanel } from './PlacementPanels'
 import ObjectPropsEditor from './ObjectPropsEditor'
+import ObjectRights from '../objects/ObjectRights'
 import NumberField from './NumberField'
 import SpaceNav from './SpaceNav'
 import PtzGeoCalibrationDialog from './PtzGeoCalibrationDialog'
@@ -606,6 +607,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
         >
           <Tab value="space" label={t('maps.tabSpace')} />
           <Tab value="selection" label={t('maps.tabSelection')} />
+          <Tab value="rights" label={t('rights.tab')} />
         </Tabs>
         <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
           {/* Both stay mounted: the space's form keeps its unsaved edits while an object is looked at. */}
@@ -614,6 +616,8 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
             {planPicture}
           </Box>
           {sideTab === 'selection' && selectionPanel}
+          {/* The rights of what is selected — or of the space itself, when nothing else is. */}
+          {sideTab === 'rights' && <ObjectRights nodeId={selectedNodeId ?? spaceId} />}
         </Box>
       </Box>
 

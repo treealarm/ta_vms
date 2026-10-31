@@ -1090,6 +1090,31 @@
     "updatePresetFailed": "No se pudo volver a grabar el preset.",
     "positionZoom": "pan {{pan}}, tilt {{tilt}}, zoom {{zoom}}"
   },
+  "rights": {
+    "tab": "Derechos",
+    "title": "Derechos de {{name}}",
+    "hint": "Un derecho se aplica a este nodo y a todo lo que contiene; los administradores siempre tienen todo.",
+    "subject": "Sujeto",
+    "role": "rol",
+    "user": "usuario",
+    "noSubjects": "No hay usuarios ni roles a los que conceder.",
+    "modeOpen": "Acceso abierto",
+    "modeEnforced": "Restringido",
+    "enforce": "Exigir derechos",
+    "enforceOnHelper": "Solo los sujetos con un derecho llegan al nodo.",
+    "enforceOffHelper": "Todo usuario con sesión llega a cada nodo salvo que los derechos digan otra cosa.",
+    "enforceConfirm": "¿Exigir derechos?",
+    "enforceOnWarning": "A partir de ahora un nodo sin derechos solo lo ven los administradores. Revise las filas antes de activarlo.",
+    "action": {
+      "view": "Ver",
+      "edit": "Editar",
+      "view_live": "En vivo",
+      "view_archive": "Archivo",
+      "ptz": "PTZ",
+      "control": "Control",
+      "export": "Exportar"
+    }
+  },
   "maps": {
     "title": "Mapas y planos",
     "tree": {
@@ -1159,6 +1184,21 @@
       "lineHint": "Haga clic para añadir puntos ({{count}}); doble clic o Intro para terminar.",
       "polygonHint": "Haga clic para añadir vértices ({{count}}); doble clic o Intro para terminar.",
       "finish": "Terminar"
+    },
+    "dictionaries": {
+      "title": "Diccionarios",
+      "states": "Estados",
+      "levels": "Capas de escala",
+      "state": "Estado",
+      "description": "Descripción",
+      "colour": "Color",
+      "alarm": "Alarma",
+      "zoomLevel": "Capa",
+      "zoomMin": "Desde zoom",
+      "zoomMax": "Hasta zoom",
+      "addLevel": "Añadir capa",
+      "statesHint": "Cómo se llama y se pinta un estado, y si cuenta como alarma.",
+      "levelsHint": "Un nodo aparece entre los dos límites de zoom; una capa que nadie usa no oculta nada."
     },
     "node": {
       "kind": {
