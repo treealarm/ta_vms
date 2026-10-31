@@ -9,27 +9,38 @@ import ImageIcon from '@mui/icons-material/Image'
 import CropRotateIcon from '@mui/icons-material/CropRotate'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import CenterFocusStrongIcon from '@mui/icons-material/CenterFocusStrong'
+import AdjustIcon from '@mui/icons-material/Adjust'
+import TimelineIcon from '@mui/icons-material/Timeline'
+import PentagonOutlinedIcon from '@mui/icons-material/PentagonOutlined'
 import { useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { useTranslation } from 'react-i18next'
 import type { CameraPlacementDto, GeoPointDto, PlanCornersDto, SpaceDto } from '../../dto/dtos'
+import type { MapFigure, MapGeometry } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import {
   errorText, loadLandmarks, loadPlacements, removeLandmark, removePlacement, removeSpacePlan, setPlanCorners,
   upsertLandmark, upsertPlacement, upsertSpace, uploadSpacePlan,
 } from '../../store/spatialSlice'
+import { loadObjProps } from '../../store/objectsSlice'
+import { loadLevels } from '../../store/levelsSlice'
+import { createReplicaAt, deleteNode, saveFigure } from '../../store/mapEditsSlice'
+import { useMapChildren } from '../../hooks/useMapChildren'
 import SpaceCanvas from '../../map/SpaceCanvas'
 import PlanOverlay from '../../map/PlanOverlay'
+import FiguresLayer from '../../map/FiguresLayer'
+import DrawingPreview, { FinishOnDoubleClick } from '../../map/DrawingPreview'
 import { CameraMarker, LandmarkMarker } from '../../map/markers'
 import { FootprintEditor, Footprints } from '../../map/footprints'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
 import { cornersAround, distance, rescaleCorners } from '../../map/geo'
 import { CameraPlacementPanel, FootprintPanel, LandmarkPanel } from './PlacementPanels'
+import ObjectPropsEditor from './ObjectPropsEditor'
 import NumberField from './NumberField'
 import SpaceNav from './SpaceNav'
 import PtzGeoCalibrationDialog from './PtzGeoCalibrationDialog'
 import GroundCalibrationDialog from './GroundCalibrationDialog'
-import { useEditorState, type Mode, type SideTab } from './editorState'
+import { DRAW_MODES, useEditorState, type Mode, type SideTab } from './editorState'
 import { childrenOf } from './spatialUtils'
 
 /** Mirrors VmsCfg's limit, so an oversized plan is refused before it is uploaded. */
@@ -77,6 +88,9 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const [draft, setDraft] = useState<CameraPlacementDto | null>(null)
   const [draftCorners, setDraftCorners] = useState<PlanCornersDto | null>(null)
   const [draftFootprint, setDraftFootprint] = useState<GeoPointDto[] | null>(null)
+  // The shape being drawn, click by click, and the one being dragged, before it is saved.
+  const [draftPoints, setDraftPoints] = useState<GeoPointDto[] | null>(null)
+  const [draftFigure, setDraftFigure] = useState<MapFigure | null>(null)
   const [alignOnMap, setAlignOnMap] = useState(false)
   const [calibrating, setCalibrating] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -84,10 +98,29 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const fileRef = useRef<HTMLInputElement>(null)
 
   const spaceId = space.id ?? ''
+  const mapData = useMapChildren(spaceId || null)
+  const levels = useAppSelector((s) => s.levels.levels)
+  const markersById = useAppSelector((s) => s.objects.markers)
+  const figuresById = useAppSelector((s) => s.objects.figures)
+  const propsById = useAppSelector((s) => s.objects.props)
+  const selectedNodeId = selection?.kind === 'node' ? selection.id : null
+  const selectedNode = selectedNodeId ? markersById[selectedNodeId] : undefined
+  const selectedFigure = selectedNodeId ? figuresById[selectedNodeId] : undefined
+  const selectedProps = selectedNodeId ? propsById[selectedNodeId] : undefined
+
   useEffect(() => {
     void dispatch(loadPlacements())
     if (spaceId) void dispatch(loadLandmarks(spaceId))
   }, [dispatch, spaceId])
+
+  useEffect(() => {
+    if (levels.length === 0) void dispatch(loadLevels())
+  }, [levels.length, dispatch])
+
+  // The editor needs the node's properties and look, which the tree read does not carry.
+  useEffect(() => {
+    if (selectedNodeId) void dispatch(loadObjProps(selectedNodeId))
+  }, [selectedNodeId, dispatch])
 
   const here = placements.filter((p) => p.spaceId === spaceId)
   const nested = childrenOf(spaces, spaceId)
@@ -134,7 +167,83 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
       setDraftFootprint(null)
     })
 
+  /** A new shape on the canvas: a node of its own, its geometry in the space's coordinates. */
+  const createFigure = (points: GeoPointDto[], kind: 'point' | 'line' | 'polygon') => {
+    if (!spaceId) return
+
+    const id = crypto.randomUUID()
+    const geometry: MapGeometry = {
+      type: kind === 'point' ? 'Point' : kind === 'line' ? 'LineString' : 'Polygon',
+      // A polygon's ring is closed before it leaves the browser; the map stores it that way.
+      coord: kind === 'polygon' ? [...points, points[0]] : points,
+    }
+
+    setDraftPoints(null)
+    void run(async () => {
+      await dispatch(saveFigure({
+        id,
+        parentId: spaceId,
+        name: `${t('maps.editor.figure')} ${mapData.markers.length + 1}`,
+        geometry,
+      })).unwrap()
+      // The tool has done its job: back to selecting, with the new shape in hand.
+      setMode('select')
+      setSelection({ kind: 'node', id })
+    })
+  }
+
+  /** Ends the shape being drawn; a double click repeats its last point, so that one is dropped. */
+  const finishDrawing = () => {
+    const points = draftPoints ?? []
+    const last = points[points.length - 1]
+    const previous = points[points.length - 2]
+    const clean = last && previous && last.lat === previous.lat && last.lon === previous.lon
+      ? points.slice(0, -1)
+      : points
+
+    if (mode === 'line' && clean.length >= 2) createFigure(clean, 'line')
+    else if (mode === 'polygon' && clean.length >= 3) createFigure(clean, 'polygon')
+    else setDraftPoints(null)
+  }
+
+  // Enter ends the shape, Escape drops it: the keyboard half of drawing on the map.
+  const finishRef = useRef(finishDrawing)
+  useEffect(() => {
+    finishRef.current = finishDrawing
+  })
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && DRAW_MODES.includes(mode)) {
+        setDraftPoints(null)
+        setMode('select')
+      }
+      if (event.key === 'Enter' && draftPoints) finishRef.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mode, draftPoints, setMode])
+
+  /** A vertex was dragged: the shape follows it live and is saved when it is let go. */
+  const handleGeometryChange = (figure: MapFigure, geometry: MapGeometry, commit: boolean) => {
+    const next = { ...figure, geometry }
+    if (!commit) {
+      setDraftFigure(next)
+      return
+    }
+
+    setDraftFigure(null)
+    void run(async () => { await dispatch(saveFigure(next)).unwrap() })
+  }
+
   const handleMapClick = (at: GeoPointDto) => {
+    if (mode === 'point' && spaceId) {
+      createFigure([at], 'point')
+      return
+    }
+    if ((mode === 'line' || mode === 'polygon') && spaceId) {
+      setDraftPoints((previous) => (previous ? [...previous, at] : [at]))
+      return
+    }
     if (pendingCameraId) {
       // A camera drawn here for the first time looks the way it does where it really stands: the
       // picture should not contradict the original.
@@ -221,6 +330,9 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     ? t('maps.placeHint', { name: camerasById[pendingCameraId]?.name || pendingCameraId })
     : mode === 'landmark' ? t('maps.landmarkModeHint')
     : mode === 'plan' ? t('maps.planModeHint')
+    : mode === 'point' ? t('maps.editor.pointHint')
+    : mode === 'line' ? t('maps.editor.lineHint', { count: draftPoints?.length ?? 0 })
+    : mode === 'polygon' ? t('maps.editor.polygonHint', { count: draftPoints?.length ?? 0 })
     : null
 
   // Applied a single time: placements load after the editor mounts, so this waits for the
@@ -280,6 +392,25 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
       }}
       onClose={() => setSelection(null)}
     />
+  ) : selectedNode ? (
+    selectedProps ? (
+      <ObjectPropsEditor
+        // The marker's version changes with every write, so a save reopens the form on what was
+        // stored rather than leaving the old fields marked dirty.
+        key={`${selectedNode.id}:${selectedProps.marker?.version ?? 0}`}
+        node={selectedNode}
+        figure={selectedFigure ?? null}
+        loaded={selectedProps}
+        levels={levels}
+        onDelete={() => void run(async () => {
+          await dispatch(deleteNode(selectedNode.id)).unwrap()
+          setSelection(null)
+        })}
+        onClose={() => setSelection(null)}
+      />
+    ) : (
+      <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>{t('common.loading')}</Typography>
+    )
   ) : (
     <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>{t('maps.nothingSelected')}</Typography>
   )
@@ -351,10 +482,18 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
             size="small"
             exclusive
             value={mode}
-            onChange={(_, v: Mode | null) => { if (v) { setMode(v); setPendingCameraId(null) } }}
+            onChange={(_, v: Mode | null) => {
+              if (!v) return
+              setMode(v)
+              setPendingCameraId(null)
+              setDraftPoints(null)
+            }}
           >
             <ToggleButton value="select"><Tooltip title={t('maps.modeSelect')}><PanToolIcon fontSize="small" /></Tooltip></ToggleButton>
             <ToggleButton value="landmark"><Tooltip title={t('maps.modeLandmark')}><PlaceIcon fontSize="small" /></Tooltip></ToggleButton>
+            <ToggleButton value="point"><Tooltip title={t('maps.editor.modePoint')}><AdjustIcon fontSize="small" /></Tooltip></ToggleButton>
+            <ToggleButton value="line"><Tooltip title={t('maps.editor.modeLine')}><TimelineIcon fontSize="small" /></Tooltip></ToggleButton>
+            <ToggleButton value="polygon"><Tooltip title={t('maps.editor.modePolygon')}><PentagonOutlinedIcon fontSize="small" /></Tooltip></ToggleButton>
             <ToggleButton value="plan" disabled={!plan}><Tooltip title={t('maps.modePlan')}><CropRotateIcon fontSize="small" /></Tooltip></ToggleButton>
           </ToggleButtonGroup>
           <Tooltip title={t('maps.saveView')}>
@@ -368,6 +507,12 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
             </Typography>
           )}
           {pendingCameraId && <Button size="small" onClick={() => setPendingCameraId(null)}>{t('common.cancel')}</Button>}
+          {draftPoints && (mode === 'line' || mode === 'polygon') && (
+            <>
+              <Button size="small" variant="outlined" onClick={finishDrawing}>{t('maps.editor.finish')}</Button>
+              <Button size="small" onClick={() => setDraftPoints(null)}>{t('common.cancel')}</Button>
+            </>
+          )}
         </Stack>
         {error && <Alert severity="error" onClose={() => setError(null)} sx={{ mx: 1, mb: 0.5 }}>{error}</Alert>}
 
@@ -376,9 +521,15 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
           space={space}
           alignOnMap={alignOnMap}
           onMapClick={handleMapClick}
-          picking={!!pendingCameraId || mode === 'landmark'}
+          picking={!!pendingCameraId || mode === 'landmark' || DRAW_MODES.includes(mode)}
           focus={focus}
           overlay={<SpaceNav spaces={spaces} space={space} />}
+          onNodeDrop={(at, nodeId) => void run(async () => {
+            const marker = await dispatch(createReplicaAt({
+              ownerId: nodeId, parentId: spaceId, lat: at.lat, lon: at.lon,
+            })).unwrap()
+            setSelection({ kind: 'node', id: marker.id })
+          })}
         >
           <MapBridge mapRef={mapRef} />
           {plan && (
@@ -389,6 +540,23 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
               onCornersChange={(c, commit) => (commit ? void commitCorners(c) : setDraftCorners(c))}
             />
           )}
+          <FiguresLayer
+            figures={mapData.figures.map((figure) => (draftFigure?.id === figure.id ? draftFigure : figure))}
+            states={{}}
+            alarms={{}}
+            descriptions={{}}
+            levels={levels}
+            selectedId={selectedNodeId}
+            onSelect={(id) => setSelection({ kind: 'node', id })}
+            // A camera placed here is drawn by its marker, not by the shape the node carries.
+            skipIds={new Set(mapData.markers
+              .filter((marker) => marker.cameraId && here.some((p) => p.cameraId === marker.cameraId))
+              .map((marker) => marker.id))}
+            editable={mode === 'select'}
+            onGeometryChange={handleGeometryChange}
+          />
+          {draftPoints && <DrawingPreview points={draftPoints} closed={mode === 'polygon'} />}
+          {(mode === 'line' || mode === 'polygon') && <FinishOnDoubleClick onFinish={() => finishRef.current()} />}
           <Footprints
             nested={nested.map((s) => (s.id === selectedNested?.id && draftFootprint ? { ...s, footprint: draftFootprint } : s))}
             selectedId={selectedNested?.id}

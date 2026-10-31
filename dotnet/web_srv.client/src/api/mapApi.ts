@@ -2,20 +2,30 @@ import { enc, jsonRequest, requestJson } from './requestJson'
 import type {
   MapAlarmStateList,
   MapBox,
+  MapCreateReplicaRequest,
+  MapDiagram,
   MapDiagramContent,
   MapDiagramList,
+  MapDiagramType,
   MapDiagramTypeList,
   MapEffectiveRights,
   MapEffectiveRightsRequest,
   MapEventList,
   MapEventsFilter,
+  MapFileInfo,
+  MapFigure,
   MapFigures,
   MapGetByParentResponse,
   MapGetDiagramTypesRequest,
   MapGetLevelResponse,
+  MapLevel,
   MapLevelList,
+  MapMarker,
   MapMarkerList,
   MapObjProps,
+  MapObject,
+  MapObjectList,
+  MapObjectPropertiesList,
   MapObjectStateList,
   MapOperationStatus,
   MapPropertyFilter,
@@ -24,15 +34,18 @@ import type {
   MapRightList,
   MapRightsMode,
   MapRightsModeResponse,
+  MapStateDescription,
   MapStateDescriptionList,
   MapTrackPointList,
   MapTracksByBoxRequest,
   MapTracksByFilterRequest,
   MapValueList,
+  MapVisual,
   MapVisualStates,
 } from '../dto/mapDtos'
 
 const BASE = '/api/map'
+const ADMIN = `${BASE}/admin`
 
 /** What a watch stream follows: a rectangle or an exact set of nodes. Changing it is a new
  *  stream — the gateway takes the scope as a connection parameter. */
@@ -140,6 +153,51 @@ export const mapApi = {
 
   deleteRights: (keys: MapRightKeyList['keys']) =>
     requestJson<MapOperationStatus>(`${BASE}/rights`, jsonRequest('DELETE', { keys })),
+
+  // ── Admin writes ───────────────────────────────────────────────────────────────────────────
+  // Editing belongs to Admin → Maps; every endpoint under api/map/admin is AdminOnly. The bodies
+  // are the proto messages, and a delete takes `{ ids: [...] }`.
+  updateObjects: (objects: MapObject[]) => put<MapObjectList>(`${ADMIN}/objects`, { objects }),
+
+  deleteObjects: (ids: string[]) =>
+    requestJson<MapOperationStatus>(`${ADMIN}/objects`, jsonRequest('DELETE', { ids })),
+
+  updateProperties: (objects: MapObjectPropertiesList['objects'], replaceProps = true) =>
+    put<MapOperationStatus>(`${ADMIN}/properties`, { objects, replaceProps }),
+
+  updateVisual: (visuals: MapVisual[]) => put<MapOperationStatus>(`${ADMIN}/visual`, { visuals }),
+
+  updateFigures: (figs: MapFigure[], addTracks = false) =>
+    put<MapFigures>(`${ADMIN}/figures`, { figs, addTracks }),
+
+  createReplica: (request: MapCreateReplicaRequest) =>
+    post<MapMarker>(`${ADMIN}/replicas`, request),
+
+  updateStateDescriptions: (descriptions: MapStateDescription[]) =>
+    put<MapOperationStatus>(`${ADMIN}/state-descriptions`, { descriptions }),
+
+  updateLevels: (levels: MapLevel[]) => put<MapLevelList>(`${ADMIN}/levels`, { levels }),
+
+  deleteLevels: (ids: string[]) =>
+    requestJson<MapOperationStatus>(`${ADMIN}/levels`, jsonRequest('DELETE', { ids })),
+
+  updateDiagrams: (diagrams: MapDiagram[]) => put<MapDiagramList>(`${ADMIN}/diagrams`, { diagrams }),
+
+  deleteDiagrams: (ids: string[]) =>
+    requestJson<MapOperationStatus>(`${ADMIN}/diagrams`, jsonRequest('DELETE', { ids })),
+
+  updateDiagramTypes: (diagramTypes: MapDiagramType[]) =>
+    put<MapDiagramTypeList>(`${ADMIN}/diagram-types`, { diagramTypes }),
+
+  deleteDiagramTypes: (ids: string[]) =>
+    requestJson<MapOperationStatus>(`${ADMIN}/diagram-types`, jsonRequest('DELETE', { ids })),
+
+  /** A picture row for a diagram background, an icon or a plan. 20 MiB at most. */
+  uploadFile: async (file: File): Promise<MapFileInfo> => {
+    const body = new FormData()
+    body.append('file', file)
+    return requestJson<MapFileInfo>(`${ADMIN}/files`, { method: 'POST', body })
+  },
 }
 
 /** A file row (`files`) as the browser loads it; the Bearer travels through the fetch wrapper. */

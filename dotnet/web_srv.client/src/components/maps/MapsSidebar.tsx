@@ -1,15 +1,22 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { Box, Chip, IconButton, List, Stack, Tab, Tabs, Tooltip, Typography } from '@mui/material'
+import {
+  Box, Chip, IconButton, List, ListItemButton, ListItemText, Stack, Tab, Tabs, Tooltip, Typography,
+} from '@mui/material'
 import PlaceIcon from '@mui/icons-material/Place'
 import { useTranslation } from 'react-i18next'
 import type { SpaceDto } from '../../dto/dtos'
+import type { MapMarker } from '../../dto/mapDtos'
 import { useAppSelector } from '../../store'
+import { useMapChildren } from '../../hooks/useMapChildren'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
+import KindIcon from '../../map/KindIcon'
+import { sortMarkers } from '../../map/nodeKind'
+import { NODE_DRAG_TYPE } from '../../map/dragTypes'
 import SettingsListItem from '../settings/SettingsListItem'
 import MapObjectList, { type MapObjectSection } from './MapObjectList'
 import { useEditorState } from './editorState'
 
-type SpaceTab = 'cameras' | 'landmarks'
+type SpaceTab = 'cameras' | 'nodes' | 'landmarks'
 
 type Props = {
   tree: { space: SpaceDto; depth: number }[]
@@ -36,6 +43,7 @@ export default function MapsSidebar({ tree, loaded, space, onSelectSpace }: Prop
   const placedHere = useAppSelector((s) => new Set(
     s.spatial.placements.filter((p) => p.spaceId === space?.id).map((p) => p.cameraId)).size)
   const landmarkCount = useAppSelector((s) => s.spatial.landmarksBySpace[space?.id ?? '']?.length ?? 0)
+  const { markers } = useMapChildren(space?.id ?? null)
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
@@ -54,12 +62,19 @@ export default function MapsSidebar({ tree, loaded, space, onSelectSpace }: Prop
               sx={{ flex: 1, minHeight: 36, '& .MuiTab-root': { minHeight: 36, minWidth: 0, px: 1, textTransform: 'none' } }}
             >
               <Tab value="cameras" label={<TabLabel label={t('maps.tabCameras')} count={`${placedHere}/${cameraCount}`} />} />
+              <Tab value="nodes" label={<TabLabel label={t('maps.editor.tabNodes')} count={String(markers.length)} />} />
               <Tab value="landmarks" label={<TabLabel label={t('maps.tabLandmarks')} count={String(landmarkCount)} />} />
             </Tabs>
             {tab === 'landmarks' && <AddLandmarkButton />}
           </Stack>
           <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-            {tab === 'cameras' ? <CamerasList space={space} /> : <LandmarksList space={space} />}
+            {tab === 'cameras' ? (
+              <CamerasList space={space} />
+            ) : tab === 'nodes' ? (
+              <NodesList markers={markers} />
+            ) : (
+              <LandmarksList space={space} />
+            )}
           </Box>
         </>
       ) : (
@@ -205,6 +220,51 @@ function CamerasList({ space }: { space: SpaceDto }) {
         {t('maps.camerasHint')}
       </Typography>
       <MapObjectList sections={sections} />
+    </>
+  )
+}
+
+/**
+ * What is drawn on this canvas already. A node dragged from here onto the map becomes a replica
+ * of itself where it is dropped — the way a camera's picture is made on another plan.
+ */
+function NodesList({ markers }: { markers: MapMarker[] }) {
+  const { t } = useTranslation()
+  const { selection, setSelection } = useEditorState()
+
+  return (
+    <>
+      <Typography variant="caption" color="text.secondary" sx={{ px: 1.5, pt: 1, display: 'block' }}>
+        {t('maps.editor.nodesHint')}
+      </Typography>
+      <List dense disablePadding>
+        {sortMarkers(markers).map((marker) => (
+          <ListItemButton
+            key={marker.id}
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.setData(NODE_DRAG_TYPE, marker.id)
+              event.dataTransfer.effectAllowed = 'copy'
+            }}
+            selected={selection?.kind === 'node' && selection.id === marker.id}
+            onClick={() => setSelection({ kind: 'node', id: marker.id })}
+            sx={{ cursor: 'grab' }}
+          >
+            <Box sx={{ width: 24, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+              <KindIcon kind={marker.nodeKind} />
+            </Box>
+            <ListItemText
+              primary={marker.name || marker.id}
+              primaryTypographyProps={{ noWrap: true, variant: 'body2' }}
+              secondary={t(`maps.node.kind.${marker.nodeKind ?? 'object'}`)}
+              secondaryTypographyProps={{ variant: 'caption' }}
+            />
+          </ListItemButton>
+        ))}
+        {markers.length === 0 && (
+          <Typography variant="body2" color="text.secondary" sx={{ p: 1.5 }}>{t('maps.editor.noNodes')}</Typography>
+        )}
+      </List>
     </>
   )
 }

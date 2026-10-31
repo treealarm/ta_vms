@@ -25,6 +25,7 @@ import levelsReducer from './levelsSlice'
 import searchReducer from './searchSlice'
 import tracksReducer from './tracksSlice'
 import diagramsReducer from './diagramsSlice'
+import mapEditsReducer from './mapEditsSlice'
 
 export const store = configureStore({
   reducer: {
@@ -53,6 +54,7 @@ export const store = configureStore({
     search: searchReducer,
     tracks: tracksReducer,
     diagrams: diagramsReducer,
+    mapEdits: mapEditsReducer,
   }
 })
 

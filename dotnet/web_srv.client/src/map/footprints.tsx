@@ -1,9 +1,10 @@
-import { useMemo, useRef, useState } from 'react'
-import { Marker, Polygon, Popup, Tooltip } from 'react-leaflet'
+import { useState } from 'react'
+import { Polygon, Popup, Tooltip } from 'react-leaflet'
 import { List, ListItemButton, ListItemText } from '@mui/material'
 import L from 'leaflet'
 import type { GeoPointDto, SpaceDto } from '../dto/dtos'
 import { ALARM_COLOR } from './cameraStatus'
+import VertexEditor from './vertexEditor'
 
 /** Ray casting in degrees: exact enough for a building's outline. */
 function contains(polygon: GeoPointDto[], p: GeoPointDto): boolean {
@@ -90,18 +91,6 @@ export function Footprints({ nested, selectedId, alarmed, onPick }: Props) {
   )
 }
 
-const vertexIcon = (color: string, size: number) => L.divIcon({
-  className: 'vms-map-handle',
-  html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid #fff;`
-    + `box-shadow:0 0 3px rgba(0,0,0,.7);cursor:move"></div>`,
-  iconSize: [size, size],
-  iconAnchor: [size / 2, size / 2],
-})
-
-// Built once: a marker handed a new icon object rebuilds its element, which ends a drag.
-const VERTEX_ICON = vertexIcon('#ffca28', 14)
-const MIDPOINT_ICON = vertexIcon('rgba(255,202,40,0.5)', 10)
-
 type EditorProps = {
   footprint: GeoPointDto[]
   /** commit is false while a corner is being dragged and true when it is let go. */
@@ -109,71 +98,9 @@ type EditorProps = {
 }
 
 /**
- * Corners of a footprint, for reshaping it: drag a corner to move it, drag a midpoint to make a new
- * corner there, Alt+click a corner to remove it (a footprint keeps at least three).
+ * Corners of a footprint, for reshaping it; the drag itself is `VertexEditor`'s, which the drawn
+ * shapes on a canvas use too.
  */
 export function FootprintEditor({ footprint, onChange }: EditorProps) {
-  // The outline the drag started from. The handles stay put while it lasts — react-leaflet moves a
-  // marker whenever its position prop is a new array, and that would pull the one being dragged
-  // out from under the pointer.
-  const [dragFrom, setDragFrom] = useState<GeoPointDto[] | null>(null)
-  // The same outline for the handlers, which may run before the state above has been rendered.
-  const fromRef = useRef<GeoPointDto[] | null>(null)
-  const anchor = dragFrom ?? footprint
-  const begin = () => { fromRef.current = footprint; setDragFrom(footprint) }
-  const end = () => { fromRef.current = null; setDragFrom(null) }
-  const base = () => fromRef.current ?? footprint
-  const handles = useMemo(() => anchor.map((p, i) => {
-    const next = anchor[(i + 1) % anchor.length]
-    return {
-      corner: [p.lat, p.lon] as [number, number],
-      middle: [(p.lat + next.lat) / 2, (p.lon + next.lon) / 2] as [number, number],
-    }
-  }), [anchor])
-
-  const at = (e: L.LeafletEvent): GeoPointDto => {
-    const ll = (e.target as L.Marker).getLatLng()
-    return { lat: ll.lat, lon: ll.lng }
-  }
-
-  return (
-    <>
-      {handles.map((h, i) => (
-        <Marker
-          key={`c${i}`}
-          position={h.corner}
-          icon={VERTEX_ICON}
-          draggable
-          eventHandlers={{
-            click: (e) => {
-              if (!(e.originalEvent as MouseEvent).altKey || footprint.length <= 3) return
-              onChange(footprint.filter((_, j) => j !== i), true)
-            },
-            dragstart: begin,
-            drag: (e) => onChange(base().map((p, j) => (j === i ? at(e) : p)), false),
-            dragend: (e) => {
-              onChange(base().map((p, j) => (j === i ? at(e) : p)), true)
-              end()
-            },
-          }}
-        />
-      ))}
-      {handles.map((h, i) => (
-        <Marker
-          key={`m${i}`}
-          position={h.middle}
-          icon={MIDPOINT_ICON}
-          draggable
-          eventHandlers={{
-            dragstart: begin,
-            drag: (e) => onChange([...base().slice(0, i + 1), at(e), ...base().slice(i + 1)], false),
-            dragend: (e) => {
-              onChange([...base().slice(0, i + 1), at(e), ...base().slice(i + 1)], true)
-              end()
-            },
-          }}
-        />
-      ))}
-    </>
-  )
+  return <VertexEditor points={footprint} onChange={onChange} />
 }

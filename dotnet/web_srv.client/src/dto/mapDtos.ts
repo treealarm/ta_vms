@@ -54,6 +54,35 @@ export type MapFigure = MapMarker & {
 
 export type MapFigures = { figs?: MapFigure[]; addTracks?: boolean }
 
+/** A node as a write carries it: the tree row alone, without its geometry. */
+export type MapObject = {
+  id?: string
+  parentId?: string
+  ownerId?: string
+  name?: string
+}
+
+export type MapObjectList = { objects?: MapObject[] }
+
+export type MapObjectProperties = { id?: string; properties?: MapExtraProperty[] }
+
+export type MapObjectPropertiesList = {
+  objects?: MapObjectProperties[]
+  /** True replaces the node's properties, false merges the sent ones into them. */
+  replaceProps?: boolean
+}
+
+export type MapVisualList = { visuals?: MapVisual[] }
+
+export type MapCreateReplicaRequest = {
+  ownerId?: string
+  parentId?: string
+  /** Empty copies the owner's name. */
+  name?: string
+}
+
+export type MapFileInfo = { id?: string; mime?: string; size?: string; etag?: string }
+
 export type MapMarkerList = { markers?: MapMarker[] }
 
 export type MapGetByParentResponse = {
