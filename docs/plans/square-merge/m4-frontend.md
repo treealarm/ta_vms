@@ -81,7 +81,7 @@ M3 отдал `api/map/*`, SSE `api/map/live` и единые права, но �
 
 ## Шаги
 
-1. **`api/map/*` — вид узла и визуал.**
+1. ✅ **`api/map/*` — вид узла и визуал.**
    `proto/vms_map.proto`: `Marker.node_kind = 8`, `Figure.node_kind = 12`,
    `Figure.visual = 13`, `ObjProps.visual = 5`, `DiagramContent.visuals = 7` (без `reserved`).
    `VmsMap/Db/Services/NodeKindLookup.cs` — пакетное определение вида по боковым таблицам
@@ -247,3 +247,27 @@ M3 отдал `api/map/*`, SSE `api/map/live` и единые права, но �
 
 Ветка `square-merge/m4-frontend` в ta_vms. M3 перед ветвлением слит в `master` merge-коммитом
 `77d2e77`. В `../ta_install` изменений нет.
+
+Сделано 2026-10-31, по коммиту на кусок:
+
+| Коммит | Что |
+|---|---|
+| `6525d9b` | этот план |
+| `5ba7c54` | `node_kind` и `visual` в чтениях карты |
+
+**Решения по ходу:**
+- Вид узла — `NodeKindLookup` рядом с `CameraIdLookup`: пакетно по боковым таблицам, приоритет
+  `space > diagram > landmark > camera > figure > object`. Реплика отвечает видом владельца —
+  картинка камеры на другом плане остаётся камерой.
+- `CameraIdLookup` тоже следует за `owner_id`: реплика, созданная не размещением (а, например,
+  перетаскиванием на мнемосхему), не имеет ни `camera_node`, ни `camera_placement` и иначе не
+  открывала бы live.
+- Визуал отдаётся в `Figure`, `ObjProps` и `DiagramContent`, без отдельного rpc: холсту он нужен
+  вместе с фигурой, панели — вместе со свойствами, мнемосхеме — вместе с содержимым.
+- `GetObjProps` берёт вид узла и visual тем же чтением; `GetCameraNode` отвечает `camera` без
+  запроса — это его контракт.
+
+**Проверено:**
+- `dotnet build dotnet/ta_vms.sln` — 0 ошибок, 0 предупреждений.
+- `dotnet test dotnet/VmsMap.Tests` — 72 (было 70; новые — вид всех шести видов и вид/visual
+  реплики, visual и kind фигуры из `GetByIds`).
