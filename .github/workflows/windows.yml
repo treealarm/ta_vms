@@ -283,3 +283,24 @@ jobs:
           .\scripts\win\Publish-ReleaseAsset.ps1 -Release windows-build -Path $zip -Rolling `
             -Title 'Windows build of master' `
             -Notes "Not a release. The Windows build of master at $env:GITHUB_SHA, replaced by every push; ta_install's Windows installer is built from it."
+
+      # ta_install builds the installer from the asset above and does not watch this repository,
+      # so without this event it waits for someone to start it by hand -- and a build nobody
+      # started leaves the pipeline that matters red until then. The token is a fine-grained PAT
+      # with Contents: write on treealarm/ta_install, which is the permission a repository
+      # dispatch needs. Unset, the step warns and does nothing: a fork, or this repository before
+      # the secret existed, builds exactly as it did.
+      - name: Ask ta_install to build the installer
+        if: ${{ github.ref == 'refs/heads/master' }}
+        env:
+          TOKEN: ${{ secrets.TA_INSTALL_DISPATCH_TOKEN }}
+        run: |
+          if (-not $env:TOKEN) {
+            "::warning::TA_INSTALL_DISPATCH_TOKEN is not set: ta_install's installer build has to be started by hand."
+            exit 0
+          }
+          $body = '{"event_type":"ta_vms-windows-build"}'
+          Invoke-RestMethod -Method Post -ContentType 'application/json' -Body $body `
+            -Uri 'https://api.github.com/repos/treealarm/ta_install/dispatches' `
+            -Headers @{ Authorization = "Bearer $($env:TOKEN)"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          "ta_install asked to build the installer from $env:GITHUB_SHA"
