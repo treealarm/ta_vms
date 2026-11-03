@@ -96,6 +96,33 @@ public class CameraNodeServiceTests
   }
 
   [Fact]
+  public async Task APlacedCameraUnderAContainerIsLeftInTheContainer()
+  {
+    var s = Create();
+    var space = await Node(s.Map, "Building");
+    var container = await Node(s.Map, "Car park", space.id);
+    var canonicalId = Guid.Parse(CameraObjectId.For("cam1"));
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = canonicalId.ToString(), name = "Front door", parent_id = container.id }
+    ]);
+    s.Db.CameraPlacements.Add(new DBCameraPlacement
+    {
+      object_id = canonicalId,
+      camera_id = "cam1",
+      is_reference = true,
+      height_m = 3,
+      hfov_deg = 60,
+      range_m = 30,
+    });
+    await s.Db.SaveChangesAsync();
+
+    // The periodic reconcile runs for every camera; a placed one keeps the parent it was given.
+    await s.Nodes.EnsureCameraAsync(new CameraInfo("cam1", "Front door", "srv1"), default);
+
+    Assert.Equal(Guid.Parse(container.id!), (await s.Db.Markers.SingleAsync(m => m.id == canonicalId)).parent_id);
+  }
+
+  [Fact]
   public async Task AReferencePlacementRemovedElsewhereReturnsTheCameraToItsServer()
   {
     var s = Create();

@@ -331,10 +331,12 @@ namespace VmsMap.Db
 
     public async Task<List<CameraPlacement>> ListPlacementsAsync(CancellationToken ct)
     {
+      // The space a placement is in is the canvas its point is drawn on, not the node's parent: a
+      // camera may hang under a container on that canvas. See CanvasResolver.
       var rows = await (from p in _db.CameraPlacements.AsNoTracking()
-                        join o in _db.Markers.AsNoTracking() on p.object_id equals o.id
-                        where o.parent_id != null
-                        select new { p, spaceId = o.parent_id!.Value }).ToListAsync(ct);
+                        join g in _db.GeoObjects.AsNoTracking() on p.object_id equals g.id
+                        where g.canvas_id != null
+                        select new { p, spaceId = g.canvas_id!.Value }).ToListAsync(ct);
       var points = await LoadPointsAsync(rows.Select(r => r.p.object_id).ToList(), ct);
 
       var result = new List<CameraPlacement>();
@@ -353,7 +355,7 @@ namespace VmsMap.Db
       var found = await PlacedReferenceAsync(cameraId, ct);
       if (found is null)
         return null;
-      var (placement, _, space) = found.Value;
+      var (placement, space) = found.Value;
       var points = await LoadPointsAsync([placement.object_id], ct);
       if (!points.TryGetValue(placement.object_id, out var point))
         return null;
@@ -397,6 +399,8 @@ namespace VmsMap.Db
 
       var canonicalId = Utils.ConvertObjectIdToGuid(CameraObjectId.For(placement.CameraId))!.Value;
       var canonical = await _db.Markers.FirstOrDefaultAsync(m => m.id == canonicalId, ct);
+      // The canvas the camera is drawn on now: where a picture stays if the camera moves away.
+      var canonicalCanvas = await CanvasOfAsync(canonicalId, ct);
       var oldReference = await _db.CameraPlacements.AsNoTracking()
         .FirstOrDefaultAsync(p => p.camera_id == placement.CameraId && p.is_reference, ct);
       var target = await RowInSpaceAsync(placement.CameraId, spaceId, ct);
@@ -410,7 +414,7 @@ namespace VmsMap.Db
       if (isReference)
       {
         // The place the camera stands in now stays as a picture when the node moves away.
-        if (canonical is not null && canonical.parent_id is Guid oldSpaceId && oldSpaceId != spaceId)
+        if (canonical is not null && canonicalCanvas is Guid oldCanvas && oldCanvas != spaceId)
         {
           var oldRow = await _db.CameraPlacements.AsNoTracking()
             .FirstOrDefaultAsync(p => p.object_id == canonicalId, ct);
@@ -418,7 +422,7 @@ namespace VmsMap.Db
           if (oldPoints.TryGetValue(canonicalId, out var oldPoint))
           {
             changed.Add(await CreatePictureAsync(
-              placement.CameraId, camera.Name, canonicalId, oldSpaceId, oldRow, oldPoint.Lat, oldPoint.Lon, ct));
+              placement.CameraId, camera.Name, canonicalId, oldCanvas, oldRow, oldPoint.Lat, oldPoint.Lon, ct));
           }
         }
 
@@ -438,8 +442,14 @@ namespace VmsMap.Db
           target = null;
         }
 
+        // Staying on the same canvas keeps the parent the administrator gave the node -- a
+        // container is as good a place for a camera as the space itself. Moving to another canvas
+        // puts it under that space, whose coordinates it is now drawn in.
+        var parentId = canonicalCanvas == spaceId && canonical?.parent_id is not null
+          ? canonical.parent_id.Value
+          : spaceId;
         await _mapService.UpdateHierarchyAsync([
-          new BaseMarkerDTO { id = canonicalId.ToString(), parent_id = spaceId.ToString(), name = camera.Name }]);
+          new BaseMarkerDTO { id = canonicalId.ToString(), parent_id = parentId.ToString(), name = camera.Name }]);
         await EnsureCameraNodeAsync(canonicalId, placement.CameraId, ct);
         await _geoService.CreateGeo([PointFigure(canonicalId, placement.Lat, placement.Lon)]);
 
@@ -541,7 +551,8 @@ namespace VmsMap.Db
     {
       var rows = await (from l in _db.Landmarks.AsNoTracking()
                         join o in _db.Markers.AsNoTracking() on l.object_id equals o.id
-                        where o.parent_id == spaceId
+                        join g in _db.GeoObjects.AsNoTracking() on l.object_id equals g.id
+                        where g.canvas_id == spaceId
                         orderby o.name
                         select new { l, o }).ToListAsync(ct);
       var points = await LoadPointsAsync(rows.Select(r => r.l.object_id).ToList(), ct);
@@ -585,14 +596,15 @@ namespace VmsMap.Db
         row = await _db.Landmarks.FirstOrDefaultAsync(l => l.object_id == id, ct)
           ?? throw new SpatialConfigException($"Landmark '{landmark.Id}' does not exist");
 
-        var marker = await _db.Markers.FirstOrDefaultAsync(m => m.id == id, ct);
+        var marker = await _db.Markers.AsNoTracking().FirstOrDefaultAsync(m => m.id == id, ct);
         // Moved to another space, every observation of it would describe a place its cameras
-        // cannot see.
-        if (marker is null || marker.parent_id != spaceId)
+        // cannot see. The canvas decides, not the parent: the landmark may hang under a container.
+        if (marker is null || await CanvasOfAsync(id, ct) != spaceId)
           throw new SpatialConfigException("A landmark cannot move to another space");
 
+        // The name changes, the parent does not: a container keeps its landmark.
         await _mapService.UpdateHierarchyAsync([
-          new BaseMarkerDTO { id = id.ToString(), parent_id = spaceId.ToString(), name = name }]);
+          new BaseMarkerDTO { id = id.ToString(), parent_id = marker.parent_id?.ToString(), name = name }]);
         row.height_m = landmark.HeightM;
       }
 
@@ -762,9 +774,9 @@ namespace VmsMap.Db
         return;
 
       var cameraSpaceId = await (from p in _db.CameraPlacements.AsNoTracking()
-                                 join o in _db.Markers.AsNoTracking() on p.object_id equals o.id
+                                 join g in _db.GeoObjects.AsNoTracking() on p.object_id equals g.id
                                  where p.camera_id == cameraId && p.is_reference
-                                 select o.parent_id).FirstOrDefaultAsync(ct);
+                                 select g.canvas_id).FirstOrDefaultAsync(ct);
       if (cameraSpaceId is null)
         throw new SpatialConfigException(
           "Mark where the camera really stands (its reference placement) before calibrating it");
@@ -775,8 +787,8 @@ namespace VmsMap.Db
           "Mark where the camera really stands (its reference placement) before calibrating it");
 
       var landmarkSpaces = await (from l in _db.Landmarks.AsNoTracking()
-                                  join o in _db.Markers.AsNoTracking() on l.object_id equals o.id
-                                  join s in _db.Spaces.AsNoTracking() on o.parent_id equals s.object_id
+                                  join g in _db.GeoObjects.AsNoTracking() on l.object_id equals g.id
+                                  join s in _db.Spaces.AsNoTracking() on g.canvas_id equals s.object_id
                                   where landmarkIds.Contains(l.object_id)
                                   select new { s.object_id, s.real_coordinates }).ToListAsync(ct);
 
@@ -811,15 +823,15 @@ namespace VmsMap.Db
 
       var marked = _db.GroundObservations.Select(o => o.camera_id);
       var placed = await (from p in _db.CameraPlacements.AsNoTracking()
-                          join o in _db.Markers.AsNoTracking() on p.object_id equals o.id
-                          join s in _db.Spaces.AsNoTracking() on o.parent_id equals s.object_id
+                          join g in _db.GeoObjects.AsNoTracking() on p.object_id equals g.id
+                          join s in _db.Spaces.AsNoTracking() on g.canvas_id equals s.object_id
                           where p.is_reference && marked.Contains(p.camera_id)
-                          select new { p, o, s }).ToListAsync(ct);
+                          select new { p, s }).ToListAsync(ct);
 
       var sharing = placed
         .Where(x => x.s.object_id == spaceId ||
                     (space.real_coordinates && x.s.real_coordinates))
-        .Select(x => (x.p, x.o, x.s))
+        .Select(x => (x.p, x.s))
         .ToList();
 
       var response = new ListCameraSpatialModelsResponse();
@@ -827,21 +839,21 @@ namespace VmsMap.Db
       return response;
     }
 
-    private async Task<(DBCameraPlacement Placement, DBMarker Object, DBSpace Space)?> PlacedReferenceAsync(
+    private async Task<(DBCameraPlacement Placement, DBSpace Space)?> PlacedReferenceAsync(
       string cameraId, CancellationToken ct)
     {
       var found = await (from p in _db.CameraPlacements.AsNoTracking()
-                         join o in _db.Markers.AsNoTracking() on p.object_id equals o.id
-                         join s in _db.Spaces.AsNoTracking() on o.parent_id equals s.object_id
+                         join g in _db.GeoObjects.AsNoTracking() on p.object_id equals g.id
+                         join s in _db.Spaces.AsNoTracking() on g.canvas_id equals s.object_id
                          where p.camera_id == cameraId && p.is_reference
-                         select new { p, o, s }).FirstOrDefaultAsync(ct);
-      return found is null ? null : (found.p, found.o, found.s);
+                         select new { p, s }).FirstOrDefaultAsync(ct);
+      return found is null ? null : (found.p, found.s);
     }
 
     /// Two queries however many cameras there are: their observations are read together and sorted
     /// out here, each kept only where its landmark shares geometry with that camera's own space.
     private async Task<List<CameraSpatialModelResponse>> BuildSpatialModelsAsync(
-      IReadOnlyList<(DBCameraPlacement Placement, DBMarker Object, DBSpace Space)> placed,
+      IReadOnlyList<(DBCameraPlacement Placement, DBSpace Space)> placed,
       CancellationToken ct)
     {
       var result = new List<CameraSpatialModelResponse>();
@@ -854,7 +866,8 @@ namespace VmsMap.Db
       var observations = (await (from o in _db.PtzGeoObservations.AsNoTracking()
                                  join l in _db.Landmarks.AsNoTracking() on o.landmark_id equals l.object_id
                                  join m in _db.Markers.AsNoTracking() on l.object_id equals m.id
-                                 join s in _db.Spaces.AsNoTracking() on m.parent_id equals s.object_id
+                                 join g in _db.GeoObjects.AsNoTracking() on l.object_id equals g.id
+                                 join s in _db.Spaces.AsNoTracking() on g.canvas_id equals s.object_id
                                  where cameraIds.Contains(o.camera_id)
                                  select new { o, l, m, s }).ToListAsync(ct))
         .ToLookup(x => x.o.camera_id, StringComparer.Ordinal);
@@ -862,7 +875,8 @@ namespace VmsMap.Db
       var ground = (await (from o in _db.GroundObservations.AsNoTracking()
                            join l in _db.Landmarks.AsNoTracking() on o.landmark_id equals l.object_id
                            join m in _db.Markers.AsNoTracking() on l.object_id equals m.id
-                           join s in _db.Spaces.AsNoTracking() on m.parent_id equals s.object_id
+                           join g in _db.GeoObjects.AsNoTracking() on l.object_id equals g.id
+                           join s in _db.Spaces.AsNoTracking() on g.canvas_id equals s.object_id
                            where cameraIds.Contains(o.camera_id)
                            select new { o, l, m, s }).ToListAsync(ct))
         .ToLookup(x => x.o.camera_id, StringComparer.Ordinal);
@@ -881,7 +895,7 @@ namespace VmsMap.Db
       static bool SharesGeometry(DBSpace a, DBSpace b) =>
         a.object_id == b.object_id || (a.real_coordinates && b.real_coordinates);
 
-      foreach (var (placement, _, space) in placed)
+      foreach (var (placement, space) in placed)
       {
         if (!points.TryGetValue(placement.object_id, out var point))
           continue;
@@ -938,11 +952,11 @@ namespace VmsMap.Db
 
     // ── Placement helpers ─────────────────────────────────────────────────────
 
-    /// The placement row this camera has in this space, whichever node carries it.
+    /// The placement row this camera has on this canvas, whichever node carries it.
     private async Task<DBCameraPlacement?> RowInSpaceAsync(string cameraId, Guid spaceId, CancellationToken ct) =>
       await (from p in _db.CameraPlacements
-             join o in _db.Markers on p.object_id equals o.id
-             where p.camera_id == cameraId && o.parent_id == spaceId
+             join g in _db.GeoObjects on p.object_id equals g.id
+             where p.camera_id == cameraId && g.canvas_id == spaceId
              select p).FirstOrDefaultAsync(ct);
 
     // The reverse index the tree needs to name a camera whose node id is an MD5 of its camera id.
@@ -1026,6 +1040,14 @@ namespace VmsMap.Db
     }
 
     // ── Geometry helpers ─────────────────────────────────────────────────────
+
+    /// The canvas a node's figure is drawn on: the space it is really in, whichever node holds it
+    /// as a child. Null when the node has no figure or no canvas ancestor.
+    private async Task<Guid?> CanvasOfAsync(Guid objectId, CancellationToken ct) =>
+      await _db.GeoObjects.AsNoTracking()
+        .Where(g => g.id == objectId)
+        .Select(g => g.canvas_id)
+        .FirstOrDefaultAsync(ct);
 
     private async Task<Dictionary<Guid, (double Lat, double Lon)>> LoadPointsAsync(
       IReadOnlyCollection<Guid> objectIds, CancellationToken ct)

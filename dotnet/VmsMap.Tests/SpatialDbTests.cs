@@ -41,7 +41,7 @@ public class SpatialDbTests
   }
 
   private sealed record Services(
-    VmsMapDbContext Db, SpatialDb Spatial, FakeCatalog Catalog, RecordingNotifier Notifier);
+    VmsMapDbContext Db, MapDb Map, SpatialDb Spatial, FakeCatalog Catalog, RecordingNotifier Notifier);
 
   private static Services Create()
   {
@@ -61,7 +61,7 @@ public class SpatialDbTests
     var catalog = new FakeCatalog();
     var notifier = new RecordingNotifier();
 
-    return new Services(db, new SpatialDb(db, map, updates, geo, catalog, notifier), catalog, notifier);
+    return new Services(db, map, new SpatialDb(db, map, updates, geo, catalog, notifier), catalog, notifier);
   }
 
   private static Space MapSpace(string name = "Main map") => new()
@@ -116,6 +116,13 @@ public class SpatialDbTests
     Lon = lon,
     HeightM = 2,
   };
+
+  private static async Task<BaseMarkerDTO> Node(MapDb map, string name, string? parentId = null)
+  {
+    var node = new BaseMarkerDTO { name = name, parent_id = parentId };
+    await map.UpdateHierarchyAsync([node]);
+    return node;
+  }
 
   [Fact]
   public async Task SpaceIsATreeNodeWithItsFootprintOnTheParentCanvas()
@@ -276,6 +283,92 @@ public class SpatialDbTests
     Assert.Single(rows, r => r.is_reference);
     Assert.Equal(canonical, rows.Single(r => r.is_reference).object_id);
     Assert.Equal(Guid.Parse(plan.Id), (await test.Db.Markers.SingleAsync(m => m.id == canonical)).parent_id!.Value);
+  }
+
+  [Fact]
+  public async Task ACameraUnderAContainerIsStillPlacedOnItsCanvas()
+  {
+    var test = Create();
+    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
+    var district = await Node(test.Map, "District", map.Id);
+
+    await test.Spatial.UpsertPlacementAsync(Placement("cam1", map.Id, reference: true), CancellationToken.None);
+    var canonical = Guid.Parse(CameraObjectId.For("cam1"));
+
+    // The administrator moves the camera into a container polygon on the same canvas.
+    await test.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = canonical.ToString(), parent_id = district.id, name = "Camera cam1" }]);
+
+    // The placement names the canvas, not the parent.
+    var placement = Assert.Single(await test.Spatial.ListPlacementsAsync(CancellationToken.None));
+    Assert.Equal(map.Id, placement.SpaceId);
+
+    var model = await test.Spatial.GetCameraSpatialModelAsync("cam1", CancellationToken.None);
+    Assert.True(model.Found);
+    Assert.Equal(map.Id, model.Space.Id);
+
+    // Writing the placement again on the same canvas keeps the container: a camera stays where
+    // the administrator put it, only its point moves.
+    await test.Spatial.UpsertPlacementAsync(
+      Placement("cam1", map.Id, reference: true, lat: 0.6, lon: 0.6), CancellationToken.None);
+    Assert.Equal(Guid.Parse(district.id!), (await test.Db.Markers.SingleAsync(m => m.id == canonical)).parent_id!.Value);
+  }
+
+  [Fact]
+  public async Task MovingAReferenceOffItsCanvasLeavesThePictureOnThatCanvas()
+  {
+    var test = Create();
+    var first = await test.Spatial.UpsertSpaceAsync(MapSpace("First"), CancellationToken.None);
+    var second = await test.Spatial.UpsertSpaceAsync(MapSpace("Second"), CancellationToken.None);
+    var district = await Node(test.Map, "District", first.Id);
+
+    await test.Spatial.UpsertPlacementAsync(Placement("cam1", first.Id, reference: true), CancellationToken.None);
+    var canonical = Guid.Parse(CameraObjectId.For("cam1"));
+    await test.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = canonical.ToString(), parent_id = district.id, name = "Camera cam1" }]);
+
+    await test.Spatial.UpsertPlacementAsync(Placement("cam1", second.Id, reference: true), CancellationToken.None);
+
+    // The node moves under the space whose coordinates it is now drawn in...
+    Assert.Equal(
+      Guid.Parse(second.Id),
+      (await test.Db.Markers.SingleAsync(m => m.id == canonical)).parent_id!.Value);
+
+    // ...and the place it stood stays as a picture on the first canvas, not under the container.
+    var picture = await test.Db.CameraPlacements.SingleAsync(p => p.camera_id == "cam1" && !p.is_reference);
+    Assert.Equal(
+      Guid.Parse(first.Id),
+      (await test.Db.GeoObjects.SingleAsync(g => g.id == picture.object_id)).canvas_id);
+  }
+
+  [Fact]
+  public async Task ALandmarkUnderAContainerBelongsToItsCanvas()
+  {
+    var test = Create();
+    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
+    var other = await test.Spatial.UpsertSpaceAsync(MapSpace("Other"), CancellationToken.None);
+    var district = await Node(test.Map, "District", map.Id);
+    var landmark = await test.Spatial.UpsertLandmarkAsync(LandmarkAt(map.Id, "Corner"), CancellationToken.None);
+    var landmarkId = Guid.Parse(landmark.Id);
+    await test.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = landmarkId.ToString(), parent_id = district.id, name = "Corner" }]);
+
+    // Listed for its canvas, and renaming it keeps the container.
+    Assert.Equal(landmark.Id, Assert.Single(await test.Spatial.ListLandmarksAsync(Guid.Parse(map.Id), CancellationToken.None)).Id);
+    landmark.Name = "Renamed";
+    await test.Spatial.UpsertLandmarkAsync(landmark, CancellationToken.None);
+    Assert.Equal(Guid.Parse(district.id!), (await test.Db.Markers.SingleAsync(m => m.id == landmarkId)).parent_id!.Value);
+
+    // Calibrating a camera with it works: the canvas decides, not the parent.
+    await test.Spatial.UpsertPlacementAsync(Placement("cam1", map.Id, reference: true), CancellationToken.None);
+    var observations = new PtzGeoObservations { CameraId = "cam1" };
+    observations.Observations.Add(new PtzGeoObservation { LandmarkId = landmark.Id, Pan = 10, Tilt = -5 });
+    await test.Spatial.SetObservationsAsync(observations, CancellationToken.None);
+
+    // It still cannot move to another space.
+    landmark.SpaceId = other.Id;
+    await Assert.ThrowsAsync<SpatialConfigException>(
+      () => test.Spatial.UpsertLandmarkAsync(landmark, CancellationToken.None));
   }
 
   [Fact]
