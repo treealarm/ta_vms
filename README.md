@@ -110,6 +110,13 @@ a 3D world. `tests/onvifsim` uses it as a bench for the PTZ calibration and aimi
 cameras every way real ones are hung (upside down, leaning, axes counted backwards) and measures
 where the head really points against the simulator's ground truth.
 
+The same cameras stand in the optional demo world: with `DEMO_CONFIG=umd-datacenter`, or with
+**Install demo** at the foot of Admin → Maps, a fresh installation is filled with a fictional data
+centre — a map, a building, two rooms, racks, switches and ports — that closes the loop between
+configuration, the map and an alarm. Without the simulator the world installs without cameras and
+says which ones it is missing. See [docs/maps-and-plans.md](docs/maps-and-plans.md), "Demo
+configuration".
+
 ## Related repositories
 
 | Repository | |

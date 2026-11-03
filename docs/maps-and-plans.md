@@ -138,6 +138,54 @@ Conventions that hold everywhere:
   the changed ids back and fetches them over `api/map/*`. The subscription is in the request, so a
   change of view opens a new stream — Dapr proxies server-streaming but not a bidirectional call.
 
+## Demo configuration
+
+An empty installation shows an empty map. An optional demo world, `umd-datacenter` ("UMD Data
+Center"), fills it with a fictional data centre so the product can be looked at — and checked
+without a browser — right after an install.
+
+**What it contains.** A map named `UMD Data Center (demo)` over the A.V. Williams building on the
+University of Maryland campus; the building's floor as a plan with a picture; two rooms (101, 102)
+as plans nested in it; six racks standing in the rooms, a switch in each rack's first slot and eight
+ports on every switch. The third port of the first rack is `DISCONNECTED`, so an operator can watch
+an alarm climb from the port through its switch, rack, room and building to the map. The `Rack 42U`
+type carries `temp` and `humidity` regions, and `DemoValueFeeder` rewrites their values every five
+seconds for as long as the world is installed. The four OnvifSim cameras — `sim-master`,
+`sim-master2`, `sim-ptz`, `sim-ptz2` — are placed where the world wants them; a camera the
+deployment does not have yet is skipped and reported, and reinstalling once it is provisioned
+places it.
+
+**The world is code.** `dotnet/VmsMap/Demo/DemoWorlds.cs` builds it from loops and constants;
+`DemoWorld.cs` is the description (spaces, types and their regions, nodes, levels, camera
+placements, states, rights) and `DemoSeeder.cs` applies it through the ordinary services. The
+pictures — plans, rack and switch backgrounds, the port icon — are embedded PNGs under
+`Demo/Assets/`, so an install never depends on a file on the instance's disk. There is no
+import/export format for maps, and the demo does not add one.
+
+**The registry.** `demo_config` and `demo_object` (`Grpc/migrations/0006_demo_seed.sql`) record the
+logical key of every row the world created — `space/room-101`, `object/rack-a-01`, `type/rack`,
+`file/rack-background`, `level/room`, `camera/sim-master` — and the id it was created with. A
+space's id is assigned by the server, so the registry is the only way to find it again. An install
+upserts everything the world names under the recorded id and deletes the recorded rows the world no
+longer names; a removal deletes them all, values included. **Rows the demo did not write are never
+named by the registry and are never touched**: a user's own node beside the world survives both an
+install and a removal.
+
+**Installing.** Either `DEMO_CONFIG=umd-datacenter` (VmsMap installs the map, VmsCfg the video wall,
+at startup) or the button at the foot of Admin → Maps (`POST api/map/admin/demo/install` and
+`.../remove`, `GET api/map/admin/demo`, administrators only), which calls both services and merges
+their reports. Both paths use the same seeder, so they are interchangeable; installing twice is
+idempotent. The whole install is one transaction under `pg_advisory_xact_lock`, so two replicas
+starting with the flag cannot each write half a world.
+
+**The video wall** belongs to VmsCfg: a wall named `UMD DC`, layout 2×2, showing the demo cameras
+the deployment has. It is installed and removed with the world, and a camera that does not exist yet
+is simply absent from it.
+
+**Rights.** A fresh installation starts with rights enforced (see the migration that creates the
+switch); the world grants `view` on its map to the realm role `user`, so an operator sees it without
+an administrator granting anything by hand. `admin` bypasses rights in any case.
+
 ## Map tiles
 
 `VMS_MAP_TILE_URL` (optional, a `{z}/{x}/{y}` template) names the provider; `VMS_MAP_TILE_ATTRIBUTION`
