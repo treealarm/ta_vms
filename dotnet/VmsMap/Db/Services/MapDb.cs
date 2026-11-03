@@ -439,8 +439,18 @@ namespace VmsMap.Db
 
       if (moved.Count > 0)
       {
+        // A move takes the whole subtree with it, so the canvas of every figure below a moved
+        // node is recomputed, not only the moved node's own: a container moved to another canvas
+        // brings its children there.
+        var subtree = await GetSubtreeIdsAsync(
+            moved.Select(id => Utils.ConvertGuidToObjectId(id)).ToList());
+        var subtreeIds = subtree
+            .Select(Utils.ConvertObjectIdToGuid)
+            .Where(g => g.HasValue)
+            .Select(g => g!.Value)
+            .ToList();
         var figures = await _db.GeoObjects
-            .Where(g => moved.Contains(g.id))
+            .Where(g => subtreeIds.Contains(g.id))
             .ToListAsync();
         if (figures.Count > 0)
         {

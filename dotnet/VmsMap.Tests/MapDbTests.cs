@@ -43,6 +43,54 @@ public class MapDbTests
   }
 
   [Fact]
+  public async Task MovingAContainerRecomputesTheCanvasOfItsWholeSubtree()
+  {
+    var (db, map) = CreateDb();
+    var first = Space(db, "First map");
+    var second = Space(db, "Second map");
+
+    var container = new BaseMarkerDTO { name = "District", parent_id = first.ToString() };
+    await map.UpdateHierarchyAsync([container]);
+    var building = new BaseMarkerDTO { name = "Building", parent_id = container.id };
+    await map.UpdateHierarchyAsync([building]);
+    var camera = new BaseMarkerDTO { name = "Camera", parent_id = building.id };
+    await map.UpdateHierarchyAsync([camera]);
+
+    var geo = new GeoService(db, new LevelService(db));
+    await geo.CreateGeo([
+      Point(container.id!, 0.5, 0.5),
+      Point(building.id!, 0.5, 0.5),
+      Point(camera.id!, 0.5, 0.5),
+    ]);
+    Assert.All(
+      await db.GeoObjects.ToListAsync(),
+      figure => Assert.Equal(first, figure.canvas_id));
+
+    // The container moves to another map, and its children go with it.
+    container.parent_id = second.ToString();
+    await map.UpdateHierarchyAsync([container]);
+
+    Assert.All(
+      await db.GeoObjects.ToListAsync(),
+      figure => Assert.Equal(second, figure.canvas_id));
+  }
+
+  private static Guid Space(VmsMapDbContext db, string name, Guid? parent = null)
+  {
+    var id = Guid.NewGuid();
+    db.Markers.Add(new DBMarker { id = id, name = name, parent_id = parent });
+    db.Spaces.Add(new DBSpace { object_id = id, kind = SpaceKinds.Map });
+    db.SaveChanges();
+    return id;
+  }
+
+  private static FigureGeoDTO Point(string id, double lat, double lon) => new()
+  {
+    id = id,
+    geometry = new GeometryCircleDTO(new Geo2DCoordDTO { Lat = lat, Lon = lon }),
+  };
+
+  [Fact]
   public async Task UpdateHierarchyAssignsAnIdToANewNode()
   {
     var (db, map) = CreateDb();
