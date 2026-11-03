@@ -1183,7 +1183,12 @@
       "lineHint": "Click to add points ({{count}}), double click or Enter to finish.",
       "polygonHint": "Click to add corners ({{count}}), double click or Enter to finish.",
       "finish": "Finish",
-      "zoomNeedsShape": "The node has no shape of its own, so there is nowhere to keep a scale layer."
+      "zoomNeedsShape": "The node has no shape of its own, so there is nowhere to keep a scale layer.",
+      "moveTo": "Move to…",
+      "moveToTitle": "Move “{{name}}” into",
+      "moveToHint": "A space, or a container on this canvas. A node's place in the tree is what makes it a child, never where it lies.",
+      "moveToFind": "Find a space or container",
+      "moveToNothing": "Nothing matches"
     },
     "dictionaries": {
       "title": "Dictionaries",

@@ -27,7 +27,7 @@ type Props = {
 }
 
 /** A small icon from `visual`, turned by its own angle; the picture is base64 in the row. */
-function figureIcon(figure: MapFigure): L.DivIcon {
+function figureIcon(figure: MapFigure, alarming: boolean): L.DivIcon {
   const width = figure.visual?.imageWidth || 28
   const height = figure.visual?.imageHeight || 28
   const rotation = figure.visual?.rotationDeg ?? 0
@@ -44,7 +44,7 @@ function figureIcon(figure: MapFigure): L.DivIcon {
     </div>`
 
   return L.divIcon({
-    className: 'map-figure-icon',
+    className: alarming ? 'map-figure-icon vms-alarm-pulse' : 'map-figure-icon',
     html,
     iconSize: [width, height],
     iconAnchor: [width / 2, height / 2],
@@ -114,6 +114,9 @@ function renderFigure(
     dashArray: selected ? '6 4' : undefined,
     fillColor: style.color,
     fillOpacity: 0.2,
+    // A container's outline breathes while it or something inside it is alarmed, as a footprint's
+    // does: at an overview scale the children that raised the alarm are out of the layer.
+    className: style.alarming ? 'vms-alarm-pulse' : undefined,
   }
 
   // A polygon arrives closed (the first point repeated at the end); its handles are the corners
@@ -185,7 +188,7 @@ function renderFigure(
       if (figure.visual?.image) {
         return (
           <Fragment key={figure.id}>
-            <Marker position={[lat, lon]} icon={figureIcon(figure)} eventHandlers={handlers}>
+            <Marker position={[lat, lon]} icon={figureIcon(figure, style.alarming)} eventHandlers={handlers}>
               <Tooltip>{figure.name}</Tooltip>
             </Marker>
             {handles}

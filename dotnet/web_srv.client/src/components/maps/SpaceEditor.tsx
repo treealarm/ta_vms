@@ -24,7 +24,7 @@ import {
 } from '../../store/spatialSlice'
 import { loadObjProps } from '../../store/objectsSlice'
 import { loadLevels } from '../../store/levelsSlice'
-import { createReplicaAt, deleteNode, saveFigure } from '../../store/mapEditsSlice'
+import { createReplicaAt, deleteNode, moveNode, movePlacedCamera, saveFigure } from '../../store/mapEditsSlice'
 import { loadDiagramContent } from '../../store/diagramsSlice'
 import { useMapChildren } from '../../hooks/useMapChildren'
 import SpaceCanvas from '../../map/SpaceCanvas'
@@ -36,6 +36,7 @@ import { FootprintEditor, Footprints } from '../../map/footprints'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
 import { cornersAround, distance, rescaleCorners } from '../../map/geo'
 import { CameraPlacementPanel, FootprintPanel, LandmarkPanel } from './PlacementPanels'
+import MoveToField from './MoveToField'
 import ObjectPropsEditor from './ObjectPropsEditor'
 import ObjectRights from '../objects/ObjectRights'
 import DiagramViewer from '../diagrams/DiagramViewer'
@@ -162,6 +163,15 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const selectedPlacement = selection?.kind === 'camera' ? placementHere(selection.id) : undefined
   const selectedLandmark = selection?.kind === 'landmark' ? landmarks.find((m) => m.id === selection.id) : undefined
   const selectedNested = selection?.kind === 'footprint' ? nested.find((s) => s.id === selection.id) : undefined
+  // The node the selection stands for, whichever panel shows it: the one to move and to put a
+  // new object under.
+  const selectionNodeId = selectedNodeId
+    ?? (selectedPlacement ? nodeForPlacement(selectedPlacement)?.id : undefined)
+    ?? selectedLandmark?.id
+    ?? selectedNested?.id
+    ?? undefined
+  // A container is any selected node: a new object goes inside it, as a parent is chosen in Square.
+  const containerId = selection?.kind === 'node' ? selectedNodeId : null
 
   const run = async (action: () => Promise<unknown>) => {
     setError(null)
@@ -189,7 +199,18 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
 
   const savePlacement = (p: CameraPlacementDto) =>
     run(async () => {
+      // A placement this canvas did not have before is a new node here; one written while a
+      // container is selected goes inside it.
+      const isNew = !here.some((stored) => stored.cameraId === p.cameraId)
       await dispatch(upsertPlacement(p)).unwrap()
+      if (isNew && containerId) {
+        await dispatch(movePlacedCamera({
+          cameraId: p.cameraId,
+          isReference: p.isReference,
+          canvasId: spaceId,
+          containerId,
+        })).unwrap()
+      }
       setDraft(null)
     })
 
@@ -215,7 +236,8 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
       await dispatch(saveFigure({
         figure: {
           id,
-          parentId: spaceId,
+          // A selected container holds the new shape; otherwise it is a child of the space.
+          parentId: containerId ?? spaceId,
           name: `${t('maps.editor.figure')} ${mapData.markers.length + 1}`,
           geometry,
         },
@@ -305,6 +327,13 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
           lon: at.lon,
           heightM: 0,
         })).unwrap()
+        // A selected container holds the new landmark; otherwise it hangs under the space.
+        if (saved.id && containerId) {
+          await dispatch(moveNode({
+            node: { id: saved.id, parentId: containerId, name: saved.name },
+            canvasId: spaceId,
+          })).unwrap()
+        }
         if (saved.id) setSelection({ kind: 'landmark', id: saved.id })
       })
       return
@@ -687,7 +716,17 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
             {settings}
             {planPicture}
           </Box>
-          {sideTab === 'selection' && selectionPanel}
+          {sideTab === 'selection' && (
+            <>
+              {/* Whether a node is a child of a container is the tree's business, not the map's. */}
+              {selectionNodeId && (
+                <Box sx={{ px: 1.5, pt: 1.5 }}>
+                  <MoveToField nodeId={selectionNodeId} canvasId={spaceId} />
+                </Box>
+              )}
+              {selectionPanel}
+            </>
+          )}
           {/* The rights of what is selected — or of the space itself, when nothing else is. */}
           {sideTab === 'rights' && <ObjectRights nodeId={selectedNodeId ?? spaceId} />}
         </Box>

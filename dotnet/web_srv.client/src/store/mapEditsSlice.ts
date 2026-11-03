@@ -3,7 +3,7 @@ import { mapApi } from '../api/mapApi'
 import type {
   MapDiagramCoordinate, MapExtraProperty, MapFigure, MapObject, MapVisual,
 } from '../dto/mapDtos'
-import { canvasAdd, dropNodes, loadNodes, loadObjProps } from './objectsSlice'
+import { canvasAdd, dropNodes, loadCanvas, loadNodes, loadObjProps } from './objectsSlice'
 
 export type MapEditsState = {
   busy: number
@@ -74,6 +74,46 @@ export const saveNodeDetails = createAsyncThunk(
       await api.dispatch(loadNodes([node.id]))
       await api.dispatch(loadObjProps(node.id))
     }
+  },
+)
+
+/**
+ * Moves a node elsewhere in the tree -- into a container on the same canvas, or into a space. The
+ * canvas composition is re-read because the node, and everything under it, may have left this one.
+ */
+export const moveNode = createAsyncThunk(
+  'mapEdits/moveNode',
+  async ({ node, canvasId }: { node: MapObject; canvasId: string }, api) => {
+    await mapApi.updateObjects([node])
+    if (node.id) await api.dispatch(loadNodes([node.id]))
+    await api.dispatch(loadCanvas(canvasId))
+    return node
+  },
+)
+
+/**
+ * A camera just placed on a canvas, when the editor had a container selected: its node goes inside
+ * that container. Only a new placement takes this path -- later writes on the same canvas keep the
+ * parent they find, which is what makes the next drag of the camera leave it where it is.
+ */
+export const movePlacedCamera = createAsyncThunk(
+  'mapEdits/movePlacedCamera',
+  async ({ cameraId, isReference, canvasId, containerId }: {
+    cameraId: string
+    isReference: boolean
+    canvasId: string
+    containerId: string
+  }, api) => {
+    const loaded = await api.dispatch(loadCanvas(canvasId)).unwrap()
+    const figures = loaded.figures
+    const node = figures.find((f) => f.cameraId === cameraId && (isReference ? !f.ownerId : !!f.ownerId))
+      ?? figures.find((f) => f.cameraId === cameraId)
+    if (!node?.id || node.parentId === containerId) return null
+
+    await mapApi.updateObjects([{ id: node.id, parentId: containerId, ownerId: node.ownerId, name: node.name }])
+    await api.dispatch(loadNodes([node.id]))
+    await api.dispatch(loadCanvas(canvasId))
+    return node.id
   },
 )
 

@@ -1183,7 +1183,12 @@
       "lineHint": "Haga clic para añadir puntos ({{count}}); doble clic o Intro para terminar.",
       "polygonHint": "Haga clic para añadir vértices ({{count}}); doble clic o Intro para terminar.",
       "finish": "Terminar",
-      "zoomNeedsShape": "El nodo no tiene una forma propia, así que no hay dónde guardar una capa de escala."
+      "zoomNeedsShape": "El nodo no tiene una forma propia, así que no hay dónde guardar una capa de escala.",
+      "moveTo": "Mover a…",
+      "moveToTitle": "Mover «{{name}}» a",
+      "moveToHint": "Un espacio, o un contenedor de este lienzo. Lo que hace hijo a un nodo es su lugar en el árbol, nunca dónde está.",
+      "moveToFind": "Buscar un espacio o contenedor",
+      "moveToNothing": "Nada coincide"
     },
     "dictionaries": {
       "title": "Diccionarios",

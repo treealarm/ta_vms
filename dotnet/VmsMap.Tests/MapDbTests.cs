@@ -43,6 +43,41 @@ public class MapDbTests
   }
 
   [Fact]
+  public async Task MovingANodeUnderItsOwnDescendantIsRefused()
+  {
+    var (db, map) = CreateDb();
+    var container = new BaseMarkerDTO { name = "Container" };
+    await map.UpdateHierarchyAsync([container]);
+    var child = new BaseMarkerDTO { name = "Child", parent_id = container.id };
+    await map.UpdateHierarchyAsync([child]);
+    var grandchild = new BaseMarkerDTO { name = "Grandchild", parent_id = child.id };
+    await map.UpdateHierarchyAsync([grandchild]);
+
+    container.parent_id = grandchild.id;
+    await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([container]));
+
+    // Nothing was written: the tree still has the container at the root.
+    Assert.Null((await db.Markers.AsNoTracking().SingleAsync(m => m.id == Guid.Parse(container.id!))).parent_id);
+    Assert.Equal(Guid.Parse(container.id!), (await db.Markers.AsNoTracking().SingleAsync(m => m.id == Guid.Parse(child.id!))).parent_id);
+  }
+
+  [Fact]
+  public async Task MovingTwoNodesInOneWriteIsCheckedAgainstWhereTheyWillBe()
+  {
+    var (db, map) = CreateDb();
+    var first = new BaseMarkerDTO { name = "First" };
+    var second = new BaseMarkerDTO { name = "Second" };
+    await map.UpdateHierarchyAsync([first, second]);
+
+    // First goes under Second while Second goes under First: together that is a loop.
+    first.parent_id = second.id;
+    second.parent_id = first.id;
+    await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([first, second]));
+
+    Assert.Null((await db.Markers.AsNoTracking().SingleAsync(m => m.id == Guid.Parse(first.id!))).parent_id);
+  }
+
+  [Fact]
   public async Task MovingAContainerRecomputesTheCanvasOfItsWholeSubtree()
   {
     var (db, map) = CreateDb();

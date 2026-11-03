@@ -413,6 +413,16 @@ namespace VmsMap.Db
         dbUpdated.Add(item, dbObj);
       }
 
+      // A move under the node's own descendant would close a loop the alarm and rights walks cannot
+      // leave; whatever rearranges the tree -- the editor's "move to" among them -- is refused here,
+      // before any tracked row is touched.
+      var moves = dbUpdated
+          .Where(kvp => existingEntities.TryGetValue(kvp.Value.id, out var before)
+                        && before.parent_id != kvp.Value.parent_id)
+          .ToDictionary(kvp => kvp.Value.id, kvp => kvp.Value.parent_id);
+      if (moves.Count > 0)
+        await EnsureNoCycleAsync(moves);
+
       // Nodes whose parent changes also change the canvas their figure is drawn on.
       var moved = new List<Guid>();
 
@@ -469,6 +479,32 @@ namespace VmsMap.Db
       }
     }
 
+
+    /// Walks up from each new parent: reaching the moved node itself means the move closes a loop.
+    /// A node moved in the same request is followed where it will go, not where it is now.
+    private async Task EnsureNoCycleAsync(IReadOnlyDictionary<Guid, Guid?> moves)
+    {
+      foreach (var (id, parent) in moves)
+      {
+        var visited = new HashSet<Guid>();
+        var at = parent;
+        while (at is not null)
+        {
+          if (at.Value == id)
+            throw new ArgumentException(
+                $"Node '{Utils.ConvertGuidToObjectId(id)}' cannot be moved under its own descendant");
+          if (!visited.Add(at.Value))
+            break;
+
+          at = moves.TryGetValue(at.Value, out var reparented)
+              ? reparented
+              : await _db.Markers.AsNoTracking()
+                  .Where(m => m.id == at.Value)
+                  .Select(m => m.parent_id)
+                  .FirstOrDefaultAsync();
+        }
+      }
+    }
 
     public async Task<long> RemoveAsync(List<string> ids)
     {
