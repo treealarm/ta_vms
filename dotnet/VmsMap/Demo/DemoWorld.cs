@@ -53,7 +53,8 @@ namespace VmsMap.Demo
     string? RegionKey = null,
     DemoRect? Canvas = null,
     DemoPoint? At = null,
-    string? IconKey = null);
+    string? IconKey = null,
+    string? ZoomLevel = null);
 
   /// A scale layer: zoom levels at which the nodes that name it are drawn.
   public sealed record DemoLevel(string Name, int Min, int Max);

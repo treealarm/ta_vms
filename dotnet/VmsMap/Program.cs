@@ -99,6 +99,9 @@ builder.Services.AddScoped<SpatialDb>();
 // The demo world: install, reinstall and removal behind one registry. The flag and the gRPC calls
 // that reach it are wired in M2.2's later steps; the seeder is the same for both.
 builder.Services.AddScoped<DemoSeeder>();
+// The rack readings of the installed world; a no-op while no demo is installed.
+builder.Services.AddScoped<DemoValueFeeder>();
+builder.Services.AddHostedService<DemoValueFeederService>();
 
 builder.Services.AddScoped<ITracksUpdateService, TracksUpdateService>();
 builder.Services.AddScoped<IMapUpdateService, MapUpdateService>();

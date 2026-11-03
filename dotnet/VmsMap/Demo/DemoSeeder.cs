@@ -216,6 +216,7 @@ namespace VmsMap.Demo
             parent_id = parentId,
             name = node.Name,
             geometry = new GeometryCircleDTO(new Geo2DCoordDTO { Lat = at.Lat, Lon = at.Lon }),
+            zoom_level = node.ZoomLevel,
           }]);
         }
 
@@ -347,6 +348,16 @@ namespace VmsMap.Demo
         switch (kind)
         {
           case "object":
+            // A value has no foreign key of its own in the model the tests use, and the demo's
+            // feeder writes them: take them away before the node they belong to.
+            var objectGuids = ofKind.Select(pair => pair.Value).ToList();
+            var values = await _db.Values.Where(value => objectGuids.Contains(value.owner_id)).ToListAsync(ct);
+            if (values.Count > 0)
+            {
+              _db.Values.RemoveRange(values);
+              await _db.SaveChangesAsync(ct);
+            }
+
             await _updates.Delete(ofKind.Select(pair => pair.Value.ToString()).ToList());
             break;
 
