@@ -11,7 +11,7 @@ export type MapGeometry = { coord?: MapCoordinate[]; type?: string }
 export type MapExtraProperty = {
   propName?: string
   strVal?: string
-  /** How the editor renders the value: VisualTypes, e.g. "__txt", "__clr", "__datetime". */
+  /** How the value is read and edited: plain text when empty, else "__clr", "__datetime", "__double" or "__int". */
   visualType?: string
 }
 

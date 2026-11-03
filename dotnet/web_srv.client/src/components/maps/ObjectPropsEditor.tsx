@@ -11,12 +11,10 @@ import type {
 import { useAppDispatch } from '../../store'
 import { saveNodeDetails } from '../../store/mapEditsSlice'
 import DetailToolbar from '../settings/DetailToolbar'
-
-/** The value shapes the properties editor offers; empty is plain text. */
-const VISUAL_TYPES = [
-  '', '__txt', '__clr', '__pass', '__datetime', '__double', '__int', '__string',
-  '__coordinates', '__ip_range', '__credential_list', '__enum_list', '__snapshot', '__map',
-]
+import PropertyValueField from './PropertyValueField'
+import {
+  PROPERTY_TYPES, PROPERTY_TYPE_LABELS, normalizeType, normalizeValue,
+} from './propertyTypes'
 
 type Props = {
   node: MapMarker
@@ -50,7 +48,9 @@ const draftOf = (node: MapMarker, figure: MapFigure | null, loaded: MapObjProps 
     image: visual?.image
       ? { data: visual.image, width: visual.imageWidth ?? 0, height: visual.imageHeight ?? 0 }
       : null,
-    properties: (loaded?.extraProps ?? figure?.extraProps ?? []).map((property) => ({ ...property })),
+    // A type the editor no longer offers is shown as plain text, the shape the value has anyway.
+    properties: (loaded?.extraProps ?? figure?.extraProps ?? [])
+      .map((property) => ({ ...property, visualType: normalizeType(property.visualType) })),
   }
 }
 
@@ -102,7 +102,12 @@ export default function ObjectPropsEditor({ node, figure, loaded, levels, onDele
 
     void dispatch(saveNodeDetails({
       node: nodeRow,
-      properties: draft.properties.filter((property) => !!property.propName),
+      properties: draft.properties
+        .filter((property) => !!property.propName)
+        .map((property) => ({
+          ...property,
+          strVal: normalizeValue(property.visualType, property.strVal ?? ''),
+        })),
       visual: {
         objectId: node.id,
         color: draft.color,
@@ -270,11 +275,11 @@ export default function ObjectPropsEditor({ node, figure, loaded, levels, onDele
                 <DeleteOutlineIcon fontSize="small" />
               </IconButton>
             </Stack>
-            <TextField
-              size="small"
-              label={t('maps.editor.propValue')}
+            <PropertyValueField
+              type={property.visualType}
               value={property.strVal ?? ''}
-              onChange={(event) => setProperty(index, { strVal: event.target.value })}
+              label={t('maps.editor.propValue')}
+              onChange={(strVal) => setProperty(index, { strVal })}
             />
             <TextField
               size="small"
@@ -283,9 +288,9 @@ export default function ObjectPropsEditor({ node, figure, loaded, levels, onDele
               value={property.visualType ?? ''}
               onChange={(event) => setProperty(index, { visualType: event.target.value })}
             >
-              {VISUAL_TYPES.map((type) => (
+              {PROPERTY_TYPES.map((type) => (
                 <MenuItem key={type || 'plain'} value={type}>
-                  {type || t('maps.editor.plainText')}
+                  {t(PROPERTY_TYPE_LABELS[type])}
                 </MenuItem>
               ))}
             </TextField>

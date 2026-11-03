@@ -69,6 +69,13 @@ Conventions that hold everywhere:
   whatever window shows it, so every screen starts at the same level of detail. A new map is framed
   in its creation form; "Open the space on this view" in the editor reframes any space.
 - **Nothing is stored in plan pixels.** Re-aligning a plan moves the picture, not the objects.
+- **An abstract property carries a type, not just text.** `properties.visual_type` says how its
+  value is read and edited: empty or `__txt` is plain text — the default — `__clr` a colour,
+  `__datetime` an instant, `__double` a number and `__int` an integer. The editor stores numbers in
+  one invariant spelling and instants as ISO 8601 UTC; a value that does not parse is kept as typed.
+  Square's action-parameter types (password, coordinates, IP range, credential and enum lists,
+  snapshot, map) went with the actions and are not carried over. The type names in the editor are
+  localized; the stored strings are not.
 - **Heading is a compass bearing**: 0 = north, clockwise — the same as Square's `__image_rotate`.
 - **Fits are never stored.** VmsMap keeps raw observations and marks; `VmsPtzTrackingSingleton`
   fits them on demand, exactly as it does the slave binding.
