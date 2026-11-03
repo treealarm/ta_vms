@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { MapDiagram, MapDiagramType, MapDiagramTypeRegion } from '../../dto/mapDtos'
 import {
-  clampRegion, diagramPaper, elementRect, normalizeRect, ownRect, regionAtPoint, regionRect, type Rect,
+  clampRegion, diagramPaper, elementRect, figureCoordinate, figurePoint, moveGeometry, normalizeRect,
+  ownRect, regionAtPoint, regionRect, type Rect,
 } from './diagramGeometry'
 
 const parent: Rect = { left: 0, top: 0, width: 400, height: 800, rotation: 0 }
@@ -148,5 +149,30 @@ describe('regionAtPoint', () => {
     expect(regionAtPoint(regions, 0.95, 0.1)).toBeUndefined()
     expect(regionAtPoint([], 0.5, 0.5)).toBeUndefined()
     expect(regionAtPoint(undefined, 0.5, 0.5)).toBeUndefined()
+  })
+})
+
+describe('free figures on a diagram', () => {
+  it('reads a figure\'s place as the canvas\'s pixels', () => {
+    // The geometry's lat and lon slots carry y and x: the canvas is the frame.
+    expect(figurePoint({ lat: 120, lon: 340 })).toEqual({ x: 340, y: 120 })
+    expect(figureCoordinate(340, 120)).toEqual({ lat: 120, lon: 340 })
+    expect(figurePoint(undefined)).toEqual({ x: 0, y: 0 })
+  })
+
+  it('moves every vertex of a shape and keeps its type', () => {
+    const moved = moveGeometry({
+      type: 'Polygon',
+      coord: [{ lat: 10, lon: 20 }, { lat: 10, lon: 60 }, { lat: 50, lon: 60 }, { lat: 10, lon: 20 }],
+    }, 5, -3)
+
+    expect(moved?.type).toBe('Polygon')
+    expect(moved?.coord).toEqual([
+      { lat: 7, lon: 25 }, { lat: 7, lon: 65 }, { lat: 47, lon: 65 }, { lat: 7, lon: 25 },
+    ])
+  })
+
+  it('leaves a figure without a shape alone', () => {
+    expect(moveGeometry(undefined, 5, 5)).toBeUndefined()
   })
 })

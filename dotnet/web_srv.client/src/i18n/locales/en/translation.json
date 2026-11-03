@@ -1099,7 +1099,12 @@
     "width": "Width",
     "height": "Height",
     "rotation": "Rotation",
-    "background": "Background"
+    "background": "Background",
+    "freeObjects": "Free objects on the paper: text, line, zone",
+    "textObject": "Text",
+    "lineObject": "Line",
+    "zoneObject": "Zone",
+    "textSample": "Text"
   },
   "rights": {
     "tab": "Rights",

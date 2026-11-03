@@ -1,4 +1,6 @@
-import type { MapDiagram, MapDiagramType, MapDiagramTypeRegion } from '../../dto/mapDtos'
+import type {
+  MapCoordinate, MapDiagram, MapDiagramType, MapDiagramTypeRegion, MapGeometry,
+} from '../../dto/mapDtos'
 
 /** A rectangle in the pixels of a diagram's own canvas. */
 export type Rect = { left: number; top: number; width: number; height: number; rotation: number }
@@ -130,4 +132,27 @@ export function regionAtPoint(
     }
   }
   return undefined
+}
+
+/**
+ * A figure on a diagram keeps its place as the canvas's own pixels, carried in the geometry's
+ * lon and lat slots — the canvas is the frame, exactly as a made-up plan's coordinates are. So a
+ * point is `{ lon: x, lat: y }` and nothing here converts to metres.
+ */
+export function figurePoint(coord: MapCoordinate | undefined): { x: number; y: number } {
+  return { x: coord?.lon ?? 0, y: coord?.lat ?? 0 }
+}
+
+/** The geometry a point of the paper stands for. */
+export function figureCoordinate(x: number, y: number): MapCoordinate {
+  return { lat: y, lon: x }
+}
+
+/** The same shape, moved by a drag: every vertex travels, the type does not change. */
+export function moveGeometry(geometry: MapGeometry | undefined, dx: number, dy: number): MapGeometry | undefined {
+  if (!geometry?.coord) return geometry
+  return {
+    ...geometry,
+    coord: geometry.coord.map((coord) => figureCoordinate((coord.lon ?? 0) + dx, (coord.lat ?? 0) + dy)),
+  }
 }

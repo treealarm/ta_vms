@@ -30,12 +30,19 @@ Conventions that hold everywhere:
   footprint on the parent is only the way in. The floors of a building are sibling spaces; the
   switcher on the map's edge moves between them, breadcrumbs move up, footprints move down. When
   footprints overlap (floors sharing one outline), a click asks which one.
-- **A canvas is the unit of drawing, not a level of the tree.** A space draws every figure whose
-  `geo_objects.canvas_id` is that space — the nearest space above the figure — whatever the depth
-  of the tree between them. So a **container** (a polygon, a circle, an icon, a node with no figure
+- **A canvas is the unit of drawing, not a level of the tree.** A space or a mnemoscheme draws
+  every figure whose `geo_objects.canvas_id` is that canvas — the nearest space or diagram above
+  the figure — whatever the depth of the tree between them. So a **container** (a polygon, a circle, an icon, a node with no figure
   at all) can hold children, and those children are drawn on the same canvas as the container, not
   only after entering it. A nested space is a canvas of its own: its footprint is drawn on the
   parent's canvas, its children on its own.
+- **A diagram carries free objects as well as its typed children.** Text, lines, polygons and icons
+  laid on a mnemoscheme are ordinary figures whose `canvas_id` is the diagram; their coordinates
+  are that canvas's pixels, carried in the geometry's lon/lat slots, the same way a made-up plan
+  carries meaningless WGS84 around (0, 0). They are edited like a plan's shapes — the same node
+  editor, the same drag — and drawn under the typed children (lines and zones) or over them
+  (points, captions, icons). A diagram is therefore an inventory of a place, not only a picture of
+  typed slots.
 - **The tree decides what is a child; geometry never does.** An object inside a polygon is not its
   child unless the tree says so, and a child need not lie inside anything. The administrator sets
   the parent: a new object is created under the selected node, or under the space when nothing is

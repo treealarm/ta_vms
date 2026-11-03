@@ -3,22 +3,30 @@ import {
   Box, Breadcrumbs, Button, CircularProgress, IconButton, Stack, ToggleButton, ToggleButtonGroup,
   Typography,
 } from '@mui/material'
+import PentagonIcon from '@mui/icons-material/Pentagon'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
+import TextFieldsIcon from '@mui/icons-material/TextFields'
+import TimelineIcon from '@mui/icons-material/Timeline'
 import ZoomInIcon from '@mui/icons-material/ZoomIn'
 import ZoomOutIcon from '@mui/icons-material/ZoomOut'
 import { useTranslation } from 'react-i18next'
-import type { MapDiagramTypeRegion, MapMarker, MapWatchMessage } from '../../dto/mapDtos'
+import type {
+  MapDiagramTypeRegion, MapFigure, MapGeometry, MapMarker, MapWatchMessage,
+} from '../../dto/mapDtos'
 import { mapLiveUrl } from '../../api/mapApi'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadDiagramContent, loadDiagramValues, setDiagramDepth } from '../../store/diagramsSlice'
 import { loadVisualStates } from '../../store/statesSlice'
+import { loadCanvas } from '../../store/objectsSlice'
 import {
-  createDiagramNode, createReplicaOnDiagram, deleteNode, saveDiagramPlacement,
+  createDiagramNode, createReplicaOnDiagram, deleteNode, saveDiagramPlacement, saveFigure,
+  saveNodeDetails,
 } from '../../store/mapEditsSlice'
 import { useMapLive } from '../../hooks/useMapLive'
 import { NODE_DRAG_TYPE } from '../../map/dragTypes'
-import { diagramPaper, fitScale, regionAtPoint, type Rect } from './diagramGeometry'
+import { diagramPaper, figureCoordinate, fitScale, moveGeometry, regionAtPoint, type Rect } from './diagramGeometry'
 import DiagramElement from './DiagramElement'
+import DiagramFigures from './DiagramFigures'
 import MapDiagramTypesDialog from './MapDiagramTypesDialog'
 
 type Props = {
@@ -59,10 +67,15 @@ export default function DiagramViewer({
   const states = useAppSelector((s) => s.states.states)
   const alarms = useAppSelector((s) => s.states.alarms)
   const descriptions = useAppSelector((s) => s.states.descriptions)
+  const canvasIds = useAppSelector((s) => s.objects.canvases[diagramId]?.ids)
+  const figuresById = useAppSelector((s) => s.objects.figures)
 
   const [factor, setFactor] = useState(1)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [typesOpen, setTypesOpen] = useState(false)
+  // The free-object tool armed on the paper, and the points of the shape being drawn with it.
+  const [tool, setTool] = useState<'text' | 'line' | 'polygon' | null>(null)
+  const [draft, setDraft] = useState<{ x: number; y: number }[]>([])
   // The element under the pointer while it is dragged, at the rectangle it will be saved at.
   const [dragging, setDragging] = useState<{ id: string; rect: Rect } | null>(null)
   const dragRef = useRef<{ id: string; rect: Rect } | null>(null)
@@ -74,6 +87,17 @@ export default function DiagramViewer({
   }, [diagramId, depth, dispatch])
 
   const reload = () => { void dispatch(loadDiagramContent({ id: diagramId, depth })) }
+
+  // The paper carries ordinary figures as well: captions, zones, lines, icons. They are read per
+  // canvas, with the same call a space makes -- the canvas is the diagram, as it is a room.
+  useEffect(() => { void dispatch(loadCanvas(diagramId)) }, [diagramId, dispatch])
+
+  const figures = useMemo(
+    () => (canvasIds ?? [])
+      .map((id) => figuresById[id])
+      .filter((figure): figure is MapFigure => !!figure),
+    [canvasIds, figuresById],
+  )
 
   // The answer for another diagram may still be in the store for a render or two.
   const shown = content?.diagramId === diagramId ? content : null
@@ -244,6 +268,76 @@ export default function DiagramViewer({
     }
   }
 
+  /** A point of the paper under the pointer, in the diagram's own pixels. */
+  const paperPoint = (event: { clientX: number; clientY: number }) => {
+    const bounds = paperRef.current?.getBoundingClientRect()
+    if (!bounds) return { x: 0, y: 0 }
+    return { x: (event.clientX - bounds.left) / scale, y: (event.clientY - bounds.top) / scale }
+  }
+
+  /** A free object of the paper: a caption, a line or a zone. It is an ordinary figure, drawn in
+   *  the canvas's pixels and edited by the node editor like any other. */
+  const createFigure = async (kind: 'text' | 'line' | 'polygon', points: { x: number; y: number }[]) => {
+    const id = crypto.randomUUID()
+    const coord = points.map((point) => figureCoordinate(point.x, point.y))
+    const geometry: MapGeometry = kind === 'polygon'
+      ? { type: 'Polygon', coord: [...coord, coord[0]] }
+      : kind === 'line'
+        ? { type: 'LineString', coord }
+        : { type: 'Point', coord: coord.slice(0, 1) }
+
+    const nameKey = kind === 'text'
+      ? 'diagramEditor.textObject'
+      : kind === 'line' ? 'diagramEditor.lineObject' : 'diagramEditor.zoneObject'
+    const name = t(nameKey)
+
+    try {
+      await dispatch(saveNodeDetails({
+        node: { id, parentId: diagramId, name },
+        properties: [],
+        visual: {
+          objectId: id,
+          color: '#ffd54f',
+          text: kind === 'text' ? t('diagramEditor.textSample') : undefined,
+        },
+        figure: { id, parentId: diagramId, name, geometry },
+      })).unwrap()
+      void dispatch(loadCanvas(diagramId))
+    } catch {
+      // The store carries the message; the paper stays as it was.
+    }
+
+    setTool(null)
+    setDraft([])
+  }
+
+  /** A click on the paper while a drawing tool is armed. */
+  const paperClick = (event: React.MouseEvent) => {
+    if (!editing || !tool) return
+    const at = paperPoint(event)
+
+    if (tool === 'text') { void createFigure('text', [at]); return }
+    if (tool === 'line') {
+      if (draft.length === 0) setDraft([at])
+      else void createFigure('line', [draft[0], at])
+      return
+    }
+
+    setDraft((current) => [...current, at])
+  }
+
+  /** A figure was dragged: its shape travels with it, the canvas is re-read. */
+  const movedFigure = (figure: MapFigure, dx: number, dy: number) => {
+    void dispatch(saveFigure({
+      figure: { ...figure, geometry: moveGeometry(figure.geometry, dx, dy) },
+      canvasId: diagramId,
+    })).unwrap()
+      .then(() => dispatch(loadCanvas(diagramId)))
+      .catch(() => undefined)
+  }
+
+  const cancelTool = () => { setTool(null); setDraft([]) }
+
   const deleteDiagram = async () => {
     const name = shown?.parents?.[shown.parents.length - 1]?.name ?? diagramId
     if (!window.confirm(t('maps.editor.confirmDelete', { name }))) return
@@ -312,6 +406,31 @@ export default function DiagramViewer({
 
         {editing ? (
           <>
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              title={t('diagramEditor.freeObjects')}
+              value={tool}
+              onChange={(_, value: 'text' | 'line' | 'polygon' | null) => { setTool(value); setDraft([]) }}
+            >
+              <ToggleButton value="text" title={t('diagramEditor.textObject')} sx={{ px: 1, py: 0.25 }}>
+                <TextFieldsIcon fontSize="small" />
+              </ToggleButton>
+              <ToggleButton value="line" title={t('diagramEditor.lineObject')} sx={{ px: 1, py: 0.25 }}>
+                <TimelineIcon fontSize="small" />
+              </ToggleButton>
+              <ToggleButton value="polygon" title={t('diagramEditor.zoneObject')} sx={{ px: 1, py: 0.25 }}>
+                <PentagonIcon fontSize="small" />
+              </ToggleButton>
+            </ToggleButtonGroup>
+            {tool === 'polygon' && draft.length >= 3 ? (
+              <Button size="small" variant="outlined" onClick={() => void createFigure('polygon', draft)}>
+                {t('maps.editor.finish')}
+              </Button>
+            ) : null}
+            {tool ? (
+              <Button size="small" onClick={cancelTool}>{t('common.cancel')}</Button>
+            ) : null}
             <Button size="small" variant="outlined" onClick={() => void createChild()}>
               {t('diagramEditor.newDiagram')}
             </Button>
@@ -335,10 +454,18 @@ export default function DiagramViewer({
           <Box sx={{ display: 'flex', justifyContent: 'center', p: 2, minWidth: 'min-content' }}>
             <Box
               ref={paperRef}
+              data-testid="diagram-paper"
               onDragOver={(event) => {
                 if (editing && event.dataTransfer.types.includes(NODE_DRAG_TYPE)) event.preventDefault()
               }}
               onDrop={(event) => void dropNode(event)}
+              // The root element covers the paper and stops its own clicks, so a drawing tool
+              // listens in the capture phase: while one is armed, the click is for the tool.
+              onClickCapture={(event) => {
+                if (!editing || !tool) return
+                event.stopPropagation()
+                paperClick(event)
+              }}
               sx={{
                 width: paper.width * scale,
                 height: paper.height * scale,
@@ -347,6 +474,7 @@ export default function DiagramViewer({
                 border: 1,
                 borderColor: 'divider',
                 bgcolor: '#1f1f1f',
+                cursor: editing && tool ? 'crosshair' : 'default',
               }}
             >
               <Box
@@ -374,6 +502,38 @@ export default function DiagramViewer({
                   dragged={dragging}
                   showRegions={editing}
                 />
+
+                <DiagramFigures
+                  figures={figures}
+                  paper={paper}
+                  scale={scale}
+                  selectedId={selectedId}
+                  editing={editing}
+                  onPick={pick}
+                  onMoved={editing ? movedFigure : undefined}
+                />
+
+                {draft.length > 0 ? (
+                  <svg
+                    style={{
+                      position: 'absolute', inset: 0, width: '100%', height: '100%',
+                      pointerEvents: 'none', zIndex: 4,
+                    }}
+                    viewBox={`0 0 ${paper.width} ${paper.height}`}
+                    preserveAspectRatio="none"
+                  >
+                    <polyline
+                      points={draft.map((point) => `${point.x},${point.y}`).join(' ')}
+                      fill="none"
+                      stroke="#ffd54f"
+                      strokeWidth={2}
+                      strokeDasharray="5 4"
+                    />
+                    {draft.map((point, index) => (
+                      <circle key={index} cx={point.x} cy={point.y} r={3} fill="#ffd54f" />
+                    ))}
+                  </svg>
+                ) : null}
               </Box>
             </Box>
           </Box>
