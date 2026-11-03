@@ -10,7 +10,7 @@ here is deleted or cut down to what is still left.
 | File | Topic |
 |---|---|
 | [camera-connection-state.md](camera-connection-state.md) | `CONNECTED`/`DISCONNECTED` is polled from VmsFs outages; a transition event from video_srv and the producer's `recording_expected` are still open |
-| [demo-gui-parity.md](demo-gui-parity.md) | Всё, что `DemoSeeder` пишет через сервисы, должно собираться в GUI; состояния и значения — данные владельцев, а не конфигурация |
+| [demo-gui-parity.md](demo-gui-parity.md) | Каждый примитив конфигурации собирается в GUI; демо — проверка этого; состояния и значения — данные владельцев |
 | [dev-stack-port-collision.md](dev-stack-port-collision.md) | A fresh `dev-up` can collide with a sidecar left by an earlier run: only app ports are checked, and a failed start leaves its `daprd` behind |
 | [distributed-analytics.md](distributed-analytics.md) | Re-identification and archive search in the database (pgvector), then analytics per node |
 | [distributed-hardening.md](distributed-hardening.md) | What a multi-machine deployment still leaves open on the network |
