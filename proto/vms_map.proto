@@ -820,9 +820,11 @@ message DiagramCoordinate {
 
 message Diagram {
   string id = 1;
+  // The diagram's own canvas: where and how big it is drawn when it is opened. It keeps this
+  // rectangle even when a region of its parent gives it its place there.
   DiagramCoordinate geometry = 2;
-  // The region of the parent's diagram type this node sits in. A node with a region has no
-  // geometry of its own.
+  // The region of the parent's diagram type this node sits in; the region then gives its place
+  // in the parent. Not a replacement for the geometry above.
   string region_id = 3;
   // The id of a DiagramType, not its name: a rename must not orphan the diagrams of a type.
   string dgr_type = 4;

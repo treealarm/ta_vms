@@ -18,6 +18,20 @@ export function ownRect(diagram: MapDiagram | undefined): Rect {
 }
 
 /**
+ * A diagram's own canvas: always its geometry, never where it stands in its parent — a diagram
+ * packed into a region of a rack still opens on the paper it was drawn on. Rows written before
+ * the two meanings were separated may carry no geometry at all, and they get a plain sheet
+ * rather than a zero-sized one they could never be opened on.
+ */
+export const FALLBACK_PAPER: Rect = { left: 0, top: 0, width: 800, height: 600, rotation: 0 }
+
+export function diagramPaper(diagram: MapDiagram | undefined): Rect {
+  const rect = ownRect(diagram)
+  if (rect.width > 0 && rect.height > 0) return { ...rect, left: 0, top: 0 }
+  return { ...FALLBACK_PAPER }
+}
+
+/**
  * Where a region of a diagram type lies inside a diagram of that type: a region is stored in
  * shares of its diagram's rectangle, so the same type fits racks of any size.
  */

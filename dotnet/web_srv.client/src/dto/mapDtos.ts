@@ -253,8 +253,9 @@ export type MapDiagramCoordinate = {
 
 export type MapDiagram = {
   id?: string
+  /** The diagram's own canvas: where and how big it is drawn when it is opened. */
   geometry?: MapDiagramCoordinate
-  /** The region of the parent's diagram type this node sits in; it then has no geometry. */
+  /** The region of the parent's diagram type this node sits in; the region then gives its place. */
   regionId?: string
   /** The id of a diagram type, not its name. */
   dgrType?: string

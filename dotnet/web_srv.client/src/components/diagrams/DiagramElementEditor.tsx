@@ -104,7 +104,9 @@ export default function DiagramElementEditor({
         name: draft.name.trim() || marker.name,
         dgrType: draft.typeId || undefined,
         regionId: inRegion ? draft.regionId : undefined,
-        geometry: inRegion ? undefined : {
+        // A region replaces the element's place in its parent, not the canvas it opens on: the
+        // rectangle shown below stays its own paper and travels unchanged.
+        geometry: inRegion ? element.geometry : {
           top: Number(draft.top) || 0,
           left: Number(draft.left) || 0,
           width: Number(draft.width) || 1,

@@ -182,8 +182,8 @@ export const saveDiagramPlacement = createAsyncThunk(
       id: placement.id,
       dgrType: placement.dgrType,
       regionId: placement.regionId,
-      // A node placed in a region has no geometry of its own, and the map says so by absence.
-      geometry: placement.regionId ? undefined : placement.geometry,
+      // The region says where the element stands; its geometry is its own canvas either way.
+      geometry: placement.geometry,
       fileId: placement.fileId,
     }])
 

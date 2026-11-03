@@ -138,6 +138,59 @@ public class MapServiceReadsTests
   }
 
   [Fact]
+  public async Task UpdateDiagramsKeepsTheGeometryOfADiagramPlacedInARegion()
+  {
+    var s = Create();
+    var rack = await Node(s.Map, "Rack");
+    var computer = await Node(s.Map, "Switch", rack.id);
+
+    await s.Grpc.UpdateDiagrams(new MapProto.DiagramList
+    {
+      Diagrams =
+      {
+        new MapProto.Diagram
+        {
+          Id = computer.id!,
+          RegionId = "slot-1",
+          Geometry = new MapProto.DiagramCoordinate { Width = 320, Height = 240 },
+        },
+      },
+    }, new TestContext());
+
+    // A region gives the diagram its place in the rack; the geometry is still its own canvas.
+    var read = await s.Grpc.GetDiagramsByIds(new MapProto.GetByIdsRequest
+    {
+      Ids = { computer.id! },
+      Caller = Caller("admin", "admin"),
+    }, new TestContext());
+
+    var stored = Assert.Single(read.Diagrams);
+    Assert.Equal("slot-1", stored.RegionId);
+    Assert.NotNull(stored.Geometry);
+    Assert.Equal(320, stored.Geometry.Width);
+    Assert.Equal(240, stored.Geometry.Height);
+
+    // Rewriting the placement keeps the canvas beside the region too.
+    await s.Grpc.UpdateDiagrams(new MapProto.DiagramList
+    {
+      Diagrams =
+      {
+        new MapProto.Diagram
+        {
+          Id = computer.id!,
+          RegionId = "slot-2",
+          Geometry = new MapProto.DiagramCoordinate { Width = 400, Height = 300 },
+        },
+      },
+    }, new TestContext());
+
+    var rewritten = Assert.Single(await s.Db.Diagrams.ToListAsync());
+    Assert.Equal("slot-2", rewritten.region_id);
+    Assert.Equal(400, rewritten.geometry?.width);
+    Assert.Equal(300, rewritten.geometry?.height);
+  }
+
+  [Fact]
   public async Task GetByParentHidesANodeTheCallerCannotSee()
   {
     var s = Create();

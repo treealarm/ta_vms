@@ -111,8 +111,8 @@ namespace VmsMap.Db
         dgr_type = Utils.ConvertObjectIdToGuid(dto.dgr_type),
         region_id = dto.region_id,
         file_id = Utils.ConvertObjectIdToGuid(dto.file_id),
-        // A node placed in a region has no geometry of its own; storing zeros would make it look
-        // like it stands in the corner of its parent instead.
+        // A region says where the node stands in its parent; the geometry is the node's own
+        // canvas and is stored beside it, not instead of it.
         geometry = dto.geometry is null
           ? null
           : new DBDiagramCoord

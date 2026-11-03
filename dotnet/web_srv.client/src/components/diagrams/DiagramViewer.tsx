@@ -17,7 +17,7 @@ import {
 } from '../../store/mapEditsSlice'
 import { useMapLive } from '../../hooks/useMapLive'
 import { NODE_DRAG_TYPE } from '../../map/dragTypes'
-import { fitScale, ownRect, regionRect, type Rect } from './diagramGeometry'
+import { diagramPaper, fitScale, regionRect, type Rect } from './diagramGeometry'
 import DiagramElement from './DiagramElement'
 import MapDiagramTypesDialog from './MapDiagramTypesDialog'
 
@@ -127,7 +127,8 @@ export default function DiagramViewer({
 
   const root = shown?.content?.find((candidate) => candidate.id === diagramId)
   const rootMarker = shown?.parents?.find((candidate) => candidate.id === diagramId) ?? { id: diagramId }
-  const paper = ownRect(root)
+  // The paper is the diagram's own canvas; where it stands in its parent is the parent's business.
+  const paper = diagramPaper(root)
   const scale = fitScale(size, paper) * factor
   const shownDepth = shown?.depth ?? depth
   const openType = shown?.dgrTypes?.find((candidate) => candidate.id === root?.dgrType)
@@ -157,7 +158,9 @@ export default function DiagramViewer({
       name,
       dgrType: element?.dgrType || undefined,
       regionId: region?.regionKey,
-      geometry: region ? undefined : {
+      // A region says where the element stands, not what it opens on: its geometry stays its own
+      // canvas. Dragged outside every region, the rectangle it was dropped at is that geometry.
+      geometry: region ? element?.geometry : {
         top: rect.top, left: rect.left, width: rect.width, height: rect.height, rotation: rect.rotation,
       },
       fileId: element?.fileId || undefined,
@@ -331,7 +334,7 @@ export default function DiagramViewer({
         {!loading && !error && !shown ? (
           <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>{t('maps.diagram.empty')}</Typography>
         ) : null}
-        {shown && paper.width > 0 ? (
+        {shown ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', p: 2, minWidth: 'min-content' }}>
             <Box
               ref={paperRef}
@@ -376,9 +379,6 @@ export default function DiagramViewer({
               </Box>
             </Box>
           </Box>
-        ) : null}
-        {shown && paper.width <= 0 ? (
-          <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>{t('maps.diagram.empty')}</Typography>
         ) : null}
       </Box>
 
