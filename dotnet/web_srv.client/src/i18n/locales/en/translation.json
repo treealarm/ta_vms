@@ -1182,7 +1182,8 @@
       "pointHint": "Click the map to place a point.",
       "lineHint": "Click to add points ({{count}}), double click or Enter to finish.",
       "polygonHint": "Click to add corners ({{count}}), double click or Enter to finish.",
-      "finish": "Finish"
+      "finish": "Finish",
+      "zoomNeedsShape": "The node has no shape of its own, so there is nowhere to keep a scale layer."
     },
     "dictionaries": {
       "title": "Dictionaries",

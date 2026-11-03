@@ -1182,7 +1182,8 @@
       "pointHint": "Haga clic en el mapa para colocar un punto.",
       "lineHint": "Haga clic para añadir puntos ({{count}}); doble clic o Intro para terminar.",
       "polygonHint": "Haga clic para añadir vértices ({{count}}); doble clic o Intro para terminar.",
-      "finish": "Terminar"
+      "finish": "Terminar",
+      "zoomNeedsShape": "El nodo no tiene una forma propia, así que no hay dónde guardar una capa de escala."
     },
     "dictionaries": {
       "title": "Diccionarios",

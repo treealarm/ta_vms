@@ -6,6 +6,7 @@ import type {
   MapAlarmState, MapFigure, MapGeometry, MapLevel, MapObjectState, MapStateDescription,
 } from '../dto/mapDtos'
 import { nodeStyle } from './nodeStyle'
+import { inLayer, levelRanges } from './zoomLevels'
 import VertexEditor from './vertexEditor'
 import { VERTEX_ICON } from './vertexHandles'
 
@@ -72,22 +73,11 @@ export default function FiguresLayer({
   const [zoom, setZoom] = useState(() => map.getZoom())
   useMapEvents({ zoomend: () => setZoom(map.getZoom()) })
 
-  const ranges = useMemo(() => {
-    const byName = new Map<string, { min: number; max: number }>()
-    for (const level of levels) {
-      if (level.zoomLevel) {
-        byName.set(level.zoomLevel, { min: level.zoomMin ?? 0, max: level.zoomMax ?? 99 })
-      }
-    }
-    return byName
-  }, [levels])
+  const ranges = useMemo(() => levelRanges(levels), [levels])
 
   const shown = figures.filter((figure) => {
     if (skipIds?.has(figure.id) || figure.nodeKind === 'space') return false
-    if (!figure.zoomLevel) return true
-
-    const range = ranges.get(figure.zoomLevel)
-    return !range || (zoom >= range.min && zoom <= range.max)
+    return inLayer(ranges, figure.zoomLevel, zoom)
   })
 
   return (

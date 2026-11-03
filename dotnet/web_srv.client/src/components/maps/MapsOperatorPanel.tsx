@@ -118,6 +118,14 @@ export default function MapsOperatorPanel() {
     () => new Map(spaceData.figures.map((figure) => [figure.id, figure])),
     [spaceData.figures],
   )
+  // The layer each nested space's footprint belongs to, from its own polygon on this canvas.
+  const spaceZoomLevels = useMemo(() => {
+    const bySpace: Record<string, string | undefined> = {}
+    for (const s of spaces) {
+      if (s.id) bySpace[s.id] = figureById.get(s.id)?.zoomLevel
+    }
+    return bySpace
+  }, [spaces, figureById])
 
   useEffect(() => {
     void dispatch(loadSpaces())
@@ -450,9 +458,10 @@ export default function MapsOperatorPanel() {
               {tracksSpaceId === space.id && tracks.length > 0 && (
                 <TracksLayer tracks={tracks} markers={markers} />
               )}
-              <Footprints nested={nested} alarmed={alarmed} onPick={(s) => s.id && open(s.id)} />
+              <Footprints nested={nested} alarmed={alarmed} levels={levels} zoomLevels={spaceZoomLevels} onPick={(s) => s.id && open(s.id)} />
               {here.map((p) => {
                 const camera = camerasById[p.cameraId]
+                const node = nodeForPlacement(p)
                 return (
                   <CameraMarker
                     key={p.cameraId}
@@ -462,6 +471,8 @@ export default function MapsOperatorPanel() {
                     selected={p.cameraId === selectedCameraId}
                     dimmed={!!selectedCameraId && p.cameraId !== selectedCameraId}
                     alarm={byCamera.get(p.cameraId) ?? null}
+                    levels={levels}
+                    zoomLevel={node ? figureById.get(node.id)?.zoomLevel : undefined}
                     onSelect={() => void selectCamera(p.cameraId)}
                   />
                 )

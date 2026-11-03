@@ -2,8 +2,11 @@ import { useMemo, useRef } from 'react'
 import { Marker, Polygon, Polyline, Tooltip } from 'react-leaflet'
 import L from 'leaflet'
 import type { CameraPlacementDto, LandmarkDto } from '../dto/dtos'
+import type { MapLevel } from '../dto/mapDtos'
 import { bearing, destination, distance, fovPolygon } from './geo'
 import { ALARM_COLOR } from './cameraStatus'
+import { inLayer, levelRanges } from './zoomLevels'
+import { useMapZoom } from '../hooks/useMapZoom'
 
 const cameraIcon = (color: string, headingDeg: number, selected: boolean, alarm: CameraAlarm) => L.divIcon({
   className: 'vms-map-camera',
@@ -48,18 +51,29 @@ type CameraProps = {
   editable?: boolean
   dimmed?: boolean
   alarm?: CameraAlarm
+  /** The scale layers; with `zoomLevel`, the marker and its cone are hidden outside the range. */
+  levels?: MapLevel[]
+  zoomLevel?: string
   onSelect?: () => void
   /** commit is false while dragging and true when the handle is let go. */
   onChange?: (placement: CameraPlacementDto, commit: boolean) => void
 }
 
 /** A camera and its view cone. heading 0 points the cone north, clockwise from there. */
-export function CameraMarker({ placement, label, color, selected, editable, dimmed, alarm = null, onSelect, onChange }: CameraProps) {
+export function CameraMarker({
+  placement, label, color, selected, editable, dimmed, alarm = null, levels, zoomLevel, onSelect, onChange,
+}: CameraProps) {
+  const zoom = useMapZoom()
+  const ranges = useMemo(() => levelRanges(levels ?? []), [levels])
+
   const p = placement
   const tip = destination({ lat: p.lat, lon: p.lon }, p.headingDeg, p.rangeM)
   const startRef = useRef(p)
   // One icon object per look: a marker handed a new one rebuilds its element, which ends a drag.
   const icon = useMemo(() => cameraIcon(color, p.headingDeg, !!selected, alarm), [color, p.headingDeg, selected, alarm])
+
+  // A camera is drawn on its own scale layer like any other node; without one it is always drawn.
+  if (levels && !inLayer(ranges, zoomLevel, zoom)) return null
 
   const moveCamera = (e: L.LeafletEvent, commit: boolean) => {
     const at = (e.target as L.Marker).getLatLng()
@@ -118,12 +132,22 @@ type LandmarkProps = {
   landmark: LandmarkDto
   selected?: boolean
   editable?: boolean
+  /** The scale layers; with `zoomLevel`, the marker is hidden outside the range. */
+  levels?: MapLevel[]
+  zoomLevel?: string
   onSelect?: () => void
   onMove?: (lat: number, lon: number) => void
 }
 
-export function LandmarkMarker({ landmark, selected, editable, onSelect, onMove }: LandmarkProps) {
+export function LandmarkMarker({
+  landmark, selected, editable, levels, zoomLevel, onSelect, onMove,
+}: LandmarkProps) {
   const icon = useMemo(() => landmarkIcon(!!selected), [selected])
+  const zoom = useMapZoom()
+  const ranges = useMemo(() => levelRanges(levels ?? []), [levels])
+  // A landmark is drawn on its own scale layer like any other node.
+  if (levels && !inLayer(ranges, zoomLevel, zoom)) return null
+
   return (
     <Marker
       position={[landmark.lat, landmark.lon]}

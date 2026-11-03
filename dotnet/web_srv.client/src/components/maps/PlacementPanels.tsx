@@ -5,11 +5,14 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useTranslation } from 'react-i18next'
 import type { CameraPlacementDto, CameraSetupDto, LandmarkDto, SpaceDto } from '../../dto/dtos'
 import NumberField from './NumberField'
+import ZoomLevelField from './ZoomLevelField'
 import { formatLatLon } from './spatialUtils'
 
 type CameraProps = {
   camera: CameraSetupDto | undefined
   placement: CameraPlacementDto
+  /** The node that carries this placement: its shape carries the scale layer. */
+  nodeId?: string
   /** Where the camera really stands, when that is another space; null when it stands nowhere. */
   referenceSpace: SpaceDto | null
   onChange: (placement: CameraPlacementDto) => void
@@ -21,7 +24,7 @@ type CameraProps = {
 
 /** The selected camera's placement in this space. Each field saves when left; drags on the map save on release. */
 export function CameraPlacementPanel({
-  camera, placement, referenceSpace, onChange, onRemove, onCalibrate, onGoToReference, onClose,
+  camera, placement, nodeId, referenceSpace, onChange, onRemove, onCalibrate, onGoToReference, onClose,
 }: CameraProps) {
   const { t } = useTranslation()
   // The sector is drawing only -- aiming never reads it -- so it stays folded until asked for.
@@ -81,6 +84,8 @@ export function CameraPlacementPanel({
         </>
       )}
       <Divider />
+      <ZoomLevelField nodeId={nodeId} />
+      <Divider />
       <Stack direction="row" spacing={1}>
         <Button color="error" size="small" onClick={onRemove}>{t('maps.removeFromSpace')}</Button>
         <Button size="small" onClick={onClose} sx={{ ml: 'auto' }}>{t('common.close')}</Button>
@@ -123,6 +128,8 @@ export function LandmarkPanel({ landmark, onChange, onRemove, onClose }: Landmar
       />
       <Typography variant="caption" color="text.secondary">{t('maps.landmarkHint')}</Typography>
       <Divider />
+      <ZoomLevelField nodeId={landmark.id} />
+      <Divider />
       <Stack direction="row" spacing={1}>
         <Button color="error" size="small" onClick={onRemove}>{t('common.delete')}</Button>
         <Button size="small" onClick={onClose} sx={{ ml: 'auto' }}>{t('common.close')}</Button>
@@ -149,6 +156,8 @@ export function FootprintPanel({ space, onOpen, onRemoveFootprint, onClose }: Fo
       </Box>
       <Button variant="contained" size="small" onClick={onOpen}>{t('maps.openSpace')}</Button>
       <Typography variant="caption" color="text.secondary">{t('maps.footprintHint')}</Typography>
+      <Divider />
+      <ZoomLevelField nodeId={space.id} />
       <Divider />
       <Stack direction="row" spacing={1}>
         <Button color="error" size="small" onClick={onRemoveFootprint}>{t('maps.removeFootprint')}</Button>

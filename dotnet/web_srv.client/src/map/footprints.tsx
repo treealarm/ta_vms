@@ -3,7 +3,10 @@ import { Polygon, Popup, Tooltip } from 'react-leaflet'
 import { List, ListItemButton, ListItemText } from '@mui/material'
 import L from 'leaflet'
 import type { GeoPointDto, SpaceDto } from '../dto/dtos'
+import type { MapLevel } from '../dto/mapDtos'
 import { ALARM_COLOR } from './cameraStatus'
+import { inLayer, levelRanges } from './zoomLevels'
+import { useMapZoom } from '../hooks/useMapZoom'
 import VertexEditor from './vertexEditor'
 
 /** Ray casting in degrees: exact enough for a building's outline. */
@@ -23,6 +26,9 @@ type Props = {
   selectedId?: string | null
   /** Spaces with an alarm running in them or anywhere inside them; their outlines burn. */
   alarmed?: ReadonlySet<string>
+  /** The scale layers a footprint can belong to, and the layer of each space's own shape. */
+  levels?: MapLevel[]
+  zoomLevels?: Record<string, string | undefined>
   /** Clicked a footprint with nothing else under it, or picked one from the list of overlapping ones. */
   onPick: (space: SpaceDto) => void
 }
@@ -31,9 +37,12 @@ type Props = {
  * Where nested spaces lie, as outlines with their names. Floors of one building usually share an
  * outline, so a click that lands in several asks which one is meant instead of guessing.
  */
-export function Footprints({ nested, selectedId, alarmed, onPick }: Props) {
+export function Footprints({ nested, selectedId, alarmed, levels, zoomLevels, onPick }: Props) {
   const [choice, setChoice] = useState<{ at: L.LatLng; spaces: SpaceDto[] } | null>(null)
-  const drawn = nested.filter((s) => s.footprint.length >= 3)
+  const zoom = useMapZoom()
+  const ranges = levelRanges(levels ?? [])
+  const drawn = nested.filter((s) => s.footprint.length >= 3
+    && (!levels || inLayer(ranges, s.id ? zoomLevels?.[s.id] : undefined, zoom)))
   // Floors drawn with one shared outline are one shape with all their names, not a pile of labels
   // on top of each other.
   const groups = new Map<string, SpaceDto[]>()

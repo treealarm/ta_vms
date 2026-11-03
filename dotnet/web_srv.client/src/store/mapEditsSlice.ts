@@ -35,6 +35,17 @@ export const saveFigure = createAsyncThunk(
   },
 )
 
+/** Moves one node to another scale layer, or off every layer: its shape is the only place that
+ *  knows the level, so the figure has to travel back whole — the write also carries the row. */
+export const saveZoomLevel = createAsyncThunk(
+  'mapEdits/saveZoomLevel',
+  async (figure: MapFigure, api) => {
+    await mapApi.updateFigures([{ ...figure, extraProps: undefined }])
+    await api.dispatch(loadNodes([figure.id!]))
+    return figure
+  },
+)
+
 export type NodeDetails = {
   /** The tree row as it is; `ownerId` has to travel back or a replica loses its owner. */
   node: MapObject

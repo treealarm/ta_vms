@@ -166,6 +166,42 @@ public class MapServiceReadsTests
   }
 
   [Fact]
+  public async Task UpdateFiguresKeepsTheOwnerAndTheLayerItWasGiven()
+  {
+    var s = Create();
+    var camera = await Node(s.Map, "Camera");
+    var plan = await Node(s.Map, "Plan");
+    var replica = await Node(s.Map, "Camera", plan.id, ownerId: camera.id);
+
+    await s.Grpc.UpdateFigures(new MapProto.Figures
+    {
+      Figs =
+      {
+        new MapProto.Figure
+        {
+          Id = replica.id!,
+          ParentId = plan.id!,
+          OwnerId = camera.id!,
+          Name = "Camera",
+          ZoomLevel = "district",
+          Geometry = new MapProto.Geometry
+          {
+            Type = "Point",
+            Coord = { new MapProto.Coordinate { Lat = 0.5, Lon = 0.5 } },
+          },
+        },
+      },
+    }, new TestContext());
+
+    // A figure write also writes the tree row: the owner has to travel back or a picture loses it.
+    var stored = await s.Db.Markers.SingleAsync(m => m.id == Guid.Parse(replica.id!));
+    Assert.Equal(Guid.Parse(camera.id!), stored.owner_id);
+
+    var figure = await s.Db.GeoObjects.SingleAsync(g => g.id == Guid.Parse(replica.id!));
+    Assert.Equal("district", figure.zoom_level);
+  }
+
+  [Fact]
   public async Task GetAlarmedStatesWithoutIdsReturnsEveryAlarmTheCallerSees()
   {
     var s = Create();

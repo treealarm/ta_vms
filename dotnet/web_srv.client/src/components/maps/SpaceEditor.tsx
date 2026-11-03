@@ -147,7 +147,16 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   // The spaces whose footprint is on this canvas, wherever the tree holds them.
   const onCanvas = new Set(mapData.markers.filter((m) => m.nodeKind === 'space').map((m) => m.id))
   const nested = spaces.filter((s) => !!s.id && onCanvas.has(s.id))
+  // The layer each footprint belongs to, from the space's own polygon in the canvas read.
+  const spaceZoomLevels: Record<string, string | undefined> = {}
+  for (const s of nested) {
+    if (s.id) spaceZoomLevels[s.id] = figuresById[s.id]?.zoomLevel
+  }
   const placementHere = (cameraId: string) => here.find((p) => p.cameraId === cameraId)
+  // The node that carries a placement: the canonical one for the reference, the picture otherwise.
+  const nodeForPlacement = (p: CameraPlacementDto) =>
+    mapData.markers.find((m) => m.cameraId === p.cameraId && (p.isReference ? !m.ownerId : !!m.ownerId))
+      ?? mapData.markers.find((m) => m.cameraId === p.cameraId)
   const referenceOf = (cameraId: string) => placements.find((p) => p.cameraId === cameraId && p.isReference)
   const spaceById = (id: string | undefined) => spaces.find((s) => s.id === id)
   const selectedPlacement = selection?.kind === 'camera' ? placementHere(selection.id) : undefined
@@ -382,6 +391,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
         key={selectedPlacement.cameraId}
         camera={camerasById[selectedPlacement.cameraId]}
         placement={selectedPlacement}
+        nodeId={nodeForPlacement(selectedPlacement)?.id}
         referenceSpace={referenceSpace}
         onChange={(p) => void savePlacement(p)}
         onRemove={() => void run(async () => {
@@ -614,6 +624,8 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
             <Footprints
               nested={nested.map((s) => (s.id === selectedNested?.id && draftFootprint ? { ...s, footprint: draftFootprint } : s))}
               selectedId={selectedNested?.id}
+              levels={levels}
+              zoomLevels={spaceZoomLevels}
               onPick={(s) => s.id && setSelection({ kind: 'footprint', id: s.id })}
             />
             {selectedNested && mode === 'select' && (
@@ -625,6 +637,8 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
             {here.map((stored) => {
               const p = draft?.cameraId === stored.cameraId ? draft : stored
               const camera = camerasById[p.cameraId]
+              // The node behind the placement carries the camera's scale layer.
+              const node = nodeForPlacement(p)
               return (
                 <CameraMarker
                   key={p.cameraId}
@@ -633,6 +647,8 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
                   color={STATUS_COLOR[cameraMapStatus(camera)]}
                   selected={selection?.kind === 'camera' && selection.id === p.cameraId}
                   editable={mode === 'select'}
+                  levels={levels}
+                  zoomLevel={node ? figuresById[node.id]?.zoomLevel : undefined}
                   onSelect={() => setSelection({ kind: 'camera', id: p.cameraId })}
                   onChange={(next, commit) => (commit ? void savePlacement(next) : setDraft(next))}
                 />
@@ -644,6 +660,8 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
                 landmark={m}
                 selected={selection?.kind === 'landmark' && selection.id === m.id}
                 editable={mode !== 'plan'}
+                levels={levels}
+                zoomLevel={m.id ? figuresById[m.id]?.zoomLevel : undefined}
                 onSelect={() => m.id && setSelection({ kind: 'landmark', id: m.id })}
                 onMove={(lat, lon) => void run(() => dispatch(upsertLandmark({ ...m, lat, lon })).unwrap())}
               />

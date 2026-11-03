@@ -2,10 +2,12 @@ using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using VmsMap.Db;
 using VmsMap.Domain;
@@ -94,11 +96,12 @@ namespace VmsMap.Grpc
     {
       var dtos = request.Objects.Select(ToDto).ToList();
 
-      await using var tx = await _db.Database.BeginTransactionAsync(context.CancellationToken);
+      await using var tx = await BeginTransactionAsync(context.CancellationToken);
 
       var updated = await _mapUpdateService.UpdateObjects(dtos);
 
-      await tx.CommitAsync(context.CancellationToken);
+      if (tx is not null)
+        await tx.CommitAsync(context.CancellationToken);
 
       return new MapProto.ObjectList { Objects = { updated.Select(ToProto) } };
     }
@@ -106,7 +109,7 @@ namespace VmsMap.Grpc
     public override async Task<MapProto.OperationStatus> UpdateProperties(
       MapProto.ObjectPropertiesList request, ServerCallContext context)
     {
-      await using var tx = await _db.Database.BeginTransactionAsync(context.CancellationToken);
+      await using var tx = await BeginTransactionAsync(context.CancellationToken);
 
       foreach (var item in request.Objects)
       {
@@ -126,7 +129,8 @@ namespace VmsMap.Grpc
         }
       }
 
-      await tx.CommitAsync(context.CancellationToken);
+      if (tx is not null)
+        await tx.CommitAsync(context.CancellationToken);
       return Ok();
     }
 
@@ -157,11 +161,12 @@ namespace VmsMap.Grpc
         figs = request.Figs.Select(ToDto).ToList()
       };
 
-      await using var tx = await _db.Database.BeginTransactionAsync(context.CancellationToken);
+      await using var tx = await BeginTransactionAsync(context.CancellationToken);
 
       await _mapUpdateService.UpdateFigures(figures);
 
-      await tx.CommitAsync(context.CancellationToken);
+      if (tx is not null)
+        await tx.CommitAsync(context.CancellationToken);
 
       return new MapProto.Figures
       {
@@ -173,11 +178,12 @@ namespace VmsMap.Grpc
     public override async Task<MapProto.OperationStatus> DeleteObjects(
       MapProto.ObjectIds request, ServerCallContext context)
     {
-      await using var tx = await _db.Database.BeginTransactionAsync(context.CancellationToken);
+      await using var tx = await BeginTransactionAsync(context.CancellationToken);
 
       var removed = await _mapUpdateService.Delete(request.Ids.ToList());
 
-      await tx.CommitAsync(context.CancellationToken);
+      if (tx is not null)
+        await tx.CommitAsync(context.CancellationToken);
 
       return new MapProto.OperationStatus
       {
@@ -406,6 +412,13 @@ namespace VmsMap.Grpc
 
     // ── Conversions ─────────────────────────────────────────────────────────────────────────
 
+    // InMemory, which the tests use, has no transactions; production always runs on PostgreSQL.
+    // Null means there is nothing to commit.
+    private Task<IDbContextTransaction?> BeginTransactionAsync(CancellationToken ct) =>
+      _db.Database.IsRelational()
+        ? _db.Database.BeginTransactionAsync(ct)!
+        : Task.FromResult<IDbContextTransaction?>(null);
+
     private static MapProto.OperationStatus Ok() => new() { Success = true };
 
     private static BaseMarkerDTO ToDto(MapProto.Object obj) => new()
@@ -435,6 +448,9 @@ namespace VmsMap.Grpc
     {
       id = fig.Id,
       parent_id = fig.ParentId,
+      // A figure write also writes the tree row; dropping the owner here would clear a picture's
+      // owner on any shape edit.
+      owner_id = fig.HasOwnerId ? fig.OwnerId : null,
       name = fig.Name,
       geometry = GeometryProtoConvert.FromProto(fig.Geometry),
       radius = fig.HasRadius ? fig.Radius : null,
@@ -447,6 +463,7 @@ namespace VmsMap.Grpc
       Id = fig.id ?? string.Empty,
       ParentId = fig.parent_id ?? string.Empty,
       Name = fig.name ?? string.Empty,
+      OwnerId = fig.owner_id ?? string.Empty,
       Geometry = GeometryProtoConvert.ToProto(fig.geometry),
       Radius = fig.radius ?? 0,
       ZoomLevel = fig.zoom_level ?? string.Empty,
