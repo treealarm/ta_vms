@@ -8,10 +8,15 @@ export const CHILDREN_PAGE = 1000
 
 export type ChildrenPage = { ids: string[]; loaded: boolean; hasMore: boolean }
 
+/** What is drawn on one canvas: every figure whose coordinates are the space's, at any depth. */
+export type CanvasPage = { ids: string[]; loaded: boolean }
+
 export type ObjectsState = {
   markers: Record<string, MapMarker>
   figures: Record<string, MapFigure>
   childrenByParent: Record<string, ChildrenPage>
+  /** The composition of a space's canvas, keyed by the space id. */
+  canvases: Record<string, CanvasPage>
   /** Null until the roots have been asked for; empty means the tree has no nodes. */
   roots: string[] | null
   props: Record<string, MapObjProps>
@@ -23,6 +28,7 @@ const initialState: ObjectsState = {
   markers: {},
   figures: {},
   childrenByParent: {},
+  canvases: {},
   roots: null,
   props: {},
   busy: 0,
@@ -51,6 +57,16 @@ export const loadChildren = createAsyncThunk(
     }
   },
 )
+
+/**
+ * One canvas whole: every figure drawn in the space's coordinates, whatever its depth in the
+ * tree. A figure carries its node's name, parent and camera, so the response fills the markers
+ * as well -- the canvas never asks for the tree.
+ */
+export const loadCanvas = createAsyncThunk('objects/loadCanvas', async (canvasId: string) => {
+  const response = await mapApi.getByBox({ canvasId })
+  return { canvasId, figures: response.figs ?? [] }
+})
 
 /**
  * The nodes with their geometry: markers for every id, figures for the ones that have a shape.
@@ -88,7 +104,7 @@ export const resolveCameraNode = createAsyncThunk(
     const known = find()
     if (known) return known
 
-    if (spaceId) await api.dispatch(loadChildren({ parentId: spaceId })).unwrap()
+    if (spaceId) await api.dispatch(loadCanvas(spaceId)).unwrap()
     return find()
   },
 )
@@ -151,6 +167,7 @@ const objectsSlice = createSlice({
   reducers: {
     /** Removes nodes the watch stream reported gone; their children pages are left alone. */
     dropNodes: (state, action: PayloadAction<string[]>) => {
+      const gone = new Set(action.payload)
       for (const id of action.payload) {
         const marker = state.markers[id]
         if (marker) {
@@ -162,6 +179,31 @@ const objectsSlice = createSlice({
         delete state.figures[id]
         delete state.props[id]
       }
+
+      for (const page of Object.values(state.canvases)) {
+        page.ids = page.ids.filter((id) => !gone.has(id))
+      }
+    },
+    /** The watch stream says a node is drawn on this canvas now, whether or not it was before. */
+    canvasAdd: (state, action: PayloadAction<{ canvasId: string; ids: string[] }>) => {
+      const page = state.canvases[action.payload.canvasId]
+      if (!page) return
+
+      const known = new Set(page.ids)
+      for (const id of action.payload.ids) {
+        if (!known.has(id)) {
+          page.ids.push(id)
+          known.add(id)
+        }
+      }
+    },
+    /** A node left the canvas -- it moved elsewhere, or is gone; the id watch drops what is gone. */
+    canvasRemove: (state, action: PayloadAction<{ canvasId: string; ids: string[] }>) => {
+      const page = state.canvases[action.payload.canvasId]
+      if (!page) return
+
+      const gone = new Set(action.payload.ids)
+      page.ids = page.ids.filter((id) => !gone.has(id))
     },
     clearObjectsError: (state) => {
       state.error = null
@@ -205,6 +247,15 @@ const objectsSlice = createSlice({
         for (const marker of action.payload.markers) mergeMarker(state, marker)
         for (const figure of action.payload.figures) mergeFigure(state, figure)
       })
+      .addCase(loadCanvas.fulfilled, (state, action) => {
+        const { canvasId, figures } = action.payload
+        for (const figure of figures) mergeFigure(state, figure)
+
+        state.canvases[canvasId] = {
+          ids: figures.map((figure) => figure.id).filter((id): id is string => !!id),
+          loaded: true,
+        }
+      })
       .addCase(resolveCameraNode.fulfilled, (state, action) => {
         if (action.payload) mergeMarker(state, action.payload)
       })
@@ -238,16 +289,30 @@ const objectsSlice = createSlice({
   },
 })
 
-export const { dropNodes, clearObjectsError } = objectsSlice.actions
+export const { dropNodes, canvasAdd, canvasRemove, clearObjectsError } = objectsSlice.actions
 export default objectsSlice.reducer
 
-/** The markers currently known for a parent, in the order the server returned them. */
+/** The nodes currently known for a parent, in the order the server returned them. */
 export function childrenOf(
   markers: Record<string, MapMarker>,
   childrenByParent: Record<string, ChildrenPage>,
   parentId: string,
 ): MapMarker[] {
   const page = childrenByParent[parentId]
+  if (!page) return []
+
+  return page.ids
+    .map((id) => markers[id])
+    .filter((marker): marker is MapMarker => marker !== undefined)
+}
+
+/** The nodes drawn on a canvas, in the order the canvas read returned them. */
+export function canvasNodes(
+  markers: Record<string, MapMarker>,
+  canvases: Record<string, CanvasPage>,
+  canvasId: string,
+): MapMarker[] {
+  const page = canvases[canvasId]
   if (!page) return []
 
   return page.ids

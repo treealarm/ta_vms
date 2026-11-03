@@ -33,7 +33,7 @@ import DiagramViewer from '../diagrams/DiagramViewer'
 import StatesTable from '../events/StatesTable'
 import SpaceNav from './SpaceNav'
 import MapObjectList from './MapObjectList'
-import { childrenOf, rootsOf, sharesGeometry } from './spatialUtils'
+import { rootsOf, sharesGeometry } from './spatialUtils'
 
 /** The camera list carries recording state and stream freshness; this is how stale the map may get. */
 const CAMERA_POLL_MS = 5000
@@ -104,7 +104,12 @@ export default function MapsOperatorPanel() {
   const here = placements
     .filter((p) => p.spaceId === space?.id && camerasById[p.cameraId])
     .sort((a, b) => (camerasById[a.cameraId].name || a.cameraId).localeCompare(camerasById[b.cameraId].name || b.cameraId))
-  const nested = space?.id ? childrenOf(spaces, space.id) : []
+  // The spaces whose footprint is drawn on this canvas, wherever the tree holds them: the canvas
+  // decides what is drawn, not the parent link.
+  const nested = useMemo(() => {
+    const onCanvas = new Set(spaceData.markers.filter((m) => m.nodeKind === 'space').map((m) => m.id))
+    return spaces.filter((s) => !!s.id && onCanvas.has(s.id))
+  }, [spaceData.markers, spaces])
 
   const selectedMarker = selectedNodeId ? markers[selectedNodeId] : undefined
   const selectedCameraId = selectedMarker?.cameraId ?? null

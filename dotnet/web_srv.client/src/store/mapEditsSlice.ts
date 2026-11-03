@@ -3,7 +3,7 @@ import { mapApi } from '../api/mapApi'
 import type {
   MapDiagramCoordinate, MapExtraProperty, MapFigure, MapObject, MapVisual,
 } from '../dto/mapDtos'
-import { dropNodes, loadChildren, loadNodes, loadObjProps } from './objectsSlice'
+import { canvasAdd, dropNodes, loadNodes, loadObjProps } from './objectsSlice'
 
 export type MapEditsState = {
   busy: number
@@ -15,11 +15,12 @@ const initialState: MapEditsState = { busy: 0, error: null }
 /**
  * Writes a shape as it stands — a new node with its geometry, or one whose vertices were just
  * dragged. The node is written first: `UpdateFigures` also writes the tree row from the figure,
- * so the row and the shape must agree on the name, the parent and the owner.
+ * so the row and the shape must agree on the name, the parent and the owner. `canvasId` names the
+ * open canvas, whose composition takes the shape at once.
  */
 export const saveFigure = createAsyncThunk(
   'mapEdits/saveFigure',
-  async (figure: MapFigure, api) => {
+  async ({ figure, canvasId }: { figure: MapFigure; canvasId?: string }, api) => {
     await mapApi.updateObjects([{
       id: figure.id,
       parentId: figure.parentId,
@@ -29,6 +30,7 @@ export const saveFigure = createAsyncThunk(
 
     await mapApi.updateFigures([figure])
     await api.dispatch(loadNodes([figure.id]))
+    if (canvasId) api.dispatch(canvasAdd({ canvasId, ids: [figure.id] }))
     return figure
   },
 )
@@ -96,8 +98,8 @@ export const createReplicaAt = createAsyncThunk(
       geometry: { type: 'Point', coord: [{ lat, lon }] },
     }])
 
-    await api.dispatch(loadChildren({ parentId })).unwrap()
     await api.dispatch(loadNodes([marker.id]))
+    api.dispatch(canvasAdd({ canvasId: parentId, ids: [marker.id] }))
     return marker
   },
 )

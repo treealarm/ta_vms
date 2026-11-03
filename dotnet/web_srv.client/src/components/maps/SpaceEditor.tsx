@@ -45,7 +45,6 @@ import SpaceNav from './SpaceNav'
 import PtzGeoCalibrationDialog from './PtzGeoCalibrationDialog'
 import GroundCalibrationDialog from './GroundCalibrationDialog'
 import { DRAW_MODES, useEditorState, type Mode, type SideTab } from './editorState'
-import { childrenOf } from './spatialUtils'
 
 /** Mirrors VmsCfg's limit, so an oversized plan is refused before it is uploaded. */
 const MAX_PLAN_BYTES = 20 * 1024 * 1024
@@ -145,7 +144,9 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   }, [selectedNodeId, dispatch])
 
   const here = placements.filter((p) => p.spaceId === spaceId)
-  const nested = childrenOf(spaces, spaceId)
+  // The spaces whose footprint is on this canvas, wherever the tree holds them.
+  const onCanvas = new Set(mapData.markers.filter((m) => m.nodeKind === 'space').map((m) => m.id))
+  const nested = spaces.filter((s) => !!s.id && onCanvas.has(s.id))
   const placementHere = (cameraId: string) => here.find((p) => p.cameraId === cameraId)
   const referenceOf = (cameraId: string) => placements.find((p) => p.cameraId === cameraId && p.isReference)
   const spaceById = (id: string | undefined) => spaces.find((s) => s.id === id)
@@ -203,10 +204,13 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     setDraftPoints(null)
     void run(async () => {
       await dispatch(saveFigure({
-        id,
-        parentId: spaceId,
-        name: `${t('maps.editor.figure')} ${mapData.markers.length + 1}`,
-        geometry,
+        figure: {
+          id,
+          parentId: spaceId,
+          name: `${t('maps.editor.figure')} ${mapData.markers.length + 1}`,
+          geometry,
+        },
+        canvasId: spaceId,
       })).unwrap()
       // The tool has done its job: back to selecting, with the new shape in hand.
       setMode('select')
@@ -254,7 +258,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     }
 
     setDraftFigure(null)
-    void run(async () => { await dispatch(saveFigure(next)).unwrap() })
+    void run(async () => { await dispatch(saveFigure({ figure: next })).unwrap() })
   }
 
   const handleMapClick = (at: GeoPointDto) => {
