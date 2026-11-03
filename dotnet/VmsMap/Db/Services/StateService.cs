@@ -191,7 +191,11 @@ namespace VmsMap.Db
           {
             id = Utils.ConvertGuidToObjectId(x.id),
             alarm = x.alarm,
-            children_alarms = x.children_alarms
+            children_alarms = x.children_alarms,
+            // The row's xmin, as every stored row carries it: without it the watch diff cannot
+            // tell a changed alarm counter from an unchanged one, and a container never learns
+            // that something inside it started alarming.
+            Version = x.Version
           });
     }
 
