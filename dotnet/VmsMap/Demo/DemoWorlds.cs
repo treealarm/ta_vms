@@ -14,25 +14,28 @@ namespace VmsMap.Demo
   public static class DemoWorlds
   {
     public const string UmdDataCenterKey = "umd-datacenter";
-    public const int UmdDataCenterVersion = 1;
+    // 2: Room 102 became a room diagram on the floor plan instead of a plan of its own.
+    public const int UmdDataCenterVersion = 2;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
       string.Equals(key, UmdDataCenterKey, StringComparison.Ordinal) ? UmdDataCenter() : null;
 
-    // The building, in WGS84. Its floor is a plan nested in the map; the rooms are plans nested in
-    // the floor, in coordinates of their own that happen to be the same numbers.
+    // The building, in WGS84. Its floor is a plan nested in the map.
     private const double BuildingSouth = 38.9918;
     private const double BuildingNorth = 38.9928;
     private const double BuildingWest = -76.9390;
     private const double BuildingEast = -76.9365;
 
+    // A room is a plan (Room 101, top-down) or a diagram on the floor (Room 102, schematic): both
+    // are rooms in the same building, and the tree alone says which representation was chosen.
     private const string Room101 = "space/room-101";
-    private const string Room102 = "space/room-102";
+    private const string Room102Layout = "object/room-102-layout";
 
     private const string RackType = "type/rack";
     private const string SwitchType = "type/switch";
     private const string PortType = "type/port";
+    private const string RoomLayoutType = "type/room-layout";
 
     public static DemoWorld UmdDataCenter()
     {
@@ -40,7 +43,8 @@ namespace VmsMap.Demo
       {
         new("file/floor-plan", "building-floor.png", "image/png"),
         new("file/room-101-plan", "room-101.png", "image/png"),
-        new("file/room-102-plan", "room-102.png", "image/png"),
+        new("file/room-layout-background", "room-layout.png", "image/png"),
+        new("file/room-icon", "room-icon.png", "image/png"),
         new("file/rack-background", "rack-42u.png", "image/png"),
         new("file/switch-background", "switch-9300.png", "image/png"),
         new("file/port-icon", "rj45-port.png", "image/png"),
@@ -48,6 +52,7 @@ namespace VmsMap.Demo
 
       var types = new List<DemoDiagramType>
       {
+        RoomLayoutTypeDefinition(),
         RackTypeDefinition(),
         SwitchTypeDefinition(),
         new(PortType, "RJ45 Port", "file/port-icon", []),
@@ -66,29 +71,40 @@ namespace VmsMap.Demo
             new DemoPoint(BuildingNorth, BuildingEast),
             new DemoPoint(BuildingSouth, BuildingWest))),
         RoomPlan(Room101, "Room 101", 38.99238, -76.93855, 38.99250, -76.93835, "file/room-101-plan"),
-        RoomPlan(Room102, "Room 102", 38.99238, -76.93760, 38.99250, -76.93740, "file/room-102-plan"),
       };
 
       var nodes = new List<DemoNode>();
       var states = new List<DemoState>();
 
-      // Four racks stand in Room 101, two in Room 102. Every rack holds one switch in its first
-      // slot and eight ports on that switch; the rest of the rack's slots stay empty on purpose.
-      var racks = new (string Key, string Name, string Room, double Lat, double Lon)[]
+      // Room 102 has no plan of its own: it is a diagram standing on the floor plan, and its two
+      // racks are elements of that schematic. Each rack still opens on its own canvas.
+      // No layer: like a nested plan's footprint, the room's entrance is on the floor at every
+      // zoom the floor is looked at. A "Room" layer here would hide it as soon as the plan is
+      // zoomed to its own detail.
+      nodes.Add(new DemoNode(Room102Layout, "Room 102", "space/building", RoomLayoutType,
+        Canvas: new DemoRect(0, 0, 800, 600),
+        At: new DemoPoint(38.99244, -76.93750),
+        VisualKey: "file/room-icon", VisualWidth: 44, VisualHeight: 44));
+
+      // Four racks stand in Room 101 (on its plan, top-down), two in Room 102's schematic. Every
+      // rack holds one switch in its first slot and eight ports on that switch; the rest of the
+      // rack's slots stay empty on purpose.
+      var racks = new (string Key, string Name, string Parent, string? Region, double? Lat, double? Lon)[]
       {
-        ("object/rack-a-01", "Rack A-01", Room101, 38.99247, -76.93851),
-        ("object/rack-a-02", "Rack A-02", Room101, 38.99247, -76.93845),
-        ("object/rack-a-03", "Rack A-03", Room101, 38.99241, -76.93851),
-        ("object/rack-a-04", "Rack A-04", Room101, 38.99241, -76.93845),
-        ("object/rack-b-01", "Rack B-01", Room102, 38.99247, -76.93756),
-        ("object/rack-b-02", "Rack B-02", Room102, 38.99247, -76.93750),
+        ("object/rack-a-01", "Rack A-01", Room101, null, 38.99247, -76.93851),
+        ("object/rack-a-02", "Rack A-02", Room101, null, 38.99247, -76.93845),
+        ("object/rack-a-03", "Rack A-03", Room101, null, 38.99241, -76.93851),
+        ("object/rack-a-04", "Rack A-04", Room101, null, 38.99241, -76.93845),
+        ("object/rack-b-01", "Rack B-01", Room102Layout, "rack-1", null, null),
+        ("object/rack-b-02", "Rack B-02", Room102Layout, "rack-2", null, null),
       };
 
       foreach (var rack in racks)
       {
-        nodes.Add(new DemoNode(rack.Key, rack.Name, rack.Room, RackType,
+        nodes.Add(new DemoNode(rack.Key, rack.Name, rack.Parent, RackType,
+          RegionKey: rack.Region,
           Canvas: new DemoRect(0, 0, 240, 720),
-          At: new DemoPoint(rack.Lat, rack.Lon),
+          At: rack.Lat is { } lat && rack.Lon is { } lon ? new DemoPoint(lat, lon) : null,
           ZoomLevel: "Rack"));
 
         var slug = rack.Key["object/".Length..];
@@ -111,7 +127,8 @@ namespace VmsMap.Demo
       var placements = new List<DemoPlacement>
       {
         new("sim-master", Room101, 38.99240, -76.93852, HeightM: 2.8, HeadingDeg: 55, HfovDeg: 70, RangeM: 12),
-        new("sim-ptz", Room102, 38.99240, -76.93757, HeightM: 2.8, HeadingDeg: 50, HfovDeg: 65, RangeM: 15),
+        // Room 102 is drawn on the floor plan rather than as a space; its camera stands there.
+        new("sim-ptz", "space/building", 38.99240, -76.93757, HeightM: 2.8, HeadingDeg: 50, HfovDeg: 65, RangeM: 15),
         new("sim-master2", "space/building", 38.99276, -76.93895, HeightM: 3, HeadingDeg: 135, HfovDeg: 80, RangeM: 60),
         new("sim-ptz2", "space/umd", 38.99250, -76.93950, HeightM: 6, HeadingDeg: 90, HfovDeg: 60, RangeM: 150),
       };
@@ -153,6 +170,19 @@ namespace VmsMap.Demo
       new DemoPoint(north, west),
     ];
 
+    /// A room drawn as a schematic instead of a plan: its rack slots are the regions its racks
+    /// fill, and each of them opens on the rack's own canvas.
+    private static DemoDiagramType RoomLayoutTypeDefinition() => new(
+      RoomLayoutType,
+      "Room layout",
+      "file/room-layout-background",
+      [
+        new DemoRegion("rack-1", new DemoRect(0.15, 0.18, 0.30, 0.64),
+          new Dictionary<string, string> { ["color"] = "#4fc3f7", ["fontSize"] = "12px" }),
+        new DemoRegion("rack-2", new DemoRect(0.55, 0.18, 0.30, 0.64),
+          new Dictionary<string, string> { ["color"] = "#4fc3f7", ["fontSize"] = "12px" }),
+      ]);
+
     /// A rack cabinet with six equipment slots and the two readings the feeder keeps alive.
     private static DemoDiagramType RackTypeDefinition()
     {
@@ -166,10 +196,10 @@ namespace VmsMap.Demo
 
       regions.Add(new DemoRegion("temp",
         new DemoRect(0.12, 0.78, 0.34, 0.05),
-        new Dictionary<string, string> { ["color"] = "#ffd54f", ["fontSize"] = "14px" }));
+        new Dictionary<string, string> { ["color"] = "#ffd54f", ["fontSize"] = "11px" }));
       regions.Add(new DemoRegion("humidity",
         new DemoRect(0.54, 0.78, 0.34, 0.05),
-        new Dictionary<string, string> { ["color"] = "#81d4fa", ["fontSize"] = "14px" }));
+        new Dictionary<string, string> { ["color"] = "#81d4fa", ["fontSize"] = "11px" }));
 
       return new(RackType, "Rack 42U", "file/rack-background", regions);
     }

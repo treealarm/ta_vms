@@ -13,7 +13,7 @@ public class DemoWorldTests
   private readonly DemoWorld _world = DemoWorlds.UmdDataCenter();
 
   [Fact]
-  public void TheBuildingHoldsTwoRoomsOnTheMap()
+  public void TheBuildingHoldsAPlanRoomAndADiagramRoom()
   {
     var map = Assert.Single(_world.Spaces, space => space.ParentKey is null);
     Assert.Equal("space/umd", map.Key);
@@ -23,31 +23,50 @@ public class DemoWorldTests
     Assert.NotNull(building.Footprint);
     Assert.NotNull(building.Plan);
 
-    var rooms = _world.Spaces.Where(space => space.ParentKey == building.Key).ToList();
-    Assert.Equal(2, rooms.Count);
-    Assert.All(rooms, room =>
-    {
-      Assert.NotNull(room.Footprint);
-      Assert.NotNull(room.Plan);
-    });
+    // Room 101 is a plan of its own: a space nested in the building.
+    var room = Assert.Single(_world.Spaces, space => space.ParentKey == building.Key);
+    Assert.Equal("space/room-101", room.Key);
+    Assert.NotNull(room.Footprint);
+    Assert.NotNull(room.Plan);
+
+    // Room 102 is a diagram standing on the floor plan: one more node between the building and
+    // its racks, with a schematic of its own and an icon where the floor shows it.
+    var roomDiagram = Assert.Single(_world.Nodes, node => node.Key == "object/room-102-layout");
+    Assert.Equal(building.Key, roomDiagram.ParentKey);
+    Assert.Equal("type/room-layout", roomDiagram.TypeKey);
+    Assert.NotNull(roomDiagram.At);
+    Assert.NotNull(roomDiagram.Canvas);
+    Assert.NotNull(roomDiagram.VisualKey);
   }
 
   [Fact]
-  public void RacksStandInRoomsAndSwitchesInThemAndPortsOnTheSwitches()
+  public void RacksStandInThePlanAndInTheRoomDiagram()
   {
-    var roomKeys = _world.Spaces
-      .Where(space => space.ParentKey == "space/building")
-      .Select(space => space.Key)
-      .ToHashSet();
-
     var racks = _world.Nodes.Where(node => node.TypeKey == "type/rack").ToList();
     Assert.Equal(6, racks.Count);
-    Assert.All(racks, rack =>
+
+    // On the plan, top-down: each rack is a point in the room's own coordinates.
+    var onThePlan = racks.Where(rack => rack.ParentKey == "space/room-101").ToList();
+    Assert.Equal(4, onThePlan.Count);
+    Assert.All(onThePlan, rack =>
     {
-      Assert.Contains(rack.ParentKey!, roomKeys);
-      Assert.Equal("Rack", rack.ZoomLevel);
       Assert.NotNull(rack.At);
-      Assert.NotNull(rack.Canvas);
+      Assert.Null(rack.RegionKey);
+      Assert.Equal("Rack", rack.ZoomLevel);
+      Assert.Equal(240, rack.Canvas?.Width);
+      Assert.Equal(720, rack.Canvas?.Height);
+    });
+
+    // In the room diagram, schematically: each rack takes a region of the layout's type and
+    // stands nowhere on a map of its own.
+    var inTheLayout = racks.Where(rack => rack.ParentKey == "object/room-102-layout").ToList();
+    Assert.Equal(2, inTheLayout.Count);
+    Assert.All(inTheLayout, rack =>
+    {
+      Assert.Null(rack.At);
+      Assert.Matches("^rack-[12]$", rack.RegionKey);
+      Assert.Equal(240, rack.Canvas?.Width);
+      Assert.Equal(720, rack.Canvas?.Height);
     });
 
     var switches = _world.Nodes.Where(node => node.TypeKey == "type/switch").ToList();
@@ -85,6 +104,9 @@ public class DemoWorldTests
     var switchType = _world.Types.Single(type => type.Key == "type/switch");
     Assert.Equal(8, switchType.Regions.Count);
     Assert.Contains(switchType.Regions, region => region.Key == "port-8");
+
+    var roomLayout = _world.Types.Single(type => type.Key == "type/room-layout");
+    Assert.Equal(["rack-1", "rack-2"], roomLayout.Regions.Select(region => region.Key));
 
     // Every region lies on its picture: a child in a region outside it would be drawn in nothing.
     foreach (var region in _world.Types.SelectMany(type => type.Regions))

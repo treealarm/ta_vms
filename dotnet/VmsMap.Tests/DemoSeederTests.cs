@@ -64,7 +64,7 @@ public class DemoSeederTests
 
     var seeder = new DemoSeeder(
       db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
-      new RightService(db), geo, new FileService(db), spatial, catalog);
+      new RightService(db), geo, new FileService(db), new VisualService(db), spatial, catalog);
 
     return new Services(db, map, seeder, catalog);
   }

@@ -54,7 +54,12 @@ namespace VmsMap.Demo
     DemoRect? Canvas = null,
     DemoPoint? At = null,
     string? IconKey = null,
-    string? ZoomLevel = null);
+    string? ZoomLevel = null,
+    // How the node is drawn where it is not its own canvas — a diagram standing on a plan is a
+    // point, and without a picture it is a plain dot nobody would take for an entrance.
+    string? VisualKey = null,
+    int? VisualWidth = null,
+    int? VisualHeight = null);
 
   /// A scale layer: zoom levels at which the nodes that name it are drawn.
   public sealed record DemoLevel(string Name, int Min, int Max);

@@ -26,7 +26,8 @@ from vmsapi import Vms  # noqa: E402
 DEMO_KEY = "umd-datacenter"
 MAP_NAME = "UMD Data Center (demo)"
 BUILDING_NAME = "A.V. Williams Building"
-ROOM_NAMES = ["Room 101", "Room 102"]
+ROOM_PLAN_NAME = "Room 101"
+ROOM_DIAGRAM_NAME = "Room 102"
 DEMO_CAMERAS = ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2"]
 
 failures = []
@@ -144,9 +145,22 @@ def walk_the_world(vms):
         return None
 
     rooms = children(vms, building["id"])
-    room_names = {room.get("name") for room in rooms}
-    check(set(ROOM_NAMES) <= room_names, f"the building holds {', '.join(ROOM_NAMES)}")
-    room = by_name(vms, rooms, ROOM_NAMES[0])
+
+    # A room is either a plan of its own or a diagram standing on the floor.
+    room = by_name(vms, rooms, ROOM_PLAN_NAME)
+    if not check(room is not None and room.get("nodeKind") == "space",
+                 f"the building holds {ROOM_PLAN_NAME} as a plan"):
+        return None
+
+    room_diagram = by_name(vms, rooms, ROOM_DIAGRAM_NAME)
+    if not check(room_diagram is not None and room_diagram.get("nodeKind") == "diagram",
+                 f"the building holds {ROOM_DIAGRAM_NAME} as a room diagram"):
+        return None
+
+    # The intermediate diagram: several racks on one schematic, each a canvas of its own.
+    layout_racks = children(vms, room_diagram["id"])
+    check(len(layout_racks) == 2 and {r.get("name") for r in layout_racks} == {"Rack B-01", "Rack B-02"},
+          f"{ROOM_DIAGRAM_NAME} shows Rack B-01 and Rack B-02 on one diagram")
 
     racks = children(vms, room["id"])
     rack = by_name(vms, racks, "Rack A-01")
@@ -166,20 +180,37 @@ def walk_the_world(vms):
     check(port is not None, "Port 3 is among them")
 
     return {
-        "map": demo_map, "building": building, "room": room, "rack": rack,
+        "map": demo_map, "building": building, "room": room, "room102": room_diagram,
+        "layout_racks": layout_racks, "rack": rack,
         "switch": computer, "port": port, "ports": ports,
     }
 
 
 def check_positions(vms, world):
     """Regions give the place; the geometry stays the diagram's own canvas (M2.2 step 1)."""
-    ids = [world[key]["id"] for key in ("rack", "switch", "port")]
+    ids = [world[key]["id"] for key in ("rack", "switch", "port", "room102")]
+    ids += [rack["id"] for rack in world["layout_racks"]]
     diagrams = {d["id"]: d for d in diagrams_by_ids(vms, ids)}
+
+    room = diagrams.get(world["room102"]["id"], {})
+    check(room.get("geometry", {}).get("width") == 800 and room.get("geometry", {}).get("height") == 600,
+          "the room diagram opens on its own 800x600 canvas")
+    check(not room.get("regionId"), "the room diagram stands by its own rectangle on the floor")
+
+    # The children come back unordered; the rack's own name says which slot it fills.
+    slots = {"Rack B-01": "rack-1", "Rack B-02": "rack-2"}
+    for rack in world["layout_racks"]:
+        region = slots[rack["name"]]
+        placed = diagrams.get(rack["id"], {})
+        check(placed.get("regionId") == region,
+              f"{rack['name']} fills the room diagram's {region} region")
+        check(placed.get("geometry", {}).get("width") == 240,
+              f"{rack['name']} keeps its own 240-wide canvas beside the region")
 
     rack = diagrams.get(world["rack"]["id"], {})
     check(rack.get("geometry", {}).get("width") == 240 and rack.get("geometry", {}).get("height") == 720,
-          "the rack opens on its own 240x720 canvas")
-    check(not rack.get("regionId"), "the rack stands by its own rectangle in the room")
+          "the plan rack opens on its own 240x720 canvas")
+    check(not rack.get("regionId"), "the plan rack stands by its own rectangle in the room")
 
     computer = diagrams.get(world["switch"]["id"], {})
     check(computer.get("regionId") == "slot-1", "the switch sits in the rack's slot-1 region")
@@ -219,10 +250,10 @@ def check_cameras(vms, world, allow_missing):
         return
 
     placed = {p.get("cameraId"): p for p in placements(vms)}
+    # Room 102 is drawn on the floor, so its camera stands on the floor plan.
     expected = {
         "sim-master": world["room"]["id"],
-        "sim-ptz": next(room["id"] for room in children(vms, world["building"]["id"])
-                        if room.get("name") == "Room 102"),
+        "sim-ptz": world["building"]["id"],
         "sim-master2": world["building"]["id"],
         "sim-ptz2": world["map"]["id"],
     }
@@ -274,7 +305,9 @@ def check_feeder(vms, world):
 
 
 def ids_of(vms, world):
-    return {key: world[key]["id"] for key in ("map", "building", "room", "rack", "switch", "port")}
+    ids = {key: world[key]["id"] for key in ("map", "building", "room", "room102", "rack", "switch", "port")}
+    ids["layout"] = [rack["id"] for rack in world["layout_racks"]]
+    return ids
 
 
 def check_reinstall(vms, world):
@@ -337,16 +370,14 @@ def main():
         print("Provisioning the demo cameras")
         provision_cameras(vms, args.sim_host, args.server_id)
 
+    # Installing is idempotent, so it is always called first: on a fresh database it writes the
+    # world, on an older one it brings it to the current version.
     print("Installing the demo world")
-    status = demo_status(vms)
-    if not status.get("installed"):
-        report = install_demo(vms)
-        print(f"  ..    created {report.get('created')}, updated {report.get('updated')}, "
-              f"removed {report.get('removed')}, wall {report.get('monitorCameras')}")
-        if report.get("skippedCameras"):
-            print(f"  ..    cameras not provisioned yet: {report.get('skippedCameras')}")
-    else:
-        warn("the world was already installed")
+    report = install_demo(vms)
+    print(f"  ..    created {report.get('created')}, updated {report.get('updated')}, "
+          f"removed {report.get('removed')}, wall {report.get('monitorCameras')}")
+    if report.get("skippedCameras"):
+        print(f"  ..    cameras not provisioned yet: {report.get('skippedCameras')}")
 
     print("Walking the world")
     world = walk_the_world(vms)

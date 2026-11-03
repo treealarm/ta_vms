@@ -35,6 +35,7 @@ namespace VmsMap.Demo
     private readonly IRightServiceInternal _rights;
     private readonly IGeoService _geo;
     private readonly FileService _files;
+    private readonly VisualService _visuals;
     private readonly SpatialDb _spatial;
     private readonly ICameraCatalog _cameras;
 
@@ -48,6 +49,7 @@ namespace VmsMap.Demo
       IRightServiceInternal rights,
       IGeoService geo,
       FileService files,
+      VisualService visuals,
       SpatialDb spatial,
       ICameraCatalog cameras)
     {
@@ -60,6 +62,7 @@ namespace VmsMap.Demo
       _rights = rights;
       _geo = geo;
       _files = files;
+      _visuals = visuals;
       _spatial = spatial;
       _cameras = cameras;
     }
@@ -208,6 +211,18 @@ namespace VmsMap.Demo
           }]);
         }
 
+        if (node.VisualKey is not null)
+        {
+          var icon = world.Files.Single(file => file.Key == node.VisualKey);
+          await _visuals.UpdateListAsync([new VisualDTO
+          {
+            object_id = id.ToString(),
+            image = DemoAssets.Read(icon.Asset),
+            image_width = node.VisualWidth,
+            image_height = node.VisualHeight,
+          }]);
+        }
+
         if (node.At is { } at)
         {
           await _geo.CreateGeo([new FigureGeoDTO
@@ -218,6 +233,12 @@ namespace VmsMap.Demo
             geometry = new GeometryCircleDTO(new Geo2DCoordDTO { Lat = at.Lat, Lon = at.Lon }),
             zoom_level = node.ZoomLevel,
           }]);
+        }
+        else
+        {
+          // A node that moved from a canvas into a diagram (or never had a place on one) must not
+          // keep the point it used to stand at.
+          await _geo.RemoveAsync([id.ToString()]);
         }
 
         ids[node.Key] = id;

@@ -83,7 +83,7 @@ public class MapServiceReadsTests
       null!,
       new DemoSeeder(
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
-        new RightService(db), geo, new FileService(db), spatial, new TestCatalog()));
+        new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog()));
 
     return new Services(db, map, states, grpc, notifier);
   }

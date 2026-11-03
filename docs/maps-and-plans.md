@@ -145,9 +145,10 @@ Center"), fills it with a fictional data centre so the product can be looked at 
 without a browser — right after an install.
 
 **What it contains.** A map named `UMD Data Center (demo)` over the A.V. Williams building on the
-University of Maryland campus; the building's floor as a plan with a picture; two rooms (101, 102)
-as plans nested in it; six racks standing in the rooms, a switch in each rack's first slot and eight
-ports on every switch. The third port of the first rack is `DISCONNECTED`, so an operator can watch
+University of Maryland campus; the building's floor as a plan with a picture; two rooms — Room 101
+as a plan of its own and Room 102 as a room diagram standing on the floor (a schematic with its two
+racks in regions of its type, each opening on its own canvas) — six racks between them, a switch in
+each rack's first slot and eight ports on every switch. The third port of the first rack is `DISCONNECTED`, so an operator can watch
 an alarm climb from the port through its switch, rack, room and building to the map. The `Rack 42U`
 type carries `temp` and `humidity` regions, and `DemoValueFeeder` rewrites their values every five
 seconds for as long as the world is installed. The four OnvifSim cameras — `sim-master`,
@@ -177,6 +178,11 @@ at startup) or the button at the foot of Admin → Maps (`POST api/map/admin/dem
 their reports. Both paths use the same seeder, so they are interchangeable; installing twice is
 idempotent. The whole install is one transaction under `pg_advisory_xact_lock`, so two replicas
 starting with the flag cannot each write half a world.
+
+A diagram that stands on a plan is an ordinary point figure, not geometry of its own: in Admin →
+Maps, selecting it shows a draggable handle, and "+ diagram" in the node list places a new one at the
+centre of the current view. A room diagram is such a node; its icon on the floor is its
+`visual.image`.
 
 **The video wall** belongs to VmsCfg: a wall named `UMD DC`, layout 2×2, showing the demo cameras
 the deployment has. It is installed and removed with the world, and a camera that does not exist yet
