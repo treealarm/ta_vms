@@ -166,6 +166,24 @@ public class MapServiceReadsTests
   }
 
   [Fact]
+  public async Task GetObjPropsReportsWhetherTheNodeHasChildren()
+  {
+    var s = Create();
+    var container = await Node(s.Map, "District");
+    await Node(s.Map, "Building", container.id);
+
+    var props = await s.Grpc.GetObjProps(new MapProto.GetObjPropsRequest
+    {
+      Id = container.id,
+      Caller = Caller("admin", "admin"),
+    }, new TestContext());
+
+    // The panel that opens on this read replaces the node in the client's store, and a container
+    // without this flag loses its "enter" action.
+    Assert.True(props.Marker.HasChildren);
+  }
+
+  [Fact]
   public async Task UpdateFiguresKeepsTheOwnerAndTheLayerItWasGiven()
   {
     var s = Create();

@@ -222,10 +222,14 @@ namespace VmsMap.Grpc
         return new MapProto.ObjProps();
 
       var kinds = await NodeKindLookup.ResolveAsync(_db, [request.Id], ct);
+      // The panel that opens on this read replaces the node in the client's store: a hard-coded
+      // "no children" here would take the "enter" action away from every container the moment it
+      // is selected.
+      var top = await _mapService.GetTopChildren([request.Id]);
       var result = new MapProto.ObjProps
       {
         Marker = ToMarker(
-          marker, false,
+          marker, top.ContainsKey(request.Id),
           (await CameraIdsAsync([request.Id], ct)).GetValueOrDefault(request.Id),
           kinds.GetValueOrDefault(request.Id, NodeKind.Object)),
       };
