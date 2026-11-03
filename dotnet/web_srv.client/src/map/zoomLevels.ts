@@ -1,4 +1,4 @@
-import type { MapLevel } from '../dto/mapDtos'
+import type { MapFigure, MapLevel } from '../dto/mapDtos'
 
 /** The zoom range a scale layer covers. */
 export type LevelRange = { min: number; max: number }
@@ -24,4 +24,19 @@ export function inLayer(
   if (!zoomLevel) return true
   const range = ranges.get(zoomLevel)
   return !range || (zoom >= range.min && zoom <= range.max)
+}
+
+/**
+ * The zoom a container is entered at: the lowest minimum among the layers its children are drawn
+ * from. Undefined when no child carries a layer — or there are no children at all — and the caller
+ * steps in by one instead.
+ */
+export function enterZoom(children: MapFigure[], levels: MapLevel[]): number | undefined {
+  const ranges = levelRanges(levels)
+  let lowest: number | undefined
+  for (const child of children) {
+    const range = child.zoomLevel ? ranges.get(child.zoomLevel) : undefined
+    if (range) lowest = lowest === undefined ? range.min : Math.min(lowest, range.min)
+  }
+  return lowest
 }

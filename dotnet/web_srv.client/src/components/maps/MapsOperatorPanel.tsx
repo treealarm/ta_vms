@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Box, Tab, Tabs, ToggleButton, Tooltip, Typography } from '@mui/material'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
+import LoginIcon from '@mui/icons-material/Login'
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
 import PersonPinCircleIcon from '@mui/icons-material/PersonPinCircle'
 import SearchIcon from '@mui/icons-material/Search'
@@ -22,6 +23,7 @@ import PlanOverlay from '../../map/PlanOverlay'
 import FiguresLayer from '../../map/FiguresLayer'
 import TracksLayer from '../../map/TracksLayer'
 import { pointsCentre } from '../../map/geo'
+import { enterZoom } from '../../map/zoomLevels'
 import { CameraMarker } from '../../map/markers'
 import { Footprints } from '../../map/footprints'
 import DetectionsLayer from '../../map/DetectionsLayer'
@@ -342,6 +344,44 @@ export default function MapsOperatorPanel() {
     }
   }
 
+  /**
+   * Enter a node that holds children. A space or a mnemoscheme opens its own canvas, which is a
+   * world of its own; anything else on this canvas raises the zoom until its children are drawn
+   * and centres on it -- never on its polygon, which may be a circle, an icon or nothing at all.
+   */
+  const enterNode = (nodeId: string) => {
+    const marker = markers[nodeId]
+    if (!marker) return
+    resetAim()
+
+    if (marker.nodeKind === 'space') {
+      openSpace(marker.id)
+      setSelectedNodeId(marker.id)
+      return
+    }
+    if (marker.nodeKind === 'diagram') {
+      setDiagramId(marker.id)
+      setSelectedNodeId(marker.id)
+      return
+    }
+
+    // The children drawn on this canvas carry their own scale layers.
+    const children = spaceData.figures.filter((figure) => figure.parentId === nodeId)
+    const zoomAtLeast = enterZoom(children, levels)
+
+    const centre = pointsCentre(figureById.get(nodeId)?.geometry?.coord ?? [])
+      ?? pointsCentre(children.flatMap((child) => child.geometry?.coord ?? []))
+    if (centre) {
+      setFocus((previous) => ({
+        ...centre,
+        seq: (previous?.seq ?? 0) + 1,
+        zoomAtLeast,
+        zoomStep: zoomAtLeast === undefined,
+      }))
+    }
+    setSelectedNodeId(nodeId)
+  }
+
   const aimAt = async (at: GeoPointDto) => {
     if (!selectedCameraId || !space?.id) return
     setAimTarget(at)
@@ -368,18 +408,28 @@ export default function MapsOperatorPanel() {
     title: t('maps.alarms'),
     hint: t('maps.alarmsHint', { minutes: RECENT_ALARM_MINUTES }),
     empty: t('maps.noAlarms'),
-    items: alarmEntries.map((entry) => ({
-      key: entry.key,
-      primary: entry.name,
-      secondary: entry.secondary,
-      dot: entry.active ? ALARM_COLOR : `${ALARM_COLOR}66`,
-      selected: entry.nodeId === selectedNodeId,
-      onClick: () => {
-        const marker = markers[entry.nodeId]
-        if (marker) selectNode(marker)
-        else if (entry.cameraId) void selectCamera(entry.cameraId)
-      },
-    })),
+    items: alarmEntries.map((entry) => {
+      const marker = markers[entry.nodeId]
+      const enterable = !!marker
+        && (marker.hasChildren || marker.nodeKind === 'space' || marker.nodeKind === 'diagram')
+      return {
+        key: entry.key,
+        primary: entry.name,
+        secondary: entry.secondary,
+        dot: entry.active ? ALARM_COLOR : `${ALARM_COLOR}66`,
+        selected: entry.nodeId === selectedNodeId,
+        onClick: () => {
+          const clicked = markers[entry.nodeId]
+          if (clicked) selectNode(clicked)
+          else if (entry.cameraId) void selectCamera(entry.cameraId)
+        },
+        action: enterable ? {
+          title: t('maps.node.enter'),
+          icon: <LoginIcon fontSize="small" />,
+          onClick: () => enterNode(entry.nodeId),
+        } : undefined,
+      }
+    }),
   }
 
   return (
@@ -494,6 +544,7 @@ export default function MapsOperatorPanel() {
             nodeId={selectedNodeId}
             onClose={() => setSelectedNodeId(null)}
             onSelect={(id) => { const marker = markers[id]; if (marker) selectNode(marker) }}
+            onEnter={enterNode}
             aiming={aiming}
             onAimingChange={setAiming}
             aimUnavailable={aimUnavailable}

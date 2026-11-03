@@ -1224,7 +1224,9 @@
       "journal": "Events",
       "cameraMissing": "This camera is not configured in this deployment",
       "color": "Colour",
-      "caption": "Caption"
+      "caption": "Caption",
+      "enter": "Enter",
+      "enterHint": "Zoom in to what is inside, or open a space's own canvas"
     },
     "tabSpaces": "Spaces",
     "tabCameras": "Cameras",

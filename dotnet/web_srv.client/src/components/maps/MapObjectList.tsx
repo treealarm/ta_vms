@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Box, List, ListItemButton, ListItemText, TextField, Typography } from '@mui/material'
+import { Box, IconButton, List, ListItemButton, ListItemText, TextField, Tooltip, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 
 export type MapObjectItem = {
@@ -10,6 +10,8 @@ export type MapObjectItem = {
   dot?: string
   selected?: boolean
   onClick: () => void
+  /** A second action at the end of the row -- entering a container, say -- without selecting it. */
+  action?: { title: string; icon: React.ReactNode; onClick: () => void }
 }
 
 export type MapObjectSection = {
@@ -67,6 +69,21 @@ export default function MapObjectList({ sections }: { sections: MapObjectSection
                       secondary={item.secondary}
                       secondaryTypographyProps={{ component: 'div' }}
                     />
+                    {item.action && (
+                      <Tooltip title={item.action.title}>
+                        <IconButton
+                          size="small"
+                          edge="end"
+                          sx={{ ml: 0.5 }}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            item.action?.onClick()
+                          }}
+                        >
+                          {item.action.icon}
+                        </IconButton>
+                      </Tooltip>
+                    )}
                   </ListItemButton>
                 ))}
               </List>

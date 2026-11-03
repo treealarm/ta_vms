@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { MapLevel } from '../dto/mapDtos'
-import { inLayer, levelRanges } from './zoomLevels'
+import type { MapFigure, MapLevel } from '../dto/mapDtos'
+import { enterZoom, inLayer, levelRanges } from './zoomLevels'
 
 const levels: MapLevel[] = [
   { id: '1', zoomLevel: 'city', zoomMin: 10, zoomMax: 12 },
@@ -42,5 +42,26 @@ describe('inLayer', () => {
 
   it('draws a node whose layer is no longer in the dictionary', () => {
     expect(inLayer(ranges, 'demolished', 8)).toBe(true)
+  })
+})
+
+describe('enterZoom', () => {
+  const child = (zoomLevel?: string): MapFigure => ({ id: zoomLevel ?? 'plain', zoomLevel })
+
+  it('enters at the lowest layer among the children', () => {
+    expect(enterZoom([child('district'), child('city')], levels)).toBe(10)
+  })
+
+  it('enters at the layer of a single child', () => {
+    expect(enterZoom([child('district')], levels)).toBe(13)
+  })
+
+  it('has no layer to aim at when no child carries one', () => {
+    expect(enterZoom([child(), child()], levels)).toBeUndefined()
+    expect(enterZoom([], levels)).toBeUndefined()
+  })
+
+  it('ignores a layer the dictionary no longer lists', () => {
+    expect(enterZoom([child('demolished'), child('district')], levels)).toBe(13)
   })
 })

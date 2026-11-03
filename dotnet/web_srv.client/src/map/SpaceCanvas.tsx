@@ -35,7 +35,15 @@ type Props = {
 }
 
 /** `seq` makes picking the same object again pan to it again. */
-export type MapFocus = { lat: number; lon: number; seq: number }
+export type MapFocus = {
+  lat: number
+  lon: number
+  seq: number
+  /** The scale level a container is entered at: never below it, never zooming out to reach it. */
+  zoomAtLeast?: number
+  /** One step in, for a container whose children carry no scale layer of their own. */
+  zoomStep?: boolean
+}
 
 // Close enough to tell one camera from the next; a map already zoomed in further stays as it is.
 const FOCUS_MIN_ZOOM = 19
@@ -133,7 +141,14 @@ function FocusOn({ focus }: { focus?: MapFocus | null }) {
     // Picking from a list usually opens a side panel in the same render, narrowing the map before
     // AutoResize has told Leaflet. Centring on the stale width would leave the object off-centre.
     map.invalidateSize({ pan: false })
-    map.setView([focus.lat, focus.lon], Math.max(map.getZoom(), FOCUS_MIN_ZOOM))
+
+    const current = map.getZoom()
+    const zoom = focus.zoomAtLeast !== undefined
+      ? Math.max(current, focus.zoomAtLeast)
+      : focus.zoomStep
+        ? current + 1
+        : Math.max(current, FOCUS_MIN_ZOOM)
+    map.setView([focus.lat, focus.lon], Math.min(zoom, map.getMaxZoom()))
   }, [map, focus])
   return null
 }

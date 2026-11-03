@@ -5,6 +5,7 @@ import {
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import GpsFixedIcon from '@mui/icons-material/GpsFixed'
+import LoginIcon from '@mui/icons-material/Login'
 import { useTranslation } from 'react-i18next'
 import type { MapExtraProperty } from '../../dto/mapDtos'
 import type { PtzGeoAimResultDto } from '../../dto/dtos'
@@ -18,6 +19,8 @@ type Props = {
   nodeId: string
   onClose: () => void
   onSelect: (id: string) => void
+  /** Enter a node that holds children: the canvas zooms into it, or a space opens its own. */
+  onEnter?: (id: string) => void
   /** Map aiming: a camera with telemetry can be pointed at a place on the canvas. */
   aiming: boolean
   onAimingChange: (on: boolean) => void
@@ -32,7 +35,7 @@ type Props = {
  * only. The camera itself and its capability to be aimed come from the map: the panel only draws.
  */
 export default function ObjectPanel({
-  nodeId, onClose, onSelect, aiming, onAimingChange, aimUnavailable, aimResult, aimError,
+  nodeId, onClose, onSelect, onEnter, aiming, onAimingChange, aimUnavailable, aimResult, aimError,
 }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
@@ -79,6 +82,13 @@ export default function ObjectPanel({
             {t(`maps.node.kind.${kind}`)}
           </Typography>
         </Box>
+        {onEnter && marker && (marker.hasChildren || kind === 'space' || kind === 'diagram') ? (
+          <Tooltip title={t('maps.node.enterHint')}>
+            <Button size="small" startIcon={<LoginIcon fontSize="small" />} onClick={() => onEnter(nodeId)}>
+              {t('maps.node.enter')}
+            </Button>
+          </Tooltip>
+        ) : null}
         <Button
           size="small"
           onClick={() => navigate(`/operator/events?node=${encodeURIComponent(nodeId)}`)}

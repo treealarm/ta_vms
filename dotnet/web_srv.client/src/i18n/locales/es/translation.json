@@ -1224,7 +1224,9 @@
       "journal": "Eventos",
       "cameraMissing": "Esta cámara no está configurada en esta instalación",
       "color": "Color",
-      "caption": "Leyenda"
+      "caption": "Leyenda",
+      "enter": "Entrar",
+      "enterHint": "Acercar a lo que hay dentro, o abrir el lienzo propio de un espacio"
     },
     "tabSpaces": "Espacios",
     "tabCameras": "Cámaras",
