@@ -261,8 +261,10 @@ message GetByParamsRequest {
   Caller caller = 5;
 }
 
-// A rectangle in WGS84, optionally narrowed to a zoom layer, a set of ids or a zone. Mirrors
-// Square's BoxDTO: `wn` is the north-west corner and `es` the south-east one.
+// An area of the map, optionally narrowed to a zoom layer, a set of ids or a zone. Mirrors
+// Square's BoxDTO: `wn` is the north-west corner and `es` the south-east one. A `canvas_id`
+// replaces the rectangle with the canvas itself: everything drawn in that space's coordinates,
+// whatever its depth in the tree.
 message Box {
   Coordinate wn = 1;
   Coordinate es = 2;
@@ -271,6 +273,8 @@ message Box {
   optional int32 count = 5;
   repeated Geometry zone = 6;
   bool not_in_zone = 7;
+  // The space (or mnemoscheme) whose canvas is asked for. Empty means the rectangle is used.
+  string canvas_id = 8;
 }
 
 message GetByBoxRequest {

@@ -24,12 +24,13 @@ public class MapLiveController(MapProto.MapService.MapServiceClient map) : Contr
 
   [HttpGet("live")]
   public async Task Live(
-    [FromQuery] string? ids, [FromQuery] bool values,
+    [FromQuery] string? ids, [FromQuery] bool values, [FromQuery] string? canvasId,
     [FromQuery] double? north, [FromQuery] double? south,
     [FromQuery] double? east, [FromQuery] double? west, [FromQuery] double? zoom,
     CancellationToken ct)
   {
-    var hasBox = north.HasValue && south.HasValue && east.HasValue && west.HasValue;
+    var hasCorners = north.HasValue && south.HasValue && east.HasValue && west.HasValue;
+    var hasBox = hasCorners || !string.IsNullOrEmpty(canvasId);
     var idList = (ids ?? string.Empty)
       .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
       .ToList();
@@ -37,7 +38,7 @@ public class MapLiveController(MapProto.MapService.MapServiceClient map) : Contr
     if (!hasBox && idList.Count == 0)
     {
       Response.StatusCode = StatusCodes.Status400BadRequest;
-      await Response.WriteAsync("ids or a box is required", ct);
+      await Response.WriteAsync("ids, a box or a canvas is required", ct);
       return;
     }
 
@@ -50,15 +51,15 @@ public class MapLiveController(MapProto.MapService.MapServiceClient map) : Contr
     {
       command.SetBox = new MapProto.WatchBox
       {
-        Box = new MapProto.Box
-        {
-          Wn = new MapProto.Coordinate { Lat = north!.Value, Lon = west!.Value },
-          Es = new MapProto.Coordinate { Lat = south!.Value, Lon = east!.Value },
-          Zoom = zoom ?? 0,
-        },
+        Box = new MapProto.Box { CanvasId = canvasId ?? string.Empty },
       };
-      if (!zoom.HasValue)
-        command.SetBox.Box.ClearZoom();
+      if (hasCorners)
+      {
+        command.SetBox.Box.Wn = new MapProto.Coordinate { Lat = north!.Value, Lon = west!.Value };
+        command.SetBox.Box.Es = new MapProto.Coordinate { Lat = south!.Value, Lon = east!.Value };
+      }
+      if (zoom.HasValue)
+        command.SetBox.Box.Zoom = zoom.Value;
     }
     else
     {

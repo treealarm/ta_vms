@@ -141,7 +141,9 @@ namespace VmsMap.Grpc
 
       var figures = await _mapService.GetFigures(geo);
 
-      if (figures.figs.Count < 1000)
+      // A canvas is drawn whole: the client shows the composition of one space and paging it into
+      // centroids would drop the very containers it exists to draw. A rectangle keeps the cut.
+      if (!string.IsNullOrEmpty(box.canvas_id) || figures.figs.Count < 1000)
         return await ToProtoFiguresAsync(figures, geo.Keys, ct);
 
       var zooms = await _levelService.GetAllZooms();
@@ -918,6 +920,7 @@ namespace VmsMap.Grpc
       result.ids = box?.Ids.ToList();
       result.count = box is { HasCount: true } ? box.Count : null;
       result.not_in_zone = box?.NotInZone ?? false;
+      result.canvas_id = string.IsNullOrEmpty(box?.CanvasId) ? null : box.CanvasId;
       result.zone = (box?.Zone ?? [])
         .Select(GeometryProtoConvert.FromProto)
         .Where(geometry => geometry is not null)
@@ -935,6 +938,7 @@ namespace VmsMap.Grpc
       target.count = source.count;
       target.zone = source.zone;
       target.not_in_zone = source.not_in_zone;
+      target.canvas_id = source.canvas_id;
     }
   }
 }

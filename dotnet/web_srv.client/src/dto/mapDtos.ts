@@ -110,6 +110,8 @@ export type MapBox = {
   count?: number
   zone?: MapGeometry[]
   notInZone?: boolean
+  /** A canvas instead of a rectangle: everything drawn in that space's coordinates. */
+  canvasId?: string
 }
 
 export type MapPropertyFilter = { propName?: string; strVal?: string }

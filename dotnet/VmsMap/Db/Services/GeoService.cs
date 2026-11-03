@@ -29,7 +29,16 @@ namespace VmsMap.Db
       var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
 
       // geo filter
-      if (box.zone != null && box.zone.Count > 0)
+      if (!string.IsNullOrEmpty(box.canvas_id))
+      {
+        // The canvas is the area. A figure belongs to the canvas it is drawn on, whatever its
+        // depth in the tree, so one query returns the whole composition of the space.
+        var canvasId = Utils.ConvertObjectIdToGuid(box.canvas_id);
+        query = canvasId is null
+            ? query.Where(_ => false)
+            : query.Where(t => t.canvas_id == canvasId.Value);
+      }
+      else if (box.zone != null && box.zone.Count > 0)
       {
         var polygons = box.zone
             .Select(z => ModelGate.ConvertGeoDTO2DB(z))

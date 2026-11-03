@@ -210,12 +210,13 @@ export function mapLiveUrl(scope: MapLiveScope, values = false): string {
   if ('ids' in scope) {
     params.ids = scope.ids.join(',')
   } else {
-    const { wn, es, zoom } = scope.box
+    const { wn, es, zoom, canvasId } = scope.box
     params.north = wn?.lat
     params.west = wn?.lon
     params.south = es?.lat
     params.east = es?.lon
     params.zoom = zoom
+    params.canvasId = canvasId
   }
 
   return `${BASE}/live?${query(params)}`
