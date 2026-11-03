@@ -66,6 +66,9 @@ service CfgService {
   // stream_name.
   rpc SetMonitorSlotStream(SetMonitorSlotStreamRequest) returns (OperationStatus);
   rpc CopyMonitor(CopyMonitorRequest) returns (MonitorSetup);
+  // The demo's video wall. The demo flag installs it at startup as well; this call is what the
+  // administrator's button uses when the world is installed after the cameras were provisioned.
+  rpc InstallDemo(InstallDemoRequest) returns (DemoMonitorReport);
   rpc ListOnvifAlarmFilters(ListOnvifAlarmFiltersRequest) returns (ListOnvifAlarmFiltersResponse);
   rpc UpsertOnvifAlarmFilter(OnvifAlarmFilter) returns (OnvifAlarmFilter);
   rpc RemoveOnvifAlarmFilter(OnvifAlarmFilterRequest) returns (OperationStatus);
@@ -630,6 +633,21 @@ message CopyMonitorRequest {
   string monitor_id   = 1;
   string owner        = 2;
   string target_owner = 3;
+}
+
+message InstallDemoRequest {
+  // The world to install, as the demo flag names it: "umd-datacenter" today.
+  string demo_key = 1;
+}
+
+// What the monitor side of an install did. The map side answers with its own report; web_srv
+// merges the two for the administrator.
+message DemoMonitorReport {
+  bool            installed       = 1;
+  repeated string placed_cameras  = 2;
+  // Cameras the deployment does not have yet; the world is valid without them and a later
+  // install places them once they are provisioned.
+  repeated string skipped_cameras = 3;
 }
 
 message ActivateAlarmOverrideRequest {

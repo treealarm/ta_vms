@@ -14,6 +14,7 @@ namespace VmsCfg
     ScheduleDb scheduleDb,
     ScheduleCache scheduleCache,
     DaprClient daprClient,
+    VmsCfg.Demo.DemoMonitor demoMonitor,
     ILogger<CfgServiceImpl> logger) : CfgService.CfgServiceBase
   {
     // One event for "something changed on this node, here is what". Replaces the old pair of
@@ -1017,6 +1018,25 @@ namespace VmsCfg
       logger.LogInformation("Monitor '{Id}' copied to '{Target}' as '{Name}'",
         request.MonitorId, request.TargetOwner, copy.Name);
       return copy;
+    }
+
+    public override async Task<DemoMonitorReport> InstallDemo(
+      InstallDemoRequest request, ServerCallContext context)
+    {
+      if (!string.Equals(request.DemoKey, VmsCfg.Demo.DemoMonitor.DemoKey, StringComparison.Ordinal))
+        throw new RpcException(new Status(
+          StatusCode.InvalidArgument, $"There is no demo world '{request.DemoKey}'"));
+
+      var plan = await demoMonitor.InstallAsync(context.CancellationToken);
+
+      logger.LogInformation(
+        "Demo wall '{Name}' installed: {Placed} cameras placed, {Skipped} skipped",
+        plan.Name, plan.Cameras.Count, plan.Skipped.Count);
+
+      var report = new DemoMonitorReport { Installed = true };
+      report.PlacedCameras.AddRange(plan.Cameras);
+      report.SkippedCameras.AddRange(plan.Skipped);
+      return report;
     }
 
     public override async Task<ListOnvifAlarmFiltersResponse> ListOnvifAlarmFilters(
