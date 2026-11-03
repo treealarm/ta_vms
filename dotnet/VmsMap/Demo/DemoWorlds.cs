@@ -15,7 +15,8 @@ namespace VmsMap.Demo
   {
     public const string UmdDataCenterKey = "umd-datacenter";
     // 2: Room 102 became a room diagram on the floor plan instead of a plan of its own.
-    public const int UmdDataCenterVersion = 2;
+    // 3: the diagram backgrounds are vector and their regions are the same geometry as the picture.
+    public const int UmdDataCenterVersion = 3;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -41,13 +42,15 @@ namespace VmsMap.Demo
     {
       var files = new List<DemoFile>
       {
-        new("file/floor-plan", "building-floor.png", "image/png"),
-        new("file/room-101-plan", "room-101.png", "image/png"),
-        new("file/room-layout-background", "room-layout.png", "image/png"),
-        new("file/room-icon", "room-icon.png", "image/png"),
-        new("file/rack-background", "rack-42u.png", "image/png"),
-        new("file/switch-background", "switch-9300.png", "image/png"),
-        new("file/port-icon", "rj45-port.png", "image/png"),
+        DemoFile.Asset("file/floor-plan", "building-floor.png", "image/png"),
+        DemoFile.Asset("file/room-101-plan", "room-101.png", "image/png"),
+        DemoFile.Asset("file/room-icon", "room-icon.png", "image/png"),
+        // The diagram backgrounds are vector, and their regions are drawn from the same geometry:
+        // see DemoArt, where a socket and the region a port takes are one rectangle.
+        new("file/room-layout-background", DemoArt.RoomLayout(), "image/svg+xml"),
+        new("file/rack-background", DemoArt.Rack(), "image/svg+xml"),
+        new("file/switch-background", DemoArt.Switch(), "image/svg+xml"),
+        new("file/port-icon", DemoArt.Port(), "image/svg+xml"),
       };
 
       var types = new List<DemoDiagramType>
@@ -82,7 +85,7 @@ namespace VmsMap.Demo
       // zoom the floor is looked at. A "Room" layer here would hide it as soon as the plan is
       // zoomed to its own detail.
       nodes.Add(new DemoNode(Room102Layout, "Room 102", "space/building", RoomLayoutType,
-        Canvas: new DemoRect(0, 0, 800, 600),
+        Canvas: new DemoRect(0, 0, DemoArt.RoomLayoutWidth, DemoArt.RoomLayoutHeight),
         At: new DemoPoint(38.99244, -76.93750),
         VisualKey: "file/room-icon", VisualWidth: 44, VisualHeight: 44));
 
@@ -103,7 +106,7 @@ namespace VmsMap.Demo
       {
         nodes.Add(new DemoNode(rack.Key, rack.Name, rack.Parent, RackType,
           RegionKey: rack.Region,
-          Canvas: new DemoRect(0, 0, 240, 720),
+          Canvas: new DemoRect(0, 0, DemoArt.RackWidth, DemoArt.RackHeight),
           At: rack.Lat is { } lat && rack.Lon is { } lon ? new DemoPoint(lat, lon) : null,
           ZoomLevel: "Rack"));
 
@@ -111,12 +114,13 @@ namespace VmsMap.Demo
         var switchKey = $"object/switch-{slug}";
         nodes.Add(new DemoNode(switchKey, "Switch " + rack.Name[5..], rack.Key, SwitchType,
           RegionKey: "slot-1",
-          Canvas: new DemoRect(0, 0, 600, 140)));
+          Canvas: new DemoRect(0, 0, DemoArt.SwitchWidth, DemoArt.SwitchHeight)));
 
         for (var port = 1; port <= 8; port += 1)
         {
           nodes.Add(new DemoNode($"object/port-{slug}-{port:00}", $"Port {port}", switchKey, PortType,
-            RegionKey: $"port-{port}"));
+            RegionKey: $"port-{port}",
+            Canvas: new DemoRect(0, 0, DemoArt.PortWidth, DemoArt.PortHeight)));
         }
       }
 
@@ -177,9 +181,9 @@ namespace VmsMap.Demo
       "Room layout",
       "file/room-layout-background",
       [
-        new DemoRegion("rack-1", new DemoRect(0.15, 0.18, 0.30, 0.64),
+        new DemoRegion("rack-1", DemoArt.RoomRack(1),
           new Dictionary<string, string> { ["color"] = "#4fc3f7", ["fontSize"] = "12px" }),
-        new DemoRegion("rack-2", new DemoRect(0.55, 0.18, 0.30, 0.64),
+        new DemoRegion("rack-2", DemoArt.RoomRack(2),
           new Dictionary<string, string> { ["color"] = "#4fc3f7", ["fontSize"] = "12px" }),
       ]);
 
@@ -189,16 +193,13 @@ namespace VmsMap.Demo
       var regions = new List<DemoRegion>();
       for (var slot = 1; slot <= 6; slot += 1)
       {
-        regions.Add(new DemoRegion($"slot-{slot}",
-          new DemoRect(0.12, 0.06 + (slot - 1) * 0.10, 0.76, 0.075),
+        regions.Add(new DemoRegion($"slot-{slot}", DemoArt.RackSlot(slot),
           new Dictionary<string, string> { ["color"] = "#d9e2ec", ["fontSize"] = "12px" }));
       }
 
-      regions.Add(new DemoRegion("temp",
-        new DemoRect(0.12, 0.78, 0.34, 0.05),
+      regions.Add(new DemoRegion("temp", DemoArt.RackTemperature,
         new Dictionary<string, string> { ["color"] = "#ffd54f", ["fontSize"] = "11px" }));
-      regions.Add(new DemoRegion("humidity",
-        new DemoRect(0.54, 0.78, 0.34, 0.05),
+      regions.Add(new DemoRegion("humidity", DemoArt.RackHumidity,
         new Dictionary<string, string> { ["color"] = "#81d4fa", ["fontSize"] = "11px" }));
 
       return new(RackType, "Rack 42U", "file/rack-background", regions);
@@ -208,8 +209,7 @@ namespace VmsMap.Demo
     private static DemoDiagramType SwitchTypeDefinition()
     {
       var regions = Enumerable.Range(1, 8)
-        .Select(port => new DemoRegion($"port-{port}",
-          new DemoRect(0.025 + (port - 1) * 0.12, 0.36, 0.10, 0.28),
+        .Select(port => new DemoRegion($"port-{port}", DemoArt.SwitchPort(port),
           new Dictionary<string, string> { ["color"] = "#b0bec5", ["fontSize"] = "10px" }))
         .ToList();
 

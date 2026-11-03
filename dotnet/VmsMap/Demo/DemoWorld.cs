@@ -12,8 +12,14 @@ namespace VmsMap.Demo
   public readonly record struct DemoRect(double Left, double Top, double Width, double Height, double Rotation = 0);
 
   /// A file the world brings: a picture of a plan, a diagram type's background or an icon. The
-  /// asset is embedded in this assembly under Demo/Assets, so the world ships with the code.
-  public sealed record DemoFile(string Key, string Asset, string Mime);
+  /// bytes are either an embedded asset under Demo/Assets or drawn by `DemoArt`, so the world ships
+  /// with the code and never depends on a file on the instance's disk.
+  public sealed record DemoFile(string Key, byte[] Content, string Mime)
+  {
+    /// A picture that is an embedded raster: the plans and the room's icon on the floor.
+    public static DemoFile Asset(string key, string asset, string mime) =>
+      new(key, DemoAssets.Read(asset), mime);
+  }
 
   /// Where a plan image lies in its space: three corners in the parent canvas's coordinates.
   public sealed record DemoPlan(string FileKey, uint WidthPx, uint HeightPx,

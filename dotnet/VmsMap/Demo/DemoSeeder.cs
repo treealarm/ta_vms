@@ -113,7 +113,7 @@ namespace VmsMap.Demo
       foreach (var file in world.Files)
       {
         var id = IdOf(file.Key);
-        await _files.PutAsync(id, file.Mime, DemoAssets.Read(file.Asset));
+        await _files.PutAsync(id, file.Mime, file.Content);
         ids[file.Key] = id;
         keep.Add(file.Key);
         Written(file.Key);
@@ -186,7 +186,7 @@ namespace VmsMap.Demo
               TopRight = ToCoordinate(space.Plan.TopRight),
               BottomLeft = ToCoordinate(space.Plan.BottomLeft),
             },
-          }, DemoAssets.Read(world.Files.Single(file => file.Key == space.Plan.FileKey).Asset), ct);
+          }, world.Files.Single(file => file.Key == space.Plan.FileKey).Content, ct);
         }
       }
 
@@ -217,7 +217,7 @@ namespace VmsMap.Demo
           await _visuals.UpdateListAsync([new VisualDTO
           {
             object_id = id.ToString(),
-            image = DemoAssets.Read(icon.Asset),
+            image = icon.Content,
             image_width = node.VisualWidth,
             image_height = node.VisualHeight,
           }]);

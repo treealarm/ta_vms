@@ -159,9 +159,13 @@ places it.
 **The world is code.** `dotnet/VmsMap/Demo/DemoWorlds.cs` builds it from loops and constants;
 `DemoWorld.cs` is the description (spaces, types and their regions, nodes, levels, camera
 placements, states, rights) and `DemoSeeder.cs` applies it through the ordinary services. The
-pictures — plans, rack and switch backgrounds, the port icon — are embedded PNGs under
-`Demo/Assets/`, so an install never depends on a file on the instance's disk. There is no
-import/export format for maps, and the demo does not add one.
+pictures ship with the code, so an install never depends on a file on the instance's disk: the floor
+and the Room 101 plan are PNGs under `Demo/Assets/`, while the diagram backgrounds — the switch, the
+rack, the room layout and the port's icon — are SVG drawn by `Demo/DemoArt.cs` from the same
+functions that lay the type's regions out. A socket and the region a port fills are therefore one
+rectangle by construction, and a region keeps the aspect of the diagram it holds: the switch drawn in
+a rack slot and the rack drawn in the room diagram are not stretched. There is no import/export
+format for maps, and the demo does not add one.
 
 **The registry.** `demo_config` and `demo_object` (`Grpc/migrations/0006_demo_seed.sql`) record the
 logical key of every row the world created — `space/room-101`, `object/rack-a-01`, `type/rack`,

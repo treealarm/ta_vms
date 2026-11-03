@@ -146,6 +146,50 @@ public class DemoWorldTests
   }
 
   [Fact]
+  public void EveryRegionIsAFeatureOfThePictureUnderIt()
+  {
+    // The types' regions and the vector backgrounds are drawn from the same geometry (DemoArt),
+    // which is what keeps a port inside its socket. These assertions are the seam: a region that
+    // stopped coming from DemoArt would drift from the picture with nothing else to notice.
+    var rackType = _world.Types.Single(type => type.Key == "type/rack");
+    for (var slot = 1; slot <= 6; slot += 1)
+    {
+      Assert.Equal(DemoArt.RackSlot(slot), rackType.Regions.Single(region => region.Key == $"slot-{slot}").Geometry);
+    }
+    Assert.Equal(DemoArt.RackTemperature, rackType.Regions.Single(region => region.Key == "temp").Geometry);
+    Assert.Equal(DemoArt.RackHumidity, rackType.Regions.Single(region => region.Key == "humidity").Geometry);
+
+    var switchType = _world.Types.Single(type => type.Key == "type/switch");
+    for (var port = 1; port <= 8; port += 1)
+    {
+      Assert.Equal(DemoArt.SwitchPort(port), switchType.Regions.Single(region => region.Key == $"port-{port}").Geometry);
+    }
+
+    var roomType = _world.Types.Single(type => type.Key == "type/room-layout");
+    Assert.Equal(DemoArt.RoomRack(1), roomType.Regions.Single(region => region.Key == "rack-1").Geometry);
+    Assert.Equal(DemoArt.RoomRack(2), roomType.Regions.Single(region => region.Key == "rack-2").Geometry);
+  }
+
+  [Fact]
+  public void TheDiagramBackgroundsAreVector()
+  {
+    // A raster background cannot be told from its regions by construction, and a scaled one blurs;
+    // the diagrams the demo draws are SVG, whose features are the regions themselves.
+    foreach (var key in new[]
+    {
+      "file/room-layout-background", "file/rack-background", "file/switch-background", "file/port-icon",
+    })
+    {
+      var file = _world.Files.Single(candidate => candidate.Key == key);
+      Assert.Equal("image/svg+xml", file.Mime);
+
+      var text = System.Text.Encoding.UTF8.GetString(file.Content);
+      Assert.StartsWith("<svg", text);
+      Assert.EndsWith("</svg>", text);
+    }
+  }
+
+  [Fact]
   public void EveryReferenceTheWorldMakesPointsAtSomethingItWrites()
   {
     var nodeKeys = _world.Nodes.Select(node => node.Key).ToHashSet();
