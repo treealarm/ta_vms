@@ -7,6 +7,10 @@ using VmsMap.Domain;
 
 namespace VmsMap.Db
 {
+  /// A type the dictionary cannot hold: its regions are the names children stand at, so each one
+  /// needs a key of its own.
+  public sealed class DiagramTypeConfigException(string message) : Exception(message);
+
   internal class DiagramTypeService : IDiagramTypeService
   {
     private readonly VmsMapDbContext _dbContext;
@@ -122,6 +126,8 @@ namespace VmsMap.Db
       if (newObjs == null || newObjs.Count == 0)
         return;
 
+      NormalizeKeys(newObjs);
+
       var dtoIdPairs = newObjs
           .Select(dto => (Id: Utils.ConvertObjectIdToGuid(dto.id) ?? Utils.NewGuid(), Dto: dto))
           .ToList();
@@ -211,10 +217,34 @@ namespace VmsMap.Db
       await _dbContext.SaveChangesAsync();
     }
 
+    /// A region is addressed by its key — a child names it in `region_id` — so a key has to be
+    /// there and to be the only one of its name. The update below matches regions by key; two of
+    /// them would be written into the first row twice and the second would silently vanish.
+    private static void NormalizeKeys(List<DiagramTypeDTO> types)
+    {
+      foreach (var type in types)
+      {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var region in type.regions ?? [])
+        {
+          var key = region.region_key?.Trim();
+          if (string.IsNullOrEmpty(key))
+            throw new DiagramTypeConfigException(
+              $"The diagram type \"{type.name}\" has a region without a key.");
+
+          if (!seen.Add(key))
+            throw new DiagramTypeConfigException(
+              $"The diagram type \"{type.name}\" has two regions keyed \"{key}\".");
+
+          region.region_key = key;
+        }
+      }
+    }
+
     // The rotation is part of the region: Square's update dropped it and a rotated region came
     // back upright after every save.
-    private static DBDiagramCoord ToDbCoord(DiagramCoordDTO? coord)
-    {
+    private static DBDiagramCoord ToDbCoord(DiagramCoordDTO? coord)    {
       var c = coord ?? new DiagramCoordDTO();
 
       return new DBDiagramCoord

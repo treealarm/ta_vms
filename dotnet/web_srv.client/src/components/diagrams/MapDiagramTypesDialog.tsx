@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Dialog, DialogActions,
-  DialogContent, DialogTitle, IconButton, Stack, TextField, Typography,
+  DialogContent, DialogTitle, Stack, TextField, Typography,
 } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useTranslation } from 'react-i18next'
 import { mapApi } from '../../api/mapApi'
 import { errorText } from '../../api/requestJson'
-import type { MapDiagramType, MapDiagramTypeRegion } from '../../dto/mapDtos'
+import type { MapDiagramType } from '../../dto/mapDtos'
 import { useMapFileImage } from '../../hooks/useMapFileImage'
 import { useAppDispatch } from '../../store'
 import { loadDiagramTypes } from '../../store/diagramsSlice'
+import DiagramTypeRegionEditor from './DiagramTypeRegionEditor'
 
 type Props = {
   open: boolean
@@ -21,11 +21,42 @@ type Props = {
   onSaved?: () => void
 }
 
-const emptyRegion = (): MapDiagramTypeRegion => ({
-  regionKey: '',
-  geometry: { top: 0.1, left: 0.1, width: 0.2, height: 0.1, rotation: 0 },
-  styles: { color: '#ffd54f', fontSize: '14px' },
-})
+const round = (value: number) => Math.round(value * 1000) / 1000
+
+/**
+ * What the server would refuse anyway, said before the round trip: every region needs a key of its
+ * own, and a region outside the paper would have no picture under it.
+ */
+function problemsOf(type: MapDiagramType, t: (key: string, options?: Record<string, unknown>) => string): string[] {
+  const problems: string[] = []
+  const keys = new Set<string>()
+
+  for (const region of type.regions ?? []) {
+    const key = region.regionKey?.trim() ?? ''
+    if (key === '') {
+      problems.push(t('diagramEditor.problemNoKey', { name: type.name }))
+      continue
+    }
+    if (keys.has(key)) problems.push(t('diagramEditor.problemDuplicateKey', { name: type.name, key }))
+    keys.add(key)
+
+    const geometry = region.geometry
+    if (!geometry) {
+      problems.push(t('diagramEditor.problemNoGeometry', { name: type.name, key }))
+      continue
+    }
+
+    const left = geometry.left ?? 0
+    const top = geometry.top ?? 0
+    const width = geometry.width ?? 0
+    const height = geometry.height ?? 0
+    const outside = left < 0 || top < 0 || width <= 0 || height <= 0
+      || round(left + width) > 1 || round(top + height) > 1
+    if (outside) problems.push(t('diagramEditor.problemOutside', { name: type.name, key }))
+  }
+
+  return problems
+}
 
 /**
  * The types of the mnemoschemes: what draws a node (its background picture) and the regions of
@@ -51,23 +82,13 @@ export default function MapDiagramTypesDialog({ open, onClose, onSaved }: Props)
   const change = (index: number, patch: Partial<MapDiagramType>) =>
     setTypes((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)))
 
-  const changeRegion = (index: number, regionIndex: number, patch: Partial<MapDiagramTypeRegion>) =>
-    setTypes((rows) => rows.map((row, i) => (i === index ? {
-      ...row,
-      regions: (row.regions ?? []).map((region, j) => (j === regionIndex ? { ...region, ...patch } : region)),
-    } : row)))
-
-  const changeRegionGeometry = (
-    index: number, regionIndex: number, field: 'top' | 'left' | 'width' | 'height', value: string,
-  ) => {
-    const region = types[index]?.regions?.[regionIndex]
-    if (!region) return
-    changeRegion(index, regionIndex, {
-      geometry: { ...region.geometry, [field]: Number(value) || 0 },
-    })
-  }
-
   const save = async () => {
+    const problems = types.flatMap((type) => problemsOf(type, t))
+    if (problems.length > 0) {
+      setError(problems.join(' '))
+      return
+    }
+
     setBusy(true)
     setError(null)
     try {
@@ -126,49 +147,10 @@ export default function MapDiagramTypesDialog({ open, onClose, onSaved }: Props)
               <Stack spacing={1.5}>
                 <TypeRow type={type} onChange={(patch) => change(index, patch)} />
                 <Typography variant="overline" color="text.secondary">{t('diagramEditor.regions')}</Typography>
-                {(type.regions ?? []).map((region, regionIndex) => (
-                  <Stack key={regionIndex} direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" useFlexGap>
-                    <TextField
-                      size="small"
-                      label={t('diagramEditor.regionKey')}
-                      value={region.regionKey ?? ''}
-                      onChange={(event) => changeRegion(index, regionIndex, { regionKey: event.target.value })}
-                      sx={{ width: 150 }}
-                    />
-                    {(['left', 'top', 'width', 'height'] as const).map((field) => (
-                      <TextField
-                        key={field}
-                        size="small"
-                        type="number"
-                        label={t(`diagramEditor.${field}`)}
-                        value={region.geometry?.[field] ?? 0}
-                        onChange={(event) => changeRegionGeometry(index, regionIndex, field, event.target.value)}
-                        inputProps={{ step: 0.01, min: 0, max: 1 }}
-                        sx={{ width: 92 }}
-                      />
-                    ))}
-                    <IconButton
-                      size="small"
-                      onClick={() => change(index, {
-                        regions: (type.regions ?? []).filter((_, j) => j !== regionIndex),
-                      })}
-                    >
-                      <DeleteOutlineIcon fontSize="small" />
-                    </IconButton>
-                  </Stack>
-                ))}
-                <Stack direction="row" spacing={1}>
-                  <Button
-                    size="small"
-                    startIcon={<AddIcon />}
-                    onClick={() => change(index, { regions: [...(type.regions ?? []), emptyRegion()] })}
-                  >
-                    {t('diagramEditor.addRegion')}
-                  </Button>
-                  <Button size="small" color="error" onClick={() => void remove(type)}>
-                    {t('diagramEditor.deleteType')}
-                  </Button>
-                </Stack>
+                <DiagramTypeRegionEditor type={type} onChange={(patch) => change(index, patch)} />
+                <Button size="small" color="error" onClick={() => void remove(type)}>
+                  {t('diagramEditor.deleteType')}
+                </Button>
               </Stack>
             </AccordionDetails>
           </Accordion>

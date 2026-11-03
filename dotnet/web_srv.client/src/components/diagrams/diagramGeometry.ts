@@ -80,3 +80,54 @@ export function fitScale(container: { width: number; height: number }, paper: Re
     (container.height - margin) / paper.height,
   )
 }
+
+/** A point in shares of a canvas, the space a diagram type stores its regions in. */
+export type SharePoint = { x: number; y: number }
+
+/** A region rectangle in shares of its canvas. */
+export type ShareRect = { left: number; top: number; width: number; height: number; rotation: number }
+
+/** The rectangle spanned by two corners, whichever way round they were dragged. */
+export function normalizeRect(from: SharePoint, to: SharePoint): ShareRect {
+  return {
+    left: Math.min(from.x, to.x),
+    top: Math.min(from.y, to.y),
+    width: Math.abs(to.x - from.x),
+    height: Math.abs(to.y - from.y),
+    rotation: 0,
+  }
+}
+
+/** Keeps a region on its canvas: a box dragged past an edge stops at it. */
+export function clampRegion(rect: ShareRect): ShareRect {
+  const width = Math.min(1, Math.max(0, rect.width))
+  const height = Math.min(1, Math.max(0, rect.height))
+  return {
+    left: Math.min(1 - width, Math.max(0, rect.left)),
+    top: Math.min(1 - height, Math.max(0, rect.top)),
+    width,
+    height,
+    rotation: rect.rotation ?? 0,
+  }
+}
+
+/**
+ * The region a point of a canvas falls in. The last one drawn wins, so a region added on top of
+ * another takes the click the way it takes the drawing.
+ */
+export function regionAtPoint(
+  regions: MapDiagramTypeRegion[] | undefined, x: number, y: number,
+): MapDiagramTypeRegion | undefined {
+  for (let index = (regions?.length ?? 0) - 1; index >= 0; index -= 1) {
+    const geometry = regions![index].geometry
+    if (!geometry) continue
+
+    const left = geometry.left ?? 0
+    const top = geometry.top ?? 0
+    if (x >= left && x <= left + (geometry.width ?? 0)
+      && y >= top && y <= top + (geometry.height ?? 0)) {
+      return regions![index]
+    }
+  }
+  return undefined
+}

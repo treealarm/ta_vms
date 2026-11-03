@@ -28,6 +28,11 @@ type Props = {
   movable?: boolean
   /** The element being dragged, at the rectangle it is currently over. */
   dragged?: { id: string; rect: Rect } | null
+  /**
+   * Draw the regions of the element's type, key and all, even where no value fills them. The
+   * administrator's paper shows the places an element may take; an operator sees only values.
+   */
+  showRegions?: boolean
 }
 
 /**
@@ -37,7 +42,7 @@ type Props = {
  */
 export default function DiagramElement({
   marker, rect, content, values, states, alarms, descriptions, depth, selectedId, onPick,
-  onMove, movable = true, dragged,
+  onMove, movable = true, dragged, showRegions = false,
 }: Props) {
   // While it is dragged, the element follows the pointer instead of the rectangle it was read at.
   const shown = dragged?.id === marker.id ? dragged.rect : rect
@@ -113,6 +118,44 @@ export default function DiagramElement({
           <Typography variant="caption" color="text.secondary" noWrap>{marker.name}</Typography>
         </Box>
       )}
+
+      {showRegions ? (type?.regions ?? []).map((region) => {
+        const area = regionRect(region, shown)
+        if (!area) return null
+
+        return (
+          <Box
+            key={`region:${region.regionKey}`}
+            sx={{
+              position: 'absolute',
+              left: area.left,
+              top: area.top,
+              width: area.width,
+              height: area.height,
+              transform: `rotate(${area.rotation}deg)`,
+              border: '1px dashed',
+              borderColor: 'rgba(255,255,255,0.55)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+            }}
+          >
+            <Typography
+              variant="caption"
+              noWrap
+              sx={{
+                px: 0.25,
+                color: region.styles?.color ?? '#ffffff',
+                backgroundColor: 'rgba(0,0,0,0.45)',
+                fontSize: 11,
+              }}
+            >
+              {region.regionKey}
+            </Typography>
+          </Box>
+        )
+      }) : null}
 
       {(type?.regions ?? []).map((region) => {
         const value = ownValues.find((candidate) => candidate.name === region.regionKey)

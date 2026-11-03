@@ -17,7 +17,7 @@ import {
 } from '../../store/mapEditsSlice'
 import { useMapLive } from '../../hooks/useMapLive'
 import { NODE_DRAG_TYPE } from '../../map/dragTypes'
-import { diagramPaper, fitScale, regionRect, type Rect } from './diagramGeometry'
+import { diagramPaper, fitScale, regionAtPoint, type Rect } from './diagramGeometry'
 import DiagramElement from './DiagramElement'
 import MapDiagramTypesDialog from './MapDiagramTypesDialog'
 
@@ -141,10 +141,7 @@ export default function DiagramViewer({
 
   /** The region of the open diagram's type a point of its paper falls in. */
   const regionAt = (x: number, y: number): MapDiagramTypeRegion | undefined =>
-    (openType?.regions ?? []).find((region) => {
-      const area = regionRect(region, paper)
-      return !!area && x >= area.left && x <= area.left + area.width && y >= area.top && y <= area.top + area.height
-    })
+    regionAtPoint(openType?.regions, x / paper.width, y / paper.height)
 
   /** Saves where an element was put: the region its middle fell in, or its own rectangle. */
   const place = async (id: string, ownerId: string | undefined, name: string | undefined, rect: Rect) => {
@@ -375,6 +372,7 @@ export default function DiagramViewer({
                   onMove={editing ? beginDrag : undefined}
                   movable={false}
                   dragged={dragging}
+                  showRegions={editing}
                 />
               </Box>
             </Box>

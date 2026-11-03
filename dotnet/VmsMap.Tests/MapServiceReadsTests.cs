@@ -191,6 +191,38 @@ public class MapServiceReadsTests
   }
 
   [Fact]
+  public async Task UpdateDiagramTypesNeedsAKeyPerRegionAndNoRepeats()
+  {
+    var s = Create();
+
+    static MapProto.DiagramTypeRegion Region(string key) => new()
+    {
+      RegionKey = key,
+      Geometry = new MapProto.DiagramCoordinate { Width = 0.5, Height = 0.5 },
+    };
+
+    // A child names its place by the key; a blank one names nothing and two alike name the same.
+    await Assert.ThrowsAsync<RpcException>(() => s.Grpc.UpdateDiagramTypes(new MapProto.DiagramTypeList
+    {
+      DiagramTypes = { new MapProto.DiagramType { Name = "Rack", Regions = { Region("  ") } } },
+    }, new TestContext()));
+
+    await Assert.ThrowsAsync<RpcException>(() => s.Grpc.UpdateDiagramTypes(new MapProto.DiagramTypeList
+    {
+      DiagramTypes = { new MapProto.DiagramType { Name = "Rack", Regions = { Region("slot-1"), Region("slot-1") } } },
+    }, new TestContext()));
+
+    var written = await s.Grpc.UpdateDiagramTypes(new MapProto.DiagramTypeList
+    {
+      DiagramTypes = { new MapProto.DiagramType { Name = "Rack", Regions = { Region(" slot-1 ") } } },
+    }, new TestContext());
+
+    // The key is stored trimmed: it is what a child's region_id is compared with.
+    var type = Assert.Single(written.DiagramTypes);
+    Assert.Equal("slot-1", Assert.Single(type.Regions).RegionKey);
+  }
+
+  [Fact]
   public async Task GetByParentHidesANodeTheCallerCannotSee()
   {
     var s = Create();

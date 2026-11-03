@@ -297,7 +297,14 @@ namespace VmsMap.Grpc
     {
       var dtos = request.DiagramTypes.Select(ToDto).ToList();
 
-      await _diagramTypeService.UpdateListAsync(dtos);
+      try
+      {
+        await _diagramTypeService.UpdateListAsync(dtos);
+      }
+      catch (DiagramTypeConfigException ex)
+      {
+        throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
+      }
 
       return new MapProto.DiagramTypeList { DiagramTypes = { dtos.Select(ToProto) } };
     }
