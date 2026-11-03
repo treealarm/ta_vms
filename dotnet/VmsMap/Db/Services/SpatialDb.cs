@@ -1274,8 +1274,13 @@ namespace VmsMap.Db
     // ── Plumbing ─────────────────────────────────────────────────────────────
 
     // InMemory, which the tests use, has no transactions; production always runs on PostgreSQL.
+    // A caller that already opened one — the demo install wraps a whole world in a single
+    // transaction — owns it: the steps here join it, and a null answer says the commit is not
+    // theirs to make. Opening a second would fail on the connection before the first step ran.
     private async Task<IDbContextTransaction?> BeginTransactionAsync(CancellationToken ct) =>
-      _db.Database.IsRelational() ? await _db.Database.BeginTransactionAsync(ct) : null;
+      !_db.Database.IsRelational() || _db.Database.CurrentTransaction is not null
+        ? null
+        : await _db.Database.BeginTransactionAsync(ct);
 
     private Task NotifyAsync(
       IEnumerable<string> objectIds, IEnumerable<string> cameraIds, CancellationToken ct) =>

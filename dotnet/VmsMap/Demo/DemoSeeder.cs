@@ -323,13 +323,18 @@ namespace VmsMap.Demo
       await DeleteAsync(registered.ToList(), ct);
       report.Removed = registered.Count;
 
-      var config = await _db.DemoConfigs.FirstOrDefaultAsync(c => c.demo_key == key, ct);
-      if (config is not null) _db.DemoConfigs.Remove(config);
-
+      // The registry first, the config row after it: the two are related only by a database
+      // cascade, which EF does not know about when it orders its deletes.
       var rows = await _db.DemoObjects.Where(o => o.demo_key == key).ToListAsync(ct);
       _db.DemoObjects.RemoveRange(rows);
-
       await _db.SaveChangesAsync(ct);
+
+      var config = await _db.DemoConfigs.FirstOrDefaultAsync(c => c.demo_key == key, ct);
+      if (config is not null)
+      {
+        _db.DemoConfigs.Remove(config);
+        await _db.SaveChangesAsync(ct);
+      }
       if (tx is not null) await tx.CommitAsync(ct);
       return report;
     }
