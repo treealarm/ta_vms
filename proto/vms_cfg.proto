@@ -69,6 +69,7 @@ service CfgService {
   // The demo's video wall. The demo flag installs it at startup as well; this call is what the
   // administrator's button uses when the world is installed after the cameras were provisioned.
   rpc InstallDemo(InstallDemoRequest) returns (DemoMonitorReport);
+  rpc RemoveDemo(InstallDemoRequest) returns (OperationStatus);
   rpc ListOnvifAlarmFilters(ListOnvifAlarmFiltersRequest) returns (ListOnvifAlarmFiltersResponse);
   rpc UpsertOnvifAlarmFilter(OnvifAlarmFilter) returns (OnvifAlarmFilter);
   rpc RemoveOnvifAlarmFilter(OnvifAlarmFilterRequest) returns (OperationStatus);

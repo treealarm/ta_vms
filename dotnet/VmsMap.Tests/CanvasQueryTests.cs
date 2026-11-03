@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Vms.Map;
 using VmsMap.Clients;
 using VmsMap.Db;
+using VmsMap.Demo;
 using VmsMap.Domain;
 using VmsMap.Grpc;
 using VmsMap.PubSub;
@@ -67,7 +68,10 @@ public class CanvasQueryTests
       new EventsService(db, map), new ValuesService(db), tracks,
       new DiagramService(db), new DiagramTypeService(db), new RightService(db), rights,
       new TestRightsNotifier(),
-      new VisualService(db), new FileService(db), spatial, null!);
+      new VisualService(db), new FileService(db), spatial, null!,
+      new DemoSeeder(
+        db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
+        new RightService(db), geo, new FileService(db), spatial, new TestCatalog()));
 
     return new Services(db, map, geo, spatial, grpc);
   }

@@ -65,6 +65,7 @@
                 "MEDIA_SERVER_PAIRS": "vms:vmsfs:vmsonvif:vmslogger:roitrc,vms-2:vmsfs-2:vmsonvif-2:vmslogger-2",
                 "DAPR_STATE_STORE_NAME": "statestore",
                 "APP_ID": "vmscfg",
+                "DEMO_CONFIG": "",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },
@@ -91,6 +92,7 @@
                 "DAPR_STATE_STORE_NAME": "statestore",
                 "PUBSUB_NAME": "orderpubsub",
                 "APP_ID": "vmsmap",
+                "DEMO_CONFIG": "",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },

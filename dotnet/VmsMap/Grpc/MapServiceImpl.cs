@@ -10,6 +10,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using VmsMap.Db;
+using VmsMap.Demo;
 using VmsMap.Domain;
 using VmsMap.PubSub;
 using VmsMap.Watch;
@@ -44,6 +45,7 @@ namespace VmsMap.Grpc
     private readonly FileService _fileService;
     private readonly SpatialDb _spatialDb;
     private readonly MapWatchPoller _watchPoller;
+    private readonly DemoSeeder _demoSeeder;
 
     public MapServiceImpl(
       VmsMapDbContext db,
@@ -65,7 +67,8 @@ namespace VmsMap.Grpc
       VisualService visualService,
       FileService fileService,
       SpatialDb spatialDb,
-      MapWatchPoller watchPoller)
+      MapWatchPoller watchPoller,
+      DemoSeeder demoSeeder)
     {
       _db = db;
       _mapService = mapService;
@@ -87,6 +90,7 @@ namespace VmsMap.Grpc
       _fileService = fileService;
       _spatialDb = spatialDb;
       _watchPoller = watchPoller;
+      _demoSeeder = demoSeeder;
     }
 
     // ── Objects ───────────────────────────────────────────────────────────────────────────────
@@ -314,6 +318,58 @@ namespace VmsMap.Grpc
     {
       await _diagramTypeService.DeleteAsync(request.Ids.ToList());
       return Ok();
+    }
+
+    // ── Demo world ────────────────────────────────────────────────────────────────────────────
+
+    public override async Task<MapProto.DemoReport> InstallDemo(
+      MapProto.InstallDemoRequest request, ServerCallContext context)
+    {
+      var world = RequireWorld(request.DemoKey);
+      var report = await _demoSeeder.InstallAsync(world, context.CancellationToken);
+      return ToProto(report);
+    }
+
+    public override async Task<MapProto.DemoReport> RemoveDemo(
+      MapProto.InstallDemoRequest request, ServerCallContext context)
+    {
+      var world = RequireWorld(request.DemoKey);
+      var report = await _demoSeeder.RemoveAsync(world.Key, context.CancellationToken);
+      return ToProto(report);
+    }
+
+    public override async Task<MapProto.DemoStatus> GetDemoStatus(
+      MapProto.InstallDemoRequest request, ServerCallContext context)
+    {
+      var world = RequireWorld(request.DemoKey);
+      var status = await _demoSeeder.GetStatusAsync(world.Key, context.CancellationToken);
+
+      return new MapProto.DemoStatus
+      {
+        DemoKey = status.Key,
+        Installed = status.Installed,
+        Version = status.Version,
+        Entities = status.Entities,
+      };
+    }
+
+    private static DemoWorld RequireWorld(string key) =>
+      DemoWorlds.For(key) ?? throw new RpcException(new Status(
+        StatusCode.InvalidArgument, $"There is no demo world '{key}'"));
+
+    private static MapProto.DemoReport ToProto(DemoReport report)
+    {
+      var proto = new MapProto.DemoReport
+      {
+        DemoKey = report.Key,
+        Version = report.Version,
+        Created = report.Created,
+        Updated = report.Updated,
+        Removed = report.Removed,
+      };
+
+      proto.SkippedCameras.AddRange(report.SkippedCameras);
+      return proto;
     }
 
     // ── Rights ───────────────────────────────────────────────────────────────────────────────

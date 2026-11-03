@@ -1039,6 +1039,20 @@ namespace VmsCfg
       return report;
     }
 
+    public override async Task<OperationStatus> RemoveDemo(
+      InstallDemoRequest request, ServerCallContext context)
+    {
+      if (!string.Equals(request.DemoKey, VmsCfg.Demo.DemoMonitor.DemoKey, StringComparison.Ordinal))
+        throw new RpcException(new Status(
+          StatusCode.InvalidArgument, $"There is no demo world '{request.DemoKey}'"));
+
+      var removed = await demoMonitor.RemoveAsync(context.CancellationToken);
+      if (removed)
+        logger.LogInformation("Demo wall '{Name}' removed", VmsCfg.Demo.DemoMonitor.Name);
+
+      return new OperationStatus { Success = true, Message = removed ? "ok" : "not installed" };
+    }
+
     public override async Task<ListOnvifAlarmFiltersResponse> ListOnvifAlarmFilters(
       ListOnvifAlarmFiltersRequest request,
       ServerCallContext context)

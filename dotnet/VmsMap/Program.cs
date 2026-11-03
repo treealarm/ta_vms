@@ -102,6 +102,8 @@ builder.Services.AddScoped<DemoSeeder>();
 // The rack readings of the installed world; a no-op while no demo is installed.
 builder.Services.AddScoped<DemoValueFeeder>();
 builder.Services.AddHostedService<DemoValueFeederService>();
+// `DEMO_CONFIG` names a world to install at startup; empty means none.
+builder.Services.AddHostedService<DemoInstallService>();
 
 builder.Services.AddScoped<ITracksUpdateService, TracksUpdateService>();
 builder.Services.AddScoped<IMapUpdateService, MapUpdateService>();

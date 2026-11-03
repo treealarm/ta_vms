@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,6 +10,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using web_srv.Authentication;
+using CfgProto = Vms.Cfg;
 using MapProto = Vms.Map;
 
 namespace web_srv;
@@ -20,7 +23,9 @@ namespace web_srv;
 [ApiController]
 [Authorize(Policy = AuthPolicies.AdminOnly)]
 [Route("api/map/admin")]
-public class MapAdminController(MapProto.MapService.MapServiceClient map) : ControllerBase
+public class MapAdminController(
+  MapProto.MapService.MapServiceClient map,
+  CfgProto.CfgService.CfgServiceClient cfg) : ControllerBase
 {
   /// Mirrors VmsMap's limit, so an oversized upload is refused here before it is streamed anywhere.
   private const int MaxFileBytes = 20 * 1024 * 1024;
@@ -28,6 +33,27 @@ public class MapAdminController(MapProto.MapService.MapServiceClient map) : Cont
 
   // A picture of tens of megabytes through two sidecars is not a 10-second call.
   private static readonly TimeSpan UploadTimeout = TimeSpan.FromSeconds(60);
+
+  // A world install writes dozens of rows through two services; an install on a small machine is
+  // still seconds, not the ten the ordinary map calls allow.
+  private static readonly TimeSpan DemoTimeout = TimeSpan.FromSeconds(120);
+
+  // The one world today; the button does not choose.
+  private const string DemoKey = "umd-datacenter";
+
+  /// What an install or a removal did on both sides of it: VmsMap writes the world, VmsCfg its
+  /// video wall. The browser shows the skipped cameras, which is a list of what to provision next.
+  public sealed record DemoInstallResult(
+    bool Installed,
+    int Version,
+    int Created,
+    int Updated,
+    int Removed,
+    IReadOnlyList<string> SkippedCameras,
+    IReadOnlyList<string> MonitorCameras);
+
+  private static CallOptions DemoOptions(CancellationToken ct) =>
+    new(deadline: DateTime.UtcNow.Add(DemoTimeout), cancellationToken: ct);
 
   public sealed class UploadForm
   {
@@ -136,6 +162,54 @@ public class MapAdminController(MapProto.MapService.MapServiceClient map) : Cont
   {
     var request = MapApi.Parse<MapProto.ObjectIds>(body);
     return MapApi.Json(await map.DeleteDiagramTypesAsync(request, MapApi.Options(ct)));
+  }
+
+  // ── Demo world ──────────────────────────────────────────────────────────────────────────────
+
+  [HttpGet("demo")]
+  public async Task<IActionResult> GetDemoStatus(CancellationToken ct)
+  {
+    var status = await map.GetDemoStatusAsync(
+      new MapProto.InstallDemoRequest { DemoKey = DemoKey }, MapApi.Options(ct));
+
+    return Ok(new { installed = status.Installed, version = status.Version, entities = status.Entities });
+  }
+
+  /// The map world first, its wall second: the wall only knows about cameras, and a failure of
+  /// the world should not leave a wall behind pointing at absent racks.
+  [HttpPost("demo/install")]
+  public async Task<IActionResult> InstallDemo(CancellationToken ct)
+  {
+    var request = new MapProto.InstallDemoRequest { DemoKey = DemoKey };
+    var world = await map.InstallDemoAsync(request, DemoOptions(ct));
+    var wall = await cfg.InstallDemoAsync(
+      new CfgProto.InstallDemoRequest { DemoKey = DemoKey }, DemoOptions(ct));
+
+    return Ok(new DemoInstallResult(
+      Installed: true,
+      Version: world.Version,
+      Created: world.Created,
+      Updated: world.Updated,
+      Removed: world.Removed,
+      SkippedCameras: [.. world.SkippedCameras.Union(wall.SkippedCameras)],
+      MonitorCameras: [.. wall.PlacedCameras]));
+  }
+
+  [HttpPost("demo/remove")]
+  public async Task<IActionResult> RemoveDemo(CancellationToken ct)
+  {
+    var request = new MapProto.InstallDemoRequest { DemoKey = DemoKey };
+    var report = await map.RemoveDemoAsync(request, DemoOptions(ct));
+    await cfg.RemoveDemoAsync(new CfgProto.InstallDemoRequest { DemoKey = DemoKey }, DemoOptions(ct));
+
+    return Ok(new DemoInstallResult(
+      Installed: false,
+      Version: report.Version,
+      Created: report.Created,
+      Updated: report.Updated,
+      Removed: report.Removed,
+      SkippedCameras: [],
+      MonitorCameras: []));
   }
 
   // ── Files ───────────────────────────────────────────────────────────────────────────────────

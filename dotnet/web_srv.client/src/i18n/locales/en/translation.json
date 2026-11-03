@@ -1224,6 +1224,19 @@
       "statesHint": "How a state is named and painted, and whether it counts as an alarm.",
       "levelsHint": "A node appears at zoom levels between the two bounds; a layer nobody uses hides nothing."
     },
+    "demo": {
+      "install": "Install demo",
+      "remove": "Remove demo",
+      "confirmInstall": "Install the demo world? It adds or replaces only demo objects; everything you created stays as it is.",
+      "confirmRemove": "Remove the demo world? Only demo objects are removed; everything you created stays as it is.",
+      "installed": "Demo world installed",
+      "removed": "Demo world removed",
+      "summary": "Created: {{created}} · updated: {{updated}} · removed: {{removed}}",
+      "wall": "Video wall: {{cameras}}",
+      "noWall": "The video wall has no cameras yet.",
+      "skippedTitle": "Cameras the deployment does not have yet",
+      "skippedHint": "The world is installed without them. Provision the cameras, then install the demo again."
+    },
     "node": {
       "kind": {
         "space": "Space",

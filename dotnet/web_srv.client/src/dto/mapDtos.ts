@@ -349,6 +349,20 @@ export type MapRightActionTable = { entries?: MapRightActionEntry[] }
 
 export type MapOperationStatus = { success?: boolean; message?: string }
 
+/** Whether the demo world is installed, and how many rows it owns. */
+export type MapDemoStatus = { installed?: boolean; version?: number; entities?: number }
+
+/** What installing or removing the world did: the map rows and the video wall together. */
+export type MapDemoReport = {
+  installed?: boolean
+  version?: number
+  created?: number
+  updated?: number
+  removed?: number
+  skippedCameras?: string[]
+  monitorCameras?: string[]
+}
+
 export type MapWatchItem = { objectId?: string; cameraId?: string }
 
 export type MapWatchAction =

@@ -16,6 +16,10 @@ namespace VmsMap.Demo
     public const string UmdDataCenterKey = "umd-datacenter";
     public const int UmdDataCenterVersion = 1;
 
+    /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
+    public static DemoWorld? For(string key) =>
+      string.Equals(key, UmdDataCenterKey, StringComparison.Ordinal) ? UmdDataCenter() : null;
+
     // The building, in WGS84. Its floor is a plan nested in the map; the rooms are plans nested in
     // the floor, in coordinates of their own that happen to be the same numbers.
     private const double BuildingSouth = 38.9918;

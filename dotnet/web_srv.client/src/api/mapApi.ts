@@ -3,6 +3,8 @@ import type {
   MapAlarmStateList,
   MapBox,
   MapCreateReplicaRequest,
+  MapDemoReport,
+  MapDemoStatus,
   MapDiagram,
   MapDiagramContent,
   MapDiagramList,
@@ -191,6 +193,15 @@ export const mapApi = {
 
   deleteDiagramTypes: (ids: string[]) =>
     requestJson<MapOperationStatus>(`${ADMIN}/diagram-types`, jsonRequest('DELETE', { ids })),
+
+  // ── Demo world ─────────────────────────────────────────────────────────────────────────────
+  // The world itself is VmsMap's; its video wall is VmsCfg's. The gateway calls both and answers
+  // one report.
+  getDemoStatus: () => requestJson<MapDemoStatus>(`${ADMIN}/demo`),
+
+  installDemo: () => requestJson<MapDemoReport>(`${ADMIN}/demo/install`, { method: 'POST' }),
+
+  removeDemo: () => requestJson<MapDemoReport>(`${ADMIN}/demo/remove`, { method: 'POST' }),
 
   /** A picture row for a diagram background, an icon or a plan. 20 MiB at most. */
   uploadFile: async (file: File): Promise<MapFileInfo> => {

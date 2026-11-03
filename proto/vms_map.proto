@@ -153,6 +153,13 @@ service MapService {
   rpc UpdateDiagramTypes(DiagramTypeList) returns (DiagramTypeList);
   rpc DeleteDiagramTypes(ObjectIds) returns (OperationStatus);
 
+  // The demo world. The world is code in VmsMap, installed through the ordinary services under a
+  // registry of what it owns, so a second install updates it and a removal deletes only it. Its
+  // video wall is VmsCfg's (CfgService.InstallDemo); web_srv calls both and merges the reports.
+  rpc InstallDemo(InstallDemoRequest) returns (DemoReport);
+  rpc RemoveDemo(InstallDemoRequest) returns (DemoReport);
+  rpc GetDemoStatus(InstallDemoRequest) returns (DemoStatus);
+
   // Rights are rows on tree nodes, inherited downwards from the moment M3 reads them: a subject
   // is a Keycloak role name or a user name, an action comes from the open set the node kind
   // allows (view, edit, and for a camera view_live, view_archive, ptz, control, export).
@@ -1033,4 +1040,30 @@ message FileInfo {
   string mime = 2;
   uint64 size = 3;
   string etag = 4;
+}
+
+// ── Demo world ────────────────────────────────────────────────────────────────
+
+message InstallDemoRequest {
+  // The world to install, as the demo flag names it: "umd-datacenter" today.
+  string demo_key = 1;
+}
+
+message DemoReport {
+  string demo_key = 1;
+  int32 version = 2;
+  int32 created = 3;
+  int32 updated = 4;
+  int32 removed = 5;
+  // Cameras the deployment does not have yet. The world is valid without them and a later
+  // install places them once they are provisioned.
+  repeated string skipped_cameras = 6;
+}
+
+message DemoStatus {
+  string demo_key = 1;
+  bool installed = 2;
+  int32 version = 3;
+  // How many rows the registry says the installed world owns.
+  int32 entities = 4;
 }

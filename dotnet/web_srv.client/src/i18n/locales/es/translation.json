@@ -1224,6 +1224,19 @@
       "statesHint": "Cómo se llama y se pinta un estado, y si cuenta como alarma.",
       "levelsHint": "Un nodo aparece entre los dos límites de zoom; una capa que nadie usa no oculta nada."
     },
+    "demo": {
+      "install": "Instalar demo",
+      "remove": "Eliminar demo",
+      "confirmInstall": "¿Instalar el mundo de demostración? Solo añade o reemplaza objetos de la demo; todo lo que usted creó queda intacto.",
+      "confirmRemove": "¿Eliminar el mundo de demostración? Solo se eliminan los objetos de la demo; todo lo que usted creó queda intacto.",
+      "installed": "Mundo de demostración instalado",
+      "removed": "Mundo de demostración eliminado",
+      "summary": "Creados: {{created}} · actualizados: {{updated}} · eliminados: {{removed}}",
+      "wall": "Videowall: {{cameras}}",
+      "noWall": "El videowall aún no tiene cámaras.",
+      "skippedTitle": "Cámaras que la instalación aún no tiene",
+      "skippedHint": "El mundo se instala sin ellas. Dé de alta las cámaras y vuelva a instalar la demo."
+    },
     "node": {
       "kind": {
         "space": "Espacio",

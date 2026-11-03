@@ -77,4 +77,9 @@ public sealed class DemoMonitor(IDbContextFactory<VmsCfgDbContext> dbFactory, Ca
 
         return plan;
     }
+
+    /// Takes the wall away with the world. Its cameras stay: they belong to the deployment, not
+    /// to the demo.
+    public Task<bool> RemoveAsync(CancellationToken ct) =>
+        storage.RemoveMonitorAsync(MonitorId.ToString(), string.Empty, ct);
 }

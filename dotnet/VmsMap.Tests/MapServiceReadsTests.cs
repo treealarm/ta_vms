@@ -8,6 +8,7 @@ using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
 using VmsMap.Clients;
 using VmsMap.Db;
+using VmsMap.Demo;
 using VmsMap.Domain;
 using VmsMap.Grpc;
 using VmsMap.PubSub;
@@ -70,16 +71,19 @@ public class MapServiceReadsTests
     var updates = new MapUpdateService(map, tracks, states);
     var rights = new RightsService(db);
     var notifier = new TestRightsNotifier();
+    var spatial = new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier());
 
     var grpc = new MapServiceImpl(
       db, map, updates, geo, levels, trackService, states, stateService,
       new EventsService(db, map), new ValuesService(db), tracks,
       new DiagramService(db), new DiagramTypeService(db), new RightService(db), rights, notifier,
-      new VisualService(db), new FileService(db),
-      new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier()),
+      new VisualService(db), new FileService(db), spatial,
       // The read tests never open a watch stream; the poller needs a scope factory only when it
       // runs, which it does not here.
-      null!);
+      null!,
+      new DemoSeeder(
+        db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
+        new RightService(db), geo, new FileService(db), spatial, new TestCatalog()));
 
     return new Services(db, map, states, grpc, notifier);
   }

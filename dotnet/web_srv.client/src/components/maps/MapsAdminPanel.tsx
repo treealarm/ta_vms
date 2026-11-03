@@ -14,6 +14,7 @@ import { SpaceForm, type NewSpace } from './SpaceForm'
 import SpaceEditor from './SpaceEditor'
 import MapsSidebar from './MapsSidebar'
 import MapDictionariesDialog from './MapDictionariesDialog'
+import DemoControl from './DemoControl'
 import RightsModeSwitch from '../objects/RightsModeSwitch'
 import { EditorStateProvider } from './EditorStateProvider'
 import { treeOf } from './spatialUtils'
@@ -87,6 +88,7 @@ export default function MapsAdminPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHa
             >
               {t('maps.dictionaries.title')}
             </Button>
+            <DemoControl />
           </Stack>
         )}
       >
