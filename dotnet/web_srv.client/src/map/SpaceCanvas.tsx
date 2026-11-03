@@ -39,8 +39,8 @@ export type MapFocus = {
   lat: number
   lon: number
   seq: number
-  /** The scale level a container is entered at: never below it, never zooming out to reach it. */
-  zoomAtLeast?: number
+  /** The scale level a container is entered at: the zoom its children start to be drawn from. */
+  zoom?: number
   /** One step in, for a container whose children carry no scale layer of their own. */
   zoomStep?: boolean
 }
@@ -143,8 +143,10 @@ function FocusOn({ focus }: { focus?: MapFocus | null }) {
     map.invalidateSize({ pan: false })
 
     const current = map.getZoom()
-    const zoom = focus.zoomAtLeast !== undefined
-      ? Math.max(current, focus.zoomAtLeast)
+    // A container is entered at its children's level even from deeper in: at a closer zoom they
+    // are hidden by the upper bound of their layer, and entering has to show them.
+    const zoom = focus.zoom !== undefined
+      ? focus.zoom
       : focus.zoomStep
         ? current + 1
         : Math.max(current, FOCUS_MIN_ZOOM)

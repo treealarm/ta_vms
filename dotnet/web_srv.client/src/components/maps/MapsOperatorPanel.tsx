@@ -367,7 +367,7 @@ export default function MapsOperatorPanel() {
 
     // The children drawn on this canvas carry their own scale layers.
     const children = spaceData.figures.filter((figure) => figure.parentId === nodeId)
-    const zoomAtLeast = enterZoom(children, levels)
+    const zoom = enterZoom(children, levels)
 
     const centre = pointsCentre(figureById.get(nodeId)?.geometry?.coord ?? [])
       ?? pointsCentre(children.flatMap((child) => child.geometry?.coord ?? []))
@@ -375,8 +375,8 @@ export default function MapsOperatorPanel() {
       setFocus((previous) => ({
         ...centre,
         seq: (previous?.seq ?? 0) + 1,
-        zoomAtLeast,
-        zoomStep: zoomAtLeast === undefined,
+        zoom,
+        zoomStep: zoom === undefined,
       }))
     }
     setSelectedNodeId(nodeId)

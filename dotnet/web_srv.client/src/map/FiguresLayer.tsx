@@ -1,11 +1,12 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useMemo } from 'react'
 import L from 'leaflet'
-import { Circle, CircleMarker, Marker, Polygon, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet'
+import { Circle, CircleMarker, Marker, Polygon, Polyline, Tooltip } from 'react-leaflet'
 import type { GeoPointDto } from '../dto/dtos'
 import type {
   MapAlarmState, MapFigure, MapGeometry, MapLevel, MapObjectState, MapStateDescription,
 } from '../dto/mapDtos'
 import { nodeStyle } from './nodeStyle'
+import { useMapZoom } from '../hooks/useMapZoom'
 import { inLayer, levelRanges } from './zoomLevels'
 import VertexEditor from './vertexEditor'
 import { VERTEX_ICON } from './vertexHandles'
@@ -69,9 +70,7 @@ export default function FiguresLayer({
   figures, states, alarms, descriptions, levels, selectedId, onSelect, skipIds,
   editable, onGeometryChange,
 }: Props) {
-  const map = useMap()
-  const [zoom, setZoom] = useState(() => map.getZoom())
-  useMapEvents({ zoomend: () => setZoom(map.getZoom()) })
+  const zoom = useMapZoom()
 
   const ranges = useMemo(() => levelRanges(levels), [levels])
 
@@ -164,7 +163,7 @@ function renderFigure(
   switch (figure.geometry?.type) {
     case 'LineString':
       return (
-        <Fragment key={figure.id}>
+        <Fragment key={`${figure.id}:${style.alarming}`}>
           <Polyline positions={coords} pathOptions={{ ...pathOptions, fillOpacity: 0 }}
             eventHandlers={handlers}>
             <Tooltip>{figure.name}</Tooltip>
@@ -174,7 +173,7 @@ function renderFigure(
       )
     case 'Polygon':
       return (
-        <Fragment key={figure.id}>
+        <Fragment key={`${figure.id}:${style.alarming}`}>
           <Polygon positions={coords} pathOptions={pathOptions} eventHandlers={handlers}>
             <Tooltip>{figure.name}</Tooltip>
           </Polygon>
@@ -187,7 +186,7 @@ function renderFigure(
 
       if (figure.visual?.image) {
         return (
-          <Fragment key={figure.id}>
+          <Fragment key={`${figure.id}:${style.alarming}`}>
             <Marker position={[lat, lon]} icon={figureIcon(figure, style.alarming)} eventHandlers={handlers}>
               <Tooltip>{figure.name}</Tooltip>
             </Marker>
@@ -198,7 +197,7 @@ function renderFigure(
 
       if ((figure.radius ?? 0) > 0) {
         return (
-          <Fragment key={figure.id}>
+          <Fragment key={`${figure.id}:${style.alarming}`}>
             <Circle center={[lat, lon]} radius={figure.radius as number}
               pathOptions={pathOptions} eventHandlers={handlers}>
               <Tooltip permanent={!!style.text} direction="top">{caption}</Tooltip>
@@ -209,7 +208,7 @@ function renderFigure(
       }
 
       return (
-        <Fragment key={figure.id}>
+        <Fragment key={`${figure.id}:${style.alarming}`}>
           <CircleMarker center={[lat, lon]} radius={selected ? 9 : 7}
             pathOptions={pathOptions} eventHandlers={handlers}>
             <Tooltip permanent={!!style.text} direction="top">{caption}</Tooltip>
