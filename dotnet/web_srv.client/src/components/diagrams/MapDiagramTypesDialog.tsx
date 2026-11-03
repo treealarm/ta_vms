@@ -18,7 +18,7 @@ type Props = {
   open: boolean
   onClose: () => void
   /** A type was written or removed: the open diagram is drawn from them again. */
-  onSaved: () => void
+  onSaved?: () => void
 }
 
 const emptyRegion = (): MapDiagramTypeRegion => ({
@@ -74,7 +74,7 @@ export default function MapDiagramTypesDialog({ open, onClose, onSaved }: Props)
       const saved = await mapApi.updateDiagramTypes(types)
       setTypes(saved.diagramTypes ?? types)
       void dispatch(loadDiagramTypes())
-      onSaved()
+      onSaved?.()
     } catch (e) {
       setError(errorText(e))
     } finally {
@@ -95,7 +95,7 @@ export default function MapDiagramTypesDialog({ open, onClose, onSaved }: Props)
       await mapApi.deleteDiagramTypes([type.id])
       setTypes((rows) => rows.filter((row) => row.id !== type.id))
       void dispatch(loadDiagramTypes())
-      onSaved()
+      onSaved?.()
     } catch (e) {
       setError(errorText(e))
     } finally {

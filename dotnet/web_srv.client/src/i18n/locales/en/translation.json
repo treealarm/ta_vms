@@ -1065,9 +1065,11 @@
   "diagramEditor": {
     "diagram": "Diagram",
     "newDiagram": "New diagram",
-    "addDiagram": "New diagram on this map",
+    "addDiagram": "New diagram under the selected node, or on this map",
     "types": "Types",
     "typesHint": "A type draws every diagram of it: its background picture, and the regions its children may take instead of a rectangle of their own.",
+    "manageTypes": "Manage types…",
+    "noTypesHint": "The dictionary has no types yet. Add one there, then choose it here.",
     "newType": "New type",
     "addType": "Add type",
     "deleteType": "Delete type",
@@ -1157,7 +1159,7 @@
     },
     "editor": {
       "tabNodes": "Nodes",
-      "nodesHint": "Drag a node onto the map to place a replica of it here.",
+      "nodesHint": "A shape drawn while a node is selected becomes its child. Drag a node onto the map to place a replica of it here.",
       "noNodes": "Nothing is drawn here yet.",
       "figure": "Figure",
       "name": "Name",

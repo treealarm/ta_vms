@@ -1,18 +1,21 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Box, Chip, IconButton, List, ListItemButton, ListItemText, Stack, Tab, Tabs, Tooltip, Typography,
 } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
+import ChevronRightIcon from '@mui/icons-material/ChevronRight'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import PlaceIcon from '@mui/icons-material/Place'
 import { useTranslation } from 'react-i18next'
 import type { SpaceDto } from '../../dto/dtos'
 import type { MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
+import { childrenOf, loadChildren } from '../../store/objectsSlice'
 import { createDiagramNode } from '../../store/mapEditsSlice'
 import { useMapChildren } from '../../hooks/useMapChildren'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
 import KindIcon from '../../map/KindIcon'
-import { sortMarkers } from '../../map/nodeKind'
+import { treeRows } from '../../map/nodeTree'
 import { NODE_DRAG_TYPE } from '../../map/dragTypes'
 import SettingsListItem from '../settings/SettingsListItem'
 import MapObjectList, { type MapObjectSection } from './MapObjectList'
@@ -73,7 +76,7 @@ export default function MapsSidebar({ tree, loaded, space, onSelectSpace }: Prop
             {tab === 'cameras' ? (
               <CamerasList space={space} />
             ) : tab === 'nodes' ? (
-              <NodesList markers={markers} space={space} />
+              <NodesTree markers={markers} space={space} onOpenSpace={onSelectSpace} />
             ) : (
               <LandmarksList space={space} />
             )}
@@ -227,28 +230,63 @@ function CamerasList({ space }: { space: SpaceDto }) {
 }
 
 /**
- * What is drawn on this canvas already. A node dragged from here onto the map becomes a replica
- * of itself where it is dropped — the way a camera's picture is made on another plan.
+ * The space's tree, a level at a time: what is drawn on this canvas and, under a container or a
+ * diagram, what the tree holds there even when it is drawn elsewhere. A node dragged from here
+ * onto the map becomes a replica of itself where it is dropped — the way a camera's picture is
+ * made on another plan.
  */
-function NodesList({ markers, space }: { markers: MapMarker[]; space: SpaceDto }) {
+function NodesTree({ markers, space, onOpenSpace }: {
+  markers: MapMarker[]; space: SpaceDto; onOpenSpace: (spaceId: string) => void
+}) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const { selection, setSelection, openDiagram } = useEditorState()
+  const known = useAppSelector((s) => s.objects.markers)
+  const childrenByParent = useAppSelector((s) => s.objects.childrenByParent)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
 
-  /** The first mnemoscheme of a space has to come from somewhere; its children are made inside it. */
+  // The space's own page is what the tree grows from; a row's page is read when it is opened.
+  useEffect(() => {
+    if (space.id && !childrenByParent[space.id]?.loaded) {
+      void dispatch(loadChildren({ parentId: space.id }))
+    }
+  }, [space.id, childrenByParent, dispatch])
+
+  const roots = space.id ? childrenOf(known, childrenByParent, space.id) : []
+  const rows = treeRows(roots, childrenByParent, known, expanded)
+  const rootsLoaded = !space.id || !!childrenByParent[space.id]?.loaded
+
+  const toggle = (id: string) => {
+    const next = new Set(expanded)
+    if (next.has(id)) {
+      next.delete(id)
+    } else {
+      next.add(id)
+      if (!childrenByParent[id]?.loaded) void dispatch(loadChildren({ parentId: id }))
+    }
+    setExpanded(next)
+  }
+
+  /** A new node belongs under what is selected — a container, another diagram — or under the space. */
   const addDiagram = async () => {
+    if (!space.id) return
+
+    const parentId = selection?.kind === 'node' && selection.id !== space.id ? selection.id : space.id
     setBusy(true)
     try {
       const created = await dispatch(createDiagramNode({
-        parentId: space.id ?? '',
+        parentId,
         name: `${t('diagramEditor.diagram')} ${markers.length + 1}`,
         geometry: { top: 0, left: 0, width: 800, height: 600, rotation: 0 },
-        // A diagram standing on a map needs a place on it, like any other node drawn there.
-        at: {
-          lat: (space.view.southWest.lat + space.view.northEast.lat) / 2,
-          lon: (space.view.southWest.lon + space.view.northEast.lon) / 2,
-        },
+        // Only the space's own child stands on this canvas; a diagram inside a container or
+        // another diagram is reached through the tree.
+        at: parentId === space.id
+          ? {
+            lat: (space.view.southWest.lat + space.view.northEast.lat) / 2,
+            lon: (space.view.southWest.lon + space.view.northEast.lon) / 2,
+          }
+          : undefined,
       })).unwrap()
       setSelection({ kind: 'node', id: created.id })
       openDiagram(created.id)
@@ -280,34 +318,57 @@ function NodesList({ markers, space }: { markers: MapMarker[]; space: SpaceDto }
         </Tooltip>
       </Stack>
       <List dense disablePadding>
-        {sortMarkers(markers).map((marker) => (
-          <ListItemButton
-            key={marker.id}
-            draggable
-            onDragStart={(event) => {
-              event.dataTransfer.setData(NODE_DRAG_TYPE, marker.id)
-              event.dataTransfer.effectAllowed = 'copy'
-            }}
-            selected={selection?.kind === 'node' && selection.id === marker.id}
-            onClick={() => {
-              setSelection({ kind: 'node', id: marker.id })
-              // A diagram is its own canvas: picking it opens it in place of the map.
-              openDiagram(marker.nodeKind === 'diagram' ? marker.id : null)
-            }}
-            sx={{ cursor: 'grab' }}
-          >
-            <Box sx={{ width: 24, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+        {rows.map(({ marker, depth }) => {
+          const open = expanded.has(marker.id)
+          // A row whose page is already in the tree can be folded even when the read that put it
+          // there did not say it has children.
+          const hasChildren = marker.hasChildren || !!childrenByParent[marker.id]?.loaded
+
+          return (
+            <ListItemButton
+              key={marker.id}
+              draggable
+              onDragStart={(event) => {
+                event.dataTransfer.setData(NODE_DRAG_TYPE, marker.id)
+                event.dataTransfer.effectAllowed = 'copy'
+              }}
+              selected={selection?.kind === 'node' && selection.id === marker.id}
+              onClick={() => {
+                // A space is a world of its own, not a shape on this canvas: open it.
+                if (marker.nodeKind === 'space') {
+                  onOpenSpace(marker.id)
+                  return
+                }
+                setSelection({ kind: 'node', id: marker.id })
+                // A diagram is its own canvas: picking it opens it in place of the map.
+                openDiagram(marker.nodeKind === 'diagram' ? marker.id : null)
+              }}
+              sx={{ cursor: 'grab', pl: 0.5 + depth * 1.5 }}
+            >
+              <Box sx={{ width: 24, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+                {hasChildren ? (
+                  <IconButton
+                    size="small"
+                    sx={{ p: 0.1 }}
+                    onClick={(event) => { event.stopPropagation(); toggle(marker.id) }}
+                  >
+                    {open
+                      ? <ExpandMoreIcon sx={{ fontSize: 16 }} />
+                      : <ChevronRightIcon sx={{ fontSize: 16 }} />}
+                  </IconButton>
+                ) : null}
+              </Box>
               <KindIcon kind={marker.nodeKind} />
-            </Box>
-            <ListItemText
-              primary={marker.name || marker.id}
-              primaryTypographyProps={{ noWrap: true, variant: 'body2' }}
-              secondary={t(`maps.node.kind.${marker.nodeKind ?? 'object'}`)}
-              secondaryTypographyProps={{ variant: 'caption' }}
-            />
-          </ListItemButton>
-        ))}
-        {markers.length === 0 && (
+              <ListItemText
+                primary={marker.name || marker.id}
+                primaryTypographyProps={{ noWrap: true, variant: 'body2' }}
+                secondary={t(`maps.node.kind.${marker.nodeKind ?? 'object'}`)}
+                secondaryTypographyProps={{ variant: 'caption' }}
+              />
+            </ListItemButton>
+          )
+        })}
+        {rootsLoaded && roots.length === 0 && (
           <Typography variant="body2" color="text.secondary" sx={{ p: 1.5 }}>{t('maps.editor.noNodes')}</Typography>
         )}
       </List>

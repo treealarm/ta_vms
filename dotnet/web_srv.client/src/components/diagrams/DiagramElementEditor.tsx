@@ -13,6 +13,7 @@ import { loadDiagramTypes } from '../../store/diagramsSlice'
 import { deleteNode, saveDiagramPlacement } from '../../store/mapEditsSlice'
 import { useMapFileImage } from '../../hooks/useMapFileImage'
 import DetailToolbar from '../settings/DetailToolbar'
+import MapDiagramTypesDialog from './MapDiagramTypesDialog'
 
 type Props = {
   marker: MapMarker
@@ -64,6 +65,7 @@ export default function DiagramElementEditor({
   const [draft, setDraft] = useState<Draft>(initial)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [typesOpen, setTypesOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const preview = useMapFileImage(draft.fileId)
 
@@ -146,18 +148,29 @@ export default function DiagramElementEditor({
           onChange={(event) => set('name', event.target.value)}
         />
 
-        <TextField
-          size="small"
-          select
-          label={t('diagramEditor.type')}
-          value={draft.typeId}
-          onChange={(event) => set('typeId', event.target.value)}
-        >
-          <MenuItem value="">{t('diagramEditor.noType')}</MenuItem>
-          {types.filter((type) => !!type.id).map((type) => (
-            <MenuItem key={type.id} value={type.id}>{type.name || type.id}</MenuItem>
-          ))}
-        </TextField>
+        {/* The type decides what draws the diagram and which places its children may take; the
+            dictionary it comes from is edited right here, so an empty one is not a dead end. */}
+        <Stack direction="row" spacing={1} alignItems="flex-start">
+          <TextField
+            size="small"
+            select
+            label={t('diagramEditor.type')}
+            value={draft.typeId}
+            onChange={(event) => set('typeId', event.target.value)}
+            sx={{ flex: 1 }}
+          >
+            <MenuItem value="">{t('diagramEditor.noType')}</MenuItem>
+            {types.filter((type) => !!type.id).map((type) => (
+              <MenuItem key={type.id} value={type.id}>{type.name || type.id}</MenuItem>
+            ))}
+          </TextField>
+          <Button size="small" sx={{ mt: 0.5, whiteSpace: 'nowrap' }} onClick={() => setTypesOpen(true)}>
+            {t('diagramEditor.manageTypes')}
+          </Button>
+        </Stack>
+        {types.length === 0 ? (
+          <Typography variant="caption" color="text.secondary">{t('diagramEditor.noTypesHint')}</Typography>
+        ) : null}
 
         <TextField
           size="small"
@@ -212,6 +225,8 @@ export default function DiagramElementEditor({
 
         <Button size="small" onClick={onClose} sx={{ alignSelf: 'flex-end' }}>{t('common.close')}</Button>
       </Box>
+
+      <MapDiagramTypesDialog open={typesOpen} onClose={() => setTypesOpen(false)} />
     </Stack>
   )
 }

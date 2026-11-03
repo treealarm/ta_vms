@@ -1065,9 +1065,11 @@
   "diagramEditor": {
     "diagram": "Mimosesquema",
     "newDiagram": "Nuevo mimosesquema",
-    "addDiagram": "Nuevo mimosesquema en este mapa",
+    "addDiagram": "Nuevo mimosesquema bajo el nodo seleccionado, o en este mapa",
     "types": "Tipos",
     "typesHint": "Un tipo dibuja todos sus mimosesquemas: su imagen de fondo y las regiones que sus hijos pueden ocupar en lugar de un rectángulo propio.",
+    "manageTypes": "Gestionar tipos…",
+    "noTypesHint": "El diccionario aún no tiene tipos. Añada uno allí y elíjalo aquí.",
     "newType": "Nuevo tipo",
     "addType": "Añadir tipo",
     "deleteType": "Eliminar tipo",
@@ -1157,7 +1159,7 @@
     },
     "editor": {
       "tabNodes": "Nodos",
-      "nodesHint": "Arrastre un nodo al mapa para colocar aquí una réplica.",
+      "nodesHint": "Una figura dibujada con un nodo seleccionado se convierte en su hijo. Arrastre un nodo al mapa para colocar aquí una réplica.",
       "noNodes": "Todavía no hay nada dibujado aquí.",
       "figure": "Figura",
       "name": "Nombre",
