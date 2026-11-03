@@ -19,7 +19,12 @@ namespace VmsMap.Db
       _db = db;
     }
 
-    public async Task<DBFile> PutAsync(string? mime, byte[] bytes)
+    public Task<DBFile> PutAsync(string? mime, byte[] bytes) => PutAsync(Utils.NewGuid(), mime, bytes);
+
+    /// Writes a blob under an id the caller chose, replacing the row with that id. The demo world
+    /// derives its file ids from its own keys, so a reinstall finds the row it wrote last time
+    /// instead of leaving the old picture behind as an orphan.
+    public async Task<DBFile> PutAsync(Guid id, string? mime, byte[] bytes)
     {
       if (bytes.Length > MaxFileBytes)
       {
@@ -27,17 +32,20 @@ namespace VmsMap.Db
           $"A file may not exceed {MaxFileBytes} bytes", nameof(bytes));
       }
 
-      var file = new DBFile
-      {
-        id = Utils.NewGuid(),
-        mime = string.IsNullOrWhiteSpace(mime) ? "application/octet-stream" : mime,
-        bytes = bytes,
-        etag = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()
-      };
+      var etag = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+      var row = await _db.Files.FirstOrDefaultAsync(f => f.id == id);
 
-      _db.Files.Add(file);
+      if (row is null)
+      {
+        row = new DBFile { id = id };
+        _db.Files.Add(row);
+      }
+
+      row.mime = string.IsNullOrWhiteSpace(mime) ? "application/octet-stream" : mime;
+      row.bytes = bytes;
+      row.etag = etag;
       await _db.SaveChangesAsync();
-      return file;
+      return row;
     }
 
     public Task<DBFile?> GetAsync(string id)

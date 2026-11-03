@@ -1,0 +1,93 @@
+using System.Collections.Generic;
+using Vms.Map;
+using VmsMap.Domain;
+
+namespace VmsMap.Demo
+{
+  /// A point in the coordinates of the canvas it is drawn on: a plan point on that plan, or a
+  /// latitude/longitude on a map.
+  public readonly record struct DemoPoint(double Lat, double Lon);
+
+  /// A rectangle, in shares of a canvas for a region or in pixels for a diagram's own paper.
+  public readonly record struct DemoRect(double Left, double Top, double Width, double Height, double Rotation = 0);
+
+  /// A file the world brings: a picture of a plan, a diagram type's background or an icon. The
+  /// asset is embedded in this assembly under Demo/Assets, so the world ships with the code.
+  public sealed record DemoFile(string Key, string Asset, string Mime);
+
+  /// Where a plan image lies in its space: three corners in the parent canvas's coordinates.
+  public sealed record DemoPlan(string FileKey, uint WidthPx, uint HeightPx,
+    DemoPoint TopLeft, DemoPoint TopRight, DemoPoint BottomLeft);
+
+  /// A space: a map, or a plan with a picture of its own. Its footprint is where it stands in its
+  /// parent's canvas.
+  public sealed record DemoSpace(
+    string Key,
+    string Name,
+    string? ParentKey,
+    SpaceKind Kind,
+    double South,
+    double West,
+    double North,
+    double East,
+    double ElevationM = 0,
+    int Ordinal = 0,
+    bool RealCoordinates = false,
+    IReadOnlyList<DemoPoint>? Footprint = null,
+    DemoPlan? Plan = null);
+
+  public sealed record DemoRegion(string Key, DemoRect Geometry, IReadOnlyDictionary<string, string>? Styles = null);
+
+  /// A diagram type: the picture behind a diagram of it and the regions its children may take.
+  public sealed record DemoDiagramType(string Key, string Name, string? BackgroundKey,
+    IReadOnlyList<DemoRegion> Regions);
+
+  /// A node of the tree. Under a space it carries a point (`At`) drawn on that space; under a
+  /// diagram it takes a region (`RegionKey`) or a rectangle of its own. Every node that is a
+  /// mnemoscheme has a `TypeKey` and a canvas (`Canvas`).
+  public sealed record DemoNode(
+    string Key,
+    string Name,
+    string? ParentKey,
+    string? TypeKey = null,
+    string? RegionKey = null,
+    DemoRect? Canvas = null,
+    DemoPoint? At = null,
+    string? IconKey = null);
+
+  /// A scale layer: zoom levels at which the nodes that name it are drawn.
+  public sealed record DemoLevel(string Name, int Min, int Max);
+
+  /// A camera from the installation, placed where the world wants it. A camera the deployment
+  /// does not have yet is skipped and reported; the world without cameras is still valid.
+  public sealed record DemoPlacement(
+    string CameraId,
+    string SpaceKey,
+    double Lat,
+    double Lon,
+    double HeightM = 3,
+    double HeadingDeg = 0,
+    double HfovDeg = 60,
+    double RangeM = 30,
+    bool IsReference = true);
+
+  /// A state row on a node: `DISCONNECTED` on a switch port is the demo's alarm.
+  public sealed record DemoState(string NodeKey, params string[] States);
+
+  /// A right on a node. The world grants `view` to the deployment's `user` role at its root.
+  public sealed record DemoRight(string NodeKey, string Subject, string Action);
+
+  /// The whole demo world, described without a single id: the seeder derives and records them.
+  /// It is code, not a dump, so a rack's ports and a switch's regions are loops in DemoWorlds.
+  public sealed record DemoWorld(
+    string Key,
+    int Version,
+    IReadOnlyList<DemoFile> Files,
+    IReadOnlyList<DemoDiagramType> Types,
+    IReadOnlyList<DemoSpace> Spaces,
+    IReadOnlyList<DemoNode> Nodes,
+    IReadOnlyList<DemoLevel> Levels,
+    IReadOnlyList<DemoPlacement> Placements,
+    IReadOnlyList<DemoState> States,
+    IReadOnlyList<DemoRight> Rights);
+}

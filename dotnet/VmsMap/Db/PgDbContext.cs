@@ -39,6 +39,10 @@ namespace VmsMap.Db
     public DbSet<DBObjectStateDescription> ObjectStateDescriptions { get; set; } = null!;
     public DbSet<DBAlarmState> AlarmStates { get; set; } = null!;
 
+    // What the demo world owns; see Demo/DemoSeeder.
+    public DbSet<DBDemoConfig> DemoConfigs { get; set; } = null!;
+    public DbSet<DBDemoObject> DemoObjects { get; set; } = null!;
+
     public VmsMapDbContext(DbContextOptions<VmsMapDbContext> options) : base(options)
     {
     }
@@ -66,6 +70,30 @@ namespace VmsMap.Db
       ConfigureCameraNodes(modelBuilder);
       ConfigureLandmarks(modelBuilder);
       ConfigureGeoObservations(modelBuilder);
+      ConfigureDemo(modelBuilder);
+    }
+
+    private void ConfigureDemo(ModelBuilder modelBuilder)
+    {
+      modelBuilder.Entity<DBDemoConfig>(entity =>
+      {
+        entity.ToTable("demo_config");
+        entity.HasKey(e => e.demo_key);
+
+        entity.Property(e => e.demo_key).HasColumnName("demo_key").IsRequired();
+        entity.Property(e => e.version).HasColumnName("version");
+        entity.Property(e => e.applied_at).HasColumnName("applied_at");
+      });
+
+      modelBuilder.Entity<DBDemoObject>(entity =>
+      {
+        entity.ToTable("demo_object");
+        entity.HasKey(e => new { e.demo_key, e.logical_key });
+
+        entity.Property(e => e.demo_key).HasColumnName("demo_key");
+        entity.Property(e => e.logical_key).HasColumnName("logical_key");
+        entity.Property(e => e.object_id).HasColumnName("object_id");
+      });
     }
 
     private void ConfigureGeoObjects(ModelBuilder modelBuilder)

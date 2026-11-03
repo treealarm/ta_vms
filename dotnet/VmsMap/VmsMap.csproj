@@ -42,4 +42,10 @@
     <Content Include="Grpc/migrations/*.sql" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The demo world's pictures: plan images and diagram type backgrounds, in the assembly so
+         an install does not depend on a file on the instance's disk. -->
+    <EmbeddedResource Include="Demo/Assets/**" />
+  </ItemGroup>
+
 </Project>

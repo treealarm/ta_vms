@@ -9,6 +9,7 @@ using VmsLog;
 using VmsMap.Adapter;
 using VmsMap.Clients;
 using VmsMap.Db;
+using VmsMap.Demo;
 using VmsMap.Domain;
 using VmsMap.Grpc;
 using VmsMap.PubSub;
@@ -94,6 +95,10 @@ builder.Services.AddScoped<FileService>();
 
 // Spaces, plans, placements, landmarks and observations on the one tree.
 builder.Services.AddScoped<SpatialDb>();
+
+// The demo world: install, reinstall and removal behind one registry. The flag and the gRPC calls
+// that reach it are wired in M2.2's later steps; the seeder is the same for both.
+builder.Services.AddScoped<DemoSeeder>();
 
 builder.Services.AddScoped<ITracksUpdateService, TracksUpdateService>();
 builder.Services.AddScoped<IMapUpdateService, MapUpdateService>();
