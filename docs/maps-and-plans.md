@@ -30,6 +30,24 @@ Conventions that hold everywhere:
   footprint on the parent is only the way in. The floors of a building are sibling spaces; the
   switcher on the map's edge moves between them, breadcrumbs move up, footprints move down. When
   footprints overlap (floors sharing one outline), a click asks which one.
+- **A canvas is the unit of drawing, not a level of the tree.** A space draws every figure whose
+  `geo_objects.canvas_id` is that space — the nearest space above the figure — whatever the depth
+  of the tree between them. So a **container** (a polygon, a circle, an icon, a node with no figure
+  at all) can hold children, and those children are drawn on the same canvas as the container, not
+  only after entering it. A nested space is a canvas of its own: its footprint is drawn on the
+  parent's canvas, its children on its own.
+- **The tree decides what is a child; geometry never does.** An object inside a polygon is not its
+  child unless the tree says so, and a child need not lie inside anything. The administrator sets
+  the parent: a new object is created under the selected node, or under the space when nothing is
+  selected, and an existing one is moved with *Move to…*. A move under the node's own descendant is
+  refused. A camera's or a landmark's place on a canvas is read from `geo_objects.canvas_id`, not
+  from its parent — which is what lets it hang under a container and still be placed on the space.
+- **A scale layer (`levels`) belongs to any node with a shape.** A node on a layer is drawn while
+  the map's zoom is inside the layer's range; a node without one is always drawn, and so is one
+  whose layer has been removed from the dictionary. *Enter* on a container raises the zoom to the
+  lowest layer among its children and centres on it — on its own shape, or on its children when it
+  has none — rather than fitting its polygon, which may be a circle, an icon or nothing. A space or
+  a mnemoscheme is entered by opening its own canvas.
 - **Real or made-up coordinates.** A map, and any plan marked real, is in WGS84. A plan in made-up
   coordinates still stores WGS84, made up around (0, 0), so one code path serves every space — but
   its numbers mean nothing anywhere else.
