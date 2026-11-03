@@ -38,11 +38,16 @@ public class MapAdminController(
   // still seconds, not the ten the ordinary map calls allow.
   private static readonly TimeSpan DemoTimeout = TimeSpan.FromSeconds(120);
 
+  // The wall is a handful of rows once VmsCfg answers. When it does not — it may not be running at
+  // all — the world is still the world, so this deadline is a report, not a failed install.
+  private static readonly TimeSpan WallTimeout = TimeSpan.FromSeconds(20);
+
   // The one world today; the button does not choose.
   private const string DemoKey = "umd-datacenter";
 
   /// What an install or a removal did on both sides of it: VmsMap writes the world, VmsCfg its
-  /// video wall. The browser shows the skipped cameras, which is a list of what to provision next.
+  /// video wall. The browser shows the skipped cameras, which is a list of what to provision next,
+  /// and the wall error, when VmsCfg could not be reached: the wall is not part of the world.
   public sealed record DemoInstallResult(
     bool Installed,
     int Version,
@@ -50,10 +55,33 @@ public class MapAdminController(
     int Updated,
     int Removed,
     IReadOnlyList<string> SkippedCameras,
-    IReadOnlyList<string> MonitorCameras);
+    IReadOnlyList<string> MonitorCameras,
+    string? WallError);
 
   private static CallOptions DemoOptions(CancellationToken ct) =>
     new(deadline: DateTime.UtcNow.Add(DemoTimeout), cancellationToken: ct);
+
+  private static CallOptions WallOptions(CancellationToken ct) =>
+    new(deadline: DateTime.UtcNow.Add(WallTimeout), cancellationToken: ct);
+
+  /// VmsCfg's half of the demo, whose failure is reported rather than thrown: the wall is built
+  /// from cameras and stands or falls on its own, while the map's world is already written.
+  private static async Task<(T? Value, string? Error)> TryWall<T>(
+    Func<Task<T>> call, CancellationToken ct) where T : class
+  {
+    try
+    {
+      return (await call(), null);
+    }
+    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+    {
+      throw;
+    }
+    catch (Exception e)
+    {
+      return (null, e.Message);
+    }
+  }
 
   public sealed class UploadForm
   {
@@ -182,8 +210,17 @@ public class MapAdminController(
   {
     var request = new MapProto.InstallDemoRequest { DemoKey = DemoKey };
     var world = await map.InstallDemoAsync(request, DemoOptions(ct));
-    var wall = await cfg.InstallDemoAsync(
-      new CfgProto.InstallDemoRequest { DemoKey = DemoKey }, DemoOptions(ct));
+    var (wall, wallError) = await TryWall(
+      async () => await cfg.InstallDemoAsync(
+        new CfgProto.InstallDemoRequest { DemoKey = DemoKey }, WallOptions(ct)), ct);
+
+    var skippedCameras = new List<string>(world.SkippedCameras);
+    var monitorCameras = new List<string>();
+    if (wall is not null)
+    {
+      skippedCameras.AddRange(wall.SkippedCameras);
+      monitorCameras.AddRange(wall.PlacedCameras);
+    }
 
     return Ok(new DemoInstallResult(
       Installed: true,
@@ -191,8 +228,9 @@ public class MapAdminController(
       Created: world.Created,
       Updated: world.Updated,
       Removed: world.Removed,
-      SkippedCameras: [.. world.SkippedCameras.Union(wall.SkippedCameras)],
-      MonitorCameras: [.. wall.PlacedCameras]));
+      SkippedCameras: skippedCameras,
+      MonitorCameras: monitorCameras,
+      WallError: wallError));
   }
 
   [HttpPost("demo/remove")]
@@ -200,7 +238,9 @@ public class MapAdminController(
   {
     var request = new MapProto.InstallDemoRequest { DemoKey = DemoKey };
     var report = await map.RemoveDemoAsync(request, DemoOptions(ct));
-    await cfg.RemoveDemoAsync(new CfgProto.InstallDemoRequest { DemoKey = DemoKey }, DemoOptions(ct));
+    var (_, wallError) = await TryWall(
+      async () => await cfg.RemoveDemoAsync(
+        new CfgProto.InstallDemoRequest { DemoKey = DemoKey }, WallOptions(ct)), ct);
 
     return Ok(new DemoInstallResult(
       Installed: false,
@@ -209,7 +249,8 @@ public class MapAdminController(
       Updated: report.Updated,
       Removed: report.Removed,
       SkippedCameras: [],
-      MonitorCameras: []));
+      MonitorCameras: [],
+      WallError: wallError));
   }
 
   // ── Files ───────────────────────────────────────────────────────────────────────────────────

@@ -1235,7 +1235,9 @@
       "wall": "Videowall: {{cameras}}",
       "noWall": "El videowall aún no tiene cámaras.",
       "skippedTitle": "Cámaras que la instalación aún no tiene",
-      "skippedHint": "El mundo se instala sin ellas. Dé de alta las cámaras y vuelva a instalar la demo."
+      "skippedHint": "El mundo se instala sin ellas. Dé de alta las cámaras y vuelva a instalar la demo.",
+      "wallErrorTitle": "El videowall no se actualizó",
+      "wallErrorHint": "VmsCfg no respondió, así que su videowall quedó como estaba. Inicie VmsCfg y repita la acción."
     },
     "node": {
       "kind": {

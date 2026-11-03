@@ -98,6 +98,14 @@ export default function DemoControl() {
                 <Typography variant="caption" color="text.secondary">{t('maps.demo.skippedHint')}</Typography>
               </Alert>
             ) : null}
+
+            {report?.wallError ? (
+              <Alert severity="warning">
+                <Typography variant="subtitle2">{t('maps.demo.wallErrorTitle')}</Typography>
+                <Typography variant="body2">{t('maps.demo.wallErrorHint')}</Typography>
+                <Typography variant="caption" color="text.secondary">{report.wallError}</Typography>
+              </Alert>
+            ) : null}
           </Stack>
         </DialogContent>
         <DialogActions>

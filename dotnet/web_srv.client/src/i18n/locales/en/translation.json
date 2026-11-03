@@ -1235,7 +1235,9 @@
       "wall": "Video wall: {{cameras}}",
       "noWall": "The video wall has no cameras yet.",
       "skippedTitle": "Cameras the deployment does not have yet",
-      "skippedHint": "The world is installed without them. Provision the cameras, then install the demo again."
+      "skippedHint": "The world is installed without them. Provision the cameras, then install the demo again.",
+      "wallErrorTitle": "The video wall was not updated",
+      "wallErrorHint": "VmsCfg did not answer, so its wall was left as it was. Start VmsCfg and repeat the action."
     },
     "node": {
       "kind": {

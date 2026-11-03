@@ -186,7 +186,9 @@ centre of the current view. A room diagram is such a node; its icon on the floor
 
 **The video wall** belongs to VmsCfg: a wall named `UMD DC`, layout 2×2, showing the demo cameras
 the deployment has. It is installed and removed with the world, and a camera that does not exist yet
-is simply absent from it.
+is simply absent from it. The two halves are independent: the wall is built from cameras, so when
+VmsCfg is unreachable the map's world is still installed and the report says what the wall failed
+on, rather than failing the whole install.
 
 **Rights.** A fresh installation starts with rights enforced (see the migration that creates the
 switch); the world grants `view` on its map to the realm role `user`, so an operator sees it without

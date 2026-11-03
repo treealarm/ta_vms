@@ -361,6 +361,8 @@ export type MapDemoReport = {
   removed?: number
   skippedCameras?: string[]
   monitorCameras?: string[]
+  /** Set when VmsCfg could not be reached: the world is installed, its video wall is not. */
+  wallError?: string
 }
 
 export type MapWatchItem = { objectId?: string; cameraId?: string }
