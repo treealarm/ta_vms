@@ -12,7 +12,7 @@ here is deleted or cut down to what is still left.
 | [camera-connection-state.md](camera-connection-state.md) | `CONNECTED`/`DISCONNECTED` is polled from VmsFs outages; a transition event from video_srv and the producer's `recording_expected` are still open |
 | [demo-gui-parity.md](demo-gui-parity.md) | Каждый примитив конфигурации собирается в GUI; демо — проверка этого; состояния и значения — данные владельцев |
 | [dev-stack-port-collision.md](dev-stack-port-collision.md) | A fresh `dev-up` can collide with a sidecar left by an earlier run: only app ports are checked, and a failed start leaves its `daprd` behind |
-| [devices-and-nodes.md](devices-and-nodes.md) | Камеры автоматически становятся узлами дерева; предложено не показывать сами устройства в списке Nodes, оставив их отображения |
+| [devices-and-nodes.md](devices-and-nodes.md) | Устройство — канонический узел, привязки только на нём; картинка на плане и отображение на диаграмме — реплики; что показывать в списке Nodes |
 | [distributed-analytics.md](distributed-analytics.md) | Re-identification and archive search in the database (pgvector), then analytics per node |
 | [distributed-hardening.md](distributed-hardening.md) | What a multi-machine deployment still leaves open on the network |
 | [log-volume-leftovers.md](log-volume-leftovers.md) | What still fills the logs after the 2026-10-25 fix: a dead camera re-resolved per call, reconnect errors, web_srv outside VmsLog |

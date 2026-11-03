@@ -69,6 +69,16 @@ Conventions that hold everywhere:
   replicas of that node (Square's `owner_id` relation): they have their own point and placement row,
   but no states of their own. A camera's first placement becomes its reference; clearing the flag
   leaves the camera with none, never quietly promoting another.
+- **A device is a canonical node; everything else is a replica of it.** Three words, one rule each:
+  a **camera** is the device — its canonical node, id derived from the camera id, the only thing
+  bindings attach to; a **picture** is a replica of it standing on a plan, with a placement row of
+  its own that is never the reference (a new reference takes the flag, and the picture gives up the
+  place it stood in); a **representation** is a replica standing on a diagram, with no placement row
+  at all. Bindings — the reference placement, calibration, aiming, master/slave — are read from the
+  camera, never from a replica, and only in a space with real coordinates: a diagram has no
+  geographic frame, so nothing placed on it can be bound. A replica shows its owner's state and has
+  none of its own, and it copies the owner's look when it is made, so one camera in two places does
+  not look like two cameras.
 - **Positions are WGS84 plus a height in metres above the floor of their space** — never above sea
   level. Height above the ground is `space.elevation_m + height_m`; elevation matters only where
   coordinates are real, so a camera upstairs and one in the yard agree on heights.
