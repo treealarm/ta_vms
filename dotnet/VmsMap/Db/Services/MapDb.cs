@@ -413,6 +413,27 @@ namespace VmsMap.Db
         dbUpdated.Add(item, dbObj);
       }
 
+      // A picture is a picture of an original, never of another picture: every read that answers
+      // through an owner -- states, values, camera id, node kind, rights -- resolves it in one hop,
+      // so the end of a chain would answer nothing. A replica dropped from another replica's
+      // canvas is stored as a replica of the node both show, and the DTO carries that back.
+      foreach (var kvp in dbUpdated.Where(kvp => kvp.Value.owner_id.HasValue))
+      {
+        var ownerId = kvp.Value.owner_id!.Value;
+
+        // A stored owner is already an original: only a write that sets a new one can name a
+        // picture, and the walk below is one read per level.
+        if (existingEntities.TryGetValue(kvp.Value.id, out var before) && before.owner_id == ownerId)
+          continue;
+
+        var original = await ResolveOwnerAsync(ownerId, kvp.Value.id);
+        if (original == ownerId)
+          continue;
+
+        kvp.Value.owner_id = original;
+        kvp.Key.owner_id = Utils.ConvertGuidToObjectId(original);
+      }
+
       // A move under the node's own descendant would close a loop the alarm and rights walks cannot
       // leave; whatever rearranges the tree -- the editor's "move to" among them -- is refused here,
       // before any tracked row is touched.
@@ -479,6 +500,36 @@ namespace VmsMap.Db
       }
     }
 
+
+    /// The node an owner must name: the one that keeps its own rows. A replica's owner is followed
+    /// to the end of the chain, and a node that would own itself, or a chain that returns to where
+    /// it started, is refused rather than written.
+    private async Task<Guid> ResolveOwnerAsync(Guid ownerId, Guid nodeId)
+    {
+      var visited = new HashSet<Guid>();
+      var current = ownerId;
+
+      while (true)
+      {
+        if (current == nodeId)
+          throw new ArgumentException(
+              $"Node '{Utils.ConvertGuidToObjectId(nodeId)}' cannot be its own owner");
+
+        if (!visited.Add(current))
+          throw new ArgumentException(
+              $"Node '{Utils.ConvertGuidToObjectId(ownerId)}' belongs to an owner cycle");
+
+        var next = await _db.Markers.AsNoTracking()
+            .Where(m => m.id == current)
+            .Select(m => m.owner_id)
+            .FirstOrDefaultAsync();
+
+        if (next is null)
+          return current;
+
+        current = next.Value;
+      }
+    }
 
     /// Walks up from each new parent: reaching the moved node itself means the move closes a loop.
     /// A node moved in the same request is followed where it will go, not where it is now.

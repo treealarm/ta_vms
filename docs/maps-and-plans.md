@@ -81,7 +81,9 @@ Conventions that hold everywhere:
   not look like two cameras. Which of the two a node is, is said by `objects.owner_id` alone, as it
   was in Square: empty means the node is the object itself — an abstract node, a container, a place
   or a device — and set means a replica of the node it names. No separate "is a device" flag is
-  kept; `camera_node` says which originals are cameras.
+  kept; `camera_node` says which originals are cameras. `owner_id` always names an original, never
+  another replica: a picture dropped from a replica's canvas is written as a picture of the node
+  both show, because every read that answers through an owner resolves it in one hop.
 - **Positions are WGS84 plus a height in metres above the floor of their space** — never above sea
   level. Height above the ground is `space.elevation_m + height_m`; elevation matters only where
   coordinates are real, so a camera upstairs and one in the yard agree on heights.

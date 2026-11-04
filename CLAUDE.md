@@ -457,6 +457,9 @@ across the two databases). These are the invariants a change must keep:
   `is_reference`, where it really stands, the only one aiming uses — and any number of pictures.
   A picture is a replica of the camera node (`objects.owner_id`) with its own point and placement
   row. Another placement is never promoted to reference behind the administrator's back.
+- **A replica's owner is an original, one level deep.** `objects.owner_id` never names another
+  replica: a picture dropped from a replica's canvas is written as a picture of the node both show,
+  because states, values, camera id, node kind and rights all resolve an owner in one hop.
 - Heading is a compass bearing, 0 = north, clockwise (Square's `__image_rotate`), and lives only in
   `camera_placement.heading_deg`.
 - Calibration fits are never stored — raw observations and ground marks in VmsMap, the PTZ fit and

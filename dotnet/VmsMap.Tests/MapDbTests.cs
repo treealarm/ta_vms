@@ -62,6 +62,41 @@ public class MapDbTests
   }
 
   [Fact]
+  public async Task AReplicaOfAReplicaIsWrittenAsAPictureOfTheOriginal()
+  {
+    var (db, map) = CreateDb();
+
+    var original = new BaseMarkerDTO { name = "Camera" };
+    await map.UpdateHierarchyAsync([original]);
+    var picture = new BaseMarkerDTO { name = "Camera", owner_id = original.id };
+    await map.UpdateHierarchyAsync([picture]);
+
+    // The second picture is dropped from the first picture's canvas: it must show the node both
+    // show. Every read that answers through an owner resolves it in one hop, so a chain would make
+    // its end answer nothing.
+    var second = new BaseMarkerDTO { name = "Camera", owner_id = picture.id };
+    await map.UpdateHierarchyAsync([second]);
+
+    var stored = await db.Markers.AsNoTracking().SingleAsync(m => m.id == Guid.Parse(second.id!));
+    Assert.Equal(Guid.Parse(original.id!), stored.owner_id);
+    Assert.Equal(original.id, second.owner_id);
+  }
+
+  [Fact]
+  public async Task ANodeCannotBeItsOwnOwner()
+  {
+    var (db, map) = CreateDb();
+
+    var node = new BaseMarkerDTO { name = "Camera" };
+    await map.UpdateHierarchyAsync([node]);
+
+    node.owner_id = node.id;
+    await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([node]));
+
+    Assert.Null((await db.Markers.AsNoTracking().SingleAsync(m => m.id == Guid.Parse(node.id!))).owner_id);
+  }
+
+  [Fact]
   public async Task DeletingANodeRemovesItsReplicasAndNothingElse()
   {
     var (db, map) = CreateDb();

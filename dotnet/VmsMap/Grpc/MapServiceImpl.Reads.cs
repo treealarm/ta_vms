@@ -286,7 +286,11 @@ namespace VmsMap.Grpc
 
       await _mapUpdateService.UpdateObjects([dto]);
 
-      var ownerProps = await _mapService.GetPropAsync(request.OwnerId);
+      // The write resolves a replica's owner to the original; the copy below follows what the
+      // node now shows, not what the caller named.
+      var resolvedOwnerId = dto.owner_id!;
+
+      var ownerProps = await _mapService.GetPropAsync(resolvedOwnerId);
       if (ownerProps?.extra_props is { Count: > 0 })
       {
         await _mapService.UpdatePropAsync([
@@ -294,8 +298,8 @@ namespace VmsMap.Grpc
         ]);
       }
 
-      var ownerVisual = (await _visualService.GetListByIdsAsync([request.OwnerId]))
-        .GetValueOrDefault(request.OwnerId);
+      var ownerVisual = (await _visualService.GetListByIdsAsync([resolvedOwnerId]))
+        .GetValueOrDefault(resolvedOwnerId);
       if (ownerVisual is not null)
       {
         await _visualService.UpdateListAsync([
