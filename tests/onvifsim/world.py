@@ -628,11 +628,16 @@ def check_maryland(world):
     master = cameras["master"]
     assert any(relay["token"] == "lamp" for relay in master.get("relayOutputs", [])), \
         "master has no 'lamp' relay"
-    assert any(device["token"] == "input" for device in vehicle.get("digitalInputs", [])), \
-        f"{DEMO_VEHICLE_CAMERA} has no 'input' sensor"
+    ptz = cameras["ptz"]
+    assert any(device["token"] == "input" for device in ptz.get("digitalInputs", [])), \
+        "ptz has no 'input' sensor"
     assert any(wire.get("relayCameraId") == "master" and wire.get("relayToken") == "lamp"
-               and wire.get("inputCameraId") == DEMO_VEHICLE_CAMERA and wire.get("inputToken") == "input"
-               for wire in world.get("wires", [])), "no wire runs from master's lamp to the car's sensor"
+               and wire.get("inputCameraId") == "ptz" and wire.get("inputToken") == "input"
+               for wire in world.get("wires", [])), "no wire runs from master's lamp to ptz's sensor"
+    # The car carries no device: a wire to it would move with it, and every camera that saw the wire
+    # would redraw at every frame of the drive.
+    assert not vehicle.get("relayOutputs") and not vehicle.get("digitalInputs"), \
+        f"{DEMO_VEHICLE_CAMERA} should carry no devices"
 
 
 def load_maryland(path, ta_install_world=None):
