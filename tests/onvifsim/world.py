@@ -634,6 +634,10 @@ def check_maryland(world):
     assert any(wire.get("relayCameraId") == "master" and wire.get("relayToken") == "lamp"
                and wire.get("inputCameraId") == "ptz" and wire.get("inputToken") == "input"
                for wire in world.get("wires", [])), "no wire runs from master's lamp to ptz's sensor"
+    assert any(lamp["token"] == "alert" for lamp in ptz.get("lamps", [])), "ptz has no 'alert' lamp"
+    assert any(wire.get("relayCameraId") == "master" and wire.get("relayToken") == "lamp"
+               and wire.get("lampCameraId") == "ptz" and wire.get("lampToken") == "alert"
+               for wire in world.get("wires", [])), "no wire runs from master's lamp to ptz's lamp"
     # The car carries no device: a wire to it would move with it, and every camera that saw the wire
     # would redraw at every frame of the drive.
     assert not vehicle.get("relayOutputs") and not vehicle.get("digitalInputs"), \
