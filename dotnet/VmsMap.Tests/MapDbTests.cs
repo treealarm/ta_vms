@@ -62,6 +62,25 @@ public class MapDbTests
   }
 
   [Fact]
+  public async Task DeletingANodeRemovesItsReplicasAndNothingElse()
+  {
+    var (db, map) = CreateDb();
+
+    var owner = new BaseMarkerDTO { name = "Rack" };
+    await map.UpdateHierarchyAsync([owner]);
+    var replica = new BaseMarkerDTO { name = "Rack", owner_id = owner.id };
+    await map.UpdateHierarchyAsync([replica]);
+    var other = new BaseMarkerDTO { name = "Other" };
+    await map.UpdateHierarchyAsync([other]);
+
+    await map.RemoveAsync([owner.id!]);
+
+    Assert.Null(await db.Markers.AsNoTracking().FirstOrDefaultAsync(m => m.id == Guid.Parse(owner.id!)));
+    Assert.Null(await db.Markers.AsNoTracking().FirstOrDefaultAsync(m => m.id == Guid.Parse(replica.id!)));
+    Assert.NotNull(await db.Markers.AsNoTracking().FirstOrDefaultAsync(m => m.id == Guid.Parse(other.id!)));
+  }
+
+  [Fact]
   public async Task MovingTwoNodesInOneWriteIsCheckedAgainstWhereTheyWillBe()
   {
     var (db, map) = CreateDb();

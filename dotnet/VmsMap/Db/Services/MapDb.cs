@@ -575,8 +575,11 @@ namespace VmsMap.Db
               result.Add(Utils.ConvertGuidToObjectId(id));
           }
 
+          // A replica is not a child: it stands on its own canvas and names the node it shows.
+          // Without the owner link here, deleting a node left its pictures behind.
           var children = await _db.Markers.AsNoTracking()
-            .Where(m => m.parent_id.HasValue && level.Contains(m.parent_id.Value))
+            .Where(m => (m.parent_id.HasValue && level.Contains(m.parent_id.Value))
+              || (m.owner_id.HasValue && level.Contains(m.owner_id.Value)))
             .Select(m => m.id)
             .ToListAsync();
           foreach (var child in children)
@@ -595,7 +598,9 @@ namespace VmsMap.Db
         WITH RECURSIVE sub AS (
           SELECT id FROM objects WHERE id = ANY(@ids)
           UNION
-          SELECT o.id FROM objects o JOIN sub s ON o.parent_id = s.id
+          -- Children, and replicas, which are not children: a replica stands on its own canvas
+          -- and names the node it shows.
+          SELECT o.id FROM objects o JOIN sub s ON o.parent_id = s.id OR o.owner_id = s.id
         )
         SELECT id FROM sub;
         """);

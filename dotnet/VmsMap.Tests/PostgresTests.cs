@@ -194,6 +194,27 @@ public class PostgresTests
   }
 
   [Fact]
+  public async Task DeletingANodeRemovesItsReplicasAndNothingElse()
+  {
+    await using var s = await OpenAsync();
+    if (s is null) return;
+
+    var (root, _, leaf) = await SeedTreeAsync(s.Db);
+
+    var replica = Guid.NewGuid();
+    s.Db.Markers.Add(new DBMarker { id = replica, name = "Camera", owner_id = leaf, parent_id = root });
+    // A picture of a node that is not being deleted is none of this delete's business.
+    var otherReplica = Guid.NewGuid();
+    s.Db.Markers.Add(new DBMarker { id = otherReplica, name = "Still there", owner_id = root });
+    await s.Db.SaveChangesAsync();
+
+    await s.Updates.Delete(new List<string> { Utils.ConvertGuidToObjectId(leaf) });
+
+    Assert.Null(await s.Db.Markers.FirstOrDefaultAsync(m => m.id == replica));
+    Assert.NotNull(await s.Db.Markers.FirstOrDefaultAsync(m => m.id == otherReplica));
+  }
+
+  [Fact]
   public async Task DeletingANodeRemovesEverythingKeyedToIt()
   {
     await using var s = await OpenAsync();
