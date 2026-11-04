@@ -1179,6 +1179,7 @@
       "figure": "Figure",
       "name": "Name",
       "objectId": "Object ID",
+      "replicaOf": "Replica of",
       "visual": "Appearance",
       "color": "Colour",
       "rotation": "Rotation",

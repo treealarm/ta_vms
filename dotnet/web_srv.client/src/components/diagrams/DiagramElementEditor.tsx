@@ -150,6 +150,14 @@ export default function DiagramElementEditor({
           onChange={(event) => set('name', event.target.value)}
         />
 
+        <TextField
+          size="small"
+          label={t('maps.editor.objectId')}
+          value={marker.id}
+          slotProps={{ input: { readOnly: true } }}
+          sx={{ '& input': { fontFamily: 'monospace', fontSize: 12 } }}
+        />
+
         {/* The type decides what draws the diagram and which places its children may take; the
             dictionary it comes from is edited right here, so an empty one is not a dead end. */}
         <Stack direction="row" spacing={1} alignItems="flex-start">
