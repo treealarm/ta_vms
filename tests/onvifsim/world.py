@@ -538,8 +538,9 @@ def build_world(onvif_base_port, pairs=None, with_walker=True):
 # building on the University of Maryland campus. OnvifSim builds that world from the same constants
 # and ships it as data/worlds/maryland.json (World/MarylandWorld.cs); the bench loads that file
 # rather than keeping a second copy of the geometry, and checks the cameras in it against the demo
-# placements below. Those mirror DemoWorlds.cs — the building envelope, the two rooms and the four
-# camera poses — so keep the two in step.
+# placements below. Those mirror DemoWorlds.cs — the building envelope and the four camera poses —
+# so keep the two in step. The master and its PTZ slave stand in one room, with a person walking
+# between them; the slave reports its head in the metadata track.
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -547,6 +548,9 @@ MARYLAND_LAT0 = 38.9923  # the centre of the demo building
 MARYLAND_LON0 = -76.9378
 MARYLAND_POSITION_TOLERANCE_M = 0.5
 MARYLAND_ANGLE_TOLERANCE_DEG = 0.5
+# Room 101 of the demo floor plan. The master and its PTZ slave work as one pair, so both stand in
+# this room, and the person they work on walks inside it (mirrors DemoWorlds.cs's Room101*).
+ROOM101_SOUTH, ROOM101_WEST, ROOM101_NORTH, ROOM101_EAST = 38.99238, -76.93855, 38.99250, -76.93835
 
 
 @dataclass(frozen=True)
@@ -563,7 +567,7 @@ class DemoPlacement:
 
 DEMO_PLACEMENTS = [
     DemoPlacement("master", 38.99240, -76.93852, 2.8, 55, 70),
-    DemoPlacement("ptz", 38.99240, -76.93757, 2.8, 50, 65),
+    DemoPlacement("ptz", 38.992484, -76.938372, 2.8, 235, 65),
     DemoPlacement("master2", 38.99276, -76.93895, 3.0, 135, 80),
     DemoPlacement("ptz2", 38.99250, -76.93950, 6.0, 90, 60),
 ]
@@ -619,6 +623,27 @@ def check_maryland(world):
         assert hfov is not None and abs(hfov - placement.hfov) <= MARYLAND_ANGLE_TOLERANCE_DEG, \
             f"{placement.id} is {hfov} deg wide, the demo {placement.hfov}"
 
+    # The pair works as one: the master detects, the slave aims where its boxes say. The slave
+    # carries its head in the metadata track, and a person walks the room between them.
+    slave = cameras["ptz"]
+    assert (slave.get("metadata") or {}).get("ptzStatus") is True, "ptz does not report its head in the telemetry"
+    assert (cameras["master"].get("metadata") or {}).get("analytics") is True, "master has no analytics"
+    walkers = world.get("walkers", [])
+    assert walkers, "the world has no person for the pair to work on"
+    assert all(w.get("detectable", True) for w in walkers), "the walker is not detectable"
+    # The pair must watch the same room: two rooms would make the slave aim at what the master
+    # cannot see (or at nothing), and the person walks between them.
+    for placement in DEMO_PLACEMENTS:
+        if placement.id in ("master", "ptz"):
+            assert ROOM101_SOUTH <= placement.lat <= ROOM101_NORTH \
+                and ROOM101_WEST <= placement.lon <= ROOM101_EAST, \
+                f"{placement.id} does not stand in Room 101 with its master/slave"
+    for walker in walkers:
+        for point in walker.get("route", []):
+            lat, lon, _ = world_to_wgs84(world, {"x": point["x"], "y": 0.0, "z": point["z"]})
+            assert ROOM101_SOUTH <= lat <= ROOM101_NORTH and ROOM101_WEST <= lon <= ROOM101_EAST, \
+                f"the person at ({point['x']}, {point['z']}) walks outside Room 101"
+
     vehicle = cameras.get(DEMO_VEHICLE_CAMERA)
     assert vehicle is not None, f"the world has no '{DEMO_VEHICLE_CAMERA}' camera"
     vehicle_id = vehicle.get("mountedOnVehicleId")
@@ -634,10 +659,11 @@ def check_maryland(world):
     assert any(wire.get("relayCameraId") == "master" and wire.get("relayToken") == "lamp"
                and wire.get("inputCameraId") == "ptz" and wire.get("inputToken") == "input"
                for wire in world.get("wires", [])), "no wire runs from master's lamp to ptz's sensor"
-    assert any(lamp["token"] == "alert" for lamp in ptz.get("lamps", [])), "ptz has no 'alert' lamp"
+    # A lamp is an actuator of the world, not a part of a camera.
+    assert any(lamp["id"] == "alert" for lamp in world.get("lamps", [])), "the world has no 'alert' lamp"
     assert any(wire.get("relayCameraId") == "master" and wire.get("relayToken") == "lamp"
-               and wire.get("lampCameraId") == "ptz" and wire.get("lampToken") == "alert"
-               for wire in world.get("wires", [])), "no wire runs from master's lamp to ptz's lamp"
+               and wire.get("lampId") == "alert"
+               for wire in world.get("wires", [])), "no wire runs from master's relay to the 'alert' lamp"
     # The car carries no device: a wire to it would move with it, and every camera that saw the wire
     # would redraw at every frame of the drive.
     assert not vehicle.get("relayOutputs") and not vehicle.get("digitalInputs"), \

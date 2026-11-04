@@ -250,10 +250,10 @@ def check_cameras(vms, world, allow_missing):
         return
 
     placed = {p.get("cameraId"): p for p in placements(vms)}
-    # Room 102 is drawn on the floor, so its camera stands on the floor plan.
+    # The master and its PTZ slave work as one pair, so both stand in Room 101.
     expected = {
         "sim-master": world["room"]["id"],
-        "sim-ptz": world["building"]["id"],
+        "sim-ptz": world["room"]["id"],
         "sim-master2": world["building"]["id"],
         "sim-ptz2": world["map"]["id"],
     }

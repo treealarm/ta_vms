@@ -132,9 +132,10 @@ namespace VmsMap.Demo
 
       var placements = new List<DemoPlacement>
       {
+        // The pair works as one: the master's boxes drive the slave's aim, so both stand in Room 101,
+        // facing each other across it, with a person walking between them in the simulator's world.
         new("sim-master", Room101, 38.99240, -76.93852, HeightM: 2.8, HeadingDeg: 55, HfovDeg: 70, RangeM: 12),
-        // Room 102 is drawn on the floor plan rather than as a space; its camera stands there.
-        new("sim-ptz", "space/building", 38.99240, -76.93757, HeightM: 2.8, HeadingDeg: 50, HfovDeg: 65, RangeM: 15),
+        new("sim-ptz", Room101, 38.992484, -76.938372, HeightM: 2.8, HeadingDeg: 235, HfovDeg: 65, RangeM: 15),
         new("sim-master2", "space/building", 38.99276, -76.93895, HeightM: 3, HeadingDeg: 135, HfovDeg: 80, RangeM: 60),
         new("sim-ptz2", "space/umd", 38.99250, -76.93950, HeightM: 6, HeadingDeg: 90, HfovDeg: 60, RangeM: 150),
       };
