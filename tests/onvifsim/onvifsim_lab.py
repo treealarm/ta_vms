@@ -8,7 +8,7 @@ default every step does both, one after the other.
 Steps, each one checking what it did and exiting 1 with the reason when something is off:
 
     up          build and start OnvifSim from ../OnvifSim in Docker, on ports clear of the dev
-                stack, and load the world
+                stack, and load the world (--world maryland: the demo world instead of the yard)
     provision   add the cameras to ta_vms over ONVIF; the map, and the plan with its picture; the
                 landmarks in each, and where each pair's cameras stand
     calibrate   PTZ by landmarks (head driven in the sim, position read back over ONVIF through
@@ -177,14 +177,23 @@ class Lab:
             log("OnvifSim already running")
         else:
             self._start_sim()
-        self.sim.put_world(W.build_world(self.onvif_base, self.all_pairs))
+        if self.args.world == "maryland":
+            # The demo world OnvifSim builds from ta_vms's demo constants; it is loaded as it ships,
+            # and checked against the demo placements before anything talks to its cameras.
+            world = W.load_maryland(Path(self.args.sim_dir).resolve() / "data" / "worlds" / "maryland.json")
+            self.sim.put_world(world)
+            expected = {camera["id"]: self.onvif_base + i for i, camera in enumerate(world["cameras"])}
+            name = "Maryland"
+        else:
+            self.sim.put_world(W.build_world(self.onvif_base, self.all_pairs))
+            cameras = [*W.STREAMING_CAMERAS, W.TOPDOWN]
+            expected = {c.id: self.onvif_base + i for i, c in enumerate(cameras)}
+            name = f"the yard, map pair hung '{self.mount.name}'"
         status = self.sim.status()
         require(status.get("h264"), "OnvifSim offers no H.264 (ffmpeg not found): video_srv needs Profile_2")
         ports = status.get("onvifPorts", {})
-        cameras = [*W.STREAMING_CAMERAS, W.TOPDOWN]
-        expected = {c.id: self.onvif_base + i for i, c in enumerate(cameras)}
         require(ports == expected, f"OnvifSim ONVIF ports are {ports}, expected {expected}")
-        log(f"OnvifSim world loaded: ONVIF {expected}, RTSP {status.get('rtspPort')}, map pair hung '{self.mount.name}'")
+        log(f"OnvifSim world loaded: {name}; ONVIF {expected}, RTSP {status.get('rtspPort')}")
 
     def _compose(self, *command, check=True):
         a = self.args
@@ -193,8 +202,10 @@ class Lab:
                    ONVIFSIM_RTSP_PORT=str(a.rtsp_port), ONVIFSIM_RTP_PORT=str(a.rtp_port),
                    ONVIFSIM_RTP_PORT_END=str(a.rtp_port + 1),
                    ONVIFSIM_ONVIF_BASE_PORT=str(a.onvif_base_port),
-                   # The cameras ta_vms talks to; the plan camera's port stays inside the container.
-                   ONVIFSIM_ONVIF_LAST_PORT=str(a.onvif_base_port + len(W.STREAMING_CAMERAS) - 1))
+                   # The cameras ta_vms talks to; the yard's plan camera, and anything beyond the
+                   # demo world's five, stay inside the container.
+                   ONVIFSIM_ONVIF_LAST_PORT=str(a.onvif_base_port + (
+                       len(W.DEMO_PLACEMENTS) + 1 if a.world == "maryland" else len(W.STREAMING_CAMERAS)) - 1))
         result = subprocess.run(["docker", "compose", "-f", str(COMPOSE_FILE), *command], env=env)
         require(not check or result.returncode == 0, f"docker compose {' '.join(command)} failed")
 
@@ -921,8 +932,12 @@ def main():
     p.add_argument("--prefix", default="sim-", help="ta_vms camera ids are <prefix>master, <prefix>ptz, ...")
     p.add_argument("--pair", choices=["both", *[pair.name for pair in W.PAIRS]], default="both",
                    help="which master/slave pair the steps work on: the map's, the plan's, or both")
-    p.add_argument("--lat0", type=float, default=W.DEFAULT_LAT0)
-    p.add_argument("--lon0", type=float, default=W.DEFAULT_LON0)
+    p.add_argument("--world", choices=["yard", "maryland"], default="yard",
+                   help="up: the yard the aiming checks work in, or the demo world (Maryland) the "
+                        "demo deployment runs")
+    p.add_argument("--lat0", type=float, default=None,
+                   help="the WGS84 anchor a pair's space measures in; the world's own by default")
+    p.add_argument("--lon0", type=float, default=None)
     p.add_argument("--seconds", type=float, default=60, help="aim-check and run duration")
     p.add_argument("--interval", type=float, default=3, help="aim-check: seconds between aims")
     p.add_argument("--outage", type=float, default=60, help="edge: how long the camera is off the network")
@@ -935,6 +950,17 @@ def main():
     p.add_argument("--no-zoom", action="store_true",
                    help="calibrate: record no zoom samples, so the slaves stay wide as they did before zoom")
     args = p.parse_args()
+    # The demo world is anchored at its own building, the yard at the farmland the bench has always
+    # measured from; an explicit --lat0/--lon0 still wins.
+    if args.lat0 is None:
+        args.lat0 = W.MARYLAND_LAT0 if args.world == "maryland" else W.DEFAULT_LAT0
+    if args.lon0 is None:
+        args.lon0 = W.MARYLAND_LON0 if args.world == "maryland" else W.DEFAULT_LON0
+    # The steps beyond `up` use world.py's yard: its landmarks, walker and camera pairs. The demo
+    # world is only loaded for watching and for provisioning done elsewhere.
+    if args.world != "yard" and args.step not in ("up", "down", "status"):
+        log(f"the {args.step} step works in the yard world; run it with --world yard")
+        return 1
 
     W.check()
     lab = Lab(args)

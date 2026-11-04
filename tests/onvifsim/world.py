@@ -18,10 +18,12 @@ Run it directly to print the world JSON and the expected numbers:
 
 import base64
 import dataclasses
+import json
 import math
 import struct
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 
 # WGS84 anchor of the sim's origin: open farmland in Maryland, which also makes a presentable map.
 # Not on the equator, so a cos(latitude) left out anywhere shows up as an east-west error instead
@@ -530,6 +532,123 @@ def build_world(onvif_base_port, pairs=None, with_walker=True):
     }
 
 
+# ── The demo world: Maryland ─────────────────────────────────────────────────────
+#
+# ta_vms's demo world (dotnet/VmsMap/Demo/DemoWorlds.cs) places its cameras in the A.V. Williams
+# building on the University of Maryland campus. OnvifSim builds that world from the same constants
+# and ships it as data/worlds/maryland.json (World/MarylandWorld.cs); the bench loads that file
+# rather than keeping a second copy of the geometry, and checks the cameras in it against the demo
+# placements below. Those mirror DemoWorlds.cs — the building envelope, the two rooms and the four
+# camera poses — so keep the two in step.
+
+REPO = Path(__file__).resolve().parents[2]
+
+MARYLAND_LAT0 = 38.9923  # the centre of the demo building
+MARYLAND_LON0 = -76.9378
+MARYLAND_POSITION_TOLERANCE_M = 0.5
+MARYLAND_ANGLE_TOLERANCE_DEG = 0.5
+
+
+@dataclass(frozen=True)
+class DemoPlacement:
+    """A demo camera's place: WGS84, height above the building floor, heading clockwise from north,
+    and the horizontal field of view (for a PTZ camera, the wide end of its lens)."""
+    id: str
+    lat: float
+    lon: float
+    height: float
+    heading: float
+    hfov: float
+
+
+DEMO_PLACEMENTS = [
+    DemoPlacement("master", 38.99240, -76.93852, 2.8, 55, 70),
+    DemoPlacement("ptz", 38.99240, -76.93757, 2.8, 50, 65),
+    DemoPlacement("master2", 38.99276, -76.93895, 3.0, 135, 80),
+    DemoPlacement("ptz2", 38.99250, -76.93950, 6.0, 90, 60),
+]
+DEMO_VEHICLE_CAMERA = "vehicle"
+
+
+def world_to_wgs84(world, position):
+    """A world point in WGS84, by WorldGeo's equirectangular formula around the world's own anchor:
+    the simulator's (x, y, z) metres, with north being the true bearing of world -Z."""
+    geo = world.get("geo") or {}
+    lat0 = geo.get("latitude", 0.0)
+    lon0 = geo.get("longitude", 0.0)
+    turn = math.radians(geo.get("north", 0.0))
+    x, y, z = position["x"], position["y"], position["z"]
+    east = x * math.cos(turn) - z * math.sin(turn)
+    north = -x * math.sin(turn) - z * math.cos(turn)
+    per_deg_lat = EARTH_RADIUS_M * math.pi / 180.0
+    per_deg_lon = per_deg_lat * math.cos(math.radians(lat0))
+    return lat0 + north / per_deg_lat, lon0 + east / per_deg_lon, geo.get("elevation", 0.0) + y
+
+
+def _ground_gap(lat1, lon1, lat2, lon2):
+    """How far apart two WGS84 points are on the ground, metres."""
+    per_deg_lat = EARTH_RADIUS_M * math.pi / 180.0
+    per_deg_lon = per_deg_lat * math.cos(math.radians((lat1 + lat2) / 2.0))
+    return math.hypot((lat1 - lat2) * per_deg_lat, (lon1 - lon2) * per_deg_lon)
+
+
+def _angle_gap(a, b):
+    return abs((a - b + 180.0) % 360.0 - 180.0)
+
+
+def check_maryland(world):
+    """Raises AssertionError if the world does not stand where ta_vms's demo placements put it."""
+    geo = world.get("geo") or {}
+    assert _ground_gap(geo.get("latitude", 0.0), geo.get("longitude", 0.0), MARYLAND_LAT0, MARYLAND_LON0) \
+        <= MARYLAND_POSITION_TOLERANCE_M, f"the world is anchored at {geo}, not at the demo building"
+    assert geo.get("north", 0.0) == 0, f"the world's north is {geo.get('north')}, not 0"
+
+    cameras = {camera["id"]: camera for camera in world.get("cameras", [])}
+    for placement in DEMO_PLACEMENTS:
+        camera = cameras.get(placement.id)
+        assert camera is not None, f"the world has no '{placement.id}' camera"
+        lat, lon, elevation = world_to_wgs84(world, camera["position"])
+        gap = _ground_gap(lat, lon, placement.lat, placement.lon)
+        assert gap <= MARYLAND_POSITION_TOLERANCE_M, \
+            f"{placement.id} stands {gap:.2f} m from its demo placement ({lat:.7f}, {lon:.7f})"
+        assert abs(elevation - placement.height) <= MARYLAND_POSITION_TOLERANCE_M, \
+            f"{placement.id} is {elevation:.2f} m up, the demo places it at {placement.height} m"
+        assert _angle_gap(camera["heading"], placement.heading) <= MARYLAND_ANGLE_TOLERANCE_DEG, \
+            f"{placement.id} faces {camera['heading']}, the demo {placement.heading}"
+        hfov = camera["hFov"] if camera.get("kind") == "fixed" else (camera.get("ptz") or {}).get("fovWide")
+        assert hfov is not None and abs(hfov - placement.hfov) <= MARYLAND_ANGLE_TOLERANCE_DEG, \
+            f"{placement.id} is {hfov} deg wide, the demo {placement.hfov}"
+
+    vehicle = cameras.get(DEMO_VEHICLE_CAMERA)
+    assert vehicle is not None, f"the world has no '{DEMO_VEHICLE_CAMERA}' camera"
+    vehicle_id = vehicle.get("mountedOnVehicleId")
+    assert vehicle_id and any(v["id"] == vehicle_id for v in world.get("vehicles", [])), \
+        f"{DEMO_VEHICLE_CAMERA} does not ride a vehicle of the world"
+
+    master = cameras["master"]
+    assert any(relay["token"] == "lamp" for relay in master.get("relayOutputs", [])), \
+        "master has no 'lamp' relay"
+    assert any(device["token"] == "input" for device in vehicle.get("digitalInputs", [])), \
+        f"{DEMO_VEHICLE_CAMERA} has no 'input' sensor"
+    assert any(wire.get("relayCameraId") == "master" and wire.get("relayToken") == "lamp"
+               and wire.get("inputCameraId") == DEMO_VEHICLE_CAMERA and wire.get("inputToken") == "input"
+               for wire in world.get("wires", [])), "no wire runs from master's lamp to the car's sensor"
+
+
+def load_maryland(path, ta_install_world=None):
+    """The demo world OnvifSim ships, checked against the demo placements; ta_install_world, when
+    given, is the same file as a deployment's demo profile seeds, and must be identical."""
+    path = Path(path)
+    world = json.loads(path.read_text())
+    check_maryland(world)
+    if ta_install_world is not None:
+        copy = Path(ta_install_world)
+        if copy.exists():
+            assert copy.read_text().replace("\r\n", "\n") == path.read_text().replace("\r\n", "\n"), \
+                f"{copy} differs from {path}: the demo profile would seed another world"
+    return world
+
+
 # ── Self-check: the world is one the checks can work in ─────────────────────────
 
 
@@ -617,10 +736,18 @@ def summary(lat0=DEFAULT_LAT0, lon0=DEFAULT_LON0):
 
 
 if __name__ == "__main__":
-    import json
-
-    check()
-    if "--dump" in sys.argv:
-        print(json.dumps(build_world(8101), indent=2))
+    if "--check-maryland" in sys.argv:
+        # The two checkouts beside this one: the world OnvifSim ships, and the copy a deployment's
+        # demo profile seeds. Both must stand where DemoWorlds places the cameras.
+        world = load_maryland(
+            REPO.parent / "OnvifSim" / "data" / "worlds" / "maryland.json",
+            REPO.parent / "ta_install" / "init_files" / "onvifsim" / "worlds" / "maryland.json")
+        geo = world["geo"]
+        print(f"Maryland OK: {len(world['cameras'])} cameras at the demo placements, "
+              f"anchored {geo['latitude']}, {geo['longitude']}")
     else:
-        print(summary())
+        check()
+        if "--dump" in sys.argv:
+            print(json.dumps(build_world(8101), indent=2))
+        else:
+            print(summary())
