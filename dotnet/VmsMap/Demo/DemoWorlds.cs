@@ -16,7 +16,8 @@ namespace VmsMap.Demo
     public const string UmdDataCenterKey = "umd-datacenter";
     // 2: Room 102 became a room diagram on the floor plan instead of a plan of its own.
     // 3: the diagram backgrounds are vector and their regions are the same geometry as the picture.
-    public const int UmdDataCenterVersion = 3;
+    // 4: the racks' points are the centres of their rectangles in the plan picture.
+    public const int UmdDataCenterVersion = 4;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -91,13 +92,14 @@ namespace VmsMap.Demo
 
       // Four racks stand in Room 101 (on its plan, top-down), two in Room 102's schematic. Every
       // rack holds one switch in its first slot and eight ports on that switch; the rest of the
-      // rack's slots stay empty on purpose.
+      // rack's slots stay empty on purpose. Each point is the centre of the rack's own rectangle
+      // in room-101.png, so the dot the editor moves sits on the cabinet it opens.
       var racks = new (string Key, string Name, string Parent, string? Region, double? Lat, double? Lon)[]
       {
-        ("object/rack-a-01", "Rack A-01", Room101, null, 38.99247, -76.93851),
-        ("object/rack-a-02", "Rack A-02", Room101, null, 38.99247, -76.93845),
-        ("object/rack-a-03", "Rack A-03", Room101, null, 38.99241, -76.93851),
-        ("object/rack-a-04", "Rack A-04", Room101, null, 38.99241, -76.93845),
+        ("object/rack-a-01", "Rack A-01", Room101, null, 38.992468, -76.938516),
+        ("object/rack-a-02", "Rack A-02", Room101, null, 38.992468, -76.938471),
+        ("object/rack-a-03", "Rack A-03", Room101, null, 38.992436, -76.938516),
+        ("object/rack-a-04", "Rack A-04", Room101, null, 38.992436, -76.938471),
         ("object/rack-b-01", "Rack B-01", Room102Layout, "rack-1", null, null),
         ("object/rack-b-02", "Rack B-02", Room102Layout, "rack-2", null, null),
       };
