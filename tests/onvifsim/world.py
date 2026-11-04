@@ -650,20 +650,30 @@ def check_maryland(world):
     assert vehicle_id and any(v["id"] == vehicle_id for v in world.get("vehicles", [])), \
         f"{DEMO_VEHICLE_CAMERA} does not ride a vehicle of the world"
 
+    # The master's three relays show every kind of link a relay can have: one lights a lamp, one
+    # drives the slave camera's sensor, and one drives a sensor of the master itself. A lamp is an
+    # actuator of the world, not a part of a camera.
     master = cameras["master"]
-    assert any(relay["token"] == "lamp" for relay in master.get("relayOutputs", [])), \
-        "master has no 'lamp' relay"
+    relays = {relay["token"] for relay in master.get("relayOutputs", [])}
+    assert {"lamp", "peer", "loop"} <= relays, f"master has no relays to wire, only {relays}"
+    assert any(device["token"] == "input" for device in master.get("digitalInputs", [])), \
+        "master has no 'input' sensor"
     ptz = cameras["ptz"]
     assert any(device["token"] == "input" for device in ptz.get("digitalInputs", [])), \
         "ptz has no 'input' sensor"
-    assert any(wire.get("relayCameraId") == "master" and wire.get("relayToken") == "lamp"
-               and wire.get("inputCameraId") == "ptz" and wire.get("inputToken") == "input"
-               for wire in world.get("wires", [])), "no wire runs from master's lamp to ptz's sensor"
-    # A lamp is an actuator of the world, not a part of a camera.
     assert any(lamp["id"] == "alert" for lamp in world.get("lamps", [])), "the world has no 'alert' lamp"
-    assert any(wire.get("relayCameraId") == "master" and wire.get("relayToken") == "lamp"
-               and wire.get("lampId") == "alert"
-               for wire in world.get("wires", [])), "no wire runs from master's relay to the 'alert' lamp"
+    wires = world.get("wires", [])
+
+    def wired(relay_token, **sink):
+        return any(wire.get("relayCameraId") == "master" and wire.get("relayToken") == relay_token
+                   and all(wire.get(key) == value for key, value in sink.items())
+                   for wire in wires)
+
+    assert wired("lamp", lampId="alert"), "no wire runs from master's 'lamp' relay to the 'alert' lamp"
+    assert wired("peer", inputCameraId="ptz", inputToken="input"), \
+        "no wire runs from master's 'peer' relay to ptz's sensor"
+    assert wired("loop", inputCameraId="master", inputToken="input"), \
+        "no wire runs from master's 'loop' relay to the master's own sensor"
     # The car carries no device: a wire to it would move with it, and every camera that saw the wire
     # would redraw at every frame of the drive.
     assert not vehicle.get("relayOutputs") and not vehicle.get("digitalInputs"), \
