@@ -30,11 +30,12 @@ export function useMapSpace(space: SpaceDto | null): MapSpaceData {
   const canvasId = space?.id ?? null
   const page = canvasId ? canvases[canvasId] : undefined
 
+  // Opened or opened again: a page that stays in the store is a page that can have lost a node
+  // while nobody was watching it -- another plan was open, or the stream was down. The read
+  // replaces the page's ids, which is what a watch gap cannot do.
   useEffect(() => {
-    if (canvasId && !canvases[canvasId]?.loaded) {
-      void dispatch(loadCanvas(canvasId))
-    }
-  }, [canvasId, canvases, dispatch])
+    if (canvasId) void dispatch(loadCanvas(canvasId))
+  }, [canvasId, dispatch])
 
   useEffect(() => {
     if (!levelsLoaded) void dispatch(loadLevels())
@@ -115,7 +116,11 @@ export function useMapSpace(space: SpaceDto | null): MapSpaceData {
   const idsKey = useMemo(() => Object.keys(markersById).sort().join(','), [markersById])
   const idsUrl = useMemo(() => (idsKey ? mapLiveUrl({ ids: idsKey.split(',') }) : null), [idsKey])
 
-  useMapLive(boxUrl, handleCanvas)
+  useMapLive(boxUrl, handleCanvas, () => {
+    // A reconnect starts a watch with nothing sent yet: a node deleted during the gap is never
+    // in its delete list, so the page is read again rather than trusted.
+    if (canvasId) void dispatch(loadCanvas(canvasId))
+  })
   useMapLive(idsUrl, handleNodes)
 
   const figures = markers
