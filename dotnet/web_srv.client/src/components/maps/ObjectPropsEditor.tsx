@@ -158,6 +158,16 @@ export default function ObjectPropsEditor({ node, figure, loaded, levels, onDele
           onChange={(event) => set('name', event.target.value)}
         />
 
+        {/* The id is what every other surface names this node by; a read-only field is the one
+            way to copy it without hunting through the network tab. */}
+        <TextField
+          size="small"
+          label={t('maps.editor.objectId')}
+          value={node.id}
+          slotProps={{ input: { readOnly: true } }}
+          sx={{ '& input': { fontFamily: 'monospace', fontSize: 12 } }}
+        />
+
         <Divider />
 
         <Typography variant="overline" color="text.secondary">{t('maps.editor.visual')}</Typography>

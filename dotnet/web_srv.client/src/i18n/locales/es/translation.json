@@ -1065,7 +1065,7 @@
   "diagramEditor": {
     "diagram": "Mimosesquema",
     "newDiagram": "Nuevo mimosesquema",
-    "addDiagram": "Nuevo mimosesquema bajo el nodo seleccionado, o en este mapa",
+    "addDiagram": "Nuevo mimosesquema en este lienzo",
     "types": "Tipos",
     "typesHint": "Un tipo dibuja todos sus mimosesquemas: su imagen de fondo y las regiones que sus hijos pueden ocupar en lugar de un rectángulo propio.",
     "manageTypes": "Gestionar tipos…",
@@ -1178,6 +1178,7 @@
       "noNodes": "Todavía no hay nada dibujado aquí.",
       "figure": "Figura",
       "name": "Nombre",
+      "objectId": "ID del objeto",
       "visual": "Aspecto",
       "color": "Color",
       "rotation": "Rotación",

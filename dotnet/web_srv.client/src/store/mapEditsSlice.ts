@@ -225,6 +225,7 @@ export const createDiagramNode = createAsyncThunk(
         name,
         geometry: { type: 'Point', coord: [{ lat: at.lat, lon: at.lon }] },
       }])
+      api.dispatch(canvasAdd({ canvasId: parentId, ids: [id] }))
     }
 
     await api.dispatch(loadNodes([id]))

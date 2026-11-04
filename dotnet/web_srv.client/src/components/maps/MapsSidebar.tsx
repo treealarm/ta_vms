@@ -268,28 +268,29 @@ function NodesTree({ markers, space, onOpenSpace }: {
     setExpanded(next)
   }
 
-  /** A new node belongs under what is selected — a container, another diagram — or under the space. */
+  /**
+   * A new diagram stands on this canvas, in the middle of the view, whatever is selected: the
+   * button belongs to the canvas, and a diagram nested in another is made from inside it, with
+   * that diagram's own "New diagram". The point stays in sight, so it can be dragged into place
+   * before the diagram is opened.
+   */
   const addDiagram = async () => {
     if (!space.id) return
 
-    const parentId = selection?.kind === 'node' && selection.id !== space.id ? selection.id : space.id
     setBusy(true)
     try {
       const created = await dispatch(createDiagramNode({
-        parentId,
+        parentId: space.id,
         name: `${t('diagramEditor.diagram')} ${markers.length + 1}`,
         geometry: { top: 0, left: 0, width: 800, height: 600, rotation: 0 },
-        // Only the space's own child stands on this canvas; a diagram inside a container or
-        // another diagram is reached through the tree.
-        at: parentId === space.id
-          ? {
-            lat: (space.view.southWest.lat + space.view.northEast.lat) / 2,
-            lon: (space.view.southWest.lon + space.view.northEast.lon) / 2,
-          }
-          : undefined,
+        at: {
+          lat: (space.view.southWest.lat + space.view.northEast.lat) / 2,
+          lon: (space.view.southWest.lon + space.view.northEast.lon) / 2,
+        },
       })).unwrap()
       setSelection({ kind: 'node', id: created.id })
-      openDiagram(created.id)
+      // The point is on the canvas, not on whatever diagram was open over it.
+      openDiagram(null)
     } catch {
       // The store carries the message.
     } finally {

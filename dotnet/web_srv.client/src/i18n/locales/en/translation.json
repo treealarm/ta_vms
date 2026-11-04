@@ -1065,7 +1065,7 @@
   "diagramEditor": {
     "diagram": "Diagram",
     "newDiagram": "New diagram",
-    "addDiagram": "New diagram under the selected node, or on this map",
+    "addDiagram": "New diagram on this canvas",
     "types": "Types",
     "typesHint": "A type draws every diagram of it: its background picture, and the regions its children may take instead of a rectangle of their own.",
     "manageTypes": "Manage types…",
@@ -1178,6 +1178,7 @@
       "noNodes": "Nothing is drawn here yet.",
       "figure": "Figure",
       "name": "Name",
+      "objectId": "Object ID",
       "visual": "Appearance",
       "color": "Colour",
       "rotation": "Rotation",
