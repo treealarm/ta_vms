@@ -93,11 +93,13 @@ export function CameraMarker({
 
   return (
     <>
+      {/* The cone is a picture of the view, not a target: a click goes through it to whatever
+          stands in the coverage — a node's point, another camera. The camera itself is picked by
+          its marker. */}
       <Polygon
         positions={fovPolygon(p)}
+        interactive={false}
         pathOptions={{ color, weight: 1, fillColor: color, fillOpacity: dimmed ? 0.05 : selected ? 0.25 : 0.12, opacity: dimmed ? 0.3 : 0.8 }}
-        // Stopped here, or the map's own click arrives next and takes the selection away again.
-        eventHandlers={onSelect ? { click: (e) => { L.DomEvent.stopPropagation(e); onSelect() } } : undefined}
       />
       <Marker
         position={[p.lat, p.lon]}
