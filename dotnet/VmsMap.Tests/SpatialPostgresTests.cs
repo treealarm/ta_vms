@@ -21,10 +21,11 @@ namespace VmsMap.Tests;
 public class SpatialPostgresTests
 {  private static readonly string? Dsn = Environment.GetEnvironmentVariable("VMS_MAP_TEST_DSN");
 
-  private sealed class FakeCatalog : ICameraCatalog
+  private sealed class FakeCatalog(IReadOnlySet<string>? geoFromDevice = null) : ICameraCatalog
   {
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
-      Task.FromResult<CameraInfo?>(new CameraInfo(cameraId, "Camera " + cameraId, "srv"));
+      Task.FromResult<CameraInfo?>(new CameraInfo(
+        cameraId, "Camera " + cameraId, "srv", geoFromDevice?.Contains(cameraId) == true));
 
     public Task<List<CameraInfo>> ListAsync(string? serverId, CancellationToken ct) =>
       Task.FromResult(new List<CameraInfo>());
@@ -53,7 +54,7 @@ public class SpatialPostgresTests
     }
   }
 
-  private static async Task<Services?> OpenAsync()
+  private static async Task<Services?> OpenAsync(IReadOnlySet<string>? geoFromDevice = null)
   {
     if (string.IsNullOrWhiteSpace(Dsn))
       return null;
@@ -89,7 +90,7 @@ public class SpatialPostgresTests
     var notifier = new RecordingNotifier();
 
     return new Services(
-      dataSource, db, new SpatialDb(db, map, updates, geo, new FakeCatalog(), notifier), notifier);
+      dataSource, db, new SpatialDb(db, map, updates, geo, new FakeCatalog(geoFromDevice), notifier), notifier);
   }
 
   private static Space MapSpace(string name = "Main map") => new()
@@ -260,5 +261,80 @@ public class SpatialPostgresTests
     var placements = await test.Spatial.ListPlacementsAsync(CancellationToken.None);
     Assert.Equal(2, placements.Count);
     Assert.Single(placements, p => p.IsReference);
+  }
+
+  [Fact]
+  public async Task ADeviceReportedPointMovesTheNodeAndNothingElse()
+  {
+    await using var test = await OpenAsync();
+    if (test is null)
+      return;
+
+    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(Placement("cam1", map.Id, reference: true, 0.5, 0.5), CancellationToken.None);
+
+    var canonicalId = Guid.Parse(CameraObjectId.For("cam1"));
+    var before = await test.Db.CameraPlacements.AsNoTracking().SingleAsync(p => p.object_id == canonicalId);
+    var parentBefore = (await test.Db.Markers.AsNoTracking().SingleAsync(m => m.id == canonicalId)).parent_id;
+
+    var moved = await test.Spatial.MoveReferencePointAsync("cam1", 0.61, 0.71, CancellationToken.None);
+
+    Assert.True(moved);
+    var figure = await test.Db.GeoObjects.AsNoTracking().SingleAsync(g => g.id == canonicalId);
+    var point = (NetTopologySuite.Geometries.Point)figure.figure;
+    Assert.Equal(0.71, point.X, 6); // longitude
+    Assert.Equal(0.61, point.Y, 6); // latitude
+
+    // The device says where it is, not how it is mounted: the values an administrator set stay.
+    var after = await test.Db.CameraPlacements.AsNoTracking().SingleAsync(p => p.object_id == canonicalId);
+    Assert.Equal(before.height_m, after.height_m);
+    Assert.Equal(before.heading_deg, after.heading_deg);
+    Assert.Equal(before.hfov_deg, after.hfov_deg);
+    Assert.Equal(before.range_m, after.range_m);
+    Assert.Equal(parentBefore, (await test.Db.Markers.AsNoTracking().SingleAsync(m => m.id == canonicalId)).parent_id);
+
+    // The map's watch stream and the tracking models both hear about it.
+    Assert.Contains("cam1", test.Notifier.Events[^1].Cameras);
+  }
+
+  [Fact]
+  public async Task AnUnplacedCameraHasNowhereToMove()
+  {
+    await using var test = await OpenAsync();
+    if (test is null)
+      return;
+
+    Assert.False(await test.Spatial.MoveReferencePointAsync("cam1", 0.61, 0.71, CancellationToken.None));
+  }
+
+  [Fact]
+  public async Task ADeviceFollowingCameraRefusesACalibration()
+  {
+    await using var test = await OpenAsync(new HashSet<string>(StringComparer.Ordinal) { "cam1" });
+    if (test is null)
+      return;
+
+    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(Placement("cam1", map.Id, reference: true), CancellationToken.None);
+    var landmark = await test.Spatial.UpsertLandmarkAsync(new Landmark
+    {
+      SpaceId = map.Id,
+      Name = "Corner",
+      Lat = 0.4,
+      Lon = 0.4,
+      HeightM = 2,
+    }, CancellationToken.None);
+
+    var marks = new GroundObservations { CameraId = "cam1" };
+    marks.Observations.Add(new GroundObservation { LandmarkId = landmark.Id, X = 0.5f, Y = 0.5f });
+    var ground = await Assert.ThrowsAsync<SpatialConfigException>(
+      () => test.Spatial.SetGroundObservationsAsync(marks, CancellationToken.None));
+    Assert.Contains("position from the device", ground.Message);
+
+    // The same rule for the PTZ landmark observations: both describe a fixed standpoint.
+    var observations = new PtzGeoObservations { CameraId = "cam1" };
+    observations.Observations.Add(new PtzGeoObservation { LandmarkId = landmark.Id, Pan = 10, Tilt = -5 });
+    await Assert.ThrowsAsync<SpatialConfigException>(
+      () => test.Spatial.SetObservationsAsync(observations, CancellationToken.None));
   }
 }

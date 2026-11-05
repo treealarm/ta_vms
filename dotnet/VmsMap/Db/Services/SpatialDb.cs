@@ -23,7 +23,7 @@ namespace VmsMap.Db
   /// a placement and a landmark are nodes of the one tree with side rows of their own; a camera is
   /// one node whose id is derived from the camera id, and its other placements are replicas of it.
   /// See Grpc/migrations/0002_spaces.sql for what each table means.
-  public class SpatialDb
+  public class SpatialDb : ICameraGeoWriter
   {
     private readonly VmsMapDbContext _db;    private readonly IMapService _mapService;
     private readonly IMapUpdateService _mapUpdateService;
@@ -510,6 +510,39 @@ namespace VmsMap.Db
       await NotifyAsync(changed, [placement.CameraId], ct);
     }
 
+    /// <summary>
+    /// Moves a camera's canonical node to a place the device itself reported.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately narrower than <see cref="UpsertPlacementAsync"/>: this is the device talking,
+    /// and the only thing it can be trusted to say is where it is. The space, the parent, the
+    /// height, the heading and the field of view stay the administrator's, and no picture moves.
+    /// A camera with no reference placement is a no-op — inventing one is a decision for a person,
+    /// and the next tick will move the point as soon as one exists.
+    /// </remarks>
+    /// <returns>False when the camera has no reference placement.</returns>
+    public async Task<bool> MoveReferencePointAsync(
+      string cameraId, double lat, double lon, CancellationToken ct)
+    {
+      RequireLatLon(lat, lon, "camera");
+
+      var reference = await _db.CameraPlacements.AsNoTracking()
+        .FirstOrDefaultAsync(p => p.camera_id == cameraId && p.is_reference, ct);
+      if (reference is null)
+        return false;
+
+      await using var tx = await BeginTransactionAsync(ct);
+      await _geoService.CreateGeo([PointFigure(reference.object_id, lat, lon)]);
+      await _db.SaveChangesAsync(ct);
+      if (tx is not null)
+        await tx.CommitAsync(ct);
+
+      // The camera id travels too: the map's own clients reload placements by it, and the tracking
+      // models drop theirs — a model fitted at the old point is a wrong answer at the new one.
+      await NotifyAsync([reference.object_id.ToString()], [cameraId], ct);
+      return true;
+    }
+
     public async Task<bool> RemovePlacementAsync(string cameraId, Guid spaceId, CancellationToken ct)
     {
       await using var tx = await BeginTransactionAsync(ct);
@@ -679,6 +712,7 @@ namespace VmsMap.Db
     public async Task SetObservationsAsync(PtzGeoObservations observations, CancellationToken ct)
     {
       var cameraId = observations.CameraId;
+      await EnsureCameraMayBeCalibratedAsync(cameraId, ct);
       var landmarkIds = ParseObservedLandmarks(observations.Observations.Select(o => o.LandmarkId));
       if (observations.Observations.Any(o => !float.IsFinite(o.Pan) || !float.IsFinite(o.Tilt)))
         throw new SpatialConfigException("Pan and tilt must be numbers");
@@ -731,6 +765,7 @@ namespace VmsMap.Db
     public async Task SetGroundObservationsAsync(GroundObservations observations, CancellationToken ct)
     {
       var cameraId = observations.CameraId;
+      await EnsureCameraMayBeCalibratedAsync(cameraId, ct);
       var landmarkIds = ParseObservedLandmarks(observations.Observations.Select(o => o.LandmarkId));
       if (observations.Observations.Any(o => !(o.X is >= 0 and <= 1) || !(o.Y is >= 0 and <= 1)))
         throw new SpatialConfigException("A mark must lie within the picture: x and y between 0 and 1");
@@ -764,6 +799,20 @@ namespace VmsMap.Db
       if (landmarkIds.Distinct().Count() != landmarkIds.Count)
         throw new SpatialConfigException("A landmark can be observed only once");
       return landmarkIds;
+    }
+
+    /// <summary>
+    /// A camera that takes its place from the device has no fixed point to fit a calibration to:
+    /// the marks would describe where it stood when they were made, not where it is now. Refused
+    /// for both the ground marks and the PTZ landmark observations.
+    /// </summary>
+    private async Task EnsureCameraMayBeCalibratedAsync(string cameraId, CancellationToken ct)
+    {
+      var camera = await _cameraCatalog.GetAsync(cameraId, ct)
+        ?? throw new SpatialConfigException($"Camera '{cameraId}' does not exist");
+      if (camera.GeoFromDevice)
+        throw new SpatialConfigException(
+          "The camera takes its position from the device, so it cannot be calibrated against landmarks");
     }
 
     /// Every landmark must be in a space that shares geometry with the one the camera really stands

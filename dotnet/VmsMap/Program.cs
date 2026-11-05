@@ -95,6 +95,9 @@ builder.Services.AddScoped<FileService>();
 
 // Spaces, plans, placements, landmarks and observations on the one tree.
 builder.Services.AddScoped<SpatialDb>();
+// The follower runs on a scope of its own; SpatialDb stays scoped with the context it shares.
+builder.Services.AddScoped<ICameraGeoWriter>(sp => sp.GetRequiredService<SpatialDb>());
+builder.Services.AddSingleton<ICameraGeoSource, VmsOnvifGeoSource>();
 
 // The demo world: install, reinstall and removal behind one registry. The flag and the gRPC calls
 // that reach it are wired in M2.2's later steps; the seeder is the same for both.
@@ -123,6 +126,8 @@ builder.Services.AddHostedService<StartupResyncService>();
 builder.Services.AddHostedService<RetentionEventSubscriber>();
 builder.Services.AddHostedService<AlarmSweepService>();
 builder.Services.AddHostedService<ConnectionStatePoller>();
+// Cameras flagged geo_from_device follow their own ONVIF position; the rest are never asked.
+builder.Services.AddHostedService<CameraGeoFollower>();
 
 builder.Services.AddScoped<MapServiceImpl>();
 

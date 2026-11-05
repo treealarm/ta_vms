@@ -193,6 +193,11 @@ public sealed class TrackingSessionManager(
     if (string.IsNullOrWhiteSpace(cameraId))
       return WorldAimResult.Failed("cameraId must not be empty");
 
+    // Checked before the calibration: for a camera following its device the answer would be wrong
+    // at the very next tick, however good the fit was when it was taken.
+    if (DevicePositionRefusal(await router.ResolveAsync(cameraId, ct)) is { } refused)
+      return WorldAimResult.Failed(refused);
+
     var model = await spatial.LoadAsync(cameraId, ct);
     if (model is null)
       return WorldAimResult.Failed($"Camera '{cameraId}' has no reference placement: mark where it really stands first");
@@ -271,12 +276,33 @@ public sealed class TrackingSessionManager(
   public async Task<string?> BindingUnusableAsync(SlaveBindingModel binding, CancellationToken ct) =>
     (await ResolveAimAsync(binding, fresh: false, ct)).Unusable();
 
+  /// <summary>
+  /// Why cameras cannot be aimed by a spatial calibration, or null when they can.
+  /// </summary>
+  /// <remarks>
+  /// A fit says where a camera stood when the landmarks were marked. A camera whose place on the
+  /// map follows its own device moves away from that point, so the fit becomes a wrong answer; the
+  /// camera is still free to guide itself off its own picture, which uses no place at all.
+  /// </remarks>
+  /// <param name="routes">The camera aimed, or the master and slave of a pair — either one is enough to refuse.</param>
+  internal static string? DevicePositionRefusal(params CameraPtzRouter.Route?[] routes) =>
+    routes.Any(route => route?.GeoFromDevice == true)
+      ? "The camera takes its position from the device, so it cannot be aimed by a calibration"
+      : null;
+
   /// <summary>Everything the binding aims by: for the map method, both cameras' calibrations.</summary>
   /// <param name="fresh">Read past the cache's TTL, for a caller acting on something just changed.</param>
   private async Task<SlaveAim> ResolveAimAsync(SlaveBindingModel binding, bool fresh, CancellationToken ct)
   {
     if (binding.Method != PtzSlaveBindingMethod.PtzSlaveBindingGeo)
       return SlaveAim.BySurvey(binding);
+
+    // The map method is built on where both cameras stand. A camera whose place follows its device
+    // has no fixed standpoint for the fit, so the pair cannot be trusted to aim anything.
+    var masterRoute = await router.ResolveAsync(binding.MasterCameraId, ct);
+    var slaveRoute = await router.ResolveAsync(binding.SlaveCameraId, ct);
+    if (DevicePositionRefusal(masterRoute, slaveRoute) is { } refused)
+      return new SlaveAim(binding, null, refused);
 
     var masterRead = spatialCache.LookupAsync(binding.MasterCameraId, fresh, ct);
     var slaveRead = spatialCache.LookupAsync(binding.SlaveCameraId, fresh, ct);
