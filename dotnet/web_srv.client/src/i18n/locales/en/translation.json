@@ -89,6 +89,8 @@
     "disabled": "Disable camera",
     "hasTelemetry": "Has telemetry (PTZ)",
     "hasTelemetryHelper": "Tick this only for cameras that really move. Firmware advertises the ONVIF PTZ service whether or not there is a motor behind it, so the joystick and object tracking are gated on this switch, not on what the camera claims. The camera's ONVIF settings page still shows what it reports — check there first.",
+    "geoFromDevice": "Position from the device (ONVIF)",
+    "geoFromDeviceHelper": "Let the camera's own ONVIF position place it on the map, and follow it as the camera moves. Leave this off for a camera placed by hand: its survey and calibration must not drift because the device reports a coordinate of its own. While this is on, geographic calibration and aiming are refused.",
     "livePreview": "Live preview ({{stream}})",
     "onvifEventsEnabled": "Subscribe to ONVIF events",
     "edgeBackfill": "Auto-recover gaps from the camera",

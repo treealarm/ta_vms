@@ -294,6 +294,15 @@ message CameraSetup {
   // claims, which is how you check one before ticking this -- and every control that actually
   // drives the camera is gated on this flag instead.
   bool has_telemetry = 27;
+
+  // Take this camera's place on the map from the camera itself.
+  //
+  // ONVIF's GetGeoLocation reports where the device stands, and a camera mounted on a vehicle
+  // reports a new place as it moves. Off by default: a hand-placed camera, calibrated or aimed by
+  // survey, must never drift because the device happens to answer with a coordinate of its own.
+  // While it is on, the map follows the device and geographic calibration and aiming are refused —
+  // a fit taken at the old point is meaningless at the new one.
+  bool geo_from_device = 28;
 }
 
 message RecordingProfileRequest {

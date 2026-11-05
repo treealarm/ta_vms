@@ -51,6 +51,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const [roiTranscode, setRoiTranscode] = useState(existing?.roiTranscode === true)
   const [onvifMetadataDisabled, setOnvifMetadataDisabled] = useState(existing?.onvifMetadataDisabled === true)
   const [hasTelemetry, setHasTelemetry] = useState(existing?.hasTelemetry === true)
+  const [geoFromDevice, setGeoFromDevice] = useState(existing?.geoFromDevice === true)
   // Percent in the field, fraction on the wire: the API speaks 0..1, operators do not.
   const pctOf = (v: number | undefined, fallback: number) =>
     String(Math.round((v ?? fallback) * 1000) / 10)
@@ -103,6 +104,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     roiTranscode: existing?.roiTranscode === true,
     onvifMetadataDisabled: existing?.onvifMetadataDisabled === true,
     hasTelemetry: existing?.hasTelemetry === true,
+    geoFromDevice: existing?.geoFromDevice === true,
     roiDelayHours: String(existing?.roiDelayHours ?? 0),
     roiMinCoverage: pctOf(existing?.roiMinCoverage, 0),
     roiMaxCoverage: pctOf(existing?.roiMaxCoverage, 1),
@@ -121,6 +123,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     || roiTranscode !== snap.roiTranscode
     || onvifMetadataDisabled !== snap.onvifMetadataDisabled
     || hasTelemetry !== snap.hasTelemetry
+    || geoFromDevice !== snap.geoFromDevice
     || roiDelayHours !== snap.roiDelayHours
     || roiMinCoverage !== snap.roiMinCoverage
     || roiMaxCoverage !== snap.roiMaxCoverage
@@ -150,6 +153,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     roiTranscode,
     onvifMetadataDisabled,
     hasTelemetry,
+    geoFromDevice,
     // Kept as text while editing so a half-typed "0." is not thrown away.
     roiDelayHours: Number(roiDelayHours) || 0,
     roiMinCoverage: (Number(roiMinCoverage) || 0) / 100,
@@ -177,7 +181,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     const action = serverChanged ? changeCameraParent : addCamera
     const result = await dispatch(action(payload))
     if (!action.rejected.match(result)) {
-      setSnap({ name, serverId, mediaMtxServerId, user, pass, ip, port, disabled, edgeBackfillStream, roiTranscode, onvifMetadataDisabled, hasTelemetry, roiDelayHours, roiMinCoverage, roiMaxCoverage })
+      setSnap({ name, serverId, mediaMtxServerId, user, pass, ip, port, disabled, edgeBackfillStream, roiTranscode, onvifMetadataDisabled, hasTelemetry, geoFromDevice, roiDelayHours, roiMinCoverage, roiMaxCoverage })
       await dispatch(fetchCameraState(initialCameraId))
       return true
     }
@@ -204,6 +208,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     setRoiTranscode(snap.roiTranscode)
     setOnvifMetadataDisabled(snap.onvifMetadataDisabled)
     setHasTelemetry(snap.hasTelemetry)
+    setGeoFromDevice(snap.geoFromDevice)
     setRoiDelayHours(snap.roiDelayHours)
     setRoiMinCoverage(snap.roiMinCoverage)
     setRoiMaxCoverage(snap.roiMaxCoverage)
@@ -330,6 +335,13 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
               <FormControlLabel
                 control={<Switch checked={hasTelemetry} onChange={(e) => setHasTelemetry(e.target.checked)} />}
                 label={t('cameras.hasTelemetry')}
+              />
+            </FieldHint>
+
+            <FieldHint hint={t('cameras.geoFromDeviceHelper')}>
+              <FormControlLabel
+                control={<Switch checked={geoFromDevice} onChange={(e) => setGeoFromDevice(e.target.checked)} />}
+                label={t('cameras.geoFromDevice')}
               />
             </FieldHint>
             {isNew

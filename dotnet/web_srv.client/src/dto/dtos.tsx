@@ -260,6 +260,9 @@ export type CameraSetupDto = {
    *  administrator's word, not the device's: firmware advertises the ONVIF PTZ service whether or
    *  not there is a motor behind it. */
   hasTelemetry?: boolean
+  /** Take this camera's place on the map from its own ONVIF position. Off by default: a
+   *  hand-placed camera must not drift, and while on, geographic calibration and aiming refuse. */
+  geoFromDevice?: boolean
   /** Re-encode finished clips with ROI, keeping detector boxes sharp. */
   roiTranscode?: boolean
   /** Hours before a closed clip may be re-encoded; 0 means as soon as possible. */

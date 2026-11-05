@@ -26,8 +26,8 @@ public class CameraStorage(
       && Guid.TryParse(camera.MediaMtxServerId, out var parsedMmx) ? parsedMmx : null;
 
     await using (var command = new NpgsqlCommand("""
-      INSERT INTO camera_setup (camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, onvif_xaddr, media_mtx_server_id, disabled, name, edge_backfill_stream, roi_transcode, roi_delay_hours, roi_min_coverage, roi_max_coverage, onvif_metadata_disabled, has_telemetry)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      INSERT INTO camera_setup (camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, onvif_xaddr, media_mtx_server_id, disabled, name, edge_backfill_stream, roi_transcode, roi_delay_hours, roi_min_coverage, roi_max_coverage, onvif_metadata_disabled, has_telemetry, geo_from_device)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       ON CONFLICT (camera_id) DO UPDATE SET
         server_id           = EXCLUDED.server_id,
         cred_user           = EXCLUDED.cred_user,
@@ -44,7 +44,8 @@ public class CameraStorage(
         roi_min_coverage    = EXCLUDED.roi_min_coverage,
         roi_max_coverage    = EXCLUDED.roi_max_coverage,
         onvif_metadata_disabled = EXCLUDED.onvif_metadata_disabled,
-        has_telemetry       = EXCLUDED.has_telemetry;
+        has_telemetry       = EXCLUDED.has_telemetry,
+        geo_from_device     = EXCLUDED.geo_from_device;
       """, connection, tx))
     {
       command.Parameters.AddWithValue(camera.CameraId);
@@ -64,6 +65,7 @@ public class CameraStorage(
       command.Parameters.AddWithValue(camera.RoiMaxCoverage);
       command.Parameters.AddWithValue(camera.OnvifMetadataDisabled);
       command.Parameters.AddWithValue(camera.HasTelemetry);
+      command.Parameters.AddWithValue(camera.GeoFromDevice);
       await command.ExecuteNonQueryAsync(ct);
     }
 
@@ -152,7 +154,8 @@ public class CameraStorage(
              camera_setup.roi_min_coverage,
              camera_setup.roi_max_coverage,
              camera_setup.onvif_metadata_disabled,
-             camera_setup.has_telemetry
+             camera_setup.has_telemetry,
+             camera_setup.geo_from_device
       FROM camera_setup
       LEFT JOIN onvif_event_subscription oes ON oes.camera_id = camera_setup.camera_id
       LEFT JOIN media_mtx_server mtx ON mtx.id = camera_setup.media_mtx_server_id
@@ -196,7 +199,8 @@ public class CameraStorage(
              camera_setup.roi_min_coverage,
              camera_setup.roi_max_coverage,
              camera_setup.onvif_metadata_disabled,
-             camera_setup.has_telemetry
+             camera_setup.has_telemetry,
+             camera_setup.geo_from_device
       FROM camera_setup
       LEFT JOIN onvif_event_subscription oes ON oes.camera_id = camera_setup.camera_id
       LEFT JOIN media_mtx_server mtx ON mtx.id = camera_setup.media_mtx_server_id
@@ -641,6 +645,7 @@ public class CameraStorage(
     setup.RoiMaxCoverage = reader.IsDBNull(20) ? 1 : reader.GetDouble(20);
     setup.OnvifMetadataDisabled = !reader.IsDBNull(21) && reader.GetBoolean(21);
     setup.HasTelemetry = !reader.IsDBNull(22) && reader.GetBoolean(22);
+    setup.GeoFromDevice = !reader.IsDBNull(23) && reader.GetBoolean(23);
 
     return setup;
   }
