@@ -10,7 +10,16 @@ public sealed record CameraConnData(
   CameraConnInfo? Conn,
   IReadOnlyList<StreamRtspEntry> Streams);
 
-public sealed class CameraConnCache(CfgService.CfgServiceClient cfgClient)
+/// <summary>
+/// Where a camera's connection details come from. An interface so a caller that needs nothing else
+/// (the I/O state service) can be exercised without a VmsCfg client behind it.
+/// </summary>
+public interface ICameraConnectionSource
+{
+  Task<CameraConnData?> GetAsync(string cameraId, CancellationToken ct);
+}
+
+public sealed class CameraConnCache(CfgService.CfgServiceClient cfgClient) : ICameraConnectionSource
 {
   private readonly ConcurrentDictionary<string, CameraConnData> _cache = new();
 

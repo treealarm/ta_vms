@@ -196,6 +196,31 @@ public sealed partial class OnvifSettingsService(
     }
   }
 
+  // ── Geolocation ──────────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Where the camera says it stands, or null when it reports no location at all. The list may
+  /// name other located entities (sensors, objects); the camera itself is the entry the standard
+  /// calls "Device", and that is the only one returned here.
+  /// </summary>
+  public async Task<OnvifLocationEntity?> GetGeoLocationAsync(string cameraId, CancellationToken ct)
+  {
+    var data = await connCache.GetAsync(cameraId, ct);
+    if (data?.Conn == null) return null;
+    try
+    {
+      var entries = await GetOrCreate(data.Conn).GetGeoLocationAsync();
+      return entries.FirstOrDefault(
+        e => string.Equals(e.Entity, "Device", StringComparison.OrdinalIgnoreCase));
+    }
+    catch (Exception ex)
+    {
+      logger.LogWarning(ex, "GetGeoLocation failed for camera {CameraId}", cameraId);
+      Evict(data.Conn);
+      throw;
+    }
+  }
+
   // ── System ────────────────────────────────────────────────────────────────────
 
   public async Task<DateTime?> GetDeviceTimeAsync(string cameraId, CancellationToken ct)

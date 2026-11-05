@@ -23,6 +23,7 @@ var ownServerId = Require("OWN_SERVER_ID");
 var cameraActorType = CameraActorType.For(ownServerId);
 
 builder.Services.AddSingleton<CameraConnCache>();
+builder.Services.AddSingleton<ICameraConnectionSource>(sp => sp.GetRequiredService<CameraConnCache>());
 // OnvifLib logs under a category of its own, which VmsLog keeps at Information: its Debug is the
 // whole SOAP envelope of every request.
 builder.Services.AddSingleton<IOnvifLogger>(sp => new OnvifLoggerAdapter(
@@ -74,6 +75,8 @@ builder.Services.AddSingleton(sp => new VmsOnvif.Onvif.OnvifLiveEventForwarder(
 builder.Services.AddHostedService(sp =>
   sp.GetRequiredService<VmsOnvif.Onvif.OnvifLiveEventForwarder>());
 builder.Services.AddSingleton<OnvifSettingsService>();
+builder.Services.AddSingleton<IDeviceIoWatcherFactory, OnvifDeviceIoWatcherFactory>();
+builder.Services.AddSingleton<DeviceIoStateService>();
 builder.Services.AddSingleton<AlarmEpisodeTracker>();
 builder.Services.AddSingleton<OnvifFilterCache>();
 builder.Services.AddSingleton<CameraArmedCache>();
@@ -98,6 +101,7 @@ builder.Services.AddHostedService(sp => new CameraConfigSubscriber(
   sp.GetRequiredService<CameraConnCache>(),
   sp.GetRequiredService<OnvifMetadataGateCache>(),
   sp.GetRequiredService<OnvifEventSubscriptionService>(),
+  sp.GetRequiredService<DeviceIoStateService>(),
   ownServerId,
   sp.GetRequiredService<ILogger<CameraConfigSubscriber>>()));
 
