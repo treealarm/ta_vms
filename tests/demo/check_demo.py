@@ -3,9 +3,10 @@
 
 The world is installed through the same API the administrator's button uses, then walked the way
 an operator walks it: map -> building -> room -> rack -> switch -> port, with the types and their
-regions, the camera placements, the video wall and the alarm climbing back up. It then proves what
-the registry is for — a second install changes no id, the administrator's own node survives both
-an install and a removal, and a removal takes only the demo.
+regions, the camera placements, the video wall, the readings the cameras report about themselves
+(position, speed, relay, sensor) and the alarm climbing back up. It then proves what the registry
+is for — a second install changes no id, the administrator's own node survives both an install and
+a removal, and a removal takes only the demo.
 
     tests/demo/check_demo.py                    # install if needed, then check
     tests/demo/check_demo.py --provision-cameras  # also add the OnvifSim cameras first

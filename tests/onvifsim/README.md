@@ -56,16 +56,19 @@ above; that is why the camera is high and narrow.
 The demo deployment runs OnvifSim with a different world, `Maryland`: the A.V. Williams building on
 the University of Maryland campus, where ta_vms's demo world
 (`dotnet/VmsMap/Demo/DemoWorlds.cs`) places its cameras. OnvifSim builds it from the same constants
-— the building envelope, the two rooms and the four camera poses — and ships it as
+— the building envelope and the camera poses — and ships it as
 `../OnvifSim/data/worlds/maryland.json`; the building is made of wall plates, because the
 rasterizer culls back faces and a solid box would be invisible from inside. Around it the world is
 hand-made: the ring road the car drives, the car camera and the scenery.
 
-Its cameras are `master`, `ptz`, `master2` and `ptz2`, standing on the demo's placements in Room
-101, Room 102, the building and the campus; the fifth, `vehicle`, rides the car. ta_vms knows them
-as `sim-master`, `sim-ptz`, `sim-master2`, `sim-ptz2` and `sim-vehicle`, at ONVIF ports 8101–8105.
-`master` has a relay lamp `lamp`, `vehicle` a digital input `input`, and a wire runs between them.
-The demo's own map is in `tests/demo`, not here.
+Its cameras are `master`, `ptz`, `master2` and `ptz2`, standing on the demo's placements in the
+hall, on the building and on the campus; the fifth, `vehicle`, rides the car. ta_vms knows them as
+`sim-master`, `sim-ptz`, `sim-master2`, `sim-ptz2` and `sim-vehicle`, at ONVIF ports 8101–8105. The
+car carries no device — a wire to it would move with it. `master` has three relays showing every
+kind of link: `lamp` lights the world's `alert` lamp, `peer` drives `ptz`'s `input` sensor, and
+`loop` drives a sensor of the master itself. The demo's own map is in `tests/demo`, not here; its
+`Device telemetry` diagram shows the vehicle camera's position and speed plus the relay and sensor
+states, and the demo's `geo_from_device` flag makes the map follow that camera.
 
 Load it into the bench's simulator:
 
