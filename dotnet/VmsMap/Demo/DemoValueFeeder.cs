@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,47 +8,72 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using VmsMap.Clients;
 using VmsMap.Db;
 using VmsMap.Domain;
 
 namespace VmsMap.Demo
 {
-  /// Keeps the demo's rack readings alive: a temperature and a humidity per rack, written into the
-  /// regions the Rack 42U type shows. ONVIF has no such readings — a camera reports a geolocation
-  /// and relays, not a room's climate — so the demo makes its own until M2.3 brings real
-  /// parameters (docs/plans/square-merge/m2.3-onvif-live-parameters.md).
+  /// Keeps the demo's camera readings alive: where the camera says it stands, how fast it is moving,
+  /// and what its relay and sensor are doing, written into the regions of the Device telemetry
+  /// diagram. The camera is asked through VmsOnvif — the same cache the web reads — so the demo
+  /// shows what ONVIF actually reports rather than a number invented here.
   ///
-  /// It writes only nodes the registry says the demo owns, and only while the world is installed:
-  /// a node the administrator made is never touched and a removed world leaves nothing behind.
+  /// It writes only values of nodes the registry says the demo owns: the diagram is a replica, and
+  /// its owner is the camera's canonical node, which is where the values live. A node the
+  /// administrator made is never touched and a removed world leaves nothing behind.
   public sealed class DemoValueFeeder
   {
-    private static readonly string[] Feeds = ["temp", "humidity"];
-    private static readonly Random Random = new();
+    private const string On = "on";
+    private const string Off = "off";
 
     private readonly VmsMapDbContext _db;
     private readonly IValuesServiceInternal _values;
+    private readonly ICameraCatalog _catalog;
+    private readonly ICameraGeoSource _geo;
+    private readonly ICameraDeviceIoSource _io;
+    private readonly TimeProvider _time;
 
-    public DemoValueFeeder(VmsMapDbContext db, IValuesServiceInternal values)
+    // The last position and the moment it was read, for the speed: a moving camera reports only
+    // places, and a speed is what two of them over a known interval make.
+    private readonly Dictionary<string, (CameraGeoPoint Point, DateTimeOffset At)> _lastFix =
+      new(StringComparer.Ordinal);
+
+    public DemoValueFeeder(
+      VmsMapDbContext db,
+      IValuesServiceInternal values,
+      ICameraCatalog catalog,
+      ICameraGeoSource geo,
+      ICameraDeviceIoSource io,
+      TimeProvider time)
     {
-      _db = db;
-      _values = values;
+      _db = db ?? throw new ArgumentNullException(nameof(db));
+      _values = values ?? throw new ArgumentNullException(nameof(values));
+      _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+      _geo = geo ?? throw new ArgumentNullException(nameof(geo));
+      _io = io ?? throw new ArgumentNullException(nameof(io));
+      _time = time ?? throw new ArgumentNullException(nameof(time));
     }
 
-    /// One round: rewrite every demo rack's readings. Returns how many values were written.
+    /// One round: rewrite every telemetry reading. Returns how many values were written.
     public async Task<int> RunOnceAsync(CancellationToken ct)
     {
       var installed = await _db.DemoConfigs.AsNoTracking()
         .AnyAsync(c => c.demo_key == DemoWorlds.UmdDataCenterKey, ct);
       if (!installed) return 0;
 
-      var owners = await _db.DemoObjects.AsNoTracking()
-        .Where(o => o.demo_key == DemoWorlds.UmdDataCenterKey && o.logical_key.StartsWith("object/"))
-        .Select(o => o.object_id)
+      var registered = await _db.DemoObjects.AsNoTracking()
+        .Where(o => o.demo_key == DemoWorlds.UmdDataCenterKey)
         .ToListAsync(ct);
-      if (owners.Count == 0) return 0;
+
+      var objectIds = registered
+        .Where(o => o.logical_key.StartsWith("object/", StringComparison.Ordinal))
+        .Select(o => o.object_id)
+        .ToList();
+      if (objectIds.Count == 0) return 0;
 
       var diagrams = await _db.Diagrams.AsNoTracking()
-        .Where(d => owners.Contains(d.id) && d.dgr_type != null)
+        .Where(d => objectIds.Contains(d.id) && d.dgr_type != null)
         .ToListAsync(ct);
       if (diagrams.Count == 0) return 0;
 
@@ -59,50 +85,104 @@ namespace VmsMap.Demo
 
       // The regions a value can fill are the type's own: only a type that has them gets readings.
       var feeding = types
-        .Where(t => t.regions.Any(region => Feeds.Contains(region.region_key)))
+        .Where(t => t.regions.Any(region => DemoTelemetry.Readings.Contains(region.region_key)))
         .Select(t => t.id)
         .ToHashSet();
 
-      var ownerIds = owners.Select(id => id.ToString()).ToList();
-      var current = await _values.GetListByOwnersAsync(ownerIds);
+      var telemetryIds = diagrams
+        .Where(d => feeding.Contains(d.dgr_type!.Value))
+        .Select(d => d.id)
+        .ToList();
+      if (telemetryIds.Count == 0) return 0;
+
+      // A replica owns nothing: the readings belong to the camera's canonical node, and the replica
+      // shows them because the map answers a replica with its owner's values.
+      var owners = await _db.Markers.AsNoTracking()
+        .Where(m => telemetryIds.Contains(m.id) && m.owner_id != null)
+        .Select(m => m.owner_id!.Value)
+        .ToListAsync(ct);
+      if (owners.Count == 0) return 0;
+
+      // Every camera the demo placed is asked: the relay and the sensor may be on different ones —
+      // that is the point of the wiring.
+      var placedIds = registered
+        .Where(o => o.logical_key.StartsWith("camera/", StringComparison.Ordinal))
+        .Select(o => o.logical_key["camera/".Length..])
+        .ToHashSet(StringComparer.Ordinal);
+      var cameras = (await _catalog.ListAsync(null, ct))
+        .Where(camera => placedIds.Contains(camera.CameraId))
+        .ToList();
+
+      var relay = await FirstAsync(cameras, _io.GetRelayAsync, ct);
+      var sensor = await FirstAsync(cameras, _io.GetInputAsync, ct);
 
       var values = new List<ValueDTO>();
-      foreach (var diagram in diagrams.Where(d => feeding.Contains(d.dgr_type!.Value)))
+      foreach (var owner in owners)
       {
-        var type = types.First(t => t.id == diagram.dgr_type!.Value);
-        foreach (var region in type.regions.Where(r => Feeds.Contains(r.region_key)))
-        {
-          var id = DemoIds.Id($"value/{diagram.id}/{region.region_key}");
-          current.TryGetValue(id, out var previous);
+        var cameraId = await _db.CameraNodes.AsNoTracking()
+          .Where(node => node.object_id == owner)
+          .Select(node => node.camera_id)
+          .FirstOrDefaultAsync(ct);
+        if (cameraId is null) continue;
 
-          values.Add(new ValueDTO
-          {
-            id = id,
-            owner_id = diagram.id.ToString(),
-            name = region.region_key,
-            value = Next(region.region_key, previous?.value),
-          });
+        var camera = cameras.FirstOrDefault(c => c.CameraId == cameraId)
+          ?? await _catalog.GetAsync(cameraId, ct);
+        if (camera is null) continue;
+
+        var point = await _geo.GetAsync(camera, ct);
+        if (point is not { } fix) continue; // no place this tick: nothing to write, retry next time
+
+        var now = _time.GetUtcNow();
+        double? speed = null;
+        if (_lastFix.TryGetValue(cameraId, out var previous))
+        {
+          var seconds = (now - previous.At).TotalSeconds;
+          if (seconds > 0)
+            speed = previous.Point.DistanceMetersTo(fix) / seconds * 3.6;
         }
+        _lastFix[cameraId] = (fix, now);
+
+        var ownerId = owner.ToString();
+        void Add(string name, string text) => values.Add(new ValueDTO
+        {
+          id = DemoIds.Id($"value/{ownerId}/{name}"),
+          owner_id = ownerId,
+          name = name,
+          value = text,
+        });
+
+        // Text rather than numbers, because the reading's own precision is part of what it says: six
+        // decimals of a degree, one of a kilometre per hour.
+        Add(DemoTelemetry.Lat, fix.Lat.ToString("F6", CultureInfo.InvariantCulture));
+        Add(DemoTelemetry.Lon, fix.Lon.ToString("F6", CultureInfo.InvariantCulture));
+        if (speed is { } kmh)
+          Add(DemoTelemetry.Speed, kmh.ToString("F1", CultureInfo.InvariantCulture));
+        if (relay.Live is { } relayOn)
+          Add(DemoTelemetry.Relay, relayOn ? On : Off);
+        if (sensor.Live is { } sensorOn)
+          Add(DemoTelemetry.Sensor, sensorOn ? On : Off);
       }
 
+      if (values.Count == 0) return 0;
       await _values.UpdateListAsync(values);
       return values.Count;
     }
 
-    /// A drift around the previous reading rather than an unrelated number: a rack warming up a
-    /// little and cooling down reads as a live room, not as a random one.
-    private static double Next(string feed, object? previous)
+    /// The first camera that has such a device at all. A camera that has one but has not announced
+    /// its state yet still answers, with a null state — the demo reports "no reading", not "off".
+    private static async Task<CameraDeviceState> FirstAsync(
+      IReadOnlyList<CameraInfo> cameras,
+      Func<CameraInfo, CancellationToken, Task<CameraDeviceState>> read,
+      CancellationToken ct)
     {
-      var value = previous is double number ? number : Default(feed);
-      var step = feed == "temp" ? 0.15 : 1.5;
-      var next = value + (Random.NextDouble() * 2 - 1) * step;
-
-      return feed == "temp"
-        ? Math.Round(Math.Clamp(next, 19, 27), 1)
-        : Math.Round(Math.Clamp(next, 30, 60), 1);
+      foreach (var camera in cameras)
+      {
+        var state = await read(camera, ct);
+        if (state.HasDevices)
+          return state;
+      }
+      return new CameraDeviceState(false, null);
     }
-
-    private static double Default(string feed) => feed == "temp" ? 22.5 : 45;
   }
 
   /// The feeder's clock: every five seconds, while the service runs. A removed world makes the

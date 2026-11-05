@@ -17,7 +17,9 @@ namespace VmsMap.Demo
     // 2: Room 102 became a room diagram on the floor plan instead of a plan of its own.
     // 3: the diagram backgrounds are vector and their regions are the same geometry as the picture.
     // 4: the racks' points are the centres of their rectangles in the plan picture.
-    public const int UmdDataCenterVersion = 4;
+    // 5: a camera's own readings — position, speed, relay, sensor — on a Device telemetry diagram,
+    //    replacing the racks' synthetic temperature and humidity.
+    public const int UmdDataCenterVersion = 5;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -39,6 +41,10 @@ namespace VmsMap.Demo
     private const string PortType = "type/port";
     private const string RoomLayoutType = "type/room-layout";
 
+    // A replica of the camera on the vehicle, showing the readings the camera itself reports. Its
+    // owner is the camera's canonical node, so values written there appear here.
+    private const string VehicleTelemetry = "object/telemetry-sim-vehicle";
+
     public static DemoWorld UmdDataCenter()
     {
       var files = new List<DemoFile>
@@ -52,6 +58,7 @@ namespace VmsMap.Demo
         new("file/rack-background", DemoArt.Rack(), "image/svg+xml"),
         new("file/switch-background", DemoArt.Switch(), "image/svg+xml"),
         new("file/port-icon", DemoArt.Port(), "image/svg+xml"),
+        new("file/device-telemetry-background", DemoArt.Telemetry(), "image/svg+xml"),
       };
 
       var types = new List<DemoDiagramType>
@@ -60,6 +67,7 @@ namespace VmsMap.Demo
         RackTypeDefinition(),
         SwitchTypeDefinition(),
         new(PortType, "RJ45 Port", "file/port-icon", []),
+        DeviceTelemetryTypeDefinition(),
       };
 
       var spaces = new List<DemoSpace>
@@ -89,6 +97,15 @@ namespace VmsMap.Demo
         Canvas: new DemoRect(0, 0, DemoArt.RoomLayoutWidth, DemoArt.RoomLayoutHeight),
         At: new DemoPoint(38.99244, -76.93750),
         VisualKey: "file/room-icon", VisualWidth: 44, VisualHeight: 44));
+
+      // The camera on the vehicle reports its own place, its speed and the state of the relay and
+      // sensor wired around it. This diagram is a replica — it shows the camera node's values and
+      // owns none of them — and it stands on the plan, because a diagram's canvas is not a space.
+      nodes.Add(new DemoNode(VehicleTelemetry, "Camera sim-vehicle", "space/building",
+        DemoTelemetry.TypeKey,
+        Canvas: new DemoRect(0, 0, DemoArt.TelemetryWidth, DemoArt.TelemetryHeight),
+        At: new DemoPoint(38.99206, -76.93875),
+        OwnerCameraId: "sim-vehicle"));
 
       // Four racks stand in Room 101 (on its plan, top-down), two in Room 102's schematic. Every
       // rack holds one switch in its first slot and eight ports on that switch; the rest of the
@@ -138,6 +155,9 @@ namespace VmsMap.Demo
         new("sim-ptz", Room101, 38.992484, -76.938372, HeightM: 2.8, HeadingDeg: 235, HfovDeg: 65, RangeM: 15),
         new("sim-master2", "space/building", 38.99276, -76.93895, HeightM: 3, HeadingDeg: 135, HfovDeg: 80, RangeM: 60),
         new("sim-ptz2", "space/umd", 38.99250, -76.93950, HeightM: 6, HeadingDeg: 90, HfovDeg: 60, RangeM: 150),
+        // On a vehicle: this is only where it starts. The camera is flagged geo_from_device, so the
+        // map follows the position it reports from then on.
+        new("sim-vehicle", "space/umd", 38.99200, -76.93930, HeightM: 2, HeadingDeg: 45, HfovDeg: 60, RangeM: 40),
       };
 
       return new DemoWorld(
@@ -190,7 +210,8 @@ namespace VmsMap.Demo
           new Dictionary<string, string> { ["color"] = "#4fc3f7", ["fontSize"] = "12px" }),
       ]);
 
-    /// A rack cabinet with six equipment slots and the two readings the feeder keeps alive.
+    /// A rack cabinet with six equipment slots. The synthetic readings the demo used to keep here
+    /// are gone: the world now shows the camera's own, on its Device telemetry diagram.
     private static DemoDiagramType RackTypeDefinition()
     {
       var regions = new List<DemoRegion>();
@@ -200,13 +221,19 @@ namespace VmsMap.Demo
           new Dictionary<string, string> { ["color"] = "#d9e2ec", ["fontSize"] = "12px" }));
       }
 
-      regions.Add(new DemoRegion("temp", DemoArt.RackTemperature,
-        new Dictionary<string, string> { ["color"] = "#ffd54f", ["fontSize"] = "11px" }));
-      regions.Add(new DemoRegion("humidity", DemoArt.RackHumidity,
-        new Dictionary<string, string> { ["color"] = "#81d4fa", ["fontSize"] = "11px" }));
-
       return new(RackType, "Rack 42U", "file/rack-background", regions);
     }
+
+    /// The camera's own readings, one region per value. The region and the label in the picture come
+    /// from one geometry (DemoArt.TelemetryReading), so a value is never written beside its name.
+    private static DemoDiagramType DeviceTelemetryTypeDefinition() => new(
+      DemoTelemetry.TypeKey,
+      "Device telemetry",
+      "file/device-telemetry-background",
+      DemoTelemetry.Readings
+        .Select(key => new DemoRegion(key, DemoArt.TelemetryReading(key),
+          new Dictionary<string, string> { ["color"] = "#e3f2fd", ["fontSize"] = "12px" }))
+        .ToList());
 
     /// A Catalyst's front panel: eight ports in one row.
     private static DemoDiagramType SwitchTypeDefinition()

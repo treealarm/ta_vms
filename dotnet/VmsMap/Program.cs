@@ -97,7 +97,11 @@ builder.Services.AddScoped<FileService>();
 builder.Services.AddScoped<SpatialDb>();
 // The follower runs on a scope of its own; SpatialDb stays scoped with the context it shares.
 builder.Services.AddScoped<ICameraGeoWriter>(sp => sp.GetRequiredService<SpatialDb>());
-builder.Services.AddSingleton<ICameraGeoSource, VmsOnvifGeoSource>();
+// One ONVIF client cache shared by the follower and the demo feeder.
+builder.Services.AddSingleton<VmsOnvifCameraSource>();
+builder.Services.AddSingleton<ICameraGeoSource>(sp => sp.GetRequiredService<VmsOnvifCameraSource>());
+builder.Services.AddSingleton<ICameraDeviceIoSource>(sp => sp.GetRequiredService<VmsOnvifCameraSource>());
+builder.Services.AddSingleton(TimeProvider.System);
 
 // The demo world: install, reinstall and removal behind one registry. The flag and the gRPC calls
 // that reach it are wired in M2.2's later steps; the seeder is the same for both.
@@ -115,6 +119,7 @@ builder.Services.AddScoped<IStatesUpdateService, StatesUpdateService>();
 // The adapter: camera nodes from the config events, one full reconcile at startup, retention
 // events into ALARM and the journal, and the sweep that takes a finished alarm away.
 builder.Services.AddScoped<CameraNodeService>();
+builder.Services.AddScoped<ICameraNodeService>(sp => sp.GetRequiredService<CameraNodeService>());
 builder.Services.AddScoped<CameraStateWriter>();
 builder.Services.AddScoped<AlarmService>();
 builder.Services.AddScoped<ConnectionStateService>();

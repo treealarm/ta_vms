@@ -26,8 +26,6 @@ namespace VmsMap.Adapter
     /// <summary>Below this a move is not worth a tree write; ENU metres, the same frame as the map.</summary>
     internal const double MoveThresholdMeters = 0.5;
 
-    private const double EarthRadiusMeters = 6_378_137;
-
     private readonly IServiceScopeFactory _scopes;
     private readonly ICameraCatalog _catalog;
     private readonly ICameraGeoSource _source;
@@ -103,7 +101,7 @@ namespace VmsMap.Adapter
           continue;
 
         if (_lastWritten.TryGetValue(camera.CameraId, out var previous)
-          && DistanceMeters(previous, position) < MoveThresholdMeters)
+          && previous.DistanceMetersTo(position) < MoveThresholdMeters)
           continue;
 
         if (!await writer.MoveReferencePointAsync(camera.CameraId, position.Lat, position.Lon, ct))
@@ -116,14 +114,5 @@ namespace VmsMap.Adapter
       }
     }
 
-    // Equirectangular over the same radius EnuFrame uses. These are hundred-metre questions, not
-    // survey ones: the cost is a cosine, and a geodesic would buy nothing the threshold can use.
-    private static double DistanceMeters(CameraGeoPoint from, CameraGeoPoint to)
-    {
-      var meanLatRad = (from.Lat + to.Lat) * Math.PI / 360;
-      var north = (to.Lat - from.Lat) * Math.PI / 180 * EarthRadiusMeters;
-      var east = (to.Lon - from.Lon) * Math.PI / 180 * EarthRadiusMeters * Math.Cos(meanLatRad);
-      return Math.Sqrt(north * north + east * east);
-    }
   }
 }

@@ -65,7 +65,11 @@ namespace VmsMap.Demo
     // point, and without a picture it is a plain dot nobody would take for an entrance.
     string? VisualKey = null,
     int? VisualWidth = null,
-    int? VisualHeight = null);
+    int? VisualHeight = null,
+    // A replica of a camera: the node shows that camera's states and values (`objects.owner_id`),
+    // and is skipped, and reported, while the deployment does not have the camera. It gets no
+    // camera_placement — a diagram's canvas is not a space.
+    string? OwnerCameraId = null);
 
   /// A scale layer: zoom levels at which the nodes that name it are drawn.
   public sealed record DemoLevel(string Name, int Min, int Max);

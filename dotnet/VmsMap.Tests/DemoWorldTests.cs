@@ -96,10 +96,12 @@ public class DemoWorldTests
   {
     var rackType = _world.Types.Single(type => type.Key == "type/rack");
     Assert.Equal("Rack 42U", rackType.Name);
-    Assert.Equal(8, rackType.Regions.Count);
+    Assert.Equal(6, rackType.Regions.Count);
     Assert.Contains(rackType.Regions, region => region.Key == "slot-1");
-    Assert.Contains(rackType.Regions, region => region.Key == "temp");
-    Assert.Contains(rackType.Regions, region => region.Key == "humidity");
+
+    // The camera's own readings, not the synthetic temperature and humidity the racks used to hold.
+    var telemetry = _world.Types.Single(type => type.Key == DemoTelemetry.TypeKey);
+    Assert.Equal(DemoTelemetry.Readings, telemetry.Regions.Select(region => region.Key));
 
     var switchType = _world.Types.Single(type => type.Key == "type/switch");
     Assert.Equal(8, switchType.Regions.Count);
@@ -119,15 +121,29 @@ public class DemoWorldTests
   }
 
   [Fact]
-  public void TheFourCamerasArePlacedInTheWorld()
+  public void TheFiveCamerasArePlacedInTheWorld()
   {
     Assert.Equal(
-      ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2"],
+      ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2", "sim-vehicle"],
       _world.Placements.Select(placement => placement.CameraId).OrderBy(id => id, System.StringComparer.Ordinal));
 
     var spaceKeys = _world.Spaces.Select(space => space.Key).ToHashSet();
     Assert.All(_world.Placements, placement => Assert.Contains(placement.SpaceKey, spaceKeys));
     Assert.All(_world.Placements, placement => Assert.True(placement.IsReference));
+  }
+
+  [Fact]
+  public void TheCameraOnTheVehicleShowsItsReadingsOnAReplica()
+  {
+    var node = _world.Nodes.Single(candidate => candidate.Key == "object/telemetry-sim-vehicle");
+
+    // A replica: its owner is the camera's canonical node, which the seeder resolves through
+    // camera_node. It carries the readings' type and stands as a diagram, so it takes no placement.
+    Assert.Equal("sim-vehicle", node.OwnerCameraId);
+    Assert.Equal(DemoTelemetry.TypeKey, node.TypeKey);
+    Assert.NotNull(node.Canvas);
+    Assert.NotNull(node.At);
+    Assert.Null(node.RegionKey);
   }
 
   [Fact]
@@ -156,8 +172,13 @@ public class DemoWorldTests
     {
       Assert.Equal(DemoArt.RackSlot(slot), rackType.Regions.Single(region => region.Key == $"slot-{slot}").Geometry);
     }
-    Assert.Equal(DemoArt.RackTemperature, rackType.Regions.Single(region => region.Key == "temp").Geometry);
-    Assert.Equal(DemoArt.RackHumidity, rackType.Regions.Single(region => region.Key == "humidity").Geometry);
+    var telemetry = _world.Types.Single(type => type.Key == DemoTelemetry.TypeKey);
+    foreach (var reading in DemoTelemetry.Readings)
+    {
+      Assert.Equal(
+        DemoArt.TelemetryReading(reading),
+        telemetry.Regions.Single(region => region.Key == reading).Geometry);
+    }
 
     var switchType = _world.Types.Single(type => type.Key == "type/switch");
     for (var port = 1; port <= 8; port += 1)
@@ -178,6 +199,7 @@ public class DemoWorldTests
     foreach (var key in new[]
     {
       "file/room-layout-background", "file/rack-background", "file/switch-background", "file/port-icon",
+      "file/device-telemetry-background",
     })
     {
       var file = _world.Files.Single(candidate => candidate.Key == key);

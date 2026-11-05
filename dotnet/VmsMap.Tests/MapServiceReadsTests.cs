@@ -6,6 +6,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using VmsMap.Adapter;
 using VmsMap.Clients;
 using VmsMap.Db;
 using VmsMap.Demo;
@@ -83,7 +85,8 @@ public class MapServiceReadsTests
       null!,
       new DemoSeeder(
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
-        new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog()));
+        new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog(),
+        new CameraNodeService(db, map, updates, NullLogger<CameraNodeService>.Instance)));
 
     return new Services(db, map, states, grpc, notifier);
   }

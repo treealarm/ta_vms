@@ -28,7 +28,8 @@ MAP_NAME = "UMD Data Center (demo)"
 BUILDING_NAME = "A.V. Williams Building"
 ROOM_PLAN_NAME = "Room 101"
 ROOM_DIAGRAM_NAME = "Room 102"
-DEMO_CAMERAS = ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2"]
+DEMO_CAMERAS = ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2", "sim-vehicle"]
+TELEMETRY_NAME = "Camera sim-vehicle"
 
 failures = []
 
@@ -90,6 +91,17 @@ def values_of(vms, owner_id):
     return (vms.call("POST", "/api/map/values/by-owners", [owner_id]) or {}).get("values") or []
 
 
+def value_text(value):
+    carried = value.get("value") or {}
+    if "stringValue" in carried:
+        return carried["stringValue"]
+    if "doubleValue" in carried:
+        return str(carried["doubleValue"])
+    if "intValue" in carried:
+        return str(carried["intValue"])
+    return ""
+
+
 def levels(vms):
     return (vms.call("GET", "/api/map/levels") or {}).get("levels") or []
 
@@ -108,10 +120,13 @@ def monitors(vms):
 def provision_cameras(vms, sim_host, server_id):
     """The four OnvifSim cameras, added the way the bench's provision step adds them."""
     existing = {camera.get("cameraId") for camera in vms.cameras()}
-    wanted = [("sim-master", 8101, False), ("sim-ptz", 8102, True),
-              ("sim-master2", 8103, False), ("sim-ptz2", 8104, True)]
+    # `geo_from_device` only for the camera on the vehicle: its place on the map is the camera's
+    # own ONVIF position, which the map follows. The others are placed by hand.
+    wanted = [("sim-master", 8101, False, False), ("sim-ptz", 8102, True, False),
+              ("sim-master2", 8103, False, False), ("sim-ptz2", 8104, True, False),
+              ("sim-vehicle", 8105, False, True)]
 
-    for camera_id, port, telemetry in wanted:
+    for camera_id, port, telemetry, geo_from_device in wanted:
         if camera_id in existing:
             warn(f"camera {camera_id} is already configured")
             continue
@@ -124,6 +139,7 @@ def provision_cameras(vms, sim_host, server_id):
                           "xaddr": f"http://{sim_host}:{port}/onvif/device_service"},
             "cred": {"user": "admin", "pass": "admin"},
             "hasTelemetry": telemetry,
+            "geoFromDevice": geo_from_device,
             "streams": [{"streamName": "main", "profileToken": "Profile_2",
                          "path": "", "webRtc": True}],
         })
@@ -226,8 +242,14 @@ def check_types(vms):
 
     rack = types.get("Rack 42U", {})
     rack_regions = {r.get("regionKey") for r in rack.get("regions") or []}
-    check({"slot-1", "temp", "humidity"} <= rack_regions,
-          f"Rack 42U offers slots, temp and humidity (has {sorted(rack_regions)})")
+    check({"slot-1"} <= rack_regions, f"Rack 42U offers its slots (has {sorted(rack_regions)})")
+    check(not ({"temp", "humidity"} & rack_regions),
+          "Rack 42U no longer shows the synthetic temperature and humidity")
+
+    telemetry = types.get("Device telemetry", {})
+    telemetry_regions = {r.get("regionKey") for r in telemetry.get("regions") or []}
+    check({"lat", "lon", "speed", "relay", "sensor"} <= telemetry_regions,
+          f"Device telemetry offers lat, lon, speed, relay and sensor (has {sorted(telemetry_regions)})")
 
     computer = types.get("Cisco Catalyst 9300", {})
     computer_regions = {r.get("regionKey") for r in computer.get("regions") or []}
@@ -256,6 +278,9 @@ def check_cameras(vms, world, allow_missing):
         "sim-ptz": world["room"]["id"],
         "sim-master2": world["building"]["id"],
         "sim-ptz2": world["map"]["id"],
+        # Only its starting point: the camera is flagged geo_from_device and follows its own ONVIF
+        # position from then on, so only the space it belongs to is fixed here.
+        "sim-vehicle": world["map"]["id"],
     }
 
     for camera_id, space_id in expected.items():
@@ -297,11 +322,23 @@ def check_alarm(vms, world):
 
 
 def check_feeder(vms, world):
-    """The rack shows the demo's own temperature and humidity, rewritten every five seconds."""
+    """The camera's own ONVIF readings, rewritten every five seconds into the replica's regions."""
+    telemetry = by_name(vms, children(vms, world["building"]["id"]), TELEMETRY_NAME)
+    if not check(telemetry is not None and telemetry.get("nodeKind") == "diagram",
+                 "the building shows the camera's Device telemetry diagram"):
+        return
+
     print("  ..    waiting for the value feeder")
     time.sleep(6)
-    names = {v.get("name") for v in values_of(vms, world["rack"]["id"])}
-    check({"temp", "humidity"} <= names, f"the rack shows temp and humidity (has {sorted(names)})")
+    values = {v.get("name"): value_text(v) for v in values_of(vms, telemetry["id"])}
+    check({"lat", "lon"} <= set(values),
+          f"the diagram shows the camera's position (has {sorted(values)})")
+    check("speed" in values,
+          f"the diagram shows a speed once two positions are known (has {sorted(values)})")
+    check(values.get("relay") in ("on", "off"),
+          f"the diagram shows the relay (has {values.get('relay')!r})")
+    check(values.get("sensor") in ("on", "off"),
+          f"the diagram shows the sensor (has {values.get('sensor')!r})")
 
 
 def ids_of(vms, world):

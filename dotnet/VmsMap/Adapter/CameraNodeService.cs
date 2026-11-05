@@ -15,7 +15,7 @@ namespace VmsMap.Adapter
   // the space of its reference placement when it has one, under its server node otherwise. The
   // camera id cannot be recovered from the node id (it is an MD5), so camera_node remembers the
   // pair for every canonical node, placed or not.
-  internal sealed class CameraNodeService
+  internal sealed class CameraNodeService : ICameraNodeService
   {
     private const string ServerIdVersion = "server";
 
