@@ -573,6 +573,36 @@ DEMO_PLACEMENTS = [
 ]
 DEMO_VEHICLE_CAMERA = "vehicle"
 
+# The pair the demo bench calibrates in the Maryland world: the master and the slave stand in one
+# hall facing each other, so one set of landmarks serves both (decision 10 of the M2.3 plan). The
+# other pair — master2 on the building's wall, ptz2 out on the campus — is too far apart to share
+# landmarks; it is calibrated in the yard world, which is what that bench is for.
+MARYLAND_PAIR_NAME = "plan"
+
+# The landmarks in the hall, in world metres (X east, Z south): between the master at
+# (-62.3, -11.1) and the slave at (-49.5, -20.5), every one of them inside both views.
+MARYLAND_LANDMARKS = [
+    Landmark("L1", -57.5, -13.5, "#e53935", "red"),
+    Landmark("L2", -54.0, -16.0, "#fdd835", "yellow"),
+    Landmark("L3", -60.0, -16.0, "#1e88e5", "blue"),
+    Landmark("L4", -53.0, -13.0, "#f5f5f5", "white"),
+    Landmark("L5", -56.0, -19.5, "#8e24aa", "purple"),
+]
+
+
+def demo_camera(world, camera_id, base):
+    """`base` at the Maryland world's own pose — the demo places its cameras from the same constants."""
+    camera = next(c for c in world["cameras"] if c["id"] == camera_id)
+    position = camera["position"]
+    return dataclasses.replace(
+        base, x=position["x"], y=position["y"], z=position["z"], heading=camera["heading"])
+
+
+def demo_pairs(world):
+    return [Pair(MARYLAND_PAIR_NAME,
+                 demo_camera(world, "master", MASTER),
+                 demo_camera(world, "ptz", SLAVE))]
+
 
 def world_to_wgs84(world, position):
     """A world point in WGS84, by WorldGeo's equirectangular formula around the world's own anchor:

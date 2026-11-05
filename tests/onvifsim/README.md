@@ -80,9 +80,30 @@ python3 tests/onvifsim/world.py --check-maryland     # checks the shipped file, 
 `up --world maryland` and the check compare each camera's WGS84, height, heading and field of view
 with the demo placements (half a metre and half a degree) and require the relay, the input and the
 wire; `world.py`'s `DEMO_PLACEMENTS` mirror `DemoWorlds.cs`, so the map, the simulator and this
-bench are kept from drifting apart. The steps that calibrate and aim (`provision`, `calibrate`,
-`aim-check`, `bind`, `run`) still work in the yard world and refuse `--world maryland`: the demo
-world is watched, not aimed at here.
+bench are kept from drifting apart.
+
+### Aiming in the demo world
+
+The aiming steps work in the demo world too, but only for the pair in Room 101 — `sim-master` and
+`sim-ptz`, the master and slave the demo places in one hall facing each other. The demo world must
+be installed first (`tests/demo/check_demo.py --provision-cameras`): the bench adds no placements
+there and refuses to invent a space. It takes the cameras' true poses from the Maryland world file,
+puts five landmarks between them in the hall (`world.py`'s `MARYLAND_LANDMARKS`, all within both
+views), marks the master's ground and the slave's landmark observations the same way as in the
+yard, and binds the slave to the master by `geo`:
+
+```
+tests/demo/check_demo.py --provision-cameras     # the demo world, its cameras and its placements
+tests/onvifsim/onvifsim_lab.py up --world maryland
+tests/onvifsim/onvifsim_lab.py provision --world maryland
+tests/onvifsim/onvifsim_lab.py calibrate --world maryland
+tests/onvifsim/onvifsim_lab.py bind --world maryland
+tests/onvifsim/onvifsim_lab.py aim-check --world maryland --seconds 30
+```
+
+The person walking the hall's route is the one the master detects and the slave follows. The other
+pair — `sim-master2` on the building's wall, `sim-ptz2` out on the campus — is too far apart to
+share landmarks and stays a yard scenario; the matrix and edge-import steps are the yard's as well.
 
 ## Running it
 
