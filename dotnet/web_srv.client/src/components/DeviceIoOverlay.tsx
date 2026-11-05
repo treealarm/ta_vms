@@ -4,6 +4,7 @@ import CloseIcon from '@mui/icons-material/Close'
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
 import { useTranslation } from 'react-i18next'
 import DeviceIoPanel from './DeviceIoPanel'
+import type { DeviceIoLiveState } from '../hooks/useDeviceIoLive'
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), Math.max(min, max))
@@ -11,10 +12,11 @@ function clamp(value: number, min: number, max: number) {
 
 type Props = {
   cameraId: string
+  live: DeviceIoLiveState
   onClose: () => void
 }
 
-export default function DeviceIoOverlay({ cameraId, onClose }: Props) {
+export default function DeviceIoOverlay({ cameraId, live, onClose }: Props) {
   const { t } = useTranslation()
   const theme = useTheme()
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -104,7 +106,7 @@ export default function DeviceIoOverlay({ cameraId, onClose }: Props) {
         </Tooltip>
       </Box>
 
-      <DeviceIoPanel cameraId={cameraId} />
+      <DeviceIoPanel cameraId={cameraId} live={live} />
     </Box>
   )
 }

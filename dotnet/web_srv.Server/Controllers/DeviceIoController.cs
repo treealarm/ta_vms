@@ -30,6 +30,8 @@ public class DeviceIoController(OnvifRouter router) : ControllerBase
       mode    = FormatMode(r.Mode),
       idleState = FormatIdleState(r.IdleState),
       delayMs = r.DelayMs,
+      // null until the camera has said anything: "no event yet" is not "inactive".
+      liveActive = r.HasLiveActive ? r.LiveActive : (bool?)null,
     }));
   }
 
@@ -99,6 +101,9 @@ public class DeviceIoController(OnvifRouter router) : ControllerBase
     {
       token     = i.Token,
       idleState = i.HasIdleState ? FormatIdleState(i.IdleState) : (string?)null,
+      // Logical state from the camera's property events; a digital input reports true/false where a
+      // relay reports active/inactive. null means the camera has not reported one yet.
+      liveActive = i.HasLiveActive ? i.LiveActive : (bool?)null,
     }));
   }
 
@@ -129,6 +134,29 @@ public class DeviceIoController(OnvifRouter router) : ControllerBase
       Options(ct));
 
     return response.Success ? Ok() : BadRequest(response.Error);
+  }
+
+  // Where the camera itself says it stands. Read-only: a position on the map is the
+  // administrator's, and only a camera flagged to follow the device takes this one into account.
+  // No location is a normal answer — many cameras never report one — so it is found=false, not 404.
+  [HttpGet("cameras/{cameraId}/geo-location")]
+  [RequiresRight(RightActions.ViewLive)]
+  public async Task<IActionResult> GetGeoLocation(string cameraId, CancellationToken ct)
+  {
+    var response = await (await router.DeviceIoAsync(cameraId, ct)).GetCameraGeoLocationAsync(
+      new CameraRequest { SourceId = cameraId }, Options(ct));
+
+    if (!string.IsNullOrEmpty(response.Error))
+      return BadRequest(response.Error);
+
+    return Ok(new
+    {
+      found = response.Found,
+      // A coordinate the camera did not send stays null: an absent latitude is not the equator.
+      lat = response.HasLat ? response.Lat : (double?)null,
+      lon = response.HasLon ? response.Lon : (double?)null,
+      elevationM = response.HasElevationM ? response.ElevationM : (double?)null,
+    });
   }
 
   private static string FormatMode(RelayMode mode) => mode == RelayMode.Bistable ? "bistable" : "monostable";

@@ -54,6 +54,8 @@ import {
   setPtzSelfGuidance, setPtzTarget, useIsPtzMaster, useMasterHasExplicitTarget, usePtzTracking,
 } from '../hooks/usePtzTracking'
 import DeviceIoOverlay from './DeviceIoOverlay'
+import DeviceIoStateBadge from './DeviceIoStateBadge'
+import { useDeviceIoLive } from '../hooks/useDeviceIoLive'
 import { useOnvifBboxCapable } from '../hooks/useOnvifBboxCapable'
 import { useArchiveMetadataCoverage } from '../hooks/archiveMetadataClient'
 import { wallPlaylistRequestBounds } from '../utils/playlistUrl'
@@ -331,6 +333,12 @@ export default function CameraUnifiedCard({
   useEffect(() => {
     if (hasRelayOutputs === false && hasDigitalInputs === false && deviceIoOpen) setDeviceIoOpen(false)
   }, [hasRelayOutputs, hasDigitalInputs, deviceIoOpen, setDeviceIoOpen])
+
+  // One poll for the tile's own indicator and for the I/O overlay above it. A camera that reported
+  // no devices is not polled at all; one that reported them is asked on the same interval as the
+  // settings panel.
+  const hasDeviceIo = (hasRelayOutputs ?? false) || (hasDigitalInputs ?? false)
+  const deviceIoLive = useDeviceIoLive(camera.cameraId, hasDeviceIo)
   // Live-only controls: in wall playback the cell shows recorded video, so PTZ and device I/O have
   // nothing to act on.
   const showPtzControl = hasTelemetry && mode === 'live' && !wallPlayback && !isDisabled
@@ -1051,6 +1059,12 @@ export default function CameraUnifiedCard({
           </Box>
         )}
 
+        {/* Relay and input state over the picture, opposite the name: the same snapshot the I/O
+            overlay reads, refreshed by the tile's single poll. */}
+        {showDeviceIoControl && (
+          <DeviceIoStateBadge relays={deviceIoLive.relays} inputs={deviceIoLive.inputs} />
+        )}
+
         {!panelOpen && (
           <Typography
             sx={{
@@ -1118,6 +1132,7 @@ export default function CameraUnifiedCard({
         {showDeviceIoControl && deviceIoOpen && (
           <DeviceIoOverlay
             cameraId={camera.cameraId}
+            live={deviceIoLive}
             onClose={() => setDeviceIoOpen(false)}
           />
         )}

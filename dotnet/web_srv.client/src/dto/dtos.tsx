@@ -1101,14 +1101,16 @@ export type OnvifAnalyticsModuleDescriptionsResponseDto = {
 export type RelayMode = 'monostable' | 'bistable'
 export type IdleState = 'open' | 'closed'
 
-// ONVIF has no operation to read a relay's current logical (active/inactive) state — only its
-// configured Mode/DelayTime/IdleState. Live state is tracked client-side after a command, never
-// fetched from the server.
+// ONVIF has no getter for a relay's current logical (active/inactive) state: the getter returns
+// configuration only. The state travels as Device/Trigger property events, which VmsOnvif caches
+// and serves back as `liveActive`. It is null until the camera has reported the device — which is
+// not the same as inactive, and must not be presented as such.
 export type RelayOutputDto = {
   token: string
   mode: RelayMode
   idleState: IdleState
   delayMs: number
+  liveActive: boolean | null
 }
 
 export type RelayOutputOptionsDto = {
@@ -1120,10 +1122,21 @@ export type RelayOutputOptionsDto = {
   discreteDelaysMs?: number[]
 }
 
-// idleState is null when the camera didn't report it at all.
+// idleState is null when the camera didn't report it at all. liveActive is the logical state the
+// camera last announced (Device/Trigger/DigitalInput), null until it has announced one.
 export type DigitalInputDto = {
   token: string
   idleState: IdleState | null
+  liveActive: boolean | null
+}
+
+// Where the camera says it stands. found=false means it reports no location at all; an individual
+// coordinate the camera omitted stays null rather than becoming zero.
+export type CameraGeoLocationDto = {
+  found: boolean
+  lat: number | null
+  lon: number | null
+  elevationM: number | null
 }
 
 export type DigitalInputOptionsDto = {
