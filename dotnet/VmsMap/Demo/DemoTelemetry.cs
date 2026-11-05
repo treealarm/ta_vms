@@ -18,5 +18,12 @@ namespace VmsMap.Demo
 
     /// <summary>Every reading, in the order the region helper numbers its rows.</summary>
     public static readonly string[] Readings = [Lat, Lon, Speed, Relay, Sensor];
+
+    // Where the two device readings come from. OnvifSim wires `sim-master`'s `peer` relay to
+    // `sim-ptz`'s `input` sensor (and its `lamp` relay to the hall's `alert` lamp), and a camera
+    // with several devices needs naming — the first one on the first camera is not always the one
+    // the demo means.
+    public const string RelayCameraId = "sim-master";
+    public const string SensorCameraId = "sim-ptz";
   }
 }

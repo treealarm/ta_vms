@@ -106,7 +106,9 @@ builder.Services.AddSingleton(TimeProvider.System);
 // The demo world: install, reinstall and removal behind one registry. The flag and the gRPC calls
 // that reach it are wired in M2.2's later steps; the seeder is the same for both.
 builder.Services.AddScoped<DemoSeeder>();
-// The rack readings of the installed world; a no-op while no demo is installed.
+// The camera readings of the installed world; a no-op while no demo is installed. The speed
+// tracker is a singleton because the feeder is scoped and a speed spans two of its rounds.
+builder.Services.AddSingleton<DemoSpeedTracker>();
 builder.Services.AddScoped<DemoValueFeeder>();
 builder.Services.AddHostedService<DemoValueFeederService>();
 // `DEMO_CONFIG` names a world to install at startup; empty means none.

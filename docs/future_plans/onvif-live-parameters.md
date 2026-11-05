@@ -8,9 +8,10 @@ itself is closed; these are the parts its scope deliberately left for later.
 ta_vms shows a camera's relay and input state one device at a time:
 
 - `DeviceIoStateService` caches every `(kind, token)` the camera reports, which is right.
-- The demo feeder (`DemoValueFeeder`) takes **the first relay of the first demo camera that has
-  one**, and the same for the input. A deployment where a camera has several relays of different
-  meaning needs to name them: which relay feeds the "relay" reading, which input the "sensor" one.
+- The demo feeder (`DemoValueFeeder`) names the cameras (`DemoTelemetry.RelayCameraId` is
+  `sim-master`, `SensorCameraId` is `sim-ptz`) but takes **their first device**. A camera with
+  several relays of different meaning needs to name the device too: which relay feeds the "relay"
+  reading, which input the "sensor" one.
 - The web lists all of them, so this is a demo limitation only, not a UI one.
 
 The wiring itself — one relay to several sinks, one input to several relays, the input reading the

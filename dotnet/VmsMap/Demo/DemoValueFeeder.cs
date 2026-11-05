@@ -32,12 +32,7 @@ namespace VmsMap.Demo
     private readonly ICameraCatalog _catalog;
     private readonly ICameraGeoSource _geo;
     private readonly ICameraDeviceIoSource _io;
-    private readonly TimeProvider _time;
-
-    // The last position and the moment it was read, for the speed: a moving camera reports only
-    // places, and a speed is what two of them over a known interval make.
-    private readonly Dictionary<string, (CameraGeoPoint Point, DateTimeOffset At)> _lastFix =
-      new(StringComparer.Ordinal);
+    private readonly DemoSpeedTracker _speed;
 
     public DemoValueFeeder(
       VmsMapDbContext db,
@@ -45,14 +40,14 @@ namespace VmsMap.Demo
       ICameraCatalog catalog,
       ICameraGeoSource geo,
       ICameraDeviceIoSource io,
-      TimeProvider time)
+      DemoSpeedTracker speed)
     {
       _db = db ?? throw new ArgumentNullException(nameof(db));
       _values = values ?? throw new ArgumentNullException(nameof(values));
       _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
       _geo = geo ?? throw new ArgumentNullException(nameof(geo));
       _io = io ?? throw new ArgumentNullException(nameof(io));
-      _time = time ?? throw new ArgumentNullException(nameof(time));
+      _speed = speed ?? throw new ArgumentNullException(nameof(speed));
     }
 
     /// One round: rewrite every telemetry reading. Returns how many values were written.
@@ -103,18 +98,16 @@ namespace VmsMap.Demo
         .ToListAsync(ct);
       if (owners.Count == 0) return 0;
 
-      // Every camera the demo placed is asked: the relay and the sensor may be on different ones —
-      // that is the point of the wiring.
-      var placedIds = registered
-        .Where(o => o.logical_key.StartsWith("camera/", StringComparison.Ordinal))
-        .Select(o => o.logical_key["camera/".Length..])
-        .ToHashSet(StringComparer.Ordinal);
-      var cameras = (await _catalog.ListAsync(null, ct))
-        .Where(camera => placedIds.Contains(camera.CameraId))
-        .ToList();
-
-      var relay = await FirstAsync(cameras, _io.GetRelayAsync, ct);
-      var sensor = await FirstAsync(cameras, _io.GetInputAsync, ct);
+      // The demo's two devices live on different cameras — that is the point of the wiring — so the
+      // world names them rather than taking the first device found.
+      var relayCamera = await _catalog.GetAsync(DemoTelemetry.RelayCameraId, ct);
+      var sensorCamera = await _catalog.GetAsync(DemoTelemetry.SensorCameraId, ct);
+      var relay = relayCamera is null
+        ? new CameraDeviceState(false, null)
+        : await _io.GetRelayAsync(relayCamera, ct);
+      var sensor = sensorCamera is null
+        ? new CameraDeviceState(false, null)
+        : await _io.GetInputAsync(sensorCamera, ct);
 
       var values = new List<ValueDTO>();
       foreach (var owner in owners)
@@ -125,22 +118,13 @@ namespace VmsMap.Demo
           .FirstOrDefaultAsync(ct);
         if (cameraId is null) continue;
 
-        var camera = cameras.FirstOrDefault(c => c.CameraId == cameraId)
-          ?? await _catalog.GetAsync(cameraId, ct);
+        var camera = await _catalog.GetAsync(cameraId, ct);
         if (camera is null) continue;
 
         var point = await _geo.GetAsync(camera, ct);
         if (point is not { } fix) continue; // no place this tick: nothing to write, retry next time
 
-        var now = _time.GetUtcNow();
-        double? speed = null;
-        if (_lastFix.TryGetValue(cameraId, out var previous))
-        {
-          var seconds = (now - previous.At).TotalSeconds;
-          if (seconds > 0)
-            speed = previous.Point.DistanceMetersTo(fix) / seconds * 3.6;
-        }
-        _lastFix[cameraId] = (fix, now);
+        var speed = _speed.Observe(cameraId, fix);
 
         var ownerId = owner.ToString();
         void Add(string name, string text) => values.Add(new ValueDTO
@@ -167,21 +151,32 @@ namespace VmsMap.Demo
       await _values.UpdateListAsync(values);
       return values.Count;
     }
+  }
 
-    /// The first camera that has such a device at all. A camera that has one but has not announced
-    /// its state yet still answers, with a null state — the demo reports "no reading", not "off".
-    private static async Task<CameraDeviceState> FirstAsync(
-      IReadOnlyList<CameraInfo> cameras,
-      Func<CameraInfo, CancellationToken, Task<CameraDeviceState>> read,
-      CancellationToken ct)
+  /// <summary>
+  /// A moving camera reports places, not speed: a speed is what two of them over a known interval
+  /// make. The state has to outlive one feeder round — the feeder is scoped and gets a fresh
+  /// instance every five seconds — so it lives in this singleton.
+  /// </summary>
+  public sealed class DemoSpeedTracker(TimeProvider time)
+  {
+    private readonly Dictionary<string, (CameraGeoPoint Point, DateTimeOffset At)> _lastFix =
+      new(StringComparer.Ordinal);
+
+    /// <returns>Kilometres per hour, or null until a previous fix for this camera is known.</returns>
+    public double? Observe(string cameraId, CameraGeoPoint point)
     {
-      foreach (var camera in cameras)
+      var now = time.GetUtcNow();
+      double? speed = null;
+      if (_lastFix.TryGetValue(cameraId, out var previous))
       {
-        var state = await read(camera, ct);
-        if (state.HasDevices)
-          return state;
+        var seconds = (now - previous.At).TotalSeconds;
+        if (seconds > 0)
+          speed = previous.Point.DistanceMetersTo(point) / seconds * 3.6;
       }
-      return new CameraDeviceState(false, null);
+
+      _lastFix[cameraId] = (point, now);
+      return speed;
     }
   }
 

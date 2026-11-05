@@ -109,7 +109,7 @@ public class DemoValueFeederTests
 
     return new Services(
       db, map, seeder,
-      new DemoValueFeeder(db, values, catalog, geoSource, ioSource, time),
+      new DemoValueFeeder(db, values, catalog, geoSource, ioSource, new DemoSpeedTracker(time)),
       geoSource, ioSource, time);
   }
 

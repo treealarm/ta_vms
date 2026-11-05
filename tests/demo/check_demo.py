@@ -21,7 +21,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "onvifsim"))
 
-from labhttp import HttpError  # noqa: E402
+from labhttp import HttpError, request  # noqa: E402
+from simapi import Sim  # noqa: E402
 from vmsapi import Vms  # noqa: E402
 
 DEMO_KEY = "umd-datacenter"
@@ -103,6 +104,48 @@ def value_text(value):
     return ""
 
 
+def values_by_name(vms, owner_id):
+    return {value.get("name"): value_text(value) for value in values_of(vms, owner_id)}
+
+
+def set_relay(vms, camera_id, token, active):
+    vms.call("POST", f"/api/DeviceIo/cameras/{camera_id}/relay-outputs/{token}/state",
+             {"active": active})
+
+
+# ── The simulator's own world ─────────────────────────────────────────────────────
+
+
+def sim_world(sim):
+    return request("GET", f"{sim.base}/api/world")
+
+
+def lamp_lit(world, lamp_id):
+    """A lamp's state as OnvifSim derives it: a wire from a closed relay, NO/NC taken into account.
+
+    There is no endpoint for it — the lamp is not a device with a state of its own — so the same
+    rule the simulator's renderer uses (`DeviceIo.LampLit`) is applied to the world it serves.
+    """
+    lamp = next((lamp for lamp in world.get("lamps") or [] if lamp.get("id") == lamp_id), None)
+    if lamp is None:
+        return None
+
+    wires = [wire for wire in world.get("wires") or [] if wire.get("lampId") == lamp_id]
+    if not wires:
+        return False  # unconnected: never lit
+
+    closed = False
+    for wire in wires:
+        camera = next((c for c in world.get("cameras") or []
+                       if c.get("id") == wire.get("relayCameraId")), None)
+        relay = next((r for r in (camera or {}).get("relayOutputs") or []
+                      if r.get("token") == wire.get("relayToken")), None)
+        if relay and relay.get("active"):
+            closed = True
+
+    return (not closed) if lamp.get("normallyClosed") else closed
+
+
 def levels(vms):
     return (vms.call("GET", "/api/map/levels") or {}).get("levels") or []
 
@@ -145,6 +188,20 @@ def provision_cameras(vms, sim_host, server_id):
                          "path": "", "webRtc": True}],
         })
         print(f"  ..    added camera {camera_id} (ONVIF {sim_host}:{port})")
+
+
+def subscribe_events(vms):
+    """Turns on the optional ONVIF event subscription for the demo cameras.
+
+    I/O state does not depend on it — VmsOnvif opens its own Device/Trigger subscription
+    automatically when a camera has devices — but the demo's alarm filters and the ONVIF settings
+    page do, and a demo installed with events off makes that look broken.
+    """
+    for camera_id in DEMO_CAMERAS:
+        try:
+            vms.call("POST", f"/api/onvif/cameras/{camera_id}/subscription")
+        except HttpError as e:
+            warn(f"could not subscribe {camera_id} to ONVIF events: {e}")
 
 
 # ── Checks ────────────────────────────────────────────────────────────────────────
@@ -290,6 +347,45 @@ def check_cameras(vms, world, allow_missing):
               f"{camera_id} stands in its space")
 
 
+def check_geo_flag(vms):
+    cameras = {camera.get("cameraId"): camera for camera in vms.cameras()}
+    check(cameras.get("sim-vehicle", {}).get("geoFromDevice") is True,
+          "sim-vehicle takes its position from the device")
+    for camera_id in ("sim-master", "sim-master2", "sim-ptz", "sim-ptz2"):
+        check(cameras.get(camera_id, {}).get("geoFromDevice") is not True,
+              f"{camera_id} is placed by hand")
+
+
+def check_marker_follows_the_camera(vms):
+    """The marker moves with the device; a hand-placed camera next to it does not move at all."""
+    before = {placement.get("cameraId"): placement for placement in placements(vms)}
+    time.sleep(7)  # the follower ticks every 5 s, so at least one move must have been written
+    after = {placement.get("cameraId"): placement for placement in placements(vms)}
+
+    vehicle_before, vehicle_after = before.get("sim-vehicle"), after.get("sim-vehicle")
+    if check(vehicle_before is not None and vehicle_after is not None,
+             "sim-vehicle is placed on the map"):
+        moved = ((vehicle_before.get("lat"), vehicle_before.get("lon"))
+                 != (vehicle_after.get("lat"), vehicle_after.get("lon")))
+        check(moved, "the vehicle camera's marker moves with the device")
+
+    master_before, master_after = before.get("sim-master"), after.get("sim-master")
+    if master_before and master_after:
+        check((master_before.get("lat"), master_before.get("lon"))
+              == (master_after.get("lat"), master_after.get("lon")),
+              "a hand-placed camera stays where the administrator put it")
+
+
+def check_events(vms):
+    subscribed = {
+        camera.get("cameraId")
+        for camera in vms.call("GET", "/api/onvif/subscriptions") or []
+        if camera.get("subscribed")
+    }
+    missing = [camera_id for camera_id in DEMO_CAMERAS if camera_id not in subscribed]
+    check(not missing, f"the demo cameras are subscribed to ONVIF events (missing {missing})")
+
+
 def check_monitor(vms, allow_missing):
     wall = next((m for m in monitors(vms) if m.get("name") == "UMD DC"), None)
     if not check(wall is not None, "the 'UMD DC' video wall is in VmsCfg"):
@@ -324,14 +420,16 @@ def check_alarm(vms, world):
 
 def check_feeder(vms, world):
     """The camera's own ONVIF readings, rewritten every five seconds into the replica's regions."""
+    # Its kind reads "camera", not "diagram": it is a replica, and the map answers a replica with
+    # the camera id of what it shows.
     telemetry = by_name(vms, children(vms, world["building"]["id"]), TELEMETRY_NAME)
-    if not check(telemetry is not None and telemetry.get("nodeKind") == "diagram",
+    if not check(telemetry is not None,
                  "the building shows the camera's Device telemetry diagram"):
         return
 
     print("  ..    waiting for the value feeder")
-    time.sleep(6)
-    values = {v.get("name"): value_text(v) for v in values_of(vms, telemetry["id"])}
+    time.sleep(8)
+    values = values_by_name(vms, telemetry["id"])
     check({"lat", "lon"} <= set(values),
           f"the diagram shows the camera's position (has {sorted(values)})")
     check("speed" in values,
@@ -340,6 +438,52 @@ def check_feeder(vms, world):
           f"the diagram shows the relay (has {values.get('relay')!r})")
     check(values.get("sensor") in ("on", "off"),
           f"the diagram shows the sensor (has {values.get('sensor')!r})")
+    return telemetry
+
+
+def check_wired_devices(vms, sim, world, telemetry):
+    """`sim-master`'s relays: one drives `sim-ptz`'s sensor, one lights the hall's lamp.
+
+    Switching them changes what the demo's diagram reads, and the simulator's own lamp — which is
+    not a device with a state, so its rule (any wired relay closed) is applied to its world.
+    """
+    initial = values_by_name(vms, telemetry["id"])
+    if not check(initial.get("relay") in ("on", "off") and initial.get("sensor") in ("on", "off"),
+                 f"the demo starts with a relay and a sensor reading (has {initial.get('relay')!r}/"
+                 f"{initial.get('sensor')!r})"):
+        return
+
+    def switch(active):
+        set_relay(vms, "sim-master", "peer", active)
+        set_relay(vms, "sim-master", "lamp", active)
+        # The camera's event (its pull point is polled), VmsOnvif's cache, then the feeder's next
+        # tick: worst case one poll plus one tick, so wait for two of each.
+        time.sleep(12)
+
+    switch(True)
+    values = values_by_name(vms, telemetry["id"])
+    check(values.get("relay") == "on",
+          f"the diagram reports the relay on (has {values.get('relay')!r})")
+    check(values.get("sensor") == "off",
+          f"the wired sensor reads 0 while the relay is closed (has {values.get('sensor')!r})")
+    check(lamp_lit(sim_world(sim), "alert") is True, "the lamp in the simulator lights up")
+
+    switch(False)
+    values = values_by_name(vms, telemetry["id"])
+    check(values.get("relay") == "off",
+          f"the diagram reports the relay off again (has {values.get('relay')!r})")
+    check(values.get("sensor") == "on",
+          f"the sensor returns to 1 (has {values.get('sensor')!r})")
+    check(lamp_lit(sim_world(sim), "alert") is False, "the lamp goes dark again")
+
+
+def check_vehicle_picture(sim):
+    """The camera on the car moves: two pictures taken apart cannot be the same."""
+    first = sim.snapshot("vehicle")
+    time.sleep(1.0)
+    second = sim.snapshot("vehicle")
+    check(len(first) > 1000, f"OnvifSim renders the vehicle picture ({len(first)} bytes)")
+    check(first != second, "the vehicle camera's picture changes as it moves")
 
 
 def ids_of(vms, world):
@@ -392,6 +536,8 @@ def main():
     parser.add_argument("--password", default="admin")
     parser.add_argument("--sim-host", default="127.0.0.1",
                         help="where ta_vms reaches OnvifSim's cameras")
+    parser.add_argument("--sim-url", default="http://127.0.0.1:8090",
+                        help="OnvifSim's own API, for the lamp and the moving picture")
     parser.add_argument("--server-id", default="vms")
     parser.add_argument("--provision-cameras", action="store_true",
                         help="add the four OnvifSim cameras before installing the world")
@@ -403,10 +549,12 @@ def main():
 
     vms = Vms(args.vms, args.user, args.password)
     vms.login()
+    sim = Sim(args.sim_url)
 
     if args.provision_cameras:
         print("Provisioning the demo cameras")
         provision_cameras(vms, args.sim_host, args.server_id)
+        subscribe_events(vms)
 
     # Installing is idempotent, so it is always called first: on a fresh database it writes the
     # world, on an older one it brings it to the current version.
@@ -433,10 +581,24 @@ def main():
     check_cameras(vms, world, args.allow_missing_cameras)
     check_monitor(vms, args.allow_missing_cameras)
 
+    print("ONVIF position, events and the marker")
+    check_geo_flag(vms)
+    check_events(vms)
+    check_marker_follows_the_camera(vms)
+
     print("Layers, readings and the alarm")
     check_levels(vms)
-    check_feeder(vms, world)
+    telemetry = check_feeder(vms, world)
     check_alarm(vms, world)
+
+    sim_up = sim.ready()
+    if not sim_up:
+        warn(f"OnvifSim is not answering at {args.sim_url}: skipped the lamp and picture checks")
+    if telemetry is not None and sim_up:
+        print("Wired relays and the lamp")
+        check_wired_devices(vms, sim, world, telemetry)
+        print("The moving camera")
+        check_vehicle_picture(sim)
 
     print("Installing again")
     world = check_reinstall(vms, world)

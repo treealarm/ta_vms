@@ -4,9 +4,11 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Vms.Map;
 using VmsDb;
+using VmsMap.Adapter;
 using VmsMap.Clients;
 using VmsMap.Db;
 using VmsMap.Domain;
@@ -44,7 +46,8 @@ public class SpatialPostgresTests
   }
 
   private sealed record Services(
-    NpgsqlDataSource DataSource, VmsMapDbContext Db, SpatialDb Spatial, RecordingNotifier Notifier)
+    NpgsqlDataSource DataSource, VmsMapDbContext Db, MapDb Map, MapUpdateService Updates,
+    SpatialDb Spatial, RecordingNotifier Notifier)
     : IAsyncDisposable
   {
     public async ValueTask DisposeAsync()
@@ -90,7 +93,8 @@ public class SpatialPostgresTests
     var notifier = new RecordingNotifier();
 
     return new Services(
-      dataSource, db, new SpatialDb(db, map, updates, geo, new FakeCatalog(geoFromDevice), notifier), notifier);
+      dataSource, db, map, updates,
+      new SpatialDb(db, map, updates, geo, new FakeCatalog(geoFromDevice), notifier), notifier);
   }
 
   private static Space MapSpace(string name = "Main map") => new()
@@ -336,5 +340,26 @@ public class SpatialPostgresTests
     observations.Observations.Add(new PtzGeoObservation { LandmarkId = landmark.Id, Pan = 10, Tilt = -5 });
     await Assert.ThrowsAsync<SpatialConfigException>(
       () => test.Spatial.SetObservationsAsync(observations, CancellationToken.None));
+  }
+
+  // A brand-new camera's node and its camera_node row used to be written in one SaveChanges, and EF
+  // ordered the inserts by tracking order — camera_node first, straight into its foreign key. Only
+  // PostgreSQL notices, which is why this lives here. Found live: adding `sim-vehicle` made the
+  // whole demo install fail.
+  [Fact]
+  public async Task ANewCamerasNodeIsWrittenBeforeItsCameraNodeRow()
+  {
+    await using var test = await OpenAsync();
+    if (test is null)
+      return;
+
+    var nodes = new CameraNodeService(
+      test.Db, test.Map, test.Updates, NullLogger<CameraNodeService>.Instance);
+    await nodes.EnsureCameraAsync(new CameraInfo("cam-new", "New camera", "srv-new"), CancellationToken.None);
+
+    var canonical = Guid.Parse(CameraObjectId.For("cam-new"));
+    Assert.NotNull(await test.Db.Markers.AsNoTracking().FirstOrDefaultAsync(m => m.id == canonical));
+    Assert.Equal("cam-new", (await test.Db.CameraNodes.AsNoTracking()
+      .SingleAsync(n => n.object_id == canonical)).camera_id);
   }
 }

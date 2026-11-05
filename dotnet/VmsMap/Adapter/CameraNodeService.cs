@@ -50,8 +50,10 @@ namespace VmsMap.Adapter
         ? await _db.Database.BeginTransactionAsync(ct)
         : null;
 
-      await EnsureCameraNodeRowAsync(canonicalId, camera.CameraId, ct);
-
+      // The node row is written before camera_node, not merely in the same SaveChanges: the
+      // camera_node row references objects.id, and EF does not know that relationship — it emits
+      // the inserts in tracking order, which put camera_node first and the foreign key refused a
+      // brand-new camera's node.
       var reference = await _db.CameraPlacements.AsNoTracking()
         .FirstOrDefaultAsync(p => p.camera_id == camera.CameraId && p.is_reference, ct);
 
@@ -92,11 +94,11 @@ namespace VmsMap.Adapter
           }
         ]);
       }
-      else
-      {
-        // Save a camera_node row that was missing without touching the node itself.
-        await _db.SaveChangesAsync(ct);
-      }
+
+      // Now that the object exists, the index row can point at it. This also saves a row that was
+      // missing without touching a node that was already right.
+      await EnsureCameraNodeRowAsync(canonicalId, camera.CameraId, ct);
+      await _db.SaveChangesAsync(ct);
 
       if (tx is not null)
         await tx.CommitAsync(ct);
