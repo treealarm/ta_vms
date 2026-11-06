@@ -35,6 +35,8 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
   public DbSet<DbOnvifEventSubscription> OnvifEventSubscriptions { get; set; }
   public DbSet<DbMediaServerNode> MediaServerNodes { get; set; }
   public DbSet<DbDeployment> Deployments { get; set; }
+  public DbSet<DbEventSubscription> EventSubscriptions { get; set; }
+  public DbSet<DbSubscriptionAction> SubscriptionActions { get; set; }
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
@@ -257,6 +259,34 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.Id).HasColumnName("id");
       e.Property(x => x.EnrollmentOpen).HasColumnName("enrollment_open");
     });
+
+    modelBuilder.Entity<DbEventSubscription>(e =>
+    {
+      e.ToTable("event_subscriptions");
+      e.HasKey(x => x.Id);
+      e.Property(x => x.Id).HasColumnName("id");
+      e.Property(x => x.Name).HasColumnName("name");
+      e.Property(x => x.Enabled).HasColumnName("enabled");
+      e.Property(x => x.EventName).HasColumnName("event_name");
+      e.Property(x => x.SourceFilter).HasColumnName("source_filter").HasColumnType("jsonb");
+      e.Property(x => x.ArmedCondition).HasColumnName("armed_condition");
+      e.Property(x => x.CooldownMs).HasColumnName("cooldown_ms");
+      e.Property(x => x.Version).HasColumnName("version");
+      e.HasMany(x => x.Actions)
+       .WithOne()
+       .HasForeignKey(x => x.SubscriptionId)
+       .OnDelete(DeleteBehavior.Cascade);
+    });
+
+    modelBuilder.Entity<DbSubscriptionAction>(e =>
+    {
+      e.ToTable("subscription_actions");
+      e.HasKey(x => new { x.SubscriptionId, x.Position });
+      e.Property(x => x.SubscriptionId).HasColumnName("subscription_id");
+      e.Property(x => x.Position).HasColumnName("position");
+      e.Property(x => x.Kind).HasColumnName("kind");
+      e.Property(x => x.Params).HasColumnName("params").HasColumnType("jsonb");
+    });
   }
 }
 
@@ -454,4 +484,29 @@ public sealed class DbDeployment
 {
   public int Id { get; set; }
   public bool EnrollmentOpen { get; set; }
+}
+
+/// <summary>One configured reaction to the journal; its actions are rows of
+/// <see cref="DbSubscriptionAction"/>.</summary>
+public sealed class DbEventSubscription
+{
+  public Guid Id { get; set; }
+  public string Name { get; set; } = string.Empty;
+  public bool Enabled { get; set; } = true;
+  public string EventName { get; set; } = string.Empty;
+  /// JSON selector; see the table's comment in the baseline migration.
+  public string SourceFilter { get; set; } = "{}";
+  public string ArmedCondition { get; set; } = EventSubscriptionRules.Any;
+  public int CooldownMs { get; set; }
+  public int Version { get; set; } = 1;
+  public List<DbSubscriptionAction> Actions { get; set; } = [];
+}
+
+/// <summary>One action, in run order. <see cref="Params"/> is per-kind JSON, validated on save.</summary>
+public sealed class DbSubscriptionAction
+{
+  public Guid SubscriptionId { get; set; }
+  public int Position { get; set; }
+  public string Kind { get; set; } = string.Empty;
+  public string Params { get; set; } = "{}";
 }

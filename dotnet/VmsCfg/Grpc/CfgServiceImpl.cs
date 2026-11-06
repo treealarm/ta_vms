@@ -13,6 +13,7 @@ namespace VmsCfg
     StorageDb storageDb,
     DeviceStorage deviceStorage,
     AlarmDefinitionStorage alarmDefinitions,
+    EventSubscriptionStorage eventSubscriptions,
     ScheduleDb scheduleDb,
     ScheduleCache scheduleCache,
     DaprClient daprClient,
@@ -31,6 +32,11 @@ namespace VmsCfg
     private const string ServerConfigChangedTopic = "server-config-changed";
     private const string CameraStateChangedTopic       = "camera-state-changed";
     private const string DeviceSettingsChangedTopic    = "device-settings-changed";
+    // The alarm definitions have travelled on this topic since M2.4c; M2.4d makes it mean the
+    // subscriptions too. A replicable VmsMap reads the shared subscriptions-version key instead of
+    // trusting this message, which reaches one replica; VmsSingleton is one instance and can.
+    private const string EventSubscriptionsChangedTopic = "event-subscriptions-changed";
+    private const string SubscriptionsVersionKey        = "subscriptions-version";
     private const string AnalyticsWatchChangedTopic    = "analytics-watch-changed";
     // Wakes the ticker in VmsSingleton after a schedule edit. It has its own app id, hence its own
     // subscription, so a topic reaches it — unlike VmsCfg's own replicas, which share one consumer
@@ -1238,6 +1244,69 @@ namespace VmsCfg
       var response = new ListAlarmDefinitionsResponse();
       response.Definitions.AddRange(await alarmDefinitions.ListAsync(context.CancellationToken));
       return response;
+    }
+
+    public override async Task<ListEventSubscriptionsResponse> ListEventSubscriptions(
+      ListEventSubscriptionsRequest request, ServerCallContext context)
+    {
+      var response = new ListEventSubscriptionsResponse();
+      response.Subscriptions.AddRange(
+        await eventSubscriptions.ListAsync(context.CancellationToken));
+      return response;
+    }
+
+    public override async Task<OperationStatus> UpsertEventSubscription(
+      UpsertEventSubscriptionRequest request, ServerCallContext context)
+    {
+      if (request.Subscription is null)
+        return new OperationStatus { Success = false, Message = "subscription must not be empty" };
+
+      var (saved, error) = await eventSubscriptions.UpsertAsync(
+        request.Subscription, context.CancellationToken);
+      if (saved is null)
+        return new OperationStatus { Success = false, Message = error };
+
+      logger.LogInformation(
+        "Event subscription '{Id}' ({Name}) saved as version {Version}",
+        saved.Id, saved.Name, saved.Version);
+
+      // After the commit: a subscriber that reacts at once must not read the old rows back.
+      await NotifyEventSubscriptionsChangedAsync(context.CancellationToken);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OperationStatus> RemoveEventSubscription(
+      RemoveEventSubscriptionRequest request, ServerCallContext context)
+    {
+      var (removed, error) = await eventSubscriptions.RemoveAsync(
+        request.Id, context.CancellationToken);
+      if (error is not null)
+        return new OperationStatus { Success = false, Message = error };
+      if (!removed)
+        return new OperationStatus { Success = false, Message = "no such subscription" };
+
+      logger.LogInformation("Event subscription '{Id}' removed", request.Id);
+      await NotifyEventSubscriptionsChangedAsync(context.CancellationToken);
+      return new OperationStatus { Success = true };
+    }
+
+    private async Task NotifyEventSubscriptionsChangedAsync(CancellationToken ct)
+    {
+      try
+      {
+        // The version key is the truth for replicable readers; the message is the fast signal.
+        await daprClient.SaveStateAsync(
+          StateStoreName, SubscriptionsVersionKey, Guid.NewGuid().ToString("N"),
+          cancellationToken: ct);
+        await daprClient.PublishEventAsync(
+          _pubSubName, EventSubscriptionsChangedTopic, string.Empty, ct);
+      }
+      catch (Exception ex)
+      {
+        // The row is saved; a lost signal costs a reader its cache TTL, not the change.
+        logger.LogWarning(ex,
+          "event-subscriptions-changed publish failed — readers will pick the change up by TTL");
+      }
     }
 
     public override async Task<ListAnalyticsWatchesResponse> ListAnalyticsWatches(

@@ -424,3 +424,39 @@ CREATE TABLE deployment (
   enrollment_open boolean NOT NULL DEFAULT true
 );
 INSERT INTO deployment (id) VALUES (1);
+
+-- ── Event routing ──────────────────────────────────────────────────────────────
+
+-- A configured reaction to the journal. The router in VmsSingleton reads these rows and nothing
+-- else says what reacts to an event; a change runs the event-subscriptions-changed signal, and
+-- `version` grows on every save so a started run keeps the snapshot it began with.
+--
+-- `source_filter` is the selector over an event's own fields and extra props:
+--   {"object_ids": [], "camera_ids": [], "kinds": [], "tokens": [], "props": {}}
+-- It is JSON rather than columns because the shape is the operator's: the router and the save-time
+-- validator are the only readers, and both know every key. An unknown key is a save-time error,
+-- never a rule ignored at run time.
+CREATE TABLE event_subscriptions (
+  id              uuid    PRIMARY KEY,
+  name            text    NOT NULL,
+  enabled         boolean NOT NULL DEFAULT true,
+  -- A name from the map's journal dictionary: sensor, relay, analytics, alarm_raised,
+  -- alarm_acknowledged, alarm_returned, alarm_closed, or the legacy alarm.
+  event_name      text    NOT NULL,
+  source_filter   jsonb   NOT NULL DEFAULT '{}',
+  armed_condition text    NOT NULL DEFAULT 'any'
+    CHECK (armed_condition IN ('any', 'armed', 'disarmed')),
+  cooldown_ms     integer NOT NULL DEFAULT 0 CHECK (cooldown_ms >= 0),
+  version         integer NOT NULL DEFAULT 1
+);
+
+-- The actions of one subscription, in the order they run. `params` is per-kind JSON, validated
+-- when the subscription is saved; position starts at 0 and is the run's progress marker.
+CREATE TABLE subscription_actions (
+  subscription_id uuid    NOT NULL REFERENCES event_subscriptions(id) ON DELETE CASCADE,
+  position        integer NOT NULL,
+  kind            text    NOT NULL CHECK (kind IN
+    ('retain_recording', 'set_relay', 'emit_event', 'raise_alarm')),
+  params          jsonb   NOT NULL,
+  PRIMARY KEY (subscription_id, position)
+);
