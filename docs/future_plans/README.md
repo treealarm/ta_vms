@@ -21,7 +21,7 @@ here is deleted or cut down to what is still left.
 | [fire-alarm-integration.md](fire-alarm-integration.md) | Пожарная сигнализация — не ещё один цифровой вход: всегда на охране, защёлка/reset, зоны и неисправности, cause-and-effect на панели; класс устройства и адаптер панели — после M2.4 |
 | [generic-device-placement.md](generic-device-placement.md) | Общая `device_placement` вместо камеро-специфичной `camera_placement`: общие поля типизированы, специфические — в `props jsonb` |
 | [log-volume-leftovers.md](log-volume-leftovers.md) | What still fills the logs after the 2026-10-25 fix: a dead camera re-resolved per call, reconnect errors, web_srv outside VmsLog |
-| [onvif-live-parameters.md](onvif-live-parameters.md) | Several devices per camera and cross-camera wiring, the UI poll interval as a setting, a fuller match between the demo world and OnvifSim's `Maryland`, the follower's first write after a restart |
+| [onvif-live-parameters.md](onvif-live-parameters.md) | Several devices per camera and cross-camera wiring, the camera read behind a tile's device list, a fuller match between the demo world and OnvifSim's `Maryland`, the follower's first write after a restart |
 | [plan-or-diagram.md](plan-or-diagram.md) | План и диаграмма: настоящая ось — географическая рамка, а не тип сущности; свободные объекты на диаграммах, затем необязательная рамка |
 | [review-2026-10-27-leftovers.md](review-2026-10-27-leftovers.md) | What the 2026-10-27 review left open: how an edge-import replay ends, two live checks |
 | [scale-bench-100k.md](scale-bench-100k.md) | Полный стенд на 100 000 камер — распределённое развёртывание; что проверяется локально и что осталось |
