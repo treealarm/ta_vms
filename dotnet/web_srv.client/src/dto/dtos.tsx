@@ -1147,6 +1147,20 @@ export type DigitalInputOptionsDto = {
   idleStateConfigurable: boolean
 }
 
+// What the operator configured for one part. A missing row means the defaults: inherit the
+// camera's arming, no alarm. Arming fields are inputs-only — a relay is driven, not watched.
+export type DeviceArmMode = 'inherit' | 'armed' | 'disarmed'
+
+export type DeviceSettingsDto = {
+  cameraId: string
+  kind: 'digital_input' | 'relay'
+  token: string
+  name: string
+  armMode: DeviceArmMode
+  triggerOn: IdleState | null
+  alarmEnabled: boolean
+}
+
 export type FloatRangeDto = { min: number; max: number }
 
 export type ImagingSettingsDto = {

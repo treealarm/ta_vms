@@ -1,5 +1,6 @@
 using Grpc.Core;
 using Microsoft.AspNetCore.Mvc;
+using Vms.Cfg;
 using Vms.Onvif;
 using web_srv.Authorization;
 
@@ -7,7 +8,9 @@ namespace web_srv;
 
 [ApiController]
 [Route("api/[controller]")]
-public class DeviceIoController(OnvifRouter router) : ControllerBase
+public class DeviceIoController(
+  OnvifRouter router,
+  CfgService.CfgServiceClient cfgClient) : ControllerBase
 {
   private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
 
@@ -159,6 +162,49 @@ public class DeviceIoController(OnvifRouter router) : ControllerBase
     });
   }
 
+  // ── Per-part settings ─────────────────────────────────────────────────────
+
+  // The camera's own state is not touched here: arming an input is configuration, not a command.
+  [HttpGet("cameras/{cameraId}/settings")]
+  [RequiresRight(RightActions.ViewLive)]
+  public async Task<IActionResult> GetSettings(string cameraId, CancellationToken ct)
+  {
+    var response = await cfgClient.ListDeviceSettingsAsync(
+      new ListDeviceSettingsRequest { CameraId = cameraId }, Options(ct));
+
+    return Ok(response.Settings.Select(s => new DeviceSettingsDto(
+      s.CameraId,
+      s.Kind,
+      s.Token,
+      s.Name,
+      s.ArmMode,
+      string.IsNullOrWhiteSpace(s.TriggerOn) ? null : s.TriggerOn,
+      s.AlarmEnabled)));
+  }
+
+  // Writing a part's arming or alarm is control: it changes what the site does, not what is shown.
+  [HttpPut("cameras/{cameraId}/settings")]
+  [RequiresRight(RightActions.Control)]
+  public async Task<IActionResult> SetSettings(
+    string cameraId, [FromBody] DeviceSettingsBody body, CancellationToken ct)
+  {
+    var response = await cfgClient.SetDeviceSettingsAsync(new SetDeviceSettingsRequest
+    {
+      Settings = new DeviceSettings
+      {
+        CameraId = cameraId,
+        Kind = body.Kind,
+        Token = body.Token,
+        Name = body.Name ?? string.Empty,
+        ArmMode = body.ArmMode,
+        TriggerOn = body.TriggerOn ?? string.Empty,
+        AlarmEnabled = body.AlarmEnabled,
+      },
+    }, Options(ct));
+
+    return response.Success ? Ok() : BadRequest(response.Message);
+  }
+
   private static string FormatMode(RelayMode mode) => mode == RelayMode.Bistable ? "bistable" : "monostable";
   private static RelayMode ParseMode(string mode) =>
     mode.Equals("bistable", StringComparison.OrdinalIgnoreCase) ? RelayMode.Bistable : RelayMode.Monostable;
@@ -167,6 +213,23 @@ public class DeviceIoController(OnvifRouter router) : ControllerBase
   private static IdleState ParseIdleState(string idleState) =>
     idleState.Equals("open", StringComparison.OrdinalIgnoreCase) ? IdleState.Open : IdleState.Closed;
 }
+
+public record DeviceSettingsDto(
+  string CameraId,
+  string Kind,
+  string Token,
+  string Name,
+  string ArmMode,
+  string? TriggerOn,
+  bool AlarmEnabled);
+
+public record DeviceSettingsBody(
+  string Kind,
+  string Token,
+  string? Name,
+  string ArmMode,
+  string? TriggerOn,
+  bool AlarmEnabled);
 
 public record SetRelayStateBody(bool Active);
 public record SetRelaySettingsBody(string Mode, string IdleState, int DelayMs);

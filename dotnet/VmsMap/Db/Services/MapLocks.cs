@@ -32,7 +32,9 @@ namespace VmsMap.Db
       if (!db.Database.IsRelational())
         return;
 
-      await db.Database.ExecuteSqlRawAsync(
+      // Parameterised, even though the key is a constant: raw interpolation is what the EF
+      // analyzer refuses, and there is no reason to ask for an exception here.
+      await db.Database.ExecuteSqlInterpolatedAsync(
         $"SELECT pg_advisory_xact_lock({DemoInstallKey});", ct);
     }
 
@@ -42,9 +44,10 @@ namespace VmsMap.Db
       if (!db.Database.IsRelational())
         return;
 
-      // The name is one of the two constants above, never anything built from input.
-      await db.Database.ExecuteSqlRawAsync(
-        $"SELECT pg_advisory_xact_lock(hashtext('{name}'));", ct);
+      // The name is one of the two constants above, never anything built from input; the
+      // parameter keeps the statement from being assembled by interpolation.
+      await db.Database.ExecuteSqlInterpolatedAsync(
+        $"SELECT pg_advisory_xact_lock(hashtext({name}));", ct);
     }
   }
 }
