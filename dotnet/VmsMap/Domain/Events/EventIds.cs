@@ -25,5 +25,13 @@ namespace VmsMap.Domain
       ObjectIdGenerator.GenerateObjectId(
         $"{sourceKind}|{sourceId}|{partKind}|{token}|{epoch}|{observedAt.UtcTicks}",
         "device_snapshot");
+
+    /// <summary>
+    /// One persisted detection, named by the analytics database's own row id. The publisher
+    /// delivers at least once, so this is what keeps a redelivery from being a second journal
+    /// row — and a second reaction of the Router.
+    /// </summary>
+    public static string ForAnalytics(long detectionId) =>
+      ObjectIdGenerator.GenerateObjectId($"analytics|{detectionId}", "analytics_event");
   }
 }

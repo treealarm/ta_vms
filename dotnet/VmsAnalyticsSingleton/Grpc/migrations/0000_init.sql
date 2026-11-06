@@ -20,7 +20,12 @@ CREATE TABLE detections (
   -- (retention_events in ta_fs); object_id = the re-identification label of the physical object.
   event_id     text        NULL,
   event_uuid   uuid        NULL,
-  object_id    text        NULL
+  object_id    text        NULL,
+  -- When this detection was handed to VmsMap as `analytics-event`. NULL means "not yet" (or
+  -- "given up on"): the row is itself the record a crash cannot lose, because it is written in
+  -- the same transaction as the detection. The publisher's sweep picks these up; rows older than
+  -- an hour are marked without being sent (docs/plans/square-merge/m2.4e-analytics-admin-demo.md).
+  map_event_at timestamptz NULL
 );
 
 CREATE TABLE detection_embeddings (
@@ -41,6 +46,9 @@ CREATE INDEX idx_detections_plate_text ON detections (plate_text) WHERE plate_te
 CREATE INDEX idx_detections_event ON detections (event_id);
 CREATE INDEX idx_detections_event_uuid ON detections (event_uuid);
 CREATE INDEX idx_detections_object_id ON detections (object_id);
+-- The publisher's sweep asks only for what has not been handed to the map; a partial index keeps
+-- it proportional to the unpublished backlog, not to the archive.
+CREATE INDEX idx_detections_unpublished ON detections (id) WHERE map_event_at IS NULL;
 CREATE INDEX idx_detection_embeddings_kind ON detection_embeddings (kind);
 CREATE INDEX idx_detection_embeddings_kind_model ON detection_embeddings (kind, model);
 

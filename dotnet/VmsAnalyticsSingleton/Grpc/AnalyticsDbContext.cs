@@ -36,6 +36,7 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
       e.Property(x => x.StorageId).HasColumnName("storage_id").HasConversion(NullableUuidText);
       e.Property(x => x.CropPath).HasColumnName("crop_path");
       e.Property(x => x.PlateText).HasColumnName("plate_text");
+      e.Property(x => x.MapEventAt).HasColumnName("map_event_at");
       e.HasIndex(x => new { x.CameraId, x.DetectedAt });
       e.HasIndex(x => x.EventId);
       e.HasIndex(x => x.EventUuid);
@@ -77,6 +78,10 @@ public sealed class DbDetection
   /// <summary>Path relative to the storage root, like clips' file_path.</summary>
   public string? CropPath { get; set; }
   public string? PlateText { get; set; }
+  /// <summary>When the detection was handed to VmsMap as `analytics-event`; null = not yet (or
+  /// given up on). The publisher's sweep reads only the nulls, so a crash between the insert and
+  /// the publish loses nothing.</summary>
+  public DateTime? MapEventAt { get; set; }
 }
 
 public sealed class DbDetectionEmbedding

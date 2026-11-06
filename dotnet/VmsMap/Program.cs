@@ -139,6 +139,13 @@ builder.Services.AddSingleton(sp => new AlarmDefinitionsCache(
   stateStoreName,
   sp.GetRequiredService<ILogger<AlarmDefinitionsCache>>()));
 builder.Services.AddSingleton<IAlarmDefinitionsSource>(sp => sp.GetRequiredService<AlarmDefinitionsCache>());
+// The gate that decides whether an analytics detection becomes a journal row. A loaded list
+// survives VmsCfg and the state store being unavailable; with none ever loaded it stays closed.
+builder.Services.AddSingleton(sp => new AnalyticsSubscriptionGate(
+  sp.GetRequiredService<CfgService.CfgServiceClient>(),
+  sp.GetRequiredService<DaprClient>(),
+  stateStoreName,
+  sp.GetRequiredService<ILogger<AnalyticsSubscriptionGate>>()));
 
 builder.Services.AddScoped<ObjectStateWriter>();
 builder.Services.AddScoped<EventsWriter>();
@@ -163,6 +170,8 @@ builder.Services.AddHostedService<RetentionEventSubscriber>();
 builder.Services.AddHostedService<EventSubscriptionsSubscriber>();
 // Device events, snapshots and the settings that name the parts.
 builder.Services.AddHostedService<DeviceEventSubscriber>();
+// Persisted detections become journal rows, but only while a subscription asks for them.
+builder.Services.AddHostedService<AnalyticsEventSubscriber>();
 // Event notification goes through a transactional outbox: the row is written with the event, so a
 // crash before the publish cannot lose the reaction.
 builder.Services.AddHostedService(sp => new OutboxPublisher(

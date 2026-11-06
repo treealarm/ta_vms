@@ -49,6 +49,12 @@ if (workerAppIds.Length > 0)
   builder.Services.AddSingleton<WatchReconciler>();
   builder.Services.AddHostedService(sp => sp.GetRequiredService<WatchReconciler>()); // keep-alive loop
   builder.Services.AddHostedService<AnalyticsWatchSubscriber>();
+  // The map event follows the persisted row, not the call: the publisher's sweep is what makes a
+  // crash between the commit and the bus harmless.
+  builder.Services.AddSingleton<IAnalyticsEventSink>(sp => new DaprAnalyticsEventSink(
+    sp.GetRequiredService<DaprClient>(), Require("PUBSUB_NAME")));
+  builder.Services.AddSingleton<AnalyticsEventPublisher>();
+  builder.Services.AddHostedService(sp => sp.GetRequiredService<AnalyticsEventPublisher>());
   builder.Services.AddHostedService<DetectionStreamConsumer>();
   builder.Services.AddHostedService<CropJanitor>();
 }
