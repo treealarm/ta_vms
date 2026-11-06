@@ -109,6 +109,20 @@ namespace VmsMap.Adapter
         using var scope = _scopes.CreateScope();
         var reconciler = scope.ServiceProvider.GetRequiredService<DeviceEventReconciler>();
         await reconciler.ApplyAsync(snapshot, ct);
+
+        // After the device, in the same order the plan fixes: the model was stored, the parts were
+        // brought into the tree, and only then is a diagram drawn from them. An unreachable camera
+        // published no parts, so there is nothing to draw from.
+        if (snapshot.Reachable)
+        {
+          var diagrams = scope.ServiceProvider.GetRequiredService<IDeviceDiagramService>();
+          await diagrams.EnsureAsync(
+            snapshot.SourceKind ?? DeviceObjectId.CameraSource,
+            snapshot.SourceId!,
+            IDeviceDiagramService.DefaultSlot,
+            ct);
+        }
+
         return TopicResponseAction.Success;
       }
       catch (OperationCanceledException) when (ct.IsCancellationRequested)

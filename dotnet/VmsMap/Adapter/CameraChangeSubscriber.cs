@@ -10,6 +10,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using VmsLog;
 using VmsMap.Clients;
+using VmsMap.Domain;
 
 namespace VmsMap.Adapter
 {
@@ -102,6 +103,7 @@ namespace VmsMap.Adapter
       {
         using var scope = _scopes.CreateScope();
         var nodes = scope.ServiceProvider.GetRequiredService<DeviceNodeService>();
+        var diagrams = scope.ServiceProvider.GetRequiredService<IDeviceDiagramService>();
 
         if (cameraIds.Count == 0)
         {
@@ -134,6 +136,14 @@ namespace VmsMap.Adapter
           else
           {
             await nodes.EnsureCameraAsync(camera, ct);
+
+            // A camera the event names may be new to a template that already exists. The node-wide
+            // branch below does not do this: it runs on every MediaMTX or pairing change, and a
+            // diagram pass over every camera on the node is a full table scan for an event that
+            // cannot create one. The periodic snapshot reconciles those.
+            await diagrams.EnsureAsync(
+              DeviceObjectId.CameraSource, cameraId, IDeviceDiagramService.DefaultSlot, ct);
+
             Remember(camera.ServerId, cameraId);
           }
         }

@@ -184,3 +184,170 @@ public class DiagramTemplateTests
     Assert.False(saved.auto_attach);
   }
 }
+
+// Which template a device gets: only the ones that ask for it, the most specific of those, and
+// nothing at all when two are equally specific.
+public class DiagramModelMatchTests
+{
+  private static DiagramTypeCandidate Type(
+    string id, string manufacturer = "", string model = "", bool autoAttach = true,
+    string sourceKind = "camera") => new(id, sourceKind, manufacturer, model, autoAttach);
+
+  [Fact]
+  public void AModelMatchWinsOverAWildcard()
+  {
+    var chosen = DiagramModelMatch.Select(
+      [Type("any"), Type("byMaker", manufacturer: "OnvifSim"),
+       Type("exact", manufacturer: "OnvifSim", model: "Simulated fixed camera")],
+      "camera", "OnvifSim", "Simulated fixed camera");
+
+    Assert.Equal("exact", chosen.TypeId);
+    Assert.Null(chosen.Ambiguity);
+  }
+
+  [Fact]
+  public void TheComparisonIgnoresCaseAndSurroundingSpace()
+  {
+    var chosen = DiagramModelMatch.Select(
+      [Type("exact", manufacturer: " onvifsim ", model: "SIMULATED FIXED CAMERA")],
+      "camera", "OnvifSim", "Simulated fixed camera");
+
+    Assert.Equal("exact", chosen.TypeId);
+  }
+
+  [Fact]
+  public void AnEmptyFieldIsAnyDeviceOfThatKind()
+  {
+    var chosen = DiagramModelMatch.Select([Type("any")], "camera", "Whatever", "X");
+
+    Assert.Equal("any", chosen.TypeId);
+  }
+
+  [Fact]
+  public void ATieCreatesNothingAndSaysWhy()
+  {
+    var chosen = DiagramModelMatch.Select(
+      [Type("rear"), Type("front", manufacturer: "OnvifSim")],
+      "camera", "OnvifSim", "Simulated fixed camera");
+
+    // "front" is the only one with a manufacturer — it wins, it does not tie.
+    Assert.Equal("front", chosen.TypeId);
+
+    var tie = DiagramModelMatch.Select(
+      [Type("rear", manufacturer: "OnvifSim", model: "X"),
+       Type("front", manufacturer: "OnvifSim", model: "X")],
+      "camera", "OnvifSim", "X");
+
+    Assert.Null(tie.TypeId);
+    Assert.NotNull(tie.Ambiguity);
+  }
+
+  [Fact]
+  public void ATemplateThatDoesNotAttachItselfIsNotACandidate()
+  {
+    var chosen = DiagramModelMatch.Select(
+      [Type("manual", manufacturer: "OnvifSim", model: "X", autoAttach: false)],
+      "camera", "OnvifSim", "X");
+
+    Assert.Null(chosen.TypeId);
+    Assert.Null(chosen.Ambiguity);
+  }
+
+  [Fact]
+  public void AnotherSourceKindIsAnotherDeviceType()
+  {
+    var chosen = DiagramModelMatch.Select(
+      [Type("switch", sourceKind: "switch")], "camera", "OnvifSim", "X");
+
+    Assert.Null(chosen.TypeId);
+  }
+}
+
+// What a template's regions resolve to on one device: one way per region, no cascade, and a
+// conflict that nobody wins.
+public class DiagramTemplateBindingTests
+{
+  private static DevicePartRef Part(string kind, string token, string name = "") =>
+    new(kind, token, name);
+
+  private static RegionPartRule Rule(string region, string kind, string by, string value) =>
+    new(region, kind, by, value);
+
+  [Fact]
+  public void ATokenFindsItsPart()
+  {
+    var result = DiagramTemplateBinding.Bind(
+      [Rule("lamp", "relay", DiagramPartMatch.Token, "lamp")],
+      [Part("relay", "lamp"), Part("relay", "peer")]);
+
+    Assert.Equal("lamp", Assert.Single(result.Bound).Part.Token);
+    Assert.Empty(result.Warnings);
+  }
+
+  [Fact]
+  public void ANameIsTheOperatorsAndIgnoresCase()
+  {
+    var result = DiagramTemplateBinding.Bind(
+      [Rule("lamp", "relay", DiagramPartMatch.Name, " Lamp ")],
+      [Part("relay", "relay1", "lamp")]);
+
+    Assert.Equal("relay1", Assert.Single(result.Bound).Part.Token);
+  }
+
+  [Fact]
+  public void AnEmptyNameMatchesNothing()
+  {
+    var result = DiagramTemplateBinding.Bind(
+      [Rule("lamp", "relay", DiagramPartMatch.Name, "")],
+      [Part("relay", "relay1", "")]);
+
+    Assert.Empty(result.Bound);
+  }
+
+  [Fact]
+  public void TwoPartsWithOneNameBindNeither()
+  {
+    var result = DiagramTemplateBinding.Bind(
+      [Rule("lamp", "relay", DiagramPartMatch.Name, "lamp")],
+      [Part("relay", "a", "lamp"), Part("relay", "b", "lamp")]);
+
+    Assert.Empty(result.Bound);
+    Assert.NotEmpty(result.Warnings);
+  }
+
+  [Fact]
+  public void AnIndexCountsFromOneInTokenOrder()
+  {
+    var result = DiagramTemplateBinding.Bind(
+      [Rule("second", "relay", DiagramPartMatch.Index, "2")],
+      [Part("relay", "c"), Part("relay", "a"), Part("relay", "b")]);
+
+    // The manifest's order is not a contract; the order of the tokens is.
+    Assert.Equal("b", Assert.Single(result.Bound).Part.Token);
+  }
+
+  [Fact]
+  public void TwoRegionsOnOnePartBindNeither()
+  {
+    var result = DiagramTemplateBinding.Bind(
+      [
+        Rule("a", "relay", DiagramPartMatch.Token, "lamp"),
+        Rule("b", "relay", DiagramPartMatch.Name, "lamp"),
+      ],
+      [Part("relay", "lamp", "lamp")]);
+
+    Assert.Empty(result.Bound);
+    Assert.NotEmpty(result.Warnings);
+  }
+
+  [Fact]
+  public void APartThatIsNotThereBindsNothing()
+  {
+    var result = DiagramTemplateBinding.Bind(
+      [Rule("lamp", "relay", DiagramPartMatch.Token, "lamp")],
+      [Part("digital_input", "lamp")]);
+
+    // Same token, other kind: a relay region cannot stand for an input.
+    Assert.Empty(result.Bound);
+  }
+}

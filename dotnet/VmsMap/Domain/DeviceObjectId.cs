@@ -28,5 +28,17 @@ namespace VmsMap.Domain
     /// <summary>The node id of a camera as a device.</summary>
     public static string ForCamera(string cameraId) =>
       For(CameraSource, cameraId, DevicePart, string.Empty);
+
+    /// <summary>The part kind a device's diagram is registered under, as one node of its own.</summary>
+    public const string DiagramPart = "diagram";
+
+    // Its own derivation: a diagram is not a part of the device's I/O, and the type it is drawn
+    // from is deliberately absent — a device that starts reporting another model keeps its node.
+    private const string DiagramVersion = "device_diagram";
+
+    /// <summary>The node id of one device's diagram in `slot` — a rear panel today, a front one later.</summary>
+    public static string ForDeviceDiagram(string sourceKind, string sourceId, string slot) =>
+      ObjectIdGenerator.GenerateObjectId(
+        $"{sourceKind}|{sourceId}|{DiagramPart}|{slot}", DiagramVersion);
   }
 }
