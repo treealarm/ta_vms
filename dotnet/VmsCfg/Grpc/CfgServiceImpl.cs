@@ -17,7 +17,8 @@ namespace VmsCfg
     ScheduleDb scheduleDb,
     ScheduleCache scheduleCache,
     DaprClient daprClient,
-    VmsCfg.Demo.DemoMonitor demoMonitor,
+    VmsCfg.Demo.DemoInstaller demoInstaller,
+    DeviceSettingsNotifier deviceSettingsNotifier,
     ILogger<CfgServiceImpl> logger) : CfgService.CfgServiceBase
   {
     // One event for "something changed on this node, here is what". Replaces the old pair of
@@ -31,7 +32,6 @@ namespace VmsCfg
     // needs, so a late or reordered message cannot make it act on a stale snapshot.
     private const string ServerConfigChangedTopic = "server-config-changed";
     private const string CameraStateChangedTopic       = "camera-state-changed";
-    private const string DeviceSettingsChangedTopic    = "device-settings-changed";
     // The alarm definitions have travelled on this topic since M2.4c; M2.4d makes it mean the
     // subscriptions too. A replicable VmsMap reads the shared subscriptions-version key instead of
     // trusting this message, which reaches one replica; VmsSingleton is one instance and can.
@@ -51,7 +51,6 @@ namespace VmsCfg
 
     // The truth for a replicable VmsMap: the pub/sub event reaches one replica, the shared key is
     // read by all of them. The value is meaningless — only "different from last time" matters.
-    private const string DeviceSettingsVersionKey   = "device-settings-version";
 
     // Investigation boards are operator-created and never expire on their own, so the number one
     // person can accumulate is capped. Walls are unaffected — they are admin-managed.
@@ -68,10 +67,6 @@ namespace VmsCfg
     private sealed record ServerConfigChanged(
       [property: JsonPropertyName("server_id")] string ServerId,
       [property: JsonPropertyName("camera_ids")] IReadOnlyList<string> CameraIds);
-
-    // Spelled out for the same reason as the one above: the subscribers read snake_case.
-    private sealed record DeviceSettingsChanged(
-      [property: JsonPropertyName("camera_id")] string CameraId);
 
     /// One camera changed. The owning node is resolved here rather than threaded through every
     /// write handler: it is one indexed lookup on a path a human triggers, and it keeps all twelve
@@ -1044,11 +1039,14 @@ namespace VmsCfg
         throw new RpcException(new Status(
           StatusCode.InvalidArgument, $"There is no demo world '{request.DemoKey}'"));
 
-      var plan = await demoMonitor.InstallAsync(context.CancellationToken);
+      var installation = await demoInstaller.InstallAsync(context.CancellationToken);
+      var plan = installation.Monitor;
 
       logger.LogInformation(
-        "Demo wall '{Name}' installed: {Placed} cameras placed, {Skipped} skipped",
-        plan.Name, plan.Cameras.Count, plan.Skipped.Count);
+        "Demo wall '{Name}' installed: {Placed} cameras placed, {Skipped} skipped; " +
+        "parts configured: {Parts}; reaction installed: {Rule}",
+        plan.Name, plan.Cameras.Count, plan.Skipped.Count,
+        string.Join(", ", installation.Devices.Configured), installation.Routing.Installed);
 
       var report = new DemoMonitorReport { Installed = true };
       report.PlacedCameras.AddRange(plan.Cameras);
@@ -1063,9 +1061,9 @@ namespace VmsCfg
         throw new RpcException(new Status(
           StatusCode.InvalidArgument, $"There is no demo world '{request.DemoKey}'"));
 
-      var removed = await demoMonitor.RemoveAsync(context.CancellationToken);
+      var removed = await demoInstaller.RemoveAsync(context.CancellationToken);
       if (removed)
-        logger.LogInformation("Demo wall '{Name}' removed", VmsCfg.Demo.DemoMonitor.Name);
+        logger.LogInformation("Demo world '{Key}' removed", VmsCfg.Demo.DemoMonitor.DemoKey);
 
       return new OperationStatus { Success = true, Message = removed ? "ok" : "not installed" };
     }
@@ -1219,24 +1217,8 @@ namespace VmsCfg
       return new OperationStatus { Success = true };
     }
 
-    private async Task NotifyDeviceSettingsChangedAsync(string cameraId, CancellationToken ct)
-    {
-      try
-      {
-        await daprClient.SaveStateAsync(
-          StateStoreName, DeviceSettingsVersionKey, Guid.NewGuid().ToString("N"),
-          cancellationToken: ct);
-        await daprClient.PublishEventAsync(
-          _pubSubName, DeviceSettingsChangedTopic, new DeviceSettingsChanged(cameraId), ct);
-      }
-      catch (Exception ex)
-      {
-        // The write itself succeeded; a lost signal costs a replica its cache TTL, not the change.
-        logger.LogWarning(ex,
-          "device-settings-changed publish failed for '{CameraId}' — replicas will pick it up by TTL",
-          cameraId);
-      }
-    }
+    private Task NotifyDeviceSettingsChangedAsync(string cameraId, CancellationToken ct) =>
+      deviceSettingsNotifier.NotifyAsync(cameraId, ct);
 
     public override async Task<ListAlarmDefinitionsResponse> ListAlarmDefinitions(
       ListAlarmDefinitionsRequest request, ServerCallContext context)

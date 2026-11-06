@@ -85,7 +85,11 @@ Conventions that hold everywhere:
   No separate "is a device" flag is kept; `device_node` says which originals are devices, and which
   part of one (`part_kind`, `part_token`). `owner_id` always names an original, never another
   replica: a picture dropped from a replica's canvas is written as a picture of the node both show,
-  because every read that answers through an owner resolves it in one hop.
+  because every read that answers through an owner resolves it in one hop. **A device need not be
+  placed at all**: it exists as a canonical node the moment it is configured, and its parts —
+  digital inputs and relays — are canonical nodes under it. That is the tree **Admin → Nodes**
+  shows in full and **Admin → Maps → Devices** offers for placement; the map's **Nodes** tab shows
+  only what is drawn on the open space, pictures included.
 - **Positions are WGS84 plus a height in metres above the floor of their space** — never above sea
   level. Height above the ground is `space.elevation_m + height_m`; elevation matters only where
   coordinates are real, so a camera upstairs and one in the yard agree on heights.

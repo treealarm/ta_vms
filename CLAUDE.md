@@ -499,6 +499,28 @@ VmsFs, VmsOnvif or VmsCfg is written for the map's sake.
   open source outages — not from a MediaMTX path, which `video_srv` tears down when nobody watches.
   `camera-state-changed` sets the camera's `armed` property. The alarm counters bubble up
   `alarm_states` in the same transaction as the state write.
+- **A device's parts are nodes of the same device, and a node need not be placed.** A digital input
+  or a relay is a canonical node under its camera (`device_node.part_kind`), created from
+  `device-event`/`device-snapshot` and named by the settings that configure it; it has no geometry
+  and no placement of its own until M2.6 gives it a replica. **Admin → Nodes** shows the whole
+  logical tree (server → camera → parts) a level at a time, with a server-side search; **Admin →
+  Maps → Devices** is the placement palette (a click makes a picture, and the first placement
+  becomes the reference); the map's **Nodes** tab is only what is drawn on that canvas.
+- **Device events are monotonic.** The publisher's `(epoch, seq)` decides what is accepted; a clock
+  is only the fallback across processes. A repeat of the value already stored is not a transition
+  and writes no journal row, but it still advances the cursor — that is how a lost message or a
+  restart is repaired.
+- **`ALARM` is the condition; acknowledgement is the operator's mark.** ack is refused (409) while
+  the condition holds on an armed node; it never removes `ALARM`, and closing is what does.
+- **The routing engine is VmsSingleton's module**, not VmsMap's: VmsMap writes the journal row and
+  its outbox row in one transaction, and the router trusts `map-event-created` for the id only — it
+  re-reads the event, the subscriptions and the arming. A run's progress, cooldowns and diagnostics
+  live in the shared state store, so a second instance would degrade delivery but not duplicate it.
+- **An analytics detection reaches the journal only while an enabled `analytics` subscription asks
+  for one.** The detection stays in `ta_analytics` regardless; `map_event_at` and the publisher's
+  sweep make a crash between the insert and the bus harmless. VmsMap's gate is evaluated when the
+  detection is processed (≤30 s of staleness) and fails closed until it has loaded the
+  subscriptions once.
 - **Rights are rows on tree nodes**: `rights(object_id, subject, action)`, with `subject` a Keycloak
   role or user name and `action` from the open set `RightActions`. They inherit downwards; `admin`
   bypasses them and the single open/enforced switch decides what a node with no rows means. VmsMap

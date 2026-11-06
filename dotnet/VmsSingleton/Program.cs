@@ -51,6 +51,9 @@ builder.Services.AddSingleton<IRoutingDiagnostics, EntityStateRoutingDiagnostics
 // Registered as itself as well as a hosted service: the router reads it, and the hosted half is
 // the subscriber that invalidates it.
 builder.Services.AddSingleton<SubscriptionCache>();
+// The router reads the same instance through the interface; registering only the concrete type
+// leaves EventRouter unconstructible and the service dead on its first start.
+builder.Services.AddSingleton<ISubscriptionSource>(sp => sp.GetRequiredService<SubscriptionCache>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SubscriptionCache>());
 
 builder.Services.AddSingleton<ActionExecutor>();

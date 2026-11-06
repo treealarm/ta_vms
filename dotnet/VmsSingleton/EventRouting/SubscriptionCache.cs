@@ -69,6 +69,7 @@ public sealed class SubscriptionCache : ISubscriptionSource, IHostedService, IDi
         .Select(x => x!)
         .ToList();
       _loadedAtUtc = DateTime.UtcNow;
+      _logger.LogDebug("Loaded {Count} enabled event subscription(s)", _entries.Count);
       return _entries;
     }
     finally

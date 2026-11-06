@@ -44,6 +44,10 @@ public sealed class EventRouter(
     }
 
     var configured = await subscriptions.ListAsync(ct);
+    // One line per event at Debug: the question "why did nothing fire" is answered here first.
+    logger.LogDebug(
+      "Event {EventId} ({EventName}): {Count} enabled subscription(s)",
+      trigger.Id, trigger.EventName, configured.Count);
     if (configured.Count == 0)
       return RouteResult.Ack;
 

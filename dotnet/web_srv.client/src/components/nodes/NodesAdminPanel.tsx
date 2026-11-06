@@ -154,8 +154,9 @@ export default function NodesAdminPanel() {
     }
   }
 
-  const isPart = !!selected && !selected.cameraId && selected.nodeKind === 'object'
-    && !!selected.parentId && markers[selected.parentId]?.nodeKind === 'camera'
+  // A part is its own node kind now: the server resolves it from device_node, not from a guess
+  // about the parent.
+  const isPart = selected?.nodeKind === 'part'
 
   return (
     <MasterDetailLayout

@@ -27,7 +27,7 @@ export type MapVisual = {
   text?: string
 }
 
-export type MapNodeKind = 'space' | 'diagram' | 'landmark' | 'camera' | 'figure' | 'object'
+export type MapNodeKind = 'space' | 'diagram' | 'landmark' | 'camera' | 'part' | 'figure' | 'object'
 
 export type MapMarker = {
   id: string

@@ -26,7 +26,12 @@ builder.Services.AddSingleton<StorageDb>();
 builder.Services.AddSingleton<DeviceStorage>();
 builder.Services.AddSingleton<AlarmDefinitionStorage>();
 builder.Services.AddSingleton<EventSubscriptionStorage>();
+builder.Services.AddSingleton<DeviceSettingsNotifier>();
 builder.Services.AddSingleton<VmsCfg.Demo.DemoMonitor>();
+builder.Services.AddSingleton<VmsCfg.Demo.DemoDevices>();
+builder.Services.AddSingleton<VmsCfg.Demo.DemoRouting>();
+// One orchestration for the button and for `DEMO_CONFIG`: the same idempotent install either way.
+builder.Services.AddSingleton<VmsCfg.Demo.DemoInstaller>();
 // `DEMO_CONFIG` names a world whose video wall this service installs at startup; empty is none.
 builder.Services.AddHostedService<VmsCfg.Demo.DemoInstallService>();
 builder.Services.AddSingleton<CfgServiceImpl>();

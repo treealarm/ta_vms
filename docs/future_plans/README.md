@@ -23,4 +23,5 @@ here is deleted or cut down to what is still left.
 | [onvif-live-parameters.md](onvif-live-parameters.md) | Several devices per camera and cross-camera wiring, the UI poll interval as a setting, a fuller match between the demo world and OnvifSim's `Maryland`, the follower's first write after a restart |
 | [plan-or-diagram.md](plan-or-diagram.md) | План и диаграмма: настоящая ось — географическая рамка, а не тип сущности; свободные объекты на диаграммах, затем необязательная рамка |
 | [review-2026-10-27-leftovers.md](review-2026-10-27-leftovers.md) | What the 2026-10-27 review left open: how an edge-import replay ends, two live checks |
+| [scale-bench-100k.md](scale-bench-100k.md) | Полный стенд на 100 000 камер — распределённое развёртывание; что проверяется локально и что осталось |
 | [windows-hardware-encoders.md](windows-hardware-encoders.md) | A hardware encoder on Windows without an NVIDIA card: QSV through D3D11 checked, several streams left, AMF, Media Foundation |
