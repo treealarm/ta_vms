@@ -22,7 +22,9 @@ namespace VmsMap.Demo
     // 6: the port no longer alarms — the demo has no synthetic state, so its map starts calm.
     // 7: the second master/slave pair moved out to the road: master2 watches the ring road from the
     //    building's north wall, ptz2 turns after the car.
-    public const int UmdDataCenterVersion = 7;
+    // 8: a device's diagram — the camera's rear panel, drawn from its model, its regions the parts
+    //    the demo configured.
+    public const int UmdDataCenterVersion = 8;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -43,6 +45,7 @@ namespace VmsMap.Demo
     private const string SwitchType = "type/switch";
     private const string PortType = "type/port";
     private const string RoomLayoutType = "type/room-layout";
+    private const string CameraPanelType = "type/camera-rear-panel";
 
     // A replica of the camera on the vehicle, showing the readings the camera itself reports. Its
     // owner is the camera's canonical node, so values written there appear here.
@@ -62,6 +65,7 @@ namespace VmsMap.Demo
         new("file/switch-background", DemoArt.Switch(), "image/svg+xml"),
         new("file/port-icon", DemoArt.Port(), "image/svg+xml"),
         new("file/device-telemetry-background", DemoArt.Telemetry(), "image/svg+xml"),
+        new("file/camera-panel-background", DemoArt.CameraRearPanel(), "image/svg+xml"),
       };
 
       var types = new List<DemoDiagramType>
@@ -71,6 +75,7 @@ namespace VmsMap.Demo
         SwitchTypeDefinition(),
         new(PortType, "RJ45 Port", "file/port-icon", []),
         DeviceTelemetryTypeDefinition(),
+        CameraPanelTypeDefinition(),
       };
 
       var spaces = new List<DemoSpace>
@@ -215,6 +220,32 @@ namespace VmsMap.Demo
         new DemoRegion("rack-2", DemoArt.RoomRack(2),
           new Dictionary<string, string> { ["color"] = "#4fc3f7", ["fontSize"] = "12px" }),
       ]);
+
+    /// A camera as a switch is drawn: the model's rear panel, one region per terminal. The parts
+    /// are found by their tokens — `sim-master` declares exactly these four — and the type attaches
+    /// itself to any device that reports being this model. `sim-vehicle` is the same model and has
+    /// nothing configured, so it gets no diagram.
+    private static DemoDiagramType CameraPanelTypeDefinition() => new(
+      CameraPanelType,
+      "Camera rear panel",
+      "file/camera-panel-background",
+      [
+        new DemoRegion("input", DemoArt.CameraPanelSocket("input"),
+          PanelStyle, new DemoRegionPart("digital_input", "token", "input")),
+        new DemoRegion("lamp", DemoArt.CameraPanelSocket("lamp"),
+          PanelStyle, new DemoRegionPart("relay", "token", "lamp")),
+        new DemoRegion("peer", DemoArt.CameraPanelSocket("peer"),
+          PanelStyle, new DemoRegionPart("relay", "token", "peer")),
+        new DemoRegion("loop", DemoArt.CameraPanelSocket("loop"),
+          PanelStyle, new DemoRegionPart("relay", "token", "loop")),
+      ],
+      SourceKind: "camera",
+      DeviceManufacturer: "OnvifSim",
+      DeviceModel: "Simulated fixed camera",
+      AutoAttach: true);
+
+    private static readonly Dictionary<string, string> PanelStyle =
+      new() { ["color"] = "#4fc3f7", ["fontSize"] = "12px" };
 
     /// A rack cabinet with six equipment slots. The synthetic readings the demo used to keep here
     /// are gone: the world now shows the camera's own, on its Device telemetry diagram.

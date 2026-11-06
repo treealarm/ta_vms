@@ -454,6 +454,51 @@ def check_positions(vms, world):
     check(port.get("regionId") == "port-3", "Port 3 sits in the switch's port-3 region")
 
 
+def check_device_diagram(vms):
+    """The camera drawn from its model: the panel under it, its sockets holding the parts that
+    were configured — and a socket that lights up with its relay, because a replica shows its
+    owner's state rather than keeping one of its own."""
+    camera_node, parts = device_nodes(vms, "sim-master")
+    if not check(camera_node is not None, "sim-master has a canonical node"):
+        return
+
+    # Drawn when the parts are configured — a settings change, not the next sweep minutes away.
+    diagram = wait_until(
+        lambda: next((kid for kid in children(vms, camera_node["id"]) if kid.get("dgrType")), None),
+        60)
+    if not check(diagram is not None, "the camera's rear panel is drawn under it"):
+        return
+
+    check((diagram.get("name") or "").endswith("Camera rear panel"),
+          f"the diagram is named after its type (has {diagram.get('name')!r})")
+
+    content = vms.call("GET", f"/api/map/diagrams/{diagram['id']}/content?depth=1") or {}
+    placements = {row.get("id"): row for row in content.get("content") or []}
+    replicas = [row for row in content.get("children") or [] if row.get("id") in placements]
+
+    regions = {placements[row["id"]].get("regionId") for row in replicas}
+    check(regions == {"input", "lamp", "peer", "loop"},
+          f"the panel's four sockets hold a replica each (has {sorted(regions)})")
+
+    peer = next((part for part in parts if part.get("name") == "Peer"), None)
+    replica = next((row for row in replicas if row.get("ownerId") == (peer or {}).get("id")), None)
+    if not check(replica is not None, "the peer socket shows the peer relay"):
+        return
+
+    check(states_of(vms, [replica["id"]]).get(replica["id"]) is not None,
+          "the replica's states are readable through its owner")
+
+    set_relay(vms, camera_id("sim-master"), "peer", True)
+    lit = wait_until(
+        lambda: "RELAY_ACTIVE" in (states_of(vms, [replica["id"]]).get(replica["id"]) or []), 40)
+    set_relay(vms, camera_id("sim-master"), "peer", False)
+    check(lit, "closing `peer` lights its socket on the panel")
+
+    dark = wait_until(
+        lambda: "RELAY_INACTIVE" in (states_of(vms, [replica["id"]]).get(replica["id"]) or []), 40)
+    check(dark, "opening it again puts the socket out")
+
+
 def check_types(vms):
     types = {t.get("name"): t for t in diagram_types(vms)}
 
@@ -474,6 +519,16 @@ def check_types(vms):
           "Cisco Catalyst 9300 offers its eight ports")
 
     check("RJ45 Port" in types, "the port type is in the dictionary")
+
+    panel = types.get("Camera rear panel", {})
+    panel_regions = {r.get("regionKey") for r in panel.get("regions") or []}
+    check({"input", "lamp", "peer", "loop"} == panel_regions,
+          f"Camera rear panel offers its four sockets (has {sorted(panel_regions)})")
+    check(panel.get("sourceKind") == "camera" and panel.get("autoAttach") is True,
+          "the panel is a template that attaches itself to its model")
+    bindings = {r.get("regionKey"): (r.get("part") or {}) for r in panel.get("regions") or []}
+    check(bindings.get("peer", {}).get("matchValue") == "peer",
+          "the peer socket finds its part by token")
 
 
 def check_cameras(vms, world, allow_missing):
@@ -1093,6 +1148,8 @@ def main():
     if sim_up:
         print("Device I/O, alarms and the demo rule")
         check_provisioning(vms)
+        print("The device's own diagram")
+        check_device_diagram(vms)
         sensor = check_sensor_in_the_tree(vms)
         if sensor is not None:
             since = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()

@@ -24,6 +24,35 @@ namespace VmsMap.Demo
     public const int PortHeight = 40;
     public const int TelemetryWidth = 360;
     public const int TelemetryHeight = 220;
+    public const int CameraPanelWidth = 480;
+    public const int CameraPanelHeight = 320;
+
+    // The four sockets of the rear panel, left to right.
+    private static readonly (string Key, string Label)[] PanelSockets =
+    [
+      ("input", "INPUT"),
+      ("lamp", "LAMP"),
+      ("peer", "PEER"),
+      ("loop", "LOOP"),
+    ];
+
+    private const double PanelSocketTop = 0.44;
+    private const double PanelSocketWidth = 0.18;
+    private const double PanelSocketHeight = 0.20;
+    private const double PanelSocketLeft = 0.06;
+
+    /// The socket a terminal of the camera's rear panel is drawn in; its region is the same
+    /// rectangle, so a replica placed there sits exactly on the terminal.
+    public static DemoRect CameraPanelSocket(string key)
+    {
+      var index = Array.FindIndex(PanelSockets, socket => socket.Key == key);
+      if (index < 0)
+        throw new ArgumentException($"No socket '{key}' on the camera's rear panel", nameof(key));
+
+      return new DemoRect(
+        PanelSocketLeft + index * (PanelSocketWidth + 0.025), PanelSocketTop,
+        PanelSocketWidth, PanelSocketHeight);
+    }
 
     private const int PortCount = 8;
     private const int SlotCount = 6;
@@ -156,6 +185,26 @@ namespace VmsMap.Demo
         var (x, y, w, h) = Pixels(TelemetryReading(key), TelemetryWidth, TelemetryHeight);
         svg.Append($"<rect x=\"{N(x)}\" y=\"{N(y)}\" width=\"{N(w)}\" height=\"{N(h)}\" rx=\"3\" fill=\"#0f1a24\" stroke=\"#2c4154\" stroke-width=\"1\"/>");
         svg.Append($"<text x=\"18\" y=\"{N(y + h / 2 + 4)}\" font-family=\"monospace\" font-size=\"11\" fill=\"#6f8aa1\">{label}</text>");
+      }
+
+      return Close(svg);
+    }
+
+    /// A camera seen from behind: the body, the terminal block, and one socket per part the demo
+    /// configures. A device's diagram is a picture with regions, exactly like a mnemoscheme.
+    public static byte[] CameraRearPanel()
+    {
+      var svg = Open(CameraPanelWidth, CameraPanelHeight);
+      svg.Append("<rect x=\"8\" y=\"8\" width=\"464\" height=\"304\" rx=\"12\" fill=\"#16222e\" stroke=\"#3b5a75\" stroke-width=\"3\"/>");
+      svg.Append("<text x=\"28\" y=\"46\" font-family=\"monospace\" font-size=\"18\" letter-spacing=\"3\" fill=\"#7f9ab1\">CAMERA — REAR PANEL</text>");
+      svg.Append("<rect x=\"28\" y=\"64\" width=\"424\" height=\"40\" rx=\"4\" fill=\"#0f1a24\" stroke=\"#2c4154\" stroke-width=\"1\"/>");
+      svg.Append("<text x=\"40\" y=\"90\" font-family=\"monospace\" font-size=\"12\" fill=\"#5f7a91\">12V   GND   I/O   LAN   RESET</text>");
+
+      foreach (var (key, label) in PanelSockets)
+      {
+        var (x, y, w, h) = Pixels(CameraPanelSocket(key), CameraPanelWidth, CameraPanelHeight);
+        svg.Append($"<rect x=\"{N(x)}\" y=\"{N(y)}\" width=\"{N(w)}\" height=\"{N(h)}\" rx=\"4\" fill=\"#0f1a24\" stroke=\"#4a6a86\" stroke-width=\"2\"/>");
+        svg.Append($"<text x=\"{N(x + w / 2)}\" y=\"{N(y + h + 22)}\" text-anchor=\"middle\" font-family=\"monospace\" font-size=\"13\" fill=\"#9fb6cb\">{label}</text>");
       }
 
       return Close(svg);

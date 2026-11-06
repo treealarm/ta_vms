@@ -133,12 +133,33 @@ public class DemoWorldTests
   }
 
   [Fact]
+  public void TheCameraPanelIsATemplateForOneModel()
+  {
+    // A device's diagram: the model it is for, and the part each socket stands for, found by the
+    // token the camera itself reports.
+    var panel = _world.Types.Single(type => type.Name == "Camera rear panel");
+
+    Assert.Equal("camera", panel.SourceKind);
+    Assert.Equal("OnvifSim", panel.DeviceManufacturer);
+    Assert.Equal("Simulated fixed camera", panel.DeviceModel);
+    Assert.True(panel.AutoAttach);
+
+    var bindings = panel.Regions.ToDictionary(region => region.Key, region => region.Part);
+    Assert.Equal(4, bindings.Count);
+    Assert.All(bindings.Values, part => Assert.Equal("token", part!.MatchBy));
+    Assert.Equal("digital_input", bindings["input"]!.PartKind);
+    Assert.Equal("relay", bindings["lamp"]!.PartKind);
+    Assert.Equal("relay", bindings["peer"]!.PartKind);
+    Assert.Equal("relay", bindings["loop"]!.PartKind);
+  }
+
+  [Fact]
   public void TheSecondPairStandsOnTheRoadWithItsBackToTheBuilding()
   {
     // The hall pair works in Room 101; the second one moved out to the map, where the ring road
     // and the car it watches are: both cameras stand in space/umd, master2 looking north over the
     // road and ptz2 looking south-east along it.
-    Assert.Equal(7, _world.Version);
+    Assert.Equal(8, _world.Version);
 
     var master = _world.Placements.Single(placement => placement.CameraId == "sim-master2");
     Assert.Equal("space/umd", master.SpaceKey);

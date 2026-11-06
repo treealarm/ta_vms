@@ -159,6 +159,14 @@ namespace VmsMap.Adapter
         // now, not at the next heartbeat: the operator just put this input on guard.
         var sensorAlarms = scope.ServiceProvider.GetRequiredService<SensorAlarmService>();
         await sensorAlarms.ReconcileCameraAsync(evt.CameraId!, ct);
+
+        // A part that has just been configured gets its replica now, and one whose settings were
+        // removed loses it now: the next snapshot is minutes away, and the administrator is
+        // looking at the diagram.
+        var diagrams = scope.ServiceProvider.GetRequiredService<IDeviceDiagramService>();
+        await diagrams.EnsureAsync(
+          DeviceObjectId.CameraSource, evt.CameraId!, IDeviceDiagramService.DefaultSlot, ct);
+
         return TopicResponseAction.Success;
       }
       catch (OperationCanceledException) when (ct.IsCancellationRequested)
