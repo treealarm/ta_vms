@@ -36,6 +36,7 @@ import { useCameraDeepLink } from './settings/useCameraDeepLink'
 import type {
   AudioEncoderConfigDto,
   AudioEncoderConfigOptionsDto,
+  CameraGeoLocationDto,
   CameraSetupDto,
   DeviceCapabilitiesDto,
   DeviceInfoDto,
@@ -537,6 +538,56 @@ function DeviceInfoBlock({ cameraId }: { cameraId: string }) {
   )
 }
 
+// Where the camera itself says it stands. Read-only on purpose: the position on the map is the
+// administrator's, and only a camera explicitly set to follow the device (a separate flag) takes
+// this one into account.
+function GeoLocationBlock({ cameraId }: { cameraId: string }) {
+  const { t } = useTranslation()
+  const [geo, setGeo] = useState<CameraGeoLocationDto | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    void (async () => {
+      setLoading(true); setError(null)
+      try {
+        setGeo(await apiFetch<CameraGeoLocationDto>(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/geo-location`))
+      } catch (e: unknown) {
+        setGeo(null)
+        setError(e instanceof Error ? e.message : String(e))
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [cameraId])
+
+  return (
+    <Box>
+      <Typography variant="caption" color="text.secondary">{t('onvifSettings.geoLocation')}</Typography>
+      {loading ? (
+        <Skeleton width={220} />
+      ) : error ? (
+        <Alert severity="error" sx={{ mt: 0.5 }}>{error}</Alert>
+      ) : !geo?.found ? (
+        <Typography variant="body2" color="text.secondary">{t('onvifSettings.geoLocationNotReported')}</Typography>
+      ) : (
+        <Stack spacing={0.25}>
+          {/* A coordinate the camera omitted stays a dash: zero would be a real place. */}
+          <Typography variant="body2">
+            {geo.lat?.toFixed(6) ?? '—'}, {geo.lon?.toFixed(6) ?? '—'}
+          </Typography>
+          {geo.elevationM != null && (
+            <Typography variant="body2">
+              <Typography component="span" color="text.secondary">{t('onvifSettings.geoElevation')}: </Typography>
+              {geo.elevationM.toFixed(1)} m
+            </Typography>
+          )}
+        </Stack>
+      )}
+    </Box>
+  )
+}
+
 function toDatetimeLocalValue(utcIso: string): string {
   const d = new Date(utcIso)
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -605,6 +656,7 @@ function SystemSection({ cameraId }: { cameraId: string }) {
   return (
     <Stack spacing={3}>
       <DeviceInfoBlock cameraId={cameraId} />
+      <GeoLocationBlock cameraId={cameraId} />
 
       <Box>
         <Typography variant="caption" color="text.secondary">{t('onvifSettings.deviceTime')}</Typography>

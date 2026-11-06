@@ -13,6 +13,12 @@ namespace VmsMap.Domain
     Task<HashSet<string>> VisibleAsync(
       IReadOnlyCollection<string> objectIds, CallerContext caller, CancellationToken ct);
 
+    // Which of the requested nodes grant one action, in one pass. The batch form exists so a list
+    // endpoint never asks per row: with 100 000 nodes that is the difference between one query per
+    // level of the tree and one per row.
+    Task<HashSet<string>> AllowedAsync(
+      IReadOnlyCollection<string> objectIds, string action, CallerContext caller, CancellationToken ct);
+
     // Whether one action is granted on one node. Used by writes that check a right (CreateReplica).
     Task<bool> IsAllowedAsync(
       string objectId, string action, CallerContext caller, CancellationToken ct);

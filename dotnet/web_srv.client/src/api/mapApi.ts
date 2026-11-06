@@ -1,5 +1,7 @@
 import { enc, jsonRequest, requestJson } from './requestJson'
 import type {
+  MapAlarm,
+  MapAlarmList,
   MapAlarmStateList,
   MapBox,
   MapCreateReplicaRequest,
@@ -17,6 +19,7 @@ import type {
   MapFileInfo,
   MapFigure,
   MapFigures,
+  MapGetAlarmsRequest,
   MapGetByParentResponse,
   MapGetDiagramTypesRequest,
   MapGetLevelResponse,
@@ -84,6 +87,10 @@ export const mapApi = {
   getByName: (name: string) =>
     requestJson<MapMarkerList>(`${BASE}/objects/by-name?${query({ name })}`),
 
+  /** The logical tree searched without descending it: a node name, a part token or a camera id. */
+  searchDeviceNodes: (search: string, limit = 50) =>
+    requestJson<MapMarkerList>(`${BASE}/objects/search?${query({ query: search, limit })}`),
+
   getByParams: (
     props: MapPropertyFilter[], startId?: string, forward = 0, count = 100,
   ) => post<MapFigures>(`${BASE}/objects/by-params`, { props, startId, forward, count }),
@@ -103,6 +110,19 @@ export const mapApi = {
 
   getStateDescriptions: (states: string[] = []) =>
     post<MapStateDescriptionList>(`${BASE}/states/descriptions`, states),
+
+  // ── Alarms ─────────────────────────────────────────────────────────────────────────────────
+  // Two keyset pages in one call: open rows and the ones closed in the last quarter of an hour.
+  getAlarms: (request: MapGetAlarmsRequest = {}) =>
+    post<MapAlarmList>(`${BASE}/alarms`, request),
+
+  /** Refused with 409 when the condition is still active and the node is armed. */
+  acknowledgeAlarm: (id: string, comment: string) =>
+    post<MapAlarm>(`${BASE}/alarms/${enc(id)}/acknowledge`, { comment }),
+
+  /** Only an alarm whose condition is already gone may be closed by hand. */
+  closeAlarm: (id: string, reason: 'false_alarm' | 'other', comment: string) =>
+    post<MapAlarm>(`${BASE}/alarms/${enc(id)}/close`, { reason, comment }),
 
   // ── Events ─────────────────────────────────────────────────────────────────────────────────
   getEvents: (filter: MapEventsFilter) =>

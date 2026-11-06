@@ -22,4 +22,12 @@
     <ProjectReference Include="..\VmsFs\VmsFs.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The migrator reads Grpc/migrations from the content root, and content files of a
+         referenced project are not copied to this project's output. -->
+    <Content Include="..\VmsFs\Grpc\migrations\*.sql"
+             Link="Grpc\migrations\%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

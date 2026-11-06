@@ -30,6 +30,10 @@ public sealed class RpcExceptionFilter : IExceptionFilter
       StatusCode.DeadlineExceeded => StatusCodes.Status504GatewayTimeout,
       StatusCode.InvalidArgument => StatusCodes.Status400BadRequest,
       StatusCode.NotFound => StatusCodes.Status404NotFound,
+      // A right the caller does not hold, and a transition the entity forbids — the two refusals
+      // the alarm endpoints document as 403 and 409.
+      StatusCode.PermissionDenied => StatusCodes.Status403Forbidden,
+      StatusCode.FailedPrecondition => StatusCodes.Status409Conflict,
       StatusCode.Unavailable => StatusCodes.Status503ServiceUnavailable,
       _ => StatusCodes.Status502BadGateway
     };

@@ -33,7 +33,13 @@ public sealed class CameraPtzRouter(
   /// Empty is legitimate: PtzServiceImpl resolves the camera's first profile itself when it gets
   /// no token, which is the right answer for a camera whose streams were never given one.
   /// </param>
-  public sealed record Route(string OnvifAppId, string ProfileToken, bool HasTelemetry);
+  /// <param name="GeoFromDevice">
+  /// The camera's place on the map is its own ONVIF position, which moves with it. Geographic
+  /// calibration and aiming are refused for such a camera — a fit taken at one point is wrong at
+  /// the next one.
+  /// </param>
+  public sealed record Route(
+    string OnvifAppId, string ProfileToken, bool HasTelemetry, bool GeoFromDevice);
 
   private sealed record Entry(Route? Route, DateTime FetchedAt);
 
@@ -82,7 +88,8 @@ public sealed class CameraPtzRouter(
         : new Route(
             onvifAppId,
             resp.Setup.Streams.Select(s => s.ProfileToken).FirstOrDefault(t => !string.IsNullOrEmpty(t)) ?? string.Empty,
-            resp.Setup.HasTelemetry);
+            resp.Setup.HasTelemetry,
+            resp.Setup.GeoFromDevice);
 
       _entries[cameraId] = new Entry(route, DateTime.UtcNow);
       return route;

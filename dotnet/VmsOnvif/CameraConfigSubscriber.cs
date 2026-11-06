@@ -11,6 +11,7 @@ public sealed class CameraConfigSubscriber(
   CameraConnCache connCache,
   OnvifMetadataGateCache metadataGate,
   OnvifEventSubscriptionService subscriptionService,
+  DeviceIoStateService deviceIoState,
   string ownServerId,
   ILogger<CameraConfigSubscriber> logger) : IHostedService, IDisposable
 {
@@ -61,13 +62,13 @@ public sealed class CameraConfigSubscriber(
   private static readonly JsonSerializerOptions JsonOptions =
     new() { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
-  private Task<TopicResponseAction> HandleConfigChangedAsync(TopicMessage message, CancellationToken _)
+  private async Task<TopicResponseAction> HandleConfigChangedAsync(TopicMessage message, CancellationToken _)
   {
     try
     {
       var evt = JsonSerializer.Deserialize<ServerConfigChanged>(message.Data.Span, JsonOptions);
       if (evt is null)
-        return Task.FromResult(TopicResponseAction.Drop);
+        return TopicResponseAction.Drop;
 
       // Another node's change: dropped here, before any work. This is the whole point of the server
       // travelling with the event — deciding ownership used to mean fetching the camera from VmsCfg,
@@ -77,14 +78,15 @@ public sealed class CameraConfigSubscriber(
       // dropped here, and once under the old one, which is not, so the subscription it leaves behind
       // is released without waiting for the sweep.
       if (!string.Equals(evt.ServerId, ownServerId, StringComparison.OrdinalIgnoreCase))
-        return Task.FromResult(TopicResponseAction.Success);
+        return TopicResponseAction.Success;
 
       // Nothing named: the periodic sweep reconciles the whole set anyway, so ask it to run now.
       if (evt.CameraIds is not { Count: > 0 })
       {
         logger.LogDebug("Node-wide config change on '{ServerId}' — reconciling every camera", evt.ServerId);
         subscriptionService.NotifyAllCamerasChanged();
-        return Task.FromResult(TopicResponseAction.Success);
+        await deviceIoState.ForgetAllAsync();
+        return TopicResponseAction.Success;
       }
 
       foreach (var cameraId in evt.CameraIds)
@@ -93,13 +95,16 @@ public sealed class CameraConfigSubscriber(
         filterCache.Invalidate(cameraId);
         metadataGate.Invalidate(cameraId);
         subscriptionService.NotifyConfigChanged(cameraId);
+        // The I/O watcher holds a connection of its own; a changed address or credential would
+        // leave it polling the old one forever. The next settings read opens a new subscription.
+        await deviceIoState.ForgetAsync(cameraId);
       }
       logger.LogDebug("ONVIF caches invalidated for {Count} camera(s)", evt.CameraIds.Count);
-      return Task.FromResult(TopicResponseAction.Success);
+      return TopicResponseAction.Success;
     }
     catch
     {
-      return Task.FromResult(TopicResponseAction.Retry);
+      return TopicResponseAction.Retry;
     }
   }
 

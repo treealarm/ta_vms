@@ -11,7 +11,7 @@ public class StorageDb(NpgsqlDataSource dataSource)
   {
     await using var command = _dataSource.CreateCommand("""
       INSERT INTO storage (storage_id, root_path, reserved_bytes, disabled)
-      VALUES ($1, $2, $3, $4)
+      VALUES ($1::uuid, $2, $3, $4)
       ON CONFLICT (storage_id) DO UPDATE SET
         root_path      = EXCLUDED.root_path,
         reserved_bytes = EXCLUDED.reserved_bytes,
@@ -28,7 +28,7 @@ public class StorageDb(NpgsqlDataSource dataSource)
   /// Removes a storage, unless it is the last one.
   /// </summary>
   /// <remarks>
-  /// What is protected is the last storage, not the seeded "default" one: once a second volume
+  /// What is protected is the last storage, not the seeded one: once a second volume
   /// exists there is nothing special about the first, and refusing to delete it by name would
   /// leave an installation stuck with a path it has outgrown. Leaving zero storages is the case
   /// worth refusing — nothing records afterwards, and the failure is silent.
@@ -48,7 +48,7 @@ public class StorageDb(NpgsqlDataSource dataSource)
     }
 
     await using var command = _dataSource.CreateCommand(
-      "DELETE FROM storage WHERE storage_id = $1;");
+      "DELETE FROM storage WHERE storage_id = $1::uuid;");
     command.Parameters.AddWithValue(storageId);
     return await command.ExecuteNonQueryAsync(ct) > 0;
   }
@@ -56,7 +56,7 @@ public class StorageDb(NpgsqlDataSource dataSource)
   public async Task<List<Storage>> ListStoragesAsync(CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      SELECT s.storage_id, s.root_path, s.reserved_bytes, s.disabled,
+      SELECT s.storage_id::text, s.root_path, s.reserved_bytes, s.disabled,
              (SELECT count(*) FROM camera_storage cs WHERE cs.storage_id = s.storage_id)
       FROM storage s
       ORDER BY s.storage_id;
@@ -87,7 +87,7 @@ public class StorageDb(NpgsqlDataSource dataSource)
     await using var tx = await connection.BeginTransactionAsync(ct);
 
     await using (var del = new NpgsqlCommand(
-      "DELETE FROM camera_storage WHERE camera_id = $1;", connection, tx))
+      "DELETE FROM camera_storage WHERE camera_id = $1::uuid;", connection, tx))
     {
       del.Parameters.AddWithValue(cameraId);
       await del.ExecuteNonQueryAsync(ct);
@@ -97,7 +97,7 @@ public class StorageDb(NpgsqlDataSource dataSource)
     {
       await using var ins = new NpgsqlCommand("""
         INSERT INTO camera_storage (camera_id, storage_id, priority)
-        VALUES ($1, $2, $3);
+        VALUES ($1::uuid, $2::uuid, $3);
         """, connection, tx);
       ins.Parameters.AddWithValue(cameraId);
       ins.Parameters.AddWithValue(a.StorageId);
@@ -113,9 +113,9 @@ public class StorageDb(NpgsqlDataSource dataSource)
     CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand("""
-      SELECT camera_id, storage_id, priority
+      SELECT camera_id::text, storage_id::text, priority
       FROM camera_storage
-      WHERE camera_id = $1
+      WHERE camera_id = $1::uuid
       ORDER BY priority ASC;
       """);
     command.Parameters.AddWithValue(cameraId);

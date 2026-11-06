@@ -114,11 +114,17 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const diagramContent = useAppSelector((s) => s.diagrams.content)
   const diagramDepth = useAppSelector((s) => s.diagrams.depth)
 
-  // A diagram is its own canvas: the node selected from the canvas or the list opens it.
+  // A diagram is its own canvas: opening it from the list, or entering a nested one, replaces the
+  // map.
   const selectNode = (id: string) => {
     setSelection({ kind: 'node', id })
     openDiagram(markersById[id]?.nodeKind === 'diagram' ? id : null)
   }
+
+  // On the space's own canvas a click only selects. Entering a diagram on click would take the
+  // canvas away at the very moment its point must be dragged, and the point is the way in only
+  // for the operator; the administrator opens it from the node tree.
+  const selectOnCanvas = (id: string) => setSelection({ kind: 'node', id })
 
   // When a diagram is open, a selected child that has a row in it is an element of it.
   const shownDiagram = openDiagramId && diagramContent?.diagramId === openDiagramId ? diagramContent : null
@@ -154,9 +160,10 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     if (s.id) spaceZoomLevels[s.id] = figuresById[s.id]?.zoomLevel
   }
   const placementHere = (cameraId: string) => here.find((p) => p.cameraId === cameraId)
-  // The node that carries a placement: the canonical one for the reference, the picture otherwise.
+  // The node that carries a placement is a replica of the camera -- always, reference or picture:
+  // the canonical node stands under its server and is never drawn on a canvas.
   const nodeForPlacement = (p: CameraPlacementDto) =>
-    mapData.markers.find((m) => m.cameraId === p.cameraId && (p.isReference ? !m.ownerId : !!m.ownerId))
+    mapData.markers.find((m) => m.cameraId === p.cameraId && !!m.ownerId)
       ?? mapData.markers.find((m) => m.cameraId === p.cameraId)
   const referenceOf = (cameraId: string) => placements.find((p) => p.cameraId === cameraId && p.isReference)
   const spaceById = (id: string | undefined) => spaces.find((s) => s.id === id)
@@ -206,7 +213,6 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
       if (isNew && containerId) {
         await dispatch(movePlacedCamera({
           cameraId: p.cameraId,
-          isReference: p.isReference,
           canvasId: spaceId,
           containerId,
         })).unwrap()
@@ -640,7 +646,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
               descriptions={{}}
               levels={levels}
               selectedId={selectedNodeId}
-              onSelect={selectNode}
+              onSelect={selectOnCanvas}
               // A camera placed here is drawn by its marker, not by the shape the node carries.
               skipIds={new Set(mapData.markers
                 .filter((marker) => marker.cameraId && here.some((p) => p.cameraId === marker.cameraId))

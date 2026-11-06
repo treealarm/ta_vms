@@ -86,9 +86,11 @@ service MapService {
   // clustered by zoom layer, exactly as Square's map did.
   rpc GetByBox(GetByBoxRequest) returns (Figures);
   rpc GetByName(GetByNameRequest) returns (MarkerList);
+  // Admin → Nodes searches the logical tree without descending it: a node's name, a part's token,
+  // or a camera id. The tree is loaded a level at a time, so a token in an unopened server would
+  // otherwise be unfindable. Capped, and filtered by the caller's rights like every multi-node read.
+  rpc SearchDeviceNodes(SearchDeviceNodesRequest) returns (MarkerList);
   rpc GetByParams(GetByParamsRequest) returns (Figures);
-  // The canonical node of a camera, for the rights editor: a camera's id is not its node id.
-  rpc GetCameraNode(CameraRequest) returns (GetCameraNodeResponse);
   // One node with its properties and the zoom range of its layer.
   rpc GetObjProps(GetObjPropsRequest) returns (ObjProps);
   // A node with owner_id set: it shows the owner's states and values but has a place of its own.
@@ -100,9 +102,26 @@ service MapService {
   // The alarm counters of the named nodes. An empty list asks for every alarmed node the caller
   // may see: the operator's alarm list is not a set of ids the browser already knows.
   rpc GetAlarmedStates(GetStatesRequest) returns (AlarmStateList);
+  // The effective arming of one device node: an input's own setting when it has one, otherwise the
+  // nearest armed property of the space the camera stands in, otherwise the camera's own arming.
+  rpc GetNodeArming(GetNodeArmingRequest) returns (GetNodeArmingResponse);
   rpc GetStateDescriptions(GetStateDescriptionsRequest) returns (StateDescriptionList);
 
+  // The operator's alarm entity, independent of the ALARM state: a row with a status, an
+  // acknowledgement and a close reason. GetAlarms answers two keyset pages, open and recently
+  // closed, each with its own cursor; the state stays the way the map paints it.
+  rpc GetAlarms(GetAlarmsRequest) returns (AlarmList);
+  // The acknowledgement, close and raise transitions. Their refusals are gRPC statuses:
+  // PERMISSION_DENIED without the right, FAILED_PRECONDITION for a transition the table forbids,
+  // NOT_FOUND for an unknown alarm.
+  rpc AcknowledgeAlarm(AcknowledgeAlarmRequest) returns (Alarm);
+  rpc CloseAlarm(CloseAlarmRequest) returns (Alarm);
+  rpc RaiseAlarm(RaiseAlarmRequest) returns (Alarm);
+
   rpc GetEventsByFilter(GetEventsByFilterRequest) returns (EventList);
+  // One event by id. The event router trusts the journal, not the bus: map-event-created carries
+  // an id and nothing else, and GetEventsByFilter has no "by id" filter — start_id is a cursor.
+  rpc GetEvent(GetEventRequest) returns (Event);
 
   rpc GetTracksByFilter(GetTracksByFilterRequest) returns (TrackPointList);
   rpc GetTracksByBox(GetTracksByBoxRequest) returns (TrackPointList);
@@ -255,6 +274,15 @@ message GetByNameRequest {
   Caller caller = 2;
 }
 
+message SearchDeviceNodesRequest {
+  // A name fragment, a part token, or a camera id. Two characters at least: one letter would
+  // return the whole tree's worth of matches up to the cap.
+  string query = 1;
+  // Capped at 50 by the service; 0 means the default (50).
+  int32 limit = 2;
+  Caller caller = 3;
+}
+
 message PropertyFilter {
   string prop_name = 1;
   string str_val = 2;
@@ -293,11 +321,6 @@ message GetByBoxRequest {
 message GetObjPropsRequest {
   string id = 1;
   Caller caller = 2;
-}
-
-message GetCameraNodeResponse {
-  bool found = 1;
-  Marker marker = 2;
 }
 
 message ObjProps {
@@ -700,8 +723,131 @@ message AlarmState {
   uint32 version = 4;
 }
 
+// What a device node's arming currently resolves to, and where the answer came from. `source` is
+// "explicit" for the part's own arm_mode, "space" for an armed property inherited from the space
+// of the camera's reference replica, and "camera" for the camera's own armed flag.
+message NodeArming {
+  string object_id = 1;
+  bool   armed     = 2;
+  string source    = 3;
+}
+
+message GetNodeArmingRequest {
+  string object_id = 1;
+}
+
+message GetNodeArmingResponse {
+  // False when the id is not a device node; arming has no meaning for a space or a server.
+  bool found        = 1;
+  NodeArming arming = 2;
+}
+
 message AlarmStateList {
   repeated AlarmState states = 1;
+}
+
+// ── The alarm entity ─────────────────────────────────────────────────────────────────────────
+
+// One operator-facing alarm. It sits on top of the ALARM state rather than replacing it: the state
+// says "there is something wrong here now", this row says "somebody has to deal with it".
+// `cleared_at` is when the condition went away, `closed_at` when the alarm was dealt with; a
+// `returned` alarm has the first and not the second.
+message Alarm {
+  string id = 1;
+  string object_id = 2;
+  // The definition the alarm was raised under, from VmsCfg. Empty when the cache did not know it:
+  // the raise still happens, with severity 'warning'.
+  string definition_id = 3;
+  // The VmsCfg event_subscriptions row a subscription-sourced alarm belongs to; empty for the
+  // sensor and retention sources.
+  string subscription_id = 4;
+  string source = 5;       // "sensor" | "retention" | "subscription"
+  string dedup_key = 6;
+  // Whether the physical condition still holds. Acknowledgement does not change it.
+  bool condition_active = 7;
+  string status = 8;       // "active" | "acknowledged" | "returned" | "closed"
+  string severity = 9;     // "warning" | "critical"
+  google.protobuf.Timestamp raised_at = 10;
+  optional google.protobuf.Timestamp cleared_at = 11;
+  // Retention only: when the episode is projected to end.
+  optional google.protobuf.Timestamp expected_end_ts = 12;
+  optional google.protobuf.Timestamp acknowledged_at = 13;
+  string acknowledged_by = 14;
+  string ack_comment = 15;
+  optional google.protobuf.Timestamp closed_at = 16;
+  // "returned_to_normal", "acknowledged_after_normal", "auto_returned_to_normal", "device_gone",
+  // "false_alarm" or "other".
+  string close_reason = 17;
+  string close_comment = 18;
+  string closed_by = 19;   // the operator's name, or "system"
+  string source_event_id = 20;
+
+  // Whether this caller may acknowledge the row now: the `acknowledge` right, not closed, and
+  // either the condition is gone or the node is disarmed. The browser never guesses this.
+  bool can_ack = 21;
+  // The node's name and its camera id, so a list row needs no second read.
+  string object_name = 22;
+  string camera_id = 23;
+}
+
+// A keyset position: the last row of the previous page. Open pages order by (raised_at, id), the
+// closed ones by (closed_at, id); the service fills the pair from the branch it is paging.
+message AlarmCursor {
+  google.protobuf.Timestamp after = 1;
+  string after_id = 2;
+}
+
+message GetAlarmsRequest {
+  Caller caller = 1;
+  // Rows per page per branch; 0 means 100.
+  int32 page_size = 2;
+  // Empty starts at the newest.
+  AlarmCursor open_after = 3;
+  AlarmCursor closed_after = 4;
+  // How far back the closed branch reads; 0 means 15 minutes.
+  int32 closed_window_minutes = 5;
+}
+
+message AlarmPage {
+  repeated Alarm alarms = 1;
+  bool has_more = 2;
+  AlarmCursor next = 3;
+}
+
+message AlarmList {
+  AlarmPage open = 1;
+  AlarmPage closed = 2;
+}
+
+message AcknowledgeAlarmRequest {
+  string id = 1;
+  Caller caller = 2;
+  string comment = 3;
+}
+
+// `reason` is "false_alarm" or "other": a manual close is only ever of an alarm whose condition is
+// already gone, and it says whether the alarm was real.
+message CloseAlarmRequest {
+  string id = 1;
+  Caller caller = 2;
+  string reason = 3;
+  string comment = 4;
+}
+
+// The system's own raise, and the way a transition can be replayed. The adapters inside VmsMap call
+// the store directly; this exists for the alarm entity to be testable from outside.
+message RaiseAlarmRequest {
+  string object_id = 1;
+  string source = 2;        // "sensor" | "retention" | "subscription"
+  string dedup_key = 3;
+  // Empty takes the severity of the definition, or "warning" when the definition is unknown.
+  string severity = 4;
+  optional google.protobuf.Timestamp expected_end_ts = 5;
+  string source_event_id = 6;
+  Caller caller = 7;
+  // The VmsCfg event_subscriptions row a subscription-sourced alarm belongs to. Empty for the
+  // sensor and retention sources.
+  string subscription_id = 8;
 }
 
 // What the map paints a set of nodes from: their states, their alarm counters and the dictionary
@@ -752,6 +898,12 @@ message GetEventsByFilterRequest {
   string sort_key = 9;
   string sort_order = 10;
   Caller caller = 11;
+}
+
+// The id of one journal row. NotFound means the event is gone — a camera deleted with its history
+// takes its events with it — and the router drops the notification.
+message GetEventRequest {
+  string id = 1;
 }
 
 // ── Values and tracks ─────────────────────────────────────────────────────────

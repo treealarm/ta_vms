@@ -41,7 +41,7 @@ namespace VmsMap.Clients
         .ToList();
     }
 
-    private static CameraInfo ToInfo(CameraSetup setup) =>
-      new(setup.CameraId, setup.Name ?? string.Empty, setup.ServerId ?? string.Empty);
+    internal static CameraInfo ToInfo(CameraSetup setup) =>
+      new(setup.CameraId, setup.Name ?? string.Empty, setup.ServerId ?? string.Empty, setup.GeoFromDevice);
   }
 }

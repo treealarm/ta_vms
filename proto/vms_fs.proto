@@ -144,6 +144,10 @@ message RetainEventRequest {
   // only that something happened on a camera, which is not enough to tell motion from tamper when
   // several filters are armed at once.
   optional string trigger = 8;
+  // Whether the episode is an alarm for the map's operator: false keeps the recording and the
+  // journal entry but raises no alarm entity. Unset means true, so a caller that never heard of
+  // the field keeps today's behaviour.
+  optional bool raise_alarm = 9;
 }
 
 message GetRecordingsFromToRequest {
@@ -265,6 +269,9 @@ message RetentionEventRow {
   string event_uuid = 6;
   optional string object_id = 7;
   optional string trigger = 8;
+  // False for an episode recorded for another reason: it is not an alarm to the operator. A
+  // renewal never changes it.
+  optional bool raise_alarm = 9;
 }
 
 message ListRetentionEventsRequest {

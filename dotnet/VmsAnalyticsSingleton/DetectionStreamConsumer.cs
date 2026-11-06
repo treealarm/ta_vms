@@ -28,6 +28,7 @@ public sealed class DetectionStreamConsumer(
   ObjectSessionService sessions,
   VmsLog.EntityStatePublisher entityStatePublisher,
   RecentLiveEmbeddingCache recentEmbeddings,
+  AnalyticsEventPublisher mapEvents,
   ILogger<DetectionStreamConsumer> logger) : BackgroundService
 {
   protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -172,9 +173,14 @@ public sealed class DetectionStreamConsumer(
     // isn't retained either, so this detection has no episode to belong to. We still persist it (with
     // its event_id group) so the row isn't lost — it just can't appear in the per-episode details
     // panel, which is correct: there is no episode. The next successful detection opens one.
-    await PersistAsync(
+    var detectionId = await PersistAsync(
       cameraId, evt, detectedAt, eventId, eventUuid, objectId, storageId, cropPath,
       watch.StoreEmbeddings, ct);
+
+    // The row is the record, not this call: `map_event_at` stays null until the map has been told,
+    // and the publisher's sweep picks up whatever a crash leaves behind. Here we only shorten the
+    // wait to one bus round trip.
+    mapEvents.Offer(detectionId);
 
     entityStatePublisher.Publish("detection", $"{cameraId}/{evt.TrackId}", new
     {
@@ -228,7 +234,8 @@ public sealed class DetectionStreamConsumer(
     }
   }
 
-  private async Task PersistAsync(
+  /// <summary>Stores the detection and answers the row id the map event is keyed by.</summary>
+  private async Task<long> PersistAsync(
     string cameraId, DetectionEvent evt, DateTime detectedAt,
     string eventId, Guid? eventUuid, string objectId, string? storageId, string? cropPath,
     bool storeEmbeddings, CancellationToken ct)
@@ -251,18 +258,20 @@ public sealed class DetectionStreamConsumer(
     db.Detections.Add(row);
     await db.SaveChangesAsync(ct);
 
-    if (!storeEmbeddings || !EmbeddingCodec.TryEncodeNormalized(evt.Embedding, out var bytes, out var dim))
-      return;
-
-    db.DetectionEmbeddings.Add(new DbDetectionEmbedding
+    if (storeEmbeddings && EmbeddingCodec.TryEncodeNormalized(evt.Embedding, out var bytes, out var dim))
     {
-      DetectionId = row.Id,
-      Kind = row.Kind,
-      Dim = dim,
-      Embedding = bytes,
-      Model = EmbeddingCodec.ModelOrNull(evt.EmbeddingModel),
-    });
-    await db.SaveChangesAsync(ct);
+      db.DetectionEmbeddings.Add(new DbDetectionEmbedding
+      {
+        DetectionId = row.Id,
+        Kind = row.Kind,
+        Dim = dim,
+        Embedding = bytes,
+        Model = EmbeddingCodec.ModelOrNull(evt.EmbeddingModel),
+      });
+      await db.SaveChangesAsync(ct);
+    }
+
+    return row.Id;
   }
 
   // Returns the episode (event_uuid) the retention call opened or extended, or null on failure.

@@ -36,6 +36,9 @@
     <!-- The node's retention journal and source liveness, read by the alarm and connectivity
          adapters. -->
     <Protobuf Include="..\..\proto\vms_fs.proto" GrpcServices="Client" />
+    <!-- Where a camera says it stands, for the cameras flagged to take their place from the
+         device. Read through the camera's own node's VmsOnvif; see CameraGeoFollower. -->
+    <Protobuf Include="..\..\proto\onvif.proto" GrpcServices="Client" />
   </ItemGroup>
 
   <ItemGroup>

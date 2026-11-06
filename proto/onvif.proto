@@ -507,6 +507,7 @@ service DeviceIoService {
   rpc GetDigitalInputs(CameraRequest) returns (GetDigitalInputsResponse);
   rpc GetDigitalInputOptions(CameraRequest) returns (GetDigitalInputOptionsResponse);
   rpc SetDigitalInputIdleState(SetDigitalInputIdleStateRequest) returns (DeviceIoResponse);
+  rpc GetCameraGeoLocation(CameraRequest) returns (GetCameraGeoLocationResponse);
 }
 
 message DeviceIoResponse {
@@ -514,14 +515,31 @@ message DeviceIoResponse {
   string error   = 2;
 }
 
+// Where the camera says it stands, taken from its own geolocation entry (the one the standard names
+// "Device"). Each coordinate is optional on the wire — it arrives with its own *Specified flag — so
+// one that is unset means the camera did not report it, not that it stands at zero: zero is a real
+// place (the equator, the prime meridian). found is false when the camera reports no location at
+// all, and error carries why the question could not be asked.
+message GetCameraGeoLocationResponse {
+  bool            found       = 1;
+  optional double lat         = 2;
+  optional double lon         = 3;
+  optional double elevation_m = 4;
+  string          error       = 5;
+}
+
 // ONVIF's GetRelayOutputs has no field for the relay's current logical (active/inactive) state —
-// only its configured Mode/DelayTime/IdleState (see RelayOutputSettings in onvif.xsd). Live state
-// can only be tracked client-side after a command, never polled.
+// only its configured Mode/DelayTime/IdleState (see RelayOutputSettings in onvif.xsd). The live
+// state comes from Device/Trigger/Relay property events instead: the subscription replays the
+// current state as Initialized and reports changes as Changed.
 message RelayOutput {
   string    token     = 1;
   RelayMode mode      = 2;
   IdleState idle_state = 3;
   int32     delay_ms  = 4;
+  // The coil's live state. Unset until the camera has reported one — the subscription's replay
+  // arrives asynchronously, so the first polls after it opens may have no value yet.
+  optional bool live_active = 5;
 }
 
 message GetRelayOutputsResponse {
@@ -559,11 +577,14 @@ message SetRelayOutputSettingsRequest {
 
 // GetDigitalInputs has no live logical-state field either (per onvif.xsd DigitalInput) — only
 // the idle-state configuration. has_idle_state is false when the camera didn't report it at all
-// (IdleStateSpecified == false on the wire).
+// (IdleStateSpecified == false on the wire). The live state comes from Device/Trigger/DigitalInput
+// property events, exactly as a relay's does.
 message DigitalInput {
   string    token          = 1;
   IdleState idle_state     = 2;
   bool      has_idle_state = 3;
+  // The line's live state: true when the input reads true. Unset until the camera has reported one.
+  optional bool live_active = 4;
 }
 
 message GetDigitalInputsResponse {

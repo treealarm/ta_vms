@@ -5,7 +5,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Vms.Map;
+using VmsMap.Adapter;
 using VmsMap.Clients;
 using VmsMap.Db;
 using VmsMap.Demo;
@@ -63,15 +65,18 @@ public class CanvasQueryTests
     var rights = new RightsService(db);
     var spatial = new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier());
 
+    var events = new EventsService(db, map);
     var grpc = new MapServiceImpl(
       db, map, updates, geo, levels, trackService, states, stateService,
-      new EventsService(db, map), new ValuesService(db), tracks,
+      events, new EventsWriter(db, events), new ValuesService(db), tracks,
       new DiagramService(db), new DiagramTypeService(db), new RightService(db), rights,
       new TestRightsNotifier(),
       new VisualService(db), new FileService(db), spatial, null!,
       new DemoSeeder(
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
-        new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog()));
+        new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog(),
+        TestWiring.DeviceNodes(db, map, updates)),
+      TestWiring.Arming(db), TestWiring.Alarms(db, map, states));
 
     return new Services(db, map, geo, spatial, grpc);
   }

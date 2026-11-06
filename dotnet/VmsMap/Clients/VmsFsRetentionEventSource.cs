@@ -58,7 +58,9 @@ namespace VmsMap.Clients
         row.AlarmEndTs is not null ? row.AlarmEndTs.ToDateTime() : null,
         row.HasStreamName ? row.StreamName : null,
         row.HasTrigger ? row.Trigger : null,
-        row.EventUuid);
+        row.EventUuid,
+        // Unset means true: a row written before the flag existed was an alarm.
+        !row.HasRaiseAlarm || row.RaiseAlarm);
     }
   }
 }

@@ -104,9 +104,11 @@ public class DbMigrator(
     // consume the last byte of the volume, which on a single-box install also holds the database
     // and the logs.
     const long defaultReservedBytes = 5L * 1024 * 1024 * 1024;
+    // Storage ids are UUIDs; this well-known one names the volume the deployment started with, so
+    // a reinstall that recreates the database and seeds again lands on the same id.
     db.Storages.Add(new DbStorage
     {
-      StorageId = "default",
+      StorageId = "00000000-0000-0000-0000-0000000000d1",
       RootPath = rootPath,
       ReservedBytes = defaultReservedBytes,
     });

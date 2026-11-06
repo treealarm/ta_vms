@@ -253,6 +253,38 @@ public class MapAdminController(
       WallError: wallError));
   }
 
+  // ── Event routing ───────────────────────────────────────────────────────────────────────────
+
+  /// The subscriptions the router in VmsSingleton executes. VmsCfg owns and validates them; the
+  /// panel is only a view over that contract, so a selector the router cannot match is refused at
+  /// save time rather than silently ignored at run time.
+  [HttpGet("event-subscriptions")]
+  public async Task<IActionResult> ListEventSubscriptions(CancellationToken ct)
+  {
+    var response = await cfg.ListEventSubscriptionsAsync(
+      new CfgProto.ListEventSubscriptionsRequest(), MapApi.Options(ct));
+    return MapApi.Json(response);
+  }
+
+  [HttpPut("event-subscriptions")]
+  public async Task<IActionResult> UpsertEventSubscription(
+    [FromBody] JsonElement body, CancellationToken ct)
+  {
+    var request = MapApi.Parse<CfgProto.UpsertEventSubscriptionRequest>(body);
+    var status = await cfg.UpsertEventSubscriptionAsync(request, MapApi.Options(ct));
+
+    return status.Success ? Ok(status) : BadRequest(new { error = status.Message });
+  }
+
+  [HttpDelete("event-subscriptions/{id}")]
+  public async Task<IActionResult> RemoveEventSubscription(string id, CancellationToken ct)
+  {
+    var status = await cfg.RemoveEventSubscriptionAsync(
+      new CfgProto.RemoveEventSubscriptionRequest { Id = id }, MapApi.Options(ct));
+
+    return status.Success ? Ok(status) : BadRequest(new { error = status.Message });
+  }
+
   // ── Files ───────────────────────────────────────────────────────────────────────────────────
 
   /// A plan, a diagram background or an icon, stored as a row of `files` in ta_map. The row is

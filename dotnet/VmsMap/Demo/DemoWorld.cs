@@ -65,7 +65,11 @@ namespace VmsMap.Demo
     // point, and without a picture it is a plain dot nobody would take for an entrance.
     string? VisualKey = null,
     int? VisualWidth = null,
-    int? VisualHeight = null);
+    int? VisualHeight = null,
+    // A replica of a camera: the node shows that camera's states and values (`objects.owner_id`),
+    // and is skipped, and reported, while the deployment does not have the camera. It gets no
+    // camera_placement — a diagram's canvas is not a space.
+    string? OwnerCameraId = null);
 
   /// A scale layer: zoom levels at which the nodes that name it are drawn.
   public sealed record DemoLevel(string Name, int Min, int Max);
@@ -83,7 +87,8 @@ namespace VmsMap.Demo
     double RangeM = 30,
     bool IsReference = true);
 
-  /// A state row on a node: `DISCONNECTED` on a switch port is the demo's alarm.
+  /// A state row on a node. The demo writes no alarm: its one row is `CONNECTED` on a switch
+  /// port, replacing the `DISCONNECTED` earlier worlds installed.
   public sealed record DemoState(string NodeKey, params string[] States);
 
   /// A right on a node. The world grants `view` to the deployment's `user` role at its root.

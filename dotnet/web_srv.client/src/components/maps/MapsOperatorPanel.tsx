@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Box, Tab, Tabs, ToggleButton, Tooltip, Typography } from '@mui/material'
+import {
+  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel,
+  Radio, RadioGroup, Tab, Tabs, TextField, ToggleButton, Tooltip, Typography,
+} from '@mui/material'
+import { useSearchParams } from 'react-router-dom'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
-import LoginIcon from '@mui/icons-material/Login'
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
 import PersonPinCircleIcon from '@mui/icons-material/PersonPinCircle'
 import SearchIcon from '@mui/icons-material/Search'
@@ -9,13 +13,14 @@ import TableRowsIcon from '@mui/icons-material/TableRows'
 import { Polyline } from 'react-leaflet'
 import { useTranslation } from 'react-i18next'
 import type { GeoPointDto, PtzGeoAimResultDto } from '../../dto/dtos'
-import type { MapEvent, MapMarker } from '../../dto/mapDtos'
+import type { MapAlarm, MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
+import { acknowledgeAlarm, closeAlarm, loadAlarms } from '../../store/alarmsSlice'
 import { loadCameras } from '../../store/liveSlice'
 import { errorText, loadPlacements, loadSpaces, spatialRequest } from '../../store/spatialSlice'
 import { loadNodes, resolveCameraNode, revealNode } from '../../store/objectsSlice'
 import { clearTracks } from '../../store/tracksSlice'
-import { RECENT_ALARM_MINUTES, alarmEndMs } from '../../store/eventsSlice'
+import { RECENT_ALARM_MINUTES } from '../../store/eventsSlice'
 import { useMapSpace } from '../../hooks/useMapSpace'
 import { useAlarmFeed } from '../../hooks/useAlarmFeed'
 import SpaceCanvas, { type MapFocus } from '../../map/SpaceCanvas'
@@ -34,11 +39,13 @@ import ObjectSearch from '../objects/ObjectSearch'
 import DiagramViewer from '../diagrams/DiagramViewer'
 import StatesTable from '../events/StatesTable'
 import SpaceNav from './SpaceNav'
-import MapObjectList from './MapObjectList'
+import MapObjectList, { type MapObjectItem } from './MapObjectList'
 import { rootsOf, sharesGeometry } from './spatialUtils'
 
 /** The camera list carries recording state and stream freshness; this is how stale the map may get. */
 const CAMERA_POLL_MS = 5000
+/** The alarm entity changes when an operator acts or a condition moves; a short poll is enough. */
+const ALARM_POLL_MS = 5000
 /** Placements change when an administrator edits the map — rarely. */
 const PLACEMENT_POLL_MS = 30000
 
@@ -53,23 +60,21 @@ const DETECTIONS_KEY = 'maps.operator.detections'
 const readDetections = () => { try { return localStorage.getItem(DETECTIONS_KEY) !== 'off' } catch { return true } }
 const writeDetections = (on: boolean) => { try { localStorage.setItem(DETECTIONS_KEY, on ? 'on' : 'off') } catch { /* private mode */ } }
 
-type AlarmEntry = {
-  key: string
-  nodeId: string
-  cameraId?: string
-  name: string
-  secondary: string
-  active: boolean
-}
+/** What the alarm dialog is open for, and what it will do when confirmed. */
+type AlarmDialogState = { alarm: MapAlarm; action: 'acknowledge' | 'close' }
 
 /**
  * Operator → Map: the one tree of nodes on the left, the space where the chosen node stands in the
  * middle — its arbitrary figures painted by their states — and the node itself on the right.
- * Alarms come from states and the journal, not from a polled camera list.
+ * The alarm list is the map's alarm entity, not the ALARM state: the state says something is wrong
+ * and paints the map, the alarm says who has to deal with it.
  */
 export default function MapsOperatorPanel() {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
+  const [searchParams] = useSearchParams()
+  // The node the journal asked to open: `?node=<uuid>` when an alarm event was clicked.
+  const requestedNode = searchParams.get('node')
   const spaces = useAppSelector((s) => s.spatial.spaces)
   const placements = useAppSelector((s) => s.spatial.placements)
   const loaded = useAppSelector((s) => s.spatial.loaded)
@@ -78,8 +83,9 @@ export default function MapsOperatorPanel() {
   const statesById = useAppSelector((s) => s.states.states)
   const alarmsById = useAppSelector((s) => s.states.alarms)
   const descriptions = useAppSelector((s) => s.states.descriptions)
-  const alarmStates = useAppSelector((s) => s.states.all)
-  const recentAlarms = useAppSelector((s) => s.events.recentAlarms)
+  const openAlarms = useAppSelector((s) => s.alarms.open)
+  const closedAlarms = useAppSelector((s) => s.alarms.closed)
+  const alarmsMore = useAppSelector((s) => s.alarms.openHasMore || s.alarms.closedHasMore)
   const levels = useAppSelector((s) => s.levels.levels)
   const tracks = useAppSelector((s) => s.tracks.tracks)
   const tracksSpaceId = useAppSelector((s) => s.tracks.spaceId)
@@ -98,10 +104,23 @@ export default function MapsOperatorPanel() {
   const [aimError, setAimError] = useState<string | null>(null)
   const [focus, setFocus] = useState<MapFocus | null>(null)
   const [detections, setDetections] = useState(readDetections)
+  // The row an operator picked and the action they picked for it; confirmed in one dialog.
+  const [alarmDialog, setAlarmDialog] = useState<AlarmDialogState | null>(null)
+  const [alarmComment, setAlarmComment] = useState('')
+  const [alarmReason, setAlarmReason] = useState<'false_alarm' | 'other'>('false_alarm')
+  const [alarmError, setAlarmError] = useState<string | null>(null)
+  const [alarmBusy, setAlarmBusy] = useState(false)
 
   const space = spaces.find((s) => s.id === spaceId) ?? rootsOf(spaces)[0] ?? null
   const spaceData = useMapSpace(space)
   useAlarmFeed()
+
+  // The entities themselves: open rows and the ones closed in the last minutes, from VmsMap.
+  useEffect(() => {
+    void dispatch(loadAlarms({}))
+    const timer = window.setInterval(() => void dispatch(loadAlarms({})), ALARM_POLL_MS)
+    return () => window.clearInterval(timer)
+  }, [dispatch])
 
   const here = placements
     .filter((p) => p.spaceId === space?.id && camerasById[p.cameraId])
@@ -140,10 +159,11 @@ export default function MapsOperatorPanel() {
     }
   }, [dispatch])
 
-  // The camera node behind the placement: the canonical node for the reference, its picture for
-  // the other placements. Its state, not the camera's recording status, paints the marker.
-  const nodeForPlacement = (p: { cameraId: string; isReference: boolean }) =>
-    spaceData.markers.find((m) => m.cameraId === p.cameraId && (p.isReference ? !m.ownerId : !!m.ownerId))
+  // The node behind a placement is always a replica of the camera: the canonical node stands under
+  // its server and is never drawn on a canvas. A reference and a picture differ by the flag, not by
+  // the node, so the matching marker is the one with an owner.
+  const nodeForPlacement = (p: { cameraId: string }) =>
+    spaceData.markers.find((m) => m.cameraId === p.cameraId && !!m.ownerId)
       ?? spaceData.markers.find((m) => m.cameraId === p.cameraId)
   const placementColor = (p: { cameraId: string; isReference: boolean }) => {
     const node = nodeForPlacement(p)
@@ -170,68 +190,23 @@ export default function MapsOperatorPanel() {
     return ids
   }, [spaces, alarmsById])
 
-  // The alarm list: running alarms from the states, alarms that just ended from the journal, so
-  // the pale ring survives NORM.
-  const alarmEntries = useMemo(() => {
-    // Recent events are already pruned by the poll that fetched them; the render itself must stay
-    // pure, so no clock is read here.
-    const latestEvent = new Map<string, MapEvent>()
-    for (const event of recentAlarms) {
-      if (!event.objectId) continue
-      const known = latestEvent.get(event.objectId)
-      const end = alarmEndMs(event) ?? Number.POSITIVE_INFINITY
-      const knownEnd = known ? alarmEndMs(known) ?? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY
-      if (end > knownEnd) latestEvent.set(event.objectId, event)
-    }
-
-    const nameOf = (nodeId: string) => {
-      const marker = markers[nodeId]
-      const cameraName = marker?.cameraId ? camerasById[marker.cameraId]?.name : undefined
-      return marker?.name || cameraName || nodeId
-    }
-    const causeOf = (event?: MapEvent) =>
-      [event?.param1 || event?.param0, event?.timestamp ? clock(event.timestamp) : ''].filter(Boolean).join(' · ')
-
-    const running: AlarmEntry[] = alarmStates
-      .filter((alarm) => alarm.alarm && alarm.id)
-      .map((alarm) => {
-        const nodeId = alarm.id as string
-        return {
-          key: `state:${nodeId}`,
-          nodeId,
-          cameraId: markers[nodeId]?.cameraId,
-          name: nameOf(nodeId),
-          secondary: causeOf(latestEvent.get(nodeId)),
-          active: true,
-        }
-      })
-
-    const ended: AlarmEntry[] = [...latestEvent.entries()]
-      .filter(([nodeId]) => !alarmStates.some((alarm) => alarm.id === nodeId && alarm.alarm))
-      .flatMap(([nodeId, event]) => {
-        if (alarmEndMs(event) === undefined) return []
-        return [{
-          key: `event:${event.id}`,
-          nodeId,
-          cameraId: markers[nodeId]?.cameraId,
-          name: nameOf(nodeId),
-          secondary: causeOf(event),
-          active: false,
-        }]
-      })
-
-    return [...running, ...ended]
-  }, [alarmStates, recentAlarms, markers, camerasById])
+  // The alarm entity, newest first. A row whose condition is still there is a running alarm; a
+  // closed one stays visible for the window VmsMap serves, so the ring survives NORM.
+  const alarmRows = useMemo(
+    () => [...openAlarms, ...closedAlarms],
+    [openAlarms, closedAlarms],
+  )
 
   const byCamera = useMemo(() => {
     const result = new Map<string, 'active' | 'recent'>()
-    for (const entry of alarmEntries) {
-      if (entry.cameraId && (!result.has(entry.cameraId) || entry.active)) {
-        result.set(entry.cameraId, entry.active ? 'active' : 'recent')
-      }
+    for (const alarm of alarmRows) {
+      const cameraId = alarm.cameraId || (alarm.objectId ? markers[alarm.objectId]?.cameraId : undefined)
+      if (!cameraId) continue
+      const active = alarm.status !== 'closed'
+      if (!result.has(cameraId) || active) result.set(cameraId, active ? 'active' : 'recent')
     }
     return result
-  }, [alarmEntries])
+  }, [alarmRows, markers])
 
   // Aiming goes by where the camera really stands, which may be another space altogether.
   const reference = placements.find((p) => p.cameraId === selectedCameraId && p.isReference)
@@ -289,7 +264,7 @@ export default function MapsOperatorPanel() {
    * resolve it.
    */
   const selectCamera = async (cameraId: string) => {
-    const known = Object.values(markers).find((m) => m.cameraId === cameraId && !m.ownerId)
+    const known = Object.values(markers).find((m) => m.cameraId === cameraId && !!m.ownerId)
       ?? Object.values(markers).find((m) => m.cameraId === cameraId)
     if (known) {
       selectNode(known)
@@ -399,37 +374,112 @@ export default function MapsOperatorPanel() {
     }
   }
 
+  // Opened from the journal's alarm event: select the node the alarm stands on and show the list
+  // it came from. The node may not be on this canvas, so it is loaded and revealed like a search hit.
+  useEffect(() => {
+    if (!requestedNode) return
+    setLeftTab(1)
+    setSelectedNodeId(requestedNode)
+    void (async () => {
+      const loaded = await dispatch(loadNodes([requestedNode])).unwrap().catch(() => null)
+      const marker = loaded?.markers.find((candidate) => candidate.id === requestedNode)
+      if (marker) await revealFromSearch(marker)
+    })()
+    // The reveal is the same one a search does; re-running it on every marker change would fight
+    // the operator's own navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedNode, dispatch])
+
   if (loaded && !space) {
     return <Typography color="text.secondary" sx={{ p: 2 }}>{t('maps.noSpacesOperator')}</Typography>
   }
   if (!space) return null
 
+  const openAlarmDialog = (alarm: MapAlarm, action: 'acknowledge' | 'close') => {
+    setAlarmDialog({ alarm, action })
+    setAlarmComment('')
+    setAlarmReason('false_alarm')
+    setAlarmError(null)
+  }
+
+  const submitAlarmDialog = async () => {
+    if (!alarmDialog?.alarm.id) return
+
+    setAlarmBusy(true)
+    setAlarmError(null)
+    try {
+      if (alarmDialog.action === 'close') {
+        await dispatch(closeAlarm({
+          id: alarmDialog.alarm.id, reason: alarmReason, comment: alarmComment,
+        })).unwrap()
+      } else {
+        await dispatch(acknowledgeAlarm({
+          id: alarmDialog.alarm.id, comment: alarmComment,
+        })).unwrap()
+      }
+      setAlarmDialog(null)
+    } catch (e) {
+      // 409 is the rule refusing a live condition on an armed node; show its own sentence.
+      setAlarmError(errorText(e))
+    } finally {
+      setAlarmBusy(false)
+    }
+  }
+
+  /** An alarm whose node is not on any loaded canvas yet: read it, then reveal it in the tree. */
+  const openAlarmNode = async (objectId: string) => {
+    const loaded = await dispatch(loadNodes([objectId])).unwrap().catch(() => null)
+    const marker = loaded?.markers.find((candidate) => candidate.id === objectId)
+    if (marker) await revealFromSearch(marker)
+  }
+
+  const alarmSecondary = (alarm: MapAlarm) => [
+    t(`alarms.source.${alarm.source || 'sensor'}`),
+    t(`alarms.status.${alarm.status || 'active'}`),
+    t(`alarms.severity.${alarm.severity || 'warning'}`),
+    alarm.raisedAt ? clock(alarm.raisedAt) : '',
+  ].filter(Boolean).join(' · ')
+
+  const alarmItems: MapObjectItem[] = alarmRows.map((alarm) => {
+      const nodeId = alarm.objectId ?? ''
+      const marker = markers[nodeId]
+      const cameraId = alarm.cameraId || marker?.cameraId
+      const active = alarm.status !== 'closed'
+      return {
+        key: alarm.id ?? `${nodeId}:${alarm.raisedAt}`,
+        primary: alarm.objectName || marker?.name || (cameraId ? camerasById[cameraId]?.name : '') || nodeId,
+        secondary: alarmSecondary(alarm),
+        dot: active ? ALARM_COLOR : `${ALARM_COLOR}66`,
+        selected: nodeId === selectedNodeId,
+        onClick: () => {
+          const clicked = markers[nodeId]
+          if (clicked) selectNode(clicked)
+          else if (cameraId) void selectCamera(cameraId)
+          else void openAlarmNode(nodeId)
+        },
+        action: {
+          title: alarm.canAck ? t('alarms.acknowledge') : t('alarms.cannotAcknowledge'),
+          icon: <CheckCircleOutlineIcon fontSize="small" />,
+          disabled: !alarm.canAck,
+          onClick: () => openAlarmDialog(alarm, 'acknowledge'),
+        },
+      }
+    })
+
+  if (alarmsMore) {
+    // The list is a keyset page, not the whole history; older rows arrive on request.
+    alarmItems.push({
+      key: 'alarms:more',
+      primary: t('maps.tree.more'),
+      onClick: () => void dispatch(loadAlarms({ more: true })),
+    })
+  }
+
   const alarmSection = {
     title: t('maps.alarms'),
     hint: t('maps.alarmsHint', { minutes: RECENT_ALARM_MINUTES }),
     empty: t('maps.noAlarms'),
-    items: alarmEntries.map((entry) => {
-      const marker = markers[entry.nodeId]
-      const enterable = !!marker
-        && (marker.hasChildren || marker.nodeKind === 'space' || marker.nodeKind === 'diagram')
-      return {
-        key: entry.key,
-        primary: entry.name,
-        secondary: entry.secondary,
-        dot: entry.active ? ALARM_COLOR : `${ALARM_COLOR}66`,
-        selected: entry.nodeId === selectedNodeId,
-        onClick: () => {
-          const clicked = markers[entry.nodeId]
-          if (clicked) selectNode(clicked)
-          else if (entry.cameraId) void selectCamera(entry.cameraId)
-        },
-        action: enterable ? {
-          title: t('maps.node.enter'),
-          icon: <LoginIcon fontSize="small" />,
-          onClick: () => enterNode(entry.nodeId),
-        } : undefined,
-      }
-    }),
+    items: alarmItems,
   }
 
   return (
@@ -559,6 +609,55 @@ export default function MapsOperatorPanel() {
           states={statesById}
           descriptions={descriptions}
         />
+      )}
+
+      {alarmDialog && (
+        <Dialog open onClose={() => setAlarmDialog(null)} maxWidth="xs" fullWidth>
+          <DialogTitle>{t('alarms.handle')}</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" sx={{ mb: 2 }}>
+              {alarmDialog.alarm.objectName || alarmDialog.alarm.objectId} · {t(`alarms.status.${alarmDialog.alarm.status || 'active'}`)}
+            </Typography>
+
+            {alarmDialog.action === 'close' && (
+              <RadioGroup
+                row
+                value={alarmReason}
+                onChange={(_, value) => setAlarmReason(value as 'false_alarm' | 'other')}
+              >
+                <FormControlLabel value="false_alarm" control={<Radio size="small" />} label={t('alarms.reason.falseAlarm')} />
+                <FormControlLabel value="other" control={<Radio size="small" />} label={t('alarms.reason.other')} />
+              </RadioGroup>
+            )}
+
+            <TextField
+              multiline
+              minRows={2}
+              fullWidth
+              label={t('alarms.comment')}
+              value={alarmComment}
+              onChange={(event) => setAlarmComment(event.target.value)}
+              sx={{ mt: 2 }}
+            />
+
+            {alarmError && <Alert severity="error" sx={{ mt: 2 }}>{alarmError}</Alert>}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setAlarmDialog(null)}>{t('common.cancel')}</Button>
+            {alarmDialog.action === 'acknowledge' && alarmDialog.alarm.status === 'returned' && (
+              <Button onClick={() => setAlarmDialog({ ...alarmDialog, action: 'close' })}>
+                {t('alarms.close')}
+              </Button>
+            )}
+            <Button
+              variant="contained"
+              disabled={alarmBusy || (alarmDialog.action === 'acknowledge' && !alarmDialog.alarm.canAck)}
+              onClick={() => void submitAlarmDialog()}
+            >
+              {alarmDialog.action === 'close' ? t('alarms.close') : t('alarms.acknowledge')}
+            </Button>
+          </DialogActions>
+        </Dialog>
       )}
     </Box>
   )

@@ -52,7 +52,28 @@ namespace VmsMap.Db
         .ToListAsync(ct))
         kinds[id] = NodeKind.Figure;
 
-      foreach (var id in await CameraGuidsAsync(db, allGuids, ct))
+      // A device node is the camera when its row is the device itself; any other row of the same
+      // registry is one of its parts. A picture created for a placement is the camera too.
+      foreach (var id in await db.DeviceNodes.AsNoTracking()
+        .Where(n => allGuids.Contains(n.object_id)
+                    && n.source_kind == DeviceObjectId.CameraSource
+                    && n.part_kind == DeviceObjectId.DevicePart)
+        .Select(n => n.object_id)
+        .ToListAsync(ct))
+        kinds[id] = NodeKind.Camera;
+
+      foreach (var id in await db.DeviceNodes.AsNoTracking()
+        .Where(n => allGuids.Contains(n.object_id)
+                    && !(n.source_kind == DeviceObjectId.CameraSource
+                         && n.part_kind == DeviceObjectId.DevicePart))
+        .Select(n => n.object_id)
+        .ToListAsync(ct))
+        kinds[id] = NodeKind.Part;
+
+      foreach (var id in await db.CameraPlacements.AsNoTracking()
+        .Where(p => allGuids.Contains(p.object_id))
+        .Select(p => p.object_id)
+        .ToListAsync(ct))
         kinds[id] = NodeKind.Camera;
 
       foreach (var id in await db.Landmarks.AsNoTracking()
@@ -95,24 +116,6 @@ namespace VmsMap.Db
     }
 
     public static string Name(NodeKind kind) => RightActions.Name(kind);
-
-    // A canonical camera has a camera_node row; a picture created for a placement has the
-    // placement row itself. Both say "this node is a camera".
-    private static async Task<List<Guid>> CameraGuidsAsync(
-      VmsMapDbContext db, List<Guid> guids, CancellationToken ct)
-    {
-      var result = await db.CameraNodes.AsNoTracking()
-        .Where(n => guids.Contains(n.object_id))
-        .Select(n => n.object_id)
-        .ToListAsync(ct);
-
-      result.AddRange(await db.CameraPlacements.AsNoTracking()
-        .Where(p => guids.Contains(p.object_id))
-        .Select(p => p.object_id)
-        .ToListAsync(ct));
-
-      return result.Distinct().ToList();
-    }
 
     private static List<Guid> ToGuids(IEnumerable<string> ids) =>
       ids

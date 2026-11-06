@@ -27,6 +27,9 @@ namespace VmsMap.Domain
     );
 
     Task<Dictionary<string, BaseMarkerDTO>> GetByNameAsync(string name);
+    // Names, part tokens and camera ids at once, for the admin's lazy tree. Not a hot path: an
+    // admin types a query, and the cap bounds the scan's answer, not the scan itself.
+    Task<Dictionary<string, BaseMarkerDTO>> SearchDeviceNodesAsync(string query, int limit);
     Task<Dictionary<string, BaseMarkerDTO>> GetTopChildren(List<string> parentIds);
     Task<List<BaseMarkerDTO>> GetAllChildren(string parent_id);
     Task<ObjPropsDTO> GetPropAsync(string id);

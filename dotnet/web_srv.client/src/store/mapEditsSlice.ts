@@ -98,15 +98,15 @@ export const moveNode = createAsyncThunk(
  */
 export const movePlacedCamera = createAsyncThunk(
   'mapEdits/movePlacedCamera',
-  async ({ cameraId, isReference, canvasId, containerId }: {
+  async ({ cameraId, canvasId, containerId }: {
     cameraId: string
-    isReference: boolean
     canvasId: string
     containerId: string
   }, api) => {
     const loaded = await api.dispatch(loadCanvas(canvasId)).unwrap()
     const figures = loaded.figures
-    const node = figures.find((f) => f.cameraId === cameraId && (isReference ? !f.ownerId : !!f.ownerId))
+    // A placement's node is always a replica, reference or not.
+    const node = figures.find((f) => f.cameraId === cameraId && !!f.ownerId)
       ?? figures.find((f) => f.cameraId === cameraId)
     if (!node?.id || node.parentId === containerId) return null
 
@@ -225,6 +225,7 @@ export const createDiagramNode = createAsyncThunk(
         name,
         geometry: { type: 'Point', coord: [{ lat: at.lat, lon: at.lon }] },
       }])
+      api.dispatch(canvasAdd({ canvasId: parentId, ids: [id] }))
     }
 
     await api.dispatch(loadNodes([id]))

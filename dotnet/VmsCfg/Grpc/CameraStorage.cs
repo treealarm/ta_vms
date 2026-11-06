@@ -26,8 +26,8 @@ public class CameraStorage(
       && Guid.TryParse(camera.MediaMtxServerId, out var parsedMmx) ? parsedMmx : null;
 
     await using (var command = new NpgsqlCommand("""
-      INSERT INTO camera_setup (camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, onvif_xaddr, media_mtx_server_id, disabled, name, edge_backfill_stream, roi_transcode, roi_delay_hours, roi_min_coverage, roi_max_coverage, onvif_metadata_disabled, has_telemetry)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      INSERT INTO camera_setup (camera_id, server_id, cred_user, cred_pass, onvif_ip, onvif_port, onvif_xaddr, media_mtx_server_id, disabled, name, edge_backfill_stream, roi_transcode, roi_delay_hours, roi_min_coverage, roi_max_coverage, onvif_metadata_disabled, has_telemetry, geo_from_device)
+      VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       ON CONFLICT (camera_id) DO UPDATE SET
         server_id           = EXCLUDED.server_id,
         cred_user           = EXCLUDED.cred_user,
@@ -44,7 +44,8 @@ public class CameraStorage(
         roi_min_coverage    = EXCLUDED.roi_min_coverage,
         roi_max_coverage    = EXCLUDED.roi_max_coverage,
         onvif_metadata_disabled = EXCLUDED.onvif_metadata_disabled,
-        has_telemetry       = EXCLUDED.has_telemetry;
+        has_telemetry       = EXCLUDED.has_telemetry,
+        geo_from_device     = EXCLUDED.geo_from_device;
       """, connection, tx))
     {
       command.Parameters.AddWithValue(camera.CameraId);
@@ -64,6 +65,7 @@ public class CameraStorage(
       command.Parameters.AddWithValue(camera.RoiMaxCoverage);
       command.Parameters.AddWithValue(camera.OnvifMetadataDisabled);
       command.Parameters.AddWithValue(camera.HasTelemetry);
+      command.Parameters.AddWithValue(camera.GeoFromDevice);
       await command.ExecuteNonQueryAsync(ct);
     }
 
@@ -84,7 +86,7 @@ public class CameraStorage(
 
     await using (var deleteCmd = new NpgsqlCommand("""
       DELETE FROM camera_stream
-      WHERE camera_id = $1 AND NOT (stream_name = ANY($2));
+      WHERE camera_id = $1::uuid AND NOT (stream_name = ANY($2));
       """, connection, tx))
     {
       deleteCmd.Parameters.AddWithValue(cameraId);
@@ -100,7 +102,7 @@ public class CameraStorage(
 
       await using var cmd = new NpgsqlCommand("""
         INSERT INTO camera_stream (camera_id, stream_name, profile_token, path, web_rtc, recording_profile_id, disabled, recordable, declared_width, declared_height)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         ON CONFLICT (camera_id, stream_name) DO UPDATE SET
           profile_token        = EXCLUDED.profile_token,
           path                 = EXCLUDED.path,
@@ -136,7 +138,7 @@ public class CameraStorage(
     var cameras = new List<CameraSetup>();
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_setup.camera_id, camera_setup.server_id, cred_user, cred_pass, onvif_ip, onvif_port,
+      SELECT camera_setup.camera_id::text, camera_setup.server_id, cred_user, cred_pass, onvif_ip, onvif_port,
              onvif_xaddr, media_mtx_server_id,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id AND s.subscribed = true) AS onvif_events_enabled,
              EXISTS(SELECT 1 FROM onvif_alarm_filter f WHERE f.camera_id = camera_setup.camera_id) AS has_onvif_filters,
@@ -152,7 +154,8 @@ public class CameraStorage(
              camera_setup.roi_min_coverage,
              camera_setup.roi_max_coverage,
              camera_setup.onvif_metadata_disabled,
-             camera_setup.has_telemetry
+             camera_setup.has_telemetry,
+             camera_setup.geo_from_device
       FROM camera_setup
       LEFT JOIN onvif_event_subscription oes ON oes.camera_id = camera_setup.camera_id
       LEFT JOIN media_mtx_server mtx ON mtx.id = camera_setup.media_mtx_server_id
@@ -180,7 +183,7 @@ public class CameraStorage(
     CameraSetup? setup = null;
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT camera_setup.camera_id, camera_setup.server_id, cred_user, cred_pass, onvif_ip, onvif_port,
+      SELECT camera_setup.camera_id::text, camera_setup.server_id, cred_user, cred_pass, onvif_ip, onvif_port,
              onvif_xaddr, media_mtx_server_id,
              EXISTS(SELECT 1 FROM onvif_event_subscription s WHERE s.camera_id = camera_setup.camera_id AND s.subscribed = true) AS onvif_events_enabled,
              EXISTS(SELECT 1 FROM onvif_alarm_filter f WHERE f.camera_id = camera_setup.camera_id) AS has_onvif_filters,
@@ -196,11 +199,12 @@ public class CameraStorage(
              camera_setup.roi_min_coverage,
              camera_setup.roi_max_coverage,
              camera_setup.onvif_metadata_disabled,
-             camera_setup.has_telemetry
+             camera_setup.has_telemetry,
+             camera_setup.geo_from_device
       FROM camera_setup
       LEFT JOIN onvif_event_subscription oes ON oes.camera_id = camera_setup.camera_id
       LEFT JOIN media_mtx_server mtx ON mtx.id = camera_setup.media_mtx_server_id
-      WHERE camera_setup.camera_id = $1;
+      WHERE camera_setup.camera_id = $1::uuid;
       """, connection))
     {
       cmd.Parameters.AddWithValue(cameraId);
@@ -236,7 +240,7 @@ public class CameraStorage(
   public async Task<bool> RemoveCameraAsync(string cameraId, CancellationToken ct)
   {
     await using var command = _dataSource.CreateCommand(
-      "DELETE FROM camera_setup WHERE camera_id = $1;");
+      "DELETE FROM camera_setup WHERE camera_id = $1::uuid;");
     command.Parameters.AddWithValue(cameraId);
     return await command.ExecuteNonQueryAsync(ct) > 0;
   }
@@ -287,7 +291,7 @@ public class CameraStorage(
       -- and inheriting a deadline left by a timed one would end it at a moment nobody chose.
       UPDATE camera_stream
       SET override_profile_id = $3::uuid, alarm_override_until = NULL
-      WHERE camera_id = $1 AND stream_name = $2;
+      WHERE camera_id = $1::uuid AND stream_name = $2;
       """);
     command.Parameters.AddWithValue(cameraId);
     command.Parameters.AddWithValue(streamName);
@@ -302,7 +306,7 @@ public class CameraStorage(
       -- whose override is already gone.
       UPDATE camera_stream
       SET override_profile_id = NULL, alarm_override_until = NULL
-      WHERE camera_id = $1 AND stream_name = $2;
+      WHERE camera_id = $1::uuid AND stream_name = $2;
       """);
     command.Parameters.AddWithValue(cameraId);
     command.Parameters.AddWithValue(streamName);
@@ -329,13 +333,13 @@ public class CameraStorage(
       WITH target AS (
         SELECT CASE
                  WHEN $2 THEN $3::uuid
-                 WHEN COALESCE((SELECT armed FROM camera_states WHERE camera_id = $1), false) THEN $4::uuid
+                 WHEN COALESCE((SELECT armed FROM camera_states WHERE camera_id = $1::uuid), false) THEN $4::uuid
                  ELSE $5::uuid
                END AS profile_id
       )
       UPDATE camera_stream cs
       SET recording_profile_id = (SELECT profile_id FROM target)
-      WHERE cs.camera_id = $1
+      WHERE cs.camera_id = $1::uuid
         AND cs.recordable
         AND COALESCE(cs.disabled, false) = false
         AND cs.recording_profile_id IS DISTINCT FROM (SELECT profile_id FROM target)
@@ -367,7 +371,7 @@ public class CameraStorage(
     await using var command = _dataSource.CreateCommand("""
       SELECT cs.recordable, rp.mode
       FROM camera_stream cs, recording_profile rp
-      WHERE cs.camera_id = $1 AND cs.stream_name = $2 AND rp.id = $3::uuid;
+      WHERE cs.camera_id = $1::uuid AND cs.stream_name = $2 AND rp.id = $3::uuid;
       """);
     command.Parameters.AddWithValue(cameraId);
     command.Parameters.AddWithValue(streamName);
@@ -385,7 +389,7 @@ public class CameraStorage(
     await using var command = _dataSource.CreateCommand("""
       UPDATE camera_stream
       SET recording_profile_id = $3::uuid
-      WHERE camera_id = $1 AND stream_name = $2;
+      WHERE camera_id = $1::uuid AND stream_name = $2;
       """);
     command.Parameters.AddWithValue(cameraId);
     command.Parameters.AddWithValue(streamName);
@@ -433,7 +437,7 @@ public class CameraStorage(
         SELECT cs.stream_name, cs.alarm_override_until AS was_until
         FROM camera_stream cs
         LEFT JOIN recording_profile rp ON rp.id = cs.recording_profile_id
-        WHERE cs.camera_id = $1
+        WHERE cs.camera_id = $1::uuid
           AND ($2::text IS NULL OR cs.stream_name = $2)
           -- A stream that is not available for recording is never a candidate: an alarm must not
           -- be a way around the flag.
@@ -448,7 +452,7 @@ public class CameraStorage(
             -- Never pull a deadline in: a longer window already granted outlives this alarm.
             alarm_override_until = GREATEST(COALESCE(cs.alarm_override_until, $4), $4)
         FROM target t
-        WHERE cs.camera_id = $1 AND cs.stream_name = t.stream_name
+        WHERE cs.camera_id = $1::uuid AND cs.stream_name = t.stream_name
         RETURNING t.was_until
       )
       SELECT
@@ -519,14 +523,14 @@ public class CameraStorage(
     var index = cameras.ToDictionary(c => c.CameraId);
 
     await using var cmd = new NpgsqlCommand("""
-      SELECT cs.camera_id, cs.stream_name, cs.profile_token, cs.path, cs.web_rtc,
+      SELECT cs.camera_id::text, cs.stream_name, cs.profile_token, cs.path, cs.web_rtc,
              rp.id,  rp.name,  rp.mode,  rp.pre_record_seconds,  rp.post_record_seconds,  rp.segment_seconds,  rp.is_override_preset,  rp.is_builtin,
              ov.id,  ov.name,  ov.mode,  ov.pre_record_seconds,  ov.post_record_seconds,  ov.segment_seconds,  ov.is_override_preset,  ov.is_builtin,
              cs.disabled, cs.recordable, cs.declared_width, cs.declared_height
       FROM camera_stream cs
       LEFT JOIN recording_profile rp ON rp.id = cs.recording_profile_id
       LEFT JOIN recording_profile ov ON ov.id = cs.override_profile_id
-      WHERE cs.camera_id = ANY($1)
+      WHERE cs.camera_id = ANY($1::uuid[])
       ORDER BY cs.camera_id, cs.stream_name;
       """, connection);
     cmd.Parameters.AddWithValue(ids);
@@ -641,6 +645,7 @@ public class CameraStorage(
     setup.RoiMaxCoverage = reader.IsDBNull(20) ? 1 : reader.GetDouble(20);
     setup.OnvifMetadataDisabled = !reader.IsDBNull(21) && reader.GetBoolean(21);
     setup.HasTelemetry = !reader.IsDBNull(22) && reader.GetBoolean(22);
+    setup.GeoFromDevice = !reader.IsDBNull(23) && reader.GetBoolean(23);
 
     return setup;
   }
@@ -738,7 +743,7 @@ public class CameraStorage(
              m.server_id, m.publish_user, m.publish_pass, m.read_user, m.read_pass, m.transcode_hevc
       FROM camera_setup cs
       LEFT JOIN media_mtx_server m ON m.id = cs.media_mtx_server_id
-      WHERE cs.camera_id = $1;
+      WHERE cs.camera_id = $1::uuid;
       """, connection))
     {
       cmd.Parameters.AddWithValue(cameraId);
@@ -793,7 +798,7 @@ public class CameraStorage(
     }
 
     await using (var assignCmd = new NpgsqlCommand("""
-      UPDATE camera_setup SET media_mtx_server_id = $2::uuid WHERE camera_id = $1;
+      UPDATE camera_setup SET media_mtx_server_id = $2::uuid WHERE camera_id = $1::uuid;
       """, connection, tx))
     {
       assignCmd.Parameters.AddWithValue(cameraId);
@@ -871,7 +876,7 @@ public class CameraStorage(
     var idArray = order.ToArray();
 
     await using (var cmd = new NpgsqlCommand("""
-      SELECT monitor_id, camera_id FROM monitor_camera
+      SELECT monitor_id, camera_id::text FROM monitor_camera
       WHERE monitor_id = ANY($1)
       ORDER BY monitor_id, position;
       """, connection))
@@ -888,7 +893,7 @@ public class CameraStorage(
     // The pinned stream is this caller's own; the camera in the slot is everyone's. Joined here so
     // a wall shared by several operators still answers each of them with their own pin.
     await using (var cmd = new NpgsqlCommand("""
-      SELECT ms.monitor_id, ms.slot_index, ms.camera_id, COALESCE(p.stream_name, '')
+      SELECT ms.monitor_id, ms.slot_index, ms.camera_id::text, COALESCE(p.stream_name, '')
       FROM monitor_slot ms
       LEFT JOIN monitor_slot_pref p
         ON p.monitor_id = ms.monitor_id AND p.slot_index = ms.slot_index AND p.owner = $2
@@ -1014,7 +1019,7 @@ public class CameraStorage(
     // whole grid each time one camera is added, which is exactly what adding a camera to an
     // investigation board does.
     await using (var delSlots = new NpgsqlCommand(
-      "DELETE FROM monitor_slot WHERE monitor_id = $1::uuid AND camera_id <> ALL($2);", connection, tx))
+      "DELETE FROM monitor_slot WHERE monitor_id = $1::uuid AND camera_id <> ALL($2::uuid[]);", connection, tx))
     {
       delSlots.Parameters.AddWithValue(monitorId);
       delSlots.Parameters.Add(new NpgsqlParameter { Value = pool.ToArray(), NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text });
@@ -1026,7 +1031,7 @@ public class CameraStorage(
     {
       await using var ins = new NpgsqlCommand("""
         INSERT INTO monitor_camera (monitor_id, camera_id, position)
-        VALUES ($1::uuid, $2, $3);
+        VALUES ($1::uuid, $2::uuid, $3);
         """, connection, tx);
       ins.Parameters.AddWithValue(monitorId);
       ins.Parameters.AddWithValue(cameraId);
@@ -1044,7 +1049,7 @@ public class CameraStorage(
     // change is a single write and must not be racing a concurrent delete of the board.
     await using var command = _dataSource.CreateCommand("""
       INSERT INTO monitor_slot (monitor_id, slot_index, camera_id)
-      SELECT $1::uuid, $2, $3
+      SELECT $1::uuid, $2, $3::uuid
       WHERE EXISTS (
         SELECT 1 FROM monitor WHERE id = $1::uuid AND (kind = 'wall' OR owner = $4))
       ON CONFLICT (monitor_id, slot_index) DO UPDATE SET camera_id = EXCLUDED.camera_id;
@@ -1241,7 +1246,7 @@ public class CameraStorage(
   public async Task SubscribeOnvifEventsAsync(string cameraId, CancellationToken ct)
   {
     await using var cmd = _dataSource.CreateCommand("""
-      INSERT INTO onvif_event_subscription (camera_id, subscribed) VALUES ($1, true)
+      INSERT INTO onvif_event_subscription (camera_id, subscribed) VALUES ($1::uuid, true)
       ON CONFLICT (camera_id) DO NOTHING;
       """);
     cmd.Parameters.AddWithValue(cameraId);
@@ -1251,7 +1256,7 @@ public class CameraStorage(
   public async Task UnsubscribeOnvifEventsAsync(string cameraId, CancellationToken ct)
   {
     await using var cmd = _dataSource.CreateCommand(
-      "DELETE FROM onvif_event_subscription WHERE camera_id = $1;");
+      "DELETE FROM onvif_event_subscription WHERE camera_id = $1::uuid;");
     cmd.Parameters.AddWithValue(cameraId);
     await cmd.ExecuteNonQueryAsync(ct);
   }
@@ -1259,7 +1264,7 @@ public class CameraStorage(
   public async Task SetOnvifSubscribedAsync(string cameraId, bool subscribed, CancellationToken ct)
   {
     await using var cmd = _dataSource.CreateCommand(
-      "UPDATE onvif_event_subscription SET subscribed = $2 WHERE camera_id = $1;");
+      "UPDATE onvif_event_subscription SET subscribed = $2 WHERE camera_id = $1::uuid;");
     cmd.Parameters.AddWithValue(cameraId);
     cmd.Parameters.AddWithValue(subscribed);
     await cmd.ExecuteNonQueryAsync(ct);
@@ -1268,7 +1273,7 @@ public class CameraStorage(
   public async Task<List<(string CameraId, bool Subscribed, int PollTimeoutSeconds, int MessageLimit)>> ListOnvifSubscriptionsAsync(CancellationToken ct)
   {
     await using var cmd = _dataSource.CreateCommand(
-      "SELECT camera_id, subscribed, poll_timeout_seconds, message_limit FROM onvif_event_subscription ORDER BY camera_id;");
+      "SELECT camera_id::text, subscribed, poll_timeout_seconds, message_limit FROM onvif_event_subscription ORDER BY camera_id;");
     var result = new List<(string, bool, int, int)>();
     await using var reader = await cmd.ExecuteReaderAsync(ct);
     while (await reader.ReadAsync(ct))
@@ -1279,7 +1284,7 @@ public class CameraStorage(
   public async Task SetOnvifPollConfigAsync(string cameraId, int pollTimeoutSeconds, int messageLimit, CancellationToken ct)
   {
     await using var cmd = _dataSource.CreateCommand(
-      "UPDATE onvif_event_subscription SET poll_timeout_seconds = $2, message_limit = $3 WHERE camera_id = $1;");
+      "UPDATE onvif_event_subscription SET poll_timeout_seconds = $2, message_limit = $3 WHERE camera_id = $1::uuid;");
     cmd.Parameters.AddWithValue(cameraId);
     cmd.Parameters.AddWithValue(pollTimeoutSeconds);
     cmd.Parameters.AddWithValue(messageLimit);
@@ -1289,7 +1294,7 @@ public class CameraStorage(
   public async Task<bool> GetCameraArmedAsync(string cameraId, CancellationToken ct)
   {
     await using var cmd = _dataSource.CreateCommand(
-      "SELECT armed FROM camera_states WHERE camera_id = $1;");
+      "SELECT armed FROM camera_states WHERE camera_id = $1::uuid;");
     cmd.Parameters.AddWithValue(cameraId);
     var result = await cmd.ExecuteScalarAsync(ct);
     return result is bool b && b;
@@ -1298,7 +1303,7 @@ public class CameraStorage(
   public async Task SetCameraArmedAsync(string cameraId, bool armed, CancellationToken ct)
   {
     await using var cmd = _dataSource.CreateCommand("""
-      INSERT INTO camera_states (camera_id, armed) VALUES ($1, $2)
+      INSERT INTO camera_states (camera_id, armed) VALUES ($1::uuid, $2)
       ON CONFLICT (camera_id) DO UPDATE SET armed = EXCLUDED.armed;
       """);
     cmd.Parameters.AddWithValue(cameraId);

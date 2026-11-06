@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next'
 import type {
   MapExtraProperty, MapFigure, MapLevel, MapMarker, MapObjProps,
 } from '../../dto/mapDtos'
-import { useAppDispatch } from '../../store'
+import { useAppDispatch, useAppSelector } from '../../store'
 import { saveNodeDetails } from '../../store/mapEditsSlice'
 import DetailToolbar from '../settings/DetailToolbar'
 import PropertyValueField from './PropertyValueField'
@@ -64,6 +64,10 @@ const same = (a: Draft, b: Draft) => JSON.stringify(a) === JSON.stringify(b)
 export default function ObjectPropsEditor({ node, figure, loaded, levels, onDelete, onClose }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
+  // A picture of another node carries its owner's id: two rows with one name are the node and
+  // the replica of it, and the panel says which is which.
+  const markers = useAppSelector((s) => s.objects.markers)
+  const owner = node.ownerId ? markers[node.ownerId] : undefined
   const initial = draftOf(node, figure, loaded)
   const [draft, setDraft] = useState<Draft>(initial)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -157,6 +161,26 @@ export default function ObjectPropsEditor({ node, figure, loaded, levels, onDele
           value={draft.name}
           onChange={(event) => set('name', event.target.value)}
         />
+
+        {/* The id is what every other surface names this node by; a read-only field is the one
+            way to copy it without hunting through the network tab. */}
+        <TextField
+          size="small"
+          label={t('maps.editor.objectId')}
+          value={node.id}
+          slotProps={{ input: { readOnly: true } }}
+          sx={{ '& input': { fontFamily: 'monospace', fontSize: 12 } }}
+        />
+
+        {node.ownerId && (
+          <TextField
+            size="small"
+            label={t('maps.editor.replicaOf')}
+            value={owner?.name ? `${owner.name} · ${node.ownerId}` : node.ownerId}
+            slotProps={{ input: { readOnly: true } }}
+            sx={{ '& input': { fontSize: 12 } }}
+          />
+        )}
 
         <Divider />
 

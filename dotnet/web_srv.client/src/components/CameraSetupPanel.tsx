@@ -12,6 +12,7 @@ import CameraDetectionsSection from './CameraDetectionsSection'
 import CameraCalibrationSection from './CameraCalibrationSection'
 import CameraTrackingSection from './CameraTrackingSection'
 import CameraSlaveBindingSection from './CameraSlaveBindingSection'
+import DeviceIoSection from './DeviceIoSection'
 import PasswordField from './PasswordField'
 import CameraStream from './CameraStream'
 import DetailToolbar from './settings/DetailToolbar'
@@ -51,13 +52,14 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const [roiTranscode, setRoiTranscode] = useState(existing?.roiTranscode === true)
   const [onvifMetadataDisabled, setOnvifMetadataDisabled] = useState(existing?.onvifMetadataDisabled === true)
   const [hasTelemetry, setHasTelemetry] = useState(existing?.hasTelemetry === true)
+  const [geoFromDevice, setGeoFromDevice] = useState(existing?.geoFromDevice === true)
   // Percent in the field, fraction on the wire: the API speaks 0..1, operators do not.
   const pctOf = (v: number | undefined, fallback: number) =>
     String(Math.round((v ?? fallback) * 1000) / 10)
   const [roiDelayHours, setRoiDelayHours] = useState(String(existing?.roiDelayHours ?? 0))
   const [roiMinCoverage, setRoiMinCoverage] = useState(pctOf(existing?.roiMinCoverage, 0))
   const [roiMaxCoverage, setRoiMaxCoverage] = useState(pctOf(existing?.roiMaxCoverage, 1))
-  type Tab = 'main' | 'advanced' | 'detections' | 'tracking' | 'calibration' | 'binding'
+  type Tab = 'main' | 'advanced' | 'devices' | 'detections' | 'tracking' | 'calibration' | 'binding'
   const [tab, setTab] = useState<Tab>('main')
   // The settings column always fills whatever the camera list and the preview leave; what varies
   // is how each tab uses that space. The survey takes all of it — it lays two live pictures side
@@ -103,6 +105,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     roiTranscode: existing?.roiTranscode === true,
     onvifMetadataDisabled: existing?.onvifMetadataDisabled === true,
     hasTelemetry: existing?.hasTelemetry === true,
+    geoFromDevice: existing?.geoFromDevice === true,
     roiDelayHours: String(existing?.roiDelayHours ?? 0),
     roiMinCoverage: pctOf(existing?.roiMinCoverage, 0),
     roiMaxCoverage: pctOf(existing?.roiMaxCoverage, 1),
@@ -121,6 +124,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     || roiTranscode !== snap.roiTranscode
     || onvifMetadataDisabled !== snap.onvifMetadataDisabled
     || hasTelemetry !== snap.hasTelemetry
+    || geoFromDevice !== snap.geoFromDevice
     || roiDelayHours !== snap.roiDelayHours
     || roiMinCoverage !== snap.roiMinCoverage
     || roiMaxCoverage !== snap.roiMaxCoverage
@@ -150,6 +154,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     roiTranscode,
     onvifMetadataDisabled,
     hasTelemetry,
+    geoFromDevice,
     // Kept as text while editing so a half-typed "0." is not thrown away.
     roiDelayHours: Number(roiDelayHours) || 0,
     roiMinCoverage: (Number(roiMinCoverage) || 0) / 100,
@@ -177,7 +182,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     const action = serverChanged ? changeCameraParent : addCamera
     const result = await dispatch(action(payload))
     if (!action.rejected.match(result)) {
-      setSnap({ name, serverId, mediaMtxServerId, user, pass, ip, port, disabled, edgeBackfillStream, roiTranscode, onvifMetadataDisabled, hasTelemetry, roiDelayHours, roiMinCoverage, roiMaxCoverage })
+      setSnap({ name, serverId, mediaMtxServerId, user, pass, ip, port, disabled, edgeBackfillStream, roiTranscode, onvifMetadataDisabled, hasTelemetry, geoFromDevice, roiDelayHours, roiMinCoverage, roiMaxCoverage })
       await dispatch(fetchCameraState(initialCameraId))
       return true
     }
@@ -204,6 +209,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
     setRoiTranscode(snap.roiTranscode)
     setOnvifMetadataDisabled(snap.onvifMetadataDisabled)
     setHasTelemetry(snap.hasTelemetry)
+    setGeoFromDevice(snap.geoFromDevice)
     setRoiDelayHours(snap.roiDelayHours)
     setRoiMinCoverage(snap.roiMinCoverage)
     setRoiMaxCoverage(snap.roiMaxCoverage)
@@ -245,6 +251,10 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
               sx={{ borderBottom: 1, borderColor: 'divider' }}
             >
               <Tab value="main" label={t('cameras.tabMain')} />
+              {/* The hardware: the parts this device declares and how each is armed. ONVIF
+                  settings keeps the camera's own device configuration (idle state, relay mode);
+                  this tab is where the deployment decides what an input means. */}
+              {!isNew && <Tab value="devices" label={t('cameras.tabDevices')} />}
               {!isNew && <Tab value="detections" label={t('cameras.tabDetections')} />}
               {/* Three tabs rather than three folds. They were accordions stacked in one tab, which
                   made a single sheet taller than the panel: opening the survey pushed it off the
@@ -332,6 +342,13 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
                 label={t('cameras.hasTelemetry')}
               />
             </FieldHint>
+
+            <FieldHint hint={t('cameras.geoFromDeviceHelper')}>
+              <FormControlLabel
+                control={<Switch checked={geoFromDevice} onChange={(e) => setGeoFromDevice(e.target.checked)} />}
+                label={t('cameras.geoFromDevice')}
+              />
+            </FieldHint>
             {isNew
               ? <CameraStoragesControl value={pendingStorages} onChange={setPendingStorages} />
               : <CameraStoragesControl cameraId={initialCameraId} />
@@ -342,6 +359,10 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
               : <CameraSchedulesControl cameraId={initialCameraId} />
             }
             </Box>
+            )}
+
+            {shownTab === 'devices' && !isNew && (
+              <DeviceIoSection cameraId={initialCameraId} />
             )}
 
             {shownTab === 'detections' && !isNew && (

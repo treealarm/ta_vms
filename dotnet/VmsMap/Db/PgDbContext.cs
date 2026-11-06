@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using System.Collections.Generic;
 using System.Text.Json;
+using VmsMap.Outbox;
 
 namespace VmsMap.Db
 {
@@ -10,6 +12,13 @@ namespace VmsMap.Db
   // follow them, not the other way round.
   public class VmsMapDbContext : DbContext
   {
+    // Camera ids are UUID columns; the gRPC contract and this service's own code carry them as
+    // strings (a UUID formatted as text). The conversion lives here, at the one boundary where the
+    // database type matters, so a malformed id fails on the way in rather than being compared as
+    // text against a uuid column.
+    private static readonly ValueConverter<string, Guid> UuidText =
+      new(id => Guid.Parse(id), id => id.ToString());
+
     public DbSet<DBGeoObject> GeoObjects { get; set; } = null!;
     public DbSet<DBDiagram> Diagrams { get; set; } = null!;
     public DbSet<DBDiagramTypeRegion> DiagramTypeRegions { get; set; } = null!;
@@ -26,18 +35,20 @@ namespace VmsMap.Db
     public DbSet<DBSpace> Spaces { get; set; } = null!;
     public DbSet<DBSpacePlan> SpacePlans { get; set; } = null!;
     public DbSet<DBCameraPlacement> CameraPlacements { get; set; } = null!;
-    public DbSet<DBCameraNode> CameraNodes { get; set; } = null!;
+    public DbSet<DBDeviceNode> DeviceNodes { get; set; } = null!;
     public DbSet<DBLandmark> Landmarks { get; set; } = null!;
     public DbSet<DBPtzGeoObservation> PtzGeoObservations { get; set; } = null!;
     public DbSet<DBGroundObservation> GroundObservations { get; set; } = null!;
 
     public DbSet<DBEvent> Events { get; set; } = null!;
+    public DbSet<DBMapOutbox> MapOutbox { get; set; } = null!;
 
     public DbSet<DBValue> Values { get; set; } = null!;
 
     public DbSet<DBObjectState> ObjectStates { get; set; } = null!;
     public DbSet<DBObjectStateDescription> ObjectStateDescriptions { get; set; } = null!;
     public DbSet<DBAlarmState> AlarmStates { get; set; } = null!;
+    public DbSet<DBAlarm> Alarms { get; set; } = null!;
 
     // What the demo world owns; see Demo/DemoSeeder.
     public DbSet<DBDemoConfig> DemoConfigs { get; set; } = null!;
@@ -53,6 +64,7 @@ namespace VmsMap.Db
 
       ConfigureValues(modelBuilder);
       ConfigureEvents(modelBuilder);
+      ConfigureOutbox(modelBuilder);
       ConfigureStates(modelBuilder);
       ConfigureRights(modelBuilder);
       ConfigureLevels(modelBuilder);
@@ -67,7 +79,7 @@ namespace VmsMap.Db
       ConfigureSpaces(modelBuilder);
       ConfigureSpacePlans(modelBuilder);
       ConfigureCameraPlacements(modelBuilder);
-      ConfigureCameraNodes(modelBuilder);
+      ConfigureDeviceNodes(modelBuilder);
       ConfigureLandmarks(modelBuilder);
       ConfigureGeoObservations(modelBuilder);
       ConfigureDemo(modelBuilder);
@@ -163,7 +175,7 @@ namespace VmsMap.Db
         entity.HasKey(e => e.object_id);
 
         entity.Property(e => e.object_id).HasColumnName("object_id");
-        entity.Property(e => e.camera_id).HasColumnName("camera_id").IsRequired();
+        entity.Property(e => e.camera_id).HasColumnName("camera_id").HasConversion(UuidText).IsRequired();
         entity.Property(e => e.is_reference).HasColumnName("is_reference");
         entity.Property(e => e.height_m).HasColumnName("height_m");
         entity.Property(e => e.heading_deg).HasColumnName("heading_deg");
@@ -172,16 +184,24 @@ namespace VmsMap.Db
       });
     }
 
-    private void ConfigureCameraNodes(ModelBuilder modelBuilder)
+    private void ConfigureDeviceNodes(ModelBuilder modelBuilder)
     {
-      modelBuilder.Entity<DBCameraNode>(entity =>
+      modelBuilder.Entity<DBDeviceNode>(entity =>
       {
-        entity.ToTable("camera_node");
+        entity.ToTable("device_node");
 
         entity.HasKey(e => e.object_id);
         entity.Property(e => e.object_id).HasColumnName("object_id").ValueGeneratedNever();
-        entity.Property(e => e.camera_id).HasColumnName("camera_id").IsRequired();
-        entity.HasIndex(e => e.camera_id).IsUnique();
+        entity.Property(e => e.source_kind).HasColumnName("source_kind").IsRequired();
+        entity.Property(e => e.source_id).HasColumnName("source_id").HasConversion(UuidText).IsRequired();
+        entity.Property(e => e.part_kind).HasColumnName("part_kind").IsRequired();
+        entity.Property(e => e.part_token).HasColumnName("part_token").IsRequired();
+        entity.Property(e => e.present).HasColumnName("present");
+        entity.Property(e => e.reachable).HasColumnName("reachable");
+        entity.Property(e => e.last_epoch).HasColumnName("last_epoch");
+        entity.Property(e => e.last_seq).HasColumnName("last_seq");
+        entity.Property(e => e.last_observed_at).HasColumnName("last_observed_at");
+        entity.HasIndex(e => new { e.source_kind, e.source_id, e.part_kind, e.part_token }).IsUnique();
       });
     }
 
@@ -204,7 +224,7 @@ namespace VmsMap.Db
         entity.ToTable("ptz_geo_observation");
         entity.HasKey(e => new { e.camera_id, e.landmark_id });
 
-        entity.Property(e => e.camera_id).HasColumnName("camera_id").IsRequired();
+        entity.Property(e => e.camera_id).HasColumnName("camera_id").HasConversion(UuidText).IsRequired();
         entity.Property(e => e.landmark_id).HasColumnName("landmark_id");
         entity.Property(e => e.pan).HasColumnName("pan");
         entity.Property(e => e.tilt).HasColumnName("tilt");
@@ -216,7 +236,7 @@ namespace VmsMap.Db
         entity.ToTable("ground_observation");
         entity.HasKey(e => new { e.camera_id, e.landmark_id });
 
-        entity.Property(e => e.camera_id).HasColumnName("camera_id").IsRequired();
+        entity.Property(e => e.camera_id).HasColumnName("camera_id").HasConversion(UuidText).IsRequired();
         entity.Property(e => e.landmark_id).HasColumnName("landmark_id");
         entity.Property(e => e.x).HasColumnName("x");
         entity.Property(e => e.y).HasColumnName("y");
@@ -435,6 +455,22 @@ namespace VmsMap.Db
       });
     }
 
+    private void ConfigureOutbox(ModelBuilder modelBuilder)
+    {
+      modelBuilder.Entity<DBMapOutbox>(entity =>
+      {
+        entity.ToTable("map_outbox");
+        entity.HasKey(e => e.id);
+        entity.Property(e => e.id).HasColumnName("id").ValueGeneratedOnAdd();
+        entity.Property(e => e.topic).HasColumnName("topic").IsRequired();
+        entity.Property(e => e.payload).HasColumnName("payload").HasColumnType("jsonb").IsRequired();
+        entity.Property(e => e.created_at).HasColumnName("created_at");
+        entity.Property(e => e.published_at).HasColumnName("published_at");
+        entity.Property(e => e.attempts).HasColumnName("attempts");
+        entity.Property(e => e.last_error).HasColumnName("last_error");
+      });
+    }
+
     private void ConfigureStates(ModelBuilder modelBuilder)
     {
       modelBuilder.Entity<DBObjectState>(entity =>
@@ -481,6 +517,50 @@ namespace VmsMap.Db
         entity.HasKey(e => e.id);
 
         entity.Property(e => e.children_alarms).IsRequired();
+      });
+
+      modelBuilder.Entity<DBAlarm>(entity =>
+      {
+        entity.ToTable("alarms");
+        entity.HasKey(e => e.id);
+
+        // Generated by the database when a raise leaves it to the column; a raise that already
+        // knows the dedup key's row keeps the row it found.
+        entity.Property(e => e.id).HasDefaultValueSql("gen_random_uuid()");
+        entity.Property(e => e.object_id).IsRequired();
+        entity.Property(e => e.definition_id).HasColumnName("definition_id");
+        entity.Property(e => e.subscription_id).HasColumnName("subscription_id");
+        entity.Property(e => e.source).HasColumnName("source").IsRequired();
+        entity.Property(e => e.dedup_key).HasColumnName("dedup_key").IsRequired();
+        entity.Property(e => e.condition_active).HasColumnName("condition_active");
+        entity.Property(e => e.status).HasColumnName("status").IsRequired();
+        entity.Property(e => e.severity).HasColumnName("severity").IsRequired();
+        entity.Property(e => e.raised_at).HasColumnName("raised_at").IsRequired();
+        entity.Property(e => e.cleared_at).HasColumnName("cleared_at");
+        entity.Property(e => e.expected_end_ts).HasColumnName("expected_end_ts");
+        entity.Property(e => e.acknowledged_at).HasColumnName("acknowledged_at");
+        entity.Property(e => e.acknowledged_by).HasColumnName("acknowledged_by");
+        entity.Property(e => e.ack_comment).HasColumnName("ack_comment");
+        entity.Property(e => e.closed_at).HasColumnName("closed_at");
+        entity.Property(e => e.close_reason).HasColumnName("close_reason");
+        entity.Property(e => e.close_comment).HasColumnName("close_comment");
+        entity.Property(e => e.closed_by).HasColumnName("closed_by");
+        entity.Property(e => e.source_event_id).HasColumnName("source_event_id");
+
+        // The same partial indexes the migration creates; they are what the two page queries and
+        // the open-alarm uniqueness rely on, and the model must not disagree with the schema.
+        entity.HasIndex(e => new { e.object_id, e.dedup_key })
+          .IsUnique()
+          .HasFilter("status <> 'closed'")
+          .HasDatabaseName("ux_alarms_open_dedup");
+        entity.HasIndex(e => new { e.raised_at, e.id })
+          .HasFilter("status <> 'closed'")
+          .HasDatabaseName("ix_alarms_open");
+        entity.HasIndex(e => new { e.closed_at, e.id })
+          .HasFilter("status = 'closed'")
+          .HasDatabaseName("ix_alarms_closed_at");
+        entity.HasIndex(e => new { e.object_id, e.raised_at })
+          .HasDatabaseName("ix_alarms_object");
       });
     }
   }

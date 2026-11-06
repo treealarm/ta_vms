@@ -11,9 +11,9 @@ using VmsMap.Domain;
 
 namespace VmsMap.Tests;
 
-// The retention adapter on the in-memory provider: the event is the episode id, a renewal moves
-// the recorded end, the sweep takes ALARM away only after VmsFs says the episode is over, and
-// connectivity never displaces the alarm.
+// The retention adapter on the in-memory provider: the episode becomes an alarm row and one legacy
+// journal event, a renewal moves the projected end, the sweep closes only after VmsFs says the
+// episode is over, and connectivity never displaces the alarm.
 public class AlarmServiceTests
 {
   private sealed class FakeRetention : IRetentionEventSource
@@ -29,8 +29,9 @@ public class AlarmServiceTests
     VmsMapDbContext Db,
     MapDb Map,
     CameraStateWriter States,
-    AlarmService Alarms,
-    FakeRetention Retention);
+    AlarmStore Alarms,
+    AlarmService Retention,
+    FakeRetention Source);
 
   private static Services Create()
   {
@@ -42,17 +43,18 @@ public class AlarmServiceTests
     var map = new MapDb(db);
     var stateService = new StateService(db);
     var statesUpdate = new StatesUpdateService(stateService, map, db);
-    var writer = new CameraStateWriter(db, stateService, statesUpdate);
-    var retention = new FakeRetention();
-    var alarms = new AlarmService(
-      db, writer, new EventsService(db, map), retention,
+    var writer = new CameraStateWriter(new ObjectStateWriter(db, stateService, statesUpdate));
+    var source = new FakeRetention();
+    var alarms = TestWiring.Alarms(db, map, statesUpdate);
+    var retention = new AlarmService(
+      db, alarms, new EventsWriter(db, new EventsService(db, map)), source,
       NullLogger<AlarmService>.Instance);
 
-    return new Services(db, map, writer, alarms, retention);
+    return new Services(db, map, writer, alarms, retention, source);
   }
 
   private static async Task<BaseMarkerDTO> Camera(
-    VmsMapDbContext db, MapDb map, string cameraId = "cam1")
+    VmsMapDbContext db, MapDb map, string cameraId = TestCameras.One)
   {
     var node = new BaseMarkerDTO
     {
@@ -60,18 +62,15 @@ public class AlarmServiceTests
       name = "Camera " + cameraId,
     };
     await map.UpdateHierarchyAsync([node]);
-    db.CameraNodes.Add(new DBCameraNode
-    {
-      object_id = Guid.Parse(node.id!),
-      camera_id = cameraId,
-    });
+    db.DeviceNodes.Add(TestCameras.DeviceNode(cameraId, Guid.Parse(node.id!)));
     await db.SaveChangesAsync();
     return node;
   }
 
   private static RetentionEpisode Episode(
-    string? id = null, DateTime? end = null, string? stream = "main", string? trigger = "motion") =>
-    new(DateTime.UtcNow, end, stream, trigger, id ?? Guid.NewGuid().ToString());
+    string? id = null, DateTime? end = null, string? stream = "main", string? trigger = "motion",
+    bool raiseAlarm = true) =>
+    new(DateTime.UtcNow, end, stream, trigger, id ?? Guid.NewGuid().ToString(), raiseAlarm);
 
   private static async Task<string?> State(VmsMapDbContext db, string cameraId)
   {
@@ -85,6 +84,9 @@ public class AlarmServiceTests
     return string.Join(",", row.states.Select(s => s.state).OrderBy(s => s));
   }
 
+  private static Task<DBAlarm?> Open(VmsMapDbContext db) =>
+    db.Alarms.AsNoTracking().OrderByDescending(a => a.raised_at).FirstOrDefaultAsync();
+
   [Fact]
   public async Task AnActiveEpisodeWritesAlarmAndOneEvent()
   {
@@ -92,10 +94,19 @@ public class AlarmServiceTests
     var camera = await Camera(s.Db, s.Map);
     var episode = Episode(end: DateTime.UtcNow.AddMinutes(5));
 
-    await s.Alarms.RecordAsync("cam1", episode, default);
+    await s.Retention.RecordAsync(TestCameras.One, episode, default);
 
-    Assert.Equal(CameraStateWriter.Alarm, await State(s.Db, "cam1"));
+    Assert.Equal(CameraStateWriter.Alarm, await State(s.Db, TestCameras.One));
 
+    var alarm = await Open(s.Db);
+    Assert.NotNull(alarm);
+    Assert.Equal(AlarmSource.Retention, alarm!.source);
+    Assert.Equal($"retention:{episode.EventUuid}", alarm.dedup_key);
+    Assert.Equal(AlarmStatus.Active, alarm.status);
+    Assert.True(alarm.condition_active);
+    Assert.NotNull(alarm.expected_end_ts);
+
+    // Retention keeps its legacy `alarm` event; no second alarm_raised is written for it.
     var evt = await s.Db.Events.Include(e => e.extra_props).SingleAsync();
     Assert.Equal(Guid.Parse(episode.EventUuid), evt.id);
     Assert.Equal(Guid.Parse(camera.id!), evt.object_id);
@@ -106,15 +117,30 @@ public class AlarmServiceTests
   }
 
   [Fact]
-  public async Task AnEpisodeAlreadyOverWritesNormAndItsEvent()
+  public async Task AnEpisodeAlreadyOverRaisesNothingAndWritesItsEvent()
   {
     var s = Create();
     await Camera(s.Db, s.Map);
 
-    await s.Alarms.RecordAsync("cam1", Episode(end: DateTime.UtcNow.AddMinutes(-1)), default);
+    await s.Retention.RecordAsync(TestCameras.One, Episode(end: DateTime.UtcNow.AddMinutes(-1)), default);
 
-    Assert.Equal(CameraStateWriter.Norm, await State(s.Db, "cam1"));
+    Assert.Null(await Open(s.Db));
+    Assert.Null(await State(s.Db, TestCameras.One));
     Assert.Equal(1, await s.Db.Events.CountAsync());
+  }
+
+  [Fact]
+  public async Task FootageIsNotAnAlarm()
+  {
+    var s = Create();
+    await Camera(s.Db, s.Map);
+
+    await s.Retention.RecordAsync(
+      TestCameras.One, Episode(end: DateTime.UtcNow.AddMinutes(5), raiseAlarm: false), default);
+
+    Assert.Null(await Open(s.Db));
+    Assert.Null(await State(s.Db, TestCameras.One));
+    Assert.Empty(await s.Db.Events.ToListAsync());
   }
 
   [Fact]
@@ -124,10 +150,11 @@ public class AlarmServiceTests
     await Camera(s.Db, s.Map);
     var episode = Episode(end: DateTime.UtcNow.AddMinutes(5));
 
-    await s.Alarms.RecordAsync("cam1", episode, default);
-    await s.Alarms.RecordAsync("cam1", episode, default);
+    await s.Retention.RecordAsync(TestCameras.One, episode, default);
+    await s.Retention.RecordAsync(TestCameras.One, episode, default);
 
     Assert.Equal(1, await s.Db.Events.CountAsync());
+    Assert.Equal(1, await s.Db.Alarms.CountAsync());
   }
 
   [Fact]
@@ -139,32 +166,41 @@ public class AlarmServiceTests
     var first = Episode(id, DateTime.UtcNow.AddMinutes(1));
     var second = Episode(id, DateTime.UtcNow.AddMinutes(10));
 
-    await s.Alarms.RecordAsync("cam1", first, default);
-    await s.Alarms.RecordAsync("cam1", second, default);
+    await s.Retention.RecordAsync(TestCameras.One, first, default);
+    await s.Retention.RecordAsync(TestCameras.One, second, default);
 
     var evt = await s.Db.Events.Include(e => e.extra_props).SingleAsync();
     var end = evt.extra_props.Single(p => p.prop_name == "alarm_end_ts").str_val;
     Assert.Contains(second.AlarmEndTs!.Value.ToString("O")[..16], end);
+
+    var alarm = await Open(s.Db);
+    Assert.NotNull(alarm!.expected_end_ts);
+    Assert.Equal(second.AlarmEndTs.Value.ToString("O")[..16], alarm.expected_end_ts.Value.ToString("O")[..16]);
   }
 
   [Fact]
-  public async Task TheSweepClearsAnAlarmWhenVmsFsConfirmsTheEnd()
+  public async Task TheSweepClosesAnAlarmWhenVmsFsConfirmsTheEnd()
   {
     var s = Create();
     await Camera(s.Db, s.Map);
     var episode = Episode(end: DateTime.UtcNow.AddMinutes(5));
-    await s.Alarms.RecordAsync("cam1", episode, default);
+    await s.Retention.RecordAsync(TestCameras.One, episode, default);
 
-    // Move the recorded end into the past without touching the state, as a stale projection would.
-    var evt = await s.Db.Events.Include(e => e.extra_props).SingleAsync();
-    evt.extra_props.Single(p => p.prop_name == "alarm_end_ts").str_val =
-      DateTime.UtcNow.AddMinutes(-1).ToString("O");
+    // VmsFs now says the episode is over, and the projection on the row is already past.
+    await s.Db.Alarms.ForEachAsync(a => a.expected_end_ts = DateTime.UtcNow.AddMinutes(-1));
     await s.Db.SaveChangesAsync();
+    s.Source.Next = Episode(episode.EventUuid, DateTime.UtcNow.AddMinutes(-1));
 
-    s.Retention.Next = Episode(episode.EventUuid, DateTime.UtcNow.AddMinutes(-1));
-    await s.Alarms.SweepAsync(default);
+    await s.Retention.SweepAsync(default);
 
-    Assert.Equal(CameraStateWriter.Norm, await State(s.Db, "cam1"));
+    var alarm = await Open(s.Db);
+    Assert.Equal(AlarmStatus.Closed, alarm!.status);
+    Assert.Equal(AlarmCloseReason.AutoReturnedToNormal, alarm.close_reason);
+    Assert.Equal("system", alarm.closed_by);
+    Assert.Equal(CameraStateWriter.Norm, await State(s.Db, TestCameras.One));
+    Assert.Contains(
+      await s.Db.Events.Select(e => e.event_name).ToListAsync(),
+      name => name == AlarmStore.ClosedEvent);
   }
 
   [Fact]
@@ -173,17 +209,19 @@ public class AlarmServiceTests
     var s = Create();
     await Camera(s.Db, s.Map);
     var episode = Episode(end: DateTime.UtcNow.AddMinutes(5));
-    await s.Alarms.RecordAsync("cam1", episode, default);
+    await s.Retention.RecordAsync(TestCameras.One, episode, default);
 
-    var evt = await s.Db.Events.Include(e => e.extra_props).SingleAsync();
-    evt.extra_props.Single(p => p.prop_name == "alarm_end_ts").str_val =
-      DateTime.UtcNow.AddMinutes(-1).ToString("O");
+    var renewed = DateTime.UtcNow.AddMinutes(10);
+    await s.Db.Alarms.ForEachAsync(a => a.expected_end_ts = DateTime.UtcNow.AddMinutes(-1));
     await s.Db.SaveChangesAsync();
+    s.Source.Next = Episode(episode.EventUuid, renewed);
 
-    s.Retention.Next = Episode(episode.EventUuid, DateTime.UtcNow.AddMinutes(10));
-    await s.Alarms.SweepAsync(default);
+    await s.Retention.SweepAsync(default);
 
-    Assert.Equal(CameraStateWriter.Alarm, await State(s.Db, "cam1"));
+    var alarm = await Open(s.Db);
+    Assert.Equal(AlarmStatus.Active, alarm!.status);
+    Assert.Equal(renewed.ToString("O")[..16], alarm.expected_end_ts!.Value.ToString("O")[..16]);
+    Assert.Equal(CameraStateWriter.Alarm, await State(s.Db, TestCameras.One));
   }
 
   [Fact]
@@ -192,16 +230,16 @@ public class AlarmServiceTests
     var s = Create();
     await Camera(s.Db, s.Map);
 
-    await s.States.SetAlarmAsync("cam1", default);
-    await s.States.SetConnectedAsync("cam1", true, default);
+    await s.States.SetAlarmAsync(TestCameras.One, default);
+    await s.States.SetConnectedAsync(TestCameras.One, true, default);
 
-    var states = await State(s.Db, "cam1");
+    var states = await State(s.Db, TestCameras.One);
     Assert.Contains(CameraStateWriter.Alarm, states);
     Assert.Contains(CameraStateWriter.Connected, states);
 
-    await s.States.SetConnectedAsync("cam1", false, default);
+    await s.States.SetConnectedAsync(TestCameras.One, false, default);
 
-    states = await State(s.Db, "cam1");
+    states = await State(s.Db, TestCameras.One);
     Assert.Contains(CameraStateWriter.Alarm, states);
     Assert.Contains(CameraStateWriter.Disconnected, states);
     Assert.DoesNotContain(

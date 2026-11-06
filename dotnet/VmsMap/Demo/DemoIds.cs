@@ -27,5 +27,10 @@ namespace VmsMap.Demo
     }
 
     public static string Id(string key) => For(key).ToString();
+
+    /// The camera id a demo camera's name stands for in VmsCfg. Camera ids are UUIDs; the name
+    /// (`sim-master`) is what the world's model and its report speak, and this is the one place the
+    /// two are tied together.
+    public static string Camera(string name) => Id($"camera/{name}");
   }
 }

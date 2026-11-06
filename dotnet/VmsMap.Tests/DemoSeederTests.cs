@@ -4,7 +4,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Vms.Map;
+using VmsMap.Adapter;
 using VmsMap.Clients;
 using VmsMap.Db;
 using VmsMap.Demo;
@@ -21,12 +23,15 @@ public class DemoSeederTests
 {
   private sealed class TestCatalog : ICameraCatalog
   {
+    // The demo world names its cameras; VmsCfg keys them by id. The fake catalogue holds ids, the
+    // way the real one does.
     private readonly HashSet<string> _known;
 
-    public TestCatalog(params string[] known) => _known = new HashSet<string>(known, StringComparer.Ordinal);
+    public TestCatalog(params string[] known) =>
+      _known = new HashSet<string>(known.Select(DemoIds.Camera), StringComparer.Ordinal);
 
     /// A camera the installation provisions after the demo was installed once.
-    public void Add(string cameraId) => _known.Add(cameraId);
+    public void Add(string cameraName) => _known.Add(DemoIds.Camera(cameraName));
 
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
       Task.FromResult(_known.Contains(cameraId)
@@ -64,7 +69,8 @@ public class DemoSeederTests
 
     var seeder = new DemoSeeder(
       db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
-      new RightService(db), geo, new FileService(db), new VisualService(db), spatial, catalog);
+      new RightService(db), geo, new FileService(db), new VisualService(db), spatial, catalog,
+      TestWiring.DeviceNodes(db, map, updates));
 
     return new Services(db, map, seeder, catalog);
   }
@@ -190,7 +196,7 @@ public class DemoSeederTests
 
     Assert.Equal(["sim-missing"], report.SkippedCameras);
     Assert.True((await s.Seeder.GetStatusAsync(Key, CancellationToken.None)).Installed);
-    Assert.Equal("sim-master", (await s.Db.CameraPlacements.SingleAsync()).camera_id);
+    Assert.Equal(DemoIds.Camera("sim-master"), (await s.Db.CameraPlacements.SingleAsync()).camera_id);
   }
 
   [Fact]
@@ -209,5 +215,38 @@ public class DemoSeederTests
 
     Assert.Empty(placed.SkippedCameras);
     Assert.Single(await s.Db.CameraPlacements.ToListAsync());
+  }
+
+  private static DemoNode TelemetryReplica() =>
+    new("object/telemetry", "Camera sim-vehicle", "space/room", "type/rack",
+      Canvas: new DemoRect(0, 0, 300, 200), OwnerCameraId: "sim-vehicle");
+
+  [Fact]
+  public async Task AReplicaHangsOffTheCamerasCanonicalNodeAndTakesNoPlacement()
+  {
+    var s = Create("sim-vehicle");
+
+    await s.Seeder.InstallAsync(World(nodes: [.. DefaultNodes(), TelemetryReplica()]), CancellationToken.None);
+
+    var replicaId = Guid.Parse(DemoIds.Id("object/telemetry"));
+    var replica = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.id == replicaId);
+    Assert.Equal(Guid.Parse(CameraObjectId.For(DemoIds.Camera("sim-vehicle"))), replica.owner_id);
+
+    // The camera stands where its placement put it; the replica shows it from a diagram, which is
+    // not a space, so there is nothing to place.
+    Assert.Empty(await s.Db.CameraPlacements.ToListAsync());
+  }
+
+  [Fact]
+  public async Task AReplicaIsSkippedWhileTheDeploymentLacksTheCamera()
+  {
+    var s = Create();
+
+    var report = await s.Seeder.InstallAsync(
+      World(nodes: [.. DefaultNodes(), TelemetryReplica()]), CancellationToken.None);
+
+    Assert.Contains("sim-vehicle", report.SkippedCameras);
+    Assert.Null(await s.Db.Markers.AsNoTracking()
+      .FirstOrDefaultAsync(m => m.id == Guid.Parse(DemoIds.Id("object/telemetry"))));
   }
 }

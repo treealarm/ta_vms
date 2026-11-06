@@ -1,0 +1,44 @@
+using Vms.Cfg;
+
+namespace VmsCfg.Demo;
+
+/// The parts the demo configures. A part's name and arming are configuration like the wall, so they
+/// belong to VmsCfg's half of the demo, not to web_srv: the install is the same whether an
+/// administrator pressed the button or `DEMO_CONFIG` installed the world at startup.
+public sealed class DemoDevices(DeviceStorage devices, DeviceSettingsNotifier notifier)
+{
+  /// What one install did, in the names the operator is told: parts it configured, cameras it could
+  /// not because the deployment does not have them yet.
+  public sealed record Plan(IReadOnlyList<string> Configured, IReadOnlyList<string> Skipped);
+
+  /// `sim-ptz`'s input is wired to `sim-master`'s `peer` relay. The input's idle contact is open,
+  /// and a closed relay contact shunts it, so the contact that means "the relay fired" is open:
+  /// that is the polarity the trigger is set to, not a guess from the picture.
+  public static DeviceSettings SensorSettings() => new()
+  {
+    CameraId = DemoCameraIds.For("sim-ptz"),
+    Kind = DeviceSettingsRules.DigitalInput,
+    Token = "input",
+    Name = "Sensor",
+    ArmMode = DeviceSettingsRules.Armed,
+    TriggerOn = DeviceSettingsRules.TriggerOpen,
+    AlarmEnabled = true,
+  };
+
+  public async Task<Plan> InstallAsync(IReadOnlyCollection<string> presentCameraIds, CancellationToken ct)
+  {
+    var settings = SensorSettings();
+    const string camera = "sim-ptz/input";
+
+    // A camera the deployment does not have is reported, not an error: the world is valid without
+    // it, and installing again once the camera exists configures the part.
+    if (!presentCameraIds.Contains(settings.CameraId))
+      return new Plan([], [camera]);
+
+    await devices.SetAsync(settings, ct);
+    // The same signal the gRPC path sends: without it VmsMap keeps the old arming for its TTL,
+    // and the demo's first contact would not raise anything.
+    await notifier.NotifyAsync(settings.CameraId, ct);
+    return new Plan([camera], []);
+  }
+}

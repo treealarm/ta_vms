@@ -173,6 +173,34 @@ namespace VmsMap.Db
             return dto;
           });
     }
+    public async Task<Dictionary<string, BaseMarkerDTO>> SearchDeviceNodesAsync(string query, int limit)
+    {
+      var pattern = $"%{query}%";
+      // A camera id is a UUID column in device_node; matching it as text would defeat the column's
+      // own comparison. Everything else is a name or a token fragment.
+      var cameraId = Guid.TryParse(query, out _) ? query : null;
+
+      var list = await (
+          from m in _db.Markers
+          join n in _db.DeviceNodes on m.id equals n.object_id
+          where EF.Functions.ILike(m.name, pattern)
+                || EF.Functions.ILike(n.part_token, pattern)
+                || (cameraId != null && n.source_id == cameraId)
+          orderby m.name
+          select m)
+        .Take(limit)
+        .ToListAsync();
+
+      return list.ToDictionary(
+          m => Utils.ConvertGuidToObjectId(m.id),
+          m =>
+          {
+            var dto = new BaseMarkerDTO();
+            m.CopyAllTo(dto);
+            return dto;
+          });
+    }
+
     public async Task<List<BaseMarkerDTO>> GetByChildIdAsync(string object_id)
     {
       var rootGuid = Utils.ConvertObjectIdToGuid(object_id);
@@ -413,6 +441,27 @@ namespace VmsMap.Db
         dbUpdated.Add(item, dbObj);
       }
 
+      // A picture is a picture of an original, never of another picture: every read that answers
+      // through an owner -- states, values, camera id, node kind, rights -- resolves it in one hop,
+      // so the end of a chain would answer nothing. A replica dropped from another replica's
+      // canvas is stored as a replica of the node both show, and the DTO carries that back.
+      foreach (var kvp in dbUpdated.Where(kvp => kvp.Value.owner_id.HasValue))
+      {
+        var ownerId = kvp.Value.owner_id!.Value;
+
+        // A stored owner is already an original: only a write that sets a new one can name a
+        // picture, and the walk below is one read per level.
+        if (existingEntities.TryGetValue(kvp.Value.id, out var before) && before.owner_id == ownerId)
+          continue;
+
+        var original = await ResolveOwnerAsync(ownerId, kvp.Value.id);
+        if (original == ownerId)
+          continue;
+
+        kvp.Value.owner_id = original;
+        kvp.Key.owner_id = Utils.ConvertGuidToObjectId(original);
+      }
+
       // A move under the node's own descendant would close a loop the alarm and rights walks cannot
       // leave; whatever rearranges the tree -- the editor's "move to" among them -- is refused here,
       // before any tracked row is touched.
@@ -438,6 +487,23 @@ namespace VmsMap.Db
           entity.parent_id = kvp.Value.parent_id;
           entity.owner_id = kvp.Value.owner_id;
           entity.name = kvp.Value.name;
+        }
+        else if (_db.Database.IsRelational())
+        {
+          // Created-or-updated in one statement. Nodes are created from several paths that run at
+          // the same time -- the resync's batches, a config event, the demo seeder -- and all of
+          // them derive the same id, so "read, then insert" leaves a window where two writers both
+          // insert and one dies on the primary key. The row did not exist when this call read the
+          // tree, so an existing one now was written by such a writer; taking this call's values is
+          // the same answer a normal update would give.
+          await _db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO objects (id, parent_id, owner_id, name)
+            VALUES ({kvp.Value.id}, {kvp.Value.parent_id}, {kvp.Value.owner_id}, {kvp.Value.name})
+            ON CONFLICT (id) DO UPDATE SET
+              parent_id = EXCLUDED.parent_id,
+              owner_id  = EXCLUDED.owner_id,
+              name      = EXCLUDED.name;
+            """);
         }
         else
         {
@@ -479,6 +545,36 @@ namespace VmsMap.Db
       }
     }
 
+
+    /// The node an owner must name: the one that keeps its own rows. A replica's owner is followed
+    /// to the end of the chain, and a node that would own itself, or a chain that returns to where
+    /// it started, is refused rather than written.
+    private async Task<Guid> ResolveOwnerAsync(Guid ownerId, Guid nodeId)
+    {
+      var visited = new HashSet<Guid>();
+      var current = ownerId;
+
+      while (true)
+      {
+        if (current == nodeId)
+          throw new ArgumentException(
+              $"Node '{Utils.ConvertGuidToObjectId(nodeId)}' cannot be its own owner");
+
+        if (!visited.Add(current))
+          throw new ArgumentException(
+              $"Node '{Utils.ConvertGuidToObjectId(ownerId)}' belongs to an owner cycle");
+
+        var next = await _db.Markers.AsNoTracking()
+            .Where(m => m.id == current)
+            .Select(m => m.owner_id)
+            .FirstOrDefaultAsync();
+
+        if (next is null)
+          return current;
+
+        current = next.Value;
+      }
+    }
 
     /// Walks up from each new parent: reaching the moved node itself means the move closes a loop.
     /// A node moved in the same request is followed where it will go, not where it is now.
@@ -575,8 +671,11 @@ namespace VmsMap.Db
               result.Add(Utils.ConvertGuidToObjectId(id));
           }
 
+          // A replica is not a child: it stands on its own canvas and names the node it shows.
+          // Without the owner link here, deleting a node left its pictures behind.
           var children = await _db.Markers.AsNoTracking()
-            .Where(m => m.parent_id.HasValue && level.Contains(m.parent_id.Value))
+            .Where(m => (m.parent_id.HasValue && level.Contains(m.parent_id.Value))
+              || (m.owner_id.HasValue && level.Contains(m.owner_id.Value)))
             .Select(m => m.id)
             .ToListAsync();
           foreach (var child in children)
@@ -595,7 +694,9 @@ namespace VmsMap.Db
         WITH RECURSIVE sub AS (
           SELECT id FROM objects WHERE id = ANY(@ids)
           UNION
-          SELECT o.id FROM objects o JOIN sub s ON o.parent_id = s.id
+          -- Children, and replicas, which are not children: a replica stands on its own canvas
+          -- and names the node it shows.
+          SELECT o.id FROM objects o JOIN sub s ON o.parent_id = s.id OR o.owner_id = s.id
         )
         SELECT id FROM sub;
         """);

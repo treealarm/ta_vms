@@ -20,6 +20,7 @@ import spatialReducer from './spatialSlice'
 import objectsReducer from './objectsSlice'
 import statesReducer from './statesSlice'
 import eventsReducer from './eventsSlice'
+import alarmsReducer from './alarmsSlice'
 import levelsReducer from './levelsSlice'
 import searchReducer from './searchSlice'
 import tracksReducer from './tracksSlice'
@@ -49,6 +50,7 @@ export const store = configureStore({
     objects: objectsReducer,
     states: statesReducer,
     events: eventsReducer,
+    alarms: alarmsReducer,
     levels: levelsReducer,
     search: searchReducer,
     tracks: tracksReducer,

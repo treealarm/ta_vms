@@ -6,9 +6,10 @@ export const KIND_ORDER: Record<string, number> = {
   space: 0,
   diagram: 1,
   camera: 2,
-  landmark: 3,
-  figure: 4,
-  object: 5,
+  part: 3,
+  landmark: 4,
+  figure: 5,
+  object: 6,
 }
 
 export function sortMarkers(markers: MapMarker[]): MapMarker[] {

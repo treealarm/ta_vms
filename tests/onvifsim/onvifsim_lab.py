@@ -5,10 +5,15 @@ Two master/slave pairs watch the same yard: one stands on a map in real coordina
 a plan in made-up ones, whose picture is the yard photographed from above. --pair picks one; by
 default every step does both, one after the other.
 
+With --world maryland the bench works in the demo world instead: one pair, the master and the slave
+in the hall of Room 101, with the landmarks in world.py's MARYLAND_LANDMARKS and the cameras placed
+exactly where tests/demo's world puts them. The demo world must be installed first; the bench adds
+no placements there. Only the aiming steps run in it — the matrix and edge import are the yard's.
+
 Steps, each one checking what it did and exiting 1 with the reason when something is off:
 
     up          build and start OnvifSim from ../OnvifSim in Docker, on ports clear of the dev
-                stack, and load the world
+                stack, and load the world (--world maryland: the demo world instead of the yard)
     provision   add the cameras to ta_vms over ONVIF; the map, and the plan with its picture; the
                 landmarks in each, and where each pair's cameras stand
     calibrate   PTZ by landmarks (head driven in the sim, position read back over ONVIF through
@@ -45,6 +50,7 @@ import subprocess
 import sys
 import time
 import urllib.parse
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -127,6 +133,13 @@ class Lab:
         self.vms = Vms(args.vms, args.user, args.password)
         self.state_file = state_file(args.vms)
         self.state = load_state(self.state_file)
+        # The demo world runs a pair of its own — the hall in Room 101 — and no heights or mounts:
+        # those belong to the yard. Its cameras come from the world OnvifSim serves, which the demo
+        # world file fixes, so the bench calibrates where the demo has placed them.
+        self.demo = args.world == "maryland"
+        self.demo_world = (
+            W.load_maryland(Path(args.sim_dir).resolve() / "data" / "worlds" / "maryland.json")
+            if self.demo else None)
         self.hang(W.MOUNTS_BY_NAME[args.mount])
         self.pairs = [p for p in self.all_pairs if args.pair in ("both", p.name)]
         # What the steps measured, for the matrix's table; notes are thresholds a "measure" mount missed.
@@ -135,7 +148,9 @@ class Lab:
     def hang(self, mount):
         """Takes the map pair as hung by mount; the plan pair always stands level."""
         self.mount = mount
-        self.all_pairs = [mount.apply(p) if p.name == W.MAP_PAIR.name else p for p in W.PAIRS]
+        self.all_pairs = (
+            W.demo_pairs(self.demo_world) if self.demo
+            else [mount.apply(p) if p.name == W.MAP_PAIR.name else p for p in W.PAIRS])
 
     def expect(self, condition, message):
         """A quality threshold: fatal for a mount expected to pass, a note for one run to measure."""
@@ -146,8 +161,13 @@ class Lab:
         self.metrics.setdefault("notes", []).append(message)
         log(f"  note ({self.mount.name}): {message}")
 
+    # Camera ids are UUIDs now. Deriving them the same way the demo does (a UUIDv5 of the demo
+    # namespace and "camera/<name>") keeps --world maryland on the ids the demo world installed,
+    # and gives a bench camera a stable id across runs.
+    CAMERA_NAMESPACE = uuid.UUID("0f3c1a52-6f5b-4a0e-9a19-3a8a5a4b7c11")
+
     def cam_id(self, camera):
-        return f"{self.args.prefix}{camera.id}"
+        return str(uuid.uuid5(self.CAMERA_NAMESPACE, f"camera/{self.args.prefix}{camera.id}"))
 
     @property
     def onvif_base(self):
@@ -155,8 +175,20 @@ class Lab:
 
     def anchor(self, pair):
         """The WGS84 a pair's space measures in: the real anchor for the map, (0, 0) for the plan,
-        which stands in made-up coordinates."""
+        which stands in made-up coordinates — and the demo world's own anchor for its hall."""
+        if self.demo:
+            return (W.MARYLAND_LAT0, W.MARYLAND_LON0)
         return (self.args.lat0, self.args.lon0) if pair.name == W.MAP_PAIR.name else (0.0, 0.0)
+
+    def landmarks(self):
+        """The landmarks this world has: the yard's five, or the hall's in the demo world."""
+        return W.MARYLAND_LANDMARKS if self.demo else W.LANDMARKS
+
+    def walker(self):
+        """The walking person as the sim holds it, so a step can take it away and put it back."""
+        if self.demo:
+            return next(w for w in self.demo_world["walkers"] if w["id"] == W.WALKER_ID)
+        return W.walker_json(W.WALKER_ROUTE)
 
     def wgs84(self, pair, x, z):
         return W.to_wgs84(x, z, *self.anchor(pair))
@@ -177,14 +209,23 @@ class Lab:
             log("OnvifSim already running")
         else:
             self._start_sim()
-        self.sim.put_world(W.build_world(self.onvif_base, self.all_pairs))
+        if self.args.world == "maryland":
+            # The demo world OnvifSim builds from ta_vms's demo constants; it is loaded as it ships,
+            # and checked against the demo placements before anything talks to its cameras.
+            world = W.load_maryland(Path(self.args.sim_dir).resolve() / "data" / "worlds" / "maryland.json")
+            self.sim.put_world(world)
+            expected = {camera["id"]: self.onvif_base + i for i, camera in enumerate(world["cameras"])}
+            name = "Maryland"
+        else:
+            self.sim.put_world(W.build_world(self.onvif_base, self.all_pairs))
+            cameras = [*W.STREAMING_CAMERAS, W.TOPDOWN]
+            expected = {c.id: self.onvif_base + i for i, c in enumerate(cameras)}
+            name = f"the yard, map pair hung '{self.mount.name}'"
         status = self.sim.status()
         require(status.get("h264"), "OnvifSim offers no H.264 (ffmpeg not found): video_srv needs Profile_2")
         ports = status.get("onvifPorts", {})
-        cameras = [*W.STREAMING_CAMERAS, W.TOPDOWN]
-        expected = {c.id: self.onvif_base + i for i, c in enumerate(cameras)}
         require(ports == expected, f"OnvifSim ONVIF ports are {ports}, expected {expected}")
-        log(f"OnvifSim world loaded: ONVIF {expected}, RTSP {status.get('rtspPort')}, map pair hung '{self.mount.name}'")
+        log(f"OnvifSim world loaded: {name}; ONVIF {expected}, RTSP {status.get('rtspPort')}")
 
     def _compose(self, *command, check=True):
         a = self.args
@@ -193,8 +234,10 @@ class Lab:
                    ONVIFSIM_RTSP_PORT=str(a.rtsp_port), ONVIFSIM_RTP_PORT=str(a.rtp_port),
                    ONVIFSIM_RTP_PORT_END=str(a.rtp_port + 1),
                    ONVIFSIM_ONVIF_BASE_PORT=str(a.onvif_base_port),
-                   # The cameras ta_vms talks to; the plan camera's port stays inside the container.
-                   ONVIFSIM_ONVIF_LAST_PORT=str(a.onvif_base_port + len(W.STREAMING_CAMERAS) - 1))
+                   # The cameras ta_vms talks to; the yard's plan camera, and anything beyond the
+                   # demo world's five, stay inside the container.
+                   ONVIFSIM_ONVIF_LAST_PORT=str(a.onvif_base_port + (
+                       len(W.DEMO_PLACEMENTS) + 1 if a.world == "maryland" else len(W.STREAMING_CAMERAS)) - 1))
         result = subprocess.run(["docker", "compose", "-f", str(COMPOSE_FILE), *command], env=env)
         require(not check or result.returncode == 0, f"docker compose {' '.join(command)} failed")
 
@@ -249,14 +292,25 @@ class Lab:
             space_id = self._ensure_space(pair)
             landmarks = self._ensure_landmarks(pair, space_id)
             for camera in (pair.master, pair.slave):
+                cam_id = self.cam_id(camera)
+                if self.demo:
+                    # The demo placed these cameras; a second placement here would move them.
+                    placed = {p.get("cameraId"): p
+                              for p in self.vms.call("GET", "/api/spatial/placements") or []}
+                    require(placed.get(cam_id, {}).get("spaceId") == space_id,
+                            f"{cam_id} is not placed in the demo's space {space_id}")
+                    continue
+
                 lat, lon = self.wgs84(pair, camera.x, camera.z)
-                self.vms.upsert_placement(self.cam_id(camera), space_id, {
-                    "cameraId": self.cam_id(camera), "spaceId": space_id, "isReference": True,
+                self.vms.upsert_placement(cam_id, space_id, {
+                    "cameraId": cam_id, "spaceId": space_id, "isReference": True,
                     "lat": lat, "lon": lon, "heightM": camera.y, "headingDeg": camera.heading,
                     "hfovDeg": camera.hfov if camera.kind == "fixed" else pair.limits.fov_wide,
                     "rangeM": 60,
                 })
-            log(f"space '{SPACE_NAMES[pair.name]}' ({space_id}): {len(landmarks)} landmarks, "
+            space_name = ("Room 101" if self.demo and pair.name == W.MARYLAND_PAIR_NAME
+                          else SPACE_NAMES[pair.name])
+            log(f"space '{space_name}' ({space_id}): {len(landmarks)} landmarks, "
                 f"{self.cam_id(pair.master)} and {self.cam_id(pair.slave)} placed")
             self.of(pair).update(space_id=space_id, landmarks=landmarks)
             save_state(self.state_file, self.state)
@@ -291,6 +345,14 @@ class Lab:
         log(f"added camera {cam_id} (ONVIF {self.args.sim_host}:{port}, {PROFILE})")
 
     def _ensure_space(self, pair):
+        if self.demo:
+            # The demo world already holds these spaces, with the pictures and coordinates the
+            # deployment uses; making our own would put the cameras somewhere the demo did not.
+            name = "Room 101" if pair.name == W.MARYLAND_PAIR_NAME else "A.V. Williams Building"
+            space = next((s for s in self.vms.spaces() if s.get("name") == name), None)
+            require(space, f"the demo world has no '{name}': install it with tests/demo/check_demo.py first")
+            return space["id"]
+
         name = SPACE_NAMES[pair.name]
         space = next((s for s in self.vms.spaces() if s.get("name") == name and not s.get("parentId")), None)
         if space is None:
@@ -319,7 +381,7 @@ class Lab:
             image = self.sim.snapshot(W.TOPDOWN.id)
         finally:
             self.sim.put_environment(W.ENVIRONMENT)
-            self.sim.put_walker(W.WALKER_ID, W.walker_json(W.WALKER_ROUTE))
+            self.sim.put_walker(W.WALKER_ID, self.walker())
         self.vms.upload_plan(space_id, image, "image/jpeg", W.PLAN_W, W.PLAN_H, W.plan_corners(*self.anchor(pair)))
         log(f"plan picture uploaded: {W.PLAN_W}x{W.PLAN_H}, {len(image) // 1024} KiB, "
             f"{2 * W.PLAN_HALF_WIDTH:.0f} m wide from {W.PLAN_ALTITUDE:.0f} m up")
@@ -329,7 +391,7 @@ class Lab:
         # every observation and mark already recorded against it.
         by_name = {lm["name"].split()[0]: lm["id"] for lm in self.vms.landmarks(space_id) if lm["name"]}
         ids = {}
-        for lm in W.LANDMARKS:
+        for lm in self.landmarks():
             lat, lon = self.wgs84(pair, lm.x, lm.z)
             body = {"spaceId": space_id, "name": lm.label, "lat": lat, "lon": lon, "heightM": 0}
             if lm.name in by_name:
@@ -359,6 +421,7 @@ class Lab:
         # landmark while it is being calibrated. Held, as the calibration wizard holds it.
         for slave in slaves:
             self.vms.hold(slave, 300)
+        walker = self.walker()
         self.sim.delete_walker(W.WALKER_ID)
         try:
             for pair in self.pairs:
@@ -368,7 +431,7 @@ class Lab:
                     self._calibrate_ground(pair)
         finally:
             self.sim.delete_walker(MARK_WALKER)
-            self.sim.put_walker(W.WALKER_ID, W.walker_json(W.WALKER_ROUTE))
+            self.sim.put_walker(W.WALKER_ID, walker)
             for slave in slaves:
                 try:
                     self.vms.hold(slave, 0)
@@ -383,7 +446,7 @@ class Lab:
         observations = []
         log(f"PTZ calibration of {slave}: centre each landmark, read the position back over ONVIF")
         log("  lm   pan°     tilt°    | ONVIF pan  tilt    | expected pan tilt   | dist m  zoom")
-        for lm in W.LANDMARKS:
+        for lm in self.landmarks():
             # The sim turns its own head onto the landmark, whichever way it hangs.
             try:
                 pan, tilt = self.sim.aim(pair.slave.id, (lm.x, 0.0, lm.z))
@@ -421,7 +484,7 @@ class Lab:
         self.expect(worst < 0.01, f"leave-one-out residual {worst:.4f} is too large for an exactly linear head")
         # The distances ta_vms measures the samples by, against the world's own.
         for o in result["observations"]:
-            lm = next(m for m in W.LANDMARKS if ids[m.name] == o["landmarkId"])
+            lm = next(m for m in self.landmarks() if ids[m.name] == o["landmarkId"])
             _, _, distance = W.bearing(pair.slave.position, (lm.x, 0.0, lm.z))
             require(o.get("distanceM") is not None and abs(o["distanceM"] - distance) < 0.1,
                     f"ta_vms puts {lm.name} {o.get('distanceM')} m from {slave}, the world {distance:.2f} m")
@@ -445,7 +508,7 @@ class Lab:
         # Where the feet are in the picture, from the master's true pose: however it hangs and turns it.
         master_pose = self.sim.camera_pose(pair.master.id)
         worst_foot = 0.0
-        for lm in W.LANDMARKS:
+        for lm in self.landmarks():
             self.sim.put_walker(MARK_WALKER, W.walker_json([(lm.x, lm.z)]))
             time.sleep(1.5)  # let boxes from the previous spot drain through the pipeline
             boxes = self._master_boxes(pair, seconds=6, wanted=8)[-5:]
@@ -483,7 +546,7 @@ class Lab:
 
     def _aim_check(self, pair, space_id):
         slave = self.cam_id(pair.slave)
-        self.sim.put_walker(W.WALKER_ID, W.walker_json(W.WALKER_ROUTE))
+        self.sim.put_walker(W.WALKER_ID, self.walker())
         samples = self._zoom_samples(pair)
         log(f"aim {slave} at the walking person through POST /api/ptz-geo/{{id}}/aim, {self.args.seconds:.0f} s, "
             f"{len(samples)} zoom sample(s)")
@@ -538,7 +601,7 @@ class Lab:
     def bind(self):
         self.vms.login()
         for pair in self.pairs:
-            if pair.name == W.PLAN_PAIR.name:
+            if not self.demo and pair.name == W.PLAN_PAIR.name:
                 self._check_plan_is_apart(pair)
             self._bind(pair)
 
@@ -591,7 +654,7 @@ class Lab:
 
     def run(self):
         self.vms.login()
-        self.sim.put_walker(W.WALKER_ID, W.walker_json(W.WALKER_ROUTE))
+        self.sim.put_walker(W.WALKER_ID, self.walker())
         for pair in self.pairs:
             self._run(pair)
 
@@ -658,7 +721,12 @@ class Lab:
         self.metrics.update(arrival_mean=mean, arrival_p95=p95, tracking_p95=_percentile(tracking, 95),
                             run_framed=sum(framed) / len(framed), fill=median_fill)
         self.expect(mean < 1.5 and p95 < 2.5, f"{slave}: arrival error mean {mean:.2f}°, p95 {p95:.2f}°")
-        self.expect(_percentile(tracking, 95) < 6, f"{slave}: tracking error p95 {_percentile(tracking, 95):.2f}°")
+        # The demo's pair stands 5-11 m apart where the yard's stands 20-30 m. The same detection
+        # lag is a much larger angle at that range, and the demo's person walks the same speed, so
+        # the at-rest error is legitimately bigger there.
+        tracking_limit = 12 if self.demo else 6
+        self.expect(_percentile(tracking, 95) < tracking_limit,
+                    f"{slave}: tracking error p95 {_percentile(tracking, 95):.2f}° (limit {tracking_limit}°)")
         self.expect(sum(framed) / len(framed) > 0.9, f"the person is out of {slave}'s picture too often")
         # Framed for FRAME_WIDTH_M the person fills about 40% of the picture's height; at the wide
         # end, under 10%. A quarter is clearly zoomed and leaves room for the frames in transit.
@@ -921,8 +989,12 @@ def main():
     p.add_argument("--prefix", default="sim-", help="ta_vms camera ids are <prefix>master, <prefix>ptz, ...")
     p.add_argument("--pair", choices=["both", *[pair.name for pair in W.PAIRS]], default="both",
                    help="which master/slave pair the steps work on: the map's, the plan's, or both")
-    p.add_argument("--lat0", type=float, default=W.DEFAULT_LAT0)
-    p.add_argument("--lon0", type=float, default=W.DEFAULT_LON0)
+    p.add_argument("--world", choices=["yard", "maryland"], default="yard",
+                   help="up: the yard the aiming checks work in, or the demo world (Maryland) the "
+                        "demo deployment runs")
+    p.add_argument("--lat0", type=float, default=None,
+                   help="the WGS84 anchor a pair's space measures in; the world's own by default")
+    p.add_argument("--lon0", type=float, default=None)
     p.add_argument("--seconds", type=float, default=60, help="aim-check and run duration")
     p.add_argument("--interval", type=float, default=3, help="aim-check: seconds between aims")
     p.add_argument("--outage", type=float, default=60, help="edge: how long the camera is off the network")
@@ -935,6 +1007,17 @@ def main():
     p.add_argument("--no-zoom", action="store_true",
                    help="calibrate: record no zoom samples, so the slaves stay wide as they did before zoom")
     args = p.parse_args()
+    # The demo world is anchored at its own building, the yard at the farmland the bench has always
+    # measured from; an explicit --lat0/--lon0 still wins.
+    if args.lat0 is None:
+        args.lat0 = W.MARYLAND_LAT0 if args.world == "maryland" else W.DEFAULT_LAT0
+    if args.lon0 is None:
+        args.lon0 = W.MARYLAND_LON0 if args.world == "maryland" else W.DEFAULT_LON0
+    # The matrix and edge import are the yard's: they rehang cameras and cut one off the network,
+    # which the demo world has no place for.
+    if args.world == "maryland" and args.step in ("matrix", "edge"):
+        log(f"the {args.step} step works in the yard world; run it with --world yard")
+        return 1
 
     W.check()
     lab = Lab(args)

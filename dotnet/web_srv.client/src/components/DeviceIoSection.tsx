@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   CircularProgress,
   Divider,
   MenuItem,
@@ -11,11 +12,14 @@ import {
   Stack,
   Switch,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { apiFetch } from '../api/apiFetch'
 import type {
+  DeviceArmMode,
+  DeviceSettingsDto,
   DigitalInputDto,
   DigitalInputOptionsDto,
   IdleState,
@@ -24,13 +28,15 @@ import type {
   RelayOutputOptionsDto,
 } from '../dto/dtos'
 import { setRelayOutputState, useRelayToggle } from '../hooks/useRelayToggle'
+import { useDeviceIoLive } from '../hooks/useDeviceIoLive'
 
 // ── Digital inputs ──────────────────────────────────────────────────────────
 
-function DigitalInputRow({ cameraId, input, options }: {
+function DigitalInputRow({ cameraId, input, options, settings: saved }: {
   cameraId: string
   input: DigitalInputDto
   options: DigitalInputOptionsDto | undefined
+  settings: DeviceSettingsDto | undefined
 }) {
   const { t } = useTranslation()
   const [idleState, setIdleState] = useState<IdleState>(input.idleState ?? 'closed')
@@ -38,6 +44,25 @@ function DigitalInputRow({ cameraId, input, options }: {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveOk, setSaveOk] = useState(false)
   const configurable = options?.idleStateConfigurable ?? false
+
+  // Arming and alarm settings live in VmsCfg, not in the camera: a missing row is the default
+  // (inherit the camera, no alarm), which is what the card starts from.
+  const [armMode, setArmMode] = useState<DeviceArmMode>(saved?.armMode ?? 'inherit')
+  const [alarmEnabled, setAlarmEnabled] = useState(saved?.alarmEnabled ?? false)
+  const [triggerOn, setTriggerOn] = useState<IdleState>(saved?.triggerOn ?? 'closed')
+  const [settingsSaving, setSettingsSaving] = useState(false)
+  const [settingsError, setSettingsError] = useState<string | null>(null)
+  const [settingsOk, setSettingsOk] = useState(false)
+
+  useEffect(() => {
+    setArmMode(saved?.armMode ?? 'inherit')
+    setAlarmEnabled(saved?.alarmEnabled ?? false)
+    setTriggerOn(saved?.triggerOn ?? 'closed')
+  }, [saved])
+
+  // Unknown polarity is a warning, not a disabled control: the setting is stored, the alarm simply
+  // cannot be raised until the camera says which contact is idle.
+  const polarityUnknown = input.idleState === null
 
   const handleSave = async () => {
     setSaving(true); setSaveError(null); setSaveOk(false)
@@ -56,10 +81,44 @@ function DigitalInputRow({ cameraId, input, options }: {
     }
   }
 
+  const handleSaveSettings = async () => {
+    setSettingsSaving(true); setSettingsError(null); setSettingsOk(false)
+    try {
+      await apiFetch(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'digital_input',
+          token: input.token,
+          name: saved?.name ?? '',
+          armMode,
+          triggerOn: alarmEnabled ? triggerOn : null,
+          alarmEnabled,
+        }),
+      })
+      setSettingsOk(true)
+      setTimeout(() => setSettingsOk(false), 3000)
+    } catch (e) {
+      setSettingsError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSettingsSaving(false)
+    }
+  }
+
   return (
     <Stack spacing={1}>
       <Stack direction="row" alignItems="center" spacing={2}>
-        <Typography variant="body2" sx={{ minWidth: 100 }}>{input.token}</Typography>
+        <Typography variant="body2" sx={{ minWidth: 100 }}>{saved?.name || input.token}</Typography>
+        <Tooltip title={t('onvifSettings.deviceIoInputStateTip')}>
+          {/* The camera's own logical state, from Device/Trigger events. A dash means it has not
+              reported one yet — not that the input reads zero. */}
+          <Chip
+            size="small"
+            variant="outlined"
+            color={input.liveActive === null ? 'default' : input.liveActive ? 'success' : 'default'}
+            label={input.liveActive === null ? '—' : input.liveActive ? '1' : '0'}
+          />
+        </Tooltip>
         <TextField
           select
           size="small"
@@ -80,36 +139,86 @@ function DigitalInputRow({ cameraId, input, options }: {
       {!configurable && (
         <Alert severity="warning" sx={{ py: 0 }}>{t('onvifSettings.deviceIoIdleStateUnsupported')}</Alert>
       )}
+      {polarityUnknown && (
+        <Alert severity="warning" sx={{ py: 0 }}>{t('onvifSettings.deviceIoPolarityUnknown')}</Alert>
+      )}
+
+      <Stack direction="row" alignItems="center" spacing={2} flexWrap="wrap" useFlexGap>
+        <TextField
+          select
+          size="small"
+          label={t('onvifSettings.deviceIoArmModeLabel')}
+          value={armMode}
+          onChange={(e) => setArmMode(e.target.value as DeviceArmMode)}
+          sx={{ minWidth: 160 }}
+        >
+          <MenuItem value="inherit">{t('onvifSettings.deviceIoArmInherit')}</MenuItem>
+          <MenuItem value="armed">{t('onvifSettings.deviceIoArmed')}</MenuItem>
+          <MenuItem value="disarmed">{t('onvifSettings.deviceIoDisarmed')}</MenuItem>
+        </TextField>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <Switch
+            checked={alarmEnabled}
+            onChange={(e) => setAlarmEnabled(e.target.checked)}
+            inputProps={{ 'aria-label': t('onvifSettings.deviceIoAlarmEnabled') }}
+          />
+          <Typography variant="body2">{t('onvifSettings.deviceIoAlarmEnabled')}</Typography>
+        </Stack>
+        <TextField
+          select
+          size="small"
+          label={t('onvifSettings.deviceIoTriggerOn')}
+          value={triggerOn}
+          disabled={!alarmEnabled}
+          onChange={(e) => setTriggerOn(e.target.value as IdleState)}
+          sx={{ minWidth: 140 }}
+        >
+          <MenuItem value="open">{t('onvifSettings.deviceIoTriggerOpen')}</MenuItem>
+          <MenuItem value="closed">{t('onvifSettings.deviceIoTriggerClosed')}</MenuItem>
+        </TextField>
+        <Button variant="contained" size="small" disabled={settingsSaving} onClick={() => void handleSaveSettings()}>
+          {settingsSaving ? <CircularProgress size={16} /> : t('onvifSettings.deviceIoSave')}
+        </Button>
+        {settingsOk && <Typography variant="body2" color="success.main">✓</Typography>}
+      </Stack>
+      {settingsError && <Alert severity="error" onClose={() => setSettingsError(null)}>{settingsError}</Alert>}
       {saveError && <Alert severity="error" onClose={() => setSaveError(null)}>{saveError}</Alert>}
     </Stack>
   )
 }
 
-function DigitalInputsGroup({ cameraId }: { cameraId: string }) {
+function DigitalInputsGroup({ cameraId, inputs, loaded }: {
+  cameraId: string
+  inputs: DigitalInputDto[]
+  loaded: boolean
+}) {
   const { t } = useTranslation()
-  const [inputs, setInputs] = useState<DigitalInputDto[] | null>(null)
   const [options, setOptions] = useState<DigitalInputOptionsDto[]>([])
-  const [error, setError] = useState<string | null>(null)
+  const [settings, setSettings] = useState<DeviceSettingsDto[]>([])
 
+  // Options are advisory (they only gate the idle-state editor). Load them once and degrade to
+  // "none" on failure, so an options error never hides the inputs list itself.
   useEffect(() => {
     let cancelled = false
-    apiFetch<DigitalInputDto[]>(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/digital-inputs`)
-      .then((i) => { if (!cancelled) { setInputs(i); setError(null) } })
-      // Resolve the loading skeleton to empty on error too; the Alert above carries the reason.
-      .catch((e: unknown) => { if (!cancelled) { setInputs([]); setError(e instanceof Error ? e.message : String(e)) } })
-    // Options are advisory (they only gate the idle-state editor). Load them separately and
-    // degrade to "none" on failure, so an options error never hides the inputs list itself.
     apiFetch<DigitalInputOptionsDto[]>(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/digital-inputs/options`)
       .then((o) => { if (!cancelled) setOptions(o) })
       .catch(() => { if (!cancelled) setOptions([]) })
     return () => { cancelled = true }
   }, [cameraId])
 
+  // A part with no row is not an error: it keeps the defaults, which is what the row starts from.
+  useEffect(() => {
+    let cancelled = false
+    apiFetch<DeviceSettingsDto[]>(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/settings`)
+      .then((s) => { if (!cancelled) setSettings(s) })
+      .catch(() => { if (!cancelled) setSettings([]) })
+    return () => { cancelled = true }
+  }, [cameraId])
+
   return (
     <Stack spacing={1.5}>
       <Typography variant="subtitle2">{t('onvifSettings.deviceIoSensorsGroup')}</Typography>
-      {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
-      {inputs === null ? (
+      {!loaded ? (
         <Skeleton variant="rounded" height={40} />
       ) : inputs.length === 0 ? (
         <Typography variant="body2" color="text.secondary">{t('onvifSettings.deviceIoNoSensors')}</Typography>
@@ -121,6 +230,7 @@ function DigitalInputsGroup({ cameraId }: { cameraId: string }) {
               cameraId={cameraId}
               input={i}
               options={options.find((o) => o.token === i.token)}
+              settings={settings.find((s) => s.kind === 'digital_input' && s.token === i.token)}
             />
           ))}
         </Stack>
@@ -193,8 +303,25 @@ function RelayOutputRow({ cameraId, relay, options }: {
       <CardContent>
         <Stack spacing={1.5}>
           <Stack direction="row" alignItems="center" spacing={2}>
+            {/* The switch is what was commanded; the chip is what the camera reports back. They
+                differ until the camera's next event arrives, and for a monostable relay they differ
+                again once it drops out on its own. */}
             <Switch checked={active} disabled={toggling} onChange={() => void handleToggle()} />
             <Typography variant="body2" sx={{ flex: 1 }}>{relay.token}</Typography>
+            <Tooltip title={t('onvifSettings.deviceIoRelayStateTip')}>
+              <Chip
+                size="small"
+                variant="outlined"
+                color={relay.liveActive === true ? 'success' : 'default'}
+                label={`${t('onvifSettings.deviceIoReportedState')}: ${
+                  relay.liveActive === null
+                    ? t('onvifSettings.deviceIoStateUnknown')
+                    : relay.liveActive
+                      ? t('onvifSettings.deviceIoActive')
+                      : t('onvifSettings.deviceIoInactive')
+                }`}
+              />
+            </Tooltip>
           </Stack>
           {toggleError && <Alert severity="error" onClose={() => setToggleError(null)}>{toggleError}</Alert>}
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
@@ -236,20 +363,18 @@ function RelayOutputRow({ cameraId, relay, options }: {
   )
 }
 
-function RelayOutputsGroup({ cameraId }: { cameraId: string }) {
+function RelayOutputsGroup({ cameraId, relays, loaded }: {
+  cameraId: string
+  relays: RelayOutputDto[]
+  loaded: boolean
+}) {
   const { t } = useTranslation()
-  const [relays, setRelays] = useState<RelayOutputDto[] | null>(null)
   const [options, setOptions] = useState<RelayOutputOptionsDto[]>([])
-  const [error, setError] = useState<string | null>(null)
 
+  // Options are advisory (delay bounds; modes are shown fixed). Load them once and degrade to
+  // "none" on failure, so an options error never hides the relay list itself.
   useEffect(() => {
     let cancelled = false
-    apiFetch<RelayOutputDto[]>(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/relay-outputs`)
-      .then((r) => { if (!cancelled) { setRelays(r); setError(null) } })
-      // Resolve the loading skeleton to empty on error too; the Alert above carries the reason.
-      .catch((e: unknown) => { if (!cancelled) { setRelays([]); setError(e instanceof Error ? e.message : String(e)) } })
-    // Options are advisory (delay bounds; modes are shown fixed). Load them separately and degrade
-    // to "none" on failure, so an options error never hides the relay list itself.
     apiFetch<RelayOutputOptionsDto[]>(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/relay-outputs/options`)
       .then((o) => { if (!cancelled) setOptions(o) })
       .catch(() => { if (!cancelled) setOptions([]) })
@@ -259,8 +384,7 @@ function RelayOutputsGroup({ cameraId }: { cameraId: string }) {
   return (
     <Stack spacing={1.5}>
       <Typography variant="subtitle2">{t('onvifSettings.deviceIoRelaysGroup')}</Typography>
-      {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
-      {relays === null ? (
+      {!loaded ? (
         <Skeleton variant="rounded" height={40} />
       ) : relays.length === 0 ? (
         <Typography variant="body2" color="text.secondary">{t('onvifSettings.deviceIoNoRelays')}</Typography>
@@ -283,11 +407,16 @@ function RelayOutputsGroup({ cameraId }: { cameraId: string }) {
 // ── Section ───────────────────────────────────────────────────────────────
 
 export default function DeviceIoSection({ cameraId }: { cameraId: string }) {
+  // One poll for both lists, alive only while this tab is on screen. The lists come from the cache
+  // VmsOnvif fills from the camera's own Device/Trigger events.
+  const { relays, inputs, loaded, error } = useDeviceIoLive(cameraId)
+
   return (
     <Stack spacing={3}>
-      <DigitalInputsGroup cameraId={cameraId} />
+      {error && <Alert severity="error">{error}</Alert>}
+      <DigitalInputsGroup cameraId={cameraId} inputs={inputs} loaded={loaded} />
       <Divider />
-      <RelayOutputsGroup cameraId={cameraId} />
+      <RelayOutputsGroup cameraId={cameraId} relays={relays} loaded={loaded} />
     </Stack>
   )
 }

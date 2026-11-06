@@ -20,6 +20,49 @@
     "loading": "Loading...",
     "undoLast": "Undo the last change (Ctrl+Z)"
   },
+  "nodes": {
+    "title": "Logical tree",
+    "search": "Search",
+    "searchHint": "Device or part name, token, or camera id",
+    "results": "{{count}} match(es), fetched from the server",
+    "noResults": "Nothing matches",
+    "empty": "No devices yet",
+    "pick": "Pick a node to see what can be done with it.",
+    "openInTree": "Open in tree",
+    "replica": "picture of another node",
+    "part": "Part of a device",
+    "partHint": "A part is a node of its own and is not placed on a map in M2.4 — its states and events are read here, under the camera it belongs to.",
+    "statesEvents": "States / Events",
+    "placeOnMap": "Place on map",
+    "placeHint": "Adds a picture of this camera to the space. The first placement becomes the reference; an existing reference is never moved from here.",
+    "space": "Space",
+    "place": "Place",
+    "placed": "Placed on {{name}}"
+  },
+  "eventRouting": {
+    "title": "Subscriptions",
+    "add": "New subscription",
+    "newTitle": "New subscription",
+    "empty": "No subscriptions yet",
+    "pick": "Pick a subscription, or add one.",
+    "name": "Name",
+    "nameRequired": "A subscription needs a name",
+    "eventName": "Event",
+    "armedCondition": "Arming",
+    "armedAny": "Any",
+    "armedArmed": "Armed only",
+    "armedDisarmed": "Disarmed only",
+    "cooldownMs": "Cooldown, ms",
+    "enabled": "Enabled",
+    "sourceFilter": "Source selector",
+    "sourceFilterHint": "JSON: object_ids, camera_ids, kinds, tokens, props. Analytics filters by props.kind, props.reid_object_id and props.min_confidence; an unknown key is refused on save.",
+    "actions": "Actions, in order",
+    "addAction": "Add action",
+    "position": "Step {{position}}",
+    "kind": "Kind",
+    "params": "parameters",
+    "saved": "Saved"
+  },
   "nav": {
     "monitors": "Monitors",
     "camSetup": "Cam setup",
@@ -41,6 +84,8 @@
     "edgeArchive": "Edge archive",
     "gaps": "Archive gaps",
     "maps": "Maps",
+    "nodes": "Nodes",
+    "eventRouting": "Event routing",
     "map": "Map",
     "changePassword": "Change password",
     "deployment": "Deployment"
@@ -89,6 +134,8 @@
     "disabled": "Disable camera",
     "hasTelemetry": "Has telemetry (PTZ)",
     "hasTelemetryHelper": "Tick this only for cameras that really move. Firmware advertises the ONVIF PTZ service whether or not there is a motor behind it, so the joystick and object tracking are gated on this switch, not on what the camera claims. The camera's ONVIF settings page still shows what it reports — check there first.",
+    "geoFromDevice": "Position from the device (ONVIF)",
+    "geoFromDeviceHelper": "Let the camera's own ONVIF position place it on the map, and follow it as the camera moves. Leave this off for a camera placed by hand: its survey and calibration must not drift because the device reports a coordinate of its own. While this is on, geographic calibration and aiming are refused.",
     "livePreview": "Live preview ({{stream}})",
     "onvifEventsEnabled": "Subscribe to ONVIF events",
     "edgeBackfill": "Auto-recover gaps from the camera",
@@ -100,6 +147,7 @@
     "roiDelayHoursHint": "0 re-compresses as soon as the clip is closed and its detections are stored. Fractional values are allowed.",
     "tabMain": "Main",
     "tabAdvanced": "Advanced",
+    "tabDevices": "Devices",
     "roiMinCoverage": "Min ROI coverage, %",
     "roiMaxCoverage": "Max ROI coverage, %",
     "roiCoverageHint": "Coverage is the share of a clip's length that has detection boxes on it. Only clips inside this band are re-compressed: below it the detector saw too little to trust, above it there is no background left to squeeze. 0 turns a bound off.",
@@ -410,7 +458,14 @@
     "sourceOnvif": "ONVIF",
     "sourceOther": "Other",
     "detections": "Detections",
-    "trigger": "Trigger"
+    "trigger": "Trigger",
+    "kind": {
+      "all": "All",
+      "sensor": "Sensors",
+      "relay": "Relays",
+      "analytics": "Analytics",
+      "alarm": "Alarms"
+    }
   },
   "stream": {
     "newStream": "New stream on {{camera}}",
@@ -697,6 +752,24 @@
     "deviceIoSave": "Save",
     "deviceIoNoRelays": "No relay outputs",
     "deviceIoNoSensors": "No digital inputs",
+    "deviceIoReportedState": "Reported",
+    "deviceIoStateUnknown": "Unknown",
+    "deviceIoActive": "Active",
+    "deviceIoInactive": "Inactive",
+    "deviceIoRelayStateTip": "The state the camera reports for this relay. It comes from ONVIF property events and can lag a command.",
+    "deviceIoInputStateTip": "The logical state the camera reports for this input.",
+    "deviceIoArmModeLabel": "Arming",
+    "deviceIoArmInherit": "Inherit",
+    "deviceIoArmed": "Armed",
+    "deviceIoDisarmed": "Disarmed",
+    "deviceIoAlarmEnabled": "Alarm on contact",
+    "deviceIoTriggerOn": "Trigger on",
+    "deviceIoTriggerOpen": "Open",
+    "deviceIoTriggerClosed": "Closed",
+    "deviceIoPolarityUnknown": "The camera has not reported an idle state, so the contact's polarity is unknown. The setting is saved; the alarm stays off until the camera reports one.",
+    "geoLocation": "Position (ONVIF)",
+    "geoLocationNotReported": "The camera does not report its position",
+    "geoElevation": "Elevation",
     "audioBitrate": "Bitrate (bps)",
     "audioSampleRate": "Sample rate (Hz)",
     "noAudioConfigs": "No audio encoder configurations",
@@ -1065,7 +1138,7 @@
   "diagramEditor": {
     "diagram": "Diagram",
     "newDiagram": "New diagram",
-    "addDiagram": "New diagram under the selected node, or on this map",
+    "addDiagram": "New diagram on this canvas",
     "types": "Types",
     "typesHint": "A type draws every diagram of it: its background picture, and the regions its children may take instead of a rectangle of their own.",
     "manageTypes": "Manage types…",
@@ -1178,6 +1251,8 @@
       "noNodes": "Nothing is drawn here yet.",
       "figure": "Figure",
       "name": "Name",
+      "objectId": "Object ID",
+      "replicaOf": "Replica of",
       "visual": "Appearance",
       "color": "Colour",
       "rotation": "Rotation",
@@ -1250,6 +1325,7 @@
         "diagram": "Diagram",
         "landmark": "Landmark",
         "camera": "Camera",
+        "part": "Part",
         "figure": "Figure",
         "object": "Object"
       },
@@ -1270,7 +1346,7 @@
       "enterHint": "Zoom in to what is inside, or open a space's own canvas"
     },
     "tabSpaces": "Spaces",
-    "tabCameras": "Cameras",
+    "tabDevices": "Devices",
     "tabLandmarks": "Landmarks",
     "pickSpace": "Pick a space to see its cameras and landmarks",
     "tabSpace": "Space",
@@ -1309,6 +1385,16 @@
     "landmarkHeightShort": "{{height}} m up",
     "findOnMap": "Find by name",
     "camerasHint": "A camera placed here is selected; any other is placed by a click on the map",
+    "devicesHint": "Devices and their parts. A device placed here is selected; any other is placed by a click on the map, which adds a picture and never moves the one it really stands on.",
+    "devices": {
+      "expand": "Show the device's parts",
+      "collapse": "Hide the device's parts",
+      "stream": "stream",
+      "input": "digital input",
+      "relay": "relay",
+      "loading": "Reading the device's parts…",
+      "noParts": "This device declares no parts"
+    },
     "notPlaced": "Not placed",
     "cameraHeight": "Height, m",
     "cameraHeightHint": "Above this plan's floor",
@@ -1450,5 +1536,32 @@
     "caFingerprint": "Certificate authority of this deployment",
     "caFingerprintHelper": "Every machine of the deployment shows a certificate it issued. A machine joining is told this fingerprint and checks the core against it; compare it with the one the core printed when it was set up.",
     "downloadCa": "Download the certificate authority"
+  },
+  "alarms": {
+    "handle": "Handle the alarm",
+    "acknowledge": "Acknowledge",
+    "close": "Close the alarm",
+    "cannotAcknowledge": "This alarm cannot be acknowledged now",
+    "comment": "Comment",
+    "openOnMap": "Open on the map",
+    "source": {
+      "sensor": "Sensor",
+      "retention": "Retention",
+      "subscription": "Subscription"
+    },
+    "status": {
+      "active": "Active",
+      "acknowledged": "Acknowledged",
+      "returned": "Returned to normal",
+      "closed": "Closed"
+    },
+    "severity": {
+      "warning": "Warning",
+      "critical": "Critical"
+    },
+    "reason": {
+      "falseAlarm": "False alarm",
+      "other": "Other"
+    }
   }
 }

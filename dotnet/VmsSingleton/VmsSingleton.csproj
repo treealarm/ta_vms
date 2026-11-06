@@ -25,6 +25,13 @@
   <ItemGroup>
     <Protobuf Include="..\..\proto\vms_singleton.proto" GrpcServices="Both" />
     <Protobuf Include="..\..\proto\vms_cfg.proto" GrpcServices="Client" />
+    <!-- The event router reads the journal and runs its actions: an event, a node's arming, the
+         journal write and the alarm raise all live in VmsMap. -->
+    <Protobuf Include="..\..\proto\vms_map.proto" GrpcServices="Client" />
+    <!-- The actions that reach a node's own services: retention on its VmsFs and a relay on its
+         VmsOnvif. Which of them is addressed comes from VmsCfg's node registry. -->
+    <Protobuf Include="..\..\proto\vms_fs.proto" GrpcServices="Client" />
+    <Protobuf Include="..\..\proto\onvif.proto" GrpcServices="Client" />
   </ItemGroup>
 
 </Project>

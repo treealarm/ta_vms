@@ -51,6 +51,60 @@ picture. The ground, the path and the feet of the landmarks therefore sit exactl
 says. Houses and trees lean slightly outwards, as anything standing up does in a photograph from
 above; that is why the camera is high and narrow.
 
+## The demo world: Maryland
+
+The demo deployment runs OnvifSim with a different world, `Maryland`: the A.V. Williams building on
+the University of Maryland campus, where ta_vms's demo world
+(`dotnet/VmsMap/Demo/DemoWorlds.cs`) places its cameras. OnvifSim builds it from the same constants
+— the building envelope and the camera poses — and ships it as
+`../OnvifSim/data/worlds/maryland.json`; the building is made of wall plates, because the
+rasterizer culls back faces and a solid box would be invisible from inside. Around it the world is
+hand-made: the ring road the car drives, the car camera and the scenery.
+
+Its cameras are `master`, `ptz`, `master2` and `ptz2`, standing on the demo's placements in the
+hall, on the building and on the campus; the fifth, `vehicle`, rides the car. ta_vms knows them as
+`sim-master`, `sim-ptz`, `sim-master2`, `sim-ptz2` and `sim-vehicle`, at ONVIF ports 8101–8105. The
+car carries no device — a wire to it would move with it. `master` has three relays showing every
+kind of link: `lamp` lights the world's `alert` lamp, `peer` drives `ptz`'s `input` sensor, and
+`loop` drives a sensor of the master itself. The demo's own map is in `tests/demo`, not here; its
+`Device telemetry` diagram shows the vehicle camera's position and speed plus the relay and sensor
+states, and the demo's `geo_from_device` flag makes the map follow that camera.
+
+Load it into the bench's simulator:
+
+```
+tests/onvifsim/onvifsim_lab.py up --world maryland   # loads ../OnvifSim/data/worlds/maryland.json
+python3 tests/onvifsim/world.py --check-maryland     # checks the shipped file, and ta_install's copy
+```
+
+`up --world maryland` and the check compare each camera's WGS84, height, heading and field of view
+with the demo placements (half a metre and half a degree) and require the relay, the input and the
+wire; `world.py`'s `DEMO_PLACEMENTS` mirror `DemoWorlds.cs`, so the map, the simulator and this
+bench are kept from drifting apart.
+
+### Aiming in the demo world
+
+The aiming steps work in the demo world too, but only for the pair in Room 101 — `sim-master` and
+`sim-ptz`, the master and slave the demo places in one hall facing each other. The demo world must
+be installed first (`tests/demo/check_demo.py --provision-cameras`): the bench adds no placements
+there and refuses to invent a space. It takes the cameras' true poses from the Maryland world file,
+puts five landmarks between them in the hall (`world.py`'s `MARYLAND_LANDMARKS`, all within both
+views), marks the master's ground and the slave's landmark observations the same way as in the
+yard, and binds the slave to the master by `geo`:
+
+```
+tests/demo/check_demo.py --provision-cameras     # the demo world, its cameras and its placements
+tests/onvifsim/onvifsim_lab.py up --world maryland
+tests/onvifsim/onvifsim_lab.py provision --world maryland
+tests/onvifsim/onvifsim_lab.py calibrate --world maryland
+tests/onvifsim/onvifsim_lab.py bind --world maryland
+tests/onvifsim/onvifsim_lab.py aim-check --world maryland --seconds 30
+```
+
+The person walking the hall's route is the one the master detects and the slave follows. The other
+pair — `sim-master2` on the building's wall, `sim-ptz2` out on the campus — is too far apart to
+share landmarks and stays a yard scenario; the matrix and edge-import steps are the yard's as well.
+
 ## Running it
 
 You need these:
@@ -82,11 +136,13 @@ person again without any of the steps before it.
 
 OnvifSim runs in the container `onvifsim-lab-onvifsim-1`, its ports mapped one to one and clear of
 the dev stack: 8090 for the editor and API, 8560 for RTSP, 6980 for RTP, and 8101–8104 for ONVIF
-(`master`, `ptz`, `master2`, `ptz2`; `topdown` gets 8105, which is not mapped out). Open
+(`master`, `ptz`, `master2`, `ptz2`; `topdown` gets 8105, which is not mapped out). With
+`--world maryland` the mapped range is 8101–8105 instead: `master`, `ptz`, `master2`, `ptz2` and
+the car's `vehicle` camera. Open
 http://localhost:8090 to watch the world while a step runs; its log is
 `docker compose -f tests/onvifsim/docker-compose.yml logs`. The steps keep what they created in
 `/tmp/onvifsim-lab/state.json`, by pair. The ta_vms camera ids are `sim-master`, `sim-ptz`,
-`sim-master2` and `sim-ptz2`.
+`sim-master2` and `sim-ptz2`; the demo world adds `sim-vehicle`.
 
 The ta_vms need not be the dev stack on this machine. `--vms http://<host>:5134 --sim-host <this
 machine's LAN address>` drives an installation elsewhere, a Windows one for instance: the cameras

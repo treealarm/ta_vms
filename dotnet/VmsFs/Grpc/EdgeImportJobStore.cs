@@ -35,7 +35,7 @@ public sealed class EdgeImportJobStore(NpgsqlDataSource dataSource)
     await using var cmd = dataSource.CreateCommand("""
       INSERT INTO edge_import_jobs
         (camera_id, stream_name, range_start_ts, range_end_ts, outage_uid)
-      VALUES ($1, $2, $3, $4, $5)
+      VALUES ($1::uuid, $2, $3, $4, $5)
       ON CONFLICT (camera_id, stream_name, range_start_ts, range_end_ts) DO UPDATE SET
         -- A finished job for the same stretch means it is being asked for again: the archive still
         -- lacks it, so the previous outcome is history and the row goes back into the queue.
@@ -74,14 +74,14 @@ public sealed class EdgeImportJobStore(NpgsqlDataSource dataSource)
         updated_ts  = now()
       WHERE job_uid = (
         SELECT job_uid FROM edge_import_jobs
-        WHERE camera_id = ANY($1)
+        WHERE camera_id = ANY($1::uuid[])
           AND (state = 'queued'
                OR (state = 'running' AND (lease_until IS NULL OR lease_until <= now())))
         ORDER BY range_start_ts
         LIMIT 1
         FOR UPDATE SKIP LOCKED
       )
-      RETURNING job_uid, camera_id, stream_name, range_start_ts, range_end_ts, outage_uid,
+      RETURNING job_uid, camera_id::text, stream_name, range_start_ts, range_end_ts, outage_uid,
                 state, attempts, media_job_id, message;
       """);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Array | NpgsqlDbType.Text, cameraIds.ToArray());

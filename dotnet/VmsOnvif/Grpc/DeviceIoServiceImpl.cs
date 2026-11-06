@@ -1,9 +1,12 @@
 using Grpc.Core;
+using OnvifLib;
 using Vms.Onvif;
 
 namespace VmsOnvif;
 
-public class DeviceIoServiceImpl(OnvifSettingsService settingsService) : DeviceIoService.DeviceIoServiceBase
+public class DeviceIoServiceImpl(
+  OnvifSettingsService settingsService,
+  DeviceIoStateService stateService) : DeviceIoService.DeviceIoServiceBase
 {
   public override async Task<GetRelayOutputsResponse> GetRelayOutputs(CameraRequest request, ServerCallContext context)
   {
@@ -11,13 +14,27 @@ public class DeviceIoServiceImpl(OnvifSettingsService settingsService) : DeviceI
     try
     {
       var relays = await settingsService.GetRelayOutputsAsync(request.SourceId, context.CancellationToken);
-      response.Relays.AddRange(relays.Select(r => new RelayOutput
+      response.Relays.AddRange(relays.Select(r =>
       {
-        Token     = r.Token,
-        Mode      = ParseMode(r.Mode),
-        IdleState = ParseIdleState(r.IdleState),
-        DelayMs   = r.DelayMs,
+        var relay = new RelayOutput
+        {
+          Token     = r.Token,
+          Mode      = ParseMode(r.Mode),
+          IdleState = ParseIdleState(r.IdleState),
+          DelayMs   = r.DelayMs,
+        };
+        if (stateService.TryGetLogicalState(request.SourceId, DeviceIoKind.Relay, r.Token) is { } active)
+          relay.LiveActive = active;
+        return relay;
       }));
+
+      // Opening the subscription is a network round trip of its own; the live values reach the
+      // caller's next poll. Its first report also starts or stops the watcher as I/O appears or
+      // goes away, and a changed idle state recomputes the contact without waiting for a heartbeat.
+      _ = stateService.ReportDevicesAsync(
+        request.SourceId,
+        DeviceIoKind.Relay,
+        relays.Select(r => new DeviceDescriptor(r.Token, r.IdleState)).ToList());
     }
     catch (Exception ex)
     {
@@ -87,12 +104,23 @@ public class DeviceIoServiceImpl(OnvifSettingsService settingsService) : DeviceI
     try
     {
       var inputs = await settingsService.GetDigitalInputsAsync(request.SourceId, context.CancellationToken);
-      response.Inputs.AddRange(inputs.Select(i => new DigitalInput
+      response.Inputs.AddRange(inputs.Select(i =>
       {
-        Token        = i.Token,
-        IdleState    = ParseIdleState(i.IdleState ?? "closed"),
-        HasIdleState = i.IdleState != null,
+        var input = new DigitalInput
+        {
+          Token        = i.Token,
+          IdleState    = ParseIdleState(i.IdleState ?? "closed"),
+          HasIdleState = i.IdleState != null,
+        };
+        if (stateService.TryGetLogicalState(request.SourceId, DeviceIoKind.DigitalInput, i.Token) is { } active)
+          input.LiveActive = active;
+        return input;
       }));
+
+      _ = stateService.ReportDevicesAsync(
+        request.SourceId,
+        DeviceIoKind.DigitalInput,
+        inputs.Select(i => new DeviceDescriptor(i.Token, i.IdleState)).ToList());
     }
     catch (Exception ex)
     {
@@ -132,6 +160,29 @@ public class DeviceIoServiceImpl(OnvifSettingsService settingsService) : DeviceI
     {
       return Fail(ex.Message);
     }
+  }
+
+  public override async Task<GetCameraGeoLocationResponse> GetCameraGeoLocation(CameraRequest request, ServerCallContext context)
+  {
+    var response = new GetCameraGeoLocationResponse();
+    try
+    {
+      var entry = await settingsService.GetGeoLocationAsync(request.SourceId, context.CancellationToken);
+      if (entry?.Location is { } location)
+      {
+        response.Found = true;
+        // Each coordinate is reported only when the camera sent it: an absent latitude is not the
+        // equator, and an absent elevation is not sea level.
+        if (location.Latitude is { } lat) response.Lat = lat;
+        if (location.Longitude is { } lon) response.Lon = lon;
+        if (location.ElevationMeters is { } elevation) response.ElevationM = elevation;
+      }
+    }
+    catch (Exception ex)
+    {
+      response.Error = ex.Message;
+    }
+    return response;
   }
 
   private static RelayMode ParseMode(string mode) =>

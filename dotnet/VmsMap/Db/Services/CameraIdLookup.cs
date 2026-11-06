@@ -8,10 +8,11 @@ using VmsMap.Domain;
 
 namespace VmsMap.Db
 {
-  // The reverse index from a node to the camera it is: camera_node for a canonical camera, the
-  // placement row for one of its pictures. A replica with neither row answers with its owner's
-  // camera, because a picture of a camera opens the same live video. Used by every read that has
-  // to name a camera and by the watch stream.
+  // The reverse index from a node to the camera it is: the device_node row for a canonical camera,
+  // the placement row for one of its pictures. A replica with neither row answers with its owner's
+  // camera, because a picture of a camera opens the same live video. A part's node (a digital input,
+  // a relay) is not the camera and answers nothing here. Used by every read that has to name a
+  // camera and by the watch stream.
   internal static class CameraIdLookup
   {
     public static async Task<Dictionary<string, string>> ResolveAsync(
@@ -28,7 +29,7 @@ namespace VmsMap.Db
         return result;
 
       // Owners are read in the same two queries: a replica created between placements has only
-      // its owner's camera_node row to answer with.
+      // its owner's device_node row to answer with.
       var owners = await db.Markers.AsNoTracking()
         .Where(m => guids.Contains(m.id) && m.owner_id != null)
         .Select(m => new { m.id, m.owner_id })
@@ -43,12 +44,14 @@ namespace VmsMap.Db
         .ToList();
 
       var cameras = new Dictionary<Guid, string>();
-      foreach (var row in await db.CameraNodes.AsNoTracking()
-        .Where(n => allGuids.Contains(n.object_id))
-        .Select(n => new { n.object_id, n.camera_id })
+      foreach (var row in await db.DeviceNodes.AsNoTracking()
+        .Where(n => allGuids.Contains(n.object_id)
+                    && n.source_kind == DeviceObjectId.CameraSource
+                    && n.part_kind == DeviceObjectId.DevicePart)
+        .Select(n => new { n.object_id, n.source_id })
         .ToListAsync(ct))
       {
-        cameras[row.object_id] = row.camera_id;
+        cameras[row.object_id] = row.source_id;
       }
 
       foreach (var row in await db.CameraPlacements.AsNoTracking()

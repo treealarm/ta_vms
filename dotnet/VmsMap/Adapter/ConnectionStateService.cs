@@ -12,9 +12,9 @@ namespace VmsMap.Adapter
   internal sealed class ConnectionStateService
   {
     private readonly CameraStateWriter _stateWriter;
-    private readonly CameraNodeService _nodes;
+    private readonly DeviceNodeService _nodes;
 
-    public ConnectionStateService(CameraStateWriter stateWriter, CameraNodeService nodes)
+    public ConnectionStateService(CameraStateWriter stateWriter, DeviceNodeService nodes)
     {
       _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
       _nodes = nodes ?? throw new ArgumentNullException(nameof(nodes));

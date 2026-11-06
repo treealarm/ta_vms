@@ -29,21 +29,25 @@ public sealed class DemoMonitor(IDbContextFactory<VmsCfgDbContext> dbFactory, Ca
     // second install has to name the same one.
     public static readonly Guid MonitorId = new("6f0b8d6e-5f2b-4a6a-9c1e-2d3a4b5c6d7e");
 
-    // The order the wall shows them in. OnvifSim's cameras, as tests/onvifsim provision creates them.
+    // The order the wall shows them in, by the names the demo world gives them. OnvifSim's
+    // cameras, as tests/onvifsim provision creates them.
     private static readonly string[] CameraOrder = ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2"];
 
     /// Which of the demo cameras exist, in wall order. Pure: the same cameras give the same plan,
-    /// which is what makes a second install a no-op on the rows.
+    /// which is what makes a second install a no-op on the rows. `Cameras` are the ids the wall
+    /// stores; `Skipped` stays names, because it is what the operator is told.
     public static DemoMonitorPlan Plan(IEnumerable<string> existingCameraIds)
     {
         var existing = existingCameraIds.ToHashSet(StringComparer.Ordinal);
+
+        var present = CameraOrder.Where(name => existing.Contains(DemoCameraIds.For(name))).ToList();
 
         return new DemoMonitorPlan(
             MonitorId.ToString(),
             Name,
             Layout,
-            CameraOrder.Where(existing.Contains).ToList(),
-            CameraOrder.Where(camera => !existing.Contains(camera)).ToList());
+            present.Select(DemoCameraIds.For).ToList(),
+            CameraOrder.Except(present).ToList());
     }
 
     public async Task<DemoMonitorPlan> InstallAsync(CancellationToken ct)

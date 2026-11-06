@@ -34,7 +34,9 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
   const { t } = useTranslation()
   const isNew = storage === null
 
-  const [storageId, setStorageId] = useState(storage?.storageId ?? '')
+  // The id is internal now — a UUID the server accepts as the row's key — so a new storage gets
+  // one here and the operator never types it. rootPath is what identifies a storage to a person.
+  const [storageId] = useState(() => storage?.storageId ?? crypto.randomUUID())
   const [rootPath, setRootPath] = useState(storage?.rootPath ?? '')
   const [reservedGb, setReservedGb] =
     useState(toGbString(storage?.reservedBytes ?? DEFAULT_RESERVED_GB * GIB))
@@ -66,7 +68,7 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
       return false
     }
     if (isNew) {
-      if (!storageId.trim() || !rootPath.trim()) {
+      if (!rootPath.trim()) {
         setError(t('storage.required'))
         return false
       }
@@ -139,14 +141,13 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
 
   // For a new form "dirty" means "complete enough to save" — navigation then
   // auto-creates it instead of silently discarding the entered data
-  useDirtyGuard(ref, isNew ? Boolean(storageId.trim() && rootPath.trim()) : dirty, applyInternal)
+  useDirtyGuard(ref, isNew ? Boolean(rootPath.trim()) : dirty, applyInternal)
 
   return (
     <Box component="form" onSubmit={(e) => void handleApply(e)} sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <DetailToolbar
-        title={isNew ? t('storage.newStorage') : storage.storageId}
-        subtitle={isNew ? undefined : storage.rootPath}
-        dirty={isNew ? Boolean(storageId.trim() && rootPath.trim()) : dirty}
+        title={isNew ? t('storage.newStorage') : storage.rootPath}
+        dirty={isNew ? Boolean(rootPath.trim()) : dirty}
         busy={saving}
         applyLabel={isNew ? t('common.add') : undefined}
         onCancel={isNew ? undefined : handleCancel}
@@ -156,14 +157,6 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
 
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 2 }}>
         <Stack spacing={2} sx={{ maxWidth: 420 }}>
-          <TextField
-            label={t('storage.storageId')}
-            value={storageId}
-            onChange={(e) => setStorageId(e.target.value)}
-            size="small"
-            disabled={!isNew}
-            required
-          />
           <Stack direction="row" spacing={1} alignItems="flex-start">
             <TextField
               label={t('storage.rootPath')}
@@ -246,8 +239,8 @@ export default function StorageSetupPanel({ ref }: { ref?: React.Ref<ApplyIfDirt
           key={s.storageId}
           selected={selected?.storageId === s.storageId}
           onClick={() => select(s.storageId)}
-          primary={s.storageId}
-          secondary={s.rootPath}
+          primary={s.rootPath}
+          secondary={s.disabled ? t('storage.disabled') : undefined}
         />
       ))}
       {storages.length === 0 && (

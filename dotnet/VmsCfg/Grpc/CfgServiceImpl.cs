@@ -11,10 +11,14 @@ namespace VmsCfg
     CameraStorage storage,
     NodeRegistry nodes,
     StorageDb storageDb,
+    DeviceStorage deviceStorage,
+    AlarmDefinitionStorage alarmDefinitions,
+    EventSubscriptionStorage eventSubscriptions,
     ScheduleDb scheduleDb,
     ScheduleCache scheduleCache,
     DaprClient daprClient,
-    VmsCfg.Demo.DemoMonitor demoMonitor,
+    VmsCfg.Demo.DemoInstaller demoInstaller,
+    DeviceSettingsNotifier deviceSettingsNotifier,
     ILogger<CfgServiceImpl> logger) : CfgService.CfgServiceBase
   {
     // One event for "something changed on this node, here is what". Replaces the old pair of
@@ -28,6 +32,11 @@ namespace VmsCfg
     // needs, so a late or reordered message cannot make it act on a stale snapshot.
     private const string ServerConfigChangedTopic = "server-config-changed";
     private const string CameraStateChangedTopic       = "camera-state-changed";
+    // The alarm definitions have travelled on this topic since M2.4c; M2.4d makes it mean the
+    // subscriptions too. A replicable VmsMap reads the shared subscriptions-version key instead of
+    // trusting this message, which reaches one replica; VmsSingleton is one instance and can.
+    private const string EventSubscriptionsChangedTopic = "event-subscriptions-changed";
+    private const string SubscriptionsVersionKey        = "subscriptions-version";
     private const string AnalyticsWatchChangedTopic    = "analytics-watch-changed";
     // Wakes the ticker in VmsSingleton after a schedule edit. It has its own app id, hence its own
     // subscription, so a topic reaches it — unlike VmsCfg's own replicas, which share one consumer
@@ -38,7 +47,10 @@ namespace VmsCfg
     // Bumped when a camera's media server changes. web_srv.Server caches camera → node to route
     // ONVIF calls, and it runs in several replicas, so a pub/sub event would reach exactly one of
     // them; a key everyone reads has no such asymmetry. Same mechanism as the permission version.
-    private const string CameraNodeVersionKey          = "cam-node-version";
+    private const string CamNodeVersionKey          = "cam-node-version";
+
+    // The truth for a replicable VmsMap: the pub/sub event reaches one replica, the shared key is
+    // read by all of them. The value is meaningless — only "different from last time" matters.
 
     // Investigation boards are operator-created and never expire on their own, so the number one
     // person can accumulate is capped. Walls are unaffected — they are admin-managed.
@@ -116,12 +128,12 @@ namespace VmsCfg
     /// Tells web_srv replicas that a camera may have moved between nodes, so their ONVIF routing
     /// cache stops pointing at the old one. Awaited: camera moves are rare admin actions, and a lost
     /// bump leaves PTZ going to the wrong node until the cache's own TTL expires.
-    private async Task BumpCameraNodeVersionAsync(CancellationToken ct)
+    private async Task BumpCamNodeVersionAsync(CancellationToken ct)
     {
       try
       {
         await daprClient.SaveStateAsync(
-          StateStoreName, CameraNodeVersionKey, Guid.NewGuid().ToString("N"), cancellationToken: ct);
+          StateStoreName, CamNodeVersionKey, Guid.NewGuid().ToString("N"), cancellationToken: ct);
       }
       catch (Exception ex)
       {
@@ -249,8 +261,8 @@ namespace VmsCfg
 
     public override async Task<OperationStatus> SetupCamera(CameraSetup request, ServerCallContext context)
     {
-      if (string.IsNullOrWhiteSpace(request.CameraId))
-        return new OperationStatus { Success = false, Message = "camera_id must not be empty" };
+      if (!Guid.TryParse(request.CameraId, out _))
+        return new OperationStatus { Success = false, Message = "camera_id must be a UUID" };
 
       if (string.IsNullOrWhiteSpace(request.ServerId))
         return new OperationStatus { Success = false, Message = "server_id must not be empty" };
@@ -276,7 +288,7 @@ namespace VmsCfg
 
       // A new camera has no cached route yet; a moved one has a stale one.
       if (existing is null || existing.ServerId != request.ServerId)
-        await BumpCameraNodeVersionAsync(context.CancellationToken);
+        await BumpCamNodeVersionAsync(context.CancellationToken);
 
       return new OperationStatus { Success = true };
     }
@@ -439,7 +451,7 @@ namespace VmsCfg
         request.Name.Trim(), request.Address.Trim(), request.MediaMtx, request.Administrator, context.CancellationToken);
       // Every node's services learn the new one through ListMediaServers: web_srv polls it, and the
       // node's own services read it when they start, which is after this.
-      await BumpCameraNodeVersionAsync(context.CancellationToken);
+      await BumpCamNodeVersionAsync(context.CancellationToken);
       // A node enrolled again from a new address took its MediaMTX with it.
       await NotifyAllMediaServersAsync(context.CancellationToken);
       return new EnrollNodeResponse { Node = ToProto(node), Package = Google.Protobuf.ByteString.CopyFrom(package) };
@@ -448,7 +460,7 @@ namespace VmsCfg
     public override async Task<OperationStatus> RemoveNode(RemoveNodeRequest request, ServerCallContext context)
     {
       await nodes.RemoveAsync(request.ServerId, context.CancellationToken);
-      await BumpCameraNodeVersionAsync(context.CancellationToken);
+      await BumpCamNodeVersionAsync(context.CancellationToken);
       // Its MediaMTX went with it, and a camera elsewhere may have been assigned that one.
       await NotifyAllMediaServersAsync(context.CancellationToken);
       return new OperationStatus { Success = true };
@@ -1027,11 +1039,14 @@ namespace VmsCfg
         throw new RpcException(new Status(
           StatusCode.InvalidArgument, $"There is no demo world '{request.DemoKey}'"));
 
-      var plan = await demoMonitor.InstallAsync(context.CancellationToken);
+      var installation = await demoInstaller.InstallAsync(context.CancellationToken);
+      var plan = installation.Monitor;
 
       logger.LogInformation(
-        "Demo wall '{Name}' installed: {Placed} cameras placed, {Skipped} skipped",
-        plan.Name, plan.Cameras.Count, plan.Skipped.Count);
+        "Demo wall '{Name}' installed: {Placed} cameras placed, {Skipped} skipped; " +
+        "parts configured: {Parts}; reaction installed: {Rule}",
+        plan.Name, plan.Cameras.Count, plan.Skipped.Count,
+        string.Join(", ", installation.Devices.Configured), installation.Routing.Installed);
 
       var report = new DemoMonitorReport { Installed = true };
       report.PlacedCameras.AddRange(plan.Cameras);
@@ -1046,9 +1061,9 @@ namespace VmsCfg
         throw new RpcException(new Status(
           StatusCode.InvalidArgument, $"There is no demo world '{request.DemoKey}'"));
 
-      var removed = await demoMonitor.RemoveAsync(context.CancellationToken);
+      var removed = await demoInstaller.RemoveAsync(context.CancellationToken);
       if (removed)
-        logger.LogInformation("Demo wall '{Name}' removed", VmsCfg.Demo.DemoMonitor.Name);
+        logger.LogInformation("Demo world '{Key}' removed", VmsCfg.Demo.DemoMonitor.DemoKey);
 
       return new OperationStatus { Success = true, Message = removed ? "ok" : "not installed" };
     }
@@ -1171,6 +1186,109 @@ namespace VmsCfg
       logger.LogInformation("Camera '{CameraId}' armed={Armed}", request.CameraId, request.Armed);
       NotifyCameraStateChanged(request.CameraId);
       return new OperationStatus { Success = true };
+    }
+
+    public override async Task<ListDeviceSettingsResponse> ListDeviceSettings(
+      ListDeviceSettingsRequest request, ServerCallContext context)
+    {
+      var response = new ListDeviceSettingsResponse();
+      response.Settings.AddRange(
+        await deviceStorage.ListAsync(request.CameraId, context.CancellationToken));
+      return response;
+    }
+
+    public override async Task<OperationStatus> SetDeviceSettings(
+      SetDeviceSettingsRequest request, ServerCallContext context)
+    {
+      if (request.Settings is null)
+        return new OperationStatus { Success = false, Message = "settings must not be empty" };
+
+      var error = DeviceSettingsRules.Validate(request.Settings);
+      if (error is not null)
+        return new OperationStatus { Success = false, Message = error };
+
+      await deviceStorage.SetAsync(request.Settings, context.CancellationToken);
+      logger.LogInformation(
+        "Device settings for camera '{CameraId}' part {Kind}/{Token} upserted",
+        request.Settings.CameraId, request.Settings.Kind, request.Settings.Token);
+
+      // After the commit: a subscriber that reacts at once must not read the old row back.
+      await NotifyDeviceSettingsChangedAsync(request.Settings.CameraId, context.CancellationToken);
+      return new OperationStatus { Success = true };
+    }
+
+    private Task NotifyDeviceSettingsChangedAsync(string cameraId, CancellationToken ct) =>
+      deviceSettingsNotifier.NotifyAsync(cameraId, ct);
+
+    public override async Task<ListAlarmDefinitionsResponse> ListAlarmDefinitions(
+      ListAlarmDefinitionsRequest request, ServerCallContext context)
+    {
+      var response = new ListAlarmDefinitionsResponse();
+      response.Definitions.AddRange(await alarmDefinitions.ListAsync(context.CancellationToken));
+      return response;
+    }
+
+    public override async Task<ListEventSubscriptionsResponse> ListEventSubscriptions(
+      ListEventSubscriptionsRequest request, ServerCallContext context)
+    {
+      var response = new ListEventSubscriptionsResponse();
+      response.Subscriptions.AddRange(
+        await eventSubscriptions.ListAsync(context.CancellationToken));
+      return response;
+    }
+
+    public override async Task<OperationStatus> UpsertEventSubscription(
+      UpsertEventSubscriptionRequest request, ServerCallContext context)
+    {
+      if (request.Subscription is null)
+        return new OperationStatus { Success = false, Message = "subscription must not be empty" };
+
+      var (saved, error) = await eventSubscriptions.UpsertAsync(
+        request.Subscription, context.CancellationToken);
+      if (saved is null)
+        return new OperationStatus { Success = false, Message = error };
+
+      logger.LogInformation(
+        "Event subscription '{Id}' ({Name}) saved as version {Version}",
+        saved.Id, saved.Name, saved.Version);
+
+      // After the commit: a subscriber that reacts at once must not read the old rows back.
+      await NotifyEventSubscriptionsChangedAsync(context.CancellationToken);
+      return new OperationStatus { Success = true };
+    }
+
+    public override async Task<OperationStatus> RemoveEventSubscription(
+      RemoveEventSubscriptionRequest request, ServerCallContext context)
+    {
+      var (removed, error) = await eventSubscriptions.RemoveAsync(
+        request.Id, context.CancellationToken);
+      if (error is not null)
+        return new OperationStatus { Success = false, Message = error };
+      if (!removed)
+        return new OperationStatus { Success = false, Message = "no such subscription" };
+
+      logger.LogInformation("Event subscription '{Id}' removed", request.Id);
+      await NotifyEventSubscriptionsChangedAsync(context.CancellationToken);
+      return new OperationStatus { Success = true };
+    }
+
+    private async Task NotifyEventSubscriptionsChangedAsync(CancellationToken ct)
+    {
+      try
+      {
+        // The version key is the truth for replicable readers; the message is the fast signal.
+        await daprClient.SaveStateAsync(
+          StateStoreName, SubscriptionsVersionKey, Guid.NewGuid().ToString("N"),
+          cancellationToken: ct);
+        await daprClient.PublishEventAsync(
+          _pubSubName, EventSubscriptionsChangedTopic, string.Empty, ct);
+      }
+      catch (Exception ex)
+      {
+        // The row is saved; a lost signal costs a reader its cache TTL, not the change.
+        logger.LogWarning(ex,
+          "event-subscriptions-changed publish failed — readers will pick the change up by TTL");
+      }
     }
 
     public override async Task<ListAnalyticsWatchesResponse> ListAnalyticsWatches(

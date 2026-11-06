@@ -22,7 +22,6 @@ namespace VmsMap.Demo
   public sealed class DemoSeeder
   {
     // hashed into the lock by PostgreSQL; any stable number does, as long as it is ours alone.
-    private const long LockKey = 0x74615f64656d6f31; // "ta_demo1"
 
     private static readonly string[] DeleteOrder = ["object", "camera", "space", "type", "level", "file"];
 
@@ -38,6 +37,7 @@ namespace VmsMap.Demo
     private readonly VisualService _visuals;
     private readonly SpatialDb _spatial;
     private readonly ICameraCatalog _cameras;
+    private readonly IDeviceNodeService _cameraNodes;
 
     public DemoSeeder(
       VmsMapDbContext db,
@@ -51,7 +51,8 @@ namespace VmsMap.Demo
       FileService files,
       VisualService visuals,
       SpatialDb spatial,
-      ICameraCatalog cameras)
+      ICameraCatalog cameras,
+      IDeviceNodeService cameraNodes)
     {
       _db = db;
       _updates = updates;
@@ -65,6 +66,7 @@ namespace VmsMap.Demo
       _visuals = visuals;
       _spatial = spatial;
       _cameras = cameras;
+      _cameraNodes = cameraNodes;
     }
 
     public async Task<DemoStatus> GetStatusAsync(string key, CancellationToken ct)
@@ -88,13 +90,40 @@ namespace VmsMap.Demo
     /// deleted. Running it twice leaves the same rows with the same ids.
     public async Task<DemoReport> InstallAsync(DemoWorld world, CancellationToken ct)
     {
+      var report = new DemoReport { Key = world.Key, Version = world.Version };
+
+      // A replica hangs off the camera's canonical node, which the adapter owns and which is keyed
+      // in device_node. That node is created before the install transaction opens — the adapter
+      // keeps a transaction of its own — so a camera provisioned moments ago is already there. A
+      // camera the deployment does not have is skipped and reported, like a placement.
+      var owners = new Dictionary<string, Guid>(StringComparer.Ordinal);
+      foreach (var node in world.Nodes.Where(node => node.OwnerCameraId is not null))
+      {
+        var cameraId = DemoIds.Camera(node.OwnerCameraId!);
+        var camera = await _cameras.GetAsync(cameraId, ct);
+        if (camera is null)
+        {
+          report.SkippedCameras.Add(node.OwnerCameraId!);
+          continue;
+        }
+
+        await _cameraNodes.EnsureCameraAsync(camera, ct);
+        var owner = await _db.DeviceNodes.AsNoTracking()
+          .Where(row => row.source_kind == DeviceObjectId.CameraSource
+                        && row.source_id == cameraId
+                        && row.part_kind == DeviceObjectId.DevicePart)
+          .Select(row => (Guid?)row.object_id)
+          .FirstOrDefaultAsync(ct);
+        if (owner is not null)
+          owners[node.Key] = owner.Value;
+      }
+
       await using var tx = await BeginAsync(ct);
       await LockAsync(ct);
 
       var registered = await LoadRegistryAsync(world.Key, ct);
       var ids = new Dictionary<string, Guid>(registered, StringComparer.Ordinal);
       var keep = new HashSet<string>(StringComparer.Ordinal);
-      var report = new DemoReport { Key = world.Key, Version = world.Version };
 
       // A world that names an entity before writing it is a bug in the model, not in the database.
       Guid Required(string key) => ids.TryGetValue(key, out var id)
@@ -193,11 +222,17 @@ namespace VmsMap.Demo
       // ── Nodes: mnemoschemes, their children and the figures they are drawn at ───────────────
       foreach (var node in ParentsFirst(world.Nodes, n => n.Key, n => n.ParentKey))
       {
+        // A replica whose camera was skipped above has no owner to hang off; the next install,
+        // once the camera exists, writes it.
+        if (node.OwnerCameraId is not null && !owners.TryGetValue(node.Key, out _))
+          continue;
+
         var id = IdOf(node.Key);
         var parentId = node.ParentKey is null ? null : Required(node.ParentKey).ToString();
+        var ownerId = owners.TryGetValue(node.Key, out var owner) ? owner.ToString() : null;
 
         await _updates.UpdateObjects([
-          new BaseMarkerDTO { id = id.ToString(), parent_id = parentId, name = node.Name }]);
+          new BaseMarkerDTO { id = id.ToString(), parent_id = parentId, name = node.Name, owner_id = ownerId }]);
 
         if (node.TypeKey is not null)
         {
@@ -250,8 +285,9 @@ namespace VmsMap.Demo
       foreach (var placement in world.Placements)
       {
         var key = $"camera/{placement.CameraId}";
+        var cameraId = DemoIds.Camera(placement.CameraId);
         var spaceId = Required(placement.SpaceKey);
-        var camera = await _cameras.GetAsync(placement.CameraId, ct);
+        var camera = await _cameras.GetAsync(cameraId, ct);
 
         if (camera is null)
         {
@@ -264,7 +300,7 @@ namespace VmsMap.Demo
 
         await _spatial.UpsertPlacementAsync(new CameraPlacement
         {
-          CameraId = placement.CameraId,
+          CameraId = cameraId,
           SpaceId = spaceId.ToString(),
           IsReference = placement.IsReference,
           Lat = placement.Lat,
@@ -375,9 +411,22 @@ namespace VmsMap.Demo
         {
           case "object":
             // A value has no foreign key of its own in the model the tests use, and the demo's
-            // feeder writes them: take them away before the node they belong to.
+            // feeder writes them: take them away before the node they belong to. A replica owns no
+            // values, though — the feeder writes them to the camera's canonical node under the ids
+            // derived from it — so those are named explicitly rather than swept per owner.
             var objectGuids = ofKind.Select(pair => pair.Value).ToList();
-            var values = await _db.Values.Where(value => objectGuids.Contains(value.owner_id)).ToListAsync(ct);
+            var owners = await _db.Markers.AsNoTracking()
+              .Where(m => objectGuids.Contains(m.id) && m.owner_id != null)
+              .Select(m => m.owner_id!.Value)
+              .ToListAsync(ct);
+            var demoValueIds = owners
+              .SelectMany(owner => DemoTelemetry.Readings
+                .Select(name => DemoIds.For($"value/{owner}/{name}")))
+              .ToList();
+
+            var values = await _db.Values
+              .Where(value => objectGuids.Contains(value.owner_id) || demoValueIds.Contains(value.id))
+              .ToListAsync(ct);
             if (values.Count > 0)
             {
               _db.Values.RemoveRange(values);
@@ -390,8 +439,9 @@ namespace VmsMap.Demo
           case "camera":
             foreach (var pair in ofKind)
             {
-              var cameraId = pair.Key["camera/".Length..];
-              await _spatial.RemovePlacementAsync(cameraId, pair.Value, ct);
+              // The registry key holds the world's name for the camera; the map speaks ids.
+              var cameraName = pair.Key["camera/".Length..];
+              await _spatial.RemovePlacementAsync(DemoIds.Camera(cameraName), pair.Value, ct);
             }
             break;
 
@@ -478,12 +528,8 @@ namespace VmsMap.Demo
 
     /// Two replicas starting with the demo enabled wait for each other here; the lock is released
     /// with the transaction.
-    private async Task LockAsync(CancellationToken ct)
-    {
-      if (!_db.Database.IsRelational()) return;
-      await _db.Database.ExecuteSqlRawAsync(
-        "SELECT pg_advisory_xact_lock({0})", [LockKey], ct);
-    }
+    private Task LockAsync(CancellationToken ct) =>
+      MapLocks.AcquireDemoInstallAsync(_db, ct);
 
     /// Parents before their children, so a child always finds its parent written. A parent outside
     /// the set (a node's parent can be a space) counts as written already.

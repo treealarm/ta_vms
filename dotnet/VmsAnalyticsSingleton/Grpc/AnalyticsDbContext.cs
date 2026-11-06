@@ -1,9 +1,20 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace VmsAnalyticsSingleton;
 
 public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> options) : DbContext(options)
 {
+  // Camera and storage ids are UUID columns; the gRPC contract and this service's own code carry
+  // them as strings (a UUID formatted as text). The conversion lives here, at the one boundary
+  // where the database type matters.
+  private static readonly ValueConverter<string, Guid> UuidText =
+    new(id => Guid.Parse(id), id => id.ToString());
+
+  private static readonly ValueConverter<string?, Guid?> NullableUuidText =
+    new(id => string.IsNullOrEmpty(id) ? null : Guid.Parse(id),
+        id => id == null ? null : id.Value.ToString());
+
   public DbSet<DbDetection> Detections { get; set; }
   public DbSet<DbDetectionEmbedding> DetectionEmbeddings { get; set; }
 
@@ -14,7 +25,7 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
       e.ToTable("detections");
       e.HasKey(x => x.Id);
       e.Property(x => x.Id).HasColumnName("id");
-      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.CameraId).HasColumnName("camera_id").HasConversion(UuidText);
       e.Property(x => x.TrackId).HasColumnName("track_id");
       e.Property(x => x.Kind).HasColumnName("kind");
       e.Property(x => x.Confidence).HasColumnName("confidence");
@@ -22,9 +33,10 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
       e.Property(x => x.EventId).HasColumnName("event_id");
       e.Property(x => x.EventUuid).HasColumnName("event_uuid");
       e.Property(x => x.ObjectId).HasColumnName("object_id");
-      e.Property(x => x.StorageId).HasColumnName("storage_id");
+      e.Property(x => x.StorageId).HasColumnName("storage_id").HasConversion(NullableUuidText);
       e.Property(x => x.CropPath).HasColumnName("crop_path");
       e.Property(x => x.PlateText).HasColumnName("plate_text");
+      e.Property(x => x.MapEventAt).HasColumnName("map_event_at");
       e.HasIndex(x => new { x.CameraId, x.DetectedAt });
       e.HasIndex(x => x.EventId);
       e.HasIndex(x => x.EventUuid);
@@ -66,6 +78,10 @@ public sealed class DbDetection
   /// <summary>Path relative to the storage root, like clips' file_path.</summary>
   public string? CropPath { get; set; }
   public string? PlateText { get; set; }
+  /// <summary>When the detection was handed to VmsMap as `analytics-event`; null = not yet (or
+  /// given up on). The publisher's sweep reads only the nulls, so a crash between the insert and
+  /// the publish loses nothing.</summary>
+  public DateTime? MapEventAt { get; set; }
 }
 
 public sealed class DbDetectionEmbedding

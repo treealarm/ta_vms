@@ -20,6 +20,49 @@
     "loading": "Cargando...",
     "undoLast": "Deshacer el último cambio (Ctrl+Z)"
   },
+  "nodes": {
+    "title": "Árbol lógico",
+    "search": "Buscar",
+    "searchHint": "Nombre del dispositivo o de una parte, token o id de cámara",
+    "results": "{{count}} coincidencia(s), leídas del servidor",
+    "noResults": "Nada coincide",
+    "empty": "Aún no hay dispositivos",
+    "pick": "Elija un nodo para ver qué se puede hacer con él.",
+    "openInTree": "Abrir en el árbol",
+    "replica": "imagen de otro nodo",
+    "part": "Parte de un dispositivo",
+    "partHint": "Una parte es un nodo propio y en M2.4 no se coloca en el mapa: sus estados y eventos se leen aquí, bajo la cámara a la que pertenece.",
+    "statesEvents": "Estados / Eventos",
+    "placeOnMap": "Colocar en el mapa",
+    "placeHint": "Añade una imagen de esta cámara al espacio. La primera colocación se convierte en la de referencia; desde aquí nunca se mueve una existente.",
+    "space": "Espacio",
+    "place": "Colocar",
+    "placed": "Colocada en {{name}}"
+  },
+  "eventRouting": {
+    "title": "Suscripciones",
+    "add": "Nueva suscripción",
+    "newTitle": "Nueva suscripción",
+    "empty": "Aún no hay suscripciones",
+    "pick": "Elija una suscripción o cree una.",
+    "name": "Nombre",
+    "nameRequired": "La suscripción necesita un nombre",
+    "eventName": "Evento",
+    "armedCondition": "Armado",
+    "armedAny": "Cualquiera",
+    "armedArmed": "Solo armado",
+    "armedDisarmed": "Solo desarmado",
+    "cooldownMs": "Enfriamiento, ms",
+    "enabled": "Activa",
+    "sourceFilter": "Selector de origen",
+    "sourceFilterHint": "JSON: object_ids, camera_ids, kinds, tokens, props. La analítica filtra por props.kind, props.reid_object_id y props.min_confidence; una clave desconocida se rechaza al guardar.",
+    "actions": "Acciones, en orden",
+    "addAction": "Añadir acción",
+    "position": "Paso {{position}}",
+    "kind": "Tipo",
+    "params": "parámetros",
+    "saved": "Guardada"
+  },
   "nav": {
     "monitors": "Monitores",
     "camSetup": "Cámaras",
@@ -41,6 +84,8 @@
     "edgeArchive": "Archivo en cámara",
     "gaps": "Huecos",
     "maps": "Mapas",
+    "nodes": "Nodos",
+    "eventRouting": "Enrutado de eventos",
     "map": "Mapa",
     "changePassword": "Cambiar contraseña",
     "deployment": "Despliegue"
@@ -89,6 +134,8 @@
     "disabled": "Deshabilitar cámara",
     "hasTelemetry": "Tiene telemetría (PTZ)",
     "hasTelemetryHelper": "Active esto solo para cámaras que realmente se mueven. El firmware anuncia el servicio ONVIF PTZ haya o no un motor detrás, por lo que el joystick y el seguimiento de objetos dependen de este interruptor y no de lo que declare la cámara. La página de ajustes ONVIF sigue mostrando lo que informa: compruébelo allí primero.",
+    "geoFromDevice": "Posición desde el dispositivo (ONVIF)",
+    "geoFromDeviceHelper": "Permite que la propia posición ONVIF de la cámara la coloque en el mapa y la siga cuando se mueva. Déjelo desactivado para una cámara colocada a mano: su levantamiento y calibración no deben desplazarse porque el dispositivo informe una coordenada propia. Mientras esté activo, la calibración geográfica y la puntería se rechazan.",
     "livePreview": "Vista en vivo ({{stream}})",
     "onvifEventsEnabled": "Suscribirse a eventos ONVIF",
     "edgeBackfill": "Recuperar huecos desde la cámara",
@@ -100,6 +147,7 @@
     "roiDelayHoursHint": "0 recomprime en cuanto el clip se cierra y sus detecciones están guardadas. Se admiten valores fraccionarios.",
     "tabMain": "Principal",
     "tabAdvanced": "Avanzado",
+    "tabDevices": "Dispositivos",
     "roiMinCoverage": "Cobertura ROI mínima, %",
     "roiMaxCoverage": "Cobertura ROI máxima, %",
     "roiCoverageHint": "La cobertura es la parte de la duración del clip que tiene detecciones. Solo se recomprimen los clips dentro de esta banda: por debajo el detector vio muy poco como para fiarse, por encima no queda fondo que comprimir. 0 desactiva el límite.",
@@ -410,7 +458,14 @@
     "sourceOnvif": "ONVIF",
     "sourceOther": "Otro",
     "detections": "Detecciones",
-    "trigger": "Disparador"
+    "trigger": "Disparador",
+    "kind": {
+      "all": "Todo",
+      "sensor": "Sensores",
+      "relay": "Relés",
+      "analytics": "Analítica",
+      "alarm": "Alarmas"
+    }
   },
   "stream": {
     "newStream": "Nuevo flujo en {{camera}}",
@@ -697,6 +752,24 @@
     "deviceIoSave": "Guardar",
     "deviceIoNoRelays": "Sin salidas de relé",
     "deviceIoNoSensors": "Sin entradas digitales",
+    "deviceIoReportedState": "Informado",
+    "deviceIoStateUnknown": "Desconocido",
+    "deviceIoActive": "Activo",
+    "deviceIoInactive": "Inactivo",
+    "deviceIoRelayStateTip": "Estado que la cámara informa para este relé. Proviene de eventos ONVIF y puede retrasarse respecto a un comando.",
+    "deviceIoInputStateTip": "Estado lógico que la cámara informa para esta entrada.",
+    "deviceIoArmModeLabel": "Armado",
+    "deviceIoArmInherit": "Heredar",
+    "deviceIoArmed": "Armado",
+    "deviceIoDisarmed": "Desarmado",
+    "deviceIoAlarmEnabled": "Alarma por contacto",
+    "deviceIoTriggerOn": "Disparar en",
+    "deviceIoTriggerOpen": "Abierto",
+    "deviceIoTriggerClosed": "Cerrado",
+    "deviceIoPolarityUnknown": "La cámara no ha informado un estado de reposo, así que se desconoce la polaridad del contacto. La configuración se guarda; la alarma no se activará hasta que la cámara lo informe.",
+    "geoLocation": "Posición (ONVIF)",
+    "geoLocationNotReported": "La cámara no informa su posición",
+    "geoElevation": "Altitud",
     "audioBitrate": "Tasa de bits (bps)",
     "audioSampleRate": "Frecuencia de muestreo (Hz)",
     "noAudioConfigs": "Sin configuraciones de codificador de audio",
@@ -1065,7 +1138,7 @@
   "diagramEditor": {
     "diagram": "Mimosesquema",
     "newDiagram": "Nuevo mimosesquema",
-    "addDiagram": "Nuevo mimosesquema bajo el nodo seleccionado, o en este mapa",
+    "addDiagram": "Nuevo mimosesquema en este lienzo",
     "types": "Tipos",
     "typesHint": "Un tipo dibuja todos sus mimosesquemas: su imagen de fondo y las regiones que sus hijos pueden ocupar en lugar de un rectángulo propio.",
     "manageTypes": "Gestionar tipos…",
@@ -1178,6 +1251,8 @@
       "noNodes": "Todavía no hay nada dibujado aquí.",
       "figure": "Figura",
       "name": "Nombre",
+      "objectId": "ID del objeto",
+      "replicaOf": "Réplica de",
       "visual": "Aspecto",
       "color": "Color",
       "rotation": "Rotación",
@@ -1270,7 +1345,7 @@
       "enterHint": "Acercar a lo que hay dentro, o abrir el lienzo propio de un espacio"
     },
     "tabSpaces": "Espacios",
-    "tabCameras": "Cámaras",
+    "tabDevices": "Dispositivos",
     "tabLandmarks": "Referencias",
     "pickSpace": "Elija un espacio para ver sus cámaras y referencias",
     "tabSpace": "Espacio",
@@ -1309,6 +1384,16 @@
     "landmarkHeightShort": "a {{height}} m",
     "findOnMap": "Buscar por nombre",
     "camerasHint": "Una cámara colocada aquí se selecciona; cualquier otra se coloca con un clic en el mapa",
+    "devicesHint": "Dispositivos y sus partes. Un dispositivo colocado aquí se selecciona; cualquier otro se coloca con un clic en el mapa, que añade una imagen y nunca mueve la de su posición real.",
+    "devices": {
+      "expand": "Mostrar las partes del dispositivo",
+      "collapse": "Ocultar las partes del dispositivo",
+      "stream": "flujo",
+      "input": "entrada digital",
+      "relay": "relé",
+      "loading": "Leyendo las partes del dispositivo…",
+      "noParts": "Este dispositivo no declara partes"
+    },
     "notPlaced": "Sin colocar",
     "cameraHeight": "Altura, m",
     "cameraHeightHint": "Sobre el piso de este plano",
@@ -1450,5 +1535,32 @@
     "caFingerprint": "Autoridad de certificación de este despliegue",
     "caFingerprintHelper": "Cada máquina del despliegue presenta un certificado emitido por ella. A una máquina que se une se le da esta huella y comprueba el núcleo con ella; compárela con la que el núcleo mostró al configurarse.",
     "downloadCa": "Descargar la autoridad de certificación"
+  },
+  "alarms": {
+    "handle": "Atender la alarma",
+    "acknowledge": "Confirmar",
+    "close": "Cerrar la alarma",
+    "cannotAcknowledge": "Esta alarma no se puede confirmar ahora",
+    "comment": "Comentario",
+    "openOnMap": "Abrir en el mapa",
+    "source": {
+      "sensor": "Sensor",
+      "retention": "Retención",
+      "subscription": "Suscripción"
+    },
+    "status": {
+      "active": "Activa",
+      "acknowledged": "Confirmada",
+      "returned": "Vuelta a la normalidad",
+      "closed": "Cerrada"
+    },
+    "severity": {
+      "warning": "Advertencia",
+      "critical": "Crítica"
+    },
+    "reason": {
+      "falseAlarm": "Falsa alarma",
+      "other": "Otra"
+    }
   }
 }

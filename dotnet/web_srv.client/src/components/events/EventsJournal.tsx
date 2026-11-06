@@ -4,7 +4,11 @@ import {
   Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material'
 import RefreshIcon from '@mui/icons-material/Refresh'
-import { useSearchParams } from 'react-router-dom'
+import InsightsIcon from '@mui/icons-material/Insights'
+import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
+import SensorsIcon from '@mui/icons-material/Sensors'
+import ToggleOnIcon from '@mui/icons-material/ToggleOn'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toIsoUtc } from '../../dto/dtos'
 import type { EpisodeDto } from '../../dto/dtos'
@@ -20,6 +24,19 @@ import EventDetailsPanel from '../EventDetailsPanel'
 import EventOpenInPlayback from '../EventOpenInPlayback'
 
 const AUTO_REFRESH_MS = 15_000
+
+/** The event kinds the journal groups, as the map's own dictionary names them. */
+type EventKind = 'all' | 'sensor' | 'relay' | 'analytics' | 'alarm'
+
+const isAlarmEvent = (event: MapEvent): boolean =>
+  event.eventName === 'alarm' || (event.eventName ?? '').startsWith('alarm_')
+
+const kindOf = (event: MapEvent): EventKind => {
+  if (isAlarmEvent(event)) return 'alarm'
+  if (event.eventName === 'sensor' || event.eventName === 'relay' || event.eventName === 'analytics')
+    return event.eventName
+  return 'all'
+}
 
 const imagesOf = (event: MapEvent): string[] =>
   (event.extraProps ?? [])
@@ -41,6 +58,7 @@ const clock = (iso?: string): string => {
 export default function EventsJournal() {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const subtree = searchParams.get('node') ?? ''
 
@@ -62,6 +80,7 @@ export default function EventsJournal() {
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [paged, setPaged] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [kind, setKind] = useState<EventKind>('all')
 
   useEffect(() => {
     void dispatch(loadEvents({
@@ -112,9 +131,11 @@ export default function EventsJournal() {
   }
 
   const visibleRows = useMemo(() => {
-    if (!text) return rows
+    const byKind = kind === 'all' ? rows : rows.filter((event) => kindOf(event) === kind)
+    if (!text) return byKind
+
     const needle = text.toLowerCase()
-    return rows.filter((event) => {
+    return byKind.filter((event) => {
       const marker = event.objectId ? markers[event.objectId] : undefined
       const cameraName = marker?.cameraId ? camerasById[marker.cameraId]?.name : undefined
       const haystack = [
@@ -123,7 +144,7 @@ export default function EventsJournal() {
       ]
       return haystack.some((value) => value?.toLowerCase().includes(needle))
     })
-  }, [rows, text, markers, camerasById])
+  }, [rows, kind, text, markers, camerasById])
 
   const selected = visibleRows.find((event) => event.id === selectedId) ?? visibleRows[0] ?? null
 
@@ -154,6 +175,26 @@ export default function EventsJournal() {
           {subtree ? (
             <Chip label={t('events.subtree', { name: subtreeName })} size="small" variant="outlined" />
           ) : null}
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={kind}
+            onChange={(_, value: EventKind | null) => value && setKind(value)}
+          >
+            <ToggleButton value="all">{t('events.kind.all')}</ToggleButton>
+            <ToggleButton value="sensor" title={t('events.kind.sensor')}>
+              <SensorsIcon fontSize="small" sx={{ mr: 0.5 }} />{t('events.kind.sensor')}
+            </ToggleButton>
+            <ToggleButton value="relay" title={t('events.kind.relay')}>
+              <ToggleOnIcon fontSize="small" sx={{ mr: 0.5 }} />{t('events.kind.relay')}
+            </ToggleButton>
+            <ToggleButton value="analytics" title={t('events.kind.analytics')}>
+              <InsightsIcon fontSize="small" sx={{ mr: 0.5 }} />{t('events.kind.analytics')}
+            </ToggleButton>
+            <ToggleButton value="alarm" title={t('events.kind.alarm')}>
+              <NotificationsActiveIcon fontSize="small" sx={{ mr: 0.5 }} />{t('events.kind.alarm')}
+            </ToggleButton>
+          </ToggleButtonGroup>
           <ToggleButtonGroup
             exclusive
             size="small"
@@ -238,6 +279,7 @@ export default function EventsJournal() {
                       sx={{ borderBottom: 1, borderColor: 'divider', display: 'block' }}
                     >
                       <Stack direction="row" spacing={0.5} alignItems="center">
+                        <EventKindIcon event={event} />
                         <Typography variant="body2" fontWeight="medium" noWrap sx={{ flex: 1, minWidth: 0 }}>
                           {nameOf(event.objectId)}
                         </Typography>
@@ -278,6 +320,16 @@ export default function EventsJournal() {
               <Typography variant="subtitle1" sx={{ flex: 1 }} noWrap>
                 {selected ? nameOf(selected.objectId) : t('events.noSelection')}
               </Typography>
+              {selected && isAlarmEvent(selected) && selected.objectId ? (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<NotificationsActiveIcon />}
+                  onClick={() => navigate(`/operator/map?node=${encodeURIComponent(selected.objectId!)}`)}
+                >
+                  {t('alarms.openOnMap')}
+                </Button>
+              ) : null}
               <EventOpenInPlayback episode={selectedEpisode} />
             </Stack>
             <ArchiveHlsPreview selected={selectedEpisode} />
@@ -288,6 +340,17 @@ export default function EventsJournal() {
       </CardContent>
     </Card>
   )
+}
+
+/** One icon per kind, so a mixed page reads at a glance. */
+function EventKindIcon({ event }: { event: MapEvent }) {
+  switch (kindOf(event)) {
+    case 'sensor': return <SensorsIcon fontSize="small" color="action" />
+    case 'relay': return <ToggleOnIcon fontSize="small" color="action" />
+    case 'analytics': return <InsightsIcon fontSize="small" color="action" />
+    case 'alarm': return <NotificationsActiveIcon fontSize="small" color="error" />
+    default: return null
+  }
 }
 
 function EventImage({ fileId, height }: { fileId?: string; height: number }) {

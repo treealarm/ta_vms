@@ -307,6 +307,7 @@ public sealed class FSController(
       CameraId        = body.CameraId,
       AlarmStartTs    = Timestamp.FromDateTime(ToUtc(body.AlarmStartTs)),
       TimeoutSeconds  = body.TimeoutSeconds,
+      RaiseAlarm      = body.RaiseAlarm,
     };
 
     if (!string.IsNullOrWhiteSpace(body.EventId))

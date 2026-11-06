@@ -160,10 +160,28 @@ namespace VmsMap.Grpc
     public override async Task<MapProto.MarkerList> GetByName(
       MapProto.GetByNameRequest request, ServerCallContext context)
     {
-      var ct = context.CancellationToken;
-      var caller = ToCaller(request.Caller);
-
       var markers = await _mapService.GetByNameAsync(request.Name ?? string.Empty);
+      return await MarkersAsync(markers, request.Caller, context.CancellationToken);
+    }
+
+    public override async Task<MapProto.MarkerList> SearchDeviceNodes(
+      MapProto.SearchDeviceNodesRequest request, ServerCallContext context)
+    {
+      var query = request.Query?.Trim() ?? string.Empty;
+      // One character is not a search: it would return the cap's worth of the first alphabet.
+      if (query.Length < 2)
+        return new MapProto.MarkerList();
+
+      var limit = Math.Clamp(request.Limit > 0 ? request.Limit : 50, 1, 50);
+      var markers = await _mapService.SearchDeviceNodesAsync(query, limit);
+      return await MarkersAsync(markers, request.Caller, context.CancellationToken);
+    }
+
+    /// <summary>The one rendering of a set of nodes: rights first, then children, camera and kind.</summary>
+    private async Task<MapProto.MarkerList> MarkersAsync(
+      Dictionary<string, BaseMarkerDTO> markers, MapProto.Caller callerDto, CancellationToken ct)
+    {
+      var caller = ToCaller(callerDto);
       var visible = await _rightsService.VisibleAsync(markers.Keys, caller, ct);
       markers = markers
         .Where(kv => visible.Contains(kv.Key))
@@ -286,7 +304,11 @@ namespace VmsMap.Grpc
 
       await _mapUpdateService.UpdateObjects([dto]);
 
-      var ownerProps = await _mapService.GetPropAsync(request.OwnerId);
+      // The write resolves a replica's owner to the original; the copy below follows what the
+      // node now shows, not what the caller named.
+      var resolvedOwnerId = dto.owner_id!;
+
+      var ownerProps = await _mapService.GetPropAsync(resolvedOwnerId);
       if (ownerProps?.extra_props is { Count: > 0 })
       {
         await _mapService.UpdatePropAsync([
@@ -294,8 +316,8 @@ namespace VmsMap.Grpc
         ]);
       }
 
-      var ownerVisual = (await _visualService.GetListByIdsAsync([request.OwnerId]))
-        .GetValueOrDefault(request.OwnerId);
+      var ownerVisual = (await _visualService.GetListByIdsAsync([resolvedOwnerId]))
+        .GetValueOrDefault(resolvedOwnerId);
       if (ownerVisual is not null)
       {
         await _visualService.UpdateListAsync([
@@ -354,6 +376,25 @@ namespace VmsMap.Grpc
       };
     }
 
+    public override async Task<MapProto.GetNodeArmingResponse> GetNodeArming(
+      MapProto.GetNodeArmingRequest request, ServerCallContext context)
+    {
+      var arming = await _armingResolver.ResolveAsync(request.ObjectId, context.CancellationToken);
+      if (arming is null)
+        return new MapProto.GetNodeArmingResponse { Found = false };
+
+      return new MapProto.GetNodeArmingResponse
+      {
+        Found = true,
+        Arming = new MapProto.NodeArming
+        {
+          ObjectId = arming.ObjectId,
+          Armed = arming.Armed,
+          Source = arming.Source,
+        },
+      };
+    }
+
     public override async Task<MapProto.AlarmStateList> GetAlarmedStates(
       MapProto.GetStatesRequest request, ServerCallContext context)
     {
@@ -400,6 +441,22 @@ namespace VmsMap.Grpc
     }
 
     // ── Events ────────────────────────────────────────────────────────────────────────────────
+
+    // The alarm raise's own read of the journal, and the one the event router uses: a
+    // map-event-created message carries an id and nothing else. No caller and no rights — see
+    // EventsService.GetByIdAsync.
+    public override async Task<MapProto.Event> GetEvent(
+      MapProto.GetEventRequest request, ServerCallContext context)
+    {
+      if (!Guid.TryParse(request.Id, out var id))
+        throw new RpcException(new Status(StatusCode.InvalidArgument, "id must be a UUID"));
+
+      var evt = await _eventsService.GetByIdAsync(id);
+      if (evt is null)
+        throw new RpcException(new Status(StatusCode.NotFound, "no such event"));
+
+      return ToProto(evt);
+    }
 
     public override async Task<MapProto.EventList> GetEventsByFilter(
       MapProto.GetEventsByFilterRequest request, ServerCallContext context)
@@ -694,7 +751,7 @@ namespace VmsMap.Grpc
       return await _rightsService.VisibleAsync(requested, ToCaller(caller), ct);
     }
 
-    // The reverse index from a node to the camera it is: the canonical row in camera_node, or the
+    // The reverse index from a node to the camera it is: the device row in device_node, or the
     // placement row of a picture. Reads name a camera at all only because of these.
     internal Task<Dictionary<string, string>> CameraIdsAsync(
       IEnumerable<string> ids, CancellationToken ct) =>

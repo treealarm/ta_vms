@@ -18,10 +18,12 @@ Run it directly to print the world JSON and the expected numbers:
 
 import base64
 import dataclasses
+import json
 import math
 import struct
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 
 # WGS84 anchor of the sim's origin: open farmland in Maryland, which also makes a presentable map.
 # Not on the equator, so a cos(latitude) left out anywhere shows up as an east-west error instead
@@ -530,6 +532,198 @@ def build_world(onvif_base_port, pairs=None, with_walker=True):
     }
 
 
+# ── The demo world: Maryland ─────────────────────────────────────────────────────
+#
+# ta_vms's demo world (dotnet/VmsMap/Demo/DemoWorlds.cs) places its cameras in the A.V. Williams
+# building on the University of Maryland campus. OnvifSim builds that world from the same constants
+# and ships it as data/worlds/maryland.json (World/MarylandWorld.cs); the bench loads that file
+# rather than keeping a second copy of the geometry, and checks the cameras in it against the demo
+# placements below. Those mirror DemoWorlds.cs — the building envelope and the four camera poses —
+# so keep the two in step. The master and its PTZ slave stand in one room, with a person walking
+# between them; the slave reports its head in the metadata track.
+
+REPO = Path(__file__).resolve().parents[2]
+
+MARYLAND_LAT0 = 38.9923  # the centre of the demo building
+MARYLAND_LON0 = -76.9378
+MARYLAND_POSITION_TOLERANCE_M = 0.5
+MARYLAND_ANGLE_TOLERANCE_DEG = 0.5
+# Room 101 of the demo floor plan. The master and its PTZ slave work as one pair, so both stand in
+# this room, and the person they work on walks inside it (mirrors DemoWorlds.cs's Room101*).
+ROOM101_SOUTH, ROOM101_WEST, ROOM101_NORTH, ROOM101_EAST = 38.99238, -76.93855, 38.99250, -76.93835
+
+
+@dataclass(frozen=True)
+class DemoPlacement:
+    """A demo camera's place: WGS84, height above the building floor, heading clockwise from north,
+    and the horizontal field of view (for a PTZ camera, the wide end of its lens)."""
+    id: str
+    lat: float
+    lon: float
+    height: float
+    heading: float
+    hfov: float
+
+
+DEMO_PLACEMENTS = [
+    DemoPlacement("master", 38.99240, -76.93852, 2.8, 55, 70),
+    DemoPlacement("ptz", 38.992484, -76.938372, 2.8, 235, 65),
+    DemoPlacement("master2", 38.99276, -76.93895, 3.0, 135, 80),
+    DemoPlacement("ptz2", 38.99250, -76.93950, 6.0, 90, 60),
+]
+DEMO_VEHICLE_CAMERA = "vehicle"
+
+# The pair the demo bench calibrates in the Maryland world: the master and the slave stand in one
+# hall facing each other, so one set of landmarks serves both (decision 10 of the M2.3 plan). The
+# other pair — master2 on the building's wall, ptz2 out on the campus — is too far apart to share
+# landmarks; it is calibrated in the yard world, which is what that bench is for.
+MARYLAND_PAIR_NAME = "plan"
+
+# The landmarks in the hall, in world metres (X east, Z south): between the master at
+# (-62.3, -11.1) and the slave at (-49.5, -20.5), every one of them inside both views.
+MARYLAND_LANDMARKS = [
+    Landmark("L1", -57.5, -13.5, "#e53935", "red"),
+    Landmark("L2", -54.0, -16.0, "#fdd835", "yellow"),
+    Landmark("L3", -60.0, -16.0, "#1e88e5", "blue"),
+    Landmark("L4", -53.0, -13.0, "#f5f5f5", "white"),
+    Landmark("L5", -56.0, -19.5, "#8e24aa", "purple"),
+]
+
+
+def demo_camera(world, camera_id, base):
+    """`base` at the Maryland world's own pose — the demo places its cameras from the same constants."""
+    camera = next(c for c in world["cameras"] if c["id"] == camera_id)
+    position = camera["position"]
+    return dataclasses.replace(
+        base, x=position["x"], y=position["y"], z=position["z"], heading=camera["heading"])
+
+
+def demo_pairs(world):
+    return [Pair(MARYLAND_PAIR_NAME,
+                 demo_camera(world, "master", MASTER),
+                 demo_camera(world, "ptz", SLAVE))]
+
+
+def world_to_wgs84(world, position):
+    """A world point in WGS84, by WorldGeo's equirectangular formula around the world's own anchor:
+    the simulator's (x, y, z) metres, with north being the true bearing of world -Z."""
+    geo = world.get("geo") or {}
+    lat0 = geo.get("latitude", 0.0)
+    lon0 = geo.get("longitude", 0.0)
+    turn = math.radians(geo.get("north", 0.0))
+    x, y, z = position["x"], position["y"], position["z"]
+    east = x * math.cos(turn) - z * math.sin(turn)
+    north = -x * math.sin(turn) - z * math.cos(turn)
+    per_deg_lat = EARTH_RADIUS_M * math.pi / 180.0
+    per_deg_lon = per_deg_lat * math.cos(math.radians(lat0))
+    return lat0 + north / per_deg_lat, lon0 + east / per_deg_lon, geo.get("elevation", 0.0) + y
+
+
+def _ground_gap(lat1, lon1, lat2, lon2):
+    """How far apart two WGS84 points are on the ground, metres."""
+    per_deg_lat = EARTH_RADIUS_M * math.pi / 180.0
+    per_deg_lon = per_deg_lat * math.cos(math.radians((lat1 + lat2) / 2.0))
+    return math.hypot((lat1 - lat2) * per_deg_lat, (lon1 - lon2) * per_deg_lon)
+
+
+def _angle_gap(a, b):
+    return abs((a - b + 180.0) % 360.0 - 180.0)
+
+
+def check_maryland(world):
+    """Raises AssertionError if the world does not stand where ta_vms's demo placements put it."""
+    geo = world.get("geo") or {}
+    assert _ground_gap(geo.get("latitude", 0.0), geo.get("longitude", 0.0), MARYLAND_LAT0, MARYLAND_LON0) \
+        <= MARYLAND_POSITION_TOLERANCE_M, f"the world is anchored at {geo}, not at the demo building"
+    assert geo.get("north", 0.0) == 0, f"the world's north is {geo.get('north')}, not 0"
+
+    cameras = {camera["id"]: camera for camera in world.get("cameras", [])}
+    for placement in DEMO_PLACEMENTS:
+        camera = cameras.get(placement.id)
+        assert camera is not None, f"the world has no '{placement.id}' camera"
+        lat, lon, elevation = world_to_wgs84(world, camera["position"])
+        gap = _ground_gap(lat, lon, placement.lat, placement.lon)
+        assert gap <= MARYLAND_POSITION_TOLERANCE_M, \
+            f"{placement.id} stands {gap:.2f} m from its demo placement ({lat:.7f}, {lon:.7f})"
+        assert abs(elevation - placement.height) <= MARYLAND_POSITION_TOLERANCE_M, \
+            f"{placement.id} is {elevation:.2f} m up, the demo places it at {placement.height} m"
+        assert _angle_gap(camera["heading"], placement.heading) <= MARYLAND_ANGLE_TOLERANCE_DEG, \
+            f"{placement.id} faces {camera['heading']}, the demo {placement.heading}"
+        hfov = camera["hFov"] if camera.get("kind") == "fixed" else (camera.get("ptz") or {}).get("fovWide")
+        assert hfov is not None and abs(hfov - placement.hfov) <= MARYLAND_ANGLE_TOLERANCE_DEG, \
+            f"{placement.id} is {hfov} deg wide, the demo {placement.hfov}"
+
+    # The pair works as one: the master detects, the slave aims where its boxes say. The slave
+    # carries its head in the metadata track, and a person walks the room between them.
+    slave = cameras["ptz"]
+    assert (slave.get("metadata") or {}).get("ptzStatus") is True, "ptz does not report its head in the telemetry"
+    assert (cameras["master"].get("metadata") or {}).get("analytics") is True, "master has no analytics"
+    walkers = world.get("walkers", [])
+    assert walkers, "the world has no person for the pair to work on"
+    assert all(w.get("detectable", True) for w in walkers), "the walker is not detectable"
+    # The pair must watch the same room: two rooms would make the slave aim at what the master
+    # cannot see (or at nothing), and the person walks between them.
+    for placement in DEMO_PLACEMENTS:
+        if placement.id in ("master", "ptz"):
+            assert ROOM101_SOUTH <= placement.lat <= ROOM101_NORTH \
+                and ROOM101_WEST <= placement.lon <= ROOM101_EAST, \
+                f"{placement.id} does not stand in Room 101 with its master/slave"
+    for walker in walkers:
+        for point in walker.get("route", []):
+            lat, lon, _ = world_to_wgs84(world, {"x": point["x"], "y": 0.0, "z": point["z"]})
+            assert ROOM101_SOUTH <= lat <= ROOM101_NORTH and ROOM101_WEST <= lon <= ROOM101_EAST, \
+                f"the person at ({point['x']}, {point['z']}) walks outside Room 101"
+
+    vehicle = cameras.get(DEMO_VEHICLE_CAMERA)
+    assert vehicle is not None, f"the world has no '{DEMO_VEHICLE_CAMERA}' camera"
+    vehicle_id = vehicle.get("mountedOnVehicleId")
+    assert vehicle_id and any(v["id"] == vehicle_id for v in world.get("vehicles", [])), \
+        f"{DEMO_VEHICLE_CAMERA} does not ride a vehicle of the world"
+
+    # The master's three relays show every kind of link a relay can have: one lights a lamp, one
+    # drives the slave camera's sensor, and one drives a sensor of the master itself. A lamp is an
+    # actuator of the world, not a part of a camera.
+    master = cameras["master"]
+    relays = {relay["token"] for relay in master.get("relayOutputs", [])}
+    assert {"lamp", "peer", "loop"} <= relays, f"master has no relays to wire, only {relays}"
+    assert any(device["token"] == "input" for device in master.get("digitalInputs", [])), \
+        "master has no 'input' sensor"
+    ptz = cameras["ptz"]
+    assert any(device["token"] == "input" for device in ptz.get("digitalInputs", [])), \
+        "ptz has no 'input' sensor"
+    assert any(lamp["id"] == "alert" for lamp in world.get("lamps", [])), "the world has no 'alert' lamp"
+    wires = world.get("wires", [])
+
+    def wired(relay_token, **sink):
+        return any(wire.get("relayCameraId") == "master" and wire.get("relayToken") == relay_token
+                   and all(wire.get(key) == value for key, value in sink.items())
+                   for wire in wires)
+
+    assert wired("lamp", lampId="alert"), "no wire runs from master's 'lamp' relay to the 'alert' lamp"
+    assert wired("peer", inputCameraId="ptz", inputToken="input"), \
+        "no wire runs from master's 'peer' relay to ptz's sensor"
+    assert wired("loop", inputCameraId="master", inputToken="input"), \
+        "no wire runs from master's 'loop' relay to the master's own sensor"
+    # The car carries no device: a wire to it would move with it, and every camera that saw the wire
+    # would redraw at every frame of the drive.
+    assert not vehicle.get("relayOutputs") and not vehicle.get("digitalInputs"), \
+        f"{DEMO_VEHICLE_CAMERA} should carry no devices"
+
+
+def load_maryland(path, ta_install_world=None):
+    """The demo world OnvifSim ships, checked against the demo placements; ta_install_world, when
+    given, is the same file as a deployment's demo profile seeds, and must be identical."""
+    path = Path(path)
+    world = json.loads(path.read_text())
+    check_maryland(world)
+    if ta_install_world is not None:
+        copy = Path(ta_install_world)
+        if copy.exists():
+            assert copy.read_text().replace("\r\n", "\n") == path.read_text().replace("\r\n", "\n"), \
+                f"{copy} differs from {path}: the demo profile would seed another world"
+    return world
+
+
 # ── Self-check: the world is one the checks can work in ─────────────────────────
 
 
@@ -617,10 +811,18 @@ def summary(lat0=DEFAULT_LAT0, lon0=DEFAULT_LON0):
 
 
 if __name__ == "__main__":
-    import json
-
-    check()
-    if "--dump" in sys.argv:
-        print(json.dumps(build_world(8101), indent=2))
+    if "--check-maryland" in sys.argv:
+        # The two checkouts beside this one: the world OnvifSim ships, and the copy a deployment's
+        # demo profile seeds. Both must stand where DemoWorlds places the cameras.
+        world = load_maryland(
+            REPO.parent / "OnvifSim" / "data" / "worlds" / "maryland.json",
+            REPO.parent / "ta_install" / "init_files" / "onvifsim" / "worlds" / "maryland.json")
+        geo = world["geo"]
+        print(f"Maryland OK: {len(world['cameras'])} cameras at the demo placements, "
+              f"anchored {geo['latitude']}, {geo['longitude']}")
     else:
-        print(summary())
+        check()
+        if "--dump" in sys.argv:
+            print(json.dumps(build_world(8101), indent=2))
+        else:
+            print(summary())

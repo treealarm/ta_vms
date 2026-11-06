@@ -260,6 +260,9 @@ export type CameraSetupDto = {
    *  administrator's word, not the device's: firmware advertises the ONVIF PTZ service whether or
    *  not there is a motor behind it. */
   hasTelemetry?: boolean
+  /** Take this camera's place on the map from its own ONVIF position. Off by default: a
+   *  hand-placed camera must not drift, and while on, geographic calibration and aiming refuse. */
+  geoFromDevice?: boolean
   /** Re-encode finished clips with ROI, keeping detector boxes sharp. */
   roiTranscode?: boolean
   /** Hours before a closed clip may be re-encoded; 0 means as soon as possible. */
@@ -1101,14 +1104,16 @@ export type OnvifAnalyticsModuleDescriptionsResponseDto = {
 export type RelayMode = 'monostable' | 'bistable'
 export type IdleState = 'open' | 'closed'
 
-// ONVIF has no operation to read a relay's current logical (active/inactive) state — only its
-// configured Mode/DelayTime/IdleState. Live state is tracked client-side after a command, never
-// fetched from the server.
+// ONVIF has no getter for a relay's current logical (active/inactive) state: the getter returns
+// configuration only. The state travels as Device/Trigger property events, which VmsOnvif caches
+// and serves back as `liveActive`. It is null until the camera has reported the device — which is
+// not the same as inactive, and must not be presented as such.
 export type RelayOutputDto = {
   token: string
   mode: RelayMode
   idleState: IdleState
   delayMs: number
+  liveActive: boolean | null
 }
 
 export type RelayOutputOptionsDto = {
@@ -1120,15 +1125,67 @@ export type RelayOutputOptionsDto = {
   discreteDelaysMs?: number[]
 }
 
-// idleState is null when the camera didn't report it at all.
+// idleState is null when the camera didn't report it at all. liveActive is the logical state the
+// camera last announced (Device/Trigger/DigitalInput), null until it has announced one.
 export type DigitalInputDto = {
   token: string
   idleState: IdleState | null
+  liveActive: boolean | null
+}
+
+// Where the camera says it stands. found=false means it reports no location at all; an individual
+// coordinate the camera omitted stays null rather than becoming zero.
+export type CameraGeoLocationDto = {
+  found: boolean
+  lat: number | null
+  lon: number | null
+  elevationM: number | null
 }
 
 export type DigitalInputOptionsDto = {
   token: string
   idleStateConfigurable: boolean
+}
+
+// What the operator configured for one part. A missing row means the defaults: inherit the
+// camera's arming, no alarm. Arming fields are inputs-only — a relay is driven, not watched.
+export type DeviceArmMode = 'inherit' | 'armed' | 'disarmed'
+
+export type DeviceSettingsDto = {
+  cameraId: string
+  kind: 'digital_input' | 'relay'
+  token: string
+  name: string
+  armMode: DeviceArmMode
+  triggerOn: IdleState | null
+  alarmEnabled: boolean
+}
+
+// ── Event routing ─────────────────────────────────────────────────────────
+// A reaction configured in Admin → Event routing. The selector and each action's parameters are
+// JSON strings: VmsCfg validates them on save, so an unknown key is refused there instead of being
+// silently ignored by the router at run time.
+
+export type SubscriptionActionDto = {
+  position?: number
+  /** "retain_recording" | "set_relay" | "emit_event" | "raise_alarm". */
+  kind?: string
+  params?: string
+}
+
+export type EventSubscriptionDto = {
+  id?: string
+  name?: string
+  enabled?: boolean
+  /** A name from the map's journal dictionary: sensor, relay, analytics, alarm_* or alarm. */
+  eventName?: string
+  /** JSON selector: {"object_ids":[],"camera_ids":[],"kinds":[],"tokens":[],"props":{}}. */
+  sourceFilter?: string
+  /** "any" | "armed" | "disarmed". */
+  armedCondition?: string
+  cooldownMs?: number
+  version?: number
+  actions?: SubscriptionActionDto[]
 }
 
 export type FloatRangeDto = { min: number; max: number }

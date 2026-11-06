@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -11,41 +12,53 @@ using VmsMap.Domain;
 
 namespace VmsMap.Adapter
 {
-  // Turns a retention episode into the camera's ALARM state and one journal event, and takes the
-  // state away after the episode's projected end has passed and VmsFs confirms it did not renew.
-  // The episode's own id is the event id, so a redelivered message cannot write a second event.
+  // Turns a retention episode into an alarm on the camera's node and one journal event, and takes
+  // it away after the episode's projected end has passed and VmsFs confirms it did not renew. The
+  // episode's own id is the event id and the alarm's dedup key, so a redelivered message can
+  // neither write a second event nor raise a second alarm.
+  //
+  // The legacy `alarm` event (id = event_uuid, props alarm_end_ts) stays: the retention journal is
+  // built on it. The alarm entity writes no `alarm_raised` for this source — the row is where the
+  // operator sees it — but an auto-on-normal close is an `alarm_closed` like any other.
   internal sealed class AlarmService
   {
     private const string AlarmEventName = "alarm";
     private const string AlarmEndProperty = "alarm_end_ts";
 
     private readonly VmsMapDbContext _db;
-    private readonly CameraStateWriter _stateWriter;
-    private readonly IEventsService _eventsService;
+    private readonly AlarmStore _alarms;
+    private readonly EventsWriter _eventsWriter;
     private readonly IRetentionEventSource _retention;
     private readonly ILogger<AlarmService> _logger;
 
     public AlarmService(
       VmsMapDbContext db,
-      CameraStateWriter stateWriter,
-      IEventsService eventsService,
+      AlarmStore alarms,
+      EventsWriter eventsWriter,
       IRetentionEventSource retention,
       ILogger<AlarmService> logger)
     {
       _db = db ?? throw new ArgumentNullException(nameof(db));
-      _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
-      _eventsService = eventsService ?? throw new ArgumentNullException(nameof(eventsService));
+      _alarms = alarms ?? throw new ArgumentNullException(nameof(alarms));
+      _eventsWriter = eventsWriter ?? throw new ArgumentNullException(nameof(eventsWriter));
       _retention = retention ?? throw new ArgumentNullException(nameof(retention));
       _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
-    /// Records one episode: ALARM if its projected end is still ahead, NORM if it is already over,
-    /// and the journal event in both cases. State and event are one transaction.
+    /// Records one episode: an alarm if its projected end is still ahead, and the journal event in
+    /// both cases. State, alarm row and event are one transaction.
     /// </summary>
     public async Task RecordAsync(
       string cameraId, RetentionEpisode episode, CancellationToken ct)
     {
+      // Footage, not an alarm: the episode stays in VmsFs and in the clip list, and neither ALARM
+      // nor a row nor the legacy `alarm` event is written for it.
+      if (!episode.RaiseAlarm)
+        return;
+
+      var objectId = CameraObjectId.For(cameraId);
+      var dedupKey = $"retention:{EventId(cameraId, episode):D}";
       var active = episode.AlarmEndTs is null || episode.AlarmEndTs > DateTime.UtcNow;
 
       var ownsTransaction = _db.Database.IsRelational()
@@ -55,9 +68,19 @@ namespace VmsMap.Adapter
         : null;
 
       if (active)
-        await _stateWriter.SetAlarmAsync(cameraId, ct);
+      {
+        await _alarms.RaiseAsync(new RaiseAlarmSpec(
+          ObjectId: Guid.Parse(objectId),
+          Source: AlarmSource.Retention,
+          DedupKey: dedupKey,
+          ExpectedEndTs: episode.AlarmEndTs,
+          SourceEventId: Guid.TryParse(episode.EventUuid, out var episodeId) ? episodeId : null,
+          Trigger: episode.Trigger), ct);
+      }
       else
-        await _stateWriter.ClearAlarmAsync(cameraId, ct);
+      {
+        await _alarms.NormalAsync(Guid.Parse(objectId), dedupKey, ct);
+      }
 
       await UpsertEventAsync(cameraId, episode, ct);
 
@@ -66,61 +89,57 @@ namespace VmsMap.Adapter
     }
 
     /// <summary>
-    /// The periodic repair: cameras still in ALARM whose recorded end is past are re-checked
-    /// against VmsFs, because a renewal may have pushed the end forward. The check is
-    /// idempotent, so every replica may run it.
+    /// The periodic repair: open retention alarms whose recorded end is past are re-checked against
+    /// VmsFs, because a renewal may have pushed the end forward. An alarm is the entity that says
+    /// what is open, not the ALARM state — the state may have been taken away for another reason.
+    /// The check is idempotent, so every replica may run it.
     /// </summary>
     public async Task SweepAsync(CancellationToken ct)
     {
       var now = DateTime.UtcNow;
 
-      var alarmedIds = await _db.ObjectStates.AsNoTracking()
-        .Where(s => s.states.Any(v => v.state == CameraStateWriter.Alarm))
-        .Select(s => s.id)
-        .ToListAsync(ct);
-      if (alarmedIds.Count == 0)
-        return;
-
-      var cameras = await _db.CameraNodes.AsNoTracking()
-        .Where(n => alarmedIds.Contains(n.object_id))
-        .Select(n => new { n.object_id, n.camera_id })
+      var open = await _db.Alarms.AsNoTracking()
+        .Where(a => a.source == AlarmSource.Retention && a.condition_active)
+        .Select(a => new { a.object_id, a.dedup_key, a.source_event_id, a.expected_end_ts })
         .ToListAsync(ct);
 
-      foreach (var camera in cameras)
+      foreach (var alarm in open)
       {
         try
         {
-          var last = await _db.Events.AsNoTracking()
-            .Include(e => e.extra_props)
-            .Where(e => e.object_id == camera.object_id && e.event_name == AlarmEventName)
-            .OrderByDescending(e => e.timestamp)
-            .FirstOrDefaultAsync(ct);
+          if (alarm.expected_end_ts is { } projected && projected > now)
+            continue; // still running by its own projection; nothing to repair
 
-          if (last is null)
+          var cameraId = await CameraIdAsync(alarm.object_id, ct);
+          if (cameraId is null)
             continue;
 
-          var endText = last.extra_props
-            .FirstOrDefault(p => p.prop_name == AlarmEndProperty)?.str_val;
-          if (!DateTime.TryParse(
-                endText, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var end)
-              || end > now)
-          {
+          // The legacy event carries the episode's start; the alarm's dedup key is its id.
+          var episodeStart = await EpisodeStartAsync(alarm.source_event_id, ct);
+          if (episodeStart is null)
             continue;
-          }
 
-          var episode = await _retention.FindAsync(camera.camera_id, last.timestamp, ct);
+          var episode = await _retention.FindAsync(cameraId, episodeStart.Value, ct);
 
           // Still running, or extended: keep (or restore) the alarm and record the new end.
           if (episode is not null && (episode.AlarmEndTs is null || episode.AlarmEndTs >= now))
           {
-            await _stateWriter.SetAlarmAsync(camera.camera_id, ct);
-            if (episode.AlarmEndTs is not null)
-              await SetEndAsync(last.id, episode.AlarmEndTs, ct);
+            await _alarms.RaiseAsync(new RaiseAlarmSpec(
+              ObjectId: alarm.object_id,
+              Source: AlarmSource.Retention,
+              DedupKey: alarm.dedup_key,
+              ExpectedEndTs: episode.AlarmEndTs,
+              SourceEventId: alarm.source_event_id,
+              Trigger: episode.Trigger), ct);
+
+            if (episode.AlarmEndTs is not null && alarm.source_event_id is { } eventId)
+              await SetEndAsync(eventId, episode.AlarmEndTs, ct);
             continue;
           }
 
-          await _stateWriter.ClearAlarmAsync(camera.camera_id, ct);
-          await SetEndAsync(last.id, episode?.AlarmEndTs ?? now, ct);
+          await _alarms.NormalAsync(alarm.object_id, alarm.dedup_key, ct);
+          if (alarm.source_event_id is { } closedId)
+            await SetEndAsync(closedId, episode?.AlarmEndTs ?? now, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -130,9 +149,26 @@ namespace VmsMap.Adapter
         {
           // A VmsFs hiccup must not take the alarm down: the next sweep tries again.
           _logger.LogWarning(ex,
-            "Alarm sweep failed for camera '{CameraId}', keeping its state", camera.camera_id);
+            "Alarm sweep failed for node {ObjectId}, keeping its alarm", alarm.object_id);
         }
       }
+    }
+
+    private async Task<string?> CameraIdAsync(Guid objectId, CancellationToken ct) =>
+      await _db.DeviceNodes.AsNoTracking()
+        .Where(n => n.object_id == objectId)
+        .Select(n => n.source_id)
+        .FirstOrDefaultAsync(ct);
+
+    private async Task<DateTime?> EpisodeStartAsync(Guid? eventId, CancellationToken ct)
+    {
+      if (eventId is null)
+        return null;
+
+      return await _db.Events.AsNoTracking()
+        .Where(e => e.id == eventId.Value && e.event_name == AlarmEventName)
+        .Select(e => (DateTime?)e.timestamp)
+        .FirstOrDefaultAsync(ct);
     }
 
     private async Task UpsertEventAsync(
@@ -149,7 +185,7 @@ namespace VmsMap.Adapter
 
       if (existing is null)
       {
-        await _eventsService.InsertManyAsync([
+        await _eventsWriter.WriteAsync([
           new EventDTO
           {
             id = eventId.ToString(),
@@ -225,8 +261,9 @@ namespace VmsMap.Adapter
       await _db.SaveChangesAsync(ct);
     }
 
-    // The episode id VmsFs generated is the dedup key; a row from an older database may not have
-    // one, and then a deterministic id keeps the message replayable just the same.
+    // The episode id VmsFs generated is the event id and the dedup key; a row from an older
+    // database may not have one, and then a deterministic id keeps the message replayable just the
+    // same.
     private static Guid EventId(string cameraId, RetentionEpisode episode) =>
       Guid.TryParse(episode.EventUuid, out var id)
         ? id

@@ -5,8 +5,16 @@ import { mapLiveUrl } from '../api/mapApi'
 import { useAppDispatch, useAppSelector } from '../store'
 import { canvasAdd, canvasNodes, canvasRemove, dropNodes, loadCanvas, loadNodes } from '../store/objectsSlice'
 import { loadLevels } from '../store/levelsSlice'
+import { loadPlacements } from '../store/spatialSlice'
 import { loadVisualStates } from '../store/statesSlice'
 import { useMapLive } from './useMapLive'
+
+/**
+ * How long a camera's move waits before the placements are read again. A point that changes every
+ * few seconds (a camera following its device) must not turn into a read per change, and a burst
+ * settles into one read at the end.
+ */
+const PLACEMENTS_RELOAD_MS = 500
 
 export type MapSpaceData = {
   /** Everything drawn on the open space's canvas, at any depth of the tree. */
@@ -30,11 +38,12 @@ export function useMapSpace(space: SpaceDto | null): MapSpaceData {
   const canvasId = space?.id ?? null
   const page = canvasId ? canvases[canvasId] : undefined
 
+  // Opened or opened again: a page that stays in the store is a page that can have lost a node
+  // while nobody was watching it -- another plan was open, or the stream was down. The read
+  // replaces the page's ids, which is what a watch gap cannot do.
   useEffect(() => {
-    if (canvasId && !canvases[canvasId]?.loaded) {
-      void dispatch(loadCanvas(canvasId))
-    }
-  }, [canvasId, canvases, dispatch])
+    if (canvasId) void dispatch(loadCanvas(canvasId))
+  }, [canvasId, dispatch])
 
   useEffect(() => {
     if (!levelsLoaded) void dispatch(loadLevels())
@@ -49,6 +58,24 @@ export function useMapSpace(space: SpaceDto | null): MapSpaceData {
   // are remembered so a node is not asked again.
   const ids = useMemo(() => page?.ids ?? [], [page])
   const loadedIds = useRef(new Set<string>())
+
+  // Placements are polled on a slow timer, but a camera that follows its device moves every few
+  // seconds — its marker would sit at the old spot until that timer came round. A geometry update
+  // naming a camera asks for a read of them now, coalesced so a burst is one read.
+  const placementsTimer = useRef<number | null>(null)
+  useEffect(() => () => {
+    if (placementsTimer.current !== null) window.clearTimeout(placementsTimer.current)
+  }, [])
+  const requestPlacements = (message: MapWatchMessage) => {
+    if (message.action !== 'set_ids2update'
+      || !(message.items ?? []).some((item) => !!item.cameraId)
+      || placementsTimer.current !== null)
+      return
+    placementsTimer.current = window.setTimeout(() => {
+      placementsTimer.current = null
+      void dispatch(loadPlacements())
+    }, PLACEMENTS_RELOAD_MS)
+  }
   useEffect(() => {
     const missing = ids.filter((id) => !loadedIds.current.has(id))
     if (missing.length === 0) return
@@ -70,6 +97,7 @@ export function useMapSpace(space: SpaceDto | null): MapSpaceData {
         dispatch(canvasAdd({ canvasId, ids: changed }))
         void dispatch(loadNodes(changed))
         void dispatch(loadVisualStates(changed))
+        requestPlacements(message)
         break
       case 'set_visual_states':
         void dispatch(loadVisualStates(changed))
@@ -93,6 +121,7 @@ export function useMapSpace(space: SpaceDto | null): MapSpaceData {
       case 'set_ids2update':
         void dispatch(loadNodes(changed))
         void dispatch(loadVisualStates(changed))
+        requestPlacements(message)
         break
       case 'set_visual_states':
         void dispatch(loadVisualStates(changed))
@@ -115,7 +144,11 @@ export function useMapSpace(space: SpaceDto | null): MapSpaceData {
   const idsKey = useMemo(() => Object.keys(markersById).sort().join(','), [markersById])
   const idsUrl = useMemo(() => (idsKey ? mapLiveUrl({ ids: idsKey.split(',') }) : null), [idsKey])
 
-  useMapLive(boxUrl, handleCanvas)
+  useMapLive(boxUrl, handleCanvas, () => {
+    // A reconnect starts a watch with nothing sent yet: a node deleted during the gap is never
+    // in its delete list, so the page is read again rather than trusted.
+    if (canvasId) void dispatch(loadCanvas(canvasId))
+  })
   useMapLive(idsUrl, handleNodes)
 
   const figures = markers

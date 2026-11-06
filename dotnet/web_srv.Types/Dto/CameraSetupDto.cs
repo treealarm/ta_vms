@@ -143,6 +143,13 @@ public record CameraSetupDto
   public bool HasTelemetry { get; init; }
 
   /// <summary>
+  /// Take this camera's place on the map from its own ONVIF position. Off by default: a hand-placed
+  /// camera must not drift when the device reports a coordinate of its own, and while the flag is
+  /// on geographic calibration and aiming are refused.
+  /// </summary>
+  public bool GeoFromDevice { get; init; }
+
+  /// <summary>
   /// Re-encode this camera's finished clips with ROI, keeping the detector's boxes sharp
   /// and spending fewer bits elsewhere. Does nothing for clips that have no boxes.
   /// </summary>

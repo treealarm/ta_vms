@@ -26,20 +26,24 @@ public sealed class DemoInstallService(IServiceScopeFactory scopes, ILogger<Demo
         try
         {
             await using var scope = scopes.CreateAsyncScope();
-            var plan = await scope.ServiceProvider.GetRequiredService<DemoMonitor>()
+            var installation = await scope.ServiceProvider.GetRequiredService<DemoInstaller>()
                 .InstallAsync(stoppingToken);
 
             log.LogInformation(
-                "Demo wall '{Name}' installed with {Placed} camera(s); {Skipped} not provisioned yet",
-                plan.Name, plan.Cameras.Count, plan.Skipped.Count);
+                "Demo world installed: wall '{Name}' with {Placed} camera(s) ({Skipped} not provisioned yet), " +
+                "parts {Parts}, reaction installed: {Rule}",
+                installation.Monitor.Name, installation.Monitor.Cameras.Count,
+                installation.Monitor.Skipped.Count,
+                string.Join(", ", installation.Devices.Configured),
+                installation.Routing.Installed);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
-            // Shutting down; the next start installs the wall.
+            // Shutting down; the next start installs the world.
         }
         catch (Exception ex)
         {
-            log.LogError(ex, "The demo wall could not be installed");
+            log.LogError(ex, "The demo world could not be installed");
         }
     }
 }

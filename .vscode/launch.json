@@ -247,8 +247,13 @@
                 "DAPR_HTTP_PORT": "3613",
                 "DAPR_GRPC_PORT": "51014",
                 "DAPR_CFG_APP_ID": "vmscfg",
+                "DAPR_MAP_APP_ID": "vmsmap",
+                "DAPR_STATE_STORE_NAME": "statestore",
                 "PUBSUB_NAME": "orderpubsub",
                 "APP_ID": "vmssingleton",
+                // The debug registry is where a suppressed or failed routing run is visible; the
+                // publisher is a no-op without this switch, so a dev stack would hide it.
+                "VMS_DEBUG_ENTITY_STATE_SECONDS": "10",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },

@@ -3,9 +3,10 @@
 
 The world is installed through the same API the administrator's button uses, then walked the way
 an operator walks it: map -> building -> room -> rack -> switch -> port, with the types and their
-regions, the camera placements, the video wall and the alarm climbing back up. It then proves what
-the registry is for — a second install changes no id, the administrator's own node survives both
-an install and a removal, and a removal takes only the demo.
+regions, the camera placements, the video wall, the readings the cameras report about themselves
+(position, speed, relay, sensor) and the port that no longer alarms. It then proves what the registry
+is for — a second install changes no id, the administrator's own node survives both an install and
+a removal, and a removal takes only the demo.
 
     tests/demo/check_demo.py                    # install if needed, then check
     tests/demo/check_demo.py --provision-cameras  # also add the OnvifSim cameras first
@@ -13,14 +14,18 @@ an install and a removal, and a removal takes only the demo.
 """
 
 import argparse
+import json
 import sys
 import time
+import urllib.parse
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "onvifsim"))
 
-from labhttp import HttpError  # noqa: E402
+from labhttp import HttpError, request  # noqa: E402
+from simapi import Sim  # noqa: E402
 from vmsapi import Vms  # noqa: E402
 
 DEMO_KEY = "umd-datacenter"
@@ -28,7 +33,23 @@ MAP_NAME = "UMD Data Center (demo)"
 BUILDING_NAME = "A.V. Williams Building"
 ROOM_PLAN_NAME = "Room 101"
 ROOM_DIAGRAM_NAME = "Room 102"
-DEMO_CAMERAS = ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2"]
+# The world names its cameras; VmsCfg keys them by UUID, the same deterministic id the seeder
+# derives (DemoIds.Camera — a UUIDv5 of the demo namespace and "camera/<name>").
+DEMO_CAMERA_NAMESPACE = uuid.UUID("0f3c1a52-6f5b-4a0e-9a19-3a8a5a4b7c11")
+DEMO_CAMERAS = ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2", "sim-vehicle"]
+TELEMETRY_NAME = "Camera sim-vehicle"
+# The reaction the demo installs: a fixed id, so a reinstall updates the same rule and the script
+# can name it (DemoRouting.SubscriptionId).
+DEMO_SUBSCRIPTION = "053df083-59b0-56b3-a28c-c5701d1fc3cf"
+# The sensor the demo configures: sim-ptz's input, wired to sim-master's `peer` relay.
+SENSOR_CAMERA = "sim-ptz"
+SENSOR_TOKEN = "input"
+LAMP_RELAY_CAMERA = "sim-master"
+LAMP_RELAY_TOKEN = "lamp"
+
+
+def camera_id(name):
+    return str(uuid.uuid5(DEMO_CAMERA_NAMESPACE, f"camera/{name}"))
 
 failures = []
 
@@ -86,8 +107,200 @@ def alarmed(vms):
     return (vms.call("POST", "/api/map/states/alarmed", []) or {}).get("states") or []
 
 
+def states_of(vms, ids):
+    rows = (vms.call("POST", "/api/map/states", ids) or {}).get("states") or []
+    return {row.get("id"): row.get("states") or [] for row in rows}
+
+
 def values_of(vms, owner_id):
     return (vms.call("POST", "/api/map/values/by-owners", [owner_id]) or {}).get("values") or []
+
+
+def value_text(value):
+    carried = value.get("value") or {}
+    if "stringValue" in carried:
+        return carried["stringValue"]
+    if "doubleValue" in carried:
+        return str(carried["doubleValue"])
+    if "intValue" in carried:
+        return str(carried["intValue"])
+    return ""
+
+
+def values_by_name(vms, owner_id):
+    return {value.get("name"): value_text(value) for value in values_of(vms, owner_id)}
+
+
+def set_relay(vms, camera_id, token, active):
+    vms.call("POST", f"/api/DeviceIo/cameras/{camera_id}/relay-outputs/{token}/state",
+             {"active": active})
+
+
+# ── The logical tree, the journal, alarms and the device settings ────────────────
+
+
+def map_search(vms, text):
+    """The logical tree searched on the server: a name, a part token or a camera id."""
+    query = urllib.parse.urlencode({"query": text, "limit": 50})
+    return (vms.call("GET", f"/api/map/objects/search?{query}") or {}).get("markers") or []
+
+
+def marker(vms, object_id):
+    rows = (vms.call("POST", "/api/map/objects/markers", [object_id]) or {}).get("markers") or []
+    return rows[0] if rows else None
+
+
+def ancestor_chain(vms, start):
+    """The nodes above one, root last — the path an alarm's state bubbles up."""
+    chain = []
+    current = start
+    while current and current.get("parentId"):
+        current = marker(vms, current["parentId"])
+        if current:
+            chain.append(current)
+    return chain
+
+
+def device_nodes(vms, name):
+    """The camera's canonical node and its parts, as the demo's adapter wrote them."""
+    camera_uuid = camera_id(name)
+    found = map_search(vms, camera_uuid)
+    camera_node = next((row for row in found if row.get("cameraId") == camera_uuid), None)
+    parts = [row for row in found if camera_node and row.get("parentId") == camera_node["id"]]
+    return camera_node, parts
+
+
+def figures_of(vms, ids):
+    return (vms.call("POST", "/api/map/objects/by-ids", ids) or {}).get("figs") or []
+
+
+def device_settings(vms, camera_uuid):
+    return vms.call("GET", f"/api/DeviceIo/cameras/{camera_uuid}/settings") or []
+
+
+def set_device_settings(vms, camera_uuid, settings):
+    vms.call("PUT", f"/api/DeviceIo/cameras/{camera_uuid}/settings", settings)
+
+
+def device_io_ready(vms, name):
+    """Whether the camera's inputs report a live state: a re-added camera needs a moment before
+    VmsOnvif's watcher is back, and a check that starts before it would read nothing."""
+    rows = vms.call("GET", f"/api/DeviceIo/cameras/{camera_id(name)}/digital-inputs") or []
+    return all(row.get("liveActive") is not None for row in rows)
+
+
+def events_of(vms, object_id, event_name=None):
+    body = {"objects": [object_id], "count": 200}
+    events = (vms.call("POST", "/api/map/events/filter", body) or {}).get("events") or []
+    return [event for event in events
+            if event_name is None or event.get("eventName") == event_name]
+
+
+def alarms(vms):
+    return vms.call("POST", "/api/map/alarms", {"pageSize": 100}) or {}
+
+
+def open_alarm(vms, object_id):
+    for alarm in (alarms(vms).get("open") or {}).get("alarms") or []:
+        if alarm.get("objectId") == object_id:
+            return alarm
+    return None
+
+
+def active_alarm(vms, object_id):
+    """The alarm with a live condition. An earlier occurrence may still be open and returned: the
+    journal row and ALARM follow the rule's own transaction, so the test waits for the reactivation
+    rather than for any row."""
+    for alarm in (alarms(vms).get("open") or {}).get("alarms") or []:
+        if alarm.get("objectId") == object_id and alarm.get("status") == "active":
+            return alarm
+    return None
+
+
+def close_reason_of(vms, alarm_id):
+    """The alarm's current row wherever it is: open, or in the recently-closed branch."""
+    for branch in ("open", "closed"):
+        for alarm in (alarms(vms).get(branch) or {}).get("alarms") or []:
+            if alarm.get("id") == alarm_id:
+                return alarm
+    return None
+
+
+def acknowledge(vms, alarm_id):
+    """The HTTP status: 200 when the transition happened, 409 when the condition is still active."""
+    try:
+        vms.call("POST", f"/api/map/alarms/{alarm_id}/acknowledge", {})
+        return 200
+    except HttpError as e:
+        return e.status
+
+
+def retention_groups(vms, since):
+    query = urllib.parse.urlencode({"from": since, "limit": 100})
+    return (vms.call("GET", f"/api/fs/retention-events?{query}") or {}).get("groups") or []
+
+
+def entity_states(vms):
+    return vms.call("GET", "/api/entitystate") or []
+
+
+def subscriptions(vms):
+    return (vms.call("GET", "/api/map/admin/event-subscriptions") or {}).get("subscriptions") or []
+
+
+def wait_until(probe, timeout=30.0, interval=1.0):
+    """Polls until the probe answers something truthy, then answers its last value."""
+    deadline = time.monotonic() + timeout
+    answer = probe()
+    while not answer and time.monotonic() < deadline:
+        time.sleep(interval)
+        answer = probe()
+    return answer
+
+
+def is_alarmed(vms, object_id):
+    return "ALARM" in (states_of(vms, [object_id]).get(object_id) or [])
+
+
+def alarm_reaches(vms, object_id):
+    """Whether the node paints as alarmed: its own alarm, or an alarmed child below it. Bubbling is
+    the `children_alarms` counter, not an `ALARM` string copied onto every ancestor."""
+    rows = (vms.call("POST", "/api/map/states/alarmed", []) or {}).get("states") or []
+    row = next((entry for entry in rows if entry.get("id") == object_id), None)
+    return bool(row and (row.get("alarm") is True or (row.get("childrenAlarms") or 0) > 0))
+
+
+# ── The simulator's own world ─────────────────────────────────────────────────────
+
+
+def sim_world(sim):
+    return request("GET", f"{sim.base}/api/world")
+
+
+def lamp_lit(world, lamp_id):
+    """A lamp's state as OnvifSim derives it: a wire from a closed relay, NO/NC taken into account.
+
+    There is no endpoint for it — the lamp is not a device with a state of its own — so the same
+    rule the simulator's renderer uses (`DeviceIo.LampLit`) is applied to the world it serves.
+    """
+    lamp = next((lamp for lamp in world.get("lamps") or [] if lamp.get("id") == lamp_id), None)
+    if lamp is None:
+        return None
+
+    wires = [wire for wire in world.get("wires") or [] if wire.get("lampId") == lamp_id]
+    if not wires:
+        return False  # unconnected: never lit
+
+    closed = False
+    for wire in wires:
+        camera = next((c for c in world.get("cameras") or []
+                       if c.get("id") == wire.get("relayCameraId")), None)
+        relay = next((r for r in (camera or {}).get("relayOutputs") or []
+                      if r.get("token") == wire.get("relayToken")), None)
+        if relay and relay.get("active"):
+            closed = True
+
+    return (not closed) if lamp.get("normallyClosed") else closed
 
 
 def levels(vms):
@@ -108,26 +321,45 @@ def monitors(vms):
 def provision_cameras(vms, sim_host, server_id):
     """The four OnvifSim cameras, added the way the bench's provision step adds them."""
     existing = {camera.get("cameraId") for camera in vms.cameras()}
-    wanted = [("sim-master", 8101, False), ("sim-ptz", 8102, True),
-              ("sim-master2", 8103, False), ("sim-ptz2", 8104, True)]
+    # `geo_from_device` only for the camera on the vehicle: its place on the map is the camera's
+    # own ONVIF position, which the map follows. The others are placed by hand.
+    wanted = [("sim-master", 8101, False, False), ("sim-ptz", 8102, True, False),
+              ("sim-master2", 8103, False, False), ("sim-ptz2", 8104, True, False),
+              ("sim-vehicle", 8105, False, True)]
 
-    for camera_id, port, telemetry in wanted:
-        if camera_id in existing:
-            warn(f"camera {camera_id} is already configured")
+    for name, port, telemetry, geo_from_device in wanted:
+        cam_id = camera_id(name)
+        if cam_id in existing:
+            warn(f"camera {name} is already configured")
             continue
 
         vms.add_camera({
-            "cameraId": camera_id,
-            "name": f"OnvifSim {camera_id}",
+            "cameraId": cam_id,
+            "name": f"OnvifSim {name}",
             "serverId": server_id,
             "onvifConn": {"ip": sim_host, "port": port,
                           "xaddr": f"http://{sim_host}:{port}/onvif/device_service"},
             "cred": {"user": "admin", "pass": "admin"},
             "hasTelemetry": telemetry,
+            "geoFromDevice": geo_from_device,
             "streams": [{"streamName": "main", "profileToken": "Profile_2",
                          "path": "", "webRtc": True}],
         })
-        print(f"  ..    added camera {camera_id} (ONVIF {sim_host}:{port})")
+        print(f"  ..    added camera {name} (ONVIF {sim_host}:{port})")
+
+
+def subscribe_events(vms):
+    """Turns on the optional ONVIF event subscription for the demo cameras.
+
+    I/O state does not depend on it — VmsOnvif opens its own Device/Trigger subscription
+    automatically when a camera has devices — but the demo's alarm filters and the ONVIF settings
+    page do, and a demo installed with events off makes that look broken.
+    """
+    for name in DEMO_CAMERAS:
+        try:
+            vms.call("POST", f"/api/onvif/cameras/{camera_id(name)}/subscription")
+        except HttpError as e:
+            warn(f"could not subscribe {name} to ONVIF events: {e}")
 
 
 # ── Checks ────────────────────────────────────────────────────────────────────────
@@ -226,8 +458,14 @@ def check_types(vms):
 
     rack = types.get("Rack 42U", {})
     rack_regions = {r.get("regionKey") for r in rack.get("regions") or []}
-    check({"slot-1", "temp", "humidity"} <= rack_regions,
-          f"Rack 42U offers slots, temp and humidity (has {sorted(rack_regions)})")
+    check({"slot-1"} <= rack_regions, f"Rack 42U offers its slots (has {sorted(rack_regions)})")
+    check(not ({"temp", "humidity"} & rack_regions),
+          "Rack 42U no longer shows the synthetic temperature and humidity")
+
+    telemetry = types.get("Device telemetry", {})
+    telemetry_regions = {r.get("regionKey") for r in telemetry.get("regions") or []}
+    check({"lat", "lon", "speed", "relay", "sensor"} <= telemetry_regions,
+          f"Device telemetry offers lat, lon, speed, relay and sensor (has {sorted(telemetry_regions)})")
 
     computer = types.get("Cisco Catalyst 9300", {})
     computer_regions = {r.get("regionKey") for r in computer.get("regions") or []}
@@ -239,7 +477,7 @@ def check_types(vms):
 
 def check_cameras(vms, world, allow_missing):
     configured = {camera.get("cameraId") for camera in vms.cameras()}
-    missing = [camera for camera in DEMO_CAMERAS if camera not in configured]
+    missing = [name for name in DEMO_CAMERAS if camera_id(name) not in configured]
 
     if missing and not allow_missing:
         check(False, f"the four demo cameras are configured (missing {', '.join(missing)})")
@@ -250,18 +488,62 @@ def check_cameras(vms, world, allow_missing):
         return
 
     placed = {p.get("cameraId"): p for p in placements(vms)}
-    # Room 102 is drawn on the floor, so its camera stands on the floor plan.
+    # The master and its PTZ slave work as one pair, so both stand in Room 101.
     expected = {
-        "sim-master": world["room"]["id"],
-        "sim-ptz": world["building"]["id"],
-        "sim-master2": world["building"]["id"],
-        "sim-ptz2": world["map"]["id"],
+        camera_id("sim-master"): world["room"]["id"],
+        camera_id("sim-ptz"): world["room"]["id"],
+        camera_id("sim-master2"): world["building"]["id"],
+        camera_id("sim-ptz2"): world["map"]["id"],
+        # Only its starting point: the camera is flagged geo_from_device and follows its own ONVIF
+        # position from then on, so only the space it belongs to is fixed here.
+        camera_id("sim-vehicle"): world["map"]["id"],
     }
 
-    for camera_id, space_id in expected.items():
-        placement = placed.get(camera_id)
+    for cam_id, space_id in expected.items():
+        placement = placed.get(cam_id)
         check(placement is not None and placement.get("spaceId") == space_id,
-              f"{camera_id} stands in its space")
+              f"{cam_id} stands in its space")
+
+
+def check_geo_flag(vms):
+    cameras = {camera.get("cameraId"): camera for camera in vms.cameras()}
+    check(cameras.get(camera_id("sim-vehicle"), {}).get("geoFromDevice") is True,
+          "sim-vehicle takes its position from the device")
+    for name in ("sim-master", "sim-master2", "sim-ptz", "sim-ptz2"):
+        check(cameras.get(camera_id(name), {}).get("geoFromDevice") is not True,
+              f"{name} is placed by hand")
+
+
+def check_marker_follows_the_camera(vms):
+    """The marker moves with the device; a hand-placed camera next to it does not move at all."""
+    before = {placement.get("cameraId"): placement for placement in placements(vms)}
+    time.sleep(7)  # the follower ticks every 5 s, so at least one move must have been written
+    after = {placement.get("cameraId"): placement for placement in placements(vms)}
+
+    vehicle = camera_id("sim-vehicle")
+    vehicle_before, vehicle_after = before.get(vehicle), after.get(vehicle)
+    if check(vehicle_before is not None and vehicle_after is not None,
+             "sim-vehicle is placed on the map"):
+        moved = ((vehicle_before.get("lat"), vehicle_before.get("lon"))
+                 != (vehicle_after.get("lat"), vehicle_after.get("lon")))
+        check(moved, "the vehicle camera's marker moves with the device")
+
+    master = camera_id("sim-master")
+    master_before, master_after = before.get(master), after.get(master)
+    if master_before and master_after:
+        check((master_before.get("lat"), master_before.get("lon"))
+              == (master_after.get("lat"), master_after.get("lon")),
+              "a hand-placed camera stays where the administrator put it")
+
+
+def check_events(vms):
+    subscribed = {
+        camera.get("cameraId")
+        for camera in vms.call("GET", "/api/onvif/subscriptions") or []
+        if camera.get("subscribed")
+    }
+    missing = [name for name in DEMO_CAMERAS if camera_id(name) not in subscribed]
+    check(not missing, f"the demo cameras are subscribed to ONVIF events (missing {missing})")
 
 
 def check_monitor(vms, allow_missing):
@@ -283,25 +565,363 @@ def check_levels(vms):
           "the Campus, Building, Room and Rack layers are in the dictionary")
 
 
-def check_alarm(vms, world):
-    """The port is DISCONNECTED and the alarm walks up every parent to the map."""
-    rows = {row.get("id"): row for row in alarmed(vms)}
+def check_port_not_alarmed(vms, world):
+    """The demo owns no device, so no node it writes is in alarm — the port least of all.
 
-    port = rows.get(world["port"]["id"], {})
-    check(port.get("alarm") is True, "Port 3 is alarmed")
+    Cameras may legitimately be DISCONNECTED (a stack without OnvifSim), which is why the check
+    is about the port and not about the world being alarm-free.
+    """
+    port_id = world["port"]["id"]
+    states = states_of(vms, [port_id]).get(port_id) or []
+    check("CONNECTED" in states, f"Port 3 is CONNECTED (has {states})")
+    check(not {"DISCONNECTED", "ALARM"} & set(states),
+          f"Port 3 carries no alarm state (has {states})")
 
-    for name in ("switch", "rack", "room", "building", "map"):
-        row = rows.get(world[name]["id"], {})
-        check(row.get("alarm") is True or (row.get("childrenAlarms") or 0) > 0,
-              f"the alarm reaches the {name}")
+    alarmed_ids = {row.get("id") for row in alarmed(vms)}
+    check(port_id not in alarmed_ids, "Port 3 is not among the alarmed nodes")
 
 
 def check_feeder(vms, world):
-    """The rack shows the demo's own temperature and humidity, rewritten every five seconds."""
+    """The camera's own ONVIF readings, rewritten every five seconds into the replica's regions."""
+    # Its kind reads "camera", not "diagram": it is a replica, and the map answers a replica with
+    # the camera id of what it shows.
+    telemetry = by_name(vms, children(vms, world["building"]["id"]), TELEMETRY_NAME)
+    if not check(telemetry is not None,
+                 "the building shows the camera's Device telemetry diagram"):
+        return
+
     print("  ..    waiting for the value feeder")
-    time.sleep(6)
-    names = {v.get("name") for v in values_of(vms, world["rack"]["id"])}
-    check({"temp", "humidity"} <= names, f"the rack shows temp and humidity (has {sorted(names)})")
+    time.sleep(8)
+    values = values_by_name(vms, telemetry["id"])
+    check({"lat", "lon"} <= set(values),
+          f"the diagram shows the camera's position (has {sorted(values)})")
+    check("speed" in values,
+          f"the diagram shows a speed once two positions are known (has {sorted(values)})")
+    check(values.get("relay") in ("on", "off"),
+          f"the diagram shows the relay (has {values.get('relay')!r})")
+    check(values.get("sensor") in ("on", "off"),
+          f"the diagram shows the sensor (has {values.get('sensor')!r})")
+    return telemetry
+
+
+def check_wired_devices(vms, sim, world, telemetry):
+    """`sim-master`'s relays: one drives `sim-ptz`'s sensor, one lights the hall's lamp.
+
+    Switching them changes what the demo's diagram reads, and the simulator's own lamp — which is
+    not a device with a state, so its rule (any wired relay closed) is applied to its world.
+    """
+    initial = values_by_name(vms, telemetry["id"])
+    if not check(initial.get("relay") in ("on", "off") and initial.get("sensor") in ("on", "off"),
+                 f"the demo starts with a relay and a sensor reading (has {initial.get('relay')!r}/"
+                 f"{initial.get('sensor')!r})"):
+        return
+
+    def switch(active):
+        set_relay(vms, camera_id("sim-master"), "peer", active)
+        set_relay(vms, camera_id("sim-master"), "lamp", active)
+        # The camera's event (its pull point is polled), VmsOnvif's cache, then the feeder's next
+        # tick. Polling for the reading rather than sleeping a fixed time keeps a slower source
+        # from turning into a false failure.
+        want_relay = "on" if active else "off"
+        want_sensor = "off" if active else "on"
+        wait_until(lambda: values_by_name(vms, telemetry["id"]).get("relay") == want_relay, 40)
+        wait_until(lambda: values_by_name(vms, telemetry["id"]).get("sensor") == want_sensor, 20)
+
+    switch(True)
+    values = values_by_name(vms, telemetry["id"])
+    check(values.get("relay") == "on",
+          f"the diagram reports the relay on (has {values.get('relay')!r})")
+    check(values.get("sensor") == "off",
+          f"the wired sensor reads 0 while the relay is closed (has {values.get('sensor')!r})")
+    check(lamp_lit(sim_world(sim), "alert") is True, "the lamp in the simulator lights up")
+
+    switch(False)
+    values = values_by_name(vms, telemetry["id"])
+    check(values.get("relay") == "off",
+          f"the diagram reports the relay off again (has {values.get('relay')!r})")
+    check(values.get("sensor") == "on",
+          f"the sensor returns to 1 (has {values.get('sensor')!r})")
+    check(lamp_lit(sim_world(sim), "alert") is False, "the lamp goes dark again")
+
+
+def check_vehicle_picture(sim):
+    """The camera on the car moves: two pictures taken apart cannot be the same."""
+    first = sim.snapshot("vehicle")
+    time.sleep(1.0)
+    second = sim.snapshot("vehicle")
+    check(len(first) > 1000, f"OnvifSim renders the vehicle picture ({len(first)} bytes)")
+    check(first != second, "the vehicle camera's picture changes as it moves")
+
+
+# ── Device I/O, alarms and routing: the M2.4e acceptance scenario ───────────────
+
+
+def sensor_part(vms):
+    """The sensor node under sim-ptz: created by the adapter from the settings the demo wrote."""
+    def find():
+        _, parts = device_nodes(vms, SENSOR_CAMERA)
+        return next((part for part in parts if part.get("name") == "Sensor"), None)
+
+    return wait_until(find, 30)
+
+
+def sensor_settings(vms):
+    return next((row for row in device_settings(vms, camera_id(SENSOR_CAMERA))
+                 if row.get("kind") == "digital_input" and row.get("token") == SENSOR_TOKEN), None)
+
+
+def sensor_events(vms, part_id, contact):
+    return [event for event in events_of(vms, part_id, "sensor")
+            if event.get("param0") == contact]
+
+
+def check_provisioning(vms):
+    """The demo installs the sensor's arming and its rule, not just the map."""
+    sensor = wait_until(lambda: sensor_settings(vms), 20)
+    if check(sensor is not None, "the demo configured sim-ptz/input"):
+        check(sensor.get("armMode") == "armed", f"the input is armed (has {sensor.get('armMode')!r})")
+        check(sensor.get("alarmEnabled") is True and sensor.get("triggerOn") == "open",
+              f"the input alarms on the contact the wire produces (has {sensor.get('triggerOn')!r})")
+
+    rule = next((row for row in subscriptions(vms) if row.get("id") == DEMO_SUBSCRIPTION), None)
+    check(rule is not None and rule.get("enabled") is True,
+          "the demo's sensor-recording rule is installed and enabled")
+
+
+def check_sensor_in_the_tree(vms):
+    """A part is a node of its own, visible under its camera, and placed nowhere."""
+    node, parts = device_nodes(vms, SENSOR_CAMERA)
+    if not check(node is not None, "sim-ptz has a canonical node in the logical tree"):
+        return None
+
+    part = sensor_part(vms)
+    if not check(part is not None, "the sensor is a node under the camera"):
+        return None
+
+    figures = figures_of(vms, [part["id"]])
+    check(not any(f.get("id") == part["id"] and f.get("geometry") for f in figures),
+          "the sensor node has no geometry: it is not placed on any map")
+    check(not any(p.get("cameraId") == part["id"] for p in placements(vms)),
+          "the sensor has no camera placement of its own")
+
+    rows = (vms.call("POST", "/api/map/states", [part["id"]]) or {}).get("states") or []
+    check(len(rows) == 1, "the sensor's states are readable")
+    check(events_of(vms, part["id"]) is not None, "the sensor's events are readable")
+
+    return {"node": node, "part": part, "ancestors": ancestor_chain(vms, part)}
+
+
+def check_sensor_alarm(vms, sensor):
+    """The contact becomes the alarm, and ALARM bubbles up the canonical tree."""
+    part = sensor["part"]
+    set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", True)
+
+    event = wait_until(lambda: sensor_events(vms, part["id"], "open"), 45)
+    check(event is not None, "the peer relay closing writes one `sensor` event with contact=open")
+
+    # An earlier front (the wired-relay check above) may have left the same alarm open and
+    # returned; the rule reactivates that row, and ALARM follows it in its own transaction.
+    alarm = wait_until(lambda: active_alarm(vms, part["id"]), 30)
+    if not check(alarm is not None, "the armed input raises one active alarm on the sensor node"):
+        return None
+
+    check(len([row for row in (alarms(vms).get("open") or {}).get("alarms") or []
+               if row.get("objectId") == part["id"]]) == 1,
+          "there is exactly one open alarm on the sensor")
+
+    for row in [part] + sensor["ancestors"]:
+        wait_until(lambda node=row: alarm_reaches(vms, node["id"]), 20)
+        check(alarm_reaches(vms, row["id"]),
+              f"ALARM reaches {row.get('name') or row['id']}")
+
+    return alarm
+
+
+def check_ack_refused(vms, sensor, alarm):
+    """Acknowledging an active condition on an armed input is refused, and changes nothing."""
+    status = acknowledge(vms, alarm["id"])
+    check(status == 409, f"acknowledging while the condition holds answers 409 (got {status})")
+
+    row = close_reason_of(vms, alarm["id"])
+    check(row is not None and row.get("status") == "active",
+          f"the refusal leaves the alarm active (has {(row or {}).get('status')!r})")
+
+
+def check_ack_after_disarm(vms, sensor, alarm):
+    """Disarming the input is what lets the operator acknowledge a condition that still holds."""
+    sensor_row = sensor_settings(vms)
+    set_device_settings(vms, camera_id(SENSOR_CAMERA), {
+        **sensor_row,
+        "armMode": "disarmed",
+    })
+
+    # The signal reaches VmsMap through device-settings-changed; a 409 until then is the gate
+    # still knowing the old arming, not a failure.
+    status = wait_until(lambda: acknowledge(vms, alarm["id"]) == 200, 25)
+    check(bool(status), "acknowledging after disarming succeeds")
+
+    row = close_reason_of(vms, alarm["id"])
+    check(row is not None and row.get("status") == "acknowledged",
+          f"the alarm is acknowledged (has {(row or {}).get('status')!r})")
+    check(is_alarmed(vms, sensor["part"]["id"]),
+          "acknowledging does not take ALARM away: the condition still holds")
+    return row
+
+
+def check_return_to_normal(vms, sensor, alarm):
+    """The contact coming back ends the alarm and takes ALARM off the node and its ancestors."""
+    part = sensor["part"]
+    set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", False)
+
+    event = wait_until(lambda: sensor_events(vms, part["id"], "closed"), 45)
+    check(event is not None, "the contact returning writes a `sensor` event with contact=closed")
+
+    row = wait_until(
+        lambda: next((r for r in (alarms(vms).get("closed") or {}).get("alarms") or []
+                      if r.get("id") == alarm["id"]), None), 40)
+    check(row is not None and row.get("status") in ("returned", "closed"),
+          f"the alarm is closed or returned by policy (has {(row or {}).get('status')!r})")
+    check(row is None or row.get("conditionActive") is not True,
+          "the closed alarm no longer claims an active condition")
+
+    for node in [part] + sensor["ancestors"]:
+        check(not alarm_reaches(vms, node["id"]),
+              f"ALARM is gone from {node.get('name') or node['id']}")
+
+    check(bool(events_of(vms, part["id"], "alarm_closed")), "`alarm_closed` is in the journal")
+
+
+def demo_group(vms, since):
+    return next((group for group in retention_groups(vms, since)
+                 if DEMO_SUBSCRIPTION in (group.get("eventId") or "")), None)
+
+
+def check_demo_rule(vms, sim, since):
+    """One event_id per source node across both cameras, two episodes, no alarm, the lamp lit."""
+    group = wait_until(lambda: demo_group(vms, since), 60)
+    if not check(group is not None, "the demo rule opened a retention group"):
+        return None
+
+    episodes = group.get("episodes") or []
+    by_camera = {}
+    for episode in episodes:
+        by_camera.setdefault(episode.get("cameraId"), []).append(episode)
+
+    for name in (LAMP_RELAY_CAMERA, SENSOR_CAMERA):
+        check(camera_id(name) in by_camera,
+              f"the demo rule retained {name} under the same event_id")
+
+    uuids = {episode.get("eventUuid") for episode in episodes}
+    check(len(uuids) >= 2, "each camera has its own episode (a distinct event_uuid)")
+
+    subscription_alarms = [
+        alarm for branch in ("open", "closed")
+        for alarm in (alarms(vms).get(branch) or {}).get("alarms") or []
+        if alarm.get("source") == "subscription"]
+    check(not subscription_alarms, "raise_alarm=false adds no alarm of its own")
+
+    if sim.ready():
+        lit = wait_until(lambda: lamp_lit(sim_world(sim), "alert") is True, 20)
+        check(bool(lit), "the rule lit the hall lamp")
+    else:
+        warn("OnvifSim is not answering: skipped the lamp check")
+
+    return group
+
+
+def check_repeat_front(vms, sensor, group, since):
+    """A second front inside MaxEpisodeDuration extends the episodes; it opens no new ones."""
+    part = sensor["part"]
+    before = {episode.get("cameraId"): episode.get("eventUuid")
+              for episode in (group or {}).get("episodes") or []}
+
+    set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", True)
+    check(bool(wait_until(lambda: len(sensor_events(vms, part["id"], "open")) >= 2, 45)),
+          "a second front writes a second `sensor` event")
+
+    extended = wait_until(lambda: demo_group(vms, since), 30)
+    if check(extended is not None, "the demo rule's group is still there"):
+        after = {episode.get("cameraId"): episode.get("eventUuid")
+                 for episode in extended.get("episodes") or []}
+        for cam, uuid_before in before.items():
+            check(after.get(cam) == uuid_before,
+                  "the episode on each camera is extended, not replaced")
+
+    subscription_alarms = [
+        alarm for branch in ("open", "closed")
+        for alarm in (alarms(vms).get(branch) or {}).get("alarms") or []
+        if alarm.get("source") == "subscription"]
+    check(not subscription_alarms, "the repeat front raises no subscription alarm")
+
+
+def check_emit_loop(vms, sensor):
+    """A rule that emits what it listens to is stopped by the causation chain, and says so."""
+    part = sensor["part"]
+    loop_id = str(uuid.uuid4())
+
+    # Back to normal first: the emitted event must be a real transition. The rule is created only
+    # now, so the window in which it can fire does not have to cover two device round trips.
+    set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", False)
+    wait_until(lambda: sensor_events(vms, part["id"], "closed"), 45)
+
+    vms.call("PUT", "/api/map/admin/event-subscriptions", {"subscription": {
+        "id": loop_id,
+        "name": "check-emit-loop",
+        "enabled": True,
+        "eventName": "sensor",
+        "sourceFilter": json.dumps({"object_ids": [part["id"]],
+                                    "props": {"contact": "open"}}),
+        "armedCondition": "any",
+        "cooldownMs": 0,
+        "actions": [{
+            "position": 0,
+            "kind": "emit_event",
+            "params": json.dumps({
+                "object_id": "source",
+                "event_name": "sensor",
+                "param0": "open",
+                "param1": "",
+                "props": {"contact": "open"},
+            }),
+        }],
+    }})
+
+    try:
+        set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", True)
+        wait_until(lambda: sensor_events(vms, part["id"], "open"), 45)
+
+        # 75 s: the router's own cache is good for a minute if the change signal is lost.
+        suppressed = wait_until(
+            lambda: next((state for state in entity_states(vms)
+                          if state.get("entityType") == "event_routing_suppressed"
+                          and loop_id in (state.get("stateJson") or "")), None), 75)
+        check(suppressed is not None,
+              "the loop is stopped by the chain and reported in the debug registry")
+    finally:
+        vms.call("DELETE", f"/api/map/admin/event-subscriptions/{loop_id}")
+
+
+def check_cleanup(vms, sensor):
+    """Leaves the world as it was installed: relay off, the input armed again."""
+    set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", False)
+    set_relay(vms, camera_id(LAMP_RELAY_CAMERA), LAMP_RELAY_TOKEN, False)
+
+    row = sensor_settings(vms)
+    if row:
+        set_device_settings(vms, camera_id(SENSOR_CAMERA), {**row, "armMode": "armed"})
+
+
+def check_camera_removal_cascade(vms, sensor):
+    """Deleting the camera takes its part nodes with it; the world never owned them."""
+    part_id = sensor["part"]["id"]
+    vms.delete_camera(camera_id(SENSOR_CAMERA))
+
+    gone = wait_until(lambda: not map_search(vms, camera_id(SENSOR_CAMERA)), 60)
+    check(bool(gone), "deleting the camera removes its nodes from the logical tree")
+    check(not any(alarm.get("objectId") == part_id
+                  for branch in ("open", "closed")
+                  for alarm in (alarms(vms).get(branch) or {}).get("alarms") or []),
+          "no alarm points at the removed sensor")
 
 
 def ids_of(vms, world):
@@ -312,6 +932,9 @@ def ids_of(vms, world):
 
 def check_reinstall(vms, world):
     before = ids_of(vms, world)
+    version_before = next((row.get("version") for row in subscriptions(vms)
+                           if row.get("id") == DEMO_SUBSCRIPTION), None)
+
     report = install_demo(vms)
     again = walk_the_world(vms)
 
@@ -321,6 +944,13 @@ def check_reinstall(vms, world):
 
     check(ids_of(vms, again) == before, "every id is the same after a second install")
     check((report.get("created") or 0) == 0, "a second install creates nothing")
+
+    # A reinstall of an unchanged world must not bump the rule's version: every replicable reader
+    # would reload its cache for nothing.
+    version_after = next((row.get("version") for row in subscriptions(vms)
+                          if row.get("id") == DEMO_SUBSCRIPTION), None)
+    check(version_after == version_before,
+          "the demo rule is not rewritten by a second install")
     return again
 
 
@@ -340,6 +970,10 @@ def check_user_node_survives(vms, world):
         check(vms.call("GET", f"/api/map/objects/{user_id}/props") is not None,
               "a user's node survives a removal")
 
+        # The sensor belongs to the camera, not to the world: removing the world must not take it.
+        check(sensor_part(vms) is not None,
+              "the demo's device nodes survive the world's removal")
+
         remaining = [s for s in spaces(vms) if s.get("name") == MAP_NAME]
         check(not remaining, "the demo map is gone after a removal")
         check(not demo_status(vms).get("installed"), "the demo reports itself removed")
@@ -354,6 +988,8 @@ def main():
     parser.add_argument("--password", default="admin")
     parser.add_argument("--sim-host", default="127.0.0.1",
                         help="where ta_vms reaches OnvifSim's cameras")
+    parser.add_argument("--sim-url", default="http://127.0.0.1:8090",
+                        help="OnvifSim's own API, for the lamp and the moving picture")
     parser.add_argument("--server-id", default="vms")
     parser.add_argument("--provision-cameras", action="store_true",
                         help="add the four OnvifSim cameras before installing the world")
@@ -365,10 +1001,12 @@ def main():
 
     vms = Vms(args.vms, args.user, args.password)
     vms.login()
+    sim = Sim(args.sim_url)
 
     if args.provision_cameras:
         print("Provisioning the demo cameras")
         provision_cameras(vms, args.sim_host, args.server_id)
+        subscribe_events(vms)
 
     # Installing is idempotent, so it is always called first: on a fresh database it writes the
     # world, on an older one it brings it to the current version.
@@ -395,10 +1033,45 @@ def main():
     check_cameras(vms, world, args.allow_missing_cameras)
     check_monitor(vms, args.allow_missing_cameras)
 
-    print("Layers, readings and the alarm")
+    print("ONVIF position, events and the marker")
+    check_geo_flag(vms)
+    check_events(vms)
+    check_marker_follows_the_camera(vms)
+
+    print("Layers, readings and the calm port")
     check_levels(vms)
-    check_feeder(vms, world)
-    check_alarm(vms, world)
+    telemetry = check_feeder(vms, world)
+    check_port_not_alarmed(vms, world)
+
+    sim_up = sim.ready()
+    if not sim_up:
+        warn(f"OnvifSim is not answering at {args.sim_url}: skipped the lamp and picture checks")
+    if telemetry is not None and sim_up:
+        print("Wired relays and the lamp")
+        check_wired_devices(vms, sim, world, telemetry)
+        print("The moving camera")
+        check_vehicle_picture(sim)
+
+    # The M2.4e scenario: a real contact, a real alarm, a real subscription. It needs the
+    # simulator's wire; without it the map half above still proves the world.
+    sensor = None
+    if sim_up:
+        print("Device I/O, alarms and the demo rule")
+        check_provisioning(vms)
+        sensor = check_sensor_in_the_tree(vms)
+        if sensor is not None:
+            since = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
+            alarm = check_sensor_alarm(vms, sensor)
+            if alarm is not None:
+                check_ack_refused(vms, sensor, alarm)
+                check_ack_after_disarm(vms, sensor, alarm)
+                check_return_to_normal(vms, sensor, alarm)
+                group = check_demo_rule(vms, sim, since)
+                check_repeat_front(vms, sensor, group, since)
+                check_emit_loop(vms, sensor)
+            check_cleanup(vms, sensor)
+    else:
+        warn("OnvifSim is not answering: skipped the device I/O and routing scenario")
 
     print("Installing again")
     world = check_reinstall(vms, world)
@@ -408,6 +1081,20 @@ def main():
         check_user_node_survives(vms, world)
         # The removal above took the world away; put it back for whoever uses the installation next.
         install_demo(vms)
+
+    # Last, because it deletes and re-provisions a camera: the nodes belong to the device, and the
+    # world never owns them.
+    if sensor is not None and not args.no_remove_check:
+        print("Deleting the camera")
+        check_camera_removal_cascade(vms, sensor)
+        # Put the bench back: the next run starts from the cameras and the world it expects.
+        provision_cameras(vms, args.sim_host, args.server_id)
+        subscribe_events(vms)
+        install_demo(vms)
+        if not wait_until(
+            lambda: device_io_ready(vms, LAMP_RELAY_CAMERA) and device_io_ready(vms, SENSOR_CAMERA),
+            60):
+            warn("the re-added camera's device I/O is not reporting yet")
 
     print()
     if failures:

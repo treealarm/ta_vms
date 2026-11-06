@@ -16,6 +16,8 @@ public static class RightActions
   public const string Ptz = "ptz";
   public const string Control = "control";
   public const string Export = "export";
+  /// <summary>Acknowledging and closing an alarm: the same right for both, it is one handling.</summary>
+  public const string Acknowledge = "acknowledge";
 }
 
 /// <summary>

@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 using System.Text;
 
@@ -21,6 +22,8 @@ namespace VmsMap.Demo
     public const int RoomLayoutHeight = 600;
     public const int PortWidth = 60;
     public const int PortHeight = 40;
+    public const int TelemetryWidth = 360;
+    public const int TelemetryHeight = 220;
 
     private const int PortCount = 8;
     private const int SlotCount = 6;
@@ -31,6 +34,23 @@ namespace VmsMap.Demo
     private const double SlotWidth = 0.76;
 
     private const double RoomRackWidth = 0.18;
+
+    // A reading's label and the box its value is written into. Both come from TelemetryRows, so a
+    // row cannot be labelled on thing and filled on another.
+    private static readonly (string Key, string Label)[] TelemetryRows =
+    [
+      (DemoTelemetry.Lat, "LAT"),
+      (DemoTelemetry.Lon, "LON"),
+      (DemoTelemetry.Speed, "SPEED, km/h"),
+      (DemoTelemetry.Relay, "RELAY"),
+      (DemoTelemetry.Sensor, "SENSOR"),
+    ];
+
+    private const double TelemetryRowTop = 0.16;
+    private const double TelemetryRowStep = 0.16;
+    private const double TelemetryRowHeight = 0.11;
+    private const double TelemetryValueLeft = 0.34;
+    private const double TelemetryValueWidth = 0.60;
 
     /// A switch's port socket, left to right; `port` is 1-based.
     public static DemoRect SwitchPort(int port) =>
@@ -44,10 +64,19 @@ namespace VmsMap.Demo
       SlotWidth,
       SlotWidth * RackWidth * SwitchHeight / SwitchWidth / RackHeight);
 
-    /// Where the feeder's readings go: two small regions at the foot of the rack.
-    public static DemoRect RackTemperature => new(0.12, 0.78, 0.34, 0.05);
-
-    public static DemoRect RackHumidity => new(0.54, 0.78, 0.34, 0.05);
+    /// Where one reading of the demo's Device telemetry diagram is written: `key` is one of
+    /// <see cref="DemoTelemetry.Readings"/>.
+    public static DemoRect TelemetryReading(string key)
+    {
+      var index = Array.FindIndex(TelemetryRows, row => row.Key == key);
+      return index < 0
+        ? throw new ArgumentOutOfRangeException(nameof(key), key, "Not a telemetry reading")
+        : new DemoRect(
+            TelemetryValueLeft,
+            TelemetryRowTop + index * TelemetryRowStep,
+            TelemetryValueWidth,
+            TelemetryRowHeight);
+    }
 
     /// A cabinet in the room's schematic; `index` is 1-based. Its height is the rack's own aspect at
     /// its width, so the rack drawn in it is not stretched.
@@ -94,8 +123,7 @@ namespace VmsMap.Demo
       return Close(svg);
     }
 
-    /// A rack cabinet: six slots, the top one taken by the switch, and the two readings' places at
-    /// its foot.
+    /// A rack cabinet: six equipment slots, the top one taken by the switch.
     public static byte[] Rack()
     {
       var svg = Open(RackWidth, RackHeight);
@@ -111,11 +139,25 @@ namespace VmsMap.Demo
         svg.Append($"<text x=\"{N(x + 6)}\" y=\"{N(y + 13)}\" font-family=\"monospace\" font-size=\"10\" fill=\"#6f8aa1\">U{slot}</text>");
       }
 
-      var (_, divider, _, _) = Pixels(RackTemperature, RackWidth, RackHeight);
-      svg.Append($"<line x1=\"28\" y1=\"{N(divider - 18)}\" x2=\"212\" y2=\"{N(divider - 18)}\" stroke=\"#2c4154\" stroke-width=\"1.5\"/>");
+      return Close(svg);
+    }
 
-      svg.Append("<rect x=\"28\" y=\"706\" width=\"26\" height=\"8\" rx=\"2\" fill=\"#223141\"/>");
-      svg.Append("<rect x=\"186\" y=\"706\" width=\"26\" height=\"8\" rx=\"2\" fill=\"#223141\"/>");
+    /// The camera's own readings as a panel: one labelled row per value
+    /// (<see cref="TelemetryReading"/>). It is the demo's picture of what ONVIF reports — position,
+    /// speed, a relay and a sensor — and the values are written into its boxes by the feeder.
+    public static byte[] Telemetry()
+    {
+      var svg = Open(TelemetryWidth, TelemetryHeight);
+      svg.Append($"<rect x=\"2\" y=\"2\" width=\"{TelemetryWidth - 4}\" height=\"{TelemetryHeight - 4}\" rx=\"8\" fill=\"#16222e\" stroke=\"#3b5a75\" stroke-width=\"2\"/>");
+      svg.Append("<text x=\"18\" y=\"27\" font-family=\"monospace\" font-size=\"13\" letter-spacing=\"2\" fill=\"#7f9ab1\">DEVICE TELEMETRY</text>");
+
+      foreach (var (key, label) in TelemetryRows)
+      {
+        var (x, y, w, h) = Pixels(TelemetryReading(key), TelemetryWidth, TelemetryHeight);
+        svg.Append($"<rect x=\"{N(x)}\" y=\"{N(y)}\" width=\"{N(w)}\" height=\"{N(h)}\" rx=\"3\" fill=\"#0f1a24\" stroke=\"#2c4154\" stroke-width=\"1\"/>");
+        svg.Append($"<text x=\"18\" y=\"{N(y + h / 2 + 4)}\" font-family=\"monospace\" font-size=\"11\" fill=\"#6f8aa1\">{label}</text>");
+      }
+
       return Close(svg);
     }
 

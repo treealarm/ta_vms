@@ -116,6 +116,9 @@ function renderFigure(
     // A container's outline breathes while it or something inside it is alarmed, as a footprint's
     // does: at an overview scale the children that raised the alarm are out of the layer.
     className: style.alarming ? 'vms-alarm-pulse' : undefined,
+    // Picking a shape must not also count as clicking the empty canvas, which clears the
+    // selection: the click stops here, as a footprint's does.
+    bubblingMouseEvents: false,
   }
 
   // A polygon arrives closed (the first point repeated at the end); its handles are the corners
