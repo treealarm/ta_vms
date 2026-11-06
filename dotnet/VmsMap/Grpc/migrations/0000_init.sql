@@ -430,6 +430,19 @@ CREATE TABLE device_node (
   UNIQUE (source_kind, source_id, part_kind, part_token)
 );
 
+-- What a device says about itself. A snapshot of the hardware, not configuration: the integration
+-- owns it, and it is stored rather than read from the event so that a diagram template still
+-- matches after a restart. Only an answering camera writes here; a timeout leaves the last known
+-- model in place.
+CREATE TABLE device_info (
+  source_kind  varchar NOT NULL,
+  source_id    uuid    NOT NULL,
+  manufacturer text    NOT NULL DEFAULT '',
+  model        text    NOT NULL DEFAULT '',
+  firmware     text    NOT NULL DEFAULT '',
+  PRIMARY KEY (source_kind, source_id)
+);
+
 -- ── Rights mode ──────────────────────────────────────────────────────────────────────────────
 -- The switch that says what a node with no rows means. A fresh installation starts enforced:
 -- nobody has been granted anything yet, and a new deployment must not open every camera by

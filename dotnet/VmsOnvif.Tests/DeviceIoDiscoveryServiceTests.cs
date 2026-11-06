@@ -24,6 +24,7 @@ public class DeviceIoDiscoveryServiceTests
     {
       Relays = [new OnvifRelayOutput("relay1", "bistable", "closed", 0)],
       Inputs = [new OnvifDigitalInput("input1", "open"), new OnvifDigitalInput("input2", "closed")],
+      Device = new OnvifDeviceInfo("OnvifSim", "Simulated fixed camera", "0.1.0", "sn", "hw"),
     };
     var sink = new FakeSink();
     sink.Snapshots[("cam1", DeviceIoKind.Relay, "relay1")] =
@@ -47,6 +48,30 @@ public class DeviceIoDiscoveryServiceTests
 
     // Both lists were reported, which is what opens the watcher without an operator.
     Assert.Equal(2, sink.Reports.Count);
+
+    // The model travels with the manifest: a diagram template is matched by it.
+    Assert.Equal(
+      new DeviceInfoPayload("OnvifSim", "Simulated fixed camera", "0.1.0"), snapshot.Device);
+  }
+
+  [Fact]
+  public async Task AnUnansweredDeviceInformationStillPublishesTheParts()
+  {
+    var reader = new FakeReader
+    {
+      Relays = [new OnvifRelayOutput("relay1", "bistable", "closed", 0)],
+      Inputs = [new OnvifDigitalInput("input1", "open")],
+      DeviceThrow = true,
+    };
+    var publisher = new FakePublisher();
+
+    await Service(reader, new FakeSink(), publisher).SweepCameraAsync(CameraId, default);
+
+    // The model is not part of the manifest: losing it must not take the parts away with it — and
+    // null is "not asked", so the map keeps the model it already knows.
+    var snapshot = Assert.Single(publisher.Snapshots);
+    Assert.Equal(2, snapshot.Parts.Count);
+    Assert.Null(snapshot.Device);
   }
 
   [Fact]
@@ -113,14 +138,20 @@ public class DeviceIoDiscoveryServiceTests
   {
     public List<OnvifRelayOutput> Relays { get; init; } = [];
     public List<OnvifDigitalInput> Inputs { get; init; } = [];
+    public OnvifDeviceInfo Device { get; init; } =
+      new("OnvifSim", "Simulated fixed camera", "0.1.0", "sn", "hw");
     public bool RelaysThrow { get; set; }
     public bool InputsThrow { get; set; }
+    public bool DeviceThrow { get; set; }
 
     public Task<List<OnvifRelayOutput>> GetRelayOutputsAsync(string cameraId, CancellationToken ct) =>
       RelaysThrow ? throw new TimeoutException("no answer") : Task.FromResult(Relays);
 
     public Task<List<OnvifDigitalInput>> GetDigitalInputsAsync(string cameraId, CancellationToken ct) =>
       InputsThrow ? throw new TimeoutException("no answer") : Task.FromResult(Inputs);
+
+    public Task<OnvifDeviceInfo?> GetDeviceInfoAsync(string cameraId, CancellationToken ct) =>
+      DeviceThrow ? throw new TimeoutException("no answer") : Task.FromResult<OnvifDeviceInfo?>(Device);
   }
 
   private sealed class FakeSink : IDeviceIoStateSink

@@ -29,7 +29,17 @@ namespace VmsMap.Adapter
     bool Reachable,
     DateTimeOffset ObservedAt,
     string? Epoch,
+    DeviceInfoMessage? Device,
     IReadOnlyList<DeviceSnapshotPartMessage>? Parts);
+
+  /// <summary>
+  /// What the device says about itself, or null when the sweep could not ask it. The difference
+  /// matters: null leaves the stored model alone, an answer — even an empty one — replaces it.
+  /// </summary>
+  internal sealed record DeviceInfoMessage(
+    string? Manufacturer,
+    string? Model,
+    string? Firmware);
 
   internal sealed record DeviceSnapshotPartMessage(
     string? Kind,

@@ -36,6 +36,7 @@ namespace VmsMap.Db
     public DbSet<DBSpacePlan> SpacePlans { get; set; } = null!;
     public DbSet<DBCameraPlacement> CameraPlacements { get; set; } = null!;
     public DbSet<DBDeviceNode> DeviceNodes { get; set; } = null!;
+    public DbSet<DBDeviceInfo> DeviceInfos { get; set; } = null!;
     public DbSet<DBLandmark> Landmarks { get; set; } = null!;
     public DbSet<DBPtzGeoObservation> PtzGeoObservations { get; set; } = null!;
     public DbSet<DBGroundObservation> GroundObservations { get; set; } = null!;
@@ -80,6 +81,7 @@ namespace VmsMap.Db
       ConfigureSpacePlans(modelBuilder);
       ConfigureCameraPlacements(modelBuilder);
       ConfigureDeviceNodes(modelBuilder);
+      ConfigureDeviceInfos(modelBuilder);
       ConfigureLandmarks(modelBuilder);
       ConfigureGeoObservations(modelBuilder);
       ConfigureDemo(modelBuilder);
@@ -202,6 +204,21 @@ namespace VmsMap.Db
         entity.Property(e => e.last_seq).HasColumnName("last_seq");
         entity.Property(e => e.last_observed_at).HasColumnName("last_observed_at");
         entity.HasIndex(e => new { e.source_kind, e.source_id, e.part_kind, e.part_token }).IsUnique();
+      });
+    }
+
+    private void ConfigureDeviceInfos(ModelBuilder modelBuilder)
+    {
+      modelBuilder.Entity<DBDeviceInfo>(entity =>
+      {
+        entity.ToTable("device_info");
+
+        entity.HasKey(e => new { e.source_kind, e.source_id });
+        entity.Property(e => e.source_kind).HasColumnName("source_kind").IsRequired();
+        entity.Property(e => e.source_id).HasColumnName("source_id").HasConversion(UuidText).IsRequired();
+        entity.Property(e => e.manufacturer).HasColumnName("manufacturer").IsRequired();
+        entity.Property(e => e.model).HasColumnName("model").IsRequired();
+        entity.Property(e => e.firmware).HasColumnName("firmware").IsRequired();
       });
     }
 
