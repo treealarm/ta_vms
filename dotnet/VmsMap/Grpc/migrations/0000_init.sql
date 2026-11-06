@@ -323,17 +323,29 @@ CREATE TABLE ground_observation (
   PRIMARY KEY (camera_id, landmark_id)
 );
 
--- A camera is one tree node whose id is derived from the camera id, but the derivation is a
--- one-way MD5: given a node id nobody can say which camera it is. A placed camera has a
--- camera_placement row to answer that; a camera that has never been placed has none, and the map,
--- the tree and the watch stream still have to name the camera behind the node. This table is that
--- index. Pictures of a camera keep their own camera_placement row and need no row here.
-CREATE TABLE camera_node (
-  object_id uuid PRIMARY KEY REFERENCES objects (id) ON DELETE CASCADE,
-  camera_id uuid NOT NULL
+-- The registry from a real device, or one part of it, to the tree node that stands for it. The
+-- node id is derived from the key and the derivation is one-way MD5, so given a node id nobody can
+-- say what it is; this table is the reverse lookup. `camera_node` was the camera-only version of
+-- it, and the key is wider on purpose: a fire panel must be able to register its zones and relays
+-- in the same index without a second registry beside this one.
+--
+--   source_kind  'camera' today; the device type later
+--   source_id    the id in the owning service's table (camera_id)
+--   part_kind    'device' for the device as a whole, 'digital_input' / 'relay' for one part
+--   part_token   the part's token; '' for the device as a whole
+--
+-- A device node is one row of part_kind='device'. Pictures of a device are replicas and keep their
+-- own camera_placement row; they need no row here.
+CREATE TABLE device_node (
+  object_id   uuid    PRIMARY KEY REFERENCES objects (id) ON DELETE CASCADE,
+  source_kind varchar NOT NULL,
+  source_id   uuid    NOT NULL,
+  part_kind   varchar NOT NULL,
+  part_token  varchar NOT NULL,
+  -- The index the unique key builds also serves every lookup by device: its leftmost columns are
+  -- the key, and parts are only ever read for one device at a time.
+  UNIQUE (source_kind, source_id, part_kind, part_token)
 );
-
-CREATE UNIQUE INDEX idx_camera_node_camera_id ON camera_node (camera_id);
 
 -- ── Rights mode ──────────────────────────────────────────────────────────────────────────────
 -- The switch that says what a node with no rows means. A fresh installation starts enforced:

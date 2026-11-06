@@ -81,9 +81,11 @@ namespace VmsMap.Adapter
       if (alarmedIds.Count == 0)
         return;
 
-      var cameras = await _db.CameraNodes.AsNoTracking()
-        .Where(n => alarmedIds.Contains(n.object_id))
-        .Select(n => new { n.object_id, n.camera_id })
+      var cameras = await _db.DeviceNodes.AsNoTracking()
+        .Where(n => alarmedIds.Contains(n.object_id)
+                    && n.source_kind == DeviceObjectId.CameraSource
+                    && n.part_kind == DeviceObjectId.DevicePart)
+        .Select(n => new { n.object_id, n.source_id })
         .ToListAsync(ct);
 
       foreach (var camera in cameras)
@@ -108,18 +110,18 @@ namespace VmsMap.Adapter
             continue;
           }
 
-          var episode = await _retention.FindAsync(camera.camera_id, last.timestamp, ct);
+          var episode = await _retention.FindAsync(camera.source_id, last.timestamp, ct);
 
           // Still running, or extended: keep (or restore) the alarm and record the new end.
           if (episode is not null && (episode.AlarmEndTs is null || episode.AlarmEndTs >= now))
           {
-            await _stateWriter.SetAlarmAsync(camera.camera_id, ct);
+            await _stateWriter.SetAlarmAsync(camera.source_id, ct);
             if (episode.AlarmEndTs is not null)
               await SetEndAsync(last.id, episode.AlarmEndTs, ct);
             continue;
           }
 
-          await _stateWriter.ClearAlarmAsync(camera.camera_id, ct);
+          await _stateWriter.ClearAlarmAsync(camera.source_id, ct);
           await SetEndAsync(last.id, episode?.AlarmEndTs ?? now, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -130,7 +132,7 @@ namespace VmsMap.Adapter
         {
           // A VmsFs hiccup must not take the alarm down: the next sweep tries again.
           _logger.LogWarning(ex,
-            "Alarm sweep failed for camera '{CameraId}', keeping its state", camera.camera_id);
+            "Alarm sweep failed for camera '{CameraId}', keeping its state", camera.source_id);
         }
       }
     }

@@ -450,7 +450,7 @@ namespace VmsMap.Db
           : spaceId;
         await _mapService.UpdateHierarchyAsync([
           new BaseMarkerDTO { id = canonicalId.ToString(), parent_id = parentId.ToString(), name = camera.Name }]);
-        await EnsureCameraNodeAsync(canonicalId, placement.CameraId, ct);
+        await EnsureDeviceNodeAsync(canonicalId, placement.CameraId, ct);
         await _geoService.CreateGeo([PointFigure(canonicalId, placement.Lat, placement.Lon)]);
 
         var row = await _db.CameraPlacements.FirstOrDefaultAsync(p => p.object_id == canonicalId, ct);
@@ -479,7 +479,7 @@ namespace VmsMap.Db
           {
             await _mapService.UpdateHierarchyAsync([
               new BaseMarkerDTO { id = canonicalId.ToString(), name = camera.Name }]);
-            await EnsureCameraNodeAsync(canonicalId, placement.CameraId, ct);
+            await EnsureDeviceNodeAsync(canonicalId, placement.CameraId, ct);
             canonical = await _db.Markers.FirstOrDefaultAsync(m => m.id == canonicalId, ct);
           }
 
@@ -1009,15 +1009,28 @@ namespace VmsMap.Db
              select p).FirstOrDefaultAsync(ct);
 
     // The reverse index the tree needs to name a camera whose node id is an MD5 of its camera id.
-    // A placement write is also where a database that predates 0004 gets its row for a camera that
-    // was placed before the migration.
-    private async Task EnsureCameraNodeAsync(Guid canonicalId, string cameraId, CancellationToken ct)
+    // A placement write is the other path that can reach a camera node the adapter has not seen.
+    private async Task EnsureDeviceNodeAsync(Guid canonicalId, string cameraId, CancellationToken ct)
     {
-      var row = await _db.CameraNodes.FirstOrDefaultAsync(n => n.object_id == canonicalId, ct);
+      var row = await _db.DeviceNodes.FirstOrDefaultAsync(n => n.object_id == canonicalId, ct);
       if (row is null)
-        _db.CameraNodes.Add(new DBCameraNode { object_id = canonicalId, camera_id = cameraId });
-      else if (row.camera_id != cameraId)
-        row.camera_id = cameraId;
+      {
+        _db.DeviceNodes.Add(new DBDeviceNode
+        {
+          object_id = canonicalId,
+          source_kind = DeviceObjectId.CameraSource,
+          source_id = cameraId,
+          part_kind = DeviceObjectId.DevicePart,
+          part_token = string.Empty,
+        });
+      }
+      else
+      {
+        row.source_kind = DeviceObjectId.CameraSource;
+        row.source_id = cameraId;
+        row.part_kind = DeviceObjectId.DevicePart;
+        row.part_token = string.Empty;
+      }
     }
 
     /// Leaves a picture where the camera stood before: a replica of the camera node with a copy of

@@ -12,6 +12,8 @@ namespace VmsMap.Domain
     Space,
     Landmark,
     Camera,
+    /// One part of a device -- a digital input or a relay -- as a node of its own.
+    Part,
     Diagram,
     Figure,
   }
@@ -38,9 +40,15 @@ namespace VmsMap.Domain
     private static readonly IReadOnlyList<string> CameraActions =
       [View, Edit, ViewLive, ViewArchive, Ptz, Control, Export];
 
+    // A part is watched and operated -- a relay switched, a sensor's alarm read -- but it is not a
+    // camera: no archive, no PTZ. Acknowledgement joins this set with the alarm entity (M2.4c).
+    private static readonly IReadOnlyList<string> PartActions =
+      [View, Edit, ViewLive, Control];
+
     public static IReadOnlyList<string> For(NodeKind kind) => kind switch
     {
       NodeKind.Camera => CameraActions,
+      NodeKind.Part => PartActions,
       _ => Common,
     };
 
@@ -52,6 +60,7 @@ namespace VmsMap.Domain
       NodeKind.Space => "space",
       NodeKind.Landmark => "landmark",
       NodeKind.Camera => "camera",
+      NodeKind.Part => "part",
       NodeKind.Diagram => "diagram",
       NodeKind.Figure => "figure",
       _ => "object",

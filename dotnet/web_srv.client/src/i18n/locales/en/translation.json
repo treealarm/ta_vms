@@ -1263,6 +1263,7 @@
         "diagram": "Diagram",
         "landmark": "Landmark",
         "camera": "Camera",
+        "part": "Part",
         "figure": "Figure",
         "object": "Object"
       },

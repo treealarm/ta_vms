@@ -38,7 +38,7 @@ namespace VmsCfg
     // Bumped when a camera's media server changes. web_srv.Server caches camera → node to route
     // ONVIF calls, and it runs in several replicas, so a pub/sub event would reach exactly one of
     // them; a key everyone reads has no such asymmetry. Same mechanism as the permission version.
-    private const string CameraNodeVersionKey          = "cam-node-version";
+    private const string CamNodeVersionKey          = "cam-node-version";
 
     // Investigation boards are operator-created and never expire on their own, so the number one
     // person can accumulate is capped. Walls are unaffected — they are admin-managed.
@@ -116,12 +116,12 @@ namespace VmsCfg
     /// Tells web_srv replicas that a camera may have moved between nodes, so their ONVIF routing
     /// cache stops pointing at the old one. Awaited: camera moves are rare admin actions, and a lost
     /// bump leaves PTZ going to the wrong node until the cache's own TTL expires.
-    private async Task BumpCameraNodeVersionAsync(CancellationToken ct)
+    private async Task BumpCamNodeVersionAsync(CancellationToken ct)
     {
       try
       {
         await daprClient.SaveStateAsync(
-          StateStoreName, CameraNodeVersionKey, Guid.NewGuid().ToString("N"), cancellationToken: ct);
+          StateStoreName, CamNodeVersionKey, Guid.NewGuid().ToString("N"), cancellationToken: ct);
       }
       catch (Exception ex)
       {
@@ -276,7 +276,7 @@ namespace VmsCfg
 
       // A new camera has no cached route yet; a moved one has a stale one.
       if (existing is null || existing.ServerId != request.ServerId)
-        await BumpCameraNodeVersionAsync(context.CancellationToken);
+        await BumpCamNodeVersionAsync(context.CancellationToken);
 
       return new OperationStatus { Success = true };
     }
@@ -439,7 +439,7 @@ namespace VmsCfg
         request.Name.Trim(), request.Address.Trim(), request.MediaMtx, request.Administrator, context.CancellationToken);
       // Every node's services learn the new one through ListMediaServers: web_srv polls it, and the
       // node's own services read it when they start, which is after this.
-      await BumpCameraNodeVersionAsync(context.CancellationToken);
+      await BumpCamNodeVersionAsync(context.CancellationToken);
       // A node enrolled again from a new address took its MediaMTX with it.
       await NotifyAllMediaServersAsync(context.CancellationToken);
       return new EnrollNodeResponse { Node = ToProto(node), Package = Google.Protobuf.ByteString.CopyFrom(package) };
@@ -448,7 +448,7 @@ namespace VmsCfg
     public override async Task<OperationStatus> RemoveNode(RemoveNodeRequest request, ServerCallContext context)
     {
       await nodes.RemoveAsync(request.ServerId, context.CancellationToken);
-      await BumpCameraNodeVersionAsync(context.CancellationToken);
+      await BumpCamNodeVersionAsync(context.CancellationToken);
       // Its MediaMTX went with it, and a camera elsewhere may have been assigned that one.
       await NotifyAllMediaServersAsync(context.CancellationToken);
       return new OperationStatus { Success = true };

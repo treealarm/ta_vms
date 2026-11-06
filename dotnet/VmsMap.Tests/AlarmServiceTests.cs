@@ -60,11 +60,7 @@ public class AlarmServiceTests
       name = "Camera " + cameraId,
     };
     await map.UpdateHierarchyAsync([node]);
-    db.CameraNodes.Add(new DBCameraNode
-    {
-      object_id = Guid.Parse(node.id!),
-      camera_id = cameraId,
-    });
+    db.DeviceNodes.Add(TestCameras.DeviceNode(cameraId, Guid.Parse(node.id!)));
     await db.SaveChangesAsync();
     return node;
   }

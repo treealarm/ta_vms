@@ -13,22 +13,23 @@ namespace VmsMap.Adapter
 {
   // Keeps the camera's place in the tree in step with VmsCfg: one canonical node per camera, under
   // the space of its reference placement when it has one, under its server node otherwise. The
-  // camera id cannot be recovered from the node id (it is an MD5), so camera_node remembers the
-  // pair for every canonical node, placed or not.
-  internal sealed class CameraNodeService : ICameraNodeService
+  // camera id cannot be recovered from the node id (it is an MD5), so device_node remembers the
+  // key for every canonical node, placed or not. The same registry will hold the camera's parts
+  // (`part_kind` other than 'device') when the adapter creates them.
+  internal sealed class DeviceNodeService : IDeviceNodeService
   {
     private const string ServerIdVersion = "server";
 
     private readonly VmsMapDbContext _db;
     private readonly IMapService _mapService;
     private readonly IMapUpdateService _mapUpdateService;
-    private readonly ILogger<CameraNodeService> _logger;
+    private readonly ILogger<DeviceNodeService> _logger;
 
-    public CameraNodeService(
+    public DeviceNodeService(
       VmsMapDbContext db,
       IMapService mapService,
       IMapUpdateService mapUpdateService,
-      ILogger<CameraNodeService> logger)
+      ILogger<DeviceNodeService> logger)
     {
       _db = db ?? throw new ArgumentNullException(nameof(db));
       _mapService = mapService ?? throw new ArgumentNullException(nameof(mapService));
@@ -50,9 +51,9 @@ namespace VmsMap.Adapter
         ? await _db.Database.BeginTransactionAsync(ct)
         : null;
 
-      // The node row is written before camera_node, not merely in the same SaveChanges: the
-      // camera_node row references objects.id, and EF does not know that relationship — it emits
-      // the inserts in tracking order, which put camera_node first and the foreign key refused a
+      // The node row is written before device_node, not merely in the same SaveChanges: the
+      // device_node row references objects.id, and EF does not know that relationship — it emits
+      // the inserts in tracking order, which put device_node first and the foreign key refused a
       // brand-new camera's node.
       var reference = await _db.CameraPlacements.AsNoTracking()
         .FirstOrDefaultAsync(p => p.camera_id == camera.CameraId && p.is_reference, ct);
@@ -97,7 +98,7 @@ namespace VmsMap.Adapter
 
       // Now that the object exists, the index row can point at it. This also saves a row that was
       // missing without touching a node that was already right.
-      await EnsureCameraNodeRowAsync(canonicalId, camera.CameraId, ct);
+      await EnsureDeviceNodeRowAsync(canonicalId, camera.CameraId, ct);
       await _db.SaveChangesAsync(ct);
 
       if (tx is not null)
@@ -146,8 +147,13 @@ namespace VmsMap.Adapter
         await _db.PtzGeoObservations.Where(o => o.camera_id == cameraId).ToListAsync(ct));
       _db.GroundObservations.RemoveRange(
         await _db.GroundObservations.Where(o => o.camera_id == cameraId).ToListAsync(ct));
-      _db.CameraNodes.RemoveRange(
-        await _db.CameraNodes.Where(n => n.object_id == canonicalGuid.Value).ToListAsync(ct));
+      // Every row the camera owns, its parts included: the map update below removes their nodes
+      // through the subtree, and the foreign key would cascade anyway, but a replica removed here
+      // must not leave the registry pointing at a node that is about to go.
+      _db.DeviceNodes.RemoveRange(
+        await _db.DeviceNodes
+          .Where(n => n.source_kind == DeviceObjectId.CameraSource && n.source_id == cameraId)
+          .ToListAsync(ct));
 
       await _db.SaveChangesAsync(ct);
 
@@ -170,8 +176,10 @@ namespace VmsMap.Adapter
     /// </summary>
     public async Task RemoveUnknownAsync(IReadOnlySet<string> known, CancellationToken ct)
     {
-      var stored = await _db.CameraNodes
-        .Select(n => n.camera_id)
+      var stored = await _db.DeviceNodes
+        .Where(n => n.source_kind == DeviceObjectId.CameraSource
+                    && n.part_kind == DeviceObjectId.DevicePart)
+        .Select(n => n.source_id)
         .Distinct()
         .ToListAsync(ct);
 
@@ -199,18 +207,32 @@ namespace VmsMap.Adapter
       return id;
     }
 
-    private async Task EnsureCameraNodeRowAsync(
+    private async Task EnsureDeviceNodeRowAsync(
       string canonicalId, string cameraId, CancellationToken ct)
     {
       var guid = Utils.ConvertObjectIdToGuid(canonicalId);
       if (guid is null)
         return;
 
-      var row = await _db.CameraNodes.FirstOrDefaultAsync(n => n.object_id == guid.Value, ct);
+      var row = await _db.DeviceNodes.FirstOrDefaultAsync(n => n.object_id == guid.Value, ct);
       if (row is null)
-        _db.CameraNodes.Add(new DBCameraNode { object_id = guid.Value, camera_id = cameraId });
-      else if (row.camera_id != cameraId)
-        row.camera_id = cameraId;
+      {
+        _db.DeviceNodes.Add(new DBDeviceNode
+        {
+          object_id = guid.Value,
+          source_kind = DeviceObjectId.CameraSource,
+          source_id = cameraId,
+          part_kind = DeviceObjectId.DevicePart,
+          part_token = string.Empty,
+        });
+      }
+      else
+      {
+        row.source_kind = DeviceObjectId.CameraSource;
+        row.source_id = cameraId;
+        row.part_kind = DeviceObjectId.DevicePart;
+        row.part_token = string.Empty;
+      }
     }
   }
 }

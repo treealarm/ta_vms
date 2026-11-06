@@ -86,7 +86,7 @@ public class MapServiceReadsTests
       new DemoSeeder(
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog(),
-        new CameraNodeService(db, map, updates, NullLogger<CameraNodeService>.Instance)));
+        new DeviceNodeService(db, map, updates, NullLogger<DeviceNodeService>.Instance)));
 
     return new Services(db, map, states, grpc, notifier);
   }
@@ -455,11 +455,7 @@ public class MapServiceReadsTests
       geometry = new DBDiagramCoord { width = 100, height = 100 },
     });
     s.Db.Landmarks.Add(new DBLandmark { object_id = Guid.Parse(landmark.id!), height_m = 1 });
-    s.Db.CameraNodes.Add(new DBCameraNode
-    {
-      object_id = Guid.Parse(camera.id!),
-      camera_id = TestCameras.One,
-    });
+    s.Db.DeviceNodes.Add(TestCameras.DeviceNode(TestCameras.One, Guid.Parse(camera.id!)));
     s.Db.GeoObjects.Add(new DBGeoObject
     {
       id = Guid.Parse(figure.id!),

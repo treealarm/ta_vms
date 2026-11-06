@@ -120,8 +120,8 @@ builder.Services.AddScoped<IStatesUpdateService, StatesUpdateService>();
 
 // The adapter: camera nodes from the config events, one full reconcile at startup, retention
 // events into ALARM and the journal, and the sweep that takes a finished alarm away.
-builder.Services.AddScoped<CameraNodeService>();
-builder.Services.AddScoped<ICameraNodeService>(sp => sp.GetRequiredService<CameraNodeService>());
+builder.Services.AddScoped<DeviceNodeService>();
+builder.Services.AddScoped<IDeviceNodeService>(sp => sp.GetRequiredService<DeviceNodeService>());
 builder.Services.AddScoped<CameraStateWriter>();
 builder.Services.AddScoped<AlarmService>();
 builder.Services.AddScoped<ConnectionStateService>();

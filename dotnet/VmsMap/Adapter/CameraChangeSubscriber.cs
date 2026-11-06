@@ -101,7 +101,7 @@ namespace VmsMap.Adapter
       try
       {
         using var scope = _scopes.CreateScope();
-        var nodes = scope.ServiceProvider.GetRequiredService<CameraNodeService>();
+        var nodes = scope.ServiceProvider.GetRequiredService<DeviceNodeService>();
 
         if (cameraIds.Count == 0)
         {
@@ -156,7 +156,7 @@ namespace VmsMap.Adapter
         var armed = await _state.GetArmedAsync(cameraId, ct);
 
         using var scope = _scopes.CreateScope();
-        var nodes = scope.ServiceProvider.GetRequiredService<CameraNodeService>();
+        var nodes = scope.ServiceProvider.GetRequiredService<DeviceNodeService>();
         await nodes.SetPropertyAsync(
           cameraId, "armed", armed.ToString(System.Globalization.CultureInfo.InvariantCulture), ct);
 

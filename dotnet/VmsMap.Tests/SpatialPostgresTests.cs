@@ -342,24 +342,90 @@ public class SpatialPostgresTests
       () => test.Spatial.SetObservationsAsync(observations, CancellationToken.None));
   }
 
-  // A brand-new camera's node and its camera_node row used to be written in one SaveChanges, and EF
-  // ordered the inserts by tracking order — camera_node first, straight into its foreign key. Only
+  // A brand-new camera's node and its registry row used to be written in one SaveChanges, and EF
+  // ordered the inserts by tracking order — the row first, straight into its foreign key. Only
   // PostgreSQL notices, which is why this lives here. Found live: adding `sim-vehicle` made the
   // whole demo install fail.
   [Fact]
-  public async Task ANewCamerasNodeIsWrittenBeforeItsCameraNodeRow()
+  public async Task ANewCamerasNodeIsWrittenBeforeItsRegistryRow()
   {
     await using var test = await OpenAsync();
     if (test is null)
       return;
 
-    var nodes = new CameraNodeService(
-      test.Db, test.Map, test.Updates, NullLogger<CameraNodeService>.Instance);
+    var nodes = new DeviceNodeService(
+      test.Db, test.Map, test.Updates, NullLogger<DeviceNodeService>.Instance);
     await nodes.EnsureCameraAsync(new CameraInfo(TestCameras.Two, "New camera", "srv-new"), CancellationToken.None);
 
     var canonical = Guid.Parse(CameraObjectId.For(TestCameras.Two));
     Assert.NotNull(await test.Db.Markers.AsNoTracking().FirstOrDefaultAsync(m => m.id == canonical));
-    Assert.Equal(TestCameras.Two, (await test.Db.CameraNodes.AsNoTracking()
-      .SingleAsync(n => n.object_id == canonical)).camera_id);
+    Assert.Equal(TestCameras.Two, (await test.Db.DeviceNodes.AsNoTracking()
+      .SingleAsync(n => n.object_id == canonical)).source_id);
+  }
+
+  // The parts are nodes of their own under the camera, and the schema cascades everything a node
+  // owns -- states, alarms, events, the registry row -- when the subtree goes. Only PostgreSQL can
+  // show that, because the deleted node's whole subtree is removed by the database, not by EF.
+  [Fact]
+  public async Task DeletingACameraTakesItsPartsTheirStatesEventsAndAlarms()
+  {
+    await using var test = await OpenAsync();
+    if (test is null)
+      return;
+
+    var cameraId = TestCameras.One;
+    var cameraNode = Guid.Parse(CameraObjectId.For(cameraId));
+    var input = Guid.Parse(DeviceObjectId.For(
+      DeviceObjectId.CameraSource, cameraId, DeviceObjectId.DigitalInputPart, "1"));
+    var relay = Guid.Parse(DeviceObjectId.For(
+      DeviceObjectId.CameraSource, cameraId, DeviceObjectId.RelayPart, "1"));
+    var nodes = new[] { cameraNode, input, relay };
+
+    test.Db.Markers.AddRange(
+      new DBMarker { id = cameraNode, name = "Camera" },
+      new DBMarker { id = input, parent_id = cameraNode, name = "Input 1" },
+      new DBMarker { id = relay, parent_id = cameraNode, name = "Relay 1" });
+    await test.Db.SaveChangesAsync();
+
+    test.Db.DeviceNodes.Add(TestCameras.DeviceNode(cameraId, cameraNode));
+    test.Db.DeviceNodes.Add(new DBDeviceNode
+    {
+      object_id = input, source_kind = DeviceObjectId.CameraSource, source_id = cameraId,
+      part_kind = DeviceObjectId.DigitalInputPart, part_token = "1",
+    });
+    test.Db.DeviceNodes.Add(new DBDeviceNode
+    {
+      object_id = relay, source_kind = DeviceObjectId.CameraSource, source_id = cameraId,
+      part_kind = DeviceObjectId.RelayPart, part_token = "1",
+    });
+    // The registry rows follow their objects, and then the states and alarms: EF does not know
+    // any of these point at objects, and would otherwise insert a child before its parent.
+    await test.Db.SaveChangesAsync();
+
+    foreach (var id in nodes)
+    {
+      test.Db.ObjectStates.Add(new DBObjectState
+      {
+        id = id,
+        timestamp = DateTime.UtcNow,
+        states = [new DBObjectStateValue { object_id = id, state = "SENSOR_OPEN" }],
+      });
+      test.Db.AlarmStates.Add(new DBAlarmState { id = id, alarm = true });
+      test.Db.Events.Add(new DBEvent
+      {
+        id = Guid.NewGuid(), object_id = id, event_name = "sensor", timestamp = DateTime.UtcNow,
+      });
+    }
+    await test.Db.SaveChangesAsync();
+
+    var cameraNodes = new DeviceNodeService(
+      test.Db, test.Map, test.Updates, NullLogger<DeviceNodeService>.Instance);
+    await cameraNodes.RemoveCameraAsync(cameraId, CancellationToken.None);
+
+    Assert.Empty(await test.Db.Markers.Where(m => nodes.Contains(m.id)).ToListAsync());
+    Assert.Empty(await test.Db.DeviceNodes.Where(n => n.source_id == cameraId).ToListAsync());
+    Assert.Empty(await test.Db.ObjectStates.Where(s => nodes.Contains(s.id)).ToListAsync());
+    Assert.Empty(await test.Db.AlarmStates.Where(s => nodes.Contains(s.id)).ToListAsync());
+    Assert.Empty(await test.Db.Events.Where(e => e.object_id != null && nodes.Contains(e.object_id)).ToListAsync());
   }
 }

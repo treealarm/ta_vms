@@ -51,10 +51,12 @@ namespace VmsMap.Grpc
       if (string.IsNullOrWhiteSpace(request.CameraId))
         return new MapProto.GetCameraNodeResponse { Found = false };
 
-      // camera_node is the canonical row; a database written before 0004 may only have the
-      // reference placement, so fall back to it.
-      var id = await _db.CameraNodes.AsNoTracking()
-        .Where(n => n.camera_id == request.CameraId)
+      // The device row is the canonical node; a database written before the registry existed may
+      // only have the reference placement, so fall back to it.
+      var id = await _db.DeviceNodes.AsNoTracking()
+        .Where(n => n.source_kind == DeviceObjectId.CameraSource
+                    && n.source_id == request.CameraId
+                    && n.part_kind == DeviceObjectId.DevicePart)
         .Select(n => (Guid?)n.object_id)
         .FirstOrDefaultAsync(ct);
 

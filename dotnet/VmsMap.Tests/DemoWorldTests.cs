@@ -138,7 +138,7 @@ public class DemoWorldTests
     var node = _world.Nodes.Single(candidate => candidate.Key == "object/telemetry-sim-vehicle");
 
     // A replica: its owner is the camera's canonical node, which the seeder resolves through
-    // camera_node. It carries the readings' type and stands as a diagram, so it takes no placement.
+    // device_node. It carries the readings' type and stands as a diagram, so it takes no placement.
     Assert.Equal("sim-vehicle", node.OwnerCameraId);
     Assert.Equal(DemoTelemetry.TypeKey, node.TypeKey);
     Assert.NotNull(node.Canvas);

@@ -215,14 +215,16 @@ namespace VmsMap.Db
 
       var ids = actions.Keys.ToList();
 
-      // A camera node's canonical row is in camera_node; a picture is named by its placement row.
+      // A camera node's row is in device_node; a picture is named by its placement row.
       var cameras = new Dictionary<Guid, string>();
-      foreach (var row in await _db.CameraNodes.AsNoTracking()
-        .Where(n => ids.Contains(n.object_id))
-        .Select(n => new { n.object_id, n.camera_id })
+      foreach (var row in await _db.DeviceNodes.AsNoTracking()
+        .Where(n => ids.Contains(n.object_id)
+                    && n.source_kind == DeviceObjectId.CameraSource
+                    && n.part_kind == DeviceObjectId.DevicePart)
+        .Select(n => new { n.object_id, n.source_id })
         .ToListAsync(ct))
       {
-        cameras[row.object_id] = row.camera_id;
+        cameras[row.object_id] = row.source_id;
       }
       foreach (var row in await _db.CameraPlacements.AsNoTracking()
         .Where(p => ids.Contains(p.object_id))

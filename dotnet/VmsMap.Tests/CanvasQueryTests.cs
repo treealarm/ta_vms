@@ -74,7 +74,7 @@ public class CanvasQueryTests
       new DemoSeeder(
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog(),
-        new CameraNodeService(db, map, updates, NullLogger<CameraNodeService>.Instance)));
+        new DeviceNodeService(db, map, updates, NullLogger<DeviceNodeService>.Instance)));
 
     return new Services(db, map, geo, spatial, grpc);
   }

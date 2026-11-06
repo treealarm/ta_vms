@@ -11,11 +11,11 @@ using VmsMap.Domain;
 namespace VmsMap.Tests;
 
 // The camera half of the adapter on the in-memory provider: the canonical node, the server node,
-// the camera_node reverse index, deletion of a camera VmsCfg no longer knows, and the armed
+// the device_node reverse index, deletion of a camera VmsCfg no longer knows, and the armed
 // property merge.
-public class CameraNodeServiceTests
+public class DeviceNodeServiceTests
 {
-  private sealed record Services(VmsMapDbContext Db, MapDb Map, CameraNodeService Nodes);
+  private sealed record Services(VmsMapDbContext Db, MapDb Map, DeviceNodeService Nodes);
 
   private static Services Create()
   {
@@ -31,7 +31,7 @@ public class CameraNodeServiceTests
     var updates = new MapUpdateService(map, tracks, states);
 
     return new Services(db, map,
-      new CameraNodeService(db, map, updates, NullLogger<CameraNodeService>.Instance));
+      new DeviceNodeService(db, map, updates, NullLogger<DeviceNodeService>.Instance));
   }
 
   private static async Task<BaseMarkerDTO> Node(
@@ -61,9 +61,9 @@ public class CameraNodeServiceTests
     Assert.Equal("srv1", server.name);
     Assert.Null(server.parent_id);
 
-    var index = await s.Db.CameraNodes.SingleAsync();
+    var index = await s.Db.DeviceNodes.SingleAsync();
     Assert.Equal(canonical, index.object_id);
-    Assert.Equal(TestCameras.One, index.camera_id);
+    Assert.Equal(TestCameras.One, index.source_id);
   }
 
   [Fact]
@@ -92,7 +92,7 @@ public class CameraNodeServiceTests
     var marker = await s.Db.Markers.SingleAsync(m => m.id == canonicalId);
     Assert.Equal("Front door", marker.name);
     Assert.Equal(Guid.Parse(space.id!), marker.parent_id);
-    Assert.Equal(canonicalId, (await s.Db.CameraNodes.SingleAsync()).object_id);
+    Assert.Equal(canonicalId, (await s.Db.DeviceNodes.SingleAsync()).object_id);
   }
 
   [Fact]
@@ -186,7 +186,7 @@ public class CameraNodeServiceTests
     Assert.Empty(await s.Db.CameraPlacements.ToListAsync());
     Assert.Empty(await s.Db.PtzGeoObservations.ToListAsync());
     Assert.Empty(await s.Db.GroundObservations.ToListAsync());
-    Assert.Empty(await s.Db.CameraNodes.ToListAsync());
+    Assert.Empty(await s.Db.DeviceNodes.ToListAsync());
   }
 
   [Fact]
@@ -203,7 +203,7 @@ public class CameraNodeServiceTests
       m => m.id == Guid.Parse(CameraObjectId.For(TestCameras.One))));
     Assert.True(await s.Db.Markers.AnyAsync(
       m => m.id == Guid.Parse(CameraObjectId.For(TestCameras.Two))));
-    Assert.Equal(TestCameras.Two, (await s.Db.CameraNodes.SingleAsync()).camera_id);
+    Assert.Equal(TestCameras.Two, (await s.Db.DeviceNodes.SingleAsync()).source_id);
   }
 
   [Fact]

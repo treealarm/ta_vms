@@ -38,7 +38,7 @@ namespace VmsMap.Demo
     private readonly VisualService _visuals;
     private readonly SpatialDb _spatial;
     private readonly ICameraCatalog _cameras;
-    private readonly ICameraNodeService _cameraNodes;
+    private readonly IDeviceNodeService _cameraNodes;
 
     public DemoSeeder(
       VmsMapDbContext db,
@@ -53,7 +53,7 @@ namespace VmsMap.Demo
       VisualService visuals,
       SpatialDb spatial,
       ICameraCatalog cameras,
-      ICameraNodeService cameraNodes)
+      IDeviceNodeService cameraNodes)
     {
       _db = db;
       _updates = updates;
@@ -94,7 +94,7 @@ namespace VmsMap.Demo
       var report = new DemoReport { Key = world.Key, Version = world.Version };
 
       // A replica hangs off the camera's canonical node, which the adapter owns and which is keyed
-      // in camera_node. That node is created before the install transaction opens — the adapter
+      // in device_node. That node is created before the install transaction opens — the adapter
       // keeps a transaction of its own — so a camera provisioned moments ago is already there. A
       // camera the deployment does not have is skipped and reported, like a placement.
       var owners = new Dictionary<string, Guid>(StringComparer.Ordinal);
@@ -109,8 +109,10 @@ namespace VmsMap.Demo
         }
 
         await _cameraNodes.EnsureCameraAsync(camera, ct);
-        var owner = await _db.CameraNodes.AsNoTracking()
-          .Where(row => row.camera_id == cameraId)
+        var owner = await _db.DeviceNodes.AsNoTracking()
+          .Where(row => row.source_kind == DeviceObjectId.CameraSource
+                        && row.source_id == cameraId
+                        && row.part_kind == DeviceObjectId.DevicePart)
           .Select(row => (Guid?)row.object_id)
           .FirstOrDefaultAsync(ct);
         if (owner is not null)

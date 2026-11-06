@@ -112,9 +112,11 @@ namespace VmsMap.Demo
       var values = new List<ValueDTO>();
       foreach (var owner in owners)
       {
-        var cameraId = await _db.CameraNodes.AsNoTracking()
-          .Where(node => node.object_id == owner)
-          .Select(node => node.camera_id)
+        var cameraId = await _db.DeviceNodes.AsNoTracking()
+          .Where(node => node.object_id == owner
+                         && node.source_kind == DeviceObjectId.CameraSource
+                         && node.part_kind == DeviceObjectId.DevicePart)
+          .Select(node => node.source_id)
           .FirstOrDefaultAsync(ct);
         if (cameraId is null) continue;
 

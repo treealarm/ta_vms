@@ -17,7 +17,7 @@ namespace VmsMap.Tests;
 public class ConnectionStateServiceTests
 {
   private sealed record Services(
-    VmsMapDbContext Db, MapDb Map, CameraNodeService Nodes,
+    VmsMapDbContext Db, MapDb Map, DeviceNodeService Nodes,
     ConnectionStateService Connections);
 
   private static Services Create()
@@ -31,11 +31,11 @@ public class ConnectionStateServiceTests
     var stateService = new StateService(db);
     var statesUpdate = new StatesUpdateService(stateService, map, db);
     var writer = new CameraStateWriter(db, stateService, statesUpdate);
-    var nodes = new CameraNodeService(db, map, new MapUpdateService(
+    var nodes = new DeviceNodeService(db, map, new MapUpdateService(
       map,
       new TracksUpdateService(map, new TrackService(db, new LevelService(db)),
         new GeoService(db, new LevelService(db))),
-      statesUpdate), NullLogger<CameraNodeService>.Instance);
+      statesUpdate), NullLogger<DeviceNodeService>.Instance);
 
     return new Services(db, map, nodes, new ConnectionStateService(writer, nodes));
   }

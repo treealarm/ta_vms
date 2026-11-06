@@ -460,6 +460,23 @@ namespace VmsMap.Db
           entity.owner_id = kvp.Value.owner_id;
           entity.name = kvp.Value.name;
         }
+        else if (_db.Database.IsRelational())
+        {
+          // Created-or-updated in one statement. Nodes are created from several paths that run at
+          // the same time -- the resync's batches, a config event, the demo seeder -- and all of
+          // them derive the same id, so "read, then insert" leaves a window where two writers both
+          // insert and one dies on the primary key. The row did not exist when this call read the
+          // tree, so an existing one now was written by such a writer; taking this call's values is
+          // the same answer a normal update would give.
+          await _db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO objects (id, parent_id, owner_id, name)
+            VALUES ({kvp.Value.id}, {kvp.Value.parent_id}, {kvp.Value.owner_id}, {kvp.Value.name})
+            ON CONFLICT (id) DO UPDATE SET
+              parent_id = EXCLUDED.parent_id,
+              owner_id  = EXCLUDED.owner_id,
+              name      = EXCLUDED.name;
+            """);
+        }
         else
         {
           _db.Markers.Add(kvp.Value);

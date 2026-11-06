@@ -92,7 +92,7 @@ namespace VmsMap.Adapter
           return TopicResponseAction.Retry;
 
         using var scope = _scopes.CreateScope();
-        var nodes = scope.ServiceProvider.GetRequiredService<CameraNodeService>();
+        var nodes = scope.ServiceProvider.GetRequiredService<DeviceNodeService>();
         await nodes.EnsureCameraAsync(camera, ct);
 
         var alarms = scope.ServiceProvider.GetRequiredService<AlarmService>();

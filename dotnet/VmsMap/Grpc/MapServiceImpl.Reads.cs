@@ -698,7 +698,7 @@ namespace VmsMap.Grpc
       return await _rightsService.VisibleAsync(requested, ToCaller(caller), ct);
     }
 
-    // The reverse index from a node to the camera it is: the canonical row in camera_node, or the
+    // The reverse index from a node to the camera it is: the device row in device_node, or the
     // placement row of a picture. Reads name a camera at all only because of these.
     internal Task<Dictionary<string, string>> CameraIdsAsync(
       IEnumerable<string> ids, CancellationToken ct) =>
