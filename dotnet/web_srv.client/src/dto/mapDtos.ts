@@ -374,3 +374,51 @@ export type MapWatchAction =
   | 'on_values_changed'
 
 export type MapWatchMessage = { action?: string; items?: MapWatchItem[] }
+
+// ── The alarm entity ────────────────────────────────────────────────────────────────────────────
+
+/** One operator alarm: the ALARM state says something is wrong, this says who must deal with it. */
+export type MapAlarm = {
+  id?: string
+  objectId?: string
+  definitionId?: string
+  subscriptionId?: string
+  /** "sensor" | "retention" | "subscription". */
+  source?: string
+  dedupKey?: string
+  conditionActive?: boolean
+  /** "active" | "acknowledged" | "returned" | "closed". */
+  status?: string
+  /** "warning" | "critical". */
+  severity?: string
+  raisedAt?: string
+  clearedAt?: string
+  expectedEndTs?: string
+  acknowledgedAt?: string
+  acknowledgedBy?: string
+  ackComment?: string
+  closedAt?: string
+  closeReason?: string
+  closeComment?: string
+  closedBy?: string
+  sourceEventId?: string
+  /** Whether this caller may acknowledge the row now; the service computes it. */
+  canAck?: boolean
+  objectName?: string
+  cameraId?: string
+}
+
+/** The last row of the previous page: (time, id), as the branch that produced it orders them. */
+export type MapAlarmCursor = { after?: string; afterId?: string }
+
+export type MapAlarmPage = { alarms?: MapAlarm[]; hasMore?: boolean; next?: MapAlarmCursor }
+
+/** Open rows and the recently closed ones, each with its own cursor. */
+export type MapAlarmList = { open?: MapAlarmPage; closed?: MapAlarmPage }
+
+export type MapGetAlarmsRequest = {
+  pageSize?: number
+  openAfter?: MapAlarmCursor
+  closedAfter?: MapAlarmCursor
+  closedWindowMinutes?: number
+}

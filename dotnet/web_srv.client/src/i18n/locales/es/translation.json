@@ -412,7 +412,14 @@
     "sourceOnvif": "ONVIF",
     "sourceOther": "Otro",
     "detections": "Detecciones",
-    "trigger": "Disparador"
+    "trigger": "Disparador",
+    "kind": {
+      "all": "Todo",
+      "sensor": "Sensores",
+      "relay": "Relés",
+      "analytics": "Analítica",
+      "alarm": "Alarmas"
+    }
   },
   "stream": {
     "newStream": "Nuevo flujo en {{camera}}",
@@ -1472,5 +1479,32 @@
     "caFingerprint": "Autoridad de certificación de este despliegue",
     "caFingerprintHelper": "Cada máquina del despliegue presenta un certificado emitido por ella. A una máquina que se une se le da esta huella y comprueba el núcleo con ella; compárela con la que el núcleo mostró al configurarse.",
     "downloadCa": "Descargar la autoridad de certificación"
+  },
+  "alarms": {
+    "handle": "Atender la alarma",
+    "acknowledge": "Confirmar",
+    "close": "Cerrar la alarma",
+    "cannotAcknowledge": "Esta alarma no se puede confirmar ahora",
+    "comment": "Comentario",
+    "openOnMap": "Abrir en el mapa",
+    "source": {
+      "sensor": "Sensor",
+      "retention": "Retención",
+      "subscription": "Suscripción"
+    },
+    "status": {
+      "active": "Activa",
+      "acknowledged": "Confirmada",
+      "returned": "Vuelta a la normalidad",
+      "closed": "Cerrada"
+    },
+    "severity": {
+      "warning": "Advertencia",
+      "critical": "Crítica"
+    },
+    "reason": {
+      "falseAlarm": "Falsa alarma",
+      "other": "Otra"
+    }
   }
 }

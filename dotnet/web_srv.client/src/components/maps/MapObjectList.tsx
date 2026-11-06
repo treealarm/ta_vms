@@ -11,7 +11,7 @@ export type MapObjectItem = {
   selected?: boolean
   onClick: () => void
   /** A second action at the end of the row -- entering a container, say -- without selecting it. */
-  action?: { title: string; icon: React.ReactNode; onClick: () => void }
+  action?: { title: string; icon: React.ReactNode; onClick: () => void; disabled?: boolean }
 }
 
 export type MapObjectSection = {
@@ -74,6 +74,7 @@ export default function MapObjectList({ sections }: { sections: MapObjectSection
                         <IconButton
                           size="small"
                           edge="end"
+                          disabled={item.action.disabled}
                           sx={{ ml: 0.5 }}
                           onClick={(event) => {
                             event.stopPropagation()

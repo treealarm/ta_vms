@@ -313,25 +313,6 @@ namespace VmsMap.Adapter
       return new AlarmOutcome(AlarmMove.Applied, alarm);
     }
 
-    /// <summary>A renewal of a retention episode moves the projected end without touching anything else.</summary>
-    public async Task SetExpectedEndAsync(
-      Guid objectId, string dedupKey, DateTime? end, CancellationToken ct)
-    {
-      if (end is null)
-        return;
-
-      await using var tx = await BeginAsync(ct);
-
-      var alarm = await LockOpenAsync(objectId, dedupKey, ct);
-      if (alarm is not null && alarm.expected_end_ts != end)
-      {
-        alarm.expected_end_ts = end;
-        await _db.SaveChangesAsync(ct);
-      }
-
-      await CommitAsync(tx, ct);
-    }
-
     public async Task<AlarmOutcome> AcknowledgeAsync(
       Guid alarmId, string actor, string? comment, CancellationToken ct)
     {

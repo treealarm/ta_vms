@@ -1,5 +1,7 @@
 import { enc, jsonRequest, requestJson } from './requestJson'
 import type {
+  MapAlarm,
+  MapAlarmList,
   MapAlarmStateList,
   MapBox,
   MapCreateReplicaRequest,
@@ -17,6 +19,7 @@ import type {
   MapFileInfo,
   MapFigure,
   MapFigures,
+  MapGetAlarmsRequest,
   MapGetByParentResponse,
   MapGetDiagramTypesRequest,
   MapGetLevelResponse,
@@ -103,6 +106,19 @@ export const mapApi = {
 
   getStateDescriptions: (states: string[] = []) =>
     post<MapStateDescriptionList>(`${BASE}/states/descriptions`, states),
+
+  // ── Alarms ─────────────────────────────────────────────────────────────────────────────────
+  // Two keyset pages in one call: open rows and the ones closed in the last quarter of an hour.
+  getAlarms: (request: MapGetAlarmsRequest = {}) =>
+    post<MapAlarmList>(`${BASE}/alarms`, request),
+
+  /** Refused with 409 when the condition is still active and the node is armed. */
+  acknowledgeAlarm: (id: string, comment: string) =>
+    post<MapAlarm>(`${BASE}/alarms/${enc(id)}/acknowledge`, { comment }),
+
+  /** Only an alarm whose condition is already gone may be closed by hand. */
+  closeAlarm: (id: string, reason: 'false_alarm' | 'other', comment: string) =>
+    post<MapAlarm>(`${BASE}/alarms/${enc(id)}/close`, { reason, comment }),
 
   // ── Events ─────────────────────────────────────────────────────────────────────────────────
   getEvents: (filter: MapEventsFilter) =>

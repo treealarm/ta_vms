@@ -412,7 +412,14 @@
     "sourceOnvif": "ONVIF",
     "sourceOther": "Other",
     "detections": "Detections",
-    "trigger": "Trigger"
+    "trigger": "Trigger",
+    "kind": {
+      "all": "All",
+      "sensor": "Sensors",
+      "relay": "Relays",
+      "analytics": "Analytics",
+      "alarm": "Alarms"
+    }
   },
   "stream": {
     "newStream": "New stream on {{camera}}",
@@ -1473,5 +1480,32 @@
     "caFingerprint": "Certificate authority of this deployment",
     "caFingerprintHelper": "Every machine of the deployment shows a certificate it issued. A machine joining is told this fingerprint and checks the core against it; compare it with the one the core printed when it was set up.",
     "downloadCa": "Download the certificate authority"
+  },
+  "alarms": {
+    "handle": "Handle the alarm",
+    "acknowledge": "Acknowledge",
+    "close": "Close the alarm",
+    "cannotAcknowledge": "This alarm cannot be acknowledged now",
+    "comment": "Comment",
+    "openOnMap": "Open on the map",
+    "source": {
+      "sensor": "Sensor",
+      "retention": "Retention",
+      "subscription": "Subscription"
+    },
+    "status": {
+      "active": "Active",
+      "acknowledged": "Acknowledged",
+      "returned": "Returned to normal",
+      "closed": "Closed"
+    },
+    "severity": {
+      "warning": "Warning",
+      "critical": "Critical"
+    },
+    "reason": {
+      "falseAlarm": "False alarm",
+      "other": "Other"
+    }
   }
 }
