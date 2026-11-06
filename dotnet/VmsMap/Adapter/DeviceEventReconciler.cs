@@ -90,23 +90,17 @@ namespace VmsMap.Adapter
         return;
       }
 
-      var listed = new HashSet<(string Kind, string Token)>();
+      var partRefs = message.Parts
+        .Where(p => !string.IsNullOrWhiteSpace(p.Kind) && !string.IsNullOrWhiteSpace(p.Token))
+        .Where(p => DevicePayload.IsDigitalInput(p.Kind) || DevicePayload.IsRelay(p.Kind))
+        .Select(p => (Kind: p.Kind!, Token: p.Token!))
+        .Distinct()
+        .ToList();
 
-      foreach (var part in message.Parts)
-      {
-        if (string.IsNullOrWhiteSpace(part.Kind) || string.IsNullOrWhiteSpace(part.Token))
-          continue;
-        if (!DevicePayload.IsDigitalInput(part.Kind) && !DevicePayload.IsRelay(part.Kind))
-          continue;
+      var listed = partRefs.ToHashSet();
 
-        listed.Add((part.Kind!, part.Token!));
-
-        if (await _nodes.EnsureAsync(
-              DeviceObjectId.CameraSource, cameraId, part.Kind!, part.Token!, ct) is null)
-        {
-          continue;
-        }
-      }
+      // One pass for the whole manifest: two calls to VmsCfg per camera, not per part.
+      await _nodes.EnsurePartsAsync(cameraId, partRefs, ct);
 
       // EnsureAsync may have inserted rows, so the registry is read again rather than reused.
       rows = await _db.DeviceNodes

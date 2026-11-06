@@ -188,25 +188,64 @@ namespace VmsMap.Adapter
     {
       if (!string.Equals(sourceKind, DeviceObjectId.CameraSource, StringComparison.Ordinal))
         return null;
-      if (string.IsNullOrWhiteSpace(sourceId)
-          || string.IsNullOrWhiteSpace(partKind)
-          || string.IsNullOrWhiteSpace(partToken))
-      {
-        return null;
-      }
+
+      var ensured = await EnsurePartsAsync(
+        sourceId, [(partKind, partToken)], ct);
+
+      return ensured.GetValueOrDefault((partKind, partToken));
+    }
+
+    /// <summary>
+    /// Ensures every part of one camera in one pass. A snapshot names all of them at once, and
+    /// asking VmsCfg and the settings cache once per camera instead of once per part is what keeps
+    /// a hundred thousand cameras a sweep rather than a storm.
+    /// </summary>
+    public async Task<Dictionary<(string Kind, string Token), string>> EnsurePartsAsync(
+      string sourceId,
+      IReadOnlyList<(string Kind, string Token)> parts,
+      CancellationToken ct)
+    {
+      var result = new Dictionary<(string, string), string>();
+      if (string.IsNullOrWhiteSpace(sourceId) || parts.Count == 0)
+        return result;
 
       var camera = await _catalog.GetAsync(sourceId, ct);
       if (camera is null)
-        return null;
+        return result;
 
       await EnsureCameraAsync(camera, ct);
 
-      var configured = await _settings.FindAsync(sourceId, partKind, partToken, ct);
-      var name = !string.IsNullOrWhiteSpace(configured?.Name)
-        ? configured!.Name
+      var configured = await _settings.ListAsync(sourceId, ct);
+      var byKey = configured.ToDictionary(
+        s => (s.Kind, s.Token), s => s, EqualityComparer<(string, string)>.Default);
+
+      foreach (var part in parts.Distinct())
+      {
+        if (string.IsNullOrWhiteSpace(part.Kind) || string.IsNullOrWhiteSpace(part.Token))
+          continue;
+
+        var name = byKey.TryGetValue(part, out var settings) ? settings.Name : null;
+        var id = await EnsurePartNodeAsync(camera, sourceId, part.Kind, part.Token, name, ct);
+        if (id is not null)
+          result[part] = id;
+      }
+
+      return result;
+    }
+
+    private async Task<string?> EnsurePartNodeAsync(
+      CameraInfo camera,
+      string sourceId,
+      string partKind,
+      string partToken,
+      string? configuredName,
+      CancellationToken ct)
+    {
+      var name = !string.IsNullOrWhiteSpace(configuredName)
+        ? configuredName!
         : $"{camera.Name} / {partToken}";
 
-      var partId = DeviceObjectId.For(sourceKind, sourceId, partKind, partToken);
+      var partId = DeviceObjectId.For(DeviceObjectId.CameraSource, sourceId, partKind, partToken);
       var partGuid = Utils.ConvertObjectIdToGuid(partId);
       var parentGuid = Utils.ConvertObjectIdToGuid(CameraObjectId.For(sourceId));
       if (partGuid is null)
@@ -227,7 +266,8 @@ namespace VmsMap.Adapter
         ]);
       }
 
-      await EnsurePartRowAsync(sourceKind, sourceId, partKind, partToken, partGuid.Value, ct);
+      await EnsurePartRowAsync(
+        DeviceObjectId.CameraSource, sourceId, partKind, partToken, partGuid.Value, ct);
       return partId;
     }
 
@@ -246,8 +286,8 @@ namespace VmsMap.Adapter
         .Select(n => new { n.part_kind, n.part_token })
         .ToListAsync(ct);
 
-      foreach (var part in parts)
-        await EnsureAsync(DeviceObjectId.CameraSource, cameraId, part.part_kind, part.part_token, ct);
+      await EnsurePartsAsync(
+        cameraId, parts.Select(p => (p.part_kind, p.part_token)).ToList(), ct);
     }
 
     private async Task EnsurePartRowAsync(
