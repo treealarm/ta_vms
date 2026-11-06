@@ -101,6 +101,16 @@ SLAVE2 = Camera("ptz2", "Slave 2 (PTZ)", "ptz", -24.0, 8.0, 18.0, heading=45.0, 
                 color="#ff3b6b")
 SLAVE_LIMITS = PtzLimits()
 
+# Not green: the grass is.
+LANDMARKS = [
+    Landmark("L1", -9.0, 4.0, "#e53935", "red"),
+    Landmark("L2", 9.0, 4.0, "#fdd835", "yellow"),
+    Landmark("L3", -13.0, -12.0, "#1e88e5", "blue"),
+    Landmark("L4", 13.0, -12.0, "#f5f5f5", "white"),
+    Landmark("L5", 0.0, -24.0, "#8e24aa", "purple"),
+]
+LANDMARK_SIZE = 0.5  # metres; small enough that a person standing on one is still seen
+
 VIDEO_W, VIDEO_H = 640, 360
 
 # The plan's picture: a camera straight above the yard, looking down, heading north, so the top of
@@ -120,10 +130,18 @@ TOPDOWN = Camera(
 @dataclass(frozen=True)
 class Pair:
     """A master and the PTZ slave it drives, standing in one ta_vms space."""
-    name: str  # "map" | "plan", which is also how the harness's --pair names it
+    name: str  # "map" | "plan" in the yard, "hall" | "road" in the demo world
     master: Camera
     slave: Camera
     limits: PtzLimits = SLAVE_LIMITS
+    # The landmarks one pair is calibrated on. The yard's two pairs watch the same yard; the demo's
+    # hall and road are apart, and each has its own.
+    landmarks: tuple = field(default_factory=lambda: tuple(LANDMARKS))
+    # What the master detects for this pair: people walking the hall, the car on the road.
+    target_kinds: tuple = ("person",)
+    # The demo space the pair stands in: its own field because a pair's cameras are placed by the
+    # demo world, and the bench has to know which space to look for.
+    space: str | None = None
 
 
 MAP_PAIR = Pair("map", MASTER, SLAVE)
@@ -136,16 +154,6 @@ STREAMING_CAMERAS = [c for pair in PAIRS for c in (pair.master, pair.slave)]
 def camera_index(camera):
     """Where a camera (or a mount variant of it, which keeps its id) stands in STREAMING_CAMERAS."""
     return next(i for i, c in enumerate(STREAMING_CAMERAS) if c.id == camera.id)
-
-# Not green: the grass is.
-LANDMARKS = [
-    Landmark("L1", -9.0, 4.0, "#e53935", "red"),
-    Landmark("L2", 9.0, 4.0, "#fdd835", "yellow"),
-    Landmark("L3", -13.0, -12.0, "#1e88e5", "blue"),
-    Landmark("L4", 13.0, -12.0, "#f5f5f5", "white"),
-    Landmark("L5", 0.0, -24.0, "#8e24aa", "purple"),
-]
-LANDMARK_SIZE = 0.5  # metres; small enough that a person standing on one is still seen
 
 WALKER_ID = "w1"
 WALKER_ROUTE = [(-8.0, 0.0), (8.0, 0.0), (8.0, -16.0), (-8.0, -16.0)]
@@ -539,8 +547,10 @@ def build_world(onvif_base_port, pairs=None, with_walker=True):
 # and ships it as data/worlds/maryland.json (World/MarylandWorld.cs); the bench loads that file
 # rather than keeping a second copy of the geometry, and checks the cameras in it against the demo
 # placements below. Those mirror DemoWorlds.cs — the building envelope and the four camera poses —
-# so keep the two in step. The master and its PTZ slave stand in one room, with a person walking
-# between them; the slave reports its head in the metadata track.
+# so keep the two in step. The demo has two pairs: the hall pair stands in Room 101 with a person
+# walking between them, and the road pair watches the ring road north of the building, where the
+# master detects the car and the slave turns to follow it. Every slave reports its head in the
+# metadata track.
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -568,40 +578,87 @@ class DemoPlacement:
 DEMO_PLACEMENTS = [
     DemoPlacement("master", 38.99240, -76.93852, 2.8, 55, 70),
     DemoPlacement("ptz", 38.992484, -76.938372, 2.8, 235, 65),
-    DemoPlacement("master2", 38.99276, -76.93895, 3.0, 135, 80),
-    DemoPlacement("ptz2", 38.99250, -76.93950, 6.0, 90, 60),
+    DemoPlacement("master2", 38.992884, -76.937858, 6.0, 0, 60),
+    DemoPlacement("ptz2", 38.993333, -76.938320, 6.0, 113, 60),
 ]
 DEMO_VEHICLE_CAMERA = "vehicle"
+# The car the road pair follows, and its body: width across, height up, length along its way. The
+# box a detector gets is the car as the picture draws it, so the height of that box is what the
+# checks measure against ObjectDetector.MinBoxHeight.
+DEMO_VEHICLE_ID = "v1"
+DEMO_VEHICLE_SIZE = (1.8, 1.45, 4.4)
+# The detector's threshold, in normalized picture units: a figure shorter than this is not seen.
+MIN_BOX_HEIGHT = 0.05
 
-# The pair the demo bench calibrates in the Maryland world: the master and the slave stand in one
-# hall facing each other, so one set of landmarks serves both (decision 10 of the M2.3 plan). The
-# other pair — master2 on the building's wall, ptz2 out on the campus — is too far apart to share
-# landmarks; it is calibrated in the yard world, which is what that bench is for.
-MARYLAND_PAIR_NAME = "plan"
+MARYLAND_HALL_PAIR = "hall"
+MARYLAND_ROAD_PAIR = "road"
 
 # The landmarks in the hall, in world metres (X east, Z south): between the master at
 # (-62.3, -11.1) and the slave at (-49.5, -20.5), every one of them inside both views.
-MARYLAND_LANDMARKS = [
+MARYLAND_HALL_LANDMARKS = (
     Landmark("L1", -57.5, -13.5, "#e53935", "red"),
     Landmark("L2", -54.0, -16.0, "#fdd835", "yellow"),
     Landmark("L3", -60.0, -16.0, "#1e88e5", "blue"),
     Landmark("L4", -53.0, -13.0, "#f5f5f5", "white"),
     Landmark("L5", -56.0, -19.5, "#8e24aa", "purple"),
-]
+)
+
+# The landmarks on the road's shoulder, in world metres: south of the lane, so the car cannot pass
+# between the master at (-5, -65) and the person standing on one during calibration. They are not
+# on one line: a ground homography needs points that span a plane, and five marks on z = -97 are in
+# the lane besides (the road is 7 m wide, so its south edge is z = -96.5).
+MARYLAND_ROAD_LANDMARKS = (
+    Landmark("L1", -14.0, -91.0, "#e53935", "red"),
+    Landmark("L2", -9.0, -96.0, "#fdd835", "yellow"),
+    Landmark("L3", -4.0, -90.0, "#1e88e5", "blue"),
+    Landmark("L4", 1.0, -96.0, "#f5f5f5", "white"),
+    Landmark("L5", 6.0, -92.0, "#8e24aa", "purple"),
+)
 
 
 def demo_camera(world, camera_id, base):
-    """`base` at the Maryland world's own pose — the demo places its cameras from the same constants."""
+    """`base` at the Maryland world's own pose — the demo places its cameras from the same constants.
+    Its lens comes from the world as well: the demo's pair does not always share the yard's."""
     camera = next(c for c in world["cameras"] if c["id"] == camera_id)
     position = camera["position"]
+    hfov = camera["hFov"] if camera.get("kind") == "fixed" \
+        else (camera.get("ptz") or {}).get("fovWide", base.hfov)
     return dataclasses.replace(
-        base, x=position["x"], y=position["y"], z=position["z"], heading=camera["heading"])
+        base, x=position["x"], y=position["y"], z=position["z"], heading=camera["heading"],
+        pitch=camera.get("pitch", base.pitch), hfov=hfov)
+
+
+def demo_limits(world, camera_id):
+    """The PTZ lens and axes a demo slave is configured with; the yard's when it has none."""
+    camera = next(c for c in world["cameras"] if c["id"] == camera_id)
+    ptz = camera.get("ptz")
+    if not ptz:
+        return SLAVE_LIMITS
+    return PtzLimits(
+        pan_min=ptz.get("panMin", SLAVE_LIMITS.pan_min), pan_max=ptz.get("panMax", SLAVE_LIMITS.pan_max),
+        tilt_min=ptz.get("tiltMin", SLAVE_LIMITS.tilt_min), tilt_max=ptz.get("tiltMax", SLAVE_LIMITS.tilt_max),
+        fov_wide=ptz.get("fovWide", SLAVE_LIMITS.fov_wide), fov_tele=ptz.get("fovTele", SLAVE_LIMITS.fov_tele),
+        pan_reverse=ptz.get("panReverse", SLAVE_LIMITS.pan_reverse),
+        tilt_reverse=ptz.get("tiltReverse", SLAVE_LIMITS.tilt_reverse))
 
 
 def demo_pairs(world):
-    return [Pair(MARYLAND_PAIR_NAME,
-                 demo_camera(world, "master", MASTER),
-                 demo_camera(world, "ptz", SLAVE))]
+    """The demo's two pairs: the hall in Room 101 and the road out on the map.
+
+    The hall's master drives its slave with boxes of the walking person; the road's master drives
+    its slave with boxes of the car, which is why the pair carries the kinds it follows."""
+    return [
+        Pair(MARYLAND_HALL_PAIR,
+             demo_camera(world, "master", MASTER),
+             demo_camera(world, "ptz", SLAVE),
+             limits=demo_limits(world, "ptz"),
+             landmarks=MARYLAND_HALL_LANDMARKS, space="hall"),
+        Pair(MARYLAND_ROAD_PAIR,
+             demo_camera(world, "master2", MASTER2),
+             demo_camera(world, "ptz2", SLAVE2),
+             limits=demo_limits(world, "ptz2"),
+             landmarks=MARYLAND_ROAD_LANDMARKS, target_kinds=("vehicle",), space="road"),
+    ]
 
 
 def world_to_wgs84(world, position):
@@ -619,21 +676,69 @@ def world_to_wgs84(world, position):
     return lat0 + north / per_deg_lat, lon0 + east / per_deg_lon, geo.get("elevation", 0.0) + y
 
 
-def _ground_gap(lat1, lon1, lat2, lon2):
+def ground_gap(lat1, lon1, lat2, lon2):
     """How far apart two WGS84 points are on the ground, metres."""
     per_deg_lat = EARTH_RADIUS_M * math.pi / 180.0
     per_deg_lon = per_deg_lat * math.cos(math.radians((lat1 + lat2) / 2.0))
     return math.hypot((lat1 - lat2) * per_deg_lat, (lon1 - lon2) * per_deg_lon)
 
 
-def _angle_gap(a, b):
+def angle_gap(a, b):
     return abs((a - b + 180.0) % 360.0 - 180.0)
+
+
+def _spread_ratio(points):
+    """How far a set of points spans a plane rather than a line: the smaller principal spread
+    against the larger one, as GroundHomography's fit measures it (it refuses below 0.05)."""
+    mx = sum(p[0] for p in points) / len(points)
+    my = sum(p[1] for p in points) / len(points)
+    sxx = syy = sxy = 0.0
+    for x, y in points:
+        sxx += (x - mx) ** 2
+        syy += (y - my) ** 2
+        sxy += (x - mx) * (y - my)
+    mean = (sxx + syy) / 2
+    root = math.sqrt(((sxx - syy) / 2) ** 2 + sxy * sxy)
+    major, minor = mean + root, max(0.0, mean - root)
+    return math.sqrt(minor / major) if major > 0 else 0.0
+
+
+def car_box(pose, x, z, heading, size=DEMO_VEHICLE_SIZE):
+    """The car's box in a picture whose pose is given, as (left, top, right, bottom) in 0..1 from
+    the top-left, or None behind the camera. The body is a box; the picture's own axes turn with
+    the mount, so this is the box ObjectDetector would cut, not a guess at the frame."""
+    width, height, length = size
+    turn = math.radians(heading)
+    forward, right = (math.sin(turn), -math.cos(turn)), (math.cos(turn), math.sin(turn))
+    corners = []
+    for along in (-length / 2, length / 2):
+        for across in (-width / 2, width / 2):
+            for up in (0.0, height):
+                px = x + forward[0] * along + right[0] * across
+                pz = z + forward[1] * along + right[1] * across
+                uv = project_pose(pose, (px, up, pz))
+                if uv is not None:
+                    corners.append(uv)
+    if not corners:
+        return None
+    us, vs = [c[0] for c in corners], [c[1] for c in corners]
+    return min(us), min(vs), max(us), max(vs)
+
+
+def route_samples(route, step=1.0, closed=True):
+    """Points along a vehicle's or walker's route, with the heading at each: (x, z, heading)."""
+    points = [*route, route[0]] if closed else route
+    for (ax, az), (bx, bz) in zip(points, points[1:]):
+        heading = bearing((ax, 0.0, az), (bx, 0.0, bz))[0]
+        count = max(1, int(math.hypot(bx - ax, bz - az) / step))
+        for i in range(count):
+            yield ax + (bx - ax) * i / count, az + (bz - az) * i / count, heading
 
 
 def check_maryland(world):
     """Raises AssertionError if the world does not stand where ta_vms's demo placements put it."""
     geo = world.get("geo") or {}
-    assert _ground_gap(geo.get("latitude", 0.0), geo.get("longitude", 0.0), MARYLAND_LAT0, MARYLAND_LON0) \
+    assert ground_gap(geo.get("latitude", 0.0), geo.get("longitude", 0.0), MARYLAND_LAT0, MARYLAND_LON0) \
         <= MARYLAND_POSITION_TOLERANCE_M, f"the world is anchored at {geo}, not at the demo building"
     assert geo.get("north", 0.0) == 0, f"the world's north is {geo.get('north')}, not 0"
 
@@ -642,22 +747,24 @@ def check_maryland(world):
         camera = cameras.get(placement.id)
         assert camera is not None, f"the world has no '{placement.id}' camera"
         lat, lon, elevation = world_to_wgs84(world, camera["position"])
-        gap = _ground_gap(lat, lon, placement.lat, placement.lon)
+        gap = ground_gap(lat, lon, placement.lat, placement.lon)
         assert gap <= MARYLAND_POSITION_TOLERANCE_M, \
             f"{placement.id} stands {gap:.2f} m from its demo placement ({lat:.7f}, {lon:.7f})"
         assert abs(elevation - placement.height) <= MARYLAND_POSITION_TOLERANCE_M, \
             f"{placement.id} is {elevation:.2f} m up, the demo places it at {placement.height} m"
-        assert _angle_gap(camera["heading"], placement.heading) <= MARYLAND_ANGLE_TOLERANCE_DEG, \
+        assert angle_gap(camera["heading"], placement.heading) <= MARYLAND_ANGLE_TOLERANCE_DEG, \
             f"{placement.id} faces {camera['heading']}, the demo {placement.heading}"
         hfov = camera["hFov"] if camera.get("kind") == "fixed" else (camera.get("ptz") or {}).get("fovWide")
         assert hfov is not None and abs(hfov - placement.hfov) <= MARYLAND_ANGLE_TOLERANCE_DEG, \
             f"{placement.id} is {hfov} deg wide, the demo {placement.hfov}"
 
-    # The pair works as one: the master detects, the slave aims where its boxes say. The slave
-    # carries its head in the metadata track, and a person walks the room between them.
-    slave = cameras["ptz"]
-    assert (slave.get("metadata") or {}).get("ptzStatus") is True, "ptz does not report its head in the telemetry"
-    assert (cameras["master"].get("metadata") or {}).get("analytics") is True, "master has no analytics"
+    # Each pair works as one: the master detects, the slave aims where its boxes say. Every slave
+    # carries its head in the metadata track, and every master boxes what it sees.
+    for name in ("master", "master2"):
+        assert (cameras[name].get("metadata") or {}).get("analytics") is True, f"{name} has no analytics"
+    for name in ("ptz", "ptz2"):
+        assert (cameras[name].get("metadata") or {}).get("ptzStatus") is True, \
+            f"{name} does not report its head in the telemetry"
     walkers = world.get("walkers", [])
     assert walkers, "the world has no person for the pair to work on"
     assert all(w.get("detectable", True) for w in walkers), "the walker is not detectable"
@@ -679,6 +786,57 @@ def check_maryland(world):
     vehicle_id = vehicle.get("mountedOnVehicleId")
     assert vehicle_id and any(v["id"] == vehicle_id for v in world.get("vehicles", [])), \
         f"{DEMO_VEHICLE_CAMERA} does not ride a vehicle of the world"
+
+    # The road pair. Both cameras must see the shoulder the landmarks stand on, the marks must span
+    # a plane (a ground homography refuses five points on one line), and the car must be big enough
+    # in the master's picture for the detector all the way across the frame, not just in the middle.
+    _, road = demo_pairs(world)
+    marks = list(road.landmarks)
+    assert _spread_ratio([(lm.x, lm.z) for lm in marks]) >= 0.05, \
+        "the road landmarks lie almost on one line; a ground homography cannot be fitted"
+    for lm in marks:
+        for camera in (road.master, road.slave):
+            uv = project(camera, (lm.x, 0.0, lm.z))
+            assert uv and 0.05 < uv[0] < 0.95 and 0.05 < uv[1] < 0.95, \
+                f"{lm.name} is not well inside {camera.id}'s picture: {uv}"
+        foot = project(road.master, (lm.x, 0.0, lm.z))
+        head = project(road.master, (lm.x, WALKER_HEIGHT, lm.z))
+        assert head and foot and foot[1] - head[1] >= 1.5 * MIN_BOX_HEIGHT, \
+            f"a person on {lm.name} is too small for {road.master.id}'s analytics"
+    pans = [ptz_degrees(road.slave, (lm.x, 0.0, lm.z)) for lm in marks]
+    assert max(p for p, _ in pans) - min(p for p, _ in pans) >= 5, \
+        f"{road.slave.id}: the road landmarks span only {max(p for p, _ in pans) - min(p for p, _ in pans):.1f} deg of pan"
+    assert max(t for _, t in pans) - min(t for _, t in pans) >= 1, \
+        f"{road.slave.id}: the road landmarks span only {max(t for _, t in pans) - min(t for _, t in pans):.1f} deg of tilt"
+    assert not (cameras["ptz2"].get("metadata") or {}).get("analytics"), \
+        "ptz2 boxes the car itself; the master's boxes are what aims it"
+
+    car = next((v for v in world.get("vehicles", []) if v["id"] == DEMO_VEHICLE_ID), None)
+    assert car is not None, f"the world has no '{DEMO_VEHICLE_ID}' car for the road pair"
+    assert car.get("detectable", True), f"{DEMO_VEHICLE_ID} is not detectable"
+    size = (car.get("width", DEMO_VEHICLE_SIZE[0]), car.get("height", DEMO_VEHICLE_SIZE[1]),
+            car.get("length", DEMO_VEHICLE_SIZE[2]))
+    route = [(point["x"], point["z"]) for point in car.get("route", [])]
+    assert len(route) >= 2, f"{DEMO_VEHICLE_ID} has no route to drive"
+    master_pose = level_pose(road.master)
+    box_heights, seen_x = [], []
+    for x, z, heading in route_samples(route, closed=car.get("return", "loop") == "loop"):
+        box = car_box(master_pose, x, z, heading, size)
+        if box is None:
+            continue
+        left, top, right, bottom = box
+        # Only the part of the pass where the whole car is in the picture: that is what a detector
+        # sees, and a box cut by the frame says nothing about how small the car gets.
+        if left < 0.0 or right > 1.0 or top < 0.0 or bottom > 1.0:
+            continue
+        box_heights.append(bottom - top)
+        seen_x.append(x)
+    assert box_heights, f"{road.master.id} never sees the whole of {DEMO_VEHICLE_ID}"
+    assert min(box_heights) >= 0.06, \
+        f"{DEMO_VEHICLE_ID} is only {min(box_heights):.3f} of {road.master.id}'s picture at its smallest " \
+        f"(the detector's threshold is {MIN_BOX_HEIGHT}); narrow the master's hfov"
+    assert max(seen_x) - min(seen_x) >= 30, \
+        f"{DEMO_VEHICLE_ID} is in {road.master.id}'s picture over only {max(seen_x) - min(seen_x):.0f} m of road"
 
     # The master's three relays show every kind of link a relay can have: one lights a lamp, one
     # drives the slave camera's sensor, and one drives a sensor of the master itself. A lamp is an

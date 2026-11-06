@@ -76,6 +76,14 @@ class Sim:
     def walker_pose(self, walker_id):
         return request("GET", self._url(f"/api/walkers/{walker_id}/pose"))
 
+    def put_vehicle(self, vehicle):
+        """Adds a car or replaces it; the body it is given is its body, speed included."""
+        request("PUT", self._url(f"/api/vehicles/{vehicle['id']}"), vehicle)
+
+    def vehicle_pose(self, vehicle_id):
+        """Where a car is now and which way it faces, as the simulator drives it."""
+        return request("GET", self._url(f"/api/vehicles/{vehicle_id}/pose"))
+
     def wait_idle(self, camera_id, timeout=10.0, settle=0.3):
         """Waits until the head has stopped; returns its pose."""
         deadline = time.monotonic() + timeout
