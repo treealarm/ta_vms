@@ -63,27 +63,29 @@ Conventions that hold everywhere:
   be aimed at, and (stage 3) which masters can drive which slaves. VmsCfg (`SpatialDb`), the
   tracking service (`CameraSpatialModel.SharesGeometryWith`) and the client (`sharesGeometry`)
   apply the same rule.
-- **A camera has one reference placement and any number of pictures.** A camera is one node of the
-  tree, its id derived from its camera id; the reference is where it really stands, and aiming and
-  calibration go by it. Pictures — the camera drawn again on a detailed plan of its corner — are
-  replicas of that node (Square's `owner_id` relation): they have their own point and placement row,
-  but no states of their own. A camera's first placement becomes its reference; clearing the flag
-  leaves the camera with none, never quietly promoting another.
+- **A camera has one reference placement and any number of pictures.** The reference is where it
+  really stands, and aiming and calibration go by it; it belongs to a replica of the camera, not to
+  the camera's canonical node. Pictures — the camera drawn again on a detailed plan of its corner —
+  are replicas too, each with its own point and placement row, but no states of their own. A
+  camera's first placement becomes its reference; clearing the flag leaves the camera with none,
+  never quietly promoting another.
 - **A device is a canonical node; everything else is a replica of it.** Three words, one rule each:
-  a **camera** is the device — its canonical node, id derived from the camera id, the only thing
-  bindings attach to; a **picture** is a replica of it standing on a plan, with a placement row of
-  its own that is never the reference (a new reference takes the flag, and the picture gives up the
-  place it stood in); a **representation** is a replica standing on a diagram, with no placement row
-  at all. Bindings — the reference placement, calibration, aiming, master/slave — are read from the
-  camera, never from a replica, and only in a space with real coordinates: a diagram has no
-  geographic frame, so nothing placed on it can be bound. A replica shows its owner's state and has
-  none of its own, and it copies the owner's look when it is made, so one camera in two places does
-  not look like two cameras. Which of the two a node is, is said by `objects.owner_id` alone, as it
-  was in Square: empty means the node is the object itself — an abstract node, a container, a place
-  or a device — and set means a replica of the node it names. No separate "is a device" flag is
-  kept; `camera_node` says which originals are cameras. `owner_id` always names an original, never
-  another replica: a picture dropped from a replica's canvas is written as a picture of the node
-  both show, because every read that answers through an owner resolves it in one hop.
+  a **camera** is the device — its canonical node, id derived from the camera id, standing under its
+  server's node, holding the meaning (states, events, alarms, rights) and no picture at all; a
+  **picture** is a replica of it standing on a map or a plan, with a placement row of its own — one
+  of which, `is_reference`, says where the camera really stands; a **representation** is a replica
+  standing on a diagram, with no placement row at all. Bindings — the reference placement,
+  calibration, aiming, master/slave — are read by camera id, from the camera's reference replica,
+  and only in a space with real coordinates: a diagram has no geographic frame, so nothing placed
+  on it can be bound. A camera placed only on a diagram has no reference until it is put on a map
+  or a plan. A replica shows its owner's state and has none of its own; how it looks is its own —
+  one camera may look different on a map, a plan and a diagram. Which of the two a node is, is said
+  by `objects.owner_id` alone, as it was in Square: empty means the node is the object itself — an
+  abstract node, a container, a place or a device — and set means a replica of the node it names.
+  No separate "is a device" flag is kept; `device_node` says which originals are devices, and which
+  part of one (`part_kind`, `part_token`). `owner_id` always names an original, never another
+  replica: a picture dropped from a replica's canvas is written as a picture of the node both show,
+  because every read that answers through an owner resolves it in one hop.
 - **Positions are WGS84 plus a height in metres above the floor of their space** — never above sea
   level. Height above the ground is `space.elevation_m + height_m`; elevation matters only where
   coordinates are real, so a camera upstairs and one in the yard agree on heights.
@@ -166,8 +168,8 @@ there is no `GetRelayState` at all.
 - **`geo_from_device`.** A camera can be told that its place on the map is its own ONVIF position.
   Off by default, because a hand-placed camera is calibrated and aimed by survey and must not drift
   with a coordinate the device happens to report. While on, `CameraGeoFollower` reads
-  `GetCameraGeoLocation` every five seconds and moves **only the point** of the canonical node —
-  never the parent, height, heading, field of view or a picture — and only when it moved more than
+  `GetCameraGeoLocation` every five seconds and moves **only the point** of the reference replica —
+  never the canonical node, the parent, height, heading or field of view — and only when it moved more than
   half a metre, publishing `map-config-changed` with both the node and the camera id so the
   browser reloads placements instead of waiting for its 30-second poll. Geographic calibration
   (ground marks, PTZ landmark observations) and aiming (a point on the map, a GEO master/slave
@@ -182,9 +184,13 @@ there is no `GetRelayState` at all.
 ## States, events and rights
 
 - **Every camera is a node from creation.** The adapter in `VmsMap/Adapter/` creates it from
-  `server-config-changed`, under the reference space when it is placed and under its server node
-  otherwise; `camera_node` maps the node back to the camera id. A camera removed from VmsCfg takes
-  its node, pictures, placements and observations with it.
+  `server-config-changed`, always under its server's node; `device_node` maps the node back to the
+  camera id (and, for parts, to the part's token). A camera removed from VmsCfg takes its node,
+  replicas, placements and observations with it.
+- **A device's rights are anchored to its reference replica's space.** A canonical node under the
+  server does not inherit a right granted on the space the camera is drawn in, so a camera node and
+  its parts are also checked from the reference replica's path; with none, the server node's path is
+  all there is.
 - **A retention episode becomes `ALARM` plus one journal event**, and `NORM` comes back when a
   sweep confirms the episode is over; `CONNECTED`/`DISCONNECTED` follow the open source outages in
   VmsFs. The alarm counters bubble up `alarm_states` in the same transaction. The event's id is the
@@ -207,8 +213,8 @@ without a browser — right after an install.
 University of Maryland campus; the building's floor as a plan with a picture; two rooms — Room 101
 as a plan of its own and Room 102 as a room diagram standing on the floor (a schematic with its two
 racks in regions of its type, each opening on its own canvas) — six racks between them, a switch in
-each rack's first slot and eight ports on every switch. The third port of the first rack is `DISCONNECTED`, so an operator can watch
-an alarm climb from the port through its switch, rack, room and building to the map. The five
+each rack's first slot and eight ports on every switch. The third port of the first rack is `CONNECTED`: the demo writes no
+synthetic alarm, so its map starts calm. The five
 OnvifSim cameras — `sim-master`, `sim-master2`, `sim-ptz`, `sim-ptz2` and `sim-vehicle` — are placed
 where the world wants them; a camera the deployment does not have yet is skipped and reported, and
 reinstalling once it is provisioned places it. `sim-vehicle` is flagged `geo_from_device`: the

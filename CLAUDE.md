@@ -481,10 +481,18 @@ The tree is also where the system's states, journal and permissions live; nothin
 VmsFs, VmsOnvif or VmsCfg is written for the map's sake.
 
 - **Every camera is a node from creation.** The adapter (`VmsMap/Adapter/`) creates the canonical
-  node from `server-config-changed`, under the space of its reference placement when it has one and
-  under its server node otherwise; `camera_node` maps the node back to the camera id, because the
-  node id is a one-way MD5. A camera VmsCfg no longer lists is removed with its pictures, placements
-  and observations.
+  node from `server-config-changed`, **always under its server node**: the canonical tree of a
+  device is one place, and where the camera is drawn is a replica's business. Any placement — map,
+  plan or diagram — is a replica (`objects.owner_id`) with its own view; the reference placement
+  (`is_reference`, what aiming and calibration go by) belongs to a replica, not to the canonical
+  node, which carries no `visual` and no `geo_objects`. `device_node` (`source_kind`, `source_id`,
+  `part_kind`, `part_token`) maps a device or one of its parts back to its node, because the node id
+  is a one-way MD5; parts are rows of the same registry with their own `part_kind`. A camera VmsCfg
+  no longer lists is removed with its replicas, placements and observations.
+- **Device rights are anchored to the space of the reference replica.** A canonical node under the
+  server does not inherit a right granted on the space the camera is drawn in, so a device node (a
+  camera or one of its parts) is also checked from its reference replica and that replica's space;
+  with no reference replica the server node's path is all there is.
 - **States come from their owners, not from the map.** `retention-event-created` becomes `ALARM`
   plus one `alarm` event (the event id is the episode's `event_uuid`, so a redelivery is a no-op);
   a sweep re-checks VmsFs before it puts `NORM` back. `CONNECTED`/`DISCONNECTED` come from VmsFs's
