@@ -266,6 +266,26 @@ CREATE TABLE camera_states (
   armed     boolean NOT NULL DEFAULT false
 );
 
+-- What the operator says about a camera's digital inputs and relays. A camera stays one row of
+-- camera_setup; its parts are described here, keyed by the ONVIF token the device itself uses.
+--
+-- No row is not a missing configuration: it is the default (inherit the camera's arming, no alarm,
+-- name from the token). The adapter never writes a row on discovery; only an administrator does.
+-- Arming fields belong to an input: a relay is driven by a command, not watched for a contact, and
+-- storing arming on one would be a configuration the product cannot apply.
+CREATE TABLE device_settings (
+  camera_id     uuid NOT NULL REFERENCES camera_setup(camera_id) ON DELETE CASCADE,
+  kind          text NOT NULL CHECK (kind IN ('digital_input','relay')),
+  token         text NOT NULL,
+  name          text NOT NULL DEFAULT '',
+  arm_mode      text NOT NULL DEFAULT 'inherit' CHECK (arm_mode IN ('inherit','armed','disarmed')),
+  trigger_on    text CHECK (trigger_on IN ('open','closed')),
+  alarm_enabled boolean NOT NULL DEFAULT false,
+  PRIMARY KEY (camera_id, kind, token),
+  CHECK (kind = 'digital_input' OR (arm_mode = 'inherit' AND trigger_on IS NULL AND NOT alarm_enabled)),
+  CHECK (NOT alarm_enabled OR trigger_on IS NOT NULL)
+);
+
 -- How this camera's pan and tilt move the picture, measured rather than assumed: one step of pan
 -- shifts the frame by (pan_dx, pan_dy), one of tilt by (tilt_dx, tilt_dy). Sign and magnitude
 -- differ per mount, so tracking cannot guess them.

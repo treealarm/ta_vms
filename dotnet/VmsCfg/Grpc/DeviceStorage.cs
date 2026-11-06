@@ -1,0 +1,105 @@
+using Microsoft.EntityFrameworkCore;
+using Vms.Cfg;
+
+namespace VmsCfg;
+
+// What the operator configured for a camera's digital inputs and relays.
+//
+// The table stores only configured parts; a part without a row is not an error and not a gap —
+// it keeps the defaults. Validation lives here rather than in the gRPC handler so the same rules
+// apply whether a row arrives through the API or through a future import, and so they can be tested
+// without a database.
+public class DeviceStorage(IDbContextFactory<VmsCfgDbContext> dbFactory)
+{
+  public async Task<List<DeviceSettings>> ListAsync(string cameraId, CancellationToken ct)
+  {
+    if (!Guid.TryParse(cameraId, out _))
+      return [];
+
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    return await db.DeviceSettings
+      .AsNoTracking()
+      .Where(x => x.CameraId == cameraId)
+      .OrderBy(x => x.Kind)
+      .ThenBy(x => x.Token)
+      .Select(x => new DeviceSettings
+      {
+        CameraId = x.CameraId,
+        Kind = x.Kind,
+        Token = x.Token,
+        Name = x.Name,
+        ArmMode = x.ArmMode,
+        TriggerOn = x.TriggerOn ?? string.Empty,
+        AlarmEnabled = x.AlarmEnabled,
+      })
+      .ToListAsync(ct);
+  }
+
+  // An upsert, not an insert: saving the same part twice is how an operator edits it, and the
+  // natural key (camera, kind, token) is what makes that idempotent.
+  public async Task SetAsync(DeviceSettings settings, CancellationToken ct)
+  {
+    string? triggerOn = string.IsNullOrWhiteSpace(settings.TriggerOn) ? null : settings.TriggerOn;
+
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    await db.Database.ExecuteSqlInterpolatedAsync($"""
+      INSERT INTO device_settings (camera_id, kind, token, name, arm_mode, trigger_on, alarm_enabled)
+      VALUES ({settings.CameraId}::uuid, {settings.Kind}, {settings.Token}, {settings.Name ?? string.Empty},
+              {settings.ArmMode}, {triggerOn}, {settings.AlarmEnabled})
+      ON CONFLICT (camera_id, kind, token) DO UPDATE SET
+        name          = EXCLUDED.name,
+        arm_mode      = EXCLUDED.arm_mode,
+        trigger_on    = EXCLUDED.trigger_on,
+        alarm_enabled = EXCLUDED.alarm_enabled;
+      """, ct);
+  }
+}
+
+public static class DeviceSettingsRules
+{
+  public const string DigitalInput = "digital_input";
+  public const string Relay = "relay";
+
+  public const string Inherit = "inherit";
+  public const string Armed = "armed";
+  public const string Disarmed = "disarmed";
+
+  public const string TriggerOpen = "open";
+  public const string TriggerClosed = "closed";
+
+  private static readonly HashSet<string> Kinds = [DigitalInput, Relay];
+  private static readonly HashSet<string> ArmModes = [Inherit, Armed, Disarmed];
+  private static readonly HashSet<string> Triggers = [TriggerOpen, TriggerClosed];
+
+  /// <summary>
+  /// The first thing wrong with a settings row, or null when it is valid. The database repeats these
+  /// checks; this is what turns them into a sentence the caller can act on.
+  /// </summary>
+  public static string? Validate(DeviceSettings settings)
+  {
+    if (!Guid.TryParse(settings.CameraId, out _))
+      return "camera_id must be a UUID";
+    if (string.IsNullOrWhiteSpace(settings.Token))
+      return "token must not be empty";
+    if (!Kinds.Contains(settings.Kind))
+      return $"kind must be '{DigitalInput}' or '{Relay}'";
+    if (!ArmModes.Contains(settings.ArmMode))
+      return $"arm_mode must be '{Inherit}', '{Armed}' or '{Disarmed}'";
+
+    var hasTrigger = !string.IsNullOrWhiteSpace(settings.TriggerOn);
+    if (hasTrigger && !Triggers.Contains(settings.TriggerOn))
+      return $"trigger_on must be '{TriggerOpen}', '{TriggerClosed}' or empty";
+
+    if (settings.Kind == Relay)
+    {
+      if (settings.ArmMode != Inherit || hasTrigger || settings.AlarmEnabled)
+        return "a relay carries no arming or alarm settings";
+      return null;
+    }
+
+    if (settings.AlarmEnabled && !hasTrigger)
+      return "alarm_enabled requires trigger_on";
+
+    return null;
+  }
+}

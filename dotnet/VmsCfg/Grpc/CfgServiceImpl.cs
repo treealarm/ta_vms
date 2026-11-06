@@ -11,6 +11,7 @@ namespace VmsCfg
     CameraStorage storage,
     NodeRegistry nodes,
     StorageDb storageDb,
+    DeviceStorage deviceStorage,
     ScheduleDb scheduleDb,
     ScheduleCache scheduleCache,
     DaprClient daprClient,
@@ -28,6 +29,7 @@ namespace VmsCfg
     // needs, so a late or reordered message cannot make it act on a stale snapshot.
     private const string ServerConfigChangedTopic = "server-config-changed";
     private const string CameraStateChangedTopic       = "camera-state-changed";
+    private const string DeviceSettingsChangedTopic    = "device-settings-changed";
     private const string AnalyticsWatchChangedTopic    = "analytics-watch-changed";
     // Wakes the ticker in VmsSingleton after a schedule edit. It has its own app id, hence its own
     // subscription, so a topic reaches it — unlike VmsCfg's own replicas, which share one consumer
@@ -39,6 +41,10 @@ namespace VmsCfg
     // ONVIF calls, and it runs in several replicas, so a pub/sub event would reach exactly one of
     // them; a key everyone reads has no such asymmetry. Same mechanism as the permission version.
     private const string CamNodeVersionKey          = "cam-node-version";
+
+    // The truth for a replicable VmsMap: the pub/sub event reaches one replica, the shared key is
+    // read by all of them. The value is meaningless — only "different from last time" matters.
+    private const string DeviceSettingsVersionKey   = "device-settings-version";
 
     // Investigation boards are operator-created and never expire on their own, so the number one
     // person can accumulate is capped. Walls are unaffected — they are admin-managed.
@@ -55,6 +61,10 @@ namespace VmsCfg
     private sealed record ServerConfigChanged(
       [property: JsonPropertyName("server_id")] string ServerId,
       [property: JsonPropertyName("camera_ids")] IReadOnlyList<string> CameraIds);
+
+    // Spelled out for the same reason as the one above: the subscribers read snake_case.
+    private sealed record DeviceSettingsChanged(
+      [property: JsonPropertyName("camera_id")] string CameraId);
 
     /// One camera changed. The owning node is resolved here rather than threaded through every
     /// write handler: it is one indexed lookup on a path a human triggers, and it keeps all twelve
@@ -1171,6 +1181,54 @@ namespace VmsCfg
       logger.LogInformation("Camera '{CameraId}' armed={Armed}", request.CameraId, request.Armed);
       NotifyCameraStateChanged(request.CameraId);
       return new OperationStatus { Success = true };
+    }
+
+    public override async Task<ListDeviceSettingsResponse> ListDeviceSettings(
+      ListDeviceSettingsRequest request, ServerCallContext context)
+    {
+      var response = new ListDeviceSettingsResponse();
+      response.Settings.AddRange(
+        await deviceStorage.ListAsync(request.CameraId, context.CancellationToken));
+      return response;
+    }
+
+    public override async Task<OperationStatus> SetDeviceSettings(
+      SetDeviceSettingsRequest request, ServerCallContext context)
+    {
+      if (request.Settings is null)
+        return new OperationStatus { Success = false, Message = "settings must not be empty" };
+
+      var error = DeviceSettingsRules.Validate(request.Settings);
+      if (error is not null)
+        return new OperationStatus { Success = false, Message = error };
+
+      await deviceStorage.SetAsync(request.Settings, context.CancellationToken);
+      logger.LogInformation(
+        "Device settings for camera '{CameraId}' part {Kind}/{Token} upserted",
+        request.Settings.CameraId, request.Settings.Kind, request.Settings.Token);
+
+      // After the commit: a subscriber that reacts at once must not read the old row back.
+      await NotifyDeviceSettingsChangedAsync(request.Settings.CameraId, context.CancellationToken);
+      return new OperationStatus { Success = true };
+    }
+
+    private async Task NotifyDeviceSettingsChangedAsync(string cameraId, CancellationToken ct)
+    {
+      try
+      {
+        await daprClient.SaveStateAsync(
+          StateStoreName, DeviceSettingsVersionKey, Guid.NewGuid().ToString("N"),
+          cancellationToken: ct);
+        await daprClient.PublishEventAsync(
+          _pubSubName, DeviceSettingsChangedTopic, new DeviceSettingsChanged(cameraId), ct);
+      }
+      catch (Exception ex)
+      {
+        // The write itself succeeded; a lost signal costs a replica its cache TTL, not the change.
+        logger.LogWarning(ex,
+          "device-settings-changed publish failed for '{CameraId}' — replicas will pick it up by TTL",
+          cameraId);
+      }
     }
 
     public override async Task<ListAnalyticsWatchesResponse> ListAnalyticsWatches(
