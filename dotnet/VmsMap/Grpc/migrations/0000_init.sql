@@ -274,6 +274,14 @@ CREATE TABLE alarms (
 CREATE UNIQUE INDEX ux_alarms_open_dedup
   ON alarms (object_id, dedup_key) WHERE status <> 'closed';
 
+-- The event router's operation key: one subscription raise per trigger event and action, even
+-- after the alarm was closed. Without it a repeat that arrives once the operator has dealt with
+-- the row would find no open alarm and raise a second one for the same event. Retention is
+-- excluded: it reuses the episode's id for every renewal, which must still move the projected end.
+CREATE UNIQUE INDEX ux_alarms_subscription_event
+  ON alarms (source_event_id, object_id, dedup_key)
+  WHERE source_event_id IS NOT NULL AND source = 'subscription';
+
 -- The two pages GetAlarms reads. Open and closed are separate queries with separate cursors, and
 -- one index cannot serve both: the open one orders by raised_at, the closed one by closed_at.
 CREATE INDEX ix_alarms_open ON alarms (raised_at DESC, id DESC) WHERE status <> 'closed';

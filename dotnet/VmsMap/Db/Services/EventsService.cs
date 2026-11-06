@@ -233,6 +233,19 @@ namespace VmsMap.Db
       return fresh.Select(p => p.Id).ToList();
     }
 
+    // The event router's read: one row, by the id the outbox announced. It carries no caller and
+    // applies no rights — the router is the system's own reaction engine, not a viewer, and a
+    // subscription configured on a node must fire whether or not some user may see that node.
+    public async Task<EventDTO?> GetByIdAsync(Guid id)
+    {
+      var row = await _dbContext.Events
+        .AsNoTracking()
+        .Include(e => e.extra_props)
+        .FirstOrDefaultAsync(e => e.id == id);
+
+      return row is null ? null : ConvertDB2DTO(row);
+    }
+
     public async Task<List<EventDTO>> GetEventsByFilter(SearchEventFilterDTO filter)
     {
       var query = _dbContext.Events.AsQueryable();

@@ -101,12 +101,21 @@ namespace VmsMap.Grpc
       if (!await _db.Markers.AsNoTracking().AnyAsync(m => m.id == objectId, ct))
         throw new RpcException(new Status(StatusCode.NotFound, "no such node"));
 
+      Guid? subscriptionId = null;
+      if (!string.IsNullOrEmpty(request.SubscriptionId))
+      {
+        if (!Guid.TryParse(request.SubscriptionId, out var parsed))
+          throw new RpcException(new Status(StatusCode.InvalidArgument, "subscription_id must be a UUID"));
+        subscriptionId = parsed;
+      }
+
       var outcome = await _alarmStore.RaiseAsync(new RaiseAlarmSpec(
         ObjectId: objectId,
         Source: request.Source,
         DedupKey: request.DedupKey,
         ExpectedEndTs: request.ExpectedEndTs?.ToDateTime(),
-        Severity: NullIfEmpty(request.Severity)), ct);
+        Severity: NullIfEmpty(request.Severity),
+        SubscriptionId: subscriptionId), ct);
 
       return await ToAlarmAsync(
         await ResolveAsync(outcome, ct), ToCaller(request.Caller), ct);

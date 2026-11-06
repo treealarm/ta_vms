@@ -13,5 +13,8 @@ namespace VmsMap.Domain
     /// </summary>
     Task<IReadOnlyList<string>> InsertManyAsync(List<EventDTO> newObjs);
     Task<List<EventDTO>> GetEventsByFilter(SearchEventFilterDTO filter_in);
+
+    /// <summary>One journal row with its props, or null when the journal has no such id.</summary>
+    Task<EventDTO?> GetByIdAsync(Guid id);
   }
 }

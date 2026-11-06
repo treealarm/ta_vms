@@ -204,6 +204,40 @@ public class AlarmStorePostgresTests
   }
 
   [Fact]
+  public async Task ASubscriptionRaiseIsIdempotentEvenAfterTheAlarmWasClosed()
+  {
+    await using var s = await OpenAsync();
+    if (s is null) return;
+
+    var tree = await SeedAsync(s);
+
+    // The router's operation: one subscription action, one trigger event. A redelivery after the
+    // next_position write was lost computes exactly the same three values.
+    var spec = new RaiseAlarmSpec(
+      tree.Input,
+      AlarmSource.Subscription,
+      "subscription:subject",
+      SourceEventId: Guid.NewGuid(),
+      SubscriptionId: Guid.NewGuid());
+
+    var first = await s.Alarms.RaiseAsync(spec, default);
+    Assert.Equal(AlarmMove.Applied, first.Move);
+
+    // The condition clears and an operator closes the alarm before the repeat arrives.
+    await s.Alarms.NormalAsync(tree.Input, spec.DedupKey, default);
+    await s.Alarms.CloseAsync(
+      first.Alarm!.id, "alice", AlarmCloseReason.FalseAlarm, null, default);
+
+    var repeat = await s.Alarms.RaiseAsync(spec, default);
+
+    Assert.Equal(AlarmMove.Unchanged, repeat.Move);
+    Assert.Equal(first.Alarm.id, repeat.Alarm!.id);
+    Assert.Single(await s.Db.Alarms.AsNoTracking().ToListAsync());
+    Assert.Single(await s.Db.Events.AsNoTracking()
+      .Where(e => e.event_name == AlarmStore.RaisedEvent).ToListAsync());
+  }
+
+  [Fact]
   public async Task ALIVEAlarmOnAnotherChildKeepsTheAncestorCounted()
   {
     await using var s = await OpenAsync();

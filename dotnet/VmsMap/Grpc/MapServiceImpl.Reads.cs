@@ -424,6 +424,22 @@ namespace VmsMap.Grpc
 
     // ── Events ────────────────────────────────────────────────────────────────────────────────
 
+    // The alarm raise's own read of the journal, and the one the event router uses: a
+    // map-event-created message carries an id and nothing else. No caller and no rights — see
+    // EventsService.GetByIdAsync.
+    public override async Task<MapProto.Event> GetEvent(
+      MapProto.GetEventRequest request, ServerCallContext context)
+    {
+      if (!Guid.TryParse(request.Id, out var id))
+        throw new RpcException(new Status(StatusCode.InvalidArgument, "id must be a UUID"));
+
+      var evt = await _eventsService.GetByIdAsync(id);
+      if (evt is null)
+        throw new RpcException(new Status(StatusCode.NotFound, "no such event"));
+
+      return ToProto(evt);
+    }
+
     public override async Task<MapProto.EventList> GetEventsByFilter(
       MapProto.GetEventsByFilterRequest request, ServerCallContext context)
     {

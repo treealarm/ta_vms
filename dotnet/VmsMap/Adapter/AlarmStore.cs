@@ -20,7 +20,8 @@ namespace VmsMap.Adapter
     string? Severity = null,
     DateTime? ExpectedEndTs = null,
     Guid? SourceEventId = null,
-    string? Trigger = null);
+    string? Trigger = null,
+    Guid? SubscriptionId = null);
 
   public enum AlarmMove
   {
@@ -157,6 +158,27 @@ namespace VmsMap.Adapter
 
       await using var tx = await BeginAsync(ct);
 
+      // The operation key, for a raise that came from the event router: one delivery of one
+      // action raises one alarm, even if an operator has closed that alarm since. The open-alarm
+      // dedup below is about the condition; this is about the operation, and its window must not
+      // end when the operator deals with the row — the router's repeat may arrive after that.
+      // Retention is excluded: it reuses the episode's id for every renewal, which must still move
+      // the projected end.
+      if (spec.Source == AlarmSource.Subscription && spec.SourceEventId is not null)
+      {
+        var applied = await _db.Alarms
+          .Where(a => a.object_id == spec.ObjectId
+                      && a.dedup_key == spec.DedupKey
+                      && a.source_event_id == spec.SourceEventId)
+          .OrderByDescending(a => a.raised_at)
+          .FirstOrDefaultAsync(ct);
+        if (applied is not null)
+        {
+          await CommitAsync(tx, ct);
+          return new AlarmOutcome(AlarmMove.Unchanged, applied);
+        }
+      }
+
       var existing = await LockOpenAsync(spec.ObjectId, spec.DedupKey, ct);
       if (existing is not null)
       {
@@ -204,9 +226,10 @@ namespace VmsMap.Adapter
       {
         id = Guid.NewGuid(),
         object_id = spec.ObjectId,
-        // The definition is the source's own: a raise cannot name another, and a subscription's
-        // id is filled in by M2.4d, which knows which subscription fired.
+        // The definition is the source's own: a raise cannot name another. A subscription-sourced
+        // alarm also names the subscription that fired it — the router knows which one it was.
         definition_id = definition is null ? null : Guid.Parse(definition.Id),
+        subscription_id = spec.SubscriptionId,
         source = spec.Source,
         dedup_key = spec.DedupKey,
         condition_active = true,
