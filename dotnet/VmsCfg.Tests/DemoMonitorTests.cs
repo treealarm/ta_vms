@@ -6,22 +6,44 @@ namespace VmsCfg.Tests;
 // the ordinary monitor tables. A camera the deployment lacks must be skipped, not invented.
 public class DemoMonitorTests
 {
+  private static readonly string[] DemoCameras =
+    ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2", "sim-vehicle"];
+
   [Fact]
   public void TheWallShowsTheDemoCamerasInItsOwnOrder()
   {
     var plan = DemoMonitor.Plan([DemoCameraIds.For("sim-ptz2"), DemoCameraIds.For("sim-master")]);
 
     Assert.Equal([DemoCameraIds.For("sim-master"), DemoCameraIds.For("sim-ptz2")], plan.Cameras);
-    Assert.Equal(["sim-master2", "sim-ptz"], plan.Skipped);
-    Assert.Equal("2x2", plan.Layout);
+    Assert.Equal(["sim-master2", "sim-ptz", "sim-vehicle"], plan.Skipped);
+    Assert.Equal("1+5", plan.Layout);
     Assert.Equal("UMD DC", plan.Name);
+  }
+
+  [Fact]
+  public void TheFiveCamerasFillTheWallInTheOrderItShowsThem()
+  {
+    var plan = DemoMonitor.Plan(DemoCameras.Select(DemoCameraIds.For));
+
+    Assert.Equal(DemoCameras.Select(DemoCameraIds.For), plan.Cameras);
+    Assert.Empty(plan.Skipped);
+  }
+
+  [Fact]
+  public void AWorldWithoutTheVehicleCameraIsStillAWall()
+  {
+    // sim-vehicle is a moving camera, not one of the demo's devices: a deployment that has not
+    // provisioned it yet still gets the four that stand in the world.
+    var plan = DemoMonitor.Plan(DemoCameras.Where(name => name != "sim-vehicle").Select(DemoCameraIds.For));
+
+    Assert.Equal(new[] { "sim-master", "sim-master2", "sim-ptz", "sim-ptz2" }.Select(DemoCameraIds.For), plan.Cameras);
+    Assert.Equal(["sim-vehicle"], plan.Skipped);
   }
 
   [Fact]
   public void ASecondInstallPlansTheSameWallUnderTheSameId()
   {
-    var all = new[] { "sim-master", "sim-master2", "sim-ptz", "sim-ptz2" }
-      .Select(DemoCameraIds.For).ToList();
+    var all = DemoCameras.Select(DemoCameraIds.For).ToList();
     var first = DemoMonitor.Plan(all);
     var second = DemoMonitor.Plan(all);
 
@@ -38,7 +60,7 @@ public class DemoMonitorTests
     var plan = DemoMonitor.Plan([]);
 
     Assert.Empty(plan.Cameras);
-    Assert.Equal(4, plan.Skipped.Count);
+    Assert.Equal(5, plan.Skipped.Count);
   }
 }
 

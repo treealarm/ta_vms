@@ -221,7 +221,9 @@ each rack's first slot and eight ports on every switch. The third port of the fi
 synthetic alarm, so its map starts calm. The five
 OnvifSim cameras — `sim-master`, `sim-master2`, `sim-ptz`, `sim-ptz2` and `sim-vehicle` — are placed
 where the world wants them; a camera the deployment does not have yet is skipped and reported, and
-reinstalling once it is provisioned places it. `sim-vehicle` is flagged `geo_from_device`: the
+reinstalling once it is provisioned places it. They form two master/slave pairs: `sim-master` →
+`sim-ptz` in Room 101, and `sim-master2` → `sim-ptz2` out on the map, where the master watches the
+ring road north of the building and the slave turns after the car its boxes report. `sim-vehicle` is flagged `geo_from_device`: the
 place given here is only where it starts, and the map follows the position the camera reports from
 then on.
 
@@ -269,9 +271,10 @@ Maps, selecting it shows a draggable handle, and "+ diagram" in the node list pl
 centre of the current view. A room diagram is such a node; its icon on the floor is its
 `visual.image`.
 
-**The video wall** belongs to VmsCfg: a wall named `UMD DC`, layout 2×2, showing the demo cameras
-the deployment has. It is installed and removed with the world, and a camera that does not exist yet
-is simply absent from it. The two halves are independent: the wall is built from cameras, so when
+**The video wall** belongs to VmsCfg: a wall named `UMD DC`, layout `1+5` (one 2×2 feature cell and
+five small ones), showing the five demo cameras the deployment has — `sim-master` in the feature
+cell. It is installed and removed with the world, and a camera that does not exist yet is simply
+absent from it. The two halves are independent: the wall is built from cameras, so when
 VmsCfg is unreachable the map's world is still installed and the report says what the wall failed
 on, rather than failing the whole install.
 

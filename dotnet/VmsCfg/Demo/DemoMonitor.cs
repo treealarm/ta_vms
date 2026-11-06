@@ -23,15 +23,19 @@ public sealed class DemoMonitor(IDbContextFactory<VmsCfgDbContext> dbFactory, Ca
 {
     public const string DemoKey = "umd-datacenter";
     public const string Name = "UMD DC";
-    public const string Layout = "2x2";
+    // Six cells: the first is a 2x2 feature, the other five are small. Five demo cameras fill all
+    // but the last; a 3x3 grid would leave four cells empty.
+    public const string Layout = "1+5";
 
     // A constant of its own, not a hash: this row is a configuration object like any other, and a
     // second install has to name the same one.
     public static readonly Guid MonitorId = new("6f0b8d6e-5f2b-4a6a-9c1e-2d3a4b5c6d7e");
 
     // The order the wall shows them in, by the names the demo world gives them. OnvifSim's
-    // cameras, as tests/onvifsim provision creates them.
-    private static readonly string[] CameraOrder = ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2"];
+    // cameras, as tests/onvifsim provision creates them. The first takes the feature cell: the
+    // master the Room 101 pair is calibrated from.
+    private static readonly string[] CameraOrder =
+      ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2", "sim-vehicle"];
 
     /// Which of the demo cameras exist, in wall order. Pure: the same cameras give the same plan,
     /// which is what makes a second install a no-op on the rows. `Cameras` are the ids the wall
@@ -75,7 +79,7 @@ public sealed class DemoMonitor(IDbContextFactory<VmsCfgDbContext> dbFactory, Ca
 
         await storage.SetMonitorCamerasAsync(plan.MonitorId, plan.Cameras, string.Empty, ct);
 
-        // The pool is what the wall may show; the slots are what it shows now, in the 2x2 order.
+        // The pool is what the wall may show; the slots are what it shows now, in the wall's order.
         for (var slot = 0; slot < plan.Cameras.Count; slot += 1)
             await storage.SetMonitorSlotAsync(plan.MonitorId, slot, plan.Cameras[slot], string.Empty, ct);
 

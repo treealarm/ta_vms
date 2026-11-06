@@ -133,6 +133,31 @@ public class DemoWorldTests
   }
 
   [Fact]
+  public void TheSecondPairStandsOnTheRoadWithItsBackToTheBuilding()
+  {
+    // The hall pair works in Room 101; the second one moved out to the map, where the ring road
+    // and the car it watches are: both cameras stand in space/umd, master2 looking north over the
+    // road and ptz2 looking south-east along it.
+    Assert.Equal(7, _world.Version);
+
+    var master = _world.Placements.Single(placement => placement.CameraId == "sim-master2");
+    Assert.Equal("space/umd", master.SpaceKey);
+    Assert.Equal(38.992884, master.Lat, 6);
+    Assert.Equal(-76.937858, master.Lon, 6);
+    Assert.Equal(6, master.HeightM);
+    Assert.Equal(0, master.HeadingDeg);
+    Assert.Equal(60, master.HfovDeg);
+
+    var ptz = _world.Placements.Single(placement => placement.CameraId == "sim-ptz2");
+    Assert.Equal("space/umd", ptz.SpaceKey);
+    Assert.Equal(38.993333, ptz.Lat, 6);
+    Assert.Equal(-76.938320, ptz.Lon, 6);
+    Assert.Equal(6, ptz.HeightM);
+    Assert.Equal(113, ptz.HeadingDeg);
+    Assert.Equal(60, ptz.HfovDeg);
+  }
+
+  [Fact]
   public void TheCameraOnTheVehicleShowsItsReadingsOnAReplica()
   {
     var node = _world.Nodes.Single(candidate => candidate.Key == "object/telemetry-sim-vehicle");
