@@ -19,7 +19,7 @@ inversion of its pull-up — is OnvifSim's model and is not carried into ta_vms.
 camera ever needs that, it would have to become camera configuration here (a sink is a device of
 another camera, and there is no cross-camera relation today).
 
-## The UI poll interval
+## The UI poll interval, and the camera read behind it
 
 `useDeviceIoLive` polls VmsOnvif's cache every five seconds (`DEVICE_IO_POLL_INTERVAL_MS`), and the
 demo feeder uses the same tick. That is a constant in both places, not a setting: a large wall with
@@ -27,6 +27,23 @@ many cameras that have devices makes one request pair per camera per five second
 watching a single relay may want a slower or a faster refresh. Making it a deployment setting needs
 a decision about where it lives (VmsCfg's camera setup or its own configuration row) — the interval
 is a property of the viewer, not of the camera.
+
+The poll is not free, and it is not a state poll either. Each call goes web_srv → VmsOnvif → the
+camera's `GetRelayOutputs` / `GetDigitalInputs` for the *configuration*, and only then enriches
+`liveActive` from the event cache. So a wall of N tiles with devices makes 2N ONVIF requests per
+five seconds, and the value on screen is still up to five seconds old. The state itself is already
+event-sourced (`DeviceIoStateWatcher`); it is the transport that is a poll.
+
+Two directions, in order:
+
+1. **Serve the lists from VmsOnvif's cached presence.** It already keeps `DevicePresence` from the
+   discovery sweep, and the parts do not change between sweeps. The live read could return that
+   list plus the event cache; only the settings panel should force a camera read.
+2. **Push the states instead of polling them.** web_srv cannot subscribe to `device-event` itself:
+   replicas of one app id share a consumer group, so each event reaches one replica and the
+   browsers on the others never see it. The fan-out point already exists — VmsMap writes the
+   states and serves `api/map/live` as a per-client stream. The monitor overlay can watch the
+   camera's device nodes there, which also makes the monitor and the map agree by construction.
 
 ## The demo world and `Maryland` match only in camera poses
 
